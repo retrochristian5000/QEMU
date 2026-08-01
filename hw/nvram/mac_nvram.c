@@ -117,8 +117,10 @@ static void macio_nvram_realizefn(DeviceState *dev, Error **errp)
                              "could not get length of nvram backing image");
             return;
         } else if (len != s->size) {
-            error_setg_errno(errp, -len,
-                             "invalid size nvram backing image");
+            error_setg(errp,
+                       "invalid size nvram backing image: expected %u bytes, "
+                       "got %" PRId64 " bytes",
+                       s->size, len);
             return;
         }
         if (blk_set_perm(s->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE,
