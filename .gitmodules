@@ -9,7 +9,7 @@
 	url = https://gitlab.com/qemu-project/ipxe.git
 [submodule "roms/openbios"]
 	path = roms/openbios
-	url = https://gitlab.com/qemu-project/openbios.git
+	url = https://github.com/retrochristian5000/PPC-Firmware.git
 [submodule "roms/qemu-palcode"]
 	path = roms/qemu-palcode
 	url = https://github.com/retrochristian5000/Alpha-Firmware.git
