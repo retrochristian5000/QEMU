@@ -219,7 +219,7 @@ static bool pmac_nvram_has_legacy_qemu_layout(MacIONVRAMState *nvr, int len)
                                      CHRP_NVPART_SYSTEM, "system") &&
            pmac_nvram_header_matches(&nvr->data[half], half,
                                      LEGACY_OSX_NVRAM_SIGNATURE,
-                                     "wwwwwwwwwwww");
+                                     "wwwwwwwwwww");
 }
 
 static void pmac_nvram_name_system_partition(uint8_t *data)
@@ -237,8 +237,9 @@ static void pmac_format_nvram_partition_of(MacIONVRAMState *nvr, int off,
 {
     int sysp_len;
 
-    sysp_len = chrp_nvram_create_system_partition(&nvr->data[off],
-                                                  DEF_SYSTEM_SIZE, len);
+    sysp_len = chrp_nvram_create_system_partition(
+        &nvr->data[off], DEF_SYSTEM_SIZE,
+        len - sizeof(ChrpNvramPartHdr));
     pmac_nvram_name_system_partition(&nvr->data[off]);
 
     chrp_nvram_create_free_partition(&nvr->data[off + sysp_len],
