@@ -16,13 +16,11 @@ alpha_user_ss = ss.source_set()
 alpha_user_ss.add(alpha_gdbstub)
 
 alpha_common_system_ss = ss.source_set()
-alpha_common_system_ss.add(
-  alpha_gdbstub,
-  files(
-    'machine.c',
-    'sys_helper.c',
-  ),
-)
+alpha_common_system_ss.add(alpha_gdbstub)
+alpha_common_system_ss.add(files(
+  'machine.c',
+  'sys_helper.c',
+))
 
 target_arch += {'alpha': alpha_ss}
 target_user_arch += {'alpha': alpha_user_ss}
