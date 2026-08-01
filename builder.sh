@@ -16,5 +16,5 @@ export PREFIX="/emulator"
 export QEMU_TARGET_LIST="ppc-softmmu"
 
 # Configure QEMU based on this script's settings.
-./configure --enable-gtk --enable-pixman --enable-pa --enable-rng-none --enable-slirp --prefix="$PREFIX" --target-list="$QEMU_TARGET_LIST" --without-default-devices --without-default-features --with-devices-ppc="$ARCH_DEVICE_FILE"
+./configure --enable-gtk --enable-pixman --enable-pa --enable-rng-none --enable-slirp --enable-tools --prefix="$PREFIX" --target-list="$QEMU_TARGET_LIST" --without-default-devices --without-default-features --with-devices-ppc="$ARCH_DEVICE_FILE"
 make all install
