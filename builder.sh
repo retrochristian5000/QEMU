@@ -153,6 +153,17 @@ else
     )
 fi
 
+# Existing clones cache submodule URLs in .git/config. Keep the OpenBIOS
+# checkout mounted from the WHP PPC-Firmware repository before configuring.
+if [[ -e "$SOURCE_DIR/.git" ]]; then
+    if ! command -v git >/dev/null 2>&1; then
+        printf 'error: git is required to mount roms/openbios\n' >&2
+        exit 1
+    fi
+    git -C "$SOURCE_DIR" submodule sync -- roms/openbios
+    git -C "$SOURCE_DIR" submodule update --init -- roms/openbios
+fi
+
 mkdir -p "$BUILD_DIR"
 
 # Reconfigure only when the host toolchain or requested build settings change.
