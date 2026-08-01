@@ -205,6 +205,11 @@ static void pmac_format_nvram_partition_osx(MacIONVRAMState *nvr, int off,
 /* Set up NVRAM with OF and OSX partitions */
 void pmac_format_nvram_partition(MacIONVRAMState *nvr, int len)
 {
+    /* Preserve a populated backing image across machine restarts. */
+    if (!buffer_is_zero(nvr->data, len)) {
+        return;
+    }
+
     /*
      * Mac OS X expects side "B" of the flash at the second half of NVRAM,
      * so we use half of the chip for OF and the other half for a free OSX
@@ -212,5 +217,10 @@ void pmac_format_nvram_partition(MacIONVRAMState *nvr, int len)
      */
     pmac_format_nvram_partition_of(nvr, 0, len / 2);
     pmac_format_nvram_partition_osx(nvr, len / 2, len / 2);
+
+    if (nvr->blk && blk_pwrite(nvr->blk, 0, len, nvr->data, 0) < 0) {
+        error_report("%s: initialization of NVRAM backing store failed",
+                     blk_name(nvr->blk));
+    }
 }
 type_init(macio_nvram_register_types)
