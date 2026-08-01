@@ -36,9 +36,11 @@
 #include "qemu/module.h"
 #include "qemu/error-report.h"
 #include "trace.h"
-#include <zlib.h> /* for adler32 */
 
 #define DEF_SYSTEM_SIZE 0xc10
+#define MACOS_NVRAM_SIGNATURE 0xa0
+#define MACOS_NVRAM_PARTITION_SIZE 0x500
+#define LEGACY_OSX_NVRAM_SIGNATURE 0x5a
 
 /* macio style NVRAM device */
 static void macio_nvram_writeb(void *opaque, hwaddr addr,
@@ -89,7 +91,6 @@ static const VMStateDescription vmstate_macio_nvram = {
         VMSTATE_END_OF_LIST()
     }
 };
-
 
 static void macio_nvram_reset(DeviceState *dev)
 {
@@ -175,63 +176,122 @@ static void macio_nvram_register_types(void)
     type_register_static(&macio_nvram_type_info);
 }
 
-/* Set up a system OpenBIOS NVRAM partition */
+static bool pmac_nvram_buffer_is_erased(const uint8_t *data, int len)
+{
+    bool all_zero = true;
+    bool all_ones = true;
+    int i;
+
+    for (i = 0; i < len; i++) {
+        all_zero &= data[i] == 0x00;
+        all_ones &= data[i] == 0xff;
+        if (!all_zero && !all_ones) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool pmac_nvram_header_matches(const uint8_t *data, int len,
+                                      uint8_t signature, const char *name)
+{
+    const ChrpNvramPartHdr *header;
+    uint32_t part_len;
+
+    if (len < sizeof(*header)) {
+        return false;
+    }
+
+    header = (const ChrpNvramPartHdr *)data;
+    part_len = be16_to_cpu(header->len) << 4;
+
+    return header->signature == signature &&
+           part_len >= sizeof(*header) && part_len <= len &&
+           !strncmp(header->name, name, sizeof(header->name));
+}
+
+static bool pmac_nvram_has_legacy_qemu_layout(MacIONVRAMState *nvr, int len)
+{
+    int half = len / 2;
+
+    return pmac_nvram_header_matches(nvr->data, half,
+                                     CHRP_NVPART_SYSTEM, "system") &&
+           pmac_nvram_header_matches(&nvr->data[half], half,
+                                     LEGACY_OSX_NVRAM_SIGNATURE,
+                                     "wwwwwwwwwwww");
+}
+
+static void pmac_nvram_name_system_partition(uint8_t *data)
+{
+    ChrpNvramPartHdr *header = (ChrpNvramPartHdr *)data;
+    uint32_t part_len = be16_to_cpu(header->len) << 4;
+
+    pstrcpy(header->name, sizeof(header->name), "common");
+    chrp_nvram_finish_partition(header, part_len);
+}
+
+/* Set up a system Open Firmware NVRAM partition. */
 static void pmac_format_nvram_partition_of(MacIONVRAMState *nvr, int off,
                                            int len)
 {
-    int sysp_end;
+    int sysp_len;
 
-    /* OpenBIOS nvram variables partition */
-    sysp_end = chrp_nvram_create_system_partition(&nvr->data[off],
-                                                  DEF_SYSTEM_SIZE, len) + off;
+    sysp_len = chrp_nvram_create_system_partition(&nvr->data[off],
+                                                  DEF_SYSTEM_SIZE, len);
+    pmac_nvram_name_system_partition(&nvr->data[off]);
 
-    /* Free space partition */
-    chrp_nvram_create_free_partition(&nvr->data[sysp_end], len - sysp_end);
+    chrp_nvram_create_free_partition(&nvr->data[off + sysp_len],
+                                     len - sysp_len);
 }
 
-#define OSX_NVRAM_SIGNATURE     (0x5A)
-
-/* Set up a Mac OS X NVRAM partition */
-static void pmac_format_nvram_partition_osx(MacIONVRAMState *nvr, int off,
-                                            int len)
+/* Set up the XPRAM/Name Registry partition expected by NewWorld Mac OS. */
+static void pmac_format_nvram_partition_macos(MacIONVRAMState *nvr, int off,
+                                              int len)
 {
-    uint32_t start = off;
-    ChrpNvramPartHdr *part_header;
-    unsigned char *data = &nvr->data[start];
+    ChrpNvramPartHdr *header;
 
-    /* empty partition */
-    part_header = (ChrpNvramPartHdr *)data;
-    part_header->signature = OSX_NVRAM_SIGNATURE;
-    pstrcpy(part_header->name, sizeof(part_header->name), "wwwwwwwwwwww");
+    assert(len >= MACOS_NVRAM_PARTITION_SIZE + sizeof(*header));
 
-    chrp_nvram_finish_partition(part_header, len);
+    memset(&nvr->data[off], 0, len);
+    header = (ChrpNvramPartHdr *)&nvr->data[off];
+    header->signature = MACOS_NVRAM_SIGNATURE;
+    pstrcpy(header->name, sizeof(header->name), "APL,MacOS75");
+    chrp_nvram_finish_partition(header, MACOS_NVRAM_PARTITION_SIZE);
 
-    /* Generation */
-    stl_be_p(&data[20], 2);
-
-    /* Adler32 checksum */
-    stl_be_p(&data[16], adler32(0, &data[20], len - 20));
+    chrp_nvram_create_free_partition(
+        &nvr->data[off + MACOS_NVRAM_PARTITION_SIZE],
+        len - MACOS_NVRAM_PARTITION_SIZE);
 }
 
-/* Set up NVRAM with OF and OSX partitions */
+/* Set up NVRAM with Open Firmware and Mac OS partitions. */
 void pmac_format_nvram_partition(MacIONVRAMState *nvr, int len)
 {
-    /* Preserve a populated backing image across machine restarts. */
-    if (!buffer_is_zero(nvr->data, len)) {
+    bool erased = pmac_nvram_buffer_is_erased(nvr->data, len);
+    bool legacy = pmac_nvram_has_legacy_qemu_layout(nvr, len);
+    int half = len / 2;
+
+    /* Preserve unknown or already-populated images rather than erase them. */
+    if (!erased && !legacy) {
         return;
     }
 
-    /*
-     * Mac OS X expects side "B" of the flash at the second half of NVRAM,
-     * so we use half of the chip for OF and the other half for a free OSX
-     * partition.
-     */
-    pmac_format_nvram_partition_of(nvr, 0, len / 2);
-    pmac_format_nvram_partition_osx(nvr, len / 2, len / 2);
+    if (erased) {
+        memset(nvr->data, 0, len);
+        pmac_format_nvram_partition_of(nvr, 0, half);
+    } else {
+        /* Upgrade the layout emitted by older QEMU builds in place. */
+        pmac_nvram_name_system_partition(nvr->data);
+    }
 
-    if (nvr->blk && blk_pwrite(nvr->blk, 0, len, nvr->data, 0) < 0) {
-        error_report("%s: initialization of NVRAM backing store failed",
-                     blk_name(nvr->blk));
+    pmac_format_nvram_partition_macos(nvr, half, len - half);
+
+    if (nvr->blk) {
+        if (blk_pwrite(nvr->blk, 0, len, nvr->data, 0) < 0 ||
+            blk_flush(nvr->blk) < 0) {
+            error_report("%s: initialization of NVRAM backing store failed",
+                         blk_name(nvr->blk));
+        }
     }
 }
 type_init(macio_nvram_register_types)
