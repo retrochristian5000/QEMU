@@ -47,23 +47,26 @@ mkdir -p "$BUILD_DIR"
 
 # Reconfigure only when the requested build settings change. This keeps Meson
 # and Ninja's incremental state intact across normal emulator rebuilds.
-config_signature="$({
+config_file="$BUILD_DIR/.whp-config"
+config_candidate="$config_file.new"
+{
     printf 'CC=%s\n' "${CC:-cc}"
     printf 'CXX=%s\n' "${CXX:-c++}"
     printf 'CFLAGS=%s\n' "$CFLAGS"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[@]}"
-} | sha256sum | awk '{print $1}')"
-signature_file="$BUILD_DIR/.whp-config-signature"
+} > "$config_candidate"
 
 if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
-   [[ ! -f "$signature_file" ]] ||
-   [[ "$(<"$signature_file")" != "$config_signature" ]]; then
+   [[ ! -f "$config_file" ]] ||
+   ! cmp -s "$config_candidate" "$config_file"; then
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "${configure_args[@]}"
     )
-    printf '%s\n' "$config_signature" > "$signature_file"
+    mv "$config_candidate" "$config_file"
+else
+    rm -f "$config_candidate"
 fi
 
 read -r -a build_target_list <<< "$BUILD_TARGETS"
