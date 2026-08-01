@@ -1,0 +1,43 @@
+name: Remove all Git tags once
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/remove-all-tags-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  remove-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete every remote tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          mapfile -t tags < <(git tag --list)
+          echo "Found ${#tags[@]} tag(s)."
+
+          if ((${#tags[@]} == 0)); then
+            exit 0
+          fi
+
+          batch_size=50
+          for ((offset=0; offset<${#tags[@]}; offset+=batch_size)); do
+            batch=("${tags[@]:offset:batch_size}")
+            git push origin --delete "${batch[@]}"
+          done
+
+          git fetch --prune --prune-tags
+          remaining=$(git tag --list | wc -l | tr -d ' ')
+          echo "Remaining tags: ${remaining}"
+          test "${remaining}" = "0"
