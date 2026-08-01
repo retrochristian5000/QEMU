@@ -12,7 +12,7 @@
 	url = https://gitlab.com/qemu-project/openbios.git
 [submodule "roms/qemu-palcode"]
 	path = roms/qemu-palcode
-	url = https://gitlab.com/qemu-project/qemu-palcode.git
+	url = https://github.com/retrochristian5000/Alpha-Firmware.git
 [submodule "roms/u-boot"]
 	path = roms/u-boot
         # upstream is https://github.com/u-boot/u-boot
