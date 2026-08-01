@@ -28,6 +28,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "qom/compat-properties.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
 #include "hw/core/qdev-properties.h"
@@ -264,6 +265,28 @@ static void ppc_heathrow_init(MachineState *machine)
         }
     }
 
+    if (!graphic_width) {
+        graphic_width = 800;
+    }
+    if (!graphic_height) {
+        graphic_height = 600;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 32;
+    }
+    if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
+        graphic_depth = 15;
+    }
+
+    /* Keep the OpenBIOS framebuffer and Mac OS NDRV EDID preference aligned. */
+    {
+        g_autofree char *xres = g_strdup_printf("%d", graphic_width);
+        g_autofree char *yres = g_strdup_printf("%d", graphic_height);
+
+        object_register_sugar_prop("VGA", "xres", xres, true);
+        object_register_sugar_prop("VGA", "yres", yres, true);
+    }
+
     pci_vga_init(pci_bus);
 
     pci_init_nic_devices(pci_bus, mc->default_nic);
@@ -286,19 +309,6 @@ static void ppc_heathrow_init(MachineState *machine)
 
     if (machine_usb(machine)) {
         pci_create_simple(pci_bus, -1, "pci-ohci");
-    }
-
-    if (!graphic_width) {
-        graphic_width = 800;
-    }
-    if (!graphic_height) {
-        graphic_height = 600;
-    }
-    if (!graphic_depth) {
-        graphic_depth = 32;
-    }
-    if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
-        graphic_depth = 15;
     }
 
     /* No PCI init: the BIOS will do it */
