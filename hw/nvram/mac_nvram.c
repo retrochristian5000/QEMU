@@ -32,14 +32,15 @@
 #include "system/block-backend.h"
 #include "system/blockdev.h"
 #include "migration/vmstate.h"
-#include "qemu/cutils.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
 #include "trace.h"
 
 #define DEF_SYSTEM_SIZE 0xc10
-#define MACOS_NVRAM_SIGNATURE 0xa0
-#define MACOS_NVRAM_PARTITION_SIZE 0x500
+#define MACOS75_NVRAM_SIGNATURE 0xa0
+#define MACOS75_NVRAM_PARTITION_SIZE 0x520
+#define OSXPANIC_NVRAM_SIGNATURE 0xa1
+#define OSXPANIC_NVRAM_PARTITION_SIZE 0x810
 #define LEGACY_OSX_NVRAM_SIGNATURE 0x5a
 
 /* macio style NVRAM device */
@@ -193,6 +194,15 @@ static bool pmac_nvram_buffer_is_erased(const uint8_t *data, int len)
     return true;
 }
 
+static void pmac_nvram_set_partition_name(ChrpNvramPartHdr *header,
+                                          const char *name)
+{
+    size_t len = MIN(strlen(name), sizeof(header->name));
+
+    memset(header->name, 0, sizeof(header->name));
+    memcpy(header->name, name, len);
+}
+
 static bool pmac_nvram_header_matches(const uint8_t *data, int len,
                                       uint8_t signature, const char *name)
 {
@@ -227,7 +237,7 @@ static void pmac_nvram_name_system_partition(uint8_t *data)
     ChrpNvramPartHdr *header = (ChrpNvramPartHdr *)data;
     uint32_t part_len = be16_to_cpu(header->len) << 4;
 
-    pstrcpy(header->name, sizeof(header->name), "common");
+    pmac_nvram_set_partition_name(header, "common");
     chrp_nvram_finish_partition(header, part_len);
 }
 
@@ -246,23 +256,37 @@ static void pmac_format_nvram_partition_of(MacIONVRAMState *nvr, int off,
                                      len - sysp_len);
 }
 
-/* Set up the XPRAM/Name Registry partition expected by NewWorld Mac OS. */
+static int pmac_format_nvram_os_partition(uint8_t *data, uint8_t signature,
+                                          const char *name, int len)
+{
+    ChrpNvramPartHdr *header = (ChrpNvramPartHdr *)data;
+
+    header->signature = signature;
+    pmac_nvram_set_partition_name(header, name);
+    chrp_nvram_finish_partition(header, len);
+
+    return len;
+}
+
+/* Set up the XPRAM, Name Registry and panic partitions used by NewWorld Macs. */
 static void pmac_format_nvram_partition_macos(MacIONVRAMState *nvr, int off,
                                               int len)
 {
-    ChrpNvramPartHdr *header;
+    int end = 0;
 
-    assert(len >= MACOS_NVRAM_PARTITION_SIZE + sizeof(*header));
+    assert(len >= MACOS75_NVRAM_PARTITION_SIZE +
+                  OSXPANIC_NVRAM_PARTITION_SIZE +
+                  sizeof(ChrpNvramPartHdr));
 
     memset(&nvr->data[off], 0, len);
-    header = (ChrpNvramPartHdr *)&nvr->data[off];
-    header->signature = MACOS_NVRAM_SIGNATURE;
-    pstrcpy(header->name, sizeof(header->name), "APL,MacOS75");
-    chrp_nvram_finish_partition(header, MACOS_NVRAM_PARTITION_SIZE);
+    end += pmac_format_nvram_os_partition(
+        &nvr->data[off + end], MACOS75_NVRAM_SIGNATURE,
+        "APL,MacOS75", MACOS75_NVRAM_PARTITION_SIZE);
+    end += pmac_format_nvram_os_partition(
+        &nvr->data[off + end], OSXPANIC_NVRAM_SIGNATURE,
+        "APL,OSXPanic", OSXPANIC_NVRAM_PARTITION_SIZE);
 
-    chrp_nvram_create_free_partition(
-        &nvr->data[off + MACOS_NVRAM_PARTITION_SIZE],
-        len - MACOS_NVRAM_PARTITION_SIZE);
+    chrp_nvram_create_free_partition(&nvr->data[off + end], len - end);
 }
 
 /* Set up NVRAM with Open Firmware and Mac OS partitions. */
