@@ -30,6 +30,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "system/block-backend.h"
+#include "system/blockdev.h"
 #include "migration/vmstate.h"
 #include "qemu/cutils.h"
 #include "qemu/module.h"
@@ -98,6 +99,14 @@ static void macio_nvram_realizefn(DeviceState *dev, Error **errp)
 {
     SysBusDevice *d = SYS_BUS_DEVICE(dev);
     MacIONVRAMState *s = MACIO_NVRAM(dev);
+
+    if (!s->blk) {
+        DriveInfo *dinfo = drive_get(IF_MTD, 0, 0);
+
+        if (dinfo) {
+            qdev_prop_set_drive(dev, "drive", blk_by_legacy_dinfo(dinfo));
+        }
+    }
 
     s->data = g_malloc0(s->size);
 
