@@ -50,6 +50,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "qom/compat-properties.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
 #include "hw/core/qdev-properties.h"
@@ -430,8 +431,6 @@ static void ppc_core99_init(MachineState *machine)
         }
     }
 
-    pci_vga_init(pci_bus);
-
     if (!graphic_width) {
         graphic_width = 800;
     }
@@ -444,6 +443,22 @@ static void ppc_core99_init(MachineState *machine)
     if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
         graphic_depth = 15;
     }
+
+    /*
+     * OpenBIOS uses the -g dimensions through FW_CFG_PPC_WIDTH/HEIGHT,
+     * while qemu_vga.ndrv builds the Mac OS mode list from VGA EDID data.
+     * Keep both views of the emulated monitor on the same preferred mode.
+     * Explicit xres/yres properties on a user-created VGA device still win.
+     */
+    {
+        g_autofree char *xres = g_strdup_printf("%d", graphic_width);
+        g_autofree char *yres = g_strdup_printf("%d", graphic_height);
+
+        object_register_sugar_prop("VGA", "xres", xres, true);
+        object_register_sugar_prop("VGA", "yres", yres, true);
+    }
+
+    pci_vga_init(pci_bus);
 
     pci_init_nic_devices(pci_bus, mc->default_nic);
 
