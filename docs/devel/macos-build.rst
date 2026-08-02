@@ -20,6 +20,11 @@ architectures:
 OpenBIOS and the PowerPC cross-toolchain bootstrap use the latter pair for
 host utilities and use ``OPENBIOS_CROSS_COMPILE`` for firmware objects.
 
+QEMU configure binds these roles explicitly.  ``CC`` is passed through
+``--cc``, ``CC_FOR_BUILD`` through ``--host-cc``, ``CXX`` through ``--cxx``,
+and ``OBJC`` through ``--objcc``.  Merely exporting a variable with a similar
+name is not treated as proof that QEMU's configure script consumes it.
+
 Native Apple Silicon
 --------------------
 
@@ -64,6 +69,40 @@ The wrapper appends the selected architecture to ``CFLAGS``, ``CXXFLAGS``,
 ``OBJCFLAGS``, and ``LDFLAGS``.  Set ``MACOS_ARCH_FLAGS=0`` only when an
 external toolchain file supplies equivalent flags.
 
+Compiler identity verification
+------------------------------
+
+A program is not accepted merely because it is named ``cc`` or because it can
+parse a trivial C source file.  Before QEMU configuration, the wrapper runs
+``scripts/verify-macos-toolchain.sh`` and verifies the effective compiler
+pipeline.
+
+The preflight check:
+
+* resolves the actual driver behind ``ccache``, ``sccache``, ``distcc``,
+  ``icecc``, ``env``, ``arch``, or ``xcrun`` wrappers;
+* rejects C-driver substitutions such as ``clang++``, ``clang-cl``, and
+  ``clang-cpp``;
+* verifies the effective target triple for ``CC``, ``CXX``, ``OBJC``, and
+  ``CC_FOR_BUILD``;
+* verifies that Clang's reported resource directory exists;
+* detects a default Clang configuration file that silently changes the target;
+* links representative C, C++, and Cocoa Objective-C programs;
+* links a separate build-machine C program with ``CC_FOR_BUILD``;
+* inspects every resulting Mach-O file with ``lipo`` and requires the expected
+  architecture slice.
+
+Compiler commands may include ordinary whitespace-separated wrappers and
+arguments.  Shell operators are rejected; use a wrapper script when a compiler
+setup requires complex shell evaluation.
+
+The resulting identity record is stored in
+``build/whp-ppc-<arch>-apple-darwin/.whp-macos-toolchain``.  Driver ``-###``
+pipelines and probe sources are stored in the adjacent
+``.whp-macos-toolchain.d`` directory.  The manifest signature participates in
+``.whp-config``, so a changed compiler identity forces QEMU configuration to
+run again.
+
 Cross-host and universal builds
 -------------------------------
 
@@ -90,6 +129,18 @@ Useful overrides
 ``MACOS_ALLOW_MIXED_HOMEBREW``
   Permit a custom Homebrew prefix instead of the architecture-standard prefix.
 
+``MACOS_VERIFY_TOOLCHAIN``
+  Run compiler identity and Mach-O probes.  It defaults to ``1``.  Disabling
+  the probe removes an important wrong-tool and wrong-architecture guard.
+
+``MACOS_ALLOW_NONCLANG``
+  Permit a non-Clang compiler after the same compile, link, target, and Mach-O
+  probes.  It does not waive those capability checks.
+
+``MACOS_ALLOW_COMPILER_CONFIG``
+  Permit an automatically loaded Clang configuration file to alter the target
+  triple.  Use this only when the injected target policy is intentional.
+
 ``CC_FOR_BUILD``, ``CXX_FOR_BUILD``
   Compilers for tools that execute on the build machine.
 
@@ -108,5 +159,6 @@ Diagnostics
 
 The configuration stamp records the physical architecture, process
 architecture, Rosetta state, Apple developer directory, SDK version, host
-compilers, build-machine compilers, dependency paths, and firmware toolchain.
-Changing any of these values forces QEMU configuration to run again.
+compilers, build-machine compilers, dependency paths, compiler-probe manifest,
+and firmware toolchain.  Changing any of these values forces QEMU
+configuration to run again.
