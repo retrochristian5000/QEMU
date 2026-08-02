@@ -159,6 +159,11 @@ if [[ "$process_arch" == "arm64" ]] &&
     exit 1
 fi
 
+# Resolve compiler roles before builder.sh computes architecture and LTO
+# defaults.  This keeps Clang's Apple integration separate from an explicit
+# GNU GCC experiment and prevents mixed C/C++ compiler families.
+source "$SCRIPT_DIR/macos-compiler-policy.bash"
+
 reject_managed_flags
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     append_flag "$variable" "-isysroot $SDKROOT"
@@ -182,6 +187,7 @@ printf '%s\n' \
     "macOS SDK:               $SDKROOT" \
     "macOS SDK version:       $MACOS_SDK_VERSION" \
     "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" \
+    "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
     "WHP build shell:         $WHP_BUILD_BASH" \
     "configure shell:         $CONFIG_SHELL"
 
