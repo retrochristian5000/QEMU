@@ -10,6 +10,7 @@ some of the basics if you are adding new files and targets to the build.
    build-system
    build-environment
    macos-build
+   macos-sdk-wrapper
    macos-lto
    kconfig
    docs
