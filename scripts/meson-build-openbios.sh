@@ -27,6 +27,7 @@ esac
 # shellcheck disable=SC1090
 source "$CONFIG_FILE"
 
+: "${OPENBIOS_BUILD_DIR:?OPENBIOS_BUILD_DIR is required}"
 : "${OPENBIOS_TOOLS_DIR:?OPENBIOS_TOOLS_DIR is required}"
 : "${OPENBIOS_HOSTCC:?OPENBIOS_HOSTCC is required}"
 : "${OPENBIOS_HOSTCXX:?OPENBIOS_HOSTCXX is required}"
@@ -119,7 +120,7 @@ if [[ -z "$cross_prefix" ]]; then
     printf 'error: no PowerPC cross-toolchain is available for OpenBIOS\n' >&2
     exit 1
 fi
-for tool in gcc as ar ld nm strip ranlib; do
+for tool in gcc as ar ld nm strip ranlib readelf; do
     if [[ ! -x "${cross_prefix}${tool}" ]]; then
         printf 'error: incomplete PowerPC cross-toolchain: %s%s\n' \
             "$cross_prefix" "$tool" >&2
@@ -129,6 +130,7 @@ done
 
 env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
     OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}" \
+    OPENBIOS_BUILD_DIR="$OPENBIOS_BUILD_DIR" \
     OPENBIOS_OUTPUT="$OUTPUT" \
     OPENBIOS_TOOLS_DIR="$OPENBIOS_TOOLS_DIR" \
     OPENBIOS_HOSTCC="$OPENBIOS_HOSTCC" \
