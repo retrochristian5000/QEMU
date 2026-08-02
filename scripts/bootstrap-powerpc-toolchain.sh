@@ -11,10 +11,12 @@ TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$SOURCE_DIR/build/tool
 TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
 TOOLCHAIN_HOST_CC="${TOOLCHAIN_HOST_CC:-${CC_FOR_BUILD:-${CC:-cc}}}"
 TOOLCHAIN_HOST_CXX="${TOOLCHAIN_HOST_CXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
+TOOLCHAIN_PKG_CONFIG="${TOOLCHAIN_PKG_CONFIG:-false}"
 MAKE_CMD="${MAKE_CMD:-${MAKE:-make}}"
 JOBS="${JOBS:-1}"
 stage_root=""
 temporary_download=""
+bootstrap_stage="initialization"
 
 BINUTILS_VERSION="${POWERPC_BINUTILS_VERSION:-2.44}"
 GCC_VERSION="${POWERPC_GCC_VERSION:-14.2.0}"
@@ -65,7 +67,19 @@ else
     exit 1
 fi
 
-powerpc_tools=(gcc as ar ld nm objcopy objdump readelf strip ranlib)
+binutils_tools=(as ar ld nm objcopy objdump readelf strip ranlib)
+powerpc_tools=(gcc "${binutils_tools[@]}")
+
+binutils_is_usable()
+{
+    local prefix_dir="$1"
+    local tool
+
+    for tool in "${binutils_tools[@]}"; do
+        [[ -x "$prefix_dir/bin/${TOOLCHAIN_TARGET}-${tool}" ]] || return 1
+    done
+}
+
 toolchain_is_usable()
 {
     local prefix_dir="$1"
@@ -83,7 +97,7 @@ toolchain_is_usable()
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=2
+BOOTSTRAP_SCHEMA=3
 BUILD_SYSTEM=$(uname -srm)
 BUILD_PROCESS_ARCH=$(uname -m)
 ROSETTA_TRANSLATED=$(sysctl -in sysctl.proc_translated 2>/dev/null || printf '0')
@@ -94,6 +108,7 @@ GCC_VERSION=$GCC_VERSION
 GCC_SHA256=$GCC_SHA256
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
+PKG_CONFIG=$TOOLCHAIN_PKG_CONFIG
 MARKER
 )"
 
@@ -119,6 +134,25 @@ cleanup()
     [[ -z "$stage_root" ]] || rm -rf "$stage_root"
     rmdir "$lock_dir" 2>/dev/null || true
 }
+report_failure()
+{
+    local status=$?
+
+    printf 'error: PowerPC toolchain bootstrap failed during %s (status %s)\n' \
+        "$bootstrap_stage" "$status" >&2
+    case "$bootstrap_stage" in
+        binutils*)
+            printf 'inspect binutils logs under: %s\n' \
+                "$TOOLCHAIN_WORK_DIR/build-binutils-$BINUTILS_VERSION" >&2
+            ;;
+        gcc*)
+            printf 'inspect GCC logs under: %s\n' \
+                "$TOOLCHAIN_WORK_DIR/build-gcc-$GCC_VERSION" >&2
+            ;;
+    esac
+    return "$status"
+}
+trap report_failure ERR
 trap cleanup EXIT
 
 download_and_verify()
@@ -168,13 +202,16 @@ gcc_src="$TOOLCHAIN_WORK_DIR/gcc-$GCC_VERSION"
 binutils_build="$TOOLCHAIN_WORK_DIR/build-binutils-$BINUTILS_VERSION"
 gcc_build="$TOOLCHAIN_WORK_DIR/build-gcc-$GCC_VERSION"
 
+bootstrap_stage="downloading and verifying source archives"
 download_and_verify "$BINUTILS_URL" "$binutils_tar" "$BINUTILS_SHA256"
 download_and_verify "$GCC_URL" "$gcc_tar" "$GCC_SHA256"
+bootstrap_stage="extracting source archives"
 extract_archive "$binutils_tar" "$binutils_src"
 extract_archive "$gcc_tar" "$gcc_src"
 
 # GCC 14's helper still names an HTTP endpoint. Use HTTPS while retaining
 # the release-provided prerequisite checksums and pinned dependency versions.
+bootstrap_stage="preparing GCC prerequisites"
 sed -i.bak \
     "s|base_url='http://gcc.gnu.org/pub/gcc/infrastructure/'|base_url='https://gcc.gnu.org/pub/gcc/infrastructure/'|" \
     "$gcc_src/contrib/download_prerequisites"
@@ -192,11 +229,14 @@ staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
 mkdir -p "$stage_root" "$(dirname "$TOOLCHAIN_DIR")"
 
+bootstrap_stage="configuring and building binutils"
 rm -rf "$binutils_build"
 mkdir -p "$binutils_build"
 (
     cd "$binutils_build"
     env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
+        -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
         CC="$TOOLCHAIN_HOST_CC" CXX="$TOOLCHAIN_HOST_CXX" \
         "$binutils_src/configure" \
         --target="$TOOLCHAIN_TARGET" \
@@ -209,17 +249,51 @@ mkdir -p "$binutils_build"
         --disable-shared \
         --disable-sim \
         --disable-werror \
-        --enable-static
-    "$MAKE_CMD" -j"$JOBS" MAKEINFO=true
-    "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install
+        --enable-static \
+        --without-zstd
+    env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
+        "$MAKE_CMD" -j"$JOBS" MAKEINFO=true
+    env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
+        "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install
 )
 
+bootstrap_stage="validating staged binutils"
+if ! binutils_is_usable "$staged_toolchain"; then
+    printf 'error: staged PowerPC binutils installation is incomplete\n' >&2
+    exit 1
+fi
+binutils_smoke_source="$TOOLCHAIN_WORK_DIR/binutils-smoke.s"
+binutils_smoke_object="$TOOLCHAIN_WORK_DIR/binutils-smoke.o"
+binutils_smoke_linked="$TOOLCHAIN_WORK_DIR/binutils-smoke-linked.o"
+cat > "$binutils_smoke_source" <<'ASSEMBLY'
+.text
+.globl whp_binutils_smoke
+whp_binutils_smoke:
+    nop
+ASSEMBLY
+"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-as" \
+    -o "$binutils_smoke_object" "$binutils_smoke_source"
+"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-ld" \
+    -r -o "$binutils_smoke_linked" "$binutils_smoke_object"
+if ! "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" \
+     -h "$binutils_smoke_linked" | grep -q 'Machine:.*PowerPC'; then
+    printf 'error: staged binutils produced the wrong object architecture\n' >&2
+    exit 1
+fi
+rm -f "$binutils_smoke_source" "$binutils_smoke_object" \
+    "$binutils_smoke_linked"
+
+bootstrap_stage="configuring and building GCC"
 rm -rf "$gcc_build"
 mkdir -p "$gcc_build"
 (
     cd "$gcc_build"
     export PATH="$staged_toolchain/bin:$PATH"
     env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
+        -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
         CC="$TOOLCHAIN_HOST_CC" CXX="$TOOLCHAIN_HOST_CXX" \
         "$gcc_src/configure" \
         --target="$TOOLCHAIN_TARGET" \
@@ -243,10 +317,15 @@ mkdir -p "$gcc_build"
         --disable-threads \
         --disable-werror \
         --enable-languages=c
-    "$MAKE_CMD" -j"$JOBS" MAKEINFO=true all-gcc
-    "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install-gcc
+    env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
+        "$MAKE_CMD" -j"$JOBS" MAKEINFO=true all-gcc
+    env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+        PKG_CONFIG="$TOOLCHAIN_PKG_CONFIG" \
+        "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install-gcc
 )
 
+bootstrap_stage="validating complete PowerPC toolchain"
 if ! toolchain_is_usable "$staged_toolchain"; then
     printf 'error: bootstrapped PowerPC toolchain is incomplete\n' >&2
     exit 1
@@ -277,5 +356,6 @@ if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
 fi
 rm -rf "$old_toolchain" "$stage_root"
 
+bootstrap_stage="completed"
 printf 'Bootstrapped PowerPC toolchain: %s/bin/%s-\n' \
     "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
