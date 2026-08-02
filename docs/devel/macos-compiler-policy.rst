@@ -18,7 +18,8 @@ The selected programs come from ``xcrun --sdk macosx --find`` so they match the
 active Xcode or Command Line Tools installation.  On macOS, an executable named
 ``gcc`` is not proof that GNU GCC was selected; Apple's unversioned ``gcc``
 entry point normally invokes Apple Clang.  The wrapper identifies compiler
-families from their reported version, not from the executable basename.
+families from their reported version or predefined macros, not from the
+executable basename.
 
 ``CC`` and ``CXX`` must be selected together and must report the same compiler
 family.  A configuration such as ``CC=gcc-14`` with an inherited
@@ -34,8 +35,9 @@ SDK and frameworks.  Replacing ``OBJC`` with GNU GCC is not part of the
 supported non-Clang escape hatch.
 
 Build-machine tools also remain Apple Clang.  QEMU configure probes, helper
-programs, ``toke``, and other programs that execute during the build must not
-silently change compiler family merely because the QEMU host compiler changed.
+programs, ``toke``, and other programs that execute during the main QEMU build
+must not silently change compiler family merely because the QEMU host compiler
+changed.
 
 Experimental GNU GCC QEMU host build
 ------------------------------------
@@ -60,19 +62,40 @@ be enabled after a separate plugin-aware tool policy and smoke test exist.
 PowerPC bootstrap host compiler
 -------------------------------
 
-Changing the compiler that builds the GNU PowerPC cross-toolchain is a separate
-experiment from changing QEMU's host compiler.
+Changing the compiler that builds the GNU PowerPC cross-toolchain is separate
+from changing QEMU's host compiler.  QEMU and Cocoa remain on Apple Clang.
 
-For the integrated OpenBIOS build, use matching build-host compilers through::
+When ``scripts/macos-builder.sh`` starts without explicit firmware-host
+compiler settings, it searches the active Homebrew GCC prefix and ``PATH`` for
+a matching versioned GNU pair, currently ``gcc-16``/``g++-16`` through
+``gcc-12``/``g++-12``.  It confirms GNU GCC from predefined compiler macros so
+Apple's Clang-backed unversioned ``gcc`` command is not mistaken for GNU GCC.
+The selected pair is exported as ``OPENBIOS_HOSTCC`` and
+``OPENBIOS_HOSTCXX``.  ``scripts/build-openbios.sh`` then passes the same pair
+to the nested binutils and GCC bootstrap.
+
+Explicit settings always override automatic selection::
 
   OPENBIOS_HOSTCC=/path/to/gcc-<major> \
   OPENBIOS_HOSTCXX=/path/to/g++-<major> \
   sh scripts/macos-builder.sh
 
-For a direct invocation of ``scripts/bootstrap-powerpc-toolchain.sh``, the
-corresponding variables are ``TOOLCHAIN_HOST_CC`` and
-``TOOLCHAIN_HOST_CXX``.  The QEMU and Cocoa compilers may remain Apple Clang
-while this isolated bootstrap experiment uses GNU GCC.
+The two variables must be supplied together.  If no versioned GNU pair is
+available, the integrated build retains the Apple Clang build-machine
+compiler rather than changing QEMU's host compiler policy.
+
+For a direct toolchain-only build, use the host-selection wrapper::
+
+  POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
+  bash scripts/bootstrap-powerpc-toolchain-host.sh
+
+The direct wrapper accepts ``POWERPC_TOOLCHAIN_HOST_CC`` and
+``POWERPC_TOOLCHAIN_HOST_CXX`` as explicit overrides.  Setting
+``POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST=1`` makes the absence of a GNU GCC pair a
+fatal error.  Before binutils starts, the wrapper rejects host flags containing
+LTO, linker-plugin, or forced-linker selections.  Binutils is built before the
+cross GCC exists, so it must not inherit QEMU host LTO or a compiler-specific
+plugin contract.
 
 Flag differences
 ----------------
@@ -116,11 +139,19 @@ Failure classification
 ``build-machine tools must use Apple Clang``
   ``CC_FOR_BUILD`` or ``CXX_FOR_BUILD`` was changed globally.  Use the
   OpenBIOS or direct toolchain-bootstrap variables for an isolated GCC-host
-  experiment instead.
+  build instead.
 
 ``GNU GCC was selected``
-  Add ``MACOS_ALLOW_NONCLANG=1`` only when the experimental path is
+  Add ``MACOS_ALLOW_NONCLANG=1`` only when the experimental QEMU-host path is
   intentional.
+
+``PowerPC toolchain host compilers must be set as a pair``
+  Only one direct-bootstrap compiler was selected.  Supply both C and C++
+  drivers.
+
+``contains an LTO or linker-plugin option``
+  A toolchain-host flag would leak a compiler-specific object or linker policy
+  into binutils.  Remove it; QEMU host LTO is managed separately by Meson.
 
 Verification
 ------------
@@ -128,5 +159,5 @@ Verification
 The compiler policy runs before ``builder.sh`` chooses its LTO default.  The
 existing macOS compiler verifier then compiles C, C++, Objective-C, and
 build-machine probes and checks their Mach-O architecture with ``lipo``.  The
-PowerPC bootstrap separately verifies its staged assembler, linker, and final
-cross compiler.
+PowerPC bootstrap separately verifies its selected host compiler pair, staged
+assembler and linker, and final cross compiler.
