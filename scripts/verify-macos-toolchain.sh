@@ -121,7 +121,6 @@ set_identity_command()
         printf 'error: compiler driver is not executable: %s\n' "$DRIVER_TOKEN" >&2
         exit 1
     fi
-    IDENTITY_CMD=("${COMPILER_CMD[@]:$DRIVER_INDEX}")
 }
 
 split_flags()
