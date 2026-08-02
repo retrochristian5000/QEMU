@@ -165,21 +165,11 @@ fi
 BUILD_DIR="${BUILD_DIR:-$DEFAULT_BUILD_DIR}"
 PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
 QEMU_TARGET_LIST="${QEMU_TARGET_LIST:-ppc-softmmu}"
-ARCH_DEVICE_FILE="${ARCH_DEVICE_FILE:-whp-profile}"
 BUILD_TARGETS="${BUILD_TARGETS:-all}"
 INSTALL="${INSTALL:-0}"
 MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-0}"
 MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
-if [[ -n "${QEMU_HOST_LTO+x}" && -n "${TCG_ENABLE_LTO+x}" &&
-      "$QEMU_HOST_LTO" != "$TCG_ENABLE_LTO" ]]; then
-    printf '%s\n' \
-        'error: QEMU_HOST_LTO and legacy TCG_ENABLE_LTO disagree.' \
-        'Use QEMU_HOST_LTO; TCG_ENABLE_LTO is only a compatibility alias.' >&2
-    exit 1
-fi
-QEMU_HOST_LTO="${QEMU_HOST_LTO:-${TCG_ENABLE_LTO:-$APPLE_SILICON_NATIVE}}"
-TCG_QOM_CAST_DEBUG="${TCG_QOM_CAST_DEBUG:-0}"
-TCG_TRACE_BACKEND="${TCG_TRACE_BACKEND:-nop}"
+QEMU_HOST_LTO="${QEMU_HOST_LTO:-$APPLE_SILICON_NATIVE}"
 BUILD_OPENBIOS="${BUILD_OPENBIOS:-1}"
 OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
 OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
@@ -191,7 +181,7 @@ POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$BUILD_DIR/fir
 
 for boolean_value in \
     INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
-    TCG_QOM_CAST_DEBUG BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
+    BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
     BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD; do
     case "${!boolean_value}" in
         0|1) ;;
@@ -321,20 +311,11 @@ configure_args=(
     --host-cc="$CC_FOR_BUILD"
     --cxx="${CXX:-c++}"
     --enable-pixman
-    --enable-rng-none
     --enable-slirp
     --enable-tools
     --enable-tcg
-    --disable-tcg-interpreter
-    --disable-debug-tcg
-    --disable-debug-info
-    --disable-plugins
-    --enable-trace-backends="$TCG_TRACE_BACKEND"
     --prefix="$PREFIX"
     --target-list="$QEMU_TARGET_LIST"
-    --without-default-devices
-    --without-default-features
-    --with-devices-ppc="$ARCH_DEVICE_FILE"
 )
 
 # Meson owns the LTO flags for QEMU host artifacts. Do not add -flto to the
@@ -343,12 +324,6 @@ if [[ "$QEMU_HOST_LTO" == "1" ]]; then
     configure_args+=(--enable-lto)
 else
     configure_args+=(--disable-lto)
-fi
-
-if [[ "$TCG_QOM_CAST_DEBUG" == "1" ]]; then
-    configure_args+=(--enable-qom-cast-debug)
-else
-    configure_args+=(--disable-qom-cast-debug)
 fi
 
 if [[ "$HOST_OS" == "Darwin" ]]; then
@@ -502,9 +477,6 @@ config_candidate="$config_file.new"
     printf 'PYTHON=%s\n' "${PYTHON:-}"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
     printf 'QEMU_HOST_LTO=%s\n' "$QEMU_HOST_LTO"
-    printf 'TCG_ENABLE_LTO_LEGACY=%s\n' "${TCG_ENABLE_LTO:-}"
-    printf 'TCG_QOM_CAST_DEBUG=%s\n' "$TCG_QOM_CAST_DEBUG"
-    printf 'TCG_TRACE_BACKEND=%s\n' "$TCG_TRACE_BACKEND"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
     printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%s\n' "$BOOTSTRAP_POWERPC_TOOLCHAIN"

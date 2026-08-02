@@ -280,7 +280,7 @@ prepare_macos_build_tree()
         printf 'OBJCFLAGS=%s\n' "${OBJCFLAGS:-}"
         printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
         printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
-        printf 'QEMU_HOST_LTO=%s\n' "${QEMU_HOST_LTO:-${TCG_ENABLE_LTO:-automatic}}"
+        printf 'QEMU_HOST_LTO=%s\n' "${QEMU_HOST_LTO:-automatic}"
         printf 'HOMEBREW_PREFIX=%s\n' "${HOMEBREW_PREFIX:-}"
         printf 'EXPECTED_PKG_CONFIG_PATH=%s\n' "$expected_pkg_config_path"
         printf 'CONFIG_SHELL=%s\n' "${CONFIG_SHELL:-}"

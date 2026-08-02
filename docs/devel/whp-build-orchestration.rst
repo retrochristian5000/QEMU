@@ -47,3 +47,14 @@ Positional arguments select Make targets for that run and take precedence over
 
 Installation remains an explicit post-build request through ``INSTALL=1``.
 It does not become an implicit side effect of an ordinary build.
+
+Configure defaults
+------------------
+
+The WHP profile does not use ``--without-default-features``,
+``--without-default-devices``, a private device configuration, or overrides
+for QEMU's random-number, tracing, debugging, plugin, and TCG-interpreter
+defaults.  QEMU's configure, Kconfig, and Meson layers remain responsible for
+detecting optional host dependencies and selecting their supported defaults.
+The wrapper adds only the features that define the WHP host integration and
+the requested QEMU target.

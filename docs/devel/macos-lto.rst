@@ -9,13 +9,10 @@ Selecting LTO
 -------------
 
 Use ``QEMU_HOST_LTO=1`` to enable LTO and ``QEMU_HOST_LTO=0`` to disable it.
-On a native Apple Silicon build the default is enabled.  ``TCG_ENABLE_LTO`` is
-accepted as a compatibility alias, but the build stops if both names are set
-to different values.
+On a native Apple Silicon build the default is enabled.
 
-The name is deliberately ``QEMU_HOST_LTO`` rather than ``TCG_ENABLE_LTO``.
-QEMU's ``--enable-lto`` option maps to Meson's project-wide host LTO option;
-it is not limited to files under ``tcg/``.
+The name reflects QEMU's ``--enable-lto`` option, which maps to Meson's
+project-wide host LTO option; it is not limited to files under ``tcg/``.
 
 Flag isolation
 --------------

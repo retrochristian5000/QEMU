@@ -141,13 +141,12 @@ case "$cc_family" in
         # Native Apple Silicon defaults to Clang LTO.  GNU GCC uses a
         # different linker-plugin and archive-tool contract, so never inherit
         # that default into the experimental GCC path.
-        if [[ "${QEMU_HOST_LTO:-${TCG_ENABLE_LTO:-0}}" == "1" ]]; then
+        if [[ "${QEMU_HOST_LTO:-0}" == "1" ]]; then
             printf '%s\n' \
                 'warning: disabling QEMU_HOST_LTO for the GNU GCC macOS path.' \
                 'GCC LTO requires a separate plugin-aware ar/nm/linker policy.' >&2
         fi
         export QEMU_HOST_LTO=0
-        export TCG_ENABLE_LTO=0
         MACOS_EFFECTIVE_COMPILER_FAMILY=gcc
         ;;
 esac
