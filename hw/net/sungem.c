@@ -52,7 +52,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(SunGEMState, SUNGEM)
  * clear them
  */
 #define GREG_STAT_LATCH       (GREG_STAT_TXALL  | GREG_STAT_TXINTME | \
-                               GREG_STAT_RXDONE | GREG_STAT_RXDONE |  \
+                               GREG_STAT_TXDONE | GREG_STAT_RXDONE |  \
                                GREG_STAT_RXNOBUF | GREG_STAT_RXTAGERR)
 
 #define GREG_IMASK        0x0010UL    /* Interrupt Mask Register */
@@ -202,7 +202,6 @@ struct gem_rxd {
 #define RXDCTRL_HPASS     0x1000000000000000ULL  /* Passed Hash Filter */
 #define RXDCTRL_ALTMAC    0x2000000000000000ULL  /* Matched ALT MAC */
 
-
 struct SunGEMState {
     PCIDevice pdev;
 
@@ -235,7 +234,6 @@ struct SunGEMState {
     uint64_t tx_first_ctl;
 };
 
-
 static void sungem_eval_irq(SunGEMState *s)
 {
     uint32_t stat, mask;
@@ -267,24 +265,24 @@ static void sungem_eval_cascade_irq(SunGEMState *s)
 {
     uint32_t stat, mask;
 
-    mask = s->macregs[MAC_TXSTAT >> 2];
-    stat = s->macregs[MAC_TXMASK >> 2];
+    stat = s->macregs[MAC_TXSTAT >> 2];
+    mask = s->macregs[MAC_TXMASK >> 2];
     if (stat & ~mask) {
         sungem_update_status(s, GREG_STAT_TXMAC, true);
     } else {
         sungem_update_status(s, GREG_STAT_TXMAC, false);
     }
 
-    mask = s->macregs[MAC_RXSTAT >> 2];
-    stat = s->macregs[MAC_RXMASK >> 2];
+    stat = s->macregs[MAC_RXSTAT >> 2];
+    mask = s->macregs[MAC_RXMASK >> 2];
     if (stat & ~mask) {
         sungem_update_status(s, GREG_STAT_RXMAC, true);
     } else {
         sungem_update_status(s, GREG_STAT_RXMAC, false);
     }
 
-    mask = s->macregs[MAC_CSTAT >> 2];
-    stat = s->macregs[MAC_MCMASK >> 2] & ~MAC_CSTAT_PTR;
+    stat = s->macregs[MAC_CSTAT >> 2] & ~MAC_CSTAT_PTR;
+    mask = s->macregs[MAC_MCMASK >> 2] & ~MAC_CSTAT_PTR;
     if (stat & ~mask) {
         sungem_update_status(s, GREG_STAT_MAC, true);
     } else {
@@ -302,7 +300,7 @@ static void sungem_do_tx_csum(SunGEMState *s)
 
     trace_sungem_tx_checksum(start, off);
 
-    if (start > (s->tx_size - 2) || off > (s->tx_size - 2)) {
+    if (s->tx_size < 2 || start > s->tx_size - 2 || off > s->tx_size - 2) {
         trace_sungem_tx_checksum_oob();
         return;
     }
@@ -465,8 +463,8 @@ static bool sungem_can_receive(NetClientState *nc)
     }
 
     /* Check RX availability */
-    kick = s->rxdmaregs[RXDMA_KICK >> 2];
-    done = s->rxdmaregs[RXDMA_DONE >> 2];
+    kick = s->rxdmaregs[RXDMA_KICK >> 2] & s->rx_mask;
+    done = s->rxdmaregs[RXDMA_DONE >> 2] & s->rx_mask;
     full = sungem_rx_full(s, kick, done);
 
     trace_sungem_rx_check(!full, kick, done);
@@ -645,9 +643,13 @@ static ssize_t sungem_receive(NetClientState *nc, const uint8_t *buf,
          */
     }
 
-    /* Calculate the checksum */
+    /* Calculate the checksum, treating offsets beyond the frame as zero. */
     coff = (rxdma_cfg & RXDMA_CFG_CSUMOFF) >> 13;
-    csum = net_raw_checksum((uint8_t *)buf + coff, size - coff);
+    if (coff < size) {
+        csum = net_raw_checksum((uint8_t *)buf + coff, size - coff);
+    } else {
+        csum = 0;
+    }
 
     /* Build the updated descriptor */
     desc.status_word = (size + fcs_size) << 16;
@@ -792,6 +794,7 @@ static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
         return 0;
     };
 }
+
 static uint16_t sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
                                 uint8_t reg_addr)
 {
@@ -1033,6 +1036,10 @@ static void sungem_mmio_rxdma_write(void *opaque, hwaddr addr, uint64_t val,
     switch (addr) {
     case RXDMA_KICK:
         trace_sungem_rx_kick(val);
+        if ((s->macregs[MAC_RXCFG >> 2] & MAC_RXCFG_ENAB) != 0 &&
+            (s->rxdmaregs[RXDMA_CFG >> 2] & RXDMA_CFG_ENABLE) != 0) {
+            qemu_flush_queued_packets(qemu_get_queue(s->nic));
+        }
         break;
     case RXDMA_CFG:
         sungem_update_masks(s);
@@ -1074,7 +1081,7 @@ static const MemoryRegionOps sungem_mmio_rxdma_ops = {
 };
 
 static void sungem_mmio_wol_write(void *opaque, hwaddr addr, uint64_t val,
-                                    unsigned size)
+                                  unsigned size)
 {
     trace_sungem_mmio_wol_write(addr, val);
 
