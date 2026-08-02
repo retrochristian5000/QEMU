@@ -6,11 +6,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 : "${BUILD_DIR:?BUILD_DIR is required}"
 
-config="$BUILD_DIR/.whp-openbios-meson.env"
+mkdir -p "$BUILD_DIR"
+build_root="$(cd -- "$BUILD_DIR" && pwd)"
+config="$build_root/.whp-openbios-meson.env"
 temporary="$config.new.$$"
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
-tools_dir="${OPENBIOS_TOOLS_DIR:-$BUILD_DIR/firmware-tools}"
-openbios_build_dir="${OPENBIOS_BUILD_DIR:-$BUILD_DIR/firmware/openbios}"
+tools_dir="${OPENBIOS_TOOLS_DIR:-$build_root/firmware-tools}"
+openbios_build_dir="${OPENBIOS_BUILD_DIR:-$build_root/firmware/openbios}"
 hostcc="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
 hostcxx="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
 hoststrip="${OPENBIOS_HOSTSTRIP:-${STRIP_FOR_BUILD:-strip}}"
@@ -31,6 +33,25 @@ case "$source_mode" in
         ;;
 esac
 
+mkdir -p "$openbios_build_dir"
+openbios_build_dir="$(cd -- "$openbios_build_dir" && pwd)"
+case "$openbios_build_dir/" in
+    "$build_root/"*) ;;
+    *)
+        printf '%s\n' \
+            'error: OPENBIOS_BUILD_DIR must be inside the QEMU build directory.' \
+            "QEMU build:     $build_root" \
+            "OpenBIOS build: $openbios_build_dir" >&2
+        exit 1
+        ;;
+esac
+if [[ "$openbios_build_dir" == "$build_root" ]]; then
+    printf '%s\n' \
+        'error: OPENBIOS_BUILD_DIR cannot be the QEMU build root itself.' \
+        "QEMU build: $build_root" >&2
+    exit 1
+fi
+
 if [[ -z "$jobs" ]]; then
     if command -v nproc >/dev/null 2>&1; then
         jobs="$(nproc)"
@@ -41,7 +62,6 @@ if [[ -z "$jobs" ]]; then
     fi
 fi
 
-mkdir -p "$BUILD_DIR"
 umask 077
 {
     printf 'OPENBIOS_DIR=%q\n' "${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}"
