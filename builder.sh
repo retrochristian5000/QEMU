@@ -36,6 +36,18 @@ BUILD_TARGETS="${BUILD_TARGETS:-all}"
 INSTALL="${INSTALL:-0}"
 MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-0}"
 MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
+TCG_ENABLE_LTO="${TCG_ENABLE_LTO:-$APPLE_SILICON_HOST}"
+TCG_QOM_CAST_DEBUG="${TCG_QOM_CAST_DEBUG:-0}"
+TCG_TRACE_BACKEND="${TCG_TRACE_BACKEND:-nop}"
+
+case "$TCG_ENABLE_LTO" in
+    0|1) ;;
+    *) printf 'error: TCG_ENABLE_LTO must be 0 or 1\n' >&2; exit 1 ;;
+esac
+case "$TCG_QOM_CAST_DEBUG" in
+    0|1) ;;
+    *) printf 'error: TCG_QOM_CAST_DEBUG must be 0 or 1\n' >&2; exit 1 ;;
+esac
 
 for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
     case "$build_path" in
@@ -124,12 +136,30 @@ configure_args=(
     --enable-rng-none
     --enable-slirp
     --enable-tools
+    --enable-tcg
+    --disable-tcg-interpreter
+    --disable-debug-tcg
+    --disable-debug-info
+    --disable-plugins
+    --enable-trace-backends="$TCG_TRACE_BACKEND"
     --prefix="$PREFIX"
     --target-list="$QEMU_TARGET_LIST"
     --without-default-devices
     --without-default-features
     --with-devices-ppc="$ARCH_DEVICE_FILE"
 )
+
+if [[ "$TCG_ENABLE_LTO" == "1" ]]; then
+    configure_args+=(--enable-lto)
+else
+    configure_args+=(--disable-lto)
+fi
+
+if [[ "$TCG_QOM_CAST_DEBUG" == "1" ]]; then
+    configure_args+=(--enable-qom-cast-debug)
+else
+    configure_args+=(--disable-qom-cast-debug)
+fi
 
 if (( APPLE_SILICON_HOST )); then
     macos_audio_drivers="coreaudio"
@@ -189,6 +219,9 @@ config_candidate="$config_file.new"
     printf 'NINJA=%s\n' "${NINJA:-}"
     printf 'PYTHON=%s\n' "${PYTHON:-}"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
+    printf 'TCG_ENABLE_LTO=%s\n' "$TCG_ENABLE_LTO"
+    printf 'TCG_QOM_CAST_DEBUG=%s\n' "$TCG_QOM_CAST_DEBUG"
+    printf 'TCG_TRACE_BACKEND=%s\n' "$TCG_TRACE_BACKEND"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[@]}"
 } > "$config_candidate"
 
