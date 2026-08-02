@@ -10,6 +10,7 @@ some of the basics if you are adding new files and targets to the build.
    build-system
    build-environment
    macos-build
+   macos-build-hygiene
    macos-sdk-wrapper
    macos-lto
    macos-compiler-policy
