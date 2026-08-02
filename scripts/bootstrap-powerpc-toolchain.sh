@@ -141,11 +141,11 @@ report_failure()
     printf 'error: PowerPC toolchain bootstrap failed during %s (status %s)\n' \
         "$bootstrap_stage" "$status" >&2
     case "$bootstrap_stage" in
-        binutils*)
+        *binutils*)
             printf 'inspect binutils logs under: %s\n' \
                 "$TOOLCHAIN_WORK_DIR/build-binutils-$BINUTILS_VERSION" >&2
             ;;
-        gcc*)
+        *GCC*|*gcc*)
             printf 'inspect GCC logs under: %s\n' \
                 "$TOOLCHAIN_WORK_DIR/build-gcc-$GCC_VERSION" >&2
             ;;
@@ -202,27 +202,10 @@ gcc_src="$TOOLCHAIN_WORK_DIR/gcc-$GCC_VERSION"
 binutils_build="$TOOLCHAIN_WORK_DIR/build-binutils-$BINUTILS_VERSION"
 gcc_build="$TOOLCHAIN_WORK_DIR/build-gcc-$GCC_VERSION"
 
-bootstrap_stage="downloading and verifying source archives"
+bootstrap_stage="downloading and verifying binutils"
 download_and_verify "$BINUTILS_URL" "$binutils_tar" "$BINUTILS_SHA256"
-download_and_verify "$GCC_URL" "$gcc_tar" "$GCC_SHA256"
-bootstrap_stage="extracting source archives"
+bootstrap_stage="extracting binutils"
 extract_archive "$binutils_tar" "$binutils_src"
-extract_archive "$gcc_tar" "$gcc_src"
-
-# GCC 14's helper still names an HTTP endpoint. Use HTTPS while retaining
-# the release-provided prerequisite checksums and pinned dependency versions.
-bootstrap_stage="preparing GCC prerequisites"
-sed -i.bak \
-    "s|base_url='http://gcc.gnu.org/pub/gcc/infrastructure/'|base_url='https://gcc.gnu.org/pub/gcc/infrastructure/'|" \
-    "$gcc_src/contrib/download_prerequisites"
-rm -f "$gcc_src/contrib/download_prerequisites.bak"
-sed -i.bak '/^[[:space:]]*echo "${gettext}"[[:space:]]*$/d' \
-    "$gcc_src/contrib/download_prerequisites"
-rm -f "$gcc_src/contrib/download_prerequisites.bak"
-(
-    cd "$gcc_src"
-    ./contrib/download_prerequisites --no-isl
-)
 
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 staged_toolchain="$stage_root$TOOLCHAIN_DIR"
@@ -284,6 +267,26 @@ if ! "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" \
 fi
 rm -f "$binutils_smoke_source" "$binutils_smoke_object" \
     "$binutils_smoke_linked"
+
+bootstrap_stage="downloading and verifying GCC"
+download_and_verify "$GCC_URL" "$gcc_tar" "$GCC_SHA256"
+bootstrap_stage="extracting GCC"
+extract_archive "$gcc_tar" "$gcc_src"
+
+# GCC 14's helper still names an HTTP endpoint. Use HTTPS while retaining
+# the release-provided prerequisite checksums and pinned dependency versions.
+bootstrap_stage="preparing GCC prerequisites"
+sed -i.bak \
+    "s|base_url='http://gcc.gnu.org/pub/gcc/infrastructure/'|base_url='https://gcc.gnu.org/pub/gcc/infrastructure/'|" \
+    "$gcc_src/contrib/download_prerequisites"
+rm -f "$gcc_src/contrib/download_prerequisites.bak"
+sed -i.bak '/^[[:space:]]*echo "${gettext}"[[:space:]]*$/d' \
+    "$gcc_src/contrib/download_prerequisites"
+rm -f "$gcc_src/contrib/download_prerequisites.bak"
+(
+    cd "$gcc_src"
+    ./contrib/download_prerequisites --no-isl
+)
 
 bootstrap_stage="configuring and building GCC"
 rm -rf "$gcc_build"
