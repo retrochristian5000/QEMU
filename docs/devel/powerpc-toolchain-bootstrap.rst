@@ -94,11 +94,25 @@ During binutils and GCC configuration and compilation the bootstrap removes:
 * ``PKG_CONFIG_LIBDIR``; and
 * ``PKG_CONFIG_SYSROOT_DIR``.
 
+On Darwin, the selected SDK, deployment target, and (for Clang) architecture
+are supplied consistently through host ``CFLAGS``, ``CXXFLAGS``,
+``CPPFLAGS``, and ``LDFLAGS``.  The explicit ``CPPFLAGS`` matter because old
+Autoconf probes preprocess headers separately instead of inheriting
+``CFLAGS``.  The nested ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD`` commands also
+carry these flags because GCC prerequisites such as GMP perform link probes
+without adding the outer build flags.
+
 ``TOOLCHAIN_PKG_CONFIG`` defaults to ``false``.  This prevents optional host
 libraries from being selected merely because a matching ``.pc`` file appears
 under ``/opt/homebrew`` or ``/usr/local``.  Any future dependency that truly
 requires ``pkg-config`` must be enabled explicitly and recorded in the
 bootstrap marker.
+
+On Darwin, the one intentional host-library exception is the ``libz`` shipped
+with the selected Apple SDK.  The pinned binutils 2.44 and GCC 14.2 trees
+bundle zlib 1.1.4, whose old ``TARGET_OS_MAC`` compatibility macro conflicts
+with current SDK declarations.  Both configure stages use
+``--with-system-zlib`` on Darwin; no Homebrew search path is introduced.
 
 Binutils configure contract
 ---------------------------
@@ -116,6 +130,7 @@ The bootstrap configures binutils with the following effective policy::
   --disable-sim
   --disable-werror
   --enable-static
+  --with-system-zlib        [Darwin only]
   --without-zstd
 
 ``--target=powerpc-elf``
@@ -159,6 +174,10 @@ The bootstrap configures binutils with the following effective policy::
   ``pkg-config``.  Compressed debug-section support is not required for
   OpenBIOS firmware objects.
 
+``--with-system-zlib`` on Darwin
+  Uses the selected SDK's maintained ``libz`` for host tools instead of the
+  incompatible legacy copy bundled with the pinned release.
+
 After installation, the bootstrap requires ``as``, ``ar``, ``ld``, ``nm``,
 ``objcopy``, ``objdump``, ``readelf``, ``strip``, and ``ranlib``.  It then
 assembles a PowerPC function, performs a relocatable link with ``ld -r``, and
@@ -171,8 +190,8 @@ The bootstrap configures GCC with the following effective policy::
 
   --target=powerpc-elf
   --prefix=<toolchain directory>
+  --with-system-zlib        [Darwin only]
   --with-cpu=604
-  --with-endian=big
   --with-newlib
   --without-headers
   --without-isl
@@ -193,7 +212,10 @@ The bootstrap configures GCC with the following effective policy::
 
 ``--target=powerpc-elf``
   Produces a bare-metal PowerPC ELF cross-compiler.  The compiler executable
-  runs on the build machine; its output runs as firmware under emulation.
+  runs on the build machine; its output runs as firmware under emulation.  GNU
+  ``config.sub`` reports the canonical identity as ``powerpc-unknown-elf``, but
+  configure retains the requested alias for the installed ``powerpc-elf-*``
+  program prefix.
 
 ``--prefix``
   Matches the binutils prefix so GCC finds the staged
@@ -203,9 +225,9 @@ The bootstrap configures GCC with the following effective policy::
   Selects a conservative PowerPC 604 default matching the Classic Mac profile
   rather than inheriting a build-host CPU default.
 
-``--with-endian=big``
-  Makes big-endian PowerPC the configured default expected by the OpenBIOS
-  image.
+``--with-system-zlib`` on Darwin
+  Applies the same SDK-zlib host policy used for binutils.  This option affects
+  the compiler programs that run on macOS, not generated PowerPC firmware.
 
 ``--with-newlib``
   Tells GCC that the eventual target environment follows newlib-like
@@ -316,6 +338,7 @@ archives::
   bash scripts/bootstrap-powerpc-toolchain.sh
 
 The bootstrap marker records the build system, process architecture, Rosetta
-state, target, source versions and checksums, host compiler commands, and
-``pkg-config`` policy.  A change to one of those inputs must invalidate the
-cached toolchain.
+state, target, source versions and checksums, host compiler commands, host-zlib
+selection, and ``pkg-config`` policy.  Schema 6 invalidates older cached
+toolchains that did not record the Darwin zlib choice.  A change to one of
+those inputs must invalidate the cached toolchain.

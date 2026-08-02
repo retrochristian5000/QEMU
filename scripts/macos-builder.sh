@@ -52,68 +52,11 @@ if { [ -n "${OPENBIOS_HOSTCC:-}" ] && [ -z "${OPENBIOS_HOSTCXX:-}" ]; } ||
     exit 1
 fi
 
-# Keep QEMU and Cocoa on Apple Clang, but prefer a native GNU GCC pair for
-# OpenBIOS host tools and the nested PowerPC binutils/GCC bootstrap.  Select
-# GCC from the Homebrew prefix that matches the running process architecture;
-# an Intel Homebrew installation must not leak into an arm64 build or vice
-# versa.  Explicit OPENBIOS_HOSTCC/HOSTCXX settings always win.
-if [ -z "${OPENBIOS_HOSTCC:-}" ] && [ -z "${OPENBIOS_HOSTCXX:-}" ]; then
-    process_arch=$(uname -m 2>/dev/null || printf unknown)
-    expected_brew=
-    expected_machine=
-    case "$process_arch" in
-        arm64|aarch64)
-            expected_brew=/opt/homebrew/bin/brew
-            expected_machine=aarch64
-            ;;
-        x86_64|amd64)
-            expected_brew=/usr/local/bin/brew
-            expected_machine=x86_64
-            ;;
-    esac
-
-    gcc_search_path=${PATH:-/usr/bin:/bin}
-    brew_command=
-    if [ -n "$expected_brew" ] && [ -x "$expected_brew" ]; then
-        brew_command=$expected_brew
-    elif [ "$MACOS_ALLOW_MIXED_HOMEBREW" = 1 ] &&
-         command -v brew >/dev/null 2>&1; then
-        brew_command=$(command -v brew)
-    fi
-    if [ -n "$brew_command" ]; then
-        gcc_prefix=$($brew_command --prefix gcc 2>/dev/null || true)
-        if [ -n "$gcc_prefix" ] && [ -d "$gcc_prefix/bin" ]; then
-            gcc_search_path=$gcc_prefix/bin:$gcc_search_path
-        fi
-    fi
-
-    for gcc_version in 16 15 14 13 12; do
-        gcc_candidate=$(PATH=$gcc_search_path command -v gcc-$gcc_version 2>/dev/null || true)
-        gxx_candidate=$(PATH=$gcc_search_path command -v g++-$gcc_version 2>/dev/null || true)
-        [ -n "$gcc_candidate" ] && [ -n "$gxx_candidate" ] || continue
-
-        compiler_macros=$($gcc_candidate -dM -E -x c /dev/null 2>/dev/null || true)
-        printf '%s\n' "$compiler_macros" | grep -q '^#define __GNUC__ ' || continue
-        if printf '%s\n' "$compiler_macros" | grep -q '^#define __clang__ '; then
-            continue
-        fi
-
-        compiler_machine=$($gcc_candidate -dumpmachine 2>/dev/null || true)
-        case "$expected_machine:$compiler_machine" in
-            aarch64:aarch64-apple-darwin*|aarch64:arm64-apple-darwin*|\
-            x86_64:x86_64-apple-darwin*) ;;
-            *) continue ;;
-        esac
-
-        OPENBIOS_HOSTCC=$gcc_candidate
-        OPENBIOS_HOSTCXX=$gxx_candidate
-        export OPENBIOS_HOSTCC OPENBIOS_HOSTCXX
-        printf '%s\n' \
-            "PowerPC firmware host CC:  $OPENBIOS_HOSTCC" \
-            "PowerPC firmware host CXX: $OPENBIOS_HOSTCXX"
-        break
-    done
-fi
+# The integrated macOS policy selects Apple Clang for build-machine tools,
+# including OpenBIOS utilities and the PowerPC cross-toolchain bootstrap.
+# A matching explicit OPENBIOS_HOSTCC/HOSTCXX pair remains available for
+# controlled compiler experiments; do not change compiler family merely
+# because a Homebrew GCC happens to be installed.
 
 CLEAN_ENV=$(command -v env 2>/dev/null || true)
 if [ -z "$CLEAN_ENV" ]; then

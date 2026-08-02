@@ -63,26 +63,19 @@ PowerPC bootstrap host compiler
 -------------------------------
 
 Changing the compiler that builds the GNU PowerPC cross-toolchain is separate
-from changing QEMU's host compiler.  QEMU and Cocoa remain on Apple Clang.
+from changing QEMU's host compiler.  The integrated build uses the same Apple
+Clang build-machine pair by default, so QEMU, Cocoa, OpenBIOS helpers, binutils,
+and the cross GCC all follow one explicit host policy.
 
-When ``scripts/macos-builder.sh`` starts without explicit firmware-host
-compiler settings, it searches the active Homebrew GCC prefix and ``PATH`` for
-a matching versioned GNU pair, currently ``gcc-16``/``g++-16`` through
-``gcc-12``/``g++-12``.  It confirms GNU GCC from predefined compiler macros so
-Apple's Clang-backed unversioned ``gcc`` command is not mistaken for GNU GCC.
-The selected pair is exported as ``OPENBIOS_HOSTCC`` and
-``OPENBIOS_HOSTCXX``.  ``scripts/build-openbios.sh`` then passes the same pair
-to the nested binutils and GCC bootstrap.
-
-Explicit settings always override automatic selection::
+Explicit firmware-host settings override that default::
 
   OPENBIOS_HOSTCC=/path/to/gcc-<major> \
   OPENBIOS_HOSTCXX=/path/to/g++-<major> \
   sh scripts/macos-builder.sh
 
-The two variables must be supplied together.  If no versioned GNU pair is
-available, the integrated build retains the Apple Clang build-machine
-compiler rather than changing QEMU's host compiler policy.
+The two variables must be supplied together.  ``scripts/build-openbios.sh``
+passes the pair only to the nested binutils and GCC bootstrap; it does not
+change QEMU's host compiler.
 
 For a direct toolchain-only build, use the host-selection wrapper::
 
@@ -90,12 +83,13 @@ For a direct toolchain-only build, use the host-selection wrapper::
   bash scripts/bootstrap-powerpc-toolchain-host.sh
 
 The direct wrapper accepts ``POWERPC_TOOLCHAIN_HOST_CC`` and
-``POWERPC_TOOLCHAIN_HOST_CXX`` as explicit overrides.  Setting
-``POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST=1`` makes the absence of a GNU GCC pair a
-fatal error.  Before binutils starts, the wrapper rejects host flags containing
-LTO, linker-plugin, or forced-linker selections.  Binutils is built before the
-cross GCC exists, so it must not inherit QEMU host LTO or a compiler-specific
-plugin contract.
+``POWERPC_TOOLCHAIN_HOST_CXX`` as explicit overrides.  Without them it selects
+Apple Clang through ``xcrun``.  Setting
+``POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST=1`` deliberately opts into the versioned
+GNU GCC search and makes the absence of a matching pair a fatal error.  Before
+binutils starts, the wrapper rejects host flags containing LTO, linker-plugin,
+or forced-linker selections.  Binutils is built before the cross GCC exists,
+so it must not inherit QEMU host LTO or a compiler-specific plugin contract.
 
 Flag differences
 ----------------
@@ -111,10 +105,9 @@ Apple Clang
 
 GNU GCC
   Produces the single Darwin architecture for which that GCC was configured.
-  Its ``-arch`` option is a compatibility check rather than a mechanism for
-  constructing universal binaries.  The wrapper therefore verifies the
-  compiler target and generated Mach-O slice instead of assuming that a flag
-  can turn an Intel GCC into an Arm compiler or vice versa.
+  The bootstrap does not pass Apple's ``-arch`` option to GNU GCC.  It verifies
+  the compiler target and generated Mach-O slice instead of assuming that a
+  flag can turn an Intel GCC into an Arm compiler or vice versa.
 
 A target-prefixed bare-metal compiler such as ``powerpc-elf-gcc`` or
 ``arm-none-eabi-gcc`` must never be used as QEMU's macOS host ``CC``.  Apple

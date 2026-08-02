@@ -23,11 +23,15 @@ TOOLCHAIN_HOST_CFLAGS="${TOOLCHAIN_HOST_CFLAGS:-}"
 TOOLCHAIN_HOST_CXXFLAGS="${TOOLCHAIN_HOST_CXXFLAGS:-}"
 TOOLCHAIN_HOST_CPPFLAGS="${TOOLCHAIN_HOST_CPPFLAGS:-}"
 TOOLCHAIN_HOST_LDFLAGS="${TOOLCHAIN_HOST_LDFLAGS:-}"
+toolchain_cc_for_build="$TOOLCHAIN_HOST_CC"
+toolchain_cxx_for_build="$TOOLCHAIN_HOST_CXX"
 MAKE_CMD="${MAKE_CMD:-${MAKE:-make}}"
 JOBS="${JOBS:-1}"
 stage_root=""
 temporary_download=""
 bootstrap_stage="initialization"
+host_configure_args=()
+host_zlib=bundled
 
 BINUTILS_VERSION="${POWERPC_BINUTILS_VERSION:-2.44}"
 GCC_VERSION="${POWERPC_GCC_VERSION:-14.2.0}"
@@ -124,6 +128,22 @@ compiler_dumpmachine()
     printf '%s\n' "$result" | sed -n '1p'
 }
 
+compiler_family()
+{
+    local command_string="$1"
+    local macros
+
+    set_command "$command_string"
+    macros="$("${COMMAND_ARRAY[@]}" -dM -E -x c /dev/null 2>/dev/null || true)"
+    if grep -q '^#define __clang__ ' <<< "$macros"; then
+        printf 'clang\n'
+    elif grep -q '^#define __GNUC__ ' <<< "$macros"; then
+        printf 'gcc\n'
+    else
+        printf 'unknown\n'
+    fi
+}
+
 normalize_apple_silicon_triplet()
 {
     case "$1" in
@@ -210,14 +230,39 @@ if [[ "$(uname -s)" == Darwin ]]; then
     esac
 
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-$(sw_vers -productVersion | awk -F. '{print $1 "." $2}')}"
+    toolchain_host_cc_family="$(compiler_family "$TOOLCHAIN_HOST_CC")"
+    toolchain_host_cxx_family="$(compiler_family "$TOOLCHAIN_HOST_CXX")"
+    if [[ "$toolchain_host_cc_family" == unknown ||
+          "$toolchain_host_cxx_family" == unknown ||
+          "$toolchain_host_cc_family" != "$toolchain_host_cxx_family" ]]; then
+        printf '%s\n' \
+            'error: Darwin host C and C++ compilers must be a matching GCC or Clang pair.' \
+            "CC:  $TOOLCHAIN_HOST_CC ($toolchain_host_cc_family)" \
+            "CXX: $TOOLCHAIN_HOST_CXX ($toolchain_host_cxx_family)" >&2
+        exit 1
+    fi
     case "$(uname -m)" in
         arm64|aarch64) toolchain_darwin_arch=arm64 ;;
         x86_64) toolchain_darwin_arch=x86_64 ;;
     esac
-    toolchain_darwin_flags="-arch $toolchain_darwin_arch -isysroot $SDKROOT -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+    toolchain_darwin_flags="-isysroot $SDKROOT -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+    if [[ "$toolchain_host_cc_family" == clang ]]; then
+        toolchain_darwin_flags="-arch $toolchain_darwin_arch $toolchain_darwin_flags"
+    fi
     TOOLCHAIN_HOST_CFLAGS="${TOOLCHAIN_HOST_CFLAGS:-$toolchain_darwin_flags}"
     TOOLCHAIN_HOST_CXXFLAGS="${TOOLCHAIN_HOST_CXXFLAGS:-$toolchain_darwin_flags}"
+    TOOLCHAIN_HOST_CPPFLAGS="${TOOLCHAIN_HOST_CPPFLAGS:-$toolchain_darwin_flags}"
     TOOLCHAIN_HOST_LDFLAGS="${TOOLCHAIN_HOST_LDFLAGS:-$toolchain_darwin_flags}"
+    # GCC prerequisites such as GMP probe CC_FOR_BUILD without adding CFLAGS
+    # or LDFLAGS.  Keep the SDK policy on the command for those nested probes.
+    toolchain_cc_for_build="$TOOLCHAIN_HOST_CC $toolchain_darwin_flags"
+    toolchain_cxx_for_build="$TOOLCHAIN_HOST_CXX $toolchain_darwin_flags"
+
+    # Binutils 2.44 and GCC 14.2 bundle zlib 1.1.4, whose legacy TARGET_OS_MAC
+    # handling defines fdopen before current Apple SDK headers declare it.  Link
+    # the host tools to the SDK's libz instead of patching release source code.
+    host_configure_args+=(--with-system-zlib)
+    host_zlib=system
 fi
 
 resolve_host_tool TOOLCHAIN_HOST_AR ar
@@ -256,7 +301,7 @@ toolchain_is_usable()
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=5
+BOOTSTRAP_SCHEMA=6
 BUILD_SYSTEM=$(uname -srm)
 BUILD_PROCESS_ARCH=$(uname -m)
 ROSETTA_TRANSLATED=$(sysctl -in sysctl.proc_translated 2>/dev/null || printf '0')
@@ -265,6 +310,7 @@ HOST_TRIPLET=$TOOLCHAIN_HOST_TRIPLET
 TARGET=$TOOLCHAIN_TARGET
 BINUTILS_VERSION=$BINUTILS_VERSION
 BINUTILS_SHA256=$BINUTILS_SHA256
+HOST_ZLIB=$host_zlib
 GCC_VERSION=$GCC_VERSION
 GCC_SHA256=$GCC_SHA256
 HOST_CC=$TOOLCHAIN_HOST_CC
@@ -450,8 +496,7 @@ validate_source_triplets()
     host_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_HOST_TRIPLET")"
     target_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_TARGET")"
     if [[ "$build_canonical" != "$TOOLCHAIN_BUILD_TRIPLET" ||
-          "$host_canonical" != "$TOOLCHAIN_HOST_TRIPLET" ||
-          "$target_canonical" != "$TOOLCHAIN_TARGET" ]]; then
+          "$host_canonical" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
         printf '%s\n' \
             "error: $project canonicalized the requested machine identities differently." \
             "requested build:  $TOOLCHAIN_BUILD_TRIPLET" \
@@ -462,6 +507,13 @@ validate_source_triplets()
             "canonical target: $target_canonical" >&2
         return 1
     fi
+
+    # GNU config.sub inserts an omitted vendor into short target aliases; for
+    # example, powerpc-elf becomes powerpc-unknown-elf.  Configure deliberately
+    # retains the original target alias for the installed powerpc-elf-* program
+    # prefix, so successful target canonicalization is the validation here.
+    printf '%s target: %s (canonical %s)\n' \
+        "$project" "$TOOLCHAIN_TARGET" "$target_canonical"
 }
 
 common_host_env=(
@@ -480,8 +532,8 @@ common_host_env=(
     "PKG_CONFIG=$TOOLCHAIN_PKG_CONFIG"
     "CC=$TOOLCHAIN_HOST_CC"
     "CXX=$TOOLCHAIN_HOST_CXX"
-    "CC_FOR_BUILD=$TOOLCHAIN_HOST_CC"
-    "CXX_FOR_BUILD=$TOOLCHAIN_HOST_CXX"
+    "CC_FOR_BUILD=$toolchain_cc_for_build"
+    "CXX_FOR_BUILD=$toolchain_cxx_for_build"
     "AR=$TOOLCHAIN_HOST_AR"
     "NM=$TOOLCHAIN_HOST_NM"
     "RANLIB=$TOOLCHAIN_HOST_RANLIB"
@@ -556,7 +608,7 @@ validate_final_toolchain()
     rm -rf "$smoke_dir"
     mkdir -p "$smoke_dir"
     cat > "$smoke_dir/smoke.c" <<'SOURCE'
-#if !defined(__powerpc__) && !defined(__POWERPC__)
+#if !defined(__powerpc__) && !defined(__POWERPC__) && !defined(__PPC__)
 #error compiler is not targeting PowerPC
 #endif
 #if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__
@@ -569,15 +621,23 @@ SOURCE
         -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH \
         PATH="$safe_path" \
         "$gcc" -m32 -mcpu=604 -msoft-float -ffreestanding \
-        -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+        -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o" || return 1
 
     env -u GCC_EXEC_PREFIX -u COMPILER_PATH -u LIBRARY_PATH \
         PATH="$safe_path" \
         "$gcc" -m32 -mcpu=604 -msoft-float -nostdlib -Wl,-r \
-        "$smoke_dir/smoke.o" -o "$smoke_dir/linked.o"
+        "$smoke_dir/smoke.o" -o "$smoke_dir/linked.o" || return 1
 
-    "$readelf" -h "$smoke_dir/linked.o" | grep -q 'Machine:.*PowerPC'
-    "$readelf" -h "$smoke_dir/linked.o" | grep -q 'Data:.*big endian'
+    "$readelf" -h "$smoke_dir/linked.o" |
+        grep -q 'Machine:.*PowerPC' || {
+            printf 'error: cross GCC produced the wrong architecture\n' >&2
+            return 1
+        }
+    "$readelf" -h "$smoke_dir/linked.o" |
+        grep -q 'Data:.*big endian' || {
+            printf 'error: cross GCC did not default to big-endian PowerPC\n' >&2
+            return 1
+        }
 
     sysroot="$("$gcc" -print-sysroot)"
     case "$sysroot" in
@@ -635,6 +695,7 @@ mkdir -p "$binutils_build"
         --disable-sim \
         --disable-werror \
         --enable-static \
+        "${host_configure_args[@]}" \
         --without-zstd
     env "${common_host_env[@]}" \
         "$MAKE_CMD" -j"$JOBS" MAKEINFO=true
@@ -656,14 +717,6 @@ download_and_verify "$GCC_URL" "$gcc_tar" "$GCC_SHA256"
 bootstrap_stage="extracting GCC"
 extract_archive "$gcc_tar" "$gcc_src"
 validate_source_triplets "$gcc_src" GCC
-
-if [[ "$TOOLCHAIN_HOST_TRIPLET" == aarch64-apple-darwin* ]] &&
-   ! grep -Eq 'aarch64[^|]*-\*-darwin|aarch64\*-\*-darwin' \
-       "$gcc_src/gcc/config.host"; then
-    printf 'error: GCC %s lacks aarch64-Darwin cross-compiler host support\n' \
-        "$GCC_VERSION" >&2
-    exit 1
-fi
 
 bootstrap_stage="preparing GCC prerequisites"
 sed -i.bak \
@@ -705,6 +758,7 @@ mkdir -p "$gcc_build"
         --prefix="$TOOLCHAIN_DIR" \
         --with-build-time-tools="$staged_toolchain/$TOOLCHAIN_TARGET/bin" \
         --with-sysroot \
+        "${host_configure_args[@]}" \
         --with-cpu=604 \
         --with-newlib \
         --without-headers \
@@ -726,9 +780,14 @@ mkdir -p "$gcc_build"
         --enable-languages=c
     env "${common_host_env[@]}" "${target_tool_env[@]}" \
         STAGE1_CFLAGS="$TOOLCHAIN_HOST_CFLAGS" \
-        "$MAKE_CMD" -j"$JOBS" MAKEINFO=true all-gcc
+        "$MAKE_CMD" -j"$JOBS" MAKEINFO=true \
+        "CC_FOR_BUILD=$toolchain_cc_for_build" \
+        "CXX_FOR_BUILD=$toolchain_cxx_for_build" all-gcc
     env "${common_host_env[@]}" "${target_tool_env[@]}" \
-        "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install-gcc
+        "$MAKE_CMD" MAKEINFO=true \
+        "CC_FOR_BUILD=$toolchain_cc_for_build" \
+        "CXX_FOR_BUILD=$toolchain_cxx_for_build" \
+        DESTDIR="$stage_root" install-gcc
 )
 
 bootstrap_stage="validating complete staged PowerPC toolchain"

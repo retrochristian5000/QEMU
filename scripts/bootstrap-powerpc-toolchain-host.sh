@@ -14,7 +14,7 @@ case "$POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST" in
         ;;
 esac
 
-if [[ ! -x "$CORE_BOOTSTRAP" ]]; then
+if [[ ! -f "$CORE_BOOTSTRAP" ]]; then
     printf 'error: PowerPC toolchain bootstrap is missing: %s\n' \
         "$CORE_BOOTSTRAP" >&2
     exit 1
@@ -101,32 +101,29 @@ if [[ -n "$selected_cc" || -n "$selected_cxx" ]]; then
         exit 1
     fi
 elif [[ "$(uname -s)" == "Darwin" ]]; then
-    for gcc_version in 16 15 14 13 12; do
-        gcc_candidate="gcc-$gcc_version"
-        gxx_candidate="g++-$gcc_version"
-        if command -v "$gcc_candidate" >/dev/null 2>&1 &&
-           command -v "$gxx_candidate" >/dev/null 2>&1 &&
-           [[ "$(compiler_family "$gcc_candidate")" == gcc ]] &&
-           [[ "$(compiler_family "$gxx_candidate")" == gcc ]]; then
-            selected_cc="$(command -v "$gcc_candidate")"
-            selected_cxx="$(command -v "$gxx_candidate")"
-            break
-        fi
-    done
-
-    if [[ -z "$selected_cc" ]]; then
-        if [[ "$POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST" == "1" ]]; then
+    if [[ "$POWERPC_TOOLCHAIN_REQUIRE_GNU_HOST" == "1" ]]; then
+        for gcc_version in 16 15 14 13 12; do
+            gcc_candidate="gcc-$gcc_version"
+            gxx_candidate="g++-$gcc_version"
+            if command -v "$gcc_candidate" >/dev/null 2>&1 &&
+               command -v "$gxx_candidate" >/dev/null 2>&1 &&
+               [[ "$(compiler_family "$gcc_candidate")" == gcc ]] &&
+               [[ "$(compiler_family "$gxx_candidate")" == gcc ]]; then
+                selected_cc="$(command -v "$gcc_candidate")"
+                selected_cxx="$(command -v "$gxx_candidate")"
+                break
+            fi
+        done
+        if [[ -z "$selected_cc" ]]; then
             printf '%s\n' \
                 'error: no versioned GNU GCC host compiler was found on macOS.' \
                 'Install a native GNU GCC pair or set POWERPC_TOOLCHAIN_HOST_CC' \
                 'and POWERPC_TOOLCHAIN_HOST_CXX explicitly.' >&2
             exit 1
         fi
+    else
         selected_cc="$(xcrun --sdk macosx --find clang)"
         selected_cxx="$(xcrun --sdk macosx --find clang++)"
-        printf '%s\n' \
-            'warning: GNU GCC was not found for the PowerPC toolchain bootstrap.' \
-            'Falling back to Apple Clang with LTO and linker-plugin flags isolated.' >&2
     fi
 else
     selected_cc="${CC_FOR_BUILD:-${CC:-cc}}"

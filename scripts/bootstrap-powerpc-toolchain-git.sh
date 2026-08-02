@@ -29,7 +29,7 @@ case "$GIT_OFFLINE" in
         ;;
 esac
 
-if [[ ! -x "$CORE_BOOTSTRAP" ]]; then
+if [[ ! -f "$CORE_BOOTSTRAP" ]]; then
     printf 'error: core PowerPC bootstrap is missing: %s\n' "$CORE_BOOTSTRAP" >&2
     exit 1
 fi
