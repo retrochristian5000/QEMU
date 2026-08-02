@@ -18,6 +18,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
+source "$SCRIPT_DIR/macos-build-hygiene.bash"
+
 append_flag()
 {
     local variable="$1"
@@ -97,7 +99,10 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
     exit 1
 fi
 
-for required in xcrun xcode-select sw_vers awk; do
+sanitize_macos_build_environment
+
+for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
+    basename mv ls; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: required Apple build tool is missing: %s\n' "$required" >&2
         exit 1
@@ -183,12 +188,16 @@ if [[ ! -x "$QEMU_CONFIG_SHELL" ]] ||
 fi
 export CONFIG_SHELL="$QEMU_CONFIG_SHELL"
 
+prepare_macos_build_tree
+
 printf '%s\n' \
     "macOS SDK:               $SDKROOT" \
     "macOS SDK version:       $MACOS_SDK_VERSION" \
     "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" \
     "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
     "WHP build shell:         $WHP_BUILD_BASH" \
-    "configure shell:         $CONFIG_SHELL"
+    "configure shell:         $CONFIG_SHELL" \
+    "QEMU build directory:    $BUILD_DIR" \
+    "firmware tools:          $OPENBIOS_TOOLS_DIR"
 
 exec "$WHP_BUILD_BASH" --noprofile --norc "$SOURCE_DIR/builder.sh" "$@"
