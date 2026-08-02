@@ -11,7 +11,11 @@ MACOS_LTO_PROBE_DIR="${MACOS_LTO_PROBE_DIR:-${MACOS_LTO_MANIFEST}.d}"
 
 case "$MACOS_HOST_ARCH" in
     arm64|x86_64) ;;
-    *) printf 'error: unsupported macOS LTO architecture: %s\n' "$MACOS_HOST_ARCH" >&2; exit 1 ;;
+    *)
+        printf 'error: unsupported macOS LTO architecture: %s\n' \
+            "$MACOS_HOST_ARCH" >&2
+        exit 1
+        ;;
 esac
 
 if [[ ! -d "$SDKROOT" ]]; then
@@ -19,24 +23,29 @@ if [[ ! -d "$SDKROOT" ]]; then
     exit 1
 fi
 for required in xcrun awk sed; do
-    command -v "$required" >/dev/null 2>&1 || {
-        printf 'error: macOS LTO probe dependency not found: %s\n' "$required" >&2
+    if ! command -v "$required" >/dev/null 2>&1; then
+        printf 'error: macOS LTO probe dependency not found: %s\n' \
+            "$required" >&2
         exit 1
-    }
+    fi
 done
 
 set_command()
 {
     local command_string="$1"
+
     case "$command_string" in
         *';'*|*'|'*|*'&'*|*'<'*|*'>'*)
-            printf 'error: compiler commands may not contain shell operators: %s\n' "$command_string" >&2
+            printf 'error: compiler commands may not contain shell operators: %s\n' \
+                "$command_string" >&2
             exit 1
             ;;
     esac
+
     CC_CMD=()
     read -r -a CC_CMD <<< "$command_string"
-    if [[ "${#CC_CMD[@]}" -eq 0 ]] || ! command -v "${CC_CMD[0]}" >/dev/null 2>&1; then
+    if [[ "${#CC_CMD[@]}" -eq 0 ]] ||
+       ! command -v "${CC_CMD[0]}" >/dev/null 2>&1; then
         printf 'error: unusable compiler command: %s\n' "$command_string" >&2
         exit 1
     fi
@@ -45,13 +54,16 @@ set_command()
 split_flags()
 {
     FLAG_ARRAY=()
-    [[ -z "$1" ]] || read -r -a FLAG_ARRAY <<< "$1"
+    if [[ -n "$1" ]]; then
+        read -r -a FLAG_ARRAY <<< "$1"
+    fi
 }
 
 reject_embedded_lto()
 {
     local variable value token
     local tokens=()
+
     for variable in CFLAGS CPPFLAGS LDFLAGS; do
         value="${!variable:-}"
         tokens=()
@@ -79,13 +91,20 @@ output_arches()
 
 mkdir -p "$MACOS_LTO_PROBE_DIR" "$(dirname "$MACOS_LTO_MANIFEST")"
 manifest_candidate="${MACOS_LTO_MANIFEST}.new.$$"
-trap 'rm -f "$manifest_candidate"' EXIT
+cleanup()
+{
+    rm -f "$manifest_candidate"
+}
+trap cleanup EXIT
 
 reject_embedded_lto
 set_command "$CC"
-split_flags "${CPPFLAGS:-}"; CPP_FLAGS=("${FLAG_ARRAY[@]}")
-split_flags "${CFLAGS:-}"; C_FLAGS=("${FLAG_ARRAY[@]}")
-split_flags "${LDFLAGS:-}"; LD_FLAGS=("${FLAG_ARRAY[@]}")
+split_flags "${CPPFLAGS:-}"
+CPP_FLAGS=("${FLAG_ARRAY[@]}")
+split_flags "${CFLAGS:-}"
+C_FLAGS=("${FLAG_ARRAY[@]}")
+split_flags "${LDFLAGS:-}"
+LD_FLAGS=("${FLAG_ARRAY[@]}")
 
 source_a="$MACOS_LTO_PROBE_DIR/lto-a.c"
 source_main="$MACOS_LTO_PROBE_DIR/lto-main.c"
@@ -108,23 +127,27 @@ int main(void)
 }
 SOURCE
 
-"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" -flto -c "$source_a" -o "$object_a"
-"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" -flto -c "$source_main" -o "$object_main"
-"${CC_CMD[@]}" "${C_FLAGS[@]}" -flto "$object_a" "$object_main" -o "$output" "${LD_FLAGS[@]}"
+"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" \
+    -flto -c "$source_a" -o "$object_a"
+"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" \
+    -flto -c "$source_main" -o "$object_main"
+"${CC_CMD[@]}" "${C_FLAGS[@]}" -flto \
+    "$object_a" "$object_main" -o "$output" "${LD_FLAGS[@]}"
 
 arches="$(output_arches "$output")"
 case " $arches " in
     *" $MACOS_HOST_ARCH "*) ;;
     *)
-        printf 'error: LTO produced Mach-O architecture %s, expected %s\n' "${arches:-<unknown>}" "$MACOS_HOST_ARCH" >&2
+        printf 'error: LTO produced Mach-O architecture %s, expected %s\n' \
+            "${arches:-<unknown>}" "$MACOS_HOST_ARCH" >&2
         exit 1
         ;;
 esac
 
-"$output" || {
+if ! "$output"; then
     printf 'error: linked macOS LTO probe did not execute successfully\n' >&2
     exit 1
-}
+fi
 
 CCACHE_DISABLE=1 "${CC_CMD[@]}" "${C_FLAGS[@]}" -flto \
     "$object_a" "$object_main" -o "$output.pipeline" "${LD_FLAGS[@]}" \
