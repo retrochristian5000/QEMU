@@ -48,6 +48,12 @@ case "${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}" in
         ;;
 esac
 
+case "${POWERPC_BINUTILS_GIT_REF:-}" in
+    ''|binutils-2_46-branch)
+        POWERPC_BINUTILS_GIT_REF=binutils_2.46-branch
+        ;;
+esac
+
 case "$OUTPUT" in
     /*) ;;
     *) OUTPUT="$PWD/$OUTPUT" ;;
@@ -74,7 +80,7 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         JOBS="${JOBS:-1}" \
         POWERPC_TOOLCHAIN_GIT_OFFLINE="${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}" \
         POWERPC_BINUTILS_GIT_URL="${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}" \
-        POWERPC_BINUTILS_GIT_REF="${POWERPC_BINUTILS_GIT_REF:-binutils-2_46-branch}" \
+        POWERPC_BINUTILS_GIT_REF="$POWERPC_BINUTILS_GIT_REF" \
         POWERPC_BINUTILS_GIT_COMMIT="${POWERPC_BINUTILS_GIT_COMMIT:-}" \
         POWERPC_GCC_GIT_URL="${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}" \
         POWERPC_GCC_GIT_REF="${POWERPC_GCC_GIT_REF:-releases/gcc-16}" \
