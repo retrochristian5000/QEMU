@@ -34,6 +34,21 @@ append_flag()
     export "$variable"
 }
 
+compiler_has_cache_wrapper()
+{
+    local token base
+    local cache_command=()
+
+    read -r -a cache_command <<< "$1"
+    for token in "${cache_command[@]}"; do
+        base="$(basename "$token")"
+        case "$base" in
+            ccache|sccache|distcc|icecc) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 if [[ "$HOST_OS" == "Darwin" ]]; then
     if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || printf '0')" == "1" ]]; then
         PHYSICAL_ARCH=arm64
@@ -60,9 +75,13 @@ MACOS_ALLOW_ROSETTA="${MACOS_ALLOW_ROSETTA:-0}"
 MACOS_HOST_ARCH="${MACOS_HOST_ARCH:-$HOST_ARCH}"
 MACOS_ALLOW_MIXED_HOMEBREW="${MACOS_ALLOW_MIXED_HOMEBREW:-0}"
 MACOS_ARCH_FLAGS="${MACOS_ARCH_FLAGS:-1}"
+MACOS_VERIFY_TOOLCHAIN="${MACOS_VERIFY_TOOLCHAIN:-1}"
+MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
+MACOS_ALLOW_COMPILER_CONFIG="${MACOS_ALLOW_COMPILER_CONFIG:-0}"
 
 for boolean_value in \
-    MACOS_ALLOW_ROSETTA MACOS_ALLOW_MIXED_HOMEBREW MACOS_ARCH_FLAGS; do
+    MACOS_ALLOW_ROSETTA MACOS_ALLOW_MIXED_HOMEBREW MACOS_ARCH_FLAGS \
+    MACOS_VERIFY_TOOLCHAIN MACOS_ALLOW_NONCLANG MACOS_ALLOW_COMPILER_CONFIG; do
     case "${!boolean_value}" in
         0|1) ;;
         *) printf 'error: %s must be 0 or 1\n' "$boolean_value" >&2; exit 1 ;;
@@ -217,12 +236,12 @@ fi
 if command -v ccache >/dev/null 2>&1; then
     if [[ -z "${CC:-}" ]]; then
         export CC="ccache cc"
-    elif [[ "$CC" != ccache\ * ]]; then
+    elif ! compiler_has_cache_wrapper "$CC"; then
         export CC="ccache $CC"
     fi
     if [[ -z "${CXX:-}" ]]; then
         export CXX="ccache c++"
-    elif [[ "$CXX" != ccache\ * ]]; then
+    elif ! compiler_has_cache_wrapper "$CXX"; then
         export CXX="ccache $CXX"
     fi
 fi
@@ -250,6 +269,9 @@ fi
 export MAKE="$MAKE_CMD"
 
 configure_args=(
+    --cc="${CC:-cc}"
+    --host-cc="$CC_FOR_BUILD"
+    --cxx="${CXX:-c++}"
     --enable-pixman
     --enable-rng-none
     --enable-slirp
@@ -314,6 +336,28 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
+MACOS_COMPILER_MANIFEST="disabled"
+MACOS_COMPILER_MANIFEST_SIGNATURE="disabled"
+if [[ "$HOST_OS" == "Darwin" && "$MACOS_VERIFY_TOOLCHAIN" == "1" ]]; then
+    MACOS_COMPILER_MANIFEST="$BUILD_DIR/.whp-macos-toolchain"
+    MACOS_HOST_ARCH="$MACOS_HOST_ARCH" \
+    BUILD_MACHINE_ARCH="$HOST_ARCH" \
+    MACOS_COMPILER_MANIFEST="$MACOS_COMPILER_MANIFEST" \
+    MACOS_COMPILER_PROBE_DIR="$BUILD_DIR/.whp-macos-toolchain.d" \
+    MACOS_ALLOW_NONCLANG="$MACOS_ALLOW_NONCLANG" \
+    MACOS_ALLOW_COMPILER_CONFIG="$MACOS_ALLOW_COMPILER_CONFIG" \
+    CC="$CC" CXX="$CXX" OBJC="$OBJC" \
+    CC_FOR_BUILD="$CC_FOR_BUILD" \
+    SDKROOT="$SDKROOT" \
+    CFLAGS="${CFLAGS:-}" CXXFLAGS="${CXXFLAGS:-}" \
+    OBJCFLAGS="${OBJCFLAGS:-}" CPPFLAGS="${CPPFLAGS:-}" \
+    LDFLAGS="${LDFLAGS:-}" \
+    MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-}" \
+        bash "$SOURCE_DIR/scripts/verify-macos-toolchain.sh"
+    MACOS_COMPILER_MANIFEST_SIGNATURE="$(cksum "$MACOS_COMPILER_MANIFEST" |
+        awk '{print $1 ":" $2}')"
+fi
+
 OPENBIOS_REVISION="disabled"
 if [[ "$BUILD_OPENBIOS" == "1" ]]; then
     OPENBIOS_REVISION="$(git -C "$SOURCE_DIR/roms/openbios" rev-parse HEAD)"
@@ -349,6 +393,11 @@ config_candidate="$config_file.new"
     printf 'ROSETTA_TRANSLATED=%s\n' "$ROSETTA_TRANSLATED"
     printf 'MACOS_HOST_ARCH=%s\n' "$MACOS_HOST_ARCH"
     printf 'MACOS_ALLOW_ROSETTA=%s\n' "$MACOS_ALLOW_ROSETTA"
+    printf 'MACOS_VERIFY_TOOLCHAIN=%s\n' "$MACOS_VERIFY_TOOLCHAIN"
+    printf 'MACOS_ALLOW_NONCLANG=%s\n' "$MACOS_ALLOW_NONCLANG"
+    printf 'MACOS_ALLOW_COMPILER_CONFIG=%s\n' "$MACOS_ALLOW_COMPILER_CONFIG"
+    printf 'MACOS_COMPILER_MANIFEST=%s\n' "$MACOS_COMPILER_MANIFEST"
+    printf 'MACOS_COMPILER_MANIFEST_SIGNATURE=%s\n' "$MACOS_COMPILER_MANIFEST_SIGNATURE"
     printf 'CC_FOR_BUILD=%s\n' "$CC_FOR_BUILD"
     printf 'CXX_FOR_BUILD=%s\n' "$CXX_FOR_BUILD"
     printf 'OBJC_FOR_BUILD=%s\n' "$OBJC_FOR_BUILD"
