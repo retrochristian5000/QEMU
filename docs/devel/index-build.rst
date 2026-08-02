@@ -12,6 +12,7 @@ some of the basics if you are adding new files and targets to the build.
    macos-build
    macos-sdk-wrapper
    macos-lto
+   macos-compiler-policy
    shell-build-policy
    powerpc-toolchain-bootstrap
    aarch64-darwin-toolchain
