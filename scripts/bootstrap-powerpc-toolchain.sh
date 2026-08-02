@@ -11,6 +11,10 @@ TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$SOURCE_DIR/build/tool
 TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
 TOOLCHAIN_HOST_CC="${TOOLCHAIN_HOST_CC:-${CC_FOR_BUILD:-${CC:-cc}}}"
 TOOLCHAIN_HOST_CXX="${TOOLCHAIN_HOST_CXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
+TOOLCHAIN_HOST_AR="${TOOLCHAIN_HOST_AR:-}"
+TOOLCHAIN_HOST_NM="${TOOLCHAIN_HOST_NM:-}"
+TOOLCHAIN_HOST_RANLIB="${TOOLCHAIN_HOST_RANLIB:-}"
+TOOLCHAIN_HOST_STRIP="${TOOLCHAIN_HOST_STRIP:-}"
 TOOLCHAIN_PKG_CONFIG="${TOOLCHAIN_PKG_CONFIG:-false}"
 TOOLCHAIN_CONFIG_SHELL="${TOOLCHAIN_CONFIG_SHELL:-${CONFIG_SHELL:-/bin/bash}}"
 TOOLCHAIN_BUILD_TRIPLET="${POWERPC_TOOLCHAIN_BUILD:-}"
@@ -63,7 +67,7 @@ if ! "$MAKE_CMD" --version 2>/dev/null | head -n 1 | grep -q 'GNU Make'; then
     exit 1
 fi
 
-for required in tar sed grep awk bzip2 gzip perl; do
+for required in tar sed grep awk bzip2 gzip perl ln mkdir mv rm; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: PowerPC toolchain bootstrap dependency not found: %s\n' \
             "$required" >&2
@@ -94,10 +98,10 @@ set_command()
     local command_string="$1"
 
     case "$command_string" in
-        *';'*|*'|'*|*'&'*|*'<'*|*'>'*)
-            printf 'error: compiler commands may not contain shell operators: %s\n' \
+        ''|*';'*|*'|'*|*'&'*|*'<'*|*'>')
+            printf 'error: command may not contain shell operators: %s\n' \
                 "$command_string" >&2
-            exit 1
+            return 1
             ;;
     esac
 
@@ -105,9 +109,8 @@ set_command()
     read -r -a COMMAND_ARRAY <<< "$command_string"
     if [[ "${#COMMAND_ARRAY[@]}" -eq 0 ]] ||
        ! command -v "${COMMAND_ARRAY[0]}" >/dev/null 2>&1; then
-        printf 'error: compiler command is not executable: %s\n' \
-            "$command_string" >&2
-        exit 1
+        printf 'error: command is not executable: %s\n' "$command_string" >&2
+        return 1
     fi
 }
 
@@ -129,6 +132,28 @@ normalize_apple_silicon_triplet()
     esac
 }
 
+resolve_host_tool()
+{
+    local variable="$1"
+    local program="$2"
+    local value="${!variable:-}"
+
+    if [[ -z "$value" ]]; then
+        if [[ "$(uname -s)" == Darwin ]]; then
+            value="$(xcrun --sdk macosx --find "$program" 2>/dev/null || true)"
+        else
+            value="$(command -v "$program" 2>/dev/null || true)"
+        fi
+    fi
+    if [[ -z "$value" ]]; then
+        printf 'error: host %s tool could not be found\n' "$program" >&2
+        return 1
+    fi
+    set_command "$value"
+    printf -v "$variable" '%s' "$value"
+    export "$variable"
+}
+
 if [[ -z "$TOOLCHAIN_BUILD_TRIPLET" ]]; then
     TOOLCHAIN_BUILD_TRIPLET="$(compiler_dumpmachine "$TOOLCHAIN_HOST_CC")"
 fi
@@ -140,27 +165,37 @@ TOOLCHAIN_BUILD_TRIPLET="$(normalize_apple_silicon_triplet "$TOOLCHAIN_BUILD_TRI
 TOOLCHAIN_HOST_TRIPLET="${TOOLCHAIN_HOST_TRIPLET:-$TOOLCHAIN_BUILD_TRIPLET}"
 TOOLCHAIN_HOST_TRIPLET="$(normalize_apple_silicon_triplet "$TOOLCHAIN_HOST_TRIPLET")"
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
-    case "$(uname -m):$TOOLCHAIN_BUILD_TRIPLET:$TOOLCHAIN_HOST_TRIPLET" in
-        arm64:aarch64-apple-darwin*:aarch64-apple-darwin*|\
-        aarch64:aarch64-apple-darwin*:aarch64-apple-darwin*|\
-        x86_64:x86_64-apple-darwin*:x86_64-apple-darwin*) ;;
-        *)
-            printf '%s\n' \
-                'error: Darwin toolchain triplets do not match the running process.' \
-                "process: $(uname -m)" \
-                "build:   $TOOLCHAIN_BUILD_TRIPLET" \
-                "host:    $TOOLCHAIN_HOST_TRIPLET" >&2
-            exit 1
-            ;;
-    esac
+# This bootstrap builds tools that run on the current machine.  A build/host
+# mismatch is a Canadian cross and needs a separate compiler and executable
+# validation path; silently treating it as an ordinary cross compiler is unsafe.
+if [[ "$TOOLCHAIN_BUILD_TRIPLET" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
+    printf '%s\n' \
+        'error: Canadian-cross build/host combinations are not supported here.' \
+        "build: $TOOLCHAIN_BUILD_TRIPLET" \
+        "host:  $TOOLCHAIN_HOST_TRIPLET" \
+        'Build the host compiler separately, then add an explicit Canadian-cross stage.' >&2
+    exit 1
+fi
 
+if [[ "$(uname -s)" == Darwin ]]; then
     for required in xcrun sw_vers; do
         if ! command -v "$required" >/dev/null 2>&1; then
             printf 'error: required Apple tool is missing: %s\n' "$required" >&2
             exit 1
         fi
     done
+
+    case "$(uname -m):$TOOLCHAIN_BUILD_TRIPLET" in
+        arm64:aarch64-apple-darwin*|aarch64:aarch64-apple-darwin*|\
+        x86_64:x86_64-apple-darwin*) ;;
+        *)
+            printf '%s\n' \
+                'error: Darwin build triplet does not match the running process.' \
+                "process: $(uname -m)" \
+                "build:   $TOOLCHAIN_BUILD_TRIPLET" >&2
+            exit 1
+            ;;
+    esac
 
     SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
     if [[ ! -d "$SDKROOT" ]]; then
@@ -185,6 +220,11 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     TOOLCHAIN_HOST_LDFLAGS="${TOOLCHAIN_HOST_LDFLAGS:-$toolchain_darwin_flags}"
 fi
 
+resolve_host_tool TOOLCHAIN_HOST_AR ar
+resolve_host_tool TOOLCHAIN_HOST_NM nm
+resolve_host_tool TOOLCHAIN_HOST_RANLIB ranlib
+resolve_host_tool TOOLCHAIN_HOST_STRIP strip
+
 binutils_tools=(as ar ld nm objcopy objdump readelf strip ranlib)
 powerpc_tools=(gcc "${binutils_tools[@]}")
 
@@ -195,6 +235,7 @@ binutils_is_usable()
 
     for tool in "${binutils_tools[@]}"; do
         [[ -x "$prefix_dir/bin/${TOOLCHAIN_TARGET}-${tool}" ]] || return 1
+        [[ -e "$prefix_dir/$TOOLCHAIN_TARGET/bin/$tool" ]] || return 1
     done
 }
 
@@ -215,7 +256,7 @@ toolchain_is_usable()
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=4
+BOOTSTRAP_SCHEMA=5
 BUILD_SYSTEM=$(uname -srm)
 BUILD_PROCESS_ARCH=$(uname -m)
 ROSETTA_TRANSLATED=$(sysctl -in sysctl.proc_translated 2>/dev/null || printf '0')
@@ -228,16 +269,22 @@ GCC_VERSION=$GCC_VERSION
 GCC_SHA256=$GCC_SHA256
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
+HOST_AR=$TOOLCHAIN_HOST_AR
+HOST_NM=$TOOLCHAIN_HOST_NM
+HOST_RANLIB=$TOOLCHAIN_HOST_RANLIB
+HOST_STRIP=$TOOLCHAIN_HOST_STRIP
 HOST_CFLAGS=$TOOLCHAIN_HOST_CFLAGS
 HOST_CXXFLAGS=$TOOLCHAIN_HOST_CXXFLAGS
 HOST_CPPFLAGS=$TOOLCHAIN_HOST_CPPFLAGS
 HOST_LDFLAGS=$TOOLCHAIN_HOST_LDFLAGS
 CONFIG_SHELL=$TOOLCHAIN_CONFIG_SHELL
 PKG_CONFIG=$TOOLCHAIN_PKG_CONFIG
+TARGET_TOOL_LAYOUT=$TOOLCHAIN_TARGET/bin
+TARGET_SYSROOT=$TOOLCHAIN_TARGET/sys-root
 MARKER
 )"
 
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == "0" ]] &&
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
    [[ -f "$marker" ]] &&
    [[ "$(cat "$marker")" == "$expected_marker" ]] &&
    toolchain_is_usable "$TOOLCHAIN_DIR"; then
@@ -253,12 +300,14 @@ if ! mkdir "$lock_dir" 2>/dev/null; then
         "$TOOLCHAIN_WORK_DIR" >&2
     exit 1
 fi
+
 cleanup()
 {
     [[ -z "$temporary_download" ]] || rm -f "$temporary_download"
     [[ -z "$stage_root" ]] || rm -rf "$stage_root"
     rmdir "$lock_dir" 2>/dev/null || true
 }
+
 report_failure()
 {
     local status=$?
@@ -330,7 +379,7 @@ SOURCE
     "${cxx_command[@]}" "${cpp_flags[@]}" "${cxx_flags[@]}" \
         "$probe_dir/host.cc" -o "$probe_dir/host-cxx" "${ld_flags[@]}"
 
-    if [[ "$(uname -s)" == "Darwin" ]]; then
+    if [[ "$(uname -s)" == Darwin ]]; then
         case "$TOOLCHAIN_HOST_TRIPLET" in
             aarch64-apple-darwin*) expected_arch=arm64 ;;
             x86_64-apple-darwin*) expected_arch=x86_64 ;;
@@ -395,39 +444,154 @@ validate_source_triplets()
     local project="$2"
     local build_canonical
     local host_canonical
+    local target_canonical
 
     build_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_BUILD_TRIPLET")"
     host_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_HOST_TRIPLET")"
+    target_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_TARGET")"
     if [[ "$build_canonical" != "$TOOLCHAIN_BUILD_TRIPLET" ||
-          "$host_canonical" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
+          "$host_canonical" != "$TOOLCHAIN_HOST_TRIPLET" ||
+          "$target_canonical" != "$TOOLCHAIN_TARGET" ]]; then
         printf '%s\n' \
             "error: $project canonicalized the requested machine identities differently." \
-            "requested build: $TOOLCHAIN_BUILD_TRIPLET" \
-            "canonical build: $build_canonical" \
-            "requested host:  $TOOLCHAIN_HOST_TRIPLET" \
-            "canonical host:  $host_canonical" >&2
+            "requested build:  $TOOLCHAIN_BUILD_TRIPLET" \
+            "canonical build:  $build_canonical" \
+            "requested host:   $TOOLCHAIN_HOST_TRIPLET" \
+            "canonical host:   $host_canonical" \
+            "requested target: $TOOLCHAIN_TARGET" \
+            "canonical target: $target_canonical" >&2
         return 1
     fi
 }
 
 common_host_env=(
-    -u CFLAGS_FOR_TARGET
-    -u CXXFLAGS_FOR_TARGET
-    -u CPPFLAGS_FOR_TARGET
-    -u LDFLAGS_FOR_TARGET
-    -u PKG_CONFIG_PATH
-    -u PKG_CONFIG_LIBDIR
-    -u PKG_CONFIG_SYSROOT_DIR
+    -u CC_FOR_TARGET -u CXX_FOR_TARGET -u GCC_FOR_TARGET -u GXX_FOR_TARGET
+    -u AR_FOR_TARGET -u AS_FOR_TARGET -u LD_FOR_TARGET -u NM_FOR_TARGET
+    -u OBJCOPY_FOR_TARGET -u OBJDUMP_FOR_TARGET -u RANLIB_FOR_TARGET
+    -u READELF_FOR_TARGET -u STRIP_FOR_TARGET
+    -u CFLAGS_FOR_TARGET -u CXXFLAGS_FOR_TARGET
+    -u CPPFLAGS_FOR_TARGET -u LDFLAGS_FOR_TARGET
+    -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH
+    -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH
+    -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH
+    -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR
     "CONFIG_SHELL=$TOOLCHAIN_CONFIG_SHELL"
     "SHELL=$TOOLCHAIN_CONFIG_SHELL"
     "PKG_CONFIG=$TOOLCHAIN_PKG_CONFIG"
     "CC=$TOOLCHAIN_HOST_CC"
     "CXX=$TOOLCHAIN_HOST_CXX"
+    "CC_FOR_BUILD=$TOOLCHAIN_HOST_CC"
+    "CXX_FOR_BUILD=$TOOLCHAIN_HOST_CXX"
+    "AR=$TOOLCHAIN_HOST_AR"
+    "NM=$TOOLCHAIN_HOST_NM"
+    "RANLIB=$TOOLCHAIN_HOST_RANLIB"
+    "STRIP=$TOOLCHAIN_HOST_STRIP"
+    "AR_FOR_BUILD=$TOOLCHAIN_HOST_AR"
+    "NM_FOR_BUILD=$TOOLCHAIN_HOST_NM"
+    "RANLIB_FOR_BUILD=$TOOLCHAIN_HOST_RANLIB"
+    "STRIP_FOR_BUILD=$TOOLCHAIN_HOST_STRIP"
     "CFLAGS=$TOOLCHAIN_HOST_CFLAGS"
     "CXXFLAGS=$TOOLCHAIN_HOST_CXXFLAGS"
     "CPPFLAGS=$TOOLCHAIN_HOST_CPPFLAGS"
     "LDFLAGS=$TOOLCHAIN_HOST_LDFLAGS"
 )
+
+prepare_target_tool_layout()
+{
+    local prefix_dir="$1"
+    local target_bin="$prefix_dir/$TOOLCHAIN_TARGET/bin"
+    local tool
+
+    mkdir -p "$target_bin" "$prefix_dir/$TOOLCHAIN_TARGET/sys-root"
+    for tool in "${binutils_tools[@]}"; do
+        rm -f "$target_bin/$tool"
+        ln -s "../../bin/${TOOLCHAIN_TARGET}-${tool}" "$target_bin/$tool"
+    done
+}
+
+validate_binutils_output()
+{
+    local prefix_dir="$1"
+    local smoke_dir="$TOOLCHAIN_WORK_DIR/binutils-smoke"
+    local object="$smoke_dir/smoke.o"
+    local linked="$smoke_dir/linked.o"
+    local archive="$smoke_dir/libsmoke.a"
+
+    rm -rf "$smoke_dir"
+    mkdir -p "$smoke_dir"
+    cat > "$smoke_dir/smoke.s" <<'ASSEMBLY'
+.text
+.globl whp_binutils_smoke
+whp_binutils_smoke:
+    nop
+ASSEMBLY
+
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-as" -o "$object" "$smoke_dir/smoke.s"
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-ld" -r -o "$linked" "$object"
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-ar" rc "$archive" "$object"
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-ranlib" "$archive"
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-nm" "$archive" >/dev/null
+
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-readelf" -h "$linked" |
+        grep -q 'Machine:.*PowerPC' || {
+            printf 'error: staged binutils produced the wrong architecture\n' >&2
+            return 1
+        }
+    "$prefix_dir/bin/${TOOLCHAIN_TARGET}-readelf" -h "$linked" |
+        grep -q 'Data:.*big endian' || {
+            printf 'error: staged binutils did not default to big-endian PowerPC\n' >&2
+            return 1
+        }
+}
+
+validate_final_toolchain()
+{
+    local prefix_dir="$1"
+    local smoke_dir="$TOOLCHAIN_WORK_DIR/final-smoke"
+    local gcc="$prefix_dir/bin/${TOOLCHAIN_TARGET}-gcc"
+    local readelf="$prefix_dir/bin/${TOOLCHAIN_TARGET}-readelf"
+    local safe_path=/usr/bin:/bin
+    local sysroot
+
+    rm -rf "$smoke_dir"
+    mkdir -p "$smoke_dir"
+    cat > "$smoke_dir/smoke.c" <<'SOURCE'
+#if !defined(__powerpc__) && !defined(__POWERPC__)
+#error compiler is not targeting PowerPC
+#endif
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__
+#error compiler does not default to big endian
+#endif
+int whp_powerpc_toolchain_smoke(void) { return 0; }
+SOURCE
+
+    env -u GCC_EXEC_PREFIX -u COMPILER_PATH -u LIBRARY_PATH \
+        -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH \
+        PATH="$safe_path" \
+        "$gcc" -m32 -mcpu=604 -msoft-float -ffreestanding \
+        -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+
+    env -u GCC_EXEC_PREFIX -u COMPILER_PATH -u LIBRARY_PATH \
+        PATH="$safe_path" \
+        "$gcc" -m32 -mcpu=604 -msoft-float -nostdlib -Wl,-r \
+        "$smoke_dir/smoke.o" -o "$smoke_dir/linked.o"
+
+    "$readelf" -h "$smoke_dir/linked.o" | grep -q 'Machine:.*PowerPC'
+    "$readelf" -h "$smoke_dir/linked.o" | grep -q 'Data:.*big endian'
+
+    sysroot="$("$gcc" -print-sysroot)"
+    case "$sysroot" in
+        "$prefix_dir/$TOOLCHAIN_TARGET/sys-root"|\
+        "$prefix_dir/$TOOLCHAIN_TARGET/sys-root/") ;;
+        *)
+            printf '%s\n' \
+                'error: installed cross GCC reports an unexpected sysroot.' \
+                "reported: ${sysroot:-<empty>}" \
+                "expected: $prefix_dir/$TOOLCHAIN_TARGET/sys-root" >&2
+            return 1
+            ;;
+    esac
+}
 
 bootstrap_stage="validating host compiler and SDK"
 validate_host_compilers
@@ -461,6 +625,7 @@ mkdir -p "$binutils_build"
         --host="$TOOLCHAIN_HOST_TRIPLET" \
         --target="$TOOLCHAIN_TARGET" \
         --prefix="$TOOLCHAIN_DIR" \
+        --with-sysroot \
         --disable-gdb \
         --disable-gdbserver \
         --disable-gprofng \
@@ -477,31 +642,14 @@ mkdir -p "$binutils_build"
         "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install
 )
 
+prepare_target_tool_layout "$staged_toolchain"
+
 bootstrap_stage="validating staged binutils"
 if ! binutils_is_usable "$staged_toolchain"; then
     printf 'error: staged PowerPC binutils installation is incomplete\n' >&2
     exit 1
 fi
-binutils_smoke_source="$TOOLCHAIN_WORK_DIR/binutils-smoke.s"
-binutils_smoke_object="$TOOLCHAIN_WORK_DIR/binutils-smoke.o"
-binutils_smoke_linked="$TOOLCHAIN_WORK_DIR/binutils-smoke-linked.o"
-cat > "$binutils_smoke_source" <<'ASSEMBLY'
-.text
-.globl whp_binutils_smoke
-whp_binutils_smoke:
-    nop
-ASSEMBLY
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-as" \
-    -o "$binutils_smoke_object" "$binutils_smoke_source"
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-ld" \
-    -r -o "$binutils_smoke_linked" "$binutils_smoke_object"
-if ! "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" \
-     -h "$binutils_smoke_linked" | grep -q 'Machine:.*PowerPC'; then
-    printf 'error: staged binutils produced the wrong object architecture\n' >&2
-    exit 1
-fi
-rm -f "$binutils_smoke_source" "$binutils_smoke_object" \
-    "$binutils_smoke_linked"
+validate_binutils_output "$staged_toolchain"
 
 bootstrap_stage="downloading and verifying GCC"
 download_and_verify "$GCC_URL" "$gcc_tar" "$GCC_SHA256"
@@ -517,8 +665,6 @@ if [[ "$TOOLCHAIN_HOST_TRIPLET" == aarch64-apple-darwin* ]] &&
     exit 1
 fi
 
-# GCC 14's helper still names an HTTP endpoint. Use HTTPS while retaining
-# the release-provided prerequisite checksums and pinned dependency versions.
 bootstrap_stage="preparing GCC prerequisites"
 sed -i.bak \
     "s|base_url='http://gcc.gnu.org/pub/gcc/infrastructure/'|base_url='https://gcc.gnu.org/pub/gcc/infrastructure/'|" \
@@ -557,10 +703,9 @@ mkdir -p "$gcc_build"
         --host="$TOOLCHAIN_HOST_TRIPLET" \
         --target="$TOOLCHAIN_TARGET" \
         --prefix="$TOOLCHAIN_DIR" \
+        --with-build-time-tools="$staged_toolchain/$TOOLCHAIN_TARGET/bin" \
+        --with-sysroot \
         --with-cpu=604 \
-        --with-endian=big \
-        --with-gnu-as \
-        --with-gnu-ld \
         --with-newlib \
         --without-headers \
         --without-isl \
@@ -586,24 +731,11 @@ mkdir -p "$gcc_build"
         "$MAKE_CMD" MAKEINFO=true DESTDIR="$stage_root" install-gcc
 )
 
-bootstrap_stage="validating complete PowerPC toolchain"
+bootstrap_stage="validating complete staged PowerPC toolchain"
 if ! toolchain_is_usable "$staged_toolchain"; then
     printf 'error: bootstrapped PowerPC toolchain is incomplete\n' >&2
     exit 1
 fi
-
-test_source="$TOOLCHAIN_WORK_DIR/toolchain-smoke.c"
-test_object="$TOOLCHAIN_WORK_DIR/toolchain-smoke.o"
-printf 'int whp_powerpc_toolchain_smoke(void) { return 0; }\n' > "$test_source"
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-gcc" \
-    -m32 -mcpu=604 -msoft-float -ffreestanding \
-    -c "$test_source" -o "$test_object"
-if ! "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" -h "$test_object" |
-     grep -q 'Machine:.*PowerPC'; then
-    printf 'error: PowerPC toolchain smoke test produced the wrong architecture\n' >&2
-    exit 1
-fi
-rm -f "$test_source" "$test_object"
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-powerpc-toolchain"
 old_toolchain="${TOOLCHAIN_DIR}.old.$$"
@@ -615,8 +747,16 @@ if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
     [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
     exit 1
 fi
-rm -rf "$old_toolchain" "$stage_root"
 
+bootstrap_stage="validating installed PowerPC toolchain routing"
+if ! validate_final_toolchain "$TOOLCHAIN_DIR"; then
+    rm -rf "$TOOLCHAIN_DIR"
+    [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+
+rm -rf "$old_toolchain" "$stage_root"
+stage_root=""
 bootstrap_stage="completed"
 printf 'Bootstrapped PowerPC toolchain: %s/bin/%s-\n' \
     "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
