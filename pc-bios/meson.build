@@ -11,6 +11,7 @@ if unpack_edk2_blobs
     'edk2-i386-vars.fd',
     'edk2-x86_64-code.fd',
     'edk2-x86_64-secure-code.fd',
+    'edk2-x86_64-vars.fd',
     'edk2-loongarch64-code.fd',
     'edk2-loongarch64-vars.fd',
   ]
@@ -26,6 +27,9 @@ if unpack_edk2_blobs
                   command: [ bzip2, '-dc', '@INPUT0@' ])
   endforeach
 endif
+
+whp_openbios_config = meson.project_build_root() / '.whp-openbios-meson.env'
+whp_openbios_enabled = fs.exists(whp_openbios_config)
 
 blobs = [
   'ast27x0_bootrom.bin',
@@ -44,7 +48,6 @@ blobs = [
   'vgabios-ati.bin',
   'openbios-sparc32',
   'openbios-sparc64',
-  'openbios-ppc',
   'QEMU,tcx.bin',
   'QEMU,cgthree.bin',
   'pxe-e1000.rom',
@@ -84,6 +87,21 @@ blobs = [
   'vof.bin',
   'vof-nvram.bin',
 ]
+
+if whp_openbios_enabled
+  whp_openbios_builder = find_program(meson.project_source_root() / 'scripts/meson-build-openbios.sh')
+  whp_openbios_ppc = custom_target('whp-openbios-ppc',
+    output: 'openbios-ppc',
+    command: [whp_openbios_builder, whp_openbios_config, '@OUTPUT@'],
+    build_by_default: 'ppc-softmmu' in target_dirs,
+    build_always_stale: true,
+    console: true,
+    install: get_option('install_blobs'),
+    install_dir: qemu_datadir)
+  roms += whp_openbios_ppc
+else
+  blobs += 'openbios-ppc'
+endif
 
 if get_option('install_blobs')
   install_data(blobs, install_dir: qemu_datadir, install_mode: 'rw-r--r--')
