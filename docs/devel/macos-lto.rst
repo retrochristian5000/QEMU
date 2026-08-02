@@ -56,7 +56,7 @@ An enabled LTO build fails before Meson setup when the compiler can emit LTO
 objects but the selected linker cannot consume them, the output architecture
 is wrong, or the linked program cannot execute.  Disabling LTO is explicit::
 
-  QEMU_HOST_LTO=0 ./builder.sh
+  QEMU_HOST_LTO=0 ./build.sh
 
 Do not work around a failed preflight by adding raw LTO flags to the global
 environment.  Diagnose the compiler, linker, SDK, and deployment target as one

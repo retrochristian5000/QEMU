@@ -28,13 +28,15 @@ The clean handoff removes these inherited variables before Bash starts:
 The selected Bash runs with ``--noprofile --norc``.  User aliases, functions,
 startup files, and login-shell choices are therefore not build inputs.
 
-Bash implementation layer
--------------------------
+Bash orchestration layer
+------------------------
 
-``builder.sh`` and ``scripts/macos-builder.bash`` are Bash programs.  They use
-features such as arrays, ``[[ ... ]]``, ``pipefail``, indirect parameter
-expansion, here strings, and ``printf -v``.  They are not dash scripts and
-must not be invoked directly with ``sh``, ``dash``, or ``zsh``.
+``builder.sh`` is the ordered run of the build stages.
+``scripts/whp-build/stages.bash`` implements those stages, and
+``scripts/macos-builder.bash`` prepares macOS-specific policy before the run.
+They use features such as arrays, ``[[ ... ]]``, ``pipefail``, indirect
+parameter expansion, here strings, and ``printf -v``.  They are not dash
+scripts and must not be invoked directly with ``sh``, ``dash``, or ``zsh``.
 
 Use one of the public launchers instead::
 

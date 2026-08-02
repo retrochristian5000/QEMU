@@ -1,15 +1,16 @@
 Meson-owned OpenBIOS bootstrap
 ==============================
 
-The WHP macOS build treats OpenBIOS as a firmware output in QEMU's Meson and
-Ninja graph.  The older ``builder.sh`` pre-configuration firmware invocation is
-disabled by the macOS wrapper, preventing two independent parts of the build
-from owning ``openbios-ppc``.
+The WHP build treats OpenBIOS as a firmware output in QEMU's Meson and Ninja
+graph on every host.  The orchestration layer does not build firmware before
+QEMU configuration, so only one part of the build owns ``openbios-ppc``.
 
 Build graph
 -----------
 
-``scripts/macos-builder.bash`` writes a shell-quoted configuration file at::
+The ``whp_prepare_sources`` stage runs
+``scripts/whp-build/configure-openbios.bash`` to write a shell-quoted
+configuration file at::
 
   BUILD_DIR/.whp-openbios-meson.env
 

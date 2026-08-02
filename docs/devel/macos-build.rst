@@ -30,7 +30,7 @@ Native Apple Silicon
 
 Run the wrapper from a native Arm shell::
 
-  arch -arm64 ./builder.sh
+  arch -arm64 ./build.sh
 
 The default build directory is
 ``build/whp-ppc-arm64-apple-darwin``.  The wrapper selects the active macOS SDK
@@ -44,7 +44,7 @@ An Intel Mac uses ``build/whp-ppc-x86_64-apple-darwin`` automatically.
 An x86_64 build on Apple Silicon is permitted only when Rosetta use is
 explicit::
 
-  arch -x86_64 env MACOS_ALLOW_ROSETTA=1 ./builder.sh
+  arch -x86_64 env MACOS_ALLOW_ROSETTA=1 ./build.sh
 
 This prevents an accidentally translated shell from silently mixing Arm and
 Intel dependencies.  Rosetta builds expect the Intel Homebrew prefix
@@ -57,7 +57,7 @@ A nonstandard prefix must be deliberate::
 
   HOMEBREW_PREFIX=/custom/brew \
   MACOS_ALLOW_MIXED_HOMEBREW=1 \
-  ./builder.sh
+  ./build.sh
 
 The override disables only the prefix guard.  It does not make libraries of
 the wrong Mach-O architecture usable.

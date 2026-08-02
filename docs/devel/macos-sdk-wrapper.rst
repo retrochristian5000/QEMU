@@ -25,12 +25,12 @@ Selected build policy
   flags;
 * adds the same ``-mmacosx-version-min`` value to those four flag groups; and
 * delegates architecture, Rosetta, Homebrew, compiler, LTO, firmware, and
-  QEMU configuration checks to ``builder.sh``.
+  QEMU configuration checks to the WHP build stages.
 
-This keeps configure probes, Meson host objects, Cocoa code, and final links
-on one SDK and minimum-version policy.  ``builder.sh`` removes the QEMU host
-flags before building OpenBIOS and the PowerPC cross-toolchain, so the macOS
-SDK does not leak into firmware compilation.
+This keeps configure probes, Meson host objects, Cocoa code, and final links on
+one SDK and minimum-version policy.  The Meson OpenBIOS adapter removes the
+QEMU host flags when its firmware edge runs, so the macOS SDK does not leak
+into firmware compilation.
 
 Deployment overrides
 --------------------

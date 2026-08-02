@@ -163,9 +163,9 @@ if [[ -z "$OPENBIOS_CROSS_COMPILE" ]]; then
     printf '%s\n' \
         'error: no complete GNU PowerPC cross-toolchain was found.' \
         'automatic bootstrapping can be enabled with:' \
-        '  BOOTSTRAP_POWERPC_TOOLCHAIN=1 ./builder.sh' \
+        '  BOOTSTRAP_POWERPC_TOOLCHAIN=1 ./build.sh' \
         'or set OPENBIOS_CROSS_COMPILE to an existing prefix:' \
-        '  OPENBIOS_CROSS_COMPILE=powerpc-unknown-linux-gnu- ./builder.sh' >&2
+        '  OPENBIOS_CROSS_COMPILE=powerpc-unknown-linux-gnu- ./build.sh' >&2
     exit 1
 fi
 

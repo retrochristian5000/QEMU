@@ -94,72 +94,6 @@ reject_managed_flags()
     done
 }
 
-write_openbios_meson_config()
-{
-    local config="$BUILD_DIR/.whp-openbios-meson.env"
-    local temporary="$config.new.$$"
-    local make_cmd="${MAKE_CMD:-}"
-    local jobs="${JOBS:-}"
-    local source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
-    local hostcc="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
-    local hostcxx="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
-    local hoststrip="${OPENBIOS_HOSTSTRIP:-${STRIP_FOR_BUILD:-$(xcrun --sdk macosx --find strip)}}"
-
-    case "$source_mode" in
-        release|git) ;;
-        *)
-            printf 'error: POWERPC_TOOLCHAIN_SOURCE_MODE must be release or git\n' >&2
-            exit 1
-            ;;
-    esac
-
-    if [[ -z "$make_cmd" ]]; then
-        if command -v gmake >/dev/null 2>&1; then
-            make_cmd=gmake
-        else
-            make_cmd=make
-        fi
-    fi
-    if [[ -z "$jobs" ]]; then
-        jobs="$(sysctl -n hw.ncpu 2>/dev/null || printf '1')"
-    fi
-
-    umask 077
-    {
-        printf 'OPENBIOS_DIR=%q\n' "${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}"
-        printf 'OPENBIOS_TOOLS_DIR=%q\n' "$OPENBIOS_TOOLS_DIR"
-        printf 'OPENBIOS_HOSTCC=%q\n' "$hostcc"
-        printf 'OPENBIOS_HOSTCXX=%q\n' "$hostcxx"
-        printf 'OPENBIOS_HOSTSTRIP=%q\n' "$hoststrip"
-        printf 'OPENBIOS_TOKE=%q\n' "${OPENBIOS_TOKE:-}"
-        printf 'OPENBIOS_CROSS_COMPILE=%q\n' "${OPENBIOS_CROSS_COMPILE:-}"
-        printf 'OPENBIOS_FORCE_RECONFIGURE=%q\n' "${OPENBIOS_FORCE_RECONFIGURE:-0}"
-        printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%q\n' "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
-        printf 'POWERPC_TOOLCHAIN_FORCE_REBUILD=%q\n' "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
-        printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%q\n' "$source_mode"
-        printf 'POWERPC_TOOLCHAIN_DIR=%q\n' "$POWERPC_TOOLCHAIN_DIR"
-        printf 'POWERPC_TOOLCHAIN_WORK_DIR=%q\n' "$POWERPC_TOOLCHAIN_WORK_DIR"
-        printf 'POWERPC_TOOLCHAIN_DOWNLOAD_DIR=%q\n' "$POWERPC_TOOLCHAIN_DOWNLOAD_DIR"
-        printf 'POWERPC_TOOLCHAIN_GIT_OFFLINE=%q\n' "${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
-        printf 'POWERPC_BINUTILS_GIT_URL=%q\n' "${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}"
-        printf 'POWERPC_BINUTILS_GIT_REF=%q\n' "${POWERPC_BINUTILS_GIT_REF:-binutils-2_46-branch}"
-        printf 'POWERPC_BINUTILS_GIT_COMMIT=%q\n' "${POWERPC_BINUTILS_GIT_COMMIT:-}"
-        printf 'POWERPC_GCC_GIT_URL=%q\n' "${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}"
-        printf 'POWERPC_GCC_GIT_REF=%q\n' "${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
-        printf 'POWERPC_GCC_GIT_COMMIT=%q\n' "${POWERPC_GCC_GIT_COMMIT:-}"
-        printf 'CONFIG_SHELL=%q\n' "${CONFIG_SHELL:-$WHP_BUILD_BASH}"
-        printf 'PKG_CONFIG_FOR_BUILD=%q\n' "${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
-        printf 'MAKE_CMD=%q\n' "$make_cmd"
-        printf 'JOBS=%q\n' "$jobs"
-    } > "$temporary"
-    mv -f "$temporary" "$config"
-
-    # The firmware is now produced by pc-bios/meson.build. Disable the older
-    # pre-configure invocation in builder.sh so there is one owner and one
-    # build-graph edge for OpenBIOS.
-    export BUILD_OPENBIOS=0
-}
-
 if [[ "$(uname -s)" != "Darwin" ]]; then
     printf 'error: scripts/macos-builder.sh must run on macOS\n' >&2
     exit 1
@@ -255,7 +189,6 @@ fi
 export CONFIG_SHELL="$QEMU_CONFIG_SHELL"
 
 prepare_macos_build_tree
-write_openbios_meson_config
 
 printf '%s\n' \
     "macOS SDK:               $SDKROOT" \

@@ -253,6 +253,8 @@ prepare_macos_build_tree()
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DIR || return 1
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_WORK_DIR || return 1
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DOWNLOAD_DIR || return 1
+    export OPENBIOS_TOOLS_DIR POWERPC_TOOLCHAIN_DIR \
+        POWERPC_TOOLCHAIN_WORK_DIR POWERPC_TOOLCHAIN_DOWNLOAD_DIR
 
     if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
         expected_pkg_config_path="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
