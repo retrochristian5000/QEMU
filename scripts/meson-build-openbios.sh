@@ -35,7 +35,8 @@ source "$CONFIG_FILE"
 : "${POWERPC_TOOLCHAIN_WORK_DIR:?POWERPC_TOOLCHAIN_WORK_DIR is required}"
 : "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:?POWERPC_TOOLCHAIN_DOWNLOAD_DIR is required}"
 
-case "${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}" in
+source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
+case "$source_mode" in
     release)
         bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-toolchain-host.sh"
         ;;
@@ -53,6 +54,31 @@ case "${POWERPC_BINUTILS_GIT_REF:-}" in
         POWERPC_BINUTILS_GIT_REF=binutils_2.46-branch
         ;;
 esac
+
+if [[ "$source_mode" == git ]]; then
+    case "$OPENBIOS_HOSTCXX" in
+        ''|*';'*|*'|'*|*'&'*|*'<'*|*'>')
+            printf 'error: invalid OpenBIOS host C++ compiler command\n' >&2
+            exit 1
+            ;;
+    esac
+    read -r -a host_cxx_command <<< "$OPENBIOS_HOSTCXX"
+    if [[ "${#host_cxx_command[@]}" -eq 0 ]] ||
+       ! command -v "${host_cxx_command[0]}" >/dev/null 2>&1; then
+        printf 'error: OpenBIOS host C++ compiler is not executable: %s\n' \
+            "$OPENBIOS_HOSTCXX" >&2
+        exit 1
+    fi
+    if ! printf '%s\n' \
+        'static_assert(__cplusplus >= 201402L, "ISO C++14 required");' |
+        "${host_cxx_command[@]}" -std=c++14 -x c++ -fsyntax-only - \
+            >/dev/null 2>&1; then
+        printf '%s\n' \
+            'error: official GCC 16 Git sources require an ISO C++14 host compiler.' \
+            "selected: $OPENBIOS_HOSTCXX" >&2
+        exit 1
+    fi
+fi
 
 case "$OUTPUT" in
     /*) ;;
