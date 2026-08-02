@@ -13,6 +13,7 @@ some of the basics if you are adding new files and targets to the build.
    macos-sdk-wrapper
    macos-lto
    powerpc-toolchain-bootstrap
+   aarch64-darwin-toolchain
    kconfig
    docs
    qapi-code-gen
