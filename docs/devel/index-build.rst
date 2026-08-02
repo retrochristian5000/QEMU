@@ -16,6 +16,7 @@ some of the basics if you are adding new files and targets to the build.
    macos-compiler-policy
    shell-build-policy
    powerpc-toolchain-bootstrap
+   openbios-meson-bootstrap
    aarch64-darwin-toolchain
    kconfig
    docs
