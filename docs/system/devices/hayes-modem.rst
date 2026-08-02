@@ -17,7 +17,7 @@ clients.  Supported behavior includes:
 * ``ATE``, ``ATQ``, ``ATV``, ``ATW``, and ``ATX`` result controls
 * ``ATI0`` through ``ATI10`` and ``AT%V`` identification
 * ``ATD``, ``ATA``, ``ATH``, ``ATO``, and the ``+++`` escape sequence
-* ``AT&C``, ``AT&D``, ``AT% C`` (without the space), ``AT&Q``, and ``AT&T``
+* ``AT&C``, ``AT&D``, ``AT%C``, ``AT&Q``, and ``AT&T``
 * S-register reads and writes, including ``S0``, ``S7``, ``S30``, and ``S95``
 * ``+FCLASS`` queries used during modem probing
 * CTS, DSR, DCD, DTR, RTS, and modem-status interrupt behavior through the
