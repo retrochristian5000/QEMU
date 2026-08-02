@@ -179,6 +179,27 @@ whp_build_tree_owned()
     return 1
 }
 
+whp_require_persistent_path_outside_build()
+{
+    local variable="$1"
+    local value="${!variable}"
+
+    value="$(whp_normalize_build_dir "$value")"
+    printf -v "$variable" '%s' "$value"
+    export "$variable"
+
+    case "$value/" in
+        "$BUILD_DIR/"*)
+            printf '%s\n' \
+                "error: $variable must be outside BUILD_DIR." \
+                "BUILD_DIR=$BUILD_DIR" \
+                "$variable=$value" \
+                'A clean QEMU reconfiguration must not erase persistent firmware tools.' >&2
+            return 1
+            ;;
+    esac
+}
+
 prepare_macos_build_tree()
 {
     local process_arch
@@ -224,26 +245,14 @@ prepare_macos_build_tree()
                 "$OPENBIOS_TOOLS_DIR"
         fi
     fi
-    case "$OPENBIOS_TOOLS_DIR" in
-        /*) ;;
-        *) OPENBIOS_TOOLS_DIR="$SOURCE_DIR/$OPENBIOS_TOOLS_DIR" ;;
-    esac
-    export OPENBIOS_TOOLS_DIR
+    whp_require_persistent_path_outside_build OPENBIOS_TOOLS_DIR || return 1
 
-    case "$OPENBIOS_TOOLS_DIR/" in
-        "$BUILD_DIR/"*)
-            printf '%s\n' \
-                'error: OPENBIOS_TOOLS_DIR must be outside BUILD_DIR.' \
-                "BUILD_DIR=$BUILD_DIR" \
-                "OPENBIOS_TOOLS_DIR=$OPENBIOS_TOOLS_DIR" \
-                'This prevents a QEMU clean rebuild from deleting the firmware toolchain.' >&2
-            return 1
-            ;;
-    esac
-
-    export POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}"
-    export POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
-    export POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
+    POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}"
+    POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
+    POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
+    whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DIR || return 1
+    whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_WORK_DIR || return 1
+    whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DOWNLOAD_DIR || return 1
 
     if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
         expected_pkg_config_path="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
@@ -251,7 +260,7 @@ prepare_macos_build_tree()
 
     identity_candidate="$(mktemp "${TMPDIR:-/tmp}/whp-macos-build-identity.XXXXXX")"
     {
-        printf 'SCHEMA=1\n'
+        printf 'SCHEMA=2\n'
         printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
         printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
         printf 'PROCESS_ARCH=%s\n' "$process_arch"
