@@ -152,7 +152,7 @@ PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
     "$MAKE_CMD" -C "$OPENBIOS_DIR" -j"${JOBS:-1}" \
     build-verbose HOSTCC="$OPENBIOS_HOSTCC"
 
-firmware="$OPENBIOS_DIR/obj-ppc/openbios-builtin.elf"
+firmware="$OPENBIOS_DIR/obj-ppc/openbios-qemu.elf"
 if [[ ! -s "$firmware" ]]; then
     printf 'error: OpenBIOS build did not produce %s\n' "$firmware" >&2
     exit 1
