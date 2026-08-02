@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}"
+OPENBIOS_BUILD_DIR="${OPENBIOS_BUILD_DIR:-$SOURCE_DIR/build/openbios}"
 OPENBIOS_OUTPUT="${OPENBIOS_OUTPUT:-$SOURCE_DIR/pc-bios/openbios-ppc}"
 OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$SOURCE_DIR/build/firmware-tools}"
 OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
@@ -24,11 +25,13 @@ FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils}"
 MAKE_CMD="${MAKE_CMD:-${MAKE:-make}}"
 config_candidate=""
 temporary_output=""
+probe_object=""
 
 cleanup()
 {
     [[ -z "$config_candidate" ]] || rm -f "$config_candidate"
     [[ -z "$temporary_output" ]] || rm -f "$temporary_output"
+    [[ -z "$probe_object" ]] || rm -f "$probe_object"
 }
 trap cleanup EXIT
 
@@ -54,7 +57,7 @@ case "$POWERPC_TOOLCHAIN_FORCE_REBUILD" in
         ;;
 esac
 
-for required in git xsltproc "$MAKE_CMD"; do
+for required in git xsltproc "$MAKE_CMD" install cksum awk grep; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: OpenBIOS build dependency not found: %s\n' "$required" >&2
         exit 1
@@ -64,6 +67,24 @@ done
 if [[ ! -f "$OPENBIOS_DIR/config/scripts/switch-arch" ]]; then
     printf 'error: OpenBIOS source is missing at %s\n' "$OPENBIOS_DIR" >&2
     printf 'run: git submodule update --init roms/openbios\n' >&2
+    exit 1
+fi
+
+mkdir -p "$OPENBIOS_BUILD_DIR"
+OPENBIOS_BUILD_DIR="$(cd -- "$OPENBIOS_BUILD_DIR" && pwd)"
+OPENBIOS_DIR="$(cd -- "$OPENBIOS_DIR" && pwd)"
+case "$OPENBIOS_BUILD_DIR" in
+    /|'')
+        printf 'error: unsafe OpenBIOS build directory: %s\n' \
+            "$OPENBIOS_BUILD_DIR" >&2
+        exit 1
+        ;;
+esac
+if [[ "$OPENBIOS_BUILD_DIR" == "$OPENBIOS_DIR" ]]; then
+    printf '%s\n' \
+        'error: OpenBIOS must use an out-of-tree build directory.' \
+        "source: $OPENBIOS_DIR" \
+        "build:  $OPENBIOS_BUILD_DIR" >&2
     exit 1
 fi
 
@@ -104,7 +125,7 @@ if [[ ! -x "$OPENBIOS_TOKE" ]]; then
     exit 1
 fi
 
-powerpc_tools=(gcc as ar ld nm strip ranlib)
+powerpc_tools=(gcc as ar ld nm strip ranlib readelf)
 
 prefix_is_usable()
 {
@@ -125,15 +146,16 @@ if [[ -n "$OPENBIOS_CROSS_COMPILE" ]]; then
         exit 1
     fi
 else
+    # OpenBIOS is freestanding 32-bit firmware. Prefer a bare-metal compiler
+    # and never auto-select a powerpc64 prefix for the qemu-ppc image.
     for candidate in \
+        powerpc-none-elf- \
+        powerpc-elf- \
+        powerpc-eabi- \
+        powerpc-unknown-elf- \
         powerpc-unknown-linux-gnu- \
         powerpc-linux-gnu- \
-        powerpc64-unknown-linux-gnu- \
-        powerpc64-linux-gnu- \
-        powerpc-none-elf- \
-        powerpc64-none-elf- \
-        powerpc-elf- \
-        ppc-elf-; do
+        powerpc-linux-; do
         if prefix_is_usable "$candidate"; then
             OPENBIOS_CROSS_COMPILE="$candidate"
             break
@@ -164,19 +186,37 @@ if [[ -z "$OPENBIOS_CROSS_COMPILE" ]]; then
         'error: no complete GNU PowerPC cross-toolchain was found.' \
         'automatic bootstrapping can be enabled with:' \
         '  BOOTSTRAP_POWERPC_TOOLCHAIN=1 ./build.sh' \
-        'or set OPENBIOS_CROSS_COMPILE to an existing prefix:' \
-        '  OPENBIOS_CROSS_COMPILE=powerpc-unknown-linux-gnu- ./build.sh' >&2
+        'or set OPENBIOS_CROSS_COMPILE to an existing 32-bit prefix:' \
+        '  OPENBIOS_CROSS_COMPILE=powerpc-elf- ./build.sh' >&2
     exit 1
 fi
 
+# Prove that an explicitly supplied or discovered compiler actually emits the
+# format consumed by qemu-system-ppc before spending time on the firmware.
+probe_object="${OPENBIOS_BUILD_DIR}.toolchain-probe.$$"
+printf 'int openbios_toolchain_probe;\n' |
+    "${OPENBIOS_CROSS_COMPILE}gcc" -m32 -ffreestanding -fno-pic -fno-pie \
+        -x c -c -o "$probe_object" -
+probe_header="$(LC_ALL=C "${OPENBIOS_CROSS_COMPILE}readelf" -hW "$probe_object")"
+if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$probe_header" ||
+   ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$probe_header" ||
+   ! grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$probe_header"; then
+    printf '%s\n' \
+        "error: $OPENBIOS_CROSS_COMPILE does not emit 32-bit big-endian PowerPC objects." >&2
+    exit 1
+fi
+rm -f "$probe_object"
+probe_object=""
+
 openbios_revision="$(git -C "$OPENBIOS_DIR" rev-parse HEAD)"
 toke_signature="$(cksum "$OPENBIOS_TOKE" | awk '{print $1 ":" $2}')"
-config_stamp="$OPENBIOS_DIR/obj-ppc/.whp-openbios-config"
-config_candidate="$OPENBIOS_DIR/.whp-openbios-config.new.$$"
+config_stamp="$OPENBIOS_BUILD_DIR/obj-ppc/.whp-openbios-config"
+config_candidate="${OPENBIOS_BUILD_DIR}.config.new.$$"
 
-mkdir -p "$(dirname "$config_stamp")"
 {
     printf 'OPENBIOS_REVISION=%s\n' "$openbios_revision"
+    printf 'OPENBIOS_SOURCE_DIR=%s\n' "$OPENBIOS_DIR"
+    printf 'OPENBIOS_BUILD_DIR=%s\n' "$OPENBIOS_BUILD_DIR"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
     printf 'OPENBIOS_HOSTCC=%s\n' "$OPENBIOS_HOSTCC"
     printf 'OPENBIOS_HOSTCXX=%s\n' "$OPENBIOS_HOSTCXX"
@@ -186,16 +226,24 @@ mkdir -p "$(dirname "$config_stamp")"
 } > "$config_candidate"
 
 if [[ "$OPENBIOS_FORCE_RECONFIGURE" == "1" ]] ||
-   [[ ! -f "$OPENBIOS_DIR/config-host.mak" ]] ||
+   [[ ! -f "$OPENBIOS_BUILD_DIR/config-host.mak" ]] ||
    [[ ! -f "$config_stamp" ]] ||
    ! cmp -s "$config_candidate" "$config_stamp"; then
-    rm -rf "$OPENBIOS_DIR/obj-ppc" "$OPENBIOS_DIR/config-host.mak"
+    rm -rf "$OPENBIOS_BUILD_DIR"
+    mkdir -p "$OPENBIOS_BUILD_DIR"
     (
-        cd "$OPENBIOS_DIR"
+        cd "$OPENBIOS_BUILD_DIR"
         PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
         CROSS_COMPILE="$OPENBIOS_CROSS_COMPILE" \
-            ./config/scripts/switch-arch qemu-ppc
+            "$OPENBIOS_DIR/config/scripts/switch-arch" qemu-ppc
     )
+    if [[ ! -f "$OPENBIOS_BUILD_DIR/config-host.mak" ||
+          ! -f "$OPENBIOS_BUILD_DIR/obj-ppc/rules.mak" ||
+          ! -f "$OPENBIOS_BUILD_DIR/obj-ppc/target/include/autoconf.h" ]]; then
+        printf '%s\n' \
+            'error: OpenBIOS configuration did not generate a complete obj-ppc build tree.' >&2
+        exit 1
+    fi
     mkdir -p "$(dirname "$config_stamp")"
     mv "$config_candidate" "$config_stamp"
     config_candidate=""
@@ -205,21 +253,69 @@ else
 fi
 
 PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
-    "$MAKE_CMD" -C "$OPENBIOS_DIR" -j"${JOBS:-1}" \
+    "$MAKE_CMD" -C "$OPENBIOS_BUILD_DIR" -j"${JOBS:-1}" \
     build-verbose HOSTCC="$OPENBIOS_HOSTCC"
 
-firmware="$OPENBIOS_DIR/obj-ppc/openbios-qemu.elf"
+firmware="$OPENBIOS_BUILD_DIR/obj-ppc/openbios-qemu.elf"
 if [[ ! -s "$firmware" ]]; then
     printf 'error: OpenBIOS build did not produce %s\n' "$firmware" >&2
     exit 1
 fi
 
-if command -v "${OPENBIOS_CROSS_COMPILE}readelf" >/dev/null 2>&1; then
-    if ! "${OPENBIOS_CROSS_COMPILE}readelf" -h "$firmware" |
-         grep -q 'Machine:.*PowerPC'; then
-        printf 'error: built OpenBIOS image is not a PowerPC ELF file\n' >&2
+readelf_cmd="${OPENBIOS_CROSS_COMPILE}readelf"
+elf_header="$(LC_ALL=C "$readelf_cmd" -hW "$firmware")"
+program_headers="$(LC_ALL=C "$readelf_cmd" -lW "$firmware")"
+
+if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$elf_header" ||
+   ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$elf_header" ||
+   ! grep -Eq 'Type:[[:space:]]+EXEC' <<< "$elf_header" ||
+   ! grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$elf_header"; then
+    printf '%s\n' \
+        'error: OpenBIOS output is not a 32-bit big-endian PowerPC executable.' >&2
+    printf '%s\n' "$elf_header" >&2
+    exit 1
+fi
+
+entry_address="$(awk -F: '/Entry point address:/ {gsub(/[[:space:]]/, "", $2); print tolower($2)}' <<< "$elf_header")"
+if [[ "$entry_address" != "0xfff00100" ]]; then
+    printf 'error: OpenBIOS entry point is %s, expected 0xfff00100\n' \
+        "${entry_address:-missing}" >&2
+    exit 1
+fi
+
+if grep -Eq '^[[:space:]]*(INTERP|DYNAMIC)[[:space:]]' <<< "$program_headers"; then
+    printf '%s\n' \
+        'error: OpenBIOS contains a dynamic-loader program header.' >&2
+    exit 1
+fi
+
+load_count=0
+entry_vector_loaded=0
+hard_reset_loaded=0
+while read -r vaddr memsz; do
+    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+    ((load_count += 1))
+    vaddr_value=$((vaddr))
+    memsz_value=$((memsz))
+    end_value=$((vaddr_value + memsz_value))
+    if ((vaddr_value < 0xfff00000 || end_value > 0x100000000)); then
+        printf 'error: OpenBIOS LOAD segment escapes the 1 MiB PROM window: %s + %s\n' \
+            "$vaddr" "$memsz" >&2
         exit 1
     fi
+    if ((vaddr_value <= 0xfff00100 && end_value > 0xfff00100)); then
+        entry_vector_loaded=1
+    fi
+    if ((vaddr_value <= 0xfffffffc && end_value > 0xfffffffc)); then
+        hard_reset_loaded=1
+    fi
+done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$program_headers")
+
+if ((load_count == 0 || entry_vector_loaded == 0 || hard_reset_loaded == 0)); then
+    printf '%s\n' \
+        'error: OpenBIOS ELF does not map both the 0xfff00100 entry vector' \
+        'and the 0xfffffffc hard-reset vector into the Power Mac PROM.' >&2
+    exit 1
 fi
 
 mkdir -p "$(dirname "$OPENBIOS_OUTPUT")"
