@@ -16,6 +16,15 @@ FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/openbios/fc
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-6e563ee54aa9f60e538d90eedaa012ae77610344}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils}"
 MAKE_CMD="${MAKE_CMD:-${MAKE:-make}}"
+config_candidate=""
+temporary_output=""
+
+cleanup()
+{
+    [[ -z "$config_candidate" ]] || rm -f "$config_candidate"
+    [[ -z "$temporary_output" ]] || rm -f "$temporary_output"
+}
+trap cleanup EXIT
 
 case "$OPENBIOS_FORCE_RECONFIGURE" in
     0|1) ;;
@@ -99,7 +108,10 @@ else
     for candidate in \
         powerpc-unknown-linux-gnu- \
         powerpc-linux-gnu- \
+        powerpc64-unknown-linux-gnu- \
+        powerpc64-linux-gnu- \
         powerpc-none-elf- \
+        powerpc64-none-elf- \
         powerpc-elf- \
         ppc-elf-; do
         if prefix_is_usable "$candidate"; then
@@ -120,7 +132,7 @@ fi
 openbios_revision="$(git -C "$OPENBIOS_DIR" rev-parse HEAD)"
 toke_signature="$(cksum "$OPENBIOS_TOKE" | awk '{print $1 ":" $2}')"
 config_stamp="$OPENBIOS_DIR/obj-ppc/.whp-openbios-config"
-config_candidate="${config_stamp}.new"
+config_candidate="$OPENBIOS_DIR/.whp-openbios-config.new.$$"
 
 mkdir -p "$(dirname "$config_stamp")"
 {
@@ -144,8 +156,10 @@ if [[ "$OPENBIOS_FORCE_RECONFIGURE" == "1" ]] ||
     )
     mkdir -p "$(dirname "$config_stamp")"
     mv "$config_candidate" "$config_stamp"
+    config_candidate=""
 else
     rm -f "$config_candidate"
+    config_candidate=""
 fi
 
 PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
@@ -168,7 +182,6 @@ fi
 
 mkdir -p "$(dirname "$OPENBIOS_OUTPUT")"
 temporary_output="${OPENBIOS_OUTPUT}.tmp.$$"
-trap 'rm -f "$temporary_output"' EXIT
 install -m 0644 "$firmware" "$temporary_output"
 
 if [[ -f "$OPENBIOS_OUTPUT" ]] && cmp -s "$temporary_output" "$OPENBIOS_OUTPUT"; then
@@ -176,7 +189,7 @@ if [[ -f "$OPENBIOS_OUTPUT" ]] && cmp -s "$temporary_output" "$OPENBIOS_OUTPUT";
 else
     mv -f "$temporary_output" "$OPENBIOS_OUTPUT"
 fi
-trap - EXIT
+temporary_output=""
 
 if command -v shasum >/dev/null 2>&1; then
     firmware_digest="$(shasum -a 256 "$OPENBIOS_OUTPUT" | awk '{print $1}')"
