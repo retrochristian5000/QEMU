@@ -1,0 +1,14 @@
+# Keep host-side Mach-O tools independent of PATH ordering.
+#
+# builder.sh prepends Homebrew so QEMU can find optional dependencies, but
+# Homebrew may also provide GNU or LLVM programs with generic names such as
+# ar, nm, ranlib, and strip.  QEMU loads this native machine file after its
+# generated tool file, so these absolute paths remain authoritative for
+# Darwin host artifacts.  The compiler driver continues to select the host
+# linker; do not add a generic `ld` entry here.
+
+[binaries]
+ar = '/usr/bin/ar'
+nm = '/usr/bin/nm'
+ranlib = '/usr/bin/ranlib'
+strip = '/usr/bin/strip'
