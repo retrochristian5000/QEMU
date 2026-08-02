@@ -9,8 +9,8 @@ Public launchers
 
 ``build.sh`` and ``scripts/macos-builder.sh`` are small POSIX ``sh``
 launchers.  They intentionally use only syntax accepted by traditional
-Bourne-style shells so they may be entered from Bash, dash, zsh, or by direct
-execution through their shebangs.
+Bourne-style shells so they may be entered from Bash, dash, zsh, or through
+their declared ``/bin/sh`` interpreter.
 
 The launchers locate GNU Bash 3.2 or newer, clear shell-startup variables, and
 then replace themselves with a non-interactive Bash process.  On macOS the
@@ -38,13 +38,14 @@ must not be invoked directly with ``sh``, ``dash``, or ``zsh``.
 
 Use one of the public launchers instead::
 
-  ./build.sh
+  sh build.sh
 
-  bash scripts/macos-builder.sh
+  sh scripts/macos-builder.sh
 
-The second command remains valid because the POSIX launcher immediately
-normalizes the process to ``WHP_BUILD_BASH``.  Calling ``sh builder.sh`` is not
-supported because an explicit interpreter overrides the script's shebang.
+The launchers immediately normalize the process to ``WHP_BUILD_BASH``.
+Calling ``sh builder.sh`` is not supported because an explicit interpreter
+overrides the script's shebang.  A local checkout may mark ``build.sh``
+executable and then use ``./build.sh`` as an equivalent convenience.
 
 Configure shell boundary
 ------------------------
@@ -86,7 +87,7 @@ The POSIX launchers should pass syntax checks with both ``dash -n`` and
 ``bash --posix -n``.  The implementation scripts should pass ``bash -n``.
 A lightweight launcher check is available without starting a build::
 
-  WHP_SHELL_PROBE_ONLY=1 ./build.sh
+  WHP_SHELL_PROBE_ONLY=1 sh build.sh
 
 It prints the selected Bash version and ``CONFIG_SHELL`` and fails if Bash
 POSIX mode is active.
