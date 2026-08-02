@@ -49,6 +49,40 @@ compiler_has_cache_wrapper()
     return 1
 }
 
+flag_string_has_lto()
+{
+    local value="$1"
+    local token
+    local tokens=()
+
+    read -r -a tokens <<< "$value"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            -flto|-flto=*|-fno-lto|-Wl,*lto*|-Wl,*LTO*|\
+            -object_path_lto*|-lto_library*|-cache_path_lto*|\
+            -Xlinker=*lto*|-Xlinker=*LTO*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+reject_global_lto_flags()
+{
+    local variable value
+
+    for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+        value="${!variable:-}"
+        if [[ -n "$value" ]] && flag_string_has_lto "$value"; then
+            printf '%s\n' \
+                "error: $variable contains an LTO option: $value" \
+                'LTO must be selected with QEMU_HOST_LTO so it remains inside' \
+                "QEMU's Meson host build and cannot leak into firmware or" \
+                'build-machine toolchains.' >&2
+            exit 1
+        fi
+    done
+}
+
 if [[ "$HOST_OS" == "Darwin" ]]; then
     if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || printf '0')" == "1" ]]; then
         PHYSICAL_ARCH=arm64
@@ -130,7 +164,14 @@ BUILD_TARGETS="${BUILD_TARGETS:-all}"
 INSTALL="${INSTALL:-0}"
 MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-0}"
 MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
-TCG_ENABLE_LTO="${TCG_ENABLE_LTO:-$APPLE_SILICON_NATIVE}"
+if [[ -n "${QEMU_HOST_LTO+x}" && -n "${TCG_ENABLE_LTO+x}" &&
+      "$QEMU_HOST_LTO" != "$TCG_ENABLE_LTO" ]]; then
+    printf '%s\n' \
+        'error: QEMU_HOST_LTO and legacy TCG_ENABLE_LTO disagree.' \
+        'Use QEMU_HOST_LTO; TCG_ENABLE_LTO is only a compatibility alias.' >&2
+    exit 1
+fi
+QEMU_HOST_LTO="${QEMU_HOST_LTO:-${TCG_ENABLE_LTO:-$APPLE_SILICON_NATIVE}}"
 TCG_QOM_CAST_DEBUG="${TCG_QOM_CAST_DEBUG:-0}"
 TCG_TRACE_BACKEND="${TCG_TRACE_BACKEND:-nop}"
 BUILD_OPENBIOS="${BUILD_OPENBIOS:-1}"
@@ -143,7 +184,7 @@ POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$BUILD_DIR/firmware-to
 POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$BUILD_DIR/firmware-tools/toolchain-downloads}"
 
 for boolean_value in \
-    INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA TCG_ENABLE_LTO \
+    INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
     TCG_QOM_CAST_DEBUG BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
     BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD; do
     case "${!boolean_value}" in
@@ -162,6 +203,7 @@ for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
 done
 
 export CFLAGS="${CFLAGS:--g0 -pipe -w}"
+reject_global_lto_flags
 
 if [[ "$HOST_OS" == "Darwin" ]]; then
     if ! command -v xcrun >/dev/null 2>&1; then
@@ -289,7 +331,9 @@ configure_args=(
     --with-devices-ppc="$ARCH_DEVICE_FILE"
 )
 
-if [[ "$TCG_ENABLE_LTO" == "1" ]]; then
+# Meson owns the LTO flags for QEMU host artifacts. Do not add -flto to the
+# process environment: those flags would also reach firmware and build tools.
+if [[ "$QEMU_HOST_LTO" == "1" ]]; then
     configure_args+=(--enable-lto)
 else
     configure_args+=(--disable-lto)
@@ -358,9 +402,26 @@ if [[ "$HOST_OS" == "Darwin" && "$MACOS_VERIFY_TOOLCHAIN" == "1" ]]; then
         awk '{print $1 ":" $2}')"
 fi
 
+MACOS_LTO_MANIFEST="disabled"
+MACOS_LTO_MANIFEST_SIGNATURE="disabled"
+if [[ "$HOST_OS" == "Darwin" && "$QEMU_HOST_LTO" == "1" ]]; then
+    MACOS_LTO_MANIFEST="$BUILD_DIR/.whp-macos-lto"
+    MACOS_HOST_ARCH="$MACOS_HOST_ARCH" \
+    MACOS_LTO_MANIFEST="$MACOS_LTO_MANIFEST" \
+    MACOS_LTO_PROBE_DIR="$BUILD_DIR/.whp-macos-lto.d" \
+    CC="$CC" SDKROOT="$SDKROOT" \
+    CFLAGS="${CFLAGS:-}" CPPFLAGS="${CPPFLAGS:-}" \
+    LDFLAGS="${LDFLAGS:-}" \
+    MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-}" \
+        bash "$SOURCE_DIR/scripts/verify-macos-lto.sh"
+    MACOS_LTO_MANIFEST_SIGNATURE="$(cksum "$MACOS_LTO_MANIFEST" |
+        awk '{print $1 ":" $2}')"
+fi
+
 OPENBIOS_REVISION="disabled"
 if [[ "$BUILD_OPENBIOS" == "1" ]]; then
     OPENBIOS_REVISION="$(git -C "$SOURCE_DIR/roms/openbios" rev-parse HEAD)"
+    env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
     OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$BUILD_DIR/firmware-tools}" \
     OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-$CC_FOR_BUILD}" \
     OPENBIOS_HOSTCXX="${OPENBIOS_HOSTCXX:-$CXX_FOR_BUILD}" \
@@ -398,6 +459,8 @@ config_candidate="$config_file.new"
     printf 'MACOS_ALLOW_COMPILER_CONFIG=%s\n' "$MACOS_ALLOW_COMPILER_CONFIG"
     printf 'MACOS_COMPILER_MANIFEST=%s\n' "$MACOS_COMPILER_MANIFEST"
     printf 'MACOS_COMPILER_MANIFEST_SIGNATURE=%s\n' "$MACOS_COMPILER_MANIFEST_SIGNATURE"
+    printf 'MACOS_LTO_MANIFEST=%s\n' "$MACOS_LTO_MANIFEST"
+    printf 'MACOS_LTO_MANIFEST_SIGNATURE=%s\n' "$MACOS_LTO_MANIFEST_SIGNATURE"
     printf 'CC_FOR_BUILD=%s\n' "$CC_FOR_BUILD"
     printf 'CXX_FOR_BUILD=%s\n' "$CXX_FOR_BUILD"
     printf 'OBJC_FOR_BUILD=%s\n' "$OBJC_FOR_BUILD"
@@ -423,7 +486,8 @@ config_candidate="$config_file.new"
     printf 'NINJA=%s\n' "${NINJA:-}"
     printf 'PYTHON=%s\n' "${PYTHON:-}"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
-    printf 'TCG_ENABLE_LTO=%s\n' "$TCG_ENABLE_LTO"
+    printf 'QEMU_HOST_LTO=%s\n' "$QEMU_HOST_LTO"
+    printf 'TCG_ENABLE_LTO_LEGACY=%s\n' "${TCG_ENABLE_LTO:-}"
     printf 'TCG_QOM_CAST_DEBUG=%s\n' "$TCG_QOM_CAST_DEBUG"
     printf 'TCG_TRACE_BACKEND=%s\n' "$TCG_TRACE_BACKEND"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
