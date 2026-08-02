@@ -88,10 +88,12 @@ blobs = [
 ]
 
 if whp_openbios_enabled
-  whp_openbios_builder = find_program(meson.project_source_root() / 'scripts/meson-build-openbios.sh')
+  whp_openbios_bash = find_program('bash')
+  whp_openbios_script = meson.project_source_root() / 'scripts/meson-build-openbios.sh'
   whp_openbios_ppc = custom_target('whp-openbios-ppc',
     output: 'openbios-ppc',
-    command: [whp_openbios_builder, whp_openbios_config, '@OUTPUT@'],
+    command: [whp_openbios_bash, whp_openbios_script,
+              whp_openbios_config, '@OUTPUT@'],
     build_by_default: 'ppc-softmmu' in target_dirs,
     build_always_stale: true,
     console: true,
@@ -99,7 +101,7 @@ if whp_openbios_enabled
     install_dir: qemu_datadir)
   roms += whp_openbios_ppc
 else
-  blobs += 'openbios-ppc'
+  blobs += ['openbios-ppc']
 endif
 
 if get_option('install_blobs')
