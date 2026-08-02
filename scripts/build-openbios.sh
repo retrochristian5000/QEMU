@@ -257,10 +257,28 @@ PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
     build-verbose HOSTCC="$OPENBIOS_HOSTCC"
 
 firmware="$OPENBIOS_BUILD_DIR/obj-ppc/openbios-qemu.elf"
+symbols="$OPENBIOS_BUILD_DIR/obj-ppc/openbios-qemu.syms"
 if [[ ! -s "$firmware" ]]; then
     printf 'error: OpenBIOS build did not produce %s\n' "$firmware" >&2
     exit 1
 fi
+if [[ ! -s "$symbols" ]]; then
+    printf 'error: OpenBIOS build did not produce %s\n' "$symbols" >&2
+    exit 1
+fi
+
+# GNU ld does not use the linker-script _start assignment as ELF e_entry
+# unless ENTRY() or -e is supplied. QEMU follows the Power Mac reset-vector
+# contract instead, so validate the linked symbol and mapped vectors directly.
+start_address="$(awk '$3 == "_start" {print tolower($1); exit}' "$symbols")"
+case "$start_address" in
+    fff00100|0xfff00100) ;;
+    *)
+        printf 'error: OpenBIOS _start is %s, expected 0xfff00100\n' \
+            "${start_address:-missing}" >&2
+        exit 1
+        ;;
+esac
 
 readelf_cmd="${OPENBIOS_CROSS_COMPILE}readelf"
 elf_header="$(LC_ALL=C "$readelf_cmd" -hW "$firmware")"
@@ -273,13 +291,6 @@ if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$elf_header" ||
     printf '%s\n' \
         'error: OpenBIOS output is not a 32-bit big-endian PowerPC executable.' >&2
     printf '%s\n' "$elf_header" >&2
-    exit 1
-fi
-
-entry_address="$(awk -F: '/Entry point address:/ {gsub(/[[:space:]]/, "", $2); print tolower($2)}' <<< "$elf_header")"
-if [[ "$entry_address" != "0xfff00100" ]]; then
-    printf 'error: OpenBIOS entry point is %s, expected 0xfff00100\n' \
-        "${entry_address:-missing}" >&2
     exit 1
 fi
 
