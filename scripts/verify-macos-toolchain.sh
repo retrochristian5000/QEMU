@@ -121,6 +121,23 @@ set_identity_command()
         printf 'error: compiler driver is not executable: %s\n' "$DRIVER_TOKEN" >&2
         exit 1
     fi
+
+    QUERY_CMD=()
+    skip_cache_prefix=0
+    for ((index = 0; index < DRIVER_INDEX; index++)); do
+        token="${COMPILER_CMD[$index]}"
+        base="$(basename "$token")"
+        case "$base" in
+            ccache|sccache|distcc|icecc)
+                skip_cache_prefix=1
+                continue
+                ;;
+        esac
+        if [[ "$skip_cache_prefix" == "0" ]]; then
+            QUERY_CMD+=("$token")
+        fi
+    done
+    QUERY_CMD+=("${COMPILER_CMD[@]:$DRIVER_INDEX}")
 }
 
 split_flags()
@@ -169,8 +186,8 @@ write_identity()
             ;;
     esac
 
-    target="$("${COMPILER_CMD[@]}" -print-target-triple 2>/dev/null || \
-              "${COMPILER_CMD[@]}" -dumpmachine 2>/dev/null || true)"
+    target="$("${QUERY_CMD[@]}" -print-target-triple 2>/dev/null || \
+              "${QUERY_CMD[@]}" -dumpmachine 2>/dev/null || true)"
     target="$(printf '%s\n' "$target" | first_line)"
     target_arch="$(canonical_arch_from_triple "$target" 2>/dev/null || true)"
     if [[ "$target_arch" != "$expected_arch" ]]; then
@@ -180,7 +197,7 @@ write_identity()
         exit 1
     fi
 
-    resource_dir="$("${COMPILER_CMD[@]}" -print-resource-dir 2>/dev/null || true)"
+    resource_dir="$("${QUERY_CMD[@]}" -print-resource-dir 2>/dev/null || true)"
     resource_dir="$(printf '%s\n' "$resource_dir" | first_line)"
     if [[ "$MACOS_ALLOW_NONCLANG" != "1" && ! -d "$resource_dir" ]]; then
         printf 'error: %s reported an unusable Clang resource directory: %s\n' \
@@ -191,10 +208,10 @@ write_identity()
     default_config_state=unsupported
     no_default_target=""
     no_default_arch=""
-    if "${COMPILER_CMD[@]}" --no-default-config -print-target-triple \
+    if "${QUERY_CMD[@]}" --no-default-config -print-target-triple \
          >/dev/null 2>&1; then
         default_config_state=stable
-        no_default_target="$("${COMPILER_CMD[@]}" --no-default-config \
+        no_default_target="$("${QUERY_CMD[@]}" --no-default-config \
                               -print-target-triple 2>/dev/null | first_line)"
         no_default_arch="$(canonical_arch_from_triple "$no_default_target" \
                             2>/dev/null || true)"
@@ -355,7 +372,7 @@ for role in CC CXX OBJC CC_FOR_BUILD; do
     set_identity_command "$command_string"
     source="$MACOS_COMPILER_PROBE_DIR/${role}.identity.c"
     printf 'int whp_compiler_identity(void) { return 0; }\n' > "$source"
-    "${COMPILER_CMD[@]}" -### -x c -c "$source" \
+    "${QUERY_CMD[@]}" -### -x c -c "$source" \
         2> "$MACOS_COMPILER_PROBE_DIR/${role}.pipeline" || true
 done
 
