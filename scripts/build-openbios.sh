@@ -9,9 +9,15 @@ OPENBIOS_OUTPUT="${OPENBIOS_OUTPUT:-$SOURCE_DIR/pc-bios/openbios-ppc}"
 OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$SOURCE_DIR/build/firmware-tools}"
 OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
 OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-${CC:-cc}}"
+OPENBIOS_HOSTCXX="${OPENBIOS_HOSTCXX:-${CXX:-c++}}"
 OPENBIOS_HOSTSTRIP="${OPENBIOS_HOSTSTRIP:-strip}"
 OPENBIOS_TOKE="${OPENBIOS_TOKE:-}"
 OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
+BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
+POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}"
+POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
+POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
+POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/openbios/fcode-utils.git}"
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-6e563ee54aa9f60e538d90eedaa012ae77610344}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils}"
@@ -30,6 +36,20 @@ case "$OPENBIOS_FORCE_RECONFIGURE" in
     0|1) ;;
     *)
         printf 'error: OPENBIOS_FORCE_RECONFIGURE must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$BOOTSTRAP_POWERPC_TOOLCHAIN" in
+    0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_POWERPC_TOOLCHAIN must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$POWERPC_TOOLCHAIN_FORCE_REBUILD" in
+    0|1) ;;
+    *)
+        printf 'error: POWERPC_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
         exit 1
         ;;
 esac
@@ -121,10 +141,28 @@ else
     done
 fi
 
+if [[ -z "$OPENBIOS_CROSS_COMPILE" && "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; then
+    POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
+    POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
+    POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_DOWNLOAD_DIR" \
+    POWERPC_TOOLCHAIN_FORCE_REBUILD="$POWERPC_TOOLCHAIN_FORCE_REBUILD" \
+    TOOLCHAIN_HOST_CC="$OPENBIOS_HOSTCC" \
+    TOOLCHAIN_HOST_CXX="$OPENBIOS_HOSTCXX" \
+    MAKE_CMD="$MAKE_CMD" \
+    JOBS="${JOBS:-1}" \
+        bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"
+    bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
+    if prefix_is_usable "$bootstrapped_prefix"; then
+        OPENBIOS_CROSS_COMPILE="$bootstrapped_prefix"
+    fi
+fi
+
 if [[ -z "$OPENBIOS_CROSS_COMPILE" ]]; then
     printf '%s\n' \
         'error: no complete GNU PowerPC cross-toolchain was found.' \
-        'set OPENBIOS_CROSS_COMPILE to its executable prefix, for example:' \
+        'automatic bootstrapping can be enabled with:' \
+        '  BOOTSTRAP_POWERPC_TOOLCHAIN=1 ./builder.sh' \
+        'or set OPENBIOS_CROSS_COMPILE to an existing prefix:' \
         '  OPENBIOS_CROSS_COMPILE=powerpc-unknown-linux-gnu- ./builder.sh' >&2
     exit 1
 fi
