@@ -39,6 +39,9 @@ MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
 TCG_ENABLE_LTO="${TCG_ENABLE_LTO:-$APPLE_SILICON_HOST}"
 TCG_QOM_CAST_DEBUG="${TCG_QOM_CAST_DEBUG:-0}"
 TCG_TRACE_BACKEND="${TCG_TRACE_BACKEND:-nop}"
+BUILD_OPENBIOS="${BUILD_OPENBIOS:-1}"
+OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
+OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
 
 case "$TCG_ENABLE_LTO" in
     0|1) ;;
@@ -47,6 +50,14 @@ esac
 case "$TCG_QOM_CAST_DEBUG" in
     0|1) ;;
     *) printf 'error: TCG_QOM_CAST_DEBUG must be 0 or 1\n' >&2; exit 1 ;;
+esac
+case "$BUILD_OPENBIOS" in
+    0|1) ;;
+    *) printf 'error: BUILD_OPENBIOS must be 0 or 1\n' >&2; exit 1 ;;
+esac
+case "$OPENBIOS_FORCE_RECONFIGURE" in
+    0|1) ;;
+    *) printf 'error: OPENBIOS_FORCE_RECONFIGURE must be 0 or 1\n' >&2; exit 1 ;;
 esac
 
 for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
@@ -196,6 +207,19 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
+OPENBIOS_REVISION="disabled"
+if [[ "$BUILD_OPENBIOS" == "1" ]]; then
+    OPENBIOS_REVISION="$(git -C "$SOURCE_DIR/roms/openbios" rev-parse HEAD)"
+    OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$BUILD_DIR/firmware-tools}" \
+    OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-${CC:-cc}}" \
+    OPENBIOS_HOSTSTRIP="${OPENBIOS_HOSTSTRIP:-strip}" \
+    OPENBIOS_CROSS_COMPILE="$OPENBIOS_CROSS_COMPILE" \
+    OPENBIOS_FORCE_RECONFIGURE="$OPENBIOS_FORCE_RECONFIGURE" \
+    MAKE_CMD="$MAKE_CMD" \
+    JOBS="$JOBS" \
+        bash "$SOURCE_DIR/scripts/build-openbios.sh"
+fi
+
 # Reconfigure only when the host toolchain or requested build settings change.
 config_file="$BUILD_DIR/.whp-config"
 config_candidate="$config_file.new"
@@ -222,6 +246,9 @@ config_candidate="$config_file.new"
     printf 'TCG_ENABLE_LTO=%s\n' "$TCG_ENABLE_LTO"
     printf 'TCG_QOM_CAST_DEBUG=%s\n' "$TCG_QOM_CAST_DEBUG"
     printf 'TCG_TRACE_BACKEND=%s\n' "$TCG_TRACE_BACKEND"
+    printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
+    printf 'OPENBIOS_REVISION=%s\n' "$OPENBIOS_REVISION"
+    printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[@]}"
 } > "$config_candidate"
 
