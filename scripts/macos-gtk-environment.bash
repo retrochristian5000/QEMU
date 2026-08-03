@@ -105,12 +105,13 @@ if [[ -z "$pkg_config_executable" ]]; then
 fi
 
 # Homebrew normally links .pc files into the prefix, but old macOS source
-# builds and formula upgrades can leave only keg-local metadata.  Add gtk+3,
-# its full dependency closure, and the canonical prefix directories.
-formulae=(gtk+3 at-spi2-core pkgconf)
+# builds and formula upgrades can leave only keg-local metadata.  Put the
+# active formula kegs ahead of generic /usr/local or /opt/homebrew symlinks.
+formulae=(pkgconf)
 while IFS= read -r formula; do
     [[ -n "$formula" ]] && formulae+=("$formula")
 done < <("$brew_cmd" deps --formula gtk+3 2>/dev/null || true)
+formulae+=(at-spi2-core gtk+3)
 
 for formula in "${formulae[@]}"; do
     formula_prefix="$("$brew_cmd" --prefix "$formula" 2>/dev/null || true)"
@@ -118,8 +119,6 @@ for formula in "${formulae[@]}"; do
     whp_gtk_prepend_path PKG_CONFIG_PATH "$formula_prefix/share/pkgconfig"
     whp_gtk_prepend_path PKG_CONFIG_PATH "$formula_prefix/lib/pkgconfig"
 done
-whp_gtk_prepend_path PKG_CONFIG_PATH "$HOMEBREW_PREFIX/share/pkgconfig"
-whp_gtk_prepend_path PKG_CONFIG_PATH "$HOMEBREW_PREFIX/lib/pkgconfig"
 
 export PKG_CONFIG="$pkg_config_executable"
 export PKG_CONFIG_FOR_BUILD="$pkg_config_executable"
