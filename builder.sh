@@ -10,6 +10,7 @@ BUILD_SYSTEM_DIR="$SOURCE_DIR/scripts/whp-build"
 source "$BUILD_SYSTEM_DIR/stages.bash"
 
 whp_prepare_build
+source "$SOURCE_DIR/scripts/macos-gtk-environment.bash"
 bash "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
 whp_prepare_sources
 whp_configure_build
