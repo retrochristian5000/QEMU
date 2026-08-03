@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
+OPENBIOS_ENVIRONMENT_POLICY=2
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -35,6 +36,28 @@ source "$CONFIG_FILE"
 : "${POWERPC_TOOLCHAIN_DIR:?POWERPC_TOOLCHAIN_DIR is required}"
 : "${POWERPC_TOOLCHAIN_WORK_DIR:?POWERPC_TOOLCHAIN_WORK_DIR is required}"
 : "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:?POWERPC_TOOLCHAIN_DOWNLOAD_DIR is required}"
+
+# QEMU's host build may legitimately use Homebrew and pkg-config.  OpenBIOS is
+# a freestanding firmware sub-build and must not inherit those search paths.
+# In particular, GCC consults CPATH, COMPILER_PATH, GCC_EXEC_PREFIX, and
+# LIBRARY_PATH even when its command line contains otherwise clean flags.
+openbios_clean_env=(
+    env
+    -u CC -u CXX -u OBJC
+    -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS
+    -u HOSTCFLAGS -u HOSTCPPFLAGS -u HOSTLDFLAGS
+    -u CFLAGS_FOR_BUILD -u CXXFLAGS_FOR_BUILD
+    -u CPPFLAGS_FOR_BUILD -u LDFLAGS_FOR_BUILD
+    -u CFLAGS_FOR_TARGET -u CXXFLAGS_FOR_TARGET
+    -u CPPFLAGS_FOR_TARGET -u LDFLAGS_FOR_TARGET
+    -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH
+    -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH
+    -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH
+    -u DYLD_INSERT_LIBRARIES
+    -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR
+    -u CMAKE_PREFIX_PATH -u CMAKE_LIBRARY_PATH -u CMAKE_INCLUDE_PATH
+    -u ACLOCAL_PATH -u ARCHFLAGS
+)
 
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
 case "$source_mode" in
@@ -72,8 +95,8 @@ if [[ "$source_mode" == git ]]; then
     fi
     if ! printf '%s\n' \
         'static_assert(__cplusplus >= 201402L, "ISO C++14 required");' |
-        "${host_cxx_command[@]}" -std=c++14 -x c++ -fsyntax-only - \
-            >/dev/null 2>&1; then
+        "${openbios_clean_env[@]}" "${host_cxx_command[@]}" \
+            -std=c++14 -x c++ -fsyntax-only - >/dev/null 2>&1; then
         printf '%s\n' \
             'error: official GCC 16 Git sources require an ISO C++14 host compiler.' \
             "selected: $OPENBIOS_HOSTCXX" >&2
@@ -87,9 +110,27 @@ case "$OUTPUT" in
 esac
 mkdir -p "$(dirname "$OUTPUT")"
 
+case "$OPENBIOS_BUILD_DIR" in
+    /|'')
+        printf 'error: unsafe OpenBIOS build directory: %s\n' \
+            "$OPENBIOS_BUILD_DIR" >&2
+        exit 1
+        ;;
+esac
+environment_policy_file="$OPENBIOS_BUILD_DIR/.whp-openbios-environment-policy"
+effective_force_reconfigure="${OPENBIOS_FORCE_RECONFIGURE:-0}"
+if [[ ! -f "$environment_policy_file" ]] ||
+   [[ "$(cat "$environment_policy_file" 2>/dev/null || true)" != \
+      "$OPENBIOS_ENVIRONMENT_POLICY" ]]; then
+    effective_force_reconfigure=1
+    printf '%s\n' \
+        'OpenBIOS environment policy changed; forcing a clean firmware rebuild.' \
+        "policy: $OPENBIOS_ENVIRONMENT_POLICY"
+fi
+
 cross_prefix="${OPENBIOS_CROSS_COMPILE:-}"
 if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
-    env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
+    "${openbios_clean_env[@]}" \
         POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
         POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
         POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_DOWNLOAD_DIR" \
@@ -128,7 +169,7 @@ for tool in gcc as ar ld nm strip ranlib readelf; do
     fi
 done
 
-env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
+"${openbios_clean_env[@]}" \
     OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}" \
     OPENBIOS_BUILD_DIR="$OPENBIOS_BUILD_DIR" \
     OPENBIOS_OUTPUT="$OUTPUT" \
@@ -138,7 +179,7 @@ env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
     OPENBIOS_HOSTSTRIP="$OPENBIOS_HOSTSTRIP" \
     OPENBIOS_TOKE="${OPENBIOS_TOKE:-}" \
     OPENBIOS_CROSS_COMPILE="$cross_prefix" \
-    OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}" \
+    OPENBIOS_FORCE_RECONFIGURE="$effective_force_reconfigure" \
     BOOTSTRAP_POWERPC_TOOLCHAIN=0 \
     POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
     POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
@@ -146,7 +187,7 @@ env -u CFLAGS -u CXXFLAGS -u OBJCFLAGS -u CPPFLAGS -u LDFLAGS \
     CC_FOR_BUILD="$OPENBIOS_HOSTCC" \
     CXX_FOR_BUILD="$OPENBIOS_HOSTCXX" \
     STRIP_FOR_BUILD="$OPENBIOS_HOSTSTRIP" \
-    PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-pkg-config}" \
+    PKG_CONFIG_FOR_BUILD=false \
     MAKE_CMD="${MAKE_CMD:-make}" \
     JOBS="${JOBS:-1}" \
     bash "$SCRIPT_DIR/build-openbios.sh"
@@ -155,3 +196,9 @@ if [[ ! -s "$OUTPUT" ]]; then
     printf 'error: Meson OpenBIOS target did not produce %s\n' "$OUTPUT" >&2
     exit 1
 fi
+
+mkdir -p "$OPENBIOS_BUILD_DIR"
+printf '%s\n' "$OPENBIOS_ENVIRONMENT_POLICY" \
+    > "$environment_policy_file.new"
+mv -f "$environment_policy_file.new" "$environment_policy_file"
+printf 'OpenBIOS environment: isolated from host package search paths\n'
