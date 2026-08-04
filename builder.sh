@@ -22,3 +22,4 @@ bash "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
 whp_prepare_sources
 whp_configure_build
 whp_build_targets "$@"
+bash "$SOURCE_DIR/scripts/verify-qemu-machine-profiles.sh" "$@"
