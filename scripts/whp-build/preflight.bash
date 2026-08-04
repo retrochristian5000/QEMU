@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Lightweight integrity checks for the WHP build wrapper itself.  This file is
+# Lightweight integrity checks for the WHP build wrapper itself. This file is
 # sourced by builder.sh before the larger stage implementation is loaded.
 
 if [[ -z "${BASH_VERSION:-}" ]]; then
@@ -15,6 +15,7 @@ whp_validate_build_scripts()
     local posix_runner
     local script
     local checked=0
+    local checked_scripts=()
     local posix_scripts=(
         "$SOURCE_DIR/build.sh"
         "$SOURCE_DIR/scripts/macos-builder.sh"
@@ -48,13 +49,21 @@ whp_validate_build_scripts()
     fi
 
     for script in "${posix_scripts[@]}"; do
-        [[ -f "$script" ]] || continue
+        if [[ ! -f "$script" ]]; then
+            printf 'error: required build script is missing: %s\n' "$script" >&2
+            return 1
+        fi
         "$posix_runner" -n "$script"
+        checked_scripts+=("$script")
         checked=$((checked + 1))
     done
     for script in "${bash_scripts[@]}"; do
-        [[ -f "$script" ]] || continue
+        if [[ ! -f "$script" ]]; then
+            printf 'error: required build script is missing: %s\n' "$script" >&2
+            return 1
+        fi
         "$bash_runner" --noprofile --norc -n "$script"
+        checked_scripts+=("$script")
         checked=$((checked + 1))
     done
 
@@ -65,7 +74,7 @@ whp_validate_build_scripts()
                 printf 'error: WHP_RUN_SHELLCHECK=1 but shellcheck is unavailable\n' >&2
                 return 1
             fi
-            shellcheck "${posix_scripts[@]}" "${bash_scripts[@]}"
+            shellcheck "${checked_scripts[@]}"
             ;;
         *)
             printf 'error: WHP_RUN_SHELLCHECK must be 0 or 1\n' >&2
