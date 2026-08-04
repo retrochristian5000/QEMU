@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Boot Linux kernel on a mac99 and g3beige ppc machine and check the console
+# Boot Linux kernel on PowerMac ppc machines and check the console
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -30,6 +30,10 @@ class MacTest(LinuxKernelTest):
 
     def test_ppc_mac99(self):
         self.set_machine('mac99')
+        self.do_day15_test()
+
+    def test_ppc_powermac3_1(self):
+        self.set_machine('powermac3_1')
         self.do_day15_test()
 
 if __name__ == '__main__':
