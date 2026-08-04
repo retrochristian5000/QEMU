@@ -34,6 +34,35 @@ stamps to avoid expensive work when nothing changed.  This also means changes
 to the generated configuration file are consumed without requiring a Meson
 reconfiguration.
 
+Firmware compatibility policy
+-----------------------------
+
+The default OpenBIOS handoff policy is ``compatible``.  It requires a 32-bit,
+big-endian, executable PowerPC ELF whose loadable segments remain inside the
+Mac99 PROM window.  The ELF entry is preferred when it points into a loadable
+segment.  Otherwise the linked ``_start`` symbol remains an accepted entry
+candidate.  The historical ``0xfff00100`` entry and ``0xfffffffc`` hard-reset
+vectors are diagnosed when absent, but they are not universal linker-layout
+requirements in compatibility mode.
+
+Use the exact historical contract as an audit mode with::
+
+  OPENBIOS_FIRMWARE_VALIDATION=strict ./build.sh whp-openbios-ppc
+
+Strict validation requires ``_start`` at ``0xfff00100`` and requires loadable
+segments to cover both the legacy entry and architectural hard-reset vectors.
+It is intentionally opt-in so the build does not reject otherwise usable
+firmware solely because its linker layout differs.
+
+At runtime, the Mac99 machine uses a valid ELF entry automatically.  Raw PROM
+images and ELFs without a usable entry retain the historical ``0xfff00100``
+fallback.  A firmware-specific reset address can be selected explicitly with::
+
+  qemu-system-ppc -machine mac99,firmware-entry=0xfff00200 ...
+
+The override must remain inside the Mac99 PROM window.  Architecture,
+endianness, image-size, and PROM-range checks remain mandatory in every mode.
+
 Source modes
 ------------
 
