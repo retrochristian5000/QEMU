@@ -19,6 +19,7 @@ POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}
 POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
 POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
 POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
+OPENBIOS_FIRMWARE_VALIDATION="${OPENBIOS_FIRMWARE_VALIDATION:-compatible}"
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/openbios/fcode-utils.git}"
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-6e563ee54aa9f60e538d90eedaa012ae77610344}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils}"
@@ -53,6 +54,14 @@ case "$POWERPC_TOOLCHAIN_FORCE_REBUILD" in
     0|1) ;;
     *)
         printf 'error: POWERPC_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$OPENBIOS_FIRMWARE_VALIDATION" in
+    compatible|strict) ;;
+    *)
+        printf '%s\n' \
+            'error: OPENBIOS_FIRMWARE_VALIDATION must be compatible or strict' >&2
         exit 1
         ;;
 esac
@@ -223,6 +232,7 @@ config_candidate="${OPENBIOS_BUILD_DIR}.config.new.$$"
     printf 'OPENBIOS_HOSTSTRIP=%s\n' "$OPENBIOS_HOSTSTRIP"
     printf 'OPENBIOS_TOKE=%s\n' "$OPENBIOS_TOKE"
     printf 'OPENBIOS_TOKE_SIGNATURE=%s\n' "$toke_signature"
+    printf 'OPENBIOS_FIRMWARE_VALIDATION=%s\n' "$OPENBIOS_FIRMWARE_VALIDATION"
 } > "$config_candidate"
 
 if [[ "$OPENBIOS_FORCE_RECONFIGURE" == "1" ]] ||
@@ -267,19 +277,6 @@ if [[ ! -s "$symbols" ]]; then
     exit 1
 fi
 
-# GNU ld does not use the linker-script _start assignment as ELF e_entry
-# unless ENTRY() or -e is supplied. QEMU follows the Power Mac reset-vector
-# contract instead, so validate the linked symbol and mapped vectors directly.
-start_address="$(awk '$3 == "_start" {print tolower($1); exit}' "$symbols")"
-case "$start_address" in
-    fff00100|0xfff00100) ;;
-    *)
-        printf 'error: OpenBIOS _start is %s, expected 0xfff00100\n' \
-            "${start_address:-missing}" >&2
-        exit 1
-        ;;
-esac
-
 readelf_cmd="${OPENBIOS_CROSS_COMPILE}readelf"
 elf_header="$(LC_ALL=C "$readelf_cmd" -hW "$firmware")"
 program_headers="$(LC_ALL=C "$readelf_cmd" -lW "$firmware")"
@@ -300,8 +297,35 @@ if grep -Eq '^[[:space:]]*(INTERP|DYNAMIC)[[:space:]]' <<< "$program_headers"; t
     exit 1
 fi
 
+start_address="$(awk '$3 == "_start" {print tolower($1); exit}' "$symbols")"
+if [[ -n "$start_address" && "$start_address" != 0x* ]]; then
+    start_address="0x$start_address"
+fi
+if [[ ! "$start_address" =~ ^0x[0-9a-f]+$ ]]; then
+    printf 'error: OpenBIOS _start symbol is missing or malformed: %s\n' \
+        "${start_address:-missing}" >&2
+    exit 1
+fi
+start_value=$((start_address))
+if ((start_value < 0xfff00000 || start_value >= 0x100000000)); then
+    printf 'error: OpenBIOS _start is outside the Mac99 PROM: %s\n' \
+        "$start_address" >&2
+    exit 1
+fi
+
+elf_entry_address="$(awk -F: '/Entry point address:/ {
+    gsub(/[[:space:]]/, "", $2); print tolower($2); exit
+}' <<< "$elf_header")"
+if [[ "$elf_entry_address" =~ ^0x[0-9a-f]+$ ]]; then
+    elf_entry_value=$((elf_entry_address))
+else
+    elf_entry_value=0
+fi
+
 load_count=0
-entry_vector_loaded=0
+start_loaded=0
+elf_entry_loaded=0
+legacy_entry_loaded=0
 hard_reset_loaded=0
 while read -r vaddr memsz; do
     [[ -n "$vaddr" && -n "$memsz" ]] || continue
@@ -314,19 +338,68 @@ while read -r vaddr memsz; do
             "$vaddr" "$memsz" >&2
         exit 1
     fi
+    if ((vaddr_value <= start_value && end_value > start_value)); then
+        start_loaded=1
+    fi
+    if ((elf_entry_value >= 0xfff00000 && elf_entry_value < 0x100000000 &&
+         vaddr_value <= elf_entry_value && end_value > elf_entry_value)); then
+        elf_entry_loaded=1
+    fi
     if ((vaddr_value <= 0xfff00100 && end_value > 0xfff00100)); then
-        entry_vector_loaded=1
+        legacy_entry_loaded=1
     fi
     if ((vaddr_value <= 0xfffffffc && end_value > 0xfffffffc)); then
         hard_reset_loaded=1
     fi
 done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$program_headers")
 
-if ((load_count == 0 || entry_vector_loaded == 0 || hard_reset_loaded == 0)); then
-    printf '%s\n' \
-        'error: OpenBIOS ELF does not map both the 0xfff00100 entry vector' \
-        'and the 0xfffffffc hard-reset vector into the Power Mac PROM.' >&2
+if ((load_count == 0)); then
+    printf 'error: OpenBIOS ELF has no loadable segments\n' >&2
     exit 1
+fi
+if ((start_loaded == 0)); then
+    printf 'error: OpenBIOS _start %s is not covered by a LOAD segment\n' \
+        "$start_address" >&2
+    exit 1
+fi
+
+if [[ "$OPENBIOS_FIRMWARE_VALIDATION" == strict ]]; then
+    if [[ "$start_address" != "0xfff00100" ]]; then
+        printf 'error: OpenBIOS _start is %s, expected 0xfff00100\n' \
+            "$start_address" >&2
+        exit 1
+    fi
+    if ((legacy_entry_loaded == 0 || hard_reset_loaded == 0)); then
+        printf '%s\n' \
+            'error: strict validation requires both the 0xfff00100 entry vector' \
+            'and the 0xfffffffc hard-reset vector in the Power Mac PROM.' >&2
+        exit 1
+    fi
+else
+    if ((elf_entry_loaded == 1)); then
+        selected_entry="$elf_entry_address"
+        selected_entry_source="ELF header"
+    else
+        selected_entry="$start_address"
+        selected_entry_source="_start symbol"
+    fi
+
+    if ((elf_entry_loaded == 0)) && [[ "$start_address" != "0xfff00100" ]]; then
+        printf '%s\n' \
+            "warning: ELF entry $elf_entry_address is unusable; _start is $start_address." \
+            'Use the QEMU compatibility override:' \
+            "  -machine mac99,firmware-entry=$start_address" >&2
+    fi
+    if ((legacy_entry_loaded == 0)); then
+        printf '%s\n' \
+            'warning: firmware does not map QEMU legacy entry 0xfff00100;' \
+            "         selected $selected_entry_source entry $selected_entry instead." >&2
+    fi
+    if ((hard_reset_loaded == 0)); then
+        printf '%s\n' \
+            'warning: firmware does not map the architectural hard-reset vector' \
+            '         at 0xfffffffc; QEMU will use the selected firmware entry.' >&2
+    fi
 fi
 
 mkdir -p "$(dirname "$OPENBIOS_OUTPUT")"
@@ -348,5 +421,6 @@ else
     firmware_digest="unavailable"
 fi
 
-printf 'OpenBIOS %s -> %s (sha256 %s)\n' \
-    "$openbios_revision" "$OPENBIOS_OUTPUT" "$firmware_digest"
+printf 'OpenBIOS %s -> %s (sha256 %s, validation %s)\n' \
+    "$openbios_revision" "$OPENBIOS_OUTPUT" "$firmware_digest" \
+    "$OPENBIOS_FIRMWARE_VALIDATION"
