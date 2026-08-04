@@ -12,8 +12,14 @@ if [[ "${WHP_BUILD_ENTRY_NORMALIZED:-0}" != 1 ]]; then
     exec "$SOURCE_DIR/build.sh" "$@"
 fi
 
-# Keep this file as one readable run of the build system.  Policy, validation,
-# configuration, and execution live behind the stage interface below.
+# Validate every wrapper script before loading the main stage implementation.
+# This catches syntax regressions even in platform-specific paths that the
+# current host would not otherwise execute.
+source "$BUILD_SYSTEM_DIR/preflight.bash"
+whp_validate_build_scripts
+
+# Keep this file as one readable run of the build system. Policy, validation,
+# configuration, execution, and artifact checks each live behind a small stage.
 source "$BUILD_SYSTEM_DIR/stages.bash"
 
 whp_prepare_build
@@ -22,7 +28,6 @@ bash "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
 whp_prepare_sources
 whp_configure_build
 whp_build_targets "$@"
-BUILD_DIR="$BUILD_DIR" \
-QEMU_TARGET_LIST="$QEMU_TARGET_LIST" \
-BUILD_TARGETS="$BUILD_TARGETS" \
-    bash "$SOURCE_DIR/scripts/verify-qemu-machine-profiles.sh" "$@"
+
+source "$BUILD_SYSTEM_DIR/post-build.bash"
+whp_verify_build_outputs "$@"
