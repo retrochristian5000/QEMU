@@ -88,6 +88,7 @@
 #define PROM_FILENAME "openbios-ppc"
 #define PROM_BASE 0xfff00000
 #define PROM_SIZE (1 * MiB)
+#define PROM_DEFAULT_ENTRY (PROM_BASE + 0x100)
 
 #define KERNEL_LOAD_ADDR 0x01000000
 #define KERNEL_GAP       0x00100000
@@ -103,11 +104,17 @@ typedef enum {
     CORE99_VIA_CONFIG_PMU_ADB
 } Core99ViaConfig;
 
+typedef struct Core99CPUResetData {
+    PowerPCCPU *cpu;
+    uint64_t firmware_entry;
+} Core99CPUResetData;
+
 struct Core99MachineState {
     /*< private >*/
     MachineState parent;
 
     Core99ViaConfig via_config;
+    uint64_t firmware_entry;
 };
 
 static void fw_cfg_boot_set(void *opaque, const char *boot_device,
@@ -123,11 +130,12 @@ static uint64_t translate_kernel_address(void *opaque, uint64_t addr)
 
 static void ppc_core99_reset(void *opaque)
 {
-    PowerPCCPU *cpu = opaque;
+    Core99CPUResetData *reset_data = opaque;
+    PowerPCCPU *cpu = reset_data->cpu;
 
     cpu_reset(CPU(cpu));
-    /* 970 CPUs want to get their initial IP as part of their boot protocol */
-    cpu->env.nip = PROM_BASE + 0x100;
+    /* 970 CPUs want to get their initial IP as part of their boot protocol. */
+    cpu->env.nip = reset_data->firmware_entry;
 }
 
 /* PowerPC Mac99 hardware initialisation */
@@ -137,13 +145,19 @@ static void ppc_core99_init(MachineState *machine)
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     PowerPCCPU *cpu = NULL;
     CPUPPCState *env = NULL;
+    Core99CPUResetData **cpu_reset_data;
+    Error *bios_err = NULL;
     char *filename;
     IrqLines *openpic_irqs;
-    int i, j, k, ppc_boot_device, machine_arch, bios_size = -1;
+    int i, j, k, ppc_boot_device, machine_arch;
+    ssize_t bios_size = -1;
+    ssize_t elf_size = ELF_LOAD_FAILED;
     const char *bios_name = machine->firmware ?: PROM_FILENAME;
     MemoryRegion *bios = g_new(MemoryRegion, 1);
     hwaddr kernel_base = 0, initrd_base = 0, cmdline_base = 0;
     long kernel_size = 0, initrd_size = 0;
+    uint64_t bios_entry = 0, bios_low = 0, bios_high = 0;
+    uint64_t firmware_entry = core99_machine->firmware_entry;
     PCIBus *pci_bus;
     bool has_pmu, has_adb;
     Object *macio;
@@ -158,6 +172,8 @@ static void ppc_core99_init(MachineState *machine)
     hwaddr nvram_addr = 0xFFF04000;
     uint64_t tbfreq = kvm_enabled() ? kvmppc_get_tbfreq() : TBFREQ;
 
+    cpu_reset_data = g_new0(Core99CPUResetData *, machine->smp.cpus);
+
     /* init CPUs */
     for (i = 0; i < machine->smp.cpus; i++) {
         cpu = POWERPC_CPU(cpu_create(machine->cpu_type));
@@ -165,7 +181,10 @@ static void ppc_core99_init(MachineState *machine)
 
         /* Set time-base frequency to 100 Mhz */
         cpu_ppc_tb_init(env, TBFREQ);
-        qemu_register_reset(ppc_core99_reset, cpu);
+        cpu_reset_data[i] = g_new0(Core99CPUResetData, 1);
+        cpu_reset_data[i]->cpu = cpu;
+        cpu_reset_data[i]->firmware_entry = PROM_DEFAULT_ENTRY;
+        qemu_register_reset(ppc_core99_reset, cpu_reset_data[i]);
     }
 
     /* allocate RAM */
@@ -182,15 +201,38 @@ static void ppc_core99_init(MachineState *machine)
 
     filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
     if (filename) {
-        /* Load OpenBIOS (ELF) */
-        bios_size = load_elf(filename, NULL, NULL, NULL, NULL,
-                             NULL, NULL, NULL,
-                             ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
-
-        if (bios_size <= 0) {
-            /* or load binary ROM image */
+        /* Prefer a compatible PowerPC ELF and honor a usable ELF entry. */
+        elf_size = load_elf(filename, NULL, NULL, NULL, &bios_entry,
+                            &bios_low, &bios_high, NULL,
+                            ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
+        if (elf_size > 0) {
+            bios_size = elf_size;
+            if (bios_low < PROM_BASE || bios_high > PROM_BASE + PROM_SIZE) {
+                error_report("PowerPC bios '%s' maps outside the Mac99 PROM "
+                             "window (0x%" PRIx64 "..0x%" PRIx64 ")",
+                             bios_name, bios_low, bios_high);
+                exit(1);
+            }
+            if (firmware_entry == 0 &&
+                bios_entry >= PROM_BASE &&
+                bios_entry < PROM_BASE + PROM_SIZE) {
+                firmware_entry = bios_entry;
+            } else if (firmware_entry == 0 && bios_entry != 0) {
+                warn_report("ignoring PowerPC bios entry 0x%" PRIx64
+                            " outside the Mac99 PROM window", bios_entry);
+            }
+        } else {
+            /* Non-ELF firmware remains supported as a raw PROM image. */
             bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE,
-                                            &error_fatal);
+                                            &bios_err);
+            if (bios_size < 0) {
+                error_reportf_err(bios_err,
+                                  "could not load raw PowerPC bios '%s': ",
+                                  bios_name);
+                error_report("ELF loader rejected it: %s",
+                             load_elf_strerror(elf_size));
+                exit(1);
+            }
         }
         g_free(filename);
     }
@@ -198,6 +240,20 @@ static void ppc_core99_init(MachineState *machine)
         error_report("could not load PowerPC bios '%s'", bios_name);
         exit(1);
     }
+
+    if (firmware_entry == 0) {
+        firmware_entry = PROM_DEFAULT_ENTRY;
+    }
+    if (firmware_entry < PROM_BASE ||
+        firmware_entry >= PROM_BASE + PROM_SIZE) {
+        error_report("Mac99 firmware entry 0x%" PRIx64
+                     " is outside the PROM window", firmware_entry);
+        exit(1);
+    }
+    for (i = 0; i < machine->smp.cpus; i++) {
+        cpu_reset_data[i]->firmware_entry = firmware_entry;
+    }
+    g_free(cpu_reset_data);
 
     if (machine->kernel_filename) {
         kernel_base = KERNEL_LOAD_ADDR;
@@ -643,11 +699,19 @@ static void core99_instance_init(Object *obj)
 
     /* Default via_config is CORE99_VIA_CONFIG_CUDA */
     cms->via_config = CORE99_VIA_CONFIG_CUDA;
+    cms->firmware_entry = 0;
     object_property_add_str(obj, "via", core99_get_via_config,
                             core99_set_via_config);
     object_property_set_description(obj, "via",
                                     "Set VIA configuration. "
                                     "Valid values are cuda, pmu and pmu-adb");
+    object_property_add_uint64_ptr(obj, "firmware-entry",
+                                   &cms->firmware_entry,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_set_description(obj, "firmware-entry",
+                                    "Override the Mac99 firmware reset entry. "
+                                    "Zero selects the ELF entry when usable, "
+                                    "otherwise 0xfff00100");
 }
 
 static const TypeInfo core99_machine_info = {
