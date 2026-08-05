@@ -40,7 +40,7 @@ source "$CONFIG_FILE"
 # Keep local builds on the repaired project fork.  Use a distinct cache path
 # so an older vanilla checkout cannot retain its origin or obsolete Makefile.
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochristian5000/fcode-utils.git}"
-FCODE_UTILS_REV="${FCODE_UTILS_REV:-6478df0f5b8bb6bf3f8654482cc2aa84264e3805}"
+FCODE_UTILS_REV="${FCODE_UTILS_REV:-b9b6da855f2e698f8163ebd22227fc43d6eef7f4}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
 
 # QEMU's host build may legitimately use Homebrew and pkg-config.  OpenBIOS is
