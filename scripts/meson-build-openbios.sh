@@ -37,6 +37,12 @@ source "$CONFIG_FILE"
 : "${POWERPC_TOOLCHAIN_WORK_DIR:?POWERPC_TOOLCHAIN_WORK_DIR is required}"
 : "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:?POWERPC_TOOLCHAIN_DOWNLOAD_DIR is required}"
 
+# Keep local builds on the repaired project fork.  Use a distinct cache path
+# so an older vanilla checkout cannot retain its origin or obsolete Makefile.
+FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochristian5000/fcode-utils.git}"
+FCODE_UTILS_REV="${FCODE_UTILS_REV:-6478df0f5b8bb6bf3f8654482cc2aa84264e3805}"
+FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
+
 # QEMU's host build may legitimately use Homebrew and pkg-config.  OpenBIOS is
 # a freestanding firmware sub-build and must not inherit those search paths.
 # In particular, GCC consults CPATH, COMPILER_PATH, GCC_EXEC_PREFIX, and
@@ -178,6 +184,9 @@ done
     OPENBIOS_HOSTCXX="$OPENBIOS_HOSTCXX" \
     OPENBIOS_HOSTSTRIP="$OPENBIOS_HOSTSTRIP" \
     OPENBIOS_TOKE="${OPENBIOS_TOKE:-}" \
+    FCODE_UTILS_REPOSITORY="$FCODE_UTILS_REPOSITORY" \
+    FCODE_UTILS_REV="$FCODE_UTILS_REV" \
+    FCODE_UTILS_DIR="$FCODE_UTILS_DIR" \
     OPENBIOS_CROSS_COMPILE="$cross_prefix" \
     OPENBIOS_FORCE_RECONFIGURE="$effective_force_reconfigure" \
     BOOTSTRAP_POWERPC_TOOLCHAIN=0 \
