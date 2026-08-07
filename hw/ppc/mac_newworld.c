@@ -33,8 +33,7 @@
  * 0001:00:04.0 PCI bridge [0604]: Apple Computer Inc. K2 HT-PCI Bridge [106b:0046]
  * 0001:00:05.0 PCI bridge [0604]: Apple Computer Inc. K2 HT-PCI Bridge [106b:0047]
  * 0001:00:06.0 PCI bridge [0604]: Apple Computer Inc. K2 HT-PCI Bridge [106b:0048]
- * 0001:00:07.0 PCI bridge [0604]: Apple Computer Inc. K2 HT-PCI Bridge [106b:0049]
- * 0001:01:07.0 Class [ff00]: Apple Computer Inc. K2 KeyLargo Mac/IO [106b:0041] (rev 20)
+ * 0001:00:07.0 Class [ff00]: Apple Computer Inc. K2 KeyLargo Mac/IO [106b:0041] (rev 20)
  * 0001:01:08.0 USB Controller [0c03]: Apple Computer Inc. K2 KeyLargo USB [106b:0040]
  * 0001:01:09.0 USB Controller [0c03]: Apple Computer Inc. K2 KeyLargo USB [106b:0040]
  * 0001:02:0b.0 USB Controller [0c03]: NEC Corporation USB [1033:0035] (rev 43)
@@ -160,7 +159,7 @@ static void ppc_core99_init(MachineState *machine)
     long kernel_size = 0, initrd_size = 0;
     uint64_t bios_entry = 0, bios_low = 0, bios_high = 0;
     uint64_t firmware_entry = core99_machine->firmware_entry;
-    PCIBus *pci_bus, *south_pci_bus;
+    PCIBus *pci_bus, *south_pci_bus, *internal_pci_bus = NULL;
     bool has_pmu, has_adb;
     bool sawtooth_topology =
         object_dynamic_cast(OBJECT(machine),
@@ -332,7 +331,7 @@ static void ppc_core99_init(MachineState *machine)
             openpic_irqs[i].irq[OPENPIC_OUTPUT_INT] =
                 qdev_get_gpio_in(dev, PPC970_INPUT_INT);
             openpic_irqs[i].irq[OPENPIC_OUTPUT_CINT] =
-                qdev_get_gpio_in(dev, PPC970_INPUT_INT);
+                 qdev_get_gpio_in(dev, PPC970_INPUT_INT);
             openpic_irqs[i].irq[OPENPIC_OUTPUT_MCK] =
                 qdev_get_gpio_in(dev, PPC970_INPUT_MCP);
             /* Not connected ? */
@@ -386,6 +385,7 @@ static void ppc_core99_init(MachineState *machine)
         sysbus_realize_and_unref(s, &error_fatal);
         sysbus_mmio_map(s, 0, 0xf4800000);
         sysbus_mmio_map(s, 1, 0xf4c00000);
+        internal_pci_bus = PCI_HOST_BRIDGE(uninorth_internal_dev)->bus;
 
         /* Uninorth main bus - this must be last to make it the default */
         uninorth_pci_dev = qdev_new(TYPE_UNI_NORTH_PCI_HOST_BRIDGE);
@@ -545,7 +545,17 @@ static void ppc_core99_init(MachineState *machine)
 
     pci_vga_init(pci_bus);
 
-    pci_init_nic_devices(pci_bus, mc->default_nic);
+    if (sawtooth_topology) {
+        /*
+         * Sawtooth's built-in GMAC is on UniNorth's internal PCI bus at
+         * device 0x0f.  Additional NICs model PCI expansion cards and live
+         * on the 33 MHz bus behind the DEC 21154.
+         */
+        pci_init_nic_in_slot(internal_pci_bus, mc->default_nic, NULL, "f");
+        pci_init_nic_devices(south_pci_bus, mc->default_nic);
+    } else {
+        pci_init_nic_devices(pci_bus, mc->default_nic);
+    }
 
     /* The NewWorld NVRAM is not located in the MacIO device */
     if (kvm_enabled() && qemu_real_host_page_size() > 4096) {
