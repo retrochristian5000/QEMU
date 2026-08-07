@@ -25,12 +25,20 @@
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
+#include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/pci/pci_device.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
 #include "system/system.h"
 #include "trace.h"
+
+#define UNINORTH_REG_POWER_MGMT       0x0030
+#define UNINORTH_REG_ARB_CTRL         0x0040
+#define UNINORTH_REG_HW_INIT_STATE    0x0070
+
+#define UNINORTH_POWER_NORMAL         0x00000000
+#define UNINORTH_HW_INIT_RUNNING      0x00000002
 
 static int pci_unin_map_irq(PCIDevice *pci_dev, int irq_num)
 {
@@ -548,16 +556,42 @@ static const TypeInfo pci_unin_internal_info = {
 static void unin_write(void *opaque, hwaddr addr, uint64_t value,
                        unsigned size)
 {
+    UNINState *s = opaque;
+
+    switch (addr) {
+    case UNINORTH_REG_POWER_MGMT:
+        s->power_mgmt = value;
+        break;
+    case UNINORTH_REG_ARB_CTRL:
+        s->arb_ctrl = value;
+        break;
+    case UNINORTH_REG_HW_INIT_STATE:
+        s->hw_init_state = value;
+        break;
+    default:
+        break;
+    }
+
     trace_unin_write(addr, value);
 }
 
 static uint64_t unin_read(void *opaque, hwaddr addr, unsigned size)
 {
+    UNINState *s = opaque;
     uint32_t value;
 
     switch (addr) {
     case 0:
         value = UNINORTH_VERSION_10A;
+        break;
+    case UNINORTH_REG_POWER_MGMT:
+        value = s->power_mgmt;
+        break;
+    case UNINORTH_REG_ARB_CTRL:
+        value = s->arb_ctrl;
+        break;
+    case UNINORTH_REG_HW_INIT_STATE:
+        value = s->hw_init_state;
         break;
     default:
         value = 0;
@@ -572,6 +606,40 @@ static const MemoryRegionOps unin_ops = {
     .read = unin_read,
     .write = unin_write,
     .endianness = DEVICE_BIG_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+    .impl = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+};
+
+static void unin_reset(DeviceState *dev)
+{
+    UNINState *s = UNI_NORTH(dev);
+
+    /*
+     * Core99 starts in normal power mode with HWInit reporting a running
+     * machine.  Tiger rewrites both around sleep/wake and performs a
+     * read-modify-write of ArbCtrl when applying the UniNorth QAck delay.
+     */
+    s->power_mgmt = UNINORTH_POWER_NORMAL;
+    s->arb_ctrl = 0;
+    s->hw_init_state = UNINORTH_HW_INIT_RUNNING;
+}
+
+static const VMStateDescription vmstate_unin = {
+    .name = "uninorth",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(power_mgmt, UNINState),
+        VMSTATE_UINT32(arb_ctrl, UNINState),
+        VMSTATE_UINT32(hw_init_state, UNINState),
+        VMSTATE_END_OF_LIST()
+    }
 };
 
 static void unin_init(Object *obj)
@@ -588,6 +656,8 @@ static void unin_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_legacy_reset(dc, unin_reset);
+    dc->vmsd = &vmstate_unin;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
 }
 

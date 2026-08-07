@@ -61,6 +61,9 @@ struct UNINState {
     SysBusDevice parent_obj;
 
     MemoryRegion mem;
+    uint32_t power_mgmt;
+    uint32_t arb_ctrl;
+    uint32_t hw_init_state;
 };
 
 #define TYPE_UNI_NORTH "uni-north"
