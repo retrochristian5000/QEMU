@@ -57,6 +57,7 @@
 #include "hw/nvram/mac_nvram.h"
 #include "hw/core/boards.h"
 #include "hw/pci-host/uninorth.h"
+#include "hw/pci-bridge/dec.h"
 #include "hw/input/adb.h"
 #include "hw/ppc/mac_dbdma.h"
 #include "hw/pci/pci.h"
@@ -158,8 +159,11 @@ static void ppc_core99_init(MachineState *machine)
     long kernel_size = 0, initrd_size = 0;
     uint64_t bios_entry = 0, bios_low = 0, bios_high = 0;
     uint64_t firmware_entry = core99_machine->firmware_entry;
-    PCIBus *pci_bus;
+    PCIBus *pci_bus, *south_pci_bus;
     bool has_pmu, has_adb;
+    bool sawtooth_topology =
+        object_dynamic_cast(OBJECT(machine),
+                            MACHINE_TYPE_NAME("powermac3_1")) != NULL;
     Object *macio;
     MACIOIDEState *macio_ide;
     BusState *adb_bus;
@@ -403,9 +407,20 @@ static void ppc_core99_init(MachineState *machine)
 
     /* init basic PC hardware */
     pci_bus = PCI_HOST_BRIDGE(uninorth_pci_dev)->bus;
+    south_pci_bus = pci_bus;
+
+    /*
+     * A PowerMac3,1 has a DEC 21154-66 at device 0x0d on UniNorth's main
+     * PCI bus.  KeyLargo and the 33 MHz PCI side sit behind that bridge.
+     * Keep generic mac99 on its historical flat topology.
+     */
+    if (sawtooth_topology) {
+        south_pci_bus = pci_dec_21154_init(pci_bus, PCI_DEVFN(13, 0));
+    }
 
     /* MacIO */
-    macio = OBJECT(pci_new(-1, TYPE_NEWWORLD_MACIO));
+    macio = OBJECT(pci_new(sawtooth_topology ? PCI_DEVFN(7, 0) : -1,
+                           TYPE_NEWWORLD_MACIO));
     dev = DEVICE(macio);
     qdev_prop_set_uint64(dev, "frequency", tbfreq);
     qdev_prop_set_bit(dev, "has-pmu", has_pmu);
@@ -415,7 +430,7 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_chr(dev, "chrA", serial_hd(0));
     qdev_prop_set_chr(dev, "chrB", serial_hd(1));
 
-    pci_realize_and_unref(PCI_DEVICE(macio), pci_bus, &error_fatal);
+    pci_realize_and_unref(PCI_DEVICE(macio), south_pci_bus, &error_fatal);
 
     pic_dev = DEVICE(object_resolve_path_component(macio, "pic"));
     for (i = 0; i < 4; i++) {
@@ -473,7 +488,9 @@ static void ppc_core99_init(MachineState *machine)
     }
 
     if (machine->usb) {
-        pci_create_simple(pci_bus, -1, "pci-ohci");
+        pci_create_simple(south_pci_bus,
+                          sawtooth_topology ? PCI_DEVFN(8, 0) : -1,
+                          "pci-ohci");
 
         /* U3 needs to use USB for input because Linux doesn't support via-cuda
         on PPC64 */
