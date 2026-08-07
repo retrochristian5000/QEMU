@@ -68,7 +68,7 @@ PCIBus *pci_dec_21154_init(PCIBus *parent_bus, int devfn)
     PCIDevice *dev;
     PCIBridge *br;
 
-    dev = pci_new_multifunction(devfn, false, TYPE_DEC_21154_P2P_BRIDGE);
+    dev = pci_new_multifunction(devfn, TYPE_DEC_21154_P2P_BRIDGE);
     br = PCI_BRIDGE(dev);
     pci_bridge_map_irq(br, "DEC 21154 PCI-PCI bridge", dec_21154_map_irq);
     pci_realize_and_unref(dev, parent_bus, &error_fatal);
