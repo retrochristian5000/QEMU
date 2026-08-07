@@ -29,6 +29,7 @@
 #include "hw/pci/pci_device.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
+#include "system/system.h"
 #include "trace.h"
 
 static int pci_unin_map_irq(PCIDevice *pci_dev, int irq_num)
@@ -221,6 +222,18 @@ static void pci_unin_agp_realize(DeviceState *dev, Error **errp)
                                    PCI_DEVFN(11, 0), 4, TYPE_PCI_BUS);
 
     pci_create_simple(h->bus, PCI_DEVFN(11, 0), "uni-north-agp");
+
+    /*
+     * UniNorth's AGP ranges are fixed in the NewWorld physical map.  Map
+     * the two PCI memory apertures and the 8 MiB PCI I/O aperture here so
+     * devices on this root bus have usable BAR address spaces.
+     */
+    memory_region_add_subregion(get_system_memory(), 0x90000000,
+                                &s->pci_hole);
+    memory_region_add_subregion(get_system_memory(), 0xf1000000,
+                                &s->pci_hole_high);
+    memory_region_add_subregion(get_system_memory(), 0xf0000000,
+                                &s->pci_io);
 }
 
 static void pci_unin_agp_init(Object *obj)
@@ -234,6 +247,24 @@ static void pci_unin_agp_init(Object *obj)
                           obj, "unin-agp-conf-idx", 0x1000);
     memory_region_init_io(&h->data_mem, OBJECT(h), &pci_host_data_le_ops,
                           obj, "unin-agp-conf-data", 0x1000);
+
+    /*
+     * Real UniNorth systems expose AGP PCI memory through a 256 MiB
+     * coarse window at 0x90000000 and a 16 MiB fine window at
+     * 0xf1000000.  Keep a full PCI memory container so BAR addresses stay
+     * in PCI address space, then alias only those two hardware apertures.
+     */
+    memory_region_init(&s->pci_mmio, OBJECT(s), "unin-agp-mmio",
+                       0x100000000ULL);
+    memory_region_init_io(&s->pci_io, OBJECT(s), &unassigned_io_ops, obj,
+                          "unin-agp-isa-mmio", 0x00800000);
+
+    memory_region_init_alias(&s->pci_hole, OBJECT(s),
+                             "unin-agp-hole", &s->pci_mmio,
+                             0x90000000ULL, 0x10000000ULL);
+    memory_region_init_alias(&s->pci_hole_high, OBJECT(s),
+                             "unin-agp-hole-high", &s->pci_mmio,
+                             0xf1000000ULL, 0x01000000ULL);
 
     sysbus_init_mmio(sbd, &h->conf_mem);
     sysbus_init_mmio(sbd, &h->data_mem);
@@ -296,6 +327,13 @@ static void unin_agp_pci_host_realize(PCIDevice *d, Error **errp)
     d->config[PCI_CACHE_LINE_SIZE] = 0x08;
     d->config[PCI_LATENCY_TIMER] = 0x10;
     /* d->config[PCI_CAPABILITY_LIST] = 0x80; */
+
+    /*
+     * kMacRISCPCIAddressSelect uses the upper 16 bits for 256 MiB coarse
+     * windows and the lower 16 bits for 16 MiB fine windows.  Select the
+     * real UniNorth AGP windows at 0x90000000 and 0xf1000000.
+     */
+    pci_set_long(d->config + 0x48, 0x02000002);
 }
 
 static void u3_agp_pci_host_realize(PCIDevice *d, Error **errp)

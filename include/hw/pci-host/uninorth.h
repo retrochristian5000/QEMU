@@ -53,6 +53,7 @@ struct UNINHostState {
     qemu_irq irqs[4];
     MemoryRegion pci_mmio;
     MemoryRegion pci_hole;
+    MemoryRegion pci_hole_high;
     MemoryRegion pci_io;
 };
 
