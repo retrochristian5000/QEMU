@@ -515,6 +515,10 @@ static void ppc_core99_init(MachineState *machine)
             usb_create_simple(usb_bus, "usb-kbd");
             usb_create_simple(usb_bus, "usb-mouse");
         }
+
+        if (sawtooth_topology) {
+            pci_create_simple(south_pci_bus, PCI_DEVFN(9, 0), "pci-ohci");
+        }
     }
 
     if (!graphic_width) {
