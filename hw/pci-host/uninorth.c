@@ -129,6 +129,10 @@ static void pci_unin_main_realize(DeviceState *dev, Error **errp)
 
     pci_create_simple(h->bus, PCI_DEVFN(11, 0), "uni-north-pci");
 
+    /* Real UniNorth main PCI fine memory window. */
+    memory_region_add_subregion(get_system_memory(), 0xf3000000,
+                                &s->pci_hole_high);
+
     /*
      * DEC 21154 bridge was unused for many years, this comment is
      * a placeholder for whoever wishes to resurrect it
@@ -156,6 +160,9 @@ static void pci_unin_main_init(Object *obj)
     memory_region_init_alias(&s->pci_hole, OBJECT(s),
                              "unin-pci-hole", &s->pci_mmio,
                              0x80000000ULL, 0x10000000ULL);
+    memory_region_init_alias(&s->pci_hole_high, OBJECT(s),
+                             "unin-pci-hole-high", &s->pci_mmio,
+                             0xf3000000ULL, 0x01000000ULL);
 
     sysbus_init_mmio(sbd, &h->conf_mem);
     sysbus_init_mmio(sbd, &h->data_mem);
@@ -285,6 +292,12 @@ static void pci_unin_internal_realize(DeviceState *dev, Error **errp)
                                    PCI_DEVFN(11, 0), 4, TYPE_PCI_BUS);
 
     pci_create_simple(h->bus, PCI_DEVFN(11, 0), "uni-north-internal-pci");
+
+    /* Real UniNorth internal PCI memory and I/O windows. */
+    memory_region_add_subregion(get_system_memory(), 0xf5000000,
+                                &s->pci_hole);
+    memory_region_add_subregion(get_system_memory(), 0xf4000000,
+                                &s->pci_io);
 }
 
 static void pci_unin_internal_init(Object *obj)
@@ -298,6 +311,14 @@ static void pci_unin_internal_init(Object *obj)
                           obj, "unin-pci-conf-idx", 0x1000);
     memory_region_init_io(&h->data_mem, OBJECT(h), &pci_host_data_le_ops,
                           obj, "unin-pci-conf-data", 0x1000);
+
+    memory_region_init(&s->pci_mmio, OBJECT(s), "unin-internal-pci-mmio",
+                       0x100000000ULL);
+    memory_region_init_io(&s->pci_io, OBJECT(s), &unassigned_io_ops, obj,
+                          "unin-internal-pci-isa-mmio", 0x00800000);
+    memory_region_init_alias(&s->pci_hole, OBJECT(s),
+                             "unin-internal-pci-hole", &s->pci_mmio,
+                             0xf5000000ULL, 0x01000000ULL);
 
     sysbus_init_mmio(sbd, &h->conf_mem);
     sysbus_init_mmio(sbd, &h->data_mem);
@@ -327,13 +348,6 @@ static void unin_agp_pci_host_realize(PCIDevice *d, Error **errp)
     d->config[PCI_CACHE_LINE_SIZE] = 0x08;
     d->config[PCI_LATENCY_TIMER] = 0x10;
     /* d->config[PCI_CAPABILITY_LIST] = 0x80; */
-
-    /*
-     * kMacRISCPCIAddressSelect uses the upper 16 bits for 256 MiB coarse
-     * windows and the lower 16 bits for 16 MiB fine windows.  Select the
-     * real UniNorth AGP windows at 0x90000000 and 0xf1000000.
-     */
-    pci_set_long(d->config + 0x48, 0x02000002);
 }
 
 static void u3_agp_pci_host_realize(PCIDevice *d, Error **errp)
