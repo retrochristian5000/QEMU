@@ -50,6 +50,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "chardev/char.h"
 #include "qom/compat-properties.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
@@ -164,6 +165,7 @@ static void ppc_core99_init(MachineState *machine)
     bool sawtooth_topology =
         object_dynamic_cast(OBJECT(machine),
                             MACHINE_TYPE_NAME("powermac3_1")) != NULL;
+    Chardev *modem_chr = NULL;
     Object *macio;
     MACIOIDEState *macio_ide;
     BusState *adb_bus;
@@ -426,8 +428,18 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_bit(dev, "has-pmu", has_pmu);
     qdev_prop_set_bit(dev, "has-adb", has_adb);
 
+    /*
+     * Sawtooth's internal modem is attached to KeyLargo SCC channel A.
+     * Model the installed module as a default device so -nodefaults leaves
+     * channel A free for an explicitly supplied serial backend.
+     */
+    if (sawtooth_topology && defaults_enabled()) {
+        modem_chr = qemu_chardev_new(NULL, "chardev-modem", NULL, NULL,
+                                     &error_fatal);
+    }
+
     dev = DEVICE(object_resolve_path_component(macio, "escc"));
-    qdev_prop_set_chr(dev, "chrA", serial_hd(0));
+    qdev_prop_set_chr(dev, "chrA", modem_chr ? modem_chr : serial_hd(0));
     qdev_prop_set_chr(dev, "chrB", serial_hd(1));
 
     pci_realize_and_unref(PCI_DEVICE(macio), south_pci_bus, &error_fatal);
