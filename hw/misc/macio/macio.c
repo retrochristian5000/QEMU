@@ -30,6 +30,7 @@
 #include "hw/pci/pci.h"
 #include "hw/ppc/mac_dbdma.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev.h"
 #include "migration/vmstate.h"
 #include "hw/char/escc.h"
 #include "hw/misc/macio/macio.h"
@@ -37,6 +38,28 @@
 #include "trace.h"
 
 #define ESCC_CLOCK 3686400
+
+#define KEYLARGO_FCR_BASE  0x38
+#define KEYLARGO_FCR_SIZE  0x14
+
+#define KL_FCR0_CHOOSE_SCCA       (1U << 1)
+#define KL_FCR0_RESET_SCC         (1U << 3)
+#define KL_FCR0_SCCA_ENABLE       (1U << 4)
+#define KL_FCR0_SCCB_ENABLE       (1U << 5)
+#define KL_FCR0_SCC_CELL_ENABLE   (1U << 6)
+#define KL_FCR0_USB0_CELL_ENABLE  (1U << 20)
+#define KL_FCR0_USB1_CELL_ENABLE  (1U << 24)
+
+#define KL_FCR1_EIDE0_ENABLE      (1U << 23)
+#define KL_FCR1_EIDE0_RESET_N     (1U << 24)
+#define KL_FCR1_EIDE1_ENABLE      (1U << 26)
+#define KL_FCR1_EIDE1_RESET_N     (1U << 27)
+
+#define KL_FCR2_IOBUS_ENABLE      (1U << 1)
+#define KL_FCR2_MPIC_ENABLE       (1U << 17)
+
+#define KL_FCR3_TIMER_CLK18_ENABLE (1U << 12)
+#define KL_FCR3_VIA_CLK16_ENABLE   (1U << 15)
 
 /* Note: this code is strongly inspired by the corresponding code in PearPC */
 
@@ -259,6 +282,86 @@ static const MemoryRegionOps timer_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static void keylargo_fcr_set_defaults(NewWorldMacIOState *ns)
+{
+    /*
+     * Open Firmware normally leaves the cells needed by the booted machine
+     * running.  Match the functions currently exposed by this KeyLargo model
+     * so Tiger and Linux see a coherent register state before they
+     * begin their own power-management sequencing.
+     */
+    ns->fcr[0] = KL_FCR0_CHOOSE_SCCA |
+                 KL_FCR0_SCCA_ENABLE |
+                 KL_FCR0_SCCB_ENABLE |
+                 KL_FCR0_SCC_CELL_ENABLE |
+                 KL_FCR0_USB0_CELL_ENABLE |
+                 KL_FCR0_USB1_CELL_ENABLE;
+    /*
+     * QEMU currently exposes two KeyLargo IDE channels.  Leave the third
+     * UltraIDE cell disabled until that controller is modeled.
+     */
+    ns->fcr[1] = KL_FCR1_EIDE0_ENABLE |
+                 KL_FCR1_EIDE0_RESET_N |
+                 KL_FCR1_EIDE1_ENABLE |
+                 KL_FCR1_EIDE1_RESET_N;
+    ns->fcr[2] = KL_FCR2_IOBUS_ENABLE | KL_FCR2_MPIC_ENABLE;
+    ns->fcr[3] = KL_FCR3_TIMER_CLK18_ENABLE | KL_FCR3_VIA_CLK16_ENABLE;
+    ns->fcr[4] = 0;
+}
+
+static uint64_t keylargo_fcr_read(void *opaque, hwaddr addr, unsigned size)
+{
+    NewWorldMacIOState *ns = opaque;
+    unsigned reg = addr >> 2;
+
+    if (reg >= ARRAY_SIZE(ns->fcr)) {
+        return 0;
+    }
+
+    return ns->fcr[reg];
+}
+
+static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
+                               unsigned size)
+{
+    NewWorldMacIOState *ns = opaque;
+    MacIOState *s = MACIO(ns);
+    unsigned reg = addr >> 2;
+    uint32_t old;
+
+    if (reg >= ARRAY_SIZE(ns->fcr)) {
+        return;
+    }
+
+    old = ns->fcr[reg];
+    ns->fcr[reg] = value;
+
+    /*
+     * The SCC reset bit is one FCR side effect QEMU can model directly
+     * without guessing at unimplemented KeyLargo cells.  USB/IDE/audio
+     * power bits are retained faithfully for guest readback; their device
+     * clock-gating hooks can be connected as those cells are modeled.
+     */
+    if (reg == 0 && (value & KL_FCR0_RESET_SCC) &&
+        !(old & KL_FCR0_RESET_SCC)) {
+        device_cold_reset(DEVICE(&s->escc));
+    }
+}
+
+static const MemoryRegionOps keylargo_fcr_ops = {
+    .read = keylargo_fcr_read,
+    .write = keylargo_fcr_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+    .impl = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+};
+
 static void macio_newworld_realize(PCIDevice *d, Error **errp)
 {
     MacIOState *s = MACIO(d);
@@ -269,6 +372,13 @@ static void macio_newworld_realize(PCIDevice *d, Error **errp)
 
     if (!macio_common_realize(d, errp)) {
         return;
+    }
+
+    if (ns->has_keylargo_fcr) {
+        keylargo_fcr_set_defaults(ns);
+        memory_region_init_io(&ns->fcr_mem, OBJECT(ns), &keylargo_fcr_ops, ns,
+                              "keylargo-fcr", KEYLARGO_FCR_SIZE);
+        memory_region_add_subregion(&s->bar, KEYLARGO_FCR_BASE, &ns->fcr_mem);
     }
 
     /* OpenPIC */
@@ -397,10 +507,11 @@ static void macio_oldworld_class_init(ObjectClass *oc, const void *data)
 
 static const VMStateDescription vmstate_macio_newworld = {
     .name = "macio-newworld",
-    .version_id = 0,
+    .version_id = 1,
     .minimum_version_id = 0,
     .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj.parent, NewWorldMacIOState),
+        VMSTATE_UINT32_ARRAY_V(fcr, NewWorldMacIOState, 5, 1),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -408,6 +519,8 @@ static const VMStateDescription vmstate_macio_newworld = {
 static const Property macio_newworld_properties[] = {
     DEFINE_PROP_BOOL("has-pmu", NewWorldMacIOState, has_pmu, false),
     DEFINE_PROP_BOOL("has-adb", NewWorldMacIOState, has_adb, false),
+    DEFINE_PROP_BOOL("keylargo-fcr", NewWorldMacIOState, has_keylargo_fcr,
+                     true),
 };
 
 static void macio_newworld_class_init(ObjectClass *oc, const void *data)
