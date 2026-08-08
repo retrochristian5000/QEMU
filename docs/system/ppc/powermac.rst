@@ -225,6 +225,64 @@ This diagram describes the current QEMU implementation.  In particular, the
 DEC 21154 label should not yet be read as a settled historical identification
 of the physical Sawtooth bridge.
 
+Physical address map
+--------------------
+
+The CPU-visible PCI apertures follow the ``ranges`` properties captured from
+a PowerMac3,1 Open Firmware device tree.  Main memory may extend up to 2 GiB;
+at that maximum size it ends at ``0x7fffffff``, immediately below the first
+PCI aperture.
+
+.. list-table:: PowerMac3,1 principal memory ranges
+   :header-rows: 1
+   :widths: 24 20 56
+
+   * - CPU address range
+     - Size
+     - Use
+   * - ``0x00000000`` through RAM end
+     - Up to 2 GiB
+     - Main memory
+   * - ``0x80000000-0x8fffffff``
+     - 256 MiB
+     - Main PCI coarse memory window
+   * - ``0x90000000-0x9fffffff``
+     - 256 MiB
+     - AGP coarse memory window
+   * - ``0xf0000000-0xf07fffff``
+     - 8 MiB
+     - AGP PCI I/O window
+   * - ``0xf0800000`` and ``0xf0c00000``
+     - 4 KiB each
+     - AGP configuration index and data windows
+   * - ``0xf1000000-0xf1ffffff``
+     - 16 MiB
+     - AGP fine memory window
+   * - ``0xf2000000-0xf27fffff``
+     - 8 MiB
+     - Main PCI I/O window
+   * - ``0xf2800000`` and ``0xf2c00000``
+     - 4 KiB each
+     - Main PCI configuration index and data windows
+   * - ``0xf3000000-0xf3ffffff``
+     - 16 MiB
+     - Main PCI fine memory window
+   * - ``0xf4000000-0xf47fffff``
+     - 8 MiB
+     - Internal PCI I/O window
+   * - ``0xf4800000`` and ``0xf4c00000``
+     - 4 KiB each
+     - Internal PCI configuration index and data windows
+   * - ``0xf5000000-0xf5ffffff``
+     - 16 MiB
+     - Internal PCI memory window
+
+QEMU's synthetic ``fw_cfg`` interface remains at ``0xf0000510`` (control)
+and ``0xf0000512`` (data), as required by the PowerPC OpenBIOS firmware ABI.
+For ``powermac3_1`` these registers occupy PCI I/O ports ``0x510-0x512``
+inside the AGP I/O window.  They are not independent mappings overlapping the
+UniNorth aperture at the root of the CPU address space.
+
 Accuracy notes and open work
 ----------------------------
 

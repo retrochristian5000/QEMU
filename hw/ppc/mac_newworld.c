@@ -584,8 +584,26 @@ static void ppc_core99_init(MachineState *machine)
     object_property_add_child(OBJECT(machine), TYPE_FW_CFG, OBJECT(fw_cfg));
     s = SYS_BUS_DEVICE(dev);
     sysbus_realize_and_unref(s, &error_fatal);
-    sysbus_mmio_map(s, 0, CFG_ADDR);
-    sysbus_mmio_map(s, 1, CFG_ADDR + 2);
+    if (sawtooth_topology) {
+        UNINHostState *agp =
+            UNI_NORTH_AGP_HOST_BRIDGE(uninorth_agp_dev);
+        hwaddr fw_cfg_offset = CFG_ADDR - UNINORTH_AGP_IO_BASE;
+
+        /*
+         * OpenBIOS has always used 0xf0000510 for this QEMU-only device.
+         * On a PowerMac3,1 that address is PCI I/O port 0x510 in the
+         * UniNorth AGP aperture, so make fw_cfg a child of that aperture
+         * rather than an overlapping region in the CPU's root map.
+         */
+        g_assert(fw_cfg_offset + 2 < UNINORTH_AGP_IO_SIZE);
+        memory_region_add_subregion(&agp->pci_io, fw_cfg_offset,
+                                    sysbus_mmio_get_region(s, 0));
+        memory_region_add_subregion(&agp->pci_io, fw_cfg_offset + 2,
+                                    sysbus_mmio_get_region(s, 1));
+    } else {
+        sysbus_mmio_map(s, 0, CFG_ADDR);
+        sysbus_mmio_map(s, 1, CFG_ADDR + 2);
+    }
 
     fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, (uint16_t)machine->smp.cpus);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)machine->smp.max_cpus);

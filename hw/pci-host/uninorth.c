@@ -247,7 +247,7 @@ static void pci_unin_agp_realize(DeviceState *dev, Error **errp)
                                 &s->pci_hole);
     memory_region_add_subregion(get_system_memory(), 0xf1000000,
                                 &s->pci_hole_high);
-    memory_region_add_subregion(get_system_memory(), 0xf0000000,
+    memory_region_add_subregion(get_system_memory(), UNINORTH_AGP_IO_BASE,
                                 &s->pci_io);
 }
 
@@ -272,7 +272,7 @@ static void pci_unin_agp_init(Object *obj)
     memory_region_init(&s->pci_mmio, OBJECT(s), "unin-agp-mmio",
                        0x100000000ULL);
     memory_region_init_io(&s->pci_io, OBJECT(s), &unassigned_io_ops, obj,
-                          "unin-agp-isa-mmio", 0x00800000);
+                          "unin-agp-isa-mmio", UNINORTH_AGP_IO_SIZE);
 
     memory_region_init_alias(&s->pci_hole, OBJECT(s),
                              "unin-agp-hole", &s->pci_mmio,

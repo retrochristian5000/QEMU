@@ -31,6 +31,10 @@
 /* UniNorth version */
 #define UNINORTH_VERSION_10A    0x7
 
+/* PowerMac3,1 UniNorth AGP PCI I/O range. */
+#define UNINORTH_AGP_IO_BASE    0xf0000000ULL
+#define UNINORTH_AGP_IO_SIZE    0x00800000ULL
+
 #define TYPE_UNI_NORTH_PCI_HOST_BRIDGE "uni-north-pci-pcihost"
 #define TYPE_UNI_NORTH_AGP_HOST_BRIDGE "uni-north-agp-pcihost"
 #define TYPE_UNI_NORTH_INTERNAL_PCI_HOST_BRIDGE "uni-north-internal-pci-pcihost"

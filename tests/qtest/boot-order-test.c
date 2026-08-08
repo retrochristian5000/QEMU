@@ -130,6 +130,42 @@ static void test_pmac_newworld_boot_order(void)
     test_boot_orders("mac99", read_boot_order_pmac, test_cases_fw_cfg);
 }
 
+static void test_pmac_powermac3_1_memory_map(void)
+{
+    static const char agp_io[] =
+        "    00000000f0000000-00000000f07fffff (prio 0, i/o): "
+        "unin-agp-isa-mmio";
+    static const char fw_cfg_ctl[] =
+        "      00000000f0000510-00000000f0000511 (prio 0, i/o): "
+        "fwcfg.ctl";
+    static const char fw_cfg_data[] =
+        "      00000000f0000512-00000000f0000512 (prio 0, i/o): "
+        "fwcfg.data";
+    QTestState *qts;
+    g_autofree char *mtree = NULL;
+    const char *line;
+
+    if (!qtest_has_machine("powermac3_1")) {
+        g_test_skip("Machine is not available");
+        return;
+    }
+
+    /* Two GiB ends immediately below Sawtooth's 0x80000000 PCI window. */
+    qts = qtest_init("-nodefaults -M powermac3_1 -m 2G -boot d");
+    g_assert_cmphex(read_boot_order_pmac(qts), ==, 'd');
+
+    mtree = qtest_hmp(qts, "info mtree");
+    line = strstr(mtree, agp_io);
+    g_assert_nonnull(line);
+    line = strchr(line, '\n');
+    g_assert_nonnull(line);
+    g_assert_true(g_str_has_prefix(++line, fw_cfg_ctl));
+    line = strchr(line, '\n');
+    g_assert_nonnull(line);
+    g_assert_true(g_str_has_prefix(++line, fw_cfg_data));
+    qtest_quit(qts);
+}
+
 static uint64_t read_boot_order_sun4m(QTestState *qts)
 {
     g_autoptr(QFWCFG) fw_cfg = mm_fw_cfg_init(qts, 0xd00000510ULL);
@@ -167,6 +203,8 @@ int main(int argc, char *argv[])
                        test_pmac_oldworld_boot_order);
         qtest_add_func("boot-order/pmac_newworld",
                        test_pmac_newworld_boot_order);
+        qtest_add_func("boot-order/powermac3_1-memory-map",
+                       test_pmac_powermac3_1_memory_map);
     } else if (strcmp(arch, "sparc") == 0) {
         qtest_add_func("boot-order/sun4m", test_sun4m_boot_order);
     } else if (strcmp(arch, "sparc64") == 0) {
