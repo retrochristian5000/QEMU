@@ -151,10 +151,12 @@ Hardware status
        UniNorth PCI interrupt outputs.
      - Modeled
    * - USB
-     - Two independent KeyLargo USB root hubs
-     - Two PCI OHCI controllers, each configured for two ports.  USB keyboard
-       and mouse are supplied when ADB is not selected.
-     - Modeled
+     - KeyLargo USB host controllers/root hubs
+     - Two PCI OHCI controllers, each configured for two ports, represent the
+       two USB host paths.  USB keyboard and mouse are supplied when ADB is not
+       selected.  Exact PCI-function and Open Firmware node layout is still
+       being checked against PowerMac3,1 evidence.
+     - Partial
    * - Ethernet
      - Built-in UniNorth/GEM-family Ethernet function
      - QEMU ``sungem`` model, whose implementation covers the GEM controller
@@ -163,9 +165,11 @@ Hardware status
      - Under validation
    * - IDE / ATA
      - KeyLargo hard-disk and removable-media ATA channels
-     - Two PMAC IDE interfaces are currently exposed.  The additional
-       UltraDMA/ATA path present in the hardware family is not yet modeled.
-     - Partial
+     - Two PMAC IDE interfaces are currently exposed.  Their mapping to the
+       Sawtooth UltraDMA and EIDE channels still needs to be checked directly;
+       the generic Core99 comment about a third controller is not treated as
+       proof that PowerMac3,1 itself requires a third channel.
+     - Under validation
    * - Internal modem path
      - Modem connected through the KeyLargo serial/communications path
      - The default Sawtooth configuration attaches a modem chardev to SCC
@@ -234,8 +238,9 @@ systems:
   Firmware device tree;
 * implement the UniNorth GART and additional AGP behavior rather than treating
   the AGP side only as a PCI-compatible bus with fixed apertures;
-* model the missing ATA/UltraDMA channel and its KeyLargo feature-control side
-  effects;
+* map QEMU's two PMAC IDE interfaces to the Sawtooth UltraDMA and EIDE channels
+  before deciding whether any additional controller belongs in this historical
+  profile;
 * connect KeyLargo and UniNorth power-control bits to actual USB, IDE, PCI and
   sleep/wake behavior;
 * add FireWire, audio and other missing built-in devices where QEMU has or can
@@ -272,16 +277,19 @@ Historical references
 ---------------------
 
 The principal hardware reference for the Sawtooth profile is Apple's original
-Power Mac G4 developer documentation.  Archived copies document the 33 MHz
-secondary PCI expansion bus and its power-managed bridge, the 32-bit 66 MHz
-AGP-2X slot, and the role of Open Firmware in configuring UniNorth and
-KeyLargo and constructing the device tree:
+Power Mac G4 developer documentation.  Archived copies document the G4 CPU,
+the 33 MHz secondary PCI expansion bus and its power-managed bridge, the
+32-bit 66 MHz AGP-2X slot, and the Open Firmware boot process and device tree:
 
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/Original_PowerMac_G4/G4Rev2-16.html
 * https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/Original_PowerMac_G4/G4Rev2-77.html
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/Original_PowerMac_G4/G4Rev2-81.html
 * https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/Original_PowerMac_G4/G4Rev2-89.html
-* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/G4Rev3-21.html
-* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/G4Rev3-84.html
 
-These references describe the hardware family and are useful controls, but
-later Power Mac G4 revisions must not be silently treated as evidence for the
+A later UniNorth Power Mac G4 developer note is also useful as a control for
+features shared across the family, such as the UniNorth AGP GART:
+
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/G4Rev3-21.html
+
+Later Power Mac G4 revisions must not be silently treated as evidence for the
 1999 PowerMac3,1 when their logic-board design changed.
