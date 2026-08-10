@@ -60,13 +60,13 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167)
      * almost any valid processor, but this is now deprecated in 10.2. Emit
      * a warning if anyone tries to use a deprecated CPU.
      *
-     * The Weitek 4167 variant is deliberately stricter: the coprocessor was
-     * designed for the 80486 local bus, so do not silently pair it with a
+     * Weitek 4167 configurations are deliberately stricter: the coprocessor
+     * was designed for the 80486 local bus, so do not silently pair it with a
      * different CPU generation.
      */
     if (with_weitek4167 &&
         strcmp(machine->cpu_type, X86_CPU_TYPE_NAME("486"))) {
-        error_report("isapc-weitek requires -cpu 486");
+        error_report("Weitek 4167 machine requires -cpu 486");
         exit(1);
     }
 
@@ -89,7 +89,7 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167)
          * code until that remapping is modeled explicitly.
          */
         if (machine->ram_size > WEITEK4167_MMIO_BASE) {
-            error_report("Too much memory for isapc-weitek: %" PRId64
+            error_report("Too much memory for Weitek 4167 machine: %" PRId64
                          " MiB, maximum 3072 MiB",
                          machine->ram_size / MiB);
             exit(1);
@@ -220,6 +220,17 @@ static void pc_init_isa_weitek(MachineState *machine)
     pc_init_isa_common(machine, true);
 }
 
+static void dell_system_e_init(MachineState *machine)
+{
+    /*
+     * The real 425E/433E are EISA systems. Until an EISA PC bus exists in
+     * QEMU, reuse the legacy AT-compatible core for the motherboard devices
+     * that are already modeled. The Weitek option is installed in these
+     * profiles so they provide a historically grounded 4167 test target.
+     */
+    pc_init_isa_common(machine, true);
+}
+
 static void isapc_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
@@ -246,7 +257,31 @@ static void isapc_weitek_machine_options(MachineClass *m)
     m->desc = "ISA-only 486 PC with Weitek 4167 coprocessor";
 }
 
+static void dell_system_e_machine_options(MachineClass *m)
+{
+    isapc_machine_options(m);
+
+    /* Period Dell advertisements commonly configured these systems with 4 MB. */
+    m->default_ram_size = 4 * MiB;
+}
+
+static void dell_system_425e_machine_options(MachineClass *m)
+{
+    dell_system_e_machine_options(m);
+    m->desc = "Dell System 425E (25 MHz i486, Weitek 4167; EISA TODO)";
+}
+
+static void dell_system_433e_machine_options(MachineClass *m)
+{
+    dell_system_e_machine_options(m);
+    m->desc = "Dell System 433E (33 MHz i486, Weitek 4167; EISA TODO)";
+}
+
 DEFINE_PC_MACHINE(isapc, "isapc", pc_init_isa,
                   isapc_machine_options);
 DEFINE_PC_MACHINE(isapc_weitek, "isapc-weitek", pc_init_isa_weitek,
                   isapc_weitek_machine_options);
+DEFINE_PC_MACHINE(dell_system_425e, "dell-system-425e", dell_system_e_init,
+                  dell_system_425e_machine_options);
+DEFINE_PC_MACHINE(dell_system_433e, "dell-system-433e", dell_system_e_init,
+                  dell_system_433e_machine_options);
