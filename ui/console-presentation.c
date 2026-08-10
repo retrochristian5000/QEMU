@@ -92,7 +92,6 @@ DisplaySurface *qemu_console_get_display_surface(QemuConsole *con)
 
     if (qemu_console_has_fixed_display_face(con) &&
         con->scanout.kind == SCANOUT_SURFACE) {
-        qemu_console_update_display_surface(con);
         return con->display_surface;
     }
 
