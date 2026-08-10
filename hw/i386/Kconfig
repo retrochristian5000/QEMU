@@ -95,6 +95,7 @@ config ISAPC
     depends on I386
     imply VGA_ISA
     select ISA_BUS
+    select EISA_BUS
     select OR_IRQ
     select PC
     select IDE_ISA
