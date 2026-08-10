@@ -97,6 +97,7 @@ Emulated Devices
    devices/keyboard.rst
    devices/net.rst
    devices/nvme.rst
+   devices/pcmcia-pc-card.rst
    devices/scsi/index.rst
    devices/usb-u2f.rst
    devices/usb.rst
