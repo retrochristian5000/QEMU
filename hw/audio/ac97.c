@@ -18,6 +18,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "hw/audio/ac97-codec.h"
 #include "hw/audio/model.h"
 #include "qemu/audio.h"
 #include "hw/pci/pci_device.h"
@@ -89,18 +90,6 @@
 #define TYPE_AC97 "AC97"
 OBJECT_DECLARE_SIMPLE_TYPE(AC97LinkState, AC97)
 
-#define REC_MASK 7
-enum {
-    REC_MIC = 0,
-    REC_CD,
-    REC_VIDEO,
-    REC_AUX,
-    REC_LINE_IN,
-    REC_STEREO_MIX,
-    REC_MONO_MIX,
-    REC_PHONE
-};
-
 typedef struct BD {
     uint32_t addr;
     uint32_t ctl_len;
@@ -126,6 +115,7 @@ struct AC97LinkState {
     uint32_t cas;
     uint32_t last_samp;
     AC97BusMasterRegs bm_regs[3];
+    /* Migration ABI: keep the historical byte-oriented codec image. */
     uint8_t mixer_data[256];
     SWVoiceIn *voice_pi;
     SWVoiceOut *voice_po;
@@ -182,6 +172,22 @@ enum {
 static void po_callback(void *opaque, int free);
 static void pi_callback(void *opaque, int avail);
 static void mc_callback(void *opaque, int avail);
+
+static AC97Codec ac97_mixer_codec(AC97LinkState *s)
+{
+    AC97Codec codec;
+
+    ac97_codec_init_le_bytes(&codec, s->mixer_data, sizeof(s->mixer_data),
+                             &ac97_codec_profile_stac9700, 0);
+    return codec;
+}
+
+static uint16_t mixer_load(AC97LinkState *s, uint32_t reg)
+{
+    AC97Codec codec = ac97_mixer_codec(s);
+
+    return ac97_codec_read(&codec, reg);
+}
 
 static void fetch_bd(AC97LinkState *s, AC97BusMasterRegs *r)
 {
@@ -278,32 +284,6 @@ static void reset_bm_regs(AC97LinkState *s, AC97BusMasterRegs *r)
 
     voice_set_active(s, r - s->bm_regs, 0);
     memset(s->silence, 0, sizeof(s->silence));
-}
-
-static void mixer_store(AC97LinkState *s, uint32_t i, uint16_t v)
-{
-    if (i + 2 > sizeof(s->mixer_data)) {
-        dolog("mixer_store: index %d out of bounds %zd",
-              i, sizeof(s->mixer_data));
-        return;
-    }
-
-    s->mixer_data[i + 0] = v & 0xff;
-    s->mixer_data[i + 1] = v >> 8;
-}
-
-static uint16_t mixer_load(AC97LinkState *s, uint32_t i)
-{
-    uint16_t val = 0xffff;
-
-    if (i + 2 > sizeof(s->mixer_data)) {
-        dolog("mixer_load: index %d out of bounds %zd",
-              i, sizeof(s->mixer_data));
-    } else {
-        val = s->mixer_data[i + 0] | (s->mixer_data[i + 1] << 8);
-    }
-
-    return val;
 }
 
 static void open_voice(AC97LinkState *s, int index, int freq)
@@ -430,77 +410,35 @@ static void update_volume_in(AC97LinkState *s)
     audio_be_set_volume_in_lr(s->audio_be, s->voice_pi, mute, lvol, rvol);
 }
 
-static void set_volume(AC97LinkState *s, int index, uint32_t val)
-{
-    switch (index) {
-    case AC97_Master_Volume_Mute:
-        val &= 0xbf3f;
-        mixer_store(s, index, val);
-        update_combined_volume_out(s);
-        break;
-    case AC97_PCM_Out_Volume_Mute:
-        val &= 0x9f1f;
-        mixer_store(s, index, val);
-        update_combined_volume_out(s);
-        break;
-    case AC97_Record_Gain_Mute:
-        val &= 0x8f0f;
-        mixer_store(s, index, val);
-        update_volume_in(s);
-        break;
-    }
-}
-
-static void record_select(AC97LinkState *s, uint32_t val)
-{
-    uint8_t rs = val & REC_MASK;
-    uint8_t ls = (val >> 8) & REC_MASK;
-    mixer_store(s, AC97_Record_Select, rs | (ls << 8));
-}
-
 static void mixer_reset(AC97LinkState *s)
 {
-    uint8_t active[LAST_INDEX];
+    AC97Codec codec = ac97_mixer_codec(s);
+    uint8_t active[LAST_INDEX] = { 0 };
 
     dolog("mixer_reset");
-    memset(s->mixer_data, 0, sizeof(s->mixer_data));
-    memset(active, 0, sizeof(active));
-    mixer_store(s, AC97_Reset, 0x0000); /* 6940 */
-    mixer_store(s, AC97_Headphone_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Master_Volume_Mono_Mute, 0x0000);
-    mixer_store(s, AC97_Master_Tone_RL, 0x0000);
-    mixer_store(s, AC97_PC_BEEP_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Phone_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Mic_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Line_In_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_CD_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Video_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Aux_Volume_Mute, 0x0000);
-    mixer_store(s, AC97_Record_Gain_Mic_Mute, 0x0000);
-    mixer_store(s, AC97_General_Purpose, 0x0000);
-    mixer_store(s, AC97_3D_Control, 0x0000);
-    mixer_store(s, AC97_Powerdown_Ctrl_Stat, 0x000f);
-
-    /*
-     * Sigmatel 9700 (STAC9700)
-     */
-    mixer_store(s, AC97_Vendor_ID1, 0x8384);
-    mixer_store(s, AC97_Vendor_ID2, 0x7600); /* 7608 */
-
-    mixer_store(s, AC97_Extended_Audio_ID, 0x0809);
-    mixer_store(s, AC97_Extended_Audio_Ctrl_Stat, 0x0009);
-    mixer_store(s, AC97_PCM_Front_DAC_Rate, 0xbb80);
-    mixer_store(s, AC97_PCM_Surround_DAC_Rate, 0xbb80);
-    mixer_store(s, AC97_PCM_LFE_DAC_Rate, 0xbb80);
-    mixer_store(s, AC97_PCM_LR_ADC_Rate, 0xbb80);
-    mixer_store(s, AC97_MIC_ADC_Rate, 0xbb80);
-
-    record_select(s, 0);
-    set_volume(s, AC97_Master_Volume_Mute, 0x8000);
-    set_volume(s, AC97_PCM_Out_Volume_Mute, 0x8808);
-    set_volume(s, AC97_Record_Gain_Mute, 0x8808);
-
+    ac97_codec_reset(&codec);
+    update_combined_volume_out(s);
+    update_volume_in(s);
     reset_voices(s, active);
+}
+
+static void apply_codec_events(AC97LinkState *s, uint32_t events)
+{
+    if (events & AC97_CODEC_EVENT_VOLUME_OUT) {
+        update_combined_volume_out(s);
+    }
+    if (events & AC97_CODEC_EVENT_VOLUME_IN) {
+        update_volume_in(s);
+    }
+    if (events & AC97_CODEC_EVENT_FRONT_DAC_RATE) {
+        open_voice(s, PO_INDEX, mixer_load(s, AC97_PCM_Front_DAC_Rate));
+    }
+    if (events & AC97_CODEC_EVENT_LR_ADC_RATE) {
+        open_voice(s, PI_INDEX, mixer_load(s, AC97_PCM_LR_ADC_Rate));
+    }
+    if (events & AC97_CODEC_EVENT_MIC_ADC_RATE) {
+        open_voice(s, MC_INDEX, mixer_load(s, AC97_MIC_ADC_Rate));
+    }
 }
 
 /**
@@ -544,98 +482,17 @@ static void nam_writeb(void *opaque, uint32_t addr, uint32_t val)
 static void nam_writew(void *opaque, uint32_t addr, uint32_t val)
 {
     AC97LinkState *s = opaque;
+    AC97Codec codec = ac97_mixer_codec(s);
+    uint32_t events;
 
     s->cas = 0;
-    switch (addr) {
-    case AC97_Reset:
+    if (addr == AC97_Reset) {
         mixer_reset(s);
-        break;
-    case AC97_Powerdown_Ctrl_Stat:
-        val &= ~0x800f;
-        val |= mixer_load(s, addr) & 0xf;
-        mixer_store(s, addr, val);
-        break;
-    case AC97_PCM_Out_Volume_Mute:
-    case AC97_Master_Volume_Mute:
-    case AC97_Record_Gain_Mute:
-        set_volume(s, addr, val);
-        break;
-    case AC97_Record_Select:
-        record_select(s, val);
-        break;
-    case AC97_Vendor_ID1:
-    case AC97_Vendor_ID2:
-        dolog("Attempt to write vendor ID to 0x%x", val);
-        break;
-    case AC97_Extended_Audio_ID:
-        dolog("Attempt to write extended audio ID to 0x%x", val);
-        break;
-    case AC97_Extended_Audio_Ctrl_Stat:
-        if (!(val & EACS_VRA)) {
-            mixer_store(s, AC97_PCM_Front_DAC_Rate, 0xbb80);
-            mixer_store(s, AC97_PCM_LR_ADC_Rate,    0xbb80);
-            open_voice(s, PI_INDEX, 48000);
-            open_voice(s, PO_INDEX, 48000);
-        }
-        if (!(val & EACS_VRM)) {
-            mixer_store(s, AC97_MIC_ADC_Rate, 0xbb80);
-            open_voice(s, MC_INDEX, 48000);
-        }
-        dolog("Setting extended audio control to 0x%x", val);
-        mixer_store(s, AC97_Extended_Audio_Ctrl_Stat, val);
-        break;
-    case AC97_PCM_Front_DAC_Rate:
-        if (mixer_load(s, AC97_Extended_Audio_Ctrl_Stat) & EACS_VRA) {
-            mixer_store(s, addr, val);
-            dolog("Set front DAC rate to %d", val);
-            open_voice(s, PO_INDEX, val);
-        } else {
-            dolog("Attempt to set front DAC rate to %d, but VRA is not set",
-                  val);
-        }
-        break;
-    case AC97_MIC_ADC_Rate:
-        if (mixer_load(s, AC97_Extended_Audio_Ctrl_Stat) & EACS_VRM) {
-            mixer_store(s, addr, val);
-            dolog("Set MIC ADC rate to %d", val);
-            open_voice(s, MC_INDEX, val);
-        } else {
-            dolog("Attempt to set MIC ADC rate to %d, but VRM is not set",
-                  val);
-        }
-        break;
-    case AC97_PCM_LR_ADC_Rate:
-        if (mixer_load(s, AC97_Extended_Audio_Ctrl_Stat) & EACS_VRA) {
-            mixer_store(s, addr, val);
-            dolog("Set front LR ADC rate to %d", val);
-            open_voice(s, PI_INDEX, val);
-        } else {
-            dolog("Attempt to set LR ADC rate to %d, but VRA is not set",
-                  val);
-        }
-        break;
-    case AC97_Headphone_Volume_Mute:
-    case AC97_Master_Volume_Mono_Mute:
-    case AC97_Master_Tone_RL:
-    case AC97_PC_BEEP_Volume_Mute:
-    case AC97_Phone_Volume_Mute:
-    case AC97_Mic_Volume_Mute:
-    case AC97_Line_In_Volume_Mute:
-    case AC97_CD_Volume_Mute:
-    case AC97_Video_Volume_Mute:
-    case AC97_Aux_Volume_Mute:
-    case AC97_Record_Gain_Mic_Mute:
-    case AC97_General_Purpose:
-    case AC97_3D_Control:
-    case AC97_Sigmatel_Analog:
-    case AC97_Sigmatel_Dac2Invert:
-        /* None of the features in these regs are emulated, so they are RO */
-        break;
-    default:
-        dolog("U nam writew 0x%x <- 0x%x", addr, val);
-        mixer_store(s, addr, val);
-        break;
+        return;
     }
+
+    events = ac97_codec_write(&codec, addr, val);
+    apply_codec_events(s, events);
 }
 
 static void nam_writel(void *opaque, uint32_t addr, uint32_t val)
@@ -743,7 +600,7 @@ static uint32_t nabm_readl(void *opaque, uint32_t addr)
     case MC_BDBAR:
         r = &s->bm_regs[GET_BM(addr)];
         val = r->bdbar;
-        dolog("BMADDR[%d] -> 0x%x", GET_BM(addr), val);
+        dolog("BMADDR[%d] -> 0x%x (bdbar 0x%x)", GET_BM(addr), val, r->bdbar);
         break;
     case PI_CIV:
     case PO_CIV:
@@ -1061,7 +918,8 @@ static void transfer_audio(AC97LinkState *s, int index, int elapsed)
             }
 
             if (r->civ == r->lvi) {
-                dolog("Underrun civ (%d) == lvi (%d)", r->civ, r->lvi);
+                dolog("Underrun civ (%d) == lvi (%d)",
+                      r->civ, r->lvi);
 
                 new_sr |= SR_LVBCI | SR_DCH | SR_CELV;
                 stop = 1;
@@ -1116,13 +974,8 @@ static int ac97_post_load(void *opaque, int version_id)
     uint8_t active[LAST_INDEX];
     AC97LinkState *s = opaque;
 
-    record_select(s, mixer_load(s, AC97_Record_Select));
-    set_volume(s, AC97_Master_Volume_Mute,
-               mixer_load(s, AC97_Master_Volume_Mute));
-    set_volume(s, AC97_PCM_Out_Volume_Mute,
-               mixer_load(s, AC97_PCM_Out_Volume_Mute));
-    set_volume(s, AC97_Record_Gain_Mute,
-               mixer_load(s, AC97_Record_Gain_Mute));
+    update_combined_volume_out(s);
+    update_volume_in(s);
 
     active[PI_INDEX] = !!(s->bm_regs[PI_INDEX].cr & CR_RPBM);
     active[PO_INDEX] = !!(s->bm_regs[PO_INDEX].cr & CR_RPBM);
@@ -1242,7 +1095,6 @@ static void nabm_write(void *opaque, hwaddr addr, uint64_t val,
         break;
     }
 }
-
 
 static const MemoryRegionOps ac97_io_nabm_ops = {
     .read = nabm_read,
