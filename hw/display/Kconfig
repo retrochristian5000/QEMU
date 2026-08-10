@@ -27,6 +27,7 @@ config PL110
 
 config IMX6UL_LCDIF
     bool
+    select FRAMEBUFFER
 
 config SII9022
     bool
