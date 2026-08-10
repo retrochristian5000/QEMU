@@ -37,15 +37,20 @@ static bool led_color_name_is_valid(const char *color_name)
 
 void led_set_intensity(LEDState *s, unsigned intensity_percent)
 {
+    unsigned old_intensity = s->intensity_percent;
+
     if (intensity_percent > LED_INTENSITY_PERCENT_MAX) {
         intensity_percent = LED_INTENSITY_PERCENT_MAX;
     }
     trace_led_set_intensity(s->description, s->color, intensity_percent);
-    if (intensity_percent != s->intensity_percent) {
-        trace_led_change_intensity(s->description, s->color,
-                                   s->intensity_percent, intensity_percent);
+    if (intensity_percent == old_intensity) {
+        return;
     }
+
+    trace_led_change_intensity(s->description, s->color,
+                               old_intensity, intensity_percent);
     s->intensity_percent = intensity_percent;
+    notifier_list_notify(&s->change_notifiers, s);
 }
 
 unsigned led_get_intensity(LEDState *s)
@@ -61,6 +66,16 @@ bool led_is_emitting(LEDState *s)
 bool led_get_gpio_level(LEDState *s)
 {
     return s->gpio_level;
+}
+
+void led_add_change_notifier(LEDState *s, Notifier *notifier)
+{
+    notifier_list_add(&s->change_notifiers, notifier);
+}
+
+void led_remove_change_notifier(LEDState *s, Notifier *notifier)
+{
+    notifier_remove(notifier);
 }
 
 void led_set_state(LEDState *s, bool is_emitting)
@@ -90,6 +105,8 @@ static bool led_qom_get_gpio_level(Object *obj, Error **errp)
 static void led_init(Object *obj)
 {
     LEDState *s = LED(obj);
+
+    notifier_list_init(&s->change_notifiers);
 
     /*
      * These are observational properties.  Frontends and debugging tools can
