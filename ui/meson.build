@@ -35,6 +35,7 @@ endif
 libui_sources = files(
     'clipboard.c',
     'console.c',
+    'console-presentation.c',
     'cursor.c',
     'dmabuf.c',
     'display-surface.c',
