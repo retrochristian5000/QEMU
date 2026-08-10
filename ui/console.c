@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "standard-headers/linux/input-event-codes.h"
 #include "ui/console.h"
+#include "ui/console-presentation.h"
 #include "ui/vgafont.h"
 #include "hw/core/qdev.h"
 #include "qapi/error.h"
@@ -277,6 +278,7 @@ static void displaychangelistener_display_console(DisplayChangeListener *dcl,
         "This VM has no graphic display device.";
     static DisplaySurface *dummy;
     QemuConsole *con = dcl->con;
+    DisplaySurface *surface;
 
     if (!con || !console_compatible_with(con, dcl, errp)) {
         if (!dummy) {
@@ -289,8 +291,10 @@ static void displaychangelistener_display_console(DisplayChangeListener *dcl,
         return;
     }
 
-    dpy_gfx_create_texture(con, con->surface);
-    displaychangelistener_gfx_switch(dcl, con->surface,
+    qemu_console_update_display_surface(con);
+    surface = qemu_console_get_display_surface(con);
+    dpy_gfx_create_texture(con, surface);
+    displaychangelistener_gfx_switch(dcl, surface,
                                      con->scanout.kind == SCANOUT_SURFACE);
 
     if (con->scanout.kind == SCANOUT_DMABUF &&
@@ -436,6 +440,7 @@ qemu_console_finalize(Object *obj)
     assert(c->gl_block == 0);
     assert(qemu_co_queue_empty(&c->dump_queue));
     g_clear_pointer(&c->surface, qemu_free_displaysurface);
+    qemu_console_free_display_surface(c);
     g_clear_pointer(&c->gl_unblock_timer, timer_free);
     g_clear_pointer(&c->ui_timer, timer_free);
     QTAILQ_REMOVE(&consoles, c, next);
@@ -731,6 +736,7 @@ void qemu_console_update(QemuConsole *con, int x, int y, int w, int h)
 {
     DisplayState *s = con->ds;
     DisplayChangeListener *dcl;
+    DisplaySurface *display_surface;
     int width = qemu_console_get_width(con, x + w);
     int height = qemu_console_get_height(con, y + h);
 
@@ -740,6 +746,24 @@ void qemu_console_update(QemuConsole *con, int x, int y, int w, int h)
     y = MIN(y, height);
     w = MIN(w, width - x);
     h = MIN(h, height - y);
+
+    if (qemu_console_has_fixed_display_face(con) &&
+        con->scanout.kind == SCANOUT_SURFACE) {
+        qemu_console_update_display_surface(con);
+        display_surface = qemu_console_get_display_surface(con);
+        width = surface_width(display_surface);
+        height = surface_height(display_surface);
+        dpy_gfx_update_texture(con, display_surface, 0, 0, width, height);
+        QLIST_FOREACH(dcl, &s->listeners, next) {
+            if (con != dcl->con) {
+                continue;
+            }
+            if (dcl->ops->dpy_gfx_update) {
+                dcl->ops->dpy_gfx_update(dcl, 0, 0, width, height);
+            }
+        }
+        return;
+    }
 
     dpy_gfx_update_texture(con, con->surface, x, y, w, h);
     QLIST_FOREACH(dcl, &s->listeners, next) {
@@ -766,10 +790,14 @@ void qemu_console_set_surface(QemuConsole *con,
     static const char placeholder_msg[] = "Display output is not active.";
     DisplayState *s = con->ds;
     DisplaySurface *old_surface = con->surface;
+    DisplaySurface *old_display_surface;
     DisplaySurface *new_surface = surface;
+    DisplaySurface *new_display_surface;
     DisplayChangeListener *dcl;
     int width;
     int height;
+
+    old_display_surface = qemu_console_get_display_surface(con);
 
     if (!surface) {
         if (old_surface) {
@@ -787,14 +815,38 @@ void qemu_console_set_surface(QemuConsole *con,
 
     con->scanout.kind = SCANOUT_SURFACE;
     con->surface = new_surface;
-    dpy_gfx_create_texture(con, new_surface);
-    QLIST_FOREACH(dcl, &s->listeners, next) {
-        if (con != dcl->con) {
-            continue;
+    qemu_console_update_display_surface(con);
+    new_display_surface = qemu_console_get_display_surface(con);
+
+    if (old_display_surface != new_display_surface) {
+        dpy_gfx_create_texture(con, new_display_surface);
+        QLIST_FOREACH(dcl, &s->listeners, next) {
+            if (con != dcl->con) {
+                continue;
+            }
+            displaychangelistener_gfx_switch(dcl, new_display_surface,
+                                             surface ? FALSE : TRUE);
         }
-        displaychangelistener_gfx_switch(dcl, new_surface, surface ? FALSE : TRUE);
+        if (old_display_surface && old_display_surface != old_surface) {
+            dpy_gfx_destroy_texture(con, old_display_surface);
+        }
+    } else if (new_display_surface) {
+        width = surface_width(new_display_surface);
+        height = surface_height(new_display_surface);
+        dpy_gfx_update_texture(con, new_display_surface, 0, 0, width, height);
+        QLIST_FOREACH(dcl, &s->listeners, next) {
+            if (con != dcl->con) {
+                continue;
+            }
+            if (dcl->ops->dpy_gfx_update) {
+                dcl->ops->dpy_gfx_update(dcl, 0, 0, width, height);
+            }
+        }
     }
-    dpy_gfx_destroy_texture(con, old_surface);
+
+    if (old_display_surface == old_surface) {
+        dpy_gfx_destroy_texture(con, old_surface);
+    }
     qemu_free_displaysurface(old_surface);
 }
 
