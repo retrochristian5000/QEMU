@@ -2,9 +2,9 @@
  * Reusable AC'97 codec register-file helpers
  *
  * Keep codec register defaults and register semantics separate from the host
- * controller.  QEMU has several AC'97 links (Intel, VIA, SoundFusion, and
- * PL041) whose transport/DMA engines differ substantially even though they
- * talk to the same class of mixer/codec registers.
+ * controller.  QEMU has several AC'97/MC'97 links (Intel, VIA, SoundFusion,
+ * and PL041) whose transport/DMA engines differ substantially even though
+ * they talk to the same class of codec registers.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -56,10 +56,10 @@ static const AC97CodecRegDefault lm4549_defaults[] = {
     { AC97_Phone_Volume_Mute,         0x8008 },
     { AC97_Mic_Volume_Mute,           0x8008 },
     { AC97_Line_In_Volume_Mute,       0x8808 },
-    { AC97_CD_Volume_Mute,            0x8808 },
-    { AC97_Video_Volume_Mute,         0x8808 },
-    { AC97_Aux_Volume_Mute,           0x8808 },
-    { AC97_PCM_Out_Volume_Mute,       0x8808 },
+    { AC97_CD_Volume_Mute,             0x8808 },
+    { AC97_Video_Volume_Mute,          0x8808 },
+    { AC97_Aux_Volume_Mute,            0x8808 },
+    { AC97_PCM_Out_Volume_Mute,        0x8808 },
     { AC97_Record_Select,              0x0000 },
     { AC97_Record_Gain_Mute,           0x8000 },
     { AC97_General_Purpose,            0x0000 },
@@ -69,6 +69,26 @@ static const AC97CodecRegDefault lm4549_defaults[] = {
     { AC97_Extended_Audio_Ctrl_Stat,   0x0000 },
     { AC97_PCM_Front_DAC_Rate,         48000 },
     { AC97_PCM_LR_ADC_Rate,            48000 },
+};
+
+/*
+ * Generic MC'97 modem personality.  Model only the standardized one-line
+ * modem function here.  Concrete silicon can override the vendor ID and add
+ * Line2, handset, caller-ID, or vendor-specific behavior later.
+ */
+static const AC97CodecRegDefault mc97_modem_defaults[] = {
+    { AC97_Reset,                     0x0000 },
+    { AC97_Extended_Modem_ID,         AC97_MEI_LINE1 },
+    { AC97_Extended_Modem_Ctrl_Stat,  AC97_MEA_GPIO | AC97_MEA_MREF |
+                                         AC97_MEA_ADC1 | AC97_MEA_DAC1 },
+    { AC97_Modem_Line1_Rate,          8000 },
+    { AC97_Modem_Line1_Level,         0x0000 },
+    { AC97_Modem_GPIO_Config,         0x0000 },
+    { AC97_Modem_GPIO_Polarity,       0x0000 },
+    { AC97_Modem_GPIO_Sticky,         0x0000 },
+    { AC97_Modem_GPIO_Wakeup,         0x0000 },
+    { AC97_Modem_GPIO_Status,         0x0000 },
+    { AC97_Modem_Misc_AFE,            0x0000 },
 };
 
 const AC97CodecProfile ac97_codec_profile_minimal = {
@@ -103,6 +123,14 @@ const AC97CodecProfile ac97_codec_profile_lm4549 = {
     .vendor_id = 0x4e534331,
     /* Preserve the historical QEMU model's partial-reset behavior. */
     .clear_on_reset = false,
+};
+
+const AC97CodecProfile ac97_codec_profile_mc97_modem = {
+    .name = "MC97 modem",
+    .kind = AC97_CODEC_PROFILE_MC97_MODEM,
+    .defaults = mc97_modem_defaults,
+    .num_defaults = ARRAY_SIZE(mc97_modem_defaults),
+    .clear_on_reset = true,
 };
 
 void ac97_codec_init_u16(AC97Codec *codec,
@@ -451,6 +479,126 @@ static uint32_t ac97_codec_write_lm4549(AC97Codec *codec,
     }
 }
 
+static uint16_t ac97_mc97_ready_bits(uint16_t ext_mid, uint16_t power)
+{
+    uint16_t ready = AC97_MEA_MREF;
+
+    if (!(power & AC97_MEA_PRA)) {
+        ready |= AC97_MEA_GPIO;
+    }
+    if (ext_mid & AC97_MEI_LINE1) {
+        if (!(power & AC97_MEA_PRC)) {
+            ready |= AC97_MEA_ADC1;
+        }
+        if (!(power & AC97_MEA_PRD)) {
+            ready |= AC97_MEA_DAC1;
+        }
+    }
+    if (ext_mid & AC97_MEI_LINE2) {
+        if (!(power & AC97_MEA_PRE)) {
+            ready |= AC97_MEA_ADC2;
+        }
+        if (!(power & AC97_MEA_PRF)) {
+            ready |= AC97_MEA_DAC2;
+        }
+    }
+    if (ext_mid & AC97_MEI_HANDSET) {
+        if (!(power & AC97_MEA_PRG)) {
+            ready |= AC97_MEA_HADC;
+        }
+        if (!(power & AC97_MEA_PRH)) {
+            ready |= AC97_MEA_HDAC;
+        }
+    }
+    return ready;
+}
+
+static uint32_t ac97_codec_write_mc97(AC97Codec *codec,
+                                       unsigned reg, uint16_t value)
+{
+    uint16_t ext_mid = ac97_codec_read(codec, AC97_Extended_Modem_ID);
+
+    switch (reg) {
+    case AC97_Reset:
+        ac97_codec_reset(codec);
+        return 0;
+
+    case AC97_Extended_Modem_ID:
+    case AC97_Vendor_ID1:
+    case AC97_Vendor_ID2:
+        return 0;
+
+    case AC97_Extended_Modem_Ctrl_Stat: {
+        uint16_t power = value & AC97_MEA_POWER_MASK;
+        uint16_t ready = ac97_mc97_ready_bits(ext_mid, power);
+
+        ac97_codec_write_raw(codec, reg, power | ready);
+        return 0;
+    }
+
+    case AC97_Modem_Line1_Rate:
+        if (!(ext_mid & AC97_MEI_LINE1)) {
+            return 0;
+        }
+        if (value < 8000 || value > 16000) {
+            return AC97_CODEC_EVENT_INVALID_RATE;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return AC97_CODEC_EVENT_MODEM_LINE1_RATE;
+
+    case AC97_Modem_Line2_Rate:
+        if (!(ext_mid & AC97_MEI_LINE2)) {
+            return 0;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Modem_Handset_Rate:
+        if (!(ext_mid & AC97_MEI_HANDSET)) {
+            return 0;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Modem_Line1_Level:
+        if (!(ext_mid & AC97_MEI_LINE1)) {
+            return 0;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Modem_Line2_Level:
+        if (!(ext_mid & AC97_MEI_LINE2)) {
+            return 0;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Modem_Handset_Level:
+        if (!(ext_mid & AC97_MEI_HANDSET)) {
+            return 0;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Modem_GPIO_Config:
+    case AC97_Modem_GPIO_Polarity:
+    case AC97_Modem_GPIO_Sticky:
+    case AC97_Modem_GPIO_Wakeup:
+    case AC97_Modem_GPIO_Status:
+        ac97_codec_write_raw(codec, reg, value);
+        return AC97_CODEC_EVENT_MODEM_GPIO;
+
+    case AC97_Modem_Misc_AFE:
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    default:
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+    }
+}
+
 uint32_t ac97_codec_write(AC97Codec *codec, unsigned reg, uint16_t value)
 {
     if (!ac97_codec_reg_valid(codec, reg)) {
@@ -469,6 +617,8 @@ uint32_t ac97_codec_write(AC97Codec *codec, unsigned reg, uint16_t value)
         return ac97_codec_write_stac9766(codec, reg, value);
     case AC97_CODEC_PROFILE_LM4549:
         return ac97_codec_write_lm4549(codec, reg, value);
+    case AC97_CODEC_PROFILE_MC97_MODEM:
+        return ac97_codec_write_mc97(codec, reg, value);
     case AC97_CODEC_PROFILE_MINIMAL:
     default:
         ac97_codec_write_raw(codec, reg, value);
