@@ -47,7 +47,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ccache \
             libfdt-dev \
-            python3-venv
+            libglib2.0-dev \
+            libpixman-1-dev \
+            python3-venv \
+            zlib1g-dev
 
       - name: Restore compiler cache
         uses: actions/cache/restore@v4
@@ -61,12 +64,15 @@ jobs:
         env:
           CC: ccache gcc
           CXX: ccache g++
+        shell: bash
         run: |
           mkdir build-ci
           cd build-ci
+          set -o pipefail
           ../configure \
             --target-list=${{ matrix.target }}-softmmu \
-            --disable-docs
+            --disable-docs \
+            2>&1 | tee configure.log
 
       - name: Build ${{ matrix.target }}
         shell: bash
@@ -74,22 +80,36 @@ jobs:
           set -o pipefail
           ninja -C build-ci qemu-system-${{ matrix.target }} 2>&1 | tee build-ci/build.log
 
-      - name: Show compiler errors
+      - name: Show build failure context
         if: failure()
+        shell: bash
         run: |
-          echo '=== compiler errors ==='
-          grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
-            build-ci/build.log | tail -n 200 || true
-          echo '=== build log tail ==='
-          tail -n 200 build-ci/build.log || true
+          if [[ -f build-ci/build.log ]]; then
+            echo '=== compiler errors ==='
+            grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
+              build-ci/build.log | tail -n 200 || true
+            echo '=== build log tail ==='
+            tail -n 200 build-ci/build.log || true
+          fi
+          if [[ -f build-ci/configure.log ]]; then
+            echo '=== configure log tail ==='
+            tail -n 200 build-ci/configure.log || true
+          fi
+          if [[ -f build-ci/meson-logs/meson-log.txt ]]; then
+            echo '=== meson log tail ==='
+            tail -n 200 build-ci/meson-logs/meson-log.txt || true
+          fi
 
-      - name: Upload build log
+      - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ matrix.target }}
-          path: build-ci/build.log
-          if-no-files-found: error
+          path: |
+            build-ci/configure.log
+            build-ci/build.log
+            build-ci/meson-logs/meson-log.txt
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Show compiler cache statistics
