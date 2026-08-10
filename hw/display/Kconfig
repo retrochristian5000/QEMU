@@ -27,7 +27,6 @@ config PL110
 
 config IMX6UL_LCDIF
     bool
-    select FRAMEBUFFER
 
 config SII9022
     bool
@@ -49,6 +48,11 @@ config VGA_PCI
     select EDID
 
 config VGA_ISA
+    bool
+    depends on ISA_BUS
+    select VGA
+
+config VGA_TSENG_ET4000AX
     bool
     depends on ISA_BUS
     select VGA
