@@ -14,6 +14,7 @@ Details about QEMU's various subsystems including how to add features to them.
    block-coroutine-wrapper
    clocks
    leds
+   physical-displays
    ebpf_rss
    hexagon-sys
    migration/index
