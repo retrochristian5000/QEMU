@@ -7,8 +7,12 @@
 #ifndef S2650_CPU_PARAM_H
 #define S2650_CPU_PARAM_H
 
-/* 32 KiB linear architectural address space. */
-#define TARGET_PAGE_BITS 8
+/*
+ * The CPU exposes a 15-bit (32 KiB) architectural address space.  QEMU system
+ * emulation requires at least 9 target page bits, so use 512-byte translation
+ * pages while retaining the real 15-bit address limit.
+ */
+#define TARGET_PAGE_BITS 9
 #define TARGET_VIRT_ADDR_SPACE_BITS 15
 
 #endif /* S2650_CPU_PARAM_H */
