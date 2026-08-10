@@ -8,6 +8,7 @@
 #ifndef HW_MISC_LED_H
 #define HW_MISC_LED_H
 
+#include "qemu/notify.h"
 #include "qom/object.h"
 #include "hw/core/qdev.h"
 
@@ -40,6 +41,9 @@ struct LEDState {
 
     uint8_t intensity_percent;
     qemu_irq irq;
+
+    /* Host-side observers; not guest-visible or migrated. */
+    NotifierList change_notifiers;
 
     /* Properties */
     char *description;
@@ -99,6 +103,24 @@ bool led_is_emitting(LEDState *s);
  * Returns: the current electrical level on the LED GPIO input.
  */
 bool led_get_gpio_level(LEDState *s);
+
+/**
+ * led_add_change_notifier:
+ * @s: the LED object
+ * @notifier: host-side observer to invoke when emitted intensity changes
+ *
+ * This is intended for front-panel and debugging frontends.  The notifier is
+ * driven by the exact emulated transitions; any visual persistence or duty-
+ * cycle averaging belongs in the frontend, not in the device model.
+ */
+void led_add_change_notifier(LEDState *s, Notifier *notifier);
+
+/**
+ * led_remove_change_notifier:
+ * @s: the LED object
+ * @notifier: previously registered observer
+ */
+void led_remove_change_notifier(LEDState *s, Notifier *notifier);
 
 /**
  * led_set_state: Set the state of a LED device
