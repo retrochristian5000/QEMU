@@ -1,0 +1,67 @@
+name: WHP QEMU smoke CI
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-qemu-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-active-targets:
+    name: Build active targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3 \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Configure focused system build
+        run: |
+          mkdir build-ci
+          cd build-ci
+          ../configure \
+            --target-list=s2650-softmmu,trimedia-softmmu,ppc-softmmu,i386-softmmu \
+            --disable-docs
+
+      - name: Build
+        run: ninja -C build-ci
+
+      - name: Smoke-test system binaries
+        run: |
+          set -eux
+          for binary in \
+            qemu-system-s2650 \
+            qemu-system-trimedia \
+            qemu-system-ppc \
+            qemu-system-i386
+          do
+            test -x "build-ci/${binary}"
+            "build-ci/${binary}" -version
+            "build-ci/${binary}" -machine help >/dev/null
+          done
