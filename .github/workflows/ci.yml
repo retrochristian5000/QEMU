@@ -53,12 +53,16 @@ jobs:
             zlib1g-dev
 
       - name: Restore compiler cache
+        id: ccache-restore
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}
           restore-keys: |
             whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
 
       - name: Configure ${{ matrix.target }}
         env:
@@ -117,11 +121,11 @@ jobs:
         run: ccache --show-stats || true
 
       - name: Save compiler cache
-        if: always()
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}
 
       - name: Smoke-test ${{ matrix.target }}
         run: |
