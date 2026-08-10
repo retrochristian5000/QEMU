@@ -17,6 +17,7 @@
 #include "hw/i386/weitek4167.h"
 #include "hw/ide/isa.h"
 #include "hw/ide/ide-bus.h"
+#include "hw/isa/eisa.h"
 #include "system/kvm.h"
 #include "hw/i386/kvm/clock.h"
 #include "hw/xen/xen-x86.h"
@@ -29,7 +30,8 @@ static const int ide_iobase[MAX_IDE_BUS] = { 0x1f0, 0x170 };
 static const int ide_iobase2[MAX_IDE_BUS] = { 0x3f6, 0x376 };
 static const int ide_irq[MAX_IDE_BUS] = { 14, 15 };
 
-static void pc_init_isa_common(MachineState *machine, bool with_weitek4167)
+static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
+                               const char *eisa_system_id)
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -140,8 +142,15 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167)
 
     gsi_state = pc_gsi_create(&x86ms->gsi, false);
 
-    isa_bus = isa_bus_new(NULL, system_memory, system_io,
-                          &error_abort);
+    if (eisa_system_id) {
+        EISABus *eisa_bus;
+
+        eisa_bus = eisa_bus_new(NULL, system_memory, system_io, &error_abort);
+        eisa_bus_set_slot_id(eisa_bus, 0, eisa_system_id, true, &error_abort);
+        isa_bus = ISA_BUS(eisa_bus);
+    } else {
+        isa_bus = isa_bus_new(NULL, system_memory, system_io, &error_abort);
+    }
     isa_bus_register_input_irqs(isa_bus, x86ms->gsi);
 
     x86ms->rtc = isa_new(TYPE_MC146818_RTC);
@@ -212,23 +221,24 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167)
 
 static void pc_init_isa(MachineState *machine)
 {
-    pc_init_isa_common(machine, false);
+    pc_init_isa_common(machine, false, NULL);
 }
 
 static void pc_init_isa_weitek(MachineState *machine)
 {
-    pc_init_isa_common(machine, true);
+    pc_init_isa_common(machine, true, NULL);
 }
 
-static void dell_system_e_init(MachineState *machine)
+static void dell_system_425e_init(MachineState *machine)
 {
-    /*
-     * The real 425E/433E are EISA systems. Until an EISA PC bus exists in
-     * QEMU, reuse the legacy AT-compatible core for the motherboard devices
-     * that are already modeled. The Weitek option is installed in these
-     * profiles so they provide a historically grounded 4167 test target.
-     */
-    pc_init_isa_common(machine, true);
+    /* Dell EISA system-board identifier DEL0001. */
+    pc_init_isa_common(machine, true, "DEL0001");
+}
+
+static void dell_system_433e_init(MachineState *machine)
+{
+    /* Dell EISA system-board identifier DEL0002. */
+    pc_init_isa_common(machine, true, "DEL0002");
 }
 
 static void isapc_machine_options(MachineClass *m)
@@ -268,20 +278,20 @@ static void dell_system_e_machine_options(MachineClass *m)
 static void dell_system_425e_machine_options(MachineClass *m)
 {
     dell_system_e_machine_options(m);
-    m->desc = "Dell System 425E (25 MHz i486, Weitek 4167; EISA TODO)";
+    m->desc = "Dell System 425E (25 MHz i486, EISA, Weitek 4167)";
 }
 
 static void dell_system_433e_machine_options(MachineClass *m)
 {
     dell_system_e_machine_options(m);
-    m->desc = "Dell System 433E (33 MHz i486, Weitek 4167; EISA TODO)";
+    m->desc = "Dell System 433E (33 MHz i486, EISA, Weitek 4167)";
 }
 
 DEFINE_PC_MACHINE(isapc, "isapc", pc_init_isa,
                   isapc_machine_options);
 DEFINE_PC_MACHINE(isapc_weitek, "isapc-weitek", pc_init_isa_weitek,
                   isapc_weitek_machine_options);
-DEFINE_PC_MACHINE(dell_system_425e, "dell-system-425e", dell_system_e_init,
+DEFINE_PC_MACHINE(dell_system_425e, "dell-system-425e", dell_system_425e_init,
                   dell_system_425e_machine_options);
-DEFINE_PC_MACHINE(dell_system_433e, "dell-system-433e", dell_system_e_init,
+DEFINE_PC_MACHINE(dell_system_433e, "dell-system-433e", dell_system_433e_init,
                   dell_system_433e_machine_options);
