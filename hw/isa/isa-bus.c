@@ -49,13 +49,15 @@ static const TypeInfo isa_bus_info = {
     .class_init = isa_bus_class_init,
 };
 
-ISABus *isa_bus_new(DeviceState *dev, MemoryRegion* address_space,
-                    MemoryRegion *address_space_io, Error **errp)
+ISABus *isa_bus_new_type(const char *bus_type, DeviceState *dev,
+                         MemoryRegion *address_space,
+                         MemoryRegion *address_space_io, Error **errp)
 {
     DeviceState *bridge = NULL;
+    Object *bus_obj;
 
     if (isabus) {
-        error_setg(errp, "Can't create a second ISA bus");
+        error_setg(errp, "Can't create a second ISA-compatible bus");
         return NULL;
     }
     if (!dev) {
@@ -63,7 +65,17 @@ ISABus *isa_bus_new(DeviceState *dev, MemoryRegion* address_space,
         dev = bridge;
     }
 
-    isabus = ISA_BUS(qbus_new(TYPE_ISA_BUS, dev, NULL));
+    bus_obj = OBJECT(qbus_new(bus_type, dev, NULL));
+    if (!object_dynamic_cast(bus_obj, TYPE_ISA_BUS)) {
+        error_setg(errp, "Bus type '%s' is not ISA-compatible", bus_type);
+        object_unparent(bus_obj);
+        if (bridge) {
+            object_unref(OBJECT(bridge));
+        }
+        return NULL;
+    }
+
+    isabus = ISA_BUS(bus_obj);
     isabus->address_space = address_space;
     isabus->address_space_io = address_space_io;
 
@@ -72,6 +84,13 @@ ISABus *isa_bus_new(DeviceState *dev, MemoryRegion* address_space,
     }
 
     return isabus;
+}
+
+ISABus *isa_bus_new(DeviceState *dev, MemoryRegion *address_space,
+                    MemoryRegion *address_space_io, Error **errp)
+{
+    return isa_bus_new_type(TYPE_ISA_BUS, dev, address_space,
+                            address_space_io, errp);
 }
 
 void isa_bus_register_input_irqs(ISABus *bus, qemu_irq *irqs_in)
