@@ -20,6 +20,7 @@ typedef enum AC97CodecProfileKind {
     AC97_CODEC_PROFILE_STAC9700,
     AC97_CODEC_PROFILE_STAC9766,
     AC97_CODEC_PROFILE_LM4549,
+    AC97_CODEC_PROFILE_MC97_MODEM,
 } AC97CodecProfileKind;
 
 typedef struct AC97CodecProfile {
@@ -49,12 +50,14 @@ typedef struct AC97Codec {
 } AC97Codec;
 
 enum {
-    AC97_CODEC_EVENT_VOLUME_OUT     = 1u << 0,
-    AC97_CODEC_EVENT_VOLUME_IN      = 1u << 1,
-    AC97_CODEC_EVENT_FRONT_DAC_RATE = 1u << 2,
-    AC97_CODEC_EVENT_LR_ADC_RATE    = 1u << 3,
-    AC97_CODEC_EVENT_MIC_ADC_RATE   = 1u << 4,
-    AC97_CODEC_EVENT_INVALID_RATE   = 1u << 5,
+    AC97_CODEC_EVENT_VOLUME_OUT       = 1u << 0,
+    AC97_CODEC_EVENT_VOLUME_IN        = 1u << 1,
+    AC97_CODEC_EVENT_FRONT_DAC_RATE   = 1u << 2,
+    AC97_CODEC_EVENT_LR_ADC_RATE      = 1u << 3,
+    AC97_CODEC_EVENT_MIC_ADC_RATE     = 1u << 4,
+    AC97_CODEC_EVENT_INVALID_RATE     = 1u << 5,
+    AC97_CODEC_EVENT_MODEM_LINE1_RATE = 1u << 6,
+    AC97_CODEC_EVENT_MODEM_GPIO       = 1u << 7,
 };
 
 /*
@@ -67,6 +70,13 @@ extern const AC97CodecProfile ac97_codec_profile_minimal;
 extern const AC97CodecProfile ac97_codec_profile_stac9700;
 extern const AC97CodecProfile ac97_codec_profile_stac9766;
 extern const AC97CodecProfile ac97_codec_profile_lm4549;
+
+/*
+ * Generic one-line MC'97 personality.  It models only the standardized modem
+ * register block and intentionally has no vendor ID; a concrete modem codec
+ * should supply a vendor-id override or a more specific derived profile.
+ */
+extern const AC97CodecProfile ac97_codec_profile_mc97_modem;
 
 void ac97_codec_init_u16(AC97Codec *codec,
                          uint16_t regs[AC97_CODEC_REGS],
