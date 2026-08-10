@@ -25,29 +25,8 @@
 
 #include "qemu/osdep.h"
 #include "ui/console.h"
-#include "ui/console-presentation.h"
 #include "ui/input.h"
 #include "ui/sdl2.h"
-
-static void sdl2_2d_set_logical_size(struct sdl2_console *scon)
-{
-    int width, height;
-
-    if (qemu_console_get_window_autoresize(scon->dcl.con)) {
-        width = surface_width(scon->surface);
-        height = surface_height(scon->surface);
-    } else {
-        /*
-         * A physical display keeps the same glass when the guest raster
-         * changes.  Use the host viewport as SDL's logical size so RenderCopy
-         * stretches the complete guest raster to the complete viewport rather
-         * than letterboxing it to the source pixel aspect ratio.
-         */
-        SDL_GetWindowSize(scon->real_window, &width, &height);
-    }
-
-    SDL_RenderSetLogicalSize(scon->real_renderer, width, height);
-}
 
 void sdl2_2d_update(DisplayChangeListener *dcl,
                     int x, int y, int w, int h)
@@ -72,7 +51,6 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
     SDL_UpdateTexture(scon->texture, &rect,
                       surface_data(surf) + surface_data_offset,
                       surface_stride(surf));
-    sdl2_2d_set_logical_size(scon);
     SDL_RenderClear(scon->real_renderer);
     SDL_RenderCopy(scon->real_renderer, scon->texture, NULL, NULL);
     SDL_RenderPresent(scon->real_renderer);
@@ -103,12 +81,13 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
         sdl2_window_create(scon);
     } else if (old_surface &&
                ((surface_width(old_surface)  != surface_width(new_surface)) ||
-                (surface_height(old_surface) != surface_height(new_surface))) &&
-               qemu_console_get_window_autoresize(dcl->con)) {
+                (surface_height(old_surface) != surface_height(new_surface)))) {
         sdl2_window_resize(scon);
     }
 
-    sdl2_2d_set_logical_size(scon);
+    SDL_RenderSetLogicalSize(scon->real_renderer,
+                             surface_width(new_surface),
+                             surface_height(new_surface));
 
     switch (surface_format(scon->surface)) {
     case PIXMAN_x1r5g5b5:

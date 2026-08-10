@@ -29,7 +29,6 @@
 #include "qemu/main-loop.h"
 #include "qemu/error-report.h"
 #include "ui/console.h"
-#include "ui/console-presentation.h"
 #include "ui/input.h"
 #include "ui/sdl2.h"
 
@@ -56,11 +55,7 @@ static void sdl2_gl_render_surface(struct sdl2_console *scon)
     SDL_GL_MakeCurrent(scon->real_window, scon->winctx);
 
     SDL_GetWindowSize(scon->real_window, &ww, &wh);
-    if (qemu_console_get_window_autoresize(scon->dcl.con)) {
-        surface_gl_setup_viewport(scon->gls, scon->surface, ww, wh);
-    } else {
-        surface_gl_setup_viewport_stretch(ww, wh);
-    }
+    surface_gl_setup_viewport(scon->gls, scon->surface, ww, wh);
 
     surface_gl_render_texture(scon->gls, scon->surface);
     SDL_GL_SwapWindow(scon->real_window);
@@ -107,8 +102,7 @@ void sdl2_gl_switch(DisplayChangeListener *dcl,
         scon->gls = qemu_gl_init_shader();
     } else if (old_surface &&
                ((surface_width(old_surface)  != surface_width(new_surface)) ||
-                (surface_height(old_surface) != surface_height(new_surface))) &&
-               qemu_console_get_window_autoresize(dcl->con)) {
+                (surface_height(old_surface) != surface_height(new_surface)))) {
         sdl2_window_resize(scon);
     }
 

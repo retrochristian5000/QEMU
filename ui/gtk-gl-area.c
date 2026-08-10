@@ -47,7 +47,6 @@ void gd_gl_area_draw(VirtualConsole *vc)
     int ww_surface, wh_surface;
     int fbw, fbh;
     int wx_offset, wy_offset;
-    bool autoresize;
 
     if (!vc->gfx.gls || !vc->gfx.ds) {
         return;
@@ -61,14 +60,8 @@ void gd_gl_area_draw(VirtualConsole *vc)
     wh = gtk_widget_get_allocated_height(vc->gfx.drawing_area);
     pw = ww * gs;
     ph = wh * gs;
-    autoresize = qemu_console_get_window_autoresize(vc->gfx.dcl.con);
 
-    if (autoresize) {
-        gd_update_scale(vc, ww, wh, fbw, fbh);
-    } else {
-        vc->gfx.scale_x = (double)ww / fbw;
-        vc->gfx.scale_y = (double)wh / fbh;
-    }
+    gd_update_scale(vc, ww, wh, fbw, fbh);
 
     ww_surface = fbw * vc->gfx.scale_x;
     wh_surface = fbh * vc->gfx.scale_y;
@@ -145,11 +138,7 @@ void gd_gl_area_draw(VirtualConsole *vc)
     } else {
         gtk_gl_area_make_current(GTK_GL_AREA(vc->gfx.drawing_area));
 
-        if (autoresize) {
-            surface_gl_setup_viewport(vc->gfx.gls, vc->gfx.ds, pw, ph);
-        } else {
-            surface_gl_setup_viewport_stretch(pw, ph);
-        }
+        surface_gl_setup_viewport(vc->gfx.gls, vc->gfx.ds, pw, ph);
         surface_gl_render_texture(vc->gfx.gls, vc->gfx.ds);
     }
 }
@@ -198,7 +187,6 @@ void gd_gl_area_switch(DisplayChangeListener *dcl,
                        DisplaySurface *surface)
 {
     VirtualConsole *vc = container_of(dcl, VirtualConsole, gfx.dcl);
-    bool first_surface = vc->gfx.ds == NULL;
     bool resized = true;
 
     trace_gd_switch(vc->label, surface_width(surface), surface_height(surface));
@@ -216,8 +204,7 @@ void gd_gl_area_switch(DisplayChangeListener *dcl,
     }
     vc->gfx.ds = surface;
 
-    if (resized &&
-        (first_surface || qemu_console_get_window_autoresize(dcl->con))) {
+    if (resized) {
         gd_update_windowsize(vc);
     }
 }

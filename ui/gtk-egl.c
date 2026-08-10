@@ -42,19 +42,6 @@ static void gtk_egl_set_scanout_mode(VirtualConsole *vc, bool scanout)
     }
 }
 
-static void gtk_egl_update_scale(VirtualConsole *vc, int ww, int wh)
-{
-    int fbw = surface_width(vc->gfx.ds);
-    int fbh = surface_height(vc->gfx.ds);
-
-    if (qemu_console_get_window_autoresize(vc->gfx.dcl.con)) {
-        gd_update_scale(vc, ww, wh, fbw, fbh);
-    } else {
-        vc->gfx.scale_x = (double)ww / fbw;
-        vc->gfx.scale_y = (double)wh / fbh;
-    }
-}
-
 /** DisplayState Callbacks (opengl version) **/
 
 void gd_egl_init(VirtualConsole *vc)
@@ -84,7 +71,6 @@ void gd_egl_draw(VirtualConsole *vc)
     int fence_fd;
 #endif
     int ww, wh, pw, ph, gs;
-    bool autoresize;
 
     if (!vc->gfx.gls || !vc->gfx.ds) {
         return;
@@ -96,7 +82,6 @@ void gd_egl_draw(VirtualConsole *vc)
     wh = gdk_window_get_height(window);
     pw = ww * gs;
     ph = wh * gs;
-    autoresize = qemu_console_get_window_autoresize(vc->gfx.dcl.con);
 
     if (vc->gfx.scanout_mode) {
 #ifdef CONFIG_GBM
@@ -110,6 +95,10 @@ void gd_egl_draw(VirtualConsole *vc)
         }
 #endif
         gd_egl_scanout_flush(&vc->gfx.dcl, 0, 0, vc->gfx.w, vc->gfx.h);
+
+        gd_update_scale(vc, ww, wh,
+                        surface_width(vc->gfx.ds),
+                        surface_height(vc->gfx.ds));
 
         glFlush();
 #ifdef CONFIG_GBM
@@ -127,16 +116,14 @@ void gd_egl_draw(VirtualConsole *vc)
         eglMakeCurrent(qemu_egl_display, vc->gfx.esurface,
                        vc->gfx.esurface, vc->gfx.ectx);
 
-        if (autoresize) {
-            surface_gl_setup_viewport(vc->gfx.gls, vc->gfx.ds, pw, ph);
-        } else {
-            surface_gl_setup_viewport_stretch(pw, ph);
-        }
+        surface_gl_setup_viewport(vc->gfx.gls, vc->gfx.ds, pw, ph);
         surface_gl_render_texture(vc->gfx.gls, vc->gfx.ds);
 
         eglSwapBuffers(qemu_egl_display, vc->gfx.esurface);
 
-        gtk_egl_update_scale(vc, ww, wh);
+        gd_update_scale(vc, ww, wh,
+                        surface_width(vc->gfx.ds),
+                        surface_height(vc->gfx.ds));
 
         glFlush();
     }
@@ -202,7 +189,6 @@ void gd_egl_switch(DisplayChangeListener *dcl,
                    DisplaySurface *surface)
 {
     VirtualConsole *vc = container_of(dcl, VirtualConsole, gfx.dcl);
-    bool first_surface = vc->gfx.ds == NULL;
     bool resized = true;
 
     trace_gd_switch(vc->label, surface_width(surface), surface_height(surface));
@@ -221,8 +207,7 @@ void gd_egl_switch(DisplayChangeListener *dcl,
         surface_gl_create_texture(vc->gfx.gls, vc->gfx.ds);
     }
 
-    if (resized &&
-        (first_surface || qemu_console_get_window_autoresize(dcl->con))) {
+    if (resized) {
         gd_update_windowsize(vc);
     }
 
@@ -373,7 +358,7 @@ void gd_egl_scanout_flush(DisplayChangeListener *dcl,
     fbw = surface_width(vc->gfx.ds);
     fbh = surface_height(vc->gfx.ds);
 
-    gtk_egl_update_scale(vc, ww_widget, wh_widget);
+    gd_update_scale(vc, ww_widget, wh_widget, fbw, fbh);
 
     ww_surface = fbw * vc->gfx.scale_x;
     wh_surface = fbh * vc->gfx.scale_y;
