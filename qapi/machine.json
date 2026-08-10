@@ -40,8 +40,8 @@
   'data' : [ 'aarch64', 'alpha', 'arm', 'avr', 'hexagon', 'hppa', 'i386',
              'loongarch64', 'm68k', 'microblaze', 'mips', 'mips64',
              'mips64el', 'mipsel', 'or1k', 'ppc',
-             'ppc64', 'riscv32', 'riscv64', 'rx', 's390x', 'sh4',
-             'sh4eb', 'sparc', 'sparc64', 'tricore',
+             'ppc64', 'riscv32', 'riscv64', 'rx', 's2650', 's390x', 'sh4',
+             'sh4eb', 'sparc', 'sparc64', 'tricore', 'trimedia',
              'x86_64', 'xtensa', 'xtensaeb' ] }
 
 ##
@@ -71,7 +71,7 @@
 { 'struct': 'CpuInfoS390',
   'data': { 'cpu-state': 'S390CpuState',
             '*dedicated': 'bool',
-            '*entitlement': 'S390CpuEntitlement' } }
+            '*entitlement': 'S390Entitlement' } }
 
 ##
 # @CpuInfoFast:
@@ -405,9 +405,9 @@
 #
 # @discard: throw away the missed ticks and continue with future
 #     injection normally.  The guest OS will see the timer jump ahead
-#     by a potentially quite significant amount all at once, as if the
-#     intervening chunk of time had simply not existed; needless to
-#     say, such a sudden jump can easily confuse a guest OS which is
+#     by a potentially quite significant amount all at once, as if
+#     the intervening chunk of time had simply not existed; needless
+#     to say, such a sudden jump can easily confuse a guest OS which is
 #     not specifically prepared to deal with it.  Assuming the guest
 #     OS can deal correctly with the time jump, the time in the guest
 #     and in the host should now match.
@@ -661,8 +661,8 @@
 # Data type in the System Locality Latency and Bandwidth Information
 # Structure of HMAT (Heterogeneous Memory Attribute Table)
 #
-# For more information about `HmatLBDataType`, see chapter 5.2.27.4:
-# Table 5-146: Field "Data Type" of ACPI 6.3 spec.
+# For more information about `HmatLBDataType`, see chapter
+# 5.2.27.4: Table 5-146: Field "Data Type" of ACPI 6.3 spec.
 #
 # @access-latency: access latency (nanoseconds)
 #
@@ -704,7 +704,7 @@
 # @latency: the value of latency from @initiator to @target proximity
 #     domain, the latency unit is "ns(nanosecond)".
 #
-# @bandwidth: the value of bandwidth between @initiator and @target
+# @bandwidth: the value of bandwidth between @initiator to @target
 #     proximity domain, the bandwidth unit is "Bytes per second".
 #
 # Since: 5.0
@@ -957,13 +957,11 @@
 # @die-id: die number within the parent container the CPU belongs to
 #     (since 4.1)
 #
-# @cluster-id: cluster number within the parent container the CPU
-#     belongs to (since 7.1)
+# @cluster-id: cluster number within the parent container (since 7.1)
 #
-# @module-id: module number within the parent container the CPU
-#     belongs to (since 9.1)
+# @module-id: module number within the parent container (since 9.1)
 #
-# @core-id: core number within the parent container the CPU belongs to
+# @core-id: core number within parent container the CPU belongs to
 #
 # @thread-id: thread number within the core the CPU  belongs to
 #
@@ -1332,7 +1330,7 @@
 ##
 # @VirtioMEMDeviceInfo:
 #
-# VirtioMEMDevice state information
+# VirtioMEM state information
 #
 # @id: device's ID
 #
@@ -1473,7 +1471,7 @@
 ##
 # @VirtioPMEMDeviceInfoWrapper:
 #
-# @data: VirtioPMEM state information
+# @data: VirtioPMEMDevice state information
 #
 # Since: 2.1
 ##
@@ -2025,8 +2023,8 @@
 #
 # @result: The result of the compare operation.
 #
-# @responsible-properties: List of properties that led to the
-#     comparison result not being identical.
+# @responsible-properties: List of properties that led to the result
+#     not being identical.
 #
 # @responsible-properties is a list of QOM property names that led to
 # both CPUs not being detected as identical.  For identical models,
@@ -2045,11 +2043,11 @@
 # @query-cpu-model-comparison:
 #
 # Compares two CPU models, @modela and @modelb, returning how they
-# compare in a specific configuration.  The results indicates how both
+# compare in a specific configuration.  The result indicates how both
 # models compare regarding runnability.  This result can be used by
 # tooling to make decisions if a certain CPU model will run in a
-# certain configuration or if a compatible CPU model has to be created
-# by baselining.
+# certain configuration or if a compatible CPU model has to be
+# created by baselining.
 #
 # Usually, a CPU model is compared against the maximum possible CPU
 # model of a certain configuration (e.g. the "host" model for KVM).
@@ -2082,8 +2080,7 @@
 # @modelb: description of the second CPU model to compare, referred to
 #     as "model B" in `CpuModelCompareResult`
 #
-# Returns: a `CpuModelCompareInfo` describing how both CPU models
-#     compare
+# Returns: a `CpuModelCompareInfo` describing how both models compare
 #
 # Errors:
 #     - if comparing CPU models is not supported by the target
@@ -2106,10 +2103,9 @@
 # details).
 #
 # This interface can be used by tooling to create a compatible CPU
-# model out two CPU models.  The created CPU model will be identical
-# to or a subset of both CPU models when comparing them.  Therefore,
-# the created CPU model is guaranteed to run where the given CPU
-# models run.
+# model out two CPU models.  The created model will be identical to or
+# a subset of both CPU models when comparing them.  Therefore, the
+# created model is guaranteed to run where the given CPU models run.
 #
 # The result returned by this command may be affected by:
 #
@@ -2209,7 +2205,7 @@
 # Errors:
 #     - if expanding CPU models is not supported
 #     - if the model cannot be expanded
-#     - if the model contains an unknown CPU definition name, unknown
+#     - if a model contains an unknown CPU definition name, unknown
 #       properties or properties with a wrong type
 #     - if an expansion type is not supported
 #
@@ -2261,8 +2257,8 @@
 # property is read-only, that means there's no known way to make the
 # CPU model run in the current host.  Implementations that choose not
 # to provide specific information return the property name "type".  If
-# the property is read-write, it means that it MAY be possible to run
-# the CPU model in the current host if that property is changed.
+# the QOM property is read-write, it means that it MAY be possible to
+# run the CPU model in the current host if that property is changed.
 # Management software can use it as hints to suggest or choose an
 # alternative for the user, or just to generate meaningful error
 # messages explaining why the CPU model can't be used.  If
