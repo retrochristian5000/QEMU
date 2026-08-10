@@ -35,6 +35,8 @@ static const char *trimedia_opcode_name(uint8_t opcode)
     switch (opcode) {
     case TRIMEDIA_OP_IGTRI:
         return "igtri";
+    case TRIMEDIA_OP_IGEQI:
+        return "igeqi";
     case TRIMEDIA_OP_ILESI:
         return "ilesi";
     case TRIMEDIA_OP_INEQI:
@@ -43,6 +45,8 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "ieqli";
     case TRIMEDIA_OP_IADDI:
         return "iaddi";
+    case TRIMEDIA_OP_ILD16D:
+        return "ild16d";
     case TRIMEDIA_OP_LD32D:
         return "ld32d";
     case TRIMEDIA_OP_ULD8D:
@@ -69,6 +73,8 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "asl";
     case TRIMEDIA_OP_IMUL:
         return "imul";
+    case TRIMEDIA_OP_H_ST32D:
+        return "h_st32d";
     case TRIMEDIA_OP_ISUBI:
         return "isubi";
     case TRIMEDIA_OP_IEQL:
@@ -81,6 +87,10 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "bitinv";
     case TRIMEDIA_OP_LSR:
         return "lsr";
+    case TRIMEDIA_OP_JMPT:
+        return "jmpt";
+    case TRIMEDIA_OP_IJMPT:
+        return "ijmpt";
     case TRIMEDIA_OP_JMPI:
         return "jmpi";
     case TRIMEDIA_OP_IJMPI:
@@ -93,6 +103,10 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "iimm/uimm";
     case TRIMEDIA_OP_ILD8D:
         return "ild8d";
+    case TRIMEDIA_OP_ULD16D:
+        return "uld16d";
+    case TRIMEDIA_OP_LD32R:
+        return "ld32r";
     default:
         return "unknown";
     }
@@ -116,7 +130,13 @@ static bool trimedia_valid_regs(const TrimediaDecodedOp *op)
     return op->dest < TRIMEDIA_NUM_GPRS &&
            op->src1 < TRIMEDIA_NUM_GPRS &&
            op->src2 < TRIMEDIA_NUM_GPRS &&
-           op->guard < TRIMEDIA_NUM_GPRS;
+           (!op->guarded || op->guard < TRIMEDIA_NUM_GPRS);
+}
+
+static bool trimedia_modifier_in_range(int32_t value, int32_t low,
+                                       int32_t high)
+{
+    return value >= low && value <= high;
 }
 
 static void trimedia_gen_variable_shift(TCGv_i32 dest, TCGv_i32 value,
@@ -152,10 +172,10 @@ static void trimedia_gen_variable_shift(TCGv_i32 dest, TCGv_i32 value,
 }
 
 /*
- * Generate one decoded result without committing it to the architectural
- * register file.  All operations in a VLIW instruction read the pre-instruction
- * register state; results are committed only after every issue slot has been
- * generated.
+ * Generate one decoded latency-1 result without committing it to the
+ * architectural register file.  All operations in a VLIW instruction read
+ * the pre-instruction register state; results are committed only after every
+ * issue slot has been generated.
  */
 static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
                                     TrimediaPendingWrite *write)
@@ -180,12 +200,18 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
         tcg_gen_add_i32(write->value, src1, src2);
         break;
     case TRIMEDIA_OP_IADDI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
         tcg_gen_addi_i32(write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_ISUB:
         tcg_gen_sub_i32(write->value, src1, src2);
         break;
     case TRIMEDIA_OP_ISUBI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
         tcg_gen_subi_i32(write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_BITAND:
@@ -200,10 +226,6 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
     case TRIMEDIA_OP_BITINV:
         tcg_gen_not_i32(write->value, src1);
         break;
-    case TRIMEDIA_OP_IMUL:
-        /* The architectural result is the low 32 bits of the product. */
-        tcg_gen_mul_i32(write->value, src1, src2);
-        break;
     case TRIMEDIA_OP_IEQL:
         tcg_gen_setcond_i32(TCG_COND_EQ, write->value, src1, src2);
         break;
@@ -214,31 +236,49 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
         tcg_gen_setcond_i32(TCG_COND_GT, write->value, src1, src2);
         break;
     case TRIMEDIA_OP_IEQLI:
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
         tcg_gen_setcondi_i32(TCG_COND_EQ, write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_INEQI:
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
         tcg_gen_setcondi_i32(TCG_COND_NE, write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_IGTRI:
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
         tcg_gen_setcondi_i32(TCG_COND_GT, write->value, src1, op->modifier);
         break;
+    case TRIMEDIA_OP_IGEQI:
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_GE, write->value, src1, op->modifier);
+        break;
     case TRIMEDIA_OP_ILESI:
-        tcg_gen_setcondi_i32(TCG_COND_LE, write->value, src1, op->modifier);
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_LT, write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_ASLI:
-        if ((unsigned int)op->modifier > 31) {
+        if (!trimedia_modifier_in_range(op->modifier, 0, 31)) {
             return false;
         }
         tcg_gen_shli_i32(write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_ASRI:
-        if ((unsigned int)op->modifier > 31) {
+        if (!trimedia_modifier_in_range(op->modifier, 0, 31)) {
             return false;
         }
         tcg_gen_sari_i32(write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_LSRI:
-        if ((unsigned int)op->modifier > 31) {
+        if (!trimedia_modifier_in_range(op->modifier, 0, 31)) {
             return false;
         }
         tcg_gen_shri_i32(write->value, src1, op->modifier);
@@ -252,7 +292,10 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
         tcg_gen_movi_i32(write->value, op->modifier);
         break;
     default:
-        /* Memory and control-flow operations are intentionally deferred. */
+        /*
+         * Latency-3 multiply, memory, and control-flow operations are known
+         * but intentionally wait for their pipeline/delay-slot machinery.
+         */
         return false;
     }
 
@@ -265,8 +308,10 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
     }
 
     write->valid = true;
-    write->guarded = op->guarded;
-    if (op->guarded) {
+
+    /* iimm/uimm are architecturally unguarded even though most ops may guard. */
+    write->guarded = op->guarded && op->opcode != TRIMEDIA_OP_IMM;
+    if (write->guarded) {
         write->guard = tcg_temp_new_i32();
         write->old_dest = tcg_temp_new_i32();
         tcg_gen_andi_i32(write->guard, trimedia_read_gpr(op->guard), 1);
@@ -366,8 +411,17 @@ static void trimedia_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
         return;
     }
 
-    if (packet.encoded_size == 0 ||
-        !trimedia_gen_packet(&packet, &unsupported_opcode)) {
+    if (packet.encoded_size == 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TriMedia: decoded zero-length packet at 0x%08x\n",
+                      (uint32_t)ctx->base.pc_next);
+        tcg_gen_movi_i32(cpu_pc, (uint32_t)ctx->base.pc_next);
+        tcg_gen_exit_tb(NULL, 0);
+        ctx->base.is_jmp = DISAS_NORETURN;
+        return;
+    }
+
+    if (!trimedia_gen_packet(&packet, &unsupported_opcode)) {
         qemu_log_mask(LOG_UNIMP,
                       "TriMedia: operation %s (0x%02x) not implemented at "
                       "0x%08x\n", trimedia_opcode_name(unsupported_opcode),
@@ -414,9 +468,9 @@ void trimedia_translate_init(void)
 
     for (i = 0; i < TRIMEDIA_NUM_GPRS; i++) {
         snprintf(cpu_gpr_name[i], sizeof(cpu_gpr_name[i]), "r%u", i);
-        cpu_gpr[i] = tcg_global_mem_new_i32(tcg_env,
-                                            offsetof(CPUTrimediaState, gpr[i]),
-                                            cpu_gpr_name[i]);
+        cpu_gpr[i] = tcg_global_mem_new_i32(
+            tcg_env, offsetof(CPUTrimediaState, gpr) + i * sizeof(uint32_t),
+            cpu_gpr_name[i]);
     }
 
     cpu_pc = tcg_global_mem_new_i32(tcg_env,
