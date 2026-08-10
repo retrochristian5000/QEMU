@@ -409,6 +409,9 @@ static void weitek4167_load_context(Weitek4167State *s, uint32_t value)
         return;
     }
 
+    /* Fast Mode is architecturally fixed on the 3167/4167 interface. */
+    s->pcr |= WEITEK_PCR_FAST;
+
     /* EE is an output/status reflection of INTR, not an accumulated input. */
     s->pcr &= ~WEITEK_AE_EE;
     weitek4167_sync_fp_status(s);
@@ -567,7 +570,6 @@ static void weitek4167_write_single(Weitek4167State *s, unsigned opcode,
             result = float32_sub(dstf, srcf, &s->fp_status);
             break;
         default:
-            weitek4167_unimplemented(s, 0, size, true);
             return;
         }
     }
@@ -618,9 +620,6 @@ static void weitek4167_write_double(Weitek4167State *s, unsigned opcode,
         }
         weitek4167_set_double(s, dst,
                              weitek4167_finish_double(s, result));
-        return;
-    case WEITEK_OP_FLOAT_D:
-        /* FLOAT.D consumes a 32-bit integer Source1, not a double source. */
         return;
     case WEITEK_OP_SQRT_D:
         weitek4167_begin_fp(s);
@@ -677,6 +676,98 @@ static void weitek4167_write_double(Weitek4167State *s, unsigned opcode,
     weitek4167_set_double(s, dst, weitek4167_finish_double(s, result));
 }
 
+static void weitek4167_mac_s(Weitek4167State *s, unsigned src,
+                             unsigned src2, uint64_t bus_value, unsigned size)
+{
+    uint32_t src_bits;
+    float32 a, b, acc, result;
+
+    if (!weitek4167_source_single(s, src, bus_value, size, &src_bits)) {
+        return;
+    }
+
+    a = make_float32(src_bits);
+    b = make_float32(s->regs[src2]);
+    acc = make_float32(s->regs[2]);
+    weitek4167_begin_fp(s);
+
+    if (float32_is_any_nan(a) || float32_is_any_nan(b) ||
+        float32_is_any_nan(acc)) {
+        float_raise(float_flag_invalid, &s->fp_status);
+        result = make_float32(WEITEK_NAN32);
+    } else {
+        /*
+         * The hardware description specifies a multiply followed by an add to
+         * ws2, but does not expose the internal intermediate rounding point.
+         * SoftFloat muladd provides the closest one-round functional model;
+         * bit-exact pipeline rounding remains a separate conformance audit.
+         */
+        result = float32_muladd(a, b, acc, 0, &s->fp_status);
+    }
+
+    s->regs[2] = weitek4167_finish_single(s, result);
+}
+
+static void weitek4167_macd_s(Weitek4167State *s, unsigned src,
+                              unsigned src2, uint64_t bus_value, unsigned size)
+{
+    uint32_t src_bits;
+    float32 a32, b32;
+    float64 a, b, acc, result;
+
+    if (!weitek4167_source_single(s, src, bus_value, size, &src_bits)) {
+        return;
+    }
+
+    a32 = make_float32(src_bits);
+    b32 = make_float32(s->regs[src2]);
+    acc = make_float64(weitek4167_get_double(s, 2));
+    weitek4167_begin_fp(s);
+
+    if (float32_is_any_nan(a32) || float32_is_any_nan(b32) ||
+        float64_is_any_nan(acc)) {
+        float_raise(float_flag_invalid, &s->fp_status);
+        result = make_float64(WEITEK_NAN64);
+    } else {
+        a = float32_to_float64(a32, &s->fp_status);
+        b = float32_to_float64(b32, &s->fp_status);
+        result = float64_muladd(a, b, acc, 0, &s->fp_status);
+    }
+
+    weitek4167_set_double(s, 2, weitek4167_finish_double(s, result));
+}
+
+static void weitek4167_macd_d(Weitek4167State *s, unsigned src,
+                              unsigned src2, uint64_t bus_value, unsigned size)
+{
+    uint64_t src_bits;
+    float64 a, b, acc, result;
+
+    if (!weitek4167_double_reg_valid(src2)) {
+        qemu_log_mask(LOG_UNIMP,
+                      "weitek4167: odd MACD.D Source2 register wd%u\n", src2);
+        return;
+    }
+    if (!weitek4167_source_double(s, src, bus_value, size, &src_bits)) {
+        return;
+    }
+
+    a = make_float64(src_bits);
+    b = make_float64(weitek4167_get_double(s, src2));
+    acc = make_float64(weitek4167_get_double(s, 2));
+    weitek4167_begin_fp(s);
+
+    if (float64_is_any_nan(a) || float64_is_any_nan(b) ||
+        float64_is_any_nan(acc)) {
+        float_raise(float_flag_invalid, &s->fp_status);
+        result = make_float64(WEITEK_NAN64);
+    } else {
+        result = float64_muladd(a, b, acc, 0, &s->fp_status);
+    }
+
+    weitek4167_set_double(s, 2, weitek4167_finish_double(s, result));
+}
+
 static void weitek4167_write(void *opaque, hwaddr offset,
                              uint64_t value, unsigned size)
 {
@@ -719,6 +810,16 @@ static void weitek4167_write(void *opaque, hwaddr offset,
     case WEITEK_OP_SQRT_S:
     case WEITEK_OP_SUB_S:
         weitek4167_write_single(s, opcode, src, dst, value, size);
+        return;
+
+    case WEITEK_OP_MAC_S:
+        weitek4167_mac_s(s, src, dst, value, size);
+        return;
+    case WEITEK_OP_MACD_S:
+        weitek4167_macd_s(s, src, dst, value, size);
+        return;
+    case WEITEK_OP_MACD_D:
+        weitek4167_macd_d(s, src, dst, value, size);
         return;
 
     case WEITEK_OP_CVTS_D:
@@ -784,13 +885,10 @@ static void weitek4167_write(void *opaque, hwaddr offset,
     case WEITEK_OP_TSTT_S:
     case WEITEK_OP_CMP_S:
     case WEITEK_OP_TST_S:
-    case WEITEK_OP_MAC_S:
-    case WEITEK_OP_MACD_D:
     case WEITEK_OP_CMPT_D:
     case WEITEK_OP_TSTT_D:
     case WEITEK_OP_CMP_D:
     case WEITEK_OP_TST_D:
-    case WEITEK_OP_MACD_S:
     case WEITEK_OP_PAGE_D:
         weitek4167_unimplemented(s, offset, size, true);
         return;
@@ -823,11 +921,13 @@ static void weitek4167_reset(DeviceState *dev)
     Weitek4167State *s = WEITEK4167(dev);
 
     /*
-     * The published programming documentation requires software to initialize
-     * the PCR explicitly; it does not define a register-file reset pattern.
-     * Preserve that distinction and only reset emulator-visible control state.
+     * The hardware documentation does not define register-file reset values.
+     * QEMU normalizes that architecturally-undefined state to zero so reset is
+     * deterministic; guest software must still initialize any state it uses.
+     * FAST is the one documented PCR mode bit that must always read as one.
      */
-    s->pcr = 0;
+    memset(s->regs, 0, sizeof(s->regs));
+    s->pcr = WEITEK_PCR_FAST;
     memset(&s->fp_status, 0, sizeof(s->fp_status));
     weitek4167_sync_fp_status(s);
     qemu_set_irq(s->irq, 0);
@@ -838,6 +938,7 @@ static void weitek4167_realize(DeviceState *dev, Error **errp)
     Weitek4167State *s = WEITEK4167(dev);
     FWCfgState *fw_cfg = fw_cfg_find();
 
+    s->pcr |= WEITEK_PCR_FAST;
     weitek4167_sync_fp_status(s);
 
     /* PRES# is represented to the PC firmware by a fw_cfg presence file. */
