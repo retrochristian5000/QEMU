@@ -76,8 +76,8 @@ void qemu_console_update_display_surface(QemuConsole *con)
         pixman_double_to_fixed((double)sh / dh));
     pixman_image_set_transform(src, &transform);
     pixman_image_set_filter(src, PIXMAN_FILTER_BILINEAR, NULL, 0);
-    pixman_image_composite32(PIXMAN_OP_SRC, src, NULL, dst,
-                             0, 0, 0, 0, 0, 0, dw, dh);
+    pixman_image_composite(PIXMAN_OP_SRC, src, NULL, dst,
+                           0, 0, 0, 0, 0, 0, dw, dh);
 
     /* Do not leave presentation-only sampling state on the guest surface. */
     pixman_image_set_transform(src, NULL);
