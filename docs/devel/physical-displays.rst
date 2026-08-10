@@ -39,6 +39,29 @@ display listeners are initialized.  The dimensions describe presentation
 geometry; they are not a list of guest modes the monitor accepts.  Timing and
 mode validation belongs in the monitor/device model separately.
 
+Analogue signal acceptance
+--------------------------
+
+Analogue television standards make the separation above especially important.
+A framebuffer size is not sufficient to describe an incoming signal, and a
+colour system is not a synonym for scan timing.
+
+``hw/display/analog-video.h`` provides independent scan and colour descriptors.
+A physical analogue monitor should first decide whether it can synchronize to
+the incoming scan family, then whether it can decode the colour encoding.
+``analog_video_receiver_lock()`` expresses the baseline outcomes as no sync,
+luminance-only lock, or colour lock.
+
+This distinction lets a monochrome display lock to a colour composite signal,
+and it prevents code from assuming that PAL always means 625/50 or that NTSC
+always defines the raster geometry.  See :doc:`analog-video` for the shared
+signal model and the RF/tuner boundary.
+
+Interlaced analogue input also carries temporal field structure.  The fixed
+face scaler is not a deinterlacer and must not be treated as one.  A future
+analogue monitor path can use field parity/timing to reproduce scan behaviour
+while keeping phosphor persistence in presentation-only state.
+
 Current scanout boundary
 ------------------------
 
