@@ -1,6 +1,10 @@
 config ISA_BUS
     bool
 
+config EISA_BUS
+    bool
+    select ISA_BUS
+
 config APM
     bool
 
