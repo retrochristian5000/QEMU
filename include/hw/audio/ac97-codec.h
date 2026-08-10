@@ -35,8 +35,8 @@ extern const AC97CodecProfile ac97_codec_profile_stac9766;
 void ac97_codec_reset(uint16_t regs[AC97_CODEC_REGS],
                       const AC97CodecProfile *profile,
                       uint32_t vendor_id_override);
-uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], uint8_t reg);
-void ac97_codec_write_raw(uint16_t regs[AC97_CODEC_REGS], uint8_t reg,
+uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], unsigned reg);
+void ac97_codec_write_raw(uint16_t regs[AC97_CODEC_REGS], unsigned reg,
                           uint16_t value);
 
 #endif /* HW_AUDIO_AC97_CODEC_H */
