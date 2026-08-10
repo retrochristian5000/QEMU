@@ -20,6 +20,7 @@
 
 #include "ui/clipboard.h"
 #include "ui/console.h"
+#include "ui/console-presentation.h"
 #include "ui/kbd-state.h"
 #if defined(CONFIG_OPENGL)
 #include "ui/egl-helpers.h"
