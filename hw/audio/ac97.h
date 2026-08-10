@@ -50,6 +50,23 @@ enum {
     AC97_MIC_ADC_Rate              = 0x34,
     AC97_6Ch_Vol_C_LFE_Mute        = 0x36,
     AC97_6Ch_Vol_L_R_Surround_Mute = 0x38,
+
+    /* AC'97 2.x modem/MC'97 extension block. */
+    AC97_Extended_Modem_ID         = 0x3C,
+    AC97_Extended_Modem_Ctrl_Stat  = 0x3E,
+    AC97_Modem_Line1_Rate          = 0x40,
+    AC97_Modem_Line2_Rate          = 0x42,
+    AC97_Modem_Handset_Rate        = 0x44,
+    AC97_Modem_Line1_Level         = 0x46,
+    AC97_Modem_Line2_Level         = 0x48,
+    AC97_Modem_Handset_Level       = 0x4A,
+    AC97_Modem_GPIO_Config         = 0x4C,
+    AC97_Modem_GPIO_Polarity       = 0x4E,
+    AC97_Modem_GPIO_Sticky         = 0x50,
+    AC97_Modem_GPIO_Wakeup         = 0x52,
+    AC97_Modem_GPIO_Status         = 0x54,
+    AC97_Modem_Misc_AFE            = 0x56,
+
     AC97_Vendor_Reserved           = 0x58,
     AC97_Sigmatel_Analog           = 0x6c, /* We emulate a Sigmatel codec */
     AC97_Sigmatel_Dac2Invert       = 0x6e, /* We emulate a Sigmatel codec */
@@ -59,6 +76,42 @@ enum {
 
 #define EACS_VRA 1
 #define EACS_VRM 8
+
+/* Extended Modem ID. */
+#define AC97_MEI_LINE1       0x0001
+#define AC97_MEI_LINE2       0x0002
+#define AC97_MEI_HANDSET     0x0004
+#define AC97_MEI_CID1        0x0008
+#define AC97_MEI_CID2        0x0010
+#define AC97_MEI_ADDR_MASK   0xc000
+
+/* Extended Modem Status and Control. */
+#define AC97_MEA_GPIO        0x0001
+#define AC97_MEA_MREF        0x0002
+#define AC97_MEA_ADC1        0x0004
+#define AC97_MEA_DAC1        0x0008
+#define AC97_MEA_ADC2        0x0010
+#define AC97_MEA_DAC2        0x0020
+#define AC97_MEA_HADC        0x0040
+#define AC97_MEA_HDAC        0x0080
+#define AC97_MEA_PRA         0x0100
+#define AC97_MEA_PRB         0x0200
+#define AC97_MEA_PRC         0x0400
+#define AC97_MEA_PRD         0x0800
+#define AC97_MEA_PRE         0x1000
+#define AC97_MEA_PRF         0x2000
+#define AC97_MEA_PRG         0x4000
+#define AC97_MEA_PRH         0x8000
+#define AC97_MEA_READY_MASK  0x00ff
+#define AC97_MEA_POWER_MASK  0xff00
+
+/* Modem GPIO status bits defined by the common MC'97 register map. */
+#define AC97_GPIO_LINE1_OH   0x0001
+#define AC97_GPIO_LINE1_RI   0x0002
+#define AC97_GPIO_LINE1_CID  0x0004
+#define AC97_GPIO_LINE2_OH   0x0100
+#define AC97_GPIO_LINE2_RI   0x0200
+#define AC97_GPIO_LINE2_CID  0x0400
 
 #define MUTE_SHIFT 15
 
