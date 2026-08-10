@@ -87,6 +87,10 @@
 #define BD_IOC (1 << 31)
 #define BD_BUP (1 << 30)
 
+/* ICH/ICH0 expose two AC_SDIN codec positions, 0x80 bytes apart. */
+#define AC97_CODEC_STRIDE 0x80
+#define AC97_MAX_CODECS   2
+
 #define TYPE_AC97 "AC97"
 OBJECT_DECLARE_SIMPLE_TYPE(AC97LinkState, AC97)
 
@@ -115,8 +119,12 @@ struct AC97LinkState {
     uint32_t cas;
     uint32_t last_samp;
     AC97BusMasterRegs bm_regs[3];
-    /* Migration ABI: keep the historical byte-oriented codec image. */
+    /*
+     * Migration ABI: keep the historical 256-byte image.  It naturally
+     * contains the two 0x80-byte codec windows used by ICH/ICH0.
+     */
     uint8_t mixer_data[256];
+    bool secondary_codec;
     SWVoiceIn *voice_pi;
     SWVoiceOut *voice_po;
     SWVoiceIn *voice_mc;
@@ -173,13 +181,49 @@ static void po_callback(void *opaque, int free);
 static void pi_callback(void *opaque, int avail);
 static void mc_callback(void *opaque, int avail);
 
-static AC97Codec ac97_mixer_codec(AC97LinkState *s)
+static bool ac97_codec_present(const AC97LinkState *s, unsigned codec_num)
+{
+    switch (codec_num) {
+    case 0:
+        return true;
+    case 1:
+        return s->glob_sta & GS_S1CR;
+    default:
+        return false;
+    }
+}
+
+static AC97Codec ac97_link_codec(AC97LinkState *s, unsigned codec_num)
 {
     AC97Codec codec;
 
-    ac97_codec_init_le_bytes(&codec, s->mixer_data, sizeof(s->mixer_data),
+    g_assert(codec_num < AC97_MAX_CODECS);
+    ac97_codec_init_le_bytes(&codec,
+                             &s->mixer_data[codec_num * AC97_CODEC_STRIDE],
+                             AC97_CODEC_STRIDE,
                              &ac97_codec_profile_stac9700, 0);
     return codec;
+}
+
+static AC97Codec ac97_mixer_codec(AC97LinkState *s)
+{
+    return ac97_link_codec(s, 0);
+}
+
+static bool ac97_decode_codec_addr(AC97LinkState *s, uint32_t addr,
+                                   AC97Codec *codec, unsigned *reg,
+                                   unsigned *codec_num)
+{
+    unsigned num = addr / AC97_CODEC_STRIDE;
+
+    if (num >= AC97_MAX_CODECS || !ac97_codec_present(s, num)) {
+        return false;
+    }
+
+    *codec = ac97_link_codec(s, num);
+    *reg = addr % AC97_CODEC_STRIDE;
+    *codec_num = num;
+    return true;
 }
 
 static uint16_t mixer_load(AC97LinkState *s, uint32_t reg)
@@ -417,6 +461,11 @@ static void mixer_reset(AC97LinkState *s)
 
     dolog("mixer_reset");
     ac97_codec_reset(&codec);
+    if (ac97_codec_present(s, 1)) {
+        AC97Codec secondary = ac97_link_codec(s, 1);
+
+        ac97_codec_reset(&secondary);
+    }
     update_combined_volume_out(s);
     update_volume_in(s);
     reset_voices(s, active);
@@ -456,8 +505,18 @@ static uint32_t nam_readb(void *opaque, uint32_t addr)
 static uint32_t nam_readw(void *opaque, uint32_t addr)
 {
     AC97LinkState *s = opaque;
+    AC97Codec codec;
+    unsigned reg;
+    unsigned codec_num;
+
     s->cas = 0;
-    return mixer_load(s, addr);
+    if (!ac97_decode_codec_addr(s, addr, &codec, &reg, &codec_num)) {
+        /* No SDIN response: report the ICH read-completion timeout. */
+        s->glob_sta |= GS_RCS;
+        return 0xffff;
+    }
+
+    return ac97_codec_read(&codec, reg);
 }
 
 static uint32_t nam_readl(void *opaque, uint32_t addr)
@@ -482,17 +541,29 @@ static void nam_writeb(void *opaque, uint32_t addr, uint32_t val)
 static void nam_writew(void *opaque, uint32_t addr, uint32_t val)
 {
     AC97LinkState *s = opaque;
-    AC97Codec codec = ac97_mixer_codec(s);
+    AC97Codec codec;
     uint32_t events;
+    unsigned reg;
+    unsigned codec_num;
 
     s->cas = 0;
-    if (addr == AC97_Reset) {
-        mixer_reset(s);
+    if (!ac97_decode_codec_addr(s, addr, &codec, &reg, &codec_num)) {
         return;
     }
 
-    events = ac97_codec_write(&codec, addr, val);
-    apply_codec_events(s, events);
+    if (reg == AC97_Reset) {
+        if (codec_num == 0) {
+            mixer_reset(s);
+        } else {
+            ac97_codec_reset(&codec);
+        }
+        return;
+    }
+
+    events = ac97_codec_write(&codec, reg, val);
+    if (codec_num == 0) {
+        apply_codec_events(s, events);
+    }
 }
 
 static void nam_writel(void *opaque, uint32_t addr, uint32_t val)
@@ -974,6 +1045,9 @@ static int ac97_post_load(void *opaque, int version_id)
     uint8_t active[LAST_INDEX];
     AC97LinkState *s = opaque;
 
+    /* S1CR was already part of the migrated GLOB_STA image. */
+    s->secondary_codec = !!(s->glob_sta & GS_S1CR);
+
     update_combined_volume_out(s);
     update_volume_in(s);
 
@@ -1114,6 +1188,12 @@ static void ac97_on_reset(DeviceState *dev)
     reset_bm_regs(s, &s->bm_regs[1]);
     reset_bm_regs(s, &s->bm_regs[2]);
 
+    if (s->secondary_codec) {
+        s->glob_sta |= GS_S1CR;
+    } else {
+        s->glob_sta &= ~GS_S1CR;
+    }
+
     /*
      * Reset the mixer too. The Windows XP driver seems to rely on
      * this. At least it wants to read the vendor id before it resets
@@ -1160,6 +1240,7 @@ static void ac97_exit(PCIDevice *dev)
 
 static const Property ac97_properties[] = {
     DEFINE_AUDIO_PROPERTIES(AC97LinkState, audio_be),
+    DEFINE_PROP_BOOL("secondary-codec", AC97LinkState, secondary_codec, false),
 };
 
 static void ac97_class_init(ObjectClass *klass, const void *data)
