@@ -15,6 +15,9 @@ struct QemuConsole {
     int index;
     DisplayState *ds;
     DisplaySurface *surface;
+    DisplaySurface *display_surface;
+    int display_face_width;
+    int display_face_height;
     DisplayScanout scanout;
     DisplayGLCtx *gl;
     int gl_block;
