@@ -19,6 +19,7 @@ typedef enum AC97CodecProfileKind {
     AC97_CODEC_PROFILE_MINIMAL,
     AC97_CODEC_PROFILE_STAC9700,
     AC97_CODEC_PROFILE_STAC9766,
+    AC97_CODEC_PROFILE_LM4549,
 } AC97CodecProfileKind;
 
 typedef struct AC97CodecProfile {
@@ -27,10 +28,15 @@ typedef struct AC97CodecProfile {
     const AC97CodecRegDefault *defaults;
     size_t num_defaults;
     uint32_t vendor_id;
+    bool clear_on_reset;
 } AC97CodecProfile;
 
 typedef enum AC97CodecStorage {
+    /* Packed words: AC'97 register 0x02 is regs[1]. */
     AC97_CODEC_STORAGE_U16,
+    /* Historical sparse words: AC'97 register 0x02 is regs[2]. */
+    AC97_CODEC_STORAGE_U16_OFFSETS,
+    /* Historical byte image: register 0x02 occupies data[2..3]. */
     AC97_CODEC_STORAGE_LE_BYTES,
 } AC97CodecStorage;
 
@@ -48,6 +54,7 @@ enum {
     AC97_CODEC_EVENT_FRONT_DAC_RATE = 1u << 2,
     AC97_CODEC_EVENT_LR_ADC_RATE    = 1u << 3,
     AC97_CODEC_EVENT_MIC_ADC_RATE   = 1u << 4,
+    AC97_CODEC_EVENT_INVALID_RATE   = 1u << 5,
 };
 
 /*
@@ -59,11 +66,16 @@ enum {
 extern const AC97CodecProfile ac97_codec_profile_minimal;
 extern const AC97CodecProfile ac97_codec_profile_stac9700;
 extern const AC97CodecProfile ac97_codec_profile_stac9766;
+extern const AC97CodecProfile ac97_codec_profile_lm4549;
 
 void ac97_codec_init_u16(AC97Codec *codec,
                          uint16_t regs[AC97_CODEC_REGS],
                          const AC97CodecProfile *profile,
                          uint32_t vendor_id_override);
+void ac97_codec_init_u16_offsets(AC97Codec *codec,
+                                 uint16_t regs[AC97_CODEC_REGS],
+                                 const AC97CodecProfile *profile,
+                                 uint32_t vendor_id_override);
 void ac97_codec_init_le_bytes(AC97Codec *codec, uint8_t *data,
                               size_t data_size,
                               const AC97CodecProfile *profile,
