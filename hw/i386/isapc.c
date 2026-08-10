@@ -12,6 +12,7 @@
 #include "qemu/error-report.h"
 #include "hw/char/parallel-isa.h"
 #include "hw/core/or-irq.h"
+#include "hw/display/tseng_et4000ax.h"
 #include "hw/dma/i8257.h"
 #include "hw/i386/pc.h"
 #include "hw/i386/weitek4167.h"
@@ -31,7 +32,8 @@ static const int ide_iobase2[MAX_IDE_BUS] = { 0x3f6, 0x376 };
 static const int ide_irq[MAX_IDE_BUS] = { 14, 15 };
 
 static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
-                               const char *eisa_system_id)
+                               const char *eisa_system_id,
+                               bool with_et4000ax)
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -195,7 +197,12 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
         x86_register_ferr_irq(x86ms->gsi[13]);
     }
 
-    pc_vga_init(isa_bus, NULL);
+    if (with_et4000ax) {
+        ISADevice *vga = isa_new(TYPE_ISA_ET4000AX);
+        isa_realize_and_unref(vga, isa_bus, &error_fatal);
+    } else {
+        pc_vga_init(isa_bus, NULL);
+    }
 
     /* init basic PC hardware */
     pc_basic_device_init(pcms, isa_bus, x86ms->gsi, x86ms->rtc,
@@ -221,30 +228,30 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
 
 static void pc_init_isa(MachineState *machine)
 {
-    pc_init_isa_common(machine, false, NULL);
+    pc_init_isa_common(machine, false, NULL, false);
 }
 
 static void pc_init_isa_weitek(MachineState *machine)
 {
-    pc_init_isa_common(machine, true, NULL);
+    pc_init_isa_common(machine, true, NULL, false);
 }
 
 static void dell_system_425e_init(MachineState *machine)
 {
     /* Dell EISA system-board identifier DEL0001. */
-    pc_init_isa_common(machine, true, "DEL0001");
+    pc_init_isa_common(machine, true, "DEL0001", false);
 }
 
 static void dell_system_433e_init(MachineState *machine)
 {
     /* Dell EISA system-board identifier DEL0002. */
-    pc_init_isa_common(machine, true, "DEL0002");
+    pc_init_isa_common(machine, true, "DEL0002", false);
 }
 
 static void dell_powerline_433de_init(MachineState *machine)
 {
     /* Dell PowerLine Workstation 433DE system-board identifier DEL0005. */
-    pc_init_isa_common(machine, true, "DEL0005");
+    pc_init_isa_common(machine, true, "DEL0005", true);
 }
 
 static void isapc_machine_options(MachineClass *m)
@@ -296,7 +303,7 @@ static void dell_system_433e_machine_options(MachineClass *m)
 static void dell_powerline_433de_machine_options(MachineClass *m)
 {
     dell_system_e_machine_options(m);
-    m->desc = "Dell PowerLine Workstation 433DE (33 MHz i486, EISA, Weitek 4167)";
+    m->desc = "Dell PowerLine Workstation 433DE (33 MHz i486, EISA, Weitek 4167, Tseng ET4000AX)";
 }
 
 DEFINE_PC_MACHINE(isapc, "isapc", pc_init_isa,
