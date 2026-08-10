@@ -42,7 +42,7 @@
 
 /* Existing QEMU mouse ID: three-button Logitech-compatible extension. */
 static const uint8_t msmouse_id[] = {'M', '3'};
-/* Microsoft EasyBall uses the base Microsoft serial-mouse identification. */
+/* A one-button EasyBall must not advertise the three-button M3 extension. */
 static const uint8_t easyball_id[] = {'M'};
 
 /*
@@ -59,7 +59,7 @@ static const uint8_t msmouse_pnp_data[] = {
     M('\\'), M('\\')
 };
 
-/* PNP0F1E is the Microsoft Kids Trackball / Serial EasyBall identifier. */
+/* Historical Microsoft PnP/INF tables identify PNP0F1E as the EasyBall. */
 static const uint8_t easyball_pnp_data[] = {
     M('('), 1, '$', M('P'), M('N'), M('P'),
     M('0'), M('F'), M('1'), M('E'),
@@ -186,6 +186,15 @@ static void msmouse_input_event(DeviceState *dev, QemuConsole *src,
         break;
 
     case INPUT_EVENT_KIND_BTN:
+        /*
+         * EasyBall has one physical button.  Ignore every other host button,
+         * including wheels and later side-button event types.
+         */
+        if (!mouse->profile->right_button &&
+            !mouse->profile->middle_button &&
+            evt->btn.button != INPUT_BUTTON_LEFT) {
+            return;
+        }
         if ((!mouse->profile->right_button &&
              evt->btn.button == INPUT_BUTTON_RIGHT) ||
             (!mouse->profile->middle_button &&
@@ -232,7 +241,8 @@ static const QemuInputHandler msmouse_handler = {
 static void msmouse_queue_identification(MouseChardev *mouse)
 {
     const MouseProfile *profile = mouse->profile;
-    int c, i, j;
+    int c;
+    size_t i, j;
     uint8_t bytes[MSMOUSE_BUF_SZ / 2];
     const uint8_t hexchr[16] = {
         M('0'), M('1'), M('2'), M('3'), M('4'), M('5'), M('6'), M('7'),
