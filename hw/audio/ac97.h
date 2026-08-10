@@ -106,12 +106,22 @@ enum {
 #define AC97_MEA_POWER_MASK  0xff00
 
 /* Modem GPIO status bits defined by the common MC'97 register map. */
-#define AC97_GPIO_LINE1_OH   0x0001
-#define AC97_GPIO_LINE1_RI   0x0002
-#define AC97_GPIO_LINE1_CID  0x0004
-#define AC97_GPIO_LINE2_OH   0x0100
-#define AC97_GPIO_LINE2_RI   0x0200
-#define AC97_GPIO_LINE2_CID  0x0400
+#define AC97_GPIO_LINE1_OH      0x0001
+#define AC97_GPIO_LINE1_RI      0x0002
+#define AC97_GPIO_LINE1_CID     0x0004
+#define AC97_GPIO_LINE1_LCS     0x0008
+#define AC97_GPIO_LINE1_PULSE   0x0010
+#define AC97_GPIO_LINE1_HL1R    0x0020
+#define AC97_GPIO_LINE1_HOHD    0x0040
+#define AC97_GPIO_LINE12_AC     0x0080
+#define AC97_GPIO_LINE12_DC     0x0100
+#define AC97_GPIO_LINE12_RS     0x0200
+#define AC97_GPIO_LINE2_OH      0x0400
+#define AC97_GPIO_LINE2_RI      0x0800
+#define AC97_GPIO_LINE2_CID     0x1000
+#define AC97_GPIO_LINE2_LCS     0x2000
+#define AC97_GPIO_LINE2_PULSE   0x4000
+#define AC97_GPIO_LINE2_HL1R    0x8000
 
 #define MUTE_SHIFT 15
 
