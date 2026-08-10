@@ -7,20 +7,6 @@
 #include "ui/console-presentation.h"
 #include "console-priv.h"
 
-bool qemu_console_get_window_autoresize(const QemuConsole *con)
-{
-    return !con || !con->window_autoresize_disabled;
-}
-
-void qemu_console_set_window_autoresize(QemuConsole *con, bool enabled)
-{
-    if (!con) {
-        return;
-    }
-
-    con->window_autoresize_disabled = !enabled;
-}
-
 bool qemu_console_has_fixed_display_face(const QemuConsole *con)
 {
     return con && con->display_face_width > 0 && con->display_face_height > 0;
@@ -110,7 +96,6 @@ void qemu_console_set_fixed_display_face(QemuConsole *con,
 
     con->display_face_width = width;
     con->display_face_height = height;
-    con->window_autoresize_disabled = true;
     qemu_console_recreate_display_surface(con);
     qemu_console_update_display_surface(con);
 }
