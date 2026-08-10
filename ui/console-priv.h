@@ -20,6 +20,7 @@ struct QemuConsole {
     int gl_block;
     QEMUTimer *gl_unblock_timer;
     int window_id;
+    bool window_autoresize_disabled;
     QemuUIInfo ui_info;
     QEMUTimer *ui_timer;
     const GraphicHwOps *hw_ops;
