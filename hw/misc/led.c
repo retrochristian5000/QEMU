@@ -53,6 +53,16 @@ unsigned led_get_intensity(LEDState *s)
     return s->intensity_percent;
 }
 
+bool led_is_emitting(LEDState *s)
+{
+    return s->intensity_percent != 0;
+}
+
+bool led_get_gpio_level(LEDState *s)
+{
+    return s->gpio_level;
+}
+
 void led_set_state(LEDState *s, bool is_emitting)
 {
     led_set_intensity(s, is_emitting ? LED_INTENSITY_PERCENT_MAX : 0);
@@ -63,22 +73,65 @@ static void led_set_state_gpio_handler(void *opaque, int line, int new_state)
     LEDState *s = LED(opaque);
 
     assert(line == 0);
-    led_set_state(s, !!new_state == s->gpio_active_high);
+    s->gpio_level = !!new_state;
+    led_set_state(s, s->gpio_level == s->gpio_active_high);
+}
+
+static bool led_qom_get_emitting(Object *obj, Error **errp)
+{
+    return led_is_emitting(LED(obj));
+}
+
+static bool led_qom_get_gpio_level(Object *obj, Error **errp)
+{
+    return led_get_gpio_level(LED(obj));
+}
+
+static void led_init(Object *obj)
+{
+    LEDState *s = LED(obj);
+
+    /*
+     * These are observational properties.  Frontends and debugging tools can
+     * inspect the physical indicator without making LED state guest writable.
+     */
+    object_property_add_bool(obj, "emitting", led_qom_get_emitting, NULL);
+    object_property_add_bool(obj, "gpio-level", led_qom_get_gpio_level, NULL);
+    object_property_add_uint8_ptr(obj, "intensity-percent",
+                                  &s->intensity_percent, OBJ_PROP_FLAG_READ);
 }
 
 static void led_reset(DeviceState *dev)
 {
     LEDState *s = LED(dev);
 
-    led_set_state(s, s->gpio_active_high);
+    /*
+     * Reset the electrical input, then derive light emission from polarity.
+     * The default input level is high to preserve the historical QEMU LED
+     * reset behaviour.  Accurate machine models can override it.
+     */
+    led_set_state_gpio_handler(s, 0, s->gpio_reset_level);
+}
+
+static int led_post_load(void *opaque, int version_id)
+{
+    LEDState *s = LED(opaque);
+
+    if (version_id < 2) {
+        /* Reconstruct the old migration stream's implicit GPIO level. */
+        s->gpio_level = led_is_emitting(s) == s->gpio_active_high;
+    }
+    return 0;
 }
 
 static const VMStateDescription vmstate_led = {
     .name = TYPE_LED,
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
+    .post_load = led_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT8(intensity_percent, LEDState),
+        VMSTATE_BOOL_V(gpio_level, LEDState, 2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -105,6 +158,7 @@ static const Property led_properties[] = {
     DEFINE_PROP_STRING("color", LEDState, color),
     DEFINE_PROP_STRING("description", LEDState, description),
     DEFINE_PROP_BOOL("gpio-active-high", LEDState, gpio_active_high, true),
+    DEFINE_PROP_BOOL("gpio-reset-level", LEDState, gpio_reset_level, true),
 };
 
 static void led_class_init(ObjectClass *klass, const void *data)
@@ -123,6 +177,7 @@ static const TypeInfo led_info = {
     .name = TYPE_LED,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(LEDState),
+    .instance_init = led_init,
     .class_init = led_class_init
 };
 
@@ -133,10 +188,11 @@ static void led_register_types(void)
 
 type_init(led_register_types)
 
-LEDState *led_create_simple(Object *parentobj,
-                            GpioPolarity gpio_polarity,
-                            LEDColor color,
-                            const char *description)
+LEDState *led_create_simple_with_reset(Object *parentobj,
+                                       GpioPolarity gpio_polarity,
+                                       bool gpio_reset_level,
+                                       LEDColor color,
+                                       const char *description)
 {
     g_autofree char *name = NULL;
     DeviceState *dev;
@@ -144,6 +200,7 @@ LEDState *led_create_simple(Object *parentobj,
     dev = qdev_new(TYPE_LED);
     qdev_prop_set_bit(dev, "gpio-active-high",
                       gpio_polarity == GPIO_POLARITY_ACTIVE_HIGH);
+    qdev_prop_set_bit(dev, "gpio-reset-level", gpio_reset_level);
     qdev_prop_set_string(dev, "color", led_color_name[color]);
     if (!description) {
         static unsigned undescribed_led_id;
@@ -157,4 +214,14 @@ LEDState *led_create_simple(Object *parentobj,
     qdev_realize_and_unref(dev, NULL, &error_fatal);
 
     return LED(dev);
+}
+
+LEDState *led_create_simple(Object *parentobj,
+                            GpioPolarity gpio_polarity,
+                            LEDColor color,
+                            const char *description)
+{
+    /* Preserve the original helper's effective reset line level. */
+    return led_create_simple_with_reset(parentobj, gpio_polarity, true,
+                                        color, description);
 }
