@@ -1,5 +1,6 @@
 hw_display_modules = {}
 
+system_ss.add(files('analog-video.c'))
 system_ss.add(when: 'CONFIG_DDC', if_true: files('i2c-ddc.c'))
 system_ss.add(when: 'CONFIG_EDID', if_true: files('edid-generate.c', 'edid-region.c'))
 
@@ -64,12 +65,12 @@ system_ss.add(when: 'CONFIG_ARTIST', if_true: files('artist.c'))
 system_ss.add(when: 'CONFIG_ATI_VGA', if_true: [files('ati.c', 'ati_2d.c', 'ati_dbg.c'), pixman])
 
 system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_PCI'],     if_true: [files('apple-gfx.m', 'apple-gfx-pci.m')])
-system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_MMIO'],    if_true: [files('apple-gfx.m', 'apple-gfx-mmio.m')])
+system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_MMIO'],   if_true: [files('apple-gfx.m', 'apple-gfx-mmio.m')])
 
 if config_all_devices.has_key('CONFIG_VIRTIO_GPU')
   virtio_gpu_ss = ss.source_set()
   virtio_gpu_ss.add(when: 'CONFIG_VIRTIO_GPU',
-                    if_true: [files('virtio-gpu-base.c', 'virtio-gpu.c'), pixman])
+                    if_true: [files('virtio-gpu-base.c', 'virtio-gpu.c'), pixman, virgl])
   if host_os == 'linux'
     virtio_gpu_ss.add(files('virtio-gpu-udmabuf.c'))
   else
@@ -88,7 +89,7 @@ if config_all_devices.has_key('CONFIG_VIRTIO_GPU')
   if rutabaga.found()
     virtio_gpu_rutabaga_ss = ss.source_set()
     virtio_gpu_rutabaga_ss.add(when: ['CONFIG_VIRTIO_GPU', rutabaga],
-                               if_true: [files('virtio-gpu-rutabaga.c'), pixman])
+                               if_true: [files('virtio-gpu-rutabaga.c'), pixman, rutabaga])
     hw_display_modules += {'virtio-gpu-rutabaga': virtio_gpu_rutabaga_ss}
   endif
 endif
@@ -97,21 +98,17 @@ if config_all_devices.has_key('CONFIG_VIRTIO_PCI')
   virtio_gpu_pci_ss = ss.source_set()
   virtio_gpu_pci_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI'],
                         if_true: [files('virtio-gpu-pci.c'), pixman])
-  virtio_gpu_pci_ss.add(when: ['CONFIG_VHOST_USER_GPU', 'CONFIG_VIRTIO_PCI'],
-                        if_true: files('vhost-user-gpu-pci.c'))
-  hw_display_modules += {'virtio-gpu-pci': virtio_gpu_pci_ss}
-
   if virgl.found() and opengl.found()
     virtio_gpu_pci_gl_ss = ss.source_set()
     virtio_gpu_pci_gl_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI', virgl, opengl],
-                             if_true: [files('virtio-gpu-pci-gl.c'), pixman])
+                             if_true: [files('virtio-gpu-pci-gl.c'), pixman, virgl])
     hw_display_modules += {'virtio-gpu-pci-gl': virtio_gpu_pci_gl_ss}
   endif
   if rutabaga.found()
-    virtio_gpu_pci_rutabaga_ss = ss.source_set()
-    virtio_gpu_pci_rutabaga_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI', rutabaga],
-                                   if_true: [files('virtio-gpu-pci-rutabaga.c'), pixman])
-    hw_display_modules += {'virtio-gpu-pci-rutabaga': virtio_gpu_pci_rutabaga_ss}
+    virtio_gpu_rutabaga_ss = ss.source_set()
+    virtio_gpu_rutabaga_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI', rutabaga],
+                               if_true: [files('virtio-gpu-pci-rutabaga.c'), pixman, rutabaga])
+    hw_display_modules += {'virtio-gpu-pci-rutabaga': virtio_gpu_rutabaga_ss}
   endif
 endif
 
@@ -125,18 +122,15 @@ if config_all_devices.has_key('CONFIG_VIRTIO_VGA')
   hw_display_modules += {'virtio-vga': virtio_vga_ss}
 
   if virgl.found() and opengl.found()
-    virtio_vga_gl_ss = ss.source_set()
-    virtio_vga_gl_ss.add(when: ['CONFIG_VIRTIO_VGA', virgl, opengl],
-                         if_true: [files('virtio-vga-gl.c'), pixman])
-    virtio_vga_gl_ss.add(when: 'CONFIG_ACPI', if_true: files('acpi-vga.c'))
-    hw_display_modules += {'virtio-vga-gl': virtio_vga_gl_ss}
+    virtio_vga_pci_gl_ss = ss.source_set()
+    virtio_vga_pci_gl_ss.add(when: ['CONFIG_VIRTIO_VGA', virgl, opengl],
+                         if_true: [files('virtio-vga-gl.c'), pixman, virgl])
+    hw_display_modules += {'virtio-vga-gl': virtio_vga_pci_gl_ss}
   endif
-
   if rutabaga.found()
     virtio_vga_rutabaga_ss = ss.source_set()
     virtio_vga_rutabaga_ss.add(when: ['CONFIG_VIRTIO_VGA', rutabaga],
-                               if_true: [files('virtio-vga-rutabaga.c'), pixman])
-    virtio_vga_rutabaga_ss.add(when: 'CONFIG_ACPI', if_true: files('acpi-vga.c'))
+                               if_true: [files('virtio-vga-rutabaga.c'), pixman, rutabaga])
     hw_display_modules += {'virtio-vga-rutabaga': virtio_vga_rutabaga_ss}
   endif
 endif
