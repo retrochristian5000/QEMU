@@ -15,6 +15,7 @@ Details about QEMU's various subsystems including how to add features to them.
    clocks
    leds
    physical-displays
+   storage-controller-modules
    ebpf_rss
    hexagon-sys
    migration/index
