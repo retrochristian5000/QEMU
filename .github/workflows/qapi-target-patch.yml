@@ -1,0 +1,59 @@
+name: One-shot QAPI target patch
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/qapi-target-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-target-enum:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Patch SysEmuTarget exactly
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('qapi/machine.json')
+          text = path.read_text()
+
+          old_s2650 = "             'ppc64', 'riscv32', 'riscv64', 'rx', 's390x', 'sh4',\n"
+          new_s2650 = "             'ppc64', 'riscv32', 'riscv64', 'rx', 's2650', 's390x', 'sh4',\n"
+          old_trimedia = "             'sh4eb', 'sparc', 'sparc64', 'tricore',\n"
+          new_trimedia = "             'sh4eb', 'sparc', 'sparc64', 'tricore', 'trimedia',\n"
+
+          if text.count(old_s2650) != 1:
+              raise SystemExit('S2650 insertion point is not unique')
+          if text.count(old_trimedia) != 1:
+              raise SystemExit('TriMedia insertion point is not unique')
+          if "'s2650'" in text or "'trimedia'" in text:
+              raise SystemExit('target already present; refusing duplicate edit')
+
+          updated = text.replace(old_s2650, new_s2650, 1)
+          updated = updated.replace(old_trimedia, new_trimedia, 1)
+          path.write_text(updated)
+          PY
+
+          git diff --check -- qapi/machine.json
+          test "$(git diff --numstat -- qapi/machine.json)" = $'2\t2\tqapi/machine.json'
+          git diff -- qapi/machine.json
+
+      - name: Commit exact patch and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/qapi-target-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add qapi/machine.json .github/workflows/qapi-target-patch.yml
+          git diff --cached --check
+          git commit -m 'qapi: register S2650 and TriMedia system targets'
+          git push origin HEAD:master
