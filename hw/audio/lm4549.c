@@ -14,10 +14,12 @@
  */
 
 #include "qemu/osdep.h"
+#include "hw/audio/ac97-codec.h"
 #include "hw/core/hw-error.h"
 #include "qemu/log.h"
 #include "qemu/audio.h"
 #include "lm4549.h"
+#include "ac97.h"
 #include "migration/vmstate.h"
 
 #if 0
@@ -39,60 +41,51 @@ do { printf("lm4549: " fmt , ## __VA_ARGS__); } while (0)
 static FILE *fp_dac_input;
 #endif
 
-/* LM4549 register list */
-enum {
-    LM4549_Reset                    = 0x00,
-    LM4549_Master_Volume            = 0x02,
-    LM4549_Line_Out_Volume          = 0x04,
-    LM4549_Master_Volume_Mono       = 0x06,
-    LM4549_PC_Beep_Volume           = 0x0A,
-    LM4549_Phone_Volume             = 0x0C,
-    LM4549_Mic_Volume               = 0x0E,
-    LM4549_Line_In_Volume           = 0x10,
-    LM4549_CD_Volume                = 0x12,
-    LM4549_Video_Volume             = 0x14,
-    LM4549_Aux_Volume               = 0x16,
-    LM4549_PCM_Out_Volume           = 0x18,
-    LM4549_Record_Select            = 0x1A,
-    LM4549_Record_Gain              = 0x1C,
-    LM4549_General_Purpose          = 0x20,
-    LM4549_3D_Control               = 0x22,
-    LM4549_Powerdown_Ctrl_Stat      = 0x26,
-    LM4549_Ext_Audio_ID             = 0x28,
-    LM4549_Ext_Audio_Stat_Ctrl      = 0x2A,
-    LM4549_PCM_Front_DAC_Rate       = 0x2C,
-    LM4549_PCM_ADC_Rate             = 0x32,
-    LM4549_Vendor_ID1               = 0x7C,
-    LM4549_Vendor_ID2               = 0x7E
-};
+static AC97Codec lm4549_codec(lm4549_state *s)
+{
+    AC97Codec codec;
+
+    /*
+     * Preserve the historical sparse regfile layout: the AC'97 byte offset
+     * is the uint16_t array index.  vmstate_lm4549_state migrates this exact
+     * array, so repacking it would break old snapshots.
+     */
+    ac97_codec_init_u16_offsets(&codec, s->regfile,
+                                &ac97_codec_profile_lm4549, 0);
+    return codec;
+}
+
+static uint16_t lm4549_codec_read(lm4549_state *s, unsigned reg)
+{
+    AC97Codec codec = lm4549_codec(s);
+
+    return ac97_codec_read(&codec, reg);
+}
+
+static void lm4549_open_voice(lm4549_state *s, unsigned freq)
+{
+    struct audsettings as = {
+        .freq = freq,
+        .nchannels = 2,
+        .fmt = AUDIO_FORMAT_S16,
+        .big_endian = false,
+    };
+
+    s->voice = audio_be_open_out(
+        s->audio_be,
+        s->voice,
+        "lm4549.out",
+        s,
+        lm4549_audio_out_callback,
+        &as
+    );
+}
 
 static void lm4549_reset(lm4549_state *s)
 {
-    uint16_t *regfile = s->regfile;
+    AC97Codec codec = lm4549_codec(s);
 
-    regfile[LM4549_Reset]               = 0x0d50;
-    regfile[LM4549_Master_Volume]       = 0x8008;
-    regfile[LM4549_Line_Out_Volume]     = 0x8000;
-    regfile[LM4549_Master_Volume_Mono]  = 0x8000;
-    regfile[LM4549_PC_Beep_Volume]      = 0x0000;
-    regfile[LM4549_Phone_Volume]        = 0x8008;
-    regfile[LM4549_Mic_Volume]          = 0x8008;
-    regfile[LM4549_Line_In_Volume]      = 0x8808;
-    regfile[LM4549_CD_Volume]           = 0x8808;
-    regfile[LM4549_Video_Volume]        = 0x8808;
-    regfile[LM4549_Aux_Volume]          = 0x8808;
-    regfile[LM4549_PCM_Out_Volume]      = 0x8808;
-    regfile[LM4549_Record_Select]       = 0x0000;
-    regfile[LM4549_Record_Gain]         = 0x8000;
-    regfile[LM4549_General_Purpose]     = 0x0000;
-    regfile[LM4549_3D_Control]          = 0x0101;
-    regfile[LM4549_Powerdown_Ctrl_Stat] = 0x000f;
-    regfile[LM4549_Ext_Audio_ID]        = 0x0001;
-    regfile[LM4549_Ext_Audio_Stat_Ctrl] = 0x0000;
-    regfile[LM4549_PCM_Front_DAC_Rate]  = 0xbb80;
-    regfile[LM4549_PCM_ADC_Rate]        = 0xbb80;
-    regfile[LM4549_Vendor_ID1]          = 0x4e53;
-    regfile[LM4549_Vendor_ID2]          = 0x4331;
+    ac97_codec_reset(&codec);
 }
 
 static void lm4549_audio_transfer(lm4549_state *s)
@@ -106,7 +99,7 @@ static void lm4549_audio_transfer(lm4549_state *s)
 
     /* Try to write the buffer content */
     written_bytes = audio_be_write(s->audio_be, s->voice, s->buffer,
-                              s->buffer_level * sizeof(uint16_t));
+                                   s->buffer_level * sizeof(uint16_t));
     written_samples = written_bytes >> 1;
 
 #if defined(LM4549_DUMP_DAC_INPUT)
@@ -154,82 +147,37 @@ static void lm4549_audio_out_callback(void *opaque, int free)
 
 uint32_t lm4549_read(lm4549_state *s, hwaddr offset)
 {
-    uint16_t *regfile = s->regfile;
-    uint32_t value = 0;
+    uint32_t value;
 
-    /* Read the stored value */
     assert(offset < 128);
-    value = regfile[offset];
+    value = lm4549_codec_read(s, offset);
 
-    DPRINTF("read [0x%02x] = 0x%04x\n", offset, value);
+    DPRINTF("read [0x%02x] = 0x%04x\n", (unsigned)offset, value);
 
     return value;
 }
 
-void lm4549_write(lm4549_state *s,
-                  hwaddr offset, uint32_t value)
+void lm4549_write(lm4549_state *s, hwaddr offset, uint32_t value)
 {
-    uint16_t *regfile = s->regfile;
+    AC97Codec codec = lm4549_codec(s);
+    uint32_t events;
 
     assert(offset < 128);
-    DPRINTF("write [0x%02x] = 0x%04x\n", offset, value);
+    DPRINTF("write [0x%02x] = 0x%04x\n", (unsigned)offset, value);
 
-    switch (offset) {
-    case LM4549_Reset:
-        lm4549_reset(s);
-        break;
+    events = ac97_codec_write(&codec, offset, value);
 
-    case LM4549_PCM_Front_DAC_Rate:
+    if (events & AC97_CODEC_EVENT_INVALID_RATE) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: DAC sample rate %d Hz is invalid, ignoring it\n",
+                      __func__, value);
+        return;
+    }
+
+    if (events & AC97_CODEC_EVENT_FRONT_DAC_RATE) {
         DPRINTF("DAC rate change = %i\n", value);
-
-        /*
-         * Valid sample rates are 4kHz to 48kHz.
-         * The datasheet doesn't say what happens if you try to
-         * set the frequency to zero. AUD_open_out() will print
-         * a bug message if we pass it a zero frequency, so just
-         * ignore attempts to set the DAC frequency to zero.
-         */
-        if (value < 4000 || value > 48000) {
-            qemu_log_mask(LOG_GUEST_ERROR,
-                          "%s: DAC sample rate %d Hz is invalid, ignoring it\n",
-                          __func__, value);
-            break;
-        }
-        regfile[LM4549_PCM_Front_DAC_Rate] = value;
-
-        /* Re-open a voice with the new sample rate */
-        struct audsettings as;
-        as.freq = value;
-        as.nchannels = 2;
-        as.fmt = AUDIO_FORMAT_S16;
-        as.big_endian = false;
-
-        s->voice = audio_be_open_out(
-            s->audio_be,
-            s->voice,
-            "lm4549.out",
-            s,
-            lm4549_audio_out_callback,
-            &as
-        );
-        break;
-
-    case LM4549_Powerdown_Ctrl_Stat:
-        value &= ~0xf;
-        value |= regfile[LM4549_Powerdown_Ctrl_Stat] & 0xf;
-        regfile[LM4549_Powerdown_Ctrl_Stat] = value;
-        break;
-
-    case LM4549_Ext_Audio_ID:
-    case LM4549_Vendor_ID1:
-    case LM4549_Vendor_ID2:
-        DPRINTF("Write to read-only register 0x%x\n", (int)offset);
-        break;
-
-    default:
-        /* Store the new value */
-        regfile[offset] = value;
-        break;
+        lm4549_open_voice(s, lm4549_codec_read(s,
+                                                AC97_PCM_Front_DAC_Rate));
     }
 }
 
@@ -260,42 +208,26 @@ uint32_t lm4549_write_samples(lm4549_state *s, uint32_t left, uint32_t right)
 static int lm4549_post_load(void *opaque, int version_id)
 {
     lm4549_state *s = (lm4549_state *)opaque;
-    uint16_t *regfile = s->regfile;
-
-    /* Re-open a voice with the current sample rate */
-    uint32_t freq = regfile[LM4549_PCM_Front_DAC_Rate];
+    uint32_t freq = lm4549_codec_read(s, AC97_PCM_Front_DAC_Rate);
 
     DPRINTF("post_load freq = %i\n", freq);
     DPRINTF("post_load voice_is_active = %i\n", s->voice_is_active);
 
-    struct audsettings as;
-    as.freq = freq;
-    as.nchannels = 2;
-    as.fmt = AUDIO_FORMAT_S16;
-    as.big_endian = false;
-
-    s->voice = audio_be_open_out(
-        s->audio_be,
-        s->voice,
-        "lm4549.out",
-        s,
-        lm4549_audio_out_callback,
-        &as
-    );
+    /* Re-open a voice with the current sample rate. */
+    lm4549_open_voice(s, freq);
 
     /* Request data */
     if (s->voice_is_active == 1) {
-        lm4549_audio_out_callback(s, audio_be_get_buffer_size_out(s->audio_be, s->voice));
+        lm4549_audio_out_callback(s,
+            audio_be_get_buffer_size_out(s->audio_be, s->voice));
     }
 
     return 0;
 }
 
-void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void* opaque,
+void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void *opaque,
                  Error **errp)
 {
-    struct audsettings as;
-
     /* Register an audio card */
     if (!audio_be_check(&s->audio_be, errp)) {
         return;
@@ -309,19 +241,7 @@ void lm4549_init(lm4549_state *s, lm4549_callback data_req_cb, void* opaque,
     lm4549_reset(s);
 
     /* Open a default voice */
-    as.freq = 48000;
-    as.nchannels = 2;
-    as.fmt = AUDIO_FORMAT_S16;
-    as.big_endian = false;
-
-    s->voice = audio_be_open_out(
-        s->audio_be,
-        s->voice,
-        "lm4549.out",
-        s,
-        lm4549_audio_out_callback,
-        &as
-    );
+    lm4549_open_voice(s, 48000);
 
     audio_be_set_volume_out_lr(s->audio_be, s->voice, 0, 255, 255);
 
