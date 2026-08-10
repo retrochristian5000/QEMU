@@ -24,7 +24,7 @@ Model the path as separate layers::
               |
               +---- luminance
               |
-              +---- colour encoding (NTSC/PAL/SECAM)
+              +---- composite colour encoding
               |
               v
        composite/baseband signal
@@ -52,7 +52,7 @@ Scanning is not colour coding
 -----------------------------
 
 ``AnalogVideoScanSystem`` describes timing independently from
-``AnalogVideoColorSystem``.  The initial timing set contains the two dominant
+``AnalogVideoColorEncoding``.  The initial timing set contains the two dominant
 interlaced conventional-TV scan families:
 
 * ``ANALOG_VIDEO_SCAN_525_59_94``: 525 total lines, 60000/1001 fields/s,
@@ -60,16 +60,21 @@ interlaced conventional-TV scan families:
 * ``ANALOG_VIDEO_SCAN_625_50``: 625 total lines, 50 fields/s, two interlaced
   fields per frame.
 
-Colour is represented independently as monochrome, NTSC, PAL or SECAM.
+Composite colour encoding is represented independently.  The initial profiles
+include monochrome, NTSC 3.58, conventional PAL 4.43, PAL-M, PAL-N and SECAM.
+These are baseband decoder profiles, not RF broadcast-system letters.
 
 This is intentional.  Code must not test ``PAL`` and infer 625/50, or test
-``NTSC`` and infer 525/59.94.  PAL-M is an important architectural control:
-it combines PAL colour coding with the 525/59.94 scan family.  Other regional
-or playback variants likewise make a single combined ``ntsc_or_pal`` enum too
-weak for reusable hardware emulation.
+``NTSC`` and infer a complete broadcast system.  PAL-M is an important
+architectural control because it combines PAL-family colour coding with the
+525/59.94 scan family.  PAL-N is another useful control: it shares the 625/50
+scan family with conventional PAL but must not be assumed decoder-identical to
+PAL 4.43 merely because both are called PAL.
 
-The predefined ``analog_video_pal_m_525_59_94`` descriptor exists partly as a
-regression guard against reintroducing that false equivalence.
+The predefined ``analog_video_pal_m_525_59_94`` and
+``analog_video_pal_n_625_50`` descriptors therefore guard against two different
+bad shortcuts: coupling colour family to scan timing, and treating a broad
+colour-family name as a complete baseband decoder profile.
 
 Line and field timing
 ---------------------
@@ -93,24 +98,25 @@ beam scanning or deinterlacing.
 Receiver lock versus colour lock
 --------------------------------
 
-A monitor can synchronize to a signal even when it cannot decode its colour
-system.  Monochrome receivers are the obvious case, but multi-standard and
-partially compatible colour receivers make the distinction useful more
+A monitor can synchronize to a signal even when it cannot decode its composite
+colour encoding.  Monochrome receivers are the obvious case, but multi-standard
+and partially compatible colour receivers make the distinction useful more
 broadly.
 
-``AnalogVideoReceiverCaps`` consequently has independent scan and colour masks.
-``analog_video_receiver_lock()`` returns one of three states:
+``AnalogVideoReceiverCaps`` consequently has independent scan and colour-profile
+masks.  ``analog_video_receiver_lock()`` returns one of three states:
 
 * ``ANALOG_VIDEO_LOCK_NONE`` -- the receiver cannot lock to the scan timing;
 * ``ANALOG_VIDEO_LOCK_LUMA`` -- sync/luminance are usable but colour is not
   decoded (or the source is monochrome);
-* ``ANALOG_VIDEO_LOCK_COLOR`` -- both scan timing and colour encoding are
-  supported.
+* ``ANALOG_VIDEO_LOCK_COLOR`` -- both scan timing and the exact represented
+  composite-colour profile are supported.
 
 A historical monitor model should use this type of signal acceptance test
 instead of maintaining a list of framebuffer dimensions.  Electrical
-bandwidth, sync tolerance, line-frequency tolerance and model-specific decoder
-quirks can be added around this baseline when documented for a real device.
+bandwidth, sync tolerance, line-frequency tolerance, chroma-decoder details and
+model-specific quirks can be added around this baseline when documented for a
+real device.
 
 Framebuffer dimensions are not TV standards
 --------------------------------------------
@@ -152,9 +158,9 @@ A complete historical display path therefore needs both concepts::
     host Cocoa/GTK/SDL/VNC window
 
 The physical display can reject an unsupported scan family, show luminance
-without colour, or decode the supported colour system before the result is
-presented on its stable face.  Host GUI resize policy remains outside that
-signal decision.
+without colour, or decode the supported composite-colour profile before the
+result is presented on its stable face.  Host GUI resize policy remains outside
+that signal decision.
 
 Overscan, blanking and active picture
 -------------------------------------
@@ -179,13 +185,14 @@ For analogue television, useful hardware stages are:
 #. RF broadcast-system handling: channel bandwidth, vision modulation, sound
    carrier arrangement and other system-specific RF parameters.
 #. IF/demodulation: recover composite video and sound/baseband information.
-#. Colour/video decoding: identify scan timing and decode NTSC/PAL/SECAM.
+#. Colour/video decoding: identify scan timing and decode the applicable
+   composite-colour profile.
 #. Capture: crop/sample/scale the decoded picture and DMA it into guest memory.
 
 The new ``AnalogVideoSignal`` type belongs between the RF/demodulator and
 monitor/decoder/capture portions of that pipeline.  RF system letters and
 channel plans should be added as a separate RF descriptor rather than fields
-that silently redefine ``AnalogVideoColorSystem``.
+that silently redefine ``AnalogVideoColorEncoding``.
 
 This boundary supports both integrated and modular hardware.  For example, a
 future PCI TV-capture card may contain a tuner module, an IF/video decoder and
@@ -195,8 +202,8 @@ signal without any RF tuner at all.
 Sound is a separate signal path
 -------------------------------
 
-Analogue television audio must not be inferred solely from NTSC/PAL/SECAM
-colour selection.  Sound carrier spacing and modulation are properties of the
+Analogue television audio must not be inferred solely from an NTSC/PAL/SECAM
+family name.  Sound carrier spacing and modulation are properties of the
 broadcast/RF system and regional implementation.  A future tuner core should
 therefore expose video and audio results separately even when one silicon part
 demodulates both.
@@ -206,13 +213,14 @@ Implementation rules
 
 When adding analogue-video hardware:
 
-* keep scan timing, colour coding and RF broadcast system separate;
+* keep scan timing, composite colour coding and RF broadcast system separate;
 * use rational rates for hardware timing where the standard is fractional;
 * preserve interlace as field timing instead of silently converting it to a
   progressive frame rate;
+* do not treat all PAL-family signals as one decoder profile;
 * let cards own their sampled/captured raster dimensions;
 * let physical monitors own face geometry, overscan and visual response;
-* do not make a GUI frontend responsible for NTSC/PAL decoding;
+* do not make a GUI frontend responsible for analogue colour decoding;
 * do not synthesize RF/channel behaviour inside the generic baseband signal;
 * add hybrid or regional variants only from documented hardware/standards
   evidence rather than deriving them from names.
