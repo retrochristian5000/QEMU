@@ -13,6 +13,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "hw/audio/ac97-codec.h"
 #include "hw/isa/vt82c686.h"
 #include "ac97.h"
 #include "trace.h"
@@ -33,120 +34,51 @@
 #define CNTL_TERM   BIT(6)
 #define CNTL_PAUSE  BIT(3)
 
+#define CODEC_VOL(vol, mask)  ((255 * ((vol) & mask)) / mask)
+
 static void open_voice_out(ViaAC97State *s);
 
-static uint16_t codec_rates[] = { 8000, 11025, 16000, 22050, 32000, 44100,
-                                  48000 };
+static AC97Codec via_ac97_codec(ViaAC97State *s)
+{
+    AC97Codec codec;
 
-#define CODEC_REG(s, o)  ((s)->codec_regs[(o) / 2])
-#define CODEC_VOL(vol, mask)  ((255 * ((vol) & mask)) / mask)
+    ac97_codec_init_u16(&codec, s->codec_regs,
+                        &ac97_codec_profile_stac9766, 0);
+    return codec;
+}
+
+static uint16_t codec_read(ViaAC97State *s, unsigned addr)
+{
+    AC97Codec codec = via_ac97_codec(s);
+
+    return ac97_codec_read(&codec, addr);
+}
 
 static void codec_volume_set_out(ViaAC97State *s)
 {
     int lvol, rvol, mute;
+    uint16_t master = codec_read(s, AC97_Master_Volume_Mute);
+    uint16_t pcm = codec_read(s, AC97_PCM_Out_Volume_Mute);
 
-    lvol = 255 - CODEC_VOL(CODEC_REG(s, AC97_Master_Volume_Mute) >> 8, 0x1f);
-    lvol *= 255 - CODEC_VOL(CODEC_REG(s, AC97_PCM_Out_Volume_Mute) >> 8, 0x1f);
+    lvol = 255 - CODEC_VOL(master >> 8, 0x1f);
+    lvol *= 255 - CODEC_VOL(pcm >> 8, 0x1f);
     lvol /= 255;
-    rvol = 255 - CODEC_VOL(CODEC_REG(s, AC97_Master_Volume_Mute), 0x1f);
-    rvol *= 255 - CODEC_VOL(CODEC_REG(s, AC97_PCM_Out_Volume_Mute), 0x1f);
+    rvol = 255 - CODEC_VOL(master, 0x1f);
+    rvol *= 255 - CODEC_VOL(pcm, 0x1f);
     rvol /= 255;
-    mute = CODEC_REG(s, AC97_Master_Volume_Mute) >> MUTE_SHIFT;
-    mute |= CODEC_REG(s, AC97_PCM_Out_Volume_Mute) >> MUTE_SHIFT;
+    mute = master >> MUTE_SHIFT;
+    mute |= pcm >> MUTE_SHIFT;
     audio_be_set_volume_out_lr(s->audio_be, s->vo, mute, lvol, rvol);
 }
 
-static void codec_reset(ViaAC97State *s)
+static void codec_apply_events(ViaAC97State *s, uint32_t events)
 {
-    memset(s->codec_regs, 0, sizeof(s->codec_regs));
-    CODEC_REG(s, AC97_Reset) = 0x6a90;
-    CODEC_REG(s, AC97_Master_Volume_Mute) = 0x8000;
-    CODEC_REG(s, AC97_Headphone_Volume_Mute) = 0x8000;
-    CODEC_REG(s, AC97_Master_Volume_Mono_Mute) = 0x8000;
-    CODEC_REG(s, AC97_Phone_Volume_Mute) = 0x8008;
-    CODEC_REG(s, AC97_Mic_Volume_Mute) = 0x8008;
-    CODEC_REG(s, AC97_Line_In_Volume_Mute) = 0x8808;
-    CODEC_REG(s, AC97_CD_Volume_Mute) = 0x8808;
-    CODEC_REG(s, AC97_Video_Volume_Mute) = 0x8808;
-    CODEC_REG(s, AC97_Aux_Volume_Mute) = 0x8808;
-    CODEC_REG(s, AC97_PCM_Out_Volume_Mute) = 0x8808;
-    CODEC_REG(s, AC97_Record_Gain_Mute) = 0x8000;
-    CODEC_REG(s, AC97_Powerdown_Ctrl_Stat) = 0x000f;
-    CODEC_REG(s, AC97_Extended_Audio_ID) = 0x0a05;
-    CODEC_REG(s, AC97_Extended_Audio_Ctrl_Stat) = 0x0400;
-    CODEC_REG(s, AC97_PCM_Front_DAC_Rate) = 48000;
-    CODEC_REG(s, AC97_PCM_LR_ADC_Rate) = 48000;
-    /* Sigmatel 9766 (STAC9766) */
-    CODEC_REG(s, AC97_Vendor_ID1) = 0x8384;
-    CODEC_REG(s, AC97_Vendor_ID2) = 0x7666;
-}
-
-static uint16_t codec_read(ViaAC97State *s, uint8_t addr)
-{
-    return CODEC_REG(s, addr);
-}
-
-static void codec_write(ViaAC97State *s, uint8_t addr, uint16_t val)
-{
-    trace_via_ac97_codec_write(addr, val);
-    switch (addr) {
-    case AC97_Reset:
-        codec_reset(s);
-        return;
-    case AC97_Master_Volume_Mute:
-    case AC97_PCM_Out_Volume_Mute:
-        if (addr == AC97_Master_Volume_Mute) {
-            if (val & BIT(13)) {
-                val |= 0x1f00;
-            }
-            if (val & BIT(5)) {
-                val |= 0x1f;
-            }
-        }
-        CODEC_REG(s, addr) = val & 0x9f1f;
+    if (events & AC97_CODEC_EVENT_VOLUME_OUT) {
         codec_volume_set_out(s);
-        return;
-    case AC97_Extended_Audio_Ctrl_Stat:
-        CODEC_REG(s, addr) &= ~EACS_VRA;
-        CODEC_REG(s, addr) |= val & EACS_VRA;
-        if (!(val & EACS_VRA)) {
-            CODEC_REG(s, AC97_PCM_Front_DAC_Rate) = 48000;
-            CODEC_REG(s, AC97_PCM_LR_ADC_Rate) = 48000;
-            open_voice_out(s);
-        }
-        return;
-    case AC97_PCM_Front_DAC_Rate:
-    case AC97_PCM_LR_ADC_Rate:
-        if (CODEC_REG(s, AC97_Extended_Audio_Ctrl_Stat) & EACS_VRA) {
-            int i;
-            uint16_t rate = val;
-
-            for (i = 0; i < ARRAY_SIZE(codec_rates) - 1; i++) {
-                if (rate < codec_rates[i] +
-                    (codec_rates[i + 1] - codec_rates[i]) / 2) {
-                    rate = codec_rates[i];
-                    break;
-                }
-            }
-            if (rate > 48000) {
-                rate = 48000;
-            }
-            CODEC_REG(s, addr) = rate;
-            open_voice_out(s);
-        }
-        return;
-    case AC97_Powerdown_Ctrl_Stat:
-        CODEC_REG(s, addr) = (val & 0xff00) | (CODEC_REG(s, addr) & 0xff);
-        return;
-    case AC97_Extended_Audio_ID:
-    case AC97_Vendor_ID1:
-    case AC97_Vendor_ID2:
-        /* Read only registers */
-        return;
-    default:
-        qemu_log_mask(LOG_UNIMP,
-                      "via-ac97: Unimplemented codec register 0x%x\n", addr);
-        CODEC_REG(s, addr) = val;
+    }
+    if (events & (AC97_CODEC_EVENT_FRONT_DAC_RATE |
+                  AC97_CODEC_EVENT_LR_ADC_RATE)) {
+        open_voice_out(s);
     }
 }
 
@@ -234,7 +166,7 @@ static void out_cb(void *opaque, int avail)
 static void open_voice_out(ViaAC97State *s)
 {
     struct audsettings as = {
-        .freq = CODEC_REG(s, AC97_PCM_Front_DAC_Rate),
+        .freq = codec_read(s, AC97_PCM_Front_DAC_Rate),
         .nchannels = s->aur.type & BIT(4) ? 2 : 1,
         .fmt = s->aur.type & BIT(5) ? AUDIO_FORMAT_S16 : AUDIO_FORMAT_S8,
         .big_endian = false,
@@ -358,8 +290,14 @@ static void sgd_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
             s->ac97_cmd |= codec_read(s, (val >> 16) & 0x7f);
             s->ac97_cmd |= BIT(25); /* data valid */
         } else {
+            AC97Codec codec = via_ac97_codec(s);
+            uint32_t events;
+            unsigned reg = (val >> 16) & 0x7f;
+
+            trace_via_ac97_codec_write(reg, val);
             s->ac97_cmd = val & 0xc0ffffffULL;
-            codec_write(s, (val >> 16) & 0x7f, val);
+            events = ac97_codec_write(&codec, reg, val);
+            codec_apply_events(s, events);
         }
         break;
     case 0xc:
@@ -417,8 +355,9 @@ static const MemoryRegionOps midi_ops = {
 static void via_ac97_reset(DeviceState *dev)
 {
     ViaAC97State *s = VIA_AC97(dev);
+    AC97Codec codec = via_ac97_codec(s);
 
-    codec_reset(s);
+    ac97_codec_reset(&codec);
 }
 
 static void via_ac97_realize(PCIDevice *pci_dev, Error **errp)
