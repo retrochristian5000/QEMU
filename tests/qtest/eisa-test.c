@@ -60,7 +60,8 @@ int main(int argc, char **argv)
         if (qtest_has_machine(data->machine)) {
             char *path = g_strdup_printf("/eisa/%s", data->machine);
 
-            qtest_add_data_func_full(path, data, test_dell_system_board, g_free);
+            qtest_add_data_func(path, data, test_dell_system_board);
+            g_free(path);
         }
     }
 
