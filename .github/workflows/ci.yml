@@ -18,14 +18,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-active-targets:
-    name: Build active targets
+  build-active-target:
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - s2650
+          - trimedia
+          - ppc
+          - i386
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
@@ -41,15 +49,15 @@ jobs:
             python3-venv \
             zlib1g-dev
 
-      - name: Configure focused system build
+      - name: Configure ${{ matrix.target }}
         run: |
           mkdir build-ci
           cd build-ci
           ../configure \
-            --target-list=s2650-softmmu,trimedia-softmmu,ppc-softmmu,i386-softmmu \
+            --target-list=${{ matrix.target }}-softmmu \
             --disable-docs
 
-      - name: Build
+      - name: Build ${{ matrix.target }}
         shell: bash
         run: |
           set -o pipefail
@@ -68,21 +76,15 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: build-log-${{ matrix.target }}
           path: build-ci/build.log
           if-no-files-found: error
           retention-days: 7
 
-      - name: Smoke-test system binaries
+      - name: Smoke-test ${{ matrix.target }}
         run: |
           set -eux
-          for binary in \
-            qemu-system-s2650 \
-            qemu-system-trimedia \
-            qemu-system-ppc \
-            qemu-system-i386
-          do
-            test -x "build-ci/${binary}"
-            "build-ci/${binary}" -version
-            "build-ci/${binary}" -machine help >/dev/null
-          done
+          binary="build-ci/qemu-system-${{ matrix.target }}"
+          test -x "${binary}"
+          "${binary}" -version
+          "${binary}" -machine help >/dev/null
