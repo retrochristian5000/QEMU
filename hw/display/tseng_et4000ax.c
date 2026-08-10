@@ -23,6 +23,7 @@
 #include "qom/object.h"
 #include "ui/console.h"
 #include "vga_int.h"
+#include "vga_regs.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(ET4000AXState, ISA_ET4000AX)
 
