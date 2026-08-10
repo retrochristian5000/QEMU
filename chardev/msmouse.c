@@ -70,9 +70,9 @@ static const uint8_t easyball_pnp_data[] = {
 
 typedef struct MouseProfile {
     const uint8_t *mouse_id;
-    size_t mouse_id_len;
+    uint32_t mouse_id_len;
     const uint8_t *pnp_data;
-    size_t pnp_data_len;
+    uint32_t pnp_data_len;
     const char *description;
     bool right_button;
     bool middle_button;
@@ -242,7 +242,7 @@ static void msmouse_queue_identification(MouseChardev *mouse)
 {
     const MouseProfile *profile = mouse->profile;
     int c;
-    size_t i, j;
+    uint32_t i, j;
     uint8_t bytes[MSMOUSE_BUF_SZ / 2];
     const uint8_t hexchr[16] = {
         M('0'), M('1'), M('2'), M('3'), M('4'), M('5'), M('6'), M('7'),
