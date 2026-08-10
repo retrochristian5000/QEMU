@@ -17,6 +17,7 @@
 #include "qemu/bswap.h"
 #include "qemu/module.h"
 #include "hw/audio/cs4630.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/pci/pci_device.h"
 #include "migration/vmstate.h"
 
