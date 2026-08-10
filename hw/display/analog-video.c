@@ -23,18 +23,24 @@ static const AnalogVideoTiming analog_video_timings[] = {
 
 const AnalogVideoSignal analog_video_ntsc_525_59_94 = {
     .scan = ANALOG_VIDEO_SCAN_525_59_94,
-    .color = ANALOG_VIDEO_COLOR_NTSC,
+    .color = ANALOG_VIDEO_COLOR_NTSC_358,
 };
 
 const AnalogVideoSignal analog_video_pal_625_50 = {
     .scan = ANALOG_VIDEO_SCAN_625_50,
-    .color = ANALOG_VIDEO_COLOR_PAL,
+    .color = ANALOG_VIDEO_COLOR_PAL_443,
 };
 
 /* PAL-M is intentionally present to prevent PAL from becoming a 625/50 alias. */
 const AnalogVideoSignal analog_video_pal_m_525_59_94 = {
     .scan = ANALOG_VIDEO_SCAN_525_59_94,
-    .color = ANALOG_VIDEO_COLOR_PAL,
+    .color = ANALOG_VIDEO_COLOR_PAL_M,
+};
+
+/* PAL-N is a distinct baseband profile despite sharing the 625/50 scan family. */
+const AnalogVideoSignal analog_video_pal_n_625_50 = {
+    .scan = ANALOG_VIDEO_SCAN_625_50,
+    .color = ANALOG_VIDEO_COLOR_PAL_N,
 };
 
 const AnalogVideoSignal analog_video_secam_625_50 = {
