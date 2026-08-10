@@ -15,12 +15,40 @@ typedef struct AC97CodecRegDefault {
     uint16_t value;
 } AC97CodecRegDefault;
 
+typedef enum AC97CodecProfileKind {
+    AC97_CODEC_PROFILE_MINIMAL,
+    AC97_CODEC_PROFILE_STAC9700,
+    AC97_CODEC_PROFILE_STAC9766,
+} AC97CodecProfileKind;
+
 typedef struct AC97CodecProfile {
     const char *name;
+    AC97CodecProfileKind kind;
     const AC97CodecRegDefault *defaults;
     size_t num_defaults;
     uint32_t vendor_id;
 } AC97CodecProfile;
+
+typedef enum AC97CodecStorage {
+    AC97_CODEC_STORAGE_U16,
+    AC97_CODEC_STORAGE_LE_BYTES,
+} AC97CodecStorage;
+
+typedef struct AC97Codec {
+    void *data;
+    size_t data_size;
+    AC97CodecStorage storage;
+    const AC97CodecProfile *profile;
+    uint32_t vendor_id_override;
+} AC97Codec;
+
+enum {
+    AC97_CODEC_EVENT_VOLUME_OUT     = 1u << 0,
+    AC97_CODEC_EVENT_VOLUME_IN      = 1u << 1,
+    AC97_CODEC_EVENT_FRONT_DAC_RATE = 1u << 2,
+    AC97_CODEC_EVENT_LR_ADC_RATE    = 1u << 3,
+    AC97_CODEC_EVENT_MIC_ADC_RATE   = 1u << 4,
+};
 
 /*
  * The minimal profile intentionally supplies no functional defaults.  It is
@@ -32,11 +60,17 @@ extern const AC97CodecProfile ac97_codec_profile_minimal;
 extern const AC97CodecProfile ac97_codec_profile_stac9700;
 extern const AC97CodecProfile ac97_codec_profile_stac9766;
 
-void ac97_codec_reset(uint16_t regs[AC97_CODEC_REGS],
-                      const AC97CodecProfile *profile,
-                      uint32_t vendor_id_override);
-uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], unsigned reg);
-void ac97_codec_write_raw(uint16_t regs[AC97_CODEC_REGS], unsigned reg,
-                          uint16_t value);
+void ac97_codec_init_u16(AC97Codec *codec,
+                         uint16_t regs[AC97_CODEC_REGS],
+                         const AC97CodecProfile *profile,
+                         uint32_t vendor_id_override);
+void ac97_codec_init_le_bytes(AC97Codec *codec, uint8_t *data,
+                              size_t data_size,
+                              const AC97CodecProfile *profile,
+                              uint32_t vendor_id_override);
+void ac97_codec_reset(AC97Codec *codec);
+uint16_t ac97_codec_read(const AC97Codec *codec, unsigned reg);
+void ac97_codec_write_raw(AC97Codec *codec, unsigned reg, uint16_t value);
+uint32_t ac97_codec_write(AC97Codec *codec, unsigned reg, uint16_t value);
 
 #endif /* HW_AUDIO_AC97_CODEC_H */
