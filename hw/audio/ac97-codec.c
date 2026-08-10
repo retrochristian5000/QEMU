@@ -78,7 +78,7 @@ void ac97_codec_reset(uint16_t regs[AC97_CODEC_REGS],
         for (i = 0; i < profile->num_defaults; i++) {
             const AC97CodecRegDefault *d = &profile->defaults[i];
 
-            if (!(d->reg & 1) && d->reg < AC97_CODEC_REGS * 2) {
+            if (!(d->reg & 1)) {
                 regs[d->reg >> 1] = d->value;
             }
         }
@@ -95,7 +95,7 @@ void ac97_codec_reset(uint16_t regs[AC97_CODEC_REGS],
     }
 }
 
-uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], uint8_t reg)
+uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], unsigned reg)
 {
     if ((reg & 1) || reg >= AC97_CODEC_REGS * 2) {
         return 0xffff;
@@ -104,7 +104,7 @@ uint16_t ac97_codec_read(const uint16_t regs[AC97_CODEC_REGS], uint8_t reg)
     return regs[reg >> 1];
 }
 
-void ac97_codec_write_raw(uint16_t regs[AC97_CODEC_REGS], uint8_t reg,
+void ac97_codec_write_raw(uint16_t regs[AC97_CODEC_REGS], unsigned reg,
                           uint16_t value)
 {
     if ((reg & 1) || reg >= AC97_CODEC_REGS * 2) {
