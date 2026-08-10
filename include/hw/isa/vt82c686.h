@@ -21,7 +21,6 @@ typedef struct {
 } ViaAC97SGDChannel;
 
 OBJECT_DECLARE_SIMPLE_TYPE(ViaAC97State, VIA_AC97);
-OBJECT_DECLARE_SIMPLE_TYPE(ViaMC97State, VIA_MC97);
 
 struct ViaAC97State {
     PCIDevice dev;
@@ -33,18 +32,6 @@ struct ViaAC97State {
     ViaAC97SGDChannel aur;
     uint16_t codec_regs[128];
     uint32_t ac97_cmd;
-};
-
-struct ViaMC97State {
-    PCIDevice dev;
-    MemoryRegion io;
-    ViaAC97SGDChannel modem_out;
-    ViaAC97SGDChannel modem_in;
-    uint16_t codec_regs[128];
-    uint32_t ac97_cmd;
-    uint32_t gpi_status;
-    uint32_t gpi_intr;
-    uint32_t codec_id;
 };
 
 void via_isa_set_irq(PCIDevice *d, int n, int level);
