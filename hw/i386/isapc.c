@@ -241,6 +241,12 @@ static void dell_system_433e_init(MachineState *machine)
     pc_init_isa_common(machine, true, "DEL0002");
 }
 
+static void dell_powerline_433de_init(MachineState *machine)
+{
+    /* Dell PowerLine Workstation 433DE system-board identifier DEL0005. */
+    pc_init_isa_common(machine, true, "DEL0005");
+}
+
 static void isapc_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
@@ -287,6 +293,12 @@ static void dell_system_433e_machine_options(MachineClass *m)
     m->desc = "Dell System 433E (33 MHz i486, EISA, Weitek 4167)";
 }
 
+static void dell_powerline_433de_machine_options(MachineClass *m)
+{
+    dell_system_e_machine_options(m);
+    m->desc = "Dell PowerLine Workstation 433DE (33 MHz i486, EISA, Weitek 4167)";
+}
+
 DEFINE_PC_MACHINE(isapc, "isapc", pc_init_isa,
                   isapc_machine_options);
 DEFINE_PC_MACHINE(isapc_weitek, "isapc-weitek", pc_init_isa_weitek,
@@ -295,3 +307,6 @@ DEFINE_PC_MACHINE(dell_system_425e, "dell-system-425e", dell_system_425e_init,
                   dell_system_425e_machine_options);
 DEFINE_PC_MACHINE(dell_system_433e, "dell-system-433e", dell_system_433e_init,
                   dell_system_433e_machine_options);
+DEFINE_PC_MACHINE(dell_powerline_433de, "dell-system-433de",
+                  dell_powerline_433de_init,
+                  dell_powerline_433de_machine_options);
