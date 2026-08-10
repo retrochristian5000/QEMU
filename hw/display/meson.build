@@ -65,12 +65,12 @@ system_ss.add(when: 'CONFIG_ARTIST', if_true: files('artist.c'))
 system_ss.add(when: 'CONFIG_ATI_VGA', if_true: [files('ati.c', 'ati_2d.c', 'ati_dbg.c'), pixman])
 
 system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_PCI'],     if_true: [files('apple-gfx.m', 'apple-gfx-pci.m')])
-system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_MMIO'],   if_true: [files('apple-gfx.m', 'apple-gfx-mmio.m')])
+system_ss.add(when: [pvg, 'CONFIG_MAC_PVG_MMIO'], if_true: [files('apple-gfx.m', 'apple-gfx-mmio.m')])
 
 if config_all_devices.has_key('CONFIG_VIRTIO_GPU')
   virtio_gpu_ss = ss.source_set()
   virtio_gpu_ss.add(when: 'CONFIG_VIRTIO_GPU',
-                    if_true: [files('virtio-gpu-base.c', 'virtio-gpu.c'), pixman, virgl])
+                    if_true: [files('virtio-gpu-base.c', 'virtio-gpu.c'), pixman, spice])
   if host_os == 'linux'
     virtio_gpu_ss.add(files('virtio-gpu-udmabuf.c'))
   else
@@ -98,6 +98,8 @@ if config_all_devices.has_key('CONFIG_VIRTIO_PCI')
   virtio_gpu_pci_ss = ss.source_set()
   virtio_gpu_pci_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI'],
                         if_true: [files('virtio-gpu-pci.c'), pixman])
+  virtio_gpu_pci_ss.add(when: ['CONFIG_VHOST_USER_GPU', 'CONFIG_VIRTIO_PCI'],
+                        if_true: files('vhost-user-gpu-pci.c'))
   if virgl.found() and opengl.found()
     virtio_gpu_pci_gl_ss = ss.source_set()
     virtio_gpu_pci_gl_ss.add(when: ['CONFIG_VIRTIO_GPU', 'CONFIG_VIRTIO_PCI', virgl, opengl],
@@ -122,10 +124,10 @@ if config_all_devices.has_key('CONFIG_VIRTIO_VGA')
   hw_display_modules += {'virtio-vga': virtio_vga_ss}
 
   if virgl.found() and opengl.found()
-    virtio_vga_pci_gl_ss = ss.source_set()
-    virtio_vga_pci_gl_ss.add(when: ['CONFIG_VIRTIO_VGA', virgl, opengl],
+    virtio_vga_gl_ss = ss.source_set()
+    virtio_vga_gl_ss.add(when: ['CONFIG_VIRTIO_VGA', virgl, opengl],
                          if_true: [files('virtio-vga-gl.c'), pixman, virgl])
-    hw_display_modules += {'virtio-vga-gl': virtio_vga_pci_gl_ss}
+    hw_display_modules += {'virtio-vga-gl': virtio_vga_gl_ss}
   endif
   if rutabaga.found()
     virtio_vga_rutabaga_ss = ss.source_set()
