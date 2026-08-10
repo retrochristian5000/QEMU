@@ -254,8 +254,8 @@
 # @tls-authz: the ID of the QAuthZ authorization object against which
 #     the client's x509 distinguished name will be validated.  This
 #     object is only resolved at time of use, so can be deleted and
-#     recreated on the fly while this object is missing, it will default to denying access
-#     (since 4.0)
+#     recreated on the fly while the chardev server is active.  If
+#     missing, it will default to denying access (since 4.0)
 #
 # @server: create server socket (default: true)
 #
@@ -775,7 +775,7 @@
 # Return info about the chardev backend just created.
 #
 # @pty: name of the slave pseudoterminal device, present if and only
-#     if the chardev type is 'pty'
+#     if a chardev of type 'pty' was created
 #
 # Since: 1.4
 ##
@@ -805,7 +805,7 @@
 #     -> { "execute" : "chardev-add",
 #          "arguments" : { "id" : "bar",
 #                          "backend" : { "type" : "file",
-#                                        "data" : { "out" : "/tmp/bar.log" } } }
+#                                        "data" : { "out" : "/tmp/bar.log" } } } }
 #     <- { "return": {} }
 #
 # .. qmp-example::
@@ -836,7 +836,7 @@
 #     -> { "execute" : "chardev-change",
 #          "arguments" : { "id" : "baz",
 #                          "backend" : { "type" : "pty", "data" : {} } } }
-#     <- { "return": {} }
+#     <- { "return": { "pty" : "/dev/pty/42" } }
 #
 # .. qmp-example::
 #
