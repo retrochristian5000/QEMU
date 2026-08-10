@@ -128,6 +128,15 @@ static inline uint32_t *cs4630_ba0_reg(CS4630State *s, hwaddr addr)
     return &s->ba0[addr >> 2];
 }
 
+static AC97Codec cs4630_ac97_codec(CS4630State *s)
+{
+    AC97Codec codec;
+
+    ac97_codec_init_u16(&codec, s->ac97, &ac97_codec_profile_minimal,
+                        s->ac97_codec_id);
+    return codec;
+}
+
 static void cs4630_update_irq(CS4630State *s)
 {
     uint32_t hisr = s->ba0[BA0_HISR >> 2];
@@ -152,6 +161,7 @@ static void cs4630_set_irq_enabled(CS4630State *s, bool enabled)
 static void cs4630_ac97_link_update(CS4630State *s, bool secondary,
                                     uint32_t value)
 {
+    AC97Codec codec = cs4630_ac97_codec(s);
     hwaddr sts_addr = secondary ? BA0_ACSTS2 : BA0_ACSTS;
     hwaddr isv_addr = secondary ? BA0_ACISV2 : BA0_ACISV;
     hwaddr cad_addr = secondary ? BA0_ACCAD2 : BA0_ACCAD;
@@ -183,11 +193,11 @@ static void cs4630_ac97_link_update(CS4630State *s, bool secondary,
 
         if (value & ACCTL_CRW) {
             *cs4630_ba0_reg(s, sad_addr) = reg;
-            *cs4630_ba0_reg(s, sda_addr) = ac97_codec_read(s->ac97, reg);
+            *cs4630_ba0_reg(s, sda_addr) = ac97_codec_read(&codec, reg);
             *sts |= ACSTS_VSTS;
         } else {
-            ac97_codec_write_raw(s->ac97, reg,
-                                 *cs4630_ba0_reg(s, cda_addr) & 0xffff);
+            ac97_codec_write(&codec, reg,
+                             *cs4630_ba0_reg(s, cda_addr) & 0xffff);
         }
 
         /* Commands complete synchronously in this first implementation. */
@@ -328,11 +338,11 @@ static const MemoryRegionOps cs4630_ba1_ops = {
 static void cs4630_reset(DeviceState *dev)
 {
     CS4630State *s = CS4630(dev);
+    AC97Codec codec = cs4630_ac97_codec(s);
 
     memset(s->ba0, 0, sizeof(s->ba0));
     memset(s->ba1, 0, s->ba1_size);
-    ac97_codec_reset(s->ac97, &ac97_codec_profile_minimal,
-                     s->ac97_codec_id);
+    ac97_codec_reset(&codec);
 
     s->irq_enabled = false;
     s->ba0[BA0_MIDSR >> 2] = MIDSR_RBE;
