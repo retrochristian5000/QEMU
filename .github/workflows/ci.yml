@@ -31,25 +31,36 @@ jobs:
           - ppc
           - i386
 
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: 'true'
+
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ccache \
             libfdt-dev \
-            libglib2.0-dev \
-            libpixman-1-dev \
-            ninja-build \
-            pkg-config \
-            python3 \
-            python3-venv \
-            zlib1g-dev
+            python3-venv
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Configure ${{ matrix.target }}
+        env:
+          CC: ccache gcc
+          CXX: ccache g++
         run: |
           mkdir build-ci
           cd build-ci
@@ -61,7 +72,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ninja -C build-ci 2>&1 | tee build-ci/build.log
+          ninja -C build-ci qemu-system-${{ matrix.target }} 2>&1 | tee build-ci/build.log
 
       - name: Show compiler errors
         if: failure()
@@ -80,6 +91,17 @@ jobs:
           path: build-ci/build.log
           if-no-files-found: error
           retention-days: 7
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Smoke-test ${{ matrix.target }}
         run: |
