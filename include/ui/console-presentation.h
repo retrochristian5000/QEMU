@@ -9,21 +9,15 @@
 #include "ui/console.h"
 
 /*
- * Generic QEMU consoles automatically track guest surface size in host GUI
- * windows.  Physical display models can disable that policy: a real monitor's
- * glass does not change size when the input raster changes.
- */
-bool qemu_console_get_window_autoresize(const QemuConsole *con);
-void qemu_console_set_window_autoresize(QemuConsole *con, bool enabled);
-
-/*
  * Give a console a fixed physical-display face.  Guest raster changes are
  * resampled into this stable presentation surface, so modes with non-square
  * pixels (for example 720x400 VGA text on a 4:3 CRT) fill the same monitor
  * face without teaching individual host GUIs about historical timings.
  *
  * Width and height are presentation geometry, not guest-visible mode limits.
- * Setting a fixed face also disables guest-driven host-window autoresizing.
+ * Because frontends continue to see one stable surface, guest mode switches
+ * no longer request host-window resizes; explicit user window resizing remains
+ * a frontend concern.
  */
 void qemu_console_set_fixed_display_face(QemuConsole *con,
                                          int width, int height);
