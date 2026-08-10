@@ -61,6 +61,8 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "iadd";
     case TRIMEDIA_OP_ISUB:
         return "isub";
+    case TRIMEDIA_OP_IGEQ:
+        return "igeq";
     case TRIMEDIA_OP_IGTR:
         return "igtr";
     case TRIMEDIA_OP_BITAND:
@@ -77,16 +79,46 @@ static const char *trimedia_opcode_name(uint8_t opcode)
         return "h_st32d";
     case TRIMEDIA_OP_ISUBI:
         return "isubi";
+    case TRIMEDIA_OP_UGTR:
+        return "ugtr";
+    case TRIMEDIA_OP_UGTRI:
+        return "ugtri";
+    case TRIMEDIA_OP_UGEQ:
+        return "ugeq";
+    case TRIMEDIA_OP_UGEQI:
+        return "ugeqi";
     case TRIMEDIA_OP_IEQL:
-        return "ieql";
+        return "ieql/ueql";
+    case TRIMEDIA_OP_UEQLI:
+        return "ueqli";
     case TRIMEDIA_OP_INEQ:
-        return "ineq";
+        return "ineq/uneq";
+    case TRIMEDIA_OP_UNEQI:
+        return "uneqi";
+    case TRIMEDIA_OP_ULESI:
+        return "ulesi";
+    case TRIMEDIA_OP_ILEQI:
+        return "ileqi";
+    case TRIMEDIA_OP_ULEQI:
+        return "uleqi";
+    case TRIMEDIA_OP_CARRY:
+        return "carry";
+    case TRIMEDIA_OP_INONZERO:
+        return "inonzero";
     case TRIMEDIA_OP_BITXOR:
         return "bitxor";
+    case TRIMEDIA_OP_BITANDINV:
+        return "bitandinv";
     case TRIMEDIA_OP_BITINV:
         return "bitinv";
+    case TRIMEDIA_OP_SEX16:
+        return "sex16";
     case TRIMEDIA_OP_LSR:
         return "lsr";
+    case TRIMEDIA_OP_ROL:
+        return "rol";
+    case TRIMEDIA_OP_ROLI:
+        return "roli";
     case TRIMEDIA_OP_JMPT:
         return "jmpt";
     case TRIMEDIA_OP_IJMPT:
@@ -171,6 +203,15 @@ static void trimedia_gen_variable_shift(TCGv_i32 dest, TCGv_i32 value,
                         shifted, large_result);
 }
 
+static void trimedia_gen_rotate_left(TCGv_i32 dest, TCGv_i32 value,
+                                     TCGv_i32 shift)
+{
+    TCGv_i32 low_five = tcg_temp_new_i32();
+
+    tcg_gen_andi_i32(low_five, shift, 31);
+    tcg_gen_rotl_i32(dest, value, low_five);
+}
+
 /*
  * Generate one decoded latency-1 result without committing it to the
  * architectural register file.  All operations in a VLIW instruction read
@@ -223,8 +264,14 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
     case TRIMEDIA_OP_BITXOR:
         tcg_gen_xor_i32(write->value, src1, src2);
         break;
+    case TRIMEDIA_OP_BITANDINV:
+        tcg_gen_andc_i32(write->value, src1, src2);
+        break;
     case TRIMEDIA_OP_BITINV:
         tcg_gen_not_i32(write->value, src1);
+        break;
+    case TRIMEDIA_OP_SEX16:
+        tcg_gen_ext16s_i32(write->value, src1);
         break;
     case TRIMEDIA_OP_IEQL:
         tcg_gen_setcond_i32(TCG_COND_EQ, write->value, src1, src2);
@@ -232,8 +279,17 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
     case TRIMEDIA_OP_INEQ:
         tcg_gen_setcond_i32(TCG_COND_NE, write->value, src1, src2);
         break;
+    case TRIMEDIA_OP_IGEQ:
+        tcg_gen_setcond_i32(TCG_COND_GE, write->value, src1, src2);
+        break;
     case TRIMEDIA_OP_IGTR:
         tcg_gen_setcond_i32(TCG_COND_GT, write->value, src1, src2);
+        break;
+    case TRIMEDIA_OP_UGTR:
+        tcg_gen_setcond_i32(TCG_COND_GTU, write->value, src1, src2);
+        break;
+    case TRIMEDIA_OP_UGEQ:
+        tcg_gen_setcond_i32(TCG_COND_GEU, write->value, src1, src2);
         break;
     case TRIMEDIA_OP_IEQLI:
         if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
@@ -265,6 +321,61 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
         }
         tcg_gen_setcondi_i32(TCG_COND_LT, write->value, src1, op->modifier);
         break;
+    case TRIMEDIA_OP_ILEQI:
+        if (!trimedia_modifier_in_range(op->modifier, -64, 63)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_LE, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_UGTRI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_GTU, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_UGEQI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_GEU, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_UEQLI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_EQ, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_UNEQI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_NE, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_ULESI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_LTU, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_ULEQI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 127)) {
+            return false;
+        }
+        tcg_gen_setcondi_i32(TCG_COND_LEU, write->value, src1, op->modifier);
+        break;
+    case TRIMEDIA_OP_CARRY:
+    {
+        TCGv_i32 sum = tcg_temp_new_i32();
+
+        tcg_gen_add_i32(sum, src1, src2);
+        tcg_gen_setcond_i32(TCG_COND_LTU, write->value, sum, src1);
+        break;
+    }
+    case TRIMEDIA_OP_INONZERO:
+        tcg_gen_movcond_i32(TCG_COND_EQ, write->value, src1,
+                            tcg_constant_i32(0), src2,
+                            tcg_constant_i32(0));
+        break;
     case TRIMEDIA_OP_ASLI:
         if (!trimedia_modifier_in_range(op->modifier, 0, 31)) {
             return false;
@@ -287,6 +398,15 @@ static bool trimedia_gen_decoded_op(const TrimediaDecodedOp *op,
     case TRIMEDIA_OP_ASR:
     case TRIMEDIA_OP_LSR:
         trimedia_gen_variable_shift(write->value, src1, src2, op->opcode);
+        break;
+    case TRIMEDIA_OP_ROL:
+        trimedia_gen_rotate_left(write->value, src1, src2);
+        break;
+    case TRIMEDIA_OP_ROLI:
+        if (!trimedia_modifier_in_range(op->modifier, 0, 31)) {
+            return false;
+        }
+        tcg_gen_rotli_i32(write->value, src1, op->modifier);
         break;
     case TRIMEDIA_OP_IMM:
         tcg_gen_movi_i32(write->value, op->modifier);
