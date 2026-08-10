@@ -12,21 +12,23 @@
 #define EISA_CONTROL   0x0c84
 #define EISA_SLOT_SIZE 0x1000
 
-static void test_dell_system_board(const void *data)
-{
-    const char *machine = data;
-    QTestState *s;
+typedef struct DellEISATestData {
+    const char *machine;
     uint8_t product_low;
+} DellEISATestData;
 
-    s = qtest_initf("-machine %s -display none", machine);
+static void test_dell_system_board(const void *opaque)
+{
+    const DellEISATestData *data = opaque;
+    QTestState *s;
 
-    /* DEL encodes to 0x10, 0xac; 0001/0002 distinguishes the siblings. */
+    s = qtest_initf("-machine %s -display none", data->machine);
+
+    /* DEL encodes to 0x10, 0xac; the product bytes select the system board. */
     g_assert_cmphex(qtest_inb(s, EISA_VENDOR_ID + 0), ==, 0x10);
     g_assert_cmphex(qtest_inb(s, EISA_VENDOR_ID + 1), ==, 0xac);
     g_assert_cmphex(qtest_inb(s, EISA_VENDOR_ID + 2), ==, 0x00);
-
-    product_low = !strcmp(machine, "dell-system-425e") ? 0x01 : 0x02;
-    g_assert_cmphex(qtest_inb(s, EISA_VENDOR_ID + 3), ==, product_low);
+    g_assert_cmphex(qtest_inb(s, EISA_VENDOR_ID + 3), ==, data->product_low);
 
     /* Slot 0 starts enabled and the standardized ENABLE bit is writable. */
     g_assert_cmphex(qtest_inb(s, EISA_CONTROL), ==, 0x01);
@@ -43,15 +45,23 @@ static void test_dell_system_board(const void *data)
 
 int main(int argc, char **argv)
 {
+    static const DellEISATestData dell_systems[] = {
+        { "dell-system-425e",  0x01 },
+        { "dell-system-433e",  0x02 },
+        { "dell-system-433de", 0x05 },
+    };
+    int i;
+
     g_test_init(&argc, &argv, NULL);
 
-    if (qtest_has_machine("dell-system-425e")) {
-        qtest_add_data_func("/eisa/dell-system-425e", "dell-system-425e",
-                            test_dell_system_board);
-    }
-    if (qtest_has_machine("dell-system-433e")) {
-        qtest_add_data_func("/eisa/dell-system-433e", "dell-system-433e",
-                            test_dell_system_board);
+    for (i = 0; i < ARRAY_SIZE(dell_systems); i++) {
+        const DellEISATestData *data = &dell_systems[i];
+
+        if (qtest_has_machine(data->machine)) {
+            char *path = g_strdup_printf("/eisa/%s", data->machine);
+
+            qtest_add_data_func_full(path, data, test_dell_system_board, g_free);
+        }
     }
 
     return g_test_run();
