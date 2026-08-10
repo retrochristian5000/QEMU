@@ -75,6 +75,7 @@ void led_add_change_notifier(LEDState *s, Notifier *notifier)
 
 void led_remove_change_notifier(LEDState *s, Notifier *notifier)
 {
+    (void)s;
     notifier_remove(notifier);
 }
 
