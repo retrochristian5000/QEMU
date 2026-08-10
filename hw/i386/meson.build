@@ -4,6 +4,7 @@ i386_ss.add(files(
   'e820_memory_layout.c',
   'monitor.c',
   'multiboot.c',
+  'weitek4167.c',
   'x86.c',
   'x86-cpu.c',
 ))
