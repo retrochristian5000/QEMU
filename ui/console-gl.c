@@ -28,6 +28,7 @@
 #include <epoxy/gl.h>
 #include "qemu/error-report.h"
 #include "ui/console.h"
+#include "ui/console-presentation.h"
 #include "ui/shader.h"
 
 /* ---------------------------------------------------------------------- */
@@ -131,7 +132,7 @@ bool surface_gl_create_texture_from_fd(DisplaySurface *surface,
                          surface_height(surface), *mem_obj, 0);
     err = glGetError();
     if (err != GL_NO_ERROR) {
-        error_report("spice: cannot create texture from memory object");
+        error_report("spice: cannot create memory object from fd\n");
         goto cleanup_tex_and_mem;
     }
     return true;
@@ -209,4 +210,9 @@ void surface_gl_setup_viewport(QemuGLShader *gls,
         stripe = ww - ww*sh/sw;
         glViewport(stripe / 2, 0, ww - stripe, wh);
     }
+}
+
+void surface_gl_setup_viewport_stretch(int ww, int wh)
+{
+    glViewport(0, 0, ww, wh);
 }
