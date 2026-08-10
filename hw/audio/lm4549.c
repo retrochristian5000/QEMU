@@ -41,6 +41,8 @@ do { printf("lm4549: " fmt , ## __VA_ARGS__); } while (0)
 static FILE *fp_dac_input;
 #endif
 
+static void lm4549_audio_out_callback(void *opaque, int free);
+
 static AC97Codec lm4549_codec(lm4549_state *s)
 {
     AC97Codec codec;
