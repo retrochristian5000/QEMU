@@ -1,9 +1,9 @@
 /*
  * Analogue television/video signal descriptors
  *
- * Keep scanning, colour coding and RF tuning as separate concepts.  NTSC,
- * PAL and SECAM describe colour encoding; they must not be used as aliases
- * for a particular line/field timing.
+ * Keep scanning, composite colour coding and RF tuning as separate concepts.
+ * NTSC, PAL and SECAM names must not be used as aliases for a particular
+ * line/field timing or broadcast channel system.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -20,13 +20,23 @@ typedef enum AnalogVideoScanSystem {
     ANALOG_VIDEO_SCAN__MAX,
 } AnalogVideoScanSystem;
 
-typedef enum AnalogVideoColorSystem {
+/*
+ * Baseband composite-colour encoding profile.  This is deliberately more
+ * specific than the broad NTSC/PAL/SECAM family name: a decoder which handles
+ * conventional PAL 4.43 is not thereby assumed to decode PAL-M or PAL-N.
+ *
+ * RF system letters, sound carriers and channel plans belong to a later RF
+ * descriptor and must not be inferred from these values.
+ */
+typedef enum AnalogVideoColorEncoding {
     ANALOG_VIDEO_COLOR_MONOCHROME = 0,
-    ANALOG_VIDEO_COLOR_NTSC,
-    ANALOG_VIDEO_COLOR_PAL,
+    ANALOG_VIDEO_COLOR_NTSC_358,
+    ANALOG_VIDEO_COLOR_PAL_443,
+    ANALOG_VIDEO_COLOR_PAL_M,
+    ANALOG_VIDEO_COLOR_PAL_N,
     ANALOG_VIDEO_COLOR_SECAM,
     ANALOG_VIDEO_COLOR__MAX,
-} AnalogVideoColorSystem;
+} AnalogVideoColorEncoding;
 
 typedef struct AnalogVideoTiming {
     uint16_t lines_per_frame;
@@ -37,7 +47,7 @@ typedef struct AnalogVideoTiming {
 
 typedef struct AnalogVideoSignal {
     AnalogVideoScanSystem scan;
-    AnalogVideoColorSystem color;
+    AnalogVideoColorEncoding color;
 } AnalogVideoSignal;
 
 #define ANALOG_VIDEO_SCAN_BIT(scan) (1U << (scan))
@@ -57,6 +67,7 @@ typedef enum AnalogVideoReceiverLock {
 extern const AnalogVideoSignal analog_video_ntsc_525_59_94;
 extern const AnalogVideoSignal analog_video_pal_625_50;
 extern const AnalogVideoSignal analog_video_pal_m_525_59_94;
+extern const AnalogVideoSignal analog_video_pal_n_625_50;
 extern const AnalogVideoSignal analog_video_secam_625_50;
 
 const AnalogVideoTiming *analog_video_get_timing(AnalogVideoScanSystem scan);
@@ -71,8 +82,8 @@ bool analog_video_get_line_rate(AnalogVideoScanSystem scan,
 
 /*
  * A receiver can lock to luminance/sync without understanding the transmitted
- * colour encoding.  This distinction is important for monochrome monitors and
- * for multi-standard television hardware.
+ * composite-colour encoding.  This distinction is important for monochrome
+ * monitors and for multi-standard television hardware.
  */
 AnalogVideoReceiverLock
 analog_video_receiver_lock(const AnalogVideoReceiverCaps *caps,
