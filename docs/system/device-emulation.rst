@@ -91,6 +91,7 @@ Emulated Devices
    devices/emmc.rst
    devices/hayes-modem.rst
    devices/igb.rst
+   devices/intel-82420-82430-bridges.rst
    devices/ivshmem-flat.rst
    devices/ivshmem.rst
    devices/keyboard.rst
