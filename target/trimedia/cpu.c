@@ -89,6 +89,10 @@ static void trimedia_cpu_reset_hold(Object *obj, ResetType type)
     }
 
     memset(env, 0, offsetof(CPUTrimediaState, end_reset_fields));
+
+    /* TriMedia r0 and r1 are architectural constants 0 and 1. */
+    env->gpr[0] = 0;
+    env->gpr[1] = 1;
 }
 
 static ObjectClass *trimedia_cpu_class_by_name(const char *cpu_model)
