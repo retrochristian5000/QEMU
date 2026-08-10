@@ -164,7 +164,7 @@ qtests_loongarch64 = qtests_filter + \
 qtests_m68k = ['boot-serial-test'] + \
   qtests_filter
 
-qtests_microblaze = \
+qtests_microblaze = ['boot-serial-test'] + \
   qtests_filter
 
 qtests_mips = \
@@ -241,6 +241,7 @@ qtests_stm32l4x5 = \
 qtests_arm = \
   (config_all_devices.has_key('CONFIG_MPS2') ? ['sse-timer-test'] : []) + \
   (config_all_devices.has_key('CONFIG_CMSDK_APB_DUALTIMER') ? ['cmsdk-apb-dualtimer-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_CMSDK_APB_TIMER') ? ['cmsdk-apb-timer-test'] : []) + \
   (config_all_devices.has_key('CONFIG_STELLARIS') or
    config_all_devices.has_key('CONFIG_MPS2') ? ['cmsdk-apb-watchdog-test'] : []) + \
   (config_all_devices.has_key('CONFIG_PFLASH_CFI02') and
@@ -379,7 +380,7 @@ if gnutls.found()
                                '../unit/crypto-tls-psk-helpers.c'), gnutls]
 
   if tasn1.found()
-    migration_tls_files += [files('../unit/crypto-tls-x509-helpers.c'), gnutls, tasn1]
+    migration_tls_files += [files('../unit/crypto-tls-x509-helpers.c'), tasn1]
   endif
 endif
 
