@@ -16,6 +16,7 @@
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
 #include "qemu/module.h"
+#include "hw/audio/ac97-codec.h"
 #include "hw/audio/cs4630.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/pci/pci_device.h"
@@ -28,7 +29,6 @@
 #define CS4630_BA0_SIZE             0x00001000
 #define CS4630_BA1_SIZE             0x00100000
 #define CS4630_BA0_DWORDS           (CS4630_BA0_SIZE / sizeof(uint32_t))
-#define CS4630_AC97_REGS            0x80
 
 /* BA0 direct registers used by the initial model. */
 #define BA0_HISR                    0x000
@@ -117,7 +117,7 @@ struct CS4630State {
     uint8_t *ba1;
     uint32_t ba1_size;
 
-    uint16_t ac97[CS4630_AC97_REGS];
+    uint16_t ac97[AC97_CODEC_REGS];
     uint32_t ac97_codec_id;
 
     bool irq_enabled;
@@ -147,19 +147,6 @@ static void cs4630_set_irq_enabled(CS4630State *s, bool enabled)
         *hisr &= ~HISR_INTENA;
     }
     cs4630_update_irq(s);
-}
-
-static void cs4630_ac97_reset(CS4630State *s)
-{
-    memset(s->ac97, 0, sizeof(s->ac97));
-
-    /*
-     * Keep the codec identity configurable.  The default is the Crystal
-     * CS4297A ID so contemporary CS46xx drivers have a sane companion codec
-     * while the controller remains independent of any particular board.
-     */
-    s->ac97[0x7c >> 1] = s->ac97_codec_id >> 16;
-    s->ac97[0x7e >> 1] = s->ac97_codec_id & 0xffff;
 }
 
 static void cs4630_ac97_link_update(CS4630State *s, bool secondary,
@@ -196,10 +183,11 @@ static void cs4630_ac97_link_update(CS4630State *s, bool secondary,
 
         if (value & ACCTL_CRW) {
             *cs4630_ba0_reg(s, sad_addr) = reg;
-            *cs4630_ba0_reg(s, sda_addr) = s->ac97[reg >> 1];
+            *cs4630_ba0_reg(s, sda_addr) = ac97_codec_read(s->ac97, reg);
             *sts |= ACSTS_VSTS;
         } else {
-            s->ac97[reg >> 1] = *cs4630_ba0_reg(s, cda_addr) & 0xffff;
+            ac97_codec_write_raw(s->ac97, reg,
+                                 *cs4630_ba0_reg(s, cda_addr) & 0xffff);
         }
 
         /* Commands complete synchronously in this first implementation. */
@@ -343,7 +331,8 @@ static void cs4630_reset(DeviceState *dev)
 
     memset(s->ba0, 0, sizeof(s->ba0));
     memset(s->ba1, 0, s->ba1_size);
-    cs4630_ac97_reset(s);
+    ac97_codec_reset(s->ac97, &ac97_codec_profile_minimal,
+                     s->ac97_codec_id);
 
     s->irq_enabled = false;
     s->ba0[BA0_MIDSR >> 2] = MIDSR_RBE;
@@ -397,7 +386,7 @@ static const VMStateDescription vmstate_cs4630 = {
         VMSTATE_UINT32_ARRAY(ba0, CS4630State, CS4630_BA0_DWORDS),
         VMSTATE_UINT32(ba1_size, CS4630State),
         VMSTATE_VBUFFER_UINT32(ba1, CS4630State, 1, NULL, ba1_size),
-        VMSTATE_UINT16_ARRAY(ac97, CS4630State, CS4630_AC97_REGS),
+        VMSTATE_UINT16_ARRAY(ac97, CS4630State, AC97_CODEC_REGS),
         VMSTATE_BOOL(irq_enabled, CS4630State),
         VMSTATE_END_OF_LIST()
     }
