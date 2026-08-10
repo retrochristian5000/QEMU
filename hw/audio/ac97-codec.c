@@ -2,9 +2,9 @@
  * Reusable AC'97 codec register-file helpers
  *
  * Keep codec register defaults and register semantics separate from the host
- * controller.  QEMU has several AC'97 links (Intel, VIA, and SoundFusion)
- * whose transport/DMA engines differ substantially even though they talk to
- * the same class of mixer/codec registers.
+ * controller.  QEMU has several AC'97 links (Intel, VIA, SoundFusion, and
+ * PL041) whose transport/DMA engines differ substantially even though they
+ * talk to the same class of mixer/codec registers.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -47,9 +47,34 @@ static const AC97CodecRegDefault stac9766_defaults[] = {
     { AC97_PCM_LR_ADC_Rate,           48000 },
 };
 
+static const AC97CodecRegDefault lm4549_defaults[] = {
+    { AC97_Reset,                     0x0d50 },
+    { AC97_Master_Volume_Mute,        0x8008 },
+    { AC97_Headphone_Volume_Mute,     0x8000 },
+    { AC97_Master_Volume_Mono_Mute,   0x8000 },
+    { AC97_PC_BEEP_Volume_Mute,       0x0000 },
+    { AC97_Phone_Volume_Mute,         0x8008 },
+    { AC97_Mic_Volume_Mute,           0x8008 },
+    { AC97_Line_In_Volume_Mute,       0x8808 },
+    { AC97_CD_Volume_Mute,            0x8808 },
+    { AC97_Video_Volume_Mute,         0x8808 },
+    { AC97_Aux_Volume_Mute,           0x8808 },
+    { AC97_PCM_Out_Volume_Mute,       0x8808 },
+    { AC97_Record_Select,              0x0000 },
+    { AC97_Record_Gain_Mute,           0x8000 },
+    { AC97_General_Purpose,            0x0000 },
+    { AC97_3D_Control,                 0x0101 },
+    { AC97_Powerdown_Ctrl_Stat,        0x000f },
+    { AC97_Extended_Audio_ID,          0x0001 },
+    { AC97_Extended_Audio_Ctrl_Stat,   0x0000 },
+    { AC97_PCM_Front_DAC_Rate,         48000 },
+    { AC97_PCM_LR_ADC_Rate,            48000 },
+};
+
 const AC97CodecProfile ac97_codec_profile_minimal = {
     .name = "minimal",
     .kind = AC97_CODEC_PROFILE_MINIMAL,
+    .clear_on_reset = true,
 };
 
 const AC97CodecProfile ac97_codec_profile_stac9700 = {
@@ -58,6 +83,7 @@ const AC97CodecProfile ac97_codec_profile_stac9700 = {
     .defaults = stac9700_defaults,
     .num_defaults = ARRAY_SIZE(stac9700_defaults),
     .vendor_id = 0x83847600,
+    .clear_on_reset = true,
 };
 
 const AC97CodecProfile ac97_codec_profile_stac9766 = {
@@ -66,6 +92,17 @@ const AC97CodecProfile ac97_codec_profile_stac9766 = {
     .defaults = stac9766_defaults,
     .num_defaults = ARRAY_SIZE(stac9766_defaults),
     .vendor_id = 0x83847666,
+    .clear_on_reset = true,
+};
+
+const AC97CodecProfile ac97_codec_profile_lm4549 = {
+    .name = "LM4549",
+    .kind = AC97_CODEC_PROFILE_LM4549,
+    .defaults = lm4549_defaults,
+    .num_defaults = ARRAY_SIZE(lm4549_defaults),
+    .vendor_id = 0x4e534331,
+    /* Preserve the historical QEMU model's partial-reset behavior. */
+    .clear_on_reset = false,
 };
 
 void ac97_codec_init_u16(AC97Codec *codec,
@@ -77,6 +114,20 @@ void ac97_codec_init_u16(AC97Codec *codec,
         .data = regs,
         .data_size = sizeof(uint16_t) * AC97_CODEC_REGS,
         .storage = AC97_CODEC_STORAGE_U16,
+        .profile = profile,
+        .vendor_id_override = vendor_id_override,
+    };
+}
+
+void ac97_codec_init_u16_offsets(AC97Codec *codec,
+                                 uint16_t regs[AC97_CODEC_REGS],
+                                 const AC97CodecProfile *profile,
+                                 uint32_t vendor_id_override)
+{
+    *codec = (AC97Codec) {
+        .data = regs,
+        .data_size = sizeof(uint16_t) * AC97_CODEC_REGS,
+        .storage = AC97_CODEC_STORAGE_U16_OFFSETS,
         .profile = profile,
         .vendor_id_override = vendor_id_override,
     };
@@ -98,37 +149,65 @@ void ac97_codec_init_le_bytes(AC97Codec *codec, uint8_t *data,
 
 static bool ac97_codec_reg_valid(const AC97Codec *codec, unsigned reg)
 {
-    return !(reg & 1) && reg + 2 <= codec->data_size;
+    switch (codec->storage) {
+    case AC97_CODEC_STORAGE_U16:
+        return !(reg & 1) && (reg >> 1) < codec->data_size / sizeof(uint16_t);
+    case AC97_CODEC_STORAGE_U16_OFFSETS:
+        return reg < codec->data_size / sizeof(uint16_t);
+    case AC97_CODEC_STORAGE_LE_BYTES:
+        return !(reg & 1) && reg + 2 <= codec->data_size;
+    default:
+        return false;
+    }
 }
 
 uint16_t ac97_codec_read(const AC97Codec *codec, unsigned reg)
 {
+    const uint16_t *regs;
+    const uint8_t *data;
+
     if (!ac97_codec_reg_valid(codec, reg)) {
         return 0xffff;
     }
 
-    if (codec->storage == AC97_CODEC_STORAGE_U16) {
-        const uint16_t *regs = codec->data;
+    switch (codec->storage) {
+    case AC97_CODEC_STORAGE_U16:
+        regs = codec->data;
         return regs[reg >> 1];
-    } else {
-        const uint8_t *data = codec->data;
+    case AC97_CODEC_STORAGE_U16_OFFSETS:
+        regs = codec->data;
+        return regs[reg];
+    case AC97_CODEC_STORAGE_LE_BYTES:
+        data = codec->data;
         return data[reg] | (data[reg + 1] << 8);
+    default:
+        return 0xffff;
     }
 }
 
 void ac97_codec_write_raw(AC97Codec *codec, unsigned reg, uint16_t value)
 {
+    uint16_t *regs;
+    uint8_t *data;
+
     if (!ac97_codec_reg_valid(codec, reg)) {
         return;
     }
 
-    if (codec->storage == AC97_CODEC_STORAGE_U16) {
-        uint16_t *regs = codec->data;
+    switch (codec->storage) {
+    case AC97_CODEC_STORAGE_U16:
+        regs = codec->data;
         regs[reg >> 1] = value;
-    } else {
-        uint8_t *data = codec->data;
+        break;
+    case AC97_CODEC_STORAGE_U16_OFFSETS:
+        regs = codec->data;
+        regs[reg] = value;
+        break;
+    case AC97_CODEC_STORAGE_LE_BYTES:
+        data = codec->data;
         data[reg] = value & 0xff;
         data[reg + 1] = value >> 8;
+        break;
     }
 }
 
@@ -138,7 +217,9 @@ void ac97_codec_reset(AC97Codec *codec)
     uint32_t vendor_id = codec->vendor_id_override;
     size_t i;
 
-    memset(codec->data, 0, codec->data_size);
+    if (!profile || profile->clear_on_reset) {
+        memset(codec->data, 0, codec->data_size);
+    }
 
     if (profile) {
         for (i = 0; i < profile->num_defaults; i++) {
@@ -338,6 +419,38 @@ static uint32_t ac97_codec_write_stac9700(AC97Codec *codec,
     }
 }
 
+static uint32_t ac97_codec_write_lm4549(AC97Codec *codec,
+                                         unsigned reg, uint16_t value)
+{
+    switch (reg) {
+    case AC97_Reset:
+        ac97_codec_reset(codec);
+        return 0;
+
+    case AC97_PCM_Front_DAC_Rate:
+        if (value < 4000 || value > 48000) {
+            return AC97_CODEC_EVENT_INVALID_RATE;
+        }
+        ac97_codec_write_raw(codec, reg, value);
+        return AC97_CODEC_EVENT_FRONT_DAC_RATE;
+
+    case AC97_Powerdown_Ctrl_Stat:
+        value &= ~0x000f;
+        value |= ac97_codec_read(codec, reg) & 0x000f;
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+
+    case AC97_Extended_Audio_ID:
+    case AC97_Vendor_ID1:
+    case AC97_Vendor_ID2:
+        return 0;
+
+    default:
+        ac97_codec_write_raw(codec, reg, value);
+        return 0;
+    }
+}
+
 uint32_t ac97_codec_write(AC97Codec *codec, unsigned reg, uint16_t value)
 {
     if (!ac97_codec_reg_valid(codec, reg)) {
@@ -354,6 +467,8 @@ uint32_t ac97_codec_write(AC97Codec *codec, unsigned reg, uint16_t value)
         return ac97_codec_write_stac9700(codec, reg, value);
     case AC97_CODEC_PROFILE_STAC9766:
         return ac97_codec_write_stac9766(codec, reg, value);
+    case AC97_CODEC_PROFILE_LM4549:
+        return ac97_codec_write_lm4549(codec, reg, value);
     case AC97_CODEC_PROFILE_MINIMAL:
     default:
         ac97_codec_write_raw(codec, reg, value);
