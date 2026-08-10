@@ -69,6 +69,14 @@ struct ISADevice {
 
 ISABus *isa_bus_new(DeviceState *dev, MemoryRegion *address_space,
                     MemoryRegion *address_space_io, Error **errp);
+/*
+ * Create an ISA-compatible bus whose QOM type derives from TYPE_ISA_BUS.
+ * This is used by buses such as EISA which retain ISA device compatibility
+ * while adding their own bus-level configuration mechanism.
+ */
+ISABus *isa_bus_new_type(const char *bus_type, DeviceState *dev,
+                         MemoryRegion *address_space,
+                         MemoryRegion *address_space_io, Error **errp);
 void isa_bus_register_input_irqs(ISABus *bus, qemu_irq *irqs_in);
 void isa_bus_dma(ISABus *bus, IsaDma *dma8, IsaDma *dma16);
 IsaDma *isa_bus_get_dma(ISABus *bus, int nchan);
