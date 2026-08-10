@@ -8,7 +8,7 @@ config SEV
 
 config SGX
     bool
-    depends on KVM
+    depends on KVM && X86_64
 
 config TDX
     bool
@@ -94,6 +94,7 @@ config ISAPC
     default y
     depends on I386
     imply VGA_ISA
+    select VGA_TSENG_ET4000AX
     select ISA_BUS
     select EISA_BUS
     select OR_IRQ
