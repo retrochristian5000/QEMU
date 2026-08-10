@@ -461,14 +461,20 @@ static void mixer_reset(AC97LinkState *s)
 
     dolog("mixer_reset");
     ac97_codec_reset(&codec);
+    update_combined_volume_out(s);
+    update_volume_in(s);
+    reset_voices(s, active);
+}
+
+static void link_codec_reset(AC97LinkState *s)
+{
+    mixer_reset(s);
+
     if (ac97_codec_present(s, 1)) {
         AC97Codec secondary = ac97_link_codec(s, 1);
 
         ac97_codec_reset(&secondary);
     }
-    update_combined_volume_out(s);
-    update_volume_in(s);
-    reset_voices(s, active);
 }
 
 static void apply_codec_events(AC97LinkState *s, uint32_t events)
@@ -1195,11 +1201,11 @@ static void ac97_on_reset(DeviceState *dev)
     }
 
     /*
-     * Reset the mixer too. The Windows XP driver seems to rely on
-     * this. At least it wants to read the vendor id before it resets
-     * the codec manually.
+     * Reset the codecs too. The Windows XP driver seems to rely on
+     * the primary vendor id being readable before it resets the codec
+     * manually.
      */
-    mixer_reset(s);
+    link_codec_reset(s);
 }
 
 static void ac97_realize(PCIDevice *dev, Error **errp)
