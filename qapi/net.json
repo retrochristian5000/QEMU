@@ -420,7 +420,8 @@
 #
 # @vhostfd: file descriptor of an already opened vhost net device
 #
-# @vhostfds: file descriptors of multiple already opened vhost net devices
+# @vhostfds: file descriptors of multiple already opened vhost net
+#     devices
 #
 # @vhostforce: vhost on for non-MSIX virtio guests
 #
