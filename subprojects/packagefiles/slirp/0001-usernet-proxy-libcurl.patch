@@ -33,7 +33,7 @@ diff --git a/meson.build b/meson.build
 diff --git a/src/libslirp.h b/src/libslirp.h
 --- a/src/libslirp.h
 +++ b/src/libslirp.h
-@@ -159,7 +159,7 @@ typedef struct SlirpCb {
+@@ -159,6 +159,6 @@ typedef struct SlirpCb {
  } SlirpCb;
  
  #define SLIRP_CONFIG_VERSION_MIN 1
@@ -41,7 +41,7 @@ diff --git a/src/libslirp.h b/src/libslirp.h
 +#define SLIRP_CONFIG_VERSION_MAX 7
  
  typedef struct SlirpConfig {
-@@ -248,6 +248,13 @@ typedef struct SlirpConfig {
+@@ -248,6 +248,14 @@ typedef struct SlirpConfig {
       * retrieved through NC-SI.
       */
      uint8_t oob_eth_addr[6];
@@ -59,14 +59,14 @@ diff --git a/src/libslirp.h b/src/libslirp.h
 diff --git a/src/slirp.h b/src/slirp.h
 --- a/src/slirp.h
 +++ b/src/slirp.h
-@@ -218,6 +218,8 @@ struct Slirp {
+@@ -218,4 +218,6 @@ struct Slirp {
      struct sockaddr_in *outbound_addr;
      struct sockaddr_in6 *outbound_addr6;
      bool disable_dns; /* slirp will not redirect/serve any DNS packet */
 +    char *outbound_proxy;
 +    void *proxy_state;
  };
-@@ -387,10 +389,28 @@ struct socket *slirp_find_ctl_socket(Slirp *slirp, struct in_addr guest_addr,
+@@ -387,10 +389,27 @@ struct socket *slirp_find_ctl_socket(Slirp *slirp, struct in_addr guest_addr,
  /* Create a new timer, i.e. call the application timer_new callback */
  void *slirp_timer_new(Slirp *slirp, SlirpTimerId id, void *cb_opaque);
  
@@ -97,7 +97,7 @@ diff --git a/src/slirp.h b/src/slirp.h
 diff --git a/src/socket.h b/src/socket.h
 --- a/src/socket.h
 +++ b/src/socket.h
-@@ -76,6 +76,10 @@ struct socket {
+@@ -76,5 +76,9 @@ struct socket {
      struct sbuf so_rcv; /* Receive buffer */
      struct sbuf so_snd; /* Send buffer */
 +
@@ -138,14 +138,14 @@ diff --git a/src/slirp.c b/src/slirp.c
 +    g_free(slirp->outbound_proxy);
      g_free(slirp);
  }
-@@ -950,6 +958,7 @@ void slirp_pollfds_fill_socket(Slirp *slirp, uint32_t *timeout,
+@@ -950,5 +958,6 @@ void slirp_pollfds_fill_socket(Slirp *slirp, uint32_t *timeout,
          }
      }
  
 +    slirp_proxy_pollfds_fill(slirp, timeout, add_poll, opaque);
      slirp_update_timeout(slirp, timeout);
  }
-@@ -982,13 +991,11 @@ void slirp_pollfds_fill(Slirp *slirp, uint32_t *timeout,
+@@ -982,15 +991,14 @@ void slirp_pollfds_fill(Slirp *slirp, uint32_t *timeout,
      slirp_pollfds_fill_socket(slirp, timeout, slirp_pollfds_fill_wrap, &wrap);
  }
  
@@ -165,7 +165,7 @@ diff --git a/src/slirp.c b/src/slirp.c
              g_warning_once("Truncating socket to int failed!");
  #ifdef __GNUC__
  #pragma GCC diagnostic push
-@@ -1002,13 +1009,21 @@ void slirp_register_poll_socket(struct socket *so)
+@@ -1002,15 +1009,19 @@ void slirp_register_poll_socket(struct socket *so)
      }
  }
  
@@ -244,7 +244,7 @@ diff --git a/src/proxy.c b/src/proxy.c
 new file mode 100644
 --- /dev/null
 +++ b/src/proxy.c
-@@ -0,0 +1,483 @@
+@@ -0,0 +1,486 @@
 +/* SPDX-License-Identifier: BSD-3-Clause */
 +/*
 + * Transparent outbound TCP proxy support for libslirp.
