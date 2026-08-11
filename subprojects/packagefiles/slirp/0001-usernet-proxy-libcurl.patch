@@ -131,7 +131,7 @@ diff --git a/src/slirp.c b/src/slirp.c
      tftp_cleanup(slirp);
  
      g_rand_free(slirp->grand);
-@@ -780,6 +787,7 @@ void slirp_cleanup(Slirp *slirp)
+@@ -780,5 +787,6 @@ void slirp_cleanup(Slirp *slirp)
      g_free(slirp->tftp_prefix);
      g_free(slirp->bootp_filename);
      g_free(slirp->vdomainname);
@@ -618,10 +618,9 @@ new file mode 100644
 +        if (!ok) {
 +            DEBUG_ERROR("proxy connect failed: %s",
 +                        curl_easy_strerror(msg->data.result));
++            curl_multi_remove_handle(ps->multi, easy);
++            so->proxy_in_multi = false;
 +        }
-+
-+        curl_multi_remove_handle(ps->multi, easy);
-+        so->proxy_in_multi = false;
 +
 +        if (ok) {
 +            int opt = 1;
@@ -700,11 +699,12 @@ new file mode 100644
 +        return;
 +    }
 +
++    if (have_valid_socket(so->s)) {
++        slirp_unregister_poll_socket(so);
++    }
 +    if (so->proxy_in_multi && ps) {
 +        curl_multi_remove_handle(ps->multi, easy);
 +        so->proxy_in_multi = false;
-+    } else if (have_valid_socket(so->s)) {
-+        slirp_unregister_poll_socket(so);
 +    }
 +
 +    /* curl owns and closes the CONNECT_ONLY socket. */
