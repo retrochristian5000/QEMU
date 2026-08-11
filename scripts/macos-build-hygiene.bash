@@ -112,7 +112,7 @@ sanitize_macos_build_environment()
         whp_append_colon_path PATH "$HOMEBREW_PREFIX/bin"
     fi
 
-    if (( ${#stripped[@]} > 0 )); then
+    if [[ ${stripped[0]+set} == set ]]; then
         printf 'macOS build environment: removed inherited search variables: %s\n' \
             "${stripped[*]}"
     fi

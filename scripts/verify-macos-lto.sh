@@ -71,7 +71,7 @@ reject_embedded_lto()
         value="${!variable:-}"
         tokens=()
         read -r -a tokens <<< "$value"
-        for token in "${tokens[@]}"; do
+        for token in ${tokens[@]+"${tokens[@]}"}; do
             case "$token" in
                 -flto|-flto=*|-fno-lto|-Wl,*lto*|-Wl,*LTO*|\
                 -object_path_lto*|-lto_library*|-cache_path_lto*|\

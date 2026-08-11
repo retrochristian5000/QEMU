@@ -231,10 +231,13 @@ int main(void)
 }
 EOF_PROBE
 
-if ! "${cc_cmd[@]}" "${cppflags[@]}" "${cflags[@]}" \
+if ! "${cc_cmd[@]}" \
+        ${cppflags[@]+"${cppflags[@]}"} \
+        ${cflags[@]+"${cflags[@]}"} \
         "${gtk_flags[@]}" "$probe_dir/gtk-header-probe.c" \
         -o "$probe_dir/gtk-header-probe" \
-        "${ldflags[@]}" "${gtk_link_flags[@]}"; then
+        ${ldflags[@]+"${ldflags[@]}"} \
+        "${gtk_link_flags[@]}"; then
     printf '%s\n' \
         'error: pkg-config reports GTK 3, but it cannot compile and link.' \
         'The gtk/gtkwidget.h -> atk/atk.h chain or Homebrew libraries are inconsistent.' \
