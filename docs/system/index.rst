@@ -23,6 +23,7 @@ or Hypervisor.Framework.
    linuxboot
    generic-loader
    guest-loader
+   guest-software/index
    barrier
    vnc-security
    tls
