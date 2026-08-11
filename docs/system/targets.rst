@@ -22,6 +22,7 @@ Contents:
    target-m68k
    target-mips
    target-or1k
+   target-x86-16bit
    target-ppc
    target-riscv
    target-rx

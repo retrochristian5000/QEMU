@@ -144,6 +144,10 @@ endif
 
 qtests_x86_64 = qtests_i386
 
+qtests_x86 = [
+  'x86-16bit-test',
+]
+
 qtests_alpha = ['boot-serial-test'] + \
   qtests_filter + \
   (config_all_devices.has_key('CONFIG_VGA') ? ['display-vga-test'] : [])
@@ -448,7 +452,10 @@ foreach dir : target_dirs
 
   target_base = dir.split('-')[0]
   qtest_emulator = emulators['qemu-system-' + target_base]
-  target_qtests = get_variable('qtests_' + target_base, []) + qtests_generic
+  target_qtests = get_variable('qtests_' + target_base, [])
+  if target_base != 'x86'
+    target_qtests += qtests_generic
+  endif
   has_kvm = ('CONFIG_KVM' in config_all_accel and host_os == 'linux'
              and cpu == target_base and fs.exists('/dev/kvm'))
 

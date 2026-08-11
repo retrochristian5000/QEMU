@@ -102,6 +102,7 @@ jobs:
           - trimedia
           - ppc
           - i386
+          - x86
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -206,3 +207,11 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Test original 16-bit x86 target
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/x86-16bit-test
+          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+            qtest-x86/x86-16bit-test

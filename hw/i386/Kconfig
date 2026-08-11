@@ -1,6 +1,12 @@
 config X86_FW_OVMF
     bool
 
+config X86_16BIT_MACHINE
+    bool
+    depends on I386
+    select ISA_BUS
+    select SERIAL_ISA
+
 config SEV
     bool
     select X86_FW_OVMF

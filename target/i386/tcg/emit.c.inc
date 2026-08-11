@@ -3044,6 +3044,17 @@ static void gen_POP(DisasContext *s, X86DecodedInsn *decode)
     gen_pop_update(s, ot);
 }
 
+static void gen_POPCS(DisasContext *s, X86DecodedInsn *decode)
+{
+    MemOp ot = gen_pop_T0(s);
+
+    assert(ot == MO_16);
+    gen_update_eip_next(s);
+    gen_op_movl_seg_real(s, R_CS, s->T0);
+    gen_pop_update(s, ot);
+    s->base.is_jmp = DISAS_EOB_ONLY;
+}
+
 static void gen_POPA(DisasContext *s, X86DecodedInsn *decode)
 {
     gen_popa(s);
@@ -3228,7 +3239,17 @@ static void gen_PSLLDQ_i(DisasContext *s, X86DecodedInsn *decode)
 
 static void gen_PUSH(DisasContext *s, X86DecodedInsn *decode)
 {
-    gen_push_v(s, s->T0);
+    X86DecodedOp *op = &decode->op[1];
+
+    if (s->is_original_x86 && op->unit == X86_OP_INT &&
+        !op->has_ea && op->n == R_ESP) {
+        TCGv decremented_sp = tcg_temp_new();
+
+        tcg_gen_subi_tl(decremented_sp, cpu_regs[R_ESP], 2);
+        gen_push_v(s, decremented_sp);
+    } else {
+        gen_push_v(s, s->T0);
+    }
 }
 
 static void gen_PUSHA(DisasContext *s, X86DecodedInsn *decode)

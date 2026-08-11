@@ -99,6 +99,11 @@ typedef enum X86Seg {
     R_TR = 7,
 } X86Seg;
 
+typedef enum X86CPUGeneration {
+    X86_CPU_GENERATION_GENERIC,
+    X86_CPU_GENERATION_8086,
+} X86CPUGeneration;
+
 /* segment descriptor fields */
 #define DESC_G_SHIFT    23
 #define DESC_G_MASK     (1 << DESC_G_SHIFT)
@@ -2218,6 +2223,9 @@ typedef struct CPUArchState {
 
     /* Fields after this point are preserved across CPU reset. */
 
+    X86CPUGeneration cpu_generation;
+    uint8_t external_data_bus_width;
+
     /* processor features (e.g. for CPUID insn) */
     /* Minimum cpuid leaf 7 value */
     uint32_t cpuid_level_func7;
@@ -2791,7 +2799,9 @@ uint64_t cpu_get_tsc(CPUX86State *env);
 
 #define CPU_RESOLVING_TYPE TYPE_X86_CPU
 
-#ifdef TARGET_X86_64
+#ifdef TARGET_X86_16BIT
+#define TARGET_DEFAULT_CPU_TYPE X86_CPU_TYPE_NAME("8086")
+#elif defined(TARGET_X86_64)
 #define TARGET_DEFAULT_CPU_TYPE X86_CPU_TYPE_NAME("qemu64")
 #else
 #define TARGET_DEFAULT_CPU_TYPE X86_CPU_TYPE_NAME("qemu32")

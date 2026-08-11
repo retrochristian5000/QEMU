@@ -1993,7 +1993,9 @@ static const X86OpEntry opcodes_root[256] = {
 
 static void decode_root(DisasContext *s, CPUX86State *env, X86OpEntry *entry, uint8_t *b)
 {
-    *entry = opcodes_root[*b];
+    static const X86OpEntry pop_cs = X86_OP_ENTRY0(POPCS);
+
+    *entry = s->is_original_x86 && *b == 0x0f ? pop_cs : opcodes_root[*b];
 }
 
 /* Decode the MODRM and SIB bytes into a register or memory operand.  */
@@ -2271,7 +2273,9 @@ static bool decode_op(DisasContext *s, CPUX86State *env, X86DecodedInsn *decode,
         op->unit = X86_OP_SEG;
         op->n = (get_modrm(s, env) >> 3) & 7;
         /* Values outside [CDEFGS]S, as well as storing to CS, are invalid.  */
-        if (op->n >= 6 || (op->n == R_CS && op == &decode->op[0])) {
+        if (op->n >= 6 ||
+            (s->is_original_x86 && op->n >= R_FS) ||
+            (op->n == R_CS && op == &decode->op[0])) {
             return false;
         }
         break;
@@ -2818,15 +2822,27 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
         s->override = R_ES;
         goto next_byte;
     case 0x64:
+        if (s->is_original_x86) {
+            break;
+        }
         s->override = R_FS;
         goto next_byte;
     case 0x65:
+        if (s->is_original_x86) {
+            break;
+        }
         s->override = R_GS;
         goto next_byte;
     case 0x66:
+        if (s->is_original_x86) {
+            break;
+        }
         s->prefix |= PREFIX_DATA;
         goto next_byte;
     case 0x67:
+        if (s->is_original_x86) {
+            break;
+        }
         s->prefix |= PREFIX_ADR;
         goto next_byte;
 #ifdef TARGET_X86_64
@@ -2902,6 +2918,12 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
         break;
     default:
         break;
+    }
+
+    if (s->is_original_x86 &&
+        ((b >= 0x60 && b <= 0x6f) || b == 0xc0 || b == 0xc1 ||
+         b == 0xc8 || b == 0xc9 || b == 0xf1)) {
+        goto illegal_op;
     }
 
     /* Post-process prefixes.  */

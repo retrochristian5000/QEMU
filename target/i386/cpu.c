@@ -2307,6 +2307,8 @@ typedef struct X86CPUVersionDefinition {
 /* Base definition for a CPU model */
 typedef struct X86CPUDefinition {
     const char *name;
+    X86CPUGeneration generation;
+    uint8_t external_data_bus_width;
     uint32_t level;
     uint32_t xlevel;
     /* vendor is zero-terminated, 12 character ASCII string */
@@ -3541,6 +3543,32 @@ static const CPUCaches yongfeng_cache_info = {
  */
 
 static const X86CPUDefinition builtin_x86_defs[] = {
+#ifdef TARGET_X86_16BIT
+    {
+        .name = "8086",
+        .generation = X86_CPU_GENERATION_8086,
+        .external_data_bus_width = 16,
+        .level = 0,
+        .vendor = CPUID_VENDOR_INTEL,
+        .family = 0,
+        .model = 0,
+        .stepping = 0,
+        .xlevel = 0,
+        .model_id = "Intel 8086",
+    },
+    {
+        .name = "8088",
+        .generation = X86_CPU_GENERATION_8086,
+        .external_data_bus_width = 8,
+        .level = 0,
+        .vendor = CPUID_VENDOR_INTEL,
+        .family = 0,
+        .model = 0,
+        .stepping = 0,
+        .xlevel = 0,
+        .model_id = "Intel 8088",
+    },
+#else
     {
         .name = "qemu64",
         .level = 0xd,
@@ -7310,6 +7338,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
             { /* end of list */ }
         }
     },
+#endif /* TARGET_X86_16BIT */
 };
 
 /*
@@ -7728,6 +7757,16 @@ static void x86_cpuid_get_avx10_version(Object *obj, Visitor *v,
     uint8_t value;
 
     value = cpu->env.avx10_version;
+    visit_type_uint8(v, name, &value, errp);
+}
+
+static void x86_cpu_get_external_data_bus_width(Object *obj, Visitor *v,
+                                                const char *name, void *opaque,
+                                                Error **errp)
+{
+    X86CPU *cpu = X86_CPU(obj);
+    uint8_t value = cpu->env.external_data_bus_width;
+
     visit_type_uint8(v, name, &value, errp);
 }
 
@@ -8465,6 +8504,8 @@ static void x86_cpu_load_model(X86CPU *cpu, const X86CPUModel *model)
      */
 
     /* CPU models only set _minimum_ values for level/xlevel: */
+    env->cpu_generation = def->generation;
+    env->external_data_bus_width = def->external_data_bus_width;
     object_property_set_uint(OBJECT(cpu), "min-level", def->level,
                              &error_abort);
     object_property_set_uint(OBJECT(cpu), "min-xlevel", def->xlevel,
@@ -9400,7 +9441,8 @@ static void x86_cpu_reset_hold(Object *obj, ResetType type)
     env->hflags &= ~HF_GUEST_MASK;
 
     cpu_x86_update_cr0(env, 0x60000010);
-    env->a20_mask = ~0x0;
+    env->a20_mask = env->cpu_generation == X86_CPU_GENERATION_8086 ?
+                    ~(1 << 20) : ~0x0;
     env->smbase = 0x30000;
     env->msr_smi_count = 0;
 
@@ -9415,7 +9457,9 @@ static void x86_cpu_reset_hold(Object *obj, ResetType type)
     env->tr.limit = 0xffff;
     env->tr.flags = DESC_P_MASK | (11 << DESC_TYPE_SHIFT);
 
-    cpu_x86_load_seg_cache(env, R_CS, 0xf000, 0xffff0000, 0xffff,
+    cpu_x86_load_seg_cache(env, R_CS, 0xf000,
+                           env->cpu_generation == X86_CPU_GENERATION_8086 ?
+                           0xf0000 : 0xffff0000, 0xffff,
                            DESC_P_MASK | DESC_S_MASK | DESC_CS_MASK |
                            DESC_R_MASK | DESC_A_MASK);
     cpu_x86_load_seg_cache(env, R_DS, 0, 0, 0xffff,
@@ -10976,6 +11020,10 @@ static void x86_cpu_common_class_init(ObjectClass *oc, const void *data)
                               x86_cpuid_set_avx10_version,
                               NULL, NULL);
 
+    object_class_property_add(oc, "external-data-bus-width", "uint8",
+                              x86_cpu_get_external_data_bus_width,
+                              NULL, NULL, NULL);
+
 #if !defined(CONFIG_USER_ONLY)
     object_class_property_add(oc, "crash-information", "GuestPanicInformation",
                               x86_cpu_get_crash_info_qom, NULL, NULL, NULL);
@@ -11027,7 +11075,9 @@ static void x86_cpu_register_types(void)
     for (i = 0; i < ARRAY_SIZE(builtin_x86_defs); i++) {
         x86_register_cpudef_types(&builtin_x86_defs[i]);
     }
+#ifndef TARGET_X86_16BIT
     type_register_static(&max_x86_cpu_type_info);
+#endif
     type_register_static(&x86_base_cpu_type_info);
 }
 
