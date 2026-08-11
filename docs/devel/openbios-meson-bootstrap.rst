@@ -8,7 +8,8 @@ QEMU configuration, so only one part of the build owns ``openbios-ppc``.
 Build graph
 -----------
 
-The ``whp_prepare_sources`` stage runs
+The ``whp_prepare_sources`` stage in
+``scripts/whp-build/prepare-sources.bash`` runs
 ``scripts/whp-build/configure-openbios.bash`` to write a shell-quoted
 configuration file at::
 

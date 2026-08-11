@@ -12,12 +12,13 @@ system. ``build.sh`` normalizes the shell and platform environment, then
 #. ask GNU Make, Meson, and Ninja to build the requested targets; and
 #. verify and record the artifacts produced by that exact run.
 
-``builder.sh`` intentionally contains only that sequence. Environment,
-configuration, and execution remain in ``scripts/whp-build/stages.bash``.
-Wrapper integrity checks live in ``scripts/whp-build/preflight.bash`` and final
-artifact checks live in ``scripts/whp-build/post-build.bash``. This keeps the
-public runner readable without hiding verification in an unrelated build
-stage.
+``builder.sh`` intentionally contains only that sequence.
+``scripts/whp-build/stages.bash`` is the stable loader for four focused
+modules: ``prepare-build.bash``, ``prepare-sources.bash``, ``configure.bash``,
+and ``build-targets.bash``. Wrapper integrity checks live in
+``scripts/whp-build/preflight.bash`` and final artifact checks live in
+``scripts/whp-build/post-build.bash``. This keeps the public runner readable
+without hiding verification in an unrelated build stage.
 
 Wrapper integrity
 -----------------

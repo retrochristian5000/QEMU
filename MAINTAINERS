@@ -4566,6 +4566,8 @@ F: .gitlab-ci.d/
 F: .travis.yml
 F: docs/devel/testing/ci*
 F: scripts/ci/
+F: scripts/tests/test-whp-build-stage-loading.bash
+F: scripts/whp-build/
 F: tests/docker/
 F: tests/vm/
 F: tests/lcitool/

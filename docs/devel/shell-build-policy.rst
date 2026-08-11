@@ -32,11 +32,13 @@ Bash orchestration layer
 ------------------------
 
 ``builder.sh`` is the ordered run of the build stages.
-``scripts/whp-build/stages.bash`` implements those stages, and
+``scripts/whp-build/stages.bash`` loads the focused preparation,
+source-input, configuration, and build-target modules in execution order.
 ``scripts/macos-builder.bash`` prepares macOS-specific policy before the run.
-They use features such as arrays, ``[[ ... ]]``, ``pipefail``, indirect
-parameter expansion, here strings, and ``printf -v``.  They are not dash
-scripts and must not be invoked directly with ``sh``, ``dash``, or ``zsh``.
+These scripts use features such as arrays, ``[[ ... ]]``, ``pipefail``,
+indirect parameter expansion, here strings, and ``printf -v``.  They are not
+dash scripts and must not be invoked directly with ``sh``, ``dash``, or
+``zsh``.
 
 Use one of the public launchers instead::
 
