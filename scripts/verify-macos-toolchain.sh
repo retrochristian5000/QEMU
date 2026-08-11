@@ -148,6 +148,9 @@ split_flags()
     fi
 }
 
+# Bash 3.2 treats an empty array as unset when nounset is active.  Keep every
+# optional flag-array copy and expansion guarded with the parameter + form.
+
 first_line()
 {
     sed -n '1p'
@@ -281,13 +284,16 @@ int main(void) { return EXIT_SUCCESS; }
 SOURCE
     set_command "$command_string"
     split_flags "${CFLAGS:-}"
-    C_FLAGS=("${FLAG_ARRAY[@]}")
+    C_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${CPPFLAGS:-}"
-    CPP_FLAGS=("${FLAG_ARRAY[@]}")
+    CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${LDFLAGS:-}"
-    LD_FLAGS=("${FLAG_ARRAY[@]}")
-    "${COMPILER_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" \
-        -x c "$source" -o "$output" "${LD_FLAGS[@]}"
+    LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    "${COMPILER_CMD[@]}" \
+        ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+        ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
+        -x c "$source" -o "$output" \
+        ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
     require_output_arch "$role" "$output" "$expected_arch"
 }
 
@@ -316,13 +322,16 @@ int main(void) { std::vector<int> values(1, 0); return values[0]; }
 SOURCE
     set_command "$CXX"
     split_flags "${CXXFLAGS:-}"
-    CXX_FLAGS=("${FLAG_ARRAY[@]}")
+    CXX_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${CPPFLAGS:-}"
-    CPP_FLAGS=("${FLAG_ARRAY[@]}")
+    CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${LDFLAGS:-}"
-    LD_FLAGS=("${FLAG_ARRAY[@]}")
-    "${COMPILER_CMD[@]}" "${CPP_FLAGS[@]}" "${CXX_FLAGS[@]}" \
-        -x c++ "$source" -o "$output" "${LD_FLAGS[@]}"
+    LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    "${COMPILER_CMD[@]}" \
+        ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+        ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} \
+        -x c++ "$source" -o "$output" \
+        ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
     require_output_arch CXX "$output" "$MACOS_HOST_ARCH"
 }
 
@@ -337,14 +346,16 @@ int main(void) { @autoreleasepool { return NSApp == nil ? 0 : 0; } }
 SOURCE
     set_command "$OBJC"
     split_flags "${OBJCFLAGS:-}"
-    OBJC_FLAGS=("${FLAG_ARRAY[@]}")
+    OBJC_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${CPPFLAGS:-}"
-    CPP_FLAGS=("${FLAG_ARRAY[@]}")
+    CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "${LDFLAGS:-}"
-    LD_FLAGS=("${FLAG_ARRAY[@]}")
-    "${COMPILER_CMD[@]}" "${CPP_FLAGS[@]}" "${OBJC_FLAGS[@]}" \
+    LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    "${COMPILER_CMD[@]}" \
+        ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+        ${OBJC_FLAGS[@]+"${OBJC_FLAGS[@]}"} \
         -x objective-c "$source" -o "$output" -framework Cocoa \
-        "${LD_FLAGS[@]}"
+        ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
     require_output_arch OBJC "$output" "$MACOS_HOST_ARCH"
 }
 

@@ -59,6 +59,9 @@ split_flags()
     fi
 }
 
+# Bash 3.2 treats an empty array as unset when nounset is active.  Keep every
+# optional flag-array copy and expansion guarded with the parameter + form.
+
 reject_embedded_lto()
 {
     local variable value token
@@ -100,11 +103,11 @@ trap cleanup EXIT
 reject_embedded_lto
 set_command "$CC"
 split_flags "${CPPFLAGS:-}"
-CPP_FLAGS=("${FLAG_ARRAY[@]}")
+CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 split_flags "${CFLAGS:-}"
-C_FLAGS=("${FLAG_ARRAY[@]}")
+C_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 split_flags "${LDFLAGS:-}"
-LD_FLAGS=("${FLAG_ARRAY[@]}")
+LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 
 source_a="$MACOS_LTO_PROBE_DIR/lto-a.c"
 source_main="$MACOS_LTO_PROBE_DIR/lto-main.c"
@@ -127,12 +130,17 @@ int main(void)
 }
 SOURCE
 
-"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" \
+"${CC_CMD[@]}" \
+    ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+    ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
     -flto -c "$source_a" -o "$object_a"
-"${CC_CMD[@]}" "${CPP_FLAGS[@]}" "${C_FLAGS[@]}" \
+"${CC_CMD[@]}" \
+    ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+    ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
     -flto -c "$source_main" -o "$object_main"
-"${CC_CMD[@]}" "${C_FLAGS[@]}" -flto \
-    "$object_a" "$object_main" -o "$output" "${LD_FLAGS[@]}"
+"${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto \
+    "$object_a" "$object_main" -o "$output" \
+    ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
 
 arches="$(output_arches "$output")"
 case " $arches " in
@@ -149,8 +157,10 @@ if ! "$output"; then
     exit 1
 fi
 
-CCACHE_DISABLE=1 "${CC_CMD[@]}" "${C_FLAGS[@]}" -flto \
-    "$object_a" "$object_main" -o "$output.pipeline" "${LD_FLAGS[@]}" \
+CCACHE_DISABLE=1 "${CC_CMD[@]}" \
+    ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto \
+    "$object_a" "$object_main" -o "$output.pipeline" \
+    ${LD_FLAGS[@]+"${LD_FLAGS[@]}"} \
     -### 2> "$pipeline" || true
 
 compiler_version="$("${CC_CMD[@]}" --version 2>&1 | sed -n '1p')"

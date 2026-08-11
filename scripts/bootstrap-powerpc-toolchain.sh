@@ -390,6 +390,9 @@ split_flags()
     fi
 }
 
+# Bash 3.2 treats an empty array as unset when nounset is active.  Keep every
+# optional flag-array copy and expansion guarded with the parameter + form.
+
 validate_host_compilers()
 {
     local probe_dir="$TOOLCHAIN_WORK_DIR/host-probe"
@@ -407,23 +410,29 @@ int main() { return 0; }
 SOURCE
 
     split_flags "$TOOLCHAIN_HOST_CPPFLAGS"
-    local cpp_flags=("${FLAG_ARRAY[@]}")
+    local cpp_flags=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "$TOOLCHAIN_HOST_CFLAGS"
-    local c_flags=("${FLAG_ARRAY[@]}")
+    local c_flags=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "$TOOLCHAIN_HOST_CXXFLAGS"
-    local cxx_flags=("${FLAG_ARRAY[@]}")
+    local cxx_flags=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
     split_flags "$TOOLCHAIN_HOST_LDFLAGS"
-    local ld_flags=("${FLAG_ARRAY[@]}")
+    local ld_flags=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 
     set_command "$TOOLCHAIN_HOST_CC"
     local cc_command=("${COMMAND_ARRAY[@]}")
-    "${cc_command[@]}" "${cpp_flags[@]}" "${c_flags[@]}" \
-        "$probe_dir/host.c" -o "$probe_dir/host-c" "${ld_flags[@]}"
+    "${cc_command[@]}" \
+        ${cpp_flags[@]+"${cpp_flags[@]}"} \
+        ${c_flags[@]+"${c_flags[@]}"} \
+        "$probe_dir/host.c" -o "$probe_dir/host-c" \
+        ${ld_flags[@]+"${ld_flags[@]}"}
 
     set_command "$TOOLCHAIN_HOST_CXX"
     local cxx_command=("${COMMAND_ARRAY[@]}")
-    "${cxx_command[@]}" "${cpp_flags[@]}" "${cxx_flags[@]}" \
-        "$probe_dir/host.cc" -o "$probe_dir/host-cxx" "${ld_flags[@]}"
+    "${cxx_command[@]}" \
+        ${cpp_flags[@]+"${cpp_flags[@]}"} \
+        ${cxx_flags[@]+"${cxx_flags[@]}"} \
+        "$probe_dir/host.cc" -o "$probe_dir/host-cxx" \
+        ${ld_flags[@]+"${ld_flags[@]}"}
 
     if [[ "$(uname -s)" == Darwin ]]; then
         case "$TOOLCHAIN_HOST_TRIPLET" in
