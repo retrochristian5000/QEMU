@@ -647,10 +647,6 @@ USBDevice *usbdevice_create(const char *driver)
         }
     }
     if (i == NULL) {
-#if 0
-        /* no error because some drivers are not converted (yet) */
-        error_report("usbdevice %s not found", driver);
-#endif
         return NULL;
     }
 
