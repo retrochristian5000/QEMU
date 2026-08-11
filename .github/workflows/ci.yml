@@ -29,6 +29,67 @@ jobs:
       - name: Test selected SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+  build-macos-ppc:
+    name: Build ppc on macOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-macos-ppc
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      QEMU_HOST_LTO: '1'
+      QEMU_TARGET_LIST: ppc-softmmu
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: brew install glib make ninja pixman pkgconf
+
+      - name: Build PowerPC system emulator through macOS wrapper
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh qemu-system-ppc 2>&1 | tee macos-build.log
+
+      - name: Show build failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f macos-build.log ]]; then
+            echo '=== compiler errors ==='
+            grep -n -E 'FAILED:|error:|Undefined symbols|ninja: build stopped' \
+              macos-build.log | tail -n 200 || true
+            echo '=== build log tail ==='
+            tail -n 200 macos-build.log || true
+          fi
+          if [[ -f build-macos-ppc/meson-logs/meson-log.txt ]]; then
+            echo '=== meson log tail ==='
+            tail -n 200 build-macos-ppc/meson-logs/meson-log.txt || true
+          fi
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ppc-build-logs
+          path: |
+            macos-build.log
+            build-macos-ppc/config.log
+            build-macos-ppc/meson-logs/meson-log.txt
+            build-macos-ppc/.whp-build-artifacts
+            build-macos-ppc/.whp-config
+            build-macos-ppc/.whp-macos-build-identity
+            build-macos-ppc/.whp-macos-lto
+            build-macos-ppc/.whp-macos-toolchain
+          if-no-files-found: warn
+          retention-days: 7
+
   build-active-target:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
