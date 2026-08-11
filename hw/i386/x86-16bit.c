@@ -68,7 +68,7 @@ static void x86_16bit_load_bios(X86MachineState *x86ms,
         exit(EXIT_FAILURE);
     }
 
-    memory_region_init_rom(&x86ms->bios, OBJECT(machine),
+    memory_region_init_rom(&x86ms->bios, NULL,
                            "x86-16bit.bios", X86_16BIT_ROM_SIZE,
                            &error_fatal);
     rom = memory_region_get_ram_ptr(&x86ms->bios);
