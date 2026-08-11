@@ -360,7 +360,8 @@
 #
 # @proxy: proxy URI for outbound TCP connections.  Supported
 #     schemes are http, socks4, socks4a, socks5 and socks5h.  UDP,
-#     ICMP and the built-in DNS resolver are not proxied.  (Since 11.1)
+#     ICMP and the built-in DNS resolver are not proxied.
+#     (Since 11.1)
 #
 # @tftp-server-name: RFC2132 "TFTP server name" string (Since 3.1)
 #
