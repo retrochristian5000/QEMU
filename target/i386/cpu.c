@@ -3568,7 +3568,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .xlevel = 0,
         .model_id = "Intel 8088",
     },
-#else
+#endif
     {
         .name = "qemu64",
         .level = 0xd,
@@ -7338,7 +7338,6 @@ static const X86CPUDefinition builtin_x86_defs[] = {
             { /* end of list */ }
         }
     },
-#endif /* TARGET_X86_16BIT */
 };
 
 /*
@@ -7382,6 +7381,7 @@ static X86CPUVersion x86_cpu_model_resolve_version(const X86CPUModel *model)
     return v;
 }
 
+#ifndef TARGET_X86_16BIT
 static const Property max_x86_cpu_properties[] = {
     DEFINE_PROP_BOOL("migratable", X86CPU, migratable, true),
     DEFINE_PROP_BOOL("host-cache-info", X86CPU, cache_info_passthrough, false),
@@ -7447,6 +7447,7 @@ static const TypeInfo max_x86_cpu_type_info = {
     .instance_init = max_x86_cpu_initfn,
     .class_init = max_x86_cpu_class_init,
 };
+#endif
 
 static char *feature_word_description(FeatureWordInfo *f)
 {
@@ -11073,6 +11074,11 @@ static void x86_cpu_register_types(void)
 
     type_register_static(&x86_cpu_type_info);
     for (i = 0; i < ARRAY_SIZE(builtin_x86_defs); i++) {
+#ifdef TARGET_X86_16BIT
+        if (builtin_x86_defs[i].generation != X86_CPU_GENERATION_8086) {
+            continue;
+        }
+#endif
         x86_register_cpudef_types(&builtin_x86_defs[i]);
     }
 #ifndef TARGET_X86_16BIT
