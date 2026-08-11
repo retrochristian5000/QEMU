@@ -4,4 +4,4 @@ revision = dd76415fce457e319d665eb8210d05c5731360ba
 diff_files = slirp/0001-usernet-proxy-libcurl.patch
 
 [provide]
-slirp = libslirp_dep
+slirp = libslirp_libdep
