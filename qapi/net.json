@@ -15,7 +15,7 @@
 #
 # Sets the link status of a virtual network adapter.
 #
-# @name: the device name of the virtual network adapter
+# @name: the device name
 #
 # @up: true to set the link status to be up
 #
@@ -63,17 +63,9 @@
 #
 # Remove a network backend.
 #
-# @id: the name of the network backend to remove
-#
-# Errors:
-#     - If @id is not a valid network backend, DeviceNotFound
+# @id: the name of the network backend.
 #
 # Since: 0.14
-#
-# .. qmp-example::
-#
-#     -> { "execute": "netdev_del", "arguments": { "id": "netdev1" } }
-#     <- { "return": {} }
 ##
 { 'command': 'netdev_del', 'data': {'id': 'str'},
   'allow-preconfig': true }
@@ -358,6 +350,10 @@
 #
 # @guestfwd: forward guest TCP connections
 #
+# @proxy: proxy URI for outbound TCP connections.  Supported schemes
+#     are http, socks4, socks4a, socks5 and socks5h.  UDP, ICMP and the
+#     built-in DNS resolver are not proxied.  (Since 11.1)
+#
 # @tftp-server-name: RFC2132 "TFTP server name" string (Since 3.1)
 #
 # Since: 1.2
@@ -385,6 +381,7 @@
     '*smbserver': 'str',
     '*hostfwd':   ['NetdevUserHostForward'],
     '*guestfwd':  ['NetdevUserGuestForward'],
+    '*proxy':     'str',
     '*tftp-server-name': 'str' } }
 
 ##
@@ -396,8 +393,7 @@
 #
 # @fd: file descriptor of an already opened tap
 #
-# @fds: multiple file descriptors of already opened multiqueue capable
-#     tap
+# @fds: multiple file descriptors of multiple queues for multiqueue interfaces
 #
 # @script: script to initialize the interface
 #
@@ -415,15 +411,14 @@
 #
 # @vhostfd: file descriptor of an already opened vhost net device
 #
-# @vhostfds: file descriptors of multiple already opened vhost net
-#     devices
+# @vhostfds: file descriptors of multiple already opened vhost net devices
 #
 # @vhostforce: vhost on for non-MSIX virtio guests
 #
 # @queues: number of queues to be created for multiqueue capable tap
 #
-# @poll-us: maximum number of microseconds that could be spent on busy
-#     polling for tap (since 2.7)
+# @poll-us: maximum number of microseconds that could be spent in busy
+#     polling (default: 0) (Since 2.7)
 #
 # Since: 1.2
 ##
@@ -979,7 +974,7 @@
 #
 # @none: don't receive any assigned packet
 #
-# @all: receive all assigned packets
+# @all: receive all assigned packet
 #
 # Since: 1.6
 ##
