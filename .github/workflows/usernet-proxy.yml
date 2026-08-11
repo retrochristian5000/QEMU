@@ -1,0 +1,98 @@
+name: WHP QEMU usernet proxy CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'net/**'
+      - 'qapi/net.json'
+      - 'subprojects/slirp.wrap'
+      - 'subprojects/packagefiles/slirp/**'
+      - '.github/workflows/usernet-proxy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-qemu-usernet-proxy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-usernet-proxy:
+    name: Build i386 usernet proxy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libcurl4-openssl-dev \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Configure proxy-enabled user networking
+        shell: bash
+        run: |
+          mkdir build-usernet-proxy
+          cd build-usernet-proxy
+          set -o pipefail
+          ../configure \
+            --target-list=i386-softmmu \
+            --disable-docs \
+            --enable-slirp \
+            2>&1 | tee configure.log
+
+      - name: Verify proxy-enabled Slirp configuration
+        shell: bash
+        run: |
+          grep -q 'slirp support.*YES' build-usernet-proxy/configure.log
+          grep -q 'libcurl' build-usernet-proxy/meson-logs/meson-log.txt
+
+      - name: Build i386 system emulator
+        shell: bash
+        run: |
+          set -o pipefail
+          ninja -C build-usernet-proxy qemu-system-i386 \
+            2>&1 | tee build-usernet-proxy/build.log
+
+      - name: Show failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build-usernet-proxy/build.log ]]; then
+            echo '=== compiler errors ==='
+            grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
+              build-usernet-proxy/build.log | tail -n 200 || true
+            echo '=== build log tail ==='
+            tail -n 200 build-usernet-proxy/build.log || true
+          fi
+          if [[ -f build-usernet-proxy/configure.log ]]; then
+            echo '=== configure log tail ==='
+            tail -n 200 build-usernet-proxy/configure.log || true
+          fi
+          if [[ -f build-usernet-proxy/meson-logs/meson-log.txt ]]; then
+            echo '=== meson log tail ==='
+            tail -n 200 build-usernet-proxy/meson-logs/meson-log.txt || true
+          fi
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: usernet-proxy-build-logs
+          path: |
+            build-usernet-proxy/configure.log
+            build-usernet-proxy/build.log
+            build-usernet-proxy/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7
