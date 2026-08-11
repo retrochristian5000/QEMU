@@ -18,6 +18,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  macos-sdk-policy:
+    name: Check macOS SDK policy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Test selected SDK version handling
+        run: bash scripts/tests/test-macos-sdk-selection.bash
+
   build-active-target:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04

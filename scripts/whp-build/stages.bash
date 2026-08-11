@@ -209,7 +209,7 @@ if [[ "$HOST_OS" == "Darwin" ]]; then
 
     export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
     export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-    MACOS_SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || printf 'unknown')"
+    MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version 2>/dev/null || printf 'unknown')"
     if [[ ! -d "$SDKROOT" ]]; then
         printf 'error: macOS SDK not found at %s\n' "$SDKROOT" >&2
         exit 1
