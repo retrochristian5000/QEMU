@@ -214,10 +214,9 @@ diff --git a/src/slirp.c b/src/slirp.c
 diff --git a/src/tcp_subr.c b/src/tcp_subr.c
 --- a/src/tcp_subr.c
 +++ b/src/tcp_subr.c
-@@ -251,8 +251,12 @@ struct tcpcb *tcp_close(struct tcpcb *tp)
-     }
-     g_free(tp);
-     so->so_tcpcb = NULL;
+@@ -321,4 +321,8 @@ struct tcpcb *tcp_close(struct tcpcb *tp)
+     if (so == slirp->tcp_last_so)
+         slirp->tcp_last_so = &slirp->tcb;
 -    slirp_unregister_poll_socket(so);
 -    closesocket(so->s);
 +    if (so->proxy_handle) {
@@ -227,9 +226,7 @@ diff --git a/src/tcp_subr.c b/src/tcp_subr.c
 +        closesocket(so->s);
 +    }
      sbfree(&so->so_rcv);
-     sbfree(&so->so_snd);
-     sofree(so);
-@@ -319,6 +323,10 @@ int tcp_fconnect(struct socket *so, unsigned short af)
+@@ -392,4 +396,8 @@ int tcp_fconnect(struct socket *so, unsigned short af)
      DEBUG_CALL("tcp_fconnect");
      DEBUG_ARG("so = %p", so);
  
@@ -237,9 +234,7 @@ diff --git a/src/tcp_subr.c b/src/tcp_subr.c
 +        return slirp_proxy_fconnect(so, af);
 +    }
 +
-     ret = slirp_socket(af, SOCK_STREAM, 0);
-     so->s = ret;
-     if (ret >= 0) {
+     so->s = slirp_socket(af, SOCK_STREAM, 0);
 diff --git a/src/proxy.c b/src/proxy.c
 new file mode 100644
 --- /dev/null
