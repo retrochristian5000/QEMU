@@ -1,0 +1,729 @@
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -77,7 +77,10 @@ if glib_static == true
+ endif
+ 
+ # libslirp_deps collects both the libslirp dependenc(y|ies) and the
+ # platform dependencies.
+-libslirp_deps = [ dependency('glib-2.0', static : glib_static) ]
++libslirp_deps = [
++  dependency('glib-2.0', static : glib_static),
++  dependency('libcurl', version : '>=7.45.0', static : glib_static),
++]
+ 
+ if host_system == 'windows'
+   # Windows: pkg-config fails us here because the static version of glib-2.0
+@@ -128,6 +131,7 @@ sources = [
+   'src/ip_icmp.c',
+   'src/ip_input.c',
+   'src/ip_output.c',
++  'src/proxy.c',
+   'src/mbuf.c',
+   'src/misc.c',
+   'src/ncsi.c',
+@@ -237,6 +241,7 @@ endif
+ libslirp_libdep = declare_dependency(
+   link_with : lib,
+   include_directories : [include_directories('src'), include_directories('.')],
++  dependencies : libslirp_deps,
+ )
+ meson.override_dependency('slirp', libslirp_libdep)
+ 
+diff --git a/src/libslirp.h b/src/libslirp.h
+--- a/src/libslirp.h
++++ b/src/libslirp.h
+@@ -159,7 +159,7 @@ typedef struct SlirpCb {
+ } SlirpCb;
+ 
+ #define SLIRP_CONFIG_VERSION_MIN 1
+-#define SLIRP_CONFIG_VERSION_MAX 6
++#define SLIRP_CONFIG_VERSION_MAX 7
+ 
+ typedef struct SlirpConfig {
+@@ -248,6 +248,13 @@ typedef struct SlirpConfig {
+      * retrieved through NC-SI.
+      */
+     uint8_t oob_eth_addr[6];
++
++    /*
++     * Fields introduced in SlirpConfig version 7 begin
++     */
++    /*
++     * Proxy URI for outbound TCP connections.  UDP and ICMP are unaffected.
++     */
++    const char *outbound_proxy;
+ } SlirpConfig;
+ 
+ /* Create a new instance of a slirp stack */
+diff --git a/src/slirp.h b/src/slirp.h
+--- a/src/slirp.h
++++ b/src/slirp.h
+@@ -218,6 +218,8 @@ struct Slirp {
+     struct sockaddr_in *outbound_addr;
+     struct sockaddr_in6 *outbound_addr6;
+     bool disable_dns; /* slirp will not redirect/serve any DNS packet */
++    char *outbound_proxy;
++    void *proxy_state;
+ };
+@@ -387,10 +389,28 @@ struct socket *slirp_find_ctl_socket(Slirp *slirp, struct in_addr guest_addr,
+ /* Create a new timer, i.e. call the application timer_new callback */
+ void *slirp_timer_new(Slirp *slirp, SlirpTimerId id, void *cb_opaque);
+ 
++/* Return true when this outgoing socket should use the configured proxy. */
++bool slirp_proxy_should_use(struct socket *so);
++/* Start an asynchronous proxied TCP connection. */
++int slirp_proxy_fconnect(struct socket *so, unsigned short af);
++/* Release proxy resources owned by an individual TCP socket. */
++void slirp_proxy_socket_cleanup(struct socket *so);
++/* Release proxy resources owned by a slirp instance. */
++void slirp_proxy_cleanup(Slirp *slirp);
++/* Add libcurl's in-progress proxy sockets to the application's poll set. */
++void slirp_proxy_pollfds_fill(Slirp *slirp, uint32_t *timeout,
++                              SlirpAddPollSocketCb add_poll, void *opaque);
++/* Feed poll results and timer expiry back into libcurl. */
++void slirp_proxy_pollfds_poll(Slirp *slirp, int select_error,
++                              SlirpGetREventsCb get_revents, void *opaque);
++
+ /* Call slirp->cb->register_poll_socket (or register_poll_fd for compatibility) */
+ void slirp_register_poll_socket(struct socket *so);
++void slirp_register_poll_socket_fd(Slirp *slirp, slirp_os_socket socket);
+ 
+ /* Call slirp->cb->unregister_poll_socket (or unregister_poll_fd for compatibility) */
+ void slirp_unregister_poll_socket(struct socket *so);
++void slirp_unregister_poll_socket_fd(Slirp *slirp, slirp_os_socket socket);
+ 
+ #endif
+diff --git a/src/socket.h b/src/socket.h
+--- a/src/socket.h
++++ b/src/socket.h
+@@ -76,6 +76,10 @@ struct socket {
+     struct sbuf so_rcv; /* Receive buffer */
+     struct sbuf so_snd; /* Send buffer */
++
++    /* libcurl easy handle for a proxy-backed outbound TCP connection. */
++    void *proxy_handle;
++    bool proxy_in_multi;
+ };
+ 
+ 
+diff --git a/src/slirp.c b/src/slirp.c
+--- a/src/slirp.c
++++ b/src/slirp.c
+@@ -728,6 +728,12 @@ Slirp *slirp_new(const SlirpConfig *cfg, const SlirpCb *callbacks, void *opaque)
+         memset(slirp->oob_eth_addr, 0, ETH_ALEN);
+     }
+ 
++    if (cfg->version >= 7) {
++        slirp->outbound_proxy = g_strdup(cfg->outbound_proxy);
++    } else {
++        slirp->outbound_proxy = NULL;
++    }
++
+     ip6_post_init(slirp);
+     return slirp;
+ }
+@@ -771,6 +777,7 @@ void slirp_cleanup(Slirp *slirp)
+     ip_cleanup(slirp);
+     ip6_cleanup(slirp);
+     m_cleanup(slirp);
++    slirp_proxy_cleanup(slirp);
+     tftp_cleanup(slirp);
+ 
+     g_rand_free(slirp->grand);
+@@ -780,6 +787,7 @@ void slirp_cleanup(Slirp *slirp)
+     g_free(slirp->tftp_prefix);
+     g_free(slirp->bootp_filename);
+     g_free(slirp->vdomainname);
++    g_free(slirp->outbound_proxy);
+     g_free(slirp);
+ }
+@@ -950,6 +958,7 @@ void slirp_pollfds_fill_socket(Slirp *slirp, uint32_t *timeout,
+         }
+     }
+ 
++    slirp_proxy_pollfds_fill(slirp, timeout, add_poll, opaque);
+     slirp_update_timeout(slirp, timeout);
+ }
+@@ -982,13 +991,11 @@ void slirp_pollfds_fill(Slirp *slirp, uint32_t *timeout,
+     slirp_pollfds_fill_socket(slirp, timeout, slirp_pollfds_fill_wrap, &wrap);
+ }
+ 
+-void slirp_register_poll_socket(struct socket *so)
++void slirp_register_poll_socket_fd(Slirp *slirp, slirp_os_socket socket)
+ {
+-    Slirp *slirp = so->slirp;
+     int fd;
+     if (slirp->cfg_version >= 6 && slirp->cb->register_poll_socket) {
+-        slirp->cb->register_poll_socket(so->s, slirp->opaque);
++        slirp->cb->register_poll_socket(socket, slirp->opaque);
+     } else {
+-        fd = (int) so->s;
+-        if ((slirp_os_socket) fd != so->s)
++        fd = (int) socket;
++        if ((slirp_os_socket) fd != socket)
+             g_warning_once("Truncating socket to int failed!");
+ #ifdef __GNUC__
+ #pragma GCC diagnostic push
+@@ -1002,13 +1009,21 @@ void slirp_register_poll_socket(struct socket *so)
+     }
+ }
+ 
+-void slirp_unregister_poll_socket(struct socket *so)
++void slirp_register_poll_socket(struct socket *so)
++{
++    slirp_register_poll_socket_fd(so->slirp, so->s);
++}
++
++void slirp_unregister_poll_socket_fd(Slirp *slirp, slirp_os_socket socket)
+ {
+-    Slirp *slirp = so->slirp;
+     int fd;
+     if (slirp->cfg_version >= 6 && slirp->cb->unregister_poll_socket) {
+-        slirp->cb->unregister_poll_socket(so->s, slirp->opaque);
++        slirp->cb->unregister_poll_socket(socket, slirp->opaque);
+     } else {
+-        fd = (int) so->s;
+-        if ((slirp_os_socket) fd != so->s)
++        fd = (int) socket;
++        if ((slirp_os_socket) fd != socket)
+             g_warning_once("Truncating socket to int failed!");
+ #ifdef __GNUC__
+ #pragma GCC diagnostic push
+@@ -1022,6 +1037,11 @@ void slirp_unregister_poll_socket(struct socket *so)
+     }
+ }
+ 
++void slirp_unregister_poll_socket(struct socket *so)
++{
++    slirp_unregister_poll_socket_fd(so->slirp, so->s);
++}
++
+ void slirp_pollfds_poll(Slirp *slirp, int select_error,
+                         SlirpGetREventsCb get_revents, void *opaque)
+ {
+@@ -1046,6 +1066,8 @@ void slirp_pollfds_poll(Slirp *slirp, int select_error,
+         slirp->last_slowtimo = curtime;
+     }
+ 
++    slirp_proxy_pollfds_poll(slirp, select_error, get_revents, opaque);
++
+     /*
+      * Check sockets
+      */
+diff --git a/src/tcp_subr.c b/src/tcp_subr.c
+--- a/src/tcp_subr.c
++++ b/src/tcp_subr.c
+@@ -251,8 +251,12 @@ struct tcpcb *tcp_close(struct tcpcb *tp)
+     }
+     g_free(tp);
+     so->so_tcpcb = NULL;
+-    slirp_unregister_poll_socket(so);
+-    closesocket(so->s);
++    if (so->proxy_handle) {
++        slirp_proxy_socket_cleanup(so);
++    } else {
++        slirp_unregister_poll_socket(so);
++        closesocket(so->s);
++    }
+     sbfree(&so->so_rcv);
+     sbfree(&so->so_snd);
+     sofree(so);
+@@ -319,6 +323,10 @@ int tcp_fconnect(struct socket *so, unsigned short af)
+     DEBUG_CALL("tcp_fconnect");
+     DEBUG_ARG("so = %p", so);
+ 
++    if (slirp_proxy_should_use(so)) {
++        return slirp_proxy_fconnect(so, af);
++    }
++
+     ret = slirp_socket(af, SOCK_STREAM, 0);
+     so->s = ret;
+     if (ret >= 0) {
+diff --git a/src/proxy.c b/src/proxy.c
+new file mode 100644
+--- /dev/null
++++ b/src/proxy.c
+@@ -0,0 +1,445 @@
++/* SPDX-License-Identifier: BSD-3-Clause */
++/*
++ * Transparent outbound TCP proxy support for libslirp.
++ *
++ * libcurl performs SOCKS and HTTP CONNECT negotiation in CONNECT_ONLY mode.
++ * Once the tunnel is established, the underlying socket is returned to the
++ * normal libslirp TCP path.  HTTPS proxies are intentionally not accepted:
++ * the raw socket would bypass libcurl's TLS framing after CONNECT_ONLY.
++ */
++
++#include "slirp.h"
++
++#include <curl/curl.h>
++
++typedef struct SlirpProxyPoll {
++    curl_socket_t fd;
++    int what;
++    int pollfds_idx;
++} SlirpProxyPoll;
++
++typedef struct SlirpProxyReady {
++    curl_socket_t fd;
++    int action;
++} SlirpProxyReady;
++
++typedef struct SlirpProxyState {
++    CURLM *multi;
++    GPtrArray *polls;
++    int64_t timeout_at_us;
++} SlirpProxyState;
++
++static gsize proxy_curl_global_state;
++
++static bool proxy_curl_global_init(void)
++{
++    if (g_once_init_enter(&proxy_curl_global_state)) {
++        CURLcode ret = curl_global_init(CURL_GLOBAL_DEFAULT);
++        g_once_init_leave(&proxy_curl_global_state,
++                          ret == CURLE_OK ? 1 : 2);
++    }
++
++    return proxy_curl_global_state == 1;
++}
++
++static bool proxy_has_scheme(const char *proxy, const char *scheme)
++{
++    size_t len = strlen(scheme);
++
++    return g_ascii_strncasecmp(proxy, scheme, len) == 0;
++}
++
++static bool proxy_uri_supported(const char *proxy)
++{
++    return proxy_has_scheme(proxy, "http://") ||
++           proxy_has_scheme(proxy, "socks4://") ||
++           proxy_has_scheme(proxy, "socks4a://") ||
++           proxy_has_scheme(proxy, "socks5://") ||
++           proxy_has_scheme(proxy, "socks5h://");
++}
++
++bool slirp_proxy_should_use(struct socket *so)
++{
++    Slirp *slirp = so->slirp;
++
++    if (!slirp->outbound_proxy) {
++        return false;
++    }
++
++    /* Keep the guest-visible Slirp subnet local to the QEMU host. */
++    switch (so->so_ffamily) {
++    case AF_INET:
++        return (so->so_faddr.s_addr & slirp->vnetwork_mask.s_addr) !=
++               slirp->vnetwork_addr.s_addr;
++    case AF_INET6:
++        return !in6_equal_net(&so->so_faddr6, &slirp->vprefix_addr6,
++                              slirp->vprefix_len);
++    default:
++        return false;
++    }
++}
++
++static SlirpProxyState *proxy_state_get(Slirp *slirp)
++{
++    SlirpProxyState *ps = slirp->proxy_state;
++
++    if (ps) {
++        return ps;
++    }
++
++    if (!proxy_curl_global_init()) {
++        return NULL;
++    }
++
++    ps = g_new0(SlirpProxyState, 1);
++    ps->multi = curl_multi_init();
++    if (!ps->multi) {
++        g_free(ps);
++        return NULL;
++    }
++
++    ps->polls = g_ptr_array_new();
++    ps->timeout_at_us = -1;
++    slirp->proxy_state = ps;
++    return ps;
++}
++
++static void proxy_poll_unregister(Slirp *slirp, SlirpProxyState *ps,
++                                  SlirpProxyPoll *poll)
++{
++    guint i;
++
++    slirp_unregister_poll_socket_fd(slirp, (slirp_os_socket)poll->fd);
++    for (i = 0; i < ps->polls->len; i++) {
++        if (g_ptr_array_index(ps->polls, i) == poll) {
++            g_ptr_array_remove_index_fast(ps->polls, i);
++            break;
++        }
++    }
++    g_free(poll);
++}
++
++static int proxy_socket_cb(CURL *easy, curl_socket_t fd, int what,
++                           void *opaque, void *socketp)
++{
++    Slirp *slirp = opaque;
++    SlirpProxyState *ps = slirp->proxy_state;
++    SlirpProxyPoll *poll = socketp;
++
++    if (!ps) {
++        return 0;
++    }
++
++    if (what == CURL_POLL_REMOVE) {
++        if (poll) {
++            proxy_poll_unregister(slirp, ps, poll);
++            curl_multi_assign(ps->multi, fd, NULL);
++        }
++        return 0;
++    }
++
++    if (!poll) {
++        poll = g_new0(SlirpProxyPoll, 1);
++        poll->fd = fd;
++        poll->pollfds_idx = -1;
++        g_ptr_array_add(ps->polls, poll);
++        slirp_register_poll_socket_fd(slirp, (slirp_os_socket)fd);
++        curl_multi_assign(ps->multi, fd, poll);
++    }
++
++    poll->what = what;
++    return 0;
++}
++
++static int proxy_timer_cb(CURLM *multi, long timeout_ms, void *opaque)
++{
++    Slirp *slirp = opaque;
++    SlirpProxyState *ps = slirp->proxy_state;
++
++    if (!ps) {
++        return 0;
++    }
++
++    if (timeout_ms < 0) {
++        ps->timeout_at_us = -1;
++    } else {
++        ps->timeout_at_us = g_get_monotonic_time() + timeout_ms * 1000;
++    }
++
++    if (slirp->cb->notify) {
++        slirp->cb->notify(slirp->opaque);
++    }
++    return 0;
++}
++
++static bool proxy_target_url(struct socket *so, char *url, size_t url_len)
++{
++    char host[INET6_ADDRSTRLEN];
++    const void *addr;
++    unsigned port;
++
++    switch (so->so_ffamily) {
++    case AF_INET:
++        addr = &so->so_faddr;
++        port = ntohs(so->so_fport);
++        if (!inet_ntop(AF_INET, addr, host, sizeof(host))) {
++            return false;
++        }
++        g_snprintf(url, url_len, "http://%s:%u/", host, port);
++        return true;
++    case AF_INET6:
++        addr = &so->so_faddr6;
++        port = ntohs(so->so_fport6);
++        if (!inet_ntop(AF_INET6, addr, host, sizeof(host))) {
++            return false;
++        }
++        if (so->fhost.sin6.sin6_scope_id) {
++            g_snprintf(url, url_len, "http://[%s%%25%u]:%u/", host,
++                       so->fhost.sin6.sin6_scope_id, port);
++        } else {
++            g_snprintf(url, url_len, "http://[%s]:%u/", host, port);
++        }
++        return true;
++    default:
++        return false;
++    }
++}
++
++int slirp_proxy_fconnect(struct socket *so, unsigned short af)
++{
++    Slirp *slirp = so->slirp;
++    SlirpProxyState *ps;
++    CURL *easy;
++    CURLMcode mret;
++    char url[INET6_ADDRSTRLEN + 48];
++
++    if (!proxy_uri_supported(slirp->outbound_proxy)) {
++        errno = EINVAL;
++        return -1;
++    }
++    if (af != AF_INET && af != AF_INET6) {
++        errno = EAFNOSUPPORT;
++        return -1;
++    }
++    if (!proxy_target_url(so, url, sizeof(url))) {
++        errno = EINVAL;
++        return -1;
++    }
++
++    ps = proxy_state_get(slirp);
++    if (!ps) {
++        errno = EIO;
++        return -1;
++    }
++
++    /* Configure callbacks lazily after the Slirp object owns the state. */
++    curl_multi_setopt(ps->multi, CURLMOPT_SOCKETFUNCTION, proxy_socket_cb);
++    curl_multi_setopt(ps->multi, CURLMOPT_SOCKETDATA, slirp);
++    curl_multi_setopt(ps->multi, CURLMOPT_TIMERFUNCTION, proxy_timer_cb);
++    curl_multi_setopt(ps->multi, CURLMOPT_TIMERDATA, slirp);
++
++    easy = curl_easy_init();
++    if (!easy) {
++        errno = EIO;
++        return -1;
++    }
++
++    if (curl_easy_setopt(easy, CURLOPT_URL, url) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_PROXY, slirp->outbound_proxy) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_CONNECT_ONLY, 1L) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_HTTPPROXYTUNNEL, 1L) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_PROXYAUTH, CURLAUTH_ANY) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_TCP_NODELAY, 1L) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, 30000L) != CURLE_OK ||
++        curl_easy_setopt(easy, CURLOPT_PRIVATE, so) != CURLE_OK) {
++        curl_easy_cleanup(easy);
++        errno = EIO;
++        return -1;
++    }
++
++    so->proxy_handle = easy;
++    so->proxy_in_multi = true;
++    so->s = SLIRP_INVALID_SOCKET;
++    soisfconnecting(so);
++
++    mret = curl_multi_add_handle(ps->multi, easy);
++    if (mret != CURLM_OK) {
++        so->proxy_handle = NULL;
++        so->proxy_in_multi = false;
++        curl_easy_cleanup(easy);
++        errno = EIO;
++        return -1;
++    }
++
++    /*
++     * Do not drive the multi handle here.  tcp_input() still has to save the
++     * guest SYN before an asynchronous completion is allowed to continue it.
++     * The zero/short curl timer wakes the application's next poll iteration.
++     */
++    errno = EINPROGRESS;
++    return -1;
++}
++
++static int proxy_poll_events(int what)
++{
++    int events = SLIRP_POLL_ERR | SLIRP_POLL_HUP;
++
++    if (what == CURL_POLL_IN || what == CURL_POLL_INOUT) {
++        events |= SLIRP_POLL_IN;
++    }
++    if (what == CURL_POLL_OUT || what == CURL_POLL_INOUT) {
++        events |= SLIRP_POLL_OUT;
++    }
++    return events;
++}
++
++void slirp_proxy_pollfds_fill(Slirp *slirp, uint32_t *timeout,
++                              SlirpAddPollSocketCb add_poll, void *opaque)
++{
++    SlirpProxyState *ps = slirp->proxy_state;
++    gint64 now, remaining_us;
++    guint i;
++
++    if (!ps) {
++        return;
++    }
++
++    for (i = 0; i < ps->polls->len; i++) {
++        SlirpProxyPoll *poll = g_ptr_array_index(ps->polls, i);
++        poll->pollfds_idx = add_poll((slirp_os_socket)poll->fd,
++                                     proxy_poll_events(poll->what), opaque);
++    }
++
++    if (ps->timeout_at_us < 0) {
++        return;
++    }
++
++    now = g_get_monotonic_time();
++    remaining_us = MAX((gint64)0, ps->timeout_at_us - now);
++    *timeout = MIN(*timeout, (uint32_t)((remaining_us + 999) / 1000));
++}
++
++static int proxy_revents_to_curl(int revents)
++{
++    int action = 0;
++
++    if (revents & SLIRP_POLL_IN) {
++        action |= CURL_CSELECT_IN;
++    }
++    if (revents & SLIRP_POLL_OUT) {
++        action |= CURL_CSELECT_OUT;
++    }
++    if (revents & (SLIRP_POLL_ERR | SLIRP_POLL_HUP)) {
++        action |= CURL_CSELECT_ERR;
++    }
++    return action;
++}
++
++static void proxy_complete(Slirp *slirp)
++{
++    SlirpProxyState *ps = slirp->proxy_state;
++    CURLMsg *msg;
++    int left;
++
++    while ((msg = curl_multi_info_read(ps->multi, &left)) != NULL) {
++        CURL *easy;
++        struct socket *so = NULL;
++        curl_socket_t fd = CURL_SOCKET_BAD;
++        bool ok;
++
++        if (msg->msg != CURLMSG_DONE) {
++            continue;
++        }
++
++        easy = msg->easy_handle;
++        curl_easy_getinfo(easy, CURLINFO_PRIVATE, &so);
++        if (!so || so->proxy_handle != easy) {
++            curl_multi_remove_handle(ps->multi, easy);
++            curl_easy_cleanup(easy);
++            continue;
++        }
++
++        ok = msg->data.result == CURLE_OK &&
++             curl_easy_getinfo(easy, CURLINFO_ACTIVESOCKET, &fd) == CURLE_OK &&
++             fd != CURL_SOCKET_BAD;
++
++        if (!ok) {
++            DEBUG_ERROR("proxy connect failed: %s",
++                        curl_easy_strerror(msg->data.result));
++        }
++
++        curl_multi_remove_handle(ps->multi, easy);
++        so->proxy_in_multi = false;
++
++        if (ok) {
++            int opt = 1;
++
++            so->s = (slirp_os_socket)fd;
++            setsockopt(so->s, SOL_SOCKET, SO_OOBINLINE,
++                       (const void *)&opt, sizeof(opt));
++            slirp_socket_set_nodelay(so->s);
++            slirp_register_poll_socket(so);
++            so->so_state &= ~SS_ISFCONNECTING;
++        } else {
++            curl_easy_cleanup(easy);
++            so->proxy_handle = NULL;
++            so->s = SLIRP_INVALID_SOCKET;
++            so->so_state &= SS_PERSISTENT_MASK;
++            so->so_state |= SS_NOFDREF;
++        }
++
++        /* Continue exactly where the normal nonblocking connect path does. */
++        tcp_input(NULL, sizeof(struct ip), so, so->so_ffamily);
++    }
++}
++
++void slirp_proxy_pollfds_poll(Slirp *slirp, int select_error,
++                              SlirpGetREventsCb get_revents, void *opaque)
++{
++    SlirpProxyState *ps = slirp->proxy_state;
++    GArray *ready;
++    guint i;
++    int running;
++
++    if (!ps) {
++        return;
++    }
++
++    ready = g_array_new(false, false, sizeof(SlirpProxyReady));
++    if (!select_error) {
++        for (i = 0; i < ps->polls->len; i++) {
++            SlirpProxyPoll *poll = g_ptr_array_index(ps->polls, i);
++            int revents = 0;
++
++            if (poll->pollfds_idx >= 0) {
++                revents = get_revents(poll->pollfds_idx, opaque);
++            }
++            if (revents) {
++                SlirpProxyReady item = {
++                    .fd = poll->fd,
++                    .action = proxy_revents_to_curl(revents),
++                };
++                g_array_append_val(ready, item);
++            }
++        }
++    }
++
++    for (i = 0; i < ready->len; i++) {
++        SlirpProxyReady *item = &g_array_index(ready, SlirpProxyReady, i);
++        curl_multi_socket_action(ps->multi, item->fd, item->action, &running);
++    }
++    g_array_free(ready, true);
++
++    if (ps->timeout_at_us >= 0 &&
++        g_get_monotonic_time() >= ps->timeout_at_us) {
++        ps->timeout_at_us = -1;
++        curl_multi_socket_action(ps->multi, CURL_SOCKET_TIMEOUT, 0, &running);
++    }
++
++    proxy_complete(slirp);
++}
++
++void slirp_proxy_socket_cleanup(struct socket *so)
++{
++    SlirpProxyState *ps = so->slirp->proxy_state;
++    CURL *easy = so->proxy_handle;
++
++    if (!easy) {
++        return;
++    }
++
++    if (so->proxy_in_multi && ps) {
++        curl_multi_remove_handle(ps->multi, easy);
++        so->proxy_in_multi = false;
++    } else if (have_valid_socket(so->s)) {
++        slirp_unregister_poll_socket(so);
++    }
++
++    /* curl owns and closes the CONNECT_ONLY socket. */
++    curl_easy_cleanup(easy);
++    so->proxy_handle = NULL;
++    so->s = SLIRP_INVALID_SOCKET;
++}
++
++void slirp_proxy_cleanup(Slirp *slirp)
++{
++    SlirpProxyState *ps = slirp->proxy_state;
++
++    if (!ps) {
++        return;
++    }
++
++    curl_multi_cleanup(ps->multi);
++    while (ps->polls->len) {
++        SlirpProxyPoll *poll = g_ptr_array_index(ps->polls,
++                                                 ps->polls->len - 1);
++        proxy_poll_unregister(slirp, ps, poll);
++    }
++    g_ptr_array_free(ps->polls, true);
++    g_free(ps);
++    slirp->proxy_state = NULL;
++}
