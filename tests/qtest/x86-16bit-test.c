@@ -3,8 +3,7 @@
  *
  * Copyright (c) 2026 Vincent Menezes
  *
- * This work is licensed under the terms of the GNU GPL, version 2 or later.
- * See the COPYING file in the top-level directory.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include "qemu/osdep.h"
@@ -132,7 +131,7 @@ static char *run_qemu_expect_failure(char **argv)
                                NULL, NULL, NULL, &stderr_text, &status,
                                &error));
     g_assert_no_error(error);
-    g_assert_false(g_spawn_check_wait_status(status, &error));
+    g_assert_false(g_spawn_check_exit_status(status, &error));
     g_clear_error(&error);
     return stderr_text;
 }
@@ -179,9 +178,10 @@ static void test_literal_rom(const void *opaque)
     GPid pid;
     int stdout_fd, stderr_fd;
     int status;
+    ssize_t errors_read;
     char output = 0;
     char errors[1024] = {};
-    struct pollfd pfd;
+    GPollFD pfd = { .events = G_IO_IN };
     char *argv[] = {
         (char *)qemu,
         (char *)"-machine", (char *)machine,
@@ -200,14 +200,16 @@ static void test_literal_rom(const void *opaque)
     g_assert_no_error(error);
 
     pfd.fd = stdout_fd;
-    pfd.events = POLLIN;
-    if (poll(&pfd, 1, 10000) > 0) {
+    if (g_poll(&pfd, 1, 10000) > 0 && (pfd.revents & G_IO_IN)) {
         g_assert_cmpint(read(stdout_fd, &output, 1), ==, 1);
     }
 
     kill(pid, SIGTERM);
     waitpid(pid, &status, 0);
-    read(stderr_fd, errors, sizeof(errors) - 1);
+    errors_read = read(stderr_fd, errors, sizeof(errors) - 1);
+    if (errors_read < 0) {
+        errors[0] = '\0';
+    }
     close(stdout_fd);
     close(stderr_fd);
     g_spawn_close_pid(pid);
