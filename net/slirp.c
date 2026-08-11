@@ -429,6 +429,15 @@ static SaveVMHandlers savevm_slirp_state = {
     .load_state = net_slirp_state_load,
 };
 
+static bool net_slirp_proxy_uri_supported(const char *proxy)
+{
+    return g_str_has_prefix(proxy, "http://") ||
+           g_str_has_prefix(proxy, "socks4://") ||
+           g_str_has_prefix(proxy, "socks4a://") ||
+           g_str_has_prefix(proxy, "socks5://") ||
+           g_str_has_prefix(proxy, "socks5h://");
+}
+
 static int net_slirp_init(NetClientState *peer, const char *model,
                           const char *name, int restricted,
                           bool ipv4, const char *vnetwork, const char *vhost,
@@ -439,7 +448,7 @@ static int net_slirp_init(NetClientState *peer, const char *model,
                           const char *vnameserver, const char *vnameserver6,
                           const char *smb_export, const char *vsmbserver,
                           const char **dnssearch, const char *vdomainname,
-                          const char *tftp_server_name,
+                          const char *proxy, const char *tftp_server_name,
                           Error **errp)
 {
     /* default settings according to historic slirp */
@@ -478,6 +487,26 @@ static int net_slirp_init(NetClientState *peer, const char *model,
         error_setg(errp, "IPv4 and IPv6 disabled");
         return -1;
     }
+
+    if (proxy && !*proxy) {
+        error_setg(errp, "'proxy' parameter cannot be empty");
+        return -1;
+    }
+
+    if (proxy && !net_slirp_proxy_uri_supported(proxy)) {
+        error_setg(errp,
+                   "Unsupported usernet proxy URI '%s'; expected http, "
+                   "socks4, socks4a, socks5 or socks5h", proxy);
+        return -1;
+    }
+
+#if !defined(SLIRP_CONFIG_VERSION_MAX) || SLIRP_CONFIG_VERSION_MAX < 7
+    if (proxy) {
+        error_setg(errp,
+                   "proxy= requires QEMU's proxy-enabled bundled libslirp");
+        return -1;
+    }
+#endif
 
     if (vnetwork) {
         if (get_str_sep(buf, sizeof(buf), &vnetwork, '/') < 0) {
@@ -642,9 +671,14 @@ static int net_slirp_init(NetClientState *peer, const char *model,
 
     s = DO_UPCAST(SlirpState, nc, nc);
 
+#if defined(SLIRP_CONFIG_VERSION_MAX) && SLIRP_CONFIG_VERSION_MAX >= 7
+    cfg.version = proxy ? 7 : 6;
+    cfg.outbound_proxy = proxy;
+#else
     cfg.version =
          SLIRP_CHECK_VERSION(4, 9, 0) ? 6 :
          SLIRP_CHECK_VERSION(4, 7, 0) ? 4 : 1;
+#endif
     cfg.restricted = restricted;
     cfg.in_enabled = ipv4;
     cfg.vnetwork = net;
@@ -1311,7 +1345,7 @@ int net_init_slirp(const Netdev *netdev, const char *name,
                          user->bootfile, user->dhcpstart,
                          user->dns, user->ipv6_dns, user->smb,
                          user->smbserver, dnssearch, user->domainname,
-                         user->tftp_server_name, errp);
+                         user->proxy, user->tftp_server_name, errp);
 
     while (slirp_configs) {
         config = slirp_configs;
