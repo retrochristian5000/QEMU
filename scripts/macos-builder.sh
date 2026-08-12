@@ -44,27 +44,18 @@ if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
     exit 1
 fi
 
-if { [ -n "${OPENBIOS_HOSTCC:-}" ] && [ -z "${OPENBIOS_HOSTCXX:-}" ]; } ||
-   { [ -z "${OPENBIOS_HOSTCC:-}" ] && [ -n "${OPENBIOS_HOSTCXX:-}" ]; }; then
-    printf '%s\n' \
-        'error: OPENBIOS_HOSTCC and OPENBIOS_HOSTCXX must be selected as a pair.' \
-        "OPENBIOS_HOSTCC=${OPENBIOS_HOSTCC:-<unset>}" \
-        "OPENBIOS_HOSTCXX=${OPENBIOS_HOSTCXX:-<unset>}" >&2
-    exit 1
-fi
-
-# The integrated macOS policy selects Apple Clang for build-machine tools,
-# including OpenBIOS utilities and the PowerPC cross-toolchain bootstrap.
-# A matching explicit OPENBIOS_HOSTCC/HOSTCXX pair remains available for
-# controlled compiler experiments; do not change compiler family merely
-# because a Homebrew GCC happens to be installed.
+# The integrated build has one build-machine compiler pair and one configure
+# shell.  OpenBIOS derives its host tools from CC_FOR_BUILD/CXX_FOR_BUILD and
+# STRIP_FOR_BUILD; obsolete role aliases are intentionally ignored.
+unset QEMU_CONFIG_SHELL TOOLCHAIN_CONFIG_SHELL MACOS_HOST_ARCH \
+    OPENBIOS_HOSTCC OPENBIOS_HOSTCXX OPENBIOS_HOSTSTRIP
+CONFIG_SHELL="$WHP_BUILD_BASH"
 
 CLEAN_ENV=$(command -v env 2>/dev/null || true)
 if [ -z "$CLEAN_ENV" ]; then
     printf 'error: env is required to normalize the build shell environment\n' >&2
     exit 1
 fi
-CONFIG_SHELL=${QEMU_CONFIG_SHELL:-$WHP_BUILD_BASH}
 export WHP_BUILD_BASH CONFIG_SHELL MACOS_ALLOW_MIXED_HOMEBREW \
     WHP_BUILD_ENTRY_NORMALIZED
 
