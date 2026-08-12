@@ -2,13 +2,20 @@
 
 set -euo pipefail
 
-: "${MACOS_HOST_ARCH:?MACOS_HOST_ARCH is required}"
-: "${BUILD_MACHINE_ARCH:?BUILD_MACHINE_ARCH is required}"
 : "${CC:?CC is required}"
 : "${CXX:?CXX is required}"
 : "${OBJC:?OBJC is required}"
 : "${CC_FOR_BUILD:?CC_FOR_BUILD is required}"
 : "${SDKROOT:?SDKROOT is required}"
+
+case "$(uname -m)" in
+    arm64|aarch64) host_arch=arm64 ;;
+    x86_64|amd64) host_arch=x86_64 ;;
+    *)
+        printf 'error: unsupported macOS process architecture: %s\n' "$(uname -m)" >&2
+        exit 1
+        ;;
+esac
 
 MACOS_COMPILER_MANIFEST="${MACOS_COMPILER_MANIFEST:-.whp-macos-toolchain}"
 MACOS_COMPILER_PROBE_DIR="${MACOS_COMPILER_PROBE_DIR:-${MACOS_COMPILER_MANIFEST}.d}"
@@ -24,15 +31,6 @@ for boolean_value in MACOS_ALLOW_NONCLANG MACOS_ALLOW_COMPILER_CONFIG; do
             ;;
     esac
 done
-
-case "$MACOS_HOST_ARCH" in
-    arm64|x86_64) ;;
-    *) printf 'error: unsupported macOS host architecture: %s\n' "$MACOS_HOST_ARCH" >&2; exit 1 ;;
-esac
-case "$BUILD_MACHINE_ARCH" in
-    arm64|x86_64) ;;
-    *) printf 'error: unsupported macOS build architecture: %s\n' "$BUILD_MACHINE_ARCH" >&2; exit 1 ;;
-esac
 
 if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
@@ -308,7 +306,7 @@ int main(void) { return 0; }
 SOURCE
     set_command "$CC_FOR_BUILD"
     "${COMPILER_CMD[@]}" -isysroot "$SDKROOT" -x c "$source" -o "$output"
-    require_output_arch "$role" "$output" "$BUILD_MACHINE_ARCH"
+    require_output_arch "$role" "$output" "$host_arch"
 }
 
 compile_cxx_probe()
@@ -332,7 +330,7 @@ SOURCE
         ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} \
         -x c++ "$source" -o "$output" \
         ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
-    require_output_arch CXX "$output" "$MACOS_HOST_ARCH"
+    require_output_arch CXX "$output" "$host_arch"
 }
 
 compile_objc_probe()
@@ -356,23 +354,22 @@ SOURCE
         ${OBJC_FLAGS[@]+"${OBJC_FLAGS[@]}"} \
         -x objective-c "$source" -o "$output" -framework Cocoa \
         ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
-    require_output_arch OBJC "$output" "$MACOS_HOST_ARCH"
+    require_output_arch OBJC "$output" "$host_arch"
 }
 
 {
-    printf 'WHP_MACOS_TOOLCHAIN_SCHEMA=1\n'
-    printf 'MACOS_HOST_ARCH=%s\n' "$MACOS_HOST_ARCH"
-    printf 'BUILD_MACHINE_ARCH=%s\n' "$BUILD_MACHINE_ARCH"
+    printf 'WHP_MACOS_TOOLCHAIN_SCHEMA=2\n'
+    printf 'HOST_ARCH=%s\n' "$host_arch"
     printf 'SDKROOT=%s\n' "$SDKROOT"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
 } > "$manifest_candidate"
 
-write_identity CC "$CC" "$MACOS_HOST_ARCH" c
-write_identity CXX "$CXX" "$MACOS_HOST_ARCH" cxx
-write_identity OBJC "$OBJC" "$MACOS_HOST_ARCH" objc
-write_identity CC_FOR_BUILD "$CC_FOR_BUILD" "$BUILD_MACHINE_ARCH" c
+write_identity CC "$CC" "$host_arch" c
+write_identity CXX "$CXX" "$host_arch" cxx
+write_identity OBJC "$OBJC" "$host_arch" objc
+write_identity CC_FOR_BUILD "$CC_FOR_BUILD" "$host_arch" c
 
-compile_c_probe CC "$CC" "$MACOS_HOST_ARCH"
+compile_c_probe CC "$CC" "$host_arch"
 compile_cxx_probe
 compile_objc_probe
 compile_build_probe
