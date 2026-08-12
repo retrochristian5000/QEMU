@@ -73,14 +73,14 @@ the choice is recorded in the bootstrap marker.
 Configure shell
 ---------------
 
-Nested binutils and GCC configure scripts run with an explicit shell::
+The public wrapper selects one GNU Bash executable with ``WHP_BUILD_BASH``.
+That path is normalized into ``CONFIG_SHELL`` and reused by nested binutils,
+GCC, and LLVM bootstrap stages::
 
-  CONFIG_SHELL=/bin/bash
-  SHELL=/bin/bash
+  WHP_BUILD_BASH=/bin/bash ./build.sh
 
-Override this with ``TOOLCHAIN_CONFIG_SHELL`` only when another known-good
-POSIX shell is required.  The selected shell path is part of the toolchain
-cache marker.
+There is no separate toolchain-shell override.  Keeping one shell selector
+prevents configure recursion from drifting onto a different interpreter.
 
 Target-tool selection
 ---------------------
