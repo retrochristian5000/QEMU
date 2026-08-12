@@ -4,6 +4,28 @@ set -eu
 
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WHP_BUILD_BASH=${WHP_BUILD_BASH:-}
+WHP_INCREMENTAL_BUILD=${WHP_INCREMENTAL_BUILD:-1}
+
+case "$WHP_INCREMENTAL_BUILD" in
+    0|1) ;;
+    *)
+        printf 'error: WHP_INCREMENTAL_BUILD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+
+# Incremental rebuilds are the public default.  The QEMU Ninja tree already
+# tracks source dependencies; keep firmware and cross-toolchain caches aligned
+# with that policy unless the caller explicitly requests a forced rebuild.
+if [ "$WHP_INCREMENTAL_BUILD" = 1 ]; then
+    OPENBIOS_FORCE_RECONFIGURE=${OPENBIOS_FORCE_RECONFIGURE:-0}
+    POWERPC_TOOLCHAIN_FORCE_REBUILD=${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}
+else
+    OPENBIOS_FORCE_RECONFIGURE=${OPENBIOS_FORCE_RECONFIGURE:-1}
+    POWERPC_TOOLCHAIN_FORCE_REBUILD=${POWERPC_TOOLCHAIN_FORCE_REBUILD:-1}
+fi
+export WHP_INCREMENTAL_BUILD OPENBIOS_FORCE_RECONFIGURE \
+    POWERPC_TOOLCHAIN_FORCE_REBUILD
 
 if [ -z "$WHP_BUILD_BASH" ]; then
     if [ "$(uname -s 2>/dev/null || printf unknown)" = Darwin ] &&
