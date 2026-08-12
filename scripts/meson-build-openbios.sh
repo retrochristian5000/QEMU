@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=3
+OPENBIOS_ENVIRONMENT_POLICY=4
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -198,7 +198,7 @@ if [[ -z "$cross_prefix" ]]; then
     printf 'error: no PowerPC cross-toolchain is available for OpenBIOS\n' >&2
     exit 1
 fi
-for tool in gcc as ar ld nm strip ranlib readelf; do
+for tool in gcc as ar ld nm strip ranlib; do
     if [[ ! -x "${cross_prefix}${tool}" ]]; then
         printf 'error: incomplete PowerPC cross-toolchain: %s%s\n' \
             "$cross_prefix" "$tool" >&2
@@ -214,6 +214,7 @@ done
     OPENBIOS_HOSTCC="$OPENBIOS_HOSTCC" \
     OPENBIOS_HOSTCXX="$OPENBIOS_HOSTCXX" \
     OPENBIOS_HOSTSTRIP="$OPENBIOS_HOSTSTRIP" \
+    OPENBIOS_READELF="${OPENBIOS_READELF:-}" \
     OPENBIOS_TOKE="${OPENBIOS_TOKE:-}" \
     FCODE_UTILS_REPOSITORY="$FCODE_UTILS_REPOSITORY" \
     FCODE_UTILS_REV="$FCODE_UTILS_REV" \
