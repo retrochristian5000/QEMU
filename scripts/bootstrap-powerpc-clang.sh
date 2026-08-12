@@ -95,20 +95,17 @@ if [[ -n "$(git -C "$LLVM_SUBMODULE_DIR" status --porcelain --untracked-files=no
 fi
 
 base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
-marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
-expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=9
-COMPILER=clang
+orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
+lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
+expected_lld_marker="$(cat <<MARKER
+LLD_SCHEMA=1
 LINKER=lld
-ASSEMBLER=gnu-as
 TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
 LLVM_GIT_COMMIT=$llvm_revision
 BASE_BOOTSTRAP_SIGNATURE=$base_signature
-HOST_SYSTEM=$(uname -srm)
-HOST_CC=$TOOLCHAIN_HOST_CC
-HOST_CXX=$TOOLCHAIN_HOST_CXX
+ORCHESTRATOR_SIGNATURE=$orchestrator_signature
 MARKER
 )"
 
@@ -129,27 +126,33 @@ clang_lld_toolchain_is_usable()
         grep -q 'LLD' || return 1
 }
 
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
-      "$(cat "$marker")" == "$expected_marker" ]] &&
-   clang_lld_toolchain_is_usable; then
-    printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
-        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
-    exit 0
+base_force="$TOOLCHAIN_FORCE_REBUILD"
+if [[ -f "$lld_marker" ]]; then
+    old_base_signature="$(awk -F= '$1 == "BASE_BOOTSTRAP_SIGNATURE" {print $2; exit}' "$lld_marker")"
+    if [[ -n "$old_base_signature" && "$old_base_signature" != "$base_signature" ]]; then
+        base_force=1
+    fi
 fi
 
 printf 'LLVM submodule revision: %s\n' "$llvm_revision"
-printf 'Building base Clang/GNU-as toolchain from the LLVM submodule revision\n'
-
-# The existing compiler bootstrap remains the binutils/Clang foundation.  Feed
-# it a local clone source rooted at the QEMU submodule, so there is no second
-# remote revision policy and no second revision to maintain.
+# Always let the compiler/binutils foundation validate its own complete marker
+# first.  It exits quickly when current and rebuilds atomically when one of its
+# compiler, binutils, host, or LLVM inputs has changed.
 POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
 POWERPC_LLVM_GIT_REF="$llvm_revision" \
 POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
 POWERPC_LLVM_GIT_OFFLINE=0 \
 POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
-POWERPC_TOOLCHAIN_FORCE_REBUILD="$TOOLCHAIN_FORCE_REBUILD" \
+POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
     bash "$BASE_BOOTSTRAP"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$lld_marker" &&
+      "$(cat "$lld_marker")" == "$expected_lld_marker" ]] &&
+   clang_lld_toolchain_is_usable; then
+    printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
+        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+    exit 0
+fi
 
 llvm_dir="$TOOLCHAIN_DIR/llvm"
 llvm_cmake_dir="$llvm_dir/lib/cmake/llvm"
@@ -346,7 +349,7 @@ if ! "$public_ld" --version | grep -q 'LLD'; then
     exit 1
 fi
 
-printf '%s\n' "$expected_marker" > "$marker"
+printf '%s\n' "$expected_lld_marker" > "$lld_marker"
 printf '%s\n' \
     "Bootstrapped PowerPC compiler/linker: Clang + LLD ($llvm_revision)" \
     "LLVM source: QEMU submodule $LLVM_SUBMODULE_PATH" \
