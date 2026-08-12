@@ -5,34 +5,44 @@ The WHP entry point is a run of QEMU's build system, not an independent build
 system. ``build.sh`` normalizes the shell and platform environment, then
 ``builder.sh`` executes a small lifecycle:
 
-#. validate the wrapper scripts before loading platform-specific paths;
+#. validate the maintained wrapper scripts;
 #. prepare the WHP build profile and host tools;
-#. prepare source-backed inputs and build-graph configuration;
+#. prepare source-backed inputs and firmware configuration;
 #. configure QEMU when the recorded build identity changes;
 #. ask GNU Make, Meson, and Ninja to build the requested targets; and
-#. verify and record the artifacts produced by that exact run.
+#. verify and record the artifacts produced by that run.
 
 ``builder.sh`` intentionally contains only that sequence.
-``scripts/whp-build/stages.bash`` is the stable loader for four focused
-modules: ``prepare-build.bash``, ``prepare-sources.bash``, ``configure.bash``,
-and ``build-targets.bash``. Wrapper integrity checks live in
-``scripts/whp-build/preflight.bash`` and final artifact checks live in
-``scripts/whp-build/post-build.bash``. This keeps the public runner readable
-without hiding verification in an unrelated build stage.
+``scripts/whp-build/stages.bash`` loads the focused preparation,
+source-input, configuration, and build-target modules. Wrapper integrity checks
+live in ``scripts/whp-build/preflight.bash`` and final artifact checks live in
+``scripts/whp-build/post-build.bash``.
 
-Wrapper integrity
------------------
+Shell contract
+--------------
 
-Every run performs ``sh -n`` or ``bash -n`` checks on the maintained build
-entry points and helper scripts, including platform-specific scripts that the
-current host would not otherwise execute. Set ``WHP_RUN_SHELLCHECK=1`` to add a
-ShellCheck pass when ShellCheck is installed::
+``build.sh`` and ``scripts/macos-builder.sh`` are small POSIX ``sh`` launchers.
+They locate GNU Bash 3.2 or newer, clear shell startup inputs such as
+``BASH_ENV``, ``ENV``, ``POSIXLY_CORRECT``, ``SHELLOPTS``, and ``BASHOPTS``,
+and then enter the Bash orchestration layer with ``--noprofile --norc``.
 
-  WHP_RUN_SHELLCHECK=1 ./build.sh qemu-system-ppc
+``WHP_BUILD_BASH`` is the single public shell selector. The selected Bash path
+is also used as ``CONFIG_SHELL`` for nested configure recursion. There is no
+separate QEMU or PowerPC-toolchain shell selector.
 
-The preflight is intentionally limited to wrapper integrity. QEMU's own build
-graph remains responsible for compiling source files and deciding which
-artifacts are out of date.
+The implementation scripts use Bash arrays, ``[[ ... ]]``, ``pipefail``, and
+other Bash syntax. Do not run ``builder.sh`` or the ``scripts/whp-build/*.bash``
+implementation files through ``sh``, ``dash``, or ``zsh``. Use the public
+launcher instead::
+
+  ./build.sh
+
+A lightweight shell check is available without starting a build::
+
+  WHP_SHELL_PROBE_ONLY=1 ./build.sh
+
+Set ``WHP_RUN_SHELLCHECK=1`` to add ShellCheck during preflight when it is
+installed.
 
 Build-graph ownership
 ---------------------
@@ -48,6 +58,22 @@ OpenBIOS follows this rule on every host. The preparation stage writes
 incremental stamps are therefore reached through one Meson/Ninja edge.
 Setting ``BUILD_OPENBIOS=0`` removes the generated graph input and selects the
 checked-in firmware blob instead.
+
+Incremental policy
+------------------
+
+Incremental builds are the default. ``WHP_INCREMENTAL_BUILD=1`` preserves the
+QEMU Ninja tree, reuses a valid OpenBIOS configuration, and reuses a valid
+PowerPC toolchain cache. QEMU configuration is rerun only when its recorded
+identity changes.
+
+For a deliberately fresh firmware/toolchain pass use::
+
+  WHP_INCREMENTAL_BUILD=0 ./build.sh
+
+The narrower ``OPENBIOS_FORCE_RECONFIGURE`` and
+``POWERPC_TOOLCHAIN_FORCE_REBUILD`` controls remain diagnostic overrides for
+one component; they are not separate build modes.
 
 Targets
 -------
@@ -85,10 +111,6 @@ with an older installed executable.
 Configure defaults
 ------------------
 
-The WHP profile does not use ``--without-default-features``,
-``--without-default-devices``, a private device configuration, or overrides
-for QEMU's random-number, tracing, debugging, plugin, and TCG-interpreter
-defaults. QEMU's configure, Kconfig, and Meson layers remain responsible for
-detecting optional host dependencies and selecting their supported defaults.
-The wrapper adds only the features that define the WHP host integration and
-the requested QEMU target.
+The WHP profile does not replace QEMU's supported configure, Kconfig, or Meson
+defaults with a private feature matrix. The wrapper adds only the host policy,
+firmware integration, and requested target choices required by the WHP build.
