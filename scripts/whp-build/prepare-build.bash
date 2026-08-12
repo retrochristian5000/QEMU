@@ -106,7 +106,6 @@ if [[ "$HOST_OS" == "Darwin" ]]; then
 fi
 
 MACOS_ALLOW_ROSETTA="${MACOS_ALLOW_ROSETTA:-0}"
-MACOS_HOST_ARCH="${MACOS_HOST_ARCH:-$HOST_ARCH}"
 MACOS_ALLOW_MIXED_HOMEBREW="${MACOS_ALLOW_MIXED_HOMEBREW:-0}"
 MACOS_ARCH_FLAGS="${MACOS_ARCH_FLAGS:-1}"
 MACOS_VERIFY_TOOLCHAIN="${MACOS_VERIFY_TOOLCHAIN:-1}"
@@ -122,34 +121,22 @@ for boolean_value in \
     esac
 done
 
-if [[ "$HOST_OS" == "Darwin" ]]; then
-    MACOS_HOST_ARCH="$(canonical_macos_arch "$MACOS_HOST_ARCH")" || {
-        printf 'error: MACOS_HOST_ARCH must be arm64 or x86_64\n' >&2
-        exit 1
-    }
-
-    if [[ "$MACOS_HOST_ARCH" != "$HOST_ARCH" ]]; then
-        printf '%s\n' \
-            "error: cross-host macOS builds are not enabled by builder.sh." \
-            "requested host: $MACOS_HOST_ARCH; running process: $HOST_ARCH" \
-            'run the build under the requested architecture, for example:' \
-            '  arch -arm64 ./builder.sh' \
-            '  arch -x86_64 env MACOS_ALLOW_ROSETTA=1 ./builder.sh' >&2
-        exit 1
-    fi
-
-    if [[ "$ROSETTA_TRANSLATED" == "1" && "$MACOS_ALLOW_ROSETTA" != "1" ]]; then
-        printf '%s\n' \
-            'error: the build is running under Rosetta translation.' \
-            'rerun natively with: arch -arm64 ./builder.sh' \
-            'or explicitly allow an x86_64 build with:' \
-            '  MACOS_ALLOW_ROSETTA=1 ./builder.sh' >&2
-        exit 1
-    fi
+if [[ "$HOST_OS" == "Darwin" &&
+      "$ROSETTA_TRANSLATED" == "1" && "$MACOS_ALLOW_ROSETTA" != "1" ]]; then
+    printf '%s\n' \
+        'error: the build is running under Rosetta translation.' \
+        'rerun natively with: arch -arm64 ./builder.sh' \
+        'or explicitly allow an x86_64 build with:' \
+        '  MACOS_ALLOW_ROSETTA=1 ./builder.sh' >&2
+    exit 1
 fi
 
+# The host architecture is derived from the running process.  Cross-host
+# builds require a distinct build configuration rather than another shell knob.
+MACOS_HOST_ARCH="$HOST_ARCH"
+
 if [[ "$HOST_OS" == "Darwin" ]]; then
-    DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc-${MACOS_HOST_ARCH}-apple-darwin"
+    DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc-${HOST_ARCH}-apple-darwin"
     DEFAULT_PREFIX="${HOME:-$SOURCE_DIR}/.local/whp-qemu"
 else
     DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc"
@@ -170,8 +157,9 @@ OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
 BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
 POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
 POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/powerpc-elf}"
-POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$BUILD_DIR/firmware-tools/toolchain-work/powerpc-elf}"
-POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$BUILD_DIR/firmware-tools/toolchain-downloads}"
+POWERPC_TOOLCHAIN_ROOT="$(dirname "$POWERPC_TOOLCHAIN_DIR")"
+POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-work/powerpc-elf"
+POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
 
 for boolean_value in \
     INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
@@ -230,22 +218,22 @@ if [[ "$HOST_OS" == "Darwin" ]]; then
     fi
 
     if [[ "$MACOS_ARCH_FLAGS" == "1" ]]; then
-        append_flag CFLAGS "-arch $MACOS_HOST_ARCH"
-        append_flag CXXFLAGS "-arch $MACOS_HOST_ARCH"
-        append_flag OBJCFLAGS "-arch $MACOS_HOST_ARCH"
-        append_flag LDFLAGS "-arch $MACOS_HOST_ARCH"
+        append_flag CFLAGS "-arch $HOST_ARCH"
+        append_flag CXXFLAGS "-arch $HOST_ARCH"
+        append_flag OBJCFLAGS "-arch $HOST_ARCH"
+        append_flag LDFLAGS "-arch $HOST_ARCH"
     fi
 
     if command -v brew >/dev/null 2>&1; then
         HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-$(brew --prefix)}"
-        case "$MACOS_HOST_ARCH" in
+        case "$HOST_ARCH" in
             arm64) expected_homebrew_prefix=/opt/homebrew ;;
             x86_64) expected_homebrew_prefix=/usr/local ;;
         esac
         if [[ "$HOMEBREW_PREFIX" != "$expected_homebrew_prefix" &&
               "$MACOS_ALLOW_MIXED_HOMEBREW" != "1" ]]; then
             printf '%s\n' \
-                "error: Homebrew prefix $HOMEBREW_PREFIX does not match $MACOS_HOST_ARCH." \
+                "error: Homebrew prefix $HOMEBREW_PREFIX does not match $HOST_ARCH." \
                 "expected: $expected_homebrew_prefix" \
                 'set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional custom layout.' >&2
             exit 1
