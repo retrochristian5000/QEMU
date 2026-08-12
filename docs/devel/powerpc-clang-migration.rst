@@ -1,38 +1,55 @@
-PowerPC Clang compiler migration
-================================
+PowerPC Clang and LLD migration
+===============================
 
 Scope
 -----
 
-The first LLVM migration step deliberately changes only the compiler used for
-32-bit PowerPC OpenBIOS target objects.  It does not replace the PowerPC GNU
-assembler, linker, archive tools, ELF inspection tools, or the QEMU host
-compiler.
+The LLVM migration lane now replaces both the 32-bit PowerPC OpenBIOS target
+compiler and the final OpenBIOS linker.  Clang produces target objects and LLD
+performs the final ELF link.  GNU ``as`` and the remaining archive/symbol/strip
+utilities stay on the existing pinned binutils release for later one-by-one
+migration.  QEMU's host compiler is unchanged.
 
-On macOS, ``scripts/meson-build-openbios.sh`` now selects the Clang lane by
+On macOS, ``scripts/meson-build-openbios.sh`` selects the Clang lane by
 default.  Other hosts retain the GCC lane unless
 ``POWERPC_TOOLCHAIN_COMPILER=clang`` is set explicitly.
 
-The Clang lane is implemented by ``scripts/bootstrap-powerpc-clang.sh``.  It
-builds the same pinned GNU binutils release used by the existing release
-bootstrap, then builds Clang from the WHP LLVM fork with only the PowerPC LLVM
-target enabled.  The default LLVM source is pinned to commit
-``e7dd336e0f7884c34108a1e722205a16c3f5307b`` from
-``retrochristian5000/LLVM``.
+LLVM source ownership
+---------------------
+
+The WHP LLVM fork is a QEMU git submodule at
+``toolchains/llvm-project``.  The QEMU gitlink is the LLVM revision pin, so
+there is no independent LLVM remote or second commit pin to keep in sync.
+The legacy compiler foundation may materialize a sparse local build cache from
+the submodule, but that cache is derived from the gitlink and is not a source
+revision authority.  The submodule follows ``retrochristian5000/LLVM`` and is
+shallow by default.
+
+To initialize it manually::
+
+  git submodule update --init toolchains/llvm-project
+
+The Clang bootstrap initializes the submodule automatically when networking is
+allowed.  ``POWERPC_LLVM_GIT_OFFLINE=1`` requires the submodule to be present
+already.  Tracked LLVM changes must be committed before the toolchain build,
+and the checked-out LLVM commit must match the QEMU gitlink.  To test a
+different LLVM revision, commit it in the LLVM fork and advance the QEMU
+submodule pointer; do not add a competing bootstrap commit pin.
 
 Compatibility boundary
 ----------------------
 
-OpenBIOS currently discovers and invokes a GNU-style ``powerpc-elf-`` prefix.
-Changing that interface at the same time as the compiler would mix two
-independent migrations.  The Clang bootstrap therefore installs a temporary
-compatibility driver at ``powerpc-elf-gcc``.  That file is a wrapper around the
-pinned WHP Clang binary; it is not GNU GCC.
+OpenBIOS continues to consume a GNU-style ``powerpc-elf-`` prefix.  The Clang
+bootstrap installs ``powerpc-elf-gcc`` as a compatibility wrapper around the
+WHP Clang binary and installs ``powerpc-elf-ld`` as a symlink to the WHP
+``ld.lld`` binary.
 
 The wrapper targets ``powerpc-none-elf`` and forces
-``-fno-integrated-as``.  A private ``-B`` tool directory routes assembly back
-to the retained ``powerpc-elf-as``.  Final OpenBIOS linking continues to use
-``powerpc-elf-ld`` directly, as before.
+``-fno-integrated-as``.  Its private ``-B`` directory therefore routes
+assembly to the retained GNU ``powerpc-elf-as`` but routes linking to LLD.
+The old GNU BFD linker is retained only as
+``libexec/powerpc-clang-gnu/ld.bfd`` for controlled A/B comparisons; normal
+OpenBIOS linking does not select it.
 
 OpenBIOS also carries several GCC-only options.  The compatibility driver
 removes only the options that Clang does not accept in this lane:
@@ -44,43 +61,54 @@ removes only the options that Clang does not accept in this lane:
 * ``-Wmaybe-uninitialized``; and
 * ``-Wno-maybe-uninitialized``.
 
-The bootstrap then compiles a PowerPC smoke object and rejects the toolchain if
-that object is not 32-bit big-endian PowerPC or if Clang creates ``.sdata`` or
-``.sbss`` sections.  It also checks Clang's reported assembler path so an
-integrated-assembler change cannot be mistaken for a compiler-only result.
+LLD validation
+--------------
+
+The base bootstrap builds the PowerPC-only LLVM/Clang foundation from a local
+cache derived from the submodule.  The outer bootstrap then builds LLD from the
+full submodule checkout against that LLVM install.  It requires ``clang``,
+``ld.lld``, and ``llvm-readelf`` before publishing the linker routing.
+
+In addition to the compiler smoke object, the bootstrap performs a firmware
+layout smoke link using the OpenBIOS-critical GNU linker interface:
+``--warn-common``, ``-z noexecstack``, ``-N``, ``-T``, and
+``--whole-archive``.  The test uses ``OUTPUT_FORMAT(elf32-powerpc)`` and
+``OUTPUT_ARCH(powerpc:common)`` and rejects LLD unless it produces:
+
+* ELF32, big-endian PowerPC ``ET_EXEC``;
+* entry point ``0xfff00100``;
+* the vector base at ``0xfff00000``;
+* the hard-reset code at ``0xfffffffc``;
+* no ``PT_INTERP`` or ``PT_DYNAMIC``; and
+* load segments that stay inside and cover the 1 MiB Power Mac PROM window.
 
 Source policy
 -------------
 
-The Clang migration lane intentionally keeps release binutils.  It therefore
-requires ``POWERPC_TOOLCHAIN_SOURCE_MODE=release`` (the default).  The existing
-GCC release and GCC Git bootstrap paths remain available as controls.
+The Clang/LLD lane still retains release binutils for GNU ``as`` and the
+remaining utilities, so it requires ``POWERPC_TOOLCHAIN_SOURCE_MODE=release``
+(the default).  The existing GCC release and GCC Git bootstrap paths remain
+available as controls.
 
-To force the old compiler lane::
+To force the GCC control lane::
 
   POWERPC_TOOLCHAIN_COMPILER=gcc \
   bash scripts/meson-build-openbios.sh CONFIG_FILE OUTPUT
 
-To rebuild only the new compiler/toolchain lane directly::
+To force a rebuild of the Clang/LLD toolchain lane::
 
   POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
   bash scripts/bootstrap-powerpc-clang.sh
-
-The LLVM source can be overridden for controlled testing with
-``POWERPC_LLVM_GIT_URL``, ``POWERPC_LLVM_GIT_REF``, and
-``POWERPC_LLVM_GIT_COMMIT``.  A changed compiler revision changes the toolchain
-marker and invalidates the cached installation.
 
 Validation boundary
 -------------------
 
 The existing GitHub Actions macOS QEMU job currently sets both
-``BUILD_OPENBIOS=0`` and ``BOOTSTRAP_POWERPC_TOOLCHAIN=0``.  A green result from
-that job therefore validates the macOS QEMU host build, not this PowerPC Clang
-firmware lane.
+``BUILD_OPENBIOS=0`` and ``BOOTSTRAP_POWERPC_TOOLCHAIN=0``.  A green result
+from that job validates the macOS QEMU host build, not the Clang/LLD firmware
+lane.
 
-Until a separate firmware-toolchain CI job is intentionally added, the
-compiler migration is considered validated only after a macOS build completes
-the Clang bootstrap, the compiler/binutils smoke checks, the OpenBIOS build,
-and the existing OpenBIOS ELF validation.  Do not treat unrelated macOS CI
-success as evidence that the firmware compiler migration passed.
+The linker migration is therefore considered fully validated only after a
+machine runs the Clang/LLD bootstrap, passes its compiler and PROM-layout
+smoke checks, builds OpenBIOS, passes the existing OpenBIOS ELF validation,
+and boots the resulting firmware under the intended QEMU PowerPC machine.
