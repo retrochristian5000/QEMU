@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=2
+OPENBIOS_ENVIRONMENT_POLICY=3
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -66,15 +66,41 @@ openbios_clean_env=(
 )
 
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
-case "$source_mode" in
-    release)
-        bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-toolchain-host.sh"
+compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-}"
+if [[ -z "$compiler_mode" ]]; then
+    case "$(uname -s)" in
+        Darwin) compiler_mode=clang ;;
+        *) compiler_mode=gcc ;;
+    esac
+fi
+case "$compiler_mode" in
+    clang)
+        # This is intentionally a compiler-only migration.  GNU binutils stay
+        # on the same pinned release path while Clang comes from the WHP fork.
+        if [[ "$source_mode" != release ]]; then
+            printf '%s\n' \
+                'error: the PowerPC Clang lane currently retains release binutils.' \
+                'set POWERPC_TOOLCHAIN_SOURCE_MODE=release or unset it.' >&2
+            exit 1
+        fi
+        bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-clang.sh"
         ;;
-    git)
-        bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-toolchain-git.sh"
+    gcc)
+        case "$source_mode" in
+            release)
+                bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-toolchain-host.sh"
+                ;;
+            git)
+                bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-toolchain-git.sh"
+                ;;
+            *)
+                printf 'error: POWERPC_TOOLCHAIN_SOURCE_MODE must be release or git\n' >&2
+                exit 1
+                ;;
+        esac
         ;;
     *)
-        printf 'error: POWERPC_TOOLCHAIN_SOURCE_MODE must be release or git\n' >&2
+        printf 'error: POWERPC_TOOLCHAIN_COMPILER must be clang or gcc\n' >&2
         exit 1
         ;;
 esac
@@ -85,7 +111,7 @@ case "${POWERPC_BINUTILS_GIT_REF:-}" in
         ;;
 esac
 
-if [[ "$source_mode" == git ]]; then
+if [[ "$compiler_mode" == gcc && "$source_mode" == git ]]; then
     case "$OPENBIOS_HOSTCXX" in
         ''|*';'*|*'|'*|*'&'*|*'<'*|*'>')
             printf 'error: invalid OpenBIOS host C++ compiler command\n' >&2
@@ -136,6 +162,7 @@ fi
 
 cross_prefix="${OPENBIOS_CROSS_COMPILE:-}"
 if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
+    printf 'PowerPC firmware compiler: %s\n' "$compiler_mode"
     "${openbios_clean_env[@]}" \
         POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
         POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
@@ -159,6 +186,10 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         POWERPC_GCC_GIT_URL="${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}" \
         POWERPC_GCC_GIT_REF="${POWERPC_GCC_GIT_REF:-releases/gcc-16}" \
         POWERPC_GCC_GIT_COMMIT="${POWERPC_GCC_GIT_COMMIT:-}" \
+        POWERPC_LLVM_GIT_URL="${POWERPC_LLVM_GIT_URL:-https://github.com/retrochristian5000/LLVM.git}" \
+        POWERPC_LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-main}" \
+        POWERPC_LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-e7dd336e0f7884c34108a1e722205a16c3f5307b}" \
+        POWERPC_LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}" \
         bash "$bootstrap_script"
     cross_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
 fi
