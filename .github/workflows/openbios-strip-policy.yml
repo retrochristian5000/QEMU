@@ -1,0 +1,48 @@
+name: OpenBIOS LLVM strip policy
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-powerpc-llvm-strip.sh'
+      - 'scripts/meson-build-openbios.sh'
+      - '.github/workflows/openbios-strip-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strip-policy:
+    name: Check llvm-strip routing
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate llvm-strip migration policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/bootstrap-powerpc-llvm-strip.sh \
+            scripts/meson-build-openbios.sh
+
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=6' \
+            scripts/meson-build-openbios.sh
+          grep -Fq 'bootstrap-powerpc-llvm-strip.sh' \
+            scripts/meson-build-openbios.sh
+          grep -Fq 'STRIP_SCHEMA=1' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
+          grep -Fq '.whp-powerpc-strip' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
+          grep -Fq 'llvm/bin/llvm-strip' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
+          grep -Fq 'strip.bfd' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
+          grep -Fq '"$llvm_strip" "$smoke_dir/unstripped.elf" -o "$smoke_dir/stripped.elf"' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
+          grep -Fq 'llvm-strip changed the OpenBIOS LOAD segment layout' \
+            scripts/bootstrap-powerpc-llvm-strip.sh
