@@ -20,9 +20,13 @@ if [[ -z "$compiler_mode" ]]; then
 fi
 tools_dir="${OPENBIOS_TOOLS_DIR:-$build_root/firmware-tools}"
 openbios_build_dir="${OPENBIOS_BUILD_DIR:-$build_root/firmware/openbios}"
-hostcc="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
-hostcxx="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
-hoststrip="${OPENBIOS_HOSTSTRIP:-${STRIP_FOR_BUILD:-strip}}"
+hostcc="${CC_FOR_BUILD:-${CC:-cc}}"
+hostcxx="${CXX_FOR_BUILD:-${CXX:-c++}}"
+hoststrip="${STRIP_FOR_BUILD:-strip}"
+toolchain_dir="${POWERPC_TOOLCHAIN_DIR:-$tools_dir/powerpc-elf}"
+toolchain_root="$(dirname "$toolchain_dir")"
+toolchain_work_dir="$toolchain_root/toolchain-work/powerpc-elf"
+toolchain_download_dir="$toolchain_root/toolchain-downloads"
 make_cmd="${MAKE_CMD:-${MAKE:-make}}"
 jobs="${JOBS:-}"
 
@@ -98,12 +102,9 @@ umask 077
     printf 'POWERPC_TOOLCHAIN_FORCE_REBUILD=%q\n' "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
     printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%q\n' "$source_mode"
     printf 'POWERPC_TOOLCHAIN_COMPILER=%q\n' "$compiler_mode"
-    printf 'POWERPC_TOOLCHAIN_DIR=%q\n' \
-        "${POWERPC_TOOLCHAIN_DIR:-$tools_dir/powerpc-elf}"
-    printf 'POWERPC_TOOLCHAIN_WORK_DIR=%q\n' \
-        "${POWERPC_TOOLCHAIN_WORK_DIR:-$tools_dir/toolchain-work/powerpc-elf}"
-    printf 'POWERPC_TOOLCHAIN_DOWNLOAD_DIR=%q\n' \
-        "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$tools_dir/toolchain-downloads}"
+    printf 'POWERPC_TOOLCHAIN_DIR=%q\n' "$toolchain_dir"
+    printf 'POWERPC_TOOLCHAIN_WORK_DIR=%q\n' "$toolchain_work_dir"
+    printf 'POWERPC_TOOLCHAIN_DOWNLOAD_DIR=%q\n' "$toolchain_download_dir"
     printf 'POWERPC_TOOLCHAIN_GIT_OFFLINE=%q\n' \
         "${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
     printf 'POWERPC_BINUTILS_GIT_URL=%q\n' \
