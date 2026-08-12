@@ -64,6 +64,14 @@ jobs:
             scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \
+            scripts/whp-build/configure-openbios.bash
+          grep -Fq 'POWERPC_LLVM_SUBMODULE_PATH=' scripts/meson-build-openbios.sh
+          if grep -Fq 'POWERPC_LLVM_GIT_COMMIT' scripts/whp-build/configure-openbios.bash ||
+             grep -Fq 'POWERPC_LLVM_GIT_COMMIT' scripts/meson-build-openbios.sh; then
+            echo 'error: LLVM revision must come from the QEMU submodule gitlink' >&2
+            exit 1
+          fi
 
   build-macos-ppc:
     name: Build ppc on macOS (Apple Silicon)
