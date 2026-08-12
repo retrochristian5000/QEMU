@@ -98,10 +98,9 @@ if [[ "$OPENBIOS_BUILD_DIR" == "$OPENBIOS_DIR" ]]; then
     exit 1
 fi
 
-if [[ -z "$OPENBIOS_TOKE" ]]; then
-    OPENBIOS_TOKE="$(command -v toke || true)"
-fi
-
+# Firmware tokenisation is part of the produced ROM, so never select an
+# ambient PATH copy implicitly.  An explicit OPENBIOS_TOKE remains an
+# intentional escape hatch; otherwise build/use the pinned WHP fcode-utils.
 if [[ -z "$OPENBIOS_TOKE" ]]; then
     cached_toke="$FCODE_UTILS_DIR/toke/toke"
     cached_revision=""
@@ -127,13 +126,16 @@ if [[ -z "$OPENBIOS_TOKE" ]]; then
             CC="$OPENBIOS_HOSTCC" STRIP="$OPENBIOS_HOSTSTRIP"
         OPENBIOS_TOKE="$cached_toke"
     fi
+elif [[ "$OPENBIOS_TOKE" != */* ]]; then
+    OPENBIOS_TOKE="$(command -v "$OPENBIOS_TOKE" 2>/dev/null || true)"
 fi
 
 if [[ ! -x "$OPENBIOS_TOKE" ]]; then
     printf 'error: toke was not built or is not executable: %s\n' \
-        "$OPENBIOS_TOKE" >&2
+        "${OPENBIOS_TOKE:-missing}" >&2
     exit 1
 fi
+printf 'OpenBIOS toke: %s\n' "$OPENBIOS_TOKE"
 
 # readelf is intentionally separate from the cross-prefix requirement.  The
 # Clang lane uses LLVM's ELF reader while GCC-only toolchains may keep using
@@ -144,10 +146,16 @@ prefix_is_usable()
 {
     local prefix="$1"
     local tool
+    local executable
 
     [[ -n "$prefix" ]] || return 1
     for tool in "${powerpc_tools[@]}"; do
-        command -v "${prefix}${tool}" >/dev/null 2>&1 || return 1
+        executable="${prefix}${tool}"
+        if [[ "$executable" == */* ]]; then
+            [[ -x "$executable" ]] || return 1
+        else
+            command -v "$executable" >/dev/null 2>&1 || return 1
+        fi
     done
 }
 
@@ -158,25 +166,7 @@ if [[ -n "$OPENBIOS_CROSS_COMPILE" ]]; then
         printf 'required tools: %s\n' "${powerpc_tools[*]}" >&2
         exit 1
     fi
-else
-    # OpenBIOS is freestanding 32-bit firmware. Prefer a bare-metal compiler
-    # and never auto-select a powerpc64 prefix for the qemu-ppc image.
-    for candidate in \
-        powerpc-none-elf- \
-        powerpc-elf- \
-        powerpc-eabi- \
-        powerpc-unknown-elf- \
-        powerpc-unknown-linux-gnu- \
-        powerpc-linux-gnu- \
-        powerpc-linux-; do
-        if prefix_is_usable "$candidate"; then
-            OPENBIOS_CROSS_COMPILE="$candidate"
-            break
-        fi
-    done
-fi
-
-if [[ -z "$OPENBIOS_CROSS_COMPILE" && "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; then
+elif [[ "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; then
     POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
     POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_DOWNLOAD_DIR" \
@@ -189,20 +179,20 @@ if [[ -z "$OPENBIOS_CROSS_COMPILE" && "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; 
     JOBS="${JOBS:-1}" \
         bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"
     bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
-    if prefix_is_usable "$bootstrapped_prefix"; then
-        OPENBIOS_CROSS_COMPILE="$bootstrapped_prefix"
+    if ! prefix_is_usable "$bootstrapped_prefix"; then
+        printf 'error: bootstrapped PowerPC toolchain is incomplete: %s\n' \
+            "$bootstrapped_prefix" >&2
+        exit 1
     fi
-fi
-
-if [[ -z "$OPENBIOS_CROSS_COMPILE" ]]; then
+    OPENBIOS_CROSS_COMPILE="$bootstrapped_prefix"
+else
     printf '%s\n' \
-        'error: no complete GNU PowerPC cross-toolchain was found.' \
-        'automatic bootstrapping can be enabled with:' \
-        '  BOOTSTRAP_POWERPC_TOOLCHAIN=1 ./build.sh' \
-        'or set OPENBIOS_CROSS_COMPILE to an existing 32-bit prefix:' \
-        '  OPENBIOS_CROSS_COMPILE=powerpc-elf- ./build.sh' >&2
+        'error: no PowerPC cross-toolchain was explicitly selected.' \
+        'Enable WHP bootstrapping with BOOTSTRAP_POWERPC_TOOLCHAIN=1 or set:' \
+        '  OPENBIOS_CROSS_COMPILE=/absolute/path/to/powerpc-elf-' >&2
     exit 1
 fi
+printf 'OpenBIOS PowerPC toolchain: %s\n' "$OPENBIOS_CROSS_COMPILE"
 
 if [[ -z "$OPENBIOS_READELF" ]]; then
     llvm_readelf="$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
@@ -212,7 +202,15 @@ if [[ -z "$OPENBIOS_READELF" ]]; then
         OPENBIOS_READELF="${OPENBIOS_CROSS_COMPILE}readelf"
     fi
 fi
-readelf_cmd="$(command -v "$OPENBIOS_READELF" 2>/dev/null || true)"
+if [[ "$OPENBIOS_READELF" == */* ]]; then
+    if [[ -x "$OPENBIOS_READELF" ]]; then
+        readelf_cmd="$OPENBIOS_READELF"
+    else
+        readelf_cmd=""
+    fi
+else
+    readelf_cmd="$(command -v "$OPENBIOS_READELF" 2>/dev/null || true)"
+fi
 if [[ -z "$readelf_cmd" ]]; then
     printf 'error: OpenBIOS ELF reader is not executable: %s\n' \
         "$OPENBIOS_READELF" >&2
@@ -220,8 +218,8 @@ if [[ -z "$readelf_cmd" ]]; then
 fi
 printf 'OpenBIOS ELF reader: %s\n' "$readelf_cmd"
 
-# Prove that an explicitly supplied or discovered compiler actually emits the
-# format consumed by qemu-system-ppc before spending time on the firmware.
+# Prove that the explicitly supplied or project-controlled compiler actually
+# emits the format consumed by qemu-system-ppc before spending time on firmware.
 probe_object="${OPENBIOS_BUILD_DIR}.toolchain-probe.$$"
 printf 'int openbios_toolchain_probe;\n' |
     "${OPENBIOS_CROSS_COMPILE}gcc" -m32 -ffreestanding -fno-pic -fno-pie \
@@ -247,6 +245,7 @@ config_candidate="${OPENBIOS_BUILD_DIR}.config.new.$$"
     printf 'OPENBIOS_SOURCE_DIR=%s\n' "$OPENBIOS_DIR"
     printf 'OPENBIOS_BUILD_DIR=%s\n' "$OPENBIOS_BUILD_DIR"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
+    printf 'OPENBIOS_READELF=%s\n' "$readelf_cmd"
     printf 'OPENBIOS_HOSTCC=%s\n' "$OPENBIOS_HOSTCC"
     printf 'OPENBIOS_HOSTCXX=%s\n' "$OPENBIOS_HOSTCXX"
     printf 'OPENBIOS_HOSTSTRIP=%s\n' "$OPENBIOS_HOSTSTRIP"
