@@ -52,7 +52,7 @@ jobs:
           fi
           grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
             scripts/build-openbios.sh
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=5' scripts/meson-build-openbios.sh
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=6' scripts/meson-build-openbios.sh
           grep -Fq "printf 'OPENBIOS_READELF=%q" \
             scripts/whp-build/configure-openbios.bash
 
