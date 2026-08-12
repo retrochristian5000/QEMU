@@ -7,6 +7,8 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 fi
 : "${SOURCE_DIR:?builder.sh must define SOURCE_DIR before loading the build system}"
 
+source "$SOURCE_DIR/scripts/whp-build/common.bash"
+
 for build_stage_module in \
     prepare-build.bash \
     prepare-sources.bash \
