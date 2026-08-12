@@ -1,0 +1,2 @@
+OpenBIOS llvm-strip migration is guarded by .github/workflows/openbios-strip-policy.yml.
+The runtime migration smoke test lives in scripts/bootstrap-powerpc-llvm-strip.sh.
