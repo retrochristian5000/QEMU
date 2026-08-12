@@ -35,6 +35,8 @@ jobs:
           set -euo pipefail
           bash -n \
             scripts/build-openbios.sh \
+            scripts/bootstrap-powerpc-clang.sh \
+            scripts/bootstrap-powerpc-clang-base.sh \
             scripts/meson-build-openbios.sh \
             scripts/whp-build/configure-openbios.bash
 
@@ -48,9 +50,20 @@ jobs:
           fi
           grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
             scripts/build-openbios.sh
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=4' scripts/meson-build-openbios.sh
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=5' scripts/meson-build-openbios.sh
           grep -Fq "printf 'OPENBIOS_READELF=%q" \
             scripts/whp-build/configure-openbios.bash
+
+          grep -Fq '[submodule "toolchains/llvm-project"]' .gitmodules
+          git ls-tree HEAD -- toolchains/llvm-project |
+            grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
+          grep -Fq 'BOOTSTRAP_SCHEMA=9' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'ln -sfn "../llvm/bin/ld.lld" "$public_ld"' \
+            scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang.sh
 
   build-macos-ppc:
     name: Build ppc on macOS (Apple Silicon)
