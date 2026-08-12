@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=4
+OPENBIOS_ENVIRONMENT_POLICY=5
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -75,8 +75,8 @@ if [[ -z "$compiler_mode" ]]; then
 fi
 case "$compiler_mode" in
     clang)
-        # This is intentionally a compiler-only migration.  GNU binutils stay
-        # on the same pinned release path while Clang comes from the WHP fork.
+        # Clang + LLD now own compilation and final firmware linking.  Release
+        # binutils remain temporarily for GNU as and the utilities not migrated yet.
         if [[ "$source_mode" != release ]]; then
             printf '%s\n' \
                 'error: the PowerPC Clang lane currently retains release binutils.' \
