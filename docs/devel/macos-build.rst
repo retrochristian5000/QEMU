@@ -1,161 +1,146 @@
 macOS host builds
 =================
 
-The WHP build wrapper supports native Apple Silicon and Intel macOS builds.
-It keeps the machine that runs build tools separate from the architecture of
-the QEMU executable and from firmware targets such as ``powerpc-elf``.
+The WHP wrapper supports native Apple Silicon and Intel macOS builds. It keeps
+four roles separate:
 
-Machine identities
-------------------
+* the process architecture that runs the build;
+* the architecture of the QEMU host executable;
+* QEMU's emulation target, for example ``ppc-softmmu``; and
+* firmware targets such as ``powerpc-elf``.
 
-A PowerPC system-emulator build on Apple Silicon has three relevant CPU
-architectures:
+For the supported native build path the QEMU host architecture is derived from
+the running process. There is no separate host-architecture override.
 
-* the macOS build and QEMU host architecture, normally ``arm64``;
-* the QEMU emulation target, for example ``ppc-softmmu``;
-* the OpenBIOS firmware target, ``powerpc-elf``.
+Entry point and SDK policy
+--------------------------
 
-``CC`` and ``CXX`` build QEMU host objects.  ``CC_FOR_BUILD`` and
-``CXX_FOR_BUILD`` build executable tools that must run during compilation.
-OpenBIOS and the PowerPC cross-toolchain bootstrap use the latter pair for
-host utilities and use ``OPENBIOS_CROSS_COMPILE`` for firmware objects.
+Use the normal launcher::
 
-QEMU configure binds these roles explicitly.  ``CC`` is passed through
-``--cc``, ``CC_FOR_BUILD`` through ``--host-cc``, ``CXX`` through ``--cxx``,
-and ``OBJC`` through ``--objcc``.  Merely exporting a variable with a similar
-name is not treated as proof that QEMU's configure script consumes it.
+  ./build.sh
 
-Native Apple Silicon
---------------------
+On macOS it enters ``scripts/macos-builder.sh`` automatically. The wrapper
+selects the active Apple developer directory and SDK with ``xcode-select`` and
+``xcrun`` unless ``DEVELOPER_DIR`` or ``SDKROOT`` is supplied. It defaults
+``MACOSX_DEPLOYMENT_TARGET`` to the running macOS major/minor version, rejects a
+deployment target newer than the selected SDK, and requires macOS 11.0 or newer
+for arm64 builds.
 
-Run the wrapper from a native Arm shell::
+The wrapper owns ``-isysroot`` and ``-mmacosx-version-min`` for C, C++,
+Objective-C, and link flags. Do not duplicate those options manually in
+``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``, ``CPPFLAGS``, or ``LDFLAGS``.
+
+Architecture and Rosetta
+------------------------
+
+Native Apple Silicon::
 
   arch -arm64 ./build.sh
 
-The default build directory is
-``build/whp-ppc-arm64-apple-darwin``.  The wrapper selects the active macOS SDK
-with ``xcrun``, enables Cocoa and CoreAudio, uses the Arm Homebrew prefix, and
-records the SDK and toolchain identity in ``.whp-config``.
-
-Intel macOS and Rosetta
------------------------
-
-An Intel Mac uses ``build/whp-ppc-x86_64-apple-darwin`` automatically.
-An x86_64 build on Apple Silicon is permitted only when Rosetta use is
-explicit::
+An intentional Intel build under Rosetta::
 
   arch -x86_64 env MACOS_ALLOW_ROSETTA=1 ./build.sh
 
-This prevents an accidentally translated shell from silently mixing Arm and
-Intel dependencies.  Rosetta builds expect the Intel Homebrew prefix
-``/usr/local``; native Arm builds expect ``/opt/homebrew``.
+The process architecture selects the build directory and architecture flags.
+Native Arm expects the Homebrew prefix ``/opt/homebrew``; Intel and Rosetta
+builds expect ``/usr/local``. A nonstandard layout requires the explicit
+``MACOS_ALLOW_MIXED_HOMEBREW=1`` escape hatch.
 
-Custom Homebrew layouts
------------------------
+Universal binaries are not produced in one build tree. Build and test arm64
+and x86_64 independently before combining artifacts.
 
-A nonstandard prefix must be deliberate::
+Build-machine and host compilers
+--------------------------------
 
-  HOMEBREW_PREFIX=/custom/brew \
-  MACOS_ALLOW_MIXED_HOMEBREW=1 \
-  ./build.sh
+``CC`` and ``CXX`` compile QEMU host objects. ``OBJC`` compiles Cocoa code.
+``CC_FOR_BUILD`` and ``CXX_FOR_BUILD`` compile tools that execute during the
+build, including firmware helpers and cross-toolchain host programs.
 
-The override disables only the prefix guard.  It does not make libraries of
-the wrong Mach-O architecture usable.
+Apple Clang selected through ``xcrun`` is the default for all of those roles.
+An experimental non-Clang QEMU host compiler requires a matching C/C++ pair and
+``MACOS_ALLOW_NONCLANG=1``. Objective-C and build-machine tools remain on the
+validated Apple toolchain unless the build logic explicitly says otherwise.
 
-Architecture flags
-------------------
+Before QEMU configuration, ``scripts/verify-macos-toolchain.sh`` verifies the
+effective compiler pipeline. It checks target triples, Clang resource paths,
+compiler configuration files, representative C/C++/Objective-C links,
+build-machine execution, and resulting Mach-O architecture slices.
 
-The wrapper appends the detected process architecture to ``CFLAGS``,
-``CXXFLAGS``, ``OBJCFLAGS``, and ``LDFLAGS``.  Set ``MACOS_ARCH_FLAGS=0`` only
-when an external toolchain file supplies equivalent flags.
+Environment hygiene and build identity
+--------------------------------------
 
-Compiler identity verification
-------------------------------
+The macOS wrapper removes inherited search variables that can silently redirect
+headers, libraries, compiler helpers, CMake, pkg-config, or dynamic-loader
+searches. It also removes the opposite-architecture Homebrew ``bin`` and
+``sbin`` entries from ``PATH`` unless a mixed layout was explicitly allowed.
 
-A program is not accepted merely because it is named ``cc`` or because it can
-parse a trivial C source file.  Before QEMU configuration, the wrapper runs
-``scripts/verify-macos-toolchain.sh`` and verifies the effective compiler
-pipeline.
+The build identity records the process architecture, SDK, deployment target,
+compiler signatures, flags, dependency paths, LTO policy, and configure shell.
+If that identity changes, the wrapper recreates only a WHP-owned QEMU build
+tree. It refuses to delete an unrelated directory. Persistent firmware tools
+remain outside the disposable QEMU Meson tree.
 
-The preflight check:
+``MACOS_ALLOW_INHERITED_SEARCH_PATHS=1`` is an expert escape hatch for an
+intentional external search environment. ``MACOS_AUTO_CLEAN=0`` converts a
+required clean reconfiguration into an error instead of automatically
+recreating the owned build directory.
 
-* resolves the actual driver behind ``ccache``, ``sccache``, ``distcc``,
-  ``icecc``, ``env``, ``arch``, or ``xcrun`` wrappers;
-* rejects C-driver substitutions such as ``clang++``, ``clang-cl``, and
-  ``clang-cpp``;
-* verifies the effective target triple for ``CC``, ``CXX``, ``OBJC``, and
-  ``CC_FOR_BUILD``;
-* verifies that Clang's reported resource directory exists;
-* detects a default Clang configuration file that silently changes the target;
-* links representative C, C++, and Cocoa Objective-C programs;
-* links a separate build-machine C program with ``CC_FOR_BUILD``;
-* inspects every resulting Mach-O file with ``lipo`` and requires the expected
-  architecture slice.
+Link-time optimization
+----------------------
 
-Compiler commands may include ordinary whitespace-separated wrappers and
-arguments.  Shell operators are rejected; use a wrapper script when a compiler
-setup requires complex shell evaluation.
+``QEMU_HOST_LTO`` controls LTO for QEMU's Meson-built host artifacts. Native
+Apple Silicon enables it by default. Do not place raw ``-flto`` or related LTO
+linker options in global compiler or linker flags; those flags could leak into
+firmware helpers or nested toolchain builds.
 
-The resulting identity record is stored in
-``build/whp-ppc-<arch>-apple-darwin/.whp-macos-toolchain``.  Driver ``-###``
-pipelines and probe sources are stored in the adjacent
-``.whp-macos-toolchain.d`` directory.  The manifest signature participates in
-``.whp-config``, so a changed compiler identity forces QEMU configuration to
-run again.
-
-Cross-host and universal builds
--------------------------------
-
-The host architecture is derived from the architecture of the running process;
-there is no separate host-architecture override.  A true cross-host build
-needs a Meson cross file, separate host and build dependency paths, and a rule
-for executing build-machine tools.  Running the wrapper under ``arch -arm64``
-or ``arch -x86_64`` keeps those roles unambiguous.
-
-Universal binaries should be assembled from two independently configured and
-tested build directories.  Do not merge only the main executable: loadable
-modules, helper programs, firmware tools, and linked libraries must be checked
-for matching slices as well.
+When LTO is enabled, ``scripts/verify-macos-lto.sh`` compiles and links a small
+multi-file program, verifies the Mach-O architecture, executes the result, and
+records the effective linker pipeline. A failed preflight is a compiler/linker
+policy problem, not a reason to inject raw LTO flags globally.
 
 Useful overrides
 ----------------
 
 ``MACOS_ALLOW_ROSETTA``
-  Permit an x86_64 build process translated on Apple Silicon.
+  Permit an x86_64 process translated on Apple Silicon.
 
 ``MACOS_ALLOW_MIXED_HOMEBREW``
-  Permit a custom Homebrew prefix instead of the architecture-standard prefix.
+  Permit a nonstandard Homebrew layout.
+
+``MACOS_ALLOW_INHERITED_SEARCH_PATHS``
+  Preserve externally supplied compiler/library search paths intentionally.
+
+``MACOS_AUTO_CLEAN``
+  Control whether a changed macOS build identity recreates the owned QEMU
+  build tree automatically.
 
 ``MACOS_VERIFY_TOOLCHAIN``
-  Run compiler identity and Mach-O probes.  It defaults to ``1``.  Disabling
-  the probe removes an important wrong-tool and wrong-architecture guard.
+  Enable compiler and Mach-O identity probes. It defaults to ``1``.
 
 ``MACOS_ALLOW_NONCLANG``
-  Permit a non-Clang compiler after the same compile, link, target, and Mach-O
-  probes.  It does not waive those capability checks.
+  Permit an explicitly selected non-Clang QEMU C/C++ compiler pair after the
+  same architecture and link checks.
 
 ``MACOS_ALLOW_COMPILER_CONFIG``
-  Permit an automatically loaded Clang configuration file to alter the target
-  triple.  Use this only when the injected target policy is intentional.
+  Permit an automatically loaded Clang configuration file when intentional.
 
-``CC_FOR_BUILD``, ``CXX_FOR_BUILD``
-  Compilers for tools that execute on the build machine.
+``QEMU_HOST_LTO``
+  Enable or disable QEMU host LTO without leaking the policy into firmware.
 
 ``CC``, ``CXX``, ``OBJC``
-  Compilers for QEMU host code.
+  QEMU host compiler roles.
+
+``CC_FOR_BUILD``, ``CXX_FOR_BUILD``, ``STRIP_FOR_BUILD``
+  Build-machine tool roles used by helper and firmware stages.
 
 ``SDKROOT``, ``DEVELOPER_DIR``, ``MACOSX_DEPLOYMENT_TARGET``
-  Select the Apple toolchain, SDK, and minimum deployment version.
-
-``PKG_CONFIG_PATH_FOR_BUILD``
-  Dependency metadata for build-machine tools.  ``PKG_CONFIG_PATH`` remains
-  the dependency path for QEMU host objects.
+  Apple SDK and deployment policy.
 
 Diagnostics
 -----------
 
-The configuration stamp records the physical architecture, process
-architecture, Rosetta state, Apple developer directory, SDK version, host
-compilers, build-machine compilers, dependency paths, compiler-probe manifest,
-and firmware toolchain.  Changing any of these values forces QEMU
-configuration to run again.
+Compiler identity is recorded in ``.whp-macos-toolchain`` and LTO capability in
+``.whp-macos-lto``. Both signatures participate in the main WHP configuration
+stamp. When a macOS build fails, classify the first divergence as SDK,
+architecture, compiler, dependency search, linker/LTO, QEMU configuration, or
+firmware/toolchain before changing unrelated build variables.
