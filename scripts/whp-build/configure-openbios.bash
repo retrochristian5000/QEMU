@@ -118,12 +118,8 @@ umask 077
         "${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
     printf 'POWERPC_GCC_GIT_COMMIT=%q\n' \
         "${POWERPC_GCC_GIT_COMMIT:-}"
-    printf 'POWERPC_LLVM_GIT_URL=%q\n' \
-        "${POWERPC_LLVM_GIT_URL:-https://github.com/retrochristian5000/LLVM.git}"
-    printf 'POWERPC_LLVM_GIT_REF=%q\n' \
-        "${POWERPC_LLVM_GIT_REF:-main}"
-    printf 'POWERPC_LLVM_GIT_COMMIT=%q\n' \
-        "${POWERPC_LLVM_GIT_COMMIT:-e7dd336e0f7884c34108a1e722205a16c3f5307b}"
+    printf 'POWERPC_LLVM_SUBMODULE_PATH=%q\n' \
+        "${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
     printf 'POWERPC_LLVM_GIT_OFFLINE=%q\n' \
         "${POWERPC_LLVM_GIT_OFFLINE:-0}"
     printf 'CONFIG_SHELL=%q\n' "${CONFIG_SHELL:-${WHP_BUILD_BASH:-/bin/bash}}"
