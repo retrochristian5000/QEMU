@@ -54,6 +54,12 @@ if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
     exit 1
 fi
 
+# One public shell choice owns every configure recursion.  Older WHP aliases
+# are deliberately discarded instead of carrying multiple names for the same
+# decision.
+unset QEMU_CONFIG_SHELL TOOLCHAIN_CONFIG_SHELL
+CONFIG_SHELL="$WHP_BUILD_BASH"
+
 # Non-interactive Bash can source BASH_ENV, and POSIX-like shells can use ENV.
 # A build entry point must not inherit user startup code or POSIX mode.
 CLEAN_ENV=$(command -v env 2>/dev/null || true)
@@ -61,7 +67,6 @@ if [ -z "$CLEAN_ENV" ]; then
     printf 'error: env is required to normalize the build shell environment\n' >&2
     exit 1
 fi
-CONFIG_SHELL=${QEMU_CONFIG_SHELL:-$WHP_BUILD_BASH}
 WHP_BUILD_ENTRY_NORMALIZED=1
 export WHP_BUILD_BASH CONFIG_SHELL WHP_BUILD_ENTRY_NORMALIZED
 
