@@ -2,6 +2,7 @@
 /build/
 /.cache/
 /.vscode/
+/docs/superpowers/
 *.pyc
 .sdk
 .stgit-*
