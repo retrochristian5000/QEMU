@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=5
+OPENBIOS_ENVIRONMENT_POLICY=6
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -75,8 +75,9 @@ if [[ -z "$compiler_mode" ]]; then
 fi
 case "$compiler_mode" in
     clang)
-        # Clang + LLD now own compilation and final firmware linking.  Release
-        # binutils remain temporarily for GNU as and the utilities not migrated yet.
+        # Clang + LLD own compilation and final linking.  llvm-strip owns the
+        # final firmware stripping stage.  Release binutils remain temporarily
+        # for GNU as and the archive/symbol utilities not migrated yet.
         if [[ "$source_mode" != release ]]; then
             printf '%s\n' \
                 'error: the PowerPC Clang lane currently retains release binutils.' \
@@ -189,6 +190,13 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         POWERPC_LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}" \
         POWERPC_LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}" \
         bash "$bootstrap_script"
+    if [[ "$compiler_mode" == clang ]]; then
+        "${openbios_clean_env[@]}" \
+            POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
+            POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
+            POWERPC_LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}" \
+            bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-strip.sh"
+    fi
     cross_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
 fi
 
