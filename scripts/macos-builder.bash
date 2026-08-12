@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
 
-if [[ -z "${BASH_VERSION:-}" ]]; then
-    printf 'error: scripts/macos-builder.bash requires GNU Bash\n' >&2
-    exit 1
-fi
-case ":${SHELLOPTS:-}:" in
-    *:posix:*)
-        printf 'error: scripts/macos-builder.bash cannot run in Bash POSIX mode\n' >&2
-        exit 1
-        ;;
-esac
-
 set -euo pipefail
-
-: "${WHP_BUILD_BASH:?WHP_BUILD_BASH is required}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+
+# build.sh is the only public policy entry point.  A direct invocation of this
+# implementation must re-enter through it rather than recreating shell policy.
+if [[ "${WHP_BUILD_ENTRY_NORMALIZED:-0}" != 1 ]]; then
+    exec "$SOURCE_DIR/build.sh" "$@"
+fi
+: "${WHP_BUILD_BASH:?WHP_BUILD_BASH is required}"
 
 source "$SCRIPT_DIR/macos-build-hygiene.bash"
 
@@ -95,7 +89,7 @@ reject_managed_flags()
 }
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-    printf 'error: scripts/macos-builder.sh must run on macOS\n' >&2
+    printf 'error: scripts/macos-builder.bash must run on macOS\n' >&2
     exit 1
 fi
 
@@ -159,14 +153,14 @@ process_arch="$(uname -m)"
 if [[ "$process_arch" == "arm64" ]] &&
    ! version_is_at_most 11.0 "$MACOSX_DEPLOYMENT_TARGET"; then
     printf '%s\n' \
-        "error: arm64 macOS builds require deployment target 11.0 or newer." \
+        'error: arm64 macOS builds require deployment target 11.0 or newer.' \
         "selected: $MACOSX_DEPLOYMENT_TARGET" >&2
     exit 1
 fi
 
-# Resolve compiler roles before builder.sh computes architecture and LTO
-# defaults.  This keeps Clang's Apple integration separate from an explicit
-# GNU GCC experiment and prevents mixed C/C++ compiler families.
+# Resolve compiler roles once, before builder.sh computes architecture and LTO
+# defaults.  The generic build stage consumes these resolved values; it must
+# not make a second compiler-family decision.
 source "$SCRIPT_DIR/macos-compiler-policy.bash"
 
 reject_managed_flags
@@ -175,19 +169,7 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
-# WHP_BUILD_BASH is the single public shell selector.  CONFIG_SHELL is the
-# normalized value consumed by QEMU and GNU configure recursion.
 CONFIG_SHELL="$WHP_BUILD_BASH"
-if [[ ! -x "$CONFIG_SHELL" ]] ||
-   ! "$CONFIG_SHELL" --noprofile --norc -c '
-        test -n "${BASH_VERSION:-}" || exit 1
-        case ":${SHELLOPTS:-}:" in *:posix:*) exit 1 ;; esac
-   ' >/dev/null 2>&1; then
-    printf '%s\n' \
-        "error: WHP_BUILD_BASH must be a non-POSIX GNU Bash: $WHP_BUILD_BASH" \
-        'Do not use dash or zsh for GCC/binutils configure recursion.' >&2
-    exit 1
-fi
 export CONFIG_SHELL
 
 prepare_macos_build_tree
@@ -198,7 +180,6 @@ printf '%s\n' \
     "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" \
     "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
     "WHP build shell:         $WHP_BUILD_BASH" \
-    "configure shell:         $CONFIG_SHELL" \
     "QEMU build directory:    $BUILD_DIR" \
     "firmware tools:          $OPENBIOS_TOOLS_DIR" \
     "OpenBIOS build owner:    Meson/Ninja"
