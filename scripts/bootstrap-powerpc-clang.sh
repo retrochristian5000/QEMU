@@ -3,11 +3,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-TOOLCHAIN_CONFIG_SHELL="${TOOLCHAIN_CONFIG_SHELL:-${CONFIG_SHELL:-/bin/bash}}"
+config_shell="${CONFIG_SHELL:-/bin/bash}"
 
-if [[ ! -x "$TOOLCHAIN_CONFIG_SHELL" ]]; then
+if [[ ! -x "$config_shell" ]]; then
     printf 'error: PowerPC toolchain CONFIG_SHELL is not executable: %s\n' \
-        "$TOOLCHAIN_CONFIG_SHELL" >&2
+        "$config_shell" >&2
     exit 1
 fi
 
@@ -31,8 +31,8 @@ toolchain_clean_env=(
     -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR
     -u CMAKE_PREFIX_PATH -u CMAKE_LIBRARY_PATH -u CMAKE_INCLUDE_PATH
     -u ACLOCAL_PATH -u ARCHFLAGS
-    CONFIG_SHELL="$TOOLCHAIN_CONFIG_SHELL"
-    SHELL="$TOOLCHAIN_CONFIG_SHELL"
+    CONFIG_SHELL="$config_shell"
+    SHELL="$config_shell"
 )
 
 # Reuse the already-pinned LLVM submodule as the compiler source cache.  This
