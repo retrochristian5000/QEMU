@@ -12,6 +12,7 @@ OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
 OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
 OPENBIOS_HOSTCXX="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
 OPENBIOS_HOSTSTRIP="${OPENBIOS_HOSTSTRIP:-${STRIP_FOR_BUILD:-strip}}"
+OPENBIOS_READELF="${OPENBIOS_READELF:-}"
 OPENBIOS_TOKE="${OPENBIOS_TOKE:-}"
 OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
 BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
@@ -134,7 +135,10 @@ if [[ ! -x "$OPENBIOS_TOKE" ]]; then
     exit 1
 fi
 
-powerpc_tools=(gcc as ar ld nm strip ranlib readelf)
+# readelf is intentionally separate from the cross-prefix requirement.  The
+# Clang lane uses LLVM's ELF reader while GCC-only toolchains may keep using
+# their prefixed GNU readelf during the staged binutils migration.
+powerpc_tools=(gcc as ar ld nm strip ranlib)
 
 prefix_is_usable()
 {
@@ -200,13 +204,29 @@ if [[ -z "$OPENBIOS_CROSS_COMPILE" ]]; then
     exit 1
 fi
 
+if [[ -z "$OPENBIOS_READELF" ]]; then
+    llvm_readelf="$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
+    if [[ -x "$llvm_readelf" ]]; then
+        OPENBIOS_READELF="$llvm_readelf"
+    else
+        OPENBIOS_READELF="${OPENBIOS_CROSS_COMPILE}readelf"
+    fi
+fi
+readelf_cmd="$(command -v "$OPENBIOS_READELF" 2>/dev/null || true)"
+if [[ -z "$readelf_cmd" ]]; then
+    printf 'error: OpenBIOS ELF reader is not executable: %s\n' \
+        "$OPENBIOS_READELF" >&2
+    exit 1
+fi
+printf 'OpenBIOS ELF reader: %s\n' "$readelf_cmd"
+
 # Prove that an explicitly supplied or discovered compiler actually emits the
 # format consumed by qemu-system-ppc before spending time on the firmware.
 probe_object="${OPENBIOS_BUILD_DIR}.toolchain-probe.$$"
 printf 'int openbios_toolchain_probe;\n' |
     "${OPENBIOS_CROSS_COMPILE}gcc" -m32 -ffreestanding -fno-pic -fno-pie \
         -x c -c -o "$probe_object" -
-probe_header="$(LC_ALL=C "${OPENBIOS_CROSS_COMPILE}readelf" -hW "$probe_object")"
+probe_header="$(LC_ALL=C "$readelf_cmd" -hW "$probe_object")"
 if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$probe_header" ||
    ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$probe_header" ||
    ! grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$probe_header"; then
@@ -277,7 +297,6 @@ if [[ ! -s "$symbols" ]]; then
     exit 1
 fi
 
-readelf_cmd="${OPENBIOS_CROSS_COMPILE}readelf"
 elf_header="$(LC_ALL=C "$readelf_cmd" -hW "$firmware")"
 program_headers="$(LC_ALL=C "$readelf_cmd" -lW "$firmware")"
 
