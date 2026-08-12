@@ -29,6 +29,29 @@ jobs:
       - name: Test selected SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+      - name: Check OpenBIOS tool provenance guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/build-openbios.sh \
+            scripts/meson-build-openbios.sh \
+            scripts/whp-build/configure-openbios.bash
+
+          if grep -Fq 'OPENBIOS_TOKE="$(command -v toke' scripts/build-openbios.sh; then
+            echo 'error: OpenBIOS may not select toke implicitly from PATH' >&2
+            exit 1
+          fi
+          if grep -Fq 'for candidate in' scripts/build-openbios.sh; then
+            echo 'error: OpenBIOS may not scan PATH for PowerPC cross prefixes' >&2
+            exit 1
+          fi
+          grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
+            scripts/build-openbios.sh
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=4' scripts/meson-build-openbios.sh
+          grep -Fq "printf 'OPENBIOS_READELF=%q" \
+            scripts/whp-build/configure-openbios.bash
+
   build-macos-ppc:
     name: Build ppc on macOS (Apple Silicon)
     runs-on: macos-15
