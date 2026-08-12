@@ -65,9 +65,9 @@ the wrong Mach-O architecture usable.
 Architecture flags
 ------------------
 
-The wrapper appends the selected architecture to ``CFLAGS``, ``CXXFLAGS``,
-``OBJCFLAGS``, and ``LDFLAGS``.  Set ``MACOS_ARCH_FLAGS=0`` only when an
-external toolchain file supplies equivalent flags.
+The wrapper appends the detected process architecture to ``CFLAGS``,
+``CXXFLAGS``, ``OBJCFLAGS``, and ``LDFLAGS``.  Set ``MACOS_ARCH_FLAGS=0`` only
+when an external toolchain file supplies equivalent flags.
 
 Compiler identity verification
 ------------------------------
@@ -106,8 +106,8 @@ run again.
 Cross-host and universal builds
 -------------------------------
 
-``builder.sh`` intentionally rejects a requested ``MACOS_HOST_ARCH`` that
-differs from the architecture of the running process.  A true cross-host build
+The host architecture is derived from the architecture of the running process;
+there is no separate host-architecture override.  A true cross-host build
 needs a Meson cross file, separate host and build dependency paths, and a rule
 for executing build-machine tools.  Running the wrapper under ``arch -arm64``
 or ``arch -x86_64`` keeps those roles unambiguous.
@@ -122,9 +122,6 @@ Useful overrides
 
 ``MACOS_ALLOW_ROSETTA``
   Permit an x86_64 build process translated on Apple Silicon.
-
-``MACOS_HOST_ARCH``
-  Require ``arm64`` or ``x86_64``.  It must match the running process.
 
 ``MACOS_ALLOW_MIXED_HOMEBREW``
   Permit a custom Homebrew prefix instead of the architecture-standard prefix.
