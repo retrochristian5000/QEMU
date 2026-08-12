@@ -99,7 +99,7 @@ if [[ -z "$DEVELOPER_DIR" || ! -d "$DEVELOPER_DIR" ]]; then
 fi
 
 export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
+export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
 if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: selected macOS SDK does not exist: %s\n' "$SDKROOT" >&2
     exit 1
