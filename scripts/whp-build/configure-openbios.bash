@@ -90,6 +90,7 @@ umask 077
     printf 'OPENBIOS_HOSTCC=%q\n' "$hostcc"
     printf 'OPENBIOS_HOSTCXX=%q\n' "$hostcxx"
     printf 'OPENBIOS_HOSTSTRIP=%q\n' "$hoststrip"
+    printf 'OPENBIOS_READELF=%q\n' "${OPENBIOS_READELF:-}"
     printf 'OPENBIOS_TOKE=%q\n' "${OPENBIOS_TOKE:-}"
     printf 'OPENBIOS_CROSS_COMPILE=%q\n' "${OPENBIOS_CROSS_COMPILE:-}"
     printf 'OPENBIOS_FORCE_RECONFIGURE=%q\n' "${OPENBIOS_FORCE_RECONFIGURE:-0}"
