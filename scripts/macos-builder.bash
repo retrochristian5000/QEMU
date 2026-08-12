@@ -175,18 +175,20 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
-QEMU_CONFIG_SHELL="${QEMU_CONFIG_SHELL:-$WHP_BUILD_BASH}"
-if [[ ! -x "$QEMU_CONFIG_SHELL" ]] ||
-   ! "$QEMU_CONFIG_SHELL" --noprofile --norc -c '
+# WHP_BUILD_BASH is the single public shell selector.  CONFIG_SHELL is the
+# normalized value consumed by QEMU and GNU configure recursion.
+CONFIG_SHELL="$WHP_BUILD_BASH"
+if [[ ! -x "$CONFIG_SHELL" ]] ||
+   ! "$CONFIG_SHELL" --noprofile --norc -c '
         test -n "${BASH_VERSION:-}" || exit 1
         case ":${SHELLOPTS:-}:" in *:posix:*) exit 1 ;; esac
    ' >/dev/null 2>&1; then
     printf '%s\n' \
-        "error: QEMU_CONFIG_SHELL must be a non-POSIX GNU Bash: $QEMU_CONFIG_SHELL" \
+        "error: WHP_BUILD_BASH must be a non-POSIX GNU Bash: $WHP_BUILD_BASH" \
         'Do not use dash or zsh for GCC/binutils configure recursion.' >&2
     exit 1
 fi
-export CONFIG_SHELL="$QEMU_CONFIG_SHELL"
+export CONFIG_SHELL
 
 prepare_macos_build_tree
 
