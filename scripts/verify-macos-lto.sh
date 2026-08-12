@@ -2,21 +2,20 @@
 
 set -euo pipefail
 
-: "${MACOS_HOST_ARCH:?MACOS_HOST_ARCH is required}"
 : "${CC:?CC is required}"
 : "${SDKROOT:?SDKROOT is required}"
 
-MACOS_LTO_MANIFEST="${MACOS_LTO_MANIFEST:-.whp-macos-lto}"
-MACOS_LTO_PROBE_DIR="${MACOS_LTO_PROBE_DIR:-${MACOS_LTO_MANIFEST}.d}"
-
-case "$MACOS_HOST_ARCH" in
-    arm64|x86_64) ;;
+case "$(uname -m)" in
+    arm64|aarch64) host_arch=arm64 ;;
+    x86_64|amd64) host_arch=x86_64 ;;
     *)
-        printf 'error: unsupported macOS LTO architecture: %s\n' \
-            "$MACOS_HOST_ARCH" >&2
+        printf 'error: unsupported macOS LTO architecture: %s\n' "$(uname -m)" >&2
         exit 1
         ;;
 esac
+
+MACOS_LTO_MANIFEST="${MACOS_LTO_MANIFEST:-.whp-macos-lto}"
+MACOS_LTO_PROBE_DIR="${MACOS_LTO_PROBE_DIR:-${MACOS_LTO_MANIFEST}.d}"
 
 if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
@@ -58,9 +57,6 @@ split_flags()
         read -r -a FLAG_ARRAY <<< "$1"
     fi
 }
-
-# Bash 3.2 treats an empty array as unset when nounset is active.  Keep every
-# optional flag-array copy and expansion guarded with the parameter + form.
 
 reject_embedded_lto()
 {
@@ -144,10 +140,10 @@ SOURCE
 
 arches="$(output_arches "$output")"
 case " $arches " in
-    *" $MACOS_HOST_ARCH "*) ;;
+    *" $host_arch "*) ;;
     *)
         printf 'error: LTO produced Mach-O architecture %s, expected %s\n' \
-            "${arches:-<unknown>}" "$MACOS_HOST_ARCH" >&2
+            "${arches:-<unknown>}" "$host_arch" >&2
         exit 1
         ;;
 esac
@@ -166,9 +162,9 @@ CCACHE_DISABLE=1 "${CC_CMD[@]}" \
 compiler_version="$("${CC_CMD[@]}" --version 2>&1 | sed -n '1p')"
 output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
 {
-    printf 'WHP_MACOS_LTO_SCHEMA=1\n'
+    printf 'WHP_MACOS_LTO_SCHEMA=2\n'
     printf 'QEMU_HOST_LTO=1\n'
-    printf 'MACOS_HOST_ARCH=%s\n' "$MACOS_HOST_ARCH"
+    printf 'HOST_ARCH=%s\n' "$host_arch"
     printf 'SDKROOT=%s\n' "$SDKROOT"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
     printf 'CC=%s\n' "$CC"
