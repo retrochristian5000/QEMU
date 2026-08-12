@@ -1,0 +1,155 @@
+name: OpenBIOS LLVM assembler
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-powerpc-clang.sh'
+      - 'scripts/bootstrap-powerpc-clang-core.sh'
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-llvm-as.sh'
+      - 'scripts/bootstrap-powerpc-llvm-strip.sh'
+      - 'scripts/build-openbios.sh'
+      - 'roms/openbios'
+      - 'toolchains/llvm-project'
+      - '.gitmodules'
+      - '.github/workflows/openbios-llvm-as.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openbios-llvm-as-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openbios-llvm-as:
+    name: Build OpenBIOS with WHP LLVM as
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      JOBS: '4'
+      POWERPC_TOOLCHAIN_DIR: ${{ github.workspace }}/build/toolchains/powerpc-elf
+      POWERPC_TOOLCHAIN_WORK_DIR: ${{ github.workspace }}/build/toolchain-work/powerpc-elf-clang
+      POWERPC_TOOLCHAIN_DOWNLOAD_DIR: ${{ github.workspace }}/build/toolchain-downloads
+      POWERPC_LLVM_SUBMODULE_PATH: toolchains/llvm-project
+      OPENBIOS_DIR: ${{ github.workspace }}/roms/openbios
+      OPENBIOS_BUILD_DIR: ${{ github.workspace }}/build/openbios-llvm-as
+      OPENBIOS_OUTPUT: ${{ github.workspace }}/build/openbios-ppc-llvm-as
+      OPENBIOS_TOOLS_DIR: ${{ github.workspace }}/build/firmware-tools
+      OPENBIOS_FIRMWARE_VALIDATION: strict
+      FCODE_UTILS_REPOSITORY: https://github.com/retrochristian5000/fcode-utils.git
+      FCODE_UTILS_REV: b9b6da855f2e698f8163ebd22227fc43d6eef7f4
+
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bzip2 \
+            cmake \
+            g++ \
+            gcc \
+            git \
+            make \
+            ninja-build \
+            perl \
+            xz-utils \
+            xsltproc \
+            zlib1g-dev
+
+      - name: Initialize pinned firmware and LLVM sources
+        run: |
+          set -euxo pipefail
+          git submodule update --init --depth 1 toolchains/llvm-project roms/openbios
+          test "$(git -C toolchains/llvm-project rev-parse HEAD)" = \
+            "$(git ls-tree HEAD -- toolchains/llvm-project | awk '{print $3}')"
+          test "$(git -C roms/openbios rev-parse HEAD)" = \
+            "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
+
+      - name: Bootstrap Clang LLD and LLVM assembler
+        shell: bash
+        run: |
+          set -o pipefail
+          POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
+            bash scripts/bootstrap-powerpc-clang.sh 2>&1 | tee llvm-as-bootstrap.log
+
+      - name: Verify published assembler routing
+        shell: bash
+        run: |
+          set -euxo pipefail
+          public_as="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
+          gnu_as="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd"
+          test -x "$public_as"
+          test -x "$gnu_as"
+          grep -Fq 'ASSEMBLER=clang-integrated' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+          "$gnu_as" --version | grep -q 'GNU assembler'
+          if "$public_as" --version 2>&1 | grep -q 'GNU assembler'; then
+            echo 'error: public PowerPC assembler still resolves to GNU as' >&2
+            exit 1
+          fi
+
+      - name: Bootstrap llvm-strip
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/bootstrap-powerpc-llvm-strip.sh 2>&1 | tee llvm-strip-bootstrap.log
+
+      - name: Build real OpenBIOS assembly corpus
+        shell: bash
+        env:
+          BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+          OPENBIOS_CROSS_COMPILE: ${{ github.workspace }}/build/toolchains/powerpc-elf/bin/powerpc-elf-
+          OPENBIOS_READELF: ${{ github.workspace }}/build/toolchains/powerpc-elf/llvm/bin/llvm-readelf
+        run: |
+          set -o pipefail
+          bash scripts/build-openbios.sh 2>&1 | tee openbios-llvm-as.log
+
+      - name: Verify OpenBIOS output
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -s "$OPENBIOS_OUTPUT"
+          "$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf" -hW "$OPENBIOS_OUTPUT" |
+            grep -Eq 'Machine:[[:space:]]+PowerPC'
+          "$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf" -hW "$OPENBIOS_OUTPUT" |
+            grep -Eq "Data:[[:space:]]+2's complement, big endian"
+          grep -Fq 'ASSEMBLER=clang-integrated' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+
+      - name: Show failure context
+        if: failure()
+        shell: bash
+        run: |
+          for log in llvm-as-bootstrap.log llvm-strip-bootstrap.log openbios-llvm-as.log; do
+            if [[ -f "$log" ]]; then
+              echo "=== $log errors ==="
+              grep -n -E 'error:|FAILED:|unknown argument|invalid|unsupported|ninja: build stopped' \
+                "$log" | tail -n 200 || true
+              echo "=== $log tail ==="
+              tail -n 200 "$log" || true
+            fi
+          done
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbios-llvm-as-failure
+          path: |
+            llvm-as-bootstrap.log
+            llvm-strip-bootstrap.log
+            openbios-llvm-as.log
+            build/toolchains/powerpc-elf/.whp-powerpc-toolchain
+            build/toolchains/powerpc-elf/.whp-powerpc-lld
+            build/toolchains/powerpc-elf/.whp-powerpc-as
+            build/toolchains/powerpc-elf/.whp-powerpc-strip
+          if-no-files-found: warn
+          retention-days: 7
