@@ -1,44 +1,6 @@
 # WHP host, toolchain, and build-policy preparation stage.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-canonical_macos_arch()
-{
-    case "$1" in
-        arm64|aarch64) printf 'arm64\n' ;;
-        x86_64|amd64) printf 'x86_64\n' ;;
-        *) return 1 ;;
-    esac
-}
-
-append_flag()
-{
-    local variable="$1"
-    local value="$2"
-    local current="${!variable:-}"
-
-    if [[ -n "$current" ]]; then
-        printf -v "$variable" '%s %s' "$current" "$value"
-    else
-        printf -v "$variable" '%s' "$value"
-    fi
-    export "$variable"
-}
-
-require_boolean_values()
-{
-    local variable
-
-    for variable in "$@"; do
-        case "${!variable}" in
-            0|1) ;;
-            *)
-                printf 'error: %s must be 0 or 1\n' "$variable" >&2
-                exit 1
-                ;;
-        esac
-    done
-}
-
 compiler_has_cache_wrapper()
 {
     local token base
@@ -107,12 +69,12 @@ whp_prepare_host_identity()
             ROSETTA_TRANSLATED=1
         fi
 
-        HOST_ARCH="$(canonical_macos_arch "$PROCESS_ARCH")" || {
+        HOST_ARCH="$(whp_canonical_macos_arch "$PROCESS_ARCH")" || {
             printf 'error: unsupported macOS process architecture: %s\n' \
                 "$PROCESS_ARCH" >&2
             exit 1
         }
-        PHYSICAL_ARCH="$(canonical_macos_arch "$PHYSICAL_ARCH")" || {
+        PHYSICAL_ARCH="$(whp_canonical_macos_arch "$PHYSICAL_ARCH")" || {
             printf 'error: unsupported macOS physical architecture: %s\n' \
                 "$PHYSICAL_ARCH" >&2
             exit 1
@@ -129,9 +91,9 @@ whp_prepare_host_identity()
     MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
     MACOS_ALLOW_COMPILER_CONFIG="${MACOS_ALLOW_COMPILER_CONFIG:-0}"
 
-    require_boolean_values \
+    whp_require_boolean_values \
         MACOS_ALLOW_ROSETTA MACOS_ALLOW_MIXED_HOMEBREW MACOS_ARCH_FLAGS \
-        MACOS_VERIFY_TOOLCHAIN MACOS_ALLOW_NONCLANG MACOS_ALLOW_COMPILER_CONFIG
+        MACOS_VERIFY_TOOLCHAIN MACOS_ALLOW_NONCLANG MACOS_ALLOW_COMPILER_CONFIG || exit 1
 
     if [[ "$HOST_OS" == Darwin && "$ROSETTA_TRANSLATED" == 1 &&
           "$MACOS_ALLOW_ROSETTA" != 1 ]]; then
@@ -172,10 +134,10 @@ whp_prepare_build_defaults()
     POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-work/powerpc-elf"
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
 
-    require_boolean_values \
+    whp_require_boolean_values \
         INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
         BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
-        BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD
+        BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
 
     for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
         case "$build_path" in
@@ -221,10 +183,10 @@ whp_prepare_host_tools()
         export OBJC="${OBJC:-$DARWIN_CLANG}"
 
         if [[ "$MACOS_ARCH_FLAGS" == 1 ]]; then
-            append_flag CFLAGS "-arch $HOST_ARCH"
-            append_flag CXXFLAGS "-arch $HOST_ARCH"
-            append_flag OBJCFLAGS "-arch $HOST_ARCH"
-            append_flag LDFLAGS "-arch $HOST_ARCH"
+            whp_append_flag CFLAGS "-arch $HOST_ARCH"
+            whp_append_flag CXXFLAGS "-arch $HOST_ARCH"
+            whp_append_flag OBJCFLAGS "-arch $HOST_ARCH"
+            whp_append_flag LDFLAGS "-arch $HOST_ARCH"
         fi
 
         if command -v brew >/dev/null 2>&1; then
