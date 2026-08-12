@@ -142,9 +142,16 @@ if ! grep -Fq \
     exit 1
 fi
 
+# The generic stage consumes macOS policy resolved by the wrapper; it no longer
+# rediscovers SDK/compiler identity.  Supply that resolved state explicitly.
 stage_output="$TEST_DIR/stage-output"
 SDKROOT="$SELECTED_SDK" \
+MACOS_SDK_VERSION=13.3 \
 MACOSX_DEPLOYMENT_TARGET=13.0 \
+DEVELOPER_DIR="$DEVELOPER_DIR_FIXTURE" \
+CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
+CC_FOR_BUILD="$CLANG" CXX_FOR_BUILD="$CLANGXX" OBJC_FOR_BUILD="$CLANG" \
+STRIP_FOR_BUILD="$STRIP" \
 BUILD_DIR="$TEST_DIR/stage-build" \
 OPENBIOS_TOOLS_DIR="$TEST_DIR/stage-tools" \
 SOURCE_DIR="$SOURCE_DIR" \
@@ -155,7 +162,7 @@ bash --noprofile --norc -c '
 ' >"$stage_output" 2>&1
 if ! grep -Fq 'selected SDK version: 13.3' "$stage_output"; then
     printf '%s\n' \
-        'error: build stages recorded a version different from the selected SDK.' >&2
+        'error: build stages changed the SDK identity resolved by the wrapper.' >&2
     cat "$stage_output" >&2
     exit 1
 fi
