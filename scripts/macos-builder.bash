@@ -12,21 +12,8 @@ if [[ "${WHP_BUILD_ENTRY_NORMALIZED:-0}" != 1 ]]; then
 fi
 : "${WHP_BUILD_BASH:?WHP_BUILD_BASH is required}"
 
+source "$SOURCE_DIR/scripts/whp-build/common.bash"
 source "$SCRIPT_DIR/macos-build-hygiene.bash"
-
-append_flag()
-{
-    local variable="$1"
-    local value="$2"
-    local current="${!variable:-}"
-
-    if [[ -n "$current" ]]; then
-        printf -v "$variable" '%s %s' "$current" "$value"
-    else
-        printf -v "$variable" '%s' "$value"
-    fi
-    export "$variable"
-}
 
 validate_version()
 {
@@ -88,7 +75,7 @@ reject_managed_flags()
     done
 }
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
+if [[ "$(uname -s)" != Darwin ]]; then
     printf 'error: scripts/macos-builder.bash must run on macOS\n' >&2
     exit 1
 fi
@@ -150,7 +137,7 @@ if ! version_is_at_most "$MACOSX_DEPLOYMENT_TARGET" "$MACOS_SDK_VERSION"; then
 fi
 
 process_arch="$(uname -m)"
-if [[ "$process_arch" == "arm64" ]] &&
+if [[ "$process_arch" == arm64 ]] &&
    ! version_is_at_most 11.0 "$MACOSX_DEPLOYMENT_TARGET"; then
     printf '%s\n' \
         'error: arm64 macOS builds require deployment target 11.0 or newer.' \
@@ -158,15 +145,12 @@ if [[ "$process_arch" == "arm64" ]] &&
     exit 1
 fi
 
-# Resolve compiler roles once, before builder.sh computes architecture and LTO
-# defaults.  The generic build stage consumes these resolved values; it must
-# not make a second compiler-family decision.
 source "$SCRIPT_DIR/macos-compiler-policy.bash"
 
 reject_managed_flags
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
-    append_flag "$variable" "-isysroot $SDKROOT"
-    append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+    whp_append_flag "$variable" "-isysroot $SDKROOT"
+    whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
 CONFIG_SHELL="$WHP_BUILD_BASH"
