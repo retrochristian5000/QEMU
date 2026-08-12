@@ -155,32 +155,23 @@ whp_prepare_build_defaults()
 whp_prepare_host_tools()
 {
     if [[ "$HOST_OS" == Darwin ]]; then
-        if ! command -v xcrun >/dev/null 2>&1; then
-            printf 'error: xcrun is missing; install the Xcode Command Line Tools\n' >&2
-            exit 1
+        # The macOS wrapper owns SDK and compiler-family selection.  The generic
+        # stage consumes that resolved policy instead of discovering it again.
+        : "${DEVELOPER_DIR:?macOS wrapper did not set DEVELOPER_DIR}"
+        : "${SDKROOT:?macOS wrapper did not set SDKROOT}"
+        : "${MACOS_SDK_VERSION:?macOS wrapper did not set MACOS_SDK_VERSION}"
+        : "${CC:?macOS wrapper did not set CC}"
+        : "${CXX:?macOS wrapper did not set CXX}"
+        : "${OBJC:?macOS wrapper did not set OBJC}"
+        : "${CC_FOR_BUILD:?macOS wrapper did not set CC_FOR_BUILD}"
+        : "${CXX_FOR_BUILD:?macOS wrapper did not set CXX_FOR_BUILD}"
+        : "${OBJC_FOR_BUILD:?macOS wrapper did not set OBJC_FOR_BUILD}"
+
+        if [[ -z "${STRIP_FOR_BUILD:-}" ]]; then
+            STRIP_FOR_BUILD="$(xcrun --sdk macosx --find strip)"
+            export STRIP_FOR_BUILD
         fi
-
-        export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
-        export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-        MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version 2>/dev/null || printf unknown)"
-        if [[ ! -d "$SDKROOT" ]]; then
-            printf 'error: macOS SDK not found at %s\n' "$SDKROOT" >&2
-            exit 1
-        fi
-
-        DARWIN_CLANG="$(xcrun --sdk macosx --find clang)"
-        DARWIN_CLANGXX="$(xcrun --sdk macosx --find clang++)"
-        DARWIN_STRIP="$(xcrun --sdk macosx --find strip)"
-
-        export CC_FOR_BUILD="${CC_FOR_BUILD:-$DARWIN_CLANG}"
-        export CXX_FOR_BUILD="${CXX_FOR_BUILD:-$DARWIN_CLANGXX}"
-        export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-$DARWIN_CLANG}"
-        export STRIP_FOR_BUILD="${STRIP_FOR_BUILD:-$DARWIN_STRIP}"
         export PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
-
-        export CC="${CC:-$DARWIN_CLANG}"
-        export CXX="${CXX:-$DARWIN_CLANGXX}"
-        export OBJC="${OBJC:-$DARWIN_CLANG}"
 
         if [[ "$MACOS_ARCH_FLAGS" == 1 ]]; then
             whp_append_flag CFLAGS "-arch $HOST_ARCH"
