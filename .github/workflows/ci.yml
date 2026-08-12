@@ -33,22 +33,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash -n \
-            build.sh \
-            scripts/macos-builder.sh \
-            scripts/macos-builder.bash \
-            scripts/macos-build-hygiene.bash \
-            scripts/build-openbios.sh \
-            scripts/bootstrap-powerpc-toolchain.sh \
-            scripts/bootstrap-powerpc-clang.sh \
-            scripts/bootstrap-powerpc-clang-core.sh \
-            scripts/bootstrap-powerpc-clang-base.sh \
-            scripts/bootstrap-powerpc-llvm-as.sh \
-            scripts/meson-build-openbios.sh \
-            scripts/whp-build/prepare-build.bash \
-            scripts/whp-build/prepare-sources.bash \
-            scripts/whp-build/configure.bash \
-            scripts/whp-build/configure-openbios.bash
+
+          SOURCE_DIR="$PWD"
+          WHP_BUILD_BASH="$(command -v bash)"
+          source scripts/whp-build/preflight.bash
+          whp_validate_build_scripts
 
           if grep -Fq 'OPENBIOS_TOKE="$(command -v toke' scripts/build-openbios.sh; then
             echo 'error: OpenBIOS may not select toke implicitly from PATH' >&2
