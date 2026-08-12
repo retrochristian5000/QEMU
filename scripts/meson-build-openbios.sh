@@ -186,9 +186,7 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         POWERPC_GCC_GIT_URL="${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}" \
         POWERPC_GCC_GIT_REF="${POWERPC_GCC_GIT_REF:-releases/gcc-16}" \
         POWERPC_GCC_GIT_COMMIT="${POWERPC_GCC_GIT_COMMIT:-}" \
-        POWERPC_LLVM_GIT_URL="${POWERPC_LLVM_GIT_URL:-https://github.com/retrochristian5000/LLVM.git}" \
-        POWERPC_LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-main}" \
-        POWERPC_LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-e7dd336e0f7884c34108a1e722205a16c3f5307b}" \
+        POWERPC_LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}" \
         POWERPC_LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}" \
         bash "$bootstrap_script"
     cross_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
