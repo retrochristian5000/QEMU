@@ -210,7 +210,10 @@ if [[ ! -d "$LLVM_SOURCE_DIR/.git" ]]; then
     git -C "$LLVM_SOURCE_DIR" sparse-checkout init --cone
 fi
 git -C "$LLVM_SOURCE_DIR" remote set-url origin "$LLVM_GIT_URL"
-git -C "$LLVM_SOURCE_DIR" sparse-checkout set llvm clang cmake third-party
+# LLVM core now imports common utilities from the sibling libc project even
+# when libc itself is not an enabled build project, so keep that source slice
+# in the compiler cache alongside llvm/clang/cmake/third-party.
+git -C "$LLVM_SOURCE_DIR" sparse-checkout set llvm clang cmake third-party libc
 if [[ "$LLVM_GIT_OFFLINE" != 1 ]]; then
     if [[ -n "$LLVM_GIT_COMMIT" ]]; then
         git -C "$LLVM_SOURCE_DIR" fetch --depth=1 --force origin "$LLVM_GIT_COMMIT"
@@ -234,10 +237,14 @@ if [[ -n "$LLVM_GIT_COMMIT" && "$llvm_revision" != "$LLVM_GIT_COMMIT" ]]; then
 fi
 git -C "$LLVM_SOURCE_DIR" checkout --detach --force "$llvm_revision"
 git -C "$LLVM_SOURCE_DIR" clean -fdx >/dev/null
+if [[ ! -d "$LLVM_SOURCE_DIR/libc" ]]; then
+    printf 'error: LLVM compiler cache is missing required libc common utilities\n' >&2
+    exit 1
+fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=7
+BOOTSTRAP_SCHEMA=8
 COMPILER=clang
 TARGET=$TOOLCHAIN_TARGET
 BINUTILS_VERSION=$BINUTILS_VERSION
