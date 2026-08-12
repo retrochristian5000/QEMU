@@ -6,9 +6,9 @@ OpenBIOS. It builds only the binutils programs required by firmware and a
 freestanding C compiler without target operating-system headers or runtime
 libraries.
 
-The canonical implementation is ``scripts/bootstrap-powerpc-toolchain.sh``.
+The canonical GNU implementation is ``scripts/bootstrap-powerpc-toolchain.sh``.
 The Clang migration reuses the same target and validation principles while
-replacing selected compiler/linker stages.
+replacing selected compiler, linker, assembler, and strip stages.
 
 Machine identities
 ------------------
@@ -29,7 +29,7 @@ installed ``powerpc-elf-*`` program prefix.
 Build stages
 ------------
 
-The dependency order is intentional::
+The GNU dependency order is intentional::
 
   validate host compiler and SDK
   download and verify binutils
@@ -121,6 +121,46 @@ explicitly through ``AS_FOR_TARGET``, ``LD_FOR_TARGET``, ``AR_FOR_TARGET``,
 Homebrew tools later in ``PATH`` must never become the target assembler or
 linker.
 
+Clang, LLD, assembler, and strip migration
+-----------------------------------------
+
+On macOS the OpenBIOS path selects the Clang lane by default. Other hosts keep
+the GCC lane unless ``POWERPC_TOOLCHAIN_COMPILER=clang`` is selected.
+
+The WHP LLVM fork is pinned by the QEMU git submodule at
+``toolchains/llvm-project``. The gitlink is the revision authority; derived
+LLVM source caches are not independent revision pins. An offline build requires
+the submodule to be initialized already, and tracked LLVM changes must be
+committed before QEMU advances the submodule pointer.
+
+OpenBIOS continues to consume the GNU-style ``powerpc-elf-`` interface. The
+migration publishes compatibility entry points while changing the underlying
+implementation one stage at a time:
+
+* ``powerpc-elf-gcc`` routes target compilation through WHP Clang;
+* ``powerpc-elf-ld`` routes the normal firmware link through LLD;
+* the assembler stage qualifies Clang's integrated assembler against retained
+  GNU ``as`` before publishing it; and
+* ``powerpc-elf-strip`` routes the firmware strip through ``llvm-strip`` after
+  structure-preservation checks.
+
+Retained GNU tools remain private A/B controls while their LLVM replacements
+are qualified. This avoids changing compiler, assembler, linker, archive,
+symbol, and strip behavior in one unreviewable step.
+
+The LLD smoke link checks the OpenBIOS-critical linker interface and requires a
+32-bit big-endian PowerPC executable whose entry, reset/vector geometry, and
+load segments remain inside the Power Mac PROM window with no dynamic loader.
+The strip smoke test uses an OpenBIOS-shaped PowerPC ELF and requires
+``llvm-strip`` to preserve ELF identity, entry point, load geometry, and
+allocatable code bytes while removing the symbol table.
+
+The compiler/binutils foundation, LLD, assembler, and strip stages keep
+separate markers so a policy change in one stage cannot be hidden by an
+otherwise-current cache. The Clang lane currently retains release binutils as
+its GNU comparison/control layer, so it uses
+``POWERPC_TOOLCHAIN_SOURCE_MODE=release``.
+
 Cache and path policy
 ---------------------
 
@@ -134,8 +174,18 @@ Force a new bootstrap with::
 
   POWERPC_TOOLCHAIN_FORCE_REBUILD=1 ./build.sh whp-openbios-ppc
 
-The current bootstrap marker schema is ``7``. A schema or input change
-invalidates older cached toolchains instead of trying to reinterpret them.
+The GNU bootstrap marker schema is ``7``. A schema or input change invalidates
+older cached toolchains instead of trying to reinterpret them. LLVM migration
+stages maintain their own marker schemas alongside the foundation marker.
+
+Validation boundary
+-------------------
+
+A green QEMU host build does not by itself validate the firmware toolchain when
+``BUILD_OPENBIOS=0`` or ``BOOTSTRAP_POWERPC_TOOLCHAIN=0``. Full firmware
+validation requires the selected compiler, assembler, linker, and strip stages
+to pass their smoke checks, then OpenBIOS must build, pass ELF validation, and
+boot under the intended QEMU PowerPC machine.
 
 Failure classification
 ----------------------
@@ -157,6 +207,11 @@ Failure classification
 ``configuring and building GCC``
   Inspect ``build-gcc-<version>/config.log`` and verify that staged target tools
   are the ones actually selected.
+
+LLVM migration stage failure
+  Inspect the stage-specific marker and smoke directory. Keep the last known
+  GNU control tool available until the LLVM replacement reproduces the
+  required PowerPC/OpenBIOS contract.
 
 ``validating complete PowerPC toolchain``
   The compiler installed but failed target, endianness, sysroot, or executable
