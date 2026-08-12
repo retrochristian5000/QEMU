@@ -57,7 +57,8 @@ jobs:
           grep -Fq '[submodule "toolchains/llvm-project"]' .gitmodules
           git ls-tree HEAD -- toolchains/llvm-project |
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
-          grep -Fq 'BOOTSTRAP_SCHEMA=9' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'LLD_SCHEMA=1' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'ln -sfn "../llvm/bin/ld.lld" "$public_ld"' \
