@@ -8,17 +8,25 @@ fi
 
 : "${BUILD_DIR:?BUILD_DIR is required}"
 
+case "$(uname -m)" in
+    arm64|aarch64) host_arch=arm64 ;;
+    x86_64|amd64) host_arch=x86_64 ;;
+    *)
+        printf 'error: unsupported macOS GTK architecture: %s\n' "$(uname -m)" >&2
+        exit 1
+        ;;
+esac
+
 split_command()
 {
     local value="$1"
-    local output_name="$2"
 
     case "$value" in
         ''|*';'*|*'|'*|*'&'*|*'<'*|*'>') return 1 ;;
     esac
-    eval "$output_name=()"
-    eval "read -r -a $output_name <<< \"\$value\""
-    eval "[[ \${#$output_name[@]} -gt 0 ]]"
+    SPLIT_COMMAND=()
+    read -r -a SPLIT_COMMAND <<< "$value"
+    [[ "${#SPLIT_COMMAND[@]}" -gt 0 ]]
 }
 
 find_brew_formula()
@@ -48,18 +56,21 @@ pkg_config_cmd=()
 cc_cmd=()
 brew_cmd=()
 
-if ! split_command "$pkg_config_value" pkg_config_cmd ||
-   ! command -v "${pkg_config_cmd[0]}" >/dev/null 2>&1; then
+if ! split_command "$pkg_config_value" ||
+   ! command -v "${SPLIT_COMMAND[0]}" >/dev/null 2>&1; then
     printf 'error: GTK verification cannot run pkg-config: %s\n' \
         "$pkg_config_value" >&2
     exit 1
 fi
-if ! split_command "$cc_value" cc_cmd ||
-   ! command -v "${cc_cmd[0]}" >/dev/null 2>&1; then
+pkg_config_cmd=("${SPLIT_COMMAND[@]}")
+
+if ! split_command "$cc_value" ||
+   ! command -v "${SPLIT_COMMAND[0]}" >/dev/null 2>&1; then
     printf 'error: GTK verification cannot run the host compiler: %s\n' \
         "$cc_value" >&2
     exit 1
 fi
+cc_cmd=("${SPLIT_COMMAND[@]}")
 
 if ! "${pkg_config_cmd[@]}" --atleast-version=3.22.0 gtk+-3.0; then
     printf '%s\n' \
@@ -93,21 +104,21 @@ atk_libdir="$("${pkg_config_cmd[@]}" --variable=libdir atk)"
 pkg_config_version="$("${pkg_config_cmd[@]}" --version 2>&1 | sed -n '1p')"
 pkg_config_executable="$(command -v "${pkg_config_cmd[0]}")"
 
-brew_value="unavailable"
-brew_version="unavailable"
-brew_prefix="unavailable"
-gtk_formula_name="unavailable"
-gtk_formula_version="unavailable"
-gtk_formula_prefix="unavailable"
-gtk_formula_prefix_real="unavailable"
-atk_formula_name="unavailable"
-atk_formula_version="unavailable"
-atk_formula_prefix="unavailable"
-atk_formula_prefix_real="unavailable"
-pkgconf_formula_name="unavailable"
-pkgconf_formula_version="unavailable"
-pkgconf_formula_prefix="unavailable"
-pkgconf_formula_prefix_real="unavailable"
+brew_value=unavailable
+brew_version=unavailable
+brew_prefix=unavailable
+gtk_formula_name=unavailable
+gtk_formula_version=unavailable
+gtk_formula_prefix=unavailable
+gtk_formula_prefix_real=unavailable
+atk_formula_name=unavailable
+atk_formula_version=unavailable
+atk_formula_prefix=unavailable
+atk_formula_prefix_real=unavailable
+pkgconf_formula_name=unavailable
+pkgconf_formula_version=unavailable
+pkgconf_formula_prefix=unavailable
+pkgconf_formula_prefix_real=unavailable
 
 if [[ -n "${HOMEBREW_PREFIX:-}" && -x "$HOMEBREW_PREFIX/bin/brew" ]]; then
     brew_value="$HOMEBREW_PREFIX/bin/brew"
@@ -258,14 +269,14 @@ if ! "$probe_dir/gtk-header-probe"; then
     printf '%s\n' \
         'error: the GTK compile-and-link probe produced an unusable executable.' \
         "GTK version: $gtk_version" \
-        "Host arch:   ${MACOS_HOST_ARCH:-unknown}" >&2
+        "Host arch:   $host_arch" >&2
     exit 1
 fi
 
 cc_version="$("${cc_cmd[@]}" --version 2>&1 | sed -n '1p' || true)"
 {
-    printf 'SCHEMA=2\n'
-    printf 'MACOS_HOST_ARCH=%s\n' "${MACOS_HOST_ARCH:-}"
+    printf 'SCHEMA=3\n'
+    printf 'HOST_ARCH=%s\n' "$host_arch"
     printf 'CC=%s\n' "$cc_value"
     printf 'CC_VERSION=%s\n' "$cc_version"
     printf 'PKG_CONFIG=%s\n' "$pkg_config_value"
@@ -317,7 +328,7 @@ printf '%s\n' \
     "GTK pkg-config metadata:  $gtk_pcfiledir" \
     "ATK pkg-config metadata:  $atk_pcfiledir" \
     "pkg-config executable:    $pkg_config_executable ($pkg_config_version)"
-if [[ "$brew_prefix" != "unavailable" ]]; then
+if [[ "$brew_prefix" != unavailable ]]; then
     printf '%s\n' \
         "Homebrew GTK formula:     $gtk_formula_version" \
         "Homebrew ATK provider:    $atk_formula_version" \
