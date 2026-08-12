@@ -11,6 +11,13 @@ build_root="$(cd -- "$BUILD_DIR" && pwd)"
 config="$build_root/.whp-openbios-meson.env"
 temporary="$config.new.$$"
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
+compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-}"
+if [[ -z "$compiler_mode" ]]; then
+    case "$(uname -s)" in
+        Darwin) compiler_mode=clang ;;
+        *) compiler_mode=gcc ;;
+    esac
+fi
 tools_dir="${OPENBIOS_TOOLS_DIR:-$build_root/firmware-tools}"
 openbios_build_dir="${OPENBIOS_BUILD_DIR:-$build_root/firmware/openbios}"
 hostcc="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
@@ -32,6 +39,19 @@ case "$source_mode" in
         exit 1
         ;;
 esac
+case "$compiler_mode" in
+    clang|gcc) ;;
+    *)
+        printf 'error: POWERPC_TOOLCHAIN_COMPILER must be clang or gcc\n' >&2
+        exit 1
+        ;;
+esac
+if [[ "$compiler_mode" == clang && "$source_mode" != release ]]; then
+    printf '%s\n' \
+        'error: the PowerPC Clang lane currently retains release binutils.' \
+        'set POWERPC_TOOLCHAIN_SOURCE_MODE=release or unset it.' >&2
+    exit 1
+fi
 
 mkdir -p "$openbios_build_dir"
 openbios_build_dir="$(cd -- "$openbios_build_dir" && pwd)"
@@ -76,6 +96,7 @@ umask 077
     printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%q\n' "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
     printf 'POWERPC_TOOLCHAIN_FORCE_REBUILD=%q\n' "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
     printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%q\n' "$source_mode"
+    printf 'POWERPC_TOOLCHAIN_COMPILER=%q\n' "$compiler_mode"
     printf 'POWERPC_TOOLCHAIN_DIR=%q\n' \
         "${POWERPC_TOOLCHAIN_DIR:-$tools_dir/powerpc-elf}"
     printf 'POWERPC_TOOLCHAIN_WORK_DIR=%q\n' \
@@ -96,6 +117,14 @@ umask 077
         "${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
     printf 'POWERPC_GCC_GIT_COMMIT=%q\n' \
         "${POWERPC_GCC_GIT_COMMIT:-}"
+    printf 'POWERPC_LLVM_GIT_URL=%q\n' \
+        "${POWERPC_LLVM_GIT_URL:-https://github.com/retrochristian5000/LLVM.git}"
+    printf 'POWERPC_LLVM_GIT_REF=%q\n' \
+        "${POWERPC_LLVM_GIT_REF:-main}"
+    printf 'POWERPC_LLVM_GIT_COMMIT=%q\n' \
+        "${POWERPC_LLVM_GIT_COMMIT:-e7dd336e0f7884c34108a1e722205a16c3f5307b}"
+    printf 'POWERPC_LLVM_GIT_OFFLINE=%q\n' \
+        "${POWERPC_LLVM_GIT_OFFLINE:-0}"
     printf 'CONFIG_SHELL=%q\n' "${CONFIG_SHELL:-${WHP_BUILD_BASH:-/bin/bash}}"
     printf 'PKG_CONFIG_FOR_BUILD=%q\n' \
         "${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
