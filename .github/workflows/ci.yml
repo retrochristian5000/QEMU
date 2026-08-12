@@ -36,7 +36,9 @@ jobs:
           bash -n \
             scripts/build-openbios.sh \
             scripts/bootstrap-powerpc-clang.sh \
+            scripts/bootstrap-powerpc-clang-core.sh \
             scripts/bootstrap-powerpc-clang-base.sh \
+            scripts/bootstrap-powerpc-llvm-as.sh \
             scripts/meson-build-openbios.sh \
             scripts/whp-build/configure-openbios.bash
 
@@ -57,14 +59,25 @@ jobs:
           grep -Fq '[submodule "toolchains/llvm-project"]' .gitmodules
           git ls-tree HEAD -- toolchains/llvm-project |
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
-          grep -Fq 'LLD_SCHEMA=1' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'LLD_SCHEMA=1' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'ln -sfn "../llvm/bin/ld.lld" "$public_ld"' \
-            scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang.sh
+            scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang-core.sh
+
+          grep -Fq 'bootstrap-powerpc-clang-core.sh' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'bootstrap-powerpc-llvm-as.sh' scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'ASSEMBLER_SCHEMA=2' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq '.whp-powerpc-as' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'as.bfd' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq -- '-a32|-mppc|-many' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'exec "$clang" --target=powerpc-none-elf -c -x assembler' \
+            scripts/bootstrap-powerpc-llvm-as.sh
+
           grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \
             scripts/whp-build/configure-openbios.bash
           grep -Fq 'POWERPC_LLVM_SUBMODULE_PATH=' scripts/meson-build-openbios.sh
