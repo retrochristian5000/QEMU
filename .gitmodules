@@ -45,3 +45,8 @@
 [submodule "tests/lcitool/libvirt-ci"]
 	path = tests/lcitool/libvirt-ci
 	url = https://gitlab.com/libvirt/libvirt-ci.git
+[submodule "toolchains/llvm-project"]
+	path = toolchains/llvm-project
+	url = https://github.com/retrochristian5000/LLVM.git
+	branch = main
+	shallow = true
