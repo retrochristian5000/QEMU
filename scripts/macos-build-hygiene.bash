@@ -206,6 +206,7 @@ prepare_macos_build_tree()
     local host_arch
     local default_build_dir
     local legacy_tools_dir
+    local toolchain_root
     local identity_file
     local identity_candidate
     local owner_file
@@ -214,15 +215,15 @@ prepare_macos_build_tree()
     local clean_reason=""
 
     process_arch="$(uname -m)"
-    case "${MACOS_HOST_ARCH:-$process_arch}" in
+    case "$process_arch" in
         arm64|aarch64) host_arch=arm64 ;;
         x86_64|amd64) host_arch=x86_64 ;;
         *)
-            printf 'error: MACOS_HOST_ARCH must be arm64 or x86_64\n' >&2
+            printf 'error: unsupported macOS process architecture: %s\n' \
+                "$process_arch" >&2
             return 1
             ;;
     esac
-    export MACOS_HOST_ARCH="$host_arch"
 
     default_build_dir="$SOURCE_DIR/build/whp-ppc-${host_arch}-apple-darwin"
     BUILD_DIR="$(whp_normalize_build_dir "${BUILD_DIR:-$default_build_dir}")"
@@ -248,9 +249,10 @@ prepare_macos_build_tree()
     whp_require_persistent_path_outside_build OPENBIOS_TOOLS_DIR || return 1
 
     POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}"
-    POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
-    POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DIR || return 1
+    toolchain_root="$(dirname "$POWERPC_TOOLCHAIN_DIR")"
+    POWERPC_TOOLCHAIN_WORK_DIR="$toolchain_root/toolchain-work/powerpc-elf"
+    POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$toolchain_root/toolchain-downloads"
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_WORK_DIR || return 1
     whp_require_persistent_path_outside_build POWERPC_TOOLCHAIN_DOWNLOAD_DIR || return 1
     export OPENBIOS_TOOLS_DIR POWERPC_TOOLCHAIN_DIR \
@@ -262,11 +264,11 @@ prepare_macos_build_tree()
 
     identity_candidate="$(mktemp "${TMPDIR:-/tmp}/whp-macos-build-identity.XXXXXX")"
     {
-        printf 'SCHEMA=2\n'
+        printf 'SCHEMA=3\n'
         printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
         printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
         printf 'PROCESS_ARCH=%s\n' "$process_arch"
-        printf 'MACOS_HOST_ARCH=%s\n' "$host_arch"
+        printf 'HOST_ARCH=%s\n' "$host_arch"
         printf 'SDKROOT=%s\n' "${SDKROOT:-}"
         printf 'MACOS_SDK_VERSION=%s\n' "${MACOS_SDK_VERSION:-}"
         printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
