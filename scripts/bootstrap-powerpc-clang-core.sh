@@ -98,8 +98,10 @@ base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
 expected_lld_marker="$(cat <<MARKER
-LLD_SCHEMA=1
+LLD_SCHEMA=2
 LINKER=lld
+ASSEMBLER=clang-integrated
+GNU_GAS=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
@@ -113,15 +115,16 @@ clang_lld_toolchain_is_usable()
 {
     local tool
 
-    for tool in gcc as ar ld nm objcopy objdump readelf strip ranlib; do
+    for tool in gcc ar ld nm objcopy objdump readelf strip ranlib; do
         [[ -x "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-${tool}" ]] || return 1
     done
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/ld.lld" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/llvm-readelf" ]] || return 1
-    [[ -x "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/ld" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/ld.bfd" ]] || return 1
+    [[ ! -e "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as" ]] || return 1
+    [[ ! -e "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd" ]] || return 1
     "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld" --version 2>/dev/null |
         grep -q 'LLD' || return 1
 }
@@ -202,9 +205,14 @@ cmake --build "$LLD_BUILD_DIR" --parallel "$JOBS"
 cmake --install "$LLD_BUILD_DIR"
 
 lld="$llvm_dir/bin/ld.lld"
+clang="$llvm_dir/bin/clang"
 llvm_readelf="$llvm_dir/bin/llvm-readelf"
 if [[ ! -x "$lld" ]]; then
     printf 'error: LLVM build did not produce LLD: %s\n' "$lld" >&2
+    exit 1
+fi
+if [[ ! -x "$clang" ]]; then
+    printf 'error: LLVM install did not produce Clang: %s\n' "$clang" >&2
     exit 1
 fi
 if [[ ! -x "$llvm_readelf" ]]; then
@@ -218,7 +226,8 @@ if ! "$lld" --version | grep -q 'LLD'; then
 fi
 
 # Before changing the public linker, prove LLD can reproduce the critical
-# OpenBIOS ROM layout and the GNU-style options used by PPC-Firmware.
+# OpenBIOS ROM layout and the GNU-style options used by PPC-Firmware.  Assemble
+# with LLVM IAS directly so this stage has no dependency on GNU as.
 smoke_dir="$TOOLCHAIN_WORK_DIR/lld-openbios-smoke"
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir"
@@ -236,8 +245,8 @@ whp_lld_smoke:
 whp_hreset:
     b _entry
 ASSEMBLY
-"$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as" \
-    -o "$smoke_dir/layout.o" "$smoke_dir/layout.s"
+"$clang" --target=powerpc-none-elf -c -x assembler \
+    "$smoke_dir/layout.s" -o "$smoke_dir/layout.o"
 "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ar" rcs \
     "$smoke_dir/liblayout.a" "$smoke_dir/layout.o"
 cat > "$smoke_dir/layout.ld" <<'LDSCRIPT'
@@ -333,13 +342,7 @@ ln -sfn "../llvm/bin/ld.lld" "$public_ld"
 ln -sfn "../../llvm/bin/ld.lld" "$shim_dir/ld"
 
 clang_driver="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-gcc"
-reported_as="$($clang_driver -print-prog-name=as)"
 reported_ld="$($clang_driver -print-prog-name=ld)"
-if [[ "$reported_as" != "$shim_dir/as" ]]; then
-    printf 'error: Clang assembler route changed unexpectedly: %s\n' \
-        "$reported_as" >&2
-    exit 1
-fi
 if [[ "$reported_ld" != "$shim_dir/ld" ]]; then
     printf 'error: Clang is not routed through LLD: %s\n' "$reported_ld" >&2
     exit 1
@@ -348,11 +351,15 @@ if ! "$public_ld" --version | grep -q 'LLD'; then
     printf 'error: public PowerPC linker does not resolve to LLD\n' >&2
     exit 1
 fi
+if [[ -e "$shim_dir/as" || -e "$shim_dir/as.bfd" ]]; then
+    printf 'error: GNU assembler residue remains in the PowerPC toolchain\n' >&2
+    exit 1
+fi
 
 printf '%s\n' "$expected_lld_marker" > "$lld_marker"
 printf '%s\n' \
     "Bootstrapped PowerPC compiler/linker: Clang + LLD ($llvm_revision)" \
     "LLVM source: QEMU submodule $LLVM_SUBMODULE_PATH" \
-    "Retained assembler: GNU as" \
+    "Assembler: Clang integrated assembler" \
     "Private A/B linker: $gnu_ld" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
