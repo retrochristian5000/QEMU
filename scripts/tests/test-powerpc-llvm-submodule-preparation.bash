@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
