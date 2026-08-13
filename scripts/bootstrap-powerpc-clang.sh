@@ -41,9 +41,9 @@ toolchain_clean_env=(
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-source-cache.sh"
 
-# Keep the established Clang + LLD bootstrap intact, then run the assembler
-# migration as its own independently validated stage.  GNU as remains the
-# private A/B oracle until LLVM IAS passes qualification and is published.
+# Build the Clang foundation with GNU GAS disabled, migrate the public linker
+# to LLD, then publish the GNU-compatible `powerpc-elf-as` wrapper backed only
+# by Clang's integrated PowerPC assembler.  GNU as is not built or retained.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 "${toolchain_clean_env[@]}" \
