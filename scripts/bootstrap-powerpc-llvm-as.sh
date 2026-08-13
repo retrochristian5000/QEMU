@@ -30,9 +30,9 @@ clang="$TOOLCHAIN_DIR/llvm/bin/clang"
 llvm_readelf="$TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
 clang_driver="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-gcc"
 public_as="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
+target_bin="$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin"
+target_as="$target_bin/as"
 shim_dir="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu"
-gnu_as="$shim_dir/as.bfd"
-shim_as="$shim_dir/as"
 marker="$TOOLCHAIN_DIR/.whp-powerpc-as"
 
 if [[ ! -x "$clang" ]]; then
@@ -53,6 +53,12 @@ if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
         "$LLVM_SUBMODULE_PATH" >&2
     exit 1
 fi
+if [[ -e "$shim_dir/as" || -e "$shim_dir/as.bfd" ]]; then
+    printf '%s\n' \
+        'error: GNU as residue remains in the PowerPC toolchain.' \
+        'run the full PowerPC toolchain bootstrap so binutils is rebuilt with GAS disabled.' >&2
+    exit 1
+fi
 
 expected_llvm_revision="$(
     git -C "$SOURCE_DIR" ls-tree HEAD -- "$LLVM_SUBMODULE_PATH" | awk '{print $3}'
@@ -69,8 +75,9 @@ fi
 
 stage_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 expected_marker="$(cat <<MARKER
-ASSEMBLER_SCHEMA=2
+ASSEMBLER_SCHEMA=3
 ASSEMBLER=clang-integrated
+GNU_GAS=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
@@ -79,7 +86,7 @@ STAGE_SIGNATURE=$stage_signature
 MARKER
 )"
 
-mkdir -p "$TOOLCHAIN_WORK_DIR" "$shim_dir"
+mkdir -p "$TOOLCHAIN_WORK_DIR" "$target_bin"
 smoke_dir="$TOOLCHAIN_WORK_DIR/llvm-as-openbios-smoke"
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir/candidate-bin"
@@ -150,11 +157,9 @@ verify_powerpc_object()
     fi
 }
 
-# Clang's -fno-integrated-as path invokes GNU as with a small set of GNU-only
-# mode-selection flags.  They describe properties already fixed by the
-# powerpc-none-elf target and are not accepted by the Clang driver itself.
-# Keep the translation in the compatibility wrapper rather than weakening the
-# LLVM PowerPC parser or changing PPC-Firmware.
+# PPC-Firmware invokes a GNU-style `as` interface.  Translate only the GNU
+# mode-selection flags whose meaning is already fixed by powerpc-none-elf and
+# send all assembly into Clang's integrated PowerPC assembler.
 candidate_as="$smoke_dir/candidate-bin/as"
 cat > "$candidate_as" <<'WRAPPER'
 #!/usr/bin/env bash
@@ -186,21 +191,19 @@ exec "$clang" --target=powerpc-none-elf -c -x assembler "${translated[@]}"
 WRAPPER
 chmod +x "$candidate_as"
 
-# Qualification happens before changing the public assembler.  Test both the
-# direct interface used by PPC-Firmware and the exact external-assembler route
-# still used by the first-stage Clang compatibility driver.
 printf 'Qualifying WHP LLVM integrated assembler for PowerPC OpenBIOS\n'
 WHP_POWERPC_CLANG="$clang" \
     "$candidate_as" "$smoke_dir/openbios.s" -m32 -g \
         -o "$smoke_dir/candidate-assembly.o"
 verify_powerpc_object "$smoke_dir/candidate-assembly.o"
 
-WHP_POWERPC_CLANG="$clang" \
-    "$clang" --target=powerpc-none-elf -fno-integrated-as \
-        -B"$smoke_dir/candidate-bin" \
-        -m32 -mcpu=604 -msoft-float -ffreestanding \
-        -fno-pic -fno-pie -O0 -g \
-        -c "$smoke_dir/openbios.c" -o "$smoke_dir/candidate-c.o"
+# The compatibility compiler itself must also succeed with no external `as`
+# available.  Its driver forces -fintegrated-as in the base bootstrap.
+"$clang_driver" \
+    -m32 -mcpu=604 -msoft-float \
+    -mcall-sysv-noeabi -msdata=none -G0 \
+    -ffreestanding -fno-pic -fno-pie -O0 -g \
+    -c "$smoke_dir/openbios.c" -o "$smoke_dir/candidate-c.o"
 verify_powerpc_object "$smoke_dir/candidate-c.o"
 
 assembler_route_is_current()
@@ -208,9 +211,10 @@ assembler_route_is_current()
     [[ -f "$marker" ]] || return 1
     [[ "$(cat "$marker")" == "$expected_marker" ]] || return 1
     [[ -x "$public_as" ]] || return 1
-    [[ -x "$gnu_as" ]] || return 1
-    [[ -x "$shim_as" ]] || return 1
-    "$gnu_as" --version 2>/dev/null | grep -q 'GNU assembler' || return 1
+    [[ -e "$target_as" ]] || return 1
+    [[ ! -e "$shim_dir/as" ]] || return 1
+    [[ ! -e "$shim_dir/as.bfd" ]] || return 1
+    ! "$public_as" --version 2>&1 | grep -q 'GNU assembler'
 }
 
 validate_public_route()
@@ -233,34 +237,20 @@ if assembler_route_is_current; then
     exit 0
 fi
 
-# Preserve GNU as as the controlled A/B oracle before publishing LLVM IAS.
-# Never overwrite the oracle with an already-rerouted wrapper.
-if [[ ! -x "$gnu_as" ]]; then
-    if [[ ! -x "$public_as" ]] ||
-       ! "$public_as" --version 2>/dev/null | grep -q 'GNU assembler'; then
-        printf '%s\n' \
-            'error: cannot preserve GNU as before the LLVM assembler reroute.' \
-            "public assembler: $public_as" \
-            "expected oracle: $gnu_as" >&2
-        exit 1
-    fi
-    mv "$public_as" "$gnu_as"
-fi
-if ! "$gnu_as" --version 2>/dev/null | grep -q 'GNU assembler'; then
-    printf 'error: retained assembler oracle is not GNU as: %s\n' "$gnu_as" >&2
+if [[ -x "$public_as" ]] &&
+   "$public_as" --version 2>&1 | grep -q 'GNU assembler'; then
+    printf '%s\n' \
+        'error: public PowerPC assembler is still GNU as.' \
+        'run the full bootstrap so the GAS-disabled base toolchain replaces it first.' >&2
     exit 1
 fi
 
-# The candidate has already passed both calling conventions.  Publish that
-# exact wrapper atomically, then keep the compiler's external `as` shim pointed
-# at the public LLVM route for this first migration experiment.
 mv -f "$candidate_as" "$public_as"
-ln -sfn "../../bin/${TOOLCHAIN_TARGET}-as" "$shim_as"
-
+ln -sfn "../../bin/${TOOLCHAIN_TARGET}-as" "$target_as"
 validate_public_route
 
 printf '%s\n' "$expected_marker" > "$marker"
 printf '%s\n' \
-    "Rerouted PowerPC assembler: $public_as -> WHP Clang IAS" \
-    "Retained GNU assembler oracle: $gnu_as" \
+    "Published PowerPC assembler: $public_as -> WHP Clang IAS" \
+    "GNU GAS: disabled" \
     "LLVM revision: $llvm_revision"
