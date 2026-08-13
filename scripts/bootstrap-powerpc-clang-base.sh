@@ -19,11 +19,12 @@ BINUTILS_ARCHIVE="binutils-${BINUTILS_VERSION}.tar.xz"
 BINUTILS_URL="${POWERPC_BINUTILS_URL:-https://sourceware.org/pub/binutils/releases/$BINUTILS_ARCHIVE}"
 BINUTILS_SHA256="${POWERPC_BINUTILS_SHA256:-ce2017e059d63e67ddb9240e9d4ec49c2893605035cd60e92ad53177f4377237}"
 
-# Keep the compiler source under WHP control.  The default commit is the
-# current main revision selected when this bootstrap lane was introduced.
+# Keep compiler source selection under WHP control. Standalone use follows the
+# LLVM remote's default branch through HEAD; the QEMU orchestrator supplies the
+# exact submodule gitlink commit so normal project builds remain reproducible.
 LLVM_GIT_URL="${POWERPC_LLVM_GIT_URL:-https://github.com/retrochristian5000/LLVM.git}"
-LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-main}"
-LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-e7dd336e0f7884c34108a1e722205a16c3f5307b}"
+LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-HEAD}"
+LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"
 LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLVM_SOURCE_DIR="${POWERPC_LLVM_SOURCE_DIR:-$TOOLCHAIN_WORK_DIR/llvm-source}"
 LLVM_BUILD_DIR="${POWERPC_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
@@ -244,10 +245,12 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=9
+BOOTSTRAP_SCHEMA=10
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_GAS=disabled
+GNU_GPROF=disabled
+GNU_GPROFNG=disabled
 TARGET=$TOOLCHAIN_TARGET
 BINUTILS_VERSION=$BINUTILS_VERSION
 BINUTILS_SHA256=$BINUTILS_SHA256
@@ -275,6 +278,8 @@ clang_toolchain_is_usable()
     [[ -x "$prefix/libexec/powerpc-clang-gnu/ld" ]] || return 1
     [[ ! -e "$prefix/libexec/powerpc-clang-gnu/as" ]] || return 1
     [[ ! -e "$prefix/libexec/powerpc-clang-gnu/as.bfd" ]] || return 1
+    [[ ! -e "$prefix/bin/${TOOLCHAIN_TARGET}-gprof" ]] || return 1
+    [[ ! -e "$prefix/$TOOLCHAIN_TARGET/bin/gprof" ]] || return 1
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
@@ -323,7 +328,7 @@ staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
 mkdir -p "$stage_root"
 
-bootstrap_stage="configuring and building GNU binutils without GAS"
+bootstrap_stage="configuring and building GNU binutils without GAS or profilers"
 rm -rf "$binutils_build"
 mkdir -p "$binutils_build"
 (
@@ -345,6 +350,7 @@ mkdir -p "$binutils_build"
         --disable-gas \
         --disable-gdb \
         --disable-gdbserver \
+        --disable-gprof \
         --disable-gprofng \
         --disable-gold \
         --disable-nls \
@@ -380,6 +386,11 @@ done
 if [[ -e "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-as" ||
       -e "$staged_toolchain/$TOOLCHAIN_TARGET/bin/as" ]]; then
     printf 'error: GNU as was installed even though GAS is disabled\n' >&2
+    exit 1
+fi
+if [[ -e "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-gprof" ||
+      -e "$staged_toolchain/$TOOLCHAIN_TARGET/bin/gprof" ]]; then
+    printf 'error: GNU gprof was installed even though profiling is disabled\n' >&2
     exit 1
 fi
 
@@ -521,6 +532,6 @@ stage_root=""
 bootstrap_stage="completed"
 printf '%s\n' \
     "Bootstrapped PowerPC compiler: Clang ($llvm_revision)" \
-    "GNU binutils: $BINUTILS_VERSION (GAS disabled)" \
+    "GNU binutils: $BINUTILS_VERSION (GAS/gprof disabled)" \
     "Assembler: Clang integrated assembler" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
