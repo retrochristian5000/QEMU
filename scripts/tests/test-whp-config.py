@@ -37,6 +37,9 @@ class WhpConfigTests(unittest.TestCase):
         values = mod.default_values()
         self.assertEqual(values['QEMU_TARGET_LIST'], 'ppc-softmmu')
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
+        self.assertEqual(values['PREFIX'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_COCOA'], 'y')
+        self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'y')
         self.assertEqual(values['BUILD_OPENBIOS'], 'y')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
@@ -53,7 +56,16 @@ class WhpConfigTests(unittest.TestCase):
     def test_shell_output_maps_portable_values_and_respects_environment_override(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
-            path.write_text('WHP_CONFIG_VERSION=1\nBUILD_OPENBIOS=n\nQEMU_HOST_LTO=y\nWHP_INCREMENTAL_BUILD=n\n', encoding='utf-8')
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'PREFIX=/opt/whp-qemu\n'
+                'MACOS_ENABLE_COCOA=n\n'
+                'MACOS_ENABLE_COREAUDIO=n\n'
+                'BUILD_OPENBIOS=n\n'
+                'QEMU_HOST_LTO=y\n'
+                'WHP_INCREMENTAL_BUILD=n\n',
+                encoding='utf-8',
+            )
             env = os.environ.copy()
             env['BUILD_OPENBIOS'] = '1'
             result = subprocess.run(
@@ -61,18 +73,25 @@ class WhpConfigTests(unittest.TestCase):
                 text=True, capture_output=True, check=True, env=env,
             )
             self.assertNotIn('BUILD_OPENBIOS=', result.stdout)
+            self.assertIn("PREFIX='/opt/whp-qemu'", result.stdout)
+            self.assertIn("MACOS_ENABLE_COCOA='0'", result.stdout)
+            self.assertIn("MACOS_ENABLE_COREAUDIO='0'", result.stdout)
             self.assertIn("QEMU_HOST_LTO='1'", result.stdout)
             self.assertIn("WHP_INCREMENTAL_BUILD='0'", result.stdout)
 
     def test_auto_value_is_not_exported(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
-            path.write_text('WHP_CONFIG_VERSION=1\nQEMU_HOST_LTO=auto\n', encoding='utf-8')
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\nQEMU_HOST_LTO=auto\nPREFIX=auto\n',
+                encoding='utf-8',
+            )
             result = subprocess.run(
                 ['python3', str(CONFIG_TOOL), '--shell', str(path)],
                 text=True, capture_output=True, check=True, env={},
             )
             self.assertNotIn('QEMU_HOST_LTO=', result.stdout)
+            self.assertNotIn('PREFIX=', result.stdout)
 
     def test_device_config_keeps_repository_defaults_before_user_overrides(self):
         mod = load_module()

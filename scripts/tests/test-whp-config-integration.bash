@@ -18,14 +18,20 @@ cp "$ROOT/configs/devices/ppc-softmmu/default.mak" \
 menu_output="$(/bin/sh "$COPY/build.sh" menuconfig --dump)"
 grep -Fq 'Build targets' <<< "$menu_output"
 grep -Fq 'Host features' <<< "$menu_output"
+grep -Fq 'Cocoa on macOS' <<< "$menu_output"
+grep -Fq 'CoreAudio on macOS' <<< "$menu_output"
 grep -Fq 'Firmware' <<< "$menu_output"
 grep -Fq 'Build behavior' <<< "$menu_output"
+grep -Fq 'Install prefix' <<< "$menu_output"
 grep -Fq 'QEMU machines' <<< "$menu_output"
 
 cat > "$COPY/.whpconfig" <<'EOF'
 WHP_CONFIG_VERSION=1
 QEMU_TARGET_LIST=ppc-softmmu
 QEMU_HOST_LTO=auto
+PREFIX=/opt/whp-qemu
+MACOS_ENABLE_COCOA=y
+MACOS_ENABLE_COREAUDIO=y
 MACOS_ENABLE_GTK=n
 MACOS_ENABLE_PA=n
 BUILD_OPENBIOS=y
@@ -35,7 +41,8 @@ INSTALL=n
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=n
 EOF
-WHP_SHELL_PROBE_ONLY=1 /bin/sh "$COPY/build.sh" >/dev/null
+probe_output="$(WHP_SHELL_PROBE_ONLY=1 /bin/sh "$COPY/build.sh")"
+grep -Fq 'WHP build shell:' <<< "$probe_output"
 grep -Fq 'CONFIG_MAC_NEWWORLD=y' \
     "$COPY/configs/devices/ppc-softmmu/whp-user.mak"
 grep -Fq 'CONFIG_MAC_OLDWORLD=n' \
@@ -86,5 +93,43 @@ source "$ROOT/scripts/whp-build/configure.bash"
 whp_configure_build
 grep -Fxq -- '--with-devices-ppc=whp-user' "$BUILD_DIR/configure-args.txt"
 grep -Fq 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=' "$BUILD_DIR/.whp-config"
+
+# Verify macOS host feature switches and prefix feed configure explicitly.
+source "$ROOT/scripts/whp-build/prepare-build.bash"
+HOST_OS=Darwin
+CC=clang
+CXX=clang++
+CC_FOR_BUILD=clang
+OBJC=clang
+PREFIX=/portable-prefix
+QEMU_TARGET_LIST=ppc-softmmu
+QEMU_HOST_LTO=0
+MACOS_ENABLE_COCOA=0
+MACOS_ENABLE_COREAUDIO=0
+MACOS_ENABLE_GTK=0
+MACOS_ENABLE_PA=0
+whp_prepare_configure_args
+macos_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--prefix=/portable-prefix' <<< "$macos_args"
+grep -Fxq -- '--disable-cocoa' <<< "$macos_args"
+grep -Fxq -- '--disable-coreaudio' <<< "$macos_args"
+grep -Fxq -- '--disable-gtk' <<< "$macos_args"
+grep -Fxq -- '--disable-pa' <<< "$macos_args"
+if grep -Fq -- '--audio-drv-list=' <<< "$macos_args"; then
+    printf 'error: disabled macOS audio backends must not emit an audio driver list\n' >&2
+    exit 1
+fi
+
+MACOS_ENABLE_COCOA=1
+MACOS_ENABLE_COREAUDIO=1
+MACOS_ENABLE_GTK=1
+MACOS_ENABLE_PA=1
+whp_prepare_configure_args
+macos_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--enable-cocoa' <<< "$macos_args"
+grep -Fxq -- '--enable-coreaudio' <<< "$macos_args"
+grep -Fxq -- '--enable-gtk' <<< "$macos_args"
+grep -Fxq -- '--enable-pa' <<< "$macos_args"
+grep -Fxq -- '--audio-drv-list=coreaudio,pa' <<< "$macos_args"
 
 printf 'WHP portable configuration integration: verified\n'

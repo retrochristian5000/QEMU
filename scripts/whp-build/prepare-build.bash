@@ -121,6 +121,8 @@ whp_prepare_build_defaults()
     QEMU_TARGET_LIST="${QEMU_TARGET_LIST:-ppc-softmmu}"
     BUILD_TARGETS="${BUILD_TARGETS:-all}"
     INSTALL="${INSTALL:-0}"
+    MACOS_ENABLE_COCOA="${MACOS_ENABLE_COCOA:-1}"
+    MACOS_ENABLE_COREAUDIO="${MACOS_ENABLE_COREAUDIO:-1}"
     MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-0}"
     MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
     QEMU_HOST_LTO="${QEMU_HOST_LTO:-$APPLE_SILICON_NATIVE}"
@@ -135,7 +137,8 @@ whp_prepare_build_defaults()
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
 
     whp_require_boolean_values \
-        INSTALL MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
+        INSTALL MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO \
+        MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
         BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
         BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
 
@@ -267,20 +270,42 @@ whp_prepare_configure_args()
     fi
 
     if [[ "$HOST_OS" == Darwin ]]; then
-        macos_audio_drivers=coreaudio
-        configure_args+=(
-            --enable-cocoa
-            --enable-coreaudio
-            --objcc="$OBJC"
-        )
+        macos_audio_drivers=
+        configure_args+=(--objcc="$OBJC")
+
+        if [[ "$MACOS_ENABLE_COCOA" == 1 ]]; then
+            configure_args+=(--enable-cocoa)
+        else
+            configure_args+=(--disable-cocoa)
+        fi
+
+        if [[ "$MACOS_ENABLE_COREAUDIO" == 1 ]]; then
+            configure_args+=(--enable-coreaudio)
+            macos_audio_drivers=coreaudio
+        else
+            configure_args+=(--disable-coreaudio)
+        fi
+
         if [[ "$MACOS_ENABLE_GTK" == 1 ]]; then
             configure_args+=(--enable-gtk)
+        else
+            configure_args+=(--disable-gtk)
         fi
+
         if [[ "$MACOS_ENABLE_PA" == 1 ]]; then
             configure_args+=(--enable-pa)
-            macos_audio_drivers+=,pa
+            if [[ -n "$macos_audio_drivers" ]]; then
+                macos_audio_drivers+=,pa
+            else
+                macos_audio_drivers=pa
+            fi
+        else
+            configure_args+=(--disable-pa)
         fi
-        configure_args+=(--audio-drv-list="$macos_audio_drivers")
+
+        if [[ -n "$macos_audio_drivers" ]]; then
+            configure_args+=(--audio-drv-list="$macos_audio_drivers")
+        fi
     else
         configure_args+=(--enable-gtk --enable-pa)
     fi

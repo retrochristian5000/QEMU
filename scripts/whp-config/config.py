@@ -26,10 +26,13 @@ class Option(NamedTuple):
 OPTIONS = (
     Option('QEMU_TARGET_LIST', 'Build targets', 'QEMU target list', 'string', 'ppc-softmmu'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa on macOS', 'bool', 'y'),
+    Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio on macOS', 'bool', 'y'),
     Option('MACOS_ENABLE_GTK', 'Host features', 'GTK on macOS', 'bool', 'n'),
     Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio on macOS', 'bool', 'n'),
     Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'bool', 'y'),
     Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'bool', 'y'),
+    Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
