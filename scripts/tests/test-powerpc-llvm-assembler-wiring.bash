@@ -37,8 +37,9 @@ fi
 grep -Fq 'ASSEMBLER_SCHEMA=3' "$as_stage"
 grep -Fq 'GNU_GAS=disabled' "$as_stage"
 grep -Fq 'exec "$clang" --target=powerpc-none-elf -c -x assembler' "$as_stage"
-if grep -Fq 'as.bfd' "$as_stage" ||
-   grep -Fq 'GNU assembler oracle' "$as_stage"; then
+if grep -Fq 'gnu_as=' "$as_stage" ||
+   grep -Fq 'Retained GNU assembler oracle' "$as_stage" ||
+   grep -Fq 'mv "$public_as" "$gnu_as"' "$as_stage"; then
     printf 'error: LLVM assembler stage still retains a GNU as fallback\n' >&2
     exit 1
 fi
