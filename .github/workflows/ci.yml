@@ -29,6 +29,9 @@ jobs:
       - name: Test selected SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+      - name: Check PowerPC LLVM assembler wiring
+        run: bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+
       - name: Check OpenBIOS tool provenance guards
         shell: bash
         run: |
@@ -56,9 +59,19 @@ jobs:
           grep -Fq '[submodule "toolchains/llvm-project"]' .gitmodules
           git ls-tree HEAD -- toolchains/llvm-project |
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
-          grep -Fq 'LLD_SCHEMA=1' scripts/bootstrap-powerpc-clang-core.sh
+
+          grep -Fq -- '--disable-gas' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'BOOTSTRAP_SCHEMA=9' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          if grep -Fq -- '-fno-integrated-as' scripts/bootstrap-powerpc-clang-base.sh; then
+            echo 'error: PowerPC Clang must not route through an external assembler' >&2
+            exit 1
+          fi
+
+          grep -Fq 'LLD_SCHEMA=2' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'ln -sfn "../llvm/bin/ld.lld" "$public_ld"' \
             scripts/bootstrap-powerpc-clang-core.sh
@@ -67,10 +80,14 @@ jobs:
 
           grep -Fq 'bootstrap-powerpc-clang-core.sh' scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'bootstrap-powerpc-llvm-as.sh' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'ASSEMBLER_SCHEMA=2' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'ASSEMBLER_SCHEMA=3' scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq '.whp-powerpc-as' scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'as.bfd' scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-llvm-as.sh
+          if grep -Fq 'as.bfd' scripts/bootstrap-powerpc-llvm-as.sh; then
+            echo 'error: GNU as fallback must not be retained' >&2
+            exit 1
+          fi
           grep -Fq -- '-a32|-mppc|-many' scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq 'exec "$clang" --target=powerpc-none-elf -c -x assembler' \
             scripts/bootstrap-powerpc-llvm-as.sh
