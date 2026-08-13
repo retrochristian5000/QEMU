@@ -2,6 +2,8 @@
 /build/
 /.cache/
 /.vscode/
+/.whpconfig
+/configs/devices/*/whp-user.mak
 /docs/superpowers/
 *.pyc
 .sdk

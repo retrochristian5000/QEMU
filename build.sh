@@ -3,7 +3,48 @@
 set -eu
 
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
+WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
+WHP_USER_CONFIG="$SOURCE_DIR/.whpconfig"
 WHP_BUILD_BASH=${WHP_BUILD_BASH:-}
+
+if [ -z "${PYTHON:-}" ]; then
+    PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+fi
+if [ -z "${PYTHON:-}" ] ||
+   ! "$PYTHON" -c 'import sys; raise SystemExit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    printf 'error: Python 3.8 or newer is required for the WHP build configuration\n' >&2
+    exit 1
+fi
+export PYTHON WHP_USER_CONFIG
+
+if [ "${1:-}" = menuconfig ]; then
+    shift
+    exec "$PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
+fi
+
+# Saved configuration supplies portable policy defaults. Explicit environment
+# variables remain one-run overrides and therefore take precedence.
+if [ -f "$WHP_USER_CONFIG" ]; then
+    WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
+    eval "$WHP_CONFIG_ENV"
+    unset WHP_CONFIG_ENV
+fi
+
+# QEMU's native Kconfig accepts per-target preset files through
+# --with-devices-ARCH=NAME. Generate the PPC preset from the portable user
+# configuration while retaining the repository's tracked defaults.
+WHP_TARGET_LIST_FOR_CONFIG=${QEMU_TARGET_LIST:-ppc-softmmu}
+case ",$WHP_TARGET_LIST_FOR_CONFIG," in
+    *,ppc-softmmu,*)
+        "$PYTHON" "$WHP_CONFIG_TOOL" --write-ppc-devices \
+            "$WHP_USER_CONFIG" \
+            "$SOURCE_DIR/configs/devices/ppc-softmmu/default.mak" \
+            "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak" || exit 1
+        ;;
+esac
+unset WHP_TARGET_LIST_FOR_CONFIG
+
 WHP_INCREMENTAL_BUILD=${WHP_INCREMENTAL_BUILD:-1}
 
 case "$WHP_INCREMENTAL_BUILD" in

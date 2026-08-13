@@ -4,7 +4,22 @@
 whp_configure_build()
 {
 # Reconfigure only when the build machine, host toolchain, SDK, dependencies,
-# firmware toolchain, or requested QEMU settings change.
+# firmware toolchain, requested QEMU settings, or portable device policy change.
+WHP_PPC_DEVICE_CONFIG_SIGNATURE=disabled
+case ",$QEMU_TARGET_LIST," in
+    *,ppc-softmmu,*)
+        WHP_PPC_DEVICE_CONFIG="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+        if [[ ! -f "$WHP_PPC_DEVICE_CONFIG" ]]; then
+            printf 'error: missing generated PPC device configuration: %s\n' \
+                "$WHP_PPC_DEVICE_CONFIG" >&2
+            exit 1
+        fi
+        configure_args+=(--with-devices-ppc=whp-user)
+        WHP_PPC_DEVICE_CONFIG_SIGNATURE="$(cksum "$WHP_PPC_DEVICE_CONFIG" |
+            awk '{print $1 ":" $2}')"
+        ;;
+esac
+
 config_file="$BUILD_DIR/.whp-config"
 config_candidate="$config_file.new"
 {
@@ -51,6 +66,7 @@ config_candidate="$config_file.new"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
     printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%s\n' "$BOOTSTRAP_POWERPC_TOOLCHAIN"
     printf 'POWERPC_TOOLCHAIN_DIR=%s\n' "$POWERPC_TOOLCHAIN_DIR"
+    printf 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=%s\n' "$WHP_PPC_DEVICE_CONFIG_SIGNATURE"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[*]}"
 } > "$config_candidate"
 
