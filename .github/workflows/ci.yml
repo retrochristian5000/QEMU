@@ -84,7 +84,9 @@ jobs:
           grep -Fq '.whp-powerpc-as' scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-llvm-as.sh
-          if grep -Fq 'as.bfd' scripts/bootstrap-powerpc-llvm-as.sh; then
+          if grep -Fq 'gnu_as=' scripts/bootstrap-powerpc-llvm-as.sh ||
+             grep -Fq 'Retained GNU assembler oracle' scripts/bootstrap-powerpc-llvm-as.sh ||
+             grep -Fq 'mv "$public_as" "$gnu_as"' scripts/bootstrap-powerpc-llvm-as.sh; then
             echo 'error: GNU as fallback must not be retained' >&2
             exit 1
           fi
