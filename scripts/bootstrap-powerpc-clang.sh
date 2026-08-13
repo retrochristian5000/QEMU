@@ -42,9 +42,11 @@ toolchain_clean_env=(
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-source-cache.sh"
 
 # Build the Clang foundation with GNU GAS disabled, migrate the public linker
-# to LLD, then publish the GNU-compatible `powerpc-elf-as` wrapper backed only
-# by Clang's integrated PowerPC assembler.  GNU as is not built or retained.
+# to LLD, publish GNU-compatible assembler and strip entry points backed only
+# by LLVM, and leave no private GNU as/strip fallbacks behind.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-as.sh"
+"${toolchain_clean_env[@]}" \
+    bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-strip.sh"

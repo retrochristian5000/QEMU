@@ -11,6 +11,7 @@ on:
       - 'scripts/bootstrap-powerpc-llvm-as.sh'
       - 'scripts/bootstrap-powerpc-llvm-strip.sh'
       - 'scripts/tests/test-powerpc-llvm-assembler-wiring.bash'
+      - 'scripts/tests/test-powerpc-llvm-strip-wiring.bash'
       - 'scripts/build-openbios.sh'
       - 'roms/openbios'
       - 'toolchains/llvm-project'
@@ -49,8 +50,10 @@ jobs:
       - name: Check out QEMU
         uses: actions/checkout@v7
 
-      - name: Verify assembler wiring policy
-        run: bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+      - name: Verify LLVM assembler and strip wiring policy
+        run: |
+          bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+          bash scripts/tests/test-powerpc-llvm-strip-wiring.bash
 
       - name: Install build dependencies
         run: |
@@ -77,7 +80,7 @@ jobs:
           test "$(git -C roms/openbios rev-parse HEAD)" = \
             "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
 
-      - name: Bootstrap Clang LLD and LLVM assembler
+      - name: Bootstrap Clang LLD LLVM assembler and strip
         shell: bash
         run: |
           set -o pipefail
@@ -107,11 +110,24 @@ jobs:
             exit 1
           fi
 
-      - name: Bootstrap llvm-strip
+      - name: Verify published strip routing
         shell: bash
         run: |
-          set -o pipefail
-          bash scripts/bootstrap-powerpc-llvm-strip.sh 2>&1 | tee llvm-strip-bootstrap.log
+          set -euxo pipefail
+          public_strip="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-strip"
+          target_strip="$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/strip"
+          shim_strip="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/strip"
+          gnu_strip="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/strip.bfd"
+          test -x "$public_strip"
+          test -x "$target_strip"
+          test ! -e "$shim_strip"
+          test ! -e "$gnu_strip"
+          grep -Fq 'STRIP=llvm-strip' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
+          grep -Fq 'GNU_STRIP=disabled' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
+          "$public_strip" --version 2>&1 | grep -q 'llvm-strip'
+          "$target_strip" --version 2>&1 | grep -q 'llvm-strip'
 
       - name: Build real OpenBIOS assembly corpus
         shell: bash
@@ -136,12 +152,16 @@ jobs:
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
           grep -Fq 'GNU_GAS=disabled' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+          grep -Fq 'STRIP=llvm-strip' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
+          grep -Fq 'GNU_STRIP=disabled' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
 
       - name: Show failure context
         if: failure()
         shell: bash
         run: |
-          for log in llvm-as-bootstrap.log llvm-strip-bootstrap.log openbios-llvm-as.log; do
+          for log in llvm-as-bootstrap.log openbios-llvm-as.log; do
             if [[ -f "$log" ]]; then
               echo "=== $log errors ==="
               grep -n -E 'error:|FAILED:|unknown argument|invalid|unsupported|ninja: build stopped' \
@@ -158,7 +178,6 @@ jobs:
           name: openbios-llvm-as-failure
           path: |
             llvm-as-bootstrap.log
-            llvm-strip-bootstrap.log
             openbios-llvm-as.log
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld

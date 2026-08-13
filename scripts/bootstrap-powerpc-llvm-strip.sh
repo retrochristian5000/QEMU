@@ -18,7 +18,7 @@ case "$TOOLCHAIN_TARGET" in
         ;;
 esac
 
-for required in git awk grep cksum mkdir mv rm; do
+for required in git awk grep cksum mkdir rm ln; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: LLVM strip migration dependency not found: %s\n' \
             "$required" >&2
@@ -53,13 +53,14 @@ llvm_readelf="$TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
 public_as="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
 public_ld="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld"
 public_strip="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-strip"
+target_strip="$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/strip"
 shim_dir="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu"
-gnu_strip="$shim_dir/strip.bfd"
 strip_marker="$TOOLCHAIN_DIR/.whp-powerpc-strip"
 strip_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 expected_strip_marker="$(cat <<MARKER
-STRIP_SCHEMA=1
+STRIP_SCHEMA=2
 STRIP=llvm-strip
+GNU_STRIP=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
@@ -73,9 +74,12 @@ llvm_strip_toolchain_is_usable()
     [[ -x "$llvm_strip" ]] || return 1
     [[ -x "$llvm_readelf" ]] || return 1
     [[ -x "$public_strip" ]] || return 1
-    [[ -x "$gnu_strip" ]] || return 1
+    [[ -e "$target_strip" ]] || return 1
+    [[ ! -e "$shim_dir/strip" ]] || return 1
+    [[ ! -e "$shim_dir/strip.bfd" ]] || return 1
     "$llvm_strip" --version 2>/dev/null | grep -q 'llvm-strip' || return 1
     "$public_strip" --version 2>/dev/null | grep -q 'llvm-strip' || return 1
+    "$target_strip" --version 2>/dev/null | grep -q 'llvm-strip' || return 1
 }
 
 if [[ -f "$strip_marker" &&
@@ -102,7 +106,7 @@ if ! "$public_ld" --version 2>/dev/null | grep -q 'LLD'; then
     exit 1
 fi
 
-# Exercise exactly the OpenBIOS strip interface before replacing GNU strip:
+# Exercise exactly the OpenBIOS strip interface before publishing llvm-strip:
 #   $(STRIP) openbios-qemu.elf.nostrip -o openbios-qemu.elf
 # The smoke image deliberately uses the same PowerPC PROM address window as
 # OpenBIOS so stripping cannot silently change ELF class, endian, entry point,
@@ -202,26 +206,20 @@ if ! grep -Eq 'Entry point address:[[:space:]]+0xfff00100' <<< "$after_header" |
     exit 1
 fi
 
-# Preserve GNU strip only as an explicit A/B oracle.  OpenBIOS keeps its
-# existing $(TARGET)strip interface, but that public compatibility name now
-# resolves to the LLVM implementation.
-mkdir -p "$shim_dir"
-if [[ ! -x "$gnu_strip" ]]; then
-    if [[ ! -x "$public_strip" ]] ||
-       ! "$public_strip" --version 2>/dev/null | grep -q 'GNU strip'; then
-        printf 'error: retained GNU strip is unavailable for the A/B fallback\n' >&2
-        exit 1
-    fi
-    mv "$public_strip" "$gnu_strip"
-fi
-ln -sfn "../llvm/bin/llvm-strip" "$public_strip"
+# Remove any GNU strip residue from older toolchains, then publish only LLVM
+# implementations under both GNU-compatible strip entry points.
+mkdir -p "$TOOLCHAIN_DIR/bin" "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin"
+rm -f "$shim_dir/strip" "$shim_dir/strip.bfd"
+rm -f "$public_strip" "$target_strip"
+ln -s "../llvm/bin/llvm-strip" "$public_strip"
+ln -s "../../bin/${TOOLCHAIN_TARGET}-strip" "$target_strip"
 
-if ! "$public_strip" --version 2>/dev/null | grep -q 'llvm-strip'; then
-    printf 'error: public PowerPC strip does not resolve to llvm-strip\n' >&2
+if ! llvm_strip_toolchain_is_usable; then
+    printf 'error: PowerPC strip compatibility entry points are not LLVM-only\n' >&2
     exit 1
 fi
 printf '%s\n' "$expected_strip_marker" > "$strip_marker"
 printf '%s\n' \
     "Bootstrapped PowerPC strip: llvm-strip ($llvm_revision)" \
-    "Private GNU strip oracle: $gnu_strip" \
-    "Compatibility strip: $public_strip"
+    "Compatibility strip: $public_strip" \
+    "Target strip: $target_strip"
