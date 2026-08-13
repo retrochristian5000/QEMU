@@ -7,11 +7,29 @@ base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
 as_stage="$ROOT/scripts/bootstrap-powerpc-llvm-as.sh"
 orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+gitmodules="$ROOT/.gitmodules"
 
-# GNU binutils may still provide the temporary linker and object utilities,
-# but GAS must never be configured, installed, retained, or selected.
+# The LLVM submodule follows its repository's default branch when explicitly
+# tracking upstream; normal builds remain pinned by QEMU's gitlink.
+llvm_module="$(awk '
+    /^\[submodule "toolchains\/llvm-project"\]$/ { in_llvm=1; next }
+    /^\[submodule / { if (in_llvm) exit }
+    in_llvm { print }
+' "$gitmodules")"
+if grep -Eq '^[[:space:]]*branch[[:space:]]*=' <<< "$llvm_module"; then
+    printf 'error: LLVM submodule hard-codes a tracking branch instead of remote HEAD\n' >&2
+    exit 1
+fi
+grep -Fq 'LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-HEAD}"' "$base"
+
+# GNU binutils may still provide temporary linker/object utilities, but GAS
+# and the profiling frontends are outside the OpenBIOS Clang contract.
 grep -Fq -- '--disable-gas' "$base"
+grep -Fq -- '--disable-gprof' "$base"
+grep -Fq -- '--disable-gprofng' "$base"
 grep -Fq 'GNU_GAS=disabled' "$base"
+grep -Fq 'GNU_GPROF=disabled' "$base"
+grep -Fq 'GNU_GPROFNG=disabled' "$base"
 if grep -Fq -- '-fno-integrated-as' "$base"; then
     printf 'error: PowerPC Clang wrapper still disables the integrated assembler\n' >&2
     exit 1
