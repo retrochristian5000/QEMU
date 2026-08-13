@@ -44,6 +44,7 @@ toolchain_clean_env=(
 # Build the Clang foundation with GNU GAS disabled, migrate the public linker
 # to LLD, publish GNU-compatible assembler, nm, and strip entry points backed
 # only by LLVM, and leave no private GNU as/nm/strip fallbacks behind.
+# GNU as is not built or retained in the published PowerPC toolchain.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 "${toolchain_clean_env[@]}" \
