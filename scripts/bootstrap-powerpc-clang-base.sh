@@ -244,8 +244,10 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=8
+BOOTSTRAP_SCHEMA=9
 COMPILER=clang
+ASSEMBLER=clang-integrated
+GNU_GAS=disabled
 TARGET=$TOOLCHAIN_TARGET
 BINUTILS_VERSION=$BINUTILS_VERSION
 BINUTILS_SHA256=$BINUTILS_SHA256
@@ -266,12 +268,13 @@ clang_toolchain_is_usable()
     local prefix="$1"
     local tool
 
-    for tool in gcc as ar ld nm objcopy objdump readelf strip ranlib; do
+    for tool in gcc ar ld nm objcopy objdump readelf strip ranlib; do
         [[ -x "$prefix/bin/${TOOLCHAIN_TARGET}-${tool}" ]] || return 1
     done
     [[ -x "$prefix/llvm/bin/clang" ]] || return 1
-    [[ -x "$prefix/libexec/powerpc-clang-gnu/as" ]] || return 1
     [[ -x "$prefix/libexec/powerpc-clang-gnu/ld" ]] || return 1
+    [[ ! -e "$prefix/libexec/powerpc-clang-gnu/as" ]] || return 1
+    [[ ! -e "$prefix/libexec/powerpc-clang-gnu/as.bfd" ]] || return 1
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
@@ -320,7 +323,7 @@ staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
 mkdir -p "$stage_root"
 
-bootstrap_stage="configuring and building unchanged GNU binutils"
+bootstrap_stage="configuring and building GNU binutils without GAS"
 rm -rf "$binutils_build"
 mkdir -p "$binutils_build"
 (
@@ -339,6 +342,7 @@ mkdir -p "$binutils_build"
         --target="$TOOLCHAIN_TARGET" \
         --prefix="$TOOLCHAIN_DIR" \
         --with-sysroot \
+        --disable-gas \
         --disable-gdb \
         --disable-gdbserver \
         --disable-gprofng \
@@ -365,7 +369,7 @@ mkdir -p "$binutils_build"
 
 mkdir -p "$staged_toolchain/$TOOLCHAIN_TARGET/bin" \
          "$staged_toolchain/$TOOLCHAIN_TARGET/sys-root"
-for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
+for tool in ar ld nm objcopy objdump readelf strip ranlib; do
     if [[ ! -x "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-${tool}" ]]; then
         printf 'error: staged GNU PowerPC binutils is missing %s\n' "$tool" >&2
         exit 1
@@ -373,25 +377,11 @@ for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
     ln -sf "../../bin/${TOOLCHAIN_TARGET}-${tool}" \
         "$staged_toolchain/$TOOLCHAIN_TARGET/bin/$tool"
 done
-
-bootstrap_stage="validating unchanged GNU binutils"
-smoke_dir="$TOOLCHAIN_WORK_DIR/binutils-smoke"
-rm -rf "$smoke_dir"
-mkdir -p "$smoke_dir"
-cat > "$smoke_dir/smoke.s" <<'ASSEMBLY'
-.text
-.globl whp_binutils_smoke
-whp_binutils_smoke:
-    nop
-ASSEMBLY
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-as" \
-    -o "$smoke_dir/smoke.o" "$smoke_dir/smoke.s"
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-ld" \
-    -r -o "$smoke_dir/linked.o" "$smoke_dir/smoke.o"
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" -h "$smoke_dir/linked.o" |
-    grep -q 'Machine:.*PowerPC'
-"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" -h "$smoke_dir/linked.o" |
-    grep -q 'Data:.*big endian'
+if [[ -e "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-as" ||
+      -e "$staged_toolchain/$TOOLCHAIN_TARGET/bin/as" ]]; then
+    printf 'error: GNU as was installed even though GAS is disabled\n' >&2
+    exit 1
+fi
 
 bootstrap_stage="configuring and building PowerPC-only Clang"
 rm -rf "$LLVM_BUILD_DIR"
@@ -425,10 +415,30 @@ if ! "$clang" --print-targets | grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)'; 
     exit 1
 fi
 
+# Validate the retained binutils with an object produced by LLVM IAS.  This
+# proves the GNU linker/object utilities interoperate without ever building GAS.
+bootstrap_stage="validating binutils with LLVM integrated assembler"
+smoke_dir="$TOOLCHAIN_WORK_DIR/binutils-smoke"
+rm -rf "$smoke_dir"
+mkdir -p "$smoke_dir"
+cat > "$smoke_dir/smoke.s" <<'ASSEMBLY'
+.text
+.globl whp_binutils_smoke
+whp_binutils_smoke:
+    nop
+ASSEMBLY
+"$clang" --target=powerpc-none-elf -c -x assembler \
+    "$smoke_dir/smoke.s" -o "$smoke_dir/smoke.o"
+"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-ld" \
+    -r -o "$smoke_dir/linked.o" "$smoke_dir/smoke.o"
+"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" -h "$smoke_dir/linked.o" |
+    grep -q 'Machine:.*PowerPC'
+"$staged_toolchain/bin/${TOOLCHAIN_TARGET}-readelf" -h "$smoke_dir/linked.o" |
+    grep -q 'Data:.*big endian'
+
 bootstrap_stage="installing the OpenBIOS Clang compatibility driver"
 shim_dir="$staged_toolchain/libexec/powerpc-clang-gnu"
 mkdir -p "$shim_dir"
-ln -sf "../../bin/${TOOLCHAIN_TARGET}-as" "$shim_dir/as"
 ln -sf "../../bin/${TOOLCHAIN_TARGET}-ld" "$shim_dir/ld"
 
 cat > "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-gcc" <<'WRAPPER'
@@ -437,14 +447,14 @@ set -euo pipefail
 
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 clang="$prefix/llvm/bin/clang"
-gnu_tools="$prefix/libexec/powerpc-clang-gnu"
+tool_shims="$prefix/libexec/powerpc-clang-gnu"
 translated=()
 
 # OpenBIOS carries three GCC-only PowerPC policy flags.  Clang's bare-metal
 # PowerPC ABI already uses static, non-small-data addressing for this lane; the
 # bootstrap smoke test below verifies that no .sdata/.sbss sections appear.
 # Keep this translation local to the compatibility driver so PPC-Firmware does
-# not have to change during the compiler-only experiment.
+# not have to change during the compiler migration.
 for arg in "$@"; do
     case "$arg" in
         -mcall-sysv-noeabi|-msdata=none|-G0|\
@@ -458,23 +468,14 @@ done
 
 exec "$clang" \
     --target=powerpc-none-elf \
-    -fno-integrated-as \
-    -B"$gnu_tools" \
+    -fintegrated-as \
+    -B"$tool_shims" \
     "${translated[@]}"
 WRAPPER
 chmod +x "$staged_toolchain/bin/${TOOLCHAIN_TARGET}-gcc"
 
-bootstrap_stage="validating compiler-only substitution"
+bootstrap_stage="validating Clang integrated assembler substitution"
 clang_driver="$staged_toolchain/bin/${TOOLCHAIN_TARGET}-gcc"
-reported_as="$($clang_driver -print-prog-name=as)"
-if [[ "$reported_as" != "$shim_dir/as" ]]; then
-    printf '%s\n' \
-        'error: Clang is not routed through the retained GNU PowerPC assembler.' \
-        "reported: $reported_as" \
-        "expected: $shim_dir/as" >&2
-    exit 1
-fi
-
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir"
 cat > "$smoke_dir/smoke.c" <<'SOURCE'
@@ -520,5 +521,6 @@ stage_root=""
 bootstrap_stage="completed"
 printf '%s\n' \
     "Bootstrapped PowerPC compiler: Clang ($llvm_revision)" \
-    "Retained assembler/linker: GNU binutils $BINUTILS_VERSION" \
+    "GNU binutils: $BINUTILS_VERSION (GAS disabled)" \
+    "Assembler: Clang integrated assembler" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
