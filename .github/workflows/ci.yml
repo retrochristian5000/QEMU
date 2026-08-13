@@ -61,8 +61,12 @@ jobs:
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
 
           grep -Fq -- '--disable-gas' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'BOOTSTRAP_SCHEMA=9' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq -- '--disable-gprof' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq -- '--disable-gprofng' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'BOOTSTRAP_SCHEMA=10' scripts/bootstrap-powerpc-clang-base.sh
           grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'GNU_GPROF=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'GNU_GPROFNG=disabled' scripts/bootstrap-powerpc-clang-base.sh
           if grep -Fq -- '-fno-integrated-as' scripts/bootstrap-powerpc-clang-base.sh; then
             echo 'error: PowerPC Clang must not route through an external assembler' >&2
             exit 1
