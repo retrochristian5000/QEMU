@@ -9,27 +9,42 @@ as_stage="$ROOT/scripts/bootstrap-powerpc-llvm-as.sh"
 orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 gitmodules="$ROOT/.gitmodules"
 
-# The LLVM submodule follows its repository's default branch when explicitly
-# tracking upstream; normal builds remain pinned by QEMU's gitlink.
+# Normal QEMU builds are pinned by the LLVM gitlink.  If .gitmodules names a
+# tracking branch, it may only name the LLVM repository's default branch.
 llvm_module="$(awk '
     /^\[submodule "toolchains\/llvm-project"\]$/ { in_llvm=1; next }
     /^\[submodule / { if (in_llvm) exit }
     in_llvm { print }
 ' "$gitmodules")"
-if grep -Eq '^[[:space:]]*branch[[:space:]]*=' <<< "$llvm_module"; then
-    printf 'error: LLVM submodule hard-codes a tracking branch instead of remote HEAD\n' >&2
-    exit 1
-fi
+llvm_branch="$(awk -F= '
+    /^[[:space:]]*branch[[:space:]]*=/ {
+        value=$2
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        print value
+        exit
+    }
+' <<< "$llvm_module")"
+case "$llvm_branch" in
+    ''|main) ;;
+    *)
+        printf 'error: LLVM submodule tracks a non-default branch: %s\n' "$llvm_branch" >&2
+        exit 1
+        ;;
+esac
 grep -Fq 'LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-HEAD}"' "$base"
+grep -Fq 'LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"' "$base"
 
 # GNU binutils may still provide temporary linker/object utilities, but GAS
 # and the profiling frontends are outside the OpenBIOS Clang contract.
 grep -Fq -- '--disable-gas' "$base"
 grep -Fq -- '--disable-gprof' "$base"
 grep -Fq -- '--disable-gprofng' "$base"
+grep -Fq 'BOOTSTRAP_SCHEMA=10' "$base"
 grep -Fq 'GNU_GAS=disabled' "$base"
 grep -Fq 'GNU_GPROF=disabled' "$base"
 grep -Fq 'GNU_GPROFNG=disabled' "$base"
+grep -Fq '[[ ! -e "$prefix/bin/${TOOLCHAIN_TARGET}-gprof" ]]' "$base"
+grep -Fq '[[ ! -e "$prefix/$TOOLCHAIN_TARGET/bin/gprof" ]]' "$base"
 if grep -Fq -- '-fno-integrated-as' "$base"; then
     printf 'error: PowerPC Clang wrapper still disables the integrated assembler\n' >&2
     exit 1
