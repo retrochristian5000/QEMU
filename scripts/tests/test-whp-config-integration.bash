@@ -36,6 +36,20 @@ if grep -Fq 'Build targets' <<< "$menu_output" ||
     exit 1
 fi
 
+# CI must install the dependencies selected by the default-enabled host toggles.
+ci_brew_install="$(grep -F 'brew install ' "$ROOT/.github/workflows/ci.yml")"
+for formula in 'gtk+3' pulseaudio; do
+    case " $ci_brew_install " in
+        *" $formula "*) ;;
+        *)
+            printf 'error: macOS CI is missing default-enabled dependency %s\n' \
+                "$formula" >&2
+            exit 1
+            ;;
+    esac
+done
+unset ci_brew_install formula
+
 cat > "$COPY/.whpconfig" <<'EOF'
 WHP_CONFIG_VERSION=1
 QEMU_HOST_LTO=auto
