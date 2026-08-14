@@ -101,12 +101,16 @@ fi
     POWERPC_TOOLCHAIN_FORCE_REBUILD=0 \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 
+# OpenBIOS now sends generated assembly through the compiler driver, whose
+# Clang route forces IAS. Remove compatibility entry points left by older
+# toolchain caches: GNU as is not built, retained, or published.
+rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
+rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"
+rm -f "$TOOLCHAIN_DIR/.whp-powerpc-as"
+
 # Publish the remaining migrated binary-tool interfaces after LLD is proven.
 # nm deliberately consumes the already-published LLVM ar route for its archive
 # map qualification. No private GNU as/ar/nm/strip fallbacks survive.
-# GNU as is not built or retained in the published PowerPC toolchain.
-"${toolchain_clean_env[@]}" \
-    bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-as.sh"
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-nm.sh"
 "${toolchain_clean_env[@]}" \

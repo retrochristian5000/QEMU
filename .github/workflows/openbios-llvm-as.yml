@@ -1,4 +1,4 @@
-name: OpenBIOS LLVM assembler
+name: OpenBIOS LLVM integrated assembler
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
-      - 'scripts/bootstrap-powerpc-llvm-as.sh'
       - 'scripts/bootstrap-powerpc-llvm-strip.sh'
       - 'scripts/tests/test-powerpc-llvm-assembler-wiring.bash'
       - 'scripts/tests/test-powerpc-llvm-strip-wiring.bash'
       - 'scripts/build-openbios.sh'
+      - 'scripts/meson-build-openbios.sh'
       - 'roms/openbios'
       - 'toolchains/llvm-project'
       - '.gitmodules'
@@ -23,12 +23,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: openbios-llvm-as-${{ github.ref }}
+  group: openbios-llvm-ias-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  openbios-llvm-as:
-    name: Build OpenBIOS with WHP LLVM as
+  openbios-llvm-ias:
+    name: Build OpenBIOS through Clang IAS
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
@@ -39,8 +39,8 @@ jobs:
       POWERPC_TOOLCHAIN_DOWNLOAD_DIR: ${{ github.workspace }}/build/toolchain-downloads
       POWERPC_LLVM_SUBMODULE_PATH: toolchains/llvm-project
       OPENBIOS_DIR: ${{ github.workspace }}/roms/openbios
-      OPENBIOS_BUILD_DIR: ${{ github.workspace }}/build/openbios-llvm-as
-      OPENBIOS_OUTPUT: ${{ github.workspace }}/build/openbios-ppc-llvm-as
+      OPENBIOS_BUILD_DIR: ${{ github.workspace }}/build/openbios-llvm-ias
+      OPENBIOS_OUTPUT: ${{ github.workspace }}/build/openbios-ppc-llvm-ias
       OPENBIOS_TOOLS_DIR: ${{ github.workspace }}/build/firmware-tools
       OPENBIOS_FIRMWARE_VALIDATION: strict
       FCODE_UTILS_REPOSITORY: https://github.com/retrochristian5000/fcode-utils.git
@@ -49,11 +49,6 @@ jobs:
     steps:
       - name: Check out QEMU
         uses: actions/checkout@v7
-
-      - name: Verify LLVM assembler and strip wiring policy
-        run: |
-          bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
-          bash scripts/tests/test-powerpc-llvm-strip-wiring.bash
 
       - name: Install build dependencies
         run: |
@@ -80,14 +75,19 @@ jobs:
           test "$(git -C roms/openbios rev-parse HEAD)" = \
             "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
 
-      - name: Bootstrap Clang LLD LLVM assembler and strip
+      - name: Verify compiler-owned assembler and strip policy
+        run: |
+          bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+          bash scripts/tests/test-powerpc-llvm-strip-wiring.bash
+
+      - name: Bootstrap Clang and LLVM binary tools
         shell: bash
         run: |
           set -o pipefail
           POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
-            bash scripts/bootstrap-powerpc-clang.sh 2>&1 | tee llvm-as-bootstrap.log
+            bash scripts/bootstrap-powerpc-clang.sh 2>&1 | tee llvm-ias-bootstrap.log
 
-      - name: Verify published assembler routing
+      - name: Verify compiler-owned assembler routing
         shell: bash
         run: |
           set -euxo pipefail
@@ -95,20 +95,19 @@ jobs:
           shim_as="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as"
           gnu_as="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd"
           target_as="$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
-          test -x "$public_as"
-          test -e "$target_as"
+          test ! -e "$public_as"
+          test ! -e "$target_as"
           test ! -e "$shim_as"
           test ! -e "$gnu_as"
+          test ! -e "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
           grep -Fq 'GNU_GAS=disabled' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-toolchain"
           grep -Fq 'ASSEMBLER=clang-integrated' \
-            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
-          grep -Fq 'GNU_GAS=disabled' \
-            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
-          if "$public_as" --version 2>&1 | grep -q 'GNU assembler'; then
-            echo 'error: public PowerPC assembler still resolves to GNU as' >&2
-            exit 1
-          fi
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-lld"
+          grep -Fq 'CC     := $(TARGET)gcc' roms/openbios/Makefile.target
+          ! grep -Fq 'AS     := $(TARGET)as' roms/openbios/Makefile.target
+          grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' \
+            roms/openbios/arch/ppc/Makefile.asm
 
       - name: Verify published strip routing
         shell: bash
@@ -137,7 +136,7 @@ jobs:
           OPENBIOS_READELF: ${{ github.workspace }}/build/toolchains/powerpc-elf/llvm/bin/llvm-readelf
         run: |
           set -o pipefail
-          bash scripts/build-openbios.sh 2>&1 | tee openbios-llvm-as.log
+          bash scripts/build-openbios.sh 2>&1 | tee openbios-llvm-ias.log
 
       - name: Verify OpenBIOS output
         shell: bash
@@ -149,9 +148,9 @@ jobs:
           "$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf" -hW "$OPENBIOS_OUTPUT" |
             grep -Eq "Data:[[:space:]]+2's complement, big endian"
           grep -Fq 'ASSEMBLER=clang-integrated' \
-            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
-          grep -Fq 'GNU_GAS=disabled' \
-            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-lld"
+          test ! -e "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
+          test ! -e "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
           grep -Fq 'STRIP=llvm-strip' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
           grep -Fq 'GNU_STRIP=disabled' \
@@ -161,7 +160,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          for log in llvm-as-bootstrap.log openbios-llvm-as.log; do
+          for log in llvm-ias-bootstrap.log openbios-llvm-ias.log; do
             if [[ -f "$log" ]]; then
               echo "=== $log errors ==="
               grep -n -E 'error:|FAILED:|unknown argument|invalid|unsupported|ninja: build stopped' \
@@ -175,13 +174,12 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: openbios-llvm-as-failure
+          name: openbios-llvm-ias-failure
           path: |
-            llvm-as-bootstrap.log
-            openbios-llvm-as.log
+            llvm-ias-bootstrap.log
+            openbios-llvm-ias.log
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
-            build/toolchains/powerpc-elf/.whp-powerpc-as
             build/toolchains/powerpc-elf/.whp-powerpc-strip
           if-no-files-found: warn
           retention-days: 7

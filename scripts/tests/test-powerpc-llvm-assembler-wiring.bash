@@ -5,8 +5,13 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
-as_stage="$ROOT/scripts/bootstrap-powerpc-llvm-as.sh"
+nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.sh"
+strip_stage="$ROOT/scripts/bootstrap-powerpc-llvm-strip.sh"
 orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+build_openbios="$ROOT/scripts/build-openbios.sh"
+meson_openbios="$ROOT/scripts/meson-build-openbios.sh"
+openbios_target="$ROOT/roms/openbios/Makefile.target"
+openbios_asm="$ROOT/roms/openbios/arch/ppc/Makefile.asm"
 gitmodules="$ROOT/.gitmodules"
 
 # Normal QEMU builds are pinned by the LLVM gitlink.  If .gitmodules names a
@@ -67,16 +72,37 @@ if grep -Fq 'Retained assembler: GNU as' "$core"; then
     exit 1
 fi
 
-grep -Fq 'ASSEMBLER_SCHEMA=3' "$as_stage"
-grep -Fq 'GNU_GAS=disabled' "$as_stage"
-grep -Fq 'exec "$clang" --target=powerpc-none-elf -c -x assembler' "$as_stage"
-if grep -Fq 'gnu_as=' "$as_stage" ||
-   grep -Fq 'Retained GNU assembler oracle' "$as_stage" ||
-   grep -Fq 'mv "$public_as" "$gnu_as"' "$as_stage"; then
-    printf 'error: LLVM assembler stage still retains a GNU as fallback\n' >&2
+if [[ -e "$ROOT/scripts/bootstrap-powerpc-llvm-as.sh" ]] ||
+   grep -Fq 'bootstrap-powerpc-llvm-as.sh' "$orchestrator"; then
+    printf 'error: obsolete standalone PowerPC as stage remains wired\n' >&2
     exit 1
 fi
 
-grep -Fq 'GNU as is not built or retained' "$orchestrator"
+grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' "$orchestrator"
+grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"' "$orchestrator"
+grep -Fq 'GNU as is not built, retained, or published' "$orchestrator"
+
+grep -Fq 'powerpc_tools=(gcc ar ld nm strip ranlib)' "$build_openbios"
+grep -Fq 'for tool in gcc ar ld nm strip ranlib; do' "$meson_openbios"
+if grep -Fq 'powerpc_tools=(gcc as ar ld nm strip ranlib)' "$build_openbios" ||
+   grep -Fq 'for tool in gcc as ar ld nm strip ranlib; do' "$meson_openbios"; then
+    printf 'error: OpenBIOS still requires a standalone as command\n' >&2
+    exit 1
+fi
+
+grep -Fq 'CC     := $(TARGET)gcc' "$openbios_target"
+grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' "$openbios_asm"
+if grep -Fq 'AS     := $(TARGET)as' "$openbios_target" ||
+   grep -Fq '$(AS) $@.s' "$openbios_asm"; then
+    printf 'error: PPC-Firmware still dispatches assembly through as\n' >&2
+    exit 1
+fi
+
+grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$nm_stage"
+grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$strip_stage"
+if grep -Fq 'public_as=' "$nm_stage" || grep -Fq 'public_as=' "$strip_stage"; then
+    printf 'error: LLVM utility qualification still depends on public as\n' >&2
+    exit 1
+fi
 
 printf 'PowerPC LLVM assembler wiring: verified\n'

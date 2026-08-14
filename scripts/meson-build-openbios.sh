@@ -75,9 +75,9 @@ if [[ -z "$compiler_mode" ]]; then
 fi
 case "$compiler_mode" in
     clang)
-        # Clang + LLD own compilation and final linking.  llvm-strip owns the
-        # final firmware stripping stage.  Release binutils remain temporarily
-        # for GNU as and the archive/symbol utilities not migrated yet.
+        # Clang IAS + LLD own compilation, assembly, and final linking.
+        # LLVM tools also own archive, symbol, and firmware stripping stages.
+        # Release binutils remain only for object utilities not migrated yet.
         if [[ "$source_mode" != release ]]; then
             printf '%s\n' \
                 'error: the PowerPC Clang lane currently retains release binutils.' \
@@ -204,7 +204,7 @@ if [[ -z "$cross_prefix" ]]; then
     printf 'error: no PowerPC cross-toolchain is available for OpenBIOS\n' >&2
     exit 1
 fi
-for tool in gcc as ar ld nm strip ranlib; do
+for tool in gcc ar ld nm strip ranlib; do
     if [[ ! -x "${cross_prefix}${tool}" ]]; then
         printf 'error: incomplete PowerPC cross-toolchain: %s%s\n' \
             "$cross_prefix" "$tool" >&2

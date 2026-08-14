@@ -137,16 +137,18 @@ OpenBIOS continues to consume the GNU-style ``powerpc-elf-`` interface. The
 migration publishes compatibility entry points while changing the underlying
 implementation one stage at a time:
 
-* ``powerpc-elf-gcc`` routes target compilation through WHP Clang;
+* ``powerpc-elf-gcc`` routes target compilation and generated assembly through
+  WHP Clang and its integrated assembler;
 * ``powerpc-elf-ld`` routes the normal firmware link through LLD;
-* the assembler stage qualifies Clang's integrated assembler against retained
-  GNU ``as`` before publishing it; and
+* OpenBIOS does not require or publish a separate ``powerpc-elf-as`` command;
+  its assembly rule invokes the compiler driver with ``-x assembler``; and
 * ``powerpc-elf-strip`` routes the firmware strip through ``llvm-strip`` after
   structure-preservation checks.
 
-Retained GNU tools remain private A/B controls while their LLVM replacements
-are qualified. This avoids changing compiler, assembler, linker, archive,
-symbol, and strip behavior in one unreviewable step.
+GAS is disabled in the binutils foundation. Older cached ``as`` compatibility
+entry points and assembler markers are removed by the Clang orchestrator before
+OpenBIOS is built. Remaining GNU object utilities stay confined to the
+foundation until their LLVM replacements are qualified.
 
 The LLD smoke link checks the OpenBIOS-critical linker interface and requires a
 32-bit big-endian PowerPC executable whose entry, reset/vector geometry, and
@@ -155,10 +157,10 @@ The strip smoke test uses an OpenBIOS-shaped PowerPC ELF and requires
 ``llvm-strip`` to preserve ELF identity, entry point, load geometry, and
 allocatable code bytes while removing the symbol table.
 
-The compiler/binutils foundation, LLD, assembler, and strip stages keep
+The compiler/binutils foundation, LLD, archive, symbol, and strip stages keep
 separate markers so a policy change in one stage cannot be hidden by an
-otherwise-current cache. The Clang lane currently retains release binutils as
-its GNU comparison/control layer, so it uses
+otherwise-current cache. The Clang lane currently retains release binutils for
+the object utilities not migrated yet, so it uses
 ``POWERPC_TOOLCHAIN_SOURCE_MODE=release``.
 
 Cache and path policy
@@ -183,9 +185,9 @@ Validation boundary
 
 A green QEMU host build does not by itself validate the firmware toolchain when
 ``BUILD_OPENBIOS=0`` or ``BOOTSTRAP_POWERPC_TOOLCHAIN=0``. Full firmware
-validation requires the selected compiler, assembler, linker, and strip stages
-to pass their smoke checks, then OpenBIOS must build, pass ELF validation, and
-boot under the intended QEMU PowerPC machine.
+validation requires the selected compiler and its integrated assembler, linker,
+and strip stages to pass their smoke checks, then OpenBIOS must build, pass ELF
+validation, and boot under the intended QEMU PowerPC machine.
 
 Failure classification
 ----------------------

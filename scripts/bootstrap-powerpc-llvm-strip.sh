@@ -48,9 +48,9 @@ if [[ "$llvm_revision" != "$expected_llvm_revision" ]]; then
     exit 1
 fi
 
+clang="$TOOLCHAIN_DIR/llvm/bin/clang"
 llvm_strip="$TOOLCHAIN_DIR/llvm/bin/llvm-strip"
 llvm_readelf="$TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
-public_as="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
 public_ld="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld"
 public_strip="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-strip"
 target_strip="$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/strip"
@@ -89,7 +89,7 @@ if [[ -f "$strip_marker" &&
     exit 0
 fi
 
-for required_tool in "$llvm_strip" "$llvm_readelf" "$public_as" "$public_ld"; do
+for required_tool in "$clang" "$llvm_strip" "$llvm_readelf" "$public_ld"; do
     if [[ ! -x "$required_tool" ]]; then
         printf 'error: LLVM strip migration prerequisite is missing: %s\n' \
             "$required_tool" >&2
@@ -128,7 +128,8 @@ whp_strip_smoke:
 whp_strip_hreset:
     b _entry
 ASSEMBLY
-"$public_as" -o "$smoke_dir/strip.o" "$smoke_dir/strip.s"
+"$clang" --target=powerpc-none-elf -c -x assembler \
+    -o "$smoke_dir/strip.o" "$smoke_dir/strip.s"
 cat > "$smoke_dir/strip.ld" <<'LDSCRIPT'
 OUTPUT_FORMAT(elf32-powerpc)
 OUTPUT_ARCH(powerpc:common)

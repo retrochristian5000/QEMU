@@ -140,7 +140,7 @@ printf 'OpenBIOS toke: %s\n' "$OPENBIOS_TOKE"
 # readelf is intentionally separate from the cross-prefix requirement.  The
 # Clang lane uses LLVM's ELF reader while GCC-only toolchains may keep using
 # their prefixed GNU readelf during the staged binutils migration.
-powerpc_tools=(gcc as ar ld nm strip ranlib)
+powerpc_tools=(gcc ar ld nm strip ranlib)
 
 prefix_is_usable()
 {

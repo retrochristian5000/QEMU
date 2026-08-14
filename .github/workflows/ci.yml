@@ -30,7 +30,9 @@ jobs:
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
       - name: Check PowerPC LLVM assembler wiring
-        run: bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+        run: |
+          git submodule update --init --depth 1 roms/openbios
+          bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
 
       - name: Check OpenBIOS tool provenance guards
         shell: bash
@@ -83,20 +85,11 @@ jobs:
           grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang-core.sh
 
           grep -Fq 'bootstrap-powerpc-clang-core.sh' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'bootstrap-powerpc-llvm-as.sh' scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'ASSEMBLER_SCHEMA=3' scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq '.whp-powerpc-as' scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-llvm-as.sh
-          if grep -Fq 'gnu_as=' scripts/bootstrap-powerpc-llvm-as.sh ||
-             grep -Fq 'Retained GNU assembler oracle' scripts/bootstrap-powerpc-llvm-as.sh ||
-             grep -Fq 'mv "$public_as" "$gnu_as"' scripts/bootstrap-powerpc-llvm-as.sh; then
-            echo 'error: GNU as fallback must not be retained' >&2
-            exit 1
-          fi
-          grep -Fq -- '-a32|-mppc|-many' scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'exec "$clang" --target=powerpc-none-elf -c -x assembler' \
-            scripts/bootstrap-powerpc-llvm-as.sh
+          test ! -e scripts/bootstrap-powerpc-llvm-as.sh
+          grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' \
+            scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'GNU as is not built, retained, or published' \
+            scripts/bootstrap-powerpc-clang.sh
 
           grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \
             scripts/whp-build/configure-openbios.bash

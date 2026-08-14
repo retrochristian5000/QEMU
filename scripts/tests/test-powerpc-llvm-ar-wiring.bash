@@ -36,10 +36,9 @@ grep -Fq 'POWERPC_TOOLCHAIN_FORCE_REBUILD=0' "$orchestrator"
 base_line="$(grep -nF 'bash "$BASE_BOOTSTRAP"' "$orchestrator" | head -n1 | cut -d: -f1)"
 ar_line="$(grep -nF 'bootstrap-powerpc-llvm-ar.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"
 core_line="$(grep -nF 'bootstrap-powerpc-clang-core.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"
-as_line="$(grep -nF 'bootstrap-powerpc-llvm-as.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"
 nm_line="$(grep -nF 'bootstrap-powerpc-llvm-nm.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"
-if (( ar_line <= base_line || core_line <= ar_line || as_line <= core_line || nm_line <= as_line )); then
-    printf 'error: LLVM ar must be published after base and before LLD/IAS/nm\n' >&2
+if (( ar_line <= base_line || core_line <= ar_line || nm_line <= core_line )); then
+    printf 'error: LLVM ar must be published after base and before LLD/nm\n' >&2
     exit 1
 fi
 

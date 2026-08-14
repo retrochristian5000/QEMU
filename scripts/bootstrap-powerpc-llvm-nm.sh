@@ -48,8 +48,8 @@ if [[ "$llvm_revision" != "$expected_llvm_revision" ]]; then
     exit 1
 fi
 
+clang="$TOOLCHAIN_DIR/llvm/bin/clang"
 llvm_nm="$TOOLCHAIN_DIR/llvm/bin/llvm-nm"
-public_as="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
 public_ar="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ar"
 public_nm="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-nm"
 target_nm="$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/nm"
@@ -89,7 +89,7 @@ if [[ -f "$nm_marker" &&
     exit 0
 fi
 
-for required_tool in "$llvm_nm" "$public_as" "$public_ar"; do
+for required_tool in "$clang" "$llvm_nm" "$public_ar"; do
     if [[ ! -x "$required_tool" ]]; then
         printf 'error: LLVM nm migration prerequisite is missing: %s\n' \
             "$required_tool" >&2
@@ -123,7 +123,8 @@ whp_llvm_nm_smoke:
 whp_llvm_nm_second:
     blr
 ASSEMBLY
-"$public_as" -o "$smoke_dir/nm.o" "$smoke_dir/nm.s"
+"$clang" --target=powerpc-none-elf -c -x assembler \
+    -o "$smoke_dir/nm.o" "$smoke_dir/nm.s"
 "$public_ar" rcs "$smoke_dir/libnm.a" "$smoke_dir/nm.o"
 
 armap_output="$("$llvm_nm" --gnu-compatible -s "$smoke_dir/libnm.a")"
