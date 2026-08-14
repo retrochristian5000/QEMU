@@ -17,6 +17,9 @@ cp "$ROOT/configs/devices/ppc-softmmu/default.mak" \
 
 menu_output="$(/bin/sh "$COPY/build.sh" menuconfig --dump)"
 grep -Fq 'Build targets' <<< "$menu_output"
+grep -Fq 'Build outputs' <<< "$menu_output"
+grep -Fq 'qemu-img' <<< "$menu_output"
+grep -Fq 'qemu-system-i386' <<< "$menu_output"
 grep -Fq 'Host features' <<< "$menu_output"
 grep -Fq 'Cocoa on macOS' <<< "$menu_output"
 grep -Fq 'CoreAudio on macOS' <<< "$menu_output"
@@ -30,6 +33,8 @@ WHP_CONFIG_VERSION=1
 QEMU_TARGET_LIST=ppc-softmmu
 QEMU_HOST_LTO=auto
 PREFIX=/opt/whp-qemu
+BUILD_QEMU_IMG=y
+BUILD_QEMU_SYSTEM_I386=y
 MACOS_ENABLE_COCOA=y
 MACOS_ENABLE_COREAUDIO=y
 MACOS_ENABLE_GTK=n
@@ -95,6 +100,7 @@ grep -Fxq -- '--with-devices-ppc=whp-user' "$BUILD_DIR/configure-args.txt"
 grep -Fq 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=' "$BUILD_DIR/.whp-config"
 
 # Verify macOS host feature switches and prefix feed configure explicitly.
+source "$ROOT/scripts/whp-build/common.bash"
 source "$ROOT/scripts/whp-build/prepare-build.bash"
 HOST_OS=Darwin
 CC=clang
@@ -104,6 +110,8 @@ OBJC=clang
 PREFIX=/portable-prefix
 QEMU_TARGET_LIST=ppc-softmmu
 QEMU_HOST_LTO=0
+BUILD_QEMU_IMG=1
+BUILD_QEMU_SYSTEM_I386=1
 MACOS_ENABLE_COCOA=0
 MACOS_ENABLE_COREAUDIO=0
 MACOS_ENABLE_GTK=0
@@ -131,5 +139,25 @@ grep -Fxq -- '--enable-coreaudio' <<< "$macos_args"
 grep -Fxq -- '--enable-gtk' <<< "$macos_args"
 grep -Fxq -- '--enable-pa' <<< "$macos_args"
 grep -Fxq -- '--audio-drv-list=coreaudio,pa' <<< "$macos_args"
+
+# Output selections feed QEMU's tools switch and default system target list.
+HOST_OS=Linux
+unset QEMU_TARGET_LIST
+BUILD_QEMU_IMG=1
+BUILD_QEMU_SYSTEM_I386=1
+whp_prepare_build_defaults
+whp_prepare_configure_args
+output_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--target-list=ppc-softmmu,i386-softmmu' <<< "$output_args"
+grep -Fxq -- '--enable-tools' <<< "$output_args"
+
+unset QEMU_TARGET_LIST
+BUILD_QEMU_IMG=0
+BUILD_QEMU_SYSTEM_I386=0
+whp_prepare_build_defaults
+whp_prepare_configure_args
+output_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--target-list=ppc-softmmu' <<< "$output_args"
+grep -Fxq -- '--disable-tools' <<< "$output_args"
 
 printf 'WHP portable configuration integration: verified\n'

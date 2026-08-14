@@ -22,6 +22,6 @@ if grep -Fq 'mv "$public_nm"' "$nm_stage" ||
 fi
 
 grep -Fq 'bootstrap-powerpc-llvm-nm.sh' "$orchestrator"
-grep -Fq 'no private GNU as/nm/strip fallbacks' "$orchestrator"
+grep -Fq 'No private GNU as/ar/nm/strip fallbacks survive' "$orchestrator"
 
 printf 'PowerPC LLVM nm wiring: verified\n'

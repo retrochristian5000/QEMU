@@ -118,13 +118,20 @@ whp_prepare_build_defaults()
 
     BUILD_DIR="${BUILD_DIR:-$DEFAULT_BUILD_DIR}"
     PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
-    QEMU_TARGET_LIST="${QEMU_TARGET_LIST:-ppc-softmmu}"
+    BUILD_QEMU_IMG="${BUILD_QEMU_IMG:-1}"
+    BUILD_QEMU_SYSTEM_I386="${BUILD_QEMU_SYSTEM_I386:-1}"
+    if [[ -z "${QEMU_TARGET_LIST+x}" ]]; then
+        QEMU_TARGET_LIST=ppc-softmmu
+        if [[ "$BUILD_QEMU_SYSTEM_I386" == 1 ]]; then
+            QEMU_TARGET_LIST+=,i386-softmmu
+        fi
+    fi
     BUILD_TARGETS="${BUILD_TARGETS:-all}"
-    INSTALL="${INSTALL:-0}"
+    INSTALL="${INSTALL:-1}"
     MACOS_ENABLE_COCOA="${MACOS_ENABLE_COCOA:-1}"
     MACOS_ENABLE_COREAUDIO="${MACOS_ENABLE_COREAUDIO:-1}"
-    MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-0}"
-    MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-0}"
+    MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-1}"
+    MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-1}"
     QEMU_HOST_LTO="${QEMU_HOST_LTO:-$APPLE_SILICON_NATIVE}"
     BUILD_OPENBIOS="${BUILD_OPENBIOS:-1}"
     OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
@@ -137,6 +144,7 @@ whp_prepare_build_defaults()
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
 
     whp_require_boolean_values \
+        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 \
         INSTALL MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO \
         MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
         BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
@@ -257,11 +265,16 @@ whp_prepare_configure_args()
         --cxx="${CXX:-c++}"
         --enable-pixman
         --enable-slirp
-        --enable-tools
         --enable-tcg
         --prefix="$PREFIX"
         --target-list="$QEMU_TARGET_LIST"
     )
+
+    if [[ "$BUILD_QEMU_IMG" == 1 ]]; then
+        configure_args+=(--enable-tools)
+    else
+        configure_args+=(--disable-tools)
+    fi
 
     if [[ "$QEMU_HOST_LTO" == 1 ]]; then
         configure_args+=(--enable-lto)

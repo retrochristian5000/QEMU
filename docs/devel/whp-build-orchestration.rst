@@ -59,6 +59,21 @@ incremental stamps are therefore reached through one Meson/Ninja edge.
 Setting ``BUILD_OPENBIOS=0`` removes the generated graph input and selects the
 checked-in firmware blob instead.
 
+Configuration menu
+------------------
+
+Run ``./build.sh menuconfig`` to edit the persistent ``.whpconfig`` build
+profile. The menu is the single portable interface for host features,
+firmware, machines, build behavior, and build outputs. Explicit environment
+variables remain one-run overrides of the saved values.
+
+Every Boolean menu item is enabled in a new profile. The build-output section
+includes ``qemu-img`` and ``qemu-system-i386``. Disabling ``qemu-img`` passes
+``--disable-tools`` to QEMU; enabling it passes ``--enable-tools``. Enabling
+``qemu-system-i386`` adds ``i386-softmmu`` to the saved target list, while
+disabling it removes that target. An explicitly supplied
+``QEMU_TARGET_LIST`` environment value remains authoritative.
+
 Incremental policy
 ------------------
 
@@ -90,8 +105,8 @@ Positional arguments select Make targets for that run and take precedence over
 
   ./build.sh whp-openbios-ppc
 
-Installation remains an explicit post-build request through ``INSTALL=1``.
-It does not become an implicit side effect of an ordinary build.
+Installation follows the ``Install after build`` menu Boolean, which is
+enabled in a new profile. Set ``INSTALL=0`` for a compile-only run.
 
 Artifact identity
 -----------------

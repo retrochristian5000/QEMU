@@ -24,17 +24,19 @@ class Option(NamedTuple):
 
 
 OPTIONS = (
+    Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
+    Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
     Option('QEMU_TARGET_LIST', 'Build targets', 'QEMU target list', 'string', 'ppc-softmmu'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa on macOS', 'bool', 'y'),
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio on macOS', 'bool', 'y'),
-    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK on macOS', 'bool', 'n'),
-    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio on macOS', 'bool', 'n'),
+    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK on macOS', 'bool', 'y'),
+    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio on macOS', 'bool', 'y'),
     Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'bool', 'y'),
     Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'bool', 'y'),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
-    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
+    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'y'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
 )
@@ -154,6 +156,25 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
         if key.startswith('CONFIG_') or key in environ:
             continue
         value = state.values[key]
+        if key == 'QEMU_TARGET_LIST':
+            i386_value = environ.get(
+                'BUILD_QEMU_SYSTEM_I386',
+                state.values['BUILD_QEMU_SYSTEM_I386'],
+            )
+            if i386_value in ('1', 'y'):
+                build_i386 = True
+            elif i386_value in ('0', 'n'):
+                build_i386 = False
+            else:
+                raise ValueError('BUILD_QEMU_SYSTEM_I386 must be 0 or 1')
+            targets = [target for target in value.split(',') if target]
+            if build_i386 and 'i386-softmmu' not in targets:
+                targets.append('i386-softmmu')
+            elif not build_i386:
+                targets = [target for target in targets if target != 'i386-softmmu']
+            if not targets:
+                raise ValueError('QEMU_TARGET_LIST must retain at least one target')
+            value = ','.join(targets)
         if value == 'auto':
             continue
         if key in SHELL_BOOL_KEYS or key == 'QEMU_HOST_LTO':

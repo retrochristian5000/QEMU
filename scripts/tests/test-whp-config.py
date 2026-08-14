@@ -44,6 +44,48 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
+    def test_all_boolean_menu_options_are_enabled_by_default(self):
+        mod = load_module()
+        values = mod.default_values()
+        for option in mod.OPTIONS:
+            if option.kind == 'bool':
+                self.assertEqual(option.default, 'y', option.key)
+                self.assertEqual(values[option.key], 'y', option.key)
+
+    def test_output_defaults_select_img_and_i386(self):
+        mod = load_module()
+        values = mod.default_values()
+        self.assertEqual(values['BUILD_QEMU_IMG'], 'y')
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_I386'], 'y')
+
+        assignments = mod.shell_assignments(
+            mod.ConfigState(values),
+            {},
+        )
+        self.assertIn("BUILD_QEMU_IMG='1'", assignments)
+        self.assertIn("BUILD_QEMU_SYSTEM_I386='1'", assignments)
+        self.assertIn(
+            "QEMU_TARGET_LIST='ppc-softmmu,i386-softmmu'",
+            assignments,
+        )
+
+    def test_disabled_i386_output_is_removed_from_saved_target_list(self):
+        mod = load_module()
+        values = mod.default_values()
+        values['QEMU_TARGET_LIST'] = 'ppc-softmmu,i386-softmmu'
+        values['BUILD_QEMU_SYSTEM_I386'] = 'n'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("QEMU_TARGET_LIST='ppc-softmmu'", assignments)
+
+    def test_environment_target_list_remains_authoritative(self):
+        mod = load_module()
+        values = mod.default_values()
+        assignments = mod.shell_assignments(
+            mod.ConfigState(values),
+            {'QEMU_TARGET_LIST': 'x86_64-softmmu'},
+        )
+        self.assertNotIn('QEMU_TARGET_LIST=', assignments)
+
     def test_load_preserves_unknown_entries_but_does_not_apply_them(self):
         mod = load_module()
         with tempfile.TemporaryDirectory() as td:
