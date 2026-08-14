@@ -36,19 +36,15 @@ if grep -Fq 'Build targets' <<< "$menu_output" ||
     exit 1
 fi
 
-# CI must install the dependencies selected by the default-enabled host toggles.
-ci_brew_install="$(grep -F 'brew install ' "$ROOT/.github/workflows/ci.yml")"
-for formula in 'gtk+3' pulseaudio; do
-    case " $ci_brew_install " in
-        *" $formula "*) ;;
-        *)
-            printf 'error: macOS CI is missing default-enabled dependency %s\n' \
-                "$formula" >&2
-            exit 1
-            ;;
-    esac
+# The PPC-only smoke job opts out of unrelated optional UI/audio dependencies.
+for setting in MACOS_ENABLE_GTK MACOS_ENABLE_PA; do
+    if ! grep -Fq "$setting: '0'" "$ROOT/.github/workflows/ci.yml"; then
+        printf 'error: macOS PPC CI must explicitly disable %s\n' \
+            "$setting" >&2
+        exit 1
+    fi
 done
-unset ci_brew_install formula
+unset setting
 
 cat > "$COPY/.whpconfig" <<'EOF'
 WHP_CONFIG_VERSION=1
