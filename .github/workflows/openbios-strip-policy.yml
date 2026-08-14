@@ -34,7 +34,7 @@ jobs:
             scripts/meson-build-openbios.sh
           grep -Fq 'bootstrap-powerpc-llvm-strip.sh' \
             scripts/meson-build-openbios.sh
-          grep -Fq 'STRIP_SCHEMA=1' \
+          grep -Fq 'STRIP_SCHEMA=2' \
             scripts/bootstrap-powerpc-llvm-strip.sh
           grep -Fq '.whp-powerpc-strip' \
             scripts/bootstrap-powerpc-llvm-strip.sh
