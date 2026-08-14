@@ -9,6 +9,7 @@ on:
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/configure.bash'
+      - 'scripts/whp-build/post-build.bash'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - '.github/workflows/whp-config.yml'
@@ -36,4 +37,5 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/whp-config/config.py scripts/whp-config/menuconfig.py
           bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/whp-build/post-build.bash
           bash -n scripts/tests/test-whp-config-integration.bash

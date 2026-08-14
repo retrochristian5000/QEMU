@@ -34,16 +34,21 @@ fi
 # QEMU's native Kconfig accepts per-target preset files through
 # --with-devices-ARCH=NAME. Generate the PPC preset from the portable user
 # configuration while retaining the repository's tracked defaults.
-WHP_TARGET_LIST_FOR_CONFIG=${QEMU_TARGET_LIST:-ppc-softmmu}
-case ",$WHP_TARGET_LIST_FOR_CONFIG," in
-    *,ppc-softmmu,*)
+WHP_BUILD_QEMU_SYSTEM_PPC_FOR_CONFIG=${BUILD_QEMU_SYSTEM_PPC:-1}
+case "$WHP_BUILD_QEMU_SYSTEM_PPC_FOR_CONFIG" in
+    1)
         "$PYTHON" "$WHP_CONFIG_TOOL" --write-ppc-devices \
             "$WHP_USER_CONFIG" \
             "$SOURCE_DIR/configs/devices/ppc-softmmu/default.mak" \
             "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak" || exit 1
         ;;
+    0) ;;
+    *)
+        printf 'error: BUILD_QEMU_SYSTEM_PPC must be 0 or 1\n' >&2
+        exit 1
+        ;;
 esac
-unset WHP_TARGET_LIST_FOR_CONFIG
+unset WHP_BUILD_QEMU_SYSTEM_PPC_FOR_CONFIG
 
 WHP_INCREMENTAL_BUILD=${WHP_INCREMENTAL_BUILD:-1}
 

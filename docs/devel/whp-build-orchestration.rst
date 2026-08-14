@@ -68,11 +68,12 @@ firmware, machines, build behavior, and build outputs. Explicit environment
 variables remain one-run overrides of the saved values.
 
 Every Boolean menu item is enabled in a new profile. The build-output section
-includes ``qemu-img`` and ``qemu-system-i386``. Disabling ``qemu-img`` passes
-``--disable-tools`` to QEMU; enabling it passes ``--enable-tools``. Enabling
-``qemu-system-i386`` adds ``i386-softmmu`` to the saved target list, while
-disabling it removes that target. An explicitly supplied
-``QEMU_TARGET_LIST`` environment value remains authoritative.
+includes ``qemu-img``, ``qemu-system-i386``, and ``qemu-system-ppc``.
+Disabling ``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
+``--enable-tools``. The two system-emulator selections derive QEMU's internal
+target list, so the menu does not expose a conflicting raw target-list field.
+Disabling both system emulators passes ``--disable-system`` for a tools-only
+build.
 
 Incremental policy
 ------------------

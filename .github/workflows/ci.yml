@@ -108,7 +108,7 @@ jobs:
           fi
 
   build-macos-ppc:
-    name: Build ppc on macOS (Apple Silicon)
+    name: Build ppc (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 60
 
@@ -117,7 +117,8 @@ jobs:
       BUILD_OPENBIOS: '0'
       BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
       QEMU_HOST_LTO: '1'
-      QEMU_TARGET_LIST: ppc-softmmu
+      BUILD_QEMU_SYSTEM_I386: '0'
+      BUILD_QEMU_SYSTEM_PPC: '1'
       MACOSX_DEPLOYMENT_TARGET: '15.0'
       HOMEBREW_NO_AUTO_UPDATE: '1'
       HOMEBREW_NO_INSTALL_CLEANUP: '1'

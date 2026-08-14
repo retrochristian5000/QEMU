@@ -26,12 +26,12 @@ class Option(NamedTuple):
 OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
-    Option('QEMU_TARGET_LIST', 'Build targets', 'QEMU target list', 'string', 'ppc-softmmu'),
+    Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa on macOS', 'bool', 'y'),
-    Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio on macOS', 'bool', 'y'),
-    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK on macOS', 'bool', 'y'),
-    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio on macOS', 'bool', 'y'),
+    Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'bool', 'y'),
+    Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'bool', 'y'),
+    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'bool', 'y'),
+    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'bool', 'y'),
     Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'bool', 'y'),
     Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'bool', 'y'),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
@@ -83,6 +83,8 @@ def load_config(path: pathlib.Path) -> ConfigState:
         return ConfigState(values, unknown)
 
     seen_version = False
+    seen_options = set()
+    legacy_target_list = None
     for number, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
         line = raw_line.strip()
         if not line or line.startswith('#'):
@@ -101,12 +103,30 @@ def load_config(path: pathlib.Path) -> ConfigState:
                     f'{path}:{number}: unsupported WHP_CONFIG_VERSION={value}'
                 )
             continue
+        if key == 'QEMU_TARGET_LIST':
+            if not value or not _STRING_RE.fullmatch(value):
+                raise ValueError(
+                    f'{path}:{number}: QEMU_TARGET_LIST contains unsupported characters'
+                )
+            legacy_target_list = value
+            continue
         option = OPTION_BY_KEY.get(key)
         if option is None:
             unknown[key] = value
             continue
         validate_value(option, value)
         values[key] = value
+        seen_options.add(key)
+
+    if legacy_target_list is not None:
+        legacy_targets = set(legacy_target_list.split(','))
+        legacy_outputs = {
+            'BUILD_QEMU_SYSTEM_I386': 'i386-softmmu',
+            'BUILD_QEMU_SYSTEM_PPC': 'ppc-softmmu',
+        }
+        for key, target in legacy_outputs.items():
+            if key not in seen_options:
+                values[key] = 'y' if target in legacy_targets else 'n'
 
     if path.stat().st_size and not seen_version:
         print(
@@ -156,25 +176,6 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
         if key.startswith('CONFIG_') or key in environ:
             continue
         value = state.values[key]
-        if key == 'QEMU_TARGET_LIST':
-            i386_value = environ.get(
-                'BUILD_QEMU_SYSTEM_I386',
-                state.values['BUILD_QEMU_SYSTEM_I386'],
-            )
-            if i386_value in ('1', 'y'):
-                build_i386 = True
-            elif i386_value in ('0', 'n'):
-                build_i386 = False
-            else:
-                raise ValueError('BUILD_QEMU_SYSTEM_I386 must be 0 or 1')
-            targets = [target for target in value.split(',') if target]
-            if build_i386 and 'i386-softmmu' not in targets:
-                targets.append('i386-softmmu')
-            elif not build_i386:
-                targets = [target for target in targets if target != 'i386-softmmu']
-            if not targets:
-                raise ValueError('QEMU_TARGET_LIST must retain at least one target')
-            value = ','.join(targets)
         if value == 'auto':
             continue
         if key in SHELL_BOOL_KEYS or key == 'QEMU_HOST_LTO':

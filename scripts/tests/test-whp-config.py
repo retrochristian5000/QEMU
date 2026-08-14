@@ -35,7 +35,6 @@ class WhpConfigTests(unittest.TestCase):
     def test_defaults_are_portable_policy(self):
         mod = load_module()
         values = mod.default_values()
-        self.assertEqual(values['QEMU_TARGET_LIST'], 'ppc-softmmu')
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'y')
@@ -52,11 +51,12 @@ class WhpConfigTests(unittest.TestCase):
                 self.assertEqual(option.default, 'y', option.key)
                 self.assertEqual(values[option.key], 'y', option.key)
 
-    def test_output_defaults_select_img_and_i386(self):
+    def test_output_defaults_select_img_i386_and_ppc(self):
         mod = load_module()
         values = mod.default_values()
         self.assertEqual(values['BUILD_QEMU_IMG'], 'y')
         self.assertEqual(values['BUILD_QEMU_SYSTEM_I386'], 'y')
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_PPC'], 'y')
 
         assignments = mod.shell_assignments(
             mod.ConfigState(values),
@@ -64,27 +64,51 @@ class WhpConfigTests(unittest.TestCase):
         )
         self.assertIn("BUILD_QEMU_IMG='1'", assignments)
         self.assertIn("BUILD_QEMU_SYSTEM_I386='1'", assignments)
-        self.assertIn(
-            "QEMU_TARGET_LIST='ppc-softmmu,i386-softmmu'",
-            assignments,
-        )
-
-    def test_disabled_i386_output_is_removed_from_saved_target_list(self):
-        mod = load_module()
-        values = mod.default_values()
-        values['QEMU_TARGET_LIST'] = 'ppc-softmmu,i386-softmmu'
-        values['BUILD_QEMU_SYSTEM_I386'] = 'n'
-        assignments = mod.shell_assignments(mod.ConfigState(values), {})
-        self.assertIn("QEMU_TARGET_LIST='ppc-softmmu'", assignments)
-
-    def test_environment_target_list_remains_authoritative(self):
-        mod = load_module()
-        values = mod.default_values()
-        assignments = mod.shell_assignments(
-            mod.ConfigState(values),
-            {'QEMU_TARGET_LIST': 'x86_64-softmmu'},
-        )
+        self.assertIn("BUILD_QEMU_SYSTEM_PPC='1'", assignments)
         self.assertNotIn('QEMU_TARGET_LIST=', assignments)
+
+    def test_menu_uses_output_toggles_instead_of_a_raw_target_list(self):
+        mod = load_module()
+        self.assertNotIn('QEMU_TARGET_LIST', mod.OPTION_BY_KEY)
+        self.assertNotIn('Build targets', [section for section, _ in mod.sections()])
+
+    def test_host_feature_labels_are_platform_neutral(self):
+        mod = load_module()
+        labels = {option.key: option.label for option in mod.OPTIONS}
+        self.assertEqual(labels['MACOS_ENABLE_COCOA'], 'Cocoa')
+        self.assertEqual(labels['MACOS_ENABLE_COREAUDIO'], 'CoreAudio')
+        self.assertEqual(labels['MACOS_ENABLE_GTK'], 'GTK')
+        self.assertEqual(labels['MACOS_ENABLE_PA'], 'PulseAudio')
+
+    def test_legacy_target_list_migrates_to_output_toggles(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'QEMU_TARGET_LIST=i386-softmmu\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_I386'], 'y')
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_PPC'], 'n')
+            self.assertNotIn('QEMU_TARGET_LIST', loaded.unknown)
+            self.assertNotIn('QEMU_TARGET_LIST=', mod.render_config(loaded))
+
+    def test_explicit_output_toggles_override_legacy_target_list(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\n'
+                'BUILD_QEMU_SYSTEM_I386=y\n'
+                'BUILD_QEMU_SYSTEM_PPC=n\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_I386'], 'y')
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_PPC'], 'n')
 
     def test_load_preserves_unknown_entries_but_does_not_apply_them(self):
         mod = load_module()

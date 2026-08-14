@@ -9,7 +9,10 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
 fi
 : "${SOURCE_DIR:?builder.sh must define SOURCE_DIR before post-build checks}"
 : "${BUILD_DIR:?whp_prepare_build must define BUILD_DIR}"
-: "${QEMU_TARGET_LIST:?whp_prepare_build must define QEMU_TARGET_LIST}"
+if [[ "${QEMU_TARGET_LIST+x}" != x ]]; then
+    printf 'error: whp_prepare_build must define QEMU_TARGET_LIST\n' >&2
+    return 1 2>/dev/null || exit 1
+fi
 
 whp_target_requested()
 {
