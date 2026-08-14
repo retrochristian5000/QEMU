@@ -30,7 +30,7 @@ jobs:
   openbios-llvm-ias:
     name: Build OpenBIOS through Clang IAS
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     env:
       JOBS: '4'
