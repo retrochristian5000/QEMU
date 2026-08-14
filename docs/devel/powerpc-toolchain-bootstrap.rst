@@ -2,13 +2,14 @@ PowerPC cross-toolchain bootstrap
 ================================
 
 The WHP firmware path can bootstrap a small ``powerpc-elf`` toolchain for
-OpenBIOS. It builds only the binutils programs required by firmware and a
+OpenBIOS. The GNU lane builds the binary utilities required by firmware and a
 freestanding C compiler without target operating-system headers or runtime
-libraries.
+libraries. The Clang lane uses LLVM tools throughout and does not bootstrap
+GNU binutils.
 
 The canonical GNU implementation is ``scripts/bootstrap-powerpc-toolchain.sh``.
-The Clang migration reuses the same target and validation principles while
-replacing selected compiler, linker, assembler, and strip stages.
+The Clang implementation reuses the same target and validation principles
+while replacing the compiler and every required target binary utility.
 
 Machine identities
 ------------------
@@ -121,11 +122,12 @@ explicitly through ``AS_FOR_TARGET``, ``LD_FOR_TARGET``, ``AR_FOR_TARGET``,
 Homebrew tools later in ``PATH`` must never become the target assembler or
 linker.
 
-Clang, LLD, assembler, and strip migration
------------------------------------------
+LLVM-only Clang toolchain
+-------------------------
 
-On macOS the OpenBIOS path selects the Clang lane by default. Other hosts keep
-the GCC lane unless ``POWERPC_TOOLCHAIN_COMPILER=clang`` is selected.
+Select this lane with ``POWERPC_TOOLCHAIN_COMPILER=clang``. Host defaults may
+select it automatically, but the implementation and firmware contract are not
+host-specific.
 
 The WHP LLVM fork is pinned by the QEMU git submodule at
 ``toolchains/llvm-project``. The gitlink is the revision authority; derived
@@ -140,15 +142,26 @@ implementation one stage at a time:
 * ``powerpc-elf-gcc`` routes target compilation and generated assembly through
   WHP Clang and its integrated assembler;
 * ``powerpc-elf-ld`` routes the normal firmware link through LLD;
+* ``powerpc-elf-ar`` and ``powerpc-elf-ranlib`` route archive creation and
+  indexing through ``llvm-ar`` and ``llvm-ranlib``;
+* ``powerpc-elf-nm`` routes symbol inspection through ``llvm-nm``;
 * OpenBIOS does not require or publish a separate ``powerpc-elf-as`` command;
   its assembly rule invokes the compiler driver with ``-x assembler``; and
 * ``powerpc-elf-strip`` routes the firmware strip through ``llvm-strip`` after
   structure-preservation checks.
 
-GAS is disabled in the binutils foundation. Older cached ``as`` compatibility
-entry points and assembler markers are removed by the Clang orchestrator before
-OpenBIOS is built. Remaining GNU object utilities stay confined to the
-foundation until their LLVM replacements are qualified.
+GNU ``libsframe`` implements the encoder and decoder for ``.sframe`` sections,
+a compact stack-unwinding format. Current GNU BFD source calls that API while
+parsing, merging, and writing those sections, so disabling ``libsframe`` alone
+does not provide a sound smaller BFD foundation. OpenBIOS neither generates nor
+consumes SFrame in this lane. Because Clang IAS, LLD, and the qualified LLVM
+utilities cover every firmware operation, the Clang foundation does not build
+GNU BFD, ``libsframe``, or any other GNU binutils component.
+
+Older cached ``as``, ``objcopy``, ``objdump``, and prefixed ``readelf`` entry
+points are removed. Firmware validation uses the pinned ``llvm-readelf``
+directly, and no private ``*.bfd`` fallback is retained. The separate GCC lane
+continues to use its complete GNU binutils contract.
 
 The LLD smoke link checks the OpenBIOS-critical linker interface and requires a
 32-bit big-endian PowerPC executable whose entry, reset/vector geometry, and
@@ -157,11 +170,10 @@ The strip smoke test uses an OpenBIOS-shaped PowerPC ELF and requires
 ``llvm-strip`` to preserve ELF identity, entry point, load geometry, and
 allocatable code bytes while removing the symbol table.
 
-The compiler/binutils foundation, LLD, archive, symbol, and strip stages keep
+The compiler/LLVM foundation, LLD, archive, symbol, and strip stages keep
 separate markers so a policy change in one stage cannot be hidden by an
-otherwise-current cache. The Clang lane currently retains release binutils for
-the object utilities not migrated yet, so it uses
-``POWERPC_TOOLCHAIN_SOURCE_MODE=release``.
+otherwise-current cache. ``POWERPC_TOOLCHAIN_SOURCE_MODE`` controls only the
+GNU GCC lane; the Clang lane always comes from the QEMU LLVM submodule gitlink.
 
 Cache and path policy
 ---------------------
@@ -176,9 +188,10 @@ Force a new bootstrap with::
 
   POWERPC_TOOLCHAIN_FORCE_REBUILD=1 ./build.sh whp-openbios-ppc
 
-The GNU bootstrap marker schema is ``7``. A schema or input change invalidates
-older cached toolchains instead of trying to reinterpret them. LLVM migration
-stages maintain their own marker schemas alongside the foundation marker.
+The GNU bootstrap marker schema is ``7`` and the LLVM-only foundation schema is
+``11``. A schema or input change invalidates older cached toolchains instead of
+trying to reinterpret them. LLVM stages maintain their own marker schemas
+alongside the foundation marker.
 
 Validation boundary
 -------------------
@@ -210,10 +223,10 @@ Failure classification
   Inspect ``build-gcc-<version>/config.log`` and verify that staged target tools
   are the ones actually selected.
 
-LLVM migration stage failure
-  Inspect the stage-specific marker and smoke directory. Keep the last known
-  GNU control tool available until the LLVM replacement reproduces the
-  required PowerPC/OpenBIOS contract.
+LLVM tool stage failure
+  Inspect the stage-specific marker and smoke directory. Each tool is
+  qualified against the required PowerPC/OpenBIOS contract before its
+  target-prefixed entry point is published.
 
 ``validating complete PowerPC toolchain``
   The compiler installed but failed target, endianness, sysroot, or executable

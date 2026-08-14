@@ -62,33 +62,40 @@ jobs:
           git ls-tree HEAD -- toolchains/llvm-project |
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
 
-          grep -Fq -- '--disable-gas' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq -- '--disable-gprof' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq -- '--disable-gprofng' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'BOOTSTRAP_SCHEMA=10' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'GNU_GAS=disabled' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'GNU_GPROF=disabled' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'GNU_GPROFNG=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'BOOTSTRAP_SCHEMA=11' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'GNU_BINUTILS=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          grep -Fq 'SFRAME=disabled' scripts/bootstrap-powerpc-clang-base.sh
+          if grep -Fq 'BINUTILS_VERSION' scripts/bootstrap-powerpc-clang-base.sh ||
+             grep -Fq 'libsframe' scripts/bootstrap-powerpc-clang-base.sh; then
+            echo 'error: LLVM-only Clang base still bootstraps GNU binutils' >&2
+            exit 1
+          fi
           if grep -Fq -- '-fno-integrated-as' scripts/bootstrap-powerpc-clang-base.sh; then
             echo 'error: PowerPC Clang must not route through an external assembler' >&2
             exit 1
           fi
 
-          grep -Fq 'LLD_SCHEMA=2' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'LLD_SCHEMA=3' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-clang-core.sh
           grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'ln -sfn "../llvm/bin/ld.lld" "$public_ld"' \
+          grep -Fq 'GNU_BINUTILS=disabled' scripts/bootstrap-powerpc-clang-core.sh
+          grep -Fq 'ln -s "../llvm/bin/ld.lld" "$public_ld"' \
             scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang-core.sh
+          if grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang-core.sh; then
+            echo 'error: LLD stage still retains a BFD linker' >&2
+            exit 1
+          fi
           grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang-core.sh
+
+          grep -Fq 'AR_SCHEMA=3' scripts/bootstrap-powerpc-llvm-ar.sh
+          grep -Fq 'RANLIB=llvm-ranlib' scripts/bootstrap-powerpc-llvm-ar.sh
+          grep -Fq 'GNU_RANLIB=disabled' scripts/bootstrap-powerpc-llvm-ar.sh
 
           grep -Fq 'bootstrap-powerpc-clang-core.sh' scripts/bootstrap-powerpc-clang.sh
           test ! -e scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' \
-            scripts/bootstrap-powerpc-clang.sh
-          grep -Fq 'GNU as is not built, retained, or published' \
+          grep -Fq 'for tool in as objcopy objdump readelf; do' \
             scripts/bootstrap-powerpc-clang.sh
 
           grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \

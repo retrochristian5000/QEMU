@@ -75,15 +75,8 @@ if [[ -z "$compiler_mode" ]]; then
 fi
 case "$compiler_mode" in
     clang)
-        # Clang IAS + LLD own compilation, assembly, and final linking.
-        # LLVM tools also own archive, symbol, and firmware stripping stages.
-        # Release binutils remain only for object utilities not migrated yet.
-        if [[ "$source_mode" != release ]]; then
-            printf '%s\n' \
-                'error: the PowerPC Clang lane currently retains release binutils.' \
-                'set POWERPC_TOOLCHAIN_SOURCE_MODE=release or unset it.' >&2
-            exit 1
-        fi
+        # The pinned LLVM submodule owns the complete Clang toolchain. Source
+        # mode selects release or Git inputs only when the GCC lane is active.
         bootstrap_script="$SCRIPT_DIR/bootstrap-powerpc-clang.sh"
         ;;
     gcc)
@@ -137,6 +130,23 @@ if [[ "$compiler_mode" == gcc && "$source_mode" == git ]]; then
     fi
 fi
 
+if [[ "$compiler_mode" == clang ]]; then
+    toolchain_source_env=(
+        "POWERPC_LLVM_SUBMODULE_PATH=${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
+        "POWERPC_LLVM_GIT_OFFLINE=${POWERPC_LLVM_GIT_OFFLINE:-0}"
+    )
+else
+    toolchain_source_env=(
+        "POWERPC_TOOLCHAIN_GIT_OFFLINE=${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
+        "POWERPC_BINUTILS_GIT_URL=${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}"
+        "POWERPC_BINUTILS_GIT_REF=$POWERPC_BINUTILS_GIT_REF"
+        "POWERPC_BINUTILS_GIT_COMMIT=${POWERPC_BINUTILS_GIT_COMMIT:-}"
+        "POWERPC_GCC_GIT_URL=${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}"
+        "POWERPC_GCC_GIT_REF=${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
+        "POWERPC_GCC_GIT_COMMIT=${POWERPC_GCC_GIT_COMMIT:-}"
+    )
+fi
+
 case "$OUTPUT" in
     /*) ;;
     *) OUTPUT="$PWD/$OUTPUT" ;;
@@ -180,15 +190,7 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         CONFIG_SHELL="${CONFIG_SHELL:-/bin/bash}" \
         MAKE_CMD="${MAKE_CMD:-make}" \
         JOBS="${JOBS:-1}" \
-        POWERPC_TOOLCHAIN_GIT_OFFLINE="${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}" \
-        POWERPC_BINUTILS_GIT_URL="${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}" \
-        POWERPC_BINUTILS_GIT_REF="$POWERPC_BINUTILS_GIT_REF" \
-        POWERPC_BINUTILS_GIT_COMMIT="${POWERPC_BINUTILS_GIT_COMMIT:-}" \
-        POWERPC_GCC_GIT_URL="${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}" \
-        POWERPC_GCC_GIT_REF="${POWERPC_GCC_GIT_REF:-releases/gcc-16}" \
-        POWERPC_GCC_GIT_COMMIT="${POWERPC_GCC_GIT_COMMIT:-}" \
-        POWERPC_LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}" \
-        POWERPC_LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}" \
+        "${toolchain_source_env[@]}" \
         bash "$bootstrap_script"
     if [[ "$compiler_mode" == clang ]]; then
         "${openbios_clean_env[@]}" \

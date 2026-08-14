@@ -8,8 +8,10 @@ on:
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-llvm-ar.sh'
       - 'scripts/bootstrap-powerpc-llvm-strip.sh'
       - 'scripts/tests/test-powerpc-llvm-assembler-wiring.bash'
+      - 'scripts/tests/test-powerpc-llvm-ar-wiring.bash'
       - 'scripts/tests/test-powerpc-llvm-strip-wiring.bash'
       - 'scripts/build-openbios.sh'
       - 'scripts/meson-build-openbios.sh'
@@ -75,9 +77,10 @@ jobs:
           test "$(git -C roms/openbios rev-parse HEAD)" = \
             "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
 
-      - name: Verify compiler-owned assembler and strip policy
+      - name: Verify LLVM-only binary-tool policy
         run: |
           bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+          bash scripts/tests/test-powerpc-llvm-ar-wiring.bash
           bash scripts/tests/test-powerpc-llvm-strip-wiring.bash
 
       - name: Bootstrap Clang and LLVM binary tools
@@ -87,23 +90,28 @@ jobs:
           POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
             bash scripts/bootstrap-powerpc-clang.sh 2>&1 | tee llvm-ias-bootstrap.log
 
-      - name: Verify compiler-owned assembler routing
+      - name: Verify LLVM-only compiler and archive routing
         shell: bash
         run: |
           set -euxo pipefail
-          public_as="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
-          shim_as="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as"
-          gnu_as="$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd"
-          target_as="$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
-          test ! -e "$public_as"
-          test ! -e "$target_as"
-          test ! -e "$shim_as"
-          test ! -e "$gnu_as"
+          for tool in as objcopy objdump readelf; do
+            test ! -e "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-$tool"
+            test ! -e "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/$tool"
+          done
+          for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
+            test ! -e "$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/$tool.bfd"
+          done
           test ! -e "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
-          grep -Fq 'GNU_GAS=disabled' \
+          grep -Fq 'GNU_BINUTILS=disabled' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-toolchain"
+          grep -Fq 'SFRAME=disabled' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-toolchain"
           grep -Fq 'ASSEMBLER=clang-integrated' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-lld"
+          grep -Fq 'RANLIB=llvm-ranlib' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-ar"
+          "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-ar" --version | grep -q LLVM
+          "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-ranlib" --version | grep -q LLVM
           grep -Fq 'CC     := $(TARGET)gcc' roms/openbios/Makefile.target
           ! grep -Fq 'AS     := $(TARGET)as' roms/openbios/Makefile.target
           grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' \
@@ -180,6 +188,7 @@ jobs:
             openbios-llvm-ias.log
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
+            build/toolchains/powerpc-elf/.whp-powerpc-ar
             build/toolchains/powerpc-elf/.whp-powerpc-strip
           if-no-files-found: warn
           retention-days: 7

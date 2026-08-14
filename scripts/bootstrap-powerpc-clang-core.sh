@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 BASE_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-clang-base.sh"
+AR_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-llvm-ar.sh"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
 TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$SOURCE_DIR/build/toolchains/$TOOLCHAIN_TARGET}"
 TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/$TOOLCHAIN_TARGET-clang}"
@@ -39,7 +40,7 @@ case "$LLVM_GIT_OFFLINE" in
         ;;
 esac
 
-for required in git cmake ninja awk grep cksum ln mkdir mv rm readlink uname; do
+for required in git cmake ninja awk grep cksum ln mkdir rm readlink uname; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: PowerPC Clang/LLD bootstrap dependency not found: %s\n' \
             "$required" >&2
@@ -98,10 +99,11 @@ base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
 expected_lld_marker="$(cat <<MARKER
-LLD_SCHEMA=2
+LLD_SCHEMA=3
 LINKER=lld
 ASSEMBLER=clang-integrated
-GNU_GAS=disabled
+GNU_BINUTILS=disabled
+SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
@@ -113,18 +115,24 @@ MARKER
 
 clang_lld_toolchain_is_usable()
 {
+    local bfd_tool
     local tool
 
-    for tool in gcc ar ld nm objcopy objdump readelf strip ranlib; do
+    for tool in gcc ar ld ranlib; do
         [[ -x "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-${tool}" ]] || return 1
     done
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/ld.lld" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/llvm/bin/llvm-readelf" ]] || return 1
     [[ -x "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/ld" ]] || return 1
-    [[ -x "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/ld.bfd" ]] || return 1
-    [[ ! -e "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as" ]] || return 1
-    [[ ! -e "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd" ]] || return 1
+    for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
+        bfd_tool="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/${tool}.bfd"
+        [[ ! -e "$bfd_tool" ]] || return 1
+    done
+    [[ "$(readlink "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld")" == \
+       "../llvm/bin/ld.lld" ]] || return 1
+    [[ "$(readlink "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/ld")" == \
+       "../../bin/${TOOLCHAIN_TARGET}-ld" ]] || return 1
     "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld" --version 2>/dev/null |
         grep -q 'LLD' || return 1
 }
@@ -138,9 +146,9 @@ if [[ -f "$lld_marker" ]]; then
 fi
 
 printf 'LLVM submodule revision: %s\n' "$llvm_revision"
-# Always let the compiler/binutils foundation validate its own complete marker
+# Always let the compiler/LLVM foundation validate its own complete marker
 # first.  It exits quickly when current and rebuilds atomically when one of its
-# compiler, binutils, host, or LLVM inputs has changed.
+# compiler, host, or LLVM inputs has changed.
 POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
 POWERPC_LLVM_GIT_REF="$llvm_revision" \
 POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
@@ -148,6 +156,10 @@ POWERPC_LLVM_GIT_OFFLINE=0 \
 POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
 POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
     bash "$BASE_BOOTSTRAP"
+
+# The LLD smoke links through a real archive, so make the core entry point
+# independently usable as well as callable through the full orchestrator.
+bash "$AR_BOOTSTRAP"
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$lld_marker" &&
       "$(cat "$lld_marker")" == "$expected_lld_marker" ]] &&
@@ -325,21 +337,19 @@ if ((load_count == 0 || start_loaded == 0 || hreset_loaded == 0)); then
     exit 1
 fi
 
-# LLD is now proven against the firmware layout.  Demote GNU ld to an explicit
-# A/B oracle and make the normal powerpc-elf-ld interface resolve to LLD.
+# LLD is now proven against the firmware layout. Publish it as the only linker
+# behind both target-prefixed entry points and Clang's private tool route.
 shim_dir="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu"
 public_ld="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-ld"
-gnu_ld="$shim_dir/ld.bfd"
-mkdir -p "$shim_dir"
-if [[ ! -x "$gnu_ld" ]]; then
-    if [[ ! -x "$public_ld" ]] || ! "$public_ld" --version 2>/dev/null | grep -q 'GNU ld'; then
-        printf 'error: retained GNU linker is unavailable for the A/B fallback\n' >&2
-        exit 1
-    fi
-    mv "$public_ld" "$gnu_ld"
-fi
-ln -sfn "../llvm/bin/ld.lld" "$public_ld"
-ln -sfn "../../llvm/bin/ld.lld" "$shim_dir/ld"
+target_ld="$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/ld"
+mkdir -p "$TOOLCHAIN_DIR/bin" "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin" "$shim_dir"
+rm -f "$public_ld" "$target_ld" "$shim_dir/ld"
+for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
+    rm -f "$shim_dir/${tool}.bfd"
+done
+ln -s "../llvm/bin/ld.lld" "$public_ld"
+ln -s "../../bin/${TOOLCHAIN_TARGET}-ld" "$target_ld"
+ln -s "../../llvm/bin/ld.lld" "$shim_dir/ld"
 
 clang_driver="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-gcc"
 reported_ld="$($clang_driver -print-prog-name=ld)"
@@ -351,15 +361,17 @@ if ! "$public_ld" --version | grep -q 'LLD'; then
     printf 'error: public PowerPC linker does not resolve to LLD\n' >&2
     exit 1
 fi
-if [[ -e "$shim_dir/as" || -e "$shim_dir/as.bfd" ]]; then
-    printf 'error: GNU assembler residue remains in the PowerPC toolchain\n' >&2
-    exit 1
-fi
+for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
+    if [[ -e "$shim_dir/${tool}.bfd" ]]; then
+        printf 'error: obsolete binary-tool residue remains: %s\n' \
+            "$shim_dir/${tool}.bfd" >&2
+        exit 1
+    fi
+done
 
 printf '%s\n' "$expected_lld_marker" > "$lld_marker"
 printf '%s\n' \
     "Bootstrapped PowerPC compiler/linker: Clang + LLD ($llvm_revision)" \
     "LLVM source: QEMU submodule $LLVM_SUBMODULE_PATH" \
     "Assembler: Clang integrated assembler" \
-    "Private A/B linker: $gnu_ld" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"

@@ -50,13 +50,6 @@ case "$compiler_mode" in
         exit 1
         ;;
 esac
-if [[ "$compiler_mode" == clang && "$source_mode" != release ]]; then
-    printf '%s\n' \
-        'error: the PowerPC Clang lane currently retains release binutils.' \
-        'set POWERPC_TOOLCHAIN_SOURCE_MODE=release or unset it.' >&2
-    exit 1
-fi
-
 mkdir -p "$openbios_build_dir"
 openbios_build_dir="$(cd -- "$openbios_build_dir" && pwd)"
 case "$openbios_build_dir/" in

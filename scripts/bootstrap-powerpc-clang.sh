@@ -65,9 +65,9 @@ if [[ -z "$llvm_revision" ]]; then
     exit 1
 fi
 
-# Build/validate the Clang foundation first, before LLD.  Mirror the core
-# bootstrap's base-signature invalidation so a changed base script is rebuilt
-# here rather than later, after llvm-ar has already replaced GNU ar.
+# Build/validate the LLVM-only Clang foundation first, before LLD. Mirror the
+# core bootstrap's base-signature invalidation so a changed base script is
+# rebuilt before the archive entry points have been published.
 base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
 base_force="$TOOLCHAIN_FORCE_REBUILD"
@@ -87,25 +87,26 @@ fi
     POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
     bash "$BASE_BOOTSTRAP"
 
-# llvm-ar is an LLVM core tool, so qualify and publish it immediately after the
-# base compiler install. bootstrap-powerpc-clang-core.sh then consumes this
-# LLVM-backed powerpc-elf-ar while proving the LLD/OpenBIOS archive path.
+# llvm-ar and llvm-ranlib are LLVM core tools, so qualify and publish them
+# immediately after the base compiler install. bootstrap-powerpc-clang-core.sh
+# then consumes the LLVM-backed archive route while proving LLD.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-ar.sh"
 
 # The base foundation has already been validated above.  Do not force it a
 # second time inside the LLD stage: a redundant forced rebuild would replace
-# the freshly-published llvm-ar with the temporary GNU bootstrap copy before
-# the LLD archive smoke runs.
+# the freshly-published archive entry points before the LLD smoke runs.
 "${toolchain_clean_env[@]}" \
     POWERPC_TOOLCHAIN_FORCE_REBUILD=0 \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 
-# OpenBIOS now sends generated assembly through the compiler driver, whose
-# Clang route forces IAS. Remove compatibility entry points left by older
-# toolchain caches: GNU as is not built, retained, or published.
-rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
-rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"
+# OpenBIOS sends generated assembly through the compiler driver, and uses
+# llvm-readelf directly. Remove entry points left by older toolchain caches;
+# these programs are not part of the Clang lane.
+for tool in as objcopy objdump readelf; do
+    rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-${tool}"
+    rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/$tool"
+done
 rm -f "$TOOLCHAIN_DIR/.whp-powerpc-as"
 
 # Publish the remaining migrated binary-tool interfaces after LLD is proven.

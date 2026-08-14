@@ -8,9 +8,11 @@ core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
 nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.sh"
 orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 
-grep -Fq 'AR_SCHEMA=2' "$ar_stage"
+grep -Fq 'AR_SCHEMA=3' "$ar_stage"
 grep -Fq 'AR=llvm-ar' "$ar_stage"
+grep -Fq 'RANLIB=llvm-ranlib' "$ar_stage"
 grep -Fq 'GNU_AR=disabled' "$ar_stage"
+grep -Fq 'GNU_RANLIB=disabled' "$ar_stage"
 grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$ar_stage"
 grep -Fq '"$llvm_ar" rcs "$smoke_dir/libarchive.a"' "$ar_stage"
 grep -Fq '"$llvm_ar" t "$smoke_dir/libarchive.a"' "$ar_stage"
@@ -19,6 +21,9 @@ grep -Fq '"$llvm_nm" --gnu-compatible -s "$smoke_dir/libarchive.a"' "$ar_stage"
 grep -Fq 'rm -f "$shim_dir/ar" "$shim_dir/ar.bfd"' "$ar_stage"
 grep -Fq 'ln -s "../llvm/bin/llvm-ar" "$public_ar"' "$ar_stage"
 grep -Fq 'ln -s "../../bin/${TOOLCHAIN_TARGET}-ar" "$target_ar"' "$ar_stage"
+grep -Fq 'ln -s "../llvm/bin/llvm-ranlib" "$public_ranlib"' "$ar_stage"
+grep -Fq 'ln -s "../../bin/${TOOLCHAIN_TARGET}-ranlib" "$target_ranlib"' "$ar_stage"
+grep -Fq '"$llvm_ranlib" "$smoke_dir/libarchive.a"' "$ar_stage"
 
 if grep -Fq 'exec "$llvm_ar"' "$ar_stage" ||
    grep -Fq 'Retained GNU ar' "$ar_stage" ||

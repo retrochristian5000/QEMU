@@ -67,7 +67,7 @@ endianness, image-size, and PROM-range checks remain mandatory in every mode.
 Source modes
 ------------
 
-Release archives remain the default source policy::
+Release archives remain the default source policy for the GCC lane::
 
   ./build.sh
 
@@ -98,6 +98,11 @@ GDB-only directories from the combined binutils-gdb export.  The PowerPC
 bootstrap still validates canonical build, host, and target triplets, host-tool
 versus target-tool routing, the installed sysroot, PowerPC ELF class, and
 big-endian output.
+
+``POWERPC_TOOLCHAIN_SOURCE_MODE`` does not select sources for the Clang lane.
+With ``POWERPC_TOOLCHAIN_COMPILER=clang``, the complete compiler and binary-tool
+stack comes from the LLVM submodule pinned by QEMU, regardless of whether the
+stored source-mode value is ``release`` or ``git``.
 
 Direct target
 -------------
