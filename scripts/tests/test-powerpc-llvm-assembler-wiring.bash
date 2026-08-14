@@ -84,9 +84,21 @@ grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/$tool"' "$orchestrator"
 
 grep -Fq 'powerpc_tools=(gcc ar ld nm strip ranlib)' "$build_openbios"
 grep -Fq 'for tool in gcc ar ld nm strip ranlib; do' "$meson_openbios"
+grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+    "$build_openbios"
+grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+    "$meson_openbios"
+grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+    "$configure_openbios"
+grep -Fq 'bootstrap-powerpc-clang.sh' "$build_openbios"
 if grep -Fq 'powerpc_tools=(gcc as ar ld nm strip ranlib)' "$build_openbios" ||
    grep -Fq 'for tool in gcc as ar ld nm strip ranlib; do' "$meson_openbios"; then
     printf 'error: OpenBIOS still requires a standalone as command\n' >&2
+    exit 1
+fi
+if grep -Fq 'bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"' \
+       "$build_openbios"; then
+    printf 'error: standalone OpenBIOS still unconditionally selects GNU tools\n' >&2
     exit 1
 fi
 if grep -Fq 'compiler_mode" == clang && "$source_mode" != release' \

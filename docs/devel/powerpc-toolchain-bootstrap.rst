@@ -7,9 +7,9 @@ freestanding C compiler without target operating-system headers or runtime
 libraries. The Clang lane uses LLVM tools throughout and does not bootstrap
 GNU binutils.
 
-The canonical GNU implementation is ``scripts/bootstrap-powerpc-toolchain.sh``.
-The Clang implementation reuses the same target and validation principles
-while replacing the compiler and every required target binary utility.
+The default implementation is the LLVM-only Clang lane. The optional GNU
+compatibility implementation is ``scripts/bootstrap-powerpc-toolchain.sh`` and
+is selected explicitly with ``POWERPC_TOOLCHAIN_COMPILER=gcc``.
 
 Machine identities
 ------------------
@@ -125,9 +125,9 @@ linker.
 LLVM-only Clang toolchain
 -------------------------
 
-Select this lane with ``POWERPC_TOOLCHAIN_COMPILER=clang``. Host defaults may
-select it automatically, but the implementation and firmware contract are not
-host-specific.
+This lane is the default on every host. Its implementation and firmware
+contract are host-independent. Set ``POWERPC_TOOLCHAIN_COMPILER=gcc`` only when
+the separate GNU compatibility lane is intentionally required.
 
 The WHP LLVM fork is pinned by the QEMU git submodule at
 ``toolchains/llvm-project``. The gitlink is the revision authority; derived

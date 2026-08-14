@@ -54,7 +54,7 @@ jobs:
           fi
           grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
             scripts/build-openbios.sh
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=6' scripts/meson-build-openbios.sh
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=7' scripts/meson-build-openbios.sh
           grep -Fq "printf 'OPENBIOS_READELF=%q" \
             scripts/whp-build/configure-openbios.bash
 
@@ -97,6 +97,14 @@ jobs:
           test ! -e scripts/bootstrap-powerpc-llvm-as.sh
           grep -Fq 'for tool in as objcopy objdump readelf; do' \
             scripts/bootstrap-powerpc-clang.sh
+          grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+            scripts/build-openbios.sh
+          grep -Fq 'powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+            scripts/whp-build/prepare-sources.bash
+          grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+            scripts/whp-build/configure-openbios.bash
+          grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
+            scripts/meson-build-openbios.sh
 
           grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \
             scripts/whp-build/configure-openbios.bash

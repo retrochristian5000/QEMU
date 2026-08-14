@@ -30,7 +30,7 @@ jobs:
             scripts/bootstrap-powerpc-llvm-strip.sh \
             scripts/meson-build-openbios.sh
 
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=6' \
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=7' \
             scripts/meson-build-openbios.sh
           grep -Fq 'bootstrap-powerpc-llvm-strip.sh' \
             scripts/meson-build-openbios.sh

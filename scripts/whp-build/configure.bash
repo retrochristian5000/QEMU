@@ -65,6 +65,10 @@ config_candidate="$config_file.new"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
     printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%s\n' "$BOOTSTRAP_POWERPC_TOOLCHAIN"
+    printf 'POWERPC_TOOLCHAIN_COMPILER=%s\n' \
+        "${POWERPC_TOOLCHAIN_COMPILER:-clang}"
+    printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%s\n' \
+        "${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
     printf 'POWERPC_TOOLCHAIN_DIR=%s\n' "$POWERPC_TOOLCHAIN_DIR"
     printf 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=%s\n' "$WHP_PPC_DEVICE_CONFIG_SIGNATURE"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[*]}"

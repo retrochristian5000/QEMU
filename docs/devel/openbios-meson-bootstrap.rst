@@ -67,12 +67,18 @@ endianness, image-size, and PROM-range checks remain mandatory in every mode.
 Source modes
 ------------
 
-Release archives remain the default source policy for the GCC lane::
+The default build uses the LLVM submodule for the complete firmware toolchain::
 
+  ./build.sh
+
+The GNU release lane is an explicit compatibility option::
+
+  POWERPC_TOOLCHAIN_COMPILER=gcc \
   ./build.sh
 
 To build binutils and GCC from their official Git repositories instead::
 
+  POWERPC_TOOLCHAIN_COMPILER=gcc \
   POWERPC_TOOLCHAIN_SOURCE_MODE=git \
   POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
   ./build.sh
@@ -87,6 +93,7 @@ and records the result in::
 For reproducible Git-source builds, pin both commits explicitly::
 
   POWERPC_TOOLCHAIN_SOURCE_MODE=git \
+  POWERPC_TOOLCHAIN_COMPILER=gcc \
   POWERPC_BINUTILS_GIT_COMMIT=<40-digit-commit> \
   POWERPC_GCC_GIT_COMMIT=<40-digit-commit> \
   POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
@@ -99,10 +106,10 @@ bootstrap still validates canonical build, host, and target triplets, host-tool
 versus target-tool routing, the installed sysroot, PowerPC ELF class, and
 big-endian output.
 
-``POWERPC_TOOLCHAIN_SOURCE_MODE`` does not select sources for the Clang lane.
-With ``POWERPC_TOOLCHAIN_COMPILER=clang``, the complete compiler and binary-tool
-stack comes from the LLVM submodule pinned by QEMU, regardless of whether the
-stored source-mode value is ``release`` or ``git``.
+``POWERPC_TOOLCHAIN_SOURCE_MODE`` does not select sources for the default Clang
+lane. The complete compiler and binary-tool stack comes from the LLVM submodule
+pinned by QEMU. GNU source settings are written to the generated OpenBIOS
+configuration only when ``POWERPC_TOOLCHAIN_COMPILER=gcc`` is explicit.
 
 Direct target
 -------------

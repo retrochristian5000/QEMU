@@ -23,6 +23,8 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-core.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-base.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-source-cache.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-ar.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-nm.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-strip.sh"
     "$SOURCE_DIR/scripts/meson-build-openbios.sh"
     "$SOURCE_DIR/scripts/build-openbios.sh"

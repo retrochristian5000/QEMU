@@ -3,16 +3,10 @@
 
 whp_prepare_sources()
 {
-    powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-}"
+    powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
     llvm_submodule_path="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 
     if [[ "$BUILD_OPENBIOS" == "1" ]]; then
-        if [[ -z "$powerpc_toolchain_compiler" ]]; then
-            case "${HOST_OS:-$(uname -s)}" in
-                Darwin) powerpc_toolchain_compiler=clang ;;
-                *) powerpc_toolchain_compiler=gcc ;;
-            esac
-        fi
         case "$powerpc_toolchain_compiler" in
             clang|gcc) ;;
             *)

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=6
+OPENBIOS_ENVIRONMENT_POLICY=7
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -66,13 +66,7 @@ openbios_clean_env=(
 )
 
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
-compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-}"
-if [[ -z "$compiler_mode" ]]; then
-    case "$(uname -s)" in
-        Darwin) compiler_mode=clang ;;
-        *) compiler_mode=gcc ;;
-    esac
-fi
+compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
 case "$compiler_mode" in
     clang)
         # The pinned LLVM submodule owns the complete Clang toolchain. Source
@@ -99,43 +93,41 @@ case "$compiler_mode" in
         ;;
 esac
 
-case "${POWERPC_BINUTILS_GIT_REF:-}" in
-    ''|binutils-2_46-branch)
-        POWERPC_BINUTILS_GIT_REF=binutils_2.46-branch
-        ;;
-esac
-
-if [[ "$compiler_mode" == gcc && "$source_mode" == git ]]; then
-    case "$OPENBIOS_HOSTCXX" in
-        ''|*';'*|*'|'*|*'&'*|*'<'*|*'>')
-            printf 'error: invalid OpenBIOS host C++ compiler command\n' >&2
-            exit 1
-            ;;
-    esac
-    read -r -a host_cxx_command <<< "$OPENBIOS_HOSTCXX"
-    if [[ "${#host_cxx_command[@]}" -eq 0 ]] ||
-       ! command -v "${host_cxx_command[0]}" >/dev/null 2>&1; then
-        printf 'error: OpenBIOS host C++ compiler is not executable: %s\n' \
-            "$OPENBIOS_HOSTCXX" >&2
-        exit 1
-    fi
-    if ! printf '%s\n' \
-        'static_assert(__cplusplus >= 201402L, "ISO C++14 required");' |
-        "${openbios_clean_env[@]}" "${host_cxx_command[@]}" \
-            -std=c++14 -x c++ -fsyntax-only - >/dev/null 2>&1; then
-        printf '%s\n' \
-            'error: official GCC 16 Git sources require an ISO C++14 host compiler.' \
-            "selected: $OPENBIOS_HOSTCXX" >&2
-        exit 1
-    fi
-fi
-
 if [[ "$compiler_mode" == clang ]]; then
     toolchain_source_env=(
         "POWERPC_LLVM_SUBMODULE_PATH=${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
         "POWERPC_LLVM_GIT_OFFLINE=${POWERPC_LLVM_GIT_OFFLINE:-0}"
     )
 else
+    case "${POWERPC_BINUTILS_GIT_REF:-}" in
+        ''|binutils-2_46-branch)
+            POWERPC_BINUTILS_GIT_REF=binutils_2.46-branch
+            ;;
+    esac
+    if [[ "$source_mode" == git ]]; then
+        case "$OPENBIOS_HOSTCXX" in
+            ''|*';'*|*'|'*|*'&'*|*'<'*|*'>')
+                printf 'error: invalid OpenBIOS host C++ compiler command\n' >&2
+                exit 1
+                ;;
+        esac
+        read -r -a host_cxx_command <<< "$OPENBIOS_HOSTCXX"
+        if [[ "${#host_cxx_command[@]}" -eq 0 ]] ||
+           ! command -v "${host_cxx_command[0]}" >/dev/null 2>&1; then
+            printf 'error: OpenBIOS host C++ compiler is not executable: %s\n' \
+                "$OPENBIOS_HOSTCXX" >&2
+            exit 1
+        fi
+        if ! printf '%s\n' \
+            'static_assert(__cplusplus >= 201402L, "ISO C++14 required");' |
+            "${openbios_clean_env[@]}" "${host_cxx_command[@]}" \
+                -std=c++14 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+            printf '%s\n' \
+                'error: GCC Git sources require an ISO C++14 host compiler.' \
+                "selected: $OPENBIOS_HOSTCXX" >&2
+            exit 1
+        fi
+    fi
     toolchain_source_env=(
         "POWERPC_TOOLCHAIN_GIT_OFFLINE=${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
         "POWERPC_BINUTILS_GIT_URL=${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}"

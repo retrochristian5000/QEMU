@@ -20,6 +20,12 @@ POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$OPENBIOS_TOOLS_DIR/powerpc-elf}
 POWERPC_TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-work/powerpc-elf}"
 POWERPC_TOOLCHAIN_DOWNLOAD_DIR="${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:-$OPENBIOS_TOOLS_DIR/toolchain-downloads}"
 POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
+POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
+POWERPC_TOOLCHAIN_SOURCE_MODE="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
+POWERPC_LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-}"
+if [[ -z "$POWERPC_LLVM_SUBMODULE_PATH" ]]; then
+    POWERPC_LLVM_SUBMODULE_PATH=toolchains/llvm-project
+fi
 OPENBIOS_FIRMWARE_VALIDATION="${OPENBIOS_FIRMWARE_VALIDATION:-compatible}"
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/openbios/fcode-utils.git}"
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-6e563ee54aa9f60e538d90eedaa012ae77610344}"
@@ -55,6 +61,21 @@ case "$POWERPC_TOOLCHAIN_FORCE_REBUILD" in
     0|1) ;;
     *)
         printf 'error: POWERPC_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$POWERPC_TOOLCHAIN_COMPILER" in
+    clang|gcc) ;;
+    *)
+        printf 'error: POWERPC_TOOLCHAIN_COMPILER must be clang or gcc\n' >&2
+        exit 1
+        ;;
+esac
+case "$POWERPC_TOOLCHAIN_SOURCE_MODE" in
+    release|git) ;;
+    *)
+        printf '%s\n' \
+            'error: POWERPC_TOOLCHAIN_SOURCE_MODE must be release or git' >&2
         exit 1
         ;;
 esac
@@ -137,9 +158,9 @@ if [[ ! -x "$OPENBIOS_TOKE" ]]; then
 fi
 printf 'OpenBIOS toke: %s\n' "$OPENBIOS_TOKE"
 
-# readelf is intentionally separate from the cross-prefix requirement.  The
-# Clang lane uses LLVM's ELF reader while GCC-only toolchains may keep using
-# their prefixed GNU readelf during the staged binutils migration.
+# readelf is intentionally separate from the cross-prefix requirement. The
+# default Clang lane uses LLVM's ELF reader; an explicitly selected GCC
+# toolchain may provide a prefixed reader instead.
 powerpc_tools=(gcc ar ld nm strip ranlib)
 
 prefix_is_usable()
@@ -167,6 +188,29 @@ if [[ -n "$OPENBIOS_CROSS_COMPILE" ]]; then
         exit 1
     fi
 elif [[ "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; then
+    case "$POWERPC_TOOLCHAIN_COMPILER" in
+        clang)
+            llvm_submodule_dir="$SOURCE_DIR/$POWERPC_LLVM_SUBMODULE_PATH"
+            if [[ ! -f "$llvm_submodule_dir/llvm/CMakeLists.txt" &&
+                  -e "$SOURCE_DIR/.git" ]]; then
+                git -C "$SOURCE_DIR" submodule update --init \
+                    "$POWERPC_LLVM_SUBMODULE_PATH"
+            fi
+            bootstrap_name=bootstrap-powerpc-clang.sh
+            bootstrap_script="$SCRIPT_DIR/$bootstrap_name"
+            ;;
+        gcc)
+            case "$POWERPC_TOOLCHAIN_SOURCE_MODE" in
+                release)
+                    bootstrap_name=bootstrap-powerpc-toolchain-host.sh
+                    ;;
+                git)
+                    bootstrap_name=bootstrap-powerpc-toolchain-git.sh
+                    ;;
+            esac
+            bootstrap_script="$SCRIPT_DIR/$bootstrap_name"
+            ;;
+    esac
     POWERPC_TOOLCHAIN_DIR="$POWERPC_TOOLCHAIN_DIR" \
     POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_WORK_DIR" \
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_DOWNLOAD_DIR" \
@@ -175,9 +219,10 @@ elif [[ "$BOOTSTRAP_POWERPC_TOOLCHAIN" == "1" ]]; then
     CXX_FOR_BUILD="$OPENBIOS_HOSTCXX" \
     TOOLCHAIN_HOST_CC="$OPENBIOS_HOSTCC" \
     TOOLCHAIN_HOST_CXX="$OPENBIOS_HOSTCXX" \
+    POWERPC_LLVM_SUBMODULE_PATH="$POWERPC_LLVM_SUBMODULE_PATH" \
     MAKE_CMD="$MAKE_CMD" \
     JOBS="${JOBS:-1}" \
-        bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"
+        bash "$bootstrap_script"
     bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"
     if ! prefix_is_usable "$bootstrapped_prefix"; then
         printf 'error: bootstrapped PowerPC toolchain is incomplete: %s\n' \

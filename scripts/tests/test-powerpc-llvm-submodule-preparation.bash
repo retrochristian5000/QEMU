@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
+CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
+REAL_BASH="$(command -v bash)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -48,7 +50,7 @@ run_default_clang_case()
 {
     : > "$git_log"
     : > "$bash_log"
-    HOST_OS=Darwin
+    HOST_OS=Linux
     unset POWERPC_TOOLCHAIN_COMPILER
 
     whp_prepare_sources
@@ -80,5 +82,28 @@ run_explicit_gcc_case()
 
 run_default_clang_case
 run_explicit_gcc_case
+
+clang_config_dir="$tmpdir/clang-config"
+BUILD_DIR="$clang_config_dir" POWERPC_TOOLCHAIN_COMPILER=clang \
+    "$REAL_BASH" "$CONFIGURE_OPENBIOS"
+clang_config="$clang_config_dir/.whp-openbios-meson.env"
+grep -Fxq 'POWERPC_TOOLCHAIN_COMPILER=clang' "$clang_config"
+grep -Fq 'POWERPC_LLVM_SUBMODULE_PATH=' "$clang_config"
+if grep -Eq '^POWERPC_(BINUTILS|GCC|TOOLCHAIN_GIT_)' "$clang_config"; then
+    printf 'error: Clang configuration still exports GNU source settings\n' >&2
+    exit 1
+fi
+
+gcc_config_dir="$tmpdir/gcc-config"
+BUILD_DIR="$gcc_config_dir" POWERPC_TOOLCHAIN_COMPILER=gcc \
+    "$REAL_BASH" "$CONFIGURE_OPENBIOS"
+gcc_config="$gcc_config_dir/.whp-openbios-meson.env"
+grep -Fxq 'POWERPC_TOOLCHAIN_COMPILER=gcc' "$gcc_config"
+grep -Fq 'POWERPC_BINUTILS_GIT_URL=' "$gcc_config"
+grep -Fq 'POWERPC_GCC_GIT_URL=' "$gcc_config"
+if grep -Fq 'POWERPC_LLVM_' "$gcc_config"; then
+    printf 'error: explicit GCC configuration still exports LLVM settings\n' >&2
+    exit 1
+fi
 
 printf 'PowerPC LLVM submodule preparation: verified\n'

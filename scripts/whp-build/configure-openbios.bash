@@ -11,13 +11,7 @@ build_root="$(cd -- "$BUILD_DIR" && pwd)"
 config="$build_root/.whp-openbios-meson.env"
 temporary="$config.new.$$"
 source_mode="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
-compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-}"
-if [[ -z "$compiler_mode" ]]; then
-    case "$(uname -s)" in
-        Darwin) compiler_mode=clang ;;
-        *) compiler_mode=gcc ;;
-    esac
-fi
+compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
 tools_dir="${OPENBIOS_TOOLS_DIR:-$build_root/firmware-tools}"
 openbios_build_dir="${OPENBIOS_BUILD_DIR:-$build_root/firmware/openbios}"
 hostcc="${CC_FOR_BUILD:-${CC:-cc}}"
@@ -98,24 +92,27 @@ umask 077
     printf 'POWERPC_TOOLCHAIN_DIR=%q\n' "$toolchain_dir"
     printf 'POWERPC_TOOLCHAIN_WORK_DIR=%q\n' "$toolchain_work_dir"
     printf 'POWERPC_TOOLCHAIN_DOWNLOAD_DIR=%q\n' "$toolchain_download_dir"
-    printf 'POWERPC_TOOLCHAIN_GIT_OFFLINE=%q\n' \
-        "${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
-    printf 'POWERPC_BINUTILS_GIT_URL=%q\n' \
-        "${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}"
-    printf 'POWERPC_BINUTILS_GIT_REF=%q\n' \
-        "${POWERPC_BINUTILS_GIT_REF:-binutils-2_46-branch}"
-    printf 'POWERPC_BINUTILS_GIT_COMMIT=%q\n' \
-        "${POWERPC_BINUTILS_GIT_COMMIT:-}"
-    printf 'POWERPC_GCC_GIT_URL=%q\n' \
-        "${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}"
-    printf 'POWERPC_GCC_GIT_REF=%q\n' \
-        "${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
-    printf 'POWERPC_GCC_GIT_COMMIT=%q\n' \
-        "${POWERPC_GCC_GIT_COMMIT:-}"
-    printf 'POWERPC_LLVM_SUBMODULE_PATH=%q\n' \
-        "${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
-    printf 'POWERPC_LLVM_GIT_OFFLINE=%q\n' \
-        "${POWERPC_LLVM_GIT_OFFLINE:-0}"
+    if [[ "$compiler_mode" == clang ]]; then
+        printf 'POWERPC_LLVM_SUBMODULE_PATH=%q\n' \
+            "${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
+        printf 'POWERPC_LLVM_GIT_OFFLINE=%q\n' \
+            "${POWERPC_LLVM_GIT_OFFLINE:-0}"
+    else
+        printf 'POWERPC_TOOLCHAIN_GIT_OFFLINE=%q\n' \
+            "${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
+        printf 'POWERPC_BINUTILS_GIT_URL=%q\n' \
+            "${POWERPC_BINUTILS_GIT_URL:-https://sourceware.org/git/binutils-gdb.git}"
+        printf 'POWERPC_BINUTILS_GIT_REF=%q\n' \
+            "${POWERPC_BINUTILS_GIT_REF:-binutils-2_46-branch}"
+        printf 'POWERPC_BINUTILS_GIT_COMMIT=%q\n' \
+            "${POWERPC_BINUTILS_GIT_COMMIT:-}"
+        printf 'POWERPC_GCC_GIT_URL=%q\n' \
+            "${POWERPC_GCC_GIT_URL:-https://gcc.gnu.org/git/gcc.git}"
+        printf 'POWERPC_GCC_GIT_REF=%q\n' \
+            "${POWERPC_GCC_GIT_REF:-releases/gcc-16}"
+        printf 'POWERPC_GCC_GIT_COMMIT=%q\n' \
+            "${POWERPC_GCC_GIT_COMMIT:-}"
+    fi
     printf 'CONFIG_SHELL=%q\n' "${CONFIG_SHELL:-${WHP_BUILD_BASH:-/bin/bash}}"
     printf 'PKG_CONFIG_FOR_BUILD=%q\n' \
         "${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
