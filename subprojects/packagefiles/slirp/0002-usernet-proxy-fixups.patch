@@ -1,14 +1,3 @@
-diff --git a/src/slirp.h b/src/slirp.h
---- a/src/slirp.h
-+++ b/src/slirp.h
-@@ -218,6 +218,7 @@ struct Slirp {
-     struct sockaddr_in *outbound_addr;
-     struct sockaddr_in6 *outbound_addr6;
-     bool disable_dns; /* slirp will not redirect/serve any DNS packet */
-+    bool disable_dhcp; /* slirp will not reply to any DHCP requests */
-     char *outbound_proxy;
-     void *proxy_state;
- };
 diff --git a/src/proxy.c b/src/proxy.c
 --- a/src/proxy.c
 +++ b/src/proxy.c

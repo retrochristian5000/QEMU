@@ -7,6 +7,7 @@ on:
     paths:
       - 'net/**'
       - 'qapi/net.json'
+      - 'scripts/tests/test-slirp-patches.bash'
       - 'subprojects/slirp.wrap'
       - 'subprojects/packagefiles/slirp/**'
       - '.github/workflows/usernet-proxy.yml'
@@ -28,6 +29,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Validate Slirp patch syntax
+        shell: bash
+        run: bash scripts/tests/test-slirp-patches.bash
 
       - name: Install build dependencies
         run: |
