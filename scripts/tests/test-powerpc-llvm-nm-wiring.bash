@@ -13,6 +13,12 @@ grep -Fq 'GNU_NM=disabled' "$nm_stage"
 grep -Fq 'exec "$llvm_nm" --gnu-compatible "$@"' "$nm_stage"
 grep -Fq '"$llvm_nm" --gnu-compatible -s "$smoke_dir/libnm.a"' "$nm_stage"
 grep -Fq '"$llvm_nm" --gnu-compatible -f Banana "$smoke_dir/nm.o"' "$nm_stage"
+grep -Fq 'raw_exact="$("$llvm_nm" --gnu-compatible -A -g -n "$smoke_dir/nm.o")"' "$nm_stage"
+grep -Fq 'public_exact="$("$public_nm" -A -g -n "$smoke_dir/nm.o")"' "$nm_stage"
+grep -Fq 'target_exact="$("$target_nm" -A -g -n "$smoke_dir/nm.o")"' "$nm_stage"
+grep -Fq 'check_linker_script_rejection raw "$llvm_nm" --gnu-compatible' "$nm_stage"
+grep -Fq 'check_linker_script_rejection public "$public_nm"' "$nm_stage"
+grep -Fq 'check_linker_script_rejection target "$target_nm"' "$nm_stage"
 grep -Fq 'rm -f "$shim_dir/nm" "$shim_dir/nm.bfd"' "$nm_stage"
 
 if grep -Fq 'mv "$public_nm"' "$nm_stage" ||
