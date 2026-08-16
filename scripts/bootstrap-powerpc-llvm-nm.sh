@@ -18,7 +18,7 @@ case "$TOOLCHAIN_TARGET" in
         ;;
 esac
 
-for required in git awk grep cksum chmod ln mkdir rm; do
+for required in git awk grep cksum chmod mkdir rm; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: LLVM nm migration dependency not found: %s\n' \
             "$required" >&2
@@ -57,7 +57,7 @@ shim_dir="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu"
 nm_marker="$TOOLCHAIN_DIR/.whp-powerpc-nm"
 nm_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 expected_nm_marker="$(cat <<MARKER
-NM_SCHEMA=1
+NM_SCHEMA=2
 NM=llvm-nm
 GNU_COMPATIBILITY=--gnu-compatible
 GNU_NM=disabled
@@ -73,10 +73,12 @@ llvm_nm_toolchain_is_usable()
 {
     [[ -x "$llvm_nm" ]] || return 1
     [[ -x "$public_nm" ]] || return 1
-    [[ -e "$target_nm" ]] || return 1
+    [[ -x "$target_nm" ]] || return 1
+    [[ ! -L "$target_nm" ]] || return 1
     [[ ! -e "$shim_dir/nm" ]] || return 1
     [[ ! -e "$shim_dir/nm.bfd" ]] || return 1
     grep -Fq -- '--gnu-compatible' "$public_nm" || return 1
+    grep -Fq -- '--gnu-compatible' "$target_nm" || return 1
     "$llvm_nm" --version 2>/dev/null | grep -q 'llvm-nm' || return 1
     "$public_nm" --version 2>/dev/null | grep -q 'llvm-nm' || return 1
     "$target_nm" --version 2>/dev/null | grep -q 'llvm-nm' || return 1
@@ -141,25 +143,36 @@ if ! grep -Eq '^[[:xdigit:]]+[[:space:]]+T[[:space:]]+whp_llvm_nm_smoke$' \
     exit 1
 fi
 
-# Remove GNU nm residue from the published toolchain and expose a deliberately
-# thin compatibility launcher. GNU semantics stay in LLVM rather than leaking
-# into QEMU wrapper logic.
+# Remove GNU nm residue from the published toolchain. nm needs a compatibility
+# option, so publish two real POSIX launchers rather than symlinking a launcher.
+# A symlinked shell script observes the alias path in $0/BASH_SOURCE and can
+# derive the wrong toolchain root, which is especially easy to expose on macOS.
 mkdir -p "$TOOLCHAIN_DIR/bin" "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin" "$shim_dir"
 rm -f "$shim_dir/nm" "$shim_dir/nm.bfd"
 rm -f "$public_nm" "$target_nm"
 cat > "$public_nm" <<'WRAPPER'
-#!/usr/bin/env bash
-set -euo pipefail
-prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+#!/bin/sh
+set -eu
+prefix=$(CDPATH= cd -P "$(dirname "$0")/.." && pwd)
 llvm_nm="$prefix/llvm/bin/llvm-nm"
-if [[ ! -x "$llvm_nm" ]]; then
+if [ ! -x "$llvm_nm" ]; then
     printf 'error: WHP PowerPC nm cannot find llvm-nm: %s\n' "$llvm_nm" >&2
     exit 1
 fi
 exec "$llvm_nm" --gnu-compatible "$@"
 WRAPPER
-chmod +x "$public_nm"
-ln -s "../../bin/${TOOLCHAIN_TARGET}-nm" "$target_nm"
+cat > "$target_nm" <<'WRAPPER'
+#!/bin/sh
+set -eu
+prefix=$(CDPATH= cd -P "$(dirname "$0")/../.." && pwd)
+llvm_nm="$prefix/llvm/bin/llvm-nm"
+if [ ! -x "$llvm_nm" ]; then
+    printf 'error: WHP PowerPC target nm cannot find llvm-nm: %s\n' "$llvm_nm" >&2
+    exit 1
+fi
+exec "$llvm_nm" --gnu-compatible "$@"
+WRAPPER
+chmod +x "$public_nm" "$target_nm"
 
 if ! llvm_nm_toolchain_is_usable; then
     printf 'error: PowerPC nm compatibility entry points are not LLVM-only\n' >&2
