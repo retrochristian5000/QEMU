@@ -172,6 +172,56 @@ if [[ "$public_armap" != "$armap_output" ]]; then
     exit 1
 fi
 
+# Exercise the exact option shape seen in the OpenBIOS failure through every
+# published entry point. A wrapper or target-side alias must not alter argv,
+# option interpretation, symbol ordering, or filename prefixes.
+raw_exact="$("$llvm_nm" --gnu-compatible -A -g -n "$smoke_dir/nm.o")"
+public_exact="$("$public_nm" -A -g -n "$smoke_dir/nm.o")"
+target_exact="$("$target_nm" -A -g -n "$smoke_dir/nm.o")"
+if [[ "$raw_exact" != "$public_exact" || "$raw_exact" != "$target_exact" ]]; then
+    printf '%s\n' \
+        'error: PowerPC nm entry points disagree for OpenBIOS -A -g -n semantics' \
+        "raw llvm-nm: $raw_exact" \
+        "public nm:    $public_exact" \
+        "target nm:    $target_exact" >&2
+    exit 1
+fi
+if ! grep -Fq 'whp_llvm_nm_smoke' <<< "$raw_exact"; then
+    printf 'error: llvm-nm -A -g -n smoke output lost the PowerPC symbol\n' >&2
+    exit 1
+fi
+
+# The real failure handed nm a linker script named target.ld. Prove that all
+# three entry points reject the same invalid input class rather than letting a
+# routing difference disguise the caller bug.
+cat > "$smoke_dir/target.ld" <<'LDSCRIPT'
+ENTRY(whp_llvm_nm_smoke)
+SECTIONS { . = 0x1000; .text : { *(.text) } }
+LDSCRIPT
+
+check_linker_script_rejection()
+{
+    local label="$1"
+    shift
+    local status
+
+    set +e
+    "$@" -A -g -n "$smoke_dir/target.ld" \
+        >"$smoke_dir/$label-target-ld.out" \
+        2>"$smoke_dir/$label-target-ld.err"
+    status=$?
+    set -e
+    if [[ "$status" -eq 0 ]]; then
+        printf 'error: %s nm entry point accepted linker-script text as object data\n' \
+            "$label" >&2
+        exit 1
+    fi
+}
+
+check_linker_script_rejection raw "$llvm_nm" --gnu-compatible
+check_linker_script_rejection public "$public_nm"
+check_linker_script_rejection target "$target_nm"
+
 printf '%s\n' "$expected_nm_marker" > "$nm_marker"
 printf '%s\n' \
     "Bootstrapped PowerPC nm: llvm-nm ($llvm_revision)" \
