@@ -9,9 +9,11 @@ on:
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-powerpc-llvm-ar.sh'
+      - 'scripts/bootstrap-powerpc-llvm-nm.sh'
       - 'scripts/bootstrap-powerpc-llvm-strip.sh'
       - 'scripts/tests/test-powerpc-llvm-assembler-wiring.bash'
       - 'scripts/tests/test-powerpc-llvm-ar-wiring.bash'
+      - 'scripts/tests/test-powerpc-llvm-nm-wiring.bash'
       - 'scripts/tests/test-powerpc-llvm-strip-wiring.bash'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/build-openbios.sh'
@@ -85,8 +87,10 @@ jobs:
         run: |
           bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
           bash scripts/tests/test-powerpc-llvm-ar-wiring.bash
+          bash scripts/tests/test-powerpc-llvm-nm-wiring.bash
           bash scripts/tests/test-powerpc-llvm-strip-wiring.bash
-          bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
+          env -u OPENBIOS_BUILD_DIR \
+            bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
 
       - name: Bootstrap Clang and LLVM binary tools
         shell: bash
@@ -121,6 +125,21 @@ jobs:
           ! grep -Fq 'AS     := $(TARGET)as' roms/openbios/Makefile.target
           grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' \
             roms/openbios/arch/ppc/Makefile.asm
+
+      - name: Verify published nm routing
+        shell: bash
+        run: |
+          set -euxo pipefail
+          public_nm="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-nm"
+          target_nm="$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/nm"
+          test -x "$public_nm"
+          test -x "$target_nm"
+          grep -Fq 'NM=llvm-nm' "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
+          grep -Fq 'GNU_COMPATIBILITY=--gnu-compatible' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
+          grep -Fq 'GNU_NM=disabled' "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
+          "$public_nm" --version 2>&1 | grep -q 'llvm-nm'
+          "$target_nm" --version 2>&1 | grep -q 'llvm-nm'
 
       - name: Verify published strip routing
         shell: bash
@@ -164,6 +183,10 @@ jobs:
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-lld"
           test ! -e "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
           test ! -e "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
+          grep -Fq 'NM=llvm-nm' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
+          grep -Fq 'GNU_NM=disabled' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
           grep -Fq 'STRIP=llvm-strip' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-strip"
           grep -Fq 'GNU_STRIP=disabled' \
@@ -194,6 +217,7 @@ jobs:
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
             build/toolchains/powerpc-elf/.whp-powerpc-ar
+            build/toolchains/powerpc-elf/.whp-powerpc-nm
             build/toolchains/powerpc-elf/.whp-powerpc-strip
           if-no-files-found: warn
           retention-days: 7
