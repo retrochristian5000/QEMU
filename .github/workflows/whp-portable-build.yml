@@ -72,3 +72,46 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" -machine help >/dev/null
           test -f "$BUILD_DIR/.whp-build-artifacts"
           test ! -e configs/devices/ppc-softmmu/whp-user.mak
+
+      - name: Build qemu-img through Bash-free core
+        env:
+          BUILD_DIR: ${{ github.workspace }}/build-whp-portable-core
+          BUILD_QEMU_SYSTEM_I386: '0'
+          BUILD_QEMU_SYSTEM_PPC: '0'
+          WHP_FORCE_PORTABLE_CORE: '1'
+        run: ./build.sh qemu-img
+
+      - name: Smoke-test Bash-free output
+        run: |
+          portable_dir="${{ github.workspace }}/build-whp-portable-core"
+          test -x "$portable_dir/qemu-img"
+          "$portable_dir/qemu-img" --version
+          grep -Fxq 'PORTABLE_CORE=1' "$portable_dir/.whp-build-artifacts"
+          test ! -e configs/devices/ppc-softmmu/whp-user.mak
+
+  windows-portable-plan:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      WHP_PORTABLE_PROBE_ONLY: '1'
+      BUILD_QEMU_IMG: '1'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: auto
+      BOOTSTRAP_POWERPC_TOOLCHAIN: auto
+      MACOS_ENABLE_GTK: auto
+      MACOS_ENABLE_PA: auto
+      QEMU_HOST_LTO: auto
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify portable driver has no Unix-only planning dependency
+        shell: pwsh
+        run: |
+          python scripts/whp-build/portable-build.py qemu-system-i386 | Tee-Object portable-plan.txt
+          Select-String -Path portable-plan.txt -SimpleMatch 'CONFIGURE_ARG=--target-list=i386-softmmu'
+          if (Select-String -Path portable-plan.txt -Pattern '--enable-(gtk|pa)') {
+            throw 'portable auto mode forced an optional desktop dependency'
+          }
