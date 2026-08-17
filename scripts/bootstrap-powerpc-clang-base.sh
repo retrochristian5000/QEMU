@@ -94,6 +94,9 @@ fi
 # shipped compiler release, but it substantially increases bootstrap latency.
 # Use -O2 for GCC-compatible host compilers; other compiler families keep their
 # native Release flags so this optimization does not narrow host portability.
+# Since the bootstrap also disables dead stripping, explicitly undo LLVM's
+# function/data section splitting in the config-specific flags that appear later
+# on the compile command line.
 cmake_host_release_args=()
 cmake_host_linker_args=()
 host_release_flags="toolchain-default"
@@ -104,10 +107,10 @@ if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
    "$TOOLCHAIN_HOST_CXX" -dM -E -x c++ /dev/null 2>/dev/null |
        grep -Eq '^#define (__clang__|__GNUC__) '; then
     host_gcc_compatible=1
-    host_release_flags="-O2 -DNDEBUG"
+    host_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
     cmake_host_release_args=(
-        "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG"
-        "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG"
+        "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
+        "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
     )
 fi
 
@@ -321,6 +324,8 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_ENABLE_WARNINGS=OFF \
     -DLLVM_ENABLE_PEDANTIC=OFF \
     -DLLVM_NO_DEAD_STRIP=ON \
+    -DLINKER_SUPPORTS_RELR=FALSE \
+    -DLINKER_SUPPORTS_COLOR_DIAGNOSTICS=FALSE \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
