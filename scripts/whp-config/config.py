@@ -55,7 +55,7 @@ SHELL_TRI_STATE_KEYS = {
     'BUILD_OPENBIOS',
     'BOOTSTRAP_POWERPC_TOOLCHAIN',
 }
-_STRING_RE = re.compile(r'^[A-Za-z0-9_.,+:/-]+$')
+_TARGET_LIST_RE = re.compile(r'^[A-Za-z0-9_.,+:/-]+$')
 _KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]*$')
 
 
@@ -81,8 +81,8 @@ def validate_value(option: Option, value: str) -> None:
             )
         return
     if option.kind == 'string':
-        if not value or not _STRING_RE.fullmatch(value):
-            raise ValueError(f'{option.key} contains unsupported characters')
+        if not value or any(character in value for character in ('\n', '\r', '\0')):
+            raise ValueError(f'{option.key} contains an invalid line break or NUL')
         return
     raise ValueError(f'unsupported option type for {option.key}')
 
@@ -115,7 +115,7 @@ def load_config(path: pathlib.Path) -> ConfigState:
                 )
             continue
         if key == 'QEMU_TARGET_LIST':
-            if not value or not _STRING_RE.fullmatch(value):
+            if not value or not _TARGET_LIST_RE.fullmatch(value):
                 raise ValueError(
                     f'{path}:{number}: QEMU_TARGET_LIST contains unsupported characters'
                 )
