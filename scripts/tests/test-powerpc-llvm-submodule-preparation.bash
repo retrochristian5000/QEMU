@@ -114,8 +114,8 @@ if grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$CLANG_BOOTSTRAP"; then
     printf 'error: LLVM bootstrap still destroys its CMake build directory\n' >&2
     exit 1
 fi
-grep -Fq 'BOOTSTRAP_SCHEMA=13' "$CLANG_BOOTSTRAP"
-grep -Fq 'LLVM_CMAKE_MODE=incremental-distribution-warning-clean' "$CLANG_BOOTSTRAP"
+grep -Fq 'BOOTSTRAP_SCHEMA=14' "$CLANG_BOOTSTRAP"
+grep -Fq 'LLVM_CMAKE_MODE=incremental-distribution-fast-host-flags' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-DLLVM_DISTRIBUTION_COMPONENTS=' "$CLANG_BOOTSTRAP"
 grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target distribution' "$CLANG_BOOTSTRAP"
 grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target install-distribution' "$CLANG_BOOTSTRAP"
@@ -124,8 +124,12 @@ for cmake_flag in \
     '-DLLVM_INCLUDE_DOCS=OFF' \
     '-DLLVM_INCLUDE_UTILS=OFF' \
     '-DLLVM_INCLUDE_RUNTIMES=OFF' \
-    '-DLLVM_ENABLE_BINDINGS=OFF'; do
+    '-DLLVM_ENABLE_BINDINGS=OFF' \
+    '-DLLVM_ENABLE_WARNINGS=OFF' \
+    '-DLLVM_ENABLE_PEDANTIC=OFF'; do
     grep -Fq -- "$cmake_flag" "$CLANG_BOOTSTRAP"
 done
+grep -Fq -- '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG' "$CLANG_BOOTSTRAP"
+grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG' "$CLANG_BOOTSTRAP"
 
 printf 'PowerPC LLVM submodule preparation: verified\n'
