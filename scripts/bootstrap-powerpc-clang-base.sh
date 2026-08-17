@@ -89,6 +89,24 @@ if ! command -v "$TOOLCHAIN_HOST_CXX" >/dev/null 2>&1; then
     exit 1
 fi
 
+# LLVM's normal Release profile uses the host compiler's most aggressive
+# optimization setting (typically -O3 for GCC/Clang). That is useful for a
+# shipped compiler release, but it substantially increases bootstrap latency.
+# Use -O2 for GCC-compatible host compilers; other compiler families keep their
+# native Release flags so this optimization does not narrow host portability.
+cmake_host_release_args=()
+host_release_flags="toolchain-default"
+if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
+       grep -Eq '^#define (__clang__|__GNUC__) ' &&
+   "$TOOLCHAIN_HOST_CXX" -dM -E -x c++ /dev/null 2>/dev/null |
+       grep -Eq '^#define (__clang__|__GNUC__) '; then
+    host_release_flags="-O2 -DNDEBUG"
+    cmake_host_release_args=(
+        "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG"
+        "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG"
+    )
+fi
+
 host_cflags=""
 host_cxxflags=""
 host_cppflags=""
@@ -202,7 +220,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=13
+BOOTSTRAP_SCHEMA=14
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -210,7 +228,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_URL=$LLVM_GIT_URL
 LLVM_GIT_COMMIT=$llvm_revision
-LLVM_CMAKE_MODE=incremental-distribution-warning-clean
+LLVM_CMAKE_MODE=incremental-distribution-fast-host-flags
 HOST_SYSTEM=$(uname -srm)
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
@@ -218,6 +236,7 @@ HOST_CFLAGS=$host_cflags
 HOST_CXXFLAGS=$host_cxxflags
 HOST_CPPFLAGS=$host_cppflags
 HOST_LDFLAGS=$host_ldflags
+HOST_RELEASE_FLAGS=$host_release_flags
 MARKER
 )"
 
@@ -265,12 +284,15 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
     -DCMAKE_CXX_COMPILER="$TOOLCHAIN_HOST_CXX" \
+    "${cmake_host_release_args[@]}" \
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm" \
     "${cmake_darwin_args[@]}" \
     -DLLVM_ENABLE_PROJECTS=clang \
     -DLLVM_TARGETS_TO_BUILD=PowerPC \
     -DLLVM_DISTRIBUTION_COMPONENTS="$llvm_distribution_components" \
     -DLLVM_ENABLE_ASSERTIONS=OFF \
+    -DLLVM_ENABLE_WARNINGS=OFF \
+    -DLLVM_ENABLE_PEDANTIC=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
