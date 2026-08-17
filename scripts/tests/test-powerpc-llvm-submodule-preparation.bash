@@ -7,6 +7,7 @@ SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
 CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
 CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+CLANG_CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
 REAL_BASH="$(command -v bash)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -155,5 +156,23 @@ grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-
 grep -Fq -- '-fuse-ld=mold' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld=lld' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
+
+# The standalone LLD stage must keep its own Ninja state and compile only the
+# ELF driver used by the PowerPC firmware lane.
+if grep -Fq 'rm -rf "$LLD_BUILD_DIR"' "$CLANG_CORE"; then
+    printf 'error: LLD bootstrap still destroys its CMake build directory\n' >&2
+    exit 1
+fi
+if grep -Fq 'JOBS="${JOBS:-1}"' "$CLANG_CORE"; then
+    printf 'error: LLD bootstrap still serializes standalone builds by default\n' >&2
+    exit 1
+fi
+grep -Fq 'LLD_SCHEMA=4' "$CLANG_CORE"
+grep -Fq 'LLD_BUILD_MODE=incremental-elf-only' "$CLANG_CORE"
+grep -Fq 'cmake_parallel_args=(--parallel)' "$CLANG_CORE"
+grep -Fq -- '-DLLD_ENABLE_BACKENDS=ELF' "$CLANG_CORE"
+grep -Fq -- '-DLLVM_TARGETS_TO_BUILD=PowerPC' "$CLANG_CORE"
+grep -Fq -- 'cmake --build "$LLD_BUILD_DIR" --target lld' "$CLANG_CORE"
+grep -Fq -- '"${cmake_parallel_args[@]}"' "$CLANG_CORE"
 
 printf 'PowerPC LLVM submodule preparation: verified\n'
