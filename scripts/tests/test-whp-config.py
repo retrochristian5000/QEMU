@@ -305,7 +305,10 @@ class WhpConfigTests(unittest.TestCase):
             ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-ppc'],
             text=True, capture_output=True, check=True, env=env,
         )
-        self.assertIn('OPTIONAL_DECLINE=OpenBIOS:auto:bash-unavailable', result.stdout)
+        self.assertIn(
+            'OPTIONAL_DECLINE=OpenBIOS:auto:firmware-adapter-unavailable',
+            result.stdout,
+        )
 
 
 if __name__ == '__main__':
