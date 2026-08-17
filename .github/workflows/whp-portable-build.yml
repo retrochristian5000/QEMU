@@ -92,7 +92,8 @@ jobs:
           "$BUILD_DIR/qemu-system-ppc" -machine help | grep -Eq 'powermac3_1|mac99'
 
           target_line="$(grep '^QEMU_TARGET_LIST=' "$BUILD_DIR/.whp-config")"
-          case ",$target_line," in
+          target_value="${target_line#QEMU_TARGET_LIST=}"
+          case ",$target_value," in
             *,i386-softmmu,*ppc-softmmu,*|*,ppc-softmmu,*i386-softmmu,*) ;;
             *)
               echo "error: incremental target set was not preserved: $target_line" >&2
