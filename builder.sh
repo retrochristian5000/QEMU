@@ -31,9 +31,11 @@ esac
 source "$BUILD_SYSTEM_DIR/stages.bash"
 
 whp_prepare_build
-source "$SOURCE_DIR/scripts/macos-gtk-environment.bash"
-"$WHP_BUILD_BASH" --noprofile --norc \
-    "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
+if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
+    source "$SOURCE_DIR/scripts/macos-gtk-environment.bash"
+    "$WHP_BUILD_BASH" --noprofile --norc \
+        "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
+fi
 whp_prepare_sources
 whp_configure_build
 whp_build_targets "$@"
