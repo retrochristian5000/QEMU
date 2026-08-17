@@ -156,8 +156,8 @@ for cmake_flag in \
 done
 grep -Fq -- '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
-grep -Fq -- '-fuse-ld=mold' "$CLANG_BOOTSTRAP"
-grep -Fq -- '-fuse-ld=lld' "$CLANG_BOOTSTRAP"
+grep -Fq 'for candidate in mold lld; do' "$CLANG_BOOTSTRAP"
+grep -Fq -- '-fuse-ld="$candidate"' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
 
 # The standalone LLD stage must keep its own Ninja state and compile only the
