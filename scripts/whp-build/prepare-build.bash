@@ -206,6 +206,9 @@ whp_apply_requested_build_targets()
 
     for target in "${requested_targets[@]}"; do
         case "$target" in
+            qemu-img)
+                BUILD_QEMU_IMG=1
+                ;;
             qemu-system-*)
                 arch="${target#qemu-system-}"
                 [[ -n "$arch" ]] && whp_qemu_target_list_add "${arch}-softmmu"
