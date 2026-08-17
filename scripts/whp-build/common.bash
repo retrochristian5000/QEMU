@@ -24,18 +24,43 @@ whp_append_flag()
     export "$variable"
 }
 
+whp_normalize_boolean_variable()
+{
+    local variable="$1"
+    local value="${!variable}"
+
+    case "${value,,}" in
+        1|y|yes|true|on) printf -v "$variable" '%s' 1 ;;
+        0|n|no|false|off) printf -v "$variable" '%s' 0 ;;
+        *)
+            printf 'error: %s must be a boolean value\n' "$variable" >&2
+            return 1
+            ;;
+    esac
+}
+
+whp_normalize_tristate_variable()
+{
+    local variable="$1"
+    local value="${!variable}"
+
+    case "${value,,}" in
+        auto) printf -v "$variable" '%s' auto ;;
+        1|y|yes|true|on) printf -v "$variable" '%s' 1 ;;
+        0|n|no|false|off) printf -v "$variable" '%s' 0 ;;
+        *)
+            printf 'error: %s must be auto or a boolean value\n' "$variable" >&2
+            return 1
+            ;;
+    esac
+}
+
 whp_require_boolean_values()
 {
     local variable
 
     for variable in "$@"; do
-        case "${!variable}" in
-            0|1) ;;
-            *)
-                printf 'error: %s must be 0 or 1\n' "$variable" >&2
-                return 1
-                ;;
-        esac
+        whp_normalize_boolean_variable "$variable" || return 1
     done
 }
 
@@ -44,12 +69,6 @@ whp_require_tristate_values()
     local variable
 
     for variable in "$@"; do
-        case "${!variable}" in
-            auto|0|1) ;;
-            *)
-                printf 'error: %s must be auto, 0, or 1\n' "$variable" >&2
-                return 1
-                ;;
-        esac
+        whp_normalize_tristate_variable "$variable" || return 1
     done
 }
