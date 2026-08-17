@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 30
     env:
       BUILD_DIR: ${{ github.workspace }}/build-whp-linux
-      BUILD_QEMU_IMG: '1'
+      BUILD_QEMU_IMG: '0'
       BUILD_QEMU_SYSTEM_I386: '1'
       BUILD_QEMU_SYSTEM_PPC: '0'
       BUILD_OPENBIOS: '0'
@@ -69,6 +69,7 @@ jobs:
       - name: Smoke-test wrapper output
         run: |
           test -x "$BUILD_DIR/qemu-system-i386"
+          test ! -x "$BUILD_DIR/qemu-img"
           "$BUILD_DIR/qemu-system-i386" --version
           "$BUILD_DIR/qemu-system-i386" -machine help >/dev/null
           test -f "$BUILD_DIR/.whp-build-artifacts"
@@ -100,6 +101,26 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Add qemu-img without restarting build tree
+        run: |
+          set -euo pipefail
+          sentinel="$BUILD_DIR/.whp-incremental-sentinel"
+          test -f "$sentinel"
+          test ! -x "$BUILD_DIR/qemu-img"
+
+          # BUILD_QEMU_IMG remains 0 in the job environment.  The explicit
+          # target must enable tools for this run without discarding either
+          # already-built system emulator or the incremental build directory.
+          ./build.sh qemu-img
+
+          test -f "$sentinel"
+          test -x "$BUILD_DIR/qemu-system-i386"
+          test -x "$BUILD_DIR/qemu-system-ppc"
+          test -x "$BUILD_DIR/qemu-img"
+          "$BUILD_DIR/qemu-img" --version
+          grep '^CONFIGURE_ARG=.*--enable-tools' "$BUILD_DIR/.whp-config" >/dev/null
+          grep -Fxq 'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu' "$BUILD_DIR/.whp-config"
 
       - name: Build qemu-img through Bash-free core
         env:
