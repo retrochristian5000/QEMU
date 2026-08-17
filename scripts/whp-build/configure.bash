@@ -53,16 +53,27 @@ whp_configure_add_target()
 whp_configure_merge_previous_targets()
 {
     local config_file="$1"
+    local current="${QEMU_TARGET_LIST:-}"
     local previous
     local target
+    local current_targets=()
     local previous_targets=()
 
     [[ "${WHP_INCREMENTAL_BUILD:-1}" == 1 ]] || return 0
     previous="$(whp_configure_previous_target_list "$config_file")"
     [[ -n "$previous" ]] || return 0
 
+    # Preserve the established target order first, then append genuinely new
+    # targets from this invocation.  Reversing that order based on whichever
+    # target the user requested would change CONFIGURE_ARG despite an identical
+    # target set and cause pointless reconfigure churn on alternating builds.
+    QEMU_TARGET_LIST=
     IFS=, read -r -a previous_targets <<< "$previous"
     for target in "${previous_targets[@]}"; do
+        whp_configure_add_target "$target"
+    done
+    IFS=, read -r -a current_targets <<< "$current"
+    for target in "${current_targets[@]}"; do
         whp_configure_add_target "$target"
     done
 }
