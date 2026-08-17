@@ -102,17 +102,97 @@ def select_runner() -> List[str]:
     raise RuntimeError('neither Ninja nor Make is available to run the QEMU build')
 
 
+def append_unique(values: List[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
+
+
+def requested_system_targets(argv: List[str]) -> List[str]:
+    targets: List[str] = []
+    for requested in argv:
+        if not requested.startswith('qemu-system-'):
+            continue
+        arch = requested[len('qemu-system-'):]
+        if arch:
+            append_unique(targets, f'{arch}-softmmu')
+    return targets
+
+
+def previous_configured_targets(build_dir: pathlib.Path) -> List[str]:
+    config_file = build_dir / '.whp-config'
+    if not config_file.is_file():
+        return []
+
+    try:
+        lines = config_file.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+
+    for line in lines:
+        if line.startswith('QEMU_TARGET_LIST='):
+            return [
+                target for target in line.split('=', 1)[1].split(',')
+                if target
+            ]
+
+    # Build trees created before the dedicated target field can still be
+    # expanded without a reset.  Recover the target list from the old recorded
+    # configure command when possible.
+    for line in lines:
+        if not line.startswith('CONFIGURE_ARG='):
+            continue
+        for arg in line.split('=', 1)[1].split():
+            if arg.startswith('--target-list='):
+                return [
+                    target for target in arg.split('=', 1)[1].split(',')
+                    if target
+                ]
+    return []
+
+
+def write_portable_config(
+    build_dir: pathlib.Path,
+    prefix: pathlib.Path,
+    configure_args: List[str],
+) -> None:
+    target_list = ''
+    for arg in configure_args:
+        if arg.startswith('--target-list='):
+            target_list = arg.split('=', 1)[1]
+            break
+
+    config_file = build_dir / '.whp-config'
+    candidate = config_file.with_name(config_file.name + '.new')
+    with candidate.open('w', encoding='utf-8') as handle:
+        handle.write('SCHEMA=2\n')
+        handle.write('PORTABLE_CORE=1\n')
+        handle.write(f'SOURCE_DIR={ROOT}\n')
+        handle.write(f'PREFIX={prefix}\n')
+        handle.write(f'QEMU_TARGET_LIST={target_list}\n')
+        handle.write(f'CONFIGURE_ARG={" ".join(configure_args)}\n')
+    os.replace(candidate, config_file)
+
+
 def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], List[str], List[str]]:
     values = resolved_values()
     build_dir = pathlib.Path(os.environ.get('BUILD_DIR', str(ROOT / 'build' / 'whp-portable'))).expanduser()
     prefix_value = values['PREFIX']
     prefix = default_prefix(build_dir) if prefix_value == 'auto' else pathlib.Path(prefix_value).expanduser()
 
-    targets: List[str] = []
+    selected_targets: List[str] = []
     if values['BUILD_QEMU_SYSTEM_PPC'] == 'y':
-        targets.append('ppc-softmmu')
+        append_unique(selected_targets, 'ppc-softmmu')
     if values['BUILD_QEMU_SYSTEM_I386'] == 'y':
-        targets.append('i386-softmmu')
+        append_unique(selected_targets, 'i386-softmmu')
+    for target in requested_system_targets(argv):
+        append_unique(selected_targets, target)
+
+    targets: List[str] = []
+    if values['WHP_INCREMENTAL_BUILD'] == 'y':
+        for target in previous_configured_targets(build_dir):
+            append_unique(targets, target)
+    for target in selected_targets:
+        append_unique(targets, target)
 
     configure_args: List[str] = [f'--prefix={prefix}']
     if targets:
@@ -120,7 +200,8 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     else:
         configure_args.append('--disable-system')
 
-    configure_args.append('--enable-tools' if values['BUILD_QEMU_IMG'] == 'y' else '--disable-tools')
+    tools_enabled = values['BUILD_QEMU_IMG'] == 'y' or 'qemu-img' in argv
+    configure_args.append('--enable-tools' if tools_enabled else '--disable-tools')
     optional_switch(configure_args, values['QEMU_HOST_LTO'], 'lto')
     optional_switch(configure_args, values['MACOS_ENABLE_GTK'], 'gtk')
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
@@ -232,6 +313,8 @@ def main(argv: List[str]) -> int:
     artifacts: Dict[str, pathlib.Path] = {}
     try:
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
+        write_portable_config(build_dir, prefix, configure_args)
+
         runner = select_runner()
         jobs = os.environ.get('JOBS') or str(os.cpu_count() or 1)
         runner_name = pathlib.Path(runner[0]).name
