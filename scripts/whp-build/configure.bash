@@ -3,20 +3,31 @@
 
 whp_configure_build()
 {
-# Reconfigure only when the build machine, host toolchain, SDK, dependencies,
-# firmware toolchain, requested QEMU settings, or portable device policy change.
-WHP_PPC_DEVICE_CONFIG_SIGNATURE=disabled
-case ",$QEMU_TARGET_LIST," in
+local ppc_custom_devices=0
+local ppc_generated_config=""
+local ppc_generated_temp=""
+local configure_status=0
+
+# QEMU's tracked ppc-softmmu defaults already include both Old World and New
+# World Macintosh boards. Do not generate a source-tree preset for that common
+# case. Only an explicit machine filter needs the compatibility preset hook.
+WHP_PPC_DEVICE_CONFIG_SIGNATURE=not-requested
+case ",${QEMU_TARGET_LIST:-}," in
     *,ppc-softmmu,*)
-        WHP_PPC_DEVICE_CONFIG="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
-        if [[ ! -f "$WHP_PPC_DEVICE_CONFIG" ]]; then
-            printf 'error: missing generated PPC device configuration: %s\n' \
-                "$WHP_PPC_DEVICE_CONFIG" >&2
-            exit 1
+        if [[ "${CONFIG_MAC_NEWWORLD:-y}" == y &&
+              "${CONFIG_MAC_OLDWORLD:-y}" == y ]]; then
+            WHP_PPC_DEVICE_CONFIG_SIGNATURE=tracked-defaults
+            stale_ppc_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+            if [[ -f "$stale_ppc_config" ]] &&
+               grep -Fq '# WHP user overrides generated from .whpconfig; do not edit.' \
+                   "$stale_ppc_config"; then
+                rm -f "$stale_ppc_config"
+            fi
+        else
+            ppc_custom_devices=1
+            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y}"
+            configure_args+=(--with-devices-ppc=whp-user)
         fi
-        configure_args+=(--with-devices-ppc=whp-user)
-        WHP_PPC_DEVICE_CONFIG_SIGNATURE="$(cksum "$WHP_PPC_DEVICE_CONFIG" |
-            awk '{print $1 ":" $2}')"
         ;;
 esac
 
@@ -44,7 +55,7 @@ config_candidate="$config_file.new"
     printf 'CC=%s\n' "${CC:-cc}"
     printf 'CXX=%s\n' "${CXX:-c++}"
     printf 'OBJC=%s\n' "${OBJC:-}"
-    printf 'CFLAGS=%s\n' "$CFLAGS"
+    printf 'CFLAGS=%s\n' "${CFLAGS:-}"
     printf 'CXXFLAGS=%s\n' "${CXXFLAGS:-}"
     printf 'OBJCFLAGS=%s\n' "${OBJCFLAGS:-}"
     printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
@@ -57,8 +68,8 @@ config_candidate="$config_file.new"
     printf 'PKG_CONFIG_PATH=%s\n' "${PKG_CONFIG_PATH:-}"
     printf 'PKG_CONFIG_PATH_FOR_BUILD=%s\n' "${PKG_CONFIG_PATH_FOR_BUILD:-}"
     printf 'HOMEBREW_PREFIX=%s\n' "${HOMEBREW_PREFIX:-}"
-    printf 'MAKE=%s\n' "$MAKE_CMD"
-    printf 'NINJA=%s\n' "${NINJA:-}"
+    printf 'MAKE=%s\n' "${MAKE_CMD:-}"
+    printf 'NINJA=%s\n' "${NINJA_CMD:-${NINJA:-}}"
     printf 'PYTHON=%s\n' "${PYTHON:-}"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
     printf 'QEMU_HOST_LTO=%s\n' "$QEMU_HOST_LTO"
@@ -70,6 +81,8 @@ config_candidate="$config_file.new"
     printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%s\n' \
         "${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
     printf 'POWERPC_TOOLCHAIN_DIR=%s\n' "$POWERPC_TOOLCHAIN_DIR"
+    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}"
+    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}"
     printf 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=%s\n' "$WHP_PPC_DEVICE_CONFIG_SIGNATURE"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[*]}"
 } > "$config_candidate"
@@ -77,10 +90,39 @@ config_candidate="$config_file.new"
 if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
    [[ ! -f "$config_file" ]] ||
    ! cmp -s "$config_candidate" "$config_file"; then
+    if [[ "$ppc_custom_devices" == 1 ]]; then
+        ppc_generated_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+        ppc_generated_temp="$ppc_generated_config.tmp.$$"
+        if [[ ! -w "$(dirname "$ppc_generated_config")" ]]; then
+            printf '%s\n' \
+                'error: custom PPC machine filtering requires a temporary QEMU device preset,' \
+                'but the source configs directory is read-only. The tracked PPC defaults remain buildable.' >&2
+            rm -f "$config_candidate"
+            return 1
+        fi
+        awk '
+            !/^CONFIG_MAC_NEWWORLD=/ && !/^CONFIG_MAC_OLDWORLD=/ { print }
+        ' "$SOURCE_DIR/configs/devices/ppc-softmmu/default.mak" > "$ppc_generated_temp"
+        {
+            printf '\n# WHP temporary user overrides; removed after configure.\n'
+            printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}"
+            printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}"
+        } >> "$ppc_generated_temp"
+        mv "$ppc_generated_temp" "$ppc_generated_config"
+    fi
+
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "${configure_args[@]}"
-    )
+    ) || configure_status=$?
+
+    if [[ -n "$ppc_generated_config" ]]; then
+        rm -f "$ppc_generated_config" "$ppc_generated_temp"
+    fi
+    if [[ "$configure_status" != 0 ]]; then
+        rm -f "$config_candidate"
+        return "$configure_status"
+    fi
     mv "$config_candidate" "$config_file"
 else
     rm -f "$config_candidate"
