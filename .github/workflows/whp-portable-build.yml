@@ -13,6 +13,7 @@ on:
       - 'scripts/whp-build/**'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-incremental.py'
       - '.github/workflows/whp-portable-build.yml'
   workflow_dispatch:
 
@@ -72,6 +73,32 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" -machine help >/dev/null
           test -f "$BUILD_DIR/.whp-build-artifacts"
           test ! -e configs/devices/ppc-softmmu/whp-user.mak
+
+      - name: Add PPC without restarting build tree
+        run: |
+          set -euo pipefail
+          sentinel="$BUILD_DIR/.whp-incremental-sentinel"
+          printf 'keep-existing-tree\n' > "$sentinel"
+
+          # BUILD_QEMU_SYSTEM_PPC remains 0 in the job environment on purpose.
+          # The explicit target request must expand this run without replacing
+          # the i386 configuration or deleting the existing build tree.
+          ./build.sh qemu-system-ppc
+
+          test -f "$sentinel"
+          test -x "$BUILD_DIR/qemu-system-i386"
+          test -x "$BUILD_DIR/qemu-system-ppc"
+          "$BUILD_DIR/qemu-system-ppc" --version
+          "$BUILD_DIR/qemu-system-ppc" -machine help | grep -Eq 'powermac3_1|mac99'
+
+          target_line="$(grep '^QEMU_TARGET_LIST=' "$BUILD_DIR/.whp-config")"
+          case ",$target_line," in
+            *,i386-softmmu,*ppc-softmmu,*|*,ppc-softmmu,*i386-softmmu,*) ;;
+            *)
+              echo "error: incremental target set was not preserved: $target_line" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Build qemu-img through Bash-free core
         env:
