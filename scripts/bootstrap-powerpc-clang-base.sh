@@ -55,7 +55,7 @@ for build_path in "$SOURCE_DIR" "$TOOLCHAIN_DIR" "$TOOLCHAIN_WORK_DIR" \
                 "$build_path" >&2
             exit 1
             ;;
-    esac
+esac
 done
 
 for required in git cmake ninja grep awk ln mkdir mv rm; do
@@ -202,7 +202,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=12
+BOOTSTRAP_SCHEMA=13
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -210,7 +210,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_URL=$LLVM_GIT_URL
 LLVM_GIT_COMMIT=$llvm_revision
-LLVM_CMAKE_MODE=incremental-distribution
+LLVM_CMAKE_MODE=incremental-distribution-warning-clean
 HOST_SYSTEM=$(uname -srm)
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
@@ -274,6 +274,10 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DLLVM_INCLUDE_UTILS=OFF \
+    -DLLVM_INCLUDE_RUNTIMES=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
     -DCLANG_INCLUDE_TESTS=OFF \
     -DLLVM_ENABLE_TERMINFO=OFF \
     -DLLVM_ENABLE_ZLIB=OFF \
