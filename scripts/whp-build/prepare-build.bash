@@ -181,6 +181,39 @@ whp_prepare_build_defaults()
     reject_global_lto_flags
 }
 
+whp_qemu_target_list_add()
+{
+    local target="$1"
+
+    [[ -n "$target" ]] || return 0
+    case ",${QEMU_TARGET_LIST:-}," in
+        *",$target,"*) return 0 ;;
+    esac
+    QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}$target"
+}
+
+whp_apply_requested_build_targets()
+{
+    local target
+    local arch
+    local requested_targets=()
+
+    if (( $# > 0 )); then
+        requested_targets=("$@")
+    else
+        read -r -a requested_targets <<< "${BUILD_TARGETS:-all}"
+    fi
+
+    for target in "${requested_targets[@]}"; do
+        case "$target" in
+            qemu-system-*)
+                arch="${target#qemu-system-}"
+                [[ -n "$arch" ]] && whp_qemu_target_list_add "${arch}-softmmu"
+                ;;
+        esac
+    done
+}
+
 whp_prepare_host_tools()
 {
     if [[ "$HOST_OS" == Darwin ]]; then
@@ -355,6 +388,7 @@ whp_prepare_build()
 {
     whp_prepare_host_identity
     whp_prepare_build_defaults
+    whp_apply_requested_build_targets "$@"
     whp_prepare_host_tools
     whp_prepare_build_tools
     whp_prepare_configure_args
