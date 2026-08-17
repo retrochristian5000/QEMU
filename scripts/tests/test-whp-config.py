@@ -192,6 +192,19 @@ class WhpConfigTests(unittest.TestCase):
             self.assertIn("QEMU_HOST_LTO='1'", result.stdout)
             self.assertIn("WHP_INCREMENTAL_BUILD='0'", result.stdout)
 
+    def test_prefix_allows_spaces_and_remains_shell_quoted(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=2\nPREFIX=C:/Program Files/WHP QEMU\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['PREFIX'], 'C:/Program Files/WHP QEMU')
+            assignments = mod.shell_assignments(loaded, {})
+            self.assertIn("PREFIX='C:/Program Files/WHP QEMU'", assignments)
+
     def test_auto_value_is_not_exported(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
