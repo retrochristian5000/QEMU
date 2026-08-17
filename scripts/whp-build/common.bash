@@ -29,9 +29,13 @@ whp_normalize_boolean_variable()
     local variable="$1"
     local value="${!variable}"
 
-    case "${value,,}" in
-        1|y|yes|true|on) printf -v "$variable" '%s' 1 ;;
-        0|n|no|false|off) printf -v "$variable" '%s' 0 ;;
+    case "$value" in
+        1|y|Y|yes|YES|Yes|true|TRUE|True|on|ON|On)
+            printf -v "$variable" '%s' 1
+            ;;
+        0|n|N|no|NO|No|false|FALSE|False|off|OFF|Off)
+            printf -v "$variable" '%s' 0
+            ;;
         *)
             printf 'error: %s must be a boolean value\n' "$variable" >&2
             return 1
@@ -44,10 +48,16 @@ whp_normalize_tristate_variable()
     local variable="$1"
     local value="${!variable}"
 
-    case "${value,,}" in
-        auto) printf -v "$variable" '%s' auto ;;
-        1|y|yes|true|on) printf -v "$variable" '%s' 1 ;;
-        0|n|no|false|off) printf -v "$variable" '%s' 0 ;;
+    case "$value" in
+        auto|AUTO|Auto)
+            printf -v "$variable" '%s' auto
+            ;;
+        1|y|Y|yes|YES|Yes|true|TRUE|True|on|ON|On)
+            printf -v "$variable" '%s' 1
+            ;;
+        0|n|N|no|NO|No|false|FALSE|False|off|OFF|Off)
+            printf -v "$variable" '%s' 0
+            ;;
         *)
             printf 'error: %s must be auto or a boolean value\n' "$variable" >&2
             return 1
