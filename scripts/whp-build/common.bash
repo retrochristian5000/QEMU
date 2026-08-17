@@ -38,3 +38,18 @@ whp_require_boolean_values()
         esac
     done
 }
+
+whp_require_tristate_values()
+{
+    local variable
+
+    for variable in "$@"; do
+        case "${!variable}" in
+            auto|0|1) ;;
+            *)
+                printf 'error: %s must be auto, 0, or 1\n' "$variable" >&2
+                return 1
+                ;;
+        esac
+    done
+}
