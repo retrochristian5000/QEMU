@@ -1,6 +1,117 @@
 # WHP configuration identity and configure execution stage.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+whp_configure_canonical_host_arch()
+{
+    case "$1" in
+        amd64|x86_64) printf 'x86_64\n' ;;
+        aarch64|arm64) printf 'arm64\n' ;;
+        *) printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_.-\n' '-' ;;
+    esac
+}
+
+whp_configure_canonical_host_os()
+{
+    case "$1" in
+        Darwin) printf 'apple-darwin\n' ;;
+        Windows|MINGW*|MSYS*|CYGWIN*) printf 'windows\n' ;;
+        *) printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_.-\n' '-' ;;
+    esac
+}
+
+whp_configure_host_tag()
+{
+    printf '%s-%s\n' \
+        "$(whp_configure_canonical_host_arch "$HOST_ARCH")" \
+        "$(whp_configure_canonical_host_os "$HOST_OS")"
+}
+
+whp_configure_metadata_value()
+{
+    local path="$1"
+    local key="$2"
+    local line
+
+    [[ -f "$path" ]] || return 0
+    while IFS= read -r line; do
+        case "$line" in
+            "$key"=*) printf '%s\n' "${line#*=}"; return 0 ;;
+        esac
+    done < "$path"
+}
+
+whp_configure_validate_build_tree_owner()
+{
+    local owner_file="$BUILD_DIR/.whp-build-owner"
+    local config_file="$BUILD_DIR/.whp-config"
+    local expected_tag
+    local recorded_source=""
+    local recorded_tag=""
+    local recorded_arch=""
+    local recorded_os=""
+    local adopted=0
+
+    mkdir -p "$BUILD_DIR"
+    expected_tag="$(whp_configure_host_tag)"
+
+    if [[ -f "$owner_file" ]]; then
+        recorded_source="$(whp_configure_metadata_value "$owner_file" SOURCE_DIR)"
+        recorded_tag="$(whp_configure_metadata_value "$owner_file" HOST_TAG)"
+        if [[ "$recorded_source" != "$SOURCE_DIR" ]]; then
+            printf '%s\n' \
+                "error: BUILD_DIR belongs to another QEMU source tree: $BUILD_DIR" \
+                'The existing build tree was preserved.' >&2
+            return 1
+        fi
+        if [[ -n "$recorded_tag" && "$recorded_tag" != "$expected_tag" ]]; then
+            printf '%s\n' \
+                "error: BUILD_DIR belongs to host ABI $recorded_tag, not $expected_tag." \
+                "build directory: $BUILD_DIR" \
+                'Use a different BUILD_DIR for a different host ABI; the existing tree was preserved.' >&2
+            return 1
+        fi
+    elif [[ -n "$(ls -A "$BUILD_DIR" 2>/dev/null)" ]]; then
+        # One-time adoption for WHP trees created before the owner marker was
+        # introduced.  Source ownership is mandatory; host metadata, when it
+        # exists, must also agree with this build machine.
+        recorded_source="$(whp_configure_metadata_value "$config_file" SOURCE_DIR)"
+        if [[ "$recorded_source" != "$SOURCE_DIR" ]]; then
+            printf '%s\n' \
+                "error: refusing to reuse non-empty unowned BUILD_DIR: $BUILD_DIR" \
+                'Choose an empty directory or an existing WHP tree for this source checkout.' >&2
+            return 1
+        fi
+        recorded_arch="$(whp_configure_metadata_value "$config_file" HOST_ARCH)"
+        recorded_os="$(whp_configure_metadata_value "$config_file" HOST_OS)"
+        if [[ -n "$recorded_arch" && -n "$recorded_os" ]]; then
+            recorded_tag="$(printf '%s-%s' \
+                "$(whp_configure_canonical_host_arch "$recorded_arch")" \
+                "$(whp_configure_canonical_host_os "$recorded_os")")"
+            if [[ "$recorded_tag" != "$expected_tag" ]]; then
+                printf '%s\n' \
+                    "error: BUILD_DIR belongs to host ABI $recorded_tag, not $expected_tag." \
+                    "build directory: $BUILD_DIR" \
+                    'The existing build tree was preserved.' >&2
+                return 1
+            fi
+        fi
+        adopted=1
+    fi
+
+    {
+        printf 'SCHEMA=2\n'
+        printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
+        printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
+        printf 'HOST_TAG=%s\n' "$expected_tag"
+    } > "$owner_file.new"
+    mv "$owner_file.new" "$owner_file"
+
+    if [[ "$adopted" == 1 ]]; then
+        printf 'Adopted existing WHP build tree without deleting prior outputs: %s\n' \
+            "$BUILD_DIR"
+    fi
+}
+
 whp_configure_previous_target_list()
 {
     local path="$1"
@@ -107,6 +218,13 @@ local configure_status=0
 local config_file="$BUILD_DIR/.whp-config"
 local config_candidate="$BUILD_DIR/.whp-config.new"
 local stale_ppc_config=""
+local host_tag=""
+
+# BUILD_DIR is persistent state, not scratch space.  Establish ownership before
+# configuration so a source checkout or host ABI can never silently take over
+# another tree.
+whp_configure_validate_build_tree_owner || return 1
+host_tag="$(whp_configure_host_tag)"
 
 # Incremental target selection is monotonic.  Reconfiguring QEMU in place to
 # add a target is safe; removing an already-configured target would make old
@@ -143,6 +261,7 @@ esac
     printf 'PROCESS_ARCH=%s\n' "$PROCESS_ARCH"
     printf 'PHYSICAL_ARCH=%s\n' "$PHYSICAL_ARCH"
     printf 'HOST_ARCH=%s\n' "$HOST_ARCH"
+    printf 'HOST_TAG=%s\n' "$host_tag"
     printf 'ROSETTA_TRANSLATED=%s\n' "$ROSETTA_TRANSLATED"
     printf 'MACOS_ALLOW_ROSETTA=%s\n' "$MACOS_ALLOW_ROSETTA"
     printf 'MACOS_VERIFY_TOOLCHAIN=%s\n' "$MACOS_VERIFY_TOOLCHAIN"
