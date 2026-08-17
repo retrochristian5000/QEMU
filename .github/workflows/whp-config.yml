@@ -7,8 +7,12 @@ on:
     paths:
       - 'build.sh'
       - 'scripts/whp-config/**'
+      - 'scripts/whp-build/common.bash'
+      - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/prepare-sources.bash'
       - 'scripts/whp-build/configure.bash'
+      - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/post-build.bash'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
@@ -35,7 +39,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/whp-config/config.py scripts/whp-config/menuconfig.py
+          python3 -m py_compile \
+            scripts/whp-config/config.py \
+            scripts/whp-config/menuconfig.py \
+            scripts/whp-build/portable-build.py
+          /bin/sh -n build.sh
+          bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/whp-build/prepare-sources.bash
+          bash -n scripts/whp-build/configure.bash
+          bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/post-build.bash
           bash -n scripts/tests/test-whp-config-integration.bash
