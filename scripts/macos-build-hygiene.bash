@@ -5,11 +5,9 @@
 
 MACOS_ALLOW_INHERITED_SEARCH_PATHS="${MACOS_ALLOW_INHERITED_SEARCH_PATHS:-0}"
 MACOS_ALLOW_MIXED_HOMEBREW="${MACOS_ALLOW_MIXED_HOMEBREW:-0}"
-MACOS_AUTO_CLEAN="${MACOS_AUTO_CLEAN:-1}"
 
 for hygiene_boolean in \
-    MACOS_ALLOW_INHERITED_SEARCH_PATHS MACOS_ALLOW_MIXED_HOMEBREW \
-    MACOS_AUTO_CLEAN; do
+    MACOS_ALLOW_INHERITED_SEARCH_PATHS MACOS_ALLOW_MIXED_HOMEBREW; do
     case "${!hygiene_boolean}" in
         0|1) ;;
         *)
@@ -18,8 +16,7 @@ for hygiene_boolean in \
             ;;
     esac
 done
-export MACOS_ALLOW_INHERITED_SEARCH_PATHS MACOS_ALLOW_MIXED_HOMEBREW \
-    MACOS_AUTO_CLEAN
+export MACOS_ALLOW_INHERITED_SEARCH_PATHS MACOS_ALLOW_MIXED_HOMEBREW
 
 whp_append_colon_path()
 {
@@ -179,6 +176,21 @@ whp_build_tree_owned()
     return 1
 }
 
+whp_recorded_host_arch()
+{
+    local file="$1"
+    local value=""
+
+    [[ -f "$file" ]] || return 0
+    value="$(sed -n 's/^HOST_ARCH=//p' "$file" | sed -n '1p')"
+    case "$value" in
+        arm64|aarch64) printf 'arm64\n' ;;
+        x86_64|amd64) printf 'x86_64\n' ;;
+        '') ;;
+        *) printf '%s\n' "$value" ;;
+    esac
+}
+
 whp_require_persistent_path_outside_build()
 {
     local variable="$1"
@@ -194,7 +206,7 @@ whp_require_persistent_path_outside_build()
                 "error: $variable must be outside BUILD_DIR." \
                 "BUILD_DIR=$BUILD_DIR" \
                 "$variable=$value" \
-                'A clean QEMU reconfiguration must not erase persistent firmware tools.' >&2
+                'Persistent firmware tools must survive QEMU build-tree maintenance.' >&2
             return 1
             ;;
     esac
@@ -205,6 +217,7 @@ prepare_macos_build_tree()
     local process_arch
     local host_arch
     local default_build_dir
+    local build_parent
     local legacy_tools_dir
     local toolchain_root
     local identity_file
@@ -212,7 +225,7 @@ prepare_macos_build_tree()
     local owner_file
     local build_has_files=0
     local expected_pkg_config_path=""
-    local clean_reason=""
+    local recorded_arch=""
 
     process_arch="$(uname -m)"
     case "$process_arch" in
@@ -225,7 +238,10 @@ prepare_macos_build_tree()
             ;;
     esac
 
-    default_build_dir="$SOURCE_DIR/build/whp-ppc-${host_arch}-apple-darwin"
+    # build.sh normally supplies an absolute, runner-neutral BUILD_DIR.  Keep a
+    # compatible fallback for direct test harnesses without reintroducing a PPC
+    # target name into host build-tree identity.
+    default_build_dir="$SOURCE_DIR/build/whp-${host_arch}-apple-darwin"
     BUILD_DIR="$(whp_normalize_build_dir "${BUILD_DIR:-$default_build_dir}")"
     export BUILD_DIR
 
@@ -236,9 +252,10 @@ prepare_macos_build_tree()
             ;;
     esac
 
+    build_parent="$(dirname "$BUILD_DIR")"
     legacy_tools_dir="$BUILD_DIR/firmware-tools"
     if [[ -z "${OPENBIOS_TOOLS_DIR:-}" ]]; then
-        OPENBIOS_TOOLS_DIR="$SOURCE_DIR/build/whp-firmware-tools-${host_arch}-apple-darwin"
+        OPENBIOS_TOOLS_DIR="$build_parent/whp-firmware-tools-${host_arch}-apple-darwin"
         if [[ ! -e "$OPENBIOS_TOOLS_DIR" && -d "$legacy_tools_dir" ]]; then
             mkdir -p "$(dirname "$OPENBIOS_TOOLS_DIR")"
             mv "$legacy_tools_dir" "$OPENBIOS_TOOLS_DIR"
@@ -264,11 +281,12 @@ prepare_macos_build_tree()
 
     identity_candidate="$(mktemp "${TMPDIR:-/tmp}/whp-macos-build-identity.XXXXXX")"
     {
-        printf 'SCHEMA=3\n'
+        printf 'SCHEMA=4\n'
         printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
         printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
         printf 'PROCESS_ARCH=%s\n' "$process_arch"
         printf 'HOST_ARCH=%s\n' "$host_arch"
+        printf 'HOST_TAG=%s-apple-darwin\n' "$host_arch"
         printf 'SDKROOT=%s\n' "${SDKROOT:-}"
         printf 'MACOS_SDK_VERSION=%s\n' "${MACOS_SDK_VERSION:-}"
         printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
@@ -308,41 +326,41 @@ prepare_macos_build_tree()
         build_has_files=1
     fi
 
-    if [[ -f "$identity_file" ]]; then
-        if ! cmp -s "$identity_candidate" "$identity_file"; then
-            clean_reason='compiler, SDK, architecture, or search-path identity changed'
-        fi
-    elif [[ "$build_has_files" == "1" ]]; then
-        clean_reason='legacy build tree has no macOS identity record'
+    if [[ "$build_has_files" == 1 ]] && ! whp_build_tree_owned "$BUILD_DIR"; then
+        rm -f "$identity_candidate"
+        printf '%s\n' \
+            "error: refusing to reuse an unowned build directory: $BUILD_DIR" \
+            'Choose an empty BUILD_DIR or a WHP-owned tree for this source checkout.' >&2
+        return 1
     fi
 
-    if [[ -n "$clean_reason" ]]; then
-        if ! whp_build_tree_owned "$BUILD_DIR"; then
-            rm -f "$identity_candidate"
-            printf '%s\n' \
-                "error: refusing to clean an unowned build directory: $BUILD_DIR" \
-                'Choose an empty BUILD_DIR or remove the foreign contents manually.' >&2
-            return 1
-        fi
-        if [[ "$MACOS_AUTO_CLEAN" != "1" ]]; then
-            rm -f "$identity_candidate"
-            printf '%s\n' \
-                "error: clean reconfiguration required: $clean_reason" \
-                "build directory: $BUILD_DIR" \
-                'Rerun with MACOS_AUTO_CLEAN=1 or choose a new BUILD_DIR.' >&2
-            return 1
-        fi
+    recorded_arch="$(whp_recorded_host_arch "$identity_file")"
+    if [[ -z "$recorded_arch" ]]; then
+        recorded_arch="$(whp_recorded_host_arch "$BUILD_DIR/.whp-config")"
+    fi
+    if [[ -n "$recorded_arch" && "$recorded_arch" != "$host_arch" ]]; then
+        rm -f "$identity_candidate"
+        printf '%s\n' \
+            "error: BUILD_DIR belongs to host architecture $recorded_arch, not $host_arch." \
+            "build directory: $BUILD_DIR" \
+            'Use a different BUILD_DIR for a different host ABI; the existing tree was preserved.' >&2
+        return 1
+    fi
 
-        printf 'Cleaning QEMU build tree: %s (%s)\n' "$BUILD_DIR" "$clean_reason"
-        rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR"
-        identity_file="$BUILD_DIR/.whp-macos-build-identity"
-        owner_file="$BUILD_DIR/.whp-build-owner"
+    if [[ -f "$identity_file" ]] && ! cmp -s "$identity_candidate" "$identity_file"; then
+        printf '%s\n' \
+            'macOS build identity changed; preserving the existing QEMU build tree.' \
+            'QEMU/Meson/Ninja will reconfigure and rebuild only stale state.'
+    elif [[ ! -f "$identity_file" && "$build_has_files" == 1 ]]; then
+        printf '%s\n' \
+            'Adopting an older WHP build tree without deleting existing outputs.'
     fi
 
     {
+        printf 'SCHEMA=2\n'
         printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
         printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
+        printf 'HOST_TAG=%s-apple-darwin\n' "$host_arch"
     } > "$owner_file.new"
     mv "$owner_file.new" "$owner_file"
     mv "$identity_candidate" "$identity_file"
