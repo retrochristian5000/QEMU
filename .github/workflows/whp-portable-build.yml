@@ -1,0 +1,74 @@
+name: WHP portable build
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - 'builder.sh'
+      - 'configure'
+      - 'meson.build'
+      - 'scripts/whp-config/**'
+      - 'scripts/whp-build/**'
+      - 'scripts/tests/test-whp-config.py'
+      - 'scripts/tests/test-whp-config-integration.bash'
+      - '.github/workflows/whp-portable-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-wrapper-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-whp-linux
+      BUILD_QEMU_IMG: '1'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      INSTALL: '0'
+      MACOS_ENABLE_GTK: auto
+      MACOS_ENABLE_PA: auto
+      QEMU_HOST_LTO: auto
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install minimal QEMU build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkgconf \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Verify Bash-free public path planning
+        run: |
+          WHP_FORCE_PORTABLE_CORE=1 \
+          WHP_PORTABLE_PROBE_ONLY=1 \
+            ./build.sh qemu-system-i386 > portable-plan.txt
+          grep -Fxq 'CONFIGURE_ARG=--target-list=i386-softmmu' portable-plan.txt
+          if grep -Eq -- '--enable-(gtk|pa)' portable-plan.txt; then
+            echo 'error: portable auto mode forced an optional desktop dependency' >&2
+            exit 1
+          fi
+
+      - name: Build i386 through public WHP wrapper
+        run: ./build.sh qemu-system-i386
+
+      - name: Smoke-test wrapper output
+        run: |
+          test -x "$BUILD_DIR/qemu-system-i386"
+          "$BUILD_DIR/qemu-system-i386" --version
+          "$BUILD_DIR/qemu-system-i386" -machine help >/dev/null
+          test -f "$BUILD_DIR/.whp-build-artifacts"
+          test ! -e configs/devices/ppc-softmmu/whp-user.mak
