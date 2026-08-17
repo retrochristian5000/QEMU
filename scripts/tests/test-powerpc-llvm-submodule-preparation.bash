@@ -128,11 +128,13 @@ for cmake_flag in \
     '-DLLVM_ENABLE_BINDINGS=OFF' \
     '-DLLVM_ENABLE_WARNINGS=OFF' \
     '-DLLVM_ENABLE_PEDANTIC=OFF' \
-    '-DLLVM_NO_DEAD_STRIP=ON'; do
+    '-DLLVM_NO_DEAD_STRIP=ON' \
+    '-DLINKER_SUPPORTS_RELR=FALSE' \
+    '-DLINKER_SUPPORTS_COLOR_DIAGNOSTICS=FALSE'; do
     grep -Fq -- "$cmake_flag" "$CLANG_BOOTSTRAP"
 done
-grep -Fq -- '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG' "$CLANG_BOOTSTRAP"
-grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG' "$CLANG_BOOTSTRAP"
+grep -Fq -- '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
+grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld=mold' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld=lld' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
