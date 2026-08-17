@@ -14,20 +14,23 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 git_log="$tmpdir/git.log"
 bash_log="$tmpdir/bash.log"
+bash_shim="$tmpdir/whp-build-bash"
 
 # Exercise the source-preparation function without touching the checkout.
-# The git shim records which submodules the stage owns; the bash shim records
-# the compiler lane propagated across the configure-openbios subprocess boundary.
+# The git shim records which submodules the stage owns; the executable shell
+# shim records the compiler lane propagated across the exact WHP_BUILD_BASH
+# subprocess boundary used by production.
 git()
 {
     printf '%s\n' "$*" >> "$git_log"
 }
 
-bash()
-{
-    printf 'compiler=%s command=%s\n' \
-        "${POWERPC_TOOLCHAIN_COMPILER:-unset}" "$*" >> "$bash_log"
-}
+cat > "$bash_shim" <<EOF
+#!/usr/bin/env bash
+printf 'compiler=%s command=%s\\n' \
+    "\${POWERPC_TOOLCHAIN_COMPILER:-unset}" "\$*" >> "$bash_log"
+EOF
+chmod +x "$bash_shim"
 
 source "$PREPARE_SOURCES"
 
@@ -47,7 +50,7 @@ STRIP_FOR_BUILD=strip
 PKG_CONFIG_FOR_BUILD=pkg-config
 MAKE_CMD=make
 JOBS=1
-WHP_BUILD_BASH="$REAL_BASH"
+WHP_BUILD_BASH="$bash_shim"
 
 run_default_clang_case()
 {
