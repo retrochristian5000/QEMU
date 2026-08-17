@@ -115,13 +115,30 @@ if grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$CLANG_BOOTSTRAP"; then
     printf 'error: LLVM bootstrap still destroys its CMake build directory\n' >&2
     exit 1
 fi
-grep -Fq 'BOOTSTRAP_SCHEMA=15' "$CLANG_BOOTSTRAP"
-grep -Fq 'LLVM_CMAKE_MODE=incremental-distribution-fast-host-link' "$CLANG_BOOTSTRAP"
+if grep -Fq 'JOBS="${JOBS:-1}"' "$CLANG_BOOTSTRAP"; then
+    printf 'error: LLVM bootstrap still serializes standalone builds by default\n' >&2
+    exit 1
+fi
+grep -Fq 'BOOTSTRAP_SCHEMA=16' "$CLANG_BOOTSTRAP"
+grep -Fq 'LLVM_CMAKE_MODE=incremental-distribution-fast-cmake' "$CLANG_BOOTSTRAP"
+grep -Fq 'cmake_parallel_args=(--parallel)' "$CLANG_BOOTSTRAP"
+grep -Fq -- '"${cmake_parallel_args[@]}"' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-DLLVM_DISTRIBUTION_COMPONENTS=' "$CLANG_BOOTSTRAP"
 grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target distribution' "$CLANG_BOOTSTRAP"
 grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target install-distribution' "$CLANG_BOOTSTRAP"
 grep -Fq -- 'llvm-headers;llvm-libraries;cmake-exports' "$CLANG_BOOTSTRAP"
 for cmake_flag in \
+    '-DCMAKE_EXPORT_COMPILE_COMMANDS=OFF' \
+    '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF' \
+    '-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON' \
+    '-DCMAKE_INSTALL_MESSAGE=NEVER' \
+    '-DLLVM_ENABLE_LTO=OFF' \
+    '-DLLVM_ENABLE_FATLTO=OFF' \
+    '-DLLVM_BUILD_INSTRUMENTED=OFF' \
+    '-DLLVM_ENABLE_MODULES=OFF' \
+    '-DLLVM_ENABLE_LIBEDIT=OFF' \
+    '-DLLVM_ENABLE_LIBPFM=OFF' \
+    '-DLLVM_ENABLE_Z3_SOLVER=OFF' \
     '-DLLVM_INCLUDE_DOCS=OFF' \
     '-DLLVM_INCLUDE_UTILS=OFF' \
     '-DLLVM_INCLUDE_RUNTIMES=OFF' \
