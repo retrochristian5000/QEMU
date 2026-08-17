@@ -46,6 +46,7 @@ STRIP_FOR_BUILD=strip
 PKG_CONFIG_FOR_BUILD=pkg-config
 MAKE_CMD=make
 JOBS=1
+WHP_BUILD_BASH="$REAL_BASH"
 
 run_default_clang_case()
 {
