@@ -165,9 +165,9 @@ Portable host mechanics move to Python where possible.
 
 CPU-count selection uses Python's `os.cpu_count()` with a minimum fallback of one job. The wrapper does not depend on `nproc` or a particular `sysctl` spelling for correctness.
 
-GNU Make remains required only where QEMU or a selected WHP helper actually requires it. Tool selection should prefer an explicitly configured command, then a suitable discovered implementation.
+The portable core should invoke the build tool produced by QEMU's configure/Meson flow directly, preferring Ninja when `build.ninja` is present. GNU Make must not become a universal WHP-wrapper prerequisite merely because the current wrapper happens to invoke `make` around QEMU. GNU Make remains required only where QEMU itself or a selected WHP helper genuinely requires it.
 
-No host tool is considered globally mandatory merely because one optional WHP feature uses it.
+Tool selection should prefer an explicitly configured command, then a suitable discovered implementation. No host tool is considered globally mandatory merely because one optional WHP feature uses it.
 
 ## Configuration data flow
 
@@ -200,7 +200,7 @@ If the user selected `y`, missing prerequisites are fatal and the message names 
 
 If the user selected `auto`, missing optional prerequisites produce a concise notice and the feature is disabled for that build.
 
-An auto-feature decline must not be reported as a generic QEMU configure failure.
+An auto-feature decline must not be reported as a generic QEMU configure failure. The resolved feature state and decline reason must also be recorded in the build summary or artifact manifest so a successful build cannot silently hide which optional capability was omitted.
 
 ## Artifact verification
 
@@ -209,7 +209,8 @@ Generic builds receive generic verification:
 - requested binary exists;
 - binary is executable where appropriate;
 - version command succeeds when supported;
-- artifact manifest records the selected targets and produced outputs.
+- artifact manifest records the selected targets and produced outputs;
+- artifact manifest records resolved optional-feature states, including `auto` decline reasons.
 
 PowerPC-specific checks remain conditional on an actual `qemu-system-ppc` request.
 
@@ -229,7 +230,7 @@ Required coverage includes:
 
 - Linux build through `./build.sh`;
 - macOS build through `./build.sh`;
-- Windows/MSYS2 wrapper smoke coverage when practical in GitHub Actions;
+- a Windows/MSYS2 wrapper smoke job on a GitHub-hosted Windows runner; a configure-and-driver smoke is sufficient if a full compile is too expensive for the routine matrix;
 - configuration-policy tests that simulate BSD-like host capability combinations without assuming GNU userland tools;
 - a no-Bash core-QEMU path test;
 - missing GTK in `auto` mode;
@@ -239,7 +240,8 @@ Required coverage includes:
 - non-root default prefix and `INSTALL=0` behavior;
 - read-only-source or no-source-mutation coverage for a normal build path;
 - explicit environment override precedence;
-- retained PowerPC machine-profile verification.
+- retained PowerPC machine-profile verification;
+- artifact-manifest coverage for auto-feature decline reasons.
 
 The CI target matrix may still use direct upstream configure builds as an additional QEMU regression lane, but those jobs do not substitute for wrapper coverage.
 
@@ -301,3 +303,5 @@ The design is complete when all of the following are true:
 8. Linux CI exercises the public wrapper path, and portability-policy tests cover non-GNU and missing-feature cases.
 9. Existing macOS hardening and PowerPC machine verification remain intact when those paths are selected.
 10. Direct upstream QEMU build behavior remains available as an independent regression/control lane.
+11. A successful build records every optional feature that was declined from `auto` and why.
+12. The public core build path does not impose GNU Make when QEMU's Ninja build is sufficient.
