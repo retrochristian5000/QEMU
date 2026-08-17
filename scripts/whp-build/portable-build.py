@@ -138,11 +138,17 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
 
     declines: List[str] = []
     if values['BUILD_OPENBIOS'] == 'y':
-        raise RuntimeError('OpenBIOS was explicitly requested, but the Bash firmware adapter is unavailable')
+        raise RuntimeError(
+            'OpenBIOS was explicitly requested, but the portable core does not run '
+            'the Bash firmware adapter'
+        )
     if values['BOOTSTRAP_POWERPC_TOOLCHAIN'] == 'y':
-        raise RuntimeError('PowerPC toolchain bootstrap was explicitly requested, but the Bash firmware adapter is unavailable')
+        raise RuntimeError(
+            'PowerPC toolchain bootstrap was explicitly requested, but the portable '
+            'core does not run the Bash firmware adapter'
+        )
     if values['BUILD_OPENBIOS'] == 'auto' and 'ppc-softmmu' in targets:
-        declines.append('OpenBIOS:auto:bash-unavailable')
+        declines.append('OpenBIOS:auto:firmware-adapter-unavailable')
 
     requested_targets = argv[:] if argv else ['all']
     return build_dir, prefix, configure_args, requested_targets, declines
