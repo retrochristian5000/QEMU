@@ -16,7 +16,7 @@ LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SUBMODULE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLD_BUILD_DIR="${POWERPC_LLD_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/lld-build}"
-JOBS="${JOBS:-1}"
+JOBS="${JOBS:-}"
 
 case "$TOOLCHAIN_TARGET" in
     powerpc-elf) ;;
@@ -40,6 +40,17 @@ case "$LLVM_GIT_OFFLINE" in
         ;;
 esac
 
+cmake_parallel_args=(--parallel)
+if [[ -n "$JOBS" ]]; then
+    case "$JOBS" in
+        0|*[!0-9]*)
+            printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
+            exit 1
+            ;;
+    esac
+    cmake_parallel_args=(--parallel "$JOBS")
+fi
+
 for required in git cmake ninja awk grep cksum ln mkdir rm readlink uname; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: PowerPC Clang/LLD bootstrap dependency not found: %s\n' \
@@ -53,7 +64,7 @@ if [[ ! -f "$BASE_BOOTSTRAP" ]]; then
     exit 1
 fi
 
-# QEMU's gitlink is the LLVM revision pin.  Initialize the checkout only when
+# QEMU's gitlink is the LLVM revision pin. Initialize the checkout only when
 # network access is allowed; an offline build must already have the submodule.
 if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
     if [[ "$LLVM_GIT_OFFLINE" == 1 ]]; then
@@ -99,7 +110,8 @@ base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
 expected_lld_marker="$(cat <<MARKER
-LLD_SCHEMA=3
+LLD_SCHEMA=4
+LLD_BUILD_MODE=incremental-elf-only
 LINKER=lld
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -110,6 +122,7 @@ LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
 LLVM_GIT_COMMIT=$llvm_revision
 BASE_BOOTSTRAP_SIGNATURE=$base_signature
 ORCHESTRATOR_SIGNATURE=$orchestrator_signature
+LLD_CMAKE_PARALLEL_JOBS=${JOBS:-native}
 MARKER
 )"
 
@@ -147,7 +160,7 @@ fi
 
 printf 'LLVM submodule revision: %s\n' "$llvm_revision"
 # Always let the compiler/LLVM foundation validate its own complete marker
-# first.  It exits quickly when current and rebuilds atomically when one of its
+# first. It exits quickly when current and rebuilds atomically when one of its
 # compiler, host, or LLVM inputs has changed.
 POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
 POWERPC_LLVM_GIT_REF="$llvm_revision" \
@@ -171,10 +184,30 @@ fi
 
 llvm_dir="$TOOLCHAIN_DIR/llvm"
 llvm_cmake_dir="$llvm_dir/lib/cmake/llvm"
+base_marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 if [[ ! -d "$llvm_cmake_dir" ]]; then
     printf 'error: base LLVM install is missing CMake package files: %s\n' \
         "$llvm_cmake_dir" >&2
     exit 1
+fi
+if [[ ! -f "$base_marker" ]]; then
+    printf 'error: base LLVM install is missing its bootstrap marker: %s\n' \
+        "$base_marker" >&2
+    exit 1
+fi
+
+# Reuse the host compile/link profile already proven by the base LLVM stage.
+lld_host_release_flags="$(awk -F= '$1 == "HOST_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
+lld_host_linker="$(awk -F= '$1 == "HOST_LINKER" {print $2; exit}' "$base_marker")"
+cmake_host_profile_args=()
+if [[ -n "$lld_host_release_flags" && "$lld_host_release_flags" != toolchain-default ]]; then
+    cmake_host_profile_args+=(
+        "-DCMAKE_C_FLAGS_RELEASE=$lld_host_release_flags"
+        "-DCMAKE_CXX_FLAGS_RELEASE=$lld_host_release_flags"
+    )
+fi
+if [[ -n "$lld_host_linker" && "$lld_host_linker" != toolchain-default ]]; then
+    cmake_host_profile_args+=("-DLLVM_USE_LINKER=$lld_host_linker")
 fi
 
 cmake_platform_args=()
@@ -202,18 +235,33 @@ if [[ "$(uname -s)" == Darwin ]]; then
     )
 fi
 
-printf 'Building LLD from QEMU LLVM submodule\n'
-rm -rf "$LLD_BUILD_DIR"
+printf 'Building focused ELF LLD from QEMU LLVM submodule\n'
 cmake -S "$LLVM_SUBMODULE_DIR/lld" -B "$LLD_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
     -DCMAKE_CXX_COMPILER="$TOOLCHAIN_HOST_CXX" \
+    "${cmake_host_profile_args[@]}" \
     -DCMAKE_INSTALL_PREFIX="$llvm_dir" \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
+    -DCMAKE_INSTALL_MESSAGE=NEVER \
     -DLLVM_DIR="$llvm_cmake_dir" \
+    -DLLVM_TARGETS_TO_BUILD=PowerPC \
+    -DLLD_ENABLE_BACKENDS=ELF \
+    -DLLD_USE_VTUNE=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLD_INCLUDE_TESTS=OFF \
+    -DLLVM_ENABLE_WARNINGS=OFF \
+    -DLLVM_ENABLE_PEDANTIC=OFF \
+    -DLLVM_NO_DEAD_STRIP=ON \
+    -DLINKER_SUPPORTS_RELR=FALSE \
+    -DLINKER_SUPPORTS_COLOR_DIAGNOSTICS=FALSE \
     "${cmake_platform_args[@]}"
-cmake --build "$LLD_BUILD_DIR" --parallel "$JOBS"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLD_BUILD_DIR" --target clean
+fi
+cmake --build "$LLD_BUILD_DIR" --target lld "${cmake_parallel_args[@]}"
 cmake --install "$LLD_BUILD_DIR"
 
 lld="$llvm_dir/bin/ld.lld"
@@ -238,7 +286,7 @@ if ! "$lld" --version | grep -q 'LLD'; then
 fi
 
 # Before changing the public linker, prove LLD can reproduce the critical
-# OpenBIOS ROM layout and the GNU-style options used by PPC-Firmware.  Assemble
+# OpenBIOS ROM layout and the GNU-style options used by PPC-Firmware. Assemble
 # with LLVM IAS directly so this stage has no dependency on GNU as.
 smoke_dir="$TOOLCHAIN_WORK_DIR/lld-openbios-smoke"
 rm -rf "$smoke_dir"
@@ -374,4 +422,5 @@ printf '%s\n' \
     "Bootstrapped PowerPC compiler/linker: Clang + LLD ($llvm_revision)" \
     "LLVM source: QEMU submodule $LLVM_SUBMODULE_PATH" \
     "Assembler: Clang integrated assembler" \
+    "LLD backends: ELF only" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
