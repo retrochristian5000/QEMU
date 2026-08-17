@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
+mc_stage="$ROOT/scripts/bootstrap-powerpc-llvm-mc.sh"
 nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.sh"
 strip_stage="$ROOT/scripts/bootstrap-powerpc-llvm-strip.sh"
 orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
@@ -40,7 +41,7 @@ esac
 grep -Fq 'LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-HEAD}"' "$base"
 grep -Fq 'LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"' "$base"
 
-# The OpenBIOS Clang lane is LLVM-only.  In particular, do not keep a partial
+# The OpenBIOS Clang lane is LLVM-only. In particular, do not keep a partial
 # GNU BFD build: current binutils couples BFD to libsframe even when OpenBIOS
 # never emits or consumes SFrame unwind metadata.
 grep -Fq 'BOOTSTRAP_SCHEMA=16' "$base"
@@ -72,16 +73,27 @@ if grep -Fq 'ld.bfd' "$core" || grep -Fq 'GNU ld' "$core"; then
     exit 1
 fi
 
+# The old standalone-as implementation is forbidden. The replacement is a
+# narrow LLVM-MC publication stage over the already-proven Clang IAS.
 if [[ -e "$ROOT/scripts/bootstrap-powerpc-llvm-as.sh" ]] ||
    grep -Fq 'bootstrap-powerpc-llvm-as.sh' "$orchestrator"; then
     printf 'error: obsolete standalone PowerPC as stage remains wired\n' >&2
     exit 1
 fi
+grep -Fq 'AS_SCHEMA=1' "$mc_stage"
+grep -Fq 'ASSEMBLER=clang-integrated-mc' "$mc_stage"
+grep -Fq 'GNU_AS=disabled' "$mc_stage"
+grep -Fq -- '--target=powerpc-none-elf' "$mc_stage"
+grep -Fq -- '-fintegrated-as' "$mc_stage"
+grep -Fq -- '-c -x assembler' "$mc_stage"
+grep -Fq 'OBJECT_ABI=ELF32-powerpc-big-endian' "$mc_stage"
+grep -Fq 'bootstrap-powerpc-llvm-mc.sh' "$orchestrator"
+grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' "$orchestrator"
+grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"' "$orchestrator"
 
-grep -Fq 'for tool in as objcopy objdump readelf; do' "$orchestrator"
-grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-${tool}"' "$orchestrator"
-grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/$tool"' "$orchestrator"
-
+# The first slice publishes the assembler independently but does not yet make
+# PPC-Firmware depend on it. Keep the existing compiler-driven assembly rule
+# until the published interface survives the real toolchain smoke.
 grep -Fq 'powerpc_tools=(gcc ar ld nm strip ranlib)' "$build_openbios"
 grep -Fq 'for tool in gcc ar ld nm strip ranlib; do' "$meson_openbios"
 grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
@@ -93,7 +105,7 @@ grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
 grep -Fq 'bootstrap-powerpc-clang.sh' "$build_openbios"
 if grep -Fq 'powerpc_tools=(gcc as ar ld nm strip ranlib)' "$build_openbios" ||
    grep -Fq 'for tool in gcc as ar ld nm strip ranlib; do' "$meson_openbios"; then
-    printf 'error: OpenBIOS still requires a standalone as command\n' >&2
+    printf 'error: first assembler slice changed the OpenBIOS tool contract too early\n' >&2
     exit 1
 fi
 if grep -Fq 'bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"' \
@@ -113,14 +125,17 @@ grep -Fq 'CC     := $(TARGET)gcc' "$openbios_target"
 grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' "$openbios_asm"
 if grep -Fq 'AS     := $(TARGET)as' "$openbios_target" ||
    grep -Fq '$(AS) $@.s' "$openbios_asm"; then
-    printf 'error: PPC-Firmware still dispatches assembly through as\n' >&2
+    printf 'error: first assembler slice changed PPC-Firmware dispatch too early\n' >&2
     exit 1
 fi
 
+# The existing utility stages still use the compiler IAS directly in this
+# slice. Their migration to the public assembler can follow after publication
+# is proven, without mixing failures between interfaces.
 grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$nm_stage"
 grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$strip_stage"
 if grep -Fq 'public_as=' "$nm_stage" || grep -Fq 'public_as=' "$strip_stage"; then
-    printf 'error: LLVM utility qualification still depends on public as\n' >&2
+    printf 'error: LLVM utility qualification moved to public as before its smoke\n' >&2
     exit 1
 fi
 

@@ -8,6 +8,7 @@ on:
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-llvm-mc.sh'
       - 'scripts/bootstrap-powerpc-llvm-ar.sh'
       - 'scripts/bootstrap-powerpc-llvm-nm.sh'
       - 'scripts/bootstrap-powerpc-llvm-strip.sh'
@@ -99,18 +100,25 @@ jobs:
           POWERPC_TOOLCHAIN_FORCE_REBUILD=1 \
             bash scripts/bootstrap-powerpc-clang.sh 2>&1 | tee llvm-ias-bootstrap.log
 
-      - name: Verify LLVM-only compiler and archive routing
+      - name: Verify LLVM-only compiler, assembler, and archive routing
         shell: bash
         run: |
           set -euxo pipefail
-          for tool in as objcopy objdump readelf; do
+          for tool in objcopy objdump readelf; do
             test ! -e "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-$tool"
             test ! -e "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/$tool"
           done
+          test -x "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
+          test -x "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
+          grep -Fq 'ASSEMBLER=clang-integrated-mc' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+          grep -Fq 'GNU_AS=disabled' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+          grep -Fq 'OBJECT_ABI=ELF32-powerpc-big-endian' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
           for tool in as ar ld nm objcopy objdump readelf strip ranlib; do
             test ! -e "$POWERPC_TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/$tool.bfd"
           done
-          test ! -e "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
           grep -Fq 'GNU_BINUTILS=disabled' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-toolchain"
           grep -Fq 'SFRAME=disabled' \
@@ -179,10 +187,10 @@ jobs:
             grep -Eq 'Machine:[[:space:]]+PowerPC'
           "$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf" -hW "$OPENBIOS_OUTPUT" |
             grep -Eq "Data:[[:space:]]+2's complement, big endian"
-          grep -Fq 'ASSEMBLER=clang-integrated' \
-            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-lld"
-          test ! -e "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
-          test ! -e "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
+          grep -Fq 'ASSEMBLER=clang-integrated-mc' \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-as"
+          test -x "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-as"
+          test -x "$POWERPC_TOOLCHAIN_DIR/powerpc-elf/bin/as"
           grep -Fq 'NM=llvm-nm' \
             "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-nm"
           grep -Fq 'GNU_NM=disabled' \
@@ -216,6 +224,7 @@ jobs:
             openbios-llvm-ias.log
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
+            build/toolchains/powerpc-elf/.whp-powerpc-as
             build/toolchains/powerpc-elf/.whp-powerpc-ar
             build/toolchains/powerpc-elf/.whp-powerpc-nm
             build/toolchains/powerpc-elf/.whp-powerpc-strip

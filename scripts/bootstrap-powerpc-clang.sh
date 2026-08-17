@@ -50,6 +50,14 @@ toolchain_clean_env=(
     SHELL="$config_shell"
 )
 
+# The compiler foundation intentionally owns no public assembler command. Clear
+# the downstream LLVM-MC interface before base validation, then republish it
+# after LLD. This lets the base keep rejecting stale GNU-as installations
+# without forcing a full compiler rebuild on every subsequent toolchain run.
+rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"
+rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"
+rm -f "$TOOLCHAIN_DIR/.whp-powerpc-as"
+
 # Reuse the already-pinned LLVM submodule as the compiler source cache.  This
 # avoids asking a local Git repository for partial-clone filtering before the
 # established Clang + LLD bootstrap validates and builds that exact revision.
@@ -100,18 +108,23 @@ fi
     POWERPC_TOOLCHAIN_FORCE_REBUILD=0 \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 
-# OpenBIOS sends generated assembly through the compiler driver, and uses
-# llvm-readelf directly. Remove entry points left by older toolchain caches;
-# these programs are not part of the Clang lane.
-for tool in as objcopy objdump readelf; do
+# Publish assembly as its own LLVM-backed interface after the compiler and LLD
+# foundations are proven. The implementation remains Clang's integrated LLVM-MC
+# assembler; GNU as is neither built nor retained as a fallback.
+"${toolchain_clean_env[@]}" \
+    bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-mc.sh"
+
+# llvm-readelf is consumed directly and objcopy/objdump are not yet public
+# interfaces in this lane. Remove entry points left by older toolchain caches.
+for tool in objcopy objdump readelf; do
     rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-${tool}"
     rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/$tool"
 done
-rm -f "$TOOLCHAIN_DIR/.whp-powerpc-as"
 
-# Publish the remaining migrated binary-tool interfaces after LLD is proven.
-# nm deliberately consumes the already-published LLVM ar route for its archive
-# map qualification. No private GNU as/ar/nm/strip fallbacks survive.
+# Publish the remaining migrated binary-tool interfaces after LLD and the
+# assembler are proven. nm deliberately consumes the already-published LLVM ar
+# route for its archive-map qualification. No private GNU binary-tool fallback
+# survives.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-nm.sh"
 "${toolchain_clean_env[@]}" \
