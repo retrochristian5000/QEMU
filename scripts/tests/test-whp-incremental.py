@@ -44,6 +44,13 @@ def configured_targets(configure_args):
     return set()
 
 
+def configured_target_value(configure_args):
+    for arg in configure_args:
+        if arg.startswith('--target-list='):
+            return arg.split('=', 1)[1]
+    return ''
+
+
 class WhpIncrementalTests(unittest.TestCase):
     def test_portable_explicit_target_overrides_disabled_saved_output_for_run(self):
         mod = load_portable_build()
@@ -58,6 +65,21 @@ class WhpIncrementalTests(unittest.TestCase):
         }):
             _, _, configure_args, _, _ = mod.build_plan(['qemu-system-ppc'])
         self.assertEqual(configured_targets(configure_args), {'ppc-softmmu'})
+
+    def test_portable_explicit_qemu_img_enables_tools_for_run(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td, temporary_environment({
+            'BUILD_DIR': td,
+            'BUILD_QEMU_IMG': '0',
+            'BUILD_QEMU_SYSTEM_I386': '0',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_OPENBIOS': 'n',
+            'BOOTSTRAP_POWERPC_TOOLCHAIN': 'n',
+            'WHP_INCREMENTAL_BUILD': '1',
+        }):
+            _, _, configure_args, _, _ = mod.build_plan(['qemu-img'])
+        self.assertIn('--enable-tools', configure_args)
+        self.assertNotIn('--disable-tools', configure_args)
 
     def test_portable_incremental_target_expansion_preserves_previous_targets(self):
         mod = load_portable_build()
@@ -80,6 +102,29 @@ class WhpIncrementalTests(unittest.TestCase):
         self.assertEqual(
             configured_targets(configure_args),
             {'i386-softmmu', 'ppc-softmmu'},
+        )
+
+    def test_portable_incremental_target_order_stays_previous_first(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-config').write_text(
+                'SCHEMA=2\nQEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\n',
+                encoding='utf-8',
+            )
+            with temporary_environment({
+                'BUILD_DIR': td,
+                'BUILD_QEMU_IMG': '0',
+                'BUILD_QEMU_SYSTEM_I386': '0',
+                'BUILD_QEMU_SYSTEM_PPC': '1',
+                'BUILD_OPENBIOS': 'n',
+                'BOOTSTRAP_POWERPC_TOOLCHAIN': 'n',
+                'WHP_INCREMENTAL_BUILD': '1',
+            }):
+                _, _, configure_args, _, _ = mod.build_plan(['qemu-system-ppc'])
+        self.assertEqual(
+            configured_target_value(configure_args),
+            'i386-softmmu,ppc-softmmu',
         )
 
     def test_bash_explicit_target_expands_configured_target_list(self):
@@ -116,6 +161,38 @@ printf '%s\n' "$QEMU_TARGET_LIST"
             {target for target in result.stdout.strip().split(',') if target},
             {'ppc-softmmu'},
         )
+
+    def test_bash_explicit_qemu_img_enables_tools_for_run(self):
+        script = r'''
+set -euo pipefail
+SOURCE_DIR="$1"
+BUILD_DIR="$2"
+HOME="$3"
+source "$SOURCE_DIR/scripts/whp-build/common.bash"
+source "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
+BUILD_QEMU_IMG=0
+BUILD_QEMU_SYSTEM_I386=0
+BUILD_QEMU_SYSTEM_PPC=0
+BUILD_OPENBIOS=0
+BOOTSTRAP_POWERPC_TOOLCHAIN=0
+WHP_INCREMENTAL_BUILD=1
+PREFIX="$BUILD_DIR/install"
+whp_prepare_build qemu-img
+printf '%s\n' "$BUILD_QEMU_IMG"
+'''
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            build_dir = root / 'build'
+            home = root / 'home'
+            build_dir.mkdir()
+            home.mkdir()
+            result = subprocess.run(
+                ['bash', '-c', script, 'bash', str(ROOT), str(build_dir), str(home)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+        self.assertEqual(result.stdout.strip(), '1')
 
     def test_bash_incremental_reconfigure_unions_existing_target_set(self):
         script = r'''
@@ -186,6 +263,29 @@ cat "$BUILD_DIR/configure-args.txt"
             {target for target in target_arg.split('=', 1)[1].split(',') if target},
             {'i386-softmmu', 'ppc-softmmu'},
         )
+
+    def test_bash_incremental_target_order_stays_previous_first(self):
+        script = r'''
+set -euo pipefail
+BUILD_DIR="$1"
+mkdir -p "$BUILD_DIR"
+printf 'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\n' > "$BUILD_DIR/.whp-config"
+QEMU_TARGET_LIST=ppc-softmmu
+WHP_INCREMENTAL_BUILD=1
+configure_args=(--target-list=ppc-softmmu)
+source "$2/scripts/whp-build/configure.bash"
+whp_configure_merge_previous_targets "$BUILD_DIR/.whp-config"
+whp_configure_sync_target_args
+printf '%s\n' "$QEMU_TARGET_LIST"
+'''
+        with tempfile.TemporaryDirectory() as td:
+            result = subprocess.run(
+                ['bash', '-c', script, 'bash', td, str(ROOT)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+        self.assertEqual(result.stdout.strip(), 'i386-softmmu,ppc-softmmu')
 
 
 if __name__ == '__main__':
