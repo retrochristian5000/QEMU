@@ -74,6 +74,20 @@ if grep -Fq -- '--enable-gtk' <<< "$portable_probe" ||
     exit 1
 fi
 
+# An unusable Bash discovered from PATH is not a reason to reject core QEMU.
+# Explicitly naming a bad WHP_BUILD_BASH remains an error, but discovery must
+# degrade to the portable Python core.
+FAKEBIN="$TMP/fakebin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/bash" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$FAKEBIN/bash"
+old_bash_probe="$(PATH="$FAKEBIN:$PATH" WHP_SHELL_PROBE_ONLY=1 \
+    /bin/sh "$COPY/build.sh")"
+grep -Fq 'portable Python core' <<< "$old_bash_probe"
+
 # Exercise configure-stage use of QEMU's device preset hook only when the user
 # explicitly filters the tracked PPC defaults. The compatibility file must be
 # removed immediately after configure.
@@ -167,6 +181,21 @@ generic_args="$(printf '%s\n' "${configure_args[@]}")"
 grep -Fxq -- '--disable-gtk' <<< "$generic_args"
 grep -Fxq -- '--enable-pa' <<< "$generic_args"
 grep -Fxq -- '--disable-lto' <<< "$generic_args"
+
+# Direct environment overrides accept common boolean spellings instead of
+# requiring the config renderer's internal 0/1 representation.
+MACOS_ENABLE_GTK=y
+MACOS_ENABLE_PA=N
+BUILD_OPENBIOS=Yes
+BOOTSTRAP_POWERPC_TOOLCHAIN=off
+QEMU_HOST_LTO=Auto
+whp_require_tristate_values MACOS_ENABLE_GTK MACOS_ENABLE_PA \
+    BUILD_OPENBIOS BOOTSTRAP_POWERPC_TOOLCHAIN QEMU_HOST_LTO
+[[ "$MACOS_ENABLE_GTK" == 1 ]]
+[[ "$MACOS_ENABLE_PA" == 0 ]]
+[[ "$BUILD_OPENBIOS" == 1 ]]
+[[ "$BOOTSTRAP_POWERPC_TOOLCHAIN" == 0 ]]
+[[ "$QEMU_HOST_LTO" == auto ]]
 
 # Default policy is unprivileged: install is off and prefix is user/build local.
 unset PREFIX INSTALL
