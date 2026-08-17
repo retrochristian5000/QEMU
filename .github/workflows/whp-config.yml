@@ -17,6 +17,7 @@ on:
       - 'scripts/whp-build/post-build.bash'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-incremental.py'
       - '.github/workflows/whp-config.yml'
   workflow_dispatch:
 
@@ -36,6 +37,9 @@ jobs:
       - name: Test build configuration integration
         run: bash scripts/tests/test-whp-config-integration.bash
 
+      - name: Test incremental build behavior
+        run: python3 scripts/tests/test-whp-incremental.py
+
       - name: Check configuration script syntax
         shell: bash
         run: |
@@ -43,7 +47,8 @@ jobs:
           python3 -m py_compile \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
-            scripts/whp-build/portable-build.py
+            scripts/whp-build/portable-build.py \
+            scripts/tests/test-whp-incremental.py
           /bin/sh -n build.sh
           bash -n builder.sh
           bash -n scripts/whp-build/common.bash
