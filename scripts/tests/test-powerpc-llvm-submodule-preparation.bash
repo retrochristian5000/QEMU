@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
 CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
+CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 REAL_BASH="$(command -v bash)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -105,5 +106,17 @@ if grep -Fq 'POWERPC_LLVM_' "$gcc_config"; then
     printf 'error: explicit GCC configuration still exports LLVM settings\n' >&2
     exit 1
 fi
+
+# The LLVM compiler bootstrap must preserve CMake/Ninja state between pinned
+# revisions. Distribution targets keep the install focused while retaining the
+# LLVM headers, libraries, and CMake package needed by the later LLD/Meson lanes.
+if grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$CLANG_BOOTSTRAP"; then
+    printf 'error: LLVM bootstrap still destroys its CMake build directory\n' >&2
+    exit 1
+fi
+grep -Fq -- '-DLLVM_DISTRIBUTION_COMPONENTS=' "$CLANG_BOOTSTRAP"
+grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target distribution' "$CLANG_BOOTSTRAP"
+grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target install-distribution' "$CLANG_BOOTSTRAP"
+grep -Fq -- 'llvm-headers;llvm-libraries;cmake-exports' "$CLANG_BOOTSTRAP"
 
 printf 'PowerPC LLVM submodule preparation: verified\n'
