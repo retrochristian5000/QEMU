@@ -202,7 +202,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=11
+BOOTSTRAP_SCHEMA=12
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -210,6 +210,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_URL=$LLVM_GIT_URL
 LLVM_GIT_COMMIT=$llvm_revision
+LLVM_CMAKE_MODE=incremental-distribution
 HOST_SYSTEM=$(uname -srm)
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
@@ -226,7 +227,8 @@ clang_toolchain_is_usable()
     local tool
 
     [[ -x "$prefix/bin/${TOOLCHAIN_TARGET}-gcc" ]] || return 1
-    for tool in clang llvm-ar llvm-nm llvm-ranlib llvm-readelf llvm-strip; do
+    for tool in clang llvm-ar llvm-nm llvm-ranlib llvm-readelf llvm-strip \
+                llvm-config llvm-tblgen; do
         [[ -x "$prefix/llvm/bin/$tool" ]] || return 1
     done
     for tool in as objcopy objdump readelf gprof; do
@@ -253,8 +255,12 @@ staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
 mkdir -p "$stage_root"
 
-bootstrap_stage="configuring and building PowerPC-only Clang"
-rm -rf "$LLVM_BUILD_DIR"
+# Keep the CMake/Ninja graph alive across LLVM revisions. CMake reconfiguration
+# updates changed rules in place, while Ninja retains object-level dependency
+# state. A forced rebuild uses the backend's clean target instead of deleting
+# CMakeCache.txt and rebuilding the project graph from scratch.
+bootstrap_stage="configuring PowerPC-only Clang"
+llvm_distribution_components='clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
@@ -263,6 +269,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     "${cmake_darwin_args[@]}" \
     -DLLVM_ENABLE_PROJECTS=clang \
     -DLLVM_TARGETS_TO_BUILD=PowerPC \
+    -DLLVM_DISTRIBUTION_COMPONENTS="$llvm_distribution_components" \
     -DLLVM_ENABLE_ASSERTIONS=OFF \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
@@ -272,17 +279,31 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_ENABLE_ZLIB=OFF \
     -DLLVM_ENABLE_ZSTD=OFF \
     -DLLVM_ENABLE_LIBXML2=OFF
-cmake --build "$LLVM_BUILD_DIR" --parallel "$JOBS"
-DESTDIR="$stage_root" cmake --install "$LLVM_BUILD_DIR"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    bootstrap_stage="cleaning requested LLVM outputs"
+    cmake --build "$LLVM_BUILD_DIR" --target clean
+fi
+
+bootstrap_stage="building PowerPC LLVM distribution"
+cmake --build "$LLVM_BUILD_DIR" --target distribution --parallel "$JOBS"
+bootstrap_stage="installing PowerPC LLVM distribution"
+DESTDIR="$stage_root" \
+    cmake --build "$LLVM_BUILD_DIR" --target install-distribution --parallel "$JOBS"
 
 clang="$staged_toolchain/llvm/bin/clang"
 llvm_readelf="$staged_toolchain/llvm/bin/llvm-readelf"
-for tool in clang llvm-ar llvm-nm llvm-ranlib llvm-readelf llvm-strip; do
+for tool in clang llvm-ar llvm-nm llvm-ranlib llvm-readelf llvm-strip \
+            llvm-config llvm-tblgen; do
     if [[ ! -x "$staged_toolchain/llvm/bin/$tool" ]]; then
-        printf 'error: LLVM install did not produce %s\n' "$tool" >&2
+        printf 'error: LLVM distribution did not produce %s\n' "$tool" >&2
         exit 1
     fi
 done
+if [[ ! -f "$staged_toolchain/llvm/lib/cmake/llvm/LLVMConfig.cmake" ]]; then
+    printf 'error: LLVM distribution did not install CMake package metadata\n' >&2
+    exit 1
+fi
 if ! "$clang" --print-targets | grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)'; then
     printf 'error: bootstrapped Clang does not contain the PowerPC 32 backend\n' >&2
     exit 1
