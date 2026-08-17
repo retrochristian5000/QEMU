@@ -11,6 +11,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 MENU_TOOL = ROOT / 'scripts' / 'whp-config' / 'menuconfig.py'
+PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
 CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
 sys.path.insert(0, str(CONFIG_DIR))
 
@@ -37,19 +38,24 @@ class WhpConfigTests(unittest.TestCase):
         values = mod.default_values()
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
-        self.assertEqual(values['MACOS_ENABLE_COCOA'], 'y')
-        self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'y')
-        self.assertEqual(values['BUILD_OPENBIOS'], 'y')
+        self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_GTK'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_PA'], 'auto')
+        self.assertEqual(values['BUILD_OPENBIOS'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_POWERPC_TOOLCHAIN'], 'auto')
+        self.assertEqual(values['INSTALL'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
-    def test_all_boolean_menu_options_are_enabled_by_default(self):
+    def test_boolean_defaults_are_valid_and_install_is_opt_in(self):
         mod = load_module()
         values = mod.default_values()
         for option in mod.OPTIONS:
             if option.kind == 'bool':
-                self.assertEqual(option.default, 'y', option.key)
-                self.assertEqual(values[option.key], 'y', option.key)
+                self.assertIn(option.default, ('y', 'n'), option.key)
+                self.assertEqual(values[option.key], option.default, option.key)
+        self.assertEqual(values['INSTALL'], 'n')
 
     def test_output_defaults_select_img_i386_and_ppc(self):
         mod = load_module()
@@ -67,6 +73,30 @@ class WhpConfigTests(unittest.TestCase):
         self.assertIn("BUILD_QEMU_SYSTEM_PPC='1'", assignments)
         self.assertNotIn('QEMU_TARGET_LIST=', assignments)
 
+    def test_auto_optional_defaults_are_not_forced_into_shell(self):
+        mod = load_module()
+        assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
+        for key in (
+            'QEMU_HOST_LTO',
+            'MACOS_ENABLE_COCOA',
+            'MACOS_ENABLE_COREAUDIO',
+            'MACOS_ENABLE_GTK',
+            'MACOS_ENABLE_PA',
+            'BUILD_OPENBIOS',
+            'BOOTSTRAP_POWERPC_TOOLCHAIN',
+            'PREFIX',
+        ):
+            self.assertNotIn(f'{key}=', assignments)
+        self.assertIn("INSTALL='0'", assignments)
+
+    def test_device_selection_is_exported_without_boolean_reencoding(self):
+        mod = load_module()
+        values = mod.default_values()
+        values['CONFIG_MAC_OLDWORLD'] = 'n'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("CONFIG_MAC_NEWWORLD='y'", assignments)
+        self.assertIn("CONFIG_MAC_OLDWORLD='n'", assignments)
+
     def test_menu_uses_output_toggles_instead_of_a_raw_target_list(self):
         mod = load_module()
         self.assertNotIn('QEMU_TARGET_LIST', mod.OPTION_BY_KEY)
@@ -79,6 +109,23 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(labels['MACOS_ENABLE_COREAUDIO'], 'CoreAudio')
         self.assertEqual(labels['MACOS_ENABLE_GTK'], 'GTK')
         self.assertEqual(labels['MACOS_ENABLE_PA'], 'PulseAudio')
+
+    def test_version_one_config_migrates_without_losing_explicit_values(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'BUILD_OPENBIOS=y\n'
+                'MACOS_ENABLE_GTK=n\n'
+                'INSTALL=y\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_OPENBIOS'], 'y')
+            self.assertEqual(loaded.values['MACOS_ENABLE_GTK'], 'n')
+            self.assertEqual(loaded.values['INSTALL'], 'y')
+            self.assertEqual(loaded.values['MACOS_ENABLE_PA'], 'auto')
 
     def test_legacy_target_list_migrates_to_output_toggles(self):
         mod = load_module()
@@ -114,7 +161,7 @@ class WhpConfigTests(unittest.TestCase):
         mod = load_module()
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
-            path.write_text('WHP_CONFIG_VERSION=1\nBUILD_OPENBIOS=n\nFUTURE_SETTING=keep-me\n', encoding='utf-8')
+            path.write_text('WHP_CONFIG_VERSION=2\nBUILD_OPENBIOS=n\nFUTURE_SETTING=keep-me\n', encoding='utf-8')
             loaded = mod.load_config(path)
             self.assertEqual(loaded.values['BUILD_OPENBIOS'], 'n')
             self.assertEqual(loaded.unknown['FUTURE_SETTING'], 'keep-me')
@@ -123,7 +170,7 @@ class WhpConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
             path.write_text(
-                'WHP_CONFIG_VERSION=1\n'
+                'WHP_CONFIG_VERSION=2\n'
                 'PREFIX=/opt/whp-qemu\n'
                 'MACOS_ENABLE_COCOA=n\n'
                 'MACOS_ENABLE_COREAUDIO=n\n'
@@ -149,7 +196,7 @@ class WhpConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
             path.write_text(
-                'WHP_CONFIG_VERSION=1\nQEMU_HOST_LTO=auto\nPREFIX=auto\n',
+                'WHP_CONFIG_VERSION=2\nQEMU_HOST_LTO=auto\nPREFIX=auto\nBUILD_OPENBIOS=auto\n',
                 encoding='utf-8',
             )
             result = subprocess.run(
@@ -158,6 +205,7 @@ class WhpConfigTests(unittest.TestCase):
             )
             self.assertNotIn('QEMU_HOST_LTO=', result.stdout)
             self.assertNotIn('PREFIX=', result.stdout)
+            self.assertNotIn('BUILD_OPENBIOS=', result.stdout)
 
     def test_device_config_keeps_repository_defaults_before_user_overrides(self):
         mod = load_module()
@@ -208,10 +256,43 @@ class WhpConfigTests(unittest.TestCase):
             loaded.values['BUILD_OPENBIOS'] = 'n'
             mod.save_config(path, loaded)
             text = path.read_text(encoding='utf-8')
-            self.assertIn('WHP_CONFIG_VERSION=1\n', text)
+            self.assertIn('WHP_CONFIG_VERSION=2\n', text)
             self.assertIn('BUILD_OPENBIOS=n\n', text)
             self.assertIn('REMOVED_SETTING=old\n', text)
             self.assertFalse((path.parent / '.whpconfig.tmp').exists())
+
+    def test_portable_core_probe_omits_auto_optional_dependencies(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_QEMU_SYSTEM_I386': '1',
+            'BUILD_OPENBIOS': 'auto',
+            'MACOS_ENABLE_GTK': 'auto',
+            'MACOS_ENABLE_PA': 'auto',
+        })
+        result = subprocess.run(
+            ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn('CONFIGURE_ARG=--target-list=i386-softmmu', result.stdout)
+        self.assertNotIn('--enable-gtk', result.stdout)
+        self.assertNotIn('--enable-pa', result.stdout)
+        self.assertNotIn('OPTIONAL_DECLINE=OpenBIOS', result.stdout)
+
+    def test_portable_core_records_auto_openbios_decline_for_ppc(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '1',
+            'BUILD_QEMU_SYSTEM_I386': '0',
+            'BUILD_OPENBIOS': 'auto',
+        })
+        result = subprocess.run(
+            ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-ppc'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn('OPTIONAL_DECLINE=OpenBIOS:auto:bash-unavailable', result.stdout)
 
 
 if __name__ == '__main__':
