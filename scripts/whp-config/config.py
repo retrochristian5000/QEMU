@@ -11,7 +11,8 @@ import sys
 from collections import OrderedDict
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-CONFIG_VERSION = '1'
+CONFIG_VERSION = '2'
+SUPPORTED_CONFIG_VERSIONS = {'1', '2'}
 
 
 class Option(NamedTuple):
@@ -28,22 +29,32 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'bool', 'y'),
-    Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'bool', 'y'),
-    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'bool', 'y'),
-    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'bool', 'y'),
-    Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'bool', 'y'),
-    Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'bool', 'y'),
+    Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
-    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'y'),
+    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
 )
 
 OPTION_BY_KEY = {option.key: option for option in OPTIONS}
 PORTABLE_BOOL_KEYS = {option.key for option in OPTIONS if option.kind == 'bool'}
-SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
+RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
+SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
+SHELL_TRI_STATE_KEYS = {
+    'QEMU_HOST_LTO',
+    'MACOS_ENABLE_COCOA',
+    'MACOS_ENABLE_COREAUDIO',
+    'MACOS_ENABLE_GTK',
+    'MACOS_ENABLE_PA',
+    'BUILD_OPENBIOS',
+    'BOOTSTRAP_POWERPC_TOOLCHAIN',
+}
 _STRING_RE = re.compile(r'^[A-Za-z0-9_.,+:/-]+$')
 _KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]*$')
 
@@ -73,7 +84,7 @@ def validate_value(option: Option, value: str) -> None:
         if not value or not _STRING_RE.fullmatch(value):
             raise ValueError(f'{option.key} contains unsupported characters')
         return
-    raise ValueError(f'unsupported option type for {option.key}: {option.kind}')
+    raise ValueError(f'unsupported option type for {option.key}')
 
 
 def load_config(path: pathlib.Path) -> ConfigState:
@@ -82,7 +93,7 @@ def load_config(path: pathlib.Path) -> ConfigState:
     if not path.exists():
         return ConfigState(values, unknown)
 
-    seen_version = False
+    config_version: Optional[str] = None
     seen_options = set()
     legacy_target_list = None
     for number, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
@@ -97,8 +108,8 @@ def load_config(path: pathlib.Path) -> ConfigState:
         if not _KEY_RE.fullmatch(key):
             raise ValueError(f'{path}:{number}: invalid option name: {key}')
         if key == 'WHP_CONFIG_VERSION':
-            seen_version = True
-            if value != CONFIG_VERSION:
+            config_version = value
+            if value not in SUPPORTED_CONFIG_VERSIONS:
                 raise ValueError(
                     f'{path}:{number}: unsupported WHP_CONFIG_VERSION={value}'
                 )
@@ -128,9 +139,14 @@ def load_config(path: pathlib.Path) -> ConfigState:
             if key not in seen_options:
                 values[key] = 'y' if target in legacy_targets else 'n'
 
-    if path.stat().st_size and not seen_version:
+    if path.stat().st_size and config_version is None:
         print(
-            f'warning: {path} has no WHP_CONFIG_VERSION; treating it as version {CONFIG_VERSION}',
+            f'warning: {path} has no WHP_CONFIG_VERSION; treating it as version 1',
+            file=sys.stderr,
+        )
+    elif config_version == '1':
+        print(
+            f'warning: {path} uses WHP_CONFIG_VERSION=1; portable defaults are migrated in memory',
             file=sys.stderr,
         )
     for key in unknown:
@@ -173,12 +189,12 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
     lines: List[str] = []
     for option in OPTIONS:
         key = option.key
-        if key.startswith('CONFIG_') or key in environ:
+        if key in environ:
             continue
         value = state.values[key]
         if value == 'auto':
             continue
-        if key in SHELL_BOOL_KEYS or key == 'QEMU_HOST_LTO':
+        if key in SHELL_BOOL_KEYS or key in SHELL_TRI_STATE_KEYS:
             value = '1' if value == 'y' else '0'
         quoted = "'" + value.replace("'", "'\"'\"'") + "'"
         lines.append(f'{key}={quoted}')
