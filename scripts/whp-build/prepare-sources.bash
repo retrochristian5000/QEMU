@@ -3,36 +3,112 @@
 
 whp_prepare_sources()
 {
-    powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
-    llvm_submodule_path="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
+    local openbios_mode="${BUILD_OPENBIOS:-auto}"
+    local bootstrap_mode="${BOOTSTRAP_POWERPC_TOOLCHAIN:-auto}"
+    local powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
+    local llvm_submodule_path="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
+    local openbios_auto=0
+    local source_prepare_failed=0
 
-    if [[ "$BUILD_OPENBIOS" == "1" ]]; then
+    case "$openbios_mode" in
+        auto)
+            openbios_auto=1
+            case ",${QEMU_TARGET_LIST:-}," in
+                *,ppc-softmmu,*) BUILD_OPENBIOS=1 ;;
+                *) BUILD_OPENBIOS=0 ;;
+            esac
+            ;;
+        0|1) BUILD_OPENBIOS="$openbios_mode" ;;
+        *)
+            printf 'error: BUILD_OPENBIOS must be auto, 0, or 1\n' >&2
+            return 1
+            ;;
+    esac
+
+    if [[ "$BUILD_OPENBIOS" == 1 ]]; then
         case "$powerpc_toolchain_compiler" in
             clang|gcc) ;;
             *)
-                printf 'error: POWERPC_TOOLCHAIN_COMPILER must be clang or gcc\n' >&2
-                exit 1
+                if [[ "$openbios_auto" == 1 ]]; then
+                    printf 'OpenBIOS auto: unsupported compiler lane %s; continuing without WHP firmware build\n' \
+                        "$powerpc_toolchain_compiler" >&2
+                    BUILD_OPENBIOS=0
+                else
+                    printf 'error: POWERPC_TOOLCHAIN_COMPILER must be clang or gcc\n' >&2
+                    return 1
+                fi
                 ;;
         esac
     fi
 
+    if [[ "$BUILD_OPENBIOS" == 1 ]]; then
+        case "$bootstrap_mode" in
+            auto)
+                if [[ -n "${OPENBIOS_CROSS_COMPILE:-}" ]]; then
+                    BOOTSTRAP_POWERPC_TOOLCHAIN=0
+                else
+                    BOOTSTRAP_POWERPC_TOOLCHAIN=1
+                fi
+                ;;
+            0|1) BOOTSTRAP_POWERPC_TOOLCHAIN="$bootstrap_mode" ;;
+            *)
+                printf 'error: BOOTSTRAP_POWERPC_TOOLCHAIN must be auto, 0, or 1\n' >&2
+                return 1
+                ;;
+        esac
+
+        if [[ -z "${MAKE_CMD:-}" ]]; then
+            if [[ "$openbios_auto" == 1 ]]; then
+                printf '%s\n' \
+                    'OpenBIOS auto: Make is unavailable; continuing with the core QEMU build.' >&2
+                BUILD_OPENBIOS=0
+                BOOTSTRAP_POWERPC_TOOLCHAIN=0
+            else
+                printf '%s\n' \
+                    'error: OpenBIOS was explicitly requested but no Make implementation is available.' >&2
+                return 1
+            fi
+        fi
+    else
+        BOOTSTRAP_POWERPC_TOOLCHAIN=0
+    fi
+
     # Existing clones cache submodule URLs in .git/config. Source preparation
-    # owns mounting every source dependency required by the selected firmware
-    # compiler lane before any bootstrap script consumes it. OpenBIOS is always
-    # required; the pinned LLVM gitlink is required only by the Clang lane.
-    if [[ "$BUILD_OPENBIOS" == "1" && -e "$SOURCE_DIR/.git" ]]; then
+    # only touches firmware/toolchain submodules when the firmware lane remains
+    # selected. A failure in auto mode is a feature decline, not a QEMU failure.
+    if [[ "$BUILD_OPENBIOS" == 1 && -e "$SOURCE_DIR/.git" ]]; then
         if ! command -v git >/dev/null 2>&1; then
-            printf 'error: git is required to mount OpenBIOS/toolchain sources\n' >&2
-            exit 1
-        fi
+            if [[ "$openbios_auto" == 1 ]]; then
+                printf '%s\n' \
+                    'OpenBIOS auto: git is unavailable; continuing without WHP firmware build.' >&2
+                BUILD_OPENBIOS=0
+                BOOTSTRAP_POWERPC_TOOLCHAIN=0
+            else
+                printf 'error: git is required to prepare OpenBIOS/toolchain sources\n' >&2
+                return 1
+            fi
+        else
+            powerpc_source_submodules=(roms/openbios)
+            if [[ "$powerpc_toolchain_compiler" == clang ]]; then
+                powerpc_source_submodules+=("$llvm_submodule_path")
+            fi
 
-        powerpc_source_submodules=(roms/openbios)
-        if [[ "$powerpc_toolchain_compiler" == clang ]]; then
-            powerpc_source_submodules+=("$llvm_submodule_path")
+            if ! git -C "$SOURCE_DIR" submodule sync -- "${powerpc_source_submodules[@]}" ||
+               ! git -C "$SOURCE_DIR" submodule update --init -- "${powerpc_source_submodules[@]}"; then
+                source_prepare_failed=1
+            fi
+            if [[ "$source_prepare_failed" == 1 ]]; then
+                if [[ "$openbios_auto" == 1 ]]; then
+                    printf '%s\n' \
+                        'OpenBIOS auto: firmware/toolchain sources could not be prepared; continuing with core QEMU.' >&2
+                    BUILD_OPENBIOS=0
+                    BOOTSTRAP_POWERPC_TOOLCHAIN=0
+                else
+                    printf 'error: failed to prepare OpenBIOS/toolchain submodules\n' >&2
+                    return 1
+                fi
+            fi
         fi
-
-        git -C "$SOURCE_DIR" submodule sync -- "${powerpc_source_submodules[@]}"
-        git -C "$SOURCE_DIR" submodule update --init -- "${powerpc_source_submodules[@]}"
     fi
 
     mkdir -p "$BUILD_DIR"
@@ -43,7 +119,8 @@ whp_prepare_sources()
         MACOS_COMPILER_MANIFEST="$BUILD_DIR/.whp-macos-toolchain"
         MACOS_COMPILER_MANIFEST="$MACOS_COMPILER_MANIFEST" \
         MACOS_COMPILER_PROBE_DIR="$BUILD_DIR/.whp-macos-toolchain.d" \
-            bash "$SOURCE_DIR/scripts/verify-macos-toolchain.sh"
+            "$WHP_BUILD_BASH" --noprofile --norc \
+                "$SOURCE_DIR/scripts/verify-macos-toolchain.sh"
         MACOS_COMPILER_MANIFEST_SIGNATURE="$(cksum "$MACOS_COMPILER_MANIFEST" |
             awk '{print $1 ":" $2}')"
     fi
@@ -54,17 +131,15 @@ whp_prepare_sources()
         MACOS_LTO_MANIFEST="$BUILD_DIR/.whp-macos-lto"
         MACOS_LTO_MANIFEST="$MACOS_LTO_MANIFEST" \
         MACOS_LTO_PROBE_DIR="$BUILD_DIR/.whp-macos-lto.d" \
-            bash "$SOURCE_DIR/scripts/verify-macos-lto.sh"
+            "$WHP_BUILD_BASH" --noprofile --norc \
+                "$SOURCE_DIR/scripts/verify-macos-lto.sh"
         MACOS_LTO_MANIFEST_SIGNATURE="$(cksum "$MACOS_LTO_MANIFEST" |
             awk '{print $1 ":" $2}')"
     fi
 
     OPENBIOS_CONFIG_FILE="$BUILD_DIR/.whp-openbios-meson.env"
-    if [[ "$BUILD_OPENBIOS" == "1" ]]; then
-        # configure-openbios.bash is a subprocess boundary. Pass the exact
-        # compiler/submodule lane selected above so source preparation and
-        # firmware configuration cannot independently choose different inputs.
-        BUILD_DIR="$BUILD_DIR" \
+    if [[ "$BUILD_OPENBIOS" == 1 ]]; then
+        if ! BUILD_DIR="$BUILD_DIR" \
         OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}" \
         OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$BUILD_DIR/firmware-tools}" \
         OPENBIOS_CROSS_COMPILE="$OPENBIOS_CROSS_COMPILE" \
@@ -81,8 +156,22 @@ whp_prepare_sources()
         PKG_CONFIG_FOR_BUILD="$PKG_CONFIG_FOR_BUILD" \
         MAKE_CMD="$MAKE_CMD" \
         JOBS="$JOBS" \
-            bash "$SOURCE_DIR/scripts/whp-build/configure-openbios.bash"
+            "$WHP_BUILD_BASH" --noprofile --norc \
+                "$SOURCE_DIR/scripts/whp-build/configure-openbios.bash"; then
+            if [[ "$openbios_auto" == 1 ]]; then
+                printf '%s\n' \
+                    'OpenBIOS auto: firmware preparation failed; continuing with the core QEMU build.' >&2
+                BUILD_OPENBIOS=0
+                BOOTSTRAP_POWERPC_TOOLCHAIN=0
+                rm -f "$OPENBIOS_CONFIG_FILE"
+            else
+                printf 'error: explicitly requested OpenBIOS preparation failed\n' >&2
+                return 1
+            fi
+        fi
     else
         rm -f "$OPENBIOS_CONFIG_FILE"
     fi
+
+    export BUILD_OPENBIOS BOOTSTRAP_POWERPC_TOOLCHAIN
 }
