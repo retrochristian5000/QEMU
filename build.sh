@@ -25,6 +25,18 @@ if [ -z "${PYTHON:-}" ] ||
 fi
 export PYTHON WHP_USER_CONFIG
 
+# Resolve BUILD_DIR exactly once before choosing the Bash or portable runner.
+# This prevents shell availability from selecting a different QEMU build tree,
+# makes relative overrides source-relative, and gives read-only source trees a
+# writable cache fallback when possible.
+BUILD_DIR=$("$PYTHON" "$WHP_PORTABLE_BUILD_TOOL" --print-build-dir) || exit 1
+export BUILD_DIR
+
+if [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" = 1 ]; then
+    printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
+    exit 0
+fi
+
 if [ "${1:-}" = menuconfig ]; then
     shift
     exec "$PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
