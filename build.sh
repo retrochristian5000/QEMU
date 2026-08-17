@@ -7,7 +7,13 @@ WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
 WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
 WHP_PORTABLE_BUILD_TOOL="$SOURCE_DIR/scripts/whp-build/portable-build.py"
 WHP_USER_CONFIG="$SOURCE_DIR/.whpconfig"
-WHP_BUILD_BASH=${WHP_BUILD_BASH:-}
+
+if [ -n "${WHP_BUILD_BASH:-}" ]; then
+    WHP_BUILD_BASH_EXPLICIT=1
+else
+    WHP_BUILD_BASH_EXPLICIT=0
+    WHP_BUILD_BASH=
+fi
 
 if [ -z "${PYTHON:-}" ]; then
     PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
@@ -33,21 +39,29 @@ if [ -z "$WHP_BUILD_BASH" ]; then
     fi
 fi
 
-# The portable core is a real build path, not an error fallback. It keeps
-# QEMU buildable on hosts that satisfy QEMU's prerequisites but do not provide
-# GNU Bash. CI can force this path even when Bash is installed.
-if [ "${WHP_FORCE_PORTABLE_CORE:-0}" = 1 ] || [ -z "$WHP_BUILD_BASH" ]; then
+portable_core()
+{
     if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
         printf 'WHP build shell: unavailable (portable Python core)\n'
         printf 'CONFIG_SHELL: <QEMU configure default>\n'
         exit 0
     fi
     exec "$PYTHON" "$WHP_PORTABLE_BUILD_TOOL" "$@"
+}
+
+# The portable core is a real build path, not an error fallback. It keeps
+# QEMU buildable on hosts that satisfy QEMU's prerequisites but do not provide
+# a usable GNU Bash. CI can force this path even when Bash is installed.
+if [ "${WHP_FORCE_PORTABLE_CORE:-0}" = 1 ] || [ -z "$WHP_BUILD_BASH" ]; then
+    portable_core "$@"
 fi
 
 if [ ! -x "$WHP_BUILD_BASH" ]; then
-    printf 'error: WHP_BUILD_BASH is not executable: %s\n' "$WHP_BUILD_BASH" >&2
-    exit 1
+    if [ "$WHP_BUILD_BASH_EXPLICIT" = 1 ]; then
+        printf 'error: WHP_BUILD_BASH is not executable: %s\n' "$WHP_BUILD_BASH" >&2
+        exit 1
+    fi
+    portable_core "$@"
 fi
 
 if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
@@ -56,22 +70,19 @@ if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
         { test "${BASH_VERSINFO[0]}" -eq 3 &&
           test "${BASH_VERSINFO[1]}" -ge 2; }
 ' >/dev/null 2>&1; then
-    printf 'error: WHP_BUILD_BASH is not GNU Bash 3.2 or newer: %s\n' \
-        "$WHP_BUILD_BASH" >&2
-    exit 1
+    if [ "$WHP_BUILD_BASH_EXPLICIT" = 1 ]; then
+        printf 'error: WHP_BUILD_BASH is not GNU Bash 3.2 or newer: %s\n' \
+            "$WHP_BUILD_BASH" >&2
+        exit 1
+    fi
+    portable_core "$@"
 fi
 
 # Saved configuration supplies portable policy defaults. Explicit environment
 # variables remain one-run overrides and therefore take precedence.
-if [ -f "$WHP_USER_CONFIG" ]; then
-    WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
-    eval "$WHP_CONFIG_ENV"
-    unset WHP_CONFIG_ENV
-else
-    WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
-    eval "$WHP_CONFIG_ENV"
-    unset WHP_CONFIG_ENV
-fi
+WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
+eval "$WHP_CONFIG_ENV"
+unset WHP_CONFIG_ENV
 
 WHP_INCREMENTAL_BUILD=${WHP_INCREMENTAL_BUILD:-1}
 case "$WHP_INCREMENTAL_BUILD" in
