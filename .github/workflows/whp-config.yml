@@ -7,14 +7,17 @@ on:
     paths:
       - 'build.sh'
       - 'builder.sh'
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/prepare-sources.bash'
+      - 'scripts/whp-build/configure-openbios.bash'
       - 'scripts/whp-build/configure.bash'
       - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/post-build.bash'
+      - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-incremental.py'
@@ -40,6 +43,9 @@ jobs:
       - name: Test incremental build behavior
         run: python3 scripts/tests/test-whp-incremental.py
 
+      - name: Test PowerPC LLVM bootstrap wiring
+        run: bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
+
       - name: Check configuration script syntax
         shell: bash
         run: |
@@ -51,10 +57,13 @@ jobs:
             scripts/tests/test-whp-incremental.py
           /bin/sh -n build.sh
           bash -n builder.sh
+          bash -n scripts/bootstrap-powerpc-clang-base.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
           bash -n scripts/whp-build/prepare-sources.bash
+          bash -n scripts/whp-build/configure-openbios.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/post-build.bash
+          bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-whp-config-integration.bash
