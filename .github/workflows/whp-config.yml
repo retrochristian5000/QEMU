@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'build.sh'
+      - 'builder.sh'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/portable-build.py'
@@ -44,6 +45,7 @@ jobs:
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py
           /bin/sh -n build.sh
+          bash -n builder.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
           bash -n scripts/whp-build/prepare-sources.bash
