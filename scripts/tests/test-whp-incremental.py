@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import platform
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from contextlib import contextmanager
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
+MACOS_HYGIENE = ROOT / 'scripts' / 'macos-build-hygiene.bash'
 
 
 def load_portable_build():
@@ -126,6 +128,56 @@ class WhpIncrementalTests(unittest.TestCase):
             configured_target_value(configure_args),
             'i386-softmmu,ppc-softmmu',
         )
+
+    def test_portable_relative_build_dir_is_source_relative(self):
+        mod = load_portable_build()
+        with temporary_environment({
+            'BUILD_DIR': 'out/relative-build',
+            'BUILD_QEMU_IMG': '0',
+            'BUILD_QEMU_SYSTEM_I386': '0',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_OPENBIOS': 'n',
+            'BOOTSTRAP_POWERPC_TOOLCHAIN': 'n',
+        }):
+            build_dir, _, _, _, _ = mod.build_plan(['qemu-img'])
+        self.assertEqual(build_dir, ROOT / 'out' / 'relative-build')
+
+    def test_portable_default_build_dir_is_host_scoped_and_runner_neutral(self):
+        mod = load_portable_build()
+        old_build_dir = os.environ.pop('BUILD_DIR', None)
+        try:
+            with temporary_environment({
+                'BUILD_QEMU_IMG': '0',
+                'BUILD_QEMU_SYSTEM_I386': '0',
+                'BUILD_QEMU_SYSTEM_PPC': '0',
+                'BUILD_OPENBIOS': 'n',
+                'BOOTSTRAP_POWERPC_TOOLCHAIN': 'n',
+            }):
+                os.environ.pop('BUILD_DIR', None)
+                build_dir, _, _, _, _ = mod.build_plan(['qemu-img'])
+        finally:
+            if old_build_dir is not None:
+                os.environ['BUILD_DIR'] = old_build_dir
+        name = build_dir.name
+        self.assertNotIn('portable', name)
+        self.assertNotIn('ppc', name)
+        self.assertIn(mod.canonical_host_arch(platform.machine()), name)
+        self.assertIn(mod.canonical_host_os(platform.system()), name)
+
+    def test_macos_hygiene_never_recursively_deletes_build_dir(self):
+        content = MACOS_HYGIENE.read_text(encoding='utf-8')
+        self.assertNotIn('rm -rf "$BUILD_DIR"', content)
+
+    def test_portable_owner_rejects_different_source(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-build-owner').write_text(
+                'SCHEMA=2\nSOURCE_DIR=/different/source\nHOST_TAG=' + mod.host_build_tag() + '\n',
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(RuntimeError, 'another QEMU source tree'):
+                mod.validate_build_tree_owner(build_dir)
 
     def test_bash_explicit_target_expands_configured_target_list(self):
         script = r'''
