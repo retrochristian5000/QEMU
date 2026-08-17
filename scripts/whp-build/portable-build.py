@@ -159,6 +159,51 @@ def print_plan(build_dir: pathlib.Path, prefix: pathlib.Path, configure_args: Li
         print(f'OPTIONAL_DECLINE={decline}')
 
 
+def locate_built_binary(build_dir: pathlib.Path, name: str) -> pathlib.Path:
+    for candidate in (build_dir / name, build_dir / f'{name}.exe'):
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f'expected build artifact was not produced: {name}')
+
+
+def verify_requested_outputs(build_dir: pathlib.Path, requested_targets: List[str]) -> Dict[str, pathlib.Path]:
+    artifacts: Dict[str, pathlib.Path] = {}
+    if 'all' in requested_targets:
+        return artifacts
+
+    for target in requested_targets:
+        if target != 'qemu-img' and not target.startswith('qemu-system-'):
+            continue
+        binary = locate_built_binary(build_dir, target)
+        version = subprocess.run(
+            [str(binary), '--version'],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if version.returncode != 0:
+            raise RuntimeError(f'built artifact failed its version probe: {binary}')
+        artifacts[target] = binary
+
+        if target == 'qemu-system-ppc':
+            machines = subprocess.run(
+                [str(binary), '-machine', 'help'],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if machines.returncode != 0:
+                raise RuntimeError(f'PowerPC emulator failed machine-list probe: {binary}')
+            for machine in ('powermac3_1', 'mac99'):
+                if machine not in machines.stdout:
+                    raise RuntimeError(
+                        f'PowerPC emulator lost required machine profile {machine}: {binary}'
+                    )
+    return artifacts
+
+
 def main(argv: List[str]) -> int:
     if sys.version_info < (3, 9):
         print('error: Python 3.9 or newer is required by QEMU', file=sys.stderr)
@@ -178,6 +223,7 @@ def main(argv: List[str]) -> int:
         print(f'WHP optional feature skipped: {decline}', file=sys.stderr)
 
     build_dir.mkdir(parents=True, exist_ok=True)
+    artifacts: Dict[str, pathlib.Path] = {}
     try:
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
         runner = select_runner()
@@ -191,10 +237,9 @@ def main(argv: List[str]) -> int:
 
         values = resolved_values()
         if values['INSTALL'] == 'y':
-            if runner_name.startswith('ninja'):
-                subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
-            else:
-                subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
+            subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
+
+        artifacts = verify_requested_outputs(build_dir, requested_targets)
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
         print(f'error: core QEMU build failed: {exc}', file=sys.stderr)
         return 1
@@ -207,6 +252,11 @@ def main(argv: List[str]) -> int:
         handle.write(f'BUILD_DIR={build_dir}\n')
         handle.write(f'PREFIX={prefix}\n')
         handle.write(f'REQUESTED_TARGETS={" ".join(requested_targets)}\n')
+        for target, path in artifacts.items():
+            handle.write(f'ARTIFACT={target}:{path}\n')
+        if 'qemu-system-ppc' in artifacts:
+            handle.write('POWERMAC3_1_REGISTERED=yes\n')
+            handle.write('MAC99_REGISTERED=yes\n')
         for decline in declines:
             handle.write(f'OPTIONAL_DECLINE={decline}\n')
     print(f'build artifact manifest: {manifest}')
