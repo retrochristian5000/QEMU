@@ -10,7 +10,7 @@ TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-wo
 TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
 TOOLCHAIN_HOST_CC="${TOOLCHAIN_HOST_CC:-${CC_FOR_BUILD:-${CC:-cc}}}"
 TOOLCHAIN_HOST_CXX="${TOOLCHAIN_HOST_CXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
-JOBS="${JOBS:-1}"
+JOBS="${JOBS:-}"
 
 # Keep compiler source selection under WHP control. Standalone use follows the
 # LLVM remote's default branch through HEAD; the QEMU orchestrator supplies the
@@ -46,6 +46,17 @@ case "$LLVM_GIT_OFFLINE" in
         exit 1
         ;;
 esac
+
+cmake_parallel_args=(--parallel)
+if [[ -n "$JOBS" ]]; then
+    case "$JOBS" in
+        0|*[!0-9]*)
+            printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
+            exit 1
+            ;;
+    esac
+    cmake_parallel_args=(--parallel "$JOBS")
+fi
 
 for build_path in "$SOURCE_DIR" "$TOOLCHAIN_DIR" "$TOOLCHAIN_WORK_DIR" \
                   "$LLVM_SOURCE_DIR" "$LLVM_BUILD_DIR"; do
@@ -248,7 +259,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=15
+BOOTSTRAP_SCHEMA=16
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -256,7 +267,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_URL=$LLVM_GIT_URL
 LLVM_GIT_COMMIT=$llvm_revision
-LLVM_CMAKE_MODE=incremental-distribution-fast-host-link
+LLVM_CMAKE_MODE=incremental-distribution-fast-cmake
 HOST_SYSTEM=$(uname -srm)
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
@@ -266,6 +277,7 @@ HOST_CPPFLAGS=$host_cppflags
 HOST_LDFLAGS=$host_ldflags
 HOST_RELEASE_FLAGS=$host_release_flags
 HOST_LINKER=$host_linker
+CMAKE_PARALLEL_JOBS=${JOBS:-native}
 MARKER
 )"
 
@@ -316,11 +328,22 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     "${cmake_host_release_args[@]}" \
     "${cmake_host_linker_args[@]}" \
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm" \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
+    -DCMAKE_INSTALL_MESSAGE=NEVER \
     "${cmake_darwin_args[@]}" \
     -DLLVM_ENABLE_PROJECTS=clang \
     -DLLVM_TARGETS_TO_BUILD=PowerPC \
     -DLLVM_DISTRIBUTION_COMPONENTS="$llvm_distribution_components" \
     -DLLVM_ENABLE_ASSERTIONS=OFF \
+    -DLLVM_ENABLE_LTO=OFF \
+    -DLLVM_ENABLE_FATLTO=OFF \
+    -DLLVM_BUILD_INSTRUMENTED=OFF \
+    -DLLVM_ENABLE_MODULES=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_LIBPFM=OFF \
+    -DLLVM_ENABLE_Z3_SOLVER=OFF \
     -DLLVM_ENABLE_WARNINGS=OFF \
     -DLLVM_ENABLE_PEDANTIC=OFF \
     -DLLVM_NO_DEAD_STRIP=ON \
@@ -341,14 +364,14 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
     bootstrap_stage="cleaning requested LLVM outputs"
-    cmake --build "$LLVM_BUILD_DIR" --target clean
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
 fi
 
 bootstrap_stage="building PowerPC LLVM distribution"
-cmake --build "$LLVM_BUILD_DIR" --target distribution --parallel "$JOBS"
+cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
 bootstrap_stage="installing PowerPC LLVM distribution"
 DESTDIR="$stage_root" \
-    cmake --build "$LLVM_BUILD_DIR" --target install-distribution --parallel "$JOBS"
+    cmake --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"
 
 clang="$staged_toolchain/llvm/bin/clang"
 llvm_readelf="$staged_toolchain/llvm/bin/llvm-readelf"
@@ -457,4 +480,5 @@ printf '%s\n' \
     "Binary utilities: LLVM only (SFrame not required)" \
     "Assembler: Clang integrated assembler" \
     "Host linker: $host_linker" \
+    "CMake parallelism: ${JOBS:-native}" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
