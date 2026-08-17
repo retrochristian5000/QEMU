@@ -43,7 +43,7 @@ grep -Fq 'LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"' "$base"
 # The OpenBIOS Clang lane is LLVM-only.  In particular, do not keep a partial
 # GNU BFD build: current binutils couples BFD to libsframe even when OpenBIOS
 # never emits or consumes SFrame unwind metadata.
-grep -Fq 'BOOTSTRAP_SCHEMA=11' "$base"
+grep -Fq 'BOOTSTRAP_SCHEMA=16' "$base"
 grep -Fq 'GNU_BINUTILS=disabled' "$base"
 grep -Fq 'SFRAME=disabled' "$base"
 for binutils_token in BINUTILS_VERSION BINUTILS_URL BINUTILS_SHA256 \
@@ -63,7 +63,7 @@ if grep -Fq 'ln -sf "../../bin/${TOOLCHAIN_TARGET}-as" "$shim_dir/as"' "$base"; 
     exit 1
 fi
 
-grep -Fq 'LLD_SCHEMA=3' "$core"
+grep -Fq 'LLD_SCHEMA=4' "$core"
 grep -Fq 'ASSEMBLER=clang-integrated' "$core"
 grep -Fq 'GNU_BINUTILS=disabled' "$core"
 grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$core"
