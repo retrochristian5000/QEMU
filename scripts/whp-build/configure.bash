@@ -1,12 +1,108 @@
 # WHP configuration identity and configure execution stage.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+whp_configure_previous_target_list()
+{
+    local path="$1"
+    local line
+    local value
+    local arg
+
+    [[ -f "$path" ]] || return 0
+
+    while IFS= read -r line; do
+        case "$line" in
+            QEMU_TARGET_LIST=*)
+                printf '%s\n' "${line#QEMU_TARGET_LIST=}"
+                return 0
+                ;;
+        esac
+    done < "$path"
+
+    # Backward compatibility for build trees created before QEMU_TARGET_LIST
+    # had its own identity field.  CONFIGURE_ARG is sufficient to recover the
+    # old target set without forcing users to throw the tree away once.
+    while IFS= read -r line; do
+        case "$line" in
+            CONFIGURE_ARG=*)
+                value="${line#CONFIGURE_ARG=}"
+                for arg in $value; do
+                    case "$arg" in
+                        --target-list=*)
+                            printf '%s\n' "${arg#--target-list=}"
+                            return 0
+                            ;;
+                    esac
+                done
+                ;;
+        esac
+    done < "$path"
+}
+
+whp_configure_add_target()
+{
+    local target="$1"
+
+    [[ -n "$target" ]] || return 0
+    case ",${QEMU_TARGET_LIST:-}," in
+        *",$target,"*) return 0 ;;
+    esac
+    QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}$target"
+}
+
+whp_configure_merge_previous_targets()
+{
+    local config_file="$1"
+    local previous
+    local target
+    local previous_targets=()
+
+    [[ "${WHP_INCREMENTAL_BUILD:-1}" == 1 ]] || return 0
+    previous="$(whp_configure_previous_target_list "$config_file")"
+    [[ -n "$previous" ]] || return 0
+
+    IFS=, read -r -a previous_targets <<< "$previous"
+    for target in "${previous_targets[@]}"; do
+        whp_configure_add_target "$target"
+    done
+}
+
+whp_configure_sync_target_args()
+{
+    local arg
+    local synced=()
+
+    for arg in "${configure_args[@]}"; do
+        case "$arg" in
+            --target-list=*|--disable-system) ;;
+            *) synced+=("$arg") ;;
+        esac
+    done
+
+    if [[ -n "${QEMU_TARGET_LIST:-}" ]]; then
+        synced+=("--target-list=$QEMU_TARGET_LIST")
+    else
+        synced+=(--disable-system)
+    fi
+    configure_args=("${synced[@]}")
+}
+
 whp_configure_build()
 {
 local ppc_custom_devices=0
 local ppc_generated_config=""
 local ppc_generated_temp=""
 local configure_status=0
+local config_file="$BUILD_DIR/.whp-config"
+local config_candidate="$BUILD_DIR/.whp-config.new"
+local stale_ppc_config=""
+
+# Incremental target selection is monotonic.  Reconfiguring QEMU in place to
+# add a target is safe; removing an already-configured target would make old
+# outputs disappear from the same build tree and turns a small follow-up build
+# into an avoidable restart.  WHP_INCREMENTAL_BUILD=0 intentionally opts out.
+whp_configure_merge_previous_targets "$config_file"
+whp_configure_sync_target_args
 
 # QEMU's tracked ppc-softmmu defaults already include both Old World and New
 # World Macintosh boards. Do not generate a source-tree preset for that common
@@ -31,8 +127,6 @@ case ",${QEMU_TARGET_LIST:-}," in
         ;;
 esac
 
-config_file="$BUILD_DIR/.whp-config"
-config_candidate="$config_file.new"
 {
     printf 'HOST_OS=%s\n' "$HOST_OS"
     printf 'PROCESS_ARCH=%s\n' "$PROCESS_ARCH"
@@ -72,6 +166,7 @@ config_candidate="$config_file.new"
     printf 'NINJA=%s\n' "${NINJA_CMD:-${NINJA:-}}"
     printf 'PYTHON=%s\n' "${PYTHON:-}"
     printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
+    printf 'QEMU_TARGET_LIST=%s\n' "${QEMU_TARGET_LIST:-}"
     printf 'QEMU_HOST_LTO=%s\n' "$QEMU_HOST_LTO"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"
