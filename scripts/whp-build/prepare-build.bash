@@ -110,13 +110,16 @@ whp_prepare_build_defaults()
 {
     if [[ "$HOST_OS" == Darwin ]]; then
         DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc-${HOST_ARCH}-apple-darwin"
-        DEFAULT_PREFIX="${HOME:-$SOURCE_DIR}/.local/whp-qemu"
     else
         DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc"
-        DEFAULT_PREFIX=/emulator
     fi
 
     BUILD_DIR="${BUILD_DIR:-$DEFAULT_BUILD_DIR}"
+    if [[ -n "${HOME:-}" && -d "$HOME" && -w "$HOME" ]]; then
+        DEFAULT_PREFIX="$HOME/.local/whp-qemu"
+    else
+        DEFAULT_PREFIX="$BUILD_DIR/install"
+    fi
     PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
     BUILD_QEMU_IMG="${BUILD_QEMU_IMG:-1}"
     BUILD_QEMU_SYSTEM_I386="${BUILD_QEMU_SYSTEM_I386:-1}"
@@ -129,16 +132,16 @@ whp_prepare_build_defaults()
         QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}i386-softmmu"
     fi
     BUILD_TARGETS="${BUILD_TARGETS:-all}"
-    INSTALL="${INSTALL:-1}"
-    MACOS_ENABLE_COCOA="${MACOS_ENABLE_COCOA:-1}"
-    MACOS_ENABLE_COREAUDIO="${MACOS_ENABLE_COREAUDIO:-1}"
-    MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-1}"
-    MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-1}"
-    QEMU_HOST_LTO="${QEMU_HOST_LTO:-$APPLE_SILICON_NATIVE}"
-    BUILD_OPENBIOS="${BUILD_OPENBIOS:-1}"
+    INSTALL="${INSTALL:-0}"
+    MACOS_ENABLE_COCOA="${MACOS_ENABLE_COCOA:-auto}"
+    MACOS_ENABLE_COREAUDIO="${MACOS_ENABLE_COREAUDIO:-auto}"
+    MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-auto}"
+    MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-auto}"
+    QEMU_HOST_LTO="${QEMU_HOST_LTO:-auto}"
+    BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"
     OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
     OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
-    BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
+    BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-auto}"
     POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
     POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
     POWERPC_TOOLCHAIN_SOURCE_MODE="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
@@ -146,13 +149,24 @@ whp_prepare_build_defaults()
     POWERPC_TOOLCHAIN_ROOT="$(dirname "$POWERPC_TOOLCHAIN_DIR")"
     POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-work/powerpc-elf"
     POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
+    CONFIG_MAC_NEWWORLD="${CONFIG_MAC_NEWWORLD:-y}"
+    CONFIG_MAC_OLDWORLD="${CONFIG_MAC_OLDWORLD:-y}"
 
     whp_require_boolean_values \
         BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \
-        INSTALL MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO \
-        MACOS_ENABLE_GTK MACOS_ENABLE_PA QEMU_HOST_LTO \
-        BUILD_OPENBIOS OPENBIOS_FORCE_RECONFIGURE \
-        BOOTSTRAP_POWERPC_TOOLCHAIN POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
+        INSTALL OPENBIOS_FORCE_RECONFIGURE \
+        POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
+    whp_require_tristate_values \
+        MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO MACOS_ENABLE_GTK \
+        MACOS_ENABLE_PA QEMU_HOST_LTO BUILD_OPENBIOS \
+        BOOTSTRAP_POWERPC_TOOLCHAIN || exit 1
+    case "$CONFIG_MAC_NEWWORLD:$CONFIG_MAC_OLDWORLD" in
+        y:y|y:n|n:y|n:n) ;;
+        *)
+            printf 'error: CONFIG_MAC_NEWWORLD and CONFIG_MAC_OLDWORLD must be y or n\n' >&2
+            exit 1
+            ;;
+    esac
 
     for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
         case "$build_path" in
@@ -163,15 +177,16 @@ whp_prepare_build_defaults()
         esac
     done
 
-    export CFLAGS="${CFLAGS:--g0 -pipe -w}"
+    CFLAGS="${CFLAGS:-}"
     reject_global_lto_flags
 }
 
 whp_prepare_host_tools()
 {
     if [[ "$HOST_OS" == Darwin ]]; then
-        # The macOS wrapper owns SDK and compiler-family selection.  The generic
-        # stage consumes that resolved policy instead of discovering it again.
+        # The macOS wrapper owns SDK and compiler-family selection when it is
+        # active. Keep those strict checks inside the macOS adapter instead of
+        # imposing Homebrew or SDK policy on unrelated hosts.
         : "${DEVELOPER_DIR:?macOS wrapper did not set DEVELOPER_DIR}"
         : "${SDKROOT:?macOS wrapper did not set SDKROOT}"
         : "${MACOS_SDK_VERSION:?macOS wrapper did not set MACOS_SDK_VERSION}"
@@ -242,23 +257,51 @@ whp_prepare_build_tools()
         DEFAULT_JOBS="$(nproc)"
     elif command -v sysctl >/dev/null 2>&1; then
         DEFAULT_JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '1')"
+    elif command -v getconf >/dev/null 2>&1; then
+        DEFAULT_JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1')"
     else
         DEFAULT_JOBS=1
     fi
+    case "$DEFAULT_JOBS" in
+        ''|*[!0-9]*|0) DEFAULT_JOBS=1 ;;
+    esac
     JOBS="${JOBS:-$DEFAULT_JOBS}"
 
     if [[ -z "${MAKE_CMD:-}" ]]; then
         if command -v gmake >/dev/null 2>&1; then
-            MAKE_CMD=gmake
+            MAKE_CMD="$(command -v gmake)"
+        elif command -v make >/dev/null 2>&1; then
+            MAKE_CMD="$(command -v make)"
         else
-            MAKE_CMD=make
+            MAKE_CMD=""
         fi
     fi
-    if ! "$MAKE_CMD" --version 2>/dev/null | head -n 1 | grep -q 'GNU Make'; then
-        printf 'error: QEMU requires GNU Make; set MAKE_CMD to a GNU Make binary\n' >&2
-        exit 1
+
+    if [[ -z "${NINJA_CMD:-}" ]]; then
+        if command -v ninja >/dev/null 2>&1; then
+            NINJA_CMD="$(command -v ninja)"
+        elif command -v ninja-build >/dev/null 2>&1; then
+            NINJA_CMD="$(command -v ninja-build)"
+        else
+            NINJA_CMD=""
+        fi
     fi
-    export MAKE="$MAKE_CMD"
+
+    if [[ -n "$MAKE_CMD" ]]; then
+        export MAKE="$MAKE_CMD"
+    fi
+}
+
+whp_add_optional_configure_switch()
+{
+    local state="$1"
+    local feature="$2"
+
+    case "$state" in
+        1) configure_args+=("--enable-$feature") ;;
+        0) configure_args+=("--disable-$feature") ;;
+        auto) ;;
+    esac
 }
 
 whp_prepare_configure_args()
@@ -267,9 +310,6 @@ whp_prepare_configure_args()
         --cc="${CC:-cc}"
         --host-cc="$CC_FOR_BUILD"
         --cxx="${CXX:-c++}"
-        --enable-pixman
-        --enable-slirp
-        --enable-tcg
         --prefix="$PREFIX"
     )
 
@@ -285,51 +325,29 @@ whp_prepare_configure_args()
         configure_args+=(--disable-tools)
     fi
 
-    if [[ "$QEMU_HOST_LTO" == 1 ]]; then
-        configure_args+=(--enable-lto)
-    else
-        configure_args+=(--disable-lto)
-    fi
+    whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
+    whp_add_optional_configure_switch "$MACOS_ENABLE_GTK" gtk
+    whp_add_optional_configure_switch "$MACOS_ENABLE_PA" pa
 
     if [[ "$HOST_OS" == Darwin ]]; then
-        macos_audio_drivers=
         configure_args+=(--objcc="$OBJC")
+        whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
+        whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio
 
-        if [[ "$MACOS_ENABLE_COCOA" == 1 ]]; then
-            configure_args+=(--enable-cocoa)
-        else
-            configure_args+=(--disable-cocoa)
-        fi
-
+        macos_audio_drivers=
         if [[ "$MACOS_ENABLE_COREAUDIO" == 1 ]]; then
-            configure_args+=(--enable-coreaudio)
             macos_audio_drivers=coreaudio
-        else
-            configure_args+=(--disable-coreaudio)
         fi
-
-        if [[ "$MACOS_ENABLE_GTK" == 1 ]]; then
-            configure_args+=(--enable-gtk)
-        else
-            configure_args+=(--disable-gtk)
-        fi
-
         if [[ "$MACOS_ENABLE_PA" == 1 ]]; then
-            configure_args+=(--enable-pa)
             if [[ -n "$macos_audio_drivers" ]]; then
                 macos_audio_drivers+=,pa
             else
                 macos_audio_drivers=pa
             fi
-        else
-            configure_args+=(--disable-pa)
         fi
-
         if [[ -n "$macos_audio_drivers" ]]; then
             configure_args+=(--audio-drv-list="$macos_audio_drivers")
         fi
-    else
-        configure_args+=(--enable-gtk --enable-pa)
     fi
 }
 
