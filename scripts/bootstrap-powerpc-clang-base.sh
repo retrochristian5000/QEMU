@@ -55,7 +55,7 @@ for build_path in "$SOURCE_DIR" "$TOOLCHAIN_DIR" "$TOOLCHAIN_WORK_DIR" \
                 "$build_path" >&2
             exit 1
             ;;
-esac
+    esac
 done
 
 for required in git cmake ninja grep awk ln mkdir mv rm; do
@@ -95,11 +95,15 @@ fi
 # Use -O2 for GCC-compatible host compilers; other compiler families keep their
 # native Release flags so this optimization does not narrow host portability.
 cmake_host_release_args=()
+cmake_host_linker_args=()
 host_release_flags="toolchain-default"
+host_linker="toolchain-default"
+host_gcc_compatible=0
 if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
        grep -Eq '^#define (__clang__|__GNUC__) ' &&
    "$TOOLCHAIN_HOST_CXX" -dM -E -x c++ /dev/null 2>/dev/null |
        grep -Eq '^#define (__clang__|__GNUC__) '; then
+    host_gcc_compatible=1
     host_release_flags="-O2 -DNDEBUG"
     cmake_host_release_args=(
         "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG"
@@ -174,6 +178,27 @@ trap cleanup EXIT
 
 mkdir -p "$TOOLCHAIN_WORK_DIR"
 
+# LLVM links several very large host executables. Prefer a faster linker when
+# the selected C and C++ drivers can actually use it, but keep the system linker
+# as a zero-dependency fallback. mold is tried before lld; both are selected via
+# LLVM_USE_LINKER so CMake applies the choice consistently to host link steps.
+if [[ "$host_gcc_compatible" == 1 ]]; then
+    linker_probe="$TOOLCHAIN_WORK_DIR/.whp-linker-probe.$$"
+    for candidate in mold lld; do
+        if printf 'int main(void) { return 0; }\n' |
+               "$TOOLCHAIN_HOST_CC" -x c - -fuse-ld="$candidate" \
+                   -o "$linker_probe" >/dev/null 2>&1 &&
+           printf 'int main() { return 0; }\n' |
+               "$TOOLCHAIN_HOST_CXX" -x c++ - -fuse-ld="$candidate" \
+                   -o "$linker_probe" >/dev/null 2>&1; then
+            host_linker="$candidate"
+            cmake_host_linker_args=("-DLLVM_USE_LINKER=$candidate")
+            break
+        fi
+    done
+    rm -f "$linker_probe"
+fi
+
 bootstrap_stage="preparing LLVM source"
 if [[ ! -d "$LLVM_SOURCE_DIR/.git" ]]; then
     if [[ "$LLVM_GIT_OFFLINE" == 1 ]]; then
@@ -220,7 +245,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=14
+BOOTSTRAP_SCHEMA=15
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -228,7 +253,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_URL=$LLVM_GIT_URL
 LLVM_GIT_COMMIT=$llvm_revision
-LLVM_CMAKE_MODE=incremental-distribution-fast-host-flags
+LLVM_CMAKE_MODE=incremental-distribution-fast-host-link
 HOST_SYSTEM=$(uname -srm)
 HOST_CC=$TOOLCHAIN_HOST_CC
 HOST_CXX=$TOOLCHAIN_HOST_CXX
@@ -237,6 +262,7 @@ HOST_CXXFLAGS=$host_cxxflags
 HOST_CPPFLAGS=$host_cppflags
 HOST_LDFLAGS=$host_ldflags
 HOST_RELEASE_FLAGS=$host_release_flags
+HOST_LINKER=$host_linker
 MARKER
 )"
 
@@ -285,6 +311,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
     -DCMAKE_CXX_COMPILER="$TOOLCHAIN_HOST_CXX" \
     "${cmake_host_release_args[@]}" \
+    "${cmake_host_linker_args[@]}" \
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm" \
     "${cmake_darwin_args[@]}" \
     -DLLVM_ENABLE_PROJECTS=clang \
@@ -293,6 +320,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_ENABLE_ASSERTIONS=OFF \
     -DLLVM_ENABLE_WARNINGS=OFF \
     -DLLVM_ENABLE_PEDANTIC=OFF \
+    -DLLVM_NO_DEAD_STRIP=ON \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_INCLUDE_EXAMPLES=OFF \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
@@ -423,4 +451,5 @@ printf '%s\n' \
     "Bootstrapped PowerPC compiler: Clang ($llvm_revision)" \
     "Binary utilities: LLVM only (SFrame not required)" \
     "Assembler: Clang integrated assembler" \
+    "Host linker: $host_linker" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
