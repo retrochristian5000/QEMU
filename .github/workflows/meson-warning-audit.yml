@@ -1,0 +1,91 @@
+name: Meson warning audit
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**/meson.build'
+      - 'meson_options.txt'
+      - 'configure'
+      - 'pc-bios/**'
+      - 'scripts/meson-buildoptions.py'
+      - 'scripts/meson-buildoptions.sh'
+      - 'scripts/whp-build/**'
+      - 'scripts/tests/check-meson-warnings.py'
+      - 'scripts/tests/test-meson-warning-audit.bash'
+      - '.github/workflows/meson-warning-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meson-warning-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ppc-meson-warnings:
+    name: PPC Meson warnings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install configure dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Test Meson warning classifier
+        run: bash scripts/tests/test-meson-warning-audit.bash
+
+      - name: Configure PPC with WHP OpenBIOS Meson target
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir build-meson-warning-audit
+          : > build-meson-warning-audit/.whp-openbios-meson.env
+          cd build-meson-warning-audit
+          ../configure \
+            --target-list=ppc-softmmu \
+            --disable-docs \
+            --disable-rust \
+            2>&1 | tee configure.log
+          pyvenv/bin/meson --version
+
+      - name: Reject Meson warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/tests/check-meson-warnings.py \
+            build-meson-warning-audit/configure.log \
+            build-meson-warning-audit/meson-logs/meson-log.txt
+
+          build-meson-warning-audit/pyvenv/bin/meson setup \
+            --reconfigure \
+            --fatal-meson-warnings \
+            build-meson-warning-audit
+
+      - name: Show warning context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build-meson-warning-audit/configure.log ]]; then
+            grep -n -E 'WARNING:|DEPRECATION:' \
+              build-meson-warning-audit/configure.log || true
+          fi
+          if [[ -f build-meson-warning-audit/meson-logs/meson-log.txt ]]; then
+            grep -n -E 'WARNING:|DEPRECATION:' \
+              build-meson-warning-audit/meson-logs/meson-log.txt || true
+            tail -n 200 build-meson-warning-audit/meson-logs/meson-log.txt || true
+          fi
