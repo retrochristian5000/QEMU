@@ -1,0 +1,192 @@
+name: Guarded OpenBIOS link-layout repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/repair-openbios-link-layout.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: guarded-openbios-link-layout-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out exact triggering revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove the old link-layout policy is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          core = Path('scripts/bootstrap-powerpc-clang-core.sh').read_text()
+          build = Path('scripts/build-openbios.sh').read_text()
+          old_link = '"$lld" --warn-common -z noexecstack -N \\\n    -T "$smoke_dir/layout.ld"'
+          if core.count(old_link) != 1:
+              raise SystemExit('error: expected one legacy -N LLD smoke rule')
+          if 'OpenBIOS LOAD segment is both writable and executable' in build:
+              raise SystemExit('error: OpenBIOS RWX guard already exists unexpectedly')
+          print('red guard: legacy -N smoke and missing RWX validator confirmed')
+          PY
+          old_openbios="$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
+          test "$old_openbios" = '69bd4b4f55300f283f47ed91720e425576d18651'
+
+      - name: Repair LLD smoke and firmware validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          core_path = Path('scripts/bootstrap-powerpc-clang-core.sh')
+          core = core_path.read_text()
+          old_link = '''"$lld" --warn-common -z noexecstack -N \\
+    -T "$smoke_dir/layout.ld" \\
+    -o "$smoke_dir/layout.elf" \\
+    --whole-archive "$smoke_dir/liblayout.a"'''
+          new_link = '''"$lld" --warn-common -z noexecstack \\
+    -T "$smoke_dir/layout.ld" \\
+    -o "$smoke_dir/layout.elf" \\
+    --whole-archive "$smoke_dir/liblayout.a" --no-whole-archive'''
+          if core.count(old_link) != 1:
+              raise SystemExit(f'error: LLD smoke link pattern count is {core.count(old_link)}')
+          core = core.replace(old_link, new_link, 1)
+
+          old_loop = '''while read -r vaddr memsz; do
+    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+    ((load_count += 1))
+    vaddr_num=$((vaddr))
+    memsz_num=$((memsz))
+    end_num=$((vaddr_num + memsz_num))
+    if ((vaddr_num < 0xfff00000 || end_num > 0x100000000)); then
+        printf 'error: LLD LOAD segment escapes the OpenBIOS PROM window\\n' >&2
+        exit 1
+    fi'''
+          new_loop = '''while read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
+    ((load_count += 1))
+    vaddr_num=$((vaddr))
+    memsz_num=$((memsz))
+    end_num=$((vaddr_num + memsz_num))
+    if [[ "$segment_flags" == *W* && "$segment_flags" == *E* ]]; then
+        printf 'error: LLD produced a writable and executable OpenBIOS LOAD segment\\n' >&2
+        exit 1
+    fi
+    if ((vaddr_num < 0xfff00000 || end_num > 0x100000000)); then
+        printf 'error: LLD LOAD segment escapes the OpenBIOS PROM window\\n' >&2
+        exit 1
+    fi'''
+          if core.count(old_loop) != 1:
+              raise SystemExit(f'error: LLD LOAD loop pattern count is {core.count(old_loop)}')
+          core = core.replace(old_loop, new_loop, 1)
+          old_awk = '''done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$layout_phdrs")'''
+          new_awk = '''done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$layout_phdrs")'''
+          if core.count(old_awk) != 1:
+              raise SystemExit(f'error: LLD LOAD parser pattern count is {core.count(old_awk)}')
+          core_path.write_text(core.replace(old_awk, new_awk, 1))
+
+          build_path = Path('scripts/build-openbios.sh')
+          build = build_path.read_text()
+          old_build_loop = '''while read -r vaddr memsz; do
+    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+    ((load_count += 1))
+    vaddr_value=$((vaddr))
+    memsz_value=$((memsz))
+    end_value=$((vaddr_value + memsz_value))
+    if ((vaddr_value < 0xfff00000 || end_value > 0x100000000)); then
+        printf 'error: OpenBIOS LOAD segment escapes the 1 MiB PROM window: %s + %s\\n' \\
+            "$vaddr" "$memsz" >&2
+        exit 1
+    fi'''
+          new_build_loop = '''while read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
+    ((load_count += 1))
+    vaddr_value=$((vaddr))
+    memsz_value=$((memsz))
+    end_value=$((vaddr_value + memsz_value))
+    if [[ "$segment_flags" == *W* && "$segment_flags" == *E* ]]; then
+        printf 'error: OpenBIOS LOAD segment is both writable and executable: %s\\n' \\
+            "$segment_flags" >&2
+        exit 1
+    fi
+    if ((vaddr_value < 0xfff00000 || end_value > 0x100000000)); then
+        printf 'error: OpenBIOS LOAD segment escapes the 1 MiB PROM window: %s + %s\\n' \\
+            "$vaddr" "$memsz" >&2
+        exit 1
+    fi'''
+          if build.count(old_build_loop) != 1:
+              raise SystemExit(f'error: firmware LOAD loop pattern count is {build.count(old_build_loop)}')
+          build = build.replace(old_build_loop, new_build_loop, 1)
+          old_build_awk = '''done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$program_headers")'''
+          new_build_awk = '''done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$program_headers")'''
+          if build.count(old_build_awk) != 1:
+              raise SystemExit(f'error: firmware LOAD parser pattern count is {build.count(old_build_awk)}')
+          build_path.write_text(build.replace(old_build_awk, new_build_awk, 1))
+          PY
+          bash -n scripts/bootstrap-powerpc-clang-core.sh
+          bash -n scripts/build-openbios.sh
+          git diff --check
+
+      - name: Update OpenBIOS submodule to repaired firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 roms/openbios
+          git -C roms/openbios fetch --depth 1 origin 130b7508b951299baa9d4162239f0de8e407da20
+          git -C roms/openbios checkout --detach 130b7508b951299baa9d4162239f0de8e407da20
+          test "$(git -C roms/openbios rev-parse HEAD)" = '130b7508b951299baa9d4162239f0de8e407da20'
+
+      - name: Validate repaired linker policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          core = Path('scripts/bootstrap-powerpc-clang-core.sh').read_text()
+          build = Path('scripts/build-openbios.sh').read_text()
+          firmware = Path('roms/openbios/arch/ppc/build.xml').read_text()
+          qemu_start = firmware.index('<executable name="openbios-qemu.elf"')
+          qemu_end = firmware.index('</executable>', qemu_start)
+          qemu_rule = firmware[qemu_start:qemu_end]
+          if ' -N ' in qemu_rule or '-z noexecstack -N' in core:
+              raise SystemExit('error: -N/--omagic survived the OpenBIOS linker repair')
+          if '--whole-archive $^ --no-whole-archive' not in qemu_rule:
+              raise SystemExit('error: OpenBIOS whole-archive state is not explicitly closed')
+          if '--whole-archive "$smoke_dir/liblayout.a" --no-whole-archive' not in core:
+              raise SystemExit('error: LLD smoke does not mirror whole-archive state closure')
+          for text, label in ((core, 'LLD smoke'), (build, 'firmware validator')):
+              if 'segment_flags' not in text or 'writable and executable' not in text:
+                  raise SystemExit(f'error: {label} is missing the RWX segment guard')
+          print('QEMU/OpenBIOS linker-layout policy: ok')
+          PY
+          test "$(git diff --submodule=short -- roms/openbios | grep -c '^+')" -ge 1
+          git diff --check
+          git diff -- scripts/bootstrap-powerpc-clang-core.sh scripts/build-openbios.sh roms/openbios
+
+      - name: Commit guarded repair to master
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          test "$(git rev-parse origin/master)" = "${GITHUB_SHA}"
+          rm -f .github/workflows/repair-openbios-link-layout.yml
+          git config user.name 'WHP QEMU repair'
+          git config user.email '252152985+retrochristian5000@users.noreply.github.com'
+          git add scripts/bootstrap-powerpc-clang-core.sh scripts/build-openbios.sh roms/openbios .github/workflows/repair-openbios-link-layout.yml
+          git diff --cached --check
+          git commit -m 'openbios: enforce non-RWX PowerPC firmware linking'
+          git push origin HEAD:master
