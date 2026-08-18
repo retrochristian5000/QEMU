@@ -33,4 +33,21 @@ printf '%s\n' \
     > "$TMP/compiler.log"
 python3 "$CHECKER" "$TMP/compiler.log"
 
+# Keep optional-dependency failures controlled by their own Meson option. A
+# cap_ng/vde copy-and-paste mix-up used to turn an explicit VDE request into a
+# warning, or make an unrelated cap_ng request turn VDE failure fatal.
+vde_block="$(awk '
+    /^vde = not_found$/ { in_vde=1 }
+    in_vde { print }
+    in_vde && /^pulse = not_found$/ { exit }
+' "$ROOT_DIR/meson.build")"
+if grep -Fq "get_option('cap_ng').enabled()" <<< "$vde_block"; then
+    echo 'error: VDE link failure is controlled by cap_ng instead of vde' >&2
+    exit 1
+fi
+if ! grep -Fq "if get_option('vde').enabled()" <<< "$vde_block"; then
+    echo 'error: VDE link failure is not controlled by the vde option' >&2
+    exit 1
+fi
+
 printf '%s\n' 'Meson warning audit regression test: ok'
