@@ -1311,7 +1311,7 @@ if vde.found() and not cc.links('''
      return 0;
    }''', dependencies: vde)
   vde = not_found
-  if get_option('cap_ng').enabled()
+  if get_option('vde').enabled()
     error('could not link libvdeplug')
   else
     warning('could not link libvdeplug, disabling')
