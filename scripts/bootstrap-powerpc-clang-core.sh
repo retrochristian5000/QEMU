@@ -364,8 +364,8 @@ fi
 load_count=0
 start_loaded=0
 hreset_loaded=0
-while read -r vaddr memsz segment_flags; do
-    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
+while IFS='|' read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" ]] || continue
     ((load_count += 1))
     vaddr_num=$((vaddr))
     memsz_num=$((memsz))
@@ -384,7 +384,7 @@ while read -r vaddr memsz segment_flags; do
     if ((vaddr_num <= 0xfffffffc && end_num > 0xfffffffc)); then
         hreset_loaded=1
     fi
-done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$layout_phdrs")
+done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3 "|" $6 "|" flags }' <<< "$layout_phdrs")
 if ((load_count == 0 || start_loaded == 0 || hreset_loaded == 0)); then
     printf 'error: LLD did not map both OpenBIOS entry vectors into LOAD segments\n' >&2
     exit 1
