@@ -331,10 +331,10 @@ SECTIONS
     /DISCARD/ : { *(.comment*) *(.note.*) }
 }
 LDSCRIPT
-"$lld" --warn-common -z noexecstack -N \
+"$lld" --warn-common -z noexecstack \
     -T "$smoke_dir/layout.ld" \
     -o "$smoke_dir/layout.elf" \
-    --whole-archive "$smoke_dir/liblayout.a"
+    --whole-archive "$smoke_dir/liblayout.a" --no-whole-archive
 
 layout_header="$(LC_ALL=C "$llvm_readelf" -hW "$smoke_dir/layout.elf")"
 layout_symbols="$(LC_ALL=C "$llvm_readelf" -sW "$smoke_dir/layout.elf")"
@@ -364,12 +364,16 @@ fi
 load_count=0
 start_loaded=0
 hreset_loaded=0
-while read -r vaddr memsz; do
-    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+while read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
     ((load_count += 1))
     vaddr_num=$((vaddr))
     memsz_num=$((memsz))
     end_num=$((vaddr_num + memsz_num))
+    if [[ "$segment_flags" == *W* && "$segment_flags" == *E* ]]; then
+        printf 'error: LLD produced a writable and executable OpenBIOS LOAD segment\n' >&2
+        exit 1
+    fi
     if ((vaddr_num < 0xfff00000 || end_num > 0x100000000)); then
         printf 'error: LLD LOAD segment escapes the OpenBIOS PROM window\n' >&2
         exit 1
@@ -380,7 +384,7 @@ while read -r vaddr memsz; do
     if ((vaddr_num <= 0xfffffffc && end_num > 0xfffffffc)); then
         hreset_loaded=1
     fi
-done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$layout_phdrs")
+done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$layout_phdrs")
 if ((load_count == 0 || start_loaded == 0 || hreset_loaded == 0)); then
     printf 'error: LLD did not map both OpenBIOS entry vectors into LOAD segments\n' >&2
     exit 1
