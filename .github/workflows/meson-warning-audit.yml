@@ -26,15 +26,22 @@ concurrency:
 
 jobs:
   ppc-meson-warnings:
-    name: PPC Meson warnings
-    runs-on: ubuntu-24.04
+    name: PPC Meson warnings (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install configure dependencies
+      - name: Install Linux configure dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -45,6 +52,10 @@ jobs:
             pkg-config \
             python3-venv \
             zlib1g-dev
+
+      - name: Install macOS configure dependencies
+        if: runner.os == 'macOS'
+        run: brew install glib ninja pixman pkgconf
 
       - name: Test Meson warning classifier
         run: bash scripts/tests/test-meson-warning-audit.bash
@@ -67,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scripts/tests/check-meson-warnings.py \
+          python3 scripts/tests/check-meson-warnings.py \
             build-meson-warning-audit/configure.log \
             build-meson-warning-audit/meson-logs/meson-log.txt
 
