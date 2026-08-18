@@ -390,12 +390,17 @@ start_loaded=0
 elf_entry_loaded=0
 legacy_entry_loaded=0
 hard_reset_loaded=0
-while read -r vaddr memsz; do
-    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+while read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
     ((load_count += 1))
     vaddr_value=$((vaddr))
     memsz_value=$((memsz))
     end_value=$((vaddr_value + memsz_value))
+    if [[ "$segment_flags" == *W* && "$segment_flags" == *E* ]]; then
+        printf 'error: OpenBIOS LOAD segment is both writable and executable: %s\n' \
+            "$segment_flags" >&2
+        exit 1
+    fi
     if ((vaddr_value < 0xfff00000 || end_value > 0x100000000)); then
         printf 'error: OpenBIOS LOAD segment escapes the 1 MiB PROM window: %s + %s\n' \
             "$vaddr" "$memsz" >&2
@@ -414,7 +419,7 @@ while read -r vaddr memsz; do
     if ((vaddr_value <= 0xfffffffc && end_value > 0xfffffffc)); then
         hard_reset_loaded=1
     fi
-done < <(awk '$1 == "LOAD" {print $3, $6}' <<< "$program_headers")
+done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$program_headers")
 
 if ((load_count == 0)); then
     printf 'error: OpenBIOS ELF has no loadable segments\n' >&2
