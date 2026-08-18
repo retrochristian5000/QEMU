@@ -34,8 +34,7 @@ jobs:
 
           core = Path('scripts/bootstrap-powerpc-clang-core.sh').read_text()
           build = Path('scripts/build-openbios.sh').read_text()
-          old_link = '"$lld" --warn-common -z noexecstack -N \\\n    -T "$smoke_dir/layout.ld"'
-          if core.count(old_link) != 1:
+          if core.count('--warn-common -z noexecstack -N') != 1:
               raise SystemExit('error: expected one legacy -N LLD smoke rule')
           if 'OpenBIOS LOAD segment is both writable and executable' in build:
               raise SystemExit('error: OpenBIOS RWX guard already exists unexpectedly')
@@ -173,7 +172,6 @@ jobs:
                   raise SystemExit(f'error: {label} is missing the RWX segment guard')
           print('QEMU/OpenBIOS linker-layout policy: ok')
           PY
-          test "$(git diff --submodule=short -- roms/openbios | grep -c '^+')" -ge 1
           git diff --check
           git diff -- scripts/bootstrap-powerpc-clang-core.sh scripts/build-openbios.sh roms/openbios
 
@@ -183,6 +181,7 @@ jobs:
           set -euo pipefail
           git fetch origin master
           test "$(git rev-parse origin/master)" = "${GITHUB_SHA}"
+          test "$(git -C roms/openbios rev-parse HEAD)" = '130b7508b951299baa9d4162239f0de8e407da20'
           rm -f .github/workflows/repair-openbios-link-layout.yml
           git config user.name 'WHP QEMU repair'
           git config user.email '252152985+retrochristian5000@users.noreply.github.com'
