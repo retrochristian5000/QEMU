@@ -390,8 +390,8 @@ start_loaded=0
 elf_entry_loaded=0
 legacy_entry_loaded=0
 hard_reset_loaded=0
-while read -r vaddr memsz segment_flags; do
-    [[ -n "$vaddr" && -n "$memsz" && -n "$segment_flags" ]] || continue
+while IFS='|' read -r vaddr memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$memsz" ]] || continue
     ((load_count += 1))
     vaddr_value=$((vaddr))
     memsz_value=$((memsz))
@@ -419,7 +419,7 @@ while read -r vaddr memsz segment_flags; do
     if ((vaddr_value <= 0xfffffffc && end_value > 0xfffffffc)); then
         hard_reset_loaded=1
     fi
-done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3, $6, flags }' <<< "$program_headers")
+done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3 "|" $6 "|" flags }' <<< "$program_headers")
 
 if ((load_count == 0)); then
     printf 'error: OpenBIOS ELF has no loadable segments\n' >&2
