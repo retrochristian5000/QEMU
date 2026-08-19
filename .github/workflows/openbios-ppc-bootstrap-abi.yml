@@ -1,0 +1,37 @@
+name: OpenBIOS PowerPC bootstrap ABI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-ppc-bootstrap-abi.bash'
+      - '.github/workflows/openbios-ppc-bootstrap-abi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ppc-bootstrap-abi:
+    name: Check pinned OpenBIOS width/endian ABI
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS
+        run: |
+          git submodule update --init roms/openbios
+          test "$(git -C roms/openbios rev-parse HEAD)" = \
+               "$(git ls-tree HEAD roms/openbios | awk '{print $3}')"
+
+      - name: Validate bootstrap ABI test shells
+        run: |
+          bash -n scripts/tests/test-openbios-ppc-bootstrap-abi.bash
+          bash -n roms/openbios/tests/test-ppc-bootstrap-abi.bash
+
+      - name: Exercise pinned bootstrap width/endian ABI
+        run: bash scripts/tests/test-openbios-ppc-bootstrap-abi.bash
