@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=8.1
+OPENBIOS_ENVIRONMENT_POLICY=8.2
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -60,17 +60,17 @@ if [[ "$(basename "$OPENBIOS_XSLTPROC")" != xsltproc ]]; then
 fi
 printf 'OpenBIOS XSLT processor: %s\n' "$OPENBIOS_XSLTPROC"
 
-# Keep local builds on the repaired project fork.  Use a distinct cache path
-# so an older vanilla checkout cannot retain its origin or obsolete Makefile.
+# Keep local builds on the repaired project fork. Use a distinct cache path so
+# an older vanilla checkout cannot retain its origin or obsolete Makefile.
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochristian5000/fcode-utils.git}"
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-b9b6da855f2e698f8163ebd22227fc43d6eef7f4}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
 
 # QEMU's host build may legitimately use Homebrew and pkg-config. OpenBIOS is
 # a freestanding firmware sub-build and must not inherit those search paths or
-# parent Make/shell control state. GNU Make can recreate command-line CC/LD/AR
-# assignments from MAKEFLAGS after those variables were explicitly unset, and
-# non-interactive Bash evaluates BASH_ENV before running child build scripts.
+# parent Make/shell/OpenBIOS selector state. GNU Make can recreate command-line
+# CC/LD/AR assignments from MAKEFLAGS; switch-arch trusts HOSTARCH and TOKE;
+# and non-interactive Bash evaluates BASH_ENV before child build scripts run.
 openbios_clean_env=(
     env
     -u CC -u CXX -u OBJC
@@ -82,6 +82,7 @@ openbios_clean_env=(
     -u CPPFLAGS_FOR_TARGET -u LDFLAGS_FOR_TARGET
     -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS
     -u MAKEFILES -u MAKEOVERRIDES -u MAKELEVEL
+    -u HOSTARCH -u TOKE
     -u BASH_ENV -u ENV -u SHELLOPTS -u BASHOPTS
     -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH
     -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH
