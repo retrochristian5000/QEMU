@@ -131,8 +131,9 @@ jobs:
           "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-ranlib" --version | grep -q LLVM
           grep -Fq 'CC     := $(TARGET)gcc' roms/openbios/Makefile.target
           ! grep -Fq 'AS     := $(TARGET)as' roms/openbios/Makefile.target
-          grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' \
-            roms/openbios/arch/ppc/Makefile.asm
+          grep -Fq '$(CC) $$EXTRACFLAGS $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c -o $@ $&lt;' \
+            roms/openbios/config/xml/rules.xml
+          ! grep -Fq '$(AS)' roms/openbios/config/xml/rules.xml
 
       - name: Verify published nm routing
         shell: bash
@@ -174,9 +175,33 @@ jobs:
           BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
           OPENBIOS_CROSS_COMPILE: ${{ github.workspace }}/build/toolchains/powerpc-elf/bin/powerpc-elf-
           OPENBIOS_READELF: ${{ github.workspace }}/build/toolchains/powerpc-elf/llvm/bin/llvm-readelf
+          V: '1'
         run: |
           set -o pipefail
           bash scripts/build-openbios.sh 2>&1 | tee openbios-llvm-ias.log
+
+      - name: Verify real OpenBIOS assembly objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          readelf="$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
+          objects=(
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/start.o"
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/switch.o"
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/timebase.o"
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/libgcc/crtsavres.o"
+          )
+          for object in "${objects[@]}"; do
+            test -s "$object"
+            header="$(LC_ALL=C "$readelf" -hW "$object")"
+            grep -Eq 'Class:[[:space:]]+ELF32' <<< "$header"
+            grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$header"
+            grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$header"
+          done
+
+          for source in qemu/start.S qemu/switch.S timebase.S crtsavres.S; do
+            grep -F "$source" openbios-llvm-ias.log | grep -Fq 'powerpc-elf-gcc'
+          done
 
       - name: Verify OpenBIOS output
         shell: bash
@@ -222,6 +247,10 @@ jobs:
           path: |
             llvm-ias-bootstrap.log
             openbios-llvm-ias.log
+            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/start.o
+            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/switch.o
+            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/timebase.o
+            build/openbios-llvm-ias/obj-ppc/target/libgcc/crtsavres.o
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
             build/toolchains/powerpc-elf/.whp-powerpc-as
