@@ -105,6 +105,7 @@ if whp_openbios_enabled
     '-u', 'ENV',
     '-u', 'SHELLOPTS',
     '-u', 'BASHOPTS',
+    'MAKEFLAGS=-rR',
   ]
   whp_openbios_ppc = custom_target('whp-openbios-ppc',
     output: 'openbios-ppc',
