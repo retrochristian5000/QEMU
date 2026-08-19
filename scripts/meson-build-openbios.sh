@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=7
+OPENBIOS_ENVIRONMENT_POLICY=8
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -36,6 +36,29 @@ source "$CONFIG_FILE"
 : "${POWERPC_TOOLCHAIN_DIR:?POWERPC_TOOLCHAIN_DIR is required}"
 : "${POWERPC_TOOLCHAIN_WORK_DIR:?POWERPC_TOOLCHAIN_WORK_DIR is required}"
 : "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:?POWERPC_TOOLCHAIN_DOWNLOAD_DIR is required}"
+
+# xsltproc is a build-host utility used by OpenBIOS switch-arch. Resolve it at
+# the QEMU/OpenBIOS boundary so keg-only and custom package layouts can supply
+# an explicit executable without leaking unrelated package search paths into
+# the freestanding firmware build.
+OPENBIOS_XSLTPROC="${OPENBIOS_XSLTPROC:-}"
+if [[ -z "$OPENBIOS_XSLTPROC" ]]; then
+    OPENBIOS_XSLTPROC="$(command -v xsltproc 2>/dev/null || true)"
+elif [[ "$OPENBIOS_XSLTPROC" != */* ]]; then
+    OPENBIOS_XSLTPROC="$(command -v "$OPENBIOS_XSLTPROC" 2>/dev/null || true)"
+fi
+if [[ -z "$OPENBIOS_XSLTPROC" || ! -x "$OPENBIOS_XSLTPROC" ]]; then
+    printf '%s\n' \
+        'error: OpenBIOS XSLT processor is not executable.' \
+        'Install xsltproc or set OPENBIOS_XSLTPROC=/absolute/path/to/xsltproc.' >&2
+    exit 1
+fi
+if [[ "$(basename "$OPENBIOS_XSLTPROC")" != xsltproc ]]; then
+    printf 'error: OPENBIOS_XSLTPROC must name an xsltproc executable: %s\n' \
+        "$OPENBIOS_XSLTPROC" >&2
+    exit 1
+fi
+printf 'OpenBIOS XSLT processor: %s\n' "$OPENBIOS_XSLTPROC"
 
 # Keep local builds on the repaired project fork.  Use a distinct cache path
 # so an older vanilla checkout cannot retain its origin or obsolete Makefile.
@@ -207,6 +230,7 @@ for tool in gcc ar ld nm strip ranlib; do
 done
 
 "${openbios_clean_env[@]}" \
+    PATH="$(dirname "$OPENBIOS_XSLTPROC"):$PATH" \
     OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}" \
     OPENBIOS_BUILD_DIR="$OPENBIOS_BUILD_DIR" \
     OPENBIOS_OUTPUT="$OUTPUT" \
@@ -214,6 +238,7 @@ done
     OPENBIOS_HOSTCC="$OPENBIOS_HOSTCC" \
     OPENBIOS_HOSTCXX="$OPENBIOS_HOSTCXX" \
     OPENBIOS_HOSTSTRIP="$OPENBIOS_HOSTSTRIP" \
+    OPENBIOS_XSLTPROC="$OPENBIOS_XSLTPROC" \
     OPENBIOS_READELF="${OPENBIOS_READELF:-}" \
     OPENBIOS_TOKE="${OPENBIOS_TOKE:-}" \
     FCODE_UTILS_REPOSITORY="$FCODE_UTILS_REPOSITORY" \
