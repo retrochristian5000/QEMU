@@ -35,6 +35,29 @@ stamps to avoid expensive work when nothing changed.  This also means changes
 to the generated configuration file are consumed without requiring a Meson
 reconfiguration.
 
+Host tools and portability
+--------------------------
+
+OpenBIOS uses ``xsltproc`` while ``switch-arch`` generates its make rules.  The
+WHP adapter treats that program as a build-host tool rather than part of the
+PowerPC cross-toolchain.  If ``xsltproc`` is already on ``PATH`` it is selected
+automatically.  Hosts with a keg-only or otherwise nonstandard installation can
+select it explicitly::
+
+  OPENBIOS_XSLTPROC=/absolute/path/to/xsltproc ./build.sh whp-openbios-ppc
+
+Only the selected executable's directory is added to the isolated OpenBIOS
+``PATH``.  Package include/library search paths from QEMU's host build remain
+removed, so locating the XSLT processor does not make the firmware inherit a
+Homebrew, pkg-config, compiler, or linker search policy.
+
+Apple Silicon also exercises a host-width-sensitive part of OpenBIOS: the
+``forthstrap`` dictionary builder is a native host executable even while its
+output targets 32-bit PowerPC.  The pinned PPC-Firmware source classifies
+``aarch64`` as a 64-bit host so host pointers are not truncated.  The WHP host
+portability test guards that source property in addition to the QEMU-side tool
+handoff.
+
 Firmware compatibility policy
 -----------------------------
 
