@@ -20,10 +20,14 @@ if [[ ! -f "$ABI_TEST" ]]; then
 fi
 
 grep -Fq 'unsigned long regs[35];' "$OPENBIOS/arch/ppc/qemu/context.h"
+grep -Fq 'unsigned long _abi_pad0;' "$OPENBIOS/arch/ppc/qemu/context.h"
+grep -Fq 'unsigned long _abi_pad1[3];' "$OPENBIOS/arch/ppc/qemu/context.h"
 grep -Fq '#define PPC_STACK_ALIGNMENT 16' "$OPENBIOS/arch/ppc/qemu/context.c"
-grep -Fq '#define SAVE_SPACE 156' "$OPENBIOS/arch/ppc/qemu/context.c"
+grep -Fq '#define STKOFF 8' "$OPENBIOS/arch/ppc/qemu/switch.S"
 grep -Fq '#define SAVE_SPACE 156' "$OPENBIOS/arch/ppc/qemu/switch.S"
+grep -Fq '#define STKOFF STACKFRAME_MINSIZE' "$OPENBIOS/arch/ppc/qemu/switch.S"
+grep -Fq '#define SAVE_SPACE 328' "$OPENBIOS/arch/ppc/qemu/switch.S"
 
 bash "$ABI_TEST"
 
-printf 'QEMU/OpenBIOS PPC context ABI: verified\n'
+printf 'QEMU/OpenBIOS PPC32/PPC64 context ABI: verified\n'
