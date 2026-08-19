@@ -1,0 +1,42 @@
+name: OpenBIOS PowerPC context ABI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-ppc-context-abi.bash'
+      - '.github/workflows/openbios-ppc-context-abi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ppc-context-abi:
+    name: Check pinned OpenBIOS PPC32 ABI
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS
+        run: |
+          git submodule update --init roms/openbios
+          test "$(git -C roms/openbios rev-parse HEAD)" = \
+               "$(git ls-tree HEAD roms/openbios | awk '{print $3}')"
+
+      - name: Install Clang probe
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang
+
+      - name: Validate ABI test shells
+        run: |
+          bash -n scripts/tests/test-openbios-ppc-context-abi.bash
+          bash -n roms/openbios/tests/test-ppc-context-abi.bash
+
+      - name: Exercise pinned PPC32 context ABI
+        run: bash scripts/tests/test-openbios-ppc-context-abi.bash
