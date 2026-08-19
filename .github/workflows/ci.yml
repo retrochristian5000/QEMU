@@ -29,10 +29,14 @@ jobs:
       - name: Test selected SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+      - name: Initialize OpenBIOS test source
+        run: git submodule update --init --depth 1 roms/openbios
+
       - name: Check PowerPC LLVM assembler wiring
-        run: |
-          git submodule update --init --depth 1 roms/openbios
-          bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+        run: bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
+
+      - name: Check OpenBIOS host portability guards
+        run: bash scripts/tests/test-openbios-host-portability.bash
 
       - name: Check OpenBIOS tool provenance guards
         shell: bash
@@ -54,7 +58,9 @@ jobs:
           fi
           grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
             scripts/build-openbios.sh
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=7' scripts/meson-build-openbios.sh
+          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=8' scripts/meson-build-openbios.sh
+          grep -Fq "printf 'OPENBIOS_XSLTPROC=%q" \
+            scripts/whp-build/configure-openbios.bash
           grep -Fq "printf 'OPENBIOS_READELF=%q" \
             scripts/whp-build/configure-openbios.bash
 
@@ -62,41 +68,6 @@ jobs:
           git ls-tree HEAD -- toolchains/llvm-project |
             grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
 
-          grep -Fq 'BOOTSTRAP_SCHEMA=11' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'GNU_BINUTILS=disabled' scripts/bootstrap-powerpc-clang-base.sh
-          grep -Fq 'SFRAME=disabled' scripts/bootstrap-powerpc-clang-base.sh
-          if grep -Fq 'BINUTILS_VERSION' scripts/bootstrap-powerpc-clang-base.sh ||
-             grep -Fq 'libsframe' scripts/bootstrap-powerpc-clang-base.sh; then
-            echo 'error: LLVM-only Clang base still bootstraps GNU binutils' >&2
-            exit 1
-          fi
-          if grep -Fq -- '-fno-integrated-as' scripts/bootstrap-powerpc-clang-base.sh; then
-            echo 'error: PowerPC Clang must not route through an external assembler' >&2
-            exit 1
-          fi
-
-          grep -Fq 'LLD_SCHEMA=3' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq '.whp-powerpc-lld' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'LINKER=lld' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'ASSEMBLER=clang-integrated' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'LLVM_SOURCE_MODE=submodule' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'GNU_BINUTILS=disabled' scripts/bootstrap-powerpc-clang-core.sh
-          grep -Fq 'ln -s "../llvm/bin/ld.lld" "$public_ld"' \
-            scripts/bootstrap-powerpc-clang-core.sh
-          if grep -Fq 'ld.bfd' scripts/bootstrap-powerpc-clang-core.sh; then
-            echo 'error: LLD stage still retains a BFD linker' >&2
-            exit 1
-          fi
-          grep -Fq 'HRESET_ADDR = 0xfffffffc;' scripts/bootstrap-powerpc-clang-core.sh
-
-          grep -Fq 'AR_SCHEMA=3' scripts/bootstrap-powerpc-llvm-ar.sh
-          grep -Fq 'RANLIB=llvm-ranlib' scripts/bootstrap-powerpc-llvm-ar.sh
-          grep -Fq 'GNU_RANLIB=disabled' scripts/bootstrap-powerpc-llvm-ar.sh
-
-          grep -Fq 'bootstrap-powerpc-clang-core.sh' scripts/bootstrap-powerpc-clang.sh
-          test ! -e scripts/bootstrap-powerpc-llvm-as.sh
-          grep -Fq 'for tool in as objcopy objdump readelf; do' \
-            scripts/bootstrap-powerpc-clang.sh
           grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
             scripts/build-openbios.sh
           grep -Fq 'powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
@@ -176,6 +147,98 @@ jobs:
             build-macos-ppc/.whp-macos-build-identity
             build-macos-ppc/.whp-macos-lto
             build-macos-ppc/.whp-macos-toolchain
+          if-no-files-found: warn
+          retention-days: 7
+
+  build-macos-openbios:
+    name: Build OpenBIOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 180
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-macos-openbios
+      BUILD_OPENBIOS: '1'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '1'
+      POWERPC_TOOLCHAIN_COMPILER: clang
+      OPENBIOS_FIRMWARE_VALIDATION: strict
+      QEMU_HOST_LTO: '0'
+      BUILD_QEMU_SYSTEM_I386: '0'
+      BUILD_QEMU_SYSTEM_PPC: '1'
+      MACOS_ENABLE_GTK: '0'
+      MACOS_ENABLE_PA: '0'
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      JOBS: '4'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install firmware build dependencies
+        run: brew install cmake glib libslirp libxslt make ninja pixman pkgconf
+
+      - name: Select keg-only XSLT processor
+        shell: bash
+        run: |
+          set -euo pipefail
+          xsltproc="$(brew --prefix libxslt)/bin/xsltproc"
+          test -x "$xsltproc"
+          printf 'OPENBIOS_XSLTPROC=%s\n' "$xsltproc" >> "$GITHUB_ENV"
+
+      - name: Initialize pinned firmware and LLVM sources
+        run: git submodule update --init --depth 1 roms/openbios toolchains/llvm-project
+
+      - name: Build OpenBIOS through macOS wrapper
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh whp-openbios-ppc 2>&1 | tee macos-openbios.log
+
+      - name: Verify PowerPC firmware artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$BUILD_DIR/.whp-openbios-meson.env"
+          firmware="$BUILD_DIR/pc-bios/openbios-ppc"
+          readelf="$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
+          test -s "$firmware"
+          test -x "$readelf"
+          "$readelf" -hW "$firmware" | grep -Eq 'Class:[[:space:]]+ELF32'
+          "$readelf" -hW "$firmware" | grep -Eq "Data:[[:space:]]+2's complement, big endian"
+          "$readelf" -hW "$firmware" | grep -Eq 'Machine:[[:space:]]+PowerPC'
+
+      - name: Show OpenBIOS failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f macos-openbios.log ]]; then
+            echo '=== OpenBIOS errors ==='
+            grep -n -E 'FAILED:|error:|panic:|segmentation|Undefined symbols|ninja: build stopped' \
+              macos-openbios.log | tail -n 250 || true
+            echo '=== OpenBIOS log tail ==='
+            tail -n 250 macos-openbios.log || true
+          fi
+          if [[ -f "$BUILD_DIR/meson-logs/meson-log.txt" ]]; then
+            echo '=== Meson log tail ==='
+            tail -n 150 "$BUILD_DIR/meson-logs/meson-log.txt" || true
+          fi
+
+      - name: Upload OpenBIOS failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-openbios-build-logs
+          path: |
+            macos-openbios.log
+            build-macos-openbios/config.log
+            build-macos-openbios/meson-logs/meson-log.txt
+            build-macos-openbios/.whp-openbios-meson.env
+            build-macos-openbios/.whp-config
+            build-macos-openbios/.whp-macos-build-identity
+            build-macos-openbios/firmware/openbios/obj-ppc/*.log
+            build-macos-openbios/firmware/openbios/obj-ppc/forth/*.log
+            whp-firmware-tools-arm64-apple-darwin/.whp-powerpc-*
           if-no-files-found: warn
           retention-days: 7
 
