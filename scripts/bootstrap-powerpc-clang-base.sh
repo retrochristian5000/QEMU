@@ -22,6 +22,8 @@ LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLVM_SOURCE_DIR="${POWERPC_LLVM_SOURCE_DIR:-$TOOLCHAIN_WORK_DIR/llvm-source}"
 LLVM_BUILD_DIR="${POWERPC_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
 LLVM_CXX_OPTIMIZATION="${POWERPC_LLVM_CXX_OPTIMIZATION:--O1}"
+LLVM_ACCURACY_CHECKS="${POWERPC_LLVM_ACCURACY_CHECKS:-0}"
+LLVM_LINK_JOBS="${POWERPC_LLVM_LINK_JOBS:-2}"
 
 stage_root=""
 bootstrap_stage="initialization"
@@ -55,6 +57,28 @@ case "$LLVM_CXX_OPTIMIZATION" in
         exit 1
         ;;
 esac
+case "$LLVM_ACCURACY_CHECKS" in
+    0|1) ;;
+    *)
+        printf 'error: POWERPC_LLVM_ACCURACY_CHECKS must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$LLVM_LINK_JOBS" in
+    0|*[!0-9]*)
+        printf 'error: POWERPC_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+            "$LLVM_LINK_JOBS" >&2
+        exit 1
+        ;;
+    *) ;;
+esac
+
+llvm_enable_assertions=OFF
+llvm_optimized_tablegen=OFF
+if [[ "$LLVM_ACCURACY_CHECKS" == 1 ]]; then
+    llvm_enable_assertions=ON
+    llvm_optimized_tablegen=ON
+fi
 
 cmake_parallel_args=(--parallel)
 if [[ -n "$JOBS" ]]; then
@@ -272,7 +296,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=18
+BOOTSTRAP_SCHEMA=19
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -291,6 +315,9 @@ HOST_LDFLAGS=$host_ldflags
 HOST_C_RELEASE_FLAGS=$host_c_release_flags
 HOST_CXX_RELEASE_FLAGS=$host_cxx_release_flags
 HOST_LINKER=$host_linker
+LLVM_ACCURACY_CHECKS=$LLVM_ACCURACY_CHECKS
+LLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions
+LLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen
 MARKER
 )"
 
@@ -349,7 +376,11 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_ENABLE_PROJECTS=clang \
     -DLLVM_TARGETS_TO_BUILD=PowerPC \
     -DLLVM_DISTRIBUTION_COMPONENTS="$llvm_distribution_components" \
-    -DLLVM_ENABLE_ASSERTIONS=OFF \
+    "-DLLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions" \
+    "-DLLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen" \
+    -DLLVM_APPEND_VC_REV=OFF \
+    -DLLVM_UNREACHABLE_OPTIMIZE=OFF \
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS" \
     -DLLVM_ENABLE_LTO=OFF \
     -DLLVM_ENABLE_FATLTO=OFF \
     -DLLVM_BUILD_INSTRUMENTED=OFF \
@@ -370,6 +401,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DLLVM_INCLUDE_RUNTIMES=OFF \
     -DLLVM_ENABLE_BINDINGS=OFF \
     -DCLANG_INCLUDE_TESTS=OFF \
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
     -DLLVM_ENABLE_TERMINFO=OFF \
     -DLLVM_ENABLE_ZLIB=OFF \
     -DLLVM_ENABLE_ZSTD=OFF \
@@ -515,4 +547,6 @@ printf '%s\n' \
     "Assembler: Clang integrated assembler" \
     "Host linker: $host_linker" \
     "CMake parallelism: ${JOBS:-native}" \
+    "LLVM link parallelism: $LLVM_LINK_JOBS" \
+    "LLVM accuracy checks: $LLVM_ACCURACY_CHECKS" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
