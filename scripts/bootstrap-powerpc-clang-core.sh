@@ -109,22 +109,6 @@ fi
 base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
-expected_lld_marker="$(cat <<MARKER
-LLD_SCHEMA=4
-LLD_BUILD_MODE=incremental-elf-only
-LINKER=lld
-ASSEMBLER=clang-integrated
-GNU_BINUTILS=disabled
-SFRAME=disabled
-TARGET=$TOOLCHAIN_TARGET
-LLVM_SOURCE_MODE=submodule
-LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
-LLVM_GIT_COMMIT=$llvm_revision
-BASE_BOOTSTRAP_SIGNATURE=$base_signature
-ORCHESTRATOR_SIGNATURE=$orchestrator_signature
-LLD_CMAKE_PARALLEL_JOBS=${JOBS:-native}
-MARKER
-)"
 
 clang_lld_toolchain_is_usable()
 {
@@ -174,14 +158,6 @@ POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
 # independently usable as well as callable through the full orchestrator.
 bash "$AR_BOOTSTRAP"
 
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$lld_marker" &&
-      "$(cat "$lld_marker")" == "$expected_lld_marker" ]] &&
-   clang_lld_toolchain_is_usable; then
-    printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
-        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
-    exit 0
-fi
-
 llvm_dir="$TOOLCHAIN_DIR/llvm"
 llvm_cmake_dir="$llvm_dir/lib/cmake/llvm"
 base_marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
@@ -196,15 +172,55 @@ if [[ ! -f "$base_marker" ]]; then
     exit 1
 fi
 
-# Reuse the host compile/link profile already proven by the base LLVM stage.
-lld_host_release_flags="$(awk -F= '$1 == "HOST_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
+# Reuse the exact host compile/link profile proven by the completed base LLVM
+# stage. C and C++ are intentionally separate: C++ uses the lighter incremental
+# profile while C retains the existing release optimization policy.
+lld_host_c_release_flags="$(awk -F= '$1 == "HOST_C_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
+lld_host_cxx_release_flags="$(awk -F= '$1 == "HOST_CXX_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
 lld_host_linker="$(awk -F= '$1 == "HOST_LINKER" {print $2; exit}' "$base_marker")"
+if [[ -z "$lld_host_c_release_flags" || -z "$lld_host_cxx_release_flags" ]]; then
+    printf 'error: base LLVM marker is missing split C/C++ release flags\n' >&2
+    exit 1
+fi
+base_marker_signature="$(cksum "$base_marker" | awk '{print $1 ":" $2}')"
+
+# Key LLD to the actual base marker, not only to the bootstrap script checksum.
+# This makes output-affecting knobs such as the C++ optimization level rebuild
+# LLD exactly once, while execution-only settings such as JOBS do not invalidate
+# either marker.
+expected_lld_marker="$(cat <<MARKER
+LLD_SCHEMA=5
+LLD_BUILD_MODE=incremental-elf-only
+LINKER=lld
+ASSEMBLER=clang-integrated
+GNU_BINUTILS=disabled
+SFRAME=disabled
+TARGET=$TOOLCHAIN_TARGET
+LLVM_SOURCE_MODE=submodule
+LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
+LLVM_GIT_COMMIT=$llvm_revision
+BASE_BOOTSTRAP_SIGNATURE=$base_signature
+BASE_MARKER_SIGNATURE=$base_marker_signature
+ORCHESTRATOR_SIGNATURE=$orchestrator_signature
+HOST_C_RELEASE_FLAGS=$lld_host_c_release_flags
+HOST_CXX_RELEASE_FLAGS=$lld_host_cxx_release_flags
+MARKER
+)"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$lld_marker" &&
+      "$(cat "$lld_marker")" == "$expected_lld_marker" ]] &&
+   clang_lld_toolchain_is_usable; then
+    printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
+        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+    exit 0
+fi
+
 cmake_host_profile_args=()
-if [[ -n "$lld_host_release_flags" && "$lld_host_release_flags" != toolchain-default ]]; then
-    cmake_host_profile_args+=(
-        "-DCMAKE_C_FLAGS_RELEASE=$lld_host_release_flags"
-        "-DCMAKE_CXX_FLAGS_RELEASE=$lld_host_release_flags"
-    )
+if [[ "$lld_host_c_release_flags" != toolchain-default ]]; then
+    cmake_host_profile_args+=("-DCMAKE_C_FLAGS_RELEASE=$lld_host_c_release_flags")
+fi
+if [[ "$lld_host_cxx_release_flags" != toolchain-default ]]; then
+    cmake_host_profile_args+=("-DCMAKE_CXX_FLAGS_RELEASE=$lld_host_cxx_release_flags")
 fi
 if [[ -n "$lld_host_linker" && "$lld_host_linker" != toolchain-default ]]; then
     cmake_host_profile_args+=("-DLLVM_USE_LINKER=$lld_host_linker")
