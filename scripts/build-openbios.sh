@@ -307,6 +307,8 @@ if [[ "$OPENBIOS_FORCE_RECONFIGURE" == "1" ]] ||
     mkdir -p "$OPENBIOS_BUILD_DIR"
     (
         cd "$OPENBIOS_BUILD_DIR"
+        HOSTARCH= \
+        TOKE="$OPENBIOS_TOKE" \
         PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
         CROSS_COMPILE="$OPENBIOS_CROSS_COMPILE" \
             "$OPENBIOS_DIR/config/scripts/switch-arch" qemu-ppc
