@@ -175,6 +175,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Verify Apple Silicon host
+        shell: bash
+        run: test "$(uname -m)" = arm64
+
       - name: Install firmware build dependencies
         run: brew install cmake glib libslirp libxslt make ninja pixman pkgconf
 
@@ -238,7 +242,7 @@ jobs:
             build-macos-openbios/.whp-macos-build-identity
             build-macos-openbios/firmware/openbios/obj-ppc/*.log
             build-macos-openbios/firmware/openbios/obj-ppc/forth/*.log
-            whp-firmware-tools-arm64-apple-darwin/.whp-powerpc-*
+            whp-firmware-tools-arm64-apple-darwin/powerpc-elf/.whp-powerpc-*
           if-no-files-found: warn
           retention-days: 7
 
