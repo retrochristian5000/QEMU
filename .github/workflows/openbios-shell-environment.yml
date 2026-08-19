@@ -1,0 +1,35 @@
+name: OpenBIOS shell environment
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'pc-bios/meson.build'
+      - 'scripts/meson-build-openbios.sh'
+      - 'scripts/tests/test-openbios-shell-environment.bash'
+      - '.github/workflows/openbios-shell-environment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-environment:
+    name: Check OpenBIOS environment isolation
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/meson-build-openbios.sh
+          bash -n scripts/tests/test-openbios-shell-environment.bash
+
+      - name: Exercise poisoned parent environment
+        shell: bash
+        run: bash scripts/tests/test-openbios-shell-environment.bash
