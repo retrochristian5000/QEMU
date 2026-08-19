@@ -4,7 +4,6 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-build_openbios="$ROOT/scripts/build-openbios.sh"
 configure_openbios="$ROOT/scripts/whp-build/configure-openbios.bash"
 meson_openbios="$ROOT/scripts/meson-build-openbios.sh"
 ci="$ROOT/.github/workflows/ci.yml"
@@ -26,11 +25,10 @@ grep -Fq -- '-o "$cpu" = "aarch64"' "$switch_arch"
 # xsltproc is a build-host tool, not a target tool. Keep its selection explicit
 # and serialized just like toke/readelf so hosts with keg-only or nonstandard
 # package layouts do not depend on ambient PATH accidents.
-grep -Fq 'OPENBIOS_XSLTPROC="${OPENBIOS_XSLTPROC:-}"' "$build_openbios"
 grep -Fq "printf 'OPENBIOS_XSLTPROC=%q" "$configure_openbios"
 grep -Fq 'OPENBIOS_XSLTPROC="${OPENBIOS_XSLTPROC:-}"' "$meson_openbios"
 grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=8' "$meson_openbios"
-grep -Fq '$(dirname "$OPENBIOS_XSLTPROC")' "$build_openbios"
+grep -Fq '$(dirname "$OPENBIOS_XSLTPROC")' "$meson_openbios"
 
 # The Apple Silicon lane must execute the actual firmware and cross-toolchain
 # path; a QEMU-only macOS build cannot catch host-specific OpenBIOS failures.
