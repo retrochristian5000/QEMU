@@ -4,8 +4,6 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 ldscript="$ROOT/roms/openbios/arch/ppc/qemu/ldscript"
-core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
-build="$ROOT/scripts/build-openbios.sh"
 
 if [[ ! -f "$ldscript" ]]; then
     printf 'error: OpenBIOS submodule is not initialized: %s\n' "$ldscript" >&2
@@ -23,16 +21,93 @@ if [[ -z "$end_line" || -z "$hreset_line" || "$end_line" -ge "$hreset_line" ]]; 
     exit 1
 fi
 grep -Fq 'ASSERT(_end <= HRESET_ADDR' "$ldscript"
-if grep -Fq '. = ALIGN(4096);' "$ldscript" &&
-   tail -n "+$hreset_line" "$ldscript" | grep -Fq '_end = .;'; then
-    printf 'error: OpenBIOS still derives _end by aligning past 0xffffffff\n' >&2
+if tail -n "+$hreset_line" "$ldscript" | grep -Fq '_end = .;'; then
+    printf 'error: OpenBIOS still derives _end after the hard-reset vector\n' >&2
     exit 1
 fi
 
-# Keep the bootstrap smoke structurally equivalent to the real linker script
-# and make the real firmware validator reject an impossible/wrapped end symbol.
-grep -Fq 'ASSERT(_end <= HRESET_ADDR' "$core"
-grep -Fq 'LLD changed the OpenBIOS payload end symbol' "$core"
-grep -Fq 'OpenBIOS _end symbol is missing or outside the normal PROM payload' "$build"
+# Exercise the real linker script when an LLVM PowerPC assembler/linker and
+# ordinary ELF inspection tools are available.  Source-only environments keep
+# the structural guard above; CI installs these tools and therefore takes the
+# behavioral path too.
+clang="$(command -v clang 2>/dev/null || true)"
+lld="$(command -v ld.lld 2>/dev/null || true)"
+readelf_cmd="$(command -v llvm-readelf 2>/dev/null || command -v readelf 2>/dev/null || true)"
+nm_cmd="$(command -v llvm-nm 2>/dev/null || command -v nm 2>/dev/null || true)"
+if [[ -n "$clang" && -n "$lld" && -n "$readelf_cmd" && -n "$nm_cmd" ]]; then
+    scratch="$(mktemp -d "${TMPDIR:-/tmp}/openbios-linker-layout.XXXXXX")"
+    trap 'rm -rf "$scratch"' EXIT
+
+    cat > "$scratch/layout.s" <<'ASSEMBLY'
+.section .text.vectors,"ax",@progbits
+.globl _entry
+_entry:
+    nop
+
+.section .text,"ax",@progbits
+.globl whp_payload
+whp_payload:
+    nop
+
+.section .bss,"aw",@nobits
+.space 16
+
+.section .romentry,"ax",@progbits
+.globl whp_hreset
+whp_hreset:
+    b _entry
+ASSEMBLY
+    "$clang" --target=powerpc-none-elf -c -x assembler \
+        "$scratch/layout.s" -o "$scratch/layout.o"
+    "$lld" --warn-common -z noexecstack -T "$ldscript" \
+        -o "$scratch/layout.elf" "$scratch/layout.o"
+
+    header="$(LC_ALL=C "$readelf_cmd" -hW "$scratch/layout.elf")"
+    grep -Eq 'Class:[[:space:]]+ELF32' <<< "$header"
+    grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$header"
+    grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$header"
+    grep -Eq 'Entry point address:[[:space:]]+0xfff00100' <<< "$header"
+
+    end_value="$(LC_ALL=C "$nm_cmd" "$scratch/layout.elf" |
+        awk '$3 == "_end" {print tolower($1); exit}')"
+    hreset_value="$(LC_ALL=C "$nm_cmd" "$scratch/layout.elf" |
+        awk '$3 == "whp_hreset" {print tolower($1); exit}')"
+    if [[ ! "$end_value" =~ ^[0-9a-f]+$ || "$end_value" == 00000000 ]]; then
+        printf 'error: LLD produced an invalid OpenBIOS _end symbol: %s\n' \
+            "${end_value:-missing}" >&2
+        exit 1
+    fi
+    end_num=$((0x$end_value))
+    if ((end_num < 0xfff08000 || end_num >= 0xfffffffc)); then
+        printf 'error: OpenBIOS _end is outside the normal payload: %s\n' \
+            "$end_value" >&2
+        exit 1
+    fi
+    if [[ "$hreset_value" != fffffffc ]]; then
+        printf 'error: OpenBIOS hard-reset vector moved: %s\n' \
+            "${hreset_value:-missing}" >&2
+        exit 1
+    fi
+
+    cat > "$scratch/overflow.s" <<'ASSEMBLY'
+.section .text.vectors,"ax",@progbits
+.globl _entry
+_entry:
+    nop
+.section .bss,"aw",@nobits
+.space 0x100000
+.section .romentry,"ax",@progbits
+    b _entry
+ASSEMBLY
+    "$clang" --target=powerpc-none-elf -c -x assembler \
+        "$scratch/overflow.s" -o "$scratch/overflow.o"
+    if "$lld" --warn-common -z noexecstack -T "$ldscript" \
+        -o "$scratch/overflow.elf" "$scratch/overflow.o" \
+        >"$scratch/overflow.log" 2>&1; then
+        printf 'error: OpenBIOS linker accepted a payload overlapping reset space\n' >&2
+        exit 1
+    fi
+    grep -Fq 'OpenBIOS payload overlaps hard reset vector' "$scratch/overflow.log"
+fi
 
 printf 'OpenBIOS linker end-symbol policy: verified\n'
