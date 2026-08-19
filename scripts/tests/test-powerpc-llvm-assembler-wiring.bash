@@ -13,7 +13,10 @@ build_openbios="$ROOT/scripts/build-openbios.sh"
 meson_openbios="$ROOT/scripts/meson-build-openbios.sh"
 configure_openbios="$ROOT/scripts/whp-build/configure-openbios.bash"
 openbios_target="$ROOT/roms/openbios/Makefile.target"
-openbios_asm="$ROOT/roms/openbios/arch/ppc/Makefile.asm"
+openbios_rules="$ROOT/roms/openbios/config/xml/rules.xml"
+openbios_objects="$ROOT/roms/openbios/config/xml/object.xsl"
+openbios_ppc_build="$ROOT/roms/openbios/arch/ppc/build.xml"
+openbios_libgcc_build="$ROOT/roms/openbios/libgcc/build.xml"
 gitmodules="$ROOT/.gitmodules"
 
 # Normal QEMU builds are pinned by the LLVM gitlink.  If .gitmodules names a
@@ -59,6 +62,7 @@ if grep -Fq -- '-fno-integrated-as' "$base"; then
     printf 'error: PowerPC Clang wrapper still disables the integrated assembler\n' >&2
     exit 1
 fi
+grep -Fq -- '-fintegrated-as' "$base"
 if grep -Fq 'ln -sf "../../bin/${TOOLCHAIN_TARGET}-as" "$shim_dir/as"' "$base"; then
     printf 'error: base bootstrap still wires a private GNU assembler shim\n' >&2
     exit 1
@@ -91,9 +95,29 @@ grep -Fq 'bootstrap-powerpc-llvm-mc.sh' "$orchestrator"
 grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' "$orchestrator"
 grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"' "$orchestrator"
 
-# The first slice publishes the assembler independently but does not yet make
-# PPC-Firmware depend on it. Keep the existing compiler-driven assembly rule
-# until the published interface survives the real toolchain smoke.
+# OpenBIOS's active XML-generated target-object graph compiles .S through CC.
+# That gives Clang ownership of both preprocessing and integrated assembly;
+# the legacy arch/ppc/Makefile.asm pipeline is not the qemu-ppc object graph.
+grep -Fq 'CC     := $(TARGET)gcc' "$openbios_target"
+grep -Fq '$(CC) $$EXTRACFLAGS $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c -o $@ $&lt;' \
+    "$openbios_rules"
+grep -Fq "document('rules.xml',.)//rule[@target=\$target][@entity='object']" \
+    "$openbios_objects"
+if grep -Fq '$(AS)' "$openbios_rules" ||
+   grep -Fq 'AS     := $(TARGET)as' "$openbios_target"; then
+    printf 'error: active OpenBIOS object graph still dispatches through standalone as\n' >&2
+    exit 1
+fi
+
+# Keep the corpus list explicit so adding, removing, or rerouting PPC assembly
+# cannot silently escape the LLVM integrated-assembler qualification lane.
+grep -Fq '<object source="qemu/start.S"/>' "$openbios_ppc_build"
+grep -Fq '<object source="qemu/switch.S"/>' "$openbios_ppc_build"
+grep -Fq '<object source="timebase.S"/>' "$openbios_ppc_build"
+grep -Fq '<object source="crtsavres.S" condition="PPC"/>' "$openbios_libgcc_build"
+
+# OpenBIOS intentionally consumes the compiler driver rather than making the
+# separately published assembler part of its required cross-prefix contract.
 grep -Fq 'powerpc_tools=(gcc ar ld nm strip ranlib)' "$build_openbios"
 grep -Fq 'for tool in gcc ar ld nm strip ranlib; do' "$meson_openbios"
 grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
@@ -105,7 +129,7 @@ grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
 grep -Fq 'bootstrap-powerpc-clang.sh' "$build_openbios"
 if grep -Fq 'powerpc_tools=(gcc as ar ld nm strip ranlib)' "$build_openbios" ||
    grep -Fq 'for tool in gcc as ar ld nm strip ranlib; do' "$meson_openbios"; then
-    printf 'error: first assembler slice changed the OpenBIOS tool contract too early\n' >&2
+    printf 'error: OpenBIOS tool contract depends on standalone as\n' >&2
     exit 1
 fi
 if grep -Fq 'bash "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"' \
@@ -118,14 +142,6 @@ if grep -Fq 'compiler_mode" == clang && "$source_mode" != release' \
    grep -Fq 'compiler_mode" == clang && "$source_mode" != release' \
        "$configure_openbios"; then
     printf 'error: LLVM submodule lane is still coupled to GNU source mode\n' >&2
-    exit 1
-fi
-
-grep -Fq 'CC     := $(TARGET)gcc' "$openbios_target"
-grep -Fq '$(CC) -c -x assembler $@.s $(AS_FLAGS) -o $@' "$openbios_asm"
-if grep -Fq 'AS     := $(TARGET)as' "$openbios_target" ||
-   grep -Fq '$(AS) $@.s' "$openbios_asm"; then
-    printf 'error: first assembler slice changed PPC-Firmware dispatch too early\n' >&2
     exit 1
 fi
 
