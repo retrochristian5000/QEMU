@@ -1,0 +1,33 @@
+name: PowerPC LLVM incremental C++ flags
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-clang-core.sh'
+      - 'scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash'
+      - '.github/workflows/powerpc-llvm-incremental-cxx-flags.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  incremental-cxx-flags:
+    name: Check incremental LLVM C++ profile
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate shell syntax
+        run: |
+          bash -n scripts/bootstrap-powerpc-clang-base.sh
+          bash -n scripts/bootstrap-powerpc-clang-core.sh
+          bash -n scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash
+
+      - name: Exercise incremental C++ flag policy
+        run: bash scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash
