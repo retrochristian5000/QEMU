@@ -1,0 +1,38 @@
+name: OpenBIOS Clang runtime ABI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/tests/test-openbios-clang-runtime-abi.bash'
+      - '.github/workflows/openbios-clang-runtime-abi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clang-runtime-abi:
+    name: Check OpenBIOS PowerPC Clang ABI
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS source
+        run: git submodule update --init --depth 1 roms/openbios
+
+      - name: Install compiler probe tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang binutils
+
+      - name: Validate compatibility test shell
+        run: bash -n scripts/tests/test-openbios-clang-runtime-abi.bash
+
+      - name: Exercise PowerPC Clang runtime contract
+        run: bash scripts/tests/test-openbios-clang-runtime-abi.bash
