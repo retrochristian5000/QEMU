@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=9
+OPENBIOS_ENVIRONMENT_POLICY=8.1
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
