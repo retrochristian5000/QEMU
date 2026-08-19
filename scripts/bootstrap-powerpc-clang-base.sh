@@ -259,7 +259,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=16
+BOOTSTRAP_SCHEMA=17
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -407,14 +407,14 @@ clang="$prefix/llvm/bin/clang"
 tool_shims="$prefix/libexec/powerpc-clang-gnu"
 translated=()
 
-# OpenBIOS carries three GCC-only PowerPC policy flags.  Clang's bare-metal
-# PowerPC ABI already uses static, non-small-data addressing for this lane; the
-# bootstrap smoke test below verifies that no .sdata/.sbss sections appear.
+# OpenBIOS carries GCC/GNU-as-only PowerPC policy flags. Clang's bare-metal
+# PowerPC ABI already uses static, non-small-data addressing for this lane, and
+# -m64 selects PPC64 integrated-assembler mode without GNU as's -a64 switch.
 # Keep this translation local to the compatibility driver so PPC-Firmware does
 # not have to change during the compiler migration.
 for arg in "$@"; do
     case "$arg" in
-        -mcall-sysv-noeabi|-msdata=none|-G0|\
+        -mcall-sysv-noeabi|-msdata=none|-G0|-Wa,-a64|\
         -Wbuiltin-declaration-mismatch|-Wmaybe-uninitialized|-Wno-maybe-uninitialized)
             ;;
         *)
@@ -443,6 +443,14 @@ cat > "$smoke_dir/smoke.c" <<'SOURCE'
 #if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__
 #error compiler does not default to big endian
 #endif
+#ifdef WHP_PPC64_SMOKE
+# if !defined(__powerpc64__)
+#  error compiler did not enter PPC64 mode
+# endif
+_Static_assert(__SIZEOF_POINTER__ == 8, "PPC64 pointer width mismatch");
+#else
+_Static_assert(__SIZEOF_POINTER__ == 4, "PPC32 pointer width mismatch");
+#endif
 int whp_powerpc_global = 7;
 int whp_powerpc_clang_smoke(int value) { return whp_powerpc_global + value; }
 SOURCE
@@ -453,6 +461,8 @@ SOURCE
     -ffreestanding -fno-pic -fno-pie -O0 \
     -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
 "$llvm_readelf" -h "$smoke_dir/smoke.o" |
+    grep -q 'Class:.*ELF32'
+"$llvm_readelf" -h "$smoke_dir/smoke.o" |
     grep -q 'Machine:.*PowerPC'
 "$llvm_readelf" -h "$smoke_dir/smoke.o" |
     grep -q 'Data:.*big endian'
@@ -461,6 +471,17 @@ if "$llvm_readelf" -SW "$smoke_dir/smoke.o" |
     printf 'error: Clang generated a PowerPC small-data section unexpectedly\n' >&2
     exit 1
 fi
+
+"$clang_driver" \
+    -m64 -mcpu=970 -mno-altivec -Wa,-a64 -msoft-float \
+    -ffreestanding -fno-pic -fno-pie -O0 -DWHP_PPC64_SMOKE \
+    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke64.o"
+"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
+    grep -q 'Class:.*ELF64'
+"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
+    grep -q 'Machine:.*PowerPC64'
+"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
+    grep -q 'Data:.*big endian'
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-powerpc-toolchain"
 old_toolchain="${TOOLCHAIN_DIR}.old.$$"
