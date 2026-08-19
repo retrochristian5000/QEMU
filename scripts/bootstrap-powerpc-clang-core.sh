@@ -16,6 +16,7 @@ LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SUBMODULE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLD_BUILD_DIR="${POWERPC_LLD_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/lld-build}"
+LLVM_LINK_JOBS="${POWERPC_LLVM_LINK_JOBS:-2}"
 JOBS="${JOBS:-}"
 
 case "$TOOLCHAIN_TARGET" in
@@ -38,6 +39,14 @@ case "$LLVM_GIT_OFFLINE" in
         printf 'error: POWERPC_LLVM_GIT_OFFLINE must be 0 or 1\n' >&2
         exit 1
         ;;
+esac
+case "$LLVM_LINK_JOBS" in
+    0|*[!0-9]*)
+        printf 'error: POWERPC_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+            "$LLVM_LINK_JOBS" >&2
+        exit 1
+        ;;
+    *) ;;
 esac
 
 cmake_parallel_args=(--parallel)
@@ -151,6 +160,7 @@ POWERPC_LLVM_GIT_REF="$llvm_revision" \
 POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
 POWERPC_LLVM_GIT_OFFLINE=0 \
 POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
+POWERPC_LLVM_LINK_JOBS="$LLVM_LINK_JOBS" \
 POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
     bash "$BASE_BOOTSTRAP"
 
@@ -172,24 +182,42 @@ if [[ ! -f "$base_marker" ]]; then
     exit 1
 fi
 
-# Reuse the exact host compile/link profile proven by the completed base LLVM
-# stage. C and C++ are intentionally separate: C++ uses the lighter incremental
-# profile while C retains the existing release optimization policy.
+# Reuse the exact host compile/link and accuracy profile proven by the completed
+# base LLVM stage. C and C++ remain intentionally separate, and assertion mode
+# must match the installed LLVM libraries that standalone LLD consumes.
 lld_host_c_release_flags="$(awk -F= '$1 == "HOST_C_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
 lld_host_cxx_release_flags="$(awk -F= '$1 == "HOST_CXX_RELEASE_FLAGS" {sub(/^[^=]*=/, ""); print; exit}' "$base_marker")"
 lld_host_linker="$(awk -F= '$1 == "HOST_LINKER" {print $2; exit}' "$base_marker")"
+lld_llvm_enable_assertions="$(awk -F= '$1 == "LLVM_ENABLE_ASSERTIONS" {print $2; exit}' "$base_marker")"
+lld_llvm_optimized_tablegen="$(awk -F= '$1 == "LLVM_OPTIMIZED_TABLEGEN" {print $2; exit}' "$base_marker")"
 if [[ -z "$lld_host_c_release_flags" || -z "$lld_host_cxx_release_flags" ]]; then
     printf 'error: base LLVM marker is missing split C/C++ release flags\n' >&2
     exit 1
 fi
+case "$lld_llvm_enable_assertions" in
+    ON|OFF) ;;
+    *)
+        printf 'error: base LLVM marker has invalid assertion mode: %s\n' \
+            "$lld_llvm_enable_assertions" >&2
+        exit 1
+        ;;
+esac
+case "$lld_llvm_optimized_tablegen" in
+    ON|OFF) ;;
+    *)
+        printf 'error: base LLVM marker has invalid TableGen mode: %s\n' \
+            "$lld_llvm_optimized_tablegen" >&2
+        exit 1
+        ;;
+esac
 base_marker_signature="$(cksum "$base_marker" | awk '{print $1 ":" $2}')"
 
 # Key LLD to the actual base marker, not only to the bootstrap script checksum.
-# This makes output-affecting knobs such as the C++ optimization level rebuild
-# LLD exactly once, while execution-only settings such as JOBS do not invalidate
-# either marker.
+# Output-affecting compile and accuracy knobs rebuild LLD exactly once, while
+# execution-only settings such as JOBS and LLVM link-pool width remain outside
+# the semantic marker.
 expected_lld_marker="$(cat <<MARKER
-LLD_SCHEMA=5
+LLD_SCHEMA=6
 LLD_BUILD_MODE=incremental-elf-only
 LINKER=lld
 ASSEMBLER=clang-integrated
@@ -204,6 +232,8 @@ BASE_MARKER_SIGNATURE=$base_marker_signature
 ORCHESTRATOR_SIGNATURE=$orchestrator_signature
 HOST_C_RELEASE_FLAGS=$lld_host_c_release_flags
 HOST_CXX_RELEASE_FLAGS=$lld_host_cxx_release_flags
+LLVM_ENABLE_ASSERTIONS=$lld_llvm_enable_assertions
+LLVM_OPTIMIZED_TABLEGEN=$lld_llvm_optimized_tablegen
 MARKER
 )"
 
@@ -267,6 +297,8 @@ cmake -S "$LLVM_SUBMODULE_DIR/lld" -B "$LLD_BUILD_DIR" -G Ninja \
     -DLLVM_TARGETS_TO_BUILD=PowerPC \
     -DLLD_ENABLE_BACKENDS=ELF \
     -DLLD_USE_VTUNE=OFF \
+    "-DLLVM_ENABLE_ASSERTIONS=$lld_llvm_enable_assertions" \
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS" \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_ENABLE_WARNINGS=OFF \
     -DLLVM_ENABLE_PEDANTIC=OFF \
@@ -444,4 +476,5 @@ printf '%s\n' \
     "LLVM source: QEMU submodule $LLVM_SUBMODULE_PATH" \
     "Assembler: Clang integrated assembler" \
     "LLD backends: ELF only" \
+    "LLVM link parallelism: $LLVM_LINK_JOBS" \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
