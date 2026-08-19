@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
-OPENBIOS_ENVIRONMENT_POLICY=8
+OPENBIOS_ENVIRONMENT_POLICY=9
 
 if [[ -z "$CONFIG_FILE" || -z "$OUTPUT" ]]; then
     printf 'usage: %s CONFIG_FILE OUTPUT\n' "$0" >&2
@@ -66,10 +66,11 @@ FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochrist
 FCODE_UTILS_REV="${FCODE_UTILS_REV:-b9b6da855f2e698f8163ebd22227fc43d6eef7f4}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
 
-# QEMU's host build may legitimately use Homebrew and pkg-config.  OpenBIOS is
-# a freestanding firmware sub-build and must not inherit those search paths.
-# In particular, GCC consults CPATH, COMPILER_PATH, GCC_EXEC_PREFIX, and
-# LIBRARY_PATH even when its command line contains otherwise clean flags.
+# QEMU's host build may legitimately use Homebrew and pkg-config. OpenBIOS is
+# a freestanding firmware sub-build and must not inherit those search paths or
+# parent Make/shell control state. GNU Make can recreate command-line CC/LD/AR
+# assignments from MAKEFLAGS after those variables were explicitly unset, and
+# non-interactive Bash evaluates BASH_ENV before running child build scripts.
 openbios_clean_env=(
     env
     -u CC -u CXX -u OBJC
@@ -79,6 +80,9 @@ openbios_clean_env=(
     -u CPPFLAGS_FOR_BUILD -u LDFLAGS_FOR_BUILD
     -u CFLAGS_FOR_TARGET -u CXXFLAGS_FOR_TARGET
     -u CPPFLAGS_FOR_TARGET -u LDFLAGS_FOR_TARGET
+    -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS
+    -u MAKEFILES -u MAKEOVERRIDES -u MAKELEVEL
+    -u BASH_ENV -u ENV -u SHELLOPTS -u BASHOPTS
     -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH
     -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH
     -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH
