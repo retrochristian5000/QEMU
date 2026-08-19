@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'pc-bios/meson.build'
+      - 'scripts/build-openbios.sh'
       - 'scripts/meson-build-openbios.sh'
       - 'scripts/tests/test-openbios-shell-environment.bash'
       - '.github/workflows/openbios-shell-environment.yml'
@@ -27,6 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          bash -n scripts/build-openbios.sh
           bash -n scripts/meson-build-openbios.sh
           bash -n scripts/tests/test-openbios-shell-environment.bash
 
