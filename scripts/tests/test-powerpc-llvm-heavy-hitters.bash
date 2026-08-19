@@ -14,6 +14,16 @@ for file in "$BASE" "$CORE"; do
     fi
 done
 
+marker_block()
+{
+    local file=$1
+    awk '
+        /expected(_lld)?_marker=.*cat <<MARKER/ { in_marker=1 }
+        in_marker { print }
+        in_marker && /^MARKER$/ { exit }
+    ' "$file"
+}
+
 # Heavy build-cost knobs must be explicit and validated. Link parallelism is
 # scheduling policy; accuracy checks are semantic because they change the built
 # compiler and therefore belong in the toolchain marker.
@@ -38,11 +48,12 @@ grep -Fq -- '"-DLLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen"' "$BASE"
 
 # The accuracy profile changes generated tools and must invalidate the semantic
 # marker exactly once. Link-pool sizing must never do so.
-grep -Fq 'BOOTSTRAP_SCHEMA=19' "$BASE"
-grep -Fq 'LLVM_ACCURACY_CHECKS=$LLVM_ACCURACY_CHECKS' "$BASE"
-grep -Fq 'LLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions' "$BASE"
-grep -Fq 'LLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen' "$BASE"
-if grep -Fq 'LLVM_LINK_JOBS=' "$BASE"; then
+base_marker="$(marker_block "$BASE")"
+grep -Fq 'BOOTSTRAP_SCHEMA=19' <<< "$base_marker"
+grep -Fq 'LLVM_ACCURACY_CHECKS=$LLVM_ACCURACY_CHECKS' <<< "$base_marker"
+grep -Fq 'LLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions' <<< "$base_marker"
+grep -Fq 'LLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen' <<< "$base_marker"
+if grep -Fq 'LLVM_LINK_JOBS=' <<< "$base_marker"; then
     printf 'error: link scheduling leaked into the base semantic marker\n' >&2
     exit 1
 fi
@@ -54,10 +65,11 @@ grep -Fq 'lld_llvm_enable_assertions=' "$CORE"
 grep -Fq 'lld_llvm_optimized_tablegen=' "$CORE"
 grep -Fq '"-DLLVM_ENABLE_ASSERTIONS=$lld_llvm_enable_assertions"' "$CORE"
 grep -Fq '"-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"' "$CORE"
-grep -Fq 'LLD_SCHEMA=6' "$CORE"
-grep -Fq 'LLVM_ENABLE_ASSERTIONS=$lld_llvm_enable_assertions' "$CORE"
-grep -Fq 'LLVM_OPTIMIZED_TABLEGEN=$lld_llvm_optimized_tablegen' "$CORE"
-if grep -Fq 'LLVM_LINK_JOBS=' "$CORE"; then
+core_marker="$(marker_block "$CORE")"
+grep -Fq 'LLD_SCHEMA=6' <<< "$core_marker"
+grep -Fq 'LLVM_ENABLE_ASSERTIONS=$lld_llvm_enable_assertions' <<< "$core_marker"
+grep -Fq 'LLVM_OPTIMIZED_TABLEGEN=$lld_llvm_optimized_tablegen' <<< "$core_marker"
+if grep -Fq 'LLVM_LINK_JOBS=' <<< "$core_marker"; then
     printf 'error: link scheduling leaked into the LLD semantic marker\n' >&2
     exit 1
 fi
