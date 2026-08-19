@@ -91,8 +91,9 @@ if whp_openbios_enabled
   whp_openbios_env = find_program('env')
   whp_openbios_bash = find_program('bash')
   whp_openbios_script = meson.project_source_root() / 'scripts/meson-build-openbios.sh'
-  # Sanitize GNU Make recursion state and shell startup hooks before Bash reads
-  # BASH_ENV. The build driver applies the same policy to its child processes.
+  # Sanitize GNU Make recursion state, OpenBIOS-native selectors, and shell
+  # startup hooks before Bash reads BASH_ENV. The build driver repeats the
+  # same policy for child firmware processes.
   whp_openbios_entry_env = [
     whp_openbios_env,
     '-u', 'MAKEFLAGS',
@@ -101,6 +102,8 @@ if whp_openbios_enabled
     '-u', 'MAKEFILES',
     '-u', 'MAKEOVERRIDES',
     '-u', 'MAKELEVEL',
+    '-u', 'HOSTARCH',
+    '-u', 'TOKE',
     '-u', 'BASH_ENV',
     '-u', 'ENV',
     '-u', 'SHELLOPTS',
