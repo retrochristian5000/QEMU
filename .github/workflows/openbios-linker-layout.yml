@@ -1,0 +1,42 @@
+name: OpenBIOS PowerPC linker layout
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-linker-layout.bash'
+      - '.github/workflows/openbios-linker-layout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openbios-linker-layout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linker-layout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS
+        run: |
+          set -euxo pipefail
+          git submodule update --init --depth 1 roms/openbios
+          test "$(git -C roms/openbios rev-parse HEAD)" = \
+            "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
+
+      - name: Install LLVM linker probe tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils clang lld
+
+      - name: Verify PowerPC linker layout
+        run: bash scripts/tests/test-openbios-linker-layout.bash
