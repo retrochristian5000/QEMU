@@ -36,7 +36,7 @@ CC := powerpc-elf-gcc
 LD := powerpc-elf-ld
 AR := powerpc-elf-ar
 all:
-	@printf 'CC=%s\nLD=%s\nAR=%s\n' '$(CC)' '$(LD)' '$(AR)'
+	@printf 'CC=%s\nLD=%s\nAR=%s\nMAKEFLAGS=%s\n' '$(CC)' '$(LD)' '$(AR)' '$(MAKEFLAGS)'
 MAKEFILE
 
 cat > "$scratch/poison.mk" <<'MAKEFILE'
@@ -57,9 +57,15 @@ make_output="$(
         make --no-print-directory -f "$scratch/child.mk"
 )"
 expected_make_output=$'CC=powerpc-elf-gcc\nLD=powerpc-elf-ld\nAR=powerpc-elf-ar'
-if [[ "$make_output" != "$expected_make_output" ]]; then
+if [[ "${make_output%$'\n'MAKEFLAGS=*}" != "$expected_make_output" ]]; then
     printf '%s\n' \
         'error: parent Make state leaked into the isolated OpenBIOS build.' \
+        "$make_output" >&2
+    exit 1
+fi
+if ! grep -Eq '^MAKEFLAGS=.*r.*R|^MAKEFLAGS=.*R.*r' <<< "$make_output"; then
+    printf '%s\n' \
+        'error: isolated OpenBIOS make lost the deliberate -rR policy.' \
         "$make_output" >&2
     exit 1
 fi
@@ -75,7 +81,8 @@ if ! BASH_ENV="$scratch/bash-env" \
 fi
 
 # Keep all GNU Make recursion/control channels and shell startup hooks out of
-# child firmware processes. JOBS and MAKE_CMD are passed back explicitly.
+# child firmware processes. JOBS and MAKE_CMD are passed back explicitly, and
+# MAKEFLAGS is then replaced with the known-safe QEMU/OpenBIOS -rR policy.
 for variable in \
     MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES MAKELEVEL \
     BASH_ENV ENV SHELLOPTS BASHOPTS; do
@@ -85,6 +92,7 @@ for variable in \
         exit 1
     fi
 done
+grep -Fq 'MAKEFLAGS=-rR' "$meson_openbios"
 
 # The initial Meson custom target must sanitize before Bash starts; unsetting
 # BASH_ENV inside meson-build-openbios.sh would be too late for that shell.
@@ -92,6 +100,7 @@ grep -Fq "whp_openbios_env = find_program('env')" "$pc_bios_meson"
 grep -Fq 'whp_openbios_entry_env = [' "$pc_bios_meson"
 grep -Fq "'-u', 'BASH_ENV'" "$pc_bios_meson"
 grep -Fq "'-u', 'MAKEFLAGS'" "$pc_bios_meson"
+grep -Fq "'MAKEFLAGS=-rR'" "$pc_bios_meson"
 grep -Fq 'command: whp_openbios_entry_env + [whp_openbios_bash' "$pc_bios_meson"
 
 printf 'OpenBIOS shell environment isolation: verified\n'
