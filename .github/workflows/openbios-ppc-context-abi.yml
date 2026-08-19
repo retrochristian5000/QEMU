@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   ppc-context-abi:
-    name: Check pinned OpenBIOS PPC32 ABI
+    name: Check pinned OpenBIOS PPC32/PPC64 ABI
     runs-on: ubuntu-24.04
 
     steps:
@@ -38,5 +38,5 @@ jobs:
           bash -n scripts/tests/test-openbios-ppc-context-abi.bash
           bash -n roms/openbios/tests/test-ppc-context-abi.bash
 
-      - name: Exercise pinned PPC32 context ABI
+      - name: Exercise pinned PPC32/PPC64 context ABI
         run: bash scripts/tests/test-openbios-ppc-context-abi.bash
