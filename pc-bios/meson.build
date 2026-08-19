@@ -88,11 +88,27 @@ blobs = [
 ]
 
 if whp_openbios_enabled
+  whp_openbios_env = find_program('env')
   whp_openbios_bash = find_program('bash')
   whp_openbios_script = meson.project_source_root() / 'scripts/meson-build-openbios.sh'
+  # Sanitize GNU Make recursion state and shell startup hooks before Bash reads
+  # BASH_ENV. The build driver applies the same policy to its child processes.
+  whp_openbios_entry_env = [
+    whp_openbios_env,
+    '-u', 'MAKEFLAGS',
+    '-u', 'MFLAGS',
+    '-u', 'GNUMAKEFLAGS',
+    '-u', 'MAKEFILES',
+    '-u', 'MAKEOVERRIDES',
+    '-u', 'MAKELEVEL',
+    '-u', 'BASH_ENV',
+    '-u', 'ENV',
+    '-u', 'SHELLOPTS',
+    '-u', 'BASHOPTS',
+  ]
   whp_openbios_ppc = custom_target('whp-openbios-ppc',
     output: 'openbios-ppc',
-    command: [whp_openbios_bash, whp_openbios_script,
+    command: whp_openbios_entry_env + [whp_openbios_bash, whp_openbios_script,
               whp_openbios_config, '@OUTPUT@'],
     build_by_default: 'ppc-softmmu' in target_dirs,
     build_always_stale: true,
