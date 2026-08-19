@@ -41,10 +41,14 @@ if [[ -z "$macos_openbios_job" ]]; then
     printf 'error: dedicated macOS OpenBIOS CI job is missing\n' >&2
     exit 1
 fi
+grep -Fq 'runs-on: macos-15' <<< "$macos_openbios_job"
+grep -Fq 'test "$(uname -m)" = arm64' <<< "$macos_openbios_job"
 grep -Fq "BUILD_OPENBIOS: '1'" <<< "$macos_openbios_job"
 grep -Fq "BOOTSTRAP_POWERPC_TOOLCHAIN: '1'" <<< "$macos_openbios_job"
 grep -Fq 'libxslt' <<< "$macos_openbios_job"
 grep -Fq 'OPENBIOS_XSLTPROC' <<< "$macos_openbios_job"
 grep -Fq './build.sh whp-openbios-ppc' <<< "$macos_openbios_job"
+grep -Fq 'whp-firmware-tools-arm64-apple-darwin/powerpc-elf/.whp-powerpc-*' \
+    <<< "$macos_openbios_job"
 
 printf 'OpenBIOS host portability guards: verified\n'
