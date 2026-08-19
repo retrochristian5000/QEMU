@@ -21,6 +21,7 @@ on:
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-incremental.py'
+      - 'scripts/tests/test-whp-targeted-openbios.bash'
       - '.github/workflows/whp-config.yml'
   workflow_dispatch:
 
@@ -42,6 +43,9 @@ jobs:
 
       - name: Test incremental build behavior
         run: python3 scripts/tests/test-whp-incremental.py
+
+      - name: Test targeted PowerPC firmware companion
+        run: bash scripts/tests/test-whp-targeted-openbios.bash
 
       - name: Test PowerPC LLVM bootstrap wiring
         run: bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
@@ -67,3 +71,4 @@ jobs:
           bash -n scripts/whp-build/post-build.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-whp-config-integration.bash
+          bash -n scripts/tests/test-whp-targeted-openbios.bash
