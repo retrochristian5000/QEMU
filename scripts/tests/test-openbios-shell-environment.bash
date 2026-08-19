@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 meson_openbios="$ROOT/scripts/meson-build-openbios.sh"
+pc_bios_meson="$ROOT/pc-bios/meson.build"
 
 for required in awk grep make mktemp; do
     if ! command -v "$required" >/dev/null 2>&1; then
@@ -14,8 +15,8 @@ for required in awk grep make mktemp; do
     fi
 done
 
-# Exercise the exact clean-environment array used at the Meson/OpenBIOS
-# boundary without sourcing the rest of the build driver.
+# Exercise the exact clean-environment array used for child firmware tools
+# without sourcing the rest of the build driver.
 clean_env_definition="$(awk '
     /^openbios_clean_env=\($/ { capture=1 }
     capture { print }
@@ -63,26 +64,34 @@ if [[ "$make_output" != "$expected_make_output" ]]; then
     exit 1
 fi
 
-# Non-interactive Bash reads BASH_ENV before executing a build script.  A user
-# or CI environment must not be able to mutate the firmware bootstrap that way.
+# Non-interactive Bash reads BASH_ENV before executing a build script.  Child
+# bootstrap shells need the same protection as the compiler and make tools.
 printf 'export WHP_OPENBIOS_BASH_ENV_POISON=1\n' > "$scratch/bash-env"
 if ! BASH_ENV="$scratch/bash-env" \
     "${openbios_clean_env[@]}" \
     bash -c 'test -z "${WHP_OPENBIOS_BASH_ENV_POISON:-}"'; then
-    printf 'error: BASH_ENV leaked into an isolated OpenBIOS shell\n' >&2
+    printf 'error: BASH_ENV leaked into an isolated OpenBIOS child shell\n' >&2
     exit 1
 fi
 
 # Keep all GNU Make recursion/control channels and shell startup hooks out of
-# the firmware boundary.  JOBS and MAKE_CMD are passed back explicitly.
+# child firmware processes. JOBS and MAKE_CMD are passed back explicitly.
 for variable in \
     MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES MAKELEVEL \
     BASH_ENV ENV SHELLOPTS BASHOPTS; do
     if ! grep -Fq -- "-u $variable" "$meson_openbios"; then
-        printf 'error: OpenBIOS clean environment does not unset %s\n' \
+        printf 'error: OpenBIOS child clean environment does not unset %s\n' \
             "$variable" >&2
         exit 1
     fi
 done
+
+# The initial Meson custom target must sanitize before Bash starts; unsetting
+# BASH_ENV inside meson-build-openbios.sh would be too late for that shell.
+grep -Fq "whp_openbios_env = find_program('env')" "$pc_bios_meson"
+grep -Fq 'whp_openbios_entry_env = [' "$pc_bios_meson"
+grep -Fq "'-u', 'BASH_ENV'" "$pc_bios_meson"
+grep -Fq "'-u', 'MAKEFLAGS'" "$pc_bios_meson"
+grep -Fq 'command: whp_openbios_entry_env + [whp_openbios_bash' "$pc_bios_meson"
 
 printf 'OpenBIOS shell environment isolation: verified\n'
