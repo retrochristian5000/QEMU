@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 meson_openbios="$ROOT/scripts/meson-build-openbios.sh"
+build_openbios="$ROOT/scripts/build-openbios.sh"
 pc_bios_meson="$ROOT/pc-bios/meson.build"
 
 for required in awk grep make mktemp; do
@@ -47,7 +48,7 @@ MAKEFILE
 
 # GNU Make exports command-line assignments through MAKEFLAGS/MAKEOVERRIDES.
 # Merely unsetting CC/LD/AR therefore does not isolate the firmware make: the
-# next make process recreates those variables from MAKEFLAGS.  MAKEFILES can
+# next make process recreates those variables from MAKEFLAGS. MAKEFILES can
 # also inject arbitrary makefile state before OpenBIOS parses its own files.
 make_output="$(
     MAKEFLAGS='rR -- CC=makeflags-host-cc LD=makeflags-host-ld AR=makeflags-host-ar' \
@@ -70,7 +71,7 @@ if ! grep -Eq '^MAKEFLAGS=.*r.*R|^MAKEFLAGS=.*R.*r' <<< "$make_output"; then
     exit 1
 fi
 
-# Non-interactive Bash reads BASH_ENV before executing a build script.  Child
+# Non-interactive Bash reads BASH_ENV before executing a build script. Child
 # bootstrap shells need the same protection as the compiler and make tools.
 printf 'export WHP_OPENBIOS_BASH_ENV_POISON=1\n' > "$scratch/bash-env"
 if ! BASH_ENV="$scratch/bash-env" \
@@ -79,6 +80,25 @@ if ! BASH_ENV="$scratch/bash-env" \
     printf 'error: BASH_ENV leaked into an isolated OpenBIOS child shell\n' >&2
     exit 1
 fi
+
+# switch-arch trusts HOSTARCH when it is already set and prefers TOKE over its
+# PATH lookup. Both therefore need to be removed at the QEMU boundary. Direct
+# build-openbios.sh use must also force host autodetection and pass the selected
+# tokenizer explicitly when switch-arch is executed.
+for variable in HOSTARCH TOKE; do
+    if ! grep -Fq -- "-u $variable" "$meson_openbios"; then
+        printf 'error: OpenBIOS child clean environment does not unset %s\n' \
+            "$variable" >&2
+        exit 1
+    fi
+    if ! grep -Fq "'-u', '$variable'" "$pc_bios_meson"; then
+        printf 'error: OpenBIOS Meson entry environment does not unset %s\n' \
+            "$variable" >&2
+        exit 1
+    fi
+done
+grep -Fq 'HOSTARCH= \' "$build_openbios"
+grep -Fq 'TOKE="$OPENBIOS_TOKE" \' "$build_openbios"
 
 # Keep all GNU Make recursion/control channels and shell startup hooks out of
 # child firmware processes. JOBS and MAKE_CMD are passed back explicitly, and
