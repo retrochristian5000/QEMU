@@ -27,7 +27,7 @@ grep -Fq -- '-o "$cpu" = "aarch64"' "$switch_arch"
 # package layouts do not depend on ambient PATH accidents.
 grep -Fq "printf 'OPENBIOS_XSLTPROC=%q" "$configure_openbios"
 grep -Fq 'OPENBIOS_XSLTPROC="${OPENBIOS_XSLTPROC:-}"' "$meson_openbios"
-grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=8' "$meson_openbios"
+grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=9' "$meson_openbios"
 grep -Fq '$(dirname "$OPENBIOS_XSLTPROC")' "$meson_openbios"
 
 # The Apple Silicon lane must execute the actual firmware and cross-toolchain
