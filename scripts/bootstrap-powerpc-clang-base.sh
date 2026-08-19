@@ -21,6 +21,7 @@ LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"
 LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLVM_SOURCE_DIR="${POWERPC_LLVM_SOURCE_DIR:-$TOOLCHAIN_WORK_DIR/llvm-source}"
 LLVM_BUILD_DIR="${POWERPC_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
+LLVM_CXX_OPTIMIZATION="${POWERPC_LLVM_CXX_OPTIMIZATION:--O1}"
 
 stage_root=""
 bootstrap_stage="initialization"
@@ -43,6 +44,14 @@ case "$LLVM_GIT_OFFLINE" in
     0|1) ;;
     *)
         printf 'error: POWERPC_LLVM_GIT_OFFLINE must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$LLVM_CXX_OPTIMIZATION" in
+    -O0|-O1|-O2|-O3|-Os|-Og) ;;
+    *)
+        printf '%s\n' \
+            'error: POWERPC_LLVM_CXX_OPTIMIZATION must be one of -O0, -O1, -O2, -O3, -Os, or -Og' >&2
         exit 1
         ;;
 esac
@@ -103,14 +112,17 @@ fi
 # LLVM's normal Release profile uses the host compiler's most aggressive
 # optimization setting (typically -O3 for GCC/Clang). That is useful for a
 # shipped compiler release, but it substantially increases bootstrap latency.
-# Use -O2 for GCC-compatible host compilers; other compiler families keep their
-# native Release flags so this optimization does not narrow host portability.
-# Since the bootstrap also disables dead stripping, explicitly undo LLVM's
-# function/data section splitting in the config-specific flags that appear later
-# on the compile command line.
+# Keep C at -O2 while using a lighter, configurable -O1 default for C++, where
+# most LLVM compile time lives. This reduces the cost of header-driven
+# incremental rebuilds without dropping all optimization from the resulting
+# tools. Other compiler families keep their native Release flags so this policy
+# does not narrow host portability. Since dead stripping is disabled, also undo
+# LLVM's function/data section splitting in the config-specific flags that
+# appear later on the compile command line.
 cmake_host_release_args=()
 cmake_host_linker_args=()
-host_release_flags="toolchain-default"
+host_c_release_flags="toolchain-default"
+host_cxx_release_flags="toolchain-default"
 host_linker="toolchain-default"
 host_gcc_compatible=0
 if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
@@ -118,10 +130,11 @@ if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
    "$TOOLCHAIN_HOST_CXX" -dM -E -x c++ /dev/null 2>/dev/null |
        grep -Eq '^#define (__clang__|__GNUC__) '; then
     host_gcc_compatible=1
-    host_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
+    host_c_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
+    host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-sections -fno-data-sections"
     cmake_host_release_args=(
-        "-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
-        "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
+        "-DCMAKE_C_FLAGS_RELEASE=$host_c_release_flags"
+        "-DCMAKE_CXX_FLAGS_RELEASE=$host_cxx_release_flags"
     )
 fi
 
@@ -259,7 +272,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=17
+BOOTSTRAP_SCHEMA=18
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -275,9 +288,9 @@ HOST_CFLAGS=$host_cflags
 HOST_CXXFLAGS=$host_cxxflags
 HOST_CPPFLAGS=$host_cppflags
 HOST_LDFLAGS=$host_ldflags
-HOST_RELEASE_FLAGS=$host_release_flags
+HOST_C_RELEASE_FLAGS=$host_c_release_flags
+HOST_CXX_RELEASE_FLAGS=$host_cxx_release_flags
 HOST_LINKER=$host_linker
-CMAKE_PARALLEL_JOBS=${JOBS:-native}
 MARKER
 )"
 
