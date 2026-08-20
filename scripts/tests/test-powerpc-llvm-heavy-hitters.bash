@@ -46,13 +46,28 @@ grep -Fq -- '"-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"' "$BASE"
 grep -Fq -- '"-DLLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions"' "$BASE"
 grep -Fq -- '"-DLLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen"' "$BASE"
 
-# The accuracy profile changes generated tools and must invalidate the semantic
-# marker exactly once. Link-pool sizing must never do so.
+# OpenBIOS only needs the compiler, assembler path, LLVM object utilities, and
+# focused LLD. Host plugin loading and rich crash/unwind diagnostics add code
+# and dependencies to the bootstrap without changing generated firmware.
+for flag in \
+    '-DLLVM_ENABLE_PLUGINS=OFF' \
+    '-DLLVM_ENABLE_BACKTRACES=OFF' \
+    '-DLLVM_ENABLE_CRASH_OVERRIDES=OFF' \
+    '-DLLVM_ENABLE_UNWIND_TABLES=OFF'; do
+    grep -Fq -- "$flag" "$BASE"
+done
+
+# The accuracy profile and host feature profile change generated tools and must
+# invalidate the semantic marker exactly once. Link-pool sizing must never do so.
 base_marker="$(marker_block "$BASE")"
-grep -Fq 'BOOTSTRAP_SCHEMA=19' <<< "$base_marker"
+grep -Fq 'BOOTSTRAP_SCHEMA=20' <<< "$base_marker"
 grep -Fq 'LLVM_ACCURACY_CHECKS=$LLVM_ACCURACY_CHECKS' <<< "$base_marker"
 grep -Fq 'LLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions' <<< "$base_marker"
 grep -Fq 'LLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen' <<< "$base_marker"
+grep -Fq 'LLVM_ENABLE_PLUGINS=OFF' <<< "$base_marker"
+grep -Fq 'LLVM_ENABLE_BACKTRACES=OFF' <<< "$base_marker"
+grep -Fq 'LLVM_ENABLE_CRASH_OVERRIDES=OFF' <<< "$base_marker"
+grep -Fq 'LLVM_ENABLE_UNWIND_TABLES=OFF' <<< "$base_marker"
 if grep -Fq 'LLVM_LINK_JOBS=' <<< "$base_marker"; then
     printf 'error: link scheduling leaked into the base semantic marker\n' >&2
     exit 1
