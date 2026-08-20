@@ -38,6 +38,17 @@ reconfiguration.
 Host tools and portability
 --------------------------
 
+OpenBIOS and QEMU's Make compatibility layer require GNU Make.  The WHP
+wrapper accepts ``gmake`` or ``make`` only after checking the program's
+identity.  This matters on BSD-family hosts, where ``make`` normally names
+BSD make; install GNU Make there or select it explicitly::
+
+  MAKE_CMD=/path/to/gmake ./build.sh whp-openbios-ppc
+
+If OpenBIOS is in ``auto`` mode and GNU Make is unavailable, the firmware
+edge is declined without breaking an otherwise Ninja-capable QEMU build.
+An explicitly requested OpenBIOS build fails early with a prerequisite error.
+
 OpenBIOS uses ``xsltproc`` while ``switch-arch`` generates its make rules.  The
 WHP adapter treats that program as a build-host tool rather than part of the
 PowerPC cross-toolchain.  If ``xsltproc`` is already on ``PATH`` it is selected

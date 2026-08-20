@@ -29,6 +29,7 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/meson-build-openbios.sh"
     "$SOURCE_DIR/scripts/build-openbios.sh"
     "$SOURCE_DIR/scripts/whp-build/common.bash"
+    "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
     "$SOURCE_DIR/scripts/whp-build/stages.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-sources.bash"

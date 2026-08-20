@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
 OPENBIOS_ENVIRONMENT_POLICY=8.2
@@ -36,6 +37,20 @@ source "$CONFIG_FILE"
 : "${POWERPC_TOOLCHAIN_DIR:?POWERPC_TOOLCHAIN_DIR is required}"
 : "${POWERPC_TOOLCHAIN_WORK_DIR:?POWERPC_TOOLCHAIN_WORK_DIR is required}"
 : "${POWERPC_TOOLCHAIN_DOWNLOAD_DIR:?POWERPC_TOOLCHAIN_DOWNLOAD_DIR is required}"
+
+requested_make="${MAKE_CMD:-${MAKE:-}}"
+if [[ -n "$requested_make" ]]; then
+    MAKE_CMD="$(whp_resolve_gnu_make "$requested_make" || true)"
+else
+    MAKE_CMD="$(whp_find_gnu_make || true)"
+fi
+if [[ -z "$MAKE_CMD" ]]; then
+    printf '%s\n' \
+        'error: OpenBIOS requires GNU Make.' \
+        'Install GNU Make (often gmake on BSD hosts) or set MAKE_CMD explicitly.' >&2
+    exit 1
+fi
+printf 'OpenBIOS GNU Make: %s\n' "$MAKE_CMD"
 
 # xsltproc is a build-host utility used by OpenBIOS switch-arch. Resolve it at
 # the QEMU/OpenBIOS boundary so keg-only and custom package layouts can supply
@@ -209,7 +224,7 @@ if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
         CXX_FOR_BUILD="$OPENBIOS_HOSTCXX" \
         STRIP_FOR_BUILD="$OPENBIOS_HOSTSTRIP" \
         CONFIG_SHELL="${CONFIG_SHELL:-/bin/bash}" \
-        MAKE_CMD="${MAKE_CMD:-make}" \
+        MAKE_CMD="$MAKE_CMD" \
         JOBS="${JOBS:-1}" \
         "${toolchain_source_env[@]}" \
         bash "$bootstrap_script"
@@ -260,7 +275,7 @@ done
     CXX_FOR_BUILD="$OPENBIOS_HOSTCXX" \
     STRIP_FOR_BUILD="$OPENBIOS_HOSTSTRIP" \
     PKG_CONFIG_FOR_BUILD=false \
-    MAKE_CMD="${MAKE_CMD:-make}" \
+    MAKE_CMD="$MAKE_CMD" \
     JOBS="${JOBS:-1}" \
     bash "$SCRIPT_DIR/build-openbios.sh"
 

@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 OPENBIOS_DIR="${OPENBIOS_DIR:-$SOURCE_DIR/roms/openbios}"
 OPENBIOS_BUILD_DIR="${OPENBIOS_BUILD_DIR:-$SOURCE_DIR/build/openbios}"
 OPENBIOS_OUTPUT="${OPENBIOS_OUTPUT:-$SOURCE_DIR/pc-bios/openbios-ppc}"
@@ -27,10 +28,21 @@ if [[ -z "$POWERPC_LLVM_SUBMODULE_PATH" ]]; then
     POWERPC_LLVM_SUBMODULE_PATH=toolchains/llvm-project
 fi
 OPENBIOS_FIRMWARE_VALIDATION="${OPENBIOS_FIRMWARE_VALIDATION:-compatible}"
-FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/openbios/fcode-utils.git}"
-FCODE_UTILS_REV="${FCODE_UTILS_REV:-6e563ee54aa9f60e538d90eedaa012ae77610344}"
-FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils}"
-MAKE_CMD="${MAKE_CMD:-${MAKE:-make}}"
+FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochristian5000/fcode-utils.git}"
+FCODE_UTILS_REV="${FCODE_UTILS_REV:-b9b6da855f2e698f8163ebd22227fc43d6eef7f4}"
+FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
+MAKE_CMD_REQUESTED="${MAKE_CMD:-${MAKE:-}}"
+if [[ -n "$MAKE_CMD_REQUESTED" ]]; then
+    MAKE_CMD="$(whp_resolve_gnu_make "$MAKE_CMD_REQUESTED" || true)"
+else
+    MAKE_CMD="$(whp_find_gnu_make || true)"
+fi
+if [[ -z "$MAKE_CMD" ]]; then
+    printf '%s\n' \
+        'error: OpenBIOS requires GNU Make.' \
+        'Install GNU Make (often gmake on BSD hosts) or set MAKE_CMD explicitly.' >&2
+    exit 1
+fi
 config_candidate=""
 temporary_output=""
 probe_object=""
@@ -88,7 +100,7 @@ case "$OPENBIOS_FIRMWARE_VALIDATION" in
         ;;
 esac
 
-for required in git xsltproc "$MAKE_CMD" install cksum awk grep; do
+for required in git xsltproc install cksum awk grep; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: OpenBIOS build dependency not found: %s\n' "$required" >&2
         exit 1

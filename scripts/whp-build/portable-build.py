@@ -153,6 +153,23 @@ def optional_switch(args: List[str], value: str, feature: str) -> None:
         args.append(f'--disable-{feature}')
 
 
+def is_gnu_make(command: List[str]) -> bool:
+    if not command:
+        return False
+    try:
+        probe = subprocess.run(
+            [*command, '--version'],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return False
+    first_line = probe.stdout.splitlines()[0] if probe.stdout else ''
+    return probe.returncode == 0 and first_line.startswith('GNU Make ')
+
+
 def select_runner() -> List[str]:
     requested_ninja = os.environ.get('NINJA_CMD') or os.environ.get('NINJA')
     if requested_ninja:
@@ -164,12 +181,17 @@ def select_runner() -> List[str]:
 
     requested_make = os.environ.get('MAKE_CMD') or os.environ.get('MAKE')
     if requested_make:
-        return shlex.split(requested_make)
+        command = shlex.split(requested_make)
+        if is_gnu_make(command):
+            return command
+        raise RuntimeError(
+            f'MAKE_CMD/MAKE does not identify GNU Make: {requested_make}'
+        )
     for name in ('gmake', 'make'):
         path = shutil.which(name)
-        if path:
+        if path and is_gnu_make([path]):
             return [path]
-    raise RuntimeError('neither Ninja nor Make is available to run the QEMU build')
+    raise RuntimeError('neither Ninja nor GNU Make is available to run the QEMU build')
 
 
 def append_unique(values: List[str], value: str) -> None:

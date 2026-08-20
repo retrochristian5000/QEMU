@@ -60,12 +60,13 @@ whp_prepare_sources()
         if [[ -z "${MAKE_CMD:-}" ]]; then
             if [[ "$openbios_auto" == 1 ]]; then
                 printf '%s\n' \
-                    'OpenBIOS auto: Make is unavailable; continuing with the core QEMU build.' >&2
+                    'OpenBIOS auto: GNU Make is unavailable; continuing with the core QEMU build.' >&2
                 BUILD_OPENBIOS=0
                 BOOTSTRAP_POWERPC_TOOLCHAIN=0
             else
                 printf '%s\n' \
-                    'error: OpenBIOS was explicitly requested but no Make implementation is available.' >&2
+                    'error: OpenBIOS was explicitly requested but GNU Make is unavailable.' \
+                    'Install GNU Make (often gmake on BSD hosts) or set MAKE_CMD explicitly.' >&2
                 return 1
             fi
         fi

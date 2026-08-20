@@ -1,6 +1,8 @@
 # WHP host, toolchain, and build-policy preparation stage.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+
 compiler_has_cache_wrapper()
 {
     local token base
@@ -289,6 +291,8 @@ whp_prepare_host_tools()
 
 whp_prepare_build_tools()
 {
+    local requested_make="${MAKE_CMD:-}"
+
     if command -v nproc >/dev/null 2>&1; then
         DEFAULT_JOBS="$(nproc)"
     elif command -v sysctl >/dev/null 2>&1; then
@@ -303,14 +307,16 @@ whp_prepare_build_tools()
     esac
     JOBS="${JOBS:-$DEFAULT_JOBS}"
 
-    if [[ -z "${MAKE_CMD:-}" ]]; then
-        if command -v gmake >/dev/null 2>&1; then
-            MAKE_CMD="$(command -v gmake)"
-        elif command -v make >/dev/null 2>&1; then
-            MAKE_CMD="$(command -v make)"
-        else
-            MAKE_CMD=""
+    if [[ -n "$requested_make" ]]; then
+        MAKE_CMD="$(whp_resolve_gnu_make "$requested_make" || true)"
+        if [[ -z "$MAKE_CMD" ]]; then
+            printf '%s\n' \
+                "error: MAKE_CMD does not identify GNU Make: $requested_make" \
+                'Set MAKE_CMD to a GNU Make executable (often gmake on BSD hosts).' >&2
+            return 1
         fi
+    else
+        MAKE_CMD="$(whp_find_gnu_make || true)"
     fi
 
     if [[ -z "${NINJA_CMD:-}" ]]; then

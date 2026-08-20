@@ -38,6 +38,9 @@ jobs:
       - name: Check OpenBIOS host portability guards
         run: bash scripts/tests/test-openbios-host-portability.bash
 
+      - name: Check OpenBIOS build prerequisites
+        run: bash scripts/tests/test-openbios-build-prerequisites.bash
+
       - name: Check OpenBIOS tool provenance guards
         shell: bash
         run: |

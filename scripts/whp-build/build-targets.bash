@@ -30,8 +30,8 @@ elif [[ -n "${MAKE_CMD:-}" ]]; then
     build_runner=("$MAKE_CMD" -C "$BUILD_DIR" -j"$JOBS")
 else
     printf '%s\n' \
-        'error: neither Ninja nor Make is available to run the configured QEMU build.' \
-        'Install Ninja, or set NINJA_CMD/MAKE_CMD explicitly.' >&2
+        'error: neither Ninja nor GNU Make is available to run the configured QEMU build.' \
+        'Install Ninja or GNU Make, or set NINJA_CMD/MAKE_CMD explicitly.' >&2
     return 1
 fi
 
