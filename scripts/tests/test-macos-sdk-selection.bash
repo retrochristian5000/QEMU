@@ -167,4 +167,42 @@ if ! grep -Fq 'selected SDK version: 13.3' "$stage_output"; then
     exit 1
 fi
 
+legacy_build="$TEST_DIR/legacy-owned-build"
+mkdir -p "$legacy_build"
+cat > "$legacy_build/.whp-macos-build-identity" <<EOF
+SCHEMA=3
+SOURCE_DIR=$SOURCE_DIR
+BUILD_DIR=$legacy_build
+PROCESS_ARCH=aarch64
+HOST_ARCH=aarch64
+EOF
+
+if ! SOURCE_DIR="$SOURCE_DIR" LEGACY_BUILD="$legacy_build" \
+    bash --noprofile --norc -c '
+        source "$SOURCE_DIR/scripts/macos-build-hygiene.bash"
+        whp_build_tree_owned "$LEGACY_BUILD"
+        [[ "$(whp_recorded_host_arch "$LEGACY_BUILD/.whp-macos-build-identity")" == arm64 ]]
+    '; then
+    printf '%s\n' \
+        'error: legacy macOS WHP ownership identity was not accepted for arm64 migration.' >&2
+    exit 1
+fi
+
+foreign_build="$TEST_DIR/foreign-build"
+mkdir -p "$foreign_build"
+cat > "$foreign_build/.whp-macos-build-identity" <<EOF
+SCHEMA=3
+SOURCE_DIR=$TEST_DIR/not-this-checkout
+HOST_ARCH=arm64
+EOF
+if SOURCE_DIR="$SOURCE_DIR" FOREIGN_BUILD="$foreign_build" \
+    bash --noprofile --norc -c '
+        source "$SOURCE_DIR/scripts/macos-build-hygiene.bash"
+        whp_build_tree_owned "$FOREIGN_BUILD"
+    '; then
+    printf '%s\n' \
+        'error: macOS ownership guard accepted an identity from another source checkout.' >&2
+    exit 1
+fi
+
 printf 'macOS SDK selection tests: passed\n'

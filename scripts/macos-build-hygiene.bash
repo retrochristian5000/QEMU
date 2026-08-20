@@ -173,6 +173,11 @@ whp_build_tree_owned()
        grep -Fqx "SOURCE_DIR=$SOURCE_DIR" "$build_dir/.whp-config"; then
         return 0
     fi
+    if [[ -f "$build_dir/.whp-macos-build-identity" ]] &&
+       grep -Fqx "SOURCE_DIR=$SOURCE_DIR" \
+           "$build_dir/.whp-macos-build-identity"; then
+        return 0
+    fi
     return 1
 }
 
