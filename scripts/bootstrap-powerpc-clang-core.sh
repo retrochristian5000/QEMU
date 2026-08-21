@@ -115,7 +115,6 @@ if [[ -n "$(git -C "$LLVM_SUBMODULE_DIR" status --porcelain --untracked-files=no
     exit 1
 fi
 
-base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
 orchestrator_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
 
@@ -143,25 +142,17 @@ clang_lld_toolchain_is_usable()
         grep -q 'LLD' || return 1
 }
 
-base_force="$TOOLCHAIN_FORCE_REBUILD"
-if [[ -f "$lld_marker" ]]; then
-    old_base_signature="$(awk -F= '$1 == "BASE_BOOTSTRAP_SIGNATURE" {print $2; exit}' "$lld_marker")"
-    if [[ -n "$old_base_signature" && "$old_base_signature" != "$base_signature" ]]; then
-        base_force=1
-    fi
-fi
-
 printf 'LLVM submodule revision: %s\n' "$llvm_revision"
-# Always let the compiler/LLVM foundation validate its own complete marker
-# first. It exits quickly when current and rebuilds atomically when one of its
-# compiler, host, or LLVM inputs has changed.
+# The base stage owns its semantic marker. Do not convert a bootstrap-script
+# checksum difference into POWERPC_TOOLCHAIN_FORCE_REBUILD: that flag means the
+# caller explicitly asked to clean the persistent LLVM graph.
 POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
 POWERPC_LLVM_GIT_REF="$llvm_revision" \
 POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
 POWERPC_LLVM_GIT_OFFLINE=0 \
 POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
 POWERPC_LLVM_LINK_JOBS="$LLVM_LINK_JOBS" \
-POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
+POWERPC_TOOLCHAIN_FORCE_REBUILD="$TOOLCHAIN_FORCE_REBUILD" \
     bash "$BASE_BOOTSTRAP"
 
 # The LLD smoke links through a real archive, so make the core entry point
@@ -212,10 +203,10 @@ case "$lld_llvm_optimized_tablegen" in
 esac
 base_marker_signature="$(cksum "$base_marker" | awk '{print $1 ":" $2}')"
 
-# Key LLD to the actual base marker, not only to the bootstrap script checksum.
-# Output-affecting compile and accuracy knobs rebuild LLD exactly once, while
-# execution-only settings such as JOBS and LLVM link-pool width remain outside
-# the semantic marker.
+# Key LLD to the actual completed base marker. Output-affecting compiler,
+# platform, and accuracy changes alter that marker; script comments/refactors
+# do not. Execution-only settings such as JOBS and link-pool width stay outside
+# the semantic marker as well.
 expected_lld_marker="$(cat <<MARKER
 LLD_SCHEMA=6
 LLD_BUILD_MODE=incremental-elf-only
@@ -227,7 +218,6 @@ TARGET=$TOOLCHAIN_TARGET
 LLVM_SOURCE_MODE=submodule
 LLVM_SUBMODULE_PATH=$LLVM_SUBMODULE_PATH
 LLVM_GIT_COMMIT=$llvm_revision
-BASE_BOOTSTRAP_SIGNATURE=$base_signature
 BASE_MARKER_SIGNATURE=$base_marker_signature
 ORCHESTRATOR_SIGNATURE=$orchestrator_signature
 HOST_C_RELEASE_FLAGS=$lld_host_c_release_flags
