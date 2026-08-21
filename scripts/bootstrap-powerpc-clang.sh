@@ -73,26 +73,17 @@ if [[ -z "$llvm_revision" ]]; then
     exit 1
 fi
 
-# Build/validate the LLVM-only Clang foundation first, before LLD. Mirror the
-# core bootstrap's base-signature invalidation so a changed base script is
-# rebuilt before the archive entry points have been published.
-base_signature="$(cksum "$BASE_BOOTSTRAP" | awk '{print $1 ":" $2}')"
-lld_marker="$TOOLCHAIN_DIR/.whp-powerpc-lld"
-base_force="$TOOLCHAIN_FORCE_REBUILD"
-if [[ -f "$lld_marker" ]]; then
-    old_base_signature="$(awk -F= '$1 == "BASE_BOOTSTRAP_SIGNATURE" {print $2; exit}' "$lld_marker")"
-    if [[ -n "$old_base_signature" && "$old_base_signature" != "$base_signature" ]]; then
-        base_force=1
-    fi
-fi
-
+# The base bootstrap owns its semantic marker and the persistent CMake/Ninja
+# graph. Never turn script-checksum drift into a clean rebuild here: semantic
+# input changes should reconfigure incrementally, while only an explicit
+# POWERPC_TOOLCHAIN_FORCE_REBUILD=1 may erase compiled LLVM outputs.
 "${toolchain_clean_env[@]}" \
     POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
     POWERPC_LLVM_GIT_REF="$llvm_revision" \
     POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
     POWERPC_LLVM_GIT_OFFLINE=0 \
     POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
-    POWERPC_TOOLCHAIN_FORCE_REBUILD="$base_force" \
+    POWERPC_TOOLCHAIN_FORCE_REBUILD="$TOOLCHAIN_FORCE_REBUILD" \
     bash "$BASE_BOOTSTRAP"
 
 # llvm-ar and llvm-ranlib are LLVM core tools, so qualify and publish them
