@@ -50,3 +50,8 @@
 	url = https://github.com/retrochristian5000/LLVM.git
 	branch = main
 	shallow = true
+[submodule "toolchains/ninja-builder"]
+	path = toolchains/ninja-builder
+	url = https://github.com/retrochristian5000/ninja-builder.git
+	branch = master
+	shallow = true

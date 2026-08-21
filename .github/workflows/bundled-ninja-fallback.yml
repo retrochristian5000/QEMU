@@ -1,0 +1,49 @@
+name: Bundled Ninja fallback
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.gitmodules'
+      - 'toolchains/ninja-builder'
+      - 'build.sh'
+      - 'scripts/ensure-ninja.py'
+      - 'scripts/tests/test-bundled-ninja-fallback.py'
+      - '.github/workflows/bundled-ninja-fallback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundled-ninja:
+    name: Check pinned Ninja fallback
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+
+      - name: Validate fallback policy
+        run: |
+          python3 -m py_compile scripts/ensure-ninja.py scripts/tests/test-bundled-ninja-fallback.py
+          sh -n build.sh
+          python3 scripts/tests/test-bundled-ninja-fallback.py
+
+      - name: Bootstrap pinned Ninja without Ninja
+        shell: bash
+        run: |
+          set -euo pipefail
+          qemu_build="$RUNNER_TEMP/qemu-build"
+          first="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
+          test -x "$first"
+          "$first" --version
+          marker="$(dirname "$first")/.whp-ninja-tool"
+          test -f "$marker"
+          before="$(stat -c '%Y:%s' "$marker")"
+          second="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
+          after="$(stat -c '%Y:%s' "$marker")"
+          test "$first" = "$second"
+          test "$before" = "$after"
+          grep -Fq 'NINJA_GIT_COMMIT=' "$marker"

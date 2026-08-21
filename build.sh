@@ -42,6 +42,25 @@ if [ "${1:-}" = menuconfig ]; then
     exec "$PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
 fi
 
+# QEMU's normal Meson path needs Ninja before configuration, not only when the
+# final build command is launched. Prefer an explicitly selected or system
+# Ninja, but lazily bootstrap the pinned WHP Ninja fork when the host does not
+# provide one. The fallback lives beside BUILD_DIR so the QEMU build tree stays
+# empty until its ownership marker is established.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
+    if [ -z "${NINJA_CMD:-}" ]; then
+        NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+    fi
+    if [ -z "${NINJA_CMD:-}" ]; then
+        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" --build-dir "$BUILD_DIR") || exit 1
+        NINJA_DIR=$(dirname -- "$NINJA_CMD")
+        PATH="$NINJA_DIR:$PATH"
+        export PATH
+        unset NINJA_DIR
+    fi
+    export NINJA_CMD PATH
+fi
+
 if [ -z "$WHP_BUILD_BASH" ]; then
     if [ "$(uname -s 2>/dev/null || printf unknown)" = Darwin ] &&
        [ -x /bin/bash ]; then
