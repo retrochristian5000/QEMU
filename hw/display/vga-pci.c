@@ -27,7 +27,6 @@
 #include "qemu/osdep.h"
 #include "hw/pci/pci_device.h"
 #include "hw/core/qdev-properties.h"
-#include "hw/core/boards.h"
 #include "migration/vmstate.h"
 #include "vga_int.h"
 #include "ui/pixel_ops.h"
@@ -57,12 +56,6 @@ struct PCIVGAState {
 
 #define TYPE_PCI_VGA "pci-vga"
 OBJECT_DECLARE_SIMPLE_TYPE(PCIVGAState, PCI_VGA)
-
-static bool pci_vga_uses_open_firmware(void)
-{
-    return object_dynamic_cast(OBJECT(qdev_get_machine()),
-                               MACHINE_TYPE_NAME("mac99")) != NULL;
-}
 
 static const VMStateDescription vmstate_vga_pci = {
     .name = "vga",
@@ -246,15 +239,6 @@ static void pci_std_vga_realize(PCIDevice *dev, Error **errp)
     VGACommonState *s = &d->vga;
     bool qext = false;
     bool edid = false;
-
-    /*
-     * The default standard VGA option ROM contains x86 code.  Mac99 uses
-     * OpenBIOS's built-in QEMU,VGA FCode instead, so suppress the default ROM
-     * and its BAR unless the user explicitly selected another ROM image.
-     */
-    if (!dev->romfile && pci_vga_uses_open_firmware()) {
-        dev->romfile = g_strdup("");
-    }
 
     /* vga + console init */
     if (!vga_common_init(s, OBJECT(dev), errp)) {
