@@ -1,0 +1,32 @@
+name: OpenBIOS PPC ELF layout
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-ppc-elf-layout.bash'
+      - '.github/workflows/openbios-ppc-elf-layout.yml'
+  pull_request:
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-ppc-elf-layout.bash'
+      - '.github/workflows/openbios-ppc-elf-layout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openbios-ppc-elf-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QEMU
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS
+        run: git submodule update --init --depth 1 roms/openbios
+
+      - name: Verify pinned PowerPC PROM layout contract
+        run: bash scripts/tests/test-openbios-ppc-elf-layout.bash
