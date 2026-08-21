@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-NINJA_BOOTSTRAP_SCHEMA='1'
+NINJA_BOOTSTRAP_SCHEMA='2'
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -189,6 +189,18 @@ def atomic_install(staging: pathlib.Path, final: pathlib.Path) -> None:
     shutil.rmtree(backup, ignore_errors=True)
 
 
+def copy_ninja_source(destination: pathlib.Path) -> None:
+    # configure.py can regenerate lexer/parser sources when re2c is installed.
+    # Build from an isolated source copy so optional host tools can never dirty
+    # the pinned Ninja submodule.
+    shutil.copytree(
+        SUBMODULE_DIR,
+        destination,
+        symlinks=True,
+        ignore=shutil.ignore_patterns('.git', 'build', 'build.ninja', 'ninja', 'ninja.exe'),
+    )
+
+
 def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
@@ -209,6 +221,10 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     staging = host_tools_root / f'{final_dir.name}.new.{os.getpid()}'
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
+    staged_source = staging / 'source'
+    bootstrap_dir = staging / 'bootstrap'
+    copy_ninja_source(staged_source)
+    bootstrap_dir.mkdir()
 
     bootstrap_env = os.environ.copy()
     for key in ('CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR'):
@@ -223,16 +239,22 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     )
     try:
         subprocess.run(
-            [sys.executable, str(SUBMODULE_DIR / 'configure.py'), '--bootstrap'],
-            cwd=staging,
+            [sys.executable, str(staged_source / 'configure.py'), '--bootstrap'],
+            cwd=bootstrap_dir,
             env=bootstrap_env,
             stdout=sys.stderr,
             stderr=sys.stderr,
             check=True,
         )
-        staged_binary = ninja_binary(staging)
+        staged_binary = ninja_binary(bootstrap_dir)
         if not binary_is_usable(staged_binary):
             raise RuntimeError(f'bundled Ninja bootstrap did not produce a usable binary: {staged_binary}')
+        published_binary = staging / staged_binary.name
+        shutil.copy2(staged_binary, published_binary)
+        if not binary_is_usable(published_binary):
+            raise RuntimeError(f'copied bundled Ninja binary is unusable: {published_binary}')
+        shutil.rmtree(staged_source)
+        shutil.rmtree(bootstrap_dir)
         (staging / '.whp-ninja-tool').write_text(expected_marker, encoding='utf-8')
         atomic_install(staging, final_dir)
     except Exception:

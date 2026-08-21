@@ -40,6 +40,8 @@ def main() -> int:
     require(bootstrap, 'NINJA_GIT_COMMIT=', 'Ninja cache revision identity')
     require(bootstrap, 'NINJA_BOOTSTRAP_SCHEMA=', 'Ninja cache schema')
     require(bootstrap, 'CXX_VERSION=', 'host compiler cache identity')
+    require(bootstrap, 'shutil.copytree(', 'read-only Ninja source staging')
+    require(bootstrap, "staged_source / 'configure.py'", 'bootstrap from staged source copy')
 
     print('bundled Ninja fallback policy: verified')
     return 0
