@@ -1,0 +1,30 @@
+name: macOS toolchain cache guard
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/verify-macos-toolchain.sh'
+      - 'scripts/tests/test-macos-toolchain-cache.bash'
+      - '.github/workflows/macos-toolchain-cache.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-macos-toolchain-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cache-policy:
+    name: Check macOS toolchain cache policy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify cache reuse and invalidation
+        run: bash scripts/tests/test-macos-toolchain-cache.bash
