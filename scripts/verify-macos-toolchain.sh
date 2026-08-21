@@ -19,6 +19,7 @@ esac
 
 MACOS_COMPILER_MANIFEST="${MACOS_COMPILER_MANIFEST:-.whp-macos-toolchain}"
 MACOS_COMPILER_PROBE_DIR="${MACOS_COMPILER_PROBE_DIR:-${MACOS_COMPILER_MANIFEST}.d}"
+MACOS_COMPILER_INPUTS="${MACOS_COMPILER_MANIFEST}.inputs"
 MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
 MACOS_ALLOW_COMPILER_CONFIG="${MACOS_ALLOW_COMPILER_CONFIG:-0}"
 
@@ -36,7 +37,7 @@ if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
     exit 1
 fi
-for required in xcrun awk sed; do
+for required in xcrun awk sed cksum cmp stat; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: macOS compiler probe dependency not found: %s\n' "$required" >&2
         exit 1
@@ -45,9 +46,10 @@ done
 
 mkdir -p "$MACOS_COMPILER_PROBE_DIR" "$(dirname "$MACOS_COMPILER_MANIFEST")"
 manifest_candidate="${MACOS_COMPILER_MANIFEST}.new.$$"
+inputs_candidate="${MACOS_COMPILER_INPUTS}.new.$$"
 cleanup()
 {
-    rm -f "$manifest_candidate"
+    rm -f "$manifest_candidate" "$inputs_candidate"
 }
 trap cleanup EXIT
 
@@ -153,6 +155,121 @@ first_line()
 {
     sed -n '1p'
 }
+
+file_metadata_signature()
+{
+    local path="$1"
+    local signature=""
+
+    if signature="$(stat -L -f '%z:%m' "$path" 2>/dev/null)"; then
+        printf '%s\n' "$signature"
+        return 0
+    fi
+    if signature="$(stat -L -c '%s:%Y' "$path" 2>/dev/null)"; then
+        printf '%s\n' "$signature"
+        return 0
+    fi
+    if [[ -f "$path" ]]; then
+        cksum "$path" | awk '{print $1 ":" $2}'
+        return 0
+    fi
+    printf 'missing\n'
+}
+
+write_cached_value()
+{
+    local key="$1"
+    local value="$2"
+
+    printf '%s=%q\n' "$key" "$value" >> "$inputs_candidate"
+}
+
+write_cached_command_identity()
+{
+    local role="$1"
+    local command_string="$2"
+    local version=""
+    local target=""
+    local resource_dir=""
+    local no_default_target="unsupported"
+
+    set_identity_command "$command_string"
+    version="$("$DRIVER_PATH" --version 2>&1 | first_line)"
+    target="$("${QUERY_CMD[@]}" -print-target-triple 2>/dev/null || \
+              "${QUERY_CMD[@]}" -dumpmachine 2>/dev/null || true)"
+    target="$(printf '%s\n' "$target" | first_line)"
+    resource_dir="$("${QUERY_CMD[@]}" -print-resource-dir 2>/dev/null || true)"
+    resource_dir="$(printf '%s\n' "$resource_dir" | first_line)"
+    if "${QUERY_CMD[@]}" --no-default-config -print-target-triple \
+         >/dev/null 2>&1; then
+        no_default_target="$("${QUERY_CMD[@]}" --no-default-config \
+                              -print-target-triple 2>/dev/null | first_line)"
+    fi
+
+    write_cached_value "${role}_COMMAND" "$command_string"
+    write_cached_value "${role}_DRIVER" "$DRIVER_PATH"
+    write_cached_value "${role}_DRIVER_STAT" \
+        "$(file_metadata_signature "$DRIVER_PATH")"
+    write_cached_value "${role}_VERSION" "$version"
+    write_cached_value "${role}_TARGET_TRIPLE" "$target"
+    write_cached_value "${role}_RESOURCE_DIR" "$resource_dir"
+    write_cached_value "${role}_RESOURCE_STAT" \
+        "$(file_metadata_signature "$resource_dir")"
+    write_cached_value "${role}_NO_DEFAULT_CONFIG_TARGET" "$no_default_target"
+}
+
+write_toolchain_cache_identity()
+{
+    local verifier_signature=""
+    local sdk_version="${MACOS_SDK_VERSION:-}"
+    local sdk_settings="$SDKROOT/SDKSettings.json"
+
+    verifier_signature="$(cksum "$0" | awk '{print $1 ":" $2}')"
+    if [[ -z "$sdk_version" ]]; then
+        sdk_version="$(xcrun --sdk "$SDKROOT" --show-sdk-version 2>/dev/null || true)"
+    fi
+    if [[ ! -e "$sdk_settings" ]]; then
+        sdk_settings="$SDKROOT/SDKSettings.plist"
+    fi
+
+    : > "$inputs_candidate"
+    write_cached_value WHP_MACOS_TOOLCHAIN_INPUT_SCHEMA 1
+    write_cached_value VERIFIER_SIGNATURE "$verifier_signature"
+    write_cached_value HOST_ARCH "$host_arch"
+    write_cached_value SDKROOT "$SDKROOT"
+    write_cached_value SDKROOT_STAT "$(file_metadata_signature "$SDKROOT")"
+    write_cached_value SDK_VERSION "$sdk_version"
+    write_cached_value SDK_SETTINGS "$sdk_settings"
+    write_cached_value SDK_SETTINGS_STAT \
+        "$(file_metadata_signature "$sdk_settings")"
+    write_cached_value MACOSX_DEPLOYMENT_TARGET \
+        "${MACOSX_DEPLOYMENT_TARGET:-}"
+    write_cached_value MACOS_ALLOW_NONCLANG "$MACOS_ALLOW_NONCLANG"
+    write_cached_value MACOS_ALLOW_COMPILER_CONFIG \
+        "$MACOS_ALLOW_COMPILER_CONFIG"
+    write_cached_value CFLAGS "${CFLAGS:-}"
+    write_cached_value CXXFLAGS "${CXXFLAGS:-}"
+    write_cached_value OBJCFLAGS "${OBJCFLAGS:-}"
+    write_cached_value CPPFLAGS "${CPPFLAGS:-}"
+    write_cached_value LDFLAGS "${LDFLAGS:-}"
+
+    write_cached_command_identity CC "$CC"
+    write_cached_command_identity CXX "$CXX"
+    write_cached_command_identity OBJC "$OBJC"
+    write_cached_command_identity CC_FOR_BUILD "$CC_FOR_BUILD"
+}
+
+write_toolchain_cache_identity
+if [[ -f "$MACOS_COMPILER_MANIFEST" ]] &&
+   grep -Fqx 'WHP_MACOS_TOOLCHAIN_SCHEMA=2' "$MACOS_COMPILER_MANIFEST" &&
+   [[ -f "$MACOS_COMPILER_INPUTS" ]] &&
+   cmp -s "$inputs_candidate" "$MACOS_COMPILER_INPUTS"; then
+    rm -f "$inputs_candidate"
+    trap - EXIT
+    printf 'Reused cached macOS compiler toolchain verification: %s\n' \
+        "$MACOS_COMPILER_MANIFEST"
+    exit 0
+fi
 
 write_identity()
 {
@@ -385,5 +502,6 @@ for role in CC CXX OBJC CC_FOR_BUILD; do
 done
 
 mv -f "$manifest_candidate" "$MACOS_COMPILER_MANIFEST"
+mv -f "$inputs_candidate" "$MACOS_COMPILER_INPUTS"
 trap - EXIT
 printf 'Verified macOS compiler toolchain: %s\n' "$MACOS_COMPILER_MANIFEST"
