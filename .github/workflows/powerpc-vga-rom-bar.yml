@@ -1,0 +1,24 @@
+name: PowerPC VGA option ROM BAR
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'hw/display/vga-pci.c'
+      - 'hw/pci/pci.c'
+      - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - '.github/workflows/powerpc-vga-rom-bar.yml'
+  pull_request:
+    paths:
+      - 'hw/display/vga-pci.c'
+      - 'hw/pci/pci.c'
+      - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - '.github/workflows/powerpc-vga-rom-bar.yml'
+
+jobs:
+  rom-bar-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify standard VGA keeps its PCI option ROM
+        run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
