@@ -61,12 +61,14 @@ _start:
 SOURCE
 "$public_as" -g -o "$smoke_dir/smoke.o" "$smoke_dir/smoke.s"
 
-"$llvm_readelf" -hW "$smoke_dir/smoke.o" |
-    grep -Eq 'Class:[[:space:]]+ELF32'
-"$llvm_readelf" -hW "$smoke_dir/smoke.o" |
-    grep -Eq "Data:[[:space:]]+2's complement, big endian"
-"$llvm_readelf" -hW "$smoke_dir/smoke.o" |
-    grep -Eq 'Machine:[[:space:]]+PowerPC'
+# Do not feed llvm-readelf directly into grep -q while pipefail is active.
+# grep is allowed to stop reading after a match; an otherwise successful
+# llvm-readelf can then receive SIGPIPE and make this stage exit with 141.
+# Capture the small ELF header once and validate the stable text instead.
+smoke_header="$(LC_ALL=C "$llvm_readelf" -hW "$smoke_dir/smoke.o")"
+grep -Eq 'Class:[[:space:]]+ELF32' <<< "$smoke_header"
+grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$smoke_header"
+grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$smoke_header"
 
 for stale in \
     "$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu/as.bfd" \

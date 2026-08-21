@@ -19,7 +19,7 @@ openbios_ppc_build="$ROOT/roms/openbios/arch/ppc/build.xml"
 openbios_libgcc_build="$ROOT/roms/openbios/libgcc/build.xml"
 gitmodules="$ROOT/.gitmodules"
 
-# Normal QEMU builds are pinned by the LLVM gitlink.  If .gitmodules names a
+# Normal QEMU builds are pinned by the LLVM gitlink. If .gitmodules names a
 # tracking branch, it may only name the LLVM repository's default branch.
 llvm_module="$(awk '
     /^\[submodule "toolchains\/llvm-project"\]$/ { in_llvm=1; next }
@@ -44,10 +44,10 @@ esac
 grep -Fq 'LLVM_GIT_REF="${POWERPC_LLVM_GIT_REF:-HEAD}"' "$base"
 grep -Fq 'LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"' "$base"
 
-# The OpenBIOS Clang lane is LLVM-only. In particular, do not keep a partial
-# GNU BFD build: current binutils couples BFD to libsframe even when OpenBIOS
-# never emits or consumes SFrame unwind metadata.
-grep -Fq 'BOOTSTRAP_SCHEMA=16' "$base"
+# Schema numbers are invalidation mechanisms, not feature contracts. Keep this
+# guard semantic so legitimate schema bumps do not prevent the real assembler
+# corpus from being exercised.
+grep -Eq 'BOOTSTRAP_SCHEMA=[1-9][0-9]*' "$base"
 grep -Fq 'GNU_BINUTILS=disabled' "$base"
 grep -Fq 'SFRAME=disabled' "$base"
 for binutils_token in BINUTILS_VERSION BINUTILS_URL BINUTILS_SHA256 \
@@ -68,7 +68,7 @@ if grep -Fq 'ln -sf "../../bin/${TOOLCHAIN_TARGET}-as" "$shim_dir/as"' "$base"; 
     exit 1
 fi
 
-grep -Fq 'LLD_SCHEMA=4' "$core"
+grep -Eq 'LLD_SCHEMA=[1-9][0-9]*' "$core"
 grep -Fq 'ASSEMBLER=clang-integrated' "$core"
 grep -Fq 'GNU_BINUTILS=disabled' "$core"
 grep -Fq '"$clang" --target=powerpc-none-elf -c -x assembler' "$core"
@@ -91,6 +91,8 @@ grep -Fq -- '--target=powerpc-none-elf' "$mc_stage"
 grep -Fq -- '-fintegrated-as' "$mc_stage"
 grep -Fq -- '-c -x assembler' "$mc_stage"
 grep -Fq 'OBJECT_ABI=ELF32-powerpc-big-endian' "$mc_stage"
+grep -Fq 'smoke_header="$(LC_ALL=C "$llvm_readelf" -hW "$smoke_dir/smoke.o")"' "$mc_stage"
+grep -Fq '<<< "$smoke_header"' "$mc_stage"
 grep -Fq 'bootstrap-powerpc-llvm-mc.sh' "$orchestrator"
 grep -Fq 'rm -f "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-as"' "$orchestrator"
 grep -Fq 'rm -f "$TOOLCHAIN_DIR/$TOOLCHAIN_TARGET/bin/as"' "$orchestrator"
@@ -154,5 +156,9 @@ if grep -Fq 'public_as=' "$nm_stage" || grep -Fq 'public_as=' "$strip_stage"; th
     printf 'error: LLVM utility qualification moved to public as before its smoke\n' >&2
     exit 1
 fi
+
+# Reproduce the status-141 hazard with a writer that is guaranteed to keep
+# producing output after grep has enough data to match.
+bash "$ROOT/scripts/tests/test-powerpc-llvm-mc-pipefail.bash"
 
 printf 'PowerPC LLVM assembler wiring: verified\n'
