@@ -157,8 +157,9 @@ if grep -Fq 'public_as=' "$nm_stage" || grep -Fq 'public_as=' "$strip_stage"; th
     exit 1
 fi
 
-# Reproduce the status-141 hazard with a writer that is guaranteed to keep
-# producing output after grep has enough data to match.
+# Guard both status-141 sites: the base compiler validation and the standalone
+# LLVM-MC publication stage.
+bash "$ROOT/scripts/tests/test-powerpc-clang-base-pipefail.bash"
 bash "$ROOT/scripts/tests/test-powerpc-llvm-mc-pipefail.bash"
 
 printf 'PowerPC LLVM assembler wiring: verified\n'
