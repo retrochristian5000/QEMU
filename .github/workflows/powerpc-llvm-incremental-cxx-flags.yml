@@ -5,9 +5,11 @@ on:
     branches:
       - master
     paths:
+      - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash'
+      - 'scripts/tests/test-powerpc-llvm-no-clean-churn.bash'
       - '.github/workflows/powerpc-llvm-incremental-cxx-flags.yml'
   workflow_dispatch:
 
@@ -25,9 +27,14 @@ jobs:
 
       - name: Validate shell syntax
         run: |
+          bash -n scripts/bootstrap-powerpc-clang.sh
           bash -n scripts/bootstrap-powerpc-clang-base.sh
           bash -n scripts/bootstrap-powerpc-clang-core.sh
           bash -n scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash
+          bash -n scripts/tests/test-powerpc-llvm-no-clean-churn.bash
 
       - name: Exercise incremental C++ flag policy
         run: bash scripts/tests/test-powerpc-llvm-incremental-cxx-flags.bash
+
+      - name: Guard persistent LLVM graph reuse
+        run: bash scripts/tests/test-powerpc-llvm-no-clean-churn.bash
