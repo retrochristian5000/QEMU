@@ -513,14 +513,12 @@ SOURCE
     -mcall-sysv-noeabi -msdata=none -G0 \
     -ffreestanding -fno-pic -fno-pie -O0 \
     -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
-"$llvm_readelf" -h "$smoke_dir/smoke.o" |
-    grep -q 'Class:.*ELF32'
-"$llvm_readelf" -h "$smoke_dir/smoke.o" |
-    grep -q 'Machine:.*PowerPC'
-"$llvm_readelf" -h "$smoke_dir/smoke.o" |
-    grep -q 'Data:.*big endian'
-if "$llvm_readelf" -SW "$smoke_dir/smoke.o" |
-   grep -Eq '[[:space:]]\.s(data|bss)([[:space:]]|$)'; then
+smoke_header="$(LC_ALL=C "$llvm_readelf" -hW "$smoke_dir/smoke.o")"
+grep -q 'Class:.*ELF32' <<< "$smoke_header"
+grep -q 'Machine:.*PowerPC' <<< "$smoke_header"
+grep -q 'Data:.*big endian' <<< "$smoke_header"
+smoke_sections="$(LC_ALL=C "$llvm_readelf" -SW "$smoke_dir/smoke.o")"
+if grep -Eq '[[:space:]]\.s(data|bss)([[:space:]]|$)' <<< "$smoke_sections"; then
     printf 'error: Clang generated a PowerPC small-data section unexpectedly\n' >&2
     exit 1
 fi
@@ -529,12 +527,10 @@ fi
     -m64 -mcpu=970 -mno-altivec -Wa,-a64 -msoft-float \
     -ffreestanding -fno-pic -fno-pie -O0 -DWHP_PPC64_SMOKE \
     -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke64.o"
-"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
-    grep -q 'Class:.*ELF64'
-"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
-    grep -q 'Machine:.*PowerPC64'
-"$llvm_readelf" -h "$smoke_dir/smoke64.o" |
-    grep -q 'Data:.*big endian'
+smoke64_header="$(LC_ALL=C "$llvm_readelf" -hW "$smoke_dir/smoke64.o")"
+grep -q 'Class:.*ELF64' <<< "$smoke64_header"
+grep -q 'Machine:.*PowerPC64' <<< "$smoke64_header"
+grep -q 'Data:.*big endian' <<< "$smoke64_header"
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-powerpc-toolchain"
 old_toolchain="${TOOLCHAIN_DIR}.old.$$"
