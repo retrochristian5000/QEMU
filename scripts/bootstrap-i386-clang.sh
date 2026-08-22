@@ -63,7 +63,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=5
+BOOTSTRAP_SCHEMA=6
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -177,15 +177,31 @@ cat >"$bin/$TOOLCHAIN_TARGET-gcc" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+link_step=1
+for arg in "$@"; do
+    case "$arg" in
+        -c|-S|-E) link_step=0 ;;
+    esac
+done
+
 args=()
 for arg in "$@"; do
     case "$arg" in
         -mpreferred-stack-boundary=2) args+=(-mstack-alignment=4) ;;
-        -fno-stack-protector-all|-fstack-check=no) ;;
+        -fno-defer-pop|-fno-stack-protector-all|-fstack-check=no) ;;
+        -fwhole-program)
+            printf 'error: SeaBIOS whole-program optimization is unsupported by Clang\n' >&2
+            exit 1
+            ;;
         *) args+=("$arg") ;;
     esac
 done
-exec "$prefix/llvm/bin/clang" --target=i386-none-elf -fuse-ld=lld "${args[@]}"
+
+driver_args=(--target=i386-none-elf)
+if [[ "$link_step" == 1 ]]; then
+    driver_args+=(-fuse-ld=lld)
+fi
+exec "$prefix/llvm/bin/clang" "${driver_args[@]}" "${args[@]}"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-gcc"
 
@@ -248,6 +264,15 @@ for pair in objcopy:llvm-objcopy objdump:llvm-objdump strip:llvm-strip; do
     ln -sfn "../llvm/bin/$target" "$bin/$TOOLCHAIN_TARGET-$name"
 done
 
+# SeaBIOS probes -fwhole-program before enabling its whole-file optimization.
+# Reject that probe so the firmware build does not mistake Clang's ignored
+# compatibility spelling for a functional optimization.
+if "$bin/$TOOLCHAIN_TARGET-gcc" -fwhole-program -S -o /dev/null \
+       -xc /dev/null >/dev/null 2>&1; then
+    printf 'error: SeaBIOS Clang shim unexpectedly accepted -fwhole-program\n' >&2
+    exit 1
+fi
+
 # Validate the exact firmware ABI without pulling another inspection utility
 # into the distribution. Compilation verifies the i386 target and 32-bit
 # pointer model; llvm-objdump verifies the resulting ELF machine type.
@@ -263,7 +288,7 @@ int whp_seabios_smoke(int value) { return value + 1; }
 EOF
 "$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -mpreferred-stack-boundary=2 \
     -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
-    -fno-defer-pop -fwhole-program -ffreestanding -fno-pic -fno-pie -O0 \
+    -fno-defer-pop -ffreestanding -fno-pic -fno-pie -O0 \
     -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
 "$bin/$TOOLCHAIN_TARGET-ld" -melf_i386 -r "$smoke_dir/smoke.o" \
     -o "$smoke_dir/smoke-linked.o"
