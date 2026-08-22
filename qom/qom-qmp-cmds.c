@@ -16,6 +16,7 @@
 #include "qemu/osdep.h"
 #include "block/qdict.h"
 #include "hw/core/qdev.h"
+#include "hw/pci/pci_device.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-qdev.h"
 #include "qapi/qapi-commands-qom.h"
@@ -209,12 +210,28 @@ ObjectPropertyInfoList *qmp_device_list_properties(const char *typename,
     while ((prop = object_property_iter_next(&iter))) {
         ObjectPropertyInfo *info;
 
-        /* Skip Object and DeviceState properties */
-        if (strcmp(prop->name, "type") == 0 ||
+        /*
+         * device-list-properties backs -device DEVICE,help, so only expose
+         * properties a user can actually set.  Read-only QOM metadata such
+         * as PCI busnr and child<> composition objects are introspection
+         * details, not device_add options.
+         */
+        if (!prop->set ||
+            strcmp(prop->name, "type") == 0 ||
             strcmp(prop->name, "realized") == 0 ||
             strcmp(prop->name, "hotpluggable") == 0 ||
             strcmp(prop->name, "hotplugged") == 0 ||
             strcmp(prop->name, "parent_bus") == 0) {
+            continue;
+        }
+
+        /*
+         * sriov-pf is inherited by all PCI devices, but only device classes
+         * that opt into user-created VFs can use it successfully.
+         */
+        if (strcmp(prop->name, "sriov-pf") == 0 &&
+            object_class_dynamic_cast(klass, TYPE_PCI_DEVICE) &&
+            !PCI_DEVICE_CLASS(klass)->sriov_vf_user_creatable) {
             continue;
         }
 

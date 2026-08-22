@@ -89,7 +89,6 @@ static void powermac3_1_machine_class_init(ObjectClass *oc, const void *data)
     };
 
     mc->desc = "Apple Power Mac G4 AGP (PowerMac3,1 / Sawtooth)";
-    mc->alias = "powermac3_1";
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("7400_v2.9");
     mc->valid_cpu_types = valid_cpu_types;
     mc->default_ram_size = 128 * MiB;

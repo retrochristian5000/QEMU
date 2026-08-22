@@ -11,10 +11,9 @@
  */
 
 /*
- * Covers QMP device-list-properties and HMP device_add help.  We
- * currently don't check that their output makes sense, only that QEMU
- * survives.  Useful since we've had an astounding number of crash
- * bugs around here.
+ * Covers QMP device-list-properties and HMP device_add help.  The generic
+ * sweep primarily checks that QEMU survives; targeted cases also validate
+ * user-facing property output where regressions have been found.
  */
 
 #include "qemu/osdep.h"
@@ -100,6 +99,21 @@ static QList *device_type_list(QTestState *qts, bool abstract)
     return qom_list_types(qts, "device", abstract);
 }
 
+static bool property_list_has_name(QList *props, const char *name)
+{
+    QListEntry *e;
+
+    QLIST_FOREACH_ENTRY(props, e) {
+        QDict *prop = qobject_to(QDict, qlist_entry_obj(e));
+
+        if (!strcmp(qdict_get_str(prop, "name"), name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void test_one_device(QTestState *qts, const char *type)
 {
     QDict *resp;
@@ -120,6 +134,43 @@ static void test_one_device(QTestState *qts, const char *type)
     help = qtest_hmp(qts, "device_add \"%s,help\"", escaped);
     g_free(help);
     g_free(escaped);
+}
+
+static void test_device_intro_settable_only(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    QDict *resp;
+    QList *props;
+    char *help;
+
+    if (!type_list_find(types, "ati-vga")) {
+        g_test_skip("ati-vga is not available for this target");
+        qobject_unref(types);
+        qtest_quit(qts);
+        return;
+    }
+
+    resp = qtest_qmp(qts, "{'execute': 'device-list-properties',"
+                          " 'arguments': {'typename': 'ati-vga'}}");
+    g_assert(qdict_haskey(resp, "return"));
+    props = qdict_get_qlist(resp, "return");
+
+    g_assert_true(property_list_has_name(props, "model"));
+    g_assert_false(property_list_has_name(props, "busnr"));
+    g_assert_false(property_list_has_name(props, "edid"));
+    g_assert_false(property_list_has_name(props, "sriov-pf"));
+
+    help = qtest_hmp(qts, "device_add \"ati-vga,help\"");
+    g_assert_nonnull(strstr(help, "model="));
+    g_assert_null(strstr(help, "busnr="));
+    g_assert_null(strstr(help, "edid="));
+    g_assert_null(strstr(help, "sriov-pf="));
+    g_free(help);
+
+    qobject_unref(resp);
+    qobject_unref(types);
+    qtest_quit(qts);
 }
 
 static void test_device_intro_list(void)
@@ -324,6 +375,8 @@ int main(int argc, char **argv)
 
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
+    qtest_add_func("device/introspect/settable-only",
+                   test_device_intro_settable_only);
     qtest_add_func("device/introspect/none", test_device_intro_none);
     qtest_add_func("device/introspect/abstract", test_device_intro_abstract);
     qtest_add_func("device/introspect/abstract-interfaces", test_abstract_interfaces);
