@@ -158,7 +158,7 @@ done
 tmp="${TMPDIR:-/tmp}/whp-i386-as.$$.$RANDOM.s"
 trap 'rm -f "$tmp"' EXIT
 cat "${inputs[@]}" > "$tmp"
-exec "$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler "$tmp" -o "$out"
+"$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler "$tmp" -o "$out"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-as"
 
