@@ -90,7 +90,7 @@ for arg in "$@"; do
         -fmerge-constants)
             merge_constants=1
             ;;
-        -* )
+        -*)
             args+=("$arg")
             ;;
         *.c)
@@ -180,8 +180,9 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         exit 0
     fi
 
-    exec "$clang" --target=i386-none-elf -m32 -c -x assembler \
+    "$clang" --target=i386-none-elf -m32 -c -x assembler \
         "$fixed_asm" -o "$output"
+    exit $?
 fi
 
 exec "$clang" "${driver_args[@]}" "${args[@]}"
