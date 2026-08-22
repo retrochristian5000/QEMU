@@ -82,7 +82,7 @@ for script in \
     "$ROOT/scripts/build-openbios.sh" \
     "$ROOT/scripts/meson-build-openbios.sh"; do
     grep -Fq 'https://github.com/retrochristian5000/fcode-utils.git' "$script"
-    grep -Fq '92c5665ddbe251db47676adf6a19454ca6d45956' "$script"
+    grep -Fq 'e506db25b0aff34b98accc18b9b81f5673351cbf' "$script"
 done
 
 printf 'OpenBIOS build prerequisites: verified\n'
