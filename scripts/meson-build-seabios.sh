@@ -18,6 +18,7 @@ mkdir -p "$output_dir"
 "$MAKE_CMD" -C "$SOURCE_DIR/roms" \
     SEABIOS_CROSS_PREFIX="$SEABIOS_CROSS_COMPILE" \
     SEABIOS_OUTPUT_DIR="$output_dir" \
+    CPP="${SEABIOS_CROSS_COMPILE}cpp" \
     bios
 
 expected=(bios.bin bios-256k.bin bios-microvm.bin)
