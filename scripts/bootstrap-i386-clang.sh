@@ -11,6 +11,15 @@ LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 LLVM_BUILD_DIR="${I386_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
 TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
+stage_root=""
+
+cleanup()
+{
+    local status=$?
+    [[ -z "$stage_root" ]] || rm -rf "$stage_root"
+    exit "$status"
+}
+trap cleanup EXIT
 
 [[ "$TOOLCHAIN_TARGET" == i386-none-elf ]] || {
     printf 'error: i386 LLVM firmware lane requires i386-none-elf\n' >&2
@@ -35,7 +44,7 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake ninja mkdir rm ln; do
+for tool in git cmake ninja grep mkdir mv rm ln; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -54,7 +63,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=3
+BOOTSTRAP_SCHEMA=4
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -68,15 +77,16 @@ EOF
 
 usable()
 {
+    local prefix="$1"
     local tool
 
     for tool in gcc cpp as ld objcopy objdump strip; do
-        [[ -x "$TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
+        [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
-      "$(cat "$marker")" == "$expected_marker" ]] && usable; then
+      "$(cat "$marker")" == "$expected_marker" ]] && usable "$TOOLCHAIN_DIR"; then
     printf 'i386 LLVM toolchain is current: %s/bin/%s-\n' \
         "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     exit 0
@@ -140,10 +150,20 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
 fi
 
 cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
-cmake --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"
 
-llvm="$TOOLCHAIN_DIR/llvm/bin"
-bin="$TOOLCHAIN_DIR/bin"
+# Install into a staging root first. Replacing the prefix after validation
+# removes stale tools left by older, broader bootstrap schemas without deleting
+# the persistent CMake/Ninja build graph.
+stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
+staged_toolchain="$stage_root$TOOLCHAIN_DIR"
+rm -rf "$stage_root"
+mkdir -p "$stage_root"
+DESTDIR="$stage_root" \
+    cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+        "${cmake_parallel_args[@]}"
+
+llvm="$staged_toolchain/llvm/bin"
+bin="$staged_toolchain/bin"
 mkdir -p "$bin"
 for required in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
     [[ -x "$llvm/$required" ]] || {
@@ -194,6 +214,9 @@ cat >"$bin/$TOOLCHAIN_TARGET-as" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "${1:-}" == --version ]]; then
+    exec "$prefix/llvm/bin/clang" --version
+fi
 out=""
 inputs=()
 while (($#)); do
@@ -223,10 +246,52 @@ for pair in objcopy:llvm-objcopy objdump:llvm-objdump strip:llvm-strip; do
     ln -sfn "../llvm/bin/$target" "$bin/$TOOLCHAIN_TARGET-$name"
 done
 
-printf '%s\n' "$expected_marker" > "$marker"
-usable || {
+# Validate the exact firmware ABI without pulling another inspection utility
+# into the distribution. Compilation verifies the i386 target and 32-bit
+# pointer model; llvm-objdump verifies the resulting ELF machine type.
+smoke_dir="$TOOLCHAIN_WORK_DIR/seabios-smoke"
+rm -rf "$smoke_dir"
+mkdir -p "$smoke_dir"
+cat >"$smoke_dir/smoke.c" <<'EOF'
+#ifndef __i386__
+#error compiler is not targeting i386
+#endif
+_Static_assert(__SIZEOF_POINTER__ == 4, "i386 pointer width mismatch");
+int whp_seabios_smoke(int value) { return value + 1; }
+EOF
+"$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -ffreestanding \
+    -fno-pic -fno-pie -O0 -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+"$bin/$TOOLCHAIN_TARGET-ld" -melf_i386 -r "$smoke_dir/smoke.o" \
+    -o "$smoke_dir/smoke-linked.o"
+smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/smoke-linked.o")"
+if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' <<<"$smoke_format"; then
+    printf 'error: i386 LLVM smoke object has an unexpected format\n%s\n' \
+        "$smoke_format" >&2
+    exit 1
+fi
+
+printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-i386-toolchain"
+usable "$staged_toolchain" || {
     printf 'error: staged i386 LLVM toolchain is incomplete\n' >&2
     exit 1
 }
-printf 'i386 LLVM toolchain ready: %s/bin/%s-\n' \
-    "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+
+old_toolchain="${TOOLCHAIN_DIR}.old.$$"
+rm -rf "$old_toolchain"
+if [[ -e "$TOOLCHAIN_DIR" ]]; then
+    mv "$TOOLCHAIN_DIR" "$old_toolchain"
+fi
+if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
+    [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+rm -rf "$old_toolchain" "$stage_root"
+stage_root=""
+
+printf '%s\n' \
+    "Bootstrapped SeaBIOS compiler: Clang ($llvm_revision)" \
+    "Target: $TOOLCHAIN_TARGET" \
+    'Assembler: Clang integrated assembler' \
+    'Linker: ELF LLD only' \
+    'Object tools: llvm-objcopy, llvm-objdump, llvm-strip' \
+    "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
