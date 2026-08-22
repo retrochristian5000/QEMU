@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import pathlib
 import shutil
 import subprocess
@@ -14,13 +13,51 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPER = ROOT / 'scripts' / 'whp-build' / 'seabios-llvm-objdump.py'
 
 
-def load_helper():
-    spec = importlib.util.spec_from_file_location('seabios_llvm_objdump', HELPER)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f'cannot load {HELPER}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def parse_like_layoutrom(output: str):
+    sections = {}
+    symbols = {}
+    state = None
+    reloc_section = None
+    for line in output.splitlines():
+        if line == 'Sections:':
+            state = 'section'
+            continue
+        if line == 'SYMBOL TABLE:':
+            state = 'symbol'
+            continue
+        if line.startswith('RELOCATION RECORDS FOR ['):
+            reloc_section = line[24:-2]
+            if reloc_section.startswith('.debug_'):
+                state = None
+                continue
+            if reloc_section not in sections:
+                raise AssertionError(f'missing section map entry for {reloc_section}')
+            state = 'reloc'
+            continue
+        if state == 'section':
+            fields = line.split()
+            if len(fields) != 7 or not fields[-1].startswith('2**'):
+                continue
+            _idx, name, size, _vma, _lma, _fileoff, align = fields
+            sections[name] = {
+                'size': int(size, 16),
+                'align': 2 ** int(align[3:]),
+                'relocs': [],
+            }
+        elif state == 'symbol':
+            parts = line[17:].split() if len(line) >= 17 else []
+            if len(parts) == 3:
+                section, _size, name = parts
+                symbols[name] = section
+            elif len(parts) == 4 and parts[2] == '.hidden':
+                section, _size, _hidden, name = parts
+                symbols[name] = section
+        elif state == 'reloc':
+            fields = line.split()
+            if len(fields) == 3:
+                _offset, reloc_type, _symbol = fields
+                sections[reloc_section]['relocs'].append(reloc_type)
+    return sections, symbols
 
 
 class SeaBiosObjdumpAbiTests(unittest.TestCase):
@@ -33,7 +70,6 @@ class SeaBiosObjdumpAbiTests(unittest.TestCase):
         if not clang or not llvm_objdump:
             self.skipTest('clang/llvm-objdump are unavailable')
 
-        helper = load_helper()
         with tempfile.TemporaryDirectory() as tmp:
             tmpdir = pathlib.Path(tmp)
             source = tmpdir / 'probe.c'
@@ -55,21 +91,15 @@ class SeaBiosObjdumpAbiTests(unittest.TestCase):
                 'python3', str(HELPER), llvm_objdump, '-thr', str(obj),
             ], text=True)
 
-            lines = output.splitlines()
-            self.assertIn('Idx Name          Size      VMA       LMA       File off  Algn', lines)
-            text_line = next(line for line in lines if '.text.probe' in line)
-            fields = text_line.split()
-            self.assertEqual(len(fields), 7)
-            self.assertEqual(fields[-1], '2**4')
-            self.assertIn('SYMBOL TABLE:', output)
-            self.assertIn('RELOCATION RECORDS FOR [.text.probe]:', output)
-            self.assertIn('R_386_PC32', output)
+            self.assertIn(
+                'Idx Name          Size      VMA       LMA       File off  Algn',
+                output.splitlines(),
+            )
+            sections, symbols = parse_like_layoutrom(output)
+            self.assertEqual(sections['.text.probe']['align'], 16)
+            self.assertEqual(symbols['probe'], '.text.probe')
+            self.assertIn('R_386_PC32', sections['.text.probe']['relocs'])
             self.assertIn('R_386_32', output)
-
-            sections, symbols = helper.parse_seabios_objdump(output.splitlines())
-            self.assertEqual(sections['.text.probe'].align, 16)
-            self.assertEqual(symbols['probe'].section, '.text.probe')
-            self.assertIn('R_386_PC32', sections['.text.probe'].reloc_types)
 
 
 if __name__ == '__main__':
