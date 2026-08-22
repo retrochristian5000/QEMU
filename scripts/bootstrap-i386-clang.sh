@@ -39,7 +39,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=1
+BOOTSTRAP_SCHEMA=2
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -51,8 +51,7 @@ EOF
 usable()
 {
     local tool
-    [[ -x "$TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-gcc" ]] || return 1
-    for tool in as ld ar nm objcopy objdump readelf strip ranlib; do
+    for tool in gcc cpp as ld ar nm objcopy objdump readelf strip ranlib; do
         [[ -x "$TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
 }
@@ -86,16 +85,16 @@ cmake_args=(
 )
 cmake "${cmake_args[@]}"
 if [[ -n "$JOBS" ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --parallel "$JOBS" --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip
+    cmake --build "$LLVM_BUILD_DIR" --parallel "$JOBS" --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-mc
 else
-    cmake --build "$LLVM_BUILD_DIR" --parallel --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip
+    cmake --build "$LLVM_BUILD_DIR" --parallel --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-mc
 fi
 cmake --install "$LLVM_BUILD_DIR"
 
 llvm="$TOOLCHAIN_DIR/llvm/bin"
 bin="$TOOLCHAIN_DIR/bin"
 mkdir -p "$bin"
-for required in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-ranlib llvm-mc; do
+for required in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-ranlib; do
     [[ -x "$llvm/$required" ]] || {
         printf 'error: LLVM install did not produce %s\n' "$required" >&2
         exit 1
@@ -116,6 +115,14 @@ done
 exec "$prefix/llvm/bin/clang" --target=i386-none-elf -fuse-ld=lld "${args[@]}"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-gcc"
+
+cat >"$bin/$TOOLCHAIN_TARGET-cpp" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$prefix/llvm/bin/clang" --target=i386-none-elf -E "$@"
+EOF
+chmod +x "$bin/$TOOLCHAIN_TARGET-cpp"
 
 cat >"$bin/$TOOLCHAIN_TARGET-ld" <<'EOF'
 #!/usr/bin/env bash
@@ -151,7 +158,7 @@ done
 tmp="${TMPDIR:-/tmp}/whp-i386-as.$$.$RANDOM.s"
 trap 'rm -f "$tmp"' EXIT
 cat "${inputs[@]}" > "$tmp"
-exec "$prefix/llvm/bin/llvm-mc" --triple=i386-none-elf --filetype=obj "$tmp" -o "$out"
+exec "$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler "$tmp" -o "$out"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-as"
 
