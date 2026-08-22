@@ -42,6 +42,7 @@ powerpc_cross_prefix := $(call find-cross-prefix,powerpc)
 x86_64_cross_prefix := $(call find-cross-prefix,x86_64)
 riscv32_cross_prefix := $(call find-cross-prefix,riscv32)
 riscv64_cross_prefix := $(call find-cross-prefix,riscv64)
+SEABIOS_CROSS_PREFIX ?= $(x86_64_cross_prefix)
 
 # tag our firmware builds
 FIRMWARE_EXTRAVERSION = -prebuilt.qemu.org
@@ -99,19 +100,19 @@ build-seabios-config-%: config.%
 	cp $< seabios/builds/$*/.config
 	$(MAKE) -C seabios \
 		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
-		CROSS_PREFIX=$(x86_64_cross_prefix) \
+		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
 		KCONFIG_CONFIG=$(CURDIR)/seabios/builds/$*/.config \
 		OUT=$(CURDIR)/seabios/builds/$*/ oldnoconfig
 	$(MAKE) -C seabios \
 		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
-		CROSS_PREFIX=$(x86_64_cross_prefix) \
+		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
 		KCONFIG_CONFIG=$(CURDIR)/seabios/builds/$*/.config \
 		OUT=$(CURDIR)/seabios/builds/$*/ all
 
 
 .PHONY: skiboot qboot palcode-clipper
 
-pxerom: $(patsubst %,pxe-rom-%,$(pxerom_variants))
+pxerom: $(patsubst %,pxe-rom-%,$(vgabios_variants))
 
 pxe-rom-%: build-pxe-roms
 	cp ipxe/src/bin/$(VID)$(DID).rom ../pc-bios/pxe-$*.rom
