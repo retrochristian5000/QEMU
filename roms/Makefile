@@ -112,7 +112,7 @@ build-seabios-config-%: config.%
 
 .PHONY: skiboot qboot palcode-clipper
 
-pxerom: $(patsubst %,pxe-rom-%,$(vgabios_variants))
+pxerom: $(patsubst %,pxe-rom-%,$(pxerom_variants))
 
 pxe-rom-%: build-pxe-roms
 	cp ipxe/src/bin/$(VID)$(DID).rom ../pc-bios/pxe-$*.rom
