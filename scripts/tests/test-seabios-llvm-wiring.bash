@@ -38,6 +38,12 @@ grep -Fq -- 'linker_args=(-m elf_i386)' "$bootstrap"
 grep -Fq -- 'unsupported i386 linker emulation' "$bootstrap"
 grep -Fq -- 'i386 linker default emulation' "$bootstrap"
 
+# layoutrom.py consumes these relocation classes after SeaBIOS's ld -r stage,
+# and the VGA link depends on garbage collection support.
+grep -Fq -- 'R_386_PC32' "$bootstrap"
+grep -Fq -- 'R_386_32' "$bootstrap"
+grep -Fq -- '--gc-sections' "$bootstrap"
+
 # SeaBIOS does not consume these tools. Keep the i386 firmware bootstrap
 # narrower than a general-purpose LLVM SDK.
 for unused in llvm-ar llvm-nm llvm-readelf llvm-ranlib llvm-mc; do
