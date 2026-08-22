@@ -36,7 +36,7 @@ if [[ "$BOOTSTRAP_I386_TOOLCHAIN" == 1 ]]; then
 fi
 
 : "${SEABIOS_CROSS_COMPILE:?SeaBIOS needs SEABIOS_CROSS_COMPILE or BOOTSTRAP_I386_TOOLCHAIN=1}"
-for tool in gcc cpp as ld ar nm objcopy objdump readelf strip ranlib; do
+for tool in gcc cpp as ld objcopy objdump strip; do
     [[ -x "${SEABIOS_CROSS_COMPILE}${tool}" ]] || {
         printf 'error: SeaBIOS cross tool is missing: %s%s\n' "$SEABIOS_CROSS_COMPILE" "$tool" >&2
         exit 1
