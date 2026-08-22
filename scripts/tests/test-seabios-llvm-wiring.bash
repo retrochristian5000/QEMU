@@ -22,6 +22,12 @@ grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
 grep -q 'llvm-strip' "$bootstrap"
 grep -q -- '--version' "$bootstrap"
+grep -Fq -- '-mpreferred-stack-boundary=2) args+=(-mstack-alignment=4) ;;' "$bootstrap"
+grep -Fq -- '-fno-stack-protector-all|-fstack-check=no) ;;' "$bootstrap"
+if grep -Fq -- '-fno-defer-pop|-fwhole-program)' "$bootstrap"; then
+    printf 'SeaBIOS shim is discarding Clang-supported compiler flags\n' >&2
+    exit 1
+fi
 
 # SeaBIOS does not consume these tools. Keep the i386 firmware bootstrap
 # narrower than a general-purpose LLVM SDK.
