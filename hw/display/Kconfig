@@ -48,6 +48,12 @@ config VGA_PCI
     select VGA
     select EDID
 
+config SIERRA_FALCON64
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+    select VGA_PCI
+
 config VGA_ISA
     bool
     depends on ISA_BUS

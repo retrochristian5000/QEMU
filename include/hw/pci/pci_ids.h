@@ -234,6 +234,9 @@
 #define PCI_VENDOR_ID_FREESCALE          0x1957
 #define PCI_DEVICE_ID_MPC8533E           0x0030
 
+#define PCI_VENDOR_ID_SIERRA             0x1a08
+#define PCI_DEVICE_ID_SIERRA_SC15064     0x0000
+
 #define PCI_VENDOR_ID_BAIDU              0x1d22
 #define PCI_DEVICE_ID_KUNLUN_VF          0x3685
 
