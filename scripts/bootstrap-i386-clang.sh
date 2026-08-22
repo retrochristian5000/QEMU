@@ -97,7 +97,8 @@ mkdir -p "$TOOLCHAIN_WORK_DIR"
 # SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
 # linker, and three object-image inspection/transformation tools. Build only
 # the LLVM components that implement that command surface. Clang itself drives
-# the integrated assembler, so llvm-mc is deliberately not part of this lane.
+# the integrated assembler, so a separate assembler binary is not part of this
+# lane.
 llvm_distribution_components='clang;clang-resource-headers;lld;llvm-objcopy;llvm-objdump;llvm-strip'
 
 cmake_args=(
