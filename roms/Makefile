@@ -43,6 +43,7 @@ x86_64_cross_prefix := $(call find-cross-prefix,x86_64)
 riscv32_cross_prefix := $(call find-cross-prefix,riscv32)
 riscv64_cross_prefix := $(call find-cross-prefix,riscv64)
 SEABIOS_CROSS_PREFIX ?= $(x86_64_cross_prefix)
+SEABIOS_OUTPUT_DIR ?= ../pc-bios
 
 # tag our firmware builds
 FIRMWARE_EXTRAVERSION = -prebuilt.qemu.org
@@ -83,9 +84,10 @@ default help:
 bios: build-seabios-config-seabios-128k \
 		build-seabios-config-seabios-256k \
 		build-seabios-config-seabios-microvm
-	cp seabios/builds/seabios-128k/bios.bin ../pc-bios/bios.bin
-	cp seabios/builds/seabios-256k/bios.bin ../pc-bios/bios-256k.bin
-	cp seabios/builds/seabios-microvm/bios.bin ../pc-bios/bios-microvm.bin
+	mkdir -p $(SEABIOS_OUTPUT_DIR)
+	cp seabios/builds/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
+	cp seabios/builds/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
+	cp seabios/builds/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
 
 vgabios seavgabios: $(patsubst %,seavgabios-%,$(vgabios_variants))
 
