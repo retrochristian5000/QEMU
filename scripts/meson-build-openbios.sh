@@ -78,7 +78,7 @@ printf 'OpenBIOS XSLT processor: %s\n' "$OPENBIOS_XSLTPROC"
 # Keep local builds on the repaired project fork. Use a distinct cache path so
 # an older vanilla checkout cannot retain its origin or obsolete Makefile.
 FCODE_UTILS_REPOSITORY="${FCODE_UTILS_REPOSITORY:-https://github.com/retrochristian5000/fcode-utils.git}"
-FCODE_UTILS_REV="${FCODE_UTILS_REV:-92c5665ddbe251db47676adf6a19454ca6d45956}"
+FCODE_UTILS_REV="${FCODE_UTILS_REV:-e506db25b0aff34b98accc18b9b81f5673351cbf}"
 FCODE_UTILS_DIR="${FCODE_UTILS_DIR:-$OPENBIOS_TOOLS_DIR/fcode-utils-retrochristian5000}"
 
 # QEMU's host build may legitimately use Homebrew and pkg-config. OpenBIOS is
