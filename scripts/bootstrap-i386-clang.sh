@@ -63,7 +63,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=4
+BOOTSTRAP_SCHEMA=5
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -180,7 +180,8 @@ prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 args=()
 for arg in "$@"; do
     case "$arg" in
-        -fno-defer-pop|-fwhole-program) ;;
+        -mpreferred-stack-boundary=2) args+=(-mstack-alignment=4) ;;
+        -fno-stack-protector-all|-fstack-check=no) ;;
         *) args+=("$arg") ;;
     esac
 done
@@ -260,8 +261,10 @@ cat >"$smoke_dir/smoke.c" <<'EOF'
 _Static_assert(__SIZEOF_POINTER__ == 4, "i386 pointer width mismatch");
 int whp_seabios_smoke(int value) { return value + 1; }
 EOF
-"$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -ffreestanding \
-    -fno-pic -fno-pie -O0 -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+"$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -mpreferred-stack-boundary=2 \
+    -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
+    -fno-defer-pop -fwhole-program -ffreestanding -fno-pic -fno-pie -O0 \
+    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
 "$bin/$TOOLCHAIN_TARGET-ld" -melf_i386 -r "$smoke_dir/smoke.o" \
     -o "$smoke_dir/smoke-linked.o"
 smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/smoke-linked.o")"
