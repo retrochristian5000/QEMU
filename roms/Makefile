@@ -44,6 +44,7 @@ riscv32_cross_prefix := $(call find-cross-prefix,riscv32)
 riscv64_cross_prefix := $(call find-cross-prefix,riscv64)
 SEABIOS_CROSS_PREFIX ?= $(x86_64_cross_prefix)
 SEABIOS_OUTPUT_DIR ?= ../pc-bios
+SEABIOS_BUILD_ROOT ?= $(abspath ../build/firmware/seabios)
 
 # tag our firmware builds
 FIRMWARE_EXTRAVERSION = -prebuilt.qemu.org
@@ -85,33 +86,33 @@ bios: build-seabios-config-seabios-128k \
 		build-seabios-config-seabios-256k \
 		build-seabios-config-seabios-microvm
 	mkdir -p $(SEABIOS_OUTPUT_DIR)
-	cp seabios/builds/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
-	cp seabios/builds/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
-	cp seabios/builds/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
+	cp $(SEABIOS_BUILD_ROOT)/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
+	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
+	cp $(SEABIOS_BUILD_ROOT)/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
 
 vgabios seavgabios: $(patsubst %,seavgabios-%,$(vgabios_variants))
 
 seavgabios-isavga: build-seabios-config-vga-isavga
-	cp seabios/builds/vga-isavga/vgabios.bin ../pc-bios/vgabios.bin
+	cp $(SEABIOS_BUILD_ROOT)/vga-isavga/vgabios.bin ../pc-bios/vgabios.bin
 
 seavgabios-%: build-seabios-config-vga-%
-	cp seabios/builds/vga-$*/vgabios.bin ../pc-bios/vgabios-$*.bin
+	cp $(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin ../pc-bios/vgabios-$*.bin
 
 build-seabios-config-%: config.%
-	mkdir -p seabios/builds/$*
-	cp $< seabios/builds/$*/.config
+	mkdir -p $(SEABIOS_BUILD_ROOT)/$*
+	cp $< $(SEABIOS_BUILD_ROOT)/$*/.config
 	$(MAKE) -C seabios \
 		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
 		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
 		CPP=$(SEABIOS_CROSS_PREFIX)cpp \
-		KCONFIG_CONFIG=$(CURDIR)/seabios/builds/$*/.config \
-		OUT=$(CURDIR)/seabios/builds/$*/ oldnoconfig
+		KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
+		OUT=$(SEABIOS_BUILD_ROOT)/$*/ oldnoconfig
 	$(MAKE) -C seabios \
 		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
 		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
 		CPP=$(SEABIOS_CROSS_PREFIX)cpp \
-		KCONFIG_CONFIG=$(CURDIR)/seabios/builds/$*/.config \
-		OUT=$(CURDIR)/seabios/builds/$*/ all
+		KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
+		OUT=$(SEABIOS_BUILD_ROOT)/$*/ all
 
 
 .PHONY: skiboot qboot palcode-clipper
@@ -223,7 +224,7 @@ hppa-firmware:
 	cp seabios-hppa/out-64/hppa-firmware64.img ../pc-bios/
 
 clean:
-	rm -rf seabios/.config seabios/out seabios/builds
+	rm -rf $(SEABIOS_BUILD_ROOT) seabios/.config seabios/out
 	$(MAKE) -C ipxe/src veryclean
 	$(MAKE) -C edk2/BaseTools clean
 	rm -rf edk2/Conf/{.cache,BuildEnv.sh,build_rule.txt,target.txt,tools_def.txt}
