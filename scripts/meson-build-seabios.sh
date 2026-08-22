@@ -8,6 +8,7 @@ shift
 source "$config_file"
 
 : "${SEABIOS_DIR:?missing SEABIOS_DIR}"
+: "${SEABIOS_BUILD_ROOT:?missing SEABIOS_BUILD_ROOT}"
 : "${SEABIOS_CROSS_COMPILE:?missing SEABIOS_CROSS_COMPILE}"
 : "${MAKE_CMD:?missing MAKE_CMD}"
 
@@ -17,6 +18,7 @@ mkdir -p "$output_dir"
 
 "$MAKE_CMD" -C "$SOURCE_DIR/roms" \
     SEABIOS_CROSS_PREFIX="$SEABIOS_CROSS_COMPILE" \
+    SEABIOS_BUILD_ROOT="$SEABIOS_BUILD_ROOT" \
     SEABIOS_OUTPUT_DIR="$output_dir" \
     CPP="${SEABIOS_CROSS_COMPILE}cpp" \
     bios
