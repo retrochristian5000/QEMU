@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import shutil
 import struct
 import subprocess
@@ -43,6 +44,17 @@ def elf32_sections(path: pathlib.Path) -> dict[str, int]:
         hdr = section(index)
         result[name_at(hdr[0])] = hdr[2]
     return result
+
+
+def function_assembly(text: str, symbol: str) -> str:
+    match = re.search(
+        rf'^{re.escape(symbol)}:.*?^\.Lfunc_end[0-9]+:',
+        text,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise AssertionError(f'missing assembly body for {symbol}')
+    return match.group(0)
 
 
 class SeaBiosClangAbiTests(unittest.TestCase):
@@ -108,6 +120,25 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             }
             self.assertTrue(any(flags & SHF_MERGE for flags in merged_rodata.values()), merged_rodata)
 
+    def test_no_merge_constants_preserves_make_dependencies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'dependency.c'
+            output = root / 'dependency.o'
+            source.write_text('int dependency(void) { return 1; }\n', encoding='utf-8')
+            result = self.compile(
+                compiler, source, output,
+                '-fno-merge-constants', '-MD', '-MT', str(output),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            depfile = root / 'dependency.d'
+            self.assertTrue(depfile.is_file())
+            dependencies = depfile.read_text(encoding='utf-8')
+            self.assertIn(str(output), dependencies)
+            self.assertIn(str(source), dependencies)
+
     def test_i386_calling_convention_and_16bit_codegen(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -130,17 +161,24 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             result = subprocess.run([
                 str(compiler), '-m32', '-m16', '-march=i386', '-mregparm=3',
                 '-mpreferred-stack-boundary=2', '-freg-struct-return',
-                '-fno-defer-pop', '-ffreestanding', '-fno-pic', '-fno-pie',
+                '-fno-defer-pop', '-fno-merge-constants',
+                '-ffreestanding', '-fno-pic', '-fno-pie',
                 '-O0', '-S', str(source), '-o', str(asm),
             ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             text = asm.read_text(encoding='utf-8')
             self.assertIn('.code16', text)
-            self.assertIn('%eax', text)
-            self.assertIn('%edx', text)
-            self.assertIn('%ecx', text)
-            self.assertRegex(text, r'pushl[ \t]+[^\n]+\n[ \t]*calll?[ \t]+sink4')
-            self.assertRegex(text, r'calll?[ \t]+sink4[^\n]*\n[ \t]*addl[ \t]+\$4,[ \t]*%esp')
+
+            pair = function_assembly(text, 'make_pair')
+            self.assertIn('%eax', pair)
+            self.assertIn('%edx', pair)
+
+            call = function_assembly(text, 'call4')
+            self.assertIn('%eax', call)
+            self.assertIn('%edx', call)
+            self.assertIn('%ecx', call)
+            self.assertRegex(call, r'(pushl[^\n]+|movl[^\n]+,[ \t]*\(%esp\))')
+            self.assertRegex(call, r'calll?[ \t]+sink4[^\n]*\n[ \t]*addl[ \t]+\$[0-9]+,[ \t]*%esp')
 
     def test_whole_program_probe_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
