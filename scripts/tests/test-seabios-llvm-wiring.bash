@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 bootstrap="$root/scripts/bootstrap-i386-clang.sh"
+objdump_helper="$root/scripts/whp-build/seabios-llvm-objdump.py"
 prepare="$root/scripts/whp-build/prepare-sources.bash"
 targets="$root/scripts/whp-build/build-targets.bash"
 rom_makefile="$root/roms/Makefile"
@@ -13,6 +14,7 @@ seabios_config="$root/scripts/whp-build/configure-seabios.bash"
 gitmodules="$root/.gitmodules"
 
 [[ -f "$bootstrap" ]]
+[[ -f "$objdump_helper" ]]
 grep -q 'i386-none-elf' "$bootstrap"
 grep -q 'LLVM_TARGETS_TO_BUILD=X86' "$bootstrap"
 grep -q 'LLVM_DISTRIBUTION_COMPONENTS' "$bootstrap"
@@ -43,6 +45,17 @@ grep -Fq -- 'i386 linker default emulation' "$bootstrap"
 grep -Fq -- 'R_386_PC32' "$bootstrap"
 grep -Fq -- 'R_386_32' "$bootstrap"
 grep -Fq -- '--gc-sections' "$bootstrap"
+
+# SeaBIOS parses GNU objdump -thr output. The cross-tool must be a wrapper,
+# not a raw llvm-objdump symlink, and it must restore the GNU alignment field.
+grep -Fq -- 'OBJDUMP_ABI=gnu-seabios-thr' "$bootstrap"
+grep -Fq -- 'seabios-llvm-objdump.py' "$bootstrap"
+grep -Fq -- 'File off  Algn' "$objdump_helper"
+grep -Fq -- '2**' "$objdump_helper"
+if grep -Fq -- 'objdump:llvm-objdump' "$bootstrap"; then
+    printf 'SeaBIOS objdump must not be a raw llvm-objdump symlink\n' >&2
+    exit 1
+fi
 
 # SeaBIOS does not consume these tools. Keep the i386 firmware bootstrap
 # narrower than a general-purpose LLVM SDK.
