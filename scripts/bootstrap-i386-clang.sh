@@ -16,12 +16,26 @@ JOBS="${JOBS:-}"
     printf 'error: i386 LLVM firmware lane requires i386-none-elf\n' >&2
     exit 1
 }
-case "$TOOLCHAIN_FORCE_REBUILD" in 0|1) ;; *)
-    printf 'error: I386_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
-    exit 1
-;; esac
+case "$TOOLCHAIN_FORCE_REBUILD" in
+    0|1) ;;
+    *)
+        printf 'error: I386_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
 
-for tool in git cmake ninja awk grep mkdir rm ln; do
+cmake_parallel_args=(--parallel)
+if [[ -n "$JOBS" ]]; then
+    case "$JOBS" in
+        0|*[!0-9]*)
+            printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
+            exit 1
+            ;;
+    esac
+    cmake_parallel_args=(--parallel "$JOBS")
+fi
+
+for tool in git cmake ninja mkdir rm ln; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -31,7 +45,8 @@ done
 if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then
     git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 fi
-[[ -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" && -f "$LLVM_SOURCE_DIR/lld/CMakeLists.txt" ]] || {
+[[ -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" &&
+   -f "$LLVM_SOURCE_DIR/lld/CMakeLists.txt" ]] || {
     printf 'error: LLVM submodule is missing clang/lld: %s\n' "$LLVM_SOURCE_DIR" >&2
     exit 1
 }
@@ -39,32 +54,41 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=2
+BOOTSTRAP_SCHEMA=3
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
+LLVM_DISTRIBUTION=seabios-minimal
+COMPILER=clang
+ASSEMBLER=clang-integrated
 LINKER=ld.lld
-BINUTILS=llvm
+OBJECT_TOOLS=llvm-objcopy;llvm-objdump;llvm-strip
 EOF
 )"
 
 usable()
 {
     local tool
-    for tool in gcc cpp as ld ar nm objcopy objdump readelf strip ranlib; do
+
+    for tool in gcc cpp as ld objcopy objdump strip; do
         [[ -x "$TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
 }
 
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" && "$(cat "$marker")" == "$expected_marker" ]] && usable; then
-    printf 'i386 LLVM toolchain is current: %s/bin/%s-\n' "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
+      "$(cat "$marker")" == "$expected_marker" ]] && usable; then
+    printf 'i386 LLVM toolchain is current: %s/bin/%s-\n' \
+        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     exit 0
 fi
 
 mkdir -p "$TOOLCHAIN_WORK_DIR"
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-    rm -rf "$LLVM_BUILD_DIR"
-fi
+
+# SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
+# linker, and three object-image inspection/transformation tools. Build only
+# the LLVM components that implement that command surface. Clang itself drives
+# the integrated assembler, so llvm-mc is deliberately not part of this lane.
+llvm_distribution_components='clang;clang-resource-headers;lld;llvm-objcopy;llvm-objdump;llvm-strip'
 
 cmake_args=(
     -S "$LLVM_SOURCE_DIR/llvm"
@@ -72,31 +96,58 @@ cmake_args=(
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+    -DCMAKE_INSTALL_MESSAGE=NEVER
     '-DLLVM_ENABLE_PROJECTS=clang;lld'
     -DLLVM_TARGETS_TO_BUILD=X86
+    -DLLD_ENABLE_BACKENDS=ELF
+    "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
+    -DLLVM_APPEND_VC_REV=OFF
+    -DLLVM_ENABLE_LTO=OFF
+    -DLLVM_ENABLE_FATLTO=OFF
+    -DLLVM_BUILD_INSTRUMENTED=OFF
+    -DLLVM_ENABLE_MODULES=OFF
+    -DLLVM_ENABLE_PLUGINS=OFF
+    -DLLVM_ENABLE_BACKTRACES=OFF
+    -DLLVM_ENABLE_CRASH_OVERRIDES=OFF
+    -DLLVM_ENABLE_UNWIND_TABLES=OFF
+    -DLLVM_ENABLE_LIBEDIT=OFF
+    -DLLVM_ENABLE_LIBPFM=OFF
+    -DLLVM_ENABLE_Z3_SOLVER=OFF
+    -DLLVM_ENABLE_WARNINGS=OFF
+    -DLLVM_ENABLE_PEDANTIC=OFF
     -DLLVM_INCLUDE_TESTS=OFF
     -DLLVM_INCLUDE_EXAMPLES=OFF
     -DLLVM_INCLUDE_BENCHMARKS=OFF
+    -DLLVM_INCLUDE_DOCS=OFF
+    -DLLVM_INCLUDE_UTILS=OFF
+    -DLLVM_INCLUDE_RUNTIMES=OFF
+    -DLLVM_ENABLE_BINDINGS=OFF
     -DCLANG_INCLUDE_TESTS=OFF
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF
     -DLLD_INCLUDE_TESTS=OFF
     -DLLVM_ENABLE_TERMINFO=OFF
     -DLLVM_ENABLE_ZLIB=OFF
     -DLLVM_ENABLE_ZSTD=OFF
+    -DLLVM_ENABLE_LIBXML2=OFF
 )
 cmake "${cmake_args[@]}"
-if [[ -n "$JOBS" ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --parallel "$JOBS" --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-mc
-else
-    cmake --build "$LLVM_BUILD_DIR" --parallel --target clang lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-mc
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
 fi
-cmake --install "$LLVM_BUILD_DIR"
+
+cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
+cmake --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"
 
 llvm="$TOOLCHAIN_DIR/llvm/bin"
 bin="$TOOLCHAIN_DIR/bin"
 mkdir -p "$bin"
-for required in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip llvm-ranlib; do
+for required in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
     [[ -x "$llvm/$required" ]] || {
-        printf 'error: LLVM install did not produce %s\n' "$required" >&2
+        printf 'error: LLVM SeaBIOS distribution did not produce %s\n' "$required" >&2
         exit 1
     }
 done
@@ -154,17 +205,19 @@ while (($#)); do
         *) inputs+=("$1"); shift ;;
     esac
 done
-[[ -n "$out" && ${#inputs[@]} -gt 0 ]] || { echo 'error: unsupported SeaBIOS assembler invocation' >&2; exit 1; }
+[[ -n "$out" && ${#inputs[@]} -gt 0 ]] || {
+    printf 'error: unsupported SeaBIOS assembler invocation\n' >&2
+    exit 1
+}
 tmp="${TMPDIR:-/tmp}/whp-i386-as.$$.$RANDOM.s"
 trap 'rm -f "$tmp"' EXIT
 cat "${inputs[@]}" > "$tmp"
-"$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler "$tmp" -o "$out"
+"$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler \
+    "$tmp" -o "$out"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-as"
 
-for pair in \
-    ar:llvm-ar nm:llvm-nm objcopy:llvm-objcopy objdump:llvm-objdump \
-    readelf:llvm-readelf strip:llvm-strip ranlib:llvm-ranlib; do
+for pair in objcopy:llvm-objcopy objdump:llvm-objdump strip:llvm-strip; do
     name="${pair%%:*}"
     target="${pair#*:}"
     ln -sfn "../llvm/bin/$target" "$bin/$TOOLCHAIN_TARGET-$name"
@@ -175,4 +228,5 @@ usable || {
     printf 'error: staged i386 LLVM toolchain is incomplete\n' >&2
     exit 1
 }
-printf 'i386 LLVM toolchain ready: %s/bin/%s-\n' "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+printf 'i386 LLVM toolchain ready: %s/bin/%s-\n' \
+    "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
