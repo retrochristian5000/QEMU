@@ -35,6 +35,8 @@ OPTIONS = (
     Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BUILD_OPENBIOS', 'Firmware', 'Build OpenBIOS', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BUILD_SEABIOS', 'Firmware', 'Build SeaBIOS', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_I386_TOOLCHAIN', 'Firmware', 'Bootstrap i386 LLVM toolchain', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
@@ -54,6 +56,8 @@ SHELL_TRI_STATE_KEYS = {
     'MACOS_ENABLE_PA',
     'BUILD_OPENBIOS',
     'BOOTSTRAP_POWERPC_TOOLCHAIN',
+    'BUILD_SEABIOS',
+    'BOOTSTRAP_I386_TOOLCHAIN',
 }
 _TARGET_LIST_RE = re.compile(r'^[A-Za-z0-9_.,+:/-]+$')
 _KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]*$')
