@@ -29,12 +29,11 @@ endif
 
 whp_openbios_config = meson.project_build_root() / '.whp-openbios-meson.env'
 whp_openbios_enabled = fs.exists(whp_openbios_config)
+whp_seabios_config = meson.project_build_root() / '.whp-seabios-meson.env'
+whp_seabios_enabled = fs.exists(whp_seabios_config)
 
 blobs = [
   'ast27x0_bootrom.bin',
-  'bios.bin',
-  'bios-256k.bin',
-  'bios-microvm.bin',
   'qboot.rom',
   'vgabios.bin',
   'vgabios-cirrus.bin',
@@ -122,6 +121,23 @@ if whp_openbios_enabled
   roms += whp_openbios_ppc
 else
   blobs += ['openbios-ppc']
+endif
+
+if whp_seabios_enabled
+  whp_seabios_bash = find_program('bash')
+  whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
+  whp_seabios_x86 = custom_target('whp-seabios-x86',
+    output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin'],
+    command: [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
+              '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@'],
+    build_by_default: 'i386-softmmu' in target_dirs,
+    build_always_stale: true,
+    console: true,
+    install: get_option('install_blobs'),
+    install_dir: qemu_datadir)
+  roms += whp_seabios_x86
+else
+  blobs += ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin']
 endif
 
 if get_option('install_blobs')
