@@ -63,7 +63,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=6
+BOOTSTRAP_SCHEMA=7
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -71,6 +71,7 @@ LLVM_DISTRIBUTION=seabios-minimal
 COMPILER=clang
 ASSEMBLER=clang-integrated
 LINKER=ld.lld
+LINKER_DEFAULT_EMULATION=elf_i386
 OBJECT_TOOLS=llvm-objcopy;llvm-objdump;llvm-strip
 EOF
 )"
@@ -217,14 +218,45 @@ cat >"$bin/$TOOLCHAIN_TARGET-ld" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-args=()
-for arg in "$@"; do
-    case "$arg" in
-        -melf_i386) args+=(-m elf_i386) ;;
-        *) args+=("$arg") ;;
+
+if [[ "${1:-}" == --version ]]; then
+    exec "$prefix/llvm/bin/ld.lld" --version
+fi
+
+# A GNU i386-none-elf cross linker defaults to elf_i386 even when callers do
+# not pass -m. SeaBIOS relies on that ABI for its final linker-script links.
+linker_args=(-m elf_i386)
+while (($#)); do
+    case "$1" in
+        -melf_i386|-m=elf_i386)
+            shift
+            ;;
+        -m)
+            if (($# < 2)); then
+                printf 'error: -m requires an i386 linker emulation\n' >&2
+                exit 1
+            fi
+            if [[ "$2" != elf_i386 ]]; then
+                printf 'error: unsupported i386 linker emulation: %s\n' "$2" >&2
+                exit 1
+            fi
+            shift 2
+            ;;
+        -m*)
+            emulation="${1#-m}"
+            if [[ "$emulation" != elf_i386 ]]; then
+                printf 'error: unsupported i386 linker emulation: %s\n' "$emulation" >&2
+                exit 1
+            fi
+            shift
+            ;;
+        *)
+            linker_args+=("$1")
+            shift
+            ;;
     esac
 done
-exec "$prefix/llvm/bin/ld.lld" "${args[@]}"
+exec "$prefix/llvm/bin/ld.lld" "${linker_args[@]}"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-ld"
 
@@ -290,12 +322,32 @@ EOF
     -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
     -fno-defer-pop -ffreestanding -fno-pic -fno-pie -O0 \
     -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
-"$bin/$TOOLCHAIN_TARGET-ld" -melf_i386 -r "$smoke_dir/smoke.o" \
+
+# Relocatable links and final script links must both inherit elf_i386 from the
+# cross-linker ABI even when SeaBIOS omits an explicit -m option.
+"$bin/$TOOLCHAIN_TARGET-ld" -r "$smoke_dir/smoke.o" \
     -o "$smoke_dir/smoke-linked.o"
-smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/smoke-linked.o")"
+cat >"$smoke_dir/smoke.lds" <<'EOF'
+OUTPUT_FORMAT("elf32-i386")
+OUTPUT_ARCH("i386")
+SECTIONS
+{
+    .text 0x1000 : { *(.text*) }
+    .data : { *(.data*) *(.bss*) }
+    /DISCARD/ : { *(.eh_frame) *(.note*) }
+}
+EOF
+"$bin/$TOOLCHAIN_TARGET-ld" -N -T "$smoke_dir/smoke.lds" \
+    "$smoke_dir/smoke-linked.o" -o "$smoke_dir/smoke-final.o"
+smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/smoke-final.o")"
 if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' <<<"$smoke_format"; then
-    printf 'error: i386 LLVM smoke object has an unexpected format\n%s\n' \
+    printf 'error: i386 linker default emulation produced an unexpected format\n%s\n' \
         "$smoke_format" >&2
+    exit 1
+fi
+if "$bin/$TOOLCHAIN_TARGET-ld" -m elf_x86_64 -r "$smoke_dir/smoke.o" \
+       -o "$smoke_dir/bad-emulation.o" >/dev/null 2>&1; then
+    printf 'error: i386 linker accepted an incompatible emulation\n' >&2
     exit 1
 fi
 
@@ -321,6 +373,6 @@ printf '%s\n' \
     "Bootstrapped SeaBIOS compiler: Clang ($llvm_revision)" \
     "Target: $TOOLCHAIN_TARGET" \
     'Assembler: Clang integrated assembler' \
-    'Linker: ELF LLD only' \
+    'Linker: ELF LLD, elf_i386 default emulation' \
     'Object tools: llvm-objcopy, llvm-objdump, llvm-strip' \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
