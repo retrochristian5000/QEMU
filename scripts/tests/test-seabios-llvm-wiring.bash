@@ -12,9 +12,21 @@ meson="$root/pc-bios/meson.build"
 [[ -f "$bootstrap" ]]
 grep -q 'i386-none-elf' "$bootstrap"
 grep -q 'LLVM_TARGETS_TO_BUILD=X86' "$bootstrap"
+grep -q 'LLVM_DISTRIBUTION_COMPONENTS' "$bootstrap"
+grep -q 'install-distribution' "$bootstrap"
 grep -q 'ld.lld' "$bootstrap"
 grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
+grep -q 'llvm-strip' "$bootstrap"
+
+# SeaBIOS does not consume these tools. Keep the i386 firmware bootstrap
+# narrower than a general-purpose LLVM SDK.
+for unused in llvm-ar llvm-nm llvm-readelf llvm-ranlib llvm-mc; do
+    if grep -q "$unused" "$bootstrap"; then
+        printf 'unexpected SeaBIOS LLVM tool: %s\n' "$unused" >&2
+        exit 1
+    fi
+done
 
 grep -q 'BUILD_SEABIOS' "$prepare"
 grep -q 'BOOTSTRAP_I386_TOOLCHAIN' "$prepare"
@@ -25,5 +37,6 @@ grep -q 'whp-seabios-x86' "$targets"
 grep -q 'qemu-system-i386' "$targets"
 
 grep -q 'SEABIOS_CROSS_PREFIX' "$rom_makefile"
+grep -q 'CPP=$(SEABIOS_CROSS_PREFIX)cpp' "$rom_makefile"
 grep -q 'whp-seabios-x86' "$meson"
 grep -q '.whp-seabios-meson.env' "$meson"
