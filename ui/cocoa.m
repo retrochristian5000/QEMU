@@ -1633,12 +1633,12 @@ static void create_initial_menus(CocoaConsole *cocoa)
     menuItem = (NSMenuItem *)[menu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"]; // Hide Others
     [menuItem setKeyEquivalentModifierMask:(NSEventModifierFlagOption|NSEventModifierFlagCommand)];
     [menu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""]; // Show All
-    [menu addItem:[NSMenuItem separatorItem]]; //Separator
+    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:@"Quit QEMU" action:@selector(terminate:) keyEquivalent:@"q"];
     menuItem = [[NSMenuItem alloc] initWithTitle:@"Apple" action:nil keyEquivalent:@""];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
-    [NSApp performSelector:@selector(setAppleMenu:) withObject:menu]; // Workaround (this method is private since 10.4+)
+    [NSApp performSelector:@selector(setAppleMenu:) withObject:menu];
 
     // Machine menu
     menu = [[NSMenu alloc] initWithTitle: @"Machine"];
@@ -1656,7 +1656,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
 
     // View menu
     menu = [[NSMenu alloc] initWithTitle:@"View"];
-    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Enter Fullscreen" action:@selector(doToggleFullScreen:) keyEquivalent:@"f"] autorelease]]; // Fullscreen
+    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Enter Fullscreen" action:@selector(doToggleFullScreen:) keyEquivalent:@"f"] autorelease]];
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom To Fit" action:@selector(zoomToFit:) keyEquivalent:@""] autorelease];
     [menuItem setState: [[cocoa->view window] styleMask] & NSWindowStyleMaskResizable ? NSControlStateValueOn : NSControlStateValueOff];
     [menu addItem: menuItem];
@@ -1669,23 +1669,16 @@ static void create_initial_menus(CocoaConsole *cocoa)
 
     // Speed menu
     menu = [[NSMenu alloc] initWithTitle:@"Speed"];
-
-    // Add the rest of the Speed menu items
     int p, percentage, throttle_pct;
     for (p = 10; p >= 0; p--)
     {
-        percentage = p * 10 > 1 ? p * 10 : 1; // prevent a 0% menu item
-
+        percentage = p * 10 > 1 ? p * 10 : 1;
         menuItem = [[[NSMenuItem alloc]
                    initWithTitle: [NSString stringWithFormat: @"%d%%", percentage] action:@selector(adjustSpeed:) keyEquivalent:@""] autorelease];
-
         if (percentage == 100) {
             [menuItem setState: NSControlStateValueOn];
         }
-
-        /* Calculate the throttle percentage */
         throttle_pct = -1 * percentage + 100;
-
         [menuItem setTag: throttle_pct];
         [menu addItem: menuItem];
     }
@@ -1695,7 +1688,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
 
     // Window menu
     menu = [[NSMenu alloc] initWithTitle:@"Window"];
-    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"] autorelease]]; // Miniaturize
+    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"] autorelease]];
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
@@ -1703,7 +1696,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
 
     // Help menu
     menu = [[NSMenu alloc] initWithTitle:@"Help"];
-    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"QEMU Documentation" action:@selector(showQEMUDoc:) keyEquivalent:@"?"] autorelease]]; // QEMU Help
+    [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"QEMU Documentation" action:@selector(showQEMUDoc:) keyEquivalent:@"?"] autorelease]];
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
@@ -1752,10 +1745,8 @@ static void addRemovableDevicesMenuItems(void)
 
     menu = [[[NSApp mainMenu] itemWithTitle:@"Machine"] submenu];
 
-    // Add a separator between related groups of menu items
     [menu addItem:[NSMenuItem separatorItem]];
 
-    // Set the attributes to the "Removable Media" menu item
     NSString *titleString = @"Removable Media";
     NSMutableAttributedString *attString=[[NSMutableAttributedString alloc] initWithString:titleString];
     NSColor *newColor = [NSColor blackColor];
@@ -1768,13 +1759,11 @@ static void addRemovableDevicesMenuItems(void)
     [attString addAttribute:NSForegroundColorAttributeName value:newColor range:NSMakeRange(0, [titleString length])];
     [attString addAttribute:NSUnderlineStyleAttributeName value:[NSNumber numberWithInt: 1] range:NSMakeRange(0, [titleString length])];
 
-    // Add the "Removable Media" menu item
     menuItem = [NSMenuItem new];
     [menuItem setAttributedTitle: attString];
     [menuItem setEnabled: NO];
     [menu addItem: menuItem];
 
-    /* Loop through all the block devices in the emulator */
     while (currentDevice) {
         deviceName = [[NSString stringWithFormat: @"%s", currentDevice->value->device] retain];
 
@@ -1916,8 +1905,6 @@ static int cocoa_main(void)
     abort();
 }
 
-
-
 #pragma mark qemu
 static void cocoa_update(DisplayChangeListener *dcl,
                          int x, int y, int w, int h)
@@ -1942,10 +1929,6 @@ static void cocoa_switch(DisplayChangeListener *dcl,
 
     COCOA_DEBUG("qemu_cocoa: cocoa_switch\n");
 
-    // The DisplaySurface will be freed as soon as this callback returns.
-    // We take a reference to the underlying pixman image here so it does
-    // not disappear from under our feet; the switchSurface method will
-    // deref the old image when it is done with it.
     pixman_image_ref(image);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2002,19 +1985,15 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
 
     COCOA_DEBUG("qemu_cocoa: cocoa_display_init\n");
 
-    // Pull this console process up to being a fully-fledged graphical
-    // app with a menubar and Dock icon
     ProcessSerialNumber psn = { 0, kCurrentProcess };
     TransformProcessType(&psn, kProcessTransformToForegroundApplication);
 
     [QemuApplication sharedApplication];
 
-    // Create an Application controller
     QemuCocoaAppController *controller = [[QemuCocoaAppController alloc] init];
     [NSApp setDelegate:controller];
     cocoa = [controller console];
 
-    /* if fullscreen mode is to be used */
     if (opts->has_full_screen && opts->full_screen) {
         [[cocoa->view window] toggleFullScreen: nil];
     }
@@ -2028,27 +2007,17 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     if (opts->u.cocoa.has_swap_opt_cmd) {
         swap_opt_cmd = opts->u.cocoa.swap_opt_cmd;
     }
-
     if (opts->u.cocoa.has_left_command_key && !opts->u.cocoa.left_command_key) {
         left_command_key_enabled = 0;
     }
-
     if (opts->u.cocoa.has_zoom_to_fit && opts->u.cocoa.zoom_to_fit) {
         [cocoa->view window].styleMask |= NSWindowStyleMaskResizable;
     }
-
     if (opts->u.cocoa.has_zoom_interpolation && opts->u.cocoa.zoom_interpolation) {
         zoom_interpolation = kCGInterpolationLow;
     }
 
     create_initial_menus(cocoa);
-    /*
-     * Create the menu entries which depend on QEMU state (for consoles
-     * and removable devices). These make calls back into QEMU functions,
-     * which is OK because at this point we know that the second thread
-     * holds the BQL and is synchronously waiting for us to
-     * finish.
-     */
     add_console_menu_entries();
     addRemovableDevicesMenuItems();
 
@@ -2065,11 +2034,6 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     qemu_clipboard_peer_register(&cbpeer);
 
     [pool release];
-
-    /*
-     * The Cocoa UI will run the NSApplication runloop on the main thread
-     * rather than the default Core Foundation one.
-     */
     qemu_main = cocoa_main;
 }
 
@@ -2079,14 +2043,14 @@ static void cocoa_display_cleanup(void)
         (QemuCocoaAppController *)[NSApp delegate];
     CocoaConsole *cocoa = controller ? [controller console] : NULL;
 
-    if (!cocoa || !cocoa->kbd) {
-        return;
+    if (cocoa && cocoa->kbd) {
+        qemu_console_unregister_listener(&cocoa->dcl);
+        g_clear_pointer(&cocoa->kbd, qkbd_state_free);
+        cocoa->con = NULL;
+        qemu_remove_mouse_mode_change_notifier(
+            &cocoa->mouse_mode_change_notifier);
     }
 
-    qemu_console_unregister_listener(&cocoa->dcl);
-    g_clear_pointer(&cocoa->kbd, qkbd_state_free);
-    cocoa->con = NULL;
-    qemu_remove_mouse_mode_change_notifier(&cocoa->mouse_mode_change_notifier);
     qemu_clipboard_peer_unregister(&cbpeer);
     g_clear_pointer(&cbinfo, qemu_clipboard_info_unref);
     qemu_event_destroy(&cbevent);
