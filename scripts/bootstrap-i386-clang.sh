@@ -63,7 +63,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=7
+BOOTSTRAP_SCHEMA=8
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -307,7 +307,7 @@ fi
 
 # Validate the exact firmware ABI without pulling another inspection utility
 # into the distribution. Compilation verifies the i386 target and 32-bit
-# pointer model; llvm-objdump verifies the resulting ELF machine type.
+# pointer model; llvm-objdump verifies linker output and relocations.
 smoke_dir="$TOOLCHAIN_WORK_DIR/seabios-smoke"
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir"
@@ -316,35 +316,73 @@ cat >"$smoke_dir/smoke.c" <<'EOF'
 #error compiler is not targeting i386
 #endif
 _Static_assert(__SIZEOF_POINTER__ == 4, "i386 pointer width mismatch");
-int whp_seabios_smoke(int value) { return value + 1; }
+extern int whp_seabios_external(int value);
+extern int whp_seabios_global;
+int whp_seabios_smoke(int value)
+{
+    return whp_seabios_external(value) + whp_seabios_global;
+}
 EOF
-"$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -mpreferred-stack-boundary=2 \
-    -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
-    -fno-defer-pop -ffreestanding -fno-pic -fno-pie -O0 \
-    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+cat >"$smoke_dir/peer.c" <<'EOF'
+int whp_seabios_global;
+int whp_seabios_external(int value) { return value + 1; }
+EOF
+for source in smoke peer; do
+    "$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -mpreferred-stack-boundary=2 \
+        -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
+        -fno-defer-pop -ffreestanding -fno-pic -fno-pie \
+        -ffunction-sections -fdata-sections -O0 \
+        -c "$smoke_dir/$source.c" -o "$smoke_dir/$source.o"
+done
 
-# Relocatable links and final script links must both inherit elf_i386 from the
-# cross-linker ABI even when SeaBIOS omits an explicit -m option.
-"$bin/$TOOLCHAIN_TARGET-ld" -r "$smoke_dir/smoke.o" \
+# Relocatable links must preserve the relocation classes layoutrom.py consumes.
+# They also inherit elf_i386 from the cross-linker ABI when -m is omitted.
+"$bin/$TOOLCHAIN_TARGET-ld" -r "$smoke_dir/smoke.o" "$smoke_dir/peer.o" \
     -o "$smoke_dir/smoke-linked.o"
+smoke_relocs="$("$bin/$TOOLCHAIN_TARGET-objdump" -r "$smoke_dir/smoke-linked.o")"
+grep -q 'R_386_PC32' <<<"$smoke_relocs" || {
+    printf 'error: i386 relocatable link lost R_386_PC32\n%s\n' "$smoke_relocs" >&2
+    exit 1
+}
+grep -q 'R_386_32' <<<"$smoke_relocs" || {
+    printf 'error: i386 relocatable link lost R_386_32\n%s\n' "$smoke_relocs" >&2
+    exit 1
+}
+
+# Exercise the GNU linker-script constructs used by SeaBIOS's final ROM link:
+# OUTPUT_FORMAT/ARCH, ABSOLUTE, LONG, PHDRS, AT(), -N, and --gc-sections.
 cat >"$smoke_dir/smoke.lds" <<'EOF'
 OUTPUT_FORMAT("elf32-i386")
 OUTPUT_ARCH("i386")
 SECTIONS
 {
-    .text 0x1000 : { *(.text*) }
-    .data : { *(.data*) *(.bss*) }
-    /DISCARD/ : { *(.eh_frame) *(.note*) }
+    code32flat_start = 0x1000;
+    .text code32flat_start : {
+        LONG(0)
+        *(.text*)
+        code32flat_end = ABSOLUTE(.);
+    } :text
+    .data : { *(.data*) *(.bss*) } :text
+    /DISCARD/ : { *(.eh_frame) *(.note*) *(.comment*) *(.llvm_addrsig*) }
+}
+ENTRY(whp_seabios_smoke)
+PHDRS
+{
+    text PT_LOAD AT ( code32flat_start );
 }
 EOF
 "$bin/$TOOLCHAIN_TARGET-ld" -N -T "$smoke_dir/smoke.lds" \
     "$smoke_dir/smoke-linked.o" -o "$smoke_dir/smoke-final.o"
-smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/smoke-final.o")"
-if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' <<<"$smoke_format"; then
-    printf 'error: i386 linker default emulation produced an unexpected format\n%s\n' \
-        "$smoke_format" >&2
-    exit 1
-fi
+"$bin/$TOOLCHAIN_TARGET-ld" --gc-sections -T "$smoke_dir/smoke.lds" \
+    "$smoke_dir/smoke-linked.o" -o "$smoke_dir/smoke-gc.o"
+for linked in smoke-final.o smoke-gc.o; do
+    smoke_format="$("$bin/$TOOLCHAIN_TARGET-objdump" -f "$smoke_dir/$linked")"
+    if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' <<<"$smoke_format"; then
+        printf 'error: i386 linker default emulation produced an unexpected format\n%s\n' \
+            "$smoke_format" >&2
+        exit 1
+    fi
+done
 if "$bin/$TOOLCHAIN_TARGET-ld" -m elf_x86_64 -r "$smoke_dir/smoke.o" \
        -o "$smoke_dir/bad-emulation.o" >/dev/null 2>&1; then
     printf 'error: i386 linker accepted an incompatible emulation\n' >&2
