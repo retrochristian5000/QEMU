@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 bootstrap="$root/scripts/bootstrap-i386-clang.sh"
+cc_helper="$root/scripts/whp-build/seabios-clang-gcc.bash"
 objdump_helper="$root/scripts/whp-build/seabios-llvm-objdump.py"
 prepare="$root/scripts/whp-build/prepare-sources.bash"
 targets="$root/scripts/whp-build/build-targets.bash"
@@ -14,6 +15,7 @@ seabios_config="$root/scripts/whp-build/configure-seabios.bash"
 gitmodules="$root/.gitmodules"
 
 [[ -f "$bootstrap" ]]
+[[ -f "$cc_helper" ]]
 [[ -f "$objdump_helper" ]]
 grep -q 'i386-none-elf' "$bootstrap"
 grep -q 'LLVM_TARGETS_TO_BUILD=X86' "$bootstrap"
@@ -27,12 +29,22 @@ grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
 grep -q 'llvm-strip' "$bootstrap"
 grep -q -- '--version' "$bootstrap"
-grep -Fq -- '-mpreferred-stack-boundary=2) args+=(-mstack-alignment=4) ;;' "$bootstrap"
-grep -Fq -- '-fno-defer-pop|-fno-stack-protector-all|-fstack-check=no) ;;' "$bootstrap"
-grep -Fq -- '-fwhole-program)' "$bootstrap"
-grep -Fq -- 'SeaBIOS whole-program optimization is unsupported by Clang' "$bootstrap"
-grep -Fq -- '-c|-S|-E) link_step=0 ;;' "$bootstrap"
-grep -Fq -- 'driver_args+=(-fuse-ld=lld)' "$bootstrap"
+grep -Fq -- 'BOOTSTRAP_SCHEMA=10' "$bootstrap"
+grep -Fq -- 'COMPILER_ABI=seabios-gcc-i386-v1' "$bootstrap"
+grep -Fq -- 'CC_COMPAT_HELPER=' "$bootstrap"
+grep -Fq -- 'cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"' "$bootstrap"
+
+# Clang's i386 driver is wrapped only where SeaBIOS depends on GCC semantics
+# that raw Clang does not provide or only accepts as ignored spellings.
+grep -Fq -- '-mpreferred-stack-boundary=2)' "$cc_helper"
+grep -Fq -- 'args+=(-mstack-alignment=4)' "$cc_helper"
+grep -Fq -- '-fno-defer-pop|-fno-stack-protector-all|-fstack-check=no)' "$cc_helper"
+grep -Fq -- '-fwhole-program)' "$cc_helper"
+grep -Fq -- 'SeaBIOS whole-program optimization is unsupported by Clang' "$cc_helper"
+grep -Fq -- '-fno-merge-constants)' "$cc_helper"
+grep -Fq -- '-fmerge-constants)' "$cc_helper"
+grep -Fq -- 'SHF_MERGE' "$cc_helper"
+grep -Fq -- 'driver_args+=(-fuse-ld=lld)' "$cc_helper"
 
 # A real i386-none-elf-ld defaults to the elf_i386 emulation. SeaBIOS relies
 # on that for final linker-script links which omit an explicit -m option.
