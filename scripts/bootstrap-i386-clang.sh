@@ -9,6 +9,7 @@ TOOLCHAIN_WORK_DIR="${I386_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/
 LLVM_SUBMODULE_PATH="${I386_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 LLVM_BUILD_DIR="${I386_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
+OBJDUMP_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-llvm-objdump.py"
 TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 stage_root=""
@@ -44,12 +45,17 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake ninja grep mkdir mv rm ln; do
+for tool in git cmake ninja grep mkdir mv rm ln cp python3; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
     }
 done
+[[ -f "$OBJDUMP_COMPAT_HELPER" ]] || {
+    printf 'error: SeaBIOS objdump compatibility helper is missing: %s\n' \
+        "$OBJDUMP_COMPAT_HELPER" >&2
+    exit 1
+}
 
 if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then
     git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
@@ -63,7 +69,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=8
+BOOTSTRAP_SCHEMA=9
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -72,6 +78,7 @@ COMPILER=clang
 ASSEMBLER=clang-integrated
 LINKER=ld.lld
 LINKER_DEFAULT_EMULATION=elf_i386
+OBJDUMP_ABI=gnu-seabios-thr
 OBJECT_TOOLS=llvm-objcopy;llvm-objdump;llvm-strip
 EOF
 )"
@@ -84,6 +91,7 @@ usable()
     for tool in gcc cpp as ld objcopy objdump strip; do
         [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
+    [[ -f "$prefix/libexec/seabios-llvm-objdump.py" ]] || return 1
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
@@ -166,13 +174,16 @@ DESTDIR="$stage_root" \
 
 llvm="$staged_toolchain/llvm/bin"
 bin="$staged_toolchain/bin"
-mkdir -p "$bin"
+libexec="$staged_toolchain/libexec"
+mkdir -p "$bin" "$libexec"
 for required in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
     [[ -x "$llvm/$required" ]] || {
         printf 'error: LLVM SeaBIOS distribution did not produce %s\n' "$required" >&2
         exit 1
     }
 done
+cp "$OBJDUMP_COMPAT_HELPER" "$libexec/seabios-llvm-objdump.py"
+chmod +x "$libexec/seabios-llvm-objdump.py"
 
 cat >"$bin/$TOOLCHAIN_TARGET-gcc" <<'EOF'
 #!/usr/bin/env bash
@@ -290,7 +301,16 @@ cat "${inputs[@]}" > "$tmp"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-as"
 
-for pair in objcopy:llvm-objcopy objdump:llvm-objdump strip:llvm-strip; do
+cat >"$bin/$TOOLCHAIN_TARGET-objdump" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+exec python3 "$prefix/libexec/seabios-llvm-objdump.py" \
+    "$prefix/llvm/bin/llvm-objdump" "$@"
+EOF
+chmod +x "$bin/$TOOLCHAIN_TARGET-objdump"
+
+for pair in objcopy:llvm-objcopy strip:llvm-strip; do
     name="${pair%%:*}"
     target="${pair#*:}"
     ln -sfn "../llvm/bin/$target" "$bin/$TOOLCHAIN_TARGET-$name"
@@ -307,7 +327,8 @@ fi
 
 # Validate the exact firmware ABI without pulling another inspection utility
 # into the distribution. Compilation verifies the i386 target and 32-bit
-# pointer model; llvm-objdump verifies linker output and relocations.
+# pointer model; the objdump compatibility shim verifies linker output,
+# relocations, symbols, and GNU-style section alignment text.
 smoke_dir="$TOOLCHAIN_WORK_DIR/seabios-smoke"
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir"
@@ -346,6 +367,26 @@ grep -q 'R_386_PC32' <<<"$smoke_relocs" || {
 }
 grep -q 'R_386_32' <<<"$smoke_relocs" || {
     printf 'error: i386 relocatable link lost R_386_32\n%s\n' "$smoke_relocs" >&2
+    exit 1
+}
+smoke_layout="$("$bin/$TOOLCHAIN_TARGET-objdump" -thr "$smoke_dir/smoke-linked.o")"
+grep -Fq 'Idx Name          Size      VMA       LMA       File off  Algn' \
+    <<<"$smoke_layout" || {
+    printf 'error: i386 objdump did not provide GNU SeaBIOS section headers\n%s\n' \
+        "$smoke_layout" >&2
+    exit 1
+}
+grep -Eq '2\*\*[0-9]+' <<<"$smoke_layout" || {
+    printf 'error: i386 objdump did not provide GNU section alignment text\n%s\n' \
+        "$smoke_layout" >&2
+    exit 1
+}
+grep -Fq 'SYMBOL TABLE:' <<<"$smoke_layout" || {
+    printf 'error: i386 objdump lost the SeaBIOS symbol table ABI\n' >&2
+    exit 1
+}
+grep -Fq 'RELOCATION RECORDS FOR [' <<<"$smoke_layout" || {
+    printf 'error: i386 objdump lost the SeaBIOS relocation table ABI\n' >&2
     exit 1
 }
 
@@ -412,5 +453,6 @@ printf '%s\n' \
     "Target: $TOOLCHAIN_TARGET" \
     'Assembler: Clang integrated assembler' \
     'Linker: ELF LLD, elf_i386 default emulation' \
+    'Objdump: LLVM with GNU SeaBIOS -thr compatibility' \
     'Object tools: llvm-objcopy, llvm-objdump, llvm-strip' \
     "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
