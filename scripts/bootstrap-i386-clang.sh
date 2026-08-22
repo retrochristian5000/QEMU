@@ -9,6 +9,7 @@ TOOLCHAIN_WORK_DIR="${I386_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/
 LLVM_SUBMODULE_PATH="${I386_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 LLVM_BUILD_DIR="${I386_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
+CC_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-clang-gcc.bash"
 OBJDUMP_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-llvm-objdump.py"
 TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
@@ -45,17 +46,19 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake ninja grep mkdir mv rm ln cp python3; do
+for tool in git cmake ninja grep mkdir mv rm ln cp python3 awk mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
     }
 done
-[[ -f "$OBJDUMP_COMPAT_HELPER" ]] || {
-    printf 'error: SeaBIOS objdump compatibility helper is missing: %s\n' \
-        "$OBJDUMP_COMPAT_HELPER" >&2
-    exit 1
-}
+for helper in "$CC_COMPAT_HELPER" "$OBJDUMP_COMPAT_HELPER"; do
+    [[ -f "$helper" ]] || {
+        printf 'error: SeaBIOS LLVM compatibility helper is missing: %s\n' \
+            "$helper" >&2
+        exit 1
+    }
+done
 
 if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then
     git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
@@ -69,12 +72,13 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=9
+BOOTSTRAP_SCHEMA=10
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
 LLVM_DISTRIBUTION=seabios-minimal
 COMPILER=clang
+COMPILER_ABI=seabios-gcc-i386-v1
 ASSEMBLER=clang-integrated
 LINKER=ld.lld
 LINKER_DEFAULT_EMULATION=elf_i386
@@ -182,40 +186,11 @@ for required in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
         exit 1
     }
 done
+
+cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"
+chmod +x "$bin/$TOOLCHAIN_TARGET-gcc"
 cp "$OBJDUMP_COMPAT_HELPER" "$libexec/seabios-llvm-objdump.py"
 chmod +x "$libexec/seabios-llvm-objdump.py"
-
-cat >"$bin/$TOOLCHAIN_TARGET-gcc" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-link_step=1
-for arg in "$@"; do
-    case "$arg" in
-        -c|-S|-E) link_step=0 ;;
-    esac
-done
-
-args=()
-for arg in "$@"; do
-    case "$arg" in
-        -mpreferred-stack-boundary=2) args+=(-mstack-alignment=4) ;;
-        -fno-defer-pop|-fno-stack-protector-all|-fstack-check=no) ;;
-        -fwhole-program)
-            printf 'error: SeaBIOS whole-program optimization is unsupported by Clang\n' >&2
-            exit 1
-            ;;
-        *) args+=("$arg") ;;
-    esac
-done
-
-driver_args=(--target=i386-none-elf)
-if [[ "$link_step" == 1 ]]; then
-    driver_args+=(-fuse-ld=lld)
-fi
-exec "$prefix/llvm/bin/clang" "${driver_args[@]}" "${args[@]}"
-EOF
-chmod +x "$bin/$TOOLCHAIN_TARGET-gcc"
 
 cat >"$bin/$TOOLCHAIN_TARGET-cpp" <<'EOF'
 #!/usr/bin/env bash
@@ -351,7 +326,7 @@ EOF
 for source in smoke peer; do
     "$bin/$TOOLCHAIN_TARGET-gcc" -m32 -march=i386 -mpreferred-stack-boundary=2 \
         -fno-stack-protector -fno-stack-protector-all -fstack-check=no \
-        -fno-defer-pop -ffreestanding -fno-pic -fno-pie \
+        -fno-defer-pop -fno-merge-constants -ffreestanding -fno-pic -fno-pie \
         -ffunction-sections -fdata-sections -O0 \
         -c "$smoke_dir/$source.c" -o "$smoke_dir/$source.o"
 done
@@ -451,6 +426,7 @@ stage_root=""
 printf '%s\n' \
     "Bootstrapped SeaBIOS compiler: Clang ($llvm_revision)" \
     "Target: $TOOLCHAIN_TARGET" \
+    'Compiler ABI: SeaBIOS GCC-compatible i386 semantics' \
     'Assembler: Clang integrated assembler' \
     'Linker: ELF LLD, elf_i386 default emulation' \
     'Objdump: LLVM with GNU SeaBIOS -thr compatibility' \
