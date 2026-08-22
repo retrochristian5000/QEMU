@@ -8,6 +8,9 @@ prepare="$root/scripts/whp-build/prepare-sources.bash"
 targets="$root/scripts/whp-build/build-targets.bash"
 rom_makefile="$root/roms/Makefile"
 meson="$root/pc-bios/meson.build"
+meson_builder="$root/scripts/meson-build-seabios.sh"
+seabios_config="$root/scripts/whp-build/configure-seabios.bash"
+gitmodules="$root/.gitmodules"
 
 [[ -f "$bootstrap" ]]
 grep -q 'i386-none-elf' "$bootstrap"
@@ -46,7 +49,17 @@ grep -q '.whp-seabios-meson.env' "$prepare"
 grep -q 'whp-seabios-x86' "$targets"
 grep -q 'qemu-system-i386' "$targets"
 
+grep -Fq '[submodule "roms/seabios"]' "$gitmodules"
+grep -Fq 'url = https://github.com/retrochristian5000/X86-Firmware.git' "$gitmodules"
+
 grep -q 'SEABIOS_CROSS_PREFIX' "$rom_makefile"
 grep -q 'CPP=$(SEABIOS_CROSS_PREFIX)cpp' "$rom_makefile"
+grep -q 'SEABIOS_BUILD_ROOT' "$rom_makefile"
+if grep -q 'seabios/builds' "$rom_makefile"; then
+    printf 'SeaBIOS build state must not be written inside the submodule\n' >&2
+    exit 1
+fi
+grep -q 'SEABIOS_BUILD_ROOT' "$seabios_config"
+grep -q 'SEABIOS_BUILD_ROOT' "$meson_builder"
 grep -q 'whp-seabios-x86' "$meson"
 grep -q '.whp-seabios-meson.env' "$meson"
