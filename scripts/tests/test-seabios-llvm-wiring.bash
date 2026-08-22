@@ -32,6 +32,12 @@ grep -Fq -- 'SeaBIOS whole-program optimization is unsupported by Clang' "$boots
 grep -Fq -- '-c|-S|-E) link_step=0 ;;' "$bootstrap"
 grep -Fq -- 'driver_args+=(-fuse-ld=lld)' "$bootstrap"
 
+# A real i386-none-elf-ld defaults to the elf_i386 emulation. SeaBIOS relies
+# on that for final linker-script links which omit an explicit -m option.
+grep -Fq -- 'linker_args=(-m elf_i386)' "$bootstrap"
+grep -Fq -- 'unsupported i386 linker emulation' "$bootstrap"
+grep -Fq -- 'i386 linker default emulation' "$bootstrap"
+
 # SeaBIOS does not consume these tools. Keep the i386 firmware bootstrap
 # narrower than a general-purpose LLVM SDK.
 for unused in llvm-ar llvm-nm llvm-readelf llvm-ranlib llvm-mc; do
