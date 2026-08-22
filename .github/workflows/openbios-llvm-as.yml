@@ -53,7 +53,7 @@ jobs:
       OPENBIOS_TOOLS_DIR: ${{ github.workspace }}/build/firmware-tools
       OPENBIOS_FIRMWARE_VALIDATION: strict
       FCODE_UTILS_REPOSITORY: https://github.com/retrochristian5000/fcode-utils.git
-      FCODE_UTILS_REV: 92c5665ddbe251db47676adf6a19454ca6d45956
+      FCODE_UTILS_REV: e506db25b0aff34b98accc18b9b81f5673351cbf
 
     steps:
       - name: Check out QEMU
@@ -188,7 +188,7 @@ jobs:
           objects=(
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/start.o"
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/switch.o"
-            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/timebase.o"
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/timebase.o"
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/libgcc/crtsavres.o"
           )
           for object in "${objects[@]}"; do
@@ -249,7 +249,7 @@ jobs:
             openbios-llvm-ias.log
             build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/start.o
             build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/switch.o
-            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/timebase.o
+            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/timebase.o
             build/openbios-llvm-ias/obj-ppc/target/libgcc/crtsavres.o
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
