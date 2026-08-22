@@ -10,6 +10,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts" / "validate-openbios-fcode.py"
+BUILD_SCRIPT = ROOT / "scripts" / "build-openbios.sh"
 
 
 def make_image(body: bytes = b"\x00") -> bytes:
@@ -69,6 +70,11 @@ def main() -> int:
         result = run_validator(bad_format)
         assert result.returncode != 0
         assert "unexpected FCode format" in result.stderr
+
+    build_script = BUILD_SCRIPT.read_text()
+    assert 'vga_fcode="$OPENBIOS_BUILD_DIR/obj-ppc/QEMU,VGA.bin"' in build_script
+    assert 'OpenBIOS build did not produce %s\\n\' "$vga_fcode"' in build_script
+    assert '"$SOURCE_DIR/scripts/validate-openbios-fcode.py" "$vga_fcode"' in build_script
 
     print("OpenBIOS VGA FCode validator tests: passed")
     return 0
