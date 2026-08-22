@@ -77,9 +77,8 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             compiler = prefix / 'bin' / 'i386-none-elf-gcc'
             source = root / 'constants.c'
             source.write_text(
-                'static const char first[] = "SeaBIOS ABI";\n'
-                'static const char second[] = "SeaBIOS ABI";\n'
-                'const char *pick(int n) { return n ? first : second; }\n',
+                'const char *first(void) { return "SeaBIOS ABI"; }\n'
+                'const char *second(void) { return "SeaBIOS ABI"; }\n',
                 encoding='utf-8',
             )
 
