@@ -22,8 +22,10 @@ on:
       - 'scripts/whp-build/configure.bash'
       - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/post-build.bash'
+      - 'scripts/whp-build/seabios-llvm-objdump.py'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/tests/test-seabios-config.py'
+      - 'scripts/tests/test-seabios-objdump-abi.py'
       - 'scripts/tests/test-seabios-llvm-wiring.bash'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
@@ -48,6 +50,9 @@ jobs:
       - name: Test SeaBIOS configuration backend
         run: python3 scripts/tests/test-seabios-config.py
 
+      - name: Test SeaBIOS objdump ABI
+        run: python3 scripts/tests/test-seabios-objdump-abi.py
+
       - name: Test build configuration integration
         run: bash scripts/tests/test-whp-config-integration.bash
 
@@ -71,8 +76,10 @@ jobs:
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py \
+            scripts/whp-build/seabios-llvm-objdump.py \
             scripts/tests/test-whp-incremental.py \
-            scripts/tests/test-seabios-config.py
+            scripts/tests/test-seabios-config.py \
+            scripts/tests/test-seabios-objdump-abi.py
           /bin/sh -n build.sh
           bash -n builder.sh
           bash -n scripts/bootstrap-powerpc-clang-base.sh
