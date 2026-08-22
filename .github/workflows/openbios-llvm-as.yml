@@ -188,7 +188,7 @@ jobs:
           objects=(
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/start.o"
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/switch.o"
-            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/qemu/timebase.o"
+            "$OPENBIOS_BUILD_DIR/obj-ppc/target/arch/ppc/timebase.o"
             "$OPENBIOS_BUILD_DIR/obj-ppc/target/libgcc/crtsavres.o"
           )
           for object in "${objects[@]}"; do
@@ -249,7 +249,7 @@ jobs:
             openbios-llvm-ias.log
             build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/start.o
             build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/switch.o
-            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/qemu/timebase.o
+            build/openbios-llvm-ias/obj-ppc/target/arch/ppc/timebase.o
             build/openbios-llvm-ias/obj-ppc/target/libgcc/crtsavres.o
             build/toolchains/powerpc-elf/.whp-powerpc-toolchain
             build/toolchains/powerpc-elf/.whp-powerpc-lld
