@@ -7,6 +7,7 @@ set -euo pipefail
 
 SEABIOS_DIR="${SEABIOS_DIR:-$SOURCE_DIR/roms/seabios}"
 SEABIOS_CONFIG_FILE="$BUILD_DIR/.whp-seabios-meson.env"
+SEABIOS_BUILD_ROOT="${SEABIOS_BUILD_ROOT:-$BUILD_DIR/firmware-build/seabios}"
 I386_TOOLCHAIN_DIR="${I386_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/i386-none-elf}"
 BOOTSTRAP_I386_TOOLCHAIN="${BOOTSTRAP_I386_TOOLCHAIN:-auto}"
 I386_TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
@@ -16,6 +17,14 @@ if [[ ! -f "$SEABIOS_DIR/Makefile" ]]; then
     printf 'error: SeaBIOS source is not initialized: %s\n' "$SEABIOS_DIR" >&2
     exit 1
 fi
+
+case "$SEABIOS_BUILD_ROOT/" in
+    "$SEABIOS_DIR/"*)
+        printf 'error: SeaBIOS build root must remain outside the submodule: %s\n' \
+            "$SEABIOS_BUILD_ROOT" >&2
+        exit 1
+        ;;
+esac
 
 case "$BOOTSTRAP_I386_TOOLCHAIN" in
     auto)
@@ -47,6 +56,7 @@ mkdir -p "$BUILD_DIR"
 tmp="$SEABIOS_CONFIG_FILE.new"
 cat >"$tmp" <<EOF
 SEABIOS_DIR=$SEABIOS_DIR
+SEABIOS_BUILD_ROOT=$SEABIOS_BUILD_ROOT
 SEABIOS_CROSS_COMPILE=$SEABIOS_CROSS_COMPILE
 MAKE_CMD=$MAKE_CMD
 EOF
