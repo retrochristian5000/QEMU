@@ -20,7 +20,7 @@
 
 #include "exec/memop.h"
 #include "exec/vaddr.h"
-#include "tcg/tcg.h"
+#include "tcg/tcg-op-common.h"
 
 /**
  * DisasJumpType:
@@ -160,6 +160,66 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
  * and the destination PC.
  */
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
+
+/**
+ * translator_goto_tb_i32:
+ * @db: disassembly context
+ * @tb_slot_idx: direct-link slot
+ * @dest: destination guest PC
+ * @pc: architectural PC to update
+ * @update_pc: whether to update @pc before leaving the TB
+ *
+ * Emit the common direct-TB-link sequence for a 32-bit architectural PC.
+ * Targets with additional branch policy should keep that policy outside this
+ * helper and use their existing target-specific wrapper.
+ */
+static inline void translator_goto_tb_i32(DisasContextBase *db,
+                                          unsigned tb_slot_idx, vaddr dest,
+                                          TCGv_i32 pc, bool update_pc)
+{
+    bool direct = translator_use_goto_tb(db, dest);
+
+    if (direct) {
+        tcg_gen_goto_tb(tb_slot_idx);
+    }
+    if (update_pc) {
+        tcg_gen_movi_i32(pc, dest);
+    }
+    if (direct) {
+        tcg_gen_exit_tb(db->tb, tb_slot_idx);
+    } else {
+        tcg_gen_lookup_and_goto_ptr();
+    }
+}
+
+/**
+ * translator_goto_tb_i64:
+ * @db: disassembly context
+ * @tb_slot_idx: direct-link slot
+ * @dest: destination guest PC
+ * @pc: architectural PC to update
+ * @update_pc: whether to update @pc before leaving the TB
+ *
+ * 64-bit counterpart to translator_goto_tb_i32().
+ */
+static inline void translator_goto_tb_i64(DisasContextBase *db,
+                                          unsigned tb_slot_idx, vaddr dest,
+                                          TCGv_i64 pc, bool update_pc)
+{
+    bool direct = translator_use_goto_tb(db, dest);
+
+    if (direct) {
+        tcg_gen_goto_tb(tb_slot_idx);
+    }
+    if (update_pc) {
+        tcg_gen_movi_i64(pc, dest);
+    }
+    if (direct) {
+        tcg_gen_exit_tb(db->tb, tb_slot_idx);
+    } else {
+        tcg_gen_lookup_and_goto_ptr();
+    }
+}
 
 /**
  * translator_io_start
