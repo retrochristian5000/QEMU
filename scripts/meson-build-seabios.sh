@@ -14,6 +14,10 @@ source "$config_file"
 
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir="$(dirname -- "$1")"
+case "$output_dir" in
+    /*) ;;
+    *) output_dir="$PWD/$output_dir" ;;
+esac
 mkdir -p "$output_dir"
 
 "$MAKE_CMD" -C "$SOURCE_DIR/roms" \
