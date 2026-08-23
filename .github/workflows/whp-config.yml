@@ -24,6 +24,7 @@ on:
       - 'scripts/whp-build/post-build.bash'
       - 'scripts/whp-build/seabios-clang-gcc.bash'
       - 'scripts/whp-build/seabios-llvm-objdump.py'
+      - 'roms/seabios'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/tests/test-seabios-clang-abi.py'
       - 'scripts/tests/test-seabios-config.py'
@@ -69,6 +70,9 @@ jobs:
 
       - name: Test PowerPC LLVM bootstrap wiring
         run: bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
+
+      - name: Initialize SeaBIOS test source
+        run: git submodule update --init --depth 1 roms/seabios
 
       - name: Test SeaBIOS LLVM bootstrap wiring
         run: bash scripts/tests/test-seabios-llvm-wiring.bash

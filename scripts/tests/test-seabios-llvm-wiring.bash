@@ -13,6 +13,12 @@ meson="$root/pc-bios/meson.build"
 meson_builder="$root/scripts/meson-build-seabios.sh"
 seabios_config="$root/scripts/whp-build/configure-seabios.bash"
 gitmodules="$root/.gitmodules"
+seabios="$root/roms/seabios"
+
+[[ -f "$seabios/Makefile" ]] || {
+    printf 'SeaBIOS test source is not initialized: %s\n' "$seabios" >&2
+    exit 1
+}
 
 [[ -f "$bootstrap" ]]
 [[ -f "$cc_helper" ]]
@@ -101,3 +107,56 @@ grep -q 'SEABIOS_BUILD_ROOT' "$seabios_config"
 grep -q 'SEABIOS_BUILD_ROOT' "$meson_builder"
 grep -q 'whp-seabios-x86' "$meson"
 grep -q '.whp-seabios-meson.env' "$meson"
+
+# QEMU resolves and exports a Python 3 interpreter before entering the
+# firmware build. SeaBIOS must honor that explicit path instead of replacing
+# it with the "python" command that modern macOS no longer provides. Its
+# standalone fallback must likewise use the Python 3 command.
+for required in make mktemp python3; do
+    command -v "$required" >/dev/null 2>&1 || {
+        printf 'missing SeaBIOS Python portability test tool: %s\n' "$required" >&2
+        exit 1
+    }
+done
+
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-python.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+mkdir -p "$scratch/bin"
+: > "$scratch/.config"
+
+cat > "$scratch/check-python.mk" <<'MAKEFILE'
+.PHONY: check-python-command
+check-python-command:
+	@$(PYTHON) -c 'import sys; raise SystemExit(sys.version_info < (3, 9))'
+MAKEFILE
+
+cat > "$scratch/bin/python" <<'SCRIPT'
+#!/bin/sh
+printf 'SeaBIOS selected the obsolete python command\n' >&2
+exit 127
+SCRIPT
+
+cat > "$scratch/bin/python3" <<'SCRIPT'
+#!/bin/sh
+exec "$SEABIOS_TEST_PYTHON" "$@"
+SCRIPT
+chmod +x "$scratch/bin/python" "$scratch/bin/python3"
+
+selected_python="$(command -v python3)"
+SEABIOS_TEST_PYTHON="$selected_python" \
+PYTHON="$selected_python" \
+PATH="$scratch/bin:$PATH" \
+    make --no-print-directory -C "$seabios" \
+        OUT="$scratch/explicit/" \
+        KCONFIG_CONFIG="$scratch/.config" \
+        -f Makefile -f "$scratch/check-python.mk" check-python-command
+
+(
+    unset PYTHON
+    SEABIOS_TEST_PYTHON="$selected_python" \
+    PATH="$scratch/bin:$PATH" \
+        make --no-print-directory -C "$seabios" \
+            OUT="$scratch/default/" \
+            KCONFIG_CONFIG="$scratch/.config" \
+            -f Makefile -f "$scratch/check-python.mk" check-python-command
+)
