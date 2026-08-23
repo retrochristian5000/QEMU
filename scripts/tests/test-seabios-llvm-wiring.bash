@@ -160,3 +160,45 @@ PATH="$scratch/bin:$PATH" \
             KCONFIG_CONFIG="$scratch/.config" \
             -f Makefile -f "$scratch/check-python.mk" check-python-command
 )
+
+# rom16.o and rom32seg.o are intermediate ELF containers, not boot entry
+# images. Exercise their real Makefile rules with an LLD-compatible boundary
+# double that reports the warning LLD emits when no entry address is given.
+cat > "$scratch/bin/ld.lld" <<'SCRIPT'
+#!/bin/sh
+case " $* " in
+    *' -e 0 '*) ;;
+    *) printf 'ld.lld: warning: cannot find entry symbol _start; not setting start address\n' >&2 ;;
+esac
+while [ "$#" -gt 1 ]; do
+    if [ "$1" = -o ]; then
+        : > "$2"
+        exit 0
+    fi
+    shift
+done
+exit 2
+SCRIPT
+chmod +x "$scratch/bin/ld.lld"
+
+mkdir -p "$scratch/link-out"
+for input in code16.o code32seg.o romlayout16.lds romlayout32seg.lds; do
+    : > "$scratch/link-out/$input"
+done
+
+link_output="$({
+    make --no-print-directory -C "$seabios" \
+        OUT="$scratch/link-out/" \
+        KCONFIG_CONFIG="$scratch/.config" \
+        TESTGCC=2 LD="$scratch/bin/ld.lld" \
+        -o "$scratch/link-out/code16.o" \
+        -o "$scratch/link-out/code32seg.o" \
+        -o "$scratch/link-out/romlayout16.lds" \
+        -o "$scratch/link-out/romlayout32seg.lds" \
+        "$scratch/link-out/rom16.o" "$scratch/link-out/rom32seg.o"
+} 2>&1)"
+if [[ "$link_output" == *'cannot find entry symbol _start'* ]]; then
+    printf 'SeaBIOS intermediate links still trigger LLD entry warnings\n%s\n' \
+        "$link_output" >&2
+    exit 1
+fi
