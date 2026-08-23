@@ -29,10 +29,11 @@ grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
 grep -q 'llvm-strip' "$bootstrap"
 grep -q -- '--version' "$bootstrap"
-grep -Fq -- 'BOOTSTRAP_SCHEMA=10' "$bootstrap"
+grep -Fq -- 'BOOTSTRAP_SCHEMA=14' "$bootstrap"
 grep -Fq -- 'COMPILER_ABI=seabios-gcc-i386-v1' "$bootstrap"
 grep -Fq -- 'CC_COMPAT_HELPER=' "$bootstrap"
 grep -Fq -- 'cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"' "$bootstrap"
+grep -Fq -- 'mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"' "$bootstrap"
 
 # Clang's i386 driver is wrapped only where SeaBIOS depends on GCC semantics
 # that raw Clang does not provide or only accepts as ignored spellings.

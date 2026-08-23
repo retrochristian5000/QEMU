@@ -120,6 +120,53 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             }
             self.assertTrue(any(flags & SHF_MERGE for flags in merged_rodata.values()), merged_rodata)
 
+    def test_no_merge_constants_handles_constant_pool_sections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'constant-pool.c'
+            output = root / 'constant-pool.o'
+            source.write_text(
+                'static const int values[] = { 8, 8, 64, 512 };\n'
+                'int read_value(unsigned int index) { return values[index & 3]; }\n',
+                encoding='utf-8',
+            )
+            result = self.compile(
+                compiler, source, output,
+                '-Os', '-fdata-sections', '-fno-merge-constants',
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rodata = {
+                name: flags for name, flags in elf32_sections(output).items()
+                if name.startswith('.rodata')
+            }
+            self.assertTrue(rodata)
+            self.assertTrue(all(not (flags & SHF_MERGE) for flags in rodata.values()), rodata)
+
+    def test_no_merge_constants_only_rewrites_section_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'named-section.c'
+            output = root / 'named-section.o'
+            source.write_text(
+                '__asm__(".section .rodata.MARK,\\\"aMS\\\",@progbits,1\\n"\n'
+                '        ".asciz \\\"marker\\\"\\n"\n'
+                '        ".text\\n");\n'
+                'int marker(void) { return 0; }\n',
+                encoding='utf-8',
+            )
+
+            result = self.compile(
+                compiler, source, output, '-Os', '-fno-merge-constants',
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sections = elf32_sections(output)
+            self.assertIn('.rodata.MARK.nomerge', sections)
+            self.assertFalse(sections['.rodata.MARK.nomerge'] & SHF_MERGE)
+
     def test_no_merge_constants_preserves_make_dependencies(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -138,6 +185,70 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             dependencies = depfile.read_text(encoding='utf-8')
             self.assertIn(str(output), dependencies)
             self.assertIn(str(source), dependencies)
+
+    def test_dependency_only_stage_takes_priority_over_compile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'dependency-only.c'
+            source.write_text('int dependency_only(void) { return 1; }\n', encoding='utf-8')
+
+            result = subprocess.run([
+                str(compiler), '-m32', '-march=i386', '-ffreestanding',
+                '-fno-pic', '-fno-pie', '-fno-merge-constants',
+                '-M', '-c', str(source),
+            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(source), result.stdout)
+
+    def test_no_merge_constants_honors_compile_to_assembly_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'assembly-stage.c'
+            output = root / 'assembly-stage.s'
+            source.write_text(
+                'int assembly_stage(void) { return 1; }\n',
+                encoding='utf-8',
+            )
+            result = subprocess.run([
+                str(compiler), '-m32', '-march=i386', '-ffreestanding',
+                '-fno-pic', '-fno-pie', '-fno-merge-constants',
+                '-S', '-c', str(source), '-o', str(output),
+            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            assembly = output.read_bytes()
+            self.assertFalse(
+                assembly.startswith(b'\x7fELF'),
+                'the -S compilation stage must not emit an ELF object',
+            )
+            self.assertIn('assembly_stage:', assembly.decode('utf-8'))
+
+    def test_compile_to_assembly_preserves_generated_offset_markers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'generated-offset.c'
+            output = root / 'generated-offset.s'
+            source.write_text(
+                '#define DEFINE(sym, val) '
+                'asm volatile("\\n->" #sym " %0 " #val : : "i" (val))\n'
+                'void emit_offset(void) { DEFINE(TEST_OFFSET, 4); }\n',
+                encoding='utf-8',
+            )
+            result = subprocess.run([
+                str(compiler), '-m32', '-march=i386', '-ffreestanding',
+                '-fno-pic', '-fno-pie', '-fno-merge-constants',
+                '-S', '-c', str(source), '-o', str(output),
+            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                '\n->TEST_OFFSET $4 4\n',
+                output.read_text(encoding='utf-8'),
+            )
 
     def test_i386_calling_convention_and_16bit_codegen(self):
         with tempfile.TemporaryDirectory() as tmp:

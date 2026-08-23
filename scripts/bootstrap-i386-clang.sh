@@ -72,7 +72,7 @@ fi
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=10
+BOOTSTRAP_SCHEMA=14
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -105,7 +105,7 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-mkdir -p "$TOOLCHAIN_WORK_DIR"
+mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 
 # SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
 # linker, and three object-image inspection/transformation tools. Build only

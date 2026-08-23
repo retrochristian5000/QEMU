@@ -37,8 +37,20 @@ for arg in "$@"; do
     fi
 
     case "$arg" in
-        -c|-S|-E)
-            action="$arg"
+        -E)
+            action=-E
+            link_step=0
+            args+=("$arg")
+            ;;
+        -S)
+            # GCC stop stages are priorities, not last-option-wins. SeaBIOS
+            # invokes its compile-to-assembly rule with both -S and -c.
+            [[ "$action" == -E ]] || action=-S
+            link_step=0
+            args+=("$arg")
+            ;;
+        -c)
+            [[ -n "$action" ]] || action=-c
             link_step=0
             args+=("$arg")
             ;;
@@ -56,6 +68,13 @@ for arg in "$@"; do
             ;;
         -xc|-xc-header|-xcpp-output)
             has_c_input=1
+            args+=("$arg")
+            ;;
+        -M|-MM)
+            # Dependency-only modes imply preprocessing and take priority over
+            # -S/-c just like GCC's -E stage.
+            action=-E
+            link_step=0
             args+=("$arg")
             ;;
         -MD|-MMD)
@@ -116,14 +135,20 @@ driver_args=(--target=i386-none-elf)
 if ((link_step)); then
     driver_args+=(-fuse-ld=lld)
 fi
+if [[ "$action" == -S ]] && ((has_c_input)); then
+    # GCC leaves inline assembly uninterpreted when emitting assembly.  This
+    # is required by SeaBIOS's generated-offset source, which deliberately
+    # emits -> markers for a later text-processing step.
+    driver_args+=(-fno-integrated-as)
+fi
 
 # GCC's -fno-merge-constants is a correctness requirement for SeaBIOS's
 # segmented layout: mergeable .rodata sections must remain distinct until the
 # final firmware link. Clang currently accepts the spelling only as an ignored
-# optimization option. For C compilation, emit assembly, remove ELF SHF_MERGE
-# / SHF_STRINGS from mergeable .rodata section directives, and then use Clang's
-# integrated assembler. This implements the missing GNU compiler ABI without
-# adding binutils or another LLVM utility to the firmware toolchain.
+# optimization option. For C compilation, emit assembly, rename mergeable
+# .rodata sections, remove their ELF SHF_MERGE / SHF_STRINGS flags, and then use
+# Clang's integrated assembler. This implements the missing GNU compiler ABI
+# without adding binutils or another LLVM utility to the firmware toolchain.
 if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$action" == -S ]]; then
     [[ -n "$output" ]] || {
         printf 'error: SeaBIOS -fno-merge-constants compilation requires -o\n' >&2
@@ -161,14 +186,20 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         compile_args+=(-MF "$depfile")
     fi
 
-    "$clang" --target=i386-none-elf "${compile_args[@]}" -S -o "$raw_asm"
+    "$clang" "${driver_args[@]}" "${compile_args[@]}" -S -o "$raw_asm"
 
     awk '
     {
         line = $0
         if (line ~ /^[[:space:]]*\.section[[:space:]]+\.rodata[^,]*,"[^"]*M[^"]*",[@%]progbits/) {
-            sub(/M/, "", line)
-            sub(/S/, "", line)
+            sub(/\.rodata[^,]*/, "&.nomerge", line)
+            flag_start = match(line, /"[^"]*M[^"]*"/)
+            flag_length = RLENGTH
+            flags = substr(line, flag_start + 1, flag_length - 2)
+            gsub(/M/, "", flags)
+            gsub(/S/, "", flags)
+            line = substr(line, 1, flag_start) flags \
+                substr(line, flag_start + flag_length - 1)
             sub(/,[0-9]+[[:space:]]*$/, "", line)
         }
         print line
