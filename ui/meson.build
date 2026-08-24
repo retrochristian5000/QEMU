@@ -26,8 +26,7 @@ if have_system or xkbcommon.found()
                   capture: true,
                   input: keycodemapdb_proj.get_variable('keymaps_csv'),
                   command: [python, keycodemapdb_proj.get_variable('keymap_gen').full_path(),
-                            'code-map', '--lang', 'glib2',
-                            '--varname', 'qemu_input_map_@0@_to_@1@'.format(e[0], e[1]),
+                            'code-map', '--lang', 'glib2', '--varname', 'qemu_input_map_@0@_to_@1@'.format(e[0], e[1]),
                             '@INPUT0@', e[0], e[1]])
   endforeach
 endif
@@ -71,7 +70,7 @@ system_ss.add(when: spice_protocol, if_true: files('vdagent.c'))
 if host_os == 'linux'
   system_ss.add(files('input-linux.c', 'udmabuf.c'))
 endif
-system_ss.add(when: cocoa, if_true: files('cocoa.m'))
+system_ss.add(when: cocoa, if_true: files('cocoa.m', 'cocoa-metal.m'))
 
 vnc_ss = ss.source_set()
 vnc_ss.add(files(
