@@ -153,6 +153,15 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
+# Apple ld applies only its essential optimization set by default.  Use the
+# release linker optimization pass and remove unreachable code/data from QEMU
+# host binaries.  Keep this on the supported Apple Clang path so experimental
+# GNU GCC builds retain their separate linker policy.
+if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
+    whp_append_flag LDFLAGS "-Wl,-O2"
+    whp_append_flag LDFLAGS "-Wl,-dead_strip"
+fi
+
 CONFIG_SHELL="$WHP_BUILD_BASH"
 export CONFIG_SHELL
 
