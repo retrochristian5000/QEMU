@@ -52,8 +52,35 @@
 #include <Carbon/Carbon.h>
 #include "hw/core/cpu.h"
 
+#ifndef MAC_OS_VERSION_12_0
+#define MAC_OS_VERSION_12_0 120000
+#endif
+
 #ifndef MAC_OS_VERSION_14_0
 #define MAC_OS_VERSION_14_0 140000
+#endif
+
+#ifndef MAC_OS_VERSION_26_0
+#define MAC_OS_VERSION_26_0 260000
+#endif
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_12_0
+@interface NSScreen (QEMUAppKit12Compat)
+@property(readonly) NSEdgeInsets safeAreaInsets;
+@property(readonly) NSTimeInterval minimumRefreshInterval;
+@end
+#endif
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_14_0
+@interface NSView (QEMUAppKit14Compat)
+- (void)setClipsToBounds:(BOOL)clips;
+@end
+#endif
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_26_0
+@interface NSScreen (QEMUAppKit26Compat)
+@property(readonly) CGDirectDisplayID CGDirectDisplayID;
+@end
 #endif
 
 //#define DEBUG
@@ -176,6 +203,110 @@ static void handleAnyDeviceErrors(Error * err)
     }
 }
 
+static NSEdgeInsets cocoa_screen_safe_area_insets(NSScreen *screen)
+{
+    NSEdgeInsets insets = { 0 };
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_12_0
+    if (@available(macOS 12.0, *)) {
+        return [screen safeAreaInsets];
+    }
+#else
+    if ([screen respondsToSelector:@selector(safeAreaInsets)]) {
+        return [screen safeAreaInsets];
+    }
+#endif
+
+    return insets;
+}
+
+static void cocoa_set_clips_to_bounds(NSView *view, BOOL clips)
+{
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
+    if (@available(macOS 14.0, *)) {
+        [view setClipsToBounds:clips];
+        return;
+    }
+#else
+    if ([view respondsToSelector:@selector(setClipsToBounds:)]) {
+        [view setClipsToBounds:clips];
+        return;
+    }
+#endif
+
+    [[view layer] setMasksToBounds:clips];
+}
+
+static CGDirectDisplayID cocoa_screen_display_id(NSScreen *screen)
+{
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_26_0
+    if (@available(macOS 26.0, *)) {
+        return [screen CGDirectDisplayID];
+    }
+#else
+    if ([screen respondsToSelector:@selector(CGDirectDisplayID)]) {
+        return [screen CGDirectDisplayID];
+    }
+#endif
+
+    NSDictionary *description = [screen deviceDescription];
+    return [[description objectForKey:@"NSScreenNumber"] unsignedIntValue];
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+static bool cocoa_legacy_refresh_rate(CGDirectDisplayID display, double *rate)
+{
+    CVDisplayLinkRef displayLink;
+    CVTime period;
+
+    if (CVDisplayLinkCreateWithCGDisplay(display, &displayLink) !=
+        kCVReturnSuccess) {
+        return false;
+    }
+
+    period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink);
+    CVDisplayLinkRelease(displayLink);
+
+    if ((period.flags & kCVTimeIsIndefinite) || period.timeValue <= 0 ||
+        period.timeScale <= 0) {
+        return false;
+    }
+
+    *rate = (double)period.timeScale / period.timeValue;
+    return *rate > 0.0;
+}
+
+#pragma clang diagnostic pop
+
+static bool cocoa_screen_refresh_rate(NSScreen *screen,
+                                      CGDirectDisplayID display,
+                                      double *rate)
+{
+    NSTimeInterval interval;
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_12_0
+    if (@available(macOS 12.0, *)) {
+        interval = [screen minimumRefreshInterval];
+        if (interval > 0.0) {
+            *rate = 1.0 / interval;
+            return true;
+        }
+    }
+#else
+    if ([screen respondsToSelector:@selector(minimumRefreshInterval)]) {
+        interval = [screen minimumRefreshInterval];
+        if (interval > 0.0) {
+            *rate = 1.0 / interval;
+            return true;
+        }
+    }
+#endif
+
+    return cocoa_legacy_refresh_rate(display, rate);
+}
+
 /*
  ------------------------------------------------------
     QemuCocoaView
@@ -256,10 +387,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         screen.width = frameRect.size.width;
         screen.height = frameRect.size.height;
         colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
-        [self setClipsToBounds:YES];
-#endif
         [self setWantsLayer:YES];
+        cocoa_set_clips_to_bounds(self, YES);
         cursorLayer = [[CALayer alloc] init];
         [cursorLayer setAnchorPoint:CGPointMake(0, 1)];
         [cursorLayer setAutoresizingMask:kCALayerMaxXMargin |
@@ -497,8 +626,9 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (NSSize) screenSafeAreaSize
 {
-    NSSize size = [[[self window] screen] frame].size;
-    NSEdgeInsets insets = [[[self window] screen] safeAreaInsets];
+    NSScreen *windowScreen = [[self window] screen];
+    NSSize size = [windowScreen frame].size;
+    NSEdgeInsets insets = cocoa_screen_safe_area_insets(windowScreen);
     size.width -= insets.left + insets.right;
     size.height -= insets.top + insets.bottom;
     return size;
@@ -527,37 +657,30 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     [self setBoundsSize:NSMakeSize(screen.width, screen.height)];
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
 - (void) updateUIInfoLocked
 {
     /* Must be called with the BQL, i.e. via updateUIInfo */
     NSSize frameSize;
-    QemuUIInfo info;
+    QemuUIInfo info = { 0 };
 
     if (!qemu_console_is_graphic(console->con)) {
         return;
     }
 
     if ([self window]) {
-        NSDictionary *description = [[[self window] screen] deviceDescription];
-        CGDirectDisplayID display = [[description objectForKey:@"NSScreenNumber"] unsignedIntValue];
-        NSSize screenSize = [[[self window] screen] frame].size;
+        NSScreen *windowScreen = [[self window] screen];
+        CGDirectDisplayID display = cocoa_screen_display_id(windowScreen);
+        NSSize screenSize = [windowScreen frame].size;
         CGSize screenPhysicalSize = CGDisplayScreenSize(display);
         bool isFullscreen = ([[self window] styleMask] & NSWindowStyleMaskFullScreen) != 0;
-        CVDisplayLinkRef displayLink;
+        double rate;
 
         frameSize = isFullscreen ? [self screenSafeAreaSize] : [self frame].size;
 
-        if (!CVDisplayLinkCreateWithCGDisplay(display, &displayLink)) {
-            CVTime period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink);
-            CVDisplayLinkRelease(displayLink);
-            if (!(period.flags & kCVTimeIsIndefinite)) {
-                qemu_console_listener_set_refresh(&console->dcl,
-                                                  1000 * period.timeValue / period.timeScale);
-                info.refresh_rate = (int64_t)1000 * period.timeScale / period.timeValue;
-            }
+        if (cocoa_screen_refresh_rate(windowScreen, display, &rate)) {
+            qemu_console_listener_set_refresh(&console->dcl,
+                                              MAX(1, (int)(1000.0 / rate)));
+            info.refresh_rate = (int64_t)(1000.0 * rate);
         }
 
         info.width_mm = frameSize.width / screenSize.width * screenPhysicalSize.width;
@@ -575,8 +698,6 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
     qemu_console_set_ui_info(console->con, &info, TRUE);
 }
-
-#pragma clang diagnostic pop
 
 - (void) updateUIInfo
 {
