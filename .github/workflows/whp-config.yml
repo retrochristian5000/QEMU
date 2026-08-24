@@ -20,6 +20,8 @@ on:
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/prepare-sources.bash'
       - 'scripts/whp-build/prepare-mold.bash'
+      - 'scripts/whp-build/host-cpu-tuning.py'
+      - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/whp-build/configure-openbios.bash'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/whp-build/configure.bash'
@@ -28,6 +30,8 @@ on:
       - 'scripts/whp-build/seabios-clang-gcc.bash'
       - 'scripts/whp-build/seabios-llvm-objdump.py'
       - 'roms/seabios'
+      - 'scripts/tests/test-host-cpu-tuning.py'
+      - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
@@ -54,6 +58,11 @@ jobs:
 
       - name: Test portable configuration backend
         run: python3 scripts/tests/test-whp-config.py
+
+      - name: Test host CPU tuning policy
+        run: |
+          python3 scripts/tests/test-host-cpu-tuning.py
+          bash scripts/tests/test-host-cpu-tuning.bash
 
       - name: Test mold menu configuration
         run: python3 scripts/tests/test-mold-config.py
@@ -96,7 +105,9 @@ jobs:
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py \
+            scripts/whp-build/host-cpu-tuning.py \
             scripts/whp-build/seabios-llvm-objdump.py \
+            scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-whp-incremental.py \
             scripts/tests/test-seabios-clang-abi.py \
@@ -111,12 +122,14 @@ jobs:
           bash -n scripts/whp-build/prepare-build.bash
           bash -n scripts/whp-build/prepare-sources.bash
           bash -n scripts/whp-build/prepare-mold.bash
+          bash -n scripts/whp-build/host-cpu-tuning.bash
           bash -n scripts/whp-build/configure-openbios.bash
           bash -n scripts/whp-build/configure-seabios.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/post-build.bash
           bash -n scripts/whp-build/seabios-clang-gcc.bash
+          bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-seabios-llvm-wiring.bash

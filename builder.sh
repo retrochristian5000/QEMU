@@ -41,6 +41,11 @@ if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
 fi
 whp_prepare_sources
 whp_prepare_mold
+# CPU code-generation flags belong to QEMU host objects only. Resolve and
+# apply them after firmware/tool bootstraps so -march/-mcpu/-mtune cannot leak
+# into SeaBIOS, OpenBIOS, LLVM bootstrap tools, or mold itself.
+whp_prepare_host_cpu_tuning
+whp_apply_host_cpu_tuning
 whp_configure_build
 whp_build_targets "$@"
 

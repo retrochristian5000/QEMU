@@ -34,6 +34,7 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-sources.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-mold.bash"
+    "$SOURCE_DIR/scripts/whp-build/host-cpu-tuning.bash"
     "$SOURCE_DIR/scripts/whp-build/configure.bash"
     "$SOURCE_DIR/scripts/whp-build/build-targets.bash"
     "$SOURCE_DIR/scripts/whp-build/configure-openbios.bash"
