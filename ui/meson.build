@@ -26,7 +26,8 @@ if have_system or xkbcommon.found()
                   capture: true,
                   input: keycodemapdb_proj.get_variable('keymaps_csv'),
                   command: [python, keycodemapdb_proj.get_variable('keymap_gen').full_path(),
-                            'code-map', '--lang', 'glib2', '--varname', 'qemu_input_map_@0@_to_@1@'.format(e[0], e[1]),
+                            'code-map', '--lang', 'glib2',
+                            '--varname', 'qemu_input_map_@0@_to_@1@'.format(e[0], e[1]),
                             '@INPUT0@', e[0], e[1]])
   endforeach
 endif
@@ -86,7 +87,6 @@ vnc_ss.add(files(
   'vnc-clipboard.c',
 ))
 vnc_ss.add(zlib, jpeg, png)
-vnc_ss.add(when: sasl, if_true: files('vnc-auth-sasl.c'))
 system_ss.add_all(when: [vnc, pixman], if_true: vnc_ss)
 system_ss.add(when: vnc, if_true: files('vnc-system.c'), if_false: files('vnc-stubs.c'))
 
