@@ -13,6 +13,8 @@
 #import <objc/runtime.h>
 #include <dlfcn.h>
 
+#include "ui/console.h"
+
 #define QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM 80
 #define QEMU_METAL_STORAGE_MODE_SHARED 0
 
