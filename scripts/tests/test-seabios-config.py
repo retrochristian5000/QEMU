@@ -46,6 +46,12 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertNotIn('BUILD_SEABIOS=', assignments)
         self.assertNotIn('BOOTSTRAP_I386_TOOLCHAIN=', assignments)
 
+    def test_pc_bios_uses_ata_dma_but_isapc_stays_conservative(self):
+        normal = (ROOT / 'roms' / 'config.seabios-256k').read_text(encoding='utf-8')
+        isapc = (ROOT / 'roms' / 'config.seabios-128k').read_text(encoding='utf-8')
+        self.assertIn('CONFIG_ATA_DMA=y', normal)
+        self.assertIn('CONFIG_ATA_DMA=n', isapc)
+
 
 if __name__ == '__main__':
     unittest.main()
