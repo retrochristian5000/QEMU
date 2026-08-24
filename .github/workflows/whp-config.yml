@@ -7,8 +7,10 @@ on:
     paths:
       - 'build.sh'
       - 'builder.sh'
+      - '.gitmodules'
       - 'roms/Makefile'
       - 'pc-bios/meson.build'
+      - 'toolchains/fast-linker'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/meson-build-seabios.sh'
@@ -17,6 +19,7 @@ on:
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/prepare-sources.bash'
+      - 'scripts/whp-build/prepare-mold.bash'
       - 'scripts/whp-build/configure-openbios.bash'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/whp-build/configure.bash'
@@ -25,6 +28,8 @@ on:
       - 'scripts/whp-build/seabios-clang-gcc.bash'
       - 'scripts/whp-build/seabios-llvm-objdump.py'
       - 'roms/seabios'
+      - 'scripts/tests/test-mold-bootstrap.bash'
+      - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/tests/test-seabios-clang-abi.py'
       - 'scripts/tests/test-seabios-config.py'
@@ -49,6 +54,12 @@ jobs:
 
       - name: Test portable configuration backend
         run: python3 scripts/tests/test-whp-config.py
+
+      - name: Test mold menu configuration
+        run: python3 scripts/tests/test-mold-config.py
+
+      - name: Test mold bootstrap policy
+        run: bash scripts/tests/test-mold-bootstrap.bash
 
       - name: Test SeaBIOS configuration backend
         run: python3 scripts/tests/test-seabios-config.py
@@ -86,6 +97,7 @@ jobs:
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py \
             scripts/whp-build/seabios-llvm-objdump.py \
+            scripts/tests/test-mold-config.py \
             scripts/tests/test-whp-incremental.py \
             scripts/tests/test-seabios-clang-abi.py \
             scripts/tests/test-seabios-config.py \
@@ -98,12 +110,14 @@ jobs:
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
           bash -n scripts/whp-build/prepare-sources.bash
+          bash -n scripts/whp-build/prepare-mold.bash
           bash -n scripts/whp-build/configure-openbios.bash
           bash -n scripts/whp-build/configure-seabios.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/post-build.bash
           bash -n scripts/whp-build/seabios-clang-gcc.bash
+          bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-seabios-llvm-wiring.bash
           bash -n scripts/tests/test-whp-config-integration.bash

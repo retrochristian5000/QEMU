@@ -29,6 +29,7 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -50,6 +51,7 @@ RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
 SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
     'QEMU_HOST_LTO',
+    'BOOTSTRAP_MOLD',
     'MACOS_ENABLE_COCOA',
     'MACOS_ENABLE_COREAUDIO',
     'MACOS_ENABLE_GTK',

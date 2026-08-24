@@ -40,6 +40,7 @@ if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
         "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
 fi
 whp_prepare_sources
+whp_prepare_mold
 whp_configure_build
 whp_build_targets "$@"
 

@@ -55,3 +55,8 @@
 	url = https://github.com/retrochristian5000/ninja-builder.git
 	branch = master
 	shallow = true
+[submodule "toolchains/fast-linker"]
+	path = toolchains/fast-linker
+	url = https://github.com/retrochristian5000/fast-linker.git
+	branch = main
+	shallow = true

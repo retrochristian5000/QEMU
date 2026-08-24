@@ -12,6 +12,7 @@ source "$SOURCE_DIR/scripts/whp-build/common.bash"
 for build_stage_module in \
     prepare-build.bash \
     prepare-sources.bash \
+    prepare-mold.bash \
     configure.bash \
     build-targets.bash; do
     source "$SOURCE_DIR/scripts/whp-build/$build_stage_module"

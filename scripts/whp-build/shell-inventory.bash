@@ -33,6 +33,7 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/whp-build/stages.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-sources.bash"
+    "$SOURCE_DIR/scripts/whp-build/prepare-mold.bash"
     "$SOURCE_DIR/scripts/whp-build/configure.bash"
     "$SOURCE_DIR/scripts/whp-build/build-targets.bash"
     "$SOURCE_DIR/scripts/whp-build/configure-openbios.bash"
