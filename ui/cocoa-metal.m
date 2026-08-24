@@ -12,8 +12,10 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <dlfcn.h>
+#include <math.h>
 
 #include "ui/console.h"
+#include "ui/cocoa-metal-dirty.h"
 
 #define QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM 80
 #define QEMU_METAL_STORAGE_MODE_SHARED 0
@@ -76,6 +78,18 @@ static id cocoa_msg_id(id object, const char *selector)
     return ((id (*)(id, SEL))objc_msgSend)(object, sel_registerName(selector));
 }
 
+static bool cocoa_metal_dirty_rect_from_nsrect(
+    NSRect rect, int width, int height, QEMUCocoaMetalDirtyRect *dirty)
+{
+    int x0 = (int)floor(NSMinX(rect));
+    int y0 = (int)floor(NSMinY(rect));
+    int x1 = (int)ceil(NSMaxX(rect));
+    int y1 = (int)ceil(NSMaxY(rect));
+
+    return qemu_cocoa_metal_dirty_rect(width, height,
+                                       x0, y0, x1, y1, dirty);
+}
+
 @interface QEMUCocoaMetalState : NSObject
 {
     CALayer *metalLayer;
@@ -83,11 +97,12 @@ static id cocoa_msg_id(id object, const char *selector)
     id metalQueue;
     id metalTexture;
     Ivar pixmanImageIvar;
+    pixman_image_t *textureImage;
     int textureWidth;
     int textureHeight;
 }
 - (id)initWithView:(NSView *)view;
-- (bool)drawView:(NSView *)view;
+- (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect;
 @end
 
 @implementation QEMUCocoaMetalState
@@ -175,7 +190,33 @@ static id cocoa_msg_id(id object, const char *selector)
     return *(pixman_image_t **)((uint8_t *)(void *)view + offset);
 }
 
-- (bool)drawView:(NSView *)view
+- (void)uploadImage:(pixman_image_t *)image
+             stride:(int)stride
+              dirty:(QEMUCocoaMetalDirtyRect)dirty
+{
+    QEMUMetalOrigin origin = {
+        (NSUInteger)dirty.x,
+        (NSUInteger)dirty.y,
+        0,
+    };
+    QEMUMetalSize size = {
+        (NSUInteger)dirty.width,
+        (NSUInteger)dirty.height,
+        1,
+    };
+    QEMUMetalRegion region = { origin, size };
+    const uint8_t *bytes = (const uint8_t *)pixman_image_get_data(image) +
+                           (size_t)dirty.y * stride +
+                           (size_t)dirty.x * 4;
+
+    ((void (*)(id, SEL, QEMUMetalRegion, NSUInteger,
+               const void *, NSUInteger))objc_msgSend)(
+        metalTexture,
+        sel_registerName("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
+        region, 0, bytes, (NSUInteger)stride);
+}
+
+- (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect
 {
     Class descriptorClass;
     id descriptor;
@@ -188,17 +229,19 @@ static id cocoa_msg_id(id object, const char *selector)
     int width;
     int height;
     int stride;
+    bool fullUpload = false;
     QEMUMetalOrigin origin = { 0, 0, 0 };
     QEMUMetalSize size;
-    QEMUMetalRegion region;
 
     if (!image) {
+        textureImage = NULL;
         [metalLayer setHidden:YES];
         return false;
     }
 
     format = pixman_image_get_format(image);
     if (format != PIXMAN_x8r8g8b8 && format != PIXMAN_a8r8g8b8) {
+        textureImage = NULL;
         [metalLayer setHidden:YES];
         return false;
     }
@@ -207,6 +250,7 @@ static id cocoa_msg_id(id object, const char *selector)
     height = pixman_image_get_height(image);
     stride = pixman_image_get_stride(image);
     if (width <= 0 || height <= 0 || stride < width * 4) {
+        textureImage = NULL;
         [metalLayer setHidden:YES];
         return false;
     }
@@ -240,6 +284,7 @@ static id cocoa_msg_id(id object, const char *selector)
             metalDevice, sel_registerName("newTextureWithDescriptor:"),
             descriptor);
         if (!metalTexture) {
+            textureImage = NULL;
             textureWidth = 0;
             textureHeight = 0;
             [metalLayer setHidden:YES];
@@ -247,15 +292,42 @@ static id cocoa_msg_id(id object, const char *selector)
         }
         textureWidth = width;
         textureHeight = height;
+        fullUpload = true;
+    }
+
+    if (textureImage != image) {
+        textureImage = image;
+        fullUpload = true;
+    }
+
+    if (fullUpload) {
+        QEMUCocoaMetalDirtyRect full = { 0, 0, width, height };
+        [self uploadImage:image stride:stride dirty:full];
+    } else {
+        const NSRect *rectList;
+        NSInteger rectCount;
+
+        [view getRectsBeingDrawn:&rectList count:&rectCount];
+        if (rectCount > 0) {
+            for (NSInteger i = 0; i < rectCount; i++) {
+                QEMUCocoaMetalDirtyRect dirty;
+
+                if (cocoa_metal_dirty_rect_from_nsrect(rectList[i], width,
+                                                       height, &dirty)) {
+                    [self uploadImage:image stride:stride dirty:dirty];
+                }
+            }
+        } else {
+            QEMUCocoaMetalDirtyRect dirty;
+
+            if (cocoa_metal_dirty_rect_from_nsrect(dirtyRect, width, height,
+                                                   &dirty)) {
+                [self uploadImage:image stride:stride dirty:dirty];
+            }
+        }
     }
 
     size = (QEMUMetalSize){ (NSUInteger)width, (NSUInteger)height, 1 };
-    region = (QEMUMetalRegion){ origin, size };
-    ((void (*)(id, SEL, QEMUMetalRegion, NSUInteger, const void *, NSUInteger))
-     objc_msgSend)(
-        metalTexture,
-        sel_registerName("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
-        region, 0, pixman_image_get_data(image), (NSUInteger)stride);
 
     ((void (*)(id, SEL, CGSize))objc_msgSend)(
         (id)metalLayer, sel_registerName("setDrawableSize:"),
@@ -326,7 +398,7 @@ static void cocoa_metal_draw(id self, SEL selector, NSRect rect)
     QEMUCocoaMetalState *state =
         objc_getAssociatedObject(self, &metal_state_key);
 
-    if (state && [state drawView:self]) {
+    if (state && [state drawView:self dirtyRect:rect]) {
         return;
     }
 

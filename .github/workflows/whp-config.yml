@@ -11,6 +11,8 @@ on:
       - 'roms/Makefile'
       - 'pc-bios/meson.build'
       - 'toolchains/fast-linker'
+      - 'ui/cocoa-metal.m'
+      - 'ui/cocoa-metal-dirty.h'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/meson-build-seabios.sh'
@@ -30,6 +32,7 @@ on:
       - 'scripts/whp-build/seabios-clang-gcc.bash'
       - 'scripts/whp-build/seabios-llvm-objdump.py'
       - 'roms/seabios'
+      - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
@@ -63,6 +66,9 @@ jobs:
         run: |
           python3 scripts/tests/test-host-cpu-tuning.py
           bash scripts/tests/test-host-cpu-tuning.bash
+
+      - name: Test Cocoa Metal dirty regions
+        run: python3 scripts/tests/test-cocoa-metal-dirty.py
 
       - name: Test mold menu configuration
         run: python3 scripts/tests/test-mold-config.py
@@ -107,6 +113,7 @@ jobs:
             scripts/whp-build/portable-build.py \
             scripts/whp-build/host-cpu-tuning.py \
             scripts/whp-build/seabios-llvm-objdump.py \
+            scripts/tests/test-cocoa-metal-dirty.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-whp-incremental.py \
