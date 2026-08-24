@@ -1,0 +1,449 @@
+name: Apply Cocoa Metal enhancement
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/apply-cocoa-metal.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify red state
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('ui/cocoa.m').read_text()
+          required = [
+              'cocoa_metal_load',
+              '- (void) setupMetal',
+              '- (bool) drawMetal',
+              'nextDrawable',
+              'MTLCreateSystemDefaultDevice',
+          ]
+          missing = [x for x in required if x not in s]
+          if missing:
+              raise SystemExit('missing Metal path: ' + ', '.join(missing))
+          PY
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+
+      - name: Apply Metal enhancement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('ui/cocoa.m')
+          s = p.read_text()
+
+          def replace_once(old, new):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one marker, found {count}: {old[:80]!r}')
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              '#import <QuartzCore/QuartzCore.h>\n#include <crt_externs.h>\n',
+              '#import <QuartzCore/QuartzCore.h>\n#import <objc/message.h>\n#import <objc/runtime.h>\n#include <crt_externs.h>\n#include <dlfcn.h>\n')
+
+          replace_once(
+              '#ifndef MAC_OS_VERSION_26_0\n#define MAC_OS_VERSION_26_0 260000\n#endif\n',
+              '''#ifndef MAC_OS_VERSION_26_0
+#define MAC_OS_VERSION_26_0 260000
+#endif
+
+typedef struct QEMUMTLOrigin {
+    NSUInteger x;
+    NSUInteger y;
+    NSUInteger z;
+} QEMUMTLOrigin;
+
+typedef struct QEMUMTLSize {
+    NSUInteger width;
+    NSUInteger height;
+    NSUInteger depth;
+} QEMUMTLSize;
+
+typedef struct QEMUMTLRegion {
+    QEMUMTLOrigin origin;
+    QEMUMTLSize size;
+} QEMUMTLRegion;
+
+enum {
+    QEMU_MTLPixelFormatBGRA8Unorm = 80,
+    QEMU_MTLStorageModeShared = 0,
+};
+
+typedef id (*QEMUMTLCreateSystemDefaultDevice)(void);
+static void *qemu_metal_handle;
+static QEMUMTLCreateSystemDefaultDevice qemu_mtl_create_system_default_device;
+''')
+
+          marker = '''static bool cocoa_screen_refresh_rate(NSScreen *screen,
+                                      CGDirectDisplayID display,
+                                      double *rate)
+{
+    NSTimeInterval interval;
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_12_0
+    if (@available(macOS 12.0, *)) {
+        interval = [screen minimumRefreshInterval];
+        if (interval > 0.0) {
+            *rate = 1.0 / interval;
+            return true;
+        }
+    }
+#else
+    if ([screen respondsToSelector:@selector(minimumRefreshInterval)]) {
+        interval = [screen minimumRefreshInterval];
+        if (interval > 0.0) {
+            *rate = 1.0 / interval;
+            return true;
+        }
+    }
+#endif
+
+    return cocoa_legacy_refresh_rate(display, rate);
+}
+'''
+          replace_once(marker, marker + '''
+static bool cocoa_metal_load(void)
+{
+    if (qemu_mtl_create_system_default_device) {
+        return true;
+    }
+
+    if (!qemu_metal_handle) {
+        qemu_metal_handle = dlopen(
+            "/System/Library/Frameworks/Metal.framework/Metal",
+            RTLD_LAZY | RTLD_LOCAL);
+    }
+    if (!qemu_metal_handle) {
+        return false;
+    }
+
+    qemu_mtl_create_system_default_device =
+        (QEMUMTLCreateSystemDefaultDevice)dlsym(
+            qemu_metal_handle, "MTLCreateSystemDefaultDevice");
+    if (!qemu_mtl_create_system_default_device) {
+        dlclose(qemu_metal_handle);
+        qemu_metal_handle = NULL;
+        return false;
+    }
+
+    return true;
+}
+''')
+
+          replace_once(
+              '    CALayer *cursorLayer;\n    QEMUCursor *cursor;\n',
+              '''    CALayer *cursorLayer;
+    CALayer *metalLayer;
+    id metalDevice;
+    id metalQueue;
+    id metalTexture;
+    int metalTextureWidth;
+    int metalTextureHeight;
+    bool metalEnabled;
+    QEMUCursor *cursor;
+''')
+
+          replace_once(
+              '- (void) switchSurface:(pixman_image_t *)image;\n',
+              '''- (void) switchSurface:(pixman_image_t *)image;
+- (void) setupMetal;
+- (bool) drawMetal;
+''')
+
+          replace_once(
+              '''        [self setWantsLayer:YES];
+        cocoa_set_clips_to_bounds(self, YES);
+        cursorLayer = [[CALayer alloc] init];
+''',
+              '''        [self setWantsLayer:YES];
+        cocoa_set_clips_to_bounds(self, YES);
+        [self setupMetal];
+        cursorLayer = [[CALayer alloc] init];
+''')
+
+          replace_once(
+              '''    CGColorSpaceRelease(colorspace);
+    [cursorLayer release];
+''',
+              '''    [metalTexture release];
+    [metalQueue release];
+    [metalDevice release];
+    CGColorSpaceRelease(colorspace);
+    [cursorLayer release];
+''')
+
+          insert_before = '''- (void)setMouseX:(int)x y:(int)y on:(bool)on
+'''
+          metal_methods = r'''- (void) setupMetal
+{
+    Class layerClass;
+    id layer;
+    id device;
+
+    if (!cocoa_metal_load()) {
+        return;
+    }
+
+    layerClass = NSClassFromString(@"CAMetalLayer");
+    if (!layerClass) {
+        return;
+    }
+
+    device = qemu_mtl_create_system_default_device();
+    if (!device) {
+        return;
+    }
+
+    metalDevice = [device retain];
+    metalQueue = ((id (*)(id, SEL))objc_msgSend)(
+        metalDevice, sel_registerName("newCommandQueue"));
+    if (!metalQueue) {
+        [metalDevice release];
+        metalDevice = nil;
+        return;
+    }
+
+    layer = ((id (*)(id, SEL))objc_msgSend)(
+        (id)layerClass, sel_registerName("layer"));
+    if (!layer) {
+        [metalQueue release];
+        metalQueue = nil;
+        [metalDevice release];
+        metalDevice = nil;
+        return;
+    }
+
+    metalLayer = (CALayer *)layer;
+    ((void (*)(id, SEL, id))objc_msgSend)(
+        layer, sel_registerName("setDevice:"), metalDevice);
+    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(
+        layer, sel_registerName("setPixelFormat:"),
+        QEMU_MTLPixelFormatBGRA8Unorm);
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(
+        layer, sel_registerName("setFramebufferOnly:"), NO);
+    [metalLayer setOpaque:YES];
+    [metalLayer setFrame:[self bounds]];
+    [metalLayer setAutoresizingMask:kCALayerWidthSizable |
+                                    kCALayerHeightSizable];
+    [[self layer] insertSublayer:metalLayer atIndex:0];
+    metalEnabled = true;
+}
+
+- (bool) drawMetal
+{
+    Class descriptorClass;
+    id descriptor;
+    id drawable;
+    id drawableTexture;
+    id commandBuffer;
+    id encoder;
+    pixman_format_code_t format;
+    int width;
+    int height;
+    int stride;
+    QEMUMTLRegion region;
+    QEMUMTLOrigin origin = { 0, 0, 0 };
+    QEMUMTLSize size;
+    CGSize drawableSize;
+
+    if (!metalEnabled || !pixman_image) {
+        return false;
+    }
+
+    format = pixman_image_get_format(pixman_image);
+    if (format != PIXMAN_x8r8g8b8 && format != PIXMAN_a8r8g8b8) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
+    width = pixman_image_get_width(pixman_image);
+    height = pixman_image_get_height(pixman_image);
+    stride = pixman_image_get_stride(pixman_image);
+    if (width <= 0 || height <= 0 || stride < width * 4) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
+    if (!metalTexture || metalTextureWidth != width ||
+        metalTextureHeight != height) {
+        descriptorClass = NSClassFromString(@"MTLTextureDescriptor");
+        if (!descriptorClass) {
+            [metalLayer setHidden:YES];
+            return false;
+        }
+
+        descriptor =
+            ((id (*)(id, SEL, NSUInteger, NSUInteger, NSUInteger, BOOL))
+             objc_msgSend)((id)descriptorClass,
+                           sel_registerName(
+                               "texture2DDescriptorWithPixelFormat:width:height:mipmapped:"),
+                           QEMU_MTLPixelFormatBGRA8Unorm,
+                           (NSUInteger)width, (NSUInteger)height, NO);
+        if (!descriptor) {
+            [metalLayer setHidden:YES];
+            return false;
+        }
+
+        ((void (*)(id, SEL, NSUInteger))objc_msgSend)(
+            descriptor, sel_registerName("setStorageMode:"),
+            QEMU_MTLStorageModeShared);
+
+        [metalTexture release];
+        metalTexture = ((id (*)(id, SEL, id))objc_msgSend)(
+            metalDevice, sel_registerName("newTextureWithDescriptor:"),
+            descriptor);
+        if (!metalTexture) {
+            metalTextureWidth = 0;
+            metalTextureHeight = 0;
+            [metalLayer setHidden:YES];
+            return false;
+        }
+        metalTextureWidth = width;
+        metalTextureHeight = height;
+    }
+
+    region.origin = origin;
+    region.size = (QEMUMTLSize){
+        (NSUInteger)width, (NSUInteger)height, 1
+    };
+    ((void (*)(id, SEL, QEMUMTLRegion, NSUInteger, const void *, NSUInteger))
+     objc_msgSend)(metalTexture,
+                   sel_registerName(
+                       "replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
+                   region, 0, pixman_image_get_data(pixman_image),
+                   (NSUInteger)stride);
+
+    drawableSize = CGSizeMake(width, height);
+    ((void (*)(id, SEL, CGSize))objc_msgSend)(
+        (id)metalLayer, sel_registerName("setDrawableSize:"), drawableSize);
+
+    [metalLayer setMagnificationFilter:
+        zoom_interpolation == kCGInterpolationNone ?
+        kCAFilterNearest : kCAFilterLinear];
+    [metalLayer setMinificationFilter:
+        zoom_interpolation == kCGInterpolationNone ?
+        kCAFilterNearest : kCAFilterLinear];
+
+    drawable = ((id (*)(id, SEL))objc_msgSend)(
+        (id)metalLayer, sel_registerName("nextDrawable"));
+    if (!drawable) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
+    drawableTexture = ((id (*)(id, SEL))objc_msgSend)(
+        drawable, sel_registerName("texture"));
+    commandBuffer = ((id (*)(id, SEL))objc_msgSend)(
+        metalQueue, sel_registerName("commandBuffer"));
+    if (!drawableTexture || !commandBuffer) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
+    encoder = ((id (*)(id, SEL))objc_msgSend)(
+        commandBuffer, sel_registerName("blitCommandEncoder"));
+    if (!encoder) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
+    size = (QEMUMTLSize){
+        (NSUInteger)width, (NSUInteger)height, 1
+    };
+    ((void (*)(id, SEL, id, NSUInteger, NSUInteger,
+               QEMUMTLOrigin, QEMUMTLSize, id, NSUInteger, NSUInteger,
+               QEMUMTLOrigin))objc_msgSend)(
+        encoder,
+        sel_registerName(
+            "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
+        metalTexture, 0, 0, origin, size,
+        drawableTexture, 0, 0, origin);
+    ((void (*)(id, SEL))objc_msgSend)(
+        encoder, sel_registerName("endEncoding"));
+    ((void (*)(id, SEL, id))objc_msgSend)(
+        commandBuffer, sel_registerName("presentDrawable:"), drawable);
+    ((void (*)(id, SEL))objc_msgSend)(
+        commandBuffer, sel_registerName("commit"));
+
+    [metalLayer setHidden:NO];
+    return true;
+}
+
+'''
+          replace_once(insert_before, metal_methods + insert_before)
+
+          replace_once(
+              '''- (void) drawRect:(NSRect) rect
+{
+    COCOA_DEBUG("QemuCocoaView: drawRect\\n");
+
+    // get CoreGraphic context
+''',
+              '''- (void) drawRect:(NSRect) rect
+{
+    COCOA_DEBUG("QemuCocoaView: drawRect\\n");
+
+    if ([self drawMetal]) {
+        return;
+    }
+
+    // get CoreGraphic context
+''')
+
+          p.write_text(s)
+          PY
+
+      - name: Verify green state and patch scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('ui/cocoa.m').read_text()
+          required = [
+              'cocoa_metal_load',
+              '- (void) setupMetal',
+              '- (bool) drawMetal',
+              'nextDrawable',
+              'MTLCreateSystemDefaultDevice',
+              'PIXMAN_x8r8g8b8',
+              'CGContextDrawImage',
+              'CVDisplayLinkCreateWithCGDisplay',
+          ]
+          missing = [x for x in required if x not in s]
+          if missing:
+              raise SystemExit('missing Metal/fallback path: ' + ', '.join(missing))
+          PY
+          git diff --check
+          test "$(git diff --name-only | tr '\n' ' ')" = "ui/cocoa.m "
+
+      - name: Commit enhancement and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-cocoa-metal.yml
+          git config user.name 'WHP QEMU automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add ui/cocoa.m .github/workflows/apply-cocoa-metal.yml
+          git commit -m 'ui/cocoa: add optional Metal acceleration'
+          git push origin HEAD:master
