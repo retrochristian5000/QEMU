@@ -16,7 +16,9 @@ triple_names="$root/toolchains/llvm-project/llvm/include/llvm/TargetParser/Tripl
 
 grep -Fq 'WIN9X_TARGET="${WIN9X_TOOLCHAIN_TARGET:-i386-pc-win9x}"' "$profile"
 grep -Fq -- '-DLLD_ENABLE_BACKENDS=ELF;COFF' "$profile"
-grep -Fq -- '--target="$WIN9X_TARGET"' "$profile"
+# The generated wrapper must preserve this variable for expansion when the
+# wrapper runs, so the generator source contains an escaped dollar sign.
+grep -Fq -- '--target="\$WIN9X_TARGET"' "$profile"
 grep -Fq -- '-march=i386' "$profile"
 grep -Fq '/machine:x86' "$profile"
 grep -Fq '/subsystem:windows,4.0' "$profile"
