@@ -85,6 +85,12 @@ jobs:
       - name: Test SeaBIOS objdump ABI
         run: python3 scripts/tests/test-seabios-objdump-abi.py
 
+      - name: Initialize SeaBIOS test source
+        run: git submodule update --init --depth 1 roms/seabios
+
+      - name: Test SeaBIOS LLVM bootstrap wiring
+        run: bash scripts/tests/test-seabios-llvm-wiring.bash
+
       - name: Test build configuration integration
         run: bash scripts/tests/test-whp-config-integration.bash
 
@@ -96,12 +102,6 @@ jobs:
 
       - name: Test PowerPC LLVM bootstrap wiring
         run: bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
-
-      - name: Initialize SeaBIOS test source
-        run: git submodule update --init --depth 1 roms/seabios
-
-      - name: Test SeaBIOS LLVM bootstrap wiring
-        run: bash scripts/tests/test-seabios-llvm-wiring.bash
 
       - name: Check configuration script syntax
         shell: bash
