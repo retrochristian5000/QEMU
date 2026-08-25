@@ -24,6 +24,7 @@ on:
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/prepare-sources.bash'
+      - 'scripts/whp-build/prepare-seabios-grub.bash'
       - 'scripts/whp-build/prepare-mold.bash'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
@@ -143,6 +144,7 @@ jobs:
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
           bash -n scripts/whp-build/prepare-sources.bash
+          bash -n scripts/whp-build/prepare-seabios-grub.bash
           bash -n scripts/whp-build/prepare-mold.bash
           bash -n scripts/whp-build/host-cpu-tuning.bash
           bash -n scripts/whp-build/configure-openbios.bash
