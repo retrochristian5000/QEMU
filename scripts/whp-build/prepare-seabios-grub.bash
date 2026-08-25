@@ -101,6 +101,7 @@ whp_prepare_seabios_grub_sources()
             printf 'MMD=%q\n' "${MMD:-mmd}"
             printf 'MCOPY=%q\n' "${MCOPY:-mcopy}"
             printf 'PYTHON=%q\n' "${PYTHON:-python3}"
+            printf 'SEABIOS_BUILD_ROOT=%q\n' "$SEABIOS_BUILD_ROOT"
         } > "$hybrid_config.new"
         if [[ ! -f "$hybrid_config" ]] || ! cmp -s "$hybrid_config.new" "$hybrid_config"; then
             mv "$hybrid_config.new" "$hybrid_config"
