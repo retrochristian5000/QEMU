@@ -18,6 +18,7 @@ on:
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/bootstrap-win9x-clang.sh'
+      - 'scripts/build-seabios-hybrid-iso.sh'
       - 'scripts/meson-build-seabios.sh'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
@@ -45,6 +46,7 @@ on:
       - 'scripts/tests/test-seabios-clang-abi.py'
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-seabios-grub-payload.bash'
+      - 'scripts/tests/test-seabios-hybrid-iso.bash'
       - 'scripts/tests/test-seabios-objdump-abi.py'
       - 'scripts/tests/test-seabios-llvm-wiring.bash'
       - 'scripts/tests/test-win9x-llvm-wiring.bash'
@@ -97,6 +99,9 @@ jobs:
       - name: Test GRUB-loadable SeaBIOS payload
         run: bash scripts/tests/test-seabios-grub-payload.bash
 
+      - name: Test hybrid x86 UEFI SeaBIOS ISO
+        run: bash scripts/tests/test-seabios-hybrid-iso.bash
+
       - name: Test SeaBIOS LLVM bootstrap wiring
         run: bash scripts/tests/test-seabios-llvm-wiring.bash
 
@@ -140,6 +145,7 @@ jobs:
           bash -n scripts/bootstrap-powerpc-clang-base.sh
           bash -n scripts/bootstrap-i386-clang.sh
           bash -n scripts/bootstrap-win9x-clang.sh
+          bash -n scripts/build-seabios-hybrid-iso.sh
           bash -n scripts/meson-build-seabios.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
@@ -157,6 +163,7 @@ jobs:
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-seabios-grub-payload.bash
+          bash -n scripts/tests/test-seabios-hybrid-iso.bash
           bash -n scripts/tests/test-seabios-llvm-wiring.bash
           bash -n scripts/tests/test-win9x-llvm-wiring.bash
           bash -n scripts/tests/test-whp-config-integration.bash
