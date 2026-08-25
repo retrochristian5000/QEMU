@@ -1,0 +1,11 @@
+# SeaBIOS configuration for a GRUB Multiboot payload.
+#
+# GRUB enters the existing SeaBIOS 32-bit ELF entry point.  Keep this profile
+# on SeaBIOS's coreboot entry path because that is where CONFIG_MULTIBOOT and
+# entry_elf are already implemented, but do not require a CBFS image.
+
+CONFIG_COREBOOT=y
+CONFIG_MULTIBOOT=y
+CONFIG_COREBOOT_FLASH=n
+CONFIG_DEBUG_COREBOOT=n
+CONFIG_BUILD_VGABIOS=n
