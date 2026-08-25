@@ -27,6 +27,13 @@ XORRISO="${XORRISO:-xorriso}"
 MFORMAT="${MFORMAT:-mformat}"
 MMD="${MMD:-mmd}"
 MCOPY="${MCOPY:-mcopy}"
+: "${SEABIOS_BUILD_ROOT:?missing SEABIOS_BUILD_ROOT}"
+
+vgabios="$SEABIOS_BUILD_ROOT/seabios-grub/vgabios.bin"
+[[ -f "$vgabios" ]] || {
+    printf 'error: GRUB framebuffer VGA BIOS is missing: %s\n' "$vgabios" >&2
+    exit 1
+}
 
 require_tool()
 {
@@ -58,6 +65,7 @@ early_cfg="$work/early.cfg"
 
 mkdir -p "$efi_dir" "$grub_dir" "$seabios_dir" "$(dirname "$output")"
 cp "$payload" "$seabios_dir/seabios-grub.elf"
+cp "$vgabios" "$seabios_dir/seabios-grub-vgabios.bin"
 
 cat > "$early_cfg" <<'EOF'
 search --no-floppy --file --set=whp_root /boot/grub/grub.cfg
@@ -70,7 +78,11 @@ set default=0
 set timeout=5
 
 menuentry "SeaBIOS legacy environment" {
+    # EFI GRUB already owns a working GOP framebuffer. Preserve that mode so
+    # Multiboot reports its address, pitch, dimensions, bpp, and RGB masks.
+    set gfxpayload=keep
     multiboot /boot/seabios/seabios-grub.elf
+    module /boot/seabios/seabios-grub-vgabios.bin name=vgaroms/whp-grub-framebuffer.rom
     boot
 }
 EOF
