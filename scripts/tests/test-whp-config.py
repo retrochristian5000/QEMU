@@ -44,6 +44,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['MACOS_ENABLE_PA'], 'auto')
         self.assertEqual(values['BUILD_OPENBIOS'], 'auto')
         self.assertEqual(values['BOOTSTRAP_POWERPC_TOOLCHAIN'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
         self.assertEqual(values['INSTALL'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
@@ -87,7 +88,23 @@ class WhpConfigTests(unittest.TestCase):
             'PREFIX',
         ):
             self.assertNotIn(f'{key}=', assignments)
+        self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
         self.assertIn("INSTALL='0'", assignments)
+
+    def test_win9x_cross_tools_are_separate_and_opt_in(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_WIN9X_TOOLCHAIN']
+        self.assertEqual(option.section, 'Windows 9x cross-tools')
+        self.assertEqual(option.label, 'Bootstrap i386-pc-win9x LLVM toolchain')
+        self.assertEqual(option.kind, 'bool')
+        self.assertEqual(option.default, 'n')
+        self.assertNotEqual(option.section, 'Firmware')
+        self.assertIn('Windows 9x cross-tools', [section for section, _ in mod.sections()])
+
+        values = mod.default_values()
+        values['BOOTSTRAP_WIN9X_TOOLCHAIN'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='1'", assignments)
 
     def test_device_selection_is_exported_without_boolean_reencoding(self):
         mod = load_module()
@@ -126,6 +143,7 @@ class WhpConfigTests(unittest.TestCase):
             self.assertEqual(loaded.values['MACOS_ENABLE_GTK'], 'n')
             self.assertEqual(loaded.values['INSTALL'], 'y')
             self.assertEqual(loaded.values['MACOS_ENABLE_PA'], 'auto')
+            self.assertEqual(loaded.values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
 
     def test_legacy_target_list_migrates_to_output_toggles(self):
         mod = load_module()
@@ -175,6 +193,7 @@ class WhpConfigTests(unittest.TestCase):
                 'MACOS_ENABLE_COCOA=n\n'
                 'MACOS_ENABLE_COREAUDIO=n\n'
                 'BUILD_OPENBIOS=n\n'
+                'BOOTSTRAP_WIN9X_TOOLCHAIN=y\n'
                 'QEMU_HOST_LTO=y\n'
                 'WHP_INCREMENTAL_BUILD=n\n',
                 encoding='utf-8',
@@ -189,6 +208,7 @@ class WhpConfigTests(unittest.TestCase):
             self.assertIn("PREFIX='/opt/whp-qemu'", result.stdout)
             self.assertIn("MACOS_ENABLE_COCOA='0'", result.stdout)
             self.assertIn("MACOS_ENABLE_COREAUDIO='0'", result.stdout)
+            self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='1'", result.stdout)
             self.assertIn("QEMU_HOST_LTO='1'", result.stdout)
             self.assertIn("WHP_INCREMENTAL_BUILD='0'", result.stdout)
 
@@ -271,6 +291,7 @@ class WhpConfigTests(unittest.TestCase):
             text = path.read_text(encoding='utf-8')
             self.assertIn('WHP_CONFIG_VERSION=2\n', text)
             self.assertIn('BUILD_OPENBIOS=n\n', text)
+            self.assertIn('BOOTSTRAP_WIN9X_TOOLCHAIN=n\n', text)
             self.assertIn('REMOVED_SETTING=old\n', text)
             self.assertFalse((path.parent / '.whpconfig.tmp').exists())
 
