@@ -33,6 +33,8 @@ whp_seabios_config = meson.project_build_root() / '.whp-seabios-meson.env'
 whp_seabios_enabled = fs.exists(whp_seabios_config)
 whp_seabios_grub_config = meson.project_build_root() / '.whp-seabios-grub-meson.env'
 whp_seabios_grub_enabled = fs.exists(whp_seabios_grub_config)
+whp_seabios_hybrid_iso_config = meson.project_build_root() / '.whp-seabios-hybrid-iso.env'
+whp_seabios_hybrid_iso_enabled = fs.exists(whp_seabios_hybrid_iso_config)
 
 blobs = [
   'ast27x0_bootrom.bin',
@@ -153,6 +155,23 @@ if whp_seabios_grub_enabled
     build_always_stale: true,
     console: true)
   roms += whp_seabios_grub
+endif
+
+if whp_seabios_hybrid_iso_enabled
+  if not whp_seabios_grub_enabled
+    error('hybrid SeaBIOS ISO requires the GRUB-loadable SeaBIOS payload')
+  endif
+  whp_seabios_hybrid_iso_bash = find_program('bash')
+  whp_seabios_hybrid_iso_script = meson.project_source_root() / 'scripts/build-seabios-hybrid-iso.sh'
+  whp_seabios_hybrid_iso = custom_target('whp-seabios-hybrid-iso',
+    output: 'whp-seabios-hybrid.iso',
+    input: whp_seabios_grub,
+    command: [whp_seabios_hybrid_iso_bash, whp_seabios_hybrid_iso_script,
+              whp_seabios_hybrid_iso_config, '@INPUT@', '@OUTPUT@'],
+    build_by_default: false,
+    build_always_stale: true,
+    console: true)
+  roms += whp_seabios_hybrid_iso
 endif
 
 if get_option('install_blobs')
