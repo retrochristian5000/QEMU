@@ -77,7 +77,7 @@ blobs = [
   'pnv-pnor.bin',
   'palcode-clipper',
   'u-boot.e500',
-  'u-boot-sam460.bin',
+  'u-boot.sam460.bin',
   'qemu_vga.ndrv',
   'edk2-licenses.txt',
   'hppa-firmware.img',
@@ -113,7 +113,7 @@ if whp_openbios_enabled
     '-u', 'BASHOPTS',
     'MAKEFLAGS=-rR',
   ]
-  whp_openbios_ppc = custom_target('whp-openbios-ppc',
+  whp_openbios_ppc = custom_target('whp-openbios-ppc-output',
     output: 'openbios-ppc',
     command: whp_openbios_entry_env + [whp_openbios_bash, whp_openbios_script,
               whp_openbios_config, '@OUTPUT@'],
@@ -122,6 +122,7 @@ if whp_openbios_enabled
     console: true,
     install: get_option('install_blobs'),
     install_dir: qemu_datadir)
+  alias_target('whp-openbios-ppc', whp_openbios_ppc)
   roms += whp_openbios_ppc
 else
   blobs += ['openbios-ppc']
@@ -130,7 +131,7 @@ endif
 if whp_seabios_enabled
   whp_seabios_bash = find_program('bash')
   whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
-  whp_seabios_x86 = custom_target('whp-seabios-x86',
+  whp_seabios_x86 = custom_target('whp-seabios-x86-output',
     output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin'],
     command: [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
               '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@'],
@@ -139,6 +140,7 @@ if whp_seabios_enabled
     console: true,
     install: get_option('install_blobs'),
     install_dir: qemu_datadir)
+  alias_target('whp-seabios-x86', whp_seabios_x86)
   roms += whp_seabios_x86
 else
   blobs += ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin']
@@ -147,13 +149,14 @@ endif
 if whp_seabios_grub_enabled
   whp_seabios_grub_bash = find_program('bash')
   whp_seabios_grub_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
-  whp_seabios_grub = custom_target('whp-seabios-grub',
+  whp_seabios_grub = custom_target('whp-seabios-grub-output',
     output: 'seabios-grub.elf',
     command: [whp_seabios_grub_bash, whp_seabios_grub_script,
               whp_seabios_grub_config, '--grub', '@OUTPUT@'],
     build_by_default: false,
     build_always_stale: true,
     console: true)
+  alias_target('whp-seabios-grub', whp_seabios_grub)
   roms += whp_seabios_grub
 endif
 
@@ -163,7 +166,7 @@ if whp_seabios_hybrid_iso_enabled
   endif
   whp_seabios_hybrid_iso_bash = find_program('bash')
   whp_seabios_hybrid_iso_script = meson.project_source_root() / 'scripts/build-seabios-hybrid-iso.sh'
-  whp_seabios_hybrid_iso = custom_target('whp-seabios-hybrid-iso',
+  whp_seabios_hybrid_iso = custom_target('whp-seabios-hybrid-iso-output',
     output: 'whp-seabios-hybrid.iso',
     input: whp_seabios_grub,
     command: [whp_seabios_hybrid_iso_bash, whp_seabios_hybrid_iso_script,
@@ -171,6 +174,7 @@ if whp_seabios_hybrid_iso_enabled
     build_by_default: false,
     build_always_stale: true,
     console: true)
+  alias_target('whp-seabios-hybrid-iso', whp_seabios_hybrid_iso)
   roms += whp_seabios_hybrid_iso
 endif
 
