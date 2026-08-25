@@ -9,6 +9,7 @@ on:
       - 'builder.sh'
       - '.gitmodules'
       - 'roms/Makefile'
+      - 'roms/config.seabios-grub'
       - 'pc-bios/meson.build'
       - 'toolchains/fast-linker'
       - 'toolchains/llvm-project'
@@ -42,6 +43,7 @@ on:
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
       - 'scripts/tests/test-seabios-clang-abi.py'
       - 'scripts/tests/test-seabios-config.py'
+      - 'scripts/tests/test-seabios-grub-payload.bash'
       - 'scripts/tests/test-seabios-objdump-abi.py'
       - 'scripts/tests/test-seabios-llvm-wiring.bash'
       - 'scripts/tests/test-win9x-llvm-wiring.bash'
@@ -90,6 +92,9 @@ jobs:
 
       - name: Initialize SeaBIOS test source
         run: git submodule update --init --depth 1 roms/seabios
+
+      - name: Test GRUB-loadable SeaBIOS payload
+        run: bash scripts/tests/test-seabios-grub-payload.bash
 
       - name: Test SeaBIOS LLVM bootstrap wiring
         run: bash scripts/tests/test-seabios-llvm-wiring.bash
@@ -149,6 +154,7 @@ jobs:
           bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
+          bash -n scripts/tests/test-seabios-grub-payload.bash
           bash -n scripts/tests/test-seabios-llvm-wiring.bash
           bash -n scripts/tests/test-win9x-llvm-wiring.bash
           bash -n scripts/tests/test-whp-config-integration.bash
