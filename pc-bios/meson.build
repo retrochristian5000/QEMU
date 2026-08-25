@@ -31,6 +31,8 @@ whp_openbios_config = meson.project_build_root() / '.whp-openbios-meson.env'
 whp_openbios_enabled = fs.exists(whp_openbios_config)
 whp_seabios_config = meson.project_build_root() / '.whp-seabios-meson.env'
 whp_seabios_enabled = fs.exists(whp_seabios_config)
+whp_seabios_grub_config = meson.project_build_root() / '.whp-seabios-grub-meson.env'
+whp_seabios_grub_enabled = fs.exists(whp_seabios_grub_config)
 
 blobs = [
   'ast27x0_bootrom.bin',
@@ -138,6 +140,19 @@ if whp_seabios_enabled
   roms += whp_seabios_x86
 else
   blobs += ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin']
+endif
+
+if whp_seabios_grub_enabled
+  whp_seabios_grub_bash = find_program('bash')
+  whp_seabios_grub_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
+  whp_seabios_grub = custom_target('whp-seabios-grub',
+    output: 'seabios-grub.elf',
+    command: [whp_seabios_grub_bash, whp_seabios_grub_script,
+              whp_seabios_grub_config, '--grub', '@OUTPUT@'],
+    build_by_default: false,
+    build_always_stale: true,
+    console: true)
+  roms += whp_seabios_grub
 endif
 
 if get_option('install_blobs')
