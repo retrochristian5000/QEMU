@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HEADER = ROOT / 'ui' / 'cocoa-metal-dirty.h'
 SOURCE = ROOT / 'ui' / 'cocoa-metal.m'
+COCOA_SOURCE = ROOT / 'ui' / 'cocoa.m'
 
 
 class CocoaMetalDirtyRectTests(unittest.TestCase):
@@ -55,6 +56,16 @@ int main(void)
         self.assertIn('getRectsBeingDrawn', text)
         self.assertIn('textureImage != image', text)
         self.assertIn('qemu_cocoa_metal_dirty_rect', text)
+
+    def test_refresh_rate_reapplied_after_application_launch(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void)applicationDidFinishLaunching:')
+        end = text.index('\n}\n', start)
+        body = text[start:end]
+
+        allow = body.index('allow_events = true;')
+        refresh = body.index('[console.view updateUIInfo];')
+        self.assertLess(allow, refresh)
 
 
 if __name__ == '__main__':
