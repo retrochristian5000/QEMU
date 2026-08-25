@@ -127,7 +127,9 @@ pxerom: $(patsubst %,pxe-rom-%,$(pxerom_variants))
 pxe-rom-%: build-pxe-roms
 	cp ipxe/src/bin/$(VID)$(DID).rom ../pc-bios/pxe-$*.rom
 
-efirom: build-pxe-roms build-efi-roms edk2-basetools
+efirom: $(patsubst %,efi-rom-%,$(pxerom_variants))
+
+efi-rom-%: build-pxe-roms build-efi-roms edk2-basetools
 	$(EDK2_EFIROM) -f "0x$(VID)" -i "0x$(DID)" -l 0x02 \
 		-b ipxe/src/bin/$(VID)$(DID).rom \
 		-ec ipxe/src/bin-x86_64-efi/$(VID)$(DID).efidrv \
