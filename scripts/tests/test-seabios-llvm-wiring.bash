@@ -209,8 +209,13 @@ fi
 # invoking the firmware linker. Any -Wreturn-type diagnostic is a correctness
 # failure because a caller may consume an indeterminate return value.
 clang_bin="$(command -v clang-18 || command -v clang || true)"
+lld_bin="$(command -v ld.lld-18 || command -v ld.lld || true)"
 [[ -n "$clang_bin" ]] || {
     printf 'missing Clang for SeaBIOS return-type test\n' >&2
+    exit 1
+}
+[[ -n "$lld_bin" ]] || {
+    printf 'missing LLD for SeaBIOS build-environment probe\n' >&2
     exit 1
 }
 return_root="$scratch/return-types"
@@ -224,14 +229,15 @@ cp "$cc_helper" "$return_toolchain/bin/i386-none-elf-gcc"
 chmod +x "$return_toolchain/bin/i386-none-elf-gcc"
 
 make --no-print-directory -C "$seabios" \
-    OUT="$return_out" KCONFIG_CONFIG="$return_config" HOSTCC=cc olddefconfig
+    OUT="$return_out" KCONFIG_CONFIG="$return_config" HOSTCC=cc TESTGCC=2 \
+    CC="$return_toolchain/bin/i386-none-elf-gcc" LD="$lld_bin" olddefconfig
 
 set +e
 make --no-print-directory -C "$seabios" \
     OUT="$return_out" KCONFIG_CONFIG="$return_config" HOSTCC=cc TESTGCC=2 \
-    CC="$return_toolchain/bin/i386-none-elf-gcc" \
-    "$return_out/ccode16.o" "$return_out/code32seg.o" \
-    "$return_out/ccode32flat.o" >"$return_log" 2>&1
+    CC="$return_toolchain/bin/i386-none-elf-gcc" LD="$lld_bin" \
+    "${return_out}ccode16.o" "${return_out}code32seg.o" \
+    "${return_out}ccode32flat.o" >"$return_log" 2>&1
 return_status=$?
 set -e
 if ((return_status != 0)); then
