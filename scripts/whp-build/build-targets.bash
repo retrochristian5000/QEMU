@@ -31,6 +31,9 @@ if [[ "${BUILD_SEABIOS:-0}" == 1 ]]; then
         fi
     done
 fi
+if [[ "${BUILD_SEABIOS_GRUB:-0}" == 1 ]]; then
+    build_target_list+=(whp-seabios-grub)
+fi
 
 if [[ -n "${NINJA_CMD:-}" ]]; then
     build_runner=("$NINJA_CMD" -C "$BUILD_DIR" -j "$JOBS")
