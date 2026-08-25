@@ -38,6 +38,7 @@ on:
       - 'scripts/whp-build/seabios-llvm-objdump.py'
       - 'roms/seabios'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
+      - 'scripts/tests/test-firmware-target-aliases.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
@@ -102,6 +103,9 @@ jobs:
       - name: Test hybrid x86 UEFI SeaBIOS ISO
         run: bash scripts/tests/test-seabios-hybrid-iso.bash
 
+      - name: Test firmware Ninja target aliases
+        run: python3 scripts/tests/test-firmware-target-aliases.py
+
       - name: Test SeaBIOS LLVM bootstrap wiring
         run: bash scripts/tests/test-seabios-llvm-wiring.bash
 
@@ -134,6 +138,7 @@ jobs:
             scripts/whp-build/host-cpu-tuning.py \
             scripts/whp-build/seabios-llvm-objdump.py \
             scripts/tests/test-cocoa-metal-dirty.py \
+            scripts/tests/test-firmware-target-aliases.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-whp-incremental.py \
