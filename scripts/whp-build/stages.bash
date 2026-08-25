@@ -12,6 +12,7 @@ source "$SOURCE_DIR/scripts/whp-build/common.bash"
 for build_stage_module in \
     prepare-build.bash \
     prepare-sources.bash \
+    prepare-seabios-grub.bash \
     prepare-mold.bash \
     host-cpu-tuning.bash \
     configure.bash \
