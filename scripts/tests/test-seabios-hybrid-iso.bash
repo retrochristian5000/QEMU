@@ -13,6 +13,7 @@ grep -Fq 'BUILD_SEABIOS_HYBRID_ISO=n' <<<"$menu_dump"
 grep -Fq "Option('BUILD_SEABIOS_HYBRID_ISO', 'Firmware', 'Build hybrid x86 UEFI SeaBIOS ISO', 'bool', 'n')" "$config_tool"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$prepare"
 grep -Fq '.whp-seabios-hybrid-iso.env' "$prepare"
+grep -Fq "printf 'SEABIOS_BUILD_ROOT=%q" "$prepare"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$targets"
 grep -Fq 'whp-seabios-hybrid-iso' "$meson"
 [[ -f "$iso_builder" ]] || {
@@ -26,13 +27,18 @@ grep -Fq 'x86_64-efi' "$iso_builder"
 grep -Fq 'BOOTIA32.EFI' "$iso_builder"
 grep -Fq 'BOOTX64.EFI' "$iso_builder"
 grep -Fq 'EFI/efiboot.img' "$iso_builder"
+grep -Fq 'seabios-grub/vgabios.bin' "$iso_builder"
+grep -Fq 'set gfxpayload=keep' "$iso_builder"
+grep -Fq 'name=vgaroms/whp-grub-framebuffer.rom' "$iso_builder"
 grep -Fq -- '-efi-boot-part' "$iso_builder"
 grep -Fq -- '--efi-boot-image' "$iso_builder"
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-hybrid-iso.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/bin" "$scratch/build"
+seabios_build_root="$scratch/firmware-build/seabios"
+mkdir -p "$scratch/bin" "$scratch/build" "$seabios_build_root/seabios-grub"
 printf 'multiboot-seabios\n' > "$scratch/seabios-grub.elf"
+printf '\x55\xaaGRUB-framebuffer-vgabios\n' > "$seabios_build_root/seabios-grub/vgabios.bin"
 
 cat > "$scratch/bin/grub-mkimage" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -95,6 +101,7 @@ XORRISO=$scratch/bin/xorriso
 MFORMAT=$scratch/bin/mformat
 MMD=$scratch/bin/mmd
 MCOPY=$scratch/bin/mcopy
+SEABIOS_BUILD_ROOT=$seabios_build_root
 EOF
 
 WHP_ISO_TEST_MKIMAGE_LOG="$scratch/mkimage.log" \
@@ -116,8 +123,11 @@ grep -Fq 'search_fs_file' "$scratch/mkimage.log"
 grep -Fq 'EFI/efiboot.img' "$scratch/xorriso.log"
 grep -Fq -- '-efi-boot-part --efi-boot-image' "$scratch/xorriso.log"
 grep -Fq '/boot/seabios/seabios-grub.elf' "$scratch/grub.cfg.log"
+grep -Fq 'set gfxpayload=keep' "$scratch/grub.cfg.log"
 grep -Fq 'multiboot /boot/seabios/seabios-grub.elf' "$scratch/grub.cfg.log"
+grep -Fq 'module /boot/seabios/seabios-grub-vgabios.bin name=vgaroms/whp-grub-framebuffer.rom' "$scratch/grub.cfg.log"
 grep -Fq 'seabios-grub.elf' "$scratch/tree.log"
+grep -Fq 'seabios-grub-vgabios.bin' "$scratch/tree.log"
 
 cat > "$scratch/bin/ninja" <<'SCRIPT'
 #!/bin/sh
@@ -137,4 +147,4 @@ WHP_ISO_TEST_TARGET_LOG="$scratch/target.log" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets' _ "$targets"
 grep -Fxq 'whp-seabios-hybrid-iso' "$scratch/target.log"
 
-printf 'hybrid x86 UEFI SeaBIOS ISO wiring: verified\n'
+printf 'hybrid x86 UEFI SeaBIOS framebuffer wiring: verified\n'
