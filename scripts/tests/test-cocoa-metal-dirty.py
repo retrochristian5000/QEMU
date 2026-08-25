@@ -58,6 +58,9 @@ int main(void)
         self.assertIn('qemu_cocoa_metal_dirty_rect', text)
 
     def test_refresh_rate_reapplied_after_application_launch(self):
+        # updateUIInfo() is suppressed before AppKit finishes launching. If the
+        # launch callback does not retry it, the listener keeps QEMU's 30 ms
+        # default refresh interval, imposing an unintended ~33.3 fps ceiling.
         text = COCOA_SOURCE.read_text(encoding='utf-8')
         start = text.index('- (void)applicationDidFinishLaunching:')
         end = text.index('\n}\n', start)
