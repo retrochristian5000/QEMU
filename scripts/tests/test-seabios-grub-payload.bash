@@ -25,8 +25,10 @@ meson_builder="$root/scripts/meson-build-seabios.sh"
 grep -Fxq 'CONFIG_COREBOOT=y' "$config"
 grep -Fxq 'CONFIG_MULTIBOOT=y' "$config"
 grep -Fxq 'CONFIG_COREBOOT_FLASH=n' "$config"
+grep -Fxq 'CONFIG_VGA_COREBOOT=y' "$config"
 grep -Fq 'seabios-grub' "$roms/Makefile"
 grep -Fq 'seabios-grub.elf' "$roms/Makefile"
+python3 "$seabios/scripts/test-multiboot-video.py"
 
 menu_dump="$(python3 "$config_tool" --dump-menu)"
 grep -Fq 'Firmware' <<<"$menu_dump"
@@ -129,12 +131,17 @@ make --no-print-directory -C "$roms" \
     seabios-grub
 
 payload="$scratch/output/seabios-grub.elf"
+vgabios="$scratch/build/seabios-grub/vgabios.bin"
 [[ -f "$payload" ]] || {
     printf 'GRUB SeaBIOS payload was not produced: %s\n' "$payload" >&2
     exit 1
 }
+[[ -f "$vgabios" ]] || {
+    printf 'GRUB framebuffer VGA BIOS was not produced: %s\n' "$vgabios" >&2
+    exit 1
+}
 
-python3 - "$payload" <<'PY'
+python3 - "$payload" "$vgabios" <<'PY'
 import pathlib
 import struct
 import sys
@@ -160,7 +167,14 @@ for offset in range(0, max(0, len(window) - 11), 4):
 else:
     raise SystemExit('SeaBIOS GRUB payload has no valid Multiboot header in its first 8 KiB')
 
+rom = pathlib.Path(sys.argv[2]).read_bytes()
+if len(rom) < 512 or rom[:2] != b'\x55\xaa':
+    raise SystemExit('GRUB framebuffer VGA BIOS is not an option ROM')
+if sum(rom) & 0xff:
+    raise SystemExit('GRUB framebuffer VGA BIOS has an invalid option-ROM checksum')
+
 print(f'SeaBIOS GRUB payload: ELF32/i386 entry=0x{entry:08x} multiboot@0x{offset:x}')
+print(f'GRUB framebuffer VGA BIOS: {len(rom)} bytes, checksum valid')
 PY
 
-printf 'GRUB-loadable SeaBIOS payload: verified\n'
+printf 'GRUB-loadable SeaBIOS payload with framebuffer VGA: verified\n'
