@@ -9,7 +9,6 @@ config_tool="$root/scripts/whp-config/config.py"
 grub_prepare="$root/scripts/whp-build/prepare-seabios-grub.bash"
 stages="$root/scripts/whp-build/stages.bash"
 builder="$root/builder.sh"
-configure="$root/scripts/whp-build/configure.bash"
 targets="$root/scripts/whp-build/build-targets.bash"
 meson="$root/pc-bios/meson.build"
 meson_builder="$root/scripts/meson-build-seabios.sh"
@@ -35,10 +34,9 @@ grep -Fq 'BUILD_SEABIOS_GRUB=n' <<<"$menu_dump"
 grep -Fq "Option('BUILD_SEABIOS_GRUB', 'Firmware', 'Build GRUB-loadable SeaBIOS', 'bool', 'n')" "$config_tool"
 grep -Fq 'BUILD_SEABIOS_GRUB' "$grub_prepare"
 grep -Fq '.whp-seabios-grub-meson.env' "$grub_prepare"
+grep -Fq 'rm -f "$BUILD_DIR/.whp-config"' "$grub_prepare"
 grep -Fq 'prepare-seabios-grub.bash' "$stages"
 grep -Fq 'whp_prepare_seabios_grub_sources' "$builder"
-grep -Fq "printf 'BUILD_SEABIOS=%s\\n'" "$configure"
-grep -Fq "printf 'BUILD_SEABIOS_GRUB=%s\\n'" "$configure"
 grep -Fq 'BUILD_SEABIOS_GRUB' "$targets"
 grep -Fq 'whp-seabios-grub' "$meson"
 grep -Fq -- '--grub' "$meson_builder"
@@ -52,7 +50,42 @@ done
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-grub.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/output" "$scratch/bin"
+mkdir -p "$scratch/output" "$scratch/bin" "$scratch/prep"
+
+# Changing the GRUB payload marker must force one Meson reconfigure without
+# deleting the persistent build tree. Repeating the same state must not cause
+# needless reconfigure churn.
+: > "$scratch/prep/.whp-config"
+BUILD_DIR="$scratch/prep" BUILD_SEABIOS_GRUB=1 BUILD_SEABIOS=0 QEMU_TARGET_LIST= \
+    bash -c '
+        set -euo pipefail
+        source "$1"
+        whp_prepare_sources() { printf "prepared\n" > "$BUILD_DIR/.whp-seabios-meson.env"; }
+        whp_prepare_seabios_grub_sources
+    ' _ "$grub_prepare"
+[[ -f "$scratch/prep/.whp-seabios-grub-meson.env" ]]
+[[ ! -f "$scratch/prep/.whp-seabios-meson.env" ]]
+[[ ! -f "$scratch/prep/.whp-config" ]]
+
+: > "$scratch/prep/.whp-config"
+BUILD_DIR="$scratch/prep" BUILD_SEABIOS_GRUB=1 BUILD_SEABIOS=0 QEMU_TARGET_LIST= \
+    bash -c '
+        set -euo pipefail
+        source "$1"
+        whp_prepare_sources() { printf "prepared\n" > "$BUILD_DIR/.whp-seabios-meson.env"; }
+        whp_prepare_seabios_grub_sources
+    ' _ "$grub_prepare"
+[[ -f "$scratch/prep/.whp-config" ]]
+
+BUILD_DIR="$scratch/prep" BUILD_SEABIOS_GRUB=0 BUILD_SEABIOS=0 QEMU_TARGET_LIST= \
+    bash -c '
+        set -euo pipefail
+        source "$1"
+        whp_prepare_sources() { :; }
+        whp_prepare_seabios_grub_sources
+    ' _ "$grub_prepare"
+[[ ! -f "$scratch/prep/.whp-seabios-grub-meson.env" ]]
+[[ ! -f "$scratch/prep/.whp-config" ]]
 
 cat > "$scratch/bin/ninja" <<'SCRIPT'
 #!/bin/sh
