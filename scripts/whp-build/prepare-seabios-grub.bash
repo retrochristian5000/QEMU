@@ -8,6 +8,9 @@ whp_prepare_seabios_grub_sources()
     local normal_seabios=0
     local normal_config="$BUILD_DIR/.whp-seabios-meson.env"
     local grub_config="$BUILD_DIR/.whp-seabios-grub-meson.env"
+    local grub_was_enabled=0
+
+    [[ -f "$grub_config" ]] && grub_was_enabled=1
 
     case "$grub_mode" in
         0|1) ;;
@@ -19,6 +22,9 @@ whp_prepare_seabios_grub_sources()
 
     if [[ "$grub_mode" == 0 ]]; then
         rm -f "$grub_config"
+        if [[ "$grub_was_enabled" == 1 ]]; then
+            rm -f "$BUILD_DIR/.whp-config"
+        fi
         whp_prepare_sources
         return
     fi
@@ -57,6 +63,10 @@ whp_prepare_seabios_grub_sources()
     else
         mv "$normal_config" "$grub_config"
         BUILD_SEABIOS=0
+    fi
+
+    if [[ "$grub_was_enabled" == 0 ]]; then
+        rm -f "$BUILD_DIR/.whp-config"
     fi
 
     export BUILD_SEABIOS BUILD_SEABIOS_GRUB
