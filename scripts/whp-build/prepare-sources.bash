@@ -7,6 +7,7 @@ whp_prepare_sources()
     local bootstrap_mode="${BOOTSTRAP_POWERPC_TOOLCHAIN:-auto}"
     local seabios_mode="${BUILD_SEABIOS:-auto}"
     local i386_bootstrap_mode="${BOOTSTRAP_I386_TOOLCHAIN:-auto}"
+    local win9x_bootstrap_mode="${BOOTSTRAP_WIN9X_TOOLCHAIN:-0}"
     local powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
     local llvm_submodule_path="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
     local i386_llvm_submodule_path="${I386_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
@@ -40,6 +41,14 @@ whp_prepare_sources()
         0|1) BUILD_SEABIOS="$seabios_mode" ;;
         *)
             printf 'error: BUILD_SEABIOS must be auto, 0, or 1\n' >&2
+            return 1
+            ;;
+    esac
+
+    case "$win9x_bootstrap_mode" in
+        0|1) BOOTSTRAP_WIN9X_TOOLCHAIN="$win9x_bootstrap_mode" ;;
+        *)
+            printf 'error: BOOTSTRAP_WIN9X_TOOLCHAIN must be 0 or 1\n' >&2
             return 1
             ;;
     esac
@@ -190,7 +199,29 @@ whp_prepare_sources()
         fi
     fi
 
+    if [[ "$BOOTSTRAP_WIN9X_TOOLCHAIN" == 1 && -e "$SOURCE_DIR/.git" ]]; then
+        if ! command -v git >/dev/null 2>&1; then
+            printf 'error: git is required to prepare Windows 9x cross-tools\n' >&2
+            return 1
+        fi
+        if ! git -C "$SOURCE_DIR" submodule sync -- "$i386_llvm_submodule_path" ||
+           ! git -C "$SOURCE_DIR" submodule update --init -- "$i386_llvm_submodule_path"; then
+            printf 'error: failed to prepare LLVM for Windows 9x cross-tools\n' >&2
+            return 1
+        fi
+    fi
+
     mkdir -p "$BUILD_DIR"
+
+    if [[ "$BOOTSTRAP_WIN9X_TOOLCHAIN" == 1 ]]; then
+        I386_LLVM_SUBMODULE_PATH="$i386_llvm_submodule_path" \
+        I386_TOOLCHAIN_DIR="${I386_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/i386-none-elf}" \
+        I386_TOOLCHAIN_WORK_DIR="${I386_TOOLCHAIN_WORK_DIR:-$BUILD_DIR/toolchain-work/i386-none-elf-clang}" \
+        WIN9X_TOOLCHAIN_DIR="${WIN9X_TOOLCHAIN_DIR:-$BUILD_DIR/cross-tools/i386-pc-win9x}" \
+        JOBS="$JOBS" \
+            "$WHP_BUILD_BASH" --noprofile --norc \
+                "$SOURCE_DIR/scripts/bootstrap-win9x-clang.sh"
+    fi
 
     MACOS_COMPILER_MANIFEST=disabled
     MACOS_COMPILER_MANIFEST_SIGNATURE=disabled
@@ -274,4 +305,5 @@ whp_prepare_sources()
 
     export BUILD_OPENBIOS BOOTSTRAP_POWERPC_TOOLCHAIN
     export BUILD_SEABIOS BOOTSTRAP_I386_TOOLCHAIN
+    export BOOTSTRAP_WIN9X_TOOLCHAIN
 }
