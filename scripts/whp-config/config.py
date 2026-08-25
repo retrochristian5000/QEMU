@@ -39,6 +39,7 @@ OPTIONS = (
     Option('BOOTSTRAP_POWERPC_TOOLCHAIN', 'Firmware', 'Bootstrap PowerPC toolchain', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BUILD_SEABIOS', 'Firmware', 'Build SeaBIOS', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_I386_TOOLCHAIN', 'Firmware', 'Bootstrap i386 LLVM toolchain', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_WIN9X_TOOLCHAIN', 'Windows 9x cross-tools', 'Bootstrap i386-pc-win9x LLVM toolchain', 'bool', 'n'),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
