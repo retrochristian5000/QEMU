@@ -63,6 +63,7 @@ default help:
 	@echo "nothing is build by default"
 	@echo "available build targets:"
 	@echo "  bios               -- update bios.bin (seabios)"
+	@echo "  seabios-grub       -- build GRUB Multiboot SeaBIOS payload"
 	@echo "  vgabios            -- update vgabios binaries (seabios)"
 	@echo "  pxerom             -- update nic roms (bios only)"
 	@echo "  efirom             -- update nic roms (bios+efi)"
@@ -89,6 +90,10 @@ bios: build-seabios-config-seabios-128k \
 	cp $(SEABIOS_BUILD_ROOT)/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
+
+seabios-grub: build-seabios-config-seabios-grub
+	mkdir -p $(SEABIOS_OUTPUT_DIR)
+	cp $(SEABIOS_BUILD_ROOT)/seabios-grub/bios.bin.elf $(SEABIOS_OUTPUT_DIR)/seabios-grub.elf
 
 vgabios seavgabios: $(patsubst %,seavgabios-%,$(vgabios_variants))
 
@@ -122,9 +127,7 @@ pxerom: $(patsubst %,pxe-rom-%,$(pxerom_variants))
 pxe-rom-%: build-pxe-roms
 	cp ipxe/src/bin/$(VID)$(DID).rom ../pc-bios/pxe-$*.rom
 
-efirom: $(patsubst %,efi-rom-%,$(pxerom_variants))
-
-efi-rom-%: build-pxe-roms build-efi-roms edk2-basetools
+efirom: build-pxe-roms build-efi-roms edk2-basetools
 	$(EDK2_EFIROM) -f "0x$(VID)" -i "0x$(DID)" -l 0x02 \
 		-b ipxe/src/bin/$(VID)$(DID).rom \
 		-ec ipxe/src/bin-x86_64-efi/$(VID)$(DID).efidrv \
