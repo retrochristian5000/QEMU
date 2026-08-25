@@ -39,7 +39,7 @@ if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
     "$WHP_BUILD_BASH" --noprofile --norc \
         "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
 fi
-whp_prepare_sources
+whp_prepare_seabios_grub_sources
 whp_prepare_mold
 # CPU code-generation flags belong to QEMU host objects only. Resolve and
 # apply them after firmware/tool bootstraps so -march/-mcpu/-mtune cannot leak
