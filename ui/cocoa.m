@@ -884,8 +884,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
      *
      * If one of the keys corresponding to a flag is down, we rely on
      * -[NSEvent keyCode] of an event whose -[NSEvent type] is
-     * NSEventTypeFlagsChanged to know the exact key which is down, which has
-     * the following two downsides:
+     * NSEventTypeFlagsChanged to know the exact key which is down, which has the
+     * following two downsides:
      * - It does not work when the application is inactive as described above.
      * - It malfactions *after* the modifier state is changed while the
      *   application is inactive. It is because -[NSEvent keyCode] does not tell
@@ -1355,6 +1355,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     COCOA_DEBUG("QemuCocoaAppController: applicationDidFinishLaunching\n");
     allow_events = true;
+    [console.view updateUIInfo];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification
@@ -1637,8 +1638,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
                                        true, false,
                                        false, 0,
                                        &err);
-        });
-        handleAnyDeviceErrors(err);
+    });
+    handleAnyDeviceErrors(err);
     }
 }
 
@@ -1754,7 +1755,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
     menuItem = (NSMenuItem *)[menu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"]; // Hide Others
     [menuItem setKeyEquivalentModifierMask:(NSEventModifierFlagOption|NSEventModifierFlagCommand)];
     [menu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""]; // Show All
-    [menu addItem:[NSMenuItem separatorItem]]; //Separator
+    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:@"Quit QEMU" action:@selector(terminate:) keyEquivalent:@"q"];
     menuItem = [[NSMenuItem alloc] initWithTitle:@"Apple" action:nil keyEquivalent:@""];
     [menuItem setSubmenu:menu];
@@ -1798,7 +1799,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
         percentage = p * 10 > 1 ? p * 10 : 1; // prevent a 0% menu item
 
         menuItem = [[[NSMenuItem alloc]
-                   initWithTitle: [NSString stringWithFormat: @"%d%%", percentage] action:@selector(adjustSpeed:) keyEquivalent:@""] autorelease];
+                   initWithTitle: [NSString stringWithFormat: @"%d%%", percentage] action:@selector(adjustSpeed:) keyEquivalent: @""] autorelease];
 
         if (percentage == 100) {
             [menuItem setState: NSControlStateValueOn];
