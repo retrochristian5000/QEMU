@@ -202,3 +202,44 @@ if [[ "$link_output" == *'cannot find entry symbol _start'* ]]; then
         "$link_output" >&2
     exit 1
 fi
+
+# Compile-check every SeaBIOS C source with the same GCC-compatibility shim
+# used by the i386 LLVM firmware lane. This is intentionally source-only: it
+# catches front-end control-flow regressions without bootstrapping LLVM or
+# invoking the firmware linker. Any -Wreturn-type diagnostic is a correctness
+# failure because a caller may consume an indeterminate return value.
+clang_bin="$(command -v clang-18 || command -v clang || true)"
+[[ -n "$clang_bin" ]] || {
+    printf 'missing Clang for SeaBIOS return-type test\n' >&2
+    exit 1
+}
+return_root="$scratch/return-types"
+return_toolchain="$return_root/toolchain"
+return_out="$return_root/out/"
+return_config="$return_root/.config"
+return_log="$return_root/compile.log"
+mkdir -p "$return_toolchain/bin" "$return_toolchain/llvm/bin" "$return_out"
+ln -s "$clang_bin" "$return_toolchain/llvm/bin/clang"
+cp "$cc_helper" "$return_toolchain/bin/i386-none-elf-gcc"
+chmod +x "$return_toolchain/bin/i386-none-elf-gcc"
+
+make --no-print-directory -C "$seabios" \
+    OUT="$return_out" KCONFIG_CONFIG="$return_config" HOSTCC=cc olddefconfig
+
+set +e
+make --no-print-directory -C "$seabios" \
+    OUT="$return_out" KCONFIG_CONFIG="$return_config" HOSTCC=cc TESTGCC=2 \
+    CC="$return_toolchain/bin/i386-none-elf-gcc" \
+    "$return_out/ccode16.o" "$return_out/code32seg.o" \
+    "$return_out/ccode32flat.o" >"$return_log" 2>&1
+return_status=$?
+set -e
+if ((return_status != 0)); then
+    cat "$return_log" >&2
+    exit "$return_status"
+fi
+if grep -Fq '[-Wreturn-type]' "$return_log"; then
+    printf 'SeaBIOS Clang return-type warning detected:\n' >&2
+    grep -B3 -A3 -F '[-Wreturn-type]' "$return_log" >&2
+    exit 1
+fi
