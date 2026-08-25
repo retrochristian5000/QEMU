@@ -5,6 +5,11 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 roms="$root/roms"
 seabios="$roms/seabios"
 config="$roms/config.seabios-grub"
+config_tool="$root/scripts/whp-config/config.py"
+prepare="$root/scripts/whp-build/prepare-sources.bash"
+targets="$root/scripts/whp-build/build-targets.bash"
+meson="$root/pc-bios/meson.build"
+meson_builder="$root/scripts/meson-build-seabios.sh"
 
 [[ -f "$seabios/Makefile" ]] || {
     printf 'SeaBIOS test source is not initialized: %s\n' "$seabios" >&2
@@ -21,6 +26,15 @@ grep -Fxq 'CONFIG_COREBOOT_FLASH=n' "$config"
 grep -Fq 'seabios-grub' "$roms/Makefile"
 grep -Fq 'seabios-grub.elf' "$roms/Makefile"
 
+menu_dump="$(python3 "$config_tool" --dump-menu)"
+grep -Fq 'Firmware' <<<"$menu_dump"
+grep -Fq 'BUILD_SEABIOS_GRUB=n' <<<"$menu_dump"
+grep -Fq "Option('BUILD_SEABIOS_GRUB', 'Firmware', 'Build GRUB-loadable SeaBIOS', 'bool', 'n')" "$config_tool"
+grep -Fq 'BUILD_SEABIOS_GRUB' "$prepare"
+grep -Fq 'BUILD_SEABIOS_GRUB' "$targets"
+grep -Fq 'whp-seabios-grub' "$meson"
+grep -Fq -- '--grub' "$meson_builder"
+
 for tool in make python3 cc ld objcopy objdump strip; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'missing GRUB SeaBIOS payload test tool: %s\n' "$tool" >&2
@@ -30,7 +44,42 @@ done
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-grub.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/output"
+mkdir -p "$scratch/output" "$scratch/bin"
+
+cat > "$scratch/bin/ninja" <<'SCRIPT'
+#!/bin/sh
+printf '%s\n' "$@" > "$WHP_GRUB_TEST_LOG"
+SCRIPT
+chmod +x "$scratch/bin/ninja"
+
+BUILD_DIR="$scratch/qemu-build" \
+BUILD_TARGETS=qemu-img \
+BUILD_OPENBIOS=0 \
+BUILD_SEABIOS=0 \
+BUILD_SEABIOS_GRUB=1 \
+INSTALL=0 \
+JOBS=1 \
+NINJA_CMD="$scratch/bin/ninja" \
+MAKE_CMD= \
+WHP_GRUB_TEST_LOG="$scratch/enabled.log" \
+bash -c 'set -euo pipefail; source "$1"; whp_build_targets' _ "$targets"
+grep -Fxq 'whp-seabios-grub' "$scratch/enabled.log"
+
+BUILD_DIR="$scratch/qemu-build" \
+BUILD_TARGETS=qemu-img \
+BUILD_OPENBIOS=0 \
+BUILD_SEABIOS=0 \
+BUILD_SEABIOS_GRUB=0 \
+INSTALL=0 \
+JOBS=1 \
+NINJA_CMD="$scratch/bin/ninja" \
+MAKE_CMD= \
+WHP_GRUB_TEST_LOG="$scratch/disabled.log" \
+bash -c 'set -euo pipefail; source "$1"; whp_build_targets' _ "$targets"
+if grep -Fxq 'whp-seabios-grub' "$scratch/disabled.log"; then
+    printf 'GRUB SeaBIOS target was requested while disabled\n' >&2
+    exit 1
+fi
 
 make --no-print-directory -C "$roms" \
     SEABIOS_BUILD_ROOT="$scratch/build" \
