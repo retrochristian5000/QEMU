@@ -152,7 +152,7 @@ resolve_grub_module_dir()
 
 i386_module_dir="$(resolve_grub_module_dir \
     "$GRUB_I386_MODULE_DIR" "$GRUB_I386_INSTALL_PREFIX" \
-    i686-elf i386-efi i686-elf-grub)"
+    i386-none-elf i386-efi i686-elf-grub)"
 x86_64_module_dir="$(resolve_grub_module_dir \
     "$GRUB_X86_64_MODULE_DIR" "$GRUB_X86_64_INSTALL_PREFIX" \
     x86_64-elf x86_64-efi x86_64-elf-grub)"
