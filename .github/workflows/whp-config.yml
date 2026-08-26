@@ -17,6 +17,7 @@ on:
       - 'ui/cocoa-metal-dirty.h'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-i386-efi-grub.sh'
       - 'scripts/bootstrap-win9x-clang.sh'
       - 'scripts/build-seabios-hybrid-iso.sh'
       - 'scripts/meson-build-seabios.sh'
@@ -42,6 +43,7 @@ on:
       - 'scripts/tests/test-homebrew-dependency-refresh.bash'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
+      - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
@@ -160,6 +162,7 @@ jobs:
           bash -n builder.sh
           bash -n scripts/bootstrap-powerpc-clang-base.sh
           bash -n scripts/bootstrap-i386-clang.sh
+          bash -n scripts/bootstrap-i386-efi-grub.sh
           bash -n scripts/bootstrap-win9x-clang.sh
           bash -n scripts/build-seabios-hybrid-iso.sh
           bash -n scripts/meson-build-seabios.sh
@@ -177,6 +180,7 @@ jobs:
           bash -n scripts/whp-build/seabios-clang-gcc.bash
           bash -n scripts/tests/test-homebrew-dependency-refresh.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
+          bash -n scripts/tests/test-i386-efi-grub-bootstrap.bash
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-seabios-grub-payload.bash
