@@ -20,8 +20,8 @@ whp_prepare_seabios_grub_sources()
     local grub_x86_64_mkimage="${GRUB_X86_64_MKIMAGE:-${legacy_grub_mkimage:-x86_64-elf-grub-mkimage}}"
     local grub_i386_module_dir="${GRUB_I386_MODULE_DIR:-${GRUB_I386_EFI_DIR:-}}"
     local grub_x86_64_module_dir="${GRUB_X86_64_MODULE_DIR:-${GRUB_X86_64_EFI_DIR:-}}"
-    local grub_i386_prefix="${GRUB_I386_PREFIX:-}"
-    local grub_x86_64_prefix="${GRUB_X86_64_PREFIX:-}"
+    local grub_i386_install_prefix="${GRUB_I386_INSTALL_PREFIX:-${GRUB_I386_PREFIX:-}}"
+    local grub_x86_64_install_prefix="${GRUB_X86_64_INSTALL_PREFIX:-${GRUB_X86_64_PREFIX:-}}"
 
     [[ -f "$grub_config" ]] && grub_was_enabled=1
     [[ -f "$hybrid_config" ]] && hybrid_was_enabled=1
@@ -111,9 +111,9 @@ whp_prepare_seabios_grub_sources()
         {
             # Keep the old single-tool override for custom installs, but record
             # separate defaults so IA32 and x86-64 EFI never share the wrong
-            # GRUB executable or module tree by accident. Module-directory and
-            # installation-prefix overrides are separate because grub-mkimage
-            # uses -d for host modules and -p for its runtime GRUB prefix.
+            # GRUB executable or module tree by accident. These are host-side
+            # discovery variables for grub-mkimage -d; the image's runtime
+            # GRUB prefix (-p /boot/grub) is intentionally a separate contract.
             printf 'GRUB_MKIMAGE=%q\n' "$legacy_grub_mkimage"
             printf 'GRUB_I386_MKIMAGE=%q\n' "$grub_i386_mkimage"
             printf 'GRUB_X86_64_MKIMAGE=%q\n' "$grub_x86_64_mkimage"
@@ -121,8 +121,10 @@ whp_prepare_seabios_grub_sources()
             printf 'GRUB_X86_64_MODULE_DIR=%q\n' "$grub_x86_64_module_dir"
             printf 'GRUB_I386_EFI_DIR=%q\n' "$grub_i386_module_dir"
             printf 'GRUB_X86_64_EFI_DIR=%q\n' "$grub_x86_64_module_dir"
-            printf 'GRUB_I386_PREFIX=%q\n' "$grub_i386_prefix"
-            printf 'GRUB_X86_64_PREFIX=%q\n' "$grub_x86_64_prefix"
+            printf 'GRUB_I386_INSTALL_PREFIX=%q\n' "$grub_i386_install_prefix"
+            printf 'GRUB_X86_64_INSTALL_PREFIX=%q\n' "$grub_x86_64_install_prefix"
+            printf 'GRUB_I386_PREFIX=%q\n' "$grub_i386_install_prefix"
+            printf 'GRUB_X86_64_PREFIX=%q\n' "$grub_x86_64_install_prefix"
             printf 'HOMEBREW_PREFIX=%q\n' "${HOMEBREW_PREFIX:-}"
             printf 'XORRISO=%q\n' "${XORRISO:-xorriso}"
             printf 'MFORMAT=%q\n' "${MFORMAT:-mformat}"
