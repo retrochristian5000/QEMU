@@ -14,6 +14,7 @@ whp_prepare_seabios_grub_sources()
     local grub_was_enabled=0
     local hybrid_was_enabled=0
     local reconfigure=0
+    local seabios_build_root=
 
     [[ -f "$grub_config" ]] && grub_was_enabled=1
     [[ -f "$hybrid_config" ]] && hybrid_was_enabled=1
@@ -79,6 +80,14 @@ whp_prepare_seabios_grub_sources()
         return 1
     }
 
+    if [[ "$hybrid_mode" == 1 ]]; then
+        seabios_build_root="$(
+            # shellcheck disable=SC1090
+            source "$normal_config"
+            printf '%s' "${SEABIOS_BUILD_ROOT:?SeaBIOS config is missing SEABIOS_BUILD_ROOT}"
+        )"
+    fi
+
     if [[ "$normal_seabios" == 1 ]]; then
         cp "$normal_config" "$grub_config.new"
         mv "$grub_config.new" "$grub_config"
@@ -101,7 +110,7 @@ whp_prepare_seabios_grub_sources()
             printf 'MMD=%q\n' "${MMD:-mmd}"
             printf 'MCOPY=%q\n' "${MCOPY:-mcopy}"
             printf 'PYTHON=%q\n' "${PYTHON:-python3}"
-            printf 'SEABIOS_BUILD_ROOT=%q\n' "$SEABIOS_BUILD_ROOT"
+            printf 'SEABIOS_BUILD_ROOT=%q\n' "$seabios_build_root"
         } > "$hybrid_config.new"
         if [[ ! -f "$hybrid_config" ]] || ! cmp -s "$hybrid_config.new" "$hybrid_config"; then
             mv "$hybrid_config.new" "$hybrid_config"
