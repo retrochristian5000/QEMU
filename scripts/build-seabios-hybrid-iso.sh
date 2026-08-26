@@ -27,8 +27,8 @@ GRUB_I386_MKIMAGE="${GRUB_I386_MKIMAGE:-${legacy_grub_mkimage:-i686-elf-grub-mki
 GRUB_X86_64_MKIMAGE="${GRUB_X86_64_MKIMAGE:-${legacy_grub_mkimage:-x86_64-elf-grub-mkimage}}"
 GRUB_I386_MODULE_DIR="${GRUB_I386_MODULE_DIR:-${GRUB_I386_EFI_DIR:-}}"
 GRUB_X86_64_MODULE_DIR="${GRUB_X86_64_MODULE_DIR:-${GRUB_X86_64_EFI_DIR:-}}"
-GRUB_I386_PREFIX="${GRUB_I386_PREFIX:-}"
-GRUB_X86_64_PREFIX="${GRUB_X86_64_PREFIX:-}"
+GRUB_I386_INSTALL_PREFIX="${GRUB_I386_INSTALL_PREFIX:-${GRUB_I386_PREFIX:-}}"
+GRUB_X86_64_INSTALL_PREFIX="${GRUB_X86_64_INSTALL_PREFIX:-${GRUB_X86_64_PREFIX:-}}"
 XORRISO="${XORRISO:-xorriso}"
 MFORMAT="${MFORMAT:-mformat}"
 MMD="${MMD:-mmd}"
@@ -90,7 +90,7 @@ find_grub_module_dir_under_prefix()
 resolve_grub_module_dir()
 {
     local configured="$1"
-    local configured_prefix="$2"
+    local configured_install_prefix="$2"
     local target_triple="$3"
     local format="$4"
     local formula="$5"
@@ -107,15 +107,15 @@ resolve_grub_module_dir()
         return 0
     fi
 
-    if [[ -n "$configured_prefix" ]]; then
+    if [[ -n "$configured_install_prefix" ]]; then
         dir="$(find_grub_module_dir_under_prefix \
-            "$configured_prefix" "$target_triple" "$format" || true)"
+            "$configured_install_prefix" "$target_triple" "$format" || true)"
         if [[ -n "$dir" ]]; then
             printf '%s\n' "$dir"
             return 0
         fi
-        printf 'error: GRUB %s prefix has no matching module tree: %s\n' \
-            "$format" "$configured_prefix" >&2
+        printf 'error: GRUB %s install prefix has no matching module tree: %s\n' \
+            "$format" "$configured_install_prefix" >&2
         return 1
     fi
 
@@ -151,17 +151,17 @@ resolve_grub_module_dir()
 }
 
 i386_module_dir="$(resolve_grub_module_dir \
-    "$GRUB_I386_MODULE_DIR" "$GRUB_I386_PREFIX" \
+    "$GRUB_I386_MODULE_DIR" "$GRUB_I386_INSTALL_PREFIX" \
     i686-elf i386-efi i686-elf-grub)"
 x86_64_module_dir="$(resolve_grub_module_dir \
-    "$GRUB_X86_64_MODULE_DIR" "$GRUB_X86_64_PREFIX" \
+    "$GRUB_X86_64_MODULE_DIR" "$GRUB_X86_64_INSTALL_PREFIX" \
     x86_64-elf x86_64-efi x86_64-elf-grub)"
 
 if [[ -z "$i386_module_dir" &&
       "$(basename "$GRUB_I386_MKIMAGE")" == i686-elf-grub-mkimage ]]; then
     printf '%s\n' \
         'error: i686-elf-grub is a PC-platform GRUB build and has no i386-efi module tree.' \
-        'Set GRUB_I386_MKIMAGE plus GRUB_I386_MODULE_DIR or GRUB_I386_PREFIX to an i386-efi build.' >&2
+        'Set GRUB_I386_MKIMAGE plus GRUB_I386_MODULE_DIR or GRUB_I386_INSTALL_PREFIX to an i386-efi build.' >&2
     exit 1
 fi
 
@@ -169,7 +169,7 @@ if [[ -z "$x86_64_module_dir" &&
       "$(basename "$GRUB_X86_64_MKIMAGE")" == x86_64-elf-grub-mkimage ]]; then
     printf '%s\n' \
         'error: x86_64-elf-grub was selected but its x86_64-efi module tree could not be located.' \
-        'Set GRUB_X86_64_MODULE_DIR or GRUB_X86_64_PREFIX to the active GRUB installation.' >&2
+        'Set GRUB_X86_64_MODULE_DIR or GRUB_X86_64_INSTALL_PREFIX to the active GRUB installation.' >&2
     exit 1
 fi
 
