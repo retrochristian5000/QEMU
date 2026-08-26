@@ -50,6 +50,12 @@ whp_prepare_mold
 # into SeaBIOS, OpenBIOS, LLVM bootstrap tools, or mold itself.
 whp_prepare_host_cpu_tuning
 whp_apply_host_cpu_tuning
+if [[ "$HOST_OS" == Darwin ]]; then
+    # Keep Homebrew's versioned Cellar kegs out of QEMU/Meson dependency state.
+    # Apply this after firmware preparation so host pkg-config policy cannot
+    # leak into SeaBIOS or OpenBIOS toolchains.
+    whp_prepare_homebrew_pkg_config
+fi
 whp_configure_build
 whp_build_targets "$@"
 

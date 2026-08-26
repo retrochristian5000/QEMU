@@ -22,6 +22,31 @@ export WHP_HOMEBREW_BREW="$fake_brew"
 
 source "$ROOT/scripts/whp-build/homebrew-deps.bash"
 
+# pkg-config metadata often embeds the versioned Cellar keg. QEMU must see the
+# stable opt symlink instead so a formula upgrade cannot strand build.ninja.
+fake_pkg_config="$TMP_ROOT/pkg-config"
+cat > "$fake_pkg_config" <<'EOF'
+#!/bin/sh
+printf '%s\n' \
+  '-I/opt/homebrew/Cellar/libslirp/4.9.3/include -L/opt/homebrew/Cellar/libslirp/4.9.3/lib -lslirp' \
+  '/opt/homebrew/Cellar/openssl@3/3.6.0/lib/pkgconfig'
+EOF
+chmod +x "$fake_pkg_config"
+normalized="$(
+    HOMEBREW_PREFIX=/opt/homebrew \
+    WHP_REAL_PKG_CONFIG="$fake_pkg_config" \
+    "$ROOT/scripts/whp-build/pkg-config-homebrew.bash" --cflags --libs libslirp
+)"
+case "$normalized" in
+    *'/opt/homebrew/Cellar/'*)
+        printf 'error: pkg-config output still contains a versioned Homebrew Cellar path\n' >&2
+        exit 1
+        ;;
+esac
+grep -Fq '/opt/homebrew/opt/libslirp/include' <<< "$normalized"
+grep -Fq '/opt/homebrew/opt/libslirp/lib' <<< "$normalized"
+grep -Fq '/opt/homebrew/opt/openssl@3/lib/pkgconfig' <<< "$normalized"
+
 fake_source="$TMP_ROOT/source"
 fake_build="$TMP_ROOT/build"
 mkdir -p "$fake_source" "$fake_build"
@@ -141,6 +166,19 @@ fi
 
 if ! grep -Fq 'FORMULA=libslirp 4.10.0' "$BUILD_DIR/.whp-homebrew-deps"; then
     printf 'error: Homebrew dependency manifest did not record upgraded libslirp\n' >&2
+    exit 1
+fi
+
+# Existing trees created before the Homebrew manifest must also reconfigure
+# once; otherwise the user's current stale Cellar path survives this upgrade.
+legacy_build="$TMP_ROOT/legacy-build"
+mkdir -p "$legacy_build"
+printf 'SOURCE_DIR=%s\nQEMU_TARGET_LIST=ppc-softmmu\n' "$fake_source" > "$legacy_build/.whp-config"
+touch "$legacy_build/build.ninja"
+BUILD_DIR="$legacy_build"
+whp_refresh_homebrew_dependency_identity
+if ! grep -Fq 'WHP_HOMEBREW_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"; then
+    printf 'error: pre-manifest build tree was not marked stale on first refresh\n' >&2
     exit 1
 fi
 

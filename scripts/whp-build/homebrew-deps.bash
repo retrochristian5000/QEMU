@@ -32,6 +32,26 @@ whp_homebrew_dependency_signature()
     printf '%s\n' "$inventory" | cksum | awk '{ printf "%s:%s\n", $1, $2 }'
 }
 
+whp_prepare_homebrew_pkg_config()
+{
+    local wrapper="$SOURCE_DIR/scripts/whp-build/pkg-config-homebrew.bash"
+    local real_pkg_config="${PKG_CONFIG:-pkg-config}"
+
+    [[ "${HOST_OS:-$(uname -s)}" == Darwin ]] || return 0
+    [[ -x "$wrapper" ]] || {
+        printf 'error: Homebrew pkg-config wrapper is missing: %s\n' "$wrapper" >&2
+        return 1
+    }
+
+    if [[ "$real_pkg_config" != "$wrapper" ]]; then
+        WHP_REAL_PKG_CONFIG="$real_pkg_config"
+        export WHP_REAL_PKG_CONFIG
+    fi
+    PKG_CONFIG="$wrapper"
+    PKG_CONFIG_FOR_BUILD="$wrapper"
+    export PKG_CONFIG PKG_CONFIG_FOR_BUILD
+}
+
 whp_refresh_homebrew_dependency_identity()
 {
     local brew_cmd
@@ -40,7 +60,6 @@ whp_refresh_homebrew_dependency_identity()
     local candidate
     local config_file
     local config_new
-    local had_manifest=0
 
     [[ "${HOST_OS:-$(uname -s)}" == Darwin ]] || return 0
 
@@ -55,9 +74,8 @@ whp_refresh_homebrew_dependency_identity()
     config_file="$BUILD_DIR/.whp-config"
     config_new="$config_file.homebrew-new"
 
-    [[ -f "$manifest" ]] && had_manifest=1
     {
-        printf 'SCHEMA=1\n'
+        printf 'SCHEMA=2\n'
         printf 'SIGNATURE=%s\n' "$signature"
         printf 'BREW=%s\n' "$brew_cmd"
         whp_homebrew_dependency_inventory "$brew_cmd" | sed 's/^/FORMULA=/'
@@ -68,17 +86,15 @@ whp_refresh_homebrew_dependency_identity()
         return 0
     fi
 
-    # Do not throw away the persistent build tree or its incremental target
-    # history.  An unknown one-shot line is enough to make the existing
-    # .whp-config differ from the canonical candidate, which makes the normal
-    # configure path refresh Meson's absolute Homebrew keg paths in place.
-    if [[ "$had_manifest" == 1 && -f "$config_file" &&
-          -f "$BUILD_DIR/build.ninja" ]]; then
+    # A persistent tree may predate this manifest, so the first run must also
+    # invalidate stale Meson paths. Preserve .whp-config and its target history;
+    # the unknown one-shot line forces a single in-place configure refresh.
+    if [[ -f "$config_file" && -f "$BUILD_DIR/build.ninja" ]]; then
         awk '!/^WHP_HOMEBREW_DEPENDENCIES_STALE=/' "$config_file" > "$config_new"
         printf 'WHP_HOMEBREW_DEPENDENCIES_STALE=%s\n' "$signature" >> "$config_new"
         mv "$config_new" "$config_file"
         printf '%s\n' \
-            'Homebrew dependency set changed; QEMU will reconfigure in place.'
+            'Homebrew dependency paths changed; QEMU will reconfigure in place.'
     fi
 
     mv "$candidate" "$manifest"
