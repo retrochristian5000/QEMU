@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 bootstrap="$root/scripts/bootstrap-i386-efi-grub.sh"
-[[ -x "$bootstrap" ]] || {
+[[ -f "$bootstrap" ]] || {
     printf 'missing IA32 EFI GRUB bootstrap: %s\n' "$bootstrap" >&2
     exit 1
 }
@@ -87,7 +87,7 @@ GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
 GRUB_I386_AUTO_INSTALL_DEPS=0 \
 WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
 JOBS=1 \
-"$bootstrap" > "$scratch/first.log"
+bash "$bootstrap" > "$scratch/first.log"
 
 grep -Fxq -- '--target=i686-elf' "$scratch/configure.log"
 grep -Fxq -- '--with-platform=efi' "$scratch/configure.log"
@@ -107,7 +107,7 @@ GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
 GRUB_I386_AUTO_INSTALL_DEPS=0 \
 WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
 JOBS=1 \
-"$bootstrap" > "$scratch/second.log"
+bash "$bootstrap" > "$scratch/second.log"
 grep -Fxq 'sentinel' "$scratch/configure.log"
 grep -Fq 'IA32 EFI GRUB is current:' "$scratch/second.log"
 
