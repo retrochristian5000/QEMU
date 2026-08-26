@@ -16,6 +16,24 @@ cat > "$scratch/src/grub-test/configure" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$WHP_GRUB_CONFIGURE_LOG"
+{
+    printf 'CC=%s\n' "${CC:-}"
+    printf 'BUILD_CC=%s\n' "${BUILD_CC:-}"
+    printf 'HOST_CC=%s\n' "${HOST_CC:-}"
+    printf 'TARGET_CC=%s\n' "${TARGET_CC:-}"
+    printf 'TARGET_CFLAGS=%s\n' "${TARGET_CFLAGS:-}"
+    printf 'TARGET_CPPFLAGS=%s\n' "${TARGET_CPPFLAGS:-}"
+    printf 'TARGET_CCASFLAGS=%s\n' "${TARGET_CCASFLAGS:-}"
+    printf 'TARGET_LDFLAGS=%s\n' "${TARGET_LDFLAGS:-}"
+    printf 'TARGET_OBJCOPY=%s\n' "${TARGET_OBJCOPY:-}"
+    printf 'TARGET_NM=%s\n' "${TARGET_NM:-}"
+    printf 'TARGET_RANLIB=%s\n' "${TARGET_RANLIB:-}"
+    printf 'TARGET_STRIP=%s\n' "${TARGET_STRIP:-}"
+    printf 'AR=%s\n' "${AR:-}"
+    printf 'CFLAGS=%s\n' "${CFLAGS:-}"
+    printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
+    printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
+} > "$WHP_GRUB_TOOLCHAIN_LOG"
 bindir=
 libdir=
 for arg in "$@"; do
@@ -71,12 +89,17 @@ chmod +x "${DESTDIR}$bindir/i386-efi-grub-mkimage"
 SCRIPT
 chmod +x "$scratch/bin/make"
 
-for tool in gcc ld objcopy nm ranlib strip; do
-    cat > "$scratch/bin/i686-elf-$tool" <<'SCRIPT'
+# The IA32 target lane must be LLVM-native. Deliberately do not provide any
+# i686-elf-gcc/binutils shims: falling back to those tools must fail this test.
+for tool in clang llvm-ar llvm-objcopy llvm-nm llvm-ranlib llvm-strip ld.lld; do
+    cat > "$scratch/bin/$tool" <<'SCRIPT'
 #!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then
+    printf 'WHP LLVM test tool\n'
+fi
 exit 0
 SCRIPT
-    chmod +x "$scratch/bin/i686-elf-$tool"
+    chmod +x "$scratch/bin/$tool"
 done
 
 install="$scratch/install/grub-i386-efi"
@@ -88,6 +111,10 @@ run_bootstrap()
     GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
     GRUB_I386_AUTO_INSTALL_DEPS=0 \
     WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
+    WHP_GRUB_TOOLCHAIN_LOG="$scratch/toolchain.log" \
+    CFLAGS='-arch arm64 -mmacosx-version-min=15.0' \
+    CPPFLAGS='-arch arm64' \
+    LDFLAGS='-mmacosx-version-min=15.0' \
     JOBS=1 \
     bash "$bootstrap" "$@"
 }
@@ -99,10 +126,37 @@ if grep -Fq -- '--with-platform=pc' "$scratch/configure.log"; then
     printf 'bootstrap configured the PC platform instead of EFI\n' >&2
     exit 1
 fi
+
+# Cross-target configuration must be explicit and must not inherit Darwin host
+# architecture/deployment flags. Clang's target triple replaces i686-elf-gcc.
+grep -Eq '^TARGET_CC=.*/?clang$' "$scratch/toolchain.log"
+grep -Eq '^TARGET_CFLAGS=.*--target=i686-elf' "$scratch/toolchain.log"
+grep -Eq '^TARGET_CPPFLAGS=.*--target=i686-elf' "$scratch/toolchain.log"
+grep -Eq '^TARGET_CCASFLAGS=.*--target=i686-elf' "$scratch/toolchain.log"
+grep -Eq '^TARGET_LDFLAGS=.*--target=i686-elf.*-fuse-ld=lld' "$scratch/toolchain.log"
+grep -Eq '^TARGET_OBJCOPY=.*/?llvm-objcopy$' "$scratch/toolchain.log"
+grep -Eq '^TARGET_NM=.*/?llvm-nm$' "$scratch/toolchain.log"
+grep -Eq '^TARGET_RANLIB=.*/?llvm-ranlib$' "$scratch/toolchain.log"
+grep -Eq '^TARGET_STRIP=.*/?llvm-strip$' "$scratch/toolchain.log"
+grep -Eq '^AR=.*/?llvm-ar$' "$scratch/toolchain.log"
+grep -Fxq 'CFLAGS=' "$scratch/toolchain.log"
+grep -Fxq 'CPPFLAGS=' "$scratch/toolchain.log"
+grep -Fxq 'LDFLAGS=' "$scratch/toolchain.log"
+if grep -Eq '(^|[ =])(-arch|-mmacosx-version-min)' "$scratch/toolchain.log"; then
+    printf 'Darwin host flags leaked into the IA32 EFI GRUB target configuration\n' >&2
+    cat "$scratch/toolchain.log" >&2
+    exit 1
+fi
+if grep -Fq 'i686-elf-gcc' "$scratch/toolchain.log"; then
+    printf 'IA32 EFI GRUB fell back to the obsolete GCC cross lane\n' >&2
+    exit 1
+fi
+
 [[ -x "$install/bin/i386-efi-grub-mkimage" ]]
 [[ -f "$install/lib/i686-elf/grub/i386-efi/moddep.lst" ]]
 [[ -f "$install/.whp-grub-i386-efi" ]]
-grep -Fxq 'BOOTSTRAP_SCHEMA=2' "$install/.whp-grub-i386-efi"
+grep -Fxq 'BOOTSTRAP_SCHEMA=3' "$install/.whp-grub-i386-efi"
+grep -Fxq 'TOOLCHAIN=llvm' "$install/.whp-grub-i386-efi"
 
 printf 'sentinel\n' > "$scratch/configure.log"
 run_bootstrap > "$scratch/second.log"
@@ -123,4 +177,4 @@ new_marker="$(cat "$install/.whp-grub-i386-efi")"
 }
 grep -Fq 'SOURCE_CKSUM=' <<<"$new_marker"
 
-printf 'IA32 EFI GRUB bootstrap, cache reuse, and source invalidation: verified\n'
+printf 'IA32 EFI GRUB LLVM bootstrap, flag isolation, cache reuse, and source invalidation: verified\n'
