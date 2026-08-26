@@ -80,15 +80,19 @@ SCRIPT
 done
 
 install="$scratch/install/grub-i386-efi"
-PATH="$scratch/bin:$PATH" \
-BUILD_DIR="$scratch/build" \
-GRUB_I386_INSTALL_PREFIX="$install" \
-GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
-GRUB_I386_AUTO_INSTALL_DEPS=0 \
-WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
-JOBS=1 \
-bash "$bootstrap" > "$scratch/first.log"
+run_bootstrap()
+{
+    PATH="$scratch/bin:$PATH" \
+    BUILD_DIR="$scratch/build" \
+    GRUB_I386_INSTALL_PREFIX="$install" \
+    GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
+    GRUB_I386_AUTO_INSTALL_DEPS=0 \
+    WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
+    JOBS=1 \
+    bash "$bootstrap" "$@"
+}
 
+run_bootstrap > "$scratch/first.log"
 grep -Fxq -- '--target=i686-elf' "$scratch/configure.log"
 grep -Fxq -- '--with-platform=efi' "$scratch/configure.log"
 if grep -Fq -- '--with-platform=pc' "$scratch/configure.log"; then
@@ -98,17 +102,25 @@ fi
 [[ -x "$install/bin/i386-efi-grub-mkimage" ]]
 [[ -f "$install/lib/i686-elf/grub/i386-efi/moddep.lst" ]]
 [[ -f "$install/.whp-grub-i386-efi" ]]
+grep -Fxq 'BOOTSTRAP_SCHEMA=2' "$install/.whp-grub-i386-efi"
 
 printf 'sentinel\n' > "$scratch/configure.log"
-PATH="$scratch/bin:$PATH" \
-BUILD_DIR="$scratch/build" \
-GRUB_I386_INSTALL_PREFIX="$install" \
-GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
-GRUB_I386_AUTO_INSTALL_DEPS=0 \
-WHP_GRUB_CONFIGURE_LOG="$scratch/configure.log" \
-JOBS=1 \
-bash "$bootstrap" > "$scratch/second.log"
+run_bootstrap > "$scratch/second.log"
 grep -Fxq 'sentinel' "$scratch/configure.log"
 grep -Fq 'IA32 EFI GRUB is current:' "$scratch/second.log"
 
-printf 'IA32 EFI GRUB bootstrap and cache policy: verified\n'
+# A Homebrew formula/source update must invalidate the cached GRUB build.
+old_marker="$(cat "$install/.whp-grub-i386-efi")"
+printf 'new source revision\n' > "$scratch/src/grub-test/revision.txt"
+tar -C "$scratch/src" -cJf "$scratch/grub.tar.xz" grub-test
+printf 'stale-cache-sentinel\n' > "$scratch/configure.log"
+run_bootstrap > "$scratch/third.log"
+grep -Fxq -- '--target=i686-elf' "$scratch/configure.log"
+new_marker="$(cat "$install/.whp-grub-i386-efi")"
+[[ "$new_marker" != "$old_marker" ]] || {
+    printf 'source archive changed without invalidating the IA32 EFI GRUB marker\n' >&2
+    exit 1
+}
+grep -Fq 'SOURCE_CKSUM=' <<<"$new_marker"
+
+printf 'IA32 EFI GRUB bootstrap, cache reuse, and source invalidation: verified\n'
