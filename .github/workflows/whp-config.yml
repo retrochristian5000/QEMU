@@ -39,6 +39,7 @@ on:
       - 'roms/seabios'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'scripts/tests/test-firmware-target-aliases.py'
+      - 'scripts/tests/test-homebrew-dependency-refresh.bash'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
@@ -127,6 +128,9 @@ jobs:
       - name: Test incremental build behavior
         run: python3 scripts/tests/test-whp-incremental.py
 
+      - name: Test Homebrew dependency refresh
+        run: bash scripts/tests/test-homebrew-dependency-refresh.bash
+
       - name: Test targeted PowerPC firmware companion
         run: bash scripts/tests/test-whp-targeted-openbios.bash
 
@@ -171,6 +175,7 @@ jobs:
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/post-build.bash
           bash -n scripts/whp-build/seabios-clang-gcc.bash
+          bash -n scripts/tests/test-homebrew-dependency-refresh.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
