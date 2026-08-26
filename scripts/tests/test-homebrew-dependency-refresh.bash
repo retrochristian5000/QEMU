@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+WHP_ORIGINAL_SOURCE_DIR="$SOURCE_DIR"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/whp-homebrew-refresh.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
