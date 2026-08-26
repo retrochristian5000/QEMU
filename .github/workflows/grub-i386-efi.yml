@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build-real-grub:
-    name: Build real i386-efi GRUB (Apple Silicon)
+    name: Build real i386-efi GRUB with LLVM (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -59,6 +59,7 @@ jobs:
           test -x "$mkimage"
           test -f "$modules/moddep.lst"
           test -f "$prefix/.whp-grub-i386-efi"
+          grep -Fxq 'TOOLCHAIN=llvm' "$prefix/.whp-grub-i386-efi"
           "$mkimage" --version
           "$mkimage" \
             -O i386-efi \
@@ -69,10 +70,10 @@ jobs:
             multiboot multiboot2 reboot halt
           test -s "$image"
 
-          objdump="$(command -v i686-elf-objdump)"
-          "$objdump" -f "$image" | tee grub-i386-efi-objdump.log
-          grep -Eq 'file format (pei-i386|pe-i386)' grub-i386-efi-objdump.log
-          grep -Eq 'architecture: i386' grub-i386-efi-objdump.log
+          llvm_readobj="$(command -v llvm-readobj)"
+          "$llvm_readobj" --file-headers "$image" | tee grub-i386-efi-readobj.log
+          grep -Eq 'Format: (COFF-i386|PE32)' grub-i386-efi-readobj.log
+          grep -Eq 'Arch: i386|Machine: IMAGE_FILE_MACHINE_I386' grub-i386-efi-readobj.log
 
       - name: Verify bootstrap cache reuse
         shell: bash
@@ -89,7 +90,7 @@ jobs:
         shell: bash
         run: |
           tail -n 250 grub-i386-efi-build.log 2>/dev/null || true
-          cat grub-i386-efi-objdump.log 2>/dev/null || true
+          cat grub-i386-efi-readobj.log 2>/dev/null || true
 
       - name: Upload failure logs
         if: failure()
@@ -98,7 +99,7 @@ jobs:
           name: grub-i386-efi-failure
           path: |
             grub-i386-efi-build.log
-            grub-i386-efi-objdump.log
+            grub-i386-efi-readobj.log
             build-grub-i386-efi/firmware-tools/grub-i386-efi/.whp-grub-i386-efi
           if-no-files-found: warn
           retention-days: 7
