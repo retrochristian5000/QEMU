@@ -27,7 +27,13 @@ whp_prepare_seabios_grub_sources()
     local grub_i386_explicit=0
     local run_i386_bootstrap=0
     local brew_cmd="${GRUB_I386_BREW:-${WHP_HOMEBREW_BREW:-}}"
-    local bootstrap_script="$SOURCE_DIR/scripts/bootstrap-i386-efi-grub.sh"
+    local source_dir="${SOURCE_DIR:-}"
+    local bootstrap_script
+
+    if [[ -z "$source_dir" ]]; then
+        source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+    fi
+    bootstrap_script="$source_dir/scripts/bootstrap-i386-efi-grub.sh"
 
     [[ -f "$grub_config" ]] && grub_was_enabled=1
     [[ -f "$hybrid_config" ]] && hybrid_was_enabled=1
