@@ -35,6 +35,7 @@ grep -Fq 'seabios-grub' "$roms/Makefile"
 grep -Fq 'seabios-grub.elf' "$roms/Makefile"
 python3 "$seabios/scripts/test-multiboot-video.py"
 python3 "$seabios/scripts/test-multiboot-keyboard.py"
+python3 "$seabios/scripts/test-vgafixup-call.py"
 
 menu_dump="$(python3 "$config_tool" --dump-menu)"
 grep -Fq 'Firmware' <<<"$menu_dump"
