@@ -18,8 +18,8 @@ grep -Fq 'GRUB_I386_MKIMAGE' "$prepare"
 grep -Fq 'GRUB_X86_64_MKIMAGE' "$prepare"
 grep -Fq 'GRUB_I386_MODULE_DIR' "$prepare"
 grep -Fq 'GRUB_X86_64_MODULE_DIR' "$prepare"
-grep -Fq 'GRUB_I386_PREFIX' "$prepare"
-grep -Fq 'GRUB_X86_64_PREFIX' "$prepare"
+grep -Fq 'GRUB_I386_INSTALL_PREFIX' "$prepare"
+grep -Fq 'GRUB_X86_64_INSTALL_PREFIX' "$prepare"
 grep -Fq 'HOMEBREW_PREFIX' "$prepare"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$targets"
 grep -Fq 'whp-seabios-hybrid-iso' "$meson"
@@ -32,8 +32,8 @@ grep -Fq 'i686-elf-grub-mkimage' "$iso_builder"
 grep -Fq 'x86_64-elf-grub-mkimage' "$iso_builder"
 grep -Fq 'GRUB_I386_MODULE_DIR' "$iso_builder"
 grep -Fq 'GRUB_X86_64_MODULE_DIR' "$iso_builder"
-grep -Fq 'GRUB_I386_PREFIX' "$iso_builder"
-grep -Fq 'GRUB_X86_64_PREFIX' "$iso_builder"
+grep -Fq 'GRUB_I386_INSTALL_PREFIX' "$iso_builder"
+grep -Fq 'GRUB_X86_64_INSTALL_PREFIX' "$iso_builder"
 grep -Fq 'brew --prefix "$formula"' "$iso_builder"
 grep -Fq 'moddep.lst' "$iso_builder"
 grep -Fq 'i386-efi' "$iso_builder"
@@ -76,6 +76,18 @@ while (( $# )); do
 done
 [[ -n "$out" && -n "$format" ]]
 printf 'EFI:%s\n' "$format" > "$out"
+SCRIPT
+
+cat > "$scratch/bin/brew" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == --prefix ]] || exit 2
+case "${2:-}" in
+    '') printf '%s\n' "$WHP_TEST_HOMEBREW_PREFIX" ;;
+    x86_64-elf-grub) printf '%s\n' "$WHP_TEST_X86_64_GRUB_PREFIX" ;;
+    i686-elf-grub) printf '%s\n' "$WHP_TEST_I686_GRUB_PREFIX" ;;
+    *) exit 1 ;;
+esac
 SCRIPT
 
 cat > "$scratch/bin/mformat" <<'SCRIPT'
@@ -127,6 +139,10 @@ MCOPY=$scratch/bin/mcopy
 SEABIOS_BUILD_ROOT=$seabios_build_root
 EOF
 
+PATH="$scratch/bin:$PATH" \
+WHP_TEST_HOMEBREW_PREFIX="$homebrew_prefix" \
+WHP_TEST_X86_64_GRUB_PREFIX="$x86_64_formula_prefix" \
+WHP_TEST_I686_GRUB_PREFIX="$homebrew_prefix/opt/i686-elf-grub" \
 WHP_ISO_TEST_MKIMAGE_LOG="$scratch/mkimage.log" \
 WHP_ISO_TEST_MTOOLS_LOG="$scratch/mtools.log" \
 WHP_ISO_TEST_XORRISO_LOG="$scratch/xorriso.log" \
