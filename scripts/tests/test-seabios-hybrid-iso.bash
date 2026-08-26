@@ -44,7 +44,7 @@ grep -Fq 'GRUB_I386_INSTALL_PREFIX' "$iso_builder"
 grep -Fq 'GRUB_X86_64_INSTALL_PREFIX' "$iso_builder"
 grep -Fq 'brew --prefix "$formula"' "$iso_builder"
 grep -Fq 'moddep.lst' "$iso_builder"
-grep -Fq 'i386-efi' "$iso_builder"
+grep -Fq 'i386-none-elf i386-efi' "$iso_builder"
 grep -Fq 'x86_64-efi' "$iso_builder"
 grep -Fq 'BOOTIA32.EFI' "$iso_builder"
 grep -Fq 'BOOTX64.EFI' "$iso_builder"
@@ -54,6 +54,10 @@ grep -Fq 'set gfxpayload=keep' "$iso_builder"
 grep -Fq 'name=vgaroms/whp-grub-framebuffer.rom' "$iso_builder"
 grep -Fq -- '-efi-boot-part' "$iso_builder"
 grep -Fq -- '--efi-boot-image' "$iso_builder"
+if grep -Fq 'lib/i686-elf/grub/i386-efi' "$prepare"; then
+    printf 'preparation still records the obsolete Homebrew i686 module path\n' >&2
+    exit 1
+fi
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-hybrid-iso.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
