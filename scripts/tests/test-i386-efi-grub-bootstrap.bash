@@ -88,13 +88,19 @@ chmod +x "${DESTDIR}$bindir/i386-efi-grub-mkimage"
 SCRIPT
 chmod +x "$scratch/bin/make"
 
+cat > "$scratch/bin/host-cc" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+chmod +x "$scratch/bin/host-cc"
+
 # Reuse the QEMU fork's already-built i386 LLVM distribution. Do not put these
 # tools on PATH: the GRUB bootstrap must consume this explicit fork ABI rather
 # than discovering a second host/Homebrew LLVM installation.
 i386_toolchain="$scratch/i386-toolchain"
 llvm_bin="$i386_toolchain/llvm/bin"
 mkdir -p "$llvm_bin"
-for tool in clang ld.lld llvm-ar llvm-nm llvm-ranlib llvm-objcopy llvm-strip llvm-readobj; do
+for tool in clang ld.lld llvm-ar llvm-nm llvm-ranlib llvm-objcopy llvm-strip llvm-objdump; do
     cat > "$llvm_bin/$tool" <<'SCRIPT'
 #!/usr/bin/env bash
 if [[ "${1:-}" == --version ]]; then
@@ -118,6 +124,7 @@ run_bootstrap()
     BUILD_DIR="$scratch/build" \
     I386_TOOLCHAIN_DIR="$i386_toolchain" \
     GRUB_I386_LLVM_BIN="$llvm_bin" \
+    GRUB_I386_BUILD_CC="$scratch/bin/host-cc" \
     GRUB_I386_INSTALL_PREFIX="$install" \
     GRUB_I386_SOURCE_ARCHIVE="$scratch/grub.tar.xz" \
     GRUB_I386_AUTO_INSTALL_DEPS=0 \
@@ -138,11 +145,11 @@ if grep -Fq -- '--with-platform=pc' "$scratch/configure.log"; then
     exit 1
 fi
 
-# Cross-target configuration must use the fork's LLVM paths and must not inherit
-# Darwin host architecture/deployment flags.
-grep -Fxq "CC=$llvm_bin/clang" "$scratch/toolchain.log"
-grep -Fxq "BUILD_CC=$llvm_bin/clang" "$scratch/toolchain.log"
-grep -Fxq "HOST_CC=$llvm_bin/clang" "$scratch/toolchain.log"
+# Host utilities keep the host compiler; target firmware compilation uses only
+# the fork's LLVM paths and cannot inherit Darwin architecture/deployment flags.
+grep -Fxq "CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
+grep -Fxq "BUILD_CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
+grep -Fxq "HOST_CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
 grep -Fxq "TARGET_CC=$llvm_bin/clang" "$scratch/toolchain.log"
 grep -Eq '^TARGET_CFLAGS=.*--target=i386-none-elf' "$scratch/toolchain.log"
 grep -Eq '^TARGET_CPPFLAGS=.*--target=i386-none-elf' "$scratch/toolchain.log"
