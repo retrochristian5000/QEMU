@@ -14,6 +14,9 @@ grep -Fq "Option('BUILD_SEABIOS_HYBRID_ISO', 'Firmware', 'Build hybrid x86 UEFI 
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$prepare"
 grep -Fq '.whp-seabios-hybrid-iso.env' "$prepare"
 grep -Fq "printf 'SEABIOS_BUILD_ROOT=%q" "$prepare"
+grep -Fq 'GRUB_I386_MKIMAGE' "$prepare"
+grep -Fq 'GRUB_X86_64_MKIMAGE' "$prepare"
+grep -Fq 'HOMEBREW_PREFIX' "$prepare"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$targets"
 grep -Fq 'whp-seabios-hybrid-iso' "$meson"
 [[ -f "$iso_builder" ]] || {
@@ -22,6 +25,8 @@ grep -Fq 'whp-seabios-hybrid-iso' "$meson"
 }
 
 grep -Fq 'i686-elf-grub-mkimage' "$iso_builder"
+grep -Fq 'x86_64-elf-grub-mkimage' "$iso_builder"
+grep -Fq 'moddep.lst' "$iso_builder"
 grep -Fq 'i386-efi' "$iso_builder"
 grep -Fq 'x86_64-efi' "$iso_builder"
 grep -Fq 'BOOTIA32.EFI' "$iso_builder"
@@ -36,9 +41,15 @@ grep -Fq -- '--efi-boot-image' "$iso_builder"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-hybrid-iso.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 seabios_build_root="$scratch/firmware-build/seabios"
-mkdir -p "$scratch/bin" "$scratch/build" "$seabios_build_root/seabios-grub"
+homebrew_prefix="$scratch/homebrew"
+i386_modules="$homebrew_prefix/lib/grub/i386-efi"
+x86_64_modules="$homebrew_prefix/lib/x86_64-elf/grub/x86_64-efi"
+mkdir -p "$scratch/bin" "$scratch/build" "$seabios_build_root/seabios-grub" \
+    "$i386_modules" "$x86_64_modules"
 printf 'multiboot-seabios\n' > "$scratch/seabios-grub.elf"
 printf '\x55\xaaGRUB-framebuffer-vgabios\n' > "$seabios_build_root/seabios-grub/vgabios.bin"
+: > "$i386_modules/moddep.lst"
+: > "$x86_64_modules/moddep.lst"
 
 cat > "$scratch/bin/grub-mkimage" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -97,6 +108,7 @@ chmod +x "$scratch/bin/"*
 
 cat > "$scratch/tools.env" <<EOF
 GRUB_MKIMAGE=$scratch/bin/grub-mkimage
+HOMEBREW_PREFIX=$homebrew_prefix
 XORRISO=$scratch/bin/xorriso
 MFORMAT=$scratch/bin/mformat
 MMD=$scratch/bin/mmd
@@ -113,8 +125,8 @@ bash "$iso_builder" "$scratch/tools.env" \
     "$scratch/seabios-grub.elf" "$scratch/build/whp-seabios-hybrid.iso"
 
 [[ -f "$scratch/build/whp-seabios-hybrid.iso" ]]
-grep -Fq -- '-O i386-efi' "$scratch/mkimage.log"
-grep -Fq -- '-O x86_64-efi' "$scratch/mkimage.log"
+grep -F -- '-O i386-efi' "$scratch/mkimage.log" | grep -Fq -- "-d $i386_modules"
+grep -F -- '-O x86_64-efi' "$scratch/mkimage.log" | grep -Fq -- "-d $x86_64_modules"
 grep -Fq 'BOOTIA32.EFI' "$scratch/mkimage.log"
 grep -Fq 'BOOTX64.EFI' "$scratch/mkimage.log"
 grep -Fq 'multiboot' "$scratch/mkimage.log"
@@ -147,4 +159,4 @@ WHP_ISO_TEST_TARGET_LOG="$scratch/target.log" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets' _ "$targets"
 grep -Fxq 'whp-seabios-hybrid-iso' "$scratch/target.log"
 
-printf 'hybrid x86 UEFI SeaBIOS framebuffer wiring: verified\n'
+printf 'hybrid x86 UEFI SeaBIOS Homebrew GRUB module wiring: verified\n'

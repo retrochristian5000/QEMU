@@ -15,6 +15,9 @@ whp_prepare_seabios_grub_sources()
     local hybrid_was_enabled=0
     local reconfigure=0
     local seabios_build_root=
+    local legacy_grub_mkimage="${GRUB_MKIMAGE:-}"
+    local grub_i386_mkimage="${GRUB_I386_MKIMAGE:-${legacy_grub_mkimage:-i686-elf-grub-mkimage}}"
+    local grub_x86_64_mkimage="${GRUB_X86_64_MKIMAGE:-${legacy_grub_mkimage:-x86_64-elf-grub-mkimage}}"
 
     [[ -f "$grub_config" ]] && grub_was_enabled=1
     [[ -f "$hybrid_config" ]] && hybrid_was_enabled=1
@@ -102,9 +105,15 @@ whp_prepare_seabios_grub_sources()
 
     if [[ "$hybrid_mode" == 1 ]]; then
         {
-            printf 'GRUB_MKIMAGE=%q\n' "${GRUB_MKIMAGE:-i686-elf-grub-mkimage}"
+            # Keep the old single-tool override for custom installs, but record
+            # separate defaults so IA32 and x86-64 EFI never share the wrong
+            # Homebrew GRUB binary by accident.
+            printf 'GRUB_MKIMAGE=%q\n' "$legacy_grub_mkimage"
+            printf 'GRUB_I386_MKIMAGE=%q\n' "$grub_i386_mkimage"
+            printf 'GRUB_X86_64_MKIMAGE=%q\n' "$grub_x86_64_mkimage"
             printf 'GRUB_I386_EFI_DIR=%q\n' "${GRUB_I386_EFI_DIR:-}"
             printf 'GRUB_X86_64_EFI_DIR=%q\n' "${GRUB_X86_64_EFI_DIR:-}"
+            printf 'HOMEBREW_PREFIX=%q\n' "${HOMEBREW_PREFIX:-}"
             printf 'XORRISO=%q\n' "${XORRISO:-xorriso}"
             printf 'MFORMAT=%q\n' "${MFORMAT:-mformat}"
             printf 'MMD=%q\n' "${MMD:-mmd}"
