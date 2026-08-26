@@ -48,12 +48,13 @@ fi
 }
 source_id="$(cksum "$archive" | awk '{printf "%s:%s", $1, $2}')"
 expected_marker="$(cat <<EOF_MARKER
-BOOTSTRAP_SCHEMA=2
+BOOTSTRAP_SCHEMA=3
 FORMULA=$FORMULA
 SOURCE_CKSUM=$source_id
 TARGET=i686-elf
 PLATFORM=i386-efi
 PROGRAM_PREFIX=i386-efi-
+TOOLCHAIN=llvm
 EOF_MARKER
 )"
 
@@ -69,30 +70,41 @@ if [[ "$FORCE_REBUILD" == 0 ]] && usable; then
     exit 0
 fi
 
-need_cross=0
-for tool in i686-elf-gcc i686-elf-ld i686-elf-objcopy i686-elf-nm i686-elf-ranlib i686-elf-strip; do
-    command -v "$tool" >/dev/null 2>&1 || need_cross=1
+# GRUB has separate host/build/target compiler contracts and explicitly
+# supports Clang as a target compiler. Use one LLVM stack instead of building
+# an i686-elf GCC/binutils stack just to produce the i386 EFI modules.
+llvm_tools=(clang llvm-ar llvm-objcopy llvm-nm llvm-ranlib llvm-strip ld.lld)
+need_llvm=0
+for tool in "${llvm_tools[@]}"; do
+    command -v "$tool" >/dev/null 2>&1 || need_llvm=1
 done
 
-if [[ "$need_cross" == 1 && "$AUTO_INSTALL_DEPS" == 1 ]]; then
+if [[ "$need_llvm" == 1 && "$AUTO_INSTALL_DEPS" == 1 ]]; then
     command -v "$BREW_CMD" >/dev/null 2>&1 || {
-        printf 'error: Homebrew is required to install the IA32 EFI GRUB cross tools\n' >&2
+        printf 'error: Homebrew is required to install the IA32 EFI GRUB LLVM tools\n' >&2
         exit 1
     }
-    "$BREW_CMD" install i686-elf-binutils i686-elf-gcc gawk help2man texinfo xz
-    for dep in i686-elf-binutils i686-elf-gcc gawk help2man texinfo xz; do
+    "$BREW_CMD" install llvm lld gawk help2man texinfo xz
+    for dep in llvm lld gawk help2man texinfo xz; do
         dep_prefix="$($BREW_CMD --prefix "$dep" 2>/dev/null || true)"
         [[ -z "$dep_prefix" || ! -d "$dep_prefix/bin" ]] || PATH="$dep_prefix/bin:$PATH"
     done
     export PATH
 fi
 
-for tool in i686-elf-gcc i686-elf-ld i686-elf-objcopy i686-elf-nm i686-elf-ranlib i686-elf-strip; do
+for tool in "${llvm_tools[@]}"; do
     command -v "$tool" >/dev/null 2>&1 || {
-        printf 'error: IA32 EFI GRUB cross tool not found after dependency preparation: %s\n' "$tool" >&2
+        printf 'error: IA32 EFI GRUB LLVM tool not found after dependency preparation: %s\n' "$tool" >&2
         exit 1
     }
 done
+
+clang="$(command -v clang)"
+llvm_ar="$(command -v llvm-ar)"
+llvm_objcopy="$(command -v llvm-objcopy)"
+llvm_nm="$(command -v llvm-nm)"
+llvm_ranlib="$(command -v llvm-ranlib)"
+llvm_strip="$(command -v llvm-strip)"
 
 source_root="$WORK_DIR/source"
 build_root="$WORK_DIR/build"
@@ -120,7 +132,36 @@ configure_args=(
 )
 (
     cd "$build_root"
-    "$grub_source/configure" "${configure_args[@]}"
+
+    # Do not let a Darwin host environment bleed -arch or deployment-target
+    # flags into GRUB's target compiler probes. Target selection belongs to
+    # Clang's portable --target= ABI; LLD handles target links.
+    CFLAGS= \
+    CPPFLAGS= \
+    LDFLAGS= \
+    BUILD_CFLAGS= \
+    BUILD_CPPFLAGS= \
+    BUILD_LDFLAGS= \
+    HOST_CFLAGS= \
+    HOST_CPPFLAGS= \
+    HOST_LDFLAGS= \
+    CC="$clang" \
+    BUILD_CC="$clang" \
+    HOST_CC="$clang" \
+    AR="$llvm_ar" \
+    NM="$llvm_nm" \
+    RANLIB="$llvm_ranlib" \
+    STRIP="$llvm_strip" \
+    TARGET_CC="$clang" \
+    TARGET_CFLAGS='-Os --target=i686-elf' \
+    TARGET_CPPFLAGS='--target=i686-elf' \
+    TARGET_CCASFLAGS='--target=i686-elf' \
+    TARGET_LDFLAGS='--target=i686-elf -fuse-ld=lld' \
+    TARGET_OBJCOPY="$llvm_objcopy" \
+    TARGET_NM="$llvm_nm" \
+    TARGET_RANLIB="$llvm_ranlib" \
+    TARGET_STRIP="$llvm_strip" \
+        "$grub_source/configure" "${configure_args[@]}"
 )
 
 make_args=()
