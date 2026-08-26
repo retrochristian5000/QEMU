@@ -23,7 +23,7 @@ output="$3"
 source "$tool_config"
 
 legacy_grub_mkimage="${GRUB_MKIMAGE:-}"
-GRUB_I386_MKIMAGE="${GRUB_I386_MKIMAGE:-${legacy_grub_mkimage:-i686-elf-grub-mkimage}}"
+GRUB_I386_MKIMAGE="${GRUB_I386_MKIMAGE:-${legacy_grub_mkimage:-i386-efi-grub-mkimage}}"
 GRUB_X86_64_MKIMAGE="${GRUB_X86_64_MKIMAGE:-${legacy_grub_mkimage:-x86_64-elf-grub-mkimage}}"
 GRUB_I386_MODULE_DIR="${GRUB_I386_MODULE_DIR:-${GRUB_I386_EFI_DIR:-}}"
 GRUB_X86_64_MODULE_DIR="${GRUB_X86_64_MODULE_DIR:-${GRUB_X86_64_EFI_DIR:-}}"
@@ -161,7 +161,7 @@ if [[ -z "$i386_module_dir" &&
       "$(basename "$GRUB_I386_MKIMAGE")" == i686-elf-grub-mkimage ]]; then
     printf '%s\n' \
         'error: i686-elf-grub is a PC-platform GRUB build and has no i386-efi module tree.' \
-        'Set GRUB_I386_MKIMAGE plus GRUB_I386_MODULE_DIR or GRUB_I386_INSTALL_PREFIX to an i386-efi build.' >&2
+        'Use the WHP IA32 EFI bootstrap or set GRUB_I386_MKIMAGE plus GRUB_I386_MODULE_DIR.' >&2
     exit 1
 fi
 
