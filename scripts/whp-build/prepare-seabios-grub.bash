@@ -24,6 +24,8 @@ whp_prepare_seabios_grub_sources()
     local grub_x86_64_install_prefix="${GRUB_X86_64_INSTALL_PREFIX:-${GRUB_X86_64_PREFIX:-}}"
     local grub_i386_bootstrap="${GRUB_I386_BOOTSTRAP:-auto}"
     local grub_i386_bootstrap_prefix="${GRUB_I386_BOOTSTRAP_PREFIX:-$BUILD_DIR/firmware-tools/grub-i386-efi}"
+    local i386_toolchain_dir="${I386_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/i386-none-elf}"
+    local i386_toolchain_work_dir="${I386_TOOLCHAIN_WORK_DIR:-$BUILD_DIR/firmware-tools/toolchain-work/i386-none-elf}"
     local grub_i386_explicit=0
     local run_i386_bootstrap=0
     local brew_cmd="${GRUB_I386_BREW:-${WHP_HOMEBREW_BREW:-}}"
@@ -69,9 +71,9 @@ whp_prepare_seabios_grub_sources()
     fi
 
     # Any explicit IA32 GRUB tool/module/prefix selection is authoritative.
-    # Otherwise Homebrew's i686-elf-grub must never be treated as EFI: that
-    # formula is configured for the PC platform. The automatic lane builds a
-    # real i386-efi GRUB from the formula's verified source instead.
+    # Otherwise Homebrew is only the GRUB source provider. The automatic lane
+    # builds a real i386-efi GRUB with the same i386-none-elf LLVM fork already
+    # prepared for SeaBIOS; Homebrew's PC-only i686 GRUB is never reused as EFI.
     if [[ -n "${GRUB_I386_MKIMAGE:-}" || -n "$legacy_grub_mkimage" ||
           -n "$grub_i386_module_dir" || -n "$grub_i386_install_prefix" ]]; then
         grub_i386_explicit=1
@@ -141,12 +143,14 @@ whp_prepare_seabios_grub_sources()
             }
             BUILD_DIR="$BUILD_DIR" \
             JOBS="${JOBS:-}" \
+            I386_TOOLCHAIN_DIR="$i386_toolchain_dir" \
+            I386_TOOLCHAIN_WORK_DIR="$i386_toolchain_work_dir" \
             GRUB_I386_BREW="$brew_cmd" \
             GRUB_I386_INSTALL_PREFIX="$grub_i386_bootstrap_prefix" \
                 bash "$bootstrap_script" || return
             grub_i386_install_prefix="$grub_i386_bootstrap_prefix"
             grub_i386_mkimage="$grub_i386_install_prefix/bin/i386-efi-grub-mkimage"
-            grub_i386_module_dir="$grub_i386_install_prefix/lib/i686-elf/grub/i386-efi"
+            grub_i386_module_dir="$grub_i386_install_prefix/lib/i386-none-elf/grub/i386-efi"
         fi
     fi
 
