@@ -20,9 +20,47 @@ mkimage="$INSTALL_PREFIX/bin/i386-efi-grub-mkimage"
 module_dir="$INSTALL_PREFIX/lib/i686-elf/grub/i386-efi"
 marker="$INSTALL_PREFIX/.whp-grub-i386-efi"
 
+for tool in make tar mktemp cksum awk; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        printf 'error: IA32 EFI GRUB bootstrap dependency not found: %s\n' "$tool" >&2
+        exit 1
+    }
+done
+
+# Resolve the source identity before accepting an existing tool. This is the
+# cache's Homebrew-upgrade guard: a formula source update must invalidate an
+# otherwise healthy old i386-efi build instead of silently reusing it.
+archive="${GRUB_I386_SOURCE_ARCHIVE:-}"
+if [[ -z "$archive" ]]; then
+    command -v "$BREW_CMD" >/dev/null 2>&1 || {
+        printf 'error: Homebrew is required to resolve the GRUB source archive\n' >&2
+        exit 1
+    }
+    archive="$($BREW_CMD --cache --build-from-source "$FORMULA" 2>/dev/null || true)"
+    if [[ -z "$archive" || ! -f "$archive" ]]; then
+        "$BREW_CMD" fetch --build-from-source "$FORMULA" >/dev/null
+        archive="$($BREW_CMD --cache --build-from-source "$FORMULA")"
+    fi
+fi
+[[ -f "$archive" ]] || {
+    printf 'error: IA32 EFI GRUB source archive is missing: %s\n' "$archive" >&2
+    exit 1
+}
+source_id="$(cksum "$archive" | awk '{printf "%s:%s", $1, $2}')"
+expected_marker="$(cat <<EOF_MARKER
+BOOTSTRAP_SCHEMA=2
+FORMULA=$FORMULA
+SOURCE_CKSUM=$source_id
+TARGET=i686-elf
+PLATFORM=i386-efi
+PROGRAM_PREFIX=i386-efi-
+EOF_MARKER
+)"
+
 usable()
 {
     [[ -x "$mkimage" && -f "$module_dir/moddep.lst" && -f "$marker" ]] || return 1
+    [[ "$(cat "$marker")" == "$expected_marker" ]] || return 1
     "$mkimage" --version >/dev/null 2>&1
 }
 
@@ -30,13 +68,6 @@ if [[ "$FORCE_REBUILD" == 0 ]] && usable; then
     printf 'IA32 EFI GRUB is current: %s\n' "$INSTALL_PREFIX"
     exit 0
 fi
-
-for tool in make tar mktemp cksum find head; do
-    command -v "$tool" >/dev/null 2>&1 || {
-        printf 'error: IA32 EFI GRUB bootstrap dependency not found: %s\n' "$tool" >&2
-        exit 1
-    }
-done
 
 need_cross=0
 for tool in i686-elf-gcc i686-elf-ld i686-elf-objcopy i686-elf-nm i686-elf-ranlib i686-elf-strip; do
@@ -62,21 +93,6 @@ for tool in i686-elf-gcc i686-elf-ld i686-elf-objcopy i686-elf-nm i686-elf-ranli
         exit 1
     }
 done
-
-archive="${GRUB_I386_SOURCE_ARCHIVE:-}"
-if [[ -z "$archive" ]]; then
-    command -v "$BREW_CMD" >/dev/null 2>&1 || {
-        printf 'error: Homebrew is required to fetch the GRUB source archive\n' >&2
-        exit 1
-    }
-    "$BREW_CMD" fetch --build-from-source "$FORMULA" >/dev/null
-    archive="$($BREW_CMD --cache --build-from-source "$FORMULA")"
-fi
-[[ -f "$archive" ]] || {
-    printf 'error: IA32 EFI GRUB source archive is missing: %s\n' "$archive" >&2
-    exit 1
-}
-source_id="$(cksum "$archive" | awk '{printf "%s:%s", $1, $2}')"
 
 source_root="$WORK_DIR/source"
 build_root="$WORK_DIR/build"
@@ -130,14 +146,7 @@ smoke="$WORK_DIR/i386-efi-smoke.efi"
     exit 1
 }
 
-cat > "$staged/.whp-grub-i386-efi" <<EOF_MARKER
-BOOTSTRAP_SCHEMA=1
-FORMULA=$FORMULA
-SOURCE_CKSUM=$source_id
-TARGET=i686-elf
-PLATFORM=i386-efi
-PROGRAM_PREFIX=i386-efi-
-EOF_MARKER
+printf '%s\n' "$expected_marker" > "$staged/.whp-grub-i386-efi"
 
 replacement="$INSTALL_PREFIX.new.$$"
 rm -rf "$replacement"
