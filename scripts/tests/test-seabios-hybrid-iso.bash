@@ -7,6 +7,7 @@ prepare="$root/scripts/whp-build/prepare-seabios-grub.bash"
 targets="$root/scripts/whp-build/build-targets.bash"
 meson="$root/pc-bios/meson.build"
 iso_builder="$root/scripts/build-seabios-hybrid-iso.sh"
+bootstrap_test="$root/scripts/tests/test-i386-efi-grub-bootstrap.bash"
 
 menu_dump="$(python3 "$config_tool" --dump-menu)"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO=n' <<<"$menu_dump"
@@ -20,6 +21,8 @@ grep -Fq 'GRUB_I386_MODULE_DIR' "$prepare"
 grep -Fq 'GRUB_X86_64_MODULE_DIR' "$prepare"
 grep -Fq 'GRUB_I386_INSTALL_PREFIX' "$prepare"
 grep -Fq 'GRUB_X86_64_INSTALL_PREFIX' "$prepare"
+grep -Fq 'GRUB_I386_BOOTSTRAP' "$prepare"
+grep -Fq 'bootstrap-i386-efi-grub.sh' "$prepare"
 grep -Fq 'HOMEBREW_PREFIX' "$prepare"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$targets"
 grep -Fq 'whp-seabios-hybrid-iso' "$meson"
@@ -27,8 +30,13 @@ grep -Fq 'whp-seabios-hybrid-iso' "$meson"
     printf 'hybrid SeaBIOS ISO builder is missing: %s\n' "$iso_builder" >&2
     exit 1
 }
+[[ -f "$bootstrap_test" ]] || {
+    printf 'IA32 EFI GRUB bootstrap test is missing: %s\n' "$bootstrap_test" >&2
+    exit 1
+}
+bash "$bootstrap_test"
 
-grep -Fq 'i686-elf-grub-mkimage' "$iso_builder"
+grep -Fq 'i386-efi-grub-mkimage' "$iso_builder"
 grep -Fq 'x86_64-elf-grub-mkimage' "$iso_builder"
 grep -Fq 'GRUB_I386_MODULE_DIR' "$iso_builder"
 grep -Fq 'GRUB_X86_64_MODULE_DIR' "$iso_builder"
