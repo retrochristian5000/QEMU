@@ -26,9 +26,15 @@ grep -Fxq 'CONFIG_COREBOOT=y' "$config"
 grep -Fxq 'CONFIG_MULTIBOOT=y' "$config"
 grep -Fxq 'CONFIG_COREBOOT_FLASH=n' "$config"
 grep -Fxq 'CONFIG_VGA_COREBOOT=y' "$config"
+grep -Fxq 'CONFIG_HARDWARE_IRQ=y' "$config"
+grep -Fxq 'CONFIG_KEYBOARD=y' "$config"
+grep -Fxq 'CONFIG_PS2PORT=y' "$config"
+grep -Fxq 'CONFIG_USB=y' "$config"
+grep -Fxq 'CONFIG_USB_KEYBOARD=y' "$config"
 grep -Fq 'seabios-grub' "$roms/Makefile"
 grep -Fq 'seabios-grub.elf' "$roms/Makefile"
 python3 "$seabios/scripts/test-multiboot-video.py"
+python3 "$seabios/scripts/test-multiboot-keyboard.py"
 
 menu_dump="$(python3 "$config_tool" --dump-menu)"
 grep -Fq 'Firmware' <<<"$menu_dump"
@@ -111,8 +117,8 @@ grep -Fxq 'whp-seabios-grub' "$scratch/enabled.log"
 BUILD_DIR="$scratch/qemu-build" \
 BUILD_TARGETS=qemu-img \
 BUILD_OPENBIOS=0 \
-BUILD_SEABIOS=0 \
 BUILD_SEABIOS_GRUB=0 \
+BUILD_SEABIOS=0 \
 INSTALL=0 \
 JOBS=1 \
 NINJA_CMD="$scratch/bin/ninja" \
@@ -140,6 +146,13 @@ vgabios="$scratch/build/seabios-grub/vgabios.bin"
     printf 'GRUB framebuffer VGA BIOS was not produced: %s\n' "$vgabios" >&2
     exit 1
 }
+
+for option in HARDWARE_IRQ KEYBOARD PS2PORT USB USB_KEYBOARD; do
+    grep -Fxq "CONFIG_${option}=y" "$scratch/build/seabios-grub/.config" || {
+        printf 'GRUB SeaBIOS build omitted required keyboard option: CONFIG_%s\n' "$option" >&2
+        exit 1
+    }
+done
 
 python3 - "$payload" "$vgabios" <<'PY'
 import pathlib
@@ -177,4 +190,4 @@ print(f'SeaBIOS GRUB payload: ELF32/i386 entry=0x{entry:08x} multiboot@0x{offset
 print(f'GRUB framebuffer VGA BIOS: {len(rom)} bytes, checksum valid')
 PY
 
-printf 'GRUB-loadable SeaBIOS payload with framebuffer VGA: verified\n'
+printf 'GRUB-loadable SeaBIOS payload with framebuffer VGA and keyboard IRQ bridge: verified\n'

@@ -4,9 +4,16 @@
 # on SeaBIOS's coreboot entry path because that is where CONFIG_MULTIBOOT and
 # entry_elf are already implemented, but do not require a CBFS image.  Build
 # the coreboot framebuffer VGA wrapper so SeaBIOS can reuse GRUB's EFI video.
+# Keep legacy keyboard interrupt routing explicit: an EFI GRUB handoff is not
+# a reset path, so the payload must provide BIOS INT16 and IRQ1 services itself.
 
 CONFIG_COREBOOT=y
 CONFIG_MULTIBOOT=y
 CONFIG_COREBOOT_FLASH=n
 CONFIG_DEBUG_COREBOOT=n
 CONFIG_VGA_COREBOOT=y
+CONFIG_HARDWARE_IRQ=y
+CONFIG_KEYBOARD=y
+CONFIG_PS2PORT=y
+CONFIG_USB=y
+CONFIG_USB_KEYBOARD=y
