@@ -1,0 +1,104 @@
+name: WHP IA32 EFI GRUB
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-i386-efi-grub.sh'
+      - 'scripts/build-seabios-hybrid-iso.sh'
+      - 'scripts/whp-build/prepare-seabios-grub.bash'
+      - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
+      - 'scripts/tests/test-seabios-hybrid-iso.bash'
+      - '.github/workflows/grub-i386-efi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-grub-i386-efi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-real-grub:
+    name: Build real i386-efi GRUB (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-grub-i386-efi
+      GRUB_I386_AUTO_INSTALL_DEPS: '1'
+      JOBS: '4'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Apple Silicon host
+        shell: bash
+        run: test "$(uname -m)" = arm64
+
+      - name: Build IA32 EFI GRUB from Homebrew source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-i386-efi-grub.sh | tee grub-i386-efi-build.log
+
+      - name: Verify mkimage and hybrid modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$BUILD_DIR/firmware-tools/grub-i386-efi"
+          mkimage="$prefix/bin/i386-efi-grub-mkimage"
+          modules="$prefix/lib/i686-elf/grub/i386-efi"
+          image="$BUILD_DIR/grub-i386-efi-smoke.efi"
+
+          test -x "$mkimage"
+          test -f "$modules/moddep.lst"
+          test -f "$prefix/.whp-grub-i386-efi"
+          "$mkimage" --version
+          "$mkimage" \
+            -O i386-efi \
+            -d "$modules" \
+            -o "$image" \
+            part_gpt part_msdos fat iso9660 \
+            search search_fs_file normal configfile echo \
+            multiboot multiboot2 reboot halt
+          test -s "$image"
+
+          objdump="$(command -v i686-elf-objdump)"
+          "$objdump" -f "$image" | tee grub-i386-efi-objdump.log
+          grep -Eq 'file format (pei-i386|pe-i386)' grub-i386-efi-objdump.log
+          grep -Eq 'architecture: i386' grub-i386-efi-objdump.log
+
+      - name: Verify bootstrap cache reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(cksum "$BUILD_DIR/firmware-tools/grub-i386-efi/.whp-grub-i386-efi")"
+          output="$(bash scripts/bootstrap-i386-efi-grub.sh)"
+          after="$(cksum "$BUILD_DIR/firmware-tools/grub-i386-efi/.whp-grub-i386-efi")"
+          test "$before" = "$after"
+          grep -Fq 'IA32 EFI GRUB is current:' <<<"$output"
+
+      - name: Show failure context
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 250 grub-i386-efi-build.log 2>/dev/null || true
+          cat grub-i386-efi-objdump.log 2>/dev/null || true
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grub-i386-efi-failure
+          path: |
+            grub-i386-efi-build.log
+            grub-i386-efi-objdump.log
+            build-grub-i386-efi/firmware-tools/grub-i386-efi/.whp-grub-i386-efi
+          if-no-files-found: warn
+          retention-days: 7
