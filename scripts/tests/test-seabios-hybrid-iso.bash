@@ -16,6 +16,10 @@ grep -Fq '.whp-seabios-hybrid-iso.env' "$prepare"
 grep -Fq "printf 'SEABIOS_BUILD_ROOT=%q" "$prepare"
 grep -Fq 'GRUB_I386_MKIMAGE' "$prepare"
 grep -Fq 'GRUB_X86_64_MKIMAGE' "$prepare"
+grep -Fq 'GRUB_I386_MODULE_DIR' "$prepare"
+grep -Fq 'GRUB_X86_64_MODULE_DIR' "$prepare"
+grep -Fq 'GRUB_I386_PREFIX' "$prepare"
+grep -Fq 'GRUB_X86_64_PREFIX' "$prepare"
 grep -Fq 'HOMEBREW_PREFIX' "$prepare"
 grep -Fq 'BUILD_SEABIOS_HYBRID_ISO' "$targets"
 grep -Fq 'whp-seabios-hybrid-iso' "$meson"
@@ -26,6 +30,11 @@ grep -Fq 'whp-seabios-hybrid-iso' "$meson"
 
 grep -Fq 'i686-elf-grub-mkimage' "$iso_builder"
 grep -Fq 'x86_64-elf-grub-mkimage' "$iso_builder"
+grep -Fq 'GRUB_I386_MODULE_DIR' "$iso_builder"
+grep -Fq 'GRUB_X86_64_MODULE_DIR' "$iso_builder"
+grep -Fq 'GRUB_I386_PREFIX' "$iso_builder"
+grep -Fq 'GRUB_X86_64_PREFIX' "$iso_builder"
+grep -Fq 'brew --prefix "$formula"' "$iso_builder"
 grep -Fq 'moddep.lst' "$iso_builder"
 grep -Fq 'i386-efi' "$iso_builder"
 grep -Fq 'x86_64-efi' "$iso_builder"
@@ -42,8 +51,9 @@ scratch="$(mktemp -d "${TMPDIR:-/tmp}/seabios-hybrid-iso.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 seabios_build_root="$scratch/firmware-build/seabios"
 homebrew_prefix="$scratch/homebrew"
-i386_modules="$homebrew_prefix/lib/grub/i386-efi"
-x86_64_modules="$homebrew_prefix/lib/x86_64-elf/grub/x86_64-efi"
+i386_modules="$scratch/grub-i386/lib/grub/i386-efi"
+x86_64_formula_prefix="$homebrew_prefix/opt/x86_64-elf-grub"
+x86_64_modules="$x86_64_formula_prefix/lib/x86_64-elf/grub/x86_64-efi"
 mkdir -p "$scratch/bin" "$scratch/build" "$seabios_build_root/seabios-grub" \
     "$i386_modules" "$x86_64_modules"
 printf 'multiboot-seabios\n' > "$scratch/seabios-grub.elf"
@@ -108,6 +118,7 @@ chmod +x "$scratch/bin/"*
 
 cat > "$scratch/tools.env" <<EOF
 GRUB_MKIMAGE=$scratch/bin/grub-mkimage
+GRUB_I386_MODULE_DIR=$i386_modules
 HOMEBREW_PREFIX=$homebrew_prefix
 XORRISO=$scratch/bin/xorriso
 MFORMAT=$scratch/bin/mformat
@@ -159,4 +170,4 @@ WHP_ISO_TEST_TARGET_LOG="$scratch/target.log" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets' _ "$targets"
 grep -Fxq 'whp-seabios-hybrid-iso' "$scratch/target.log"
 
-printf 'hybrid x86 UEFI SeaBIOS Homebrew GRUB module wiring: verified\n'
+printf 'hybrid x86 UEFI SeaBIOS stable GRUB module wiring: verified\n'
