@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-WHP_ORIGINAL_SOURCE_DIR="$SOURCE_DIR"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/whp-homebrew-refresh.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -15,36 +14,13 @@ if [ "$#" -eq 3 ] && [ "$1" = list ] && [ "$2" = --formula ] && [ "$3" = --versi
     cat "$WHP_TEST_BREW_FORMULAE"
     exit 0
 fi
-printf 'unsupported fake brew invocation:' >&2
-printf ' %s' "$@" >&2
-printf '\n' >&2
 exit 2
 EOF
 chmod +x "$fake_brew"
 export WHP_TEST_BREW_FORMULAE="$formulae"
+export WHP_HOMEBREW_BREW="$fake_brew"
 
-source "$SOURCE_DIR/scripts/macos-build-hygiene.bash"
-
-printf '%s\n' \
-    'glib 2.86.0' \
-    'libslirp 4.9.3' \
-    'pixman 0.46.4' > "$formulae"
-old_signature="$(whp_homebrew_dependency_signature "$fake_brew")"
-
-printf '%s\n' \
-    'glib 2.86.0' \
-    'libslirp 4.10.0' \
-    'pixman 0.46.4' > "$formulae"
-new_signature="$(whp_homebrew_dependency_signature "$fake_brew")"
-
-if [[ -z "$old_signature" || -z "$new_signature" ||
-      "$old_signature" == "$new_signature" ]]; then
-    printf '%s\n' \
-        'error: Homebrew dependency signature did not change after libslirp upgrade.' \
-        "old=$old_signature" \
-        "new=$new_signature" >&2
-    exit 1
-fi
+source "$ROOT/scripts/whp-build/homebrew-deps.bash"
 
 fake_source="$TMP_ROOT/source"
 fake_build="$TMP_ROOT/build"
@@ -115,21 +91,56 @@ CONFIG_MAC_OLDWORLD=y
 WHP_INCREMENTAL_BUILD=1
 configure_args=(--disable-system --disable-tools)
 
-source "$WHP_ORIGINAL_SOURCE_DIR/scripts/whp-build/configure.bash"
+source "$ROOT/scripts/whp-build/configure.bash"
 
-HOMEBREW_DEPENDENCY_SIGNATURE="$old_signature"
+printf '%s\n' \
+    'glib 2.86.0' \
+    'libslirp 4.9.3' \
+    'pixman 0.46.4' > "$formulae"
+old_signature="$(whp_homebrew_dependency_signature "$fake_brew")"
+whp_refresh_homebrew_dependency_identity
 whp_configure_build
 first_count="$(cat "$BUILD_DIR/configure-count")"
 
-HOMEBREW_DEPENDENCY_SIGNATURE="$new_signature"
+# An unchanged Homebrew inventory must not churn configure.
+whp_refresh_homebrew_dependency_identity
+whp_configure_build
+stable_count="$(cat "$BUILD_DIR/configure-count")"
+
+printf '%s\n' \
+    'glib 2.86.0' \
+    'libslirp 4.10.0' \
+    'pixman 0.46.4' > "$formulae"
+new_signature="$(whp_homebrew_dependency_signature "$fake_brew")"
+whp_refresh_homebrew_dependency_identity
+
+if ! grep -Fq 'WHP_HOMEBREW_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"; then
+    printf 'error: Homebrew upgrade did not mark the QEMU config stale\n' >&2
+    exit 1
+fi
+
 whp_configure_build
 second_count="$(cat "$BUILD_DIR/configure-count")"
 
-if [[ "$first_count" != 1 || "$second_count" != 2 ]]; then
+if grep -Fq 'WHP_HOMEBREW_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"; then
+    printf 'error: one-shot Homebrew stale marker survived successful configure\n' >&2
+    exit 1
+fi
+
+if [[ -z "$old_signature" || -z "$new_signature" ||
+      "$old_signature" == "$new_signature" ]]; then
+    printf 'error: libslirp upgrade did not change the Homebrew signature\n' >&2
+    exit 1
+fi
+if [[ "$first_count" != 1 || "$stable_count" != 1 || "$second_count" != 2 ]]; then
     printf '%s\n' \
-        'error: a Homebrew dependency upgrade did not force in-place QEMU reconfiguration.' \
-        "first configure count=$first_count" \
-        "second configure count=$second_count" >&2
+        'error: Homebrew dependency refresh did not reconfigure exactly once.' \
+        "first=$first_count stable=$stable_count upgraded=$second_count" >&2
+    exit 1
+fi
+
+if ! grep -Fq 'FORMULA=libslirp 4.10.0' "$BUILD_DIR/.whp-homebrew-deps"; then
+    printf 'error: Homebrew dependency manifest did not record upgraded libslirp\n' >&2
     exit 1
 fi
 
