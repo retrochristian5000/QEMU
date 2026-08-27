@@ -21,6 +21,7 @@
 
 #include "qemu/osdep.h"
 
+#include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "system/watchdog.h"
@@ -142,7 +143,10 @@ static void i6300esb_disable_timer(I6300State *d)
 {
     i6300esb_debug("timer disabled\n");
 
-    timer_del(d->timer);
+    /* Avoid taking the timer-list lock when the watchdog is already idle. */
+    if (timer_pending(d->timer)) {
+        timer_del(d->timer);
+    }
 }
 
 static void i6300esb_reset(DeviceState *dev)
@@ -185,10 +189,13 @@ static void i6300esb_timer_expired(void *vp)
         /* What to do at the end of stage 1? */
         switch (d->int_type) {
         case INT_TYPE_IRQ:
-            fprintf(stderr, "i6300esb_timer_expired: I would send APIC 1 INT 10 here if I knew how (XXX)\n");
+            qemu_log_mask(LOG_UNIMP,
+                          "i6300esb: APIC 1 INT 10 watchdog interrupt "
+                          "is not implemented\n");
             break;
         case INT_TYPE_SMI:
-            fprintf(stderr, "i6300esb_timer_expired: I would send SMI here if I knew how (XXX)\n");
+            qemu_log_mask(LOG_UNIMP,
+                          "i6300esb: watchdog SMI is not implemented\n");
             break;
         }
 
