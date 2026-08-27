@@ -1,0 +1,88 @@
+name: WHP IBM CGA implementation
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  cga:
+    if: github.event.head_commit.message == 'WHP CGA implementation trigger'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Stage RED test
+        run: python3 .github/scripts/implement_ibm_cga.py tests
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev libglib2.0-dev libpixman-1-dev python3-venv zlib1g-dev
+
+      - name: Configure RED build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir build-cga
+          cd build-cga
+          ../configure --target-list=i386-softmmu,x86-softmmu --disable-docs
+          ninja qemu-system-i386 tests/qtest/cga-test
+
+      - name: Verify RED
+        shell: bash
+        run: |
+          set +e
+          build-cga/pyvenv/bin/meson test -C build-cga --print-errorlogs cga-test \
+            >/tmp/cga-red.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/cga-red.log
+          test "$rc" -ne 0
+          grep -Ei 'isa-cga|cga' /tmp/cga-red.log
+
+      - name: Apply production code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/implement_ibm_cga.py production
+          git diff --check
+
+      - name: Build GREEN
+        shell: bash
+        run: |
+          set -euo pipefail
+          ninja -C build-cga qemu-system-i386 qemu-system-x86 tests/qtest/cga-test
+
+      - name: Verify GREEN
+        shell: bash
+        run: |
+          set -euo pipefail
+          build-cga/pyvenv/bin/meson test -C build-cga --print-errorlogs cga-test
+          build-cga/qemu-system-i386 -vga help | grep -E '^cga[[:space:]]'
+          build-cga/qemu-system-x86 -vga help | grep -E '^cga[[:space:]]'
+
+      - name: Commit verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hw/display/Kconfig hw/display/meson.build hw/display/cga.c \
+            hw/i386/Kconfig hw/i386/pc.c hw/i386/x86-16bit.c \
+            hw/isa/isa-bus.c include/system/system.h system/vl.c \
+            tests/qtest/cga-test.c tests/qtest/meson.build \
+            docs/superpowers/specs/2026-08-27-ibm-cga-design.md \
+            docs/superpowers/plans/2026-08-27-ibm-cga.md
+          git commit -m 'display: add IBM CGA ISA adapter'
+          git push origin HEAD:master
