@@ -31,6 +31,10 @@ esac
 source "$BUILD_SYSTEM_DIR/stages.bash"
 source "$BUILD_SYSTEM_DIR/homebrew-deps.bash"
 
+# CPU tuning belongs to QEMU host objects only. Remove inherited copies before
+# any preparation stage so they cannot leak into firmware or bootstrap tools.
+whp_strip_inherited_host_cpu_tuning
+
 # Preparation must see the requested build outputs.  A command such as
 # `./build.sh qemu-system-ppc` is a run-specific request and must be able to
 # expand an existing incremental build even when the saved PPC toggle is off.
