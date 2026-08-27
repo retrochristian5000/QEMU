@@ -1,6 +1,48 @@
 # QEMU host CPU code-generation tuning adapter.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+whp_strip_host_cpu_tuning_from()
+{
+    local variable="$1"
+    local value="${!variable:-}"
+    local token
+    local skip_value=0
+    local tokens=()
+    local kept=()
+
+    [[ -n "$value" ]] || return 0
+
+    read -r -a tokens <<< "$value"
+    for token in "${tokens[@]}"; do
+        if (( skip_value )); then
+            skip_value=0
+            continue
+        fi
+        case "$token" in
+            -march|-mcpu|-mtune)
+                skip_value=1
+                ;;
+            -march=*|-mcpu=*|-mtune=*)
+                ;;
+            *)
+                kept+=("$token")
+                ;;
+        esac
+    done
+
+    printf -v "$variable" '%s' "${kept[*]}"
+    export "$variable"
+}
+
+whp_strip_inherited_host_cpu_tuning()
+{
+    local variable
+
+    for variable in CFLAGS CXXFLAGS OBJCFLAGS; do
+        whp_strip_host_cpu_tuning_from "$variable"
+    done
+}
+
 whp_prepare_host_cpu_tuning()
 {
     local tool="$SOURCE_DIR/scripts/whp-build/host-cpu-tuning.py"
