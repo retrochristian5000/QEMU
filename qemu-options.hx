@@ -1420,14 +1420,26 @@ legacy PC, they are not recommended for modern configurations.
 ERST
 
 DEF("fda", HAS_ARG, QEMU_OPTION_fda,
-    "-fda/-fdb file  use 'file' as floppy disk 0/1 image\n", QEMU_ARCH_ALL)
+    "-fda/-fdb file|file=file[,id=id][,readonly=on|off][,speed=rate]\n"
+    "                use file as floppy disk 0/1 image; rate is auto, 250k,\n"
+    "                300k, 500k, or 1m\n", QEMU_ARCH_ALL)
 DEF("fdb", HAS_ARG, QEMU_OPTION_fdb, "", QEMU_ARCH_ALL)
 SRST
 ``-fda file``
   \
 ``-fdb file``
     Use file as floppy disk 0/1 image (see the :ref:`disk images` chapter in
-    the System Emulation Users Guide).
+    the System Emulation Users Guide). The traditional bare file path remains
+    supported.
+
+``-fda file=file[,id=id][,readonly=on|off][,speed=rate]``
+  \
+``-fdb file=file[,id=id][,readonly=on|off][,speed=rate]``
+    Configure the same floppy shortcut with additional drive options. ``id``
+    names the block backend, ``readonly=on`` exposes a write-protected medium,
+    and ``speed`` selects the floppy data rate. Valid rates are ``auto``,
+    ``250k``, ``300k``, ``500k``, and ``1m``. ``auto`` keeps geometry-based
+    rate detection.
 ERST
 
 DEF("hda", HAS_ARG, QEMU_OPTION_hda,

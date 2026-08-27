@@ -45,6 +45,7 @@
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
+#include "qemu/option.h"
 #include "trace.h"
 #include "qom/object.h"
 #include "fdc-internal.h"
@@ -212,8 +213,10 @@ static int fd_sector(FDrive *drv)
 /* Returns current position, in bytes, for given drive */
 static int fd_offset(FDrive *drv)
 {
-    g_assert(fd_sector(drv) < INT_MAX >> BDRV_SECTOR_BITS);
-    return fd_sector(drv) << BDRV_SECTOR_BITS;
+    int sector = fd_sector(drv);
+
+    g_assert(sector < INT_MAX >> BDRV_SECTOR_BITS);
+    return sector << BDRV_SECTOR_BITS;
 }
 
 /* Seek to a new position:
@@ -279,6 +282,49 @@ static void fd_recalibrate(FDrive *drv)
 {
     FLOPPY_DPRINTF("recalibrate\n");
     fd_seek(drv, 0, 0, 1, 1);
+}
+
+static int fd_rate_from_string(const char *speed)
+{
+    if (!g_ascii_strcasecmp(speed, "250k")) {
+        return FDRIVE_RATE_250K;
+    }
+    if (!g_ascii_strcasecmp(speed, "300k")) {
+        return FDRIVE_RATE_300K;
+    }
+    if (!g_ascii_strcasecmp(speed, "500k")) {
+        return FDRIVE_RATE_500K;
+    }
+    if (!g_ascii_strcasecmp(speed, "1m")) {
+        return FDRIVE_RATE_1M;
+    }
+    return -1;
+}
+
+static const char *fd_configured_speed(FDrive *drv)
+{
+    DriveInfo *dinfo;
+
+    if (!drv->blk) {
+        return NULL;
+    }
+
+    dinfo = blk_legacy_dinfo(drv->blk);
+    return dinfo ? qemu_opt_get(dinfo->opts, "speed") : NULL;
+}
+
+static uint8_t fd_configured_media_rate(FDrive *drv, uint8_t detected_rate)
+{
+    const char *speed = fd_configured_speed(drv);
+    int rate;
+
+    if (!speed || !g_ascii_strcasecmp(speed, "auto")) {
+        return detected_rate;
+    }
+
+    rate = fd_rate_from_string(speed);
+    g_assert(rate >= 0);
+    return rate;
 }
 
 /**
@@ -367,7 +413,7 @@ static int pick_geometry(FDrive *drv)
     drv->max_track = parse->max_track;
     drv->last_sect = parse->last_sect;
     drv->disk = parse->drive;
-    drv->media_rate = parse->rate;
+    drv->media_rate = fd_configured_media_rate(drv, parse->rate);
     return 0;
 }
 
@@ -467,6 +513,7 @@ static void floppy_drive_realize(DeviceState *qdev, Error **errp)
     FloppyDrive *dev = FLOPPY_DRIVE(qdev);
     FloppyBus *bus = FLOPPY_BUS(qdev->parent_bus);
     FDrive *drive;
+    const char *speed;
     bool read_only;
     int ret;
 
@@ -541,6 +588,14 @@ static void floppy_drive_realize(DeviceState *qdev, Error **errp)
     drive->conf = &dev->conf;
     drive->blk = dev->conf.blk;
     drive->fdctrl = bus->fdc;
+
+    speed = fd_configured_speed(drive);
+    if (speed && g_ascii_strcasecmp(speed, "auto") &&
+        fd_rate_from_string(speed) < 0) {
+        error_setg(errp, "invalid floppy speed '%s' "
+                   "(expected auto, 250k, 300k, 500k, or 1m)", speed);
+        return;
+    }
 
     fd_init(drive);
     blk_set_dev_ops(drive->blk, &fd_block_ops, drive);
@@ -1104,7 +1159,9 @@ void fdctrl_reset(FDCtrl *fdctrl, int do_irq)
     fdctrl->dor |= (fdctrl->dma_chann != -1) ? FD_DOR_DMAEN : 0;
     fdctrl->msr = FD_MSR_RQM;
     fdctrl->reset_sensei = 0;
-    timer_del(fdctrl->result_timer);
+    if (timer_pending(fdctrl->result_timer)) {
+        timer_del(fdctrl->result_timer);
+    }
     /* FIFO state */
     fdctrl->data_pos = 0;
     fdctrl->data_len = 0;

@@ -199,11 +199,14 @@ static int drive_index_to_unit_id(BlockInterfaceType type, int index)
 QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
                     const char *optstr)
 {
+    bool file_is_opts = type == IF_FLOPPY && file &&
+                        strstart(file, "file=", NULL);
     QemuOpts *opts;
 
     GLOBAL_STATE_CODE();
 
-    opts = qemu_opts_parse_noisily(qemu_find_opts("drive"), optstr, false);
+    opts = qemu_opts_parse_noisily(qemu_find_opts("drive"),
+                                   file_is_opts ? file : optstr, false);
     if (!opts) {
         return NULL;
     }
@@ -213,8 +216,9 @@ QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
     if (index >= 0) {
         qemu_opt_set_number(opts, "index", index, &error_abort);
     }
-    if (file)
+    if (file && !file_is_opts) {
         qemu_opt_set(opts, "file", file, &error_abort);
+    }
     return opts;
 }
 
@@ -749,6 +753,10 @@ QemuOptsList qemu_legacy_drive_opts = {
             .name = "file",
             .type = QEMU_OPT_STRING,
             .help = "file name",
+        },{
+            .name = "speed",
+            .type = QEMU_OPT_STRING,
+            .help = "floppy data rate (auto, 250k, 300k, 500k, 1m)",
         },
 
         /* Options that are passed on, but have special semantics with -drive */
@@ -903,6 +911,12 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type,
         }
     } else {
         type = block_default_type;
+    }
+
+    value = qemu_opt_get(legacy_opts, "speed");
+    if (value && type != IF_FLOPPY) {
+        error_setg(errp, "speed is only supported by floppy drives");
+        goto fail;
     }
 
     /* Device address specified by bus/unit or index.
