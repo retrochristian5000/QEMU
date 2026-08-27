@@ -96,6 +96,7 @@ Emulated Devices
    devices/ivshmem-flat.rst
    devices/ivshmem.rst
    devices/keyboard.rst
+   devices/ls120-superdisk.rst
    devices/net.rst
    devices/nvme.rst
    devices/pcmcia-pc-card.rst
