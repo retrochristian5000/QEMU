@@ -67,7 +67,7 @@ jobs:
           text = text.replace('        cwd=ROOT,', '        cwd=cwd,', 1)
 
           old_filter = '        cmd.extend(["-p", path])'
-          new_filter = '        cmd.extend(["-p", f"/i386/{path}"])'
+          new_filter = '        cmd.extend(["-p", f"/i386{path}"])'
           if text.count(old_filter) != 1:
               raise SystemExit('unexpected ls120-tdd qtest filter')
           text = text.replace(old_filter, new_filter, 1)
