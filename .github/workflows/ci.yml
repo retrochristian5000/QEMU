@@ -367,6 +367,34 @@ jobs:
           "${binary}" -version
           "${binary}" -machine help >/dev/null
 
+      - name: Test rich floppy shortcut options
+        if: matrix.target == 'i386'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="build-ci/qemu-system-i386"
+          image="build-ci/fda-rich.img"
+          qmp_out="build-ci/fda-rich-qmp.out"
+
+          truncate -s 1440K "$image"
+          printf '%s\n' \
+            '{"execute":"qmp_capabilities"}' \
+            '{"execute":"query-block"}' \
+            '{"execute":"quit"}' |
+            "$binary" \
+              -machine pc \
+              -display none \
+              -monitor none \
+              -serial none \
+              -net none \
+              -S \
+              -qmp stdio \
+              -fda "file=$image,id=bootfloppy,readonly=on,speed=500k" \
+              >"$qmp_out"
+
+          grep -Eq '"device"[[:space:]]*:[[:space:]]*"bootfloppy"' "$qmp_out"
+          grep -Eq '"ro"[[:space:]]*:[[:space:]]*true' "$qmp_out"
+
       - name: Test original 16-bit x86 target
         if: matrix.target == 'x86'
         run: |
