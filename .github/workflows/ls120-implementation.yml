@@ -1,0 +1,128 @@
+name: LS-120 implementation TDD
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/ls120-implementation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: whp-ls120-implementation
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Repair out-of-tree TDD build invocation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('scripts/ls120-tdd.py')
+          text = path.read_text()
+
+          old_sig = (
+              'def run(cmd: list[str], *, check: bool = True, '
+              'env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:'
+          )
+          new_sig = (
+              'def run(cmd: list[str], *, check: bool = True, '
+              'env: dict[str, str] | None = None, '
+              'cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:'
+          )
+          if text.count(old_sig) != 1:
+              raise SystemExit('unexpected ls120-tdd run() signature')
+          text = text.replace(old_sig, new_sig, 1)
+
+          if text.count('        cwd=ROOT,') != 1:
+              raise SystemExit('unexpected ls120-tdd cwd binding')
+          text = text.replace('        cwd=ROOT,', '        cwd=cwd,', 1)
+
+          pattern = re.compile(
+              r'    run\(\[\n'
+              r'        "\./configure",.*?'
+              r'    if not BUILD\.exists\(\):\n'
+              r'        raise RuntimeError\("configure did not create build directory"\)\n',
+              re.S,
+          )
+          replacement = (
+              '    BUILD.mkdir()\n'
+              '    run([\n'
+              '        "../configure",\n'
+              '        "--target-list=i386-softmmu",\n'
+              '        "--disable-docs",\n'
+              '        "--disable-werror",\n'
+              '    ], cwd=BUILD)\n'
+          )
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('unexpected ls120-tdd configure block')
+
+          path.write_text(text)
+          PY
+
+      - name: Run LS-120 RED-GREEN implementation
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/ls120-tdd.py 2>&1 | tee ls120-tdd.log
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git rm scripts/ls120-tdd.py .github/workflows/ls120-implementation.yml
+          git add \
+            include/hw/ide/ide-dev.h \
+            hw/ide/ide-dev.c \
+            hw/ide/ide-internal.h \
+            hw/ide/core.c \
+            hw/ide/atapi.c \
+            hw/ide/ahci.c \
+            tests/qtest/ide-test.c
+
+          git diff --cached --check
+          git status --short
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'hw/ide: add LS-120 SuperDisk ATAPI device'
+          git push origin HEAD:master
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ls120-tdd-failure
+          path: ls120-tdd.log
+          if-no-files-found: warn
+          retention-days: 7
