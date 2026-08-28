@@ -5,10 +5,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/core/qdev.h"
 #include "qemu/module.h"
 #include "qom/compat-properties.h"
-#include "qom/object.h"
 
 /*
  * Keep Pixman fills enabled, but do not enable Pixman blits by default.
@@ -23,14 +21,4 @@ static void ati_vga_register_profile(void)
 #endif
 }
 
-static void ati_vga_register_description(void)
-{
-    ObjectClass *klass = object_class_by_name("ati-vga");
-
-    g_assert(klass);
-    DEVICE_CLASS(klass)->desc =
-        "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller";
-}
-
 type_init(ati_vga_register_profile)
-opts_init(ati_vga_register_description)
