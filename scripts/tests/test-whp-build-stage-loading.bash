@@ -5,25 +5,42 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SYSTEM_DIR="$SOURCE_DIR/scripts/whp-build"
+BUILDER="$SOURCE_DIR/builder.sh"
 
-source "$BUILD_SYSTEM_DIR/stages.bash"
+# builder.sh is the sole production orchestrator.  A separate stage loader
+# recreates a second ordered list that can drift away from the actual run
+# sequence.
+if [[ -e "$BUILD_SYSTEM_DIR/stages.bash" ]]; then
+    printf 'error: duplicate build orchestrator still exists: %s\n' \
+        "$BUILD_SYSTEM_DIR/stages.bash" >&2
+    exit 1
+fi
 
-for stage_function in \
-    whp_prepare_build \
-    whp_prepare_sources \
-    whp_configure_build \
-    whp_build_targets; do
-    if ! declare -F "$stage_function" >/dev/null; then
-        printf 'error: build stage function was not loaded: %s\n' \
-            "$stage_function" >&2
+for module in \
+    common.bash \
+    prepare-build.bash \
+    prepare-sources.bash \
+    prepare-seabios-grub.bash \
+    prepare-mold.bash \
+    host-cpu-tuning.bash \
+    configure.bash \
+    build-targets.bash; do
+    source_line="source \"\$BUILD_SYSTEM_DIR/$module\""
+    if ! grep -Fqx "$source_line" "$BUILDER"; then
+        printf 'error: builder.sh does not directly load build module: %s\n' \
+            "$module" >&2
         exit 1
     fi
+
 done
 
 for module in \
-    "$BUILD_SYSTEM_DIR/stages.bash" \
+    "$BUILD_SYSTEM_DIR/common.bash" \
     "$BUILD_SYSTEM_DIR/prepare-build.bash" \
     "$BUILD_SYSTEM_DIR/prepare-sources.bash" \
+    "$BUILD_SYSTEM_DIR/prepare-seabios-grub.bash" \
+    "$BUILD_SYSTEM_DIR/prepare-mold.bash" \
+    "$BUILD_SYSTEM_DIR/host-cpu-tuning.bash" \
     "$BUILD_SYSTEM_DIR/configure.bash" \
     "$BUILD_SYSTEM_DIR/build-targets.bash"; do
     if [[ -e "$module" && -x "$module" ]]; then
@@ -33,4 +50,4 @@ for module in \
     fi
 done
 
-printf 'WHP build stage loading: verified\n'
+printf 'WHP single build orchestration: verified\n'
