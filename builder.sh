@@ -28,7 +28,17 @@ case "${WHP_RUNTIME_PREFLIGHT:-0}" in
         ;;
 esac
 
-source "$BUILD_SYSTEM_DIR/stages.bash"
+# Keep module loading beside the execution order so the build has one
+# production orchestrator.  The modules define stages; builder.sh owns how
+# those stages are assembled and run.
+source "$BUILD_SYSTEM_DIR/common.bash"
+source "$BUILD_SYSTEM_DIR/prepare-build.bash"
+source "$BUILD_SYSTEM_DIR/prepare-sources.bash"
+source "$BUILD_SYSTEM_DIR/prepare-seabios-grub.bash"
+source "$BUILD_SYSTEM_DIR/prepare-mold.bash"
+source "$BUILD_SYSTEM_DIR/host-cpu-tuning.bash"
+source "$BUILD_SYSTEM_DIR/configure.bash"
+source "$BUILD_SYSTEM_DIR/build-targets.bash"
 source "$BUILD_SYSTEM_DIR/homebrew-deps.bash"
 
 # CPU tuning belongs to QEMU host objects only. Remove inherited copies before
