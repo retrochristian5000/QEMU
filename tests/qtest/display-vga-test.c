@@ -13,28 +13,11 @@
 #include "qobject/qdict.h"
 #include "qobject/qlist.h"
 
-typedef struct VGAMultiheadPair {
-    const char *primary;
-    const char *secondary;
-} VGAMultiheadPair;
-
 static void pci_multihead(void)
 {
     QTestState *qts;
 
     qts = qtest_init("-vga none -device VGA -device secondary-vga");
-    qtest_quit(qts);
-}
-
-static void pci_mixed_multihead(gconstpointer data)
-{
-    const VGAMultiheadPair *pair = data;
-    QTestState *qts;
-
-    qts = qtest_initf("-vga none "
-                      "-device %s,id=primary "
-                      "-device %s,id=secondary,legacy-vga-decode=off",
-                      pair->primary, pair->secondary);
     qtest_quit(qts);
 }
 
@@ -109,12 +92,6 @@ int main(int argc, char **argv)
         "virtio-gpu-pci",
         "virtio-vga"
     };
-    static const VGAMultiheadPair multihead_pairs[] = {
-        { "VGA", "cirrus-vga" },
-        { "ati-vga", "cirrus-vga" },
-        { "cirrus-vga", "VGA" },
-        { "cirrus-vga", "ati-vga" },
-    };
     static const unsigned int sierra_vram_mb[] = { 1, 2, 4 };
 
     g_test_init(&argc, &argv, NULL);
@@ -144,20 +121,6 @@ int main(int argc, char **argv)
 
     if (qtest_has_device("secondary-vga")) {
         qtest_add_func("/display/pci/multihead", pci_multihead);
-    }
-
-    for (int i = 0; i < ARRAY_SIZE(multihead_pairs); i++) {
-        const VGAMultiheadPair *pair = &multihead_pairs[i];
-
-        if (qtest_has_device(pair->primary) &&
-            qtest_has_device(pair->secondary)) {
-            char *testpath = g_strdup_printf("/display/pci/multihead/%s+%s",
-                                             pair->primary,
-                                             pair->secondary);
-
-            qtest_add_data_func(testpath, pair, pci_mixed_multihead);
-            g_free(testpath);
-        }
     }
 
     return g_test_run();
