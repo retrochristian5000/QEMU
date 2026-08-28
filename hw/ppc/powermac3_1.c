@@ -23,6 +23,7 @@
 
 #define TYPE_POWERMAC3_1_MACHINE MACHINE_TYPE_NAME("powermac3_1")
 #define TYPE_CORE99_MACHINE MACHINE_TYPE_NAME("mac99")
+#define POWERMAC3_1_AGP_BUS_NAME "pci.0"
 
 static void (*powermac3_1_parent_init)(MachineState *machine);
 
@@ -67,13 +68,33 @@ static void powermac3_1_machine_init(MachineState *machine)
     powermac3_1_parent_init(machine);
     vga_interface_type = requested_vga;
 
+    agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
+        TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
+    agp_bus = agp_host->bus;
+
+    /*
+     * mac99 deliberately creates UniNorth AGP first, its internal PCI root
+     * second, and the normal PCI-slot root last.  QBus therefore names the
+     * Sawtooth AGP root pci.0 while leaving the normal PCI root as the default
+     * destination for an unqualified -device.  Treat pci.0 as a machine-level
+     * command-line ABI so users can combine real display models, for example:
+     *
+     *   -vga none -device ati-vga,bus=pci.0 -device cirrus-vga
+     *   -vga none -device cirrus-vga,bus=pci.0 -device VGA
+     *
+     * Do not silently let inherited bus-order changes retarget those devices.
+     */
+    if (g_strcmp0(agp_bus->qbus.name, POWERMAC3_1_AGP_BUS_NAME) != 0) {
+        error_setg(&error_fatal,
+                   "PowerMac3,1 AGP bus expected '%s', got '%s'",
+                   POWERMAC3_1_AGP_BUS_NAME,
+                   agp_bus->qbus.name ?: "<unnamed>");
+    }
+
     if (requested_vga == VGA_NONE || requested_vga == VGA_DEVICE) {
         return;
     }
 
-    agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
-        TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
-    agp_bus = agp_host->bus;
     powermac3_1_vga_init(agp_bus, requested_vga);
 }
 
