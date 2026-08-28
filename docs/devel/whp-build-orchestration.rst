@@ -3,20 +3,25 @@ WHP build orchestration
 
 The WHP entry point is a run of QEMU's build system, not an independent build
 system. ``build.sh`` normalizes the shell and platform environment, then
-``builder.sh`` executes a small lifecycle:
+``builder.sh`` owns both module loading and the small build lifecycle:
 
-#. validate the maintained wrapper scripts;
+#. validate the maintained wrapper scripts when runtime preflight is requested;
 #. prepare the WHP build profile and host tools;
 #. prepare source-backed inputs and firmware configuration;
 #. configure QEMU when the recorded build identity changes;
 #. ask GNU Make, Meson, and Ninja to build the requested targets; and
 #. verify and record the artifacts produced by that run.
 
-``builder.sh`` intentionally contains only that sequence.
-``scripts/whp-build/stages.bash`` loads the focused preparation,
-source-input, configuration, and build-target modules. Wrapper integrity checks
-live in ``scripts/whp-build/preflight.bash`` and final artifact checks live in
+The focused ``scripts/whp-build/*.bash`` modules define individual stages but
+do not maintain another ordered stage list. ``builder.sh`` sources those
+modules directly beside the sequence that executes them, so module membership
+and execution order have one production owner. Wrapper integrity checks live
+in ``scripts/whp-build/preflight.bash`` and final artifact checks live in
 ``scripts/whp-build/post-build.bash``.
+
+``scripts/whp-build/stages.bash`` is a temporary non-loading tombstone for the
+retired stage-loader path. It must not source modules or define an orchestration
+loop.
 
 Shell contract
 --------------
