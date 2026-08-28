@@ -29,8 +29,8 @@ if "this must be last to make it the default" not in mac_newworld:
 required = (
     '#define POWERMAC3_1_AGP_BUS_NAME "pci.0"',
     "TYPE_UNI_NORTH_AGP_HOST_BRIDGE",
-    "qbus_get_name(BUS(agp_bus))",
-    "POWERMac3,1 AGP bus expected",
+    "agp_bus->qbus.name",
+    "PowerMac3,1 AGP bus expected",
     "PCI_DEVFN(16, 0)",
     "powermac3_1_vga_init(agp_bus, requested_vga)",
 )
