@@ -53,7 +53,7 @@ jobs:
       OPENBIOS_TOOLS_DIR: ${{ github.workspace }}/build/firmware-tools
       OPENBIOS_FIRMWARE_VALIDATION: strict
       FCODE_UTILS_REPOSITORY: https://github.com/retrochristian5000/fcode-utils.git
-      FCODE_UTILS_REV: 9a3c7366ff2857d07e6ef5bf27c91439dd1ca1bc
+      FCODE_UTILS_REV: 1815c48e38e1e126564cf61b43a5f29a22cac696
 
     steps:
       - name: Check out QEMU
