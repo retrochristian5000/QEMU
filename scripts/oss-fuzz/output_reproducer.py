@@ -124,9 +124,17 @@ def main():
                         nargs='?', default="test_fuzz")
     parser.add_argument('input_trace', help="input QTest command sequence \
                         (stdin by default)",
-                        nargs='?', type=argparse.FileType('r'),
-                        default=sys.stdin)
+                        nargs='?')
     args = parser.parse_args()
+
+    try:
+        if args.input_trace in (None, '-'):
+            trace = sys.stdin.read().strip()
+        else:
+            with open(args.input_trace, 'r') as input_trace:
+                trace = input_trace.read().strip()
+    except OSError as exc:
+        parser.error(f"argument input_trace: can't open '{args.input_trace}': {exc}")
 
     qemu_path = os.getenv("QEMU_PATH")
     qemu_args = os.getenv("QEMU_ARGS")
@@ -139,7 +147,6 @@ def main():
         bash_args += " -qtest stdio"
 
     arch = qemu_path.split("-")[-1]
-    trace = args.input_trace.read().strip()
 
     if args.bash :
         print(bash_reproducer(qemu_path, bash_args, trace))

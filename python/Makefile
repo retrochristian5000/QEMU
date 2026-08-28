@@ -15,9 +15,9 @@ help:
 	@echo "make check-tox:"
 	@echo "    Run tests against multiple python versions."
 	@echo "    These tests use the newest dependencies."
-	@echo "    Requires: Python 3.9 - 3.11, and tox."
-	@echo "    Hint (Fedora): 'sudo dnf install python3-tox python3.11'"
-	@echo "    The variable QEMU_TOX_EXTRA_ARGS can be use to pass extra"
+	@echo "    Tests Python 3.9 - 3.14 when those interpreters are installed."
+	@echo "    Requires: tox."
+	@echo "    The variable QEMU_TOX_EXTRA_ARGS can be used to pass extra"
 	@echo "    arguments to tox".
 	@echo ""
 	@echo "make check-dev:"
@@ -27,6 +27,10 @@ help:
 	@echo ""
 	@echo "make check:"
 	@echo "    Run tests in your *current environment*."
+	@echo "    Performs no environment setup of any kind."
+	@echo ""
+	@echo "make check-warnings:"
+	@echo "    Run tests with Python warnings enabled, including deprecations."
 	@echo "    Performs no environment setup of any kind."
 	@echo ""
 	@echo "make develop:"
@@ -106,6 +110,10 @@ develop:
 .PHONY: check
 check:
 	@pytest -v tests/*.py
+
+.PHONY: check-warnings
+check-warnings:
+	@PYTHONWARNINGS=default pytest -v tests/*.py
 
 .PHONY: check-tox
 check-tox:

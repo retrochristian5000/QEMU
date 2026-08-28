@@ -12,7 +12,7 @@
 import os
 import subprocess
 
-from datetime import datetime
+from datetime import datetime, timezone
 from qemu_test import QemuSystemTest, Asset
 from qemu_test import wait_for_console_pattern, exec_command
 from qemu_test import skipIfMissingCommands, skipBigDataTest
@@ -75,7 +75,7 @@ class HypervisorTest(QemuSystemTest):
         wait_for_console_pattern(self, 'localhost login:')
         exec_command_and_wait_for_pattern(self, 'root', ps1)
         # If the time is wrong, SSL certificates can fail.
-        cmd='date -s "' + datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S' + '"')
+        cmd='date -s "' + datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S' + '"')
         exec_command_and_wait_for_pattern(self, cmd, ps1)
         ps1='alpine:~#'
         exec_command_and_wait_for_pattern(self, 'setup-alpine -qe', ps1)
