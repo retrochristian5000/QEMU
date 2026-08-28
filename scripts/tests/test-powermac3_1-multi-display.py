@@ -7,38 +7,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 POWER_MAC = ROOT / "hw/ppc/powermac3_1.c"
 MAC_NEWWORLD = ROOT / "hw/ppc/mac_newworld.c"
-UNINORTH = ROOT / "hw/pci-host/uninorth.c"
 
 power_mac = POWER_MAC.read_text(encoding="utf-8")
 mac_newworld = MAC_NEWWORLD.read_text(encoding="utf-8")
-uninorth = UNINORTH.read_text(encoding="utf-8")
 errors: list[str] = []
 
-
-def function_body(source: str, name: str, next_name: str) -> str:
-    start = source.find(f"static void {name}")
-    end = source.find(f"static void {next_name}", start + 1)
-    if start < 0 or end < 0:
-        return ""
-    return source[start:end]
-
-
-# Sawtooth exposes three independent UniNorth PCI roots.  Their bus names are
-# part of the user-facing multi-display contract: pci.0 is AGP, pci.1 is the
-# internal root, and pci.2 is the normal PCI-slot root/default bus.
-root_contracts = (
-    ("pci_unin_agp_realize", "pci_unin_agp_init", 'pci_register_root_bus(dev, "pci.0"'),
-    ("pci_unin_internal_realize", "pci_unin_internal_init", 'pci_register_root_bus(dev, "pci.1"'),
-    ("pci_unin_main_realize", "pci_unin_main_init", 'pci_register_root_bus(dev, "pci.2"'),
-)
-for function, next_function, needle in root_contracts:
-    body = function_body(uninorth, function, next_function)
-    if needle not in body:
-        errors.append(f"stable UniNorth bus contract missing in {function}: {needle}")
-
-# Keep the creation order that makes the main PCI root the default destination
-# for an extra `-device`, while the first explicitly addressed card can occupy
-# the AGP root at pci.0.
+# Keep the inherited creation order that makes the AGP root pci.0 and the main
+# PCI-slot root the default destination for an extra `-device`.
 agp_pos = mac_newworld.find("TYPE_UNI_NORTH_AGP_HOST_BRIDGE")
 internal_pos = mac_newworld.find("TYPE_UNI_NORTH_INTERNAL_PCI_HOST_BRIDGE")
 main_pos = mac_newworld.find("TYPE_UNI_NORTH_PCI_HOST_BRIDGE")
@@ -47,12 +22,23 @@ if not (0 <= agp_pos < internal_pos < main_pos):
 if "this must be last to make it the default" not in mac_newworld:
     errors.append("main UniNorth PCI default-bus invariant lost")
 
-# PowerMac3,1's automatic display must still use the real AGP host, and the
-# machine profile must never substitute a secondary-vga model for user cards.
-for needle in ("TYPE_UNI_NORTH_AGP_HOST_BRIDGE", "PCI_DEVFN(16, 0)",
-               "powermac3_1_vga_init(agp_bus, requested_vga)"):
+# PowerMac3,1 publishes pci.0 as its AGP slot contract and verifies that the
+# inherited topology still gives that name to the resolved AGP bus.  This lets
+# users place any real PCI display model in AGP with bus=pci.0 while an extra
+# unqualified -device remains on the normal PCI-slot root.
+required = (
+    '#define POWERMAC3_1_AGP_BUS_NAME "pci.0"',
+    "TYPE_UNI_NORTH_AGP_HOST_BRIDGE",
+    "qbus_get_name(BUS(agp_bus))",
+    "POWERMac3,1 AGP bus expected",
+    "PCI_DEVFN(16, 0)",
+    "powermac3_1_vga_init(agp_bus, requested_vga)",
+)
+for needle in required:
     if needle not in power_mac:
         errors.append(f"PowerMac3,1 AGP display contract missing: {needle}")
+
+# Never flatten extra real cards into the QEMU-specific secondary-vga model.
 if '"secondary-vga"' in power_mac:
     errors.append("PowerMac3,1 must not force secondary-vga for extra displays")
 
