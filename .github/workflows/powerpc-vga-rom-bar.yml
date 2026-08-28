@@ -1,4 +1,4 @@
-name: PowerPC VGA option ROM BAR
+name: PowerPC display firmware contracts
 
 on:
   push:
@@ -6,19 +6,25 @@ on:
     paths:
       - 'hw/display/vga-pci.c'
       - 'hw/pci/pci.c'
+      - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-multi-display.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
   pull_request:
     paths:
       - 'hw/display/vga-pci.c'
       - 'hw/pci/pci.c'
+      - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-multi-display.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
 
 jobs:
-  rom-bar-contract:
+  display-contracts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Verify standard VGA keeps its PCI option ROM
         run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
+      - name: Verify Sawtooth generic AGP + PCI multi-display wiring
+        run: python3 scripts/tests/test-powermac3_1-multi-display.py
