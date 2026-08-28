@@ -50,8 +50,10 @@ static void sierra_falcon64_instance_init(Object *obj)
 
 static void sierra_falcon64_class_init(ObjectClass *klass, const void *data)
 {
+    DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(klass);
 
+    dc->desc = "Sierra Semiconductor Falcon/64 SC15064 PCI VGA controller";
     sierra_falcon64_parent_realize = pc->realize;
     pc->realize = sierra_falcon64_realize;
     pc->vendor_id = PCI_VENDOR_ID_SIERRA;

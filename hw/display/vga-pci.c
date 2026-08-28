@@ -385,6 +385,7 @@ static void vga_class_init(ObjectClass *klass, const void *data)
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     device_class_set_props(dc, vga_pci_properties);
     dc->hotpluggable = false;
+    dc->desc = "QEMU Standard VGA PCI controller";
 
     /* Expose framebuffer byteorder via QOM */
     object_class_property_add_bool(klass, "big-endian-framebuffer",

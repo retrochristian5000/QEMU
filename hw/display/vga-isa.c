@@ -108,6 +108,7 @@ static void vga_isa_class_initfn(ObjectClass *klass, const void *data)
     dc->realize = vga_isa_realizefn;
     device_class_set_legacy_reset(dc, vga_isa_reset);
     dc->vmsd = &vmstate_vga_isa;
+    dc->desc = "QEMU Standard VGA ISA controller";
     device_class_set_props(dc, vga_isa_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }

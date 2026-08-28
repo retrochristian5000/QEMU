@@ -270,12 +270,19 @@ static void virtio_vga_inst_initfn(Object *obj)
     VIRTIO_VGA_BASE(dev)->vgpu = VIRTIO_GPU_BASE(&dev->vdev);
 }
 
+static void virtio_vga_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc = "VirtIO VGA graphics adapter";
+}
 
 static VirtioPCIDeviceTypeInfo virtio_vga_info = {
     .generic_name  = TYPE_VIRTIO_VGA,
     .parent        = TYPE_VIRTIO_VGA_BASE,
     .instance_size = sizeof(VirtIOVGA),
     .instance_init = virtio_vga_inst_initfn,
+    .class_init    = virtio_vga_class_init,
 };
 module_obj(TYPE_VIRTIO_VGA);
 

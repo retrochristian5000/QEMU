@@ -190,6 +190,51 @@ static void test_device_intro_list(void)
     qtest_quit(qts);
 }
 
+static void assert_device_help_desc(const char *help,
+                                    const char *name,
+                                    const char *desc)
+{
+    g_autofree char *name_needle = g_strdup_printf("name \"%s\"", name);
+    g_autofree char *desc_needle = g_strdup_printf("desc \"%s\"", desc);
+    const char *line = strstr(help, name_needle);
+    const char *line_end;
+
+    g_assert_nonnull(line);
+    line_end = strchr(line, '\n');
+    if (!line_end) {
+        line_end = line + strlen(line);
+    }
+    g_assert_nonnull(g_strstr_len(line, line_end - line, desc_needle));
+}
+
+static void test_device_intro_display_descriptions(void)
+{
+    static const struct {
+        const char *name;
+        const char *desc;
+    } devices[] = {
+        { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
+        { "isa-vga", "QEMU Standard VGA ISA controller" },
+        { "sierra-falcon64",
+          "Sierra Semiconductor Falcon/64 SC15064 PCI VGA controller" },
+        { "VGA", "QEMU Standard VGA PCI controller" },
+        { "virtio-vga", "VirtIO VGA graphics adapter" },
+        { "vmware-svga", "VMware SVGA II PCI VGA controller" },
+    };
+    QTestState *qts = qtest_init(common_args);
+    g_autofree char *help = qtest_hmp(qts, "device_add help");
+    QList *types = device_type_list(qts, false);
+
+    for (size_t i = 0; i < ARRAY_SIZE(devices); i++) {
+        if (type_list_find(types, devices[i].name)) {
+            assert_device_help_desc(help, devices[i].name, devices[i].desc);
+        }
+    }
+
+    qobject_unref(types);
+    qtest_quit(qts);
+}
+
 /*
  * Ensure all entries returned by qom-list-types implements=<parent>
  * have <parent> as a parent.
@@ -374,6 +419,8 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("device/introspect/list", test_device_intro_list);
+    qtest_add_func("device/introspect/display-descriptions",
+                   test_device_intro_display_descriptions);
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
     qtest_add_func("device/introspect/settable-only",
                    test_device_intro_settable_only);
