@@ -51,7 +51,7 @@ static PCIDevice *powermac3_1_vga_init(PCIBus *bus, VGAInterfaceType vga_type)
 static void powermac3_1_machine_init(MachineState *machine)
 {
     VGAInterfaceType requested_vga = vga_interface_type;
-    Object *agp_host;
+    PCIHostState *agp_host;
     PCIBus *agp_bus;
 
     /*
@@ -71,9 +71,9 @@ static void powermac3_1_machine_init(MachineState *machine)
         return;
     }
 
-    agp_host = object_resolve_type_unambiguous(
-        TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort);
-    agp_bus = PCI_HOST_BRIDGE(agp_host)->bus;
+    agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
+        TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
+    agp_bus = agp_host->bus;
     powermac3_1_vga_init(agp_bus, requested_vga);
 }
 
