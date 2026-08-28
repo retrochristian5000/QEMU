@@ -26,7 +26,8 @@
 
 static void (*powermac3_1_parent_init)(MachineState *machine);
 
-static PCIDevice *powermac3_1_vga_init(PCIBus *bus, int vga_type)
+static PCIDevice *powermac3_1_vga_init(PCIBus *bus,
+                                       VGAInterfaceType vga_type)
 {
     vga_interface_created = true;
 
@@ -50,7 +51,7 @@ static PCIDevice *powermac3_1_vga_init(PCIBus *bus, int vga_type)
 
 static void powermac3_1_machine_init(MachineState *machine)
 {
-    int requested_vga = vga_interface_type;
+    VGAInterfaceType requested_vga = vga_interface_type;
     Object *agp_host;
     PCIBus *agp_bus;
 
