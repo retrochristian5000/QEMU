@@ -19,4 +19,14 @@ if grep -Eq 'powermac3_1_vga_init\(PCIBus \*bus, int vga_type\)|int requested_vg
     exit 1
 fi
 
-echo "PowerMac3,1 VGA selector types: verified"
+if ! grep -Eq 'PCIHostState \*agp_host;' "$source_file"; then
+    echo "error: Sawtooth AGP host must retain PCIHostState type" >&2
+    exit 1
+fi
+
+if grep -Eq 'Object \*agp_host;' "$source_file"; then
+    echo "error: Sawtooth AGP host regressed to generic Object type" >&2
+    exit 1
+fi
+
+echo "PowerMac3,1 video type boundaries: verified"
