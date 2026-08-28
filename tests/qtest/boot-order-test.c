@@ -22,6 +22,11 @@ typedef struct {
     uint64_t expected_reboot;
 } boot_order_test;
 
+typedef struct {
+    const char *agp;
+    const char *pci;
+} pmac_display_pair;
+
 static void test_a_boot_order(const char *machine,
                               const char *test_args,
                               uint64_t (*read_boot_order)(QTestState *),
@@ -120,6 +125,11 @@ static const boot_order_test test_cases_fw_cfg[] = {
     {}
 };
 
+static const pmac_display_pair powermac3_1_display_pairs[] = {
+    { "ati-vga", "cirrus-vga" },
+    { "cirrus-vga", "VGA" },
+};
+
 static void test_pmac_oldworld_boot_order(void)
 {
     test_boot_orders("g3beige", read_boot_order_pmac, test_cases_fw_cfg);
@@ -166,6 +176,34 @@ static void test_pmac_powermac3_1_memory_map(void)
     qtest_quit(qts);
 }
 
+static void test_pmac_powermac3_1_display_pair(gconstpointer data)
+{
+    const pmac_display_pair *pair = data;
+    QTestState *qts;
+
+    if (!qtest_has_machine("powermac3_1")) {
+        g_test_skip("Machine is not available");
+        return;
+    }
+    if (!qtest_has_device(pair->agp) || !qtest_has_device(pair->pci)) {
+        g_test_skip("Requested display pair is not available");
+        return;
+    }
+
+    /*
+     * Exercise two real card models on Sawtooth's independent display roots.
+     * The AGP card occupies the historical device 0x10 slot on pci.0; the
+     * unqualified second card uses the normal main PCI root.  Successful
+     * realize proves that neither card was flattened into secondary-vga and
+     * that their legacy PCI address spaces do not collide across UniNorth.
+     */
+    qts = qtest_initf("-nodefaults -M powermac3_1 -vga none "
+                      "-device %s,bus=pci.0,addr=0x10,id=agp-display "
+                      "-device %s,id=pci-display",
+                      pair->agp, pair->pci);
+    qtest_quit(qts);
+}
+
 static uint64_t read_boot_order_sun4m(QTestState *qts)
 {
     g_autoptr(QFWCFG) fw_cfg = mm_fw_cfg_init(qts, 0xd00000510ULL);
@@ -205,6 +243,12 @@ int main(int argc, char *argv[])
                        test_pmac_newworld_boot_order);
         qtest_add_func("boot-order/powermac3_1-memory-map",
                        test_pmac_powermac3_1_memory_map);
+        qtest_add_data_func("boot-order/powermac3_1-display/ati+cirrus",
+                            &powermac3_1_display_pairs[0],
+                            test_pmac_powermac3_1_display_pair);
+        qtest_add_data_func("boot-order/powermac3_1-display/cirrus+vga",
+                            &powermac3_1_display_pairs[1],
+                            test_pmac_powermac3_1_display_pair);
     } else if (strcmp(arch, "sparc") == 0) {
         qtest_add_func("boot-order/sun4m", test_sun4m_boot_order);
     } else if (strcmp(arch, "sparc64") == 0) {
