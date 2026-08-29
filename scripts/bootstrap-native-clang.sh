@@ -246,8 +246,21 @@ EOF
 "$staged_toolchain/bin/clang++" -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
-rm -rf "$TOOLCHAIN_DIR"
-mv "$staged_toolchain" "$TOOLCHAIN_DIR"
+usable "$staged_toolchain" || {
+    printf 'error: staged WHP native LLVM toolchain is incomplete\n' >&2
+    exit 1
+}
+
+old_toolchain="${TOOLCHAIN_DIR}.old.$$"
+rm -rf "$old_toolchain"
+if [[ -e "$TOOLCHAIN_DIR" ]]; then
+    mv "$TOOLCHAIN_DIR" "$old_toolchain"
+fi
+if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
+    [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+rm -rf "$old_toolchain" "$stage_root"
 stage_root=""
 
 printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
