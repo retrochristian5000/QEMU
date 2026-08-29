@@ -1,0 +1,97 @@
+name: WHP 8086 Jcc alias repair
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: whp-8086-jcc-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'WHP 8086 Jcc alias repair trigger'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev libglib2.0-dev libpixman-1-dev python3-venv zlib1g-dev
+
+      - name: Configure original-x86 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir build-8086-jcc
+          cd build-8086-jcc
+          ../configure --target-list=x86-softmmu --disable-docs
+
+      - name: Stage RED regression test
+        run: python3 .github/scripts/repair_8086_jcc_aliases.py test
+
+      - name: Build RED
+        shell: bash
+        run: |
+          set -euo pipefail
+          ninja -C build-8086-jcc qemu-system-x86 tests/qtest/x86-16bit-test
+
+      - name: Verify RED
+        shell: bash
+        run: |
+          set +e
+          build-8086-jcc/pyvenv/bin/meson test -C build-8086-jcc \
+            --print-errorlogs x86-16bit-test >/tmp/8086-jcc-red.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/8086-jcc-red.log
+          test "$rc" -ne 0
+          grep -Ei 'x86-16bit|execute/8086|execute/8088|ERROR|Bail out' \
+            /tmp/8086-jcc-red.log
+
+      - name: Apply decoder repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/repair_8086_jcc_aliases.py fix
+          git diff --check
+
+      - name: Build GREEN
+        shell: bash
+        run: |
+          set -euo pipefail
+          ninja -C build-8086-jcc qemu-system-x86 tests/qtest/x86-16bit-test
+
+      - name: Verify GREEN
+        shell: bash
+        run: |
+          set -euo pipefail
+          build-8086-jcc/pyvenv/bin/meson test -C build-8086-jcc \
+            --print-errorlogs x86-16bit-test
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm \
+            .github/workflows/whp-8086-jcc-repair.yml \
+            .github/scripts/repair_8086_jcc_aliases.py
+          git add \
+            target/i386/tcg/decode-original-x86.c.inc \
+            tests/qtest/x86-16bit-test.c
+          git diff --cached --check
+          git commit -m 'target/i386: restore 8086 60h-6Fh Jcc aliases'
+          git push origin HEAD:master
