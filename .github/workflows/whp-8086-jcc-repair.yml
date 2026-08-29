@@ -53,13 +53,16 @@ jobs:
         run: |
           set +e
           build-8086-jcc/pyvenv/bin/meson test -C build-8086-jcc \
-            --print-errorlogs x86-16bit-test >/tmp/8086-jcc-red.log 2>&1
+            --print-errorlogs qtest-x86/x86-16bit-test >/tmp/8086-jcc-red.log 2>&1
           rc=$?
           set -e
           cat /tmp/8086-jcc-red.log
           test "$rc" -ne 0
-          grep -Ei 'x86-16bit|execute/8086|execute/8088|ERROR|Bail out' \
-            /tmp/8086-jcc-red.log
+          if grep -Fq 'does not match any test' /tmp/8086-jcc-red.log; then
+            echo 'error: RED did not execute the qtest' >&2
+            exit 1
+          fi
+          grep -Ei 'execute/8086|execute/8088|Bail out|ERROR' /tmp/8086-jcc-red.log
 
       - name: Apply decoder repair
         shell: bash
@@ -79,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           build-8086-jcc/pyvenv/bin/meson test -C build-8086-jcc \
-            --print-errorlogs x86-16bit-test
+            --print-errorlogs qtest-x86/x86-16bit-test
 
       - name: Commit verified repair
         shell: bash
