@@ -19,10 +19,6 @@ and execution order have one production owner. Wrapper integrity checks live
 in ``scripts/whp-build/preflight.bash`` and final artifact checks live in
 ``scripts/whp-build/post-build.bash``.
 
-``scripts/whp-build/stages.bash`` is a temporary non-loading tombstone for the
-retired stage-loader path. It must not source modules or define an orchestration
-loop.
-
 Shell contract
 --------------
 

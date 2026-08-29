@@ -6,24 +6,6 @@ set -euo pipefail
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SYSTEM_DIR="$SOURCE_DIR/scripts/whp-build"
 BUILDER="$SOURCE_DIR/builder.sh"
-STAGE_LOADER="$BUILD_SYSTEM_DIR/stages.bash"
-SHELL_INVENTORY="$BUILD_SYSTEM_DIR/shell-inventory.bash"
-
-# builder.sh is the sole production orchestrator.  Keep a retired stages.bash
-# tombstone if an older checkout still references the path, but never let it
-# own module loading or another ordered stage list again.
-if [[ -e "$STAGE_LOADER" ]] &&
-   grep -Eq '^[[:space:]]*(source[[:space:]]|for[[:space:]]+build_stage_module)' \
-       "$STAGE_LOADER"; then
-    printf 'error: duplicate build orchestration remains in: %s\n' \
-        "$STAGE_LOADER" >&2
-    exit 1
-fi
-
-if grep -Fq '/scripts/whp-build/stages.bash"' "$SHELL_INVENTORY"; then
-    printf 'error: retired stage loader remains in active shell inventory\n' >&2
-    exit 1
-fi
 
 for module in \
     common.bash \
