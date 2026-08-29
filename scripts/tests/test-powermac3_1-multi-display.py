@@ -23,13 +23,15 @@ if "this must be last to make it the default" not in mac_newworld:
     errors.append("main UniNorth PCI default-bus invariant lost")
 
 # PowerMac3,1 publishes pci.0 as its AGP slot contract and verifies that the
-# inherited topology still gives that name to the resolved AGP bus.  This lets
-# users place any real PCI display model in AGP with bus=pci.0 while an extra
-# unqualified -device remains on the normal PCI-slot root.
+# inherited topology still gives that name to the resolved AGP bus.  PCIBus is
+# intentionally opaque to board code, so inspect the QBus name through the
+# public BusState parent instead of dereferencing PCIBus internals.
 required = (
     '#define POWERMAC3_1_AGP_BUS_NAME "pci.0"',
     "TYPE_UNI_NORTH_AGP_HOST_BRIDGE",
-    "agp_bus->qbus.name",
+    "BusState *agp_qbus",
+    "agp_qbus = BUS(agp_bus)",
+    "agp_qbus->name",
     "PowerMac3,1 AGP bus expected",
     "PCI_DEVFN(16, 0)",
     "powermac3_1_vga_init(agp_bus, requested_vga)",
@@ -37,6 +39,9 @@ required = (
 for needle in required:
     if needle not in power_mac:
         errors.append(f"PowerMac3,1 AGP display contract missing: {needle}")
+
+if "agp_bus->qbus" in power_mac:
+    errors.append("PowerMac3,1 must not dereference opaque PCIBus internals")
 
 # Never flatten extra real cards into the QEMU-specific secondary-vga model.
 if '"secondary-vga"' in power_mac:
