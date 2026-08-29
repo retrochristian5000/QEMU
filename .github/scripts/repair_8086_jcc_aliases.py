@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TEST = ROOT / "tests/qtest/x86-16bit-test.c"
 DECODE = ROOT / "target/i386/tcg/decode-original-x86.c.inc"
 
+# The repair workflow is triggered only after the target-config include fix.
 TEST_START = "        0xc6, 0x06, 0x02, 0x02, 0x01, /* phase = 1 */\n"
 TEST_END = "        0xb0, 'T',                    /* mov al, 'T' */\n"
 TEST_REPLACEMENT = """        0x31, 0xc0,                   /* xor ax, ax: ZF = 1 */
