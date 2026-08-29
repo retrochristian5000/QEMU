@@ -44,6 +44,18 @@ NEW_DECODE = """    if (s->is_original_x86) {
     *entry = opcodes_root[*b];
 """
 
+OLD_ILLEGAL = """    if (s->is_original_x86 &&
+        ((b >= 0x60 && b <= 0x6f) || b == 0xc0 || b == 0xc1 ||
+         b == 0xc8 || b == 0xc9 || b == 0xf1)) {
+        goto illegal_op;
+    }
+"""
+NEW_ILLEGAL = """    if (s->is_original_x86 &&
+        (b == 0xc0 || b == 0xc1 || b == 0xc8 || b == 0xc9 || b == 0xf1)) {
+        goto illegal_op;
+    }
+"""
+
 
 def stage_test() -> None:
     text = TEST.read_text()
@@ -60,11 +72,22 @@ def stage_test() -> None:
 
 def apply_fix() -> None:
     text = DECODE.read_text()
-    if NEW_DECODE in text:
-        return
-    if OLD_DECODE not in text:
-        raise SystemExit("could not find original decode_root assignment")
-    DECODE.write_text(text.replace(OLD_DECODE, NEW_DECODE, 1))
+    changed = False
+
+    if NEW_DECODE not in text:
+        if OLD_DECODE not in text:
+            raise SystemExit("could not find original decode_root assignment")
+        text = text.replace(OLD_DECODE, NEW_DECODE, 1)
+        changed = True
+
+    if NEW_ILLEGAL not in text:
+        if OLD_ILLEGAL not in text:
+            raise SystemExit("could not find original 8086 illegal-op guard")
+        text = text.replace(OLD_ILLEGAL, NEW_ILLEGAL, 1)
+        changed = True
+
+    if changed:
+        DECODE.write_text(text)
 
 
 def main() -> None:
