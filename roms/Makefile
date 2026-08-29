@@ -105,13 +105,17 @@ seavgabios-%: build-seabios-config-vga-%
 
 build-seabios-config-%: config.%
 	mkdir -p $(SEABIOS_BUILD_ROOT)/$*
-	cp $< $(SEABIOS_BUILD_ROOT)/$*/.config
-	$(MAKE) -C seabios \
-		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
-		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
-		CPP=$(SEABIOS_CROSS_PREFIX)cpp \
-		KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
-		OUT=$(SEABIOS_BUILD_ROOT)/$*/ oldnoconfig
+	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
+	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
+		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config" && \
+		$(MAKE) -C seabios \
+			EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
+			CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
+			CPP=$(SEABIOS_CROSS_PREFIX)cpp \
+			KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
+			OUT=$(SEABIOS_BUILD_ROOT)/$*/ oldnoconfig && \
+		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; \
+	fi
 	$(MAKE) -C seabios \
 		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
 		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
