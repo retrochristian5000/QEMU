@@ -15,6 +15,7 @@
 #include "qom/compat-properties.h"
 #include "qom/object.h"
 #include "hw/core/boards.h"
+#include "hw/core/qdev.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
@@ -54,6 +55,7 @@ static void powermac3_1_machine_init(MachineState *machine)
     VGAInterfaceType requested_vga = vga_interface_type;
     PCIHostState *agp_host;
     PCIBus *agp_bus;
+    BusState *agp_qbus;
 
     /*
      * The generic mac99 initializer creates its automatic VGA device on the
@@ -71,6 +73,7 @@ static void powermac3_1_machine_init(MachineState *machine)
     agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
         TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
     agp_bus = agp_host->bus;
+    agp_qbus = BUS(agp_bus);
 
     /*
      * mac99 deliberately creates UniNorth AGP first, its internal PCI root
@@ -84,11 +87,11 @@ static void powermac3_1_machine_init(MachineState *machine)
      *
      * Do not silently let inherited bus-order changes retarget those devices.
      */
-    if (g_strcmp0(agp_bus->qbus.name, POWERMAC3_1_AGP_BUS_NAME) != 0) {
+    if (g_strcmp0(agp_qbus->name, POWERMAC3_1_AGP_BUS_NAME) != 0) {
         error_setg(&error_fatal,
                    "PowerMac3,1 AGP bus expected '%s', got '%s'",
                    POWERMAC3_1_AGP_BUS_NAME,
-                   agp_bus->qbus.name ?: "<unnamed>");
+                   agp_qbus->name ?: "<unnamed>");
     }
 
     if (requested_vga == VGA_NONE || requested_vga == VGA_DEVICE) {
