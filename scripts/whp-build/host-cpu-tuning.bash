@@ -43,6 +43,49 @@ whp_strip_inherited_host_cpu_tuning()
     done
 }
 
+whp_strip_host_performance_overrides_from()
+{
+    local variable="$1"
+    local value="${!variable:-}"
+    local token
+    local tokens=()
+    local kept=()
+
+    [[ -n "$value" ]] || return 0
+
+    read -r -a tokens <<< "$value"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            -O|-O0|-O1|-O2|-O3|-Og|-Os|-Oz|-Ofast|\
+            -fno-inline|-fno-inline-functions|-fno-inline-small-functions|\
+            -fno-omit-frame-pointer|-fno-optimize-sibling-calls|\
+            -fno-vectorize|-fno-slp-vectorize|\
+            -pg|--coverage|-fprofile-arcs|-ftest-coverage|\
+            -finstrument-functions|-fcoverage-mapping|\
+            -fsanitize=*|-fsanitize-coverage=*|-fsanitize-recover=*|\
+            -fno-sanitize-recover=*|-fprofile-generate|\
+            -fprofile-generate=*|-fprofile-instr-generate|\
+            -fprofile-instr-generate=*)
+                ;;
+            *)
+                kept+=("$token")
+                ;;
+        esac
+    done
+
+    printf -v "$variable" '%s' "${kept[*]}"
+    export "$variable"
+}
+
+whp_strip_inherited_host_performance_overrides()
+{
+    local variable
+
+    for variable in CFLAGS CXXFLAGS OBJCFLAGS; do
+        whp_strip_host_performance_overrides_from "$variable"
+    done
+}
+
 whp_prepare_host_cpu_tuning()
 {
     local tool="$SOURCE_DIR/scripts/whp-build/host-cpu-tuning.py"
