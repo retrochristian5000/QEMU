@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# build.sh captures stdout to obtain exactly one value: the installed prefix.
+# Send CMake/Ninja/git chatter to stderr so the compiler path cannot be
+# contaminated by bootstrap progress output.
+exec 3>&1
+exec 1>&2
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 LLVM_SUBMODULE_PATH="${NATIVE_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
@@ -149,7 +155,7 @@ usable()
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
       "$(cat "$marker")" == "$expected_marker" ]] && usable "$TOOLCHAIN_DIR"; then
     printf 'WHP native LLVM is current: %s\n' "$TOOLCHAIN_DIR" >&2
-    printf '%s\n' "$TOOLCHAIN_DIR"
+    printf '%s\n' "$TOOLCHAIN_DIR" >&3
     exit 0
 fi
 
@@ -245,4 +251,4 @@ mv "$staged_toolchain" "$TOOLCHAIN_DIR"
 stage_root=""
 
 printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
-printf '%s\n' "$TOOLCHAIN_DIR"
+printf '%s\n' "$TOOLCHAIN_DIR" >&3
