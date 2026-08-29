@@ -127,12 +127,31 @@ esac
 if [ "$WHP_INCREMENTAL_BUILD" = 1 ]; then
     OPENBIOS_FORCE_RECONFIGURE=${OPENBIOS_FORCE_RECONFIGURE:-0}
     POWERPC_TOOLCHAIN_FORCE_REBUILD=${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}
+    NATIVE_LLVM_FORCE_REBUILD=${NATIVE_LLVM_FORCE_REBUILD:-0}
 else
     OPENBIOS_FORCE_RECONFIGURE=${OPENBIOS_FORCE_RECONFIGURE:-1}
     POWERPC_TOOLCHAIN_FORCE_REBUILD=${POWERPC_TOOLCHAIN_FORCE_REBUILD:-1}
+    NATIVE_LLVM_FORCE_REBUILD=${NATIVE_LLVM_FORCE_REBUILD:-1}
 fi
 export WHP_INCREMENTAL_BUILD OPENBIOS_FORCE_RECONFIGURE \
-    POWERPC_TOOLCHAIN_FORCE_REBUILD
+    POWERPC_TOOLCHAIN_FORCE_REBUILD NATIVE_LLVM_FORCE_REBUILD
+
+BOOTSTRAP_NATIVE_LLVM=${BOOTSTRAP_NATIVE_LLVM:-0}
+case "$BOOTSTRAP_NATIVE_LLVM" in
+    0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_NATIVE_LLVM must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
+    NATIVE_LLVM_DIR=$("$WHP_BUILD_BASH" --noprofile --norc \
+        "$SOURCE_DIR/scripts/bootstrap-native-clang.sh") || exit 1
+    CC="$NATIVE_LLVM_DIR/bin/clang"
+    CXX="$NATIVE_LLVM_DIR/bin/clang++"
+    export NATIVE_LLVM_DIR CC CXX
+    printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
+fi
 
 # One public shell choice owns every Bash-based helper. The core build path
 # above does not need this setting at all.

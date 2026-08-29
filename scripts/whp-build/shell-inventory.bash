@@ -16,6 +16,7 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
     "$SOURCE_DIR/scripts/verify-macos-toolchain.sh"
     "$SOURCE_DIR/scripts/verify-macos-lto.sh"
+    "$SOURCE_DIR/scripts/bootstrap-native-clang.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-host.sh"
     "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-git.sh"

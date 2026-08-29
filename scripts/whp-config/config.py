@@ -30,6 +30,7 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
+    Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
