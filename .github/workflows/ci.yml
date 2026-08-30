@@ -120,6 +120,13 @@ jobs:
           set -o pipefail
           ./build.sh qemu-system-ppc 2>&1 | tee macos-build.log
 
+      - name: Test Darwin thread signal mask
+        shell: bash
+        run: |
+          set -euo pipefail
+          ninja -C "$BUILD_DIR" tests/unit/test-qemu-thread-signal-mask
+          "$BUILD_DIR/tests/unit/test-qemu-thread-signal-mask" --tap -k
+
       - name: Show build failure context
         if: failure()
         shell: bash
