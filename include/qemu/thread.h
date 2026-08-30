@@ -218,6 +218,25 @@ G_NORETURN void qemu_thread_exit(void *retval);
 void qemu_thread_set_name(const char *name);
 const char *qemu_thread_get_name(void);
 
+/*
+ * Return a host-wide identifier for the current thread.  Darwin's pthread
+ * identifier is 64-bit and distinct from the process id, unlike the legacy
+ * qemu_get_thread_id() fallback used by user-mode signal paths.
+ */
+static inline int64_t qemu_get_host_thread_id(void)
+{
+#ifdef __APPLE__
+    uint64_t thread_id;
+    int ret = pthread_threadid_np(NULL, &thread_id);
+
+    g_assert_cmpint(ret, ==, 0);
+    g_assert(thread_id <= INT64_MAX);
+    return thread_id;
+#else
+    return qemu_get_thread_id();
+#endif
+}
+
 struct Notifier;
 /**
  * qemu_thread_atexit_add:
