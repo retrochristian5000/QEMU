@@ -439,11 +439,14 @@ void qemu_thread_create(QemuThread *thread, const char *name,
 
     /* Leave signal handling to the iothread.  */
     sigfillset(&set);
-    /* Blocking the signals can result in undefined behaviour. */
+    /* Blocking synchronous fault signals can result in undefined behaviour. */
     sigdelset(&set, SIGSEGV);
     sigdelset(&set, SIGFPE);
     sigdelset(&set, SIGILL);
-    /* TODO avoid SIGBUS loss on macOS */
+#ifdef __APPLE__
+    /* Darwin must deliver synchronous SIGBUS to the faulting thread. */
+    sigdelset(&set, SIGBUS);
+#endif
     pthread_sigmask(SIG_SETMASK, &set, &oldset);
 
     qemu_thread_args = g_new0(QemuThreadArgs, 1);
