@@ -381,6 +381,15 @@ static void *do_touch_pages(void *arg)
     int ret = 0;
 
     /*
+     * Preallocation owns this special SIGBUS policy. Generic QEMU threads on
+     * Darwin leave synchronous SIGBUS unblocked, so block it here until the
+     * recovery point below is ready.
+     */
+    sigemptyset(&set);
+    sigaddset(&set, SIGBUS);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+    /*
      * On Linux, the page faults from the loop below can cause mmap_sem
      * contention with allocation of the thread stacks.  Do not start
      * clearing until all threads have been created.
@@ -392,8 +401,6 @@ static void *do_touch_pages(void *arg)
     qemu_mutex_unlock(&page_mutex);
 
     /* unblock SIGBUS */
-    sigemptyset(&set);
-    sigaddset(&set, SIGBUS);
     pthread_sigmask(SIG_UNBLOCK, &set, &oldset);
 
     if (sigsetjmp(memset_args->env, 1)) {
@@ -747,7 +754,6 @@ void *qemu_alloc_stack(size_t *sz)
         perror("failed to set up stack guard page");
         abort();
     }
-
 #ifdef CONFIG_DEBUG_STACK_USAGE
     for (ptr2 = ptr + pagesz; ptr2 < ptr + *sz; ptr2 += sizeof(uint32_t)) {
         *(uint32_t *)ptr2 = 0xdeadbeaf;
