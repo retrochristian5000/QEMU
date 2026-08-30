@@ -61,7 +61,7 @@ static void error_exit(int err, const char *msg)
 
 static inline clockid_t qemu_timedwait_clockid(void)
 {
-#ifdef CONFIG_PTHREAD_CONDATTR_SETCLOCK
+#if defined(CONFIG_PTHREAD_CONDATTR_SETCLOCK) || defined(__APPLE__)
     return CLOCK_MONOTONIC;
 #else
     return CLOCK_REALTIME;
@@ -251,7 +251,23 @@ qemu_cond_timedwait_ts(QemuCond *cond, QemuMutex *mutex, struct timespec *ts,
 
     assert(cond->initialized);
     trace_qemu_mutex_unlock(mutex, file, line);
+#ifdef __APPLE__
+    struct timespec now, rel = { 0 };
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (ts->tv_sec > now.tv_sec ||
+        (ts->tv_sec == now.tv_sec && ts->tv_nsec > now.tv_nsec)) {
+        rel.tv_sec = ts->tv_sec - now.tv_sec;
+        rel.tv_nsec = ts->tv_nsec - now.tv_nsec;
+        if (rel.tv_nsec < 0) {
+            rel.tv_sec--;
+            rel.tv_nsec += 1000000000;
+        }
+    }
+    err = pthread_cond_timedwait_relative_np(&cond->cond, &mutex->lock, &rel);
+#else
     err = pthread_cond_timedwait(&cond->cond, &mutex->lock, ts);
+#endif
     trace_qemu_mutex_locked(mutex, file, line);
     if (err && err != ETIMEDOUT) {
         error_exit(err, __func__);
