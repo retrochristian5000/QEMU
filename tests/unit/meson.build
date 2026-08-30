@@ -52,6 +52,10 @@ tests = {
   'test-envlist': [],
 }
 
+if host_os == 'darwin'
+  tests += {'test-qemu-thread-signal-mask': []}
+endif
+
 if have_system or have_tools
   tests += {
     'test-qmp-event': [testqapi],
