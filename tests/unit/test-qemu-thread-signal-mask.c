@@ -1,5 +1,5 @@
 /*
- * QEMU POSIX thread signal-mask tests
+ * QEMU Darwin POSIX thread tests
  *
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
@@ -56,10 +56,76 @@ static void test_darwin_thread_signal_mask(void)
     g_assert_cmpint(sigismember(&state.mask, SIGTERM), ==, 1);
 }
 
+static int64_t monotonic_ns(void)
+{
+    struct timespec ts;
+    int ret;
+
+    ret = clock_gettime(CLOCK_MONOTONIC, &ts);
+    g_assert_cmpint(ret, ==, 0);
+    return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
+static void assert_timed_wait_elapsed(int64_t start_ns, int64_t end_ns)
+{
+    int64_t elapsed_ns = end_ns - start_ns;
+
+    /* Leave ample room for timer coalescing and loaded CI runners. */
+    g_assert_cmpint(elapsed_ns, >=, 1000000LL);
+    g_assert_cmpint(elapsed_ns, <, 5000000000LL);
+}
+
+static void test_darwin_cond_timedwait(void)
+{
+    QemuMutex mutex;
+    QemuCond cond;
+    int64_t start_ns;
+    int64_t end_ns;
+    bool signaled;
+
+    qemu_mutex_init(&mutex);
+    qemu_cond_init(&cond);
+    qemu_mutex_lock(&mutex);
+
+    start_ns = monotonic_ns();
+    signaled = qemu_cond_timedwait(&cond, &mutex, 20);
+    end_ns = monotonic_ns();
+
+    qemu_mutex_unlock(&mutex);
+    qemu_cond_destroy(&cond);
+    qemu_mutex_destroy(&mutex);
+
+    g_assert_false(signaled);
+    assert_timed_wait_elapsed(start_ns, end_ns);
+}
+
+static void test_darwin_sem_timedwait(void)
+{
+    QemuSemaphore sem;
+    int64_t start_ns;
+    int64_t end_ns;
+    int ret;
+
+    qemu_sem_init(&sem, 0);
+
+    start_ns = monotonic_ns();
+    ret = qemu_sem_timedwait(&sem, 20);
+    end_ns = monotonic_ns();
+
+    qemu_sem_destroy(&sem);
+
+    g_assert_cmpint(ret, ==, -1);
+    assert_timed_wait_elapsed(start_ns, end_ns);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/qemu-thread/darwin/signal-mask",
                     test_darwin_thread_signal_mask);
+    g_test_add_func("/qemu-thread/darwin/cond-timedwait",
+                    test_darwin_cond_timedwait);
+    g_test_add_func("/qemu-thread/darwin/sem-timedwait",
+                    test_darwin_sem_timedwait);
     return g_test_run();
 }
