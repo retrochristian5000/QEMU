@@ -12,6 +12,10 @@ typedef struct ThreadSignalMask {
     sigset_t mask;
 } ThreadSignalMask;
 
+typedef struct HostThreadId {
+    int64_t id;
+} HostThreadId;
+
 static void *capture_thread_signal_mask(void *opaque)
 {
     ThreadSignalMask *state = opaque;
@@ -19,6 +23,14 @@ static void *capture_thread_signal_mask(void *opaque)
 
     ret = pthread_sigmask(SIG_SETMASK, NULL, &state->mask);
     g_assert_cmpint(ret, ==, 0);
+    return NULL;
+}
+
+static void *capture_host_thread_id(void *opaque)
+{
+    HostThreadId *state = opaque;
+
+    state->id = qemu_get_host_thread_id();
     return NULL;
 }
 
@@ -54,6 +66,22 @@ static void test_darwin_thread_signal_mask(void)
     g_assert_cmpint(sigismember(&state.mask, SIGILL), ==, 0);
     g_assert_cmpint(sigismember(&state.mask, SIGBUS), ==, 0);
     g_assert_cmpint(sigismember(&state.mask, SIGTERM), ==, 1);
+}
+
+static void test_darwin_host_thread_id(void)
+{
+    HostThreadId child = { 0 };
+    QemuThread thread;
+    int64_t main_id = qemu_get_host_thread_id();
+
+    qemu_thread_create(&thread, "thread-id-test",
+                       capture_host_thread_id, &child,
+                       QEMU_THREAD_JOINABLE);
+    qemu_thread_join(&thread);
+
+    g_assert_cmpint(main_id, >, 0);
+    g_assert_cmpint(child.id, >, 0);
+    g_assert_cmpint(child.id, !=, main_id);
 }
 
 static int64_t monotonic_ns(void)
@@ -123,6 +151,8 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/qemu-thread/darwin/signal-mask",
                     test_darwin_thread_signal_mask);
+    g_test_add_func("/qemu-thread/darwin/host-thread-id",
+                    test_darwin_host_thread_id);
     g_test_add_func("/qemu-thread/darwin/cond-timedwait",
                     test_darwin_cond_timedwait);
     g_test_add_func("/qemu-thread/darwin/sem-timedwait",
