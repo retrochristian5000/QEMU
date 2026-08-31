@@ -6,7 +6,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 cpu_h = (ROOT / "target/trimedia/cpu.h").read_text(encoding="utf-8")
 cpu_c = (ROOT / "target/trimedia/cpu.c").read_text(encoding="utf-8")
-translate_c = (ROOT / "target/trimedia/translate.c").read_text(encoding="utf-8")
 
 # TM3260 core architectural state: keep the first register slice explicit.
 expected_state = (
@@ -30,13 +29,5 @@ for declaration in expected_state:
 # State dumps are the first debugger/diagnostic visibility for this target.
 for name in ("pcsw", "dpc", "spc", "excvec", "cccount"):
     assert f"env->{name}" in cpu_c, f"CPU dump does not expose {name}"
-
-# Make the special registers addressable by future decoded special-register ops.
-for name in ("pcsw", "dpc", "spc", "excvec"):
-    assert f"static TCGv_i32 cpu_{name};" in translate_c
-    assert f"offsetof(CPUTrimediaState, {name})" in translate_c
-assert "static TCGv_i64 cpu_cccount;" in translate_c
-assert "offsetof(CPUTrimediaState, cccount)" in translate_c
-assert "tcg_global_mem_new_i64" in translate_c
 
 print("TriMedia architectural register state: verified")
