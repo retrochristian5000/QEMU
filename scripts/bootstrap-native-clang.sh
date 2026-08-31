@@ -116,6 +116,65 @@ for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
     }
 done
 
+query_target_triple()
+{
+    local compiler="$1"
+    local target=''
+
+    target="$("$compiler" -print-target-triple 2>/dev/null || true)"
+    if [[ -z "$target" ]]; then
+        target="$("$compiler" -dumpmachine 2>/dev/null || true)"
+    fi
+    printf '%s\n' "$target" | sed -n '1p'
+}
+
+canonical_native_arch()
+{
+    case "$1" in
+        arm64|aarch64) printf 'arm64\n' ;;
+        x86_64|amd64) printf 'x86_64\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+native_target_matches_host()
+{
+    local target="$1"
+    local arch vendor os target_arch
+
+    [[ -n "$target" ]] || return 1
+    IFS='-' read -r arch vendor os _ <<< "$target"
+    target_arch="$(canonical_native_arch "$arch" 2>/dev/null || true)"
+    [[ "$target_arch" == "$host_tag" ]] || return 1
+
+    if [[ "$host_os" == Darwin ]]; then
+        [[ "$vendor" == apple ]] || return 1
+        case "$os" in
+            darwin*|macos*|macosx*) ;;
+            *) return 1 ;;
+        esac
+    fi
+}
+
+bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
+bootstrap_cxx_target="$(query_target_triple "$bootstrap_cxx")"
+if ! native_target_matches_host "$bootstrap_cc_target"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C compiler does not target the host ABI.' \
+        "compiler: $bootstrap_cc" \
+        "target:   ${bootstrap_cc_target:-<unknown>}" \
+        "host:     $host_id" >&2
+    exit 1
+fi
+if ! native_target_matches_host "$bootstrap_cxx_target"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C++ compiler does not target the host ABI.' \
+        "compiler: $bootstrap_cxx" \
+        "target:   ${bootstrap_cxx_target:-<unknown>}" \
+        "host:     $host_id" >&2
+    exit 1
+fi
+
 # The WHP LLVM fork is already a QEMU submodule and is the single source for
 # firmware, legacy-target, and native compiler profiles. Keep the native lane
 # on that gitlink rather than cloning or pinning a second LLVM lineage.
@@ -137,8 +196,10 @@ LLVM_TARGETS_TO_BUILD=$llvm_target
 DISTRIBUTION=clang-native-minimal
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
+BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target
 BOOTSTRAP_CXX=$bootstrap_cxx
 BOOTSTRAP_CXX_VERSION=$bootstrap_cxx_version
+BOOTSTRAP_CXX_TARGET_TRIPLE=$bootstrap_cxx_target
 SDKROOT=$sdkroot
 MACOSX_DEPLOYMENT_TARGET=$deployment_target
 EOF
@@ -147,10 +208,15 @@ EOF
 usable()
 {
     local prefix="$1"
+    local target=''
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
+    target="$(query_target_triple "$prefix/bin/clang")"
+    native_target_matches_host "$target" || return 1
+    target="$(query_target_triple "$prefix/bin/clang++")"
+    native_target_matches_host "$target" || return 1
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
         "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
     printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
