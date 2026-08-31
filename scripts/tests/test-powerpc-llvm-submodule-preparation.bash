@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
 CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
+CLANG_ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 CLANG_CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
 REAL_BASH="$(command -v bash)"
@@ -112,18 +113,22 @@ if grep -Fq 'POWERPC_LLVM_' "$gcc_config"; then
     exit 1
 fi
 
-# The LLVM compiler bootstrap must preserve CMake/Ninja state between pinned
-# revisions. Distribution targets keep the install focused while retaining the
-# LLVM headers, libraries, and CMake package needed by the later LLD/Meson lanes.
+# The base compiler stage may keep CMake/Ninja state inside one build directory,
+# but the QEMU orchestrator must never reuse that graph across LLVM revisions.
+# The exact gitlink therefore participates in the build-directory identity.
 if grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$CLANG_BOOTSTRAP"; then
-    printf 'error: LLVM bootstrap still destroys its CMake build directory\n' >&2
+    printf 'error: base LLVM bootstrap destroys its per-revision CMake graph\n' >&2
     exit 1
 fi
+grep -Fq 'POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"' \
+    "$CLANG_ORCHESTRATOR"
+grep -Fq 'POWERPC_LLVM_BUILD_DIR="$POWERPC_LLVM_BUILD_DIR"' \
+    "$CLANG_ORCHESTRATOR"
 if grep -Fq 'JOBS="${JOBS:-1}"' "$CLANG_BOOTSTRAP"; then
     printf 'error: LLVM bootstrap still serializes standalone builds by default\n' >&2
     exit 1
 fi
-grep -Fq 'BOOTSTRAP_SCHEMA=16' "$CLANG_BOOTSTRAP"
+grep -Fq 'BOOTSTRAP_SCHEMA=20' "$CLANG_BOOTSTRAP"
 grep -Fq 'LLVM_CMAKE_MODE=incremental-distribution-fast-cmake' "$CLANG_BOOTSTRAP"
 grep -Fq 'cmake_parallel_args=(--parallel)' "$CLANG_BOOTSTRAP"
 grep -Fq -- '"${cmake_parallel_args[@]}"' "$CLANG_BOOTSTRAP"
@@ -154,14 +159,16 @@ for cmake_flag in \
     '-DLINKER_SUPPORTS_COLOR_DIAGNOSTICS=FALSE'; do
     grep -Fq -- "$cmake_flag" "$CLANG_BOOTSTRAP"
 done
-grep -Fq -- '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
-grep -Fq -- '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -fno-function-sections -fno-data-sections' "$CLANG_BOOTSTRAP"
+grep -Fq 'host_c_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"' \
+    "$CLANG_BOOTSTRAP"
+grep -Fq 'host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-sections -fno-data-sections"' \
+    "$CLANG_BOOTSTRAP"
 grep -Fq 'for candidate in mold lld; do' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld="$candidate"' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
 
-# The standalone LLD stage must keep its own Ninja state and compile only the
-# ELF driver used by the PowerPC firmware lane.
+# The standalone LLD stage keeps its own Ninja state for one base-toolchain
+# identity and compiles only the ELF driver used by the PowerPC firmware lane.
 if grep -Fq 'rm -rf "$LLD_BUILD_DIR"' "$CLANG_CORE"; then
     printf 'error: LLD bootstrap still destroys its CMake build directory\n' >&2
     exit 1
@@ -170,7 +177,7 @@ if grep -Fq 'JOBS="${JOBS:-1}"' "$CLANG_CORE"; then
     printf 'error: LLD bootstrap still serializes standalone builds by default\n' >&2
     exit 1
 fi
-grep -Fq 'LLD_SCHEMA=4' "$CLANG_CORE"
+grep -Fq 'LLD_SCHEMA=6' "$CLANG_CORE"
 grep -Fq 'LLD_BUILD_MODE=incremental-elf-only' "$CLANG_CORE"
 grep -Fq 'cmake_parallel_args=(--parallel)' "$CLANG_CORE"
 grep -Fq -- '-DLLD_ENABLE_BACKENDS=ELF' "$CLANG_CORE"
