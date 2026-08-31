@@ -21,6 +21,10 @@ typedef struct CPUArchState {
     uint32_t gpr[TRIMEDIA_NUM_GPRS];
     uint32_t pc;
     uint32_t pcsw;
+    uint32_t dpc;
+    uint32_t spc;
+    uint32_t excvec;
+    uint64_t cccount;
 
     /* Fields up to this point are cleared by CPU reset. */
     struct {} end_reset_fields;
