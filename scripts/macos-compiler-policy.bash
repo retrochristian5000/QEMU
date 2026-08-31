@@ -18,7 +18,7 @@ case "$MACOS_ALLOW_NONCLANG" in
         ;;
 esac
 
-for required in xcrun basename sed; do
+for required in xcrun basename sed uname; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: macOS compiler policy dependency not found: %s\n' \
             "$required" >&2
@@ -59,6 +59,80 @@ compiler_family()
         *GCC*|*gcc*|*'Free Software Foundation'*) printf 'gcc\n' ;;
         *) printf 'unknown\n' ;;
     esac
+}
+
+compiler_target_triple()
+{
+    local command_string="$1"
+    local triple=''
+
+    set_compiler_command "$command_string" || return 1
+    triple="$("${COMPILER_COMMAND[@]}" -print-target-triple 2>/dev/null || true)"
+    if [[ -z "$triple" ]]; then
+        triple="$("${COMPILER_COMMAND[@]}" -dumpmachine 2>/dev/null || true)"
+    fi
+    [[ -n "$triple" ]] || return 1
+    printf '%s\n' "$triple"
+}
+
+canonical_macos_arch()
+{
+    case "$1" in
+        arm64|aarch64) printf 'arm64\n' ;;
+        x86_64|amd64) printf 'x86_64\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+require_apple_darwin_target()
+{
+    local label="$1"
+    local command_string="$2"
+    local triple arch vendor os host_arch target_arch
+
+    triple="$(compiler_target_triple "$command_string")" || {
+        printf 'error: could not determine %s target triple: %s\n' \
+            "$label" "$command_string" >&2
+        return 1
+    }
+
+    IFS='-' read -r arch vendor os _ <<< "$triple"
+    if [[ "$vendor" != apple ]]; then
+        printf '%s\n' \
+            "error: $label must use an Apple Darwin/macOS target triple." \
+            "compiler: $command_string" \
+            "target:   $triple" >&2
+        return 1
+    fi
+    case "$os" in
+        darwin*|macos*|macosx*) ;;
+        *)
+            printf '%s\n' \
+                "error: $label must use an Apple Darwin/macOS target triple." \
+                "compiler: $command_string" \
+                "target:   $triple" >&2
+            return 1
+            ;;
+    esac
+
+    host_arch="$(canonical_macos_arch "$(uname -m)")" || {
+        printf 'error: unsupported macOS host architecture: %s\n' "$(uname -m)" >&2
+        return 1
+    }
+    target_arch="$(canonical_macos_arch "$arch")" || {
+        printf 'error: unsupported %s target architecture in triple: %s\n' \
+            "$label" "$triple" >&2
+        return 1
+    }
+    if [[ "$target_arch" != "$host_arch" ]]; then
+        printf '%s\n' \
+            "error: $label target architecture does not match the macOS host." \
+            "host:     $host_arch" \
+            "target:   $triple" >&2
+        return 1
+    fi
+
+    printf '%s\n' "$triple"
 }
 
 APPLE_CLANG="$(xcrun --sdk macosx --find clang)"
@@ -125,6 +199,19 @@ if [[ "$build_cc_family" != clang || "$build_cxx_family" != clang ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
+MACOS_CC_TARGET_TRIPLE="$(require_apple_darwin_target CC "$CC")" || \
+    return 1 2>/dev/null || exit 1
+MACOS_CXX_TARGET_TRIPLE="$(require_apple_darwin_target CXX "$CXX")" || \
+    return 1 2>/dev/null || exit 1
+MACOS_OBJC_TARGET_TRIPLE="$(require_apple_darwin_target OBJC "$OBJC")" || \
+    return 1 2>/dev/null || exit 1
+MACOS_BUILD_CC_TARGET_TRIPLE="$(require_apple_darwin_target CC_FOR_BUILD "$CC_FOR_BUILD")" || \
+    return 1 2>/dev/null || exit 1
+MACOS_BUILD_CXX_TARGET_TRIPLE="$(require_apple_darwin_target CXX_FOR_BUILD "$CXX_FOR_BUILD")" || \
+    return 1 2>/dev/null || exit 1
+export MACOS_CC_TARGET_TRIPLE MACOS_CXX_TARGET_TRIPLE MACOS_OBJC_TARGET_TRIPLE
+export MACOS_BUILD_CC_TARGET_TRIPLE MACOS_BUILD_CXX_TARGET_TRIPLE
+
 case "$cc_family" in
     clang)
         MACOS_EFFECTIVE_COMPILER_FAMILY=clang
@@ -155,8 +242,8 @@ export MACOS_EFFECTIVE_COMPILER_FAMILY
 export WHP_MACOS_COMPILER_POLICY_APPLIED=1
 
 printf '%s\n' \
-    "QEMU C compiler:          $CC ($cc_family)" \
-    "QEMU C++ compiler:        $CXX ($cxx_family)" \
-    "QEMU Objective-C:         $OBJC ($objc_family)" \
+    "QEMU C compiler:          $CC ($cc_family; $MACOS_CC_TARGET_TRIPLE)" \
+    "QEMU C++ compiler:        $CXX ($cxx_family; $MACOS_CXX_TARGET_TRIPLE)" \
+    "QEMU Objective-C:         $OBJC ($objc_family; $MACOS_OBJC_TARGET_TRIPLE)" \
     "build-machine compiler:   $CC_FOR_BUILD/$CXX_FOR_BUILD" \
     "QEMU host LTO:            ${QEMU_HOST_LTO:-automatic}"
