@@ -5,7 +5,7 @@ set -eu
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
 WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
-WHP_PORTABLE_BUILD_TOOL="$SOURCE_DIR/scripts/whp-build/portable-build.py"
+WHP_PORTABLE_BUILD_TOOL="$SOURCE_DIR/scripts/whp-build/portable-build-entry.py"
 WHP_USER_CONFIG="$SOURCE_DIR/.whpconfig"
 
 if [ -n "${WHP_BUILD_BASH:-}" ]; then
@@ -102,8 +102,7 @@ if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
           test "${BASH_VERSINFO[1]}" -ge 2; }
 ' >/dev/null 2>&1; then
     if [ "$WHP_BUILD_BASH_EXPLICIT" = 1 ]; then
-        printf 'error: WHP_BUILD_BASH is not GNU Bash 3.2 or newer: %s\n' \
-            "$WHP_BUILD_BASH" >&2
+        printf 'error: WHP_BUILD_BASH is not GNU Bash 3.2 or newer: %s\n' "$WHP_BUILD_BASH" >&2
         exit 1
     fi
     portable_core "$@"
