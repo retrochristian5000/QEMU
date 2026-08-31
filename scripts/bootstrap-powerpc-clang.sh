@@ -79,6 +79,22 @@ fi
 # build-directory identity instead of mixing revisions in one graph.
 POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"
 
+# A marker and matching gitlink are not enough to trust an already-installed
+# compiler: an older mixed CMake/Ninja graph can leave a frontend that emits
+# "non-leaf-no-reserve" paired with a verifier that rejects it. Exercise the
+# exact producer path and force a clean rebuild if that installed cache is bad.
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
+      -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]]; then
+    if ! printf 'int whp_powerpc_frame_pointer(void) { return 0; }\n' |
+         "$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \
+             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+             -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1; then
+        printf '%s\n' \
+            'PowerPC LLVM cache failed the frame-pointer verifier probe; rebuilding.' >&2
+        TOOLCHAIN_FORCE_REBUILD=1
+    fi
+fi
+
 # The base bootstrap owns its semantic marker. Script-checksum drift still does
 # not force a clean rebuild; revision changes naturally select a fresh graph.
 "${toolchain_clean_env[@]}" \
