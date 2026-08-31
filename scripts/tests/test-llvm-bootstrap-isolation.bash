@@ -7,8 +7,9 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 native="$ROOT/scripts/bootstrap-native-clang.sh"
 i386="$ROOT/scripts/bootstrap-i386-clang.sh"
 powerpc="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+powerpc_base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 
-for script in "$native" "$i386" "$powerpc"; do
+for script in "$native" "$i386" "$powerpc" "$powerpc_base"; do
     [[ -f "$script" ]] || {
         printf 'error: missing LLVM bootstrap: %s\n' "$script" >&2
         exit 1
@@ -43,6 +44,14 @@ done
 # modern "non-leaf-no-reserve" function attribute.
 grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$native" || {
     printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
+    exit 1
+}
+grep -Fq '"$prefix/llvm/bin/clang" --target=powerpc-none-elf \' "$powerpc_base" || {
+    printf 'error: PowerPC LLVM cache check does not compile with installed clang\n' >&2
+    exit 1
+}
+grep -Fq -- '-fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$powerpc_base" || {
+    printf 'error: PowerPC LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
 
