@@ -15,6 +15,11 @@ TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 stage_root=""
 
+# This is a host compiler bootstrap for a freestanding target, not a QEMU host
+# object build. Keep ambient optimization, sanitizer, coverage, linker, and
+# frame-pointer flags outside LLVM's CMake configuration.
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+
 cleanup()
 {
     local status=$?
