@@ -34,13 +34,35 @@ case "$BOOTSTRAP_I386_TOOLCHAIN" in
     *) printf 'error: BOOTSTRAP_I386_TOOLCHAIN must be auto, 0, or 1\n' >&2; exit 1 ;;
 esac
 
-if [[ "$BOOTSTRAP_I386_TOOLCHAIN" == 1 ]]; then
+bootstrap_i386_toolchain()
+{
+    local force_rebuild="$1"
+
     I386_TOOLCHAIN_DIR="$I386_TOOLCHAIN_DIR" \
     I386_TOOLCHAIN_WORK_DIR="${I386_TOOLCHAIN_WORK_DIR:-$BUILD_DIR/firmware-tools/toolchain-work/i386-none-elf}" \
-    I386_TOOLCHAIN_FORCE_REBUILD="$I386_TOOLCHAIN_FORCE_REBUILD" \
+    I386_TOOLCHAIN_FORCE_REBUILD="$force_rebuild" \
     I386_LLVM_SUBMODULE_PATH="$I386_LLVM_SUBMODULE_PATH" \
     JOBS="${JOBS:-}" \
         bash "$SOURCE_DIR/scripts/bootstrap-i386-clang.sh"
+}
+
+if [[ "$BOOTSTRAP_I386_TOOLCHAIN" == 1 ]]; then
+    bootstrap_i386_toolchain "$I386_TOOLCHAIN_FORCE_REBUILD"
+
+    # A matching marker plus a plain compile cannot detect a mixed LLVM cache
+    # whose frontend knows the modern non-leaf frame-pointer mode while its
+    # verifier does not. Exercise the exact producer path before SeaBIOS uses
+    # the compiler; a failure forces the bootstrap's existing clean rebuild.
+    i386_clang="$I386_TOOLCHAIN_DIR/llvm/bin/clang"
+    if ! printf 'int whp_i386_frame_pointer(void) { return 0; }\n' |
+         "$i386_clang" --target=i386-none-elf -m32 -march=i386 \
+             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+             -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1; then
+        printf '%s\n' \
+            'i386 LLVM cache failed the frame-pointer verifier probe; rebuilding.' >&2
+        bootstrap_i386_toolchain 1
+    fi
+
     SEABIOS_CROSS_COMPILE="$I386_TOOLCHAIN_DIR/bin/i386-none-elf-"
 fi
 
