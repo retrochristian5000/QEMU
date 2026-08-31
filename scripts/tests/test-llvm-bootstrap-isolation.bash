@@ -8,14 +8,15 @@ native="$ROOT/scripts/bootstrap-native-clang.sh"
 i386="$ROOT/scripts/bootstrap-i386-clang.sh"
 powerpc="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 powerpc_base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+seabios_config="$ROOT/scripts/whp-build/configure-seabios.bash"
 
-for script in "$native" "$i386" "$powerpc" "$powerpc_base"; do
+for script in "$native" "$i386" "$powerpc" "$powerpc_base" "$seabios_config"; do
     [[ -f "$script" ]] || {
-        printf 'error: missing LLVM bootstrap: %s\n' "$script" >&2
+        printf 'error: missing LLVM bootstrap boundary: %s\n' "$script" >&2
         exit 1
     }
     bash -n "$script" || {
-        printf 'error: LLVM bootstrap has invalid shell syntax: %s\n' "$script" >&2
+        printf 'error: LLVM bootstrap boundary has invalid shell syntax: %s\n' "$script" >&2
         exit 1
     }
 done
@@ -46,12 +47,16 @@ grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer 
     printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
-grep -Fq '"$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET" -m32 -march=i386 \' "$i386" || {
-    printf 'error: i386 LLVM cache check does not compile with installed clang\n' >&2
+grep -Fq '"$i386_clang" --target=i386-none-elf -m32 -march=i386 \' "$seabios_config" || {
+    printf 'error: SeaBIOS i386 cache check does not compile with installed clang\n' >&2
     exit 1
 }
-grep -Fq -- '-fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$i386" || {
-    printf 'error: i386 LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
+grep -Fq -- '-fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$seabios_config" || {
+    printf 'error: SeaBIOS i386 cache check does not exercise non-leaf frame-pointer IR\n' >&2
+    exit 1
+}
+grep -Fq 'bootstrap_i386_toolchain 1' "$seabios_config" || {
+    printf 'error: SeaBIOS i386 frame-pointer failure does not force a clean rebuild\n' >&2
     exit 1
 }
 grep -Fq '"$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \' "$powerpc" || {
