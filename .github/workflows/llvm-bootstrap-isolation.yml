@@ -1,0 +1,27 @@
+name: WHP LLVM bootstrap isolation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - '.github/workflows/llvm-bootstrap-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-isolation:
+    name: Check LLVM bootstrap isolation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify LLVM bootstrap environment boundary
+        run: bash scripts/tests/test-llvm-bootstrap-isolation.bash
