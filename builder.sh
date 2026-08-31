@@ -33,6 +33,7 @@ esac
 # those stages are assembled and run.
 source "$BUILD_SYSTEM_DIR/common.bash"
 source "$BUILD_SYSTEM_DIR/prepare-build.bash"
+source "$BUILD_SYSTEM_DIR/diagnostics.bash"
 source "$BUILD_SYSTEM_DIR/prepare-sources.bash"
 source "$BUILD_SYSTEM_DIR/prepare-seabios-grub.bash"
 source "$BUILD_SYSTEM_DIR/prepare-mold.bash"
@@ -49,6 +50,7 @@ whp_strip_inherited_host_cpu_tuning
 # `./build.sh qemu-system-ppc` is a run-specific request and must be able to
 # expand an existing incremental build even when the saved PPC toggle is off.
 whp_prepare_build "$@"
+whp_apply_qemu_diagnostics
 if [[ "$HOST_OS" == Darwin ]]; then
     whp_refresh_homebrew_dependency_identity
 fi
