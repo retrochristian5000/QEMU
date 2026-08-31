@@ -18,7 +18,7 @@ LDFLAGS=-Wl,-T$(LINK_SCRIPT) -Wl,-melf_i386
 CFLAGS+=-nostdlib -ggdb -O0 $(MINILIB_INC)
 LDFLAGS+=-static -nostdlib $(CRT_OBJS) $(MINILIB_OBJS) -lgcc
 
-TESTS+=$(MULTIARCH_TESTS)
+TESTS+=$(MULTIARCH_TESTS) register-flags
 EXTRA_RUNS+=$(MULTIARCH_RUNS)
 
 # building head blobs
@@ -29,6 +29,9 @@ EXTRA_RUNS+=$(MULTIARCH_RUNS)
 
 # Build and link the tests
 %: %.c $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
+
+register-flags: $(I386_SYSTEM_SRC)/register-flags.c $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
 
 memory: CFLAGS+=-DCHECK_UNALIGNED=1
