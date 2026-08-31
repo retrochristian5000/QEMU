@@ -41,6 +41,24 @@ grep -Fq -- 'CC_COMPAT_HELPER=' "$bootstrap"
 grep -Fq -- 'cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"' "$bootstrap"
 grep -Fq -- 'mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"' "$bootstrap"
 
+# The i386 LLVM lane must always synchronize the shared LLVM gitlink, even when
+# a previous checkout already populated the directory.  Reusing whatever HEAD
+# happens to be present can pair the wrong source revision with the QEMU build.
+grep -Fq -- 'git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"' "$bootstrap"
+if grep -Fq -- 'if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then' "$bootstrap"; then
+    printf 'i386 LLVM bootstrap only refreshes the submodule when it is missing\n' >&2
+    exit 1
+fi
+
+# A cached compiler must compile a real i386 translation unit before reuse.
+# This catches frontend/backend verifier skew that --version cannot expose.
+grep -Fq -- '"$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET"' "$bootstrap"
+grep -Fq -- '-x c -c - -o /dev/null' "$bootstrap"
+
+# Do not reuse an LLVM CMake/Ninja object graph when the toolchain must rebuild.
+# LLVM IR contracts can change between source revisions.
+grep -Fq -- 'rm -rf "$LLVM_BUILD_DIR"' "$bootstrap"
+
 # Clang's i386 driver is wrapped only where SeaBIOS depends on GCC semantics
 # that raw Clang does not provide or only accepts as ignored spellings.
 grep -Fq -- '-mpreferred-stack-boundary=2)' "$cc_helper"
