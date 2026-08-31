@@ -25,6 +25,14 @@ assert 'bootstrap-native-clang.sh' in inventory
 assert '"$prefix/bin/clang" -x c -c - -o /dev/null' in bootstrap
 assert '"$prefix/bin/clang++" -x c++ -c - -o /dev/null' in bootstrap
 
+# Darwin ABI identity is more than the CPU name.  A native compiler cache must
+# retain the producer triple and reject a compiler that no longer targets the
+# Apple Darwin/macOS ABI even when its architecture still matches the host.
+assert 'BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target' in bootstrap
+assert 'native_target_matches_host "$target"' in bootstrap
+assert 'darwin*|macos*|macosx*' in bootstrap
+assert 'apple' in bootstrap
+
 # Never carry a CMake/Ninja object graph across a native LLVM rebuild.  LLVM
 # source revisions can change IR contracts, so an incremental graph from an
 # older revision is not a safe cache boundary.
