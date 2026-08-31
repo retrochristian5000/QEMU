@@ -4,30 +4,35 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+native="$ROOT/scripts/bootstrap-native-clang.sh"
+i386="$ROOT/scripts/bootstrap-i386-clang.sh"
+powerpc="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 
-bootstraps=(
-    "$ROOT/scripts/bootstrap-native-clang.sh"
-    "$ROOT/scripts/bootstrap-i386-clang.sh"
-    "$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
-)
-
-for script in "${bootstraps[@]}"; do
+for script in "$native" "$i386" "$powerpc"; do
     [[ -f "$script" ]] || {
         printf 'error: missing LLVM bootstrap: %s\n' "$script" >&2
         exit 1
     }
+done
 
-    # LLVM bootstraps are tool builds, not QEMU host-object builds.  Ambient
-    # optimization/sanitizer/frame-pointer/linker flags must not cross this
-    # boundary; CMake receives the bootstrap's explicit ABI policy instead.
+# Native LLVM is invoked by build.sh before the normal QEMU host-flag cleanup,
+# and the i386 bootstrap is invoked directly by the SeaBIOS preparation path.
+# Both therefore own a local boundary against ambient host-object flags.
+for script in "$native" "$i386"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$script" || {
         printf 'error: LLVM bootstrap inherits QEMU host flags: %s\n' "$script" >&2
         exit 1
     }
 done
 
-native="$ROOT/scripts/bootstrap-native-clang.sh"
-powerpc="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+# PowerPC already enters its compiler stages through a dedicated clean env.
+# Keep that single boundary instead of duplicating ad-hoc unsets in the base.
+for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+    grep -Fq -- "-u $variable" "$powerpc" || {
+        printf 'error: PowerPC LLVM clean environment retains %s\n' "$variable" >&2
+        exit 1
+    }
+done
 
 # Exercise the exact frontend -> IR verifier path implicated by the regression.
 grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -x c -c - -o /dev/null' "$native" || {
@@ -35,10 +40,11 @@ grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -x c -c - -o /dev/null' "$
     exit 1
 }
 
-# Never retain a PowerPC LLVM CMake/Ninja graph across a toolchain rebuild.
-# The source tree may gain new IR attributes before old objects are relinked.
-grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$powerpc" || {
-    printf 'error: PowerPC LLVM bootstrap can reuse a stale object graph\n' >&2
+# A PowerPC compiler graph may be incremental within one LLVM revision, but it
+# must not be reused after the gitlink changes. Key the build directory to the
+# exact source revision selected by the QEMU tree.
+grep -Fq 'POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"' "$powerpc" || {
+    printf 'error: PowerPC LLVM build graph is not revision-isolated\n' >&2
     exit 1
 }
 
