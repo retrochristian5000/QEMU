@@ -60,10 +60,12 @@ for helper in "$CC_COMPAT_HELPER" "$OBJDUMP_COMPAT_HELPER"; do
     }
 done
 
-if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then
-    git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
-fi
-[[ -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" &&
+# The standalone i386 bootstrap must honor the QEMU gitlink just like the
+# integrated source-preparation path.  An already-populated submodule is not
+# proof that its checkout matches the revision selected by this QEMU tree.
+git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
+[[ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" &&
+   -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" &&
    -f "$LLVM_SOURCE_DIR/lld/CMakeLists.txt" ]] || {
     printf 'error: LLVM submodule is missing clang/lld: %s\n' "$LLVM_SOURCE_DIR" >&2
     exit 1
@@ -96,6 +98,10 @@ usable()
         [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
     [[ -f "$prefix/libexec/seabios-llvm-objdump.py" ]] || return 1
+    [[ -x "$prefix/llvm/bin/clang" ]] || return 1
+    printf 'int whp_i386_llvm_usable(void) { return 0; }\n' |
+        "$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET" -m32 -march=i386 \
+            -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
@@ -105,6 +111,10 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
+# Do not retain LLVM objects from an older source state.  A mixed frontend and
+# verifier can produce IR attributes that the stale backend rejects even when
+# the installed compiler still answers --version successfully.
+rm -rf "$LLVM_BUILD_DIR"
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 
 # SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
@@ -158,16 +168,11 @@ cmake_args=(
     -DLLVM_ENABLE_LIBXML2=OFF
 )
 cmake "${cmake_args[@]}"
-
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
-fi
-
 cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
 
 # Install into a staging root first. Replacing the prefix after validation
-# removes stale tools left by older, broader bootstrap schemas without deleting
-# the persistent CMake/Ninja build graph.
+# removes stale tools left by older, broader bootstrap schemas while the LLVM
+# build itself comes from a clean CMake/Ninja graph.
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
