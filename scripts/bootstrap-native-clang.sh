@@ -147,9 +147,14 @@ EOF
 usable()
 {
     local prefix="$1"
+
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
+    printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
+        "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
+        "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || return 1
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
@@ -159,6 +164,10 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
+# LLVM's IR and verifier contracts can change between revisions.  If the
+# installed compiler is stale or unhealthy, do not reuse a CMake/Ninja graph
+# containing objects from an older source state.
+rm -rf "$LLVM_BUILD_DIR"
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 llvm_distribution_components='clang;clang-resource-headers'
 cmake_args=(
@@ -208,10 +217,6 @@ cmake_args=(
     "${cmake_host_args[@]}"
 )
 cmake "${cmake_args[@]}"
-
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
-fi
 cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
 
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
