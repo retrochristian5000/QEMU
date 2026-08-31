@@ -130,6 +130,10 @@ static void trimedia_cpu_realize(DeviceState *dev, Error **errp)
     tcc->parent_realize(dev, errp);
 }
 
+static const char *const trimedia_timer_names[TRIMEDIA_NUM_TIMERS] = {
+    "timer1", "timer2", "timer3", "systimer",
+};
+
 static void trimedia_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 {
     CPUTrimediaState *env = cpu_env(cs);
@@ -140,6 +144,14 @@ static void trimedia_cpu_dump_state(CPUState *cs, FILE *f, int flags)
                  "dpc=0x%08x spc=0x%08x excvec=0x%08x "
                  "cccount=0x%016" PRIx64 "\n",
                  env->dpc, env->spc, env->excvec, env->cccount);
+    for (i = 0; i < TRIMEDIA_NUM_TIMERS; i++) {
+        const TrimediaTimerState *timer = &env->timers[i];
+
+        qemu_fprintf(f,
+                     "%s control=0x%08x modulus=0x%08x value=0x%08x\n",
+                     trimedia_timer_names[i], timer->control, timer->modulus,
+                     timer->value);
+    }
     for (i = 0; i < TRIMEDIA_NUM_GPRS; i += 4) {
         qemu_fprintf(f,
                      "r%-3d=0x%08x r%-3d=0x%08x r%-3d=0x%08x r%-3d=0x%08x\n",
@@ -197,7 +209,7 @@ static const TypeInfo trimedia_cpu_type_info = {
     .name = TYPE_TRIMEDIA_CPU,
     .parent = TYPE_CPU,
     .instance_size = sizeof(TrimediaCPU),
-    .instance_align = __alignof(TrimediaCPU),
+    .instance_align = __alignof__(TrimediaCPU),
     .abstract = true,
     .class_size = sizeof(TrimediaCPUClass),
     .class_init = trimedia_cpu_class_init,
