@@ -7,6 +7,7 @@ on:
     paths:
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - '.github/workflows/llvm-bootstrap-isolation.yml'
