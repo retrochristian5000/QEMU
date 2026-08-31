@@ -13,6 +13,10 @@ for script in "$native" "$i386" "$powerpc"; do
         printf 'error: missing LLVM bootstrap: %s\n' "$script" >&2
         exit 1
     }
+    bash -n "$script" || {
+        printf 'error: LLVM bootstrap has invalid shell syntax: %s\n' "$script" >&2
+        exit 1
+    }
 done
 
 # Native LLVM is invoked by build.sh before the normal QEMU host-flag cleanup,
