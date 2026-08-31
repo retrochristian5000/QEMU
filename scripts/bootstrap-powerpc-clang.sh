@@ -73,16 +73,21 @@ if [[ -z "$llvm_revision" ]]; then
     exit 1
 fi
 
-# The base bootstrap owns its semantic marker and the persistent CMake/Ninja
-# graph. Never turn script-checksum drift into a clean rebuild here: semantic
-# input changes should reconfigure incrementally, while only an explicit
-# POWERPC_TOOLCHAIN_FORCE_REBUILD=1 may erase compiled LLVM outputs.
+# CMake/Ninja state is safe to reuse only while the LLVM source revision stays
+# identical. A newer frontend may emit IR attributes that an older verifier in
+# the retained object graph cannot understand, so make the gitlink part of the
+# build-directory identity instead of mixing revisions in one graph.
+POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"
+
+# The base bootstrap owns its semantic marker. Script-checksum drift still does
+# not force a clean rebuild; revision changes naturally select a fresh graph.
 "${toolchain_clean_env[@]}" \
     POWERPC_LLVM_GIT_URL="$LLVM_SUBMODULE_DIR" \
     POWERPC_LLVM_GIT_REF="$llvm_revision" \
     POWERPC_LLVM_GIT_COMMIT="$llvm_revision" \
     POWERPC_LLVM_GIT_OFFLINE=0 \
     POWERPC_LLVM_SOURCE_DIR="$TOOLCHAIN_WORK_DIR/llvm-source-from-submodule" \
+    POWERPC_LLVM_BUILD_DIR="$POWERPC_LLVM_BUILD_DIR" \
     POWERPC_TOOLCHAIN_FORCE_REBUILD="$TOOLCHAIN_FORCE_REBUILD" \
     bash "$BASE_BOOTSTRAP"
 
@@ -96,6 +101,7 @@ fi
 # second time inside the LLD stage: a redundant forced rebuild would replace
 # the freshly-published archive entry points before the LLD smoke runs.
 "${toolchain_clean_env[@]}" \
+    POWERPC_LLVM_BUILD_DIR="$POWERPC_LLVM_BUILD_DIR" \
     POWERPC_TOOLCHAIN_FORCE_REBUILD=0 \
     bash "$SCRIPT_DIR/bootstrap-powerpc-clang-core.sh"
 
