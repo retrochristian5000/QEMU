@@ -19,4 +19,15 @@ assert '-DLLVM_ENABLE_PROJECTS=clang' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
 assert 'bootstrap-native-clang.sh' in inventory
 
+# A cached compiler must exercise the frontend, IR verifier, and backend before
+# reuse.  --version alone cannot detect mixed LLVM objects such as a verifier
+# that rejects an attribute emitted by the matching Clang frontend.
+assert '"$prefix/bin/clang" -x c -c - -o /dev/null' in bootstrap
+assert '"$prefix/bin/clang++" -x c++ -c - -o /dev/null' in bootstrap
+
+# Never carry a CMake/Ninja object graph across a native LLVM rebuild.  LLVM
+# source revisions can change IR contracts, so an incremental graph from an
+# older revision is not a safe cache boundary.
+assert 'rm -rf "$LLVM_BUILD_DIR"' in bootstrap
+
 print('native LLVM wiring tests: passed')
