@@ -15,6 +15,12 @@ TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 stage_root=""
 
+# This script builds the compiler used by QEMU; it is not itself a QEMU host
+# object build. Do not let outer optimization, sanitizer, coverage, or frame-
+# pointer policy become part of LLVM's bootstrap ABI. Platform ABI inputs such
+# as SDKROOT and MACOSX_DEPLOYMENT_TARGET are handled explicitly below.
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+
 case "$TOOLCHAIN_FORCE_REBUILD" in
     0|1) ;;
     *)
@@ -219,6 +225,9 @@ usable()
     native_target_matches_host "$target" || return 1
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
         "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    printf 'int whp_native_llvm_frame_pointer(void) { return 0; }\n' |
+        "$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
     printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
         "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || return 1
 }
