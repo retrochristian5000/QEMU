@@ -14,6 +14,8 @@ cp "$ROOT/build.sh" "$COPY/build.sh"
 cp "$ROOT/scripts/whp-config/config.py" "$COPY/scripts/whp-config/config.py"
 cp "$ROOT/scripts/whp-config/menuconfig.py" "$COPY/scripts/whp-config/menuconfig.py"
 cp "$ROOT/scripts/whp-build/portable-build.py" "$COPY/scripts/whp-build/portable-build.py"
+cp "$ROOT/scripts/whp-build/portable-build-entry.py" \
+   "$COPY/scripts/whp-build/portable-build-entry.py"
 cp "$ROOT/configs/devices/ppc-softmmu/default.mak" \
    "$COPY/configs/devices/ppc-softmmu/default.mak"
 
@@ -73,11 +75,46 @@ portable_probe="$(
     /bin/sh "$COPY/build.sh" qemu-system-i386
 )"
 grep -Fq 'CONFIGURE_ARG=--target-list=i386-softmmu' <<< "$portable_probe"
+grep -Fq 'CONFIGURE_ARG=--enable-werror' <<< "$portable_probe"
+grep -Fq 'CONFIGURE_ARG=--disable-asan' <<< "$portable_probe"
+grep -Fq 'CONFIGURE_ARG=--disable-ubsan' <<< "$portable_probe"
+grep -Fq 'CONFIGURE_ARG=--disable-tsan' <<< "$portable_probe"
 if grep -Fq -- '--enable-gtk' <<< "$portable_probe" ||
    grep -Fq -- '--enable-pa' <<< "$portable_probe"; then
     printf 'error: portable auto mode must not force GTK or PulseAudio\n' >&2
     exit 1
 fi
+
+portable_sanitizer_probe="$(
+    WHP_FORCE_PORTABLE_CORE=1 \
+    WHP_PORTABLE_PROBE_ONLY=1 \
+    BUILD_QEMU_SYSTEM_I386=1 \
+    BUILD_QEMU_SYSTEM_PPC=0 \
+    QEMU_WERROR=0 \
+    QEMU_ASAN=1 \
+    QEMU_UBSAN=1 \
+    QEMU_TSAN=0 \
+    /bin/sh "$COPY/build.sh" qemu-system-i386
+)"
+grep -Fq 'CONFIGURE_ARG=--disable-werror' <<< "$portable_sanitizer_probe"
+grep -Fq 'CONFIGURE_ARG=--enable-asan' <<< "$portable_sanitizer_probe"
+grep -Fq 'CONFIGURE_ARG=--enable-ubsan' <<< "$portable_sanitizer_probe"
+grep -Fq 'CONFIGURE_ARG=--disable-tsan' <<< "$portable_sanitizer_probe"
+
+portable_tsan_error="$TMP/portable-tsan-error.txt"
+if WHP_FORCE_PORTABLE_CORE=1 \
+   WHP_PORTABLE_PROBE_ONLY=1 \
+   BUILD_QEMU_SYSTEM_I386=1 \
+   BUILD_QEMU_SYSTEM_PPC=0 \
+   QEMU_ASAN=1 \
+   QEMU_TSAN=1 \
+   /bin/sh "$COPY/build.sh" qemu-system-i386 \
+       >"$portable_tsan_error" 2>&1; then
+    printf 'error: portable core accepted incompatible sanitizer settings\n' >&2
+    exit 1
+fi
+grep -Fq 'QEMU_TSAN cannot be combined with QEMU_ASAN or QEMU_UBSAN' \
+    "$portable_tsan_error"
 
 # An unusable Bash discovered from PATH is not a reason to reject core QEMU.
 # Explicitly naming a bad WHP_BUILD_BASH remains an error, but discovery must
@@ -160,6 +197,7 @@ test ! -e "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
 # Verify explicit host-feature switches feed configure, while auto does not.
 source "$ROOT/scripts/whp-build/common.bash"
 source "$ROOT/scripts/whp-build/prepare-build.bash"
+source "$ROOT/scripts/whp-build/diagnostics.bash"
 HOST_OS=Linux
 CC=cc
 CXX=c++
@@ -187,6 +225,40 @@ grep -Fxq -- '--disable-gtk' <<< "$generic_args"
 grep -Fxq -- '--enable-pa' <<< "$generic_args"
 grep -Fxq -- '--disable-lto' <<< "$generic_args"
 
+QEMU_WERROR=1
+QEMU_ASAN=1
+QEMU_UBSAN=1
+QEMU_TSAN=0
+whp_apply_qemu_diagnostics
+generic_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--enable-werror' <<< "$generic_args"
+grep -Fxq -- '--enable-asan' <<< "$generic_args"
+grep -Fxq -- '--enable-ubsan' <<< "$generic_args"
+grep -Fxq -- '--disable-tsan' <<< "$generic_args"
+
+configure_args=()
+QEMU_WERROR=1
+QEMU_ASAN=0
+QEMU_UBSAN=0
+QEMU_TSAN=1
+whp_apply_qemu_diagnostics
+generic_args="$(printf '%s\n' "${configure_args[@]}")"
+grep -Fxq -- '--enable-werror' <<< "$generic_args"
+grep -Fxq -- '--disable-asan' <<< "$generic_args"
+grep -Fxq -- '--disable-ubsan' <<< "$generic_args"
+grep -Fxq -- '--enable-tsan' <<< "$generic_args"
+
+configure_args=()
+QEMU_WERROR=1
+QEMU_ASAN=1
+QEMU_UBSAN=0
+QEMU_TSAN=1
+if whp_apply_qemu_diagnostics 2>/dev/null; then
+    printf 'error: Bash builder accepted incompatible sanitizer settings\n' >&2
+    exit 1
+fi
+[[ ${#configure_args[@]} == 0 ]]
+
 # Direct environment overrides accept common boolean spellings instead of
 # requiring the config renderer's internal 0/1 representation.
 MACOS_ENABLE_GTK=y
@@ -212,5 +284,8 @@ whp_prepare_build_defaults
 [[ "$INSTALL" == 0 ]]
 [[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]
 [[ "$PREFIX" != /emulator ]]
+
+python3 -m py_compile "$ROOT/scripts/whp-build/portable-build-entry.py"
+bash -n "$ROOT/scripts/whp-build/diagnostics.bash"
 
 printf 'WHP portable configuration integration: verified\n'
