@@ -87,7 +87,9 @@ cat > "$CLANG" <<'EOF'
 #!/usr/bin/env bash
 case "${1:-}" in
     --version) printf 'Apple clang version 16.0.0\n' ;;
-    -dumpmachine|-print-target-triple) printf 'arm64-apple-darwin24.0.0\n' ;;
+    -dumpmachine|-print-target-triple)
+        printf '%s\n' "${TEST_TARGET_TRIPLE:-arm64-apple-darwin24.0.0}"
+        ;;
     -print-resource-dir) printf '/tmp\n' ;;
     *) exit 0 ;;
 esac
@@ -120,6 +122,25 @@ export TEST_DEVELOPER_DIR="$DEVELOPER_DIR_FIXTURE"
 export TEST_CLANG="$CLANG"
 export TEST_CLANGXX="$CLANGXX"
 export TEST_STRIP="$STRIP"
+
+non_darwin_output="$TEST_DIR/non-darwin-output"
+if TEST_TARGET_TRIPLE=arm64-unknown-linux-gnu \
+   CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
+   CC_FOR_BUILD="$CLANG" CXX_FOR_BUILD="$CLANGXX" \
+   bash --noprofile --norc -c \
+       'source "$1/scripts/macos-compiler-policy.bash"' _ "$SOURCE_DIR" \
+       >"$non_darwin_output" 2>&1; then
+    printf '%s\n' \
+        'error: macOS compiler policy accepted an arm64 non-Darwin target triple.' >&2
+    cat "$non_darwin_output" >&2
+    exit 1
+fi
+if ! grep -Fq 'Apple Darwin/macOS target triple' "$non_darwin_output"; then
+    printf '%s\n' \
+        'error: macOS compiler policy did not diagnose the non-Darwin target ABI.' >&2
+    cat "$non_darwin_output" >&2
+    exit 1
+fi
 
 wrapper_output="$TEST_DIR/wrapper-output"
 if SDKROOT="$SELECTED_SDK" \
