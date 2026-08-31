@@ -46,6 +46,14 @@ grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer 
     printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
+grep -Fq '"$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET" -m32 -march=i386 \' "$i386" || {
+    printf 'error: i386 LLVM cache check does not compile with installed clang\n' >&2
+    exit 1
+}
+grep -Fq -- '-fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$i386" || {
+    printf 'error: i386 LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
+    exit 1
+}
 grep -Fq '"$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \' "$powerpc" || {
     printf 'error: PowerPC LLVM cache check does not compile with installed clang\n' >&2
     exit 1
