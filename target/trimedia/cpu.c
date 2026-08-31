@@ -136,6 +136,10 @@ static void trimedia_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     int i;
 
     qemu_fprintf(f, "pc=0x%08x pcsw=0x%08x\n", env->pc, env->pcsw);
+    qemu_fprintf(f,
+                 "dpc=0x%08x spc=0x%08x excvec=0x%08x "
+                 "cccount=0x%016" PRIx64 "\n",
+                 env->dpc, env->spc, env->excvec, env->cccount);
     for (i = 0; i < TRIMEDIA_NUM_GPRS; i += 4) {
         qemu_fprintf(f,
                      "r%-3d=0x%08x r%-3d=0x%08x r%-3d=0x%08x r%-3d=0x%08x\n",
