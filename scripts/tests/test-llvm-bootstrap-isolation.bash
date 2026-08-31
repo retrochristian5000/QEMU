@@ -34,9 +34,11 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
     }
 done
 
-# Exercise the exact frontend -> IR verifier path implicated by the regression.
-grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -x c -c - -o /dev/null' "$native" || {
-    printf 'error: native LLVM cache check does not exercise frame-pointer IR\n' >&2
+# Exercise the exact frontend -> IR verifier path implicated by the regression:
+# keeping non-leaf frame pointers while omitting leaf frame pointers emits the
+# modern "non-leaf-no-reserve" function attribute.
+grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$native" || {
+    printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
 
