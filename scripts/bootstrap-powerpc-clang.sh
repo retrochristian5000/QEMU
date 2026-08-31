@@ -120,8 +120,8 @@ done
 
 # Publish the remaining migrated binary-tool interfaces after LLD and the
 # assembler are proven. nm deliberately consumes the already-published LLVM ar
-# route for its archive-map qualification. No private GNU binary-tool fallback
-# survives.
+# route for its archive-map qualification. No private GNU as/ar/nm/strip
+# fallbacks survive.
 "${toolchain_clean_env[@]}" \
     bash "$SCRIPT_DIR/bootstrap-powerpc-llvm-nm.sh"
 "${toolchain_clean_env[@]}" \
