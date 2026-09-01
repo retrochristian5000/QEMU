@@ -76,6 +76,34 @@ grep -Fq 'rm -rf "$POWERPC_LLVM_BUILD_DIR"' "$powerpc" || {
     exit 1
 }
 
+# The frame-pointer failure proved that an installed compiler can look present
+# while one LLVM module is stale. Guard the rest of the core distribution too:
+# archive/index, symbol, ELF reader, strip, configuration, and TableGen tools
+# must participate in the current-cache health gate instead of relying on
+# markers or --version-only checks in later publication stages.
+grep -Fq 'powerpc_llvm_cache_is_usable()' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache has no integrated core-module smoke\n' >&2
+    exit 1
+}
+for tool in llvm-ar llvm-ranlib llvm-nm llvm-readelf llvm-strip llvm-config llvm-tblgen; do
+    grep -Fq "\$TOOLCHAIN_DIR/llvm/bin/$tool" "$powerpc" || {
+        printf 'error: PowerPC LLVM cache health gate omits %s\n' "$tool" >&2
+        exit 1
+    }
+done
+grep -Fq '"$llvm_ar" rcs "$cache_smoke_dir/libcache.a" "$cache_smoke_dir/cache.o"' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache does not exercise archive creation\n' >&2
+    exit 1
+}
+grep -Fq '"$llvm_nm" --gnu-compatible -g "$cache_smoke_dir/cache.o"' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache does not exercise symbol inspection\n' >&2
+    exit 1
+}
+grep -Fq '"$llvm_strip" "$cache_smoke_dir/cache.o" -o "$cache_smoke_dir/cache-stripped.o"' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache does not exercise object stripping\n' >&2
+    exit 1
+}
+
 # A PowerPC compiler graph may be incremental within one LLVM revision, but it
 # must not be reused after the gitlink changes. Key the build directory to the
 # exact source revision selected by the QEMU tree.
