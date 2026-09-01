@@ -178,17 +178,18 @@ canonical_native_arch()
 native_target_matches_host()
 {
     local target="$1"
-    local arch target_arch
+    local arch target_arch target_vendor target_os
 
     [[ -n "$target" ]] || return 1
-    arch="${target%%-*}"
+    IFS='-' read -r arch target_vendor target_os _ <<< "$target"
     target_arch="$(canonical_native_arch "$arch" 2>/dev/null || true)"
     [[ "$target_arch" == "$host_tag" ]] || return 1
 
     case "$host_os" in
         macos)
-            case "$target" in
-                *-apple-darwin*|*-apple-macos*|*-apple-macosx*) ;;
+            [[ "$target_vendor" == apple ]] || return 1
+            case "$target_os" in
+                darwin*|macos*) ;;
                 *) return 1 ;;
             esac
             ;;
