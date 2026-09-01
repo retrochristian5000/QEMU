@@ -89,4 +89,29 @@ if grep -Fq 'LLVM_LINK_JOBS=' <<< "$core_marker"; then
     exit 1
 fi
 
+# A cached LLD that still answers --version is not necessarily a working
+# OpenBIOS linker. Require the current-cache shortcut to perform a real
+# PowerPC ELF link and to discard the standalone LLD graph when that semantic
+# probe fails, matching the broken-module recovery policy of the base compiler.
+grep -Fq 'powerpc_lld_cache_is_usable()' "$CORE" || {
+    printf 'error: PowerPC LLD cache has no semantic health probe\n' >&2
+    exit 1
+}
+grep -Fq '"$cache_clang" --target=powerpc-none-elf -c -x assembler' "$CORE" || {
+    printf 'error: PowerPC LLD cache probe does not build a PowerPC object\n' >&2
+    exit 1
+}
+grep -Fq '"$cache_lld" -T "$cache_smoke_dir/cache.ld"' "$CORE" || {
+    printf 'error: PowerPC LLD cache probe does not perform a linker-script link\n' >&2
+    exit 1
+}
+grep -Fq '"$cache_readelf" -hW "$cache_smoke_dir/cache.elf"' "$CORE" || {
+    printf 'error: PowerPC LLD cache probe does not inspect linked ELF output\n' >&2
+    exit 1
+}
+grep -Fq 'rm -rf "$LLD_BUILD_DIR"' "$CORE" || {
+    printf 'error: broken PowerPC LLD graph is not discarded before rebuild\n' >&2
+    exit 1
+}
+
 printf 'PowerPC LLVM heavy-hitter policy: verified\n'
