@@ -104,6 +104,21 @@ grep -Fq '"$llvm_strip" "$cache_smoke_dir/cache.o" -o "$cache_smoke_dir/cache-st
     exit 1
 }
 
+# clang-resource-headers is a separate installed distribution component. A
+# headerless compiler smoke cannot detect a partial install where clang itself
+# works but freestanding standard headers are missing or stale.
+for header in stddef.h stdarg.h; do
+    grep -Fq "#include <$header>" "$powerpc" || {
+        printf 'error: PowerPC LLVM cache does not exercise resource header %s\n' \
+            "$header" >&2
+        exit 1
+    }
+done
+grep -Fq 'size_t whp_powerpc_cache_size' "$powerpc" || {
+    printf 'error: PowerPC LLVM resource-header smoke does not consume size_t\n' >&2
+    exit 1
+}
+
 # Standalone LLD consumes the installed LLVM CMake package, not only the
 # executables above. A stale LLVMConfig/exports graph can therefore break the
 # macOS linker stage while clang and llvm-config still look healthy. Require a
