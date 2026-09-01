@@ -13,6 +13,7 @@ LLVM_SUBMODULE_PATH="${NATIVE_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
+LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
 stage_root=""
 
 # This script builds the compiler used by QEMU; it is not itself a QEMU host
@@ -27,6 +28,14 @@ case "$TOOLCHAIN_FORCE_REBUILD" in
         printf 'error: NATIVE_LLVM_FORCE_REBUILD must be 0 or 1\n' >&2
         exit 1
         ;;
+esac
+case "$LLVM_LINK_JOBS" in
+    0|*[!0-9]*)
+        printf 'error: NATIVE_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+            "$LLVM_LINK_JOBS" >&2
+        exit 1
+        ;;
+    *) ;;
 esac
 
 # build.sh owns host detection. Keep a direct-invocation fallback for this
@@ -299,6 +308,7 @@ cmake_args=(
     "-DLLVM_TARGETS_TO_BUILD=$llvm_target"
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
     -DLLVM_APPEND_VC_REV=OFF
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
     -DLLVM_ENABLE_LTO=OFF
     -DLLVM_ENABLE_FATLTO=OFF
     -DLLVM_BUILD_INSTRUMENTED=OFF
