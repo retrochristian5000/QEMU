@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# This helper can be invoked directly as well as through the sanitized PowerPC
+# orchestrator. Keep QEMU host-object policy out of LLVM's own CMake profile;
+# platform ABI inputs such as SDKROOT and MACOSX_DEPLOYMENT_TARGET are supplied
+# explicitly below.
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
@@ -21,7 +27,7 @@ LLVM_GIT_COMMIT="${POWERPC_LLVM_GIT_COMMIT:-}"
 LLVM_GIT_OFFLINE="${POWERPC_LLVM_GIT_OFFLINE:-0}"
 LLVM_SOURCE_DIR="${POWERPC_LLVM_SOURCE_DIR:-$TOOLCHAIN_WORK_DIR/llvm-source}"
 LLVM_BUILD_DIR="${POWERPC_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
-LLVM_CXX_OPTIMIZATION="${POWERPC_LLVM_CXX_OPTIMIZATION:--O1}"
+LLVM_CXX_OPTIMIZATION="${POWERPC_LLVM_CXX_OPTIMIZATION:-toolchain-default}"
 LLVM_ACCURACY_CHECKS="${POWERPC_LLVM_ACCURACY_CHECKS:-0}"
 LLVM_LINK_JOBS="${POWERPC_LLVM_LINK_JOBS:-2}"
 
@@ -50,10 +56,10 @@ case "$LLVM_GIT_OFFLINE" in
         ;;
 esac
 case "$LLVM_CXX_OPTIMIZATION" in
-    -O0|-O1|-O2|-O3|-Os|-Og) ;;
+    toolchain-default|-O0|-O1|-O2|-O3|-Os|-Og) ;;
     *)
         printf '%s\n' \
-            'error: POWERPC_LLVM_CXX_OPTIMIZATION must be one of -O0, -O1, -O2, -O3, -Os, or -Og' >&2
+            'error: POWERPC_LLVM_CXX_OPTIMIZATION must be toolchain-default, -O0, -O1, -O2, -O3, -Os, or -Og' >&2
         exit 1
         ;;
 esac
@@ -133,16 +139,12 @@ if ! command -v "$TOOLCHAIN_HOST_CXX" >/dev/null 2>&1; then
     exit 1
 fi
 
-# LLVM's normal Release profile uses the host compiler's most aggressive
-# optimization setting (typically -O3 for GCC/Clang). That is useful for a
-# shipped compiler release, but it substantially increases bootstrap latency.
-# Keep C at -O2 while using a lighter, configurable -O1 default for C++, where
-# most LLVM compile time lives. This reduces the cost of header-driven
-# incremental rebuilds without dropping all optimization from the resulting
-# tools. Other compiler families keep their native Release flags so this policy
-# does not narrow host portability. Since dead stripping is disabled, also undo
-# LLVM's function/data section splitting in the config-specific flags that
-# appear later on the compile command line.
+# Match the native and i386 LLVM bootstrap contract by default: CMake's Release
+# profile owns host optimization for the active compiler. The older PowerPC
+# latency profile remains an explicit opt-in through
+# POWERPC_LLVM_CXX_OPTIMIZATION. When selected, C stays at -O2 while C++ uses
+# the requested level and section splitting remains disabled because this lane
+# also disables dead stripping.
 cmake_host_release_args=()
 cmake_host_linker_args=()
 host_c_release_flags="toolchain-default"
@@ -154,12 +156,14 @@ if "$TOOLCHAIN_HOST_CC" -dM -E -x c /dev/null 2>/dev/null |
    "$TOOLCHAIN_HOST_CXX" -dM -E -x c++ /dev/null 2>/dev/null |
        grep -Eq '^#define (__clang__|__GNUC__) '; then
     host_gcc_compatible=1
-    host_c_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
-    host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-sections -fno-data-sections"
-    cmake_host_release_args=(
-        "-DCMAKE_C_FLAGS_RELEASE=$host_c_release_flags"
-        "-DCMAKE_CXX_FLAGS_RELEASE=$host_cxx_release_flags"
-    )
+    if [[ "$LLVM_CXX_OPTIMIZATION" != toolchain-default ]]; then
+        host_c_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"
+        host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-sections -fno-data-sections"
+        cmake_host_release_args=(
+            "-DCMAKE_C_FLAGS_RELEASE=$host_c_release_flags"
+            "-DCMAKE_CXX_FLAGS_RELEASE=$host_cxx_release_flags"
+        )
+    fi
 fi
 
 host_cflags=""
@@ -301,7 +305,7 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=20
+BOOTSTRAP_SCHEMA=21
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
