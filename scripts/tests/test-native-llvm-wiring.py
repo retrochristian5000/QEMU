@@ -42,12 +42,16 @@ assert '#include <stdarg.h>' in bootstrap
 assert '-fno-omit-frame-pointer -momit-leaf-frame-pointer' in bootstrap
 assert '"$prefix/bin/clang++" -x c++ -c - -o /dev/null' in bootstrap
 
-# Native ABI identity is more than the CPU name. Require an Apple target on
-# macOS and a Linux target on Linux so a same-architecture cross compiler cannot
-# masquerade as the host compiler.
+# Native ABI identity is more than the CPU name. On macOS, follow LLVM's
+# ARCH-VENDOR-OS[-ENV] boundary: `apple` must be the vendor field and the OS
+# field must be Darwin/macOS. A loose `*-apple-darwin*` substring would accept
+# malformed triples such as arm64-unknown-apple-darwin.
 assert 'native_target_matches_host "$target"' in bootstrap
-for target in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
-    assert target in bootstrap
+assert "IFS='-' read -r arch target_vendor target_os _ <<< \"$target\"" in bootstrap
+assert '[[ "$target_vendor" == apple ]] || return 1' in bootstrap
+assert 'darwin*|macos*)' in bootstrap
+for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
+    assert loose_match not in bootstrap
 assert '*-linux-*|*-linux' in bootstrap
 
 # Do not pass CMake cache variables that the pinned LLVM revision no longer
