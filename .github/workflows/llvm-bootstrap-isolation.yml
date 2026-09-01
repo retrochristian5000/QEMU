@@ -29,8 +29,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Check out LLVM policy source
-        run: git submodule update --init --depth 1 toolchains/llvm-project
+      - name: Fetch pinned LLVM TableGen policy source
+        shell: bash
+        run: |
+          set -euo pipefail
+          llvm_revision="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          test -n "$llvm_revision"
+          tablegen_cmake="$RUNNER_TEMP/TableGen.cmake"
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/retrochristian5000/LLVM/$llvm_revision/llvm/cmake/modules/TableGen.cmake" \
+            -o "$tablegen_cmake"
+          printf 'WHP_LLVM_TABLEGEN_CMAKE=%s\n' "$tablegen_cmake" >> "$GITHUB_ENV"
 
       - name: Verify LLVM TableGen duplicate-edge policy
         run: python3 scripts/tests/test-llvm-tablegen-dedup.py
