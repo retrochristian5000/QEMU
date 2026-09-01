@@ -15,6 +15,19 @@ else
     WHP_BUILD_BASH=
 fi
 
+WHP_BUILD_SHELL=${WHP_BUILD_SHELL:-auto}
+case "$WHP_BUILD_SHELL" in
+    auto|bash|zsh) ;;
+    portable)
+        WHP_FORCE_PORTABLE_CORE=1
+        ;;
+    *)
+        printf 'error: WHP_BUILD_SHELL must be auto, bash, zsh, or portable: %s\n' \
+            "$WHP_BUILD_SHELL" >&2
+        exit 1
+        ;;
+esac
+
 if [ -z "${PYTHON:-}" ]; then
     PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 fi
@@ -160,6 +173,39 @@ if ! "$WHP_BUILD_BASH" --noprofile --norc -c '
     portable_core "$@"
 fi
 
+# zsh is the default interactive shell on current macOS releases, but the WHP
+# implementation graph intentionally remains Bash. Let zsh own the macOS
+# orchestration boundary while keeping Bash as CONFIG_SHELL and as the explicit
+# interpreter for Bash-only helpers. -f prevents user zsh startup files from
+# changing build semantics.
+WHP_BUILD_FRONTEND_KIND=bash
+WHP_BUILD_FRONTEND_SHELL="$WHP_BUILD_BASH"
+if [ "$WHP_HOST_OS" = macos ]; then
+    case "$WHP_BUILD_SHELL" in
+        auto|zsh)
+            if [ -x /bin/zsh ]; then
+                WHP_ZSH=/bin/zsh
+            else
+                WHP_ZSH=$(command -v zsh 2>/dev/null || true)
+            fi
+            if [ -n "$WHP_ZSH" ] &&
+               "$WHP_ZSH" -f -c 'test -n "${ZSH_VERSION:-}"' >/dev/null 2>&1; then
+                WHP_BUILD_FRONTEND_KIND=zsh
+                WHP_BUILD_FRONTEND_SHELL="$WHP_ZSH"
+            elif [ "$WHP_BUILD_SHELL" = zsh ]; then
+                printf 'error: WHP_BUILD_SHELL=zsh requires a usable zsh\n' >&2
+                exit 1
+            fi
+            unset WHP_ZSH
+            ;;
+        bash) ;;
+    esac
+elif [ "$WHP_BUILD_SHELL" = zsh ]; then
+    printf 'error: WHP_BUILD_SHELL=zsh is currently supported only on macOS\n' >&2
+    exit 1
+fi
+export WHP_BUILD_SHELL WHP_BUILD_FRONTEND_KIND WHP_BUILD_FRONTEND_SHELL
+
 # Saved configuration supplies portable policy defaults. Explicit environment
 # variables remain one-run overrides and therefore take precedence.
 WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
@@ -212,6 +258,7 @@ WHP_BUILD_ENTRY_NORMALIZED=1
 export WHP_BUILD_BASH CONFIG_SHELL WHP_BUILD_ENTRY_NORMALIZED
 
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
+    printf 'WHP orchestration shell: %s\n' "$WHP_BUILD_FRONTEND_KIND"
     exec "$WHP_BUILD_BASH" --noprofile --norc -c '
         printf "WHP build shell: %s\n" "$BASH_VERSION"
         printf "CONFIG_SHELL: %s\n" "$CONFIG_SHELL"
@@ -222,10 +269,20 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
 fi
 
 # macOS keeps its stricter SDK/compiler adapter when Bash is available. The
-# portable core remains available with WHP_FORCE_PORTABLE_CORE=1 or no Bash.
+# portable core remains available with WHP_BUILD_SHELL=portable,
+# WHP_FORCE_PORTABLE_CORE=1, or no usable Bash backend.
 if [ "$WHP_HOST_OS" = macos ] &&
    [ "${WHP_SKIP_MACOS_WRAPPER:-0}" != 1 ]; then
-    exec /bin/sh "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
+    case "$WHP_BUILD_FRONTEND_KIND" in
+        zsh)
+            exec "$WHP_BUILD_FRONTEND_SHELL" -f \
+                "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
+            ;;
+        bash)
+            exec "$WHP_BUILD_BASH" --noprofile --norc \
+                "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
+            ;;
+    esac
 fi
 
 # Non-interactive Bash can source BASH_ENV. Remove user startup hooks before
