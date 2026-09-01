@@ -25,9 +25,9 @@ assert 'bootstrap-native-clang.sh' in inventory
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
-# load a matching reader. Keep libLTO in the macOS native distribution, record
-# that component in the cache contract, and reject cached toolchains missing it.
-assert 'llvm_distribution_components="${llvm_distribution_components};LTO"' in bootstrap
+# load a matching reader. The same Darwin distribution also owns compiler-rt,
+# so keep LTO and both runtime umbrella components in one exact platform policy.
+assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 
@@ -39,7 +39,6 @@ assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 # profile unless it is deliberately opted in later.
 assert 'llvm_enable_runtimes=compiler-rt' in bootstrap
 assert 'llvm_include_runtimes=ON' in bootstrap
-assert '${llvm_distribution_components};LTO;builtins;runtimes' in bootstrap
 assert '"-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"' in bootstrap
 assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
