@@ -231,11 +231,16 @@ mkdir -p "$TOOLCHAIN_WORK_DIR"
 
 # LLVM links several very large host executables. Prefer a faster linker when
 # the selected C and C++ drivers can actually use it, but keep the system linker
-# as a zero-dependency fallback. mold is tried before lld; both are selected via
-# LLVM_USE_LINKER so CMake applies the choice consistently to host link steps.
+# as a zero-dependency fallback. On Darwin, Clang routes non-LLD linkers through
+# the ld64 compatibility path and may inject -lto_library. mold can accept the
+# link while warning about that Apple-specific option, so leave Darwin to LLD
+# or the system linker. Other hosts retain the mold-first fast path.
 if [[ "$host_gcc_compatible" == 1 ]]; then
     linker_probe="$TOOLCHAIN_WORK_DIR/.whp-linker-probe.$$"
     for candidate in mold lld; do
+        if [[ "$(uname -s)" == Darwin && "$candidate" == mold ]]; then
+            continue
+        fi
         if printf 'int main(void) { return 0; }\n' |
                "$TOOLCHAIN_HOST_CC" -x c - -fuse-ld="$candidate" \
                    -o "$linker_probe" >/dev/null 2>&1 &&
