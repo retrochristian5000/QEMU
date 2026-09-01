@@ -142,6 +142,63 @@ clang_lld_toolchain_is_usable()
         grep -q 'LLD' || return 1
 }
 
+powerpc_lld_cache_is_usable()
+{
+    local cache_clang="$TOOLCHAIN_DIR/llvm/bin/clang"
+    local cache_lld="$TOOLCHAIN_DIR/llvm/bin/ld.lld"
+    local cache_readelf="$TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
+    local cache_smoke_dir="$TOOLCHAIN_WORK_DIR/lld-cache-smoke"
+    local header
+
+    [[ -x "$cache_clang" && -x "$cache_lld" && -x "$cache_readelf" ]] || return 1
+
+    rm -rf "$cache_smoke_dir"
+    mkdir -p "$cache_smoke_dir"
+    cat > "$cache_smoke_dir/cache.s" <<'ASSEMBLY'
+.section .text,"ax",@progbits
+.globl _start
+_start:
+    nop
+ASSEMBLY
+    cat > "$cache_smoke_dir/cache.ld" <<'LDSCRIPT'
+OUTPUT_FORMAT(elf32-powerpc)
+OUTPUT_ARCH(powerpc:common)
+ENTRY(_start)
+SECTIONS
+{
+    . = 0x1000;
+    .text : { *(.text) *(.text.*) }
+    /DISCARD/ : { *(.comment*) *(.note.*) }
+}
+LDSCRIPT
+
+    if ! "$cache_clang" --target=powerpc-none-elf -c -x assembler \
+            "$cache_smoke_dir/cache.s" -o "$cache_smoke_dir/cache.o" \
+            >/dev/null 2>&1 ||
+       ! "$cache_lld" -T "$cache_smoke_dir/cache.ld" \
+            -o "$cache_smoke_dir/cache.elf" "$cache_smoke_dir/cache.o" \
+            >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    header="$(LC_ALL=C "$cache_readelf" -hW "$cache_smoke_dir/cache.elf" 2>/dev/null)" || {
+        rm -rf "$cache_smoke_dir"
+        return 1
+    }
+    if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$header" ||
+       ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$header" ||
+       ! grep -Eq 'Type:[[:space:]]+EXEC' <<< "$header" ||
+       ! grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$header" ||
+       ! grep -Eq 'Entry point address:[[:space:]]+0x1000' <<< "$header"; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$cache_smoke_dir"
+    return 0
+}
+
 printf 'LLVM submodule revision: %s\n' "$llvm_revision"
 # The base stage owns its semantic marker. Do not convert a bootstrap-script
 # checksum difference into POWERPC_TOOLCHAIN_FORCE_REBUILD: that flag means the
@@ -228,11 +285,16 @@ MARKER
 )"
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$lld_marker" &&
-      "$(cat "$lld_marker")" == "$expected_lld_marker" ]] &&
-   clang_lld_toolchain_is_usable; then
-    printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
-        "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
-    exit 0
+      "$(cat "$lld_marker")" == "$expected_lld_marker" ]]; then
+    if clang_lld_toolchain_is_usable && powerpc_lld_cache_is_usable; then
+        printf 'PowerPC Clang/LLD toolchain is current: %s/bin/%s-\n' \
+            "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
+        exit 0
+    fi
+    printf '%s\n' \
+        'PowerPC LLD cache failed the semantic link smoke; rebuilding.' >&2
+    rm -f "$lld_marker"
+    rm -rf "$LLD_BUILD_DIR"
 fi
 
 cmake_host_profile_args=()
