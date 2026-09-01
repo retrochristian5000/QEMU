@@ -5,6 +5,8 @@ on:
     branches:
       - master
     paths:
+      - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
@@ -27,6 +29,8 @@ jobs:
 
       - name: Validate shell syntax
         run: |
+          bash -n scripts/bootstrap-native-clang.sh
+          bash -n scripts/bootstrap-i386-clang.sh
           bash -n scripts/bootstrap-powerpc-clang.sh
           bash -n scripts/bootstrap-powerpc-clang-base.sh
           bash -n scripts/bootstrap-powerpc-clang-core.sh
