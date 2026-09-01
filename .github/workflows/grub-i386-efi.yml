@@ -43,6 +43,10 @@ jobs:
         shell: bash
         run: test "$(uname -m)" = arm64
 
+      - name: Test IA32 EFI bootstrap policy
+        shell: bash
+        run: bash scripts/tests/test-i386-efi-grub-bootstrap.bash
+
       - name: Build IA32 EFI GRUB from Homebrew source with WHP LLVM
         shell: bash
         run: |
