@@ -21,6 +21,16 @@ assert '-DLLVM_ENABLE_PROJECTS=clang' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
 assert 'bootstrap-native-clang.sh' in inventory
 
+# Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
+# when LTO is active. A Clang-only distribution therefore creates a producer /
+# consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
+# load a matching reader. Keep libLTO in the macOS native distribution, record
+# that component in the cache contract, and reject cached toolchains missing it.
+assert 'llvm_distribution_components="${llvm_distribution_components};LTO"' in bootstrap
+assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
+assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=3' in bootstrap
+
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
 # platform decision that can drift from QEMU's wrapper selection.
@@ -31,7 +41,6 @@ assert 'host_os="${WHP_HOST_OS:-}"' in bootstrap
 assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
-assert 'BOOTSTRAP_SCHEMA=2' in bootstrap
 
 # A cached compiler must exercise the frontend, resource headers, IR verifier,
 # and backend before reuse. --version alone cannot detect mixed LLVM objects
