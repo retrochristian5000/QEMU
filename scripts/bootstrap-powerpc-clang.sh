@@ -107,8 +107,10 @@ SOURCE
 
     # Keep the original frame-pointer producer/verifier regression in the
     # broader health check, then reuse its real PowerPC object to exercise the
-    # core LLVM tools that OpenBIOS consumes indirectly.
-    if ! "$clang" --target=powerpc-none-elf \
+    # core LLVM tools that OpenBIOS consumes indirectly. Keep the literal
+    # installed-Clang path visible so the original regression guard cannot be
+    # accidentally weakened by a later refactor of this helper.
+    if ! "$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \
             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
             -ffreestanding -O0 -c "$cache_smoke_dir/cache.c" \
             -o "$cache_smoke_dir/cache.o" >/dev/null 2>&1; then
