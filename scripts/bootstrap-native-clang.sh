@@ -29,8 +29,27 @@ case "$TOOLCHAIN_FORCE_REBUILD" in
         ;;
 esac
 
-host_os="$(uname -s)"
-host_arch="$(uname -m)"
+# build.sh owns host detection. Keep a direct-invocation fallback for this
+# helper, but never reinterpret a normalized host identity supplied by the
+# public build entry.
+host_os="${WHP_HOST_OS:-}"
+host_kernel="${WHP_HOST_KERNEL:-$(uname -s)}"
+host_arch="${WHP_HOST_ARCH:-$(uname -m)}"
+if [[ -z "$host_os" ]]; then
+    case "$host_kernel" in
+        Darwin) host_os=macos ;;
+        Linux) host_os=linux ;;
+        CYGWIN*|MINGW*|MSYS*) host_os=windows ;;
+        FreeBSD) host_os=freebsd ;;
+        NetBSD) host_os=netbsd ;;
+        OpenBSD) host_os=openbsd ;;
+        DragonFly) host_os=dragonfly ;;
+        SunOS) host_os=solaris ;;
+        Haiku) host_os=haiku ;;
+        *) host_os=other ;;
+    esac
+fi
+
 case "$host_arch" in
     arm64|aarch64)
         host_tag=arm64
@@ -48,10 +67,14 @@ case "$host_arch" in
         ;;
 esac
 case "$host_os" in
-    Darwin) host_platform=apple-darwin ;;
-    Linux) host_platform=linux ;;
+    macos) host_platform=apple-darwin ;;
+    linux) host_platform=linux ;;
     *)
-        printf 'error: unsupported native LLVM host platform: %s\n' "$host_os" >&2
+        printf '%s\n' \
+            'error: WHP native LLVM bootstrap does not support this host OS.' \
+            "detected OS: $host_os" \
+            "kernel:      $host_kernel" \
+            "architecture: $host_arch" >&2
         exit 1
         ;;
 esac
@@ -90,7 +113,7 @@ done
 cmake_host_args=()
 sdkroot=""
 deployment_target=""
-if [[ "$host_os" == Darwin ]]; then
+if [[ "$host_os" == macos ]]; then
     for tool in xcrun sw_vers; do
         command -v "$tool" >/dev/null 2>&1 || {
             printf 'error: native LLVM macOS dependency not found: %s\n' "$tool" >&2
@@ -146,20 +169,28 @@ canonical_native_arch()
 native_target_matches_host()
 {
     local target="$1"
-    local arch vendor os target_arch
+    local arch target_arch
 
     [[ -n "$target" ]] || return 1
-    IFS='-' read -r arch vendor os _ <<< "$target"
+    arch="${target%%-*}"
     target_arch="$(canonical_native_arch "$arch" 2>/dev/null || true)"
     [[ "$target_arch" == "$host_tag" ]] || return 1
 
-    if [[ "$host_os" == Darwin ]]; then
-        [[ "$vendor" == apple ]] || return 1
-        case "$os" in
-            darwin*|macos*|macosx*) ;;
-            *) return 1 ;;
-        esac
-    fi
+    case "$host_os" in
+        macos)
+            case "$target" in
+                *-apple-darwin*|*-apple-macos*|*-apple-macosx*) ;;
+                *) return 1 ;;
+            esac
+            ;;
+        linux)
+            case "$target" in
+                *-linux-*|*-linux) ;;
+                *) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
@@ -169,7 +200,7 @@ if ! native_target_matches_host "$bootstrap_cc_target"; then
         'error: native LLVM bootstrap C compiler does not target the host ABI.' \
         "compiler: $bootstrap_cc" \
         "target:   ${bootstrap_cc_target:-<unknown>}" \
-        "host:     $host_id" >&2
+        "host:     $host_id ($host_os/$host_kernel)" >&2
     exit 1
 fi
 if ! native_target_matches_host "$bootstrap_cxx_target"; then
@@ -177,7 +208,7 @@ if ! native_target_matches_host "$bootstrap_cxx_target"; then
         'error: native LLVM bootstrap C++ compiler does not target the host ABI.' \
         "compiler: $bootstrap_cxx" \
         "target:   ${bootstrap_cxx_target:-<unknown>}" \
-        "host:     $host_id" >&2
+        "host:     $host_id ($host_os/$host_kernel)" >&2
     exit 1
 fi
 
@@ -195,9 +226,12 @@ bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=1
+BOOTSTRAP_SCHEMA=2
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
+HOST_OS=$host_os
+HOST_KERNEL=$host_kernel
+HOST_ARCH=$host_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
 DISTRIBUTION=clang-native-minimal
 BOOTSTRAP_CC=$bootstrap_cc
