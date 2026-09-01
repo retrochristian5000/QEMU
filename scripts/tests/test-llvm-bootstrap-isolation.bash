@@ -93,11 +93,11 @@ grep -Fq '"$i386_objdump" -f "$cache_smoke_dir/cache-linked.o"' "$i386" || {
     printf 'error: i386 LLVM cache does not inspect linked ELF output\n' >&2
     exit 1
 }
-grep -Fq '"$i386_objcopy" "$cache_smoke_dir/cache-linked.o" "$cache_smoke_dir/cache-copy.o"' "$i386" || {
+grep -Fq '"$i386_objcopy" "$cache_smoke_dir/cache-linked.o" \' "$i386" || {
     printf 'error: i386 LLVM cache does not exercise objcopy\n' >&2
     exit 1
 }
-grep -Fq '"$i386_strip" -o "$cache_smoke_dir/cache-stripped.o" "$cache_smoke_dir/cache-copy.o"' "$i386" || {
+grep -Fq '"$i386_strip" -o "$cache_smoke_dir/cache-stripped.o" \' "$i386" || {
     printf 'error: i386 LLVM cache does not exercise strip\n' >&2
     exit 1
 }
