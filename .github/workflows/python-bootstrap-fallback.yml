@@ -1,0 +1,29 @@
+name: WHP bundled Python fallback
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - '.gitmodules'
+      - 'toolchains/python-runtime'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/tests/test-python-bootstrap-fallback.bash'
+      - '.github/workflows/python-bootstrap-fallback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-fallback:
+    name: Check bundled Python fallback
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Exercise Python fallback boundary
+        shell: bash
+        run: bash scripts/tests/test-python-bootstrap-fallback.bash
