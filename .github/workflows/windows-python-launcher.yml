@@ -1,0 +1,30 @@
+name: WHP Windows Python launcher
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - 'scripts/whp-config/**'
+      - 'scripts/whp-build/portable-build.py'
+      - 'scripts/whp-build/portable-build-entry.py'
+      - 'scripts/tests/test-windows-python-launcher.bash'
+      - '.github/workflows/windows-python-launcher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-launcher:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Reproduce Windows Python launcher discovery
+        run: bash scripts/tests/test-windows-python-launcher.bash
+
+      - name: Check test syntax
+        run: bash -n scripts/tests/test-windows-python-launcher.bash
