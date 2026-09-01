@@ -13,6 +13,7 @@ CC_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-clang-gcc.bash"
 OBJDUMP_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-llvm-objdump.py"
 TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
+LLVM_LINK_JOBS="${I386_LLVM_LINK_JOBS:-2}"
 stage_root=""
 
 # This is a host compiler bootstrap for a freestanding target, not a QEMU host
@@ -38,6 +39,14 @@ case "$TOOLCHAIN_FORCE_REBUILD" in
         printf 'error: I386_TOOLCHAIN_FORCE_REBUILD must be 0 or 1\n' >&2
         exit 1
         ;;
+esac
+case "$LLVM_LINK_JOBS" in
+    0|*[!0-9]*)
+        printf 'error: I386_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+            "$LLVM_LINK_JOBS" >&2
+        exit 1
+        ;;
+    *) ;;
 esac
 
 cmake_parallel_args=(--parallel)
@@ -208,6 +217,7 @@ cmake_args=(
     -DLLD_ENABLE_BACKENDS=ELF
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
     -DLLVM_APPEND_VC_REV=OFF
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
     -DLLVM_ENABLE_LTO=OFF
     -DLLVM_ENABLE_FATLTO=OFF
     -DLLVM_BUILD_INSTRUMENTED=OFF
