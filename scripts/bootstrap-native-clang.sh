@@ -235,20 +235,29 @@ llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
 llvm_distribution_components='clang;clang-resource-headers'
+llvm_enable_runtimes=''
+llvm_include_runtimes=OFF
 if [[ "$host_os" == macos ]]; then
     # Darwin Clang tells ld64 to load this toolchain's lib/libLTO.dylib for
     # -flto. Keep the bitcode producer and reader on the same LLVM revision.
-    llvm_distribution_components="${llvm_distribution_components};LTO"
+    # Sanitizer drivers also resolve their runtime from Clang's own resource
+    # tree, so ship compiler-rt with the compiler instead of relying on Xcode's
+    # unrelated runtime revision.
+    llvm_enable_runtimes=compiler-rt
+    llvm_include_runtimes=ON
+    llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=3
+BOOTSTRAP_SCHEMA=4
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
+LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
+LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
@@ -265,10 +274,22 @@ usable()
 {
     local prefix="$1"
     local target=''
+    local ubsan_exe=''
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     if [[ "$host_os" == macos ]]; then
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
+        ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
+            return 1
+        if ! printf 'int main(void) { return 0; }\n' |
+            "$prefix/bin/clang" -fsanitize=undefined \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
+            rm -f "$ubsan_exe"
+            return 1
+        fi
+        rm -f "$ubsan_exe"
     fi
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
@@ -314,6 +335,7 @@ cmake_args=(
     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
     -DCMAKE_INSTALL_MESSAGE=NEVER
     -DLLVM_ENABLE_PROJECTS=clang
+    "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
     "-DLLVM_TARGETS_TO_BUILD=$llvm_target"
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
     -DLLVM_APPEND_VC_REV=OFF
@@ -337,7 +359,7 @@ cmake_args=(
     -DLLVM_INCLUDE_BENCHMARKS=OFF
     -DLLVM_INCLUDE_DOCS=OFF
     -DLLVM_INCLUDE_UTILS=OFF
-    -DLLVM_INCLUDE_RUNTIMES=OFF
+    "-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"
     -DLLVM_ENABLE_BINDINGS=OFF
     -DCLANG_INCLUDE_TESTS=OFF
     -DCLANG_ENABLE_STATIC_ANALYZER=OFF
