@@ -10,9 +10,9 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
-PYTHON_BOOTSTRAP_SCHEMA=1
+PYTHON_BOOTSTRAP_SCHEMA=2
 JOBS=${JOBS:-}
-staging_dir=
+cleanup_path=
 
 # This interpreter is a host prerequisite, not a QEMU target object. Never let
 # target/guest flags or cross-binutils choices leak into CPython's host build.
@@ -22,8 +22,8 @@ unset PYTHONHOME PYTHONPATH
 
 cleanup()
 {
-    if [ -n "$staging_dir" ]; then
-        rm -rf "$staging_dir"
+    if [ -n "$cleanup_path" ]; then
+        rm -rf "$cleanup_path"
     fi
 }
 trap cleanup 0
@@ -59,14 +59,19 @@ python_from_prefix()
 python_usable()
 {
     candidate=$1
+    expected_prefix=$2
     [ -n "$candidate" ] || return 1
     "$candidate" -c '
+from pathlib import Path
 import ensurepip
 import sys
 import tomllib
 import venv
-raise SystemExit(sys.version_info < (3, 9))
-' >/dev/null 2>&1
+if sys.version_info < (3, 9):
+    raise SystemExit(1)
+if Path(sys.prefix).resolve() != Path(sys.argv[1]).resolve():
+    raise SystemExit(1)
+' "$expected_prefix" >/dev/null 2>&1
 }
 
 require_tool git
@@ -107,6 +112,10 @@ elif [ -n "${HOME:-}" ]; then
 else
     TOOLCHAIN_DIR="$SOURCE_DIR/build/toolchains/python-runtime/$host_tag"
 fi
+case "$TOOLCHAIN_DIR" in
+    /*) ;;
+    *) fail "bundled Python cache path must be absolute: $TOOLCHAIN_DIR" ;;
+esac
 WORK_DIR=${WHP_PYTHON_BOOTSTRAP_WORK_DIR:-"${TOOLCHAIN_DIR}.work"}
 marker="$TOOLCHAIN_DIR/.whp-python-runtime"
 
@@ -119,22 +128,54 @@ set -- $gitlink
 [ "$2" = commit ] || fail "Python runtime gitlink has unexpected type: $2"
 python_revision=$3
 
+# Resolve the host compiler policy before checking the cache so a compiler
+# upgrade or an explicit compiler change cannot silently reuse an older runtime.
+case "$build_mode" in
+    posix)
+        if [ "$host_kernel" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
+            bootstrap_cc=${WHP_PYTHON_BOOTSTRAP_CC:-$(xcrun --sdk macosx --find clang)}
+        elif [ -n "${WHP_PYTHON_BOOTSTRAP_CC:-}" ]; then
+            bootstrap_cc=$WHP_PYTHON_BOOTSTRAP_CC
+        elif [ -n "${CC_FOR_BUILD:-}" ]; then
+            bootstrap_cc=$CC_FOR_BUILD
+        else
+            bootstrap_cc=$(command -v cc 2>/dev/null || command -v clang 2>/dev/null || command -v gcc 2>/dev/null || true)
+        fi
+        [ -n "$bootstrap_cc" ] || fail 'a host C compiler is required to bootstrap bundled Python'
+        command -v "$bootstrap_cc" >/dev/null 2>&1 || [ -x "$bootstrap_cc" ] ||
+            fail "bundled Python host C compiler is not executable: $bootstrap_cc"
+        bootstrap_cc_version=$("$bootstrap_cc" --version 2>&1 | sed -n '1p')
+        [ -n "$bootstrap_cc_version" ] ||
+            fail "could not identify bundled Python host C compiler: $bootstrap_cc"
+        ;;
+    pcbuild)
+        # PCbuild owns Visual Studio discovery. Record that policy boundary plus
+        # the architecture; the source revision and platform remain separately
+        # represented in the marker.
+        bootstrap_cc=PCbuild
+        bootstrap_cc_version="PCbuild-default-$host_arch"
+        ;;
+    *) fail "unsupported bundled Python build mode: $build_mode" ;;
+esac
+
 expected_marker=$(cat <<EOF
 PYTHON_BOOTSTRAP_SCHEMA=$PYTHON_BOOTSTRAP_SCHEMA
 PYTHON_GIT_COMMIT=$python_revision
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 BUILD_MODE=$build_mode
+BOOTSTRAP_CC=$bootstrap_cc
+BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
 EOF
 )
 
 cached_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
 if [ -f "$marker" ] &&
    [ "$(cat "$marker")" = "$expected_marker" ] &&
-   python_usable "$cached_python"; then
+   python_usable "$cached_python" "$TOOLCHAIN_DIR"; then
     printf 'Reused bundled WHP Python: %s\n' "$cached_python" >&2
     printf '%s\n' "$cached_python" >&3
-    staging_dir=
+    cleanup_path=
     trap - 0
     exit 0
 fi
@@ -150,9 +191,6 @@ parent_dir=$(dirname -- "$TOOLCHAIN_DIR")
 mkdir -p "$parent_dir"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-staging_dir="${TOOLCHAIN_DIR}.new.$$"
-rm -rf "$staging_dir"
-mkdir -p "$staging_dir"
 
 case "$build_mode" in
     posix)
@@ -166,25 +204,20 @@ case "$build_mode" in
             make_jobs=
         fi
 
-        if [ "$host_kernel" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
-            bootstrap_cc=${WHP_PYTHON_BOOTSTRAP_CC:-$(xcrun --sdk macosx --find clang)}
-            if [ -z "${SDKROOT:-}" ]; then
-                SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
-                export SDKROOT
-            fi
-        else
-            if [ -n "${WHP_PYTHON_BOOTSTRAP_CC:-}" ]; then
-                bootstrap_cc=$WHP_PYTHON_BOOTSTRAP_CC
-            elif [ -n "${CC_FOR_BUILD:-}" ]; then
-                bootstrap_cc=$CC_FOR_BUILD
-            else
-                bootstrap_cc=$(command -v cc 2>/dev/null || command -v clang 2>/dev/null || command -v gcc 2>/dev/null || true)
-            fi
+        if [ "$host_kernel" = Darwin ] && command -v xcrun >/dev/null 2>&1 &&
+           [ -z "${SDKROOT:-}" ]; then
+            SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+            export SDKROOT
         fi
-        [ -n "$bootstrap_cc" ] || fail 'a host C compiler is required to bootstrap bundled Python'
-        command -v "$bootstrap_cc" >/dev/null 2>&1 || [ -x "$bootstrap_cc" ] ||
-            fail "bundled Python host C compiler is not executable: $bootstrap_cc"
 
+        # Configure CPython for its final prefix and stage installation with
+        # DESTDIR. Moving an interpreter configured for a temporary prefix can
+        # leave sysconfig/install metadata referring to the discarded path.
+        install_root="$WORK_DIR/install-root.$$"
+        rm -rf "$install_root"
+        mkdir -p "$install_root"
+        staging_dir="$install_root$TOOLCHAIN_DIR"
+        cleanup_path=$install_root
         build_dir="$WORK_DIR/build"
         mkdir -p "$build_dir"
         printf 'Bootstrapping WHP Python %s for %s with %s\n' \
@@ -192,20 +225,24 @@ case "$build_mode" in
         (
             cd "$build_dir"
             CC="$bootstrap_cc" "$PYTHON_SOURCE_DIR/configure" \
-                --prefix="$staging_dir" \
+                --prefix="$TOOLCHAIN_DIR" \
                 --with-ensurepip=install
             if [ -n "$make_jobs" ]; then
                 make "$make_jobs"
             else
                 make
             fi
-            make install
+            make DESTDIR="$install_root" install
         )
         ;;
 
     pcbuild)
         require_tool cp
         require_tool cmd.exe
+        staging_dir="${TOOLCHAIN_DIR}.new.$$"
+        cleanup_path=$staging_dir
+        rm -rf "$staging_dir"
+        mkdir -p "$staging_dir"
         windows_source="$WORK_DIR/source"
         mkdir -p "$windows_source"
         cp -R "$PYTHON_SOURCE_DIR/." "$windows_source/"
@@ -250,8 +287,13 @@ case "$build_mode" in
 esac
 
 staged_python=$(python_from_prefix "$staging_dir" 2>/dev/null || true)
-python_usable "$staged_python" ||
-    fail 'staged bundled Python cannot satisfy QEMU Python requirements'
+# POSIX DESTDIR staging intentionally records the final prefix, so it cannot be
+# semantically executed until published. Windows layout output is relocatable
+# and can be checked before publication.
+if [ "$build_mode" = pcbuild ]; then
+    python_usable "$staged_python" "$staging_dir" ||
+        fail 'staged bundled Python cannot satisfy QEMU Python requirements'
+fi
 printf '%s\n' "$expected_marker" > "$staging_dir/.whp-python-runtime"
 
 old_dir="${TOOLCHAIN_DIR}.old.$$"
@@ -263,11 +305,11 @@ if ! mv "$staging_dir" "$TOOLCHAIN_DIR"; then
     [ ! -e "$old_dir" ] || mv "$old_dir" "$TOOLCHAIN_DIR"
     exit 1
 fi
-staging_dir=
+cleanup_path=
 rm -rf "$old_dir" "$WORK_DIR"
 
 installed_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
-python_usable "$installed_python" ||
+python_usable "$installed_python" "$TOOLCHAIN_DIR" ||
     fail 'installed bundled Python failed its semantic health check'
 printf 'WHP bundled Python ready: %s\n' "$installed_python" >&2
 printf '%s\n' "$installed_python" >&3
