@@ -9,6 +9,7 @@ on:
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/verify-macos-lto.sh'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'scripts/tests/test-native-llvm-wiring.py'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
   workflow_dispatch:
@@ -64,12 +65,15 @@ jobs:
           marker="$NATIVE_LLVM_DIR/.whp-native-llvm"
           clang="$NATIVE_LLVM_DIR/bin/clang"
           clangxx="$NATIVE_LLVM_DIR/bin/clang++"
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=2' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=4' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
           grep -Fxq 'HOST_ARCH=arm64' "$marker"
+          grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
+          grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
           "$clang" -print-target-triple | grep -Eq '^arm64-apple-(darwin|macos|macosx)'
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
@@ -77,8 +81,14 @@ jobs:
               -ffreestanding -x c -c - -o native-llvm-c.o
           printf 'int whp_native_ci_cxx() { return 0; }\n' |
             "$clangxx" -x c++ -c - -o native-llvm-cxx.o
+          printf 'int main(void) { return 0; }\n' |
+            "$clang" -fsanitize=undefined \
+              -isysroot "$sdkroot" \
+              "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+              -x c - -o native-llvm-ubsan
           test -s native-llvm-c.o
           test -s native-llvm-cxx.o
+          test -x native-llvm-ubsan
 
       - name: Probe WHP Clang to macOS LTO handoff
         shell: bash
