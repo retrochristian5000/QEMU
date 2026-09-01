@@ -82,7 +82,9 @@ POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"
 # A marker and matching gitlink are not enough to trust an already-installed
 # compiler: an older mixed CMake/Ninja graph can leave a frontend that emits
 # "non-leaf-no-reserve" paired with a verifier that rejects it. Exercise the
-# exact producer path and force a clean rebuild if that installed cache is bad.
+# exact producer path. If it fails, discard the revision graph itself before
+# rebuilding; Ninja's clean target does not guarantee stale CMake-generated or
+# module state is removed from a poisoned graph.
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
       -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]]; then
     if ! printf 'int whp_powerpc_frame_pointer(void) { return 0; }\n' |
@@ -91,6 +93,7 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
              -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1; then
         printf '%s\n' \
             'PowerPC LLVM cache failed the frame-pointer verifier probe; rebuilding.' >&2
+        rm -rf "$POWERPC_LLVM_BUILD_DIR"
         TOOLCHAIN_FORCE_REBUILD=1
     fi
 fi
