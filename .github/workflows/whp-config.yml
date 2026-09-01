@@ -80,6 +80,9 @@ jobs:
           python3 scripts/tests/test-host-cpu-tuning.py
           bash scripts/tests/test-host-cpu-tuning.bash
 
+      - name: Test macOS zsh build entry
+        run: bash scripts/tests/test-macos-zsh-entry.bash
+
       - name: Test Cocoa Metal dirty regions
         run: python3 scripts/tests/test-cocoa-metal-dirty.py
 
@@ -127,9 +130,6 @@ jobs:
 
       - name: Test build configuration integration
         run: bash scripts/tests/test-whp-config-integration.bash
-
-      - name: Test macOS zsh build entry
-        run: bash scripts/tests/test-macos-zsh-entry.bash
 
       - name: Test incremental build behavior
         run: python3 scripts/tests/test-whp-incremental.py
