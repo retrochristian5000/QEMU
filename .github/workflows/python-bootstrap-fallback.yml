@@ -10,6 +10,7 @@ on:
       - 'toolchains/python-runtime'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/tests/test-python-bootstrap-fallback.bash'
+      - 'scripts/tests/test-python-bootstrap-real.bash'
       - '.github/workflows/python-bootstrap-fallback.yml'
   workflow_dispatch:
 
@@ -27,3 +28,17 @@ jobs:
       - name: Exercise Python fallback boundary
         shell: bash
         run: bash scripts/tests/test-python-bootstrap-fallback.bash
+
+  real-bootstrap:
+    name: Build pinned Python fallback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Build and reuse bundled Python
+        shell: bash
+        env:
+          JOBS: 2
+        run: bash scripts/tests/test-python-bootstrap-real.bash
