@@ -41,12 +41,19 @@ python_path="$(
     exit 1
 }
 "$python_path" -c '
+from pathlib import Path
 import ensurepip
 import sys
 import tomllib
 import venv
 assert sys.version_info >= (3, 9)
-'
+assert Path(sys.prefix).resolve() == Path(sys.argv[1]).resolve(), (sys.prefix, sys.argv[1])
+' "$cache_root"
+
+marker="$cache_root/.whp-python-runtime"
+[[ -f "$marker" ]]
+grep -Eq '^BOOTSTRAP_CC=.+$' "$marker"
+grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
 
 python_path_reused="$(
     WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" JOBS="${JOBS:-2}" \
