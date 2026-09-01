@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-tablegen_path = ROOT / 'toolchains/llvm-project/llvm/cmake/modules/TableGen.cmake'
-assert tablegen_path.is_file(), 'LLVM TableGen.cmake is unavailable; initialize the LLVM submodule first'
+tablegen_path = Path(os.environ.get(
+    'WHP_LLVM_TABLEGEN_CMAKE',
+    ROOT / 'toolchains/llvm-project/llvm/cmake/modules/TableGen.cmake',
+))
+assert tablegen_path.is_file(), f'LLVM TableGen.cmake is unavailable: {tablegen_path}'
 tablegen = tablegen_path.read_text(encoding='utf-8')
 
 # TableGen include directories feed both command-line -I options and, on older
