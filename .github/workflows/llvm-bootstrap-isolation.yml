@@ -13,6 +13,8 @@ on:
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'scripts/tests/test-llvm-tablegen-dedup.py'
+      - 'toolchains/llvm-project'
       - '.github/workflows/llvm-bootstrap-isolation.yml'
   workflow_dispatch:
 
@@ -26,6 +28,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Check out LLVM policy source
+        run: git submodule update --init --depth 1 toolchains/llvm-project
+
+      - name: Verify LLVM TableGen duplicate-edge policy
+        run: python3 scripts/tests/test-llvm-tablegen-dedup.py
 
       - name: Verify native LLVM wiring
         run: python3 scripts/tests/test-native-llvm-wiring.py
