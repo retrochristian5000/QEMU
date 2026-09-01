@@ -61,8 +61,7 @@ else
                 python_launcher=$(command -v py 2>/dev/null || true)
                 if [ -n "$python_launcher" ]; then
                     python_candidate=$(
-                        "$python_launcher" -c \
-                            'import sys; print(sys.executable) if sys.version_info >= (3, 9) else raise SystemExit(1)' \
+                        "$python_launcher" -c 'import sys; print(sys.executable)' \
                             2>/dev/null || true
                     )
                     if whp_python_usable "$python_candidate"; then
