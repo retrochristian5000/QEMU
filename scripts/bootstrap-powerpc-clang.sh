@@ -79,20 +79,97 @@ fi
 # build-directory identity instead of mixing revisions in one graph.
 POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"
 
+powerpc_llvm_cache_is_usable()
+{
+    local clang="$TOOLCHAIN_DIR/llvm/bin/clang"
+    local llvm_ar="$TOOLCHAIN_DIR/llvm/bin/llvm-ar"
+    local llvm_ranlib="$TOOLCHAIN_DIR/llvm/bin/llvm-ranlib"
+    local llvm_nm="$TOOLCHAIN_DIR/llvm/bin/llvm-nm"
+    local llvm_readelf="$TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
+    local llvm_strip="$TOOLCHAIN_DIR/llvm/bin/llvm-strip"
+    local llvm_config="$TOOLCHAIN_DIR/llvm/bin/llvm-config"
+    local llvm_tblgen="$TOOLCHAIN_DIR/llvm/bin/llvm-tblgen"
+    local cache_smoke_dir="$TOOLCHAIN_WORK_DIR/llvm-cache-smoke"
+    local header
+    local nm_output
+    local tool
+
+    for tool in "$clang" "$llvm_ar" "$llvm_ranlib" "$llvm_nm" \
+                "$llvm_readelf" "$llvm_strip" "$llvm_config" "$llvm_tblgen"; do
+        [[ -x "$tool" ]] || return 1
+    done
+
+    rm -rf "$cache_smoke_dir"
+    mkdir -p "$cache_smoke_dir"
+    cat > "$cache_smoke_dir/cache.c" <<'SOURCE'
+int whp_powerpc_cache_smoke(void) { return 0; }
+SOURCE
+
+    # Keep the original frame-pointer producer/verifier regression in the
+    # broader health check, then reuse its real PowerPC object to exercise the
+    # core LLVM tools that OpenBIOS consumes indirectly.
+    if ! "$clang" --target=powerpc-none-elf \
+            -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -ffreestanding -O0 -c "$cache_smoke_dir/cache.c" \
+            -o "$cache_smoke_dir/cache.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    header="$(LC_ALL=C "$llvm_readelf" -hW "$cache_smoke_dir/cache.o" 2>/dev/null)" || {
+        rm -rf "$cache_smoke_dir"
+        return 1
+    }
+    if ! grep -Eq 'Class:[[:space:]]+ELF32' <<< "$header" ||
+       ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$header" ||
+       ! grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$header"; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    if ! "$llvm_ar" rcs "$cache_smoke_dir/libcache.a" "$cache_smoke_dir/cache.o" ||
+       ! "$llvm_ranlib" "$cache_smoke_dir/libcache.a"; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+    if [[ "$("$llvm_ar" t "$cache_smoke_dir/libcache.a" 2>/dev/null)" != cache.o ]]; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    nm_output="$("$llvm_nm" --gnu-compatible -g "$cache_smoke_dir/cache.o" 2>/dev/null)" || {
+        rm -rf "$cache_smoke_dir"
+        return 1
+    }
+    if ! grep -Fq 'whp_powerpc_cache_smoke' <<< "$nm_output"; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    if ! "$llvm_strip" "$cache_smoke_dir/cache.o" -o "$cache_smoke_dir/cache-stripped.o" ||
+       ! LC_ALL=C "$llvm_readelf" -hW "$cache_smoke_dir/cache-stripped.o" \
+            >/dev/null 2>&1 ||
+       ! "$llvm_config" --version >/dev/null 2>&1 ||
+       ! "$llvm_tblgen" --version >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$cache_smoke_dir"
+    return 0
+}
+
 # A marker and matching gitlink are not enough to trust an already-installed
-# compiler: an older mixed CMake/Ninja graph can leave a frontend that emits
-# "non-leaf-no-reserve" paired with a verifier that rejects it. Exercise the
-# exact producer path. If it fails, discard the revision graph itself before
-# rebuilding; Ninja's clean target does not guarantee stale CMake-generated or
-# module state is removed from a poisoned graph.
+# LLVM distribution. A mixed object graph can leave one frontend/backend or
+# utility module stale while every executable still exists and answers
+# --version. Exercise the real PowerPC object path plus the core archive,
+# symbol, ELF-reader, strip, config, and TableGen tools. If any part fails,
+# discard the revision graph itself before rebuilding it from the pinned source.
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
       -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]]; then
-    if ! printf 'int whp_powerpc_frame_pointer(void) { return 0; }\n' |
-         "$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \
-             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
-             -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1; then
+    if ! powerpc_llvm_cache_is_usable; then
         printf '%s\n' \
-            'PowerPC LLVM cache failed the frame-pointer verifier probe; rebuilding.' >&2
+            'PowerPC LLVM cache failed the core module smoke; rebuilding.' >&2
         rm -rf "$POWERPC_LLVM_BUILD_DIR"
         TOOLCHAIN_FORCE_REBUILD=1
     fi
