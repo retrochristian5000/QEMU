@@ -28,11 +28,55 @@ case "$WHP_BUILD_SHELL" in
         ;;
 esac
 
-if [ -z "${PYTHON:-}" ]; then
-    PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+whp_python_usable()
+{
+    [ -n "${1:-}" ] || return 1
+    "$1" -c 'import sys; raise SystemExit(sys.version_info < (3, 9))' \
+        >/dev/null 2>&1
+}
+
+if [ -n "${PYTHON:-}" ]; then
+    if ! whp_python_usable "$PYTHON"; then
+        printf 'error: PYTHON is not Python 3.9 or newer: %s\n' "$PYTHON" >&2
+        exit 1
+    fi
+else
+    PYTHON=
+    for python_name in python3 python; do
+        python_candidate=$(command -v "$python_name" 2>/dev/null || true)
+        if whp_python_usable "$python_candidate"; then
+            PYTHON=$python_candidate
+            break
+        fi
+    done
+
+    # Windows installations may expose only the Python launcher even when a
+    # runtime is installed, and Store aliases named python/python3 may exist
+    # without being usable from the current MSYS shell. Resolve the launcher to
+    # the real interpreter so downstream configure/Meson calls receive an
+    # executable path rather than launcher-specific semantics.
+    if [ -z "$PYTHON" ]; then
+        case "$(uname -s 2>/dev/null || true)" in
+            CYGWIN*|MINGW*|MSYS*)
+                python_launcher=$(command -v py 2>/dev/null || true)
+                if [ -n "$python_launcher" ]; then
+                    python_candidate=$(
+                        "$python_launcher" -c \
+                            'import sys; print(sys.executable) if sys.version_info >= (3, 9) else raise SystemExit(1)' \
+                            2>/dev/null || true
+                    )
+                    if whp_python_usable "$python_candidate"; then
+                        PYTHON=$python_candidate
+                    fi
+                fi
+                unset python_launcher
+                ;;
+        esac
+    fi
+    unset python_name python_candidate
 fi
-if [ -z "${PYTHON:-}" ] ||
-   ! "$PYTHON" -c 'import sys; raise SystemExit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+
+if [ -z "${PYTHON:-}" ]; then
     printf 'error: Python 3.9 or newer is required by QEMU and the WHP build configuration\n' >&2
     exit 1
 fi
