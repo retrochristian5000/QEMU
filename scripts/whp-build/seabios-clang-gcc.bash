@@ -93,7 +93,7 @@ for arg in "$@"; do
             # GCC encodes the boundary as log2(bytes); SeaBIOS asks for 2^2.
             args+=(-mstack-alignment=4)
             ;;
-        -fno-defer-pop|-fno-stack-protector-all|-fstack-check=no)
+        -fno-stack-protector-all|-fstack-check=no)
             # Clang either lacks these spellings or diagnoses them as ignored.
             # The SeaBIOS ABI checks cover the required behavior separately.
             ;;
