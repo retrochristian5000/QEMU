@@ -20,6 +20,10 @@ case "${1:-}" in
             exit 0
         fi
         ;;
+    *config.py)
+        # The shell probe only needs an empty configuration environment.
+        exit 0
+        ;;
 esac
 exit 2
 EOF
