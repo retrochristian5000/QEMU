@@ -71,6 +71,10 @@ grep -Fq 'TOOLCHAIN_FORCE_REBUILD=1' "$powerpc" || {
     printf 'error: PowerPC LLVM cache failure does not force a rebuild\n' >&2
     exit 1
 }
+grep -Fq 'rm -rf "$POWERPC_LLVM_BUILD_DIR"' "$powerpc" || {
+    printf 'error: broken PowerPC LLVM module graph is not discarded before rebuild\n' >&2
+    exit 1
+}
 
 # A PowerPC compiler graph may be incremental within one LLVM revision, but it
 # must not be reused after the gitlink changes. Key the build directory to the
