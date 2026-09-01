@@ -56,11 +56,65 @@ prepare_homebrew_build_helpers()
 
 fork_primary_usable()
 {
+    local smoke_dir="$WORK_DIR/llvm-primary-smoke"
+    local object_format
     local tool
+
     [[ -f "$llvm_marker" ]] || return 1
     for tool in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
         [[ -x "$LLVM_BIN/$tool" ]] || return 1
     done
+
+    # A marker plus executable presence cannot detect a mixed installed LLVM
+    # graph. Exercise the exact compiler/resource-header/frame-pointer path that
+    # exposed the stale-module bug, then carry its ELF object through LLD and
+    # the object utilities GRUB consumes. Failure falls through to the existing
+    # i386 bootstrap, which owns graph deletion and rebuilding.
+    rm -rf "$smoke_dir"
+    mkdir -p "$smoke_dir"
+    cat >"$smoke_dir/cache.c" <<'SOURCE'
+#include <stddef.h>
+#include <stdarg.h>
+#ifndef __i386__
+#error compiler is not targeting i386
+#endif
+_Static_assert(__SIZEOF_POINTER__ == 4, "i386 pointer width mismatch");
+size_t whp_i386_grub_cache_size(void) { return sizeof(size_t) + sizeof(va_list); }
+int whp_i386_grub_cache(void) { return 0; }
+SOURCE
+
+    if ! "$LLVM_BIN/clang" --target="$TARGET_TRIPLE" -m32 -march=i386 \
+            -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -ffreestanding -O0 -c "$smoke_dir/cache.c" \
+            -o "$smoke_dir/cache.o" >/dev/null 2>&1 ||
+       ! "$LLVM_BIN/ld.lld" -m elf_i386 -r "$smoke_dir/cache.o" \
+            -o "$smoke_dir/cache-linked.o" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    object_format="$("$LLVM_BIN/llvm-objdump" -f "$smoke_dir/cache-linked.o" 2>/dev/null)" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+    if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' \
+            <<<"$object_format"; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    if ! "$LLVM_BIN/llvm-objcopy" "$smoke_dir/cache-linked.o" \
+            "$smoke_dir/cache-copy.o" >/dev/null 2>&1 ||
+       ! "$LLVM_BIN/llvm-strip" -o "$smoke_dir/cache-stripped.o" \
+            "$smoke_dir/cache-copy.o" >/dev/null 2>&1 ||
+       ! "$LLVM_BIN/llvm-objdump" -f "$smoke_dir/cache-stripped.o" \
+            >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$smoke_dir"
+    return 0
 }
 
 prepare_fork_llvm()
