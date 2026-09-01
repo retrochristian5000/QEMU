@@ -64,6 +64,44 @@ grep -Fq 'size_t whp_native_llvm_resource_size' "$native" || {
     exit 1
 }
 
+# The standalone SeaBIOS LLVM bootstrap owns Clang, resource headers, the
+# integrated assembler wrapper, LLD, objdump, objcopy, and strip. Its installed
+# cache must prove that whole command surface semantically before a matching
+# marker is allowed to skip a rebuild.
+for header in stddef.h stdarg.h; do
+    grep -Fq "#include <$header>" "$i386" || {
+        printf 'error: i386 LLVM cache does not exercise resource header %s\n' \
+            "$header" >&2
+        exit 1
+    }
+done
+grep -Fq -- '-fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$i386" || {
+    printf 'error: i386 LLVM cache does not exercise non-leaf frame-pointer IR\n' >&2
+    exit 1
+}
+for tool in as ld objcopy objdump strip; do
+    grep -Fq '"$prefix/bin/$TOOLCHAIN_TARGET-'"$tool"'"' "$i386" || {
+        printf 'error: i386 LLVM cache health gate omits %s semantics\n' "$tool" >&2
+        exit 1
+    }
+done
+grep -Fq '"$i386_ld" -r "$cache_smoke_dir/cache.o" "$cache_smoke_dir/cache-asm.o"' "$i386" || {
+    printf 'error: i386 LLVM cache does not exercise LLD relocatable linking\n' >&2
+    exit 1
+}
+grep -Fq '"$i386_objdump" -f "$cache_smoke_dir/cache-linked.o"' "$i386" || {
+    printf 'error: i386 LLVM cache does not inspect linked ELF output\n' >&2
+    exit 1
+}
+grep -Fq '"$i386_objcopy" "$cache_smoke_dir/cache-linked.o" "$cache_smoke_dir/cache-copy.o"' "$i386" || {
+    printf 'error: i386 LLVM cache does not exercise objcopy\n' >&2
+    exit 1
+}
+grep -Fq '"$i386_strip" -o "$cache_smoke_dir/cache-stripped.o" "$cache_smoke_dir/cache-copy.o"' "$i386" || {
+    printf 'error: i386 LLVM cache does not exercise strip\n' >&2
+    exit 1
+}
+
 grep -Fq '"$i386_clang" --target=i386-none-elf -m32 -march=i386 \' "$seabios_config" || {
     printf 'error: SeaBIOS i386 cache check does not compile with installed clang\n' >&2
     exit 1
