@@ -104,6 +104,23 @@ grep -Fq '"$llvm_strip" "$cache_smoke_dir/cache.o" -o "$cache_smoke_dir/cache-st
     exit 1
 }
 
+# Standalone LLD consumes the installed LLVM CMake package, not only the
+# executables above. A stale LLVMConfig/exports graph can therefore break the
+# macOS linker stage while clang and llvm-config still look healthy. Require a
+# real CMake configure against that installed package before trusting the cache.
+grep -Fq 'find_package(LLVM CONFIG REQUIRED)' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache does not validate installed CMake metadata\n' >&2
+    exit 1
+}
+grep -Fq '"-DLLVM_DIR=$llvm_cmake_dir"' "$powerpc" || {
+    printf 'error: PowerPC LLVM CMake metadata probe does not pin installed LLVM_DIR\n' >&2
+    exit 1
+}
+grep -Fq 'cmake -S "$cache_cmake_source" -B "$cache_cmake_build"' "$powerpc" || {
+    printf 'error: PowerPC LLVM cache does not configure a CMake package smoke\n' >&2
+    exit 1
+}
+
 # A PowerPC compiler graph may be incremental within one LLVM revision, but it
 # must not be reused after the gitlink changes. Key the build directory to the
 # exact source revision selected by the QEMU tree.
