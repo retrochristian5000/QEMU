@@ -27,7 +27,7 @@ done
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/grub-i386-efi-test.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/src/grub-test" "$scratch/bin"
+mkdir -p "$scratch/src/grub-test/grub-core" "$scratch/bin"
 
 cat > "$scratch/src/grub-test/configure" <<'SCRIPT'
 #!/usr/bin/env bash
