@@ -1,0 +1,101 @@
+name: WHP native LLVM macOS
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'toolchains/llvm-project'
+      - '.github/workflows/native-llvm-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-native-llvm-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-llvm:
+    name: Build native LLVM (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-native-llvm/qemu
+      NATIVE_LLVM_DIR: ${{ github.workspace }}/build-native-llvm/toolchain
+      NATIVE_LLVM_WORK_DIR: ${{ github.workspace }}/build-native-llvm/work
+      NATIVE_LLVM_BUILD_DIR: ${{ github.workspace }}/build-native-llvm/work/llvm-build
+      BOOTSTRAP_NATIVE_LLVM: '1'
+      WHP_SHELL_PROBE_ONLY: '1'
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      JOBS: '4'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Apple Silicon host
+        shell: bash
+        run: test "$(uname -m)" = arm64
+
+      - name: Install native LLVM build dependencies
+        run: brew install cmake ninja
+
+      - name: Bootstrap native LLVM through build entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build.sh >native-llvm.out 2>native-llvm.log
+          cat native-llvm.log
+          cat native-llvm.out
+
+      - name: Verify host identity and native ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="$NATIVE_LLVM_DIR/.whp-native-llvm"
+          clang="$NATIVE_LLVM_DIR/bin/clang"
+          clangxx="$NATIVE_LLVM_DIR/bin/clang++"
+
+          grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
+          grep -Fxq 'BOOTSTRAP_SCHEMA=2' "$marker"
+          grep -Fxq 'HOST_OS=macos' "$marker"
+          grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
+          grep -Fxq 'HOST_ARCH=arm64' "$marker"
+          "$clang" -print-target-triple | grep -Eq '^arm64-apple-(darwin|macos|macosx)'
+
+          printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
+            "$clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+              -ffreestanding -x c -c - -o native-llvm-c.o
+          printf 'int whp_native_ci_cxx() { return 0; }\n' |
+            "$clangxx" -x c++ -c - -o native-llvm-cxx.o
+          test -s native-llvm-c.o
+          test -s native-llvm-cxx.o
+
+      - name: Show native LLVM failure context
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 250 native-llvm.log 2>/dev/null || true
+          tail -n 100 native-llvm.out 2>/dev/null || true
+          cat "$NATIVE_LLVM_DIR/.whp-native-llvm" 2>/dev/null || true
+
+      - name: Upload native LLVM failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-llvm-macos-failure
+          path: |
+            native-llvm.log
+            native-llvm.out
+            build-native-llvm/toolchain/.whp-native-llvm
+            build-native-llvm/work/llvm-build/CMakeCache.txt
+          if-no-files-found: warn
+          retention-days: 7
