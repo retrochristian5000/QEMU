@@ -28,3 +28,31 @@ jobs:
 
       - name: Check test syntax
         run: bash -n scripts/tests/test-windows-python-launcher.bash
+
+  windows-python-launcher:
+    runs-on: windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Windows launcher path boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v py
+          python_path="$(py -c 'import sys; print(sys.executable)')"
+          test -n "$python_path"
+          "$python_path" -c 'import sys; raise SystemExit(sys.version_info < (3, 9))'
+
+          fakebin="$RUNNER_TEMP/whp-python-aliases"
+          mkdir -p "$fakebin"
+          for name in python3 python; do
+              cat > "$fakebin/$name" <<'EOF'
+          #!/bin/sh
+          exit 127
+          EOF
+              chmod +x "$fakebin/$name"
+          done
+
+          menu_output="$(PATH="$fakebin:$PATH" /bin/sh ./build.sh menuconfig --dump)"
+          grep -Fq 'Build outputs' <<< "$menu_output"
