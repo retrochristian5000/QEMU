@@ -75,6 +75,18 @@ else
     unset python_name python_candidate
 fi
 
+# If the host has no usable interpreter, bootstrap the pinned WHP Python fork.
+# Explicit PYTHON remains authoritative: only automatic discovery reaches this
+# fallback.
+if [ -z "${PYTHON:-}" ]; then
+    PYTHON=$(/bin/sh "$SOURCE_DIR/scripts/bootstrap-python.sh") || exit 1
+    if ! whp_python_usable "$PYTHON"; then
+        printf 'error: bundled WHP Python is not Python 3.9 or newer: %s\n' \
+            "${PYTHON:-<missing>}" >&2
+        exit 1
+    fi
+fi
+
 if [ -z "${PYTHON:-}" ]; then
     printf 'error: Python 3.9 or newer is required by QEMU and the WHP build configuration\n' >&2
     exit 1

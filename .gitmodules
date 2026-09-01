@@ -60,3 +60,8 @@
 	url = https://github.com/retrochristian5000/fast-linker.git
 	branch = main
 	shallow = true
+[submodule "toolchains/python-runtime"]
+	path = toolchains/python-runtime
+	url = https://github.com/retrochristian5000/Python.git
+	branch = main
+	shallow = true
