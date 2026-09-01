@@ -5,6 +5,7 @@ on:
     branches:
       - master
     paths:
+      - 'build.sh'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/bootstrap-powerpc-clang.sh'
