@@ -4,6 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+build="$ROOT/build.sh"
 native="$ROOT/scripts/bootstrap-native-clang.sh"
 i386="$ROOT/scripts/bootstrap-i386-clang.sh"
 powerpc="$ROOT/scripts/bootstrap-powerpc-clang.sh"
@@ -21,21 +22,34 @@ for script in "$native" "$i386" "$powerpc" "$powerpc_base" "$seabios_config"; do
     }
 done
 
+# Host policy belongs to the top-level build, not to whichever LLVM helper is
+# entered later. Normalize common kernels once, expose the result to the user,
+# and pass the exact identity through to the native compiler bootstrap.
+for host_os in macos linux windows; do
+    grep -Fq "WHP_HOST_OS=$host_os" "$build" || {
+        printf 'error: build entry does not normalize host OS %s\n' "$host_os" >&2
+        exit 1
+    }
+done
+grep -Fq 'export WHP_HOST_OS WHP_HOST_KERNEL WHP_HOST_ARCH' "$build" || {
+    printf 'error: normalized host identity is not exported by build.sh\n' >&2
+    exit 1
+}
+grep -Fq 'WHP host: %s (%s/%s)' "$build" || {
+    printf 'error: build.sh does not report the detected host to the user\n' >&2
+    exit 1
+}
+grep -Fq 'host_os="${WHP_HOST_OS:-}"' "$native" || {
+    printf 'error: native LLVM redetects the OS instead of consuming build host policy\n' >&2
+    exit 1
+}
+
 # Native LLVM is invoked by build.sh before the normal QEMU host-flag cleanup,
 # and the i386 bootstrap is invoked directly by the SeaBIOS preparation path.
 # Both therefore own a local boundary against ambient host-object flags.
 for script in "$native" "$i386"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$script" || {
         printf 'error: LLVM bootstrap inherits QEMU host flags: %s\n' "$script" >&2
-        exit 1
-    }
-done
-
-# PowerPC already enters its compiler stages through a dedicated clean env.
-# Keep that single boundary instead of duplicating ad-hoc unsets in the base.
-for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
-    grep -Fq -- "-u $variable" "$powerpc" || {
-        printf 'error: PowerPC LLVM clean environment retains %s\n' "$variable" >&2
         exit 1
     }
 done
