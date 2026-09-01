@@ -47,6 +47,23 @@ grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer 
     printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
+
+# Native LLVM installs clang-resource-headers as a separate component and can
+# be selected as QEMU's macOS host compiler. Its cache gate must therefore prove
+# those headers are usable, not merely that a headerless frontend invocation
+# succeeds.
+for header in stddef.h stdarg.h; do
+    grep -Fq "#include <$header>" "$native" || {
+        printf 'error: native LLVM cache does not exercise resource header %s\n' \
+            "$header" >&2
+        exit 1
+    }
+done
+grep -Fq 'size_t whp_native_llvm_resource_size' "$native" || {
+    printf 'error: native LLVM resource-header smoke does not consume size_t\n' >&2
+    exit 1
+}
+
 grep -Fq '"$i386_clang" --target=i386-none-elf -m32 -march=i386 \' "$seabios_config" || {
     printf 'error: SeaBIOS i386 cache check does not compile with installed clang\n' >&2
     exit 1
