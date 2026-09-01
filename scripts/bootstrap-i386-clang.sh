@@ -97,16 +97,80 @@ EOF
 usable()
 {
     local prefix="$1"
+    local clang="$prefix/llvm/bin/clang"
+    local i386_as="$prefix/bin/$TOOLCHAIN_TARGET-as"
+    local i386_ld="$prefix/bin/$TOOLCHAIN_TARGET-ld"
+    local i386_objcopy="$prefix/bin/$TOOLCHAIN_TARGET-objcopy"
+    local i386_objdump="$prefix/bin/$TOOLCHAIN_TARGET-objdump"
+    local i386_strip="$prefix/bin/$TOOLCHAIN_TARGET-strip"
+    local cache_smoke_dir="$TOOLCHAIN_WORK_DIR/i386-cache-smoke"
+    local object_format
     local tool
 
     for tool in gcc cpp as ld objcopy objdump strip; do
         [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
     [[ -f "$prefix/libexec/seabios-llvm-objdump.py" ]] || return 1
-    [[ -x "$prefix/llvm/bin/clang" ]] || return 1
-    printf 'int whp_i386_llvm_usable(void) { return 0; }\n' |
-        "$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET" -m32 -march=i386 \
-            -ffreestanding -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    for tool in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
+        [[ -x "$prefix/llvm/bin/$tool" ]] || return 1
+    done
+
+    rm -rf "$cache_smoke_dir"
+    mkdir -p "$cache_smoke_dir"
+    cat >"$cache_smoke_dir/cache.c" <<'SOURCE'
+#include <stddef.h>
+#include <stdarg.h>
+#ifndef __i386__
+#error compiler is not targeting i386
+#endif
+_Static_assert(__SIZEOF_POINTER__ == 4, "i386 pointer width mismatch");
+size_t whp_i386_cache_size(void) { return sizeof(size_t) + sizeof(va_list); }
+int whp_i386_cache(void) { return 0; }
+SOURCE
+    if ! "$clang" --target="$TOOLCHAIN_TARGET" -m32 -march=i386 \
+            -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -ffreestanding -O0 -c "$cache_smoke_dir/cache.c" \
+            -o "$cache_smoke_dir/cache.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    cat >"$cache_smoke_dir/cache.s" <<'ASSEMBLY'
+.text
+.globl whp_i386_cache_asm
+whp_i386_cache_asm:
+    ret
+ASSEMBLY
+    if ! "$i386_as" --32 -o "$cache_smoke_dir/cache-asm.o" \
+            "$cache_smoke_dir/cache.s" >/dev/null 2>&1 ||
+       ! "$i386_ld" -r "$cache_smoke_dir/cache.o" "$cache_smoke_dir/cache-asm.o" \
+            -o "$cache_smoke_dir/cache-linked.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    object_format="$("$i386_objdump" -f "$cache_smoke_dir/cache-linked.o" 2>/dev/null)" || {
+        rm -rf "$cache_smoke_dir"
+        return 1
+    }
+    if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' \
+            <<<"$object_format"; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    if ! "$i386_objcopy" "$cache_smoke_dir/cache-linked.o" \
+            "$cache_smoke_dir/cache-copy.o" >/dev/null 2>&1 ||
+       ! "$i386_strip" -o "$cache_smoke_dir/cache-stripped.o" \
+            "$cache_smoke_dir/cache-copy.o" >/dev/null 2>&1 ||
+       ! "$i386_objdump" -f "$cache_smoke_dir/cache-stripped.o" \
+            >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$cache_smoke_dir"
+    return 0
 }
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
