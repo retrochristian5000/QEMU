@@ -106,6 +106,14 @@ powerpc_llvm_cache_is_usable()
     rm -rf "$cache_smoke_dir"
     mkdir -p "$cache_smoke_dir"
     cat > "$cache_smoke_dir/cache.c" <<'SOURCE'
+#include <stddef.h>
+#include <stdarg.h>
+
+size_t whp_powerpc_cache_size(void)
+{
+    return sizeof(size_t) + sizeof(va_list);
+}
+
 int whp_powerpc_cache_smoke(void) { return 0; }
 SOURCE
 
@@ -113,7 +121,9 @@ SOURCE
     # broader health check, then reuse its real PowerPC object to exercise the
     # core LLVM tools that OpenBIOS consumes indirectly. Keep the literal
     # installed-Clang path visible so the original regression guard cannot be
-    # accidentally weakened by a later refactor of this helper.
+    # accidentally weakened by a later refactor of this helper. Including
+    # freestanding standard headers also validates the separately installed
+    # clang-resource-headers distribution component.
     if ! "$TOOLCHAIN_DIR/llvm/bin/clang" --target=powerpc-none-elf \
             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
             -ffreestanding -O0 -c "$cache_smoke_dir/cache.c" \
@@ -189,10 +199,11 @@ CMAKE
 
 # A marker and matching gitlink are not enough to trust an already-installed
 # LLVM distribution. A mixed object graph can leave one frontend/backend,
-# utility, or installed CMake-export module stale while every executable still
-# exists and answers --version. Exercise the real PowerPC object path plus the
-# core archive, symbol, ELF-reader, strip, config, TableGen, and CMake package
-# interfaces. If any part fails, discard the revision graph before rebuilding.
+# utility, resource-header, or installed CMake-export module stale while every
+# executable still exists and answers --version. Exercise the real PowerPC
+# object path plus the core archive, symbol, ELF-reader, strip, config, TableGen,
+# resource-header, and CMake package interfaces. If any part fails, discard the
+# revision graph before rebuilding.
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
       -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]]; then
     if ! powerpc_llvm_cache_is_usable; then
