@@ -10,6 +10,7 @@ bootstrap = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf
 i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.sh').read_text(encoding='utf-8')
 powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.sh').read_text(encoding='utf-8')
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
+macos_workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
@@ -29,7 +30,22 @@ assert 'bootstrap-native-clang.sh' in inventory
 assert 'llvm_distribution_components="${llvm_distribution_components};LTO"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
-assert 'BOOTSTRAP_SCHEMA=3' in bootstrap
+
+# A Darwin Clang driver accepts -fsanitize=undefined even when its matching
+# compiler-rt runtime was never built or installed. Native macOS toolchains must
+# therefore build compiler-rt with the just-built Clang, generate the runtimes
+# graph, distribute both builtins and runtimes, and prove the installed driver
+# can link an actual UBSan executable. Linux keeps its existing no-runtimes
+# profile unless it is deliberately opted in later.
+assert 'llvm_enable_runtimes=compiler-rt' in bootstrap
+assert 'llvm_include_runtimes=ON' in bootstrap
+assert '${llvm_distribution_components};LTO;builtins;runtimes' in bootstrap
+assert '"-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"' in bootstrap
+assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
+assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
+assert '-fsanitize=undefined' in bootstrap
+assert '-fsanitize=undefined' in macos_workflow
+assert 'BOOTSTRAP_SCHEMA=4' in bootstrap
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
