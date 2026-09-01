@@ -89,7 +89,10 @@ powerpc_llvm_cache_is_usable()
     local llvm_strip="$TOOLCHAIN_DIR/llvm/bin/llvm-strip"
     local llvm_config="$TOOLCHAIN_DIR/llvm/bin/llvm-config"
     local llvm_tblgen="$TOOLCHAIN_DIR/llvm/bin/llvm-tblgen"
+    local llvm_cmake_dir="$TOOLCHAIN_DIR/llvm/lib/cmake/llvm"
     local cache_smoke_dir="$TOOLCHAIN_WORK_DIR/llvm-cache-smoke"
+    local cache_cmake_source="$cache_smoke_dir/cmake-source"
+    local cache_cmake_build="$cache_smoke_dir/cmake-build"
     local header
     local nm_output
     local tool
@@ -98,6 +101,7 @@ powerpc_llvm_cache_is_usable()
                 "$llvm_readelf" "$llvm_strip" "$llvm_config" "$llvm_tblgen"; do
         [[ -x "$tool" ]] || return 1
     done
+    [[ -f "$llvm_cmake_dir/LLVMConfig.cmake" ]] || return 1
 
     rm -rf "$cache_smoke_dir"
     mkdir -p "$cache_smoke_dir"
@@ -157,16 +161,38 @@ SOURCE
         return 1
     fi
 
+    # Standalone LLD consumes the installed LLVM CMake exports. A damaged or
+    # stale LLVMConfig.cmake can therefore stop the next stage even when all
+    # installed executables above still work. Configure a metadata-only project
+    # and require the core imported targets that the downstream LLD build uses.
+    mkdir -p "$cache_cmake_source"
+    cat > "$cache_cmake_source/CMakeLists.txt" <<'CMAKE'
+cmake_minimum_required(VERSION 3.20)
+project(WHP_LLVM_PACKAGE_SMOKE LANGUAGES NONE)
+find_package(LLVM CONFIG REQUIRED)
+if(NOT TARGET LLVMCore OR NOT TARGET LLVMSupport)
+  message(FATAL_ERROR "installed LLVM package is missing core imported targets")
+endif()
+CMAKE
+    if ! cmake -S "$cache_cmake_source" -B "$cache_cmake_build" \
+            "-DLLVM_DIR=$llvm_cmake_dir" \
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON \
+            >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
     rm -rf "$cache_smoke_dir"
     return 0
 }
 
 # A marker and matching gitlink are not enough to trust an already-installed
-# LLVM distribution. A mixed object graph can leave one frontend/backend or
-# utility module stale while every executable still exists and answers
-# --version. Exercise the real PowerPC object path plus the core archive,
-# symbol, ELF-reader, strip, config, and TableGen tools. If any part fails,
-# discard the revision graph itself before rebuilding it from the pinned source.
+# LLVM distribution. A mixed object graph can leave one frontend/backend,
+# utility, or installed CMake-export module stale while every executable still
+# exists and answers --version. Exercise the real PowerPC object path plus the
+# core archive, symbol, ELF-reader, strip, config, TableGen, and CMake package
+# interfaces. If any part fails, discard the revision graph before rebuilding.
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
       -x "$TOOLCHAIN_DIR/llvm/bin/clang" ]]; then
     if ! powerpc_llvm_cache_is_usable; then
