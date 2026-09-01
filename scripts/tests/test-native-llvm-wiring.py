@@ -57,6 +57,19 @@ assert 'CLANG_ENABLE_ARCMT' not in bootstrap
 for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
     assert 'LLVM_ENABLE_TERMINFO' not in llvm_bootstrap
 
+# LLVM's large executable links need their own Ninja pool. Keep compilation
+# fully parallel while capping concurrent links so a many-core host does not
+# turn link-time memory pressure into paging or intermittent bootstrap failure.
+link_job_policies = (
+    (bootstrap, 'NATIVE_LLVM_LINK_JOBS'),
+    (i386_bootstrap, 'I386_LLVM_LINK_JOBS'),
+    (powerpc_bootstrap, 'POWERPC_LLVM_LINK_JOBS'),
+)
+for llvm_bootstrap, override in link_job_policies:
+    assert f'LLVM_LINK_JOBS="${{{override}:-2}}"' in llvm_bootstrap
+    assert 'LLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS' in llvm_bootstrap
+    assert f'{override} must be a positive integer' in llvm_bootstrap
+
 # Never carry a CMake/Ninja object graph across a native LLVM rebuild. LLVM
 # source revisions can change IR contracts, so an incremental graph from an
 # older revision is not a safe cache boundary.
