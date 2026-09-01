@@ -4,13 +4,13 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+POWERPC="$ROOT/scripts/bootstrap-powerpc-clang.sh"
 BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
 CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
 NATIVE="$ROOT/scripts/bootstrap-native-clang.sh"
 I386="$ROOT/scripts/bootstrap-i386-clang.sh"
-WIN9X="$ROOT/scripts/bootstrap-win9x-clang.sh"
 
-for file in "$BASE" "$CORE" "$NATIVE" "$I386" "$WIN9X"; do
+for file in "$POWERPC" "$BASE" "$CORE" "$NATIVE" "$I386"; do
     if [[ ! -f "$file" ]]; then
         printf 'error: required LLVM bootstrap script is missing: %s\n' "$file" >&2
         exit 1
@@ -54,11 +54,20 @@ for file in "$NATIVE" "$I386"; do
     fi
 done
 
-# Every CMake-driven LLVM bootstrap must reject ambient QEMU object-build flags.
-# ABI inputs such as SDKROOT/deployment target are supplied explicitly instead.
-for file in "$NATIVE" "$I386" "$BASE" "$CORE" "$WIN9X"; do
+# Each independently callable compiler bootstrap owns a local boundary against
+# ambient QEMU object-build flags. The PowerPC component helpers are normally
+# reached through bootstrap-powerpc-clang.sh, whose env -u list is the shared
+# boundary for those later stages.
+for file in "$NATIVE" "$I386" "$BASE"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$file" || {
-        printf 'error: LLVM bootstrap inherits ambient QEMU flags: %s\n' "$file" >&2
+        printf 'error: standalone LLVM bootstrap inherits ambient QEMU flags: %s\n' "$file" >&2
+        exit 1
+    }
+done
+for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+    grep -Eq -- "-u[[:space:]]+$variable([[:space:]]|$)" "$POWERPC" || {
+        printf 'error: PowerPC orchestrator does not isolate %s from component bootstraps\n' \
+            "$variable" >&2
         exit 1
     }
 done
