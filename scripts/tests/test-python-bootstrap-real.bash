@@ -10,15 +10,14 @@ submodule_name='toolchains/python-runtime'
 [[ "$(git config -f .gitmodules --get "submodule.${submodule_name}.branch" || true)" == main ]]
 
 gitlink="$(git ls-tree HEAD -- "$submodule_name")"
-case "$gitlink" in
-    "160000 commit "????????????????????????????????????????"\t$submodule_name") ;;
-    *)
-        printf 'error: Python runtime is not registered as a pinned gitlink: %s\n' \
-            "${gitlink:-<missing>}" >&2
-        exit 1
-        ;;
-esac
-expected_revision="$(printf '%s\n' "$gitlink" | awk '{print $3}')"
+read -r gitlink_mode gitlink_type expected_revision gitlink_path <<< "$gitlink"
+if [[ "$gitlink_mode" != 160000 || "$gitlink_type" != commit ||
+      ! "$expected_revision" =~ ^[0-9a-f]{40}$ ||
+      "$gitlink_path" != "$submodule_name" ]]; then
+    printf 'error: Python runtime is not registered as a pinned gitlink: %s\n' \
+        "${gitlink:-<missing>}" >&2
+    exit 1
+fi
 
 git submodule update --init --depth 1 "$submodule_name"
 actual_revision="$(git -C "$submodule_name" rev-parse HEAD)"
