@@ -225,6 +225,9 @@ usable()
     native_target_matches_host "$target" || return 1
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
         "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_llvm_resource_size(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
+        "$prefix/bin/clang" -ffreestanding -x c -c - -o /dev/null \
+            >/dev/null 2>&1 || return 1
     printf 'int whp_native_llvm_frame_pointer(void) { return 0; }\n' |
         "$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
             -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
@@ -239,9 +242,10 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-# LLVM's IR and verifier contracts can change between revisions.  If the
-# installed compiler is stale or unhealthy, do not reuse a CMake/Ninja graph
-# containing objects from an older source state.
+# LLVM's IR, verifier, and installed resource-header contracts can change
+# between revisions. If the installed compiler is stale, unhealthy, or only
+# partially installed, do not reuse a CMake/Ninja graph containing objects from
+# the suspect source state.
 rm -rf "$LLVM_BUILD_DIR"
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 llvm_distribution_components='clang;clang-resource-headers'
