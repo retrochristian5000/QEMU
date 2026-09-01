@@ -234,16 +234,22 @@ git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
+llvm_distribution_components='clang;clang-resource-headers'
+if [[ "$host_os" == macos ]]; then
+    # Darwin Clang tells ld64 to load this toolchain's lib/libLTO.dylib for
+    # -flto. Keep the bitcode producer and reader on the same LLVM revision.
+    llvm_distribution_components="${llvm_distribution_components};LTO"
+fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=2
+BOOTSTRAP_SCHEMA=3
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
-DISTRIBUTION=clang-native-minimal
+LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
 BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target
@@ -261,6 +267,9 @@ usable()
     local target=''
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
+    if [[ "$host_os" == macos ]]; then
+        [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
+    fi
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
     target="$(query_target_triple "$prefix/bin/clang")"
@@ -292,7 +301,6 @@ fi
 # the suspect source state.
 rm -rf "$LLVM_BUILD_DIR"
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
-llvm_distribution_components='clang;clang-resource-headers'
 cmake_args=(
     -S "$LLVM_SOURCE_DIR/llvm"
     -B "$LLVM_BUILD_DIR"
