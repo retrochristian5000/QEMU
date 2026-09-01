@@ -63,7 +63,11 @@ grep -Fq -- 'rm -rf "$LLVM_BUILD_DIR"' "$bootstrap"
 # that raw Clang does not provide or only accepts as ignored spellings.
 grep -Fq -- '-mpreferred-stack-boundary=2)' "$cc_helper"
 grep -Fq -- 'args+=(-mstack-alignment=4)' "$cc_helper"
-grep -Fq -- '-fno-defer-pop|-fno-stack-protector-all|-fstack-check=no)' "$cc_helper"
+grep -Fq -- '-fno-stack-protector-all|-fstack-check=no)' "$cc_helper"
+if grep -Fq -- '-fno-defer-pop' "$cc_helper"; then
+    printf 'SeaBIOS wrapper must pass Clang-supported -fno-defer-pop through\n' >&2
+    exit 1
+fi
 grep -Fq -- '-fwhole-program)' "$cc_helper"
 grep -Fq -- 'SeaBIOS whole-program optimization is unsupported by Clang' "$cc_helper"
 grep -Fq -- '-fno-merge-constants)' "$cc_helper"
