@@ -44,6 +44,7 @@ on:
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
+      - 'scripts/tests/test-macos-zsh-entry.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
@@ -127,6 +128,9 @@ jobs:
       - name: Test build configuration integration
         run: bash scripts/tests/test-whp-config-integration.bash
 
+      - name: Test macOS zsh build entry
+        run: bash scripts/tests/test-macos-zsh-entry.bash
+
       - name: Test incremental build behavior
         run: python3 scripts/tests/test-whp-incremental.py
 
@@ -181,6 +185,7 @@ jobs:
           bash -n scripts/tests/test-homebrew-dependency-refresh.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-i386-efi-grub-bootstrap.bash
+          bash -n scripts/tests/test-macos-zsh-entry.bash
           bash -n scripts/tests/test-mold-bootstrap.bash
           bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
           bash -n scripts/tests/test-seabios-grub-payload.bash
