@@ -8,6 +8,23 @@ bootstrap="$root/scripts/bootstrap-i386-efi-grub.sh"
     exit 1
 }
 
+# GRUB must not trust an i386 LLVM marker plus executable presence. An existing
+# mixed LLVM installation can keep every path while one compiler/linker/object
+# module is stale, so the GRUB-side primary gate must exercise the installed
+# ABI before deciding that the compiler bootstrap can be skipped.
+for probe in \
+    'whp_i386_grub_cache_size' \
+    '-fno-omit-frame-pointer -momit-leaf-frame-pointer' \
+    '"$LLVM_BIN/ld.lld" -m elf_i386 -r' \
+    '"$LLVM_BIN/llvm-objdump" -f' \
+    '"$LLVM_BIN/llvm-objcopy"' \
+    '"$LLVM_BIN/llvm-strip"'; do
+    grep -Fq -- "$probe" "$bootstrap" || {
+        printf 'GRUB i386 LLVM cache gate is not semantic: %s\n' "$probe" >&2
+        exit 1
+    }
+done
+
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/grub-i386-efi-test.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/src/grub-test" "$scratch/bin"
@@ -103,9 +120,46 @@ mkdir -p "$llvm_bin"
 for tool in clang ld.lld llvm-ar llvm-nm llvm-ranlib llvm-objcopy llvm-strip llvm-objdump; do
     cat > "$llvm_bin/$tool" <<'SCRIPT'
 #!/usr/bin/env bash
+set -euo pipefail
+tool="${0##*/}"
 if [[ "${1:-}" == --version ]]; then
     printf 'WHP LLVM fork test tool\n'
+    exit 0
 fi
+case "$tool" in
+    clang|ld.lld)
+        out=""
+        while (($#)); do
+            case "$1" in
+                -o) out="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [[ -z "$out" ]] || printf 'ELF' > "$out"
+        ;;
+    llvm-objcopy)
+        cp "$1" "$2"
+        ;;
+    llvm-strip)
+        out=""
+        input=""
+        while (($#)); do
+            case "$1" in
+                -o) out="$2"; shift 2 ;;
+                *) input="$1"; shift ;;
+            esac
+        done
+        [[ -n "$out" && -n "$input" ]]
+        cp "$input" "$out"
+        ;;
+    llvm-objdump)
+        if [[ "${1:-}" == -f ]]; then
+            printf '%s\n' \
+                'file format elf32-i386' \
+                'architecture: i386'
+        fi
+        ;;
+esac
 exit 0
 SCRIPT
     chmod +x "$llvm_bin/$tool"
