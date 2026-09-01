@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 config = (ROOT / 'scripts/whp-config/config.py').read_text(encoding='utf-8')
 build = (ROOT / 'build.sh').read_text(encoding='utf-8')
 bootstrap = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
+i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.sh').read_text(encoding='utf-8')
+powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.sh').read_text(encoding='utf-8')
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
@@ -47,6 +49,13 @@ assert 'native_target_matches_host "$target"' in bootstrap
 for target in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert target in bootstrap
 assert '*-linux-*|*-linux' in bootstrap
+
+# Do not pass CMake cache variables that the pinned LLVM revision no longer
+# defines. CMake reports these as manually-specified variables that were not
+# used by the project, which hides meaningful bootstrap warnings in noise.
+assert 'CLANG_ENABLE_ARCMT' not in bootstrap
+for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
+    assert 'LLVM_ENABLE_TERMINFO' not in llvm_bootstrap
 
 # Never carry a CMake/Ninja object graph across a native LLVM rebuild. LLVM
 # source revisions can change IR contracts, so an incremental graph from an
