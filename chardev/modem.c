@@ -23,8 +23,10 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "qemu/fifo8.h"
 #include "qemu/module.h"
+#include "qemu/option.h"
 #include "chardev/char.h"
 #include "chardev/char-serial.h"
 #include "qom/object.h"
