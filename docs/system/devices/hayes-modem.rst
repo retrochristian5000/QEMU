@@ -9,6 +9,14 @@ Attach the modem to a serial port with::
 
   -chardev modem,id=modem0 -serial chardev:modem0
 
+The optional ``model`` property selects the emulated modem model::
+
+  -chardev modem,id=modem0,model=hayes-accura-2400 \
+    -serial chardev:modem0
+
+The default and currently supported model is ``hayes-accura-2400``.  An
+unsupported model name stops chardev creation with an error.
+
 The backend identifies as a Hayes Accura 2400-class modem and implements the
 command sequences commonly used by DOS, Windows 9x Unimodem, and dial-up
 clients.  Supported behavior includes:

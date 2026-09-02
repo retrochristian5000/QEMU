@@ -457,6 +457,19 @@
   'base': 'ChardevCommon' }
 
 ##
+# @ChardevModem:
+#
+# Configuration info for an emulated modem.
+#
+# @model: modem model (default: ``hayes-accura-2400``)
+#
+# Since: 11.1
+##
+{ 'struct': 'ChardevModem',
+  'data': { '*model': 'str' },
+  'base': 'ChardevCommon' }
+
+##
 # @ChardevQemuVDAgent:
 #
 # Configuration info for QEMU vdagent implementation.
@@ -514,6 +527,8 @@
 #
 # @easyball: emulated Microsoft EasyBall serial trackball (since 11.1)
 #
+# @modem: emulated modem (since 11.1)
+#
 # @wctablet: emulated Wacom Penpartner serial tablet (since 2.9)
 #
 # @braille: Baum Braille device (since 1.5)
@@ -557,6 +572,7 @@
             'hub',
             'msmouse',
             'easyball',
+            'modem',
             'wctablet',
             { 'name': 'braille', 'if': 'CONFIG_BRLAPI' },
             'testdev',
@@ -715,6 +731,16 @@
   'data': { 'data': 'ChardevRingbuf' } }
 
 ##
+# @ChardevModemWrapper:
+#
+# @data: configuration info for an emulated modem
+#
+# Since: 11.1
+##
+{ 'struct': 'ChardevModemWrapper',
+  'data': { 'data': 'ChardevModem' } }
+
+##
 # @ChardevPtyWrapper:
 #
 # @data: Configuration info for pty chardevs
@@ -750,6 +776,7 @@
             'hub': 'ChardevHubWrapper',
             'msmouse': 'ChardevCommonWrapper',
             'easyball': 'ChardevCommonWrapper',
+            'modem': 'ChardevModemWrapper',
             'wctablet': 'ChardevCommonWrapper',
             'braille': { 'type': 'ChardevCommonWrapper',
                          'if': 'CONFIG_BRLAPI' },

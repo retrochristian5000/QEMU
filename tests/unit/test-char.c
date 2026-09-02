@@ -1793,6 +1793,62 @@ static void char_null_test(void)
     qemu_chr_fe_deinit(&c, true);
 }
 
+static Chardev *char_modem_new(const char *label, const char *model,
+                               Error **errp)
+{
+    QemuOpts *opts;
+    Chardev *chr;
+
+    opts = qemu_opts_create(qemu_find_opts("chardev"), label, 1,
+                            &error_abort);
+    qemu_opt_set(opts, "backend", "modem", &error_abort);
+    if (model && !qemu_opt_set(opts, "model", model, errp)) {
+        qemu_opts_del(opts);
+        return NULL;
+    }
+
+    chr = qemu_chr_new_from_opts(opts, NULL, errp);
+    qemu_opts_del(opts);
+    return chr;
+}
+
+static void char_modem_default_model_test(void)
+{
+    g_autofree char *filename = NULL;
+    Chardev *chr;
+
+    chr = char_modem_new("modem-default", NULL, &error_abort);
+    g_assert_nonnull(chr);
+    filename = qemu_chr_get_filename(chr);
+    g_assert_cmpstr(filename, ==, "modem:hayes-accura-2400");
+    object_unparent(OBJECT(chr));
+}
+
+static void char_modem_explicit_model_test(void)
+{
+    g_autofree char *filename = NULL;
+    Chardev *chr;
+
+    chr = char_modem_new("modem-explicit", "hayes-accura-2400",
+                         &error_abort);
+    g_assert_nonnull(chr);
+    filename = qemu_chr_get_filename(chr);
+    g_assert_cmpstr(filename, ==, "modem:hayes-accura-2400");
+    object_unparent(OBJECT(chr));
+}
+
+static void char_modem_invalid_model_test(void)
+{
+    g_autoptr(Error) err = NULL;
+    Chardev *chr;
+
+    chr = char_modem_new("modem-invalid", "unsupported", &err);
+    g_assert_null(chr);
+    g_assert_nonnull(err);
+    g_assert_nonnull(strstr(error_get_pretty(err),
+                            "Unsupported modem model 'unsupported'"));
+}
+
 static void char_invalid_test(void)
 {
     Chardev *chr;
@@ -1902,6 +1958,12 @@ int main(int argc, char **argv)
     qemu_add_opts(&qemu_chardev_opts);
 
     g_test_add_func("/char/null", char_null_test);
+    g_test_add_func("/char/modem/model/default",
+                    char_modem_default_model_test);
+    g_test_add_func("/char/modem/model/explicit",
+                    char_modem_explicit_model_test);
+    g_test_add_func("/char/modem/model/invalid",
+                    char_modem_invalid_model_test);
     g_test_add_func("/char/invalid", char_invalid_test);
     g_test_add_func("/char/ringbuf", char_ringbuf_test);
     g_test_add_func("/char/mux", char_mux_test);

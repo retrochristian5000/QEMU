@@ -35,6 +35,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_OUTBUF_SIZE 4096
 #define MODEM_COMMAND_SIZE 256
 #define MODEM_SREG_COUNT 100
+#define MODEM_DEFAULT_MODEL "hayes-accura-2400"
 
 #define MODEM_INPUT_LINES (CHR_TIOCM_DTR | CHR_TIOCM_RTS)
 #define MODEM_OUTPUT_LINES \
@@ -51,9 +52,38 @@ typedef enum ModemResult {
     MODEM_RESULT_NO_ANSWER,
 } ModemResult;
 
+typedef struct ModemModel {
+    const char *name;
+    int connect_speed;
+    const char *identification[11];
+    const char *fallback_identification;
+} ModemModel;
+
+static const ModemModel modem_models[] = {
+    {
+        .name = MODEM_DEFAULT_MODEL,
+        .connect_speed = 2400,
+        .identification = {
+            "240",
+            "000",
+            "ROM CHECKSUM OK",
+            "Hayes Accura 2400",
+            "QEMU Hayes-compatible modem",
+            "V1.0",
+            "RCV2400",
+            "Hayes-compatible error correcting modem",
+            "2400",
+            "QEMU",
+            "SERIAL MODEM",
+        },
+        .fallback_identification = "QEMU Hayes-compatible modem",
+    },
+};
+
 struct ModemChardev {
     Chardev parent;
 
+    const ModemModel *model;
     Fifo8 outbuf;
     QEMUSerialSetParams dte;
     int tiocm;
@@ -183,7 +213,20 @@ static void modem_result(ModemChardev *modem, ModemResult result)
     modem_queue_line(modem, modem->verbose ? text : numeric);
 }
 
-static void modem_profile_defaults(ModemChardev *modem)
+static const ModemModel *modem_model_find(const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < ARRAY_SIZE(modem_models); i++) {
+        if (strcmp(name, modem_models[i].name) == 0) {
+            return &modem_models[i];
+        }
+    }
+
+    return NULL;
+}
+
+static void modem_model_defaults(ModemChardev *modem)
 {
     memset(modem->sreg, 0, sizeof(modem->sreg));
     modem->sreg[0] = 0;
@@ -199,7 +242,7 @@ static void modem_profile_defaults(ModemChardev *modem)
     modem->dtr_mode = 2;
     modem->x_mode = 4;
     modem->w_mode = 1;
-    modem->connect_speed = 2400;
+    modem->connect_speed = modem->model->connect_speed;
     modem_update_carrier(modem);
 }
 
@@ -220,7 +263,7 @@ static void modem_hangup(ModemChardev *modem, bool report)
 static void modem_reset(ModemChardev *modem)
 {
     modem_hangup(modem, false);
-    modem_profile_defaults(modem);
+    modem_model_defaults(modem);
     modem->command_len = 0;
 }
 
@@ -256,44 +299,13 @@ static char *modem_normalize_command(const char *command)
 
 static void modem_report_identification(ModemChardev *modem, int index)
 {
-    switch (index) {
-    case 0:
-        modem_queue_line(modem, "240");
-        break;
-    case 1:
-        modem_queue_line(modem, "000");
-        break;
-    case 2:
-        modem_queue_line(modem, "ROM CHECKSUM OK");
-        break;
-    case 3:
-        modem_queue_line(modem, "Hayes Accura 2400");
-        break;
-    case 4:
-        modem_queue_line(modem, "QEMU Hayes-compatible modem");
-        break;
-    case 5:
-        modem_queue_line(modem, "V1.0");
-        break;
-    case 6:
-        modem_queue_line(modem, "RCV2400");
-        break;
-    case 7:
-        modem_queue_line(modem, "Hayes-compatible error correcting modem");
-        break;
-    case 8:
-        modem_queue_line(modem, "2400");
-        break;
-    case 9:
-        modem_queue_line(modem, "QEMU");
-        break;
-    case 10:
-        modem_queue_line(modem, "SERIAL MODEM");
-        break;
-    default:
-        modem_queue_line(modem, "QEMU Hayes-compatible modem");
-        break;
+    const char *identification = modem->model->fallback_identification;
+
+    if (index >= 0 &&
+        (size_t)index < ARRAY_SIZE(modem->model->identification)) {
+        identification = modem->model->identification[index];
     }
+    modem_queue_line(modem, identification);
 }
 
 static void modem_report_profile(ModemChardev *modem)
@@ -479,7 +491,7 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 break;
             case 'F':
                 modem_parse_number(&p, 0);
-                modem_profile_defaults(modem);
+                modem_model_defaults(modem);
                 break;
             case 'K':
             case 'Q':
@@ -630,7 +642,9 @@ static void modem_chr_update_read_handler(Chardev *chr)
 
 static char *modem_chr_get_filename(Chardev *chr)
 {
-    return g_strdup("modem:hayes-accura-2400");
+    ModemChardev *modem = CHARDEV_MODEM(chr);
+
+    return g_strdup_printf("modem:%s", modem->model->name);
 }
 
 static bool modem_chr_open(Chardev *chr,
@@ -638,12 +652,34 @@ static bool modem_chr_open(Chardev *chr,
                            Error **errp)
 {
     ModemChardev *modem = CHARDEV_MODEM(chr);
+    const char *model_name = MODEM_DEFAULT_MODEL;
+
+    if (backend && backend->u.modem.data &&
+        backend->u.modem.data->model) {
+        model_name = backend->u.modem.data->model;
+    }
+    modem->model = modem_model_find(model_name);
+    if (!modem->model) {
+        error_setg(errp, "Unsupported modem model '%s'", model_name);
+        return false;
+    }
 
     fifo8_create(&modem->outbuf, MODEM_OUTBUF_SIZE);
     modem->tiocm = CHR_TIOCM_CTS | CHR_TIOCM_DSR;
     modem->command_mode = true;
     modem_reset(modem);
     return true;
+}
+
+static void modem_chr_parse(QemuOpts *opts, ChardevBackend *backend,
+                            Error **errp)
+{
+    ChardevModem *modem;
+
+    backend->type = CHARDEV_BACKEND_KIND_MODEM;
+    modem = backend->u.modem.data = g_new0(ChardevModem, 1);
+    qemu_chr_parse_common(opts, qapi_ChardevModem_base(modem));
+    modem->model = g_strdup(qemu_opt_get(opts, "model"));
 }
 
 static void modem_chr_finalize(Object *obj)
@@ -657,6 +693,7 @@ static void modem_chr_class_init(ObjectClass *oc, const void *data)
 {
     ChardevClass *cc = CHARDEV_CLASS(oc);
 
+    cc->chr_parse = modem_chr_parse;
     cc->chr_open = modem_chr_open;
     cc->chr_write = modem_chr_write;
     cc->chr_accept_input = modem_chr_accept_input;

@@ -993,6 +993,9 @@ QemuOptsList qemu_chardev_opts = {
             .name = "name",
             .type = QEMU_OPT_STRING,
         },{
+            .name = "model",
+            .type = QEMU_OPT_STRING,
+        },{
             .name = "debug",
             .type = QEMU_OPT_NUMBER,
         },{
