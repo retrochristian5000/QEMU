@@ -379,7 +379,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
     -DCMAKE_CXX_COMPILER="$TOOLCHAIN_HOST_CXX" \
     "${cmake_host_release_args[@]}" \
-    "${cmake_host_linker_args[@]}" \
+    ${cmake_host_linker_args[@]+"${cmake_host_linker_args[@]}"} \
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
