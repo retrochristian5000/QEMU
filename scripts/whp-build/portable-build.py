@@ -368,6 +368,11 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
 
     tools_enabled = values['BUILD_QEMU_IMG'] == 'y' or 'qemu-img' in argv
     configure_args.append('--enable-tools' if tools_enabled else '--disable-tools')
+    # Keep optimization inside QEMU host compilation and in the configure
+    # identity; firmware and cross-toolchain policy never sees this flag.
+    configure_args.append(
+        f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
+    )
     optional_switch(configure_args, values['QEMU_HOST_LTO'], 'lto')
     optional_switch(configure_args, values['MACOS_ENABLE_GTK'], 'gtk')
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
