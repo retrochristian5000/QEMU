@@ -36,4 +36,6 @@ jobs:
         run: ./configure --target-list=mep-softmmu --enable-werror --disable-docs
 
       - name: Build qemu-system-mep
-        run: ninja -C build qemu-system-mep
+        run: |
+          ninja -C build qemu-system-mep
+          test -x build/qemu-system-mep
