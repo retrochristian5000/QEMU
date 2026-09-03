@@ -30,6 +30,7 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('QEMU_HOST_OPTIMIZATION', 'Host features', 'QEMU host optimization level', 'choice', '3', ('0', '1', '2', '3', 'g', 's')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
