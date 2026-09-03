@@ -50,6 +50,12 @@ whp_strip_inherited_host_cpu_tuning
 # `./build.sh qemu-system-ppc` is a run-specific request and must be able to
 # expand an existing incremental build even when the saved PPC toggle is off.
 whp_prepare_build "$@"
+BUILD_QEMU_SYSTEM_SPARC="${BUILD_QEMU_SYSTEM_SPARC:-0}"
+whp_require_boolean_values BUILD_QEMU_SYSTEM_SPARC
+if [[ "$BUILD_QEMU_SYSTEM_SPARC" == 1 ]]; then
+    whp_qemu_target_list_add sparc-softmmu
+    whp_prepare_configure_args
+fi
 whp_apply_qemu_diagnostics
 if [[ "$HOST_OS" == Darwin ]]; then
     whp_refresh_homebrew_dependency_identity

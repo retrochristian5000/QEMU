@@ -28,6 +28,7 @@ OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
+    Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
@@ -149,6 +150,7 @@ def load_config(path: pathlib.Path) -> ConfigState:
         legacy_outputs = {
             'BUILD_QEMU_SYSTEM_I386': 'i386-softmmu',
             'BUILD_QEMU_SYSTEM_PPC': 'ppc-softmmu',
+            'BUILD_QEMU_SYSTEM_SPARC': 'sparc-softmmu',
         }
         for key, target in legacy_outputs.items():
             if key not in seen_options:

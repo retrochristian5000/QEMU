@@ -28,6 +28,17 @@ def install_diagnostic_policy(core) -> None:
             original_build_plan(argv)
         values = core.resolved_values()
 
+        if values['BUILD_QEMU_SYSTEM_SPARC'] == 'y':
+            for index, arg in enumerate(configure_args):
+                if arg.startswith('--target-list='):
+                    targets = arg.split('=', 1)[1].split(',')
+                    core.append_unique(targets, 'sparc-softmmu')
+                    configure_args[index] = '--target-list=' + ','.join(targets)
+                    break
+                if arg == '--disable-system':
+                    configure_args[index] = '--target-list=sparc-softmmu'
+                    break
+
         if values['QEMU_TSAN'] == 'y' and (
             values['QEMU_ASAN'] == 'y' or values['QEMU_UBSAN'] == 'y'
         ):
