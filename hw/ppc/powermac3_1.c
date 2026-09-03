@@ -29,7 +29,9 @@
 #define POWERMAC3_1_AGP_BUS_NAME "pci.0"
 #define POWERMAC3_1_DEFAULT_CLOCK_FREQUENCY (450UL * 1000UL * 1000UL)
 #define POWERMAC3_1_DEFAULT_BUS_FREQUENCY (100UL * 1000UL * 1000UL)
+#define POWERMAC3_1_OF_BOARD_ID_FILE "etc/ppc/board-id"
 
+static char powermac3_1_of_board_id[] = "PowerMac3,1";
 static void (*powermac3_1_parent_init)(MachineState *machine);
 
 static PCIDevice *powermac3_1_rage128_init(PCIBus *bus)
@@ -103,6 +105,16 @@ static void powermac3_1_machine_init(MachineState *machine)
                       POWERMAC3_1_DEFAULT_CLOCK_FREQUENCY);
     fw_cfg_modify_i32(fw_cfg, FW_CFG_PPC_BUSFREQ,
                       POWERMAC3_1_DEFAULT_BUS_FREQUENCY);
+
+    /*
+     * OpenBIOS board identity ABI: etc/ppc/board-id contains a NUL-terminated
+     * ASCII Open Firmware model identifier, and the fw_cfg file size includes
+     * the trailing NUL.  A named file keeps older OpenBIOS builds compatible:
+     * firmware that predates this contract simply ignores it.
+     */
+    fw_cfg_add_file(fw_cfg, POWERMAC3_1_OF_BOARD_ID_FILE,
+                    powermac3_1_of_board_id,
+                    sizeof(powermac3_1_of_board_id));
 
     agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
         TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
