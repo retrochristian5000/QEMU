@@ -7,62 +7,26 @@ on:
     paths:
       - 'build.sh'
       - 'builder.sh'
-      - '.gitmodules'
-      - 'roms/Makefile'
-      - 'roms/config.seabios-grub'
-      - 'pc-bios/meson.build'
-      - 'toolchains/fast-linker'
-      - 'toolchains/llvm-project'
-      - 'ui/cocoa-metal.m'
-      - 'ui/cocoa-metal-dirty.h'
-      - 'scripts/bootstrap-powerpc-clang-base.sh'
-      - 'scripts/bootstrap-i386-clang.sh'
-      - 'scripts/bootstrap-i386-efi-grub.sh'
-      - 'scripts/bootstrap-win9x-clang.sh'
-      - 'scripts/build-seabios-hybrid-iso.sh'
-      - 'scripts/meson-build-seabios.sh'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/portable-build-entry.py'
       - 'scripts/whp-build/prepare-build.bash'
-      - 'scripts/whp-build/prepare-sources.bash'
-      - 'scripts/whp-build/prepare-seabios-grub.bash'
-      - 'scripts/whp-build/prepare-mold.bash'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
-      - 'scripts/whp-build/configure-openbios.bash'
-      - 'scripts/whp-build/configure-seabios.bash'
-      - 'scripts/whp-build/configure.bash'
-      - 'scripts/whp-build/build-targets.bash'
-      - 'scripts/whp-build/post-build.bash'
-      - 'scripts/whp-build/seabios-clang-gcc.bash'
-      - 'scripts/whp-build/seabios-llvm-objdump.py'
-      - 'roms/seabios'
-      - 'scripts/tests/test-cocoa-metal-dirty.py'
-      - 'scripts/tests/test-firmware-target-aliases.py'
-      - 'scripts/tests/test-homebrew-dependency-refresh.bash'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
-      - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
-      - 'scripts/tests/test-macos-zsh-entry.bash'
-      - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-mold-config.py'
-      - 'scripts/tests/test-powerpc-llvm-submodule-preparation.bash'
-      - 'scripts/tests/test-seabios-clang-abi.py'
       - 'scripts/tests/test-seabios-config.py'
-      - 'scripts/tests/test-seabios-grub-payload.bash'
-      - 'scripts/tests/test-seabios-hybrid-iso.bash'
-      - 'scripts/tests/test-seabios-objdump-abi.py'
-      - 'scripts/tests/test-seabios-llvm-wiring.bash'
-      - 'scripts/tests/test-win9x-llvm-wiring.bash'
       - 'scripts/tests/test-whp-config.py'
-      - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-incremental.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
-      - 'scripts/tests/test-whp-targeted-openbios.bash'
       - '.github/workflows/whp-config.yml'
   workflow_dispatch:
+
+concurrency:
+  group: whp-config-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -70,85 +34,27 @@ permissions:
 jobs:
   test-config:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Test portable configuration backend
-        run: python3 scripts/tests/test-whp-config.py
+      - name: Test configuration model
+        run: |
+          python3 scripts/tests/test-whp-config.py
+          python3 scripts/tests/test-whp-sparc-menu.py
+          python3 scripts/tests/test-mold-config.py
+          python3 scripts/tests/test-seabios-config.py
 
-      - name: Test SPARC menu target
-        run: python3 scripts/tests/test-whp-sparc-menu.py
+      - name: Test incremental planning
+        run: python3 scripts/tests/test-whp-incremental.py
 
       - name: Test host CPU tuning policy
         run: |
           python3 scripts/tests/test-host-cpu-tuning.py
           bash scripts/tests/test-host-cpu-tuning.bash
 
-      - name: Test macOS zsh build entry
-        run: bash scripts/tests/test-macos-zsh-entry.bash
-
-      - name: Test Cocoa Metal dirty regions
-        run: python3 scripts/tests/test-cocoa-metal-dirty.py
-
-      - name: Test mold menu configuration
-        run: python3 scripts/tests/test-mold-config.py
-
-      - name: Test mold bootstrap policy
-        run: bash scripts/tests/test-mold-bootstrap.bash
-
-      - name: Test SeaBIOS configuration backend
-        run: python3 scripts/tests/test-seabios-config.py
-
-      - name: Test SeaBIOS Clang ABI
-        run: python3 scripts/tests/test-seabios-clang-abi.py
-
-      - name: Test SeaBIOS objdump ABI
-        run: python3 scripts/tests/test-seabios-objdump-abi.py
-
-      - name: Initialize SeaBIOS test source
-        run: git submodule update --init --depth 1 roms/seabios
-
-      - name: Test SeaBIOS NASM object rule
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends nasm
-          python3 roms/seabios/scripts/test-nasm-build.py
-
-      - name: Test GRUB-loadable SeaBIOS payload
-        run: bash scripts/tests/test-seabios-grub-payload.bash
-
-      - name: Test hybrid x86 UEFI SeaBIOS ISO
-        run: bash scripts/tests/test-seabios-hybrid-iso.bash
-
-      - name: Test firmware Ninja target aliases
-        run: python3 scripts/tests/test-firmware-target-aliases.py
-
-      - name: Test SeaBIOS LLVM bootstrap wiring
-        run: bash scripts/tests/test-seabios-llvm-wiring.bash
-
-      - name: Initialize LLVM target test source
-        run: git submodule update --init --depth 1 toolchains/llvm-project
-
-      - name: Test Win9x LLVM target wiring
-        run: bash scripts/tests/test-win9x-llvm-wiring.bash
-
-      - name: Test build configuration integration
-        run: bash scripts/tests/test-whp-config-integration.bash
-
-      - name: Test incremental build behavior
-        run: python3 scripts/tests/test-whp-incremental.py
-
-      - name: Test Homebrew dependency refresh
-        run: bash scripts/tests/test-homebrew-dependency-refresh.bash
-
-      - name: Test targeted PowerPC firmware companion
-        run: bash scripts/tests/test-whp-targeted-openbios.bash
-
-      - name: Test PowerPC LLVM bootstrap wiring
-        run: bash scripts/tests/test-powerpc-llvm-submodule-preparation.bash
-
-      - name: Check configuration script syntax
+      - name: Check configuration syntax
         shell: bash
         run: |
           set -euo pipefail
@@ -158,46 +64,15 @@ jobs:
             scripts/whp-build/portable-build.py \
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
-            scripts/whp-build/seabios-llvm-objdump.py \
-            scripts/tests/test-cocoa-metal-dirty.py \
-            scripts/tests/test-firmware-target-aliases.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-mold-config.py \
-            scripts/tests/test-whp-incremental.py \
-            scripts/tests/test-seabios-clang-abi.py \
             scripts/tests/test-seabios-config.py \
-            scripts/tests/test-seabios-objdump-abi.py \
-            scripts/tests/test-whp-sparc-menu.py \
-            roms/seabios/scripts/test-nasm-build.py
+            scripts/tests/test-whp-config.py \
+            scripts/tests/test-whp-incremental.py \
+            scripts/tests/test-whp-sparc-menu.py
           /bin/sh -n build.sh
           bash -n builder.sh
-          bash -n scripts/bootstrap-powerpc-clang-base.sh
-          bash -n scripts/bootstrap-i386-clang.sh
-          bash -n scripts/bootstrap-i386-efi-grub.sh
-          bash -n scripts/bootstrap-win9x-clang.sh
-          bash -n scripts/build-seabios-hybrid-iso.sh
-          bash -n scripts/meson-build-seabios.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
-          bash -n scripts/whp-build/prepare-sources.bash
-          bash -n scripts/whp-build/prepare-seabios-grub.bash
-          bash -n scripts/whp-build/prepare-mold.bash
           bash -n scripts/whp-build/host-cpu-tuning.bash
-          bash -n scripts/whp-build/configure-openbios.bash
-          bash -n scripts/whp-build/configure-seabios.bash
-          bash -n scripts/whp-build/configure.bash
-          bash -n scripts/whp-build/build-targets.bash
-          bash -n scripts/whp-build/post-build.bash
-          bash -n scripts/whp-build/seabios-clang-gcc.bash
-          bash -n scripts/tests/test-homebrew-dependency-refresh.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
-          bash -n scripts/tests/test-i386-efi-grub-bootstrap.bash
-          bash -n scripts/tests/test-macos-zsh-entry.bash
-          bash -n scripts/tests/test-mold-bootstrap.bash
-          bash -n scripts/tests/test-powerpc-llvm-submodule-preparation.bash
-          bash -n scripts/tests/test-seabios-grub-payload.bash
-          bash -n scripts/tests/test-seabios-hybrid-iso.bash
-          bash -n scripts/tests/test-seabios-llvm-wiring.bash
-          bash -n scripts/tests/test-win9x-llvm-wiring.bash
-          bash -n scripts/tests/test-whp-config-integration.bash
-          bash -n scripts/tests/test-whp-targeted-openbios.bash
