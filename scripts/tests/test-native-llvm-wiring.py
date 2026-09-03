@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 config = (ROOT / 'scripts/whp-config/config.py').read_text(encoding='utf-8')
 build = (ROOT / 'build.sh').read_text(encoding='utf-8')
+builder = (ROOT / 'builder.sh').read_text(encoding='utf-8')
 bootstrap = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
 i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.sh').read_text(encoding='utf-8')
 powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.sh').read_text(encoding='utf-8')
@@ -21,6 +22,23 @@ assert 'git clone' not in bootstrap
 assert '-DLLVM_ENABLE_PROJECTS=clang' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
 assert 'bootstrap-native-clang.sh' in inventory
+
+# BOOTSTRAP_NATIVE_LLVM selects the compiler for QEMU host objects, not the
+# compiler for firmware helpers or cross-toolchain host programs. Preserve an
+# explicit *_FOR_BUILD override, but repair the old non-Darwin inheritance path
+# before firmware preparation when CC/CXX were replaced by native LLVM.
+assert 'cc_for_build_was_set=0' in builder
+assert 'cxx_for_build_was_set=0' in builder
+assert 'objc_for_build_was_set=0' in builder
+assert 'CC_FOR_BUILD=cc' in builder
+assert 'CXX_FOR_BUILD=c++' in builder
+assert 'OBJC_FOR_BUILD="$CC_FOR_BUILD"' in builder
+assert 'native_llvm_build_compiler_reset=1' in builder
+prepare_index = builder.index('whp_prepare_build "$@"')
+reset_index = builder.index('CC_FOR_BUILD=cc')
+firmware_index = builder.index('whp_prepare_seabios_grub_sources')
+assert prepare_index < reset_index < firmware_index
+assert builder.index('whp_prepare_configure_args', reset_index) < firmware_index
 
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /

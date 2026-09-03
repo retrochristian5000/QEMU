@@ -46,10 +46,49 @@ source "$BUILD_SYSTEM_DIR/homebrew-deps.bash"
 # any preparation stage so they cannot leak into firmware or bootstrap tools.
 whp_strip_inherited_host_cpu_tuning
 
+# Native LLVM replaces CC/CXX at the public build boundary because those
+# variables select QEMU's host compiler. Remember whether the build-machine
+# compiler variables were explicitly selected before defaults are filled in;
+# firmware and bootstrap tools must not inherit QEMU's native LLVM by accident.
+cc_for_build_was_set=0
+cxx_for_build_was_set=0
+objc_for_build_was_set=0
+[[ -n "${CC_FOR_BUILD:-}" ]] && cc_for_build_was_set=1
+[[ -n "${CXX_FOR_BUILD:-}" ]] && cxx_for_build_was_set=1
+[[ -n "${OBJC_FOR_BUILD:-}" ]] && objc_for_build_was_set=1
+
 # Preparation must see the requested build outputs.  A command such as
 # `./build.sh qemu-system-ppc` is a run-specific request and must be able to
 # expand an existing incremental build even when the saved PPC toggle is off.
 whp_prepare_build "$@"
+
+# macOS already pins build-machine tools to Apple Clang. On other hosts,
+# whp_prepare_host_tools historically derived *_FOR_BUILD from CC/CXX; when
+# BOOTSTRAP_NATIVE_LLVM is enabled that makes firmware helpers use QEMU's LLVM.
+# Restore ordinary build-machine defaults only when the user did not select an
+# explicit *_FOR_BUILD compiler, then refresh QEMU's configure arguments.
+if [[ "${BOOTSTRAP_NATIVE_LLVM:-0}" == 1 && "$HOST_OS" != Darwin ]]; then
+    native_llvm_build_compiler_reset=0
+    if [[ "$cc_for_build_was_set" == 0 ]]; then
+        CC_FOR_BUILD=cc
+        export CC_FOR_BUILD
+        native_llvm_build_compiler_reset=1
+    fi
+    if [[ "$cxx_for_build_was_set" == 0 ]]; then
+        CXX_FOR_BUILD=c++
+        export CXX_FOR_BUILD
+        native_llvm_build_compiler_reset=1
+    fi
+    if [[ "$objc_for_build_was_set" == 0 ]]; then
+        OBJC_FOR_BUILD="$CC_FOR_BUILD"
+        export OBJC_FOR_BUILD
+        native_llvm_build_compiler_reset=1
+    fi
+    if [[ "$native_llvm_build_compiler_reset" == 1 ]]; then
+        whp_prepare_configure_args
+    fi
+fi
+
 BUILD_QEMU_SYSTEM_SPARC="${BUILD_QEMU_SYSTEM_SPARC:-0}"
 whp_require_boolean_values BUILD_QEMU_SYSTEM_SPARC
 if [[ "$BUILD_QEMU_SYSTEM_SPARC" == 1 ]]; then
