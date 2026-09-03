@@ -16,6 +16,8 @@
 #include "qom/object.h"
 #include "hw/core/boards.h"
 #include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/nvram/fw_cfg.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
@@ -25,8 +27,26 @@
 #define TYPE_POWERMAC3_1_MACHINE MACHINE_TYPE_NAME("powermac3_1")
 #define TYPE_CORE99_MACHINE MACHINE_TYPE_NAME("mac99")
 #define POWERMAC3_1_AGP_BUS_NAME "pci.0"
+#define POWERMAC3_1_DEFAULT_CLOCK_FREQUENCY (450UL * 1000UL * 1000UL)
+#define POWERMAC3_1_DEFAULT_BUS_FREQUENCY (100UL * 1000UL * 1000UL)
 
 static void (*powermac3_1_parent_init)(MachineState *machine);
+
+static PCIDevice *powermac3_1_rage128_init(PCIBus *bus)
+{
+    PCIDevice *dev = pci_new(PCI_DEVFN(16, 0), "ati-vga");
+
+    /*
+     * The launch PowerMac3,1 paired its 450 MHz G4 configuration with a
+     * 16 MiB ATI Rage 128 in the dedicated AGP-2X slot.  QEMU's rage128p
+     * model is the closest available device and already implements the
+     * Rage128-family PCI identity used by Mac OS drivers.
+     */
+    qdev_prop_set_string(DEVICE(dev), "model", "rage128p");
+    qdev_prop_set_uint32(DEVICE(dev), "vgamem_mb", 16);
+    pci_realize_and_unref(dev, bus, &error_fatal);
+    return dev;
+}
 
 static PCIDevice *powermac3_1_vga_init(PCIBus *bus, VGAInterfaceType vga_type)
 {
@@ -38,7 +58,8 @@ static PCIDevice *powermac3_1_vga_init(PCIBus *bus, VGAInterfaceType vga_type)
     case VGA_QXL:
         return pci_create_simple(bus, PCI_DEVFN(16, 0), "qxl-vga");
     case VGA_STD:
-        return pci_create_simple(bus, PCI_DEVFN(16, 0), "VGA");
+        /* "std" is the machine-standard factory display for this profile. */
+        return powermac3_1_rage128_init(bus);
     case VGA_VMWARE:
         return pci_create_simple(bus, PCI_DEVFN(16, 0), "vmware-svga");
     case VGA_VIRTIO:
@@ -56,6 +77,7 @@ static void powermac3_1_machine_init(MachineState *machine)
     PCIHostState *agp_host;
     PCIBus *agp_bus;
     BusState *agp_qbus;
+    FWCfgState *fw_cfg;
 
     /*
      * The generic mac99 initializer creates its automatic VGA device on the
@@ -69,6 +91,18 @@ static void powermac3_1_machine_init(MachineState *machine)
 
     powermac3_1_parent_init(machine);
     vga_interface_type = requested_vga;
+
+    /*
+     * mac99 intentionally advertises a generic known-good 900 MHz value to
+     * OpenBIOS.  The historical profile instead reports the launch 450 MHz
+     * Sawtooth configuration while retaining its real 100 MHz system bus.
+     */
+    fw_cfg = fw_cfg_find();
+    g_assert(fw_cfg);
+    fw_cfg_modify_i32(fw_cfg, FW_CFG_PPC_CLOCKFREQ,
+                      POWERMAC3_1_DEFAULT_CLOCK_FREQUENCY);
+    fw_cfg_modify_i32(fw_cfg, FW_CFG_PPC_BUSFREQ,
+                      POWERMAC3_1_DEFAULT_BUS_FREQUENCY);
 
     agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
         TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));

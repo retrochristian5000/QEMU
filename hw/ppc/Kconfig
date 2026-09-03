@@ -142,6 +142,7 @@ config MAC_NEWWORLD
     imply TEST_DEVICES
     imply USB_OHCI_PCI
     select ADB
+    select ATI_VGA
     select MACIO
     select MACIO_GPIO
     select MAC_PMU
