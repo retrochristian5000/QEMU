@@ -8,6 +8,8 @@ on:
       - 'target/mep/**'
       - 'target/meson.build'
       - 'target/Kconfig'
+      - 'qapi/machine.json'
+      - 'include/qemu/base-arch-defs.h'
       - 'configs/targets/mep-softmmu.mak'
       - 'configs/devices/mep-softmmu/**'
       - '.github/workflows/mep-target.yml'
