@@ -17,11 +17,16 @@ on:
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-host-optimization.py'
+      - 'scripts/tests/test-x87-trig-upgrade.py'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-incremental.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
+      - 'target/i386/helper.h'
+      - 'target/i386/tcg/helper-tcg.h'
+      - 'target/i386/tcg/fpu_trig_helper.c'
+      - 'target/i386/tcg/meson.build'
       - '.github/workflows/whp-config.yml'
   workflow_dispatch:
 
@@ -58,6 +63,9 @@ jobs:
       - name: Test host optimization policy
         run: python3 scripts/tests/test-host-optimization.py
 
+      - name: Test x87 trig upgrade contract
+        run: python3 scripts/tests/test-x87-trig-upgrade.py
+
       - name: Check configuration syntax
         shell: bash
         run: |
@@ -70,6 +78,7 @@ jobs:
             scripts/whp-build/host-cpu-tuning.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-host-optimization.py \
+            scripts/tests/test-x87-trig-upgrade.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-seabios-config.py \
             scripts/tests/test-whp-config.py \
