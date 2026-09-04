@@ -1117,7 +1117,8 @@ static void nvme_ns_instance_init(Object *obj)
 {
     NvmeNamespace *ns = NVME_NS(obj);
 
-    sprintf(ns->bootindex_suffix, "/namespace@%" PRIu32 ",0", ns->params.nsid);
+    snprintf(ns->bootindex_suffix, sizeof(ns->bootindex_suffix),
+             "/namespace@%" PRIu32 ",0", ns->params.nsid);
 
     device_add_bootindex_property(obj, &ns->bootindex, "bootindex",
                                   ns->bootindex_suffix, DEVICE(obj));
