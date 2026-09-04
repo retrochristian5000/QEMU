@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.sh"
-orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.bash"
+orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.bash"
 
 grep -Fq 'NM_SCHEMA=2' "$nm_stage"
 grep -Fq 'NM=llvm-nm' "$nm_stage"
