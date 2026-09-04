@@ -8,10 +8,13 @@
  */
 
 #include "qemu/osdep.h"
+#include "hw/display/vga_regs.h"
 #include "hw/pci/pci_ids.h"
 #include "libqtest.h"
 #include "qobject/qdict.h"
 #include "qobject/qlist.h"
+
+#define VGA_LEGACY_MEM_BASE 0xa0000
 
 static void pci_multihead(void)
 {
@@ -27,6 +30,97 @@ static void test_vga(gconstpointer data)
 
     qts = qtest_initf("-vga none -device %s", (const char *)data);
     qtest_quit(qts);
+}
+
+static void vga_seq_write(QTestState *qts, uint8_t index, uint8_t value)
+{
+    qtest_outb(qts, VGA_SEQ_I, index);
+    qtest_outb(qts, VGA_SEQ_D, value);
+}
+
+static void vga_gfx_write(QTestState *qts, uint8_t index, uint8_t value)
+{
+    qtest_outb(qts, VGA_GFX_I, index);
+    qtest_outb(qts, VGA_GFX_D, value);
+}
+
+static void vga_attr_write(QTestState *qts, uint8_t index, uint8_t value)
+{
+    qtest_inb(qts, VGA_IS1_RC);
+    qtest_outb(qts, VGA_ATT_W, index);
+    qtest_outb(qts, VGA_ATT_W, value);
+}
+
+static uint8_t vga_attr_read(QTestState *qts, uint8_t index)
+{
+    qtest_inb(qts, VGA_IS1_RC);
+    qtest_outb(qts, VGA_ATT_W, index);
+    return qtest_inb(qts, VGA_ATT_R);
+}
+
+static void vga_prepare_memory_access(QTestState *qts, bool chain4)
+{
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, VGA_SEQ_RESET, 0x03);
+    vga_seq_write(qts, VGA_SEQ_PLANE_WRITE, VGA_SR02_ALL_PLANES);
+    vga_seq_write(qts, VGA_SEQ_MEMORY_MODE,
+                  VGA_SR04_EXT_MEM | VGA_SR04_SEQ_MODE |
+                  (chain4 ? VGA_SR04_CHN_4M : 0));
+    vga_gfx_write(qts, VGA_GFX_PLANE_READ, 0);
+    vga_gfx_write(qts, VGA_GFX_MODE, 0);
+    vga_gfx_write(qts, VGA_GFX_MISC, 0);
+    vga_gfx_write(qts, VGA_GFX_BIT_MASK, 0xff);
+}
+
+static void test_vga_attribute_palette_ipas(void)
+{
+    QTestState *qts = qtest_init("-vga none -device VGA");
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_attr_write(qts, VGA_ATC_PALETTE3, 0x12);
+
+    qtest_inb(qts, VGA_IS1_RC);
+    qtest_outb(qts, VGA_ATT_W,
+               VGA_AR_ENABLE_DISPLAY | VGA_ATC_PALETTE3);
+    qtest_outb(qts, VGA_ATT_W, 0x2a);
+
+    g_assert_cmphex(vga_attr_read(qts, VGA_ATC_PALETTE3), ==, 0x12);
+    qtest_quit(qts);
+}
+
+static void test_vga_pel_mask(void)
+{
+    QTestState *qts = qtest_init("-vga none -device VGA");
+
+    qtest_outb(qts, VGA_PEL_MSK, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x5a);
+
+    qtest_outb(qts, VGA_PEL_MSK, 0xff);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xff);
+    qtest_quit(qts);
+}
+
+static void test_vga_eram_memory_decode(void)
+{
+    static const bool chain4_modes[] = { false, true };
+
+    for (int i = 0; i < ARRAY_SIZE(chain4_modes); i++) {
+        QTestState *qts = qtest_init("-vga none -device VGA");
+        uint8_t baseline = chain4_modes[i] ? 0x69 : 0x5a;
+        uint8_t blocked = chain4_modes[i] ? 0x96 : 0xa5;
+
+        vga_prepare_memory_access(qts, chain4_modes[i]);
+        qtest_writeb(qts, VGA_LEGACY_MEM_BASE, baseline);
+        g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE), ==, baseline);
+
+        qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR);
+        qtest_writeb(qts, VGA_LEGACY_MEM_BASE, blocked);
+        qtest_outb(qts, VGA_MIS_W,
+                   VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+
+        g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE), ==, baseline);
+        qtest_quit(qts);
+    }
 }
 
 static QDict *find_pci_device(QList *buses, const char *qdev_id)
@@ -93,6 +187,7 @@ int main(int argc, char **argv)
         "virtio-vga"
     };
     static const unsigned int sierra_vram_mb[] = { 1, 2, 4 };
+    const char *arch = qtest_get_arch();
 
     g_test_init(&argc, &argv, NULL);
 
@@ -102,6 +197,15 @@ int main(int argc, char **argv)
             qtest_add_data_func(testpath, devices[i], test_vga);
             g_free(testpath);
         }
+    }
+
+    if (qtest_has_device("VGA") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/vga/attribute-palette-ipas",
+                       test_vga_attribute_palette_ipas);
+        qtest_add_func("/display/vga/pel-mask", test_vga_pel_mask);
+        qtest_add_func("/display/vga/eram-memory-decode",
+                       test_vga_eram_memory_decode);
     }
 
     if (qtest_has_device("sierra-falcon64")) {
