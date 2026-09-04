@@ -1,0 +1,126 @@
+name: Hardware deprecated API audit
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'hw/**'
+      - 'include/hw/**'
+      - 'include/glib-compat.h'
+      - 'configs/**'
+      - 'configure'
+      - 'meson.build'
+      - 'meson_options.txt'
+      - 'scripts/tests/test-hw-deprecated-api-audit.bash'
+      - '.github/workflows/hw-deprecated-api-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hw-deprecated-api-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-audit:
+    name: Reject deprecated hardware APIs and suppressions
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Audit hardware sources
+        run: bash scripts/tests/test-hw-deprecated-api-audit.bash
+
+  all-system-werror:
+    name: All system hardware (${{ matrix.cc }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cc: gcc
+            cxx: g++
+          - cc: clang
+            cxx: clang++
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Configure all system emulators with Werror
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir build-hw-deprecated-audit
+          cd build-hw-deprecated-audit
+          ../configure \
+            --disable-user \
+            --disable-docs \
+            --disable-rust \
+            --enable-werror \
+            2>&1 | tee configure.log
+
+      - name: Compile all configured emulated hardware
+        shell: bash
+        run: |
+          set -o pipefail
+          ninja -C build-hw-deprecated-audit 2>&1 | tee build-hw-deprecated-audit/build.log
+
+      - name: Reject non-fatal deprecated declaration warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -n -E 'warning:.*deprecated|deprecated declaration' \
+              build-hw-deprecated-audit/build.log; then
+            echo 'error: deprecated declaration warning escaped Werror' >&2
+            exit 1
+          fi
+
+      - name: Show failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build-hw-deprecated-audit/build.log ]]; then
+            grep -n -E 'FAILED:|error:|warning:.*deprecated|deprecated declaration|ninja: build stopped' \
+              build-hw-deprecated-audit/build.log | tail -n 250 || true
+            tail -n 200 build-hw-deprecated-audit/build.log || true
+          fi
+          if [[ -f build-hw-deprecated-audit/configure.log ]]; then
+            tail -n 150 build-hw-deprecated-audit/configure.log || true
+          fi
+          if [[ -f build-hw-deprecated-audit/meson-logs/meson-log.txt ]]; then
+            tail -n 150 build-hw-deprecated-audit/meson-logs/meson-log.txt || true
+          fi
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hw-deprecated-api-${{ matrix.cc }}-logs
+          path: |
+            build-hw-deprecated-audit/configure.log
+            build-hw-deprecated-audit/build.log
+            build-hw-deprecated-audit/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7
