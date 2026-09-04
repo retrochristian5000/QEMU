@@ -4,9 +4,9 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.sh"
-CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
-BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.bash"
+CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
+BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
 
 for file in "$ORCHESTRATOR" "$CORE" "$BASE"; do
     [[ -f "$file" ]] || {
