@@ -27,7 +27,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # Repair the latent integration-harness SOURCE_DIR leak first.
+          # The integration harness deliberately points SOURCE_DIR at a fake tree
+          # during configure tests. Restore the repository before loading real
+          # production helpers later in the same test process.
           path = Path('scripts/tests/test-whp-config-integration.bash')
           text = path.read_text(encoding='utf-8')
           old = '''# Verify explicit host-feature switches feed configure, while auto does not.
@@ -43,10 +45,13 @@ jobs:
               raise SystemExit('integration harness boundary marker changed unexpectedly')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          # Reuse the already-reviewed red/green repair body, but keep workflow YAML
-          # out of the bot commit because GitHub blocks Actions tokens from writing it.
+          # Reuse the already-exercised red/green repair body. It locally edits four
+          # workflow files too; restore those before committing because Actions tokens
+          # are not allowed to push workflow changes in this repository.
           workflow = Path('.github/workflows/whp-run-tests-toggle-repair.yml').read_text(encoding='utf-8')
           marker = '      - name: Red-green RUN_TESTS repair\n        shell: bash\n        run: |\n'
+          if workflow.count(marker) != 1:
+              raise SystemExit('original RUN_TESTS repair workflow shape changed unexpectedly')
           block = workflow.split(marker, 1)[1]
           lines = []
           for line in block.splitlines():
@@ -58,37 +63,36 @@ jobs:
                   raise SystemExit(f'unexpected repair block line: {line!r}')
           script = '\n'.join(lines) + '\n'
 
-          needle = 'expected="$(cat <<\'EOF\' | sort\n'
-          restore = '''git restore -- \\
-            .github/workflows/ci.yml \\
-            .github/workflows/native-llvm-macos.yml \\
-            .github/workflows/whp-config.yml \\
-            .github/workflows/whp-portable-build.yml
+          expected_start = script.index('expected="$(cat <<\'EOF\' | sort\n')
+          expected_end = script.index('\nactual="$(git diff --name-only | sort)"', expected_start)
+          source_expected = '''git restore -- \\
+  .github/workflows/ci.yml \\
+  .github/workflows/native-llvm-macos.yml \\
+  .github/workflows/whp-config.yml \\
+  .github/workflows/whp-portable-build.yml
 
-          '''
-          if script.count(needle) != 1:
-              raise SystemExit('repair expected-file marker changed unexpectedly')
-          script = script.replace(needle, restore + needle, 1)
+expected="$(cat <<'EOF' | sort
+scripts/tests/test-whp-config-integration.bash
+scripts/tests/test-whp-config.py
+scripts/whp-build/build-targets.bash
+scripts/whp-build/portable-build.py
+scripts/whp-build/prepare-build.bash
+scripts/whp-config/config.py
+EOF
+)"'''
+          script = script[:expected_start] + source_expected + script[expected_end:]
 
-          for entry in (
-              '.github/workflows/ci.yml\n',
-              '.github/workflows/native-llvm-macos.yml\n',
-              '.github/workflows/whp-config.yml\n',
-              '.github/workflows/whp-portable-build.yml\n',
-          ):
-              if script.count(entry) < 1:
-                  raise SystemExit(f'missing expected workflow entry: {entry!r}')
-              script = script.replace(entry, '', 1)
-
-          for entry in (
-              '  .github/workflows/ci.yml \\\n',
-              '  .github/workflows/native-llvm-macos.yml \\\n',
-              '  .github/workflows/whp-config.yml \\\n',
-              '  .github/workflows/whp-portable-build.yml \\\n',
-          ):
-              if script.count(entry) != 1:
-                  raise SystemExit(f'missing git-add workflow entry: {entry!r}')
-              script = script.replace(entry, '', 1)
+          add_start = script.index('git add -- \\\n')
+          commit_marker = "\ngit commit -m 'build: let users control QEMU tests'"
+          add_end = script.index(commit_marker, add_start)
+          source_add = '''git add -- \\
+scripts/tests/test-whp-config-integration.bash \\
+scripts/tests/test-whp-config.py \\
+scripts/whp-build/build-targets.bash \\
+scripts/whp-build/portable-build.py \\
+scripts/whp-build/prepare-build.bash \\
+scripts/whp-config/config.py'''
+          script = script[:add_start] + source_add + script[add_end:]
 
           Path('/tmp/whp-run-tests-source-repair.sh').write_text(script, encoding='utf-8')
           PY
