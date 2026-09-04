@@ -17,14 +17,14 @@ EXTRA_CFLAGS += -mcpu=power4
 %.o: %.c
 	$(call quiet-command, $(CC) $(EXTRA_CFLAGS) -c -fno-stack-protector -o $@ $<,Compiling)
 
-vof.elf: entry.o main.o ci.o bootmem.o libc.o
+vof.ELF: entry.o main.o ci.o bootmem.o libc.o
 	$(call quiet-command, $(LD) -nostdlib -e_start -T$(SRC_DIR)/vof.lds -EB -o $@ $^,Linking)
 
-%.bin: %.elf
+%.bin: %.ELF
 	$(call quiet-command, $(OBJCOPY) -O binary -j .text -j .data -j .toc -j .got2 $^ $@,Extracting raw object)
 
 clean:
-	rm -f *.o vof.bin vof.elf *~
+	rm -f *.o vof.bin vof.ELF *~
 
 distclean: clean
 
