@@ -11,7 +11,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 PORTABLE_ENTRY = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
-BUILDER = ROOT / 'builder.sh'
+BUILDER = ROOT / 'builder.bash'
 
 
 def load_config_module():

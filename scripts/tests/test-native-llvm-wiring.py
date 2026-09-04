@@ -6,10 +6,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 config = (ROOT / 'scripts/whp-config/config.py').read_text(encoding='utf-8')
 build = (ROOT / 'build.sh').read_text(encoding='utf-8')
-builder = (ROOT / 'builder.sh').read_text(encoding='utf-8')
-bootstrap = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
-i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.sh').read_text(encoding='utf-8')
-powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.sh').read_text(encoding='utf-8')
+builder = (ROOT / 'builder.bash').read_text(encoding='utf-8')
+bootstrap = (ROOT / 'scripts/bootstrap-native-clang.bash').read_text(encoding='utf-8')
+i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.bash').read_text(encoding='utf-8')
+powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.bash').read_text(encoding='utf-8')
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
 macos_workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
