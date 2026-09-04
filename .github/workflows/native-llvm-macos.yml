@@ -131,6 +131,7 @@ jobs:
           BUILD_SEABIOS_GRUB: '0'
           BOOTSTRAP_I386_TOOLCHAIN: '0'
           QEMU_HOST_LTO: '0'
+          RUN_TESTS: '0'
           MACOS_ENABLE_COCOA: '0'
           MACOS_ENABLE_COREAUDIO: '0'
           MACOS_ENABLE_GTK: '0'
