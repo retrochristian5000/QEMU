@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
@@ -32,6 +33,14 @@ def load_menu_module():
     return module
 
 
+def load_portable_build_module():
+    spec = importlib.util.spec_from_file_location('whp_portable_build', PORTABLE_BUILD_TOOL)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 class WhpConfigTests(unittest.TestCase):
     def test_defaults_are_portable_policy(self):
         mod = load_module()
@@ -48,6 +57,51 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['INSTALL'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
+
+    def test_run_tests_is_user_controlled_build_behavior(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['RUN_TESTS']
+        self.assertEqual(option.section, 'Build behavior')
+        self.assertEqual(option.label, 'Run tests after build')
+        self.assertEqual(option.kind, 'bool')
+        self.assertEqual(option.default, 'y')
+
+        values = mod.default_values()
+        self.assertEqual(values['RUN_TESTS'], 'y')
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='1'", assignments)
+
+        values['RUN_TESTS'] = 'n'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='0'", assignments)
+
+    def test_portable_test_runner_uses_qemu_make_check(self):
+        mod = load_portable_build_module()
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            build_dir = td_path / 'build'
+            log = td_path / 'make.log'
+            fake_make = td_path / 'gmake'
+            fake_make.write_text(
+                '#!/bin/sh\n'
+                'if [ "${1:-}" = "--version" ]; then\n'
+                '  echo "GNU Make 4.4"\n'
+                '  exit 0\n'
+                'fi\n'
+                'printf "%s\\n" "$*" >> "$WHP_TEST_RUNNER_LOG"\n',
+                encoding='utf-8',
+            )
+            fake_make.chmod(0o755)
+            with mock.patch.dict(
+                os.environ,
+                {'MAKE_CMD': str(fake_make), 'WHP_TEST_RUNNER_LOG': str(log)},
+                clear=False,
+            ):
+                mod.run_qemu_tests(build_dir, '3')
+            self.assertEqual(
+                log.read_text(encoding='utf-8').strip(),
+                f'-C {build_dir} -j3 check',
+            )
 
     def test_boolean_defaults_are_valid_and_install_is_opt_in(self):
         mod = load_module()

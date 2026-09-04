@@ -170,6 +170,32 @@ def is_gnu_make(command: List[str]) -> bool:
     return probe.returncode == 0 and first_line.startswith('GNU Make ')
 
 
+def select_gnu_make() -> List[str]:
+    requested_make = os.environ.get('MAKE_CMD') or os.environ.get('MAKE')
+    if requested_make:
+        command = shlex.split(requested_make)
+        if is_gnu_make(command):
+            return command
+        raise RuntimeError(
+            f'MAKE_CMD/MAKE does not identify GNU Make: {requested_make}'
+        )
+    for name in ('gmake', 'make'):
+        path = shutil.which(name)
+        if path and is_gnu_make([path]):
+            return [path]
+    raise RuntimeError(
+        'RUN_TESTS=y requires GNU Make for the QEMU make check suite'
+    )
+
+
+def run_qemu_tests(build_dir: pathlib.Path, jobs: str) -> None:
+    make = select_gnu_make()
+    subprocess.run(
+        [*make, '-C', str(build_dir), f'-j{jobs}', 'check'],
+        check=True,
+    )
+
+
 def select_runner() -> List[str]:
     requested_ninja = os.environ.get('NINJA_CMD') or os.environ.get('NINJA')
     if requested_ninja:
@@ -502,6 +528,8 @@ def main(argv: List[str]) -> int:
         subprocess.run(build_command, check=True)
 
         values = resolved_values()
+        if values['RUN_TESTS'] == 'y':
+            run_qemu_tests(build_dir, jobs)
         if values['INSTALL'] == 'y':
             subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
 

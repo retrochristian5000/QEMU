@@ -6,6 +6,7 @@ whp_build_targets()
 local build_target_list=()
 local build_runner=()
 local target
+local run_qemu_tests=0
 if (( $# > 0 )); then
     build_target_list=("$@")
 else
@@ -50,6 +51,29 @@ else
 fi
 
 "${build_runner[@]}" "${build_target_list[@]}"
+
+# RUN_TESTS controls QEMU's documented regression suite, not firmware-only
+# helper targets. The suite is exposed through QEMU's GNU Make compatibility
+# layer as `make check`, even when Ninja performed the compilation itself.
+if [[ "${RUN_TESTS:-1}" == 1 ]]; then
+    for target in "${build_target_list[@]}"; do
+        case "$target" in
+            all|qemu-img|qemu-system-*)
+                run_qemu_tests=1
+                break
+                ;;
+        esac
+    done
+fi
+if [[ "$run_qemu_tests" == 1 ]]; then
+    if [[ -z "${MAKE_CMD:-}" ]]; then
+        printf '%s\n' \
+            'error: RUN_TESTS=1 requires GNU Make for the QEMU make check suite.' \
+            'Install GNU Make, set MAKE_CMD, or disable tests in menuconfig.' >&2
+        return 1
+    fi
+    "$MAKE_CMD" -C "$BUILD_DIR" -j"$JOBS" check
+fi
 
 # Installation is deliberately separate from compilation and is opt-in. This
 # avoids making an otherwise successful unprivileged build fail on a prefix.

@@ -51,6 +51,7 @@ OPTIONS = (
     Option('BOOTSTRAP_WIN9X_TOOLCHAIN', 'Windows 9x cross-tools', 'Bootstrap i386-pc-win9x LLVM toolchain', 'bool', 'n'),
     Option('PREFIX', 'Build behavior', 'Install prefix', 'string', 'auto'),
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
+    Option('RUN_TESTS', 'Build behavior', 'Run tests after build', 'bool', 'y'),
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),

@@ -37,6 +37,7 @@ grep -Fq 'ThreadSanitizer' <<< "$menu_output"
 grep -Fq 'Firmware' <<< "$menu_output"
 grep -Fq 'Build behavior' <<< "$menu_output"
 grep -Fq 'Install prefix' <<< "$menu_output"
+grep -Fq 'Run tests after build' <<< "$menu_output"
 grep -Fq 'QEMU machines' <<< "$menu_output"
 if grep -Fq 'Build targets' <<< "$menu_output" ||
    grep -Fq 'QEMU target list' <<< "$menu_output" ||
@@ -59,6 +60,7 @@ MACOS_ENABLE_PA=auto
 BUILD_OPENBIOS=auto
 BOOTSTRAP_POWERPC_TOOLCHAIN=auto
 WHP_INCREMENTAL_BUILD=y
+RUN_TESTS=y
 INSTALL=n
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
@@ -195,6 +197,9 @@ fi
 test ! -e "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
 
 # Verify explicit host-feature switches feed configure, while auto does not.
+# Earlier configure tests intentionally redirect SOURCE_DIR to a fake tree.
+# Restore the real repository before loading the production build helpers.
+SOURCE_DIR="$ROOT"
 source "$ROOT/scripts/whp-build/common.bash"
 source "$ROOT/scripts/whp-build/prepare-build.bash"
 source "$ROOT/scripts/whp-build/diagnostics.bash"
@@ -281,9 +286,52 @@ HOST_ARCH=x86_64
 HOME="$TMP/home"
 mkdir -p "$HOME"
 whp_prepare_build_defaults
+[[ "$RUN_TESTS" == 1 ]]
 [[ "$INSTALL" == 0 ]]
 [[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]
 [[ "$PREFIX" != /emulator ]]
+
+# RUN_TESTS is post-build policy. QEMU builds run make check when enabled,
+# skip it when disabled, and firmware-only targets do not trigger the QEMU suite.
+TEST_BUILD_DIR="$TMP/test-build"
+TEST_NINJA_LOG="$TMP/test-ninja.log"
+TEST_MAKE_LOG="$TMP/test-make.log"
+FAKE_TEST_NINJA="$TMP/fake-test-ninja"
+FAKE_TEST_MAKE="$TMP/fake-test-make"
+mkdir -p "$TEST_BUILD_DIR"
+cat > "$FAKE_TEST_NINJA" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WHP_TEST_NINJA_LOG"
+EOF
+cat > "$FAKE_TEST_MAKE" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WHP_TEST_MAKE_LOG"
+EOF
+chmod +x "$FAKE_TEST_NINJA" "$FAKE_TEST_MAKE"
+
+RUN_TESTS=1 INSTALL=0 JOBS=2 \
+BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
+WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
+bash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \
+    _ "$ROOT/scripts/whp-build/build-targets.bash"
+grep -Fq 'qemu-system-i386' "$TEST_NINJA_LOG"
+grep -Fq ' check' "$TEST_MAKE_LOG"
+
+: > "$TEST_MAKE_LOG"
+RUN_TESTS=0 INSTALL=0 JOBS=2 \
+BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
+WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
+bash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \
+    _ "$ROOT/scripts/whp-build/build-targets.bash"
+test ! -s "$TEST_MAKE_LOG"
+
+: > "$TEST_MAKE_LOG"
+RUN_TESTS=1 INSTALL=0 JOBS=2 \
+BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
+WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
+bash -c 'set -euo pipefail; source "$1"; whp_build_targets whp-openbios-ppc' \
+    _ "$ROOT/scripts/whp-build/build-targets.bash"
+test ! -s "$TEST_MAKE_LOG"
 
 python3 -m py_compile "$ROOT/scripts/whp-build/portable-build-entry.py"
 bash -n "$ROOT/scripts/whp-build/diagnostics.bash"
