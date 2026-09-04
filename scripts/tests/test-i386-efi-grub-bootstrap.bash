@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-bootstrap="$root/scripts/bootstrap-i386-efi-grub.sh"
+bootstrap="$root/scripts/bootstrap-i386-efi-grub.bash"
 [[ -f "$bootstrap" ]] || {
     printf 'missing IA32 EFI GRUB bootstrap: %s\n' "$bootstrap" >&2
     exit 1
@@ -80,7 +80,6 @@ done
 if [[ "$install" == 0 ]]; then
     exit 0
 fi
-# shellcheck disable=SC1090
 source "$build_dir/whp-install.env"
 mkdir -p "${DESTDIR:?}$bindir" "${DESTDIR}$libdir/grub/i386-efi"
 cat > "${DESTDIR}$bindir/i386-efi-grub-mkimage" <<'MKIMAGE'
@@ -111,9 +110,6 @@ exit 0
 SCRIPT
 chmod +x "$scratch/bin/host-cc"
 
-# Reuse the QEMU fork's already-built i386 LLVM distribution. Do not put these
-# tools on PATH: the GRUB bootstrap must consume this explicit fork ABI rather
-# than discovering a second host/Homebrew LLVM installation.
 i386_toolchain="$scratch/i386-toolchain"
 llvm_bin="$i386_toolchain/llvm/bin"
 mkdir -p "$llvm_bin"
@@ -199,8 +195,6 @@ if grep -Fq -- '--with-platform=pc' "$scratch/configure.log"; then
     exit 1
 fi
 
-# Host utilities keep the host compiler; target firmware compilation uses only
-# the fork's LLVM paths and cannot inherit Darwin architecture/deployment flags.
 grep -Fxq "CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
 grep -Fxq "BUILD_CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
 grep -Fxq "HOST_CC=$scratch/bin/host-cc" "$scratch/toolchain.log"
@@ -238,7 +232,6 @@ run_bootstrap > "$scratch/second.log"
 grep -Fxq 'sentinel' "$scratch/configure.log"
 grep -Fq 'IA32 EFI GRUB is current:' "$scratch/second.log"
 
-# A GRUB source update must invalidate the cached GRUB build.
 old_marker="$(cat "$install/.whp-grub-i386-efi")"
 printf 'new source revision\n' > "$scratch/src/grub-test/revision.txt"
 tar -C "$scratch/src" -cJf "$scratch/grub.tar.xz" grub-test
