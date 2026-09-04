@@ -6,9 +6,9 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_DIR="$ROOT"
 PREPARE_SOURCES="$ROOT/scripts/whp-build/prepare-sources.bash"
 CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
-CLANG_ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.sh"
-CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
-CLANG_CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
+CLANG_ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.bash"
+CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
+CLANG_CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
 REAL_BASH="$(command -v bash)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -17,10 +17,6 @@ git_log="$tmpdir/git.log"
 bash_log="$tmpdir/bash.log"
 bash_shim="$tmpdir/whp-build-bash"
 
-# Exercise the source-preparation function without touching the checkout.
-# The git shim records which submodules the stage owns; the executable shell
-# shim records the compiler lane propagated across the exact WHP_BUILD_BASH
-# subprocess boundary used by production.
 git()
 {
     printf '%s\n' "$*" >> "$git_log"
@@ -113,9 +109,6 @@ if grep -Fq 'POWERPC_LLVM_' "$gcc_config"; then
     exit 1
 fi
 
-# The base compiler stage may keep CMake/Ninja state inside one build directory,
-# but the QEMU orchestrator must never reuse that graph across LLVM revisions.
-# The exact gitlink therefore participates in the build-directory identity.
 if grep -Fq 'rm -rf "$LLVM_BUILD_DIR"' "$CLANG_BOOTSTRAP"; then
     printf 'error: base LLVM bootstrap destroys its per-revision CMake graph\n' >&2
     exit 1
@@ -167,8 +160,6 @@ grep -Fq 'for candidate in mold lld; do' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld="$candidate"' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
 
-# The standalone LLD stage keeps its own Ninja state for one base-toolchain
-# identity and compiles only the ELF driver used by the PowerPC firmware lane.
 if grep -Fq 'rm -rf "$LLD_BUILD_DIR"' "$CLANG_CORE"; then
     printf 'error: LLD bootstrap still destroys its CMake build directory\n' >&2
     exit 1
