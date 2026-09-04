@@ -31,6 +31,7 @@ jobs:
       BUILD_QEMU_SYSTEM_PPC: '0'
       BUILD_OPENBIOS: '0'
       BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      RUN_TESTS: '0'
       INSTALL: '0'
       MACOS_ENABLE_GTK: auto
       MACOS_ENABLE_PA: auto
