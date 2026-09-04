@@ -3,10 +3,10 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-ar_stage="$ROOT/scripts/bootstrap-powerpc-llvm-ar.sh"
-core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
-nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.sh"
-orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+ar_stage="$ROOT/scripts/bootstrap-powerpc-llvm-ar.bash"
+core="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
+nm_stage="$ROOT/scripts/bootstrap-powerpc-llvm-nm.bash"
+orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.bash"
 
 grep -Fq 'AR_SCHEMA=3' "$ar_stage"
 grep -Fq 'AR=llvm-ar' "$ar_stage"
