@@ -1,0 +1,36 @@
+name: NCR53C710 register contract
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'hw/scsi/ncr53c710.c'
+      - 'hw/scsi/ncr53c710.h'
+      - 'hw/scsi/lasi_ncr710.c'
+      - 'tests/qtest/ncr53c710-register-contract.py'
+      - '.github/workflows/ncr53c710-register-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3-venv
+      - name: Configure HPPA system emulator
+        run: ./configure --target-list=hppa-softmmu --disable-docs --disable-werror
+      - name: Build qemu-system-hppa
+        run: ninja -C build qemu-system-hppa
+      - name: Check NCR53C710 register contract
+        run: python3 tests/qtest/ncr53c710-register-contract.py build/qemu-system-hppa
