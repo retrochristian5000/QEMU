@@ -4,11 +4,11 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-POWERPC="$ROOT/scripts/bootstrap-powerpc-clang.sh"
-BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
-CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
-NATIVE="$ROOT/scripts/bootstrap-native-clang.sh"
-I386="$ROOT/scripts/bootstrap-i386-clang.sh"
+POWERPC="$ROOT/scripts/bootstrap-powerpc-clang.bash"
+BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
+CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
+NATIVE="$ROOT/scripts/bootstrap-native-clang.bash"
+I386="$ROOT/scripts/bootstrap-i386-clang.bash"
 
 for file in "$POWERPC" "$BASE" "$CORE" "$NATIVE" "$I386"; do
     if [[ ! -f "$file" ]]; then
@@ -35,16 +35,11 @@ grep -Fq '"$LLVM_CXX_OPTIMIZATION" != toolchain-default' "$BASE" || {
     exit 1
 }
 
-# Preserve the old latency-focused profile as an explicit tuning option rather
-# than deleting it. Setting POWERPC_LLVM_CXX_OPTIMIZATION restores the prior C
-# -O2 / configurable C++ profile and carries it into the focused LLD stage.
 grep -Fq 'host_c_release_flags="-O2 -DNDEBUG -fno-function-sections -fno-data-sections"' "$BASE"
 grep -Fq 'host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-sections -fno-data-sections"' "$BASE"
 grep -Fq '"-DCMAKE_C_FLAGS_RELEASE=$host_c_release_flags"' "$BASE"
 grep -Fq '"-DCMAKE_CXX_FLAGS_RELEASE=$host_cxx_release_flags"' "$BASE"
 
-# The native and i386 bootstraps are the reference contract: neither may grow
-# a private C/C++ Release override or the parity guarantee becomes ambiguous.
 for file in "$NATIVE" "$I386"; do
     if grep -Fq 'CMAKE_C_FLAGS_RELEASE=' "$file" ||
        grep -Fq 'CMAKE_CXX_FLAGS_RELEASE=' "$file"; then
@@ -54,10 +49,6 @@ for file in "$NATIVE" "$I386"; do
     fi
 done
 
-# Each independently callable compiler bootstrap owns a local boundary against
-# ambient QEMU object-build flags. The PowerPC component helpers are normally
-# reached through bootstrap-powerpc-clang.sh, whose env -u list is the shared
-# boundary for those later stages.
 for file in "$NATIVE" "$I386" "$BASE"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$file" || {
         printf 'error: standalone LLVM bootstrap inherits ambient QEMU flags: %s\n' "$file" >&2
@@ -72,8 +63,6 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
     }
 done
 
-# Persist each output-affecting language profile independently. The default
-# marker says toolchain-default; an explicit legacy profile records exact flags.
 grep -Eq 'BOOTSTRAP_SCHEMA=[0-9]+' "$BASE"
 grep -Fq 'HOST_C_RELEASE_FLAGS=$host_c_release_flags' "$BASE"
 grep -Fq 'HOST_CXX_RELEASE_FLAGS=$host_cxx_release_flags' "$BASE"
@@ -82,8 +71,6 @@ if grep -Fq 'HOST_RELEASE_FLAGS=' "$BASE"; then
     exit 1
 fi
 
-# Parallel job count affects scheduling, not artifacts. It must not be part of
-# either semantic marker or changing JOBS alone can trigger a needless rebuild.
 if grep -Fq 'CMAKE_PARALLEL_JOBS=${JOBS:-native}' "$BASE"; then
     printf 'error: base bootstrap marker still treats JOBS as an artifact input\n' >&2
     exit 1
@@ -93,8 +80,6 @@ if grep -Fq 'LLD_CMAKE_PARALLEL_JOBS=${JOBS:-native}' "$CORE"; then
     exit 1
 fi
 
-# LLD inherits the exact split profile from the completed base marker, but only
-# emits explicit CMake Release flags when that marker is not toolchain-default.
 grep -Eq 'LLD_SCHEMA=[0-9]+' "$CORE"
 grep -Fq 'base_marker_signature="$(cksum "$base_marker" | awk' "$CORE"
 grep -Fq 'BASE_MARKER_SIGNATURE=$base_marker_signature' "$CORE"
