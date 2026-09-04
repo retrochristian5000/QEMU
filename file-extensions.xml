@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Dataset title="WHP File Extensions Standard">
+    <Alias cat="Link" type="string">
+        <DSHORT name="DOS Program Shortcut">.PIF</DSHORT>
+        <SHCUT name="Windows Shortcut">.lnk</SHCUT>
+        <SYMLINK name="Unix Symlink">.slink</SYMLINK>
+        <URL name="URL Shortcut">.url</URL>
+    </Alias>
+    <Archive cat="Archive" type="string">
+        <APPLEDSK name="Apple Disk Image">.DMG</APPLEDSK>
+        <CKML name="Compressed KML">.kmz</CKML>
+        <FAT12_RAW name="Raw Disk Image (FAT12-formatted)">.fat12</FAT12_RAW>
+        <FAT32_QCOW2 name="Qcow2 Image (FAT32-formatted)">.Qcow2</FAT32_QCOW2>
+        <MBIN name="MacBinary">.mbin</MBIN>
+        <NADSK name="Apple Disk Image (NDIF)">.IMG</NADSK>
+        <NTFS_RAW name="Raw Disk Image (NTFS-formatted)">.NTFS</NTFS_RAW>
+        <QCOW2 name="Qcow2 Image">.qcow2</QCOW2>
+        <SELFADSK name="Self-Mounting Apple Disk Image">.SMI</SELFADSK>
+        <TAR name="Tar">.tar</TAR>
+        <ZIP name="Zip">.zip</ZIP>
+    </Archive>
+    <Exe cat="Executable" type="string">
+        <ARMCE name="PE (ARM + Windows CE)">.armce</ARMCE>
+        <DOS name="DOS (COM)">.COM</DOS>
+        <ELF name="ELF">.ELF</ELF>
+        <ELIN name="ELF (Linux)">.linux</ELIN>
+        <EXE name="PE (Windows 9x)">.exe</EXE>
+        <FIRMWARE name="Firmware">.rom</FIRMWARE>
+        <GENERIC name="Generic Program">.BIN</GENERIC>
+        <MACHO name="Mach-O">.macho</MACHO>
+        <WIN16 name="NE (Windows)">.EXE</WIN16>
+    </Exe>
+    <Img cat="Image" type="string">
+        <ANIGIF name="Animated GIF">.GIF</ANIGIF>
+        <BMAP name="Bitmap">.bmp</BMAP>
+        <BITMAP name="Uncompressed Bitmap">.Ubmp</BITMAP>
+        <BMP name="RLE-compressed Bitmap">.BMP</BMP>
+        <GIF name="Static GIF">.gif</GIF>
+        <J2K name="DWT-compressed JPEG 2000">.j2k</J2K>
+        <JPEG name="JPEG">.jpg</JPEG>
+        <PCX name="RLE-compressed PCX">.pcx</PCX>
+        <PNG name="PNG">.png</PNG>
+        <TIFF name="RLE-compressed TIFF">.tiff</TIFF>
+        <UTIFF name="Uncompressed TIFF">.TIFF</UTIFF>
+        <WEBP name="WebP">.webp</WEBP>
+    </Img>
+    <Lang cat="Source" type="string">
+        <ASM name="x86 Assembly (Intel Syntax)">.ASM</ASM>
+        <ASP name="Classic ASP">.ASP</ASP>
+        <BASH name="Shell Script (bash)">.bash</BASH>
+        <BATCH name="DOS Batch">.BAT</BATCH>
+        <C name="C">.c</C>
+        <C11 name="C11">.c11</C11>
+        <C89 name="C89">.C</C89>
+        <CHANNEL name="Microsoft CDF">.CDF</CHANNEL>
+        <CPLUSPLUS name="C++">.cpp</CPLUSPLUS>
+        <CSS name="CSS">.css</CSS>
+        <DBAT name="DOS Batch (MS-DOS 6.22)">.BaT</DBAT>
+        <FORTRAN name="FORTRAN">.f</FORTRAN>
+        <GAS name="GNU Assembly">.S</GAS>
+        <H_C name="C Header">.h</H_C>
+        <H_CPP name="C++ Header">.hpp</H_CPP>
+        <HAPP name="HTML Application">.hta</HAPP>
+        <HTML name="HTML">.html</HTML>
+        <IE4HTML name="HTML (Internet Explorer 4.0-Compatible)">.HTM</IE4HTML>
+        <KGOOGLE name="KML (Google Earth-Compatible)">.KML</KGOOGLE>
+        <KML name="KML">.kml</KML>
+        <JAVA name="Java">.java</JAVA>
+        <JASCRIPT name="JavaScript">.js</JASCRIPT>
+        <JSCR name="JScript">.JS</JSCR>
+        <JSP name="JSP">.jsp</JSP>
+        <LINKER name="Linker Script">.ld</LINKER>
+        <NASM name="NASM">.asm</NASM>
+        <OBJC name="Objective-C">.objC</OBJC>
+        <OBJCPP name="Objective-C++">.objCpp</OBJCPP>
+        <PERL name="Perl Script">.perl</PERL>
+        <POSIXSHELL name="Shell Script (POSIX-compatible)">.sh</POSIXSHELL>
+        <PRE2KHTML name="HTML (Pre-2000 Syntax)">.htm</PRE2KHTML>
+        <PYTHON name="Python">.py</PYTHON>
+        <SH name="Shell Script">.SH</SH>
+        <SVG name="SVG Image">.svg</SVG>
+        <TEXT name="Plain Text">.txt</TEXT>
+        <UTF8TEXT name="Plain Text (UTF-8)">.TXT</UTF8TEXT>
+        <VB name="VBScript">.VBS</VB>
+        <VBASIC name="Visual Basic">.VB</VBASIC>
+        <WREG name="Windows Registry Merge File">.reg</WREG>
+        <XML name="XML">.xml</XML>
+    </Lang>
+    <Lib cat="Library" type="string">
+        <ACTX name="ActiveX Control (DLL)">.ocx</ACTX>
+        <DLL name="Dynamic-Link Library (Windows)">.dll</DLL>
+        <DYELF name="ELF (Dynamically-Linked Library)">.so</DYELF>
+        <DYMAC name="Mach-O (Dynamically-Linked Library)">.dylib</DYMAC>
+        <MSDLL name="Dynamic-Link Library">.DLL</MSDLL>
+        <W16 name="Dynamic-Link Library (Win16)">.d16</W16>
+        <W9x name="Dynamic-Link Library (Win9x)">.dll9x</W9x>
+    </Lib>
+    <Movie cat="Movie" type="string">
+        <AVI name="AVI">.AVI</AVI>
+        <QT name="QuickTime">.mov</QT>
+        <SMACKER name="Smacker">.SMK</SMACKER>
+        <WMV name="Windows Media (WMV)">.wmv</WMV>
+    </Movie>
+    <Object cat="Object" type="string">
+        <ELFOBJ name="ELF (Object Code)">.elf</ELFOBJ>
+        <LINUXOBJ name="ELF (Linux Object Code)">.lobj</LINUXOBJ>
+        <MACHOOBJ name="Mach-O (Object Code)">.MACHobj</MACHOOBJ>
+        <XCOFFOBJ name="XCOFF (Object Code)">.xcoff</XCOFFOBJ>
+    </Object>
+    <Snd cat="Audio" type="string">
+        <MP3 name="MP3">.mp3</MP3>
+        <WAV name="WAV">.WAV</WAV>
+        <WMA name="Windows Media">.WMA</WMA>
+    </Snd>
+    <FmtStruct cat="Format Structures" type="group">
+        <ELF type="metadata">
+            <ABI_OS byte="7" cat="OS ABI-specific">
+                <GNU val="Hurd">0x04</GNU>
+                <Linux val="Linux">0x03</Linux>
+                <OpenBSD val="OpenBSD">0x0C</OpenBSD>
+                <SysV val="System V">0x00</SysV>
+            </ABI_OS>
+            <Bits byte="4" cat="Bit Class">0x01 || 0x02</Bits>
+            <Endianness byte="5" cat="Endianness" type="choice">0x01 || 0x02</Endianness>
+            <MustEqualTo cat="Required Bytes">
+                <Byte_0>0x7F</Byte_0>
+                <Byte_1 ascii_val="E">0x45</Byte_1>
+                <Byte_2 ascii_val="L">0x4C</Byte_2>
+                <Byte_3 ascii_val="F">0x46</Byte_3>
+            </MustEqualTo>
+            <TargetISA byte="18" cat="ISA-specific">
+                <AArch64 val="ARM (64-bit)">0xB7</AArch64>
+                <Alpha val="Alpha">0x29</Alpha>
+                <IA64 val="Itanium">0x32</IA64>
+                <MIPS val="MIPS">0x08</MIPS>
+                <P64 val="PowerPC (64-bit)">0x15</P64>
+                <PPC val="PowerPC (32-bit)">0x14</PPC>
+                <StanMIPSX val="MIPS-X">0x33</StanMIPSX>
+                <VAX val="VAX">0x4B</VAX>
+                <x86 val="x86 (32-bit)">0x03</x86>
+                <x86_64 val="x86 (64-bit)">0x3E</x86_64>
+            </TargetISA>
+        </ELF>
+        <MBIN type="metadata">
+            <MustEqualTo cat="Required" type="group">
+                <Byte_0>0x00</Byte_0>
+                <Byte_74>0x00</Byte_74>
+            </MustEqualTo>
+            <MBIN3 cat="MacBinary III-specific">
+                <Byte_102 ascii_val="m">0x6D</Byte_102>
+                <Byte_103 ascii_val="B">0x42</Byte_103>
+                <Byte_104 ascii_val="I">0x49</Byte_104>
+                <Byte_105 ascii_val="N">0x4E</Byte_105>
+            </MBIN3>
+        </MBIN>
+    </FmtStruct>
+    <MagicNum cat="Magic Numbers" type="hex">
+        <ELF>7F 45 4C 46</ELF>
+        <ZIP>50 4B</ZIP>
+    </MagicNum>
+    <MetaData>
+        <CaseSensitive type="bool">true</CaseSensitive>
+        <InternalUsage type="bool">true</InternalUsage>
+        <LimitedToStd type="bool">false</LimitedToStd>
+    </MetaData>
+</Dataset>
