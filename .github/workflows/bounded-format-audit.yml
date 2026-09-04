@@ -1,0 +1,37 @@
+name: Bounded format audit
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.c'
+      - '**/*.h'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.c.inc'
+      - '**/*.h.inc'
+      - '**/*.m'
+      - '**/*.mm'
+      - 'scripts/tests/check-unbounded-format.py'
+      - '.github/workflows/bounded-format-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bounded-format-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-audit:
+    name: Reject unbounded production format calls
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Audit QEMU-owned production sources
+        run: python3 scripts/tests/check-unbounded-format.py
