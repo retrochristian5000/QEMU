@@ -62,6 +62,20 @@ objc_for_build_was_set=0
 # expand an existing incremental build even when the saved PPC toggle is off.
 whp_prepare_build "$@"
 
+# Host optimization is a QEMU-only policy. Saved configuration is validated by
+# config.py, but environment overrides bypass that parser and must be checked
+# here before any expensive firmware/tool preparation starts.
+QEMU_HOST_OPTIMIZATION="${QEMU_HOST_OPTIMIZATION:-3}"
+case "$QEMU_HOST_OPTIMIZATION" in
+    0|1|2|3|g|s) ;;
+    *)
+        printf '%s\n' \
+            'error: QEMU_HOST_OPTIMIZATION must be one of: 0, 1, 2, 3, g, s' >&2
+        exit 1
+        ;;
+esac
+export QEMU_HOST_OPTIMIZATION
+
 # macOS already pins build-machine tools to Apple Clang. On other hosts,
 # whp_prepare_host_tools historically derived *_FOR_BUILD from CC/CXX; when
 # BOOTSTRAP_NATIVE_LLVM is enabled that makes firmware helpers use QEMU's LLVM.
@@ -106,10 +120,14 @@ if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
 fi
 whp_prepare_seabios_grub_sources
 whp_prepare_mold
-# QEMU's Meson build owns the host optimization level. Strip inherited shell
+# QEMU's Meson build owns the host optimization baseline. Strip inherited shell
 # optimization, sanitizer, coverage, and anti-optimization flags here, after
 # firmware/tool bootstraps, so they cannot silently slow the QEMU host binary.
 whp_strip_inherited_host_performance_overrides
+# Override Meson's upstream -O2 baseline through QEMU's supported host-only
+# EXTRA_CFLAGS path. This is intentionally applied after firmware/tool setup so
+# -O3 (or an explicit lower level) cannot alter OpenBIOS, SeaBIOS, LLVM, or mold.
+configure_args+=(--extra-cflags="-O$QEMU_HOST_OPTIMIZATION")
 # CPU code-generation flags belong to QEMU host objects only. Resolve and
 # apply them after firmware/tool bootstraps so -march/-mcpu/-mtune cannot leak
 # into SeaBIOS, OpenBIOS, LLVM bootstrap tools, or mold itself.
