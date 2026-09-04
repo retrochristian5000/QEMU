@@ -733,7 +733,7 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine)
 
         cpu_item->type = g_strdup(machine->possible_cpus->cpus[i].type);
         cpu_item->vcpus_count = machine->possible_cpus->cpus[i].vcpus_count;
-        cpu_item->props = g_memdup(&machine->possible_cpus->cpus[i].props,
+        cpu_item->props = g_memdup2(&machine->possible_cpus->cpus[i].props,
                                    sizeof(*cpu_item->props));
 
         cpu = machine->possible_cpus->cpus[i].cpu;

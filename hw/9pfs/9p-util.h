@@ -265,7 +265,7 @@ static inline struct dirent *qemu_dirent_dup(struct dirent *dent)
         sz = offsetof(struct dirent, d_name) +
                       strlen(dent->d_name) + 1;
     }
-    return g_memdup(dent, sz);
+    return g_memdup2(dent, sz);
 }
 
 /*
