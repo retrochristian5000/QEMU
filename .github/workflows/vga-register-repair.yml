@@ -46,229 +46,350 @@ jobs:
       - name: Apply documented VGA register semantics
         shell: bash
         run: |
-          cat > /tmp/vga-registers.patch <<'PATCH'
-          diff --git a/hw/display/vga_int.h b/hw/display/vga_int.h
-          --- a/hw/display/vga_int.h
-          +++ b/hw/display/vga_int.h
-          @@
-           typedef struct VGACommonState {
-               MemoryRegion *legacy_address_space;
-          +    MemoryRegion *legacy_vga_mem;
-               uint8_t *vram_ptr;
-               MemoryRegion vram;
-          @@
-               uint8_t dac_sub_index;
-               uint8_t dac_read_index;
-               uint8_t dac_write_index;
-          +    uint8_t dac_mask;
-               uint8_t dac_cache[3]; /* used when writing */
-               int dac_8bit;
-               uint8_t palette[768];
-          diff --git a/hw/display/vga.c b/hw/display/vga.c
-          --- a/hw/display/vga.c
-          +++ b/hw/display/vga.c
-          @@
-           static void vga_update_memory_access(VGACommonState *s)
-           {
-               hwaddr base, offset, size;
-           
-          +    if (s->legacy_vga_mem) {
-          +        memory_region_set_enabled(s->legacy_vga_mem,
-          +                                  s->msr & VGA_MIS_ENB_MEM_ACCESS);
-          +    }
-          +
-               if (s->legacy_address_space == NULL) {
-                   return;
-               }
-          @@
-                   s->has_chain4_alias = false;
-                   s->plane_updated = 0xf;
-               }
-          +    if (!(s->msr & VGA_MIS_ENB_MEM_ACCESS)) {
-          +        return;
-          +    }
-               if ((sr(s, VGA_SEQ_PLANE_WRITE) & VGA_SR02_ALL_PLANES) ==
-                   VGA_SR02_ALL_PLANES && sr(s, VGA_SEQ_MEMORY_MODE) & VGA_SR04_CHN_4M) {
-                   offset = 0;
-          @@
-                   case VGA_SEQ_D:
-                       val = s->sr[s->sr_index];
-           #ifdef DEBUG_VGA_REG
-                       printf("vga: read SR%x = 0x%02x\n", s->sr_index, val);
-           #endif
-                       break;
-          +        case VGA_PEL_MSK:
-          +            val = s->dac_mask;
-          +            break;
-                   case VGA_PEL_IR:
-                       val = s->dac_state;
-                       break;
-          @@
-                       index = s->ar_index & 0x1f;
-                       switch(index) {
-                       case VGA_ATC_PALETTE0 ... VGA_ATC_PALETTEF:
-          -                s->ar[index] = val & 0x3f;
-          +                if (!(s->ar_index & VGA_AR_ENABLE_DISPLAY)) {
-          +                    s->ar[index] = val & 0x3f;
-          +                }
-                           break;
-          @@
-               case VGA_MIS_W:
-                   s->msr = val & ~0x10;
-                   s->update_retrace_info(s);
-          +        vga_update_memory_access(s);
-                   break;
-          @@
-               case VGA_SEQ_D:
-           #ifdef DEBUG_VGA_REG
-                   printf("vga: write SR%x = 0x%02x\n", s->sr_index, val);
-           #endif
-                   s->sr[s->sr_index] = val & sr_mask[s->sr_index];
-                   if (s->sr_index == VGA_SEQ_CLOCK_MODE) {
-                       s->update_retrace_info(s);
-                   }
-                   vga_update_memory_access(s);
-                   break;
-          +    case VGA_PEL_MSK:
-          +        s->dac_mask = val;
-          +        break;
-               case VGA_PEL_IR:
-                   s->dac_read_index = val;
-          @@
-                   } else {
-                       v = ((s->ar[VGA_ATC_COLOR_PAGE] & 0xc) << 4) | (v & 0x3f);
-                   }
-          -        v = v * 3;
-          +        v = (v & s->dac_mask) * 3;
-                   col = rgb_to_pixel32(c6_to_8(s->palette[v]),
-                                        c6_to_8(s->palette[v + 1]),
-          @@
-               int full_update, i;
-               uint32_t v, col, *palette;
-           
-               full_update = 0;
-               palette = s->last_palette;
-          -    v = 0;
-               for(i = 0; i < 256; i++) {
-          +        v = (i & s->dac_mask) * 3;
-                   if (s->dac_8bit) {
-                       col = rgb_to_pixel32(s->palette[v],
-                                            s->palette[v + 1],
-          @@
-                       full_update = 1;
-                       palette[i] = col;
-                   }
-          -        v += 3;
-               }
-               return full_update;
-           }
-          @@
-               s->dac_sub_index = 0;
-               s->dac_read_index = 0;
-               s->dac_write_index = 0;
-          +    s->dac_mask = 0xff;
-               memset(s->dac_cache, '\0', sizeof(s->dac_cache));
-               s->dac_8bit = 0;
-          @@
-           const MemoryRegionOps vga_mem_ops = {
-               .read = vga_mem_read,
-               .write = vga_mem_write,
-               .endianness = DEVICE_LITTLE_ENDIAN,
-               .impl = {
-                   .min_access_size = 1,
-                   .max_access_size = 1,
-               },
-           };
-           
-          +static int vga_common_pre_load(void *opaque)
-          +{
-          +    VGACommonState *s = opaque;
-          +
-          +    s->dac_mask = 0xff;
-          +    return 0;
-          +}
-          +
-           static int vga_common_post_load(void *opaque, int version_id)
-          @@
-           static const VMStateDescription vmstate_vga_endian = {
-               .name = "vga.endian",
-               .version_id = 1,
-               .minimum_version_id = 1,
-               .needed = vga_endian_state_needed,
-               .fields = (const VMStateField[]) {
-                   VMSTATE_BOOL(big_endian_fb, VGACommonState),
-                   VMSTATE_END_OF_LIST()
-               }
-           };
-           
-          +static bool vga_pel_mask_state_needed(void *opaque)
-          +{
-          +    VGACommonState *s = opaque;
-          +
-          +    return s->dac_mask != 0xff;
-          +}
-          +
-          +static const VMStateDescription vmstate_vga_pel_mask = {
-          +    .name = "vga.pel-mask",
-          +    .version_id = 1,
-          +    .minimum_version_id = 1,
-          +    .needed = vga_pel_mask_state_needed,
-          +    .fields = (const VMStateField[]) {
-          +        VMSTATE_UINT8(dac_mask, VGACommonState),
-          +        VMSTATE_END_OF_LIST()
-          +    }
-          +};
-          +
-           const VMStateDescription vmstate_vga_common = {
-               .name = "vga",
-               .version_id = 2,
-               .minimum_version_id = 2,
-          +    .pre_load = vga_common_pre_load,
-               .post_load = vga_common_post_load,
-          @@
-               },
-               .subsections = (const VMStateDescription * const []) {
-                   &vmstate_vga_endian,
-          +        &vmstate_vga_pel_mask,
-                   NULL
-               }
-           };
-          @@
-               vga_mem = g_malloc(sizeof(*vga_mem));
-               memory_region_init_io(vga_mem, obj, &vga_mem_ops, s,
-                                     "vga-lowmem", 0x20000);
-               memory_region_set_flush_coalesced(vga_mem);
-          +    s->legacy_vga_mem = vga_mem;
-          +    memory_region_set_enabled(vga_mem,
-          +                              s->msr & VGA_MIS_ENB_MEM_ACCESS);
-           
-               return vga_mem;
-           }
-          diff --git a/tests/qtest/display-vga-test.c b/tests/qtest/display-vga-test.c
-          --- a/tests/qtest/display-vga-test.c
-          +++ b/tests/qtest/display-vga-test.c
-          @@
-           static void test_vga_pel_mask(void)
-           {
-               QTestState *qts = qtest_init("-vga none -device VGA");
-           
-          +    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xff);
-          +
-               qtest_outb(qts, VGA_PEL_MSK, 0x5a);
-               g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x5a);
-          diff --git a/.github/workflows/vga-register-contract.yml b/.github/workflows/vga-register-contract.yml
-          --- a/.github/workflows/vga-register-contract.yml
-          +++ b/.github/workflows/vga-register-contract.yml
-          @@
-               - name: Build VGA qtest
-                 run: ninja -C build qemu-system-x86_64 tests/qtest/display-vga-test
-               - name: Check IBM VGA register contract
-          -        run: meson test -C build --print-errorlogs qtest-x86_64/display-vga-test
-          +        run: build/pyvenv/bin/meson test -C build --print-errorlogs qtest-x86_64/display-vga-test
-          PATCH
-          git apply --check /tmp/vga-registers.patch
-          git apply /tmp/vga-registers.patch
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "hw/display/vga_int.h",
+              """typedef struct VGACommonState {
+              MemoryRegion *legacy_address_space;
+              uint8_t *vram_ptr;
+          """,
+              """typedef struct VGACommonState {
+              MemoryRegion *legacy_address_space;
+              MemoryRegion *legacy_vga_mem;
+              uint8_t *vram_ptr;
+          """,
+          )
+          replace_once(
+              "hw/display/vga_int.h",
+              """    uint8_t dac_read_index;
+              uint8_t dac_write_index;
+              uint8_t dac_cache[3]; /* used when writing */
+          """,
+              """    uint8_t dac_read_index;
+              uint8_t dac_write_index;
+              uint8_t dac_mask;
+              uint8_t dac_cache[3]; /* used when writing */
+          """,
+          )
+
+          replace_once(
+              "hw/display/vga.c",
+              """static void vga_update_memory_access(VGACommonState *s)
+          {
+              hwaddr base, offset, size;
+
+              if (s->legacy_address_space == NULL) {
+          """,
+              """static void vga_update_memory_access(VGACommonState *s)
+          {
+              hwaddr base, offset, size;
+
+              if (s->legacy_vga_mem) {
+                  memory_region_set_enabled(s->legacy_vga_mem,
+                                            s->msr & VGA_MIS_ENB_MEM_ACCESS);
+              }
+
+              if (s->legacy_address_space == NULL) {
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """        s->has_chain4_alias = false;
+                  s->plane_updated = 0xf;
+              }
+              if ((sr(s, VGA_SEQ_PLANE_WRITE) & VGA_SR02_ALL_PLANES) ==
+          """,
+              """        s->has_chain4_alias = false;
+                  s->plane_updated = 0xf;
+              }
+              if (!(s->msr & VGA_MIS_ENB_MEM_ACCESS)) {
+                  return;
+              }
+              if ((sr(s, VGA_SEQ_PLANE_WRITE) & VGA_SR02_ALL_PLANES) ==
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """        case VGA_SEQ_D:
+                  val = s->sr[s->sr_index];
+          #ifdef DEBUG_VGA_REG
+                  printf("vga: read SR%x = 0x%02x\\n", s->sr_index, val);
+          #endif
+                  break;
+              case VGA_PEL_IR:
+          """,
+              """        case VGA_SEQ_D:
+                  val = s->sr[s->sr_index];
+          #ifdef DEBUG_VGA_REG
+                  printf("vga: read SR%x = 0x%02x\\n", s->sr_index, val);
+          #endif
+                  break;
+              case VGA_PEL_MSK:
+                  val = s->dac_mask;
+                  break;
+              case VGA_PEL_IR:
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """            switch(index) {
+                  case VGA_ATC_PALETTE0 ... VGA_ATC_PALETTEF:
+                      s->ar[index] = val & 0x3f;
+                      break;
+          """,
+              """            switch(index) {
+                  case VGA_ATC_PALETTE0 ... VGA_ATC_PALETTEF:
+                      if (!(s->ar_index & VGA_AR_ENABLE_DISPLAY)) {
+                          s->ar[index] = val & 0x3f;
+                      }
+                      break;
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    case VGA_MIS_W:
+                  s->msr = val & ~0x10;
+                  s->update_retrace_info(s);
+                  break;
+          """,
+              """    case VGA_MIS_W:
+                  s->msr = val & ~0x10;
+                  s->update_retrace_info(s);
+                  vga_update_memory_access(s);
+                  break;
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """        vga_update_memory_access(s);
+                  break;
+              case VGA_PEL_IR:
+                  s->dac_read_index = val;
+          """,
+              """        vga_update_memory_access(s);
+                  break;
+              case VGA_PEL_MSK:
+                  s->dac_mask = val;
+                  break;
+              case VGA_PEL_IR:
+                  s->dac_read_index = val;
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """        v = v * 3;
+                  col = rgb_to_pixel32(c6_to_8(s->palette[v]),
+          """,
+              """        v = (v & s->dac_mask) * 3;
+                  col = rgb_to_pixel32(c6_to_8(s->palette[v]),
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    full_update = 0;
+              palette = s->last_palette;
+              v = 0;
+              for(i = 0; i < 256; i++) {
+                  if (s->dac_8bit) {
+          """,
+              """    full_update = 0;
+              palette = s->last_palette;
+              for(i = 0; i < 256; i++) {
+                  v = (i & s->dac_mask) * 3;
+                  if (s->dac_8bit) {
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """            full_update = 1;
+                  palette[i] = col;
+              }
+              v += 3;
+              }
+              return full_update;
+          """,
+              """            full_update = 1;
+                  palette[i] = col;
+              }
+              }
+              return full_update;
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    s->dac_read_index = 0;
+              s->dac_write_index = 0;
+              memset(s->dac_cache, '\\0', sizeof(s->dac_cache));
+          """,
+              """    s->dac_read_index = 0;
+              s->dac_write_index = 0;
+              s->dac_mask = 0xff;
+              memset(s->dac_cache, '\\0', sizeof(s->dac_cache));
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """const MemoryRegionOps vga_mem_ops = {
+              .read = vga_mem_read,
+              .write = vga_mem_write,
+              .endianness = DEVICE_LITTLE_ENDIAN,
+              .impl = {
+                  .min_access_size = 1,
+                  .max_access_size = 1,
+              },
+          };
+
+          static int vga_common_post_load(void *opaque, int version_id)
+          """,
+              """const MemoryRegionOps vga_mem_ops = {
+              .read = vga_mem_read,
+              .write = vga_mem_write,
+              .endianness = DEVICE_LITTLE_ENDIAN,
+              .impl = {
+                  .min_access_size = 1,
+                  .max_access_size = 1,
+              },
+          };
+
+          static int vga_common_pre_load(void *opaque)
+          {
+              VGACommonState *s = opaque;
+
+              s->dac_mask = 0xff;
+              return 0;
+          }
+
+          static int vga_common_post_load(void *opaque, int version_id)
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """static const VMStateDescription vmstate_vga_endian = {
+              .name = "vga.endian",
+              .version_id = 1,
+              .minimum_version_id = 1,
+              .needed = vga_endian_state_needed,
+              .fields = (const VMStateField[]) {
+                  VMSTATE_BOOL(big_endian_fb, VGACommonState),
+                  VMSTATE_END_OF_LIST()
+              }
+          };
+
+          const VMStateDescription vmstate_vga_common = {
+          """,
+              """static const VMStateDescription vmstate_vga_endian = {
+              .name = "vga.endian",
+              .version_id = 1,
+              .minimum_version_id = 1,
+              .needed = vga_endian_state_needed,
+              .fields = (const VMStateField[]) {
+                  VMSTATE_BOOL(big_endian_fb, VGACommonState),
+                  VMSTATE_END_OF_LIST()
+              }
+          };
+
+          static bool vga_pel_mask_state_needed(void *opaque)
+          {
+              VGACommonState *s = opaque;
+
+              return s->dac_mask != 0xff;
+          }
+
+          static const VMStateDescription vmstate_vga_pel_mask = {
+              .name = "vga.pel-mask",
+              .version_id = 1,
+              .minimum_version_id = 1,
+              .needed = vga_pel_mask_state_needed,
+              .fields = (const VMStateField[]) {
+                  VMSTATE_UINT8(dac_mask, VGACommonState),
+                  VMSTATE_END_OF_LIST()
+              }
+          };
+
+          const VMStateDescription vmstate_vga_common = {
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    .version_id = 2,
+              .minimum_version_id = 2,
+              .post_load = vga_common_post_load,
+          """,
+              """    .version_id = 2,
+              .minimum_version_id = 2,
+              .pre_load = vga_common_pre_load,
+              .post_load = vga_common_post_load,
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    .subsections = (const VMStateDescription * const []) {
+                  &vmstate_vga_endian,
+                  NULL
+          """,
+              """    .subsections = (const VMStateDescription * const []) {
+                  &vmstate_vga_endian,
+                  &vmstate_vga_pel_mask,
+                  NULL
+          """,
+          )
+          replace_once(
+              "hw/display/vga.c",
+              """    memory_region_init_io(vga_mem, obj, &vga_mem_ops, s,
+                                    "vga-lowmem", 0x20000);
+              memory_region_set_flush_coalesced(vga_mem);
+
+              return vga_mem;
+          """,
+              """    memory_region_init_io(vga_mem, obj, &vga_mem_ops, s,
+                                    "vga-lowmem", 0x20000);
+              memory_region_set_flush_coalesced(vga_mem);
+              s->legacy_vga_mem = vga_mem;
+              memory_region_set_enabled(vga_mem,
+                                        s->msr & VGA_MIS_ENB_MEM_ACCESS);
+
+              return vga_mem;
+          """,
+          )
+
+          replace_once(
+              "tests/qtest/display-vga-test.c",
+              """static void test_vga_pel_mask(void)
+          {
+              QTestState *qts = qtest_init("-vga none -device VGA");
+
+              qtest_outb(qts, VGA_PEL_MSK, 0x5a);
+          """,
+              """static void test_vga_pel_mask(void)
+          {
+              QTestState *qts = qtest_init("-vga none -device VGA");
+
+              g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xff);
+
+              qtest_outb(qts, VGA_PEL_MSK, 0x5a);
+          """,
+          )
+
+          replace_once(
+              ".github/workflows/vga-register-contract.yml",
+              "run: meson test -C build --print-errorlogs qtest-x86_64/display-vga-test",
+              "run: build/pyvenv/bin/meson test -C build --print-errorlogs qtest-x86_64/display-vga-test",
+          )
+          PY
           git diff --check
+          git diff -- hw/display/vga.c hw/display/vga_int.h \
+            tests/qtest/display-vga-test.c \
+            .github/workflows/vga-register-contract.yml
       - name: Rebuild and prove VGA register contract is green
         run: |
           ninja -C build qemu-system-x86_64 tests/qtest/display-vga-test
