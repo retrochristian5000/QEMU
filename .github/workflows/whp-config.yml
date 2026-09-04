@@ -14,6 +14,7 @@ on:
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
+      - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-host-optimization.py'
@@ -51,6 +52,7 @@ jobs:
           python3 scripts/tests/test-whp-sparc-menu.py
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
+          python3 scripts/tests/test-native-llvm-build-entry.py
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
@@ -76,6 +78,7 @@ jobs:
             scripts/whp-build/portable-build.py \
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
+            scripts/tests/test-native-llvm-build-entry.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-host-optimization.py \
             scripts/tests/test-x87-trig-upgrade.py \
