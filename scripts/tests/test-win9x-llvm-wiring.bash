@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-profile="$root/scripts/bootstrap-win9x-clang.sh"
+profile="$root/scripts/bootstrap-win9x-clang.bash"
 triple_names="$root/toolchains/llvm-project/llvm/include/llvm/TargetParser/TripleName.def"
 config="$root/scripts/whp-config/config.py"
 prepare_sources="$root/scripts/whp-build/prepare-sources.bash"
@@ -18,8 +18,6 @@ prepare_sources="$root/scripts/whp-build/prepare-sources.bash"
 
 grep -Fq 'WIN9X_TARGET="${WIN9X_TOOLCHAIN_TARGET:-i386-pc-win9x}"' "$profile"
 grep -Fq -- '-DLLD_ENABLE_BACKENDS=ELF;COFF' "$profile"
-# The generated wrapper must preserve this variable for expansion when the
-# wrapper runs, so the generator source contains an escaped dollar sign.
 grep -Fq -- '--target="\$WIN9X_TARGET"' "$profile"
 grep -Fq -- '-march=i386' "$profile"
 grep -Fq '/machine:x86' "$profile"
