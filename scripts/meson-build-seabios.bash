@@ -33,7 +33,16 @@ if [[ "$mode" == grub ]]; then
         SEABIOS_OUTPUT_DIR="$output_dir" \
         CPP="${SEABIOS_CROSS_COMPILE}cpp" \
         seabios-grub
-    expected=(seabios-grub.elf)
+
+    # SeaBIOS/roms still emits the historical lowercase filename. Keep that
+    # upstream-facing convention at the boundary, then publish the WHP-owned
+    # linked executable using the internal .ELF assignment.
+    legacy_elf="$output_dir/seabios-grub.elf"
+    canonical_elf="$output_dir/seabios-grub.ELF"
+    if [[ -f "$legacy_elf" ]]; then
+        mv -f "$legacy_elf" "$canonical_elf"
+    fi
+    expected=(seabios-grub.ELF)
 else
     "$MAKE_CMD" -C "$SOURCE_DIR/roms" \
         SEABIOS_CROSS_PREFIX="$SEABIOS_CROSS_COMPILE" \
