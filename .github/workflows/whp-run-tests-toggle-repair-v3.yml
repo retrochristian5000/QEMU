@@ -1,0 +1,96 @@
+name: WHP RUN_TESTS source repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/whp-run-tests-toggle-repair-v3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Verify and push source-side RUN_TESTS repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Repair the latent integration-harness SOURCE_DIR leak first.
+          path = Path('scripts/tests/test-whp-config-integration.bash')
+          text = path.read_text(encoding='utf-8')
+          old = '''# Verify explicit host-feature switches feed configure, while auto does not.
+          source "$ROOT/scripts/whp-build/common.bash"
+          '''
+          new = '''# Verify explicit host-feature switches feed configure, while auto does not.
+          # Earlier configure tests intentionally redirect SOURCE_DIR to a fake tree.
+          # Restore the real repository before loading the production build helpers.
+          SOURCE_DIR="$ROOT"
+          source "$ROOT/scripts/whp-build/common.bash"
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('integration harness boundary marker changed unexpectedly')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # Reuse the already-reviewed red/green repair body, but keep workflow YAML
+          # out of the bot commit because GitHub blocks Actions tokens from writing it.
+          workflow = Path('.github/workflows/whp-run-tests-toggle-repair.yml').read_text(encoding='utf-8')
+          marker = '      - name: Red-green RUN_TESTS repair\n        shell: bash\n        run: |\n'
+          block = workflow.split(marker, 1)[1]
+          lines = []
+          for line in block.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              elif not line:
+                  lines.append('')
+              else:
+                  raise SystemExit(f'unexpected repair block line: {line!r}')
+          script = '\n'.join(lines) + '\n'
+
+          needle = 'expected="$(cat <<\'EOF\' | sort\n'
+          restore = '''git restore -- \\
+            .github/workflows/ci.yml \\
+            .github/workflows/native-llvm-macos.yml \\
+            .github/workflows/whp-config.yml \\
+            .github/workflows/whp-portable-build.yml
+
+          '''
+          if script.count(needle) != 1:
+              raise SystemExit('repair expected-file marker changed unexpectedly')
+          script = script.replace(needle, restore + needle, 1)
+
+          for entry in (
+              '.github/workflows/ci.yml\n',
+              '.github/workflows/native-llvm-macos.yml\n',
+              '.github/workflows/whp-config.yml\n',
+              '.github/workflows/whp-portable-build.yml\n',
+          ):
+              if script.count(entry) < 1:
+                  raise SystemExit(f'missing expected workflow entry: {entry!r}')
+              script = script.replace(entry, '', 1)
+
+          for entry in (
+              '  .github/workflows/ci.yml \\\n',
+              '  .github/workflows/native-llvm-macos.yml \\\n',
+              '  .github/workflows/whp-config.yml \\\n',
+              '  .github/workflows/whp-portable-build.yml \\\n',
+          ):
+              if script.count(entry) != 1:
+                  raise SystemExit(f'missing git-add workflow entry: {entry!r}')
+              script = script.replace(entry, '', 1)
+
+          Path('/tmp/whp-run-tests-source-repair.sh').write_text(script, encoding='utf-8')
+          PY
+
+          bash /tmp/whp-run-tests-source-repair.sh
