@@ -211,37 +211,37 @@ static void of_dpa_flow_key_dump(OfDpaFlowKey *key, OfDpaFlowKey *mask)
 {
     char buf[512], *b = buf, *mac;
 
-    b += sprintf(b, " tbl %2d", key->tbl_id);
+    b += snprintf(b, sizeof(buf) - (b - buf), " tbl %2d", key->tbl_id);
 
     if (key->in_pport || (mask && mask->in_pport)) {
-        b += sprintf(b, " in_pport %2d", key->in_pport);
+        b += snprintf(b, sizeof(buf) - (b - buf), " in_pport %2d", key->in_pport);
         if (mask && mask->in_pport != 0xffffffff) {
-            b += sprintf(b, "/0x%08x", key->in_pport);
+            b += snprintf(b, sizeof(buf) - (b - buf), "/0x%08x", key->in_pport);
         }
     }
 
     if (key->tunnel_id || (mask && mask->tunnel_id)) {
-        b += sprintf(b, " tun %8d", key->tunnel_id);
+        b += snprintf(b, sizeof(buf) - (b - buf), " tun %8d", key->tunnel_id);
         if (mask && mask->tunnel_id != 0xffffffff) {
-            b += sprintf(b, "/0x%08x", key->tunnel_id);
+            b += snprintf(b, sizeof(buf) - (b - buf), "/0x%08x", key->tunnel_id);
         }
     }
 
     if (key->eth.vlan_id || (mask && mask->eth.vlan_id)) {
-        b += sprintf(b, " vlan %4d", ntohs(key->eth.vlan_id));
+        b += snprintf(b, sizeof(buf) - (b - buf), " vlan %4d", ntohs(key->eth.vlan_id));
         if (mask && mask->eth.vlan_id != 0xffff) {
-            b += sprintf(b, "/0x%04x", ntohs(key->eth.vlan_id));
+            b += snprintf(b, sizeof(buf) - (b - buf), "/0x%04x", ntohs(key->eth.vlan_id));
         }
     }
 
     if (memcmp(key->eth.src.a, zero_mac.a, ETH_ALEN) ||
         (mask && memcmp(mask->eth.src.a, zero_mac.a, ETH_ALEN))) {
         mac = qemu_mac_strdup_printf(key->eth.src.a);
-        b += sprintf(b, " src %s", mac);
+        b += snprintf(b, sizeof(buf) - (b - buf), " src %s", mac);
         g_free(mac);
         if (mask && memcmp(mask->eth.src.a, ff_mac.a, ETH_ALEN)) {
             mac = qemu_mac_strdup_printf(mask->eth.src.a);
-            b += sprintf(b, "/%s", mac);
+            b += snprintf(b, sizeof(buf) - (b - buf), "/%s", mac);
             g_free(mac);
         }
     }
@@ -249,33 +249,33 @@ static void of_dpa_flow_key_dump(OfDpaFlowKey *key, OfDpaFlowKey *mask)
     if (memcmp(key->eth.dst.a, zero_mac.a, ETH_ALEN) ||
         (mask && memcmp(mask->eth.dst.a, zero_mac.a, ETH_ALEN))) {
         mac = qemu_mac_strdup_printf(key->eth.dst.a);
-        b += sprintf(b, " dst %s", mac);
+        b += snprintf(b, sizeof(buf) - (b - buf), " dst %s", mac);
         g_free(mac);
         if (mask && memcmp(mask->eth.dst.a, ff_mac.a, ETH_ALEN)) {
             mac = qemu_mac_strdup_printf(mask->eth.dst.a);
-            b += sprintf(b, "/%s", mac);
+            b += snprintf(b, sizeof(buf) - (b - buf), "/%s", mac);
             g_free(mac);
         }
     }
 
     if (key->eth.type || (mask && mask->eth.type)) {
-        b += sprintf(b, " type 0x%04x", ntohs(key->eth.type));
+        b += snprintf(b, sizeof(buf) - (b - buf), " type 0x%04x", ntohs(key->eth.type));
         if (mask && mask->eth.type != 0xffff) {
-            b += sprintf(b, "/0x%04x", ntohs(mask->eth.type));
+            b += snprintf(b, sizeof(buf) - (b - buf), "/0x%04x", ntohs(mask->eth.type));
         }
         switch (ntohs(key->eth.type)) {
         case 0x0800:
         case 0x86dd:
             if (key->ip.proto || (mask && mask->ip.proto)) {
-                b += sprintf(b, " ip proto %2d", key->ip.proto);
+                b += snprintf(b, sizeof(buf) - (b - buf), " ip proto %2d", key->ip.proto);
                 if (mask && mask->ip.proto != 0xff) {
-                    b += sprintf(b, "/0x%02x", mask->ip.proto);
+                    b += snprintf(b, sizeof(buf) - (b - buf), "/0x%02x", mask->ip.proto);
                 }
             }
             if (key->ip.tos || (mask && mask->ip.tos)) {
-                b += sprintf(b, " ip tos %2d", key->ip.tos);
+                b += snprintf(b, sizeof(buf) - (b - buf), " ip tos %2d", key->ip.tos);
                 if (mask && mask->ip.tos != 0xff) {
-                    b += sprintf(b, "/0x%02x", mask->ip.tos);
+                    b += snprintf(b, sizeof(buf) - (b - buf), "/0x%02x", mask->ip.tos);
                 }
             }
             break;
@@ -283,10 +283,10 @@ static void of_dpa_flow_key_dump(OfDpaFlowKey *key, OfDpaFlowKey *mask)
         switch (ntohs(key->eth.type)) {
         case 0x0800:
             if (key->ipv4.addr.dst || (mask && mask->ipv4.addr.dst)) {
-                b += sprintf(b, " dst %s",
+                b += snprintf(b, sizeof(buf) - (b - buf), " dst %s",
                     inet_ntoa(*(struct in_addr *)&key->ipv4.addr.dst));
                 if (mask) {
-                    b += sprintf(b, "/%d",
+                    b += snprintf(b, sizeof(buf) - (b - buf), "/%d",
                                  of_dpa_mask2prefix(mask->ipv4.addr.dst));
                 }
             }

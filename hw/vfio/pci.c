@@ -2852,7 +2852,7 @@ bool vfio_pci_host_match(PCIHostDeviceAddress *addr, const char *name)
 {
     char tmp[36];
 
-    sprintf(tmp, "%04x:%02x:%02x.%1x", addr->domain,
+    snprintf(tmp, sizeof(tmp), "%04x:%02x:%02x.%1x", addr->domain,
             addr->bus, addr->slot, addr->function);
 
     return (strcmp(tmp, name) == 0);

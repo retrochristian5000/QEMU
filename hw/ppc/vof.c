@@ -100,7 +100,7 @@ static void prop_format(char *tval, int tlen, const void *prop, int len)
             strcat(t, " ");
             ++t;
         }
-        t += sprintf(t, "%02X", *c & 0xFF);
+        t += snprintf(t, tlen - (t - tval), "%02X", *c & 0xFF);
     }
 }
 

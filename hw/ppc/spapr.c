@@ -359,7 +359,7 @@ static int spapr_dt_memory_node(SpaprMachineState *spapr, void *fdt, int nodeid,
     mem_reg_property[0] = cpu_to_be64(start);
     mem_reg_property[1] = cpu_to_be64(size);
 
-    sprintf(mem_name, "memory@%" HWADDR_PRIx, start);
+    snprintf(mem_name, sizeof(mem_name), "memory@%" HWADDR_PRIx, start);
     off = fdt_add_subnode(fdt, 0, mem_name);
     _FDT(off);
     _FDT((fdt_setprop_string(fdt, off, "device_type", "memory")));

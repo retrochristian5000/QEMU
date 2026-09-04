@@ -636,12 +636,14 @@ static char *tdx_parse_panic_message(char *message)
     } else {
         if (!printable) {
             /* 3 = length of "%02x " */
-            buf = g_malloc(len * 3);
+            buf = g_malloc(len * 3 + 1);
             for (i = 0; i < len; i++) {
                 if (message[i] == '\0') {
                     break;
                 } else {
-                    sprintf(buf + 3 * i, "%02x ", message[i]);
+                    snprintf(buf + 3 * i, len * 3 + 1 - 3 * i,
+                             "%02x ",
+                             (unsigned int)(unsigned char)message[i]);
                 }
             }
             if (i > 0) {
