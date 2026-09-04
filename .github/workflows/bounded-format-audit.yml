@@ -26,12 +26,12 @@ concurrency:
 
 jobs:
   static-audit:
-    name: Reject unbounded production format calls
+    name: Reject unbounded C/C++ format calls
     runs-on: ubuntu-24.04
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Audit QEMU-owned production sources
+      - name: Audit QEMU-owned C/C++ sources
         run: python3 scripts/tests/check-unbounded-format.py

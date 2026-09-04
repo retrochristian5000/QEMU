@@ -13,7 +13,6 @@ on:
       - 'meson.build'
       - 'meson_options.txt'
       - 'scripts/checkpatch.pl'
-      - 'scripts/tests/check-unbounded-format.py'
       - 'scripts/tests/test-hw-deprecated-api-audit.bash'
       - '.github/workflows/hw-deprecated-api-audit.yml'
   workflow_dispatch:

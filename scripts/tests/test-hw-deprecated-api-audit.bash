@@ -15,13 +15,6 @@ if hits="$(git grep -n -E 'g_memdup[[:space:]]*\(' -- hw include/hw 2>/dev/null)
     status=1
 fi
 
-# Darwin SDKs deprecate sprintf(), and QEMU's style guide already requires the
-# bounded snprintf()/vsnprintf() forms. Audit real C/C++ call expressions while
-# excluding tests, firmware sources, scripts, generated headers, and subprojects.
-if ! python3 scripts/tests/check-unbounded-format.py; then
-    status=1
-fi
-
 suppression_pattern='diagnostic[[:space:]]+ignored[[:space:]]+"-Wdeprecated-declarations"|G_GNUC_BEGIN_IGNORE_DEPRECATIONS|-Wno-error=deprecated-declarations|-Wno-deprecated-declarations'
 if hits="$(git grep -n -E "$suppression_pattern" -- hw include/hw 2>/dev/null | \
     grep -v '^hw/hyperv/hv-balloon-page_range_tree.c:')"; then

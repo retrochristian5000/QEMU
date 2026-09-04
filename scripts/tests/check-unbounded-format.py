@@ -8,10 +8,9 @@ from pathlib import Path
 
 CALL_RE = re.compile(r"(?<![A-Za-z0-9_])(?:sprintf|vsprintf)\s*\(")
 SOURCE_SUFFIXES = (".c", ".h", ".cc", ".cpp", ".c.inc", ".h.inc", ".m", ".mm")
+# These are imported/generated interfaces or non-C/C++ tooling.  Tests,
+# firmware, and bundled C subprojects are intentionally audited.
 EXCLUDED_PREFIXES = (
-    "tests/",
-    "subprojects/",
-    "pc-bios/",
     "scripts/",
     "linux-headers/",
     "include/standard-headers/",
@@ -109,7 +108,7 @@ def main() -> int:
         return 0
 
     print(
-        "error: QEMU-owned production code uses unbounded sprintf()/vsprintf(); "
+        "error: QEMU-owned C/C++ code uses unbounded sprintf()/vsprintf(); "
         "use snprintf()/vsnprintf().",
         file=sys.stderr,
     )
