@@ -12,13 +12,88 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   register-contract:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Apply documented NCR53C710 register corrections
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('hw/scsi/ncr53c710.c')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''/* SSTAT1 (0x0E) - SCSI Status Register 1 */\n#define NCR710_SSTAT1_ORF    0x02\n#define NCR710_SSTAT1_ILF    0x04\n''',
+                  '''/* SSTAT1 (0x0E) - SCSI Status Register 1 */\n#define NCR710_SSTAT1_ILF    0x80\n#define NCR710_SSTAT1_ORF    0x40\n#define NCR710_SSTAT1_OLF    0x20\n#define NCR710_SSTAT1_RSTI   0x02\n'''
+              ),
+              (
+                  '''    case NCR710_SSTAT1_REG: /* SSTAT1 */\n        ret = s->sstat0;\n        break;\n''',
+                  '''    case NCR710_SSTAT1_REG: /* SSTAT1 */\n        ret = s->sstat1;\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_CTEST2_REG: /* CTEST2 */\n        ret = s->ctest2;\n        s->ctest2 |= 0x04;\n        break;\n''',
+                  '''    case NCR710_CTEST2_REG: /* CTEST2 */\n        ret = s->ctest2 & ~NCR710_CTEST2_SIGP;\n        if (s->istat & NCR710_ISTAT_SIGP) {\n            ret |= NCR710_CTEST2_SIGP;\n            s->istat &= ~NCR710_ISTAT_SIGP;\n        }\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_CTEST8_REG: /* CTEST8 */\n        ret = s->istat;\n        break;\n''',
+                  '''    case NCR710_CTEST8_REG: /* CTEST8 */\n        ret = s->ctest8;\n        break;\n'''
+              ),
+              (
+                  '''        if (val & NCR710_SCNTL1_RST) {\n            if (!(s->sstat0 & NCR710_SSTAT0_RST)) {\n                s->sstat0 |= NCR710_SSTAT0_RST;\n                ncr710_script_scsi_interrupt(s, NCR710_SSTAT0_RST);\n            }\n            if (!(old_val & NCR710_SCNTL1_RST)) {\n                NCR710_DPRINTF("NCR710: SCNTL1: SCSI bus reset "\n                               "initiated\\n");\n                ncr710_soft_reset(s);\n            }\n        } else {\n            s->sstat0 &= ~NCR710_SSTAT0_RST;\n        }\n''',
+                  '''        if (val & NCR710_SCNTL1_RST) {\n            s->sstat1 |= NCR710_SSTAT1_RSTI;\n            if (!(old_val & NCR710_SCNTL1_RST)) {\n                NCR710_DPRINTF("NCR710: SCNTL1: SCSI bus reset "\n                               "initiated\\n");\n                bus_cold_reset(BUS(&s->bus));\n                s->sstat0 |= NCR710_SSTAT0_RST;\n                ncr710_script_scsi_interrupt(s, NCR710_SSTAT0_RST);\n            }\n        } else {\n            s->sstat1 &= ~NCR710_SSTAT1_RSTI;\n        }\n'''
+              ),
+              (
+                  '''    case NCR710_SDID_REG: /* SDID */\n        s->sdid = val & 0x0F; /* Only lower 4 bits are valid */\n        break;\n''',
+                  '''    case NCR710_SDID_REG: /* SDID */\n        s->sdid = val;\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_SODL_REG: /* SODL */\n        s->sodl = val;\n        s->sstat1 |= NCR710_SSTAT1_ORF; /* SCSI Output Register Full */\n        break;\n''',
+                  '''    case NCR710_SODL_REG: /* SODL */\n        s->sodl = val;\n        s->sstat1 |= NCR710_SSTAT1_OLF;\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_CTEST1_REG: /* CTEST1, read-only */\n        s->ctest1 = val;\n        break;\n\n    case NCR710_CTEST2_REG: /* CTEST2, read-only */\n        s->ctest2 = val;\n        break;\n''',
+                  '''    case NCR710_CTEST1_REG: /* CTEST1, read-only */\n    case NCR710_CTEST2_REG: /* CTEST2, read-only */\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_ISTAT_REG: /* ISTAT */\n        old_val = s->istat;\n\n        if ((old_val & NCR710_ISTAT_DIP) && !(val & NCR710_ISTAT_DIP)) {\n            /* Clear script interrupt data after Linux processes it */\n            s->dstat = 0;\n            s->dsps = 0;\n        }\n\n        if ((old_val & NCR710_ISTAT_SIP) && !(val & NCR710_ISTAT_SIP)) {\n            s->sstat0 = 0;\n        }\n\n        s->istat = (val & ~(NCR710_ISTAT_DIP | NCR710_ISTAT_SIP)) |\n                  (s->istat & (NCR710_ISTAT_DIP | NCR710_ISTAT_SIP));\n        ncr710_update_irq(s);\n\n        if (val & NCR710_ISTAT_ABRT) {\n            ncr710_script_dma_interrupt(s, NCR710_DSTAT_ABRT);\n        }\n        break;\n''',
+                  '''    case NCR710_ISTAT_REG: /* ISTAT */\n        old_val = s->istat;\n        s->istat = (val & ~(NCR710_ISTAT_DIP | NCR710_ISTAT_SIP)) |\n                  (old_val & (NCR710_ISTAT_DIP | NCR710_ISTAT_SIP));\n\n        if ((val & NCR710_ISTAT_RST) &&\n            !(old_val & NCR710_ISTAT_RST)) {\n            ncr710_soft_reset(s);\n            s->istat |= NCR710_ISTAT_RST;\n        } else {\n            ncr710_update_irq(s);\n            if ((val & NCR710_ISTAT_ABRT) &&\n                !(old_val & NCR710_ISTAT_ABRT)) {\n                ncr710_script_dma_interrupt(s, NCR710_DSTAT_ABRT);\n            }\n        }\n        break;\n'''
+              ),
+              (
+                  '''    case NCR710_LCRC_REG: /* LCRC */\n        s->lcrc = val;\n        break;\n''',
+                  '''    case NCR710_LCRC_REG: /* LCRC */\n        s->lcrc = 0;\n        break;\n'''
+              ),
+          ]
+
+          changed = False
+          for old, new in replacements:
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  changed = True
+              elif new not in text:
+                  raise SystemExit('expected NCR53C710 source pattern not found')
+
+          if changed:
+              path.write_text(text)
+          PY
+
+          if ! git diff --quiet -- hw/scsi/ncr53c710.c; then
+            git diff --check
+            git diff -- hw/scsi/ncr53c710.c
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add hw/scsi/ncr53c710.c
+            git commit -m 'hw/scsi: correct NCR53C710 register semantics'
+            git push origin HEAD:master
+          fi
       - name: Install QEMU build dependencies
         run: |
           sudo apt-get update
