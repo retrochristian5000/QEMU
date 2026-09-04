@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-strip_stage="$ROOT/scripts/bootstrap-powerpc-llvm-strip.sh"
-orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.sh"
+strip_stage="$ROOT/scripts/bootstrap-powerpc-llvm-strip.bash"
+orchestrator="$ROOT/scripts/bootstrap-powerpc-clang.bash"
 
 grep -Fq 'STRIP_SCHEMA=2' "$strip_stage"
 grep -Fq 'GNU_STRIP=disabled' "$strip_stage"
