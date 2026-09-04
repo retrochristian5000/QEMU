@@ -80,8 +80,10 @@
 #define NCR710_SSTAT0_MA     0x80
 
 /* SSTAT1 (0x0E) - SCSI Status Register 1 */
-#define NCR710_SSTAT1_ORF    0x02
-#define NCR710_SSTAT1_ILF    0x04
+#define NCR710_SSTAT1_ILF    0x80
+#define NCR710_SSTAT1_ORF    0x40
+#define NCR710_SSTAT1_OLF    0x20
+#define NCR710_SSTAT1_RSTI   0x02
 
 /* SSTAT2 (0x0F) - SCSI Status Register 2 */
 #define NCR710_SSTAT2_FF0    0x01
@@ -1843,7 +1845,7 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         }
         break;
     case NCR710_SSTAT1_REG: /* SSTAT1 */
-        ret = s->sstat0;
+        ret = s->sstat1;
         break;
     case NCR710_SSTAT2_REG: /* SSTAT2 */
         ret = s->sstat2;
@@ -1857,8 +1859,11 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         ret = s->ctest1;
         break;
     case NCR710_CTEST2_REG: /* CTEST2 */
-        ret = s->ctest2;
-        s->ctest2 |= 0x04;
+        ret = s->ctest2 & ~NCR710_CTEST2_SIGP;
+        if (s->istat & NCR710_ISTAT_SIGP) {
+            ret |= NCR710_CTEST2_SIGP;
+            s->istat &= ~NCR710_ISTAT_SIGP;
+        }
         break;
     case NCR710_CTEST3_REG: /* CTEST3 */
         ret = s->ctest3;
@@ -1893,7 +1898,7 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         ret = s->istat;
         break;
     case NCR710_CTEST8_REG: /* CTEST8 */
-        ret = s->istat;
+        ret = s->ctest8;
         break;
     case NCR710_LCRC_REG: /* LCRC */
         ret = s->lcrc;
@@ -2017,22 +2022,21 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
         }
 
         if (val & NCR710_SCNTL1_RST) {
-            if (!(s->sstat0 & NCR710_SSTAT0_RST)) {
-                s->sstat0 |= NCR710_SSTAT0_RST;
-                ncr710_script_scsi_interrupt(s, NCR710_SSTAT0_RST);
-            }
+            s->sstat1 |= NCR710_SSTAT1_RSTI;
             if (!(old_val & NCR710_SCNTL1_RST)) {
                 NCR710_DPRINTF("NCR710: SCNTL1: SCSI bus reset "
                                "initiated\n");
-                ncr710_soft_reset(s);
+                bus_cold_reset(BUS(&s->bus));
+                s->sstat0 |= NCR710_SSTAT0_RST;
+                ncr710_script_scsi_interrupt(s, NCR710_SSTAT0_RST);
             }
         } else {
-            s->sstat0 &= ~NCR710_SSTAT0_RST;
+            s->sstat1 &= ~NCR710_SSTAT1_RSTI;
         }
         break;
 
     case NCR710_SDID_REG: /* SDID */
-        s->sdid = val & 0x0F; /* Only lower 4 bits are valid */
+        s->sdid = val;
         break;
 
     case NCR710_SIEN_REG: /* SIEN */
@@ -2051,7 +2055,7 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
 
     case NCR710_SODL_REG: /* SODL */
         s->sodl = val;
-        s->sstat1 |= NCR710_SSTAT1_ORF; /* SCSI Output Register Full */
+        s->sstat1 |= NCR710_SSTAT1_OLF;
         break;
 
     case NCR710_SOCL_REG: /* SOCL */
@@ -2100,11 +2104,7 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
         break;
 
     case NCR710_CTEST1_REG: /* CTEST1, read-only */
-        s->ctest1 = val;
-        break;
-
     case NCR710_CTEST2_REG: /* CTEST2, read-only */
-        s->ctest2 = val;
         break;
 
     case NCR710_CTEST3_REG: /* CTEST3 */
@@ -2134,23 +2134,19 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
 
     case NCR710_ISTAT_REG: /* ISTAT */
         old_val = s->istat;
-
-        if ((old_val & NCR710_ISTAT_DIP) && !(val & NCR710_ISTAT_DIP)) {
-            /* Clear script interrupt data after Linux processes it */
-            s->dstat = 0;
-            s->dsps = 0;
-        }
-
-        if ((old_val & NCR710_ISTAT_SIP) && !(val & NCR710_ISTAT_SIP)) {
-            s->sstat0 = 0;
-        }
-
         s->istat = (val & ~(NCR710_ISTAT_DIP | NCR710_ISTAT_SIP)) |
-                  (s->istat & (NCR710_ISTAT_DIP | NCR710_ISTAT_SIP));
-        ncr710_update_irq(s);
+                  (old_val & (NCR710_ISTAT_DIP | NCR710_ISTAT_SIP));
 
-        if (val & NCR710_ISTAT_ABRT) {
-            ncr710_script_dma_interrupt(s, NCR710_DSTAT_ABRT);
+        if ((val & NCR710_ISTAT_RST) &&
+            !(old_val & NCR710_ISTAT_RST)) {
+            ncr710_soft_reset(s);
+            s->istat |= NCR710_ISTAT_RST;
+        } else {
+            ncr710_update_irq(s);
+            if ((val & NCR710_ISTAT_ABRT) &&
+                !(old_val & NCR710_ISTAT_ABRT)) {
+                ncr710_script_dma_interrupt(s, NCR710_DSTAT_ABRT);
+            }
         }
         break;
 
@@ -2168,7 +2164,7 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
         s->ctest8 = val;
         break;
     case NCR710_LCRC_REG: /* LCRC */
-        s->lcrc = val;
+        s->lcrc = 0;
         break;
 
     CASE_SET_REG24(dbc, NCR710_DBC_REG)
