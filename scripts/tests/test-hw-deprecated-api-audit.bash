@@ -15,12 +15,10 @@ if hits="$(git grep -n -E 'g_memdup[[:space:]]*\(' -- hw include/hw 2>/dev/null)
     status=1
 fi
 
-# Darwin SDKs deprecate sprintf(); keep USB device formatting bounded so -Werror
-# cannot turn a host SDK policy update into an emulated-hardware build failure.
-if hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb 2>/dev/null)"; then
-    printf '%s\n' \
-        'error: emulated USB hardware may not use unbounded sprintf(); use snprintf().' >&2
-    printf '%s\n' "$hits" >&2
+# Darwin SDKs deprecate sprintf(), and QEMU's style guide already requires the
+# bounded snprintf()/vsnprintf() forms. Audit real C/C++ call expressions while
+# excluding tests, firmware sources, scripts, generated headers, and subprojects.
+if ! python3 scripts/tests/check-unbounded-format.py; then
     status=1
 fi
 
