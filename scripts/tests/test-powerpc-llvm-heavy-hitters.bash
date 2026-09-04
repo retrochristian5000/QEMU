@@ -4,8 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
-CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
+BASE="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
+CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
 
 for file in "$BASE" "$CORE"; do
     if [[ ! -f "$file" ]]; then
@@ -24,9 +24,6 @@ marker_block()
     ' "$file"
 }
 
-# Heavy build-cost knobs must be explicit and validated. Link parallelism is
-# scheduling policy; accuracy checks are semantic because they change the built
-# compiler and therefore belong in the toolchain marker.
 grep -Fq 'LLVM_ACCURACY_CHECKS="${POWERPC_LLVM_ACCURACY_CHECKS:-0}"' "$BASE"
 grep -Fq 'LLVM_LINK_JOBS="${POWERPC_LLVM_LINK_JOBS:-2}"' "$BASE"
 grep -Fq 'POWERPC_LLVM_ACCURACY_CHECKS must be 0 or 1' "$BASE"
@@ -36,9 +33,6 @@ grep -Fq 'llvm_optimized_tablegen=OFF' "$BASE"
 grep -Fq 'llvm_enable_assertions=ON' "$BASE"
 grep -Fq 'llvm_optimized_tablegen=ON' "$BASE"
 
-# Fast-hardened default: avoid VCS-wide relinks and unused analyzer code, make
-# release-mode unreachable paths trap deterministically, and keep heavyweight
-# link concurrency in its own Ninja pool.
 grep -Fq -- '-DLLVM_APPEND_VC_REV=OFF' "$BASE"
 grep -Fq -- '-DCLANG_ENABLE_STATIC_ANALYZER=OFF' "$BASE"
 grep -Fq -- '-DLLVM_UNREACHABLE_OPTIMIZE=OFF' "$BASE"
@@ -46,9 +40,6 @@ grep -Fq -- '"-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"' "$BASE"
 grep -Fq -- '"-DLLVM_ENABLE_ASSERTIONS=$llvm_enable_assertions"' "$BASE"
 grep -Fq -- '"-DLLVM_OPTIMIZED_TABLEGEN=$llvm_optimized_tablegen"' "$BASE"
 
-# OpenBIOS only needs the compiler, assembler path, LLVM object utilities, and
-# focused LLD. Host plugin loading and rich crash/unwind diagnostics add code
-# and dependencies to the bootstrap without changing generated firmware.
 for flag in \
     '-DLLVM_ENABLE_PLUGINS=OFF' \
     '-DLLVM_ENABLE_BACKTRACES=OFF' \
@@ -57,8 +48,6 @@ for flag in \
     grep -Fq -- "$flag" "$BASE"
 done
 
-# The accuracy profile and host feature profile change generated tools and must
-# invalidate the semantic marker exactly once. Link-pool sizing must never do so.
 base_marker="$(marker_block "$BASE")"
 grep -Fq 'BOOTSTRAP_SCHEMA=20' <<< "$base_marker"
 grep -Fq 'LLVM_ACCURACY_CHECKS=$LLVM_ACCURACY_CHECKS' <<< "$base_marker"
@@ -73,8 +62,6 @@ if grep -Fq 'LLVM_LINK_JOBS=' <<< "$base_marker"; then
     exit 1
 fi
 
-# Standalone LLD must stay in the same assertion/ABI-check mode as the base LLVM
-# libraries it consumes. Its link pool is also scheduling-only.
 grep -Fq 'LLVM_LINK_JOBS="${POWERPC_LLVM_LINK_JOBS:-2}"' "$CORE"
 grep -Fq 'lld_llvm_enable_assertions=' "$CORE"
 grep -Fq 'lld_llvm_optimized_tablegen=' "$CORE"
@@ -89,10 +76,6 @@ if grep -Fq 'LLVM_LINK_JOBS=' <<< "$core_marker"; then
     exit 1
 fi
 
-# A cached LLD that still answers --version is not necessarily a working
-# OpenBIOS linker. Require the current-cache shortcut to perform a real
-# PowerPC ELF link and to discard the standalone LLD graph when that semantic
-# probe fails, matching the broken-module recovery policy of the base compiler.
 grep -Fq 'powerpc_lld_cache_is_usable()' "$CORE" || {
     printf 'error: PowerPC LLD cache has no semantic health probe\n' >&2
     exit 1
