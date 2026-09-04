@@ -5,10 +5,10 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 build="$ROOT/build.sh"
-native="$ROOT/scripts/bootstrap-native-clang.sh"
-i386="$ROOT/scripts/bootstrap-i386-clang.sh"
-powerpc="$ROOT/scripts/bootstrap-powerpc-clang.sh"
-powerpc_base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+native="$ROOT/scripts/bootstrap-native-clang.bash"
+i386="$ROOT/scripts/bootstrap-i386-clang.bash"
+powerpc="$ROOT/scripts/bootstrap-powerpc-clang.bash"
+powerpc_base="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
 seabios_config="$ROOT/scripts/whp-build/configure-seabios.bash"
 
 for script in "$native" "$i386" "$powerpc" "$powerpc_base" "$seabios_config"; do
@@ -22,9 +22,6 @@ for script in "$native" "$i386" "$powerpc" "$powerpc_base" "$seabios_config"; do
     }
 done
 
-# Host policy belongs to the top-level build, not to whichever LLVM helper is
-# entered later. Normalize common kernels once, expose the result to the user,
-# and pass the exact identity through to the native compiler bootstrap.
 for host_os in macos linux windows; do
     grep -Fq "WHP_HOST_OS=$host_os" "$build" || {
         printf 'error: build entry does not normalize host OS %s\n' "$host_os" >&2
@@ -44,9 +41,6 @@ grep -Fq 'host_os="${WHP_HOST_OS:-}"' "$native" || {
     exit 1
 }
 
-# Native LLVM is invoked by build.sh before the normal QEMU host-flag cleanup,
-# and the i386 bootstrap is invoked directly by the SeaBIOS preparation path.
-# Both therefore own a local boundary against ambient host-object flags.
 for script in "$native" "$i386"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$script" || {
         printf 'error: LLVM bootstrap inherits QEMU host flags: %s\n' "$script" >&2
@@ -54,18 +48,11 @@ for script in "$native" "$i386"; do
     }
 done
 
-# Exercise the exact frontend -> IR verifier path implicated by the regression:
-# keeping non-leaf frame pointers while omitting leaf frame pointers emits the
-# modern "non-leaf-no-reserve" function attribute.
 grep -Fq '"$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \' "$native" || {
     printf 'error: native LLVM cache check does not exercise non-leaf frame-pointer IR\n' >&2
     exit 1
 }
 
-# Native LLVM installs clang-resource-headers as a separate component and can
-# be selected as QEMU's macOS host compiler. Its cache gate must therefore prove
-# those headers are usable, not merely that a headerless frontend invocation
-# succeeds.
 for header in stddef.h stdarg.h; do
     grep -Fq "#include <$header>" "$native" || {
         printf 'error: native LLVM cache does not exercise resource header %s\n' \
@@ -78,10 +65,6 @@ grep -Fq 'size_t whp_native_llvm_resource_size' "$native" || {
     exit 1
 }
 
-# The standalone SeaBIOS LLVM bootstrap owns Clang, resource headers, the
-# integrated assembler wrapper, LLD, objdump, objcopy, and strip. Its installed
-# cache must prove that whole command surface semantically before a matching
-# marker is allowed to skip a rebuild.
 for header in stddef.h stdarg.h; do
     grep -Fq "#include <$header>" "$i386" || {
         printf 'error: i386 LLVM cache does not exercise resource header %s\n' \
@@ -145,11 +128,6 @@ grep -Fq 'rm -rf "$POWERPC_LLVM_BUILD_DIR"' "$powerpc" || {
     exit 1
 }
 
-# The frame-pointer failure proved that an installed compiler can look present
-# while one LLVM module is stale. Guard the rest of the core distribution too:
-# archive/index, symbol, ELF reader, strip, configuration, and TableGen tools
-# must participate in the current-cache health gate instead of relying on
-# markers or --version-only checks in later publication stages.
 grep -Fq 'powerpc_llvm_cache_is_usable()' "$powerpc" || {
     printf 'error: PowerPC LLVM cache has no integrated core-module smoke\n' >&2
     exit 1
@@ -173,9 +151,6 @@ grep -Fq '"$llvm_strip" "$cache_smoke_dir/cache.o" -o "$cache_smoke_dir/cache-st
     exit 1
 }
 
-# clang-resource-headers is a separate installed distribution component. A
-# headerless compiler smoke cannot detect a partial install where clang itself
-# works but freestanding standard headers are missing or stale.
 for header in stddef.h stdarg.h; do
     grep -Fq "#include <$header>" "$powerpc" || {
         printf 'error: PowerPC LLVM cache does not exercise resource header %s\n' \
@@ -188,10 +163,6 @@ grep -Fq 'size_t whp_powerpc_cache_size' "$powerpc" || {
     exit 1
 }
 
-# Standalone LLD consumes the installed LLVM CMake package, not only the
-# executables above. A stale LLVMConfig/exports graph can therefore break the
-# macOS linker stage while clang and llvm-config still look healthy. Require a
-# real CMake configure against that installed package before trusting the cache.
 grep -Fq 'find_package(LLVM CONFIG REQUIRED)' "$powerpc" || {
     printf 'error: PowerPC LLVM cache does not validate installed CMake metadata\n' >&2
     exit 1
@@ -205,9 +176,6 @@ grep -Fq 'cmake -S "$cache_cmake_source" -B "$cache_cmake_build"' "$powerpc" || 
     exit 1
 }
 
-# A PowerPC compiler graph may be incremental within one LLVM revision, but it
-# must not be reused after the gitlink changes. Key the build directory to the
-# exact source revision selected by the QEMU tree.
 grep -Fq 'POWERPC_LLVM_BUILD_DIR="$TOOLCHAIN_WORK_DIR/llvm-build/$llvm_revision"' "$powerpc" || {
     printf 'error: PowerPC LLVM build graph is not revision-isolated\n' >&2
     exit 1
