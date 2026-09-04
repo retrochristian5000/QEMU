@@ -68,9 +68,9 @@ G_NORETURN void raise_exception_err(CPUX86State *env, int exception_index,
 G_NORETURN void raise_exception_err_ra(CPUX86State *env, int exception_index,
                                        int error_code, uintptr_t retaddr);
 G_NORETURN void raise_interrupt(CPUX86State *nenv, int intno, int next_eip_addend);
-G_NORETURN void handle_unaligned_access(CPUX86State *env, vaddr vaddr,
+G_NORETURN void handle_unaligned_access(CPUX86State *env, vaddr vaddr, int size,
                                         MMUAccessType access_type,
-                                        uintptr_t retaddr);
+                                        int mmu_idx, uintptr_t retaddr);
 #ifdef CONFIG_USER_ONLY
 void x86_cpu_record_sigsegv(CPUState *cs, vaddr addr,
                             MMUAccessType access_type,
@@ -113,9 +113,6 @@ int exception_has_error_code(int intno);
 /* smm_helper.c */
 void do_smm_enter(X86CPU *cpu);
 
-/* system/bpt_helper.c */
-bool check_hw_breakpoints(CPUX86State *env, bool force_dr6_update);
-
 /*
  * Do the tasks usually performed by gen_eob().  Callers of this function
  * should also handle TF as appropriate.
@@ -126,4 +123,15 @@ static inline void do_end_instruction(CPUX86State *env)
     env->hflags &= ~HF_INHIBIT_IRQ_MASK;
     env->eflags &= ~HF_RF_MASK;
 }
+
+/*
+ * Route only the three WHP-upgraded x87 transcendental instructions to the
+ * floatx80 implementations.  helper-tcg.h is included after helper-gen.h in
+ * both x86 translators, so the generated legacy and WHP helper functions are
+ * already available when these call-site aliases take effect.
+ */
+#define gen_helper_fptan gen_helper_fptan_whp
+#define gen_helper_fsin gen_helper_fsin_whp
+#define gen_helper_fcos gen_helper_fcos_whp
+
 #endif /* I386_HELPER_TCG_H */
