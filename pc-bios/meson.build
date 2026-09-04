@@ -93,7 +93,7 @@ blobs = [
 if whp_openbios_enabled
   whp_openbios_env = find_program('env')
   whp_openbios_bash = find_program('bash')
-  whp_openbios_script = meson.project_source_root() / 'scripts/meson-build-openbios.sh'
+  whp_openbios_script = meson.project_source_root() / 'scripts/meson-build-openbios.bash'
   # Sanitize GNU Make recursion state, OpenBIOS-native selectors, and shell
   # startup hooks before Bash reads BASH_ENV. The build driver repeats the
   # same policy for child firmware processes.
@@ -130,7 +130,7 @@ endif
 
 if whp_seabios_enabled
   whp_seabios_bash = find_program('bash')
-  whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
+  whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
   whp_seabios_x86 = custom_target('whp-seabios-x86-output',
     output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin'],
     command: [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
@@ -148,9 +148,9 @@ endif
 
 if whp_seabios_grub_enabled
   whp_seabios_grub_bash = find_program('bash')
-  whp_seabios_grub_script = meson.project_source_root() / 'scripts/meson-build-seabios.sh'
+  whp_seabios_grub_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
   whp_seabios_grub = custom_target('whp-seabios-grub-output',
-    output: 'seabios-grub.elf',
+    output: 'seabios-grub.ELF',
     command: [whp_seabios_grub_bash, whp_seabios_grub_script,
               whp_seabios_grub_config, '--grub', '@OUTPUT@'],
     build_by_default: false,
@@ -165,7 +165,7 @@ if whp_seabios_hybrid_iso_enabled
     error('hybrid SeaBIOS ISO requires the GRUB-loadable SeaBIOS payload')
   endif
   whp_seabios_hybrid_iso_bash = find_program('bash')
-  whp_seabios_hybrid_iso_script = meson.project_source_root() / 'scripts/build-seabios-hybrid-iso.sh'
+  whp_seabios_hybrid_iso_script = meson.project_source_root() / 'scripts/build-seabios-hybrid-iso.bash'
   whp_seabios_hybrid_iso = custom_target('whp-seabios-hybrid-iso-output',
     output: 'whp-seabios-hybrid.iso',
     input: whp_seabios_grub,
