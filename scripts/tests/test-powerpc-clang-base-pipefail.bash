@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-base="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+base="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
 
 validation="$(awk '
     /bootstrap_stage="validating Clang integrated assembler substitution"/ { in_validation=1 }
