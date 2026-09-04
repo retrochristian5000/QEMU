@@ -73,8 +73,8 @@ CTYPE_OBJS = isdigit.o isxdigit.o toupper.o
 	$(call quiet-command,$(CC) $(LIBC_CFLAGS) -c -o $@ $<,Compiling)
 
 STRING_OBJS = strcat.o strchr.o strrchr.o strcpy.o strlen.o strncpy.o \
-	      strcmp.o strncmp.o strcasecmp.o strncasecmp.o strstr.o \
-	      memset.o memcpy.o memmove.o memcmp.o
+	     strcmp.o strncmp.o strcasecmp.o strncasecmp.o strstr.o \
+	     memset.o memcpy.o memmove.o memcmp.o
 %.o : $(SLOF_DIR)/lib/libc/string/%.c
 	$(call quiet-command,$(CC) $(LIBC_CFLAGS) -c -o $@ $<,Compiling)
 
@@ -112,10 +112,10 @@ libnet.a: $(LIBNETOBJS)
 
 build-all: s390-ccw.img
 
-s390-ccw.elf: $(OBJECTS) libnet.a libc.a
+s390-ccw.ELF: $(OBJECTS) libnet.a libc.a
 	$(call quiet-command,$(CC) $(EXTRA_LDFLAGS) $(LDFLAGS) -o $@ $^,Linking)
 
-s390-ccw.img: s390-ccw.elf
+s390-ccw.img: s390-ccw.ELF
 	$(call quiet-command,$(STRIP) --strip-unneeded $< -o $@,Stripping $< into)
 
 $(OBJECTS): Makefile
@@ -124,7 +124,7 @@ ALL_OBJS = $(sort $(OBJECTS) $(LIBCOBJS) $(LIBNETOBJS))
 -include $(ALL_OBJS:%.o=%.d)
 
 clean:
-	rm -f *.o *.d *.img *.elf *~ *.a
+	rm -f *.o *.d *.img *.ELF *~ *.a
 
 distclean:
 	rm -f config-cc.mak
