@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-core="$ROOT/scripts/bootstrap-powerpc-clang-core.sh"
+core="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
 lld_cmake="$ROOT/toolchains/llvm-project/lld/CMakeLists.txt"
 
 # The persistent standalone LLD cache must be actively normalized to LLVM's
