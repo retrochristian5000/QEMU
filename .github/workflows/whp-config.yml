@@ -12,6 +12,7 @@ on:
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/portable-build-entry.py'
       - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/tests/test-native-llvm-build-entry.py'
@@ -22,6 +23,7 @@ on:
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-whp-config.py'
+      - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-incremental.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
       - 'target/i386/helper.h'
@@ -53,6 +55,7 @@ jobs:
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
           python3 scripts/tests/test-native-llvm-build-entry.py
+          bash scripts/tests/test-whp-config-integration.bash
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
@@ -91,5 +94,7 @@ jobs:
           bash -n builder.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/host-cpu-tuning.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
+          bash -n scripts/tests/test-whp-config-integration.bash
