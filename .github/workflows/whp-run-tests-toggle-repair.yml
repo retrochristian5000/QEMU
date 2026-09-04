@@ -1,0 +1,224 @@
+name: WHP RUN_TESTS menu repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/whp-run-tests-toggle-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Red-green RUN_TESTS repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}: {old!r}')
+              p.write_text(text.replace(old, new, count), encoding='utf-8')
+
+          # Tests first: these must fail against the old implementation.
+          replace(
+              'scripts/tests/test-whp-config.py',
+              'import unittest\n',
+              'import unittest\nfrom unittest import mock\n',
+          )
+          replace(
+              'scripts/tests/test-whp-config.py',
+              "def load_menu_module():\n    spec = importlib.util.spec_from_file_location('whp_menuconfig', MENU_TOOL)\n    module = importlib.util.module_from_spec(spec)\n    assert spec.loader is not None\n    spec.loader.exec_module(module)\n    return module\n\n\n",
+              "def load_menu_module():\n    spec = importlib.util.spec_from_file_location('whp_menuconfig', MENU_TOOL)\n    module = importlib.util.module_from_spec(spec)\n    assert spec.loader is not None\n    spec.loader.exec_module(module)\n    return module\n\n\ndef load_portable_build_module():\n    spec = importlib.util.spec_from_file_location('whp_portable_build', PORTABLE_BUILD_TOOL)\n    module = importlib.util.module_from_spec(spec)\n    assert spec.loader is not None\n    spec.loader.exec_module(module)\n    return module\n\n\n",
+          )
+          replace(
+              'scripts/tests/test-whp-config.py',
+              '    def test_boolean_defaults_are_valid_and_install_is_opt_in(self):\n',
+              "    def test_run_tests_is_user_controlled_build_behavior(self):\n        mod = load_module()\n        option = mod.OPTION_BY_KEY['RUN_TESTS']\n        self.assertEqual(option.section, 'Build behavior')\n        self.assertEqual(option.label, 'Run tests after build')\n        self.assertEqual(option.kind, 'bool')\n        self.assertEqual(option.default, 'y')\n\n        values = mod.default_values()\n        self.assertEqual(values['RUN_TESTS'], 'y')\n        assignments = mod.shell_assignments(mod.ConfigState(values), {})\n        self.assertIn(\"RUN_TESTS='1'\", assignments)\n\n        values['RUN_TESTS'] = 'n'\n        assignments = mod.shell_assignments(mod.ConfigState(values), {})\n        self.assertIn(\"RUN_TESTS='0'\", assignments)\n\n    def test_portable_test_runner_uses_qemu_make_check(self):\n        mod = load_portable_build_module()\n        with tempfile.TemporaryDirectory() as td:\n            td_path = pathlib.Path(td)\n            build_dir = td_path / 'build'\n            log = td_path / 'make.log'\n            fake_make = td_path / 'gmake'\n            fake_make.write_text(\n                '#!/bin/sh\\n'\n                'if [ \"${1:-}\" = \"--version\" ]; then\\n'\n                '  echo \"GNU Make 4.4\"\\n'\n                '  exit 0\\n'\n                'fi\\n'\n                'printf \"%s\\\\n\" \"$*\" >> \"$WHP_TEST_RUNNER_LOG\"\\n',\n                encoding='utf-8',\n            )\n            fake_make.chmod(0o755)\n            with mock.patch.dict(\n                os.environ,\n                {'MAKE_CMD': str(fake_make), 'WHP_TEST_RUNNER_LOG': str(log)},\n                clear=False,\n            ):\n                mod.run_qemu_tests(build_dir, '3')\n            self.assertEqual(\n                log.read_text(encoding='utf-8').strip(),\n                f'-C {build_dir} -j3 check',\n            )\n\n    def test_boolean_defaults_are_valid_and_install_is_opt_in(self):\n",
+          )
+
+          replace(
+              'scripts/tests/test-whp-config-integration.bash',
+              "grep -Fq 'Install prefix' <<< \"$menu_output\"\n",
+              "grep -Fq 'Install prefix' <<< \"$menu_output\"\ngrep -Fq 'Run tests after build' <<< \"$menu_output\"\n",
+          )
+          replace(
+              'scripts/tests/test-whp-config-integration.bash',
+              'WHP_INCREMENTAL_BUILD=y\nINSTALL=n\n',
+              'WHP_INCREMENTAL_BUILD=y\nRUN_TESTS=y\nINSTALL=n\n',
+          )
+          replace(
+              'scripts/tests/test-whp-config-integration.bash',
+              '[[ "$INSTALL" == 0 ]]\n[[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]\n',
+              '[[ "$RUN_TESTS" == 1 ]]\n[[ "$INSTALL" == 0 ]]\n[[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]\n',
+          )
+          replace(
+              'scripts/tests/test-whp-config-integration.bash',
+              'python3 -m py_compile "$ROOT/scripts/whp-build/portable-build-entry.py"\n',
+              '''# RUN_TESTS is post-build policy. QEMU builds run make check when enabled,\n# skip it when disabled, and firmware-only targets do not trigger the QEMU suite.\nTEST_BUILD_DIR="$TMP/test-build"\nTEST_NINJA_LOG="$TMP/test-ninja.log"\nTEST_MAKE_LOG="$TMP/test-make.log"\nFAKE_TEST_NINJA="$TMP/fake-test-ninja"\nFAKE_TEST_MAKE="$TMP/fake-test-make"\nmkdir -p "$TEST_BUILD_DIR"\ncat > "$FAKE_TEST_NINJA" <<'EOF'\n#!/bin/sh\nprintf '%s\\n' "$*" >> "$WHP_TEST_NINJA_LOG"\nEOF\ncat > "$FAKE_TEST_MAKE" <<'EOF'\n#!/bin/sh\nprintf '%s\\n' "$*" >> "$WHP_TEST_MAKE_LOG"\nEOF\nchmod +x "$FAKE_TEST_NINJA" "$FAKE_TEST_MAKE"\n\nRUN_TESTS=1 INSTALL=0 JOBS=2 \\\nBUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \\\nWHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \\\nbash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \\\n    _ "$ROOT/scripts/whp-build/build-targets.bash"\ngrep -Fq 'qemu-system-i386' "$TEST_NINJA_LOG"\ngrep -Fq ' check' "$TEST_MAKE_LOG"\n\n: > "$TEST_MAKE_LOG"\nRUN_TESTS=0 INSTALL=0 JOBS=2 \\\nBUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \\\nWHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \\\nbash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \\\n    _ "$ROOT/scripts/whp-build/build-targets.bash"\ntest ! -s "$TEST_MAKE_LOG"\n\n: > "$TEST_MAKE_LOG"\nRUN_TESTS=1 INSTALL=0 JOBS=2 \\\nBUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \\\nWHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \\\nbash -c 'set -euo pipefail; source "$1"; whp_build_targets whp-openbios-ppc' \\\n    _ "$ROOT/scripts/whp-build/build-targets.bash"\ntest ! -s "$TEST_MAKE_LOG"\n\npython3 -m py_compile "$ROOT/scripts/whp-build/portable-build-entry.py"\n''',
+          )
+          PY
+
+          set +e
+          python3 scripts/tests/test-whp-config.py >/tmp/run-tests-red-python.log 2>&1
+          red_python=$?
+          bash scripts/tests/test-whp-config-integration.bash >/tmp/run-tests-red-bash.log 2>&1
+          red_bash=$?
+          set -e
+          if [[ "$red_python" == 0 || "$red_bash" == 0 ]]; then
+            echo 'error: RUN_TESTS regression tests did not fail before implementation' >&2
+            cat /tmp/run-tests-red-python.log >&2 || true
+            cat /tmp/run-tests-red-bash.log >&2 || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}: {old!r}')
+              p.write_text(text.replace(old, new, count), encoding='utf-8')
+
+          replace(
+              'scripts/whp-config/config.py',
+              "    Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),\n    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),\n",
+              "    Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),\n    Option('RUN_TESTS', 'Build behavior', 'Run tests after build', 'bool', 'y'),\n    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),\n",
+          )
+
+          replace(
+              'scripts/whp-build/prepare-build.bash',
+              '    BUILD_TARGETS="${BUILD_TARGETS:-all}"\n    INSTALL="${INSTALL:-0}"\n',
+              '    BUILD_TARGETS="${BUILD_TARGETS:-all}"\n    RUN_TESTS="${RUN_TESTS:-1}"\n    INSTALL="${INSTALL:-0}"\n',
+          )
+          replace(
+              'scripts/whp-build/prepare-build.bash',
+              '        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \\\n        INSTALL OPENBIOS_FORCE_RECONFIGURE \\\n',
+              '        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \\\n        RUN_TESTS INSTALL OPENBIOS_FORCE_RECONFIGURE \\\n',
+          )
+
+          replace(
+              'scripts/whp-build/build-targets.bash',
+              'local target\n',
+              'local target\nlocal run_qemu_tests=0\n',
+          )
+          replace(
+              'scripts/whp-build/build-targets.bash',
+              '"${build_runner[@]}" "${build_target_list[@]}"\n\n# Installation is deliberately separate from compilation and is opt-in. This\n',
+              '''"${build_runner[@]}" "${build_target_list[@]}"\n\n# RUN_TESTS controls QEMU's documented regression suite, not firmware-only\n# helper targets. The suite is exposed through QEMU's GNU Make compatibility\n# layer as `make check`, even when Ninja performed the compilation itself.\nif [[ "${RUN_TESTS:-1}" == 1 ]]; then\n    for target in "${build_target_list[@]}"; do\n        case "$target" in\n            all|qemu-img|qemu-system-*)\n                run_qemu_tests=1\n                break\n                ;;\n        esac\n    done\nfi\nif [[ "$run_qemu_tests" == 1 ]]; then\n    if [[ -z "${MAKE_CMD:-}" ]]; then\n        printf '%s\\n' \\\n            'error: RUN_TESTS=1 requires GNU Make for the QEMU make check suite.' \\\n            'Install GNU Make, set MAKE_CMD, or disable tests in menuconfig.' >&2\n        return 1\n    fi\n    "$MAKE_CMD" -C "$BUILD_DIR" -j"$JOBS" check\nfi\n\n# Installation is deliberately separate from compilation and is opt-in. This\n''',
+          )
+
+          replace(
+              'scripts/whp-build/portable-build.py',
+              "def select_runner() -> List[str]:\n",
+              '''def select_gnu_make() -> List[str]:\n    requested_make = os.environ.get('MAKE_CMD') or os.environ.get('MAKE')\n    if requested_make:\n        command = shlex.split(requested_make)\n        if is_gnu_make(command):\n            return command\n        raise RuntimeError(\n            f'MAKE_CMD/MAKE does not identify GNU Make: {requested_make}'\n        )\n    for name in ('gmake', 'make'):\n        path = shutil.which(name)\n        if path and is_gnu_make([path]):\n            return [path]\n    raise RuntimeError(\n        'RUN_TESTS=y requires GNU Make for the QEMU make check suite'\n    )\n\n\ndef run_qemu_tests(build_dir: pathlib.Path, jobs: str) -> None:\n    make = select_gnu_make()\n    subprocess.run(\n        [*make, '-C', str(build_dir), f'-j{jobs}', 'check'],\n        check=True,\n    )\n\n\ndef select_runner() -> List[str]:\n''',
+          )
+          replace(
+              'scripts/whp-build/portable-build.py',
+              "        values = resolved_values()\n        if values['INSTALL'] == 'y':\n",
+              "        values = resolved_values()\n        if values['RUN_TESTS'] == 'y':\n            run_qemu_tests(build_dir, jobs)\n        if values['INSTALL'] == 'y':\n",
+          )
+
+          replace(
+              '.github/workflows/whp-config.yml',
+              "      - 'scripts/whp-build/prepare-build.bash'\n",
+              "      - 'scripts/whp-build/prepare-build.bash'\n      - 'scripts/whp-build/build-targets.bash'\n",
+          )
+          replace(
+              '.github/workflows/whp-config.yml',
+              "      - 'scripts/tests/test-whp-config.py'\n",
+              "      - 'scripts/tests/test-whp-config.py'\n      - 'scripts/tests/test-whp-config-integration.bash'\n",
+          )
+          replace(
+              '.github/workflows/whp-config.yml',
+              '          python3 scripts/tests/test-native-llvm-build-entry.py\n',
+              '          python3 scripts/tests/test-native-llvm-build-entry.py\n          bash scripts/tests/test-whp-config-integration.bash\n',
+          )
+          replace(
+              '.github/workflows/whp-config.yml',
+              '          bash -n scripts/whp-build/prepare-build.bash\n',
+              '          bash -n scripts/whp-build/prepare-build.bash\n          bash -n scripts/whp-build/build-targets.bash\n',
+          )
+          replace(
+              '.github/workflows/whp-config.yml',
+              '          bash -n scripts/tests/test-host-cpu-tuning.bash\n',
+              '          bash -n scripts/tests/test-host-cpu-tuning.bash\n          bash -n scripts/tests/test-whp-config-integration.bash\n',
+          )
+
+          for path in ('.github/workflows/ci.yml', '.github/workflows/whp-portable-build.yml'):
+              replace(
+                  path,
+                  'permissions:\n  contents: read\n',
+                  "permissions:\n  contents: read\n\nenv:\n  # Build-only CI jobs opt out; their dedicated regression guards stay active.\n  RUN_TESTS: '0'\n",
+              )
+          replace(
+              '.github/workflows/native-llvm-macos.yml',
+              "      BOOTSTRAP_NATIVE_LLVM: '1'\n",
+              "      BOOTSTRAP_NATIVE_LLVM: '1'\n      RUN_TESTS: '0'\n",
+          )
+          PY
+
+          python3 scripts/tests/test-whp-config.py
+          bash scripts/tests/test-whp-config-integration.bash
+          python3 -m py_compile \
+            scripts/whp-config/config.py \
+            scripts/whp-build/portable-build.py \
+            scripts/tests/test-whp-config.py
+          bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/whp-build/build-targets.bash
+          bash -n scripts/tests/test-whp-config-integration.bash
+          git diff --check
+
+          expected="$(cat <<'EOF' | sort
+          .github/workflows/ci.yml
+          .github/workflows/native-llvm-macos.yml
+          .github/workflows/whp-config.yml
+          .github/workflows/whp-portable-build.yml
+          scripts/tests/test-whp-config-integration.bash
+          scripts/tests/test-whp-config.py
+          scripts/whp-build/build-targets.bash
+          scripts/whp-build/portable-build.py
+          scripts/whp-build/prepare-build.bash
+          scripts/whp-config/config.py
+          EOF
+          )"
+          actual="$(git diff --name-only | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'error: unexpected RUN_TESTS repair file set\nexpected:\n%s\nactual:\n%s\n' "$expected" "$actual" >&2
+            exit 1
+          fi
+
+          git add -- \
+            .github/workflows/ci.yml \
+            .github/workflows/native-llvm-macos.yml \
+            .github/workflows/whp-config.yml \
+            .github/workflows/whp-portable-build.yml \
+            scripts/tests/test-whp-config-integration.bash \
+            scripts/tests/test-whp-config.py \
+            scripts/whp-build/build-targets.bash \
+            scripts/whp-build/portable-build.py \
+            scripts/whp-build/prepare-build.bash \
+            scripts/whp-config/config.py
+          git commit -m 'build: let users control QEMU tests'
+          git push origin HEAD:master
