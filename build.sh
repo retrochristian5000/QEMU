@@ -345,4 +345,4 @@ fi
 unset BASH_ENV ENV
 
 exec "$WHP_BUILD_BASH" --noprofile --norc \
-    "$SOURCE_DIR/scripts/whp-build/build-entry.bash" "$@"
+    "$SOURCE_DIR/builder.sh" "$@"
