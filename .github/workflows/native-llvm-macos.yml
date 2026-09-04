@@ -6,8 +6,16 @@ on:
       - master
     paths:
       - 'build.sh'
+      - 'builder.bash'
       - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/macos-builder.sh'
+      - 'scripts/macos-builder.bash'
+      - 'scripts/macos-build-hygiene.bash'
+      - 'scripts/macos-compiler-policy.bash'
       - 'scripts/verify-macos-lto.sh'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'toolchains/llvm-project'
@@ -47,8 +55,8 @@ jobs:
         shell: bash
         run: test "$(uname -m)" = arm64
 
-      - name: Install native LLVM build dependencies
-        run: brew install cmake ninja
+      - name: Install native LLVM and QEMU build dependencies
+        run: brew install cmake glib libslirp make ninja pixman pkgconf
 
       - name: Bootstrap native LLVM through build entry
         shell: bash
@@ -110,15 +118,46 @@ jobs:
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
 
+      - name: Build QEMU with bootstrapped LLVM
+        shell: bash
+        env:
+          WHP_SHELL_PROBE_ONLY: '0'
+          BUILD_QEMU_IMG: '0'
+          BUILD_QEMU_SYSTEM_I386: '1'
+          BUILD_QEMU_SYSTEM_PPC: '0'
+          BUILD_OPENBIOS: '0'
+          BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+          BUILD_SEABIOS: '0'
+          BUILD_SEABIOS_GRUB: '0'
+          BOOTSTRAP_I386_TOOLCHAIN: '0'
+          QEMU_HOST_LTO: '0'
+          MACOS_ENABLE_COCOA: '0'
+          MACOS_ENABLE_COREAUDIO: '0'
+          MACOS_ENABLE_GTK: '0'
+          MACOS_ENABLE_PA: '0'
+        run: |
+          set -euo pipefail
+          ./build.sh qemu-system-i386 2>&1 | tee native-qemu.log
+          test -x "$BUILD_DIR/qemu-system-i386"
+          "$BUILD_DIR/qemu-system-i386" --version
+          grep -Fq "QEMU native compiler: WHP LLVM ($NATIVE_LLVM_DIR)" native-qemu.log
+          grep -Fq "QEMU C compiler:          $NATIVE_LLVM_DIR/bin/clang" native-qemu.log
+          grep -Fq "CC=$NATIVE_LLVM_DIR/bin/clang|" \
+            "$BUILD_DIR/.whp-macos-build-identity"
+
       - name: Show native LLVM failure context
         if: failure()
         shell: bash
         run: |
           tail -n 250 native-llvm.log 2>/dev/null || true
           tail -n 100 native-llvm.out 2>/dev/null || true
+          tail -n 300 native-qemu.log 2>/dev/null || true
           cat "$NATIVE_LLVM_DIR/.whp-native-llvm" 2>/dev/null || true
           cat native-llvm-lto.manifest 2>/dev/null || true
           cat native-llvm-lto.d/LTO.link.pipeline 2>/dev/null || true
+          cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
+          tail -n 200 "$BUILD_DIR/config.log" 2>/dev/null || true
+          tail -n 200 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
 
       - name: Upload native LLVM failure logs
         if: failure()
@@ -128,8 +167,13 @@ jobs:
           path: |
             native-llvm.log
             native-llvm.out
+            native-qemu.log
             native-llvm-lto.manifest
             native-llvm-lto.d/
+            build-native-llvm/qemu/config.log
+            build-native-llvm/qemu/meson-logs/meson-log.txt
+            build-native-llvm/qemu/.whp-config
+            build-native-llvm/qemu/.whp-macos-build-identity
             build-native-llvm/toolchain/.whp-native-llvm
             build-native-llvm/work/llvm-build/CMakeCache.txt
           if-no-files-found: warn
