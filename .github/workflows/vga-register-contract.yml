@@ -1,0 +1,36 @@
+name: IBM VGA register contract
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'hw/display/vga.c'
+      - 'hw/display/vga_int.h'
+      - 'hw/display/vga_regs.h'
+      - 'tests/qtest/display-vga-test.c'
+      - '.github/workflows/vga-register-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkg-config \
+            python3-venv
+      - name: Configure x86_64 system emulator
+        run: ./configure --target-list=x86_64-softmmu --disable-docs --disable-werror
+      - name: Build VGA qtest
+        run: ninja -C build qemu-system-x86_64 tests/qtest/display-vga-test
+      - name: Check IBM VGA register contract
+        run: meson test -C build --print-errorlogs qtest-x86_64/display-vga-test
