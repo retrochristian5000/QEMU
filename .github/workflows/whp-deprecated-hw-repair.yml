@@ -1,0 +1,81 @@
+name: WHP deprecated hardware API repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/whp-deprecated-hw-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Replace deprecated GLib copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          expected = {
+              'hw/9pfs/9p-synth.c': 1,
+              'hw/9pfs/9p-util.h': 1,
+              'hw/9pfs/9p.c': 1,
+              'hw/acpi/core.c': 1,
+              'hw/core/machine.c': 1,
+              'hw/net/eepro100.c': 1,
+              'hw/nvram/fw_cfg.c': 4,
+              'hw/scsi/mptsas.c': 2,
+              'hw/vfio/pci.c': 1,
+          }
+
+          total = 0
+          for name, wanted in expected.items():
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              found = text.count('g_memdup(')
+              if found != wanted:
+                  raise SystemExit(
+                      f'{name}: expected {wanted} g_memdup() calls, found {found}'
+                  )
+              path.write_text(text.replace('g_memdup(', 'g_memdup2('),
+                              encoding='utf-8')
+              total += found
+
+          if total != 13:
+              raise SystemExit(f'expected 13 replacements, made {total}')
+          PY
+
+          git diff --check
+          bash scripts/tests/test-hw-deprecated-api-audit.bash
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hw/9pfs/9p-synth.c \
+            hw/9pfs/9p-util.h \
+            hw/9pfs/9p.c \
+            hw/acpi/core.c \
+            hw/core/machine.c \
+            hw/net/eepro100.c \
+            hw/nvram/fw_cfg.c \
+            hw/scsi/mptsas.c \
+            hw/vfio/pci.c
+          git diff --cached --check
+          git commit -m 'hw: replace deprecated g_memdup with g_memdup2'
+          git push origin HEAD:master
