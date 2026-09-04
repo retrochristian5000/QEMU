@@ -13,6 +13,7 @@
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "fpu/softfloat.h"
+#include "fpu/softfloat-macros.h"
 #include "../../m68k/softfloat.h"
 
 #define X87_FPU_C2          0x0400
