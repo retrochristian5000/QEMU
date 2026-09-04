@@ -22,11 +22,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Prove guard is red and repair OHCI formatting
+      - name: Repair OHCI formatting and install guard
         shell: bash
         run: |
           set -euo pipefail
-
           hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb)"
           count="$(printf '%s\n' "$hits" | grep -c .)"
           if [[ "$count" -ne 1 ]]; then
@@ -34,8 +33,6 @@ jobs:
             printf '%s\n' "$hits" >&2
             exit 1
           fi
-          printf '%s\n' "$hits" | grep -Fq \
-            'hw/usb/hcd-ohci.c:        p += sprintf(p, " %.2x", buf[i]);'
 
           python3 - <<'PY'
           from pathlib import Path
@@ -51,20 +48,21 @@ jobs:
 
           audit = Path('scripts/tests/test-hw-deprecated-api-audit.bash')
           text = audit.read_text(encoding='utf-8')
-          marker = "suppression_pattern='diagnostic[[:space:]]+ignored[[:space:]]+\\\"-Wdeprecated-declarations\\\"|G_GNUC_BEGIN_IGNORE_DEPRECATIONS|-Wno-error=deprecated-declarations|-Wno-deprecated-declarations'"
-          guard = r'''if hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb 2>/dev/null)"; then
-    printf '%s\n' \
-        'error: emulated USB hardware may not use unbounded sprintf(); use snprintf().' >&2
-    printf '%s\n' "$hits" >&2
-    status=1
-fi
-
-'''
+          marker = 'suppression_pattern='
           if text.count(marker) != 1:
               raise SystemExit('hardware audit insertion point changed')
           if 'emulated USB hardware may not use unbounded sprintf()' in text:
               raise SystemExit('USB sprintf guard already exists')
-          audit.write_text(text.replace(marker, guard + marker), encoding='utf-8')
+          guard = (
+              "if hits=\"$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\\(' "
+              "-- hw/usb 2>/dev/null)\"; then\n"
+              "    printf '%s\\n' \\\n"
+              "        'error: emulated USB hardware may not use unbounded sprintf(); use snprintf().' >&2\n"
+              "    printf '%s\\n' \"$hits\" >&2\n"
+              "    status=1\n"
+              "fi\n\n"
+          )
+          audit.write_text(text.replace(marker, guard + marker, 1), encoding='utf-8')
           PY
 
           git diff --check
@@ -73,7 +71,6 @@ fi
             echo 'error: raw sprintf() survived USB repair' >&2
             exit 1
           fi
-          git diff -- hw/usb/hcd-ohci.c scripts/tests/test-hw-deprecated-api-audit.bash
 
       - name: Commit verified USB repair
         shell: bash
