@@ -864,7 +864,7 @@ static void ohci_td_pkt(const char *msg, const uint8_t *buf, size_t len)
             break;
         }
 
-        p += sprintf(p, " %.2x", buf[i]);
+        p += snprintf(p, sizeof(tmp) - (p - tmp), " %.2x", buf[i]);
     }
 }
 

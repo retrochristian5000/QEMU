@@ -15,6 +15,13 @@ if hits="$(git grep -n -E 'g_memdup[[:space:]]*\(' -- hw include/hw 2>/dev/null)
     status=1
 fi
 
+if hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb 2>/dev/null)"; then
+    printf '%s\n' \
+        'error: emulated USB hardware may not use unbounded sprintf(); use snprintf().' >&2
+    printf '%s\n' "$hits" >&2
+    status=1
+fi
+
 suppression_pattern='diagnostic[[:space:]]+ignored[[:space:]]+"-Wdeprecated-declarations"|G_GNUC_BEGIN_IGNORE_DEPRECATIONS|-Wno-error=deprecated-declarations|-Wno-deprecated-declarations'
 if hits="$(git grep -n -E "$suppression_pattern" -- hw include/hw 2>/dev/null | \
     grep -v '^hw/hyperv/hv-balloon-page_range_tree.c:')"; then
