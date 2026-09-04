@@ -68,9 +68,9 @@ G_NORETURN void raise_exception_err(CPUX86State *env, int exception_index,
 G_NORETURN void raise_exception_err_ra(CPUX86State *env, int exception_index,
                                        int error_code, uintptr_t retaddr);
 G_NORETURN void raise_interrupt(CPUX86State *nenv, int intno, int next_eip_addend);
-G_NORETURN void handle_unaligned_access(CPUX86State *env, vaddr vaddr, int size,
+G_NORETURN void handle_unaligned_access(CPUX86State *env, vaddr vaddr,
                                         MMUAccessType access_type,
-                                        int mmu_idx, uintptr_t retaddr);
+                                        uintptr_t retaddr);
 #ifdef CONFIG_USER_ONLY
 void x86_cpu_record_sigsegv(CPUState *cs, vaddr addr,
                             MMUAccessType access_type,
@@ -112,6 +112,9 @@ int exception_has_error_code(int intno);
 
 /* smm_helper.c */
 void do_smm_enter(X86CPU *cpu);
+
+/* system/bpt_helper.c */
+bool check_hw_breakpoints(CPUX86State *env, bool force_dr6_update);
 
 /*
  * Do the tasks usually performed by gen_eob().  Callers of this function
