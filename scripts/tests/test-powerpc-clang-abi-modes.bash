@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.sh"
+BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
 
 for required in clang grep mktemp; do
     if ! command -v "$required" >/dev/null 2>&1; then
@@ -23,10 +23,6 @@ else
     exit 1
 fi
 
-# switch-arch's qemu-ppc64 recipe carries the historical GNU-as selector
-# -Wa,-a64. Clang's integrated assembler derives 64-bit mode from -m64 and
-# rejects that GNU-as option on current LLVM. The compatibility driver must
-# consume it just like the other GCC-only OpenBIOS policy switches.
 grep -Fq -- '-Wa,-a64' "$BOOTSTRAP"
 grep -Eq -- '-mcall-sysv-noeabi\|-msdata=none\|-G0\|.*-Wa,-a64' "$BOOTSTRAP"
 grep -Fq -- '--target=powerpc-none-elf' "$BOOTSTRAP"
@@ -60,7 +56,6 @@ clang --target=powerpc-none-elf -fintegrated-as \
     -m32 -mcpu=604 -msoft-float -ffreestanding -fno-pic -fno-pie \
     -c "$scratch/probe.c" -o "$scratch/ppc32.o"
 
-# This is the command after the compatibility driver removes -Wa,-a64.
 clang --target=powerpc-none-elf -fintegrated-as \
     -m64 -mcpu=970 -mno-altivec -msoft-float \
     -ffreestanding -fno-pic -fno-pie -DEXPECT_PPC64 \
