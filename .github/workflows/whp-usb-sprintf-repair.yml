@@ -1,0 +1,86 @@
+name: WHP USB sprintf repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/whp-usb-sprintf-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Prove guard is red and repair OHCI formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb)"
+          count="$(printf '%s\n' "$hits" | grep -c .)"
+          if [[ "$count" -ne 1 ]]; then
+            printf 'error: expected exactly one raw sprintf() in hw/usb, found %s\n' "$count" >&2
+            printf '%s\n' "$hits" >&2
+            exit 1
+          fi
+          printf '%s\n' "$hits" | grep -Fq \
+            'hw/usb/hcd-ohci.c:        p += sprintf(p, " %.2x", buf[i]);'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ohci = Path('hw/usb/hcd-ohci.c')
+          text = ohci.read_text(encoding='utf-8')
+          old = '        p += sprintf(p, " %.2x", buf[i]);'
+          new = ('        p += snprintf(p, sizeof(tmp) - (p - tmp), '
+                 '" %.2x", buf[i]);')
+          if text.count(old) != 1:
+              raise SystemExit('OHCI sprintf precondition changed')
+          ohci.write_text(text.replace(old, new), encoding='utf-8')
+
+          audit = Path('scripts/tests/test-hw-deprecated-api-audit.bash')
+          text = audit.read_text(encoding='utf-8')
+          marker = "suppression_pattern='diagnostic[[:space:]]+ignored[[:space:]]+\\\"-Wdeprecated-declarations\\\"|G_GNUC_BEGIN_IGNORE_DEPRECATIONS|-Wno-error=deprecated-declarations|-Wno-deprecated-declarations'"
+          guard = r'''if hits="$(git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb 2>/dev/null)"; then
+    printf '%s\n' \
+        'error: emulated USB hardware may not use unbounded sprintf(); use snprintf().' >&2
+    printf '%s\n' "$hits" >&2
+    status=1
+fi
+
+'''
+          if text.count(marker) != 1:
+              raise SystemExit('hardware audit insertion point changed')
+          if 'emulated USB hardware may not use unbounded sprintf()' in text:
+              raise SystemExit('USB sprintf guard already exists')
+          audit.write_text(text.replace(marker, guard + marker), encoding='utf-8')
+          PY
+
+          git diff --check
+          bash scripts/tests/test-hw-deprecated-api-audit.bash
+          if git grep -n -E '(^|[^[:alnum:]_])sprintf[[:space:]]*\(' -- hw/usb; then
+            echo 'error: raw sprintf() survived USB repair' >&2
+            exit 1
+          fi
+          git diff -- hw/usb/hcd-ohci.c scripts/tests/test-hw-deprecated-api-audit.bash
+
+      - name: Commit verified USB repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hw/usb/hcd-ohci.c scripts/tests/test-hw-deprecated-api-audit.bash
+          git diff --cached --check
+          git commit -m 'hw/usb: replace OHCI sprintf with snprintf'
+          git push origin HEAD:master
