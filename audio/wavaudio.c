@@ -82,7 +82,7 @@ static int wav_init_out(HWVoiceOut *hw, struct audsettings *as)
     Audiodev *dev = hw->s->dev;
     AudiodevWavOptions *wopts = &dev->u.wav;
     struct audsettings wav_as = audiodev_to_audsettings(dev->u.wav.out);
-    const char *wav_path = wopts->path ?: "qemu.wav";
+    const char *wav_path = wopts->path ?: "qemu.WAV";
 
     stereo = wav_as.nchannels == 2;
     switch (wav_as.fmt) {
