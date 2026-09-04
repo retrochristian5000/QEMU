@@ -1,0 +1,59 @@
+name: WHP bounded format repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/whp-format-repair.yml'
+      - 'scripts/tests/repair-unbounded-format.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Repair audited unbounded format calls
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/repair-unbounded-format.py
+          git diff --check
+          bash scripts/tests/test-hw-deprecated-api-audit.bash
+          git diff --stat
+
+      - name: Commit verified format repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            disas/m68k.c \
+            hw/net/eepro100.c \
+            hw/net/rocker/rocker.c \
+            hw/net/rocker/rocker_of_dpa.c \
+            hw/ppc/spapr.c \
+            hw/ppc/vof.c \
+            hw/scsi/scsi-generic.c \
+            hw/vfio/pci.c \
+            include/disas/dis-asm.h \
+            libdecnumber/dpd/decimal128.c \
+            libdecnumber/dpd/decimal32.c \
+            libdecnumber/dpd/decimal64.c \
+            qga/vss-win32/install.cpp \
+            system/runstate.c \
+            target/m68k/translate.c \
+            target/rx/disas.c \
+            target/xtensa/xtensa-isa.c
+          git diff --cached --check
+          git commit -m 'treewide: replace unbounded sprintf calls'
+          git push origin HEAD:master
