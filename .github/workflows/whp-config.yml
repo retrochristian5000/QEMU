@@ -16,6 +16,7 @@ on:
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
+      - 'scripts/tests/test-host-optimization.py'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-whp-config.py'
@@ -54,6 +55,9 @@ jobs:
           python3 scripts/tests/test-host-cpu-tuning.py
           bash scripts/tests/test-host-cpu-tuning.bash
 
+      - name: Test host optimization policy
+        run: python3 scripts/tests/test-host-optimization.py
+
       - name: Check configuration syntax
         shell: bash
         run: |
@@ -65,6 +69,7 @@ jobs:
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
             scripts/tests/test-host-cpu-tuning.py \
+            scripts/tests/test-host-optimization.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-seabios-config.py \
             scripts/tests/test-whp-config.py \
