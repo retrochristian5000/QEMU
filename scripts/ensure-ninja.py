@@ -105,14 +105,23 @@ def ensure_ninja_source() -> str:
 
 
 def select_host_cxx() -> str:
-    requested = os.environ.get('CXX_FOR_BUILD') or os.environ.get('CXX')
+    requested = os.environ.get('CXX_FOR_BUILD')
     if requested:
         return requested
 
+    # Ninja executes on the build machine, so on macOS it must not inherit
+    # QEMU's target CXX. A self-built Clang targeting aarch64-apple-darwin does
+    # not necessarily carry an Apple SDK sysroot and can fail through libc++
+    # with headers such as <errno.h> missing. Prefer the SDK compiler for the
+    # build-machine role unless CXX_FOR_BUILD explicitly overrides it.
     if platform.system() == 'Darwin' and shutil.which('xcrun'):
         candidate = run_text(['xcrun', '--sdk', 'macosx', '--find', 'clang++'])
         if candidate:
             return candidate
+
+    requested = os.environ.get('CXX')
+    if requested:
+        return requested
 
     for name in ('c++', 'clang++', 'g++'):
         path = shutil.which(name)
