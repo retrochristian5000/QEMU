@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-NINJA_BOOTSTRAP_SCHEMA='3'
+NINJA_BOOTSTRAP_SCHEMA='4'
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -141,6 +141,38 @@ def select_host_sdkroot() -> str:
     return sdkroot
 
 
+def select_compiler_cache() -> str:
+    explicit = os.environ.get('WHP_COMPILER_CACHE_CMD', '')
+    if explicit:
+        argv = shlex.split(explicit)
+        if len(argv) != 1:
+            raise RuntimeError('WHP_COMPILER_CACHE_CMD must name exactly one executable')
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if not path or not pathlib.Path(path).exists():
+            raise RuntimeError(f'compiler cache is not executable: {candidate}')
+        if pathlib.Path(path).name not in ('ccache', 'sccache'):
+            raise RuntimeError(f'unsupported compiler cache command: {path}')
+        return str(path)
+
+    policy = os.environ.get('COMPILER_CACHE', 'auto')
+    if policy not in ('auto', 'ccache', 'sccache', 'none'):
+        raise RuntimeError(
+            f'COMPILER_CACHE must be auto, ccache, sccache, or none: {policy}'
+        )
+    if policy == 'none':
+        return ''
+
+    names = ('ccache', 'sccache') if policy == 'auto' else (policy,)
+    for name in names:
+        path = shutil.which(name)
+        if path:
+            return path
+    if policy != 'auto':
+        raise RuntimeError(f'requested compiler cache is not installed: {policy}')
+    return ''
+
+
 def compiler_version(command: str) -> str:
     argv = shlex.split(command)
     if not argv:
@@ -224,16 +256,42 @@ def copy_ninja_source(destination: pathlib.Path) -> None:
     )
 
 
-def bootstrap_environment(cxx: str, sdkroot: str) -> dict[str, str]:
+def bootstrap_environment(
+    cxx: str,
+    sdkroot: str,
+    compiler_cache: str = '',
+    compiler_cache_dir: pathlib.Path | None = None,
+) -> dict[str, str]:
     bootstrap_env = os.environ.copy()
-    for key in ('CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR', 'SDKROOT'):
+    for key in (
+        'CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR', 'SDKROOT',
+        'CCACHE_DIR', 'SCCACHE_DIR',
+    ):
         bootstrap_env.pop(key, None)
+
     bootstrap_env['CXX'] = cxx
+    if compiler_cache:
+        cache_name = pathlib.Path(compiler_cache).name
+        if cache_name not in ('ccache', 'sccache'):
+            raise RuntimeError(f'unsupported compiler cache command: {compiler_cache}')
+        bootstrap_env['CXX'] = f'{shlex.quote(compiler_cache)} {cxx}'
+        if compiler_cache_dir is not None:
+            if cache_name == 'ccache':
+                bootstrap_env['CCACHE_DIR'] = str(compiler_cache_dir)
+            else:
+                bootstrap_env['SCCACHE_DIR'] = str(compiler_cache_dir)
+
     if sdkroot:
         sysroot_flag = f'-isysroot {shlex.quote(sdkroot)}'
         bootstrap_env['SDKROOT'] = sdkroot
         bootstrap_env['CXXFLAGS'] = sysroot_flag
-        bootstrap_env['LDFLAGS'] = sysroot_flag
+        link_flags = sysroot_flag
+        if platform.system() == 'Darwin':
+            # Ninja is a build helper, not a QEMU deliverable. Optimize and
+            # dead-strip the helper itself without leaking these flags into
+            # QEMU, firmware, or cross-toolchain link commands.
+            link_flags += ' -Wl,-O2 -Wl,-dead_strip'
+        bootstrap_env['LDFLAGS'] = link_flags
     if os.environ.get('AR_FOR_BUILD'):
         bootstrap_env['AR'] = os.environ['AR_FOR_BUILD']
     return bootstrap_env
@@ -243,6 +301,7 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
     sdkroot = select_host_sdkroot()
+    compiler_cache = select_compiler_cache()
     cxx_version = compiler_version(cxx)
     expected_marker = marker_text(revision, cxx, cxx_version, sdkroot)
 
@@ -265,7 +324,19 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     copy_ninja_source(staged_source)
     bootstrap_dir.mkdir()
 
-    bootstrap_env = bootstrap_environment(cxx, sdkroot)
+    compiler_cache_dir = None
+    if compiler_cache:
+        cache_name = pathlib.Path(compiler_cache).name
+        compiler_cache_dir = (
+            qemu_build_dir.parent / '.whp-compiler-cache' / f'{cache_name}-{host_tag}'
+        )
+        compiler_cache_dir.mkdir(parents=True, exist_ok=True)
+    bootstrap_env = bootstrap_environment(
+        cxx,
+        sdkroot,
+        compiler_cache,
+        compiler_cache_dir,
+    )
 
     print(
         f'Bootstrapping bundled Ninja {revision[:12]} with {cxx_version}',
@@ -273,6 +344,11 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     )
     if sdkroot:
         print(f'Bundled Ninja macOS SDK: {sdkroot}', file=sys.stderr)
+    if compiler_cache and compiler_cache_dir is not None:
+        print(
+            f'Bundled Ninja compiler cache: {compiler_cache} ({compiler_cache_dir})',
+            file=sys.stderr,
+        )
     try:
         subprocess.run(
             [sys.executable, str(staged_source / 'configure.py'), '--bootstrap'],
