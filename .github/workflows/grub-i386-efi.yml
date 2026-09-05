@@ -7,9 +7,11 @@ on:
     paths:
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/bootstrap-i386-efi-grub.sh'
+      - 'scripts/bootstrap-i386-efi-grub.bash'
       - 'scripts/build-seabios-hybrid-iso.sh'
       - 'scripts/whp-build/prepare-seabios-grub.bash'
       - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
+      - 'scripts/tests/test-grub-fork-source.bash'
       - 'scripts/tests/test-seabios-hybrid-iso.bash'
       - '.gitmodules'
       - '.github/workflows/grub-i386-efi.yml'
@@ -42,6 +44,10 @@ jobs:
       - name: Verify Apple Silicon host
         shell: bash
         run: test "$(uname -m)" = arm64
+
+      - name: Test GRUB fork source policy
+        shell: bash
+        run: bash scripts/tests/test-grub-fork-source.bash
 
       - name: Test IA32 EFI bootstrap policy
         shell: bash
