@@ -6,8 +6,8 @@ SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 BUILD_ROOT="${BUILD_DIR:-$SOURCE_DIR/build}"
 INSTALL_PREFIX="${GRUB_I386_INSTALL_PREFIX:-$BUILD_ROOT/firmware-tools/grub-i386-efi}"
 WORK_DIR="${GRUB_I386_WORK_DIR:-$BUILD_ROOT/toolchain-work/grub-i386-efi}"
-GRUB_REPOSITORY="${GRUB_I386_SOURCE_REPOSITORY:-https://github.com/retrochristian5000/grub.git}"
-GRUB_REVISION="${GRUB_I386_SOURCE_REVISION:-2f972128c48b90bf8b63aadffe6d546976e1dee6}"
+GRUB_SUBMODULE_PATH="${GRUB_I386_SUBMODULE_PATH:-toolchains/grub}"
+GRUB_SUBMODULE_DIR="$SOURCE_DIR/$GRUB_SUBMODULE_PATH"
 BREW_CMD="${GRUB_I386_BREW:-${WHP_HOMEBREW_BREW:-brew}}"
 AUTO_INSTALL_DEPS="${GRUB_I386_AUTO_INSTALL_DEPS:-1}"
 FORCE_REBUILD="${GRUB_I386_FORCE_REBUILD:-0}"
@@ -206,15 +206,11 @@ fi
     exit 1
 }
 
-# Resolve the source identity before accepting an existing image. The normal
-# producer is the WHP GitHub GRUB fork at a pinned commit. An explicit archive
-# remains available for offline/reproducer use, but Homebrew no longer provides
-# GRUB source code.
+# Resolve source identity before accepting an existing image. The normal
+# producer is the QEMU-pinned WHP GRUB gitlink. The build uses an immutable
+# local archive of that exact commit so generated files never dirty the
+# submodule checkout. An explicit source archive remains for reproducer use.
 SOURCE_ARCHIVE="${GRUB_I386_SOURCE_ARCHIVE:-}"
-if [[ ! "$GRUB_REVISION" =~ ^[0-9a-fA-F]{40}$ ]]; then
-    printf 'error: GRUB_I386_SOURCE_REVISION must be a full 40-hex commit: %s\n' "$GRUB_REVISION" >&2
-    exit 1
-fi
 if [[ -n "$SOURCE_ARCHIVE" ]]; then
     [[ -f "$SOURCE_ARCHIVE" ]] || {
         printf 'error: IA32 EFI GRUB source archive is missing: %s\n' "$SOURCE_ARCHIVE" >&2
@@ -223,14 +219,31 @@ if [[ -n "$SOURCE_ARCHIVE" ]]; then
     source_id="$(cksum "$SOURCE_ARCHIVE" | awk '{printf "%s:%s", $1, $2}')"
     source_marker="SOURCE_CKSUM=$source_id"
 else
+    git -C "$SOURCE_DIR" submodule sync -- "$GRUB_SUBMODULE_PATH" >/dev/null
+    git -C "$SOURCE_DIR" submodule update --init --depth 1 -- "$GRUB_SUBMODULE_PATH"
+    [[ -f "$GRUB_SUBMODULE_DIR/configure.ac" ]] || {
+        printf 'error: GRUB submodule is not initialized: %s\n' "$GRUB_SUBMODULE_DIR" >&2
+        exit 1
+    }
+    expected_revision="$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$GRUB_SUBMODULE_PATH" | awk '{print $3}')"
+    GRUB_REVISION="$(git -C "$GRUB_SUBMODULE_DIR" rev-parse HEAD)"
+    [[ "$expected_revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
+        printf 'error: QEMU GRUB gitlink is not a full commit: %s\n' "$expected_revision" >&2
+        exit 1
+    }
+    [[ "$GRUB_REVISION" == "$expected_revision" ]] || {
+        printf 'error: GRUB submodule is at %s but QEMU pins %s\n' \
+            "$GRUB_REVISION" "$expected_revision" >&2
+        exit 1
+    }
     source_marker="$(cat <<EOF_SOURCE
-SOURCE_REPOSITORY=$GRUB_REPOSITORY
+SOURCE_SUBMODULE=$GRUB_SUBMODULE_PATH
 SOURCE_REVISION=$GRUB_REVISION
 EOF_SOURCE
 )"
 fi
 expected_marker="$(cat <<EOF_MARKER
-BOOTSTRAP_SCHEMA=4
+BOOTSTRAP_SCHEMA=5
 $source_marker
 TARGET=$TARGET_TRIPLE
 PLATFORM=i386-efi
@@ -268,18 +281,11 @@ if [[ -n "$SOURCE_ARCHIVE" ]]; then
     }
     grub_source="$1"
 else
+    grub_source="$source_root/grub"
+    mkdir -p "$grub_source"
+    git -C "$GRUB_SUBMODULE_DIR" archive --format=tar "$GRUB_REVISION" |
+        tar -xf - -C "$grub_source"
     prepare_homebrew_build_helpers
-    git -C "$source_root" init -q
-    git -C "$source_root" remote add origin "$GRUB_REPOSITORY"
-    git -C "$source_root" fetch --depth=1 origin "$GRUB_REVISION"
-    resolved_revision="$(git -C "$source_root" rev-parse FETCH_HEAD)"
-    [[ "$resolved_revision" == "$GRUB_REVISION" ]] || {
-        printf 'error: GRUB repository resolved %s instead of pinned %s\n' \
-            "$resolved_revision" "$GRUB_REVISION" >&2
-        exit 1
-    }
-    git -C "$source_root" checkout --detach -q "$GRUB_REVISION"
-    grub_source="$source_root"
     (
         cd "$grub_source"
         SKIP_PO=1 ./bootstrap

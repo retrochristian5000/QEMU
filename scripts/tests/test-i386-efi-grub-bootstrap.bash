@@ -8,10 +8,6 @@ bootstrap="$root/scripts/bootstrap-i386-efi-grub.bash"
     exit 1
 }
 
-# GRUB must not trust an i386 LLVM marker plus executable presence. An existing
-# mixed LLVM installation can keep every path while one compiler/linker/object
-# module is stale, so the GRUB-side primary gate must exercise the installed
-# ABI before deciding that the compiler bootstrap can be skipped.
 for probe in \
     'whp_i386_grub_cache_size' \
     '-fno-omit-frame-pointer -momit-leaf-frame-pointer' \
@@ -223,7 +219,7 @@ fi
 [[ -x "$install/bin/i386-efi-grub-mkimage" ]]
 [[ -f "$install/lib/i386-none-elf/grub/i386-efi/moddep.lst" ]]
 [[ -f "$install/.whp-grub-i386-efi" ]]
-grep -Fxq 'BOOTSTRAP_SCHEMA=4' "$install/.whp-grub-i386-efi"
+grep -Fxq 'BOOTSTRAP_SCHEMA=5' "$install/.whp-grub-i386-efi"
 grep -Fxq 'TOOLCHAIN=whp-llvm-fork' "$install/.whp-grub-i386-efi"
 grep -Fxq "LLVM_BIN=$llvm_bin" "$install/.whp-grub-i386-efi"
 
