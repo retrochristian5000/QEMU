@@ -28,15 +28,15 @@ jobs:
 
           replacements = {
               "tests/qtest/npcm7xx_pwm-test.c": [
-                  ("sprintf(qom_path,", "snprintf(qom_path, sizeof(qom_path),", 1),
-                  ("sprintf(test_name,", "snprintf(test_name, sizeof(test_name),", 3),
+                  ("sprintf(path,", "snprintf(path, sizeof(path),", 2),
+                  ("sprintf(name,", "snprintf(name, sizeof(name),", 2),
               ],
               "tests/qtest/npcm7xx_adc-test.c": [
-                  ("sprintf(qom_path,", "snprintf(qom_path, sizeof(qom_path),", 1),
-                  ("sprintf(test_name,", "snprintf(test_name, sizeof(test_name),", 1),
+                  ("sprintf(name,", "snprintf(name, sizeof(name),", 1),
+                  ("sprintf(buf,", "snprintf(buf, sizeof(buf),", 1),
               ],
               "tests/unit/test-visitor-serialization.c": [
-                  ("sprintf(prefix,", "snprintf(prefix, sizeof(prefix),", 1),
+                  ("sprintf(testname_prefix,", "snprintf(testname_prefix, sizeof(testname_prefix),", 1),
                   ("sprintf(testname,", "snprintf(testname, sizeof(testname),", 5),
               ],
               "tests/unit/test-qobject-output-visitor.c": [
@@ -45,8 +45,14 @@ jobs:
               "tests/unit/test-qobject-input-visitor.c": [
                   ("sprintf(expected,", "snprintf(expected, sizeof(expected),", 1),
               ],
+              "tests/qtest/libqtest.c": [
+                  ("sprintf(&enc[i * 2],", "snprintf(&enc[i * 2], sizeof(\"00\"),", 1),
+              ],
               "pc-bios/s390-ccw/netmain.c": [
                   ("sprintf(uuid_str,", "snprintf(uuid_str, sizeof(uuid_str),", 1),
+              ],
+              "subprojects/libvduse/libvduse.c": [
+                  ("sprintf(dev_path,", "snprintf(dev_path, strlen(name) + strlen(\"/dev/vduse/\") + 1,", 1),
               ],
           }
 
@@ -54,18 +60,18 @@ jobs:
           for filename, rules in replacements.items():
               path = Path(filename)
               text = path.read_text(encoding="utf-8")
-              for old, new, historical_max in rules:
+              for old, new, expected in rules:
                   found = text.count(old)
-                  if found > historical_max:
+                  if found != expected:
                       raise SystemExit(
-                          f"{filename}: expected at most {historical_max} occurrences of {old!r}, found {found}"
+                          f"{filename}: expected {expected} occurrences of {old!r}, found {found}"
                       )
-                  if found:
-                      print(f"{filename}: replacing {found} occurrence(s) of {old}")
-                      text = text.replace(old, new)
-                      total += found
+                  text = text.replace(old, new)
+                  total += found
               path.write_text(text, encoding="utf-8")
 
+          if total != 17:
+              raise SystemExit(f"expected 17 replacements, made {total}")
           print(f"replaced {total} currently-live unbounded sprintf() calls")
           PY
 
@@ -86,8 +92,9 @@ jobs:
             tests/unit/test-visitor-serialization.c \
             tests/unit/test-qobject-output-visitor.c \
             tests/unit/test-qobject-input-visitor.c \
-            pc-bios/s390-ccw/netmain.c
+            tests/qtest/libqtest.c \
+            pc-bios/s390-ccw/netmain.c \
+            subprojects/libvduse/libvduse.c
           git diff --cached --check
-          git diff --cached --quiet && { echo 'error: no source repair produced'; exit 1; }
-          git commit -m 'tests: replace remaining unbounded sprintf calls'
+          git commit -m 'treewide: replace remaining unbounded sprintf calls'
           git push origin HEAD:master
