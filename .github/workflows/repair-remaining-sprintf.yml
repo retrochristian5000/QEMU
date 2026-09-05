@@ -1,0 +1,92 @@
+name: Repair remaining sprintf calls
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/repair-remaining-sprintf.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v7
+        with:
+          ref: master
+
+      - name: Replace remaining unbounded format calls
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              "tests/qtest/npcm7xx_pwm-test.c": [
+                  ("sprintf(qom_path,", "snprintf(qom_path, sizeof(qom_path),", 1),
+                  ("sprintf(test_name,", "snprintf(test_name, sizeof(test_name),", 3),
+              ],
+              "tests/qtest/npcm7xx_adc-test.c": [
+                  ("sprintf(qom_path,", "snprintf(qom_path, sizeof(qom_path),", 1),
+                  ("sprintf(test_name,", "snprintf(test_name, sizeof(test_name),", 1),
+              ],
+              "tests/unit/test-visitor-serialization.c": [
+                  ("sprintf(prefix,", "snprintf(prefix, sizeof(prefix),", 1),
+                  ("sprintf(testname,", "snprintf(testname, sizeof(testname),", 5),
+              ],
+              "tests/unit/test-qobject-output-visitor.c": [
+                  ("sprintf(expected,", "snprintf(expected, sizeof(expected),", 1),
+              ],
+              "tests/unit/test-qobject-input-visitor.c": [
+                  ("sprintf(expected,", "snprintf(expected, sizeof(expected),", 1),
+              ],
+              "pc-bios/s390-ccw/netmain.c": [
+                  ("sprintf(uuid_str,", "snprintf(uuid_str, sizeof(uuid_str),", 1),
+              ],
+          }
+
+          total = 0
+          for filename, rules in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              for old, new, expected in rules:
+                  found = text.count(old)
+                  if found != expected:
+                      raise SystemExit(
+                          f"{filename}: expected {expected} occurrences of {old!r}, found {found}"
+                      )
+                  text = text.replace(old, new)
+                  total += found
+              path.write_text(text, encoding="utf-8")
+
+          if total != 15:
+              raise SystemExit(f"expected 15 replacements, made {total}")
+          print(f"replaced {total} unbounded sprintf() calls")
+          PY
+
+      - name: Run bounded-format regression guard
+        run: python3 scripts/tests/check-unbounded-format.py
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Commit source repair and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/repair-remaining-sprintf.yml
+          git add \
+            tests/qtest/npcm7xx_pwm-test.c \
+            tests/qtest/npcm7xx_adc-test.c \
+            tests/unit/test-visitor-serialization.c \
+            tests/unit/test-qobject-output-visitor.c \
+            tests/unit/test-qobject-input-visitor.c \
+            pc-bios/s390-ccw/netmain.c
+          git diff --cached --check
+          git commit -m 'tests: replace remaining unbounded sprintf calls'
+          git push origin HEAD:master
