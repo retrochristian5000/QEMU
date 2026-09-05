@@ -53,8 +53,8 @@ abi_long freebsd_exec_common(abi_ulong path_or_fd, abi_ulong guest_argp,
 
     qarg0 = argp = g_new0(char *, argc + 9);
     /* save the first argument for the emulator */
-    *argp++ = (char *)getprogname();
-    *argp++ = (char *)getprogname();
+    *argp++ = (char *)g_get_prgname();
+    *argp++ = (char *)g_get_prgname();
     envp = g_new0(char *, envc + 1);
     for (gp = guest_argp, q = argp; gp; gp += sizeof(abi_ulong), q++) {
         if (get_user_ual(addr, gp)) {
