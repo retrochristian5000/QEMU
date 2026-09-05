@@ -6,7 +6,8 @@ SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 BUILD_ROOT="${BUILD_DIR:-$SOURCE_DIR/build}"
 INSTALL_PREFIX="${GRUB_I386_INSTALL_PREFIX:-$BUILD_ROOT/firmware-tools/grub-i386-efi}"
 WORK_DIR="${GRUB_I386_WORK_DIR:-$BUILD_ROOT/toolchain-work/grub-i386-efi}"
-FORMULA="${GRUB_I386_SOURCE_FORMULA:-i686-elf-grub}"
+GRUB_REPOSITORY="${GRUB_I386_SOURCE_REPOSITORY:-https://github.com/retrochristian5000/grub.git}"
+GRUB_REVISION="${GRUB_I386_SOURCE_REVISION:-2f972128c48b90bf8b63aadffe6d546976e1dee6}"
 BREW_CMD="${GRUB_I386_BREW:-${WHP_HOMEBREW_BREW:-brew}}"
 AUTO_INSTALL_DEPS="${GRUB_I386_AUTO_INSTALL_DEPS:-1}"
 FORCE_REBUILD="${GRUB_I386_FORCE_REBUILD:-0}"
@@ -30,7 +31,7 @@ module_dir="$INSTALL_PREFIX/lib/$TARGET_TRIPLE/grub/i386-efi"
 marker="$INSTALL_PREFIX/.whp-grub-i386-efi"
 llvm_marker="$I386_TOOLCHAIN_DIR/.whp-i386-toolchain"
 
-for tool in make tar mktemp cksum awk; do
+for tool in make tar mktemp cksum awk git; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: IA32 EFI GRUB bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -46,8 +47,8 @@ prepare_homebrew_build_helpers()
 
     # These are ordinary source-build helpers. LLVM/LLD deliberately do not
     # belong here: GRUB consumes the QEMU fork's existing LLVM submodule build.
-    "$BREW_CMD" install cmake ninja gawk help2man texinfo xz >/dev/null
-    for dep in cmake ninja gawk help2man texinfo xz; do
+    "$BREW_CMD" install autoconf automake bison cmake flex gawk gettext help2man ninja pkgconf texinfo xz >/dev/null
+    for dep in autoconf automake bison cmake flex gawk gettext help2man ninja pkgconf texinfo xz; do
         dep_prefix="$($BREW_CMD --prefix "$dep" 2>/dev/null || true)"
         [[ -z "$dep_prefix" || ! -d "$dep_prefix/bin" ]] || PATH="$dep_prefix/bin:$PATH"
     done
@@ -205,30 +206,32 @@ fi
     exit 1
 }
 
-# Resolve the GRUB source identity before accepting an existing image. Homebrew
-# is only a source provider here; no Homebrew GCC/binutils/LLVM target toolchain
-# is installed or consumed.
-archive="${GRUB_I386_SOURCE_ARCHIVE:-}"
-if [[ -z "$archive" ]]; then
-    command -v "$BREW_CMD" >/dev/null 2>&1 || {
-        printf 'error: Homebrew is required to resolve the GRUB source archive\n' >&2
+# Resolve the source identity before accepting an existing image. The normal
+# producer is the WHP GitHub GRUB fork at a pinned commit. An explicit archive
+# remains available for offline/reproducer use, but Homebrew no longer provides
+# GRUB source code.
+SOURCE_ARCHIVE="${GRUB_I386_SOURCE_ARCHIVE:-}"
+if [[ ! "$GRUB_REVISION" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    printf 'error: GRUB_I386_SOURCE_REVISION must be a full 40-hex commit: %s\n' "$GRUB_REVISION" >&2
+    exit 1
+fi
+if [[ -n "$SOURCE_ARCHIVE" ]]; then
+    [[ -f "$SOURCE_ARCHIVE" ]] || {
+        printf 'error: IA32 EFI GRUB source archive is missing: %s\n' "$SOURCE_ARCHIVE" >&2
         exit 1
     }
-    archive="$($BREW_CMD --cache --build-from-source "$FORMULA" 2>/dev/null || true)"
-    if [[ -z "$archive" || ! -f "$archive" ]]; then
-        "$BREW_CMD" fetch --build-from-source "$FORMULA" >/dev/null
-        archive="$($BREW_CMD --cache --build-from-source "$FORMULA")"
-    fi
+    source_id="$(cksum "$SOURCE_ARCHIVE" | awk '{printf "%s:%s", $1, $2}')"
+    source_marker="SOURCE_CKSUM=$source_id"
+else
+    source_marker="$(cat <<EOF_SOURCE
+SOURCE_REPOSITORY=$GRUB_REPOSITORY
+SOURCE_REVISION=$GRUB_REVISION
+EOF_SOURCE
+)"
 fi
-[[ -f "$archive" ]] || {
-    printf 'error: IA32 EFI GRUB source archive is missing: %s\n' "$archive" >&2
-    exit 1
-}
-source_id="$(cksum "$archive" | awk '{printf "%s:%s", $1, $2}')"
 expected_marker="$(cat <<EOF_MARKER
 BOOTSTRAP_SCHEMA=4
-FORMULA=$FORMULA
-SOURCE_CKSUM=$source_id
+$source_marker
 TARGET=$TARGET_TRIPLE
 PLATFORM=i386-efi
 PROGRAM_PREFIX=i386-efi-
@@ -255,14 +258,37 @@ build_root="$WORK_DIR/build"
 stage_root="$WORK_DIR/install-root.$$"
 rm -rf "$source_root" "$build_root" "$stage_root"
 mkdir -p "$source_root" "$build_root" "$stage_root" "$(dirname "$INSTALL_PREFIX")"
-tar -xf "$archive" -C "$source_root"
 
-set -- "$source_root"/*
-[[ $# -eq 1 && -d "$1" && -x "$1/configure" ]] || {
-    printf 'error: GRUB archive did not unpack to one configured source tree\n' >&2
-    exit 1
-}
-grub_source="$1"
+if [[ -n "$SOURCE_ARCHIVE" ]]; then
+    tar -xf "$SOURCE_ARCHIVE" -C "$source_root"
+    set -- "$source_root"/*
+    [[ $# -eq 1 && -d "$1" && -x "$1/configure" ]] || {
+        printf 'error: GRUB archive did not unpack to one configured source tree\n' >&2
+        exit 1
+    }
+    grub_source="$1"
+else
+    prepare_homebrew_build_helpers
+    git -C "$source_root" init -q
+    git -C "$source_root" remote add origin "$GRUB_REPOSITORY"
+    git -C "$source_root" fetch --depth=1 origin "$GRUB_REVISION"
+    resolved_revision="$(git -C "$source_root" rev-parse FETCH_HEAD)"
+    [[ "$resolved_revision" == "$GRUB_REVISION" ]] || {
+        printf 'error: GRUB repository resolved %s instead of pinned %s\n' \
+            "$resolved_revision" "$GRUB_REVISION" >&2
+        exit 1
+    }
+    git -C "$source_root" checkout --detach -q "$GRUB_REVISION"
+    grub_source="$source_root"
+    (
+        cd "$grub_source"
+        SKIP_PO=1 ./bootstrap
+    )
+    [[ -x "$grub_source/configure" ]] || {
+        printf 'error: GRUB bootstrap did not produce configure\n' >&2
+        exit 1
+    }
+fi
 : > "$grub_source/grub-core/extra_deps.lst"
 
 configure_args=(
