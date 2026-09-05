@@ -62,7 +62,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=4' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=5' in bootstrap
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
@@ -74,6 +74,27 @@ assert 'host_os="${WHP_HOST_OS:-}"' in bootstrap
 assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
+
+# Apple calls the Mach-O architecture arm64, while LLVM's canonical target
+# architecture is AArch64/aarch64. Keep those namespaces separate: CMake still
+# emits arm64 Mach-O objects, but the LLVM host/default triple and WHP cache
+# identity use aarch64-apple-darwin so downstream QEMU tool selection sees one
+# stable ABI name regardless of whether the bootstrap compiler prints arm64 or
+# aarch64.
+assert 'host_tag=aarch64' in bootstrap
+assert 'darwin_cmake_arch=arm64' in bootstrap
+assert "arm64|aarch64) printf 'aarch64\\n'" in bootstrap
+assert 'canonical_native_target_triple()' in bootstrap
+assert 'llvm_host_triple="$bootstrap_cc_target_canonical"' in bootstrap
+assert 'llvm_default_target_triple="$llvm_host_triple"' in bootstrap
+assert '"-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"' in bootstrap
+assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in bootstrap
+assert '"-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"' in bootstrap
+assert 'LLVM_HOST_TRIPLE=$llvm_host_triple' in bootstrap
+assert 'LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple' in bootstrap
+assert 'BOOTSTRAP_CC_TARGET_TRIPLE_CANONICAL=$bootstrap_cc_target_canonical' in bootstrap
+assert 'BOOTSTRAP_CXX_TARGET_TRIPLE_CANONICAL=$bootstrap_cxx_target_canonical' in bootstrap
+assert bootstrap.count('[[ "$target" == "$llvm_default_target_triple" ]] || return 1') >= 2
 
 # A cached compiler must exercise the frontend, resource headers, IR verifier,
 # and backend before reuse. --version alone cannot detect mixed LLVM objects

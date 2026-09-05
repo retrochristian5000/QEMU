@@ -61,12 +61,14 @@ fi
 
 case "$host_arch" in
     arm64|aarch64)
-        host_tag=arm64
+        host_tag=aarch64
+        darwin_cmake_arch=arm64
         llvm_target=AArch64
         smoke_macro=__aarch64__
         ;;
     x86_64|amd64)
         host_tag=x86_64
+        darwin_cmake_arch=x86_64
         llvm_target=X86
         smoke_macro=__x86_64__
         ;;
@@ -139,7 +141,7 @@ if [[ "$host_os" == macos ]]; then
     }
     cmake_host_args=(
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
-        "-DCMAKE_OSX_ARCHITECTURES=$host_tag"
+        "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
     )
 else
@@ -169,10 +171,21 @@ query_target_triple()
 canonical_native_arch()
 {
     case "$1" in
-        arm64|aarch64) printf 'arm64\n' ;;
+        arm64|aarch64) printf 'aarch64\n' ;;
         x86_64|amd64) printf 'x86_64\n' ;;
         *) return 1 ;;
     esac
+}
+
+canonical_native_target_triple()
+{
+    local target="$1"
+    local target_arch canonical_arch
+
+    [[ "$target" == *-* ]] || return 1
+    target_arch="${target%%-*}"
+    canonical_arch="$(canonical_native_arch "$target_arch")" || return 1
+    printf '%s-%s\n' "$canonical_arch" "${target#*-}"
 }
 
 native_target_matches_host()
@@ -221,6 +234,18 @@ if ! native_target_matches_host "$bootstrap_cxx_target"; then
         "host:     $host_id ($host_os/$host_kernel)" >&2
     exit 1
 fi
+bootstrap_cc_target_canonical="$(canonical_native_target_triple "$bootstrap_cc_target")" || {
+    printf 'error: failed to canonicalize native LLVM bootstrap C target: %s\n' \
+        "$bootstrap_cc_target" >&2
+    exit 1
+}
+bootstrap_cxx_target_canonical="$(canonical_native_target_triple "$bootstrap_cxx_target")" || {
+    printf 'error: failed to canonicalize native LLVM bootstrap C++ target: %s\n' \
+        "$bootstrap_cxx_target" >&2
+    exit 1
+}
+llvm_host_triple="$bootstrap_cc_target_canonical"
+llvm_default_target_triple="$llvm_host_triple"
 
 # The WHP LLVM fork is already a QEMU submodule and is the single source for
 # firmware, legacy-target, and native compiler profiles. Keep the native lane
@@ -249,22 +274,26 @@ if [[ "$host_os" == macos ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=4
+BOOTSTRAP_SCHEMA=5
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
+LLVM_HOST_TRIPLE=$llvm_host_triple
+LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
 LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
 LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
 BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target
+BOOTSTRAP_CC_TARGET_TRIPLE_CANONICAL=$bootstrap_cc_target_canonical
 BOOTSTRAP_CXX=$bootstrap_cxx
 BOOTSTRAP_CXX_VERSION=$bootstrap_cxx_version
 BOOTSTRAP_CXX_TARGET_TRIPLE=$bootstrap_cxx_target
+BOOTSTRAP_CXX_TARGET_TRIPLE_CANONICAL=$bootstrap_cxx_target_canonical
 SDKROOT=$sdkroot
 MACOSX_DEPLOYMENT_TARGET=$deployment_target
 EOF
@@ -295,8 +324,12 @@ usable()
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
     target="$(query_target_triple "$prefix/bin/clang")"
     native_target_matches_host "$target" || return 1
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
     target="$(query_target_triple "$prefix/bin/clang++")"
     native_target_matches_host "$target" || return 1
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
         "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
     printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_llvm_resource_size(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
@@ -337,6 +370,8 @@ cmake_args=(
     -DLLVM_ENABLE_PROJECTS=clang
     "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
     "-DLLVM_TARGETS_TO_BUILD=$llvm_target"
+    "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
+    "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
     -DLLVM_APPEND_VC_REV=OFF
     "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
