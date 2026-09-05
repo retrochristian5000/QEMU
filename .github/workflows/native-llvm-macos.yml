@@ -55,6 +55,10 @@ jobs:
         shell: bash
         run: test "$(uname -m)" = arm64
 
+      - name: Verify native LLVM wiring
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-wiring.py
+
       - name: Install native LLVM and QEMU build dependencies
         run: brew install cmake glib libslirp make ninja pixman pkgconf
 
@@ -76,13 +80,16 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=4' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=5' "$marker"
+          grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
           grep -Fxq 'HOST_ARCH=arm64' "$marker"
+          grep -Eq '^LLVM_HOST_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
+          grep -Eq '^LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
-          "$clang" -print-target-triple | grep -Eq '^arm64-apple-(darwin|macos|macosx)'
+          "$clang" -print-target-triple | grep -Eq '^aarch64-apple-(darwin|macos|macosx)'
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
             "$clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
