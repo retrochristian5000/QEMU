@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-NINJA_BOOTSTRAP_SCHEMA='2'
+NINJA_BOOTSTRAP_SCHEMA='3'
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -130,6 +130,17 @@ def select_host_cxx() -> str:
     raise RuntimeError('a host C++17 compiler is required to bootstrap bundled Ninja')
 
 
+def select_host_sdkroot() -> str:
+    if platform.system() != 'Darwin':
+        return ''
+    if not shutil.which('xcrun'):
+        raise RuntimeError('xcrun is required to locate the macOS SDK for bundled Ninja')
+    sdkroot = run_text(['xcrun', '--sdk', 'macosx', '--show-sdk-path'])
+    if not sdkroot:
+        raise RuntimeError('xcrun did not return a macOS SDK path for bundled Ninja')
+    return sdkroot
+
+
 def compiler_version(command: str) -> str:
     argv = shlex.split(command)
     if not argv:
@@ -150,7 +161,7 @@ def compiler_version(command: str) -> str:
     return first
 
 
-def marker_text(revision: str, cxx: str, cxx_version: str) -> str:
+def marker_text(revision: str, cxx: str, cxx_version: str, sdkroot: str) -> str:
     return (
         f'NINJA_BOOTSTRAP_SCHEMA={NINJA_BOOTSTRAP_SCHEMA}\n'
         f'SOURCE_DIR={ROOT}\n'
@@ -160,6 +171,7 @@ def marker_text(revision: str, cxx: str, cxx_version: str) -> str:
         f'PYTHON={pathlib.Path(sys.executable).resolve()}\n'
         f'CXX={cxx}\n'
         f'CXX_VERSION={cxx_version}\n'
+        f'SDKROOT={sdkroot}\n'
     )
 
 
@@ -212,11 +224,27 @@ def copy_ninja_source(destination: pathlib.Path) -> None:
     )
 
 
+def bootstrap_environment(cxx: str, sdkroot: str) -> dict[str, str]:
+    bootstrap_env = os.environ.copy()
+    for key in ('CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR', 'SDKROOT'):
+        bootstrap_env.pop(key, None)
+    bootstrap_env['CXX'] = cxx
+    if sdkroot:
+        sysroot_flag = f'-isysroot {shlex.quote(sdkroot)}'
+        bootstrap_env['SDKROOT'] = sdkroot
+        bootstrap_env['CXXFLAGS'] = sysroot_flag
+        bootstrap_env['LDFLAGS'] = sysroot_flag
+    if os.environ.get('AR_FOR_BUILD'):
+        bootstrap_env['AR'] = os.environ['AR_FOR_BUILD']
+    return bootstrap_env
+
+
 def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
+    sdkroot = select_host_sdkroot()
     cxx_version = compiler_version(cxx)
-    expected_marker = marker_text(revision, cxx, cxx_version)
+    expected_marker = marker_text(revision, cxx, cxx_version, sdkroot)
 
     host_tag = f'{platform.system().lower()}-{platform.machine().lower()}'
     host_tools_root = qemu_build_dir.parent / '.whp-host-tools'
@@ -237,17 +265,14 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     copy_ninja_source(staged_source)
     bootstrap_dir.mkdir()
 
-    bootstrap_env = os.environ.copy()
-    for key in ('CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR'):
-        bootstrap_env.pop(key, None)
-    bootstrap_env['CXX'] = cxx
-    if os.environ.get('AR_FOR_BUILD'):
-        bootstrap_env['AR'] = os.environ['AR_FOR_BUILD']
+    bootstrap_env = bootstrap_environment(cxx, sdkroot)
 
     print(
         f'Bootstrapping bundled Ninja {revision[:12]} with {cxx_version}',
         file=sys.stderr,
     )
+    if sdkroot:
+        print(f'Bundled Ninja macOS SDK: {sdkroot}', file=sys.stderr)
     try:
         subprocess.run(
             [sys.executable, str(staged_source / 'configure.py'), '--bootstrap'],
