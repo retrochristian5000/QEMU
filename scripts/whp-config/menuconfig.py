@@ -34,6 +34,20 @@ def display_value(kind: str, value: str) -> str:
     return value
 
 
+def _scroll_top(row_count: int, selected_row: int, top: int, viewport_rows: int) -> int:
+    if row_count <= 0 or viewport_rows <= 0:
+        return 0
+    viewport_rows = min(viewport_rows, row_count)
+    max_top = row_count - viewport_rows
+    top = min(max(top, 0), max_top)
+    selected_row = min(max(selected_row, 0), row_count - 1)
+    if selected_row < top:
+        return selected_row
+    if selected_row >= top + viewport_rows:
+        return min(selected_row - viewport_rows + 1, max_top)
+    return top
+
+
 def _edit_string(stdscr, prompt: str, current: str) -> str:
     height, width = stdscr.getmaxyx()
     curses.echo()
@@ -66,8 +80,9 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
     rows = _flatten_items()
     selectable = [i for i, row in enumerate(rows) if row[0] == 'option']
     selected_pos = 0
+    scroll_top = 0
     dirty = False
-    status = 'Arrows move  Space/Enter change  s save  r defaults  q quit'
+    status = 'Arrows move  PgUp/PgDn page  Space/Enter change  s save  r defaults  q quit'
 
     while True:
         stdscr.erase()
@@ -75,21 +90,35 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
         stdscr.addnstr(0, 0, 'WHP QEMU Configuration', max(1, width - 1), curses.A_BOLD)
         stdscr.addnstr(1, 0, f'File: {config_path}', max(1, width - 1))
         current_row = selectable[selected_pos]
+        viewport_rows = max(0, height - 6)
+        scroll_top = _scroll_top(len(rows), current_row, scroll_top, viewport_rows)
         y = 3
-        for index, (row_kind, label, option) in enumerate(rows):
-            if y >= height - 3:
-                break
-            if row_kind == 'section':
-                stdscr.addnstr(y, 0, label, max(1, width - 1), curses.A_BOLD)
-            else:
-                assert option is not None
-                value = display_value(option.kind, state.values[option.key])
-                line = f'  {value:<10} {label}'
-                attr = curses.A_REVERSE if index == current_row else curses.A_NORMAL
-                stdscr.addnstr(y, 0, line, max(1, width - 1), attr)
-            y += 1
-        if state.unknown and y < height - 3:
-            stdscr.addnstr(y, 0, f'{len(state.unknown)} preserved unknown setting(s)', max(1, width - 1))
+        if viewport_rows:
+            visible_end = min(len(rows), scroll_top + viewport_rows)
+            for index in range(scroll_top, visible_end):
+                row_kind, label, option = rows[index]
+                if row_kind == 'section':
+                    stdscr.addnstr(y, 0, label, max(1, width - 1), curses.A_BOLD)
+                else:
+                    assert option is not None
+                    value = display_value(option.kind, state.values[option.key])
+                    line = f'  {value:<10} {label}'
+                    attr = curses.A_REVERSE if index == current_row else curses.A_NORMAL
+                    stdscr.addnstr(y, 0, line, max(1, width - 1), attr)
+                y += 1
+        else:
+            visible_end = scroll_top
+
+        if height >= 3:
+            more = []
+            if scroll_top > 0:
+                more.append('↑ more')
+            if visible_end < len(rows):
+                more.append('↓ more')
+            if state.unknown:
+                more.append(f'{len(state.unknown)} preserved unknown setting(s)')
+            stdscr.addnstr(height - 3, 0, '  '.join(more), max(1, width - 1))
+
         stdscr.addnstr(height - 2, 0, status, max(1, width - 1))
         if dirty:
             stdscr.addnstr(height - 1, 0, 'Modified', max(1, width - 1), curses.A_BOLD)
@@ -103,6 +132,18 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             continue
         if key in (curses.KEY_DOWN, ord('j')):
             selected_pos = (selected_pos + 1) % len(selectable)
+            continue
+        if key == curses.KEY_PPAGE:
+            selected_pos = max(0, selected_pos - max(1, viewport_rows - 1))
+            continue
+        if key == curses.KEY_NPAGE:
+            selected_pos = min(len(selectable) - 1, selected_pos + max(1, viewport_rows - 1))
+            continue
+        if key == curses.KEY_HOME:
+            selected_pos = 0
+            continue
+        if key == curses.KEY_END:
+            selected_pos = len(selectable) - 1
             continue
         if key in (ord(' '), curses.KEY_ENTER, 10, 13):
             option = rows[selectable[selected_pos]][2]
@@ -120,6 +161,7 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             if new != old:
                 state.values[option.key] = new
                 dirty = True
+                status = f'Changed {option.label}; press s to save'
             continue
         if key == ord('r'):
             state.values = whp_config.default_values()

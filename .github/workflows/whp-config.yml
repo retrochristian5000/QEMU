@@ -15,6 +15,7 @@ on:
       - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
+      - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
@@ -51,6 +52,7 @@ jobs:
       - name: Test configuration model
         run: |
           python3 scripts/tests/test-whp-config.py
+          python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-whp-sparc-menu.py
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
@@ -81,6 +83,7 @@ jobs:
             scripts/whp-build/portable-build.py \
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
+            scripts/tests/test-menuconfig-scroll.py \
             scripts/tests/test-native-llvm-build-entry.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-host-optimization.py \
