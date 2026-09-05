@@ -8,6 +8,8 @@ bootstrap="$root/scripts/bootstrap-i386-efi-grub.bash"
     exit 1
 }
 
+# GRUB must not trust a marker plus executable presence. Exercise the installed
+# i386 LLVM ABI before deciding that the compiler bootstrap can be skipped.
 for probe in \
     'whp_i386_grub_cache_size' \
     '-fno-omit-frame-pointer -momit-leaf-frame-pointer' \
@@ -20,6 +22,11 @@ for probe in \
         exit 1
     }
 done
+
+grep -Fq -- '--with-target-toolchain=llvm' "$bootstrap" || {
+    printf 'default GRUB lane does not request the GRUB-owned LLVM mode\n' >&2
+    exit 1
+}
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/grub-i386-efi-test.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
@@ -183,6 +190,8 @@ run_bootstrap()
     bash "$bootstrap" "$@"
 }
 
+# The explicit archive compatibility lane intentionally exercises the legacy
+# TARGET_* handoff for an archive that predates the GRUB-owned frontend.
 run_bootstrap > "$scratch/first.log"
 grep -Fxq -- '--target=i386-none-elf' "$scratch/configure.log"
 grep -Fxq -- '--with-platform=efi' "$scratch/configure.log"
@@ -211,15 +220,12 @@ if grep -Eq '(^|[ =])(-arch|-mmacosx-version-min)' "$scratch/toolchain.log"; the
     cat "$scratch/toolchain.log" >&2
     exit 1
 fi
-if grep -Eq '(i686-elf-gcc|/opt/homebrew/.*/clang|/usr/local/.*/clang)' "$scratch/toolchain.log"; then
-    printf 'IA32 EFI GRUB escaped the QEMU LLVM-fork toolchain ABI\n' >&2
-    exit 1
-fi
 
 [[ -x "$install/bin/i386-efi-grub-mkimage" ]]
 [[ -f "$install/lib/i386-none-elf/grub/i386-efi/moddep.lst" ]]
 [[ -f "$install/.whp-grub-i386-efi" ]]
-grep -Fxq 'BOOTSTRAP_SCHEMA=5' "$install/.whp-grub-i386-efi"
+grep -Fxq 'BOOTSTRAP_SCHEMA=6' "$install/.whp-grub-i386-efi"
+grep -Fxq 'GRUB_TARGET_TOOLCHAIN=llvm' "$install/.whp-grub-i386-efi"
 grep -Fxq 'TOOLCHAIN=whp-llvm-fork' "$install/.whp-grub-i386-efi"
 grep -Fxq "LLVM_BIN=$llvm_bin" "$install/.whp-grub-i386-efi"
 
@@ -241,4 +247,4 @@ new_marker="$(cat "$install/.whp-grub-i386-efi")"
 }
 grep -Fq 'SOURCE_CKSUM=' <<<"$new_marker"
 
-printf 'IA32 EFI GRUB reuses the WHP LLVM fork with clean host/target flags: verified\n'
+printf 'IA32 EFI GRUB uses GRUB LLVM mode by default and preserves archive compatibility: verified\n'

@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           bash scripts/bootstrap-i386-efi-grub.sh | tee grub-i386-efi-build.log
 
-      - name: Verify gitlink identity, mkimage, and hybrid modules
+      - name: Verify gitlink identity, LLVM mode, mkimage, and hybrid modules
         shell: bash
         run: |
           set -euo pipefail
@@ -80,6 +80,7 @@ jobs:
           grep -Fxq 'SOURCE_SUBMODULE=toolchains/grub' "$marker"
           grep -Fxq "SOURCE_REVISION=$expected_grub" "$marker"
           grep -Fxq 'TOOLCHAIN=whp-llvm-fork' "$marker"
+          grep -Fxq 'GRUB_TARGET_TOOLCHAIN=llvm' "$marker"
           grep -Fxq 'TARGET=i386-none-elf' "$marker"
           grep -Fxq 'PLATFORM=i386-efi' "$marker"
           "$mkimage" --version

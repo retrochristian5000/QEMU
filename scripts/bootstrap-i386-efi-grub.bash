@@ -67,10 +67,8 @@ fork_primary_usable()
     done
 
     # A marker plus executable presence cannot detect a mixed installed LLVM
-    # graph. Exercise the exact compiler/resource-header/frame-pointer path that
-    # exposed the stale-module bug, then carry its ELF object through LLD and
-    # the object utilities GRUB consumes. Failure falls through to the existing
-    # i386 bootstrap, which owns graph deletion and rebuilding.
+    # graph. Exercise the compiler/resource-header/frame-pointer path and then
+    # carry its ELF object through LLD and the object utilities GRUB consumes.
     rm -rf "$smoke_dir"
     mkdir -p "$smoke_dir"
     cat >"$smoke_dir/cache.c" <<'SOURCE'
@@ -147,9 +145,8 @@ prepare_fork_llvm()
         return 0
     fi
 
-    # SeaBIOS did not originally need nm/ranlib. Build only those two LLVM
-    # utilities from the same persistent LLVM build graph when GRUB needs them;
-    # do not create a second LLVM installation.
+    # SeaBIOS did not originally need nm/ranlib. Build only those LLVM tools
+    # from the persistent LLVM graph when GRUB needs them.
     prepare_homebrew_build_helpers
     command -v cmake >/dev/null 2>&1 || {
         printf 'error: cmake is required to extend the WHP LLVM fork for GRUB\n' >&2
@@ -194,9 +191,7 @@ EOF_RANLIB
 
 prepare_fork_llvm
 llvm_toolchain_id="$(cksum "$llvm_marker" | awk '{printf "%s:%s", $1, $2}')"
-clang="$LLVM_BIN/clang"
-llvm_objcopy="$LLVM_BIN/llvm-objcopy"
-llvm_strip="$LLVM_BIN/llvm-strip"
+LLVM_TOOL_PATH="$LLVM_BIN:$(dirname "$llvm_nm"):$(dirname "$llvm_ranlib"):$PATH"
 
 if [[ -z "$BUILD_CC" ]]; then
     BUILD_CC="$(command -v cc 2>/dev/null || command -v clang 2>/dev/null || true)"
@@ -243,12 +238,13 @@ EOF_SOURCE
 )"
 fi
 expected_marker="$(cat <<EOF_MARKER
-BOOTSTRAP_SCHEMA=5
+BOOTSTRAP_SCHEMA=6
 $source_marker
 TARGET=$TARGET_TRIPLE
 PLATFORM=i386-efi
 PROGRAM_PREFIX=i386-efi-
 TOOLCHAIN=whp-llvm-fork
+GRUB_TARGET_TOOLCHAIN=llvm
 LLVM_TOOLCHAIN_CKSUM=$llvm_toolchain_id
 LLVM_BIN=$LLVM_BIN
 EOF_MARKER
@@ -297,8 +293,20 @@ else
 fi
 : > "$grub_source/grub-core/extra_deps.lst"
 
+grub_toolchain_frontend="$grub_source/build-aux/whp-configure-toolchain"
+if [[ -x "$grub_toolchain_frontend" ]]; then
+    use_grub_toolchain_frontend=1
+elif [[ -n "$SOURCE_ARCHIVE" ]]; then
+    # Compatibility lane for explicit older/reproducer archives. The default
+    # gitlink must always carry the GRUB-owned LLVM frontend.
+    use_grub_toolchain_frontend=0
+else
+    printf 'error: pinned GRUB source lacks LLVM target-toolchain support: %s\n' \
+        "$grub_toolchain_frontend" >&2
+    exit 1
+fi
+
 configure_args=(
-    --disable-werror
     --disable-nls
     --target="$TARGET_TRIPLE"
     --with-platform=efi
@@ -310,32 +318,51 @@ configure_args=(
 (
     cd "$build_root"
 
-    # Keep macOS host flags on the host side. The target side is selected only
-    # by Clang's bare-metal triple, so -arch/-mmacosx-version-min cannot reach
-    # an ELF compiler again.
-    PATH="$LLVM_BIN:$(dirname "$llvm_nm"):$PATH" \
-    CFLAGS= \
-    CPPFLAGS= \
-    LDFLAGS= \
-    BUILD_CFLAGS= \
-    BUILD_CPPFLAGS= \
-    BUILD_LDFLAGS= \
-    HOST_CFLAGS= \
-    HOST_CPPFLAGS= \
-    HOST_LDFLAGS= \
-    CC="$BUILD_CC" \
-    BUILD_CC="$BUILD_CC" \
-    HOST_CC="$BUILD_CC" \
-    TARGET_CC="$clang" \
-    TARGET_CFLAGS="-Os --target=$TARGET_TRIPLE" \
-    TARGET_CPPFLAGS="--target=$TARGET_TRIPLE" \
-    TARGET_CCASFLAGS="--target=$TARGET_TRIPLE" \
-    TARGET_LDFLAGS="--target=$TARGET_TRIPLE -fuse-ld=lld" \
-    TARGET_OBJCOPY="$llvm_objcopy" \
-    TARGET_NM="$llvm_nm" \
-    TARGET_RANLIB="$llvm_ranlib" \
-    TARGET_STRIP="$llvm_strip" \
-        "$grub_source/configure" "${configure_args[@]}"
+    # Host and target ABIs stay separate. Darwin -arch/deployment flags are
+    # cleared from the host-facing environment. The default path delegates
+    # Clang/LLD/LLVM-binutils selection to the GRUB fork itself.
+    if [[ "$use_grub_toolchain_frontend" == 1 ]]; then
+        PATH="$LLVM_TOOL_PATH" \
+        CFLAGS= \
+        CPPFLAGS= \
+        LDFLAGS= \
+        BUILD_CFLAGS= \
+        BUILD_CPPFLAGS= \
+        BUILD_LDFLAGS= \
+        HOST_CFLAGS= \
+        HOST_CPPFLAGS= \
+        HOST_LDFLAGS= \
+        CC="$BUILD_CC" \
+        BUILD_CC="$BUILD_CC" \
+        HOST_CC="$BUILD_CC" \
+            "$grub_toolchain_frontend" \
+                --with-target-toolchain=llvm \
+                "${configure_args[@]}"
+    else
+        PATH="$LLVM_TOOL_PATH" \
+        CFLAGS= \
+        CPPFLAGS= \
+        LDFLAGS= \
+        BUILD_CFLAGS= \
+        BUILD_CPPFLAGS= \
+        BUILD_LDFLAGS= \
+        HOST_CFLAGS= \
+        HOST_CPPFLAGS= \
+        HOST_LDFLAGS= \
+        CC="$BUILD_CC" \
+        BUILD_CC="$BUILD_CC" \
+        HOST_CC="$BUILD_CC" \
+        TARGET_CC="$LLVM_BIN/clang" \
+        TARGET_CFLAGS="-Os --target=$TARGET_TRIPLE" \
+        TARGET_CPPFLAGS="--target=$TARGET_TRIPLE" \
+        TARGET_CCASFLAGS="--target=$TARGET_TRIPLE" \
+        TARGET_LDFLAGS="--target=$TARGET_TRIPLE -fuse-ld=lld" \
+        TARGET_OBJCOPY="$LLVM_BIN/llvm-objcopy" \
+        TARGET_NM="$llvm_nm" \
+        TARGET_RANLIB="$llvm_ranlib" \
+        TARGET_STRIP="$LLVM_BIN/llvm-strip" \
+            "$grub_source/configure" "${configure_args[@]}"
+    fi
 )
 
 make_args=()
@@ -343,10 +370,8 @@ if [[ -n "$JOBS" ]]; then
     case "$JOBS" in 0|*[!0-9]*) printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2; exit 1 ;; esac
     make_args=(-j"$JOBS")
 fi
-PATH="$LLVM_BIN:$(dirname "$llvm_nm"):$PATH" \
-    make -C "$build_root" "${make_args[@]}"
-PATH="$LLVM_BIN:$(dirname "$llvm_nm"):$PATH" \
-    DESTDIR="$stage_root" make -C "$build_root" install
+PATH="$LLVM_TOOL_PATH" make -C "$build_root" "${make_args[@]}"
+PATH="$LLVM_TOOL_PATH" DESTDIR="$stage_root" make -C "$build_root" install
 
 staged="$stage_root$INSTALL_PREFIX"
 staged_mkimage="$staged/bin/i386-efi-grub-mkimage"

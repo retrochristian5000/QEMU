@@ -9,8 +9,6 @@ gitmodules="$root/.gitmodules"
     exit 1
 }
 
-repo='https://github.com/retrochristian5000/grub.git'
-
 grep -Fq '[submodule "toolchains/grub"]' "$gitmodules" || {
     printf 'QEMU does not declare the WHP GRUB submodule\n' >&2
     exit 1
@@ -35,6 +33,14 @@ grep -Fq 'git -C "$GRUB_SUBMODULE_DIR" archive --format=tar "$GRUB_REVISION"' "$
     printf 'IA32 EFI GRUB does not build from an immutable gitlink snapshot\n' >&2
     exit 1
 }
+grep -Fq 'build-aux/whp-configure-toolchain' "$bootstrap" || {
+    printf 'IA32 EFI GRUB does not consume the GRUB-owned toolchain frontend\n' >&2
+    exit 1
+}
+grep -Fq -- '--with-target-toolchain=llvm' "$bootstrap" || {
+    printf 'IA32 EFI GRUB does not request the GRUB LLVM toolchain mode\n' >&2
+    exit 1
+}
 grep -Fq 'SOURCE_SUBMODULE=$GRUB_SUBMODULE_PATH' "$bootstrap" || {
     printf 'IA32 EFI GRUB marker does not record the source submodule\n' >&2
     exit 1
@@ -56,4 +62,4 @@ if grep -Fq 'fetch --build-from-source "$FORMULA"' "$bootstrap" ||
     exit 1
 fi
 
-printf 'IA32 EFI GRUB source is pinned by the QEMU WHP GRUB submodule: verified\n'
+printf 'IA32 EFI GRUB is pinned by QEMU and delegates LLVM policy to GRUB: verified\n'
