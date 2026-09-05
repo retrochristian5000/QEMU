@@ -1,0 +1,30 @@
+name: Remove accidental branch
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/cleanup-do-not-use-branch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v7
+        with:
+          ref: master
+      - name: Delete accidental branch and remove this workflow
+        run: |
+          set -euo pipefail
+          git push origin --delete DO_NOT_USE
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/cleanup-do-not-use-branch.yml
+          git commit -m 'ci: remove accidental branch cleanup job'
+          git push origin HEAD:master
