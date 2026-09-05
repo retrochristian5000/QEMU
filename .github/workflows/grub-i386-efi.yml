@@ -53,13 +53,13 @@ jobs:
         shell: bash
         run: bash scripts/tests/test-i386-efi-grub-bootstrap.bash
 
-      - name: Build IA32 EFI GRUB from Homebrew source with WHP LLVM
+      - name: Build IA32 EFI GRUB from WHP GitHub fork with WHP LLVM
         shell: bash
         run: |
           set -euo pipefail
           bash scripts/bootstrap-i386-efi-grub.sh | tee grub-i386-efi-build.log
 
-      - name: Verify mkimage and hybrid modules
+      - name: Verify fork identity, mkimage, and hybrid modules
         shell: bash
         run: |
           set -euo pipefail
@@ -67,15 +67,19 @@ jobs:
           llvm_bin="$BUILD_DIR/firmware-tools/i386-none-elf/llvm/bin"
           mkimage="$prefix/bin/i386-efi-grub-mkimage"
           modules="$prefix/lib/i386-none-elf/grub/i386-efi"
+          marker="$prefix/.whp-grub-i386-efi"
           image="$BUILD_DIR/grub-i386-efi-smoke.efi"
 
           test -x "$mkimage"
           test -x "$llvm_bin/clang"
           test -x "$llvm_bin/llvm-objdump"
           test -f "$modules/moddep.lst"
-          test -f "$prefix/.whp-grub-i386-efi"
-          grep -Fxq 'TOOLCHAIN=whp-llvm-fork' "$prefix/.whp-grub-i386-efi"
-          grep -Fxq 'TARGET=i386-none-elf' "$prefix/.whp-grub-i386-efi"
+          test -f "$marker"
+          grep -Fxq 'SOURCE_REPOSITORY=https://github.com/retrochristian5000/grub.git' "$marker"
+          grep -Fxq 'SOURCE_REVISION=2f972128c48b90bf8b63aadffe6d546976e1dee6' "$marker"
+          grep -Fxq 'TOOLCHAIN=whp-llvm-fork' "$marker"
+          grep -Fxq 'TARGET=i386-none-elf' "$marker"
+          grep -Fxq 'PLATFORM=i386-efi' "$marker"
           "$mkimage" --version
           "$mkimage" \
             -O i386-efi \
