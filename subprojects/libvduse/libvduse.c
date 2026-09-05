@@ -1166,7 +1166,7 @@ static int vduse_dev_init(VduseDev *dev, const char *name,
     if (!dev_path) {
         return -ENOMEM;
     }
-    sprintf(dev_path, "/dev/vduse/%s", name);
+    snprintf(dev_path, strlen(name) + strlen("/dev/vduse/") + 1, "/dev/vduse/%s", name);
 
     fd = open(dev_path, O_RDWR);
     free(dev_path);

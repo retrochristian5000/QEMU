@@ -1455,7 +1455,7 @@ void qtest_memwrite(QTestState *s, uint64_t addr, const void *data, size_t size)
     enc = g_malloc(2 * size + 1);
 
     for (i = 0; i < size; i++) {
-        sprintf(&enc[i * 2], "%02x", ptr[i]);
+        snprintf(&enc[i * 2], sizeof("00"), "%02x", ptr[i]);
     }
 
     qtest_sendf(s, "write 0x%" PRIx64 " 0x%zx 0x%s\n", addr, size, enc);
