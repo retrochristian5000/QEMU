@@ -45,6 +45,39 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
         ), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
             self.assertEqual(mod.select_host_cxx(), '/opt/host-clang++')
 
+    def test_darwin_sdkroot_comes_from_xcrun(self):
+        mod = load_bootstrap_module()
+        with mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
+             mock.patch.object(mod.shutil, 'which', return_value='/usr/bin/xcrun'), \
+             mock.patch.object(mod, 'run_text', return_value='/SDKs/MacOSX.sdk') as run_text:
+            self.assertEqual(mod.select_host_sdkroot(), '/SDKs/MacOSX.sdk')
+            run_text.assert_called_once_with(
+                ['xcrun', '--sdk', 'macosx', '--show-sdk-path']
+            )
+
+    def test_bootstrap_environment_replaces_target_sdk_flags(self):
+        mod = load_bootstrap_module()
+        with mock.patch.dict(
+            os.environ,
+            {
+                'CXX': '/tmp/target-clang++',
+                'CXXFLAGS': '--target=aarch64-apple-darwin',
+                'LDFLAGS': '--target=aarch64-apple-darwin',
+                'SDKROOT': '/wrong-sdk',
+                'AR_FOR_BUILD': '/usr/bin/ar',
+            },
+            clear=True,
+        ):
+            env = mod.bootstrap_environment('/usr/bin/clang++', '/SDKs/MacOSX.sdk')
+
+        self.assertEqual(env['CXX'], '/usr/bin/clang++')
+        self.assertEqual(env['SDKROOT'], '/SDKs/MacOSX.sdk')
+        self.assertEqual(env['CXXFLAGS'], '-isysroot /SDKs/MacOSX.sdk')
+        self.assertEqual(env['LDFLAGS'], '-isysroot /SDKs/MacOSX.sdk')
+        self.assertEqual(env['AR'], '/usr/bin/ar')
+        self.assertNotIn('--target=aarch64-apple-darwin', env['CXXFLAGS'])
+        self.assertNotIn('--target=aarch64-apple-darwin', env['LDFLAGS'])
+
 
 if __name__ == '__main__':
     unittest.main()
