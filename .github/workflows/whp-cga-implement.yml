@@ -81,8 +81,6 @@ jobs:
             hw/display/Kconfig hw/display/meson.build hw/display/cga.c \
             hw/i386/Kconfig hw/i386/pc.c hw/i386/x86-16bit.c \
             hw/isa/isa-bus.c include/system/system.h system/vl.c \
-            tests/qtest/cga-test.c tests/qtest/meson.build \
-            docs/superpowers/specs/2026-08-27-ibm-cga-design.md \
-            docs/superpowers/plans/2026-08-27-ibm-cga.md
+            tests/qtest/cga-test.c tests/qtest/meson.build
           git commit -m 'display: add IBM CGA ISA adapter'
           git push origin HEAD:master
