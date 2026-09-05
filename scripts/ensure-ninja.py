@@ -81,6 +81,8 @@ def ensure_ninja_source() -> str:
                 'git', '-C', str(ROOT), 'submodule', 'update', '--init', '--depth', '1',
                 str(SUBMODULE_REL),
             ],
+            stdout=sys.stderr,
+            stderr=sys.stderr,
             check=True,
         )
         current_revision = run_text(['git', '-C', str(SUBMODULE_DIR), 'rev-parse', 'HEAD'])
