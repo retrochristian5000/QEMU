@@ -12,7 +12,7 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 NINJA_BOOTSTRAP = ROOT / 'scripts' / 'ensure-ninja.py'
-PREPARE_BUILD = ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash'
+BUILD_WRAPPER = ROOT / 'builder.sh'
 
 
 def load_module(path: pathlib.Path, name: str):
@@ -87,17 +87,19 @@ class CompilerCachePolicyTests(unittest.TestCase):
         self.assertEqual(env['CXXFLAGS'], '-isysroot /SDKs/MacOSX.sdk')
         self.assertEqual(
             env['LDFLAGS'],
-            '-isysroot /SDKs/MacOSX.sdk -Wl,-dead_strip',
+            '-isysroot /SDKs/MacOSX.sdk -Wl,-O2 -Wl,-dead_strip',
         )
         self.assertNotIn('-Wl,-dead_strip', env['CXXFLAGS'])
 
-    def test_qemu_host_policy_consumes_menu_cache_without_packaging_it(self):
-        text = PREPARE_BUILD.read_text(encoding='utf-8')
-        self.assertIn('COMPILER_CACHE="${COMPILER_CACHE:-auto}"', text)
+    def test_qemu_host_cache_is_build_time_only(self):
+        text = BUILD_WRAPPER.read_text(encoding='utf-8')
+        self.assertIn('COMPILER_CACHE=${COMPILER_CACHE:-auto}', text)
         self.assertIn('WHP_COMPILER_CACHE_CMD', text)
         self.assertIn('.whp-compiler-cache', text)
         self.assertIn('ccache|sccache', text)
-        self.assertNotIn('configure_args+=(--compiler-cache', text)
+        self.assertIn('CCACHE_DISABLE=1', text)
+        self.assertNotIn('--compiler-cache', text)
+        self.assertNotIn('PREFIX/.whp-compiler-cache', text)
 
 
 if __name__ == '__main__':
