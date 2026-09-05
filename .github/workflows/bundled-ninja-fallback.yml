@@ -10,6 +10,7 @@ on:
       - 'build.sh'
       - 'scripts/ensure-ninja.py'
       - 'scripts/tests/test-bundled-ninja-fallback.py'
+      - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - '.github/workflows/bundled-ninja-fallback.yml'
   workflow_dispatch:
 
@@ -18,8 +19,14 @@ permissions:
 
 jobs:
   bundled-ninja:
-    name: Check pinned Ninja fallback
-    runs-on: ubuntu-24.04
+    name: Check pinned Ninja fallback (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out QEMU
@@ -27,23 +34,59 @@ jobs:
 
       - name: Validate fallback policy
         run: |
-          python3 -m py_compile scripts/ensure-ninja.py scripts/tests/test-bundled-ninja-fallback.py
+          python3 -m py_compile \
+            scripts/ensure-ninja.py \
+            scripts/tests/test-bundled-ninja-fallback.py \
+            scripts/tests/test-ninja-macos-host-compiler.py
           sh -n build.sh
           python3 scripts/tests/test-bundled-ninja-fallback.py
+          python3 scripts/tests/test-ninja-macos-host-compiler.py
 
       - name: Bootstrap pinned Ninja without Ninja
         shell: bash
         run: |
           set -euo pipefail
           qemu_build="$RUNNER_TEMP/qemu-build"
+          fake_target_cxx=''
+
+          # Reproduce the macOS failure mode: QEMU's target CXX can be a
+          # self-built aarch64-apple-darwin Clang without an SDK sysroot.  It
+          # must never compile a build-machine tool such as Ninja.  The fake
+          # compiler advertises itself as Clang but fails exactly like the
+          # observed libc++ header error if it is accidentally selected.
+          if [[ "$(uname -s)" == Darwin ]]; then
+            fake_target_cxx="$RUNNER_TEMP/target-clang++"
+            cat >"$fake_target_cxx" <<'EOF'
+          #!/bin/sh
+          if [ "${1:-}" = "--version" ]; then
+              echo 'WHP target clang version 0.0.0'
+              exit 0
+          fi
+          echo "fatal error: 'errno.h' file not found" >&2
+          exit 1
+          EOF
+            chmod +x "$fake_target_cxx"
+            export CXX="$fake_target_cxx"
+            unset CXX_FOR_BUILD
+          fi
+
           first="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
           test -x "$first"
           "$first" --version
           marker="$(dirname "$first")/.whp-ninja-tool"
           test -f "$marker"
-          before="$(stat -c '%Y:%s' "$marker")"
+          before="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
           second="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
-          after="$(stat -c '%Y:%s' "$marker")"
+          after="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
           test "$first" = "$second"
           test "$before" = "$after"
           grep -Fq 'NINJA_GIT_COMMIT=' "$marker"
+
+          if [[ "$(uname -s)" == Darwin ]]; then
+            host_cxx="$(xcrun --sdk macosx --find clang++)"
+            grep -Fxq "CXX=$host_cxx" "$marker"
+            if grep -Fq "$fake_target_cxx" "$marker"; then
+              echo 'error: target CXX leaked into macOS Ninja host bootstrap' >&2
+              exit 1
+            fi
+          fi
