@@ -8,8 +8,11 @@ on:
       - '.gitmodules'
       - 'toolchains/ninja-builder'
       - 'build.sh'
+      - 'builder.sh'
       - 'scripts/ensure-ninja.py'
+      - 'scripts/whp-config/config.py'
       - 'scripts/tests/test-bundled-ninja-fallback.py'
+      - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - '.github/workflows/bundled-ninja-fallback.yml'
   workflow_dispatch:
@@ -37,21 +40,33 @@ jobs:
           python3 -m py_compile \
             scripts/ensure-ninja.py \
             scripts/tests/test-bundled-ninja-fallback.py \
+            scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-ninja-macos-host-compiler.py
           sh -n build.sh
+          sh -n builder.sh
           python3 scripts/tests/test-bundled-ninja-fallback.py
+          python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-ninja-macos-host-compiler.py
 
-      - name: Bootstrap pinned Ninja without Ninja
+      - name: Bootstrap pinned Ninja through compiler cache
         shell: bash
         run: |
           set -euo pipefail
           qemu_build="$RUNNER_TEMP/qemu-build"
           fake_target_cxx=''
+          fake_cache_bin="$RUNNER_TEMP/compiler-cache-bin"
+          mkdir -p "$fake_cache_bin"
+          cat >"$fake_cache_bin/ccache" <<'EOF'
+          #!/bin/sh
+          exec "$@"
+          EOF
+          chmod +x "$fake_cache_bin/ccache"
+          export PATH="$fake_cache_bin:$PATH"
+          export COMPILER_CACHE=ccache
 
           # Reproduce the macOS failure mode: QEMU's target CXX can be a
-          # self-built aarch64-apple-darwin Clang without an SDK sysroot.  It
-          # must never compile a build-machine tool such as Ninja.  The fake
+          # self-built aarch64-apple-darwin Clang without an SDK sysroot. It
+          # must never compile a build-machine tool such as Ninja. The fake
           # compiler advertises itself as Clang but fails exactly like the
           # observed libc++ header error if it is accidentally selected.
           if [[ "$(uname -s)" == Darwin ]]; then
@@ -75,12 +90,22 @@ jobs:
           "$first" --version
           marker="$(dirname "$first")/.whp-ninja-tool"
           test -f "$marker"
+          test -d "$RUNNER_TEMP/.whp-compiler-cache"
+          find "$RUNNER_TEMP/.whp-compiler-cache" -maxdepth 1 -type d -name 'ccache-*' | grep -q .
           before="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
           second="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
           after="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
           test "$first" = "$second"
           test "$before" = "$after"
           grep -Fq 'NINJA_GIT_COMMIT=' "$marker"
+          grep -Fxq 'NINJA_BOOTSTRAP_SCHEMA=4' "$marker"
+
+          # Compiler caching is an input to the build process, not part of the
+          # published Ninja helper's cache identity or QEMU installation ABI.
+          if grep -Fq "$fake_cache_bin/ccache" "$marker"; then
+            echo 'error: compiler-cache path leaked into Ninja artifact identity' >&2
+            exit 1
+          fi
 
           if [[ "$(uname -s)" == Darwin ]]; then
             host_cxx="$(xcrun --sdk macosx --find clang++)"
