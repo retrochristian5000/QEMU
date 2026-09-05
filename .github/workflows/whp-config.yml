@@ -7,6 +7,7 @@ on:
     paths:
       - 'build.sh'
       - 'builder.sh'
+      - 'scripts/ensure-ninja.py'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/portable-build.py'
@@ -80,6 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            scripts/ensure-ninja.py \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py \
@@ -97,6 +99,7 @@ jobs:
             scripts/tests/test-whp-incremental.py \
             scripts/tests/test-whp-sparc-menu.py
           /bin/sh -n build.sh
+          /bin/sh -n builder.sh
           bash -n builder.sh
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/prepare-build.bash
