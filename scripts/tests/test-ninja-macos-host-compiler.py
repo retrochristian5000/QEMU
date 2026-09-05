@@ -67,16 +67,20 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
                 'AR_FOR_BUILD': '/usr/bin/ar',
             },
             clear=True,
-        ):
+        ), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
             env = mod.bootstrap_environment('/usr/bin/clang++', '/SDKs/MacOSX.sdk')
 
         self.assertEqual(env['CXX'], '/usr/bin/clang++')
         self.assertEqual(env['SDKROOT'], '/SDKs/MacOSX.sdk')
         self.assertEqual(env['CXXFLAGS'], '-isysroot /SDKs/MacOSX.sdk')
-        self.assertEqual(env['LDFLAGS'], '-isysroot /SDKs/MacOSX.sdk')
+        self.assertEqual(
+            env['LDFLAGS'],
+            '-isysroot /SDKs/MacOSX.sdk -Wl,-O2 -Wl,-dead_strip',
+        )
         self.assertEqual(env['AR'], '/usr/bin/ar')
         self.assertNotIn('--target=aarch64-apple-darwin', env['CXXFLAGS'])
         self.assertNotIn('--target=aarch64-apple-darwin', env['LDFLAGS'])
+        self.assertNotIn('-Wl,-dead_strip', env['CXXFLAGS'])
 
 
 if __name__ == '__main__':
