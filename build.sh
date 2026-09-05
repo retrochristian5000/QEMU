@@ -162,23 +162,53 @@ if [ "${1:-}" = menuconfig ]; then
     exec "$PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
 fi
 
+# Saved configuration supplies portable policy defaults. Explicit environment
+# variables remain one-run overrides and therefore take precedence. Load it
+# before selecting Ninja so menuconfig can choose the build executor used by
+# both the LLVM bootstrap and QEMU itself.
+WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
+eval "$WHP_CONFIG_ENV"
+unset WHP_CONFIG_ENV
+
+BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
+case "$BOOTSTRAP_NINJA" in
+    y) BOOTSTRAP_NINJA=1 ;;
+    n) BOOTSTRAP_NINJA=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_NINJA must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_NINJA
+
 # QEMU's normal Meson path needs Ninja before configuration, not only when the
-# final build command is launched. Prefer an explicitly selected or system
-# Ninja, but lazily bootstrap the pinned WHP Ninja fork when the host does not
-# provide one. The fallback lives beside BUILD_DIR so the QEMU build tree stays
-# empty until its ownership marker is established.
+# final build command is launched. An explicit NINJA_CMD is authoritative.
+# Otherwise auto prefers a host Ninja and falls back to the pinned WHP fork,
+# 1 forces the pinned fork, and 0 requires a host Ninja. Export NINJA as well
+# as NINJA_CMD so QEMU/Meson and WHP helpers consume one exact executable.
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
-    if [ -z "${NINJA_CMD:-}" ]; then
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
         NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
     fi
-    if [ -z "${NINJA_CMD:-}" ]; then
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ]; then
         NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" --build-dir "$BUILD_DIR") || exit 1
-        NINJA_DIR=$(dirname -- "$NINJA_CMD")
-        PATH="$NINJA_DIR:$PATH"
-        export PATH
-        unset NINJA_DIR
     fi
-    export NINJA_CMD PATH
+    if [ -z "${NINJA_CMD:-}" ]; then
+        printf '%s\n' \
+            'error: Ninja is required, but BOOTSTRAP_NINJA=0 disables the bundled fallback.' \
+            'Install Ninja, set NINJA_CMD, or select Bootstrap/use WHP Ninja in menuconfig.' >&2
+        exit 1
+    fi
+    case "$NINJA_CMD" in
+        */*)
+            NINJA_DIR=$(dirname -- "$NINJA_CMD")
+            PATH="$NINJA_DIR:$PATH"
+            unset NINJA_DIR
+            ;;
+    esac
+    NINJA=$NINJA_CMD
+    export NINJA_CMD NINJA PATH
 fi
 
 if [ -z "$WHP_BUILD_BASH" ]; then
@@ -260,12 +290,6 @@ elif [ "$WHP_BUILD_SHELL" = zsh ]; then
     exit 1
 fi
 export WHP_BUILD_SHELL WHP_BUILD_FRONTEND_KIND WHP_BUILD_FRONTEND_SHELL
-
-# Saved configuration supplies portable policy defaults. Explicit environment
-# variables remain one-run overrides and therefore take precedence.
-WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exit 1
-eval "$WHP_CONFIG_ENV"
-unset WHP_CONFIG_ENV
 
 WHP_INCREMENTAL_BUILD=${WHP_INCREMENTAL_BUILD:-1}
 case "$WHP_INCREMENTAL_BUILD" in

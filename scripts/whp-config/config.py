@@ -33,6 +33,7 @@ OPTIONS = (
     Option('QEMU_HOST_OPTIMIZATION', 'Host features', 'QEMU host optimization level', 'choice', '3', ('0', '1', '2', '3', 'g', 's')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
+    Option('BOOTSTRAP_NINJA', 'Host features', 'Bootstrap/use WHP Ninja', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -63,6 +64,7 @@ RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
 SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
     'QEMU_HOST_LTO',
+    'BOOTSTRAP_NINJA',
     'BOOTSTRAP_MOLD',
     'MACOS_ENABLE_COCOA',
     'MACOS_ENABLE_COREAUDIO',

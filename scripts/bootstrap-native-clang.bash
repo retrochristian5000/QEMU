@@ -14,6 +14,7 @@ LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
+ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
 stage_root=""
 
 # This script builds the compiler used by QEMU; it is not itself a QEMU host
@@ -114,12 +115,27 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake ninja sed mkdir mv rm ln mktemp; do
+for tool in git cmake sed mkdir mv rm ln mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: native LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
     }
 done
+if [[ "$ninja_cmd" == */* ]]; then
+    [[ -x "$ninja_cmd" ]] || {
+        printf 'error: native LLVM Ninja is not executable: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+else
+    resolved_ninja="$(command -v "$ninja_cmd" 2>/dev/null || true)"
+    [[ -n "$resolved_ninja" ]] || {
+        printf 'error: native LLVM bootstrap dependency not found: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+    ninja_cmd="$resolved_ninja"
+    unset resolved_ninja
+fi
+printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
 
 cmake_host_args=()
 sdkroot=""
@@ -359,6 +375,7 @@ cmake_args=(
     -S "$LLVM_SOURCE_DIR/llvm"
     -B "$LLVM_BUILD_DIR"
     -G Ninja
+    "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"

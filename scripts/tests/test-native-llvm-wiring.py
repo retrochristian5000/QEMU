@@ -40,6 +40,13 @@ firmware_index = builder.index('whp_prepare_seabios_grub_sources')
 assert prepare_index < reset_index < firmware_index
 assert builder.index('whp_prepare_configure_args', reset_index) < firmware_index
 
+# The public build entry selects one Ninja for the whole host build. Native LLVM
+# must consume that same executable instead of independently searching PATH,
+# because CMake's generator is part of the bootstrap producer/consumer boundary.
+assert 'ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"' in bootstrap
+assert '"-DCMAKE_MAKE_PROGRAM=$ninja_cmd"' in bootstrap
+assert 'WHP native LLVM Ninja:' in bootstrap
+
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
