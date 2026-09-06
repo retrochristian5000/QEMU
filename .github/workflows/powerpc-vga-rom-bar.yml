@@ -6,23 +6,27 @@ on:
     paths:
       - 'hw/display/vga-pci.c'
       - 'hw/pci/pci.c'
+      - 'hw/pci-bridge/dec.c'
       - 'hw/ppc/Kconfig'
       - 'hw/ppc/mac_newworld.c'
       - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
+      - 'scripts/tests/test-dec21154-power-management.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
   pull_request:
     paths:
       - 'hw/display/vga-pci.c'
       - 'hw/pci/pci.c'
+      - 'hw/pci-bridge/dec.c'
       - 'hw/ppc/Kconfig'
       - 'hw/ppc/mac_newworld.c'
       - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
+      - 'scripts/tests/test-dec21154-power-management.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
 
 jobs:
@@ -36,3 +40,5 @@ jobs:
         run: python3 scripts/tests/test-powermac3_1-defaults.py
       - name: Verify Sawtooth generic AGP + PCI multi-display wiring
         run: python3 scripts/tests/test-powermac3_1-multi-display.py
+      - name: Verify Sawtooth DEC 21154 power-management contract
+        run: python3 scripts/tests/test-dec21154-power-management.py
