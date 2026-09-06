@@ -42,13 +42,18 @@
 #define KEYLARGO_FCR_BASE  0x38
 #define KEYLARGO_FCR_SIZE  0x14
 
-#define KL_FCR0_CHOOSE_SCCA       (1U << 1)
-#define KL_FCR0_RESET_SCC         (1U << 3)
-#define KL_FCR0_SCCA_ENABLE       (1U << 4)
-#define KL_FCR0_SCCB_ENABLE       (1U << 5)
-#define KL_FCR0_SCC_CELL_ENABLE   (1U << 6)
-#define KL_FCR0_USB0_CELL_ENABLE  (1U << 20)
-#define KL_FCR0_USB1_CELL_ENABLE  (1U << 24)
+#define KL_FCR0_SCC_A_INTF_ENABLE   (1U << 1)
+#define KL_FCR0_RESET_SCC           (1U << 3)
+#define KL_FCR0_SCCA_ENABLE         (1U << 4)
+#define KL_FCR0_SCCB_ENABLE         (1U << 5)
+#define KL_FCR0_SCC_CELL_ENABLE     (1U << 6)
+#define KL_FCR0_USB0_PAD_SUSPEND0   (1U << 18)
+#define KL_FCR0_USB0_PAD_SUSPEND1   (1U << 19)
+#define KL_FCR0_USB0_CELL_ENABLE    (1U << 20)
+#define KL_FCR0_USB1_PAD_SUSPEND0   (1U << 22)
+#define KL_FCR0_USB1_PAD_SUSPEND1   (1U << 23)
+#define KL_FCR0_USB1_CELL_ENABLE    (1U << 24)
+#define KL_FCR0_USB_REF_SUSPEND     (1U << 28)
 
 #define KL_FCR1_AUDIO_SEL22M_CLK    (1U << 1)
 #define KL_FCR1_AUDIO_CLK_ENABLE     (1U << 3)
@@ -69,11 +74,40 @@
 #define KL_FCR1_UIDE_ENABLE          (1U << 29)
 #define KL_FCR1_UIDE_RESET_N         (1U << 30)
 
-#define KL_FCR2_IOBUS_ENABLE      (1U << 1)
-#define KL_FCR2_MPIC_ENABLE       (1U << 17)
+#define KL_FCR2_IOBUS_ENABLE        (1U << 1)
+#define KL_FCR2_SLEEP_STATE_BIT     (1U << 8)
+#define KL_FCR2_MPIC_ENABLE         (1U << 17)
+#define KL_FCR2_ALT_DATA_OUT        (1U << 25)
 
-#define KL_FCR3_TIMER_CLK18_ENABLE (1U << 12)
-#define KL_FCR3_VIA_CLK16_ENABLE   (1U << 15)
+#define KL_FCR3_SHUTDOWN_PLL_TOTAL  (1U << 0)
+#define KL_FCR3_SHUTDOWN_PLLKW6     (1U << 1)
+#define KL_FCR3_SHUTDOWN_PLLKW4     (1U << 2)
+#define KL_FCR3_SHUTDOWN_PLLKW35    (1U << 3)
+#define KL_FCR3_SHUTDOWN_PLLKW12    (1U << 4)
+#define KL_FCR3_PLL_RESET            (1U << 5)
+#define KL_FCR3_SHUTDOWN_PLL2X       (1U << 7)
+#define KL_FCR3_CLK66_ENABLE         (1U << 8)
+#define KL_FCR3_CLK49_ENABLE         (1U << 9)
+#define KL_FCR3_CLK45_ENABLE         (1U << 10)
+#define KL_FCR3_CLK31_ENABLE         (1U << 11)
+#define KL_FCR3_TIMER_CLK18_ENABLE   (1U << 12)
+#define KL_FCR3_I2S1_CLK18_ENABLE    (1U << 13)
+#define KL_FCR3_I2S0_CLK18_ENABLE    (1U << 14)
+#define KL_FCR3_VIA_CLK16_ENABLE     (1U << 15)
+#define KL_FCR3_STOPPING33_ENABLED   (1U << 19)
+
+/*
+ * FCR4 packs wake control and status into one 8-bit lane per USB port.
+ * These definitions deliberately do not assign a lane to Sawtooth's rear,
+ * AGP, or modem routes until that physical routing is independently proven.
+ */
+#define KL_FCR4_PORT_DISCONNECT_WAKE_EN(p) (0x01U << ((p) * 8))
+#define KL_FCR4_PORT_CONNECT_WAKE_EN(p)    (0x02U << ((p) * 8))
+#define KL_FCR4_PORT_RESUME_WAKE_EN(p)     (0x04U << ((p) * 8))
+#define KL_FCR4_PORT_WAKEUP_ENABLE(p)      (0x08U << ((p) * 8))
+#define KL_FCR4_PORT_DISCONNECT_STAT(p)    (0x10U << ((p) * 8))
+#define KL_FCR4_PORT_CONNECT_STAT(p)       (0x20U << ((p) * 8))
+#define KL_FCR4_PORT_RESUME_STAT(p)        (0x40U << ((p) * 8))
 
 /* Note: this code is strongly inspired by the corresponding code in PearPC */
 
@@ -304,7 +338,7 @@ static void keylargo_fcr_set_defaults(NewWorldMacIOState *ns)
      * so Tiger and Linux see a coherent register state before they
      * begin their own power-management sequencing.
      */
-    ns->fcr[0] = KL_FCR0_CHOOSE_SCCA |
+    ns->fcr[0] = KL_FCR0_SCC_A_INTF_ENABLE |
                  KL_FCR0_SCCA_ENABLE |
                  KL_FCR0_SCCB_ENABLE |
                  KL_FCR0_SCC_CELL_ENABLE |
@@ -351,10 +385,12 @@ static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
     ns->fcr[reg] = value;
 
     /*
-     * The SCC reset bit is one FCR side effect QEMU can model directly
-     * without guessing at unimplemented KeyLargo cells.  USB/IDE/audio
-     * power bits are retained faithfully for guest readback; their device
-     * clock-gating hooks can be connected as those cells are modeled.
+     * The recovered FCR map now covers Sawtooth's USB pad/reference suspend,
+     * sleep/data-out, PLL/clock, and per-port USB wake controls in addition to
+     * the previously named cells.  Preserve all of those bits for guest
+     * readback.  SCC reset remains the one direct side effect modeled here;
+     * USB/IDE/audio gating, wake latching, and board power-domain effects are
+     * wired separately as the corresponding devices gain those interfaces.
      */
     if (reg == 0 && (value & KL_FCR0_RESET_SCC) &&
         !(old & KL_FCR0_RESET_SCC)) {
