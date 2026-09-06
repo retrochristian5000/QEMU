@@ -33,15 +33,36 @@
 #define TYPE_MACIO_GPIO "macio-gpio"
 OBJECT_DECLARE_SIMPLE_TYPE(MacIOGPIOState, MACIO_GPIO)
 
+/*
+ * KeyLargo GPIO register layout at MacIO offset 0x50:
+ *
+ *   0x50-0x57  GPIO level registers (2 x 32-bit)
+ *   0x58-0x69  18 external-interrupt GPIO registers
+ *   0x6a-0x7a  17 ordinary GPIO registers
+ *   0x7b-0x7f  reserved in the current model
+ *
+ * Apple Cheetah- and Panther-era drivers both save/restore this exact
+ * 18 + 17 topology.  Keep the historical 36-byte migration storage for
+ * compatibility with older QEMU migration streams, but expose only the
+ * 35 hardware GPIO registers.
+ */
+#define MACIO_GPIO_LEVEL_BYTES       8
+#define MACIO_GPIO_EXTINT_COUNT      18
+#define MACIO_GPIO_NORMAL_COUNT      17
+#define MACIO_GPIO_REG_COUNT         (MACIO_GPIO_EXTINT_COUNT + \
+                                      MACIO_GPIO_NORMAL_COUNT)
+#define MACIO_GPIO_MIG_REG_COUNT     36
+#define MACIO_GPIO_MMIO_SIZE         0x30
+
 struct MacIOGPIOState {
     /*< private >*/
     SysBusDevice parent;
     /*< public >*/
 
     MemoryRegion gpiomem;
-    qemu_irq gpio_extirqs[10];
-    uint8_t gpio_levels[8];
-    uint8_t gpio_regs[36]; /* XXX Check count */
+    qemu_irq gpio_extirqs[MACIO_GPIO_EXTINT_COUNT];
+    uint8_t gpio_levels[MACIO_GPIO_LEVEL_BYTES];
+    uint8_t gpio_regs[MACIO_GPIO_MIG_REG_COUNT];
 };
 
 void macio_set_gpio(MacIOGPIOState *s, uint32_t gpio, bool state);
