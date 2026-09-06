@@ -68,16 +68,6 @@
 #define KL_FCR1_EIDE1_RESET_N        (1U << 27)
 #define KL_FCR1_UIDE_ENABLE          (1U << 29)
 #define KL_FCR1_UIDE_RESET_N         (1U << 30)
-#define KL_FCR1_VALID_MASK \
-    (KL_FCR1_AUDIO_SEL22M_CLK | KL_FCR1_AUDIO_CLK_ENABLE | \
-     KL_FCR1_AUDIO_CLK_OUT_ENABLE | KL_FCR1_AUDIO_CELL_ENABLE | \
-     KL_FCR1_CHOOSE_AUDIO | KL_FCR1_CHOOSE_I2S0 | \
-     KL_FCR1_I2S0_CELL_ENABLE | KL_FCR1_I2S0_CLK_ENABLE | \
-     KL_FCR1_I2S0_ENABLE | KL_FCR1_I2S1_CELL_ENABLE | \
-     KL_FCR1_I2S1_CLK_ENABLE | KL_FCR1_I2S1_ENABLE | \
-     KL_FCR1_EIDE0_ENABLE | KL_FCR1_EIDE0_RESET_N | \
-     KL_FCR1_EIDE1_ENABLE | KL_FCR1_EIDE1_RESET_N | \
-     KL_FCR1_UIDE_ENABLE | KL_FCR1_UIDE_RESET_N)
 
 #define KL_FCR2_IOBUS_ENABLE      (1U << 1)
 #define KL_FCR2_MPIC_ENABLE       (1U << 17)
@@ -355,10 +345,6 @@ static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
 
     if (reg >= ARRAY_SIZE(ns->fcr)) {
         return;
-    }
-
-    if (reg == 1) {
-        value &= KL_FCR1_VALID_MASK;
     }
 
     old = ns->fcr[reg];
