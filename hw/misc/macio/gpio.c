@@ -44,6 +44,12 @@ void macio_set_gpio(MacIOGPIOState *s, uint32_t gpio, bool state)
 {
     uint8_t new_reg;
 
+    if (gpio >= MACIO_GPIO_EXTINT_COUNT) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "GPIO: external GPIO index %u out of range\n", gpio);
+        return;
+    }
+
     trace_macio_set_gpio(gpio, state);
 
     if (s->gpio_regs[gpio] & OUT_ENABLE) {
@@ -105,13 +111,19 @@ static void macio_gpio_write(void *opaque, hwaddr addr, uint64_t value,
 
     trace_macio_gpio_write(addr, value);
 
-    /* Levels regs are read-only */
-    if (addr < 8) {
+    /*
+     * Apple saves and restores both GPIO level registers across sleep, so
+     * preserve byte writes here instead of treating the 0x50-0x57 block as
+     * read-only.  Multi-byte accesses are split to byte operations by the
+     * MemoryRegion implementation below.
+     */
+    if (addr < MACIO_GPIO_LEVEL_BYTES) {
+        s->gpio_levels[addr] = value;
         return;
     }
 
-    addr -= 8;
-    if (addr < 36) {
+    addr -= MACIO_GPIO_LEVEL_BYTES;
+    if (addr < MACIO_GPIO_REG_COUNT) {
         value &= ~IN_DATA;
 
         if (value & OUT_ENABLE) {
@@ -130,12 +142,12 @@ static uint64_t macio_gpio_read(void *opaque, hwaddr addr, unsigned size)
     uint64_t val = 0;
 
     /* Levels regs */
-    if (addr < 8) {
+    if (addr < MACIO_GPIO_LEVEL_BYTES) {
         val = s->gpio_levels[addr];
     } else {
-        addr -= 8;
+        addr -= MACIO_GPIO_LEVEL_BYTES;
 
-        if (addr < 36) {
+        if (addr < MACIO_GPIO_REG_COUNT) {
             val = s->gpio_regs[addr];
         }
     }
@@ -160,12 +172,12 @@ static void macio_gpio_init(Object *obj)
     MacIOGPIOState *s = MACIO_GPIO(obj);
     int i;
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < MACIO_GPIO_EXTINT_COUNT; i++) {
         sysbus_init_irq(sbd, &s->gpio_extirqs[i]);
     }
 
     memory_region_init_io(&s->gpiomem, OBJECT(s), &macio_gpio_ops, obj,
-                          "gpio", 0x30);
+                          "gpio", MACIO_GPIO_MMIO_SIZE);
     sysbus_init_mmio(sbd, &s->gpiomem);
 }
 
@@ -174,8 +186,10 @@ static const VMStateDescription vmstate_macio_gpio = {
     .version_id = 0,
     .minimum_version_id = 0,
     .fields = (const VMStateField[]) {
-        VMSTATE_UINT8_ARRAY(gpio_levels, MacIOGPIOState, 8),
-        VMSTATE_UINT8_ARRAY(gpio_regs, MacIOGPIOState, 36),
+        VMSTATE_UINT8_ARRAY(gpio_levels, MacIOGPIOState,
+                            MACIO_GPIO_LEVEL_BYTES),
+        VMSTATE_UINT8_ARRAY(gpio_regs, MacIOGPIOState,
+                            MACIO_GPIO_MIG_REG_COUNT),
         VMSTATE_END_OF_LIST()
     }
 };
