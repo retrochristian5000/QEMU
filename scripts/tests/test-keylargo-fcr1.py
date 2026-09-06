@@ -41,14 +41,11 @@ for name, bit in required_bits.items():
     if f"(1U << {bit})" not in line:
         errors.append(f"missing or incorrect KeyLargo FCR1 bit {name} at {bit}")
 
-if "#define KL_FCR1_VALID_MASK" not in text:
-    errors.append("KeyLargo FCR1 needs an explicit valid-bit mask")
-
-# Reserved FCR1 positions must not become sticky guest-visible state.  This is
-# deliberately a register-level rule; actual audio/I2S/ATA clock side effects
-# can be attached independently as those devices are modeled.
-if "if (reg == 1)" not in text or "value &= KL_FCR1_VALID_MASK;" not in text:
-    errors.append("KeyLargo FCR1 writes must discard reserved bits")
+# Apple updates individual FCR fields with masked read/modify/write operations,
+# but that does not establish that undocumented bit positions are hard-wired
+# zero.  Preserve them until we have direct silicon/documentation evidence.
+if "KL_FCR1_VALID_MASK" in text or "value &= KL_FCR1_VALID_MASK;" in text:
+    errors.append("KeyLargo FCR1 must not force undocumented bit positions to zero")
 
 if errors:
     for error in errors:
