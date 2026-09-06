@@ -23,6 +23,7 @@
 #include "qom/object.h"
 
 #define DEC_21154_DEVICE_ID 0x0026
+#define DEC_21154_PM_CAP_OFFSET 0xdc
 
 static int dec_21154_map_irq(PCIDevice *pci_dev, int irq_num)
 {
@@ -32,6 +33,19 @@ static int dec_21154_map_irq(PCIDevice *pci_dev, int irq_num)
 static void dec_21154_realize(PCIDevice *dev, Error **errp)
 {
     pci_bridge_initfn(dev, TYPE_PCI_BUS);
+
+    /*
+     * DEC 21154 rev-05 implements PCI Power Management 1.0 at 0xdc.
+     * QEMU's PCI core tracks D-state transitions here; DEC-specific clock,
+     * arbiter and board-level power wiring remain separate work.
+     */
+    if (pci_pm_init(dev, DEC_21154_PM_CAP_OFFSET, errp) < 0) {
+        return;
+    }
+    pci_set_word(dev->config + DEC_21154_PM_CAP_OFFSET + PCI_PM_PMC,
+                 PCI_PM_CAP_VER_1_0);
+    pci_set_word(dev->wmask + DEC_21154_PM_CAP_OFFSET + PCI_PM_CTRL,
+                 PCI_PM_CTRL_STATE_MASK);
 }
 
 static void dec_21154_class_init(ObjectClass *klass, const void *data)
