@@ -1,0 +1,27 @@
+name: PowerMac3,1 KeyLargo FCR contract
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'hw/misc/macio/macio.c'
+      - 'scripts/tests/test-powermac3_1-keylargo-fcr.py'
+      - '.github/workflows/powermac3_1-keylargo-fcr.yml'
+  pull_request:
+    paths:
+      - 'hw/misc/macio/macio.c'
+      - 'scripts/tests/test-powermac3_1-keylargo-fcr.py'
+      - '.github/workflows/powermac3_1-keylargo-fcr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Verify PowerMac3,1 KeyLargo FCR map
+        run: python3 scripts/tests/test-powermac3_1-keylargo-fcr.py
