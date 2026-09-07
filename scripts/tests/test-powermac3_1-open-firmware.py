@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = (ROOT / "hw/ppc/powermac3_1.c").read_text()
 GENERIC = (ROOT / "hw/ppc/mac_newworld.c").read_text()
+PROFILE_WORDS = " ".join(PROFILE.split())
 
 
 def require(text: str, needle: str, label: str) -> None:
@@ -21,7 +22,7 @@ require(PROFILE, "fw_cfg_add_file(fw_cfg, POWERMAC3_1_OF_BOARD_ID_FILE,",
         "board-id publication")
 require(PROFILE, "sizeof(powermac3_1_of_board_id)",
         "NUL-inclusive board-id size")
-require(PROFILE, "NUL-terminated ASCII Open Firmware model identifier",
+require(PROFILE_WORDS, "NUL-terminated ASCII Open Firmware model identifier",
         "ABI format documentation")
 
 # Keep the explicit historical machine opt-in. Generic mac99 must not acquire
