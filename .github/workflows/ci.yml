@@ -30,6 +30,9 @@ jobs:
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+      - name: Test native LLVM incremental bootstrap contract
+        run: bash scripts/tests/test-native-llvm-incremental-bootstrap.bash
+
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 
