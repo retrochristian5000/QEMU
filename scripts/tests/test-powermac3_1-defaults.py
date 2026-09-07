@@ -74,9 +74,29 @@ for needle in required_ohci_identity:
     if needle not in ohci_pci:
         errors.append(f"pci-ohci identity contract missing: {needle}")
 
+# The physical KeyLargo functions reserve a 4 KiB PCI aperture even though the
+# OHCI register file itself occupies only the first 0x100 bytes.  Preserve the
+# generic pci-ohci 256-byte ABI while allowing historical machines to expose a
+# larger BAR container around the unchanged register region.
+required_ohci_aperture = (
+    'MemoryRegion bar;',
+    'uint32_t bar_size;',
+    'if (ohci->bar_size < 256 ||',
+    '(ohci->bar_size & (ohci->bar_size - 1))) {',
+    'memory_region_init(&ohci->bar, OBJECT(dev), "ohci-pci-bar",',
+    'ohci->bar_size);',
+    'memory_region_add_subregion(&ohci->bar, 0, &ohci->state.mem);',
+    'pci_register_bar(dev, 0, 0, &ohci->bar);',
+    'DEFINE_PROP_UINT32("bar-size", OHCIPCIState, bar_size, 256),',
+)
+for needle in required_ohci_aperture:
+    if needle not in ohci_pci:
+        errors.append(f"pci-ohci BAR aperture contract missing: {needle}")
+
 required_usb_profile = (
     '{ "pci-ohci", "num-ports", "2" },',
     '{ "pci-ohci", "device-id", "0x0019" },',
+    '{ "pci-ohci", "bar-size", "4096" },',
 )
 for needle in required_usb_profile:
     if needle not in power_mac:
