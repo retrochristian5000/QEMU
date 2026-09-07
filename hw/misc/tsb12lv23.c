@@ -516,11 +516,21 @@ static void tsb12lv23_realize(PCIDevice *pdev, Error **errp)
     pci_register_bar(pdev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->ti_mmio);
 }
 
+static int tsb12lv23_post_load(void *opaque, int version_id)
+{
+    TSB12LV23State *s = opaque;
+
+    tsb12lv23_update_irq(s);
+    return 0;
+}
+
 static const VMStateDescription vmstate_tsb12lv23 = {
     .name = "tsb12lv23",
     .version_id = 1,
     .minimum_version_id = 1,
+    .post_load = tsb12lv23_post_load,
     .fields = (const VMStateField[]) {
+        VMSTATE_PCI_DEVICE(parent_obj, TSB12LV23State),
         VMSTATE_UINT32(at_retries, TSB12LV23State),
         VMSTATE_UINT32(csr_data, TSB12LV23State),
         VMSTATE_UINT32(csr_compare, TSB12LV23State),
