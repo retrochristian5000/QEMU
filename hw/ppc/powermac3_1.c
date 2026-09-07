@@ -157,6 +157,7 @@ static void powermac3_1_machine_class_init(ObjectClass *oc, const void *data)
     static GlobalProperty sawtooth_compat[] = {
         { "pci-ohci", "num-ports", "2" },
         { "pci-ohci", "device-id", "0x0019" },
+        { "pci-ohci", "bar-size", "4096" },
     };
 
     mc->desc = "Apple Power Mac G4 AGP (PowerMac3,1 / Sawtooth)";
@@ -164,7 +165,11 @@ static void powermac3_1_machine_class_init(ObjectClass *oc, const void *data)
     mc->valid_cpu_types = valid_cpu_types;
     mc->default_ram_size = 128 * MiB;
 
-    /* KeyLargo provides two two-port OHCI functions with PCI ID 106b:0019. */
+    /*
+     * KeyLargo provides two two-port OHCI functions with PCI ID 106b:0019.
+     * Each function reserves a 4 KiB PCI MMIO aperture around its OHCI
+     * register block.
+     */
     compat_props_add(mc->compat_props, sawtooth_compat,
                      G_N_ELEMENTS(sawtooth_compat));
 
