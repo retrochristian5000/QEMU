@@ -365,11 +365,11 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-# LLVM's IR, verifier, and installed resource-header contracts can change
-# between revisions. If the installed compiler is stale, unhealthy, or only
-# partially installed, do not reuse a CMake/Ninja graph containing objects from
-# the suspect source state.
-rm -rf "$LLVM_BUILD_DIR"
+# Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
+# revisions. Re-running CMake updates changed rules in place, while Ninja keeps
+# object dependency state and rebuilds only affected outputs. A stale or
+# partially installed toolchain is not evidence that the generated build graph
+# is corrupt, because installation is staged separately below.
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 cmake_args=(
     -S "$LLVM_SOURCE_DIR/llvm"
@@ -421,6 +421,11 @@ cmake_args=(
     "${cmake_host_args[@]}"
 )
 cmake "${cmake_args[@]}"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+fi
+
 cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
 
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
