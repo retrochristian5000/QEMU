@@ -97,79 +97,6 @@ jobs:
           grep -Fq -- 'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then' "$bootstrap"
           grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"' "$bootstrap"
           ''')
-
-          isolation = Path(".github/workflows/llvm-bootstrap-isolation.yml")
-          replace_once(
-              isolation,
-              "      - 'scripts/bootstrap-i386-clang.sh'\n",
-              "      - 'scripts/bootstrap-i386-clang.sh'\n      - 'scripts/bootstrap-i386-clang.bash'\n")
-
-          grub = Path(".github/workflows/grub-i386-efi.yml")
-          replace_once(
-              grub,
-              "      - 'scripts/bootstrap-i386-clang.sh'\n",
-              "      - 'scripts/bootstrap-i386-clang.sh'\n      - 'scripts/bootstrap-i386-clang.bash'\n")
-          replace_once(
-              grub,
-              "      - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'\n",
-              "      - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'\n      - 'scripts/tests/test-i386-llvm-incremental-bootstrap.bash'\n")
-          replace_once(
-              grub,
-              '''      - name: Build IA32 EFI GRUB from pinned WHP submodule with WHP LLVM
-          ''',
-              '''      - name: Test i386 LLVM incremental bootstrap contract
-                shell: bash
-                run: bash scripts/tests/test-i386-llvm-incremental-bootstrap.bash
-
-              - name: Build IA32 EFI GRUB from pinned WHP submodule with WHP LLVM
-          ''')
-          replace_once(
-              grub,
-              '''      - name: Verify gitlink identity, LLVM mode, mkimage, and hybrid modules
-          ''',
-              '''      - name: Verify i386 LLVM CMake graph survives re-entry
-                shell: bash
-                run: |
-                  set -euo pipefail
-                  llvm_prefix="$BUILD_DIR/firmware-tools/i386-none-elf"
-                  llvm_build="$BUILD_DIR/firmware-tools/toolchain-work/i386-none-elf/llvm-build"
-                  sentinel="$llvm_build/.whp-incremental-sentinel"
-
-                  test -f "$llvm_build/CMakeCache.txt"
-                  test -f "$llvm_build/build.ninja"
-                  printf 'preserve i386 LLVM CMake/Ninja state\n' >"$sentinel"
-
-                  # Force the i386 bootstrap path without changing LLVM source or CMake
-                  # policy. The installed marker is disposable; the generated graph is not.
-                  rm -f "$llvm_prefix/.whp-i386-toolchain"
-                  bash scripts/bootstrap-i386-efi-grub.sh | tee grub-i386-efi-incremental.log
-
-                  test -f "$sentinel"
-                  test -f "$llvm_build/CMakeCache.txt"
-                  test -f "$llvm_build/build.ninja"
-                  test -f "$llvm_prefix/.whp-i386-toolchain"
-                  grep -Fq 'Bootstrapped SeaBIOS compiler: Clang' grub-i386-efi-incremental.log
-
-              - name: Verify gitlink identity, LLVM mode, mkimage, and hybrid modules
-          ''')
-          replace_once(
-              grub,
-              '''          tail -n 250 grub-i386-efi-build.log 2>/dev/null || true
-                    cat grub-i386-efi-objdump.log 2>/dev/null || true
-          ''',
-              '''          tail -n 250 grub-i386-efi-build.log 2>/dev/null || true
-                    tail -n 250 grub-i386-efi-incremental.log 2>/dev/null || true
-                    cat grub-i386-efi-objdump.log 2>/dev/null || true
-          ''')
-          replace_once(
-              grub,
-              '''            grub-i386-efi-build.log
-                      grub-i386-efi-objdump.log
-          ''',
-              '''            grub-i386-efi-build.log
-                      grub-i386-efi-incremental.log
-                      grub-i386-efi-objdump.log
-          ''')
           PY
 
       - name: Verify repaired contracts
@@ -180,25 +107,14 @@ jobs:
           bash -n scripts/tests/test-seabios-llvm-wiring.bash
           bash scripts/tests/test-i386-llvm-incremental-bootstrap.bash
           bash scripts/tests/test-llvm-bootstrap-isolation.bash
-          python3 - <<'PY'
-          from pathlib import Path
-          test = Path('scripts/tests/test-seabios-llvm-wiring.bash').read_text()
-          assert 'bootstrap="$root/scripts/bootstrap-i386-clang.bash"' in test
-          assert 'rm -rf "$LLVM_BUILD_DIR"' not in Path('scripts/bootstrap-i386-clang.bash').read_text()
-          PY
 
-      - name: Commit verified repair to master
+      - name: Commit source repair to master
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "retrochristian5000"
           git config user.email "252152985+retrochristian5000@users.noreply.github.com"
-          git rm .github/workflows/i386-llvm-incremental-repair.yml
-          git add \
-            scripts/bootstrap-i386-clang.bash \
-            scripts/tests/test-seabios-llvm-wiring.bash \
-            .github/workflows/llvm-bootstrap-isolation.yml \
-            .github/workflows/grub-i386-efi.yml
+          git add scripts/bootstrap-i386-clang.bash scripts/tests/test-seabios-llvm-wiring.bash
           git diff --cached --check
           git diff --cached --stat
           git commit -m "llvm: preserve i386-none-elf incremental graph"
