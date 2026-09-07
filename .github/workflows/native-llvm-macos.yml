@@ -70,6 +70,31 @@ jobs:
           cat native-llvm.log
           cat native-llvm.out
 
+      - name: Verify native LLVM incremental CMake graph reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt"
+          test -f "$NATIVE_LLVM_BUILD_DIR/build.ninja"
+          sentinel="$NATIVE_LLVM_BUILD_DIR/.whp-incremental-sentinel"
+          printf 'preserve CMake and Ninja state\n' >"$sentinel"
+
+          # Force the bootstrap path without changing source or CMake policy.
+          # The old implementation deleted LLVM_BUILD_DIR here and restarted
+          # compilation from zero. The incremental implementation must retain
+          # the generated graph and let CMake/Ninja determine that outputs are
+          # already current.
+          rm -f "$NATIVE_LLVM_DIR/.whp-native-llvm"
+          ./build.sh >native-llvm-incremental.out 2>native-llvm-incremental.log
+          cat native-llvm-incremental.log
+          cat native-llvm-incremental.out
+
+          test -f "$sentinel"
+          test -f "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt"
+          test -f "$NATIVE_LLVM_BUILD_DIR/build.ninja"
+          test -f "$NATIVE_LLVM_DIR/.whp-native-llvm"
+          grep -Fq 'WHP native LLVM ready:' native-llvm-incremental.log
+
       - name: Verify host identity and native ABI
         shell: bash
         run: |
@@ -159,6 +184,8 @@ jobs:
         run: |
           tail -n 250 native-llvm.log 2>/dev/null || true
           tail -n 100 native-llvm.out 2>/dev/null || true
+          tail -n 250 native-llvm-incremental.log 2>/dev/null || true
+          tail -n 100 native-llvm-incremental.out 2>/dev/null || true
           tail -n 300 native-qemu.log 2>/dev/null || true
           cat "$NATIVE_LLVM_DIR/.whp-native-llvm" 2>/dev/null || true
           cat native-llvm-lto.manifest 2>/dev/null || true
@@ -175,6 +202,8 @@ jobs:
           path: |
             native-llvm.log
             native-llvm.out
+            native-llvm-incremental.log
+            native-llvm-incremental.out
             native-qemu.log
             native-llvm-lto.manifest
             native-llvm-lto.d/
