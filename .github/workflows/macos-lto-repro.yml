@@ -1,0 +1,88 @@
+name: macOS LTO reproducer
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/macos-lto-repro.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-macos-lto-repro
+  cancel-in-progress: false
+
+jobs:
+  system-clang-lto:
+    name: QEMU LTO with Apple Clang
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-macos-lto-repro
+      BOOTSTRAP_NATIVE_LLVM: '0'
+      BUILD_QEMU_IMG: '0'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      BUILD_SEABIOS: '0'
+      BUILD_SEABIOS_GRUB: '0'
+      BOOTSTRAP_I386_TOOLCHAIN: '0'
+      QEMU_HOST_LTO: '1'
+      RUN_TESTS: '0'
+      MACOS_ENABLE_COCOA: '0'
+      MACOS_ENABLE_COREAUDIO: '0'
+      MACOS_ENABLE_GTK: '0'
+      MACOS_ENABLE_PA: '0'
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Apple Silicon host
+        shell: bash
+        run: test "$(uname -m)" = arm64
+
+      - name: Install QEMU build dependencies
+        run: brew install glib libslirp make ninja pixman pkgconf
+
+      - name: Build real QEMU with host LTO
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build.sh qemu-system-i386 2>&1 | tee macos-lto-repro.log
+          test -x "$BUILD_DIR/qemu-system-i386"
+          "$BUILD_DIR/qemu-system-i386" --version
+          grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
+
+      - name: Show linker failure context
+        if: failure()
+        shell: bash
+        run: |
+          grep -n -E 'FAILED:|error:|warning:|Undefined symbols|ld:|ninja: build stopped' \
+            macos-lto-repro.log | tail -n 300 || true
+          tail -n 400 macos-lto-repro.log 2>/dev/null || true
+          cat "$BUILD_DIR/.whp-config" 2>/dev/null || true
+          cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
+          tail -n 250 "$BUILD_DIR/config.log" 2>/dev/null || true
+          tail -n 250 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-lto-repro-failure
+          path: |
+            macos-lto-repro.log
+            build-macos-lto-repro/.whp-config
+            build-macos-lto-repro/.whp-macos-build-identity
+            build-macos-lto-repro/config.log
+            build-macos-lto-repro/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7
