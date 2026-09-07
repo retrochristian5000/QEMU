@@ -270,10 +270,15 @@ Hardware status
      - IEEE 1394a/FireWire 400 controller and PHY with two external ports and
        one internal port.  Real-machine PCI enumeration identifies a Texas
        Instruments TSB12LV23 at secondary-bus device ``0x0a``.
-     - No Sawtooth FireWire controller, PHY or port topology is currently
-       present.
+     - A dedicated ``tsb12lv23`` device is installed at secondary-bus device
+       ``0x0a`` with PCI identity ``104c:8019``, revision ``0x00``, OHCI
+       programming interface ``0x10``, a 2 KiB OHCI BAR, a 16 KiB TI extension
+       BAR and PCI power-management capability.  Probe/reset-oriented OHCI
+       control, interrupt, CSR, filter and migration state is present.  The
+       separate PHY, three-port topology, bus reset/self-ID process, packet
+       transport and asynchronous/isochronous DMA engines remain unimplemented.
      - High
-     - Missing
+     - Partial
    * - AirPort
      - Optional internal 11 Mbps wireless LAN module in the wireless LAN slot
      - Not modeled by this machine.
@@ -297,7 +302,7 @@ Hardware status
 Current QEMU topology
 ---------------------
 
-At a high level, the current machine and one important missing device are
+At a high level, the current machine and its partial FireWire controller are
 arranged as follows::
 
   PowerPC 7400 (450 MHz reference profile)
@@ -315,7 +320,7 @@ arranged as follows::
                     +-- KeyLargo / MacIO @ 0x07
                     +-- OHCI USB controller 0 @ 0x08
                     +-- OHCI USB controller 1 @ 0x09
-                    +-- [missing] TI TSB12LV23 FireWire @ 0x0a
+                    +-- TI TSB12LV23 FireWire (partial) @ 0x0a
                     +-- PCI expansion devices
 
 The DEC identity/revision and the ``0x07``/``0x08``/``0x09``/``0x0a`` south-bus
@@ -404,9 +409,11 @@ hardware behaviors that firmware and operating systems can observe:
   sleep/wake behavior;
 * represent the physical boot-flash relationship without confusing QEMU's
   OpenBIOS firmware image with Apple's historical 1 MiB ROM contents;
-* add a TI TSB12LV23-compatible FireWire path, Screamer audio and AirPort only
-  when suitable device models can represent real guest-visible behavior rather
-  than placeholder hardware; and
+* complete the TSB12LV23 FireWire path with a real PHY, three-port topology,
+  bus reset/self-ID behavior, packet transport and OHCI async/iso DMA rather
+  than treating the controller-only implementation as a complete 1394 bus;
+* add Screamer audio and AirPort only when suitable device models can represent
+  real guest-visible behavior rather than placeholder hardware; and
 * keep separate PowerMac3,1 retail/board variants separate when evidence shows
   a hardware distinction instead of silently flattening them into the 450 MHz
   reference profile.
