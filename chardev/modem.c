@@ -38,6 +38,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_COMMAND_SIZE 256
 #define MODEM_SREG_COUNT 100
 #define MODEM_DEFAULT_MODEL "hayes-accura-2400"
+#define MODEM_VOICE_MODEL "rockwell-voice-14400"
 
 #define MODEM_INPUT_LINES (CHR_TIOCM_DTR | CHR_TIOCM_RTS)
 #define MODEM_OUTPUT_LINES \
@@ -57,6 +58,7 @@ typedef enum ModemResult {
 typedef struct ModemModel {
     const char *name;
     int connect_speed;
+    bool supports_voice;
     const char *identification[11];
     const char *fallback_identification;
 } ModemModel;
@@ -65,6 +67,7 @@ static const ModemModel modem_models[] = {
     {
         .name = MODEM_DEFAULT_MODEL,
         .connect_speed = 2400,
+        .supports_voice = false,
         .identification = {
             "240",
             "000",
@@ -79,6 +82,25 @@ static const ModemModel modem_models[] = {
             "SERIAL MODEM",
         },
         .fallback_identification = "QEMU Hayes-compatible modem",
+    },
+    {
+        .name = MODEM_VOICE_MODEL,
+        .connect_speed = 14400,
+        .supports_voice = true,
+        .identification = {
+            "144",
+            "000",
+            "ROM CHECKSUM OK",
+            "Rockwell-compatible 14.4 Voice",
+            "QEMU Rockwell-compatible voice modem",
+            "V1.0",
+            "VOICE14400",
+            "Hayes-compatible voice/fax/data modem",
+            "14400",
+            "QEMU",
+            "VOICE MODEM",
+        },
+        .fallback_identification = "QEMU Rockwell-compatible voice modem",
     },
 };
 
@@ -107,6 +129,13 @@ struct ModemChardev {
     int dtr_mode;
     int x_mode;
     int w_mode;
+
+    int service_class;
+    int voice_line;
+    int voice_compression;
+    int voice_sample_rate;
+    int voice_rx_gain;
+    int voice_tx_gain;
 };
 
 static void modem_chr_accept_input(Chardev *chr)
@@ -150,6 +179,14 @@ static void modem_queue_line(ModemChardev *modem, const char *str)
     modem_queue_string(modem, "\r\n");
     modem_queue_string(modem, str);
     modem_queue_string(modem, "\r\n");
+}
+
+static void modem_queue_value(ModemChardev *modem,
+                              const char *name, int value)
+{
+    g_autofree char *line = g_strdup_printf("%s: %d", name, value);
+
+    modem_queue_line(modem, line);
 }
 
 static void modem_update_carrier(ModemChardev *modem)
@@ -228,6 +265,15 @@ static const ModemModel *modem_model_find(const char *name)
     return NULL;
 }
 
+static void modem_voice_defaults(ModemChardev *modem)
+{
+    modem->voice_line = 0;
+    modem->voice_compression = 128;
+    modem->voice_sample_rate = 8000;
+    modem->voice_rx_gain = 128;
+    modem->voice_tx_gain = 128;
+}
+
 static void modem_model_defaults(ModemChardev *modem)
 {
     memset(modem->sreg, 0, sizeof(modem->sreg));
@@ -245,6 +291,8 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->x_mode = 4;
     modem->w_mode = 1;
     modem->connect_speed = modem->model->connect_speed;
+    modem->service_class = 0;
+    modem_voice_defaults(modem);
     modem_update_carrier(modem);
 }
 
@@ -337,29 +385,163 @@ static void modem_connect(ModemChardev *modem)
     modem_result(modem, MODEM_RESULT_CONNECT);
 }
 
+static bool modem_handle_service_class(ModemChardev *modem,
+                                       const char **command,
+                                       const char *prefix)
+{
+    const char *p = *command;
+    int value;
+
+    if (!g_str_has_prefix(p, prefix)) {
+        return false;
+    }
+    p += strlen(prefix);
+
+    if (g_str_has_prefix(p, "=?")) {
+        modem_queue_line(modem, modem->model->supports_voice ? "0,1,8" : "0,1");
+        p += 2;
+    } else if (*p == '?') {
+        g_autofree char *line = g_strdup_printf("%d", modem->service_class);
+
+        modem_queue_line(modem, line);
+        p++;
+    } else if (*p == '=') {
+        p++;
+        value = modem_parse_number(&p, -1);
+        if (value != 0 && value != 1 &&
+            !(value == 8 && modem->model->supports_voice)) {
+            return false;
+        }
+        modem->service_class = value;
+    } else {
+        return false;
+    }
+
+    *command = p;
+    return true;
+}
+
+static bool modem_handle_voice_gain(ModemChardev *modem,
+                                    const char **command,
+                                    const char *prefix,
+                                    int *gain)
+{
+    const char *p = *command;
+    int value;
+
+    if (!g_str_has_prefix(p, prefix)) {
+        return false;
+    }
+    p += strlen(prefix);
+
+    if (g_str_has_prefix(p, "=?")) {
+        g_autofree char *line = g_strdup_printf("%s: (0-255)", prefix);
+
+        modem_queue_line(modem, line);
+        p += 2;
+    } else if (*p == '?') {
+        modem_queue_value(modem, prefix, *gain);
+        p++;
+    } else if (*p == '=') {
+        p++;
+        value = modem_parse_number(&p, -1);
+        if (value < 0 || value > 255) {
+            return false;
+        }
+        *gain = value;
+    } else {
+        return false;
+    }
+
+    *command = p;
+    return true;
+}
+
+static bool modem_handle_voice_line(ModemChardev *modem,
+                                    const char **command)
+{
+    const char *p = *command;
+    int value;
+
+    if (!g_str_has_prefix(p, "+VLS")) {
+        return false;
+    }
+    p += strlen("+VLS");
+
+    if (g_str_has_prefix(p, "=?")) {
+        modem_queue_line(modem, "+VLS: (0-7)");
+        p += 2;
+    } else if (*p == '?') {
+        modem_queue_value(modem, "+VLS", modem->voice_line);
+        p++;
+    } else if (*p == '=') {
+        p++;
+        value = modem_parse_number(&p, -1);
+        if (value < 0 || value > 7) {
+            return false;
+        }
+        modem->voice_line = value;
+    } else {
+        return false;
+    }
+
+    *command = p;
+    return true;
+}
+
+static bool modem_handle_voice_compression(ModemChardev *modem,
+                                           const char **command)
+{
+    const char *p = *command;
+    int compression;
+    int sample_rate;
+
+    if (!g_str_has_prefix(p, "+VSM")) {
+        return false;
+    }
+    p += strlen("+VSM");
+
+    if (g_str_has_prefix(p, "=?")) {
+        modem_queue_line(modem,
+                         "+VSM: 128,\"8-BIT LINEAR\",8,0,(8000),(0),(0)");
+        p += 2;
+    } else if (*p == '?') {
+        g_autofree char *line = g_strdup_printf("+VSM: %d,%d",
+                                                modem->voice_compression,
+                                                modem->voice_sample_rate);
+
+        modem_queue_line(modem, line);
+        p++;
+    } else if (*p == '=') {
+        p++;
+        compression = modem_parse_number(&p, -1);
+        if (*p != ',') {
+            return false;
+        }
+        p++;
+        sample_rate = modem_parse_number(&p, -1);
+        if (compression != 128 || sample_rate != 8000) {
+            return false;
+        }
+        modem->voice_compression = compression;
+        modem->voice_sample_rate = sample_rate;
+    } else {
+        return false;
+    }
+
+    *command = p;
+    return true;
+}
+
 static bool modem_handle_extended(ModemChardev *modem, const char **command)
 {
     const char *p = *command;
 
-    if (g_str_has_prefix(p, "+FCLASS=?")) {
-        modem_queue_line(modem, "0,1");
-        *command = p + strlen("+FCLASS=?");
+    if (modem_handle_service_class(modem, command, "+FCLASS") ||
+        modem_handle_service_class(modem, command, "#CLS")) {
         return true;
     }
-    if (g_str_has_prefix(p, "+FCLASS?")) {
-        modem_queue_line(modem, "0");
-        *command = p + strlen("+FCLASS?");
-        return true;
-    }
-    if (g_str_has_prefix(p, "+FCLASS=")) {
-        p += strlen("+FCLASS=");
-        if (*p != '0' && *p != '1') {
-            return false;
-        }
-        p++;
-        *command = p;
-        return true;
-    }
+
     if (g_str_has_prefix(p, "+MS")) {
         while (*p && *p != ';') {
             p++;
@@ -368,6 +550,24 @@ static bool modem_handle_extended(ModemChardev *modem, const char **command)
             p++;
         }
         *command = p;
+        return true;
+    }
+
+    if (!modem->model->supports_voice || modem->service_class != 8) {
+        return false;
+    }
+
+    if (g_str_has_prefix(p, "+VIP")) {
+        modem_voice_defaults(modem);
+        *command = p + strlen("+VIP");
+        return true;
+    }
+    if (modem_handle_voice_line(modem, command) ||
+        modem_handle_voice_compression(modem, command) ||
+        modem_handle_voice_gain(modem, command, "+VGR",
+                                &modem->voice_rx_gain) ||
+        modem_handle_voice_gain(modem, command, "+VGT",
+                                &modem->voice_tx_gain)) {
         return true;
     }
 
@@ -522,6 +722,7 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             }
             break;
         case '+':
+        case '#':
             p--;
             if (!modem_handle_extended(modem, &p)) {
                 modem_result(modem, MODEM_RESULT_ERROR);
