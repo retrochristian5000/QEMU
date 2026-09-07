@@ -196,6 +196,23 @@ static int drive_index_to_unit_id(BlockInterfaceType type, int index)
     return max_devs ? index % max_devs : index;
 }
 
+static GPtrArray *legacy_cdrom_opts;
+
+static bool drive_opts_is_legacy_cdrom(QemuOpts *opts)
+{
+    guint i;
+
+    if (!legacy_cdrom_opts) {
+        return false;
+    }
+    for (i = 0; i < legacy_cdrom_opts->len; i++) {
+        if (g_ptr_array_index(legacy_cdrom_opts, i) == opts) {
+            return true;
+        }
+    }
+    return false;
+}
+
 QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
                     const char *optstr)
 {
@@ -209,6 +226,13 @@ QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
                                    file_is_opts ? file : optstr, false);
     if (!opts) {
         return NULL;
+    }
+    if (type == IF_DEFAULT && index == 2 && optstr &&
+        !strcmp(optstr, "media=cdrom")) {
+        if (!legacy_cdrom_opts) {
+            legacy_cdrom_opts = g_ptr_array_new();
+        }
+        g_ptr_array_add(legacy_cdrom_opts, opts);
     }
     if (type != IF_DEFAULT) {
         qemu_opt_set(opts, "if", if_name[type], &error_abort);
@@ -308,6 +332,98 @@ int drive_get_max_bus(BlockInterfaceType type)
         }
     }
     return max_bus;
+}
+
+static BlockInterfaceType drive_opts_type(QemuOpts *opts,
+                                          BlockInterfaceType default_type)
+{
+    const char *value = qemu_opt_get(opts, "if");
+    BlockInterfaceType type;
+
+    if (!value) {
+        return default_type;
+    }
+    for (type = 0; type < IF_COUNT; type++) {
+        if (!strcmp(value, if_name[type])) {
+            return type;
+        }
+    }
+    return IF_COUNT;
+}
+
+static bool drive_index_reserved(QemuOpts *self, BlockInterfaceType type,
+                                 BlockInterfaceType default_type,
+                                 int index)
+{
+    QemuOptsList *list = qemu_find_opts("drive");
+    QemuOpts *opts;
+
+    QTAILQ_FOREACH(opts, &list->head, next) {
+        BlockInterfaceType opt_type;
+        int opt_index;
+        int bus;
+        int unit;
+
+        if (opts == self || drive_opts_is_legacy_cdrom(opts)) {
+            continue;
+        }
+        opt_type = drive_opts_type(opts, default_type);
+        if (opt_type != type) {
+            continue;
+        }
+
+        opt_index = qemu_opt_get_number(opts, "index", -1);
+        if (opt_index >= 0) {
+            if (opt_index == index) {
+                return true;
+            }
+            continue;
+        }
+
+        unit = qemu_opt_get_number(opts, "unit", -1);
+        if (unit < 0) {
+            continue;
+        }
+        bus = qemu_opt_get_number(opts, "bus", 0);
+        if (if_max_devs[type]) {
+            opt_index = bus * if_max_devs[type] + unit;
+        } else if (bus == 0) {
+            opt_index = unit;
+        } else {
+            continue;
+        }
+        if (opt_index == index) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int drive_legacy_cdrom_index(QemuOpts *opts,
+                                    BlockInterfaceType type,
+                                    BlockInterfaceType default_type)
+{
+    static const int preferred[] = { 2, 3 };
+    int candidate;
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(preferred); i++) {
+        candidate = preferred[i];
+        if (!drive_get_by_index(type, candidate) &&
+            !drive_index_reserved(opts, type, default_type, candidate)) {
+            return candidate;
+        }
+    }
+
+    for (candidate = 0; ; candidate++) {
+        if (candidate == preferred[0] || candidate == preferred[1]) {
+            continue;
+        }
+        if (!drive_get_by_index(type, candidate) &&
+            !drive_index_reserved(opts, type, default_type, candidate)) {
+            return candidate;
+        }
+    }
 }
 
 static void bdrv_format_print(void *opaque, const char *name)
@@ -924,6 +1040,10 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type,
     bus_id  = qemu_opt_get_number(legacy_opts, "bus", 0);
     unit_id = qemu_opt_get_number(legacy_opts, "unit", -1);
     index   = qemu_opt_get_number(legacy_opts, "index", -1);
+    if (drive_opts_is_legacy_cdrom(all_opts)) {
+        index = drive_legacy_cdrom_index(all_opts, type,
+                                         block_default_type);
+    }
 
     max_devs = if_max_devs[type];
 
