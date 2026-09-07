@@ -41,6 +41,7 @@ struct OHCIPCIState {
 
     OHCIState state;
     char *masterbus;
+    uint16_t device_id;
     uint32_t num_ports;
     uint32_t firstport;
 };
@@ -64,6 +65,7 @@ static void usb_ohci_realize_pci(PCIDevice *dev, Error **errp)
     Error *err = NULL;
     OHCIPCIState *ohci = PCI_OHCI(dev);
 
+    pci_set_word(dev->config + PCI_DEVICE_ID, ohci->device_id);
     dev->config[PCI_CLASS_PROG] = 0x10; /* OHCI */
     dev->config[PCI_INTERRUPT_PIN] = 0x01; /* interrupt pin A */
 
@@ -111,6 +113,8 @@ static void usb_ohci_reset_pci(DeviceState *d)
 
 static const Property ohci_pci_properties[] = {
     DEFINE_PROP_STRING("masterbus", OHCIPCIState, masterbus),
+    DEFINE_PROP_UINT16("device-id", OHCIPCIState, device_id,
+                       PCI_DEVICE_ID_APPLE_IPID_USB),
     DEFINE_PROP_UINT32("num-ports", OHCIPCIState, num_ports, 3),
     DEFINE_PROP_UINT32("firstport", OHCIPCIState, firstport, 0),
 };
