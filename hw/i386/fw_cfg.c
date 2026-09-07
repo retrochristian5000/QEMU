@@ -14,6 +14,7 @@
 
 #include "qemu/osdep.h"
 #include "system/numa.h"
+#include "system/system.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/aml-build.h"
 #include "hw/firmware/smbios.h"
@@ -116,6 +117,33 @@ void fw_cfg_build_smbios(PCMachineState *pcms, FWCfgState *fw_cfg,
 #endif
 }
 
+static void fw_cfg_add_qemu_display_mode(FWCfgState *fw_cfg)
+{
+    uint32_t *width;
+    uint32_t *height;
+    uint32_t *depth;
+
+    if (graphic_width <= 0 || graphic_height <= 0) {
+        return;
+    }
+
+    /*
+     * QEMU -> x86 firmware ABI.  Each named fw_cfg file contains one
+     * little-endian 32-bit integer.  A depth of zero means unspecified.
+     */
+    width = g_new(uint32_t, 1);
+    height = g_new(uint32_t, 1);
+    depth = g_new(uint32_t, 1);
+    *width = cpu_to_le32(graphic_width);
+    *height = cpu_to_le32(graphic_height);
+    *depth = cpu_to_le32(graphic_depth);
+
+    fw_cfg_add_file(fw_cfg, "etc/qemu-display-width", width, sizeof(*width));
+    fw_cfg_add_file(fw_cfg, "etc/qemu-display-height", height,
+                    sizeof(*height));
+    fw_cfg_add_file(fw_cfg, "etc/qemu-display-depth", depth, sizeof(*depth));
+}
+
 FWCfgState *fw_cfg_arch_create(MachineState *ms,
                                       uint16_t boot_cpus,
                                       uint16_t apic_id_limit)
@@ -149,6 +177,7 @@ FWCfgState *fw_cfg_arch_create(MachineState *ms,
                          acpi_tables, acpi_tables_len);
     }
     fw_cfg_add_i32(fw_cfg, FW_CFG_IRQ0_OVERRIDE, 1);
+    fw_cfg_add_qemu_display_mode(fw_cfg);
 
     fw_cfg_add_bytes(fw_cfg, FW_CFG_HPET, &hpet_fw_cfg, sizeof(hpet_fw_cfg));
     /* allocate memory for the NUMA channel: one (64bit) word for the number
