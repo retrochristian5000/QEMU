@@ -9,7 +9,7 @@ TSB = ROOT / "hw/misc/tsb12lv23.c"
 MISC_MESON = ROOT / "hw/misc/meson.build"
 MISC_KCONFIG = ROOT / "hw/misc/Kconfig"
 PPC_KCONFIG = ROOT / "hw/ppc/Kconfig"
-MAC_NEWWORLD = ROOT / "hw/ppc/mac_newworld.c"
+POWER_MAC = ROOT / "hw/ppc/powermac3_1.c"
 
 errors: list[str] = []
 
@@ -22,7 +22,7 @@ else:
 meson = MISC_MESON.read_text(encoding="utf-8")
 misc_kconfig = MISC_KCONFIG.read_text(encoding="utf-8")
 ppc_kconfig = PPC_KCONFIG.read_text(encoding="utf-8")
-mac_newworld = MAC_NEWWORLD.read_text(encoding="utf-8")
+power_mac = POWER_MAC.read_text(encoding="utf-8")
 
 # Physical Sawtooth enumeration and the TI programming manual agree on the
 # controller's PCI identity, INTA routing and OHCI programming interface.
@@ -88,8 +88,8 @@ for needle in required_pm:
     if needle not in tsb:
         errors.append(f"TSB12LV23 power-management contract missing: {needle}")
 
-# Build only when the NewWorld family is enabled, but instantiate only on the
-# historical Sawtooth topology at secondary-bus device 0x0a.
+# Build with the NewWorld family, but instantiate only in the historical
+# powermac3_1 wrapper after its parent has created the DEC 21154 bridge.
 if "config TSB12LV23" not in misc_kconfig or "depends on PCI" not in misc_kconfig:
     errors.append("TSB12LV23 Kconfig symbol missing or not PCI-scoped")
 if "CONFIG_TSB12LV23" not in meson or "tsb12lv23.c" not in meson:
@@ -101,13 +101,24 @@ newworld = ppc_kconfig[newworld_start:newworld_end if newworld_end >= 0 else Non
 if "select TSB12LV23" not in newworld:
     errors.append("MAC_NEWWORLD must select TSB12LV23 for the Sawtooth profile")
 
-firewire_create = 'pci_create_simple(south_pci_bus, PCI_DEVFN(0x0a, 0),\n                          "tsb12lv23");'
-if firewire_create not in mac_newworld:
-    errors.append("PowerMac3,1 must instantiate TSB12LV23 at secondary PCI device 0x0a")
+required_machine_wiring = (
+    '#include "hw/pci-bridge/dec.h"',
+    '#include "hw/pci/pci_bridge.h"',
+    'TYPE_DEC_21154_P2P_BRIDGE',
+    'south_pci_bus = pci_bridge_get_sec_bus(PCI_BRIDGE(south_bridge));',
+    'pci_create_simple(south_pci_bus, PCI_DEVFN(0x0a, 0), "tsb12lv23");',
+)
+for needle in required_machine_wiring:
+    if needle not in power_mac:
+        errors.append(f"PowerMac3,1 FireWire wiring missing: {needle}")
 
-sawtooth_guard = mac_newworld.rfind("if (sawtooth_topology)", 0, mac_newworld.find(firewire_create))
-if sawtooth_guard < 0:
-    errors.append("TSB12LV23 instantiation must remain scoped to the Sawtooth topology")
+parent_init = power_mac.find("powermac3_1_parent_init(machine);")
+bridge_resolve = power_mac.find("TYPE_DEC_21154_P2P_BRIDGE")
+firewire_create = power_mac.find(
+    'pci_create_simple(south_pci_bus, PCI_DEVFN(0x0a, 0), "tsb12lv23");'
+)
+if not (0 <= parent_init < bridge_resolve < firewire_create):
+    errors.append("TSB12LV23 must attach after parent Sawtooth bridge creation")
 
 if errors:
     for error in errors:
