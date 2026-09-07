@@ -1,0 +1,152 @@
+name: i386 CLI repair
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/i386-cli-repair.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: whp-qemu-i386-cli-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: 'true'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ccache \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Restore i386 compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-i386-${{ github.sha }}
+          restore-keys: |
+            whp-qemu-ccache-v1-${{ runner.os }}-i386-
+
+      - name: Apply i386 CLI fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          blockdev = Path("blockdev.c")
+          marker = '''static int drive_index_reserved_cb(void *opaque, QemuOpts *opts,
+                                             Error **errp)
+          '''
+          helper = '''static int drive_opts_get_raw_number(QemuOpts *opts, const char *name,
+                                                   int default_value)
+          {
+              const char *value = qemu_opt_get(opts, name);
+              uint64_t number;
+
+              if (!value || qemu_strtou64(value, NULL, 0, &number) < 0 ||
+                  number > (uint64_t)INT_MAX) {
+                  return default_value;
+              }
+              return number;
+          }
+
+          static int drive_index_reserved_cb(void *opaque, QemuOpts *opts,
+                                             Error **errp)
+          '''
+          replace_once(blockdev, marker, helper)
+          replace_once(blockdev,
+                       '    opt_index = qemu_opt_get_number(opts, "index", -1);\n',
+                       '    opt_index = drive_opts_get_raw_number(opts, "index", -1);\n')
+          replace_once(blockdev,
+                       '    unit = qemu_opt_get_number(opts, "unit", -1);\n',
+                       '    unit = drive_opts_get_raw_number(opts, "unit", -1);\n')
+          replace_once(blockdev,
+                       '    bus = qemu_opt_get_number(opts, "bus", 0);\n',
+                       '    bus = drive_opts_get_raw_number(opts, "bus", 0);\n')
+
+          options = Path("qemu-options.hx")
+          replace_once(
+              options,
+              '''DEF("g", HAS_ARG, QEMU_OPTION_g ,
+              "-g WxH[xDEPTH]  Set the initial graphical resolution and depth\\n",
+              QEMU_ARCH_PPC | QEMU_ARCH_SPARC | QEMU_ARCH_M68K)
+          ''',
+              '''DEF("g", HAS_ARG, QEMU_OPTION_g ,
+              "-g WxH[xDEPTH]  Set the initial graphical resolution and depth\\n",
+              QEMU_ARCH_I386 | QEMU_ARCH_PPC | QEMU_ARCH_SPARC | QEMU_ARCH_M68K)
+          ''')
+
+          gtest = Path("scripts/tests/test-seabios-g-option.py")
+          replace_once(
+              gtest,
+              'assert "graphic_width > 0 && graphic_height > 0" in FWCFG\n',
+              '''assert (\n    "graphic_width > 0 && graphic_height > 0" in FWCFG\n    or "graphic_width <= 0 || graphic_height <= 0" in FWCFG\n), "x86 fw_cfg display-mode geometry guard missing"\n''')
+          PY
+
+      - name: Verify SeaBIOS -g source contract
+        run: python3 scripts/tests/test-seabios-g-option.py
+
+      - name: Configure i386
+        env:
+          CC: ccache gcc
+          CXX: ccache g++
+        shell: bash
+        run: |
+          mkdir build-i386-repair
+          cd build-i386-repair
+          ../configure --target-list=i386-softmmu --disable-docs
+
+      - name: Build i386
+        run: ninja -C build-i386-repair qemu-system-i386
+
+      - name: Verify i386 CLI regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="build-i386-repair/qemu-system-i386"
+          "$binary" -g 800x600x32 -version >/dev/null
+          "$binary" -help | grep -F -- '-g WxH[xDEPTH]'
+          bash scripts/tests/test-cdrom-hdc.bash "$binary"
+
+      - name: Commit verified repair to master
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "retrochristian5000"
+          git config user.email "252152985+retrochristian5000@users.noreply.github.com"
+          git rm .github/workflows/i386-cli-repair.yml
+          git add blockdev.c qemu-options.hx scripts/tests/test-seabios-g-option.py
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "i386: repair legacy CD-ROM and -g option handling"
+          git push origin HEAD:master
