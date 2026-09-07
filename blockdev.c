@@ -351,52 +351,64 @@ static BlockInterfaceType drive_opts_type(QemuOpts *opts,
     return IF_COUNT;
 }
 
+typedef struct DriveIndexReservation {
+    QemuOpts *self;
+    BlockInterfaceType type;
+    BlockInterfaceType default_type;
+    int index;
+} DriveIndexReservation;
+
+static int drive_index_reserved_cb(void *opaque, QemuOpts *opts,
+                                   Error **errp)
+{
+    DriveIndexReservation *reservation = opaque;
+    BlockInterfaceType opt_type;
+    int opt_index;
+    int bus;
+    int unit;
+
+    if (opts == reservation->self || drive_opts_is_legacy_cdrom(opts)) {
+        return 0;
+    }
+    opt_type = drive_opts_type(opts, reservation->default_type);
+    if (opt_type != reservation->type) {
+        return 0;
+    }
+
+    opt_index = qemu_opt_get_number(opts, "index", -1);
+    if (opt_index >= 0) {
+        return opt_index == reservation->index;
+    }
+
+    unit = qemu_opt_get_number(opts, "unit", -1);
+    if (unit < 0) {
+        return 0;
+    }
+    bus = qemu_opt_get_number(opts, "bus", 0);
+    if (if_max_devs[reservation->type]) {
+        opt_index = bus * if_max_devs[reservation->type] + unit;
+    } else if (bus == 0) {
+        opt_index = unit;
+    } else {
+        return 0;
+    }
+    return opt_index == reservation->index;
+}
+
 static bool drive_index_reserved(QemuOpts *self, BlockInterfaceType type,
                                  BlockInterfaceType default_type,
                                  int index)
 {
-    QemuOptsList *list = qemu_find_opts("drive");
-    QemuOpts *opts;
+    DriveIndexReservation reservation = {
+        .self = self,
+        .type = type,
+        .default_type = default_type,
+        .index = index,
+    };
 
-    QTAILQ_FOREACH(opts, &list->head, next) {
-        BlockInterfaceType opt_type;
-        int opt_index;
-        int bus;
-        int unit;
-
-        if (opts == self || drive_opts_is_legacy_cdrom(opts)) {
-            continue;
-        }
-        opt_type = drive_opts_type(opts, default_type);
-        if (opt_type != type) {
-            continue;
-        }
-
-        opt_index = qemu_opt_get_number(opts, "index", -1);
-        if (opt_index >= 0) {
-            if (opt_index == index) {
-                return true;
-            }
-            continue;
-        }
-
-        unit = qemu_opt_get_number(opts, "unit", -1);
-        if (unit < 0) {
-            continue;
-        }
-        bus = qemu_opt_get_number(opts, "bus", 0);
-        if (if_max_devs[type]) {
-            opt_index = bus * if_max_devs[type] + unit;
-        } else if (bus == 0) {
-            opt_index = unit;
-        } else {
-            continue;
-        }
-        if (opt_index == index) {
-            return true;
-        }
-    }
-    return false;
+    return qemu_opts_foreach(qemu_find_opts("drive"),
+                             drive_index_reserved_cb, &reservation,
+                             NULL) != 0;
 }
 
 static int drive_legacy_cdrom_index(QemuOpts *opts,
