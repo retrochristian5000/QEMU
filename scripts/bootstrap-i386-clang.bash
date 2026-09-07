@@ -189,10 +189,11 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-# Do not retain LLVM objects from an older source state.  A mixed frontend and
-# verifier can produce IR attributes that the stale backend rejects even when
-# the installed compiler still answers --version successfully.
-rm -rf "$LLVM_BUILD_DIR"
+# Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
+# revisions. Re-running CMake updates changed rules in place, while Ninja keeps
+# object dependency state and rebuilds only affected outputs. The installed
+# toolchain is staged separately, so an invalid prefix does not make this graph
+# disposable.
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
 
 # SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
@@ -246,11 +247,16 @@ cmake_args=(
     -DLLVM_ENABLE_LIBXML2=OFF
 )
 cmake "${cmake_args[@]}"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+fi
+
 cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
 
 # Install into a staging root first. Replacing the prefix after validation
 # removes stale tools left by older, broader bootstrap schemas while the LLVM
-# build itself comes from a clean CMake/Ninja graph.
+# build itself comes from the persistent CMake/Ninja graph above.
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"

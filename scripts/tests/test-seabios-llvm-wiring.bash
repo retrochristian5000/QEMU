@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-bootstrap="$root/scripts/bootstrap-i386-clang.sh"
+bootstrap="$root/scripts/bootstrap-i386-clang.bash"
 cc_helper="$root/scripts/whp-build/seabios-clang-gcc.bash"
 objdump_helper="$root/scripts/whp-build/seabios-llvm-objdump.py"
 prepare="$root/scripts/whp-build/prepare-sources.bash"
@@ -55,9 +55,17 @@ fi
 grep -Fq -- '"$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET"' "$bootstrap"
 grep -Fq -- '-x c -c - -o /dev/null' "$bootstrap"
 
-# Do not reuse an LLVM CMake/Ninja object graph when the toolchain must rebuild.
-# LLVM IR contracts can change between source revisions.
-grep -Fq -- 'rm -rf "$LLVM_BUILD_DIR"' "$bootstrap"
+# Preserve the generated LLVM graph across ordinary rebuilds. CMake updates the
+# graph in place and Ninja invalidates affected objects. Explicit forced rebuilds
+# clean outputs through the backend without deleting CMakeCache.txt/build.ninja.
+if grep -Fq -- 'rm -rf "$LLVM_BUILD_DIR"' "$bootstrap"; then
+    printf 'i386 LLVM bootstrap destroys incremental CMake/Ninja state
+' >&2
+    exit 1
+fi
+grep -Fq -- 'cmake "${cmake_args[@]}"' "$bootstrap"
+grep -Fq -- 'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then' "$bootstrap"
+grep -Fq -- 'cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"' "$bootstrap"
 
 # Clang's i386 driver is wrapped only where SeaBIOS depends on GCC semantics
 # that raw Clang does not provide or only accepts as ignored spellings.
