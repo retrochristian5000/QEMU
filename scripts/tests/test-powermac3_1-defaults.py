@@ -8,13 +8,11 @@ ROOT = Path(__file__).resolve().parents[2]
 POWER_MAC = ROOT / "hw/ppc/powermac3_1.c"
 MAC_NEWWORLD = ROOT / "hw/ppc/mac_newworld.c"
 OHCI_PCI = ROOT / "hw/usb/hcd-ohci-pci.c"
-PCI_HEADER = ROOT / "include/hw/pci/pci.h"
 PPC_KCONFIG = ROOT / "hw/ppc/Kconfig"
 
 power_mac = POWER_MAC.read_text(encoding="utf-8")
 mac_newworld = MAC_NEWWORLD.read_text(encoding="utf-8")
 ohci_pci = OHCI_PCI.read_text(encoding="utf-8")
-pci_header = PCI_HEADER.read_text(encoding="utf-8")
 kconfig = PPC_KCONFIG.read_text(encoding="utf-8")
 errors: list[str] = []
 
@@ -63,25 +61,26 @@ for needle in required_video:
         errors.append(f"PowerMac3,1 Rage 128 default missing: {needle}")
 
 # A real PowerMac3,1 enumerates both KeyLargo OHCI functions as Apple 106b:0019.
-# Keep pci-ohci's existing 106b:003f identity as its compatibility default, but
-# make the historical Sawtooth profile override only its two built-in devices.
-if '#define PCI_DEVICE_ID_APPLE_KEYLARGO_USB 0x0019' not in pci_header:
-    errors.append("Apple KeyLargo USB PCI device ID 0x0019 is not named")
-if 'DEFINE_PROP_UINT16("device-id", OHCIPCIState, device_id,' not in ohci_pci:
-    errors.append("pci-ohci does not expose a per-device PCI identity override")
-if 'PCI_DEVICE_ID_APPLE_IPID_USB)' not in ohci_pci:
-    errors.append("pci-ohci compatibility default must remain Apple 0x003f")
-if 'pci_set_word(dev->config + PCI_DEVICE_ID, ohci->device_id);' not in ohci_pci:
-    errors.append("pci-ohci device-id property is not applied to PCI config space")
-required_usb = (
-    'pci_new(PCI_DEVFN(8, 0), "pci-ohci")',
-    'pci_new(PCI_DEVFN(9, 0), "pci-ohci")',
-    'qdev_prop_set_uint16(DEVICE(ohci), "device-id",',
-    'PCI_DEVICE_ID_APPLE_KEYLARGO_USB);',
+# Keep pci-ohci's existing 106b:003f identity as its compatibility default, and
+# scope the historical identity override to the powermac3_1 machine profile.
+required_ohci_identity = (
+    'uint16_t device_id;',
+    'DEFINE_PROP_UINT16("device-id", OHCIPCIState, device_id,',
+    'PCI_DEVICE_ID_APPLE_IPID_USB),',
+    'pci_set_word(dev->config + PCI_DEVICE_ID, ohci->device_id);',
+    'k->device_id = PCI_DEVICE_ID_APPLE_IPID_USB;',
 )
-for needle in required_usb:
-    if needle not in mac_newworld:
-        errors.append(f"PowerMac3,1 KeyLargo USB identity missing: {needle}")
+for needle in required_ohci_identity:
+    if needle not in ohci_pci:
+        errors.append(f"pci-ohci identity contract missing: {needle}")
+
+required_usb_profile = (
+    '{ "pci-ohci", "num-ports", "2" },',
+    '{ "pci-ohci", "device-id", "0x0019" },',
+)
+for needle in required_usb_profile:
+    if needle not in power_mac:
+        errors.append(f"PowerMac3,1 KeyLargo USB profile missing: {needle}")
 
 # Since the machine creates ati-vga as a default device, the NewWorld build
 # must guarantee that model is present rather than merely hoping Kconfig chose it.
