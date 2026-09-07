@@ -167,7 +167,12 @@ if have_system
             qom,
             io,
             chardev,
-          ]
+          ],
+          'test-modem-voice': [
+            meson.project_source_root() / 'chardev/modem.c',
+            qom,
+            chardev,
+          ],
         }
     endif
 
