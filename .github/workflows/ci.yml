@@ -108,6 +108,10 @@ jobs:
           "${binary}" -version
           "${binary}" -machine help >/dev/null
 
+      - name: Verify live Sawtooth FireWire PCI device
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
+
       - name: Test rich floppy shortcut options
         if: matrix.target == 'i386'
         shell: bash
