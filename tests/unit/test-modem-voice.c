@@ -147,35 +147,35 @@ static void test_voice_configuration(void)
 
     response = modem_command(&fe, &out, "AT+VSM=?\r");
     assert_response_contains(response,
-                             "128,\"8-BIT LINEAR\",8,0,(8000),(0),(0)");
+                             "+VSM: 128,\"8-BIT LINEAR\",8,0,(8000),(0),(0)");
     response = modem_command(&fe, &out, "AT+VSM=128,8000\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT+VSM?\r");
-    assert_response_contains(response, "\r\n128,8000\r\n");
+    assert_response_contains(response, "\r\n+VSM: 128,8000\r\n");
 
     response = modem_command(&fe, &out, "AT+VLS=1\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT+VLS?\r");
-    assert_response_contains(response, "\r\n1\r\n");
+    assert_response_contains(response, "\r\n+VLS: 1\r\n");
 
     response = modem_command(&fe, &out, "AT+VGR=96\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT+VGR?\r");
-    assert_response_contains(response, "\r\n96\r\n");
+    assert_response_contains(response, "\r\n+VGR: 96\r\n");
 
     response = modem_command(&fe, &out, "AT+VGT=160\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT+VGT?\r");
-    assert_response_contains(response, "\r\n160\r\n");
+    assert_response_contains(response, "\r\n+VGT: 160\r\n");
 
     response = modem_command(&fe, &out, "AT+VIP\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT+VLS?\r");
-    assert_response_contains(response, "\r\n0\r\n");
+    assert_response_contains(response, "\r\n+VLS: 0\r\n");
     response = modem_command(&fe, &out, "AT+VGR?\r");
-    assert_response_contains(response, "\r\n128\r\n");
+    assert_response_contains(response, "\r\n+VGR: 128\r\n");
     response = modem_command(&fe, &out, "AT+VGT?\r");
-    assert_response_contains(response, "\r\n128\r\n");
+    assert_response_contains(response, "\r\n+VGT: 128\r\n");
 
     modem_frontend_cleanup(&fe, chr);
 }
