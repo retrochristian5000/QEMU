@@ -5,6 +5,9 @@ on:
     branches: [ master ]
     paths:
       - 'hw/display/vga-pci.c'
+      - 'hw/misc/Kconfig'
+      - 'hw/misc/meson.build'
+      - 'hw/misc/tsb12lv23.c'
       - 'hw/pci/pci.c'
       - 'hw/pci-bridge/dec.c'
       - 'hw/ppc/Kconfig'
@@ -12,12 +15,16 @@ on:
       - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
+      - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
       - 'scripts/tests/test-dec21154-power-management.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
   pull_request:
     paths:
       - 'hw/display/vga-pci.c'
+      - 'hw/misc/Kconfig'
+      - 'hw/misc/meson.build'
+      - 'hw/misc/tsb12lv23.c'
       - 'hw/pci/pci.c'
       - 'hw/pci-bridge/dec.c'
       - 'hw/ppc/Kconfig'
@@ -25,6 +32,7 @@ on:
       - 'hw/ppc/powermac3_1.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
+      - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
       - 'scripts/tests/test-dec21154-power-management.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
@@ -38,6 +46,8 @@ jobs:
         run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
       - name: Verify Sawtooth retail defaults
         run: python3 scripts/tests/test-powermac3_1-defaults.py
+      - name: Verify Sawtooth TSB12LV23 FireWire controller
+        run: python3 scripts/tests/test-powermac3_1-firewire.py
       - name: Verify Sawtooth generic AGP + PCI multi-display wiring
         run: python3 scripts/tests/test-powermac3_1-multi-display.py
       - name: Verify Sawtooth DEC 21154 power-management contract
