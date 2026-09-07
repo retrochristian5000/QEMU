@@ -40,8 +40,10 @@ struct OHCIPCIState {
     /*< public >*/
 
     OHCIState state;
+    MemoryRegion bar;
     char *masterbus;
     uint16_t device_id;
+    uint32_t bar_size;
     uint32_t num_ports;
     uint32_t firstport;
 };
@@ -65,6 +67,13 @@ static void usb_ohci_realize_pci(PCIDevice *dev, Error **errp)
     Error *err = NULL;
     OHCIPCIState *ohci = PCI_OHCI(dev);
 
+    if (ohci->bar_size < 256 ||
+        (ohci->bar_size & (ohci->bar_size - 1))) {
+        error_setg(errp,
+                   "pci-ohci BAR size must be a power of two and at least 256 bytes");
+        return;
+    }
+
     pci_set_word(dev->config + PCI_DEVICE_ID, ohci->device_id);
     dev->config[PCI_CLASS_PROG] = 0x10; /* OHCI */
     dev->config[PCI_INTERRUPT_PIN] = 0x01; /* interrupt pin A */
@@ -77,8 +86,18 @@ static void usb_ohci_realize_pci(PCIDevice *dev, Error **errp)
         return;
     }
 
+    /*
+     * Keep the OHCI register implementation at its native 0x100 bytes while
+     * allowing hardware profiles to expose a larger PCI aperture around it.
+     * Accesses in the unused tail remain unassigned rather than inventing
+     * registers that the controller does not implement.
+     */
+    memory_region_init(&ohci->bar, OBJECT(dev), "ohci-pci-bar",
+                       ohci->bar_size);
+    memory_region_add_subregion(&ohci->bar, 0, &ohci->state.mem);
+
     ohci->state.irq = pci_allocate_irq(dev);
-    pci_register_bar(dev, 0, 0, &ohci->state.mem);
+    pci_register_bar(dev, 0, 0, &ohci->bar);
 }
 
 static void usb_ohci_exit(PCIDevice *dev)
@@ -115,6 +134,7 @@ static const Property ohci_pci_properties[] = {
     DEFINE_PROP_STRING("masterbus", OHCIPCIState, masterbus),
     DEFINE_PROP_UINT16("device-id", OHCIPCIState, device_id,
                        PCI_DEVICE_ID_APPLE_IPID_USB),
+    DEFINE_PROP_UINT32("bar-size", OHCIPCIState, bar_size, 256),
     DEFINE_PROP_UINT32("num-ports", OHCIPCIState, num_ports, 3),
     DEFINE_PROP_UINT32("firstport", OHCIPCIState, firstport, 0),
 };
