@@ -88,6 +88,17 @@ for needle in required_pm:
     if needle not in tsb:
         errors.append(f"TSB12LV23 power-management contract missing: {needle}")
 
+# Migration must carry the PCI parent state as well as OHCI registers and must
+# re-evaluate the level-triggered INTA line after a load.
+required_migration = (
+    'VMSTATE_PCI_DEVICE(parent_obj, TSB12LV23State),',
+    'static int tsb12lv23_post_load(void *opaque, int version_id)',
+    '.post_load = tsb12lv23_post_load,',
+)
+for needle in required_migration:
+    if needle not in tsb:
+        errors.append(f"TSB12LV23 migration contract missing: {needle}")
+
 # Build with the NewWorld family, but instantiate only in the historical
 # powermac3_1 wrapper after its parent has created the DEC 21154 bridge.
 if "config TSB12LV23" not in misc_kconfig or "depends on PCI" not in misc_kconfig:
