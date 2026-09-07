@@ -22,8 +22,9 @@ required_fwcfg = (
 for token in required_fwcfg:
     assert token in FWCFG, f"missing SeaBIOS -g producer contract: {token}"
 
-assert "graphic_width > 0 && graphic_height > 0" in FWCFG, (
-    "QEMU must not publish a SeaBIOS display override unless -g supplied geometry"
-)
+assert (
+    "graphic_width > 0 && graphic_height > 0" in FWCFG
+    or "graphic_width <= 0 || graphic_height <= 0" in FWCFG
+), "x86 fw_cfg display-mode geometry guard missing"
 
 print("QEMU -> SeaBIOS -g display-mode ABI: verified")

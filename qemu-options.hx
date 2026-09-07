@@ -2620,7 +2620,7 @@ ERST
 
 DEF("g", HAS_ARG, QEMU_OPTION_g ,
     "-g WxH[xDEPTH]  Set the initial graphical resolution and depth\n",
-    QEMU_ARCH_PPC | QEMU_ARCH_SPARC | QEMU_ARCH_M68K)
+    QEMU_ARCH_I386 | QEMU_ARCH_PPC | QEMU_ARCH_SPARC | QEMU_ARCH_M68K)
 SRST
 ``-g`` *width*\ ``x``\ *height*\ ``[x``\ *depth*\ ``]``
     Set the initial graphical resolution and depth (PPC, SPARC only).

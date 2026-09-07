@@ -358,6 +358,19 @@ typedef struct DriveIndexReservation {
     int index;
 } DriveIndexReservation;
 
+static int drive_opts_get_raw_number(QemuOpts *opts, const char *name,
+                                         int default_value)
+{
+    const char *value = qemu_opt_get(opts, name);
+    uint64_t number;
+
+    if (!value || qemu_strtou64(value, NULL, 0, &number) < 0 ||
+        number > (uint64_t)INT_MAX) {
+        return default_value;
+    }
+    return number;
+}
+
 static int drive_index_reserved_cb(void *opaque, QemuOpts *opts,
                                    Error **errp)
 {
@@ -375,16 +388,16 @@ static int drive_index_reserved_cb(void *opaque, QemuOpts *opts,
         return 0;
     }
 
-    opt_index = qemu_opt_get_number(opts, "index", -1);
+    opt_index = drive_opts_get_raw_number(opts, "index", -1);
     if (opt_index >= 0) {
         return opt_index == reservation->index;
     }
 
-    unit = qemu_opt_get_number(opts, "unit", -1);
+    unit = drive_opts_get_raw_number(opts, "unit", -1);
     if (unit < 0) {
         return 0;
     }
-    bus = qemu_opt_get_number(opts, "bus", 0);
+    bus = drive_opts_get_raw_number(opts, "bus", 0);
     if (if_max_devs[reservation->type]) {
         opt_index = bus * if_max_devs[reservation->type] + unit;
     } else if (bus == 0) {
