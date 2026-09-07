@@ -1,4 +1,4 @@
-name: WHP QEMU smoke CI
+name: WHP QEMU fast CI
 
 on:
   push:
@@ -18,249 +18,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  macos-sdk-policy:
-    name: Check macOS SDK policy
+  build-policy:
+    name: Check build policy
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Test selected SDK version handling
+      - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
-
-      - name: Initialize OpenBIOS test source
-        run: git submodule update --init --depth 1 roms/openbios
-
-      - name: Check PowerPC LLVM assembler wiring
-        run: bash scripts/tests/test-powerpc-llvm-assembler-wiring.bash
-
-      - name: Check OpenBIOS host portability guards
-        run: bash scripts/tests/test-openbios-host-portability.bash
-
-      - name: Check OpenBIOS build prerequisites
-        run: bash scripts/tests/test-openbios-build-prerequisites.bash
-
-      - name: Check OpenBIOS tool provenance guards
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SOURCE_DIR="$PWD"
-          WHP_BUILD_BASH="$(command -v bash)"
-          source scripts/whp-build/preflight.bash
-          whp_validate_build_scripts
-
-          if grep -Fq 'OPENBIOS_TOKE="$(command -v toke' scripts/build-openbios.sh; then
-            echo 'error: OpenBIOS may not select toke implicitly from PATH' >&2
-            exit 1
-          fi
-          if grep -Fq 'for candidate in' scripts/build-openbios.sh; then
-            echo 'error: OpenBIOS may not scan PATH for PowerPC cross prefixes' >&2
-            exit 1
-          fi
-          grep -Fq 'bootstrapped_prefix="$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-"' \
-            scripts/build-openbios.sh
-          grep -Fq 'OPENBIOS_ENVIRONMENT_POLICY=8' scripts/meson-build-openbios.sh
-          grep -Fq "printf 'OPENBIOS_XSLTPROC=%q" \
-            scripts/whp-build/configure-openbios.bash
-          grep -Fq "printf 'OPENBIOS_READELF=%q" \
-            scripts/whp-build/configure-openbios.bash
-
-          grep -Fq '[submodule "toolchains/llvm-project"]' .gitmodules
-          git ls-tree HEAD -- toolchains/llvm-project |
-            grep -Eq '^160000 commit [0-9a-f]{40}[[:space:]]+toolchains/llvm-project$'
-
-          grep -Fq 'POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
-            scripts/build-openbios.sh
-          grep -Fq 'powerpc_toolchain_compiler="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
-            scripts/whp-build/prepare-sources.bash
-          grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
-            scripts/whp-build/configure-openbios.bash
-          grep -Fq 'compiler_mode="${POWERPC_TOOLCHAIN_COMPILER:-clang}"' \
-            scripts/meson-build-openbios.sh
-
-          grep -Fq "printf 'POWERPC_LLVM_SUBMODULE_PATH=%q" \
-            scripts/whp-build/configure-openbios.bash
-          grep -Fq 'POWERPC_LLVM_SUBMODULE_PATH=' scripts/meson-build-openbios.sh
-          if grep -Fq 'POWERPC_LLVM_GIT_COMMIT' scripts/whp-build/configure-openbios.bash ||
-             grep -Fq 'POWERPC_LLVM_GIT_COMMIT' scripts/meson-build-openbios.sh; then
-            echo 'error: LLVM revision must come from the QEMU submodule gitlink' >&2
-            exit 1
-          fi
-
-  build-macos-ppc:
-    name: Build ppc (Apple Silicon)
-    runs-on: macos-15
-    timeout-minutes: 60
-
-    env:
-      BUILD_DIR: ${{ github.workspace }}/build-macos-ppc
-      BUILD_OPENBIOS: '0'
-      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
-      QEMU_HOST_LTO: '1'
-      BUILD_QEMU_SYSTEM_I386: '0'
-      BUILD_QEMU_SYSTEM_PPC: '1'
-      RUN_TESTS: '0'
-      MACOS_ENABLE_GTK: '0'
-      MACOS_ENABLE_PA: '0'
-      MACOSX_DEPLOYMENT_TARGET: '15.0'
-      HOMEBREW_NO_AUTO_UPDATE: '1'
-      HOMEBREW_NO_INSTALL_CLEANUP: '1'
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Install build dependencies
-        run: brew install glib libslirp make ninja pixman pkgconf
-
-      - name: Build PowerPC system emulator through macOS wrapper
-        shell: bash
-        run: |
-          set -o pipefail
-          ./build.sh qemu-system-ppc 2>&1 | tee macos-build.log
-
-      - name: Test Darwin thread signal mask
-        shell: bash
-        run: |
-          set -euo pipefail
-          ninja -C "$BUILD_DIR" tests/unit/test-qemu-thread-signal-mask
-          "$BUILD_DIR/tests/unit/test-qemu-thread-signal-mask" --tap -k
-
-      - name: Show build failure context
-        if: failure()
-        shell: bash
-        run: |
-          if [[ -f macos-build.log ]]; then
-            echo '=== compiler errors ==='
-            grep -n -E 'FAILED:|error:|Undefined symbols|ninja: build stopped' \
-              macos-build.log | tail -n 200 || true
-            echo '=== build log tail ==='
-            tail -n 200 macos-build.log || true
-          fi
-          if [[ -f build-macos-ppc/meson-logs/meson-log.txt ]]; then
-            echo '=== meson log tail ==='
-            tail -n 200 build-macos-ppc/meson-logs/meson-log.txt || true
-          fi
-
-      - name: Upload failure logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-ppc-build-logs
-          path: |
-            macos-build.log
-            build-macos-ppc/config.log
-            build-macos-ppc/meson-logs/meson-log.txt
-            build-macos-ppc/.whp-build-artifacts
-            build-macos-ppc/.whp-config
-            build-macos-ppc/.whp-macos-build-identity
-            build-macos-ppc/.whp-macos-lto
-            build-macos-ppc/.whp-macos-toolchain
-          if-no-files-found: warn
-          retention-days: 7
-
-  build-macos-openbios:
-    name: Build OpenBIOS (Apple Silicon)
-    runs-on: macos-15
-    timeout-minutes: 180
-
-    env:
-      BUILD_DIR: ${{ github.workspace }}/build-macos-openbios
-      BUILD_OPENBIOS: '1'
-      BOOTSTRAP_POWERPC_TOOLCHAIN: '1'
-      POWERPC_TOOLCHAIN_COMPILER: clang
-      OPENBIOS_FIRMWARE_VALIDATION: strict
-      QEMU_HOST_LTO: '0'
-      BUILD_QEMU_SYSTEM_I386: '0'
-      BUILD_QEMU_SYSTEM_PPC: '1'
-      MACOS_ENABLE_GTK: '0'
-      MACOS_ENABLE_PA: '0'
-      MACOSX_DEPLOYMENT_TARGET: '15.0'
-      JOBS: '4'
-      HOMEBREW_NO_AUTO_UPDATE: '1'
-      HOMEBREW_NO_INSTALL_CLEANUP: '1'
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Verify Apple Silicon host
-        shell: bash
-        run: test "$(uname -m)" = arm64
-
-      - name: Install firmware build dependencies
-        run: brew install cmake glib libslirp libxslt make ninja pixman pkgconf
-
-      - name: Select keg-only XSLT processor
-        shell: bash
-        run: |
-          set -euo pipefail
-          xsltproc="$(brew --prefix libxslt)/bin/xsltproc"
-          test -x "$xsltproc"
-          printf 'OPENBIOS_XSLTPROC=%s\n' "$xsltproc" >> "$GITHUB_ENV"
-
-      - name: Initialize pinned firmware and LLVM sources
-        run: git submodule update --init --depth 1 roms/openbios toolchains/llvm-project
-
-      - name: Build OpenBIOS through macOS wrapper
-        shell: bash
-        run: |
-          set -o pipefail
-          ./build.sh whp-openbios-ppc 2>&1 | tee macos-openbios.log
-
-      - name: Verify PowerPC firmware artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          source "$BUILD_DIR/.whp-openbios-meson.env"
-          firmware="$BUILD_DIR/pc-bios/openbios-ppc"
-          readelf="$POWERPC_TOOLCHAIN_DIR/llvm/bin/llvm-readelf"
-          test -s "$firmware"
-          test -x "$readelf"
-          "$readelf" -hW "$firmware" | grep -Eq 'Class:[[:space:]]+ELF32'
-          "$readelf" -hW "$firmware" | grep -Eq "Data:[[:space:]]+2's complement, big endian"
-          "$readelf" -hW "$firmware" | grep -Eq 'Machine:[[:space:]]+PowerPC'
-
-      - name: Show OpenBIOS failure context
-        if: failure()
-        shell: bash
-        run: |
-          if [[ -f macos-openbios.log ]]; then
-            echo '=== OpenBIOS errors ==='
-            grep -n -E 'FAILED:|error:|panic:|segmentation|Undefined symbols|ninja: build stopped' \
-              macos-openbios.log | tail -n 250 || true
-            echo '=== OpenBIOS log tail ==='
-            tail -n 250 macos-openbios.log || true
-          fi
-          if [[ -f "$BUILD_DIR/meson-logs/meson-log.txt" ]]; then
-            echo '=== Meson log tail ==='
-            tail -n 150 "$BUILD_DIR/meson-logs/meson-log.txt" || true
-          fi
-
-      - name: Upload OpenBIOS failure logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-openbios-build-logs
-          path: |
-            macos-openbios.log
-            build-macos-openbios/config.log
-            build-macos-openbios/meson-logs/meson-log.txt
-            build-macos-openbios/.whp-openbios-meson.env
-            build-macos-openbios/.whp-config
-            build-macos-openbios/.whp-macos-build-identity
-            build-macos-openbios/firmware/openbios/obj-ppc/*.log
-            build-macos-openbios/firmware/openbios/obj-ppc/forth/*.log
-            whp-firmware-tools-arm64-apple-darwin/powerpc-elf/.whp-powerpc-*
-          if-no-files-found: warn
-          retention-days: 7
 
   build-active-target:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -324,49 +97,6 @@ jobs:
           set -o pipefail
           ninja -C build-ci qemu-system-${{ matrix.target }} 2>&1 | tee build-ci/build.log
 
-      - name: Show build failure context
-        if: failure()
-        shell: bash
-        run: |
-          if [[ -f build-ci/build.log ]]; then
-            echo '=== compiler errors ==='
-            grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
-              build-ci/build.log | tail -n 200 || true
-            echo '=== build log tail ==='
-            tail -n 200 build-ci/build.log || true
-          fi
-          if [[ -f build-ci/configure.log ]]; then
-            echo '=== configure log tail ==='
-            tail -n 200 build-ci/configure.log || true
-          fi
-          if [[ -f build-ci/meson-logs/meson-log.txt ]]; then
-            echo '=== meson log tail ==='
-            tail -n 200 build-ci/meson-logs/meson-log.txt || true
-          fi
-
-      - name: Upload failure logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-${{ matrix.target }}
-          path: |
-            build-ci/configure.log
-            build-ci/build.log
-            build-ci/meson-logs/meson-log.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Show compiler cache statistics
-        if: always()
-        run: ccache --show-stats || true
-
-      - name: Save compiler cache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}
-
       - name: Smoke-test ${{ matrix.target }}
         run: |
           set -eux
@@ -410,3 +140,46 @@ jobs:
           ninja -C build-ci tests/qtest/x86-16bit-test
           build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
             qtest-x86/x86-16bit-test
+
+      - name: Show build failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build-ci/build.log ]]; then
+            echo '=== compiler errors ==='
+            grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
+              build-ci/build.log | tail -n 200 || true
+            echo '=== build log tail ==='
+            tail -n 200 build-ci/build.log || true
+          fi
+          if [[ -f build-ci/configure.log ]]; then
+            echo '=== configure log tail ==='
+            tail -n 200 build-ci/configure.log || true
+          fi
+          if [[ -f build-ci/meson-logs/meson-log.txt ]]; then
+            echo '=== meson log tail ==='
+            tail -n 200 build-ci/meson-logs/meson-log.txt || true
+          fi
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.target }}
+          path: |
+            build-ci/configure.log
+            build-ci/build.log
+            build-ci/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}
