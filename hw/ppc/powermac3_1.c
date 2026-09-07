@@ -19,7 +19,9 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/nvram/fw_cfg.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_host.h"
+#include "hw/pci-bridge/dec.h"
 #include "hw/pci-host/uninorth.h"
 #include "hw/ppc/ppc.h"
 #include "system/system.h"
@@ -78,8 +80,10 @@ static void powermac3_1_machine_init(MachineState *machine)
     VGAInterfaceType requested_vga = vga_interface_type;
     PCIHostState *agp_host;
     PCIBus *agp_bus;
+    PCIBus *south_pci_bus;
     BusState *agp_qbus;
     FWCfgState *fw_cfg;
+    Object *south_bridge;
 
     /*
      * The generic mac99 initializer creates its automatic VGA device on the
@@ -93,6 +97,16 @@ static void powermac3_1_machine_init(MachineState *machine)
 
     powermac3_1_parent_init(machine);
     vga_interface_type = requested_vga;
+
+    /*
+     * Sawtooth's TI TSB12LV23 is a fixed device at 0x0a on the 33 MHz PCI
+     * bus behind the DEC 21154.  Resolve the bridge created by the inherited
+     * Sawtooth topology so this historical device never leaks into mac99.
+     */
+    south_bridge = object_resolve_type_unambiguous(
+        TYPE_DEC_21154_P2P_BRIDGE, &error_abort);
+    south_pci_bus = pci_bridge_get_sec_bus(PCI_BRIDGE(south_bridge));
+    pci_create_simple(south_pci_bus, PCI_DEVFN(0x0a, 0), "tsb12lv23");
 
     /*
      * mac99 intentionally advertises a generic known-good 900 MHz value to
