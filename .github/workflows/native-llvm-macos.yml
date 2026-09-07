@@ -14,6 +14,7 @@ on:
       - 'scripts/macos-build-hygiene.bash'
       - 'scripts/macos-compiler-policy.bash'
       - 'scripts/verify-macos-lto.sh'
+      - 'scripts/verify-macos-lto.bash'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
@@ -150,7 +151,7 @@ jobs:
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
 
-      - name: Build QEMU with bootstrapped LLVM
+      - name: Build QEMU with bootstrapped LLVM and LTO
         shell: bash
         env:
           WHP_SHELL_PROBE_ONLY: '0'
@@ -162,7 +163,7 @@ jobs:
           BUILD_SEABIOS: '0'
           BUILD_SEABIOS_GRUB: '0'
           BOOTSTRAP_I386_TOOLCHAIN: '0'
-          QEMU_HOST_LTO: '0'
+          QEMU_HOST_LTO: '1'
           RUN_TESTS: '0'
           MACOS_ENABLE_COCOA: '0'
           MACOS_ENABLE_COREAUDIO: '0'
@@ -177,6 +178,7 @@ jobs:
           grep -Fq "QEMU C compiler:          $NATIVE_LLVM_DIR/bin/clang" native-qemu.log
           grep -Fq "CC=$NATIVE_LLVM_DIR/bin/clang|" \
             "$BUILD_DIR/.whp-macos-build-identity"
+          grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
 
       - name: Show native LLVM failure context
         if: failure()
