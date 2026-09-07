@@ -136,6 +136,10 @@ jobs:
           grep -Eq '"device"[[:space:]]*:[[:space:]]*"bootfloppy"' "$qmp_out"
           grep -Eq '"ro"[[:space:]]*:[[:space:]]*true' "$qmp_out"
 
+      - name: Test -hdc and -cdrom coexistence
+        if: matrix.target == 'i386'
+        run: bash scripts/tests/test-cdrom-hdc.bash build-ci/qemu-system-i386
+
       - name: Test original 16-bit x86 target
         if: matrix.target == 'x86'
         run: |
