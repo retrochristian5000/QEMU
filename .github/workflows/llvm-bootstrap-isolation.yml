@@ -8,6 +8,7 @@ on:
       - 'build.sh'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-i386-clang.bash'
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/whp-build/configure-seabios.bash'
