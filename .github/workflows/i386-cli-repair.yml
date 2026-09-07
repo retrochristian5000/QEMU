@@ -109,8 +109,15 @@ jobs:
           gtest = Path("scripts/tests/test-seabios-g-option.py")
           replace_once(
               gtest,
-              'assert "graphic_width > 0 && graphic_height > 0" in FWCFG\n',
-              '''assert (\n    "graphic_width > 0 && graphic_height > 0" in FWCFG\n    or "graphic_width <= 0 || graphic_height <= 0" in FWCFG\n), "x86 fw_cfg display-mode geometry guard missing"\n''')
+              '''assert "graphic_width > 0 && graphic_height > 0" in FWCFG, (
+              "QEMU must not publish a SeaBIOS display override unless -g supplied geometry"
+          )
+          ''',
+              '''assert (
+              "graphic_width > 0 && graphic_height > 0" in FWCFG
+              or "graphic_width <= 0 || graphic_height <= 0" in FWCFG
+          ), "x86 fw_cfg display-mode geometry guard missing"
+          ''')
           PY
 
       - name: Verify SeaBIOS -g source contract
