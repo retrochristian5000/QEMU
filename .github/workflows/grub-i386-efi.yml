@@ -6,11 +6,13 @@ on:
       - master
     paths:
       - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-i386-clang.bash'
       - 'scripts/bootstrap-i386-efi-grub.sh'
       - 'scripts/bootstrap-i386-efi-grub.bash'
       - 'scripts/build-seabios-hybrid-iso.sh'
       - 'scripts/whp-build/prepare-seabios-grub.bash'
       - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
+      - 'scripts/tests/test-i386-llvm-incremental-bootstrap.bash'
       - 'scripts/tests/test-grub-fork-source.bash'
       - 'scripts/tests/test-seabios-hybrid-iso.bash'
       - 'toolchains/grub'
@@ -54,11 +56,43 @@ jobs:
         shell: bash
         run: bash scripts/tests/test-i386-efi-grub-bootstrap.bash
 
+      - name: Test i386 LLVM incremental bootstrap contract
+        shell: bash
+        run: bash scripts/tests/test-i386-llvm-incremental-bootstrap.bash
+
       - name: Build IA32 EFI GRUB from pinned WHP submodule with WHP LLVM
         shell: bash
         run: |
           set -euo pipefail
           bash scripts/bootstrap-i386-efi-grub.sh | tee grub-i386-efi-build.log
+
+      - name: Verify i386 LLVM CMake graph survives re-entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          llvm_prefix="$BUILD_DIR/firmware-tools/i386-none-elf"
+          llvm_work="$BUILD_DIR/firmware-tools/toolchain-work/i386-none-elf"
+          llvm_build="$llvm_work/llvm-build"
+          sentinel="$llvm_build/.whp-incremental-sentinel"
+
+          test -f "$llvm_build/CMakeCache.txt"
+          test -f "$llvm_build/build.ninja"
+          printf 'preserve i386 LLVM CMake/Ninja state\n' >"$sentinel"
+
+          # Re-enter the bootstrap without changing LLVM source or CMake policy.
+          # The installed marker is disposable; the generated graph is not.
+          rm -f "$llvm_prefix/.whp-i386-toolchain"
+          I386_TOOLCHAIN_DIR="$llvm_prefix" \
+          I386_TOOLCHAIN_WORK_DIR="$llvm_work" \
+          I386_LLVM_BUILD_DIR="$llvm_build" \
+          JOBS="$JOBS" \
+            bash scripts/bootstrap-i386-clang.sh | tee grub-i386-efi-incremental.log
+
+          test -f "$sentinel"
+          test -f "$llvm_build/CMakeCache.txt"
+          test -f "$llvm_build/build.ninja"
+          test -f "$llvm_prefix/.whp-i386-toolchain"
+          grep -Fq 'Bootstrapped SeaBIOS compiler: Clang' grub-i386-efi-incremental.log
 
       - name: Verify gitlink identity, LLVM mode, mkimage, and hybrid modules
         shell: bash
@@ -112,6 +146,7 @@ jobs:
         shell: bash
         run: |
           tail -n 250 grub-i386-efi-build.log 2>/dev/null || true
+          tail -n 250 grub-i386-efi-incremental.log 2>/dev/null || true
           cat grub-i386-efi-objdump.log 2>/dev/null || true
 
       - name: Upload failure logs
@@ -121,6 +156,7 @@ jobs:
           name: grub-i386-efi-failure
           path: |
             grub-i386-efi-build.log
+            grub-i386-efi-incremental.log
             grub-i386-efi-objdump.log
             build-grub-i386-efi/firmware-tools/grub-i386-efi/.whp-grub-i386-efi
             build-grub-i386-efi/firmware-tools/i386-none-elf/.whp-i386-toolchain
