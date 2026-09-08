@@ -325,7 +325,25 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
         "$SOURCE_DIR/scripts/bootstrap-native-clang.sh") || exit 1
     CC="$NATIVE_LLVM_DIR/bin/clang"
     CXX="$NATIVE_LLVM_DIR/bin/clang++"
-    export NATIVE_LLVM_DIR CC CXX
+    AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
+    RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+    NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
+    OBJC="$NATIVE_LLVM_DIR/bin/clang"
+    PATH="$NATIVE_LLVM_DIR/bin:$PATH"
+    export NATIVE_LLVM_DIR CC CXX AR RANLIB NM OBJC PATH
+
+    # Darwin host links must consume the same LLVM revision that produced the
+    # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
+    # direct LD consumers get the same linker explicitly.
+    if [ "$WHP_HOST_OS" = macos ]; then
+        LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
+        NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+        case " ${LDFLAGS:-} " in
+            *" $NATIVE_LLVM_LDFLAG "*) ;;
+            *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
+        esac
+        export LD NATIVE_LLVM_LDFLAG LDFLAGS
+    fi
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
 fi
 
