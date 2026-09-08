@@ -31,7 +31,7 @@ jobs:
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
       - name: Test native LLVM incremental bootstrap contract
-        run: bash scripts/tests/test-native-llvm-incremental-bootstrap.bash
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
 
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
