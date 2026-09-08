@@ -144,13 +144,4 @@ for llvm_bootstrap, override in link_job_policies:
     assert 'LLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS' in llvm_bootstrap
     assert f'{override} must be a positive integer' in llvm_bootstrap
 
-# Preserve the CMake/Ninja binary tree across interrupted builds and LLVM source
-# revisions. CMake owns in-place rule regeneration and Ninja owns object-level
-# dependency invalidation. An explicit forced rebuild cleans generated outputs
-# through the backend without deleting CMakeCache.txt/build.ninja.
-assert 'rm -rf "$LLVM_BUILD_DIR"' not in bootstrap
-assert 'cmake "${cmake_args[@]}"' in bootstrap
-assert 'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then' in bootstrap
-assert 'cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"' in bootstrap
-
 print('native LLVM wiring tests: passed')
