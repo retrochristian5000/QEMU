@@ -17,9 +17,22 @@ assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
+assert 'AR="$NATIVE_LLVM_DIR/bin/llvm-ar"' in build
+assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
+assert 'OBJC="$NATIVE_LLVM_DIR/bin/clang"' in build
+assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
+assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
 assert 'toolchains/llvm-project' in bootstrap
 assert 'git clone' not in bootstrap
-assert '-DLLVM_ENABLE_PROJECTS=clang' in bootstrap
+assert 'llvm_enable_projects=clang' in bootstrap
+assert 'llvm_distribution_components=\'clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm\'' in bootstrap
+assert 'llvm_enable_projects="${llvm_enable_projects};lld"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"' in bootstrap
+assert '"-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"' in bootstrap
+assert '[[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&' in bootstrap
+assert '-x "$prefix/bin/llvm-nm" ]] || return 1' in bootstrap
+assert '[[ -x "$prefix/bin/ld64.lld" ]] || return 1' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
 assert 'bootstrap-native-clang.sh' in inventory
 
@@ -52,7 +65,7 @@ assert 'WHP native LLVM Ninja:' in bootstrap
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
 # load a matching reader. The same Darwin distribution also owns compiler-rt,
 # so keep LTO and both runtime umbrella components in one exact platform policy.
-assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 
@@ -69,7 +82,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=5' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=6' in bootstrap
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
