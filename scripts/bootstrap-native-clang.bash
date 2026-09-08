@@ -275,22 +275,23 @@ git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
-llvm_distribution_components='clang;clang-resource-headers'
+llvm_enable_projects=clang
+llvm_distribution_components='clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm'
 llvm_enable_runtimes=''
 llvm_include_runtimes=OFF
 if [[ "$host_os" == macos ]]; then
-    # Darwin Clang tells ld64 to load this toolchain's lib/libLTO.dylib for
-    # -flto. Keep the bitcode producer and reader on the same LLVM revision.
-    # Sanitizer drivers also resolve their runtime from Clang's own resource
-    # tree, so ship compiler-rt with the compiler instead of relying on Xcode's
-    # unrelated runtime revision.
+    # Keep the Darwin linker and archive readers on the same LLVM revision as
+    # the compiler that emits LTO bitcode. ld64.lld consumes LLVM IR directly,
+    # while libLTO remains available for explicit system-ld64 compatibility.
+    # compiler-rt also belongs to the same installed compiler runtime family.
+    llvm_enable_projects="${llvm_enable_projects};lld"
     llvm_enable_runtimes=compiler-rt
     llvm_include_runtimes=ON
-    llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"
+    llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=5
+BOOTSTRAP_SCHEMA=6
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -299,6 +300,7 @@ HOST_ARCH=$host_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
 LLVM_HOST_TRIPLE=$llvm_host_triple
 LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
+LLVM_ENABLE_PROJECTS=$llvm_enable_projects
 LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
 LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
@@ -322,12 +324,15 @@ usable()
     local ubsan_exe=''
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
+    [[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&
+       -x "$prefix/bin/llvm-nm" ]] || return 1
     if [[ "$host_os" == macos ]]; then
+        [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -fsanitize=undefined \
+            "$prefix/bin/clang" -fsanitize=undefined -fuse-ld=lld \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
@@ -384,7 +389,7 @@ cmake_args=(
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
     -DCMAKE_INSTALL_MESSAGE=NEVER
-    -DLLVM_ENABLE_PROJECTS=clang
+    "-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"
     "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
     "-DLLVM_TARGETS_TO_BUILD=$llvm_target"
     "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
