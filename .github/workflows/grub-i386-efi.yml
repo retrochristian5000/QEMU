@@ -12,7 +12,7 @@ on:
       - 'scripts/build-seabios-hybrid-iso.sh'
       - 'scripts/whp-build/prepare-seabios-grub.bash'
       - 'scripts/tests/test-i386-efi-grub-bootstrap.bash'
-      - 'scripts/tests/test-i386-llvm-incremental-bootstrap.bash'
+      - 'scripts/tests/test-llvm-incremental-bootstrap.bash'
       - 'scripts/tests/test-grub-fork-source.bash'
       - 'scripts/tests/test-seabios-hybrid-iso.bash'
       - 'toolchains/grub'
@@ -58,7 +58,7 @@ jobs:
 
       - name: Test i386 LLVM incremental bootstrap contract
         shell: bash
-        run: bash scripts/tests/test-i386-llvm-incremental-bootstrap.bash
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-i386-clang.bash 'i386-none-elf LLVM'
 
       - name: Build IA32 EFI GRUB from pinned WHP submodule with WHP LLVM
         shell: bash
