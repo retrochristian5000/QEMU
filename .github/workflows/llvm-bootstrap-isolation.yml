@@ -7,13 +7,14 @@ on:
     paths:
       - 'build.sh'
       - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/bootstrap-i386-clang.sh'
       - 'scripts/bootstrap-i386-clang.bash'
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
-      - 'scripts/tests/test-i386-llvm-incremental-bootstrap.bash'
+      - 'scripts/tests/test-llvm-incremental-bootstrap.bash'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-llvm-tablegen-dedup.py'
       - 'toolchains/llvm-project'
@@ -49,8 +50,11 @@ jobs:
       - name: Verify native LLVM wiring
         run: python3 scripts/tests/test-native-llvm-wiring.py
 
+      - name: Verify native LLVM incremental bootstrap contract
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
+
       - name: Verify i386 LLVM incremental bootstrap contract
-        run: bash scripts/tests/test-i386-llvm-incremental-bootstrap.bash
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-i386-clang.bash 'i386-none-elf LLVM'
 
       - name: Verify LLVM bootstrap environment boundary
         run: bash scripts/tests/test-llvm-bootstrap-isolation.bash
