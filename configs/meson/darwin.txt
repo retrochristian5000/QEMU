@@ -1,14 +1,11 @@
-# Keep host-side Mach-O tools independent of PATH ordering.
+# Darwin host tool selection is resolved before QEMU configure runs.
 #
-# builder.sh prepends Homebrew so QEMU can find optional dependencies, but
-# Homebrew may also provide GNU or LLVM programs with generic names such as
-# ar, nm, ranlib, and strip.  QEMU loads this native machine file after its
-# generated tool file, so these absolute paths remain authoritative for
-# Darwin host artifacts.  The compiler driver continues to select the host
-# linker; do not add a generic `ld` entry here.
+# scripts/macos-builder.bash supplies Apple ar/nm/ranlib/strip as defaults
+# while preserving explicit overrides such as the coherent llvm-ar, llvm-nm,
+# and llvm-ranlib installed by BOOTSTRAP_NATIVE_LLVM.  configure then records
+# those exact tools in config-meson.cross.  Do not override them in this later
+# native file: doing so can mix Apple archive tools with LLVM LTO objects and
+# hide the toolchain selected by the public build entry.
 
 [binaries]
-ar = '/usr/bin/ar'
-nm = '/usr/bin/nm'
-ranlib = '/usr/bin/ranlib'
-strip = '/usr/bin/strip'
+# Intentionally empty.  config-meson.cross owns Darwin binary selection.

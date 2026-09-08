@@ -226,4 +226,27 @@ if SOURCE_DIR="$SOURCE_DIR" FOREIGN_BUILD="$foreign_build" \
     exit 1
 fi
 
+# Darwin's late Meson native file used to force /usr/bin/ar, nm, and ranlib
+# after build.sh had selected a coherent native LLVM tool family.  Keep Apple
+# tools as PATH-independent defaults in the wrapper, where explicit selections
+# survive, and leave the later native file unable to overwrite them.
+macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
+darwin_native="$SOURCE_DIR/configs/meson/darwin.txt"
+for expected in \
+    'export AR="${AR:-/usr/bin/ar}"' \
+    'export NM="${NM:-/usr/bin/nm}"' \
+    'export RANLIB="${RANLIB:-/usr/bin/ranlib}"' \
+    'export STRIP="${STRIP:-/usr/bin/strip}"'; do
+    if ! grep -Fq "$expected" "$macos_builder"; then
+        printf 'error: missing Darwin tool default: %s\n' "$expected" >&2
+        exit 1
+    fi
+done
+if grep -Eq '^(ar|nm|ranlib|strip)[[:space:]]*=' "$darwin_native"; then
+    printf '%s\n' \
+        'error: Darwin native file overrides configure-selected archive tools.' >&2
+    cat "$darwin_native" >&2
+    exit 1
+fi
+
 printf 'macOS SDK selection tests: passed\n'

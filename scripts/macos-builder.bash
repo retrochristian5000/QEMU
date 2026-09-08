@@ -147,6 +147,16 @@ fi
 
 source "$SCRIPT_DIR/macos-compiler-policy.bash"
 
+# Keep Darwin's PATH-independent Apple archive tools as the default, but do
+# not overwrite an explicit tool family selected by build.sh.  In particular,
+# BOOTSTRAP_NATIVE_LLVM must carry its matching llvm-ar/llvm-nm/llvm-ranlib
+# through QEMU configure so LTO objects and archive indexes come from one LLVM
+# revision instead of being forced back to the system tools by darwin.txt.
+export AR="${AR:-/usr/bin/ar}"
+export NM="${NM:-/usr/bin/nm}"
+export RANLIB="${RANLIB:-/usr/bin/ranlib}"
+export STRIP="${STRIP:-/usr/bin/strip}"
+
 reject_managed_flags
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     whp_append_flag "$variable" "-isysroot $SDKROOT"
