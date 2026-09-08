@@ -103,18 +103,27 @@ jobs:
           marker="$NATIVE_LLVM_DIR/.whp-native-llvm"
           clang="$NATIVE_LLVM_DIR/bin/clang"
           clangxx="$NATIVE_LLVM_DIR/bin/clang++"
+          ar="$NATIVE_LLVM_DIR/bin/llvm-ar"
+          ranlib="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+          nm="$NATIVE_LLVM_DIR/bin/llvm-nm"
+          ld="$NATIVE_LLVM_DIR/bin/ld64.lld"
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=5' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=6' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
           grep -Fxq 'HOST_ARCH=arm64' "$marker"
           grep -Eq '^LLVM_HOST_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
           grep -Eq '^LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
+          grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
+          test -x "$ar"
+          test -x "$ranlib"
+          test -x "$nm"
+          test -x "$ld"
           "$clang" -print-target-triple | grep -Eq '^aarch64-apple-(darwin|macos|macosx)'
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
@@ -123,7 +132,7 @@ jobs:
           printf 'int whp_native_ci_cxx() { return 0; }\n' |
             "$clangxx" -x c++ -c - -o native-llvm-cxx.o
           printf 'int main(void) { return 0; }\n' |
-            "$clang" -fsanitize=undefined \
+            "$clang" -fsanitize=undefined -fuse-ld=lld \
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-ubsan
@@ -141,7 +150,7 @@ jobs:
           export CC="$NATIVE_LLVM_DIR/bin/clang"
           export CFLAGS="$common_flags"
           export CPPFLAGS=''
-          export LDFLAGS="$common_flags"
+          export LDFLAGS="$common_flags -fuse-ld=lld"
           export MACOS_LTO_MANIFEST="$GITHUB_WORKSPACE/native-llvm-lto.manifest"
           export MACOS_LTO_PROBE_DIR="$GITHUB_WORKSPACE/native-llvm-lto.d"
 
