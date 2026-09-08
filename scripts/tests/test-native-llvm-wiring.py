@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from pathlib import Path
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 config = (ROOT / 'scripts/whp-config/config.py').read_text(encoding='utf-8')
@@ -12,6 +13,18 @@ i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.bash').read_text(encoding
 powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.bash').read_text(encoding='utf-8')
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
 macos_workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
+
+# Syntax is the first guard. Keep the public POSIX entry parseable by /bin/sh,
+# and require every Bash implementation touched by this lane to parse before
+# semantic/string-contract assertions are evaluated.
+subprocess.run(['sh', '-n', str(ROOT / 'build.sh')], check=True)
+for bash_path in (
+    ROOT / 'builder.bash',
+    ROOT / 'scripts/bootstrap-native-clang.bash',
+    ROOT / 'scripts/bootstrap-i386-clang.bash',
+    ROOT / 'scripts/bootstrap-powerpc-clang-base.bash',
+):
+    subprocess.run(['bash', '-n', str(bash_path)], check=True)
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
