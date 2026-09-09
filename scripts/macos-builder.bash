@@ -169,9 +169,25 @@ done
 # optimization available, but force class sends back to the supported form for
 # this exact native LLVM linker/compiler pairing.  Apple's ld remains free to
 # use the newer class-selector stubs.
+#
+# Mach-O LLD also leaves eager input prefetching disabled by default.  Reuse the
+# build's established parallelism as the default page-in worker count so QEMU's
+# large object/archive set can be faulted in concurrently with linker work.
+# Keep this LLD-specific flag inside the same exact toolchain guard; callers can
+# set NATIVE_LLVM_READ_WORKERS=0 to disable it or choose another non-negative
+# worker count without exposing --read-workers to Apple's system linker.
 if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
       -n "${NATIVE_LLVM_DIR:-}" &&
       "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
+    native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"
+    case "$native_lld_read_workers" in
+        ''|*[!0-9]*)
+            printf 'error: NATIVE_LLVM_READ_WORKERS must be a non-negative integer: %s\n' \
+                "$native_lld_read_workers" >&2
+            exit 1
+            ;;
+    esac
+    whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"
     whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"
 fi
 
