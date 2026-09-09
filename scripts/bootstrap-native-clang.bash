@@ -138,6 +138,7 @@ fi
 printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
 
 cmake_host_args=()
+cmake_darwin_runtime_args=()
 sdkroot=""
 deployment_target=""
 if [[ "$host_os" == macos ]]; then
@@ -159,6 +160,15 @@ if [[ "$host_os" == macos ]]; then
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
+    )
+    # LLVM's builtins and runtimes are separate ExternalProject configurations.
+    # Carry the Darwin ABI inputs into both explicitly instead of depending on
+    # the parent project's conditional sysroot forwarding. Objective-C runtime
+    # links in compiler-rt must search the same SDK as the compiler bootstrap.
+    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
+    cmake_darwin_runtime_args=(
+        "-DRUNTIMES_CMAKE_ARGS=$darwin_external_cmake_args"
+        "-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"
     )
 else
     bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-${CC_FOR_BUILD:-cc}}"
@@ -291,7 +301,7 @@ if [[ "$host_os" == macos ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=6
+BOOTSTRAP_SCHEMA=7
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -322,6 +332,8 @@ usable()
     local prefix="$1"
     local target=''
     local ubsan_exe=''
+    local objc_exe=''
+    local objc_log=''
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     [[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&
@@ -340,6 +352,31 @@ usable()
             return 1
         fi
         rm -f "$ubsan_exe"
+
+        # A Darwin compiler is not usable by QEMU merely because C links. The
+        # Cocoa UI is Objective-C, and Clang's runtime link adds -lobjc. Prove
+        # that the installed Clang -> ld64.lld path can resolve both libobjc
+        # and a system framework from the selected macOS SDK before publishing
+        # or reusing the toolchain.
+        objc_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc.XXXXXX")" ||
+            return 1
+        objc_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc-log.XXXXXX")" || {
+            rm -f "$objc_exe"
+            return 1
+        }
+        if ! printf 'int main(void) { return 0; }\n' |
+            "$prefix/bin/clang" -fuse-ld=lld \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -fobjc-link-runtime -x objective-c - -framework Cocoa \
+                -o "$objc_exe" >/dev/null 2>"$objc_log"; then
+            printf 'error: WHP native LLVM cannot link Objective-C against SDK %s\n' \
+                "$sdkroot" >&2
+            cat "$objc_log" >&2
+            rm -f "$objc_exe" "$objc_log"
+            return 1
+        fi
+        rm -f "$objc_exe" "$objc_log"
     fi
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
@@ -423,6 +460,7 @@ cmake_args=(
     -DLLVM_ENABLE_ZLIB=OFF
     -DLLVM_ENABLE_ZSTD=OFF
     -DLLVM_ENABLE_LIBXML2=OFF
+    "${cmake_darwin_runtime_args[@]}"
     "${cmake_host_args[@]}"
 )
 cmake "${cmake_args[@]}"
