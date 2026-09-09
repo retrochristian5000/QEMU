@@ -185,7 +185,7 @@ qtests_ppc = \
   (config_all_devices.has_key('CONFIG_ISA_TESTDEV') ? ['endianness-test'] : []) +            \
   (config_all_accel.has_key('CONFIG_TCG') ? ['prom-env-test'] : []) +                              \
   (config_all_accel.has_key('CONFIG_TCG') ? ['boot-serial-test'] : []) +                           \
-  ['boot-order-test']
+  ['boot-order-test', 'macio-timer-test']
 
 qtests_ppc64 = \
   qtests_ppc + \
