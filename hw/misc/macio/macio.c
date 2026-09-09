@@ -308,8 +308,7 @@ static uint64_t timer_read(void *opaque, hwaddr addr, unsigned size)
     uint64_t systime = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     uint64_t kltime;
 
-    kltime = muldiv64(systime, 4194300, NANOSECONDS_PER_SECOND * 4);
-    kltime = muldiv64(kltime, 18432000, 1048575);
+    kltime = muldiv64(systime, 18432000, NANOSECONDS_PER_SECOND);
 
     switch (addr) {
     case 0x38:
