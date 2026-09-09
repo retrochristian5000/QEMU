@@ -201,6 +201,12 @@ static void test_tree_remove(void)
     char c, d;
     gint i;
     gboolean removed;
+    guint remaining;
+
+    destroyed_key = NULL;
+    destroyed_value = NULL;
+    destroyed_key_count = 0;
+    destroyed_value_count = 0;
 
     tree = q_tree_new_full((GCompareDataFunc)my_compare, NULL,
                            my_key_destroy,
@@ -214,6 +220,8 @@ static void test_tree_remove(void)
     q_tree_insert(tree, &c, &c);
     g_assert(destroyed_key == &c);
     g_assert(destroyed_value == &chars[0]);
+    g_assert_cmpuint(destroyed_key_count, ==, 1);
+    g_assert_cmpuint(destroyed_value_count, ==, 1);
     destroyed_key = NULL;
     destroyed_value = NULL;
 
@@ -221,6 +229,8 @@ static void test_tree_remove(void)
     q_tree_replace(tree, &d, &d);
     g_assert(destroyed_key == &chars[1]);
     g_assert(destroyed_value == &chars[1]);
+    g_assert_cmpuint(destroyed_key_count, ==, 2);
+    g_assert_cmpuint(destroyed_value_count, ==, 2);
     destroyed_key = NULL;
     destroyed_value = NULL;
 
@@ -229,6 +239,8 @@ static void test_tree_remove(void)
     g_assert(removed);
     g_assert(destroyed_key == &chars[2]);
     g_assert(destroyed_value == &chars[2]);
+    g_assert_cmpuint(destroyed_key_count, ==, 3);
+    g_assert_cmpuint(destroyed_value_count, ==, 3);
     destroyed_key = NULL;
     destroyed_value = NULL;
 
@@ -237,14 +249,23 @@ static void test_tree_remove(void)
     g_assert(removed);
     g_assert(destroyed_key == NULL);
     g_assert(destroyed_value == NULL);
+    g_assert_cmpuint(destroyed_key_count, ==, 3);
+    g_assert_cmpuint(destroyed_value_count, ==, 3);
 
     const gchar *remove = "omkjigfedba";
     for (i = 0; remove[i]; i++) {
         removed = q_tree_remove(tree, &remove[i]);
         g_assert(removed);
     }
+    g_assert_cmpuint(destroyed_key_count, ==, 3 + strlen(remove));
+    g_assert_cmpuint(destroyed_value_count, ==, 3 + strlen(remove));
 
+    remaining = q_tree_nnodes(tree);
     q_tree_destroy(tree);
+    g_assert_cmpuint(destroyed_key_count, ==,
+                     3 + strlen(remove) + remaining);
+    g_assert_cmpuint(destroyed_value_count, ==,
+                     3 + strlen(remove) + remaining);
 }
 
 static void test_tree_destroy(void)
