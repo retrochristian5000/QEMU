@@ -31,10 +31,8 @@
 
 static QemuMutex counts_mutex;
 static long long n_reads = 0LL;
-static long long n_updates = 0LL;
 static int64_t n_reclaims;
 static int64_t n_nodes_removed;
-static long long n_nodes = 0LL;
 static int g_test_in_charge = 0;
 
 static int nthreadsrunning;
@@ -200,8 +198,6 @@ static void *rcu_q_reader(void *arg)
 static void *rcu_q_updater(void *arg)
 {
     int j, target_el;
-    long long n_nodes_local = 0;
-    long long n_updates_local = 0;
     long long n_removed_local = 0;
     struct list_element *el, *prev_el;
 
@@ -234,19 +230,15 @@ static void *rcu_q_updater(void *arg)
             j++;
             if (target_el == j) {
                 struct list_element *new_el = g_new(struct list_element, 1);
-                n_nodes_local++;
                 TEST_LIST_INSERT_AFTER_RCU(el, new_el, entry);
                 break;
             }
         }
 
-        n_updates_local += 2;
         synchronize_rcu();
     }
     synchronize_rcu();
     qemu_mutex_lock(&counts_mutex);
-    n_nodes += n_nodes_local;
-    n_updates += n_updates_local;
     qatomic_set(&n_nodes_removed, n_nodes_removed + n_removed_local);
     qemu_mutex_unlock(&counts_mutex);
     return NULL;
@@ -262,9 +254,6 @@ static void rcu_qtest_init(void)
         new_el = g_new(struct list_element, 1);
         TEST_LIST_INSERT_HEAD_RCU(&Q_list_head, new_el, entry);
     }
-    qemu_mutex_lock(&counts_mutex);
-    n_nodes += RCU_Q_LEN;
-    qemu_mutex_unlock(&counts_mutex);
 }
 
 static void rcu_qtest_run(int duration, int nreaders)
