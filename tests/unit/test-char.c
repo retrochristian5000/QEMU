@@ -1839,7 +1839,7 @@ static void char_modem_explicit_model_test(void)
 
 static void char_modem_invalid_model_test(void)
 {
-    g_autoptr(Error) err = NULL;
+    Error *err = NULL;
     Chardev *chr;
 
     chr = char_modem_new("modem-invalid", "unsupported", &err);
@@ -1847,6 +1847,7 @@ static void char_modem_invalid_model_test(void)
     g_assert_nonnull(err);
     g_assert_nonnull(strstr(error_get_pretty(err),
                             "Unsupported modem model 'unsupported'"));
+    error_free(err);
 }
 
 static void char_invalid_test(void)
