@@ -110,7 +110,7 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=6' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=7' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
@@ -174,7 +174,7 @@ jobs:
           BOOTSTRAP_I386_TOOLCHAIN: '0'
           QEMU_HOST_LTO: '1'
           RUN_TESTS: '0'
-          MACOS_ENABLE_COCOA: '0'
+          MACOS_ENABLE_COCOA: '1'
           MACOS_ENABLE_COREAUDIO: '0'
           MACOS_ENABLE_GTK: '0'
           MACOS_ENABLE_PA: '0'
