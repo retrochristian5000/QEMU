@@ -33,6 +33,9 @@ jobs:
       - name: Test native LLVM incremental bootstrap contract
         run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
 
+      - name: Test tagless QEMU version generation
+        run: bash scripts/tests/test-qemu-version.bash
+
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 
