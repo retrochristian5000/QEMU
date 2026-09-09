@@ -18,8 +18,6 @@
 #include "qemu/module.h"
 
 
-static char *tmpfs;
-
 static void set_multifd_compression(QTestState *from, QTestState *to,
                                     const char *method)
 {
@@ -50,7 +48,7 @@ static void test_multifd_tcp_zstd(char *name, MigrateCommon *args)
 
 static void test_multifd_postcopy_tcp_zstd(char *name, MigrateCommon *args)
 {
-    args->start_hook = migrate_hook_start_precopy_tcp_multifd_zstd,
+    args->start_hook = migrate_hook_start_precopy_tcp_multifd_zstd;
 
     args->start.caps[MIGRATION_CAPABILITY_MULTIFD] = true;
     args->start.caps[MIGRATION_CAPABILITY_POSTCOPY_RAM] = true;
@@ -166,7 +164,7 @@ static void test_multifd_tcp_zlib(char *name, MigrateCommon *args)
     test_precopy_common(args);
 }
 
-static void migration_test_add_compression_smoke(MigrationTestEnv *env)
+static void migration_test_add_compression_smoke(void)
 {
     migration_test_add("/migration/multifd/tcp/plain/zlib",
                        test_multifd_tcp_zlib);
@@ -174,9 +172,7 @@ static void migration_test_add_compression_smoke(MigrationTestEnv *env)
 
 void migration_test_add_compression(MigrationTestEnv *env)
 {
-    tmpfs = env->tmpfs;
-
-    migration_test_add_compression_smoke(env);
+    migration_test_add_compression_smoke();
 
     if (!env->full_set) {
         return;
