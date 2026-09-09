@@ -163,6 +163,18 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
+# Clang can lower known class messages to linker-synthesized symbols such as
+# _objc_msgSendClass$new$_OBJC_CLASS_$_NSTextField.  The pinned WHP ld64.lld
+# currently synthesizes the older _objc_msgSend$selector form only.  Keep that
+# optimization available, but force class sends back to the supported form for
+# this exact native LLVM linker/compiler pairing.  Apple's ld remains free to
+# use the newer class-selector stubs.
+if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
+      -n "${NATIVE_LLVM_DIR:-}" &&
+      "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
+    whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"
+fi
+
 # Apple ld applies only its essential optimization set by default.  Use the
 # release linker optimization pass and remove unreachable code/data from QEMU
 # host binaries.  Keep this on the supported Apple Clang path so experimental
