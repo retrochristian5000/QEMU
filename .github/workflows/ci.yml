@@ -115,6 +115,14 @@ jobs:
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
 
+      - name: Test KeyLargo timer precision
+        if: matrix.target == 'ppc'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/macio-timer-test
+          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+            qtest-ppc/macio-timer-test
+
       - name: Test rich floppy shortcut options
         if: matrix.target == 'i386'
         shell: bash
