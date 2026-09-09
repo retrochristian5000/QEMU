@@ -95,7 +95,24 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=6' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=7' in bootstrap
+
+# LLVM configures builtins and runtimes as separate ExternalProjects on Darwin.
+# The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:
+# Objective-C runtime links must carry the same SDK, architecture, and minimum
+# OS version into both sub-builds. The installed toolchain must then prove that
+# ld64.lld can resolve libobjc and Cocoa before it is cached or published.
+assert 'darwin_external_cmake_args=' in bootstrap
+assert '-DCMAKE_OSX_SYSROOT=$sdkroot' in bootstrap
+assert '-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch' in bootstrap
+assert '-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target' in bootstrap
+assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
+assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
+assert '"${cmake_darwin_runtime_args[@]}"' in bootstrap
+assert '-fobjc-link-runtime' in bootstrap
+assert '-x objective-c' in bootstrap
+assert '-framework Cocoa' in bootstrap
+assert 'cannot link Objective-C against SDK' in bootstrap
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
