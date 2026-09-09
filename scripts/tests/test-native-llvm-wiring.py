@@ -124,6 +124,14 @@ assert '${NATIVE_LLVM_LDFLAG:-}' in macos_builder
 assert '"${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld"' in macos_builder
 assert 'whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"' in macos_builder
 
+# Mach-O LLD's eager input-page prefetch path is disabled unless --read-workers
+# is supplied. Reuse QEMU's established JOBS policy by default, while allowing
+# a native-linker-only override (including 0 to disable) without leaking this
+# LLD-specific option to Apple's system linker.
+assert 'native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"' in macos_builder
+assert 'NATIVE_LLVM_READ_WORKERS must be a non-negative integer' in macos_builder
+assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' in macos_builder
+
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
 # platform decision that can drift from QEMU's wrapper selection.
