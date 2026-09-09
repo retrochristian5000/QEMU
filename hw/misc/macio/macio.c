@@ -39,8 +39,9 @@
 
 #define ESCC_CLOCK 3686400
 
-#define KEYLARGO_FCR_BASE  0x38
-#define KEYLARGO_FCR_SIZE  0x14
+#define KEYLARGO_FCR_BASE   0x38
+#define KEYLARGO_FCR_SIZE   0x14
+#define KEYLARGO_TIMER_FREQ 18432000
 
 #define KL_FCR0_SCC_A_INTF_ENABLE   (1U << 1)
 #define KL_FCR0_RESET_SCC           (1U << 3)
@@ -308,7 +309,8 @@ static uint64_t timer_read(void *opaque, hwaddr addr, unsigned size)
     uint64_t systime = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     uint64_t kltime;
 
-    kltime = muldiv64(systime, 18432000, NANOSECONDS_PER_SECOND);
+    kltime = muldiv64(systime, KEYLARGO_TIMER_FREQ,
+                     NANOSECONDS_PER_SECOND);
 
     switch (addr) {
     case 0x38:
