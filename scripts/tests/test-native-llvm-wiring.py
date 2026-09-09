@@ -12,6 +12,7 @@ bootstrap = (ROOT / 'scripts/bootstrap-native-clang.bash').read_text(encoding='u
 i386_bootstrap = (ROOT / 'scripts/bootstrap-i386-clang.bash').read_text(encoding='utf-8')
 powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.bash').read_text(encoding='utf-8')
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
+macos_builder = (ROOT / 'scripts/macos-builder.bash').read_text(encoding='utf-8')
 macos_workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
 # Syntax is the first guard. Keep the public POSIX entry parseable by /bin/sh,
@@ -113,6 +114,15 @@ assert '-fobjc-link-runtime' in bootstrap
 assert '-x objective-c' in bootstrap
 assert '-framework Cocoa' in bootstrap
 assert 'cannot link Objective-C against SDK' in bootstrap
+
+# Clang can emit ld64-1250 class-message stubs such as
+# _objc_msgSendClass$new$_OBJC_CLASS_$_NSTextField. The pinned WHP ld64.lld
+# currently synthesizes only the older _objc_msgSend$selector family. Disable
+# only the unsupported class-selector optimization when this exact native LLD
+# pairing is active; Apple ld and non-native compiler paths must stay unchanged.
+assert '${NATIVE_LLVM_LDFLAG:-}' in macos_builder
+assert '"${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld"' in macos_builder
+assert 'whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"' in macos_builder
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
