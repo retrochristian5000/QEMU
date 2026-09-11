@@ -158,7 +158,7 @@ static void ppc_core99_init(MachineState *machine)
     MemoryRegion *bios = g_new(MemoryRegion, 1);
     hwaddr kernel_base = 0, initrd_base = 0, cmdline_base = 0;
     long kernel_size = 0, initrd_size = 0;
-    uint64_t bios_entry = 0, bios_low = 0, bios_high = 0;
+    uint64_t bios_low = 0, bios_high = 0;
     uint64_t firmware_entry = core99_machine->firmware_entry;
     PCIBus *pci_bus, *south_pci_bus, *internal_pci_bus = NULL;
     bool has_pmu, has_adb;
@@ -207,8 +207,8 @@ static void ppc_core99_init(MachineState *machine)
 
     filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
     if (filename) {
-        /* Prefer a compatible PowerPC ELF and honor a usable ELF entry. */
-        elf_size = load_elf(filename, NULL, NULL, NULL, &bios_entry,
+        /* Load ELF segments without treating the ELF entry as a reset entry. */
+        elf_size = load_elf(filename, NULL, NULL, NULL, NULL,
                             &bios_low, &bios_high, NULL,
                             ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
         if (elf_size > 0) {
@@ -218,14 +218,6 @@ static void ppc_core99_init(MachineState *machine)
                              "window (0x%" PRIx64 "..0x%" PRIx64 ")",
                              bios_name, bios_low, bios_high);
                 exit(1);
-            }
-            if (firmware_entry == 0 &&
-                bios_entry >= PROM_BASE &&
-                bios_entry < PROM_BASE + PROM_SIZE) {
-                firmware_entry = bios_entry;
-            } else if (firmware_entry == 0 && bios_entry != 0) {
-                warn_report("ignoring PowerPC bios entry 0x%" PRIx64
-                            " outside the Mac99 PROM window", bios_entry);
             }
         } else {
             /* Non-ELF firmware remains supported as a raw PROM image. */
@@ -248,6 +240,10 @@ static void ppc_core99_init(MachineState *machine)
     }
 
     if (firmware_entry == 0) {
+        /*
+         * OpenBIOS needs its reset vector to initialize the CPU and stack.
+         * Older images have an ELF entry pointing at stack-using code instead.
+         */
         firmware_entry = PROM_DEFAULT_ENTRY;
     }
     if (firmware_entry < PROM_BASE ||
@@ -772,8 +768,7 @@ static void core99_instance_init(Object *obj)
                                    OBJ_PROP_FLAG_READWRITE);
     object_property_set_description(obj, "firmware-entry",
                                     "Override the Mac99 firmware reset entry. "
-                                    "Zero selects the ELF entry when usable, "
-                                    "otherwise 0xfff00100");
+                                    "Zero selects the reset vector 0xfff00100");
 }
 
 static const TypeInfo core99_machine_info = {

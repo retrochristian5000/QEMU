@@ -182,6 +182,7 @@ qtests_mips64el = qtests_mips
 
 qtests_ppc = \
   qtests_filter + \
+  (config_all_devices.has_key('CONFIG_MAC_NEWWORLD') ? ['mac99-test'] : []) +              \
   (config_all_devices.has_key('CONFIG_ISA_TESTDEV') ? ['endianness-test'] : []) +            \
   (config_all_accel.has_key('CONFIG_TCG') ? ['prom-env-test'] : []) +                              \
   (config_all_accel.has_key('CONFIG_TCG') ? ['boot-serial-test'] : []) +                           \

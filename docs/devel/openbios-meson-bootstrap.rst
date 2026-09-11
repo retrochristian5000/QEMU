@@ -89,9 +89,11 @@ segments to cover both the legacy entry and architectural hard-reset vectors.
 It is intentionally opt-in so the build does not reject otherwise usable
 firmware solely because its linker layout differs.
 
-At runtime, the Mac99 machine uses a valid ELF entry automatically.  Raw PROM
-images and ELFs without a usable entry retain the historical ``0xfff00100``
-fallback.  A firmware-specific reset address can be selected explicitly with::
+At runtime, the Mac99 machine starts both ELF and raw PROM images at the
+historical reset vector ``0xfff00100``.  An ELF entry inside a loadable segment
+does not establish that it is safe to enter at CPU reset: older OpenBIOS images
+point to code that expects an initialized stack.  Firmware with a different
+reset address requires an explicit override::
 
   qemu-system-ppc -machine mac99,firmware-entry=0xfff00200 ...
 
