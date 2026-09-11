@@ -6,6 +6,12 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/whp-build/openbios-build-cache.bash"
 
+meson_openbios="$ROOT/scripts/meson-build-openbios.bash"
+grep -Fq 'openbios-build-cache.bash' "$meson_openbios"
+grep -Fq 'whp_openbios_source_signature' "$meson_openbios"
+grep -Fq 'OpenBIOS unchanged; reusing' "$meson_openbios"
+grep -Fq 'whp_openbios_cache_write' "$meson_openbios"
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 repo="$tmp/openbios"
