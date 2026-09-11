@@ -1797,7 +1797,6 @@ static void create_initial_menus(CocoaConsole *cocoa)
     for (p = 10; p >= 0; p--)
     {
         percentage = p * 10 > 1 ? p * 10 : 1; // prevent a 0% menu item
-
         menuItem = [[[NSMenuItem alloc]
                    initWithTitle: [NSString stringWithFormat: @"%d%%", percentage] action:@selector(adjustSpeed:) keyEquivalent:@""] autorelease];
 
@@ -2201,13 +2200,15 @@ static void cocoa_display_cleanup(void)
         (QemuCocoaAppController *)[NSApp delegate];
     CocoaConsole *cocoa = controller ? [controller console] : NULL;
 
-    if (cocoa && cocoa->kbd) {
-        qemu_console_unregister_listener(&cocoa->dcl);
-        g_clear_pointer(&cocoa->kbd, qkbd_state_free);
-        cocoa->con = NULL;
-        qemu_remove_mouse_mode_change_notifier(
-            &cocoa->mouse_mode_change_notifier);
+    if (!cocoa || !cocoa->kbd) {
+        return;
     }
+
+    qemu_console_unregister_listener(&cocoa->dcl);
+    g_clear_pointer(&cocoa->kbd, qkbd_state_free);
+    cocoa->con = NULL;
+    qemu_remove_mouse_mode_change_notifier(
+        &cocoa->mouse_mode_change_notifier);
 
     qemu_clipboard_peer_unregister(&cbpeer);
     g_clear_pointer(&cbinfo, qemu_clipboard_info_unref);
