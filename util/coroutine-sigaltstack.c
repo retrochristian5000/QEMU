@@ -29,6 +29,13 @@
 #include <pthread.h>
 #include "qemu/coroutine_int.h"
 
+#ifdef QEMU_SANITIZE_ADDRESS
+#ifdef CONFIG_ASAN_IFACE_FIBER
+#define CONFIG_ASAN 1
+#include <sanitizer/asan_interface.h>
+#endif
+#endif
+
 #ifdef CONFIG_SAFESTACK
 #error "SafeStack is not compatible with code run in alternate signal stacks"
 #endif
@@ -70,6 +77,30 @@ static CoroutineThreadState *coroutine_get_thread_state(void)
     return s;
 }
 
+static inline void finish_switch_fiber(void *fake_stack_save)
+{
+#ifdef CONFIG_ASAN
+    CoroutineThreadState *s = coroutine_get_thread_state();
+    const void *bottom_old;
+    size_t size_old;
+
+    __sanitizer_finish_switch_fiber(fake_stack_save, &bottom_old, &size_old);
+
+    if (!s->leader.stack) {
+        s->leader.stack = (void *)bottom_old;
+        s->leader.stack_size = size_old;
+    }
+#endif
+}
+
+static inline void start_switch_fiber_asan(void **fake_stack_save,
+                                           const void *bottom, size_t size)
+{
+#ifdef CONFIG_ASAN
+    __sanitizer_start_switch_fiber(fake_stack_save, bottom, size);
+#endif
+}
+
 static void qemu_coroutine_thread_cleanup(void *opaque)
 {
     CoroutineThreadState *s = opaque;
@@ -95,10 +126,18 @@ static void __attribute__((constructor)) coroutine_init(void)
  */
 static void coroutine_bootstrap(CoroutineSigAltStack *self, Coroutine *co)
 {
+    void *fake_stack_save = NULL;
+
     /* Initialize longjmp environment and switch back the caller */
     if (!sigsetjmp(self->env, 0)) {
+        CoroutineThreadState *s = coroutine_get_thread_state();
+
+        start_switch_fiber_asan(&fake_stack_save,
+                                s->leader.stack, s->leader.stack_size);
         siglongjmp(*(sigjmp_buf *)co->entry_arg, 1);
     }
+
+    finish_switch_fiber(fake_stack_save);
 
     while (true) {
         co->entry(co->entry_arg);
@@ -133,6 +172,14 @@ static void coroutine_trampoline(int signal)
     }
 
     /*
+     * The signal handler's first invocation was entered by the kernel. The
+     * second invocation is reached by an ASan-annotated siglongjmp from the
+     * leader stack, so finish that first fiber switch and remember the leader
+     * stack bounds before coroutine_bootstrap() needs to jump back to it.
+     */
+    finish_switch_fiber(NULL);
+
+    /*
      * Ok, the caller has siglongjmp'ed back to us, so now prepare
      * us for the real machine state switching. We have to jump
      * into another function here to get a new stack context for
@@ -156,6 +203,7 @@ Coroutine *qemu_coroutine_new(void)
     sigset_t sigs;
     sigset_t osigs;
     sigjmp_buf old_env;
+    void *fake_stack_save = NULL;
     static pthread_mutex_t sigusr2_mutex = PTHREAD_MUTEX_INITIALIZER;
 
     /* The way to manipulate stack is with the sigaltstack function. We
@@ -252,8 +300,11 @@ Coroutine *qemu_coroutine_new(void)
      * the fact that `jmp_buf' usually is an array type.
      */
     if (!sigsetjmp(old_env, 0)) {
+        start_switch_fiber_asan(&fake_stack_save, co->stack, co->stack_size);
         siglongjmp(coTS->tr_reenter, 1);
     }
+
+    finish_switch_fiber(fake_stack_save);
 
     /*
      * Ok, we returned again, so now we're finished
@@ -262,9 +313,27 @@ Coroutine *qemu_coroutine_new(void)
     return &co->base;
 }
 
+#if defined(CONFIG_ASAN) && defined(CONFIG_COROUTINE_POOL)
+static void coroutine_fn terminate_asan(void *opaque)
+{
+    CoroutineSigAltStack *to = DO_UPCAST(CoroutineSigAltStack, base, opaque);
+    CoroutineThreadState *s = coroutine_get_thread_state();
+
+    s->current = opaque;
+    start_switch_fiber_asan(NULL, to->stack, to->stack_size);
+    siglongjmp(to->env, COROUTINE_ENTER);
+}
+#endif
+
 void qemu_coroutine_delete(Coroutine *co_)
 {
     CoroutineSigAltStack *co = DO_UPCAST(CoroutineSigAltStack, base, co_);
+
+#if defined(CONFIG_ASAN) && defined(CONFIG_COROUTINE_POOL)
+    co_->entry_arg = qemu_coroutine_self();
+    co_->entry = terminate_asan;
+    qemu_coroutine_switch(co_->entry_arg, co_, COROUTINE_ENTER);
+#endif
 
     qemu_free_stack(co->stack, co->stack_size);
     g_free(co);
@@ -277,13 +346,21 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
     CoroutineSigAltStack *to = DO_UPCAST(CoroutineSigAltStack, base, to_);
     CoroutineThreadState *s = coroutine_get_thread_state();
     int ret;
+    void *fake_stack_save = NULL;
 
     s->current = to_;
 
     ret = sigsetjmp(from->env, 0);
     if (ret == 0) {
+        start_switch_fiber_asan(IS_ENABLED(CONFIG_COROUTINE_POOL) ||
+                                action != COROUTINE_TERMINATE ?
+                                    &fake_stack_save : NULL,
+                                to->stack, to->stack_size);
         siglongjmp(to->env, action);
     }
+
+    finish_switch_fiber(fake_stack_save);
+
     return ret;
 }
 
@@ -300,4 +377,3 @@ bool qemu_in_coroutine(void)
 
     return s && s->current->caller;
 }
-
