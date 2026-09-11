@@ -1192,6 +1192,7 @@ static void ati_vga_class_init(ObjectClass *klass, const void *data)
     device_class_set_legacy_reset(dc, ati_vga_reset);
     device_class_set_props(dc, ati_vga_properties);
     dc->hotpluggable = false;
+    dc->desc = "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller";
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 
     k->class_id = PCI_CLASS_DISPLAY_VGA;
