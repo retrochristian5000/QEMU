@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+source "$SOURCE_DIR/scripts/whp-build/openbios-build-cache.bash"
 CONFIG_FILE="${1:-}"
 OUTPUT="${2:-}"
 OPENBIOS_ENVIRONMENT_POLICY=8.2
@@ -207,6 +208,55 @@ if [[ ! -f "$environment_policy_file" ]] ||
         "policy: $OPENBIOS_ENVIRONMENT_POLICY"
 fi
 
+# Meson intentionally keeps the firmware target stale so edits inside the
+# OpenBIOS submodule cannot disappear behind an incomplete dependency list.
+# Make that stale target cheap: reuse a verified ROM when every semantic input
+# that can change the firmware still matches the last successful build.
+openbios_cache_file="$OPENBIOS_BUILD_DIR/.whp-openbios-output-cache"
+openbios_source_signature="$(whp_openbios_source_signature "$OPENBIOS_DIR")"
+openbios_cache_signature="$({
+    printf 'OPENBIOS_SOURCE=%s\n' "$openbios_source_signature"
+    printf 'OPENBIOS_ENVIRONMENT_POLICY=%s\n' "$OPENBIOS_ENVIRONMENT_POLICY"
+    printf 'OPENBIOS_HOSTCC=%s\n' "$OPENBIOS_HOSTCC"
+    printf 'OPENBIOS_HOSTCXX=%s\n' "$OPENBIOS_HOSTCXX"
+    printf 'OPENBIOS_HOSTSTRIP=%s\n' "$OPENBIOS_HOSTSTRIP"
+    printf 'OPENBIOS_TOKE=%s\n' "${OPENBIOS_TOKE:-}"
+    printf 'OPENBIOS_CROSS_COMPILE=%s\n' "${OPENBIOS_CROSS_COMPILE:-}"
+    printf 'BOOTSTRAP_POWERPC_TOOLCHAIN=%s\n' "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}"
+    printf 'POWERPC_TOOLCHAIN_SOURCE_MODE=%s\n' "$source_mode"
+    printf 'POWERPC_TOOLCHAIN_COMPILER=%s\n' "$compiler_mode"
+    printf 'POWERPC_TOOLCHAIN_DIR=%s\n' "$POWERPC_TOOLCHAIN_DIR"
+    printf 'POWERPC_LLVM_SUBMODULE_PATH=%s\n' "${POWERPC_LLVM_SUBMODULE_PATH:-}"
+    printf 'POWERPC_LLVM_GIT_OFFLINE=%s\n' "${POWERPC_LLVM_GIT_OFFLINE:-0}"
+    printf 'POWERPC_TOOLCHAIN_GIT_OFFLINE=%s\n' "${POWERPC_TOOLCHAIN_GIT_OFFLINE:-0}"
+    printf 'POWERPC_BINUTILS_GIT_URL=%s\n' "${POWERPC_BINUTILS_GIT_URL:-}"
+    printf 'POWERPC_BINUTILS_GIT_REF=%s\n' "${POWERPC_BINUTILS_GIT_REF:-}"
+    printf 'POWERPC_BINUTILS_GIT_COMMIT=%s\n' "${POWERPC_BINUTILS_GIT_COMMIT:-}"
+    printf 'POWERPC_GCC_GIT_URL=%s\n' "${POWERPC_GCC_GIT_URL:-}"
+    printf 'POWERPC_GCC_GIT_REF=%s\n' "${POWERPC_GCC_GIT_REF:-}"
+    printf 'POWERPC_GCC_GIT_COMMIT=%s\n' "${POWERPC_GCC_GIT_COMMIT:-}"
+    printf 'FCODE_UTILS_REPOSITORY=%s\n' "$FCODE_UTILS_REPOSITORY"
+    printf 'FCODE_UTILS_REV=%s\n' "$FCODE_UTILS_REV"
+    printf 'OPENBIOS_FIRMWARE_VALIDATION=%s\n' \
+        "${OPENBIOS_FIRMWARE_VALIDATION:-compatible}"
+    printf 'MESON_DRIVER=%s\n' \
+        "$(whp_openbios_file_signature "$SCRIPT_DIR/meson-build-openbios.bash")"
+    printf 'OPENBIOS_DRIVER=%s\n' \
+        "$(whp_openbios_file_signature "$SCRIPT_DIR/build-openbios.bash")"
+    printf 'CACHE_HELPER=%s\n' \
+        "$(whp_openbios_file_signature "$SOURCE_DIR/scripts/whp-build/openbios-build-cache.bash")"
+} | cksum | awk '{print $1 ":" $2}')"
+openbios_cache_force="$effective_force_reconfigure"
+if [[ "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}" == 1 ]]; then
+    openbios_cache_force=1
+fi
+if whp_openbios_cache_is_fresh \
+    "$openbios_cache_file" "$OUTPUT" "$openbios_cache_signature" \
+    "$openbios_cache_force"; then
+    printf 'OpenBIOS unchanged; reusing %s\n' "$OUTPUT"
+    exit 0
+fi
+
 cross_prefix="${OPENBIOS_CROSS_COMPILE:-}"
 if [[ -z "$cross_prefix" && "${BOOTSTRAP_POWERPC_TOOLCHAIN:-1}" == 1 ]]; then
     printf 'PowerPC firmware compiler: %s\n' "$compiler_mode"
@@ -288,4 +338,6 @@ mkdir -p "$OPENBIOS_BUILD_DIR"
 printf '%s\n' "$OPENBIOS_ENVIRONMENT_POLICY" \
     > "$environment_policy_file.new"
 mv -f "$environment_policy_file.new" "$environment_policy_file"
+whp_openbios_cache_write \
+    "$openbios_cache_file" "$OUTPUT" "$openbios_cache_signature"
 printf 'OpenBIOS environment: isolated from host package search paths\n'
