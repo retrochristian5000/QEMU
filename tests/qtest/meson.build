@@ -133,7 +133,7 @@ if dbus_daemon.found() and gdbus_codegen.found()
   dbus_vmstate1 = custom_target('dbus-vmstate description',
                                 build_by_default: true,
                                 output: [ 'dbus-vmstate1.h', 'dbus-vmstate1.c'],
-                                input: meson.project_source_root() / 'backends/dbus-daemon.sh',
+                                input: meson.project_source_root() / 'backends/dbus-vmstate1.xml',
                                 command: [gdbus_codegen, '@INPUT@',
                                           '--interface-prefix', 'org.qemu',
                                           '--output-directory', meson.current_build_dir(),
@@ -385,7 +385,7 @@ if gnutls.found()
                                '../unit/crypto-tls-psk-helpers.c'), gnutls]
 
   if tasn1.found()
-    migration_tls_files += [files('../unit/crypto-tls-x509-helpers.c'), gnutls, tasn1]
+    migration_tls_files += [files('../unit/crypto-tls-x509-helpers.c'), tasn1]
   endif
 endif
 
@@ -433,7 +433,7 @@ if vnc.found()
       dbus_vnc_test_deps = [dbus_display1, qemu_vnc1, gio, gvnc, keymap_targets]
       if gnutls.found() and tasn1.found()
         dbus_vnc_test_deps += [files('../unit/crypto-tls-x509-helpers.c'),
-                               gnutls, tasn1, keymap_targets]
+                               gnutls, tasn1]
       endif
       qtests += {'dbus-vnc-test': dbus_vnc_test_deps}
       qtests_x86_64 += ['dbus-vnc-test']
