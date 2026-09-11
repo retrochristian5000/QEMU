@@ -1358,6 +1358,7 @@ static void vmsvga_class_init(ObjectClass *klass, const void *data)
     dc->vmsd = &vmstate_vmware_vga;
     device_class_set_props(dc, vga_vmware_properties);
     dc->hotpluggable = false;
+    dc->desc = "VMware SVGA II PCI VGA controller";
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }
 
