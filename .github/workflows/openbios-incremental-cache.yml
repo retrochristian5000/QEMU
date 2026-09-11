@@ -1,0 +1,39 @@
+name: OpenBIOS incremental cache
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/meson-build-openbios.bash'
+      - 'scripts/whp-build/openbios-build-cache.bash'
+      - 'scripts/tests/test-openbios-build-cache.bash'
+      - '.github/workflows/openbios-incremental-cache.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openbios-incremental-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cache-guards:
+    name: Verify OpenBIOS reuse guards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+
+      - name: Check Bash syntax
+        run: |
+          bash -n \
+            scripts/meson-build-openbios.bash \
+            scripts/whp-build/openbios-build-cache.bash \
+            scripts/tests/test-openbios-build-cache.bash
+
+      - name: Exercise cache invalidation
+        run: bash scripts/tests/test-openbios-build-cache.bash
