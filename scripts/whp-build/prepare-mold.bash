@@ -136,6 +136,26 @@ whp_mold_compiler_command()
     command -v "${WHP_MOLD_CC_CMD[0]}" >/dev/null 2>&1
 }
 
+whp_mold_archiver_command()
+{
+    local command_string="${AR:-}"
+
+    if [[ -z "$command_string" ]]; then
+        if command -v llvm-ar >/dev/null 2>&1; then
+            command_string=llvm-ar
+        else
+            command_string=ar
+        fi
+    fi
+    case "$command_string" in
+        *';'*|*'|'*|*'&'*|*'<'*|*'>') return 1 ;;
+    esac
+    WHP_MOLD_AR_CMD=()
+    read -r -a WHP_MOLD_AR_CMD <<< "$command_string"
+    [[ "${#WHP_MOLD_AR_CMD[@]}" -gt 0 ]] || return 1
+    command -v "${WHP_MOLD_AR_CMD[0]}" >/dev/null 2>&1
+}
+
 whp_mold_link_probe()
 {
     local linker="$1"
@@ -145,7 +165,6 @@ whp_mold_link_probe()
     local linker_dir
     local status=0
     local ld_flags=()
-    local lto_flags=()
 
     whp_mold_compiler_command "${CC:-cc}" || {
         printf 'error: cannot execute QEMU host compiler for mold probe: %s\n' \
@@ -157,22 +176,67 @@ whp_mold_link_probe()
     probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-mold-probe.XXXXXX")" || return 1
     source="$probe_dir/probe.c"
     output="$probe_dir/probe"
-    printf 'int main(void) { return 0; }\n' > "$source"
 
     if [[ -n "${LDFLAGS:-}" ]]; then
         read -r -a ld_flags <<< "$LDFLAGS"
     fi
+
     if [[ "${QEMU_HOST_LTO:-auto}" == 1 ]]; then
-        lto_flags=(-flto)
+        local main_source="$probe_dir/main.c"
+        local lib_source="$probe_dir/lib.c"
+        local main_object="$probe_dir/main.o"
+        local lib_object="$probe_dir/lib.o"
+        local archive="$probe_dir/libprobe.a"
+
+        if ! whp_mold_archiver_command; then
+            printf 'error: cannot execute archiver for mold LTO probe: %s\n' \
+                "${AR:-auto}" >&2
+            rm -rf "$probe_dir"
+            return 1
+        fi
+
+        cat > "$main_source" <<'EOF_MAIN'
+extern int whp_mold_lto_value(void);
+int main(void)
+{
+    return whp_mold_lto_value() == 42 ? 0 : 1;
+}
+EOF_MAIN
+        cat > "$lib_source" <<'EOF_LIB'
+int whp_mold_lto_value(void)
+{
+    return 42;
+}
+EOF_LIB
+
+        # QEMU links many static libraries.  Compile the probe as separate IR
+        # objects and put one in an archive so we validate LLVM/GCC plugin
+        # activation, archive indexing/extraction, and mold's final LTO link.
+        if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
+            -flto -c "$main_source" -o "$main_object"; then
+            status=1
+        elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
+            -flto -c "$lib_source" -o "$lib_object"; then
+            status=1
+        elif ! "${WHP_MOLD_AR_CMD[@]}" rcs "$archive" "$lib_object"; then
+            status=1
+        elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
+            -flto -fuse-ld=mold "$main_object" "$archive" -o "$output" \
+            "${ld_flags[@]}"; then
+            status=1
+        elif ! "$output"; then
+            status=1
+        fi
+    else
+        printf 'int main(void) { return 0; }\n' > "$source"
+        if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
+            "$source" -o "$output" -fuse-ld=mold "${ld_flags[@]}"; then
+            status=1
+        elif ! "$output"; then
+            status=1
+        fi
     fi
 
-    if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-        "${lto_flags[@]}" "$source" -o "$output" \
-        -fuse-ld=mold "${ld_flags[@]}"; then
-        status=1
-    elif ! "$output"; then
-        status=1
-    fi
     rm -rf "$probe_dir"
     return "$status"
 }
