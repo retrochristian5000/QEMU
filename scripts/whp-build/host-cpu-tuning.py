@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -15,6 +17,10 @@ from typing import List, Optional, Sequence, Tuple
 _ALLOWED_PREFIXES = ('-march=', '-mcpu=', '-mtune=')
 _ALLOWED_VALUE_CHARS = frozenset(
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.,+:/=-'
+)
+_TARGET_CPU_QUOTED_RE = re.compile(r'"-target-cpu"\s+"([A-Za-z0-9_.+-]+)"')
+_TARGET_CPU_PLAIN_RE = re.compile(
+    r'(?:^|\s)-target-cpu\s+([A-Za-z0-9_.+-]+)', re.MULTILINE
 )
 
 
@@ -80,13 +86,46 @@ def compilers_accept(
     return True
 
 
+def compiler_native_cpu(command: str, language: str = 'c') -> Optional[str]:
+    """Return Clang's concrete host CPU name without enabling it for codegen."""
+    cmd = _command(command)
+    result = subprocess.run(
+        [
+            *cmd,
+            '-mcpu=native',
+            '-###',
+            '-x',
+            language,
+            '-c',
+            '-',
+            '-o',
+            os.devnull,
+        ],
+        input='int whp_native_cpu_probe(void) { return 0; }\n',
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    output = f'{result.stderr}\n{result.stdout}'
+    match = _TARGET_CPU_QUOTED_RE.search(output)
+    if match is None:
+        match = _TARGET_CPU_PLAIN_RE.search(output)
+    if match is None:
+        return None
+    return match.group(1)
+
+
 def native_candidates(host_arch: str) -> Tuple[Tuple[str, ...], ...]:
     arch = host_arch.lower()
     if arch in ('arm64', 'aarch64'):
-        return (
-            ('-mcpu=native',),
-            ('-mtune=native',),
-        )
+        # Keep native ARM64 builds on the portable ISA baseline.  -mcpu=native
+        # enables host ISA extensions, while -mtune only changes scheduling and
+        # cost modelling.  A concrete tune CPU is substituted earlier when the
+        # active Clang exposes one through -mcpu=native -###.
+        return (('-mtune=native',),)
     if arch in ('x86_64', 'amd64'):
         return (
             ('-march=native', '-mtune=native'),
@@ -112,6 +151,13 @@ def resolve_cpu_tuning(
     if requested == 'portable':
         return []
     if requested == 'native':
+        arch = host_arch.lower()
+        if arch in ('arm64', 'aarch64'):
+            native_cpu = compiler_native_cpu(cc)
+            if native_cpu:
+                concrete_tune = (f'-mtune={native_cpu}',)
+                if compilers_accept(concrete_tune, cc, cxx, objc):
+                    return list(concrete_tune)
         for candidate in native_candidates(host_arch):
             if compilers_accept(candidate, cc, cxx, objc):
                 return list(candidate)
