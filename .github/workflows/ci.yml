@@ -117,6 +117,13 @@ jobs:
           "${binary}" -version
           "${binary}" -machine help >/dev/null
 
+      - name: Test buffer_is_zero quick coverage
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci tests/unit/test-bufferiszero
+          build-ci/tests/unit/test-bufferiszero --tap -k
+
       - name: Verify live Sawtooth FireWire PCI device
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
