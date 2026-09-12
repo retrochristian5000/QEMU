@@ -14,6 +14,7 @@ on:
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-lean-profile.py'
       - 'scripts/tests/test-llvm-incremental-bootstrap.bash'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-llvm-tablegen-dedup.py'
@@ -49,6 +50,9 @@ jobs:
 
       - name: Verify native LLVM wiring
         run: python3 scripts/tests/test-native-llvm-wiring.py
+
+      - name: Verify native LLVM lean profile
+        run: python3 scripts/tests/test-native-llvm-lean-profile.py
 
       - name: Verify native LLVM incremental bootstrap contract
         run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
