@@ -61,6 +61,15 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" --version
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
 
+      - name: Reproduce i386 VGA display test
+        shell: bash
+        env:
+          QTEST_QEMU_BINARY: ${{ github.workspace }}/build-macos-lto-repro/qemu-system-i386
+        run: |
+          set -euo pipefail
+          ninja -C "$BUILD_DIR" tests/qtest/display-vga-test
+          "$BUILD_DIR/tests/qtest/display-vga-test" --tap -k
+
       - name: Show linker failure context
         if: failure()
         shell: bash
