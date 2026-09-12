@@ -19,8 +19,11 @@ class Suite(object):
         return [f'{base}-{speed}' for speed in self.speeds]
 
 
-print(r'''
+default_test_jobs = min(os.cpu_count() or 1, 4)
+
+print(fr'''
 SPEED = quick
+TEST_JOBS ?= {default_test_jobs}
 
 .speed.quick = $(sort $(filter-out %-slow %-thorough %-optional, $1))
 .speed.slow = $(sort $(filter-out %-thorough, $1))
@@ -31,7 +34,11 @@ TIMEOUT_MULTIPLIER ?= 1
 ifneq ($(SPEED), quick)
 .mtestargs += --setup $(SPEED)
 endif
+ifneq ($(filter -j%, $(MAKEFLAGS)),)
 .mtestargs += $(subst -j,--num-processes , $(filter-out -j, $(lastword -j1 $(filter -j%, $(MAKEFLAGS)))))
+else
+.mtestargs += --num-processes $(TEST_JOBS)
+endif
 
 .check.mtestargs = $(MTESTARGS) $(.mtestargs) $(if $(V),--verbose,--print-errorlogs) \
     $(foreach s, $(sort $(.check.mtest-suites)), --suite $s)
