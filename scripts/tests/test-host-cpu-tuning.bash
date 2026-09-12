@@ -10,6 +10,17 @@ trap 'rm -rf "$tmpdir"' EXIT
 fake="$tmpdir/fake-cc"
 cat > "$fake" <<'COMPILER'
 #!/bin/sh
+probe=0
+native=0
+for arg in "$@"; do
+    case "$arg" in
+        -###) probe=1 ;;
+        -mcpu=native) native=1 ;;
+    esac
+done
+if [ "$probe" = 1 ] && [ "$native" = 1 ]; then
+    printf '"-cc1" "-target-cpu" "apple-m4"\n' >&2
+fi
 exit 0
 COMPILER
 chmod +x "$fake"
@@ -37,17 +48,18 @@ whp_strip_inherited_host_performance_overrides
 [[ "$OBJCFLAGS" == '-Wextra' ]]
 
 whp_prepare_host_cpu_tuning >/dev/null
-[[ "$QEMU_HOST_CPU_FLAGS_RESOLVED" == '-mcpu=native' ]]
+[[ "$QEMU_HOST_CPU_FLAGS_RESOLVED" == '-mtune=apple-m4' ]]
+[[ "$QEMU_HOST_NATIVE_CPU" == 'apple-m4' ]]
 LDFLAGS='-Wl,test'
 whp_apply_host_cpu_tuning
-[[ "$CFLAGS" == '-g -DKEEP=1 -mcpu=native' ]]
-[[ "$CXXFLAGS" == '-Wall -mcpu=native' ]]
-[[ "$OBJCFLAGS" == '-Wextra -mcpu=native' ]]
+[[ "$CFLAGS" == '-g -DKEEP=1 -mtune=apple-m4' ]]
+[[ "$CXXFLAGS" == '-Wall -mtune=apple-m4' ]]
+[[ "$OBJCFLAGS" == '-Wextra -mtune=apple-m4' ]]
 [[ "$LDFLAGS" == '-Wl,test' ]]
 
 # Applying the QEMU-only tuning twice must not duplicate it.
 whp_apply_host_cpu_tuning
-[[ "$CFLAGS" == '-g -DKEEP=1 -mcpu=native' ]]
+[[ "$CFLAGS" == '-g -DKEEP=1 -mtune=apple-m4' ]]
 
 # Portable mode must remove inherited performance/CPU overrides and add no
 # host-specific replacement.
@@ -63,5 +75,6 @@ whp_apply_host_cpu_tuning
 [[ "$CFLAGS" == '-g' ]]
 [[ "$CXXFLAGS" == '-Wall' ]]
 [[ "$OBJCFLAGS" == '-Wextra' ]]
+[[ -z "$QEMU_HOST_NATIVE_CPU" ]]
 
 printf 'host CPU tuning wrapper tests: passed\n'
