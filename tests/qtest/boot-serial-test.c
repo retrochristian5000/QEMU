@@ -86,7 +86,7 @@ static const uint8_t kernel_aarch64[] = {
     0x41, 0x60, 0x00, 0x79,                 /*        strh   w1, [x2, #48]   Set CR */
     0x81, 0x0a, 0x80, 0x52,                 /*        mov    w1, #'T' */
     0x41, 0x00, 0x00, 0x39,                 /* loop:  strb   w1, [x2]        *TXDAT = 'T' */
-    0xff, 0xff, 0x17, 0x17,                 /*        b      -4             (loop) */
+    0xff, 0xff, 0xff, 0x17,                 /*        b      -4             (loop) */
 };
 
 static const uint8_t kernel_nrf51[] = {
