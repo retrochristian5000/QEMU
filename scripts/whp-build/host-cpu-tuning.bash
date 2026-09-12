@@ -91,6 +91,9 @@ whp_prepare_host_cpu_tuning()
     local tool="$SOURCE_DIR/scripts/whp-build/host-cpu-tuning.py"
     local requested="${QEMU_HOST_CPU_TUNING:-native}"
     local args=()
+    local token
+    local tokens=()
+    local tune_cpu=""
 
     : "${PYTHON:=python3}"
     QEMU_HOST_CPU_TUNING="$requested"
@@ -105,9 +108,23 @@ whp_prepare_host_cpu_tuning()
     fi
 
     QEMU_HOST_CPU_FLAGS_RESOLVED="$("$PYTHON" "$tool" "${args[@]}")" || return 1
+    QEMU_HOST_NATIVE_CPU=""
+    if [[ "$requested" == native && -n "$QEMU_HOST_CPU_FLAGS_RESOLVED" ]]; then
+        read -r -a tokens <<< "$QEMU_HOST_CPU_FLAGS_RESOLVED"
+        for token in "${tokens[@]}"; do
+            case "$token" in
+                -mtune=*)
+                    tune_cpu="${token#-mtune=}"
+                    if [[ "$tune_cpu" != native ]]; then
+                        QEMU_HOST_NATIVE_CPU="$tune_cpu"
+                    fi
+                    ;;
+            esac
+        done
+    fi
     WHP_HOST_CPU_TUNING_APPLIED=0
     export QEMU_HOST_CPU_TUNING QEMU_HOST_CPU_FLAGS_RESOLVED \
-        WHP_HOST_CPU_TUNING_APPLIED
+        QEMU_HOST_NATIVE_CPU WHP_HOST_CPU_TUNING_APPLIED
 
     case "$requested" in
         portable)
@@ -115,8 +132,13 @@ whp_prepare_host_cpu_tuning()
             ;;
         native)
             if [[ -n "$QEMU_HOST_CPU_FLAGS_RESOLVED" ]]; then
-                printf 'QEMU host CPU tuning: native -> %s\n' \
-                    "$QEMU_HOST_CPU_FLAGS_RESOLVED"
+                if [[ -n "$QEMU_HOST_NATIVE_CPU" ]]; then
+                    printf 'QEMU host CPU tuning: native (%s) -> %s\n' \
+                        "$QEMU_HOST_NATIVE_CPU" "$QEMU_HOST_CPU_FLAGS_RESOLVED"
+                else
+                    printf 'QEMU host CPU tuning: native -> %s\n' \
+                        "$QEMU_HOST_CPU_FLAGS_RESOLVED"
+                fi
             else
                 printf '%s\n' \
                     'warning: native QEMU host CPU tuning is unsupported by the active compiler;' \
