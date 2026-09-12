@@ -1,6 +1,16 @@
 name: WHP QEMU full macOS CI
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/full-macos.yml'
+      - 'tests/qtest/boot-serial-test.c'
+      - 'hw/ppc/prep.c'
+      - 'hw/isa/pc87312.c'
+      - 'roms/openbios'
+      - 'pc-bios/openbios-ppc'
   workflow_dispatch:
 
 permissions:
@@ -43,6 +53,16 @@ jobs:
           set -o pipefail
           ./build.sh qemu-system-ppc 2>&1 | tee macos-build.log
 
+      - name: Test 40p boot serial
+        shell: bash
+        env:
+          QTEST_QEMU_BINARY: ${{ github.workspace }}/build-macos-ppc/qemu-system-ppc
+        run: |
+          set -euo pipefail
+          ninja -C "$BUILD_DIR" tests/qtest/boot-serial-test
+          "$BUILD_DIR/tests/qtest/boot-serial-test" --tap -k \
+            -p /ppc/boot-serial/40p
+
       - name: Test Darwin thread signal mask
         shell: bash
         run: |
@@ -84,6 +104,7 @@ jobs:
           retention-days: 7
 
   build-macos-openbios:
+    if: github.event_name == 'workflow_dispatch'
     name: Build OpenBIOS (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 180
