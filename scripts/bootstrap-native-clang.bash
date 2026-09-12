@@ -162,12 +162,29 @@ if [[ "$host_os" == macos ]]; then
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
     )
     # LLVM's builtins and runtimes are separate ExternalProject configurations.
-    # Carry the Darwin ABI inputs into both explicitly instead of depending on
-    # the parent project's conditional sysroot forwarding. Objective-C runtime
-    # links in compiler-rt must search the same SDK as the compiler bootstrap.
+    # Carry Darwin ABI inputs into both, but keep compiler-rt-only feature
+    # policy out of builtins so CMake does not report irrelevant cache entries.
     darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
+    darwin_runtimes_cmake_args="$darwin_external_cmake_args"
+    for compiler_rt_option in \
+        -DCOMPILER_RT_ENABLE_IOS=OFF \
+        -DCOMPILER_RT_ENABLE_MACCATALYST=OFF \
+        -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
+        -DCOMPILER_RT_ENABLE_TVOS=OFF \
+        -DCOMPILER_RT_ENABLE_XROS=OFF \
+        -DCOMPILER_RT_BUILD_XRAY=OFF \
+        -DCOMPILER_RT_BUILD_CTX_PROFILE=OFF \
+        -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+        -DCOMPILER_RT_BUILD_ORC=OFF \
+        -DCOMPILER_RT_BUILD_GWP_ASAN=OFF \
+        -DCOMPILER_RT_INCLUDE_TESTS=OFF \
+        -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+        -DCOMPILER_RT_BUILD_LIBFUZZER=ON \
+        -DCOMPILER_RT_BUILD_PROFILE=ON; do
+        darwin_runtimes_cmake_args="${darwin_runtimes_cmake_args};${compiler_rt_option}"
+    done
     cmake_darwin_runtime_args=(
-        "-DRUNTIMES_CMAKE_ARGS=$darwin_external_cmake_args"
+        "-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"
         "-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"
     )
 else
@@ -181,6 +198,31 @@ for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
         exit 1
     }
 done
+
+compiler_accepts_native_tune()
+{
+    local compiler="$1"
+    local language="$2"
+
+    printf 'int whp_native_llvm_tune_probe(void) { return 0; }\n' |
+        "$compiler" -mtune=native -x "$language" -c - -o /dev/null \
+            >/dev/null 2>&1
+}
+
+# LLVM itself is a build tool here. -O2 retains Release/NDEBUG semantics while
+# reducing expensive optimizer work versus CMake's usual Release -O3. Native
+# tuning is scheduling-only and therefore does not raise the generated
+# toolchain's minimum ISA the way -mcpu=native or -march=native would.
+llvm_bootstrap_cflags='-O2 -DNDEBUG'
+llvm_bootstrap_cxxflags='-O2 -DNDEBUG'
+if compiler_accepts_native_tune "$bootstrap_cc" c; then
+    llvm_bootstrap_cflags="$llvm_bootstrap_cflags -mtune=native"
+fi
+if compiler_accepts_native_tune "$bootstrap_cxx" c++; then
+    llvm_bootstrap_cxxflags="$llvm_bootstrap_cxxflags -mtune=native"
+fi
+printf 'WHP native LLVM C flags: %s\n' "$llvm_bootstrap_cflags" >&2
+printf 'WHP native LLVM C++ flags: %s\n' "$llvm_bootstrap_cxxflags" >&2
 
 query_target_triple()
 {
@@ -301,7 +343,7 @@ if [[ "$host_os" == macos ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=7
+BOOTSTRAP_SCHEMA=8
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -314,6 +356,23 @@ LLVM_ENABLE_PROJECTS=$llvm_enable_projects
 LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
 LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
+CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
+CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
+LLVM_ENABLE_TELEMETRY=OFF
+COMPILER_RT_ENABLE_IOS=OFF
+COMPILER_RT_ENABLE_MACCATALYST=OFF
+COMPILER_RT_ENABLE_WATCHOS=OFF
+COMPILER_RT_ENABLE_TVOS=OFF
+COMPILER_RT_ENABLE_XROS=OFF
+COMPILER_RT_BUILD_XRAY=OFF
+COMPILER_RT_BUILD_CTX_PROFILE=OFF
+COMPILER_RT_BUILD_MEMPROF=OFF
+COMPILER_RT_BUILD_ORC=OFF
+COMPILER_RT_BUILD_GWP_ASAN=OFF
+COMPILER_RT_INCLUDE_TESTS=OFF
+COMPILER_RT_BUILD_SANITIZERS=ON
+COMPILER_RT_BUILD_LIBFUZZER=ON
+COMPILER_RT_BUILD_PROFILE=ON
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
 BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target
@@ -419,6 +478,8 @@ cmake_args=(
     -G Ninja
     "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
     -DCMAKE_BUILD_TYPE=Release
+    "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
+    "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
@@ -455,6 +516,7 @@ cmake_args=(
     -DLLVM_INCLUDE_UTILS=OFF
     "-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"
     -DLLVM_ENABLE_BINDINGS=OFF
+    -DLLVM_ENABLE_TELEMETRY=OFF
     -DCLANG_INCLUDE_TESTS=OFF
     -DCLANG_ENABLE_STATIC_ANALYZER=OFF
     -DLLVM_ENABLE_ZLIB=OFF
