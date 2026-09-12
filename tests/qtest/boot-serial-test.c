@@ -164,7 +164,7 @@ static const testdef_t tests[] = {
     { "avr", "arduino-duemilanove", "", "T", sizeof(bios_avr), NULL, bios_avr },
     { "avr", "arduino-mega-2560-v3", "", "T", sizeof(bios_avr), NULL, bios_avr},
     { "ppc", "ppce500", "", "U-Boot" },
-    { "ppc", "40p", "-m 128 -vga none", "Memory: 128M" },
+    { "ppc", "40p", "-vga none -boot d", "Trying cd:," },
     { "ppc", "g3beige", "", "PowerPC,750" },
     { "ppc", "mac99", "", "PowerPC,G4" },
     { "ppc", "sam460ex", "-m 256", "DRAM:  256 MiB" },
@@ -291,8 +291,14 @@ static void test_machine(const void *data)
     ser_fd = open(serialtmp, O_RDONLY);
     g_assert(ser_fd != -1);
     if (!check_guest_output(qts, test, ser_fd)) {
-        g_error("Failed to find expected string. Please check '%s'",
-                serialtmp);
+        g_autofree char *serial_output = NULL;
+
+        if (g_file_get_contents(serialtmp, &serial_output, NULL, NULL)) {
+            g_test_message("Serial output:\n%s", serial_output);
+        }
+        g_test_message("Failed to find expected string '%s' in '%s'",
+                       test->expect, serialtmp);
+        g_test_fail();
     }
     unlink(serialtmp);
 
