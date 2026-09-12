@@ -23,6 +23,25 @@
 
 static char buffer[8 * 1024 * 1024];
 
+/*
+ * The negative test is quadratic in the buffer size because it checks every
+ * possible non-zero marker offset.  Keep that exhaustive coverage for slow
+ * runs.  Quick runs keep every small size and sample around 64-byte
+ * boundaries, which also covers the current 128- and 256-byte SIMD block
+ * boundaries, plus the largest sizes in the test range.
+ */
+static bool test_negative_size(size_t size)
+{
+    size_t rem;
+
+    if (!g_test_quick() || size <= 64 || size >= 1021) {
+        return true;
+    }
+
+    rem = size % 64;
+    return rem == 0 || rem == 1 || rem == 63;
+}
+
 static void test_1(void)
 {
     size_t s, a, o;
@@ -49,6 +68,9 @@ static void test_1(void)
     /* Negative tests for size, alignment, and the offset of the marker.  */
     for (a = 1; a <= 64; a++) {
         for (s = 1; s < 1024; s++) {
+            if (!test_negative_size(s)) {
+                continue;
+            }
             for (o = 0; o < s; ++o) {
                 buffer[a + o] = 1;
                 g_assert(!buffer_is_zero(buffer + a, s));
