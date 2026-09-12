@@ -33,11 +33,18 @@ class HostCpuTuningTests(unittest.TestCase):
         self.compiler = pathlib.Path(self.tmp.name) / 'fake-cc'
         self.compiler.write_text(
             '#!/bin/sh\n'
+            'probe=0\n'
+            'native=0\n'
             'for arg in "$@"; do\n'
             '  case "$arg" in\n'
             '    -mcpu=reject|-march=reject|-mtune=reject) exit 1 ;;\n'
+            '    -###) probe=1 ;;\n'
+            '    -mcpu=native) native=1 ;;\n'
             '  esac\n'
             'done\n'
+            'if [ "$probe" = 1 ] && [ "$native" = 1 ]; then\n'
+            '  printf \'"-cc1" "-target-cpu" "apple-m4"\\n\' >&2\n'
+            'fi\n'
             'exit 0\n',
             encoding='utf-8',
         )
@@ -47,8 +54,20 @@ class HostCpuTuningTests(unittest.TestCase):
     def resolve(self, value, arch):
         return mod.resolve_cpu_tuning(value, arch, self.cc, self.cc, self.cc)
 
-    def test_arm64_native_prefers_mcpu(self):
-        self.assertEqual(self.resolve('native', 'arm64'), ['-mcpu=native'])
+    def test_arm64_native_resolves_tune_cpu_without_raising_isa(self):
+        self.assertEqual(self.resolve('native', 'arm64'), ['-mtune=apple-m4'])
+
+    def test_arm64_native_falls_back_to_mtune_native_when_cpu_name_is_hidden(self):
+        hidden = pathlib.Path(self.tmp.name) / 'hidden-native-cc'
+        hidden.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        hidden.chmod(0o755)
+        compiler = str(hidden)
+        self.assertEqual(
+            mod.resolve_cpu_tuning(
+                'native', 'arm64', compiler, compiler, compiler
+            ),
+            ['-mtune=native'],
+        )
 
     def test_x86_native_uses_march_and_mtune(self):
         self.assertEqual(
