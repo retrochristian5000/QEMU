@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - '.github/workflows/full-macos.yml'
+      - 'scripts/tests/test-darwin-host-physmem.py'
+      - 'util/oslib-posix.c'
       - 'tests/qtest/boot-serial-test.c'
       - 'hw/ppc/prep.c'
       - 'hw/isa/pc87312.c'
@@ -43,6 +45,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Check Darwin host RAM discovery
+        run: python3 scripts/tests/test-darwin-host-physmem.py
 
       - name: Install build dependencies
         run: brew install glib libslirp make ninja pixman pkgconf
