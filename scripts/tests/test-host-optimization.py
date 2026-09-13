@@ -47,6 +47,8 @@ def portable_probe(optimization: str | None = None) -> subprocess.CompletedProce
 
 
 class HostOptimizationTests(unittest.TestCase):
+    # Keep the ordinary build aligned with QEMU/Meson's -O2 baseline while
+    # retaining explicit -O1/-O3 overrides for fast iteration and validation.
     def test_default_policy_is_o2_without_ofast(self):
         mod = load_config_module()
         option = mod.OPTION_BY_KEY['QEMU_HOST_OPTIMIZATION']
