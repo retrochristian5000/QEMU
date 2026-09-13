@@ -33,7 +33,6 @@
 #include "qemu/option.h"
 #include "qemu/error-report.h"
 #include "qemu/config-file.h"
-#include "qemu/bswap.h"
 #include "qemu/log.h"
 #include "qemu/systemd.h"
 #include "block/snapshot.h"
@@ -71,8 +70,6 @@
 #define QEMU_NBD_OPT_SELINUX_LABEL   266
 #define QEMU_NBD_OPT_TLSHOSTNAME     267
 #define QEMU_NBD_OPT_HANDSHAKE_LIMIT 268
-
-#define MBR_SIZE 512
 
 static int persistent = 0;
 static enum { RUNNING, TERMINATE, TERMINATED } state;
