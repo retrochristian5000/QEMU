@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: whp-apply-selective-tools-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apply:
     runs-on: ubuntu-24.04
@@ -17,8 +21,6 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Apply selective tool wiring
         run: python3 scripts/apply-selective-tools.py
