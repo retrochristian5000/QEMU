@@ -41,6 +41,12 @@ def main() -> int:
     require(entry, 'BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}', 'Ninja bootstrap default')
     require(entry, '[ "$BOOTSTRAP_NINJA" != 1 ]', 'forced bundled Ninja policy')
     require(entry, '[ "$BOOTSTRAP_NINJA" != 0 ]', 'disabled bundled Ninja policy')
+    require(
+        entry,
+        '[ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]',
+        'macOS auto preference for WHP Ninja',
+    )
+    require(entry, 'WHP_PREFER_BUNDLED_NINJA=1', 'macOS bundled Ninja preference state')
     require(entry, 'NINJA_CMD=', 'Ninja command export')
     require(entry, 'NINJA=$NINJA_CMD', 'QEMU Ninja environment handoff')
     require(entry, 'export NINJA_CMD NINJA PATH', 'Ninja PATH propagation before configure')
