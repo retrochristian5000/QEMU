@@ -31,7 +31,15 @@ jobs:
       BUILD_SEABIOS: '0'
       BUILD_SEABIOS_GRUB: '0'
       BOOTSTRAP_I386_TOOLCHAIN: '0'
+      # Keep the sentinel intentionally aggressive even though normal WHP
+      # builds now default to -O2. This lane must continue to expose bugs that
+      # require the -O3 + full-LTO combination.
+      QEMU_HOST_OPTIMIZATION: '3'
       QEMU_HOST_LTO: '1'
+      COMPILER_CACHE: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 300M
+      CCACHE_COMPRESS: 'true'
       RUN_TESTS: '0'
       MACOS_ENABLE_COCOA: '0'
       MACOS_ENABLE_COREAUDIO: '0'
@@ -50,7 +58,19 @@ jobs:
         run: test "$(uname -m)" = arm64
 
       - name: Install QEMU build dependencies
-        run: brew install glib libslirp make ninja pixman pkgconf
+        run: brew install ccache glib libslirp make ninja pixman pkgconf
+
+      - name: Restore compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .whp-compiler-cache
+          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: |
+            whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
 
       - name: Build real QEMU with host LTO
         shell: bash
@@ -60,6 +80,7 @@ jobs:
           test -x "$BUILD_DIR/qemu-system-i386"
           "$BUILD_DIR/qemu-system-i386" --version
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
+          grep -Fq -- '--extra-cflags=-O3' "$BUILD_DIR/.whp-config"
 
       - name: Reproduce i386 VGA display test
         shell: bash
@@ -70,17 +91,35 @@ jobs:
           ninja -C "$BUILD_DIR" tests/qtest/display-vga-test
           "$BUILD_DIR/tests/qtest/display-vga-test" --tap -k
 
-      - name: Show linker failure context
+      - name: Show failure context
         if: failure()
         shell: bash
         run: |
-          grep -n -E 'FAILED:|error:|warning:|Undefined symbols|ld:|ninja: build stopped' \
+          grep -n -E 'FAILED:|ERROR:|assert|error:|warning:|Undefined symbols|ld:|ninja: build stopped' \
             macos-lto-repro.log | tail -n 300 || true
           tail -n 400 macos-lto-repro.log 2>/dev/null || true
           cat "$BUILD_DIR/.whp-config" 2>/dev/null || true
           cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
           tail -n 250 "$BUILD_DIR/config.log" 2>/dev/null || true
           tail -n 250 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
+          for log in /tmp/qemu-display-vga.log /tmp/*display-vga*.log; do
+            if [[ -f "$log" ]]; then
+              echo "=== $log ==="
+              tail -n 300 "$log" || true
+              cp "$log" "${{ github.workspace }}/$(basename "$log")" || true
+            fi
+          done
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .whp-compiler-cache
+          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
 
       - name: Upload failure logs
         if: failure()
@@ -89,6 +128,8 @@ jobs:
           name: macos-lto-repro-failure
           path: |
             macos-lto-repro.log
+            qemu-display-vga.log
+            *display-vga*.log
             build-macos-lto-repro/.whp-config
             build-macos-lto-repro/.whp-macos-build-identity
             build-macos-lto-repro/config.log
