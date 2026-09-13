@@ -1,0 +1,9 @@
+# Serial-console boot smoke tests for PowerMac machines.
+
+if {![info exists QEMU_MACHINES]} {
+    set QEMU_MACHINES {mac99 powermac3_1}
+}
+
+foreach machine $QEMU_MACHINES {
+    qemu_serial_boot $machine {>> OpenBIOS}
+}

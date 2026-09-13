@@ -11,6 +11,7 @@ check-help:
 	@echo " $(MAKE) check-qtest                   Run qtest tests"
 	@echo " $(MAKE) check-functional              Run python-based functional tests"
 	@echo " $(MAKE) check-functional-TARGET       Run functional tests for a given target"
+	@echo " $(MAKE) check-dejagnu-serial          Run DejaGNU serial-console boot smoke tests"
 	@echo " $(MAKE) check-unit                    Run qobject tests"
 	@echo " $(MAKE) check-qapi-schema             Run QAPI schema tests"
 	@echo " $(MAKE) check-tracetool               Run tracetool generator tests"
@@ -103,6 +104,28 @@ distclean-tcg: $(DISTCLEAN_TCG_TARGET_RULES)
 
 # Build up our target list from the filtered list of ninja targets
 TARGETS=$(patsubst libqemu-%.a, %, $(filter libqemu-%.a, $(ninja-targets)))
+
+DEJAGNU ?= runtest
+DEJAGNU_QEMU_PPC ?= $(BUILD_DIR)/qemu-system-ppc
+DEJAGNU_OUTDIR ?= $(BUILD_DIR)/tests/dejagnu
+
+ifneq ($(filter ppc-softmmu,$(TARGETS)),)
+.ninja-goals.check-dejagnu-serial += qemu-system-ppc
+endif
+
+.PHONY: check-dejagnu-serial
+check-dejagnu-serial:
+	@command -v $(DEJAGNU) >/dev/null 2>&1 || { \
+		echo "SKIP: DejaGNU runtest not found"; exit 0; }
+	@test -x "$(DEJAGNU_QEMU_PPC)" || { \
+		echo "SKIP: qemu-system-ppc not built"; exit 0; }
+	@mkdir -p "$(DEJAGNU_OUTDIR)"
+	@cd "$(DEJAGNU_OUTDIR)" && \
+		$(DEJAGNU) --tool qemu \
+			--srcdir "$(SRC_PATH)/tests/dejagnu" \
+			--outdir "$(DEJAGNU_OUTDIR)" \
+			QEMU="$(DEJAGNU_QEMU_PPC)" \
+			serial-console.exp
 
 FUNCTIONAL_TARGETS=$(patsubst %-softmmu,check-functional-%, $(filter %-softmmu,$(TARGETS)))
 .PHONY: $(FUNCTIONAL_TARGETS)
