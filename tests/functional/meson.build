@@ -71,7 +71,7 @@ foreach speed : ['quick', 'thorough']
     endif
 
     test_env = environment()
-    if have_tools
+    if tool_enabled['qemu-img']
       test_env.set('QEMU_TEST_QEMU_IMG', meson.global_build_root() / 'qemu-img')
       test_deps += [qemu_img]
     endif

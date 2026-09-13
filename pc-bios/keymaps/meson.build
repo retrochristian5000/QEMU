@@ -44,7 +44,7 @@ if native_qemu_keymap.found()
   foreach km, args: keymaps
     # generate with qemu-kvm
     keymap_targets += custom_target(km,
-                                    build_by_default: true,
+                                    build_by_default: have_system,
                                     output: km,
                                     command: [native_qemu_keymap, '-f', '@OUTPUT@', args.split()],
                                     install: have_system,

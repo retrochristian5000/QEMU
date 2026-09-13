@@ -672,6 +672,12 @@ for opt do
                         error_exit "File $cf does not exist"
                     fi
   ;;
+  --enable-tools=*)
+      test -n "$optarg" || error_exit "--enable-tools= requires a comma-separated tool list"
+      meson_option_parse --enable-tools ""
+      selected_tools=$(printf "%s" "$optarg" | tr ',' ':')
+      meson_option_add "-Dtool_list=$(meson_option_build_array "$selected_tools")"
+  ;;
   --without-default-features) # processed above
   ;;
   --static) static="yes"
@@ -874,6 +880,7 @@ Advanced options (experts only):
   --wasm64-32bit-address-limit Restrict wasm64 address space to 32-bit (default
                                is to use the whole 64-bit range).
 EOF
+  printf "%s\n" "  --enable-tools=LIST        build only comma-separated support utilities"
   meson_options_help
 cat << EOF
   system          all system emulation targets

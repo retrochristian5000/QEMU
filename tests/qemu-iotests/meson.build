@@ -1,4 +1,6 @@
-if not have_tools or host_os == 'windows'
+if host_os == 'windows' or not (tool_enabled['qemu-img'] and \
+    tool_enabled['qemu-io'] and tool_enabled['qemu-nbd'] and \
+    tool_enabled['qemu-storage-daemon'])
   subdir_done()
 endif
 

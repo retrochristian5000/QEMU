@@ -250,6 +250,14 @@ have_tcg = get_option('tcg').allowed() and (have_system or have_user)
 have_tools = get_option('tools') \
   .disable_auto_if(not have_system) \
   .allowed()
+tool_list = get_option('tool_list')
+if not have_tools and tool_list.length() > 0
+  error('tool_list requires tools support')
+endif
+tool_enabled = {}
+foreach tool : ['qemu-img', 'qemu-io', 'qemu-nbd', 'qemu-storage-daemon', 'qemu-keymap', 'qemu-edid', 'elf2dmp', 'vhost-user-blk', 'vhost-user-bridge', 'vhost-user-gpu', 'vhost-user-input', 'vhost-user-scsi', 'qemu-bridge-helper', 'qemu-pr-helper', 'qemu-vmsr-helper', 'ivshmem-client', 'ivshmem-server', 'qemu-vnc']
+  tool_enabled += {tool: have_tools and (tool_list.length() == 0 or tool in tool_list)}
+endforeach
 have_ga = get_option('guest_agent') \
   .disable_auto_if(not have_system and not have_tools) \
   .require(host_os in ['sunos', 'linux', 'windows', 'freebsd', 'netbsd', 'openbsd'],
@@ -4499,77 +4507,107 @@ endif
 
 subdir('qga')
 
-# Don't build qemu-keymap if xkbcommon is not explicitly enabled
-# when we don't build tools or system
+# qemu-keymap also feeds the explicit update-keymaps target, so keep the
+# executable defined when xkbcommon is available but only build/install it by
+# default when the user selected it.
 if xkbcommon.found()
-  # used for the update-keymaps target, so include rules even if !have_tools
   qemu_keymap = executable('qemu-keymap', files('qemu-keymap.c', 'ui/input-keymap.c') + genh,
-                           dependencies: [qemuutil, xkbcommon], install: have_tools)
+                           dependencies: [qemuutil, xkbcommon],
+                           build_by_default: tool_enabled['qemu-keymap'],
+                           install: tool_enabled['qemu-keymap'])
 endif
 
 if have_tools
   tools_link_args = enable_modules ? ['@block.syms'] : []
+endif
+
+if tool_enabled['qemu-img']
   qemu_img = executable('qemu-img', [files('qemu-img.c'), hxdep],
              link_args: tools_link_args, link_depends: block_syms,
              dependencies: [authz, block, crypto, io, qom, qemuutil], install: true)
+  traceable += [{'exe': 'qemu-img', 'probe-prefix': 'qemu.img'}]
+endif
+
+if tool_enabled['qemu-io']
   qemu_io = executable('qemu-io', files('qemu-io.c'),
              link_args: tools_link_args, link_depends: block_syms,
              dependencies: [block, qemuutil], install: true)
+  traceable += [{'exe': 'qemu-io', 'probe-prefix': 'qemu.io'}]
+endif
+
+if tool_enabled['qemu-nbd']
   qemu_nbd = executable('qemu-nbd', files('qemu-nbd.c'),
                link_args: tools_link_args, link_depends: block_syms,
                dependencies: [blockdev, qemuutil, selinux],
                install: true)
+  traceable += [{'exe': 'qemu-nbd', 'probe-prefix': 'qemu.nbd'}]
+endif
 
+if tool_enabled['qemu-storage-daemon']
   subdir('storage-daemon')
+  traceable += [{'exe': 'qemu-storage-daemon', 'probe-prefix': 'qemu.storage_daemon'}]
+endif
 
-  foreach exe: [ 'qemu-img', 'qemu-io', 'qemu-nbd', 'qemu-storage-daemon']
-    traceable += [{
-      'exe': exe,
-      'probe-prefix': 'qemu.' + exe.substring(5).replace('-', '_')
-    }]
-  endforeach
-
+if tool_enabled['elf2dmp']
   subdir('contrib/elf2dmp')
+endif
 
+if tool_enabled['qemu-edid']
   executable('qemu-edid', files('qemu-edid.c', 'hw/display/edid-generate.c'),
              dependencies: [qemuutil, rt],
              install: true)
+endif
 
-  if have_vhost_user
+if have_vhost_user
+  if tool_enabled['vhost-user-blk']
     subdir('contrib/vhost-user-blk')
+  endif
+  if tool_enabled['vhost-user-bridge']
     subdir('contrib/vhost-user-bridge')
+  endif
+  if tool_enabled['vhost-user-gpu']
     subdir('contrib/vhost-user-gpu')
+  endif
+  if tool_enabled['vhost-user-input']
     subdir('contrib/vhost-user-input')
+  endif
+  if tool_enabled['vhost-user-scsi']
     subdir('contrib/vhost-user-scsi')
   endif
+endif
 
-  if host_os == 'linux'
+if host_os == 'linux'
+  if tool_enabled['qemu-bridge-helper']
     executable('qemu-bridge-helper', files('qemu-bridge-helper.c'),
                dependencies: [qemuutil, libcap_ng],
                install: true,
                install_dir: get_option('libexecdir'))
+  endif
 
+  if tool_enabled['qemu-pr-helper']
     executable('qemu-pr-helper', files('scsi/qemu-pr-helper.c', 'scsi/utils.c'),
                dependencies: [authz, crypto, io, qom, qemuutil,
                               libcap_ng, mpathpersist],
                install: true)
+  endif
 
-    if cpu == 'x86_64'
-      executable('qemu-vmsr-helper', files('tools/i386/qemu-vmsr-helper.c'),
+  if cpu == 'x86_64' and tool_enabled['qemu-vmsr-helper']
+    executable('qemu-vmsr-helper', files('tools/i386/qemu-vmsr-helper.c'),
                dependencies: [authz, crypto, io, qom, qemuutil,
                               libcap_ng, mpathpersist],
                install: true)
-    endif
   endif
+endif
 
-  if have_ivshmem
-    subdir('contrib/ivshmem-client')
-    subdir('contrib/ivshmem-server')
-  endif
+if have_ivshmem and tool_enabled['ivshmem-client']
+  subdir('contrib/ivshmem-client')
+endif
+if have_ivshmem and tool_enabled['ivshmem-server']
+  subdir('contrib/ivshmem-server')
+endif
 
-  if have_qemu_vnc
-    subdir('tools/qemu-vnc')
-  endif
+if have_qemu_vnc and tool_enabled['qemu-vnc']
+  subdir('tools/qemu-vnc')
 endif
 
 if stap.found()

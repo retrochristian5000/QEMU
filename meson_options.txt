@@ -38,6 +38,9 @@ option('coroutine_backend', type: 'combo',
        value: 'auto', description: 'coroutine backend to use')
 option('gdb', type: 'string', value: '',
        description: 'Path to GDB')
+option('tool_list', type : 'array', value : [],
+       choices : ['qemu-img', 'qemu-io', 'qemu-nbd', 'qemu-storage-daemon', 'qemu-keymap', 'qemu-edid', 'elf2dmp', 'vhost-user-blk', 'vhost-user-bridge', 'vhost-user-gpu', 'vhost-user-input', 'vhost-user-scsi', 'qemu-bridge-helper', 'qemu-pr-helper', 'qemu-vmsr-helper', 'ivshmem-client', 'ivshmem-server', 'qemu-vnc'],
+       description: 'support utilities to build when tools are enabled (empty means all)')
 
 # Everything else can be set via --enable/--disable-* option
 # on the configure script command line.  After adding an option
