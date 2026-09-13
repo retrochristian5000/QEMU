@@ -184,22 +184,45 @@ export BOOTSTRAP_NINJA
 
 # QEMU's normal Meson path needs Ninja before configuration, not only when the
 # final build command is launched. An explicit NINJA_CMD is authoritative.
-# Otherwise auto prefers a host Ninja and falls back to the pinned WHP fork,
-# 1 forces the pinned fork, and 0 requires a host Ninja. Export NINJA as well
-# as NINJA_CMD so QEMU/Meson and WHP helpers consume one exact executable.
+# On macOS, auto prefers the pinned WHP Ninja so the process-launch fast path
+# is used even when Homebrew Ninja is installed; it falls back to a host Ninja
+# if the optional bundled bootstrap is unavailable. Other hosts keep the
+# host-first auto policy. 1 forces the pinned fork, and 0 requires a host Ninja.
+# Export NINJA as well as NINJA_CMD so QEMU/Meson and WHP helpers consume one
+# exact executable.
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
+    WHP_PREFER_BUNDLED_NINJA=0
+    WHP_BUNDLED_NINJA_TRIED=0
+    if [ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]; then
+        WHP_PREFER_BUNDLED_NINJA=1
+    fi
+
+    if [ -z "${NINJA_CMD:-}" ] && [ "$WHP_PREFER_BUNDLED_NINJA" = 1 ]; then
+        WHP_BUNDLED_NINJA_TRIED=1
+        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
+            --build-dir "$BUILD_DIR") || NINJA_CMD=
+    fi
     if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
         NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
     fi
-    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ]; then
-        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" --build-dir "$BUILD_DIR") || exit 1
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ] && \
+       [ "$WHP_BUNDLED_NINJA_TRIED" != 1 ]; then
+        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
+            --build-dir "$BUILD_DIR") || exit 1
     fi
     if [ -z "${NINJA_CMD:-}" ]; then
-        printf '%s\n' \
-            'error: Ninja is required, but BOOTSTRAP_NINJA=0 disables the bundled fallback.' \
-            'Install Ninja, set NINJA_CMD, or select Bootstrap/use WHP Ninja in menuconfig.' >&2
+        if [ "$BOOTSTRAP_NINJA" = 0 ]; then
+            printf '%s\n' \
+                'error: Ninja is required, but BOOTSTRAP_NINJA=0 disables the bundled fallback.' \
+                'Install Ninja or set NINJA_CMD.' >&2
+        else
+            printf '%s\n' \
+                'error: no usable Ninja was found and the pinned WHP Ninja bootstrap failed.' \
+                'Install Ninja, set NINJA_CMD, or check the bundled Ninja bootstrap diagnostics.' >&2
+        fi
         exit 1
     fi
+    unset WHP_PREFER_BUNDLED_NINJA WHP_BUNDLED_NINJA_TRIED
     case "$NINJA_CMD" in
         */*)
             NINJA_DIR=$(dirname -- "$NINJA_CMD")
