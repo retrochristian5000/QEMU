@@ -7,3 +7,21 @@ if {![info exists QEMU_MACHINES]} {
 foreach machine $QEMU_MACHINES {
     qemu_serial_boot $machine {>> OpenBIOS}
 }
+
+# Mirror the PowerPC machine list in tests/qtest/prom-env-test.c.  Keep the
+# same nvramrc memory write, then emit a serial marker after the store so the
+# DejaGNU harness can distinguish PROM execution from a generic firmware boot.
+if {![info exists QEMU_PROM_ENV_MACHINES]} {
+    set QEMU_PROM_ENV_MACHINES {mac99 g3beige}
+}
+
+set prom_env_args [list \
+    -prom-env {use-nvramrc?=true} \
+    -prom-env {nvramrc=cafec0de 4000 l! ." QEMU_PROM_ENV_OK" cr}]
+
+foreach machine $QEMU_PROM_ENV_MACHINES {
+    qemu_serial_expect $machine \
+        {QEMU_PROM_ENV_OK} \
+        "$machine prom-env executes nvramrc" \
+        $prom_env_args
+}

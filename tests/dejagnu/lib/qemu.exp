@@ -3,18 +3,18 @@
 proc qemu_exit {} {}
 proc qemu_version {} {}
 
-proc qemu_serial_boot {machine success_pattern} {
+proc qemu_serial_expect {machine success_pattern test_name extra_args} {
     global QEMU
     global QEMU_SERIAL_TIMEOUT
     global spawn_id
     global timeout
 
     if {![info exists QEMU] || $QEMU eq ""} {
-        unsupported "$machine serial console: QEMU is not set"
+        unsupported "$test_name: QEMU is not set"
         return
     }
     if {![file executable $QEMU]} {
-        unsupported "$machine serial console: $QEMU is not executable"
+        unsupported "$test_name: $QEMU is not executable"
         return
     }
 
@@ -22,16 +22,18 @@ proc qemu_serial_boot {machine success_pattern} {
         set QEMU_SERIAL_TIMEOUT 30
     }
     set timeout $QEMU_SERIAL_TIMEOUT
-    set test_name "$machine serial console reaches $success_pattern"
 
-    verbose "spawning $QEMU for $machine serial-console boot test" 1
-    spawn -noecho $QEMU \
+    set command [list $QEMU \
         -M $machine \
         -accel tcg \
         -display none \
         -monitor none \
         -serial stdio \
-        -no-reboot
+        -no-reboot]
+    set command [concat $command $extra_args]
+
+    verbose "spawning [join $command { }]" 1
+    spawn -noecho {*}$command
 
     set qemu_spawn_id $spawn_id
     set qemu_pid [exp_pid -i $qemu_spawn_id]
@@ -71,4 +73,11 @@ proc qemu_serial_boot {machine success_pattern} {
     catch {exec kill -TERM $qemu_pid}
     catch {close -i $qemu_spawn_id}
     catch {wait -i $qemu_spawn_id}
+}
+
+proc qemu_serial_boot {machine success_pattern} {
+    qemu_serial_expect $machine \
+        $success_pattern \
+        "$machine serial console reaches $success_pattern" \
+        {}
 }
