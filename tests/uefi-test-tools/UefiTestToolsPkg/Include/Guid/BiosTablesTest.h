@@ -40,7 +40,7 @@ extern EFI_GUID gBiosTablesTestGuid;
 // The following structure must be allocated in Boot Services Data type memory,
 // aligned at a 1MB boundary.
 //
-#pragma pack (1)
+#pragma pack(push, 1)
 typedef struct {
   //
   // The signature GUID is written to the MB-aligned structure from
@@ -75,6 +75,6 @@ typedef struct {
   EFI_PHYSICAL_ADDRESS Smbios21;
   EFI_PHYSICAL_ADDRESS Smbios30;
 } BIOS_TABLES_TEST;
-#pragma pack ()
+#pragma pack(pop)
 
 #endif /* BIOSTABLESTEST_H */
