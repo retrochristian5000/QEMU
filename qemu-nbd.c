@@ -19,7 +19,9 @@
 #include "qemu/osdep.h"
 #include <getopt.h>
 #include <libgen.h>
+#ifdef __linux__
 #include <pthread.h>
+#endif
 
 #include "qemu/help-texts.h"
 #include "qapi/error.h"
@@ -588,7 +590,10 @@ int main(int argc, char **argv)
     bool seen_cache = false;
     bool seen_discard = false;
     bool seen_aio = false;
+#if HAVE_NBD_DEVICE
     pthread_t client_thread;
+    bool client_thread_started = false;
+#endif
     const char *fmt = NULL;
     Error *local_err = NULL;
     BlockdevDetectZeroesOptions detect_zeroes =
@@ -778,11 +783,9 @@ int main(int argc, char **argv)
         case 'V':
             version(argv[0]);
             exit(0);
-            break;
         case 'h':
             usage(argv[0]);
             exit(0);
-            break;
         case '?':
             error_report("Try `%s --help' for more information.", argv[0]);
             exit(EXIT_FAILURE);
@@ -1191,18 +1194,16 @@ int main(int argc, char **argv)
     blk_exp_add(export_opts, &error_fatal);
     qapi_free_BlockExportOptions(export_opts);
 
-    if (opts.device) {
 #if HAVE_NBD_DEVICE
+    if (opts.device) {
         ret = pthread_create(&client_thread, NULL, nbd_client_thread, &opts);
         if (ret != 0) {
             error_report("Failed to create client thread: %s", strerror(ret));
             exit(EXIT_FAILURE);
         }
-#endif
-    } else {
-        /* Shut up GCC warnings.  */
-        memset(&client_thread, 0, sizeof(client_thread));
+        client_thread_started = true;
     }
+#endif
 
     nbd_update_server_watch();
 
@@ -1238,12 +1239,13 @@ int main(int argc, char **argv)
 
     qemu_opts_del(sn_opts);
 
-    if (opts.device) {
+#if HAVE_NBD_DEVICE
+    if (client_thread_started) {
         void *result;
         pthread_join(client_thread, &result);
         ret = (intptr_t)result;
         exit(ret);
-    } else {
-        exit(EXIT_SUCCESS);
     }
+#endif
+    exit(EXIT_SUCCESS);
 }
