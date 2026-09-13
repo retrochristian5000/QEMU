@@ -48,6 +48,10 @@
 #include <sys/syscall.h>
 #endif
 
+#ifdef CONFIG_DARWIN
+#include <sys/sysctl.h>
+#endif
+
 #ifdef __FreeBSD__
 #include <sys/thr.h>
 #include <sys/user.h>
@@ -833,6 +837,15 @@ void sigaction_invoke(struct sigaction *action,
 
 size_t qemu_get_host_physmem(void)
 {
+#ifdef CONFIG_DARWIN
+    uint64_t memsize = 0;
+    size_t len = sizeof(memsize);
+
+    if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) == 0 &&
+        len == sizeof(memsize)) {
+        return memsize > SIZE_MAX ? SIZE_MAX : (size_t)memsize;
+    }
+#endif
 #ifdef _SC_PHYS_PAGES
     long pages = sysconf(_SC_PHYS_PAGES);
     if (pages > 0) {
