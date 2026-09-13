@@ -64,8 +64,9 @@ whp_prepare_build "$@"
 
 # Host optimization is a QEMU-only policy. Saved configuration is validated by
 # config.py, but environment overrides bypass that parser and must be checked
-# here before any expensive firmware/tool preparation starts.
-QEMU_HOST_OPTIMIZATION="${QEMU_HOST_OPTIMIZATION:-3}"
+# here before any expensive firmware/tool preparation starts. Keep the normal
+# default aligned with QEMU/Meson's -O2 policy; -O3 remains an explicit opt-in.
+QEMU_HOST_OPTIMIZATION="${QEMU_HOST_OPTIMIZATION:-2}"
 case "$QEMU_HOST_OPTIMIZATION" in
     0|1|2|3|g|s) ;;
     *)
@@ -126,7 +127,7 @@ whp_prepare_mold
 whp_strip_inherited_host_performance_overrides
 # Override Meson's upstream -O2 baseline through QEMU's supported host-only
 # EXTRA_CFLAGS path. This is intentionally applied after firmware/tool setup so
-# -O3 (or an explicit lower level) cannot alter OpenBIOS, SeaBIOS, LLVM, or mold.
+# an explicit optimization level cannot alter OpenBIOS, SeaBIOS, LLVM, or mold.
 configure_args+=(--extra-cflags="-O$QEMU_HOST_OPTIMIZATION")
 # CPU code-generation flags belong to QEMU host objects only. Resolve and
 # apply them after firmware/tool bootstraps so -march/-mcpu/-mtune cannot leak
