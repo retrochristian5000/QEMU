@@ -39,6 +39,9 @@ jobs:
       - name: Test QEMU Error ownership guard
         run: bash scripts/tests/test-error-autoptr.bash
 
+      - name: Test qemu-nbd include hygiene
+        run: python3 scripts/tests/test-qemu-nbd-includes.py
+
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 
@@ -116,6 +119,14 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Build and smoke-test qemu-nbd
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci qemu-nbd
+          build-ci/qemu-nbd --version
+          build-ci/qemu-nbd --help >/dev/null
 
       - name: Test buffer_is_zero quick coverage
         if: matrix.target == 'x86'
