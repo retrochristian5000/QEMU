@@ -17,7 +17,6 @@
  */
 
 #include "qemu/osdep.h"
-#include <getopt.h>
 #include <libgen.h>
 #ifdef __linux__
 #include <pthread.h>
@@ -39,7 +38,6 @@
 #include "qemu/systemd.h"
 #include "block/snapshot.h"
 #include "qobject/qdict.h"
-#include "qobject/qstring.h"
 #include "qom/object_interfaces.h"
 #include "io/channel-socket.h"
 #include "io/net-listener.h"
