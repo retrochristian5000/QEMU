@@ -13,6 +13,8 @@ on:
       - 'scripts/tests/test-selective-tools.py'
       - 'tests/functional/meson.build'
       - 'tests/qemu-iotests/meson.build'
+      - 'pc-bios/keymaps/meson.build'
+      - 'docs/meson.build'
       - '.github/workflows/selective-tools.yml'
   workflow_dispatch:
 
@@ -24,11 +26,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  contract:
+  selective-tools:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
       - name: Test selective tools contract
         run: python3 scripts/tests/test-selective-tools.py
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev libglib2.0-dev libpixman-1-dev python3-venv zlib1g-dev
+
+      - name: Build only qemu-img and qemu-nbd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir build-selective
+          cd build-selective
+          ../configure --disable-system --disable-user --disable-docs \
+            --enable-tools=qemu-img,qemu-nbd
+          cd ..
+          ninja -C build-selective
+          test -x build-selective/qemu-img
+          test -x build-selective/qemu-nbd
+          test ! -e build-selective/qemu-io
+          test ! -e build-selective/qemu-storage-daemon
+          ! ninja -C build-selective -t targets all | grep -Eq '(^|/)qemu-io:'
+          ! ninja -C build-selective -t targets all | grep -Eq '(^|/)qemu-storage-daemon:'
+
+      - name: Reject unknown tool names
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir build-invalid
+          cd build-invalid
+          if ../configure --disable-system --disable-user --disable-docs \
+              --enable-tools=qemu-img,not-a-qemu-tool >configure.out 2>&1; then
+            cat configure.out
+            exit 1
+          fi
+          grep -E 'not-a-qemu-tool|tool_list' configure.out
