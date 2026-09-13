@@ -47,25 +47,32 @@ def portable_probe(optimization: str | None = None) -> subprocess.CompletedProce
 
 
 class HostOptimizationTests(unittest.TestCase):
-    def test_default_policy_is_o3_without_ofast(self):
+    def test_default_policy_is_o2_without_ofast(self):
         mod = load_config_module()
         option = mod.OPTION_BY_KEY['QEMU_HOST_OPTIMIZATION']
-        self.assertEqual(option.default, '3')
+        self.assertEqual(option.default, '2')
         self.assertEqual(option.choices, ('0', '1', '2', '3', 'g', 's'))
         self.assertNotIn('fast', option.choices)
         assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
-        self.assertIn("QEMU_HOST_OPTIMIZATION='3'", assignments)
+        self.assertIn("QEMU_HOST_OPTIMIZATION='2'", assignments)
 
-    def test_portable_core_defaults_to_o3(self):
+    def test_portable_core_defaults_to_o2(self):
         result = portable_probe()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('CONFIGURE_ARG=--extra-cflags=-O3', result.stdout)
-
-    def test_portable_core_preserves_explicit_lower_level(self):
-        result = portable_probe('2')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('CONFIGURE_ARG=--extra-cflags=-O2', result.stdout)
         self.assertNotIn('CONFIGURE_ARG=--extra-cflags=-O3', result.stdout)
+
+    def test_portable_core_preserves_explicit_higher_level(self):
+        result = portable_probe('3')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('CONFIGURE_ARG=--extra-cflags=-O3', result.stdout)
+        self.assertNotIn('CONFIGURE_ARG=--extra-cflags=-O2', result.stdout)
+
+    def test_portable_core_preserves_explicit_lower_level(self):
+        result = portable_probe('1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('CONFIGURE_ARG=--extra-cflags=-O1', result.stdout)
+        self.assertNotIn('CONFIGURE_ARG=--extra-cflags=-O2', result.stdout)
 
     def test_portable_core_rejects_ofast(self):
         result = portable_probe('fast')
@@ -84,6 +91,7 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertLess(firmware_index, strip_index)
         self.assertLess(strip_index, optimization_index)
         self.assertLess(optimization_index, configure_index)
+        self.assertIn('QEMU_HOST_OPTIMIZATION="${QEMU_HOST_OPTIMIZATION:-2}"', builder)
         self.assertIn('0|1|2|3|g|s)', builder)
         self.assertNotIn('-Ofast', builder)
 
