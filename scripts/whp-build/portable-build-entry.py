@@ -21,6 +21,10 @@ I386_AUDIO_KEYS = (
     'I386_AUDIO_CS4630',
     'I386_AUDIO_HDA',
 )
+PPC_AUDIO_KEYS = (
+    'PPC_AUDIO_ES1370',
+)
+HARDWARE_KEYS = I386_AUDIO_KEYS + PPC_AUDIO_KEYS
 
 
 def load_core():
@@ -57,10 +61,10 @@ def install_diagnostic_policy(core) -> None:
                 'core does not run the native LLVM bootstrap'
             )
 
-        if any(values[key] != 'auto' for key in I386_AUDIO_KEYS):
+        if any(values[key] != 'auto' for key in HARDWARE_KEYS):
             raise RuntimeError(
-                'custom i386 audio hardware filtering requires the Bash feature '
-                'adapter; core QEMU remains buildable with tracked i386 audio defaults'
+                'custom QEMU hardware filtering requires the Bash feature adapter; '
+                'core QEMU remains buildable with tracked per-architecture defaults'
             )
 
         if values['BUILD_QEMU_SYSTEM_SPARC'] == 'y':
