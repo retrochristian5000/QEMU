@@ -62,7 +62,7 @@ class WhpConfigTests(unittest.TestCase):
         mod = load_module()
         option = mod.OPTION_BY_KEY['RUN_TESTS']
         self.assertEqual(option.section, 'Build behavior')
-        self.assertEqual(option.label, 'Run full regression suite after build')
+        self.assertEqual(option.label, 'Run tests after build')
         self.assertEqual(option.kind, 'bool')
         self.assertEqual(option.default, 'n')
 
