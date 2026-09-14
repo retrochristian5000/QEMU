@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 MENU_TOOL = ROOT / 'scripts' / 'whp-config' / 'menuconfig.py'
 PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
+PORTABLE_ENTRY_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 
 AUDIO_OPTIONS = {
@@ -119,8 +120,12 @@ whp_configure_i386_audio_signature
             'es1370=auto;ac97=auto;cs4630=auto;hda=y',
         )
 
-    def test_portable_core_rejects_unhandled_audio_override(self):
+    def test_portable_entry_rejects_unhandled_audio_override(self):
         portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_i386_audio')
+        entry = load_module(PORTABLE_ENTRY_TOOL, 'whp_portable_entry_i386_audio')
+        self.assertEqual(set(entry.I386_AUDIO_KEYS), set(AUDIO_OPTIONS))
+        entry.install_diagnostic_policy(portable)
+
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
             config_path = td_path / '.whpconfig'
