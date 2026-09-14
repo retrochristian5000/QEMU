@@ -22,6 +22,7 @@ class Option(NamedTuple):
     kind: str
     default: str
     choices: Tuple[str, ...] = ()
+    group: str = ''
 
 
 OPTIONS = (
@@ -58,15 +59,16 @@ OPTIONS = (
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
-    Option('I386_AUDIO_SB16', 'QEMU i386 audio hardware', 'Sound Blaster 16 (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_ADLIB', 'QEMU i386 audio hardware', 'AdLib (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_GUS', 'QEMU i386 audio hardware', 'Gravis UltraSound (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_CS4231A', 'QEMU i386 audio hardware', 'Crystal CS4231A (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_PCSPK', 'QEMU i386 audio hardware', 'PC speaker', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_ES1370', 'QEMU i386 audio hardware', 'Ensoniq ES1370 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_AC97', 'QEMU i386 audio hardware', "Intel AC'97 (PCI)", 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_CS4630', 'QEMU i386 audio hardware', 'Crystal CS4630 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_HDA', 'QEMU i386 audio hardware', 'Intel HD Audio (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_SB16', 'QEMU hardware', 'Sound Blaster 16 (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_ADLIB', 'QEMU hardware', 'AdLib (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_GUS', 'QEMU hardware', 'Gravis UltraSound (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_CS4231A', 'QEMU hardware', 'Crystal CS4231A (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_PCSPK', 'QEMU hardware', 'PC speaker', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_ES1370', 'QEMU hardware', 'i386', 'choice', 'auto', ('auto', 'y', 'n'), 'Ensoniq ES1370 (PCI)'),
+    Option('PPC_AUDIO_ES1370', 'QEMU hardware', 'ppc', 'choice', 'auto', ('auto', 'y', 'n'), 'Ensoniq ES1370 (PCI)'),
+    Option('I386_AUDIO_AC97', 'QEMU hardware', "Intel AC'97 (PCI)", 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_CS4630', 'QEMU hardware', 'Crystal CS4630 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_HDA', 'QEMU hardware', 'Intel HD Audio (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
 )
 
 OPTION_BY_KEY = {option.key: option for option in OPTIONS}
@@ -235,7 +237,7 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
 
 
 def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
-    overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
+    overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD', 'CONFIG_ES1370'}
     kept_lines = []
     for line in base.splitlines():
         stripped = line.strip()
@@ -245,12 +247,16 @@ def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
     prefix = '\n'.join(kept_lines)
     if prefix:
         prefix += '\n'
-    return (
+    result = (
         prefix
         + '# WHP user overrides generated from .whpconfig; do not edit.\n'
         + f"CONFIG_MAC_NEWWORLD={values['CONFIG_MAC_NEWWORLD']}\n"
         + f"CONFIG_MAC_OLDWORLD={values['CONFIG_MAC_OLDWORLD']}\n"
     )
+    es1370 = values.get('PPC_AUDIO_ES1370', 'auto')
+    if es1370 != 'auto':
+        result += f'CONFIG_ES1370={es1370}\n'
+    return result
 
 
 def write_ppc_device_config(base_path: pathlib.Path, path: pathlib.Path, state: ConfigState) -> None:
