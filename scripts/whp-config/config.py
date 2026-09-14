@@ -237,7 +237,10 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
 
 
 def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
-    overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD', 'CONFIG_ES1370'}
+    es1370 = values.get('PPC_AUDIO_ES1370', 'auto')
+    overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
+    if es1370 != 'auto':
+        overridden.add('CONFIG_ES1370')
     kept_lines = []
     for line in base.splitlines():
         stripped = line.strip()
@@ -253,7 +256,6 @@ def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
         + f"CONFIG_MAC_NEWWORLD={values['CONFIG_MAC_NEWWORLD']}\n"
         + f"CONFIG_MAC_OLDWORLD={values['CONFIG_MAC_OLDWORLD']}\n"
     )
-    es1370 = values.get('PPC_AUDIO_ES1370', 'auto')
     if es1370 != 'auto':
         result += f'CONFIG_ES1370={es1370}\n'
     return result
