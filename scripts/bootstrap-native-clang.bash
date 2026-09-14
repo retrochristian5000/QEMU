@@ -304,9 +304,16 @@ done
 # toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
 # drive it against the selected SDK. This avoids routing every large Clang/LLVM
 # relink through Apple's system ld, while preserving the system linker as the
-# cold-bootstrap and incompatibility fallback. Keep input prefetch bounded by
-# the existing link-job pool rather than increasing concurrent heavy links.
+# cold-bootstrap and incompatibility fallback. Explicitly clear the linker
+# cache entries first so an incremental CMake graph cannot retain a stale LLD
+# selection when the prior toolchain is missing or no longer passes the probe.
 bootstrap_linker_args=()
+bootstrap_linker_args+=(
+    -DLLVM_USE_LINKER=
+    -DCMAKE_EXE_LINKER_FLAGS=
+    -DCMAKE_SHARED_LINKER_FLAGS=
+    -DCMAKE_MODULE_LINKER_FLAGS=
+)
 bootstrap_linker_name=system
 if [[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
     if printf 'int main(void) { return 0; }\n' |
