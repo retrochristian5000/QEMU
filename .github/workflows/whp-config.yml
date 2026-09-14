@@ -35,6 +35,7 @@ on:
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-hardware-menu.py'
       - 'scripts/tests/test-whp-i386-audio-menu.py'
       - 'scripts/tests/test-whp-incremental.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
@@ -63,6 +64,7 @@ jobs:
       - name: Test configuration model
         run: |
           python3 scripts/tests/test-whp-config.py
+          python3 scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-darwin-lto-threads.py
@@ -115,6 +117,7 @@ jobs:
             scripts/tests/test-mold-config.py \
             scripts/tests/test-seabios-config.py \
             scripts/tests/test-whp-config.py \
+            scripts/tests/test-whp-hardware-menu.py \
             scripts/tests/test-whp-i386-audio-menu.py \
             scripts/tests/test-whp-incremental.py \
             scripts/tests/test-whp-sparc-menu.py
