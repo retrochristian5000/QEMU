@@ -8,7 +8,8 @@ local build_runner=()
 local target
 local run_qemu_tests=0
 local test_plan=
-local test_selector="$SOURCE_DIR/scripts/whp-build/select-tests.py"
+local test_source_dir="${SOURCE_DIR:-$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
+local test_selector="$test_source_dir/scripts/whp-build/select-tests.py"
 local test_target
 local test_targets=()
 if (( $# > 0 )); then
@@ -78,7 +79,7 @@ if [[ "$run_qemu_tests" == 1 ]]; then
         changed)
             test_plan="$(
                 "${PYTHON:-python3}" "$test_selector" plan \
-                    --source "$SOURCE_DIR" \
+                    --source "$test_source_dir" \
                     --build "$BUILD_DIR" \
                     --targets "${QEMU_TARGET_LIST:-}"
             )" || return 1
@@ -110,7 +111,7 @@ if [[ "$run_qemu_tests" == 1 ]]; then
     # can still build and run the conservative full suite; it simply cannot
     # remember a changed-only baseline for the next invocation.
     if ! "${PYTHON:-python3}" "$test_selector" record \
-        --source "$SOURCE_DIR" \
+        --source "$test_source_dir" \
         --build "$BUILD_DIR" \
         --targets "${QEMU_TARGET_LIST:-}"; then
         printf '%s\n' \
