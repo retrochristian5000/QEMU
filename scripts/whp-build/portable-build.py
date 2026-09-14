@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
+SELECTOR_TOOL = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
 USER_CONFIG = ROOT / '.whpconfig'
 
 
@@ -184,16 +185,84 @@ def select_gnu_make() -> List[str]:
         if path and is_gnu_make([path]):
             return [path]
     raise RuntimeError(
-        'RUN_TESTS=y requires GNU Make for the QEMU make check suite'
+        'RUN_TESTS=y requires GNU Make for the QEMU test suites'
     )
+
+
+def _record_qemu_test_state(build_dir: pathlib.Path, targets: List[str]) -> None:
+    record = subprocess.run(
+        [
+            sys.executable,
+            str(SELECTOR_TOOL),
+            'record',
+            '--source',
+            str(ROOT),
+            '--build',
+            str(build_dir),
+            '--targets',
+            ','.join(targets),
+        ],
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if record.returncode != 0:
+        detail = record.stderr.strip()
+        suffix = f': {detail}' if detail else ''
+        print(
+            'warning: QEMU tests passed but selective test state could not be recorded'
+            + suffix,
+            file=sys.stderr,
+        )
 
 
 def run_qemu_tests(build_dir: pathlib.Path, jobs: str) -> None:
-    make = select_gnu_make()
-    subprocess.run(
-        [*make, '-C', str(build_dir), f'-j{jobs}', 'check'],
-        check=True,
-    )
+    values = resolved_values()
+    scope = values.get('QEMU_TEST_SCOPE', 'changed')
+    configured_targets = previous_configured_targets(build_dir)
+
+    if scope == 'full':
+        test_targets = ['check']
+    elif scope == 'changed':
+        plan = subprocess.run(
+            [
+                sys.executable,
+                str(SELECTOR_TOOL),
+                'plan',
+                '--source',
+                str(ROOT),
+                '--build',
+                str(build_dir),
+                '--targets',
+                ','.join(configured_targets),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if plan.returncode != 0:
+            detail = plan.stderr.strip()
+            raise RuntimeError(
+                'selective QEMU test planning failed'
+                + (f': {detail}' if detail else '')
+            )
+        test_targets = [line for line in plan.stdout.splitlines() if line]
+    else:
+        raise RuntimeError(f'QEMU_TEST_SCOPE must be changed or full: {scope}')
+
+    if test_targets:
+        make = select_gnu_make()
+        print(f"WHP QEMU tests: {' '.join(test_targets)}")
+        subprocess.run(
+            [*make, '-C', str(build_dir), f'-j{jobs}', *test_targets],
+            check=True,
+        )
+    else:
+        print('WHP QEMU tests: no affected suites; skipping unchanged tests.')
+
+    _record_qemu_test_state(build_dir, configured_targets)
 
 
 def select_runner() -> List[str]:
@@ -254,7 +323,7 @@ def previous_configured_targets(build_dir: pathlib.Path) -> List[str]:
             ]
 
     # Build trees created before the dedicated target field can still be
-    # expanded without a reset.  Recover the target list from the old recorded
+    # expanded without a reset. Recover the target list from the old recorded
     # configure command when possible.
     for line in lines:
         if not line.startswith('CONFIGURE_ARG='):
@@ -310,7 +379,7 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
         return
 
     # Adopt build trees produced by older WHP revisions when their existing
-    # configuration proves source-tree ownership.  Missing host metadata is
+    # configuration proves source-tree ownership. Missing host metadata is
     # tolerated once so old incremental work is not discarded.
     config = _metadata(build_dir / '.whp-config')
     if config.get('SOURCE_DIR') == expected_source:
