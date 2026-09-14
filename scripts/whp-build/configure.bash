@@ -91,7 +91,7 @@ whp_configure_validate_build_tree_owner()
                 printf '%s\n' \
                     "error: BUILD_DIR belongs to host ABI $recorded_tag, not $expected_tag." \
                     "build directory: $BUILD_DIR" \
-                    'The existing build tree was preserved.' >&2
+                    'The existing tree was preserved.' >&2
                 return 1
             fi
         fi
@@ -207,6 +207,21 @@ whp_configure_sync_target_args()
         synced+=(--disable-system)
     fi
     configure_args=("${synced[@]}")
+}
+
+whp_configure_write_ppc_device_config()
+{
+    local base="$1"
+    local output="$2"
+
+    awk '
+        !/^CONFIG_MAC_NEWWORLD=/ &&
+        !/^CONFIG_MAC_OLDWORLD=/ { print }
+    ' "$base" > "$output" || return 1
+
+    printf '\n# WHP generated PPC machine overrides; retained for Meson regeneration.\n' >> "$output"
+    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
+    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
 }
 
 whp_configure_i386_audio_value()
@@ -326,9 +341,9 @@ case ",${QEMU_TARGET_LIST:-}," in
             WHP_PPC_DEVICE_CONFIG_SIGNATURE=tracked-defaults
             stale_ppc_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
             if [[ -f "$stale_ppc_config" ]] &&
-               grep -Fq '# WHP user overrides generated from .whpconfig; do not edit.' \
+               ! grep -Eq '# WHP (user overrides generated from \.whpconfig; do not edit\.|temporary user overrides; removed after configure\.|generated PPC machine overrides; retained for Meson regeneration\.)' \
                    "$stale_ppc_config"; then
-                rm -f "$stale_ppc_config"
+                stale_ppc_config=""
             fi
         else
             ppc_custom_devices=1
@@ -363,12 +378,38 @@ case ",${QEMU_TARGET_LIST:-}," in
         ;;
 esac
 
-# The custom i386 preset is a persistent Meson source input.  Recreate it before
-# deciding that an existing configure is reusable, because ignored source-tree
-# files can disappear independently of BUILD_DIR/.whp-config.  Generate the
-# candidate in BUILD_DIR so a read-only source tree remains usable when the
-# already-present preset is still correct, and avoid touching the preset when
-# its contents have not changed.
+# Custom device presets are persistent Meson source inputs.  Recreate them
+# before deciding that an existing configure is reusable, because ignored
+# source-tree files can disappear independently of BUILD_DIR/.whp-config.
+# Generate candidates in BUILD_DIR so a read-only source tree remains usable
+# when an already-present preset is still correct, and avoid timestamp churn
+# when the generated contents have not changed.
+if [[ "$ppc_custom_devices" == 1 ]]; then
+    ppc_generated_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+    ppc_generated_temp="$BUILD_DIR/.whp-ppc-device-config.tmp.$$"
+    if ! whp_configure_write_ppc_device_config \
+        "$SOURCE_DIR/configs/devices/ppc-softmmu/default.mak" \
+        "$ppc_generated_temp"; then
+        rm -f "$ppc_generated_temp"
+        return 1
+    fi
+    if [[ -f "$ppc_generated_config" ]] &&
+       cmp -s "$ppc_generated_temp" "$ppc_generated_config"; then
+        rm -f "$ppc_generated_temp"
+        ppc_generated_temp=""
+    else
+        if [[ ! -w "$(dirname "$ppc_generated_config")" ]]; then
+            printf '%s\n' \
+                'error: custom PPC machine filtering requires configs/devices/ppc-softmmu/whp-user.mak,' \
+                'but the source configs directory is read-only. The tracked PPC defaults remain buildable.' >&2
+            rm -f "$ppc_generated_temp"
+            return 1
+        fi
+        mv "$ppc_generated_temp" "$ppc_generated_config"
+        ppc_generated_temp=""
+    fi
+fi
+
 if [[ "$i386_custom_audio" == 1 ]]; then
     i386_generated_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
     i386_generated_temp="$BUILD_DIR/.whp-i386-device-config.tmp.$$"
@@ -455,39 +496,18 @@ fi
 if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
    [[ ! -f "$config_file" ]] ||
    ! cmp -s "$config_candidate" "$config_file"; then
-    if [[ "$ppc_custom_devices" == 1 ]]; then
-        ppc_generated_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
-        ppc_generated_temp="$ppc_generated_config.tmp.$$"
-        if [[ ! -w "$(dirname "$ppc_generated_config")" ]]; then
-            printf '%s\n' \
-                'error: custom PPC machine filtering requires a temporary QEMU device preset,' \
-                'but the source configs directory is read-only. The tracked PPC defaults remain buildable.' >&2
-            rm -f "$config_candidate"
-            return 1
-        fi
-        awk '
-            !/^CONFIG_MAC_NEWWORLD=/ && !/^CONFIG_MAC_OLDWORLD=/ { print }
-        ' "$SOURCE_DIR/configs/devices/ppc-softmmu/default.mak" > "$ppc_generated_temp"
-        {
-            printf '\n# WHP temporary user overrides; removed after configure.\n'
-            printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}"
-            printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}"
-        } >> "$ppc_generated_temp"
-        mv "$ppc_generated_temp" "$ppc_generated_config"
-    fi
-
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "${configure_args[@]}"
     ) || configure_status=$?
 
-    if [[ -n "$ppc_generated_config" ]]; then
-        rm -f "$ppc_generated_config" "$ppc_generated_temp"
-    fi
-    rm -f "$i386_generated_temp"
+    rm -f "$ppc_generated_temp" "$i386_generated_temp"
     if [[ "$configure_status" != 0 ]]; then
         rm -f "$config_candidate"
         return "$configure_status"
+    fi
+    if [[ "$ppc_custom_devices" != 1 && -n "$stale_ppc_config" ]]; then
+        rm -f "$stale_ppc_config"
     fi
     if [[ "$i386_custom_audio" != 1 && -n "$stale_i386_config" ]]; then
         rm -f "$stale_i386_config"
@@ -495,6 +515,9 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
     mv "$config_candidate" "$config_file"
 else
     rm -f "$config_candidate"
+    if [[ "$ppc_custom_devices" != 1 && -n "$stale_ppc_config" ]]; then
+        rm -f "$stale_ppc_config"
+    fi
     if [[ "$i386_custom_audio" != 1 && -n "$stale_i386_config" ]]; then
         rm -f "$stale_i386_config"
     fi
