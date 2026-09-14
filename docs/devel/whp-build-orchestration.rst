@@ -77,13 +77,12 @@ target list, so the menu does not expose a conflicting raw target-list field.
 Disabling every system emulator passes ``--disable-system`` for a tools-only
 build.
 
-The ``QEMU hardware`` section exposes optional device models independently of
-the system-emulator selector. Each target choice is three-state: ``auto``,
-``y``, or ``n``. ``auto`` leaves QEMU's Kconfig decision unchanged for that
-architecture. Hardware that is valid on more than one target is displayed once
-with architecture choices underneath it. For example, ``Ensoniq ES1370 (PCI)``
-has independent ``i386`` and ``ppc`` choices; the ISA-only audio models remain
-single-target entries until another architecture has been validated for them.
+The ``QEMU hardware`` section is device-first. Each currently exposed audio
+model appears once, with independent ``i386`` and ``ppc`` choices underneath:
+Sound Blaster 16, AdLib, Gravis UltraSound, Crystal CS4231A, PC speaker,
+Ensoniq ES1370, Intel AC'97, Crystal CS4630, and Intel HD Audio. Each target
+choice is three-state: ``auto``, ``y``, or ``n``. ``auto`` leaves QEMU's
+Kconfig decision and dependency handling unchanged for that architecture.
 
 Explicit ``y`` or ``n`` values are written as only the requested ``CONFIG_*``
 overrides in the matching architecture preset, such as
