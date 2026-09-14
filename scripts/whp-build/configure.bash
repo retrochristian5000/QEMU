@@ -209,22 +209,7 @@ whp_configure_sync_target_args()
     configure_args=("${synced[@]}")
 }
 
-whp_configure_write_ppc_device_config()
-{
-    local base="$1"
-    local output="$2"
-
-    awk '
-        !/^CONFIG_MAC_NEWWORLD=/ &&
-        !/^CONFIG_MAC_OLDWORLD=/ { print }
-    ' "$base" > "$output" || return 1
-
-    printf '\n# WHP generated PPC machine overrides; retained for Meson regeneration.\n' >> "$output"
-    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
-    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
-}
-
-whp_configure_i386_audio_value()
+whp_configure_hardware_value()
 {
     local name="$1"
     local value="$2"
@@ -240,19 +225,54 @@ whp_configure_i386_audio_value()
     esac
 }
 
+whp_configure_write_ppc_device_config()
+{
+    local base="$1"
+    local output="$2"
+    local es1370
+
+    es1370="$(whp_configure_hardware_value PPC_AUDIO_ES1370 "${PPC_AUDIO_ES1370:-auto}")" || return 1
+
+    if [[ "$es1370" == auto ]]; then
+        awk '
+            !/^CONFIG_MAC_NEWWORLD=/ &&
+            !/^CONFIG_MAC_OLDWORLD=/ { print }
+        ' "$base" > "$output" || return 1
+    else
+        awk '
+            !/^CONFIG_MAC_NEWWORLD=/ &&
+            !/^CONFIG_MAC_OLDWORLD=/ &&
+            !/^CONFIG_ES1370=/ { print }
+        ' "$base" > "$output" || return 1
+    fi
+
+    printf '\n# WHP generated PPC device overrides; retained for Meson regeneration.\n' >> "$output"
+    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
+    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
+    if [[ "$es1370" != auto ]]; then
+        printf 'CONFIG_ES1370=%s\n' "$es1370" >> "$output"
+    fi
+}
+
+# Compatibility name for existing i386-focused tests and helper callers.
+whp_configure_i386_audio_value()
+{
+    whp_configure_hardware_value "$@"
+}
+
 whp_configure_i386_audio_signature()
 {
     local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
 
-    sb16="$(whp_configure_i386_audio_value I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}")" || return 1
-    adlib="$(whp_configure_i386_audio_value I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}")" || return 1
-    gus="$(whp_configure_i386_audio_value I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}")" || return 1
-    cs4231a="$(whp_configure_i386_audio_value I386_AUDIO_CS4231A "${I386_AUDIO_CS4231A:-auto}")" || return 1
-    pcspk="$(whp_configure_i386_audio_value I386_AUDIO_PCSPK "${I386_AUDIO_PCSPK:-auto}")" || return 1
-    es1370="$(whp_configure_i386_audio_value I386_AUDIO_ES1370 "${I386_AUDIO_ES1370:-auto}")" || return 1
-    ac97="$(whp_configure_i386_audio_value I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}")" || return 1
-    cs4630="$(whp_configure_i386_audio_value I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}")" || return 1
-    hda="$(whp_configure_i386_audio_value I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}")" || return 1
+    sb16="$(whp_configure_hardware_value I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}")" || return 1
+    adlib="$(whp_configure_hardware_value I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}")" || return 1
+    gus="$(whp_configure_hardware_value I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}")" || return 1
+    cs4231a="$(whp_configure_hardware_value I386_AUDIO_CS4231A "${I386_AUDIO_CS4231A:-auto}")" || return 1
+    pcspk="$(whp_configure_hardware_value I386_AUDIO_PCSPK "${I386_AUDIO_PCSPK:-auto}")" || return 1
+    es1370="$(whp_configure_hardware_value I386_AUDIO_ES1370 "${I386_AUDIO_ES1370:-auto}")" || return 1
+    ac97="$(whp_configure_hardware_value I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}")" || return 1
+    cs4630="$(whp_configure_hardware_value I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}")" || return 1
+    hda="$(whp_configure_hardware_value I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}")" || return 1
 
     printf 'sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
         "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
@@ -266,7 +286,7 @@ whp_configure_append_i386_audio_override()
     local symbol="$4"
     local value
 
-    value="$(whp_configure_i386_audio_value "$name" "$raw_value")" || return 1
+    value="$(whp_configure_hardware_value "$name" "$raw_value")" || return 1
     if [[ "$value" != auto ]]; then
         printf '%s=%s\n' "$symbol" "$value" >> "$output"
     fi
@@ -306,6 +326,7 @@ whp_configure_build()
 local ppc_custom_devices=0
 local ppc_generated_config=""
 local ppc_generated_temp=""
+local ppc_es1370=""
 local i386_custom_audio=0
 local i386_generated_config=""
 local i386_generated_temp=""
@@ -331,23 +352,25 @@ whp_configure_merge_previous_targets "$config_file"
 whp_configure_sync_target_args
 
 # QEMU's tracked ppc-softmmu defaults already include both Old World and New
-# World Macintosh boards. Do not generate a source-tree preset for that common
-# case. Only an explicit machine filter needs the compatibility preset hook.
+# World Macintosh boards. Keep those defaults, and all device Kconfig defaults,
+# unless the user explicitly filters a machine or PPC hardware model.
 WHP_PPC_DEVICE_CONFIG_SIGNATURE=not-requested
 case ",${QEMU_TARGET_LIST:-}," in
     *,ppc-softmmu,*)
+        ppc_es1370="$(whp_configure_hardware_value PPC_AUDIO_ES1370 "${PPC_AUDIO_ES1370:-auto}")" || return 1
         if [[ "${CONFIG_MAC_NEWWORLD:-y}" == y &&
-              "${CONFIG_MAC_OLDWORLD:-y}" == y ]]; then
+              "${CONFIG_MAC_OLDWORLD:-y}" == y &&
+              "$ppc_es1370" == auto ]]; then
             WHP_PPC_DEVICE_CONFIG_SIGNATURE=tracked-defaults
             stale_ppc_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
             if [[ -f "$stale_ppc_config" ]] &&
-               ! grep -Eq '# WHP (user overrides generated from \.whpconfig; do not edit\.|temporary user overrides; removed after configure\.|generated PPC machine overrides; retained for Meson regeneration\.)' \
+               ! grep -Eq '# WHP (user overrides generated from \.whpconfig; do not edit\.|temporary user overrides; removed after configure\.|generated PPC machine overrides; retained for Meson regeneration\.|generated PPC device overrides; retained for Meson regeneration\.)' \
                    "$stale_ppc_config"; then
                 stale_ppc_config=""
             fi
         else
             ppc_custom_devices=1
-            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y}"
+            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y};es1370=$ppc_es1370"
             configure_args+=(--with-devices-ppc=whp-user)
         fi
         ;;
@@ -400,7 +423,7 @@ if [[ "$ppc_custom_devices" == 1 ]]; then
     else
         if [[ ! -w "$(dirname "$ppc_generated_config")" ]]; then
             printf '%s\n' \
-                'error: custom PPC machine filtering requires configs/devices/ppc-softmmu/whp-user.mak,' \
+                'error: custom PPC device selection requires configs/devices/ppc-softmmu/whp-user.mak,' \
                 'but the source configs directory is read-only. The tracked PPC defaults remain buildable.' >&2
             rm -f "$ppc_generated_temp"
             return 1
@@ -466,8 +489,8 @@ fi
     printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
     printf 'DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
     printf 'SDKROOT=%s\n' "${SDKROOT:-}"
-    printf 'MACOS_SDK_VERSION=%s\n' "${MACOS_SDK_VERSION:-}"
-    printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
+    printf 'MACOS_SDK_VERSION=%s\n' "$MACOS_SDK_VERSION"
+    printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "$MACOSX_DEPLOYMENT_TARGET"
     printf 'PKG_CONFIG=%s\n' "${PKG_CONFIG:-pkg-config}"
     printf 'PKG_CONFIG_PATH=%s\n' "${PKG_CONFIG_PATH:-}"
     printf 'PKG_CONFIG_PATH_FOR_BUILD=%s\n' "${PKG_CONFIG_PATH_FOR_BUILD:-}"
