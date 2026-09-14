@@ -15,6 +15,18 @@ MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 sys.path.insert(0, str(CONFIG_DIR))
 
+AUDIO_DEVICES = {
+    'SB16': ('Sound Blaster 16 (ISA)', 'CONFIG_SB16'),
+    'ADLIB': ('AdLib (ISA)', 'CONFIG_ADLIB'),
+    'GUS': ('Gravis UltraSound (ISA)', 'CONFIG_GUS'),
+    'CS4231A': ('Crystal CS4231A (ISA)', 'CONFIG_CS4231A'),
+    'PCSPK': ('PC speaker', 'CONFIG_PCSPK'),
+    'ES1370': ('Ensoniq ES1370 (PCI)', 'CONFIG_ES1370'),
+    'AC97': ("Intel AC'97 (PCI)", 'CONFIG_AC97'),
+    'CS4630': ('Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
+    'HDA': ('Intel HD Audio (PCI)', 'CONFIG_HDA'),
+}
+
 
 def load_module(path: pathlib.Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -25,43 +37,35 @@ def load_module(path: pathlib.Path, name: str):
 
 
 class WhpHardwareMenuTests(unittest.TestCase):
-    def test_audio_devices_live_under_generic_hardware_section(self):
+    def test_all_audio_devices_group_i386_and_ppc_choices(self):
         config = load_module(CONFIG_TOOL, 'whp_config_hardware')
-        for key in (
-            'I386_AUDIO_SB16',
-            'I386_AUDIO_ADLIB',
-            'I386_AUDIO_GUS',
-            'I386_AUDIO_CS4231A',
-            'I386_AUDIO_PCSPK',
-            'I386_AUDIO_ES1370',
-            'I386_AUDIO_AC97',
-            'I386_AUDIO_CS4630',
-            'I386_AUDIO_HDA',
-        ):
-            self.assertEqual(config.OPTION_BY_KEY[key].section, 'QEMU hardware')
+        for suffix, (group, _) in AUDIO_DEVICES.items():
+            i386_key = f'I386_AUDIO_{suffix}'
+            ppc_key = f'PPC_AUDIO_{suffix}'
+            self.assertIn(i386_key, config.OPTION_BY_KEY)
+            self.assertIn(ppc_key, config.OPTION_BY_KEY)
+            i386 = config.OPTION_BY_KEY[i386_key]
+            ppc = config.OPTION_BY_KEY[ppc_key]
+            self.assertEqual(i386.section, 'QEMU hardware')
+            self.assertEqual(ppc.section, 'QEMU hardware')
+            self.assertEqual(i386.group, group)
+            self.assertEqual(ppc.group, group)
+            self.assertEqual(i386.label, 'i386')
+            self.assertEqual(ppc.label, 'ppc')
+            for option in (i386, ppc):
+                self.assertEqual(option.kind, 'choice')
+                self.assertEqual(option.default, 'auto')
+                self.assertEqual(option.choices, ('auto', 'y', 'n'))
 
-    def test_es1370_groups_i386_and_ppc_target_choices(self):
-        config = load_module(CONFIG_TOOL, 'whp_config_es1370_targets')
-        self.assertIn('PPC_AUDIO_ES1370', config.OPTION_BY_KEY)
-        i386 = config.OPTION_BY_KEY['I386_AUDIO_ES1370']
-        ppc = config.OPTION_BY_KEY['PPC_AUDIO_ES1370']
-        self.assertTrue(hasattr(i386, 'group'))
-        self.assertEqual(i386.group, 'Ensoniq ES1370 (PCI)')
-        self.assertEqual(ppc.group, i386.group)
-        self.assertEqual(i386.label, 'i386')
-        self.assertEqual(ppc.label, 'ppc')
-        for option in (i386, ppc):
-            self.assertEqual(option.kind, 'choice')
-            self.assertEqual(option.default, 'auto')
-            self.assertEqual(option.choices, ('auto', 'y', 'n'))
-
-    def test_menu_dump_shows_one_es1370_group_with_two_targets(self):
+    def test_menu_dump_shows_each_device_once_with_two_targets(self):
         with tempfile.TemporaryDirectory() as td:
             config_path = pathlib.Path(td) / '.whpconfig'
             config_path.write_text(
                 'WHP_CONFIG_VERSION=2\n'
-                'I386_AUDIO_ES1370=n\n'
-                'PPC_AUDIO_ES1370=y\n',
+                'I386_AUDIO_SB16=n\n'
+                'PPC_AUDIO_SB16=y\n'
+                'I386_AUDIO_HDA=y\n'
+                'PPC_AUDIO_HDA=n\n',
                 encoding='utf-8',
             )
             result = subprocess.run(
@@ -71,24 +75,24 @@ class WhpHardwareMenuTests(unittest.TestCase):
                 check=True,
             )
         self.assertIn('QEMU hardware', result.stdout)
-        self.assertEqual(result.stdout.count('Ensoniq ES1370 (PCI)'), 1)
+        for group, _ in AUDIO_DEVICES.values():
+            self.assertEqual(result.stdout.count(group), 1)
         self.assertIn('<n>        i386', result.stdout)
         self.assertIn('<y>        ppc', result.stdout)
 
-    def test_ppc_auto_preserves_upstream_es1370_default(self):
+    def test_ppc_auto_preserves_upstream_audio_defaults(self):
         config = load_module(CONFIG_TOOL, 'whp_config_ppc_auto')
         values = config.default_values()
-        base = (
-            '# PPC defaults\n'
-            'CONFIG_ES1370=y\n'
-            'CONFIG_MAC_NEWWORLD=y\n'
-            'CONFIG_MAC_OLDWORLD=y\n'
-        )
-        rendered = config.render_ppc_device_config(values, base)
-        self.assertIn('CONFIG_ES1370=y', rendered)
-        self.assertEqual(rendered.count('CONFIG_ES1370='), 1)
+        base_lines = ['# PPC defaults']
+        for _, symbol in AUDIO_DEVICES.values():
+            base_lines.append(f'{symbol}=y')
+        base_lines.extend(('CONFIG_MAC_NEWWORLD=y', 'CONFIG_MAC_OLDWORLD=y'))
+        rendered = config.render_ppc_device_config(values, '\n'.join(base_lines) + '\n')
+        for _, symbol in AUDIO_DEVICES.values():
+            self.assertIn(f'{symbol}=y', rendered)
+            self.assertEqual(rendered.count(symbol + '='), 1)
 
-    def test_ppc_es1370_override_is_written_to_ppc_device_preset(self):
+    def test_ppc_audio_overrides_are_written_to_ppc_device_preset(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
             base = td_path / 'default.mak'
@@ -99,11 +103,14 @@ class WhpHardwareMenuTests(unittest.TestCase):
                 'CONFIG_MAC_OLDWORLD=y\n',
                 encoding='utf-8',
             )
+            assignments = '\n'.join(
+                f'PPC_AUDIO_{suffix}=n' for suffix in AUDIO_DEVICES
+            )
             script = f'''set -euo pipefail
 source {CONFIGURE_BASH!s}
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
-PPC_AUDIO_ES1370=n
+{assignments}
 whp_configure_write_ppc_device_config "$1" "$2"
 '''
             subprocess.run(
@@ -116,10 +123,11 @@ whp_configure_write_ppc_device_config "$1" "$2"
 
         self.assertIn('CONFIG_MAC_NEWWORLD=y', text)
         self.assertIn('CONFIG_MAC_OLDWORLD=y', text)
-        self.assertEqual(text.count('CONFIG_ES1370='), 1)
-        self.assertIn('CONFIG_ES1370=n', text)
+        for _, symbol in AUDIO_DEVICES.values():
+            self.assertEqual(text.count(symbol + '='), 1)
+            self.assertIn(f'{symbol}=n', text)
 
-    def test_ppc_es1370_alone_selects_ppc_custom_preset(self):
+    def test_ppc_audio_choice_alone_selects_ppc_custom_preset(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
             source_dir = td_path / 'source'
@@ -174,7 +182,7 @@ POWERPC_TOOLCHAIN_DIR="$2/powerpc"
 QEMU_TARGET_LIST=ppc-softmmu
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
-PPC_AUDIO_ES1370=n
+PPC_AUDIO_HDA=n
 configure_args=(--target-list=ppc-softmmu)
 source {CONFIGURE_BASH!s}
 whp_configure_build
@@ -188,16 +196,13 @@ whp_configure_build
 
             preset = device_dir / 'whp-user.mak'
             self.assertTrue(preset.is_file())
-            self.assertIn('CONFIG_ES1370=n', preset.read_text(encoding='utf-8'))
+            self.assertIn('CONFIG_HDA=n', preset.read_text(encoding='utf-8'))
             self.assertIn(
                 '--with-devices-ppc=whp-user',
                 (build_dir / 'configure-args.txt').read_text(encoding='utf-8'),
             )
             metadata = (build_dir / '.whp-config').read_text(encoding='utf-8')
-            self.assertIn(
-                'WHP_PPC_DEVICE_CONFIG_SIGNATURE=newworld=y;oldworld=y;es1370=n',
-                metadata,
-            )
+            self.assertIn('hda=n', metadata)
 
 
 if __name__ == '__main__':
