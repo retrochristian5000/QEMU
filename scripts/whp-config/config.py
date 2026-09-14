@@ -58,6 +58,15 @@ OPTIONS = (
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
+    Option('I386_AUDIO_SB16', 'QEMU i386 audio hardware', 'Sound Blaster 16 (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_ADLIB', 'QEMU i386 audio hardware', 'AdLib (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_GUS', 'QEMU i386 audio hardware', 'Gravis UltraSound (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_CS4231A', 'QEMU i386 audio hardware', 'Crystal CS4231A (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_PCSPK', 'QEMU i386 audio hardware', 'PC speaker', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_ES1370', 'QEMU i386 audio hardware', 'Ensoniq ES1370 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_AC97', 'QEMU i386 audio hardware', "Intel AC'97 (PCI)", 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_CS4630', 'QEMU i386 audio hardware', 'Crystal CS4630 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('I386_AUDIO_HDA', 'QEMU i386 audio hardware', 'Intel HD Audio (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
 )
 
 OPTION_BY_KEY = {option.key: option for option in OPTIONS}
