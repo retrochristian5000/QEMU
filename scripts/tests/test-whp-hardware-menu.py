@@ -12,6 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
 CONFIG_TOOL = CONFIG_DIR / 'config.py'
 MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
+CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 sys.path.insert(0, str(CONFIG_DIR))
 
 
@@ -73,6 +74,37 @@ class WhpHardwareMenuTests(unittest.TestCase):
         self.assertEqual(result.stdout.count('Ensoniq ES1370 (PCI)'), 1)
         self.assertIn('<n>        i386', result.stdout)
         self.assertIn('<y>        ppc', result.stdout)
+
+    def test_ppc_es1370_override_is_written_to_ppc_device_preset(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            base = td_path / 'default.mak'
+            output = td_path / 'whp-user.mak'
+            base.write_text(
+                '# PPC defaults\n'
+                'CONFIG_MAC_NEWWORLD=y\n'
+                'CONFIG_MAC_OLDWORLD=y\n',
+                encoding='utf-8',
+            )
+            script = f'''set -euo pipefail
+source {CONFIGURE_BASH!s}
+CONFIG_MAC_NEWWORLD=y
+CONFIG_MAC_OLDWORLD=y
+PPC_AUDIO_ES1370=n
+whp_configure_write_ppc_device_config "$1" "$2"
+'''
+            subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(output)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            text = output.read_text(encoding='utf-8')
+
+        self.assertIn('CONFIG_MAC_NEWWORLD=y', text)
+        self.assertIn('CONFIG_MAC_OLDWORLD=y', text)
+        self.assertEqual(text.count('CONFIG_ES1370='), 1)
+        self.assertIn('CONFIG_ES1370=n', text)
 
 
 if __name__ == '__main__':
