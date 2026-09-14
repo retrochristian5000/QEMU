@@ -17,3 +17,10 @@
 # all-core power spike.  Command-line -Db_lto_threads=N remains an explicit
 # escape hatch for performance experiments.
 b_lto_threads = 1
+
+# Mach-O's LLVM toolchain supports ThinLTO and an incremental object cache.
+# Prefer that mode whenever QEMU enables LTO: it keeps the existing one-worker
+# power ceiling while allowing unchanged ThinLTO backends to be reused across
+# incremental links.  These options are inert when b_lto=false.
+b_lto_mode = 'thin'
+b_thinlto_cache = true
