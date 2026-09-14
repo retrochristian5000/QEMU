@@ -274,7 +274,7 @@ whp_configure_write_i386_audio_config()
         !/^CONFIG_HDA=/ { print }
     ' "$base" > "$output" || return 1
 
-    printf '\n# WHP temporary i386 audio overrides; removed after configure.\n' >> "$output"
+    printf '\n# WHP generated i386 audio overrides; retained for Meson regeneration.\n' >> "$output"
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}" CONFIG_SB16 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}" CONFIG_ADLIB || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}" CONFIG_GUS || return 1
@@ -340,8 +340,8 @@ esac
 
 # Audio devices are optional Kconfig models on i386. Keep upstream defaults
 # when every menu entry is auto; only an explicit y/n choice creates a target
-# preset. This avoids freezing unrelated Kconfig defaults when one model is
-# toggled.
+# preset. Meson records that preset as a source input, so the generated file
+# must remain in configs/devices/i386-softmmu while the custom preset is active.
 WHP_I386_AUDIO_CONFIG_SIGNATURE=not-requested
 case ",${QEMU_TARGET_LIST:-}," in
     *,i386-softmmu,*)
@@ -351,9 +351,9 @@ case ",${QEMU_TARGET_LIST:-}," in
             WHP_I386_AUDIO_CONFIG_SIGNATURE=tracked-defaults
             stale_i386_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
             if [[ -f "$stale_i386_config" ]] &&
-               grep -Fq '# WHP temporary i386 audio overrides; removed after configure.' \
+               ! grep -Eq '# WHP (temporary i386 audio overrides; removed after configure\.|generated i386 audio overrides; retained for Meson regeneration\.)' \
                    "$stale_i386_config"; then
-                rm -f "$stale_i386_config"
+                stale_i386_config=""
             fi
         else
             i386_custom_audio=1
@@ -449,17 +449,17 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
         i386_generated_temp="$i386_generated_config.tmp.$$"
         if [[ ! -w "$(dirname "$i386_generated_config")" ]]; then
             printf '%s\n' \
-                'error: custom i386 audio filtering requires a temporary QEMU device preset,' \
+                'error: custom i386 audio filtering requires a generated QEMU device preset,' \
                 'but the source configs directory is read-only. The tracked i386 defaults remain buildable.' >&2
             rm -f "$ppc_generated_config" "$ppc_generated_temp" \
-                "$i386_generated_config" "$i386_generated_temp" "$config_candidate"
+                "$i386_generated_temp" "$config_candidate"
             return 1
         fi
         if ! whp_configure_write_i386_audio_config \
             "$SOURCE_DIR/configs/devices/i386-softmmu/default.mak" \
             "$i386_generated_temp"; then
             rm -f "$ppc_generated_config" "$ppc_generated_temp" \
-                "$i386_generated_config" "$i386_generated_temp" "$config_candidate"
+                "$i386_generated_temp" "$config_candidate"
             return 1
         fi
         mv "$i386_generated_temp" "$i386_generated_config"
@@ -470,16 +470,22 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
         "$SOURCE_DIR/configure" "${configure_args[@]}"
     ) || configure_status=$?
 
-    if [[ -n "$ppc_generated_config" || -n "$i386_generated_config" ]]; then
-        rm -f "$ppc_generated_config" "$ppc_generated_temp" \
-            "$i386_generated_config" "$i386_generated_temp"
+    if [[ -n "$ppc_generated_config" ]]; then
+        rm -f "$ppc_generated_config" "$ppc_generated_temp"
     fi
+    rm -f "$i386_generated_temp"
     if [[ "$configure_status" != 0 ]]; then
         rm -f "$config_candidate"
         return "$configure_status"
     fi
+    if [[ "$i386_custom_audio" != 1 && -n "$stale_i386_config" ]]; then
+        rm -f "$stale_i386_config"
+    fi
     mv "$config_candidate" "$config_file"
 else
     rm -f "$config_candidate"
+    if [[ "$i386_custom_audio" != 1 && -n "$stale_i386_config" ]]; then
+        rm -f "$stale_i386_config"
+    fi
 fi
 }
