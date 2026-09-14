@@ -69,7 +69,14 @@ def _flatten_items():
     rows = []
     for section, options in whp_config.sections():
         rows.append(('section', section, None))
+        current_group = None
         for option in options:
+            if option.group:
+                if option.group != current_group:
+                    rows.append(('group', option.group, None))
+                current_group = option.group
+            else:
+                current_group = None
             rows.append(('option', option.label, option))
     return rows
 
@@ -99,10 +106,13 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
                 row_kind, label, option = rows[index]
                 if row_kind == 'section':
                     stdscr.addnstr(y, 0, label, max(1, width - 1), curses.A_BOLD)
+                elif row_kind == 'group':
+                    stdscr.addnstr(y, 2, label, max(1, width - 3), curses.A_BOLD)
                 else:
                     assert option is not None
                     value = display_value(option.kind, state.values[option.key])
-                    line = f'  {value:<10} {label}'
+                    indent = '    ' if option.group else '  '
+                    line = f'{indent}{value:<10} {label}'
                     attr = curses.A_REVERSE if index == current_row else curses.A_NORMAL
                     stdscr.addnstr(y, 0, line, max(1, width - 1), attr)
                 y += 1
@@ -201,8 +211,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.dump:
         for section, options in whp_config.sections():
             print(section)
+            current_group = None
             for option in options:
-                print(f'  {display_value(option.kind, state.values[option.key]):<10} {option.label}')
+                if option.group:
+                    if option.group != current_group:
+                        print(f'  {option.group}')
+                    current_group = option.group
+                    indent = '    '
+                else:
+                    current_group = None
+                    indent = '  '
+                print(
+                    f'{indent}{display_value(option.kind, state.values[option.key]):<10} '
+                    f'{option.label}'
+                )
         return 0
 
     if curses is None:
