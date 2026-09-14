@@ -43,8 +43,13 @@ class WhpI386AudioMenuTests(unittest.TestCase):
         config = load_module(CONFIG_TOOL, 'whp_config_i386_audio')
         for key, (label, _) in AUDIO_OPTIONS.items():
             option = config.OPTION_BY_KEY[key]
-            self.assertEqual(option.section, 'QEMU i386 audio hardware')
-            self.assertEqual(option.label, label)
+            self.assertEqual(option.section, 'QEMU hardware')
+            if key == 'I386_AUDIO_ES1370':
+                self.assertEqual(option.group, label)
+                self.assertEqual(option.label, 'i386')
+            else:
+                self.assertEqual(option.group, '')
+                self.assertEqual(option.label, label)
             self.assertEqual(option.kind, 'choice')
             self.assertEqual(option.default, 'auto')
             self.assertEqual(option.choices, ('auto', 'y', 'n'))
@@ -62,7 +67,7 @@ class WhpI386AudioMenuTests(unittest.TestCase):
         self.assertIn("I386_AUDIO_SB16='n'", assignments)
         self.assertIn("I386_AUDIO_HDA='y'", assignments)
 
-    def test_menu_dump_exposes_sound_blaster_and_audio_section(self):
+    def test_menu_dump_exposes_sound_blaster_and_hardware_section(self):
         with tempfile.TemporaryDirectory() as td:
             config_path = pathlib.Path(td) / '.whpconfig'
             config_path.write_text(
@@ -76,7 +81,8 @@ class WhpI386AudioMenuTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 check=True,
             )
-        self.assertIn('QEMU i386 audio hardware', result.stdout)
+        self.assertIn('QEMU hardware', result.stdout)
+        self.assertNotIn('QEMU i386 audio hardware', result.stdout)
         self.assertIn('<n>        Sound Blaster 16 (ISA)', result.stdout)
         self.assertIn('<auto>     Intel HD Audio (PCI)', result.stdout)
 
@@ -297,6 +303,7 @@ whp_configure_build
         portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_i386_audio')
         entry = load_module(PORTABLE_ENTRY_TOOL, 'whp_portable_entry_i386_audio')
         self.assertEqual(set(entry.I386_AUDIO_KEYS), set(AUDIO_OPTIONS))
+        self.assertIn('PPC_AUDIO_ES1370', entry.HARDWARE_KEYS)
         entry.install_diagnostic_policy(portable)
 
         with tempfile.TemporaryDirectory() as td:
@@ -312,7 +319,7 @@ whp_configure_build
             )
             with mock.patch.object(portable, 'USER_CONFIG', config_path), \
                  mock.patch.dict(os.environ, {'BUILD_DIR': str(build_dir)}, clear=False):
-                with self.assertRaisesRegex(RuntimeError, 'i386 audio hardware filtering'):
+                with self.assertRaisesRegex(RuntimeError, 'QEMU hardware filtering'):
                     portable.build_plan([])
 
 
