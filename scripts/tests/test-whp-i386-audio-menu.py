@@ -28,6 +28,9 @@ AUDIO_OPTIONS = {
     'I386_AUDIO_CS4630': ('Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
     'I386_AUDIO_HDA': ('Intel HD Audio (PCI)', 'CONFIG_HDA'),
 }
+PPC_AUDIO_KEYS = {
+    key.replace('I386_', 'PPC_', 1) for key in AUDIO_OPTIONS
+}
 
 
 def load_module(path: pathlib.Path, name: str):
@@ -41,15 +44,11 @@ def load_module(path: pathlib.Path, name: str):
 class WhpI386AudioMenuTests(unittest.TestCase):
     def test_audio_options_are_target_scoped_tristates(self):
         config = load_module(CONFIG_TOOL, 'whp_config_i386_audio')
-        for key, (label, _) in AUDIO_OPTIONS.items():
+        for key, (group, _) in AUDIO_OPTIONS.items():
             option = config.OPTION_BY_KEY[key]
             self.assertEqual(option.section, 'QEMU hardware')
-            if key == 'I386_AUDIO_ES1370':
-                self.assertEqual(option.group, label)
-                self.assertEqual(option.label, 'i386')
-            else:
-                self.assertEqual(option.group, '')
-                self.assertEqual(option.label, label)
+            self.assertEqual(option.group, group)
+            self.assertEqual(option.label, 'i386')
             self.assertEqual(option.kind, 'choice')
             self.assertEqual(option.default, 'auto')
             self.assertEqual(option.choices, ('auto', 'y', 'n'))
@@ -83,8 +82,10 @@ class WhpI386AudioMenuTests(unittest.TestCase):
             )
         self.assertIn('QEMU hardware', result.stdout)
         self.assertNotIn('QEMU i386 audio hardware', result.stdout)
-        self.assertIn('<n>        Sound Blaster 16 (ISA)', result.stdout)
-        self.assertIn('<auto>     Intel HD Audio (PCI)', result.stdout)
+        self.assertEqual(result.stdout.count('Sound Blaster 16 (ISA)'), 1)
+        self.assertEqual(result.stdout.count('Intel HD Audio (PCI)'), 1)
+        self.assertIn('    <n>        i386', result.stdout)
+        self.assertIn('    <auto>     ppc', result.stdout)
 
     def test_kconfig_preset_contains_only_explicit_audio_overrides(self):
         with tempfile.TemporaryDirectory() as td:
@@ -303,7 +304,11 @@ whp_configure_build
         portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_i386_audio')
         entry = load_module(PORTABLE_ENTRY_TOOL, 'whp_portable_entry_i386_audio')
         self.assertEqual(set(entry.I386_AUDIO_KEYS), set(AUDIO_OPTIONS))
-        self.assertIn('PPC_AUDIO_ES1370', entry.HARDWARE_KEYS)
+        self.assertEqual(set(entry.PPC_AUDIO_KEYS), PPC_AUDIO_KEYS)
+        self.assertEqual(
+            set(entry.HARDWARE_KEYS),
+            set(AUDIO_OPTIONS) | PPC_AUDIO_KEYS,
+        )
         entry.install_diagnostic_policy(portable)
 
         with tempfile.TemporaryDirectory() as td:
