@@ -135,6 +135,10 @@ whp_configure_i386_audio_signature
             configure = source_dir / 'configure'
             configure.write_text(
                 '#!/bin/sh\n'
+                'count=0\n'
+                'test ! -f configure-count.txt || read count < configure-count.txt\n'
+                'count=$((count + 1))\n'
+                'printf "%s\\n" "$count" > configure-count.txt\n'
                 'printf "%s\\n" "$@" > configure-args.txt\n'
                 'touch build.ninja\n',
                 encoding='utf-8',
@@ -177,16 +181,29 @@ I386_AUDIO_SB16=n
 configure_args=(--target-list=i386-softmmu)
 source {CONFIGURE_BASH!s}
 whp_configure_build
-test -f "$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
-grep -Fxq 'CONFIG_SB16=n' "$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
-grep -Fxq -- '--with-devices-i386=whp-user' "$BUILD_DIR/configure-args.txt"
 '''
-            subprocess.run(
-                ['bash', '-c', script, '_', str(source_dir), str(build_dir)],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
+            preset = device_dir / 'whp-user.mak'
+            for run in range(2):
+                subprocess.run(
+                    ['bash', '-c', script, '_', str(source_dir), str(build_dir)],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+                if run == 0:
+                    self.assertTrue(preset.is_file())
+                    preset.unlink()
+
+            self.assertTrue(preset.is_file())
+            self.assertIn('CONFIG_SB16=n', preset.read_text(encoding='utf-8'))
+            self.assertEqual(
+                (build_dir / 'configure-count.txt').read_text(encoding='utf-8').strip(),
+                '1',
+            )
+            self.assertIn(
+                '--with-devices-i386=whp-user',
+                (build_dir / 'configure-args.txt').read_text(encoding='utf-8'),
             )
 
     def test_portable_entry_rejects_unhandled_audio_override(self):
