@@ -8,24 +8,16 @@ import os
 import pathlib
 import subprocess
 import unittest
-from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
+PORTABLE_BUILD_ENTRY = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 BUILDER = ROOT / 'builder.bash'
 
 
 def load_config_module():
     spec = importlib.util.spec_from_file_location('whp_config', CONFIG_TOOL)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def load_portable_build_module():
-    spec = importlib.util.spec_from_file_location('whp_portable_build_jobs', PORTABLE_BUILD_TOOL)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -90,16 +82,27 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('QEMU_HOST_OPTIMIZATION must be one of', result.stderr)
 
-    def test_portable_core_rejects_zero_job_parallelism(self):
-        mod = load_portable_build_module()
-        resolve_jobs = getattr(mod, 'resolve_jobs', None)
-        self.assertIsNotNone(
-            resolve_jobs,
-            'portable build must validate JOBS before passing -j to Ninja/Make',
+    def test_public_portable_entry_rejects_zero_job_parallelism(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_IMG': '0',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_QEMU_SYSTEM_I386': '1',
+            'BUILD_OPENBIOS': 'auto',
+            'BOOTSTRAP_POWERPC_TOOLCHAIN': 'auto',
+            'BOOTSTRAP_NATIVE_LLVM': '0',
+            'JOBS': '0',
+        })
+        result = subprocess.run(
+            ['python3', str(PORTABLE_BUILD_ENTRY), 'qemu-system-i386'],
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
         )
-        with mock.patch.dict(os.environ, {'JOBS': '0'}, clear=False):
-            with self.assertRaisesRegex(ValueError, 'JOBS must be a positive integer'):
-                resolve_jobs()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('JOBS must be a positive integer', result.stderr)
 
     def test_bash_path_applies_optimization_after_firmware_preparation(self):
         builder = BUILDER.read_text(encoding='utf-8')
