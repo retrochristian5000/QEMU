@@ -263,9 +263,20 @@ def bootstrap_environment(
     compiler_cache_dir: pathlib.Path | None = None,
 ) -> dict[str, str]:
     bootstrap_env = os.environ.copy()
+    # Ninja is a host build helper. Do not let ambient target/search-path state
+    # choose headers, libraries, architectures, or CMake/pkg-config prefixes
+    # before the platform wrapper has a chance to sanitize the main QEMU build.
+    # Explicit host compiler, SDK, cache and archive-tool inputs are restored
+    # below after this isolation boundary.
     for key in (
         'CC', 'CFLAGS', 'CXXFLAGS', 'CPPFLAGS', 'LDFLAGS', 'AR', 'SDKROOT',
         'CCACHE_DIR', 'SCCACHE_DIR',
+        'CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
+        'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'LIBRARY_PATH',
+        'DYLD_LIBRARY_PATH', 'DYLD_FALLBACK_LIBRARY_PATH',
+        'DYLD_INSERT_LIBRARIES', 'CMAKE_PREFIX_PATH', 'CMAKE_LIBRARY_PATH',
+        'CMAKE_INCLUDE_PATH', 'PKG_CONFIG_PATH', 'PKG_CONFIG_LIBDIR',
+        'PKG_CONFIG_SYSROOT_DIR', 'ACLOCAL_PATH', 'ARCHFLAGS',
     ):
         bootstrap_env.pop(key, None)
 
