@@ -156,12 +156,30 @@ class SelectiveTestStateTests(unittest.TestCase):
             [],
         )
 
+    def test_uncommitted_deletion_runs_owning_suite(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        (self.repo / 'block/qcow2.c').unlink()
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check-block'],
+        )
+
     def test_committed_change_since_last_success_uses_selective_suite(self):
         self.mod.record_test_state(self.repo, self.build, self.targets)
         path = self.repo / 'qapi/machine.json'
         path.write_text('{"changed": true}\n', encoding='utf-8')
         git(self.repo, 'add', 'qapi/machine.json')
         git(self.repo, 'commit', '-qm', 'change qapi')
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check-qapi-schema'],
+        )
+
+    def test_committed_deletion_since_last_success_uses_selective_suite(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        (self.repo / 'qapi/machine.json').unlink()
+        git(self.repo, 'add', '-u')
+        git(self.repo, 'commit', '-qm', 'delete qapi file')
         self.assertEqual(
             self.mod.plan_changed_tests(self.repo, self.build, self.targets),
             ['check-qapi-schema'],
