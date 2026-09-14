@@ -91,6 +91,23 @@ class CompilerCachePolicyTests(unittest.TestCase):
         )
         self.assertNotIn('-Wl,-dead_strip', env['CXXFLAGS'])
 
+    def test_ninja_bootstrap_strips_inherited_search_environment(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_env_hygiene_test')
+        inherited = {
+            'CPATH': '/tmp/foreign/include',
+            'C_INCLUDE_PATH': '/tmp/foreign/c-include',
+            'CPLUS_INCLUDE_PATH': '/tmp/foreign/cxx-include',
+            'LIBRARY_PATH': '/tmp/foreign/lib',
+            'DYLD_LIBRARY_PATH': '/tmp/foreign/dyld',
+            'CMAKE_PREFIX_PATH': '/tmp/foreign/cmake',
+            'ARCHFLAGS': '-arch x86_64',
+        }
+        with mock.patch.dict(os.environ, inherited, clear=True):
+            env = ninja.bootstrap_environment('/usr/bin/clang++', '')
+
+        for key in inherited:
+            self.assertNotIn(key, env, key)
+
     def test_qemu_host_cache_is_build_time_only(self):
         text = BUILD_WRAPPER.read_text(encoding='utf-8')
         self.assertIn('COMPILER_CACHE=${COMPILER_CACHE:-auto}', text)
