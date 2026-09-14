@@ -68,9 +68,10 @@ profile. The menu is the single portable interface for host features,
 firmware, machines, build behavior, hardware filters, and build outputs.
 Explicit environment variables remain one-run overrides of the saved values.
 
-Every Boolean menu item is enabled in a new profile. The build-output section
-includes ``qemu-img`` and the supported ``qemu-system-*`` selectors. Disabling
-``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
+Each menu item carries its own repository default; optional diagnostics,
+installation, and some build outputs are deliberately opt-in. The build-output
+section includes ``qemu-img`` and the supported ``qemu-system-*`` selectors.
+Disabling ``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
 ``--enable-tools``. The system-emulator selections derive QEMU's internal
 target list, so the menu does not expose a conflicting raw target-list field.
 Disabling every system emulator passes ``--disable-system`` for a tools-only
@@ -122,8 +123,9 @@ Positional arguments select Make targets for that run and take precedence over
 
   ./build.sh whp-openbios-ppc
 
-Installation follows the ``Install after build`` menu Boolean, which is
-enabled in a new profile. Set ``INSTALL=0`` for a compile-only run.
+Installation follows the ``Install after build`` menu Boolean and is opt-in in
+a new profile. Set ``INSTALL=1`` when installation is wanted; compile-only runs
+keep ``INSTALL=0``.
 
 Artifact identity
 -----------------
