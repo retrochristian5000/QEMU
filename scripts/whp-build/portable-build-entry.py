@@ -90,10 +90,9 @@ def install_diagnostic_policy(core) -> None:
 
 
 def install_test_policy(core) -> None:
-    selector = load_selector()
     original_run_qemu_tests = core.run_qemu_tests
 
-    def record_state(build_dir: pathlib.Path, targets: List[str]) -> None:
+    def record_state(selector, build_dir: pathlib.Path, targets: List[str]) -> None:
         try:
             selector.record_test_state(core.ROOT, build_dir, targets)
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
@@ -106,11 +105,12 @@ def install_test_policy(core) -> None:
         values = core.resolved_values()
         scope = values.get('QEMU_TEST_SCOPE', 'changed')
         targets = core.previous_configured_targets(build_dir)
+        selector = load_selector()
 
         if scope == 'full':
             print('WHP QEMU tests: check')
             original_run_qemu_tests(build_dir, jobs)
-            record_state(build_dir, targets)
+            record_state(selector, build_dir, targets)
             return
         if scope != 'changed':
             raise RuntimeError(
@@ -127,7 +127,7 @@ def install_test_policy(core) -> None:
             )
         else:
             print('WHP QEMU tests: no affected suites; skipping unchanged tests.')
-        record_state(build_dir, targets)
+        record_state(selector, build_dir, targets)
 
     core.run_qemu_tests = run_qemu_tests
 
