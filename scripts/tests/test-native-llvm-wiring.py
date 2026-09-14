@@ -133,6 +133,22 @@ assert 'native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"' in ma
 assert 'NATIVE_LLVM_READ_WORKERS must be a non-negative integer' in macos_builder
 assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' in macos_builder
 
+# Rebuilding the native Darwin toolchain can reuse the previously installed
+# ld64.lld instead of routing every large LLVM/Clang link back through Apple's
+# system linker. Probe that exact linker first, keep the two-link Ninja pool,
+# and use the same bounded count for Mach-O LLD's input prefetch workers. A
+# missing or incompatible installed linker must leave the system linker path
+# untouched so cold bootstraps still work.
+assert 'bootstrap_linker_args=()' in bootstrap
+assert '[[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]' in bootstrap
+assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
+assert '"$bootstrap_cxx" -fuse-ld=lld' in bootstrap
+assert '-Wl,--read-workers="$LLVM_LINK_JOBS"' in bootstrap
+assert '"-DLLVM_USE_LINKER=lld"' in bootstrap
+assert '"-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"' in bootstrap
+assert '"${bootstrap_linker_args[@]}"' in bootstrap
+assert 'WHP native LLVM bootstrap linker:' in bootstrap
+
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
 # platform decision that can drift from QEMU's wrapper selection.
