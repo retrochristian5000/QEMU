@@ -60,15 +60,18 @@ class TestPolicyTests(unittest.TestCase):
         entry = PORTABLE_ENTRY.read_text(encoding='utf-8')
         self.assertIn('select-tests.py', core)
         self.assertIn('QEMU_TEST_SCOPE', core)
-        self.assertIn('plan_changed_tests', core)
-        self.assertIn('record_test_state', core)
+        self.assertIn("'plan'", core)
+        self.assertIn("'record'", core)
+        self.assertIn('no affected suites; skipping unchanged tests', core)
         self.assertNotIn('install_test_policy', entry)
 
     def test_explicit_full_scope_still_uses_qemu_make_check(self):
         targets = BUILD_TARGETS.read_text(encoding='utf-8')
+        core = PORTABLE_CORE.read_text(encoding='utf-8')
         self.assertIn('RUN_TESTS=1 requires GNU Make', targets)
         self.assertIn('QEMU_TEST_SCOPE', targets)
         self.assertIn('check', targets)
+        self.assertIn("test_targets = ['check']", core)
 
 
 if __name__ == '__main__':
