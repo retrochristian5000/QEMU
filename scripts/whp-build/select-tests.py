@@ -133,7 +133,7 @@ def _name_list(result: subprocess.CompletedProcess[str]) -> list[str]:
 def _dirty_paths(source_dir: pathlib.Path) -> list[str]:
     paths = set(
         _name_list(
-            _git(source_dir, 'diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD')
+            _git(source_dir, 'diff', '--name-only', '--diff-filter=ACMDRTUXB', 'HEAD')
         )
     )
     paths.update(
@@ -212,7 +212,7 @@ def _committed_paths(source_dir: pathlib.Path, older: str, newer: str) -> list[s
             source_dir,
             'diff',
             '--name-only',
-            '--diff-filter=ACMRTUXB',
+            '--diff-filter=ACMDRTUXB',
             f'{older}..{newer}',
         )
     )
@@ -248,7 +248,7 @@ def _paths_changed_since_state(
             continue
 
         if before_dirty is not None and after_dirty is None:
-            # A previously dirty file may merely have been committed.  Avoid
+            # A previously dirty file may merely have been committed. Avoid
             # rerunning its suite when the tested bytes are unchanged.
             if _path_digest(source_dir, path) == before_dirty:
                 continue
