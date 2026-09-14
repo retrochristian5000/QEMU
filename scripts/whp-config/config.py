@@ -25,6 +25,19 @@ class Option(NamedTuple):
     group: str = ''
 
 
+AUDIO_HARDWARE = (
+    ('SB16', 'Sound Blaster 16 (ISA)', 'CONFIG_SB16'),
+    ('ADLIB', 'AdLib (ISA)', 'CONFIG_ADLIB'),
+    ('GUS', 'Gravis UltraSound (ISA)', 'CONFIG_GUS'),
+    ('CS4231A', 'Crystal CS4231A (ISA)', 'CONFIG_CS4231A'),
+    ('PCSPK', 'PC speaker', 'CONFIG_PCSPK'),
+    ('ES1370', 'Ensoniq ES1370 (PCI)', 'CONFIG_ES1370'),
+    ('AC97', "Intel AC'97 (PCI)", 'CONFIG_AC97'),
+    ('CS4630', 'Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
+    ('HDA', 'Intel HD Audio (PCI)', 'CONFIG_HDA'),
+)
+
+
 OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
@@ -59,16 +72,20 @@ OPTIONS = (
     Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
-    Option('I386_AUDIO_SB16', 'QEMU hardware', 'Sound Blaster 16 (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_ADLIB', 'QEMU hardware', 'AdLib (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_GUS', 'QEMU hardware', 'Gravis UltraSound (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_CS4231A', 'QEMU hardware', 'Crystal CS4231A (ISA)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_PCSPK', 'QEMU hardware', 'PC speaker', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_ES1370', 'QEMU hardware', 'i386', 'choice', 'auto', ('auto', 'y', 'n'), 'Ensoniq ES1370 (PCI)'),
-    Option('PPC_AUDIO_ES1370', 'QEMU hardware', 'ppc', 'choice', 'auto', ('auto', 'y', 'n'), 'Ensoniq ES1370 (PCI)'),
-    Option('I386_AUDIO_AC97', 'QEMU hardware', "Intel AC'97 (PCI)", 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_CS4630', 'QEMU hardware', 'Crystal CS4630 (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('I386_AUDIO_HDA', 'QEMU hardware', 'Intel HD Audio (PCI)', 'choice', 'auto', ('auto', 'y', 'n')),
+    *tuple(
+        option
+        for suffix, group, _ in AUDIO_HARDWARE
+        for option in (
+            Option(
+                f'I386_AUDIO_{suffix}', 'QEMU hardware', 'i386', 'choice',
+                'auto', ('auto', 'y', 'n'), group,
+            ),
+            Option(
+                f'PPC_AUDIO_{suffix}', 'QEMU hardware', 'ppc', 'choice',
+                'auto', ('auto', 'y', 'n'), group,
+            ),
+        )
+    ),
 )
 
 OPTION_BY_KEY = {option.key: option for option in OPTIONS}
@@ -237,10 +254,14 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
 
 
 def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
-    es1370 = values.get('PPC_AUDIO_ES1370', 'auto')
     overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
-    if es1370 != 'auto':
-        overridden.add('CONFIG_ES1370')
+    ppc_values = []
+    for suffix, _, symbol in AUDIO_HARDWARE:
+        value = values.get(f'PPC_AUDIO_{suffix}', 'auto')
+        ppc_values.append((symbol, value))
+        if value != 'auto':
+            overridden.add(symbol)
+
     kept_lines = []
     for line in base.splitlines():
         stripped = line.strip()
@@ -256,8 +277,9 @@ def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
         + f"CONFIG_MAC_NEWWORLD={values['CONFIG_MAC_NEWWORLD']}\n"
         + f"CONFIG_MAC_OLDWORLD={values['CONFIG_MAC_OLDWORLD']}\n"
     )
-    if es1370 != 'auto':
-        result += f'CONFIG_ES1370={es1370}\n'
+    for symbol, value in ppc_values:
+        if value != 'auto':
+            result += f'{symbol}={value}\n'
     return result
 
 
