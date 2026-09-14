@@ -9,7 +9,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
-PREPARE_BUILD = ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash'
+BUILD_ENTRY = ROOT / 'build.sh'
 BUILD_TARGETS = ROOT / 'scripts' / 'whp-build' / 'build-targets.bash'
 
 
@@ -30,11 +30,13 @@ class TestPolicyTests(unittest.TestCase):
         self.assertEqual(option.default, 'n')
         self.assertEqual(config.default_values()['RUN_TESTS'], 'n')
 
-    def test_bash_build_defaults_match_opt_in_policy(self):
-        prepare = PREPARE_BUILD.read_text(encoding='utf-8')
-        targets = BUILD_TARGETS.read_text(encoding='utf-8')
-        self.assertIn('RUN_TESTS="${RUN_TESTS:-0}"', prepare)
-        self.assertIn('if [[ "${RUN_TESTS:-0}" == 1 ]]; then', targets)
+    def test_public_build_entry_exports_config_policy(self):
+        entry = BUILD_ENTRY.read_text(encoding='utf-8')
+        config_index = entry.index(
+            'WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG")'
+        )
+        eval_index = entry.index('eval "$WHP_CONFIG_ENV"')
+        self.assertLess(config_index, eval_index)
 
     def test_explicit_full_suite_still_uses_qemu_make_check(self):
         targets = BUILD_TARGETS.read_text(encoding='utf-8')
