@@ -120,6 +120,75 @@ whp_configure_i386_audio_signature
             'es1370=auto;ac97=auto;cs4630=auto;hda=y',
         )
 
+    def test_configure_keeps_i386_preset_for_meson_regeneration(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            source_dir = td_path / 'source'
+            build_dir = td_path / 'build'
+            device_dir = source_dir / 'configs' / 'devices' / 'i386-softmmu'
+            device_dir.mkdir(parents=True)
+            build_dir.mkdir()
+            (device_dir / 'default.mak').write_text(
+                '# i386 defaults\nCONFIG_TEST_DEVICES=n\n',
+                encoding='utf-8',
+            )
+            configure = source_dir / 'configure'
+            configure.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "$@" > configure-args.txt\n'
+                'touch build.ninja\n',
+                encoding='utf-8',
+            )
+            configure.chmod(0o755)
+
+            script = f'''set -euo pipefail
+SOURCE_DIR="$1"
+BUILD_DIR="$2"
+HOST_OS=Linux
+PROCESS_ARCH=x86_64
+PHYSICAL_ARCH=x86_64
+HOST_ARCH=x86_64
+ROSETTA_TRANSLATED=0
+MACOS_ALLOW_ROSETTA=0
+MACOS_VERIFY_TOOLCHAIN=0
+MACOS_ALLOW_NONCLANG=0
+MACOS_ALLOW_COMPILER_CONFIG=0
+MACOS_COMPILER_MANIFEST=disabled
+MACOS_COMPILER_MANIFEST_SIGNATURE=disabled
+MACOS_LTO_MANIFEST=disabled
+MACOS_LTO_MANIFEST_SIGNATURE=disabled
+CC_FOR_BUILD=cc
+CXX_FOR_BUILD=c++
+OBJC_FOR_BUILD=cc
+STRIP_FOR_BUILD=strip
+PKG_CONFIG_FOR_BUILD=pkg-config
+CFLAGS=
+MAKE_CMD=make
+NINJA_CMD=ninja
+QEMU_HOST_LTO=auto
+BUILD_OPENBIOS=0
+OPENBIOS_CROSS_COMPILE=
+BOOTSTRAP_POWERPC_TOOLCHAIN=0
+POWERPC_TOOLCHAIN_DIR="$2/powerpc"
+QEMU_TARGET_LIST=i386-softmmu
+CONFIG_MAC_NEWWORLD=y
+CONFIG_MAC_OLDWORLD=y
+I386_AUDIO_SB16=n
+configure_args=(--target-list=i386-softmmu)
+source {CONFIGURE_BASH!s}
+whp_configure_build
+test -f "$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+grep -Fxq 'CONFIG_SB16=n' "$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+grep -Fxq -- '--with-devices-i386=whp-user' "$BUILD_DIR/configure-args.txt"
+'''
+            subprocess.run(
+                ['bash', '-c', script, '_', str(source_dir), str(build_dir)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
     def test_portable_entry_rejects_unhandled_audio_override(self):
         portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_i386_audio')
         entry = load_module(PORTABLE_ENTRY_TOOL, 'whp_portable_entry_i386_audio')
