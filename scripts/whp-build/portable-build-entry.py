@@ -10,6 +10,17 @@ import sys
 from typing import List
 
 CORE_PATH = pathlib.Path(__file__).with_name('portable-build.py')
+I386_AUDIO_KEYS = (
+    'I386_AUDIO_SB16',
+    'I386_AUDIO_ADLIB',
+    'I386_AUDIO_GUS',
+    'I386_AUDIO_CS4231A',
+    'I386_AUDIO_PCSPK',
+    'I386_AUDIO_ES1370',
+    'I386_AUDIO_AC97',
+    'I386_AUDIO_CS4630',
+    'I386_AUDIO_HDA',
+)
 
 
 def load_core():
@@ -44,6 +55,12 @@ def install_diagnostic_policy(core) -> None:
             raise RuntimeError(
                 'BOOTSTRAP_NATIVE_LLVM was explicitly requested, but the portable '
                 'core does not run the native LLVM bootstrap'
+            )
+
+        if any(values[key] != 'auto' for key in I386_AUDIO_KEYS):
+            raise RuntimeError(
+                'custom i386 audio hardware filtering requires the Bash feature '
+                'adapter; core QEMU remains buildable with tracked i386 audio defaults'
             )
 
         if values['BUILD_QEMU_SYSTEM_SPARC'] == 'y':
