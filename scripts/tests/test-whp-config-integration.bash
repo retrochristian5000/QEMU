@@ -133,8 +133,8 @@ old_bash_probe="$(PATH="$FAKEBIN:$PATH" WHP_SHELL_PROBE_ONLY=1 \
 grep -Fq 'portable Python core' <<< "$old_bash_probe"
 
 # Exercise configure-stage use of QEMU's device preset hook only when the user
-# explicitly filters the tracked PPC defaults. The compatibility file must be
-# removed immediately after configure.
+# explicitly filters the tracked PPC defaults. Meson records the compatibility
+# file as a source input, so it must remain while the custom preset is active.
 SOURCE_DIR="$TMP/source"
 BUILD_DIR="$TMP/build"
 mkdir -p "$SOURCE_DIR/configs/devices/ppc-softmmu" "$BUILD_DIR"
@@ -182,9 +182,11 @@ source "$ROOT/scripts/whp-build/configure.bash"
 whp_configure_build
 grep -Fxq -- '--with-devices-ppc=whp-user' "$BUILD_DIR/configure-args.txt"
 grep -Fq 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=newworld=y;oldworld=n' "$BUILD_DIR/.whp-config"
-test ! -e "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+test -f "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+grep -Fxq 'CONFIG_MAC_NEWWORLD=y' "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
+grep -Fxq 'CONFIG_MAC_OLDWORLD=n' "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
 
-# Tracked PPC defaults must not request or generate a custom device preset.
+# Tracked PPC defaults must not request or retain a custom device preset.
 rm -f "$BUILD_DIR/build.ninja" "$BUILD_DIR/.whp-config"
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
