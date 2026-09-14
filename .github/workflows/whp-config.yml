@@ -95,6 +95,7 @@ jobs:
             scripts/whp-build/portable-build.py \
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
+            scripts/whp-build/select-tests.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-darwin-lto-threads.py \
             scripts/tests/test-menuconfig-scroll.py \
