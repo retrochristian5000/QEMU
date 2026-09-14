@@ -106,6 +106,86 @@ whp_configure_write_ppc_device_config "$1" "$2"
         self.assertEqual(text.count('CONFIG_ES1370='), 1)
         self.assertIn('CONFIG_ES1370=n', text)
 
+    def test_ppc_es1370_alone_selects_ppc_custom_preset(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            source_dir = td_path / 'source'
+            build_dir = td_path / 'build'
+            device_dir = source_dir / 'configs' / 'devices' / 'ppc-softmmu'
+            device_dir.mkdir(parents=True)
+            build_dir.mkdir()
+            (device_dir / 'default.mak').write_text(
+                '# PPC defaults\n'
+                'CONFIG_MAC_NEWWORLD=y\n'
+                'CONFIG_MAC_OLDWORLD=y\n',
+                encoding='utf-8',
+            )
+            configure = source_dir / 'configure'
+            configure.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "$@" > configure-args.txt\n'
+                'touch build.ninja\n',
+                encoding='utf-8',
+            )
+            configure.chmod(0o755)
+
+            script = f'''set -euo pipefail
+SOURCE_DIR="$1"
+BUILD_DIR="$2"
+HOST_OS=Linux
+PROCESS_ARCH=x86_64
+PHYSICAL_ARCH=x86_64
+HOST_ARCH=x86_64
+ROSETTA_TRANSLATED=0
+MACOS_ALLOW_ROSETTA=0
+MACOS_VERIFY_TOOLCHAIN=0
+MACOS_ALLOW_NONCLANG=0
+MACOS_ALLOW_COMPILER_CONFIG=0
+MACOS_COMPILER_MANIFEST=disabled
+MACOS_COMPILER_MANIFEST_SIGNATURE=disabled
+MACOS_LTO_MANIFEST=disabled
+MACOS_LTO_MANIFEST_SIGNATURE=disabled
+CC_FOR_BUILD=cc
+CXX_FOR_BUILD=c++
+OBJC_FOR_BUILD=cc
+STRIP_FOR_BUILD=strip
+PKG_CONFIG_FOR_BUILD=pkg-config
+CFLAGS=
+MAKE_CMD=make
+NINJA_CMD=ninja
+QEMU_HOST_LTO=auto
+BUILD_OPENBIOS=0
+OPENBIOS_CROSS_COMPILE=
+BOOTSTRAP_POWERPC_TOOLCHAIN=0
+POWERPC_TOOLCHAIN_DIR="$2/powerpc"
+QEMU_TARGET_LIST=ppc-softmmu
+CONFIG_MAC_NEWWORLD=y
+CONFIG_MAC_OLDWORLD=y
+PPC_AUDIO_ES1370=n
+configure_args=(--target-list=ppc-softmmu)
+source {CONFIGURE_BASH!s}
+whp_configure_build
+'''
+            subprocess.run(
+                ['bash', '-c', script, '_', str(source_dir), str(build_dir)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            preset = device_dir / 'whp-user.mak'
+            self.assertTrue(preset.is_file())
+            self.assertIn('CONFIG_ES1370=n', preset.read_text(encoding='utf-8'))
+            self.assertIn(
+                '--with-devices-ppc=whp-user',
+                (build_dir / 'configure-args.txt').read_text(encoding='utf-8'),
+            )
+            metadata = (build_dir / '.whp-config').read_text(encoding='utf-8')
+            self.assertIn(
+                'WHP_PPC_DEVICE_CONFIG_SIGNATURE=newworld=y;oldworld=y;es1370=n',
+                metadata,
+            )
+
 
 if __name__ == '__main__':
     unittest.main()
