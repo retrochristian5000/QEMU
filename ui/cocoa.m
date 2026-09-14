@@ -253,6 +253,7 @@ static CGDirectDisplayID cocoa_screen_display_id(NSScreen *screen)
     return [[description objectForKey:@"NSScreenNumber"] unsignedIntValue];
 }
 
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_VERSION_12_0
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
@@ -279,6 +280,7 @@ static bool cocoa_legacy_refresh_rate(CGDirectDisplayID display, double *rate)
 }
 
 #pragma clang diagnostic pop
+#endif
 
 static bool cocoa_screen_refresh_rate(NSScreen *screen,
                                       CGDirectDisplayID display,
@@ -304,7 +306,12 @@ static bool cocoa_screen_refresh_rate(NSScreen *screen,
     }
 #endif
 
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_VERSION_12_0
     return cocoa_legacy_refresh_rate(display, rate);
+#else
+    (void)display;
+    return false;
+#endif
 }
 
 /*
