@@ -28,6 +28,15 @@ def install_diagnostic_policy(core) -> None:
             original_build_plan(argv)
         values = core.resolved_values()
 
+        # The portable Python entry skips the Bash bootstrap graph entirely.
+        # Fail closed when native LLVM was explicitly requested instead of
+        # silently compiling QEMU with whichever system compiler is available.
+        if values['BOOTSTRAP_NATIVE_LLVM'] == 'y':
+            raise RuntimeError(
+                'BOOTSTRAP_NATIVE_LLVM was explicitly requested, but the portable '
+                'core does not run the native LLVM bootstrap'
+            )
+
         if values['BUILD_QEMU_SYSTEM_SPARC'] == 'y':
             for index, arg in enumerate(configure_args):
                 if arg.startswith('--target-list='):
