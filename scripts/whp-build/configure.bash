@@ -225,33 +225,29 @@ whp_configure_hardware_value()
     esac
 }
 
-whp_configure_write_ppc_device_config()
+whp_configure_audio_signature()
 {
-    local base="$1"
-    local output="$2"
-    local es1370
+    local prefix="$1"
+    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local name
 
-    es1370="$(whp_configure_hardware_value PPC_AUDIO_ES1370 "${PPC_AUDIO_ES1370:-auto}")" || return 1
+    name="${prefix}_AUDIO_SB16"; sb16="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_ADLIB"; adlib="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_GUS"; gus="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_CS4231A"; cs4231a="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_PCSPK"; pcspk="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_ES1370"; es1370="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_AC97"; ac97="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_CS4630"; cs4630="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+    name="${prefix}_AUDIO_HDA"; hda="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
 
-    if [[ "$es1370" == auto ]]; then
-        awk '
-            !/^CONFIG_MAC_NEWWORLD=/ &&
-            !/^CONFIG_MAC_OLDWORLD=/ { print }
-        ' "$base" > "$output" || return 1
-    else
-        awk '
-            !/^CONFIG_MAC_NEWWORLD=/ &&
-            !/^CONFIG_MAC_OLDWORLD=/ &&
-            !/^CONFIG_ES1370=/ { print }
-        ' "$base" > "$output" || return 1
-    fi
+    printf 'sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
+        "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
+}
 
-    printf '\n# WHP generated PPC device overrides; retained for Meson regeneration.\n' >> "$output"
-    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
-    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
-    if [[ "$es1370" != auto ]]; then
-        printf 'CONFIG_ES1370=%s\n' "$es1370" >> "$output"
-    fi
+whp_configure_ppc_audio_signature()
+{
+    whp_configure_audio_signature PPC
 }
 
 # Compatibility name for existing i386-focused tests and helper callers.
@@ -262,23 +258,10 @@ whp_configure_i386_audio_value()
 
 whp_configure_i386_audio_signature()
 {
-    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
-
-    sb16="$(whp_configure_hardware_value I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}")" || return 1
-    adlib="$(whp_configure_hardware_value I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}")" || return 1
-    gus="$(whp_configure_hardware_value I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}")" || return 1
-    cs4231a="$(whp_configure_hardware_value I386_AUDIO_CS4231A "${I386_AUDIO_CS4231A:-auto}")" || return 1
-    pcspk="$(whp_configure_hardware_value I386_AUDIO_PCSPK "${I386_AUDIO_PCSPK:-auto}")" || return 1
-    es1370="$(whp_configure_hardware_value I386_AUDIO_ES1370 "${I386_AUDIO_ES1370:-auto}")" || return 1
-    ac97="$(whp_configure_hardware_value I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}")" || return 1
-    cs4630="$(whp_configure_hardware_value I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}")" || return 1
-    hda="$(whp_configure_hardware_value I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}")" || return 1
-
-    printf 'sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
-        "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
+    whp_configure_audio_signature I386
 }
 
-whp_configure_append_i386_audio_override()
+whp_configure_append_audio_override()
 {
     local output="$1"
     local name="$2"
@@ -290,6 +273,54 @@ whp_configure_append_i386_audio_override()
     if [[ "$value" != auto ]]; then
         printf '%s=%s\n' "$symbol" "$value" >> "$output"
     fi
+}
+
+whp_configure_append_i386_audio_override()
+{
+    whp_configure_append_audio_override "$@"
+}
+
+whp_configure_write_ppc_device_config()
+{
+    local base="$1"
+    local output="$2"
+    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local drop_re='^CONFIG_(MAC_NEWWORLD|MAC_OLDWORLD)='
+
+    sb16="$(whp_configure_hardware_value PPC_AUDIO_SB16 "${PPC_AUDIO_SB16:-auto}")" || return 1
+    adlib="$(whp_configure_hardware_value PPC_AUDIO_ADLIB "${PPC_AUDIO_ADLIB:-auto}")" || return 1
+    gus="$(whp_configure_hardware_value PPC_AUDIO_GUS "${PPC_AUDIO_GUS:-auto}")" || return 1
+    cs4231a="$(whp_configure_hardware_value PPC_AUDIO_CS4231A "${PPC_AUDIO_CS4231A:-auto}")" || return 1
+    pcspk="$(whp_configure_hardware_value PPC_AUDIO_PCSPK "${PPC_AUDIO_PCSPK:-auto}")" || return 1
+    es1370="$(whp_configure_hardware_value PPC_AUDIO_ES1370 "${PPC_AUDIO_ES1370:-auto}")" || return 1
+    ac97="$(whp_configure_hardware_value PPC_AUDIO_AC97 "${PPC_AUDIO_AC97:-auto}")" || return 1
+    cs4630="$(whp_configure_hardware_value PPC_AUDIO_CS4630 "${PPC_AUDIO_CS4630:-auto}")" || return 1
+    hda="$(whp_configure_hardware_value PPC_AUDIO_HDA "${PPC_AUDIO_HDA:-auto}")" || return 1
+
+    [[ "$sb16" != auto ]] && drop_re="$drop_re|^CONFIG_SB16="
+    [[ "$adlib" != auto ]] && drop_re="$drop_re|^CONFIG_ADLIB="
+    [[ "$gus" != auto ]] && drop_re="$drop_re|^CONFIG_GUS="
+    [[ "$cs4231a" != auto ]] && drop_re="$drop_re|^CONFIG_CS4231A="
+    [[ "$pcspk" != auto ]] && drop_re="$drop_re|^CONFIG_PCSPK="
+    [[ "$es1370" != auto ]] && drop_re="$drop_re|^CONFIG_ES1370="
+    [[ "$ac97" != auto ]] && drop_re="$drop_re|^CONFIG_AC97="
+    [[ "$cs4630" != auto ]] && drop_re="$drop_re|^CONFIG_CS4630="
+    [[ "$hda" != auto ]] && drop_re="$drop_re|^CONFIG_HDA="
+
+    awk -v re="$drop_re" '$0 !~ re { print }' "$base" > "$output" || return 1
+
+    printf '\n# WHP generated PPC device overrides; retained for Meson regeneration.\n' >> "$output"
+    printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
+    printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
+    whp_configure_append_audio_override "$output" PPC_AUDIO_SB16 "$sb16" CONFIG_SB16 || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_ADLIB "$adlib" CONFIG_ADLIB || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_GUS "$gus" CONFIG_GUS || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_CS4231A "$cs4231a" CONFIG_CS4231A || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_PCSPK "$pcspk" CONFIG_PCSPK || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_ES1370 "$es1370" CONFIG_ES1370 || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_AC97 "$ac97" CONFIG_AC97 || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_CS4630 "$cs4630" CONFIG_CS4630 || return 1
+    whp_configure_append_audio_override "$output" PPC_AUDIO_HDA "$hda" CONFIG_HDA || return 1
 }
 
 whp_configure_write_i386_audio_config()
@@ -326,7 +357,7 @@ whp_configure_build()
 local ppc_custom_devices=0
 local ppc_generated_config=""
 local ppc_generated_temp=""
-local ppc_es1370=""
+local ppc_audio_signature=""
 local i386_custom_audio=0
 local i386_generated_config=""
 local i386_generated_temp=""
@@ -357,10 +388,11 @@ whp_configure_sync_target_args
 WHP_PPC_DEVICE_CONFIG_SIGNATURE=not-requested
 case ",${QEMU_TARGET_LIST:-}," in
     *,ppc-softmmu,*)
-        ppc_es1370="$(whp_configure_hardware_value PPC_AUDIO_ES1370 "${PPC_AUDIO_ES1370:-auto}")" || return 1
+        ppc_audio_signature="$(whp_configure_ppc_audio_signature)" || return 1
         if [[ "${CONFIG_MAC_NEWWORLD:-y}" == y &&
               "${CONFIG_MAC_OLDWORLD:-y}" == y &&
-              "$ppc_es1370" == auto ]]; then
+              "$ppc_audio_signature" == \
+              'sb16=auto;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;es1370=auto;ac97=auto;cs4630=auto;hda=auto' ]]; then
             WHP_PPC_DEVICE_CONFIG_SIGNATURE=tracked-defaults
             stale_ppc_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
             if [[ -f "$stale_ppc_config" ]] &&
@@ -370,7 +402,7 @@ case ",${QEMU_TARGET_LIST:-}," in
             fi
         else
             ppc_custom_devices=1
-            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y};es1370=$ppc_es1370"
+            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y};$ppc_audio_signature"
             configure_args+=(--with-devices-ppc=whp-user)
         fi
         ;;
