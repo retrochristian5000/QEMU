@@ -8,6 +8,7 @@ import os
 import pathlib
 import subprocess
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
@@ -17,6 +18,14 @@ BUILDER = ROOT / 'builder.bash'
 
 def load_config_module():
     spec = importlib.util.spec_from_file_location('whp_config', CONFIG_TOOL)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_portable_build_module():
+    spec = importlib.util.spec_from_file_location('whp_portable_build_jobs', PORTABLE_BUILD_TOOL)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -80,6 +89,17 @@ class HostOptimizationTests(unittest.TestCase):
         result = portable_probe('fast')
         self.assertEqual(result.returncode, 2)
         self.assertIn('QEMU_HOST_OPTIMIZATION must be one of', result.stderr)
+
+    def test_portable_core_rejects_zero_job_parallelism(self):
+        mod = load_portable_build_module()
+        resolve_jobs = getattr(mod, 'resolve_jobs', None)
+        self.assertIsNotNone(
+            resolve_jobs,
+            'portable build must validate JOBS before passing -j to Ninja/Make',
+        )
+        with mock.patch.dict(os.environ, {'JOBS': '0'}, clear=False):
+            with self.assertRaisesRegex(ValueError, 'JOBS must be a positive integer'):
+                resolve_jobs()
 
     def test_bash_path_applies_optimization_after_firmware_preparation(self):
         builder = BUILDER.read_text(encoding='utf-8')
