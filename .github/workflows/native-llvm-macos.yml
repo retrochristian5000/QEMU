@@ -7,6 +7,7 @@ on:
     paths:
       - 'build.sh'
       - 'builder.bash'
+      - 'configs/meson/darwin.txt'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-builder.sh'
@@ -17,6 +18,7 @@ on:
       - 'scripts/verify-macos-lto.bash'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/configure.bash'
+      - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'toolchains/llvm-project'
