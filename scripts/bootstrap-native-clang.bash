@@ -300,6 +300,35 @@ for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
     }
 done
 
+# Native LLVM rebuilds already have a linker from the previous successful
+# toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
+# drive it against the selected SDK. This avoids routing every large Clang/LLVM
+# relink through Apple's system ld, while preserving the system linker as the
+# cold-bootstrap and incompatibility fallback. Keep input prefetch bounded by
+# the existing link-job pool rather than increasing concurrent heavy links.
+bootstrap_linker_args=()
+bootstrap_linker_name=system
+if [[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
+    if printf 'int main(void) { return 0; }\n' |
+        PATH="$TOOLCHAIN_DIR/bin:$PATH" \
+            "$bootstrap_cxx" -fuse-ld=lld \
+            -Wl,--read-workers="$LLVM_LINK_JOBS" \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -x c++ - -o /dev/null >/dev/null 2>&1; then
+        PATH="$TOOLCHAIN_DIR/bin:$PATH"
+        export PATH
+        bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"
+        bootstrap_linker_args=(
+            "-DLLVM_USE_LINKER=lld"
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
+            "-DCMAKE_MODULE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
+        )
+    fi
+fi
+printf 'WHP native LLVM bootstrap linker: %s\n' "$bootstrap_linker_name" >&2
+
 compiler_accepts_native_tune()
 {
     local compiler="$1"
@@ -584,6 +613,7 @@ cmake_args=(
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
     "${cmake_compiler_launcher_args[@]}"
+    "${bootstrap_linker_args[@]}"
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
     -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
