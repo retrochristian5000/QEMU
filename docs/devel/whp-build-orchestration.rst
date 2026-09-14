@@ -81,10 +81,15 @@ The ``QEMU i386 audio hardware`` section exposes optional audio models such as
 Sound Blaster 16, AdLib, Gravis UltraSound, ES1370, AC'97, and Intel HD Audio.
 Each entry is a three-state choice: ``auto``, ``y``, or ``n``. ``auto`` leaves
 QEMU's Kconfig decision unchanged. Explicit ``y`` or ``n`` values are written
-as only the requested ``CONFIG_*`` overrides in a temporary i386 device preset
-and passed through QEMU's supported ``--with-devices-i386`` configure hook.
-The preset is removed after configure, so the source tree does not retain a
-second device configuration.
+as only the requested ``CONFIG_*`` overrides in
+``configs/devices/i386-softmmu/whp-user.mak`` and passed through QEMU's
+supported ``--with-devices-i386`` configure hook.
+
+Meson records that architecture-scoped preset as a source input, so the
+ignored generated file remains present while the custom i386 device profile is
+active. It is removed only after a successful configuration has switched back
+to QEMU's tracked ``default.mak`` preset. This keeps automatic Meson/Ninja
+regeneration from referring to a vanished device file.
 
 The audio selectors are target-scoped: an i386 setting does not alter PowerPC
 or SPARC device configuration. If the portable Python fallback is active
