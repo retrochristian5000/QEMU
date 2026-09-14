@@ -62,18 +62,18 @@ class WhpConfigTests(unittest.TestCase):
         mod = load_module()
         option = mod.OPTION_BY_KEY['RUN_TESTS']
         self.assertEqual(option.section, 'Build behavior')
-        self.assertEqual(option.label, 'Run tests after build')
+        self.assertEqual(option.label, 'Run full regression suite after build')
         self.assertEqual(option.kind, 'bool')
-        self.assertEqual(option.default, 'y')
+        self.assertEqual(option.default, 'n')
 
         values = mod.default_values()
-        self.assertEqual(values['RUN_TESTS'], 'y')
-        assignments = mod.shell_assignments(mod.ConfigState(values), {})
-        self.assertIn("RUN_TESTS='1'", assignments)
-
-        values['RUN_TESTS'] = 'n'
+        self.assertEqual(values['RUN_TESTS'], 'n')
         assignments = mod.shell_assignments(mod.ConfigState(values), {})
         self.assertIn("RUN_TESTS='0'", assignments)
+
+        values['RUN_TESTS'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='1'", assignments)
 
     def test_portable_test_runner_uses_qemu_make_check(self):
         mod = load_portable_build_module()
