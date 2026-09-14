@@ -209,15 +209,97 @@ whp_configure_sync_target_args()
     configure_args=("${synced[@]}")
 }
 
+whp_configure_i386_audio_value()
+{
+    local name="$1"
+    local value="$2"
+
+    case "$value" in
+        auto|AUTO|Auto) printf 'auto\n' ;;
+        1|y|Y|yes|YES|Yes|true|TRUE|True|on|ON|On) printf 'y\n' ;;
+        0|n|N|no|NO|No|false|FALSE|False|off|OFF|Off) printf 'n\n' ;;
+        *)
+            printf 'error: %s must be auto or a boolean value\n' "$name" >&2
+            return 1
+            ;;
+    esac
+}
+
+whp_configure_i386_audio_signature()
+{
+    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+
+    sb16="$(whp_configure_i386_audio_value I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}")" || return 1
+    adlib="$(whp_configure_i386_audio_value I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}")" || return 1
+    gus="$(whp_configure_i386_audio_value I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}")" || return 1
+    cs4231a="$(whp_configure_i386_audio_value I386_AUDIO_CS4231A "${I386_AUDIO_CS4231A:-auto}")" || return 1
+    pcspk="$(whp_configure_i386_audio_value I386_AUDIO_PCSPK "${I386_AUDIO_PCSPK:-auto}")" || return 1
+    es1370="$(whp_configure_i386_audio_value I386_AUDIO_ES1370 "${I386_AUDIO_ES1370:-auto}")" || return 1
+    ac97="$(whp_configure_i386_audio_value I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}")" || return 1
+    cs4630="$(whp_configure_i386_audio_value I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}")" || return 1
+    hda="$(whp_configure_i386_audio_value I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}")" || return 1
+
+    printf 'sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
+        "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
+}
+
+whp_configure_append_i386_audio_override()
+{
+    local output="$1"
+    local name="$2"
+    local raw_value="$3"
+    local symbol="$4"
+    local value
+
+    value="$(whp_configure_i386_audio_value "$name" "$raw_value")" || return 1
+    if [[ "$value" != auto ]]; then
+        printf '%s=%s\n' "$symbol" "$value" >> "$output"
+    fi
+}
+
+whp_configure_write_i386_audio_config()
+{
+    local base="$1"
+    local output="$2"
+
+    awk '
+        !/^CONFIG_SB16=/ &&
+        !/^CONFIG_ADLIB=/ &&
+        !/^CONFIG_GUS=/ &&
+        !/^CONFIG_CS4231A=/ &&
+        !/^CONFIG_PCSPK=/ &&
+        !/^CONFIG_ES1370=/ &&
+        !/^CONFIG_AC97=/ &&
+        !/^CONFIG_CS4630=/ &&
+        !/^CONFIG_HDA=/ { print }
+    ' "$base" > "$output" || return 1
+
+    printf '\n# WHP temporary i386 audio overrides; removed after configure.\n' >> "$output"
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}" CONFIG_SB16 || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}" CONFIG_ADLIB || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}" CONFIG_GUS || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_CS4231A "${I386_AUDIO_CS4231A:-auto}" CONFIG_CS4231A || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_PCSPK "${I386_AUDIO_PCSPK:-auto}" CONFIG_PCSPK || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_ES1370 "${I386_AUDIO_ES1370:-auto}" CONFIG_ES1370 || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}" CONFIG_AC97 || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}" CONFIG_CS4630 || return 1
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}" CONFIG_HDA || return 1
+}
+
 whp_configure_build()
 {
 local ppc_custom_devices=0
 local ppc_generated_config=""
 local ppc_generated_temp=""
+local i386_custom_audio=0
+local i386_generated_config=""
+local i386_generated_temp=""
+local i386_audio_signature=""
 local configure_status=0
 local config_file="$BUILD_DIR/.whp-config"
 local config_candidate="$BUILD_DIR/.whp-config.new"
 local stale_ppc_config=""
+local stale_i386_config=""
 local host_tag=""
 
 # BUILD_DIR is persistent state, not scratch space.  Establish ownership before
@@ -252,6 +334,31 @@ case ",${QEMU_TARGET_LIST:-}," in
             ppc_custom_devices=1
             WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y}"
             configure_args+=(--with-devices-ppc=whp-user)
+        fi
+        ;;
+esac
+
+# Audio devices are optional Kconfig models on i386. Keep upstream defaults
+# when every menu entry is auto; only an explicit y/n choice creates a target
+# preset. This avoids freezing unrelated Kconfig defaults when one model is
+# toggled.
+WHP_I386_AUDIO_CONFIG_SIGNATURE=not-requested
+case ",${QEMU_TARGET_LIST:-}," in
+    *,i386-softmmu,*)
+        i386_audio_signature="$(whp_configure_i386_audio_signature)" || return 1
+        if [[ "$i386_audio_signature" == \
+              'sb16=auto;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;es1370=auto;ac97=auto;cs4630=auto;hda=auto' ]]; then
+            WHP_I386_AUDIO_CONFIG_SIGNATURE=tracked-defaults
+            stale_i386_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+            if [[ -f "$stale_i386_config" ]] &&
+               grep -Fq '# WHP temporary i386 audio overrides; removed after configure.' \
+                   "$stale_i386_config"; then
+                rm -f "$stale_i386_config"
+            fi
+        else
+            i386_custom_audio=1
+            WHP_I386_AUDIO_CONFIG_SIGNATURE="$i386_audio_signature"
+            configure_args+=(--with-devices-i386=whp-user)
         fi
         ;;
 esac
@@ -309,6 +416,7 @@ esac
     printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}"
     printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}"
     printf 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=%s\n' "$WHP_PPC_DEVICE_CONFIG_SIGNATURE"
+    printf 'WHP_I386_AUDIO_CONFIG_SIGNATURE=%s\n' "$WHP_I386_AUDIO_CONFIG_SIGNATURE"
     printf 'CONFIGURE_ARG=%s\n' "${configure_args[*]}"
 } > "$config_candidate"
 
@@ -336,13 +444,35 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
         mv "$ppc_generated_temp" "$ppc_generated_config"
     fi
 
+    if [[ "$i386_custom_audio" == 1 ]]; then
+        i386_generated_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+        i386_generated_temp="$i386_generated_config.tmp.$$"
+        if [[ ! -w "$(dirname "$i386_generated_config")" ]]; then
+            printf '%s\n' \
+                'error: custom i386 audio filtering requires a temporary QEMU device preset,' \
+                'but the source configs directory is read-only. The tracked i386 defaults remain buildable.' >&2
+            rm -f "$ppc_generated_config" "$ppc_generated_temp" \
+                "$i386_generated_config" "$i386_generated_temp" "$config_candidate"
+            return 1
+        fi
+        if ! whp_configure_write_i386_audio_config \
+            "$SOURCE_DIR/configs/devices/i386-softmmu/default.mak" \
+            "$i386_generated_temp"; then
+            rm -f "$ppc_generated_config" "$ppc_generated_temp" \
+                "$i386_generated_config" "$i386_generated_temp" "$config_candidate"
+            return 1
+        fi
+        mv "$i386_generated_temp" "$i386_generated_config"
+    fi
+
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "${configure_args[@]}"
     ) || configure_status=$?
 
-    if [[ -n "$ppc_generated_config" ]]; then
-        rm -f "$ppc_generated_config" "$ppc_generated_temp"
+    if [[ -n "$ppc_generated_config" || -n "$i386_generated_config" ]]; then
+        rm -f "$ppc_generated_config" "$ppc_generated_temp" \
+            "$i386_generated_config" "$i386_generated_temp"
     fi
     if [[ "$configure_status" != 0 ]]; then
         rm -f "$config_candidate"
