@@ -61,19 +61,27 @@ class WhpConfigTests(unittest.TestCase):
     def test_run_tests_is_user_controlled_build_behavior(self):
         mod = load_module()
         option = mod.OPTION_BY_KEY['RUN_TESTS']
+        scope = mod.OPTION_BY_KEY['QEMU_TEST_SCOPE']
         self.assertEqual(option.section, 'Build behavior')
         self.assertEqual(option.label, 'Run tests after build')
         self.assertEqual(option.kind, 'bool')
-        self.assertEqual(option.default, 'n')
+        self.assertEqual(option.default, 'y')
+        self.assertEqual(scope.kind, 'choice')
+        self.assertEqual(scope.default, 'changed')
+        self.assertEqual(scope.choices, ('changed', 'full'))
 
         values = mod.default_values()
-        self.assertEqual(values['RUN_TESTS'], 'n')
-        assignments = mod.shell_assignments(mod.ConfigState(values), {})
-        self.assertIn("RUN_TESTS='0'", assignments)
-
-        values['RUN_TESTS'] = 'y'
+        self.assertEqual(values['RUN_TESTS'], 'y')
+        self.assertEqual(values['QEMU_TEST_SCOPE'], 'changed')
         assignments = mod.shell_assignments(mod.ConfigState(values), {})
         self.assertIn("RUN_TESTS='1'", assignments)
+        self.assertIn("QEMU_TEST_SCOPE='changed'", assignments)
+
+        values['RUN_TESTS'] = 'n'
+        values['QEMU_TEST_SCOPE'] = 'full'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='0'", assignments)
+        self.assertIn("QEMU_TEST_SCOPE='full'", assignments)
 
     def test_portable_test_runner_uses_qemu_make_check(self):
         mod = load_portable_build_module()
