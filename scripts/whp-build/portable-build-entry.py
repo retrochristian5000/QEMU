@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import sys
 from typing import List
@@ -18,6 +19,14 @@ def load_core():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def validate_jobs() -> None:
+    value = os.environ.get('JOBS')
+    if value is None or value == '':
+        return
+    if not value.isdecimal() or int(value) <= 0:
+        raise ValueError(f'JOBS must be a positive integer when set: {value}')
 
 
 def install_diagnostic_policy(core) -> None:
@@ -71,6 +80,7 @@ def install_diagnostic_policy(core) -> None:
 
 def main(argv: List[str]) -> int:
     try:
+        validate_jobs()
         core = load_core()
         install_diagnostic_policy(core)
     except (OSError, RuntimeError, ValueError) as exc:
