@@ -11,6 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 BUILD_ENTRY = ROOT / 'build.sh'
 BUILD_TARGETS = ROOT / 'scripts' / 'whp-build' / 'build-targets.bash'
+SELECTOR = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
 
 
 def load_config_module():
@@ -22,13 +23,20 @@ def load_config_module():
 
 
 class TestPolicyTests(unittest.TestCase):
-    def test_full_regression_suite_is_opt_in_by_default(self):
+    def test_regression_tests_default_to_changed_only(self):
         config = load_config_module()
-        option = config.OPTION_BY_KEY['RUN_TESTS']
-        self.assertEqual(option.section, 'Build behavior')
-        self.assertEqual(option.kind, 'bool')
-        self.assertEqual(option.default, 'n')
-        self.assertEqual(config.default_values()['RUN_TESTS'], 'n')
+        run_tests = config.OPTION_BY_KEY['RUN_TESTS']
+        scope = config.OPTION_BY_KEY['QEMU_TEST_SCOPE']
+        self.assertEqual(run_tests.section, 'Build behavior')
+        self.assertEqual(run_tests.kind, 'bool')
+        self.assertEqual(run_tests.default, 'y')
+        self.assertEqual(scope.section, 'Build behavior')
+        self.assertEqual(scope.kind, 'choice')
+        self.assertEqual(scope.default, 'changed')
+        self.assertEqual(scope.choices, ('changed', 'full'))
+        defaults = config.default_values()
+        self.assertEqual(defaults['RUN_TESTS'], 'y')
+        self.assertEqual(defaults['QEMU_TEST_SCOPE'], 'changed')
 
     def test_public_build_entry_exports_config_policy(self):
         entry = BUILD_ENTRY.read_text(encoding='utf-8')
@@ -38,10 +46,18 @@ class TestPolicyTests(unittest.TestCase):
         eval_index = entry.index('eval "$WHP_CONFIG_ENV"')
         self.assertLess(config_index, eval_index)
 
-    def test_explicit_full_suite_still_uses_qemu_make_check(self):
+    def test_changed_scope_uses_selector_and_records_success(self):
+        targets = BUILD_TARGETS.read_text(encoding='utf-8')
+        self.assertIn(str(SELECTOR.relative_to(ROOT)), targets)
+        self.assertIn('QEMU_TEST_SCOPE', targets)
+        self.assertIn(' plan ', targets)
+        self.assertIn(' record ', targets)
+
+    def test_explicit_full_scope_still_uses_qemu_make_check(self):
         targets = BUILD_TARGETS.read_text(encoding='utf-8')
         self.assertIn('RUN_TESTS=1 requires GNU Make', targets)
-        self.assertIn('"$MAKE_CMD" -C "$BUILD_DIR" -j"$JOBS" check', targets)
+        self.assertIn('QEMU_TEST_SCOPE', targets)
+        self.assertIn('check', targets)
 
 
 if __name__ == '__main__':
