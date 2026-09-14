@@ -11,6 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 BUILD_ENTRY = ROOT / 'build.sh'
 BUILD_TARGETS = ROOT / 'scripts' / 'whp-build' / 'build-targets.bash'
+PORTABLE_CORE = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
 PORTABLE_ENTRY = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 SELECTOR = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
 
@@ -54,13 +55,14 @@ class TestPolicyTests(unittest.TestCase):
         self.assertIn(' plan ', targets)
         self.assertIn(' record ', targets)
 
-    def test_portable_entry_uses_same_selective_policy(self):
+    def test_portable_core_owns_same_selective_policy(self):
+        core = PORTABLE_CORE.read_text(encoding='utf-8')
         entry = PORTABLE_ENTRY.read_text(encoding='utf-8')
-        self.assertIn('select-tests.py', entry)
-        self.assertIn('install_test_policy', entry)
-        self.assertIn('QEMU_TEST_SCOPE', entry)
-        self.assertIn('plan_changed_tests', entry)
-        self.assertIn('record_test_state', entry)
+        self.assertIn('select-tests.py', core)
+        self.assertIn('QEMU_TEST_SCOPE', core)
+        self.assertIn('plan_changed_tests', core)
+        self.assertIn('record_test_state', core)
+        self.assertNotIn('install_test_policy', entry)
 
     def test_explicit_full_scope_still_uses_qemu_make_check(self):
         targets = BUILD_TARGETS.read_text(encoding='utf-8')
