@@ -75,6 +75,19 @@ class WhpHardwareMenuTests(unittest.TestCase):
         self.assertIn('<n>        i386', result.stdout)
         self.assertIn('<y>        ppc', result.stdout)
 
+    def test_ppc_auto_preserves_upstream_es1370_default(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_ppc_auto')
+        values = config.default_values()
+        base = (
+            '# PPC defaults\n'
+            'CONFIG_ES1370=y\n'
+            'CONFIG_MAC_NEWWORLD=y\n'
+            'CONFIG_MAC_OLDWORLD=y\n'
+        )
+        rendered = config.render_ppc_device_config(values, base)
+        self.assertIn('CONFIG_ES1370=y', rendered)
+        self.assertEqual(rendered.count('CONFIG_ES1370='), 1)
+
     def test_ppc_es1370_override_is_written_to_ppc_device_preset(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
