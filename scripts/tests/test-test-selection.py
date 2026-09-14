@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -17,6 +19,17 @@ def load_selector():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def git(repo: pathlib.Path, *args: str) -> str:
+    result = subprocess.run(
+        ['git', '-C', str(repo), *args],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 class SelectiveTestMappingTests(unittest.TestCase):
@@ -88,6 +101,102 @@ class SelectiveTestMappingTests(unittest.TestCase):
                 self.targets,
             ),
             ['check-unit', 'check-block'],
+        )
+
+
+class SelectiveTestStateTests(unittest.TestCase):
+    def setUp(self):
+        self.mod = load_selector()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.temp.name)
+        self.repo = self.root / 'source'
+        self.build = self.root / 'build'
+        self.repo.mkdir()
+        self.build.mkdir()
+        git(self.repo, 'init', '-q')
+        git(self.repo, 'config', 'user.email', 'whp-tests@example.invalid')
+        git(self.repo, 'config', 'user.name', 'WHP Tests')
+        for relative, text in (
+            ('block/qcow2.c', '/* block */\n'),
+            ('qapi/machine.json', '{}\n'),
+            ('docs/readme.rst', 'docs\n'),
+        ):
+            path = self.repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8')
+        git(self.repo, 'add', '.')
+        git(self.repo, 'commit', '-qm', 'baseline')
+        self.targets = ['ppc-softmmu', 'i386-softmmu']
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_first_validation_is_full_then_unchanged_tree_runs_nothing(self):
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check'],
+        )
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            [],
+        )
+
+    def test_dirty_known_change_runs_only_its_suite_and_can_be_recorded(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        path = self.repo / 'block/qcow2.c'
+        path.write_text('/* changed block */\n', encoding='utf-8')
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check-block'],
+        )
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            [],
+        )
+
+    def test_committed_change_since_last_success_uses_selective_suite(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        path = self.repo / 'qapi/machine.json'
+        path.write_text('{"changed": true}\n', encoding='utf-8')
+        git(self.repo, 'add', 'qapi/machine.json')
+        git(self.repo, 'commit', '-qm', 'change qapi')
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check-qapi-schema'],
+        )
+
+    def test_docs_only_change_runs_no_qemu_suite(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        path = self.repo / 'docs/readme.rst'
+        path.write_text('changed docs\n', encoding='utf-8')
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            [],
+        )
+
+    def test_configured_target_change_forces_full_validation(self):
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        self.assertEqual(
+            self.mod.plan_changed_tests(
+                self.repo, self.build, ['ppc-softmmu', 'i386-softmmu', 'sparc-softmmu']
+            ),
+            ['check'],
+        )
+
+    def test_untracked_content_change_invalidates_recorded_state(self):
+        extra = self.repo / 'block/new-driver.c'
+        extra.write_text('/* first */\n', encoding='utf-8')
+        self.mod.record_test_state(self.repo, self.build, self.targets)
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            [],
+        )
+        extra.write_text('/* second */\n', encoding='utf-8')
+        self.assertEqual(
+            self.mod.plan_changed_tests(self.repo, self.build, self.targets),
+            ['check-block'],
         )
 
 
