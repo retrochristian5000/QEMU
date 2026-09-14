@@ -137,6 +137,107 @@ else
 fi
 printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
 
+# The normal QEMU build enables compiler caching later in builder.sh. Native
+# LLVM is bootstrapped before that handoff, so opt it into the same cache policy
+# explicitly. This avoids reparsing LLVM/Clang's large C++ headers on cache hits
+# without changing Clang parser semantics or making cache state part of the
+# installed toolchain ABI.
+COMPILER_CACHE="${COMPILER_CACHE:-auto}"
+case "$COMPILER_CACHE" in
+    auto|ccache|sccache|none) ;;
+    *)
+        printf 'error: COMPILER_CACHE must be auto, ccache, sccache, or none: %s\n' \
+            "$COMPILER_CACHE" >&2
+        exit 1
+        ;;
+esac
+
+compiler_cache_cmd="${WHP_COMPILER_CACHE_CMD:-}"
+if [[ -z "$compiler_cache_cmd" ]]; then
+    case "$COMPILER_CACHE" in
+        auto)
+            compiler_cache_cmd="$(command -v ccache 2>/dev/null || true)"
+            if [[ -z "$compiler_cache_cmd" ]]; then
+                compiler_cache_cmd="$(command -v sccache 2>/dev/null || true)"
+            fi
+            ;;
+        ccache|sccache)
+            compiler_cache_cmd="$(command -v "$COMPILER_CACHE" 2>/dev/null || true)"
+            if [[ -z "$compiler_cache_cmd" ]]; then
+                printf 'error: requested compiler cache is not installed: %s\n' \
+                    "$COMPILER_CACHE" >&2
+                exit 1
+            fi
+            ;;
+        none)
+            compiler_cache_cmd=""
+            ;;
+    esac
+fi
+
+cmake_compiler_launcher_args=(
+    -DCMAKE_C_COMPILER_LAUNCHER=
+    -DCMAKE_CXX_COMPILER_LAUNCHER=
+)
+if [[ -n "$compiler_cache_cmd" ]]; then
+    case "$compiler_cache_cmd" in
+        *' '*)
+            printf 'error: WHP_COMPILER_CACHE_CMD must name one executable: %s\n' \
+                "$compiler_cache_cmd" >&2
+            exit 1
+            ;;
+        */*)
+            [[ -x "$compiler_cache_cmd" ]] || {
+                printf 'error: compiler cache is not executable: %s\n' \
+                    "$compiler_cache_cmd" >&2
+                exit 1
+            }
+            ;;
+        *)
+            resolved_cache="$(command -v "$compiler_cache_cmd" 2>/dev/null || true)"
+            [[ -n "$resolved_cache" ]] || {
+                printf 'error: compiler cache is not executable: %s\n' \
+                    "$compiler_cache_cmd" >&2
+                exit 1
+            }
+            compiler_cache_cmd="$resolved_cache"
+            unset resolved_cache
+            ;;
+    esac
+
+    cache_build_dir="${BUILD_DIR:-$SOURCE_DIR/build}"
+    WHP_COMPILER_CACHE_ROOT="${WHP_COMPILER_CACHE_ROOT:-$(dirname -- "$cache_build_dir")/.whp-compiler-cache}"
+    cache_tag="$host_kernel-$host_arch"
+    cache_base="${compiler_cache_cmd##*/}"
+    case "$cache_base" in
+        ccache)
+            CCACHE_DIR="${CCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/ccache-$cache_tag}"
+            export CCACHE_DIR
+            ;;
+        sccache)
+            SCCACHE_DIR="${SCCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/sccache-$cache_tag}"
+            export SCCACHE_DIR
+            ;;
+        *)
+            printf 'error: unsupported compiler cache command: %s\n' \
+                "$compiler_cache_cmd" >&2
+            exit 1
+            ;;
+    esac
+    WHP_COMPILER_CACHE_CMD="$compiler_cache_cmd"
+    export WHP_COMPILER_CACHE_CMD WHP_COMPILER_CACHE_ROOT
+    cmake_compiler_launcher_args=(
+        "-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd"
+        "-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd"
+    )
+    printf 'WHP native LLVM compiler cache: %s (%s)\n' \
+        "$cache_base" "$WHP_COMPILER_CACHE_ROOT" >&2
+elif [[ "$COMPILER_CACHE" == none ]]; then
+    CCACHE_DISABLE=1
+    export CCACHE_DISABLE
+    printf 'WHP native LLVM compiler cache: disabled\n' >&2
+fi
+
 cmake_host_args=()
 cmake_darwin_runtime_args=()
 sdkroot=""
@@ -164,7 +265,7 @@ if [[ "$host_os" == macos ]]; then
     # LLVM's builtins and runtimes are separate ExternalProject configurations.
     # Carry Darwin ABI inputs into both, but keep compiler-rt-only feature
     # policy out of builtins so CMake does not report irrelevant cache entries.
-    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
+    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd"
     darwin_runtimes_cmake_args="$darwin_external_cmake_args"
     for compiler_rt_option in \
         -DCOMPILER_RT_ENABLE_IOS=OFF \
@@ -482,6 +583,7 @@ cmake_args=(
     "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
+    "${cmake_compiler_launcher_args[@]}"
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
     -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
