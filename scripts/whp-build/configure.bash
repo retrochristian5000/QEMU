@@ -363,6 +363,38 @@ case ",${QEMU_TARGET_LIST:-}," in
         ;;
 esac
 
+# The custom i386 preset is a persistent Meson source input.  Recreate it before
+# deciding that an existing configure is reusable, because ignored source-tree
+# files can disappear independently of BUILD_DIR/.whp-config.  Generate the
+# candidate in BUILD_DIR so a read-only source tree remains usable when the
+# already-present preset is still correct, and avoid touching the preset when
+# its contents have not changed.
+if [[ "$i386_custom_audio" == 1 ]]; then
+    i386_generated_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+    i386_generated_temp="$BUILD_DIR/.whp-i386-device-config.tmp.$$"
+    if ! whp_configure_write_i386_audio_config \
+        "$SOURCE_DIR/configs/devices/i386-softmmu/default.mak" \
+        "$i386_generated_temp"; then
+        rm -f "$i386_generated_temp"
+        return 1
+    fi
+    if [[ -f "$i386_generated_config" ]] &&
+       cmp -s "$i386_generated_temp" "$i386_generated_config"; then
+        rm -f "$i386_generated_temp"
+        i386_generated_temp=""
+    else
+        if [[ ! -w "$(dirname "$i386_generated_config")" ]]; then
+            printf '%s\n' \
+                'error: custom i386 audio filtering requires configs/devices/i386-softmmu/whp-user.mak,' \
+                'but the source configs directory is read-only. The tracked i386 defaults remain buildable.' >&2
+            rm -f "$i386_generated_temp"
+            return 1
+        fi
+        mv "$i386_generated_temp" "$i386_generated_config"
+        i386_generated_temp=""
+    fi
+fi
+
 {
     printf 'HOST_OS=%s\n' "$HOST_OS"
     printf 'PROCESS_ARCH=%s\n' "$PROCESS_ARCH"
@@ -442,27 +474,6 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
             printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}"
         } >> "$ppc_generated_temp"
         mv "$ppc_generated_temp" "$ppc_generated_config"
-    fi
-
-    if [[ "$i386_custom_audio" == 1 ]]; then
-        i386_generated_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
-        i386_generated_temp="$i386_generated_config.tmp.$$"
-        if [[ ! -w "$(dirname "$i386_generated_config")" ]]; then
-            printf '%s\n' \
-                'error: custom i386 audio filtering requires a generated QEMU device preset,' \
-                'but the source configs directory is read-only. The tracked i386 defaults remain buildable.' >&2
-            rm -f "$ppc_generated_config" "$ppc_generated_temp" \
-                "$i386_generated_temp" "$config_candidate"
-            return 1
-        fi
-        if ! whp_configure_write_i386_audio_config \
-            "$SOURCE_DIR/configs/devices/i386-softmmu/default.mak" \
-            "$i386_generated_temp"; then
-            rm -f "$ppc_generated_config" "$ppc_generated_temp" \
-                "$i386_generated_temp" "$config_candidate"
-            return 1
-        fi
-        mv "$i386_generated_temp" "$i386_generated_config"
     fi
 
     (
