@@ -77,25 +77,33 @@ target list, so the menu does not expose a conflicting raw target-list field.
 Disabling every system emulator passes ``--disable-system`` for a tools-only
 build.
 
-The ``QEMU i386 audio hardware`` section exposes optional audio models such as
-Sound Blaster 16, AdLib, Gravis UltraSound, ES1370, AC'97, and Intel HD Audio.
-Each entry is a three-state choice: ``auto``, ``y``, or ``n``. ``auto`` leaves
-QEMU's Kconfig decision unchanged. Explicit ``y`` or ``n`` values are written
-as only the requested ``CONFIG_*`` overrides in
-``configs/devices/i386-softmmu/whp-user.mak`` and passed through QEMU's
-supported ``--with-devices-i386`` configure hook.
+The ``QEMU hardware`` section exposes optional device models independently of
+the system-emulator selector. Each target choice is three-state: ``auto``,
+``y``, or ``n``. ``auto`` leaves QEMU's Kconfig decision unchanged for that
+architecture. Hardware that is valid on more than one target is displayed once
+with architecture choices underneath it. For example, ``Ensoniq ES1370 (PCI)``
+has independent ``i386`` and ``ppc`` choices; the ISA-only audio models remain
+single-target entries until another architecture has been validated for them.
 
-Meson records that architecture-scoped preset as a source input, so the
-ignored generated file remains present while the custom i386 device profile is
-active. It is removed only after a successful configuration has switched back
-to QEMU's tracked ``default.mak`` preset. This keeps automatic Meson/Ninja
-regeneration from referring to a vanished device file.
+Explicit ``y`` or ``n`` values are written as only the requested ``CONFIG_*``
+overrides in the matching architecture preset, such as
+``configs/devices/i386-softmmu/whp-user.mak`` or
+``configs/devices/ppc-softmmu/whp-user.mak``. QEMU then receives the supported
+``--with-devices-i386=whp-user`` or ``--with-devices-ppc=whp-user`` configure
+hook for the affected target. An i386 choice never changes the PowerPC preset,
+and a PowerPC choice never changes the i386 preset.
 
-The audio selectors are target-scoped: an i386 setting does not alter PowerPC
-or SPARC device configuration. If the portable Python fallback is active
-instead of the Bash feature adapter, an explicit i386 audio filter fails
-closed rather than being silently ignored; leaving the entries on ``auto``
-continues to use QEMU's tracked defaults.
+Meson records each selected architecture-scoped preset as a source input, so
+an ignored generated ``whp-user.mak`` remains present while that custom device
+profile is active. It is removed only after a successful configuration has
+switched the architecture back to QEMU's tracked ``default.mak`` preset. This
+also lets the wrapper reconstruct a missing ignored preset before reusing an
+otherwise unchanged Meson/Ninja configuration.
+
+The portable Python fallback does not currently materialize target-specific
+device presets. It therefore fails closed when any explicit ``QEMU hardware``
+filter is requested instead of silently ignoring it. Leaving hardware choices
+on ``auto`` continues to use QEMU's tracked Kconfig defaults and dependencies.
 
 Incremental policy
 ------------------
