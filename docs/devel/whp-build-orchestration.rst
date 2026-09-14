@@ -65,16 +65,31 @@ Configuration menu
 
 Run ``./build.sh menuconfig`` to edit the persistent ``.whpconfig`` build
 profile. The menu is the single portable interface for host features,
-firmware, machines, build behavior, and build outputs. Explicit environment
-variables remain one-run overrides of the saved values.
+firmware, machines, build behavior, hardware filters, and build outputs.
+Explicit environment variables remain one-run overrides of the saved values.
 
 Every Boolean menu item is enabled in a new profile. The build-output section
-includes ``qemu-img``, ``qemu-system-i386``, and ``qemu-system-ppc``.
-Disabling ``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
-``--enable-tools``. The two system-emulator selections derive QEMU's internal
+includes ``qemu-img`` and the supported ``qemu-system-*`` selectors. Disabling
+``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
+``--enable-tools``. The system-emulator selections derive QEMU's internal
 target list, so the menu does not expose a conflicting raw target-list field.
-Disabling both system emulators passes ``--disable-system`` for a tools-only
+Disabling every system emulator passes ``--disable-system`` for a tools-only
 build.
+
+The ``QEMU i386 audio hardware`` section exposes optional audio models such as
+Sound Blaster 16, AdLib, Gravis UltraSound, ES1370, AC'97, and Intel HD Audio.
+Each entry is a three-state choice: ``auto``, ``y``, or ``n``. ``auto`` leaves
+QEMU's Kconfig decision unchanged. Explicit ``y`` or ``n`` values are written
+as only the requested ``CONFIG_*`` overrides in a temporary i386 device preset
+and passed through QEMU's supported ``--with-devices-i386`` configure hook.
+The preset is removed after configure, so the source tree does not retain a
+second device configuration.
+
+The audio selectors are target-scoped: an i386 setting does not alter PowerPC
+or SPARC device configuration. If the portable Python fallback is active
+instead of the Bash feature adapter, an explicit i386 audio filter fails
+closed rather than being silently ignored; leaving the entries on ``auto``
+continues to use QEMU's tracked defaults.
 
 Incremental policy
 ------------------
@@ -130,4 +145,6 @@ Configure defaults
 
 The WHP profile does not replace QEMU's supported configure, Kconfig, or Meson
 defaults with a private feature matrix. The wrapper adds only the host policy,
-firmware integration, and requested target choices required by the WHP build.
+firmware integration, and explicit target/device choices requested by the WHP
+build profile. Device choices left on ``auto`` remain owned by QEMU's Kconfig
+defaults and dependencies.
