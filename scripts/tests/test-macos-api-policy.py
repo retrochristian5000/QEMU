@@ -24,6 +24,7 @@ class MacOSApiPolicyTests(unittest.TestCase):
             '#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_VERSION_12_0\n'
             '    return cocoa_legacy_refresh_rate(display, rate);\n'
             '#else\n'
+            '    (void)display;\n'
             '    return false;\n'
             '#endif'
         )
