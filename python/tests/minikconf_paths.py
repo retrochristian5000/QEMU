@@ -31,3 +31,11 @@ def test_include_tracking_normalizes_paths(tmp_path):
     expected = [str(kconfig.resolve()), str(child.resolve())]
     assert data.previously_included == expected
     assert data._included_files == set(expected)
+
+
+def test_depfile_path_escaping():
+    assert minikconf.escape_depfile_path("plain/path") == "plain/path"
+    assert minikconf.escape_depfile_path("path with space") == "path\\ with\\ space"
+    assert minikconf.escape_depfile_path("hash#path") == "hash\\#path"
+    assert minikconf.escape_depfile_path("cash$path") == "cash$$path"
+    assert minikconf.escape_depfile_path("back\\ slash") == "back\\\\\\ slash"

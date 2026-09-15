@@ -48,6 +48,29 @@ def debug_print(*args: object) -> None:
     #print('# ' + (' '.join(str(x) for x in args)))
     pass
 
+def escape_depfile_path(path: str) -> str:
+    result: list[str] = []
+    backslashes = 0
+
+    for ch in path:
+        if ch == '\\':
+            backslashes += 1
+            continue
+
+        if ch == ' ':
+            result.append('\\' * (2 * backslashes + 1))
+            result.append(ch)
+        elif ch == '#':
+            result.append('\\' * (backslashes + 1))
+            result.append(ch)
+        else:
+            result.append('\\' * backslashes)
+            result.append('$$' if ch == '$' else ch)
+        backslashes = 0
+
+    result.append('\\' * backslashes)
+    return ''.join(result)
+
 # -------------------------------------------
 # KconfigData implements the Kconfig semantics.  For now it can only
 # detect undefined symbols, i.e. symbols that were referenced in
@@ -728,10 +751,10 @@ def main() -> None:
         if key not in external_vars and config[key]:
             print ('CONFIG_%s=y' % key)
 
-    deps = open(argv[2], 'wt', encoding='utf-8')
-    for fname in data.previously_included:
-        print ('%s: %s' % (argv[1], fname), file=deps)
-    deps.close()
+    output = escape_depfile_path(argv[1])
+    with open(argv[2], 'wt', encoding='utf-8') as deps:
+        for fname in data.previously_included:
+            print('%s: %s' % (output, escape_depfile_path(fname)), file=deps)
 
 if __name__ == '__main__':
     main()
