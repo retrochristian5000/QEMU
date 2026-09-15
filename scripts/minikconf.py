@@ -229,6 +229,7 @@ class KconfigData:
     def __init__(self, value_mangler: Mangler = defconfig) -> None:
         self.value_mangler = value_mangler
         self.previously_included: list[str] = []
+        self._included_files: set[str] = set()
         self.defined_vars: set[str] = set()
         self.referenced_vars: dict[str, KconfigData.Var] = {}
         self.clauses: list[KconfigData.Clause] = []
@@ -381,6 +382,7 @@ class KconfigParser:
         self.abs_fname = os.path.abspath(fp.name)
         self.fname = fp.name
         self.data.previously_included.append(self.abs_fname)
+        self.data._included_files.add(self.abs_fname)
 
         src = fp.read()
         if src == '' or src[-1] != '\n':
@@ -419,18 +421,16 @@ class KconfigParser:
             inf = inf.parent
 
         # skip multiple include of the same file
-        if incl_abs_fname in self.data.previously_included:
+        if incl_abs_fname in self.data._included_files:
             return
         try:
-            try:
-                fp = open(incl_abs_fname, 'rt', encoding='utf-8')
-            except IOError as e:
-                raise KconfigParserError(self, '%s: %s' % (e.strerror, include))
+            fp = open(incl_abs_fname, 'rt', encoding='utf-8')
+        except IOError as e:
+            raise KconfigParserError(self, '%s: %s' % (e.strerror, include))
 
+        with fp:
             inner = IncludeInfo(file=self.fname, line=self.line, parent=self.incl_info)
             type(self).parse(fp, self.data, inner)
-        finally:
-            fp.close()
 
     # recursive descent parser -----
 
