@@ -8,6 +8,8 @@ on:
       - 'build.sh'
       - 'builder.bash'
       - 'configs/meson/darwin.txt'
+      - 'tcg/aarch64/tcg-target.c.inc'
+      - 'tcg/tcg.c'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-builder.sh'
@@ -23,6 +25,7 @@ on:
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-macos-arch-policy.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
   workflow_dispatch:
@@ -63,6 +66,10 @@ jobs:
       - name: Verify macOS architecture policy
         shell: bash
         run: bash scripts/tests/test-macos-arch-policy.bash
+
+      - name: Audit arm64e TCG pointer authentication gate
+        shell: bash
+        run: python3 scripts/tests/test-tcg-arm64e-ptrauth.py
 
       - name: Verify native LLVM wiring
         shell: bash
@@ -144,6 +151,10 @@ jobs:
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-ubsan
+
+          # Keep a direct arm64e compiler/linker/runtime probe even while QEMU
+          # itself remains on arm64.  This separates toolchain capability from
+          # the still-open TCG JIT pointer-authentication audit.
           printf 'int main(void) { return 0; }\n' |
             "$clang" -arch arm64e -fuse-ld=lld \
               -isysroot "$sdkroot" \
@@ -177,7 +188,7 @@ jobs:
           grep -Fxq 'QEMU_HOST_LTO=1' "$MACOS_LTO_MANIFEST"
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
-          test "$selected_arch" = arm64e
+          test "$selected_arch" = arm64
 
       - name: Build QEMU with bootstrapped LLVM and LTO
         shell: bash
@@ -204,11 +215,11 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" --version
           grep -Fq "QEMU native compiler: WHP LLVM ($NATIVE_LLVM_DIR)" native-qemu.log
           grep -Fq "QEMU C compiler:          $NATIVE_LLVM_DIR/bin/clang" native-qemu.log
-          grep -Fq 'macOS Mach-O arch:       arm64e' native-qemu.log
+          grep -Fq 'macOS Mach-O arch:       arm64' native-qemu.log
           grep -Fq "CC=$NATIVE_LLVM_DIR/bin/clang|" \
             "$BUILD_DIR/.whp-macos-build-identity"
-          grep -Eq '^CFLAGS=.*-arch arm64e' "$BUILD_DIR/.whp-macos-build-identity"
-          grep -Eq '^LDFLAGS=.*-arch arm64e' "$BUILD_DIR/.whp-macos-build-identity"
+          grep -Eq '^CFLAGS=.*-arch arm64([[:space:]]|$)' "$BUILD_DIR/.whp-macos-build-identity"
+          grep -Eq '^LDFLAGS=.*-arch arm64([[:space:]]|$)' "$BUILD_DIR/.whp-macos-build-identity"
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
 
       - name: Show native LLVM failure context
