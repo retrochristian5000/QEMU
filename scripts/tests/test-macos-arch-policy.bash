@@ -35,16 +35,21 @@ chmod +x "$FAKE_CLANG"
 # arm64e with a separate LLVM backend.
 source "$SOURCE_DIR/scripts/macos-arch-policy.bash"
 
+# Auto must stay on the established arm64 ABI until TCG handles pointer
+# authentication at both C -> JIT and JIT -> C call boundaries.  Merely having
+# a compiler and SDK that can link arm64e is not enough.
 : > "$TEST_COMPILER_LOG"
 selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
+[[ "$selected" == arm64 ]]
+[[ ! -s "$TEST_COMPILER_LOG" ]]
+
+# Explicit arm64e remains a probe-gated development lane.
+: > "$TEST_COMPILER_LOG"
+selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=arm64e \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
 [[ "$selected" == arm64e ]]
 grep -Fq -- '-arch arm64e' "$TEST_COMPILER_LOG"
-
-: > "$TEST_COMPILER_LOG"
-selected="$(TEST_ARM64E_SUPPORTED=0 WHP_MACOS_ARCH=auto \
-    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
-[[ "$selected" == arm64 ]]
 
 if TEST_ARM64E_SUPPORTED=0 WHP_MACOS_ARCH=arm64e \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 \
@@ -71,7 +76,7 @@ grep -Fq 'WHP_MACOS_ARCH must be auto, arm64, arm64e, or x86_64' \
 
 : > "$TEST_COMPILER_LOG"
 selected="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld \
-    TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
+    TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=arm64e \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
 [[ "$selected" == arm64e ]]
 grep -Fq -- '-fuse-ld=lld' "$TEST_COMPILER_LOG"
