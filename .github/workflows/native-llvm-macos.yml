@@ -14,12 +14,14 @@ on:
       - 'scripts/macos-builder.bash'
       - 'scripts/macos-build-hygiene.bash'
       - 'scripts/macos-compiler-policy.bash'
+      - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-lto.sh'
       - 'scripts/verify-macos-lto.bash'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'scripts/tests/test-macos-arch-policy.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
@@ -57,6 +59,10 @@ jobs:
       - name: Verify Apple Silicon host
         shell: bash
         run: test "$(uname -m)" = arm64
+
+      - name: Verify macOS architecture policy
+        shell: bash
+        run: bash scripts/tests/test-macos-arch-policy.bash
 
       - name: Verify native LLVM wiring
         shell: bash
@@ -112,7 +118,7 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=7' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=8' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
@@ -138,18 +144,28 @@ jobs:
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-ubsan
+          printf 'int main(void) { return 0; }\n' |
+            "$clang" -arch arm64e -fuse-ld=lld \
+              -isysroot "$sdkroot" \
+              "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+              -x c - -o native-llvm-arm64e
           test -s native-llvm-c.o
           test -s native-llvm-cxx.o
           test -x native-llvm-ubsan
+          test -x native-llvm-arm64e
+          ./native-llvm-arm64e
 
       - name: Probe WHP Clang to macOS LTO handoff
         shell: bash
         run: |
           set -euo pipefail
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
-          common_flags="-arch arm64 -isysroot $sdkroot -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
           export SDKROOT="$sdkroot"
           export CC="$NATIVE_LLVM_DIR/bin/clang"
+          source scripts/macos-arch-policy.bash
+          selected_arch="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_MACOS_ARCH=auto \
+            whp_select_macos_arch "$CC" "$sdkroot" "$MACOSX_DEPLOYMENT_TARGET" "$(uname -m)")"
+          common_flags="-arch $selected_arch -isysroot $sdkroot -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
           export CFLAGS="$common_flags"
           export CPPFLAGS=''
           export LDFLAGS="$common_flags -fuse-ld=lld"
@@ -161,6 +177,7 @@ jobs:
           grep -Fxq 'QEMU_HOST_LTO=1' "$MACOS_LTO_MANIFEST"
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
+          test "$selected_arch" = arm64e
 
       - name: Build QEMU with bootstrapped LLVM and LTO
         shell: bash
@@ -187,8 +204,11 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" --version
           grep -Fq "QEMU native compiler: WHP LLVM ($NATIVE_LLVM_DIR)" native-qemu.log
           grep -Fq "QEMU C compiler:          $NATIVE_LLVM_DIR/bin/clang" native-qemu.log
+          grep -Fq 'macOS Mach-O arch:       arm64e' native-qemu.log
           grep -Fq "CC=$NATIVE_LLVM_DIR/bin/clang|" \
             "$BUILD_DIR/.whp-macos-build-identity"
+          grep -Eq '^CFLAGS=.*-arch arm64e' "$BUILD_DIR/.whp-macos-build-identity"
+          grep -Eq '^LDFLAGS=.*-arch arm64e' "$BUILD_DIR/.whp-macos-build-identity"
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
 
       - name: Show native LLVM failure context
