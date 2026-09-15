@@ -3,6 +3,11 @@
 # Select the Apple Mach-O architecture used for QEMU host objects.  arm64e is
 # an ABI variant of the AArch64 backend, not a separate LLVM target backend, so
 # keep this policy independent from WHP_HOST_ARCH/LLVM_TARGETS_TO_BUILD.
+#
+# QEMU's TCG JIT still needs explicit arm64e pointer-authentication handling at
+# both C -> JIT and JIT -> C call boundaries.  Keep auto on the established
+# arm64 ABI until those paths execute translated guest code under CI.  Explicit
+# arm64e remains available as a probe-gated audit/development lane.
 
 whp_macos_arch_probe_arm64e()
 {
@@ -62,13 +67,7 @@ whp_select_macos_arch()
     esac
 
     if [[ "$requested" == auto ]]; then
-        if [[ "$native_arch" == arm64 ]] &&
-           whp_macos_arch_probe_arm64e \
-               "$compiler" "$sdkroot" "$deployment_target"; then
-            printf 'arm64e\n'
-        else
-            printf '%s\n' "$native_arch"
-        fi
+        printf '%s\n' "$native_arch"
         return 0
     fi
 
