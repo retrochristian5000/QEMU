@@ -410,8 +410,9 @@ class KconfigParser:
         return '%s%s:%d:%d' % (incl_chain, self.fname, self.line, col)
 
     def do_include(self, include: str) -> None:
-        incl_abs_fname = os.path.join(os.path.dirname(self.abs_fname),
-                                      include)
+        incl_abs_fname = os.path.abspath(
+            os.path.join(os.path.dirname(self.abs_fname), include)
+        )
         # catch inclusion cycle
         inf = self.incl_info
         while inf:
