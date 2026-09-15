@@ -336,14 +336,16 @@ static void ibm_40p_init(MachineState *machine)
     if (defaults_enabled()) {
         m48t59 = NVRAM(isa_create_simple(isa_bus, "isa-m48t59"));
 
-        isa_dev = isa_new("cs4231a");
-        dev = DEVICE(isa_dev);
-        qdev_prop_set_uint32(dev, "iobase", 0x830);
-        qdev_prop_set_uint32(dev, "irq", 10);
-        if (machine->audiodev) {
-            qdev_prop_set_string(dev, "audiodev", machine->audiodev);
+        isa_dev = isa_try_new("cs4231a");
+        if (isa_dev) {
+            dev = DEVICE(isa_dev);
+            qdev_prop_set_uint32(dev, "iobase", 0x830);
+            qdev_prop_set_uint32(dev, "irq", 10);
+            if (machine->audiodev) {
+                qdev_prop_set_string(dev, "audiodev", machine->audiodev);
+            }
+            isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
         }
-        isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
         isa_dev = isa_new("pc87312");
         dev = DEVICE(isa_dev);

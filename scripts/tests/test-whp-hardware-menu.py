@@ -13,6 +13,10 @@ CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
 CONFIG_TOOL = CONFIG_DIR / 'config.py'
 MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
+PPC_KCONFIG = ROOT / 'hw' / 'ppc' / 'Kconfig'
+ISA_KCONFIG = ROOT / 'hw' / 'isa' / 'Kconfig'
+PPC_PREP = ROOT / 'hw' / 'ppc' / 'prep.c'
+I82378 = ROOT / 'hw' / 'isa' / 'i82378.c'
 sys.path.insert(0, str(CONFIG_DIR))
 
 AUDIO_DEVICES = {
@@ -34,6 +38,12 @@ def load_module(path: pathlib.Path, name: str):
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def kconfig_block(text: str, symbol: str) -> str:
+    marker = f'config {symbol}\n'
+    block = text.split(marker, 1)[1]
+    return block.split('\nconfig ', 1)[0]
 
 
 class WhpHardwareMenuTests(unittest.TestCase):
@@ -126,6 +136,19 @@ whp_configure_write_ppc_device_config "$1" "$2"
         for _, symbol in AUDIO_DEVICES.values():
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=n', text)
+
+    def test_ppc_audio_hard_dependencies_are_optional(self):
+        prep_kconfig = kconfig_block(PPC_KCONFIG.read_text(encoding='utf-8'), 'PREP')
+        i82378_kconfig = kconfig_block(ISA_KCONFIG.read_text(encoding='utf-8'), 'I82378')
+        prep_source = PPC_PREP.read_text(encoding='utf-8')
+        i82378_source = I82378.read_text(encoding='utf-8')
+
+        self.assertIn('imply CS4231A', prep_kconfig)
+        self.assertNotIn('select CS4231A', prep_kconfig)
+        self.assertIn('imply PCSPK', i82378_kconfig)
+        self.assertNotIn('select PCSPK', i82378_kconfig)
+        self.assertIn('isa_dev = isa_try_new("cs4231a");', prep_source)
+        self.assertIn('pcspk = isa_try_new(TYPE_PC_SPEAKER);', i82378_source)
 
     def test_ppc_audio_choice_alone_selects_ppc_custom_preset(self):
         with tempfile.TemporaryDirectory() as td:

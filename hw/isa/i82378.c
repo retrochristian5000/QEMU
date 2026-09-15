@@ -103,10 +103,13 @@ static void i82378_realize(PCIDevice *pci, Error **errp)
     pit = i8254_pit_init(isabus, 0x40, 0, NULL);
 
     /* speaker */
-    pcspk = isa_new(TYPE_PC_SPEAKER);
-    object_property_set_link(OBJECT(pcspk), "pit", OBJECT(pit), &error_fatal);
-    if (!isa_realize_and_unref(pcspk, isabus, errp)) {
-        return;
+    pcspk = isa_try_new(TYPE_PC_SPEAKER);
+    if (pcspk) {
+        object_property_set_link(OBJECT(pcspk), "pit", OBJECT(pit),
+                                 &error_fatal);
+        if (!isa_realize_and_unref(pcspk, isabus, errp)) {
+            return;
+        }
     }
 
     /* 2 82C37 (dma) */
