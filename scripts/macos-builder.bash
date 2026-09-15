@@ -14,6 +14,7 @@ fi
 
 source "$SOURCE_DIR/scripts/whp-build/common.bash"
 source "$SCRIPT_DIR/macos-build-hygiene.bash"
+source "$SCRIPT_DIR/macos-arch-policy.bash"
 
 validate_version()
 {
@@ -63,11 +64,11 @@ reject_managed_flags()
     for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
         value="${!variable:-}"
         case " $value " in
-            *' -isysroot'*|*' --sysroot'*|*' -mmacosx-version-min'*)
+            *' -isysroot'*|*' --sysroot'*|*' -mmacosx-version-min'*|*' -arch '*)
                 printf '%s\n' \
-                    "error: $variable already selects a macOS SDK or deployment target:" \
+                    "$variable already selects a managed macOS SDK, deployment target, or architecture:" \
                     "  $value" \
-                    'Use SDKROOT and MACOSX_DEPLOYMENT_TARGET with this wrapper so' \
+                    'Use SDKROOT, MACOSX_DEPLOYMENT_TARGET, and WHP_MACOS_ARCH with this wrapper so' \
                     'compile tests, QEMU host objects, and final links use one policy.' >&2
                 exit 1
                 ;;
@@ -158,7 +159,14 @@ export RANLIB="${RANLIB:-/usr/bin/ranlib}"
 export STRIP="${STRIP:-/usr/bin/strip}"
 
 reject_managed_flags
+WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
+    "$MACOSX_DEPLOYMENT_TARGET" "$process_arch")" || exit 1
+export WHP_MACOS_ARCH
+
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
+    if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
+        whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"
+    fi
     whp_append_flag "$variable" "-isysroot $SDKROOT"
     whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
@@ -209,6 +217,7 @@ printf '%s\n' \
     "macOS SDK:               $SDKROOT" \
     "macOS SDK version:       $MACOS_SDK_VERSION" \
     "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" \
+    "macOS Mach-O arch:       $WHP_MACOS_ARCH" \
     "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
     "WHP build shell:         $WHP_BUILD_BASH" \
     "QEMU build directory:    $BUILD_DIR" \
