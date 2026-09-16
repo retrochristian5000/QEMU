@@ -11,16 +11,16 @@
 # Intentionally empty.  config-meson.cross owns Darwin binary selection.
 
 [built-in options]
-# Meson's b_lto_threads=0 means automatic LTO backend parallelism, which can
-# scale to the host CPU count.  Keep Darwin links bounded to one LTO worker by
-# default so native Apple Silicon builds do not turn one link into a sustained
-# all-core power spike.  Command-line -Db_lto_threads=N remains an explicit
-# escape hatch for performance experiments.
-b_lto_threads = 1
+# Keep LTO backend parallelism on Meson's automatic setting.  Positive
+# b_lto_threads values make Clang add an explicit -flto-jobs=N request; on
+# Darwin the driver lowers that request to the linker's -threads=N backend
+# option.  A value of one therefore serializes ThinLTO and leaks -threads=1
+# into final link commands.  Zero leaves backend sizing automatic while
+# command-line -Db_lto_threads=N remains available for explicit experiments.
+b_lto_threads = 0
 
 # Mach-O's LLVM toolchain supports ThinLTO and an incremental object cache.
-# Prefer that mode whenever QEMU enables LTO: it keeps the existing one-worker
-# power ceiling while allowing unchanged ThinLTO backends to be reused across
-# incremental links.  These options are inert when b_lto=false.
+# Prefer that mode whenever QEMU enables LTO so unchanged ThinLTO backends can
+# be reused across incremental links.  These options are inert when b_lto=false.
 b_lto_mode = 'thin'
 b_thinlto_cache = true
