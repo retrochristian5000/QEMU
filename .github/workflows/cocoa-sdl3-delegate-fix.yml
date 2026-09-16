@@ -171,8 +171,8 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '^CONFIG_COCOA=y$' build-cocoa-sdl3/config-host.mak
-          grep -q 'SDL3 audio support.*YES' build-cocoa-sdl3/meson-logs/meson-log.txt
-          test -f build-cocoa-sdl3/ui/libqemu-sdl3-core.a
+          otool -L build-cocoa-sdl3/qemu-system-i386 | tee build-cocoa-sdl3/linked-libraries.txt
+          grep -Eiq 'SDL3|libSDL3' build-cocoa-sdl3/linked-libraries.txt
           python3 scripts/tests/test-cocoa-display-cleanup-state.py
 
       - name: Exercise SDL3-backed clean shutdown
