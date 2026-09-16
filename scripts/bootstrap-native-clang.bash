@@ -282,8 +282,10 @@ compiler_supports_macos_arch()
             -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
             -x "$language" - -o "$output" >/dev/null 2>&1; then
-        rm -f "$output"
-        return 0
+        if "$output" >/dev/null 2>&1; then
+            rm -f "$output"
+            return 0
+        fi
     fi
     rm -f "$output"
     return 1
@@ -382,11 +384,12 @@ fi
 
 # Native LLVM rebuilds already have a linker from the previous successful
 # toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
-# drive it against the selected SDK. This avoids routing every large Clang/LLVM
-# relink through Apple's system ld, while preserving the system linker as the
-# cold-bootstrap and incompatibility fallback. Explicitly clear the linker
-# cache entries first so an incremental CMake graph cannot retain a stale LLD
-# selection when the prior toolchain is missing or no longer passes the probe.
+# drive it against the selected SDK. The current WHP Mach-O LLD backend does
+# not yet implement ARM64_RELOC_AUTHENTICATED_POINTER, so an arm64e bootstrap
+# must stay on Apple's linker even when a previous ld64.lld is available.
+# Explicitly clear the linker cache entries first so an incremental CMake graph
+# cannot retain a stale LLD selection when the prior toolchain is missing,
+# unsupported for the selected ABI, or no longer passes the probe.
 bootstrap_linker_args=()
 bootstrap_linker_args+=(
     -DLLVM_USE_LINKER=
@@ -395,7 +398,8 @@ bootstrap_linker_args+=(
     -DCMAKE_MODULE_LINKER_FLAGS=
 )
 bootstrap_linker_name=system
-if [[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
+if [[ "$host_os" == macos && "$darwin_cmake_arch" != arm64e &&
+      -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
     if printf 'int main(void) { return 0; }\n' |
         PATH="$TOOLCHAIN_DIR/bin:$PATH" \
             "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
@@ -611,6 +615,7 @@ usable()
     local ubsan_exe=''
     local objc_exe=''
     local objc_log=''
+    local linker_driver_args=()
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     [[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&
@@ -618,11 +623,14 @@ usable()
     if [[ "$host_os" == macos ]]; then
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
+        if [[ "$darwin_cmake_arch" != arm64e ]]; then
+            linker_driver_args=(-fuse-ld=lld)
+        fi
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
         if ! printf 'int main(void) { return 0; }\n' |
             "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
-                -fsanitize=undefined -fuse-ld=lld \
+                -fsanitize=undefined "${linker_driver_args[@]}" \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
@@ -633,9 +641,9 @@ usable()
 
         # A Darwin compiler is not usable by QEMU merely because C links. The
         # Cocoa UI is Objective-C, and Clang's runtime link adds -lobjc. Prove
-        # that the installed Clang -> ld64.lld path can resolve both libobjc
-        # and a system framework from the selected macOS SDK before publishing
-        # or reusing the toolchain.
+        # that the installed Clang can resolve both libobjc and a system
+        # framework from the selected macOS SDK. arm64e deliberately uses
+        # Apple ld until WHP Mach-O LLD supports authenticated relocations.
         objc_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc.XXXXXX")" ||
             return 1
         objc_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc-log.XXXXXX")" || {
@@ -643,7 +651,8 @@ usable()
             return 1
         }
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -arch "$darwin_cmake_arch" -fuse-ld=lld \
+            "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
+                "${linker_driver_args[@]}" \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -fobjc-link-runtime -x objective-c - -framework Cocoa \
