@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: whp-lld-arm64e-auth-${{ github.ref }}
+  group: whp-lld-arm64e-auth-lean-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
