@@ -8,10 +8,13 @@ on:
       - 'ui/meson.build'
       - 'ui/sdl3-core.c'
       - 'ui/sdl3-2d.c'
+      - 'ui/sdl3-display.c'
       - 'include/ui/sdl3-core.h'
       - 'include/ui/sdl3-2d.h'
+      - 'include/ui/sdl3-display.h'
       - 'scripts/tests/test-sdl3-video-core.py'
       - 'scripts/tests/test-sdl3-2d.py'
+      - 'scripts/tests/test-sdl3-display-surface.py'
       - '.github/workflows/sdl3-video-core-macos.yml'
   workflow_dispatch:
 
@@ -20,7 +23,7 @@ permissions:
 
 jobs:
   core:
-    name: SDL3 video core and 2D rendering
+    name: SDL3 video core, 2D, and DisplaySurface
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +41,9 @@ jobs:
 
       - name: Verify 2D rendering contract
         run: python3 scripts/tests/test-sdl3-2d.py
+
+      - name: Verify DisplaySurface bridge contract
+        run: python3 scripts/tests/test-sdl3-display-surface.py
 
       - name: Compile video lifecycle and 2D smoke
         run: |
