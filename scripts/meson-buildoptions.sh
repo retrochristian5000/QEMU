@@ -181,6 +181,7 @@ meson_options_help() {
   printf "%s\n" '  rust            Rust support'
   printf "%s\n" '  rutabaga-gfx    rutabaga_gfx support'
   printf "%s\n" '  sdl             SDL user interface'
+  printf "%s\n" '  sdl-audio       SDL3 audio backend'
   printf "%s\n" '  sdl-image       SDL Image support for icons'
   printf "%s\n" '  seccomp         seccomp support'
   printf "%s\n" '  selinux         SELinux support in qemu-nbd'
@@ -480,6 +481,8 @@ _meson_option_parse() {
     --disable-safe-stack) printf "%s" -Dsafe_stack=false ;;
     --enable-sdl) printf "%s" -Dsdl=enabled ;;
     --disable-sdl) printf "%s" -Dsdl=disabled ;;
+    --enable-sdl-audio) printf "%s" -Dsdl_audio=enabled ;;
+    --disable-sdl-audio) printf "%s" -Dsdl_audio=disabled ;;
     --enable-sdl-image) printf "%s" -Dsdl_image=enabled ;;
     --disable-sdl-image) printf "%s" -Dsdl_image=disabled ;;
     --enable-seccomp) printf "%s" -Dseccomp=enabled ;;

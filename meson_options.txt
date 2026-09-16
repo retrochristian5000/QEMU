@@ -219,6 +219,8 @@ option('gtk', type : 'feature', value : 'auto',
        description: 'GTK+ user interface')
 option('sdl', type : 'feature', value : 'auto',
        description: 'SDL user interface')
+option('sdl_audio', type : 'feature', value : 'auto',
+       description: 'SDL3 audio backend')
 option('sdl_image', type : 'feature', value : 'auto',
        description: 'SDL Image support for icons')
 option('seccomp', type : 'feature', value : 'auto',

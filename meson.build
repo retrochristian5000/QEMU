@@ -1647,6 +1647,13 @@ else
   sdl_image = not_found
 endif
 
+sdl_audio = not_found
+if not get_option('sdl_audio').auto() or have_system
+  sdl_audio = dependency('sdl3', version: '>=3.2.0',
+                         required: get_option('sdl_audio'),
+                         method: 'pkg-config')
+endif
+
 rbd = not_found
 if not get_option('rbd').auto() or have_block
   librados = cc.find_library('rados', required: get_option('rbd'))
@@ -2284,7 +2291,7 @@ if have_system
     'oss': oss.found(),
     'pa': pulse.found(),
     'pipewire': pipewire.found(),
-    'sdl': sdl.found(),
+    'sdl': sdl_audio.found(),
     'sndio': sndio.found(),
   }
   foreach k, v: audio_drivers_available
@@ -4934,6 +4941,7 @@ if host_os == 'darwin'
 endif
 summary_info += {'D-Bus display':     dbus_display}
 summary_info += {'SDL support':       sdl}
+summary_info += {'SDL3 audio support': sdl_audio}
 summary_info += {'SDL image support': sdl_image}
 summary_info += {'GTK support':       gtk}
 summary_info += {'pixman':            pixman}
