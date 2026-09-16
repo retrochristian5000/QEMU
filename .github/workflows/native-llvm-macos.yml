@@ -251,6 +251,54 @@ jobs:
           grep -Eq '^LDFLAGS=.*-arch arm64([[:space:]]|$)' "$BUILD_DIR/.whp-macos-build-identity"
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
 
+      - name: Build and run ARM64e i386 TCG smoke
+        shell: bash
+        env:
+          WHP_SHELL_PROBE_ONLY: '0'
+          BOOTSTRAP_NATIVE_LLVM: '0'
+          BUILD_QEMU_IMG: '0'
+          BUILD_QEMU_SYSTEM_I386: '1'
+          BUILD_QEMU_SYSTEM_PPC: '0'
+          BUILD_OPENBIOS: '0'
+          BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+          BUILD_SEABIOS: '0'
+          BUILD_SEABIOS_GRUB: '0'
+          BOOTSTRAP_I386_TOOLCHAIN: '0'
+          QEMU_HOST_LTO: '0'
+          RUN_TESTS: '0'
+          MACOS_ENABLE_COCOA: '0'
+          MACOS_ENABLE_COREAUDIO: '0'
+          MACOS_ENABLE_GTK: '0'
+          MACOS_ENABLE_PA: '0'
+          WHP_MACOS_ARCH: arm64e
+        run: |
+          set -euo pipefail
+          export BUILD_DIR="$GITHUB_WORKSPACE/build-arm64e-qemu"
+          export CC="$NATIVE_LLVM_DIR/bin/clang"
+          export CXX="$NATIVE_LLVM_DIR/bin/clang++"
+          export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
+          export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+          export NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
+          export OBJC="$NATIVE_LLVM_DIR/bin/clang"
+          export LD="$(xcrun -f ld)"
+          unset NATIVE_LLVM_LDFLAG
+          export LDFLAGS=''
+
+          ./build.sh qemu-system-i386 2>&1 | tee arm64e-qemu.log
+          test -x "$BUILD_DIR/qemu-system-i386"
+          lipo -archs "$BUILD_DIR/qemu-system-i386" | tr ' ' '\n' | grep -Fxq arm64e
+          file "$BUILD_DIR/qemu-system-i386" | grep -Fq arm64e
+          "$BUILD_DIR/qemu-system-i386" --version
+          grep -Fq 'macOS Mach-O arch:       arm64e' arm64e-qemu.log
+
+          python3 scripts/bench-i386-tcg.py \
+            --qemu "$BUILD_DIR/qemu-system-i386" \
+            --workload startup \
+            --workload fcomi \
+            --loops 200000 \
+            --rounds 1 \
+            --tcg-thread single
+
       - name: Show native LLVM failure context
         if: failure()
         shell: bash
@@ -260,12 +308,16 @@ jobs:
           tail -n 250 native-llvm-incremental.log 2>/dev/null || true
           tail -n 100 native-llvm-incremental.out 2>/dev/null || true
           tail -n 300 native-qemu.log 2>/dev/null || true
+          tail -n 300 arm64e-qemu.log 2>/dev/null || true
           cat "$NATIVE_LLVM_DIR/.whp-native-llvm" 2>/dev/null || true
           cat native-llvm-lto.manifest 2>/dev/null || true
           cat native-llvm-lto.d/LTO.link.pipeline 2>/dev/null || true
           cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
+          cat "$GITHUB_WORKSPACE/build-arm64e-qemu/.whp-macos-build-identity" 2>/dev/null || true
           tail -n 200 "$BUILD_DIR/config.log" 2>/dev/null || true
           tail -n 200 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
+          tail -n 200 "$GITHUB_WORKSPACE/build-arm64e-qemu/config.log" 2>/dev/null || true
+          tail -n 200 "$GITHUB_WORKSPACE/build-arm64e-qemu/meson-logs/meson-log.txt" 2>/dev/null || true
           grep -E '^(CMAKE_OSX_ARCHITECTURES|CMAKE_OSX_SYSROOT|CMAKE_OSX_DEPLOYMENT_TARGET)' \
             "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true
 
@@ -280,12 +332,17 @@ jobs:
             native-llvm-incremental.log
             native-llvm-incremental.out
             native-qemu.log
+            arm64e-qemu.log
             native-llvm-lto.manifest
             native-llvm-lto.d/
             build-native-llvm/qemu/config.log
             build-native-llvm/qemu/meson-logs/meson-log.txt
             build-native-llvm/qemu/.whp-config
             build-native-llvm/qemu/.whp-macos-build-identity
+            build-arm64e-qemu/config.log
+            build-arm64e-qemu/meson-logs/meson-log.txt
+            build-arm64e-qemu/.whp-config
+            build-arm64e-qemu/.whp-macos-build-identity
             build-native-llvm/toolchain/.whp-native-llvm
             build-native-llvm/work/llvm-build/CMakeCache.txt
           if-no-files-found: warn
