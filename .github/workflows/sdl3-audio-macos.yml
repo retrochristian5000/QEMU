@@ -69,8 +69,7 @@ jobs:
             --disable-sdl \
             --enable-sdl-audio \
             2>&1 | tee configure.log
-          grep -Fq 'SDL support' configure.log
-          grep -Fq 'SDL3 audio support' configure.log
+          grep -Eq 'SDL3 audio support[[:space:]]*:?[[:space:]]*YES' configure.log
           if grep -Eq 'SDL support[[:space:]]*:?[[:space:]]*YES' configure.log; then
             echo 'SDL2 display unexpectedly enabled' >&2
             exit 1
@@ -79,16 +78,17 @@ jobs:
       - name: Build QEMU SDL3 audio configuration
         run: ninja -C build-sdl3-audio qemu-system-ppc
 
-      - name: Verify SDL3 audio module is linked or built
+      - name: Verify compiled SDL3 audio backend
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'CONFIG_AUDIO_SDL=y' build-sdl3-audio/config-host.mak
-          if grep -Fq 'CONFIG_SDL=y' build-sdl3-audio/config-host.mak; then
-            echo 'SDL2 display should be disabled' >&2
+          test -f build-sdl3-audio/libqemuaudio.a.p/audio_sdlaudio.c.o
+          otool -L build-sdl3-audio/qemu-system-ppc | tee /tmp/qemu-otool.txt
+          grep -Eiq 'SDL3|libSDL3' /tmp/qemu-otool.txt
+          if find build-sdl3-audio -type f -path '*ui_sdl2*.o' -print -quit | grep -q .; then
+            echo 'SDL2 display objects should not be built' >&2
             exit 1
           fi
-          find build-sdl3-audio -type f -name '*sdl*' -print | head -n 50
 
       - name: Smoke QEMU SDL3 backend initialization
         shell: bash
