@@ -188,6 +188,10 @@ jobs:
           grep -Eq '"device"[[:space:]]*:[[:space:]]*"bootfloppy"' "$qmp_out"
           grep -Eq '"ro"[[:space:]]*:[[:space:]]*true' "$qmp_out"
 
+      - name: Reproduce ATI SeaBIOS display
+        if: matrix.target == 'i386'
+        run: python3 scripts/tests/test-i386-ati-seabios.py build-ci/qemu-system-i386
+
       - name: Test -hdc and -cdrom coexistence
         if: matrix.target == 'i386'
         run: bash scripts/tests/test-cdrom-hdc.bash build-ci/qemu-system-i386
