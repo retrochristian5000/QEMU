@@ -7,8 +7,11 @@ on:
       - 'meson.build'
       - 'ui/meson.build'
       - 'ui/sdl3-core.c'
+      - 'ui/sdl3-2d.c'
       - 'include/ui/sdl3-core.h'
+      - 'include/ui/sdl3-2d.h'
       - 'scripts/tests/test-sdl3-video-core.py'
+      - 'scripts/tests/test-sdl3-2d.py'
       - '.github/workflows/sdl3-video-core-macos.yml'
   workflow_dispatch:
 
@@ -17,7 +20,7 @@ permissions:
 
 jobs:
   core:
-    name: SDL3 video core lifecycle
+    name: SDL3 video core and 2D rendering
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -33,23 +36,34 @@ jobs:
       - name: Verify core contract
         run: python3 scripts/tests/test-sdl3-video-core.py
 
-      - name: Compile core lifecycle smoke
+      - name: Verify 2D rendering contract
+        run: python3 scripts/tests/test-sdl3-2d.py
+
+      - name: Compile video lifecycle and 2D smoke
         run: |
-          cat > /tmp/test-sdl3-video-core.c <<'EOF'
+          cat > /tmp/test-sdl3-video.c <<'EOF'
+          #include <stdint.h>
           #include <stdio.h>
           #include <SDL3/SDL_main.h>
           #include "ui/sdl3-core.h"
+          #include "ui/sdl3-2d.h"
 
           int main(void)
           {
               SDL_Window *window;
+              QemuSDL3Display2D display = {0};
+              uint32_t pixels[4] = {
+                  0xffff0000u, 0xff00ff00u,
+                  0xff0000ffu, 0xffffffffu,
+              };
+              SDL_Rect rect = { 0, 0, 2, 2 };
 
               if (!qemu_sdl3_video_init()) {
                   fprintf(stderr, "SDL3 video init failed: %s\n", SDL_GetError());
                   return 1;
               }
 
-              window = qemu_sdl3_window_create("QEMU SDL3 core", 320, 200,
+              window = qemu_sdl3_window_create("QEMU SDL3 2D", 320, 200,
                                                 SDL_WINDOW_HIDDEN |
                                                 SDL_WINDOW_RESIZABLE);
               if (!window) {
@@ -58,26 +72,34 @@ jobs:
                   return 1;
               }
 
-              if (!qemu_sdl3_window_set_title(window, "QEMU SDL3 core smoke") ||
-                  !qemu_sdl3_window_resize(window, 400, 240) ||
-                  !qemu_sdl3_window_set_visible(window, false)) {
-                  fprintf(stderr, "SDL3 core lifecycle failed: %s\n", SDL_GetError());
+              if (!qemu_sdl3_2d_init(&display, window) ||
+                  !qemu_sdl3_2d_configure(&display, SDL_PIXELFORMAT_ARGB8888,
+                                          2, 2) ||
+                  !qemu_sdl3_2d_update(&display, &rect, pixels,
+                                       2 * (int)sizeof(uint32_t))) {
+                  fprintf(stderr, "SDL3 2D rendering failed: %s\n", SDL_GetError());
+                  qemu_sdl3_2d_destroy(&display);
                   qemu_sdl3_window_destroy(window);
                   qemu_sdl3_video_quit();
                   return 1;
               }
 
+              qemu_sdl3_2d_destroy(&display);
               qemu_sdl3_window_destroy(window);
               qemu_sdl3_video_quit();
               return 0;
           }
           EOF
           clang -std=c11 -Wall -Wextra -Werror -Iinclude \
-            ui/sdl3-core.c /tmp/test-sdl3-video-core.c \
+            ui/sdl3-core.c ui/sdl3-2d.c /tmp/test-sdl3-video.c \
             $(pkg-config --cflags --libs sdl3) \
-            -o /tmp/test-sdl3-video-core
+            -o /tmp/test-sdl3-video
 
-      - name: Run core lifecycle smoke
+      - name: Run video lifecycle and 2D smoke
         env:
           SDL_VIDEODRIVER: dummy
-        run: /tmp/test-sdl3-video-core
+          SDL_VIDEO_DUMMY_SAVE_FRAMES: '1'
+        run: |
+          rm -f SDL_window*.bmp
+          /tmp/test-sdl3-video
+          test -n "$(find . -maxdepth 1 -name 'SDL_window*.bmp' -print -quit)"
