@@ -1,0 +1,78 @@
+name: WHP LLD ARM64e authenticated relocation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'toolchains/llvm-project'
+      - '.github/workflows/lld-arm64e-auth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-lld-arm64e-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm64e-auth:
+    name: Link ARM64e authenticated pointer
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      NATIVE_LLVM_DIR: ${{ github.workspace }}/build-arm64e-auth/toolchain
+      NATIVE_LLVM_WORK_DIR: ${{ github.workspace }}/build-arm64e-auth/work
+      NATIVE_LLVM_BUILD_DIR: ${{ github.workspace }}/build-arm64e-auth/work/llvm-build
+      NATIVE_LLVM_MACOS_ARCH: 'auto'
+      BOOTSTRAP_NATIVE_LLVM: '1'
+      WHP_SHELL_PROBE_ONLY: '1'
+      MACOSX_DEPLOYMENT_TARGET: '26.0'
+      JOBS: '4'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: brew install cmake glib libslirp make ninja pixman pkgconf
+
+      - name: Bootstrap native LLVM
+        shell: bash
+        run: ./build.sh >native-llvm.out 2>native-llvm.log
+
+      - name: Link authenticated ARM64e pointer with WHP LLD
+        shell: bash
+        run: |
+          set -euo pipefail
+          mc="$NATIVE_LLVM_DIR/bin/llvm-mc"
+          ld="$NATIVE_LLVM_DIR/bin/ld64.lld"
+          objdump="$NATIVE_LLVM_DIR/bin/llvm-objdump"
+
+          cat >foo.s <<'EOF'
+          .text
+          .globl _foo
+          _foo:
+            ret
+          EOF
+          cat >test.s <<'EOF'
+          .data
+          .p2align 3
+          .quad _foo@AUTH(ia,42,addr)
+          EOF
+
+          "$mc" -filetype=obj -triple=arm64e-apple-macos -o foo.o foo.s
+          "$mc" -filetype=obj -triple=arm64e-apple-macos -o test.o test.s
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -install_name @rpath/libfoo.dylib foo.o -o libfoo.dylib
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib libfoo.dylib test.o -o libtest.dylib
+
+          "$objdump" --macho --private-header libtest.dylib | tee header.txt
+          "$objdump" --macho --chained-fixups libtest.dylib | tee fixups.txt
+          grep -Eq 'ARM64[[:space:]]+E' header.txt
+          grep -Fq 'pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)' fixups.txt
+          grep -Fq '_foo' fixups.txt
