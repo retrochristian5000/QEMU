@@ -1621,6 +1621,11 @@ if not get_option('brlapi').auto() or have_system
   endif
 endif
 
+sdl3_video = not_found
+if have_system and get_option('sdl').allowed()
+  sdl3_video = dependency('sdl3', version: '>=3.2.0', required: false)
+endif
+
 sdl = not_found
 if not get_option('sdl').auto() or have_system
   sdl = dependency('sdl2', required: get_option('sdl'))

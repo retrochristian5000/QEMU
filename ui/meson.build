@@ -162,6 +162,13 @@ if gtk.found()
   ui_modules += {'gtk' : gtk_ss}
 endif
 
+if sdl3_video.found()
+  static_library('qemu-sdl3-core',
+                 files('sdl3-core.c'),
+                 dependencies: [sdl3_video],
+                 build_by_default: true)
+endif
+
 if sdl.found()
   sdl_ss = ss.source_set()
   sdl_ss.add(sdl, sdl_image, pixman, glib, files(
