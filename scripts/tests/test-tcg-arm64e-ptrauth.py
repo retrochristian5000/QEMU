@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 tcg_core = (ROOT / 'tcg/tcg.c').read_text(encoding='utf-8')
+cpu_exec = (ROOT / 'accel/tcg/cpu-exec.c').read_text(encoding='utf-8')
 policy = (ROOT / 'scripts/macos-arch-policy.bash').read_text(encoding='utf-8')
 workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
@@ -18,22 +19,20 @@ workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding
 # so TCG must do both transitions explicitly.
 helper_ready = all(token in tcg_core for token in (
     '#include <ptrauth.h>',
-    '__PTRAUTH__',
+    '#if defined(__PTRAUTH__)',
     'ptrauth_key_function_pointer',
-    'ptrauth_strip',
-    'qemu_ld_helpers',
-    'qemu_st_helpers',
-    'tcg_out_call',
+    'ptrauth_strip(func, ptrauth_key_function_pointer)',
+    'tcg_ptrauth_init_ldst_helpers();',
+    'qemu_ld_helpers[i] = tcg_ptrauth_strip_helper(qemu_ld_helpers[i]);',
+    'qemu_st_helpers[i] = tcg_ptrauth_strip_helper(qemu_st_helpers[i]);',
+    'tcg_out_call(s, tcg_ptrauth_strip_helper(tcg_call_func(op)), info);',
 ))
 entry_ready = all(token in tcg_core for token in (
-    '#include <ptrauth.h>',
-    '__PTRAUTH__',
-    'ptrauth_key_function_pointer',
     'ptrauth_sign_unauthenticated',
-    'tcg_qemu_tb_exec',
+    'tcg_qemu_tb_exec = tcg_ptrauth_sign_jit_entry(',
 )) and re.search(
-    r'ptrauth_sign_unauthenticated\s*\([^;]*?'
-    r'ptrauth_key_function_pointer\s*,\s*0\s*\)',
+    r'ptrauth_sign_unauthenticated\s*\(\s*\(tcg_prologue_fn \*\)entry\s*,'
+    r'\s*ptrauth_key_function_pointer\s*,\s*0\s*\)',
     tcg_core,
     re.S,
 )
@@ -41,8 +40,10 @@ runtime_ready = all(token in workflow for token in (
     'WHP_MACOS_ARCH: arm64e',
     'qemu-system-i386',
     'lipo -archs',
+    'xcrun -f ld',
     'scripts/bench-i386-tcg.py',
     '--workload startup',
+    '--workload fcomi',
     '--tcg-thread single',
 ))
 
@@ -50,8 +51,12 @@ assert helper_ready, 'arm64e JIT -> C helper calls are not pointer-auth safe'
 assert entry_ready, 'arm64e C -> JIT entry is not signed as a C function pointer'
 assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke test'
 
+# PAC work belongs at setup/translation boundaries, not the per-TB dispatcher.
+assert 'ptrauth_strip' not in cpu_exec
+assert 'ptrauth_sign_unauthenticated' not in cpu_exec
+
 # Promotion of WHP_MACOS_ARCH=auto remains a separate policy decision made only
 # after the implementation and runtime lane above are both present and green.
 assert 'whp_select_macos_arch' in policy
 
-print('arm64e TCG pointer-auth audit: implementation and runtime smoke required')
+print('arm64e TCG pointer-auth audit: call boundaries and runtime smoke wired')
