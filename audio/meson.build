@@ -18,7 +18,7 @@ foreach m : [
   ['dsound', dsound, files('dsoundaudio.c', 'audio_win_int.c')],
   ['oss', oss, files('ossaudio.c')],
   ['pa', pulse, files('paaudio.c')],
-  ['sdl', sdl, files('sdlaudio.c')],
+  ['sdl', sdl_audio, files('sdlaudio.c')],
   ['jack', jack, files('jackaudio.c')],
   ['sndio', sndio, files('sndioaudio.c')],
   ['pipewire', pipewire, files('pwaudio.c')],
