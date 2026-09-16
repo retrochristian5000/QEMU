@@ -1,0 +1,117 @@
+name: WHP SDL3 audio macOS
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'meson.build'
+      - 'meson_options.txt'
+      - 'scripts/meson-buildoptions.sh'
+      - 'audio/meson.build'
+      - 'audio/sdlaudio.c'
+      - 'scripts/tests/sdl3-audio-smoke.c'
+      - 'scripts/tests/test-sdl3-audio-split.py'
+      - '.github/workflows/sdl3-audio-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-sdl3-audio-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sdl3-audio:
+    name: SDL3 audio without SDL2 display
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      SDL_AUDIODRIVER: dummy
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Apple Silicon host
+        run: test "$(uname -m)" = arm64
+
+      - name: Install build dependencies
+        run: brew install glib ninja pixman pkgconf sdl3
+
+      - name: Verify independent dependency contract
+        run: python3 scripts/tests/test-sdl3-audio-split.py
+
+      - name: Compile and run SDL3 stream smoke probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror \
+            $(pkg-config --cflags sdl3) \
+            scripts/tests/sdl3-audio-smoke.c \
+            $(pkg-config --libs sdl3) \
+            -o /tmp/sdl3-audio-smoke
+          /tmp/sdl3-audio-smoke
+
+      - name: Configure QEMU with SDL3 audio only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir build-sdl3-audio
+          cd build-sdl3-audio
+          ../configure \
+            --target-list=ppc-softmmu \
+            --disable-docs \
+            --disable-sdl \
+            --enable-sdl-audio \
+            2>&1 | tee configure.log
+          grep -Fq 'SDL support' configure.log
+          grep -Fq 'SDL3 audio support' configure.log
+          if grep -Eq 'SDL support[[:space:]]*:?[[:space:]]*YES' configure.log; then
+            echo 'SDL2 display unexpectedly enabled' >&2
+            exit 1
+          fi
+
+      - name: Build QEMU SDL3 audio configuration
+        run: ninja -C build-sdl3-audio qemu-system-ppc
+
+      - name: Verify SDL3 audio module is linked or built
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'CONFIG_AUDIO_SDL=y' build-sdl3-audio/config-host.mak
+          if grep -Fq 'CONFIG_SDL=y' build-sdl3-audio/config-host.mak; then
+            echo 'SDL2 display should be disabled' >&2
+            exit 1
+          fi
+          find build-sdl3-audio -type f -name '*sdl*' -print | head -n 50
+
+      - name: Smoke QEMU SDL3 backend initialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          build-sdl3-audio/qemu-system-ppc \
+            -machine none \
+            -display none \
+            -audiodev sdl,id=sdl3audio \
+            -S \
+            -nodefaults \
+            -monitor none \
+            -serial none \
+            -qmp unix:/tmp/qemu-sdl3-audio.qmp,server=on,wait=off &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          sleep 2
+          kill -0 "$pid"
+          kill "$pid"
+          wait "$pid" || status=$?
+          status=${status:-0}
+          if [ "$status" -ne 0 ] && [ "$status" -ne 143 ]; then
+            echo "QEMU SDL3 audio smoke exited with $status" >&2
+            exit "$status"
+          fi
+          trap - EXIT
