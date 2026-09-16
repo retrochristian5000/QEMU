@@ -373,6 +373,12 @@ whp_prepare_configure_args()
     whp_add_optional_configure_switch "$MACOS_ENABLE_PA" pa
 
     if [[ "$HOST_OS" == Darwin ]]; then
+        # Make the automatic LTO backend policy part of WHP's configure
+        # identity.  A positive b_lto_threads value makes Clang emit an
+        # explicit -flto-jobs=N request and Darwin lowers that to linker
+        # -threads=N.  Recording zero here both prevents -threads=1 and forces
+        # persistent trees carrying the old one-worker setting to reconfigure.
+        configure_args+=(-Db_lto_threads=0)
         configure_args+=(--objcc="$OBJC")
         whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
         whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio
