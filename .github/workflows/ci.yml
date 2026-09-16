@@ -45,6 +45,9 @@ jobs:
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 
+      - name: Test SDL3 audio split contract
+        run: python3 scripts/tests/test-sdl3-audio-split.py
+
   build-active-target:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
