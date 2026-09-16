@@ -13,6 +13,7 @@ keymaps = [
   ['x11', 'linux'],
   ['xorgkbd', 'linux'],
   ['xorgxquartz', 'linux'],
+  ['xorgxwin', 'linux'],
   ['osx', 'linux'],
 ]
 
@@ -163,8 +164,8 @@ endif
 
 if sdl3_video.found()
   static_library('qemu-sdl3-core',
-                 files('sdl3-core.c', 'sdl3-2d.c'),
-                 dependencies: [sdl3_video],
+                 files('sdl3-core.c', 'sdl3-2d.c', 'sdl3-display.c'),
+                 dependencies: [sdl3_video, pixman, glib],
                  build_by_default: true)
 endif
 
