@@ -9,15 +9,16 @@ BOOTSTRAP = ROOT / 'scripts' / 'bootstrap-native-clang.bash'
 text = BOOTSTRAP.read_text(encoding='utf-8')
 
 # Native LLVM is a host tool, so its Darwin architecture policy is independent
-# from QEMU TCG's WHP_MACOS_ARCH=auto safety gate.  On Apple Silicon, auto must
-# prefer arm64e when both bootstrap compilers can compile and link that ABI,
-# while retaining arm64 as the compatibility fallback.
+# from QEMU TCG's WHP_MACOS_ARCH=auto safety gate.  On Apple Silicon, auto may
+# select arm64e only when both bootstrap compilers can compile, link, and run
+# that ABI; older macOS releases must retain arm64 as the compatibility path.
 assert 'NATIVE_LLVM_MACOS_ARCH' in text
 assert 'compiler_supports_macos_arch()' in text
 assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in text
 assert 'darwin_cmake_arch=arm64e' in text
 assert 'darwin_cmake_arch=arm64' in text
 assert 'WHP native LLVM macOS arch:' in text
+assert '"$output" >/dev/null 2>&1' in text
 
 # The selected Mach-O ABI must be part of the cached toolchain identity so an
 # older arm64 toolchain cannot be reused after an arm64e-capable host switches.
