@@ -102,7 +102,8 @@ assert 'BOOTSTRAP_SCHEMA=8' in bootstrap
 # The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:
 # Objective-C runtime links must carry the same SDK, architecture, and minimum
 # OS version into both sub-builds. The installed toolchain must then prove that
-# ld64.lld can resolve libobjc and Cocoa before it is cached or published.
+# the selected Darwin linker can resolve libobjc and Cocoa before it is cached
+# or published.
 assert 'darwin_external_cmake_args=' in bootstrap
 assert 'darwin_runtimes_cmake_args=' in bootstrap
 assert '-DCMAKE_OSX_SYSROOT=$sdkroot' in bootstrap
@@ -133,16 +134,16 @@ assert 'native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"' in ma
 assert 'NATIVE_LLVM_READ_WORKERS must be a non-negative integer' in macos_builder
 assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' in macos_builder
 
-# Rebuilding the native Darwin toolchain can reuse the previously installed
-# ld64.lld instead of routing every large LLVM/Clang link back through Apple's
-# system linker. Probe that exact linker first, keep the two-link Ninja pool,
-# and use the same bounded count for Mach-O LLD's input prefetch workers. A
-# missing or incompatible installed linker must leave the system linker path
-# untouched so cold bootstraps still work. The probe must use the selected
-# bootstrap Mach-O architecture too, so an old arm64 linker is not accepted for
-# an arm64e rebuild without proving the selected ABI.
+# Rebuilding the native Darwin toolchain may reuse the previously installed
+# ld64.lld for ordinary arm64. arm64e is deliberately excluded because the
+# current WHP Mach-O LLD backend does not implement authenticated-pointer
+# relocations; those links must stay on Apple ld. Probe the exact reusable LLD,
+# keep the two-link Ninja pool, and use the same bounded count for Mach-O LLD's
+# input prefetch workers. A missing or incompatible installed linker must leave
+# the system-linker path untouched so cold bootstraps still work.
 assert 'bootstrap_linker_args=()' in bootstrap
-assert '[[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]' in bootstrap
+assert '"$host_os" == macos && "$darwin_cmake_arch" != arm64e &&' in bootstrap
+assert '-x "$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
 assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
 assert '"$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld' in bootstrap
 assert '-Wl,--read-workers="$LLVM_LINK_JOBS"' in bootstrap
