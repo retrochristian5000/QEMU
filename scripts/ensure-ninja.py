@@ -12,12 +12,13 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-NINJA_BOOTSTRAP_SCHEMA='4'
+NINJA_BOOTSTRAP_SCHEMA='5'
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -141,6 +142,70 @@ def select_host_sdkroot() -> str:
     return sdkroot
 
 
+def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
+    argv = shlex.split(cxx)
+    if not argv or platform.system() != 'Darwin' or not sdkroot:
+        return False
+
+    with tempfile.TemporaryDirectory(prefix='whp-ninja-arch-') as tmp:
+        output = pathlib.Path(tmp) / 'probe'
+        completed = subprocess.run(
+            [
+                *argv,
+                '-arch', arch,
+                '-isysroot', sdkroot,
+                '-x', 'c++', '-',
+                '-o', str(output),
+            ],
+            input='int main() { return 0; }\n',
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return completed.returncode == 0 and output.is_file()
+
+
+def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
+    if platform.system() != 'Darwin':
+        return ''
+
+    requested = os.environ.get('NINJA_MACOS_ARCH', 'auto')
+    if requested not in ('auto', 'arm64', 'arm64e', 'x86_64'):
+        raise RuntimeError(
+            'NINJA_MACOS_ARCH must be auto, arm64, arm64e, or x86_64: '
+            f'{requested}'
+        )
+
+    machine = platform.machine().lower()
+    if machine in ('arm64', 'aarch64'):
+        if requested == 'auto':
+            if compiler_supports_macos_arch(cxx, sdkroot, 'arm64e'):
+                return 'arm64e'
+            return 'arm64'
+        if requested == 'arm64':
+            return 'arm64'
+        if requested == 'arm64e':
+            if not compiler_supports_macos_arch(cxx, sdkroot, 'arm64e'):
+                raise RuntimeError(
+                    'requested Ninja arm64e bootstrap is unsupported by the '
+                    'selected compiler and macOS SDK'
+                )
+            return 'arm64e'
+        raise RuntimeError(
+            f'requested Ninja macOS architecture is not native to Apple Silicon: {requested}'
+        )
+
+    if machine in ('x86_64', 'amd64'):
+        if requested in ('auto', 'x86_64'):
+            return 'x86_64'
+        raise RuntimeError(
+            f'requested Ninja macOS architecture is not native to x86_64: {requested}'
+        )
+
+    raise RuntimeError(f'unsupported macOS host architecture for Ninja bootstrap: {machine}')
+
+
 def select_compiler_cache() -> str:
     explicit = os.environ.get('WHP_COMPILER_CACHE_CMD', '')
     if explicit:
@@ -193,7 +258,13 @@ def compiler_version(command: str) -> str:
     return first
 
 
-def marker_text(revision: str, cxx: str, cxx_version: str, sdkroot: str) -> str:
+def marker_text(
+    revision: str,
+    cxx: str,
+    cxx_version: str,
+    sdkroot: str,
+    macos_arch: str = '',
+) -> str:
     return (
         f'NINJA_BOOTSTRAP_SCHEMA={NINJA_BOOTSTRAP_SCHEMA}\n'
         f'SOURCE_DIR={ROOT}\n'
@@ -204,6 +275,7 @@ def marker_text(revision: str, cxx: str, cxx_version: str, sdkroot: str) -> str:
         f'CXX={cxx}\n'
         f'CXX_VERSION={cxx_version}\n'
         f'SDKROOT={sdkroot}\n'
+        f'NINJA_MACOS_ARCH={macos_arch}\n'
     )
 
 
@@ -228,6 +300,22 @@ def binary_is_usable(path: pathlib.Path) -> bool:
     except OSError:
         return False
     return completed.returncode == 0
+
+
+def binary_has_macos_arch(path: pathlib.Path, arch: str) -> bool:
+    if platform.system() != 'Darwin' or not arch:
+        return True
+    lipo = shutil.which('lipo')
+    if not lipo:
+        return False
+    completed = subprocess.run(
+        [lipo, '-archs', str(path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0 and arch in completed.stdout.split()
 
 
 def atomic_install(staging: pathlib.Path, final: pathlib.Path) -> None:
@@ -261,6 +349,7 @@ def bootstrap_environment(
     sdkroot: str,
     compiler_cache: str = '',
     compiler_cache_dir: pathlib.Path | None = None,
+    macos_arch: str = '',
 ) -> dict[str, str]:
     bootstrap_env = os.environ.copy()
     # Ninja is a host build helper. Do not let ambient target/search-path state
@@ -293,10 +382,14 @@ def bootstrap_environment(
                 bootstrap_env['SCCACHE_DIR'] = str(compiler_cache_dir)
 
     if sdkroot:
-        sysroot_flag = f'-isysroot {shlex.quote(sdkroot)}'
+        flags = []
+        if platform.system() == 'Darwin' and macos_arch:
+            flags.extend(('-arch', macos_arch))
+        flags.extend(('-isysroot', shlex.quote(sdkroot)))
+        common_flags = ' '.join(flags)
         bootstrap_env['SDKROOT'] = sdkroot
-        bootstrap_env['CXXFLAGS'] = sysroot_flag
-        link_flags = sysroot_flag
+        bootstrap_env['CXXFLAGS'] = common_flags
+        link_flags = common_flags
         if platform.system() == 'Darwin':
             # Ninja is a build helper, not a QEMU deliverable. Optimize and
             # dead-strip the helper itself without leaking these flags into
@@ -312,9 +405,10 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
     sdkroot = select_host_sdkroot()
+    macos_arch = select_host_macos_arch(cxx, sdkroot)
     compiler_cache = select_compiler_cache()
     cxx_version = compiler_version(cxx)
-    expected_marker = marker_text(revision, cxx, cxx_version, sdkroot)
+    expected_marker = marker_text(revision, cxx, cxx_version, sdkroot, macos_arch)
 
     host_tag = f'{platform.system().lower()}-{platform.machine().lower()}'
     host_tools_root = qemu_build_dir.parent / '.whp-host-tools'
@@ -322,7 +416,12 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     marker = final_dir / '.whp-ninja-tool'
     binary = ninja_binary(final_dir)
 
-    if marker.is_file() and marker.read_text(encoding='utf-8') == expected_marker and binary_is_usable(binary):
+    if (
+        marker.is_file()
+        and marker.read_text(encoding='utf-8') == expected_marker
+        and binary_is_usable(binary)
+        and binary_has_macos_arch(binary, macos_arch)
+    ):
         print(f'Reused bundled Ninja: {binary}', file=sys.stderr)
         return binary.resolve()
 
@@ -347,6 +446,7 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
         sdkroot,
         compiler_cache,
         compiler_cache_dir,
+        macos_arch,
     )
 
     print(
@@ -355,6 +455,8 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     )
     if sdkroot:
         print(f'Bundled Ninja macOS SDK: {sdkroot}', file=sys.stderr)
+    if macos_arch:
+        print(f'Bundled Ninja macOS arch: {macos_arch}', file=sys.stderr)
     if compiler_cache and compiler_cache_dir is not None:
         print(
             f'Bundled Ninja compiler cache: {compiler_cache} ({compiler_cache_dir})',
@@ -372,10 +474,20 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
         staged_binary = ninja_binary(bootstrap_dir)
         if not binary_is_usable(staged_binary):
             raise RuntimeError(f'bundled Ninja bootstrap did not produce a usable binary: {staged_binary}')
+        if not binary_has_macos_arch(staged_binary, macos_arch):
+            raise RuntimeError(
+                f'bundled Ninja bootstrap produced the wrong macOS architecture: '
+                f'expected {macos_arch or "native"}'
+            )
         published_binary = staging / staged_binary.name
         shutil.copy2(staged_binary, published_binary)
         if not binary_is_usable(published_binary):
             raise RuntimeError(f'copied bundled Ninja binary is unusable: {published_binary}')
+        if not binary_has_macos_arch(published_binary, macos_arch):
+            raise RuntimeError(
+                f'copied bundled Ninja has the wrong macOS architecture: '
+                f'expected {macos_arch or "native"}'
+            )
         shutil.rmtree(staged_source)
         shutil.rmtree(bootstrap_dir)
         (staging / '.whp-ninja-tool').write_text(expected_marker, encoding='utf-8')
