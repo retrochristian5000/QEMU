@@ -25,6 +25,7 @@ on:
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-macos-arch-policy.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
@@ -48,6 +49,7 @@ jobs:
       NATIVE_LLVM_DIR: ${{ github.workspace }}/build-native-llvm/toolchain
       NATIVE_LLVM_WORK_DIR: ${{ github.workspace }}/build-native-llvm/work
       NATIVE_LLVM_BUILD_DIR: ${{ github.workspace }}/build-native-llvm/work/llvm-build
+      NATIVE_LLVM_MACOS_ARCH: 'auto'
       BOOTSTRAP_NATIVE_LLVM: '1'
       WHP_SHELL_PROBE_ONLY: '1'
       MACOSX_DEPLOYMENT_TARGET: '15.0'
@@ -74,6 +76,10 @@ jobs:
       - name: Verify native LLVM wiring
         shell: bash
         run: python3 scripts/tests/test-native-llvm-wiring.py
+
+      - name: Verify native LLVM arm64e bootstrap policy
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
 
       - name: Install native LLVM and QEMU build dependencies
         run: brew install cmake glib libslirp make ninja pixman pkgconf
@@ -125,20 +131,34 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
+          grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
           grep -Fxq 'BOOTSTRAP_SCHEMA=8' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
           grep -Fxq 'HOST_ARCH=arm64' "$marker"
+          grep -Fxq 'MACOS_BOOTSTRAP_ARCH=arm64e' "$marker"
           grep -Eq '^LLVM_HOST_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
           grep -Eq '^LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
           grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
+          grep -Fxq 'CMAKE_OSX_ARCHITECTURES:STRING=arm64e' "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt"
           test -x "$ar"
           test -x "$ranlib"
           test -x "$nm"
           test -x "$ld"
+
+          # The bootstrap compiler is itself an arm64e host program on Macs
+          # where Apple Clang + SDK can build that ABI. This is separate from
+          # Clang's ability to emit arm64e QEMU objects.
+          for tool in "$clang" "$clangxx" "$ld"; do
+            lipo -archs "$tool" | tr ' ' '\n' | grep -Fxq arm64e
+            file "$tool" | grep -Fq arm64e
+          done
+          "$clang" --version >/dev/null
+          "$clangxx" --version >/dev/null
+          "$ld" --version >/dev/null
           "$clang" -print-target-triple | grep -Eq '^aarch64-apple-(darwin|macos|macosx)'
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
@@ -147,14 +167,14 @@ jobs:
           printf 'int whp_native_ci_cxx() { return 0; }\n' |
             "$clangxx" -x c++ -c - -o native-llvm-cxx.o
           printf 'int main(void) { return 0; }\n' |
-            "$clang" -fsanitize=undefined -fuse-ld=lld \
+            "$clang" -arch arm64e -fsanitize=undefined -fuse-ld=lld \
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-ubsan
 
-          # Keep a direct arm64e compiler/linker/runtime probe even while QEMU
-          # itself remains on arm64.  This separates toolchain capability from
-          # the still-open TCG JIT pointer-authentication audit.
+          # Keep a direct arm64e compiler/linker/runtime probe while QEMU itself
+          # remains on arm64 in auto mode. This separates toolchain capability
+          # from the still-open TCG JIT pointer-authentication audit.
           printf 'int main(void) { return 0; }\n' |
             "$clang" -arch arm64e -fuse-ld=lld \
               -isysroot "$sdkroot" \
@@ -164,6 +184,7 @@ jobs:
           test -s native-llvm-cxx.o
           test -x native-llvm-ubsan
           test -x native-llvm-arm64e
+          ./native-llvm-ubsan
           ./native-llvm-arm64e
 
       - name: Probe WHP Clang to macOS LTO handoff
@@ -237,6 +258,8 @@ jobs:
           cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
           tail -n 200 "$BUILD_DIR/config.log" 2>/dev/null || true
           tail -n 200 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
+          grep -E '^(CMAKE_OSX_ARCHITECTURES|CMAKE_OSX_SYSROOT|CMAKE_OSX_DEPLOYMENT_TARGET)' \
+            "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true
 
       - name: Upload native LLVM failure logs
         if: failure()
