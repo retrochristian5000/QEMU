@@ -103,7 +103,7 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
             clear=True,
         ), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
             env = mod.bootstrap_environment(
-                '/usr/bin/clang++', '/SDKs/MacOSX.sdk', 'arm64e'
+                '/usr/bin/clang++', '/SDKs/MacOSX.sdk', macos_arch='arm64e'
             )
 
         self.assertEqual(env['CXX'], '/usr/bin/clang++')
