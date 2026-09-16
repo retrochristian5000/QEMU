@@ -138,11 +138,13 @@ assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' i
 # system linker. Probe that exact linker first, keep the two-link Ninja pool,
 # and use the same bounded count for Mach-O LLD's input prefetch workers. A
 # missing or incompatible installed linker must leave the system linker path
-# untouched so cold bootstraps still work.
+# untouched so cold bootstraps still work. The probe must use the selected
+# bootstrap Mach-O architecture too, so an old arm64 linker is not accepted for
+# an arm64e rebuild without proving the selected ABI.
 assert 'bootstrap_linker_args=()' in bootstrap
 assert '[[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]' in bootstrap
 assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
-assert '"$bootstrap_cxx" -fuse-ld=lld' in bootstrap
+assert '"$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld' in bootstrap
 assert '-Wl,--read-workers="$LLVM_LINK_JOBS"' in bootstrap
 assert '"-DLLVM_USE_LINKER=lld"' in bootstrap
 assert '"-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"' in bootstrap
@@ -160,12 +162,11 @@ assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
 
-# Apple calls the Mach-O architecture arm64, while LLVM's canonical target
-# architecture is AArch64/aarch64. Keep those namespaces separate: CMake still
-# emits arm64 Mach-O objects, but the LLVM host/default triple and WHP cache
-# identity use aarch64-apple-darwin so downstream QEMU tool selection sees one
-# stable ABI name regardless of whether the bootstrap compiler prints arm64 or
-# aarch64.
+# Apple calls the backend architecture arm64/aarch64 while arm64e is a Darwin
+# Mach-O ABI variant. Keep those namespaces separate: CMake may select arm64e
+# for the bootstrap program, but the LLVM host/default triple and WHP cache
+# identity remain aarch64-apple-darwin so downstream target selection stays
+# stable.
 assert 'host_tag=aarch64' in bootstrap
 assert 'darwin_cmake_arch=arm64' in bootstrap
 assert "arm64|aarch64) printf 'aarch64\\n'" in bootstrap
