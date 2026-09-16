@@ -29,6 +29,27 @@
 #define TYPE_POWERPC_CPU "powerpc-cpu"
 #endif
 
+/*
+ * Optional descriptive metadata for a platform CPU operating point.
+ *
+ * These values describe firmware-visible or historical hardware profiles;
+ * they do not add cache storage, cache timing, or cycle-accurate frequency
+ * behavior to QEMU.  A zero value means unknown or unspecified.
+ *
+ * This is internal QOM model metadata, not guest-visible migration ABI.
+ */
+typedef struct PowerPCCPUCacheProfile {
+    uint32_t size;
+    uint64_t frequency;
+} PowerPCCPUCacheProfile;
+
+typedef struct PowerPCCPUProfile {
+    uint64_t clock_frequency;
+    uint64_t bus_frequency;
+    PowerPCCPUCacheProfile l2;
+    PowerPCCPUCacheProfile l3;
+} PowerPCCPUProfile;
+
 OBJECT_DECLARE_CPU_TYPE(PowerPCCPU, PowerPCCPUClass, POWERPC_CPU)
 
 #define POWERPC_CPU_TYPE_SUFFIX "-" TYPE_POWERPC_CPU
