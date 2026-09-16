@@ -1,0 +1,186 @@
+name: Cocoa SDL3 delegate shutdown fix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/cocoa-sdl3-delegate-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-15
+    timeout-minutes: 35
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Add regression test
+        shell: bash
+        run: |
+          cat > scripts/tests/test-cocoa-display-cleanup-state.py <<'PY'
+          #!/usr/bin/env python3
+          from pathlib import Path
+          import re
+          import sys
+
+          source = (Path(__file__).resolve().parents[2] / "ui" / "cocoa.m").read_text()
+
+          def body(name, next_marker):
+              match = re.search(name + r"(?P<body>.*?)" + next_marker, source, re.S)
+              if not match:
+                  raise SystemExit(f"could not locate {name}")
+              return match.group("body")
+
+          failures = []
+          if "static CocoaConsole *cocoa_console;" not in source:
+              failures.append("Cocoa frontend has no explicit initialized-console state")
+
+          send_event = body(r"@implementation QemuApplication\s*- \(void\)sendEvent:\(NSEvent \*\)event", r"\n}\n@end")
+          if "CocoaConsole *cocoa = cocoa_console;" not in send_event:
+              failures.append("QemuApplication sendEvent still recovers Cocoa state indirectly")
+          if "[NSApp delegate]" in send_event:
+              failures.append("QemuApplication sendEvent still assumes NSApp.delegate is QEMU Cocoa")
+
+          cleanup = body(r"static void cocoa_display_cleanup\(void\)\s*\{", r"\n}\n\nstatic QemuDisplay")
+          if "CocoaConsole *cocoa = cocoa_console;" not in cleanup:
+              failures.append("Cocoa cleanup does not use Cocoa-owned initialization state")
+          if "[NSApp delegate]" in cleanup:
+              failures.append("Cocoa cleanup still sends QEMU selectors to arbitrary app delegates")
+          if "if (!cocoa || !cocoa->kbd)" not in cleanup:
+              failures.append("Cocoa cleanup is not safe when the backend was never initialized")
+          if "cocoa_console = NULL;" not in cleanup:
+              failures.append("Cocoa cleanup does not clear its initialized state")
+
+          init = body(r"static void cocoa_display_init\(DisplayState \*ds, DisplayOptions \*opts\)\s*\{", r"\n}\n\nstatic void cocoa_display_cleanup")
+          if "cocoa_console = cocoa;" not in init:
+              failures.append("Cocoa init does not publish the state used by cleanup/event dispatch")
+
+          if failures:
+              for failure in failures:
+                  print(f"FAIL: {failure}", file=sys.stderr)
+              raise SystemExit(1)
+
+          print("Cocoa display cleanup state: ok")
+          PY
+          chmod +x scripts/tests/test-cocoa-display-cleanup-state.py
+
+      - name: Confirm RED regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 scripts/tests/test-cocoa-display-cleanup-state.py; then
+            echo 'error: regression test unexpectedly passed before the fix' >&2
+            exit 1
+          fi
+
+      - name: Apply Cocoa-owned state fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('ui/cocoa.m')
+          text = path.read_text()
+
+          def replace_once(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'static QemuCocoaPasteboardTypeOwner *cbowner;\n',
+              'static QemuCocoaPasteboardTypeOwner *cbowner;\n\n'
+              '/*\n'
+              ' * qemu_display_cleanup() runs cleanup for every registered display\n'
+              ' * backend.  Keep Cocoa initialization state here instead of inferring\n'
+              ' * it from NSApp.delegate, which may legitimately belong to SDL3.\n'
+              ' */\n'
+              'static CocoaConsole *cocoa_console;\n'
+          )
+
+          delegate_lookup = (
+              '    QemuCocoaAppController *controller =\n'
+              '        (QemuCocoaAppController *)[NSApp delegate];\n'
+              '    CocoaConsole *cocoa = controller ? [controller console] : NULL;\n'
+          )
+          if text.count(delegate_lookup) != 2:
+              raise SystemExit(f'expected two delegate state lookups, found {text.count(delegate_lookup)}')
+          text = text.replace(delegate_lookup, '    CocoaConsole *cocoa = cocoa_console;\n', 2)
+
+          replace_once(
+              '    [NSApp setDelegate:controller];\n'
+              '    cocoa = [controller console];\n',
+              '    [NSApp setDelegate:controller];\n'
+              '    cocoa = [controller console];\n'
+              '    cocoa_console = cocoa;\n'
+          )
+
+          replace_once(
+              '    if (!cocoa || !cocoa->kbd) {\n'
+              '        return;\n'
+              '    }\n\n'
+              '    qemu_console_unregister_listener(&cocoa->dcl);\n',
+              '    if (!cocoa || !cocoa->kbd) {\n'
+              '        return;\n'
+              '    }\n\n'
+              '    cocoa_console = NULL;\n'
+              '    qemu_console_unregister_listener(&cocoa->dcl);\n'
+          )
+
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff -- ui/cocoa.m scripts/tests/test-cocoa-display-cleanup-state.py
+
+      - name: Confirm GREEN regression
+        run: python3 scripts/tests/test-cocoa-display-cleanup-state.py
+
+      - name: Install macOS build dependencies
+        run: brew install glib libslirp ninja pixman pkgconf sdl3
+
+      - name: Configure Cocoa plus SDL3 i386 build
+        shell: bash
+        run: |
+          mkdir build-cocoa-sdl3
+          cd build-cocoa-sdl3
+          ../configure \
+            --target-list=i386-softmmu \
+            --enable-cocoa \
+            --enable-sdl \
+            --disable-docs
+
+      - name: Build qemu-system-i386
+        run: ninja -C build-cocoa-sdl3 qemu-system-i386
+
+      - name: Verify compiled frontend mix
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^CONFIG_COCOA=y$' build-cocoa-sdl3/config-host.mak
+          grep -q '^CONFIG_SDL=y$' build-cocoa-sdl3/config-host.mak
+          python3 scripts/tests/test-cocoa-display-cleanup-state.py
+
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/cocoa-sdl3-delegate-fix.yml
+          git add ui/cocoa.m scripts/tests/test-cocoa-display-cleanup-state.py
+          git commit -m 'ui/cocoa: decouple cleanup state from app delegate'
+          git push origin HEAD:master
