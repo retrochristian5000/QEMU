@@ -28,4 +28,12 @@ assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
 # silently built for a different ABI.
 assert text.count('-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch') >= 2
 
+# The WHP Mach-O LLD fork does not yet implement ARM64_RELOC_AUTHENTICATED_POINTER.
+# A trivial arm64e link probe can therefore succeed even though real LLVM objects
+# later fail with "INVALID relocation has invalid width".  Never reuse the old
+# ld64.lld for an arm64e bootstrap; keep Apple ld as that build's linker until
+# the backend gains a real authenticated-relocation capability probe.
+assert '"$darwin_cmake_arch" != arm64e' in text
+assert text.index('"$darwin_cmake_arch" != arm64e') < text.index('-fuse-ld=lld')
+
 print('native LLVM arm64e bootstrap policy: verified')
