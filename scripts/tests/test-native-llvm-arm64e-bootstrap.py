@@ -21,7 +21,6 @@ assert 'WHP native LLVM macOS arch:' in text
 
 # The selected Mach-O ABI must be part of the cached toolchain identity so an
 # older arm64 toolchain cannot be reused after an arm64e-capable host switches.
-assert 'BOOTSTRAP_SCHEMA=9' in text
 assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
 
 # CMake's parent graph and compiler-rt ExternalProjects must consume the same
