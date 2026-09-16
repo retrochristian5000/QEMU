@@ -163,7 +163,12 @@ def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
             stderr=subprocess.DEVNULL,
             check=False,
         )
-        return completed.returncode == 0 and output.is_file()
+        if completed.returncode != 0 or not output.is_file():
+            return False
+        # A bootstrap architecture is useful only if the host can execute it.
+        # macOS 15 can compile/link arm64e user programs but intentionally
+        # rejects them at launch; macOS 26 supports third-party arm64e directly.
+        return binary_is_usable(output)
 
 
 def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
@@ -188,8 +193,8 @@ def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
         if requested == 'arm64e':
             if not compiler_supports_macos_arch(cxx, sdkroot, 'arm64e'):
                 raise RuntimeError(
-                    'requested Ninja arm64e bootstrap is unsupported by the '
-                    'selected compiler and macOS SDK'
+                    'requested Ninja arm64e bootstrap cannot be compiled, linked, '
+                    'and executed by the selected compiler, SDK, and host macOS'
                 )
             return 'arm64e'
         raise RuntimeError(
