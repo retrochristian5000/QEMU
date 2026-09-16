@@ -25,7 +25,6 @@ struct xkb_rule_names names = {
 };
 
 static xkb_mod_mask_t shift;
-static xkb_mod_mask_t ctrl;
 static xkb_mod_mask_t altgr;
 static xkb_mod_mask_t numlock;
 
@@ -227,7 +226,6 @@ int main(int argc, char *argv[])
     }
 
     shift = get_mod(map, "Shift");
-    ctrl = get_mod(map, "Control");
     altgr = get_mod(map, "AltGr");
     if (!altgr) {
         altgr = get_mod(map, "Mod5");
