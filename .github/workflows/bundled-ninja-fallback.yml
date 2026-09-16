@@ -98,7 +98,7 @@ jobs:
           test "$first" = "$second"
           test "$before" = "$after"
           grep -Fq 'NINJA_GIT_COMMIT=' "$marker"
-          grep -Fxq 'NINJA_BOOTSTRAP_SCHEMA=4' "$marker"
+          grep -Fxq 'NINJA_BOOTSTRAP_SCHEMA=5' "$marker"
 
           # Compiler caching is an input to the build process, not part of the
           # published Ninja helper's cache identity or QEMU installation ABI.
@@ -114,4 +114,18 @@ jobs:
               echo 'error: target CXX leaked into macOS Ninja host bootstrap' >&2
               exit 1
             fi
+
+            case "$(uname -m)" in
+              arm64)
+                grep -Fxq 'NINJA_MACOS_ARCH=arm64e' "$marker"
+                lipo -archs "$first" | tr ' ' '\n' | grep -Fxq arm64e
+                file "$first" | grep -Fq arm64e
+                ;;
+              x86_64)
+                grep -Fxq 'NINJA_MACOS_ARCH=x86_64' "$marker"
+                lipo -archs "$first" | tr ' ' '\n' | grep -Fxq x86_64
+                ;;
+            esac
+          else
+            grep -Fxq 'NINJA_MACOS_ARCH=' "$marker"
           fi
