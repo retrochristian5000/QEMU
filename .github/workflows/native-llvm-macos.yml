@@ -40,8 +40,8 @@ concurrency:
 
 jobs:
   native-llvm:
-    name: Build native LLVM (Apple Silicon)
-    runs-on: macos-15
+    name: Build native LLVM (Apple Silicon arm64e)
+    runs-on: macos-26
     timeout-minutes: 90
 
     env:
@@ -52,7 +52,7 @@ jobs:
       NATIVE_LLVM_MACOS_ARCH: 'auto'
       BOOTSTRAP_NATIVE_LLVM: '1'
       WHP_SHELL_PROBE_ONLY: '1'
-      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      MACOSX_DEPLOYMENT_TARGET: '26.0'
       JOBS: '4'
       HOMEBREW_NO_AUTO_UPDATE: '1'
       HOMEBREW_NO_INSTALL_CLEANUP: '1'
@@ -91,6 +91,8 @@ jobs:
           ./build.sh >native-llvm.out 2>native-llvm.log
           cat native-llvm.log
           cat native-llvm.out
+          grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
+          grep -Fq 'WHP native LLVM bootstrap linker: system' native-llvm.log
 
       - name: Verify native LLVM incremental CMake graph reuse
         shell: bash
@@ -105,7 +107,9 @@ jobs:
           # The old implementation deleted LLVM_BUILD_DIR here and restarted
           # compilation from zero. The incremental implementation must retain
           # the generated graph and let CMake/Ninja determine that outputs are
-          # already current.
+          # already current. arm64e must also keep Apple ld rather than reusing
+          # the just-installed Mach-O LLD, whose backend does not yet handle
+          # ARM64_RELOC_AUTHENTICATED_POINTER.
           rm -f "$NATIVE_LLVM_DIR/.whp-native-llvm"
           ./build.sh >native-llvm-incremental.out 2>native-llvm-incremental.log
           cat native-llvm-incremental.log
@@ -116,6 +120,7 @@ jobs:
           test -f "$NATIVE_LLVM_BUILD_DIR/build.ninja"
           test -f "$NATIVE_LLVM_DIR/.whp-native-llvm"
           grep -Fq 'WHP native LLVM ready:' native-llvm-incremental.log
+          grep -Fq 'WHP native LLVM bootstrap linker: system' native-llvm-incremental.log
 
       - name: Verify host identity and native ABI
         shell: bash
@@ -149,9 +154,9 @@ jobs:
           test -x "$nm"
           test -x "$ld"
 
-          # The bootstrap compiler is itself an arm64e host program on Macs
-          # where Apple Clang + SDK can build that ABI. This is separate from
-          # Clang's ability to emit arm64e QEMU objects.
+          # The bootstrap compiler and linker are themselves arm64e host
+          # programs on macOS 26. This is separate from whether Mach-O LLD can
+          # consume arm64e authenticated relocations as a target linker.
           for tool in "$clang" "$clangxx" "$ld"; do
             lipo -archs "$tool" | tr ' ' '\n' | grep -Fxq arm64e
             file "$tool" | grep -Fq arm64e
@@ -166,17 +171,20 @@ jobs:
               -ffreestanding -x c -c - -o native-llvm-c.o
           printf 'int whp_native_ci_cxx() { return 0; }\n' |
             "$clangxx" -x c++ -c - -o native-llvm-cxx.o
+
+          # ARM64e output is linked by Apple ld until the WHP Mach-O LLD fork
+          # implements authenticated-pointer relocations and chained fixups.
           printf 'int main(void) { return 0; }\n' |
-            "$clang" -arch arm64e -fsanitize=undefined -fuse-ld=lld \
+            "$clang" -arch arm64e -fsanitize=undefined \
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-ubsan
 
-          # Keep a direct arm64e compiler/linker/runtime probe while QEMU itself
+          # Keep a direct arm64e compiler/runtime probe while QEMU itself
           # remains on arm64 in auto mode. This separates toolchain capability
           # from the still-open TCG JIT pointer-authentication audit.
           printf 'int main(void) { return 0; }\n' |
-            "$clang" -arch arm64e -fuse-ld=lld \
+            "$clang" -arch arm64e \
               -isysroot "$sdkroot" \
               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
               -x c - -o native-llvm-arm64e
