@@ -83,7 +83,7 @@ def main() -> int:
         "-net", "none",
         "-boot", "menu=off",
         "-qmp", "stdio",
-        "-device", "ati-vga",
+        "-vga", "ati",
     ]
 
     proc = subprocess.Popen(
