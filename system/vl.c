@@ -976,6 +976,11 @@ static const VGAInterfaceInfo vga_interfaces[VGA_TYPE_MAX] = {
         .name = "Virtio VGA",
         .class_names = { "virtio-vga" },
     },
+    [VGA_ATI] = {
+        .opt_name = "ati",
+        .name = "ATI VGA",
+        .class_names = { "ati-vga" },
+    },
     [VGA_QXL] = {
         .opt_name = "qxl",
         .name = "QXL VGA",
