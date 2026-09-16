@@ -26,12 +26,21 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: '1'
 
     steps:
-      - name: Check out source
+      - name: Check out QEMU source
         uses: actions/checkout@v7
 
-      - name: Fetch pinned LLVM source
-        shell: bash
-        run: git submodule update --init --depth 1 toolchains/llvm-project
+      - name: Check out pinned LLVM source sparsely
+        uses: actions/checkout@v7
+        with:
+          repository: retrochristian5000/LLVM
+          ref: f6fb0a753b60e3653d0721fc2ab93110a5c455b9
+          path: llvm-project
+          fetch-depth: 1
+          sparse-checkout: |
+            cmake
+            lld
+            llvm
+            third-party
 
       - name: Install build dependencies
         run: brew install cmake ninja
@@ -41,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake -G Ninja \
-            -S toolchains/llvm-project/llvm \
+            -S llvm-project/llvm \
             -B build-lld \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS=lld \
