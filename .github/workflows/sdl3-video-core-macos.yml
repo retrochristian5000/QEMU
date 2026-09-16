@@ -1,0 +1,83 @@
+name: SDL3 video core
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'meson.build'
+      - 'ui/meson.build'
+      - 'ui/sdl3-core.c'
+      - 'include/ui/sdl3-core.h'
+      - 'scripts/tests/test-sdl3-video-core.py'
+      - '.github/workflows/sdl3-video-core-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: SDL3 video core lifecycle
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Apple Silicon host
+        run: |
+          test "$(uname -m)" = arm64
+          sw_vers
+
+      - name: Install SDL3
+        run: brew install pkg-config sdl3
+
+      - name: Verify core contract
+        run: python3 scripts/tests/test-sdl3-video-core.py
+
+      - name: Compile core lifecycle smoke
+        run: |
+          cat > /tmp/test-sdl3-video-core.c <<'EOF'
+          #include <stdio.h>
+          #include <SDL3/SDL_main.h>
+          #include "ui/sdl3-core.h"
+
+          int main(void)
+          {
+              SDL_Window *window;
+
+              if (!qemu_sdl3_video_init()) {
+                  fprintf(stderr, "SDL3 video init failed: %s\n", SDL_GetError());
+                  return 1;
+              }
+
+              window = qemu_sdl3_window_create("QEMU SDL3 core", 320, 200,
+                                                SDL_WINDOW_HIDDEN |
+                                                SDL_WINDOW_RESIZABLE);
+              if (!window) {
+                  fprintf(stderr, "SDL3 window create failed: %s\n", SDL_GetError());
+                  qemu_sdl3_video_quit();
+                  return 1;
+              }
+
+              if (!qemu_sdl3_window_set_title(window, "QEMU SDL3 core smoke") ||
+                  !qemu_sdl3_window_resize(window, 400, 240) ||
+                  !qemu_sdl3_window_set_visible(window, false)) {
+                  fprintf(stderr, "SDL3 core lifecycle failed: %s\n", SDL_GetError());
+                  qemu_sdl3_window_destroy(window);
+                  qemu_sdl3_video_quit();
+                  return 1;
+              }
+
+              qemu_sdl3_window_destroy(window);
+              qemu_sdl3_video_quit();
+              return 0;
+          }
+          EOF
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude \
+            ui/sdl3-core.c /tmp/test-sdl3-video-core.c \
+            $(pkg-config --cflags --libs sdl3) \
+            -o /tmp/test-sdl3-video-core
+
+      - name: Run core lifecycle smoke
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: /tmp/test-sdl3-video-core
