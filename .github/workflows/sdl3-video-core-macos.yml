@@ -33,8 +33,8 @@ jobs:
           test "$(uname -m)" = arm64
           sw_vers
 
-      - name: Install SDL3
-        run: brew install pkg-config sdl3
+      - name: Install SDL build dependencies
+        run: brew install pkg-config meson ninja glib pixman sdl2 sdl3
 
       - name: Verify core contract
         run: python3 scripts/tests/test-sdl3-video-core.py
@@ -44,6 +44,14 @@ jobs:
 
       - name: Verify DisplaySurface bridge contract
         run: python3 scripts/tests/test-sdl3-display-surface.py
+
+      - name: Compile DisplaySurface bridge in QEMU build
+        run: |
+          ./configure --target-list=ppc-softmmu \
+            --enable-sdl --disable-sdl-image \
+            --disable-opengl --disable-gtk --disable-cocoa \
+            --disable-docs --disable-tools
+          ninja -C build ui/libqemu-sdl3-core.a
 
       - name: Compile video lifecycle and 2D smoke
         run: |
