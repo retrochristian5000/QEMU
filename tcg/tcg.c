@@ -24,6 +24,10 @@
 
 #include "qemu/osdep.h"
 
+#if defined(__PTRAUTH__)
+#include <ptrauth.h>
+#endif
+
 /* Define to jump the ELF file used to communicate with GDB.  */
 #undef DEBUG_JIT
 
@@ -208,7 +212,7 @@ static void tcg_out_st_helper_args(TCGContext *s, const TCGLabelQemuLdst *l,
                                    const TCGLdstHelperParam *p)
     __attribute__((unused));
 
-static void * const qemu_ld_helpers[MO_SSIZE + 1] __attribute__((unused)) = {
+static void *qemu_ld_helpers[MO_SSIZE + 1] __attribute__((unused)) = {
     [MO_UB] = helper_ldub_mmu,
     [MO_SB] = helper_ldsb_mmu,
     [MO_UW] = helper_lduw_mmu,
@@ -219,13 +223,61 @@ static void * const qemu_ld_helpers[MO_SSIZE + 1] __attribute__((unused)) = {
     [MO_128] = helper_ld16_mmu,
 };
 
-static void * const qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {
+static void *qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {
     [MO_8]  = helper_stb_mmu,
     [MO_16] = helper_stw_mmu,
     [MO_32] = helper_stl_mmu,
     [MO_64] = helper_stq_mmu,
     [MO_128] = helper_st16_mmu,
 };
+
+/*
+ * arm64e C function pointers carry pointer authentication.  TCG emits
+ * ordinary BL/BLR instructions for helpers, so generated code needs
+ * raw code addresses.  Strip during translation/setup, never in the
+ * generated hot path.  Conversely, C calls the generated TCG prologue
+ * through a function pointer, so sign that raw JIT address once.
+ */
+#if defined(__PTRAUTH__)
+static inline void *tcg_ptrauth_strip_helper(void *func)
+{
+    return ptrauth_strip(func, ptrauth_key_function_pointer);
+}
+
+static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(void *entry)
+{
+    return ptrauth_sign_unauthenticated((tcg_prologue_fn *)entry,
+                                         ptrauth_key_function_pointer, 0);
+}
+
+static void tcg_ptrauth_init_ldst_helpers(void)
+{
+    for (size_t i = 0; i < ARRAY_SIZE(qemu_ld_helpers); i++) {
+        if (qemu_ld_helpers[i]) {
+            qemu_ld_helpers[i] = tcg_ptrauth_strip_helper(qemu_ld_helpers[i]);
+        }
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(qemu_st_helpers); i++) {
+        if (qemu_st_helpers[i]) {
+            qemu_st_helpers[i] = tcg_ptrauth_strip_helper(qemu_st_helpers[i]);
+        }
+    }
+}
+#else
+static inline void *tcg_ptrauth_strip_helper(void *func)
+{
+    return func;
+}
+
+static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(void *entry)
+{
+    return (tcg_prologue_fn *)entry;
+}
+
+static inline void tcg_ptrauth_init_ldst_helpers(void)
+{
+}
+#endif
 
 typedef struct {
     MemOp atom;   /* lg2 bits of atomicity required */
@@ -1768,6 +1820,8 @@ static void tcg_context_init(unsigned max_threads)
     memset(s, 0, sizeof(*s));
     s->nb_globals = 0;
 
+    tcg_ptrauth_init_ldst_helpers();
+
     init_call_layout(&info_helper_ld32_mmu);
     init_call_layout(&info_helper_ld64_mmu);
     init_call_layout(&info_helper_ld128_mmu);
@@ -1854,7 +1908,8 @@ void tcg_prologue_init(void)
     s->data_gen_ptr = NULL;
 
 #ifndef CONFIG_TCG_INTERPRETER
-    tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
+    tcg_qemu_tb_exec = tcg_ptrauth_sign_jit_entry(
+        tcg_splitwx_to_rx(s->code_ptr));
 #endif
 
     s->pool_labels = NULL;
@@ -5947,7 +6002,7 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
         load_arg_ref(s, 0, ts->mem_base->reg, ts->mem_offset, &allocated_regs);
     }
 
-    tcg_out_call(s, tcg_call_func(op), info);
+    tcg_out_call(s, tcg_ptrauth_strip_helper(tcg_call_func(op)), info);
 
     /* Assign output registers and emit moves if needed.  */
     switch (info->out_kind) {
