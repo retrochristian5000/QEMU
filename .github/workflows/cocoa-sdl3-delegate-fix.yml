@@ -160,19 +160,30 @@ jobs:
           ../configure \
             --target-list=i386-softmmu \
             --enable-cocoa \
-            --enable-sdl \
+            --enable-sdl-audio \
             --disable-docs
 
       - name: Build qemu-system-i386
         run: ninja -C build-cocoa-sdl3 qemu-system-i386
 
-      - name: Verify compiled frontend mix
+      - name: Verify compiled Cocoa and SDL3 mix
         shell: bash
         run: |
           set -euo pipefail
           grep -q '^CONFIG_COCOA=y$' build-cocoa-sdl3/config-host.mak
-          grep -q '^CONFIG_SDL=y$' build-cocoa-sdl3/config-host.mak
+          grep -q 'SDL3 audio support.*YES' build-cocoa-sdl3/meson-logs/meson-log.txt
+          test -f build-cocoa-sdl3/ui/libqemu-sdl3-core.a
           python3 scripts/tests/test-cocoa-display-cleanup-state.py
+
+      - name: Exercise SDL3-backed clean shutdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'quit\n' | build-cocoa-sdl3/qemu-system-i386 \
+            -machine none \
+            -display none \
+            -audiodev sdl,id=audio0 \
+            -monitor stdio
 
       - name: Commit verified fix
         shell: bash
