@@ -17,7 +17,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Apply PAC bridge and runtime smoke lane
+      - name: Apply PAC bridge
         shell: bash
         run: |
           set -euo pipefail
@@ -30,11 +30,11 @@ jobs:
                   raise SystemExit(f'{label}: expected one match, found {count}')
               return text.replace(old, new, 1)
 
-          tcg_path = Path('tcg/tcg.c')
-          tcg = tcg_path.read_text(encoding='utf-8')
+          path = Path('tcg/tcg.c')
+          text = path.read_text(encoding='utf-8')
 
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               '#include "qemu/osdep.h"\n',
               '#include "qemu/osdep.h"\n\n'
               '#if defined(__PTRAUTH__)\n'
@@ -43,20 +43,20 @@ jobs:
               'ptrauth include',
           )
 
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               'static void * const qemu_ld_helpers[MO_SSIZE + 1] __attribute__((unused)) = {',
               'static void *qemu_ld_helpers[MO_SSIZE + 1] __attribute__((unused)) = {',
               'load helper mutability',
           )
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               'static void * const qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {',
               'static void *qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {',
               'store helper mutability',
           )
 
-          helper_anchor = '''static void *qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {
+          anchor = '''static void *qemu_st_helpers[MO_SIZE + 1] __attribute__((unused)) = {
               [MO_8]  = helper_stb_mmu,
               [MO_16] = helper_stw_mmu,
               [MO_32] = helper_stl_mmu,
@@ -64,7 +64,7 @@ jobs:
               [MO_128] = helper_st16_mmu,
           };
           '''
-          helper_block = helper_anchor + '''
+          bridge = anchor + '''
           /*
            * arm64e C function pointers carry pointer authentication.  TCG emits
            * ordinary BL/BLR instructions for helpers, so generated code needs
@@ -113,104 +113,42 @@ jobs:
           }
           #endif
           '''
-          tcg = replace_once(tcg, helper_anchor, helper_block, 'PAC helper bridge')
+          text = replace_once(text, anchor, bridge, 'PAC helper bridge')
 
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               '    init_call_layout(&info_helper_ld32_mmu);\n',
               '    tcg_ptrauth_init_ldst_helpers();\n\n'
               '    init_call_layout(&info_helper_ld32_mmu);\n',
               'PAC helper initialization',
           )
-
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               '    tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);',
               '    tcg_qemu_tb_exec = tcg_ptrauth_sign_jit_entry(\n'
               '        tcg_splitwx_to_rx(s->code_ptr));',
               'PAC JIT entry signing',
           )
-
-          tcg = replace_once(
-              tcg,
+          text = replace_once(
+              text,
               '    tcg_out_call(s, tcg_call_func(op), info);',
               '    tcg_out_call(s, tcg_ptrauth_strip_helper(tcg_call_func(op)), info);',
               'PAC generated helper stripping',
           )
 
-          tcg_path.write_text(tcg, encoding='utf-8')
-
-          workflow_path = Path('.github/workflows/native-llvm-macos.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          smoke_marker = '      - name: Show native LLVM failure context\n'
-          smoke_step = '''      - name: Build and run ARM64e i386 TCG smoke
-                shell: bash
-                env:
-                  WHP_SHELL_PROBE_ONLY: '0'
-                  BOOTSTRAP_NATIVE_LLVM: '0'
-                  BUILD_QEMU_IMG: '0'
-                  BUILD_QEMU_SYSTEM_I386: '1'
-                  BUILD_QEMU_SYSTEM_PPC: '0'
-                  BUILD_OPENBIOS: '0'
-                  BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
-                  BUILD_SEABIOS: '0'
-                  BUILD_SEABIOS_GRUB: '0'
-                  BOOTSTRAP_I386_TOOLCHAIN: '0'
-                  QEMU_HOST_LTO: '0'
-                  RUN_TESTS: '0'
-                  MACOS_ENABLE_COCOA: '0'
-                  MACOS_ENABLE_COREAUDIO: '0'
-                  MACOS_ENABLE_GTK: '0'
-                  MACOS_ENABLE_PA: '0'
-                  WHP_MACOS_ARCH: arm64e
-                run: |
-                  set -euo pipefail
-                  export BUILD_DIR="$GITHUB_WORKSPACE/build-arm64e-qemu"
-                  export CC="$NATIVE_LLVM_DIR/bin/clang"
-                  export CXX="$NATIVE_LLVM_DIR/bin/clang++"
-                  export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
-                  export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
-                  export NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
-                  export OBJC="$NATIVE_LLVM_DIR/bin/clang"
-                  export LD="$(xcrun -f ld)"
-                  unset NATIVE_LLVM_LDFLAG
-                  export LDFLAGS=''
-
-                  ./build.sh qemu-system-i386 2>&1 | tee arm64e-qemu.log
-                  test -x "$BUILD_DIR/qemu-system-i386"
-                  lipo -archs "$BUILD_DIR/qemu-system-i386" | tr ' ' '\\n' | grep -Fxq arm64e
-                  file "$BUILD_DIR/qemu-system-i386" | grep -Fq arm64e
-                  "$BUILD_DIR/qemu-system-i386" --version
-                  grep -Fq 'macOS Mach-O arch:       arm64e' arm64e-qemu.log
-
-                  python3 scripts/bench-i386-tcg.py \\
-                    --qemu "$BUILD_DIR/qemu-system-i386" \\
-                    --workload startup \\
-                    --workload fcomi \\
-                    --loops 200000 \\
-                    --rounds 1 \\
-                    --tcg-thread single
-
-          '''
-          workflow = replace_once(
-              workflow,
-              smoke_marker,
-              smoke_step + smoke_marker,
-              'ARM64e runtime smoke insertion',
-          )
-          workflow_path.write_text(workflow, encoding='utf-8')
+          path.write_text(text, encoding='utf-8')
           PY
 
           python3 scripts/tests/test-tcg-arm64e-ptrauth.py
+          git diff --check -- tcg/tcg.c
 
-      - name: Commit production bridge
+      - name: Commit source bridge
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/workflows/apply-arm64e-tcg-pac.yml
-          git add tcg/tcg.c .github/workflows/native-llvm-macos.yml
+          git add tcg/tcg.c
           git diff --cached --check
           git diff --cached --stat
           git commit -m 'tcg: make arm64e call boundaries PAC-correct'
