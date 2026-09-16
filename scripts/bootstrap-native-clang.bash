@@ -257,6 +257,96 @@ if [[ "$host_os" == macos ]]; then
         printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2
         exit 1
     }
+else
+    bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-${CC_FOR_BUILD:-cc}}"
+    bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-${CXX_FOR_BUILD:-c++}}"
+fi
+
+for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
+    [[ -x "$compiler" ]] || command -v "$compiler" >/dev/null 2>&1 || {
+        printf 'error: native LLVM bootstrap compiler is not executable: %s\n' "$compiler" >&2
+        exit 1
+    }
+done
+
+compiler_supports_macos_arch()
+{
+    local compiler="$1"
+    local language="$2"
+    local arch="$3"
+    local output
+
+    output="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-arch.XXXXXX")" || return 1
+    if printf 'int main(void) { return 0; }\n' |
+        "$compiler" -arch "$arch" \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -x "$language" - -o "$output" >/dev/null 2>&1; then
+        rm -f "$output"
+        return 0
+    fi
+    rm -f "$output"
+    return 1
+}
+
+if [[ "$host_os" == macos ]]; then
+    requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"
+    case "$requested_macos_arch" in
+        auto|arm64|arm64e|x86_64) ;;
+        *)
+            printf 'error: NATIVE_LLVM_MACOS_ARCH must be auto, arm64, arm64e, or x86_64: %s\n' \
+                "$requested_macos_arch" >&2
+            exit 1
+            ;;
+    esac
+
+    case "$host_tag" in
+        aarch64)
+            case "$requested_macos_arch" in
+                auto)
+                    if compiler_supports_macos_arch "$bootstrap_cc" c arm64e &&
+                       compiler_supports_macos_arch "$bootstrap_cxx" c++ arm64e; then
+                        darwin_cmake_arch=arm64e
+                    else
+                        darwin_cmake_arch=arm64
+                    fi
+                    ;;
+                arm64)
+                    darwin_cmake_arch=arm64
+                    ;;
+                arm64e)
+                    if ! compiler_supports_macos_arch "$bootstrap_cc" c arm64e ||
+                       ! compiler_supports_macos_arch "$bootstrap_cxx" c++ arm64e; then
+                        printf '%s\n' \
+                            'error: requested native LLVM arm64e bootstrap is unsupported.' \
+                            "C compiler:   $bootstrap_cc" \
+                            "C++ compiler: $bootstrap_cxx" \
+                            "SDK:          $sdkroot" \
+                            "target:       $deployment_target" >&2
+                        exit 1
+                    fi
+                    darwin_cmake_arch=arm64e
+                    ;;
+                *)
+                    printf 'error: requested native LLVM macOS architecture is not native to Apple Silicon: %s\n' \
+                        "$requested_macos_arch" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        x86_64)
+            case "$requested_macos_arch" in
+                auto|x86_64) darwin_cmake_arch=x86_64 ;;
+                *)
+                    printf 'error: requested native LLVM macOS architecture is not native to x86_64: %s\n' \
+                        "$requested_macos_arch" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+    esac
+
+    printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
     cmake_host_args=(
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
@@ -288,17 +378,7 @@ if [[ "$host_os" == macos ]]; then
         "-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"
         "-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"
     )
-else
-    bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-${CC_FOR_BUILD:-cc}}"
-    bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-${CXX_FOR_BUILD:-c++}}"
 fi
-
-for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
-    [[ -x "$compiler" ]] || command -v "$compiler" >/dev/null 2>&1 || {
-        printf 'error: native LLVM bootstrap compiler is not executable: %s\n' "$compiler" >&2
-        exit 1
-    }
-done
 
 # Native LLVM rebuilds already have a linker from the previous successful
 # toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
@@ -318,7 +398,7 @@ bootstrap_linker_name=system
 if [[ "$host_os" == macos && -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
     if printf 'int main(void) { return 0; }\n' |
         PATH="$TOOLCHAIN_DIR/bin:$PATH" \
-            "$bootstrap_cxx" -fuse-ld=lld \
+            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
             -Wl,--read-workers="$LLVM_LINK_JOBS" \
             -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
@@ -486,6 +566,7 @@ HOST=$host_id
 HOST_OS=$host_os
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
+MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch
 LLVM_TARGETS_TO_BUILD=$llvm_target
 LLVM_HOST_TRIPLE=$llvm_host_triple
 LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
@@ -540,7 +621,8 @@ usable()
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -fsanitize=undefined -fuse-ld=lld \
+            "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
+                -fsanitize=undefined -fuse-ld=lld \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
@@ -561,7 +643,7 @@ usable()
             return 1
         }
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -fuse-ld=lld \
+            "$prefix/bin/clang" -arch "$darwin_cmake_arch" -fuse-ld=lld \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -fobjc-link-runtime -x objective-c - -framework Cocoa \
