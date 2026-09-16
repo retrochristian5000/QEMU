@@ -1,0 +1,253 @@
+name: Apply SDL3 video core slice
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/apply-sdl3-video-core.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install SDL3
+        run: brew install pkg-config sdl3
+
+      - name: Apply core-only SDL3 video slice
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          meson = Path('meson.build')
+          text = meson.read_text()
+          old = """sdl = not_found
+          if not get_option('sdl').auto() or have_system
+            sdl = dependency('sdl2', required: get_option('sdl'))
+            sdl_image = not_found
+          endif
+          """
+          new = """sdl3_video = not_found
+          if have_system and get_option('sdl').allowed()
+            sdl3_video = dependency('sdl3', version: '>=3.2.0', required: false)
+          endif
+
+          sdl = not_found
+          if not get_option('sdl').auto() or have_system
+            sdl = dependency('sdl2', required: get_option('sdl'))
+            sdl_image = not_found
+          endif
+          """
+          if old not in text:
+              raise SystemExit('meson SDL2 dependency block changed; refusing blind edit')
+          meson.write_text(text.replace(old, new, 1))
+
+          ui_meson = Path('ui/meson.build')
+          text = ui_meson.read_text()
+          marker = """if sdl.found()
+            sdl_ss = ss.source_set()
+          """
+          insert = """if sdl3_video.found()
+            static_library('qemu-sdl3-core',
+                           files('sdl3-core.c'),
+                           dependencies: [sdl3_video],
+                           build_by_default: true)
+          endif
+
+          if sdl.found()
+            sdl_ss = ss.source_set()
+          """
+          if marker not in text:
+              raise SystemExit('ui SDL block changed; refusing blind edit')
+          ui_meson.write_text(text.replace(marker, insert, 1))
+          PY
+
+          cat > include/ui/sdl3-core.h <<'EOF'
+          #ifndef QEMU_UI_SDL3_CORE_H
+          #define QEMU_UI_SDL3_CORE_H
+
+          #include <stdbool.h>
+          #include <SDL3/SDL.h>
+
+          bool qemu_sdl3_video_init(void);
+          void qemu_sdl3_video_quit(void);
+
+          SDL_Window *qemu_sdl3_window_create(const char *title,
+                                               int width,
+                                               int height,
+                                               SDL_WindowFlags flags);
+          bool qemu_sdl3_window_set_title(SDL_Window *window,
+                                          const char *title);
+          bool qemu_sdl3_window_resize(SDL_Window *window,
+                                       int width,
+                                       int height);
+          bool qemu_sdl3_window_set_visible(SDL_Window *window, bool visible);
+          bool qemu_sdl3_window_set_fullscreen(SDL_Window *window,
+                                               bool fullscreen);
+          void qemu_sdl3_window_destroy(SDL_Window *window);
+
+          #endif /* QEMU_UI_SDL3_CORE_H */
+          EOF
+
+          cat > ui/sdl3-core.c <<'EOF'
+          /*
+           * QEMU SDL3 display core
+           *
+           * Core video/window lifecycle only. Rendering, input and OpenGL
+           * remain in the SDL2 frontend until their dedicated SDL3 ports.
+           */
+
+          #include "ui/sdl3-core.h"
+
+          static bool qemu_sdl3_video_main_thread(void)
+          {
+              if (SDL_IsMainThread()) {
+                  return true;
+              }
+
+              SDL_SetError("QEMU SDL3 video core must run on the main thread");
+              return false;
+          }
+
+          bool qemu_sdl3_video_init(void)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return false;
+              }
+
+              return SDL_InitSubSystem(SDL_INIT_VIDEO);
+          }
+
+          void qemu_sdl3_video_quit(void)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return;
+              }
+
+              SDL_QuitSubSystem(SDL_INIT_VIDEO);
+          }
+
+          SDL_Window *qemu_sdl3_window_create(const char *title,
+                                               int width,
+                                               int height,
+                                               SDL_WindowFlags flags)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return NULL;
+              }
+
+              return SDL_CreateWindow(title, width, height, flags);
+          }
+
+          bool qemu_sdl3_window_set_title(SDL_Window *window,
+                                          const char *title)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return false;
+              }
+
+              return SDL_SetWindowTitle(window, title);
+          }
+
+          bool qemu_sdl3_window_resize(SDL_Window *window,
+                                       int width,
+                                       int height)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return false;
+              }
+
+              return SDL_SetWindowSize(window, width, height);
+          }
+
+          bool qemu_sdl3_window_set_visible(SDL_Window *window, bool visible)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return false;
+              }
+
+              return visible ? SDL_ShowWindow(window) : SDL_HideWindow(window);
+          }
+
+          bool qemu_sdl3_window_set_fullscreen(SDL_Window *window,
+                                               bool fullscreen)
+          {
+              if (!qemu_sdl3_video_main_thread()) {
+                  return false;
+              }
+
+              if (fullscreen && !SDL_SetWindowFullscreenMode(window, NULL)) {
+                  return false;
+              }
+
+              return SDL_SetWindowFullscreen(window, fullscreen);
+          }
+
+          void qemu_sdl3_window_destroy(SDL_Window *window)
+          {
+              if (!window || !qemu_sdl3_video_main_thread()) {
+                  return;
+              }
+
+              SDL_DestroyWindow(window);
+          }
+          EOF
+
+      - name: Verify contract turns green
+        run: python3 scripts/tests/test-sdl3-video-core.py
+
+      - name: Compile SDL3 core with warnings as errors
+        run: |
+          cat > /tmp/test-sdl3-video-core.c <<'EOF'
+          #include <stdio.h>
+          #include <SDL3/SDL_main.h>
+          #include "ui/sdl3-core.h"
+
+          int main(void)
+          {
+              SDL_Window *window;
+
+              if (!qemu_sdl3_video_init()) {
+                  fprintf(stderr, "SDL3 video init failed: %s\n", SDL_GetError());
+                  return 1;
+              }
+              window = qemu_sdl3_window_create("QEMU SDL3 core", 320, 200,
+                                                SDL_WINDOW_HIDDEN |
+                                                SDL_WINDOW_RESIZABLE);
+              if (!window ||
+                  !qemu_sdl3_window_set_title(window, "QEMU SDL3 core smoke") ||
+                  !qemu_sdl3_window_resize(window, 400, 240) ||
+                  !qemu_sdl3_window_set_visible(window, false)) {
+                  fprintf(stderr, "SDL3 core lifecycle failed: %s\n", SDL_GetError());
+                  if (window) {
+                      qemu_sdl3_window_destroy(window);
+                  }
+                  qemu_sdl3_video_quit();
+                  return 1;
+              }
+              qemu_sdl3_window_destroy(window);
+              qemu_sdl3_video_quit();
+              return 0;
+          }
+          EOF
+          clang -std=c11 -Wall -Wextra -Werror -Iinclude \
+            ui/sdl3-core.c /tmp/test-sdl3-video-core.c \
+            $(pkg-config --cflags --libs sdl3) \
+            -o /tmp/test-sdl3-video-core
+          SDL_VIDEODRIVER=dummy /tmp/test-sdl3-video-core
+
+      - name: Commit core implementation and remove apply workflow
+        run: |
+          rm .github/workflows/apply-sdl3-video-core.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add meson.build ui/meson.build include/ui/sdl3-core.h ui/sdl3-core.c \
+                  .github/workflows/apply-sdl3-video-core.yml
+          git commit -m 'ui: add SDL3 video core lifecycle'
+          git push origin HEAD:master
