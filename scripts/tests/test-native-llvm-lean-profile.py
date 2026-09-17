@@ -28,6 +28,16 @@ assert '"-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"' in bootstrap
 assert 'CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags' in bootstrap
 assert 'CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags' in bootstrap
 
+# The C++ language level is independent from release optimization. Keep the
+# default conservative, require the requested level instead of silently falling
+# back, and make it part of the installed-toolchain cache identity.
+assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"' in bootstrap
+assert 'compiler_supports_cxx_standard()' in bootstrap
+assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
+assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
+assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+
 # LLVM telemetry is not part of the QEMU compiler/linker contract.
 assert '-DLLVM_ENABLE_TELEMETRY=OFF' in bootstrap
 assert 'LLVM_ENABLE_TELEMETRY=OFF' in bootstrap
@@ -67,7 +77,7 @@ assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"' in bootstrap
 assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
 
 # Any of these policy changes must invalidate an older installed compiler cache.
-assert 'BOOTSTRAP_SCHEMA=8' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=9' in bootstrap
 for policy in runtime_off + runtime_on:
     assert policy in bootstrap[bootstrap.index('expected_marker='):], policy
 
