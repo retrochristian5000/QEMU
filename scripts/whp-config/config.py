@@ -46,6 +46,7 @@ OPTIONS = (
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_OPTIMIZATION', 'Host features', 'QEMU host optimization level', 'choice', '2', ('0', '1', '2', '3', 'g', 's')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
+    Option('QEMU_C_STANDARD', 'Host features', 'QEMU C language standard', 'choice', 'gnu11', ('gnu11', 'gnu17', 'gnu23')),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('BOOTSTRAP_NINJA', 'Host features', 'Bootstrap/use WHP Ninja', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice', 'auto', ('auto', 'ccache', 'sccache', 'none')),
