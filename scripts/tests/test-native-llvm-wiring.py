@@ -28,6 +28,7 @@ for bash_path in (
     subprocess.run(['bash', '-n', str(bash_path)], check=True)
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
+assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
@@ -74,6 +75,17 @@ assert 'ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"' in bootstrap
 assert '"-DCMAKE_MAKE_PROGRAM=$ninja_cmd"' in bootstrap
 assert 'WHP native LLVM Ninja:' in bootstrap
 
+# The LLVM bootstrap language level is user-selectable but must be explicit and
+# cache-identifying. C++26 probes both the final spelling and Clang's c++2c
+# spelling so the bootstrap can work across compiler transition releases.
+assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"' in bootstrap
+assert 'compiler_supports_cxx_standard()' in bootstrap
+assert 'standards=(c++26 c++2c)' in bootstrap
+assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
+assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
+assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
@@ -96,7 +108,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=8' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=9' in bootstrap
 
 # LLVM configures builtins and runtimes as separate ExternalProjects on Darwin.
 # The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:
