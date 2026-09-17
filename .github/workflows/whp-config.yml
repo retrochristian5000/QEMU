@@ -10,6 +10,7 @@ on:
       - 'configs/meson/darwin.txt'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
+      - 'scripts/qapi/common.py'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/configure.bash'
@@ -20,6 +21,7 @@ on:
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/whp-build/select-tests.py'
+      - 'scripts/tests/test-qapi-c23-keywords.py'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-api-policy.py'
@@ -63,6 +65,7 @@ jobs:
 
       - name: Test configuration model
         run: |
+          python3 scripts/tests/test-qapi-c23-keywords.py
           python3 scripts/tests/test-whp-config.py
           python3 scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-whp-i386-audio-menu.py
@@ -98,12 +101,14 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/ensure-ninja.py \
+            scripts/qapi/common.py \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
             scripts/whp-build/portable-build.py \
             scripts/whp-build/portable-build-entry.py \
             scripts/whp-build/host-cpu-tuning.py \
             scripts/whp-build/select-tests.py \
+            scripts/tests/test-qapi-c23-keywords.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-darwin-lto-threads.py \
             scripts/tests/test-macos-api-policy.py \
