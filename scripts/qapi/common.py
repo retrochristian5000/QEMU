@@ -106,6 +106,10 @@ def c_name(name: str, protect: bool = True) -> str:
     # ISO/IEC 9899:2011, 6.4.1
     c11_words = set(['_Alignas', '_Alignof', '_Atomic', '_Generic',
                      '_Noreturn', '_Static_assert', '_Thread_local'])
+    # ISO/IEC 9899:2023, 6.4.1; omit words already protected above/below.
+    c23_words = set(['alignas', 'alignof', 'constexpr', 'nullptr',
+                     'static_assert', 'thread_local', 'typeof_unqual',
+                     '_BitInt', '_Decimal32', '_Decimal64', '_Decimal128'])
     # GCC http://gcc.gnu.org/onlinedocs/gcc-4.7.1/gcc/C-Extensions.html
     # excluding _.*
     gcc_words = set(['asm', 'typeof'])
@@ -122,8 +126,8 @@ def c_name(name: str, protect: bool = True) -> str:
     # namespace pollution:
     polluted_words = set(['unix', 'errno', 'mips', 'sparc', 'i386', 'linux'])
     name = re.sub(r'[^A-Za-z0-9_]', '_', name)
-    if protect and (name in (c89_words | c99_words | c11_words | gcc_words
-                             | cpp_words | polluted_words)
+    if protect and (name in (c89_words | c99_words | c11_words | c23_words
+                             | gcc_words | cpp_words | polluted_words)
                     or name[0].isdigit()):
         return 'q_' + name
     return name
