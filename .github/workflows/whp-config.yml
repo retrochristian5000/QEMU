@@ -11,6 +11,7 @@ on:
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
       - 'scripts/qapi/common.py'
+      - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/configure.bash'
@@ -22,6 +23,7 @@ on:
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/whp-build/select-tests.py'
       - 'scripts/tests/test-qapi-c23-keywords.py'
+      - 'scripts/tests/test-cpp-standard-config.py'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-api-policy.py'
@@ -66,6 +68,7 @@ jobs:
       - name: Test configuration model
         run: |
           python3 scripts/tests/test-qapi-c23-keywords.py
+          python3 scripts/tests/test-cpp-standard-config.py
           python3 scripts/tests/test-whp-config.py
           python3 scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-whp-i386-audio-menu.py
@@ -109,6 +112,7 @@ jobs:
             scripts/whp-build/host-cpu-tuning.py \
             scripts/whp-build/select-tests.py \
             scripts/tests/test-qapi-c23-keywords.py \
+            scripts/tests/test-cpp-standard-config.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-darwin-lto-threads.py \
             scripts/tests/test-macos-api-policy.py \
@@ -129,6 +133,7 @@ jobs:
           /bin/sh -n build.sh
           /bin/sh -n builder.sh
           bash -n builder.sh
+          bash -n scripts/bootstrap-native-clang.bash
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/prepare-build.bash
