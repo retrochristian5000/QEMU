@@ -244,7 +244,7 @@ static inline void *tcg_ptrauth_strip_helper(void *func)
     return ptrauth_strip(func, ptrauth_key_function_pointer);
 }
 
-static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(void *entry)
+static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(const void *entry)
 {
     return ptrauth_sign_unauthenticated((tcg_prologue_fn *)entry,
                                          ptrauth_key_function_pointer, 0);
@@ -269,7 +269,7 @@ static inline void *tcg_ptrauth_strip_helper(void *func)
     return func;
 }
 
-static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(void *entry)
+static inline tcg_prologue_fn *tcg_ptrauth_sign_jit_entry(const void *entry)
 {
     return (tcg_prologue_fn *)entry;
 }
