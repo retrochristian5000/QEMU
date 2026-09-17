@@ -154,6 +154,10 @@ def optional_switch(args: List[str], value: str, feature: str) -> None:
         args.append(f'--disable-{feature}')
 
 
+def qemu_c_standard_configure_args(values: Dict[str, str]) -> List[str]:
+    return [f"-Dc_std={values['QEMU_C_STANDARD']}"]
+
+
 def is_gnu_make(command: List[str]) -> bool:
     if not command:
         return False
@@ -456,6 +460,7 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         append_unique(targets, target)
 
     configure_args: List[str] = [f'--prefix={prefix}']
+    configure_args.extend(qemu_c_standard_configure_args(values))
     if targets:
         configure_args.append(f"--target-list={','.join(targets)}")
     else:
