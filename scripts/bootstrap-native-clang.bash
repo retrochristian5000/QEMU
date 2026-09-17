@@ -14,6 +14,7 @@ LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
+LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"
 ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
 stage_root=""
 
@@ -37,6 +38,14 @@ case "$LLVM_LINK_JOBS" in
         exit 1
         ;;
     *) ;;
+esac
+case "$LLVM_CXX_STANDARD" in
+    17|20|23|26) ;;
+    *)
+        printf 'error: NATIVE_LLVM_CXX_STANDARD must be 17, 20, 23, or 26: %s\n' \
+            "$LLVM_CXX_STANDARD" >&2
+        exit 1
+        ;;
 esac
 
 # build.sh owns host detection. Keep a direct-invocation fallback for this
@@ -382,6 +391,51 @@ if [[ "$host_os" == macos ]]; then
     )
 fi
 
+compiler_supports_cxx_standard()
+{
+    local standard="$1"
+    local candidate
+    local standards=()
+
+    case "$standard" in
+        17|20|23)
+            standards=("c++$standard")
+            ;;
+        26)
+            standards=(c++26 c++2c)
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    for candidate in "${standards[@]}"; do
+        if [[ "$host_os" == macos ]]; then
+            if printf 'constexpr int whp_cxx_standard_probe = 1;\n' |
+                "$bootstrap_cxx" -arch "$darwin_cmake_arch" \
+                    "-std=$candidate" -isysroot "$sdkroot" \
+                    "-mmacosx-version-min=$deployment_target" \
+                    -x c++ -c - -o /dev/null >/dev/null 2>&1; then
+                return 0
+            fi
+        elif printf 'constexpr int whp_cxx_standard_probe = 1;\n' |
+            "$bootstrap_cxx" "-std=$candidate" -x c++ -c - -o /dev/null \
+                >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! compiler_supports_cxx_standard "$LLVM_CXX_STANDARD"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C++ compiler does not support the selected standard.' \
+        "compiler: $bootstrap_cxx" \
+        "standard: C++$LLVM_CXX_STANDARD" >&2
+    exit 1
+fi
+printf 'WHP native LLVM C++ standard: C++%s\n' "$LLVM_CXX_STANDARD" >&2
+
 # Native LLVM rebuilds already have a linker from the previous successful
 # toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
 # drive it against the selected SDK. The current WHP Mach-O LLD backend does
@@ -564,7 +618,7 @@ if [[ "$host_os" == macos ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=8
+BOOTSTRAP_SCHEMA=9
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -580,6 +634,8 @@ LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
 CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
 CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
+CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
+CMAKE_CXX_STANDARD_REQUIRED=ON
 LLVM_ENABLE_TELEMETRY=OFF
 COMPILER_RT_ENABLE_IOS=OFF
 COMPILER_RT_ENABLE_MACCATALYST=OFF
@@ -708,6 +764,8 @@ cmake_args=(
     -DCMAKE_BUILD_TYPE=Release
     "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
     "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
+    "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
     "${cmake_compiler_launcher_args[@]}"
