@@ -28,56 +28,56 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> int:
-    config = load_module('whp_config_cpp_standard_test', CONFIG_TOOL)
-    portable = load_module('whp_portable_cpp_standard_test', PORTABLE_BUILD_TOOL)
+    config = load_module('whp_config_cxx_standard_test', CONFIG_TOOL)
+    portable = load_module('whp_portable_cxx_standard_test', PORTABLE_BUILD_TOOL)
 
-    qemu_option = config.OPTION_BY_KEY.get('QEMU_CPP_STANDARD')
-    require(qemu_option is not None, 'QEMU_CPP_STANDARD is missing from menuconfig')
+    qemu_option = config.OPTION_BY_KEY.get('QEMU_CXX_STANDARD')
+    require(qemu_option is not None, 'QEMU_CXX_STANDARD is missing from menuconfig')
     require(qemu_option.section == 'Host features',
-            'QEMU_CPP_STANDARD is not a Host features option')
-    require(qemu_option.kind == 'choice', 'QEMU_CPP_STANDARD must be a choice')
+            'QEMU_CXX_STANDARD is not a Host features option')
+    require(qemu_option.kind == 'choice', 'QEMU_CXX_STANDARD must be a choice')
     require(qemu_option.default == 'gnu++23',
-            'QEMU_CPP_STANDARD default must remain gnu++23 during migration')
+            'QEMU_CXX_STANDARD default must remain gnu++23 during migration')
     require(
         qemu_option.choices == ('gnu++17', 'gnu++20', 'gnu++23', 'c++26'),
-        'QEMU_CPP_STANDARD choices are incorrect',
+        'QEMU_CXX_STANDARD choices are incorrect',
     )
 
-    llvm_option = config.OPTION_BY_KEY.get('NATIVE_LLVM_CPP_STANDARD')
+    llvm_option = config.OPTION_BY_KEY.get('NATIVE_LLVM_CXX_STANDARD')
     require(llvm_option is not None,
-            'NATIVE_LLVM_CPP_STANDARD is missing from menuconfig')
+            'NATIVE_LLVM_CXX_STANDARD is missing from menuconfig')
     require(llvm_option.section == 'Host features',
-            'NATIVE_LLVM_CPP_STANDARD is not a Host features option')
+            'NATIVE_LLVM_CXX_STANDARD is not a Host features option')
     require(llvm_option.kind == 'choice',
-            'NATIVE_LLVM_CPP_STANDARD must be a choice')
+            'NATIVE_LLVM_CXX_STANDARD must be a choice')
     require(llvm_option.default == '17',
-            'NATIVE_LLVM_CPP_STANDARD default must remain 17 during migration')
+            'NATIVE_LLVM_CXX_STANDARD default must remain 17 during migration')
     require(llvm_option.choices == ('17', '20', '23', '26'),
-            'NATIVE_LLVM_CPP_STANDARD choices are incorrect')
+            'NATIVE_LLVM_CXX_STANDARD choices are incorrect')
 
-    original_qemu = os.environ.get('QEMU_CPP_STANDARD')
-    original_llvm = os.environ.get('NATIVE_LLVM_CPP_STANDARD')
+    original_qemu = os.environ.get('QEMU_CXX_STANDARD')
+    original_llvm = os.environ.get('NATIVE_LLVM_CXX_STANDARD')
     try:
-        os.environ['QEMU_CPP_STANDARD'] = 'c++26'
-        os.environ['NATIVE_LLVM_CPP_STANDARD'] = '26'
+        os.environ['QEMU_CXX_STANDARD'] = 'c++26'
+        os.environ['NATIVE_LLVM_CXX_STANDARD'] = '26'
         values = portable.resolved_values()
-        require(values['QEMU_CPP_STANDARD'] == 'c++26',
+        require(values['QEMU_CXX_STANDARD'] == 'c++26',
                 'C++26 QEMU environment override was not resolved')
-        require(values['NATIVE_LLVM_CPP_STANDARD'] == '26',
+        require(values['NATIVE_LLVM_CXX_STANDARD'] == '26',
                 'C++26 LLVM environment override was not resolved')
     finally:
         if original_qemu is None:
-            os.environ.pop('QEMU_CPP_STANDARD', None)
+            os.environ.pop('QEMU_CXX_STANDARD', None)
         else:
-            os.environ['QEMU_CPP_STANDARD'] = original_qemu
+            os.environ['QEMU_CXX_STANDARD'] = original_qemu
         if original_llvm is None:
-            os.environ.pop('NATIVE_LLVM_CPP_STANDARD', None)
+            os.environ.pop('NATIVE_LLVM_CXX_STANDARD', None)
         else:
-            os.environ['NATIVE_LLVM_CPP_STANDARD'] = original_llvm
+            os.environ['NATIVE_LLVM_CXX_STANDARD'] = original_llvm
 
     for standard in qemu_option.choices:
-        args = portable.qemu_cpp_standard_configure_args(
-            {'QEMU_CPP_STANDARD': standard}
+        args = portable.qemu_cxx_standard_configure_args(
+            {'QEMU_CXX_STANDARD': standard}
         )
         expected = f'-Dcpp_std={standard}'
         require(args == [expected],
@@ -96,8 +96,8 @@ def main() -> int:
             raise SystemExit(f'invalid {option.key}={invalid} was accepted')
 
     bootstrap = NATIVE_LLVM_BOOTSTRAP.read_text(encoding='utf-8')
-    require('NATIVE_LLVM_CPP_STANDARD' in bootstrap,
-            'native LLVM bootstrap does not consume NATIVE_LLVM_CPP_STANDARD')
+    require('NATIVE_LLVM_CXX_STANDARD' in bootstrap,
+            'native LLVM bootstrap does not consume NATIVE_LLVM_CXX_STANDARD')
     require('compiler_supports_cxx_standard' in bootstrap,
             'native LLVM bootstrap lacks a C++ standard compiler probe')
     require('-DCMAKE_CXX_STANDARD=' in bootstrap,
