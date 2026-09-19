@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: whp-clang-sema-cxx26-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sema-cxx26:
     name: Build clangSema (Apple Silicon arm64e, C++26)
@@ -20,8 +24,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
-        with:
-          submodules: true
+
+      - name: Fetch pinned LLVM source
+        shell: bash
+        run: git submodule update --init --depth 1 toolchains/llvm-project
 
       - name: Install build tools
         run: brew install cmake ninja
