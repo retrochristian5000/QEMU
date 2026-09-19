@@ -671,7 +671,7 @@ usable()
     local ubsan_exe=''
     local objc_exe=''
     local objc_log=''
-    local linker_driver_args=()
+    local clang_link_driver=("$prefix/bin/clang")
 
     [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
     [[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&
@@ -680,13 +680,13 @@ usable()
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
         if [[ "$darwin_cmake_arch" != arm64e ]]; then
-            linker_driver_args=(-fuse-ld=lld)
+            clang_link_driver+=(-fuse-ld=lld)
         fi
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
-                -fsanitize=undefined "${linker_driver_args[@]}" \
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
+                -fsanitize=undefined \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
@@ -707,8 +707,7 @@ usable()
             return 1
         }
         if ! printf 'int main(void) { return 0; }\n' |
-            "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
-                "${linker_driver_args[@]}" \
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -fobjc-link-runtime -x objective-c - -framework Cocoa \
