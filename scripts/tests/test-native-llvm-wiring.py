@@ -85,6 +85,11 @@ assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
 assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
 assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
+assert "WHP native LLVM C++ standard: C++26" in macos_workflow
+assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow
+assert "grep -Fxq 'CMAKE_CXX_STANDARD_REQUIRED=ON' \"$marker\"" in macos_workflow
+assert "grep -Fxq 'BOOTSTRAP_SCHEMA=9' \"$marker\"" in macos_workflow
 
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
@@ -163,6 +168,10 @@ assert '"-DLLVM_USE_LINKER=lld"' in bootstrap
 assert '"-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"' in bootstrap
 assert '"${bootstrap_linker_args[@]}"' in bootstrap
 assert 'WHP native LLVM bootstrap linker:' in bootstrap
+assert 'local clang_link_driver=("$prefix/bin/clang")' in bootstrap
+assert 'clang_link_driver+=(-fuse-ld=lld)' in bootstrap
+assert '"${clang_link_driver[@]}" -arch "$darwin_cmake_arch"' in bootstrap
+assert 'linker_driver_args' not in bootstrap
 
 # The public build entry owns platform detection. Native LLVM consumes the same
 # normalized OS/kernel/architecture identity instead of making an independent
