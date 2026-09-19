@@ -29,6 +29,7 @@ for bash_path in (
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
+assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n')" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
@@ -85,6 +86,12 @@ assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
 assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
 assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
+assert 'LLVM_PCH="${NATIVE_LLVM_PCH:-0}"' in bootstrap
+assert 'cmake_disable_precompile_headers=ON' in bootstrap
+assert 'cmake_disable_precompile_headers=OFF' in bootstrap
+assert '"-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"' in bootstrap
+assert 'CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers' in bootstrap
+assert 'WHP native LLVM precompiled headers:' in bootstrap
 assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
 assert "WHP native LLVM C++ standard: C++26" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow
