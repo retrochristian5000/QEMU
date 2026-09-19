@@ -50,6 +50,7 @@ OPTIONS = (
     Option('QEMU_CXX_STANDARD', 'Host features', 'QEMU C++ language standard', 'choice', 'gnu++23', ('gnu++17', 'gnu++20', 'gnu++23', 'c++26')),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '17', ('17', '20', '23', '26')),
+    Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n'),
     Option('BOOTSTRAP_NINJA', 'Host features', 'Bootstrap/use WHP Ninja', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice', 'auto', ('auto', 'ccache', 'sccache', 'none')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
