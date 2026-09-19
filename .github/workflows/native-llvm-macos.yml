@@ -51,6 +51,7 @@ jobs:
       NATIVE_LLVM_BUILD_DIR: ${{ github.workspace }}/build-native-llvm/work/llvm-build
       NATIVE_LLVM_MACOS_ARCH: 'auto'
       BOOTSTRAP_NATIVE_LLVM: '1'
+      NATIVE_LLVM_CXX_STANDARD: '26'
       WHP_SHELL_PROBE_ONLY: '1'
       MACOSX_DEPLOYMENT_TARGET: '26.0'
       JOBS: '4'
@@ -93,6 +94,7 @@ jobs:
           cat native-llvm.out
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
           grep -Fq 'WHP native LLVM bootstrap linker: system' native-llvm.log
+          grep -Fq 'WHP native LLVM C++ standard: C++26' native-llvm.log
 
       - name: Verify native LLVM incremental CMake graph reuse
         shell: bash
@@ -137,7 +139,7 @@ jobs:
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=8' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=9' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
@@ -148,6 +150,8 @@ jobs:
           grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
+          grep -Fxq 'CMAKE_CXX_STANDARD=26' "$marker"
+          grep -Fxq 'CMAKE_CXX_STANDARD_REQUIRED=ON' "$marker"
           grep -Fxq 'CMAKE_OSX_ARCHITECTURES:STRING=arm64e' "$NATIVE_LLVM_BUILD_DIR/CMakeCache.txt"
           test -x "$ar"
           test -x "$ranlib"
