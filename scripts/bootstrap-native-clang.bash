@@ -15,6 +15,7 @@ TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"
+LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
 stage_root=""
 
@@ -47,6 +48,21 @@ case "$LLVM_CXX_STANDARD" in
         exit 1
         ;;
 esac
+case "$LLVM_PCH" in
+    0)
+        cmake_disable_precompile_headers=ON
+        llvm_pch_state=disabled
+        ;;
+    1)
+        cmake_disable_precompile_headers=OFF
+        llvm_pch_state=enabled
+        ;;
+    *)
+        printf 'error: NATIVE_LLVM_PCH must be 0 or 1: %s\n' "$LLVM_PCH" >&2
+        exit 1
+        ;;
+esac
+printf 'WHP native LLVM precompiled headers: %s\n' "$llvm_pch_state" >&2
 
 # build.sh owns host detection. Keep a direct-invocation fallback for this
 # helper, but never reinterpret a normalized host identity supplied by the
@@ -636,6 +652,7 @@ CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
 CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
 CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
 CMAKE_CXX_STANDARD_REQUIRED=ON
+CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers
 LLVM_ENABLE_TELEMETRY=OFF
 COMPILER_RT_ENABLE_IOS=OFF
 COMPILER_RT_ENABLE_MACCATALYST=OFF
@@ -765,6 +782,7 @@ cmake_args=(
     "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
     "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"
     -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
     "${cmake_compiler_launcher_args[@]}"
