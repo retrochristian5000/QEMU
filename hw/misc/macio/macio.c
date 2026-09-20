@@ -595,7 +595,7 @@ static const Property macio_newworld_properties[] = {
     DEFINE_PROP_BOOL("has-adb", NewWorldMacIOState, has_adb, false),
     DEFINE_PROP_BOOL("keylargo-fcr", NewWorldMacIOState, has_keylargo_fcr,
                      true),
-    DEFINE_PROP_BOOL("screamer", NewWorldMacIOState, has_screamer, false),
+    DEFINE_PROP_BOOL("has-screamer", NewWorldMacIOState, has_screamer, false),
 };
 
 static void macio_newworld_class_init(ObjectClass *oc, const void *data)

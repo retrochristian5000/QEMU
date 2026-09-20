@@ -425,7 +425,7 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_bit(dev, "has-pmu", has_pmu);
     qdev_prop_set_bit(dev, "has-adb", has_adb);
 #ifdef CONFIG_SCREAMER
-    qdev_prop_set_bit(dev, "screamer", sawtooth_topology);
+    qdev_prop_set_bit(dev, "has-screamer", sawtooth_topology);
 #endif
 
     /*

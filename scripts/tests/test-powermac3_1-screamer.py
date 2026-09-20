@@ -22,8 +22,8 @@ require(MISC_KCONFIG, "    select SCREAMER", "MacIO Screamer link dependency")
 if "CONFIG_SCREAMER" in MACIO_H:
     raise SystemExit("device CONFIG_SCREAMER must not leak into public MacIO headers")
 require(MACIO_H, "ScreamerState screamer;", "MacIO Screamer child")
-require(MACIO_C, 'DEFINE_PROP_BOOL("screamer"', "MacIO Screamer gate")
-require(MAC_NEWWORLD, 'qdev_prop_set_bit(dev, "screamer", sawtooth_topology);',
+require(MACIO_C, 'DEFINE_PROP_BOOL("has-screamer"', "MacIO Screamer gate")
+require(MAC_NEWWORLD, 'qdev_prop_set_bit(dev, "has-screamer", sawtooth_topology);',
         "Sawtooth-only Screamer property")
 require(MACIO_C, "memory_region_add_subregion(&s->bar, 0x14000,",
         "DAV MMIO mapping")
