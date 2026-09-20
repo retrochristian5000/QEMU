@@ -164,3 +164,9 @@ config MAC_PVG_PCI
     bool
     depends on MAC_PVG && PCI
     default y if PCI_DEVICES
+
+config S3_VGA
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+    select VGA
