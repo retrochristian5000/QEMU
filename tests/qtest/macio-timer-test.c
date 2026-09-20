@@ -19,6 +19,9 @@
 #define MACIO_SCREAMER_STATUS (MACIO_BAR_BASE + 0x14020)
 #define MACIO_SCREAMER_SWAP   (MACIO_BAR_BASE + 0x14040)
 #define SCREAMER_STATUS_FIXED  0x00403100U
+#define SAWTOOTH_BRIDGE_SLOT    13
+#define SAWTOOTH_SECONDARY_BUS  1
+#define SAWTOOTH_MACIO_SLOT     7
 #define KEYLARGO_TIMER_FREQ  18432000ULL
 #define TIMER_PROBE_NS       1899
 
@@ -58,7 +61,7 @@ static unsigned find_keylargo_slot(QTestState *qts)
         (PCI_DEVICE_ID_APPLE_UNI_N_KEYL << 16) | PCI_VENDOR_ID_APPLE;
     unsigned slot;
 
-    for (slot = 0; slot < 32; slot++) {
+    for (slot = 11; slot < 32; slot++) {
         uninorth_select(qts, slot, 0);
         if (read_le32(qts, UNINORTH_CONFIG_DATA) == keylargo_id) {
             return slot;
@@ -76,6 +79,43 @@ static void map_keylargo(QTestState *qts, unsigned slot)
     uninorth_select(qts, slot, PCI_COMMAND);
     write_le16(qts, UNINORTH_CONFIG_DATA + (PCI_COMMAND & 7),
                PCI_COMMAND_MEMORY);
+}
+
+static void uninorth_select_cfa1(QTestState *qts, unsigned bus,
+                                 unsigned slot, unsigned reg)
+{
+    write_le32(qts, UNINORTH_CONFIG_ADDR,
+               1U | (bus << 16) | (PCI_DEVFN(slot, 0) << 8) |
+               (reg & ~7U));
+}
+
+static void map_sawtooth_keylargo(QTestState *qts)
+{
+    /*
+     * PowerMac3,1 puts KeyLargo at bus 1, device 7 behind the DEC 21154
+     * at root device 13.  Program the bridge exactly far enough for qtest
+     * to reach and map MacIO; firmware normally performs this enumeration.
+     */
+    uninorth_select(qts, SAWTOOTH_BRIDGE_SLOT, PCI_PRIMARY_BUS);
+    write_le32(qts, UNINORTH_CONFIG_DATA,
+               (SAWTOOTH_SECONDARY_BUS << 8) |
+               (SAWTOOTH_SECONDARY_BUS << 16));
+
+    uninorth_select(qts, SAWTOOTH_BRIDGE_SLOT, PCI_MEMORY_BASE);
+    write_le32(qts, UNINORTH_CONFIG_DATA, 0x80008000U);
+
+    uninorth_select(qts, SAWTOOTH_BRIDGE_SLOT, PCI_COMMAND);
+    write_le16(qts, UNINORTH_CONFIG_DATA + (PCI_COMMAND & 7),
+               PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+
+    uninorth_select_cfa1(qts, SAWTOOTH_SECONDARY_BUS,
+                         SAWTOOTH_MACIO_SLOT, PCI_BASE_ADDRESS_0);
+    write_le32(qts, UNINORTH_CONFIG_DATA, MACIO_BAR_BASE);
+
+    uninorth_select_cfa1(qts, SAWTOOTH_SECONDARY_BUS,
+                         SAWTOOTH_MACIO_SLOT, PCI_COMMAND);
+    write_le16(qts, UNINORTH_CONFIG_DATA + (PCI_COMMAND & 7),
+               PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
 }
 
 static void test_keylargo_timer_precision(void)
@@ -108,7 +148,6 @@ static void test_sawtooth_screamer_registers(void)
 {
     QTestState *qts;
     uint32_t codec_write = (1U << 24) | (1U << 12) | 0x84;
-    unsigned slot;
 
     if (g_str_equal(qtest_get_arch(), "ppc64")) {
         g_test_skip("PowerMac3,1 is a 32-bit NewWorld machine");
@@ -116,8 +155,7 @@ static void test_sawtooth_screamer_registers(void)
     }
 
     qts = qtest_init("-M powermac3_1 -nodefaults -boot c");
-    slot = find_keylargo_slot(qts);
-    map_keylargo(qts, slot);
+    map_sawtooth_keylargo(qts);
 
     g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_STATUS),
                     ==, SCREAMER_STATUS_FIXED);

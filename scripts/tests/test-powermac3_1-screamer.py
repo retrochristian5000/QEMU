@@ -46,6 +46,11 @@ require(SCREAMER_C, ".big_endian = !(s->regs[SCREAMER_BYTE_SWAP] & 1)",
 require(SCREAMER_C, "screamer_rx_dma", "capture DMA handler")
 require(SCREAMER_C, "timer_mod_ns(s->rx_timer", "paced capture timer")
 require(SCREAMER_C, "screamer_save_residual", "DB-DMA residual persistence")
+QTEST = (ROOT / "tests/qtest/macio-timer-test.c").read_text()
+require(QTEST, "map_sawtooth_keylargo", "Sawtooth downstream MacIO qtest mapping")
+require(QTEST, "uninorth_select_cfa1", "UniNorth CFA1 downstream config access")
+require(QTEST, "SAWTOOTH_BRIDGE_SLOT    13", "Sawtooth DEC 21154 root slot")
+require(QTEST, "SAWTOOTH_MACIO_SLOT     7", "Sawtooth KeyLargo secondary slot")
 require(SCREAMER_C, "dma_memory_write", "silence capture progression")
 require(SCREAMER_H, "#define SCREAMER_BUFFER_SIZE 0x10000",
         "bounded playback buffer")
