@@ -14,6 +14,11 @@
 #define UNINORTH_CONFIG_DATA 0xf2c00000
 #define MACIO_BAR_BASE       0x80000000
 #define MACIO_TIMER_LOW      (MACIO_BAR_BASE + 0x15038)
+#define MACIO_SCREAMER_CTRL   (MACIO_BAR_BASE + 0x14000)
+#define MACIO_SCREAMER_CODEC  (MACIO_BAR_BASE + 0x14010)
+#define MACIO_SCREAMER_STATUS (MACIO_BAR_BASE + 0x14020)
+#define MACIO_SCREAMER_SWAP   (MACIO_BAR_BASE + 0x14040)
+#define SCREAMER_STATUS_FIXED  0x00403100U
 #define KEYLARGO_TIMER_FREQ  18432000ULL
 #define TIMER_PROBE_NS       1899
 
@@ -53,7 +58,7 @@ static unsigned find_keylargo_slot(QTestState *qts)
         (PCI_DEVICE_ID_APPLE_UNI_N_KEYL << 16) | PCI_VENDOR_ID_APPLE;
     unsigned slot;
 
-    for (slot = 11; slot < 32; slot++) {
+    for (slot = 0; slot < 32; slot++) {
         uninorth_select(qts, slot, 0);
         if (read_le32(qts, UNINORTH_CONFIG_DATA) == keylargo_id) {
             return slot;
@@ -99,10 +104,43 @@ static void test_keylargo_timer_precision(void)
     qtest_quit(qts);
 }
 
+static void test_sawtooth_screamer_registers(void)
+{
+    QTestState *qts;
+    uint32_t codec_write = (1U << 24) | (1U << 12) | 0x84;
+    unsigned slot;
+
+    if (g_str_equal(qtest_get_arch(), "ppc64")) {
+        g_test_skip("PowerMac3,1 is a 32-bit NewWorld machine");
+        return;
+    }
+
+    qts = qtest_init("-M powermac3_1 -nodefaults -boot c");
+    slot = find_keylargo_slot(qts);
+    map_keylargo(qts, slot);
+
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_STATUS),
+                    ==, SCREAMER_STATUS_FIXED);
+
+    write_le32(qts, MACIO_SCREAMER_CTRL, 0x211);
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_CTRL), ==, 0x211);
+
+    write_le32(qts, MACIO_SCREAMER_CODEC, codec_write);
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_CODEC),
+                    ==, codec_write & ~(1U << 24));
+
+    write_le32(qts, MACIO_SCREAMER_SWAP, 1);
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_SWAP), ==, 1);
+
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ppc/macio/keylargo-timer-precision",
                    test_keylargo_timer_precision);
+    qtest_add_func("/ppc/macio/sawtooth-screamer-registers",
+                   test_sawtooth_screamer_registers);
     return g_test_run();
 }

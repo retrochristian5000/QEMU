@@ -146,7 +146,6 @@ config MAC_NEWWORLD
     select MACIO
     select MACIO_GPIO
     select MAC_PMU
-    select SCREAMER
     select TSB12LV23
     select UNIN_PCI
     select FW_CFG_PPC

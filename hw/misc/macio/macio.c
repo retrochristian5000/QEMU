@@ -443,7 +443,6 @@ static void macio_newworld_realize(PCIDevice *d, Error **errp)
     sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, NEWWORLD_ESCCB_IRQ));
     sysbus_connect_irq(sbd, 1, qdev_get_gpio_in(pic_dev, NEWWORLD_ESCCA_IRQ));
 
-#ifdef CONFIG_SCREAMER
     if (ns->has_screamer) {
         sbd = SYS_BUS_DEVICE(&ns->screamer);
         if (!sysbus_realize(sbd, errp)) {
@@ -464,7 +463,6 @@ static void macio_newworld_realize(PCIDevice *d, Error **errp)
     } else {
         object_unparent(OBJECT(&ns->screamer));
     }
-#endif
 
     /* IDE buses */
     if (!macio_realize_ide(s, &ns->ide[0],
@@ -539,10 +537,8 @@ static void macio_newworld_init(Object *obj)
     object_initialize_child(obj, "pic", &ns->pic, TYPE_OPENPIC);
 
     object_initialize_child(obj, "gpio", &ns->gpio, TYPE_MACIO_GPIO);
-#ifdef CONFIG_SCREAMER
     object_initialize_child(obj, "screamer", &ns->screamer,
                             TYPE_SCREAMER);
-#endif
 
     for (i = 0; i < 2; i++) {
         macio_init_ide(s, &ns->ide[i], i);
@@ -599,9 +595,7 @@ static const Property macio_newworld_properties[] = {
     DEFINE_PROP_BOOL("has-adb", NewWorldMacIOState, has_adb, false),
     DEFINE_PROP_BOOL("keylargo-fcr", NewWorldMacIOState, has_keylargo_fcr,
                      true),
-#ifdef CONFIG_SCREAMER
     DEFINE_PROP_BOOL("screamer", NewWorldMacIOState, has_screamer, false),
-#endif
 };
 
 static void macio_newworld_class_init(ObjectClass *oc, const void *data)

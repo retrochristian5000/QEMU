@@ -26,9 +26,7 @@
 #ifndef MACIO_H
 #define MACIO_H
 
-#ifdef CONFIG_SCREAMER
 #include "hw/audio/screamer.h"
-#endif
 #include "hw/char/escc.h"
 #include "hw/pci/pci_device.h"
 #include "hw/ide/ide-bus.h"
@@ -146,17 +144,13 @@ struct NewWorldMacIOState {
     bool has_pmu;
     bool has_adb;
     bool has_keylargo_fcr;
-#ifdef CONFIG_SCREAMER
     bool has_screamer;
-#endif
     MemoryRegion fcr_mem;
     uint32_t fcr[5];
     OpenPICState pic;
     MACIOIDEState ide[2];
     MacIOGPIOState gpio;
-#ifdef CONFIG_SCREAMER
     ScreamerState screamer;
-#endif
 };
 
 #endif /* MACIO_H */

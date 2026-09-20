@@ -17,8 +17,10 @@ def require(text: str, needle: str, label: str) -> None:
 
 require(AUDIO_KCONFIG, "config SCREAMER", "Screamer Kconfig symbol")
 require(AUDIO_MESON, "'CONFIG_SCREAMER'", "Screamer Meson selection")
-require(PPC_KCONFIG, "    select SCREAMER", "NewWorld Screamer selection")
-require(MACIO_H, "#ifdef CONFIG_SCREAMER", "OldWorld build guard")
+MISC_KCONFIG = (ROOT / "hw/misc/Kconfig").read_text()
+require(MISC_KCONFIG, "    select SCREAMER", "MacIO Screamer link dependency")
+if "CONFIG_SCREAMER" in MACIO_H:
+    raise SystemExit("device CONFIG_SCREAMER must not leak into public MacIO headers")
 require(MACIO_H, "ScreamerState screamer;", "MacIO Screamer child")
 require(MACIO_C, 'DEFINE_PROP_BOOL("screamer"', "MacIO Screamer gate")
 require(MAC_NEWWORLD, 'qdev_prop_set_bit(dev, "screamer", sawtooth_topology);',
@@ -42,6 +44,8 @@ require(SCREAMER_C, "codec_ctrl_regs[4]", "output C attenuation")
 require(SCREAMER_C, ".big_endian = !(s->regs[SCREAMER_BYTE_SWAP] & 1)",
         "DAV byte-swap handling")
 require(SCREAMER_C, "screamer_rx_dma", "capture DMA handler")
+require(SCREAMER_C, "timer_mod_ns(s->rx_timer", "paced capture timer")
+require(SCREAMER_C, "screamer_save_residual", "DB-DMA residual persistence")
 require(SCREAMER_C, "dma_memory_write", "silence capture progression")
 require(SCREAMER_H, "#define SCREAMER_BUFFER_SIZE 0x10000",
         "bounded playback buffer")

@@ -27,6 +27,7 @@
 #include "hw/core/sysbus.h"
 #include "hw/ppc/mac_dbdma.h"
 #include "qemu/audio.h"
+#include "qemu/timer.h"
 
 #define TYPE_SCREAMER "screamer"
 OBJECT_DECLARE_SIMPLE_TYPE(ScreamerState, SCREAMER)
@@ -48,6 +49,8 @@ struct ScreamerState {
     DBDMAState *dbdma;
     int tx_channel;
     int rx_channel;
+    QEMUTimer *rx_timer;
+    DBDMA_io *rx_io;
 
     uint32_t regs[SCREAMER_MMIO_REGS];
     uint16_t codec_ctrl_regs[8];

@@ -27,6 +27,7 @@
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
+#include "qemu/timer.h"
 #include "hw/audio/screamer.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
@@ -72,11 +73,11 @@ static void screamer_update_volume(ScreamerState *s)
     uint16_t out_c = s->codec_ctrl_regs[4];
     bool a_muted = control & SCREAMER_CODEC_AMUTE;
     bool c_muted = control & SCREAMER_CODEC_CMUTE;
-    uint8_t a_left = a_muted ? 0 : (uint8_t)((0xf - (out_a & 0xf)) * 17);
-    uint8_t a_right = a_muted ? 0 :
+    uint8_t a_right = a_muted ? 0 : (uint8_t)((0xf - (out_a & 0xf)) * 17);
+    uint8_t a_left = a_muted ? 0 :
         (uint8_t)((0xf - ((out_a >> 6) & 0xf)) * 17);
-    uint8_t c_left = c_muted ? 0 : (uint8_t)((0xf - (out_c & 0xf)) * 17);
-    uint8_t c_right = c_muted ? 0 :
+    uint8_t c_right = c_muted ? 0 : (uint8_t)((0xf - (out_c & 0xf)) * 17);
+    uint8_t c_left = c_muted ? 0 :
         (uint8_t)((0xf - ((out_c >> 6) & 0xf)) * 17);
     uint8_t left = MAX(a_left, c_left);
     uint8_t right = MAX(a_right, c_right);
@@ -192,20 +193,45 @@ static void screamer_tx_dma(DBDMA_io *io)
     screamer_tx_refill(s, io);
 }
 
+static void screamer_save_residual(DBDMA_io *io)
+{
+    DBDMA_channel *ch = io->channel;
+
+    if (!io->processing) {
+        return;
+    }
+
+    ch->current.xfer_status = cpu_to_le16(ch->regs[DBDMA_STATUS]);
+    ch->current.res_count = cpu_to_le16(io->len);
+    dma_memory_write(&address_space_memory, ch->regs[DBDMA_CMDPTR_LO],
+                     &ch->current, sizeof(ch->current),
+                     MEMTXATTRS_UNSPECIFIED);
+    io->processing = false;
+}
+
 static void screamer_tx_flush(DBDMA_io *io)
 {
     ScreamerState *s = io->opaque;
 
     screamer_clear_queue(s);
-    io->processing = false;
+    screamer_save_residual(io);
 }
 
-static void screamer_rx_dma(DBDMA_io *io)
+static void screamer_rx_complete(void *opaque)
 {
+    ScreamerState *s = opaque;
+    DBDMA_io *io = s->rx_io;
     static const uint8_t silence[4096];
-    uint32_t remaining = (uint32_t)io->len;
-    hwaddr addr = io->addr;
+    uint32_t remaining;
+    hwaddr addr;
 
+    if (!io || !io->processing) {
+        s->rx_io = NULL;
+        return;
+    }
+
+    remaining = (uint32_t)io->len;
+    addr = io->addr;
     while (remaining > 0) {
         size_t len = MIN((size_t)remaining, sizeof(silence));
 
@@ -217,12 +243,34 @@ static void screamer_rx_dma(DBDMA_io *io)
 
     io->addr = addr;
     io->len = 0;
+    s->rx_io = NULL;
     io->dma_end(io);
+}
+
+static void screamer_rx_dma(DBDMA_io *io)
+{
+    ScreamerState *s = io->opaque;
+    uint64_t frames = MAX((uint64_t)1,
+                          ((uint64_t)(uint32_t)io->len +
+                           SCREAMER_SAMPLE_BYTES - 1) /
+                          SCREAMER_SAMPLE_BYTES);
+    uint64_t delay_ns = MAX((uint64_t)1,
+                            muldiv64(frames, NANOSECONDS_PER_SECOND, s->rate));
+
+    s->rx_io = io;
+    timer_mod_ns(s->rx_timer,
+                 qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + delay_ns);
 }
 
 static void screamer_rx_flush(DBDMA_io *io)
 {
-    io->processing = false;
+    ScreamerState *s = io->opaque;
+
+    if (s->rx_io == io) {
+        timer_del(s->rx_timer);
+        s->rx_io = NULL;
+    }
+    screamer_save_residual(io);
 }
 
 void macio_screamer_register_dma(ScreamerState *s, DBDMAState *dbdma,
@@ -358,6 +406,8 @@ static void screamer_reset_hold(Object *obj, ResetType type)
     memset(s->codec_ctrl_regs, 0, sizeof(s->codec_ctrl_regs));
     s->rate = screamer_rates[0];
     screamer_clear_queue(s);
+    timer_del(s->rx_timer);
+    s->rx_io = NULL;
     if (s->voice) {
         screamer_update_settings(s, NULL);
     }
@@ -375,6 +425,10 @@ static void screamer_realize(DeviceState *dev, Error **errp)
 static void screamer_unrealize(DeviceState *dev)
 {
     ScreamerState *s = SCREAMER(dev);
+
+    timer_free(s->rx_timer);
+    s->rx_timer = NULL;
+    s->rx_io = NULL;
     if (s->voice) {
         audio_be_close_out(s->audio_be, s->voice);
         s->voice = NULL;
@@ -385,6 +439,8 @@ static void screamer_init(Object *obj)
 {
     ScreamerState *s = SCREAMER(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+
+    s->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, screamer_rx_complete, s);
     memory_region_init_io(&s->mem, obj, &screamer_ops, s,
                           "screamer-dav", SCREAMER_DAV_MMIO_SIZE);
     sysbus_init_mmio(sbd, &s->mem);
