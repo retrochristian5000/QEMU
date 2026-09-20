@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 tcg_core = (ROOT / 'tcg/tcg.c').read_text(encoding='utf-8')
+tcg_aarch64 = (ROOT / 'tcg/aarch64/tcg-target.c.inc').read_text(encoding='utf-8')
 cpu_exec = (ROOT / 'accel/tcg/cpu-exec.c').read_text(encoding='utf-8')
 policy = (ROOT / 'scripts/macos-arch-policy.bash').read_text(encoding='utf-8')
 workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
@@ -36,6 +37,24 @@ entry_ready = all(token in tcg_core for token in (
     tcg_core,
     re.S,
 )
+return_ready = all(token in tcg_aarch64 for token in (
+    'PACIBSP           = 0xd503237f',
+    'RETAB             = 0xd65f0fff',
+    'tcg_out32(s, PACIBSP);',
+    'tcg_out32(s, RETAB);',
+)) and re.search(
+    r'tcg_out_bti\(s, BTI_C\);.*?'
+    r'#if defined\(__PTRAUTH__\).*?'
+    r'tcg_out32\(s, PACIBSP\);.*?'
+    r'tcg_out_insn\(s, ldstpair, STP, TCG_REG_FP, TCG_REG_LR,.*?'
+    r'tcg_out_insn\(s, ldstpair, LDP, TCG_REG_FP, TCG_REG_LR,.*?'
+    r'#if defined\(__PTRAUTH__\).*?'
+    r'tcg_out32\(s, RETAB\);.*?'
+    r'#else.*?'
+    r'tcg_out_insn\(s, bcond_reg, RET, TCG_REG_LR\);',
+    tcg_aarch64,
+    re.S,
+)
 runtime_ready = all(token in workflow for token in (
     'WHP_MACOS_ARCH: arm64e',
     'qemu-system-i386',
@@ -49,6 +68,7 @@ runtime_ready = all(token in workflow for token in (
 
 assert helper_ready, 'arm64e JIT -> C helper calls are not pointer-auth safe'
 assert entry_ready, 'arm64e C -> JIT entry is not signed as a C function pointer'
+assert return_ready, 'arm64e TCG prologue/epilogue does not authenticate LR'
 assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke test'
 
 # PAC work belongs at setup/translation boundaries, not the per-TB dispatcher.
@@ -59,4 +79,4 @@ assert 'ptrauth_sign_unauthenticated' not in cpu_exec
 # after the implementation and runtime lane above are both present and green.
 assert 'whp_select_macos_arch' in policy
 
-print('arm64e TCG pointer-auth audit: call boundaries and runtime smoke wired')
+print('arm64e TCG pointer-auth audit: calls, return path, and runtime smoke wired')
