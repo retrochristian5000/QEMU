@@ -252,4 +252,15 @@ for llvm_bootstrap, override in link_job_policies:
     assert 'LLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS' in llvm_bootstrap
     assert f'{override} must be a positive integer' in llvm_bootstrap
 
+# A C++26 failure should not throw away buildable work that can be reused by
+# the next incremental invocation. All LLVM bootstrap lanes use Ninja, so ask
+# it to exhaust independent build edges before returning a non-zero status.
+# This is not continue-on-success: the failed distribution still stops before
+# install-distribution.
+for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
+    assert (
+        'cmake --build "$LLVM_BUILD_DIR" --target distribution '
+        '"${cmake_parallel_args[@]}" -- -k 0'
+    ) in llvm_bootstrap
+
 print('native LLVM wiring tests: passed')

@@ -429,7 +429,11 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
 fi
 
 bootstrap_stage="building PowerPC LLVM distribution"
-cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
+# Keep traversing independent Ninja edges after a compile failure so the
+# persistent build tree contains every object that can be built. Ninja still
+# returns failure after exhausting the reachable graph, so errors remain fatal
+# and installation is never attempted from an incomplete distribution.
+cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 bootstrap_stage="installing PowerPC LLVM distribution"
 DESTDIR="$stage_root" \
     cmake --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"

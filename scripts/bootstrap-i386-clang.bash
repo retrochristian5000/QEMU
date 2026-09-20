@@ -252,7 +252,11 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
     cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
 fi
 
-cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}"
+# Keep traversing independent Ninja edges after a compile failure so the
+# persistent build tree contains every object that can be built. Ninja still
+# returns failure after exhausting the reachable graph, so errors remain fatal
+# and installation is never attempted from an incomplete distribution.
+cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 
 # Install into a staging root first. Replacing the prefix after validation
 # removes stale tools left by older, broader bootstrap schemas while the LLVM
