@@ -647,6 +647,10 @@ typedef enum {
     DMB_LD            = 0x00000100,
     DMB_ST            = 0x00000200,
 
+    /* Pointer authentication instructions used by the arm64e host ABI. */
+    PACIBSP           = 0xd503237f,
+    RETAB             = 0xd65f0fff,
+
     BTI_C             = 0xd503245f,
     BTI_J             = 0xd503249f,
     BTI_JC            = 0xd50324df,
@@ -3470,6 +3474,16 @@ static void tcg_target_qemu_prologue(TCGContext *s)
 
     tcg_out_bti(s, BTI_C);
 
+#if defined(__PTRAUTH__)
+    /*
+     * arm64e return addresses use key B with the stack pointer at function
+     * entry as the discriminator.  Sign LR before the pre-indexed STP below
+     * changes SP, so the matching RETAB sees the same discriminator after
+     * the epilogue restores SP.
+     */
+    tcg_out32(s, PACIBSP);
+#endif
+
     /* Push (FP, LR) and allocate space for all saved registers.  */
     tcg_out_insn(s, ldstpair, STP, TCG_REG_FP, TCG_REG_LR,
                  TCG_REG_SP, -PUSH_SIZE, 1, 1);
@@ -3530,7 +3544,11 @@ static void tcg_target_qemu_prologue(TCGContext *s)
     /* Pop (FP, LR), restore SP to previous frame.  */
     tcg_out_insn(s, ldstpair, LDP, TCG_REG_FP, TCG_REG_LR,
                  TCG_REG_SP, PUSH_SIZE, 0, 1);
+#if defined(__PTRAUTH__)
+    tcg_out32(s, RETAB);
+#else
     tcg_out_insn(s, bcond_reg, RET, TCG_REG_LR);
+#endif
 }
 
 static void tcg_out_tb_start(TCGContext *s)
