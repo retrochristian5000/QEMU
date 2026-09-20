@@ -148,17 +148,17 @@ jobs:
           build-ci/tests/qtest/boot-serial-test --tap -k \
             -p /ppc/boot-serial/40p
 
-      - name: Verify live Sawtooth FireWire PCI device
-        if: matrix.target == 'ppc'
-        run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
-
-      - name: Test KeyLargo timer precision
+      - name: Test KeyLargo timer and Screamer runtime
         if: matrix.target == 'ppc'
         run: |
           set -eux
           ninja -C build-ci tests/qtest/macio-timer-test
           build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
             qtest-ppc/macio-timer-test
+
+      - name: Verify live Sawtooth FireWire PCI device
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
 
       - name: Test rich floppy shortcut options
         if: matrix.target == 'i386'
