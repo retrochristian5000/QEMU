@@ -25,6 +25,8 @@ require(MACIO_H, "ScreamerState screamer;", "MacIO Screamer child")
 require(MACIO_C, 'DEFINE_PROP_BOOL("has-screamer"', "MacIO Screamer gate")
 require(MAC_NEWWORLD, 'qdev_prop_set_bit(dev, "has-screamer", sawtooth_topology);',
         "Sawtooth-only Screamer property")
+if "#ifdef CONFIG_SCREAMER" in MAC_NEWWORLD:
+    raise SystemExit("Sawtooth Screamer runtime property must not be compile-time gated")
 require(MACIO_C, "memory_region_add_subregion(&s->bar, 0x14000,",
         "DAV MMIO mapping")
 require(MACIO_C,
@@ -49,6 +51,7 @@ require(SCREAMER_C, "screamer_save_residual", "DB-DMA residual persistence")
 QTEST = (ROOT / "tests/qtest/macio-timer-test.c").read_text()
 require(QTEST, "map_sawtooth_keylargo", "Sawtooth downstream MacIO qtest mapping")
 require(QTEST, "uninorth_select_cfa1", "UniNorth CFA1 downstream config access")
+require(QTEST, "uninorth_read_cfa1", "Sawtooth KeyLargo PCI identity probe")
 require(QTEST, "SAWTOOTH_BRIDGE_SLOT    13", "Sawtooth DEC 21154 root slot")
 require(QTEST, "SAWTOOTH_MACIO_SLOT     7", "Sawtooth KeyLargo secondary slot")
 require(SCREAMER_C, "dma_memory_write", "silence capture progression")

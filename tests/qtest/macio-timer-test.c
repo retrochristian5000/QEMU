@@ -89,6 +89,13 @@ static void uninorth_select_cfa1(QTestState *qts, unsigned bus,
                (reg & ~7U));
 }
 
+static uint32_t uninorth_read_cfa1(QTestState *qts, unsigned bus,
+                                   unsigned slot, unsigned reg)
+{
+    uninorth_select_cfa1(qts, bus, slot, reg);
+    return read_le32(qts, UNINORTH_CONFIG_DATA + (reg & 7));
+}
+
 static void map_sawtooth_keylargo(QTestState *qts)
 {
     /*
@@ -107,6 +114,12 @@ static void map_sawtooth_keylargo(QTestState *qts)
     uninorth_select(qts, SAWTOOTH_BRIDGE_SLOT, PCI_COMMAND);
     write_le16(qts, UNINORTH_CONFIG_DATA + (PCI_COMMAND & 7),
                PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+
+    g_assert_cmphex(
+        uninorth_read_cfa1(qts, SAWTOOTH_SECONDARY_BUS,
+                           SAWTOOTH_MACIO_SLOT, PCI_VENDOR_ID),
+        ==,
+        (PCI_DEVICE_ID_APPLE_UNI_N_KEYL << 16) | PCI_VENDOR_ID_APPLE);
 
     uninorth_select_cfa1(qts, SAWTOOTH_SECONDARY_BUS,
                          SAWTOOTH_MACIO_SLOT, PCI_BASE_ADDRESS_0);
