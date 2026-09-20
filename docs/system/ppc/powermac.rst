@@ -287,9 +287,15 @@ Hardware status
    * - Audio
      - Screamer 16-bit audio codec connected to KeyLargo's DAV path with
        DB-DMA support
-     - No Screamer-compatible Sawtooth audio device is currently provided.
+     - The PowerMac3,1 profile exposes a Screamer-compatible DAV register
+       block at MacIO offset ``0x14000`` and uses DB-DMA channels ``0x10``
+       (playback) and ``0x12`` (capture). Playback supports the eight basic
+       22 MHz-family sample rates, codec readback, output A/C attenuation
+       and mute controls, and DAV byte swapping. Capture currently returns
+       silence; detailed analog jack/speaker sensing and migration are not
+       modeled.
      - High
-     - Missing
+     - Partial
    * - Power management
      - PMU99 plus UniNorth/KeyLargo clock, bus and device power control; USB and
        the secondary PCI side participate in sleep/power transitions

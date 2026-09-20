@@ -424,6 +424,9 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_uint64(dev, "frequency", tbfreq);
     qdev_prop_set_bit(dev, "has-pmu", has_pmu);
     qdev_prop_set_bit(dev, "has-adb", has_adb);
+#ifdef CONFIG_SCREAMER
+    qdev_prop_set_bit(dev, "screamer", sawtooth_topology);
+#endif
 
     /*
      * Sawtooth's internal modem is attached to KeyLargo SCC channel A.
