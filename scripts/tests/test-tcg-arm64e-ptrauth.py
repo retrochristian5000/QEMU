@@ -11,9 +11,11 @@ cpu_exec = (ROOT / 'accel/tcg/cpu-exec.c').read_text(encoding='utf-8')
 policy = (ROOT / 'scripts/macos-arch-policy.bash').read_text(encoding='utf-8')
 workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
-# arm64e has two TCG pointer-authentication boundaries.  Keep the bridge in
-# generic TCG code so every AArch64 helper call path, including qemu_ld/st slow
-# paths, receives the same raw C code address before the backend chooses BL/BLR.
+# arm64e has three TCG pointer-authentication boundaries: JIT -> C helper
+# calls, C -> JIT entry, and the generated JIT return path.  Keep helper
+# normalization in generic TCG code so every AArch64 helper call path, including
+# qemu_ld/st slow paths, receives the same raw C code address before the backend
+# chooses BL/BLR.
 #
 # Ordinary C function pointers use ptrauth_key_function_pointer with a zero
 # discriminator.  A cast through void * does not strip or re-sign the pointer,
