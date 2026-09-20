@@ -202,11 +202,6 @@ static inline int address_to_reg(uint32_t addr)
     return addr >> 10;
 }
 
-static inline uint32_t reg_to_address(int reg)
-{
-    return (reg << 10) + 0x2e8;
-}
-
 static inline void do_cmd_done(S3TrioState *s)
 {
     s->gp_stat &= ~GP_STAT_BUSY;
@@ -592,7 +587,7 @@ static void s3_trio_dac_ioport_writeb(void *opaque, uint32_t addr, uint32_t val)
     vga_ioport_write(&s->vga, addr - 0x2ea + VGA_PEL_MSK, val);
 }
 
-static uint16_t* s3_trio_get_register(S3TrioState *s, uint32_t addr, int is_write, uint32_t* val_if_write)
+static uint16_t *s3_trio_get_register(S3TrioState *s, uint32_t addr, int is_write, uint32_t* val_if_write)
 {
     uint16_t *p = NULL;
 
@@ -737,7 +732,7 @@ static uint32_t s3_trio_ioport_readw(void *opaque, uint32_t addr)
     return val;
 }
 
-static void s3_trio_post_write(S3TrioState* s, uint32_t addr)
+static void s3_trio_post_write(S3TrioState *s, uint32_t addr)
 {
     switch (address_to_reg(addr)) {
     case REG_H_DISP:
@@ -1090,7 +1085,7 @@ static void s3_trio_realize(PCIDevice *dev, Error **errp)
     S3TrioState *s = S3_TRIO(dev);
     Object *o = OBJECT(dev);
     const MemoryRegionPortio *vga_ports, *vbe_ports;
-    MemoryRegion* vga_io_memory;
+    MemoryRegion *vga_io_memory;
 
     /* The 86C765 PCI parts support 1, 2, or 4 MiB of local VRAM. */
     if (s->vga.vram_size_mb != 1 && s->vga.vram_size_mb != 2 &&
