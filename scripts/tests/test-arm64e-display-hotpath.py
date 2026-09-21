@@ -123,7 +123,7 @@ for token in (
 ):
     assert token in cocoa, f"missing Cocoa native-texture lifetime contract: {token}"
 
-switch_start = cocoa.index("static void cocoa_switch(DisplayChangeListener *dcl,")
+switch_start = cocoa.rindex("static void cocoa_switch(DisplayChangeListener *dcl,")
 switch_end = cocoa.index("\n}\n", switch_start)
 switch_body = cocoa[switch_start:switch_end]
 clear_native = switch_body.index("qemu_cocoa_metal_clear_texture(view);")
