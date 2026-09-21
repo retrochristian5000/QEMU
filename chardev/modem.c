@@ -24,9 +24,12 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qapi/qapi-types-sockets.h"
 #include "qemu/fifo8.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
+#include "io/channel-socket.h"
+#include "io/task.h"
 #include "chardev/char.h"
 #include "chardev/char-serial.h"
 #include "qom/object.h"
@@ -35,6 +38,7 @@
 OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 
 #define MODEM_OUTBUF_SIZE 4096
+#define MODEM_NETBUF_SIZE 65536
 #define MODEM_COMMAND_SIZE 256
 #define MODEM_SREG_COUNT 100
 #define MODEM_DEFAULT_MODEL "hayes-accura-2400"
@@ -109,6 +113,12 @@ struct ModemChardev {
 
     const ModemModel *model;
     Fifo8 outbuf;
+    Fifo8 net_txbuf;
+    QIOChannel *tcp_ioc;
+    guint tcp_read_tag;
+    guint tcp_write_tag;
+    char *tcp_host;
+    char *tcp_port;
     QEMUSerialSetParams dte;
     int tiocm;
     int connect_speed;
@@ -123,6 +133,7 @@ struct ModemChardev {
     bool quiet;
     bool verbose;
     bool connected;
+    bool dialing;
     bool command_mode;
     bool carrier_follows_connection;
     bool compression;
@@ -137,6 +148,11 @@ struct ModemChardev {
     int voice_rx_gain;
     int voice_tx_gain;
 };
+
+static void modem_connect(ModemChardev *modem);
+static void modem_hangup(ModemChardev *modem, bool report);
+static void modem_tcp_arm_read(ModemChardev *modem);
+static void modem_tcp_close(ModemChardev *modem);
 
 static void modem_chr_accept_input(Chardev *chr)
 {
@@ -153,6 +169,8 @@ static void modem_chr_accept_input(Chardev *chr)
         len = qemu_chr_be_can_write(chr);
         avail -= size;
     }
+
+    modem_tcp_arm_read(modem);
 }
 
 static void modem_queue_bytes(ModemChardev *modem,
@@ -300,6 +318,7 @@ static void modem_hangup(ModemChardev *modem, bool report)
 {
     bool was_connected = modem->connected;
 
+    modem_tcp_close(modem);
     modem->connected = false;
     modem->command_mode = true;
     modem->plus_count = 0;
@@ -383,6 +402,202 @@ static void modem_connect(ModemChardev *modem)
     modem->plus_count = 0;
     modem_update_carrier(modem);
     modem_result(modem, MODEM_RESULT_CONNECT);
+}
+
+static void modem_tcp_close(ModemChardev *modem)
+{
+    if (modem->tcp_read_tag) {
+        g_source_remove(modem->tcp_read_tag);
+        modem->tcp_read_tag = 0;
+    }
+    if (modem->tcp_write_tag) {
+        g_source_remove(modem->tcp_write_tag);
+        modem->tcp_write_tag = 0;
+    }
+    if (modem->tcp_ioc) {
+        qio_channel_close(modem->tcp_ioc, NULL);
+        object_unref(OBJECT(modem->tcp_ioc));
+        modem->tcp_ioc = NULL;
+    }
+    modem->dialing = false;
+    fifo8_reset(&modem->net_txbuf);
+}
+
+static gboolean modem_tcp_read_ready(QIOChannel *ioc, GIOCondition condition,
+                                     gpointer opaque)
+{
+    ModemChardev *modem = opaque;
+    uint8_t buf[4096];
+    size_t avail;
+    ssize_t ret;
+    Error *err = NULL;
+
+    (void)condition;
+    if (ioc != modem->tcp_ioc) {
+        return G_SOURCE_REMOVE;
+    }
+
+    avail = fifo8_num_free(&modem->outbuf);
+    if (!avail) {
+        modem->tcp_read_tag = 0;
+        return G_SOURCE_REMOVE;
+    }
+
+    ret = qio_channel_read(ioc, buf, MIN(sizeof(buf), avail), &err);
+    if (ret > 0) {
+        modem_queue_bytes(modem, buf, ret);
+        if (!fifo8_num_free(&modem->outbuf)) {
+            modem->tcp_read_tag = 0;
+            return G_SOURCE_REMOVE;
+        }
+        return G_SOURCE_CONTINUE;
+    }
+    if (ret == QIO_CHANNEL_ERR_BLOCK) {
+        error_free(err);
+        return G_SOURCE_CONTINUE;
+    }
+
+    error_free(err);
+    modem->tcp_read_tag = 0;
+    modem_hangup(modem, true);
+    return G_SOURCE_REMOVE;
+}
+
+static void modem_tcp_arm_read(ModemChardev *modem)
+{
+    if (!modem->tcp_ioc || !modem->connected || modem->tcp_read_tag ||
+        !fifo8_num_free(&modem->outbuf)) {
+        return;
+    }
+
+    modem->tcp_read_tag =
+        qio_channel_add_watch(modem->tcp_ioc,
+                              G_IO_IN | G_IO_HUP | G_IO_ERR,
+                              modem_tcp_read_ready, modem, NULL);
+}
+
+static void modem_tcp_flush(ModemChardev *modem);
+
+static gboolean modem_tcp_write_ready(QIOChannel *ioc, GIOCondition condition,
+                                      gpointer opaque)
+{
+    ModemChardev *modem = opaque;
+
+    (void)condition;
+    if (ioc != modem->tcp_ioc) {
+        return G_SOURCE_REMOVE;
+    }
+
+    modem->tcp_write_tag = 0;
+    modem_tcp_flush(modem);
+    return G_SOURCE_REMOVE;
+}
+
+static void modem_tcp_flush(ModemChardev *modem)
+{
+    while (modem->tcp_ioc && fifo8_num_used(&modem->net_txbuf)) {
+        const uint8_t *buf;
+        uint32_t size;
+        ssize_t ret;
+        Error *err = NULL;
+
+        buf = fifo8_peek_bufptr(&modem->net_txbuf,
+                                fifo8_num_used(&modem->net_txbuf), &size);
+        ret = qio_channel_write(modem->tcp_ioc, buf, size, &err);
+        if (ret > 0) {
+            fifo8_drop(&modem->net_txbuf, ret);
+            continue;
+        }
+        if (ret == QIO_CHANNEL_ERR_BLOCK) {
+            error_free(err);
+            if (!modem->tcp_write_tag) {
+                modem->tcp_write_tag =
+                    qio_channel_add_watch(modem->tcp_ioc,
+                                          G_IO_OUT | G_IO_HUP | G_IO_ERR,
+                                          modem_tcp_write_ready, modem, NULL);
+            }
+            return;
+        }
+
+        error_free(err);
+        modem_hangup(modem, true);
+        return;
+    }
+}
+
+static bool modem_tcp_queue(ModemChardev *modem,
+                            const uint8_t *buf, size_t len)
+{
+    if (!modem->tcp_ioc) {
+        return true;
+    }
+    if (len > fifo8_num_free(&modem->net_txbuf)) {
+        return false;
+    }
+
+    fifo8_push_all(&modem->net_txbuf, buf, len);
+    modem_tcp_flush(modem);
+    return true;
+}
+
+static void modem_tcp_connected(QIOTask *task, gpointer opaque)
+{
+    ModemChardev *modem = opaque;
+    QIOChannelSocket *sioc =
+        QIO_CHANNEL_SOCKET(qio_task_get_source(task));
+    QIOChannel *ioc = QIO_CHANNEL(sioc);
+    Error *err = NULL;
+
+    if (qio_task_propagate_error(task, &err)) {
+        if (modem->tcp_ioc == ioc && modem->dialing) {
+            modem_tcp_close(modem);
+            modem_result(modem, MODEM_RESULT_NO_CARRIER);
+        }
+        error_free(err);
+        return;
+    }
+
+    if (modem->tcp_ioc != ioc || !modem->dialing) {
+        return;
+    }
+    modem->dialing = false;
+
+    if (!qio_channel_set_blocking(ioc, false, &err)) {
+        modem_tcp_close(modem);
+        modem_result(modem, MODEM_RESULT_NO_CARRIER);
+        error_free(err);
+        return;
+    }
+
+    qio_channel_set_delay(ioc, false);
+    modem_connect(modem);
+    modem_tcp_arm_read(modem);
+}
+
+static void modem_dial(ModemChardev *modem)
+{
+    QIOChannelSocket *sioc;
+    SocketAddress addr = {
+        .type = SOCKET_ADDRESS_TYPE_INET,
+    };
+
+    if (!modem->tcp_host) {
+        modem_connect(modem);
+        return;
+    }
+
+    modem_hangup(modem, false);
+    addr.u.inet.host = modem->tcp_host;
+    addr.u.inet.port = modem->tcp_port;
+
+    sioc = qio_channel_socket_new();
+    modem->tcp_ioc = QIO_CHANNEL(sioc);
+    modem->dialing = true;
+    qio_channel_set_name(modem->tcp_ioc, "modem-tcp");
+    qio_channel_socket_connect_async(sioc, &addr,
+                                     modem_tcp_connected,
+                                     object_ref(OBJECT(modem)),
+                                     object_unref, NULL);
 }
 
 static bool modem_handle_service_class(ModemChardev *modem,
@@ -617,7 +832,7 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             while (*p && *p != ';') {
                 p++;
             }
-            modem_connect(modem);
+            modem_dial(modem);
             return;
         case 'E':
             modem->echo = modem_parse_number(&p, 0) != 0;
@@ -764,13 +979,19 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                     modem->command_mode = true;
                     modem_result(modem, MODEM_RESULT_OK);
                 }
-            } else {
-                /*
-                 * Online payload transport will be supplied by a wrapped
-                 * chardev in a later step.  Consume it here like a modem with
-                 * an established carrier but no remote payload source.
-                 */
+                continue;
+            }
+
+            if (modem->plus_count) {
+                static const uint8_t pluses[] = "++";
+
+                if (!modem_tcp_queue(modem, pluses, modem->plus_count)) {
+                    return i;
+                }
                 modem->plus_count = 0;
+            }
+            if (!modem_tcp_queue(modem, &c, 1)) {
+                return i;
             }
             continue;
         }
@@ -861,6 +1082,17 @@ static bool modem_chr_open(Chardev *chr,
         backend->u.modem.data->model) {
         model_name = backend->u.modem.data->model;
     }
+    if (backend && backend->u.modem.data) {
+        ChardevModem *opts = backend->u.modem.data;
+
+        if (!!opts->host != !!opts->port) {
+            error_setg(errp,
+                       "modem TCP transport requires both 'host' and 'port'");
+            return false;
+        }
+        modem->tcp_host = g_strdup(opts->host);
+        modem->tcp_port = g_strdup(opts->port);
+    }
     modem->model = modem_model_find(model_name);
     if (!modem->model) {
         error_setg(errp, "Unsupported modem model '%s'", model_name);
@@ -868,6 +1100,7 @@ static bool modem_chr_open(Chardev *chr,
     }
 
     fifo8_create(&modem->outbuf, MODEM_OUTBUF_SIZE);
+    fifo8_create(&modem->net_txbuf, MODEM_NETBUF_SIZE);
     modem->tiocm = CHR_TIOCM_CTS | CHR_TIOCM_DSR;
     modem->command_mode = true;
     modem_reset(modem);
@@ -883,13 +1116,19 @@ static void modem_chr_parse(QemuOpts *opts, ChardevBackend *backend,
     modem = backend->u.modem.data = g_new0(ChardevModem, 1);
     qemu_chr_parse_common(opts, qapi_ChardevModem_base(modem));
     modem->model = g_strdup(qemu_opt_get(opts, "model"));
+    modem->host = g_strdup(qemu_opt_get(opts, "host"));
+    modem->port = g_strdup(qemu_opt_get(opts, "port"));
 }
 
 static void modem_chr_finalize(Object *obj)
 {
     ModemChardev *modem = CHARDEV_MODEM(obj);
 
+    modem_tcp_close(modem);
+    fifo8_destroy(&modem->net_txbuf);
     fifo8_destroy(&modem->outbuf);
+    g_free(modem->tcp_host);
+    g_free(modem->tcp_port);
 }
 
 static void modem_chr_class_init(ObjectClass *oc, const void *data)

@@ -463,10 +463,17 @@
 #
 # @model: modem model (default: ``hayes-accura-2400``)
 #
+# @host: optional TCP host used by ATD dialing
+#
+# @port: optional TCP service/port used by ATD dialing.  Must be specified
+#     together with @host.
+#
 # Since: 11.1
 ##
 { 'struct': 'ChardevModem',
-  'data': { '*model': 'str' },
+  'data': { '*model': 'str',
+            '*host': 'str',
+            '*port': 'str' },
   'base': 'ChardevCommon' }
 
 ##

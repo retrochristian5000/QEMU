@@ -1812,6 +1812,45 @@ static Chardev *char_modem_new(const char *label, const char *model,
     return chr;
 }
 
+static Chardev *char_modem_tcp_new(const char *label,
+                                   const char *host, const char *port,
+                                   Error **errp)
+{
+    QemuOpts *opts;
+    Chardev *chr;
+
+    opts = qemu_opts_create(qemu_find_opts("chardev"), label, 1,
+                            &error_abort);
+    qemu_opt_set(opts, "backend", "modem", &error_abort);
+    if (host) {
+        qemu_opt_set(opts, "host", host, &error_abort);
+    }
+    if (port) {
+        qemu_opt_set(opts, "port", port, &error_abort);
+    }
+
+    chr = qemu_chr_new_from_opts(opts, NULL, errp);
+    qemu_opts_del(opts);
+    return chr;
+}
+
+static void char_modem_tcp_config_test(void)
+{
+    Error *err = NULL;
+    Chardev *chr;
+
+    chr = char_modem_tcp_new("modem-tcp-valid", "127.0.0.1", "2323",
+                             &error_abort);
+    g_assert_nonnull(chr);
+    object_unparent(OBJECT(chr));
+
+    chr = char_modem_tcp_new("modem-tcp-host-only", "127.0.0.1", NULL, &err);
+    g_assert_null(chr);
+    g_assert_nonnull(err);
+    g_assert_nonnull(strstr(error_get_pretty(err), "both 'host' and 'port'"));
+    error_free(err);
+}
+
 static void char_modem_default_model_test(void)
 {
     g_autofree char *filename = NULL;
@@ -1965,6 +2004,8 @@ int main(int argc, char **argv)
                     char_modem_explicit_model_test);
     g_test_add_func("/char/modem/model/invalid",
                     char_modem_invalid_model_test);
+    g_test_add_func("/char/modem/tcp/config",
+                    char_modem_tcp_config_test);
     g_test_add_func("/char/invalid", char_invalid_test);
     g_test_add_func("/char/ringbuf", char_ringbuf_test);
     g_test_add_func("/char/mux", char_mux_test);

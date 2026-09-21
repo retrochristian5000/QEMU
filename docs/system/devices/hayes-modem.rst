@@ -61,11 +61,29 @@ transport have not yet been connected to QEMU audio.  Advertising those states
 before a sample path exists would let guest software enter a mode the backend
 cannot fulfill.
 
-Current transport boundary
---------------------------
+TCP data transport
+------------------
 
-``ATD`` and ``ATA`` establish an emulated carrier and return the model's
-configured ``CONNECT`` speed.  Online payload bytes are consumed locally.  The
-backend does not yet bridge the connected data stream to a socket, pipe, PPP
-server, or voice sample stream.  Use ``+++`` followed by ``ATH`` to return to
-command mode and hang up.
+The modem can use a TCP connection as its emulated telephone-line data path.
+Configure a destination with both ``host`` and ``port``::
+
+  -chardev modem,id=modem0,model=hayes-accura-2400,host=127.0.0.1,port=2323 \
+    -serial chardev:modem0
+
+With a TCP destination configured, ``ATD`` starts a non-blocking TCP
+connection.  The guest receives ``CONNECT`` only after the connection is
+established and ``NO CARRIER`` if the connection fails or the remote endpoint
+closes it.  While online, serial payload bytes are forwarded bidirectionally
+between the guest UART and the TCP stream.  ``+++`` returns to command mode and
+``ATH`` closes the TCP connection.
+
+The dialed Hayes number is intentionally kept separate from the TCP endpoint.
+This lets DOS, Windows and other legacy dialers continue to issue ordinary
+telephone-number strings while QEMU maps that emulated line to a host TCP
+service.  A phonebook/number-to-endpoint mapping can therefore be added later
+without replacing the transport ABI.
+
+If ``host`` and ``port`` are omitted, ``ATD`` and ``ATA`` retain the
+existing local-carrier behavior used by modem-detection tests.  Incoming TCP
+ringing/``ATA`` service is not implemented yet; this first transport layer is
+outbound dialing only.  Voice sample transport also remains separate.
