@@ -9,6 +9,7 @@ meson = (ROOT / "meson.build").read_text(encoding="utf-8")
 meson_options = (ROOT / "meson_options.txt").read_text(encoding="utf-8")
 prepare = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
 portable = (ROOT / "scripts/whp-build/portable-build.py").read_text(encoding="utf-8")
+build_targets = (ROOT / "scripts/whp-build/build-targets.bash").read_text(encoding="utf-8")
 config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
 module_c = (ROOT / "util/module.c").read_text(encoding="utf-8")
 module_h = (ROOT / "include/qemu/module.h").read_text(encoding="utf-8")
@@ -33,6 +34,20 @@ assert 'whp_add_optional_configure_switch "$QEMU_HOST_MODULES" modules' in prepa
 assert "platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto'" in portable
 assert "configure_args.append('--enable-modules')" in portable
 assert "optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')" in portable
+
+# Targeted builds must carry Meson's module alias when it exists. Otherwise a
+# successful qemu-system-* link can leave its optional DSOs unbuilt.
+for token in (
+    'grep -Eq \'^build modules(:|[[:space:]])\' "$BUILD_DIR/build.ninja"',
+    'build_target_list+=(modules)',
+):
+    assert token in build_targets, f"missing targeted module build contract: {token}"
+for token in (
+    "def dynamic_modules_enabled(",
+    "def append_module_build_target(",
+    "append_unique(requested_targets, 'modules')",
+):
+    assert token in portable, f"missing portable module build contract: {token}"
 
 # Modules must remain incompatible with a fully static executable. Do not
 # paper over this QEMU invariant by forcing both policies at once.
