@@ -35,6 +35,10 @@ on:
       - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
       - 'scripts/tests/test-arm64e-isa-hotpath.py'
       - 'scripts/bench-macos-swift-host.py'
+      - 'scripts/tests/test-arm64e-iso-hotpath.py'
+      - 'block/io.c'
+      - 'block/raw-format.c'
+      - 'include/block/block_int-io.h'
       - 'hw/isa/piix.c'
       - 'hw/isa/lpc_ich9.c'
       - 'hw/pci/pci_host.c'
@@ -118,6 +122,10 @@ jobs:
         env:
           WHP_MACOS_ARCH: arm64e
         run: python3 scripts/bench-macos-swift-host.py --samples 3 --rounds 5000000
+
+      - name: Audit arm64e raw ISO read hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-iso-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash

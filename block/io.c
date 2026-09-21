@@ -997,6 +997,11 @@ bdrv_driver_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
         qiov = &local_qiov;
     }
 
+    if (likely(drv == &bdrv_raw)) {
+        ret = bdrv_raw_co_preadv(bs, offset, bytes, qiov, flags);
+        goto out;
+    }
+
     if (drv->bdrv_co_preadv) {
         ret = drv->bdrv_co_preadv(bs, offset, bytes, qiov, flags);
         goto out;
