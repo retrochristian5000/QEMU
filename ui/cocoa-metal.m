@@ -14,6 +14,7 @@
 #include <math.h>
 
 #include "ui/console.h"
+#include "ui/cocoa-metal.h"
 #include "ui/cocoa-metal-dirty.h"
 
 #define QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM 80
@@ -53,6 +54,10 @@ typedef struct CocoaConsole CocoaConsole;
 @end
 
 @protocol QEMUMetalTextureRuntime <NSObject>
+- (id)device;
+- (NSUInteger)width;
+- (NSUInteger)height;
+- (NSUInteger)pixelFormat;
 - (void)replaceRegion:(QEMUMetalRegion)region
           mipmapLevel:(NSUInteger)level
             withBytes:(const void *)bytes
@@ -153,12 +158,22 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     id<QEMUMetalDeviceRuntime> metalDevice;
     id<QEMUMetalCommandQueueRuntime> metalQueue;
     id<QEMUMetalTextureRuntime> metalTexture;
+    id<QEMUMetalTextureRuntime> nativeTexture;
+    NSUInteger nativeTextureWidth;
+    NSUInteger nativeTextureHeight;
     Ivar pixmanImageIvar;
     pixman_image_t *textureImage;
     int textureWidth;
     int textureHeight;
 }
 - (id)initWithView:(NSView *)view;
+- (bool)canUseNativeTexture:(id<QEMUMetalTextureRuntime>)texture
+                      width:(uint32_t)width
+                     height:(uint32_t)height;
+- (void)setNativeTexture:(id<QEMUMetalTextureRuntime>)texture
+                   width:(uint32_t)width
+                  height:(uint32_t)height;
+- (void)clearNativeTexture;
 - (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect;
 @end
 
@@ -225,11 +240,58 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
 - (void)dealloc
 {
+    [nativeTexture release];
     [metalTexture release];
     [metalLayer release];
     [metalQueue release];
     [metalDevice release];
     [super dealloc];
+}
+
+- (bool)canUseNativeTexture:(id<QEMUMetalTextureRuntime>)texture
+                      width:(uint32_t)width
+                     height:(uint32_t)height
+{
+    if (!texture || [texture device] != metalDevice) {
+        return false;
+    }
+    if ([texture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM) {
+        return false;
+    }
+    return [texture width] == width && [texture height] == height;
+}
+
+- (void)setNativeTexture:(id<QEMUMetalTextureRuntime>)texture
+                   width:(uint32_t)width
+                  height:(uint32_t)height
+{
+    if (![self canUseNativeTexture:texture width:width height:height]) {
+        [self clearNativeTexture];
+        return;
+    }
+
+    if (nativeTexture != texture) {
+        [texture retain];
+        [nativeTexture release];
+        nativeTexture = texture;
+    }
+    nativeTextureWidth = width;
+    nativeTextureHeight = height;
+
+    /*
+     * The upload texture is now stale while AppleGFX is drawing directly into
+     * nativeTexture.  Force one complete Pixman upload if we later fall back.
+     */
+    textureImage = NULL;
+}
+
+- (void)clearNativeTexture
+{
+    [nativeTexture release];
+    nativeTexture = nil;
+    nativeTextureWidth = 0;
+    nativeTextureHeight = 0;
+    textureImage = NULL;
 }
 
 - (pixman_image_t *)pixmanImageForView:(NSView *)view
@@ -275,40 +337,49 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     id<QEMUMetalTextureDescriptorRuntime> descriptor;
     id<QEMUMetalDrawableRuntime> drawable;
     id<QEMUMetalTextureRuntime> drawableTexture;
+    id<QEMUMetalTextureRuntime> sourceTexture;
     id<QEMUMetalCommandBufferRuntime> commandBuffer;
     id<QEMUMetalBlitEncoderRuntime> encoder;
-    pixman_image_t *image = [self pixmanImageForView:view];
+    pixman_image_t *image = NULL;
     pixman_format_code_t format;
     int width;
     int height;
-    int stride;
+    int stride = 0;
     bool fullUpload = false;
     QEMUMetalOrigin origin = { 0, 0, 0 };
     QEMUMetalSize size;
 
-    if (!image) {
-        textureImage = NULL;
-        [metalLayer setHidden:YES];
-        return false;
+    if (nativeTexture) {
+        width = (int)nativeTextureWidth;
+        height = (int)nativeTextureHeight;
+        sourceTexture = nativeTexture;
+    } else {
+        image = [self pixmanImageForView:view];
+        if (!image) {
+            textureImage = NULL;
+            [metalLayer setHidden:YES];
+            return false;
+        }
+
+        format = pixman_image_get_format(image);
+        if (format != PIXMAN_x8r8g8b8 && format != PIXMAN_a8r8g8b8) {
+            textureImage = NULL;
+            [metalLayer setHidden:YES];
+            return false;
+        }
+
+        width = pixman_image_get_width(image);
+        height = pixman_image_get_height(image);
+        stride = pixman_image_get_stride(image);
+        if (width <= 0 || height <= 0 || stride < width * 4) {
+            textureImage = NULL;
+            [metalLayer setHidden:YES];
+            return false;
+        }
     }
 
-    format = pixman_image_get_format(image);
-    if (format != PIXMAN_x8r8g8b8 && format != PIXMAN_a8r8g8b8) {
-        textureImage = NULL;
-        [metalLayer setHidden:YES];
-        return false;
-    }
-
-    width = pixman_image_get_width(image);
-    height = pixman_image_get_height(image);
-    stride = pixman_image_get_stride(image);
-    if (width <= 0 || height <= 0 || stride < width * 4) {
-        textureImage = NULL;
-        [metalLayer setHidden:YES];
-        return false;
-    }
-
-    if (!metalTexture || textureWidth != width || textureHeight != height) {
+    if (!nativeTexture &&
+        (!metalTexture || textureWidth != width || textureHeight != height)) {
         descriptorClass = (Class<QEMUMetalTextureDescriptorRuntime>)
             NSClassFromString(@"MTLTextureDescriptor");
         if (!descriptorClass) {
@@ -344,36 +415,39 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         fullUpload = true;
     }
 
-    if (textureImage != image) {
-        textureImage = image;
-        fullUpload = true;
-    }
+    if (!nativeTexture) {
+        if (textureImage != image) {
+            textureImage = image;
+            fullUpload = true;
+        }
 
-    if (fullUpload) {
-        QEMUCocoaMetalDirtyRect full = { 0, 0, width, height };
-        [self uploadImage:image stride:stride dirty:full];
-    } else {
-        const NSRect *rectList;
-        NSInteger rectCount;
+        if (fullUpload) {
+            QEMUCocoaMetalDirtyRect full = { 0, 0, width, height };
+            [self uploadImage:image stride:stride dirty:full];
+        } else {
+            const NSRect *rectList;
+            NSInteger rectCount;
 
-        [view getRectsBeingDrawn:&rectList count:&rectCount];
-        if (rectCount > 0) {
-            for (NSInteger i = 0; i < rectCount; i++) {
+            [view getRectsBeingDrawn:&rectList count:&rectCount];
+            if (rectCount > 0) {
+                for (NSInteger i = 0; i < rectCount; i++) {
+                    QEMUCocoaMetalDirtyRect dirty;
+
+                    if (cocoa_metal_dirty_rect_from_nsrect(rectList[i], width,
+                                                           height, &dirty)) {
+                        [self uploadImage:image stride:stride dirty:dirty];
+                    }
+                }
+            } else {
                 QEMUCocoaMetalDirtyRect dirty;
 
-                if (cocoa_metal_dirty_rect_from_nsrect(rectList[i], width,
-                                                       height, &dirty)) {
+                if (cocoa_metal_dirty_rect_from_nsrect(dirtyRect, width, height,
+                                                       &dirty)) {
                     [self uploadImage:image stride:stride dirty:dirty];
                 }
             }
-        } else {
-            QEMUCocoaMetalDirtyRect dirty;
-
-            if (cocoa_metal_dirty_rect_from_nsrect(dirtyRect, width, height,
-                                                   &dirty)) {
-                [self uploadImage:image stride:stride dirty:dirty];
-            }
         }
+        sourceTexture = metalTexture;
     }
 
     size = (QEMUMetalSize){ (NSUInteger)width, (NSUInteger)height, 1 };
@@ -400,7 +474,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         return false;
     }
 
-    [encoder copyFromTexture:metalTexture
+    [encoder copyFromTexture:sourceTexture
                     sourceSlice:0
                     sourceLevel:0
                    sourceOrigin:origin
@@ -418,6 +492,44 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 }
 
 @end
+
+bool qemu_cocoa_metal_can_use_texture(void *opaque_view, void *opaque_texture,
+                                      uint32_t width, uint32_t height)
+{
+    NSView *view = (NSView *)opaque_view;
+    QEMUCocoaMetalState *state =
+        objc_getAssociatedObject(view, &metal_state_key);
+
+    return state &&
+        [state canUseNativeTexture:(id<QEMUMetalTextureRuntime>)opaque_texture
+                            width:width
+                           height:height];
+}
+
+void qemu_cocoa_metal_set_texture(void *opaque_view, void *opaque_texture,
+                                  uint32_t width, uint32_t height)
+{
+    NSView *view = (NSView *)opaque_view;
+    QEMUCocoaMetalState *state =
+        objc_getAssociatedObject(view, &metal_state_key);
+
+    if (state) {
+        [state setNativeTexture:(id<QEMUMetalTextureRuntime>)opaque_texture
+                          width:width
+                         height:height];
+    }
+}
+
+void qemu_cocoa_metal_clear_texture(void *opaque_view)
+{
+    NSView *view = (NSView *)opaque_view;
+    QEMUCocoaMetalState *state =
+        objc_getAssociatedObject(view, &metal_state_key);
+
+    if (state) {
+        [state clearNativeTexture];
+    }
+}
 
 static id cocoa_metal_init(id self, SEL selector, NSRect frame,
                            CocoaConsole *console)
