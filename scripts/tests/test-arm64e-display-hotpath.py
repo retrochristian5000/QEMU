@@ -89,6 +89,17 @@ assert apple_gfx.count("copy_mtl_texture_to_surface_mem(") == 2, (
     "fallback call"
 )
 
+# Coalesce bursty PVG new-frame notifications before they cross into the AIO
+# thread. One queued BH is enough because it asks the framework for its current
+# frame; the existing pending_frames logic still bounds rendering work.
+for token in (
+    "qatomic_set(&s->frame_bh_queued, false);",
+    "qatomic_cmpxchg(&s->frame_bh_queued, false, true)",
+    "aio_bh_schedule_oneshot(qemu_get_aio_context(),",
+    "trace_apple_gfx_surface_storage(width, height, shared_surface);",
+):
+    assert token in apple_gfx, f"missing AppleGFX frame coalescing contract: {token}"
+
 # The shared AppleGFX surface also advertises its native texture to Cocoa.
 # Cocoa must retain it across the asynchronous surface switch, verify it uses
 # the same Metal device, and blit it directly rather than upload Pixman bytes.
