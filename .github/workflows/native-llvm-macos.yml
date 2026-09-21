@@ -33,6 +33,9 @@ on:
       - 'ui/cocoa-metal.m'
       - 'scripts/tests/test-arm64e-pci-hotpath.py'
       - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
+      - 'scripts/tests/test-arm64e-isa-hotpath.py'
+      - 'hw/isa/piix.c'
+      - 'hw/isa/lpc_ich9.c'
       - 'hw/pci/pci_host.c'
       - 'hw/pci/pci_bridge.c'
       - 'include/hw/pci/pci_bus.h'
@@ -104,6 +107,10 @@ jobs:
       - name: Audit arm64e PCI INTx hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-pci-irq-hotpath.py
+
+      - name: Audit arm64e ISA IRQ hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-isa-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash
