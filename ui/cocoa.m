@@ -33,6 +33,7 @@
 #include "standard-headers/linux/input-event-codes.h"
 #include "ui/clipboard.h"
 #include "ui/console.h"
+#include "ui/cocoa-metal.h"
 #include "ui/input.h"
 #include "ui/kbd-state.h"
 #include "system/system.h"
@@ -2067,17 +2068,30 @@ static void cocoa_switch(DisplayChangeListener *dcl,
     CocoaConsole *cocoa = container_of(dcl, CocoaConsole, dcl);
     QemuCocoaView *view = cocoa->view;
     pixman_image_t *image = surface->image;
+    id native_texture = (id)qemu_displaysurface_get_native_handle(
+        surface, DISPLAY_SURFACE_NATIVE_METAL_TEXTURE);
+    uint32_t width = surface_width(surface);
+    uint32_t height = surface_height(surface);
 
     COCOA_DEBUG("qemu_cocoa: cocoa_switch\n");
 
-    // The DisplaySurface will be freed as soon as this callback returns.
-    // We take a reference to the underlying pixman image here so it does
-    // not disappear from under our feet; the switchSurface method will
-    // deref the old image when it is done with it.
+    /*
+     * The DisplaySurface will be freed as soon as this callback returns.
+     * Retain both backing forms across the asynchronous main-queue switch.
+     */
     pixman_image_ref(image);
+    [native_texture retain];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [view switchSurface:image];
+        if (native_texture &&
+            qemu_cocoa_metal_can_use_texture(view, native_texture,
+                                             width, height)) {
+            qemu_cocoa_metal_set_texture(view, native_texture, width, height);
+        } else {
+            qemu_cocoa_metal_clear_texture(view);
+        }
+        [native_texture release];
     });
 }
 
