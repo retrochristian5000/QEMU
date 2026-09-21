@@ -57,6 +57,17 @@ int main(void)
         self.assertIn('textureImage != image', text)
         self.assertIn('qemu_cocoa_metal_dirty_rect', text)
 
+    def test_arm64e_runtime_dispatch_is_typed(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        self.assertNotIn('objc_msgSend', text)
+        self.assertNotIn('#import <objc/message.h>', text)
+        self.assertIn('@protocol QEMUMetalLayerRuntime', text)
+        self.assertIn('@protocol QEMUMetalBlitEncoderRuntime', text)
+        self.assertIn('CocoaConsole *console', text)
+        self.assertIn('(QEMUMetalCreateSystemDefaultDevice)dlsym', text)
+        self.assertNotIn('ptrauth_strip', text)
+        self.assertNotIn('ptrauth_sign_unauthenticated', text)
+
     def test_refresh_rate_reapplied_after_application_launch(self):
         # updateUIInfo() is suppressed before AppKit finishes launching. If the
         # launch callback does not retry it, the listener keeps QEMU's 30 ms

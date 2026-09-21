@@ -9,7 +9,6 @@
 
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
-#import <objc/message.h>
 #import <objc/runtime.h>
 #include <dlfcn.h>
 #include <math.h>
@@ -37,8 +36,66 @@ typedef struct QEMUMetalRegion {
     QEMUMetalSize size;
 } QEMUMetalRegion;
 
+typedef struct CocoaConsole CocoaConsole;
+
+@protocol QEMUMetalLayerRuntime <NSObject>
++ (id)layer;
+- (void)setDevice:(id)device;
+- (void)setPixelFormat:(NSUInteger)pixelFormat;
+- (void)setFramebufferOnly:(BOOL)framebufferOnly;
+- (void)setDrawableSize:(CGSize)size;
+- (id)nextDrawable;
+@end
+
+@protocol QEMUMetalDeviceRuntime <NSObject>
+- (id)newCommandQueue;
+- (id)newTextureWithDescriptor:(id)descriptor;
+@end
+
+@protocol QEMUMetalTextureRuntime <NSObject>
+- (void)replaceRegion:(QEMUMetalRegion)region
+          mipmapLevel:(NSUInteger)level
+            withBytes:(const void *)bytes
+          bytesPerRow:(NSUInteger)bytesPerRow;
+@end
+
+@protocol QEMUMetalTextureDescriptorRuntime <NSObject>
++ (id)texture2DDescriptorWithPixelFormat:(NSUInteger)pixelFormat
+                                   width:(NSUInteger)width
+                                  height:(NSUInteger)height
+                               mipmapped:(BOOL)mipmapped;
+- (void)setStorageMode:(NSUInteger)storageMode;
+@end
+
+@protocol QEMUMetalDrawableRuntime <NSObject>
+- (id)texture;
+@end
+
+@protocol QEMUMetalCommandQueueRuntime <NSObject>
+- (id)commandBuffer;
+@end
+
+@protocol QEMUMetalCommandBufferRuntime <NSObject>
+- (id)blitCommandEncoder;
+- (void)presentDrawable:(id)drawable;
+- (void)commit;
+@end
+
+@protocol QEMUMetalBlitEncoderRuntime <NSObject>
+- (void)copyFromTexture:(id)sourceTexture
+            sourceSlice:(NSUInteger)sourceSlice
+            sourceLevel:(NSUInteger)sourceLevel
+           sourceOrigin:(QEMUMetalOrigin)sourceOrigin
+             sourceSize:(QEMUMetalSize)sourceSize
+              toTexture:(id)destinationTexture
+       destinationSlice:(NSUInteger)destinationSlice
+       destinationLevel:(NSUInteger)destinationLevel
+      destinationOrigin:(QEMUMetalOrigin)destinationOrigin;
+- (void)endEncoding;
+@end
+
 typedef id (*QEMUMetalCreateSystemDefaultDevice)(void);
-typedef id (*QEMUCocoaInitIMP)(id, SEL, NSRect, void *);
+typedef id (*QEMUCocoaInitIMP)(id, SEL, NSRect, CocoaConsole *);
 typedef void (*QEMUCocoaDrawIMP)(id, SEL, NSRect);
 
 static void *metal_handle;
@@ -61,6 +118,11 @@ static bool cocoa_metal_load(void)
         return false;
     }
 
+    /*
+     * On arm64e, dyld returns code symbols from dlsym() already signed with
+     * the default C function-pointer schema.  Keep the value typed and let
+     * Clang preserve that authentication when storing and calling it.
+     */
     metal_create_default_device =
         (QEMUMetalCreateSystemDefaultDevice)dlsym(
             metal_handle, "MTLCreateSystemDefaultDevice");
@@ -71,11 +133,6 @@ static bool cocoa_metal_load(void)
     }
 
     return true;
-}
-
-static id cocoa_msg_id(id object, const char *selector)
-{
-    return ((id (*)(id, SEL))objc_msgSend)(object, sel_registerName(selector));
 }
 
 static bool cocoa_metal_dirty_rect_from_nsrect(
@@ -93,9 +150,9 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 @interface QEMUCocoaMetalState : NSObject
 {
     CALayer *metalLayer;
-    id metalDevice;
-    id metalQueue;
-    id metalTexture;
+    id<QEMUMetalDeviceRuntime> metalDevice;
+    id<QEMUMetalCommandQueueRuntime> metalQueue;
+    id<QEMUMetalTextureRuntime> metalTexture;
     Ivar pixmanImageIvar;
     pixman_image_t *textureImage;
     int textureWidth;
@@ -109,9 +166,9 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
 - (id)initWithView:(NSView *)view
 {
-    Class layerClass;
-    id layer;
-    id device;
+    Class<QEMUMetalLayerRuntime> layerClass;
+    id<QEMUMetalLayerRuntime> layer;
+    id<QEMUMetalDeviceRuntime> device;
 
     self = [super init];
     if (!self) {
@@ -124,7 +181,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         return nil;
     }
 
-    layerClass = NSClassFromString(@"CAMetalLayer");
+    layerClass = (Class<QEMUMetalLayerRuntime>)
+        NSClassFromString(@"CAMetalLayer");
     if (!layerClass) {
         [self release];
         return nil;
@@ -137,26 +195,22 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     }
 
     metalDevice = [device retain];
-    metalQueue = cocoa_msg_id(metalDevice, "newCommandQueue");
+    metalQueue = [metalDevice newCommandQueue];
     if (!metalQueue) {
         [self release];
         return nil;
     }
 
-    layer = cocoa_msg_id((id)layerClass, "layer");
+    layer = [layerClass layer];
     if (!layer) {
         [self release];
         return nil;
     }
 
     metalLayer = [(CALayer *)layer retain];
-    ((void (*)(id, SEL, id))objc_msgSend)(
-        layer, sel_registerName("setDevice:"), metalDevice);
-    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(
-        layer, sel_registerName("setPixelFormat:"),
-        QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM);
-    ((void (*)(id, SEL, BOOL))objc_msgSend)(
-        layer, sel_registerName("setFramebufferOnly:"), NO);
+    [layer setDevice:metalDevice];
+    [layer setPixelFormat:QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM];
+    [layer setFramebufferOnly:NO];
 
     [metalLayer setOpaque:YES];
     [metalLayer setFrame:[view bounds]];
@@ -209,21 +263,20 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                            (size_t)dirty.y * stride +
                            (size_t)dirty.x * 4;
 
-    ((void (*)(id, SEL, QEMUMetalRegion, NSUInteger,
-               const void *, NSUInteger))objc_msgSend)(
-        metalTexture,
-        sel_registerName("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"),
-        region, 0, bytes, (NSUInteger)stride);
+    [metalTexture replaceRegion:region
+                       mipmapLevel:0
+                         withBytes:bytes
+                       bytesPerRow:(NSUInteger)stride];
 }
 
 - (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect
 {
-    Class descriptorClass;
-    id descriptor;
-    id drawable;
-    id drawableTexture;
-    id commandBuffer;
-    id encoder;
+    Class<QEMUMetalTextureDescriptorRuntime> descriptorClass;
+    id<QEMUMetalTextureDescriptorRuntime> descriptor;
+    id<QEMUMetalDrawableRuntime> drawable;
+    id<QEMUMetalTextureRuntime> drawableTexture;
+    id<QEMUMetalCommandBufferRuntime> commandBuffer;
+    id<QEMUMetalBlitEncoderRuntime> encoder;
     pixman_image_t *image = [self pixmanImageForView:view];
     pixman_format_code_t format;
     int width;
@@ -256,33 +309,29 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     }
 
     if (!metalTexture || textureWidth != width || textureHeight != height) {
-        descriptorClass = NSClassFromString(@"MTLTextureDescriptor");
+        descriptorClass = (Class<QEMUMetalTextureDescriptorRuntime>)
+            NSClassFromString(@"MTLTextureDescriptor");
         if (!descriptorClass) {
             [metalLayer setHidden:YES];
             return false;
         }
 
         descriptor =
-            ((id (*)(id, SEL, NSUInteger, NSUInteger, NSUInteger, BOOL))
-             objc_msgSend)(
-                (id)descriptorClass,
-                sel_registerName(
-                    "texture2DDescriptorWithPixelFormat:width:height:mipmapped:"),
-                QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM,
-                (NSUInteger)width, (NSUInteger)height, NO);
+            [descriptorClass
+                texture2DDescriptorWithPixelFormat:
+                    QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM
+                                           width:(NSUInteger)width
+                                          height:(NSUInteger)height
+                                       mipmapped:NO];
         if (!descriptor) {
             [metalLayer setHidden:YES];
             return false;
         }
 
-        ((void (*)(id, SEL, NSUInteger))objc_msgSend)(
-            descriptor, sel_registerName("setStorageMode:"),
-            QEMU_METAL_STORAGE_MODE_SHARED);
+        [descriptor setStorageMode:QEMU_METAL_STORAGE_MODE_SHARED];
 
         [metalTexture release];
-        metalTexture = ((id (*)(id, SEL, id))objc_msgSend)(
-            metalDevice, sel_registerName("newTextureWithDescriptor:"),
-            descriptor);
+        metalTexture = [metalDevice newTextureWithDescriptor:descriptor];
         if (!metalTexture) {
             textureImage = NULL;
             textureWidth = 0;
@@ -329,43 +378,40 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
     size = (QEMUMetalSize){ (NSUInteger)width, (NSUInteger)height, 1 };
 
-    ((void (*)(id, SEL, CGSize))objc_msgSend)(
-        (id)metalLayer, sel_registerName("setDrawableSize:"),
-        CGSizeMake(width, height));
+    [(id<QEMUMetalLayerRuntime>)metalLayer
+        setDrawableSize:CGSizeMake(width, height)];
 
-    drawable = cocoa_msg_id((id)metalLayer, "nextDrawable");
+    drawable = [(id<QEMUMetalLayerRuntime>)metalLayer nextDrawable];
     if (!drawable) {
         [metalLayer setHidden:YES];
         return false;
     }
 
-    drawableTexture = cocoa_msg_id(drawable, "texture");
-    commandBuffer = cocoa_msg_id(metalQueue, "commandBuffer");
+    drawableTexture = [drawable texture];
+    commandBuffer = [metalQueue commandBuffer];
     if (!drawableTexture || !commandBuffer) {
         [metalLayer setHidden:YES];
         return false;
     }
 
-    encoder = cocoa_msg_id(commandBuffer, "blitCommandEncoder");
+    encoder = [commandBuffer blitCommandEncoder];
     if (!encoder) {
         [metalLayer setHidden:YES];
         return false;
     }
 
-    ((void (*)(id, SEL, id, NSUInteger, NSUInteger,
-               QEMUMetalOrigin, QEMUMetalSize, id, NSUInteger, NSUInteger,
-               QEMUMetalOrigin))objc_msgSend)(
-        encoder,
-        sel_registerName(
-            "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"),
-        metalTexture, 0, 0, origin, size,
-        drawableTexture, 0, 0, origin);
-    ((void (*)(id, SEL))objc_msgSend)(
-        encoder, sel_registerName("endEncoding"));
-    ((void (*)(id, SEL, id))objc_msgSend)(
-        commandBuffer, sel_registerName("presentDrawable:"), drawable);
-    ((void (*)(id, SEL))objc_msgSend)(
-        commandBuffer, sel_registerName("commit"));
+    [encoder copyFromTexture:metalTexture
+                    sourceSlice:0
+                    sourceLevel:0
+                   sourceOrigin:origin
+                     sourceSize:size
+                      toTexture:drawableTexture
+               destinationSlice:0
+               destinationLevel:0
+              destinationOrigin:origin];
+    [encoder endEncoding];
+    [commandBuffer presentDrawable:drawable];
+    [commandBuffer commit];
 
     [metalLayer setHidden:NO];
     return true;
@@ -373,7 +419,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
 @end
 
-static id cocoa_metal_init(id self, SEL selector, NSRect frame, void *console)
+static id cocoa_metal_init(id self, SEL selector, NSRect frame,
+                           CocoaConsole *console)
 {
     id view;
     QEMUCocoaMetalState *state;
