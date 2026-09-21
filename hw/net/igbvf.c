@@ -248,6 +248,7 @@ static void igbvf_pci_realize(PCIDevice *dev, Error **errp)
     int i;
 
     dev->config_write = igbvf_write_config;
+    dev->config_write_default = false;
 
     memory_region_init_io(&s->mmio, OBJECT(dev), &mmio_ops, s, "igbvf-mmio",
         IGBVF_MMIO_SIZE);

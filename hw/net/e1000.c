@@ -1631,6 +1631,7 @@ static void pci_e1000_realize(PCIDevice *pci_dev, Error **errp)
     uint8_t *macaddr;
 
     pci_dev->config_write = e1000_write_config;
+    pci_dev->config_write_default = false;
 
     pci_conf = pci_dev->config;
 

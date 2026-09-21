@@ -101,6 +101,8 @@ struct PCIDevice {
     /* do not access the following fields */
     PCIConfigReadFunc *config_read;
     PCIConfigWriteFunc *config_write;
+    bool config_read_default;
+    bool config_write_default;
 
     /* Legacy PCI VGA regions */
     MemoryRegion *vga_regions[QEMU_PCI_VGA_NUM_REGIONS];

@@ -387,6 +387,7 @@ static void igb_pci_realize(PCIDevice *pci_dev, Error **errp)
     trace_e1000e_cb_pci_realize();
 
     pci_dev->config_write = igb_write_config;
+    pci_dev->config_write_default = false;
 
     pci_dev->config[PCI_CACHE_LINE_SIZE] = 0x10;
     pci_dev->config[PCI_INTERRUPT_PIN] = 1;

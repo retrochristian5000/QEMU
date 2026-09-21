@@ -1443,6 +1443,10 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
         config_write = pci_default_write_config;
     pci_dev->config_read = config_read;
     pci_dev->config_write = config_write;
+    pci_dev->config_read_default =
+        config_read == pci_default_read_config;
+    pci_dev->config_write_default =
+        config_write == pci_default_write_config;
     bus->devices[devfn] = pci_dev;
     pci_dev->version_id = 2; /* Current pci device vmstate version */
     if (!pci_device_supports_iommu_address_space(pci_dev, errp)) {
