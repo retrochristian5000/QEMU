@@ -1030,9 +1030,6 @@ do_write:
     memory_region_set_dirty(&s->vram, addr << 2, sizeof(uint32_t));
 }
 
-typedef void *vga_draw_line_func(VGACommonState *s1, uint8_t *d,
-                                 uint32_t srcaddr, int width, int hpel);
-
 #include "vga-access.h"
 #include "vga-helpers.h"
 
@@ -1413,22 +1410,43 @@ enum {
     VGA_DRAW_LINE_NB,
 };
 
-static vga_draw_line_func * const vga_draw_line_table[VGA_DRAW_LINE_NB] = {
-    vga_draw_line2,
-    vga_draw_line2d2,
-    vga_draw_line4,
-    vga_draw_line4d2,
-    vga_draw_line8d2,
-    vga_draw_line8,
-    vga_draw_line15_le,
-    vga_draw_line16_le,
-    vga_draw_line24_le,
-    vga_draw_line32_le,
-    vga_draw_line15_be,
-    vga_draw_line16_be,
-    vga_draw_line24_be,
-    vga_draw_line32_be,
-};
+static inline void *vga_draw_line_dispatch(int draw_line, VGACommonState *s,
+                                           uint8_t *d, uint32_t srcaddr,
+                                           int width, int hpel)
+{
+    switch (draw_line) {
+    case VGA_DRAW_LINE2:
+        return vga_draw_line2(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE2D2:
+        return vga_draw_line2d2(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE4:
+        return vga_draw_line4(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE4D2:
+        return vga_draw_line4d2(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE8D2:
+        return vga_draw_line8d2(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE8:
+        return vga_draw_line8(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE15_LE:
+        return vga_draw_line15_le(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE16_LE:
+        return vga_draw_line16_le(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE24_LE:
+        return vga_draw_line24_le(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE32_LE:
+        return vga_draw_line32_le(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE15_BE:
+        return vga_draw_line15_be(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE16_BE:
+        return vga_draw_line16_be(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE24_BE:
+        return vga_draw_line24_be(s, d, srcaddr, width, hpel);
+    case VGA_DRAW_LINE32_BE:
+        return vga_draw_line32_be(s, d, srcaddr, width, hpel);
+    default:
+        g_assert_not_reached();
+    }
+}
 
 static int vga_get_bpp(VGACommonState *s)
 {
@@ -1504,7 +1522,6 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
     int hpel;
     uint8_t *d;
     uint32_t v, addr1, addr;
-    vga_draw_line_func *vga_draw_line = NULL;
     bool allocate_surface, force_shadow = false;
     pixman_format_code_t format;
 #if HOST_BIG_ENDIAN
@@ -1671,8 +1688,6 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
         }
     }
 
-    vga_draw_line = vga_draw_line_table[v];
-
     if (surface_is_allocated(surface) && s->cursor_invalidate) {
         s->cursor_invalidate(s);
     }
@@ -1727,7 +1742,7 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
                 y_start = y;
             if (surface_is_allocated(surface)) {
                 uint8_t *p;
-                p = vga_draw_line(s, d, addr, width, hpel);
+                p = vga_draw_line_dispatch(v, s, d, addr, width, hpel);
                 if (p) {
                     memcpy(d, p, disp_width * sizeof(uint32_t));
                 }
