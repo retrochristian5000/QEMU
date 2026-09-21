@@ -18,6 +18,26 @@ else
     read -r -a build_target_list <<< "$BUILD_TARGETS"
 fi
 
+# Meson keeps QEMU DSOs as separate build targets. A named emulator build does
+# not automatically traverse build-by-default module targets, so carry the
+# module alias when WHP dynamic modules are active. An all build already covers
+# them. Check the generated graph first because very narrow configurations can
+# legitimately produce no modules and therefore no alias target.
+build_dynamic_modules=0
+case "${QEMU_HOST_MODULES:-auto}" in
+    1) build_dynamic_modules=1 ;;
+    auto)
+        [[ "${HOST_OS:-}" == Darwin ]] && build_dynamic_modules=1
+        ;;
+esac
+if [[ "$build_dynamic_modules" == 1 &&
+      -f "$BUILD_DIR/build.ninja" &&
+      " ${build_target_list[*]} " != *" all "* ]] &&
+   grep -Eq '^build modules(:|[[:space:]])' "$BUILD_DIR/build.ninja"; then
+    build_target_list+=(modules)
+fi
+unset build_dynamic_modules
+
 # Firmware targets are build_by_default for their matching system targets, so
 # an `all` build already requests them. Named qemu-system-* builds bypass that
 # default graph and must carry their firmware companion explicitly.
