@@ -286,6 +286,90 @@ static void apple_gfx_render_new_frame(AppleGFXState *s)
     });
 }
 
+static void apple_gfx_release_surface_buffer(pixman_image_t *image,
+                                            void *opaque)
+{
+    id<MTLBuffer> buffer = (id<MTLBuffer>)opaque;
+
+    (void)image;
+    [buffer release];
+}
+
+static bool apple_gfx_create_shared_surface_texture(
+    AppleGFXState *s, MTLTextureDescriptor *texture_descriptor,
+    uint32_t width, uint32_t height, DisplaySurface **surface_out,
+    id<MTLTexture> *texture_out)
+{
+#if defined(__arm64__) && defined(__PTRAUTH__)
+    NSUInteger alignment;
+    NSUInteger bytes_per_row;
+    NSUInteger buffer_length;
+    id<MTLBuffer> buffer;
+    id<MTLTexture> texture;
+    DisplaySurface *surface;
+
+    /*
+     * arm64e runs on Apple GPUs with unified memory.  A linear Metal texture
+     * can share storage with a CPU-visible MTLBuffer, so make the QEMU
+     * DisplaySurface point at the same bytes.  This removes the full-frame
+     * texture getBytes() readback after every completed frame.
+     */
+    if (!s->mtl.hasUnifiedMemory ||
+        ![s->mtl supportsFamily:MTLGPUFamilyApple1]) {
+        return false;
+    }
+
+    alignment =
+        [s->mtl minimumLinearTextureAlignmentForPixelFormat:
+                    MTLPixelFormatBGRA8Unorm];
+    if (alignment == 0) {
+        return false;
+    }
+
+    bytes_per_row = (NSUInteger)width * 4;
+    bytes_per_row = DIV_ROUND_UP(bytes_per_row, alignment) * alignment;
+    if (height != 0 && bytes_per_row > SIZE_MAX / height) {
+        return false;
+    }
+    buffer_length = bytes_per_row * height;
+
+    texture_descriptor.storageMode = MTLStorageModeShared;
+    buffer = [s->mtl newBufferWithLength:buffer_length
+                                 options:MTLResourceStorageModeShared];
+    if (!buffer) {
+        return false;
+    }
+
+    texture = [buffer newTextureWithDescriptor:texture_descriptor
+                                        offset:0
+                                   bytesPerRow:bytes_per_row];
+    if (!texture) {
+        [buffer release];
+        return false;
+    }
+
+    surface = qemu_create_displaysurface_from(width, height,
+                                              PIXMAN_x8r8g8b8,
+                                              (int)bytes_per_row,
+                                              [buffer contents]);
+    /*
+     * Cocoa switches surfaces asynchronously.  Keep the MTLBuffer alive until
+     * the last pixman reference disappears rather than tying its lifetime to
+     * AppleGFXState's current mode.
+     */
+    pixman_image_set_destroy_function(surface->image,
+                                      apple_gfx_release_surface_buffer,
+                                      [buffer retain]);
+    [buffer release];
+
+    *surface_out = surface;
+    *texture_out = texture;
+    return true;
+#else
+    return false;
+#endif
+}
+
 static void copy_mtl_texture_to_surface_mem(id<MTLTexture> texture, void *vram)
 {
     /*
@@ -314,7 +398,10 @@ static void apple_gfx_render_frame_completed_bh(void *opaque)
         /* Only update display if mode hasn't changed since we started rendering. */
         if (s->rendering_frame_width == surface_width(s->surface) &&
             s->rendering_frame_height == surface_height(s->surface)) {
-            copy_mtl_texture_to_surface_mem(s->texture, surface_data(s->surface));
+            if (!s->using_shared_surface_texture) {
+                copy_mtl_texture_to_surface_mem(s->texture,
+                                                surface_data(s->surface));
+            }
             if (s->gfx_update_requested) {
                 s->gfx_update_requested = false;
                 qemu_console_update_full(s->con);
@@ -356,16 +443,16 @@ static const GraphicHwOps apple_gfx_fb_ops = {
 static void set_mode(AppleGFXState *s, uint32_t width, uint32_t height)
 {
     MTLTextureDescriptor *textureDescriptor;
+    DisplaySurface *surface = NULL;
+    id<MTLTexture> texture = nil;
+    id<MTLTexture> old_texture;
+    bool shared_surface = false;
 
     if (s->surface &&
         width == surface_width(s->surface) &&
         height == surface_height(s->surface)) {
         return;
     }
-
-    [s->texture release];
-
-    s->surface = qemu_create_displaysurface(width, height);
 
     @autoreleasepool {
         textureDescriptor =
@@ -375,12 +462,33 @@ static void set_mode(AppleGFXState *s, uint32_t width, uint32_t height)
                                             height:height
                                          mipmapped:NO];
         textureDescriptor.usage = s->pgdisp.minimumTextureUsage;
-        s->texture = [s->mtl newTextureWithDescriptor:textureDescriptor];
-        s->using_managed_texture_storage =
-            (s->texture.storageMode == MTLStorageModeManaged);
+
+        shared_surface = apple_gfx_create_shared_surface_texture(
+            s, textureDescriptor, width, height, &surface, &texture);
+
+        if (!shared_surface) {
+            surface = qemu_create_displaysurface(width, height);
+            texture = [s->mtl newTextureWithDescriptor:textureDescriptor];
+        }
     }
 
+    if (!texture) {
+        qemu_free_displaysurface(surface);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: failed to create %ux%u Metal texture\n",
+                      __func__, width, height);
+        return;
+    }
+
+    old_texture = s->texture;
+    s->surface = surface;
+    s->texture = texture;
+    s->using_shared_surface_texture = shared_surface;
+    s->using_managed_texture_storage =
+        !shared_surface && texture.storageMode == MTLStorageModeManaged;
+
     qemu_console_set_surface(s->con, s->surface);
+    [old_texture release];
 }
 
 static void update_cursor(AppleGFXState *s)
