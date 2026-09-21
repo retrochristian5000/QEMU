@@ -44,6 +44,7 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('QEMU_HOST_MODULES', 'Host features', 'Dynamic QEMU modules', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_OPTIMIZATION', 'Host features', 'QEMU host optimization level', 'choice', '2', ('0', '1', '2', '3', 'g', 's')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
     Option('QEMU_C_STANDARD', 'Host features', 'QEMU C language standard', 'choice', 'gnu11', ('gnu11', 'gnu17', 'gnu23')),
@@ -98,6 +99,7 @@ RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
 SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
     'QEMU_HOST_LTO',
+    'QEMU_HOST_MODULES',
     'BOOTSTRAP_NINJA',
     'BOOTSTRAP_MOLD',
     'MACOS_ENABLE_COCOA',
