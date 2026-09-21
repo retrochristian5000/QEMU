@@ -1673,13 +1673,6 @@ static const MemoryRegionOps sm501_2d_engine_ops = {
 
 /* draw line functions for all console modes */
 
-typedef void draw_line_func(uint8_t *d, const uint8_t *s,
-                            int width, const uint32_t *pal);
-
-typedef void draw_hwc_line_func(uint8_t *d, const uint8_t *s,
-                                int width, const uint8_t *palette,
-                                int c_x, int c_y);
-
 static void draw_line8_32(uint8_t *d, const uint8_t *s, int width,
                           const uint32_t *pal)
 {
@@ -1725,6 +1718,24 @@ static void draw_line32_32(uint8_t *d, const uint8_t *s, int width,
         s += 4;
         d += 4;
     } while (--width != 0);
+}
+
+static inline void draw_line_32(int src_bpp, uint8_t *d, const uint8_t *s,
+                                int width, const uint32_t *pal)
+{
+    switch (src_bpp) {
+    case 1:
+        draw_line8_32(d, s, width, pal);
+        break;
+    case 2:
+        draw_line16_32(d, s, width, pal);
+        break;
+    case 4:
+        draw_line32_32(d, s, width, pal);
+        break;
+    default:
+        g_assert_not_reached();
+    }
 }
 
 /**
@@ -1773,8 +1784,7 @@ static bool sm501_update_display(void *opaque)
     int height = get_height(s, crt);
     int src_bpp = get_bpp(s, crt);
     int dst_bpp = surface_bytes_per_pixel(surface);
-    draw_line_func *draw_line = NULL;
-    draw_hwc_line_func *draw_hwc_line = NULL;
+    bool draw_hwc = false;
     int full_update = 0;
     int y_start = -1;
     ram_addr_t offset;
@@ -1793,16 +1803,11 @@ static bool sm501_update_display(void *opaque)
                                                 SM501_DC_PANEL_PALETTE]
                                : &s->dc_palette[0]);
 
-    /* choose draw_line function */
+    /* Validate the source format before entering the scanline loop. */
     switch (src_bpp) {
     case 1:
-        draw_line = draw_line8_32;
-        break;
     case 2:
-        draw_line = draw_line16_32;
-        break;
     case 4:
-        draw_line = draw_line32_32;
         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR, "sm501: update display"
@@ -1812,8 +1817,7 @@ static bool sm501_update_display(void *opaque)
 
     /* set up to draw hardware cursor */
     if (is_hwc_enabled(s, crt)) {
-        /* choose cursor draw line function */
-        draw_hwc_line = draw_hwc_line_32;
+        draw_hwc = true;
         hwc_src = get_hwc_address(s, crt);
         c_x = get_hwc_x(s, crt);
         c_y = get_hwc_y(s, crt);
@@ -1843,7 +1847,7 @@ static bool sm501_update_display(void *opaque)
         int update, update_hwc;
 
         /* check if hardware cursor is enabled and we're within its range */
-        update_hwc = draw_hwc_line && c_y <= y && y < c_y + SM501_HWC_HEIGHT;
+        update_hwc = draw_hwc && c_y <= y && y < c_y + SM501_HWC_HEIGHT;
         update = full_update || update_hwc;
         /* check dirty flags for each line */
         update |= memory_region_snapshot_get_dirty(&s->local_mem_region, snap,
@@ -1855,11 +1859,12 @@ static bool sm501_update_display(void *opaque)
             d +=  y * width * dst_bpp;
 
             /* draw graphics layer */
-            draw_line(d, s->local_mem + offset, width, palette);
+            draw_line_32(src_bpp, d, s->local_mem + offset, width, palette);
 
             /* draw hardware cursor */
             if (update_hwc) {
-                draw_hwc_line(d, hwc_src, width, hwc_palette, c_x, y - c_y);
+                draw_hwc_line_32(d, hwc_src, width, hwc_palette, c_x,
+                                 y - c_y);
             }
 
             if (y_start < 0) {
