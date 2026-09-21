@@ -141,6 +141,7 @@ whp_prepare_build_defaults()
     MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-auto}"
     MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-auto}"
     QEMU_HOST_LTO="${QEMU_HOST_LTO:-auto}"
+    QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
     BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"
     OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
     OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
@@ -161,7 +162,7 @@ whp_prepare_build_defaults()
         POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
     whp_require_tristate_values \
         MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO MACOS_ENABLE_GTK \
-        MACOS_ENABLE_PA QEMU_HOST_LTO BUILD_OPENBIOS \
+        MACOS_ENABLE_PA QEMU_HOST_LTO QEMU_HOST_MODULES BUILD_OPENBIOS \
         BOOTSTRAP_POWERPC_TOOLCHAIN || exit 1
     case "$CONFIG_MAC_NEWWORLD:$CONFIG_MAC_OLDWORLD" in
         y:y|y:n|n:y|n:n) ;;
@@ -369,6 +370,14 @@ whp_prepare_configure_args()
     fi
 
     whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
+    if [[ "$HOST_OS" == Darwin && "$QEMU_HOST_MODULES" == auto ]]; then
+        # QEMU already isolates optional host backends/devices as DSOs.
+        # Prefer dyld-backed modules on macOS instead of folding them into
+        # every emulator executable when static linking was not requested.
+        configure_args+=(--enable-modules)
+    else
+        whp_add_optional_configure_switch "$QEMU_HOST_MODULES" modules
+    fi
     whp_add_optional_configure_switch "$MACOS_ENABLE_GTK" gtk
     whp_add_optional_configure_switch "$MACOS_ENABLE_PA" pa
 
