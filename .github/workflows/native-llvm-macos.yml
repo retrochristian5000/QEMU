@@ -32,6 +32,7 @@ on:
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'scripts/tests/test-arm64e-display-hotpath.py'
       - 'scripts/tests/arm64e-display-abi-probe.m'
+      - 'scripts/tests/arm64e-metal-shared-surface-probe.m'
       - 'ui/cocoa.m'
       - 'ui/cocoa-metal.m'
       - 'ui/cocoa-metal.h'
@@ -282,6 +283,23 @@ jobs:
           lipo -archs arm64e-display-abi-probe | tr ' ' '\n' | grep -Fxq arm64e
           file arm64e-display-abi-probe | grep -Fq arm64e
           ./arm64e-display-abi-probe
+
+      - name: Run ARM64e Metal shared-surface probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang="$NATIVE_LLVM_DIR/bin/clang"
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          "$clang" -arch arm64e -O2 -Wall -Wextra -Werror \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            scripts/tests/arm64e-metal-shared-surface-probe.m \
+            -framework Foundation -framework Metal \
+            -o arm64e-metal-shared-surface-probe
+          lipo -archs arm64e-metal-shared-surface-probe |
+            tr ' ' '\n' | grep -Fxq arm64e
+          file arm64e-metal-shared-surface-probe | grep -Fq arm64e
+          ./arm64e-metal-shared-surface-probe
 
       - name: Probe WHP Clang to macOS LTO handoff
         shell: bash
