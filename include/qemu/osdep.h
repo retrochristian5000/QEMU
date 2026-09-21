@@ -845,14 +845,34 @@ size_t qemu_get_host_physmem(void);
  * for the current thread.
  */
 #ifdef __APPLE__
+enum {
+    QEMU_JIT_WRITE_PROTECT_UNKNOWN = -1,
+    QEMU_JIT_WRITE_PROTECT_WRITE = 0,
+    QEMU_JIT_WRITE_PROTECT_EXECUTE = 1,
+};
+
+/*
+ * pthread_jit_write_protect_np() changes state for the current thread.
+ * Cache that state so repeated TCG execution does not re-issue an unchanged
+ * transition. UNKNOWN forces the first access on each thread to synchronize
+ * with the kernel-provided state.
+ */
+extern __thread int qemu_jit_write_protected;
+
 static inline void qemu_thread_jit_execute(void)
 {
-    pthread_jit_write_protect_np(true);
+    if (qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_EXECUTE) {
+        pthread_jit_write_protect_np(true);
+        qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_EXECUTE;
+    }
 }
 
 static inline void qemu_thread_jit_write(void)
 {
-    pthread_jit_write_protect_np(false);
+    if (qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_WRITE) {
+        pthread_jit_write_protect_np(false);
+        qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_WRITE;
+    }
 }
 #else
 static inline void qemu_thread_jit_write(void) {}

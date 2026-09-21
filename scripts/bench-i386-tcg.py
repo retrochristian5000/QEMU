@@ -162,11 +162,16 @@ def make_bios(workload: str, loops: int) -> bytes:
     return bytes(bios)
 
 
-def qemu_command(qemu: str, bios: pathlib.Path, tcg_thread: str) -> list[str]:
+def qemu_command(
+    qemu: str, bios: pathlib.Path, tcg_thread: str, split_wx: str
+) -> list[str]:
+    accel = f"tcg,thread={tcg_thread}"
+    if split_wx != "auto":
+        accel += f",split-wx={split_wx}"
     return [
         qemu,
         "-machine", "pc",
-        "-accel", f"tcg,thread={tcg_thread}",
+        "-accel", accel,
         "-cpu", "qemu32",
         "-smp", "1",
         "-m", "16M",
@@ -180,8 +185,10 @@ def qemu_command(qemu: str, bios: pathlib.Path, tcg_thread: str) -> list[str]:
     ]
 
 
-def run_once(qemu: str, bios: pathlib.Path, tcg_thread: str, timeout: float) -> float:
-    command = qemu_command(qemu, bios, tcg_thread)
+def run_once(
+    qemu: str, bios: pathlib.Path, tcg_thread: str, split_wx: str, timeout: float
+) -> float:
+    command = qemu_command(qemu, bios, tcg_thread, split_wx)
     started = time.perf_counter()
     completed = subprocess.run(
         command,
@@ -205,10 +212,14 @@ def median_runtime(
     qemu: str,
     bios: pathlib.Path,
     tcg_thread: str,
+    split_wx: str,
     rounds: int,
     timeout: float,
 ) -> tuple[float, list[float]]:
-    samples = [run_once(qemu, bios, tcg_thread, timeout) for _ in range(rounds)]
+    samples = [
+        run_once(qemu, bios, tcg_thread, split_wx, timeout)
+        for _ in range(rounds)
+    ]
     return statistics.median(samples), samples
 
 
@@ -229,6 +240,12 @@ def main() -> int:
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--tcg-thread", choices=("single", "multi"), default="single")
+    parser.add_argument(
+        "--split-wx",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="select TCG split W^X mapping mode",
+    )
     parser.add_argument(
         "--workload",
         action="append",
@@ -257,6 +274,7 @@ def main() -> int:
     qemu = resolve_qemu(args.qemu)
     print(f"QEMU:       {qemu}")
     print(f"TCG thread: {args.tcg_thread}")
+    print(f"Split W^X:  {args.split_wx}")
     print(f"Loops:      {args.loops}")
     print(f"Rounds:     {args.rounds}")
 
@@ -267,7 +285,12 @@ def main() -> int:
             bios = tempdir / f"{workload}.bin"
             bios.write_bytes(make_bios(workload, args.loops))
             median, samples = median_runtime(
-                qemu, bios, args.tcg_thread, args.rounds, args.timeout
+                qemu,
+                bios,
+                args.tcg_thread,
+                args.split_wx,
+                args.rounds,
+                args.timeout,
             )
             medians[workload] = median
             sample_text = ", ".join(f"{sample * 1000:.1f}" for sample in samples)

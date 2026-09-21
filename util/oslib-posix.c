@@ -52,6 +52,10 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifdef __APPLE__
+__thread int qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_UNKNOWN;
+#endif
+
 #ifdef __FreeBSD__
 #include <sys/thr.h>
 #include <sys/user.h>

@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[2]
 tcg_core = (ROOT / 'tcg/tcg.c').read_text(encoding='utf-8')
 tcg_aarch64 = (ROOT / 'tcg/aarch64/tcg-target.c.inc').read_text(encoding='utf-8')
 cpu_exec = (ROOT / 'accel/tcg/cpu-exec.c').read_text(encoding='utf-8')
+osdep = (ROOT / 'include/qemu/osdep.h').read_text(encoding='utf-8')
+oslib = (ROOT / 'util/oslib-posix.c').read_text(encoding='utf-8')
+benchmark = (ROOT / 'scripts/bench-i386-tcg.py').read_text(encoding='utf-8')
 policy = (ROOT / 'scripts/macos-arch-policy.bash').read_text(encoding='utf-8')
 workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
 
@@ -57,6 +60,24 @@ return_ready = all(token in tcg_aarch64 for token in (
     tcg_aarch64,
     re.S,
 )
+jit_mode_cache_ready = all(token in osdep for token in (
+    'extern __thread int qemu_jit_write_protected;',
+    'QEMU_JIT_WRITE_PROTECT_UNKNOWN',
+    'QEMU_JIT_WRITE_PROTECT_WRITE',
+    'QEMU_JIT_WRITE_PROTECT_EXECUTE',
+    'qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_EXECUTE',
+    'qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_WRITE',
+)) and (
+    '__thread int qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_UNKNOWN;'
+    in oslib
+)
+splitwx_benchmark_ready = all(token in benchmark for token in (
+    '--split-wx',
+    'split-wx={split_wx}',
+)) and all(token in workflow for token in (
+    'for split_wx in off on; do',
+    '--split-wx "$split_wx"',
+))
 runtime_ready = all(token in workflow for token in (
     'WHP_MACOS_ARCH: arm64e',
     'qemu-system-i386',
@@ -71,6 +92,8 @@ runtime_ready = all(token in workflow for token in (
 assert helper_ready, 'arm64e JIT -> C helper calls are not pointer-auth safe'
 assert entry_ready, 'arm64e C -> JIT entry is not signed as a C function pointer'
 assert return_ready, 'arm64e TCG prologue/epilogue does not authenticate LR'
+assert jit_mode_cache_ready, 'Darwin TCG does not cache per-thread JIT protection mode'
+assert splitwx_benchmark_ready, 'ARM64e CI does not compare split W^X modes'
 assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke test'
 
 # PAC work belongs at setup/translation boundaries, not the per-TB dispatcher.

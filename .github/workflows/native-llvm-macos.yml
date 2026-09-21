@@ -295,13 +295,17 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" --version
           grep -Fq 'macOS Mach-O arch:       arm64e' arm64e-qemu.log
 
-          python3 scripts/bench-i386-tcg.py \
-            --qemu "$BUILD_DIR/qemu-system-i386" \
-            --workload startup \
-            --workload fcomi \
-            --loops 200000 \
-            --rounds 1 \
-            --tcg-thread single
+          for split_wx in off on; do
+            echo "ARM64e TCG benchmark: split-wx=$split_wx"
+            python3 scripts/bench-i386-tcg.py \
+              --qemu "$BUILD_DIR/qemu-system-i386" \
+              --workload startup \
+              --workload fcomi \
+              --loops 200000 \
+              --rounds 1 \
+              --tcg-thread single \
+              --split-wx "$split_wx"
+          done
 
       - name: Show native LLVM failure context
         if: failure()
