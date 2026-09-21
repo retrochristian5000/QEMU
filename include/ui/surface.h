@@ -14,9 +14,16 @@
 #define QEMU_ALLOCATED_FLAG     0x01
 #define QEMU_PLACEHOLDER_FLAG   0x02
 
+typedef enum DisplaySurfaceNativeType {
+    DISPLAY_SURFACE_NATIVE_NONE,
+    DISPLAY_SURFACE_NATIVE_METAL_TEXTURE,
+} DisplaySurfaceNativeType;
+
 typedef struct DisplaySurface {
     pixman_image_t *image;
     uint8_t flags;
+    DisplaySurfaceNativeType native_type;
+    void *native_handle;
 #ifdef CONFIG_OPENGL
     uint32_t texture;
 #endif
@@ -46,6 +53,19 @@ static inline int surface_is_allocated(DisplaySurface *surface)
 static inline int surface_is_placeholder(DisplaySurface *surface)
 {
     return surface->flags & QEMU_PLACEHOLDER_FLAG;
+}
+
+static inline void qemu_displaysurface_set_native_handle(
+    DisplaySurface *surface, DisplaySurfaceNativeType type, void *handle)
+{
+    surface->native_type = type;
+    surface->native_handle = handle;
+}
+
+static inline void *qemu_displaysurface_get_native_handle(
+    DisplaySurface *surface, DisplaySurfaceNativeType type)
+{
+    return surface->native_type == type ? surface->native_handle : NULL;
 }
 
 static inline int surface_stride(DisplaySurface *s)
