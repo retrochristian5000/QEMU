@@ -302,6 +302,26 @@ def append_unique(values: List[str], value: str) -> None:
         values.append(value)
 
 
+def dynamic_modules_enabled(values: Dict[str, str]) -> bool:
+    state = values['QEMU_HOST_MODULES']
+    return state == 'y' or (state == 'auto' and platform.system() == 'Darwin')
+
+
+def append_module_build_target(
+    build_dir: pathlib.Path, requested_targets: List[str], values: Dict[str, str]
+) -> None:
+    if not dynamic_modules_enabled(values) or 'all' in requested_targets:
+        return
+
+    build_ninja = build_dir / 'build.ninja'
+    if not build_ninja.is_file():
+        return
+    for line in build_ninja.read_text(encoding='utf-8', errors='replace').splitlines():
+        if line.startswith('build modules:') or line.startswith('build modules '):
+            append_unique(requested_targets, 'modules')
+            return
+
+
 def requested_system_targets(argv: List[str]) -> List[str]:
     targets: List[str] = []
     for requested in argv:
@@ -600,6 +620,8 @@ def main(argv: List[str]) -> int:
         write_build_tree_owner(build_dir)
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
         write_portable_config(build_dir, prefix, configure_args)
+        values = resolved_values()
+        append_module_build_target(build_dir, requested_targets, values)
 
         runner = select_runner()
         jobs = os.environ.get('JOBS') or str(os.cpu_count() or 1)
@@ -610,7 +632,6 @@ def main(argv: List[str]) -> int:
             build_command = [*runner, '-C', str(build_dir), f'-j{jobs}', *requested_targets]
         subprocess.run(build_command, check=True)
 
-        values = resolved_values()
         if values['RUN_TESTS'] == 'y':
             run_qemu_tests(build_dir, jobs)
         if values['INSTALL'] == 'y':
