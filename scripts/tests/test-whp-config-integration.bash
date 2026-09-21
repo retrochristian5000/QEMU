@@ -25,6 +25,7 @@ grep -Fq 'qemu-img' <<< "$menu_output"
 grep -Fq 'qemu-system-i386' <<< "$menu_output"
 grep -Fq 'qemu-system-ppc' <<< "$menu_output"
 grep -Fq 'Host features' <<< "$menu_output"
+grep -Fq 'Dynamic QEMU modules' <<< "$menu_output"
 grep -Fq 'Cocoa' <<< "$menu_output"
 grep -Fq 'CoreAudio' <<< "$menu_output"
 grep -Fq 'GTK' <<< "$menu_output"
@@ -49,6 +50,7 @@ fi
 cat > "$COPY/.whpconfig" <<'EOF'
 WHP_CONFIG_VERSION=2
 QEMU_HOST_LTO=auto
+QEMU_HOST_MODULES=auto
 PREFIX=auto
 BUILD_QEMU_IMG=y
 BUILD_QEMU_SYSTEM_I386=y
@@ -81,6 +83,9 @@ grep -Fq 'CONFIGURE_ARG=--enable-werror' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-asan' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-ubsan' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-tsan' <<< "$portable_probe"
+if [[ "$(uname -s)" == Darwin ]]; then
+    grep -Fq 'CONFIGURE_ARG=--enable-modules' <<< "$portable_probe"
+fi
 if grep -Fq -- '--enable-gtk' <<< "$portable_probe" ||
    grep -Fq -- '--enable-pa' <<< "$portable_probe"; then
     printf 'error: portable auto mode must not force GTK or PulseAudio\n' >&2
