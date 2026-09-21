@@ -488,6 +488,7 @@ static void set_mode(AppleGFXState *s, uint32_t width, uint32_t height)
     s->using_shared_surface_texture = shared_surface;
     s->using_managed_texture_storage =
         !shared_surface && texture.storageMode == MTLStorageModeManaged;
+    trace_apple_gfx_surface_storage(width, height, shared_surface);
 
     qemu_console_set_surface(s->con, s->surface);
     [old_texture release];
@@ -745,6 +746,13 @@ static void new_frame_handler_bh(void *opaque)
 {
     AppleGFXState *s = opaque;
 
+    /*
+     * Let a new framework notification queue the next BH as soon as this one
+     * starts. Notifications which arrived while this BH was already queued
+     * have been coalesced into the current frame request.
+     */
+    qatomic_set(&s->frame_bh_queued, false);
+
     /* Drop frames if guest gets too far ahead. */
     if (s->pending_frames >= 2) {
         return;
@@ -768,7 +776,17 @@ static PGDisplayDescriptor *apple_gfx_prepare_display_descriptor(AppleGFXState *
     disp_desc.queue = dispatch_get_main_queue();
     disp_desc.newFrameEventHandler = ^(void) {
         trace_apple_gfx_new_frame();
-        aio_bh_schedule_oneshot(qemu_get_aio_context(), new_frame_handler_bh, s);
+
+        /*
+         * ParavirtualizedGraphics can notify faster than the AIO thread can
+         * consume frames. Keep at most one unsatisfied BH in the queue; the BH
+         * renders the framework's current frame, so duplicate notifications
+         * before it runs do not require duplicate queue crossings.
+         */
+        if (!qatomic_cmpxchg(&s->frame_bh_queued, false, true)) {
+            aio_bh_schedule_oneshot(qemu_get_aio_context(),
+                                    new_frame_handler_bh, s);
+        }
     };
     disp_desc.modeChangeHandler = ^(PGDisplayCoord_t sizeInPixels,
                                     OSType pixelFormat) {
