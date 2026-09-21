@@ -28,6 +28,7 @@ on:
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-arm64e-ide-hotpath.py'
+      - 'scripts/tests/test-arm64e-pic-hotpath.py'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
   workflow_dispatch:
@@ -78,6 +79,10 @@ jobs:
       - name: Audit arm64e IDE PIO hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-ide-hotpath.py
+
+      - name: Audit arm64e i8259 PIC hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-pic-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash

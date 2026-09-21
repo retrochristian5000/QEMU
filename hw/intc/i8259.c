@@ -28,6 +28,8 @@
 #include "hw/isa/isa.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
+#include "qemu/bitops.h"
+#include "qemu/host-utils.h"
 #include "hw/isa/i8259_internal.h"
 #include "trace.h"
 #include "qom/object.h"
@@ -59,16 +61,18 @@ static PICCommonState *slave_pic;
    number). Return 8 if no irq */
 static int get_priority(PICCommonState *s, int mask)
 {
-    int priority;
+    uint8_t rotated;
 
     if (mask == 0) {
         return 8;
     }
-    priority = 0;
-    while ((mask & (1 << ((priority + s->priority_add) & 7))) == 0) {
-        priority++;
-    }
-    return priority;
+
+    /*
+     * Rotate the current priority base onto bit 0, then find the first
+     * pending interrupt without a data-dependent eight-step probe loop.
+     */
+    rotated = ror8(mask, s->priority_add);
+    return ctz32(rotated);
 }
 
 /* return the pic wanted interrupt. return -1 if none */
