@@ -31,6 +31,10 @@ on:
       - 'scripts/tests/test-arm64e-pic-hotpath.py'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'ui/cocoa-metal.m'
+      - 'scripts/tests/test-arm64e-pci-hotpath.py'
+      - 'hw/pci/pci_host.c'
+      - 'hw/pci/pci.c'
+      - 'include/hw/pci/pci_device.h'
       - 'toolchains/llvm-project'
       - '.github/workflows/native-llvm-macos.yml'
   workflow_dispatch:
@@ -89,6 +93,10 @@ jobs:
       - name: Audit arm64e Cocoa runtime dispatch
         shell: bash
         run: python3 scripts/tests/test-cocoa-metal-dirty.py
+
+      - name: Audit arm64e PCI config hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-pci-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash

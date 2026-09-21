@@ -98,7 +98,12 @@ void pci_host_config_write_common(PCIDevice *pci_dev, uint32_t addr,
     trace_pci_cfg_write(pci_dev->name, pci_dev_bus_num(pci_dev),
                         PCI_SLOT(pci_dev->devfn),
                         PCI_FUNC(pci_dev->devfn), addr, val);
-    pci_dev->config_write(pci_dev, addr, val, MIN(len, limit - addr));
+    len = MIN(len, limit - addr);
+    if (likely(pci_dev->config_write_default)) {
+        pci_default_write_config(pci_dev, addr, val, len);
+    } else {
+        pci_dev->config_write(pci_dev, addr, val, len);
+    }
 }
 
 uint32_t pci_host_config_read_common(PCIDevice *pci_dev, uint32_t addr,
@@ -125,7 +130,12 @@ uint32_t pci_host_config_read_common(PCIDevice *pci_dev, uint32_t addr,
         return ~0x0;
     }
 
-    ret = pci_dev->config_read(pci_dev, addr, MIN(len, limit - addr));
+    len = MIN(len, limit - addr);
+    if (likely(pci_dev->config_read_default)) {
+        ret = pci_default_read_config(pci_dev, addr, len);
+    } else {
+        ret = pci_dev->config_read(pci_dev, addr, len);
+    }
     trace_pci_cfg_read(pci_dev->name, pci_dev_bus_num(pci_dev),
                        PCI_SLOT(pci_dev->devfn),
                        PCI_FUNC(pci_dev->devfn), addr, ret);
