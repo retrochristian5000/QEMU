@@ -360,6 +360,8 @@ static bool apple_gfx_create_shared_surface_texture(
     pixman_image_set_destroy_function(surface->image,
                                       apple_gfx_release_surface_buffer,
                                       [buffer retain]);
+    qemu_displaysurface_set_native_handle(
+        surface, DISPLAY_SURFACE_NATIVE_METAL_TEXTURE, texture);
     [buffer release];
 
     *surface_out = surface;
