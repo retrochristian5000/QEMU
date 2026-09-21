@@ -2083,13 +2083,17 @@ static void cocoa_switch(DisplayChangeListener *dcl,
     [native_texture retain];
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        /*
+         * A mode switch can resize the NSView. Drop the old native source
+         * before switchSurface() changes the geometry so an AppKit redraw can
+         * never pair new dimensions with the previous mode's Metal texture.
+         */
+        qemu_cocoa_metal_clear_texture(view);
         [view switchSurface:image];
         if (native_texture &&
             qemu_cocoa_metal_can_use_texture(view, native_texture,
                                              width, height)) {
             qemu_cocoa_metal_set_texture(view, native_texture, width, height);
-        } else {
-            qemu_cocoa_metal_clear_texture(view);
         }
         [native_texture release];
     });
