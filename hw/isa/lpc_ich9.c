@@ -212,27 +212,34 @@ static void ich9_lpc_pic_irq(ICH9LPCState *lpc, int pirq_num,
 }
 
 /* gsi: i8259+ioapic irq 0-15, otherwise assert */
-static void ich9_lpc_update_pic(ICH9LPCState *lpc, int gsi)
+static bool ich9_lpc_pic_has_pirq_source(ICH9LPCState *lpc, int gsi,
+                                         int skip_pirq)
 {
-    int i, pic_level;
+    PCIBus *bus = pci_get_bus(&lpc->d);
+    int i;
 
     assert(gsi < ICH9_LPC_PIC_NUM_PINS);
 
-    /* The pic level is the logical OR of all the PCI irqs mapped to it */
-    pic_level = 0;
     for (i = 0; i < ICH9_LPC_NB_PIRQS; i++) {
         int tmp_irq;
         int tmp_dis;
+
+        if (i == skip_pirq) {
+            continue;
+        }
         ich9_lpc_pic_irq(lpc, i, &tmp_irq, &tmp_dis);
-        if (!tmp_dis && tmp_irq == gsi) {
-            pic_level |= pci_bus_get_irq_level(pci_get_bus(&lpc->d), i);
+        if (!tmp_dis && tmp_irq == gsi && pci_bus_get_irq_level(bus, i)) {
+            return true;
         }
     }
-    if (gsi == lpc->sci_gsi) {
-        pic_level |= lpc->sci_level;
-    }
+    return false;
+}
 
-    qemu_set_irq(lpc->gsi[gsi], pic_level);
+static bool ich9_lpc_pic_has_other_source(ICH9LPCState *lpc, int gsi,
+                                          int skip_pirq)
+{
+    return (gsi == lpc->sci_gsi && lpc->sci_level) ||
+           ich9_lpc_pic_has_pirq_source(lpc, gsi, skip_pirq);
 }
 
 /* APIC mode: GSIx: PIRQ[A-H] -> GSI 16, ... no pirq shares same APIC pins. */
@@ -246,32 +253,27 @@ static int ich9_gsi_to_pirq(int gsi)
     return gsi - ICH9_LPC_PIC_NUM_PINS;
 }
 
-/* gsi: ioapic irq 16-23, otherwise assert */
-static void ich9_lpc_update_apic(ICH9LPCState *lpc, int gsi)
-{
-    int level = 0;
-
-    assert(gsi >= ICH9_LPC_PIC_NUM_PINS);
-
-    level |= pci_bus_get_irq_level(pci_get_bus(&lpc->d), ich9_gsi_to_pirq(gsi));
-    if (gsi == lpc->sci_gsi) {
-        level |= lpc->sci_level;
-    }
-
-    qemu_set_irq(lpc->gsi[gsi], level);
-}
-
 static void ich9_lpc_set_irq(void *opaque, int pirq, int level)
 {
     ICH9LPCState *lpc = opaque;
-    int pic_irq, pic_dis;
+    int apic_gsi;
+    int pic_irq;
+    int pic_dis;
 
     assert(0 <= pirq);
     assert(pirq < ICH9_LPC_NB_PIRQS);
+    level = !!level;
 
-    ich9_lpc_update_apic(lpc, ich9_pirq_to_gsi(pirq));
+    apic_gsi = ich9_pirq_to_gsi(pirq);
+    if (apic_gsi != lpc->sci_gsi || !lpc->sci_level) {
+        qemu_set_irq(lpc->gsi[apic_gsi], level);
+    }
+
     ich9_lpc_pic_irq(lpc, pirq, &pic_irq, &pic_dis);
-    ich9_lpc_update_pic(lpc, pic_irq);
+    if (!pic_dis &&
+        !ich9_lpc_pic_has_other_source(lpc, pic_irq, pirq)) {
+        qemu_set_irq(lpc->gsi[pic_irq], level);
+    }
 }
 
 /* return the pirq number (PIRQ[A-H]:0-7) corresponding to
@@ -377,9 +379,14 @@ static void ich9_set_sci(void *opaque, int irq_num, int level)
     }
 
     if (irq >= ICH9_LPC_PIC_NUM_PINS) {
-        ich9_lpc_update_apic(lpc, irq);
-    } else {
-        ich9_lpc_update_pic(lpc, irq);
+        int pirq = ich9_gsi_to_pirq(irq);
+
+        if (pirq < 0 || pirq >= ICH9_LPC_NB_PIRQS ||
+            !pci_bus_get_irq_level(pci_get_bus(&lpc->d), pirq)) {
+            qemu_set_irq(lpc->gsi[irq], level);
+        }
+    } else if (!ich9_lpc_pic_has_pirq_source(lpc, irq, -1)) {
+        qemu_set_irq(lpc->gsi[irq], level);
     }
 }
 

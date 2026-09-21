@@ -38,12 +38,17 @@
 #include "migration/vmstate.h"
 #include "hw/acpi/acpi_aml_interface.h"
 
+static bool piix_get_irq_pic_level(PIIXState *s, int pic_irq)
+{
+    return !!(s->pic_levels &
+              (((1ULL << PIIX_NUM_PIRQS) - 1) <<
+               (pic_irq * PIIX_NUM_PIRQS)));
+}
+
 static void piix_set_irq_pic(PIIXState *s, int pic_irq)
 {
     qemu_set_irq(s->isa_irqs_in[pic_irq],
-                 !!(s->pic_levels &
-                    (((1ULL << PIIX_NUM_PIRQS) - 1) <<
-                     (pic_irq * PIIX_NUM_PIRQS))));
+                 piix_get_irq_pic_level(s, pic_irq));
 }
 
 static void piix_set_pci_irq_level_internal(PIIXState *s, int pirq, int level)
@@ -63,6 +68,8 @@ static void piix_set_pci_irq_level_internal(PIIXState *s, int pirq, int level)
 
 static void piix_set_pci_irq_level(PIIXState *s, int pirq, int level)
 {
+    bool old_level;
+    bool new_level;
     int pic_irq;
 
     pic_irq = s->dev.config[PIIX_PIRQCA + pirq];
@@ -70,9 +77,13 @@ static void piix_set_pci_irq_level(PIIXState *s, int pirq, int level)
         return;
     }
 
+    old_level = piix_get_irq_pic_level(s, pic_irq);
     piix_set_pci_irq_level_internal(s, pirq, level);
+    new_level = piix_get_irq_pic_level(s, pic_irq);
 
-    piix_set_irq_pic(s, pic_irq);
+    if (old_level != new_level) {
+        qemu_set_irq(s->isa_irqs_in[pic_irq], new_level);
+    }
 }
 
 static void piix_set_pci_irq(void *opaque, int pirq, int level)
