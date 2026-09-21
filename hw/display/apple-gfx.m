@@ -261,6 +261,7 @@ static void apple_gfx_render_new_frame(AppleGFXState *s)
                           "failed\n", __func__);
             bql_lock();
             --s->pending_frames;
+            qatomic_set(&s->frame_bh_queued, false);
             if (s->pending_frames > 0) {
                 apple_gfx_render_new_frame(s);
             }
@@ -396,6 +397,7 @@ static void apple_gfx_render_frame_completed_bh(void *opaque)
     @autoreleasepool {
         --s->pending_frames;
         assert(s->pending_frames >= 0);
+        qatomic_set(&s->frame_bh_queued, false);
 
         /* Only update display if mode hasn't changed since we started rendering. */
         if (s->rendering_frame_width == surface_width(s->surface) &&
@@ -747,17 +749,18 @@ static void new_frame_handler_bh(void *opaque)
     AppleGFXState *s = opaque;
 
     /*
-     * Let a new framework notification queue the next BH as soon as this one
-     * starts. Notifications which arrived while this BH was already queued
-     * have been coalesced into the current frame request.
+     * Drop frames if the guest gets too far ahead. Keep the atomic gate closed
+     * while both frame slots are occupied so further PVG notifications do not
+     * schedule redundant BHs. A completion reopens the gate.
      */
-    qatomic_set(&s->frame_bh_queued, false);
-
-    /* Drop frames if guest gets too far ahead. */
     if (s->pending_frames >= 2) {
         return;
     }
+
     ++s->pending_frames;
+    if (s->pending_frames < 2) {
+        qatomic_set(&s->frame_bh_queued, false);
+    }
     if (s->pending_frames > 1) {
         return;
     }
