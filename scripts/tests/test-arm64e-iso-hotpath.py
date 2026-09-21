@@ -4,7 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 io = (ROOT / "block/io.c").read_text(encoding="utf-8")
 raw = (ROOT / "block/raw-format.c").read_text(encoding="utf-8")
+block = (ROOT / "block.c").read_text(encoding="utf-8")
 header = (ROOT / "include/block/block_int-io.h").read_text(encoding="utf-8")
+common = (ROOT / "include/block/block_int-common.h").read_text(encoding="utf-8")
 ide = (ROOT / "tests/qtest/ide-test.c").read_text(encoding="utf-8")
 
 for token in (
@@ -32,6 +34,22 @@ assert dispatch.index("if (drv->bdrv_co_preadv_part)") < dispatch.index(
     "if (likely(drv == &bdrv_raw))"
 ), "partial-read handlers must take precedence over the raw direct path"
 assert "ret = drv->bdrv_co_preadv(bs, offset, bytes, qiov, flags);" in dispatch
+
+for token in (
+    "int bdrv_raw_probe(const uint8_t *buf, int buf_size,",
+    ".bdrv_probe           = &bdrv_raw_probe,",
+):
+    assert token in common + raw, f"missing raw ISO probe contract: {token}"
+
+probe_start = block.index("BlockDriver *bdrv_probe_all(")
+probe_end = block.index("static int find_image_format", probe_start)
+probe = block[probe_start:probe_end]
+assert "if (d == &bdrv_raw)" in probe
+assert "score = bdrv_raw_probe(buf, buf_size, filename);" in probe
+assert "score = d->bdrv_probe(buf, buf_size, filename);" in probe
+assert probe.index("if (d == &bdrv_raw)") < probe.index(
+    "d->bdrv_probe(buf, buf_size, filename)"
+), "raw probe must direct-call before generic callback dispatch"
 
 for test_name in (
     '"/ide/cdrom/pio"',

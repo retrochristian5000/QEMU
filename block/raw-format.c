@@ -534,7 +534,8 @@ static int raw_open(BlockDriverState *bs, QDict *options, int flags,
     return 0;
 }
 
-static int raw_probe(const uint8_t *buf, int buf_size, const char *filename)
+int bdrv_raw_probe(const uint8_t *buf, int buf_size,
+                   const char *filename)
 {
     /* smallest possible positive score so that raw is used if and only if no
      * other block driver works
@@ -639,7 +640,7 @@ BlockDriver bdrv_raw = {
     .format_name          = "raw",
     .instance_size        = sizeof(BDRVRawState),
     .supports_zoned_children = true,
-    .bdrv_probe           = &raw_probe,
+    .bdrv_probe           = &bdrv_raw_probe,
     .bdrv_reopen_prepare  = &raw_reopen_prepare,
     .bdrv_reopen_commit   = &raw_reopen_commit,
     .bdrv_reopen_abort    = &raw_reopen_abort,

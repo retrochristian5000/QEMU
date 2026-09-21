@@ -999,12 +999,17 @@ BlockDriver *bdrv_probe_all(const uint8_t *buf, int buf_size,
     IO_CODE();
 
     QLIST_FOREACH(d, &bdrv_drivers, list) {
-        if (d->bdrv_probe) {
+        if (d == &bdrv_raw) {
+            score = bdrv_raw_probe(buf, buf_size, filename);
+        } else if (d->bdrv_probe) {
             score = d->bdrv_probe(buf, buf_size, filename);
-            if (score > score_max) {
-                score_max = score;
-                drv = d;
-            }
+        } else {
+            continue;
+        }
+
+        if (score > score_max) {
+            score_max = score;
+            drv = d;
         }
     }
 

@@ -1321,6 +1321,8 @@ extern BlockDriver bdrv_file;
 extern BlockDriver bdrv_raw;
 extern BlockDriver bdrv_qcow2;
 
+int bdrv_raw_probe(const uint8_t *buf, int buf_size, const char *filename);
+
 extern unsigned int bdrv_drain_all_count;
 extern QemuOptsList bdrv_create_opts_simple;
 
