@@ -117,9 +117,6 @@ static const MacFbMode macfb_mode_table[] = {
     { MACFB_DISPLAY_APPLE_21_COLOR, 8, 0x120, 0x5ff, 1152, 870, 0x480, 0x80 },
 };
 
-typedef void macfb_draw_line_func(MacfbState *s, uint8_t *d, uint32_t addr,
-                                  int width);
-
 static inline uint8_t macfb_read_byte(MacfbState *s, uint32_t addr)
 {
     return s->vram[addr & s->vram_bit_mask];
@@ -242,25 +239,41 @@ static void macfb_draw_line24(MacfbState *s, uint8_t *d, uint32_t addr,
 }
 
 
-enum {
+typedef enum MacFBDrawLine {
     MACFB_DRAW_LINE1,
     MACFB_DRAW_LINE2,
     MACFB_DRAW_LINE4,
     MACFB_DRAW_LINE8,
     MACFB_DRAW_LINE16,
     MACFB_DRAW_LINE24,
-    MACFB_DRAW_LINE_NB,
-};
+} MacFBDrawLine;
 
-static macfb_draw_line_func * const
-                              macfb_draw_line_table[MACFB_DRAW_LINE_NB] = {
-    macfb_draw_line1,
-    macfb_draw_line2,
-    macfb_draw_line4,
-    macfb_draw_line8,
-    macfb_draw_line16,
-    macfb_draw_line24,
-};
+static inline void macfb_draw_line(MacFBDrawLine draw_line, MacfbState *s,
+                                   uint8_t *d, uint32_t addr, int width)
+{
+    switch (draw_line) {
+    case MACFB_DRAW_LINE1:
+        macfb_draw_line1(s, d, addr, width);
+        break;
+    case MACFB_DRAW_LINE2:
+        macfb_draw_line2(s, d, addr, width);
+        break;
+    case MACFB_DRAW_LINE4:
+        macfb_draw_line4(s, d, addr, width);
+        break;
+    case MACFB_DRAW_LINE8:
+        macfb_draw_line8(s, d, addr, width);
+        break;
+    case MACFB_DRAW_LINE16:
+        macfb_draw_line16(s, d, addr, width);
+        break;
+    case MACFB_DRAW_LINE24:
+        macfb_draw_line24(s, d, addr, width);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+}
 
 static int macfb_check_dirty(MacfbState *s, DirtyBitmapSnapshot *snap,
                              ram_addr_t addr, int len)
@@ -273,34 +286,30 @@ static void macfb_draw_graphic(MacfbState *s)
     DisplaySurface *surface = qemu_console_surface(s->con);
     DirtyBitmapSnapshot *snap = NULL;
     ram_addr_t page;
-    uint32_t v = 0;
+    MacFBDrawLine draw_line = MACFB_DRAW_LINE1;
     int y, ymin;
     int macfb_stride = s->mode->stride;
-    macfb_draw_line_func *macfb_draw_line;
 
     switch (s->depth) {
     case 1:
-        v = MACFB_DRAW_LINE1;
+        draw_line = MACFB_DRAW_LINE1;
         break;
     case 2:
-        v = MACFB_DRAW_LINE2;
+        draw_line = MACFB_DRAW_LINE2;
         break;
     case 4:
-        v = MACFB_DRAW_LINE4;
+        draw_line = MACFB_DRAW_LINE4;
         break;
     case 8:
-        v = MACFB_DRAW_LINE8;
+        draw_line = MACFB_DRAW_LINE8;
         break;
     case 16:
-        v = MACFB_DRAW_LINE16;
+        draw_line = MACFB_DRAW_LINE16;
         break;
     case 24:
-        v = MACFB_DRAW_LINE24;
+        draw_line = MACFB_DRAW_LINE24;
         break;
     }
-
-    macfb_draw_line = macfb_draw_line_table[v];
-    assert(macfb_draw_line != NULL);
 
     snap = memory_region_snapshot_and_clear_dirty(&s->mem_vram, 0x0,
                                              memory_region_size(&s->mem_vram),
@@ -313,7 +322,7 @@ static void macfb_draw_graphic(MacfbState *s)
             uint8_t *data_display;
 
             data_display = surface_data(surface) + y * surface_stride(surface);
-            macfb_draw_line(s, data_display, page, s->width);
+            macfb_draw_line(draw_line, s, data_display, page, s->width);
 
             if (ymin < 0) {
                 ymin = y;
