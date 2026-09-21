@@ -60,6 +60,7 @@ typedef struct AppleGFXState {
 
     /* Mutable state (atomic) */
     bool cursor_show;
+    bool frame_bh_queued;
 } AppleGFXState;
 
 void apple_gfx_common_init(Object *obj, AppleGFXState *s, const char* obj_name);
