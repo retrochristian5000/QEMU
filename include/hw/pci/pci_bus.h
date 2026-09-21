@@ -40,6 +40,7 @@ struct PCIBus {
     uint32_t slot_reserved_mask;
     pci_set_irq_fn set_irq;
     pci_map_irq_fn map_irq;
+    bool map_irq_default_swizzle;
     pci_route_irq_fn route_intx_to_irq;
     void *irq_opaque;
     PCIDevice *devices[PCI_SLOT_MAX * PCI_FUNC_MAX];

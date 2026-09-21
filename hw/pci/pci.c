@@ -387,25 +387,50 @@ static inline void pci_set_irq_state(PCIDevice *d, int irq_num, int level)
 
 static void pci_bus_change_irq_level(PCIBus *bus, int irq_num, int change)
 {
+    bool old_level;
+    bool new_level;
+
     assert(irq_num >= 0);
     assert(irq_num < bus->nirq);
+
+    old_level = bus->irq_count[irq_num] != 0;
     bus->irq_count[irq_num] += change;
-    bus->set_irq(bus->irq_opaque, irq_num, bus->irq_count[irq_num] != 0);
+    new_level = bus->irq_count[irq_num] != 0;
+
+    /*
+     * PCI INTx is level-triggered.  When multiple devices share a line,
+     * count changes such as 1 -> 2 or 2 -> 1 do not change the electrical
+     * level and therefore do not need another host callback.
+     */
+    if (old_level != new_level) {
+        bus->set_irq(bus->irq_opaque, irq_num, new_level);
+    }
+}
+
+static inline int pci_map_irq(PCIBus *bus, PCIDevice *pci_dev, int irq_num)
+{
+    if (likely(bus->map_irq_default_swizzle)) {
+        return pci_swizzle_map_irq_fn(pci_dev, irq_num);
+    }
+    return bus->map_irq(pci_dev, irq_num);
 }
 
 static void pci_change_irq_level(PCIDevice *pci_dev, int irq_num, int change)
 {
     PCIBus *bus;
+
     for (;;) {
         int dev_irq = irq_num;
+
         bus = pci_get_bus(pci_dev);
         assert(bus->map_irq);
-        irq_num = bus->map_irq(pci_dev, irq_num);
+        irq_num = pci_map_irq(bus, pci_dev, irq_num);
         trace_pci_route_irq(dev_irq, DEVICE(pci_dev)->canonical_path, irq_num,
                             pci_bus_is_root(bus) ? "root-complex"
                                     : DEVICE(bus->parent_dev)->canonical_path);
-        if (bus->set_irq)
+        if (bus->set_irq) {
             break;
+        }
         pci_dev = bus->parent_dev;
     }
     pci_bus_change_irq_level(bus, irq_num, change);
@@ -748,12 +773,14 @@ void pci_bus_irqs(PCIBus *bus, pci_set_irq_fn set_irq,
 void pci_bus_map_irqs(PCIBus *bus, pci_map_irq_fn map_irq)
 {
     bus->map_irq = map_irq;
+    bus->map_irq_default_swizzle = map_irq == pci_swizzle_map_irq_fn;
 }
 
 void pci_bus_irqs_cleanup(PCIBus *bus)
 {
     bus->set_irq = NULL;
     bus->map_irq = NULL;
+    bus->map_irq_default_swizzle = false;
     bus->irq_opaque = NULL;
     bus->nirq = 0;
     g_free(bus->irq_count);

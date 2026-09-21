@@ -32,7 +32,10 @@ on:
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'ui/cocoa-metal.m'
       - 'scripts/tests/test-arm64e-pci-hotpath.py'
+      - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
       - 'hw/pci/pci_host.c'
+      - 'hw/pci/pci_bridge.c'
+      - 'include/hw/pci/pci_bus.h'
       - 'hw/pci/pci.c'
       - 'include/hw/pci/pci_device.h'
       - 'toolchains/llvm-project'
@@ -97,6 +100,10 @@ jobs:
       - name: Audit arm64e PCI config hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-pci-hotpath.py
+
+      - name: Audit arm64e PCI INTx hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-pci-irq-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash
