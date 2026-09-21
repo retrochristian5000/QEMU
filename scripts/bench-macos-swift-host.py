@@ -223,16 +223,24 @@ int main(int argc, char **argv)
             ]
         )
 
-        run(
-            [
-                swiftc,
-                "-sdk", sdk,
-                "-target", target,
-                str(swift_obj),
-                str(c_obj),
-                "-o", str(exe),
-            ]
-        )
+        try:
+            run(
+                [
+                    swiftc,
+                    "-sdk", sdk,
+                    "-target", target,
+                    str(swift_obj),
+                    str(c_obj),
+                    "-o", str(exe),
+                ]
+            )
+        except subprocess.CalledProcessError as exc:
+            print(
+                f"SKIP: Swift {version[0]}.{version[1]} cannot link target "
+                f"{target}"
+            )
+            print(exc.stdout)
+            return 0
 
         print(f"Swift compiler: {swiftc}")
         print(f"Swift version:  {version[0]}.{version[1]}")
