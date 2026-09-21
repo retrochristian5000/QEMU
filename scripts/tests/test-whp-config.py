@@ -46,6 +46,7 @@ class WhpConfigTests(unittest.TestCase):
         mod = load_module()
         values = mod.default_values()
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
+        self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'auto')
@@ -141,6 +142,7 @@ class WhpConfigTests(unittest.TestCase):
         assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
         for key in (
             'QEMU_HOST_LTO',
+            'QEMU_HOST_MODULES',
             'MACOS_ENABLE_COCOA',
             'MACOS_ENABLE_COREAUDIO',
             'MACOS_ENABLE_GTK',
