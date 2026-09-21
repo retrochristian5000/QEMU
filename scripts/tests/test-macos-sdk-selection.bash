@@ -9,13 +9,17 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 FAKE_BIN="$TEST_DIR/bin"
 ACTIVE_SDK="$TEST_DIR/MacOSX15.0.sdk"
 SELECTED_SDK="$TEST_DIR/MacOSX13.3.sdk"
+BETA_SDK="$TEST_DIR/MacOSX16.0.sdk"
 DEVELOPER_DIR_FIXTURE="$TEST_DIR/Developer"
 CLANG="$FAKE_BIN/clang"
 CLANGXX="$FAKE_BIN/clang++"
 STRIP="$FAKE_BIN/strip"
 
-mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" \
+mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK" \
     "$DEVELOPER_DIR_FIXTURE"
+: > "$ACTIVE_SDK/SDKSettings.json"
+: > "$SELECTED_SDK/SDKSettings.json"
+: > "$BETA_SDK/SDKSettings.json"
 
 cat > "$FAKE_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -62,6 +66,7 @@ case "${1:-}" in
     --show-sdk-version)
         case "$sdk" in
             "$TEST_SELECTED_SDK") printf '13.3\n' ;;
+            "$TEST_BETA_SDK") printf '16.0\n' ;;
             macosx|"$TEST_ACTIVE_SDK") printf '15.0\n' ;;
             *) exit 1 ;;
         esac
@@ -80,6 +85,36 @@ case "${1:-}" in
     *)
         exit 1
         ;;
+esac
+EOF
+
+cat > "$FAKE_BIN/plutil" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" != "-extract" || "${3:-}" != "raw" ]]; then
+    exit 1
+fi
+key="$2"
+settings_file="${!#}"
+case "$settings_file:$key" in
+    "$TEST_SELECTED_SDK/SDKSettings.json:SupportedTargets.macosx.DefaultDeploymentTarget")
+        printf '13.3\n' ;;
+    "$TEST_SELECTED_SDK/SDKSettings.json:SupportedTargets.macosx.MinimumDeploymentTarget")
+        printf '11.0\n' ;;
+    "$TEST_SELECTED_SDK/SDKSettings.json:SupportedTargets.macosx.MaximumDeploymentTarget")
+        printf '13.3.99\n' ;;
+    "$TEST_ACTIVE_SDK/SDKSettings.json:SupportedTargets.macosx.DefaultDeploymentTarget")
+        printf '15.0\n' ;;
+    "$TEST_ACTIVE_SDK/SDKSettings.json:SupportedTargets.macosx.MinimumDeploymentTarget")
+        printf '11.0\n' ;;
+    "$TEST_ACTIVE_SDK/SDKSettings.json:SupportedTargets.macosx.MaximumDeploymentTarget")
+        printf '15.0.99\n' ;;
+    "$TEST_BETA_SDK/SDKSettings.json:SupportedTargets.macosx.DefaultDeploymentTarget")
+        printf '16.0\n' ;;
+    "$TEST_BETA_SDK/SDKSettings.json:SupportedTargets.macosx.MinimumDeploymentTarget")
+        printf '11.0\n' ;;
+    "$TEST_BETA_SDK/SDKSettings.json:SupportedTargets.macosx.MaximumDeploymentTarget")
+        printf '16.0.99\n' ;;
+    *) exit 1 ;;
 esac
 EOF
 
@@ -112,12 +147,13 @@ exec /bin/bash "\$@"
 EOF
 
 chmod +x "$FAKE_BIN/uname" "$FAKE_BIN/xcode-select" \
-    "$FAKE_BIN/sw_vers" "$FAKE_BIN/xcrun" "$FAKE_BIN/build-bash" \
-    "$CLANG" "$CLANGXX" "$STRIP"
+    "$FAKE_BIN/sw_vers" "$FAKE_BIN/xcrun" "$FAKE_BIN/plutil" \
+    "$FAKE_BIN/build-bash" "$CLANG" "$CLANGXX" "$STRIP"
 
 export PATH="$FAKE_BIN:$PATH"
 export TEST_ACTIVE_SDK="$ACTIVE_SDK"
 export TEST_SELECTED_SDK="$SELECTED_SDK"
+export TEST_BETA_SDK="$BETA_SDK"
 export TEST_DEVELOPER_DIR="$DEVELOPER_DIR_FIXTURE"
 export TEST_CLANG="$CLANG"
 export TEST_CLANGXX="$CLANGXX"
@@ -156,12 +192,50 @@ if SDKROOT="$SELECTED_SDK" \
     exit 1
 fi
 if ! grep -Fq \
-    'deployment target 14.0 is newer than SDK 13.3' "$wrapper_output"; then
+    'deployment target 14.0 is newer than the selected SDK maximum 13.3.99' \
+    "$wrapper_output"; then
     printf '%s\n' \
-        'error: macOS wrapper did not diagnose the selected SDK version.' >&2
+        'error: macOS wrapper did not diagnose the selected SDK deployment range.' >&2
     cat "$wrapper_output" >&2
     exit 1
 fi
+
+# When the running OS is newer than an explicitly selected older SDK, the
+# automatic deployment target should clamp to the SDK default instead of
+# rejecting the build.
+older_sdk_output="$TEST_DIR/older-sdk-output"
+if ! SDKROOT="$SELECTED_SDK" \
+   MACOSX_DEPLOYMENT_TARGET= \
+   BUILD_DIR="$TEST_DIR/older-sdk-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/older-sdk-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$older_sdk_output" 2>&1; then
+    printf '%s\n' \
+        'error: macOS wrapper rejected an older SDK on a newer host.' >&2
+    cat "$older_sdk_output" >&2
+    exit 1
+fi
+grep -Fq 'macOS deployment target: 13.3 (sdk-default)' "$older_sdk_output"
+grep -Fq 'builder reached' "$older_sdk_output"
+
+# A beta/newer SDK on an older host should keep the host runtime as the
+# automatic deployment target so build-time executables remain runnable.
+beta_sdk_output="$TEST_DIR/beta-sdk-output"
+if ! SDKROOT="$BETA_SDK" \
+   MACOSX_DEPLOYMENT_TARGET= \
+   BUILD_DIR="$TEST_DIR/beta-sdk-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/beta-sdk-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$beta_sdk_output" 2>&1; then
+    printf '%s\n' \
+        'error: macOS wrapper rejected a newer SDK on an older host.' >&2
+    cat "$beta_sdk_output" >&2
+    exit 1
+fi
+grep -Fq 'macOS deployment target: 15.0 (host)' "$beta_sdk_output"
+grep -Fq 'builder reached' "$beta_sdk_output"
 
 # The generic stage consumes macOS policy resolved by the wrapper; it no longer
 # rediscovers SDK/compiler identity.  Supply that resolved state explicitly.

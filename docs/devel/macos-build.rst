@@ -21,10 +21,21 @@ Use the normal launcher::
 
 On macOS it enters ``scripts/macos-builder.sh`` automatically. The wrapper
 selects the active Apple developer directory and SDK with ``xcode-select`` and
-``xcrun`` unless ``DEVELOPER_DIR`` or ``SDKROOT`` is supplied. It defaults
-``MACOSX_DEPLOYMENT_TARGET`` to the running macOS major/minor version, rejects a
-deployment target newer than the selected SDK, and requires macOS 11.0 or newer
-for arm64 builds.
+``xcrun`` unless ``DEVELOPER_DIR`` or ``SDKROOT`` is supplied. SDK identity
+and deployment policy are kept separate: the wrapper reads the macOS target
+minimum/default/maximum from ``SDKSettings.json`` or ``SDKSettings.plist`` when
+available. The automatic deployment target is the running macOS major/minor
+version while that version is supported by the selected SDK. If the host is
+newer than an explicitly selected older SDK, the automatic target is clamped
+to the SDK's default deployment target instead of making the host version an
+invalid minimum. A beta or newer SDK on an older host therefore keeps the host
+runtime as the minimum so build-time executables remain runnable.
+
+An explicit ``MACOSX_DEPLOYMENT_TARGET`` is never silently clamped. It must fit
+the selected SDK's deployment range. If SDK deployment metadata cannot be read,
+the SDK release version is used as the fallback default and its major/minor
+release line supplies a conservative maximum. arm64 builds still require a
+deployment target of macOS 11.0 or newer.
 
 The wrapper owns ``-isysroot`` and ``-mmacosx-version-min`` for C, C++,
 Objective-C, and link flags. Do not duplicate those options manually in

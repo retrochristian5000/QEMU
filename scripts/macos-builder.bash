@@ -57,6 +57,46 @@ version_is_at_most()
     return 0
 }
 
+read_sdk_version_setting()
+{
+    local key="$1"
+    local settings_file
+    local value
+
+    command -v plutil >/dev/null 2>&1 || return 1
+    for settings_file in "$SDKROOT/SDKSettings.json" "$SDKROOT/SDKSettings.plist"; do
+        [[ -f "$settings_file" ]] || continue
+        value="$(plutil -extract "$key" raw -o - "$settings_file" 2>/dev/null || true)"
+        if validate_version "$value"; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+    return 1
+}
+
+read_macos_sdk_deployment_setting()
+{
+    local name="$1"
+    local value
+
+    value="$(read_sdk_version_setting "SupportedTargets.macosx.$name" || true)"
+    if [[ -z "$value" ]]; then
+        value="$(read_sdk_version_setting "$name" || true)"
+    fi
+    [[ -n "$value" ]] || return 1
+    printf '%s\n' "$value"
+}
+
+sdk_release_ceiling()
+{
+    local version="$1"
+    local parts=()
+
+    IFS=. read -r -a parts <<< "$version"
+    printf '%s.%s.99\n' "${parts[0]}" "${parts[1]:-0}"
+}
+
 reject_managed_flags()
 {
     local variable value
@@ -116,23 +156,70 @@ case "$SDKROOT" in
 esac
 
 host_product_version="$(sw_vers -productVersion)"
-default_deployment_target="$(printf '%s\n' "$host_product_version" |
+host_deployment_target="$(printf '%s\n' "$host_product_version" |
     awk -F. '{ print $1 "." ($2 == "" ? 0 : $2) }')"
-export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-$default_deployment_target}"
+
+if ! validate_version "$MACOS_SDK_VERSION"; then
+    printf 'error: xcrun returned an invalid macOS SDK version: %s\n' \
+        "$MACOS_SDK_VERSION" >&2
+    exit 1
+fi
+
+sdk_default_deployment_target="$(
+    read_macos_sdk_deployment_setting DefaultDeploymentTarget || true
+)"
+sdk_minimum_deployment_target="$(
+    read_macos_sdk_deployment_setting MinimumDeploymentTarget || true
+)"
+sdk_maximum_deployment_target="$(
+    read_macos_sdk_deployment_setting MaximumDeploymentTarget || true
+)"
+
+# SDK Version identifies headers/APIs, while deployment metadata identifies
+# which runtime versions the SDK can target. Older SDKs may be selected on a
+# newer host, and beta/newer SDKs may be selected on an older host. Keep the
+# automatic runtime target on the host when possible, but clamp it to the SDK's
+# own default if the host lies above the SDK's supported range.
+if [[ -z "$sdk_default_deployment_target" ]]; then
+    sdk_default_deployment_target="$MACOS_SDK_VERSION"
+fi
+if [[ -z "$sdk_maximum_deployment_target" ]]; then
+    sdk_maximum_deployment_target="$(sdk_release_ceiling "$MACOS_SDK_VERSION")"
+fi
+
+if [[ -n "${MACOSX_DEPLOYMENT_TARGET:-}" ]]; then
+    deployment_target_source=user
+else
+    deployment_target_source=host
+    MACOSX_DEPLOYMENT_TARGET="$host_deployment_target"
+    if ! version_is_at_most "$MACOSX_DEPLOYMENT_TARGET" \
+        "$sdk_maximum_deployment_target"; then
+        MACOSX_DEPLOYMENT_TARGET="$sdk_default_deployment_target"
+        deployment_target_source=sdk-default
+    fi
+fi
+export MACOSX_DEPLOYMENT_TARGET
+export MACOS_SDK_DEFAULT_DEPLOYMENT_TARGET="$sdk_default_deployment_target"
+export MACOS_SDK_MINIMUM_DEPLOYMENT_TARGET="$sdk_minimum_deployment_target"
+export MACOS_SDK_MAXIMUM_DEPLOYMENT_TARGET="$sdk_maximum_deployment_target"
 
 if ! validate_version "$MACOSX_DEPLOYMENT_TARGET"; then
     printf 'error: invalid MACOSX_DEPLOYMENT_TARGET: %s\n' \
         "$MACOSX_DEPLOYMENT_TARGET" >&2
     exit 1
 fi
-if ! validate_version "$MACOS_SDK_VERSION"; then
-    printf 'error: xcrun returned an invalid macOS SDK version: %s\n' \
-        "$MACOS_SDK_VERSION" >&2
+if [[ -n "$sdk_minimum_deployment_target" ]] &&
+   ! version_is_at_most "$sdk_minimum_deployment_target" \
+       "$MACOSX_DEPLOYMENT_TARGET"; then
+    printf '%s\n' \
+        "error: deployment target $MACOSX_DEPLOYMENT_TARGET is older than the selected SDK minimum $sdk_minimum_deployment_target." \
+        'Select an older SDK or raise MACOSX_DEPLOYMENT_TARGET.' >&2
     exit 1
 fi
-if ! version_is_at_most "$MACOSX_DEPLOYMENT_TARGET" "$MACOS_SDK_VERSION"; then
+if ! version_is_at_most "$MACOSX_DEPLOYMENT_TARGET" \
+    "$sdk_maximum_deployment_target"; then
     printf '%s\n' \
-        "error: deployment target $MACOSX_DEPLOYMENT_TARGET is newer than SDK $MACOS_SDK_VERSION." \
+        "error: deployment target $MACOSX_DEPLOYMENT_TARGET is newer than the selected SDK maximum $sdk_maximum_deployment_target." \
         'Select a newer SDK or lower MACOSX_DEPLOYMENT_TARGET.' >&2
     exit 1
 fi
@@ -216,7 +303,9 @@ prepare_macos_build_tree
 printf '%s\n' \
     "macOS SDK:               $SDKROOT" \
     "macOS SDK version:       $MACOS_SDK_VERSION" \
-    "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" \
+    "macOS SDK target range:  ${sdk_minimum_deployment_target:-unknown}..$sdk_maximum_deployment_target" \
+    "macOS SDK default target: $sdk_default_deployment_target" \
+    "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET ($deployment_target_source)" \
     "macOS Mach-O arch:       $WHP_MACOS_ARCH" \
     "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
     "WHP build shell:         $WHP_BUILD_BASH" \
