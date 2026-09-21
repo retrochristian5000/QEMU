@@ -24,7 +24,9 @@ for token in (
     assert token in raw, f"raw ISO semantics changed or fast path missing: {token}"
 
 start = io.index("bdrv_driver_preadv(")
-end = io.index("\n}\n", start) + 3
+end = io.index(
+    "static int coroutine_fn GRAPH_RDLOCK\nbdrv_driver_pwritev", start
+)
 dispatch = io[start:end]
 assert dispatch.index("if (drv->bdrv_co_preadv_part)") < dispatch.index(
     "if (likely(drv == &bdrv_raw))"
