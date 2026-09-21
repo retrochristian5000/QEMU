@@ -123,6 +123,17 @@ for token in (
 ):
     assert token in cocoa, f"missing Cocoa native-texture lifetime contract: {token}"
 
+switch_start = cocoa.index("static void cocoa_switch(DisplayChangeListener *dcl,")
+switch_end = cocoa.index("\n}\n", switch_start)
+switch_body = cocoa[switch_start:switch_end]
+clear_native = switch_body.index("qemu_cocoa_metal_clear_texture(view);")
+switch_surface = switch_body.index("[view switchSurface:image];")
+set_native = switch_body.index("qemu_cocoa_metal_set_texture(")
+assert clear_native < switch_surface < set_native, (
+    "Cocoa mode switch must clear the old native texture before changing "
+    "surface geometry and installing the new texture"
+)
+
 for token in (
     "id<QEMUMetalTextureRuntime> nativeTexture;",
     "[texture device] != metalDevice",
