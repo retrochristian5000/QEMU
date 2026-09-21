@@ -1,0 +1,75 @@
+name: WHP Clang CodeGen C++26 isolation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/llvm-codegen-cxx26.yml'
+      - 'toolchains/llvm-project'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-clang-codegen-cxx26-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codegen-cxx26:
+    name: Build clangCodeGen (Apple Silicon arm64e, C++26)
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Fetch pinned LLVM source
+        shell: bash
+        run: git submodule update --init --depth 1 toolchains/llvm-project
+
+      - name: Install build tools
+        run: brew install cmake ninja
+
+      - name: Configure LLVM and Clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          cc="$(xcrun --sdk macosx --find clang)"
+          cxx="$(xcrun --sdk macosx --find clang++)"
+          cmake -S toolchains/llvm-project/llvm -B build-codegen-cxx26 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="$cc" \
+            -DCMAKE_CXX_COMPILER="$cxx" \
+            -DCMAKE_CXX_STANDARD=26 \
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
+            -DCMAKE_OSX_SYSROOT="$sdkroot" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64e \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+            -DLLVM_ENABLE_PROJECTS=clang \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_APPEND_VC_REV=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_LIBEDIT=OFF
+
+      - name: Build clangCodeGen
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --build build-codegen-cxx26 --target clangCodeGen --parallel 4 2>&1 | tee clang-codegen-cxx26.log
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-codegen-cxx26-failure
+          path: clang-codegen-cxx26.log
+          if-no-files-found: warn
+          retention-days: 7
