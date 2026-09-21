@@ -54,6 +54,7 @@ typedef struct AppleGFXState {
     bool gfx_update_requested; /* QEMU display system wants a new frame */
     bool new_frame_ready; /* Guest has rendered a frame, ready to be used */
     bool using_managed_texture_storage;
+    bool using_shared_surface_texture;
     uint32_t rendering_frame_width;
     uint32_t rendering_frame_height;
 
