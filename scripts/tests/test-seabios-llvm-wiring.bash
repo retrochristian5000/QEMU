@@ -35,11 +35,15 @@ grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
 grep -q 'llvm-strip' "$bootstrap"
 grep -q -- '--version' "$bootstrap"
-grep -Fq -- 'BOOTSTRAP_SCHEMA=14' "$bootstrap"
+grep -Fq -- 'BOOTSTRAP_SCHEMA=15' "$bootstrap"
 grep -Fq -- 'COMPILER_ABI=seabios-gcc-i386-v1' "$bootstrap"
 grep -Fq -- 'CC_COMPAT_HELPER=' "$bootstrap"
 grep -Fq -- 'cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"' "$bootstrap"
 grep -Fq -- 'mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"' "$bootstrap"
+grep -Fq -- 'SHARED_LLVM_DIR="${WHP_SHARED_LLVM_DIR:-${NATIVE_LLVM_DIR:-}}"' "$bootstrap"
+grep -Fq -- 'shared_llvm_is_usable()' "$bootstrap"
+grep -Fq -- 'LLVM_EXECUTABLE_SOURCE=$llvm_executable_source' "$bootstrap"
+grep -Fq -- 'ln -s "$SHARED_LLVM_DIR" "$staged_toolchain/llvm"' "$bootstrap"
 
 # The i386 LLVM lane must always synchronize the shared LLVM gitlink, even when
 # a previous checkout already populated the directory.  Reusing whatever HEAD

@@ -38,6 +38,8 @@ done
 # object-format backend, so do not build a second LLVM tree for this ABI.
 "$I386_BOOTSTRAP"
 
+shared_llvm="$I386_TOOLCHAIN_DIR/llvm/bin"
+
 [[ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]] || {
     printf 'error: LLVM source is missing after i386 bootstrap: %s\n' \
         "$LLVM_SOURCE_DIR" >&2
@@ -63,13 +65,14 @@ EOF
 usable()
 {
     local bin="$WIN9X_TOOLCHAIN_DIR/bin"
+    local tool
 
     [[ -x "$bin/$WIN9X_TARGET-clang" &&
        -x "$bin/$WIN9X_TARGET-lld-link" &&
-       -x "$bin/$WIN9X_TARGET-objdump" &&
-       -f "$LLVM_BUILD_DIR/CMakeCache.txt" ]] || return 1
-    grep -Fq 'LLD_ENABLE_BACKENDS:STRING=ELF;COFF' \
-        "$LLVM_BUILD_DIR/CMakeCache.txt" || return 1
+       -x "$bin/$WIN9X_TARGET-objdump" ]] || return 1
+    for tool in clang lld-link llvm-objdump; do
+        [[ -x "$shared_llvm/$tool" ]] || return 1
+    done
 }
 
 if [[ -f "$marker" && "$(cat "$marker")" == "$expected_marker" ]] && usable; then
@@ -78,24 +81,32 @@ if [[ -f "$marker" && "$(cat "$marker")" == "$expected_marker" ]] && usable; the
     exit 0
 fi
 
-cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" \
-    '-DLLD_ENABLE_BACKENDS=ELF;COFF'
+if [[ ! -x "$shared_llvm/lld-link" ]]; then
+    if [[ -L "$I386_TOOLCHAIN_DIR/llvm" ]]; then
+        printf '%s\n' \
+            'error: shared LLVM executable set is missing the COFF LLD frontend.' \
+            "shared LLVM: $I386_TOOLCHAIN_DIR/llvm" >&2
+        exit 1
+    fi
 
-cmake_parallel_args=(--parallel)
-if [[ -n "$JOBS" ]]; then
-    case "$JOBS" in
-        0|*[!0-9]*)
-            printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
-            exit 1
-            ;;
-    esac
-    cmake_parallel_args=(--parallel "$JOBS")
+    cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" \
+        '-DLLD_ENABLE_BACKENDS=ELF;COFF'
+
+    cmake_parallel_args=(--parallel)
+    if [[ -n "$JOBS" ]]; then
+        case "$JOBS" in
+            0|*[!0-9]*)
+                printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
+                exit 1
+                ;;
+        esac
+        cmake_parallel_args=(--parallel "$JOBS")
+    fi
+
+    cmake --build "$LLVM_BUILD_DIR" --target lld "${cmake_parallel_args[@]}"
+    cmake --build "$LLVM_BUILD_DIR" --target install-lld "${cmake_parallel_args[@]}"
 fi
 
-cmake --build "$LLVM_BUILD_DIR" --target lld "${cmake_parallel_args[@]}"
-cmake --build "$LLVM_BUILD_DIR" --target install-lld "${cmake_parallel_args[@]}"
-
-shared_llvm="$I386_TOOLCHAIN_DIR/llvm/bin"
 for required in clang lld-link llvm-objdump; do
     [[ -x "$shared_llvm/$required" ]] || {
         printf 'error: shared X86 LLVM build did not produce %s\n' "$required" >&2

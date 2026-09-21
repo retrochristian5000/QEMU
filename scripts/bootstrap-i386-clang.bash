@@ -14,6 +14,7 @@ OBJDUMP_COMPAT_HELPER="$SOURCE_DIR/scripts/whp-build/seabios-llvm-objdump.py"
 TOOLCHAIN_FORCE_REBUILD="${I386_TOOLCHAIN_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${I386_LLVM_LINK_JOBS:-2}"
+SHARED_LLVM_DIR="${WHP_SHARED_LLVM_DIR:-${NATIVE_LLVM_DIR:-}}"
 stage_root=""
 
 # This is a host compiler bootstrap for a freestanding target, not a QEMU host
@@ -86,12 +87,45 @@ git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 }
 
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
+
+shared_llvm_is_usable()
+{
+    local shared_marker="$SHARED_LLVM_DIR/.whp-native-llvm"
+    local supported_targets
+    local tool
+
+    [[ -d "$SHARED_LLVM_DIR" && -f "$shared_marker" ]] || return 1
+    grep -Fxq "LLVM_GIT_COMMIT=$llvm_revision" "$shared_marker" || return 1
+    grep -Fxq 'LLVM_TARGETS_TO_BUILD=AArch64;X86;PowerPC' "$shared_marker" || return 1
+    grep -Fxq 'LLD_ENABLE_BACKENDS=ELF;COFF;MachO' "$shared_marker" || return 1
+    for tool in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
+        [[ -x "$SHARED_LLVM_DIR/bin/$tool" ]] || return 1
+    done
+    supported_targets="$("$SHARED_LLVM_DIR/bin/clang" --print-targets 2>/dev/null)" ||
+        return 1
+    grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets"
+}
+
+llvm_executable_source=local
+if [[ -n "$SHARED_LLVM_DIR" ]]; then
+    SHARED_LLVM_DIR="$(cd -- "$SHARED_LLVM_DIR" && pwd -P)"
+    if ! shared_llvm_is_usable; then
+        printf '%s\n' \
+            'error: shared LLVM executable set is not usable for the i386 firmware lane.' \
+            "shared LLVM: $SHARED_LLVM_DIR" \
+            "LLVM revision: $llvm_revision" >&2
+        exit 1
+    fi
+    llvm_executable_source="shared:$SHARED_LLVM_DIR"
+fi
+
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=14
+BOOTSTRAP_SCHEMA=15
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
+LLVM_EXECUTABLE_SOURCE=$llvm_executable_source
 LLVM_DISTRIBUTION=seabios-minimal
 COMPILER=clang
 COMPILER_ABI=seabios-gcc-i386-v1
@@ -189,85 +223,91 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-# Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
-# revisions. Re-running CMake updates changed rules in place, while Ninja keeps
-# object dependency state and rebuilds only affected outputs. The installed
-# toolchain is staged separately, so an invalid prefix does not make this graph
-# disposable.
+# Keep target-specific wrappers separate from the host LLVM executables. When
+# build.sh has already produced the multi-target WHP LLVM set, reuse it directly
+# and skip this lane's redundant Clang/LLVM/LLD compilation.
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
-
-# SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
-# linker, and three object-image inspection/transformation tools. Build only
-# the LLVM components that implement that command surface. Clang itself drives
-# the integrated assembler, so a separate assembler binary is not part of this
-# lane.
-llvm_distribution_components='clang;clang-resource-headers;lld;llvm-objcopy;llvm-objdump;llvm-strip'
-
-cmake_args=(
-    -S "$LLVM_SOURCE_DIR/llvm"
-    -B "$LLVM_BUILD_DIR"
-    -G Ninja
-    -DCMAKE_BUILD_TYPE=Release
-    -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm"
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
-    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
-    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
-    -DCMAKE_INSTALL_MESSAGE=NEVER
-    '-DLLVM_ENABLE_PROJECTS=clang;lld'
-    -DLLVM_TARGETS_TO_BUILD=X86
-    -DLLD_ENABLE_BACKENDS=ELF
-    "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
-    -DLLVM_APPEND_VC_REV=OFF
-    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
-    -DLLVM_ENABLE_LTO=OFF
-    -DLLVM_ENABLE_FATLTO=OFF
-    -DLLVM_BUILD_INSTRUMENTED=OFF
-    -DLLVM_ENABLE_MODULES=OFF
-    -DLLVM_ENABLE_PLUGINS=OFF
-    -DLLVM_ENABLE_BACKTRACES=OFF
-    -DLLVM_ENABLE_CRASH_OVERRIDES=OFF
-    -DLLVM_ENABLE_UNWIND_TABLES=OFF
-    -DLLVM_ENABLE_LIBEDIT=OFF
-    -DLLVM_ENABLE_LIBPFM=OFF
-    -DLLVM_ENABLE_Z3_SOLVER=OFF
-    -DLLVM_ENABLE_WARNINGS=OFF
-    -DLLVM_ENABLE_PEDANTIC=OFF
-    -DLLVM_INCLUDE_TESTS=OFF
-    -DLLVM_INCLUDE_EXAMPLES=OFF
-    -DLLVM_INCLUDE_BENCHMARKS=OFF
-    -DLLVM_INCLUDE_DOCS=OFF
-    -DLLVM_INCLUDE_UTILS=OFF
-    -DLLVM_INCLUDE_RUNTIMES=OFF
-    -DLLVM_ENABLE_BINDINGS=OFF
-    -DCLANG_INCLUDE_TESTS=OFF
-    -DCLANG_ENABLE_STATIC_ANALYZER=OFF
-    -DLLD_INCLUDE_TESTS=OFF
-    -DLLVM_ENABLE_ZLIB=OFF
-    -DLLVM_ENABLE_ZSTD=OFF
-    -DLLVM_ENABLE_LIBXML2=OFF
-)
-cmake "${cmake_args[@]}"
-
-if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
-fi
-
-# Keep traversing independent Ninja edges after a compile failure so the
-# persistent build tree contains every object that can be built. Ninja still
-# returns failure after exhausting the reachable graph, so errors remain fatal
-# and installation is never attempted from an incomplete distribution.
-cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
-
-# Install into a staging root first. Replacing the prefix after validation
-# removes stale tools left by older, broader bootstrap schemas while the LLVM
-# build itself comes from the persistent CMake/Ninja graph above.
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 rm -rf "$stage_root"
-mkdir -p "$stage_root"
-DESTDIR="$stage_root" \
-    cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
-        "${cmake_parallel_args[@]}"
+mkdir -p "$staged_toolchain"
+
+if [[ -n "$SHARED_LLVM_DIR" ]]; then
+    ln -s "$SHARED_LLVM_DIR" "$staged_toolchain/llvm"
+else
+    # Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
+    # revisions. Re-running CMake updates changed rules in place, while Ninja keeps
+    # object dependency state and rebuilds only affected outputs. The installed
+    # toolchain is staged separately, so an invalid prefix does not make this graph
+    # disposable.
+    mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
+    
+    # SeaBIOS needs a C compiler/preprocessor, an assembler interface, an ELF
+    # linker, and three object-image inspection/transformation tools. Build only
+    # the LLVM components that implement that command surface. Clang itself drives
+    # the integrated assembler, so a separate assembler binary is not part of this
+    # lane.
+    llvm_distribution_components='clang;clang-resource-headers;lld;llvm-objcopy;llvm-objdump;llvm-strip'
+    
+    cmake_args=(
+        -S "$LLVM_SOURCE_DIR/llvm"
+        -B "$LLVM_BUILD_DIR"
+        -G Ninja
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm"
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+        -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+        -DCMAKE_INSTALL_MESSAGE=NEVER
+        '-DLLVM_ENABLE_PROJECTS=clang;lld'
+        -DLLVM_TARGETS_TO_BUILD=X86
+        -DLLD_ENABLE_BACKENDS=ELF
+        "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
+        -DLLVM_APPEND_VC_REV=OFF
+        "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
+        -DLLVM_ENABLE_LTO=OFF
+        -DLLVM_ENABLE_FATLTO=OFF
+        -DLLVM_BUILD_INSTRUMENTED=OFF
+        -DLLVM_ENABLE_MODULES=OFF
+        -DLLVM_ENABLE_PLUGINS=OFF
+        -DLLVM_ENABLE_BACKTRACES=OFF
+        -DLLVM_ENABLE_CRASH_OVERRIDES=OFF
+        -DLLVM_ENABLE_UNWIND_TABLES=OFF
+        -DLLVM_ENABLE_LIBEDIT=OFF
+        -DLLVM_ENABLE_LIBPFM=OFF
+        -DLLVM_ENABLE_Z3_SOLVER=OFF
+        -DLLVM_ENABLE_WARNINGS=OFF
+        -DLLVM_ENABLE_PEDANTIC=OFF
+        -DLLVM_INCLUDE_TESTS=OFF
+        -DLLVM_INCLUDE_EXAMPLES=OFF
+        -DLLVM_INCLUDE_BENCHMARKS=OFF
+        -DLLVM_INCLUDE_DOCS=OFF
+        -DLLVM_INCLUDE_UTILS=OFF
+        -DLLVM_INCLUDE_RUNTIMES=OFF
+        -DLLVM_ENABLE_BINDINGS=OFF
+        -DCLANG_INCLUDE_TESTS=OFF
+        -DCLANG_ENABLE_STATIC_ANALYZER=OFF
+        -DLLD_INCLUDE_TESTS=OFF
+        -DLLVM_ENABLE_ZLIB=OFF
+        -DLLVM_ENABLE_ZSTD=OFF
+        -DLLVM_ENABLE_LIBXML2=OFF
+    )
+    cmake "${cmake_args[@]}"
+    
+    if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+        cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+    fi
+    
+    # Keep traversing independent Ninja edges after a compile failure so the
+    # persistent build tree contains every object that can be built. Ninja still
+    # returns failure after exhausting the reachable graph, so errors remain fatal
+    # and installation is never attempted from an incomplete distribution.
+    cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+
+    DESTDIR="$stage_root" \
+        cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+            "${cmake_parallel_args[@]}"
+fi
 
 llvm="$staged_toolchain/llvm/bin"
 bin="$staged_toolchain/bin"
