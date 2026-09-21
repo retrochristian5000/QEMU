@@ -16,6 +16,11 @@ JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"
 LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
+# Build one host-native LLVM executable set for QEMU plus the freestanding
+# firmware lanes. Target selection belongs at Clang invocation time via
+# --target=..., not in separate host executable builds.
+LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'
+LLD_ENABLE_BACKENDS='ELF;COFF;MachO'
 ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
 stage_root=""
 
@@ -618,8 +623,8 @@ git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
-llvm_enable_projects=clang
-llvm_distribution_components='clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm'
+llvm_enable_projects='clang;lld'
+llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 llvm_enable_runtimes=''
 llvm_include_runtimes=OFF
 if [[ "$host_os" == macos ]]; then
@@ -627,21 +632,21 @@ if [[ "$host_os" == macos ]]; then
     # the compiler that emits LTO bitcode. ld64.lld consumes LLVM IR directly,
     # while libLTO remains available for explicit system-ld64 compatibility.
     # compiler-rt also belongs to the same installed compiler runtime family.
-    llvm_enable_projects="${llvm_enable_projects};lld"
     llvm_enable_runtimes=compiler-rt
     llvm_include_runtimes=ON
-    llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"
+    llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=9
+BOOTSTRAP_SCHEMA=10
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
 HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch
-LLVM_TARGETS_TO_BUILD=$llvm_target
+LLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD
+LLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS
 LLVM_HOST_TRIPLE=$llvm_host_triple
 LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
 LLVM_ENABLE_PROJECTS=$llvm_enable_projects
@@ -690,9 +695,18 @@ usable()
     local objc_log=''
     local clang_link_driver=("$prefix/bin/clang")
 
-    [[ -x "$prefix/bin/clang" && -x "$prefix/bin/clang++" ]] || return 1
-    [[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&
-       -x "$prefix/bin/llvm-nm" ]] || return 1
+    local supported_targets=''
+    local required_tool
+
+    for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib \
+                         llvm-nm llvm-objcopy llvm-objdump llvm-strip \
+                         llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
+        [[ -x "$prefix/bin/$required_tool" ]] || return 1
+    done
+    supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
+    grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
+    grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
+    grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
     if [[ "$host_os" == macos ]]; then
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
@@ -794,7 +808,8 @@ cmake_args=(
     -DCMAKE_INSTALL_MESSAGE=NEVER
     "-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"
     "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
-    "-DLLVM_TARGETS_TO_BUILD=$llvm_target"
+    "-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"
+    "-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"
     "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
     "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
@@ -824,6 +839,7 @@ cmake_args=(
     -DLLVM_ENABLE_TELEMETRY=OFF
     -DCLANG_INCLUDE_TESTS=OFF
     -DCLANG_ENABLE_STATIC_ANALYZER=OFF
+    -DLLD_INCLUDE_TESTS=OFF
     -DLLVM_ENABLE_ZLIB=OFF
     -DLLVM_ENABLE_ZSTD=OFF
     -DLLVM_ENABLE_LIBXML2=OFF
@@ -891,5 +907,7 @@ fi
 rm -rf "$old_toolchain" "$stage_root"
 stage_root=""
 
+printf 'WHP native LLVM target backends: %s\n' "$LLVM_TARGETS_TO_BUILD" >&2
+printf 'WHP native LLVM LLD backends: %s\n' "$LLD_ENABLE_BACKENDS" >&2
 printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
 printf '%s\n' "$TOOLCHAIN_DIR" >&3

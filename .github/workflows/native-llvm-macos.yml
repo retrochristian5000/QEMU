@@ -139,7 +139,7 @@ jobs:
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=9' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=10' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"

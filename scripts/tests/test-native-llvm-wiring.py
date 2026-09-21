@@ -41,15 +41,22 @@ assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
 assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
 assert 'toolchains/llvm-project' in bootstrap
 assert 'git clone' not in bootstrap
-assert 'llvm_enable_projects=clang' in bootstrap
-assert 'llvm_distribution_components=\'clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm\'' in bootstrap
-assert 'llvm_enable_projects="${llvm_enable_projects};lld"' in bootstrap
-assert 'llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"' in bootstrap
+assert "llvm_enable_projects='clang;lld'" in bootstrap
+assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
 assert '"-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"' in bootstrap
-assert '[[ -x "$prefix/bin/llvm-ar" && -x "$prefix/bin/llvm-ranlib" &&' in bootstrap
-assert '-x "$prefix/bin/llvm-nm" ]] || return 1' in bootstrap
+assert 'for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib' in bootstrap
+assert 'llvm-nm llvm-objcopy llvm-objdump llvm-strip' in bootstrap
+assert 'llvm-readobj llvm-readelf llvm-config llvm-tblgen' in bootstrap
 assert '[[ -x "$prefix/bin/ld64.lld" ]] || return 1' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
+assert "LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'" in bootstrap
+assert "LLD_ENABLE_BACKENDS='ELF;COFF;MachO'" in bootstrap
+assert '"-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"' in bootstrap
+assert '"-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"' in bootstrap
+assert "grep -Eq '(^|[[:space:]])x86([[:space:]]|$)'" in bootstrap
+assert "grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)'" in bootstrap
+assert 'WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"' in build
 assert 'bootstrap-native-clang.sh' in inventory
 
 # BOOTSTRAP_NATIVE_LLVM selects the compiler for QEMU host objects, not the
@@ -96,14 +103,14 @@ assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
 assert "WHP native LLVM C++ standard: C++26" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD_REQUIRED=ON' \"$marker\"" in macos_workflow
-assert "grep -Fxq 'BOOTSTRAP_SCHEMA=9' \"$marker\"" in macos_workflow
+assert "grep -Fxq 'BOOTSTRAP_SCHEMA=10' \"$marker\"" in macos_workflow
 
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
 # load a matching reader. The same Darwin distribution also owns compiler-rt,
 # so keep LTO and both runtime umbrella components in one exact platform policy.
-assert 'llvm_distribution_components="${llvm_distribution_components};lld;LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 
@@ -120,7 +127,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=9' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=10' in bootstrap
 
 # LLVM configures builtins and runtimes as separate ExternalProjects on Darwin.
 # The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:
