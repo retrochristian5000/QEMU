@@ -30,7 +30,14 @@ on:
       - 'scripts/tests/test-arm64e-ide-hotpath.py'
       - 'scripts/tests/test-arm64e-pic-hotpath.py'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
+      - 'scripts/tests/test-arm64e-display-hotpath.py'
+      - 'scripts/tests/arm64e-display-abi-probe.m'
       - 'ui/cocoa-metal.m'
+      - 'hw/display/vga.c'
+      - 'hw/display/macfb.c'
+      - 'hw/display/sm501.c'
+      - 'hw/display/apple-gfx.m'
+      - 'hw/display/apple-gfx-mmio.m'
       - 'scripts/tests/test-arm64e-pci-hotpath.py'
       - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
       - 'scripts/tests/test-arm64e-isa-hotpath.py'
@@ -104,6 +111,10 @@ jobs:
       - name: Audit arm64e Cocoa runtime dispatch
         shell: bash
         run: python3 scripts/tests/test-cocoa-metal-dirty.py
+
+      - name: Audit arm64e display hot paths
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-display-hotpath.py
 
       - name: Audit arm64e PCI config hot path
         shell: bash
@@ -252,6 +263,21 @@ jobs:
           ./native-llvm-ubsan
           ./native-llvm-arm64e
 
+      - name: Run ARM64e display callback ABI probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang="$NATIVE_LLVM_DIR/bin/clang"
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          "$clang" -arch arm64e -O2 -Wall -Wextra -Werror -fblocks \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            scripts/tests/arm64e-display-abi-probe.m -lobjc \
+            -o arm64e-display-abi-probe
+          lipo -archs arm64e-display-abi-probe | tr ' ' '\n' | grep -Fxq arm64e
+          file arm64e-display-abi-probe | grep -Fq arm64e
+          ./arm64e-display-abi-probe
+
       - name: Probe WHP Clang to macOS LTO handoff
         shell: bash
         run: |
@@ -323,7 +349,7 @@ jobs:
           BOOTSTRAP_I386_TOOLCHAIN: '0'
           QEMU_HOST_LTO: '0'
           RUN_TESTS: '0'
-          MACOS_ENABLE_COCOA: '0'
+          MACOS_ENABLE_COCOA: '1'
           MACOS_ENABLE_COREAUDIO: '0'
           MACOS_ENABLE_GTK: '0'
           MACOS_ENABLE_PA: '0'
@@ -346,6 +372,7 @@ jobs:
           lipo -archs "$BUILD_DIR/qemu-system-i386" | tr ' ' '\n' | grep -Fxq arm64e
           file "$BUILD_DIR/qemu-system-i386" | grep -Fq arm64e
           "$BUILD_DIR/qemu-system-i386" --version
+          "$BUILD_DIR/qemu-system-i386" -display help 2>&1 | grep -Fq cocoa
           grep -Fq 'macOS Mach-O arch:       arm64e' arm64e-qemu.log
 
           for split_wx in off on; do
