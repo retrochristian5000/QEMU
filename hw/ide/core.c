@@ -80,6 +80,16 @@ static const char *IDE_DMA_CMD_str(enum ide_dma_cmd enval)
 }
 
 static void ide_dummy_transfer_stop(IDEState *s);
+static int transfer_end_table_idx(EndTransferFunc *fn);
+
+enum IDETransferEndIndex {
+    IDE_TRANSFER_END_SECTOR_READ = 0,
+    IDE_TRANSFER_END_SECTOR_WRITE = 1,
+    IDE_TRANSFER_END_STOP = 2,
+    IDE_TRANSFER_END_ATAPI_REPLY = 3,
+    IDE_TRANSFER_END_ATAPI_CMD = 4,
+    IDE_TRANSFER_END_DUMMY_STOP = 5,
+};
 
 const MemoryRegionPortio ide_portio_list[] = {
     { 0, 8, 1, .read = ide_ioport_read, .write = ide_ioport_write },
@@ -554,6 +564,15 @@ static void ide_clear_retry(IDEState *s)
     s->bus->retry_nsector = 0;
 }
 
+static void ide_set_end_transfer_func(IDEState *s, EndTransferFunc *fn)
+{
+    int idx = transfer_end_table_idx(fn);
+
+    assert(idx >= 0);
+    s->end_transfer_func = fn;
+    s->end_transfer_fn_idx = idx;
+}
+
 /* prepare data transfer and tell what to do after */
 bool ide_transfer_start_norecurse(IDEState *s, uint8_t *buf, int size,
                                   EndTransferFunc *end_transfer_func)
@@ -565,7 +584,7 @@ bool ide_transfer_start_norecurse(IDEState *s, uint8_t *buf, int size,
         s->status |= DRQ_STAT;
     }
     if (!s->bus->dma->ops->pio_transfer) {
-        s->end_transfer_func = end_transfer_func;
+        ide_set_end_transfer_func(s, end_transfer_func);
         return false;
     }
     s->bus->dma->ops->pio_transfer(s->bus->dma);
@@ -589,7 +608,7 @@ static void ide_cmd_done(IDEState *s)
 
 static void ide_transfer_halt(IDEState *s)
 {
-    s->end_transfer_func = ide_transfer_stop;
+    ide_set_end_transfer_func(s, ide_transfer_stop);
     s->data_ptr = s->io_buffer;
     s->data_end = s->io_buffer;
     s->status &= ~DRQ_STAT;
@@ -2382,17 +2401,18 @@ void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val)
  */
 static bool ide_is_pio_out(IDEState *s)
 {
-    if (s->end_transfer_func == ide_sector_write ||
-        s->end_transfer_func == ide_atapi_cmd) {
+    switch (s->end_transfer_fn_idx) {
+    case IDE_TRANSFER_END_SECTOR_WRITE:
+    case IDE_TRANSFER_END_ATAPI_CMD:
         return false;
-    } else if (s->end_transfer_func == ide_sector_read ||
-               s->end_transfer_func == ide_transfer_stop ||
-               s->end_transfer_func == ide_atapi_cmd_reply_end ||
-               s->end_transfer_func == ide_dummy_transfer_stop) {
+    case IDE_TRANSFER_END_SECTOR_READ:
+    case IDE_TRANSFER_END_STOP:
+    case IDE_TRANSFER_END_ATAPI_REPLY:
+    case IDE_TRANSFER_END_DUMMY_STOP:
         return true;
+    default:
+        abort();
     }
-
-    abort();
 }
 
 void ide_data_writew(void *opaque, uint32_t addr, uint32_t val)
@@ -2829,13 +2849,13 @@ static bool is_identify_set(void *opaque, int version_id)
     return s->identify_set != 0;
 }
 
-static EndTransferFunc* transfer_end_table[] = {
-        ide_sector_read,
-        ide_sector_write,
-        ide_transfer_stop,
-        ide_atapi_cmd_reply_end,
-        ide_atapi_cmd,
-        ide_dummy_transfer_stop,
+static EndTransferFunc *transfer_end_table[] = {
+    [IDE_TRANSFER_END_SECTOR_READ] = ide_sector_read,
+    [IDE_TRANSFER_END_SECTOR_WRITE] = ide_sector_write,
+    [IDE_TRANSFER_END_STOP] = ide_transfer_stop,
+    [IDE_TRANSFER_END_ATAPI_REPLY] = ide_atapi_cmd_reply_end,
+    [IDE_TRANSFER_END_ATAPI_CMD] = ide_atapi_cmd,
+    [IDE_TRANSFER_END_DUMMY_STOP] = ide_dummy_transfer_stop,
 };
 
 static int transfer_end_table_idx(EndTransferFunc *fn)
