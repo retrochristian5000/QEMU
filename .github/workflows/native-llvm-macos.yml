@@ -376,7 +376,16 @@ jobs:
           grep -Eq '^LDFLAGS=.*-arch arm64([[:space:]]|$)' "$BUILD_DIR/.whp-macos-build-identity"
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
           grep -Fxq 'QEMU_HOST_MODULES=auto' "$BUILD_DIR/.whp-config"
-          grep -Eq '^#define CONFIG_MODULES (1|true)      - name: Build and run ARM64e i386 TCG smoke
+          grep -Eq '^#define CONFIG_MODULES (1|true)$' "$BUILD_DIR/config-host.h"
+
+          coreaudio_module="$(find "$BUILD_DIR" -name audio-coreaudio.dylib -print | sed -n '1p')"
+          test -n "$coreaudio_module"
+          lipo -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64
+          file "$coreaudio_module" | grep -Fq arm64
+          otool -L "$coreaudio_module" | grep -Fq CoreAudio.framework
+          "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
+
+      - name: Build and run ARM64e i386 TCG smoke
         shell: bash
         env:
           WHP_SHELL_PROBE_ONLY: '0'
@@ -417,7 +426,15 @@ jobs:
           "$BUILD_DIR/qemu-system-i386" -display help 2>&1 | grep -Fq cocoa
           grep -Fq 'macOS Mach-O arch:       arm64e' arm64e-qemu.log
           grep -Fxq 'QEMU_HOST_MODULES=auto' "$BUILD_DIR/.whp-config"
-          grep -Eq '^#define CONFIG_MODULES (1|true)          for split_wx in off on; do
+          grep -Eq '^#define CONFIG_MODULES (1|true)$' "$BUILD_DIR/config-host.h"
+
+          coreaudio_module="$(find "$BUILD_DIR" -name audio-coreaudio.dylib -print | sed -n '1p')"
+          test -n "$coreaudio_module"
+          lipo -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64e
+          file "$coreaudio_module" | grep -Fq arm64e
+          "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
+
+          for split_wx in off on; do
             echo "ARM64e TCG benchmark: split-wx=$split_wx"
             python3 scripts/bench-i386-tcg.py \
               --qemu "$BUILD_DIR/qemu-system-i386" \
