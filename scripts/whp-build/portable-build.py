@@ -479,6 +479,10 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
     optional_switch(configure_args, values['QEMU_HOST_LTO'], 'lto')
+    if platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto':
+        configure_args.append('--enable-modules')
+    else:
+        optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')
     optional_switch(configure_args, values['MACOS_ENABLE_GTK'], 'gtk')
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
 
