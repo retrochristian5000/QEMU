@@ -465,8 +465,8 @@
 #
 # @host: optional TCP host used by ATD dialing
 #
-# @port: optional TCP service/port used by ATD dialing.  Must be specified
-#     together with @host.
+# @port: optional TCP service/port used by ATD dialing.  Must be
+#     specified together with @host.
 #
 # Since: 11.1
 ##
