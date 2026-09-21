@@ -42,6 +42,7 @@ on:
       - 'hw/display/sm501.c'
       - 'hw/display/apple-gfx.m'
       - 'hw/display/apple-gfx-mmio.m'
+      - 'hw/display/trace-events'
       - 'scripts/tests/test-arm64e-pci-hotpath.py'
       - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
       - 'scripts/tests/test-arm64e-isa-hotpath.py'
