@@ -9,7 +9,9 @@ macfb = (ROOT / "hw/display/macfb.c").read_text(encoding="utf-8")
 sm501 = (ROOT / "hw/display/sm501.c").read_text(encoding="utf-8")
 apple_gfx = (ROOT / "hw/display/apple-gfx.m").read_text(encoding="utf-8")
 apple_gfx_mmio = (ROOT / "hw/display/apple-gfx-mmio.m").read_text(encoding="utf-8")
+cocoa = (ROOT / "ui/cocoa.m").read_text(encoding="utf-8")
 cocoa_metal = (ROOT / "ui/cocoa-metal.m").read_text(encoding="utf-8")
+surface = (ROOT / "include/ui/surface.h").read_text(encoding="utf-8")
 
 # Scanline renderers run once for each dirty line. Keep their stable mode
 # selection as data and dispatch to direct functions so arm64e does not pay a
@@ -86,5 +88,36 @@ assert apple_gfx.count("copy_mtl_texture_to_surface_mem(") == 2, (
     "AppleGFX full-frame readback should exist only as one helper and one "
     "fallback call"
 )
+
+# The shared AppleGFX surface also advertises its native texture to Cocoa.
+# Cocoa must retain it across the asynchronous surface switch, verify it uses
+# the same Metal device, and blit it directly rather than upload Pixman bytes.
+for token in (
+    "DISPLAY_SURFACE_NATIVE_METAL_TEXTURE",
+    "void *native_handle;",
+    "qemu_displaysurface_set_native_handle(",
+    "qemu_displaysurface_get_native_handle(",
+):
+    assert token in surface, f"missing native DisplaySurface contract: {token}"
+
+assert "DISPLAY_SURFACE_NATIVE_METAL_TEXTURE, texture" in apple_gfx
+
+for token in (
+    'qemu_displaysurface_get_native_handle(',
+    '[native_texture retain];',
+    'qemu_cocoa_metal_can_use_texture(view, native_texture,',
+    'qemu_cocoa_metal_set_texture(view, native_texture, width, height);',
+    'qemu_cocoa_metal_clear_texture(view);',
+    '[native_texture release];',
+):
+    assert token in cocoa, f"missing Cocoa native-texture lifetime contract: {token}"
+
+for token in (
+    "id<QEMUMetalTextureRuntime> nativeTexture;",
+    "[texture device] != metalDevice",
+    "sourceTexture = nativeTexture;",
+    "[encoder copyFromTexture:sourceTexture",
+):
+    assert token in cocoa_metal, f"missing Cocoa direct Metal scanout: {token}"
 
 print("ARM64e display hot-path and callback ABI audit passed")
