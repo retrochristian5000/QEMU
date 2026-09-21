@@ -1851,6 +1851,102 @@ static void char_modem_tcp_config_test(void)
     error_free(err);
 }
 
+static bool char_modem_output_contains(const FeHandler *h,
+                                       const char *text)
+{
+    return g_strstr_len(h->read_buf, h->read_count, text) != NULL;
+}
+
+static void char_modem_tcp_roundtrip_test(void)
+{
+    SocketAddress listen_addr = {
+        .type = SOCKET_ADDRESS_TYPE_INET,
+        .u.inet.host = (char *)"127.0.0.1",
+        .u.inet.port = (char *)"0",
+    };
+    bool has_ipv4;
+    bool has_ipv6;
+    QIOChannelSocket *listener;
+    QIOChannelSocket *peer;
+    SocketAddress *local_addr;
+    CharFrontend fe = { 0 };
+    FeHandler h = { 0 };
+    Chardev *chr;
+    uint8_t peer_buf[32] = { 0 };
+    const uint8_t guest_payload[] = "guest-to-tcp";
+    const uint8_t peer_payload[] = "tcp-to-guest";
+    ssize_t ret;
+    int spins;
+
+    g_assert_cmpint(socket_check_protocol_support(&has_ipv4, &has_ipv6), ==, 0);
+    if (!has_ipv4) {
+        g_test_skip("IPv4 loopback is unavailable");
+        return;
+    }
+
+    listener = qio_channel_socket_new();
+    qio_channel_socket_listen_sync(listener, &listen_addr, 1, &error_abort);
+    local_addr = qio_channel_socket_get_local_address(listener, &error_abort);
+    g_assert_nonnull(local_addr);
+    g_assert_cmpint(local_addr->type, ==, SOCKET_ADDRESS_TYPE_INET);
+
+    chr = char_modem_tcp_new("modem-tcp-roundtrip",
+                             "127.0.0.1", local_addr->u.inet.port,
+                             &error_abort);
+    g_assert_nonnull(chr);
+    qemu_chr_fe_init(&fe, chr, &error_abort);
+    qemu_chr_fe_set_handlers(&fe, fe_can_read, fe_read, fe_event, NULL,
+                             &h, NULL, true);
+
+    ret = qemu_chr_fe_write(&fe, (const uint8_t *)"ATD5551212\r", 11);
+    g_assert_cmpint(ret, ==, 11);
+
+    qio_channel_wait(QIO_CHANNEL(listener), G_IO_IN);
+    peer = qio_channel_socket_accept(listener, &error_abort);
+    g_assert_nonnull(peer);
+
+    for (spins = 0;
+         spins < 1000 && !char_modem_output_contains(&h, "CONNECT");
+         spins++) {
+        g_main_context_iteration(g_main_context_default(), true);
+    }
+    g_assert_true(char_modem_output_contains(&h, "CONNECT"));
+
+    ret = qemu_chr_fe_write(&fe, guest_payload, sizeof(guest_payload) - 1);
+    g_assert_cmpint(ret, ==, sizeof(guest_payload) - 1);
+    qio_channel_wait(QIO_CHANNEL(peer), G_IO_IN);
+    ret = qio_channel_read(QIO_CHANNEL(peer), peer_buf,
+                           sizeof(guest_payload) - 1, &error_abort);
+    g_assert_cmpint(ret, ==, sizeof(guest_payload) - 1);
+    g_assert_cmpmem(peer_buf, ret, guest_payload, sizeof(guest_payload) - 1);
+
+    ret = qio_channel_write(QIO_CHANNEL(peer), peer_payload,
+                            sizeof(peer_payload) - 1, &error_abort);
+    g_assert_cmpint(ret, ==, sizeof(peer_payload) - 1);
+    for (spins = 0;
+         spins < 1000 && !char_modem_output_contains(&h, "tcp-to-guest");
+         spins++) {
+        g_main_context_iteration(g_main_context_default(), true);
+    }
+    g_assert_true(char_modem_output_contains(&h, "tcp-to-guest"));
+
+    qio_channel_close(QIO_CHANNEL(peer), &error_abort);
+    object_unref(OBJECT(peer));
+    for (spins = 0;
+         spins < 1000 && !char_modem_output_contains(&h, "NO CARRIER");
+         spins++) {
+        g_main_context_iteration(g_main_context_default(), true);
+    }
+    g_assert_true(char_modem_output_contains(&h, "NO CARRIER"));
+
+    qemu_chr_fe_deinit(&fe, false);
+    object_unparent(OBJECT(chr));
+    qio_channel_close(QIO_CHANNEL(listener), &error_abort);
+    object_unref(OBJECT(listener));
+    qapi_free_SocketAddress(local_addr);
+    (void)has_ipv6;
+}
+
 static void char_modem_default_model_test(void)
 {
     g_autofree char *filename = NULL;
@@ -2006,6 +2102,8 @@ int main(int argc, char **argv)
                     char_modem_invalid_model_test);
     g_test_add_func("/char/modem/tcp/config",
                     char_modem_tcp_config_test);
+    g_test_add_func("/char/modem/tcp/roundtrip",
+                    char_modem_tcp_roundtrip_test);
     g_test_add_func("/char/invalid", char_invalid_test);
     g_test_add_func("/char/ringbuf", char_ringbuf_test);
     g_test_add_func("/char/mux", char_mux_test);
