@@ -67,4 +67,24 @@ for text in (apple_gfx, apple_gfx_mmio):
     assert "ptrauth_strip" not in text
     assert "ptrauth_sign_unauthenticated" not in text
 
+# AppleGFX on arm64e/Apple Silicon should render into unified storage that is
+# simultaneously the QEMU DisplaySurface.  Keep getBytes() as a fallback for
+# hosts where Metal cannot create the linear shared texture.
+for token in (
+    "#if defined(__arm64__) && defined(__PTRAUTH__)",
+    "minimumLinearTextureAlignmentForPixelFormat:",
+    "newBufferWithLength:buffer_length",
+    "newTextureWithDescriptor:texture_descriptor",
+    "qemu_create_displaysurface_from(width, height,",
+    "pixman_image_set_destroy_function(surface->image,",
+    "s->using_shared_surface_texture = shared_surface;",
+    "if (!s->using_shared_surface_texture)",
+):
+    assert token in apple_gfx, f"missing AppleGFX shared-surface contract: {token}"
+
+assert apple_gfx.count("copy_mtl_texture_to_surface_mem(") == 2, (
+    "AppleGFX full-frame readback should exist only as one helper and one "
+    "fallback call"
+)
+
 print("ARM64e display hot-path and callback ABI audit passed")
