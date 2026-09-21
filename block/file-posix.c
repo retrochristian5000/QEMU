@@ -2642,9 +2642,9 @@ out:
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
-raw_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
-              QEMUIOVector *qiov, BdrvRequestFlags flags)
+int coroutine_fn GRAPH_RDLOCK
+bdrv_file_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                    QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     return raw_co_prw(bs, &offset, bytes, qiov, QEMU_AIO_READ, flags);
 }
@@ -3976,7 +3976,7 @@ BlockDriver bdrv_file = {
     .bdrv_co_pwrite_zeroes = raw_co_pwrite_zeroes,
     .bdrv_co_delete_file = raw_co_delete_file,
 
-    .bdrv_co_preadv         = raw_co_preadv,
+    .bdrv_co_preadv         = bdrv_file_co_preadv,
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_co_pdiscard       = raw_co_pdiscard,
@@ -4446,7 +4446,7 @@ static BlockDriver bdrv_host_device = {
     .bdrv_co_invalidate_cache = raw_co_invalidate_cache,
     .bdrv_co_pwrite_zeroes = hdev_co_pwrite_zeroes,
 
-    .bdrv_co_preadv         = raw_co_preadv,
+    .bdrv_co_preadv         = bdrv_file_co_preadv,
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_co_pdiscard       = hdev_co_pdiscard,
@@ -4584,7 +4584,7 @@ static BlockDriver bdrv_host_cdrom = {
     .mutable_opts           = mutable_opts,
     .bdrv_co_invalidate_cache = raw_co_invalidate_cache,
 
-    .bdrv_co_preadv         = raw_co_preadv,
+    .bdrv_co_preadv         = bdrv_file_co_preadv,
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_refresh_limits    = cdrom_refresh_limits,
@@ -4709,7 +4709,7 @@ static BlockDriver bdrv_host_cdrom = {
     .create_opts            = &bdrv_create_opts_simple,
     .mutable_opts           = mutable_opts,
 
-    .bdrv_co_preadv         = raw_co_preadv,
+    .bdrv_co_preadv         = bdrv_file_co_preadv,
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_refresh_limits    = cdrom_refresh_limits,

@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 io = (ROOT / "block/io.c").read_text(encoding="utf-8")
 raw = (ROOT / "block/raw-format.c").read_text(encoding="utf-8")
+file_posix = (ROOT / "block/file-posix.c").read_text(encoding="utf-8")
 block = (ROOT / "block.c").read_text(encoding="utf-8")
 header = (ROOT / "include/block/block_int-io.h").read_text(encoding="utf-8")
 common = (ROOT / "include/block/block_int-common.h").read_text(encoding="utf-8")
@@ -34,6 +35,19 @@ assert dispatch.index("if (drv->bdrv_co_preadv_part)") < dispatch.index(
     "if (likely(drv == &bdrv_raw))"
 ), "partial-read handlers must take precedence over the raw direct path"
 assert "ret = drv->bdrv_co_preadv(bs, offset, bytes, qiov, flags);" in dispatch
+assert "#ifdef CONFIG_POSIX" in dispatch
+assert "if (likely(drv == &bdrv_file))" in dispatch
+assert "ret = bdrv_file_co_preadv(bs, offset, bytes, qiov, flags);" in dispatch
+
+for token in (
+    "bdrv_file_co_preadv(BlockDriverState *bs",
+    "return raw_co_prw(bs, &offset, bytes, qiov, QEMU_AIO_READ, flags);",
+    ".bdrv_co_preadv         = bdrv_file_co_preadv,",
+):
+    assert token in file_posix, f"missing POSIX ISO file-read contract: {token}"
+
+assert "#ifdef CONFIG_POSIX" in header
+assert "bdrv_file_co_preadv(" in header
 
 for token in (
     "int bdrv_raw_probe(const uint8_t *buf, int buf_size,",

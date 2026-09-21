@@ -1002,6 +1002,13 @@ bdrv_driver_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
         goto out;
     }
 
+#ifdef CONFIG_POSIX
+    if (likely(drv == &bdrv_file)) {
+        ret = bdrv_file_co_preadv(bs, offset, bytes, qiov, flags);
+        goto out;
+    }
+#endif
+
     if (drv->bdrv_co_preadv) {
         ret = drv->bdrv_co_preadv(bs, offset, bytes, qiov, flags);
         goto out;
