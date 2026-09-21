@@ -34,6 +34,7 @@ on:
       - 'scripts/tests/test-arm64e-pci-hotpath.py'
       - 'scripts/tests/test-arm64e-pci-irq-hotpath.py'
       - 'scripts/tests/test-arm64e-isa-hotpath.py'
+      - 'scripts/bench-macos-swift-host.py'
       - 'hw/isa/piix.c'
       - 'hw/isa/lpc_ich9.c'
       - 'hw/pci/pci_host.c'
@@ -111,6 +112,12 @@ jobs:
       - name: Audit arm64e ISA IRQ hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-isa-hotpath.py
+
+      - name: Probe Swift arm64e C ABI and codegen
+        shell: bash
+        env:
+          WHP_MACOS_ARCH: arm64e
+        run: python3 scripts/bench-macos-swift-host.py --samples 3 --rounds 5000000
 
       - name: Verify native LLVM wiring
         shell: bash
