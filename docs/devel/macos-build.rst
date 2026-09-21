@@ -109,6 +109,29 @@ multi-file program, verifies the Mach-O architecture, executes the result, and
 records the effective linker pipeline. A failed preflight is a compiler/linker
 policy problem, not a reason to inject raw LTO flags globally.
 
+Dynamic QEMU modules
+--------------------
+
+``QEMU_HOST_MODULES`` controls QEMU's existing loadable-module layer. Its
+default is ``auto``; on macOS WHP resolves that to ``--enable-modules`` so
+optional backends and devices that QEMU already marks as module-safe are emitted
+as Mach-O ``.dylib`` modules and loaded through GLib/GModule and dyld instead of
+being folded into every emulator executable. Explicit ``QEMU_HOST_MODULES=0``
+keeps the monolithic behavior, while ``1`` requests modules on any QEMU host
+where they are supported.
+
+This policy does not turn QEMU's internal staging archives into public shared
+libraries. Core implementation layers such as QOM, TCG, the target library, and
+the current Cocoa/AppleGFX Metal path remain linked into the emulator. Existing
+module boundaries include host audio backends such as CoreAudio, optional UI and
+block backends, USB host/redirect support, and several display devices.
+
+Named emulator builds also request Meson's ``modules`` alias when that target
+exists. This is necessary because a targeted ``qemu-system-*`` Ninja build does
+not otherwise traverse unrelated build-by-default module targets. The normal
+build-tree ``qemu-bundle`` supplies the same relocated module layout used before
+installation.
+
 Useful overrides
 ----------------
 
@@ -137,6 +160,10 @@ Useful overrides
 
 ``QEMU_HOST_LTO``
   Enable or disable QEMU host LTO without leaking the policy into firmware.
+
+``QEMU_HOST_MODULES``
+  Select dynamic QEMU modules. ``auto`` enables them on macOS, ``1`` forces
+  them on supported hosts, and ``0`` keeps module-capable code built in.
 
 ``CC``, ``CXX``, ``OBJC``
   QEMU host compiler roles.
