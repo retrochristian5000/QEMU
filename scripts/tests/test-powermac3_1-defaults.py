@@ -9,12 +9,35 @@ POWER_MAC = ROOT / "hw/ppc/powermac3_1.c"
 MAC_NEWWORLD = ROOT / "hw/ppc/mac_newworld.c"
 OHCI_PCI = ROOT / "hw/usb/hcd-ohci-pci.c"
 PPC_KCONFIG = ROOT / "hw/ppc/Kconfig"
+PPC_CPU_INIT = ROOT / "target/ppc/cpu_init.c"
+PPC_CPU_MODELS = ROOT / "target/ppc/cpu-models.c"
 
 power_mac = POWER_MAC.read_text(encoding="utf-8")
 mac_newworld = MAC_NEWWORLD.read_text(encoding="utf-8")
 ohci_pci = OHCI_PCI.read_text(encoding="utf-8")
 kconfig = PPC_KCONFIG.read_text(encoding="utf-8")
+cpu_init = PPC_CPU_INIT.read_text(encoding="utf-8")
+cpu_models = PPC_CPU_MODELS.read_text(encoding="utf-8")
 errors: list[str] = []
+
+# The MPC7400 implements tlbie and tlbsync but not tlbia.  Keep that
+# architectural distinction in the shared CPU model so Sawtooth and future
+# MPC7400 machines receive the correct illegal-instruction behavior.
+cpu_7400_start = cpu_init.find("POWERPC_FAMILY(7400)")
+cpu_7400_end = cpu_init.find("static void init_proc_7410", cpu_7400_start)
+if cpu_7400_start < 0 or cpu_7400_end < 0:
+    errors.append("MPC7400 CPU family block is missing")
+else:
+    cpu_7400 = cpu_init[cpu_7400_start:cpu_7400_end]
+    if "PPC_MEM_TLBIE" not in cpu_7400 or "PPC_MEM_TLBSYNC" not in cpu_7400:
+        errors.append("MPC7400 must retain tlbie and tlbsync")
+    if "PPC_MEM_TLBIA" in cpu_7400:
+        errors.append("MPC7400 must not advertise unsupported tlbia")
+
+# Preserve a Motorola-style stable CPU name for board profiles and standalone
+# PowerPC work while retaining an explicit revisioned implementation underneath.
+if '{ "mpc7400", "7400_v2.9" },' not in cpu_models:
+    errors.append("canonical mpc7400 CPU alias is missing")
 
 # Keep the profile coherent with the original 450 MHz / 128 MiB retail
 # Sawtooth configuration instead of inheriting generic mac99's 900 MHz
