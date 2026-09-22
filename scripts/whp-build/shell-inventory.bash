@@ -29,6 +29,7 @@ WHP_POSIX_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/build-openbios.sh"
     "$SOURCE_DIR/scripts/meson-build-seabios.sh"
     "$SOURCE_DIR/scripts/build-seabios-hybrid-iso.sh"
+    "$SOURCE_DIR/scripts/whp-build/update-source.sh"
     "$SOURCE_DIR/scripts/bootstrap-i386-clang.sh"
     "$SOURCE_DIR/scripts/bootstrap-win9x-clang.sh"
     "$SOURCE_DIR/scripts/bootstrap-i386-efi-grub.sh"
