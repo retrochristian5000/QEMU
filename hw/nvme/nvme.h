@@ -739,7 +739,7 @@ static inline NvmeSecCtrlEntry *nvme_sctrl_for_cntlid(NvmeCtrl *n,
                                                       uint16_t cntlid)
 {
     NvmeSecCtrlEntry *list = n->sec_ctrl_list;
-    uint8_t i;
+    uint32_t i;
 
     for (i = 0; i < n->nr_sec_ctrls; i++) {
         if (le16_to_cpu(list[i].scid) == cntlid) {
