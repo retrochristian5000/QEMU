@@ -195,7 +195,7 @@ static void periodic_timer_update(MC146818RtcState *s, int64_t current_time,
     if (s->lost_tick_policy == LOST_TICK_POLICY_SLEW) {
         uint32_t old_irq_coalesced = s->irq_coalesced;
 
-        lost_clock += old_irq_coalesced * old_period;
+        lost_clock += (int64_t)old_irq_coalesced * old_period;
         s->irq_coalesced = lost_clock / s->period;
         lost_clock %= s->period;
         if (old_irq_coalesced != s->irq_coalesced ||
