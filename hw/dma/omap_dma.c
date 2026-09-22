@@ -552,8 +552,10 @@ static void omap_dma_transfer_setup(struct soc_dma_ch_s *dma)
         frames = new_element / a->elements;
         a->element = new_element % a->elements;
         a->frame += frames;
-        a->src += (uint64_t)min_elems * a->elem_delta[0] + frames * a->frame_delta[0];
-        a->dest += (uint64_t)min_elems * a->elem_delta[1] + frames * a->frame_delta[1];
+        a->src += (uint64_t)min_elems * a->elem_delta[0] +
+                  (int64_t)frames * a->frame_delta[0];
+        a->dest += (uint64_t)min_elems * a->elem_delta[1] +
+                   (int64_t)frames * a->frame_delta[1];
 
         /* If the channel is async, update cpc */
         if (!ch->sync && frames) {
