@@ -1801,7 +1801,7 @@ static int megasas_handle_io(MegasasState *s, MegasasCmd *cmd, int frame_cmd)
         return MFI_STAT_DEVICE_NOT_FOUND;
     }
 
-    cmd->iov_size = lba_count * sdev->blocksize;
+    cmd->iov_size = (size_t)lba_count * sdev->blocksize;
     if (megasas_map_sgl(s, cmd, &cmd->frame->io.sgl)) {
         megasas_write_sense(cmd, SENSE_CODE(TARGET_FAILURE));
         cmd->frame->header.scsi_status = CHECK_CONDITION;
