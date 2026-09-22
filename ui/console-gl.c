@@ -102,7 +102,8 @@ bool surface_gl_create_texture_from_fd(DisplaySurface *surface,
                                        int fd, GLuint *texture,
                                        GLuint *mem_obj)
 {
-    unsigned long size = surface_stride(surface) * surface_height(surface);
+    unsigned long size = (unsigned long)surface_stride(surface) *
+                         surface_height(surface);
     GLenum err = glGetError();
     *texture = 0;
     *mem_obj = 0;
