@@ -41,6 +41,22 @@ def perm(arr):
     return s
 
 
+def safe_socket_path(path_value):
+    if not path_value:
+        return None
+
+    normalized = os.path.normpath(path_value)
+
+    if os.path.isabs(normalized):
+        return None
+
+    parts = normalized.split(os.sep)
+    if '..' in parts:
+        return None
+
+    return normalized
+
+
 def render_block_graph(qmp, filename, format='png'):
     '''
     Render graph in text (dot) representation into "@filename" and
@@ -115,9 +131,10 @@ if __name__ == '__main__':
     obj = sys.argv[1]
     out = sys.argv[2]
 
-    if os.path.exists(obj):
+    socket_path = safe_socket_path(obj)
+    if socket_path is not None and os.path.exists(socket_path):
         # assume unix socket
-        qmp = QEMUMonitorProtocol(obj)
+        qmp = QEMUMonitorProtocol(socket_path)
         qmp.connect()
     else:
         # assume libvirt guest name
