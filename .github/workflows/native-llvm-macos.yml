@@ -443,6 +443,20 @@ jobs:
               --split-wx "$split_wx"
           done
 
+          # Keep split W^X fixed while measuring the startup cost of the
+          # translation-block cache mapping itself.  The default-size result
+          # above is the baseline for these deliberately smaller caches.
+          for tb_size in 64 128 256 512; do
+            echo "ARM64e TCG startup benchmark: tb-size=$tb_size MiB"
+            python3 scripts/bench-i386-tcg.py \
+              --qemu "$BUILD_DIR/qemu-system-i386" \
+              --workload startup \
+              --rounds 1 \
+              --tcg-thread single \
+              --split-wx on \
+              --tb-size "$tb_size"
+          done
+
       - name: Show native LLVM failure context
         if: failure()
         shell: bash
