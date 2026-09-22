@@ -106,7 +106,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Verify Apple Silicon host
         shell: bash
@@ -481,7 +481,7 @@ jobs:
 
       - name: Upload native LLVM failure logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-llvm-macos-failure
           path: |
