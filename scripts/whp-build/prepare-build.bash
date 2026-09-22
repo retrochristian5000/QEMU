@@ -370,6 +370,12 @@ whp_prepare_configure_args()
     fi
 
     whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
+    if [[ "$HOST_OS" == Darwin ]]; then
+        # WHP macOS builds are intentionally TCG-only. KVM is Linux-only, and
+        # auto-detected HVF would otherwise add host-hypervisor code and signing
+        # entitlements to native-architecture emulators.
+        configure_args+=(--disable-kvm --disable-hvf)
+    fi
     if [[ "$HOST_OS" == Darwin && "$QEMU_HOST_MODULES" == auto ]]; then
         # QEMU already isolates optional host backends/devices as DSOs.
         # Prefer dyld-backed modules on macOS instead of folding them into
