@@ -101,7 +101,8 @@ static bool get_pt_entry(CPUState *cpu, struct gpt_translation *pt,
     }
 
     index = gpt_entry(pt->gva, level, pae);
-    address_space_read(&address_space_memory, gpa + index * pte_size(pae),
+    address_space_read(&address_space_memory,
+                       gpa + (uint64_t)index * (uint64_t)pte_size(pae),
                        MEMTXATTRS_UNSPECIFIED, &pte, pte_size(pae));
 
     pt->pte[level - 1] = pte;
