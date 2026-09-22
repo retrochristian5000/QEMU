@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload failure logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-ppc-build-logs
           path: |
@@ -246,7 +246,7 @@ jobs:
 
       - name: Upload OpenBIOS failure logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-openbios-build-logs
           path: |
