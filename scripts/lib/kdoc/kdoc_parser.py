@@ -192,7 +192,10 @@ function_xforms  = [
     (KernRe(r"__diagnose_as\s*\(\s*\S+\s*(?:,\s*\d+\s*)*\) +"), ""),
     (KernRe(r"DECL_BUCKET_PARAMS\s*\(\s*(\S+)\s*,\s*(\S+)\s*\)"), r"\1, \2"),
     (KernRe(r"__attribute_const__ +"), ""),
-    (KernRe(r"__attribute__\s*\(\((?:[\w\s]+(?:\([^)]*\))?\s*,?)+\)\)\s+"), ""),
+    # Keep attribute items comma-delimited so malformed input cannot trigger
+    # catastrophic backtracking in the prototype cleanup (CWE-1333).
+    (KernRe(r"__attribute__\s*\(\(\s*\w+(?:\s*\([^)]*\))?"
+            r"(?:\s*,\s*\w+(?:\s*\([^)]*\))?)*\s*\)\)\s+"), ""),
 ]
 
 #
