@@ -47,6 +47,7 @@ class WhpConfigTests(unittest.TestCase):
         values = mod.default_values()
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
         self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_SDL'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'auto')
@@ -143,6 +144,7 @@ class WhpConfigTests(unittest.TestCase):
         for key in (
             'QEMU_HOST_LTO',
             'QEMU_HOST_MODULES',
+            'BOOTSTRAP_SDL',
             'MACOS_ENABLE_COCOA',
             'MACOS_ENABLE_COREAUDIO',
             'MACOS_ENABLE_GTK',
@@ -154,6 +156,20 @@ class WhpConfigTests(unittest.TestCase):
             self.assertNotIn(f'{key}=', assignments)
         self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
         self.assertIn("INSTALL='0'", assignments)
+
+    def test_sdl_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_SDL']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP SDL3')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_SDL'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_SDL='1'", assignments)
 
     def test_win9x_cross_tools_are_separate_and_opt_in(self):
         mod = load_module()
