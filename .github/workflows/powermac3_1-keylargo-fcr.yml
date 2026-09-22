@@ -22,6 +22,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Verify PowerMac3,1 KeyLargo FCR map
         run: python3 scripts/tests/test-powermac3_1-keylargo-fcr.py
