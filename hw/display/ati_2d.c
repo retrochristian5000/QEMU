@@ -72,8 +72,8 @@ static void ati_set_dirty(const ATI2DCtx *ctx)
     unsigned int bypp = ctx->bpp / 8;
     hwaddr dirty_start = ctx->dst_offset + ctx->dst.x * bypp +
                          ctx->dst.y * ctx->dst_stride;
-    hwaddr dirty_end = dirty_start + ctx->dst.width * bypp +
-                       (ctx->dst.height - 1) * ctx->dst_stride;
+    hwaddr dirty_end = dirty_start + (hwaddr)ctx->dst.width * bypp +
+                       (hwaddr)(ctx->dst.height - 1) * ctx->dst_stride;
     /*
      * The blit may be outside of the visible screen (e.g. virtual desktops.)
      * Dirty only the intersection of the visible screen and the blit.
