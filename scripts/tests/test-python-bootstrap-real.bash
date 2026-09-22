@@ -42,12 +42,15 @@ python_path="$(
 "$python_path" -c '
 from pathlib import Path
 import ensurepip
+import pip
 import sys
 import tomllib
 import venv
 assert sys.version_info >= (3, 9)
 assert Path(sys.prefix).resolve() == Path(sys.argv[1]).resolve(), (sys.prefix, sys.argv[1])
 ' "$cache_root"
+
+"$python_path" -m pip --version >/dev/null
 
 marker="$cache_root/.whp-python-runtime"
 [[ -f "$marker" ]]

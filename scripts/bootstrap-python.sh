@@ -10,7 +10,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
-PYTHON_BOOTSTRAP_SCHEMA=2
+PYTHON_BOOTSTRAP_SCHEMA=3
 JOBS=${JOBS:-}
 cleanup_path=
 
@@ -56,7 +56,7 @@ python_from_prefix()
     return 1
 }
 
-python_usable()
+python_core_usable()
 {
     candidate=$1
     expected_prefix=$2
@@ -72,6 +72,33 @@ if sys.version_info < (3, 9):
 if Path(sys.prefix).resolve() != Path(sys.argv[1]).resolve():
     raise SystemExit(1)
 ' "$expected_prefix" >/dev/null 2>&1
+}
+
+pip_usable()
+{
+    candidate=$1
+    [ -n "$candidate" ] || return 1
+    "$candidate" -m pip --version >/dev/null 2>&1
+}
+
+ensure_pip()
+{
+    candidate=$1
+    if pip_usable "$candidate"; then
+        return 0
+    fi
+
+    printf 'Repairing pip in bundled WHP Python: %s\n' "$candidate" >&2
+    "$candidate" -m ensurepip --upgrade --default-pip >/dev/null 2>&1 || return 1
+    pip_usable "$candidate"
+}
+
+python_usable()
+{
+    candidate=$1
+    expected_prefix=$2
+    python_core_usable "$candidate" "$expected_prefix" || return 1
+    pip_usable "$candidate"
 }
 
 require_tool git
@@ -172,6 +199,8 @@ EOF
 cached_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
 if [ -f "$marker" ] &&
    [ "$(cat "$marker")" = "$expected_marker" ] &&
+   python_core_usable "$cached_python" "$TOOLCHAIN_DIR" &&
+   ensure_pip "$cached_python" &&
    python_usable "$cached_python" "$TOOLCHAIN_DIR"; then
     printf 'Reused bundled WHP Python: %s\n' "$cached_python" >&2
     printf '%s\n' "$cached_python" >&3
@@ -291,6 +320,10 @@ staged_python=$(python_from_prefix "$staging_dir" 2>/dev/null || true)
 # semantically executed until published. Windows layout output is relocatable
 # and can be checked before publication.
 if [ "$build_mode" = pcbuild ]; then
+    python_core_usable "$staged_python" "$staging_dir" ||
+        fail 'staged bundled Python cannot satisfy QEMU Python requirements'
+    ensure_pip "$staged_python" ||
+        fail 'staged bundled Python could not bootstrap pip'
     python_usable "$staged_python" "$staging_dir" ||
         fail 'staged bundled Python cannot satisfy QEMU Python requirements'
 fi
@@ -309,6 +342,10 @@ cleanup_path=
 rm -rf "$old_dir" "$WORK_DIR"
 
 installed_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
+python_core_usable "$installed_python" "$TOOLCHAIN_DIR" ||
+    fail 'installed bundled Python failed its semantic health check'
+ensure_pip "$installed_python" ||
+    fail 'installed bundled Python could not bootstrap pip'
 python_usable "$installed_python" "$TOOLCHAIN_DIR" ||
     fail 'installed bundled Python failed its semantic health check'
 printf 'WHP bundled Python ready: %s\n' "$installed_python" >&2
