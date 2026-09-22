@@ -165,28 +165,43 @@ int64_t vcpu_calculate_dirtyrate(int64_t calc_time_ms,
     int64_t dirtyrate;
     int i = 0;
     unsigned int gen_id = 0;
+    bool retry;
 
-retry:
-    init_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    do {
+        retry = false;
+        init_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
-    WITH_QEMU_LOCK_GUARD(&qemu_cpu_list_lock) {
-        gen_id = cpu_list_generation_id_get();
-        records = vcpu_dirty_stat_alloc(stat);
-        vcpu_dirty_stat_collect(records, true);
-    }
+        WITH_QEMU_LOCK_GUARD(&qemu_cpu_list_lock) {
+            gen_id = cpu_list_generation_id_get();
+            records = vcpu_dirty_stat_alloc(stat);
+            vcpu_dirty_stat_collect(records, true);
+        }
 
-    duration = dirty_stat_wait(calc_time_ms, init_time_ms);
+        duration = dirty_stat_wait(calc_time_ms, init_time_ms);
 
-    global_dirty_log_sync(flag, one_shot);
+        global_dirty_log_sync(flag, one_shot);
 
-    WITH_QEMU_LOCK_GUARD(&qemu_cpu_list_lock) {
-        if (gen_id != cpu_list_generation_id_get()) {
+        WITH_QEMU_LOCK_GUARD(&qemu_cpu_list_lock) {
+            if (gen_id != cpu_list_generation_id_get()) {
+                retry = true;
+            } else {
+                vcpu_dirty_stat_collect(records, false);
+            }
+        }
+
+        if (retry) {
             g_clear_pointer(&records, g_free);
             g_clear_pointer(&stat->rates, g_free);
-            goto retry;
+
+            /*
+             * One-shot sampling stopped dirty logging above.  A CPU hotplug
+             * invalidates that sample, so restart logging before retrying.
+             */
+            if (one_shot) {
+                global_dirty_log_change(flag, true);
+            }
         }
-        vcpu_dirty_stat_collect(records, false);
-    }
+    } while (retry);
 
     for (i = 0; i < stat->nvcpu; i++) {
         dirtyrate = do_calculate_dirtyrate(records[i], duration);
