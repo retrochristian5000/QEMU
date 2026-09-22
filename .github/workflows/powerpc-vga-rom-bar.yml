@@ -4,6 +4,8 @@ on:
   push:
     branches: [ master ]
     paths:
+      - 'hw/display/ati.c'
+      - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
@@ -16,6 +18,7 @@ on:
       - 'target/ppc/cpu_init.c'
       - 'target/ppc/cpu-models.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
@@ -23,6 +26,8 @@ on:
       - '.github/workflows/powerpc-vga-rom-bar.yml'
   pull_request:
     paths:
+      - 'hw/display/ati.c'
+      - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
@@ -35,6 +40,7 @@ on:
       - 'target/ppc/cpu_init.c'
       - 'target/ppc/cpu-models.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
@@ -48,11 +54,13 @@ jobs:
   display-contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Verify standard VGA keeps its PCI option ROM
         run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
       - name: Verify Sawtooth retail defaults
         run: python3 scripts/tests/test-powermac3_1-defaults.py
+      - name: Verify Sawtooth Rage128 DDC contract
+        run: python3 scripts/tests/test-powermac3_1-rage128-ddc.py
       - name: Verify Sawtooth TSB12LV23 FireWire controller
         run: python3 scripts/tests/test-powermac3_1-firewire.py
       - name: Verify Sawtooth generic AGP + PCI multi-display wiring
