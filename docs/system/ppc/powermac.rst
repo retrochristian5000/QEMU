@@ -228,8 +228,12 @@ Hardware status
        100Base-TX
      - QEMU ``sungem`` uses the Apple UniNorth GMAC PCI identity, revision
        ``0x01``, and is placed at device ``0x0f`` on the UniNorth internal PCI
-       bus, matching real PowerMac3,1 enumeration.  PHY details, power behavior
-       and timing are not hardware-exact.
+       bus, matching real PowerMac3,1 enumeration.  Its MIF read path exposes a
+       BCM5201-compatible 10/100 PHY identity and coherent BMCR/BMSR,
+       auto-negotiation advertisement/partner and auxiliary-status reads tied
+       to the QEMU backend link state.  PHY register writes, the UniNorth GMAC
+       clock gate, KeyLargo PHY reset wiring and the exact physical Sawtooth PHY
+       revision remain incomplete or under validation.
      - High
      - Partial
    * - IDE / ATA
