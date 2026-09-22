@@ -35,9 +35,10 @@ if "data &= ~(BIT(base + 8) | BIT(base + 9));" not in ati_c:
 
 # Rage128 DDC needs to see partial byte writes and line release, not merely a
 # narrow enable-bit write pattern guarded by magic masks.
-monid_start = ati_c.find("case GPIO_MONID ... GPIO_MONID + 3:")
+write_start = ati_c.find("static void ati_mm_write")
+monid_start = ati_c.find("case GPIO_MONID ... GPIO_MONID + 3:", write_start)
 monid_end = ati_c.find("case PALETTE_INDEX", monid_start)
-if monid_start < 0 or monid_end < 0:
+if write_start < 0 or monid_start < 0 or monid_end < 0:
     errors.append("Rage128 GPIO_MONID write handler is missing")
 else:
     monid = ati_c[monid_start:monid_end]
