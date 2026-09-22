@@ -30,7 +30,7 @@ def run(cmd: list[str]) -> str:
 
 def swift_version(swiftc: str) -> tuple[int, int]:
     out = run([swiftc, "--version"])
-    match = re.search(r"(?:Apple )?Swift version\\s+(\\d+)\\.(\\d+)", out)
+    match = re.search(r"(?:Apple )?Swift version\s+(\d+)\.(\d+)", out)
     if not match:
         raise RuntimeError(f"cannot parse Swift version from: {out.strip()}")
     return int(match.group(1)), int(match.group(2))
