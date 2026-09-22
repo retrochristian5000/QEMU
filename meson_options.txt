@@ -80,8 +80,8 @@ option('mshv', type: 'feature', value: 'auto',
        description: 'MSHV acceleration support')
 option('whpx', type: 'feature', value: 'auto',
        description: 'WHPX acceleration support')
-option('hvf', type: 'feature', value: 'auto',
-       description: 'HVF acceleration support')
+option('hvf', type: 'feature', value: 'disabled',
+       description: 'HVF acceleration support (opt-in)')
 option('nitro', type: 'feature', value: 'auto',
        description: 'Nitro acceleration support')
 option('nvmm', type: 'feature', value: 'auto',
