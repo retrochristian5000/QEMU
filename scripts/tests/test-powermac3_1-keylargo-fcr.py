@@ -71,6 +71,24 @@ if "KL_FCR0_CHOOSE_SCCA" in source:
 # Sawtooth's Screamer path is not merely register readback: FCR1 must drive
 # the codec's cell-enable input, and the firmware-facing default must keep the
 # legacy audio cell/clock route alive until the guest powers it down.
+power_start = source.find("#define KL_FCR1_SCREAMER_POWER_MASK")
+default_start = source.find("#define KL_FCR1_SCREAMER_DEFAULT_MASK", power_start)
+fcr2_start = source.find("#define KL_FCR2_IOBUS_ENABLE", default_start)
+if power_start < 0 or default_start < 0 or fcr2_start < 0:
+    missing.append("Screamer FCR1 mask boundaries")
+else:
+    power_mask = source[power_start:default_start]
+    default_mask = source[default_start:fcr2_start]
+    for bit in ("KL_FCR1_AUDIO_CLK_ENABLE",
+                "KL_FCR1_AUDIO_CLK_OUT_ENABLE",
+                "KL_FCR1_AUDIO_CELL_ENABLE"):
+        if bit not in power_mask:
+            missing.append(f"Screamer power mask bit: {bit}")
+    if "KL_FCR1_CHOOSE_AUDIO" in power_mask:
+        missing.append("Screamer power mask must not treat AUDIO_CHOOSE as power")
+    if "KL_FCR1_CHOOSE_AUDIO" not in default_mask:
+        missing.append("Sawtooth default must preserve legacy AUDIO_CHOOSE route")
+
 for needle in (
     "KL_FCR1_SCREAMER_POWER_MASK",
     "KL_FCR1_SCREAMER_DEFAULT_MASK",
