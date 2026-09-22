@@ -1388,6 +1388,7 @@ static uint16_t virtio_net_handle_rss(VirtIONet *n,
     struct virtio_net_rss_config cfg;
     size_t s, offset = 0, size_get;
     uint16_t queue_pairs, i;
+    g_autofree uint16_t *indirections_table = NULL;
     struct {
         uint16_t us;
         uint8_t b;
@@ -1431,24 +1432,24 @@ static uint16_t virtio_net_handle_rss(VirtIONet *n,
     }
     offset += size_get;
     size_get = sizeof(uint16_t) * n->rss_data.indirections_len;
-    g_free(n->rss_data.indirections_table);
-    n->rss_data.indirections_table = g_malloc(size_get);
-    if (!n->rss_data.indirections_table) {
+    indirections_table = g_try_new(uint16_t, n->rss_data.indirections_len);
+    if (!indirections_table) {
         err_msg = "Can't allocate indirections table";
         err_value = n->rss_data.indirections_len;
         goto error;
     }
-    s = iov_to_buf(iov, iov_cnt, offset,
-                   n->rss_data.indirections_table, size_get);
+    s = iov_to_buf(iov, iov_cnt, offset, indirections_table, size_get);
     if (s != size_get) {
         err_msg = "Short indirection table buffer";
         err_value = (uint32_t)s;
         goto error;
     }
     for (i = 0; i < n->rss_data.indirections_len; ++i) {
-        uint16_t val = n->rss_data.indirections_table[i];
-        n->rss_data.indirections_table[i] = virtio_lduw_p(vdev, &val);
+        uint16_t val = indirections_table[i];
+        indirections_table[i] = virtio_lduw_p(vdev, &val);
     }
+    g_free(n->rss_data.indirections_table);
+    n->rss_data.indirections_table = g_steal_pointer(&indirections_table);
     offset += size_get;
     size_get = sizeof(temp);
     s = iov_to_buf(iov, iov_cnt, offset, &temp, size_get);
