@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
@@ -41,6 +41,10 @@ jobs:
 
       - name: Test qemu-nbd include hygiene
         run: python3 scripts/tests/test-qemu-nbd-includes.py
+
+      - name: Test dirtyrate sparse-vCPU indexing
+        run: python3 scripts/tests/test-dirtyrate-sparse-vcpu.py
+
 
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
@@ -70,7 +74,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install build dependencies
         run: |
