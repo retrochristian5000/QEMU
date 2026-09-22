@@ -14,7 +14,7 @@ rust-version.workspace = true
 
 [dependencies]
 glib-sys.workspace = true
-bilge = { version = "0.2.0" }
+bilge = { version = "0.5.0" }
 bilge-impl = { version = "0.2.0" }
 bits = { path = "../../../bits" }
 common = { path = "../../../common" }
