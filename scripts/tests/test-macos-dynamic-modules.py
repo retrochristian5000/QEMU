@@ -35,6 +35,12 @@ assert "platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto'"
 assert "configure_args.append('--enable-modules')" in portable
 assert "optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')" in portable
 
+# WHP macOS builds are TCG-only. Keep both host hypervisor accelerators out of
+# the configure identity so future native-architecture targets cannot silently
+# acquire KVM/HVF code or Hypervisor.framework signing entitlements.
+assert 'configure_args+=(--disable-kvm --disable-hvf)' in prepare
+assert "configure_args.extend(['--disable-kvm', '--disable-hvf'])" in portable
+
 # Targeted builds must carry Meson's module alias when it exists. Otherwise a
 # successful qemu-system-* link can leave its optional DSOs unbuilt.
 for token in (
