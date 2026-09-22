@@ -1391,6 +1391,8 @@ if host_os == 'darwin' and (not get_option('libisofs').auto() or have_block)
                         required: get_option('libisofs'),
                         method: 'pkg-config')
   if libisofs.found() and not cc.compiles('''
+      #include <sys/types.h>
+      #include <time.h>
       #include <libisofs.h>
       int main(void) { return 0; }
     ''',

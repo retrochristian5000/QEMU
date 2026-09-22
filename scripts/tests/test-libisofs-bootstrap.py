@@ -58,6 +58,13 @@ def main() -> int:
     require(helper, "LIBISOFS_GIT_COMMIT=", "libisofs cache revision identity")
     require(helper, 'PKG_NAME = "libisofs-1"', "pkg-config identity")
     require(helper, '"-Werror=strict-prototypes"', "strict prototype probe")
+    require(
+        helper,
+        'platform.system() != "Darwin"',
+        "physical Darwin bootstrap guard",
+    )
+    require(helper, "#include <sys/types.h>", "strict-prototype POSIX types")
+    require(helper, "#include <time.h>", "strict-prototype time types")
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
@@ -72,6 +79,8 @@ def main() -> int:
         "name: 'libisofs strict prototypes'",
         "Meson strict-prototype compile probe",
     )
+    require(meson, "#include <sys/types.h>", "Meson libisofs POSIX types")
+    require(meson, "#include <time.h>", "Meson libisofs time types")
     require(
         meson,
         "libisofs.h is incompatible with -Wstrict-prototypes",

@@ -213,7 +213,9 @@ def strict_header_probe(cc: str, pkgconf: str) -> bool:
     except RuntimeError:
         return False
 
-    source = """#include <libisofs.h>
+    source = """#include <sys/types.h>
+#include <time.h>
+#include <libisofs.h>
 int main(void)
 {
     return 0;
@@ -432,6 +434,19 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--mode", choices=("auto", "force"), default="auto")
     args = parser.parse_args(argv)
+
+    if platform.system() != "Darwin":
+        if args.mode == "force":
+            print(
+                "error: WHP libisofs bootstrap is supported only on Darwin",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "WHP libisofs bootstrap: skipped on non-Darwin host",
+            file=sys.stderr,
+        )
+        return 0
 
     try:
         cc = select_c_compiler()
