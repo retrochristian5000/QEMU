@@ -581,15 +581,25 @@ static char *usb_get_fw_dev_path(DeviceState *qdev)
     fw_path = g_malloc(fw_len);
     in = dev->port->path;
     while (fw_len - pos > 0) {
+        int n;
+
         nr = strtol(in, &in, 10);
         if (in[0] == '.') {
             /* some hub between root port and device */
-            pos += snprintf(fw_path + pos, fw_len - pos, "hub@%lx/", nr);
+            n = snprintf(fw_path + pos, fw_len - pos, "hub@%lx/", nr);
+            if (n < 0 || n >= fw_len - pos) {
+                fw_path[fw_len - 1] = '\0';
+                break;
+            }
+            pos += n;
             in++;
         } else {
             /* the device itself */
-            snprintf(fw_path + pos, fw_len - pos, "%s@%lx",
-                     qdev_fw_name(qdev), nr);
+            n = snprintf(fw_path + pos, fw_len - pos, "%s@%lx",
+                         qdev_fw_name(qdev), nr);
+            if (n < 0 || n >= fw_len - pos) {
+                fw_path[fw_len - 1] = '\0';
+            }
             break;
         }
     }
