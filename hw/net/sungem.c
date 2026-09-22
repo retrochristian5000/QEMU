@@ -181,6 +181,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(SunGEMState, SUNGEM)
 #define BCM5201_AUXSTATUS                 0x19
 #define BCM5201_AUXSTATUS_ANEG_COMPLETE   0x8000
 #define BCM5201_AUXSTATUS_LP_ABILITY      0x1000
+#define BCM5201_AUXSTATUS_HCD_10T         0x0100
+#define BCM5201_AUXSTATUS_HCD_10T_FD      0x0200
+#define BCM5201_AUXSTATUS_HCD_100TX       0x0300
 #define BCM5201_AUXSTATUS_HCD_100TX_FD    0x0500
 #define BCM5201_AUXSTATUS_SPEED100        0x0008
 #define BCM5201_AUXSTATUS_LINK            0x0004
@@ -191,6 +194,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(SunGEMState, SUNGEM)
 #define BCM5201_AUXMODE2_WRITABLE         0x037e
 #define BCM5201_MULTIPHY                  0x1e
 #define BCM5201_MULTIPHY_HCD_100TX_FD     0x8000
+#define BCM5201_MULTIPHY_HCD_100TX        0x2000
+#define BCM5201_MULTIPHY_HCD_10T_FD       0x1000
+#define BCM5201_MULTIPHY_HCD_10T          0x0800
 #define BCM5201_MULTIPHY_RESTART_ANEG     0x0100
 #define BCM5201_MULTIPHY_ANEG_COMPLETE    0x0080
 #define BCM5201_MULTIPHY_SUPERISOLATE     0x0008
@@ -297,7 +303,7 @@ static void sungem_phy_reset(SunGEMState *s)
 
 static bool sungem_phy_powered(SunGEMState *s)
 {
-    return !(s->phy_bmcr & (MII_BMCR_PDOWN | MII_BMCR_ISOLATE)) &&
+    return !(s->phy_bmcr & MII_BMCR_PDOWN) &&
            !(s->phy_multiphy & BCM5201_MULTIPHY_SUPERISOLATE);
 }
 
@@ -307,30 +313,100 @@ static bool sungem_phy_link_up(SunGEMState *s)
            !qemu_get_queue(s->nic)->link_down;
 }
 
+static bool sungem_phy_data_path_up(SunGEMState *s)
+{
+    return sungem_phy_link_up(s) &&
+           !(s->phy_bmcr & MII_BMCR_ISOLATE);
+}
+
 static bool sungem_phy_autoneg(SunGEMState *s)
 {
     return (s->phy_bmcr & MII_BMCR_AUTOEN) != 0;
 }
 
+static uint16_t sungem_phy_aneg_common(SunGEMState *s)
+{
+    return s->phy_anar & BCM5201_ANAR_CAPS;
+}
+
+static bool sungem_phy_aneg_resolved(SunGEMState *s)
+{
+    return sungem_phy_link_up(s) && sungem_phy_autoneg(s) &&
+           (sungem_phy_aneg_common(s) &
+            (MII_ANAR_TXFD | MII_ANAR_TX | MII_ANAR_10FD | MII_ANAR_10));
+}
+
 static bool sungem_phy_speed100(SunGEMState *s)
 {
-    if (sungem_phy_autoneg(s)) {
-        return sungem_phy_link_up(s);
+    uint16_t common;
+
+    if (!sungem_phy_autoneg(s)) {
+        return (s->phy_bmcr & MII_BMCR_SPEED100) != 0;
     }
-    return (s->phy_bmcr & MII_BMCR_SPEED100) != 0;
+
+    common = sungem_phy_aneg_common(s);
+    return (common & (MII_ANAR_TXFD | MII_ANAR_TX)) != 0;
 }
 
 static bool sungem_phy_full_duplex(SunGEMState *s)
 {
-    if (sungem_phy_autoneg(s)) {
-        return sungem_phy_link_up(s);
+    uint16_t common;
+
+    if (!sungem_phy_autoneg(s)) {
+        return (s->phy_bmcr & MII_BMCR_FD) != 0;
     }
-    return (s->phy_bmcr & MII_BMCR_FD) != 0;
+
+    common = sungem_phy_aneg_common(s);
+    if (common & MII_ANAR_TXFD) {
+        return true;
+    }
+    if (common & MII_ANAR_TX) {
+        return false;
+    }
+    return (common & MII_ANAR_10FD) != 0;
+}
+
+static uint16_t sungem_phy_aux_hcd(SunGEMState *s)
+{
+    uint16_t common = sungem_phy_aneg_common(s);
+
+    if (common & MII_ANAR_TXFD) {
+        return BCM5201_AUXSTATUS_HCD_100TX_FD;
+    }
+    if (common & MII_ANAR_TX) {
+        return BCM5201_AUXSTATUS_HCD_100TX;
+    }
+    if (common & MII_ANAR_10FD) {
+        return BCM5201_AUXSTATUS_HCD_10T_FD;
+    }
+    if (common & MII_ANAR_10) {
+        return BCM5201_AUXSTATUS_HCD_10T;
+    }
+    return 0;
+}
+
+static uint16_t sungem_phy_multiphy_hcd(SunGEMState *s)
+{
+    uint16_t common = sungem_phy_aneg_common(s);
+
+    if (common & MII_ANAR_TXFD) {
+        return BCM5201_MULTIPHY_HCD_100TX_FD;
+    }
+    if (common & MII_ANAR_TX) {
+        return BCM5201_MULTIPHY_HCD_100TX;
+    }
+    if (common & MII_ANAR_10FD) {
+        return BCM5201_MULTIPHY_HCD_10T_FD;
+    }
+    if (common & MII_ANAR_10) {
+        return BCM5201_MULTIPHY_HCD_10T;
+    }
+    return 0;
 }
 
 static void sungem_phy_notify_state(SunGEMState *s)
 {
-    if (s->nic && sungem_phy_link_up(s)) {
+    if (s->nic && sungem_phy_data_path_up(s)) {
         qemu_flush_queued_packets(qemu_get_queue(s->nic));
     }
 }
@@ -417,7 +493,7 @@ static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,
 
     if (s->macregs[MAC_XIFCFG >> 2] & MAC_XIFCFG_LBCK) {
         qemu_receive_packet(nc, buf, size);
-    } else if (sungem_phy_link_up(s)) {
+    } else if (sungem_phy_data_path_up(s)) {
         qemu_send_packet(nc, buf, size);
     }
 }
@@ -553,7 +629,7 @@ static bool sungem_can_receive(NetClientState *nc)
     rxmac_cfg = s->macregs[MAC_RXCFG >> 2];
     rxdma_cfg = s->rxdmaregs[RXDMA_CFG >> 2];
 
-    if (!sungem_phy_link_up(s)) {
+    if (!sungem_phy_data_path_up(s)) {
         return false;
     }
 
@@ -670,7 +746,7 @@ static ssize_t sungem_receive(NetClientState *nc, const uint8_t *buf,
 
     trace_sungem_rx_packet(size);
 
-    if (!sungem_phy_link_up(s)) {
+    if (!sungem_phy_data_path_up(s)) {
         return 0;
     }
 
@@ -952,7 +1028,7 @@ static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
         val = BCM5201_BMSR_CAPS;
         if (link_up) {
             val |= MII_BMSR_LINK_ST;
-            if (autoneg) {
+            if (sungem_phy_aneg_resolved(s)) {
                 val |= MII_BMSR_AN_COMP;
             }
         }
@@ -989,10 +1065,10 @@ static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
             if (sungem_phy_speed100(s)) {
                 val |= BCM5201_AUXSTATUS_SPEED100;
             }
-            if (autoneg) {
+            if (sungem_phy_aneg_resolved(s)) {
                 val |= BCM5201_AUXSTATUS_ANEG_COMPLETE |
                        BCM5201_AUXSTATUS_LP_ABILITY |
-                       BCM5201_AUXSTATUS_HCD_100TX_FD;
+                       sungem_phy_aux_hcd(s);
             }
         }
         return val;
@@ -1002,8 +1078,8 @@ static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
         return s->phy_auxmode2;
     case BCM5201_MULTIPHY:
         val = s->phy_multiphy;
-        if (link_up && autoneg) {
-            val |= BCM5201_MULTIPHY_HCD_100TX_FD |
+        if (sungem_phy_aneg_resolved(s)) {
+            val |= sungem_phy_multiphy_hcd(s) |
                    BCM5201_MULTIPHY_ANEG_COMPLETE;
         }
         return val;
