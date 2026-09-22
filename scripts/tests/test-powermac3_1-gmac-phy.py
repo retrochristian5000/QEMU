@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the Sawtooth UniNorth GMAC BCM5201 PHY read contract."""
+"""Guard the Sawtooth UniNorth GMAC BCM5201 PHY contract."""
 
 from pathlib import Path
 import sys
@@ -11,63 +11,104 @@ errors: list[str] = []
 
 required = (
     "#define BCM5201_AUXCTLSTATUS              0x18",
-    "#define BCM5201_AUXCTLSTATUS_DUPLEX       0x0001",
-    "#define BCM5201_AUXCTLSTATUS_SPEED100     0x0002",
-    "#define BCM5201_AUXCTLSTATUS_ANEG         0x0008",
     "#define BCM5201_AUXSTATUS                 0x19",
-    "#define BCM5201_AUXSTATUS_HCD_100TX_FD    0x0500",
-    "static bool sungem_phy_link_up(SunGEMState *s)",
-    "return !qemu_get_queue(s->nic)->link_down;",
+    "#define BCM5201_INTERRUPT                 0x1a",
+    "#define BCM5201_AUXMODE2                  0x1b",
+    "#define BCM5201_MULTIPHY                  0x1e",
+    "#define BCM5201_MULTIPHY_SUPERISOLATE     0x0008",
+    "#define BCM5201_MULTIPHY_SERIALMODE       0x0002",
+    "uint16_t phy_bmcr;",
+    "uint16_t phy_anar;",
+    "uint16_t phy_auxctl;",
+    "uint16_t phy_interrupt;",
+    "uint16_t phy_auxmode2;",
+    "uint16_t phy_multiphy;",
+    "static void sungem_phy_reset(SunGEMState *s)",
+    "static bool sungem_phy_data_path_up(SunGEMState *s)",
+    "static bool sungem_phy_aneg_resolved(SunGEMState *s)",
+    "static uint16_t sungem_phy_aux_hcd(SunGEMState *s)",
+    "static uint16_t sungem_phy_multiphy_hcd(SunGEMState *s)",
+    "static void sungem_mii_write(SunGEMState *s, uint8_t phy_addr,",
+    "if (phy_addr != s->phy_addr) {",
+    "if (val & MII_BMCR_RESET) {",
+    "s->phy_bmcr = val & BCM5201_BMCR_WRITABLE;",
+    "s->phy_anar = val & BCM5201_ANAR_WRITABLE;",
+    "s->phy_auxctl = val & BCM5201_AUXCTL_WRITABLE;",
+    "s->phy_interrupt = val & BCM5201_INTERRUPT_WRITABLE;",
+    "s->phy_auxmode2 = val & BCM5201_AUXMODE2_WRITABLE;",
+    "s->phy_multiphy = val & BCM5201_MULTIPHY_WRITABLE;",
     "case MII_BMCR:",
-    "return MII_BMCR_AUTOEN;",
-    "case MII_BMSR:",
-    "BCM5201_BMSR_CAPS",
-    "MII_BMSR_AN_COMP | MII_BMSR_LINK_ST",
+    "return s->phy_bmcr;",
     "case MII_ANAR:",
-    "return BCM5201_ANAR_CAPS;",
-    "case MII_ANLPAR:",
-    "BCM5201_ANAR_CAPS | MII_ANLPAR_ACK",
-    "case MII_ANER:",
-    "MII_ANER_NWAY",
-    "case BCM5201_AUXCTLSTATUS:",
-    "BCM5201_AUXCTLSTATUS_ANEG",
-    "BCM5201_AUXCTLSTATUS_SPEED100",
-    "BCM5201_AUXCTLSTATUS_DUPLEX",
-    "case BCM5201_AUXSTATUS:",
-    "BCM5201_AUXSTATUS_ANEG_COMPLETE",
-    "BCM5201_AUXSTATUS_LP_ABILITY",
-    "BCM5201_AUXSTATUS_HCD_100TX_FD",
-    "BCM5201_AUXSTATUS_LINK",
+    "return s->phy_anar;",
+    "case BCM5201_INTERRUPT:",
+    "return s->phy_interrupt;",
+    "case BCM5201_AUXMODE2:",
+    "return s->phy_auxmode2;",
+    "case BCM5201_MULTIPHY:",
+    "VMSTATE_UINT16_V(phy_bmcr, SunGEMState, 1)",
+    "VMSTATE_UINT16_V(phy_multiphy, SunGEMState, 1)",
 )
 for needle in required:
     if needle not in source:
-        errors.append(f"missing PHY read contract: {needle}")
+        errors.append(f"missing PHY contract: {needle}")
 
-# Retire the old contradictory shortcuts.
 for forbidden in (
-    "case MII_BMCR:\n        return 0;",
-    "return MII_ANLPAR_TXFD;",
-    "case 0x18: /* 5201 AUX status */",
+    "/* XXX TODO */",
+    "case MII_BMCR:\n        return MII_BMCR_AUTOEN;",
     "return 3; /* 100FD */",
 ):
     if forbidden in source:
-        errors.append(f"stale primitive PHY read remains: {forbidden}")
+        errors.append(f"stale primitive PHY behavior remains: {forbidden}")
 
-# Capability bits are static; negotiated status is conditional on link.
-read_start = source.find("static uint16_t __sungem_mii_read")
-read_end = source.find("static uint16_t sungem_mii_read", read_start + 1)
-if read_start < 0 or read_end < 0:
-    errors.append("PHY read helper bounds are missing")
+# BMCR reset/restart are commands rather than persistent readable state.
+write_start = source.find("static void sungem_mii_write")
+read_start = source.find("static uint16_t __sungem_mii_read", write_start)
+if write_start < 0 or read_start < 0:
+    errors.append("PHY write/read helper bounds are missing")
 else:
-    read_body = source[read_start:read_end]
-    if "link_up ? MII_BMSR_AN_COMP | MII_BMSR_LINK_ST : 0" not in read_body:
-        errors.append("BMSR link/aneg status must follow backend link")
-    if "return link_up ? (BCM5201_ANAR_CAPS | MII_ANLPAR_ACK) : 0;" not in read_body:
-        errors.append("ANLPAR must not advertise a live partner while link is down")
+    write_body = source[write_start:read_start]
+    if "MII_BMCR_RESET" not in write_body:
+        errors.append("BMCR reset command must be handled")
+    if "MII_BMCR_ANRESTART" in source and "BCM5201_BMCR_WRITABLE" in write_body:
+        bmcr_mask_start = source.find("#define BCM5201_BMCR_WRITABLE")
+        bmcr_mask_end = source.find("#define BCM5201_ANAR_WRITABLE", bmcr_mask_start)
+        if bmcr_mask_start >= 0 and bmcr_mask_end >= 0:
+            bmcr_mask = source[bmcr_mask_start:bmcr_mask_end]
+            if "MII_BMCR_ANRESTART" in bmcr_mask:
+                errors.append("ANRESTART must self-clear instead of persisting in BMCR")
+
+# Isolate blocks the MAC data path but should not masquerade as cable loss.
+power_start = source.find("static bool sungem_phy_powered")
+link_start = source.find("static bool sungem_phy_link_up", power_start)
+path_start = source.find("static bool sungem_phy_data_path_up", link_start)
+autoneg_start = source.find("static bool sungem_phy_autoneg", path_start)
+if min(power_start, link_start, path_start, autoneg_start) < 0:
+    errors.append("PHY power/link/data helper boundaries are missing")
+else:
+    powered = source[power_start:link_start]
+    link = source[link_start:path_start]
+    data_path = source[path_start:autoneg_start]
+    if "MII_BMCR_ISOLATE" in powered or "MII_BMCR_ISOLATE" in link:
+        errors.append("BMCR isolate must not be treated as physical carrier loss")
+    if "MII_BMCR_ISOLATE" not in data_path:
+        errors.append("BMCR isolate must block the MAC data path")
+
+# Guest advertisement must affect the negotiated mode instead of forcing 100FD.
+if "s->phy_anar & BCM5201_ANAR_CAPS" not in source:
+    errors.append("autonegotiation must derive common abilities from guest ANAR")
+for hcd in (
+    "BCM5201_AUXSTATUS_HCD_100TX_FD",
+    "BCM5201_AUXSTATUS_HCD_100TX",
+    "BCM5201_AUXSTATUS_HCD_10T_FD",
+    "BCM5201_AUXSTATUS_HCD_10T",
+):
+    if hcd not in source:
+        errors.append(f"missing negotiated HCD mode: {hcd}")
 
 if errors:
     for error in errors:
         print(f"FAIL: {error}", file=sys.stderr)
     raise SystemExit(1)
 
-print("PowerMac3,1 BCM5201 PHY read contract: verified")
+print("PowerMac3,1 BCM5201 PHY read/write contract: verified")
