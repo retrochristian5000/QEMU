@@ -380,7 +380,7 @@ static int virtio_pci_ioeventfd_assign(DeviceState *d, EventNotifier *notifier,
     MemoryRegion *modern_mr = &proxy->notify.mr;
     MemoryRegion *modern_notify_mr = &proxy->notify_pio.mr;
     MemoryRegion *legacy_mr = &proxy->bar;
-    hwaddr modern_addr = virtio_pci_queue_mem_mult(proxy) *
+    hwaddr modern_addr = (hwaddr)virtio_pci_queue_mem_mult(proxy) *
                          virtio_get_queue_index(vq);
     hwaddr legacy_addr = VIRTIO_PCI_QUEUE_NOTIFY;
 
