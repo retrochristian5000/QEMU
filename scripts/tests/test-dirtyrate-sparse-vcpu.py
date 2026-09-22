@@ -13,6 +13,7 @@ dirtylimit = DIRTYLIMIT.read_text(encoding="utf-8")
 errors: list[str] = []
 
 required_dirtyrate = (
+    "g_autofree DirtyPageRecord *records = NULL;",
     "int cpu_index;",
     "record->cpu_index = cpu->cpu_index;",
     "record_dirtypages(&records[index], cpu, start);",
@@ -29,6 +30,7 @@ for forbidden in (
     "dirty_pages[cpu->cpu_index].start_pages",
     "dirty_pages[cpu->cpu_index].end_pages",
     "stat->rates[i].id = i;",
+    "g_free(records);",
 ):
     if forbidden in dirtyrate:
         errors.append(f"dense allocation still indexed by sparse cpu_index: {forbidden}")
