@@ -1682,11 +1682,11 @@ static inline uint32_t do_helper_trt(CPUS390XState *env, int len,
     int i;
 
     for (i = 0; i <= len; i++) {
-        uint8_t byte = cpu_ldub_data_ra(env, array + i * inc, ra);
+        uint8_t byte = cpu_ldub_data_ra(env, array + (int64_t)i * inc, ra);
         uint8_t sbyte = cpu_ldub_data_ra(env, trans + byte, ra);
 
         if (sbyte != 0) {
-            set_address(env, 1, array + i * inc);
+            set_address(env, 1, array + (int64_t)i * inc);
             env->regs[2] = deposit64(env->regs[2], 0, 8, sbyte);
             return (i == len) ? 2 : 1;
         }
