@@ -55,6 +55,7 @@ struct ScreamerState {
     uint32_t regs[SCREAMER_MMIO_REGS];
     uint16_t codec_ctrl_regs[8];
     uint32_t rate;
+    bool cell_enabled;
 
     uint8_t tx_buffer[SCREAMER_BUFFER_SIZE];
     uint32_t tx_rpos;
