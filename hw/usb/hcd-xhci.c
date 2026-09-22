@@ -2072,20 +2072,29 @@ static USBPort *xhci_lookup_uport(XHCIState *xhci, uint32_t *slot_ctx)
 {
     USBPort *uport;
     char path[32];
-    int i, pos, port;
+    int i, port, n;
+    size_t pos;
 
     port = (slot_ctx[1]>>16) & 0xFF;
     if (port < 1 || port > xhci->numports) {
         return NULL;
     }
     port = xhci->ports[port-1].uport->index+1;
-    pos = snprintf(path, sizeof(path), "%d", port);
+    n = snprintf(path, sizeof(path), "%d", port);
+    if (n < 0 || n >= sizeof(path)) {
+        return NULL;
+    }
+    pos = n;
     for (i = 0; i < 5; i++) {
         port = (slot_ctx[0] >> 4*i) & 0x0f;
         if (!port) {
             break;
         }
-        pos += snprintf(path + pos, sizeof(path) - pos, ".%d", port);
+        n = snprintf(path + pos, sizeof(path) - pos, ".%d", port);
+        if (n < 0 || n >= sizeof(path) - pos) {
+            return NULL;
+        }
+        pos += n;
     }
 
     QTAILQ_FOREACH(uport, &xhci->bus.used, next) {
