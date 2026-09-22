@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload failure log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clang-sema-cxx26-failure
           path: clang-sema-cxx26.log
