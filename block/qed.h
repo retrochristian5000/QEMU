@@ -285,7 +285,7 @@ static inline bool qed_check_cluster_offset(BDRVQEDState *s, uint64_t offset)
  */
 static inline bool qed_check_table_offset(BDRVQEDState *s, uint64_t offset)
 {
-    uint64_t end_offset = offset + (s->header.table_size - 1) *
+    uint64_t end_offset = offset + (uint64_t)(s->header.table_size - 1) *
                           s->header.cluster_size;
 
     /* Overflow check */
