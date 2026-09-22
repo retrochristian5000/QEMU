@@ -262,7 +262,7 @@ efi_status uefi_vars_check_auth_2(uefi_vars_state *uv, uefi_variable *var,
 
     /* checks passed, set variable data */
     var->time = auth.timestamp;
-    if (va->data_size - data_offset > 0) {
+    if (va->data_size > data_offset) {
         var->data = g_malloc(va->data_size - data_offset);
         memcpy(var->data, data + data_offset, va->data_size - data_offset);
         var->data_size = va->data_size - data_offset;
