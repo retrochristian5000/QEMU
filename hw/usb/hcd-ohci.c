@@ -864,7 +864,16 @@ static void ohci_td_pkt(const char *msg, const uint8_t *buf, size_t len)
             break;
         }
 
-        p += snprintf(p, sizeof(tmp) - (p - tmp), " %.2x", buf[i]);
+        {
+            size_t rem = sizeof(tmp) - (p - tmp);
+            int n = snprintf(p, rem, " %.2x", buf[i]);
+            if (n < 0 || (size_t)n >= rem) {
+                p = tmp + sizeof(tmp) - 1;
+                *p = 0;
+            } else {
+                p += n;
+            }
+        }
     }
 }
 
