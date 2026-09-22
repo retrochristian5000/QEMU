@@ -31,6 +31,20 @@ jobs:
       - name: Verify SDL bootstrap wiring
         run: python3 scripts/tests/test-sdl-bootstrap.py
 
+      - name: Install Linux SDL3 window-system headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libx11-dev \
+            libxext-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxfixes-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libxss-dev \
+            libxtst-dev
+
       - name: Build and install pinned SDL3
         shell: bash
         run: |
