@@ -189,7 +189,7 @@ static void nvme_init_queue_common(nvme_ctrl *ctrl, nvme_queue *q,
                                    uint16_t db_idx, uint32_t size)
 {
     q->ctrl = ctrl;
-    q->doorbell = (sizeof(NvmeBar) + db_idx * ctrl->db_stride);
+    q->doorbell = sizeof(NvmeBar) + ((uint64_t)db_idx * ctrl->db_stride);
     g_test_message(" q %p db_idx %u doorbell 0x%" PRIx64, q, db_idx, q->doorbell);
     q->size = size;
 }
