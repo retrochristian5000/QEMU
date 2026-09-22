@@ -45,6 +45,8 @@ jobs:
       - name: Test dirtyrate sparse-vCPU indexing
         run: python3 scripts/tests/test-dirtyrate-sparse-vcpu.py
 
+      - name: Test automatic source refresh policy
+        run: python3 scripts/tests/test-build-source-update.py
 
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
