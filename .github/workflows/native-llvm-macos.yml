@@ -63,6 +63,7 @@ on:
       - 'scripts/tests/test-arm64e-isa-hotpath.py'
       - 'scripts/bench-macos-swift-host.py'
       - 'scripts/tests/test-arm64e-iso-hotpath.py'
+      - 'scripts/tests/test-arm64e-block-write-hotpath.py'
       - 'block/io.c'
       - 'block/raw-format.c'
       - 'include/block/block_int-io.h'
@@ -161,6 +162,10 @@ jobs:
       - name: Audit arm64e raw ISO read hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-iso-hotpath.py
+
+      - name: Audit arm64e block write hot path
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-block-write-hotpath.py
 
       - name: Verify native LLVM wiring
         shell: bash

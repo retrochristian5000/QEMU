@@ -1092,6 +1092,18 @@ bdrv_driver_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
         qiov = &local_qiov;
     }
 
+    if (likely(drv == &bdrv_raw)) {
+        ret = bdrv_raw_co_pwritev(bs, offset, bytes, qiov, flags);
+        goto emulate_flags;
+    }
+
+#ifdef CONFIG_POSIX
+    if (likely(drv == &bdrv_file)) {
+        ret = bdrv_file_co_pwritev(bs, offset, bytes, qiov, flags);
+        goto emulate_flags;
+    }
+#endif
+
     if (drv->bdrv_co_pwritev) {
         ret = drv->bdrv_co_pwritev(bs, offset, bytes, qiov, flags);
         goto emulate_flags;

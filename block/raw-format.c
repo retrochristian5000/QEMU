@@ -221,9 +221,9 @@ bdrv_raw_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
     return bdrv_co_preadv(bs->file, offset, bytes, qiov, flags);
 }
 
-static int coroutine_fn GRAPH_RDLOCK
-raw_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
-               QEMUIOVector *qiov, BdrvRequestFlags flags)
+int coroutine_fn GRAPH_RDLOCK
+bdrv_raw_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                    QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     void *buf = NULL;
     BlockDriver *drv;
@@ -648,7 +648,7 @@ BlockDriver bdrv_raw = {
     .bdrv_child_perm      = raw_child_perm,
     .bdrv_co_create_opts  = &raw_co_create_opts,
     .bdrv_co_preadv       = &bdrv_raw_co_preadv,
-    .bdrv_co_pwritev      = &raw_co_pwritev,
+    .bdrv_co_pwritev      = &bdrv_raw_co_pwritev,
     .bdrv_co_pwrite_zeroes = &raw_co_pwrite_zeroes,
     .bdrv_co_pdiscard     = &raw_co_pdiscard,
     .bdrv_co_zone_report  = &raw_co_zone_report,
