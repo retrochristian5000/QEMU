@@ -29,6 +29,15 @@ assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
 # silently built for a different ABI.
 assert text.count('-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch') >= 2
 
+# The installed compiler must be smoke-tested with the ABI selected for the
+# toolchain itself.  A plain clang invocation defaults back to arm64 on macOS
+# and would therefore fail to prove that an arm64e bootstrap can compile C.
+assert 'smoke_arch_args=(' in text
+assert '-arch "$darwin_cmake_arch"' in text
+assert '"${smoke_arch_args[@]}"' in text
+assert '#ifndef __arm64e__' in text
+assert 'whp_arm64e_fp' in text
+
 # The WHP Mach-O LLD fork does not yet implement ARM64_RELOC_AUTHENTICATED_POINTER.
 # A trivial arm64e link probe can therefore succeed even though real LLVM objects
 # later fail with "INVALID relocation has invalid width".  Never reuse the old
