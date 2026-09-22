@@ -5141,7 +5141,8 @@ static int GRAPH_RDLOCK make_completely_empty(BlockDriverState *bs)
         goto fail;
     }
 
-    ret = bdrv_truncate(bs->file, (3 + l1_clusters) * s->cluster_size, false,
+    ret = bdrv_truncate(bs->file,
+                        (int64_t)(3 + l1_clusters) * s->cluster_size, false,
                         PREALLOC_MODE_OFF, 0, &local_err);
     if (ret < 0) {
         error_report_err(local_err);
