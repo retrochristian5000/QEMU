@@ -1385,6 +1385,12 @@ if not get_option('libiscsi').auto() or have_block
                          required: get_option('libiscsi'),
                          method: 'pkg-config')
 endif
+libisofs = not_found
+if host_os == 'darwin' and (not get_option('libisofs').auto() or have_block)
+  libisofs = dependency('libisofs-1',
+                        required: get_option('libisofs'),
+                        method: 'pkg-config')
+endif
 zstd = not_found
 if not get_option('zstd').auto() or have_block
   zstd = dependency('libzstd', version: '>=1.4.0',
@@ -2480,6 +2486,7 @@ config_host_data.set('CONFIG_EBPF', libbpf.found())
 config_host_data.set('CONFIG_AF_XDP', libxdp.found())
 config_host_data.set('CONFIG_LIBDAXCTL', libdaxctl.found())
 config_host_data.set('CONFIG_LIBISCSI', libiscsi.found())
+config_host_data.set('CONFIG_LIBISOFS', libisofs.found())
 config_host_data.set('CONFIG_LIBNFS', libnfs.found())
 config_host_data.set('CONFIG_LIBSSH', libssh.found())
 config_host_data.set('CONFIG_LINUX_AIO', libaio.found())
@@ -5026,6 +5033,7 @@ summary_info += {'usb net redir':     usbredir}
 summary_info += {'OpenGL support (epoxy)': opengl}
 summary_info += {'GBM':               gbm}
 summary_info += {'libiscsi support':  libiscsi}
+summary_info += {'libisofs support':  libisofs}
 summary_info += {'libnfs support':    libnfs}
 if host_os == 'windows'
   if have_ga

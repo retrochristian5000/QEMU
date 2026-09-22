@@ -43,6 +43,10 @@
 #include "scsi/constants.h"
 #include "scsi/utils.h"
 
+#if defined(CONFIG_DARWIN) && defined(CONFIG_LIBISOFS)
+#include <libisofs.h>
+#endif
+
 #ifndef __sun__
 #include <sys/ioctl.h>
 #endif
@@ -583,6 +587,166 @@ static int raw_apply_nocache(int fd, int bdrv_flags, Error **errp)
     return 0;
 }
 
+#if defined(CONFIG_DARWIN) && defined(CONFIG_LIBISOFS) && defined(F_RDADVISE)
+#define ISO_BLOCK_SIZE 2048
+#define ISO_PVD_LBA 16
+#define ISO_READAHEAD_MAX (64 * MiB)
+
+static gsize raw_libisofs_init_state;
+
+static bool raw_libisofs_init(void)
+{
+    if (g_once_init_enter(&raw_libisofs_init_state)) {
+        int ret = iso_init_with_flag(1);
+
+        g_once_init_leave(&raw_libisofs_init_state, ret > 0 ? 1 : 2);
+    }
+
+    return raw_libisofs_init_state == 1;
+}
+
+static void raw_darwin_rdadvise(int fd, uint64_t offset, uint64_t bytes)
+{
+    while (bytes) {
+        struct radvisory ra = {
+            .ra_offset = offset,
+            .ra_count = MIN(bytes, (uint64_t)INT_MAX),
+        };
+
+        if (fcntl(fd, F_RDADVISE, &ra) < 0) {
+            break;
+        }
+        offset += ra.ra_count;
+        bytes -= ra.ra_count;
+    }
+}
+
+static bool raw_is_iso9660(int fd)
+{
+    uint8_t id[5];
+
+    return pread(fd, id, sizeof(id), ISO_PVD_LBA * ISO_BLOCK_SIZE + 1) ==
+               sizeof(id) &&
+           memcmp(id, "CD001", sizeof(id)) == 0;
+}
+
+static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
+                                          int bdrv_flags)
+{
+    IsoDataSource *src = NULL;
+    IsoImage *image = NULL;
+    IsoReadOpts *read_opts = NULL;
+    IsoReadImageFeatures *features = NULL;
+    ElToritoBootImage **boots = NULL;
+    IsoFile **bootnodes = NULL;
+    IsoBoot *catnode = NULL;
+    char *cat_content = NULL;
+    off_t cat_size = 0;
+    uint32_t cat_lba = 0;
+    int num_boots = 0;
+    int ret;
+    int i;
+
+    /*
+     * F_RDADVISE is useful for the buffered path. cache.direct=on uses
+     * F_NOCACHE on Darwin, so pre-populating the unified buffer cache there
+     * would work against the requested cache policy.
+     */
+    if ((bdrv_flags & BDRV_O_NOCACHE) || !raw_is_iso9660(fd) ||
+        !raw_libisofs_init()) {
+        return;
+    }
+
+    if (iso_data_source_new_from_file(filename, &src) < 0 ||
+        iso_image_new("qemu-isofs-metadata", &image) < 0 ||
+        iso_read_opts_new(&read_opts, 0) < 0) {
+        goto out;
+    }
+
+    /*
+     * We need layout and El Torito extents, not filesystem presentation.
+     * Skip optional name/attribute/checksum trees to keep the one-time probe
+     * small while retaining the primary ISO-9660 tree.
+     */
+    iso_read_opts_set_no_rockridge(read_opts, 1);
+    iso_read_opts_set_no_joliet(read_opts, 1);
+    iso_read_opts_set_no_iso1999(read_opts, 1);
+    iso_read_opts_set_no_aaip(read_opts, 1);
+    iso_read_opts_set_no_md5(read_opts, 1);
+
+    ret = iso_image_import(image, src, read_opts, &features);
+    if (ret < 0) {
+        goto out;
+    }
+
+    /* Warm the volume descriptors and nearby metadata used during boot. */
+    raw_darwin_rdadvise(fd, ISO_PVD_LBA * ISO_BLOCK_SIZE, 64 * KiB);
+
+    ret = iso_image_get_bootcat(image, &catnode, &cat_lba,
+                                &cat_content, &cat_size);
+    if (ret > 0) {
+        raw_darwin_rdadvise(fd, (uint64_t)cat_lba * ISO_BLOCK_SIZE,
+                            MAX((uint64_t)cat_size, (uint64_t)ISO_BLOCK_SIZE));
+    }
+
+    ret = iso_image_get_all_boot_imgs(image, &num_boots, &boots,
+                                      &bootnodes, 0);
+    if (ret > 0) {
+        for (i = 0; i < num_boots; i++) {
+            struct iso_file_section *sections = NULL;
+            int section_count = 0;
+            int section_ret;
+            int j;
+
+            if (!bootnodes[i]) {
+                continue;
+            }
+
+            section_ret = iso_file_get_old_image_sections(
+                bootnodes[i], &section_count, &sections, 0);
+            if (section_ret <= 0) {
+                free(sections);
+                continue;
+            }
+
+            for (j = 0; j < section_count; j++) {
+                uint64_t bytes = MIN((uint64_t)sections[j].size,
+                                     (uint64_t)ISO_READAHEAD_MAX);
+
+                if (bytes) {
+                    raw_darwin_rdadvise(
+                        fd, (uint64_t)sections[j].block * ISO_BLOCK_SIZE,
+                        bytes);
+                }
+            }
+            free(sections);
+        }
+    }
+
+out:
+    free(cat_content);
+    free(boots);
+    free(bootnodes);
+    if (features) {
+        iso_read_image_features_destroy(features);
+    }
+    if (read_opts) {
+        iso_read_opts_free(read_opts);
+    }
+    if (src) {
+        iso_data_source_unref(src);
+    }
+    if (image) {
+        iso_image_unref(image);
+    }
+}
+#else
+static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
+                                          int bdrv_flags)
+{
+}
+#endif
+
 static void raw_parse_filename(const char *filename, QDict *options,
                                Error **errp)
 {
@@ -818,6 +982,9 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
             goto fail;
         } else {
             s->has_fallocate = true;
+            if (!(s->open_flags & O_RDWR)) {
+                raw_isofs_metadata_read_ahead(filename, s->fd, bdrv_flags);
+            }
         }
     } else {
         if (!(S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {

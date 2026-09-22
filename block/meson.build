@@ -91,7 +91,7 @@ endif
 if host_os == 'windows'
   block_ss.add(files('file-win32.c', 'win32-aio.c'))
 else
-  block_ss.add(files('file-posix.c'), coref, iokit)
+  block_ss.add(files('file-posix.c'), coref, iokit, libisofs)
 endif
 block_ss.add(when: libiscsi, if_true: files('iscsi-opts.c'))
 if host_os == 'linux'

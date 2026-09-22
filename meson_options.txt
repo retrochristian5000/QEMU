@@ -169,6 +169,8 @@ option('libdw', type : 'feature', value : 'auto',
        description: 'debuginfo support')
 option('libiscsi', type : 'feature', value : 'auto',
        description: 'libiscsi userspace initiator')
+option('libisofs', type : 'feature', value : 'auto',
+       description: 'libisofs metadata-assisted ISO read-ahead')
 option('libnfs', type : 'feature', value : 'auto',
        description: 'libnfs block device driver')
 option('mpath', type : 'feature', value : 'auto',

@@ -65,6 +65,7 @@ on:
       - 'scripts/tests/test-arm64e-iso-hotpath.py'
       - 'scripts/tests/test-arm64e-block-write-hotpath.py'
       - 'scripts/tests/test-darwin-block-nocache.py'
+      - 'scripts/tests/test-darwin-libisofs-metadata.py'
       - 'block/io.c'
       - 'block/raw-format.c'
       - 'include/block/block_int-io.h'
@@ -172,6 +173,10 @@ jobs:
         shell: bash
         run: python3 scripts/tests/test-darwin-block-nocache.py
 
+      - name: Audit Darwin libisofs metadata path
+        shell: bash
+        run: python3 scripts/tests/test-darwin-libisofs-metadata.py
+
       - name: Verify native LLVM wiring
         shell: bash
         run: python3 scripts/tests/test-native-llvm-wiring.py
@@ -181,7 +186,7 @@ jobs:
         run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
 
       - name: Install native LLVM and QEMU build dependencies
-        run: brew install cmake glib libslirp make ninja pixman pkgconf
+        run: brew install cmake glib libisofs libslirp make ninja pixman pkgconf
 
       - name: Bootstrap native LLVM through build entry
         shell: bash
