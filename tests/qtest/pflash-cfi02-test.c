@@ -460,7 +460,7 @@ static void test_geometry(const void *opaque)
         if (c->nb_blocs[region] > 1) {
             flash_write(c, byte_addr + c->sector_len[region], erase_cmd);
         }
-        byte_addr += c->sector_len[region] * c->nb_blocs[region];
+        byte_addr += (uint64_t)c->sector_len[region] * c->nb_blocs[region];
     }
 
     qtest_clock_step_next(c->qtest); /* Step over the 50 us timeout. */
