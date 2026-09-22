@@ -463,13 +463,25 @@ static void usb_mask_to_str(char *dest, size_t size,
         { .mask = USB_SPEED_MASK_HIGH,  .name = "high"  },
         { .mask = USB_SPEED_MASK_SUPER, .name = "super" },
     };
-    int i, pos = 0;
+    int i;
+    size_t pos = 0;
 
     for (i = 0; i < ARRAY_SIZE(speeds); i++) {
         if (speeds[i].mask & speedmask) {
-            pos += snprintf(dest + pos, size - pos, "%s%s",
-                            pos ? "+" : "",
-                            speeds[i].name);
+            size_t rem = (pos < size) ? (size - pos) : 0;
+            int n;
+
+            if (rem == 0) {
+                break;
+            }
+
+            n = snprintf(dest + pos, rem, "%s%s",
+                         pos ? "+" : "",
+                         speeds[i].name);
+            if (n < 0 || (size_t)n >= rem) {
+                break;
+            }
+            pos += (size_t)n;
         }
     }
 
