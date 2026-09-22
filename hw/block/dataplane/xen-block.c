@@ -192,8 +192,9 @@ static int xen_block_parse_request(XenBlockRequest *request)
             goto err;
         }
 
-        len = (request->req.seg[i].last_sect -
-               request->req.seg[i].first_sect + 1) * dataplane->sector_size;
+        len = (size_t)(request->req.seg[i].last_sect -
+                       request->req.seg[i].first_sect + 1) *
+              dataplane->sector_size;
         request->size += len;
     }
     if (request->start + request->size > blk_getlength(dataplane->blk)) {
