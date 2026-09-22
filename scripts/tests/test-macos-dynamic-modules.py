@@ -23,6 +23,7 @@ coreaudio = (ROOT / "audio/coreaudio.m").read_text(encoding="utf-8")
 # Preserve upstream's conservative global default. WHP policy chooses modules
 # at the build-adapter layer instead of silently changing every QEMU build.
 assert "option('modules', type : 'feature', value : 'disabled'" in meson_options
+assert "option('hvf', type: 'feature', value: 'disabled'" in meson_options
 assert 'QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"' in prepare
 assert "QEMU_HOST_MODULES" in config
 assert "Dynamic QEMU modules" in config
