@@ -65,7 +65,7 @@ require(SCREAMER_C,
         "audio_be_set_active_out(s->audio_be, s->voice, s->cell_enabled);",
         "host voice follows KeyLargo cell state")
 require(SCREAMER_C, "if (!s->cell_enabled) {", "DMA/output gating")
-require(MACIO_C, "KL_FCR1_SCREAMER_ENABLE_MASK", "KeyLargo Screamer enable mask")
+require(MACIO_C, "KL_FCR1_SCREAMER_POWER_MASK", "KeyLargo Screamer enable mask")
 require(MACIO_C, "KL_FCR1_SCREAMER_DEFAULT_MASK", "Sawtooth Screamer firmware default")
 require(MACIO_C, "keylargo_update_screamer(ns);", "FCR1 to Screamer propagation")
 require(SCREAMER_C, ".unmigratable = 1", "migration safety guard")
