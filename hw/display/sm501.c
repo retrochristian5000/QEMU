@@ -1843,7 +1843,7 @@ static bool sm501_update_display(void *opaque)
     offset = get_fb_addr(s, crt);
     snap = memory_region_snapshot_and_clear_dirty(&s->local_mem_region,
               offset, width * height * src_bpp, DIRTY_MEMORY_VGA);
-    for (y = 0; y < height; y++, offset += width * src_bpp) {
+    for (y = 0; y < height; y++, offset += (unsigned long)width * src_bpp) {
         int update, update_hwc;
 
         /* check if hardware cursor is enabled and we're within its range */
