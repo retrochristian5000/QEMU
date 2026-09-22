@@ -106,7 +106,7 @@ static void walk_pte(Monitor *mon, AddressSpace *as,
     pgsize = 1UL << (PGSHIFT + ptshift);
 
     for (idx = 0; idx < (1UL << ptidxbits); idx++) {
-        pte_addr = base + idx * ptesize;
+        pte_addr = base + (hwaddr)idx * ptesize;
         address_space_read(as, pte_addr, attrs, &pte, ptesize);
 
         paddr = (hwaddr)(pte >> PTE_PPN_SHIFT) << PGSHIFT;
