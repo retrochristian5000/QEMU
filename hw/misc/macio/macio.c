@@ -421,9 +421,9 @@ static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
      * The recovered FCR map now covers Sawtooth's USB pad/reference suspend,
      * sleep/data-out, PLL/clock, and per-port USB wake controls in addition to
      * the previously named cells.  Preserve all of those bits for guest
-     * readback.  SCC reset remains the one direct side effect modeled here;
-     * USB/IDE/audio gating, wake latching, and board power-domain effects are
-     * wired separately as the corresponding devices gain those interfaces.
+     * readback.  SCC reset and Screamer audio-cell gating have direct side
+     * effects here; USB/IDE gating, wake latching, and other board power-domain
+     * effects remain separate until those devices gain the needed interfaces.
      */
     if (reg == 0 && (value & KL_FCR0_RESET_SCC) &&
         !(old & KL_FCR0_RESET_SCC)) {
