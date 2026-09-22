@@ -173,6 +173,30 @@ OBJECT_DECLARE_SIMPLE_TYPE(SunGEMState, SUNGEM)
 #define MIF_STATUS        0x0018UL    /* MIF Status Register */
 #define MIF_SMACHINE      0x001CUL    /* MIF State Machine Register */
 
+/* Broadcom BCM5201 vendor registers used by Apple GMAC drivers. */
+#define BCM5201_AUXCTLSTATUS              0x18
+#define BCM5201_AUXCTLSTATUS_DUPLEX       0x0001
+#define BCM5201_AUXCTLSTATUS_SPEED100     0x0002
+#define BCM5201_AUXCTLSTATUS_ANEG         0x0008
+#define BCM5201_AUXSTATUS                 0x19
+#define BCM5201_AUXSTATUS_ANEG_COMPLETE   0x8000
+#define BCM5201_AUXSTATUS_LP_ABILITY      0x1000
+#define BCM5201_AUXSTATUS_HCD_100TX_FD    0x0500
+#define BCM5201_AUXSTATUS_SPEED100        0x0008
+#define BCM5201_AUXSTATUS_LINK            0x0004
+#define BCM5201_AUXSTATUS_ANEG_ENABLE     0x0002
+#define BCM5201_INTERRUPT                 0x1a
+#define BCM5201_AUXMODE2                  0x1b
+#define BCM5201_MULTIPHY                  0x1e
+
+#define BCM5201_BMSR_CAPS \
+    (MII_BMSR_100TX_FD | MII_BMSR_100TX_HD | MII_BMSR_10T_FD | \
+     MII_BMSR_10T_HD | MII_BMSR_AUTONEG | MII_BMSR_EXTCAP)
+
+#define BCM5201_ANAR_CAPS \
+    (MII_ANAR_CSMACD | MII_ANAR_TXFD | MII_ANAR_TX | \
+     MII_ANAR_10FD | MII_ANAR_10)
+
 /* PCS/Serialink Registers */
 #define SUNGEM_MMIO_PCS_SIZE   0x60
 #define PCS_MIISTAT       0x0004UL    /* PCS MII Status Register */
@@ -762,37 +786,62 @@ static void sungem_mii_write(SunGEMState *s, uint8_t phy_addr,
     /* XXX TODO */
 }
 
+static bool sungem_phy_link_up(SunGEMState *s)
+{
+    return !qemu_get_queue(s->nic)->link_down;
+}
+
 static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
                                   uint8_t reg_addr)
 {
+    bool link_up;
+
     if (phy_addr != s->phy_addr) {
         return 0xffff;
     }
-    /* Primitive emulation of a BCM5201 to please the driver,
-     * ID is 0x00406210. TODO: Do a gigabit PHY like BCM5400
+
+    /*
+     * Model the 10/100 Broadcom BCM5201 used by early Apple GMAC systems.
+     * Keep the Clause 22 registers internally consistent with the negotiated
+     * link that QEMU exposes: auto-negotiation enabled, 100BASE-TX full duplex
+     * when the backend link is up.
      */
+    link_up = sungem_phy_link_up(s);
+
     switch (reg_addr) {
     case MII_BMCR:
-        return 0;
+        return MII_BMCR_AUTOEN;
+    case MII_BMSR:
+        return BCM5201_BMSR_CAPS |
+               (link_up ? MII_BMSR_AN_COMP | MII_BMSR_LINK_ST : 0);
     case MII_PHYID1:
         return 0x0040;
     case MII_PHYID2:
         return 0x6210;
-    case MII_BMSR:
-        if (qemu_get_queue(s->nic)->link_down) {
-            return MII_BMSR_100TX_FD  | MII_BMSR_AUTONEG;
-        } else {
-            return MII_BMSR_100TX_FD | MII_BMSR_AN_COMP |
-                    MII_BMSR_AUTONEG | MII_BMSR_LINK_ST;
-        }
-    case MII_ANLPAR:
     case MII_ANAR:
-        return MII_ANLPAR_TXFD;
-    case 0x18: /* 5201 AUX status */
-        return 3; /* 100FD */
+        return BCM5201_ANAR_CAPS;
+    case MII_ANLPAR:
+        return link_up ? (BCM5201_ANAR_CAPS | MII_ANLPAR_ACK) : 0;
+    case MII_ANER:
+        return link_up ? MII_ANER_NWAY : 0;
+    case BCM5201_AUXCTLSTATUS:
+        return BCM5201_AUXCTLSTATUS_ANEG |
+               (link_up ? BCM5201_AUXCTLSTATUS_SPEED100 |
+                          BCM5201_AUXCTLSTATUS_DUPLEX : 0);
+    case BCM5201_AUXSTATUS:
+        return BCM5201_AUXSTATUS_ANEG_ENABLE |
+               (link_up ? BCM5201_AUXSTATUS_ANEG_COMPLETE |
+                          BCM5201_AUXSTATUS_LP_ABILITY |
+                          BCM5201_AUXSTATUS_HCD_100TX_FD |
+                          BCM5201_AUXSTATUS_SPEED100 |
+                          BCM5201_AUXSTATUS_LINK : 0);
+    case BCM5201_INTERRUPT:
+    case BCM5201_AUXMODE2:
+    case BCM5201_MULTIPHY:
+        return 0;
     default:
         return 0;
-    };
+    }
 }
 
 static uint16_t sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
