@@ -287,6 +287,58 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
     export NINJA_CMD NINJA PATH
 fi
 
+BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
+case "$BOOTSTRAP_SDL" in
+    y) BOOTSTRAP_SDL=1 ;;
+    n) BOOTSTRAP_SDL=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_SDL must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_SDL
+
+# SDL3 is a normal QEMU host dependency, so keep QEMU's Meson dependency
+# detection authoritative. The WHP bootstrap only provides a pinned private
+# prefix and makes it visible through pkg-config/CMake. auto keeps a usable
+# host SDL3, otherwise it falls back to the pinned SDL fork when the bootstrap
+# prerequisites are available. 1 forces the fork; 0 disables only the bundled
+# fallback and leaves normal host dependency discovery untouched.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$BOOTSTRAP_SDL" != 0 ]; then
+    SDL_BOOTSTRAP_MODE=auto
+    if [ "$BOOTSTRAP_SDL" = 1 ]; then
+        SDL_BOOTSTRAP_MODE=force
+    fi
+    WHP_SDL_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-sdl.py" \
+            --build-dir "$BUILD_DIR" --mode "$SDL_BOOTSTRAP_MODE"
+    ) || exit 1
+    unset SDL_BOOTSTRAP_MODE
+
+    if [ -n "$WHP_SDL_PREFIX" ]; then
+        WHP_SDL_PC_PATH=
+        for WHP_SDL_PC_DIR in \
+            "$WHP_SDL_PREFIX/lib/pkgconfig" \
+            "$WHP_SDL_PREFIX/lib64/pkgconfig" \
+            "$WHP_SDL_PREFIX/libdata/pkgconfig"; do
+            if [ -d "$WHP_SDL_PC_DIR" ]; then
+                WHP_SDL_PC_PATH="${WHP_SDL_PC_PATH:+$WHP_SDL_PC_PATH:}$WHP_SDL_PC_DIR"
+            fi
+        done
+        if [ -n "$WHP_SDL_PC_PATH" ]; then
+            PKG_CONFIG_PATH="$WHP_SDL_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            export PKG_CONFIG_PATH
+        fi
+        CMAKE_PREFIX_PATH="$WHP_SDL_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+        SDL3_ROOT="$WHP_SDL_PREFIX"
+        export WHP_SDL_PREFIX CMAKE_PREFIX_PATH SDL3_ROOT
+        unset WHP_SDL_PC_PATH WHP_SDL_PC_DIR
+    fi
+fi
+
 if [ -z "$WHP_BUILD_BASH" ]; then
     if [ "$WHP_HOST_OS" = macos ] && [ -x /bin/bash ]; then
         WHP_BUILD_BASH=/bin/bash
