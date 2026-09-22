@@ -2454,6 +2454,7 @@ static void configure_accelerators(const char *progname)
 
     if (QTAILQ_EMPTY(&qemu_accel_opts.head)) {
         char **accel_list, **tmp;
+        bool default_accelerators = false;
 
         if (accelerators == NULL) {
             bool have_tcg = false;
@@ -2494,6 +2495,7 @@ static void configure_accelerators(const char *progname)
                              " no default accelerator available");
                 exit(1);
             }
+            default_accelerators = true;
         }
         accel_list = g_strsplit(accelerators, ":", 0);
 
@@ -2502,7 +2504,7 @@ static void configure_accelerators(const char *progname)
              * Filter invalid accelerators here, to prevent obscenities
              * such as "-machine accel=tcg,,thread=single".
              */
-            if (accel_find(*tmp)) {
+            if (default_accelerators || accel_find(*tmp)) {
                 qemu_opts_parse_noisily(qemu_find_opts("accel"), *tmp, true);
             } else {
                 init_failed = true;
