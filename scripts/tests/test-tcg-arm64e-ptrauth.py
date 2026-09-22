@@ -78,6 +78,13 @@ splitwx_benchmark_ready = all(token in benchmark for token in (
     'for split_wx in off on; do',
     '--split-wx "$split_wx"',
 ))
+tbsize_benchmark_ready = all(token in benchmark for token in (
+    '--tb-size',
+    'tb-size={tb_size}',
+)) and all(token in workflow for token in (
+    'for tb_size in 64 128 256 512; do',
+    '--tb-size "$tb_size"',
+))
 runtime_ready = all(token in workflow for token in (
     'WHP_MACOS_ARCH: arm64e',
     'qemu-system-i386',
@@ -94,6 +101,7 @@ assert entry_ready, 'arm64e C -> JIT entry is not signed as a C function pointer
 assert return_ready, 'arm64e TCG prologue/epilogue does not authenticate LR'
 assert jit_mode_cache_ready, 'Darwin TCG does not cache per-thread JIT protection mode'
 assert splitwx_benchmark_ready, 'ARM64e CI does not compare split W^X modes'
+assert tbsize_benchmark_ready, 'ARM64e CI does not compare TCG cache startup sizes'
 assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke test'
 
 # PAC work belongs at setup/translation boundaries, not the per-TB dispatcher.
