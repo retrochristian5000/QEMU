@@ -2344,7 +2344,7 @@ expand_zero_clusters_in_l1(BlockDriverState *bs, uint64_t *l1_table,
         }
 
         for (slice = 0; slice < n_slices; slice++) {
-            uint64_t slice_offset = l2_offset + slice * slice_size2;
+            uint64_t slice_offset = l2_offset + (uint64_t)slice * slice_size2;
             bool l2_dirty = false;
             if (is_active_l1) {
                 /* get active L2 tables from cache */
