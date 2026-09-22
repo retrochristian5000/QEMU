@@ -829,12 +829,20 @@ static void scsi_generic_command_dump(uint8_t *cmd, int len)
     int i;
     char *line_buffer, *p;
     size_t line_buffer_size = len * 5 + 1;
+    size_t remaining;
 
     line_buffer = g_malloc(line_buffer_size);
 
-    for (i = 0, p = line_buffer; i < len; i++) {
-        p += snprintf(p, line_buffer_size - (p - line_buffer),
-                      " 0x%02x", cmd[i]);
+    for (i = 0, p = line_buffer, remaining = line_buffer_size; i < len; i++) {
+        int n = snprintf(p, remaining, " 0x%02x", cmd[i]);
+
+        if (n < 0 || (size_t)n >= remaining) {
+            line_buffer[line_buffer_size - 1] = '\0';
+            break;
+        }
+
+        p += n;
+        remaining -= n;
     }
     trace_scsi_generic_send_command(line_buffer);
 
