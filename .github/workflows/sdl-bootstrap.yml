@@ -1,0 +1,76 @@
+name: WHP SDL3 bootstrap
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.gitmodules'
+      - 'toolchains/sdl'
+      - 'build.sh'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/tests/test-sdl-bootstrap.py'
+      - '.github/workflows/sdl-bootstrap.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: whp-sdl-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out QEMU without submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify SDL bootstrap wiring
+        run: python3 scripts/tests/test-sdl-bootstrap.py
+
+      - name: Build and install pinned SDL3
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_dir="$RUNNER_TEMP/whp-sdl-bootstrap"
+          prefix="$(python3 scripts/ensure-sdl.py               --build-dir "$build_dir" --mode force)"
+          test -n "$prefix"
+          test -f "$prefix/include/SDL3/SDL.h"
+
+          pc=
+          for candidate in               "$prefix/lib/pkgconfig/sdl3.pc"               "$prefix/lib64/pkgconfig/sdl3.pc"               "$prefix/libdata/pkgconfig/sdl3.pc"; do
+            if [[ -f "$candidate" ]]; then
+              pc="$candidate"
+              break
+            fi
+          done
+          test -n "$pc"
+
+          version="$(PKG_CONFIG_PATH="$(dirname "$pc")"               pkg-config --modversion sdl3)"
+          python3 - "$version" <<'PY'
+          import sys
+          parts = tuple(int(piece) for piece in sys.argv[1].split('.')[:3])
+          if parts < (3, 2, 0):
+              raise SystemExit(f"SDL3 bootstrap is too old: {sys.argv[1]}")
+          PY
+
+          if ! find "$prefix" -type f -name 'libSDL3*.a' -print -quit | grep -q .; then
+            echo "error: SDL3 bootstrap did not install a static library" >&2
+            exit 1
+          fi
+
+          printf 'SDL3 bootstrap smoke: %s (%s)\n' "$version" "$prefix"
+          printf '%s\n' "$prefix" > "$RUNNER_TEMP/whp-sdl-prefix"
+
+      - name: Verify bootstrap cache reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_dir="$RUNNER_TEMP/whp-sdl-bootstrap"
+          first="$(cat "$RUNNER_TEMP/whp-sdl-prefix")"
+          second="$(python3 scripts/ensure-sdl.py               --build-dir "$build_dir" --mode force)"
+          test "$first" = "$second"
+          echo "SDL3 bootstrap cache: reused"
