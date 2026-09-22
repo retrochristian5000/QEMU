@@ -47,6 +47,7 @@ class WhpConfigTests(unittest.TestCase):
         values = mod.default_values()
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
         self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_PYTHON'], 'auto')
         self.assertEqual(values['BOOTSTRAP_SDL'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')

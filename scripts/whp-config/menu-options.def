@@ -1,0 +1,61 @@
+# WHP menu fallback schema: key|section|label|kind|default|choices|group
+BUILD_QEMU_IMG|Build outputs|qemu-img|bool|y||
+BUILD_QEMU_SYSTEM_I386|Build outputs|qemu-system-i386|bool|y||
+BUILD_QEMU_SYSTEM_PPC|Build outputs|qemu-system-ppc|bool|y||
+BUILD_QEMU_SYSTEM_SPARC|Build outputs|qemu-system-sparc|bool|n||
+QEMU_HOST_LTO|Host features|Link-time optimization|choice|auto|auto,y,n|
+QEMU_HOST_MODULES|Host features|Dynamic QEMU modules|choice|auto|auto,y,n|
+QEMU_HOST_OPTIMIZATION|Host features|QEMU host optimization level|choice|2|0,1,2,3,g,s|
+QEMU_HOST_CPU_TUNING|Host features|QEMU host CPU tuning flags|string|native||
+QEMU_C_STANDARD|Host features|QEMU C language standard|choice|gnu11|gnu11,gnu17,gnu23|
+QEMU_CXX_STANDARD|Host features|QEMU C++ language standard|choice|gnu++23|gnu++17,gnu++20,gnu++23,c++26|
+BOOTSTRAP_NATIVE_LLVM|Host features|Bootstrap/use WHP native LLVM|bool|n||
+NATIVE_LLVM_CXX_STANDARD|Host features|Native LLVM C++ language standard|choice|17|17,20,23,26|
+NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|bool|n||
+BOOTSTRAP_PYTHON|Host features|Bootstrap/use WHP Python|choice|auto|auto,y,n|
+BOOTSTRAP_NINJA|Host features|Bootstrap/use WHP Ninja|choice|auto|auto,y,n|
+BOOTSTRAP_SDL|Host features|Bootstrap/use WHP SDL3|choice|auto|auto,y,n|
+BOOTSTRAP_JACK|Host features|Bootstrap/use WHP JACK|choice|auto|auto,y,n|
+BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n|
+COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,none|
+BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold (ELF hosts)|choice|auto|auto,y,n|
+MACOS_ENABLE_COCOA|Host features|Cocoa|choice|auto|auto,y,n|
+MACOS_ENABLE_COREAUDIO|Host features|CoreAudio|choice|auto|auto,y,n|
+MACOS_ENABLE_GTK|Host features|GTK|choice|auto|auto,y,n|
+MACOS_ENABLE_PA|Host features|PulseAudio|choice|auto|auto,y,n|
+QEMU_WERROR|Diagnostics|Treat compiler warnings as errors|bool|y||
+QEMU_ASAN|Diagnostics|AddressSanitizer|bool|n||
+QEMU_UBSAN|Diagnostics|UndefinedBehaviorSanitizer|bool|n||
+QEMU_TSAN|Diagnostics|ThreadSanitizer|bool|n||
+BUILD_OPENBIOS|Firmware|Build OpenBIOS|choice|auto|auto,y,n|
+BOOTSTRAP_POWERPC_TOOLCHAIN|Firmware|Bootstrap PowerPC toolchain|choice|auto|auto,y,n|
+BUILD_SEABIOS|Firmware|Build SeaBIOS|choice|auto|auto,y,n|
+BUILD_SEABIOS_GRUB|Firmware|Build GRUB-loadable SeaBIOS|bool|n||
+BUILD_SEABIOS_HYBRID_ISO|Firmware|Build hybrid x86 UEFI SeaBIOS ISO|bool|n||
+BOOTSTRAP_I386_TOOLCHAIN|Firmware|Bootstrap i386 LLVM toolchain|choice|auto|auto,y,n|
+BOOTSTRAP_WIN9X_TOOLCHAIN|Windows 9x cross-tools|Bootstrap i386-pc-win9x LLVM toolchain|bool|n||
+PREFIX|Build behavior|Install prefix|string|auto||
+WHP_INCREMENTAL_BUILD|Build behavior|Incremental builds|bool|y||
+RUN_TESTS|Build behavior|Run tests after build|bool|y||
+QEMU_TEST_SCOPE|Build behavior|QEMU test scope|choice|changed|changed,full|
+INSTALL|Build behavior|Install after build|bool|n||
+CONFIG_MAC_NEWWORLD|QEMU machines|New World Macintosh|bool|y||
+CONFIG_MAC_OLDWORLD|QEMU machines|Old World Macintosh|bool|y||
+I386_AUDIO_SB16|QEMU hardware|i386|choice|auto|auto,y,n|Sound Blaster 16 (ISA)
+PPC_AUDIO_SB16|QEMU hardware|ppc|choice|auto|auto,y,n|Sound Blaster 16 (ISA)
+I386_AUDIO_ADLIB|QEMU hardware|i386|choice|auto|auto,y,n|AdLib (ISA)
+PPC_AUDIO_ADLIB|QEMU hardware|ppc|choice|auto|auto,y,n|AdLib (ISA)
+I386_AUDIO_GUS|QEMU hardware|i386|choice|auto|auto,y,n|Gravis UltraSound (ISA)
+PPC_AUDIO_GUS|QEMU hardware|ppc|choice|auto|auto,y,n|Gravis UltraSound (ISA)
+I386_AUDIO_CS4231A|QEMU hardware|i386|choice|auto|auto,y,n|Crystal CS4231A (ISA)
+PPC_AUDIO_CS4231A|QEMU hardware|ppc|choice|auto|auto,y,n|Crystal CS4231A (ISA)
+I386_AUDIO_PCSPK|QEMU hardware|i386|choice|auto|auto,y,n|PC speaker
+PPC_AUDIO_PCSPK|QEMU hardware|ppc|choice|auto|auto,y,n|PC speaker
+I386_AUDIO_ES1370|QEMU hardware|i386|choice|auto|auto,y,n|Ensoniq ES1370 (PCI)
+PPC_AUDIO_ES1370|QEMU hardware|ppc|choice|auto|auto,y,n|Ensoniq ES1370 (PCI)
+I386_AUDIO_AC97|QEMU hardware|i386|choice|auto|auto,y,n|Intel AC'97 (PCI)
+PPC_AUDIO_AC97|QEMU hardware|ppc|choice|auto|auto,y,n|Intel AC'97 (PCI)
+I386_AUDIO_CS4630|QEMU hardware|i386|choice|auto|auto,y,n|Crystal CS4630 (PCI)
+PPC_AUDIO_CS4630|QEMU hardware|ppc|choice|auto|auto,y,n|Crystal CS4630 (PCI)
+I386_AUDIO_HDA|QEMU hardware|i386|choice|auto|auto,y,n|Intel HD Audio (PCI)
+PPC_AUDIO_HDA|QEMU hardware|ppc|choice|auto|auto,y,n|Intel HD Audio (PCI)

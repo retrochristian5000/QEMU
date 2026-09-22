@@ -58,8 +58,39 @@ export WHP_SOURCE_UPDATE
 
 WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
 WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
+WHP_MENUCONFIG_SHELL="$SOURCE_DIR/scripts/whp-config/menuconfig.sh"
 WHP_PORTABLE_BUILD_TOOL="$SOURCE_DIR/scripts/whp-build/portable-build-entry.py"
 WHP_USER_CONFIG="$SOURCE_DIR/.whpconfig"
+
+whp_config_bootstrap_python()
+{
+    [ -f "$WHP_USER_CONFIG" ] || return 1
+    whp_bootstrap_python_value=
+    while IFS= read -r whp_config_line || [ -n "$whp_config_line" ]; do
+        case "$whp_config_line" in
+            BOOTSTRAP_PYTHON=*)
+                whp_bootstrap_python_value=${whp_config_line#BOOTSTRAP_PYTHON=}
+                ;;
+        esac
+    done < "$WHP_USER_CONFIG"
+    [ -n "$whp_bootstrap_python_value" ] || return 1
+    printf '%s\n' "$whp_bootstrap_python_value"
+}
+
+if [ -z "${BOOTSTRAP_PYTHON:-}" ]; then
+    BOOTSTRAP_PYTHON=$(whp_config_bootstrap_python 2>/dev/null || printf 'auto\n')
+fi
+case "$BOOTSTRAP_PYTHON" in
+    y) BOOTSTRAP_PYTHON=1 ;;
+    n) BOOTSTRAP_PYTHON=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_PYTHON must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_PYTHON
+unset whp_bootstrap_python_value whp_config_line
 
 if [ -n "${WHP_BUILD_BASH:-}" ]; then
     WHP_BUILD_BASH_EXPLICIT=1
@@ -88,17 +119,20 @@ whp_python_usable()
         >/dev/null 2>&1
 }
 
+PYTHON_EXPLICIT=0
+HOST_PYTHON=
 if [ -n "${PYTHON:-}" ]; then
+    PYTHON_EXPLICIT=1
     if ! whp_python_usable "$PYTHON"; then
         printf 'error: PYTHON is not Python 3.9 or newer: %s\n' "$PYTHON" >&2
         exit 1
     fi
+    HOST_PYTHON=$PYTHON
 else
-    PYTHON=
     for python_name in python3 python; do
         python_candidate=$(command -v "$python_name" 2>/dev/null || true)
         if whp_python_usable "$python_candidate"; then
-            PYTHON=$python_candidate
+            HOST_PYTHON=$python_candidate
             break
         fi
     done
@@ -108,7 +142,7 @@ else
     # without being usable from the current MSYS shell. Resolve the launcher to
     # the real interpreter so downstream configure/Meson calls receive an
     # executable path rather than launcher-specific semantics.
-    if [ -z "$PYTHON" ]; then
+    if [ -z "$HOST_PYTHON" ]; then
         case "$(uname -s 2>/dev/null || true)" in
             CYGWIN*|MINGW*|MSYS*)
                 python_launcher=$(command -v py 2>/dev/null || true)
@@ -118,7 +152,7 @@ else
                             2>/dev/null || true
                     )
                     if whp_python_usable "$python_candidate"; then
-                        PYTHON=$python_candidate
+                        HOST_PYTHON=$python_candidate
                     fi
                 fi
                 unset python_launcher
@@ -128,10 +162,37 @@ else
     unset python_name python_candidate
 fi
 
-# If the host has no usable interpreter, bootstrap the pinned WHP Python fork.
-# Explicit PYTHON remains authoritative: only automatic discovery reaches this
-# fallback.
+# menuconfig must remain reachable before Python itself exists. Prefer the
+# richer curses UI when a usable host interpreter is already present, but do
+# not bootstrap Python merely to enter configuration: the POSIX-shell fallback
+# reads and writes the same .whpconfig format.
+if [ "${1:-}" = menuconfig ]; then
+    shift
+    if [ -n "$HOST_PYTHON" ]; then
+        exec "$HOST_PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
+    fi
+    exec /bin/sh "$WHP_MENUCONFIG_SHELL" "$WHP_USER_CONFIG" "$@"
+fi
+
+# Explicit PYTHON remains authoritative. Otherwise BOOTSTRAP_PYTHON follows the
+# same auto/force/disable policy as the other WHP-managed dependencies:
+# auto uses a usable host Python and falls back to the pinned fork, 1 forces
+# the fork, and 0 requires a usable host interpreter.
+if [ "$PYTHON_EXPLICIT" = 1 ]; then
+    PYTHON=$HOST_PYTHON
+elif [ "$BOOTSTRAP_PYTHON" = 1 ]; then
+    PYTHON=
+else
+    PYTHON=$HOST_PYTHON
+fi
+
 if [ -z "${PYTHON:-}" ]; then
+    if [ "$BOOTSTRAP_PYTHON" = 0 ]; then
+        printf '%s\n' \
+            'error: Python 3.9 or newer is required, but BOOTSTRAP_PYTHON=0 disables the bundled fallback.' \
+            'Install Python, set PYTHON, or enable the WHP Python bootstrap.' >&2
+        exit 1
+    fi
     PYTHON=$(/bin/sh "$SOURCE_DIR/scripts/bootstrap-python.sh") || exit 1
     if ! whp_python_usable "$PYTHON"; then
         printf 'error: bundled WHP Python is not Python 3.9 or newer: %s\n' \
@@ -141,10 +202,11 @@ if [ -z "${PYTHON:-}" ]; then
 fi
 
 if [ -z "${PYTHON:-}" ]; then
-    printf 'error: Python 3.9 or newer is required by QEMU and the WHP build configuration\n' >&2
+    printf 'error: Python 3.9 or newer is required by QEMU\n' >&2
     exit 1
 fi
 export PYTHON WHP_USER_CONFIG
+unset HOST_PYTHON PYTHON_EXPLICIT
 
 # Detect the host once at the public build boundary. Helpers consume this
 # normalized identity instead of independently interpreting uname output, which
@@ -208,11 +270,6 @@ export BUILD_DIR
 if [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" = 1 ]; then
     printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
     exit 0
-fi
-
-if [ "${1:-}" = menuconfig ]; then
-    shift
-    exec "$PYTHON" "$WHP_MENUCONFIG_TOOL" "$WHP_USER_CONFIG" "$@"
 fi
 
 # Saved configuration supplies portable policy defaults. Explicit environment

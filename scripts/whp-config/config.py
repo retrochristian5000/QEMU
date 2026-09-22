@@ -52,6 +52,7 @@ OPTIONS = (
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '17', ('17', '20', '23', '26')),
     Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n'),
+    Option('BOOTSTRAP_PYTHON', 'Host features', 'Bootstrap/use WHP Python', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_NINJA', 'Host features', 'Bootstrap/use WHP Ninja', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_SDL', 'Host features', 'Bootstrap/use WHP SDL3', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_JACK', 'Host features', 'Bootstrap/use WHP JACK', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -103,6 +104,7 @@ SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
     'QEMU_HOST_LTO',
     'QEMU_HOST_MODULES',
+    'BOOTSTRAP_PYTHON',
     'BOOTSTRAP_NINJA',
     'BOOTSTRAP_SDL',
     'BOOTSTRAP_JACK',
