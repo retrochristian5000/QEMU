@@ -91,8 +91,12 @@ static void vcpu_dirty_rate_stat_collect(void)
                               false);
 
     for (i = 0; i < stat.nvcpu; i++) {
-        vcpu_dirty_rate_stat->stat.rates[i].id = i;
-        vcpu_dirty_rate_stat->stat.rates[i].dirty_rate =
+        int cpu_index = stat.rates[i].id;
+
+        assert(cpu_index >= 0 &&
+               cpu_index < vcpu_dirty_rate_stat->stat.nvcpu);
+        vcpu_dirty_rate_stat->stat.rates[cpu_index].id = cpu_index;
+        vcpu_dirty_rate_stat->stat.rates[cpu_index].dirty_rate =
             stat.rates[i].dirty_rate;
     }
 
