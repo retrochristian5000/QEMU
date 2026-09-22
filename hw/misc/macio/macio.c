@@ -75,11 +75,12 @@
 #define KL_FCR1_UIDE_ENABLE          (1U << 29)
 #define KL_FCR1_UIDE_RESET_N         (1U << 30)
 
-#define KL_FCR1_SCREAMER_ENABLE_MASK \
+#define KL_FCR1_SCREAMER_POWER_MASK \
     (KL_FCR1_AUDIO_CLK_ENABLE | KL_FCR1_AUDIO_CLK_OUT_ENABLE | \
      KL_FCR1_AUDIO_CELL_ENABLE | KL_FCR1_CHOOSE_AUDIO)
 #define KL_FCR1_SCREAMER_DEFAULT_MASK \
-    (KL_FCR1_AUDIO_SEL22M_CLK | KL_FCR1_SCREAMER_ENABLE_MASK)
+    (KL_FCR1_AUDIO_SEL22M_CLK | KL_FCR1_CHOOSE_AUDIO | \
+     KL_FCR1_SCREAMER_POWER_MASK)
 
 #define KL_FCR2_IOBUS_ENABLE        (1U << 1)
 #define KL_FCR2_SLEEP_STATE_BIT     (1U << 8)
@@ -343,8 +344,8 @@ static bool keylargo_screamer_enabled(const NewWorldMacIOState *ns)
         return true;
     }
 
-    return (ns->fcr[1] & KL_FCR1_SCREAMER_ENABLE_MASK) ==
-           KL_FCR1_SCREAMER_ENABLE_MASK;
+    return (ns->fcr[1] & KL_FCR1_SCREAMER_POWER_MASK) ==
+           KL_FCR1_SCREAMER_POWER_MASK;
 }
 
 static void keylargo_update_screamer(NewWorldMacIOState *ns)
