@@ -291,16 +291,19 @@ Hardware status
        block at MacIO offset ``0x14000`` and uses DB-DMA channels ``0x10``
        (playback) and ``0x12`` (capture). Playback supports the eight basic
        22 MHz-family sample rates, codec readback, output A/C attenuation
-       and mute controls, and DAV byte swapping. Capture currently returns
-       silence; detailed analog jack/speaker sensing and migration are not
-       modeled.
+       and mute controls, and DAV byte swapping. KeyLargo FCR1 now gates
+       the Screamer audio cell/clock path, so guest power-management writes
+       stop and resume codec activity instead of being readback-only. Capture
+       currently returns silence; detailed analog jack/speaker sensing and
+       migration are not modeled.
      - High
      - Partial
    * - Power management
      - PMU99 plus UniNorth/KeyLargo clock, bus and device power control; USB and
        the secondary PCI side participate in sleep/power transitions
      - PMU selection plus a subset of UniNorth and KeyLargo control registers.
-       Most clock gating, bus power removal, FireWire PHY continuity and
+       KeyLargo FCR1 audio cell/clock gating is connected to Screamer; most
+       other clock gating, bus power removal, FireWire PHY continuity and
        sleep/wake side effects are not connected to the affected devices.
      - High
      - Partial
