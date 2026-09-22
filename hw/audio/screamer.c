@@ -66,6 +66,38 @@ static void screamer_clear_queue(ScreamerState *s)
     s->tx_count = 0;
 }
 
+static void screamer_rx_dma(DBDMA_io *io);
+
+static void screamer_set_cell_enable(void *opaque, int n, int level)
+{
+    ScreamerState *s = opaque;
+    bool enabled = level != 0;
+
+    if (s->cell_enabled == enabled) {
+        return;
+    }
+
+    s->cell_enabled = enabled;
+
+    if (!enabled) {
+        screamer_clear_queue(s);
+        timer_del(s->rx_timer);
+        s->rx_io = NULL;
+    }
+
+    if (s->voice) {
+        audio_be_set_active_out(s->audio_be, s->voice, enabled);
+    }
+
+    if (enabled && s->dbdma) {
+        DBDMA_io *io = &s->dbdma->channels[s->rx_channel].io;
+
+        if (io->processing && !s->rx_io) {
+            screamer_rx_dma(io);
+        }
+    }
+}
+
 static void screamer_update_volume(ScreamerState *s)
 {
     uint16_t control = s->codec_ctrl_regs[1];
@@ -110,7 +142,7 @@ static bool screamer_update_settings(ScreamerState *s, Error **errp)
         return false;
     }
 
-    audio_be_set_active_out(s->audio_be, s->voice, true);
+    audio_be_set_active_out(s->audio_be, s->voice, s->cell_enabled);
     screamer_update_volume(s);
     return true;
 }
@@ -139,6 +171,10 @@ static void screamer_tx_refill(ScreamerState *s, DBDMA_io *io)
 static void screamer_output_cb(void *opaque, int free_b)
 {
     ScreamerState *s = opaque;
+
+    if (!s->cell_enabled) {
+        return;
+    }
 
     while (free_b > 0) {
         size_t len;
@@ -189,6 +225,10 @@ static void screamer_output_cb(void *opaque, int free_b)
 static void screamer_tx_dma(DBDMA_io *io)
 {
     ScreamerState *s = io->opaque;
+
+    if (!s->cell_enabled) {
+        return;
+    }
 
     screamer_tx_refill(s, io);
 }
@@ -250,7 +290,13 @@ static void screamer_rx_complete(void *opaque)
 static void screamer_rx_dma(DBDMA_io *io)
 {
     ScreamerState *s = io->opaque;
-    uint64_t frames = MAX((uint64_t)1,
+    uint64_t frames;
+
+    if (!s->cell_enabled) {
+        return;
+    }
+
+    frames = MAX((uint64_t)1,
                           ((uint64_t)(uint32_t)io->len +
                            SCREAMER_SAMPLE_BYTES - 1) /
                           SCREAMER_SAMPLE_BYTES);
@@ -440,6 +486,9 @@ static void screamer_init(Object *obj)
     ScreamerState *s = SCREAMER(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
+    s->cell_enabled = true;
+    qdev_init_gpio_in_named(DEVICE(obj), screamer_set_cell_enable,
+                            "cell-enable", 1);
     s->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, screamer_rx_complete, s);
     memory_region_init_io(&s->mem, obj, &screamer_ops, s,
                           "screamer-dav", SCREAMER_DAV_MMIO_SIZE);
