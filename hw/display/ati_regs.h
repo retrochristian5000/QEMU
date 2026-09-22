@@ -41,6 +41,29 @@
 #define GPIO_VGA_DDC                            0x0060
 #define GPIO_DVI_DDC                            0x0064
 #define GPIO_MONID                              0x0068
+
+/*
+ * Rage128 GPIO_MONID pin groups.  A_n is the output value, Y_n is the
+ * sensed input level, EN_n enables output drive, and MASK_n selects the pin
+ * for monitor/DDC use.  Sawtooth's single-head VGA DDC path uses data line 1
+ * and clock line 2.
+ */
+#define GPIO_MONID_A_0                          BIT(0)
+#define GPIO_MONID_A_1                          BIT(1)
+#define GPIO_MONID_A_2                          BIT(2)
+#define GPIO_MONID_A_3                          BIT(3)
+#define GPIO_MONID_Y_0                          BIT(8)
+#define GPIO_MONID_Y_1                          BIT(9)
+#define GPIO_MONID_Y_2                          BIT(10)
+#define GPIO_MONID_Y_3                          BIT(11)
+#define GPIO_MONID_EN_0                         BIT(16)
+#define GPIO_MONID_EN_1                         BIT(17)
+#define GPIO_MONID_EN_2                         BIT(18)
+#define GPIO_MONID_EN_3                         BIT(19)
+#define GPIO_MONID_MASK_0                       BIT(24)
+#define GPIO_MONID_MASK_1                       BIT(25)
+#define GPIO_MONID_MASK_2                       BIT(26)
+#define GPIO_MONID_MASK_3                       BIT(27)
 #define I2C_CNTL_1                              0x0094
 #define AMCGPIO_MASK_MIR                        0x009c
 #define AMCGPIO_A_MIR                           0x00a0
