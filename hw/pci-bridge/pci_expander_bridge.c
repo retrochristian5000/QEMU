@@ -218,7 +218,7 @@ void pxb_cxl_hook_up_registers(CXLState *cxl_state, PCIBus *bus, Error **errp)
     struct MemoryRegion *mr = &cxl_cstate->crb.component_registers;
     hwaddr offset;
 
-    offset = memory_region_size(mr) * cxl_state->next_mr_idx;
+    offset = memory_region_size(mr) * (hwaddr)cxl_state->next_mr_idx;
     if (offset > memory_region_size(&cxl_state->host_mr)) {
         error_setg(errp, "Insufficient space for pxb cxl host register space");
         return;
