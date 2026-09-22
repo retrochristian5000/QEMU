@@ -886,8 +886,29 @@ cat >"$smoke_dir/smoke.cc" <<'EOF'
 static_assert(sizeof(void *) >= 4, "unexpected native pointer width");
 int whp_native_llvm_cxx_smoke() { return 0; }
 EOF
-"$staged_toolchain/bin/clang" -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
-"$staged_toolchain/bin/clang++" -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
+
+smoke_arch_args=()
+if [[ "$host_os" == macos ]]; then
+    smoke_arch_args=(
+        -arch "$darwin_cmake_arch"
+        -isysroot "$sdkroot"
+        "-mmacosx-version-min=$deployment_target"
+    )
+fi
+if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
+    cat >>"$smoke_dir/smoke.c" <<'EOF'
+#ifndef __arm64e__
+#error native LLVM lost the arm64e ABI during the installed-toolchain smoke test
+#endif
+static int whp_arm64e_target(int value) { return value + 1; }
+static int (*whp_arm64e_fp)(int) = whp_arm64e_target;
+int whp_native_llvm_arm64e_smoke(int value) { return whp_arm64e_fp(value); }
+EOF
+fi
+"$staged_toolchain/bin/clang" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+"$staged_toolchain/bin/clang++" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
 usable "$staged_toolchain" || {
