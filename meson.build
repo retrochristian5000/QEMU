@@ -1390,6 +1390,20 @@ if host_os == 'darwin' and (not get_option('libisofs').auto() or have_block)
   libisofs = dependency('libisofs-1', version: '>=1.1.2',
                         required: get_option('libisofs'),
                         method: 'pkg-config')
+  if libisofs.found() and not cc.compiles('''
+      #include <libisofs.h>
+      int main(void) { return 0; }
+    ''',
+    args: ['-Werror=strict-prototypes'],
+    dependencies: libisofs,
+    name: 'libisofs strict prototypes')
+    libisofs = not_found
+    if get_option('libisofs').enabled()
+      error('libisofs.h is incompatible with -Wstrict-prototypes')
+    else
+      warning('libisofs.h fails -Wstrict-prototypes; disabling libisofs support')
+    endif
+  endif
 endif
 zstd = not_found
 if not get_option('zstd').auto() or have_block

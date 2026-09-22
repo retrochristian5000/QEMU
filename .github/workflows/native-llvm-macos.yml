@@ -69,6 +69,10 @@ on:
       - 'scripts/tests/test-arm64e-block-write-hotpath.py'
       - 'scripts/tests/test-darwin-block-nocache.py'
       - 'scripts/tests/test-darwin-libisofs-metadata.py'
+      - 'scripts/tests/test-libisofs-bootstrap.py'
+      - 'scripts/ensure-libisofs.py'
+      - 'toolchains/libisofs'
+      - '.gitmodules'
       - 'block/io.c'
       - 'block/raw-format.c'
       - 'include/block/block_int-io.h'
@@ -186,6 +190,10 @@ jobs:
         shell: bash
         run: python3 scripts/tests/test-darwin-libisofs-metadata.py
 
+      - name: Audit WHP libisofs fork wiring
+        shell: bash
+        run: python3 scripts/tests/test-libisofs-bootstrap.py
+
       - name: Verify native LLVM wiring
         shell: bash
         run: python3 scripts/tests/test-native-llvm-wiring.py
@@ -195,7 +203,7 @@ jobs:
         run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
 
       - name: Install native LLVM and QEMU build dependencies
-        run: brew install cmake glib libisofs libslirp make ninja pixman pkgconf
+        run: brew install autoconf automake cmake glib libslirp libtool make ninja pixman pkgconf
 
       - name: Bootstrap native LLVM through build entry
         shell: bash

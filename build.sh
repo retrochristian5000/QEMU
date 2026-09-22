@@ -339,6 +339,55 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
     fi
 fi
 
+BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}
+case "$BOOTSTRAP_LIBISOFS" in
+    y) BOOTSTRAP_LIBISOFS=1 ;;
+    n) BOOTSTRAP_LIBISOFS=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_LIBISOFS must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_LIBISOFS
+
+# libisofs is used only by the Darwin metadata-assisted ISO path. Keep Meson's
+# dependency detection authoritative, but reject host headers which fail
+# Clang's strict-prototype contract. auto uses a compatible host libisofs when
+# available and otherwise stages the pinned WHP fork. 1 forces the fork.
+if [ "$WHP_HOST_OS" = macos ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$BOOTSTRAP_LIBISOFS" != 0 ]; then
+    LIBISOFS_BOOTSTRAP_MODE=auto
+    if [ "$BOOTSTRAP_LIBISOFS" = 1 ]; then
+        LIBISOFS_BOOTSTRAP_MODE=force
+    fi
+    WHP_LIBISOFS_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libisofs.py" \
+            --build-dir "$BUILD_DIR" --mode "$LIBISOFS_BOOTSTRAP_MODE"
+    ) || exit 1
+    unset LIBISOFS_BOOTSTRAP_MODE
+
+    if [ -n "$WHP_LIBISOFS_PREFIX" ]; then
+        WHP_LIBISOFS_PC_PATH=
+        for WHP_LIBISOFS_PC_DIR in \
+            "$WHP_LIBISOFS_PREFIX/lib/pkgconfig" \
+            "$WHP_LIBISOFS_PREFIX/lib64/pkgconfig" \
+            "$WHP_LIBISOFS_PREFIX/libdata/pkgconfig"; do
+            if [ -d "$WHP_LIBISOFS_PC_DIR" ]; then
+                WHP_LIBISOFS_PC_PATH="${WHP_LIBISOFS_PC_PATH:+$WHP_LIBISOFS_PC_PATH:}$WHP_LIBISOFS_PC_DIR"
+            fi
+        done
+        if [ -n "$WHP_LIBISOFS_PC_PATH" ]; then
+            PKG_CONFIG_PATH="$WHP_LIBISOFS_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            export PKG_CONFIG_PATH
+        fi
+        export WHP_LIBISOFS_PREFIX
+        unset WHP_LIBISOFS_PC_PATH WHP_LIBISOFS_PC_DIR
+    fi
+fi
+
 if [ -z "$WHP_BUILD_BASH" ]; then
     if [ "$WHP_HOST_OS" = macos ] && [ -x /bin/bash ]; then
         WHP_BUILD_BASH=/bin/bash
