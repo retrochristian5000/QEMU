@@ -33,6 +33,8 @@ else:
         errors.append("MPC7400 must retain tlbie and tlbsync")
     if "PPC_MEM_TLBIA" in cpu_7400:
         errors.append("MPC7400 must not advertise unsupported tlbia")
+    if "PPC_FLOAT_FSQRT" in cpu_7400:
+        errors.append("MPC7400 must not advertise unsupported fsqrt/fsqrts")
 
 # Preserve a Motorola-style stable CPU name for board profiles and standalone
 # PowerPC work while retaining an explicit revisioned implementation underneath.
