@@ -75,6 +75,12 @@
 #define KL_FCR1_UIDE_ENABLE          (1U << 29)
 #define KL_FCR1_UIDE_RESET_N         (1U << 30)
 
+#define KL_FCR1_SCREAMER_ENABLE_MASK \
+    (KL_FCR1_AUDIO_CLK_ENABLE | KL_FCR1_AUDIO_CLK_OUT_ENABLE | \
+     KL_FCR1_AUDIO_CELL_ENABLE | KL_FCR1_CHOOSE_AUDIO)
+#define KL_FCR1_SCREAMER_DEFAULT_MASK \
+    (KL_FCR1_AUDIO_SEL22M_CLK | KL_FCR1_SCREAMER_ENABLE_MASK)
+
 #define KL_FCR2_IOBUS_ENABLE        (1U << 1)
 #define KL_FCR2_SLEEP_STATE_BIT     (1U << 8)
 #define KL_FCR2_MPIC_ENABLE         (1U << 17)
@@ -331,6 +337,29 @@ static const MemoryRegionOps timer_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static bool keylargo_screamer_enabled(const NewWorldMacIOState *ns)
+{
+    if (!ns->has_keylargo_fcr) {
+        return true;
+    }
+
+    return (ns->fcr[1] & KL_FCR1_SCREAMER_ENABLE_MASK) ==
+           KL_FCR1_SCREAMER_ENABLE_MASK;
+}
+
+static void keylargo_update_screamer(NewWorldMacIOState *ns)
+{
+    qemu_irq cell_enable;
+
+    if (!ns->has_screamer) {
+        return;
+    }
+
+    cell_enable = qdev_get_gpio_in_named(DEVICE(&ns->screamer),
+                                         "cell-enable", 0);
+    qemu_set_irq(cell_enable, keylargo_screamer_enabled(ns));
+}
+
 static void keylargo_fcr_set_defaults(NewWorldMacIOState *ns)
 {
     /*
@@ -353,6 +382,9 @@ static void keylargo_fcr_set_defaults(NewWorldMacIOState *ns)
                  KL_FCR1_EIDE0_RESET_N |
                  KL_FCR1_EIDE1_ENABLE |
                  KL_FCR1_EIDE1_RESET_N;
+    if (ns->has_screamer) {
+        ns->fcr[1] |= KL_FCR1_SCREAMER_DEFAULT_MASK;
+    }
     ns->fcr[2] = KL_FCR2_IOBUS_ENABLE | KL_FCR2_MPIC_ENABLE;
     ns->fcr[3] = KL_FCR3_TIMER_CLK18_ENABLE | KL_FCR3_VIA_CLK16_ENABLE;
     ns->fcr[4] = 0;
@@ -396,6 +428,10 @@ static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
     if (reg == 0 && (value & KL_FCR0_RESET_SCC) &&
         !(old & KL_FCR0_RESET_SCC)) {
         device_cold_reset(DEVICE(&s->escc));
+    }
+
+    if (reg == 1) {
+        keylargo_update_screamer(ns);
     }
 }
 
@@ -460,6 +496,7 @@ static void macio_newworld_realize(PCIDevice *d, Error **errp)
                            qdev_get_gpio_in(pic_dev,
                                             NEWWORLD_SCREAMER_RX_IRQ));
         macio_screamer_register_dma(&ns->screamer, &s->dbdma, 0x10, 0x12);
+        keylargo_update_screamer(ns);
     } else {
         object_unparent(OBJECT(&ns->screamer));
     }
