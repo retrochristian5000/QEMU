@@ -4173,8 +4173,7 @@ POWERPC_FAMILY(7400)(ObjectClass *oc, const void *data)
     pcc->check_attn = check_attn_none;
     pcc->insns_flags = PPC_INSNS_BASE | PPC_STRING | PPC_MFTB |
                        PPC_FLOAT | PPC_FLOAT_FSEL | PPC_FLOAT_FRES |
-                       PPC_FLOAT_FSQRT | PPC_FLOAT_FRSQRTE |
-                       PPC_FLOAT_STFIWX |
+                       PPC_FLOAT_FRSQRTE | PPC_FLOAT_STFIWX |
                        PPC_CACHE | PPC_CACHE_ICBI |
                        PPC_CACHE_DCBA | PPC_CACHE_DCBZ |
                        PPC_MEM_SYNC | PPC_MEM_EIEIO |
