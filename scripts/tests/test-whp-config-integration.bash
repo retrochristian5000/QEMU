@@ -26,6 +26,7 @@ grep -Fq 'qemu-system-i386' <<< "$menu_output"
 grep -Fq 'qemu-system-ppc' <<< "$menu_output"
 grep -Fq 'Host features' <<< "$menu_output"
 grep -Fq 'Dynamic QEMU modules' <<< "$menu_output"
+grep -Fq 'Bootstrap/use WHP SDL3' <<< "$menu_output"
 grep -Fq 'Cocoa' <<< "$menu_output"
 grep -Fq 'CoreAudio' <<< "$menu_output"
 grep -Fq 'GTK' <<< "$menu_output"
@@ -220,6 +221,7 @@ BUILD_QEMU_IMG=1
 MACOS_ENABLE_GTK=auto
 MACOS_ENABLE_PA=auto
 QEMU_HOST_LTO=auto
+QEMU_HOST_MODULES=auto
 whp_prepare_configure_args
 generic_args="$(printf '%s\n' "${configure_args[@]}")"
 grep -Fxq -- '--prefix=/portable-prefix' <<< "$generic_args"
