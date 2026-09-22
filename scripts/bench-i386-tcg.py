@@ -295,7 +295,8 @@ def main() -> int:
     print(f"QEMU:       {qemu}")
     print(f"TCG thread: {args.tcg_thread}")
     print(f"Split W^X:  {args.split_wx}")
-    print(f"TB size:    {args.tb_size if args.tb_size is not None else 'auto'} MiB")
+    tb_size_label = f"{args.tb_size} MiB" if args.tb_size is not None else "auto"
+    print(f"TB size:    {tb_size_label}")
     print(f"Loops:      {args.loops}")
     print(f"Rounds:     {args.rounds}")
 
