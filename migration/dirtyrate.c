@@ -39,6 +39,7 @@
 uint64_t total_dirty_pages;
 
 typedef struct DirtyPageRecord {
+    int cpu_index;
     uint64_t start_pages;
     uint64_t end_pages;
 } DirtyPageRecord;
@@ -64,13 +65,19 @@ static int64_t dirty_stat_wait(int64_t msec, int64_t initial_time)
     return msec;
 }
 
-static inline void record_dirtypages(DirtyPageRecord *dirty_pages,
+static inline void record_dirtypages(DirtyPageRecord *record,
                                      CPUState *cpu, bool start)
 {
     if (start) {
-        dirty_pages[cpu->cpu_index].start_pages = cpu->dirty_pages;
+        record->cpu_index = cpu->cpu_index;
+        record->start_pages = cpu->dirty_pages;
     } else {
-        dirty_pages[cpu->cpu_index].end_pages = cpu->dirty_pages;
+        /*
+         * The CPU list generation is checked before the second sample, so
+         * the dense record order must still describe the same CPUs.
+         */
+        assert(record->cpu_index == cpu->cpu_index);
+        record->end_pages = cpu->dirty_pages;
     }
 }
 
@@ -139,9 +146,11 @@ static void vcpu_dirty_stat_collect(DirtyPageRecord *records,
                                     bool start)
 {
     CPUState *cpu;
+    int index = 0;
 
     CPU_FOREACH(cpu) {
-        record_dirtypages(records, cpu, start);
+        record_dirtypages(&records[index], cpu, start);
+        index++;
     }
 }
 
@@ -172,8 +181,8 @@ retry:
 
     WITH_QEMU_LOCK_GUARD(&qemu_cpu_list_lock) {
         if (gen_id != cpu_list_generation_id_get()) {
-            g_free(records);
-            g_free(stat->rates);
+            g_clear_pointer(&records, g_free);
+            g_clear_pointer(&stat->rates, g_free);
             goto retry;
         }
         vcpu_dirty_stat_collect(records, false);
@@ -182,10 +191,10 @@ retry:
     for (i = 0; i < stat->nvcpu; i++) {
         dirtyrate = do_calculate_dirtyrate(records[i], duration);
 
-        stat->rates[i].id = i;
+        stat->rates[i].id = records[i].cpu_index;
         stat->rates[i].dirty_rate = dirtyrate;
 
-        trace_dirtyrate_do_calculate_vcpu(i, dirtyrate);
+        trace_dirtyrate_do_calculate_vcpu(records[i].cpu_index, dirtyrate);
     }
 
     g_free(records);
