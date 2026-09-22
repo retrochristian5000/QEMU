@@ -5,11 +5,14 @@ on:
     branches:
       - master
     paths:
+      - '.gitmodules'
+      - 'toolchains/sdl'
       - 'build.sh'
       - 'builder.sh'
       - 'configs/meson/darwin.txt'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
+      - 'scripts/ensure-sdl.py'
       - 'scripts/qapi/common.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/whp-config/**'
@@ -37,6 +40,7 @@ on:
       - 'scripts/tests/test-x87-trig-upgrade.py'
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-seabios-config.py'
+      - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-hardware-menu.py'
@@ -63,7 +67,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Test configuration model
         run: |
@@ -79,6 +83,7 @@ jobs:
           python3 scripts/tests/test-whp-sparc-menu.py
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
+          python3 scripts/tests/test-sdl-bootstrap.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-test-policy.py
           python3 scripts/tests/test-test-selection.py
@@ -104,6 +109,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/ensure-ninja.py \
+            scripts/ensure-sdl.py \
             scripts/qapi/common.py \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
@@ -125,6 +131,7 @@ jobs:
             scripts/tests/test-x87-trig-upgrade.py \
             scripts/tests/test-mold-config.py \
             scripts/tests/test-seabios-config.py \
+            scripts/tests/test-sdl-bootstrap.py \
             scripts/tests/test-whp-config.py \
             scripts/tests/test-whp-hardware-menu.py \
             scripts/tests/test-whp-i386-audio-menu.py \
