@@ -1579,7 +1579,7 @@ int virtqueue_get_avail_bytes(VirtQueue *vq, unsigned int *in_bytes,
 
     desc_size = virtio_vdev_has_feature(vq->vdev, VIRTIO_F_RING_PACKED) ?
                                 sizeof(VRingPackedDesc) : sizeof(VRingDesc);
-    if (caches->desc.len < vq->vring.num * desc_size) {
+    if (caches->desc.len < (size_t)vq->vring.num * desc_size) {
         virtio_error(vq->vdev, "Cannot map descriptor ring");
         goto err;
     }
