@@ -1387,7 +1387,7 @@ if not get_option('libiscsi').auto() or have_block
 endif
 libisofs = not_found
 if host_os == 'darwin' and (not get_option('libisofs').auto() or have_block)
-  libisofs = dependency('libisofs-1',
+  libisofs = dependency('libisofs-1', version: '>=1.1.2',
                         required: get_option('libisofs'),
                         method: 'pkg-config')
 endif

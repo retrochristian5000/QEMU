@@ -744,6 +744,9 @@ out:
 static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
                                           int bdrv_flags)
 {
+    (void)filename;
+    (void)fd;
+    (void)bdrv_flags;
 }
 #endif
 
