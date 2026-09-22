@@ -36,6 +36,9 @@ class Code:
     def emit(self, *values: int) -> None:
         self.data.extend(value & 0xFF for value in values)
 
+    def u16(self, value: int) -> None:
+        self.data.extend((value & 0xFFFF).to_bytes(2, "little"))
+
     def u32(self, value: int) -> None:
         self.data.extend((value & 0xFFFFFFFF).to_bytes(4, "little"))
 
@@ -132,12 +135,46 @@ def workload_fcomi(code: Code, loops: int) -> None:
     code.emit(0xDD, 0xD8)        # fstp st(0)
 
 
+TB_DISPATCH_BLOCKS = 8192
+
+
+def workload_dispatch(code: Code, loops: int) -> None:
+    """Exercise the per-vCPU TB jump cache with many indirect destinations."""
+    rounds = max(1, (loops + TB_DISPATCH_BLOCKS - 1) // TB_DISPATCH_BLOCKS)
+    emit_loop_count(code, rounds)
+
+    # Each ordinary block is exactly five bytes:
+    #   mov bx, next_ip
+    #   jmp bx
+    # Indirect jumps use lookup_and_goto_ptr, so an 8192-block ring applies
+    # sustained pressure to the current 4096-entry direct-mapped jump cache.
+    first_block = len(code.data)
+    block_size = 5
+    for index in range(TB_DISPATCH_BLOCKS - 1):
+        next_ip = first_block + (index + 1) * block_size
+        if next_ip > 0xFFFF:
+            raise ValueError("dispatch workload exceeds the real-mode IP range")
+        code.emit(0xBB)          # mov bx, imm16
+        code.u16(next_ip)
+        code.emit(0xFF, 0xE3)    # jmp bx
+
+    # Complete one ring.  Repeat until the requested approximate number of
+    # indirect dispatches has executed, then fall through to isa-debug-exit.
+    code.emit(0x66, 0x49)        # dec ecx
+    code.jcc8(0x74, "dispatch_done")
+    code.emit(0xBB)              # mov bx, imm16
+    code.u16(first_block)
+    code.emit(0xFF, 0xE3)        # jmp bx
+    code.label("dispatch_done")
+
+
 WORKLOADS: dict[str, Callable[[Code, int], None]] = {
     "startup": workload_startup,
     "branch": workload_branch,
     "flags": workload_flags,
     "memory": workload_memory,
     "fcomi": workload_fcomi,
+    "dispatch": workload_dispatch,
 }
 
 

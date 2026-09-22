@@ -457,6 +457,19 @@ jobs:
               --tb-size "$tb_size"
           done
 
+          # Exercise more indirect TB destinations than fit in the current
+          # 4096-entry per-vCPU direct-mapped jump cache.  Keep this separate
+          # from the tb-size sweep: it measures dispatch-cache pressure, not
+          # code-buffer mapping cost.
+          echo "ARM64e TCG jump-cache pressure benchmark"
+          python3 scripts/bench-i386-tcg.py \
+            --qemu "$BUILD_DIR/qemu-system-i386" \
+            --workload dispatch \
+            --loops 262144 \
+            --rounds 1 \
+            --tcg-thread single \
+            --split-wx on
+
       - name: Show native LLVM failure context
         if: failure()
         shell: bash
