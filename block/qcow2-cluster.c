@@ -315,7 +315,7 @@ static int GRAPH_RDLOCK l2_allocate(BlockDriverState *bs, int l1_index)
     trace_qcow2_l2_allocate_get_empty(bs, l1_index);
     for (slice = 0; slice < n_slices; slice++) {
         ret = qcow2_cache_get_empty(bs, s->l2_table_cache,
-                                    l2_offset + slice * slice_size2,
+                                    l2_offset + (uint64_t)slice * slice_size2,
                                     (void **) &l2_slice);
         if (ret < 0) {
             goto fail;
