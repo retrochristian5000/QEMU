@@ -73,6 +73,8 @@ static void screamer_set_cell_enable(void *opaque, int n, int level)
     ScreamerState *s = opaque;
     bool enabled = level != 0;
 
+    assert(n == 0);
+
     if (s->cell_enabled == enabled) {
         return;
     }
@@ -291,17 +293,18 @@ static void screamer_rx_dma(DBDMA_io *io)
 {
     ScreamerState *s = io->opaque;
     uint64_t frames;
+    uint64_t delay_ns;
 
     if (!s->cell_enabled) {
         return;
     }
 
     frames = MAX((uint64_t)1,
-                          ((uint64_t)(uint32_t)io->len +
-                           SCREAMER_SAMPLE_BYTES - 1) /
-                          SCREAMER_SAMPLE_BYTES);
-    uint64_t delay_ns = MAX((uint64_t)1,
-                            muldiv64(frames, NANOSECONDS_PER_SECOND, s->rate));
+                 ((uint64_t)(uint32_t)io->len +
+                  SCREAMER_SAMPLE_BYTES - 1) /
+                 SCREAMER_SAMPLE_BYTES);
+    delay_ns = MAX((uint64_t)1,
+                   muldiv64(frames, NANOSECONDS_PER_SECOND, s->rate));
 
     s->rx_io = io;
     timer_mod_ns(s->rx_timer,
