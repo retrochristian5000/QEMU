@@ -3,6 +3,59 @@
 set -eu
 
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+# Normal local builds refresh the tracked QEMU branch before any tool or
+# configuration discovery.  Probe/menu invocations stay side-effect free unless
+# the caller explicitly sets WHP_SOURCE_UPDATE=1.
+WHP_SOURCE_UPDATE=${WHP_SOURCE_UPDATE:-auto}
+case "$WHP_SOURCE_UPDATE" in
+    auto|0|1) ;;
+    *)
+        printf 'error: WHP_SOURCE_UPDATE must be auto, 0, or 1: %s\n' \
+            "$WHP_SOURCE_UPDATE" >&2
+        exit 1
+        ;;
+esac
+
+WHP_SOURCE_UPDATE_SKIP=0
+if [ "$WHP_SOURCE_UPDATE" = auto ]; then
+    case "${1:-}" in
+        menuconfig) WHP_SOURCE_UPDATE_SKIP=1 ;;
+    esac
+    if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ] ||
+       [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" = 1 ] ||
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" = 1 ]; then
+        WHP_SOURCE_UPDATE_SKIP=1
+    fi
+fi
+
+if [ "${WHP_SOURCE_UPDATE_DONE:-0}" != 1 ] &&
+   [ "$WHP_SOURCE_UPDATE" != 0 ] &&
+   [ "$WHP_SOURCE_UPDATE_SKIP" != 1 ]; then
+    WHP_SOURCE_REVISION_BEFORE=$(
+        git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
+    )
+    WHP_SOURCE_UPDATE="$WHP_SOURCE_UPDATE" \
+        /bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"
+    WHP_SOURCE_REVISION_AFTER=$(
+        git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
+    )
+
+    WHP_SOURCE_UPDATE_DONE=1
+    export WHP_SOURCE_UPDATE_DONE
+
+    if [ -n "$WHP_SOURCE_REVISION_BEFORE" ] &&
+       [ -n "$WHP_SOURCE_REVISION_AFTER" ] &&
+       [ "$WHP_SOURCE_REVISION_BEFORE" != "$WHP_SOURCE_REVISION_AFTER" ]; then
+        printf 'WHP source update: re-entering updated build.sh (%s -> %s)\n' \
+            "$WHP_SOURCE_REVISION_BEFORE" "$WHP_SOURCE_REVISION_AFTER" >&2
+        exec "$SOURCE_DIR/build.sh" "$@"
+    fi
+    unset WHP_SOURCE_REVISION_BEFORE WHP_SOURCE_REVISION_AFTER
+fi
+unset WHP_SOURCE_UPDATE_SKIP
+export WHP_SOURCE_UPDATE
+
 WHP_CONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/config.py"
 WHP_MENUCONFIG_TOOL="$SOURCE_DIR/scripts/whp-config/menuconfig.py"
 WHP_PORTABLE_BUILD_TOOL="$SOURCE_DIR/scripts/whp-build/portable-build-entry.py"
