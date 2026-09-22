@@ -1,4 +1,4 @@
-name: PowerPC display firmware contracts
+name: PowerMac3,1 hardware contracts
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - 'hw/display/ati.c'
       - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
+      - 'hw/net/sungem.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
       - 'hw/misc/tsb12lv23.c'
@@ -19,6 +20,7 @@ on:
       - 'target/ppc/cpu-models.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
+      - 'scripts/tests/test-powermac3_1-gmac-phy.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
@@ -29,6 +31,7 @@ on:
       - 'hw/display/ati.c'
       - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
+      - 'hw/net/sungem.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
       - 'hw/misc/tsb12lv23.c'
@@ -41,6 +44,7 @@ on:
       - 'target/ppc/cpu-models.c'
       - 'scripts/tests/test-powerpc-vga-rom-bar.py'
       - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
+      - 'scripts/tests/test-powermac3_1-gmac-phy.py'
       - 'scripts/tests/test-powermac3_1-defaults.py'
       - 'scripts/tests/test-powermac3_1-firewire.py'
       - 'scripts/tests/test-powermac3_1-multi-display.py'
@@ -51,7 +55,7 @@ permissions:
   contents: read
 
 jobs:
-  display-contracts:
+  hardware-contracts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,6 +65,8 @@ jobs:
         run: python3 scripts/tests/test-powermac3_1-defaults.py
       - name: Verify Sawtooth Rage128 DDC contract
         run: python3 scripts/tests/test-powermac3_1-rage128-ddc.py
+      - name: Verify Sawtooth BCM5201 PHY reads
+        run: python3 scripts/tests/test-powermac3_1-gmac-phy.py
       - name: Verify Sawtooth TSB12LV23 FireWire controller
         run: python3 scripts/tests/test-powermac3_1-firewire.py
       - name: Verify Sawtooth generic AGP + PCI multi-display wiring
