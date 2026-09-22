@@ -18,6 +18,13 @@ on:
     branches: [ "master" ]
   schedule:
     - cron: '25 20 * * 2'
+  workflow_dispatch:
+
+# Keep only the newest scan for the same branch/event.  This avoids burning
+# CodeQL capacity on superseded pushes while preserving independent PR scans.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
