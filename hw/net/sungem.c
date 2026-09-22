@@ -186,8 +186,28 @@ OBJECT_DECLARE_SIMPLE_TYPE(SunGEMState, SUNGEM)
 #define BCM5201_AUXSTATUS_LINK            0x0004
 #define BCM5201_AUXSTATUS_ANEG_ENABLE     0x0002
 #define BCM5201_INTERRUPT                 0x1a
+#define BCM5201_INTERRUPT_WRITABLE        0xcf00
 #define BCM5201_AUXMODE2                  0x1b
+#define BCM5201_AUXMODE2_WRITABLE         0x037e
 #define BCM5201_MULTIPHY                  0x1e
+#define BCM5201_MULTIPHY_HCD_100TX_FD     0x8000
+#define BCM5201_MULTIPHY_RESTART_ANEG     0x0100
+#define BCM5201_MULTIPHY_ANEG_COMPLETE    0x0080
+#define BCM5201_MULTIPHY_SUPERISOLATE     0x0008
+#define BCM5201_MULTIPHY_SERIALMODE       0x0002
+#define BCM5201_MULTIPHY_WRITABLE         \
+    (BCM5201_MULTIPHY_SUPERISOLATE | BCM5201_MULTIPHY_SERIALMODE)
+
+#define BCM5201_AUXCTL_WRITABLE           0xc0f4
+
+#define BCM5201_BMCR_WRITABLE \
+    (MII_BMCR_LOOPBACK | MII_BMCR_SPEED100 | MII_BMCR_AUTOEN | \
+     MII_BMCR_PDOWN | MII_BMCR_ISOLATE | MII_BMCR_FD | MII_BMCR_CTST)
+
+#define BCM5201_ANAR_WRITABLE \
+    (MII_ANAR_RFAULT | MII_ANAR_PAUSE_ASYM | MII_ANAR_PAUSE | \
+     MII_ANAR_TXFD | MII_ANAR_TX | MII_ANAR_10FD | MII_ANAR_10 | \
+     MII_ANAR_SELECT)
 
 #define BCM5201_BMSR_CAPS \
     (MII_BMSR_100TX_FD | MII_BMSR_100TX_HD | MII_BMSR_10T_FD | \
@@ -241,6 +261,13 @@ struct SunGEMState {
     NICConf conf;
     uint32_t phy_addr;
 
+    uint16_t phy_bmcr;
+    uint16_t phy_anar;
+    uint16_t phy_auxctl;
+    uint16_t phy_interrupt;
+    uint16_t phy_auxmode2;
+    uint16_t phy_multiphy;
+
     uint32_t gregs[SUNGEM_MMIO_GREG_SIZE >> 2];
     uint32_t txdmaregs[SUNGEM_MMIO_TXDMA_SIZE >> 2];
     uint32_t rxdmaregs[SUNGEM_MMIO_RXDMA_SIZE >> 2];
@@ -257,6 +284,56 @@ struct SunGEMState {
     uint32_t tx_size;
     uint64_t tx_first_ctl;
 };
+
+static void sungem_phy_reset(SunGEMState *s)
+{
+    s->phy_bmcr = MII_BMCR_AUTOEN;
+    s->phy_anar = BCM5201_ANAR_CAPS;
+    s->phy_auxctl = 0;
+    s->phy_interrupt = 0;
+    s->phy_auxmode2 = 0;
+    s->phy_multiphy = 0;
+}
+
+static bool sungem_phy_powered(SunGEMState *s)
+{
+    return !(s->phy_bmcr & (MII_BMCR_PDOWN | MII_BMCR_ISOLATE)) &&
+           !(s->phy_multiphy & BCM5201_MULTIPHY_SUPERISOLATE);
+}
+
+static bool sungem_phy_link_up(SunGEMState *s)
+{
+    return s->nic && sungem_phy_powered(s) &&
+           !qemu_get_queue(s->nic)->link_down;
+}
+
+static bool sungem_phy_autoneg(SunGEMState *s)
+{
+    return (s->phy_bmcr & MII_BMCR_AUTOEN) != 0;
+}
+
+static bool sungem_phy_speed100(SunGEMState *s)
+{
+    if (sungem_phy_autoneg(s)) {
+        return sungem_phy_link_up(s);
+    }
+    return (s->phy_bmcr & MII_BMCR_SPEED100) != 0;
+}
+
+static bool sungem_phy_full_duplex(SunGEMState *s)
+{
+    if (sungem_phy_autoneg(s)) {
+        return sungem_phy_link_up(s);
+    }
+    return (s->phy_bmcr & MII_BMCR_FD) != 0;
+}
+
+static void sungem_phy_notify_state(SunGEMState *s)
+{
+    if (s->nic && sungem_phy_link_up(s)) {
+        qemu_flush_queued_packets(qemu_get_queue(s->nic));
+    }
+}
 
 static void sungem_eval_irq(SunGEMState *s)
 {
@@ -340,7 +417,7 @@ static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,
 
     if (s->macregs[MAC_XIFCFG >> 2] & MAC_XIFCFG_LBCK) {
         qemu_receive_packet(nc, buf, size);
-    } else {
+    } else if (sungem_phy_link_up(s)) {
         qemu_send_packet(nc, buf, size);
     }
 }
@@ -476,6 +553,10 @@ static bool sungem_can_receive(NetClientState *nc)
     rxmac_cfg = s->macregs[MAC_RXCFG >> 2];
     rxdma_cfg = s->rxdmaregs[RXDMA_CFG >> 2];
 
+    if (!sungem_phy_link_up(s)) {
+        return false;
+    }
+
     /* If MAC disabled, can't receive */
     if ((rxmac_cfg & MAC_RXCFG_ENAB) == 0) {
         trace_sungem_rx_mac_disabled();
@@ -588,6 +669,10 @@ static ssize_t sungem_receive(NetClientState *nc, const uint8_t *buf,
     unsigned int rx_cond;
 
     trace_sungem_rx_packet(size);
+
+    if (!sungem_phy_link_up(s)) {
+        return 0;
+    }
 
     rxmac_cfg = s->macregs[MAC_RXCFG >> 2];
     rxdma_cfg = s->rxdmaregs[RXDMA_CFG >> 2];
@@ -707,9 +792,9 @@ static ssize_t sungem_receive(NetClientState *nc, const uint8_t *buf,
 
 static void sungem_set_link_status(NetClientState *nc)
 {
-    /* We don't do anything for now as I believe none of the OSes
-     * drivers use the MIF autopoll feature nor the PHY interrupt
-     */
+    SunGEMState *s = qemu_get_nic_opaque(nc);
+
+    sungem_phy_notify_state(s);
 }
 
 static void sungem_update_masks(SunGEMState *s)
@@ -760,6 +845,10 @@ static void sungem_reset_all(SunGEMState *s, bool pci_reset)
 {
     trace_sungem_reset(pci_reset);
 
+    if (pci_reset) {
+        sungem_phy_reset(s);
+    }
+
     sungem_reset_rx(s);
     sungem_reset_tx(s);
 
@@ -783,18 +872,66 @@ static void sungem_mii_write(SunGEMState *s, uint8_t phy_addr,
 {
     trace_sungem_mii_write(phy_addr, reg_addr, val);
 
-    /* XXX TODO */
-}
+    if (phy_addr != s->phy_addr) {
+        return;
+    }
 
-static bool sungem_phy_link_up(SunGEMState *s)
-{
-    return !qemu_get_queue(s->nic)->link_down;
+    switch (reg_addr) {
+    case MII_BMCR:
+        if (val & MII_BMCR_RESET) {
+            sungem_phy_reset(s);
+            sungem_phy_notify_state(s);
+            return;
+        }
+
+        /*
+         * RESET and ANRESTART are self-clearing command bits.  Keep only
+         * implemented BCM5201 mode controls in the readable BMCR state.
+         */
+        s->phy_bmcr = val & BCM5201_BMCR_WRITABLE;
+        sungem_phy_notify_state(s);
+        break;
+
+    case MII_ANAR:
+        s->phy_anar = val & BCM5201_ANAR_WRITABLE;
+        break;
+
+    case BCM5201_AUXCTLSTATUS:
+        /*
+         * SPEED and DUPLEX are resolved status bits.  Preserve only the
+         * documented control portion and synthesize operating mode on reads.
+         */
+        s->phy_auxctl = val & BCM5201_AUXCTL_WRITABLE;
+        break;
+
+    case BCM5201_INTERRUPT:
+        s->phy_interrupt = val & BCM5201_INTERRUPT_WRITABLE;
+        break;
+
+    case BCM5201_AUXMODE2:
+        s->phy_auxmode2 = val & BCM5201_AUXMODE2_WRITABLE;
+        break;
+
+    case BCM5201_MULTIPHY:
+        s->phy_multiphy = val & BCM5201_MULTIPHY_WRITABLE;
+        /*
+         * RESTART_ANEG is command-only and therefore self-clears.  Negotiation
+         * completes immediately in this deterministic link model.
+         */
+        sungem_phy_notify_state(s);
+        break;
+
+    default:
+        break;
+    }
 }
 
 static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
                                   uint8_t reg_addr)
 {
+    bool autoneg;
     bool link_up;
+    uint16_t val;
 
     if (phy_addr != s->phy_addr) {
         return 0xffff;
@@ -802,48 +939,78 @@ static uint16_t __sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
 
     /*
      * Model the 10/100 Broadcom BCM5201 used by early Apple GMAC systems.
-     * Keep the Clause 22 registers internally consistent with the negotiated
-     * link that QEMU exposes: auto-negotiation enabled, 100BASE-TX full duplex
-     * when the backend link is up.
+     * The backend supplies carrier state; BMCR and vendor controls determine
+     * whether the PHY is powered, isolated, negotiating or forced.
      */
+    autoneg = sungem_phy_autoneg(s);
     link_up = sungem_phy_link_up(s);
 
     switch (reg_addr) {
     case MII_BMCR:
-        return MII_BMCR_AUTOEN;
+        return s->phy_bmcr;
     case MII_BMSR:
-        return BCM5201_BMSR_CAPS |
-               (link_up ? MII_BMSR_AN_COMP | MII_BMSR_LINK_ST : 0);
+        val = BCM5201_BMSR_CAPS;
+        if (link_up) {
+            val |= MII_BMSR_LINK_ST;
+            if (autoneg) {
+                val |= MII_BMSR_AN_COMP;
+            }
+        }
+        return val;
     case MII_PHYID1:
         return 0x0040;
     case MII_PHYID2:
         return 0x6210;
     case MII_ANAR:
-        return BCM5201_ANAR_CAPS;
+        return s->phy_anar;
     case MII_ANLPAR:
-        return link_up ? (BCM5201_ANAR_CAPS | MII_ANLPAR_ACK) : 0;
+        return link_up && autoneg ?
+               (BCM5201_ANAR_CAPS | MII_ANLPAR_ACK) : 0;
     case MII_ANER:
-        return link_up ? MII_ANER_NWAY : 0;
+        return link_up && autoneg ? MII_ANER_NWAY : 0;
     case BCM5201_AUXCTLSTATUS:
-        return BCM5201_AUXCTLSTATUS_ANEG |
-               (link_up ? BCM5201_AUXCTLSTATUS_SPEED100 |
-                          BCM5201_AUXCTLSTATUS_DUPLEX : 0);
+        val = s->phy_auxctl;
+        if (autoneg) {
+            val |= BCM5201_AUXCTLSTATUS_ANEG;
+        }
+        if (link_up) {
+            if (sungem_phy_speed100(s)) {
+                val |= BCM5201_AUXCTLSTATUS_SPEED100;
+            }
+            if (sungem_phy_full_duplex(s)) {
+                val |= BCM5201_AUXCTLSTATUS_DUPLEX;
+            }
+        }
+        return val;
     case BCM5201_AUXSTATUS:
-        return BCM5201_AUXSTATUS_ANEG_ENABLE |
-               (link_up ? BCM5201_AUXSTATUS_ANEG_COMPLETE |
-                          BCM5201_AUXSTATUS_LP_ABILITY |
-                          BCM5201_AUXSTATUS_HCD_100TX_FD |
-                          BCM5201_AUXSTATUS_SPEED100 |
-                          BCM5201_AUXSTATUS_LINK : 0);
+        val = autoneg ? BCM5201_AUXSTATUS_ANEG_ENABLE : 0;
+        if (link_up) {
+            val |= BCM5201_AUXSTATUS_LINK;
+            if (sungem_phy_speed100(s)) {
+                val |= BCM5201_AUXSTATUS_SPEED100;
+            }
+            if (autoneg) {
+                val |= BCM5201_AUXSTATUS_ANEG_COMPLETE |
+                       BCM5201_AUXSTATUS_LP_ABILITY |
+                       BCM5201_AUXSTATUS_HCD_100TX_FD;
+            }
+        }
+        return val;
     case BCM5201_INTERRUPT:
+        return s->phy_interrupt;
     case BCM5201_AUXMODE2:
+        return s->phy_auxmode2;
     case BCM5201_MULTIPHY:
-        return 0;
+        val = s->phy_multiphy;
+        if (link_up && autoneg) {
+            val |= BCM5201_MULTIPHY_HCD_100TX_FD |
+                   BCM5201_MULTIPHY_ANEG_COMPLETE;
+        }
+        return val;
     default:
         return 0;
     }
 }
-
 static uint16_t sungem_mii_read(SunGEMState *s, uint8_t phy_addr,
                                 uint8_t reg_addr)
 {
@@ -1487,12 +1654,18 @@ static const Property sungem_properties[] = {
 
 static const VMStateDescription vmstate_sungem = {
     .name = "sungem",
-    .version_id = 0,
+    .version_id = 1,
     .minimum_version_id = 0,
     .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(pdev, SunGEMState),
         VMSTATE_MACADDR(conf.macaddr, SunGEMState),
         VMSTATE_UINT32(phy_addr, SunGEMState),
+        VMSTATE_UINT16_V(phy_bmcr, SunGEMState, 1),
+        VMSTATE_UINT16_V(phy_anar, SunGEMState, 1),
+        VMSTATE_UINT16_V(phy_auxctl, SunGEMState, 1),
+        VMSTATE_UINT16_V(phy_interrupt, SunGEMState, 1),
+        VMSTATE_UINT16_V(phy_auxmode2, SunGEMState, 1),
+        VMSTATE_UINT16_V(phy_multiphy, SunGEMState, 1),
         VMSTATE_UINT32_ARRAY(gregs, SunGEMState, (SUNGEM_MMIO_GREG_SIZE >> 2)),
         VMSTATE_UINT32_ARRAY(txdmaregs, SunGEMState,
                              (SUNGEM_MMIO_TXDMA_SIZE >> 2)),
