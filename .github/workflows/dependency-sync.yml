@@ -1,0 +1,39 @@
+name: Dependency mirror sync
+
+on:
+  pull_request:
+    paths:
+      - 'rust/Cargo.toml'
+      - 'rust/Cargo.lock'
+      - 'subprojects/*-rs.wrap'
+      - 'pythondeps.toml'
+      - 'python/wheels/**'
+      - 'docs/requirements.txt'
+      - 'scripts/ci/check-dependency-sync.py'
+      - '.github/workflows/dependency-sync.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'rust/Cargo.toml'
+      - 'rust/Cargo.lock'
+      - 'subprojects/*-rs.wrap'
+      - 'pythondeps.toml'
+      - 'python/wheels/**'
+      - 'docs/requirements.txt'
+      - 'scripts/ci/check-dependency-sync.py'
+      - '.github/workflows/dependency-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Check mirrored dependency pins
+        run: python3 scripts/ci/check-dependency-sync.py
