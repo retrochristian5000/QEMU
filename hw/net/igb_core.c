@@ -931,8 +931,9 @@ igb_has_rxbufs(IGBCore *core, const E1000ERingInfo *r, size_t total_size)
 
     trace_e1000e_rx_has_buffers(r->idx, bufs, total_size, bufsize);
 
-    return total_size <= bufs / (core->rx_desc_len / E1000_MIN_RX_DESC_LEN) *
-                         bufsize;
+    return total_size <= ((size_t)bufs /
+                          (core->rx_desc_len / E1000_MIN_RX_DESC_LEN)) *
+                         (size_t)bufsize;
 }
 
 static uint32_t
