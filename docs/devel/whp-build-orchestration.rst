@@ -45,6 +45,33 @@ A lightweight shell check is available without starting a build::
 Set ``WHP_RUN_SHELLCHECK=1`` to add ShellCheck during preflight when it is
 installed.
 
+Source refresh
+--------------
+
+Normal local ``./build.sh`` runs refresh the checkout before Python,
+toolchain, or QEMU configuration discovery.  ``WHP_SOURCE_UPDATE=auto`` is
+the default.  It fast-forwards only the current QEMU branch from its configured
+upstream and then synchronizes and initializes the exact recursive submodule
+revisions recorded by that QEMU commit.
+
+The refresh deliberately uses ``git pull --ff-only`` and never resets,
+cleans, rebases, or follows arbitrary submodule branch tips.  QEMU's gitlinks
+remain authoritative because firmware and toolchain bootstrap guards depend on
+those exact revisions for reproducible builds.
+
+If the QEMU commit changes, the launcher re-executes the newly pulled
+``build.sh`` before continuing.  This prevents an older launcher from driving
+newer orchestration helpers in the same build.
+
+Automatic refresh is skipped for CI, ``menuconfig``, and build/shell/portable
+probe invocations so those operations stay side-effect free.  Set
+``WHP_SOURCE_UPDATE=0`` to disable refresh completely.  Set
+``WHP_SOURCE_UPDATE=1`` to require it; unsafe states such as tracked source
+changes, a detached QEMU checkout, no configured upstream, or tracked
+submodule changes then fail instead of silently building older sources.
+In ``auto`` mode the same conditions produce a warning and preserve the
+current checkout.
+
 Build-graph ownership
 ---------------------
 
