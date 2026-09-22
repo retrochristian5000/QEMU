@@ -95,6 +95,7 @@ void gdb_do_syscall(gdb_syscall_complete_cb cb, const char *fmt, ...)
 {
     char *p, *p_end;
     va_list va;
+    int n;
 
     if (!gdb_attached()) {
         return;
@@ -115,19 +116,34 @@ void gdb_do_syscall(gdb_syscall_complete_cb cb, const char *fmt, ...)
             switch (*fmt++) {
             case 'x':
                 i32 = va_arg(va, uint32_t);
-                p += snprintf(p, p_end - p, "%" PRIx32, i32);
+                n = snprintf(p, p_end - p, "%" PRIx32, i32);
+                if (n < 0 || n >= p_end - p) {
+                    p = p_end - 1;
+                    goto finish;
+                }
+                p += n;
                 break;
             case 'l':
                 if (*(fmt++) != 'x') {
                     goto bad_format;
                 }
                 i64 = va_arg(va, uint64_t);
-                p += snprintf(p, p_end - p, "%" PRIx64, i64);
+                n = snprintf(p, p_end - p, "%" PRIx64, i64);
+                if (n < 0 || n >= p_end - p) {
+                    p = p_end - 1;
+                    goto finish;
+                }
+                p += n;
                 break;
             case 's':
                 i64 = va_arg(va, uint64_t);
                 i32 = va_arg(va, uint32_t);
-                p += snprintf(p, p_end - p, "%" PRIx64 "/%" PRIx32, i64, i32);
+                n = snprintf(p, p_end - p, "%" PRIx64 "/%" PRIx32, i64, i32);
+                if (n < 0 || n >= p_end - p) {
+                    p = p_end - 1;
+                    goto finish;
+                }
+                p += n;
                 break;
             default:
             bad_format:
@@ -136,9 +152,14 @@ void gdb_do_syscall(gdb_syscall_complete_cb cb, const char *fmt, ...)
                 break;
             }
         } else {
+            if (p >= p_end - 1) {
+                p = p_end - 1;
+                goto finish;
+            }
             *(p++) = *(fmt++);
         }
     }
+finish:
     *p = 0;
 
     va_end(va);
