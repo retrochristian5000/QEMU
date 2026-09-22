@@ -284,8 +284,8 @@ static void target_setup_sve_record(struct target_sve_context *sve,
 static void target_setup_za_record(struct target_za_context *za,
                                    CPUARMState *env, int size)
 {
-    int vq = sme_vq(env);
-    int vl = vq * TARGET_SVE_VQ_BYTES;
+    abi_ulong vq = sme_vq(env);
+    abi_ulong vl = vq * TARGET_SVE_VQ_BYTES;
     int i, j;
 
     memset(za, 0, sizeof(*za));
