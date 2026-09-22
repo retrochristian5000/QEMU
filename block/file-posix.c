@@ -546,11 +546,41 @@ static void raw_parse_flags(int bdrv_flags, int *open_flags, bool has_writers)
         *open_flags |= O_RDONLY;
     }
 
-    /* Use O_DSYNC for write-through caching, no flags for write-back caching,
-     * and O_DIRECT for no caching. */
-    if ((bdrv_flags & BDRV_O_NOCACHE)) {
+    /*
+     * Linux and other hosts use O_DIRECT for cache.direct=on. Darwin does
+     * not provide O_DIRECT; apply F_NOCACHE to the opened descriptor instead
+     * of falling back to O_DSYNC, which changes write durability semantics
+     * and can serialize writes.
+     */
+    if (bdrv_flags & BDRV_O_NOCACHE) {
+#ifndef CONFIG_DARWIN
         *open_flags |= O_DIRECT;
+#endif
     }
+}
+
+static int raw_apply_nocache(int fd, int bdrv_flags, Error **errp)
+{
+#ifdef CONFIG_DARWIN
+    struct stat st;
+    int nocache = !!(bdrv_flags & BDRV_O_NOCACHE);
+
+    if (fstat(fd, &st) < 0) {
+        error_setg_errno(errp, errno, "Could not stat file for cache mode");
+        return -errno;
+    }
+
+    /*
+     * F_NOCACHE is the Darwin file-descriptor control for bypassing the
+     * unified buffer cache. Device nodes are already outside the regular-file
+     * page-cache path, so only apply it to image files.
+     */
+    if (S_ISREG(st.st_mode) && fcntl(fd, F_NOCACHE, nocache) < 0) {
+        error_setg_errno(errp, errno, "Could not configure F_NOCACHE");
+        return -errno;
+    }
+#endif
+    return 0;
 }
 
 static void raw_parse_filename(const char *filename, QDict *options,
@@ -715,6 +745,11 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
         goto fail;
     }
     s->fd = fd;
+
+    ret = raw_apply_nocache(s->fd, bdrv_flags, errp);
+    if (ret < 0) {
+        goto fail;
+    }
 
     /* Check s->open_flags rather than bdrv_flags due to auto-read-only */
     if (s->open_flags & O_RDWR) {
@@ -1057,7 +1092,13 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
     int ret;
     bool has_writers = perm &
         (BLK_PERM_WRITE | BLK_PERM_WRITE_UNCHANGED | BLK_PERM_RESIZE);
+    bool nocache_changed = false;
     int fcntl_flags = O_APPEND | O_NONBLOCK;
+
+#ifdef CONFIG_DARWIN
+    nocache_changed = !!(flags & BDRV_O_NOCACHE) !=
+                      !!(bs->open_flags & BDRV_O_NOCACHE);
+#endif
 #ifdef O_NOATIME
     fcntl_flags |= O_NOATIME;
 #endif
@@ -1078,12 +1119,13 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
     assert((s->open_flags & O_ASYNC) == 0);
 #endif
 
-    if (*open_flags == s->open_flags) {
+    if (*open_flags == s->open_flags && !nocache_changed) {
         /* We're lucky, the existing fd is fine */
         return s->fd;
     }
 
-    if ((*open_flags & ~fcntl_flags) == (s->open_flags & ~fcntl_flags)) {
+    if (!nocache_changed &&
+        (*open_flags & ~fcntl_flags) == (s->open_flags & ~fcntl_flags)) {
         /* dup the original fd */
         fd = qemu_dup(s->fd);
         if (fd >= 0) {
@@ -1104,6 +1146,14 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
             if (fd == -1) {
                 return -1;
             }
+        }
+    }
+
+    if (fd != -1) {
+        ret = raw_apply_nocache(fd, flags, errp);
+        if (ret < 0) {
+            qemu_close(fd);
+            return -1;
         }
     }
 

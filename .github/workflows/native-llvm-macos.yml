@@ -64,6 +64,7 @@ on:
       - 'scripts/bench-macos-swift-host.py'
       - 'scripts/tests/test-arm64e-iso-hotpath.py'
       - 'scripts/tests/test-arm64e-block-write-hotpath.py'
+      - 'scripts/tests/test-darwin-block-nocache.py'
       - 'block/io.c'
       - 'block/raw-format.c'
       - 'include/block/block_int-io.h'
@@ -166,6 +167,10 @@ jobs:
       - name: Audit arm64e block write hot path
         shell: bash
         run: python3 scripts/tests/test-arm64e-block-write-hotpath.py
+
+      - name: Audit Darwin block cache-direct path
+        shell: bash
+        run: python3 scripts/tests/test-darwin-block-nocache.py
 
       - name: Verify native LLVM wiring
         shell: bash
