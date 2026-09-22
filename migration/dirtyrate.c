@@ -159,7 +159,7 @@ int64_t vcpu_calculate_dirtyrate(int64_t calc_time_ms,
                                  unsigned int flag,
                                  bool one_shot)
 {
-    DirtyPageRecord *records = NULL;
+    g_autofree DirtyPageRecord *records = NULL;
     int64_t init_time_ms;
     int64_t duration;
     int64_t dirtyrate;
@@ -196,8 +196,6 @@ retry:
 
         trace_dirtyrate_do_calculate_vcpu(records[i].cpu_index, dirtyrate);
     }
-
-    g_free(records);
 
     return duration;
 }
