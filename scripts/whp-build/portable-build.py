@@ -627,7 +627,15 @@ def main(argv: List[str]) -> int:
         append_module_build_target(build_dir, requested_targets, values)
 
         runner = select_runner()
-        jobs = os.environ.get('JOBS') or str(os.cpu_count() or 1)
+        jobs_env = os.environ.get('JOBS')
+        default_jobs = os.cpu_count() or 1
+        try:
+            jobs_int = int(jobs_env) if jobs_env is not None else default_jobs
+        except ValueError:
+            jobs_int = default_jobs
+        if jobs_int < 1:
+            jobs_int = default_jobs
+        jobs = str(jobs_int)
         runner_name = pathlib.Path(runner[0]).name
         if runner_name.startswith('ninja'):
             build_command = [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
