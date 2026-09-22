@@ -44,6 +44,21 @@ for needle in required_dirtylimit:
     if needle not in dirtylimit:
         errors.append(f"dirtylimit loses sparse vCPU ID: {needle}")
 
+# A one-shot dirty-ring sample stops logging before the CPU-generation check.
+# If hotplug invalidates the sample, logging must be restarted before retrying.
+for needle in (
+    "bool retry;",
+    "do {",
+    "} while (retry);",
+    "if (one_shot) {",
+    "global_dirty_log_change(flag, true);",
+):
+    if needle not in dirtyrate:
+        errors.append(f"missing one-shot retry repair: {needle}")
+
+if "goto retry;" in dirtyrate:
+    errors.append("dirtyrate retry must not jump past one-shot log restart")
+
 if errors:
     for error in errors:
         print(f"FAIL: {error}", file=sys.stderr)
