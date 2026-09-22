@@ -75,6 +75,11 @@
 	url = https://github.com/retrochristian5000/SDLosaurus.git
 	branch = main
 	shallow = true
+[submodule "toolchains/jack"]
+	path = toolchains/jack
+	url = https://github.com/retrochristian5000/jack.git
+	branch = master
+	shallow = true
 [submodule "toolchains/libisofs"]
 	path = toolchains/libisofs
 	url = https://github.com/retrochristian5000/libisofs.git
