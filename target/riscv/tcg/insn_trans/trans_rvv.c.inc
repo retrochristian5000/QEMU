@@ -263,7 +263,7 @@ static bool trans_vsetivli(DisasContext *s, arg_vsetivli *a)
 /* vector register offset from env */
 static uint32_t vreg_ofs(DisasContext *s, int reg)
 {
-    return offsetof(CPURISCVState, vreg) + reg * s->cfg_ptr->vlenb;
+    return offsetof(CPURISCVState, vreg) + (size_t)reg * s->cfg_ptr->vlenb;
 }
 
 /* check functions */
