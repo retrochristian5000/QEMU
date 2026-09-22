@@ -98,7 +98,7 @@ unsigned long virtio_load_direct(unsigned long rec_list1, unsigned long rec_list
     if (status) {
         return 0;
     }
-    addr += sec_num * virtio_get_block_size();
+    addr += (unsigned long)sec_num * virtio_get_block_size();
 
     return addr;
 }
