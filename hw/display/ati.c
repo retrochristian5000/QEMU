@@ -242,7 +242,7 @@ static uint64_t ati_i2c(bitbang_i2c_interface *i2c, uint64_t data, int base)
     bitbang_i2c_set(i2c, BITBANG_I2C_SCL, c);
     d = bitbang_i2c_set(i2c, BITBANG_I2C_SDA, d);
 
-    data &= ~0xf00ULL;
+    data &= ~(BIT(base + 8) | BIT(base + 9));
     if (c) {
         data |= BIT(base + 9);
     }
@@ -685,14 +685,16 @@ static void ati_mm_write(void *opaque, hwaddr addr,
     case GPIO_MONID ... GPIO_MONID + 3:
         /* FIXME What does Radeon have here? */
         if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
-            /* Rage128p accesses DDC via MONID(1-2) with additional mask bit */
+            /*
+             * Single-head Rage128 VGA DDC uses MONID data line 1 and clock
+             * line 2.  Refresh the open-drain bus state after every partial
+             * or full register write so byte writes and line release are
+             * visible immediately.
+             */
             ati_reg_write_offs(&s->regs.gpio_monid,
                                addr - GPIO_MONID, data, size);
-            if ((s->regs.gpio_monid & BIT(25)) &&
-                ((addr <= GPIO_MONID + 2 && addr + size > GPIO_MONID + 2) ||
-                 (addr == GPIO_MONID && (s->regs.gpio_monid & 0x60000)))) {
-                s->regs.gpio_monid = ati_i2c(&s->bbi2c, s->regs.gpio_monid, 1);
-            }
+            s->regs.gpio_monid = ati_i2c(&s->bbi2c,
+                                         s->regs.gpio_monid, 1);
         }
         break;
     case PALETTE_INDEX ... PALETTE_INDEX + 3:
@@ -1107,6 +1109,11 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
     bitbang_i2c_init(&s->bbi2c, i2cbus);
     i2c_slave_set_address(I2C_SLAVE(&s->i2cddc), 0x50);
     qdev_realize(DEVICE(&s->i2cddc), BUS(i2cbus), &error_abort);
+    if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
+        s->regs.gpio_monid = ati_i2c(&s->bbi2c, s->regs.gpio_monid, 1);
+    } else {
+        s->regs.gpio_dvi_ddc = ati_i2c(&s->bbi2c, s->regs.gpio_dvi_ddc, 0);
+    }
 
     /* mmio register space */
     memory_region_init_io(&s->mm, OBJECT(s), &ati_mm_ops, s,
