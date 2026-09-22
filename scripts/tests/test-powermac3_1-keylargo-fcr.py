@@ -72,7 +72,7 @@ if "KL_FCR0_CHOOSE_SCCA" in source:
 # the codec's cell-enable input, and the firmware-facing default must keep the
 # legacy audio cell/clock route alive until the guest powers it down.
 for needle in (
-    "KL_FCR1_SCREAMER_ENABLE_MASK",
+    "KL_FCR1_SCREAMER_POWER_MASK",
     "KL_FCR1_SCREAMER_DEFAULT_MASK",
     "keylargo_screamer_enabled",
     "keylargo_update_screamer",
