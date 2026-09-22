@@ -134,7 +134,7 @@ int coroutine_fn qed_find_cluster(BDRVQEDState *s, QEDRequest *request,
     }
 
     *len = MIN(*len,
-               n * s->header.cluster_size - qed_offset_into_cluster(s, pos));
+               (size_t)n * s->header.cluster_size - qed_offset_into_cluster(s, pos));
 
 out:
     *img_offset = offset;
