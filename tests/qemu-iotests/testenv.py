@@ -37,7 +37,15 @@ def isxfile(path: str) -> bool:
 
 
 def get_default_machine(qemu_prog: str) -> str:
-    outp = subprocess.run([qemu_prog, '-machine', 'help'], check=True,
+    qemu_prog_path = Path(qemu_prog)
+    if '..' in qemu_prog_path.parts:
+        raise ValueError(f'Unsafe QEMU executable path: {qemu_prog}')
+
+    qemu_prog_resolved = qemu_prog_path.resolve()
+    if not qemu_prog_resolved.is_file() or not os.access(qemu_prog_resolved, os.X_OK):
+        raise ValueError(f'Invalid QEMU executable path: {qemu_prog}')
+
+    outp = subprocess.run([str(qemu_prog_resolved), '-machine', 'help'], check=True,
                           universal_newlines=True,
                           stdout=subprocess.PIPE).stdout
 
