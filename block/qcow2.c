@@ -5066,7 +5066,7 @@ static int GRAPH_RDLOCK make_completely_empty(BlockDriverState *bs)
      * an issue because the dirty flag is set, complete data loss is in fact
      * desired and partial data loss is consequently fine as well */
     ret = bdrv_pwrite_zeroes(bs->file, s->cluster_size,
-                             (2 + l1_clusters) * s->cluster_size, 0);
+                             (2 + l1_clusters) * (int64_t)s->cluster_size, 0);
     /* This call (even if it failed overall) may have overwritten on-disk
      * refcount structures; in that case, the in-memory refcount information
      * will probably differ from the on-disk information which makes the BDS
