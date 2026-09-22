@@ -163,11 +163,17 @@ def make_bios(workload: str, loops: int) -> bytes:
 
 
 def qemu_command(
-    qemu: str, bios: pathlib.Path, tcg_thread: str, split_wx: str
+    qemu: str,
+    bios: pathlib.Path,
+    tcg_thread: str,
+    split_wx: str,
+    tb_size: int | None,
 ) -> list[str]:
     accel = f"tcg,thread={tcg_thread}"
     if split_wx != "auto":
         accel += f",split-wx={split_wx}"
+    if tb_size is not None:
+        accel += f",tb-size={tb_size}"
     return [
         qemu,
         "-machine", "pc",
@@ -186,9 +192,14 @@ def qemu_command(
 
 
 def run_once(
-    qemu: str, bios: pathlib.Path, tcg_thread: str, split_wx: str, timeout: float
+    qemu: str,
+    bios: pathlib.Path,
+    tcg_thread: str,
+    split_wx: str,
+    tb_size: int | None,
+    timeout: float,
 ) -> float:
-    command = qemu_command(qemu, bios, tcg_thread, split_wx)
+    command = qemu_command(qemu, bios, tcg_thread, split_wx, tb_size)
     started = time.perf_counter()
     completed = subprocess.run(
         command,
@@ -213,11 +224,12 @@ def median_runtime(
     bios: pathlib.Path,
     tcg_thread: str,
     split_wx: str,
+    tb_size: int | None,
     rounds: int,
     timeout: float,
 ) -> tuple[float, list[float]]:
     samples = [
-        run_once(qemu, bios, tcg_thread, split_wx, timeout)
+        run_once(qemu, bios, tcg_thread, split_wx, tb_size, timeout)
         for _ in range(rounds)
     ]
     return statistics.median(samples), samples
@@ -247,6 +259,12 @@ def main() -> int:
         help="select TCG split W^X mapping mode",
     )
     parser.add_argument(
+        "--tb-size",
+        type=int,
+        metavar="MIB",
+        help="set the TCG translation-block cache size in MiB",
+    )
+    parser.add_argument(
         "--workload",
         action="append",
         choices=tuple(WORKLOADS),
@@ -263,6 +281,8 @@ def main() -> int:
         parser.error("--rounds must be at least 1")
     if not 1 <= args.loops <= 0xFFFFFFFF:
         parser.error("--loops must be between 1 and 4294967295")
+    if args.tb_size is not None and args.tb_size < 1:
+        parser.error("--tb-size must be at least 1 MiB")
 
     workloads = args.workload or list(WORKLOADS)
     if args.emit_bios:
@@ -275,6 +295,7 @@ def main() -> int:
     print(f"QEMU:       {qemu}")
     print(f"TCG thread: {args.tcg_thread}")
     print(f"Split W^X:  {args.split_wx}")
+    print(f"TB size:    {args.tb_size if args.tb_size is not None else 'auto'} MiB")
     print(f"Loops:      {args.loops}")
     print(f"Rounds:     {args.rounds}")
 
@@ -289,6 +310,7 @@ def main() -> int:
                 bios,
                 args.tcg_thread,
                 args.split_wx,
+                args.tb_size,
                 args.rounds,
                 args.timeout,
             )
