@@ -2008,6 +2008,8 @@ static int of_dpa_cmd_add_l2_flood(OfDpa *of_dpa, OfDpaGroup *group,
 {
     OfDpaGroup *l2_group;
     RockerTlv **tlvs;
+    uint32_t *new_group_ids;
+    uint16_t new_group_count;
     int err;
     int i;
 
@@ -2016,32 +2018,29 @@ static int of_dpa_cmd_add_l2_flood(OfDpa *of_dpa, OfDpaGroup *group,
         return -ROCKER_EINVAL;
     }
 
-    group->l2_flood.group_count =
+    new_group_count =
         rocker_tlv_get_le16(group_tlvs[ROCKER_TLV_OF_DPA_GROUP_COUNT]);
 
-    tlvs = g_new0(RockerTlv *, group->l2_flood.group_count + 1);
+    tlvs = g_new0(RockerTlv *, new_group_count + 1);
+    new_group_ids = g_new0(uint32_t, new_group_count);
 
-    g_free(group->l2_flood.group_ids);
-    group->l2_flood.group_ids =
-        g_new0(uint32_t, group->l2_flood.group_count);
-
-    rocker_tlv_parse_nested(tlvs, group->l2_flood.group_count,
+    rocker_tlv_parse_nested(tlvs, new_group_count,
                             group_tlvs[ROCKER_TLV_OF_DPA_GROUP_IDS]);
 
-    for (i = 0; i < group->l2_flood.group_count; i++) {
+    for (i = 0; i < new_group_count; i++) {
         if (!tlvs[i + 1]) {
             err = -ROCKER_EINVAL;
             goto err_out;
         }
-        group->l2_flood.group_ids[i] = rocker_tlv_get_le32(tlvs[i + 1]);
+        new_group_ids[i] = rocker_tlv_get_le32(tlvs[i + 1]);
     }
 
     /* All of the L2 interface groups referenced by the L2 flood
      * must have same VLAN
      */
 
-    for (i = 0; i < group->l2_flood.group_count; i++) {
-        l2_group = of_dpa_group_find(of_dpa, group->l2_flood.group_ids[i]);
+    for (i = 0; i < new_group_count; i++) {
+        l2_group = of_dpa_group_find(of_dpa, new_group_ids[i]);
         if (!l2_group) {
             continue;
         }
@@ -2051,16 +2050,21 @@ static int of_dpa_cmd_add_l2_flood(OfDpa *of_dpa, OfDpaGroup *group,
              ROCKER_GROUP_VLAN_GET(group->id))) {
             DPRINTF("l2 interface group 0x%08x VLAN doesn't match l2 "
                     "flood group 0x%08x\n",
-                    group->l2_flood.group_ids[i], group->id);
+                    new_group_ids[i], group->id);
             err = -ROCKER_EINVAL;
             goto err_out;
         }
     }
 
+    g_free(group->l2_flood.group_ids);
+    group->l2_flood.group_ids = new_group_ids;
+    group->l2_flood.group_count = new_group_count;
+
     g_free(tlvs);
     return ROCKER_OK;
 
 err_out:
+    g_free(new_group_ids);
     group->l2_flood.group_count = 0;
     g_free(group->l2_flood.group_ids);
     group->l2_flood.group_ids = NULL;
