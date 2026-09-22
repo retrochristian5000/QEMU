@@ -321,7 +321,8 @@ static int usb_host_get_port(libusb_device *dev, char *port, size_t len)
 {
     uint8_t path[7];
     size_t off;
-    int rc, i;
+    size_t remaining;
+    int rc, i, n;
 
 #if LIBUSB_API_VERSION >= 0x01000102
     rc = libusb_get_port_numbers(dev, path, 7);
@@ -331,9 +332,23 @@ static int usb_host_get_port(libusb_device *dev, char *port, size_t len)
     if (rc < 0) {
         return 0;
     }
-    off = snprintf(port, len, "%d", path[0]);
+
+    n = snprintf(port, len, "%d", path[0]);
+    if (n < 0 || (size_t)n >= len) {
+        return len ? (int)(len - 1) : 0;
+    }
+    off = n;
+
     for (i = 1; i < rc; i++) {
-        off += snprintf(port+off, len-off, ".%d", path[i]);
+        if (off >= len) {
+            return len ? (int)(len - 1) : 0;
+        }
+        remaining = len - off;
+        n = snprintf(port + off, remaining, ".%d", path[i]);
+        if (n < 0 || (size_t)n >= remaining) {
+            return len ? (int)(len - 1) : 0;
+        }
+        off += n;
     }
     return off;
 }
