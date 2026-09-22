@@ -37,6 +37,9 @@ on:
       - 'scripts/tests/test-dec21154-power-management.py'
       - '.github/workflows/powerpc-vga-rom-bar.yml'
 
+permissions:
+  contents: read
+
 jobs:
   display-contracts:
     runs-on: ubuntu-latest
