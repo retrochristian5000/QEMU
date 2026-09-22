@@ -62,7 +62,7 @@ jobs:
 
       - name: Restore compiler cache
         id: ccache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .whp-compiler-cache
           key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
@@ -116,7 +116,7 @@ jobs:
 
       - name: Save compiler cache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .whp-compiler-cache
           key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
