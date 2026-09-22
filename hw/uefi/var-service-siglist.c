@@ -207,7 +207,8 @@ void uefi_vars_siglist_blob_generate(uefi_vars_siglist *siglist,
             i++;
         }
 
-        efilist->siglist_size = sizeof(efi_siglist) + efilist->sig_size * i;
+        efilist->siglist_size = sizeof(efi_siglist) +
+                                (uint64_t)efilist->sig_size * i;
         pos += efilist->siglist_size;
     }
 
