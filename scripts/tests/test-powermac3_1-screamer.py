@@ -57,5 +57,16 @@ require(QTEST, "SAWTOOTH_MACIO_SLOT     7", "Sawtooth KeyLargo secondary slot")
 require(SCREAMER_C, "dma_memory_write", "silence capture progression")
 require(SCREAMER_H, "#define SCREAMER_BUFFER_SIZE 0x10000",
         "bounded playback buffer")
+require(SCREAMER_H, "bool cell_enabled;", "KeyLargo audio-cell state")
+require(SCREAMER_C, 'qdev_init_gpio_in_named(DEVICE(obj), screamer_set_cell_enable,',
+        "KeyLargo cell-enable input")
+require(SCREAMER_C, '"cell-enable", 1);', "named audio-cell control")
+require(SCREAMER_C,
+        "audio_be_set_active_out(s->audio_be, s->voice, s->cell_enabled);",
+        "host voice follows KeyLargo cell state")
+require(SCREAMER_C, "if (!s->cell_enabled) {", "DMA/output gating")
+require(MACIO_C, "KL_FCR1_SCREAMER_ENABLE_MASK", "KeyLargo Screamer enable mask")
+require(MACIO_C, "KL_FCR1_SCREAMER_DEFAULT_MASK", "Sawtooth Screamer firmware default")
+require(MACIO_C, "keylargo_update_screamer(ns);", "FCR1 to Screamer propagation")
 require(SCREAMER_C, ".unmigratable = 1", "migration safety guard")
 print("PowerMac3,1 Screamer contract: ok")
