@@ -499,6 +499,9 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
     optional_switch(configure_args, values['QEMU_HOST_LTO'], 'lto')
+    if platform.system() == 'Darwin':
+        # WHP macOS builds deliberately use TCG instead of host hypervisors.
+        configure_args.extend(['--disable-kvm', '--disable-hvf'])
     if platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto':
         configure_args.append('--enable-modules')
     else:
