@@ -2457,25 +2457,16 @@ static void configure_accelerators(const char *progname)
         bool default_accelerators = false;
 
         if (accelerators == NULL) {
-            bool have_tcg = false;
-            bool have_kvm = false;
-            bool have_hvf = false;
-
             /*
-             * The default accelerators are linked into each system emulator,
-             * so their target configuration already tells us what is
-             * available.  Avoid QOM/module lookups here; the selected
-             * accelerator is resolved once below when it is initialized.
+             * system/vl.c is target-independent code, so per-target
+             * accelerator config macros such as CONFIG_KVM and CONFIG_HVF
+             * are intentionally poisoned here.  Resolve availability through
+             * QOM once, then skip the redundant validation below for the
+             * default list we construct from these results.
              */
-#ifdef CONFIG_TCG
-            have_tcg = true;
-#endif
-#ifdef CONFIG_KVM
-            have_kvm = true;
-#endif
-#ifdef CONFIG_HVF
-            have_hvf = true;
-#endif
+            bool have_tcg = accel_find("tcg");
+            bool have_kvm = accel_find("kvm");
+            bool have_hvf = accel_find("hvf");
 
             if (have_tcg && have_kvm) {
                 if (g_str_has_suffix(progname, "kvm")) {
