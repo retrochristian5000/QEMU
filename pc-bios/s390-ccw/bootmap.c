@@ -233,7 +233,7 @@ static block_number_t load_eckd_segments(block_number_t blk, bool ldipl,
                 return ERROR_BLOCK_NR;
             }
 
-            *address += (count + 1) * virtio_get_block_size();
+            *address += (unsigned long)(count + 1) * virtio_get_block_size();
         }
     } while (more_data);
     return block_nr;
