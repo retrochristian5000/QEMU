@@ -134,20 +134,15 @@ def cryptsetup_add_password(config, slot):
 
     (password, mainslot) = config.first_password()
 
-    pwfile = os.path.join(iotests.test_dir, "passwd.txt")
-    with open(pwfile, "w") as fh:
-        fh.write(config.passwords[slot])
+    args = ["luksAddKey", config.image_path(),
+            "--key-slot", slot,
+            "--key-file", "-",
+            "--iter-time", "10",
+            "-"]
 
-    try:
-        args = ["luksAddKey", config.image_path(),
-                "--key-slot", slot,
-                "--key-file", "-",
-                "--iter-time", "10",
-                pwfile]
-
-        cryptsetup(args, password)
-    finally:
-        os.unlink(pwfile)
+    # Provide existing passphrase (for --key-file -) and new passphrase
+    # (for final '-' keyfile argument) via stdin, avoiding clear-text files.
+    cryptsetup(args, password + "\n" + config.passwords[slot] + "\n")
 
 
 def cryptsetup_format(config):
