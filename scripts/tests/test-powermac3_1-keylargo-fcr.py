@@ -67,6 +67,24 @@ for macro in wake_macros:
 if "KL_FCR0_CHOOSE_SCCA" in source:
     missing.append("remove misleading KL_FCR0_CHOOSE_SCCA alias")
 
+
+# Sawtooth's Screamer path is not merely register readback: FCR1 must drive
+# the codec's cell-enable input, and the firmware-facing default must keep the
+# legacy audio cell/clock route alive until the guest powers it down.
+for needle in (
+    "KL_FCR1_SCREAMER_ENABLE_MASK",
+    "KL_FCR1_SCREAMER_DEFAULT_MASK",
+    "keylargo_screamer_enabled",
+    "keylargo_update_screamer",
+    'qdev_get_gpio_in_named(DEVICE(&ns->screamer),',
+    '"cell-enable", 0)',
+    "if (reg == 1) {",
+    "keylargo_update_screamer(ns);",
+    "ns->fcr[1] |= KL_FCR1_SCREAMER_DEFAULT_MASK;",
+):
+    if needle not in source:
+        missing.append(f"Screamer FCR1 wiring: {needle}")
+
 if missing:
     raise SystemExit(
         "PowerMac3,1 KeyLargo FCR contract is incomplete:\n  - "
