@@ -26,6 +26,7 @@ grep -Fq 'qemu-system-i386' <<< "$menu_output"
 grep -Fq 'qemu-system-ppc' <<< "$menu_output"
 grep -Fq 'Host features' <<< "$menu_output"
 grep -Fq 'Dynamic QEMU modules' <<< "$menu_output"
+grep -Fq 'Bootstrap/use WHP Bash' <<< "$menu_output"
 grep -Fq 'Bootstrap/use WHP SDL3' <<< "$menu_output"
 grep -Fq 'Cocoa' <<< "$menu_output"
 grep -Fq 'CoreAudio' <<< "$menu_output"
@@ -62,6 +63,7 @@ MACOS_ENABLE_GTK=auto
 MACOS_ENABLE_PA=auto
 BUILD_OPENBIOS=auto
 BOOTSTRAP_POWERPC_TOOLCHAIN=auto
+BOOTSTRAP_BASH=auto
 WHP_INCREMENTAL_BUILD=y
 RUN_TESTS=y
 INSTALL_AFTER_BUILD=n

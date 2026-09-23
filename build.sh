@@ -280,6 +280,69 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+BOOTSTRAP_BASH=${BOOTSTRAP_BASH:-auto}
+case "$BOOTSTRAP_BASH" in
+    y) BOOTSTRAP_BASH=1 ;;
+    n) BOOTSTRAP_BASH=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_BASH must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_BASH
+
+whp_bash_usable()
+{
+    [ -n "${1:-}" ] || return 1
+    [ -x "$1" ] || return 1
+    "$1" --noprofile --norc -c '
+        test -n "${BASH_VERSION:-}" || exit 1
+        test "${BASH_VERSINFO[0]}" -gt 3 ||
+            { test "${BASH_VERSINFO[0]}" -eq 3 &&
+              test "${BASH_VERSINFO[1]}" -ge 2; }
+    ' >/dev/null 2>&1
+}
+
+if [ -z "$WHP_BUILD_BASH" ]; then
+    if [ "$WHP_HOST_OS" = macos ] && [ -x /bin/bash ]; then
+        WHP_BUILD_BASH=/bin/bash
+    else
+        WHP_BUILD_BASH=$(command -v bash 2>/dev/null || true)
+    fi
+fi
+
+if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_FORCE_PORTABLE_CORE:-0}" != 1 ]; then
+    WHP_BOOTSTRAP_BASH=0
+    if [ "$BOOTSTRAP_BASH" = 1 ]; then
+        WHP_BOOTSTRAP_BASH=1
+    elif [ "$BOOTSTRAP_BASH" = auto ]; then
+        if [ "$WHP_HOST_OS" = macos ] || ! whp_bash_usable "$WHP_BUILD_BASH"; then
+            WHP_BOOTSTRAP_BASH=1
+        fi
+    fi
+
+    if [ "$WHP_BOOTSTRAP_BASH" = 1 ]; then
+        WHP_BUNDLED_BASH=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-bash.py" --build-dir "$BUILD_DIR"
+        ) || WHP_BUNDLED_BASH=
+        if whp_bash_usable "$WHP_BUNDLED_BASH"; then
+            WHP_BUILD_BASH=$WHP_BUNDLED_BASH
+        elif [ "$BOOTSTRAP_BASH" = 1 ]; then
+            printf '%s\n' \
+                'error: BOOTSTRAP_BASH=1 requested the pinned WHP Bash, but its bootstrap failed.' >&2
+            exit 1
+        elif ! whp_bash_usable "$WHP_BUILD_BASH"; then
+            WHP_BUILD_BASH=
+        fi
+        unset WHP_BUNDLED_BASH
+    fi
+    unset WHP_BOOTSTRAP_BASH
+fi
+
 BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
 case "$BOOTSTRAP_NINJA" in
     y) BOOTSTRAP_NINJA=1 ;;
@@ -509,13 +572,6 @@ if [ "$WHP_HOST_OS" = macos ] &&
     fi
 fi
 
-if [ -z "$WHP_BUILD_BASH" ]; then
-    if [ "$WHP_HOST_OS" = macos ] && [ -x /bin/bash ]; then
-        WHP_BUILD_BASH=/bin/bash
-    else
-        WHP_BUILD_BASH=$(command -v bash 2>/dev/null || true)
-    fi
-fi
 
 portable_core()
 {
