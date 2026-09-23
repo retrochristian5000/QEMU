@@ -14,6 +14,9 @@ on:
       - 'docs/devel/whp-dependency-ledger.rst'
       - 'docs/devel/whp-darwin-user.rst'
       - 'darwin-user/include/target_macho.h'
+      - 'darwin-user/include/macho_probe.h'
+      - 'darwin-user/macho_probe.c'
+      - 'darwin-user/ppc/target_abi.h'
       - 'docs/devel/index-internals.rst'
       - 'docs/devel/index-build.rst'
       - 'docs/user/main.rst'
@@ -45,6 +48,7 @@ on:
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-darwin-user-recovery.py'
       - 'scripts/tests/test-darwin-macho-abi.py'
+      - 'scripts/tests/test-darwin-ppc-abi.py'
       - 'scripts/tests/test-macos-api-policy.py'
       - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-python-menu-fallback.py'
@@ -105,6 +109,7 @@ jobs:
           python3 scripts/tests/test-darwin-lto-threads.py
           python3 scripts/tests/test-darwin-user-recovery.py
           python3 scripts/tests/test-darwin-macho-abi.py
+          python3 scripts/tests/test-darwin-ppc-abi.py
           python3 scripts/tests/test-macos-api-policy.py
           python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-python-menu-fallback.py
@@ -157,6 +162,7 @@ jobs:
             scripts/tests/test-darwin-lto-threads.py \
             scripts/tests/test-darwin-user-recovery.py \
             scripts/tests/test-darwin-macho-abi.py \
+            scripts/tests/test-darwin-ppc-abi.py \
             scripts/tests/test-macos-api-policy.py \
             scripts/tests/test-menuconfig-scroll.py \
             scripts/tests/test-python-menu-fallback.py \
