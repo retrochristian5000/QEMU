@@ -90,6 +90,16 @@ def main() -> int:
         'libtool_arg = f"LIBTOOL={libtool}"',
         "installed GNU libtool make override",
     )
+    require(
+        helper,
+        'env.pop("INSTALL", None)',
+        "WHP INSTALL policy isolation from Autoconf",
+    )
+    require(
+        helper,
+        'libtool --mode=install 1',
+        "documented INSTALL collision regression",
+    )
 
     require(
         meson,

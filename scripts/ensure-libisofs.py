@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "2"
+LIBISOFS_BOOTSTRAP_SCHEMA = "3"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 
@@ -406,6 +406,11 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     )
 
     env = os.environ.copy()
+    # QEMU's top-level INSTALL variable is a WHP boolean (0/1), while
+    # Autoconf reserves INSTALL for the install program. Let AC_PROG_INSTALL
+    # discover the host installer instead of leaking the WHP policy value and
+    # producing commands such as "libtool --mode=install 1 ...".
+    env.pop("INSTALL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
     compile_flags = ["-O3", "-Werror=strict-prototypes"]
