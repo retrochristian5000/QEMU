@@ -70,6 +70,10 @@ tar -C "$scratch/src" -cJf "$scratch/grub.tar.xz" grub-test
 cat > "$scratch/bin/make" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == --version ]]; then
+    printf 'GNU Make 4.4.90 (WHP test stub)\n'
+    exit 0
+fi
 build_dir=
 install=0
 while (($#)); do
