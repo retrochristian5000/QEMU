@@ -68,6 +68,28 @@ def main() -> int:
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
+    require(helper, "def select_gnu_libtool(", "GNU Libtool selector")
+    require(helper, '"GNU libtool" in version', "GNU Libtool validation")
+    require(
+        helper,
+        '("glibtool", "libtool")',
+        "macOS GNU libtool preference",
+    )
+    require(
+        helper,
+        '("glibtoolize", "libtoolize")',
+        "macOS GNU libtoolize preference",
+    )
+    require(
+        helper,
+        'env["LIBTOOLIZE"] = libtoolize',
+        "explicit libtoolize bootstrap handoff",
+    )
+    require(
+        helper,
+        'libtool_arg = f"LIBTOOL={libtool}"',
+        "installed GNU libtool make override",
+    )
 
     require(
         meson,

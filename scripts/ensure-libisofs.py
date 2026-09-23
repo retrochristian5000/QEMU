@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "1"
+LIBISOFS_BOOTSTRAP_SCHEMA = "2"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 
@@ -151,6 +151,44 @@ def command_path(name: str, env_name: str | None = None) -> str:
     if path:
         return path
     raise RuntimeError(f"{name} is required to bootstrap bundled libisofs")
+
+
+def select_gnu_libtool(env_name: str, names: tuple[str, ...]) -> str:
+    requested = os.environ.get(env_name, "")
+    candidates: list[str] = []
+
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError(f"{env_name} must name exactly one executable")
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if not path or not pathlib.Path(path).exists():
+            raise RuntimeError(f"{env_name} is not executable: {candidate}")
+        candidates.append(str(path))
+    else:
+        for name in names:
+            path = shutil.which(name)
+            if path and path not in candidates:
+                candidates.append(path)
+
+    for path in candidates:
+        try:
+            version = run_text([path, "--version"])
+        except RuntimeError:
+            continue
+        if "GNU libtool" in version:
+            return path
+        if requested:
+            raise RuntimeError(
+                f"{env_name} must select GNU Libtool, not: {path}"
+            )
+
+    joined = "/".join(names)
+    raise RuntimeError(
+        f"GNU Libtool is required to bootstrap bundled libisofs "
+        f"({joined} not found)"
+    )
 
 
 def select_c_compiler() -> str:
@@ -295,8 +333,16 @@ def append_flags(current: str, values: list[str]) -> str:
     return " ".join(parts)
 
 
-def marker_text(revision: str, cc: str, cc_id: str, sdkroot: str,
-                arch: str, deployment: str) -> str:
+def marker_text(
+    revision: str,
+    cc: str,
+    cc_id: str,
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+    libtool: str,
+    libtoolize: str,
+) -> str:
     return (
         f"LIBISOFS_BOOTSTRAP_SCHEMA={LIBISOFS_BOOTSTRAP_SCHEMA}\n"
         f"LIBISOFS_GIT_COMMIT={revision}\n"
@@ -307,6 +353,10 @@ def marker_text(revision: str, cc: str, cc_id: str, sdkroot: str,
         f"SDKROOT={sdkroot}\n"
         f"WHP_MACOS_ARCH={arch}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
+        f"LIBTOOL={libtool}\n"
+        f"LIBTOOL_VERSION={run_text([libtool, '--version']).splitlines()[0]}\n"
+        f"LIBTOOLIZE={libtoolize}\n"
+        f"LIBTOOLIZE_VERSION={run_text([libtoolize, '--version']).splitlines()[0]}\n"
         "STRICT_PROTOTYPES=1\n"
         "SHARED=0\n"
         "STATIC=1\n"
@@ -328,6 +378,10 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     revision = ensure_libisofs_source()
     make = command_path("make", "MAKE")
+    libtool = select_gnu_libtool("LIBTOOL", ("glibtool", "libtool"))
+    libtoolize = select_gnu_libtool(
+        "LIBTOOLIZE", ("glibtoolize", "libtoolize")
+    )
     sdkroot, arch, deployment = macos_settings()
     cc_id = compiler_version(cc)
 
@@ -335,7 +389,9 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     source_copy = work_dir / "source"
     object_dir = work_dir / "build"
     prefix = build_root / "deps" / "libisofs"
-    marker = marker_text(revision, cc, cc_id, sdkroot, arch, deployment)
+    marker = marker_text(
+        revision, cc, cc_id, sdkroot, arch, deployment, libtool, libtoolize
+    )
     if cache_valid(prefix, marker):
         return prefix
 
@@ -351,6 +407,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
 
     env = os.environ.copy()
     env["CC"] = cc
+    env["LIBTOOLIZE"] = libtoolize
     compile_flags = ["-O3", "-Werror=strict-prototypes"]
     link_flags: list[str] = []
     if sdkroot:
@@ -387,9 +444,17 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         "--disable-libjte",
         "--disable-ldconfig-at-install",
     ], cwd=object_dir, env=env)
-    run_logged([make, "-j", str(max(1, os.cpu_count() or 1))],
-               cwd=object_dir, env=env)
-    run_logged([make, "install"], cwd=object_dir, env=env)
+    libtool_arg = f"LIBTOOL={libtool}"
+    run_logged(
+        [make, libtool_arg, "-j", str(max(1, os.cpu_count() or 1))],
+        cwd=object_dir,
+        env=env,
+    )
+    run_logged(
+        [make, libtool_arg, "install"],
+        cwd=object_dir,
+        env=env,
+    )
 
     pc_file = find_pkgconfig_file(prefix)
     if pc_file is None:
