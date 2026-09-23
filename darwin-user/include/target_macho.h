@@ -22,14 +22,28 @@ typedef int32_t QemuDarwinVmProt;
 
 /* mach/machine.h */
 #define QEMU_DARWIN_CPU_ARCH_ABI64 0x01000000
-#define QEMU_DARWIN_CPU_TYPE_X86   7
-#define QEMU_DARWIN_CPU_TYPE_ARM   12
+#define QEMU_DARWIN_CPU_TYPE_X86      7
+#define QEMU_DARWIN_CPU_TYPE_ARM      12
+#define QEMU_DARWIN_CPU_TYPE_POWERPC  18
 #define QEMU_DARWIN_CPU_TYPE_X86_64 \
     (QEMU_DARWIN_CPU_TYPE_X86 | QEMU_DARWIN_CPU_ARCH_ABI64)
+#define QEMU_DARWIN_CPU_TYPE_POWERPC64 \
+    (QEMU_DARWIN_CPU_TYPE_POWERPC | QEMU_DARWIN_CPU_ARCH_ABI64)
 #define QEMU_DARWIN_CPU_TYPE_ARM64 \
     (QEMU_DARWIN_CPU_TYPE_ARM | QEMU_DARWIN_CPU_ARCH_ABI64)
 
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_ALL   0
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_601   1
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_603   3
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_604   6
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_750   9
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_7400 10
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_7450 11
+#define QEMU_DARWIN_CPU_SUBTYPE_POWERPC_970 100
+
 /* mach-o/loader.h */
+#define QEMU_DARWIN_MH_MAGIC    0xfeedfaceU
+#define QEMU_DARWIN_MH_CIGAM    0xcefaedfeU
 #define QEMU_DARWIN_MH_MAGIC_64 0xfeedfacfU
 #define QEMU_DARWIN_MH_CIGAM_64 0xcffaedfeU
 
@@ -37,6 +51,9 @@ typedef int32_t QemuDarwinVmProt;
 #define QEMU_DARWIN_MH_DYLINKER 0x7U
 
 #define QEMU_DARWIN_LC_REQ_DYLD 0x80000000U
+#define QEMU_DARWIN_LC_SEGMENT 0x01U
+#define QEMU_DARWIN_LC_THREAD 0x04U
+#define QEMU_DARWIN_LC_UNIXTHREAD 0x05U
 #define QEMU_DARWIN_LC_LOAD_DYLINKER 0x0eU
 #define QEMU_DARWIN_LC_SEGMENT_64 0x19U
 #define QEMU_DARWIN_LC_DYLD_INFO_ONLY \
@@ -48,6 +65,16 @@ typedef int32_t QemuDarwinVmProt;
     (0x33U | QEMU_DARWIN_LC_REQ_DYLD)
 #define QEMU_DARWIN_LC_DYLD_CHAINED_FIXUPS \
     (0x34U | QEMU_DARWIN_LC_REQ_DYLD)
+
+typedef struct QemuDarwinMachHeader32 {
+    uint32_t magic;
+    QemuDarwinCpuType cputype;
+    QemuDarwinCpuSubtype cpusubtype;
+    uint32_t filetype;
+    uint32_t ncmds;
+    uint32_t sizeofcmds;
+    uint32_t flags;
+} QemuDarwinMachHeader32;
 
 typedef struct QemuDarwinMachHeader64 {
     uint32_t magic;
@@ -64,6 +91,20 @@ typedef struct QemuDarwinLoadCommand {
     uint32_t cmd;
     uint32_t cmdsize;
 } QemuDarwinLoadCommand;
+
+typedef struct QemuDarwinSegmentCommand32 {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    char segname[16];
+    uint32_t vmaddr;
+    uint32_t vmsize;
+    uint32_t fileoff;
+    uint32_t filesize;
+    QemuDarwinVmProt maxprot;
+    QemuDarwinVmProt initprot;
+    uint32_t nsects;
+    uint32_t flags;
+} QemuDarwinSegmentCommand32;
 
 typedef struct QemuDarwinSegmentCommand64 {
     uint32_t cmd;
@@ -119,8 +160,11 @@ typedef struct QemuDarwinBuildVersionCommand {
 _Static_assert(sizeof(QemuDarwinCpuType) == 4, "Darwin cpu_type_t ABI");
 _Static_assert(sizeof(QemuDarwinCpuSubtype) == 4, "Darwin cpu_subtype_t ABI");
 _Static_assert(sizeof(QemuDarwinVmProt) == 4, "Darwin vm_prot_t ABI");
+_Static_assert(sizeof(QemuDarwinMachHeader32) == 28, "mach_header ABI");
 _Static_assert(sizeof(QemuDarwinMachHeader64) == 32, "mach_header_64 ABI");
 _Static_assert(sizeof(QemuDarwinLoadCommand) == 8, "load_command ABI");
+_Static_assert(sizeof(QemuDarwinSegmentCommand32) == 56,
+               "segment_command ABI");
 _Static_assert(sizeof(QemuDarwinSegmentCommand64) == 72,
                "segment_command_64 ABI");
 _Static_assert(sizeof(QemuDarwinEntryPointCommand) == 24,
