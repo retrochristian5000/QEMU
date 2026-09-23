@@ -633,15 +633,19 @@ int load_elf_binary(struct bsd_binprm *bprm, struct target_pt_regs *regs,
     }
 
     /* Now read in all of the header information */
-    elf_phdata = (struct elf_phdr *)malloc(elf_ex.e_phentsize * elf_ex.e_phnum);
+    size_t phdr_bytes;
+    if ((size_t)elf_ex.e_phnum > SIZE_MAX / (size_t)elf_ex.e_phentsize) {
+        return -ENOEXEC;
+    }
+    phdr_bytes = (size_t)elf_ex.e_phentsize * (size_t)elf_ex.e_phnum;
+    elf_phdata = (struct elf_phdr *)malloc(phdr_bytes);
     if (elf_phdata == NULL) {
         return -ENOMEM;
     }
 
     retval = lseek(bprm->fd, elf_ex.e_phoff, SEEK_SET);
     if (retval > 0) {
-        retval = read(bprm->fd, (char *)elf_phdata,
-                                elf_ex.e_phentsize * elf_ex.e_phnum);
+        retval = read(bprm->fd, (char *)elf_phdata, phdr_bytes);
     }
 
     if (retval < 0) {
