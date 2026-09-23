@@ -1,0 +1,136 @@
+/*
+ * Darwin/Mach-O target ABI definitions for user-mode emulation.
+ *
+ * Keep this header independent of the host macOS SDK.  These structures
+ * describe the guest file ABI and must compile identically on Darwin, Linux,
+ * and other supported QEMU build hosts.
+ *
+ * Provenance:
+ *   Apple XNU external Mach-O headers (mach-o/loader.h, mach/machine.h).
+ *   Historical QEMU darwin-user tree before 0adb124659cfadf9f0b5c99874c476116f0cf74f.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+#ifndef QEMU_DARWIN_USER_TARGET_MACHO_H
+#define QEMU_DARWIN_USER_TARGET_MACHO_H
+
+#include <stdint.h>
+
+typedef int32_t QemuDarwinCpuType;
+typedef int32_t QemuDarwinCpuSubtype;
+typedef int32_t QemuDarwinVmProt;
+
+/* mach/machine.h */
+#define QEMU_DARWIN_CPU_ARCH_ABI64 0x01000000
+#define QEMU_DARWIN_CPU_TYPE_X86   7
+#define QEMU_DARWIN_CPU_TYPE_ARM   12
+#define QEMU_DARWIN_CPU_TYPE_X86_64 \
+    (QEMU_DARWIN_CPU_TYPE_X86 | QEMU_DARWIN_CPU_ARCH_ABI64)
+#define QEMU_DARWIN_CPU_TYPE_ARM64 \
+    (QEMU_DARWIN_CPU_TYPE_ARM | QEMU_DARWIN_CPU_ARCH_ABI64)
+
+/* mach-o/loader.h */
+#define QEMU_DARWIN_MH_MAGIC_64 0xfeedfacfU
+#define QEMU_DARWIN_MH_CIGAM_64 0xcffaedfeU
+
+#define QEMU_DARWIN_MH_EXECUTE 0x2U
+#define QEMU_DARWIN_MH_DYLINKER 0x7U
+
+#define QEMU_DARWIN_LC_REQ_DYLD 0x80000000U
+#define QEMU_DARWIN_LC_LOAD_DYLINKER 0x0eU
+#define QEMU_DARWIN_LC_SEGMENT_64 0x19U
+#define QEMU_DARWIN_LC_DYLD_INFO_ONLY \
+    (0x22U | QEMU_DARWIN_LC_REQ_DYLD)
+#define QEMU_DARWIN_LC_MAIN \
+    (0x28U | QEMU_DARWIN_LC_REQ_DYLD)
+#define QEMU_DARWIN_LC_BUILD_VERSION 0x32U
+#define QEMU_DARWIN_LC_DYLD_EXPORTS_TRIE \
+    (0x33U | QEMU_DARWIN_LC_REQ_DYLD)
+#define QEMU_DARWIN_LC_DYLD_CHAINED_FIXUPS \
+    (0x34U | QEMU_DARWIN_LC_REQ_DYLD)
+
+typedef struct QemuDarwinMachHeader64 {
+    uint32_t magic;
+    QemuDarwinCpuType cputype;
+    QemuDarwinCpuSubtype cpusubtype;
+    uint32_t filetype;
+    uint32_t ncmds;
+    uint32_t sizeofcmds;
+    uint32_t flags;
+    uint32_t reserved;
+} QemuDarwinMachHeader64;
+
+typedef struct QemuDarwinLoadCommand {
+    uint32_t cmd;
+    uint32_t cmdsize;
+} QemuDarwinLoadCommand;
+
+typedef struct QemuDarwinSegmentCommand64 {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    char segname[16];
+    uint64_t vmaddr;
+    uint64_t vmsize;
+    uint64_t fileoff;
+    uint64_t filesize;
+    QemuDarwinVmProt maxprot;
+    QemuDarwinVmProt initprot;
+    uint32_t nsects;
+    uint32_t flags;
+} QemuDarwinSegmentCommand64;
+
+typedef struct QemuDarwinEntryPointCommand {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint64_t entryoff;
+    uint64_t stacksize;
+} QemuDarwinEntryPointCommand;
+
+typedef struct QemuDarwinLcStr {
+    uint32_t offset;
+} QemuDarwinLcStr;
+
+typedef struct QemuDarwinDylinkerCommand {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    QemuDarwinLcStr name;
+} QemuDarwinDylinkerCommand;
+
+typedef struct QemuDarwinLinkeditDataCommand {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t dataoff;
+    uint32_t datasize;
+} QemuDarwinLinkeditDataCommand;
+
+typedef struct QemuDarwinBuildVersionCommand {
+    uint32_t cmd;
+    uint32_t cmdsize;
+    uint32_t platform;
+    uint32_t minos;
+    uint32_t sdk;
+    uint32_t ntools;
+} QemuDarwinBuildVersionCommand;
+
+/*
+ * These are on-disk ABI sizes.  If a compiler changes any of them, fail at
+ * compile time instead of letting a loader silently parse host-shaped data.
+ */
+_Static_assert(sizeof(QemuDarwinCpuType) == 4, "Darwin cpu_type_t ABI");
+_Static_assert(sizeof(QemuDarwinCpuSubtype) == 4, "Darwin cpu_subtype_t ABI");
+_Static_assert(sizeof(QemuDarwinVmProt) == 4, "Darwin vm_prot_t ABI");
+_Static_assert(sizeof(QemuDarwinMachHeader64) == 32, "mach_header_64 ABI");
+_Static_assert(sizeof(QemuDarwinLoadCommand) == 8, "load_command ABI");
+_Static_assert(sizeof(QemuDarwinSegmentCommand64) == 72,
+               "segment_command_64 ABI");
+_Static_assert(sizeof(QemuDarwinEntryPointCommand) == 24,
+               "entry_point_command ABI");
+_Static_assert(sizeof(QemuDarwinLcStr) == 4, "lc_str ABI");
+_Static_assert(sizeof(QemuDarwinDylinkerCommand) == 12,
+               "dylinker_command ABI");
+_Static_assert(sizeof(QemuDarwinLinkeditDataCommand) == 16,
+               "linkedit_data_command ABI");
+_Static_assert(sizeof(QemuDarwinBuildVersionCommand) == 24,
+               "build_version_command ABI");
+
+#endif
