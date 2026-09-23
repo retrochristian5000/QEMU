@@ -9,6 +9,7 @@ on:
       - 'toolchains/aften'
       - 'toolchains/jack'
       - 'toolchains/make'
+      - 'toolchains/wine'
       - 'toolchains/sdl'
       - 'docs/devel/whp-dependency-ledger.rst'
       - 'docs/devel/index-build.rst'
@@ -54,6 +55,7 @@ on:
       - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/test-libisofs-bootstrap.py'
       - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-wine-dependency-policy.py'
       - 'scripts/tests/test-whp-dependency-ledger.py'
       - 'scripts/ensure-bash.py'
       - 'scripts/tests/test-bash-bootstrap.py'
@@ -105,6 +107,7 @@ jobs:
           python3 scripts/tests/test-sdl-bootstrap.py
           python3 scripts/tests/test-libisofs-bootstrap.py
           python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-wine-dependency-policy.py
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-test-policy.py
@@ -158,6 +161,7 @@ jobs:
             scripts/tests/test-sdl-bootstrap.py \
             scripts/tests/test-libisofs-bootstrap.py \
             scripts/tests/test-make-dependency-policy.py \
+            scripts/tests/test-wine-dependency-policy.py \
             scripts/tests/test-whp-dependency-ledger.py \
             scripts/tests/test-whp-config.py \
             scripts/tests/test-whp-hardware-menu.py \

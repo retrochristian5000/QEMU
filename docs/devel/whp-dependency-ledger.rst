@@ -126,6 +126,10 @@ by the WHP account.
      - ``LLVM``
      - yes
      - native and cross compiler family; bootstrap must start from an already usable host compiler.
+   * - ``toolchains/wine``
+     - ``water`` (Wine)
+     - yes
+     - Wine 11.16 fork; ``planned`` Windows API/PE validation and cross-development layer. Normal source already carries ``configure``; basic build requirements include GNU Make, flex, bison, a host compiler, and platform development headers/tooling.
    * - ``toolchains/grub``
      - ``grub``
      - yes
@@ -195,6 +199,13 @@ graph.  A compact view is::
              |
              +--> QEMU host compiler
              +--> firmware cross-toolchain lanes
+             +--> Windows PE/COFF cross targets
+                       |
+                       +--> Wine execution/API validation (planned)
+
+  GNU Make + flex + bison + host/platform development headers
+      |
+      +--> pinned WHP Wine fork (planned)
 
   QEMU configure -> Python venv/Meson -> Meson dependency resolution
                  -> Ninja artifacts -> GNU Make test/firmware umbrella
@@ -237,6 +248,48 @@ inputs needed by ``build.sh``.  Once that path is validated, the pinned fork
 can move from ``planned`` to ``managed`` and sit before Python, Bash, and
 the other Make-consuming bootstraps.
 
+Wine and Windows ABI validation
+-------------------------------
+
+The WHP Wine fork is pinned at ``toolchains/wine`` from the
+``retrochristian5000/water`` repository.  The source identifies itself as
+Wine 11.16 and already carries a generated ``configure`` script, so an
+ordinary build does not need to regenerate Autoconf inputs first.
+
+Wine has four distinct WHP roles and they must remain distinguishable:
+
+#. **Windows API implementation evidence.** Wine's ``include/*.h``,
+   ``include/*.idl``, and ``dlls/*`` trees expose API names, structures,
+   interfaces, DLL organization, and implementation behavior. They are useful
+   comparative evidence for Windows API studies, but they are not automatically
+   the normative definition of Microsoft's ABI or API.
+#. **Windows cross-development tools.** Wine supplies tools including
+   ``winegcc``, ``winebuild``, ``widl``, ``wrc``, and
+   ``winedump``. These provide an independent lane for producing and
+   inspecting PE/COFF-facing artifacts.
+#. **LLVM Windows validation.** WHP LLVM may produce Windows-targeted PE/COFF
+   binaries first; Wine can then execute or inspect compatible outputs. This
+   direction is ``LLVM -> Windows artifact -> Wine validation``, not a
+   Wine dependency inside LLVM's bootstrap.
+#. **Wine cross-build research.** Wine's configure logic supports PE
+   architecture selections including ``aarch64`` and ``arm64ec``, and
+   cross-compiling Wine requires an already-built Wine tools directory through
+   ``--with-wine-tools=DIR``. Native Wine tools and target Wine artifacts
+   therefore form separate build roles.
+
+Do not merge Windows ``arm64ec`` with Apple ``arm64e``. ``arm64ec``
+belongs to the Windows PE/ABI lane; ``arm64e`` belongs to Apple's
+pointer-authenticated Mach-O ABI lane. A spelling resemblance is not an ABI
+edge.
+
+The first Wine integration is intentionally ``planned``, not
+``managed``. The full Wine feature surface has many optional dependencies,
+and a WHP bootstrap should select an explicit profile rather than silently
+turn every available host library into a required build root. Wine's basic
+documented source-build requirements include GNU Make, flex, bison, a host
+compiler, and the platform's development headers/tooling; graphics, audio,
+security, multimedia, USB, printing, and similar libraries remain conditional.
+
 Meson-owned subprojects and wraps
 ---------------------------------
 
@@ -274,6 +327,12 @@ Circularity guards
 #. A toolchain may not require the QEMU binary it is being built to produce.
 #. Native LLVM must bootstrap from an existing host compiler; it must not make
    itself its own root dependency.
+#. Wine may validate Windows artifacts produced by LLVM, but Wine must not
+   become a prerequisite for bootstrapping the LLVM compiler that produces
+   those artifacts.
+#. A Wine cross-build that uses ``--with-wine-tools=DIR`` must consume an
+   already-built compatible native Wine tools tree; the target build must not
+   recursively depend on itself to create those tools.
 #. The pinned GNU Make fork must not be promoted to the first Make executable
    while its maintainer-source preparation still needs a seed GNU Make.
    GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
