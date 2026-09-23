@@ -165,11 +165,11 @@ static void test_file(void)
         error("stat time");
     }
 
-    chk_error(stat(tmpdir, &st));
-    if (!S_ISDIR(st.st_mode))
-        error("stat mode");
     {
         int tmpdir_fd = chk_error(open(tmpdir, O_RDONLY | O_DIRECTORY));
+        chk_error(fstat(tmpdir_fd, &st));
+        if (!S_ISDIR(st.st_mode))
+            error("stat mode");
 
     /* fstat */
     fd = chk_error(open("file2", O_RDWR));
