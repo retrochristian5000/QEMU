@@ -321,6 +321,7 @@ int qemu_darwin_macho_validate(const uint8_t *data, size_t size,
                                const QemuDarwinMachOInfo *info)
 {
     size_t offset;
+    size_t command_end;
     uint32_t i;
 
     if (data == NULL || info == NULL) {
@@ -380,7 +381,6 @@ int qemu_darwin_macho_ppc_entry(const uint8_t *data, size_t size,
 {
     QemuDarwinMachOInfo info;
     size_t offset;
-    size_t command_end;
     uint32_t i;
 
     if (entry == NULL || qemu_darwin_macho_probe(data, size, &info) != 0 ||
