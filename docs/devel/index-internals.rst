@@ -33,3 +33,4 @@ Details about QEMU's various subsystems including how to add features to them.
    virtio-backends
    crypto
    multiple-iothreads
+   whp-darwin-user

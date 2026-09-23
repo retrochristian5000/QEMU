@@ -12,7 +12,10 @@ on:
       - 'toolchains/wine'
       - 'toolchains/sdl'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - 'docs/devel/whp-darwin-user.rst'
+      - 'docs/devel/index-internals.rst'
       - 'docs/devel/index-build.rst'
+      - 'docs/user/main.rst'
       - 'toolchains/python-runtime'
       - 'build.sh'
       - 'builder.sh'
@@ -39,6 +42,7 @@ on:
       - 'scripts/tests/test-cxx-standard-config.py'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
+      - 'scripts/tests/test-darwin-user-recovery.py'
       - 'scripts/tests/test-macos-api-policy.py'
       - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-python-menu-fallback.py'
@@ -97,6 +101,7 @@ jobs:
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-darwin-lto-threads.py
+          python3 scripts/tests/test-darwin-user-recovery.py
           python3 scripts/tests/test-macos-api-policy.py
           python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-python-menu-fallback.py
@@ -147,6 +152,7 @@ jobs:
             scripts/tests/test-cxx-standard-config.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-darwin-lto-threads.py \
+            scripts/tests/test-darwin-user-recovery.py \
             scripts/tests/test-macos-api-policy.py \
             scripts/tests/test-menuconfig-scroll.py \
             scripts/tests/test-python-menu-fallback.py \

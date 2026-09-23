@@ -12,6 +12,11 @@ The following OS are supported in user space emulation:
 
 -  BSD (referred as qemu-bsd-user)
 
+Darwin/macOS user-mode is not yet advertised as a supported target in this
+fork. Historical QEMU Darwin-user code is being recovered and redesigned for
+modern Mach-O, x86_64/AArch64, dyld, and Darwin ABI requirements; see
+:ref:`whp-darwin-user`.
+
 Features
 --------
 

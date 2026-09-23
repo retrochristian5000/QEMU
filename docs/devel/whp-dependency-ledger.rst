@@ -290,6 +290,15 @@ documented source-build requirements include GNU Make, flex, bison, a host
 compiler, and the platform's development headers/tooling; graphics, audio,
 security, multimedia, USB, printing, and similar libraries remain conditional.
 
+Darwin user-mode recovery
+-------------------------
+
+Darwin/macOS user-mode is a ``planned`` QEMU execution target rather than
+a third-party dependency. The recovery contract and ABI boundaries are
+tracked in :ref:`whp-darwin-user`. LLVM may generate Mach-O test fixtures
+for this lane, but Darwin-user must not become a prerequisite for the LLVM
+bootstrap that generates those fixtures.
+
 Meson-owned subprojects and wraps
 ---------------------------------
 
