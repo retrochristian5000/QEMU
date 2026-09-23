@@ -195,17 +195,22 @@ int qemu_darwin_macho_select_arch(const uint8_t *data, size_t size,
         int32_t arch_cpu = (int32_t)read_u32(arch, endian);
         uint64_t offset;
         uint64_t arch_bytes;
+        uint32_t align;
         QemuDarwinMachOInfo selected;
 
         if (fat64) {
             offset = read_u64(arch + 8, endian);
             arch_bytes = read_u64(arch + 16, endian);
+            align = read_u32(arch + 24, endian);
         } else {
             offset = read_u32(arch + 8, endian);
             arch_bytes = read_u32(arch + 12, endian);
+            align = read_u32(arch + 16, endian);
         }
 
-        if (offset > size || arch_bytes > (uint64_t)size - offset) {
+        if (offset < table_size || offset > size ||
+            arch_bytes > (uint64_t)size - offset || align >= 64 ||
+            (align != 0 && (offset & ((UINT64_C(1) << align) - 1)) != 0)) {
             return -1;
         }
         if (arch_cpu != cputype) {
@@ -281,6 +286,31 @@ static int validate_segment32(const uint8_t *data, size_t size,
     if ((size_t)fileoff > size || (size_t)filesize > size - fileoff) {
         return -1;
     }
+
+    for (uint32_t i = 0; i < nsects; i++) {
+        const uint8_t *section = command + sizeof(QemuDarwinSegmentCommand32) +
+                                 (size_t)i * sizeof(QemuDarwinSection32);
+        uint32_t section_size = read_u32(section + 36, endian);
+        uint32_t section_offset = read_u32(section + 40, endian);
+        uint32_t reloff = read_u32(section + 48, endian);
+        uint32_t nreloc = read_u32(section + 52, endian);
+        uint32_t flags = read_u32(section + 56, endian);
+        uint32_t type = flags & QEMU_DARWIN_SECTION_TYPE;
+        uint64_t reloc_bytes = (uint64_t)nreloc *
+                               sizeof(QemuDarwinRelocationInfoRaw);
+        bool zerofill = type == QEMU_DARWIN_S_ZEROFILL ||
+                        type == QEMU_DARWIN_S_GB_ZEROFILL ||
+                        type == QEMU_DARWIN_S_THREAD_LOCAL_ZEROFILL;
+
+        if (!zerofill && ((size_t)section_offset > size ||
+            (size_t)section_size > size - section_offset)) {
+            return -1;
+        }
+        if ((size_t)reloff > size || reloc_bytes > size - reloff) {
+            return -1;
+        }
+    }
+
     (void)data;
     return 0;
 }
@@ -313,6 +343,31 @@ static int validate_segment64(const uint8_t *data, size_t size,
     if (fileoff > size || filesize > (uint64_t)size - fileoff) {
         return -1;
     }
+
+    for (uint32_t i = 0; i < nsects; i++) {
+        const uint8_t *section = command + sizeof(QemuDarwinSegmentCommand64) +
+                                 (size_t)i * sizeof(QemuDarwinSection64);
+        uint64_t section_size = read_u64(section + 40, endian);
+        uint32_t section_offset = read_u32(section + 48, endian);
+        uint32_t reloff = read_u32(section + 56, endian);
+        uint32_t nreloc = read_u32(section + 60, endian);
+        uint32_t flags = read_u32(section + 64, endian);
+        uint32_t type = flags & QEMU_DARWIN_SECTION_TYPE;
+        uint64_t reloc_bytes = (uint64_t)nreloc *
+                               sizeof(QemuDarwinRelocationInfoRaw);
+        bool zerofill = type == QEMU_DARWIN_S_ZEROFILL ||
+                        type == QEMU_DARWIN_S_GB_ZEROFILL ||
+                        type == QEMU_DARWIN_S_THREAD_LOCAL_ZEROFILL;
+
+        if (!zerofill && ((uint64_t)section_offset > size ||
+            section_size > (uint64_t)size - section_offset)) {
+            return -1;
+        }
+        if ((size_t)reloff > size || reloc_bytes > size - reloff) {
+            return -1;
+        }
+    }
+
     (void)data;
     return 0;
 }

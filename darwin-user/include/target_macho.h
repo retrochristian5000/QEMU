@@ -70,6 +70,12 @@ typedef int32_t QemuDarwinVmProt;
 #define QEMU_DARWIN_LC_DYLD_CHAINED_FIXUPS \
     (0x34U | QEMU_DARWIN_LC_REQ_DYLD)
 
+#define QEMU_DARWIN_SECTION_TYPE 0x000000ffU
+#define QEMU_DARWIN_S_REGULAR 0x00U
+#define QEMU_DARWIN_S_ZEROFILL 0x01U
+#define QEMU_DARWIN_S_GB_ZEROFILL 0x0cU
+#define QEMU_DARWIN_S_THREAD_LOCAL_ZEROFILL 0x12U
+
 typedef struct QemuDarwinFatHeader {
     uint32_t magic;
     uint32_t nfat_arch;
@@ -177,6 +183,11 @@ typedef struct QemuDarwinThreadStateHeader {
     uint32_t flavor;
     uint32_t count;
 } QemuDarwinThreadStateHeader;
+typedef struct QemuDarwinRelocationInfoRaw {
+    int32_t address;
+    uint32_t info;
+} QemuDarwinRelocationInfoRaw;
+
 typedef struct QemuDarwinEntryPointCommand {
     uint32_t cmd;
     uint32_t cmdsize;
@@ -231,6 +242,8 @@ _Static_assert(sizeof(QemuDarwinSegmentCommand64) == 72,
 _Static_assert(sizeof(QemuDarwinSection64) == 80, "section_64 ABI");
 _Static_assert(sizeof(QemuDarwinThreadStateHeader) == 8,
                "thread state header ABI");
+_Static_assert(sizeof(QemuDarwinRelocationInfoRaw) == 8,
+               "relocation_info ABI");
 _Static_assert(sizeof(QemuDarwinEntryPointCommand) == 24,
                "entry_point_command ABI");
 _Static_assert(sizeof(QemuDarwinLcStr) == 4, "lc_str ABI");
