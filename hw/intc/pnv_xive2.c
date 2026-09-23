@@ -166,7 +166,7 @@ static uint64_t pnv_xive2_vst_addr_direct(PnvXive2 *xive, uint32_t type,
         return 0;
     }
 
-    return vst_addr + idx * info->size;
+    return vst_addr + (uint64_t)idx * info->size;
 }
 
 static uint64_t pnv_xive2_vst_addr_indirect(PnvXive2 *xive, uint32_t type,
