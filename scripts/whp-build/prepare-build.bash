@@ -293,7 +293,10 @@ whp_prepare_host_tools()
 
 whp_prepare_build_tools()
 {
-    local requested_make="${MAKE_CMD:-}"
+    # MAKE_CMD and MAKE are two spellings of the same host-tool selection.
+    # Honor either one so early bootstraps and the later QEMU/firmware graph
+    # cannot silently switch to a different GNU Make executable.
+    local requested_make="${MAKE_CMD:-${MAKE:-}}"
 
     if command -v nproc >/dev/null 2>&1; then
         DEFAULT_JOBS="$(nproc)"

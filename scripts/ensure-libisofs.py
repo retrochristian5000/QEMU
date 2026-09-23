@@ -154,9 +154,11 @@ def command_path(name: str, env_name: str | None = None) -> str:
             return str(path)
         raise RuntimeError(f"{env_name} is not executable: {candidate}")
 
-    path = shutil.which(name)
-    if path:
-        return path
+    names = ("gmake", "make") if name == "make" else (name,)
+    for candidate in names:
+        path = shutil.which(candidate)
+        if path:
+            return path
     raise RuntimeError(f"{name} is required to bootstrap bundled libisofs")
 
 

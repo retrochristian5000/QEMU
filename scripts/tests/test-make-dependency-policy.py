@@ -40,6 +40,20 @@ def main() -> int:
     require(grub_bootstrap, 'MAKE_CMD_REQUESTED="${MAKE_CMD:-${MAKE:-}}"', "GRUB MAKE_CMD/MAKE handoff")
     require(grub_bootstrap, 'PATH="$LLVM_TOOL_PATH" "$MAKE_CMD" -C "$build_root"', "GRUB selected Make build")
 
+    prepare_build = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
+    require(
+        prepare_build,
+        'local requested_make="${MAKE_CMD:-${MAKE:-}}"',
+        "late MAKE_CMD/MAKE convergence",
+    )
+
+    libisofs = (ROOT / "scripts/ensure-libisofs.py").read_text(encoding="utf-8")
+    require(
+        libisofs,
+        'names = ("gmake", "make") if name == "make" else (name,)',
+        "libisofs GNU Make preference",
+    )
+
     print("GNU Make dependency policy: verified")
     return 0
 
