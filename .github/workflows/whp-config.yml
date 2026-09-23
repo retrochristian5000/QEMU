@@ -14,6 +14,7 @@ on:
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-libisofs.py'
       - 'scripts/qapi/common.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/bootstrap-python.sh'
@@ -45,6 +46,7 @@ on:
       - 'scripts/tests/test-mold-config.py'
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-sdl-bootstrap.py'
+      - 'scripts/tests/test-libisofs-bootstrap.py'
       - 'scripts/ensure-bash.py'
       - 'scripts/tests/test-bash-bootstrap.py'
       - 'scripts/tests/test-whp-config.py'
@@ -93,6 +95,7 @@ jobs:
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
           python3 scripts/tests/test-sdl-bootstrap.py
+          python3 scripts/tests/test-libisofs-bootstrap.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-test-policy.py
           python3 scripts/tests/test-test-selection.py
@@ -119,6 +122,7 @@ jobs:
           python3 -m py_compile \
             scripts/ensure-ninja.py \
             scripts/ensure-sdl.py \
+            scripts/ensure-libisofs.py \
             scripts/qapi/common.py \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \
@@ -142,6 +146,7 @@ jobs:
             scripts/tests/test-mold-config.py \
             scripts/tests/test-seabios-config.py \
             scripts/tests/test-sdl-bootstrap.py \
+            scripts/tests/test-libisofs-bootstrap.py \
             scripts/tests/test-whp-config.py \
             scripts/tests/test-whp-hardware-menu.py \
             scripts/tests/test-whp-i386-audio-menu.py \
