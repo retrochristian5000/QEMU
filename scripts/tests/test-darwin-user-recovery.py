@@ -19,8 +19,9 @@ def main() -> int:
     required = {
         "historical removal commit": "0adb124659cfadf9f0b5c99874c476116f0cf74f",
         "historical parent tree": "148210301e334694badcc8ae72ecb522c6d7bac6",
-        "x86_64 target lane": "x86_64-darwin-user",
-        "AArch64 target lane": "aarch64-darwin-user",
+        "PowerPC-first lane": "ppc-darwin-user",
+        "PowerPC recovery order": "PowerPC32 -> PPC64/G5 -> i386 -> x86_64 -> AArch64 -> arm64e",
+        "AArch64 target lane": "AArch64",
         "ARM64E distinction": "arm64e",
         "ARM64EC separation": "arm64ec",
         "Mach-O 64-bit boundary": "MH_MAGIC_64",
