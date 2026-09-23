@@ -19,6 +19,12 @@ and execution order have one production owner. Wrapper integrity checks live
 in ``scripts/whp-build/preflight.bash`` and final artifact checks live in
 ``scripts/whp-build/post-build.bash``.
 
+The submodule, host-tool, library, firmware, and conditional dependency edges
+used by this orchestration are tracked in :ref:`whp-dependency-ledger`.
+That ledger distinguishes a source that is merely available from one that is a
+production build dependency, and records which pinned sources are WHP-owned
+forks that may be edited directly.
+
 Shell contract
 --------------
 

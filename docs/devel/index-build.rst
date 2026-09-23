@@ -10,6 +10,7 @@ some of the basics if you are adding new files and targets to the build.
    build-system
    build-environment
    whp-build-orchestration
+   whp-dependency-ledger
    macos-build
    powerpc-toolchain-bootstrap
    openbios-meson-bootstrap
