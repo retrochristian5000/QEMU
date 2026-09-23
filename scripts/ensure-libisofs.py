@@ -458,7 +458,8 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
 
     env = os.environ.copy()
     # INSTALL is reserved for the installation command by Autoconf/Make.
-    # Do not let an unrelated caller override AC_PROG_INSTALL accidentally.
+    # Do not let an unrelated caller override AC_PROG_INSTALL accidentally;
+    # that collision produced broken commands such as "libtool --mode=install 1 ...".
     env.pop("INSTALL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
