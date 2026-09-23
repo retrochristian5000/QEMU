@@ -168,6 +168,8 @@ static void test_file(void)
     chk_error(stat(tmpdir, &st));
     if (!S_ISDIR(st.st_mode))
         error("stat mode");
+    {
+        int tmpdir_fd = chk_error(open(tmpdir, O_RDONLY | O_DIRECTORY));
 
     /* fstat */
     fd = chk_error(open("file2", O_RDWR));
@@ -206,10 +208,12 @@ static void test_file(void)
     if (len != 4)
         error("readdir");
 
-    chk_error(unlink("file3"));
-    chk_error(unlink("file2"));
+    chk_error(unlinkat(tmpdir_fd, "file3", 0));
+    chk_error(unlinkat(tmpdir_fd, "file2", 0));
     chk_error(chdir(cur_dir));
-    chk_error(rmdir(tmpdir));
+    chk_error(unlinkat(AT_FDCWD, tmpdir, AT_REMOVEDIR));
+    chk_error(close(tmpdir_fd));
+    }
 }
 
 static void test_fork(void)
