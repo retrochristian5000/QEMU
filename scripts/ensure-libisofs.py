@@ -18,9 +18,16 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "3"
+LIBISOFS_BOOTSTRAP_SCHEMA = "4"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
+LIBISOFS_CONFIGURE_ARGS = (
+    "--disable-shared",
+    "--enable-static",
+    "--disable-libacl",
+    "--disable-libjte",
+    "--disable-ldconfig-at-install",
+)
 
 
 def run_text(command: List[str], *, cwd: pathlib.Path | None = None,
@@ -333,19 +340,33 @@ def append_flags(current: str, values: list[str]) -> str:
     return " ".join(parts)
 
 
-def marker_text(
-    revision: str,
+def incremental_build_enabled() -> bool:
+    value = os.environ.get("WHP_INCREMENTAL_BUILD", "1").strip().lower()
+    if value in ("1", "y", "yes", "true", "on"):
+        return True
+    if value in ("0", "n", "no", "false", "off"):
+        return False
+    raise RuntimeError(
+        "WHP_INCREMENTAL_BUILD must be 0 or 1 "
+        f"(boolean aliases are accepted): {value}"
+    )
+
+
+def workspace_marker_text(
     cc: str,
     cc_id: str,
     sdkroot: str,
     arch: str,
     deployment: str,
     libtool: str,
+    libtool_id: str,
     libtoolize: str,
+    libtoolize_id: str,
+    cflags: str,
+    ldflags: str,
 ) -> str:
     return (
         f"LIBISOFS_BOOTSTRAP_SCHEMA={LIBISOFS_BOOTSTRAP_SCHEMA}\n"
-        f"LIBISOFS_GIT_COMMIT={revision}\n"
         f"CC={cc}\n"
         f"CC_VERSION={cc_id}\n"
         f"HOST_SYSTEM={platform.system()}\n"
@@ -354,13 +375,55 @@ def marker_text(
         f"WHP_MACOS_ARCH={arch}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
         f"LIBTOOL={libtool}\n"
-        f"LIBTOOL_VERSION={run_text([libtool, '--version']).splitlines()[0]}\n"
+        f"LIBTOOL_VERSION={libtool_id}\n"
         f"LIBTOOLIZE={libtoolize}\n"
-        f"LIBTOOLIZE_VERSION={run_text([libtoolize, '--version']).splitlines()[0]}\n"
+        f"LIBTOOLIZE_VERSION={libtoolize_id}\n"
+        f"CFLAGS={cflags}\n"
+        f"LDFLAGS={ldflags}\n"
+        f"CONFIGURE_ARGS={shlex.join(LIBISOFS_CONFIGURE_ARGS)}\n"
         "STRICT_PROTOTYPES=1\n"
         "SHARED=0\n"
         "STATIC=1\n"
     )
+
+
+def marker_text(revision: str, workspace_marker: str) -> str:
+    return workspace_marker + f"LIBISOFS_GIT_COMMIT={revision}\n"
+
+
+def prepare_workspace(
+    work_dir: pathlib.Path,
+    prefix: pathlib.Path,
+    source_copy: pathlib.Path,
+    workspace_marker: str,
+    *,
+    incremental: bool,
+) -> bool:
+    marker_file = work_dir / ".whp-libisofs-workspace"
+    reuse = False
+    if incremental and marker_file.is_file():
+        try:
+            reuse = (
+                marker_file.read_text(encoding="utf-8", errors="replace")
+                == workspace_marker
+            )
+        except OSError:
+            reuse = False
+
+    if reuse:
+        # Refresh only the copied source. Keep the configured object tree and
+        # installed prefix so Make can rebuild just what the new source needs.
+        shutil.rmtree(source_copy, ignore_errors=True)
+        return True
+
+    # A changed compiler/SDK/architecture/Libtool/configure profile cannot
+    # safely share objects. WHP_INCREMENTAL_BUILD=0 also deliberately lands
+    # here even when the workspace marker is otherwise compatible.
+    shutil.rmtree(work_dir, ignore_errors=True)
+    shutil.rmtree(prefix, ignore_errors=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    return False
 
 
 def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
@@ -384,32 +447,18 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     )
     sdkroot, arch, deployment = macos_settings()
     cc_id = compiler_version(cc)
+    libtool_id = run_text([libtool, "--version"]).splitlines()[0]
+    libtoolize_id = run_text([libtoolize, "--version"]).splitlines()[0]
+    incremental = incremental_build_enabled()
 
     work_dir = build_root / "bootstrap" / "libisofs"
     source_copy = work_dir / "source"
     object_dir = work_dir / "build"
     prefix = build_root / "deps" / "libisofs"
-    marker = marker_text(
-        revision, cc, cc_id, sdkroot, arch, deployment, libtool, libtoolize
-    )
-    if cache_valid(prefix, marker):
-        return prefix
-
-    shutil.rmtree(work_dir, ignore_errors=True)
-    shutil.rmtree(prefix, ignore_errors=True)
-    work_dir.mkdir(parents=True, exist_ok=True)
-    prefix.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(
-        SUBMODULE_DIR,
-        source_copy,
-        ignore=shutil.ignore_patterns(".git"),
-    )
 
     env = os.environ.copy()
-    # QEMU's top-level INSTALL variable is a WHP boolean (0/1), while
-    # Autoconf reserves INSTALL for the install program. Let AC_PROG_INSTALL
-    # discover the host installer instead of leaking the WHP policy value and
-    # producing commands such as "libtool --mode=install 1 ...".
+    # INSTALL is reserved for the installation command by Autoconf/Make.
+    # Do not let an unrelated caller override AC_PROG_INSTALL accidentally.
     env.pop("INSTALL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
@@ -432,23 +481,58 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env["CFLAGS"] = append_flags(env.get("CFLAGS", ""), compile_flags)
     env["LDFLAGS"] = append_flags(env.get("LDFLAGS", ""), link_flags)
 
-    print(
-        f"WHP libisofs bootstrap: {revision} -> {prefix}",
-        file=sys.stderr,
+    workspace_marker = workspace_marker_text(
+        cc,
+        cc_id,
+        sdkroot,
+        arch,
+        deployment,
+        libtool,
+        libtool_id,
+        libtoolize,
+        libtoolize_id,
+        env["CFLAGS"],
+        env["LDFLAGS"],
     )
+    marker = marker_text(revision, workspace_marker)
+    if incremental and cache_valid(prefix, marker):
+        return prefix
+
+    reused_workspace = prepare_workspace(
+        work_dir,
+        prefix,
+        source_copy,
+        workspace_marker,
+        incremental=incremental,
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        SUBMODULE_DIR,
+        source_copy,
+        ignore=shutil.ignore_patterns(".git"),
+    )
+
+    if reused_workspace:
+        print(
+            f"WHP libisofs incremental rebuild: {revision} -> {prefix}",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"WHP libisofs bootstrap: {revision} -> {prefix}",
+            file=sys.stderr,
+        )
+
     run_logged(["/bin/sh", "bootstrap"], cwd=source_copy, env=env)
 
     object_dir.mkdir(parents=True, exist_ok=True)
     configure = source_copy / "configure"
-    run_logged([
-        str(configure),
-        f"--prefix={prefix}",
-        "--disable-shared",
-        "--enable-static",
-        "--disable-libacl",
-        "--disable-libjte",
-        "--disable-ldconfig-at-install",
-    ], cwd=object_dir, env=env)
+    run_logged(
+        [str(configure), f"--prefix={prefix}", *LIBISOFS_CONFIGURE_ARGS],
+        cwd=object_dir,
+        env=env,
+    )
     libtool_arg = f"LIBTOOL={libtool}"
     run_logged(
         [make, libtool_arg, "-j", str(max(1, os.cpu_count() or 1))],
@@ -495,9 +579,13 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             else:
                 os.environ["PKG_CONFIG_PATH"] = old_path
 
+    # Publish reuse state only after install and validation have succeeded.
+    # A failed build therefore cannot bless a new ABI/configuration identity.
+    (work_dir / ".whp-libisofs-workspace").write_text(
+        workspace_marker, encoding="utf-8"
+    )
     (prefix / ".whp-libisofs-bootstrap").write_text(marker, encoding="utf-8")
     return prefix
-
 
 def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser()
