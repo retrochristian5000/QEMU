@@ -46,6 +46,10 @@ typedef int32_t QemuDarwinVmProt;
 #define QEMU_DARWIN_MH_CIGAM    0xcefaedfeU
 #define QEMU_DARWIN_MH_MAGIC_64 0xfeedfacfU
 #define QEMU_DARWIN_MH_CIGAM_64 0xcffaedfeU
+#define QEMU_DARWIN_FAT_MAGIC    0xcafebabeU
+#define QEMU_DARWIN_FAT_CIGAM    0xbebafecaU
+#define QEMU_DARWIN_FAT_MAGIC_64 0xcafebabfU
+#define QEMU_DARWIN_FAT_CIGAM_64 0xbfbafecaU
 
 #define QEMU_DARWIN_MH_EXECUTE 0x2U
 #define QEMU_DARWIN_MH_DYLINKER 0x7U
@@ -66,6 +70,27 @@ typedef int32_t QemuDarwinVmProt;
 #define QEMU_DARWIN_LC_DYLD_CHAINED_FIXUPS \
     (0x34U | QEMU_DARWIN_LC_REQ_DYLD)
 
+typedef struct QemuDarwinFatHeader {
+    uint32_t magic;
+    uint32_t nfat_arch;
+} QemuDarwinFatHeader;
+
+typedef struct QemuDarwinFatArch32 {
+    QemuDarwinCpuType cputype;
+    QemuDarwinCpuSubtype cpusubtype;
+    uint32_t offset;
+    uint32_t size;
+    uint32_t align;
+} QemuDarwinFatArch32;
+
+typedef struct QemuDarwinFatArch64 {
+    QemuDarwinCpuType cputype;
+    QemuDarwinCpuSubtype cpusubtype;
+    uint64_t offset;
+    uint64_t size;
+    uint32_t align;
+    uint32_t reserved;
+} QemuDarwinFatArch64;
 typedef struct QemuDarwinMachHeader32 {
     uint32_t magic;
     QemuDarwinCpuType cputype;
@@ -106,6 +131,19 @@ typedef struct QemuDarwinSegmentCommand32 {
     uint32_t flags;
 } QemuDarwinSegmentCommand32;
 
+typedef struct QemuDarwinSection32 {
+    char sectname[16];
+    char segname[16];
+    uint32_t addr;
+    uint32_t size;
+    uint32_t offset;
+    uint32_t align;
+    uint32_t reloff;
+    uint32_t nreloc;
+    uint32_t flags;
+    uint32_t reserved1;
+    uint32_t reserved2;
+} QemuDarwinSection32;
 typedef struct QemuDarwinSegmentCommand64 {
     uint32_t cmd;
     uint32_t cmdsize;
@@ -120,6 +158,25 @@ typedef struct QemuDarwinSegmentCommand64 {
     uint32_t flags;
 } QemuDarwinSegmentCommand64;
 
+typedef struct QemuDarwinSection64 {
+    char sectname[16];
+    char segname[16];
+    uint64_t addr;
+    uint64_t size;
+    uint32_t offset;
+    uint32_t align;
+    uint32_t reloff;
+    uint32_t nreloc;
+    uint32_t flags;
+    uint32_t reserved1;
+    uint32_t reserved2;
+    uint32_t reserved3;
+} QemuDarwinSection64;
+
+typedef struct QemuDarwinThreadStateHeader {
+    uint32_t flavor;
+    uint32_t count;
+} QemuDarwinThreadStateHeader;
 typedef struct QemuDarwinEntryPointCommand {
     uint32_t cmd;
     uint32_t cmdsize;
@@ -160,13 +217,20 @@ typedef struct QemuDarwinBuildVersionCommand {
 _Static_assert(sizeof(QemuDarwinCpuType) == 4, "Darwin cpu_type_t ABI");
 _Static_assert(sizeof(QemuDarwinCpuSubtype) == 4, "Darwin cpu_subtype_t ABI");
 _Static_assert(sizeof(QemuDarwinVmProt) == 4, "Darwin vm_prot_t ABI");
+_Static_assert(sizeof(QemuDarwinFatHeader) == 8, "fat_header ABI");
+_Static_assert(sizeof(QemuDarwinFatArch32) == 20, "fat_arch ABI");
+_Static_assert(sizeof(QemuDarwinFatArch64) == 32, "fat_arch_64 ABI");
 _Static_assert(sizeof(QemuDarwinMachHeader32) == 28, "mach_header ABI");
 _Static_assert(sizeof(QemuDarwinMachHeader64) == 32, "mach_header_64 ABI");
 _Static_assert(sizeof(QemuDarwinLoadCommand) == 8, "load_command ABI");
 _Static_assert(sizeof(QemuDarwinSegmentCommand32) == 56,
                "segment_command ABI");
+_Static_assert(sizeof(QemuDarwinSection32) == 68, "section ABI");
 _Static_assert(sizeof(QemuDarwinSegmentCommand64) == 72,
                "segment_command_64 ABI");
+_Static_assert(sizeof(QemuDarwinSection64) == 80, "section_64 ABI");
+_Static_assert(sizeof(QemuDarwinThreadStateHeader) == 8,
+               "thread state header ABI");
 _Static_assert(sizeof(QemuDarwinEntryPointCommand) == 24,
                "entry_point_command ABI");
 _Static_assert(sizeof(QemuDarwinLcStr) == 4, "lc_str ABI");

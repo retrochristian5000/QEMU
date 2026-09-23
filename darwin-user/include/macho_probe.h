@@ -34,4 +34,18 @@ typedef struct QemuDarwinMachOInfo {
 int qemu_darwin_macho_probe(const uint8_t *data, size_t size,
                             QemuDarwinMachOInfo *info);
 
+/* Select a thin image directly or a matching architecture from a fat image. */
+int qemu_darwin_macho_select_arch(const uint8_t *data, size_t size,
+                                  int32_t cputype,
+                                  const uint8_t **slice, size_t *slice_size,
+                                  QemuDarwinMachOInfo *info);
+
+/* Validate load-command, segment/section, and thread-state bounds. */
+int qemu_darwin_macho_validate(const uint8_t *data, size_t size,
+                               const QemuDarwinMachOInfo *info);
+
+/* Extract SRR0 from the PowerPC LC_UNIXTHREAD/LC_THREAD state. */
+int qemu_darwin_macho_ppc_entry(const uint8_t *data, size_t size,
+                                uint64_t *entry);
+
 #endif
