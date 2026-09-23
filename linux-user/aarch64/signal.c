@@ -853,6 +853,7 @@ static void target_setup_frame(int usig, struct target_sigaction *ka,
     int fpsimd_ofs, fr_ofs, sve_ofs = 0, za_ofs = 0, tpidr2_ofs = 0;
     int zt_ofs = 0, esr_ofs = 0, gcs_ofs = 0, fpmr_ofs = 0;
     int sve_size = 0, za_size = 0, tpidr2_size = 0, zt_size = 0;
+    unsigned long za_ul_size = 0;
     struct target_rt_sigframe *frame;
     struct target_rt_frame_record *fr;
     abi_ulong frame_addr, return_addr;
@@ -891,10 +892,14 @@ static void target_setup_frame(int usig, struct target_sigaction *ka,
         tpidr2_ofs = alloc_sigframe_space(tpidr2_size, &layout);
         /* ZA state needs saving only if it is enabled.  */
         if (FIELD_EX64(env->svcr, SVCR, ZA)) {
-            za_size = TARGET_ZA_SIG_CONTEXT_SIZE(sme_vq(env));
+            za_ul_size = TARGET_ZA_SIG_CONTEXT_SIZE((unsigned long)sme_vq(env));
         } else {
-            za_size = TARGET_ZA_SIG_CONTEXT_SIZE(0);
+            za_ul_size = TARGET_ZA_SIG_CONTEXT_SIZE(0UL);
         }
+        if (za_ul_size > INT_MAX) {
+            return -TARGET_EFAULT;
+        }
+        za_size = (int)za_ul_size;
         za_ofs = alloc_sigframe_space(za_size, &layout);
     }
     if (cpu_isar_feature(aa64_sme2, env_archcpu(env)) &&
