@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import os
 import pathlib
 import platform
@@ -12,12 +13,13 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/bash")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-BASH_BOOTSTRAP_SCHEMA = "1"
+BASH_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(
@@ -82,6 +84,42 @@ def archive_source_signature() -> str:
     return f"archive-{digest.hexdigest()}"
 
 
+def copy_bash_source(revision: str, destination: pathlib.Path) -> None:
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
+        completed = subprocess.run(
+            [
+                "git", "-C", str(SUBMODULE_DIR),
+                "archive", "--format=tar", revision,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode(
+                "utf-8", errors="replace"
+            ).strip()
+            raise RuntimeError(
+                f"could not archive pinned Bash revision {revision}"
+                + (f": {detail}" if detail else "")
+            )
+        destination.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(
+            fileobj=io.BytesIO(completed.stdout), mode="r:"
+        ) as archive:
+            archive.extractall(destination)
+        return
+
+    shutil.copytree(
+        SUBMODULE_DIR,
+        destination,
+        ignore=shutil.ignore_patterns(".git"),
+    )
+
+
 def ensure_bash_source() -> str:
     if not git_checkout_available():
         return archive_source_signature()
@@ -125,9 +163,10 @@ def ensure_bash_source() -> str:
         "--untracked-files=no",
     ])
     if dirty:
-        raise RuntimeError(
-            "bundled Bash submodule has tracked changes; commit them in the "
-            "Bash fork and update the QEMU gitlink"
+        print(
+            "WHP Bash bootstrap: tracked submodule changes are preserved "
+            "and excluded from the pinned build:\n" + dirty,
+            file=sys.stderr,
         )
     return expected_revision
 
@@ -264,7 +303,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     sdkroot, arch, deployment = macos_settings()
 
     prefix = build_root / "deps" / "bash"
-    object_dir = build_root / "bootstrap" / "bash"
+    work_dir = build_root / "bootstrap" / "bash"
+    source_copy = work_dir / "source"
+    object_dir = work_dir / "build"
     marker = marker_text(revision, cc, sdkroot, arch, deployment)
     marker_file = prefix / ".whp-bash-bootstrap"
     bash_path = prefix / "bin" / "bash"
@@ -277,8 +318,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         return bash_path
 
     shutil.rmtree(prefix, ignore_errors=True)
-    shutil.rmtree(object_dir, ignore_errors=True)
+    shutil.rmtree(work_dir, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    copy_bash_source(revision, source_copy)
     object_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
@@ -302,7 +345,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         env["SDKROOT"] = sdkroot
         env["MACOSX_DEPLOYMENT_TARGET"] = deployment
 
-    configure = SUBMODULE_DIR / "configure"
+    configure = source_copy / "configure"
     print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged([
         "/bin/sh", str(configure), f"--prefix={prefix}",
