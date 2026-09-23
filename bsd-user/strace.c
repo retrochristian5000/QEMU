@@ -111,8 +111,7 @@ static void print_ioctl(const struct syscallname *name,
         abi_long arg5, abi_long arg6)
 {
     /* Decode the ioctl request */
-    gemu_log("%s(%d, 0x%0lx { IO%s%s GRP:0x%x('%c') CMD:%d LEN:%d }, 0x"
-            TARGET_ABI_FMT_lx ", ...)",
+    gemu_log("%s(%d, 0x%0lx { IO%s%s GRP:0x%x('%c') CMD:%d LEN:%d }, 0x%lx, ...)",
             name->name,
             (int)arg1,
             (unsigned long)arg2,
@@ -122,7 +121,7 @@ static void print_ioctl(const struct syscallname *name,
             isprint(IOCGROUP(arg2)) ? (char)IOCGROUP(arg2) : '?',
             (int)arg2 & 0xFF,
             (int)IOCPARM_LEN(arg2),
-            arg3);
+            (unsigned long)arg3);
 }
 
 static void print_sysarch(const struct syscallname *name, abi_long arg1,
