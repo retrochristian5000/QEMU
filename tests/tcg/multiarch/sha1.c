@@ -25,6 +25,14 @@ A million repetitions of "a"
 #include <string.h>
 #include <stdint.h>
 
+static void secure_bzero(void *ptr, size_t len)
+{
+    volatile unsigned char *p = (volatile unsigned char *)ptr;
+    while (len--) {
+        *p++ = 0;
+    }
+}
+
 /* ================ sha1.h ================ */
 /*
 SHA-1 in C
@@ -123,7 +131,7 @@ CHAR64LONG16* block = (const CHAR64LONG16*)buffer;
     /* Wipe variables */
     a = b = c = d = e = 0;
 #ifdef SHA1HANDSOFF
-    memset(block, '\0', sizeof(block));
+    secure_bzero(block, sizeof(block));
 #endif
 }
 
