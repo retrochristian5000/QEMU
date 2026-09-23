@@ -36,7 +36,8 @@ def main() -> int:
         "AArch64/arm64e distinction": (
             "``aarch64``",
             "``arm64e``",
-            "NEON is therefore an optimization opportunity",
+            "NEON",
+            "optimization opportunity",
         ),
         "circularity policy": (
             "Circularity guards",
