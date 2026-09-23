@@ -211,8 +211,7 @@ int qemu_darwin_macho_select_arch(const uint8_t *data, size_t size,
         if (arch_cpu != cputype) {
             continue;
         }
-        if (arch_bytes > SIZE_MAX ||
-            qemu_darwin_macho_probe(data + (size_t)offset,
+        if (qemu_darwin_macho_probe(data + (size_t)offset,
                                     (size_t)arch_bytes, &selected) != 0 ||
             selected.cputype != cputype) {
             return -1;
@@ -240,11 +239,11 @@ static int validate_thread_command(const uint8_t *command, uint32_t cmdsize,
             return -1;
         }
         count = read_u32(command + offset + 4, endian);
-        if (count > SIZE_MAX / sizeof(uint32_t)) {
+        offset += sizeof(QemuDarwinThreadStateHeader);
+        if ((uint64_t)count * sizeof(uint32_t) > cmdsize - offset) {
             return -1;
         }
         state_bytes = (size_t)count * sizeof(uint32_t);
-        offset += sizeof(QemuDarwinThreadStateHeader);
         if (state_bytes > cmdsize - offset) {
             return -1;
         }
@@ -322,14 +321,13 @@ int qemu_darwin_macho_validate(const uint8_t *data, size_t size,
                                const QemuDarwinMachOInfo *info)
 {
     size_t offset;
-    size_t command_end;
     uint32_t i;
 
     if (data == NULL || info == NULL) {
         return -1;
     }
     offset = macho_header_size(info);
-    if ((size_t)info->sizeofcmds > size - offset) {
+    if (offset > size || (size_t)info->sizeofcmds > size - offset) {
         return -1;
     }
     command_end = offset + info->sizeofcmds;
@@ -397,7 +395,6 @@ int qemu_darwin_macho_ppc_entry(const uint8_t *data, size_t size,
     }
 
     offset = macho_header_size(&info);
-    command_end = offset + info.sizeofcmds;
     for (i = 0; i < info.ncmds; i++) {
         const uint8_t *command = data + offset;
         uint32_t cmd = read_u32(command, info.endian);
@@ -433,6 +430,5 @@ int qemu_darwin_macho_ppc_entry(const uint8_t *data, size_t size,
         offset += cmdsize;
     }
 
-    (void)command_end;
     return -1;
 }
