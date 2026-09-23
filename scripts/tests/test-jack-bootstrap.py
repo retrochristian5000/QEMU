@@ -30,6 +30,18 @@ def main() -> int:
     require(gitmodules, "branch = master", "JACK fork branch")
 
     require(
+        gitmodules,
+        '[submodule "toolchains/aften"]',
+        "Aften submodule declaration",
+    )
+    require(gitmodules, "path = toolchains/aften", "Aften submodule path")
+    require(
+        gitmodules,
+        "url = https://github.com/retrochristian5000/aften.git",
+        "WHP Aften fork URL",
+    )
+
+    require(
         config,
         "Option('BOOTSTRAP_JACK', 'Host features', 'Bootstrap/use WHP JACK', "
         "'choice', 'auto', ('auto', 'y', 'n'))",
