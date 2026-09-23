@@ -488,7 +488,7 @@ static void virtio_gpu_transfer_to_host_2d(VirtIOGPU *g,
 
             iov_to_buf(res->iov, res->iov_cnt, src_offset,
                        (uint8_t *)img_data + dst_offset,
-                       t2d.r.width * bpp);
+                       ((size_t)t2d.r.width) * bpp);
         }
     } else {
         src_offset = t2d.offset;
