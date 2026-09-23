@@ -11,8 +11,8 @@ import sys
 from collections import OrderedDict
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-CONFIG_VERSION = '2'
-SUPPORTED_CONFIG_VERSIONS = {'1', '2'}
+CONFIG_VERSION = '3'
+SUPPORTED_CONFIG_VERSIONS = {'1', '2', '3'}
 
 
 class Option(NamedTuple):
@@ -78,7 +78,7 @@ OPTIONS = (
     Option('WHP_INCREMENTAL_BUILD', 'Build behavior', 'Incremental builds', 'bool', 'y'),
     Option('RUN_TESTS', 'Build behavior', 'Run tests after build', 'bool', 'y'),
     Option('QEMU_TEST_SCOPE', 'Build behavior', 'QEMU test scope', 'choice', 'changed', ('changed', 'full')),
-    Option('INSTALL', 'Build behavior', 'Install after build', 'bool', 'n'),
+    Option('INSTALL_AFTER_BUILD', 'Build behavior', 'Install after build', 'bool', 'n'),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
     *tuple(
@@ -160,6 +160,7 @@ def load_config(path: pathlib.Path) -> ConfigState:
     config_version: Optional[str] = None
     seen_options = set()
     legacy_target_list = None
+    legacy_install_after_build = None
     for number, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
         line = raw_line.strip()
         if not line or line.startswith('#'):
@@ -185,6 +186,11 @@ def load_config(path: pathlib.Path) -> ConfigState:
                 )
             legacy_target_list = value
             continue
+        if key == 'INSTALL':
+            if value not in ('y', 'n'):
+                raise ValueError(f'{path}:{number}: INSTALL must be y or n')
+            legacy_install_after_build = value
+            continue
         option = OPTION_BY_KEY.get(key)
         if option is None:
             unknown[key] = value
@@ -192,6 +198,12 @@ def load_config(path: pathlib.Path) -> ConfigState:
         validate_value(option, value)
         values[key] = value
         seen_options.add(key)
+
+    if (
+        legacy_install_after_build is not None
+        and 'INSTALL_AFTER_BUILD' not in seen_options
+    ):
+        values['INSTALL_AFTER_BUILD'] = legacy_install_after_build
 
     if legacy_target_list is not None:
         legacy_targets = set(legacy_target_list.split(','))
@@ -209,9 +221,10 @@ def load_config(path: pathlib.Path) -> ConfigState:
             f'warning: {path} has no WHP_CONFIG_VERSION; treating it as version 1',
             file=sys.stderr,
         )
-    elif config_version == '1':
+    elif config_version in ('1', '2'):
         print(
-            f'warning: {path} uses WHP_CONFIG_VERSION=1; portable defaults are migrated in memory',
+            f'warning: {path} uses WHP_CONFIG_VERSION={config_version}; '
+            'portable defaults are migrated in memory',
             file=sys.stderr,
         )
     for key in unknown:

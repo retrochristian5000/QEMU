@@ -163,8 +163,9 @@ Positional arguments select Make targets for that run and take precedence over
   ./build.sh whp-openbios-ppc
 
 Installation follows the ``Install after build`` menu Boolean and is opt-in in
-a new profile. Set ``INSTALL=1`` when installation is wanted; compile-only runs
-keep ``INSTALL=0``.
+a new profile. Set ``INSTALL_AFTER_BUILD=1`` when installation is wanted; compile-only
+runs keep ``INSTALL_AFTER_BUILD=0``. The generic ``INSTALL`` name is reserved
+for build systems that use it to name the installation command.
 
 Artifact identity
 -----------------

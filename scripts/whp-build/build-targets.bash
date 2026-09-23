@@ -141,7 +141,7 @@ fi
 
 # Installation is deliberately separate from compilation and is opt-in. This
 # avoids making an otherwise successful unprivileged build fail on a prefix.
-if [[ "$INSTALL" == "1" ]]; then
+if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
     if [[ -n "${NINJA_CMD:-}" ]]; then
         "$NINJA_CMD" -C "$BUILD_DIR" install
     elif [[ -n "${MAKE_CMD:-}" ]]; then

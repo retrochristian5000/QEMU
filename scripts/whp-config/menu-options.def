@@ -38,7 +38,7 @@ PREFIX|Build behavior|Install prefix|string|auto||
 WHP_INCREMENTAL_BUILD|Build behavior|Incremental builds|bool|y||
 RUN_TESTS|Build behavior|Run tests after build|bool|y||
 QEMU_TEST_SCOPE|Build behavior|QEMU test scope|choice|changed|changed,full|
-INSTALL|Build behavior|Install after build|bool|n||
+INSTALL_AFTER_BUILD|Build behavior|Install after build|bool|n||
 CONFIG_MAC_NEWWORLD|QEMU machines|New World Macintosh|bool|y||
 CONFIG_MAC_OLDWORLD|QEMU machines|Old World Macintosh|bool|y||
 I386_AUDIO_SB16|QEMU hardware|i386|choice|auto|auto,y,n|Sound Blaster 16 (ISA)

@@ -57,7 +57,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['BUILD_OPENBIOS'], 'auto')
         self.assertEqual(values['BOOTSTRAP_POWERPC_TOOLCHAIN'], 'auto')
         self.assertEqual(values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
-        self.assertEqual(values['INSTALL'], 'n')
+        self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
@@ -121,7 +121,7 @@ class WhpConfigTests(unittest.TestCase):
             if option.kind == 'bool':
                 self.assertIn(option.default, ('y', 'n'), option.key)
                 self.assertEqual(values[option.key], option.default, option.key)
-        self.assertEqual(values['INSTALL'], 'n')
+        self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
 
     def test_output_defaults_select_img_i386_and_ppc(self):
         mod = load_module()
@@ -156,7 +156,7 @@ class WhpConfigTests(unittest.TestCase):
         ):
             self.assertNotIn(f'{key}=', assignments)
         self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
-        self.assertIn("INSTALL='0'", assignments)
+        self.assertIn("INSTALL_AFTER_BUILD='0'", assignments)
 
     def test_sdl_bootstrap_is_tristate_host_policy(self):
         mod = load_module()
@@ -222,7 +222,7 @@ class WhpConfigTests(unittest.TestCase):
             loaded = mod.load_config(path)
             self.assertEqual(loaded.values['BUILD_OPENBIOS'], 'y')
             self.assertEqual(loaded.values['MACOS_ENABLE_GTK'], 'n')
-            self.assertEqual(loaded.values['INSTALL'], 'y')
+            self.assertEqual(loaded.values['INSTALL_AFTER_BUILD'], 'y')
             self.assertEqual(loaded.values['MACOS_ENABLE_PA'], 'auto')
             self.assertEqual(loaded.values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
 
@@ -370,7 +370,7 @@ class WhpConfigTests(unittest.TestCase):
             loaded.values['BUILD_OPENBIOS'] = 'n'
             mod.save_config(path, loaded)
             text = path.read_text(encoding='utf-8')
-            self.assertIn('WHP_CONFIG_VERSION=2\n', text)
+            self.assertIn('WHP_CONFIG_VERSION=3\n', text)
             self.assertIn('BUILD_OPENBIOS=n\n', text)
             self.assertIn('BOOTSTRAP_WIN9X_TOOLCHAIN=n\n', text)
             self.assertIn('REMOVED_SETTING=old\n', text)

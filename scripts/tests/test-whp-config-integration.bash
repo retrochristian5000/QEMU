@@ -49,7 +49,7 @@ if grep -Fq 'Build targets' <<< "$menu_output" ||
 fi
 
 cat > "$COPY/.whpconfig" <<'EOF'
-WHP_CONFIG_VERSION=2
+WHP_CONFIG_VERSION=3
 QEMU_HOST_LTO=auto
 QEMU_HOST_MODULES=auto
 PREFIX=auto
@@ -64,7 +64,7 @@ BUILD_OPENBIOS=auto
 BOOTSTRAP_POWERPC_TOOLCHAIN=auto
 WHP_INCREMENTAL_BUILD=y
 RUN_TESTS=y
-INSTALL=n
+INSTALL_AFTER_BUILD=n
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
 EOF
@@ -289,14 +289,14 @@ whp_require_tristate_values MACOS_ENABLE_GTK MACOS_ENABLE_PA \
 [[ "$QEMU_HOST_LTO" == auto ]]
 
 # Default policy is unprivileged: install is off and prefix is user/build local.
-unset PREFIX INSTALL
+unset PREFIX INSTALL_AFTER_BUILD
 HOST_OS=Linux
 HOST_ARCH=x86_64
 HOME="$TMP/home"
 mkdir -p "$HOME"
 whp_prepare_build_defaults
 [[ "$RUN_TESTS" == 1 ]]
-[[ "$INSTALL" == 0 ]]
+[[ "$INSTALL_AFTER_BUILD" == 0 ]]
 [[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]
 [[ "$PREFIX" != /emulator ]]
 
@@ -318,7 +318,7 @@ printf '%s\n' "$*" >> "$WHP_TEST_MAKE_LOG"
 EOF
 chmod +x "$FAKE_TEST_NINJA" "$FAKE_TEST_MAKE"
 
-RUN_TESTS=1 INSTALL=0 JOBS=2 \
+RUN_TESTS=1 INSTALL_AFTER_BUILD=0 JOBS=2 \
 BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
 WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \
@@ -327,7 +327,7 @@ grep -Fq 'qemu-system-i386' "$TEST_NINJA_LOG"
 grep -Fq ' check' "$TEST_MAKE_LOG"
 
 : > "$TEST_MAKE_LOG"
-RUN_TESTS=0 INSTALL=0 JOBS=2 \
+RUN_TESTS=0 INSTALL_AFTER_BUILD=0 JOBS=2 \
 BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
 WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \
@@ -335,7 +335,7 @@ bash -c 'set -euo pipefail; source "$1"; whp_build_targets qemu-system-i386' \
 test ! -s "$TEST_MAKE_LOG"
 
 : > "$TEST_MAKE_LOG"
-RUN_TESTS=1 INSTALL=0 JOBS=2 \
+RUN_TESTS=1 INSTALL_AFTER_BUILD=0 JOBS=2 \
 BUILD_DIR="$TEST_BUILD_DIR" NINJA_CMD="$FAKE_TEST_NINJA" MAKE_CMD="$FAKE_TEST_MAKE" \
 WHP_TEST_NINJA_LOG="$TEST_NINJA_LOG" WHP_TEST_MAKE_LOG="$TEST_MAKE_LOG" \
 bash -c 'set -euo pipefail; source "$1"; whp_build_targets whp-openbios-ppc' \

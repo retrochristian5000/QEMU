@@ -645,7 +645,7 @@ def main(argv: List[str]) -> int:
 
         if values['RUN_TESTS'] == 'y':
             run_qemu_tests(build_dir, jobs)
-        if values['INSTALL'] == 'y':
+        if values['INSTALL_AFTER_BUILD'] == 'y':
             subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
 
         artifacts = verify_requested_outputs(build_dir, requested_targets)
