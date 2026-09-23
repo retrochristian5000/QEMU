@@ -62,7 +62,15 @@ def main() -> int:
     require(helper, '"--client-only"', "JACK client-only build profile")
     require(helper, '"--autostart=none"', "JACK server autostart suppression")
     require(helper, '"WHP_MACOS_ARCH"', "shared macOS ABI policy")
-    require(helper, 'abi = f"-arch {arch}"', "explicit JACK Darwin architecture")
+    require(helper, "def macos_settings()", "JACK macOS SDK policy")
+    require(helper, '"--show-sdk-path"', "macOS SDK discovery")
+    require(helper, '"-isysroot", sdkroot', "explicit JACK macOS sysroot")
+    require(helper, 'env["SDKROOT"] = sdkroot', "JACK SDK environment")
+    require(
+        helper,
+        'env["MACOSX_DEPLOYMENT_TARGET"] = deployment',
+        "JACK deployment target environment",
+    )
 
     require(meson, "dependency('jack'", "QEMU JACK dependency contract")
 

@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/jack")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-JACK_BOOTSTRAP_SCHEMA = "1"
+JACK_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(command: List[str], cwd: pathlib.Path | None = None) -> str:
@@ -176,6 +176,41 @@ def compiler_id(path: str) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def macos_settings() -> tuple[str, str, str]:
+    if platform.system() != "Darwin":
+        return "", "", ""
+
+    sdkroot = os.environ.get("SDKROOT", "")
+    if not sdkroot:
+        if not shutil.which("xcrun"):
+            raise RuntimeError(
+                "xcrun is required to locate the macOS SDK for JACK"
+            )
+        sdkroot = run_text(["xcrun", "--sdk", "macosx", "--show-sdk-path"])
+    if not pathlib.Path(sdkroot).is_dir():
+        raise RuntimeError(f"macOS SDK does not exist: {sdkroot}")
+
+    arch = os.environ.get("WHP_MACOS_ARCH", "auto")
+    if arch == "auto":
+        machine = platform.machine().lower()
+        if machine in ("arm64", "aarch64"):
+            arch = "arm64"
+        elif machine in ("x86_64", "amd64"):
+            arch = "x86_64"
+        else:
+            raise RuntimeError(f"unsupported macOS architecture: {machine}")
+    if arch not in ("arm64", "arm64e", "x86_64"):
+        raise RuntimeError(f"unsupported WHP_MACOS_ARCH for JACK: {arch}")
+
+    deployment = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "")
+    if not deployment:
+        version = platform.mac_ver()[0]
+        pieces = version.split(".")
+        deployment = ".".join(pieces[:2]) if version else "11.0"
+
+    return sdkroot, arch, deployment
+
+
 def system_jack_usable() -> bool:
     pkg_config = shutil.which("pkg-config") or shutil.which("pkgconf")
     if not pkg_config:
@@ -200,7 +235,14 @@ def find_pkgconfig_file(prefix: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
-def marker_text(revision: str, cc: str, cxx: str) -> str:
+def marker_text(
+    revision: str,
+    cc: str,
+    cxx: str,
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+) -> str:
     return (
         f"JACK_BOOTSTRAP_SCHEMA={JACK_BOOTSTRAP_SCHEMA}\n"
         f"JACK_GIT_COMMIT={revision}\n"
@@ -211,8 +253,9 @@ def marker_text(revision: str, cc: str, cxx: str) -> str:
         f"CXX={cxx}\n"
         f"CXX_VERSION={compiler_id(cxx)}\n"
         f"PYTHON={sys.executable}\n"
-        f"WHP_MACOS_ARCH={os.environ.get('WHP_MACOS_ARCH', 'auto')}\n"
-        f"MACOSX_DEPLOYMENT_TARGET={os.environ.get('MACOSX_DEPLOYMENT_TARGET', '')}\n"
+        f"SDKROOT={sdkroot}\n"
+        f"WHP_MACOS_ARCH={arch}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
         "JACK_CLIENT_ONLY=1\n"
     )
 
@@ -232,7 +275,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     cc = command_path("clang", "CC", ("cc", "clang", "gcc"))
     cxx = command_path("clang++", "CXX", ("c++", "clang++", "g++"))
     prefix = build_root / "deps" / "jack"
-    marker = marker_text(revision, cc, cxx)
+    sdkroot, arch, deployment = macos_settings()
+    marker = marker_text(revision, cc, cxx, sdkroot, arch, deployment)
     if cache_valid(prefix, marker):
         return prefix
 
@@ -250,15 +294,20 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     # Keep the selected Darwin ABI coherent with QEMU without inheriting its
     # unrelated warning, optimization, language-standard, or linker flags.
+    # A non-Apple Clang does not reliably infer the active macOS SDK, so make
+    # the SDK and deployment target explicit. Otherwise Waf can misdiagnose
+    # SDK headers such as <sys/types.h> as missing.
     if platform.system() == "Darwin":
-        arch = os.environ.get("WHP_MACOS_ARCH", "auto")
-        if arch != "auto":
-            if arch not in ("arm64", "arm64e", "x86_64"):
-                raise RuntimeError(f"unsupported WHP_MACOS_ARCH for JACK: {arch}")
-            abi = f"-arch {arch}"
-            env["CFLAGS"] = abi
-            env["CXXFLAGS"] = abi
-            env["LDFLAGS"] = abi
+        darwin_flags = shlex.join([
+            "-arch", arch,
+            "-isysroot", sdkroot,
+            f"-mmacosx-version-min={deployment}",
+        ])
+        env["CFLAGS"] = darwin_flags
+        env["CXXFLAGS"] = darwin_flags
+        env["LDFLAGS"] = darwin_flags
+        env["SDKROOT"] = sdkroot
+        env["MACOSX_DEPLOYMENT_TARGET"] = deployment
 
     command = [
         sys.executable,
