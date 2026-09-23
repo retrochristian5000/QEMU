@@ -91,6 +91,11 @@
 	branch = master
 	shallow = true
 
+[submodule "toolchains/make"]
+	path = toolchains/make
+	url = https://github.com/retrochristian5000/make.git
+	branch = master
+	shallow = true
 [submodule "toolchains/bash"]
 	path = toolchains/bash
 	url = https://github.com/retrochristian5000/bash.git

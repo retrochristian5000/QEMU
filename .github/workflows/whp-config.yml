@@ -8,6 +8,7 @@ on:
       - '.gitmodules'
       - 'toolchains/aften'
       - 'toolchains/jack'
+      - 'toolchains/make'
       - 'toolchains/sdl'
       - 'docs/devel/whp-dependency-ledger.rst'
       - 'docs/devel/index-build.rst'
@@ -22,6 +23,7 @@ on:
       - 'scripts/qapi/common.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/bootstrap-python.sh'
+      - 'scripts/bootstrap-i386-efi-grub.bash'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
       - 'scripts/whp-build/configure.bash'
@@ -51,6 +53,7 @@ on:
       - 'scripts/tests/test-seabios-config.py'
       - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/test-libisofs-bootstrap.py'
+      - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-whp-dependency-ledger.py'
       - 'scripts/ensure-bash.py'
       - 'scripts/tests/test-bash-bootstrap.py'
@@ -101,6 +104,7 @@ jobs:
           python3 scripts/tests/test-seabios-config.py
           python3 scripts/tests/test-sdl-bootstrap.py
           python3 scripts/tests/test-libisofs-bootstrap.py
+          python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-test-policy.py
@@ -153,6 +157,7 @@ jobs:
             scripts/tests/test-seabios-config.py \
             scripts/tests/test-sdl-bootstrap.py \
             scripts/tests/test-libisofs-bootstrap.py \
+            scripts/tests/test-make-dependency-policy.py \
             scripts/tests/test-whp-dependency-ledger.py \
             scripts/tests/test-whp-config.py \
             scripts/tests/test-whp-hardware-menu.py \
@@ -164,6 +169,7 @@ jobs:
           /bin/sh -n builder.sh
           bash -n builder.sh
           bash -n scripts/bootstrap-native-clang.bash
+          bash -n scripts/bootstrap-i386-efi-grub.bash
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/prepare-build.bash

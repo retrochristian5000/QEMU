@@ -142,6 +142,10 @@ by the WHP account.
      - ``Python``
      - yes
      - Python >= 3.9 fallback; POSIX bootstrap requires a host C compiler and GNU Make.
+   * - ``toolchains/make``
+     - ``make``
+     - yes
+     - Pinned GNU Make fork; currently ``planned`` as a managed build tool because its Git maintainer-source tree still needs a seed GNU Make/Autotools path before it can produce the configured no-Make bootstrap inputs.
    * - ``toolchains/sdl``
      - ``SDLosaurus``
      - yes
@@ -181,7 +185,8 @@ graph.  A compact view is::
       |      +--> optional mold            |
       |                                   +--> JACK full macOS server
       |
-      +--> GNU Make
+      +--> GNU Make seed
+      |      +--> pinned WHP Make fork (planned)
       |      +--> Python POSIX fallback
       |      +--> Bash fallback
       |      +--> libisofs
@@ -207,6 +212,30 @@ full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional
 libraries stay feature-gated rather than becoming WHP bootstrap roots.
+
+GNU Make bootstrap boundary
+---------------------------
+
+The WHP owns the pinned ``toolchains/make`` fork and downstream bootstrap
+consumers should honor one selected GNU Make through ``MAKE_CMD`` or
+``MAKE``.  Bash, libisofs, OpenBIOS, SeaBIOS, the POSIX Python fallback,
+and the i386 EFI GRUB bootstrap therefore converge on the same executable
+selection instead of rediscovering ``make`` independently.
+
+The pinned GNU Make ``master`` is currently a maintainer-source tree.  It
+contains GNU Make's ``build.sh``, which can compile Make without an existing
+Make program, but ``build.sh`` consumes ``build.cfg`` and other outputs
+created by ``configure``.  The Git tree does not carry the release-style
+generated ``configure``/``Makefile.in``/gnulib build inputs.  Regenerating
+those inputs from the Git tree requires the Autotools/gnulib maintainer path,
+whose documented prerequisites include GNU Make.
+
+That means the fork must not yet replace the first seed GNU Make: doing so
+would hide a ``Make -> Make`` cycle.  The intended promotion path is to make
+the fork carry, or reproducibly produce without Make, the configured-source
+inputs needed by ``build.sh``.  Once that path is validated, the pinned fork
+can move from ``planned`` to ``managed`` and sit before Python, Bash, and
+the other Make-consuming bootstraps.
 
 Meson-owned subprojects and wraps
 ---------------------------------
@@ -245,6 +274,10 @@ Circularity guards
 #. A toolchain may not require the QEMU binary it is being built to produce.
 #. Native LLVM must bootstrap from an existing host compiler; it must not make
    itself its own root dependency.
+#. The pinned GNU Make fork must not be promoted to the first Make executable
+   while its maintainer-source preparation still needs a seed GNU Make.
+   GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
+   have been produced.
 #. Aften may feed a full JACK macOS server build and may later feed QEMU
    directly.  JACK must not become the only route through which QEMU can reach
    Aften.

@@ -41,6 +41,32 @@ require_tool()
         fail "bundled Python bootstrap dependency not found: $1"
 }
 
+resolve_bootstrap_make()
+{
+    requested_make=${MAKE_CMD:-${MAKE:-}}
+    if [ -n "$requested_make" ]; then
+        case "$requested_make" in
+            *[[:space:]]*)
+                fail "MAKE_CMD/MAKE must name one GNU Make executable: $requested_make"
+                ;;
+            */*) bootstrap_make=$requested_make ;;
+            *) bootstrap_make=$(command -v "$requested_make" 2>/dev/null || true) ;;
+        esac
+    else
+        bootstrap_make=$(command -v gmake 2>/dev/null || command -v make 2>/dev/null || true)
+    fi
+
+    [ -n "$bootstrap_make" ] && [ -x "$bootstrap_make" ] ||
+        fail "GNU Make is required to bootstrap bundled Python; set MAKE_CMD or MAKE"
+
+    make_version=$("$bootstrap_make" --version 2>/dev/null | sed -n '1p')
+    case "$make_version" in
+        GNU\ Make\ *) ;;
+        *) fail "Python bootstrap requires GNU Make, not: ${make_version:-$bootstrap_make}" ;;
+    esac
+    printf '%s\n' "$bootstrap_make"
+}
+
 python_from_prefix()
 {
     prefix=$1
@@ -223,7 +249,7 @@ mkdir -p "$WORK_DIR"
 
 case "$build_mode" in
     posix)
-        require_tool make
+        bootstrap_make=$(resolve_bootstrap_make)
         if [ -n "$JOBS" ]; then
             case "$JOBS" in
                 0|*[!0-9]*) fail "JOBS must be a positive integer when set: $JOBS" ;;
@@ -257,11 +283,11 @@ case "$build_mode" in
                 --prefix="$TOOLCHAIN_DIR" \
                 --with-ensurepip=install
             if [ -n "$make_jobs" ]; then
-                make "$make_jobs"
+                "$bootstrap_make" "$make_jobs"
             else
-                make
+                "$bootstrap_make"
             fi
-            make DESTDIR="$install_root" install
+            "$bootstrap_make" DESTDIR="$install_root" install
         )
         ;;
 

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 BUILD_ROOT="${BUILD_DIR:-$SOURCE_DIR/build}"
 INSTALL_PREFIX="${GRUB_I386_INSTALL_PREFIX:-$BUILD_ROOT/firmware-tools/grub-i386-efi}"
 WORK_DIR="${GRUB_I386_WORK_DIR:-$BUILD_ROOT/toolchain-work/grub-i386-efi}"
@@ -31,7 +32,21 @@ module_dir="$INSTALL_PREFIX/lib/$TARGET_TRIPLE/grub/i386-efi"
 marker="$INSTALL_PREFIX/.whp-grub-i386-efi"
 llvm_marker="$I386_TOOLCHAIN_DIR/.whp-i386-toolchain"
 
-for tool in make tar mktemp cksum awk git; do
+MAKE_CMD_REQUESTED="${MAKE_CMD:-${MAKE:-}}"
+if [[ -n "$MAKE_CMD_REQUESTED" ]]; then
+    MAKE_CMD="$(whp_resolve_gnu_make "$MAKE_CMD_REQUESTED" || true)"
+else
+    MAKE_CMD="$(whp_find_gnu_make || true)"
+fi
+[[ -n "$MAKE_CMD" ]] || {
+    printf '%s\n' \
+        'error: GNU Make is required for the IA32 EFI GRUB bootstrap.' \
+        'Set MAKE_CMD or MAKE to the selected GNU Make executable.' >&2
+    exit 1
+}
+export MAKE="$MAKE_CMD"
+
+for tool in tar mktemp cksum awk git; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: IA32 EFI GRUB bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -370,8 +385,8 @@ if [[ -n "$JOBS" ]]; then
     case "$JOBS" in 0|*[!0-9]*) printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2; exit 1 ;; esac
     make_args=(-j"$JOBS")
 fi
-PATH="$LLVM_TOOL_PATH" make -C "$build_root" "${make_args[@]}"
-PATH="$LLVM_TOOL_PATH" DESTDIR="$stage_root" make -C "$build_root" install
+PATH="$LLVM_TOOL_PATH" "$MAKE_CMD" -C "$build_root" "${make_args[@]}"
+PATH="$LLVM_TOOL_PATH" DESTDIR="$stage_root" "$MAKE_CMD" -C "$build_root" install
 
 staged="$stage_root$INSTALL_PREFIX"
 staged_mkimage="$staged/bin/i386-efi-grub-mkimage"
