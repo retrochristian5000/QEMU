@@ -61,6 +61,53 @@ predates modern dyld load commands. Its signal file also left target/host
 ``siginfo`` conversion empty. Restoring the directory verbatim would
 therefore resurrect known incompleteness.
 
+PowerPC Mach-O format baseline
+------------------------------
+
+The first executable loader lane uses these on-disk forms:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Property
+     - PPC32
+     - PPC64/G5
+   * - Thin magic
+     - ``MH_MAGIC``
+     - ``MH_MAGIC_64``
+   * - Byte order
+     - big-endian
+     - big-endian
+   * - CPU type
+     - ``CPU_TYPE_POWERPC`` (18)
+     - ``CPU_TYPE_POWERPC64`` (18 | ABI64)
+   * - Mach header
+     - 28 bytes
+     - 32 bytes
+   * - Segment command
+     - ``LC_SEGMENT`` / 56-byte base
+     - ``LC_SEGMENT_64`` / 72-byte base
+   * - Section record
+     - 68 bytes
+     - 80 bytes
+   * - Thread flavor
+     - ``PPC_THREAD_STATE`` (1), 40 words
+     - ``PPC_THREAD_STATE64`` (5), 78 words
+   * - Initial PC
+     - 32-bit ``srr0``
+     - 64-bit ``srr0``
+
+Universal/fat containers are a separate outer format. The 32-bit fat
+architecture record is 20 bytes and the 64-bit fat architecture record is 32
+bytes; either may select a PPC32 or PPC64 thin slice. The probe validates the
+fat table, slice bounds, alignment exponent, and the CPU type repeated inside
+the selected thin Mach-O image.
+
+Section tables are validated as part of each segment command. File-backed
+sections must fit inside the selected slice; zero-fill section types are not
+required to have file bytes. Relocation tables are currently treated as raw
+8-byte on-disk records for bounds checking so host C bitfield layout cannot
+silently redefine PowerPC relocation encoding.
 ABI formats
 -----------
 
