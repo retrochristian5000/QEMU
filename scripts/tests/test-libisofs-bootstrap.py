@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib.util
+import os
+import tempfile
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,6 +14,98 @@ def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
 
+
+
+def load_helper_module():
+    path = ROOT / "scripts/ensure-libisofs.py"
+    spec = importlib.util.spec_from_file_location("whp_ensure_libisofs", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("error: could not load ensure-libisofs.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_incremental_workspace() -> None:
+    helper = load_helper_module()
+    if not hasattr(helper, "incremental_build_enabled"):
+        raise SystemExit("error: libisofs bootstrap has no incremental policy parser")
+    if not hasattr(helper, "prepare_workspace"):
+        raise SystemExit("error: libisofs bootstrap has no reusable workspace planner")
+
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("WHP_INCREMENTAL_BUILD", None)
+        if not helper.incremental_build_enabled():
+            raise SystemExit("error: libisofs incremental builds must default on")
+        for value in ("1", "y", "yes", "true", "on"):
+            os.environ["WHP_INCREMENTAL_BUILD"] = value
+            if not helper.incremental_build_enabled():
+                raise SystemExit(f"error: incremental value {value!r} was rejected")
+        for value in ("0", "n", "no", "false", "off"):
+            os.environ["WHP_INCREMENTAL_BUILD"] = value
+            if helper.incremental_build_enabled():
+                raise SystemExit(f"error: clean-build value {value!r} was ignored")
+        os.environ["WHP_INCREMENTAL_BUILD"] = "broken"
+        try:
+            helper.incremental_build_enabled()
+        except RuntimeError:
+            pass
+        else:
+            raise SystemExit("error: invalid WHP_INCREMENTAL_BUILD was accepted")
+
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-incremental-") as tmp:
+        root = Path(tmp)
+        work = root / "bootstrap/libisofs"
+        source = work / "source"
+        objects = work / "build"
+        prefix = root / "deps/libisofs"
+        source.mkdir(parents=True)
+        objects.mkdir(parents=True)
+        prefix.mkdir(parents=True)
+        (source / "old-source.c").write_text("old", encoding="utf-8")
+        (objects / "keep.o").write_text("object", encoding="utf-8")
+        (prefix / "keep.pc").write_text("installed", encoding="utf-8")
+        (work / ".whp-libisofs-workspace").write_text(
+            "identity\n", encoding="utf-8"
+        )
+
+        reused = helper.prepare_workspace(
+            work, prefix, source, "identity\n", incremental=True
+        )
+        if not reused:
+            raise SystemExit("error: compatible libisofs workspace was not reused")
+        if not (objects / "keep.o").is_file():
+            raise SystemExit("error: incremental libisofs rebuild deleted objects")
+        if not (prefix / "keep.pc").is_file():
+            raise SystemExit("error: incremental libisofs rebuild deleted prefix")
+        if source.exists():
+            raise SystemExit("error: incremental libisofs rebuild kept stale source copy")
+
+        source.mkdir(parents=True)
+        (source / "new-source.c").write_text("new", encoding="utf-8")
+        reused = helper.prepare_workspace(
+            work, prefix, source, "different\n", incremental=True
+        )
+        if reused:
+            raise SystemExit("error: incompatible libisofs workspace was reused")
+        if (objects / "keep.o").exists() or (prefix / "keep.pc").exists():
+            raise SystemExit("error: incompatible libisofs objects were preserved")
+
+        objects.mkdir(parents=True, exist_ok=True)
+        prefix.mkdir(parents=True, exist_ok=True)
+        source.mkdir(parents=True, exist_ok=True)
+        (objects / "clean.o").write_text("object", encoding="utf-8")
+        (prefix / "clean.pc").write_text("installed", encoding="utf-8")
+        (work / ".whp-libisofs-workspace").write_text(
+            "different\n", encoding="utf-8"
+        )
+        reused = helper.prepare_workspace(
+            work, prefix, source, "different\n", incremental=False
+        )
+        if reused:
+            raise SystemExit("error: WHP_INCREMENTAL_BUILD=0 reused libisofs state")
+        if (objects / "clean.o").exists() or (prefix / "clean.pc").exists():
+            raise SystemExit("error: clean libisofs rebuild preserved old state")
 
 def main() -> int:
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
@@ -100,6 +196,9 @@ def main() -> int:
         'libtool --mode=install 1',
         "documented INSTALL collision regression",
     )
+    require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
+    require(helper, "def prepare_workspace(", "incremental workspace planner")
+    require(helper, ".whp-libisofs-workspace", "workspace identity marker")
 
     require(
         meson,
@@ -127,6 +226,7 @@ def main() -> int:
             "of exercising the pinned WHP fork"
         )
 
+    test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")
     return 0
 
