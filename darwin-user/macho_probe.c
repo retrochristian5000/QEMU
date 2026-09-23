@@ -271,12 +271,15 @@ static int validate_segment32(const uint8_t *data, size_t size,
         return -1;
     }
     nsects = read_u32(command + 48, endian);
-    if (nsects > (SIZE_MAX - sizeof(QemuDarwinSegmentCommand32)) /
-                 sizeof(QemuDarwinSection32)) {
-        return -1;
+    {
+        uint64_t required64 = sizeof(QemuDarwinSegmentCommand32) +
+                              (uint64_t)nsects * sizeof(QemuDarwinSection32);
+
+        if (required64 != cmdsize) {
+            return -1;
+        }
+        required = (size_t)required64;
     }
-    required = sizeof(QemuDarwinSegmentCommand32) +
-               (size_t)nsects * sizeof(QemuDarwinSection32);
     if (required != cmdsize) {
         return -1;
     }
@@ -328,12 +331,15 @@ static int validate_segment64(const uint8_t *data, size_t size,
         return -1;
     }
     nsects = read_u32(command + 64, endian);
-    if (nsects > (SIZE_MAX - sizeof(QemuDarwinSegmentCommand64)) /
-                 sizeof(QemuDarwinSection64)) {
-        return -1;
+    {
+        uint64_t required64 = sizeof(QemuDarwinSegmentCommand64) +
+                              (uint64_t)nsects * sizeof(QemuDarwinSection64);
+
+        if (required64 != cmdsize) {
+            return -1;
+        }
+        required = (size_t)required64;
     }
-    required = sizeof(QemuDarwinSegmentCommand64) +
-               (size_t)nsects * sizeof(QemuDarwinSection64);
     if (required != cmdsize) {
         return -1;
     }
