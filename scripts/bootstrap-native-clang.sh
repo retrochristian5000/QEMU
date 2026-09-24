@@ -25,7 +25,7 @@ if [ -z "$native_llvm_dir" ] || [ ! -d "$native_llvm_dir" ]; then
         "${native_llvm_dir:-<empty>}" >&2
     exit 1
 fi
-for tool in clang clang++ llvm-ar llvm-ranlib llvm-nm; do
+for tool in clang clang++ llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-readelf; do
     if [ ! -x "$native_llvm_dir/bin/$tool" ]; then
         printf 'error: native LLVM bootstrap did not provide %s: %s\n' \
             "$tool" "$native_llvm_dir/bin/$tool" >&2

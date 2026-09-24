@@ -31,12 +31,17 @@ assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
 assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n')" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
+wrapper = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
+assert 'llvm-nm llvm-objcopy llvm-readelf' in wrapper
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
 assert 'AR="$NATIVE_LLVM_DIR/bin/llvm-ar"' in build
 assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
 assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
+assert 'OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"' in build
+assert 'READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"' in build
 assert 'OBJC="$NATIVE_LLVM_DIR/bin/clang"' in build
+assert 'OBJCOPY READELF OBJC PATH' in build
 assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
 assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
 assert 'toolchains/llvm-project' in bootstrap
