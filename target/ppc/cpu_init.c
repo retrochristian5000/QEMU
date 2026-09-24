@@ -4255,6 +4255,12 @@ static void init_proc_7410(CPUPPCState *env)
                  SPR_NOACCESS, SPR_NOACCESS,
                  &spr_read_generic, &spr_write_generic,
                  0x00000000);
+
+    /* Memory subsystem configuration */
+    spr_register(env, SPR_MSSCR1, "MSSCR1",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
     /* Memory management */
     register_low_BATs(env);
     init_excp_7400(env);
