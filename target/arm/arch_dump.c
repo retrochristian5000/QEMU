@@ -151,7 +151,7 @@ static off_t sve_zreg_offset(uint32_t vq, int n)
 
 static off_t sve_preg_offset(uint32_t vq, int n)
 {
-    return sve_zreg_offset(vq, 32) + vq * 16 / 8 * n;
+    return sve_zreg_offset(vq, 32) + (off_t)vq * 16 / 8 * n;
 }
 
 static off_t sve_fpsr_offset(uint32_t vq)
