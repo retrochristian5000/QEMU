@@ -260,6 +260,7 @@ static target_ulong h_page_init(PowerPCCPU *cpu, SpaprMachineState *spapr,
     hwaddr dst = args[1];
     hwaddr src = args[2];
     hwaddr len = TARGET_PAGE_SIZE;
+    hwaddr dst_access_len = 0;
     uint8_t *pdst, *psrc;
     target_long ret = H_SUCCESS;
 
@@ -275,25 +276,38 @@ static target_ulong h_page_init(PowerPCCPU *cpu, SpaprMachineState *spapr,
         return H_PARAMETER;
     }
     pdst = physical_memory_map(dst, &len, true);
-    if (!pdst || len != TARGET_PAGE_SIZE) {
+    if (!pdst) {
+        return H_PARAMETER;
+    }
+    if (len != TARGET_PAGE_SIZE) {
+        physical_memory_unmap(pdst, len, true, 0);
         return H_PARAMETER;
     }
 
     if (flags & H_COPY_PAGE) {
+        hwaddr src_len = TARGET_PAGE_SIZE;
+
         /* Map-in source, copy to destination, and unmap source again */
         if (!is_ram_address(spapr, src) || (src & ~TARGET_PAGE_MASK) != 0) {
             ret = H_PARAMETER;
             goto unmap_out;
         }
-        psrc = physical_memory_map(src, &len, false);
-        if (!psrc || len != TARGET_PAGE_SIZE) {
+        psrc = physical_memory_map(src, &src_len, false);
+        if (!psrc) {
             ret = H_PARAMETER;
             goto unmap_out;
         }
-        memcpy(pdst, psrc, len);
-        physical_memory_unmap(psrc, len, 0, len);
+        if (src_len != TARGET_PAGE_SIZE) {
+            physical_memory_unmap(psrc, src_len, false, 0);
+            ret = H_PARAMETER;
+            goto unmap_out;
+        }
+        memcpy(pdst, psrc, TARGET_PAGE_SIZE);
+        dst_access_len = TARGET_PAGE_SIZE;
+        physical_memory_unmap(psrc, src_len, false, src_len);
     } else if (flags & H_ZERO_PAGE) {
-        memset(pdst, 0, len);          /* Just clear the destination page */
+        memset(pdst, 0, TARGET_PAGE_SIZE);
+        dst_access_len = TARGET_PAGE_SIZE;
     }
 
     if (kvm_enabled() && (flags & H_ICACHE_SYNCHRONIZE) != 0) {
@@ -310,7 +324,7 @@ static target_ulong h_page_init(PowerPCCPU *cpu, SpaprMachineState *spapr,
     }
 
 unmap_out:
-    physical_memory_unmap(pdst, TARGET_PAGE_SIZE, 1, len);
+    physical_memory_unmap(pdst, len, true, dst_access_len);
     return ret;
 }
 
