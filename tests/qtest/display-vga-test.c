@@ -24,6 +24,20 @@ static void pci_multihead(void)
     qtest_quit(qts);
 }
 
+static void test_isa_cirrus_profile(void)
+{
+    QTestState *qts = qtest_init("-vga none -device isa-cirrus-vga");
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, 0x98);
+    g_assert_cmphex(vga_seq_read(qts, 0x17), ==, 0x38);
+    g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==, 0x18);
+
+    qtest_quit(qts);
+}
+
 static void test_vga(gconstpointer data)
 {
     QTestState *qts;
@@ -36,6 +50,18 @@ static void vga_seq_write(QTestState *qts, uint8_t index, uint8_t value)
 {
     qtest_outb(qts, VGA_SEQ_I, index);
     qtest_outb(qts, VGA_SEQ_D, value);
+}
+
+static uint8_t vga_seq_read(QTestState *qts, uint8_t index)
+{
+    qtest_outb(qts, VGA_SEQ_I, index);
+    return qtest_inb(qts, VGA_SEQ_D);
+}
+
+static uint8_t vga_crtc_read(QTestState *qts, uint8_t index)
+{
+    qtest_outb(qts, VGA_CRT_IC, index);
+    return qtest_inb(qts, VGA_CRT_DC);
 }
 
 static void vga_gfx_write(QTestState *qts, uint8_t index, uint8_t value)
@@ -206,6 +232,12 @@ int main(int argc, char **argv)
         qtest_add_func("/display/vga/pel-mask", test_vga_pel_mask);
         qtest_add_func("/display/vga/eram-memory-decode",
                        test_vga_eram_memory_decode);
+    }
+
+    if (qtest_has_device("isa-cirrus-vga") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/isa/cirrus-profile",
+                       test_isa_cirrus_profile);
     }
 
     if (qtest_has_device("sierra-falcon64")) {

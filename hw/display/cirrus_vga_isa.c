@@ -48,18 +48,20 @@ static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
     ISACirrusVGAState *d = ISA_CIRRUS_VGA(dev);
     VGACommonState *s = &d->cirrus_vga.vga;
 
-    /* follow real hardware, cirrus card emulated has 4 MB video memory.
-       Also accept 8 MB/16 MB for backward compatibility. */
-    if (s->vram_size_mb != 4 && s->vram_size_mb != 8 &&
-        s->vram_size_mb != 16) {
-        error_setg(errp, "Invalid cirrus_vga ram size '%u'",
+    /*
+     * Model the ISA-capable CL-GD5428.  The CL-GD5430 previously used
+     * here is a local-bus part and does not support ISA.  A 2 MiB board
+     * also matches the maximum display memory supported by the GD5428.
+     */
+    if (s->vram_size_mb != 2) {
+        error_setg(errp, "Invalid isa-cirrus-vga ram size '%u', expected 2",
                    s->vram_size_mb);
         return;
     }
     if (!vga_common_init(s, OBJECT(dev), errp)) {
         return;
     }
-    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), CIRRUS_ID_CLGD5430, 0,
+    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), CIRRUS_ID_CLGD5428, 0,
                        isa_address_space(isadev),
                        isa_address_space_io(isadev));
     s->con = qemu_graphic_console_create(dev, 0, s->hw_ops, s);
@@ -70,7 +72,7 @@ static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
 
 static const Property isa_cirrus_vga_properties[] = {
     DEFINE_PROP_UINT32("vgamem_mb", struct ISACirrusVGAState,
-                       cirrus_vga.vga.vram_size_mb, 4),
+                       cirrus_vga.vga.vram_size_mb, 2),
     DEFINE_PROP_BOOL("blitter", struct ISACirrusVGAState,
                      cirrus_vga.enable_blitter, true),
     DEFINE_PROP_BOOL("global-vmstate", struct ISACirrusVGAState,

@@ -2809,7 +2809,9 @@ static void cirrus_reset(void *opaque)
         s->vga.sr[0x1F] = 0x22;         // MemClock
         s->vga.sr[0x0F] = CIRRUS_MEMSIZE_2M;
         s->vga.sr[0x17] = s->bustype;
-        s->vga.sr[0x15] = 0x03; /* memory size, 3=2MB, 4=4MB */
+        if (s->device_id == CIRRUS_ID_CLGD5430) {
+            s->vga.sr[0x15] = 0x03; /* memory size, 3=2MB, 4=4MB */
+        }
     }
     s->vga.cr[0x27] = s->device_id;
 
@@ -2864,12 +2866,14 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
         rop_to_index[CIRRUS_ROP_NOTSRC] = 13;
         rop_to_index[CIRRUS_ROP_NOTSRC_OR_DST] = 14;
         rop_to_index[CIRRUS_ROP_NOTSRC_AND_NOTDST] = 15;
-        s->device_id = device_id;
-        if (is_pci)
-            s->bustype = CIRRUS_BUSTYPE_PCI;
-        else
-            s->bustype = CIRRUS_BUSTYPE_ISA;
     }
+
+    /*
+     * Chip identity and bus type are per-device state.  Do not hide them
+     * behind the process-wide ROP table initialization above.
+     */
+    s->device_id = device_id;
+    s->bustype = is_pci ? CIRRUS_BUSTYPE_PCI : CIRRUS_BUSTYPE_ISA;
 
     /* Register ioport 0x3b0 - 0x3df */
     memory_region_init_io(&s->cirrus_vga_io, owner, &cirrus_vga_io_ops, s,
