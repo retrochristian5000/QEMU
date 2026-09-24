@@ -5101,6 +5101,19 @@ static void register_970_hior_sprs(CPUPPCState *env)
                  0x00000000);
 }
 
+static void register_970_asr_spr(CPUPPCState *env)
+{
+    /*
+     * The 970 implements ASR as a hypervisor resource for software-managed
+     * SLB reloads. In QEMU's Apple-mode 970 model hypervisor facilities are
+     * strapped off, so expose the stored value through supervisor access.
+     */
+    spr_register(env, SPR_ASR, "ASR",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+}
+
 static void register_book3s_ctrl_sprs(CPUPPCState *env)
 {
     spr_register(env, SPR_CTRL, "CTRL",
@@ -5963,6 +5976,7 @@ static void init_proc_970(CPUPPCState *env)
     /* 970 Specific Registers */
     register_970_hid_sprs(env);
     register_970_hior_sprs(env);
+    register_970_asr_spr(env);
     register_low_BATs(env);
     register_970_pmu_sup_sprs(env);
     register_970_pmu_user_sprs(env);
