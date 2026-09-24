@@ -54,6 +54,11 @@ def main() -> int:
         "libisofs GNU Make preference",
     )
 
+    libtool = (ROOT / "scripts/ensure-libtool.py").read_text(encoding="utf-8")
+    require(libtool, "select_gnu_make()", "Libtool GNU Make resolver")
+    require(libtool, 'os.environ.get("MAKE_CMD"', "Libtool MAKE_CMD handoff")
+    require(libtool, '"GNU Make" in output', "Libtool GNU Make identity check")
+
     print("GNU Make dependency policy: verified")
     return 0
 

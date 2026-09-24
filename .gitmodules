@@ -95,6 +95,11 @@
 	url = https://github.com/retrochristian5000/libisofs.git
 	branch = master
 	shallow = true
+[submodule "toolchains/libtool"]
+	path = toolchains/libtool
+	url = https://github.com/retrochristian5000/libtool.git
+	branch = master
+	shallow = true
 
 [submodule "toolchains/make"]
 	path = toolchains/make

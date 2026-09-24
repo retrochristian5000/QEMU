@@ -166,6 +166,10 @@ by the WHP account.
      - ``libisofs``
      - yes
      - Darwin ISO metadata path; GNU Make + GNU Libtool + host C compiler; pkg-config is used for discovery/probes.
+   * - ``toolchains/libtool``
+     - ``libtool``
+     - yes
+     - Managed GNU Libtool host-tool fallback for Autotools consumers. The Git maintainer tree bootstraps from GNU Make, Autoconf/Automake, Help2man, Texinfo, xz, and its pinned gnulib/bootstrap submodules; it does not consume an existing Libtool.
    * - ``toolchains/bash``
      - ``bash``
      - yes
@@ -193,7 +197,9 @@ graph.  A compact view is::
       |      +--> pinned WHP Make fork (planned)
       |      +--> Python POSIX fallback
       |      +--> Bash fallback
-      |      +--> libisofs
+      |      +--> WHP Libtool bootstrap
+      |               |
+      |               +--> libisofs
       |
       +--> optional native LLVM
              |
@@ -247,6 +253,30 @@ the fork carry, or reproducibly produce without Make, the configured-source
 inputs needed by ``build.sh``.  Once that path is validated, the pinned fork
 can move from ``planned`` to ``managed`` and sit before Python, Bash, and
 the other Make-consuming bootstraps.
+
+GNU Libtool bootstrap boundary
+------------------------------
+
+The pinned ``toolchains/libtool`` fork is a maintainer-source checkout, so
+QEMU must generate its release-style Autotools files before configuration.
+The managed bootstrap uses the fork's exact gitlink plus its nested
+``gnulib`` and ``gl-mod/bootstrap`` gitlinks, stages them in an isolated
+build workspace, suppresses translation downloads, and records the generating
+Autotools identities in the cache marker.
+
+This does not create a Libtool-to-Libtool cycle.  GNU Libtool's own
+``bootstrap.conf`` deliberately sets ``LIBTOOLIZE=true`` because
+``libtoolize`` is an output of the package being bootstrapped.  The WHP
+helper also removes inherited ``LIBTOOL`` and ``LIBTOOLIZE`` variables
+before running the maintainer bootstrap.  The real seed edge is therefore
+GNU Make + Autoconf/Automake + Help2man/Texinfo/xz -> Libtool.
+
+``BOOTSTRAP_LIBTOOL=auto`` keeps a complete existing GNU Libtool pair when
+one is already available and otherwise attempts the pinned fork.
+``BOOTSTRAP_LIBTOOL=1`` forces the fork.  A successful private bootstrap
+exports ``LIBTOOL``, ``LIBTOOLIZE``, and its aclocal macro directory so
+libisofs and future Autotools consumers see one coherent Libtool revision.
+Apple's unrelated ``/usr/bin/libtool`` is never accepted as GNU Libtool.
 
 Wine and Windows ABI validation
 -------------------------------
@@ -346,6 +376,10 @@ Circularity guards
    while its maintainer-source preparation still needs a seed GNU Make.
    GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
    have been produced.
+#. The pinned GNU Libtool fork must not consume an installed Libtool to
+   bootstrap itself. Its maintainer bootstrap uses ``LIBTOOLIZE=true``, and
+   the WHP wrapper clears inherited ``LIBTOOL``/``LIBTOOLIZE`` before
+   generating and installing the private toolset.
 #. Aften may feed a full JACK macOS server build and may later feed QEMU
    directly.  JACK must not become the only route through which QEMU can reach
    Aften.

@@ -72,6 +72,9 @@ on:
       - 'scripts/tests/test-libisofs-bootstrap.py'
       - 'scripts/ensure-libisofs.py'
       - 'toolchains/libisofs'
+      - 'scripts/ensure-libtool.py'
+      - 'scripts/tests/test-libtool-bootstrap.py'
+      - 'toolchains/libtool'
       - '.gitmodules'
       - 'block/io.c'
       - 'block/raw-format.c'
@@ -193,6 +196,10 @@ jobs:
       - name: Audit WHP libisofs fork wiring
         shell: bash
         run: python3 scripts/tests/test-libisofs-bootstrap.py
+
+      - name: Audit WHP Libtool fork wiring
+        shell: bash
+        run: python3 scripts/tests/test-libtool-bootstrap.py
 
       - name: Verify native LLVM wiring
         shell: bash

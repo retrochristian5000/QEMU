@@ -17,6 +17,7 @@ BOOTSTRAP_BASH|Host features|Bootstrap/use WHP Bash|choice|auto|auto,y,n|
 BOOTSTRAP_NINJA|Host features|Bootstrap/use WHP Ninja|choice|auto|auto,y,n|
 BOOTSTRAP_SDL|Host features|Bootstrap/use WHP SDL3|choice|auto|auto,y,n|
 BOOTSTRAP_JACK|Host features|Bootstrap/use WHP JACK|choice|auto|auto,y,n|
+BOOTSTRAP_LIBTOOL|Host features|Bootstrap/use WHP Libtool|choice|auto|auto,y,n|
 BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n|
 COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,none|
 BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold (ELF hosts)|choice|auto|auto,y,n|

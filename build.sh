@@ -523,6 +523,49 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
     fi
 fi
 
+BOOTSTRAP_LIBTOOL=${BOOTSTRAP_LIBTOOL:-auto}
+case "$BOOTSTRAP_LIBTOOL" in
+    y) BOOTSTRAP_LIBTOOL=1 ;;
+    n) BOOTSTRAP_LIBTOOL=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_LIBTOOL must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_LIBTOOL
+
+# GNU Libtool is a host-side Autotools generator used by source dependencies
+# such as libisofs.  auto keeps an existing GNU Libtool pair when available
+# and otherwise attempts the pinned WHP fork; 1 forces the pinned fork.  Keep
+# Apple /usr/bin/libtool out of this path because it is a different tool.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$BOOTSTRAP_LIBTOOL" != 0 ]; then
+    LIBTOOL_BOOTSTRAP_MODE=auto
+    if [ "$BOOTSTRAP_LIBTOOL" = 1 ]; then
+        LIBTOOL_BOOTSTRAP_MODE=force
+    fi
+    WHP_LIBTOOL_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libtool.py" \
+            --build-dir "$BUILD_DIR" --mode "$LIBTOOL_BOOTSTRAP_MODE"
+    ) || exit 1
+    unset LIBTOOL_BOOTSTRAP_MODE
+
+    if [ -n "$WHP_LIBTOOL_PREFIX" ]; then
+        LIBTOOL="$WHP_LIBTOOL_PREFIX/bin/libtool"
+        LIBTOOLIZE="$WHP_LIBTOOL_PREFIX/bin/libtoolize"
+        PATH="$WHP_LIBTOOL_PREFIX/bin:$PATH"
+        WHP_LIBTOOL_ACLOCAL="$WHP_LIBTOOL_PREFIX/share/aclocal"
+        if [ -d "$WHP_LIBTOOL_ACLOCAL" ]; then
+            ACLOCAL_PATH="$WHP_LIBTOOL_ACLOCAL${ACLOCAL_PATH:+:$ACLOCAL_PATH}"
+            export ACLOCAL_PATH
+        fi
+        export WHP_LIBTOOL_PREFIX LIBTOOL LIBTOOLIZE PATH
+        unset WHP_LIBTOOL_ACLOCAL
+    fi
+fi
+
 BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}
 case "$BOOTSTRAP_LIBISOFS" in
     y) BOOTSTRAP_LIBISOFS=1 ;;
