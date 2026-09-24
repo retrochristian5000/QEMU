@@ -206,3 +206,48 @@ jobs:
           bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-python-menu-fallback.bash
           bash -n scripts/tests/test-whp-config-integration.bash
+
+
+  test-libtool-bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Libtool bootstrap seeds
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake build-essential help2man m4 make perl texinfo xz-utils
+
+      - name: Bootstrap pinned WHP Libtool
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-libtool"
+          prefix="$(python3 scripts/ensure-libtool.py \
+            --build-dir "$build_root" --mode force)"
+          test "$prefix" = "$build_root/deps/libtool"
+          test -x "$prefix/bin/libtool"
+          test -x "$prefix/bin/libtoolize"
+          "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
+          "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=1' \
+            "$prefix/.whp-libtool-bootstrap"
+          expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
+          grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
+            "$prefix/.whp-libtool-bootstrap"
+
+      - name: Verify Libtool bootstrap cache reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-libtool"
+          first="$build_root/deps/libtool/.whp-libtool-bootstrap"
+          before="$(cksum "$first")"
+          prefix="$(python3 scripts/ensure-libtool.py \
+            --build-dir "$build_root" --mode force)"
+          test "$prefix" = "$build_root/deps/libtool"
+          after="$(cksum "$first")"
+          test "$before" = "$after"
