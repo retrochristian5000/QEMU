@@ -687,7 +687,8 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     OBJC="$NATIVE_LLVM_DIR/bin/clang"
     PATH="$NATIVE_LLVM_DIR/bin:$PATH"
     WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"
-    export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM         OBJCOPY READELF OBJC PATH
+    export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM \
+        OBJCOPY READELF OBJC PATH
 
     # Darwin host links must consume the same LLVM revision that produced the
     # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
