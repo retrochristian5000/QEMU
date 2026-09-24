@@ -347,14 +347,16 @@ static target_ulong h_enter_nested(PowerPCCPU *cpu,
     len = sizeof(*hvstate);
     hvstate = address_space_map(CPU(cpu)->as, hv_ptr, &len, false,
                                 MEMTXATTRS_UNSPECIFIED);
-    if (len != sizeof(*hvstate)) {
-        address_space_unmap(CPU(cpu)->as, hvstate, len, 0, false);
+    if (!hvstate || len != sizeof(*hvstate)) {
+        if (hvstate) {
+            address_space_unmap(CPU(cpu)->as, hvstate, len, false, 0);
+        }
         return H_PARAMETER;
     }
 
     memcpy(&hv_state, hvstate, len);
 
-    address_space_unmap(CPU(cpu)->as, hvstate, len, len, false);
+    address_space_unmap(CPU(cpu)->as, hvstate, len, false, len);
 
     /*
      * We accept versions 1 and 2. Version 2 fields are unused because TCG
@@ -381,7 +383,9 @@ static target_ulong h_enter_nested(PowerPCCPU *cpu,
     regs = address_space_map(CPU(cpu)->as, regs_ptr, &len, false,
                                 MEMTXATTRS_UNSPECIFIED);
     if (!regs || len != sizeof(*regs)) {
-        address_space_unmap(CPU(cpu)->as, regs, len, 0, false);
+        if (regs) {
+            address_space_unmap(CPU(cpu)->as, regs, len, false, 0);
+        }
         g_free(spapr_cpu->nested_host_state);
         return H_P2;
     }
@@ -397,7 +401,7 @@ static target_ulong h_enter_nested(PowerPCCPU *cpu,
     l2_state.msr = regs->msr;
     l2_state.nip = regs->nip;
 
-    address_space_unmap(CPU(cpu)->as, regs, len, len, false);
+    address_space_unmap(CPU(cpu)->as, regs, len, false, len);
 
     l2_state.cfar = hv_state.cfar;
     l2_state.lpidr = hv_state.lpid;
@@ -494,8 +498,10 @@ static void spapr_exit_nested_hv(PowerPCCPU *cpu, int excp)
     len = sizeof(*hvstate);
     hvstate = address_space_map(CPU(cpu)->as, hv_ptr, &len, true,
                                 MEMTXATTRS_UNSPECIFIED);
-    if (len != sizeof(*hvstate)) {
-        address_space_unmap(CPU(cpu)->as, hvstate, len, 0, true);
+    if (!hvstate || len != sizeof(*hvstate)) {
+        if (hvstate) {
+            address_space_unmap(CPU(cpu)->as, hvstate, len, true, 0);
+        }
         env->gpr[3] = H_PARAMETER;
         return;
     }
@@ -525,13 +531,15 @@ static void spapr_exit_nested_hv(PowerPCCPU *cpu, int excp)
     hvstate->ppr = l2_state.ppr;
 
     /* Is it okay to specify write length larger than actual data written? */
-    address_space_unmap(CPU(cpu)->as, hvstate, len, len, true);
+    address_space_unmap(CPU(cpu)->as, hvstate, len, true, len);
 
     len = sizeof(*regs);
     regs = address_space_map(CPU(cpu)->as, regs_ptr, &len, true,
                                 MEMTXATTRS_UNSPECIFIED);
     if (!regs || len != sizeof(*regs)) {
-        address_space_unmap(CPU(cpu)->as, regs, len, 0, true);
+        if (regs) {
+            address_space_unmap(CPU(cpu)->as, regs, len, true, 0);
+        }
         env->gpr[3] = H_P2;
         return;
     }
@@ -556,7 +564,7 @@ static void spapr_exit_nested_hv(PowerPCCPU *cpu, int excp)
     }
 
     /* Is it okay to specify write length larger than actual data written? */
-    address_space_unmap(CPU(cpu)->as, regs, len, len, true);
+    address_space_unmap(CPU(cpu)->as, regs, len, true, len);
 }
 
 static bool spapr_nested_vcpu_check(SpaprMachineStateNestedGuest *guest,
@@ -1516,19 +1524,17 @@ static target_ulong map_and_getset_state(PowerPCCPU *cpu,
     gsr->gsb = address_space_map(CPU(cpu)->as, gsr->buf, (uint64_t *)&len,
                                  is_write, MEMTXATTRS_UNSPECIFIED);
     if (!gsr->gsb) {
-        rc = H_P3;
-        goto out1;
+        return H_P3;
     }
 
     if (len != gsr->len) {
-        rc = H_P3;
-        goto out1;
+        address_space_unmap(CPU(cpu)->as, gsr->gsb, len, is_write, 0);
+        return H_P3;
     }
 
     rc = getset_state(spapr, guest, vcpuid, gsr);
-
-out1:
-    address_space_unmap(CPU(cpu)->as, gsr->gsb, len, is_write, len);
+    address_space_unmap(CPU(cpu)->as, gsr->gsb, len, is_write,
+                        is_write ? len : 0);
     return rc;
 }
 
@@ -1712,7 +1718,9 @@ static void exit_process_output_buffer(SpaprMachineState *spapr,
     gsb = address_space_map(CPU(cpu)->as, vcpu->runbufout.addr, &len, true,
                             MEMTXATTRS_UNSPECIFIED);
     if (!gsb || len != vcpu->runbufout.size) {
-        address_space_unmap(CPU(cpu)->as, gsb, len, true, len);
+        if (gsb) {
+            address_space_unmap(CPU(cpu)->as, gsb, len, true, 0);
+        }
         *r3 = H_P2;
         return;
     }
