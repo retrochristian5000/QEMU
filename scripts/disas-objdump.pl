@@ -5,8 +5,10 @@ use warnings;
 use File::Temp qw/ tempfile /;
 use Getopt::Long;
 
-# Default to the system objdump if a cross-compiler edition not given.
-my $aobjdump = "objdump";
+# Honor the build-selected objdump before falling back to the ambient system.
+# BOOTSTRAP_NATIVE_LLVM exports llvm-objdump here so ad-hoc disassembly uses
+# the same LLVM revision as the objects being inspected.
+my $aobjdump = $ENV{"OBJDUMP"} || "objdump";
 my $hobjdump = "";
 my $tobjdump = "";
 my $hmachine = "";

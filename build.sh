@@ -683,24 +683,27 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
     NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
     OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"
+    OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"
     READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"
+    STRIP="$NATIVE_LLVM_DIR/bin/llvm-strip"
     OBJC="$NATIVE_LLVM_DIR/bin/clang"
     PATH="$NATIVE_LLVM_DIR/bin:$PATH"
     WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"
     export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM \
-        OBJCOPY READELF OBJC PATH
+        OBJCOPY OBJDUMP READELF STRIP OBJC PATH
 
     # Darwin host links must consume the same LLVM revision that produced the
     # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
     # direct LD consumers get the same linker explicitly.
     if [ "$WHP_HOST_OS" = macos ]; then
         LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
+        LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
         NATIVE_LLVM_LDFLAG=-fuse-ld=lld
         case " ${LDFLAGS:-} " in
             *" $NATIVE_LLVM_LDFLAG "*) ;;
             *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
         esac
-        export LD NATIVE_LLVM_LDFLAG LDFLAGS
+        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS
     fi
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
 fi

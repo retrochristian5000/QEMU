@@ -310,7 +310,8 @@ for expected in \
     'export AR="${AR:-/usr/bin/ar}"' \
     'export NM="${NM:-/usr/bin/nm}"' \
     'export RANLIB="${RANLIB:-/usr/bin/ranlib}"' \
-    'export STRIP="${STRIP:-/usr/bin/strip}"'; do
+    'export STRIP="${STRIP:-/usr/bin/strip}"' \
+    'export LIPO="${LIPO:-/usr/bin/lipo}"'; do
     if ! grep -Fq "$expected" "$macos_builder"; then
         printf 'error: missing Darwin tool default: %s\n' "$expected" >&2
         exit 1

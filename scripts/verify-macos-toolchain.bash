@@ -252,6 +252,12 @@ write_toolchain_cache_identity()
     write_cached_value OBJCFLAGS "${OBJCFLAGS:-}"
     write_cached_value CPPFLAGS "${CPPFLAGS:-}"
     write_cached_value LDFLAGS "${LDFLAGS:-}"
+    write_cached_value LIPO "${LIPO:-xcrun lipo}"
+    if [[ -n "${LIPO:-}" ]]; then
+        write_cached_value LIPO_STAT "$(file_metadata_signature "$LIPO")"
+    else
+        write_cached_value LIPO_STAT xcrun
+    fi
 
     write_cached_command_identity CC "$CC"
     write_cached_command_identity CXX "$CXX"
@@ -363,7 +369,11 @@ write_identity()
 
 output_arches()
 {
-    xcrun lipo -archs "$1" 2>/dev/null || true
+    if [[ -n "${LIPO:-}" ]]; then
+        "$LIPO" -archs "$1" 2>/dev/null || true
+    else
+        xcrun lipo -archs "$1" 2>/dev/null || true
+    fi
 }
 
 require_output_arch()
@@ -479,6 +489,7 @@ SOURCE
     printf 'HOST_ARCH=%s\n' "$host_arch"
     printf 'SDKROOT=%s\n' "$SDKROOT"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
+    printf 'LIPO=%s\n' "${LIPO:-xcrun lipo}"
 } > "$manifest_candidate"
 
 write_identity CC "$CC" "$host_arch" c

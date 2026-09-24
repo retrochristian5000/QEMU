@@ -85,7 +85,11 @@ reject_embedded_lto()
 
 output_arches()
 {
-    xcrun lipo -archs "$1" 2>/dev/null || true
+    if [[ -n "${LIPO:-}" ]]; then
+        "$LIPO" -archs "$1" 2>/dev/null || true
+    else
+        xcrun lipo -archs "$1" 2>/dev/null || true
+    fi
 }
 
 mkdir -p "$MACOS_LTO_PROBE_DIR" "$(dirname "$MACOS_LTO_MANIFEST")"
@@ -169,6 +173,7 @@ output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
     printf 'CC=%s\n' "$CC"
     printf 'CC_VERSION=%s\n' "$compiler_version"
+    printf 'LIPO=%s\n' "${LIPO:-xcrun lipo}"
     printf 'CFLAGS=%s\n' "${CFLAGS:-}"
     printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
     printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"

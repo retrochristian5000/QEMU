@@ -634,11 +634,11 @@ if [[ "$host_os" == macos ]]; then
     # compiler-rt also belongs to the same installed compiler runtime family.
     llvm_enable_runtimes=compiler-rt
     llvm_include_runtimes=ON
-    llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"
+    llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=10
+BOOTSTRAP_SCHEMA=11
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -708,6 +708,7 @@ usable()
     grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
     if [[ "$host_os" == macos ]]; then
+        [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
         if [[ "$darwin_cmake_arch" != arm64e ]]; then

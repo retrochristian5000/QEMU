@@ -25,7 +25,8 @@ if [ -z "$native_llvm_dir" ] || [ ! -d "$native_llvm_dir" ]; then
         "${native_llvm_dir:-<empty>}" >&2
     exit 1
 fi
-for tool in clang clang++ llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-readelf; do
+for tool in clang clang++ llvm-ar llvm-ranlib llvm-nm llvm-objcopy \
+    llvm-objdump llvm-readelf llvm-strip; do
     if [ ! -x "$native_llvm_dir/bin/$tool" ]; then
         printf 'error: native LLVM bootstrap did not provide %s: %s\n' \
             "$tool" "$native_llvm_dir/bin/$tool" >&2
@@ -33,6 +34,11 @@ for tool in clang clang++ llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-readelf;
     fi
 done
 if [ "$(uname -s)" = Darwin ]; then
+    if [ ! -x "$native_llvm_dir/bin/llvm-lipo" ]; then
+        printf 'error: native LLVM bootstrap did not provide llvm-lipo: %s\n' \
+            "$native_llvm_dir/bin/llvm-lipo" >&2
+        exit 1
+    fi
     if [ ! -x "$native_llvm_dir/bin/ld64.lld" ]; then
         printf 'error: native LLVM bootstrap did not provide ld64.lld: %s\n' \
             "$native_llvm_dir/bin/ld64.lld" >&2

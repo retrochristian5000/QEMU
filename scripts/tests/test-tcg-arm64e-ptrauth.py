@@ -88,7 +88,7 @@ tbsize_benchmark_ready = all(token in benchmark for token in (
 runtime_ready = all(token in workflow for token in (
     'WHP_MACOS_ARCH: arm64e',
     'qemu-system-i386',
-    'lipo -archs',
+    'llvm-lipo" -archs',
     'xcrun -f ld',
     'scripts/bench-i386-tcg.py',
     '--workload startup',

@@ -254,12 +254,15 @@ jobs:
           ar="$NATIVE_LLVM_DIR/bin/llvm-ar"
           ranlib="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
           nm="$NATIVE_LLVM_DIR/bin/llvm-nm"
+          objdump="$NATIVE_LLVM_DIR/bin/llvm-objdump"
+          strip="$NATIVE_LLVM_DIR/bin/llvm-strip"
+          lipo="$NATIVE_LLVM_DIR/bin/llvm-lipo"
           ld="$NATIVE_LLVM_DIR/bin/ld64.lld"
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
 
           grep -Eq '^WHP host: macOS \(Darwin/arm64\)$' native-llvm.log
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
-          grep -Fxq 'BOOTSTRAP_SCHEMA=10' "$marker"
+          grep -Fxq 'BOOTSTRAP_SCHEMA=11' "$marker"
           grep -Fxq 'HOST=aarch64-apple-darwin' "$marker"
           grep -Fxq 'HOST_OS=macos' "$marker"
           grep -Fxq 'HOST_KERNEL=Darwin' "$marker"
@@ -276,13 +279,16 @@ jobs:
           test -x "$ar"
           test -x "$ranlib"
           test -x "$nm"
+          test -x "$objdump"
+          test -x "$strip"
+          test -x "$lipo"
           test -x "$ld"
 
           # The bootstrap compiler and linker are themselves arm64e host
           # programs on macOS 26. This is separate from whether Mach-O LLD can
           # consume arm64e authenticated relocations as a target linker.
           for tool in "$clang" "$clangxx" "$ld"; do
-            lipo -archs "$tool" | tr ' ' '\n' | grep -Fxq arm64e
+            "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs "$tool" | tr ' ' '\n' | grep -Fxq arm64e
             file "$tool" | grep -Fq arm64e
           done
           "$clang" --version >/dev/null
@@ -330,7 +336,7 @@ jobs:
             "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
             scripts/tests/arm64e-display-abi-probe.m -lobjc \
             -o arm64e-display-abi-probe
-          lipo -archs arm64e-display-abi-probe | tr ' ' '\n' | grep -Fxq arm64e
+          "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs arm64e-display-abi-probe | tr ' ' '\n' | grep -Fxq arm64e
           file arm64e-display-abi-probe | grep -Fq arm64e
           ./arm64e-display-abi-probe
 
@@ -346,7 +352,7 @@ jobs:
             scripts/tests/arm64e-metal-shared-surface-probe.m \
             -framework Foundation -framework Metal \
             -o arm64e-metal-shared-surface-probe
-          lipo -archs arm64e-metal-shared-surface-probe |
+          "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs arm64e-metal-shared-surface-probe |
             tr ' ' '\n' | grep -Fxq arm64e
           file arm64e-metal-shared-surface-probe | grep -Fq arm64e
           ./arm64e-metal-shared-surface-probe
@@ -358,6 +364,7 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT="$sdkroot"
           export CC="$NATIVE_LLVM_DIR/bin/clang"
+          export LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
           source scripts/macos-arch-policy.bash
           selected_arch="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_MACOS_ARCH=auto \
             whp_select_macos_arch "$CC" "$sdkroot" "$MACOSX_DEPLOYMENT_TARGET" "$(uname -m)")"
@@ -410,7 +417,7 @@ jobs:
           grep -Eq '^#define CONFIG_MODULES (1|true)$' "$BUILD_DIR/config-host.h"
           coreaudio_module="$(find "$BUILD_DIR" -name audio-coreaudio.dylib -print | sed -n '1p')"
           test -n "$coreaudio_module"
-          lipo -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64
+          "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64
           file "$coreaudio_module" | grep -Fq arm64
           otool -L "$coreaudio_module" | grep -Fq CoreAudio.framework
           "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
@@ -443,6 +450,11 @@ jobs:
           export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
           export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
           export NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
+          export OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"
+          export OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"
+          export READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"
+          export STRIP="$NATIVE_LLVM_DIR/bin/llvm-strip"
+          export LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
           export OBJC="$NATIVE_LLVM_DIR/bin/clang"
           export LD="$(xcrun -f ld)"
           unset NATIVE_LLVM_LDFLAG
@@ -450,7 +462,7 @@ jobs:
 
           ./build.sh qemu-system-i386 2>&1 | tee arm64e-qemu.log
           test -x "$BUILD_DIR/qemu-system-i386"
-          lipo -archs "$BUILD_DIR/qemu-system-i386" | tr ' ' '\n' | grep -Fxq arm64e
+          "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs "$BUILD_DIR/qemu-system-i386" | tr ' ' '\n' | grep -Fxq arm64e
           file "$BUILD_DIR/qemu-system-i386" | grep -Fq arm64e
           "$BUILD_DIR/qemu-system-i386" --version
           "$BUILD_DIR/qemu-system-i386" -display help 2>&1 | grep -Fq cocoa
@@ -459,7 +471,7 @@ jobs:
           grep -Eq '^#define CONFIG_MODULES (1|true)$' "$BUILD_DIR/config-host.h"
           coreaudio_module="$(find "$BUILD_DIR" -name audio-coreaudio.dylib -print | sed -n '1p')"
           test -n "$coreaudio_module"
-          lipo -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64e
+          "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64e
           file "$coreaudio_module" | grep -Fq arm64e
           "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
 

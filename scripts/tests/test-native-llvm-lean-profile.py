@@ -77,7 +77,7 @@ assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"' in bootstrap
 assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
 
 # Any of these policy changes must invalidate an older installed compiler cache.
-assert 'BOOTSTRAP_SCHEMA=10' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=11' in bootstrap
 for policy in runtime_off + runtime_on:
     assert policy in bootstrap[bootstrap.index('expected_marker='):], policy
 

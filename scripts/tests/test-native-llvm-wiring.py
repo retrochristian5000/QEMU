@@ -14,6 +14,7 @@ powerpc_bootstrap = (ROOT / 'scripts/bootstrap-powerpc-clang-base.bash').read_te
 inventory = (ROOT / 'scripts/whp-build/shell-inventory.bash').read_text(encoding='utf-8')
 macos_builder = (ROOT / 'scripts/macos-builder.bash').read_text(encoding='utf-8')
 macos_workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
+disas_objdump = (ROOT / 'scripts/disas-objdump.pl').read_text(encoding='utf-8')
 
 # Syntax is the first guard. Keep the public POSIX entry parseable by /bin/sh,
 # and require every Bash implementation touched by this lane to parse before
@@ -32,23 +33,30 @@ assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
 assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n')" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 wrapper = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
-assert 'llvm-nm llvm-objcopy llvm-readelf' in wrapper
+assert 'llvm-nm llvm-objcopy' in wrapper
+assert 'llvm-objdump llvm-readelf llvm-strip' in wrapper
+assert 'native LLVM bootstrap did not provide llvm-lipo' in wrapper
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
 assert 'AR="$NATIVE_LLVM_DIR/bin/llvm-ar"' in build
 assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
 assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
 assert 'OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"' in build
+assert 'OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"' in build
 assert 'READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"' in build
+assert 'STRIP="$NATIVE_LLVM_DIR/bin/llvm-strip"' in build
+assert 'LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"' in build
 assert 'OBJC="$NATIVE_LLVM_DIR/bin/clang"' in build
-assert 'OBJCOPY READELF OBJC PATH' in build
+assert 'OBJCOPY OBJDUMP READELF STRIP OBJC PATH' in build
+assert 'export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS' in build
+assert '$ENV{"OBJDUMP"} || "objdump"' in disas_objdump
 assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
 assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
 assert 'toolchains/llvm-project' in bootstrap
 assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
-assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"' in bootstrap
 assert '"-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"' in bootstrap
 assert 'for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib' in bootstrap
 assert 'llvm-nm llvm-objcopy llvm-objdump llvm-strip' in bootstrap
@@ -108,14 +116,14 @@ assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
 assert "WHP native LLVM C++ standard: C++26" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD_REQUIRED=ON' \"$marker\"" in macos_workflow
-assert "grep -Fxq 'BOOTSTRAP_SCHEMA=10' \"$marker\"" in macos_workflow
+assert "grep -Fxq 'BOOTSTRAP_SCHEMA=11' \"$marker\"" in macos_workflow
 
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
 # load a matching reader. The same Darwin distribution also owns compiler-rt,
 # so keep LTO and both runtime umbrella components in one exact platform policy.
-assert 'llvm_distribution_components="${llvm_distribution_components};LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 
@@ -132,7 +140,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=10' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=11' in bootstrap
 
 # LLVM configures builtins and runtimes as separate ExternalProjects on Darwin.
 # The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:
