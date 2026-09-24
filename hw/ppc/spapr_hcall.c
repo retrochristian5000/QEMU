@@ -43,6 +43,27 @@ bool is_ram_address(SpaprMachineState *spapr, hwaddr addr)
     return false;
 }
 
+static bool spapr_guest_ram_range(hwaddr addr, hwaddr size)
+{
+    MemoryRegionSection mrs;
+    bool valid;
+
+    if (!size || size - 1 > HWADDR_MAX - addr) {
+        return false;
+    }
+
+    mrs = memory_region_find(get_system_memory(), addr, size);
+    if (!mrs.mr) {
+        return false;
+    }
+
+    valid = memory_region_is_ram(mrs.mr) &&
+            !memory_region_is_rom(mrs.mr) &&
+            int128_ge(mrs.size, int128_make64(size));
+    memory_region_unref(mrs.mr);
+    return valid;
+}
+
 /* Convert a return code from the KVM ioctl()s implementing resize HPT
  * into a PAPR hypercall return code */
 static target_ulong resize_hpt_convert_rc(int ret)
@@ -351,11 +372,13 @@ static target_ulong register_vpa(PowerPCCPU *cpu, target_ulong vpa)
     if (vpa % env->dcache_line_size) {
         return H_PARAMETER;
     }
-    /* FIXME: bounds check the address */
+    if (!spapr_guest_ram_range(vpa, VPA_SIZE_OFFSET + sizeof(uint16_t))) {
+        return H_PARAMETER;
+    }
 
-    size = lduw_be_phys(cs->as, vpa + 0x4);
+    size = lduw_be_phys(cs->as, vpa + VPA_SIZE_OFFSET);
 
-    if (size < VPA_MIN_SIZE) {
+    if (size < VPA_MIN_SIZE || !spapr_guest_ram_range(vpa, size)) {
         return H_PARAMETER;
     }
 
@@ -391,6 +414,7 @@ static target_ulong deregister_vpa(PowerPCCPU *cpu, target_ulong vpa)
 
 static target_ulong register_slb_shadow(PowerPCCPU *cpu, target_ulong addr)
 {
+    CPUPPCState *env = &cpu->env;
     SpaprCpuState *spapr_cpu = spapr_cpu_state(cpu);
     uint32_t size;
 
@@ -399,8 +423,13 @@ static target_ulong register_slb_shadow(PowerPCCPU *cpu, target_ulong addr)
         return H_HARDWARE;
     }
 
-    size = ldl_be_phys(CPU(cpu)->as, addr + 0x4);
-    if (size < 0x8) {
+    if (addr % env->dcache_line_size ||
+        !spapr_guest_ram_range(addr, VPA_SIZE_OFFSET + sizeof(uint32_t))) {
+        return H_PARAMETER;
+    }
+
+    size = ldl_be_phys(CPU(cpu)->as, addr + VPA_SIZE_OFFSET);
+    if (size < 0x8 || !spapr_guest_ram_range(addr, size)) {
         return H_PARAMETER;
     }
 
@@ -429,6 +458,7 @@ static target_ulong deregister_slb_shadow(PowerPCCPU *cpu, target_ulong addr)
 
 static target_ulong register_dtl(PowerPCCPU *cpu, target_ulong addr)
 {
+    CPUPPCState *env = &cpu->env;
     SpaprCpuState *spapr_cpu = spapr_cpu_state(cpu);
     uint32_t size;
 
@@ -437,9 +467,14 @@ static target_ulong register_dtl(PowerPCCPU *cpu, target_ulong addr)
         return H_HARDWARE;
     }
 
-    size = ldl_be_phys(CPU(cpu)->as, addr + 0x4);
+    if (addr % env->dcache_line_size ||
+        !spapr_guest_ram_range(addr, VPA_SIZE_OFFSET + sizeof(uint32_t))) {
+        return H_PARAMETER;
+    }
 
-    if (size < 48) {
+    size = ldl_be_phys(CPU(cpu)->as, addr + VPA_SIZE_OFFSET);
+
+    if (size < 48 || !spapr_guest_ram_range(addr, size)) {
         return H_PARAMETER;
     }
 
