@@ -5,6 +5,9 @@
 - Never generate branches
 - Never create or commit Superpowers planning/spec artifacts in this repository; keep planning outside the repo
 
+## Permission Rules
+- Never change permissions at random.
+
 ## Code Search Rules
 - Resolve the repository boundary before searching. A submodule is a separate repository; do not expect parent-repository code search to traverse it.
 - If an exact repository path is known, fetch/read that file directly before running a broad code search.
