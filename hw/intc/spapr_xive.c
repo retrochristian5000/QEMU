@@ -1391,21 +1391,25 @@ static target_ulong h_int_set_queue_config(PowerPCCPU *cpu,
     }
 
     if (qsize) {
-        hwaddr plen = 1 << qsize;
+        hwaddr qlen = (hwaddr)1 << qsize;
+        hwaddr plen = qlen;
         void *eq;
 
         /*
-         * Validate the guest EQ. We should also check that the queue
-         * has been zeroed by the OS.
+         * Validate that the guest EQ is writable. No queue data is changed
+         * here, so do not report any bytes as written when unmapping.
          */
         eq = address_space_map(CPU(cpu)->as, qpage, &plen, true,
                                MEMTXATTRS_UNSPECIFIED);
-        if (plen != 1 << qsize) {
+        if (!eq || plen != qlen) {
+            if (eq) {
+                address_space_unmap(CPU(cpu)->as, eq, plen, true, 0);
+            }
             qemu_log_mask(LOG_GUEST_ERROR, "XIVE: failed to map EQ @0x%"
                           HWADDR_PRIx "\n", qpage);
             return H_P4;
         }
-        address_space_unmap(CPU(cpu)->as, eq, plen, true, plen);
+        address_space_unmap(CPU(cpu)->as, eq, plen, true, 0);
     }
 
     /* "target" should have been validated above */
