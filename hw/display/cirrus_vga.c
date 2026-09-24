@@ -201,6 +201,31 @@ static uint8_t rop_to_index[256];
 static void cirrus_bitblt_reset(CirrusVGAState *s);
 static void cirrus_update_memory_access(CirrusVGAState *s);
 
+static bool cirrus_has_mmio(const CirrusVGAState *s)
+{
+    switch (s->device_id) {
+    case CIRRUS_ID_CLGD5430:
+    case CIRRUS_ID_CLGD5434:
+    case CIRRUS_ID_CLGD5436:
+    case CIRRUS_ID_CLGD5446:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static uint8_t cirrus_blt_addr_hi_mask(const CirrusVGAState *s)
+{
+    switch (s->device_id) {
+    case CIRRUS_ID_CLGD5434:
+    case CIRRUS_ID_CLGD5436:
+    case CIRRUS_ID_CLGD5446:
+        return 0x3f;
+    default:
+        return 0x1f;
+    }
+}
+
 /***************************************
  *
  *  raster operations
@@ -1575,15 +1600,15 @@ cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
     case 0x27:                  // BLT SRC PITCH 0x001f00
         s->vga.gr[reg_index] = reg_value & 0x1f;
         break;
-    case 0x2a:                  // BLT DEST ADDR 0x3f0000
-        s->vga.gr[reg_index] = reg_value & 0x3f;
+    case 0x2a:                  // BLT DEST ADDR high
+        s->vga.gr[reg_index] = reg_value & cirrus_blt_addr_hi_mask(s);
         /* if auto start mode, starts bit blt now */
         if (s->vga.gr[0x31] & CIRRUS_BLT_AUTOSTART) {
             cirrus_bitblt_start(s);
         }
         break;
-    case 0x2e:                  // BLT SRC ADDR 0x3f0000
-        s->vga.gr[reg_index] = reg_value & 0x3f;
+    case 0x2e:                  // BLT SRC ADDR high
+        s->vga.gr[reg_index] = reg_value & cirrus_blt_addr_hi_mask(s);
         break;
     case 0x31:                  // BLT STATUS/START
         cirrus_write_bitblt(s, reg_value);
@@ -2035,7 +2060,8 @@ static uint64_t cirrus_vga_mem_read(void *opaque,
     } else if (addr >= 0x18000 && addr < 0x18100) {
         /* memory-mapped I/O */
         val = 0xff;
-        if ((s->vga.sr[0x17] & 0x44) == 0x04) {
+        if (cirrus_has_mmio(s) &&
+            (s->vga.sr[0x17] & 0x44) == 0x04) {
             val = cirrus_mmio_blt_read(s, addr & 0xff);
         }
     } else {
@@ -2100,7 +2126,8 @@ static void cirrus_vga_mem_write(void *opaque,
         }
     } else if (addr >= 0x18000 && addr < 0x18100) {
         /* memory-mapped I/O */
-        if ((s->vga.sr[0x17] & 0x44) == 0x04) {
+        if (cirrus_has_mmio(s) &&
+            (s->vga.sr[0x17] & 0x44) == 0x04) {
             cirrus_mmio_blt_write(s, addr & 0xff, mem_value);
         }
     } else {
@@ -2325,7 +2352,8 @@ static uint64_t cirrus_linear_read(void *opaque, hwaddr addr,
 
     addr &= s->cirrus_addr_mask;
 
-    if (((s->vga.sr[0x17] & 0x44) == 0x44) &&
+    if ((cirrus_has_mmio(s) &&
+         (s->vga.sr[0x17] & 0x44) == 0x44) &&
         ((addr & s->linear_mmio_mask) == s->linear_mmio_mask)) {
         /* memory-mapped I/O */
         ret = cirrus_mmio_blt_read(s, addr & 0xff);
@@ -2354,7 +2382,8 @@ static void cirrus_linear_write(void *opaque, hwaddr addr,
 
     addr &= s->cirrus_addr_mask;
 
-    if (((s->vga.sr[0x17] & 0x44) == 0x44) &&
+    if ((cirrus_has_mmio(s) &&
+         (s->vga.sr[0x17] & 0x44) == 0x44) &&
         ((addr & s->linear_mmio_mask) ==  s->linear_mmio_mask)) {
         /* memory-mapped I/O */
         cirrus_mmio_blt_write(s, addr & 0xff, val);
@@ -2472,7 +2501,8 @@ static void cirrus_update_memory_access(CirrusVGAState *s)
     unsigned mode;
 
     memory_region_transaction_begin();
-    if ((s->vga.sr[0x17] & 0x44) == 0x44) {
+    if (cirrus_has_mmio(s) &&
+         (s->vga.sr[0x17] & 0x44) == 0x44) {
         goto generic_io;
     } else if (s->cirrus_srcptr != s->cirrus_srcptr_end) {
         goto generic_io;

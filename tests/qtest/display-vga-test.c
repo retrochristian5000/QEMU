@@ -50,6 +50,18 @@ static uint8_t vga_crtc_read(QTestState *qts, uint8_t index)
     return qtest_inb(qts, VGA_CRT_DC);
 }
 
+static void vga_gfx_write(QTestState *qts, uint8_t index, uint8_t value)
+{
+    qtest_outb(qts, VGA_GFX_I, index);
+    qtest_outb(qts, VGA_GFX_D, value);
+}
+
+static uint8_t vga_gfx_read(QTestState *qts, uint8_t index)
+{
+    qtest_outb(qts, VGA_GFX_I, index);
+    return qtest_inb(qts, VGA_GFX_D);
+}
+
 static void test_isa_cirrus_profile(void)
 {
     QTestState *qts = qtest_init("-vga none -device isa-cirrus-vga");
@@ -61,13 +73,23 @@ static void test_isa_cirrus_profile(void)
     g_assert_cmphex(vga_seq_read(qts, 0x17), ==, 0x38);
     g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==, 0x18);
 
-    qtest_quit(qts);
-}
+    vga_gfx_write(qts, 0x2a, 0x3f);
+    vga_gfx_write(qts, 0x2e, 0x3f);
+    g_assert_cmphex(vga_gfx_read(qts, 0x2a), ==, 0x1f);
+    g_assert_cmphex(vga_gfx_read(qts, 0x2e), ==, 0x1f);
 
-static void vga_gfx_write(QTestState *qts, uint8_t index, uint8_t value)
-{
-    qtest_outb(qts, VGA_GFX_I, index);
-    qtest_outb(qts, VGA_GFX_D, value);
+    /*
+     * SR17[2] enables BitBLT MMIO on later Cirrus chips, but the
+     * CL-GD5428 predates that capability.  Keep the B8000 aperture
+     * unmapped even if software sets the otherwise writable bit.
+     */
+    vga_gfx_write(qts, 0x00, 0x5a);
+    vga_seq_write(qts, 0x07, 0x01);
+    vga_seq_write(qts, 0x17, 0x04);
+    g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE + 0x18000),
+                    ==, 0xff);
+
+    qtest_quit(qts);
 }
 
 static void vga_attr_write(QTestState *qts, uint8_t index, uint8_t value)
