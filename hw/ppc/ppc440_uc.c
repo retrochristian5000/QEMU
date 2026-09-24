@@ -831,7 +831,7 @@ static uint32_t dcr_read_pcie(void *opaque, int dcrn)
         ret = s->omr2_mask >> 32;
         break;
     case PEGPL_OMR2MSKL:
-        ret = s->omr3_mask;
+        ret = s->omr2_mask;
         break;
     case PEGPL_OMR3BAH:
         ret = s->omr3_base >> 32;
