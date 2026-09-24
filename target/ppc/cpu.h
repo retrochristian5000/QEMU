@@ -2314,6 +2314,7 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_Exxx_L1CSR1       (0x3F3)
 #define SPR_440_DBDR          (0x3F3)
 #define SPR_LDSTDB            (0x3F4)
+#define SPR_745X_1012         (0x3F4) /* Undocumented factory-use SPR */
 #define SPR_750_TDCL          (0x3F4)
 #define SPR_40x_IAC1          (0x3F4)
 #define SPR_MMUCSR0           (0x3F4)

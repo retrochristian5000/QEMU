@@ -495,6 +495,20 @@ static void register_G2_sprs(CPUPPCState *env)
                  0x00000000);
 }
 
+static void register_745x_factory_sprs(CPUPPCState *env)
+{
+    /*
+     * MPC7450-family silicon implements SPR 1012 as an undocumented,
+     * factory-use register. Some guest kernels probe it during early boot.
+     * Cache/memory-system side effects are not modeled, but preserving the
+     * register value provides the architecturally visible mfspr/mtspr state.
+     */
+    spr_register(env, SPR_745X_1012, "SPR1012",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
+}
+
 static void register_74xx_sprs(CPUPPCState *env)
 {
     /* Breakpoints */
@@ -4291,6 +4305,7 @@ static void init_proc_7440(CPUPPCState *env)
     register_non_embedded_sprs(env);
     register_sdr1_sprs(env);
     register_74xx_sprs(env);
+    register_745x_factory_sprs(env);
     vscr_init(env, 0x00010000);
 
     spr_register(env, SPR_UBAMR, "UBAMR",
@@ -4392,6 +4407,7 @@ static void init_proc_7450(CPUPPCState *env)
     register_non_embedded_sprs(env);
     register_sdr1_sprs(env);
     register_74xx_sprs(env);
+    register_745x_factory_sprs(env);
     vscr_init(env, 0x00010000);
     /* Level 3 cache control */
     register_l3_ctrl(env);
@@ -4515,6 +4531,7 @@ static void init_proc_7445(CPUPPCState *env)
     register_non_embedded_sprs(env);
     register_sdr1_sprs(env);
     register_74xx_sprs(env);
+    register_745x_factory_sprs(env);
     vscr_init(env, 0x00010000);
     /* LDSTCR */
     spr_register(env, SPR_LDSTCR, "LDSTCR",
@@ -4645,6 +4662,7 @@ static void init_proc_7455(CPUPPCState *env)
     register_non_embedded_sprs(env);
     register_sdr1_sprs(env);
     register_74xx_sprs(env);
+    register_745x_factory_sprs(env);
     vscr_init(env, 0x00010000);
     /* Level 3 cache control */
     register_l3_ctrl(env);
@@ -4777,6 +4795,7 @@ static void init_proc_7457(CPUPPCState *env)
     register_non_embedded_sprs(env);
     register_sdr1_sprs(env);
     register_74xx_sprs(env);
+    register_745x_factory_sprs(env);
     vscr_init(env, 0x00010000);
     /* Level 3 cache control */
     register_l3_ctrl(env);
