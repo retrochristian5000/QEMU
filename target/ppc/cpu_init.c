@@ -4165,6 +4165,16 @@ static void init_proc_7400(CPUPPCState *env)
                  SPR_NOACCESS, SPR_NOACCESS,
                  &spr_read_generic, &spr_write_generic,
                  0x00000000);
+
+    /*
+     * LDSTDB is a supervisor-visible factory-use register on the
+     * MPC7400/MPC7410 family. Preserve its SPR state even though QEMU does
+     * not model the implementation-specific load/store debug behavior.
+     */
+    spr_register(env, SPR_LDSTDB, "LDSTDB",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_read_generic, &spr_write_generic,
+                 0x00000000);
     /* Thermal management */
     register_thrm_sprs(env);
     /* Memory management */
