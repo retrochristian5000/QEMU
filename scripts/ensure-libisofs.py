@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "4"
+LIBISOFS_BOOTSTRAP_SCHEMA = "5"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_CONFIGURE_ARGS = (
@@ -227,6 +227,56 @@ def compiler_version(cc: str) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def shell_usable(path: str) -> bool:
+    completed = subprocess.run(
+        [path, "-c", "exit 0"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def resolve_shell(requested: str, env_name: str) -> str:
+    argv = shlex.split(requested)
+    if len(argv) != 1:
+        raise RuntimeError(f"{env_name} must name exactly one executable")
+    candidate = argv[0]
+    path = (
+        candidate
+        if pathlib.Path(candidate).is_absolute()
+        else shutil.which(candidate)
+    )
+    if not path or not pathlib.Path(path).exists() or not shell_usable(str(path)):
+        raise RuntimeError(f"{env_name} is not a usable shell: {candidate}")
+    return str(path)
+
+
+def select_config_shell() -> str:
+    for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL"):
+        requested = os.environ.get(env_name, "")
+        if requested:
+            return resolve_shell(requested, env_name)
+
+    for name in ("bash", "sh"):
+        path = shutil.which(name)
+        if path and shell_usable(path):
+            return path
+    raise RuntimeError("a usable configuration shell is required to bootstrap libisofs")
+
+
+def shell_identity(path: str) -> str:
+    completed = subprocess.run(
+        [path, "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    first = completed.stdout.splitlines()[0] if completed.stdout else ""
+    return f"{path}|{first}"
+
+
 def version_tuple(value: str) -> tuple[int, ...]:
     pieces = []
     for part in value.strip().split("."):
@@ -246,9 +296,31 @@ def pkg_config() -> str | None:
     return shutil.which("pkg-config") or shutil.which("pkgconf")
 
 
-def strict_header_probe(cc: str, pkgconf: str) -> bool:
+def pkg_config_flags(
+    pkgconf: str,
+    *,
+    static: bool,
+    env: dict[str, str] | None = None,
+) -> list[str]:
+    command = [pkgconf]
+    if static:
+        command.append("--static")
+    command += ["--cflags", "--libs", PKG_NAME]
+    return shlex.split(run_text(command, env=env))
+
+
+def libisofs_link_probe(
+    cc: str,
+    pkgconf: str,
+    *,
+    static: bool,
+    compile_flags: list[str] | None = None,
+    link_flags: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> bool:
     if subprocess.run(
         [pkgconf, "--atleast-version=1.1.2", PKG_NAME],
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
@@ -256,24 +328,67 @@ def strict_header_probe(cc: str, pkgconf: str) -> bool:
         return False
 
     try:
-        cflags = shlex.split(run_text([pkgconf, "--cflags", PKG_NAME]))
+        flags = pkg_config_flags(pkgconf, static=static, env=env)
     except RuntimeError:
         return False
 
     source = """#include <sys/types.h>
 #include <time.h>
+#include <stdlib.h>
 #include <libisofs.h>
-int main(void)
+int main(int argc, char **argv)
 {
+    char *converted = NULL;
+    size_t converted_len = 0;
+
+    (void) argv;
+    if (iso_init() < 0)
+        return 1;
+
+    /*
+     * Keep static-only translation units in the link without executing them.
+     * This catches missing zlib/iconv dependencies that a header-only or
+     * iso_init-only probe cannot expose.
+     */
+    if (argc == 12345) {
+        iso_file_add_zisofs_filter((IsoFile *) 0, 0);
+        iso_file_add_gzip_filter((IsoFile *) 0, 0);
+        iso_conv_name_chars(
+            (IsoWriteOpts *) 0, (char *) "", 0,
+            &converted, &converted_len, 0
+        );
+        free(converted);
+    }
+
+    iso_finish();
     return 0;
 }
 """
     with tempfile.TemporaryDirectory(prefix="qemu-libisofs-probe-") as tmp:
         probe = pathlib.Path(tmp) / "probe.c"
-        probe.write_text(source, encoding="utf-8")
+        binary = pathlib.Path(tmp) / "probe"
         completed = subprocess.run(
-            [cc, "-std=gnu11", "-Werror=strict-prototypes", "-fsyntax-only",
-             *cflags, str(probe)],
+            [
+                cc,
+                "-std=gnu11",
+                "-Werror=strict-prototypes",
+                *(compile_flags or []),
+                str(probe),
+                *(link_flags or []),
+                *flags,
+                "-o",
+                str(binary),
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return False
+        completed = subprocess.run(
+            [str(binary)],
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -281,9 +396,30 @@ int main(void)
         return completed.returncode == 0
 
 
+def strict_header_probe(cc: str, pkgconf: str) -> bool:
+    return libisofs_link_probe(cc, pkgconf, static=False)
+
+
 def system_libisofs_usable(cc: str) -> bool:
     pkgconf = pkg_config()
-    return bool(pkgconf and strict_header_probe(cc, pkgconf))
+    if not pkgconf:
+        return False
+    sdkroot, arch, deployment = macos_settings()
+    architecture_flags = (
+        [
+            "-arch", arch,
+            "-isysroot", sdkroot,
+            f"-mmacosx-version-min={deployment}",
+        ]
+        if sdkroot else []
+    )
+    return libisofs_link_probe(
+        cc,
+        pkgconf,
+        static=False,
+        compile_flags=architecture_flags,
+        link_flags=architecture_flags,
+    )
 
 
 def find_pkgconfig_file(prefix: pathlib.Path) -> pathlib.Path | None:
@@ -295,6 +431,19 @@ def find_pkgconfig_file(prefix: pathlib.Path) -> pathlib.Path | None:
         if candidate.is_file():
             return candidate
     for candidate in prefix.glob("**/pkgconfig/libisofs-1.pc"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_static_library(prefix: pathlib.Path) -> pathlib.Path | None:
+    for candidate in (
+        prefix / "lib" / "libisofs.a",
+        prefix / "lib64" / "libisofs.a",
+    ):
+        if candidate.is_file():
+            return candidate
+    for candidate in prefix.glob("**/libisofs.a"):
         if candidate.is_file():
             return candidate
     return None
@@ -360,8 +509,7 @@ def workspace_marker_text(
     sdkroot: str,
     arch: str,
     deployment: str,
-    libtool: str,
-    libtool_id: str,
+    config_shell: str,
     libtoolize: str,
     libtoolize_id: str,
     cflags: str,
@@ -376,8 +524,7 @@ def workspace_marker_text(
         f"SDKROOT={sdkroot}\n"
         f"WHP_MACOS_ARCH={arch}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
-        f"LIBTOOL={libtool}\n"
-        f"LIBTOOL_VERSION={libtool_id}\n"
+        f"CONFIG_SHELL={shell_identity(config_shell)}\n"
         f"LIBTOOLIZE={libtoolize}\n"
         f"LIBTOOLIZE_VERSION={libtoolize_id}\n"
         f"CFLAGS={cflags}\n"
@@ -435,7 +582,7 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
     if marker_file.read_text(encoding="utf-8", errors="replace") != marker:
         return False
     pc_file = find_pkgconfig_file(prefix)
-    if pc_file is None:
+    if pc_file is None or find_static_library(prefix) is None:
         return False
     return version_tuple(installed_version(pc_file)) >= LIBISOFS_MIN_VERSION
 
@@ -443,13 +590,12 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     revision = ensure_libisofs_source()
     make = command_path("make", "MAKE")
-    libtool = select_gnu_libtool("LIBTOOL", ("glibtool", "libtool"))
     libtoolize = select_gnu_libtool(
         "LIBTOOLIZE", ("glibtoolize", "libtoolize")
     )
+    config_shell = select_config_shell()
     sdkroot, arch, deployment = macos_settings()
     cc_id = compiler_version(cc)
-    libtool_id = run_text([libtool, "--version"]).splitlines()[0]
     libtoolize_id = run_text([libtoolize, "--version"]).splitlines()[0]
     incremental = incremental_build_enabled()
 
@@ -459,12 +605,16 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     prefix = build_root / "deps" / "libisofs"
 
     env = os.environ.copy()
-    # INSTALL is reserved for the installation command by Autoconf/Make.
-    # Do not let an unrelated caller override AC_PROG_INSTALL accidentally;
-    # that collision produced broken commands such as "libtool --mode=install 1 ...".
+    # INSTALL and LIBTOOL are project-generated Autotools variables. Do not
+    # let caller state replace AC_PROG_INSTALL or the configured ./libtool.
+    # The old LIBTOOL override could discard Darwin/arm64e settings captured
+    # by configure and produced commands such as "libtool --mode=install 1".
     env.pop("INSTALL", None)
+    env.pop("LIBTOOL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
+    env["CONFIG_SHELL"] = config_shell
+    env["SHELL"] = config_shell
     compile_flags = ["-O3", "-Werror=strict-prototypes"]
     link_flags: list[str] = []
     if sdkroot:
@@ -490,8 +640,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         sdkroot,
         arch,
         deployment,
-        libtool,
-        libtool_id,
+        config_shell,
         libtoolize,
         libtoolize_id,
         env["CFLAGS"],
@@ -527,26 +676,31 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             file=sys.stderr,
         )
 
-    run_logged(["/bin/sh", "bootstrap"], cwd=source_copy, env=env)
+    run_logged([config_shell, "bootstrap"], cwd=source_copy, env=env)
 
     object_dir.mkdir(parents=True, exist_ok=True)
     configure = source_copy / "configure"
     run_logged(
-        [str(configure), f"--prefix={prefix}", *LIBISOFS_CONFIGURE_ARGS],
+        [
+            config_shell,
+            str(configure),
+            f"--prefix={prefix}",
+            *LIBISOFS_CONFIGURE_ARGS,
+        ],
         cwd=object_dir,
         env=env,
     )
-    libtool_arg = f"LIBTOOL={libtool}"
+    local_libtool = object_dir / "libtool"
+    if not local_libtool.is_file():
+        raise RuntimeError(
+            "libisofs configure did not generate its project-local libtool"
+        )
     run_logged(
-        [make, libtool_arg, "-j", str(max(1, os.cpu_count() or 1))],
+        [make, "-j", str(max(1, os.cpu_count() or 1))],
         cwd=object_dir,
         env=env,
     )
-    run_logged(
-        [make, libtool_arg, "install"],
-        cwd=object_dir,
-        env=env,
-    )
+    run_logged([make, "install"], cwd=object_dir, env=env)
 
     pc_file = find_pkgconfig_file(prefix)
     if pc_file is None:
@@ -561,26 +715,45 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         )
 
     pkgconf = pkg_config()
-    if pkgconf:
-        probe_env = os.environ.copy()
-        pc_dir = str(pc_file.parent)
-        probe_env["PKG_CONFIG_PATH"] = (
-            pc_dir
-            + (":" + probe_env["PKG_CONFIG_PATH"]
-               if probe_env.get("PKG_CONFIG_PATH") else "")
+    if not pkgconf:
+        raise RuntimeError(
+            "pkg-config/pkgconf is required to validate bootstrapped libisofs"
         )
-        old_path = os.environ.get("PKG_CONFIG_PATH")
-        os.environ["PKG_CONFIG_PATH"] = probe_env["PKG_CONFIG_PATH"]
-        try:
-            if not strict_header_probe(cc, pkgconf):
-                raise RuntimeError(
-                    "bootstrapped libisofs failed the Clang strict-prototype probe"
-                )
-        finally:
-            if old_path is None:
-                os.environ.pop("PKG_CONFIG_PATH", None)
-            else:
-                os.environ["PKG_CONFIG_PATH"] = old_path
+    probe_env = os.environ.copy()
+    pc_dir = str(pc_file.parent)
+    probe_env["PKG_CONFIG_PATH"] = (
+        pc_dir
+        + (":" + probe_env["PKG_CONFIG_PATH"]
+           if probe_env.get("PKG_CONFIG_PATH") else "")
+    )
+    static_flags = pkg_config_flags(pkgconf, static=True, env=probe_env)
+    if "-lz" not in static_flags:
+        raise RuntimeError(
+            "bootstrapped static libisofs does not export its zlib dependency"
+        )
+    if "-lpthread" not in static_flags:
+        raise RuntimeError(
+            "bootstrapped static libisofs does not export its pthread dependency"
+        )
+    architecture_flags = (
+        [
+            "-arch", arch,
+            "-isysroot", sdkroot,
+            f"-mmacosx-version-min={deployment}",
+        ]
+        if sdkroot else []
+    )
+    if not libisofs_link_probe(
+        cc,
+        pkgconf,
+        static=True,
+        compile_flags=architecture_flags,
+        link_flags=architecture_flags,
+        env=probe_env,
+    ):
+        raise RuntimeError(
+            "bootstrapped libisofs failed the static compile/link/runtime probe"
+        )
 
     # Publish reuse state only after install and validation have succeeded.
     # A failed build therefore cannot bless a new ABI/configuration identity.

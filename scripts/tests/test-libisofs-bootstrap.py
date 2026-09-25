@@ -164,13 +164,27 @@ def main() -> int:
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, "def select_gnu_libtool(", "GNU Libtool selector")
-    require(helper, '"GNU libtool" in version', "GNU Libtool validation")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "5"', "bootstrap schema")
+    require(helper, "def select_config_shell(", "configuration shell selector")
+    require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
+    require(helper, 'env["SHELL"] = config_shell', "make shell routing")
+    require(helper, 'env.pop("LIBTOOL", None)', "project-local Libtool isolation")
+    require(helper, 'local_libtool = object_dir / "libtool"', "local Libtool check")
+    require(helper, '[config_shell, "bootstrap"]', "bootstrap interpreter")
+    require(helper, "def libisofs_link_probe(", "consumer link probe")
+    require(helper, "def find_static_library(", "static archive cache guard")
+    require(helper, '"-lz" not in static_flags', "zlib static dependency check")
     require(
         helper,
-        '("glibtool", "libtool")',
-        "macOS GNU libtool preference",
+        '"-lpthread" not in static_flags',
+        "pthread static dependency check",
     )
+    require(helper, "def select_gnu_libtool(", "GNU Libtool selector")
+    require(helper, '"GNU libtool" in version', "GNU Libtool validation")
+    if '("glibtool", "libtool")' in helper:
+        raise SystemExit(
+            "error: libisofs bootstrap still selects a global libtool driver"
+        )
     require(
         helper,
         '("glibtoolize", "libtoolize")',
@@ -181,11 +195,10 @@ def main() -> int:
         'env["LIBTOOLIZE"] = libtoolize',
         "explicit libtoolize bootstrap handoff",
     )
-    require(
-        helper,
-        'libtool_arg = f"LIBTOOL={libtool}"',
-        "installed GNU libtool make override",
-    )
+    if 'libtool_arg = f"LIBTOOL={libtool}"' in helper:
+        raise SystemExit(
+            "error: libisofs still overrides its generated project-local libtool"
+        )
     require(
         helper,
         'env.pop("INSTALL", None)',
