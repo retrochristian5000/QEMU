@@ -233,7 +233,7 @@ jobs:
           test -x "$prefix/bin/libtoolize"
           "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
           "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
-          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=1' \
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=2' \
             "$prefix/.whp-libtool-bootstrap"
           expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
