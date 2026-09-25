@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "2"
+LIBTOOL_BOOTSTRAP_SCHEMA = "3"
 
 
 def run_text(
@@ -413,6 +413,150 @@ def compiler_version(cc: str) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def executable_path(candidate: str) -> str | None:
+    path = (
+        candidate
+        if pathlib.Path(candidate).is_absolute()
+        else shutil.which(candidate)
+    )
+    if path and pathlib.Path(path).is_file() and os.access(path, os.X_OK):
+        return str(pathlib.Path(path).resolve())
+    return None
+
+
+def explicit_tool(env_name: str) -> str | None:
+    requested = os.environ.get(env_name, "")
+    if not requested:
+        return None
+    argv = shlex.split(requested)
+    if len(argv) != 1:
+        raise RuntimeError(f"{env_name} must name exactly one executable")
+    path = executable_path(argv[0])
+    if not path:
+        raise RuntimeError(f"{env_name} is not executable: {argv[0]}")
+    return path
+
+
+def llvm_roots(cc: str) -> list[pathlib.Path]:
+    roots: list[pathlib.Path] = []
+    for env_name in ("NATIVE_LLVM_DIR", "WHP_SHARED_LLVM_DIR"):
+        value = os.environ.get(env_name, "")
+        if value:
+            root = pathlib.Path(value).expanduser().resolve() / "bin"
+            if root not in roots:
+                roots.append(root)
+
+    cc_dir = pathlib.Path(cc).resolve().parent
+    if cc_dir not in roots:
+        roots.append(cc_dir)
+    return roots
+
+
+def select_llvm_tool(
+    env_name: str,
+    llvm_name: str,
+    fallback_names: tuple[str, ...],
+    cc: str,
+) -> str:
+    requested = explicit_tool(env_name)
+    if requested:
+        return requested
+
+    for root in llvm_roots(cc):
+        path = executable_path(str(root / llvm_name))
+        if path:
+            return path
+
+    path = executable_path(llvm_name)
+    if path:
+        return path
+
+    if platform.system() == "Darwin" and shutil.which("xcrun"):
+        completed = subprocess.run(
+            ["xcrun", "--find", llvm_name],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if completed.returncode == 0:
+            path = executable_path(completed.stdout.strip())
+            if path:
+                return path
+
+    for name in fallback_names:
+        path = executable_path(name)
+        if path:
+            return path
+    raise RuntimeError(
+        f"{env_name} tool is required; tried {llvm_name} and "
+        + ", ".join(fallback_names)
+    )
+
+
+def select_cxx_compiler(cc: str) -> str:
+    requested = explicit_tool("CXX")
+    if requested:
+        return requested
+
+    for root in llvm_roots(cc):
+        path = executable_path(str(root / "clang++"))
+        if path:
+            return path
+
+    if platform.system() == "Darwin" and shutil.which("xcrun"):
+        completed = subprocess.run(
+            ["xcrun", "--sdk", "macosx", "--find", "clang++"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if completed.returncode == 0:
+            path = executable_path(completed.stdout.strip())
+            if path:
+                return path
+
+    for name in ("clang++", "c++", "g++"):
+        path = executable_path(name)
+        if path:
+            return path
+    raise RuntimeError("a host C++ compiler is required to bootstrap Libtool")
+
+
+def select_linker(cc: str, arch: str) -> str:
+    requested = explicit_tool("LD")
+    if requested:
+        return requested
+
+    # Our Mach-O LLD still lacks ARM64_RELOC_AUTHENTICATED_POINTER support.
+    # Keep Apple ld for arm64e even while the rest of Libtool prefers LLVM.
+    if platform.system() == "Darwin" and arch == "arm64e":
+        if shutil.which("xcrun"):
+            return run_text(["xcrun", "--find", "ld"])
+        path = executable_path("ld")
+        if path:
+            return path
+        raise RuntimeError("Apple ld is required for the arm64e Libtool path")
+
+    llvm_linker = "ld64.lld" if platform.system() == "Darwin" else "ld.lld"
+    for root in llvm_roots(cc):
+        path = executable_path(str(root / llvm_linker))
+        if path:
+            return path
+
+    path = executable_path(llvm_linker)
+    if path:
+        return path
+
+    if platform.system() == "Darwin" and shutil.which("xcrun"):
+        return run_text(["xcrun", "--find", "ld"])
+    path = executable_path("ld")
+    if path:
+        return path
+    raise RuntimeError("a host linker is required to bootstrap Libtool")
+
+
 def shell_usable(path: str) -> bool:
     completed = subprocess.run(
         [path, "-c", "exit 0"],
@@ -494,9 +638,18 @@ def macos_settings() -> tuple[str, str, str]:
 
 
 def tool_identity(path: str) -> str:
-    output = run_text([path, "--version"])
-    first = output.splitlines()[0] if output else ""
-    return f"{path}|{first}"
+    for option in ("--version", "-v", "-V"):
+        completed = subprocess.run(
+            [path, option],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        output = completed.stdout.strip()
+        if output:
+            return f"{path}|{output.splitlines()[0]}"
+    return f"{path}|<version unavailable>"
 
 
 def marker_text(
@@ -551,10 +704,20 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision, nested_revisions = ensure_libtool_source()
     cc = select_c_compiler()
+    cxx = select_cxx_compiler(cc)
     sdkroot, arch, deployment = macos_settings()
     config_shell = select_config_shell()
 
     tools = {
+        "CXX": cxx,
+        "AR": select_llvm_tool("AR", "llvm-ar", ("ar",), cc),
+        "RANLIB": select_llvm_tool("RANLIB", "llvm-ranlib", ("ranlib",), cc),
+        "NM": select_llvm_tool("NM", "llvm-nm", ("nm",), cc),
+        "OBJDUMP": select_llvm_tool(
+            "OBJDUMP", "llvm-objdump", ("objdump",), cc
+        ),
+        "STRIP": select_llvm_tool("STRIP", "llvm-strip", ("strip",), cc),
+        "LD": select_linker(cc, arch),
         "MAKE": select_gnu_make(),
         "AUTOCONF": command_path("autoconf", "AUTOCONF"),
         "AUTOMAKE": command_path("automake", "AUTOMAKE"),
@@ -607,7 +770,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     for name, path in tools.items():
         env[name] = path
 
-    tool_dirs: list[str] = []
+    tool_dirs: list[str] = [str(pathlib.Path(cc).parent)]
     for path in tools.values():
         parent = str(pathlib.Path(path).parent)
         if parent not in tool_dirs:

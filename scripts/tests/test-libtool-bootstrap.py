@@ -71,7 +71,25 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "2"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "3"', "cache schema")
+    require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
+    require(helper, "def select_cxx_compiler(", "LLVM C++ compiler selector")
+    require(helper, "def select_linker(", "LLVM linker selector")
+    require(helper, '"llvm-ar"', "LLVM archiver preference")
+    require(helper, '"llvm-ranlib"', "LLVM ranlib preference")
+    require(helper, '"llvm-nm"', "LLVM nm preference")
+    require(helper, '"llvm-objdump"', "LLVM objdump preference")
+    require(helper, '"llvm-strip"', "LLVM strip preference")
+    require(
+        helper,
+        'arch == "arm64e"',
+        "ARM64e linker exception",
+    )
+    require(
+        helper,
+        '"ld64.lld" if platform.system() == "Darwin" else "ld.lld"',
+        "LLVM linker preference",
+    )
     require(helper, "CONFIG_SHELL=", "configuration shell cache identity")
     require(helper, "--disable-ltdl-install", "minimal Libtool profile")
     require(helper, "system_libtool_pair()", "host GNU Libtool auto path")
