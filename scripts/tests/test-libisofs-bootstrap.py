@@ -172,6 +172,15 @@ def main() -> int:
     require(helper, 'local_libtool = object_dir / "libtool"', "local Libtool check")
     require(helper, '[config_shell, "bootstrap"]', "bootstrap interpreter")
     require(helper, "def libisofs_link_probe(", "consumer link probe")
+    require(
+        helper,
+        'iso_set_local_charset((char *) "UTF-8", 0);',
+        "minimum-version iconv link probe",
+    )
+    if "iso_conv_name_chars(" in helper:
+        raise SystemExit(
+            "error: libisofs link probe raises the declared >=1.1.2 API minimum"
+        )
     require(helper, "def find_static_library(", "static archive cache guard")
     require(helper, '"-lz" not in static_flags', "zlib static dependency check")
     require(

@@ -334,30 +334,23 @@ def libisofs_link_probe(
 
     source = """#include <sys/types.h>
 #include <time.h>
-#include <stdlib.h>
 #include <libisofs.h>
 int main(int argc, char **argv)
 {
-    char *converted = NULL;
-    size_t converted_len = 0;
-
     (void) argv;
     if (iso_init() < 0)
         return 1;
 
     /*
      * Keep static-only translation units in the link without executing them.
-     * This catches missing zlib/iconv dependencies that a header-only or
-     * iso_init-only probe cannot expose.
+     * All referenced APIs predate the declared libisofs >= 1.1.2 minimum.
+     * zisofs/gzip pull zlib users; iso_set_local_charset pulls util.c, whose
+     * translation unit contains libisofs' iconv users.
      */
     if (argc == 12345) {
         iso_file_add_zisofs_filter((IsoFile *) 0, 0);
         iso_file_add_gzip_filter((IsoFile *) 0, 0);
-        iso_conv_name_chars(
-            (IsoWriteOpts *) 0, (char *) "", 0,
-            &converted, &converted_len, 0
-        );
-        free(converted);
+        iso_set_local_charset((char *) "UTF-8", 0);
     }
 
     iso_finish();
