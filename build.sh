@@ -570,7 +570,29 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
             export ACLOCAL_PATH
         fi
         export WHP_LIBTOOL_PREFIX LIBTOOL LIBTOOLIZE PATH
-        unset WHP_LIBTOOL_ACLOCAL
+
+        # Reuse the exact host tools selected while bootstrapping Libtool.
+        # This prevents downstream libtoolize users from rediscovering a
+        # different archiver/linker suite after the LLVM-first selection.
+        WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"
+        whp_libtool_marker_tool()
+        {
+            sed -n "s|^$1=\\([^|]*\\)|.*$|\\1|p" "$WHP_LIBTOOL_MARKER" |
+                sed -n '1p'
+        }
+        AR=$(whp_libtool_marker_tool AR)
+        RANLIB=$(whp_libtool_marker_tool RANLIB)
+        NM=$(whp_libtool_marker_tool NM)
+        OBJDUMP=$(whp_libtool_marker_tool OBJDUMP)
+        STRIP=$(whp_libtool_marker_tool STRIP)
+        LD=$(whp_libtool_marker_tool LD)
+        export AR RANLIB NM OBJDUMP STRIP LD
+        if [ "$WHP_HOST_OS" = macos ]; then
+            LIPO=$(whp_libtool_marker_tool LIPO)
+            OTOOL=$(whp_libtool_marker_tool OTOOL)
+            export LIPO OTOOL
+        fi
+        unset WHP_LIBTOOL_ACLOCAL WHP_LIBTOOL_MARKER
     fi
 fi
 

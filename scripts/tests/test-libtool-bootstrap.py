@@ -67,6 +67,30 @@ def main() -> int:
         "libtoolize export",
     )
     require(build, "ACLOCAL_PATH=", "Libtool aclocal macro path")
+    require(
+        build,
+        'WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"',
+        "Libtool tool marker handoff",
+    )
+    require(build, "whp_libtool_marker_tool()", "Libtool marker tool reader")
+    require(build, "AR=$(whp_libtool_marker_tool AR)", "Libtool AR handoff")
+    require(
+        build,
+        "RANLIB=$(whp_libtool_marker_tool RANLIB)",
+        "Libtool ranlib handoff",
+    )
+    require(build, "NM=$(whp_libtool_marker_tool NM)", "Libtool nm handoff")
+    require(
+        build,
+        "OBJDUMP=$(whp_libtool_marker_tool OBJDUMP)",
+        "Libtool objdump handoff",
+    )
+    require(
+        build,
+        "STRIP=$(whp_libtool_marker_tool STRIP)",
+        "Libtool strip handoff",
+    )
+    require(build, "LD=$(whp_libtool_marker_tool LD)", "Libtool linker handoff")
 
     require(helper, "toolchains/libtool", "pinned Libtool source")
     require(helper, "NESTED_SUBMODULES", "nested Libtool source policy")
@@ -84,6 +108,8 @@ def main() -> int:
     require(helper, '"llvm-nm"', "LLVM nm preference")
     require(helper, '"llvm-objdump"', "LLVM objdump preference")
     require(helper, '"llvm-strip"', "LLVM strip preference")
+    require(helper, '"llvm-lipo"', "LLVM lipo preference")
+    require(helper, '"llvm-otool"', "LLVM otool preference")
     require(
         helper,
         'arch == "arm64e"',
@@ -159,9 +185,19 @@ def main() -> int:
 
     early_shell = build.find('CONFIG_SHELL="$WHP_BUILD_BASH"')
     libtool_hook = build.find("scripts/ensure-libtool.py")
+    libisofs_hook = build.find("scripts/ensure-libisofs.py")
+    llvm_tool_handoff = build.find("AR=$(whp_libtool_marker_tool AR)")
     if early_shell < 0 or libtool_hook < 0 or early_shell > libtool_hook:
         raise SystemExit(
             "error: CONFIG_SHELL is not published before Libtool bootstrap"
+        )
+    if (
+        llvm_tool_handoff < 0
+        or libisofs_hook < 0
+        or llvm_tool_handoff > libisofs_hook
+    ):
+        raise SystemExit(
+            "error: Libtool LLVM host tools are not exported before libisofs"
         )
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")

@@ -699,6 +699,13 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "M4": command_path("m4", "M4"),
         "PERL": command_path("perl", "PERL"),
     }
+    if platform.system() == "Darwin":
+        tools["LIPO"] = select_llvm_tool(
+            "LIPO", "llvm-lipo", ("lipo",), cc
+        )
+        tools["OTOOL"] = select_llvm_tool(
+            "OTOOL", "llvm-otool", ("otool",), cc
+        )
 
     prefix = build_root / "deps" / "libtool"
     work_dir = build_root / "bootstrap" / "libtool"
