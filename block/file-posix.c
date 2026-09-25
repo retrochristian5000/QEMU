@@ -630,8 +630,96 @@ static bool raw_is_iso9660(int fd)
            memcmp(id, "CD001", sizeof(id)) == 0;
 }
 
-static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
-                                          int bdrv_flags)
+typedef struct RawIsoDataSource {
+    int source_fd;
+    int read_fd;
+} RawIsoDataSource;
+
+static int raw_isofs_data_source_open(IsoDataSource *src)
+{
+    RawIsoDataSource *data = src->data;
+
+    if (data->read_fd >= 0) {
+        return 1;
+    }
+
+    data->read_fd = qemu_dup(data->source_fd);
+    return data->read_fd >= 0 ? 1 : ISO_DATA_SOURCE_MISHAP;
+}
+
+static int raw_isofs_data_source_close(IsoDataSource *src)
+{
+    RawIsoDataSource *data = src->data;
+
+    if (data->read_fd >= 0) {
+        qemu_close(data->read_fd);
+        data->read_fd = -1;
+    }
+    return 1;
+}
+
+static int raw_isofs_data_source_read_block(IsoDataSource *src, uint32_t lba,
+                                            uint8_t *buffer)
+{
+    RawIsoDataSource *data = src->data;
+    off_t offset = (off_t)lba * ISO_BLOCK_SIZE;
+    size_t done = 0;
+
+    if (data->read_fd < 0) {
+        return ISO_DATA_SOURCE_FAILURE;
+    }
+
+    while (done < ISO_BLOCK_SIZE) {
+        ssize_t ret = pread(data->read_fd, buffer + done,
+                            ISO_BLOCK_SIZE - done, offset + done);
+
+        if (ret < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return ISO_DATA_SOURCE_MISHAP;
+        }
+        if (ret == 0) {
+            return ISO_DATA_SOURCE_MISHAP;
+        }
+        done += ret;
+    }
+
+    return 1;
+}
+
+static void raw_isofs_data_source_free(IsoDataSource *src)
+{
+    RawIsoDataSource *data = src->data;
+
+    if (data) {
+        if (data->read_fd >= 0) {
+            qemu_close(data->read_fd);
+        }
+        g_free(data);
+    }
+}
+
+static IsoDataSource *raw_isofs_data_source_new_from_fd(int fd)
+{
+    IsoDataSource *src = g_new0(IsoDataSource, 1);
+    RawIsoDataSource *data = g_new0(RawIsoDataSource, 1);
+
+    data->source_fd = fd;
+    data->read_fd = -1;
+
+    src->version = 0;
+    src->refcount = 1;
+    src->open = raw_isofs_data_source_open;
+    src->close = raw_isofs_data_source_close;
+    src->read_block = raw_isofs_data_source_read_block;
+    src->free_data = raw_isofs_data_source_free;
+    src->data = data;
+
+    return src;
+}
+
+static void raw_isofs_metadata_read_ahead(int fd, int bdrv_flags)
 {
     IsoDataSource *src = NULL;
     IsoImage *image = NULL;
@@ -657,8 +745,8 @@ static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
         return;
     }
 
-    if (iso_data_source_new_from_file(filename, &src) < 0 ||
-        iso_image_new("qemu-isofs-metadata", &image) < 0 ||
+    src = raw_isofs_data_source_new_from_fd(fd);
+    if (iso_image_new("qemu-isofs-metadata", &image) < 0 ||
         iso_read_opts_new(&read_opts, 0) < 0) {
         goto out;
     }
@@ -741,10 +829,8 @@ out:
     }
 }
 #else
-static void raw_isofs_metadata_read_ahead(const char *filename, int fd,
-                                          int bdrv_flags)
+static void raw_isofs_metadata_read_ahead(int fd, int bdrv_flags)
 {
-    (void)filename;
     (void)fd;
     (void)bdrv_flags;
 }
@@ -986,7 +1072,7 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
         } else {
             s->has_fallocate = true;
             if (!(s->open_flags & O_RDWR)) {
-                raw_isofs_metadata_read_ahead(filename, s->fd, bdrv_flags);
+                raw_isofs_metadata_read_ahead(s->fd, bdrv_flags);
             }
         }
     } else {

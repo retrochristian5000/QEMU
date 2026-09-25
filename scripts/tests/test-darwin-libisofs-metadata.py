@@ -20,7 +20,9 @@ assert "file-posix.c'), coref, iokit, libisofs" in block_meson
 for token in (
     "#include <libisofs.h>",
     "raw_isofs_metadata_read_ahead(",
-    "iso_data_source_new_from_file(",
+    "raw_isofs_data_source_new_from_fd(",
+    "qemu_dup(data->source_fd)",
+    "pread(data->read_fd",
     "iso_image_import(",
     "iso_image_get_bootcat(",
     "iso_image_get_all_boot_imgs(",
@@ -36,5 +38,8 @@ assert "iso_read_opts_set_no_rockridge(read_opts, 1)" in src
 assert "iso_read_opts_set_no_joliet(read_opts, 1)" in src
 assert "iso_read_opts_set_no_iso1999(read_opts, 1)" in src
 assert "ISO_READAHEAD_MAX (64 * MiB)" in src
+assert "iso_data_source_new_from_file(" not in src
+assert "raw_isofs_metadata_read_ahead(filename" not in src
+assert "raw_isofs_metadata_read_ahead(s->fd, bdrv_flags)" in src
 
 print("Darwin libisofs metadata read-ahead audit passed")
