@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "1"
+LIBTOOL_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(
@@ -226,6 +226,7 @@ def copy_libtool_source(
     revision: str,
     nested_revisions: dict[pathlib.Path, str],
     destination: pathlib.Path,
+    config_shell: str,
 ) -> None:
     shutil.rmtree(destination, ignore_errors=True)
     if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
@@ -237,8 +238,15 @@ def copy_libtool_source(
                 destination / relpath,
             )
 
+        version_helper = (
+            SUBMODULE_DIR / "gnulib" / "build-aux" / "git-version-gen"
+        )
+        if not version_helper.is_file():
+            raise RuntimeError(
+                f"pinned gnulib git-version-gen is unavailable: {version_helper}"
+            )
         version = run_text(
-            ["/bin/sh", "build-aux/git-version-gen", ".tarball-version"],
+            [config_shell, str(version_helper), ".tarball-version"],
             cwd=SUBMODULE_DIR,
         )
         (destination / ".tarball-version").write_text(
@@ -405,6 +413,56 @@ def compiler_version(cc: str) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def shell_usable(path: str) -> bool:
+    completed = subprocess.run(
+        [path, "-c", "exit 0"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def resolve_shell(requested: str, env_name: str) -> str:
+    argv = shlex.split(requested)
+    if len(argv) != 1:
+        raise RuntimeError(f"{env_name} must name exactly one executable")
+    candidate = argv[0]
+    path = (
+        candidate
+        if pathlib.Path(candidate).is_absolute()
+        else shutil.which(candidate)
+    )
+    if not path or not pathlib.Path(path).exists() or not shell_usable(str(path)):
+        raise RuntimeError(f"{env_name} is not a usable shell: {candidate}")
+    return str(path)
+
+
+def select_config_shell() -> str:
+    for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL"):
+        requested = os.environ.get(env_name, "")
+        if requested:
+            return resolve_shell(requested, env_name)
+
+    for name in ("bash", "sh"):
+        path = shutil.which(name)
+        if path and shell_usable(path):
+            return path
+    raise RuntimeError("a usable configuration shell is required to bootstrap Libtool")
+
+
+def shell_identity(path: str) -> str:
+    completed = subprocess.run(
+        [path, "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    first = completed.stdout.splitlines()[0] if completed.stdout else ""
+    return f"{path}|{first}"
+
+
 def macos_settings() -> tuple[str, str, str]:
     if platform.system() != "Darwin":
         return "", "", ""
@@ -448,6 +506,7 @@ def marker_text(
     sdkroot: str,
     arch: str,
     deployment: str,
+    config_shell: str,
     tools: dict[str, str],
 ) -> str:
     nested = ",".join(
@@ -465,6 +524,7 @@ def marker_text(
         f"SDKROOT={sdkroot}",
         f"WHP_MACOS_ARCH={arch}",
         f"MACOSX_DEPLOYMENT_TARGET={deployment}",
+        f"CONFIG_SHELL={shell_identity(config_shell)}",
         "LTDL_INSTALL=disabled",
     ]
     for name in sorted(tools):
@@ -492,6 +552,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision, nested_revisions = ensure_libtool_source()
     cc = select_c_compiler()
     sdkroot, arch, deployment = macos_settings()
+    config_shell = select_config_shell()
 
     tools = {
         "MAKE": select_gnu_make(),
@@ -519,6 +580,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         sdkroot,
         arch,
         deployment,
+        config_shell,
         tools,
     )
     if cache_valid(prefix, marker):
@@ -528,7 +590,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     shutil.rmtree(work_dir, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
-    copy_libtool_source(revision, nested_revisions, source_copy)
+    copy_libtool_source(
+        revision, nested_revisions, source_copy, config_shell
+    )
     object_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
@@ -538,6 +602,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     ):
         env.pop(key, None)
     env["CC"] = cc
+    env["CONFIG_SHELL"] = config_shell
+    env["SHELL"] = config_shell
     for name, path in tools.items():
         env[name] = path
 
@@ -565,7 +631,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     )
     run_logged(
         [
-            "/bin/sh", str(source_copy / "bootstrap"),
+            config_shell, str(source_copy / "bootstrap"),
             "--skip-po",
             "--no-git",
             "--copy",
@@ -580,7 +646,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     run_logged(
         [
-            "/bin/sh", str(configure),
+            config_shell, str(configure),
             f"--prefix={prefix}",
             "--disable-ltdl-install",
         ],

@@ -343,6 +343,14 @@ if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ] &&
     unset WHP_BOOTSTRAP_BASH
 fi
 
+# Publish the selected implementation shell before any managed Autotools
+# dependency is bootstrapped. The Libtool bootstrap otherwise defaults
+# CONFIG_SHELL to /bin/sh and can silently escape the WHP shell policy.
+if [ -n "$WHP_BUILD_BASH" ]; then
+    CONFIG_SHELL="$WHP_BUILD_BASH"
+    export WHP_BUILD_BASH CONFIG_SHELL
+fi
+
 BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
 case "$BOOTSTRAP_NINJA" in
     y) BOOTSTRAP_NINJA=1 ;;

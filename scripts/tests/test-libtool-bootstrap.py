@@ -71,10 +71,44 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, "LIBTOOL_BOOTSTRAP_SCHEMA=", "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "2"', "cache schema")
+    require(helper, "CONFIG_SHELL=", "configuration shell cache identity")
     require(helper, "--disable-ltdl-install", "minimal Libtool profile")
     require(helper, "system_libtool_pair()", "host GNU Libtool auto path")
     require(helper, "GNU libtool", "GNU tool identity check")
+    require(helper, "def select_config_shell(", "configuration shell selector")
+    require(
+        helper,
+        'env["CONFIG_SHELL"] = config_shell',
+        "Libtool CONFIG_SHELL routing",
+    )
+    require(helper, 'env["SHELL"] = config_shell', "Libtool make shell routing")
+    require(
+        helper,
+        'SUBMODULE_DIR / "gnulib" / "build-aux" / "git-version-gen"',
+        "pinned gnulib version helper",
+    )
+    require(
+        helper,
+        '[config_shell, str(source_copy / "bootstrap")',
+        "Libtool bootstrap interpreter",
+    )
+    require(
+        helper,
+        '[config_shell, str(configure)',
+        "Libtool configure interpreter",
+    )
+    if '["/bin/sh",' in helper:
+        raise SystemExit(
+            "error: Libtool bootstrap still hard-codes /bin/sh as an interpreter"
+        )
+
+    early_shell = build.find('CONFIG_SHELL="$WHP_BUILD_BASH"')
+    libtool_hook = build.find("scripts/ensure-libtool.py")
+    if early_shell < 0 or libtool_hook < 0 or early_shell > libtool_hook:
+        raise SystemExit(
+            "error: CONFIG_SHELL is not published before Libtool bootstrap"
+        )
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
     require(ledger, "Libtool bootstrap", "Libtool dependency edge")
