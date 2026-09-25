@@ -73,6 +73,11 @@ def main() -> int:
         "Libtool tool marker handoff",
     )
     require(build, "whp_libtool_marker_tool()", "Libtool marker tool reader")
+    require(
+        build,
+        'sed -n "s#^$1=\\\\([^|]*\\\\)|.*$#\\\\1#p"',
+        "safe Libtool marker separator parsing",
+    )
     require(build, "AR=$(whp_libtool_marker_tool AR)", "Libtool AR handoff")
     require(
         build,

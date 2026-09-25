@@ -577,7 +577,7 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
         WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"
         whp_libtool_marker_tool()
         {
-            sed -n "s|^$1=\\([^|]*\\)|.*$|\\1|p" "$WHP_LIBTOOL_MARKER" |
+            sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
                 sed -n '1p'
         }
         AR=$(whp_libtool_marker_tool AR)
