@@ -17,6 +17,9 @@ on:
       - 'scripts/macos-build-hygiene.bash'
       - 'scripts/macos-compiler-policy.bash'
       - 'scripts/macos-arch-policy.bash'
+      - 'scripts/ensure-bash.py'
+      - 'scripts/tests/test-bash-bootstrap.py'
+      - 'toolchains/bash'
       - 'scripts/verify-macos-lto.sh'
       - 'scripts/verify-macos-lto.bash'
       - 'scripts/whp-build/prepare-build.bash'
@@ -124,6 +127,26 @@ jobs:
       - name: Verify Apple Silicon host
         shell: bash
         run: test "$(uname -m)" = arm64
+
+      - name: Bootstrap pinned Bash as arm64e
+        shell: bash
+        env:
+          WHP_MACOS_ARCH: arm64e
+        run: |
+          set -euo pipefail
+          bash_build="$RUNNER_TEMP/whp-bash-arm64e"
+          bash_path="$(python3 scripts/ensure-bash.py --build-dir "$bash_build")"
+          marker="$bash_build/deps/bash/.whp-bash-bootstrap"
+          expected_triplet="arm64e-apple-darwin$(uname -r)"
+          lipo="$(xcrun --find lipo)"
+
+          test -x "$bash_path"
+          test "$("$bash_path" --noprofile --norc -c 'printf "%s\\n" "$MACHTYPE"')" = "$expected_triplet"
+          "$lipo" -archs "$bash_path" | tr ' ' '\n' | grep -Fxq arm64e
+          file "$bash_path" | grep -Fq arm64e
+          grep -Fxq 'BASH_BOOTSTRAP_SCHEMA=3' "$marker"
+          grep -Fxq 'BASH_ABI_VARIANT=arm64e' "$marker"
+          grep -Fxq "BASH_HOST_TRIPLET=$expected_triplet" "$marker"
 
       - name: Verify macOS architecture policy
         shell: bash
