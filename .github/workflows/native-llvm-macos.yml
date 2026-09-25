@@ -234,7 +234,10 @@ jobs:
         run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
 
       - name: Install native LLVM and QEMU build dependencies
-        run: brew install autoconf automake cmake glib libslirp libtool make ninja pixman pkgconf
+        run: |
+          brew install \
+            autoconf automake cmake glib help2man libslirp libtool m4 make \
+            ninja pixman pkgconf texinfo xz
 
       - name: Bootstrap pinned libisofs as arm64e
         shell: bash
