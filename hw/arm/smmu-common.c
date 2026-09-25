@@ -600,7 +600,7 @@ static int smmu_ptw_64_s2(SMMUTransCfg *cfg,
      * The offset is the idx * size of each ttb(number of ptes * (sizeof(pte))
      */
     uint64_t baseaddr = extract64(cfg->s2cfg.vttb, 0, cfg->s2cfg.eff_ps) +
-                                  (1 << stride) * idx * sizeof(uint64_t);
+                                  (1ULL << stride) * idx * sizeof(uint64_t);
     dma_addr_t indexmask = VMSA_IDXMSK(inputsize, stride, level);
 
     baseaddr &= ~indexmask;
