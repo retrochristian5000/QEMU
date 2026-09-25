@@ -116,6 +116,19 @@ def main() -> int:
     workflow = (
         ROOT / ".github/workflows/native-llvm-macos.yml"
     ).read_text(encoding="utf-8")
+    libisofs_root = ROOT / "toolchains/libisofs"
+    libisofs_util = (
+        (libisofs_root / "libisofs/util.c").read_text(encoding="utf-8")
+        if (libisofs_root / "libisofs/util.c").is_file() else ""
+    )
+    libisofs_data_source = (
+        (libisofs_root / "libisofs/data_source.c").read_text(encoding="utf-8")
+        if (libisofs_root / "libisofs/data_source.c").is_file() else ""
+    )
+    libisofs_fs_local = (
+        (libisofs_root / "libisofs/fs_local.c").read_text(encoding="utf-8")
+        if (libisofs_root / "libisofs/fs_local.c").is_file() else ""
+    )
 
     require(
         gitmodules,
@@ -221,6 +234,40 @@ def main() -> int:
     require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
     require(helper, "def prepare_workspace(", "incremental workspace planner")
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
+
+    if libisofs_util:
+        require(
+            libisofs_util,
+            "char *iso_local_make_abspath(const char *path)",
+            "local path namespace anchor",
+        )
+        require(
+            libisofs_util,
+            "if (path[0] == '/' || path[0] == 0)",
+            "absolute host-path preservation",
+        )
+    if libisofs_data_source:
+        require(
+            libisofs_data_source,
+            "absolute_path = iso_local_make_abspath(path);",
+            "data-source path anchoring",
+        )
+        require(
+            libisofs_data_source,
+            "data->path = absolute_path;",
+            "anchored data-source path ownership",
+        )
+    if libisofs_fs_local:
+        require(
+            libisofs_fs_local,
+            "absolute_path = iso_local_make_abspath(path);",
+            "local-filesystem path anchoring",
+        )
+        require(
+            libisofs_fs_local,
+            "if (child == NULL)",
+            "root dot-dot guard",
+        )
 
     require(
         meson,
