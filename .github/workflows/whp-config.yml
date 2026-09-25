@@ -233,11 +233,18 @@ jobs:
           test -x "$prefix/bin/libtoolize"
           "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
           "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
-          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=2' \
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=3' \
             "$prefix/.whp-libtool-bootstrap"
           expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
             "$prefix/.whp-libtool-bootstrap"
+          macro="$prefix/share/aclocal/libtool.m4"
+          test -f "$macro"
+          grep -Fq '[llvm-ar ar]' "$macro"
+          grep -Fq '[llvm-ranlib ranlib]' "$macro"
+          grep -Fq '[llvm-strip strip]' "$macro"
+          grep -Fq '[llvm-objdump objdump]' "$macro"
+          grep -Fq '[llvm-lipo lipo]' "$macro"
 
       - name: Verify Libtool bootstrap cache reuse
         shell: bash

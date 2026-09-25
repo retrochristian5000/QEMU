@@ -24,6 +24,11 @@ def main() -> int:
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(
         encoding="utf-8"
     )
+    libtool_m4_path = ROOT / "toolchains/libtool/m4/libtool.m4"
+    libtool_m4 = (
+        libtool_m4_path.read_text(encoding="utf-8")
+        if libtool_m4_path.is_file() else ""
+    )
 
     ast.parse(helper, filename=str(helper_path))
 
@@ -73,7 +78,6 @@ def main() -> int:
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
     require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "3"', "cache schema")
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
-    require(helper, "def select_cxx_compiler(", "LLVM C++ compiler selector")
     require(helper, "def select_linker(", "LLVM linker selector")
     require(helper, '"llvm-ar"', "LLVM archiver preference")
     require(helper, '"llvm-ranlib"', "LLVM ranlib preference")
@@ -90,6 +94,38 @@ def main() -> int:
         '"ld64.lld" if platform.system() == "Darwin" else "ld.lld"',
         "LLVM linker preference",
     )
+    require(
+        helper,
+        '"OBJDUMP", "llvm-objdump", ("objdump", "false")',
+        "optional objdump fallback",
+    )
+    if libtool_m4:
+        require(libtool_m4, "[llvm-ar ar]", "Libtool macro LLVM ar preference")
+        require(
+            libtool_m4,
+            "[llvm-ranlib ranlib]",
+            "Libtool macro LLVM ranlib preference",
+        )
+        require(
+            libtool_m4,
+            "[llvm-strip strip]",
+            "Libtool macro LLVM strip preference",
+        )
+        require(
+            libtool_m4,
+            "llvm-nm ${ac_tool_prefix}nm",
+            "Libtool macro LLVM nm preference",
+        )
+        require(
+            libtool_m4,
+            "[llvm-objdump objdump]",
+            "Libtool macro LLVM objdump preference",
+        )
+        require(
+            libtool_m4,
+            "[llvm-lipo lipo]",
+            "Libtool macro LLVM lipo preference",
+        )
     require(helper, "CONFIG_SHELL=", "configuration shell cache identity")
     require(helper, "--disable-ltdl-install", "minimal Libtool profile")
     require(helper, "system_libtool_pair()", "host GNU Libtool auto path")

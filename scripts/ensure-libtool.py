@@ -494,36 +494,6 @@ def select_llvm_tool(
     )
 
 
-def select_cxx_compiler(cc: str) -> str:
-    requested = explicit_tool("CXX")
-    if requested:
-        return requested
-
-    for root in llvm_roots(cc):
-        path = executable_path(str(root / "clang++"))
-        if path:
-            return path
-
-    if platform.system() == "Darwin" and shutil.which("xcrun"):
-        completed = subprocess.run(
-            ["xcrun", "--sdk", "macosx", "--find", "clang++"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if completed.returncode == 0:
-            path = executable_path(completed.stdout.strip())
-            if path:
-                return path
-
-    for name in ("clang++", "c++", "g++"):
-        path = executable_path(name)
-        if path:
-            return path
-    raise RuntimeError("a host C++ compiler is required to bootstrap Libtool")
-
-
 def select_linker(cc: str, arch: str) -> str:
     requested = explicit_tool("LD")
     if requested:
@@ -704,17 +674,15 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision, nested_revisions = ensure_libtool_source()
     cc = select_c_compiler()
-    cxx = select_cxx_compiler(cc)
     sdkroot, arch, deployment = macos_settings()
     config_shell = select_config_shell()
 
     tools = {
-        "CXX": cxx,
         "AR": select_llvm_tool("AR", "llvm-ar", ("ar",), cc),
         "RANLIB": select_llvm_tool("RANLIB", "llvm-ranlib", ("ranlib",), cc),
         "NM": select_llvm_tool("NM", "llvm-nm", ("nm",), cc),
         "OBJDUMP": select_llvm_tool(
-            "OBJDUMP", "llvm-objdump", ("objdump",), cc
+            "OBJDUMP", "llvm-objdump", ("objdump", "false"), cc
         ),
         "STRIP": select_llvm_tool("STRIP", "llvm-strip", ("strip",), cc),
         "LD": select_linker(cc, arch),
