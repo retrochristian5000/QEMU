@@ -90,12 +90,12 @@ def main() -> int:
     )
     require(
         helper,
-        '[config_shell, str(source_copy / "bootstrap")',
+        'config_shell, str(source_copy / "bootstrap"),',
         "Libtool bootstrap interpreter",
     )
     require(
         helper,
-        '[config_shell, str(configure)',
+        'config_shell, str(configure),',
         "Libtool configure interpreter",
     )
     if '["/bin/sh",' in helper:
