@@ -41,5 +41,9 @@ assert "ISO_READAHEAD_MAX (64 * MiB)" in src
 assert "iso_data_source_new_from_file(" not in src
 assert "raw_isofs_metadata_read_ahead(filename" not in src
 assert "raw_isofs_metadata_read_ahead(s->fd, bdrv_flags)" in src
+assert "IsoDataSource *src = calloc(1, sizeof(*src));" in src
+assert "data = calloc(1, sizeof(*data));" in src
+assert "free(data);" in src
+assert "if (!src ||" in src
 
 print("Darwin libisofs metadata read-ahead audit passed")

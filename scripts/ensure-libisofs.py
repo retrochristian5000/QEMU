@@ -24,6 +24,7 @@ PKG_NAME = "libisofs-1"
 LIBISOFS_CONFIGURE_ARGS = (
     "--disable-shared",
     "--enable-static",
+    "--disable-versioned-libs",
     "--disable-libacl",
     "--disable-libjte",
     "--disable-ldconfig-at-install",

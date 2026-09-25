@@ -176,6 +176,11 @@ def main() -> int:
     require(helper, "#include <time.h>", "strict-prototype time types")
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
+    require(
+        helper,
+        '"--disable-versioned-libs"',
+        "static build source-path isolation",
+    )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
     require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "5"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")

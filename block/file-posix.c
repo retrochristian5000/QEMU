@@ -696,14 +696,28 @@ static void raw_isofs_data_source_free(IsoDataSource *src)
         if (data->read_fd >= 0) {
             qemu_close(data->read_fd);
         }
-        g_free(data);
+        free(data);
     }
 }
 
 static IsoDataSource *raw_isofs_data_source_new_from_fd(int fd)
 {
-    IsoDataSource *src = g_new0(IsoDataSource, 1);
-    RawIsoDataSource *data = g_new0(RawIsoDataSource, 1);
+    IsoDataSource *src = calloc(1, sizeof(*src));
+    RawIsoDataSource *data;
+
+    if (!src) {
+        return NULL;
+    }
+
+    /*
+     * libisofs owns the public IsoDataSource after import and releases it
+     * with libc free(). Keep its allocation domain identical here.
+     */
+    data = calloc(1, sizeof(*data));
+    if (!data) {
+        free(src);
+        return NULL;
+    }
 
     data->source_fd = fd;
     data->read_fd = -1;
@@ -746,7 +760,8 @@ static void raw_isofs_metadata_read_ahead(int fd, int bdrv_flags)
     }
 
     src = raw_isofs_data_source_new_from_fd(fd);
-    if (iso_image_new("qemu-isofs-metadata", &image) < 0 ||
+    if (!src ||
+        iso_image_new("qemu-isofs-metadata", &image) < 0 ||
         iso_read_opts_new(&read_opts, 0) < 0) {
         goto out;
     }
