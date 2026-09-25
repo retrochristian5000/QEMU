@@ -25,6 +25,42 @@ def load_helper_module():
     return module
 
 
+def test_macos_arch_identity() -> None:
+    helper = load_helper_module()
+    cases = {
+        "arm64": "aarch64-apple-darwin25.0.0",
+        "arm64e": "arm64e-apple-darwin25.0.0",
+        "x86_64": "x86_64-apple-darwin25.0.0",
+    }
+    for arch, expected in cases.items():
+        actual = helper.macos_host_triplet(arch, "25.0.0")
+        if actual != expected:
+            raise SystemExit(
+                f"error: Bash host triplet mismatch for {arch}: "
+                f"{actual} != {expected}"
+            )
+
+    expected_flags = [
+        "-arch", "arm64e",
+        "-isysroot", "/tmp/MacOSX.sdk",
+        "-mmacosx-version-min=15.0",
+    ]
+    actual_flags = helper.macos_compile_flags(
+        "/tmp/MacOSX.sdk", "arm64e", "15.0"
+    )
+    if actual_flags != expected_flags:
+        raise SystemExit(
+            "error: arm64e Bash compiler flags lost architecture/SDK policy"
+        )
+
+    try:
+        helper.macos_host_triplet("arm64ec", "25.0.0")
+    except RuntimeError:
+        pass
+    else:
+        raise SystemExit("error: unsupported Bash ABI was accepted")
+
+
 def test_pinned_source_copy_ignores_dirty_checkout() -> None:
     helper = load_helper_module()
     if not hasattr(helper, "copy_bash_source"):
@@ -99,11 +135,19 @@ def main() -> int:
     require(build, "WHP_BUILD_BASH_EXPLICIT", "explicit Bash override")
     require(helper, "toolchains/bash", "pinned Bash source")
     require(helper, '"submodule", "update"', "lazy Bash submodule initialization")
+    require(helper, 'BASH_BOOTSTRAP_SCHEMA = "3"', "Bash cache schema")
     require(helper, "BASH_GIT_COMMIT=", "Bash cache revision identity")
+    require(helper, "BASH_HOST_TRIPLET=", "Bash host triplet cache identity")
+    require(helper, "BASH_ABI_VARIANT=", "Bash ABI cache identity")
     require(helper, 'env.pop("INSTALL", None)', "INSTALL namespace isolation")
     require(helper, '"--without-bash-malloc"', "system malloc profile")
     require(helper, '"--disable-nls"', "minimal Bash profile")
     require(helper, '"-isysroot", sdkroot', "macOS Bash SDK routing")
+    require(helper, "def macos_arch_usable(", "macOS Bash ABI probe")
+    require(helper, 'f"--build={host_triplet}"', "Bash build triplet routing")
+    require(helper, 'f"--host={host_triplet}"', "Bash host triplet routing")
+    require(helper, '"support" / "config.sub"', "Bash triplet canonicalization")
+    require(helper, "bash_machtype(bash_path)", "Bash MACHTYPE validation")
     require(helper, "def copy_bash_source(", "isolated Bash source copy")
     require(helper, 'source_copy = work_dir / "source"', "Bash source workspace")
     require(helper, 'configure = source_copy / "configure"', "isolated configure input")
@@ -112,6 +156,7 @@ def main() -> int:
             "error: Bash bootstrap still rejects dirty working trees before "
             "using the pinned committed source"
         )
+    test_macos_arch_identity()
     test_pinned_source_copy_ignores_dirty_checkout()
     print("WHP Bash bootstrap wiring: verified")
     return 0

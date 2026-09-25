@@ -14,12 +14,13 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/bash")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-BASH_BOOTSTRAP_SCHEMA = "2"
+BASH_BOOTSTRAP_SCHEMA = "3"
 
 
 def run_text(
@@ -224,6 +225,79 @@ def compiler_version(cc: str) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def macos_compile_flags(
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+) -> list[str]:
+    return [
+        "-arch", arch,
+        "-isysroot", sdkroot,
+        f"-mmacosx-version-min={deployment}",
+    ]
+
+
+def macos_host_triplet(arch: str, darwin_release: str) -> str:
+    cpu = {
+        "arm64": "aarch64",
+        "arm64e": "arm64e",
+        "x86_64": "x86_64",
+    }.get(arch)
+    if cpu is None:
+        raise RuntimeError(f"unsupported macOS Bash architecture: {arch}")
+    if not darwin_release:
+        raise RuntimeError("Darwin release is required for the Bash host triplet")
+    return f"{cpu}-apple-darwin{darwin_release}"
+
+
+def macos_arch_usable(
+    cc: str,
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+) -> bool:
+    flags = macos_compile_flags(sdkroot, arch, deployment)
+    with tempfile.TemporaryDirectory(prefix="whp-bash-arch-probe-") as tmp:
+        root = pathlib.Path(tmp)
+        source = root / "probe.c"
+        binary = root / "probe"
+        source.write_text(
+            "int main(void) { return 0; }\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [cc, *flags, str(source), "-o", str(binary)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return False
+        completed = subprocess.run(
+            [str(binary)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return completed.returncode == 0
+
+
+def bash_machtype(path: pathlib.Path) -> str:
+    return run_text([
+        str(path), "--noprofile", "--norc", "-c",
+        'printf "%s\\n" "$MACHTYPE"',
+    ])
+
+
+def bash_matches_host(path: pathlib.Path, expected: str) -> bool:
+    if not expected:
+        return True
+    try:
+        return bash_machtype(path) == expected
+    except (OSError, RuntimeError):
+        return False
+
+
 def macos_settings() -> tuple[str, str, str]:
     if platform.system() != "Darwin":
         return "", "", ""
@@ -280,7 +354,9 @@ def marker_text(
     sdkroot: str,
     arch: str,
     deployment: str,
+    host_triplet: str,
 ) -> str:
+    abi_variant = "arm64e" if arch == "arm64e" else "base"
     return (
         f"BASH_BOOTSTRAP_SCHEMA={BASH_BOOTSTRAP_SCHEMA}\n"
         f"BASH_GIT_COMMIT={revision}\n"
@@ -290,6 +366,8 @@ def marker_text(
         f"CC_VERSION={compiler_version(cc)}\n"
         f"SDKROOT={sdkroot}\n"
         f"WHP_MACOS_ARCH={arch}\n"
+        f"BASH_HOST_TRIPLET={host_triplet}\n"
+        f"BASH_ABI_VARIANT={abi_variant}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
         "BASH_MALLOC=system\n"
         "NLS=disabled\n"
@@ -301,12 +379,17 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     cc = select_c_compiler()
     make = command_path("make", "MAKE")
     sdkroot, arch, deployment = macos_settings()
+    host_triplet = (
+        macos_host_triplet(arch, platform.release()) if sdkroot else ""
+    )
 
     prefix = build_root / "deps" / "bash"
     work_dir = build_root / "bootstrap" / "bash"
     source_copy = work_dir / "source"
     object_dir = work_dir / "build"
-    marker = marker_text(revision, cc, sdkroot, arch, deployment)
+    marker = marker_text(
+        revision, cc, sdkroot, arch, deployment, host_triplet,
+    )
     marker_file = prefix / ".whp-bash-bootstrap"
     bash_path = prefix / "bin" / "bash"
 
@@ -314,8 +397,17 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         marker_file.is_file()
         and marker_file.read_text(encoding="utf-8", errors="replace") == marker
         and bash_usable(bash_path)
+        and bash_matches_host(bash_path, host_triplet)
     ):
         return bash_path
+
+    if arch == "arm64e" and not macos_arch_usable(
+        cc, sdkroot, arch, deployment,
+    ):
+        raise RuntimeError(
+            "requested arm64e Bash, but the selected compiler/SDK/"
+            "deployment target cannot compile, link, and execute it"
+        )
 
     shutil.rmtree(prefix, ignore_errors=True)
     shutil.rmtree(work_dir, ignore_errors=True)
@@ -335,22 +427,43 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["CC"] = cc
 
     if sdkroot:
-        flags = shlex.join([
-            "-arch", arch,
-            "-isysroot", sdkroot,
-            f"-mmacosx-version-min={deployment}",
-        ])
+        flags = shlex.join(
+            macos_compile_flags(sdkroot, arch, deployment)
+        )
         env["CFLAGS"] = flags
         env["LDFLAGS"] = flags
         env["SDKROOT"] = sdkroot
         env["MACOSX_DEPLOYMENT_TARGET"] = deployment
 
     configure = source_copy / "configure"
-    print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
-    run_logged([
+    configure_command = [
         "/bin/sh", str(configure), f"--prefix={prefix}",
+    ]
+    if host_triplet:
+        config_sub = source_copy / "support" / "config.sub"
+        canonical_host = run_text(
+            ["/bin/sh", str(config_sub), host_triplet],
+            cwd=source_copy,
+            env=env,
+        )
+        if canonical_host != host_triplet:
+            raise RuntimeError(
+                "bundled Bash config.sub changed the requested host triplet: "
+                f"{host_triplet} -> {canonical_host}"
+            )
+        # The selected Mach-O ABI is executable on this build machine. Passing
+        # it as both build and host keeps Autoconf's native runtime probes
+        # enabled while preserving arm64e in Bash's MACHTYPE.
+        configure_command.extend([
+            f"--build={host_triplet}",
+            f"--host={host_triplet}",
+        ])
+    configure_command.extend([
         "--without-bash-malloc", "--disable-nls",
-    ], cwd=object_dir, env=env)
+    ])
+
+    print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
+    run_logged(configure_command, cwd=object_dir, env=env)
     run_logged(
         [make, "-j", str(max(1, os.cpu_count() or 1))],
         cwd=object_dir, env=env,
@@ -359,6 +472,13 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     if not bash_usable(bash_path):
         raise RuntimeError(f"bootstrapped Bash is not usable: {bash_path}")
+    if host_triplet:
+        actual_machtype = bash_machtype(bash_path)
+        if actual_machtype != host_triplet:
+            raise RuntimeError(
+                "bootstrapped Bash reported the wrong MACHTYPE: "
+                f"{actual_machtype} != {host_triplet}"
+            )
     marker_file.write_text(marker, encoding="utf-8")
     return bash_path
 
