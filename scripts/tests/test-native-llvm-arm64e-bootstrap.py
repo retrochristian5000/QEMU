@@ -29,6 +29,17 @@ assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
 # silently built for a different ABI.
 assert text.count('-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch') >= 2
 
+# Apple SME builtins must use Clang's canonical AArch64 architecture spelling.
+# The old armv8a+sme form makes the arm64e compiler-rt build fail before QEMU.
+compiler_rt_builtins = (
+    ROOT / 'toolchains' / 'llvm-project' / 'compiler-rt' / 'lib' / 'builtins'
+    / 'CMakeLists.txt'
+)
+if compiler_rt_builtins.is_file():
+    compiler_rt_text = compiler_rt_builtins.read_text(encoding='utf-8')
+    assert '-march=armv8-a+sme' in compiler_rt_text
+    assert '-march=armv8a+sme' not in compiler_rt_text
+
 # The installed compiler must be smoke-tested with the ABI selected for the
 # toolchain itself.  A plain clang invocation defaults back to arm64 on macOS
 # and would therefore fail to prove that an arm64e bootstrap can compile C.
