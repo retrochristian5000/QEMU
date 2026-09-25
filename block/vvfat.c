@@ -1408,7 +1408,7 @@ read_cluster_directory:
 
         assert(s->current_fd);
 
-        offset = s->cluster_size *
+        offset = (off_t)s->cluster_size *
             ((cluster_num - s->current_mapping->begin)
             + s->current_mapping->info.file.offset);
         if(lseek(s->current_fd, offset, SEEK_SET)!=offset)
