@@ -83,7 +83,7 @@ static const PMBusCoefficients adm1272_coefficients[] = {
 uint16_t pmbus_data2direct_mode(PMBusCoefficients c, uint32_t value)
 {
     /* R is usually negative to fit large readings into 16 bits */
-    uint16_t y = (c.m * value + c.b) * pow(10, c.R);
+    uint16_t y = (((double)c.m * (double)value) + (double)c.b) * pow(10.0, c.R);
     return y;
 }
 
