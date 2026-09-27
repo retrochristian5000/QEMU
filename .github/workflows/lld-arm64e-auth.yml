@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: retrochristian5000/LLVM
-          ref: f6fb0a753b60e3653d0721fc2ab93110a5c455b9
+          ref: ce207c7744dead9521acaaf8be043e969e7599a4
           path: llvm-project
           fetch-depth: 1
           sparse-checkout: |
@@ -41,6 +41,19 @@ jobs:
             lld
             llvm
             third-party
+
+      - name: Verify LLVM checkout matches QEMU gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          actual="$(git -C llvm-project rev-parse HEAD)"
+          test -n "$expected"
+          test "$actual" = "$expected" || {
+            printf 'error: ARM64e LLD workflow LLVM pin %s != QEMU gitlink %s\n' \
+              "$actual" "$expected" >&2
+            exit 1
+          }
 
       - name: Install build dependencies
         run: brew install cmake ninja
@@ -56,7 +69,7 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=lld \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
-          cmake --build build-lld --target lld -- -j4
+          cmake --build build-lld --target lld llvm-objdump -- -j4
 
       - name: Link authenticated ARM64e pointer with WHP LLD
         shell: bash
@@ -83,3 +96,7 @@ jobs:
           "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
             -dylib libfoo.dylib test.o -o libtest.dylib
           test -s libtest.dylib
+          "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
+            --macho --chained-fixups libtest.dylib >fixups.txt
+          grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' fixups.txt
+          grep -Fq '_foo' fixups.txt
