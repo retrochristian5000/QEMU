@@ -256,6 +256,23 @@ def copy_libtool_source(
         (destination / ".tarball-version").write_text(
             version + "\n", encoding="utf-8"
         )
+
+        # git archive deliberately removes .git, so Libtool's Makefile cannot
+        # regenerate .serial with its normal git-log rule. Recreate the same
+        # numeric input from the pinned checkout before leaving Git context.
+        serial = run_text(
+            [
+                "git", "-C", str(SUBMODULE_DIR),
+                "rev-list", "--count", revision,
+            ]
+        )
+        if not serial.isdigit() or int(serial) < 1:
+            raise RuntimeError(
+                f"invalid Libtool macro serial for {revision}: {serial!r}"
+            )
+        (destination / ".serial").write_text(
+            serial + "\n", encoding="utf-8"
+        )
         return
 
     shutil.copytree(

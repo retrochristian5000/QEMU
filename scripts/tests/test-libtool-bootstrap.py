@@ -337,6 +337,16 @@ def main() -> int:
     )
     require(
         helper,
+        '"rev-list", "--count", revision',
+        "Libtool archive macro serial reconstruction",
+    )
+    require(
+        helper,
+        '(destination / ".serial").write_text(',
+        "Libtool archive .serial materialization",
+    )
+    require(
+        helper,
         'config_shell, str(source_copy / "bootstrap"),',
         "Libtool bootstrap interpreter",
     )
