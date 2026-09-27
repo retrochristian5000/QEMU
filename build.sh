@@ -588,9 +588,10 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
         LD=$(whp_libtool_marker_tool LD)
         export AR RANLIB NM OBJDUMP STRIP LD
         if [ "$WHP_HOST_OS" = macos ]; then
+            DSYMUTIL=$(whp_libtool_marker_tool DSYMUTIL)
             LIPO=$(whp_libtool_marker_tool LIPO)
             OTOOL=$(whp_libtool_marker_tool OTOOL)
-            export LIPO OTOOL
+            export DSYMUTIL LIPO OTOOL
         fi
         unset WHP_LIBTOOL_ACLOCAL WHP_LIBTOOL_MARKER
     fi

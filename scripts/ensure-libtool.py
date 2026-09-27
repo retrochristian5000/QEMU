@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "3"
+LIBTOOL_BOOTSTRAP_SCHEMA = "4"
 
 
 def run_text(
@@ -700,6 +700,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "PERL": command_path("perl", "PERL"),
     }
     if platform.system() == "Darwin":
+        tools["DSYMUTIL"] = select_llvm_tool(
+            "DSYMUTIL", "llvm-dsymutil", ("dsymutil",), cc
+        )
         tools["LIPO"] = select_llvm_tool(
             "LIPO", "llvm-lipo", ("lipo",), cc
         )

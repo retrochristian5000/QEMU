@@ -96,6 +96,11 @@ def main() -> int:
         "Libtool strip handoff",
     )
     require(build, "LD=$(whp_libtool_marker_tool LD)", "Libtool linker handoff")
+    require(
+        build,
+        "DSYMUTIL=$(whp_libtool_marker_tool DSYMUTIL)",
+        "Libtool dsymutil handoff",
+    )
 
     require(helper, "toolchains/libtool", "pinned Libtool source")
     require(helper, "NESTED_SUBMODULES", "nested Libtool source policy")
@@ -105,7 +110,7 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "3"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "4"', "cache schema")
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
     require(helper, "def select_linker(", "LLVM linker selector")
     require(helper, '"llvm-ar"', "LLVM archiver preference")
@@ -113,6 +118,7 @@ def main() -> int:
     require(helper, '"llvm-nm"', "LLVM nm preference")
     require(helper, '"llvm-objdump"', "LLVM objdump preference")
     require(helper, '"llvm-strip"', "LLVM strip preference")
+    require(helper, '"llvm-dsymutil"', "LLVM dsymutil preference")
     require(helper, '"llvm-lipo"', "LLVM lipo preference")
     require(helper, '"llvm-otool"', "LLVM otool preference")
     require(
@@ -156,6 +162,16 @@ def main() -> int:
             libtool_m4,
             "[llvm-lipo lipo]",
             "Libtool macro LLVM lipo preference",
+        )
+        require(
+            libtool_m4,
+            "[llvm-dsymutil dsymutil]",
+            "Libtool macro LLVM dsymutil preference",
+        )
+        require(
+            libtool_m4,
+            "[llvm-dlltool dlltool]",
+            "Libtool macro LLVM dlltool preference",
         )
     require(helper, "CONFIG_SHELL=", "configuration shell cache identity")
     require(helper, "--disable-ltdl-install", "minimal Libtool profile")
