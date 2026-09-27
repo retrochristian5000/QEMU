@@ -726,12 +726,21 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
             sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
                 sed -n '1p'
         }
+        whp_libtool_marker_value()
+        {
+            sed -n "s#^$1=##p" "$WHP_LIBTOOL_MARKER" | sed -n '1p'
+        }
         AR=$(whp_libtool_marker_tool AR)
         RANLIB=$(whp_libtool_marker_tool RANLIB)
         NM=$(whp_libtool_marker_tool NM)
         OBJDUMP=$(whp_libtool_marker_tool OBJDUMP)
         STRIP=$(whp_libtool_marker_tool STRIP)
         LD=$(whp_libtool_marker_tool LD)
+        if grep -q '^ARFLAGS=' "$WHP_LIBTOOL_MARKER"; then
+            ARFLAGS=$(whp_libtool_marker_value ARFLAGS)
+            AR_FLAGS=$ARFLAGS
+            export ARFLAGS AR_FLAGS
+        fi
         export AR RANLIB NM OBJDUMP STRIP LD
         if [ "$WHP_HOST_OS" = macos ]; then
             DSYMUTIL=$(whp_libtool_marker_tool DSYMUTIL)

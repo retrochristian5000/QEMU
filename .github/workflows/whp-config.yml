@@ -233,7 +233,7 @@ jobs:
           test -x "$prefix/bin/libtoolize"
           "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
           "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
-          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=4' \
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=5' \
             "$prefix/.whp-libtool-bootstrap"
           expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
@@ -241,6 +241,7 @@ jobs:
           macro="$prefix/share/aclocal/libtool.m4"
           test -f "$macro"
           grep -Fq '[llvm-ar ar]' "$macro"
+          grep -Fq 'whether $AR accepts $AR_FLAGS to create an archive' "$macro"
           grep -Fq '[llvm-ranlib ranlib]' "$macro"
           grep -Fq '[llvm-strip strip]' "$macro"
           grep -Fq '[llvm-objdump objdump]' "$macro"

@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "4"
+LIBTOOL_BOOTSTRAP_SCHEMA = "5"
 
 
 def run_text(
@@ -494,6 +494,22 @@ def select_llvm_tool(
     )
 
 
+def select_arflags(ar: str) -> str | None:
+    # Libtool gives the legacy AR_FLAGS variable priority over ARFLAGS.
+    # Preserve an explicit choice, but otherwise use the conservative archive
+    # creation mode for llvm-ar instead of inheriting unrelated host settings.
+    for env_name in ("AR_FLAGS", "ARFLAGS"):
+        if env_name in os.environ:
+            value = os.environ[env_name].strip()
+            if not value:
+                raise RuntimeError(f"{env_name} must not be empty")
+            return value
+
+    if pathlib.Path(ar).name.startswith("llvm-ar"):
+        return "cr"
+    return None
+
+
 def select_linker(cc: str, arch: str) -> str:
     # Our Mach-O LLD still lacks ARM64_RELOC_AUTHENTICATED_POINTER support.
     # Keep Apple ld for arm64e even if the surrounding native-LLVM build has
@@ -633,6 +649,7 @@ def marker_text(
     deployment: str,
     config_shell: str,
     tools: dict[str, str],
+    arflags: str | None,
 ) -> str:
     nested = ",".join(
         f"{path}={nested_revisions[path]}"
@@ -652,6 +669,8 @@ def marker_text(
         f"CONFIG_SHELL={shell_identity(config_shell)}",
         "LTDL_INSTALL=disabled",
     ]
+    if arflags is not None:
+        lines.append(f"ARFLAGS={arflags}")
     for name in sorted(tools):
         lines.append(f"{name}={tool_identity(tools[name])}")
     return "\n".join(lines) + "\n"
@@ -712,6 +731,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             "OTOOL", "llvm-otool", ("otool",), cc
         )
 
+    arflags = select_arflags(tools["AR"])
+
     prefix = build_root / "deps" / "libtool"
     work_dir = build_root / "bootstrap" / "libtool"
     source_copy = work_dir / "source"
@@ -725,6 +746,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         deployment,
         config_shell,
         tools,
+        arflags,
     )
     if cache_valid(prefix, marker):
         return prefix
@@ -741,7 +763,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env = os.environ.copy()
     for key in (
         "INSTALL", "LIBTOOL", "LIBTOOLIZE", "BASH_ENV", "ENV",
-        "CFLAGS", "CPPFLAGS", "LDFLAGS",
+        "CFLAGS", "CPPFLAGS", "LDFLAGS", "ARFLAGS", "AR_FLAGS",
     ):
         env.pop(key, None)
     env["CC"] = cc
@@ -749,6 +771,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["SHELL"] = config_shell
     for name, path in tools.items():
         env[name] = path
+    if arflags is not None:
+        # Keep Automake's ARFLAGS and Libtool's legacy AR_FLAGS synchronized.
+        env["ARFLAGS"] = arflags
+        env["AR_FLAGS"] = arflags
 
     tool_dirs: list[str] = [str(pathlib.Path(cc).parent)]
     for path in tools.values():

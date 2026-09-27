@@ -79,6 +79,13 @@ def main() -> int:
         "safe Libtool marker separator parsing",
     )
     require(build, "AR=$(whp_libtool_marker_tool AR)", "Libtool AR handoff")
+    require(build, "whp_libtool_marker_value()", "Libtool marker value reader")
+    require(
+        build,
+        "ARFLAGS=$(whp_libtool_marker_value ARFLAGS)",
+        "Libtool ARFLAGS handoff",
+    )
+    require(build, "AR_FLAGS=$ARFLAGS", "Libtool legacy AR_FLAGS synchronization")
     require(
         build,
         "RANLIB=$(whp_libtool_marker_tool RANLIB)",
@@ -110,8 +117,11 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "4"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "5"', "cache schema")
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
+    require(helper, "def select_arflags(", "archive flag selector")
+    require(helper, 'return "cr"', "llvm-ar default archive flags")
+    require(helper, '"ARFLAGS", "AR_FLAGS"', "archive flag environment isolation")
     require(helper, "def select_linker(", "LLVM linker selector")
     require(helper, '"llvm-ar"', "LLVM archiver preference")
     require(helper, '"llvm-ranlib"', "LLVM ranlib preference")
@@ -142,6 +152,11 @@ def main() -> int:
     )
     if libtool_m4:
         require(libtool_m4, "[llvm-ar ar]", "Libtool macro LLVM ar preference")
+        require(
+            libtool_m4,
+            "whether $AR accepts $AR_FLAGS to create an archive",
+            "Libtool archiver flag validation",
+        )
         require(
             libtool_m4,
             "[llvm-ranlib ranlib]",
