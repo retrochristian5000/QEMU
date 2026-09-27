@@ -666,6 +666,13 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
 fi
 
+# Publish the canonical configuration shell before Autotools dependencies.
+# This preserves the shell contract while still letting native LLVM come first.
+unset QEMU_CONFIG_SHELL TOOLCHAIN_CONFIG_SHELL
+CONFIG_SHELL="$WHP_BUILD_BASH"
+WHP_BUILD_ENTRY_NORMALIZED=1
+export WHP_BUILD_BASH CONFIG_SHELL WHP_BUILD_ENTRY_NORMALIZED
+
 # Autotools dependencies must be configured only after the requested native
 # LLVM toolchain is available. Otherwise Libtool can cache system ar/ranlib/nm
 # before llvm-ar/llvm-ranlib/llvm-nm exist and leak those stale choices into
@@ -785,13 +792,6 @@ if [ "$WHP_HOST_OS" = macos ] &&
     fi
 fi
 
-
-# One public shell choice owns every Bash-based helper. The core build path
-# above does not need this setting at all.
-unset QEMU_CONFIG_SHELL TOOLCHAIN_CONFIG_SHELL
-CONFIG_SHELL="$WHP_BUILD_BASH"
-WHP_BUILD_ENTRY_NORMALIZED=1
-export WHP_BUILD_BASH CONFIG_SHELL WHP_BUILD_ENTRY_NORMALIZED
 
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
     printf 'WHP orchestration shell: %s\n' "$WHP_BUILD_FRONTEND_KIND"
