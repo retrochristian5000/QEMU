@@ -108,6 +108,26 @@ whp_prepare_host_identity()
     fi
 }
 
+whp_validate_qemu_language_standards()
+{
+    case "$QEMU_C_STANDARD" in
+        gnu11|gnu17|gnu23) ;;
+        *)
+            printf 'error: QEMU_C_STANDARD must be gnu11, gnu17, or gnu23: %s\n' \
+                "$QEMU_C_STANDARD" >&2
+            return 1
+            ;;
+    esac
+    case "$QEMU_CXX_STANDARD" in
+        gnu++17|gnu++20|gnu++23|c++26) ;;
+        *)
+            printf 'error: QEMU_CXX_STANDARD must be gnu++17, gnu++20, gnu++23, or c++26: %s\n' \
+                "$QEMU_CXX_STANDARD" >&2
+            return 1
+            ;;
+    esac
+}
+
 whp_prepare_build_defaults()
 {
     if [[ "$HOST_OS" == Darwin ]]; then
@@ -142,6 +162,8 @@ whp_prepare_build_defaults()
     MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-auto}"
     QEMU_HOST_LTO="${QEMU_HOST_LTO:-auto}"
     QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
+    QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
+    QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
     BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"
     OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
     OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
@@ -164,6 +186,7 @@ whp_prepare_build_defaults()
         MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO MACOS_ENABLE_GTK \
         MACOS_ENABLE_PA QEMU_HOST_LTO QEMU_HOST_MODULES BUILD_OPENBIOS \
         BOOTSTRAP_POWERPC_TOOLCHAIN || exit 1
+    whp_validate_qemu_language_standards || exit 1
     case "$CONFIG_MAC_NEWWORLD:$CONFIG_MAC_OLDWORLD" in
         y:y|y:n|n:y|n:n) ;;
         *)
@@ -358,6 +381,8 @@ whp_prepare_configure_args()
         --host-cc="$CC_FOR_BUILD"
         --cxx="${CXX:-c++}"
         --prefix="$PREFIX"
+        -Dc_std="$QEMU_C_STANDARD"
+        -Dcpp_std="$QEMU_CXX_STANDARD"
     )
 
     if [[ -n "$QEMU_TARGET_LIST" ]]; then

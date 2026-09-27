@@ -224,9 +224,13 @@ MACOS_ENABLE_GTK=auto
 MACOS_ENABLE_PA=auto
 QEMU_HOST_LTO=auto
 QEMU_HOST_MODULES=auto
+QEMU_C_STANDARD=gnu23
+QEMU_CXX_STANDARD=c++26
 whp_prepare_configure_args
 generic_args="$(printf '%s\n' "${configure_args[@]}")"
 grep -Fxq -- '--prefix=/portable-prefix' <<< "$generic_args"
+grep -Fxq -- '-Dc_std=gnu23' <<< "$generic_args"
+grep -Fxq -- '-Dcpp_std=c++26' <<< "$generic_args"
 if grep -Eq -- '--(enable|disable)-(gtk|pa|lto)' <<< "$generic_args"; then
     printf 'error: auto host features must be left to QEMU/Meson detection\n' >&2
     exit 1
@@ -290,8 +294,23 @@ whp_require_tristate_values MACOS_ENABLE_GTK MACOS_ENABLE_PA \
 [[ "$BOOTSTRAP_POWERPC_TOOLCHAIN" == 0 ]]
 [[ "$QEMU_HOST_LTO" == auto ]]
 
+# Reject direct environment overrides before configure sees an unsupported
+# language mode; config.py already validates saved menu values.
+QEMU_C_STANDARD=gnu99
+QEMU_CXX_STANDARD=gnu++23
+if whp_validate_qemu_language_standards 2>/dev/null; then
+    printf 'error: Bash builder accepted invalid QEMU_C_STANDARD\n' >&2
+    exit 1
+fi
+QEMU_C_STANDARD=gnu11
+QEMU_CXX_STANDARD=gnu++14
+if whp_validate_qemu_language_standards 2>/dev/null; then
+    printf 'error: Bash builder accepted invalid QEMU_CXX_STANDARD\n' >&2
+    exit 1
+fi
+
 # Default policy is unprivileged: install is off and prefix is user/build local.
-unset PREFIX INSTALL_AFTER_BUILD
+unset PREFIX INSTALL_AFTER_BUILD QEMU_C_STANDARD QEMU_CXX_STANDARD
 HOST_OS=Linux
 HOST_ARCH=x86_64
 HOME="$TMP/home"
@@ -301,6 +320,8 @@ whp_prepare_build_defaults
 [[ "$INSTALL_AFTER_BUILD" == 0 ]]
 [[ "$PREFIX" == "$HOME/.local/whp-qemu" ]]
 [[ "$PREFIX" != /emulator ]]
+[[ "$QEMU_C_STANDARD" == gnu11 ]]
+[[ "$QEMU_CXX_STANDARD" == gnu++23 ]]
 
 # RUN_TESTS is post-build policy. QEMU builds run make check when enabled,
 # skip it when disabled, and firmware-only targets do not trigger the QEMU suite.
