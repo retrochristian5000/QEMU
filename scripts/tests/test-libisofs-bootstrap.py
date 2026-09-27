@@ -3,6 +3,7 @@
 
 import importlib.util
 import os
+import stat
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -24,6 +25,55 @@ def load_helper_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def write_fake_m4(path: Path, *, gnu: bool) -> None:
+    if gnu:
+        body = """#!/bin/sh
+if [ "$1" = --gnu ] && [ "$2" = --version ]; then
+    printf '%s\\n' 'm4 (GNU M4) 1.4.21'
+    exit 0
+fi
+exit 2
+"""
+    else:
+        body = """#!/bin/sh
+printf '%s\\n' "gm4: unrecognized option '--gnu'" >&2
+exit 1
+"""
+    path.write_text(body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def test_gnu_m4_selector() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-m4-") as tmp:
+        root = Path(tmp)
+        good = root / "good-m4"
+        bad = root / "bad-m4"
+        write_fake_m4(good, gnu=True)
+        write_fake_m4(bad, gnu=False)
+        old_m4 = os.environ.get("M4")
+        try:
+            os.environ["M4"] = str(bad)
+            try:
+                helper.select_gnu_m4()
+            except RuntimeError as exc:
+                if "--gnu support" not in str(exc):
+                    raise SystemExit(
+                        "error: invalid libisofs M4 diagnostic lost capability detail"
+                    )
+            else:
+                raise SystemExit("error: libisofs accepted non-GNU M4")
+
+            os.environ["M4"] = str(good)
+            if helper.select_gnu_m4() != str(good):
+                raise SystemExit("error: libisofs did not honor explicit GNU M4")
+        finally:
+            if old_m4 is None:
+                os.environ.pop("M4", None)
+            else:
+                os.environ["M4"] = old_m4
 
 
 def test_c_standard_policy() -> None:
@@ -245,6 +295,10 @@ def main() -> int:
         "pthread static dependency check",
     )
     require(helper, "def select_gnu_libtool(", "GNU Libtool selector")
+    require(helper, "def select_gnu_m4(", "GNU M4 selector")
+    require(helper, '"--gnu", "--version"', "GNU M4 capability probe")
+    require(helper, 'env["M4"] = m4', "GNU M4 Autotools handoff")
+    require(helper, 'f"M4={m4}\\n"', "GNU M4 workspace identity")
     require(helper, '"GNU libtool" in version', "GNU Libtool validation")
     if '("glibtool", "libtool")' in helper:
         raise SystemExit(
@@ -338,6 +392,7 @@ def main() -> int:
             "of exercising the pinned WHP fork"
         )
 
+    test_gnu_m4_selector()
     test_c_standard_policy()
     test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")
