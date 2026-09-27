@@ -26,6 +26,19 @@ def load_helper_module():
     return module
 
 
+def test_c_standard_policy() -> None:
+    helper = load_helper_module()
+    if helper.LIBISOFS_C_STANDARD != "gnu11":
+        raise SystemExit(
+            "error: libisofs bootstrap must follow QEMU GNU C11 policy"
+        )
+    expected = ["-std=gnu11", "-Werror=strict-prototypes"]
+    if helper.libisofs_c_policy_flags() != expected:
+        raise SystemExit(
+            "error: libisofs GNU C compiler policy flags drifted"
+        )
+
+
 def test_incremental_workspace() -> None:
     helper = load_helper_module()
     if not hasattr(helper, "incremental_build_enabled"):
@@ -166,7 +179,32 @@ def main() -> int:
     require(helper, '"submodule", "update"', "lazy submodule initialization")
     require(helper, "LIBISOFS_GIT_COMMIT=", "libisofs cache revision identity")
     require(helper, 'PKG_NAME = "libisofs-1"', "pkg-config identity")
-    require(helper, '"-Werror=strict-prototypes"', "strict prototype probe")
+    require(
+        helper,
+        'LIBISOFS_C_STANDARD = "gnu11"',
+        "libisofs GNU C standard",
+    )
+    require(
+        helper,
+        "def libisofs_c_policy_flags(",
+        "shared libisofs GNU C compiler policy",
+    )
+    require(
+        helper,
+        'compile_flags = ["-O3", *libisofs_c_policy_flags()]',
+        "libisofs GNU C build policy",
+    )
+    require(
+        helper,
+        "*libisofs_c_policy_flags(),",
+        "libisofs GNU C probe policy",
+    )
+    if '"-std=gnu11",' in helper:
+        raise SystemExit(
+            "error: libisofs bootstrap still hard-codes GNU C11 outside "
+            "the shared compiler policy"
+        )
+    require(helper, '"-Werror=strict-prototypes"', "strict prototype policy")
     require(
         helper,
         'platform.system() != "Darwin"',
@@ -300,6 +338,7 @@ def main() -> int:
             "of exercising the pinned WHP fork"
         )
 
+    test_c_standard_policy()
     test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")
     return 0

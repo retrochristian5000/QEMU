@@ -21,6 +21,7 @@ SUBMODULE_DIR = ROOT / SUBMODULE_REL
 LIBISOFS_BOOTSTRAP_SCHEMA = "5"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
+LIBISOFS_C_STANDARD = "gnu11"
 LIBISOFS_CONFIGURE_ARGS = (
     "--disable-shared",
     "--enable-static",
@@ -297,6 +298,13 @@ def pkg_config() -> str | None:
     return shutil.which("pkg-config") or shutil.which("pkgconf")
 
 
+def libisofs_c_policy_flags() -> list[str]:
+    return [
+        f"-std={LIBISOFS_C_STANDARD}",
+        "-Werror=strict-prototypes",
+    ]
+
+
 def pkg_config_flags(
     pkgconf: str,
     *,
@@ -364,8 +372,7 @@ int main(int argc, char **argv)
         completed = subprocess.run(
             [
                 cc,
-                "-std=gnu11",
-                "-Werror=strict-prototypes",
+                *libisofs_c_policy_flags(),
                 *(compile_flags or []),
                 str(probe),
                 *(link_flags or []),
@@ -609,7 +616,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env["LIBTOOLIZE"] = libtoolize
     env["CONFIG_SHELL"] = config_shell
     env["SHELL"] = config_shell
-    compile_flags = ["-O3", "-Werror=strict-prototypes"]
+    compile_flags = ["-O3", *libisofs_c_policy_flags()]
     link_flags: list[str] = []
     if sdkroot:
         compile_flags += [
