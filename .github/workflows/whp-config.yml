@@ -242,6 +242,7 @@ jobs:
           test -f "$macro"
           grep -Fq '[llvm-ar ar]' "$macro"
           grep -Fq 'whether $AR accepts $AR_FLAGS to create an archive' "$macro"
+          grep -Fq 'ARFLAGS:-"$lt_ar_flags"' "$macro"
           grep -Fq '[llvm-ranlib ranlib]' "$macro"
           grep -Fq '[llvm-strip strip]' "$macro"
           grep -Fq '[llvm-objdump objdump]' "$macro"

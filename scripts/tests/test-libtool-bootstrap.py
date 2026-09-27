@@ -29,6 +29,11 @@ def main() -> int:
         libtool_m4_path.read_text(encoding="utf-8")
         if libtool_m4_path.is_file() else ""
     )
+    libtool_early_test_path = ROOT / "toolchains/libtool/tests/early-libtool.at"
+    libtool_early_test = (
+        libtool_early_test_path.read_text(encoding="utf-8")
+        if libtool_early_test_path.is_file() else ""
+    )
 
     ast.parse(helper, filename=str(helper_path))
 
@@ -159,6 +164,11 @@ def main() -> int:
         )
         require(
             libtool_m4,
+            'ARFLAGS:-"\\@S|@lt_ar_flags"',
+            "Libtool empty ARFLAGS fallback",
+        )
+        require(
+            libtool_m4,
             "[llvm-ranlib ranlib]",
             "Libtool macro LLVM ranlib preference",
         )
@@ -243,6 +253,13 @@ def main() -> int:
     ):
         raise SystemExit(
             "error: Libtool LLVM host tools are not exported before libisofs"
+        )
+
+    if libtool_early_test:
+        require(
+            libtool_early_test,
+            "ARFLAGS= $LIBTOOL --mode=link",
+            "empty ARFLAGS archive regression test",
         )
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
