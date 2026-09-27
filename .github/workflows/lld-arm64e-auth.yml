@@ -38,6 +38,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             cmake
+            libc
             lld
             llvm
             third-party
