@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "6"
+LIBTOOL_BOOTSTRAP_SCHEMA = "7"
 
 
 def run_text(
@@ -873,8 +873,25 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         cwd=object_dir,
         env=env,
     )
+    configured_libtool = object_dir / "libtool"
+    if configured_libtool.is_file():
+        config_dump = run_text(
+            [config_shell, str(configured_libtool), "--config"],
+            cwd=object_dir,
+            env=env,
+        )
+        for line in config_dump.splitlines():
+            if line.startswith(
+                ("AR=", "AR_FLAGS=", "lt_ar_flags=", "old_archive_cmds=")
+            ):
+                print(f"WHP Libtool generated config: {line}", file=sys.stderr)
+
     jobs = str(max(1, os.cpu_count() or 1))
-    run_logged([tools["MAKE"], "-j", jobs], cwd=object_dir, env=env)
+    run_logged(
+        [tools["MAKE"], "-j", jobs, "V=1"],
+        cwd=object_dir,
+        env=env,
+    )
     run_logged([tools["MAKE"], "install"], cwd=object_dir, env=env)
 
     libtool = prefix / "bin" / "libtool"

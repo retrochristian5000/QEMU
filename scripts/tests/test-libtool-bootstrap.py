@@ -127,7 +127,7 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "6"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "7"', "cache schema")
     require(
         helper,
         'SUBMODULE_DIR / "m4" / "libtool.m4"',
@@ -138,6 +138,12 @@ def main() -> int:
         'SUBMODULE_DIR / "libltdl" / "configure.ac"',
         "standalone libltdl cache signature",
     )
+    require(
+        helper,
+        '"old_archive_cmds="',
+        "generated Libtool archive configuration diagnostics",
+    )
+    require(helper, '"V=1"', "verbose Libtool bootstrap make")
     require(helper, "def verify_archive_smoke(", "archive smoke test")
     require(helper, 'smoke_env["ARFLAGS"] = ""', "empty ARFLAGS smoke")
     require(helper, '"libwhp-ar-smoke.la"', "static archive smoke output")
