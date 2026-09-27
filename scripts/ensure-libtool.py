@@ -495,12 +495,10 @@ def select_llvm_tool(
 
 
 def select_linker(cc: str, arch: str) -> str:
-    requested = explicit_tool("LD")
-    if requested:
-        return requested
-
     # Our Mach-O LLD still lacks ARM64_RELOC_AUTHENTICATED_POINTER support.
-    # Keep Apple ld for arm64e even while the rest of Libtool prefers LLVM.
+    # Keep Apple ld for arm64e even if the surrounding native-LLVM build has
+    # already exported LD=ld64.lld. The relocation constraint is stronger
+    # than the general LLVM-tool preference.
     if platform.system() == "Darwin" and arch == "arm64e":
         if shutil.which("xcrun"):
             return run_text(["xcrun", "--find", "ld"])
@@ -508,6 +506,10 @@ def select_linker(cc: str, arch: str) -> str:
         if path:
             return path
         raise RuntimeError("Apple ld is required for the arm64e Libtool path")
+
+    requested = explicit_tool("LD")
+    if requested:
+        return requested
 
     llvm_linker = "ld64.lld" if platform.system() == "Darwin" else "ld.lld"
     for root in llvm_roots(cc):

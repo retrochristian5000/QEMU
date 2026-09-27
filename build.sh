@@ -531,122 +531,6 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
     fi
 fi
 
-BOOTSTRAP_LIBTOOL=${BOOTSTRAP_LIBTOOL:-auto}
-case "$BOOTSTRAP_LIBTOOL" in
-    y) BOOTSTRAP_LIBTOOL=1 ;;
-    n) BOOTSTRAP_LIBTOOL=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_LIBTOOL must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
-export BOOTSTRAP_LIBTOOL
-
-# GNU Libtool is a host-side Autotools generator used by source dependencies
-# such as libisofs.  auto keeps an existing GNU Libtool pair when available
-# and otherwise attempts the pinned WHP fork; 1 forces the pinned fork.  Keep
-# Apple /usr/bin/libtool out of this path because it is a different tool.
-if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
-   [ "$BOOTSTRAP_LIBTOOL" != 0 ]; then
-    LIBTOOL_BOOTSTRAP_MODE=auto
-    if [ "$BOOTSTRAP_LIBTOOL" = 1 ]; then
-        LIBTOOL_BOOTSTRAP_MODE=force
-    fi
-    WHP_LIBTOOL_PREFIX=$(
-        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libtool.py" \
-            --build-dir "$BUILD_DIR" --mode "$LIBTOOL_BOOTSTRAP_MODE"
-    ) || exit 1
-    unset LIBTOOL_BOOTSTRAP_MODE
-
-    if [ -n "$WHP_LIBTOOL_PREFIX" ]; then
-        LIBTOOL="$WHP_LIBTOOL_PREFIX/bin/libtool"
-        LIBTOOLIZE="$WHP_LIBTOOL_PREFIX/bin/libtoolize"
-        PATH="$WHP_LIBTOOL_PREFIX/bin:$PATH"
-        WHP_LIBTOOL_ACLOCAL="$WHP_LIBTOOL_PREFIX/share/aclocal"
-        if [ -d "$WHP_LIBTOOL_ACLOCAL" ]; then
-            ACLOCAL_PATH="$WHP_LIBTOOL_ACLOCAL${ACLOCAL_PATH:+:$ACLOCAL_PATH}"
-            export ACLOCAL_PATH
-        fi
-        export WHP_LIBTOOL_PREFIX LIBTOOL LIBTOOLIZE PATH
-
-        # Reuse the exact host tools selected while bootstrapping Libtool.
-        # This prevents downstream libtoolize users from rediscovering a
-        # different archiver/linker suite after the LLVM-first selection.
-        WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"
-        whp_libtool_marker_tool()
-        {
-            sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
-                sed -n '1p'
-        }
-        AR=$(whp_libtool_marker_tool AR)
-        RANLIB=$(whp_libtool_marker_tool RANLIB)
-        NM=$(whp_libtool_marker_tool NM)
-        OBJDUMP=$(whp_libtool_marker_tool OBJDUMP)
-        STRIP=$(whp_libtool_marker_tool STRIP)
-        LD=$(whp_libtool_marker_tool LD)
-        export AR RANLIB NM OBJDUMP STRIP LD
-        if [ "$WHP_HOST_OS" = macos ]; then
-            DSYMUTIL=$(whp_libtool_marker_tool DSYMUTIL)
-            LIPO=$(whp_libtool_marker_tool LIPO)
-            OTOOL=$(whp_libtool_marker_tool OTOOL)
-            export DSYMUTIL LIPO OTOOL
-        fi
-        unset WHP_LIBTOOL_ACLOCAL WHP_LIBTOOL_MARKER
-    fi
-fi
-
-BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}
-case "$BOOTSTRAP_LIBISOFS" in
-    y) BOOTSTRAP_LIBISOFS=1 ;;
-    n) BOOTSTRAP_LIBISOFS=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_LIBISOFS must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
-export BOOTSTRAP_LIBISOFS
-
-# libisofs is used only by the Darwin metadata-assisted ISO path. Keep Meson's
-# dependency detection authoritative, but reject host headers which fail
-# Clang's strict-prototype contract. auto uses a compatible host libisofs when
-# available and otherwise stages the pinned WHP fork. 1 forces the fork.
-if [ "$WHP_HOST_OS" = macos ] &&
-   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
-   [ "$BOOTSTRAP_LIBISOFS" != 0 ]; then
-    LIBISOFS_BOOTSTRAP_MODE=auto
-    if [ "$BOOTSTRAP_LIBISOFS" = 1 ]; then
-        LIBISOFS_BOOTSTRAP_MODE=force
-    fi
-    WHP_LIBISOFS_PREFIX=$(
-        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libisofs.py" \
-            --build-dir "$BUILD_DIR" --mode "$LIBISOFS_BOOTSTRAP_MODE"
-    ) || exit 1
-    unset LIBISOFS_BOOTSTRAP_MODE
-
-    if [ -n "$WHP_LIBISOFS_PREFIX" ]; then
-        WHP_LIBISOFS_PC_PATH=
-        for WHP_LIBISOFS_PC_DIR in \
-            "$WHP_LIBISOFS_PREFIX/lib/pkgconfig" \
-            "$WHP_LIBISOFS_PREFIX/lib64/pkgconfig" \
-            "$WHP_LIBISOFS_PREFIX/libdata/pkgconfig"; do
-            if [ -d "$WHP_LIBISOFS_PC_DIR" ]; then
-                WHP_LIBISOFS_PC_PATH="${WHP_LIBISOFS_PC_PATH:+$WHP_LIBISOFS_PC_PATH:}$WHP_LIBISOFS_PC_DIR"
-            fi
-        done
-        if [ -n "$WHP_LIBISOFS_PC_PATH" ]; then
-            PKG_CONFIG_PATH="$WHP_LIBISOFS_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-            export PKG_CONFIG_PATH
-        fi
-        export WHP_LIBISOFS_PREFIX
-        unset WHP_LIBISOFS_PC_PATH WHP_LIBISOFS_PC_DIR
-    fi
-fi
-
-
 portable_core()
 {
     if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
@@ -781,6 +665,126 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     fi
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
 fi
+
+# Autotools dependencies must be configured only after the requested native
+# LLVM toolchain is available. Otherwise Libtool can cache system ar/ranlib/nm
+# before llvm-ar/llvm-ranlib/llvm-nm exist and leak those stale choices into
+# libisofs and other downstream projects.
+BOOTSTRAP_LIBTOOL=${BOOTSTRAP_LIBTOOL:-auto}
+case "$BOOTSTRAP_LIBTOOL" in
+    y) BOOTSTRAP_LIBTOOL=1 ;;
+    n) BOOTSTRAP_LIBTOOL=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_LIBTOOL must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_LIBTOOL
+
+# GNU Libtool is a host-side Autotools generator used by source dependencies
+# such as libisofs.  auto keeps an existing GNU Libtool pair when available
+# and otherwise attempts the pinned WHP fork; 1 forces the pinned fork.  Keep
+# Apple /usr/bin/libtool out of this path because it is a different tool.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$BOOTSTRAP_LIBTOOL" != 0 ]; then
+    LIBTOOL_BOOTSTRAP_MODE=auto
+    if [ "$BOOTSTRAP_LIBTOOL" = 1 ]; then
+        LIBTOOL_BOOTSTRAP_MODE=force
+    fi
+    WHP_LIBTOOL_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libtool.py" \
+            --build-dir "$BUILD_DIR" --mode "$LIBTOOL_BOOTSTRAP_MODE"
+    ) || exit 1
+    unset LIBTOOL_BOOTSTRAP_MODE
+
+    if [ -n "$WHP_LIBTOOL_PREFIX" ]; then
+        LIBTOOL="$WHP_LIBTOOL_PREFIX/bin/libtool"
+        LIBTOOLIZE="$WHP_LIBTOOL_PREFIX/bin/libtoolize"
+        PATH="$WHP_LIBTOOL_PREFIX/bin:$PATH"
+        WHP_LIBTOOL_ACLOCAL="$WHP_LIBTOOL_PREFIX/share/aclocal"
+        if [ -d "$WHP_LIBTOOL_ACLOCAL" ]; then
+            ACLOCAL_PATH="$WHP_LIBTOOL_ACLOCAL${ACLOCAL_PATH:+:$ACLOCAL_PATH}"
+            export ACLOCAL_PATH
+        fi
+        export WHP_LIBTOOL_PREFIX LIBTOOL LIBTOOLIZE PATH
+
+        # Reuse the exact host tools selected while bootstrapping Libtool.
+        # This prevents downstream libtoolize users from rediscovering a
+        # different archiver/linker suite after the LLVM-first selection.
+        WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"
+        whp_libtool_marker_tool()
+        {
+            sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
+                sed -n '1p'
+        }
+        AR=$(whp_libtool_marker_tool AR)
+        RANLIB=$(whp_libtool_marker_tool RANLIB)
+        NM=$(whp_libtool_marker_tool NM)
+        OBJDUMP=$(whp_libtool_marker_tool OBJDUMP)
+        STRIP=$(whp_libtool_marker_tool STRIP)
+        LD=$(whp_libtool_marker_tool LD)
+        export AR RANLIB NM OBJDUMP STRIP LD
+        if [ "$WHP_HOST_OS" = macos ]; then
+            DSYMUTIL=$(whp_libtool_marker_tool DSYMUTIL)
+            LIPO=$(whp_libtool_marker_tool LIPO)
+            OTOOL=$(whp_libtool_marker_tool OTOOL)
+            export DSYMUTIL LIPO OTOOL
+        fi
+        unset WHP_LIBTOOL_ACLOCAL WHP_LIBTOOL_MARKER
+    fi
+fi
+
+BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}
+case "$BOOTSTRAP_LIBISOFS" in
+    y) BOOTSTRAP_LIBISOFS=1 ;;
+    n) BOOTSTRAP_LIBISOFS=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_LIBISOFS must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_LIBISOFS
+
+# libisofs is used only by the Darwin metadata-assisted ISO path. Keep Meson's
+# dependency detection authoritative, but reject host headers which fail
+# Clang's strict-prototype contract. auto uses a compatible host libisofs when
+# available and otherwise stages the pinned WHP fork. 1 forces the fork.
+if [ "$WHP_HOST_OS" = macos ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$BOOTSTRAP_LIBISOFS" != 0 ]; then
+    LIBISOFS_BOOTSTRAP_MODE=auto
+    if [ "$BOOTSTRAP_LIBISOFS" = 1 ]; then
+        LIBISOFS_BOOTSTRAP_MODE=force
+    fi
+    WHP_LIBISOFS_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-libisofs.py" \
+            --build-dir "$BUILD_DIR" --mode "$LIBISOFS_BOOTSTRAP_MODE"
+    ) || exit 1
+    unset LIBISOFS_BOOTSTRAP_MODE
+
+    if [ -n "$WHP_LIBISOFS_PREFIX" ]; then
+        WHP_LIBISOFS_PC_PATH=
+        for WHP_LIBISOFS_PC_DIR in \
+            "$WHP_LIBISOFS_PREFIX/lib/pkgconfig" \
+            "$WHP_LIBISOFS_PREFIX/lib64/pkgconfig" \
+            "$WHP_LIBISOFS_PREFIX/libdata/pkgconfig"; do
+            if [ -d "$WHP_LIBISOFS_PC_DIR" ]; then
+                WHP_LIBISOFS_PC_PATH="${WHP_LIBISOFS_PC_PATH:+$WHP_LIBISOFS_PC_PATH:}$WHP_LIBISOFS_PC_DIR"
+            fi
+        done
+        if [ -n "$WHP_LIBISOFS_PC_PATH" ]; then
+            PKG_CONFIG_PATH="$WHP_LIBISOFS_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            export PKG_CONFIG_PATH
+        fi
+        export WHP_LIBISOFS_PREFIX
+        unset WHP_LIBISOFS_PC_PATH WHP_LIBISOFS_PC_DIR
+    fi
+fi
+
 
 # One public shell choice owns every Bash-based helper. The core build path
 # above does not need this setting at all.

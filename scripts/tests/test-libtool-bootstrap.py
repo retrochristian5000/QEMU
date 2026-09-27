@@ -126,6 +126,10 @@ def main() -> int:
         'arch == "arm64e"',
         "ARM64e linker exception",
     )
+    if helper.find('requested = explicit_tool("LD")') < helper.find('arch == "arm64e"'):
+        raise SystemExit(
+            "error: inherited LD bypasses the arm64e Apple-linker exception"
+        )
     require(
         helper,
         '"ld64.lld" if platform.system() == "Darwin" else "ld.lld"',
@@ -205,12 +209,17 @@ def main() -> int:
         )
 
     early_shell = build.find('CONFIG_SHELL="$WHP_BUILD_BASH"')
+    native_llvm_hook = build.find("scripts/bootstrap-native-clang.sh")
     libtool_hook = build.find("scripts/ensure-libtool.py")
     libisofs_hook = build.find("scripts/ensure-libisofs.py")
     llvm_tool_handoff = build.find("AR=$(whp_libtool_marker_tool AR)")
     if early_shell < 0 or libtool_hook < 0 or early_shell > libtool_hook:
         raise SystemExit(
             "error: CONFIG_SHELL is not published before Libtool bootstrap"
+        )
+    if native_llvm_hook < 0 or libtool_hook < 0 or native_llvm_hook > libtool_hook:
+        raise SystemExit(
+            "error: Libtool is bootstrapped before the native LLVM toolchain"
         )
     if (
         llvm_tool_handoff < 0
