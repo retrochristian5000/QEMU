@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "8"
+LIBTOOL_BOOTSTRAP_SCHEMA = "9"
 
 
 def run_text(
@@ -130,6 +130,7 @@ def ensure_nested_submodules() -> dict[pathlib.Path, str]:
 def archive_source_signature() -> str:
     candidates = (
         SUBMODULE_DIR / "bootstrap",
+        SUBMODULE_DIR / "bootstrap.conf",
         SUBMODULE_DIR / "configure.ac",
         SUBMODULE_DIR / "m4" / "libtool.m4",
         SUBMODULE_DIR / "libltdl" / "configure.ac",
@@ -886,11 +887,23 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         for line in config_dump.splitlines():
             if line.startswith(
                 (
-                    "AR=", "RANLIB=", "AR_FLAGS=", "lt_ar_flags=",
-                    "old_archive_cmds=",
+                    "SHELL=", "AR=", "RANLIB=", "AR_FLAGS=",
+                    "lt_ar_flags=", "old_archive_cmds=",
                 )
             ):
                 print(f"WHP Libtool generated config: {line}", file=sys.stderr)
+        shell_lines = [
+            line for line in config_dump.splitlines()
+            if line.startswith("SHELL=")
+        ]
+        if not shell_lines:
+            raise RuntimeError("generated Libtool config has no SHELL")
+        generated_shell = shell_lines[0].split("=", 1)[1].strip().strip('"')
+        if generated_shell != config_shell:
+            raise RuntimeError(
+                "generated Libtool shell diverged from bootstrap shell: "
+                f"{generated_shell} != {config_shell}"
+            )
 
     jobs = str(max(1, os.cpu_count() or 1))
     run_logged(

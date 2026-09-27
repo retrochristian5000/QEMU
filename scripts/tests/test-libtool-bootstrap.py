@@ -34,6 +34,11 @@ def main() -> int:
         libltdl_configure_path.read_text(encoding="utf-8")
         if libltdl_configure_path.is_file() else ""
     )
+    libtool_bootstrap_conf_path = ROOT / "toolchains/libtool/bootstrap.conf"
+    libtool_bootstrap_conf = (
+        libtool_bootstrap_conf_path.read_text(encoding="utf-8")
+        if libtool_bootstrap_conf_path.is_file() else ""
+    )
     libtool_early_test_path = ROOT / "toolchains/libtool/tests/early-libtool.at"
     libtool_early_test = (
         libtool_early_test_path.read_text(encoding="utf-8")
@@ -127,7 +132,12 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "8"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "9"', "cache schema")
+    require(
+        helper,
+        'SUBMODULE_DIR / "bootstrap.conf"',
+        "Libtool bootstrap policy cache signature",
+    )
     require(
         helper,
         'SUBMODULE_DIR / "m4" / "libtool.m4"',
@@ -238,6 +248,11 @@ def main() -> int:
     require(helper, "--disable-ltdl-install", "minimal Libtool profile")
     require(helper, "system_libtool_pair()", "host GNU Libtool auto path")
     require(helper, "GNU libtool", "GNU tool identity check")
+    require(
+        helper,
+        '"generated Libtool shell diverged from bootstrap shell"',
+        "generated Libtool shell identity guard",
+    )
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(
         helper,
@@ -285,6 +300,18 @@ def main() -> int:
     ):
         raise SystemExit(
             "error: Libtool LLVM host tools are not exported before libisofs"
+        )
+
+    if libtool_bootstrap_conf:
+        require(
+            libtool_bootstrap_conf,
+            "SHELL=$CONFIG_SHELL",
+            "bootstrap shell synchronization",
+        )
+        require(
+            libtool_bootstrap_conf,
+            "export SHELL",
+            "bootstrap shell export",
         )
 
     if libltdl_configure:
