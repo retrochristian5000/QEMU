@@ -240,7 +240,7 @@ jobs:
           expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
             "$prefix/.whp-libtool-bootstrap"
-          grep -Eq '^AR=.*/llvm-ar\\|' "$prefix/.whp-libtool-bootstrap"
+          grep -Fq '/llvm-ar|' "$prefix/.whp-libtool-bootstrap"
           grep -Fxq 'ARFLAGS=cr' "$prefix/.whp-libtool-bootstrap"
           macro="$prefix/share/aclocal/libtool.m4"
           test -f "$macro"
