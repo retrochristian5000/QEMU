@@ -444,6 +444,78 @@ def explicit_tool(env_name: str) -> str | None:
     return path
 
 
+def gnu_m4_version(path: str) -> str:
+    completed = subprocess.run(
+        [path, "--gnu", "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    output = completed.stdout.strip()
+    if completed.returncode != 0 or "GNU M4" not in output:
+        detail = output.splitlines()[0] if output else "<no version output>"
+        raise RuntimeError(
+            f"not GNU M4 with --gnu support: {path}: {detail}"
+        )
+    return output.splitlines()[0]
+
+
+def select_gnu_m4() -> str:
+    requested = explicit_tool("M4")
+    if requested:
+        gnu_m4_version(requested)
+        return requested
+
+    candidates: list[str] = []
+
+    def add_candidate(candidate: str | None) -> None:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    if platform.system() == "Darwin":
+        # Homebrew's GNU m4 formula is keg-only because macOS already ships an
+        # m4. Search the normal keg locations before PATH so Xcode's m4/gm4
+        # compatibility tools cannot win merely because their names match.
+        for candidate in (
+            "/opt/homebrew/opt/m4/bin/m4",
+            "/usr/local/opt/m4/bin/m4",
+        ):
+            add_candidate(executable_path(candidate))
+
+        brew = shutil.which("brew")
+        if brew:
+            completed = subprocess.run(
+                [brew, "--prefix", "m4"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if completed.returncode == 0:
+                prefix = completed.stdout.strip()
+                if prefix:
+                    add_candidate(executable_path(str(pathlib.Path(prefix) / "bin" / "m4")))
+
+    names = ("gm4", "m4") if platform.system() == "Darwin" else ("m4", "gm4")
+    for name in names:
+        add_candidate(executable_path(name))
+
+    rejected: list[str] = []
+    for path in candidates:
+        try:
+            gnu_m4_version(path)
+        except RuntimeError as exc:
+            rejected.append(str(exc))
+            continue
+        return path
+
+    detail = "; ".join(rejected) if rejected else "no candidates found"
+    raise RuntimeError(
+        "GNU M4 with --gnu support is required to bootstrap Libtool: " + detail
+    )
+
+
 def llvm_roots(cc: str) -> list[pathlib.Path]:
     roots: list[pathlib.Path] = []
     for env_name in ("NATIVE_LLVM_DIR", "WHP_SHARED_LLVM_DIR"):
@@ -768,7 +840,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "HELP2MAN": command_path("help2man", "HELP2MAN"),
         "MAKEINFO": command_path("makeinfo", "MAKEINFO"),
         "XZ": command_path("xz", "XZ"),
-        "M4": command_path("m4", "M4"),
+        "M4": select_gnu_m4(),
         "PERL": command_path("perl", "PERL"),
     }
     if platform.system() == "Darwin":

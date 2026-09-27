@@ -3,6 +3,10 @@
 
 from pathlib import Path
 import ast
+import importlib.util
+import os
+import stat
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,6 +14,69 @@ ROOT = Path(__file__).resolve().parents[2]
 def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
+
+
+def load_helper_module():
+    path = ROOT / "scripts/ensure-libtool.py"
+    spec = importlib.util.spec_from_file_location("whp_ensure_libtool", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("error: could not load ensure-libtool.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_fake_m4(path: Path, *, gnu: bool) -> None:
+    if gnu:
+        body = """#!/bin/sh
+if [ "$1" = --gnu ] && [ "$2" = --version ]; then
+    printf '%s\\n' 'm4 (GNU M4) 1.4.21'
+    exit 0
+fi
+exit 2
+"""
+    else:
+        body = """#!/bin/sh
+if [ "$1" = --gnu ]; then
+    printf '%s\\n' "gm4: unrecognized option '--gnu'" >&2
+    exit 1
+fi
+printf '%s\\n' 'Apple M4 compatibility tool'
+"""
+    path.write_text(body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def test_gnu_m4_selector() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libtool-m4-") as tmp:
+        root = Path(tmp)
+        good = root / "good-m4"
+        bad = root / "bad-m4"
+        write_fake_m4(good, gnu=True)
+        write_fake_m4(bad, gnu=False)
+
+        old_m4 = os.environ.get("M4")
+        try:
+            os.environ["M4"] = str(bad)
+            try:
+                helper.select_gnu_m4()
+            except RuntimeError as exc:
+                if "--gnu support" not in str(exc):
+                    raise SystemExit(
+                        "error: invalid M4 diagnostic did not explain GNU capability failure"
+                    )
+            else:
+                raise SystemExit("error: non-GNU M4 was accepted")
+
+            os.environ["M4"] = str(good)
+            if helper.select_gnu_m4() != str(good):
+                raise SystemExit("error: explicit GNU M4 was not selected")
+        finally:
+            if old_m4 is None:
+                os.environ.pop("M4", None)
+            else:
+                os.environ["M4"] = old_m4
 
 
 def main() -> int:
@@ -166,6 +233,9 @@ def main() -> int:
             "error: Libtool tool selection still resolves LLVM multicall aliases"
         )
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
+    require(helper, "def select_gnu_m4(", "GNU M4 capability selector")
+    require(helper, '"--gnu", "--version"', "GNU M4 capability probe")
+    require(helper, '"M4": select_gnu_m4()', "GNU M4 bootstrap selection")
     require(helper, "def select_arflags(", "archive flag selector")
     require(helper, 'return "cr"', "llvm-ar default archive flags")
     require(helper, '"ARFLAGS", "AR_FLAGS"', "archive flag environment isolation")
@@ -332,6 +402,8 @@ def main() -> int:
             "ARFLAGS= $LIBTOOL --mode=link",
             "empty ARFLAGS archive regression test",
         )
+
+    test_gnu_m4_selector()
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
     require(ledger, "Libtool bootstrap", "Libtool dependency edge")
