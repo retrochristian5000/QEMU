@@ -211,6 +211,8 @@ jobs:
   test-libtool-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      CC: clang
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -219,7 +221,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            autoconf automake build-essential help2man m4 make perl texinfo xz-utils
+            autoconf automake build-essential clang help2man llvm m4 make perl texinfo xz-utils
 
       - name: Bootstrap pinned WHP Libtool
         shell: bash
@@ -233,11 +235,13 @@ jobs:
           test -x "$prefix/bin/libtoolize"
           "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
           "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
-          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=5' \
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=6' \
             "$prefix/.whp-libtool-bootstrap"
           expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
             "$prefix/.whp-libtool-bootstrap"
+          grep -Eq '^AR=.*/llvm-ar\\|' "$prefix/.whp-libtool-bootstrap"
+          grep -Fxq 'ARFLAGS=cr' "$prefix/.whp-libtool-bootstrap"
           macro="$prefix/share/aclocal/libtool.m4"
           test -f "$macro"
           grep -Fq '[llvm-ar ar]' "$macro"

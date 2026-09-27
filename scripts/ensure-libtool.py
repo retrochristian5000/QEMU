@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "5"
+LIBTOOL_BOOTSTRAP_SCHEMA = "6"
 
 
 def run_text(
@@ -131,6 +131,9 @@ def archive_source_signature() -> str:
     candidates = (
         SUBMODULE_DIR / "bootstrap",
         SUBMODULE_DIR / "configure.ac",
+        SUBMODULE_DIR / "m4" / "libtool.m4",
+        SUBMODULE_DIR / "libltdl" / "configure.ac",
+        SUBMODULE_DIR / "Makefile.am",
         SUBMODULE_DIR / "libtoolize.in",
         SUBMODULE_DIR / "build-aux" / "ltmain.in",
     )
@@ -692,6 +695,50 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
     return True
 
 
+def verify_archive_smoke(
+    libtool: pathlib.Path,
+    cc: str,
+    env: dict[str, str],
+    work_dir: pathlib.Path,
+) -> None:
+    smoke_dir = work_dir / "archive-smoke"
+    shutil.rmtree(smoke_dir, ignore_errors=True)
+    smoke_dir.mkdir(parents=True)
+    source = smoke_dir / "archive-smoke.c"
+    source.write_text(
+        "int whp_libtool_archive_smoke(void) { return 0; }\n",
+        encoding="utf-8",
+    )
+
+    smoke_env = env.copy()
+    # Exercise the exact failure mode: an empty run-time ARFLAGS must fall
+    # back to the archive operation recorded when Libtool was configured.
+    smoke_env["ARFLAGS"] = ""
+    smoke_env.pop("AR_FLAGS", None)
+
+    run_logged(
+        [
+            str(libtool), "--mode=compile", "--tag=CC", cc,
+            "-c", str(source), "-o", "archive-smoke.lo",
+        ],
+        cwd=smoke_dir,
+        env=smoke_env,
+    )
+    run_logged(
+        [
+            str(libtool), "--mode=link", "--tag=CC", cc,
+            "-static", "-o", "libwhp-ar-smoke.la", "archive-smoke.lo",
+        ],
+        cwd=smoke_dir,
+        env=smoke_env,
+    )
+    archive = smoke_dir / ".libs" / "libwhp-ar-smoke.a"
+    if not archive.is_file() or archive.stat().st_size == 0:
+        raise RuntimeError(
+            "Libtool archive smoke test did not produce a static archive"
+        )
+
+
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision, nested_revisions = ensure_libtool_source()
     cc = select_c_compiler()
@@ -798,6 +845,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         f"WHP Libtool bootstrap: {revision} -> {prefix}",
         file=sys.stderr,
     )
+    print(
+        f"WHP Libtool archiver: {tools['AR']} {arflags or '<default>'}",
+        file=sys.stderr,
+    )
     run_logged(
         [
             config_shell, str(source_copy / "bootstrap"),
@@ -829,6 +880,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     libtool = prefix / "bin" / "libtool"
     libtoolize = prefix / "bin" / "libtoolize"
     gnu_libtool_version(str(libtool))
+    verify_archive_smoke(libtool, cc, env, work_dir)
     gnu_libtool_version(str(libtoolize))
     (prefix / ".whp-libtool-bootstrap").write_text(
         marker, encoding="utf-8"

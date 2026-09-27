@@ -29,6 +29,11 @@ def main() -> int:
         libtool_m4_path.read_text(encoding="utf-8")
         if libtool_m4_path.is_file() else ""
     )
+    libltdl_configure_path = ROOT / "toolchains/libtool/libltdl/configure.ac"
+    libltdl_configure = (
+        libltdl_configure_path.read_text(encoding="utf-8")
+        if libltdl_configure_path.is_file() else ""
+    )
     libtool_early_test_path = ROOT / "toolchains/libtool/tests/early-libtool.at"
     libtool_early_test = (
         libtool_early_test_path.read_text(encoding="utf-8")
@@ -122,7 +127,20 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "5"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "6"', "cache schema")
+    require(
+        helper,
+        'SUBMODULE_DIR / "m4" / "libtool.m4"',
+        "Libtool macro cache signature",
+    )
+    require(
+        helper,
+        'SUBMODULE_DIR / "libltdl" / "configure.ac"',
+        "standalone libltdl cache signature",
+    )
+    require(helper, "def verify_archive_smoke(", "archive smoke test")
+    require(helper, 'smoke_env["ARFLAGS"] = ""', "empty ARFLAGS smoke")
+    require(helper, '"libwhp-ar-smoke.la"', "static archive smoke output")
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
     require(helper, "def select_arflags(", "archive flag selector")
     require(helper, 'return "cr"', "llvm-ar default archive flags")
@@ -253,6 +271,18 @@ def main() -> int:
     ):
         raise SystemExit(
             "error: Libtool LLVM host tools are not exported before libisofs"
+        )
+
+    if libltdl_configure:
+        require(
+            libltdl_configure,
+            'AR_FLAGS=cr',
+            "standalone libltdl archive default",
+        )
+        require(
+            libltdl_configure,
+            'test -n "${ARFLAGS-}"',
+            "standalone libltdl empty-flag handling",
         )
 
     if libtool_early_test:
