@@ -23,7 +23,7 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "7"
+LIBTOOL_BOOTSTRAP_SCHEMA = "8"
 
 
 def run_text(
@@ -423,7 +423,10 @@ def executable_path(candidate: str) -> str | None:
         else shutil.which(candidate)
     )
     if path and pathlib.Path(path).is_file() and os.access(path, os.X_OK):
-        return str(pathlib.Path(path).resolve())
+        # Preserve the invoked filename. LLVM uses multicall/symlink aliases
+        # such as llvm-ranlib -> llvm-ar and llvm-strip -> llvm-objcopy; fully
+        # resolving the symlink changes argv[0] and therefore tool semantics.
+        return os.path.abspath(path)
     return None
 
 
@@ -882,7 +885,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         )
         for line in config_dump.splitlines():
             if line.startswith(
-                ("AR=", "AR_FLAGS=", "lt_ar_flags=", "old_archive_cmds=")
+                (
+                    "AR=", "RANLIB=", "AR_FLAGS=", "lt_ar_flags=",
+                    "old_archive_cmds=",
+                )
             ):
                 print(f"WHP Libtool generated config: {line}", file=sys.stderr)
 

@@ -127,7 +127,7 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "7"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "8"', "cache schema")
     require(
         helper,
         'SUBMODULE_DIR / "m4" / "libtool.m4"',
@@ -147,6 +147,15 @@ def main() -> int:
     require(helper, "def verify_archive_smoke(", "archive smoke test")
     require(helper, 'smoke_env["ARFLAGS"] = ""', "empty ARFLAGS smoke")
     require(helper, '"libwhp-ar-smoke.la"', "static archive smoke output")
+    require(
+        helper,
+        "return os.path.abspath(path)",
+        "LLVM multicall alias preservation",
+    )
+    if "pathlib.Path(path).resolve()" in helper:
+        raise SystemExit(
+            "error: Libtool tool selection still resolves LLVM multicall aliases"
+        )
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
     require(helper, "def select_arflags(", "archive flag selector")
     require(helper, 'return "cr"', "llvm-ar default archive flags")
