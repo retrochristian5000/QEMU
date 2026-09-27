@@ -894,7 +894,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     jobs = str(max(1, os.cpu_count() or 1))
     run_logged(
-        [tools["MAKE"], "-j", jobs, "V=1"],
+        [tools["MAKE"], "-j", jobs],
         cwd=object_dir,
         env=env,
     )

@@ -143,7 +143,6 @@ def main() -> int:
         '"old_archive_cmds="',
         "generated Libtool archive configuration diagnostics",
     )
-    require(helper, '"V=1"', "verbose Libtool bootstrap make")
     require(helper, "def verify_archive_smoke(", "archive smoke test")
     require(helper, 'smoke_env["ARFLAGS"] = ""', "empty ARFLAGS smoke")
     require(helper, '"libwhp-ar-smoke.la"', "static archive smoke output")
