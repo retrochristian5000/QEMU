@@ -224,7 +224,9 @@ itself.
 
 Core QEMU dependencies represented by the minimal CI/build metadata include
 GLib/gmodule, zlib, pixman, libffi, and libfdt in addition to the shell,
-compiler, Python, Meson, Ninja, pkg-config, and basic build utilities.  The
+compiler, Python, Meson, Ninja, pkg-config, and basic build utilities.  The WHP
+GLib fork is pinned at ``toolchains/glib`` so QEMU has a repository-owned GLib
+source alongside the system/package-manager dependency path.  The
 full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional

@@ -90,6 +90,11 @@
 	url = https://github.com/retrochristian5000/aften.git
 	branch = master
 	shallow = true
+[submodule "toolchains/glib"]
+	path = toolchains/glib
+	url = https://github.com/retrochristian5000/Glib.git
+	branch = main
+	shallow = true
 [submodule "toolchains/libisofs"]
 	path = toolchains/libisofs
 	url = https://github.com/retrochristian5000/libisofs.git
