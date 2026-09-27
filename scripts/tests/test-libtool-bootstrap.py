@@ -250,7 +250,7 @@ def main() -> int:
     require(helper, "GNU libtool", "GNU tool identity check")
     require(
         helper,
-        '"generated Libtool shell diverged from bootstrap shell"',
+        '"generated Libtool shell diverged from bootstrap shell: "',
         "generated Libtool shell identity guard",
     )
     require(helper, "def select_config_shell(", "configuration shell selector")
