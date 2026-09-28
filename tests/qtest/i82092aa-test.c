@@ -18,7 +18,20 @@
 #define I82092AA_SOCKET_4       0x04
 
 #define I82092AA_EXCA_IDENT     0x00
+#define I82092AA_EXCA_STATUS    0x01
+#define I82092AA_EXCA_ADDRWIN   0x06
+#define I82092AA_EXCA_IO0       0x08
+#define I82092AA_EXCA_MEM0      0x10
 #define I82092AA_SOCKET_STRIDE  0x40
+
+#define I365_CS_DETECT          0x0c
+#define I365_CS_READY           0x20
+#define I365_ENA_MEM0           0x01
+#define I365_ENA_IO0            0x40
+
+#define WORLDPORT_ATTR_BASE     0x000d0000
+#define WORLDPORT_IO_BASE       0x0300
+#define WORLDPORT_CONFIG_BASE   0x0200
 
 static void check_socket_ident(QPCIDevice *dev, QPCIBar bar,
                                unsigned socket, uint8_t expected)
@@ -98,6 +111,85 @@ static void test_i82092aa_4socket(void)
     test_i82092aa_profile(4, I82092AA_SOCKET_4);
 }
 
+static void exca_write(QPCIDevice *dev, QPCIBar bar,
+                       uint8_t reg, uint8_t value)
+{
+    qpci_io_writeb(dev, bar, 0, reg);
+    qpci_io_writeb(dev, bar, 1, value);
+}
+
+static uint8_t exca_read(QPCIDevice *dev, QPCIBar bar, uint8_t reg)
+{
+    qpci_io_writeb(dev, bar, 0, reg);
+    return qpci_io_readb(dev, bar, 1);
+}
+
+static void test_i82092aa_worldport(void)
+{
+    QTestState *qts;
+    QPCIBus *pcibus;
+    QPCIDevice *dev;
+    QPCIBar bar;
+    uint8_t status;
+
+    qts = qtest_init("-nodefaults -M pc -display none "
+                     "-device i82092aa,addr=04.0,sockets=1,id=pcic "
+                     "-device usr-worldport-v34,bus=pcic.0");
+    pcibus = qpci_new_pc(qts, NULL);
+    dev = qpci_device_find(pcibus, QPCI_DEVFN(0x4, 0x0));
+    g_assert_nonnull(dev);
+    qpci_device_enable(dev);
+    bar = qpci_iomap(dev, 0, NULL);
+
+    status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
+    g_assert_cmphex(status & (I365_CS_DETECT | I365_CS_READY), ==,
+                    I365_CS_DETECT | I365_CS_READY);
+
+    /*
+     * Map a 4 KiB host memory window at 0xd0000 to card attribute address 0.
+     * The signed page offset is (0 - 0xd0000) >> 12 == -0xd0 == 0x3f30
+     * in the 14-bit ExCA offset field; bit 14 selects attribute memory.
+     */
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 0, 0xd0);
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 1, 0x00);
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 2, 0xd0);
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 3, 0x00);
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 4, 0x30);
+    exca_write(dev, bar, I82092AA_EXCA_MEM0 + 5, 0x7f);
+    exca_write(dev, bar, I82092AA_EXCA_ADDRWIN, I365_ENA_MEM0);
+
+    g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE), ==, 0x15);
+    g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 1), ==, 0xff);
+    g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 2), ==, 0x35);
+
+    /* Enable WorldPort configuration index 1 through its COR. */
+    qtest_writeb(qts, WORLDPORT_ATTR_BASE + WORLDPORT_CONFIG_BASE, 0x01);
+    g_assert_cmphex(qtest_readb(qts,
+                               WORLDPORT_ATTR_BASE + WORLDPORT_CONFIG_BASE),
+                    ==, 0x01);
+
+    /* Map the controller's first I/O window onto the card's 8-byte UART. */
+    exca_write(dev, bar, I82092AA_EXCA_IO0 + 0,
+               WORLDPORT_IO_BASE & 0xff);
+    exca_write(dev, bar, I82092AA_EXCA_IO0 + 1,
+               WORLDPORT_IO_BASE >> 8);
+    exca_write(dev, bar, I82092AA_EXCA_IO0 + 2,
+               (WORLDPORT_IO_BASE + 7) & 0xff);
+    exca_write(dev, bar, I82092AA_EXCA_IO0 + 3,
+               (WORLDPORT_IO_BASE + 7) >> 8);
+    exca_write(dev, bar, I82092AA_EXCA_ADDRWIN,
+               I365_ENA_MEM0 | I365_ENA_IO0);
+
+    /* 16550 scratch-register round trip proves host I/O reaches the card. */
+    qtest_outb(qts, WORLDPORT_IO_BASE + 7, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x5a);
+
+    qpci_iounmap(dev, bar);
+    g_free(dev);
+    qpci_free_pc(pcibus);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -105,6 +197,9 @@ int main(int argc, char **argv)
     qtest_add_func("/i82092aa/1-socket", test_i82092aa_1socket);
     qtest_add_func("/i82092aa/2-socket", test_i82092aa_2socket);
     qtest_add_func("/i82092aa/4-socket", test_i82092aa_4socket);
+    if (qtest_has_device("usr-worldport-v34")) {
+        qtest_add_func("/i82092aa/worldport-v34", test_i82092aa_worldport);
+    }
 
     return g_test_run();
 }
