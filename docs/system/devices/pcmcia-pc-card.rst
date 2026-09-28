@@ -192,6 +192,12 @@ makes the real silicon profile visible to firmware and operating-system
 drivers, while card insertion, CIS data, memory/I/O window forwarding and
 card-generated interrupts remain work for the generic 16-bit PC Card layer.
 
+The current ``i82092aa`` device represents PPEC PCI function 0 only.  The same
+physical 82092AA also exposes PCI function 1 as an Enhanced IDE controller
+with device ID ``8086:1222`` and its own IDE BAR/configuration register set.
+That function remains unimplemented and must not be approximated by silently
+attaching an unrelated generic IDE controller to the PCMCIA function.
+
 CardBus generation
 ------------------
 
