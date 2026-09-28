@@ -3,6 +3,6 @@ config I82092AA
     default y if PCI_DEVICES
     depends on PCI
     help
-      Intel 82092AA PCI-to-PCMCIA bridge.  The initial model exposes the
-      PCI function and 82365SL-compatible ExCA socket-register interface
+      Intel 82092AA PCI-to-PCMCIA bridge.  The initial model exposes PPEC
+      function 0 and its 82365SL-compatible ExCA socket-register interface
       with selectable one-, two-, or four-socket hardware profiles.
