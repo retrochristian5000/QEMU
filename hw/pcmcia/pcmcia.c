@@ -30,7 +30,7 @@ bool pcmcia_bus_card_present(PCMCIABus *bus)
 
 void pcmcia_card_set_irq(PCMCIACardState *card, int level)
 {
-    if (card->bus) {
+    if (card->bus && card->bus->card_irq) {
         qemu_set_irq(card->bus->card_irq, level);
     }
 }
@@ -150,7 +150,7 @@ static void pcmcia_card_realize(DeviceState *dev, Error **errp)
     card->bus = bus;
     if (pcc->realize_card) {
         pcc->realize_card(card, errp);
-        if (*errp) {
+        if (errp && *errp) {
             card->bus = NULL;
             return;
         }
@@ -173,7 +173,9 @@ static void pcmcia_card_unrealize(DeviceState *dev)
     }
 
     if (bus) {
-        qemu_set_irq(bus->card_irq, 0);
+        if (bus->card_irq) {
+            qemu_set_irq(bus->card_irq, 0);
+        }
         if (bus->card == card) {
             bus->card = NULL;
         }
