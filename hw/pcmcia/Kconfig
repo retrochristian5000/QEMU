@@ -1,0 +1,8 @@
+config I82092AA
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+    help
+      Intel 82092AA PCI-to-PCMCIA bridge.  The initial model exposes the
+      PCI function and 82365SL-compatible ExCA socket-register interface
+      with selectable one-, two-, or four-socket hardware profiles.
