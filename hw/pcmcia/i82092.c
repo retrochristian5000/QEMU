@@ -16,12 +16,10 @@
 #define TYPE_I82092AA "i82092aa"
 OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 
-#define I82092AA_MAX_SOCKETS       4
 #define I82092AA_EXCA_REGS         0x100
 #define I82092AA_SOCKET_STRIDE     0x40
 
 #define I82092AA_PCICON            0x40
-#define I82092AA_PCICON_SOCKETMASK 0x06
 #define I82092AA_PCICON_1SOCKET    0x02
 #define I82092AA_PCICON_2SOCKET    0x00
 #define I82092AA_PCICON_4SOCKET    0x04
@@ -182,8 +180,7 @@ static void i82092aa_reset(DeviceState *dev)
 
     /*
      * Intel documents 0x84 as the default Identification Register value.
-     * The low nibble remains writable so software can request 82365SL
-     * compatibility behavior.
+     * The register remains writable for 82365SL compatibility behavior.
      */
     for (i = 0; i < s->sockets; i++) {
         s->regs[i * I82092AA_SOCKET_STRIDE + I365_IDENT] = 0x84;
