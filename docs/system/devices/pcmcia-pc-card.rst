@@ -143,8 +143,18 @@ important limitations:
 Current WHP QEMU status
 -----------------------
 
-The current fork has no generic PCMCIA/CardBus subsystem and no x86 PC Card
-socket controller.
+The current fork does not yet have a generic PC Card device bus or CardBus
+subsystem.  It now has an initial Intel 82092AA PCI-to-PCMCIA controller model,
+exposed as ``-device i82092aa``.  The model provides the PCI identity/class,
+the BAR0 ExCA index/data interface, one-, two- and four-socket strap profiles,
+the per-socket ``0x40`` register banks, Intel's ``0x84`` identification reset
+value, PCICON writable/strap bits and migration state.
+
+The sockets are currently empty: card attachment, CIS/attribute/common/I/O
+forwarding, host-window address translation, card detect and card IRQ delivery
+still depend on a reusable 16-bit PC Card core.  Keeping that boundary explicit
+prevents the controller profile from inventing a card or silently becoming a
+CardBus implementation.
 
 There are nevertheless useful surviving clues:
 
@@ -159,6 +169,28 @@ There are nevertheless useful surviving clues:
 The StrongARM references are evidence that PC Card support is useful beyond x86
 laptops.  They are not evidence that an Intel 82365SL should be attached to a
 StrongARM machine; each board still needs its real controller identified.
+
+Intel 82092AA PCI profile
+-------------------------
+
+The Intel 82092AA PPEC is a PCI-to-PCMCIA controller for 16-bit PC Cards, not a
+CardBus bridge.  QEMU models it as a conventional PCI function with Intel
+vendor/device ID ``8086:1221`` and PCI class ``0x0605`` (PCMCIA bridge).
+
+The ``sockets`` property selects the documented hardware strap profile:
+
+* ``sockets=1`` maps PCICON bits 2:1 to ``01``;
+* ``sockets=2`` is the default and maps them to ``00``; and
+* ``sockets=4`` maps them to ``10``.
+
+BAR0 is a four-byte PCI I/O aperture.  Only offsets ``BASE+0`` and ``BASE+1``
+are implemented as the ExCA index/data pair; the remaining two bytes are not
+invented as registers.  Each socket occupies a ``0x40``-byte indexed bank.
+
+This first-stage controller deliberately stops at the socket boundary.  It
+makes the real silicon profile visible to firmware and operating-system
+drivers, while card insertion, CIS data, memory/I/O window forwarding and
+card-generated interrupts remain work for the generic 16-bit PC Card layer.
 
 CardBus generation
 ------------------
@@ -244,6 +276,9 @@ A conservative implementation order is:
    routing and the two I/O/five memory windows.
 #. Add explicit 82365SL Revision 0 and 82365SL-DF profiles once their differing
    identification and voltage/power semantics are represented.
+#. Reuse that card-layer work with the existing ``i82092aa`` PCI controller,
+   replacing its currently empty socket boundary with real card attachment,
+   window translation, card-detect and interrupt delivery.
 #. Restore/adapt the former Microdrive/CompactFlash PC Card model as an initial
    inserted card and add controller/card qtests for CIS reads, window mapping,
    insertion/ejection and interrupt routing.
@@ -295,6 +330,11 @@ Useful implementation references include:
 * Analog Devices/Maxim MAX613/MAX614 and MAX780-series data sheets, whose
   compatibility lists provide period evidence for the 82365-compatible
   controller ecosystem and companion socket-power hardware.
+* Intel *82092AA PCI-to-PCMCIA Enhanced IDE Controller (PPEC)*,
+  order 290511-001, December 1993, for the PCI identity, BAR0 index/data
+  aperture, PCICON socket straps and ExCA-compatible register behavior.
+* The Linux ``i82092`` driver as an independent software control for socket
+  probing, ExCA register use and PCI interrupt routing.
 * Texas Instruments PCI CardBus controller documentation, especially PCI1510
   and PCI1520, for the relationship between CardBus bridging and the retained
   82365-compatible ExCA register path.
