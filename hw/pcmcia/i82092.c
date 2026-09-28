@@ -454,10 +454,8 @@ static void i82092aa_realize(PCIDevice *dev, Error **errp)
     pci_set_byte(dev->wmask + I82092AA_PPIRR, 0xff);
 
     for (socket = 0; socket < s->sockets; socket++) {
-        g_autofree char *bus_name = g_strdup_printf("pcmcia.%u", socket);
-
         s->card_irq[socket] = qemu_allocate_irq(i82092aa_card_irq, s, socket);
-        pcmcia_bus_init(&s->socket_bus[socket], DEVICE(s), bus_name, socket,
+        pcmcia_bus_init(&s->socket_bus[socket], DEVICE(s), NULL, socket,
                         s->card_irq[socket], i82092aa_card_event, s);
 
         for (map = 0; map < I82092AA_IO_WINDOWS; map++) {
@@ -512,10 +510,23 @@ static void i82092aa_exit(PCIDevice *dev)
     }
 }
 
+static int i82092aa_post_load(void *opaque, int version_id)
+{
+    I82092AAState *s = opaque;
+    unsigned socket;
+
+    for (socket = 0; socket < s->sockets; socket++) {
+        i82092aa_update_windows(s, socket);
+    }
+    pci_set_irq(PCI_DEVICE(s), s->card_irq_levels != 0);
+    return 0;
+}
+
 static const VMStateDescription vmstate_i82092aa = {
     .name = "i82092aa",
     .version_id = 2,
     .minimum_version_id = 1,
+    .post_load = i82092aa_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, I82092AAState),
         VMSTATE_UINT8(index, I82092AAState),
