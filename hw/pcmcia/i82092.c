@@ -10,12 +10,16 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
+#include "hw/pcmcia/pcmcia.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
 
 #define TYPE_I82092AA "i82092aa"
 OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 
+#define I82092AA_MAX_SOCKETS       4
+#define I82092AA_IO_WINDOWS        2
+#define I82092AA_MEM_WINDOWS       5
 #define I82092AA_EXCA_REGS         0x100
 #define I82092AA_SOCKET_STRIDE     0x40
 
@@ -37,8 +41,33 @@ OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 #define I365_GENCTL                0x16
 #define I365_GBLCTL                0x1e
 
-#define I365_PWR_OUT               0x80
+#define I365_IO(map)               (0x08 + ((map) << 2))
+#define I365_MEM(map)              (0x10 + ((map) << 3))
+#define I365_W_START               0
+#define I365_W_STOP                2
+#define I365_W_OFF                 4
+
+#define I365_CS_DETECT             0x0c
+#define I365_CS_READY              0x20
 #define I365_CS_POWERON            0x40
+
+#define I365_PWR_OUT               0x80
+
+#define I365_CSC_DETECT            0x08
+
+#define I365_ENA_IO(map)           (0x40 << (map))
+#define I365_ENA_MEM(map)          (0x01 << (map))
+
+#define I365_MEM_REG               0x4000
+
+typedef struct I82092AAWindow {
+    MemoryRegion mr;
+    I82092AAState *owner;
+    uint32_t card_base;
+    uint8_t socket;
+    uint8_t map;
+    bool attribute;
+} I82092AAWindow;
 
 struct I82092AAState {
     PCIDevice parent_obj;
@@ -47,11 +76,214 @@ struct I82092AAState {
     uint8_t index;
     uint8_t regs[I82092AA_EXCA_REGS];
     uint8_t sockets;
+
+    PCMCIABus socket_bus[I82092AA_MAX_SOCKETS];
+    qemu_irq card_irq[I82092AA_MAX_SOCKETS];
+    uint8_t card_irq_levels;
+
+    I82092AAWindow io_window[I82092AA_MAX_SOCKETS][I82092AA_IO_WINDOWS];
+    I82092AAWindow mem_window[I82092AA_MAX_SOCKETS][I82092AA_MEM_WINDOWS];
 };
+
+static uint16_t i82092aa_reg16(I82092AAState *s, unsigned socket,
+                               unsigned reg)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE + reg;
+
+    return s->regs[base] | (s->regs[base + 1] << 8);
+}
 
 static bool i82092aa_socket_present(const I82092AAState *s, uint8_t index)
 {
     return (index / I82092AA_SOCKET_STRIDE) < s->sockets;
+}
+
+static uint64_t i82092aa_card_io_read(void *opaque, hwaddr addr,
+                                      unsigned size)
+{
+    I82092AAWindow *window = opaque;
+    PCMCIABus *bus = &window->owner->socket_bus[window->socket];
+
+    return pcmcia_bus_io_read(bus, window->card_base + addr) & 0xff;
+}
+
+static void i82092aa_card_io_write(void *opaque, hwaddr addr,
+                                    uint64_t value, unsigned size)
+{
+    I82092AAWindow *window = opaque;
+    PCMCIABus *bus = &window->owner->socket_bus[window->socket];
+
+    pcmcia_bus_io_write(bus, window->card_base + addr, value);
+}
+
+static const MemoryRegionOps i82092aa_card_io_ops = {
+    .read = i82092aa_card_io_read,
+    .write = i82092aa_card_io_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
+static uint64_t i82092aa_card_mem_read(void *opaque, hwaddr addr,
+                                       unsigned size)
+{
+    I82092AAWindow *window = opaque;
+    PCMCIABus *bus = &window->owner->socket_bus[window->socket];
+    uint32_t card_addr = window->card_base + addr;
+    uint64_t value = 0;
+    unsigned i;
+
+    if (window->attribute) {
+        for (i = 0; i < size; i++) {
+            value |= (uint64_t)pcmcia_bus_attr_read(bus, card_addr + i)
+                     << (i * 8);
+        }
+        return value;
+    }
+
+    if (size == 2) {
+        return pcmcia_bus_common_read(bus, card_addr);
+    }
+    return pcmcia_bus_common_read(bus, card_addr) & 0xff;
+}
+
+static void i82092aa_card_mem_write(void *opaque, hwaddr addr,
+                                    uint64_t value, unsigned size)
+{
+    I82092AAWindow *window = opaque;
+    PCMCIABus *bus = &window->owner->socket_bus[window->socket];
+    uint32_t card_addr = window->card_base + addr;
+    unsigned i;
+
+    if (window->attribute) {
+        for (i = 0; i < size; i++) {
+            pcmcia_bus_attr_write(bus, card_addr + i,
+                                  (value >> (i * 8)) & 0xff);
+        }
+        return;
+    }
+
+    if (size == 2) {
+        pcmcia_bus_common_write(bus, card_addr, value);
+    } else {
+        pcmcia_bus_common_write(bus, card_addr, value & 0xff);
+    }
+}
+
+static const MemoryRegionOps i82092aa_card_mem_ops = {
+    .read = i82092aa_card_mem_read,
+    .write = i82092aa_card_mem_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {
+        .min_access_size = 1,
+        .max_access_size = 2,
+    },
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 2,
+    },
+};
+
+static void i82092aa_update_io_window(I82092AAState *s, unsigned socket,
+                                       unsigned map)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE;
+    I82092AAWindow *window = &s->io_window[socket][map];
+    uint16_t start = i82092aa_reg16(s, socket, I365_IO(map) + I365_W_START);
+    uint16_t stop = i82092aa_reg16(s, socket, I365_IO(map) + I365_W_STOP);
+    bool enabled = pcmcia_bus_card_present(&s->socket_bus[socket]) &&
+                   (s->regs[base + I365_ADDRWIN] & I365_ENA_IO(map)) &&
+                   stop >= start;
+
+    memory_region_transaction_begin();
+    memory_region_set_enabled(&window->mr, false);
+    if (stop >= start) {
+        window->card_base = 0;
+        memory_region_set_size(&window->mr, (uint32_t)stop - start + 1);
+        memory_region_set_address(&window->mr, start);
+    }
+    memory_region_set_enabled(&window->mr, enabled);
+    memory_region_transaction_commit();
+}
+
+static void i82092aa_update_mem_window(I82092AAState *s, unsigned socket,
+                                        unsigned map)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE;
+    unsigned reg = I365_MEM(map);
+    I82092AAWindow *window = &s->mem_window[socket][map];
+    uint16_t start_reg = i82092aa_reg16(s, socket, reg + I365_W_START);
+    uint16_t stop_reg = i82092aa_reg16(s, socket, reg + I365_W_STOP);
+    uint16_t off_reg = i82092aa_reg16(s, socket, reg + I365_W_OFF);
+    uint32_t start = (start_reg & 0x0fff) << 12;
+    uint32_t stop = ((stop_reg & 0x0fff) << 12) | 0xfff;
+    int32_t page_offset = off_reg & 0x3fff;
+    int64_t card_base;
+    bool enabled;
+
+    if (page_offset & 0x2000) {
+        page_offset |= ~0x3fff;
+    }
+    card_base = (int64_t)start + ((int64_t)page_offset << 12);
+
+    enabled = pcmcia_bus_card_present(&s->socket_bus[socket]) &&
+              (s->regs[base + I365_ADDRWIN] & I365_ENA_MEM(map)) &&
+              stop >= start && card_base >= 0;
+
+    memory_region_transaction_begin();
+    memory_region_set_enabled(&window->mr, false);
+    if (stop >= start && card_base >= 0) {
+        window->card_base = card_base;
+        window->attribute = off_reg & I365_MEM_REG;
+        memory_region_set_size(&window->mr, (uint64_t)stop - start + 1);
+        memory_region_set_address(&window->mr, start);
+    }
+    memory_region_set_enabled(&window->mr, enabled);
+    memory_region_transaction_commit();
+}
+
+static void i82092aa_update_windows(I82092AAState *s, unsigned socket)
+{
+    unsigned i;
+
+    for (i = 0; i < I82092AA_IO_WINDOWS; i++) {
+        i82092aa_update_io_window(s, socket, i);
+    }
+    for (i = 0; i < I82092AA_MEM_WINDOWS; i++) {
+        i82092aa_update_mem_window(s, socket, i);
+    }
+}
+
+static void i82092aa_card_irq(void *opaque, int n, int level)
+{
+    I82092AAState *s = opaque;
+
+    if (level) {
+        s->card_irq_levels |= 1U << n;
+    } else {
+        s->card_irq_levels &= ~(1U << n);
+    }
+    pci_set_irq(PCI_DEVICE(s), s->card_irq_levels != 0);
+}
+
+static void i82092aa_card_event(PCMCIABus *bus, bool inserted, void *opaque)
+{
+    I82092AAState *s = opaque;
+    unsigned base = bus->socket * I82092AA_SOCKET_STRIDE;
+
+    if (inserted) {
+        s->regs[base + I365_STATUS] |= I365_CS_DETECT | I365_CS_READY;
+    } else {
+        s->regs[base + I365_STATUS] &= ~(I365_CS_DETECT | I365_CS_READY);
+    }
+    s->regs[base + I365_CSC] |= I365_CSC_DETECT;
+    i82092aa_update_windows(s, bus->socket);
 }
 
 static bool i82092aa_exca_writable(uint8_t reg)
@@ -97,11 +329,6 @@ static uint64_t i82092aa_io_read(void *opaque, hwaddr addr, unsigned size)
     reg = s->index & (I82092AA_SOCKET_STRIDE - 1);
     value = s->regs[s->index];
 
-    /*
-     * Card-status-change bits are latched events and are cleared by a read.
-     * The current model has no attached PC Card yet, so these bits can only
-     * become nonzero through future socket/card integration.
-     */
     if (reg == I365_CSC) {
         s->regs[s->index] = 0;
     }
@@ -114,6 +341,7 @@ static void i82092aa_io_write(void *opaque, hwaddr addr,
 {
     I82092AAState *s = opaque;
     uint8_t reg;
+    uint8_t socket;
     uint8_t socket_base;
 
     if (addr == 0) {
@@ -124,6 +352,7 @@ static void i82092aa_io_write(void *opaque, hwaddr addr,
         return;
     }
 
+    socket = s->index / I82092AA_SOCKET_STRIDE;
     reg = s->index & (I82092AA_SOCKET_STRIDE - 1);
     if (!i82092aa_exca_writable(reg)) {
         return;
@@ -132,12 +361,16 @@ static void i82092aa_io_write(void *opaque, hwaddr addr,
     s->regs[s->index] = value;
 
     if (reg == I365_POWER) {
-        socket_base = s->index & ~(I82092AA_SOCKET_STRIDE - 1);
+        socket_base = socket * I82092AA_SOCKET_STRIDE;
         if (value & I365_PWR_OUT) {
             s->regs[socket_base + I365_STATUS] |= I365_CS_POWERON;
         } else {
             s->regs[socket_base + I365_STATUS] &= ~I365_CS_POWERON;
         }
+    }
+
+    if (reg == I365_ADDRWIN || (reg >= 0x08 && reg <= 0x35)) {
+        i82092aa_update_windows(s, socket);
     }
 }
 
@@ -176,6 +409,7 @@ static void i82092aa_reset(DeviceState *dev)
     unsigned i;
 
     s->index = 0;
+    s->card_irq_levels = 0;
     memset(s->regs, 0, sizeof(s->regs));
 
     /*
@@ -183,53 +417,111 @@ static void i82092aa_reset(DeviceState *dev)
      * The register remains writable for 82365SL compatibility behavior.
      */
     for (i = 0; i < s->sockets; i++) {
-        s->regs[i * I82092AA_SOCKET_STRIDE + I365_IDENT] = 0x84;
+        unsigned base = i * I82092AA_SOCKET_STRIDE;
+
+        s->regs[base + I365_IDENT] = 0x84;
+        if (pcmcia_bus_card_present(&s->socket_bus[i])) {
+            s->regs[base + I365_STATUS] |= I365_CS_DETECT | I365_CS_READY;
+        }
+        i82092aa_update_windows(s, i);
     }
 
     pci_set_byte(pci->config + I82092AA_PCICON,
                  i82092aa_socket_config(s->sockets));
     pci_set_byte(pci->config + I82092AA_PPIRR, 0x00);
+    pci_set_irq(pci, 0);
 }
 
 static void i82092aa_realize(PCIDevice *dev, Error **errp)
 {
     I82092AAState *s = I82092AA(dev);
+    MemoryRegion *pci_io = pci_address_space_io(dev);
+    MemoryRegion *pci_mem = pci_address_space(dev);
+    unsigned socket;
+    unsigned map;
 
     if (s->sockets != 1 && s->sockets != 2 && s->sockets != 4) {
         error_setg(errp, "i82092aa sockets must be 1, 2, or 4");
         return;
     }
 
-    /*
-     * BAR0 contains the ExCA index/data pair.  PCI I/O BARs have a minimum
-     * four-byte aperture; only offsets 0 and 1 are implemented by the PPEC.
-     */
     memory_region_init_io(&s->io, OBJECT(s), &i82092aa_io_ops, s,
                           "i82092aa-exca", 4);
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_IO, &s->io);
-
     pci_set_byte(dev->config + PCI_INTERRUPT_PIN, 1);
 
-    /*
-     * PCICON bits 2:1 are read-only socket-configuration straps.  Bits 5:3
-     * control enhanced timing/read-prefetch/post-write buffering and bit 0
-     * selects the PCI clock timing profile.
-     */
     pci_set_byte(dev->wmask + I82092AA_PCICON, I82092AA_PCICON_WRMASK);
     pci_set_byte(dev->wmask + I82092AA_PPIRR, 0xff);
+
+    for (socket = 0; socket < s->sockets; socket++) {
+        g_autofree char *bus_name = g_strdup_printf("pcmcia.%u", socket);
+
+        s->card_irq[socket] = qemu_allocate_irq(i82092aa_card_irq, s, socket);
+        pcmcia_bus_init(&s->socket_bus[socket], DEVICE(s), bus_name, socket,
+                        s->card_irq[socket], i82092aa_card_event, s);
+
+        for (map = 0; map < I82092AA_IO_WINDOWS; map++) {
+            I82092AAWindow *window = &s->io_window[socket][map];
+            g_autofree char *name =
+                g_strdup_printf("i82092aa-s%u-io%u", socket, map);
+
+            window->owner = s;
+            window->socket = socket;
+            window->map = map;
+            memory_region_init_io(&window->mr, OBJECT(s),
+                                  &i82092aa_card_io_ops, window, name, 0x10000);
+            memory_region_set_enabled(&window->mr, false);
+            memory_region_add_subregion_overlap(pci_io, 0, &window->mr, 1);
+        }
+
+        for (map = 0; map < I82092AA_MEM_WINDOWS; map++) {
+            I82092AAWindow *window = &s->mem_window[socket][map];
+            g_autofree char *name =
+                g_strdup_printf("i82092aa-s%u-mem%u", socket, map);
+
+            window->owner = s;
+            window->socket = socket;
+            window->map = map;
+            memory_region_init_io(&window->mr, OBJECT(s),
+                                  &i82092aa_card_mem_ops, window, name,
+                                  1U << 24);
+            memory_region_set_enabled(&window->mr, false);
+            memory_region_add_subregion_overlap(pci_mem, 0, &window->mr, 1);
+        }
+    }
 
     i82092aa_reset(DEVICE(dev));
 }
 
+static void i82092aa_exit(PCIDevice *dev)
+{
+    I82092AAState *s = I82092AA(dev);
+    unsigned socket;
+    unsigned map;
+
+    for (socket = 0; socket < s->sockets; socket++) {
+        for (map = 0; map < I82092AA_IO_WINDOWS; map++) {
+            memory_region_del_subregion(pci_address_space_io(dev),
+                                        &s->io_window[socket][map].mr);
+        }
+        for (map = 0; map < I82092AA_MEM_WINDOWS; map++) {
+            memory_region_del_subregion(pci_address_space(dev),
+                                        &s->mem_window[socket][map].mr);
+        }
+        qemu_free_irq(s->card_irq[socket]);
+    }
+}
+
 static const VMStateDescription vmstate_i82092aa = {
     .name = "i82092aa",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, I82092AAState),
         VMSTATE_UINT8(index, I82092AAState),
         VMSTATE_UINT8_ARRAY(regs, I82092AAState, I82092AA_EXCA_REGS),
         VMSTATE_UINT8(sockets, I82092AAState),
+        VMSTATE_UINT8_V(card_irq_levels, I82092AAState, 2),
         VMSTATE_END_OF_LIST()
     },
 };
@@ -244,6 +536,7 @@ static void i82092aa_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(klass);
 
     pc->realize = i82092aa_realize;
+    pc->exit = i82092aa_exit;
     pc->vendor_id = PCI_VENDOR_ID_INTEL;
     pc->device_id = PCI_DEVICE_ID_INTEL_82092AA_0;
     pc->revision = 0x01;
