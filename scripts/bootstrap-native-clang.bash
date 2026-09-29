@@ -20,7 +20,7 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # firmware lanes. Target selection belongs at Clang invocation time via
 # --target=..., not in separate host executable builds.
 LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'
-LLD_ENABLE_BACKENDS='ELF;COFF;MachO'
+LLD_ENABLE_BACKENDS='ELF;COFF;MinGW;MachO'
 ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
 stage_root=""
 
@@ -624,7 +624,7 @@ llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
 llvm_enable_projects='clang;lld'
-llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
+llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 llvm_enable_runtimes=''
 llvm_include_runtimes=OFF
 if [[ "$host_os" == macos ]]; then
@@ -638,7 +638,7 @@ if [[ "$host_os" == macos ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=11
+BOOTSTRAP_SCHEMA=12
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -686,6 +686,69 @@ MACOSX_DEPLOYMENT_TARGET=$deployment_target
 EOF
 )"
 
+windows_cross_target_usable()
+{
+    local prefix="$1"
+    local smoke_dir
+    local headers
+
+    smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-native-llvm-windows.XXXXXX")" ||
+        return 1
+
+    cat >"$smoke_dir/win32.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef __i386__
+#error clang did not select the i686 Windows target
+#endif
+_Static_assert(sizeof(void *) == 4, "i686 Windows pointer width mismatch");
+int whp_windows_i686_object(void) { return 32; }
+SOURCE
+
+    cat >"$smoke_dir/win64.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef _WIN64
+#error clang did not select the 64-bit Windows ABI
+#endif
+#ifndef __x86_64__
+#error clang did not select the x86_64 Windows target
+#endif
+_Static_assert(sizeof(void *) == 8, "x86_64 Windows pointer width mismatch");
+__attribute__((noreturn)) void whp_windows_entry(void)
+{
+    for (;;) {
+    }
+}
+SOURCE
+
+    if ! "$prefix/bin/clang" --target=i686-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win32.c" -o "$smoke_dir/win32.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/clang" --target=x86_64-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win64.c" -o "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    headers="$("$prefix/bin/llvm-readobj" --file-headers         "$smoke_dir/win64.obj" 2>/dev/null)" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+    grep -Eq 'COFF-x86-64|IMAGE_FILE_MACHINE_AMD64' <<< "$headers" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+
+    if ! "$prefix/bin/lld-link" /machine:x64 /entry:whp_windows_entry             /subsystem:console /nodefaultlib             /out:"$smoke_dir/coff.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/ld.lld" -m i386pep --entry=whp_windows_entry             --subsystem=console --no-insert-timestamp             -o "$smoke_dir/mingw.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$smoke_dir"
+    return 0
+}
+
 usable()
 {
     local prefix="$1"
@@ -699,6 +762,7 @@ usable()
     local required_tool
 
     for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib \
+                         llvm-lib llvm-dlltool llvm-rc llvm-windres \
                          llvm-nm llvm-objcopy llvm-objdump llvm-strip \
                          llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
         [[ -x "$prefix/bin/$required_tool" ]] || return 1
@@ -707,6 +771,7 @@ usable()
     grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
+    windows_cross_target_usable "$prefix" || return 1
     if [[ "$host_os" == macos ]]; then
         [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1

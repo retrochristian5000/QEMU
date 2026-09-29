@@ -97,7 +97,7 @@ shared_llvm_is_usable()
     [[ -d "$SHARED_LLVM_DIR" && -f "$shared_marker" ]] || return 1
     grep -Fxq "LLVM_GIT_COMMIT=$llvm_revision" "$shared_marker" || return 1
     grep -Fxq 'LLVM_TARGETS_TO_BUILD=AArch64;X86;PowerPC' "$shared_marker" || return 1
-    grep -Fxq 'LLD_ENABLE_BACKENDS=ELF;COFF;MachO' "$shared_marker" || return 1
+    grep -Fxq 'LLD_ENABLE_BACKENDS=ELF;COFF;MinGW;MachO' "$shared_marker" || return 1
     for tool in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
         [[ -x "$SHARED_LLVM_DIR/bin/$tool" ]] || return 1
     done
