@@ -55,6 +55,43 @@ A lightweight shell check is available without starting a build::
 Set ``WHP_RUN_SHELLCHECK=1`` to add ShellCheck during preflight when it is
 installed.
 
+Windows PowerShell entry
+------------------------
+
+Windows users can enter the same build policy from Windows PowerShell 5.1 or
+PowerShell 7 with ``build.ps1``.  The PowerShell launcher does not duplicate
+QEMU configuration, firmware preparation, or build ordering.  It locates a
+Windows-native MSYS2, Git-for-Windows, or Cygwin Bash, converts the checkout
+path with ``cygpath``, pins that interpreter through ``WHP_BUILD_BASH``, and
+then invokes ``build.sh`` with ``--noprofile --norc``::
+
+  .\build.ps1 qemu-system-i386
+
+MSYS2 is the preferred Windows environment because the native QEMU build still
+needs its POSIX build tools and Windows compiler/dependency set.  Set
+``WHP_WINDOWS_BASH`` to an explicit ``bash.exe`` when automatic discovery
+should not choose among multiple installations.  WSL Bash is deliberately
+rejected by this launcher: entering WSL would select a Linux host ABI rather
+than build native Windows QEMU.
+
+The PowerShell launcher also provides a narrow convenience switch for the
+existing UEFI SeaBIOS graph::
+
+  .\build.ps1 -SeaBIOSUefi qemu-system-i386
+
+``-SeaBIOSUefi`` enables ``BUILD_SEABIOS_GRUB=1`` and
+``BUILD_SEABIOS_HYBRID_ISO=1``.  Unless the caller already selected another
+policy, it also sets ``GRUB_I386_BOOTSTRAP=1`` so the pinned WHP IA32 EFI
+GRUB path is used instead of depending on an unrelated host GRUB.  This switch
+does not install system packages and does not create a second firmware build
+implementation.  The x86-64 EFI frontend continues to use the existing
+``GRUB_X86_64_MKIMAGE``, ``GRUB_X86_64_MODULE_DIR``, and
+``GRUB_X86_64_INSTALL_PREFIX`` discovery contract.
+
+Use ``-NoSourceUpdate`` as the PowerShell spelling of a one-run
+``WHP_SOURCE_UPDATE=0`` override.  All other WHP environment variables and
+positional targets are passed through to ``build.sh``.
+
 Source refresh
 --------------
 

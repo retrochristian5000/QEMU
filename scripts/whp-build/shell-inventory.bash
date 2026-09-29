@@ -2,9 +2,10 @@
 # Keep this list as data: runtime preflight and CI should consume it instead of
 # maintaining independent copies that can drift when a script is added.
 #
-# WHP extension policy is internal-only: .sh launchers are POSIX-compatible and
-# .bash implementations require GNU Bash. This inventory never constrains file
-# names supplied by QEMU users for firmware, disks, logs, or other runtime data.
+# WHP extension policy is internal-only: .sh launchers are POSIX-compatible,
+# .bash implementations require GNU Bash, and .ps1 launchers require PowerShell.
+# This inventory never constrains file names supplied by QEMU users for
+# firmware, disks, logs, or other runtime data.
 
 WHP_POSIX_BUILD_SCRIPTS=(
     "$SOURCE_DIR/build.sh"
@@ -75,4 +76,8 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/whp-build/preflight.bash"
     "$SOURCE_DIR/scripts/whp-build/post-build.bash"
     "$SOURCE_DIR/scripts/whp-build/shell-inventory.bash"
+)
+
+WHP_POWERSHELL_BUILD_SCRIPTS=(
+    "$SOURCE_DIR/build.ps1"
 )

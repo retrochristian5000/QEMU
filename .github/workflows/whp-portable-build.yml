@@ -6,12 +6,15 @@ on:
       - master
     paths:
       - 'build.sh'
+      - 'build.ps1'
       - 'builder.sh'
       - 'configure'
       - 'meson.build'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/**'
       - 'scripts/tests/test-whp-config.py'
+      - 'scripts/tests/test-file-extension-standard.py'
+      - 'scripts/tests/test-powershell-build-entry.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-incremental.py'
       - '.github/workflows/whp-portable-build.yml'
@@ -40,6 +43,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Verify PowerShell launcher contract
+        run: |
+          python3 scripts/tests/test-file-extension-standard.py
+          python3 scripts/tests/test-powershell-build-entry.py
 
       - name: Install minimal QEMU build dependencies
         run: |
@@ -156,6 +164,17 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Verify PowerShell public launcher reaches build.sh
+        shell: pwsh
+        env:
+          WHP_SHELL_PROBE_ONLY: '1'
+          WHP_SOURCE_UPDATE: '0'
+        run: |
+          .\build.ps1 -SeaBIOSUefi | Tee-Object powershell-build-probe.txt
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP Windows Bash:'
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP SeaBIOS UEFI lane: enabled'
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP build shell:'
 
       - name: Verify portable driver has no Unix-only planning dependency
         shell: pwsh

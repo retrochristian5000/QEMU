@@ -75,6 +75,7 @@
         <OBJCPP name="Objective-C++">.objCpp</OBJCPP>
         <PERL name="Perl Script">.perl</PERL>
         <POSIXSHELL name="Shell Script (POSIX-compatible)">.sh</POSIXSHELL>
+        <POWERSHELL name="PowerShell Script">.ps1</POWERSHELL>
         <PRE2KHTML name="HTML (Pre-2000 Syntax)">.htm</PRE2KHTML>
         <PYTHON name="Python">.py</PYTHON>
         <SH name="Shell Script">.SH</SH>

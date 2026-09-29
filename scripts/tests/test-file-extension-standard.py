@@ -38,6 +38,7 @@ assert metadata.findtext("LimitedToStd") == "false"
 # user-supplied filename.
 assert registry_extension(xml_root, "Lang", "POSIXSHELL") == ".sh"
 assert registry_extension(xml_root, "Lang", "BASH") == ".bash"
+assert registry_extension(xml_root, "Lang", "POWERSHELL") == ".ps1"
 assert registry_extension(xml_root, "Exe", "ELF") == ".ELF"
 assert registry_extension(xml_root, "Object", "ELFOBJ") == ".elf"
 assert registry_extension(xml_root, "Snd", "WAV") == ".WAV"
@@ -45,6 +46,7 @@ assert registry_extension(xml_root, "Snd", "WAV") == ".WAV"
 inventory_text = INVENTORY.read_text(encoding="utf-8")
 posix_scripts = inventory_paths(inventory_text, "WHP_POSIX_BUILD_SCRIPTS")
 bash_scripts = inventory_paths(inventory_text, "WHP_BASH_BUILD_SCRIPTS")
+powershell_scripts = inventory_paths(inventory_text, "WHP_POWERSHELL_BUILD_SCRIPTS")
 
 for script in posix_scripts:
     assert script.suffix == ".sh", f"POSIX script has non-.sh extension: {script}"
@@ -55,6 +57,10 @@ for script in posix_scripts:
 for script in bash_scripts:
     assert script.suffix == ".bash", f"Bash implementation has non-.bash extension: {script}"
     assert script.is_file(), f"missing Bash implementation: {script}"
+
+for script in powershell_scripts:
+    assert script.suffix == ".ps1", f"PowerShell launcher has non-.ps1 extension: {script}"
+    assert script.is_file(), f"missing PowerShell launcher: {script}"
 
 vof_makefile = (ROOT / "pc-bios" / "vof" / "Makefile").read_text(encoding="utf-8")
 s390_makefile = (ROOT / "pc-bios" / "s390-ccw" / "Makefile").read_text(encoding="utf-8")
