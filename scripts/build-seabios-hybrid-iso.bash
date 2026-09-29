@@ -60,6 +60,90 @@ require_tool MMD "$MMD"
 require_tool MCOPY "$MCOPY"
 require_tool PYTHON "${PYTHON:-python3}"
 
+verify_seabios_payload()
+{
+    local image="$1"
+
+    "${PYTHON:-python3}" - "$image" <<'PY'
+import pathlib
+import struct
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = path.read_bytes()
+if len(data) < 52 or data[:4] != b'\x7fELF':
+    raise SystemExit(f'{path}: SeaBIOS payload is not ELF')
+if data[4] != 1 or data[5] != 1:
+    raise SystemExit(f'{path}: SeaBIOS payload must be little-endian ELF32')
+if struct.unpack_from('<H', data, 18)[0] != 3:
+    raise SystemExit(f'{path}: SeaBIOS payload must target EM_386')
+entry = struct.unpack_from('<I', data, 24)[0]
+if entry == 0:
+    raise SystemExit(f'{path}: SeaBIOS payload has no ELF entry point')
+
+magic = 0x1BADB002
+window = data[:8192]
+for offset in range(0, max(0, len(window) - 11), 4):
+    got_magic, flags, checksum = struct.unpack_from('<III', window, offset)
+    if got_magic == magic and ((got_magic + flags + checksum) & 0xffffffff) == 0:
+        break
+else:
+    raise SystemExit(f'{path}: SeaBIOS payload has no valid Multiboot-1 header')
+
+print(f'SeaBIOS handoff ABI: ELF32/i386 entry=0x{entry:08x} multiboot@0x{offset:x}')
+PY
+}
+
+verify_efi_image()
+{
+    local image="$1"
+    local expected_machine="$2"
+    local expected_magic="$3"
+    local label="$4"
+
+    "${PYTHON:-python3}" - "$image" "$expected_machine" "$expected_magic" "$label" <<'PY'
+import pathlib
+import struct
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected_machine = int(sys.argv[2], 0)
+expected_magic = int(sys.argv[3], 0)
+label = sys.argv[4]
+data = path.read_bytes()
+
+if len(data) < 0x40 or data[:2] != b'MZ':
+    raise SystemExit(f'{label}: missing DOS MZ header')
+peoff = struct.unpack_from('<I', data, 0x3c)[0]
+if peoff > len(data) - 24 or data[peoff:peoff + 4] != b'PE\0\0':
+    raise SystemExit(f'{label}: missing PE/COFF signature')
+machine = struct.unpack_from('<H', data, peoff + 4)[0]
+size_optional = struct.unpack_from('<H', data, peoff + 20)[0]
+optional = peoff + 24
+if size_optional < 70 or optional > len(data) - size_optional:
+    raise SystemExit(f'{label}: truncated PE optional header')
+magic = struct.unpack_from('<H', data, optional)[0]
+subsystem = struct.unpack_from('<H', data, optional + 68)[0]
+
+if machine != expected_machine:
+    raise SystemExit(
+        f'{label}: PE machine 0x{machine:04x} != expected 0x{expected_machine:04x}'
+    )
+if magic != expected_magic:
+    raise SystemExit(
+        f'{label}: optional-header magic 0x{magic:04x} != expected 0x{expected_magic:04x}'
+    )
+if subsystem != 10:
+    raise SystemExit(f'{label}: PE subsystem {subsystem} is not EFI application (10)')
+
+print(
+    f'{label} ABI: machine=0x{machine:04x} optional=0x{magic:04x} subsystem=EFI_APPLICATION'
+)
+PY
+}
+
+verify_seabios_payload "$payload"
+
 homebrew_prefix="${HOMEBREW_PREFIX:-}"
 if [[ -z "$homebrew_prefix" ]] && command -v brew >/dev/null 2>&1; then
     homebrew_prefix="$(brew --prefix 2>/dev/null || true)"
@@ -233,6 +317,11 @@ build_efi "$GRUB_I386_MKIMAGE" i386-efi "$efi_dir/BOOTIA32.EFI" \
     "$i386_module_dir"
 build_efi "$GRUB_X86_64_MKIMAGE" x86_64-efi "$efi_dir/BOOTX64.EFI" \
     "$x86_64_module_dir"
+
+# Keep each firmware-facing ABI explicit. SeaBIOS remains a 32-bit Multiboot
+# payload even when the platform firmware and GRUB frontend are x86-64 UEFI.
+verify_efi_image "$efi_dir/BOOTIA32.EFI" 0x014c 0x010b BOOTIA32.EFI
+verify_efi_image "$efi_dir/BOOTX64.EFI" 0x8664 0x020b BOOTX64.EFI
 
 "${PYTHON:-python3}" - "$esp" <<'PY'
 import pathlib

@@ -48,6 +48,10 @@ grep -Fq 'i386-none-elf i386-efi' "$iso_builder"
 grep -Fq 'x86_64-efi' "$iso_builder"
 grep -Fq 'BOOTIA32.EFI' "$iso_builder"
 grep -Fq 'BOOTX64.EFI' "$iso_builder"
+grep -Fq 'verify_seabios_payload' "$iso_builder"
+grep -Fq 'verify_efi_image' "$iso_builder"
+grep -Fq '0x014c 0x010b BOOTIA32.EFI' "$iso_builder"
+grep -Fq '0x8664 0x020b BOOTX64.EFI' "$iso_builder"
 grep -Fq 'EFI/efiboot.img' "$iso_builder"
 grep -Fq 'seabios-grub/vgabios.bin' "$iso_builder"
 grep -Fq 'set gfxpayload=keep' "$iso_builder"
@@ -68,7 +72,28 @@ x86_64_formula_prefix="$homebrew_prefix/opt/x86_64-elf-grub"
 x86_64_modules="$x86_64_formula_prefix/lib/x86_64-elf/grub/x86_64-efi"
 mkdir -p "$scratch/bin" "$scratch/build" "$seabios_build_root/seabios-grub" \
     "$i386_modules" "$x86_64_modules"
-printf 'multiboot-seabios\n' > "$scratch/seabios-grub.elf"
+python3 - "$scratch/seabios-grub.elf" <<'PY'
+import pathlib
+import struct
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = bytearray(4096)
+data[:4] = b'\x7fELF'
+data[4] = 1
+data[5] = 1
+data[6] = 1
+struct.pack_into('<H', data, 16, 2)
+struct.pack_into('<H', data, 18, 3)
+struct.pack_into('<I', data, 20, 1)
+struct.pack_into('<I', data, 24, 0x00100000)
+struct.pack_into('<H', data, 40, 52)
+magic = 0x1BADB002
+flags = 0
+checksum = (-magic - flags) & 0xffffffff
+struct.pack_into('<III', data, 64, magic, flags, checksum)
+path.write_bytes(data)
+PY
 printf '\x55\xaaGRUB-framebuffer-vgabios\n' > "$seabios_build_root/seabios-grub/vgabios.bin"
 : > "$i386_modules/moddep.lst"
 : > "$x86_64_modules/moddep.lst"
@@ -87,7 +112,33 @@ while (( $# )); do
     esac
 done
 [[ -n "$out" && -n "$format" ]]
-printf 'EFI:%s\n' "$format" > "$out"
+python3 - "$out" "$format" <<'PY'
+import pathlib
+import struct
+import sys
+
+path = pathlib.Path(sys.argv[1])
+fmt = sys.argv[2]
+try:
+    machine, magic, opt_size = {
+        'i386-efi': (0x014c, 0x010b, 0x00e0),
+        'x86_64-efi': (0x8664, 0x020b, 0x00f0),
+    }[fmt]
+except KeyError:
+    raise SystemExit(f'unsupported test EFI format: {fmt}')
+
+data = bytearray(512)
+data[:2] = b'MZ'
+peoff = 0x80
+struct.pack_into('<I', data, 0x3c, peoff)
+data[peoff:peoff + 4] = b'PE\0\0'
+struct.pack_into('<HHIIIHH', data, peoff + 4,
+                 machine, 0, 0, 0, 0, opt_size, 0x0202)
+optional = peoff + 24
+struct.pack_into('<H', data, optional, magic)
+struct.pack_into('<H', data, optional + 68, 10)
+path.write_bytes(data)
+PY
 SCRIPT
 
 cat > "$scratch/bin/brew" <<'SCRIPT'
