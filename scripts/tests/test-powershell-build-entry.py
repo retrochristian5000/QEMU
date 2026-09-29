@@ -25,10 +25,14 @@ required = (
     '--noprofile',
     '--norc',
     'build.sh',
+    "Write-Output 'WHP SeaBIOS UEFI lane: enabled'",
+    'Write-Output "WHP Windows Bash:',
 )
 for token in required:
     assert token in entry, f'missing PowerShell launcher contract token: {token}'
 
+assert 'Write-Host' not in entry, 'launcher status must stay capturable by CI pipelines'
+assert '.ToArray()' not in entry, 'PowerShell 5.1 launcher must not rely on LINQ extension methods'
 assert 'portable-build-entry.py' not in entry, (
     'PowerShell launcher must enter build.sh so firmware and QEMU share one policy path'
 )

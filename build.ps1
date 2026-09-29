@@ -87,8 +87,8 @@ function Find-WindowsPosixBash {
 
     $programFiles = [Environment]::GetEnvironmentVariable('ProgramFiles')
     if (-not [string]::IsNullOrWhiteSpace($programFiles)) {
-        $candidates.Add((Join-Path -Path $programFiles -ChildPath 'Git\bin\bash.exe'))
         $candidates.Add((Join-Path -Path $programFiles -ChildPath 'Git\usr\bin\bash.exe'))
+        $candidates.Add((Join-Path -Path $programFiles -ChildPath 'Git\bin\bash.exe'))
     }
     $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
     if (-not [string]::IsNullOrWhiteSpace($programFilesX86)) {
@@ -155,16 +155,18 @@ function Add-WindowsPosixToolPath {
         default { 'mingw64' }
     }
 
-    $prepend = New-Object System.Collections.Generic.List[string]
+    $prepend = @()
     $abiBin = Join-Path -Path $root -ChildPath "$abiDir\bin"
     if (Test-Path -LiteralPath $abiBin -PathType Container) {
-        $prepend.Add($abiBin)
+        $prepend += $abiBin
     }
     if (Test-Path -LiteralPath $usrBin -PathType Container) {
-        $prepend.Add($usrBin)
+        $prepend += $usrBin
     }
     if ($prepend.Count -gt 0) {
-        $env:PATH = (($prepend.ToArray() + @($env:PATH)) -join [IO.Path]::PathSeparator)
+        $pathEntries = @($prepend)
+        $pathEntries += $env:PATH
+        $env:PATH = ($pathEntries -join [IO.Path]::PathSeparator)
     }
 }
 
@@ -192,12 +194,12 @@ if ($SeaBIOSUefi) {
     if ([string]::IsNullOrWhiteSpace($env:GRUB_I386_BOOTSTRAP)) {
         $env:GRUB_I386_BOOTSTRAP = '1'
     }
-    Write-Host 'WHP SeaBIOS UEFI lane: enabled'
+    Write-Output 'WHP SeaBIOS UEFI lane: enabled'
 }
 
 $kernelOutput = @(& $BashPath --noprofile --norc -c 'uname -s' 2>$null)
 $Kernel = $kernelOutput[-1].Trim()
-Write-Host "WHP Windows Bash: $BashPath ($Kernel)"
+Write-Output "WHP Windows Bash: $BashPath ($Kernel)"
 
 & $BashPath --noprofile --norc $PosixBuildScript @Targets
 $BuildExitCode = $LASTEXITCODE
