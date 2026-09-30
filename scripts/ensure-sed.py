@@ -15,6 +15,7 @@ import io
 import os
 import pathlib
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
 SED_ADAPTER = ROOT / "sed.sh"
-SED_BOOTSTRAP_SCHEMA = "2"
+SED_BOOTSTRAP_SCHEMA = "3"
 
 
 def run_text(
@@ -336,21 +337,81 @@ def extract_git_archive(
         archive.extractall(destination)
 
 
+def latest_release_version() -> str:
+    """Return the newest numbered release documented in sed's NEWS file."""
+    news = (SUBMODULE_DIR / "NEWS").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    match = re.search(
+        r"(?m)^\\* Noteworthy changes in release "
+        r"([0-9]+(?:\\.[0-9]+)+) \\(",
+        news,
+    )
+    return match.group(1) if match else "0"
+
+
+def fallback_staged_version(revision: str) -> str:
+    """Return a truthful deterministic version when Git history is incomplete."""
+    base = latest_release_version()
+    if revision.startswith("archive-"):
+        identity = revision.removeprefix("archive-")[:12]
+        kind = "archive"
+    else:
+        identity = revision[:12]
+        kind = "git"
+    identity = re.sub(r"[^0-9A-Za-z]+", "", identity) or "unknown"
+    return f"{base}.{kind}-{identity}"
+
+
+def live_checkout_version(revision: str) -> str:
+    """Use gnulib's version generator from the live sed checkout.
+
+    GNU sed does not track build-aux/git-version-gen directly. bootstrap.conf
+    imports it from the pinned gnulib submodule before Autoconf evaluates
+    configure.ac. QEMU needs a version earlier because it converts the live
+    checkout into an isolated git-archive tree, so use that exact gnulib
+    helper against the live checkout and persist its answer as
+    .tarball-version in the staged tree.
+    """
+    version_helper = (
+        SUBMODULE_DIR / NESTED_REL / "build-aux" / "git-version-gen"
+    )
+    if not version_helper.is_file():
+        raise RuntimeError(
+            "pinned gnulib lacks build-aux/git-version-gen: "
+            f"{version_helper}"
+        )
+
+    version = run_text(
+        [
+            "/bin/sh",
+            str(version_helper),
+            str(SUBMODULE_DIR / ".tarball-version"),
+        ],
+        cwd=SUBMODULE_DIR,
+    ).strip()
+
+    # A shallow submodule may not carry a reachable release tag, in which
+    # case upstream git-version-gen correctly reports UNKNOWN. Do not fetch
+    # extra history behind the user's back just to name a build; the exact
+    # QEMU gitlink is already authoritative, so preserve the newest documented
+    # sed release plus the pinned commit identity instead.
+    if not version or version == "UNKNOWN":
+        version = fallback_staged_version(revision)
+    return version
+
+
 def copy_source(
     revision: str, nested_revision: str, destination: pathlib.Path
 ) -> None:
     shutil.rmtree(destination, ignore_errors=True)
     if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
+        version = live_checkout_version(revision)
         extract_git_archive(SUBMODULE_DIR, revision, destination)
         extract_git_archive(
             SUBMODULE_DIR / NESTED_REL,
             nested_revision,
             destination / NESTED_REL,
-        )
-        version_helper = SUBMODULE_DIR / "build-aux" / "git-version-gen"
-        version = run_text(
-            ["/bin/sh", str(version_helper), ".tarball-version"],
-            cwd=SUBMODULE_DIR,
         )
         (destination / ".tarball-version").write_text(
             version + "\n", encoding="utf-8"
@@ -362,6 +423,12 @@ def copy_source(
         destination,
         ignore=shutil.ignore_patterns(".git"),
     )
+    tarball_version = destination / ".tarball-version"
+    if not tarball_version.is_file():
+        tarball_version.write_text(
+            fallback_staged_version(revision) + "\n",
+            encoding="utf-8",
+        )
 
 
 def macos_environment(env: dict[str, str]) -> tuple[str, str, str]:
