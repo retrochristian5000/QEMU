@@ -343,8 +343,8 @@ def latest_release_version() -> str:
         encoding="utf-8", errors="replace"
     )
     match = re.search(
-        r"(?m)^\\* Noteworthy changes in release "
-        r"([0-9]+(?:\\.[0-9]+)+) \\(",
+        r"(?m)^\* Noteworthy changes in release "
+        r"([0-9]+(?:\.[0-9]+)+) \(",
         news,
     )
     return match.group(1) if match else "0"
