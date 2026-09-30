@@ -202,11 +202,8 @@ graph.  A compact view is::
       |      +--> Bash fallback
       |      +--> Ninja fallback
       |
-      +--> CMake --------------------+
-      |      |                       |
-      |      +--> SDL3               +--> Aften
-      |      +--> optional mold            |
-      |                                   +--> JACK full macOS server
+      +--> CMake
+      |      +--> optional mold
       |
       +--> GNU Make seed
       |      +--> pinned WHP Make fork (planned)
@@ -219,10 +216,18 @@ graph.  A compact view is::
       +--> optional native LLVM
              |
              +--> QEMU host compiler
+             |      +--> SDL3 host library
+             |      +--> JACK client library
+             |      +--> Libtool-configured downstream archives
+             |             +--> libisofs
+             |
              +--> firmware cross-toolchain lanes
              +--> Windows PE/COFF cross targets
                        |
                        +--> Wine execution/API validation (planned)
+
+  When native LLVM is disabled, SDL3/JACK fall back to the seed build-machine
+  compiler so portable/non-LLVM builds retain their existing preparation path.
 
   GNU Make + flex + bison + host/platform development headers
       |
@@ -246,6 +251,26 @@ full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional
 libraries stay feature-gated rather than becoming WHP bootstrap roots.
+
+Bootstrap phase ordering
+------------------------
+
+The host bootstrap is split into phases rather than one flat dependency list.
+
+**Seed/tool phase:** ``cc.sh``, Python, Automake, GNU sed, managed Git, Bash,
+and Ninja are available before native LLVM. These are generators/orchestration
+tools needed to reach the compiler build and therefore use build-machine roles.
+
+**Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
+bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
+archive/binutils replacements.
+
+**Artifact-library phase:** SDL and JACK are linked into QEMU, so in an LLVM
+build they are deliberately deferred until after compiler promotion. In a
+non-LLVM or portable build they remain preparable with the seed compiler.
+Libtool stays after compiler promotion because its configure/cache records
+archive and binary-tool identities, and libisofs remains downstream of that
+Libtool selection.
 
 Bootstrap compiler boundary
 ---------------------------

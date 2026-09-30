@@ -1,0 +1,39 @@
+name: bootstrap phase ordering
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'build.sh'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-jack.py'
+      - 'scripts/ensure-libtool.py'
+      - 'scripts/ensure-libisofs.py'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/tests/test-bootstrap-phase-order.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/bootstrap-phase-order.yml'
+  pull_request:
+    paths:
+      - 'build.sh'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-jack.py'
+      - 'scripts/ensure-libtool.py'
+      - 'scripts/ensure-libisofs.py'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/tests/test-bootstrap-phase-order.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/bootstrap-phase-order.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bootstrap phase order
+        run: python3 scripts/tests/test-bootstrap-phase-order.py
+      - name: Check public build shell syntax
+        run: bash -n build.sh
