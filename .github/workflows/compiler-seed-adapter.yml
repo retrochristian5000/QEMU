@@ -1,0 +1,94 @@
+name: compiler seed adapter
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'cc.sh'
+      - 'build.sh'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/ensure-bash.py'
+      - 'scripts/ensure-git.py'
+      - 'scripts/ensure-jack.py'
+      - 'scripts/ensure-ninja.py'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/compiler-seed-adapter.yml'
+  pull_request:
+    paths:
+      - 'cc.sh'
+      - 'build.sh'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/ensure-bash.py'
+      - 'scripts/ensure-git.py'
+      - 'scripts/ensure-jack.py'
+      - 'scripts/ensure-ninja.py'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/compiler-seed-adapter.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify static compiler policy
+        run: python3 scripts/tests/test-bootstrap-compiler-policy.py
+
+      - name: Exercise native compiler adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc="$(./cc.sh --print-cc)"
+          cxx="$(./cc.sh --print-cxx)"
+          test -x "$cc"
+          test -x "$cxx"
+          ./cc.sh --check
+          ./cc.sh --check-cxx
+
+          tmp="$RUNNER_TEMP/whp-cc-adapter"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+
+          printf '%s\n' 'int main(void) { return 0; }' > "$tmp/probe.c"
+          ./cc.sh "$tmp/probe.c" -o "$tmp/probe-c"
+          "$tmp/probe-c"
+
+          printf '%s\n' 'int main() { return 0; }' > "$tmp/probe.cc"
+          ./cc.sh --cxx -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-cxx"
+          "$tmp/probe-cxx"
+
+          shim="$tmp/bin"
+          mkdir -p "$shim"
+          ln -s "$GITHUB_WORKSPACE/cc.sh" "$shim/cc"
+          PATH="$shim:$PATH" WHP_CC_SEED="$cc" \
+            "$shim/cc" "$tmp/probe.c" -o "$tmp/probe-shim"
+          "$tmp/probe-shim"
+
+          cat > "$tmp/fake-cc" <<'EOF'
+          #!/bin/sh
+          if [ "$1" = --version ]; then
+              echo 'fake cc 1.0'
+              exit 0
+          fi
+          exit 1
+          EOF
+          chmod +x "$tmp/fake-cc"
+          if WHP_CC_SEED="$tmp/fake-cc" ./cc.sh --print-cc; then
+              echo 'fake compiler unexpectedly passed native probe' >&2
+              exit 1
+          fi

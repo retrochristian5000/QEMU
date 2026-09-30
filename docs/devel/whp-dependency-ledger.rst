@@ -187,6 +187,11 @@ graph.  A compact view is::
 
   primitive host tools / SDK / compiler
       |
+      +--> cc.sh native C seed
+      |      +--> Python fallback
+      |      +--> GNU sed / Git / Bash / SDL host builds
+      |      +--> lazy C++17 seed -> Ninja / JACK / native LLVM
+      |
       +--> seed Git
       |      +--> QEMU source checkout/update
       |      +--> pinned WHP Git fork
@@ -241,6 +246,22 @@ full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional
 libraries stay feature-gated rather than becoming WHP bootstrap roots.
+
+Bootstrap compiler boundary
+---------------------------
+
+``cc.sh`` is the pre-LLVM native compiler adapter. It is intentionally a
+root-boundary selector rather than a compiler implementation: a usable host
+compiler must already exist before the WHP LLVM fork can build itself. The
+adapter validates that its selected C compiler can compile, link, and execute a
+native probe, and it exposes a separate lazy C++17 selection for components
+that actually need C++.
+
+The build-machine roles are ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD``.
+Target ``CC``/``CXX`` are deliberately excluded from seed discovery so a
+cross compiler cannot leak backward into Python, GNU sed, Git, Bash, SDL,
+Ninja, JACK, or the native LLVM bootstrap. Explicit seed overrides use
+``WHP_CC_SEED`` and ``WHP_CXX_SEED``.
 
 Git bootstrap boundary
 ----------------------
@@ -395,6 +416,9 @@ claimed as already implemented.
 Circularity guards
 ------------------
 
+#. The native compiler selected by ``cc.sh`` is a seed dependency. The WHP
+   LLVM fork may replace compilers only after LLVM has been built; LLVM must
+   never be selected as the compiler required to bootstrap its own first stage.
 #. Seed Git remains mandatory for the initial QEMU checkout/source refresh and
    for materializing the pinned Git fork. Managed Git may take over only after
    it has been built; a local-only build must not replace HTTPS-capable seed Git.
