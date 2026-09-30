@@ -12,6 +12,7 @@ PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
 PYTHON_BOOTSTRAP_SCHEMA=3
 JOBS=${JOBS:-}
+SED=${SED:-sed}
 cleanup_path=
 
 # This interpreter is a host prerequisite, not a QEMU target object. Never let
@@ -59,7 +60,7 @@ resolve_bootstrap_make()
     [ -n "$bootstrap_make" ] && [ -x "$bootstrap_make" ] ||
         fail "GNU Make is required to bootstrap bundled Python; set MAKE_CMD or MAKE"
 
-    make_version=$("$bootstrap_make" --version 2>/dev/null | sed -n '1p')
+    make_version=$("$bootstrap_make" --version 2>/dev/null | "$SED" -n '1p')
     case "$make_version" in
         GNU\ Make\ *) ;;
         *) fail "Python bootstrap requires GNU Make, not: ${make_version:-$bootstrap_make}" ;;
@@ -128,7 +129,7 @@ python_usable()
 }
 
 require_tool git
-require_tool sed
+require_tool "$SED"
 require_tool mkdir
 require_tool rm
 require_tool mv
@@ -149,8 +150,8 @@ case "$host_kernel" in
     *) build_mode=posix ;;
 esac
 
-host_kernel_tag=$(printf '%s' "$host_kernel" | sed 's/[^A-Za-z0-9_.-]/-/g')
-host_arch_tag=$(printf '%s' "$host_arch" | sed 's/[^A-Za-z0-9_.-]/-/g')
+host_kernel_tag=$(printf '%s' "$host_kernel" | "$SED" 's/[^A-Za-z0-9_.-]/-/g')
+host_arch_tag=$(printf '%s' "$host_arch" | "$SED" 's/[^A-Za-z0-9_.-]/-/g')
 host_tag="$host_kernel_tag-$host_arch_tag"
 
 if [ -n "${WHP_PYTHON_BOOTSTRAP_DIR:-}" ]; then
@@ -197,7 +198,7 @@ case "$build_mode" in
         [ -n "$bootstrap_cc" ] || fail 'a host C compiler is required to bootstrap bundled Python'
         command -v "$bootstrap_cc" >/dev/null 2>&1 || [ -x "$bootstrap_cc" ] ||
             fail "bundled Python host C compiler is not executable: $bootstrap_cc"
-        bootstrap_cc_version=$("$bootstrap_cc" --version 2>&1 | sed -n '1p')
+        bootstrap_cc_version=$("$bootstrap_cc" --version 2>&1 | "$SED" -n '1p')
         [ -n "$bootstrap_cc_version" ] ||
             fail "could not identify bundled Python host C compiler: $bootstrap_cc"
         ;;

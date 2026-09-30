@@ -280,6 +280,97 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+BOOTSTRAP_SED=${BOOTSTRAP_SED:-auto}
+case "$BOOTSTRAP_SED" in
+    y) BOOTSTRAP_SED=1 ;;
+    n) BOOTSTRAP_SED=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_SED must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_SED
+
+whp_sed_usable()
+{
+    [ -n "${1:-}" ] || return 1
+    [ -x "$1" ] || return 1
+    [ "$(printf 'alpha\n' | "$1" -n 's/^alpha$/beta/p' 2>/dev/null)" = beta ]
+}
+
+whp_sed_is_gnu()
+{
+    whp_sed_usable "$1" || return 1
+    "$1" --version 2>/dev/null | grep -q 'GNU sed'
+}
+
+# GNU sed's Git bootstrap itself uses sed.  Therefore the system sed is a
+# deliberately small seed boundary: once Python is available, auto keeps an
+# existing GNU sed or tries the pinned WHP fork.  The validated result is then
+# exported through both SED and PATH so literal 'sed' calls and Autoconf agree.
+if [ -n "${SED:-}" ]; then
+    case "$SED" in
+        *[[:space:]]*)
+            printf 'error: SED must name one executable: %s\n' "$SED" >&2
+            exit 1
+            ;;
+    esac
+    case "$SED" in
+        */*) WHP_SED_EXPLICIT=$SED ;;
+        *) WHP_SED_EXPLICIT=$(command -v "$SED" 2>/dev/null || true) ;;
+    esac
+    if ! whp_sed_usable "$WHP_SED_EXPLICIT"; then
+        printf 'error: SED is not a usable sed executable: %s\n' "$SED" >&2
+        exit 1
+    fi
+    SED=$WHP_SED_EXPLICIT
+    unset WHP_SED_EXPLICIT
+else
+    WHP_HOST_SED=$(command -v gsed 2>/dev/null || command -v sed 2>/dev/null || true)
+    if ! whp_sed_usable "$WHP_HOST_SED"; then
+        printf 'error: a working host sed is required as the GNU sed bootstrap seed\n' >&2
+        exit 1
+    fi
+
+    SED=
+    if [ "$BOOTSTRAP_SED" != 1 ] && whp_sed_is_gnu "$WHP_HOST_SED"; then
+        SED=$WHP_HOST_SED
+    elif [ "$BOOTSTRAP_SED" != 0 ] &&
+         [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+         [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+        WHP_SED_SEED=$WHP_HOST_SED
+        export WHP_SED_SEED
+        SED=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-sed.py" --build-dir "$BUILD_DIR"
+        ) || SED=
+        unset WHP_SED_SEED
+    fi
+
+    if [ -z "$SED" ]; then
+        if [ "$BOOTSTRAP_SED" = 1 ]; then
+            printf '%s\n'                 'error: BOOTSTRAP_SED=1 requested the pinned GNU sed, but its bootstrap failed.' >&2
+            exit 1
+        fi
+        SED=$WHP_HOST_SED
+        if [ "$BOOTSTRAP_SED" = auto ] && ! whp_sed_is_gnu "$SED"; then
+            printf 'WHP GNU sed bootstrap unavailable; retaining host seed sed: %s\n'                 "$SED" >&2
+        fi
+    fi
+    unset WHP_HOST_SED
+fi
+
+WHP_SED_DIR=$(dirname -- "$SED")
+PATH="$WHP_SED_DIR:$PATH"
+export SED PATH
+if whp_sed_is_gnu "$SED"; then
+    WHP_SED_KIND=GNU
+else
+    WHP_SED_KIND=host
+fi
+printf 'QEMU sed: %s (%s)\n' "$SED" "$WHP_SED_KIND" >&2
+unset WHP_SED_DIR WHP_SED_KIND
+
 BOOTSTRAP_BASH=${BOOTSTRAP_BASH:-auto}
 case "$BOOTSTRAP_BASH" in
     y) BOOTSTRAP_BASH=1 ;;

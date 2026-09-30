@@ -1,0 +1,60 @@
+name: GNU sed bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/sed'
+      - 'build.sh'
+      - 'scripts/ensure-sed.py'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/gnu-sed-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/sed'
+      - 'build.sh'
+      - 'scripts/ensure-sed.py'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/gnu-sed-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GNU sed bootstrap prerequisites
+        shell: bash
+        run: |
+          brew install autoconf automake gettext gperf texinfo wget xz
+          echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap pinned GNU sed
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$(brew --prefix gettext)/bin:$(brew --prefix texinfo)/bin:$PATH"
+          seed=/usr/bin/sed
+          test -x "$seed"
+          if "$seed" --version 2>/dev/null | grep -q 'GNU sed'; then
+            echo "expected macOS seed sed to be non-GNU" >&2
+            exit 1
+          fi
+
+          WHP_SED_SEED="$seed"             sed_path="$(python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          test -x "$sed_path"
+          "$sed_path" --version | grep -q 'GNU sed'
+          test "$(printf 'alpha\n' | "$sed_path" -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' |             "$sed_path" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
+
+          # Cache validation must return the same managed executable.
+          again="$(WHP_SED_SEED="$seed"             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          test "$again" = "$sed_path"
