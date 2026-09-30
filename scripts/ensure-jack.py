@@ -159,10 +159,24 @@ def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:
             return str(path)
         raise RuntimeError(f"{env_name} is not executable: {candidate}")
 
-    if platform.system() == "Darwin" and shutil.which("xcrun"):
-        found = run_text(["xcrun", "--sdk", "macosx", "--find", value])
-        if found:
+    adapter = ROOT / "cc.sh"
+    if env_name in ("CC_FOR_BUILD", "CXX_FOR_BUILD") and adapter.is_file() and os.access(adapter, os.X_OK):
+        mode = "--print-cc" if env_name == "CC_FOR_BUILD" else "--print-cxx"
+        completed = subprocess.run(
+            [str(adapter), mode],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        found = completed.stdout.strip()
+        if completed.returncode == 0 and found:
             return found
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            f"QEMU cc.sh could not resolve JACK {env_name}"
+            + (f": {detail}" if detail else "")
+        )
 
     for name in fallbacks:
         path = shutil.which(name)
@@ -272,8 +286,8 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_jack_source()
-    cc = command_path("clang", "CC", ("cc", "clang", "gcc"))
-    cxx = command_path("clang++", "CXX", ("c++", "clang++", "g++"))
+    cc = command_path("clang", "CC_FOR_BUILD", ("cc", "clang", "gcc"))
+    cxx = command_path("clang++", "CXX_FOR_BUILD", ("c++", "clang++", "g++"))
     prefix = build_root / "deps" / "jack"
     sdkroot, arch, deployment = macos_settings()
     marker = marker_text(revision, cc, cxx, sdkroot, arch, deployment)

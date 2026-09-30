@@ -272,6 +272,18 @@ cmake_host_args=()
 cmake_darwin_runtime_args=()
 sdkroot=""
 deployment_target=""
+seed_cc="${CC_FOR_BUILD:-}"
+seed_cxx="${CXX_FOR_BUILD:-}"
+if [[ -z "$seed_cc" ]]; then
+    seed_cc="$("$SOURCE_DIR/cc.sh" --print-cc)"
+fi
+if [[ -z "$seed_cxx" ]]; then
+    seed_cxx="$("$SOURCE_DIR/cc.sh" --print-cxx)"
+fi
+
+bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-$seed_cc}"
+bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-$seed_cxx}"
+
 if [[ "$host_os" == macos ]]; then
     for tool in xcrun sw_vers; do
         command -v "$tool" >/dev/null 2>&1 || {
@@ -279,18 +291,14 @@ if [[ "$host_os" == macos ]]; then
             exit 1
         }
     done
-    bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-$(xcrun --sdk macosx --find clang)}"
-    bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-$(xcrun --sdk macosx --find clang++)}"
     sdkroot="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
     deployment_target="${MACOSX_DEPLOYMENT_TARGET:-$(sw_vers -productVersion | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')}"
     [[ -d "$sdkroot" ]] || {
         printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2
         exit 1
     }
-else
-    bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-${CC_FOR_BUILD:-cc}}"
-    bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-${CXX_FOR_BUILD:-c++}}"
 fi
+unset seed_cc seed_cxx
 
 for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
     [[ -x "$compiler" ]] || command -v "$compiler" >/dev/null 2>&1 || {

@@ -110,25 +110,25 @@ def select_host_cxx() -> str:
     if requested:
         return requested
 
-    # Ninja executes on the build machine, so on macOS it must not inherit
-    # QEMU's target CXX. A self-built Clang targeting aarch64-apple-darwin does
-    # not necessarily carry an Apple SDK sysroot and can fail through libc++
-    # with headers such as <errno.h> missing. Prefer the SDK compiler for the
-    # build-machine role unless CXX_FOR_BUILD explicitly overrides it.
-    if platform.system() == 'Darwin' and shutil.which('xcrun'):
-        candidate = run_text(['xcrun', '--sdk', 'macosx', '--find', 'clang++'])
-        if candidate:
+    adapter = ROOT / 'cc.sh'
+    if adapter.is_file() and os.access(adapter, os.X_OK):
+        completed = subprocess.run(
+            [str(adapter), '--print-cxx'],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode == 0 and candidate:
             return candidate
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            'QEMU cc.sh could not resolve the Ninja build C++ compiler'
+            + (f': {detail}' if detail else '')
+        )
 
-    requested = os.environ.get('CXX')
-    if requested:
-        return requested
-
-    for name in ('c++', 'clang++', 'g++'):
-        path = shutil.which(name)
-        if path:
-            return path
-    raise RuntimeError('a host C++17 compiler is required to bootstrap bundled Ninja')
+    raise RuntimeError('a native host C++17 compiler is required to bootstrap bundled Ninja')
 
 
 def select_host_sdkroot() -> str:
