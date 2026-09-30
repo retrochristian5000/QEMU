@@ -161,27 +161,36 @@ def command_path(name: str, env_name: str | None = None) -> str:
 
 
 def select_c_compiler() -> str:
-    requested = os.environ.get("CC")
+    requested = os.environ.get("CC_FOR_BUILD", "")
     if requested:
         argv = shlex.split(requested)
         if len(argv) != 1:
-            raise RuntimeError("CC must name exactly one executable for SDL bootstrap")
+            raise RuntimeError("CC_FOR_BUILD must name exactly one executable")
         candidate = argv[0]
         path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
         if path and pathlib.Path(path).exists():
             return str(path)
-        raise RuntimeError(f"CC is not executable: {candidate}")
+        raise RuntimeError(f"CC_FOR_BUILD is not executable: {candidate}")
 
-    if platform.system() == "Darwin" and shutil.which("xcrun"):
-        candidate = run_text(["xcrun", "--sdk", "macosx", "--find", "clang"])
-        if candidate:
+    adapter = ROOT / "cc.sh"
+    if adapter.is_file() and os.access(adapter, os.X_OK):
+        completed = subprocess.run(
+            [str(adapter), "--print-cc"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode == 0 and candidate:
             return candidate
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU cc.sh could not resolve the SDL bootstrap compiler"
+            + (f": {detail}" if detail else "")
+        )
 
-    for name in ("cc", "clang", "gcc"):
-        path = shutil.which(name)
-        if path:
-            return path
-    raise RuntimeError("a host C compiler is required to bootstrap bundled SDL3")
+    raise RuntimeError("a native build C compiler is required to bootstrap SDL3")
 
 
 def compiler_version(cc: str) -> str:
