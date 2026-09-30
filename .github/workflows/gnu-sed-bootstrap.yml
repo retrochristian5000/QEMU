@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - '.gitmodules'
+      - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'build.sh'
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - '.gitmodules'
+      - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'build.sh'
@@ -46,8 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$(brew --prefix gettext)/bin:$(brew --prefix texinfo)/bin:$PATH"
-          seed=/usr/bin/sed
+          seed="$(WHP_SED_SEED=/usr/bin/sed ./sed.sh --print-seed)"
           test -x "$seed"
+          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
           automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           export PATH="$automake_prefix/bin:$PATH"
@@ -86,8 +89,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          seed="$(command -v sed)"
+          seed="$(./sed.sh --print-seed)"
           test -x "$seed"
+          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
           automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           export PATH="$automake_prefix/bin:$PATH"

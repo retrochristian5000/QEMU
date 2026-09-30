@@ -26,7 +26,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
-SED_BOOTSTRAP_SCHEMA = "1"
+SED_ADAPTER = ROOT / "sed.sh"
+SED_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(
@@ -131,35 +132,31 @@ def gnu_sed_usable(path: str) -> bool:
         stderr=subprocess.STDOUT,
         check=False,
     )
-    return (
-        completed.returncode == 0
-        and "GNU sed" in completed.stdout
-    )
+    return completed.returncode == 0 and "GNU sed" in completed.stdout
 
 
 def seed_sed() -> str:
-    requested = explicit_executable("WHP_SED_SEED")
-    if requested:
-        if not semantic_sed_usable(requested):
-            raise RuntimeError(
-                f"WHP_SED_SEED failed the portable sed probes: {requested}"
-            )
-        return requested
+    if not SED_ADAPTER.is_file() or not os.access(SED_ADAPTER, os.X_OK):
+        raise RuntimeError(f"QEMU sed seed adapter is unavailable: {SED_ADAPTER}")
 
-    # SED can be an explicit host seed when this helper is run directly.
-    requested = explicit_executable("SED")
-    if requested:
-        if not semantic_sed_usable(requested):
-            raise RuntimeError(f"SED failed the portable sed probes: {requested}")
-        return requested
-
-    for name in ("sed", "gsed"):
-        path = executable(name)
-        if path and semantic_sed_usable(path):
-            return path
-    raise RuntimeError(
-        "a working seed sed is required to bootstrap the pinned GNU sed"
+    completed = subprocess.run(
+        [str(SED_ADAPTER), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=os.environ.copy(),
     )
+    seed = completed.stdout.strip()
+    if completed.returncode != 0 or not seed:
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU sed.sh could not resolve the GNU sed bootstrap seed"
+            + (f": {detail}" if detail else "")
+        )
+    if not semantic_sed_usable(seed):
+        raise RuntimeError(f"resolved seed sed failed semantic probes: {seed}")
+    return seed
 
 
 def command_path(
@@ -445,7 +442,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     ):
         env.pop(key, None)
     env["CC"] = cc
-    env["SED"] = seed
+    env["WHP_SED_SEED"] = seed
+    env["SED"] = str(SED_ADAPTER)
     sdkroot, arch, deployment = macos_environment(env)
 
     marker = marker_text(
@@ -472,9 +470,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     seed_bin.mkdir(parents=True, exist_ok=True)
     seed_link = seed_bin / "sed"
     try:
-        seed_link.symlink_to(seed)
+        seed_link.symlink_to(SED_ADAPTER)
     except OSError:
-        shutil.copy2(seed, seed_link)
+        shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
     env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
 

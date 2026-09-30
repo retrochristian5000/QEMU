@@ -24,7 +24,8 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-AUTOMAKE_BOOTSTRAP_SCHEMA = "1"
+SED_ADAPTER = ROOT / "sed.sh"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(
@@ -133,30 +134,30 @@ def select_gnu_make() -> str:
     raise RuntimeError("GNU Make is required to bootstrap GNU Automake")
 
 
-def semantic_sed_usable(path: str) -> bool:
+def select_seed_sed() -> str:
+    if not SED_ADAPTER.is_file() or not os.access(SED_ADAPTER, os.X_OK):
+        raise RuntimeError(f"QEMU sed seed adapter is unavailable: {SED_ADAPTER}")
+
+    env = os.environ.copy()
+    requested = os.environ.get("WHP_AUTOMAKE_SED_SEED", "")
+    if requested:
+        env["WHP_SED_SEED"] = requested
     completed = subprocess.run(
-        [path, "-n", "s/^alpha$/beta/p"],
-        input="alpha\n",
+        [str(SED_ADAPTER), "--print-seed"],
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    return completed.returncode == 0 and completed.stdout == "beta\n"
-
-
-def select_seed_sed() -> str:
-    for env_name in ("WHP_AUTOMAKE_SED_SEED", "SED"):
-        requested = explicit_tool(env_name)
-        if requested:
-            if not semantic_sed_usable(requested):
-                raise RuntimeError(f"{env_name} failed the sed probe: {requested}")
-            return requested
-    for name in ("sed", "gsed"):
-        path = executable(name)
-        if path and semantic_sed_usable(path):
-            return path
-    raise RuntimeError("a working sed is required to bootstrap GNU Automake")
+    seed = completed.stdout.strip()
+    if completed.returncode != 0 or not seed:
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU sed.sh could not resolve the Automake bootstrap seed"
+            + (f": {detail}" if detail else "")
+        )
+    return seed
 
 
 def first_line(command: List[str]) -> str:
@@ -366,9 +367,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     seed_bin.mkdir(parents=True, exist_ok=True)
     seed_link = seed_bin / "sed"
     try:
-        seed_link.symlink_to(seed)
+        seed_link.symlink_to(SED_ADAPTER)
     except OSError:
-        shutil.copy2(seed, seed_link)
+        shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
 
     env = os.environ.copy()
@@ -380,6 +381,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["PERL"] = perl
     env["AUTOCONF"] = autoconf
     env["AUTOM4TE"] = autom4te
+    env["WHP_SED_SEED"] = seed
+    env["SED"] = str(SED_ADAPTER)
     env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
 
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"

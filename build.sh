@@ -421,9 +421,9 @@ if [ -n "${SED:-}" ]; then
     SED=$WHP_SED_EXPLICIT
     unset WHP_SED_EXPLICIT
 else
-    WHP_HOST_SED=$(command -v gsed 2>/dev/null || command -v sed 2>/dev/null || true)
+    WHP_HOST_SED=$("$SOURCE_DIR/sed.sh" --print-seed 2>/dev/null || true)
     if ! whp_sed_usable "$WHP_HOST_SED"; then
-        printf 'error: a working host sed is required as the GNU sed bootstrap seed\n' >&2
+        printf 'error: QEMU sed.sh could not resolve a working host sed seed\n' >&2
         exit 1
     fi
 

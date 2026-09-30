@@ -1,0 +1,51 @@
+name: sed seed adapter
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'sed.sh'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-sed.py'
+      - '.github/workflows/sed-seed-adapter.yml'
+  pull_request:
+    paths:
+      - 'sed.sh'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-sed.py'
+      - '.github/workflows/sed-seed-adapter.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Exercise pre-bootstrap sed adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(./sed.sh --print-seed)"
+          test -x "$seed"
+          ./sed.sh --check
+          test "$(printf 'alpha\n' | ./sed.sh -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'A B/C\n' | ./sed.sh 's,[^A-Za-z0-9_.-],-,g')" = A-B-C
+
+          # Putting the adapter on PATH under the literal name sed must not
+          # recurse back into itself.
+          shim="$RUNNER_TEMP/whp-sed-seed-bin"
+          mkdir -p "$shim"
+          ln -sf "$GITHUB_WORKSPACE/sed.sh" "$shim/sed"
+          PATH="$shim:$PATH" WHP_SED_SEED="$seed" \
+            test "$(printf 'alpha\n' | "$shim/sed" -n 's/^alpha$/beta/p')" = beta
+
+          test "$(WHP_SED_SEED="$seed" ./sed.sh --print-seed)" = "$seed"
