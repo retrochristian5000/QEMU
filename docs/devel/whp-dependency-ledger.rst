@@ -150,6 +150,10 @@ by the WHP account.
      - ``make``
      - yes
      - Pinned GNU Make fork; currently ``planned`` as a managed build tool because its Git maintainer-source tree still needs a seed GNU Make/Autotools path before it can produce the configured no-Make bootstrap inputs.
+   * - ``toolchains/git``
+     - ``git-tools``
+     - yes
+     - Managed Git fork behind an explicit seed-Git boundary. Seed Git still obtains QEMU and materializes the fork; only an HTTPS-capable managed build may replace it for later remote/submodule work.
    * - ``toolchains/sdl``
      - ``SDLosaurus``
      - yes
@@ -182,6 +186,12 @@ The current host-side order is intentionally split from the QEMU artifact
 graph.  A compact view is::
 
   primitive host tools / SDK / compiler
+      |
+      +--> seed Git
+      |      +--> QEMU source checkout/update
+      |      +--> pinned WHP Git fork
+      |             +--> managed full Git (HTTPS-capable) -> later submodules
+      |             +--> managed local Git -> local repository operations only
       |
       +--> Python >= 3.9
       |      +--> Bash fallback
@@ -231,6 +241,26 @@ full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional
 libraries stay feature-gated rather than becoming WHP bootstrap roots.
+
+Git bootstrap boundary
+----------------------
+
+The WHP owns the pinned ``toolchains/git`` fork, but Git cannot be the first
+Git executable in the graph. An already usable seed Git is required to obtain
+the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
+``toolchains/git`` plus its pinned ``sha1collisiondetection`` gitlink.
+
+After that seed boundary, ``scripts/ensure-git.py`` builds a private Git.
+The preferred profile retains libcurl/HTTPS transport while disabling unrelated
+bootstrap surfaces such as gettext, Perl, Python helpers, Tcl/Tk, gitweb,
+Expat/WebDAV, direct OpenSSL use, and iconv. In ``auto`` mode a failed full
+profile may fall back to a reduced ``NO_CURL`` local profile; that binary is
+exposed for local use but is never promoted over the HTTPS-capable seed.
+
+``BOOTSTRAP_GIT=1`` requires the fork and requires ``git-remote-https``
+before the managed Git is placed on ``PATH``. This keeps the
+``Git -> checkout Git`` edge visible as a seed boundary rather than a hidden
+self-cycle.
 
 GNU Make bootstrap boundary
 ---------------------------
@@ -365,6 +395,9 @@ claimed as already implemented.
 Circularity guards
 ------------------
 
+#. Seed Git remains mandatory for the initial QEMU checkout/source refresh and
+   for materializing the pinned Git fork. Managed Git may take over only after
+   it has been built; a local-only build must not replace HTTPS-capable seed Git.
 #. A toolchain may not require the QEMU binary it is being built to produce.
 #. Native LLVM must bootstrap from an existing host compiler; it must not make
    itself its own root dependency.

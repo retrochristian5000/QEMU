@@ -1,0 +1,91 @@
+name: WHP Git bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'git.sh'
+      - 'toolchains/git'
+      - 'build.sh'
+      - 'scripts/ensure-git.py'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/tests/test-git-dependency-policy.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/git-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'git.sh'
+      - 'toolchains/git'
+      - 'build.sh'
+      - 'scripts/ensure-git.py'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/tests/test-git-dependency-policy.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/git-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Git build prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libcurl4-openssl-dev zlib1g-dev
+
+      - name: Install Git build prerequisites (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install curl
+          echo "WHP_GIT_CURLDIR=$(brew --prefix curl)" >> "$GITHUB_ENV"
+
+      - name: Verify dependency policy
+        run: python3 scripts/tests/test-git-dependency-policy.py
+
+      - name: Build pinned Git with HTTPS transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(./git.sh --print-seed)"
+          test -x "$seed"
+          ./git.sh --check
+
+          prefix="$(WHP_GIT_SEED="$seed" \
+            python3 scripts/ensure-git.py \
+              --build-dir "$RUNNER_TEMP/whp-git" --mode force)"
+          git_path="$prefix/bin/git"
+          test -x "$git_path"
+          "$git_path" --version
+          exec_path="$("$git_path" --exec-path)"
+          test -x "$exec_path/git-remote-https"
+
+          repo="$RUNNER_TEMP/git-smoke"
+          rm -rf "$repo"
+          "$git_path" init -q "$repo"
+          "$git_path" -C "$repo" config user.name 'WHP Git'
+          "$git_path" -C "$repo" config user.email whp@example.invalid
+          printf 'managed git\n' > "$repo/probe"
+          "$git_path" -C "$repo" add probe
+          "$git_path" -C "$repo" commit -q -m probe
+          "$git_path" -C "$repo" rev-parse --verify HEAD
+
+          "$git_path" ls-remote \
+            https://github.com/retrochristian5000/git-tools.git HEAD \
+            | grep -Eq '^[0-9a-f]{40}[[:space:]]+HEAD$'
+
+          again="$(WHP_GIT_SEED="$seed" \
+            python3 scripts/ensure-git.py \
+              --build-dir "$RUNNER_TEMP/whp-git" --mode force)"
+          test "$again" = "$prefix"
