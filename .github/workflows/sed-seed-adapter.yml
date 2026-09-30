@@ -45,7 +45,9 @@ jobs:
           shim="$RUNNER_TEMP/whp-sed-seed-bin"
           mkdir -p "$shim"
           ln -sf "$GITHUB_WORKSPACE/sed.sh" "$shim/sed"
-          PATH="$shim:$PATH" WHP_SED_SEED="$seed" \
-            test "$(printf 'alpha\n' | "$shim/sed" -n 's/^alpha$/beta/p')" = beta
+          result="$(printf 'alpha\n' | \
+            PATH="$shim:$PATH" "$shim/sed" -n 's/^alpha$/beta/p')"
+          test "$result" = beta
 
+          # Explicit provenance must still resolve to the same underlying seed.
           test "$(WHP_SED_SEED="$seed" ./sed.sh --print-seed)" = "$seed"

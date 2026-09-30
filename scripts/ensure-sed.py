@@ -463,9 +463,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     copy_source(revision, nested_revision, source)
     objects.mkdir(parents=True, exist_ok=True)
 
-    # Bootstrap scripts invoke literal 'sed'. Elevate only the chosen seed
-    # executable, not its whole directory, so /usr/bin cannot shadow a managed
-    # Automake or other WHP host tool already at the front of PATH.
+    # Bootstrap scripts invoke literal 'sed'. Put only the QEMU seed adapter
+    # at the front of PATH; it delegates to WHP_SED_SEED. This avoids exposing
+    # the seed sed's whole system directory, where host Automake or other tools
+    # could otherwise shadow managed WHP dependencies.
     seed_bin = work / "seed-bin"
     seed_bin.mkdir(parents=True, exist_ok=True)
     seed_link = seed_bin / "sed"
