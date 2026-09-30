@@ -19,7 +19,7 @@ def main() -> int:
     require(adapter, "CC_FOR_BUILD", "C build-machine role")
     require(adapter, "CXX_FOR_BUILD", "C++ build-machine role")
     require(adapter, "-std=c++17", "C++17 seed requirement")
-    if 'target/cross CC and CXX' not in adapter:
+    if 'Target/cross CC and CXX' not in adapter:
         raise SystemExit("error: cc.sh does not document target compiler exclusion")
 
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
