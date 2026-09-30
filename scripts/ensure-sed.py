@@ -200,16 +200,29 @@ def select_gnu_make() -> str:
 
 
 def select_cc() -> str:
-    requested = explicit_executable("CC")
+    requested = explicit_executable("CC_FOR_BUILD")
     if requested:
         return requested
-    if platform.system() == "Darwin" and shutil.which("xcrun"):
-        return run_text(["xcrun", "--sdk", "macosx", "--find", "clang"])
-    for name in ("cc", "clang", "gcc"):
-        path = executable(name)
-        if path:
-            return path
-    raise RuntimeError("a host C compiler is required to bootstrap GNU sed")
+
+    adapter = ROOT / "cc.sh"
+    if adapter.is_file() and os.access(adapter, os.X_OK):
+        completed = subprocess.run(
+            [str(adapter), "--print-cc"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode == 0 and candidate:
+            return candidate
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU cc.sh could not resolve the GNU sed bootstrap compiler"
+            + (f": {detail}" if detail else "")
+        )
+
+    raise RuntimeError("a native build C compiler is required to bootstrap GNU sed")
 
 
 def compiler_version(cc: str) -> str:
