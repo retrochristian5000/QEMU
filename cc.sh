@@ -28,12 +28,15 @@ resolve_executable()
 {
     value=$1
     [ -n "$value" ] || return 1
-    case "$value" in
-        *[[:space:]]*) return 1 ;;
-    esac
     if [ -x "$value" ]; then
+        # An explicit executable path may legitimately contain whitespace.
         candidate=$value
     else
+        # Command names cannot safely contain shell whitespace in this seed
+        # interface; callers with such a path should provide the path itself.
+        case "$value" in
+            *[[:space:]]*) return 1 ;;
+        esac
         candidate=$(command -v "$value" 2>/dev/null || true)
     fi
     [ -n "$candidate" ] && [ -x "$candidate" ] || return 1
@@ -151,12 +154,11 @@ select_cxx()
     fi
 
     cc=$(select_cc) || return 1
-    for value in $(derived_cxx_candidates "$cc"); do
-        if compiler=$(try_compiler c++ "$value"); then
-            printf '%s\n' "$compiler"
-            return 0
-        fi
-    done
+    value=$(derived_cxx_candidates "$cc" 2>/dev/null || true)
+    if [ -n "$value" ] && compiler=$(try_compiler c++ "$value"); then
+        printf '%s\n' "$compiler"
+        return 0
+    fi
 
     for value in c++ clang++ g++; do
         if compiler=$(try_compiler c++ "$value"); then
