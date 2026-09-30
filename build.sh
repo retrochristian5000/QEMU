@@ -465,6 +465,66 @@ fi
 printf 'QEMU sed: %s (%s)\n' "$SED" "$WHP_SED_KIND" >&2
 unset WHP_SED_DIR WHP_SED_KIND
 
+BOOTSTRAP_GIT=${BOOTSTRAP_GIT:-auto}
+case "$BOOTSTRAP_GIT" in
+    y) BOOTSTRAP_GIT=1 ;;
+    n) BOOTSTRAP_GIT=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_GIT must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_GIT
+
+WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
+if [ -z "$WHP_GIT_SEED" ]; then
+    printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
+    exit 1
+fi
+export WHP_GIT_SEED
+
+if [ "$BOOTSTRAP_GIT" != 0 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$WHP_HOST_OS" != windows ]; then
+    WHP_GIT_MODE=auto
+    [ "$BOOTSTRAP_GIT" != 1 ] || WHP_GIT_MODE=force
+    WHP_GIT_PREFIX=$(
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-git.py" \
+            --build-dir "$BUILD_DIR" --mode "$WHP_GIT_MODE"
+    ) || WHP_GIT_PREFIX=
+    unset WHP_GIT_MODE
+
+    if [ -n "$WHP_GIT_PREFIX" ] && [ -x "$WHP_GIT_PREFIX/bin/git" ]; then
+        WHP_MANAGED_GIT="$WHP_GIT_PREFIX/bin/git"
+        WHP_GIT_EXEC_PATH=$("$WHP_MANAGED_GIT" --exec-path 2>/dev/null || true)
+        if [ -n "$WHP_GIT_EXEC_PATH" ] &&
+           [ -x "$WHP_GIT_EXEC_PATH/git-remote-https" ]; then
+            GIT="$WHP_MANAGED_GIT"
+            PATH="$WHP_GIT_PREFIX/bin:$PATH"
+            export GIT WHP_GIT_PREFIX PATH
+            printf 'QEMU Git: WHP managed %s\n' \
+                "$("$GIT" --version 2>/dev/null || printf unknown)" >&2
+        else
+            WHP_GIT_LOCAL="$WHP_MANAGED_GIT"
+            export WHP_GIT_LOCAL WHP_GIT_PREFIX
+            printf 'QEMU Git: WHP local profile %s; seed remains network authority\n' \
+                "$("$WHP_GIT_LOCAL" --version 2>/dev/null || printf unknown)" >&2
+            if [ "$BOOTSTRAP_GIT" = 1 ]; then
+                printf '%s\n' \
+                    'error: BOOTSTRAP_GIT=1 requires managed Git with HTTPS transport' >&2
+                exit 1
+            fi
+        fi
+        unset WHP_MANAGED_GIT WHP_GIT_EXEC_PATH
+    elif [ "$BOOTSTRAP_GIT" = 1 ]; then
+        printf '%s\n' \
+            'error: BOOTSTRAP_GIT=1 requested the pinned WHP Git, but its bootstrap failed.' >&2
+        exit 1
+    fi
+fi
+
 BOOTSTRAP_BASH=${BOOTSTRAP_BASH:-auto}
 case "$BOOTSTRAP_BASH" in
     y) BOOTSTRAP_BASH=1 ;;

@@ -128,3 +128,9 @@
 	url = https://github.com/retrochristian5000/automake.git
 	branch = master
 	shallow = true
+
+[submodule "toolchains/git"]
+	path = toolchains/git
+	url = https://github.com/retrochristian5000/git-tools.git
+	branch = master
+	shallow = true
