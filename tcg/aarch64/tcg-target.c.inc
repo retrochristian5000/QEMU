@@ -521,6 +521,8 @@ typedef enum {
 
     /* Data-processing (1 source) instructions.  */
     Irr_sf_CLZ         = 0x5ac01000,
+    Irr_sf_CTZ         = 0x5ac01800,
+    Irr_sf_CNT         = 0x5ac01c00,
     Irr_sf_RBIT        = 0x5ac00000,
     Irr_sf_REV         = 0x5ac00000, /* + size << 10 */
 
@@ -2186,24 +2188,30 @@ static const TCGOutOpBinary outop_andc = {
     .out_rrr = tgen_andc,
 };
 
-static void tgen_clz(TCGContext *s, TCGType type,
-                     TCGReg a0, TCGReg a1, TCGReg a2)
+static void tgen_clzctz(TCGContext *s, TCGType type, TCGReg a0, TCGReg a1,
+                        TCGReg a2, AArch64Insn insn)
 {
     tcg_out_cmp(s, type, TCG_COND_NE, a1, 0, true);
-    tcg_out_insn(s, rr_sf, CLZ, type, TCG_REG_TMP0, a1);
+    tcg_out_insn_rr_sf(s, insn, type, TCG_REG_TMP0, a1);
     tcg_out_insn(s, csel, CSEL, type, a0, TCG_REG_TMP0, a2, TCG_COND_NE);
 }
 
-static void tgen_clzi(TCGContext *s, TCGType type,
-                      TCGReg a0, TCGReg a1, tcg_target_long a2)
+static void tgen_clz(TCGContext *s, TCGType type,
+                     TCGReg a0, TCGReg a1, TCGReg a2)
+{
+    tgen_clzctz(s, type, a0, a1, a2, Irr_sf_CLZ);
+}
+
+static void tgen_clzctzi(TCGContext *s, TCGType type, TCGReg a0, TCGReg a1,
+                         tcg_target_long a2, AArch64Insn insn)
 {
     if (a2 == (type == TCG_TYPE_I32 ? 32 : 64)) {
-        tcg_out_insn(s, rr_sf, CLZ, type, a0, a1);
+        tcg_out_insn_rr_sf(s, insn, type, a0, a1);
         return;
     }
 
     tcg_out_cmp(s, type, TCG_COND_NE, a1, 0, true);
-    tcg_out_insn(s, rr_sf, CLZ, type, a0, a1);
+    tcg_out_insn_rr_sf(s, insn, type, a0, a1);
 
     switch (a2) {
     case -1:
@@ -2219,28 +2227,54 @@ static void tgen_clzi(TCGContext *s, TCGType type,
     }
 }
 
+static void tgen_clzi(TCGContext *s, TCGType type,
+                      TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tgen_clzctzi(s, type, a0, a1, a2, Irr_sf_CLZ);
+}
+
 static const TCGOutOpBinary outop_clz = {
     .base.static_constraint = C_O1_I2(r, r, rAL),
     .out_rrr = tgen_clz,
     .out_rri = tgen_clzi,
 };
 
+static TCGConstraintSetIndex cset_ctpop(TCGType type, unsigned flags)
+{
+    return cpuinfo & CPUINFO_CSSC ? C_O1_I1(r, r) : C_NotImplemented;
+}
+
+static void tgen_ctpop(TCGContext *s, TCGType type, TCGReg a0, TCGReg a1)
+{
+    tcg_out_insn(s, rr_sf, CNT, type, a0, a1);
+}
+
 static const TCGOutOpUnary outop_ctpop = {
-    .base.static_constraint = C_NotImplemented,
+    .base.static_constraint = C_Dynamic,
+    .base.dynamic_constraint = cset_ctpop,
+    .out_rr = tgen_ctpop,
 };
 
 static void tgen_ctz(TCGContext *s, TCGType type,
                      TCGReg a0, TCGReg a1, TCGReg a2)
 {
-    tcg_out_insn(s, rr_sf, RBIT, type, TCG_REG_TMP0, a1);
-    tgen_clz(s, type, a0, TCG_REG_TMP0, a2);
+    if (cpuinfo & CPUINFO_CSSC) {
+        tgen_clzctz(s, type, a0, a1, a2, Irr_sf_CTZ);
+    } else {
+        tcg_out_insn(s, rr_sf, RBIT, type, TCG_REG_TMP0, a1);
+        tgen_clzctz(s, type, a0, TCG_REG_TMP0, a2, Irr_sf_CLZ);
+    }
 }
 
 static void tgen_ctzi(TCGContext *s, TCGType type,
                       TCGReg a0, TCGReg a1, tcg_target_long a2)
 {
-    tcg_out_insn(s, rr_sf, RBIT, type, TCG_REG_TMP0, a1);
-    tgen_clzi(s, type, a0, TCG_REG_TMP0, a2);
+    if (cpuinfo & CPUINFO_CSSC) {
+        tgen_clzctzi(s, type, a0, a1, a2, Irr_sf_CTZ);
+    } else {
+        tcg_out_insn(s, rr_sf, RBIT, type, TCG_REG_TMP0, a1);
+        tgen_clzctzi(s, type, a0, TCG_REG_TMP0, a2, Irr_sf_CLZ);
+    }
 }
 
 static const TCGOutOpBinary outop_ctz = {
