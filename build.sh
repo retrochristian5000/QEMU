@@ -174,6 +174,23 @@ if [ "${1:-}" = menuconfig ]; then
     exec /bin/sh "$WHP_MENUCONFIG_SHELL" "$WHP_USER_CONFIG" "$@"
 fi
 
+# Select a native build-machine C compiler before any compiled fallback can
+# run. Target CC is intentionally excluded from this root dependency.
+case "$(uname -s 2>/dev/null || true)" in
+    CYGWIN*|MINGW*|MSYS*)
+        # Python's PCbuild path owns Visual Studio discovery on Windows.
+        ;;
+    *)
+        if [ -z "${WHP_CC_SEED:-}" ] && [ -n "${CC_FOR_BUILD:-}" ]; then
+            WHP_CC_SEED=$CC_FOR_BUILD
+            export WHP_CC_SEED
+        fi
+        CC_FOR_BUILD=$("$SOURCE_DIR/cc.sh" --print-cc) || exit 1
+        export CC_FOR_BUILD
+        printf 'QEMU bootstrap C compiler: %s\n' "$CC_FOR_BUILD" >&2
+        ;;
+esac
+
 # Explicit PYTHON remains authoritative. Otherwise BOOTSTRAP_PYTHON follows the
 # same auto/force/disable policy as the other WHP-managed dependencies:
 # auto uses a usable host Python and falls back to the pinned fork, 1 forces

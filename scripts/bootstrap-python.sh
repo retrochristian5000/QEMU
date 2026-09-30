@@ -186,14 +186,14 @@ python_revision=$3
 # upgrade or an explicit compiler change cannot silently reuse an older runtime.
 case "$build_mode" in
     posix)
-        if [ "$host_kernel" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
-            bootstrap_cc=${WHP_PYTHON_BOOTSTRAP_CC:-$(xcrun --sdk macosx --find clang)}
-        elif [ -n "${WHP_PYTHON_BOOTSTRAP_CC:-}" ]; then
+        if [ -n "${WHP_PYTHON_BOOTSTRAP_CC:-}" ]; then
             bootstrap_cc=$WHP_PYTHON_BOOTSTRAP_CC
         elif [ -n "${CC_FOR_BUILD:-}" ]; then
             bootstrap_cc=$CC_FOR_BUILD
+        elif [ -x "$SOURCE_DIR/cc.sh" ]; then
+            bootstrap_cc=$("$SOURCE_DIR/cc.sh" --print-cc 2>/dev/null || true)
         else
-            bootstrap_cc=$(command -v cc 2>/dev/null || command -v clang 2>/dev/null || command -v gcc 2>/dev/null || true)
+            bootstrap_cc=
         fi
         [ -n "$bootstrap_cc" ] || fail 'a host C compiler is required to bootstrap bundled Python'
         command -v "$bootstrap_cc" >/dev/null 2>&1 || [ -x "$bootstrap_cc" ] ||
