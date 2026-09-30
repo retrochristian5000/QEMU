@@ -274,8 +274,12 @@ the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
 After that seed boundary, ``scripts/ensure-git.py`` builds a private Git.
 The preferred profile retains libcurl/HTTPS transport while disabling unrelated
 bootstrap surfaces such as gettext, Perl, Python helpers, Tcl/Tk, gitweb,
-Expat/WebDAV, direct OpenSSL use, and iconv. In ``auto`` mode a failed full
-profile may fall back to a reduced ``NO_CURL`` local profile; that binary is
+Expat/WebDAV, and direct OpenSSL use. Iconv is intentionally retained because
+Darwin enables ``PRECOMPOSE_UNICODE``; combining that path with
+``NO_ICONV`` removes ``reencode_string_iconv`` while
+``compat/precompose_utf8.c`` still calls it. On current Darwin releases the
+managed build uses the expected libiconv prefix. In ``auto`` mode a failed
+full profile may fall back to a reduced ``NO_CURL`` local profile; that binary is
 exposed for local use but is never promoted over the HTTPS-capable seed.
 
 ``BOOTSTRAP_GIT=1`` requires the fork and requires ``git-remote-https``
