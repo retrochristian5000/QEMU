@@ -40,7 +40,9 @@ jobs:
 
       - name: Install bootstrap prerequisites (macOS)
         if: runner.os == 'macOS'
-        run: brew install autoconf texinfo
+        run: |
+          brew install autoconf texinfo
+          echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap pinned Automake
         shell: bash

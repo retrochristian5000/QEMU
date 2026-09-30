@@ -164,6 +164,19 @@ def first_line(command: List[str]) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def tolerant_identity(command: List[str]) -> str:
+    completed = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    output = completed.stdout.strip()
+    first = output.splitlines()[0] if output else "<no version output>"
+    return f"exit={completed.returncode}: {first}"
+
+
 def git_checkout_available() -> bool:
     return shutil.which("git") is not None and (ROOT / ".git").exists()
 
@@ -310,7 +323,7 @@ def marker_text(
     return (
         f"AUTOMAKE_BOOTSTRAP_SCHEMA={AUTOMAKE_BOOTSTRAP_SCHEMA}\n"
         f"AUTOMAKE_GIT_COMMIT={revision}\n"
-        f"SEED_SED={seed}: {first_line([seed, '--version'])}\n"
+        f"SEED_SED={seed}: {tolerant_identity([seed, '--version'])}\n"
         f"PERL={perl}: {first_line([perl, '--version'])}\n"
         f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
         f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
