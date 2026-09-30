@@ -10,6 +10,7 @@ on:
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
@@ -22,6 +23,7 @@ on:
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
@@ -35,6 +37,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify sed version staging policy
+        run: python3 scripts/tests/test-sed-version-staging.py
 
       - name: Install GNU sed bootstrap prerequisites
         shell: bash
@@ -78,6 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify sed version staging policy
+        run: python3 scripts/tests/test-sed-version-staging.py
 
       - name: Install GNU sed bootstrap prerequisites
         run: |
