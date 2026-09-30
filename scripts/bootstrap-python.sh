@@ -12,7 +12,12 @@ PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
 PYTHON_BOOTSTRAP_SCHEMA=3
 JOBS=${JOBS:-}
-SED=${SED:-"$SOURCE_DIR/sed.sh"}
+if [ -n "${SED:-}" ] && [ -z "${WHP_SED_SEED:-}" ]; then
+    WHP_SED_SEED=$SED
+    export WHP_SED_SEED
+fi
+SED="$SOURCE_DIR/sed.sh"
+export SED
 cleanup_path=
 
 # This interpreter is a host prerequisite, not a QEMU target object. Never let

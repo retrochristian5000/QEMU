@@ -4,7 +4,8 @@
 
 Automake's Git bootstrap is deliberately self-hosting: it creates temporary
 aclocal/automake scripts from its own sources, so an installed Automake is not
-needed.  It does require a small seed tool set (sed, Perl, Autoconf, GNU Make).
+needed. It consumes QEMU's sed adapter (external sed preferred, guarded shell
+subset available) plus Perl, Autoconf, and GNU Make.
 """
 
 from __future__ import annotations
