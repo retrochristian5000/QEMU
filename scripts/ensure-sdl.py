@@ -161,16 +161,18 @@ def command_path(name: str, env_name: str | None = None) -> str:
 
 
 def select_c_compiler() -> str:
-    requested = os.environ.get("CC_FOR_BUILD", "")
-    if requested:
+    for env_name in ("CC", "CC_FOR_BUILD"):
+        requested = os.environ.get(env_name, "")
+        if not requested:
+            continue
         argv = shlex.split(requested)
         if len(argv) != 1:
-            raise RuntimeError("CC_FOR_BUILD must name exactly one executable")
+            raise RuntimeError(f"{env_name} must name exactly one executable")
         candidate = argv[0]
         path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
         if path and pathlib.Path(path).exists():
             return str(path)
-        raise RuntimeError(f"CC_FOR_BUILD is not executable: {candidate}")
+        raise RuntimeError(f"{env_name} is not executable: {candidate}")
 
     adapter = ROOT / "cc.sh"
     if adapter.is_file() and os.access(adapter, os.X_OK):
@@ -190,7 +192,7 @@ def select_c_compiler() -> str:
             + (f": {detail}" if detail else "")
         )
 
-    raise RuntimeError("a native build C compiler is required to bootstrap SDL3")
+    raise RuntimeError("a native host C compiler is required to bootstrap SDL3")
 
 
 def compiler_version(cc: str) -> str:

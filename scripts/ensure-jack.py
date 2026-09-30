@@ -159,9 +159,21 @@ def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:
             return str(path)
         raise RuntimeError(f"{env_name} is not executable: {candidate}")
 
+    build_env = "CC_FOR_BUILD" if env_name == "CC" else "CXX_FOR_BUILD"
+    requested_build = os.environ.get(build_env, "")
+    if requested_build:
+        argv = shlex.split(requested_build)
+        if len(argv) != 1:
+            raise RuntimeError(f"{build_env} must name exactly one executable")
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if path and pathlib.Path(path).exists():
+            return str(path)
+        raise RuntimeError(f"{build_env} is not executable: {candidate}")
+
     adapter = ROOT / "cc.sh"
-    if env_name in ("CC_FOR_BUILD", "CXX_FOR_BUILD") and adapter.is_file() and os.access(adapter, os.X_OK):
-        mode = "--print-cc" if env_name == "CC_FOR_BUILD" else "--print-cxx"
+    if adapter.is_file() and os.access(adapter, os.X_OK):
+        mode = "--print-cc" if env_name == "CC" else "--print-cxx"
         completed = subprocess.run(
             [str(adapter), mode],
             text=True,
@@ -286,8 +298,8 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_jack_source()
-    cc = command_path("clang", "CC_FOR_BUILD", ("cc", "clang", "gcc"))
-    cxx = command_path("clang++", "CXX_FOR_BUILD", ("c++", "clang++", "g++"))
+    cc = command_path("clang", "CC", ("cc", "clang", "gcc"))
+    cxx = command_path("clang++", "CXX", ("c++", "clang++", "g++"))
     prefix = build_root / "deps" / "jack"
     sdkroot, arch, deployment = macos_settings()
     marker = marker_text(revision, cc, cxx, sdkroot, arch, deployment)

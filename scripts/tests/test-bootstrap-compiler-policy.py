@@ -34,7 +34,6 @@ def main() -> int:
         "scripts/ensure-git.py",
         "scripts/ensure-sed.py",
         "scripts/ensure-bash.py",
-        "scripts/ensure-sdl.py",
     ):
         text = (ROOT / relpath).read_text(encoding="utf-8")
         require(text, "CC_FOR_BUILD", f"{relpath} build compiler role")
@@ -46,9 +45,14 @@ def main() -> int:
     if "os.environ.get('CXX')" in ninja:
         raise SystemExit("error: Ninja bootstrap must not inherit target CXX")
 
+    sdl = (ROOT / "scripts/ensure-sdl.py").read_text(encoding="utf-8")
+    require(sdl, '("CC", "CC_FOR_BUILD")', "SDL artifact/build compiler priority")
+
     jack = (ROOT / "scripts/ensure-jack.py").read_text(encoding="utf-8")
-    require(jack, '"CC_FOR_BUILD"', "JACK C build role")
-    require(jack, '"CXX_FOR_BUILD"', "JACK C++ build role")
+    require(jack, 'command_path("clang", "CC"', "JACK artifact C role")
+    require(jack, 'command_path("clang++", "CXX"', "JACK artifact C++ role")
+    require(jack, '"CC_FOR_BUILD"', "JACK C fallback")
+    require(jack, '"CXX_FOR_BUILD"', "JACK C++ fallback")
 
     llvm = (ROOT / "scripts/bootstrap-native-clang.bash").read_text(encoding="utf-8")
     require(llvm, '"$SOURCE_DIR/cc.sh" --print-cc', "LLVM C seed")
