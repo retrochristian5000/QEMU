@@ -60,3 +60,33 @@ jobs:
           again="$(WHP_SED_SEED="$seed" \
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test "$again" = "$sed_path"
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GNU sed bootstrap prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            autoconf automake gettext gperf texinfo wget xz-utils
+
+      - name: Bootstrap pinned GNU sed
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(command -v sed)"
+          test -x "$seed"
+
+          sed_path="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          test -x "$sed_path"
+          "$sed_path" --version | grep -q 'GNU sed'
+          test "$(printf 'alpha\n' | "$sed_path" -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' | \
+            "$sed_path" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
+
+          again="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          test "$again" = "$sed_path"
