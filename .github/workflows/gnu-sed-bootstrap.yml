@@ -49,12 +49,14 @@ jobs:
             exit 1
           fi
 
-          WHP_SED_SEED="$seed"             sed_path="$(python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          sed_path="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test -x "$sed_path"
           "$sed_path" --version | grep -q 'GNU sed'
           test "$(printf 'alpha\n' | "$sed_path" -n 's/^alpha$/beta/p')" = beta
           test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' |             "$sed_path" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
 
           # Cache validation must return the same managed executable.
-          again="$(WHP_SED_SEED="$seed"             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
+          again="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test "$again" = "$sed_path"
