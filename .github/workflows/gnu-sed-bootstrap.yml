@@ -6,8 +6,10 @@ on:
     paths:
       - '.gitmodules'
       - 'toolchains/sed'
+      - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
       - '.github/workflows/gnu-sed-bootstrap.yml'
@@ -15,8 +17,10 @@ on:
     paths:
       - '.gitmodules'
       - 'toolchains/sed'
+      - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
       - '.github/workflows/gnu-sed-bootstrap.yml'
@@ -33,7 +37,7 @@ jobs:
       - name: Install GNU sed bootstrap prerequisites
         shell: bash
         run: |
-          brew install autoconf automake gettext gperf texinfo wget xz
+          brew install autoconf gettext gperf texinfo wget xz
           echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
 
@@ -44,6 +48,12 @@ jobs:
           export PATH="$(brew --prefix gettext)/bin:$(brew --prefix texinfo)/bin:$PATH"
           seed=/usr/bin/sed
           test -x "$seed"
+          automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          export PATH="$automake_prefix/bin:$PATH"
+          export AUTOMAKE="$automake_prefix/bin/automake"
+          export ACLOCAL="$automake_prefix/bin/aclocal"
+          "$AUTOMAKE" --version | grep -q 'GNU automake'
           if "$seed" --version 2>/dev/null | grep -q 'GNU sed'; then
             echo "expected macOS seed sed to be non-GNU" >&2
             exit 1
@@ -70,7 +80,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            autoconf automake gettext gperf texinfo wget xz-utils
+            autoconf gettext gperf texinfo wget xz-utils
 
       - name: Bootstrap pinned GNU sed
         shell: bash
@@ -78,6 +88,12 @@ jobs:
           set -euo pipefail
           seed="$(command -v sed)"
           test -x "$seed"
+          automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          export PATH="$automake_prefix/bin:$PATH"
+          export AUTOMAKE="$automake_prefix/bin/automake"
+          export ACLOCAL="$automake_prefix/bin/aclocal"
+          "$AUTOMAKE" --version | grep -q 'GNU automake'
 
           sed_path="$(WHP_SED_SEED="$seed" \
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"

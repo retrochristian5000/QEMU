@@ -1,0 +1,80 @@
+name: GNU Automake bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/automake'
+      - 'build.sh'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/automake-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/automake'
+      - 'build.sh'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/automake-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bootstrap prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y autoconf texinfo
+
+      - name: Install bootstrap prerequisites (macOS)
+        if: runner.os == 'macOS'
+        run: brew install autoconf texinfo
+
+      - name: Bootstrap pinned Automake
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(command -v sed)"
+          prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          test -x "$prefix/bin/automake"
+          test -x "$prefix/bin/aclocal"
+          "$prefix/bin/automake" --version | grep -q 'GNU automake'
+          "$prefix/bin/aclocal" --version | grep -q 'GNU automake'
+
+          tmp="$RUNNER_TEMP/automake-smoke"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+          cat > "$tmp/configure.ac" <<'EOF'
+          AC_INIT([whp-automake-smoke], [1])
+          AM_INIT_AUTOMAKE([foreign])
+          AC_CONFIG_FILES([Makefile])
+          AC_OUTPUT
+          EOF
+          cat > "$tmp/Makefile.am" <<'EOF'
+          EXTRA_DIST =
+          EOF
+          (
+            cd "$tmp"
+            PATH="$prefix/bin:$PATH"
+            "$prefix/bin/aclocal"
+            autoconf
+            "$prefix/bin/automake" --add-missing --copy --foreign
+            test -f Makefile.in
+          )
+
+          again="$(WHP_AUTOMAKE_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          test "$again" = "$prefix"

@@ -122,3 +122,9 @@
 	url = https://github.com/retrochristian5000/sed.git
 	branch = master
 	shallow = true
+
+[submodule "toolchains/automake"]
+	path = toolchains/automake
+	url = https://github.com/retrochristian5000/automake.git
+	branch = master
+	shallow = true

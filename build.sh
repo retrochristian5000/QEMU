@@ -280,6 +280,100 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+BOOTSTRAP_AUTOMAKE=${BOOTSTRAP_AUTOMAKE:-auto}
+case "$BOOTSTRAP_AUTOMAKE" in
+    y) BOOTSTRAP_AUTOMAKE=1 ;;
+    n) BOOTSTRAP_AUTOMAKE=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_AUTOMAKE must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_AUTOMAKE
+
+whp_automake_pair_usable()
+{
+    [ -n "${1:-}" ] && [ -x "$1" ] || return 1
+    [ -n "${2:-}" ] && [ -x "$2" ] || return 1
+    "$1" --version 2>/dev/null | grep -q 'GNU automake' || return 1
+    "$2" --version 2>/dev/null | grep -q 'GNU automake'
+}
+
+WHP_AUTOMAKE_EXPLICIT=0
+if [ -n "${AUTOMAKE:-}" ] || [ -n "${ACLOCAL:-}" ]; then
+    WHP_AUTOMAKE_EXPLICIT=1
+    if [ -z "${AUTOMAKE:-}" ] || [ -z "${ACLOCAL:-}" ]; then
+        printf 'error: AUTOMAKE and ACLOCAL must be supplied as a pair\n' >&2
+        exit 1
+    fi
+    case "$AUTOMAKE" in
+        */*) ;;
+        *) AUTOMAKE=$(command -v "$AUTOMAKE" 2>/dev/null || true) ;;
+    esac
+    case "$ACLOCAL" in
+        */*) ;;
+        *) ACLOCAL=$(command -v "$ACLOCAL" 2>/dev/null || true) ;;
+    esac
+    if ! whp_automake_pair_usable "$AUTOMAKE" "$ACLOCAL"; then
+        printf 'error: explicit AUTOMAKE/ACLOCAL pair is not usable\n' >&2
+        exit 1
+    fi
+fi
+
+if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
+    WHP_HOST_AUTOMAKE=$(command -v automake 2>/dev/null || true)
+    WHP_HOST_ACLOCAL=$(command -v aclocal 2>/dev/null || true)
+    WHP_NEED_AUTOMAKE=0
+    if [ "$BOOTSTRAP_AUTOMAKE" = 1 ]; then
+        WHP_NEED_AUTOMAKE=1
+    elif [ "$BOOTSTRAP_AUTOMAKE" = auto ]; then
+        if [ "$WHP_HOST_OS" = macos ] ||
+           ! whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
+            WHP_NEED_AUTOMAKE=1
+        fi
+    fi
+
+    if [ "$WHP_NEED_AUTOMAKE" = 1 ] &&
+       [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+        WHP_AUTOMAKE_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-automake.py" \
+                --build-dir "$BUILD_DIR"
+        ) || WHP_AUTOMAKE_PREFIX=
+        if [ -n "$WHP_AUTOMAKE_PREFIX" ]; then
+            AUTOMAKE="$WHP_AUTOMAKE_PREFIX/bin/automake"
+            ACLOCAL="$WHP_AUTOMAKE_PREFIX/bin/aclocal"
+        fi
+    fi
+
+    if ! whp_automake_pair_usable "${AUTOMAKE:-}" "${ACLOCAL:-}"; then
+        if whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
+            AUTOMAKE=$WHP_HOST_AUTOMAKE
+            ACLOCAL=$WHP_HOST_ACLOCAL
+        elif [ "$BOOTSTRAP_AUTOMAKE" = 1 ]; then
+            printf '%s\n' \
+                'error: BOOTSTRAP_AUTOMAKE=1 requested the pinned WHP Automake, but its bootstrap failed.' >&2
+            exit 1
+        else
+            AUTOMAKE=
+            ACLOCAL=
+            printf '%s\n' \
+                'WHP Automake unavailable; later Autotools source bootstraps may fall back or fail.' >&2
+        fi
+    fi
+    unset WHP_HOST_AUTOMAKE WHP_HOST_ACLOCAL WHP_NEED_AUTOMAKE WHP_AUTOMAKE_PREFIX
+fi
+
+if [ -n "${AUTOMAKE:-}" ]; then
+    WHP_AUTOMAKE_BIN_DIR=$(dirname -- "$AUTOMAKE")
+    PATH="$WHP_AUTOMAKE_BIN_DIR:$PATH"
+    export AUTOMAKE ACLOCAL PATH
+    printf 'QEMU Automake: %s\n' "$AUTOMAKE" >&2
+    unset WHP_AUTOMAKE_BIN_DIR
+fi
+unset WHP_AUTOMAKE_EXPLICIT
+
 BOOTSTRAP_SED=${BOOTSTRAP_SED:-auto}
 case "$BOOTSTRAP_SED" in
     y) BOOTSTRAP_SED=1 ;;

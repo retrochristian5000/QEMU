@@ -446,8 +446,6 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         env.pop(key, None)
     env["CC"] = cc
     env["SED"] = seed
-    seed_dir = str(pathlib.Path(seed).parent)
-    env["PATH"] = seed_dir + os.pathsep + env.get("PATH", "")
     sdkroot, arch, deployment = macos_environment(env)
 
     marker = marker_text(
@@ -466,6 +464,19 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     work.mkdir(parents=True, exist_ok=True)
     copy_source(revision, nested_revision, source)
     objects.mkdir(parents=True, exist_ok=True)
+
+    # Bootstrap scripts invoke literal 'sed'. Elevate only the chosen seed
+    # executable, not its whole directory, so /usr/bin cannot shadow a managed
+    # Automake or other WHP host tool already at the front of PATH.
+    seed_bin = work / "seed-bin"
+    seed_bin.mkdir(parents=True, exist_ok=True)
+    seed_link = seed_bin / "sed"
+    try:
+        seed_link.symlink_to(seed)
+    except OSError:
+        shutil.copy2(seed, seed_link)
+        seed_link.chmod(seed_link.stat().st_mode | 0o111)
+    env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
 
     config_shell = executable(os.environ.get("CONFIG_SHELL", "")) or "/bin/sh"
     print(
