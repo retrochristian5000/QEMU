@@ -33,6 +33,11 @@ def main() -> int:
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/git")', "Git pin")
     require(helper, 'SHA1_REL = pathlib.Path("sha1collisiondetection")', "SHA-1 pin")
     require(helper, '"NO_CURL=YesPlease"', "local transport boundary")
+    if '"NO_ICONV=YesPlease"' in helper:
+        raise SystemExit(
+            "error: managed Git must not combine Darwin PRECOMPOSE_UNICODE with NO_ICONV"
+        )
+    require(helper, "iconv_prefix", "Darwin iconv dependency")
     require(helper, '"DC_SHA1_SUBMODULE=YesPlease"', "collision-detection source")
     require(helper, "has_https_transport", "managed transport probe")
 

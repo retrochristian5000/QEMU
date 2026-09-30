@@ -48,8 +48,9 @@ jobs:
       - name: Install Git build prerequisites (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install curl
+          brew install curl libiconv
           echo "WHP_GIT_CURLDIR=$(brew --prefix curl)" >> "$GITHUB_ENV"
+          echo "WHP_GIT_ICONVDIR=$(brew --prefix libiconv)" >> "$GITHUB_ENV"
 
       - name: Verify dependency policy
         run: python3 scripts/tests/test-git-dependency-policy.py

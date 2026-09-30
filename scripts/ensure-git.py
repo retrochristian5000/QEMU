@@ -229,6 +229,35 @@ def curl_prefix() -> str:
     return ""
 
 
+def iconv_prefix() -> str:
+    if platform.system() != "Darwin":
+        return ""
+
+    explicit = os.environ.get("WHP_GIT_ICONVDIR", "")
+    candidates = []
+    if explicit:
+        candidates.append(pathlib.Path(explicit).expanduser().resolve())
+    candidates.extend((
+        pathlib.Path("/opt/homebrew/opt/libiconv"),
+        pathlib.Path("/usr/local/opt/libiconv"),
+    ))
+    for path in candidates:
+        if (path / "include" / "iconv.h").is_file():
+            return str(path)
+
+    release = platform.release().split(".", 1)[0]
+    try:
+        darwin_major = int(release)
+    except ValueError:
+        darwin_major = 0
+    if darwin_major >= 24:
+        raise RuntimeError(
+            "Git PRECOMPOSE_UNICODE requires usable iconv on Darwin 24+; "
+            "install Homebrew libiconv or set WHP_GIT_ICONVDIR"
+        )
+    return ""
+
+
 def git_usable(path: pathlib.Path) -> bool:
     if not path.is_file() or not os.access(path, os.X_OK):
         return False
@@ -273,7 +302,7 @@ def smoke_local(git_path: pathlib.Path) -> bool:
     return True
 
 
-def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir) -> str:
+def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, iconv_dir) -> str:
     return (
         f"GIT_BOOTSTRAP_SCHEMA={GIT_BOOTSTRAP_SCHEMA}\n"
         f"GIT_GIT_COMMIT={revision}\n"
@@ -283,10 +312,11 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir) -> s
         f"MAKE={make}: {run_text([make, '--version']).splitlines()[0]}\n"
         f"PROFILE={profile}\n"
         f"CURLDIR={curl_dir}\n"
+        f"ICONVDIR={iconv_dir}\n"
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -311,13 +341,19 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
         f"prefix={prefix}", f"CC={cc}",
         "NO_GETTEXT=YesPlease", "NO_PERL=YesPlease", "NO_PYTHON=YesPlease",
         "NO_TCLTK=YesPlease", "NO_GITWEB=YesPlease", "NO_EXPAT=YesPlease",
-        "NO_OPENSSL=YesPlease", "NO_ICONV=YesPlease",
+        "NO_OPENSSL=YesPlease",
         "NO_INSTALL_HARDLINKS=YesPlease", "DC_SHA1_SUBMODULE=YesPlease",
     ]
     if profile == "core":
         variables.append("NO_CURL=YesPlease")
     elif curl_dir:
         variables.append(f"CURLDIR={curl_dir}")
+
+    if iconv_dir:
+        variables.extend((
+            "USE_HOMEBREW_LIBICONV=YesPlease",
+            f"ICONVDIR={iconv_dir}",
+        ))
 
     print(
         f"WHP Git bootstrap: {revision} -> {prefix} "
@@ -342,6 +378,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     cc = select_cc()
     make = select_gnu_make()
     curl_dir = curl_prefix()
+    iconv_dir = iconv_prefix()
     prefix = build_root / "deps" / "git"
     marker_path = prefix / ".whp-git-bootstrap"
     git_path = prefix / "bin" / "git"
@@ -354,6 +391,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         marker = marker_text(
             revision, sha1_revision, seed, cc, make, profile,
             curl_dir if profile == "full" else "",
+            iconv_dir,
         )
         if (
             marker_path.is_file()
@@ -367,7 +405,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         try:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
-                profile, curl_dir if profile == "full" else "",
+                profile, curl_dir if profile == "full" else "", iconv_dir,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:
