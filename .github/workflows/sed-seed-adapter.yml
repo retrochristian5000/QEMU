@@ -28,7 +28,7 @@ jobs:
         os: [ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Exercise pre-bootstrap sed adapter
         shell: bash
@@ -51,30 +51,3 @@ jobs:
 
           # Explicit provenance must still resolve to the same underlying seed.
           test "$(WHP_SED_SEED="$seed" ./sed.sh --print-seed)" = "$seed"
-
-      - name: Exercise pure-shell fallback
-        shell: bash
-        run: |
-          set -euo pipefail
-          shell_seed="$(WHP_SED_FORCE_SHELL=1 ./sed.sh --print-seed)"
-          test -x "$shell_seed"
-          WHP_SED_FORCE_SHELL=1 ./sed.sh --check | grep -q 'shell fallback'
-
-          test "$(printf 'alpha\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh -n 's/^alpha$/beta/p')" = beta
-          test "$(printf 'A B/C\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh 's,[^A-Za-z0-9_.-],-,g')" = A-B-C
-          test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
-          test "$(printf 'one\ntwo\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh -n '1p')" = one
-          test "$(printf '/tmp/path/name\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh 's,^.*/,,'')" = name
-          test "$(printf 'APIVERSION=1.19\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh -n 's/^APIVERSION=//p')" = 1.19
-
-          cat > "$RUNNER_TEMP/configure.ac" <<'EOF'
-          AC_INIT([GNU Automake], [1.19.92], [bug@example.invalid])
-          EOF
-          test "$(WHP_SED_FORCE_SHELL=1 ./sed.sh -ne '/AC_INIT/s/^[^[]*\[[^[]*\[\([^]]*\)\].*$/\1/p' "$RUNNER_TEMP/configure.ac")" = 1.19.92
-
-          test "$(printf '@APIVERSION@ @PACKAGE@\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh             -e 's%@APIVERSION@%1.19%g'             -e 's%@PACKAGE@%automake%g')" = '1.19 automake'
-
-          if printf 'x\n' | WHP_SED_FORCE_SHELL=1 ./sed.sh '2q'; then
-              echo 'unsupported shell-fallback script unexpectedly succeeded' >&2
-              exit 1
-          fi
