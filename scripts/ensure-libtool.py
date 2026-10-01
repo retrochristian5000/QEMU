@@ -23,7 +23,21 @@ NESTED_SUBMODULES = (
     pathlib.Path("gnulib"),
     pathlib.Path("gl-mod/bootstrap"),
 )
-LIBTOOL_BOOTSTRAP_SCHEMA = "9"
+LIBTOOL_BOOTSTRAP_SCHEMA = "10"
+
+# These commands are discovered by Autoconf/Automake for the staged Libtool
+# tree. Do not inherit unrelated caller values; compiler/binutils selections
+# remain explicit inputs and are intentionally handled elsewhere.
+AUTOTOOLS_UTILITY_ENV = (
+    "INSTALL",
+    "INSTALL_PROGRAM",
+    "INSTALL_SCRIPT",
+    "INSTALL_DATA",
+    "INSTALL_STRIP_PROGRAM",
+    "MKDIR_P",
+    "mkdir_p",
+    "LN_S",
+)
 
 
 def run_text(
@@ -590,6 +604,83 @@ def select_llvm_tool(
     )
 
 
+def semantic_sed_usable(path: str) -> bool:
+    probes = (
+        ("alpha\n", ["-n", "s/^alpha$/beta/p"], "beta\n"),
+        ("A B/C\n", ["s,[^A-Za-z0-9_.-],-,g"], "A-B-C\n"),
+        (
+            "AR=/tmp/llvm-ar|LLVM\n",
+            ["-n", r"s#^AR=\([^|]*\)|.*$#\1#p"],
+            "/tmp/llvm-ar\n",
+        ),
+        ("one\ntwo\n", ["-n", "1p"], "one\n"),
+    )
+    for data, args, expected in probes:
+        completed = subprocess.run(
+            [path, *args],
+            input=data,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0 or completed.stdout != expected:
+            return False
+    return True
+
+
+def select_sed() -> str:
+    requested = os.environ.get("SED", "")
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError("SED must name exactly one executable")
+        candidate = argv[0]
+        path = (
+            candidate
+            if pathlib.Path(candidate).is_absolute()
+            else shutil.which(candidate)
+        )
+        if (
+            not path
+            or not pathlib.Path(path).is_file()
+            or not os.access(path, os.X_OK)
+            or not semantic_sed_usable(str(path))
+        ):
+            raise RuntimeError(f"SED is not a usable sed executable: {candidate}")
+        return str(path)
+
+    adapter = ROOT / "sed.sh"
+    if not adapter.is_file() or not os.access(adapter, os.X_OK):
+        raise RuntimeError(f"QEMU sed seed adapter is unavailable: {adapter}")
+    completed = subprocess.run(
+        [str(adapter), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    path = completed.stdout.strip()
+    if (
+        completed.returncode != 0
+        or not path
+        or not pathlib.Path(path).is_file()
+        or not os.access(path, os.X_OK)
+        or not semantic_sed_usable(path)
+    ):
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU sed.sh could not resolve a usable Libtool bootstrap sed"
+            + (f": {detail}" if detail else "")
+        )
+    return path
+
+
+def isolate_autotools_utility_env(env: dict[str, str]) -> None:
+    for name in AUTOTOOLS_UTILITY_ENV:
+        env.pop(name, None)
+
+
 def select_arflags(ar: str) -> str | None:
     # Libtool gives the legacy AR_FLAGS variable priority over ARFLAGS.
     # Preserve an explicit choice, but otherwise use the conservative archive
@@ -858,6 +949,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "MAKEINFO": command_path("makeinfo", "MAKEINFO"),
         "XZ": command_path("xz", "XZ"),
         "M4": select_gnu_m4(),
+        "SED": select_sed(),
         "PERL": command_path("perl", "PERL"),
     }
     if platform.system() == "Darwin":
@@ -901,8 +993,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     object_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
+    isolate_autotools_utility_env(env)
     for key in (
-        "INSTALL", "LIBTOOL", "LIBTOOLIZE", "BASH_ENV", "ENV",
+        "LIBTOOL", "LIBTOOLIZE", "BASH_ENV", "ENV",
         "CFLAGS", "CPPFLAGS", "LDFLAGS", "ARFLAGS", "AR_FLAGS",
     ):
         env.pop(key, None)

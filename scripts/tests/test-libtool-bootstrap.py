@@ -79,6 +79,32 @@ def test_gnu_m4_selector() -> None:
                 os.environ["M4"] = old_m4
 
 
+def test_autotools_utility_isolation() -> None:
+    helper = load_helper_module()
+    env = {name: f"poison-{name}" for name in helper.AUTOTOOLS_UTILITY_ENV}
+    env.update(
+        {
+            "AR": "/managed/llvm-ar",
+            "RANLIB": "/managed/llvm-ranlib",
+            "NM": "/managed/llvm-nm",
+            "STRIP": "/managed/llvm-strip",
+            "SED": "/managed/sed",
+        }
+    )
+    helper.isolate_autotools_utility_env(env)
+    leaked = [name for name in helper.AUTOTOOLS_UTILITY_ENV if name in env]
+    if leaked:
+        raise SystemExit(
+            "error: Libtool retained caller Autotools utility overrides: "
+            + ", ".join(leaked)
+        )
+    for name in ("AR", "RANLIB", "NM", "STRIP", "SED"):
+        if name not in env:
+            raise SystemExit(
+                f"error: Libtool utility isolation erased intentional {name}"
+            )
+
+
 def main() -> int:
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
@@ -199,7 +225,7 @@ def main() -> int:
     require(helper, '"--skip-po"', "translation download suppression")
     require(helper, 'env.pop(key, None)', "environment isolation")
     require(helper, '"LIBTOOL", "LIBTOOLIZE"', "self-host cycle guard")
-    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "9"', "cache schema")
+    require(helper, 'LIBTOOL_BOOTSTRAP_SCHEMA = "10"', "cache schema")
     require(
         helper,
         'SUBMODULE_DIR / "bootstrap.conf"',
@@ -236,6 +262,17 @@ def main() -> int:
     require(helper, "def select_gnu_m4(", "GNU M4 capability selector")
     require(helper, '"--gnu", "--version"', "GNU M4 capability probe")
     require(helper, '"M4": select_gnu_m4()', "GNU M4 bootstrap selection")
+    require(helper, '"SED": select_sed()', "verified sed bootstrap selection")
+    require(
+        helper,
+        "AUTOTOOLS_UTILITY_ENV = (",
+        "Autotools utility isolation set",
+    )
+    require(
+        helper,
+        "isolate_autotools_utility_env(env)",
+        "Autotools utility isolation application",
+    )
     require(helper, "def select_arflags(", "archive flag selector")
     require(helper, 'return "cr"', "llvm-ar default archive flags")
     require(helper, '"ARFLAGS", "AR_FLAGS"', "archive flag environment isolation")
@@ -414,6 +451,7 @@ def main() -> int:
         )
 
     test_gnu_m4_selector()
+    test_autotools_utility_isolation()
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
     require(ledger, "Libtool bootstrap", "Libtool dependency edge")

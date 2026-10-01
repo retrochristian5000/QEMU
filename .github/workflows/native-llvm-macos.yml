@@ -246,9 +246,9 @@ jobs:
         run: |
           set -euo pipefail
           smoke_root="$RUNNER_TEMP/whp-libisofs-arm64e"
+          export SED="$(./sed.sh --print-seed)"
           libtool_prefix="$(python3 scripts/ensure-libtool.py --build-dir "$smoke_root" --mode force)"
           export LIBTOOLIZE="$libtool_prefix/bin/libtoolize"
-          export SED="$(./sed.sh --print-seed)"
           prefix="$(python3 scripts/ensure-libisofs.py --build-dir "$smoke_root" --mode force)"
           marker="$prefix/.whp-libisofs-bootstrap"
           archive="$(find "$prefix" -name libisofs.a -print -quit)"
