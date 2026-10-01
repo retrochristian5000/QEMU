@@ -19,6 +19,7 @@ source sparc/Kconfig
 source tricore/Kconfig
 source trimedia/Kconfig
 source xtensa/Kconfig
+source z80/Kconfig
 source hexagon/Kconfig
 
 config TARGET_BIG_ENDIAN
