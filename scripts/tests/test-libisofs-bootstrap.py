@@ -76,6 +76,32 @@ def test_gnu_m4_selector() -> None:
                 os.environ["M4"] = old_m4
 
 
+def test_autotools_utility_isolation() -> None:
+    helper = load_helper_module()
+    env = {name: f"poison-{name}" for name in helper.AUTOTOOLS_UTILITY_ENV}
+    env.update(
+        {
+            "AR": "/managed/llvm-ar",
+            "RANLIB": "/managed/llvm-ranlib",
+            "NM": "/managed/llvm-nm",
+            "STRIP": "/managed/llvm-strip",
+            "SED": "/managed/sed",
+        }
+    )
+    helper.isolate_autotools_utility_env(env)
+    leaked = [name for name in helper.AUTOTOOLS_UTILITY_ENV if name in env]
+    if leaked:
+        raise SystemExit(
+            "error: libisofs retained caller Autotools utility overrides: "
+            + ", ".join(leaked)
+        )
+    for name in ("AR", "RANLIB", "NM", "STRIP", "SED"):
+        if name not in env:
+            raise SystemExit(
+                f"error: libisofs utility isolation erased intentional {name}"
+            )
+
+
 def test_c_standard_policy() -> None:
     helper = load_helper_module()
     if helper.LIBISOFS_C_STANDARD != "gnu11":
@@ -192,6 +218,22 @@ def main() -> int:
         (libisofs_root / "libisofs/fs_local.c").read_text(encoding="utf-8")
         if (libisofs_root / "libisofs/fs_local.c").is_file() else ""
     )
+    libisofs_bootstrap = (
+        (libisofs_root / "bootstrap").read_text(encoding="utf-8")
+        if (libisofs_root / "bootstrap").is_file() else ""
+    )
+    libisofs_configure = (
+        (libisofs_root / "configure.ac").read_text(encoding="utf-8")
+        if (libisofs_root / "configure.ac").is_file() else ""
+    )
+    libisofs_acinclude = (
+        (libisofs_root / "acinclude.m4").read_text(encoding="utf-8")
+        if (libisofs_root / "acinclude.m4").is_file() else ""
+    )
+    libisofs_makefile = (
+        (libisofs_root / "Makefile.am").read_text(encoding="utf-8")
+        if (libisofs_root / "Makefile.am").is_file() else ""
+    )
 
     require(
         gitmodules,
@@ -270,7 +312,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "5"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "6"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -320,9 +362,21 @@ def main() -> int:
         )
     require(
         helper,
-        'env.pop("INSTALL", None)',
-        "WHP INSTALL policy isolation from Autoconf",
+        "AUTOTOOLS_UTILITY_ENV = (",
+        "Autotools utility isolation set",
     )
+    require(
+        helper,
+        "def isolate_autotools_utility_env(",
+        "Autotools utility isolation helper",
+    )
+    require(
+        helper,
+        "isolate_autotools_utility_env(env)",
+        "Autotools utility isolation application",
+    )
+    require(helper, 'env["SED"] = sed', "explicit sed handoff")
+    require(helper, 'f"SED={sed}\\n"', "sed workspace identity")
     require(
         helper,
         'libtool --mode=install 1',
@@ -331,6 +385,57 @@ def main() -> int:
     require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
     require(helper, "def prepare_workspace(", "incremental workspace planner")
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
+
+    if libisofs_bootstrap:
+        if "uname -s" in libisofs_bootstrap:
+            raise SystemExit(
+                "error: libisofs bootstrap still spawns uname to choose libtoolize"
+            )
+        require(
+            libisofs_bootstrap,
+            "command -v glibtoolize",
+            "glibtoolize capability-based selection",
+        )
+    if libisofs_configure:
+        require(
+            libisofs_configure,
+            "LT_CURRENT_MINUS_AGE=$((LT_CURRENT - LT_AGE))",
+            "shell-native Libtool version arithmetic",
+        )
+        if "expr $LT_CURRENT - $LT_AGE" in libisofs_configure:
+            raise SystemExit(
+                "error: libisofs still uses external expr for version arithmetic"
+            )
+    if libisofs_acinclude:
+        require(
+            libisofs_acinclude,
+            '${libdir%/lib}/libdata/pkgconfig',
+            "shell-native FreeBSD pkg-config path rewrite",
+        )
+        if "printf '%s\\n' \"$libdir\" | \"$SED\"" in libisofs_acinclude:
+            raise SystemExit(
+                "error: libisofs still spawns sed for a simple /lib suffix rewrite"
+            )
+    if libisofs_makefile:
+        require(
+            libisofs_makefile,
+            "-$(RM) -r demo/.libs",
+            "Automake cleanup utility",
+        )
+        require(
+            libisofs_makefile,
+            '$(MKDIR_P) "$(docdir)/html"',
+            "Automake directory creation utility",
+        )
+        require(
+            libisofs_makefile,
+            '$(RM) -r "$(docdir)"',
+            "Automake uninstall cleanup utility",
+        )
+        if "$(mkinstalldirs)" in libisofs_makefile:
+            raise SystemExit(
+                "error: libisofs still uses deprecated mkinstalldirs"
+            )
 
     if libisofs_util:
         require(
@@ -393,6 +498,7 @@ def main() -> int:
         )
 
     test_gnu_m4_selector()
+    test_autotools_utility_isolation()
     test_c_standard_policy()
     test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")

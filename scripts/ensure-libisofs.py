@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "5"
+LIBISOFS_BOOTSTRAP_SCHEMA = "6"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -29,6 +29,21 @@ LIBISOFS_CONFIGURE_ARGS = (
     "--disable-libacl",
     "--disable-libjte",
     "--disable-ldconfig-at-install",
+)
+
+# These variables belong to Autoconf/Automake's generated utility layer.
+# Inheriting them from QEMU's caller can replace locally detected install,
+# directory-creation, or symlink commands with unrelated values. Keep
+# compiler/binutils variables out of this list: those are intentional inputs.
+AUTOTOOLS_UTILITY_ENV = (
+    "INSTALL",
+    "INSTALL_PROGRAM",
+    "INSTALL_SCRIPT",
+    "INSTALL_DATA",
+    "INSTALL_STRIP_PROGRAM",
+    "MKDIR_P",
+    "mkdir_p",
+    "LN_S",
 )
 
 
@@ -162,6 +177,83 @@ def command_path(name: str, env_name: str | None = None) -> str:
         if path:
             return path
     raise RuntimeError(f"{name} is required to bootstrap bundled libisofs")
+
+
+def semantic_sed_usable(path: str) -> bool:
+    probes = (
+        ("alpha\n", ["-n", "s/^alpha$/beta/p"], "beta\n"),
+        ("A B/C\n", ["s,[^A-Za-z0-9_.-],-,g"], "A-B-C\n"),
+        (
+            "AR=/tmp/llvm-ar|LLVM\n",
+            ["-n", r"s#^AR=\([^|]*\)|.*$#\1#p"],
+            "/tmp/llvm-ar\n",
+        ),
+        ("one\ntwo\n", ["-n", "1p"], "one\n"),
+    )
+    for data, args, expected in probes:
+        completed = subprocess.run(
+            [path, *args],
+            input=data,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0 or completed.stdout != expected:
+            return False
+    return True
+
+
+def select_sed() -> str:
+    requested = os.environ.get("SED", "")
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError("SED must name exactly one executable")
+        candidate = argv[0]
+        path = (
+            candidate
+            if pathlib.Path(candidate).is_absolute()
+            else shutil.which(candidate)
+        )
+        if (
+            not path
+            or not pathlib.Path(path).is_file()
+            or not os.access(path, os.X_OK)
+            or not semantic_sed_usable(str(path))
+        ):
+            raise RuntimeError(f"SED is not a usable sed executable: {candidate}")
+        return str(path)
+
+    adapter = ROOT / "sed.sh"
+    if not adapter.is_file() or not os.access(adapter, os.X_OK):
+        raise RuntimeError(f"QEMU sed seed adapter is unavailable: {adapter}")
+    completed = subprocess.run(
+        [str(adapter), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    path = completed.stdout.strip()
+    if (
+        completed.returncode != 0
+        or not path
+        or not pathlib.Path(path).is_file()
+        or not os.access(path, os.X_OK)
+        or not semantic_sed_usable(path)
+    ):
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU sed.sh could not resolve a usable libisofs bootstrap sed"
+            + (f": {detail}" if detail else "")
+        )
+    return path
+
+
+def isolate_autotools_utility_env(env: dict[str, str]) -> None:
+    for name in AUTOTOOLS_UTILITY_ENV:
+        env.pop(name, None)
 
 
 def gnu_m4_version(path: str) -> str:
@@ -595,6 +687,7 @@ def workspace_marker_text(
     libtoolize_id: str,
     m4: str,
     m4_id: str,
+    sed: str,
     cflags: str,
     ldflags: str,
 ) -> str:
@@ -612,6 +705,7 @@ def workspace_marker_text(
         f"LIBTOOLIZE_VERSION={libtoolize_id}\n"
         f"M4={m4}\n"
         f"M4_VERSION={m4_id}\n"
+        f"SED={sed}\n"
         f"CFLAGS={cflags}\n"
         f"LDFLAGS={ldflags}\n"
         f"CONFIGURE_ARGS={shlex.join(LIBISOFS_CONFIGURE_ARGS)}\n"
@@ -684,6 +778,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     libtoolize_id = run_text([libtoolize, "--version"]).splitlines()[0]
     m4 = select_gnu_m4()
     m4_id = gnu_m4_version(m4)
+    sed = select_sed()
     incremental = incremental_build_enabled()
 
     work_dir = build_root / "bootstrap" / "libisofs"
@@ -692,15 +787,19 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     prefix = build_root / "deps" / "libisofs"
 
     env = os.environ.copy()
-    # INSTALL and LIBTOOL are project-generated Autotools variables. Do not
-    # let caller state replace AC_PROG_INSTALL or the configured ./libtool.
-    # The old LIBTOOL override could discard Darwin/arm64e settings captured
-    # by configure and produced commands such as "libtool --mode=install 1".
-    env.pop("INSTALL", None)
+    # Autoconf/Automake must own their portable install/mkdir/symlink
+    # variables. A QEMU caller can intentionally select compiler/binutils
+    # tools, but must not replace commands generated for this source tree.
+    isolate_autotools_utility_env(env)
+
+    # LIBTOOL is also project-generated. The old override could discard
+    # Darwin/arm64e settings captured by configure and produced commands such
+    # as "libtool --mode=install 1".
     env.pop("LIBTOOL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
     env["M4"] = m4
+    env["SED"] = sed
     env["CONFIG_SHELL"] = config_shell
     env["SHELL"] = config_shell
     compile_flags = ["-O3", *libisofs_c_policy_flags()]
@@ -733,6 +832,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         libtoolize_id,
         m4,
         m4_id,
+        sed,
         env["CFLAGS"],
         env["LDFLAGS"],
     )

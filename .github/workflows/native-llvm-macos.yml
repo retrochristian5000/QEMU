@@ -248,6 +248,7 @@ jobs:
           smoke_root="$RUNNER_TEMP/whp-libisofs-arm64e"
           libtool_prefix="$(python3 scripts/ensure-libtool.py --build-dir "$smoke_root" --mode force)"
           export LIBTOOLIZE="$libtool_prefix/bin/libtoolize"
+          export SED="$(./sed.sh --print-seed)"
           prefix="$(python3 scripts/ensure-libisofs.py --build-dir "$smoke_root" --mode force)"
           marker="$prefix/.whp-libisofs-bootstrap"
           archive="$(find "$prefix" -name libisofs.a -print -quit)"
@@ -258,9 +259,10 @@ jobs:
           test -n "$archive"
           test -n "$pc_file"
           "$lipo" -archs "$archive" | tr ' ' '\n' | grep -Fxq arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=5' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=6' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
+          grep -Fxq "SED=$SED" "$marker"
 
           static_libs="$(PKG_CONFIG_PATH="$(dirname "$pc_file")" "$pkgconf" --static --libs libisofs-1)"
           case " $static_libs " in
