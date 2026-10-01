@@ -31,11 +31,8 @@
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
 #include "system/system.h"
+#include "system/cpus.h"
 #include "trace.h"
-
-#define UNINORTH_REG_POWER_MGMT       0x0030
-#define UNINORTH_REG_ARB_CTRL         0x0040
-#define UNINORTH_REG_HW_INIT_STATE    0x0070
 
 #define UNINORTH_POWER_NORMAL         0x00000000
 #define UNINORTH_HW_INIT_RUNNING      0x00000002
@@ -356,6 +353,19 @@ static void unin_agp_pci_host_realize(PCIDevice *d, Error **errp)
     d->config[PCI_CACHE_LINE_SIZE] = 0x08;
     d->config[PCI_LATENCY_TIMER] = 0x10;
     /* d->config[PCI_CAPABILITY_LIST] = 0x80; */
+
+    /*
+     * UniNorth 1.x exposes its AGP GART controls as vendor-specific PCI
+     * configuration dwords.  Keep translation itself out of this first
+     * register pass, but preserve the guest-visible programming state.
+     */
+    pci_set_long(d->wmask + UNINORTH_CFG_GART_BASE, 0xffffffffU);
+    pci_set_long(d->wmask + UNINORTH_CFG_AGP_BASE, 0xffffffffU);
+    pci_set_long(d->wmask + UNINORTH_CFG_GART_CTRL,
+                 UNINORTH_GART_CTRL_WRITABLE_MASK);
+
+    /* An idle bridge reports no pending internal-status condition. */
+    pci_set_long(d->config + UNINORTH_CFG_INTERNAL_STATUS, 0);
 }
 
 static void u3_agp_pci_host_realize(PCIDevice *d, Error **errp)
@@ -559,6 +569,9 @@ static void unin_write(void *opaque, hwaddr addr, uint64_t value,
     UNINState *s = opaque;
 
     switch (addr) {
+    case UNINORTH_REG_CLOCK_CNTL:
+        s->clock_cntl = value;
+        break;
     case UNINORTH_REG_POWER_MGMT:
         s->power_mgmt = value;
         break;
@@ -581,14 +594,20 @@ static uint64_t unin_read(void *opaque, hwaddr addr, unsigned size)
     uint32_t value;
 
     switch (addr) {
-    case 0:
+    case UNINORTH_REG_VERSION:
         value = UNINORTH_VERSION_10A;
+        break;
+    case UNINORTH_REG_CLOCK_CNTL:
+        value = s->clock_cntl;
         break;
     case UNINORTH_REG_POWER_MGMT:
         value = s->power_mgmt;
         break;
     case UNINORTH_REG_ARB_CTRL:
         value = s->arb_ctrl;
+        break;
+    case UNINORTH_REG_CPU_NUMBER:
+        value = current_cpu ? current_cpu->cpu_index : 0;
         break;
     case UNINORTH_REG_HW_INIT_STATE:
         value = s->hw_init_state;
@@ -625,6 +644,11 @@ static void unin_reset(DeviceState *dev)
      * machine.  Tiger rewrites both around sleep/wake and performs a
      * read-modify-write of ArbCtrl when applying the UniNorth QAck delay.
      */
+    /*
+     * Keep ClockCntl as a guest-visible latch for now.  Device clock-gating
+     * side effects are separate hardware work and must not be guessed here.
+     */
+    s->clock_cntl = 0;
     s->power_mgmt = UNINORTH_POWER_NORMAL;
     s->arb_ctrl = 0;
     s->hw_init_state = UNINORTH_HW_INIT_RUNNING;
@@ -632,12 +656,13 @@ static void unin_reset(DeviceState *dev)
 
 static const VMStateDescription vmstate_unin = {
     .name = "uninorth",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT32(power_mgmt, UNINState),
         VMSTATE_UINT32(arb_ctrl, UNINState),
         VMSTATE_UINT32(hw_init_state, UNINState),
+        VMSTATE_UINT32_V(clock_cntl, UNINState, 2),
         VMSTATE_END_OF_LIST()
     }
 };

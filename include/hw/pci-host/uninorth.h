@@ -31,6 +31,32 @@
 /* UniNorth version */
 #define UNINORTH_VERSION_10A    0x7
 
+/* UniNorth memory-mapped registers (big-endian). */
+#define UNINORTH_REG_VERSION        0x0000
+#define UNINORTH_REG_CLOCK_CNTL     0x0020
+#define UNINORTH_REG_POWER_MGMT     0x0030
+#define UNINORTH_REG_ARB_CTRL       0x0040
+#define UNINORTH_REG_CPU_NUMBER     0x0050
+#define UNINORTH_REG_HW_INIT_STATE  0x0070
+
+#define UNINORTH_CLOCK_CNTL_PCI     0x00000001
+#define UNINORTH_CLOCK_CNTL_GMAC    0x00000002
+#define UNINORTH_CLOCK_CNTL_FW      0x00000004
+
+/* UniNorth AGP PCI configuration registers (little-endian). */
+#define UNINORTH_CFG_GART_BASE       0x8c
+#define UNINORTH_CFG_AGP_BASE        0x90
+#define UNINORTH_CFG_GART_CTRL       0x94
+#define UNINORTH_CFG_INTERNAL_STATUS 0x98
+
+#define UNINORTH_GART_CTRL_INVAL     0x00000001
+#define UNINORTH_GART_CTRL_ENABLE    0x00000100
+#define UNINORTH_GART_CTRL_2XRESET   0x00010000
+#define UNINORTH_GART_CTRL_DISSBADET 0x00020000
+#define UNINORTH_GART_CTRL_WRITABLE_MASK \
+    (UNINORTH_GART_CTRL_INVAL | UNINORTH_GART_CTRL_ENABLE | \
+     UNINORTH_GART_CTRL_2XRESET | UNINORTH_GART_CTRL_DISSBADET)
+
 /* PowerMac3,1 UniNorth AGP PCI I/O range. */
 #define UNINORTH_AGP_IO_BASE    0xf0000000ULL
 #define UNINORTH_AGP_IO_SIZE    0x00800000ULL
@@ -65,6 +91,7 @@ struct UNINState {
     SysBusDevice parent_obj;
 
     MemoryRegion mem;
+    uint32_t clock_cntl;
     uint32_t power_mgmt;
     uint32_t arb_ctrl;
     uint32_t hw_init_state;

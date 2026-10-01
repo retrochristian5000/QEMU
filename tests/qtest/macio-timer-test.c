@@ -8,10 +8,15 @@
 
 #include "libqtest.h"
 #include "hw/pci/pci.h"
+#include "hw/pci-host/uninorth.h"
 #include "qemu/bswap.h"
 
-#define UNINORTH_CONFIG_ADDR 0xf2800000
-#define UNINORTH_CONFIG_DATA 0xf2c00000
+#define UNINORTH_CONFIG_ADDR     0xf2800000
+#define UNINORTH_CONFIG_DATA     0xf2c00000
+#define UNINORTH_AGP_CONFIG_ADDR 0xf0800000
+#define UNINORTH_AGP_CONFIG_DATA 0xf0c00000
+#define UNINORTH_REG_BASE        0xf8000000
+#define UNINORTH_AGP_HOST_SLOT   11
 #define MACIO_BAR_BASE       0x80000000
 #define MACIO_TIMER_LOW      (MACIO_BAR_BASE + 0x15038)
 #define MACIO_SCREAMER_CTRL   (MACIO_BAR_BASE + 0x14000)
@@ -41,6 +46,22 @@ static void write_le32(QTestState *qts, uint64_t addr, uint32_t value)
     qtest_memwrite(qts, addr, buf, sizeof(buf));
 }
 
+static uint32_t read_be32(QTestState *qts, uint64_t addr)
+{
+    uint8_t buf[4];
+
+    qtest_memread(qts, addr, buf, sizeof(buf));
+    return ldl_be_p(buf);
+}
+
+static void write_be32(QTestState *qts, uint64_t addr, uint32_t value)
+{
+    uint8_t buf[4];
+
+    stl_be_p(buf, value);
+    qtest_memwrite(qts, addr, buf, sizeof(buf));
+}
+
 static void write_le16(QTestState *qts, uint64_t addr, uint16_t value)
 {
     uint8_t buf[2];
@@ -53,6 +74,25 @@ static void uninorth_select(QTestState *qts, unsigned slot, unsigned reg)
 {
     write_le32(qts, UNINORTH_CONFIG_ADDR,
                (1U << slot) | (reg & ~7U));
+}
+
+static void uninorth_agp_select(QTestState *qts, unsigned reg)
+{
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(UNINORTH_AGP_HOST_SLOT, 0) << 8) |
+               (reg & ~3U));
+}
+
+static uint32_t uninorth_agp_read(QTestState *qts, unsigned reg)
+{
+    uninorth_agp_select(qts, reg);
+    return read_le32(qts, UNINORTH_AGP_CONFIG_DATA + (reg & 3));
+}
+
+static void uninorth_agp_write(QTestState *qts, unsigned reg, uint32_t value)
+{
+    uninorth_agp_select(qts, reg);
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA + (reg & 3), value);
 }
 
 static unsigned find_keylargo_slot(QTestState *qts)
@@ -157,6 +197,55 @@ static void test_keylargo_timer_precision(void)
     qtest_quit(qts);
 }
 
+static void test_sawtooth_uninorth_registers(void)
+{
+    QTestState *qts;
+    uint32_t clocks = UNINORTH_CLOCK_CNTL_PCI |
+                      UNINORTH_CLOCK_CNTL_GMAC |
+                      UNINORTH_CLOCK_CNTL_FW;
+    uint32_t ctrl = UNINORTH_GART_CTRL_ENABLE |
+                    UNINORTH_GART_CTRL_INVAL |
+                    UNINORTH_GART_CTRL_2XRESET;
+
+    if (g_str_equal(qtest_get_arch(), "ppc64")) {
+        g_test_skip("PowerMac3,1 uses UniNorth 1.0.10, not U3");
+        return;
+    }
+
+    qts = qtest_init("-M powermac3_1 -nodefaults -boot c");
+
+    g_assert_cmphex(read_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_VERSION),
+                    ==, UNINORTH_VERSION_10A);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_CPU_NUMBER),
+                    ==, 0);
+
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_CLOCK_CNTL, clocks);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_CLOCK_CNTL),
+                    ==, clocks);
+
+    uninorth_agp_write(qts, UNINORTH_CFG_GART_BASE, 0x12345020U);
+    g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_GART_BASE),
+                    ==, 0x12345020U);
+
+    uninorth_agp_write(qts, UNINORTH_CFG_AGP_BASE, 0x90000000U);
+    g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_AGP_BASE),
+                    ==, 0x90000000U);
+
+    uninorth_agp_write(qts, UNINORTH_CFG_GART_CTRL, ctrl | 0x80000000U);
+    g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_GART_CTRL),
+                    ==, ctrl);
+
+    g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_INTERNAL_STATUS),
+                    ==, 0);
+    uninorth_agp_write(qts, UNINORTH_CFG_INTERNAL_STATUS, 0xffffffffU);
+    g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_INTERNAL_STATUS),
+                    ==, 0);
+
+    qtest_quit(qts);
+}
+
 static void test_sawtooth_screamer_registers(void)
 {
     QTestState *qts;
@@ -191,6 +280,8 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ppc/macio/keylargo-timer-precision",
                    test_keylargo_timer_precision);
+    qtest_add_func("/ppc/uninorth/sawtooth-registers",
+                   test_sawtooth_uninorth_registers);
     qtest_add_func("/ppc/macio/sawtooth-screamer-registers",
                    test_sawtooth_screamer_registers);
     return g_test_run();
