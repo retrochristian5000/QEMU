@@ -29,6 +29,13 @@ def main() -> int:
     require(ledger, "Make -> Make", "GNU Make self-bootstrap warning")
     require(ledger, "build.sh", "GNU Make no-Make bootstrap path")
     require(ledger, "build.cfg", "GNU Make configured-input boundary")
+    require(ledger, "libisofs bootstrap boundary", "libisofs dependency section")
+    require(ledger, "zlib", "libisofs zlib root edge")
+    require(ledger, "pkg-config/pkgconf", "libisofs pkg-config probe edge")
+
+    make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
+    if "[[" in make_resolver or "local " in make_resolver:
+        raise SystemExit("error: early GNU Make resolver is no longer POSIX-sh compatible")
 
     python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")
     require(python_bootstrap, "resolve_bootstrap_make()", "Python Make resolver")
