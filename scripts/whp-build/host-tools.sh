@@ -95,6 +95,108 @@ if [ -n "${AUTOMAKE:-}" ]; then
 fi
 unset WHP_AUTOMAKE_EXPLICIT
 
+BOOTSTRAP_AUTOCONF=${BOOTSTRAP_AUTOCONF:-auto}
+case "$BOOTSTRAP_AUTOCONF" in
+    y) BOOTSTRAP_AUTOCONF=1 ;;
+    n) BOOTSTRAP_AUTOCONF=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_AUTOCONF must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_AUTOCONF
+
+whp_autoconf_pair_usable()
+{
+    [ -n "${1:-}" ] && [ -x "$1" ] || return 1
+    [ -n "${2:-}" ] && [ -x "$2" ] || return 1
+    "$1" --version 2>/dev/null | grep -q 'GNU Autoconf' || return 1
+    "$2" --version 2>/dev/null | grep -q 'GNU Autoconf'
+}
+
+WHP_AUTOCONF_EXPLICIT=0
+if [ -n "${AUTOCONF:-}" ] || [ -n "${AUTOM4TE:-}" ]; then
+    WHP_AUTOCONF_EXPLICIT=1
+    if [ -z "${AUTOCONF:-}" ] || [ -z "${AUTOM4TE:-}" ]; then
+        printf 'error: AUTOCONF and AUTOM4TE must be supplied as a pair\n' >&2
+        exit 1
+    fi
+    case "$AUTOCONF" in
+        */*) ;;
+        *) AUTOCONF=$(command -v "$AUTOCONF" 2>/dev/null || true) ;;
+    esac
+    case "$AUTOM4TE" in
+        */*) ;;
+        *) AUTOM4TE=$(command -v "$AUTOM4TE" 2>/dev/null || true) ;;
+    esac
+    if ! whp_autoconf_pair_usable "$AUTOCONF" "$AUTOM4TE"; then
+        printf 'error: explicit AUTOCONF/AUTOM4TE pair is not usable\n' >&2
+        exit 1
+    fi
+fi
+
+if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
+    WHP_HOST_AUTOCONF=$(command -v autoconf 2>/dev/null || true)
+    WHP_HOST_AUTOM4TE=$(command -v autom4te 2>/dev/null || true)
+    WHP_NEED_AUTOCONF=0
+    if [ "$BOOTSTRAP_AUTOCONF" = 1 ]; then
+        WHP_NEED_AUTOCONF=1
+    elif [ "$BOOTSTRAP_AUTOCONF" = auto ]; then
+        if [ "$WHP_HOST_OS" = macos ] ||
+           ! whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
+            WHP_NEED_AUTOCONF=1
+        fi
+    fi
+
+    if [ "$WHP_NEED_AUTOCONF" = 1 ] &&
+       [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+        WHP_AUTOCONF_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-autoconf.py" \
+                --build-dir "$BUILD_DIR"
+        ) || WHP_AUTOCONF_PREFIX=
+        if [ -n "$WHP_AUTOCONF_PREFIX" ]; then
+            AUTOCONF="$WHP_AUTOCONF_PREFIX/bin/autoconf"
+            AUTOM4TE="$WHP_AUTOCONF_PREFIX/bin/autom4te"
+            AUTOHEADER="$WHP_AUTOCONF_PREFIX/bin/autoheader"
+            AUTORECONF="$WHP_AUTOCONF_PREFIX/bin/autoreconf"
+        fi
+    fi
+
+    if ! whp_autoconf_pair_usable "${AUTOCONF:-}" "${AUTOM4TE:-}"; then
+        if whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
+            AUTOCONF=$WHP_HOST_AUTOCONF
+            AUTOM4TE=$WHP_HOST_AUTOM4TE
+        elif [ "$BOOTSTRAP_AUTOCONF" = 1 ]; then
+            printf '%s\n' \
+                'error: BOOTSTRAP_AUTOCONF=1 requested the pinned WHP Autoconf, but its bootstrap failed.' >&2
+            exit 1
+        else
+            AUTOCONF=
+            AUTOM4TE=
+            printf '%s\n' \
+                'WHP Autoconf unavailable; later maintainer-source bootstraps may fail.' >&2
+        fi
+    fi
+    unset WHP_HOST_AUTOCONF WHP_HOST_AUTOM4TE WHP_NEED_AUTOCONF WHP_AUTOCONF_PREFIX
+fi
+
+if [ -n "${AUTOCONF:-}" ]; then
+    WHP_AUTOCONF_BIN_DIR=$(dirname -- "$AUTOCONF")
+    if [ -z "${AUTOHEADER:-}" ] && [ -x "$WHP_AUTOCONF_BIN_DIR/autoheader" ]; then
+        AUTOHEADER="$WHP_AUTOCONF_BIN_DIR/autoheader"
+    fi
+    if [ -z "${AUTORECONF:-}" ] && [ -x "$WHP_AUTOCONF_BIN_DIR/autoreconf" ]; then
+        AUTORECONF="$WHP_AUTOCONF_BIN_DIR/autoreconf"
+    fi
+    PATH="$WHP_AUTOCONF_BIN_DIR:$PATH"
+    export AUTOCONF AUTOM4TE AUTOHEADER AUTORECONF PATH
+    printf 'QEMU Autoconf: %s\n' "$AUTOCONF" >&2
+    unset WHP_AUTOCONF_BIN_DIR
+fi
+unset WHP_AUTOCONF_EXPLICIT
+
 BOOTSTRAP_SED=${BOOTSTRAP_SED:-auto}
 case "$BOOTSTRAP_SED" in
     y) BOOTSTRAP_SED=1 ;;

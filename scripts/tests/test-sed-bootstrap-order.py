@@ -34,12 +34,14 @@ def main() -> int:
         raise SystemExit("error: seed sed is selected after the Python fallback")
 
     automake_pos = host_tools.index("BOOTSTRAP_AUTOMAKE=")
+    autoconf_pos = host_tools.index("BOOTSTRAP_AUTOCONF=")
     sed_pos = host_tools.index("BOOTSTRAP_SED=")
     git_pos = host_tools.index("BOOTSTRAP_GIT=")
     bash_pos = host_tools.index("BOOTSTRAP_BASH=")
-    if not automake_pos < sed_pos < git_pos < bash_pos:
+    if not automake_pos < autoconf_pos < sed_pos < git_pos < bash_pos:
         raise SystemExit(
-            "error: expected host-tool order is Automake -> GNU sed -> Git -> Bash"
+            "error: expected host-tool order is "
+            "Automake -> Autoconf -> GNU sed -> Git -> Bash"
         )
 
     require(
