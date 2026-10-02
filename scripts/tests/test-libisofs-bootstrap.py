@@ -416,6 +416,16 @@ def main() -> int:
         (automake_root / "lib/am/ltlib.am").read_text(encoding="utf-8")
         if (automake_root / "lib/am/ltlib.am").is_file() else ""
     )
+    automake_driver = (
+        (automake_root / "bin/automake.in").read_text(encoding="utf-8")
+        if (automake_root / "bin/automake.in").is_file() else ""
+    )
+    autoconf_c = (
+        (ROOT / "toolchains/autoconf/lib/autoconf/c.m4").read_text(
+            encoding="utf-8"
+        )
+        if (ROOT / "toolchains/autoconf/lib/autoconf/c.m4").is_file() else ""
+    )
     libisofs_node_header = (
         (libisofs_root / "libisofs/node.h").read_text(encoding="utf-8")
         if (libisofs_root / "libisofs/node.h").is_file() else ""
@@ -781,6 +791,23 @@ def main() -> int:
             automake_data,
             "install-%DIR%%PRIMARY%:",
             "Automake data/header install target template",
+        )
+    if automake_driver:
+        require(
+            automake_driver,
+            "'link' => '$(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@'",
+            "Automake C link carries CFLAGS",
+        )
+    if autoconf_c:
+        require(
+            autoconf_c,
+            "char $2 (void);",
+            "Autoconf AC_CHECK_LIB strict prototype",
+        )
+        require(
+            autoconf_c,
+            "char $1 (void);",
+            "Autoconf AC_CHECK_FUNC strict prototype",
         )
 
     if libisofs_util:

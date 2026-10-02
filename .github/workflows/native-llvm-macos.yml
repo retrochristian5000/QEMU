@@ -274,6 +274,24 @@ jobs:
           grep -Fxq 'LDFLAGS=' "$marker"
           grep -Fxq 'CXXFLAGS=UNUSED' "$marker"
           grep -Fxq 'LINKER_POLICY=COMPILER_DEFAULT' "$marker"
+          cflags_line="$(grep '^CFLAGS=' "$marker")"
+          case "$cflags_line" in
+            *"-fuse-ld=lld"*|*"--read-workers"*)
+              echo "QEMU linker policy leaked into libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+          esac
+          case "$cflags_line" in
+            *"-arch arm64e"*"-arch arm64e"*)
+              echo "duplicate arm64e architecture flag in libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+            *"-arch arm64e"*) ;;
+            *)
+              echo "missing arm64e architecture flag in libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+          esac
 
           static_libs="$(PKG_CONFIG_PATH="$(dirname "$pc_file")" "$pkgconf" --static --libs libisofs-1)"
           case " $static_libs " in

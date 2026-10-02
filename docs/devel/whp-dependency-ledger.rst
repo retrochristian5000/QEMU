@@ -664,6 +664,17 @@ QEMU configures the fork with ``--disable-debug``. The fork now respects an
 explicit caller ``CFLAGS`` and no longer prepends its historical debug/warning
 or optimization bundle on top of orchestrator-owned flags; only the
 ``DEBUG``/``NDEBUG`` semantic define follows the selected debug mode.
+This empty-``LDFLAGS`` policy is tied to the pinned Automake C link template,
+which expands ``$(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS)``.
+Thus the Darwin ABI triplet in ``CFLAGS`` reaches Libtool's compiler-driver
+link exactly once. If that Automake template changes, the libisofs static test
+must fail before the policy is reconsidered.
+
+The global ``-Werror=strict-prototypes`` check remains intentional. The pinned
+WHP Autoconf emits ``char func(void)`` declarations for both ``AC_CHECK_LIB``
+and ``AC_CHECK_FUNC`` probe paths, so strict-prototype warnings do not turn
+valid zlib/iconv/function checks into false negatives.
+
 
 
 
