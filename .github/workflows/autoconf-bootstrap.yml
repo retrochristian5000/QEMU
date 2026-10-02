@@ -1,0 +1,87 @@
+name: WHP Autoconf bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/autoconf'
+      - 'toolchains/automake'
+      - 'sed.sh'
+      - 'scripts/ensure-autoconf.py'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/autoconf-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/autoconf'
+      - 'toolchains/automake'
+      - 'sed.sh'
+      - 'scripts/ensure-autoconf.py'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - '.github/workflows/autoconf-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: false
+
+      - name: Install seed prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install autoconf m4 texinfo
+            echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
+          else
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y autoconf m4 texinfo
+          fi
+
+      - name: Verify static Autoconf wiring
+        run: python3 scripts/tests/test-autoconf-bootstrap.py
+
+      - name: Bootstrap managed Automake then Autoconf
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export PATH="$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
+          fi
+          seed="$(./sed.sh --print-seed)"
+          automake_prefix="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          export AUTOMAKE="$automake_prefix/bin/automake"
+          export ACLOCAL="$automake_prefix/bin/aclocal"
+          export PATH="$automake_prefix/bin:$PATH"
+          "$AUTOMAKE" --version | grep -q 'GNU automake'
+
+          autoconf_prefix="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          test -x "$autoconf_prefix/bin/autoconf"
+          test -x "$autoconf_prefix/bin/autom4te"
+          test -x "$autoconf_prefix/bin/autoheader"
+          test -x "$autoconf_prefix/bin/autoreconf"
+          "$autoconf_prefix/bin/autoconf" --version | grep -q 'GNU Autoconf'
+          "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
+
+          again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          test "$again" = "$autoconf_prefix"

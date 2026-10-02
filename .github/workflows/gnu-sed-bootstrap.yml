@@ -8,11 +8,13 @@ on:
       - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
+      - 'toolchains/autoconf'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-autoconf.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
       - '.github/workflows/gnu-sed-bootstrap.yml'
@@ -22,11 +24,13 @@ on:
       - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
+      - 'toolchains/autoconf'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-autoconf.py'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/whp-config/config.py'
       - '.github/workflows/gnu-sed-bootstrap.yml'
@@ -49,15 +53,16 @@ jobs:
       - name: Install GNU sed bootstrap prerequisites
         shell: bash
         run: |
-          brew install autoconf gettext gperf texinfo wget xz
+          brew install autoconf gettext gperf m4 texinfo wget xz
           echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
 
       - name: Bootstrap pinned GNU sed
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$(brew --prefix gettext)/bin:$(brew --prefix texinfo)/bin:$PATH"
+          export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
           seed="$(WHP_SED_SEED=/usr/bin/sed ./sed.sh --print-seed)"
           test -x "$seed"
           test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
@@ -67,6 +72,14 @@ jobs:
           export AUTOMAKE="$automake_prefix/bin/automake"
           export ACLOCAL="$automake_prefix/bin/aclocal"
           "$AUTOMAKE" --version | grep -q 'GNU automake'
+          autoconf_prefix="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          export PATH="$autoconf_prefix/bin:$PATH"
+          export AUTOCONF="$autoconf_prefix/bin/autoconf"
+          export AUTOM4TE="$autoconf_prefix/bin/autom4te"
+          export AUTOHEADER="$autoconf_prefix/bin/autoheader"
+          export AUTORECONF="$autoconf_prefix/bin/autoreconf"
+          "$AUTOCONF" --version | grep -q 'GNU Autoconf'
           if "$seed" --version 2>/dev/null | grep -q 'GNU sed'; then
             echo "expected macOS seed sed to be non-GNU" >&2
             exit 1
@@ -99,7 +112,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            autoconf gettext gperf texinfo wget xz-utils
+            autoconf gettext gperf m4 texinfo wget xz-utils
 
       - name: Bootstrap pinned GNU sed
         shell: bash
@@ -114,6 +127,14 @@ jobs:
           export AUTOMAKE="$automake_prefix/bin/automake"
           export ACLOCAL="$automake_prefix/bin/aclocal"
           "$AUTOMAKE" --version | grep -q 'GNU automake'
+          autoconf_prefix="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          export PATH="$autoconf_prefix/bin:$PATH"
+          export AUTOCONF="$autoconf_prefix/bin/autoconf"
+          export AUTOM4TE="$autoconf_prefix/bin/autom4te"
+          export AUTOHEADER="$autoconf_prefix/bin/autoheader"
+          export AUTORECONF="$autoconf_prefix/bin/autoreconf"
+          "$AUTOCONF" --version | grep -q 'GNU Autoconf'
 
           sed_path="$(WHP_SED_SEED="$seed" \
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
