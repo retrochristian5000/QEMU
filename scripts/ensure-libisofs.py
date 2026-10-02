@@ -160,26 +160,6 @@ def ensure_libisofs_source() -> str:
     return expected_revision
 
 
-def command_path(name: str, env_name: str | None = None) -> str:
-    requested = os.environ.get(env_name, "") if env_name else ""
-    if requested:
-        argv = shlex.split(requested)
-        if len(argv) != 1:
-            raise RuntimeError(f"{env_name} must name exactly one executable")
-        candidate = argv[0]
-        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
-        if path and pathlib.Path(path).exists():
-            return str(path)
-        raise RuntimeError(f"{env_name} is not executable: {candidate}")
-
-    names = ("gmake", "make") if name == "make" else (name,)
-    for candidate in names:
-        path = shutil.which(candidate)
-        if path:
-            return path
-    raise RuntimeError(f"{name} is required to bootstrap bundled libisofs")
-
-
 def select_gnu_make() -> str:
     requested = os.environ.get("MAKE_CMD") or os.environ.get("MAKE", "")
     candidates: list[str] = []
