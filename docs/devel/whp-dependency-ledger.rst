@@ -596,10 +596,17 @@ pointers. The existing arm64e configure gate separately requires Clang
 pointer-authenticated calls.
 
 QEMU repeats that contract in its consumer link probe, rejects Apple-silicon
-deployment targets below macOS 11, and verifies the installed static archive
-with ``lipo -verify_arch`` for the exact requested Mach-O architecture. This
-is significant for ``arm64e`` because it is a distinct Mach-O CPU subtype,
-not merely an ``arm64`` spelling alias.
+deployment targets below macOS 11, and queries the installed static archive
+with ``lipo -archs``. The private archive must report exactly one architecture
+and it must exactly equal the requested Mach-O architecture. This is
+significant for ``arm64e`` because it is a distinct Mach-O CPU subtype, not
+merely an ``arm64`` spelling alias.
+
+Do not use ``llvm-lipo -verify_arch`` on ``libisofs.a`` with the pinned LLVM
+fork. Its ``VerifyArch`` implementation handles Mach-O objects and universal
+binaries but not ``Archive`` inputs, whereas its ``-archs`` path explicitly
+constructs an archive slice, validates that all archive members share the same
+CPU type and CPU subtype, and reports the subtype-aware architecture name.
 
 The xinfo implementation was audited for pointer-authentication hazards. Its
 function-pointer keys remain stored, compared, and invoked as the declared

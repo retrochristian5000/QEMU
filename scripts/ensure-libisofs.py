@@ -690,26 +690,29 @@ def select_macho_lipo() -> str:
     raise RuntimeError("lipo/llvm-lipo is required to verify macOS libisofs ABI")
 
 
+def macho_archive_architectures(archive: pathlib.Path) -> tuple[str, ...]:
+    lipo = select_macho_lipo()
+    output = run_text([lipo, "-archs", str(archive)])
+    architectures = tuple(output.split())
+    if not architectures:
+        raise RuntimeError(
+            f"lipo returned no architecture for libisofs archive: {archive}"
+        )
+    return architectures
+
+
 def verify_macho_archive_architecture(
     archive: pathlib.Path,
     arch: str,
 ) -> None:
     if platform.system() != "Darwin":
         return
-    lipo = select_macho_lipo()
-    completed = subprocess.run(
-        [lipo, "-verify_arch", arch, str(archive)],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stdout.strip()
+    architectures = macho_archive_architectures(archive)
+    if architectures != (arch,):
+        found = " ".join(architectures)
         raise RuntimeError(
-            f"libisofs archive does not contain required Mach-O ABI {arch}: "
-            f"{archive}"
-            + (f": {detail}" if detail else "")
+            f"libisofs archive Mach-O ABI mismatch: expected only {arch}, "
+            f"found {found}: {archive}"
         )
 
 

@@ -115,6 +115,48 @@ def test_c_standard_policy() -> None:
         )
 
 
+def test_macho_archive_architecture_contract() -> None:
+    helper = load_helper_module()
+    archive = Path("/tmp/libisofs.a")
+    with mock.patch.object(helper.platform, "system", return_value="Darwin"):
+        with mock.patch.object(
+            helper, "select_macho_lipo", return_value="/managed/llvm-lipo"
+        ):
+            with mock.patch.object(
+                helper, "run_text", return_value="arm64e \n"
+            ) as run_text_mock:
+                helper.verify_macho_archive_architecture(archive, "arm64e")
+                run_text_mock.assert_called_once_with(
+                    ["/managed/llvm-lipo", "-archs", str(archive)]
+                )
+
+            with mock.patch.object(
+                helper, "run_text", return_value="arm64 arm64e \n"
+            ):
+                try:
+                    helper.verify_macho_archive_architecture(archive, "arm64e")
+                except RuntimeError as exc:
+                    if "expected only arm64e" not in str(exc):
+                        raise SystemExit(
+                            "error: mixed-architecture libisofs diagnostic lost ABI detail"
+                        )
+                else:
+                    raise SystemExit(
+                        "error: mixed-architecture libisofs archive was accepted"
+                    )
+
+            with mock.patch.object(
+                helper, "run_text", return_value="arm64 \n"
+            ):
+                try:
+                    helper.verify_macho_archive_architecture(archive, "arm64e")
+                except RuntimeError:
+                    pass
+                else:
+                    raise SystemExit(
+                        "error: arm64 archive was accepted for arm64e"
+                    )
+
 def test_macos_deployment_contract() -> None:
     helper = load_helper_module()
     base_env = {
@@ -438,7 +480,9 @@ def main() -> int:
     require(helper, "def prepare_workspace(", "incremental workspace planner")
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
     require(helper, "def verify_macho_archive_architecture(", "Mach-O ABI verifier")
-    require(helper, '"-verify_arch", arch', "Mach-O architecture check")
+    require(helper, '"-archs", str(archive)', "archive-safe llvm-lipo architecture query")
+    if "\"-verify_arch\"" in helper:
+        raise SystemExit("error: libisofs helper still uses llvm-lipo -verify_arch on archives")
     require(helper, 'deployment_version[0] < 11', "Apple-silicon deployment guard")
 
     if libisofs_bootstrap:
@@ -632,6 +676,7 @@ def main() -> int:
     test_gnu_m4_selector()
     test_autotools_utility_isolation()
     test_c_standard_policy()
+    test_macho_archive_architecture_contract()
     test_macos_deployment_contract()
     test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")
