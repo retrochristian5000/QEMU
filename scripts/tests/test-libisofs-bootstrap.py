@@ -115,6 +115,39 @@ def test_c_standard_policy() -> None:
         )
 
 
+def test_private_install_surface_contract() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-install-") as tmp:
+        prefix = Path(tmp)
+        (prefix / "lib").mkdir()
+        (prefix / "lib/libisofs.a").write_bytes(b"archive")
+        (prefix / "include/libisofs").mkdir(parents=True)
+        (prefix / "include/libisofs/libisofs.h").write_text(
+            "/* header */\n", encoding="utf-8"
+        )
+        (prefix / "lib/pkgconfig").mkdir()
+        (prefix / "lib/pkgconfig/libisofs-1.pc").write_text(
+            "Version: 1.5.9\n", encoding="utf-8"
+        )
+        (prefix / "lib/libisofs.la").write_text("metadata\n", encoding="utf-8")
+        helper.prune_private_install_metadata(prefix)
+        if (prefix / "lib/libisofs.la").exists():
+            raise SystemExit("error: private libisofs install retained .la metadata")
+        helper.verify_private_install_surface(prefix)
+
+        (prefix / "share/doc/libisofs/doc/html").mkdir(parents=True)
+        try:
+            helper.verify_private_install_surface(prefix)
+        except RuntimeError as exc:
+            if "non-private artifacts" not in str(exc):
+                raise SystemExit(
+                    "error: private-install rejection lost artifact detail"
+                )
+        else:
+            raise SystemExit(
+                "error: private libisofs install accepted documentation output"
+            )
+
 def test_macho_archive_architecture_contract() -> None:
     helper = load_helper_module()
     archive = Path("/tmp/libisofs.a")
@@ -313,6 +346,15 @@ def main() -> int:
         (libisofs_root / "Makefile.am").read_text(encoding="utf-8")
         if (libisofs_root / "Makefile.am").is_file() else ""
     )
+    automake_root = ROOT / "toolchains" / "automake"
+    automake_data = (
+        (automake_root / "lib/am/data.am").read_text(encoding="utf-8")
+        if (automake_root / "lib/am/data.am").is_file() else ""
+    )
+    automake_ltlib = (
+        (automake_root / "lib/am/ltlib.am").read_text(encoding="utf-8")
+        if (automake_root / "lib/am/ltlib.am").is_file() else ""
+    )
     libisofs_node_header = (
         (libisofs_root / "libisofs/node.h").read_text(encoding="utf-8")
         if (libisofs_root / "libisofs/node.h").is_file() else ""
@@ -400,13 +442,18 @@ def main() -> int:
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-demo"', "library-only libisofs bootstrap")
     require(helper, '"--disable-docs"', "documentation-free libisofs bootstrap")
+    require(helper, '"install-libLTLIBRARIES"', "library install target")
+    require(helper, '"install-libincludeHEADERS"', "header install target")
+    require(helper, '"install-pkgconfigDATA"', "pkg-config install target")
+    if '[make, "install"]' in helper:
+        raise SystemExit("error: libisofs helper regressed to blanket make install")
     require(
         helper,
         '"--disable-versioned-libs"',
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "9"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "10"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -612,6 +659,23 @@ def main() -> int:
             "pos->process == proc",
             "typed xinfo function-pointer comparison",
         )
+    if automake_ltlib:
+        require(
+            automake_ltlib,
+            "install-%DIR%LTLIBRARIES:",
+            "Automake Libtool install target template",
+        )
+        require(
+            automake_ltlib,
+            "--mode=install $(INSTALL)",
+            "Automake Libtool installer contract",
+        )
+    if automake_data:
+        require(
+            automake_data,
+            "install-%DIR%%PRIMARY%:",
+            "Automake data/header install target template",
+        )
 
     if libisofs_util:
         require(
@@ -676,6 +740,7 @@ def main() -> int:
     test_gnu_m4_selector()
     test_autotools_utility_isolation()
     test_c_standard_policy()
+    test_private_install_surface_contract()
     test_macho_archive_architecture_contract()
     test_macos_deployment_contract()
     test_incremental_workspace()

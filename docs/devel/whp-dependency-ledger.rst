@@ -612,6 +612,26 @@ The xinfo implementation was audited for pointer-authentication hazards. Its
 function-pointer keys remain stored, compared, and invoked as the declared
 ``iso_node_xinfo_func`` type rather than being flattened through integer or
 data-pointer storage.
+The private QEMU install no longer invokes blanket ``make install``. It calls
+only Automake's generated ``install-libLTLIBRARIES``,
+``install-libincludeHEADERS``, and ``install-pkgconfigDATA`` targets. The
+library target uses Libtool's explicit ``--mode=install $(INSTALL)`` contract;
+the header and pkg-config targets use Automake's data installer path.
+
+Caller overrides of ``INSTALL``, ``INSTALL_DATA``, ``INSTALL_PROGRAM``,
+``INSTALL_SCRIPT``, ``INSTALL_STRIP_PROGRAM``, ``MKDIR_P``, ``mkdir_p``, and
+``LN_S`` are removed before configure, so an ambient build environment cannot
+replace the locally detected install utilities. The targeted install bypasses
+libisofs' ``install-exec-hook`` (including ldconfig), documentation hooks, and
+any future package install class not explicitly admitted to QEMU.
+
+Libtool may still create ``libisofs.la`` while installing the static library;
+QEMU removes that private Libtool metadata immediately because downstream QEMU
+consumers use the archive and pkg-config metadata instead. A post-install
+surface check requires ``libisofs.a``, ``libisofs.h``, and ``libisofs-1.pc``
+and rejects shared libraries, demos, generated documentation, or a leftover
+``libisofs.la``.
+
 
 Darwin still falls through libisofs' generic local-filesystem feature branch,
 so native macOS xattr import/export remains a feature gap. Do not map Darwin

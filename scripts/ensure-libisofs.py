@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "9"
+LIBISOFS_BOOTSTRAP_SCHEMA = "10"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -31,6 +31,11 @@ LIBISOFS_CONFIGURE_ARGS = (
     "--disable-libacl",
     "--disable-libjte",
     "--disable-ldconfig-at-install",
+)
+LIBISOFS_INSTALL_TARGETS = (
+    "install-libLTLIBRARIES",
+    "install-libincludeHEADERS",
+    "install-pkgconfigDATA",
 )
 
 # These variables belong to Autoconf/Automake's generated utility layer.
@@ -716,6 +721,47 @@ def verify_macho_archive_architecture(
         )
 
 
+def prune_private_install_metadata(prefix: pathlib.Path) -> None:
+    for candidate in prefix.glob("**/libisofs.la"):
+        if candidate.is_file() or candidate.is_symlink():
+            candidate.unlink()
+
+
+def verify_private_install_surface(prefix: pathlib.Path) -> None:
+    archive = find_static_library(prefix)
+    if archive is None:
+        raise RuntimeError(
+            f"libisofs private install lost its static archive: {prefix}"
+        )
+
+    header = prefix / "include" / "libisofs" / "libisofs.h"
+    if not header.is_file():
+        raise RuntimeError(
+            f"libisofs private install lost its public header: {header}"
+        )
+
+    pc_file = find_pkgconfig_file(prefix)
+    if pc_file is None:
+        raise RuntimeError(
+            f"libisofs private install lost libisofs-1.pc: {prefix}"
+        )
+
+    forbidden: list[pathlib.Path] = []
+    for pattern in (
+        "**/doc/html",
+        "**/demo",
+        "**/*.dylib",
+        "**/*.so",
+        "**/libisofs.la",
+    ):
+        forbidden.extend(prefix.glob(pattern))
+    if forbidden:
+        rendered = ", ".join(str(path) for path in forbidden)
+        raise RuntimeError(
+            "libisofs private install unexpectedly contains non-private "
+            f"artifacts: {rendered}"
+        )
+
 def installed_version(pc_file: pathlib.Path) -> str:
     for line in pc_file.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("Version:"):
@@ -998,13 +1044,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         cwd=object_dir,
         env=env,
     )
-    run_logged([make, "install"], cwd=object_dir, env=env)
+    run_logged([make, *LIBISOFS_INSTALL_TARGETS], cwd=object_dir, env=env)
 
+    prune_private_install_metadata(prefix)
+    verify_private_install_surface(prefix)
     archive = find_static_library(prefix)
-    if archive is None:
-        raise RuntimeError(
-            f"libisofs bootstrap did not install a static archive under {prefix}"
-        )
+    assert archive is not None
     verify_macho_archive_architecture(archive, arch)
 
     pc_file = find_pkgconfig_file(prefix)
