@@ -306,13 +306,14 @@ def main() -> int:
     require(helper, "#include <time.h>", "strict-prototype time types")
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
+    require(helper, '"--disable-demo"', "library-only libisofs bootstrap")
     require(
         helper,
         '"--disable-versioned-libs"',
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "6"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "7"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -402,6 +403,16 @@ def main() -> int:
             "LT_CURRENT_MINUS_AGE=$((LT_CURRENT - LT_AGE))",
             "shell-native Libtool version arithmetic",
         )
+        require(
+            libisofs_configure,
+            "AC_ARG_ENABLE([demo],",
+            "optional libisofs demo configure switch",
+        )
+        require(
+            libisofs_configure,
+            "AM_CONDITIONAL([BUILD_DEMO]",
+            "libisofs demo Automake conditional",
+        )
         if "expr $LT_CURRENT - $LT_AGE" in libisofs_configure:
             raise SystemExit(
                 "error: libisofs still uses external expr for version arithmetic"
@@ -417,6 +428,16 @@ def main() -> int:
                 "error: libisofs still spawns sed for a simple /lib suffix rewrite"
             )
     if libisofs_makefile:
+        require(
+            libisofs_makefile,
+            "if BUILD_DEMO",
+            "conditional demo build graph",
+        )
+        require(
+            libisofs_makefile,
+            "noinst_PROGRAMS = \\\\n\\tdemo/demo",
+            "conditional demo program target",
+        )
         require(
             libisofs_makefile,
             "-$(RM) -r demo/.libs",
