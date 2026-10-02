@@ -20,7 +20,35 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/bash")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-BASH_BOOTSTRAP_SCHEMA = "3"
+BASH_BOOTSTRAP_SCHEMA = "4"
+BASH_CONFIGURE_ARGS = (
+    "--without-bash-malloc",
+    "--disable-nls",
+    "--disable-readline",
+    "--disable-history",
+    "--disable-bang-history",
+    "--disable-progcomp",
+    "--disable-alias",
+    "--disable-directory-stack",
+    "--disable-coprocesses",
+    "--disable-net-redirections",
+    "--disable-restricted",
+    "--disable-debugger",
+    "--disable-function-import",
+)
+
+# The managed shell is an implementation shell, not an interactive terminal.
+# Keep a direct runtime probe for Bash syntax/features used by the WHP modules
+# so future configure pruning cannot silently produce a shell that starts but
+# cannot execute the build graph.
+BASH_REQUIRED_FEATURE_PROBE = (
+    'whp_probe_array=(one two); '
+    '[[ "${#whp_probe_array[@]}" -eq 2 ]] || exit 1; '
+    '(( whp_probe_value = 1 + 1 )); '
+    '[[ "$whp_probe_value" -eq 2 ]] || exit 1; '
+    'IFS= read -r whp_probe_line < <(printf "%s\\n" process-substitution); '
+    '[[ "$whp_probe_line" == process-substitution ]] || exit 1'
+)
 
 
 def run_text(
@@ -348,7 +376,8 @@ def bash_usable(path: pathlib.Path) -> bool:
             str(path), "--noprofile", "--norc", "-c",
             'test -n "$BASH_VERSION" && '
             '(( BASH_VERSINFO[0] > 3 || '
-            '(BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] >= 2) ))',
+            '(BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] >= 2) )) && '
+            + BASH_REQUIRED_FEATURE_PROBE,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -378,6 +407,7 @@ def marker_text(
         f"BASH_HOST_TRIPLET={host_triplet}\n"
         f"BASH_ABI_VARIANT={abi_variant}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
+        f"CONFIGURE_ARGS={shlex.join(BASH_CONFIGURE_ARGS)}\n"
         "BASH_MALLOC=system\n"
         "NLS=disabled\n"
     )
@@ -467,9 +497,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             f"--build={host_triplet}",
             f"--host={host_triplet}",
         ])
-    configure_command.extend([
-        "--without-bash-malloc", "--disable-nls",
-    ])
+    configure_command.extend(BASH_CONFIGURE_ARGS)
 
     print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(configure_command, cwd=object_dir, env=env)

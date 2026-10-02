@@ -135,13 +135,42 @@ def main() -> int:
     require(build, "WHP_BUILD_BASH_EXPLICIT", "explicit Bash override")
     require(helper, "toolchains/bash", "pinned Bash source")
     require(helper, '"submodule", "update"', "lazy Bash submodule initialization")
-    require(helper, 'BASH_BOOTSTRAP_SCHEMA = "3"', "Bash cache schema")
+    require(helper, 'BASH_BOOTSTRAP_SCHEMA = "4"', "Bash cache schema")
     require(helper, "BASH_GIT_COMMIT=", "Bash cache revision identity")
     require(helper, "BASH_HOST_TRIPLET=", "Bash host triplet cache identity")
     require(helper, "BASH_ABI_VARIANT=", "Bash ABI cache identity")
     require(helper, 'env.pop("INSTALL", None)', "INSTALL namespace isolation")
     require(helper, '"--without-bash-malloc"', "system malloc profile")
     require(helper, '"--disable-nls"', "minimal Bash profile")
+    for option in (
+        "--disable-readline",
+        "--disable-history",
+        "--disable-bang-history",
+        "--disable-progcomp",
+        "--disable-alias",
+        "--disable-directory-stack",
+        "--disable-coprocesses",
+        "--disable-net-redirections",
+        "--disable-restricted",
+        "--disable-debugger",
+        "--disable-function-import",
+    ):
+        require(helper, f'"{option}"', f"Bash lean profile {option}")
+    require(
+        helper,
+        "BASH_REQUIRED_FEATURE_PROBE",
+        "Bash required-feature runtime probe",
+    )
+    require(
+        helper,
+        "process-substitution",
+        "Bash process-substitution feature guard",
+    )
+    require(
+        helper,
+        "whp_probe_array=(one two)",
+        "Bash indexed-array feature guard",
+    )
     require(helper, '"-isysroot", sdkroot', "macOS Bash SDK routing")
     require(helper, "def macos_arch_usable(", "macOS Bash ABI probe")
     require(helper, 'f"--build={host_triplet}"', "Bash build triplet routing")
