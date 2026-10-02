@@ -258,11 +258,15 @@ jobs:
 
           test -n "$archive"
           test -n "$pc_file"
+          test -f "$prefix/include/libisofs/libisofs.h"
+          test -z "$(find "$prefix" -name libisofs.la -print -quit)"
+          test -z "$(find "$prefix" \( -name '*.dylib' -o -name '*.so' \) -print -quit)"
+          test -z "$(find "$prefix" -path '*/doc/html' -print -quit)"
           archive_archs="$("$lipo" -archs "$archive")"
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=9' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=10' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"
