@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "11"
+LIBISOFS_BOOTSTRAP_SCHEMA = "12"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -33,6 +33,7 @@ LIBISOFS_CONFIGURE_ARGS = (
     "--disable-lfa-flags",
     "--disable-projid",
     "--disable-dir-rec-size-check",
+    "--disable-debug",
     "--disable-libjte",
     "--disable-ldconfig-at-install",
 )
@@ -75,6 +76,17 @@ AUTOTOOLS_UTILITY_ENV = (
     "LN_S",
 )
 
+DEPENDENCY_FLAG_ENV = (
+    "CFLAGS",
+    "CPPFLAGS",
+    "CXXFLAGS",
+    "OBJCFLAGS",
+    "OBJCXXFLAGS",
+    "LDFLAGS",
+    "LIBS",
+    "CPP",
+    "LD",
+)
 
 def run_text(command: List[str], *, cwd: pathlib.Path | None = None,
              env: dict[str, str] | None = None) -> str:
@@ -304,6 +316,11 @@ def isolate_autotools_utility_env(env: dict[str, str]) -> None:
     for name in AUTOTOOLS_UTILITY_ENV:
         env.pop(name, None)
 
+
+def isolate_dependency_flag_env(env: dict[str, str]) -> None:
+    """Keep QEMU host/compiler policy out of the private libisofs build."""
+    for name in DEPENDENCY_FLAG_ENV:
+        env.pop(name, None)
 
 def gnu_m4_version(path: str) -> str:
     completed = subprocess.run(
@@ -657,7 +674,6 @@ def system_libisofs_usable(cc: str) -> bool:
         pkgconf,
         static=False,
         compile_flags=architecture_flags,
-        link_flags=architecture_flags,
     )
 
 
@@ -828,12 +844,6 @@ def macos_settings() -> tuple[str, str, str]:
     return sdkroot, arch, deployment
 
 
-def append_flags(current: str, values: list[str]) -> str:
-    parts = [current.strip()] if current.strip() else []
-    parts.extend(values)
-    return " ".join(parts)
-
-
 def incremental_build_enabled() -> bool:
     value = os.environ.get("WHP_INCREMENTAL_BUILD", "1").strip().lower()
     if value in ("1", "y", "yes", "true", "on"):
@@ -859,6 +869,7 @@ def workspace_marker_text(
     m4_id: str,
     sed: str,
     cflags: str,
+    cppflags: str,
     ldflags: str,
 ) -> str:
     return (
@@ -877,7 +888,10 @@ def workspace_marker_text(
         f"M4_VERSION={m4_id}\n"
         f"SED={sed}\n"
         f"CFLAGS={cflags}\n"
+        f"CPPFLAGS={cppflags}\n"
         f"LDFLAGS={ldflags}\n"
+        "CXXFLAGS=UNUSED\n"
+        "LINKER_POLICY=COMPILER_DEFAULT\n"
         f"CONFIGURE_ARGS={shlex.join(LIBISOFS_CONFIGURE_ARGS)}\n"
         "STRICT_PROTOTYPES=1\n"
         "SHARED=0\n"
@@ -982,10 +996,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     # variables. A QEMU caller can intentionally select compiler/binutils
     # tools, but must not replace commands generated for this source tree.
     isolate_autotools_utility_env(env)
+    isolate_dependency_flag_env(env)
 
-    # LIBTOOL is also project-generated. The old override could discard
-    # Darwin/arm64e settings captured by configure and produced commands such
-    # as "libtool --mode=install 1".
+    # LIBTOOL is project-generated. LD is intentionally isolated above too:
+    # QEMU may export native ld64.lld, while libisofs Darwin/arm64e configure
+    # and link probes must let the selected Clang driver choose its platform
+    # linker unless libisofs itself explicitly gains a linker policy.
     env.pop("LIBTOOL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
@@ -994,14 +1010,8 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env["CONFIG_SHELL"] = config_shell
     env["SHELL"] = config_shell
     compile_flags = ["-O3", *libisofs_c_policy_flags()]
-    link_flags: list[str] = []
     if sdkroot:
         compile_flags += [
-            "-arch", arch,
-            "-isysroot", sdkroot,
-            f"-mmacosx-version-min={deployment}",
-        ]
-        link_flags += [
             "-arch", arch,
             "-isysroot", sdkroot,
             f"-mmacosx-version-min={deployment}",
@@ -1009,8 +1019,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         env["SDKROOT"] = sdkroot
         env["MACOSX_DEPLOYMENT_TARGET"] = deployment
 
-    env["CFLAGS"] = append_flags(env.get("CFLAGS", ""), compile_flags)
-    env["LDFLAGS"] = append_flags(env.get("LDFLAGS", ""), link_flags)
+    # CFLAGS carries the Darwin ABI triplet through compile and the
+    # compiler-driver link commands. LDFLAGS stays empty so those flags are
+    # not duplicated and QEMU-specific linker policy cannot leak in.
+    env["CFLAGS"] = " ".join(compile_flags)
+    env["CPPFLAGS"] = ""
+    env["LDFLAGS"] = ""
 
     workspace_marker = workspace_marker_text(
         cc,
@@ -1025,6 +1039,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         m4_id,
         sed,
         env["CFLAGS"],
+        env["CPPFLAGS"],
         env["LDFLAGS"],
     )
     marker = marker_text(revision, workspace_marker)
@@ -1142,7 +1157,6 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         pkgconf,
         static=True,
         compile_flags=architecture_flags,
-        link_flags=architecture_flags,
         env=probe_env,
     ):
         raise RuntimeError(

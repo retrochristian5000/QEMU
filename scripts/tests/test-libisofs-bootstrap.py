@@ -102,6 +102,29 @@ def test_autotools_utility_isolation() -> None:
             )
 
 
+def test_dependency_flag_isolation() -> None:
+    helper = load_helper_module()
+    env = {name: f"poison-{name}" for name in helper.DEPENDENCY_FLAG_ENV}
+    env.update({
+        "AR": "/managed/llvm-ar",
+        "RANLIB": "/managed/llvm-ranlib",
+        "NM": "/managed/llvm-nm",
+        "STRIP": "/managed/llvm-strip",
+        "LIPO": "/managed/llvm-lipo",
+    })
+    helper.isolate_dependency_flag_env(env)
+    leaked = [name for name in helper.DEPENDENCY_FLAG_ENV if name in env]
+    if leaked:
+        raise SystemExit(
+            "error: libisofs retained caller compiler/linker policy: "
+            + ", ".join(leaked)
+        )
+    for name in ("AR", "RANLIB", "NM", "STRIP", "LIPO"):
+        if name not in env:
+            raise SystemExit(
+                f"error: libisofs flag isolation erased intentional {name}"
+            )
+
 def test_c_standard_policy() -> None:
     helper = load_helper_module()
     if helper.LIBISOFS_C_STANDARD != "gnu11":
@@ -484,6 +507,7 @@ def main() -> int:
     require(helper, '"--disable-lfa-flags"', "QEMU Linux attribute disable")
     require(helper, '"--disable-projid"', "QEMU project-id disable")
     require(helper, '"--disable-dir-rec-size-check"', "QEMU directory-size debug disable")
+    require(helper, '"--disable-debug"', "QEMU release CFLAGS policy")
     require(helper, '"install-libLTLIBRARIES"', "library install target")
     require(helper, '"install-libincludeHEADERS"', "header install target")
     require(helper, '"install-pkgconfigDATA"', "pkg-config install target")
@@ -495,7 +519,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "11"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "12"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -548,6 +572,30 @@ def main() -> int:
         "AUTOTOOLS_UTILITY_ENV = (",
         "Autotools utility isolation set",
     )
+    require(
+        helper,
+        "DEPENDENCY_FLAG_ENV = (",
+        "dependency compiler/linker flag isolation set",
+    )
+    require(
+        helper,
+        "def isolate_dependency_flag_env(",
+        "dependency compiler/linker flag isolation helper",
+    )
+    require(
+        helper,
+        "isolate_dependency_flag_env(env)",
+        "dependency compiler/linker flag isolation application",
+    )
+    require(helper, 'env["CFLAGS"] = " ".join(compile_flags)', "owned CFLAGS")
+    require(helper, 'env["CPPFLAGS"] = ""', "isolated CPPFLAGS")
+    require(helper, 'env["LDFLAGS"] = ""', "isolated LDFLAGS")
+    require(helper, '"CXXFLAGS=UNUSED\\n"', "C++ flag non-participation marker")
+    require(helper, '"LINKER_POLICY=COMPILER_DEFAULT\\n"', "linker policy marker")
+    if "append_flags(" in helper:
+        raise SystemExit("error: libisofs still appends QEMU caller flags")
+    if "link_flags=architecture_flags" in helper:
+        raise SystemExit("error: libisofs duplicates Darwin ABI flags at link")
     require(
         helper,
         "def isolate_autotools_utility_env(",
@@ -630,6 +678,16 @@ def main() -> int:
             libisofs_configure,
             'AS_IF([test "x$enable_docs" = xyes]',
             "conditional Doxygen configure output",
+        )
+        require(
+            libisofs_configure,
+            "libisofs_user_cflags_set != xyes",
+            "caller-owned CFLAGS policy guard",
+        )
+        require(
+            libisofs_configure,
+            "CFLAGS=\"-DNDEBUG $CFLAGS\"",
+            "release semantic define",
         )
         if "expr $LT_CURRENT - $LT_AGE" in libisofs_configure:
             raise SystemExit(
@@ -787,6 +845,7 @@ def main() -> int:
 
     test_gnu_m4_selector()
     test_autotools_utility_isolation()
+    test_dependency_flag_isolation()
     test_c_standard_policy()
     test_qemu_bootstrap_source_pruning()
     test_private_install_surface_contract()

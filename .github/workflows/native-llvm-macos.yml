@@ -266,10 +266,14 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=11' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=12' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"
+          grep -Fxq 'CPPFLAGS=' "$marker"
+          grep -Fxq 'LDFLAGS=' "$marker"
+          grep -Fxq 'CXXFLAGS=UNUSED' "$marker"
+          grep -Fxq 'LINKER_POLICY=COMPILER_DEFAULT' "$marker"
 
           static_libs="$(PKG_CONFIG_PATH="$(dirname "$pc_file")" "$pkgconf" --static --libs libisofs-1)"
           case " $static_libs " in

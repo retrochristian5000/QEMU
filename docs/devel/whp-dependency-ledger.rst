@@ -645,6 +645,26 @@ Core source, ``configure.ac``, ``Makefile.am``, ``acinclude.m4``, generated
 Autotools helpers, and dependency tracking remain intact. The fork also avoids
 generating ``doc/doxygen.conf`` at configure time when ``--disable-docs`` is
 active, so pruning ``doc/`` cannot create a configure-time dependency hole.
+The private libisofs build owns its compiler/linker flag boundary. QEMU global
+``CFLAGS``, ``CPPFLAGS``, ``CXXFLAGS``, Objective-C flags, ``LDFLAGS``,
+``LIBS``, ``CPP``, and ``LD`` are removed before configure. This prevents the
+macOS wrapper's already-expanded ``-arch``/``-isysroot``/deployment flags and
+QEMU-only linker policy such as ``-fuse-ld=lld`` or ``--read-workers`` from
+being appended a second time to libisofs.
+
+The helper reconstructs only its GNU C11/strict-prototype policy and the
+resolved Darwin ABI triplet in ``CFLAGS``. ``CPPFLAGS`` and ``LDFLAGS`` are
+empty at the dependency boundary; compiler-driver links consume the ABI
+triplet once through ``CFLAGS``. LLVM ``AR``/``RANLIB``/``NM``/``STRIP`` and
+``LIPO`` remain intentional tool selections, but QEMU's exported
+``LD=ld64.lld`` does not: Clang chooses the platform linker for libisofs
+Darwin/arm64e configure and link probes.
+
+QEMU configures the fork with ``--disable-debug``. The fork now respects an
+explicit caller ``CFLAGS`` and no longer prepends its historical debug/warning
+or optimization bundle on top of orchestrator-owned flags; only the
+``DEBUG``/``NDEBUG`` semantic define follows the selected debug mode.
+
 
 
 
