@@ -588,6 +588,30 @@ The fork wraps its Doxygen target plus documentation install/uninstall hooks in
 ``BUILD_DOCS``, so QEMU cannot accidentally install stale ``doc/html`` output and
 Doxygen is not part of the QEMU libisofs prerequisite graph.  This does not
 affect QEMU's own documentation targets.
+On macOS, the QEMU profile treats libisofs as an ABI-sensitive dependency
+rather than merely checking that it compiled. The fork validates the 64-bit
+Darwin widths exposed through its public API: data pointers, ``size_t``,
+``ssize_t``, ``off_t``, ``time_t``, ``ino_t``, and typed xinfo function
+pointers. The existing arm64e configure gate separately requires Clang
+pointer-authenticated calls.
+
+QEMU repeats that contract in its consumer link probe, rejects Apple-silicon
+deployment targets below macOS 11, and verifies the installed static archive
+with ``lipo -verify_arch`` for the exact requested Mach-O architecture. This
+is significant for ``arm64e`` because it is a distinct Mach-O CPU subtype,
+not merely an ``arm64`` spelling alias.
+
+The xinfo implementation was audited for pointer-authentication hazards. Its
+function-pointer keys remain stored, compared, and invoked as the declared
+``iso_node_xinfo_func`` type rather than being flattened through integer or
+data-pointer storage.
+
+Darwin still falls through libisofs' generic local-filesystem feature branch,
+so native macOS xattr import/export remains a feature gap. Do not map Darwin
+onto the Linux or FreeBSD AAIP adapter as an ABI shortcut: the underlying
+xattr interfaces have different platform signatures and semantics. A future
+Darwin adapter should be implemented and probed explicitly.
+
 
 Wine and Windows ABI validation
 -------------------------------

@@ -748,7 +748,7 @@ def macos_settings() -> tuple[str, str, str]:
 
     if arch in ("arm64", "arm64e"):
         deployment_version = version_tuple(deployment)
-        if not deployment_version or deployment_version < (11, 0):
+        if not deployment_version or deployment_version[0] < 11:
             raise RuntimeError(
                 f"{arch} requires MACOSX_DEPLOYMENT_TARGET >= 11.0, "
                 f"not {deployment}"

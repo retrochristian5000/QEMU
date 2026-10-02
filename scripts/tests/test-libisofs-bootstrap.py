@@ -144,6 +144,14 @@ def test_macos_deployment_contract() -> None:
                     "error: valid arm64e deployment target was not preserved"
                 )
 
+        base_env["MACOSX_DEPLOYMENT_TARGET"] = "11"
+        with mock.patch.dict(os.environ, base_env, clear=False):
+            _, arch, deployment = helper.macos_settings()
+            if arch != "arm64e" or deployment != "11":
+                raise SystemExit(
+                    "error: major-only arm64e deployment target was rejected"
+                )
+
 def test_incremental_workspace() -> None:
     helper = load_helper_module()
     if not hasattr(helper, "incremental_build_enabled"):
@@ -431,7 +439,7 @@ def main() -> int:
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
     require(helper, "def verify_macho_archive_architecture(", "Mach-O ABI verifier")
     require(helper, '"-verify_arch", arch', "Mach-O architecture check")
-    require(helper, 'deployment_version < (11, 0)', "Apple-silicon deployment guard")
+    require(helper, 'deployment_version[0] < 11', "Apple-silicon deployment guard")
 
     if libisofs_bootstrap:
         if "uname -s" in libisofs_bootstrap:
