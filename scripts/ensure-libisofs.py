@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "7"
+LIBISOFS_BOOTSTRAP_SCHEMA = "8"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -26,6 +26,7 @@ LIBISOFS_CONFIGURE_ARGS = (
     "--disable-shared",
     "--enable-static",
     "--disable-demo",
+    "--disable-docs",
     "--disable-versioned-libs",
     "--disable-libacl",
     "--disable-libjte",

@@ -307,13 +307,14 @@ def main() -> int:
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-demo"', "library-only libisofs bootstrap")
+    require(helper, '"--disable-docs"', "documentation-free libisofs bootstrap")
     require(
         helper,
         '"--disable-versioned-libs"',
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "7"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "8"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -413,6 +414,16 @@ def main() -> int:
             "AM_CONDITIONAL([BUILD_DEMO]",
             "libisofs demo Automake conditional",
         )
+        require(
+            libisofs_configure,
+            "AC_ARG_ENABLE([docs],",
+            "optional libisofs documentation configure switch",
+        )
+        require(
+            libisofs_configure,
+            "AM_CONDITIONAL([BUILD_DOCS]",
+            "libisofs documentation Automake conditional",
+        )
         if "expr $LT_CURRENT - $LT_AGE" in libisofs_configure:
             raise SystemExit(
                 "error: libisofs still uses external expr for version arithmetic"
@@ -432,6 +443,16 @@ def main() -> int:
             libisofs_makefile,
             "if BUILD_DEMO",
             "conditional demo build graph",
+        )
+        require(
+            libisofs_makefile,
+            "if BUILD_DOCS",
+            "conditional documentation build graph",
+        )
+        require(
+            libisofs_makefile,
+            "doc:\tdoc/html",
+            "documentation target remains standalone-only",
         )
         require(
             libisofs_makefile,

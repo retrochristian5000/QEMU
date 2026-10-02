@@ -505,9 +505,10 @@ libisofs bootstrap boundary
 
 The Darwin libisofs bootstrap is an artifact-library edge, not a Meson-owned
 subproject.  QEMU currently uses the pinned fork only for the metadata-assisted
-ISO path.  Its QEMU profile is static-only and library-only:
-``--disable-shared --enable-static --disable-demo``, with libacl and libjte
-disabled.  The standalone libisofs fork still builds its demo by default.
+ISO path.  Its QEMU profile is static-only, library-only, and documentation-free:
+``--disable-shared --enable-static --disable-demo --disable-docs``, with libacl
+and libjte disabled.  The standalone libisofs fork keeps both demo and Doxygen
+documentation enabled by default.
 
 The prerequisites which must exist *before* libisofs are:
 
@@ -533,9 +534,10 @@ The prerequisites which must exist *before* libisofs are:
        The pinned WHP Make fork remains ``planned`` and is not promoted across
        its unresolved Make-to-Make maintainer-source cycle.
    * - Autoconf + GNU M4
-     - root
-     - Regenerate ``configure`` from the fork's maintainer source.  GNU M4 is
-       capability-checked by the libisofs helper.
+     - managed/root
+     - Managed WHP Autoconf regenerates ``configure`` from the fork's
+       maintainer source; GNU M4 remains a root capability checked by the
+       libisofs helper.
    * - Automake/aclocal
      - managed/root
      - Generates the Makefile inputs.  The WHP Automake fallback is prepared in
@@ -581,9 +583,11 @@ needed Make.  The public build boundary now establishes the seed GNU Make
 identity first, while the later stage only re-validates the same selection.
 
 ACL and libjte are disabled in the QEMU libisofs profile and therefore are not
-active edges.  The demo is disabled and documentation is not part of the normal
-QEMU bootstrap, so neither the demo executable nor Doxygen belongs in the QEMU
-libisofs prerequisite graph.
+active edges.  The demo and documentation are both disabled at configure time.
+The fork wraps its Doxygen target plus documentation install/uninstall hooks in
+``BUILD_DOCS``, so QEMU cannot accidentally install stale ``doc/html`` output and
+Doxygen is not part of the QEMU libisofs prerequisite graph.  This does not
+affect QEMU's own documentation targets.
 
 Wine and Windows ABI validation
 -------------------------------
