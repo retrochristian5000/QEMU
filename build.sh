@@ -173,6 +173,17 @@ if [ "${1:-}" = menuconfig ]; then
     fi
     exec /bin/sh "$WHP_MENUCONFIG_SHELL" "$WHP_USER_CONFIG" "$@"
 fi
+# Establish one validated seed sed before any bootstrap that needs sed.
+# Managed GNU sed cannot occupy this slot because its maintainer-source
+# bootstrap requires Automake, while the Python/Automake bootstraps already
+# need a basic sed. Keep only the seed identity here; host-tools.sh later
+# promotes the pinned GNU sed and exports it through SED/PATH.
+if [ -z "${WHP_SED_SEED:-}" ] && [ -n "${SED:-}" ]; then
+    WHP_SED_SEED=$SED
+fi
+WHP_SED_SEED=$("$SOURCE_DIR/sed.sh" --print-seed) || exit 1
+export WHP_SED_SEED
+printf 'QEMU seed sed: %s\n' "$WHP_SED_SEED" >&2
 
 # Resolve the seed GNU Make once before any bootstrap which consumes it.
 # The pinned WHP Make fork is not promoted here yet because its maintainer

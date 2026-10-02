@@ -140,7 +140,10 @@ def select_seed_sed() -> str:
         raise RuntimeError(f"QEMU sed seed adapter is unavailable: {SED_ADAPTER}")
 
     env = os.environ.copy()
-    requested = os.environ.get("WHP_AUTOMAKE_SED_SEED", "")
+    requested = (
+        os.environ.get("WHP_AUTOMAKE_SED_SEED")
+        or os.environ.get("WHP_SED_SEED", "")
+    )
     if requested:
         env["WHP_SED_SEED"] = requested
     completed = subprocess.run(
