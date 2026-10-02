@@ -10,6 +10,7 @@ on:
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
       - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
@@ -23,6 +24,7 @@ on:
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
       - 'scripts/tests/test-sed-version-staging.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/bootstrap-python.sh'
@@ -37,6 +39,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify sed bootstrap ordering
+        run: python3 scripts/tests/test-sed-bootstrap-order.py
 
       - name: Verify sed version staging policy
         run: python3 scripts/tests/test-sed-version-staging.py
@@ -83,6 +88,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify sed bootstrap ordering
+        run: python3 scripts/tests/test-sed-bootstrap-order.py
 
       - name: Verify sed version staging policy
         run: python3 scripts/tests/test-sed-version-staging.py

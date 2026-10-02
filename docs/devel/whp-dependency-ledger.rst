@@ -180,6 +180,17 @@ by the WHP account.
      - Bash fallback for WHP orchestration; host C compiler + GNU Make. The WHP
        profile is non-interactive and omits Readline/history plus other unused
        interactive/network/debug subsystems while retaining build-script syntax.
+   * - ``toolchains/automake``
+     - ``automake``
+     - yes
+     - Managed Automake/aclocal fallback. Its Git bootstrap consumes the
+       validated seed sed plus Perl, Autoconf/autom4te, and seed GNU Make.
+   * - ``toolchains/sed``
+     - ``sed``
+     - yes
+     - Managed GNU sed host tool. Its maintainer-source bootstrap is downstream
+       of Automake and a validated host sed seed, then the installed GNU sed is
+       promoted ahead of managed Git, Bash, and later Autotools consumers.
 
 Known bootstrap and library edges
 ---------------------------------
@@ -259,11 +270,13 @@ Bootstrap phase ordering
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh``, seed GNU Make, Python, Automake, GNU sed,
-managed Git, Bash, and Ninja are available before native LLVM. These are
-generators/orchestration tools needed to reach the compiler build and therefore
-use build-machine roles. The seed GNU Make identity is established before the
-Python fallback and exported through both ``MAKE_CMD`` and ``MAKE``.
+**Seed/tool phase:** ``cc.sh``, seed GNU Make, seed sed, Python, Automake,
+managed GNU sed, managed Git, Bash, and Ninja are available before native LLVM.
+These are generators/orchestration tools needed to reach the compiler build and
+therefore use build-machine roles. The seed GNU Make identity is established
+before the Python fallback and exported through both ``MAKE_CMD`` and ``MAKE``.
+A single validated sed seed is likewise established before Python and Automake;
+managed GNU sed is promoted only after Automake is available.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
@@ -315,6 +328,52 @@ exposed for local use but is never promoted over the HTTPS-capable seed.
 before the managed Git is placed on ``PATH``. This keeps the
 ``Git -> checkout Git`` edge visible as a seed boundary rather than a hidden
 self-cycle.
+
+sed/Automake bootstrap boundary
+-------------------------------
+
+GNU sed has two different roles in the WHP bootstrap and they must not be
+flattened into one executable slot.
+
+**Seed sed** is a root capability. ``sed.sh`` validates the small semantic
+subset needed by the bootstrap and rejects recursion back into itself. The
+public ``build.sh`` resolves this seed once as ``WHP_SED_SEED`` before the
+Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
+self-bootstrap therefore consume one provenance identity rather than
+independently rediscovering host sed implementations.
+
+**Managed GNU sed** remains downstream of Automake. The pinned sed fork is a
+maintainer-source checkout whose bootstrap explicitly requires Automake and
+Autoconf; its gnulib path also requires M4. The sed fork's ``bootstrap.conf``
+declares gettext, makeinfo, and Perl as build prerequisites. In the current
+WHP invocation, ``--skip-po`` avoids PO refresh/download work but does not
+remove those prerequisite checks, and the gettext path can still run
+``autopoint`` because ``configure.ac`` uses GNU gettext macros.
+
+The resulting order is therefore::
+
+  seed Git + host compiler + seed GNU Make + seed sed
+      |
+      +--> Python fallback
+      +--> Automake/aclocal
+              |
+              +--> managed GNU sed
+                      |
+                      +--> managed Git
+                      +--> managed Bash
+                      +--> later Autotools consumers
+
+Autoconf/autom4te, M4, Perl, gettext/autopoint, makeinfo, and the pinned
+gnulib checkout are prerequisites of the current maintainer-source sed path.
+They are not later QEMU artifacts that should be moved ahead of sed; today
+they remain root/tool prerequisites. A future release-style sed source profile
+could retire some of these maintainer-only edges, but moving managed sed ahead
+of Automake would instead create a bootstrap cycle.
+
+Keeping managed sed before Git and Bash is intentional. Those downstream
+builds may use the promoted GNU sed through ``SED``/``PATH``; moving sed after
+them would throw away the benefit of the managed tool without removing any
+real prerequisite.
 
 Bash bootstrap profile
 ----------------------
@@ -589,6 +648,9 @@ Circularity guards
    while its maintainer-source preparation still needs a seed GNU Make.
    GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
    have been produced.
+#. Managed GNU sed must not replace the seed sed before Automake exists.
+   Python and Automake consume the validated seed; the sed maintainer bootstrap
+   then consumes Automake and promotes the pinned GNU sed for later consumers.
 #. The pinned GNU Libtool fork must not consume an installed Libtool to
    bootstrap itself. Its maintainer bootstrap uses ``LIBTOOLIZE=true``, and
    the WHP wrapper clears inherited ``LIBTOOL``/``LIBTOOLIZE`` before

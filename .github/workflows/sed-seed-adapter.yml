@@ -5,16 +5,20 @@ on:
     branches: [master]
     paths:
       - 'sed.sh'
+      - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/sed-seed-adapter.yml'
   pull_request:
     paths:
       - 'sed.sh'
+      - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-sed.py'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/sed-seed-adapter.yml'
 
 permissions:
@@ -29,6 +33,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify sed bootstrap ordering
+        run: python3 scripts/tests/test-sed-bootstrap-order.py
 
       - name: Exercise pre-bootstrap sed adapter
         shell: bash
