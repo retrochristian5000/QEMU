@@ -948,7 +948,13 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
     pc_file = find_pkgconfig_file(prefix)
     if pc_file is None or find_static_library(prefix) is None:
         return False
-    return version_tuple(installed_version(pc_file)) >= LIBISOFS_MIN_VERSION
+    if version_tuple(installed_version(pc_file)) < LIBISOFS_MIN_VERSION:
+        return False
+    try:
+        verify_private_install_surface(prefix)
+    except RuntimeError:
+        return False
+    return True
 
 
 def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:

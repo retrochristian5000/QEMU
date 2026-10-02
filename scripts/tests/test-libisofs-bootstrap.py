@@ -568,6 +568,7 @@ def main() -> int:
     require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
     require(helper, "def prepare_workspace(", "incremental workspace planner")
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
+    require(helper, "verify_private_install_surface(prefix)", "cache install-surface admission")
     require(helper, "def verify_macho_archive_architecture(", "Mach-O ABI verifier")
     require(helper, '"-archs", str(archive)', "archive-safe llvm-lipo architecture query")
     if "\"-verify_arch\"" in helper:
