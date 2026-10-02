@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "10"
+LIBISOFS_BOOTSTRAP_SCHEMA = "11"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -29,6 +29,10 @@ LIBISOFS_CONFIGURE_ARGS = (
     "--disable-docs",
     "--disable-versioned-libs",
     "--disable-libacl",
+    "--disable-xattr",
+    "--disable-lfa-flags",
+    "--disable-projid",
+    "--disable-dir-rec-size-check",
     "--disable-libjte",
     "--disable-ldconfig-at-install",
 )
@@ -36,6 +40,24 @@ LIBISOFS_INSTALL_TARGETS = (
     "install-libLTLIBRARIES",
     "install-libincludeHEADERS",
     "install-pkgconfigDATA",
+)
+QEMU_UNUSED_SOURCE_DIRS = (
+    "demo",
+    "doc",
+    "test",
+    ".github",
+    ".settings",
+)
+QEMU_UNUSED_SOURCE_FILES = (
+    ".cproject",
+    ".cdtproject",
+    ".project",
+    ".bzrignore",
+    "README_AI",
+    "SECURITY.md",
+    "TODO",
+    "ChangeLog",
+    "Roadmap",
 )
 
 # These variables belong to Autoconf/Automake's generated utility layer.
@@ -867,6 +889,21 @@ def marker_text(revision: str, workspace_marker: str) -> str:
     return workspace_marker + f"LIBISOFS_GIT_COMMIT={revision}\n"
 
 
+def prune_qemu_bootstrap_source(source: pathlib.Path) -> None:
+    """Remove maintainer-only material after Autotools generated the build."""
+    for relative in QEMU_UNUSED_SOURCE_DIRS:
+        shutil.rmtree(source / relative, ignore_errors=True)
+
+    for relative in QEMU_UNUSED_SOURCE_FILES:
+        path = source / relative
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except FileNotFoundError:
+            pass
+
 def prepare_workspace(
     work_dir: pathlib.Path,
     prefix: pathlib.Path,
@@ -1021,6 +1058,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         )
 
     run_logged([config_shell, "bootstrap"], cwd=source_copy, env=env)
+    prune_qemu_bootstrap_source(source_copy)
 
     object_dir.mkdir(parents=True, exist_ok=True)
     configure = source_copy / "configure"

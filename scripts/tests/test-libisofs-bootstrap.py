@@ -115,6 +115,44 @@ def test_c_standard_policy() -> None:
         )
 
 
+def test_qemu_bootstrap_source_pruning() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-prune-") as tmp:
+        source = Path(tmp)
+        for directory in helper.QEMU_UNUSED_SOURCE_DIRS:
+            path = source / directory
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "unused").write_text("unused\n", encoding="utf-8")
+        for filename in helper.QEMU_UNUSED_SOURCE_FILES:
+            path = source / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("unused\n", encoding="utf-8")
+
+        for filename in ("configure", "Makefile.in", "configure.ac", "Makefile.am", "acinclude.m4"):
+            (source / filename).write_text("keep\n", encoding="utf-8")
+        (source / "libisofs").mkdir()
+        (source / "libisofs/core.c").write_text("keep\n", encoding="utf-8")
+
+        helper.prune_qemu_bootstrap_source(source)
+
+        for directory in helper.QEMU_UNUSED_SOURCE_DIRS:
+            if (source / directory).exists():
+                raise SystemExit(
+                    f"error: QEMU libisofs bootstrap retained {directory}"
+                )
+        for filename in helper.QEMU_UNUSED_SOURCE_FILES:
+            if (source / filename).exists():
+                raise SystemExit(
+                    f"error: QEMU libisofs bootstrap retained {filename}"
+                )
+        for filename in ("configure", "Makefile.in", "configure.ac", "Makefile.am", "acinclude.m4"):
+            if not (source / filename).is_file():
+                raise SystemExit(
+                    f"error: QEMU libisofs bootstrap pruned required {filename}"
+                )
+        if not (source / "libisofs/core.c").is_file():
+            raise SystemExit("error: QEMU libisofs bootstrap pruned library source")
+
 def test_private_install_surface_contract() -> None:
     helper = load_helper_module()
     with tempfile.TemporaryDirectory(prefix="whp-libisofs-install-") as tmp:
@@ -442,6 +480,10 @@ def main() -> int:
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-demo"', "library-only libisofs bootstrap")
     require(helper, '"--disable-docs"', "documentation-free libisofs bootstrap")
+    require(helper, '"--disable-xattr"', "QEMU xattr probe disable")
+    require(helper, '"--disable-lfa-flags"', "QEMU Linux attribute disable")
+    require(helper, '"--disable-projid"', "QEMU project-id disable")
+    require(helper, '"--disable-dir-rec-size-check"', "QEMU directory-size debug disable")
     require(helper, '"install-libLTLIBRARIES"', "library install target")
     require(helper, '"install-libincludeHEADERS"', "header install target")
     require(helper, '"install-pkgconfigDATA"', "pkg-config install target")
@@ -453,7 +495,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "10"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "11"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -582,6 +624,11 @@ def main() -> int:
             libisofs_configure,
             "AM_CONDITIONAL([BUILD_DOCS]",
             "libisofs documentation Automake conditional",
+        )
+        require(
+            libisofs_configure,
+            'AS_IF([test "x$enable_docs" = xyes]',
+            "conditional Doxygen configure output",
         )
         if "expr $LT_CURRENT - $LT_AGE" in libisofs_configure:
             raise SystemExit(
@@ -740,6 +787,7 @@ def main() -> int:
     test_gnu_m4_selector()
     test_autotools_utility_isolation()
     test_c_standard_policy()
+    test_qemu_bootstrap_source_pruning()
     test_private_install_surface_contract()
     test_macho_archive_architecture_contract()
     test_macos_deployment_contract()

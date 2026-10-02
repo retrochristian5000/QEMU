@@ -631,6 +631,21 @@ consumers use the archive and pkg-config metadata instead. A post-install
 surface check requires ``libisofs.a``, ``libisofs.h``, and ``libisofs-1.pc``
 and rejects shared libraries, demos, generated documentation, or a leftover
 ``libisofs.la``.
+The QEMU configure profile also disables local-filesystem metadata features
+that the Darwin call site does not request: xattr import/export, Linux
+``chattr`` flags, XFS-style project IDs, and the directory-record prediction
+debug check. Zlib stays enabled because QEMU imports existing ISO images and
+compressed-image content remains a valid read-path capability.
+
+After ``bootstrap`` has generated ``configure`` and ``Makefile.in``, the QEMU
+workspace prunes maintainer-only material that cannot participate in the
+private build: ``demo/``, ``doc/``, the obsolete ``test/`` tree, GitHub/IDE
+metadata, and release-planning text such as ``TODO``/``ChangeLog``/``Roadmap``.
+Core source, ``configure.ac``, ``Makefile.am``, ``acinclude.m4``, generated
+Autotools helpers, and dependency tracking remain intact. The fork also avoids
+generating ``doc/doxygen.conf`` at configure time when ``--disable-docs`` is
+active, so pruning ``doc/`` cannot create a configure-time dependency hole.
+
 
 
 Darwin still falls through libisofs' generic local-filesystem feature branch,
