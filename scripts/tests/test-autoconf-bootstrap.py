@@ -18,6 +18,7 @@ def main() -> int:
         encoding="utf-8"
     )
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
+    ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
 
     require(gitmodules, '[submodule "toolchains/autoconf"]', "Autoconf submodule")
     require(
@@ -49,6 +50,10 @@ def main() -> int:
         raise SystemExit(
             "error: managed Autoconf is not ordered Automake -> Autoconf -> sed"
         )
+
+    require(ledger, "``toolchains/autoconf``", "Autoconf registry row")
+    require(ledger, "Autoconf bootstrap boundary", "Autoconf boundary")
+    require(ledger, "seed Autoconf/autom4te", "Autoconf cycle guard")
 
     print("WHP Autoconf bootstrap wiring: verified")
     return 0

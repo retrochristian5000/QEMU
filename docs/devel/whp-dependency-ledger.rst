@@ -185,6 +185,12 @@ by the WHP account.
      - yes
      - Managed Automake/aclocal fallback. Its Git bootstrap consumes the
        validated seed sed plus Perl, Autoconf/autom4te, and seed GNU Make.
+   * - ``toolchains/autoconf``
+     - ``autoconf``
+     - yes
+     - Managed Autoconf/autom4te/autoheader/autoreconf suite. Its Git bootstrap
+       self-hosts Autoconf from the pinned source but consumes Automake/aclocal,
+       GNU M4, Perl, seed GNU Make, and the validated seed sed.
    * - ``toolchains/sed``
      - ``sed``
      - yes
@@ -271,12 +277,13 @@ Bootstrap phase ordering
 The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``cc.sh``, seed GNU Make, seed sed, Python, Automake,
-managed GNU sed, managed Git, Bash, and Ninja are available before native LLVM.
-These are generators/orchestration tools needed to reach the compiler build and
-therefore use build-machine roles. The seed GNU Make identity is established
-before the Python fallback and exported through both ``MAKE_CMD`` and ``MAKE``.
-A single validated sed seed is likewise established before Python and Automake;
-managed GNU sed is promoted only after Automake is available.
+managed Autoconf, managed GNU sed, managed Git, Bash, and Ninja are available
+before native LLVM. These are generators/orchestration tools needed to reach
+the compiler build and therefore use build-machine roles. The seed GNU Make
+identity is established before the Python fallback and exported through both
+``MAKE_CMD`` and ``MAKE``. A single validated sed seed is likewise established
+before Python and Automake. Managed Autoconf is promoted after Automake, and
+managed GNU sed is promoted only after that suite is available.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
@@ -329,6 +336,40 @@ before the managed Git is placed on ``PATH``. This keeps the
 ``Git -> checkout Git`` edge visible as a seed boundary rather than a hidden
 self-cycle.
 
+Autoconf bootstrap boundary
+---------------------------
+
+The pinned ``toolchains/autoconf`` fork is a maintainer-source checkout, but
+its ``bootstrap`` self-hosts temporary ``autoconf`` and ``autom4te`` programs
+from the source tree. It therefore does not need an installed Autoconf to
+generate its own ``configure``.
+
+The cycle boundary is Automake: the WHP Automake Git bootstrap still consumes
+a seed Autoconf/autom4te pair, while the Autoconf Git bootstrap consumes
+Automake/aclocal. The valid order is therefore::
+
+  seed Autoconf/autom4te
+          |
+          +--> managed Automake/aclocal
+                    |
+                    +--> managed Autoconf suite
+                              |
+                              +--> managed GNU sed
+                              +--> later Autotools consumers
+
+Managed Autoconf must not be fed back into the same Automake bootstrap that
+produces the Automake instance it consumes. The seed Autoconf dependency is
+therefore narrowed to the first Automake stage.
+
+``scripts/ensure-autoconf.py`` uses a tool-only install profile: executables,
+Autom4te/Autoconf/M4sugar/Autotest data, autoscan data, and auxiliary config
+scripts are installed without Info or manual generation. Help2man and Texinfo
+remain upstream developer/release tools, not requirements of the QEMU profile.
+
+The direct roots for this managed stage are Automake/aclocal, GNU M4, Perl,
+seed GNU Make, a primitive shell, ``realpath``/``mktemp``, and the validated
+sed seed.
+
 sed/Automake bootstrap boundary
 -------------------------------
 
@@ -342,7 +383,7 @@ Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
 self-bootstrap therefore consume one provenance identity rather than
 independently rediscovering host sed implementations.
 
-**Managed GNU sed** remains downstream of Automake. The pinned sed fork is a
+**Managed GNU sed** remains downstream of Automake and managed Autoconf. The pinned sed fork is a
 maintainer-source checkout whose bootstrap explicitly requires Automake and
 Autoconf; its gnulib path also requires M4. The sed fork's ``bootstrap.conf``
 declares gettext, makeinfo, and Perl as build prerequisites. In the current
@@ -363,7 +404,7 @@ The resulting order is therefore::
                       +--> managed Bash
                       +--> later Autotools consumers
 
-Autoconf/autom4te, M4, Perl, gettext/autopoint, makeinfo, and the pinned
+Managed Autoconf/autom4te, M4, Perl, gettext/autopoint, makeinfo, and the pinned
 gnulib checkout are prerequisites of the current maintainer-source sed path.
 They are not later QEMU artifacts that should be moved ahead of sed; today
 they remain root/tool prerequisites. A future release-style sed source profile
@@ -648,6 +689,9 @@ Circularity guards
    while its maintainer-source preparation still needs a seed GNU Make.
    GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
    have been produced.
+#. Managed Autoconf must not bootstrap the Automake instance that it itself
+   consumes. Seed Autoconf/autom4te feeds the first Automake stage; that
+   Automake stage then builds the pinned Autoconf for later consumers.
 #. Managed GNU sed must not replace the seed sed before Automake exists.
    Python and Automake consume the validated seed; the sed maintainer bootstrap
    then consumes Automake and promotes the pinned GNU sed for later consumers.
