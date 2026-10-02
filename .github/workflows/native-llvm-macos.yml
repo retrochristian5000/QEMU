@@ -258,8 +258,9 @@ jobs:
 
           test -n "$archive"
           test -n "$pc_file"
+          "$lipo" -verify_arch arm64e "$archive"
           "$lipo" -archs "$archive" | tr ' ' '\n' | grep -Fxq arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=6' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=9' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"

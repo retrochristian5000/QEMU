@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "8"
+LIBISOFS_BOOTSTRAP_SCHEMA = "9"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -536,8 +536,25 @@ def libisofs_link_probe(
         return False
 
     source = """#include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <libisofs.h>
+#ifdef __APPLE__
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+_Static_assert(sizeof(void *) == 8, "Darwin data pointers must be 64-bit");
+_Static_assert(sizeof(size_t) == 8, "Darwin size_t must be 64-bit");
+_Static_assert(sizeof(ssize_t) == 8, "Darwin ssize_t must be 64-bit");
+_Static_assert(sizeof(off_t) == 8, "Darwin off_t must be 64-bit");
+_Static_assert(sizeof(time_t) == 8, "Darwin time_t must be 64-bit");
+_Static_assert(sizeof(ino_t) == 8, "Darwin ino_t must be 64-bit");
+_Static_assert(sizeof(iso_node_xinfo_func) == sizeof(void *),
+               "Darwin function pointer width drifted");
+#if defined(__arm64e__) && !__has_feature(ptrauth_calls)
+#error arm64e consumer without pointer-authenticated calls
+#endif
+#endif
 int main(int argc, char **argv)
 {
     (void) argv;
@@ -643,6 +660,58 @@ def find_static_library(prefix: pathlib.Path) -> pathlib.Path | None:
             return candidate
     return None
 
+def select_macho_lipo() -> str:
+    requested = os.environ.get("LIPO", "")
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError("LIPO must name exactly one executable")
+        candidate = argv[0]
+        path = (
+            candidate
+            if pathlib.Path(candidate).is_absolute()
+            else shutil.which(candidate)
+        )
+        if not path or not pathlib.Path(path).is_file():
+            raise RuntimeError(f"LIPO is not executable: {candidate}")
+        return str(path)
+
+    for name in ("llvm-lipo", "lipo"):
+        path = shutil.which(name)
+        if path:
+            return path
+
+    xcrun = shutil.which("xcrun")
+    if xcrun:
+        path = run_text([xcrun, "--sdk", "macosx", "--find", "lipo"])
+        if path:
+            return path
+
+    raise RuntimeError("lipo/llvm-lipo is required to verify macOS libisofs ABI")
+
+
+def verify_macho_archive_architecture(
+    archive: pathlib.Path,
+    arch: str,
+) -> None:
+    if platform.system() != "Darwin":
+        return
+    lipo = select_macho_lipo()
+    completed = subprocess.run(
+        [lipo, "-verify_arch", arch, str(archive)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stdout.strip()
+        raise RuntimeError(
+            f"libisofs archive does not contain required Mach-O ABI {arch}: "
+            f"{archive}"
+            + (f": {detail}" if detail else "")
+        )
+
 
 def installed_version(pc_file: pathlib.Path) -> str:
     for line in pc_file.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -676,6 +745,14 @@ def macos_settings() -> tuple[str, str, str]:
         version = platform.mac_ver()[0]
         pieces = version.split(".")
         deployment = ".".join(pieces[:2]) if version else "11.0"
+
+    if arch in ("arm64", "arm64e"):
+        deployment_version = version_tuple(deployment)
+        if not deployment_version or deployment_version < (11, 0):
+            raise RuntimeError(
+                f"{arch} requires MACOSX_DEPLOYMENT_TARGET >= 11.0, "
+                f"not {deployment}"
+            )
 
     return sdkroot, arch, deployment
 
@@ -860,6 +937,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     )
     marker = marker_text(revision, workspace_marker)
     if incremental and cache_valid(prefix, marker):
+        archive = find_static_library(prefix)
+        if archive is None:
+            raise RuntimeError(
+                f"cached libisofs prefix lost its static archive: {prefix}"
+            )
+        verify_macho_archive_architecture(archive, arch)
         return prefix
 
     reused_workspace = prepare_workspace(
@@ -913,6 +996,13 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         env=env,
     )
     run_logged([make, "install"], cwd=object_dir, env=env)
+
+    archive = find_static_library(prefix)
+    if archive is None:
+        raise RuntimeError(
+            f"libisofs bootstrap did not install a static archive under {prefix}"
+        )
+    verify_macho_archive_architecture(archive, arch)
 
     pc_file = find_pkgconfig_file(prefix)
     if pc_file is None:

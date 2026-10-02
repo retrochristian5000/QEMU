@@ -115,6 +115,35 @@ def test_c_standard_policy() -> None:
         )
 
 
+def test_macos_deployment_contract() -> None:
+    helper = load_helper_module()
+    base_env = {
+        "SDKROOT": "/tmp/whp-fake-macos-sdk",
+        "WHP_MACOS_ARCH": "arm64e",
+        "MACOSX_DEPLOYMENT_TARGET": "10.15",
+    }
+    with mock.patch.object(helper.platform, "system", return_value="Darwin"):
+        with mock.patch.dict(os.environ, base_env, clear=False):
+            try:
+                helper.macos_settings()
+            except RuntimeError as exc:
+                if ">= 11.0" not in str(exc):
+                    raise SystemExit(
+                        "error: invalid arm64e deployment diagnostic lost ABI detail"
+                    )
+            else:
+                raise SystemExit(
+                    "error: libisofs accepted pre-11.0 arm64e deployment target"
+                )
+
+        base_env["MACOSX_DEPLOYMENT_TARGET"] = "11.0"
+        with mock.patch.dict(os.environ, base_env, clear=False):
+            _, arch, deployment = helper.macos_settings()
+            if arch != "arm64e" or deployment != "11.0":
+                raise SystemExit(
+                    "error: valid arm64e deployment target was not preserved"
+                )
+
 def test_incremental_workspace() -> None:
     helper = load_helper_module()
     if not hasattr(helper, "incremental_build_enabled"):
@@ -234,6 +263,14 @@ def main() -> int:
         (libisofs_root / "Makefile.am").read_text(encoding="utf-8")
         if (libisofs_root / "Makefile.am").is_file() else ""
     )
+    libisofs_node_header = (
+        (libisofs_root / "libisofs/node.h").read_text(encoding="utf-8")
+        if (libisofs_root / "libisofs/node.h").is_file() else ""
+    )
+    libisofs_node_source = (
+        (libisofs_root / "libisofs/node.c").read_text(encoding="utf-8")
+        if (libisofs_root / "libisofs/node.c").is_file() else ""
+    )
 
     require(
         gitmodules,
@@ -304,6 +341,11 @@ def main() -> int:
     )
     require(helper, "#include <sys/types.h>", "strict-prototype POSIX types")
     require(helper, "#include <time.h>", "strict-prototype time types")
+    require(helper, '_Static_assert(sizeof(off_t) == 8', "Darwin off_t ABI guard")
+    require(helper, '_Static_assert(sizeof(time_t) == 8', "Darwin time_t ABI guard")
+    require(helper, '_Static_assert(sizeof(ino_t) == 8', "Darwin inode ABI guard")
+    require(helper, 'sizeof(iso_node_xinfo_func) == sizeof(void *)', "function-pointer ABI guard")
+    require(helper, '__has_feature(ptrauth_calls)', "arm64e consumer PAC guard")
     require(helper, '"--disable-shared"', "static-only fork bootstrap")
     require(helper, '"--enable-static"', "static fork bootstrap")
     require(helper, '"--disable-demo"', "library-only libisofs bootstrap")
@@ -314,7 +356,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "8"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "9"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -387,6 +429,9 @@ def main() -> int:
     require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
     require(helper, "def prepare_workspace(", "incremental workspace planner")
     require(helper, ".whp-libisofs-workspace", "workspace identity marker")
+    require(helper, "def verify_macho_archive_architecture(", "Mach-O ABI verifier")
+    require(helper, '"-verify_arch", arch', "Mach-O architecture check")
+    require(helper, 'deployment_version < (11, 0)', "Apple-silicon deployment guard")
 
     if libisofs_bootstrap:
         if "uname -s" in libisofs_bootstrap:
@@ -403,6 +448,21 @@ def main() -> int:
             libisofs_configure,
             "LT_CURRENT_MINUS_AGE=$((LT_CURRENT - LT_AGE))",
             "shell-native Libtool version arithmetic",
+        )
+        require(
+            libisofs_configure,
+            "libisofs_cv_darwin_abi64",
+            "64-bit Darwin ABI configure probe",
+        )
+        require(
+            libisofs_configure,
+            "sizeof(ino_t) == 8",
+            "Darwin ino_t width configure guard",
+        )
+        require(
+            libisofs_configure,
+            "LIBISOFS_DARWIN_ABI64",
+            "validated Darwin ABI define",
         )
         require(
             libisofs_configure,
@@ -483,6 +543,23 @@ def main() -> int:
             raise SystemExit(
                 "error: libisofs still uses deprecated mkinstalldirs"
             )
+    if libisofs_node_header:
+        require(
+            libisofs_node_header,
+            "iso_node_xinfo_func process;",
+            "typed xinfo function-pointer storage",
+        )
+    if libisofs_node_source:
+        require(
+            libisofs_node_source,
+            "info->process = proc;",
+            "typed xinfo function-pointer assignment",
+        )
+        require(
+            libisofs_node_source,
+            "pos->process == proc",
+            "typed xinfo function-pointer comparison",
+        )
 
     if libisofs_util:
         require(
@@ -547,6 +624,7 @@ def main() -> int:
     test_gnu_m4_selector()
     test_autotools_utility_isolation()
     test_c_standard_policy()
+    test_macos_deployment_contract()
     test_incremental_workspace()
     print("WHP libisofs bootstrap wiring: verified")
     return 0
