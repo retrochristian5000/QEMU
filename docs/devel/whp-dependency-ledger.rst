@@ -177,7 +177,9 @@ by the WHP account.
    * - ``toolchains/bash``
      - ``bash``
      - yes
-     - Bash fallback for WHP orchestration; host C compiler + GNU Make.
+     - Bash fallback for WHP orchestration; host C compiler + GNU Make. The WHP
+       profile is non-interactive and omits Readline/history plus other unused
+       interactive/network/debug subsystems while retaining build-script syntax.
 
 Known bootstrap and library edges
 ---------------------------------
@@ -313,6 +315,42 @@ exposed for local use but is never promoted over the HTTPS-capable seed.
 before the managed Git is placed on ``PATH``. This keeps the
 ``Git -> checkout Git`` edge visible as a seed boundary rather than a hidden
 self-cycle.
+
+Bash bootstrap profile
+----------------------
+
+The managed Bash fork is used as a non-interactive implementation shell for
+WHP build modules. It is always invoked with ``--noprofile --norc`` at the
+orchestration boundary, so the bootstrap does not need to reproduce a full
+interactive login shell.
+
+The QEMU profile keeps the Bash language features already used by WHP scripts,
+including indexed arrays, ``[[ ... ]]`` conditionals, arithmetic
+``(( ... ))``, and process substitution. ``scripts/ensure-bash.py``
+executes a runtime contract probe after installation and on cache reuse so a
+future configure change cannot silently remove those required features.
+
+The following subsystems are deliberately disabled in the managed profile:
+
+* Readline, history, and bang-history. They are interactive facilities. This
+  also removes Bash's normal build dependency on its bundled Readline/history
+  archives; the pinned Bash Makefile lists 31 Readline objects and five
+  history-library objects behind those dependency variables.
+* Programmable completion, aliases, and the pushd/popd directory stack. The WHP
+  script tree does not use those shell facilities.
+* Coprocesses and ``/dev/tcp``/``/dev/udp`` network redirections. Build
+  orchestration uses explicit subprocesses and tools instead of Bash network or
+  coprocess primitives.
+* Restricted-shell mode and Bash debugger support. Neither is part of the WHP
+  build-shell contract.
+* Imported environment functions. WHP scripts do not export functions with
+  ``export -f``, and disabling implicit function import reduces caller
+  environment influence on the managed build shell.
+
+This is intentionally a selective profile, not Bash's
+``--enable-minimal-config``. The latter disables arrays, process
+substitution, conditional commands, arithmetic commands, and other syntax that
+the WHP already uses, so adopting it would create a fragile re-enable list.
 
 GNU Make bootstrap boundary
 ---------------------------
