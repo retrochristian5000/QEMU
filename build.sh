@@ -174,6 +174,31 @@ if [ "${1:-}" = menuconfig ]; then
     exec /bin/sh "$WHP_MENUCONFIG_SHELL" "$WHP_USER_CONFIG" "$@"
 fi
 
+# Resolve the seed GNU Make once before any bootstrap which consumes it.
+# The pinned WHP Make fork is not promoted here yet because its maintainer
+# source path still has a Make -> Make bootstrap cycle. MAKE_CMD and MAKE are
+# exported together so Python, Automake, Bash, Libtool, libisofs, firmware, and
+# the later QEMU stage cannot silently rediscover different Make executables.
+. "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}
+if [ -n "$WHP_MAKE_REQUESTED" ]; then
+    MAKE_CMD=$(whp_resolve_gnu_make "$WHP_MAKE_REQUESTED" || true)
+    if [ -z "$MAKE_CMD" ]; then
+        printf '%s\n' \
+            "error: MAKE_CMD/MAKE does not identify GNU Make: $WHP_MAKE_REQUESTED" \
+            'Set MAKE_CMD or MAKE to a GNU Make executable (often gmake on BSD hosts).' >&2
+        exit 1
+    fi
+else
+    MAKE_CMD=$(whp_find_gnu_make || true)
+fi
+if [ -n "$MAKE_CMD" ]; then
+    MAKE=$MAKE_CMD
+    export MAKE_CMD MAKE
+    printf 'QEMU seed GNU Make: %s\n' "$MAKE_CMD" >&2
+fi
+unset WHP_MAKE_REQUESTED
+
 # Select a native build-machine C compiler before any compiled fallback can
 # run. Target CC is intentionally excluded from this root dependency.
 case "$(uname -s 2>/dev/null || true)" in

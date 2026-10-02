@@ -257,9 +257,11 @@ Bootstrap phase ordering
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh``, Python, Automake, GNU sed, managed Git, Bash,
-and Ninja are available before native LLVM. These are generators/orchestration
-tools needed to reach the compiler build and therefore use build-machine roles.
+**Seed/tool phase:** ``cc.sh``, seed GNU Make, Python, Automake, GNU sed,
+managed Git, Bash, and Ninja are available before native LLVM. These are
+generators/orchestration tools needed to reach the compiler build and therefore
+use build-machine roles. The seed GNU Make identity is established before the
+Python fallback and exported through both ``MAKE_CMD`` and ``MAKE``.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
@@ -359,6 +361,91 @@ one is already available and otherwise attempts the pinned fork.
 exports ``LIBTOOL``, ``LIBTOOLIZE``, and its aclocal macro directory so
 libisofs and future Autotools consumers see one coherent Libtool revision.
 Apple's unrelated ``/usr/bin/libtool`` is never accepted as GNU Libtool.
+
+libisofs bootstrap boundary
+----------------------------
+
+The Darwin libisofs bootstrap is an artifact-library edge, not a Meson-owned
+subproject.  QEMU currently uses the pinned fork only for the metadata-assisted
+ISO path.  Its QEMU profile is static-only and library-only:
+``--disable-shared --enable-static --disable-demo``, with libacl and libjte
+disabled.  The standalone libisofs fork still builds its demo by default.
+
+The prerequisites which must exist *before* libisofs are:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - Dependency
+     - WHP state
+     - libisofs edge
+   * - Python >= 3.9
+     - managed/root
+     - Runs ``scripts/ensure-libisofs.py``; therefore it is earlier than the
+       libisofs source/configure/build steps.
+   * - Git
+     - managed after seed
+     - Reads the QEMU gitlink and materializes the pinned
+       ``toolchains/libisofs`` checkout.
+   * - GNU Make
+     - root seed
+     - Builds and installs libisofs.  The selected seed is exported through
+       ``MAKE_CMD`` and ``MAKE`` before Automake, Libtool, or libisofs run.
+       The pinned WHP Make fork remains ``planned`` and is not promoted across
+       its unresolved Make-to-Make maintainer-source cycle.
+   * - Autoconf + GNU M4
+     - root
+     - Regenerate ``configure`` from the fork's maintainer source.  GNU M4 is
+       capability-checked by the libisofs helper.
+   * - Automake/aclocal
+     - managed/root
+     - Generates the Makefile inputs.  The WHP Automake fallback is prepared in
+       the seed/tool phase before libisofs.
+   * - GNU sed
+     - managed/root
+     - Used by Autoconf/configure and selected before the libisofs bootstrap.
+   * - GNU Libtool/libtoolize
+     - managed/root
+     - Must precede libisofs.  The managed Libtool path is deliberately after
+       native LLVM promotion so its cached archive/binutils identities match the
+       compiler family that will build libisofs.
+   * - configuration shell
+     - managed/root
+     - Bash is preferred through ``WHP_BUILD_BASH``/``CONFIG_SHELL``; the
+       generated project-local Libtool is tied to this configure environment.
+   * - C compiler + archive/binutils tools
+     - root/promoted
+     - Seed compiler when native LLVM is disabled; promoted WHP LLVM tools when
+       ``BOOTSTRAP_NATIVE_LLVM=1``.
+   * - Darwin SDK/libSystem
+     - root
+     - Supplies the platform headers/runtime and the pthread/iconv facilities
+       used by the current Darwin profile.
+   * - zlib
+     - root library
+     - libisofs links zlib during its own build and exports ``-lz`` to static
+       consumers.  This edge exists before QEMU's later Meson dependency
+       resolution and must not be modeled as a dependency on the QEMU build.
+   * - pkg-config/pkgconf
+     - root probe tool
+     - Detects a usable host libisofs and validates the private static install.
+       QEMU's later Homebrew path-normalizing wrapper is configure-state policy,
+       not a library which must be built before libisofs.
+
+The current audit found no WHP library or firmware component built *after*
+libisofs which libisofs actually consumes.  SDL/JACK are independent QEMU host
+libraries; the PowerPC/OpenBIOS, SeaBIOS/GRUB, and mold lanes are also
+independent.  The ordering defect was tool selection rather than a missing
+library build: canonical GNU Make selection previously happened in the later
+QEMU preparation stage even though Automake, Libtool, and libisofs had already
+needed Make.  The public build boundary now establishes the seed GNU Make
+identity first, while the later stage only re-validates the same selection.
+
+ACL and libjte are disabled in the QEMU libisofs profile and therefore are not
+active edges.  The demo is disabled and documentation is not part of the normal
+QEMU bootstrap, so neither the demo executable nor Doxygen belongs in the QEMU
+libisofs prerequisite graph.
 
 Wine and Windows ABI validation
 -------------------------------

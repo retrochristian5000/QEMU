@@ -40,6 +40,19 @@ def main() -> int:
     require(grub_bootstrap, 'MAKE_CMD_REQUESTED="${MAKE_CMD:-${MAKE:-}}"', "GRUB MAKE_CMD/MAKE handoff")
     require(grub_bootstrap, 'PATH="$LLVM_TOOL_PATH" "$MAKE_CMD" -C "$build_root"', "GRUB selected Make build")
 
+    build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    require(
+        build,
+        '. "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"',
+        "early shared GNU Make resolver",
+    )
+    require(
+        build,
+        'WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}',
+        "early MAKE_CMD/MAKE convergence",
+    )
+    require(build, 'export MAKE_CMD MAKE', "early GNU Make export")
+
     prepare_build = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
     require(
         prepare_build,
@@ -48,10 +61,16 @@ def main() -> int:
     )
 
     libisofs = (ROOT / "scripts/ensure-libisofs.py").read_text(encoding="utf-8")
+    require(libisofs, "def select_gnu_make()", "libisofs GNU Make selector")
     require(
         libisofs,
-        'names = ("gmake", "make") if name == "make" else (name,)',
-        "libisofs GNU Make preference",
+        'os.environ.get("MAKE_CMD") or os.environ.get("MAKE", "")',
+        "libisofs MAKE_CMD/MAKE handoff",
+    )
+    require(
+        libisofs,
+        'if version.startswith("GNU Make "):',
+        "libisofs GNU Make identity check",
     )
 
     libtool = (ROOT / "scripts/ensure-libtool.py").read_text(encoding="utf-8")

@@ -180,6 +180,46 @@ def command_path(name: str, env_name: str | None = None) -> str:
     raise RuntimeError(f"{name} is required to bootstrap bundled libisofs")
 
 
+def select_gnu_make() -> str:
+    requested = os.environ.get("MAKE_CMD") or os.environ.get("MAKE", "")
+    candidates: list[str] = []
+
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError("MAKE_CMD/MAKE must name exactly one executable")
+        candidate = argv[0]
+        path = (
+            candidate
+            if pathlib.Path(candidate).is_absolute()
+            else shutil.which(candidate)
+        )
+        if not path or not pathlib.Path(path).exists():
+            raise RuntimeError(
+                f"MAKE_CMD/MAKE is not executable: {candidate}"
+            )
+        candidates.append(str(path))
+    else:
+        for name in ("gmake", "make"):
+            path = shutil.which(name)
+            if path and path not in candidates:
+                candidates.append(path)
+
+    for path in candidates:
+        try:
+            version = run_text([path, "--version"])
+        except RuntimeError:
+            continue
+        if version.startswith("GNU Make "):
+            return path
+        if requested:
+            raise RuntimeError(
+                f"MAKE_CMD/MAKE must select GNU Make, not: {path}"
+            )
+
+    raise RuntimeError("GNU Make is required to bootstrap bundled libisofs")
+
+
 def semantic_sed_usable(path: str) -> bool:
     probes = (
         ("alpha\n", ["-n", "s/^alpha$/beta/p"], "beta\n"),
@@ -769,7 +809,7 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
 
 def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     revision = ensure_libisofs_source()
-    make = command_path("make", "MAKE")
+    make = select_gnu_make()
     libtoolize = select_gnu_libtool(
         "LIBTOOLIZE", ("glibtoolize", "libtoolize")
     )
