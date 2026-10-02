@@ -435,7 +435,12 @@ def main() -> int:
         )
         require(
             libisofs_makefile,
-            "noinst_PROGRAMS = \\\\n\\tdemo/demo",
+            "noinst_PROGRAMS =",
+            "conditional demo program declaration",
+        )
+        require(
+            libisofs_makefile,
+            "demo/demo",
             "conditional demo program target",
         )
         require(
