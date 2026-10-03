@@ -13,6 +13,11 @@ BOOTSTRAP_NATIVE_LLVM|Host features|Bootstrap/use WHP native LLVM|bool|n||
 NATIVE_LLVM_CXX_STANDARD|Host features|Native LLVM C++ language standard|choice|17|17,20,23,26|
 NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|bool|n||
 BOOTSTRAP_PYTHON|Host features|Bootstrap/use WHP Python|choice|auto|auto,y,n|
+BOOTSTRAP_AUTOMAKE|Host features|Bootstrap/use WHP Automake|choice|auto|auto,y,n|
+BOOTSTRAP_AUTOCONF|Host features|Bootstrap/use WHP Autoconf|choice|auto|auto,y,n|
+BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make|choice|auto|auto,y,n|
+BOOTSTRAP_SED|Host features|Bootstrap/use WHP GNU sed|choice|auto|auto,y,n|
+BOOTSTRAP_GIT|Host features|Bootstrap/use WHP Git|choice|auto|auto,y,n|
 BOOTSTRAP_BASH|Host features|Bootstrap/use WHP Bash|choice|auto|auto,y,n|
 BOOTSTRAP_NINJA|Host features|Bootstrap/use WHP Ninja|choice|auto|auto,y,n|
 BOOTSTRAP_SDL|Host features|Bootstrap/use WHP SDL3|choice|auto|auto,y,n|

@@ -204,8 +204,9 @@ else
     MAKE_CMD=$(whp_find_gnu_make || true)
 fi
 if [ -n "$MAKE_CMD" ]; then
+    WHP_MAKE_SEED=$MAKE_CMD
     MAKE=$MAKE_CMD
-    export MAKE_CMD MAKE
+    export WHP_MAKE_SEED MAKE_CMD MAKE
     printf 'QEMU seed GNU Make: %s\n' "$MAKE_CMD" >&2
 fi
 unset WHP_MAKE_REQUESTED

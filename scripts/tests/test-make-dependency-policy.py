@@ -29,9 +29,22 @@ def main() -> int:
     require(ledger, "Make -> Make", "GNU Make self-bootstrap warning")
     require(ledger, "build.sh", "GNU Make no-Make bootstrap path")
     require(ledger, "build.cfg", "GNU Make configured-input boundary")
+    require(ledger, "BOOTSTRAP_MAKE", "GNU Make managed promotion policy")
     require(ledger, "libisofs bootstrap boundary", "libisofs dependency section")
     require(ledger, "zlib", "libisofs zlib root edge")
     require(ledger, "pkg-config/pkgconf", "libisofs pkg-config probe edge")
+
+    config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
+    require(config, "BOOTSTRAP_MAKE", "GNU Make menu configuration")
+
+    shell_menu = (ROOT / "scripts/whp-config/menu-options.def").read_text(encoding="utf-8")
+    require(shell_menu, "BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make", "GNU Make shell menu option")
+
+    make_bootstrap = (ROOT / "scripts/ensure-make.py").read_text(encoding="utf-8")
+    require(make_bootstrap, "MAKE_BOOTSTRAP_SCHEMA", "GNU Make bootstrap schema")
+    require(make_bootstrap, "GNULIB_COMMIT", "pinned gnulib revision")
+    require(make_bootstrap, "build.sh", "GNU Make no-Make compiler stage")
+    require(make_bootstrap, "WHP_MAKE_SEED", "GNU Make seed boundary")
 
     make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
     if "[[" in make_resolver or "local " in make_resolver:
@@ -58,7 +71,13 @@ def main() -> int:
         'WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}',
         "early MAKE_CMD/MAKE convergence",
     )
-    require(build, 'export MAKE_CMD MAKE', "early GNU Make export")
+    require(build, 'export WHP_MAKE_SEED MAKE_CMD MAKE', "early GNU Make seed export")
+
+    host_tools = (ROOT / "scripts/whp-build/host-tools.sh").read_text(encoding="utf-8")
+    require(host_tools, "BOOTSTRAP_MAKE=", "GNU Make host-tools policy")
+    require(host_tools, "scripts/ensure-make.py", "GNU Make managed bootstrap call")
+    require(host_tools, "WHP_MAKE_SEED", "GNU Make host-tools seed handoff")
+    require(host_tools, "WHP_MAKE_PREFIX/bin/make", "GNU Make promotion executable")
 
     prepare_build = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
     require(

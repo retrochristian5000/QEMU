@@ -66,6 +66,7 @@ on:
       - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/test-libisofs-bootstrap.py'
       - 'scripts/ensure-libtool.py'
+      - 'scripts/ensure-make.py'
       - 'scripts/tests/test-libtool-bootstrap.py'
       - 'toolchains/libtool'
       - 'scripts/tests/test-make-dependency-policy.py'
@@ -155,6 +156,7 @@ jobs:
             scripts/ensure-ninja.py \
             scripts/ensure-sdl.py \
             scripts/ensure-libisofs.py \
+            scripts/ensure-make.py \
             scripts/qapi/common.py \
             scripts/whp-config/config.py \
             scripts/whp-config/menuconfig.py \

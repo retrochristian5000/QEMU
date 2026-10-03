@@ -48,6 +48,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
         self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
         self.assertEqual(values['BOOTSTRAP_PYTHON'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_MAKE'], 'auto')
         self.assertEqual(values['BOOTSTRAP_SDL'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
@@ -157,6 +158,20 @@ class WhpConfigTests(unittest.TestCase):
             self.assertNotIn(f'{key}=', assignments)
         self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
         self.assertIn("INSTALL_AFTER_BUILD='0'", assignments)
+
+    def test_make_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_MAKE']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP GNU Make')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_MAKE'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_MAKE='1'", assignments)
 
     def test_sdl_bootstrap_is_tristate_host_policy(self):
         mod = load_module()

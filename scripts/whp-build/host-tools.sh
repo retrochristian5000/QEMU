@@ -197,6 +197,69 @@ if [ -n "${AUTOCONF:-}" ]; then
 fi
 unset WHP_AUTOCONF_EXPLICIT
 
+
+BOOTSTRAP_MAKE=${BOOTSTRAP_MAKE:-auto}
+case "$BOOTSTRAP_MAKE" in
+    y) BOOTSTRAP_MAKE=1 ;;
+    n) BOOTSTRAP_MAKE=0 ;;
+    auto|0|1) ;;
+    *)
+        printf 'error: BOOTSTRAP_MAKE must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+export BOOTSTRAP_MAKE
+
+# Keep the first GNU Make as an explicit seed through Python and the
+# maintainer Automake/Autoconf stages. After those inputs exist, macOS auto
+# mode prefers the pinned WHP Make while force mode requires it everywhere.
+WHP_PROMOTE_MAKE=0
+if [ "$BOOTSTRAP_MAKE" = 1 ]; then
+    WHP_PROMOTE_MAKE=1
+elif [ "$BOOTSTRAP_MAKE" = auto ] && [ "$WHP_HOST_OS" = macos ]; then
+    WHP_PROMOTE_MAKE=1
+fi
+
+if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$WHP_HOST_OS" != windows ]; then
+    if [ -z "${WHP_MAKE_SEED:-}" ]; then
+        if [ "$BOOTSTRAP_MAKE" = 1 ]; then
+            printf '%s\n' 'error: BOOTSTRAP_MAKE=1 requires a seed GNU Make.' >&2
+            exit 1
+        fi
+    else
+        WHP_MAKE_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-make.py" --build-dir "$BUILD_DIR"
+        ) || WHP_MAKE_PREFIX=
+        if [ -n "$WHP_MAKE_PREFIX" ]; then
+            MAKE_CMD=$(whp_resolve_gnu_make "$WHP_MAKE_PREFIX/bin/make" || true)
+        else
+            MAKE_CMD=
+        fi
+        if [ -n "$MAKE_CMD" ]; then
+            MAKE=$MAKE_CMD
+            WHP_MAKE_BIN_DIR=$(dirname -- "$MAKE_CMD")
+            PATH="$WHP_MAKE_BIN_DIR:$PATH"
+            export WHP_MAKE_PREFIX MAKE_CMD MAKE PATH
+            printf 'QEMU GNU Make: WHP managed %s\n' \
+                "$("$MAKE_CMD" --version 2>/dev/null | sed -n '1p')" >&2
+            unset WHP_MAKE_BIN_DIR
+        elif [ "$BOOTSTRAP_MAKE" = 1 ]; then
+            printf '%s\n' 'error: BOOTSTRAP_MAKE=1 requested the pinned WHP GNU Make, but its bootstrap failed.' >&2
+            exit 1
+        else
+            MAKE_CMD=$WHP_MAKE_SEED
+            MAKE=$MAKE_CMD
+            export MAKE_CMD MAKE
+            printf 'WHP GNU Make bootstrap unavailable; retaining seed: %s\n' "$MAKE_CMD" >&2
+        fi
+        unset WHP_MAKE_PREFIX
+    fi
+fi
+unset WHP_PROMOTE_MAKE
+
 BOOTSTRAP_SED=${BOOTSTRAP_SED:-auto}
 case "$BOOTSTRAP_SED" in
     y) BOOTSTRAP_SED=1 ;;
