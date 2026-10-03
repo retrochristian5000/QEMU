@@ -114,6 +114,7 @@ def main() -> int:
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    build += (ROOT / "scripts/whp-build/host-tools.sh").read_text(encoding="utf-8")
     helper = (ROOT / "scripts/ensure-bash.py").read_text(encoding="utf-8")
 
     require(gitmodules, '[submodule "toolchains/bash"]', "Bash submodule")
