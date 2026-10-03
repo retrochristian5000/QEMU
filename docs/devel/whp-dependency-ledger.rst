@@ -149,7 +149,7 @@ by the WHP account.
    * - ``toolchains/make``
      - ``make``
      - yes
-     - Pinned GNU Make fork; currently ``planned`` as a managed build tool because its Git maintainer-source tree still needs a seed GNU Make/Autotools path before it can produce the configured no-Make bootstrap inputs.
+     - Managed GNU Make host tool behind an explicit seed-Make boundary. Automake/Autoconf generate the maintainer inputs, the helper pins gnulib exactly, GNU Make's ``build.sh`` compiles the managed binary without recursive Make, and downstream consumers use the promoted executable.
    * - ``toolchains/git``
      - ``git-tools``
      - yes
@@ -225,12 +225,16 @@ graph.  A compact view is::
       |      +--> optional mold
       |
       +--> GNU Make seed
-      |      +--> pinned WHP Make fork (planned)
       |      +--> Python POSIX fallback
-      |      +--> Bash fallback
-      |      +--> WHP Libtool bootstrap
+      |      +--> Automake / Autoconf maintainer stages
       |               |
-      |               +--> libisofs
+      |               +--> pinned WHP Make fork
+      |                       |
+      |                       +--> managed GNU Make
+      |                               +--> GNU sed / Git / Bash
+      |                               +--> WHP Libtool bootstrap
+      |                                       |
+      |                                       +--> libisofs
       |
       +--> optional native LLVM
              |
@@ -469,12 +473,23 @@ generated ``configure``/``Makefile.in``/gnulib build inputs.  Regenerating
 those inputs from the Git tree requires the Autotools/gnulib maintainer path,
 whose documented prerequisites include GNU Make.
 
-That means the fork must not yet replace the first seed GNU Make: doing so
-would hide a ``Make -> Make`` cycle.  The intended promotion path is to make
-the fork carry, or reproducibly produce without Make, the configured-source
-inputs needed by ``build.sh``.  Once that path is validated, the pinned fork
-can move from ``planned`` to ``managed`` and sit before Python, Bash, and
-the other Make-consuming bootstraps.
+The first GNU Make therefore remains an explicit seed rather than being
+silently replaced. Python's POSIX fallback and the Automake/Autoconf
+maintainer stages still consume that seed because they must exist before the
+managed helper can run.
+
+After those prerequisites are available, ``BOOTSTRAP_MAKE=auto`` prefers the
+pinned fork on macOS, ``BOOTSTRAP_MAKE=1`` forces it, and
+``BOOTSTRAP_MAKE=0`` retains the seed. ``scripts/ensure-make.py`` stages the
+exact QEMU gitlink, replaces GNU Make's moving ``stable-202507`` gnulib branch
+reference with the audited commit
+``b22f5a3037712a3c957a03071ce0b219cef4d65b``, runs the maintainer bootstrap
+with the seed Make, configures a tool-only profile, and invokes GNU Make's own
+``build.sh`` for the compile/link stage. The resulting binary is promoted
+through ``MAKE_CMD``, ``MAKE``, and ``PATH`` for GNU sed, Git, Bash, Libtool,
+libisofs, firmware, and the later QEMU build graph. This keeps the
+``Make -> Make`` edge visible as a seed boundary instead of pretending it does
+not exist.
 
 GNU Libtool bootstrap boundary
 ------------------------------
@@ -528,11 +543,11 @@ The prerequisites which must exist *before* libisofs are:
      - Reads the QEMU gitlink and materializes the pinned
        ``toolchains/libisofs`` checkout.
    * - GNU Make
-     - root seed
-     - Builds and installs libisofs.  The selected seed is exported through
-       ``MAKE_CMD`` and ``MAKE`` before Automake, Libtool, or libisofs run.
-       The pinned WHP Make fork remains ``planned`` and is not promoted across
-       its unresolved Make-to-Make maintainer-source cycle.
+     - managed after seed
+     - The seed GNU Make bootstraps the early Python/Autotools boundary. Once
+       Automake and Autoconf exist, the pinned WHP Make is promoted through
+       ``MAKE_CMD`` and ``MAKE``; libisofs therefore consumes the managed
+       executable when that promotion succeeds.
    * - Autoconf + GNU M4
      - managed/root
      - Managed WHP Autoconf regenerates ``configure`` from the fork's
@@ -787,9 +802,10 @@ Circularity guards
    already-built compatible native Wine tools tree; the target build must not
    recursively depend on itself to create those tools.
 #. The pinned GNU Make fork must not be promoted to the first Make executable
-   while its maintainer-source preparation still needs a seed GNU Make.
-   GNU Make's no-Make ``build.sh`` is usable only after its configured inputs
-   have been produced.
+   while its maintainer-source preparation still needs a seed GNU Make. The
+   seed remains explicit through Python plus Automake/Autoconf; only then may
+   ``ensure-make.py`` generate the configured inputs, use the no-Make
+   ``build.sh``, and promote the resulting managed Make for downstream work.
 #. Managed Autoconf must not bootstrap the Automake instance that it itself
    consumes. Seed Autoconf/autom4te feeds the first Automake stage; that
    Automake stage then builds the pinned Autoconf for later consumers.
