@@ -102,6 +102,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Test GNU Make bootstrap policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ensure-make.py
+          /bin/sh -n build.sh
+          bash -n scripts/whp-build/host-tools.sh
+          python3 scripts/tests/test-make-dependency-policy.py
+
       - name: Test configuration model
         run: |
           python3 scripts/tests/test-qapi-c23-keywords.py
