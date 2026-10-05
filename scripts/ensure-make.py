@@ -135,7 +135,7 @@ def bootstrap_required_version(name):
         encoding="utf-8", errors="replace"
     )
     match = re.search(
-        rf"(?m)^{re.escape(name)}[ \\t]+([0-9]+(?:\\.[0-9]+)+)[ \\t]*$",
+        rf"(?m)^{re.escape(name)}[ \t]+([0-9]+(?:\.[0-9]+)+)[ \t]*$",
         text,
     )
     if not match:
