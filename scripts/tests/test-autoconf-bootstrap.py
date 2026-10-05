@@ -27,7 +27,20 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
-    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "1"', "bootstrap schema")
+    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "2"', "bootstrap schema")
+    require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
+    require(
+        helper,
+        '"/opt/homebrew/opt/m4/bin/m4"',
+        "Apple Silicon Homebrew M4 preference",
+    )
+    require(
+        helper,
+        '"/usr/local/opt/m4/bin/m4"',
+        "Intel Homebrew M4 preference",
+    )
+    require(helper, 'for name in ("m4", "gm4")', "canonical M4 fallback order")
+    require(helper, 'm4_link = seed_bin / "m4"', "literal M4 bootstrap shim")
     require(helper, '"AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF"', "self-host isolation")
     require(helper, 'str(source / "bootstrap")', "source self-bootstrap")
     require(helper, '"install-binSCRIPTS"', "tool-only executable install")
