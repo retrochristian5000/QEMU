@@ -29,6 +29,8 @@ def main() -> int:
     require(ledger, "Make -> Make", "GNU Make self-bootstrap warning")
     require(ledger, "build.sh", "GNU Make no-Make bootstrap path")
     require(ledger, "build.cfg", "GNU Make configured-input boundary")
+    require(ledger, "**configure-time**", "GNU Make seed configure boundary")
+    require(ledger, "BUILD_DIR/cache/make-generated", "GNU Make generated-source cache")
     require(ledger, "BOOTSTRAP_MAKE", "GNU Make managed promotion policy")
     require(ledger, "libisofs bootstrap boundary", "libisofs dependency section")
     require(ledger, "zlib", "libisofs zlib root edge")
