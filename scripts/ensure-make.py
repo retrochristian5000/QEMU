@@ -22,7 +22,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
 
-MAKE_BOOTSTRAP_SCHEMA = "5"
+MAKE_BOOTSTRAP_SCHEMA = "6"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
 GNULIB_URL = "https://github.com/coreutils/gnulib.git"
 
@@ -456,6 +456,122 @@ def ensure_gnulib_cache(build_root, git):
     return cache
 
 
+def generation_marker_text(
+    revision, automake, aclocal, autoconf, autom4te, autoheader, autoreconf,
+    sed, autopoint, config_shell, required_automake, required_autoconf,
+):
+    return (
+        "MAKE_GENERATED_SCHEMA=1\n"
+        f"MAKE_GIT_COMMIT={revision}\n"
+        f"GNULIB_COMMIT={GNULIB_COMMIT}\n"
+        f"REQUIRED_AUTOMAKE={required_automake}\n"
+        f"REQUIRED_AUTOCONF={required_autoconf}\n"
+        f"HOST_SYSTEM={platform.system()}\n"
+        f"AUTOMAKE={automake}: {first_line([automake, '--version'])}\n"
+        f"ACLOCAL={aclocal}: {first_line([aclocal, '--version'])}\n"
+        f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
+        f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
+        f"AUTOHEADER={autoheader}: {first_line([autoheader, '--version'])}\n"
+        f"AUTORECONF={autoreconf}: {first_line([autoreconf, '--version'])}\n"
+        f"CONFIG_SHELL={shell_identity(config_shell)}\n"
+        f"SED={sed}\n"
+        f"AUTOPOINT={autopoint}: {first_line([autopoint, '--version'])}\n"
+        f"ACLOCAL_PATH={os.environ.get('ACLOCAL_PATH', '')}\n"
+    )
+
+
+def generated_source_usable(path, marker):
+    marker_path = path / ".whp-make-generated"
+    if not marker_path.is_file():
+        return False
+    if marker_path.read_text(encoding="utf-8", errors="replace") != marker:
+        return False
+    required = (
+        path / "configure",
+        path / "Makefile.in",
+        path / "lib" / "Makefile.in",
+        path / "build.cfg.in",
+        path / "src" / "config.h.in",
+        path / "build.sh",
+    )
+    return all(item.is_file() for item in required)
+
+
+def ensure_generated_source(
+    build_root, revision, gnulib_source, env, config_shell, marker
+):
+    cache = build_root / "cache" / "make-generated"
+    if generated_source_usable(cache, marker):
+        print(
+            f"WHP GNU Make generated source cache: reused {cache}",
+            file=sys.stderr,
+        )
+        return cache
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    staging = cache.parent / f".make-generated.new.{os.getpid()}"
+    old_cache = cache.parent / f".make-generated.old.{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(old_cache, ignore_errors=True)
+
+    try:
+        copy_source(revision, staging)
+        pin_gnulib(staging)
+
+        generation_env = env.copy()
+        for key in ("MAKE", "MAKE_CMD", "CC", "PKG_CONFIG"):
+            generation_env.pop(key, None)
+
+        run_logged(
+            [
+                config_shell, str(staging / "bootstrap"),
+                "--gen", "--no-git", "--skip-po", "--force",
+                "--no-bootstrap-sync",
+            ],
+            cwd=staging,
+            env=generation_env,
+        )
+        if not (staging / "configure").is_file():
+            raise RuntimeError(
+                "GNU Make bootstrap did not generate configure"
+            )
+
+        (staging / ".whp-make-generated").write_text(
+            marker, encoding="utf-8"
+        )
+        if not generated_source_usable(staging, marker):
+            raise RuntimeError(
+                "GNU Make generated source cache failed validation"
+            )
+
+        if generated_source_usable(cache, marker):
+            shutil.rmtree(staging, ignore_errors=True)
+            print(
+                f"WHP GNU Make generated source cache: reused {cache}",
+                file=sys.stderr,
+            )
+            return cache
+
+        if cache.exists():
+            os.replace(cache, old_cache)
+        try:
+            os.replace(staging, cache)
+        except BaseException:
+            if old_cache.exists() and not cache.exists():
+                os.replace(old_cache, cache)
+            raise
+        shutil.rmtree(old_cache, ignore_errors=True)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    print(
+        f"WHP GNU Make generated source cache: populated {cache}",
+        file=sys.stderr,
+    )
+    return cache
+
+
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
                 autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
                 config_shell, required_automake, required_autoconf):
@@ -518,8 +634,6 @@ def bootstrap(build_root):
     shutil.rmtree(prefix, ignore_errors=True)
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True, exist_ok=True)
-    copy_source(revision, source)
-    pin_gnulib(source)
     gnulib_source = ensure_gnulib_cache(build_root, git)
     objects.mkdir(parents=True, exist_ok=True)
 
@@ -578,22 +692,27 @@ def bootstrap(build_root):
         env.get("PATH", ""),
     ])
 
+    generation_marker = generation_marker_text(
+        revision, automake, aclocal, autoconf, autom4te, autoheader,
+        autoreconf, sed, autopoint, config_shell, required_automake,
+        required_autoconf,
+    )
+    generated_source = ensure_generated_source(
+        build_root, revision, gnulib_source, env, config_shell,
+        generation_marker,
+    )
+    shutil.copytree(
+        generated_source,
+        source,
+        ignore=shutil.ignore_patterns(".whp-make-generated"),
+    )
+
     print(
         f"WHP GNU Make bootstrap: {revision} -> {prefix} "
         f"(seed {seed_make}, gnulib {GNULIB_COMMIT})",
         file=sys.stderr,
     )
-    run_logged(
-        [
-            config_shell, str(source / "bootstrap"),
-            "--gen", "--no-git", "--skip-po", "--force",
-            "--no-bootstrap-sync",
-        ],
-        cwd=source, env=env,
-    )
     configure = source / "configure"
-    if not configure.is_file():
-        raise RuntimeError("GNU Make bootstrap did not generate configure")
     run_logged(
         [config_shell, str(configure), f"--prefix={prefix}", *MAKE_CONFIGURE_ARGS],
         cwd=objects, env=env,
