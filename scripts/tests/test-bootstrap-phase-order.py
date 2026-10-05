@@ -7,12 +7,24 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 build = (ROOT / "build.sh").read_text(encoding="utf-8")
+host_libraries = (ROOT / "scripts/whp-build/host-libraries.sh").read_text(
+    encoding="utf-8"
+)
 
 def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
 
-require(build, "whp_prepare_qemu_host_libraries()", "host-library phase helper")
+require(
+    host_libraries,
+    "whp_prepare_qemu_host_libraries()",
+    "host-library phase helper definition",
+)
+require(
+    build,
+    '. "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"',
+    "host-library phase module load",
+)
 require(
     build,
     'if [ "$BOOTSTRAP_NATIVE_LLVM" = 0 ]; then\n    whp_prepare_qemu_host_libraries',

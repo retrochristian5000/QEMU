@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'build.sh'
+      - 'scripts/whp-build/host-libraries.sh'
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-jack.py'
       - 'scripts/ensure-libtool.py'
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - 'build.sh'
+      - 'scripts/whp-build/host-libraries.sh'
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-jack.py'
       - 'scripts/ensure-libtool.py'

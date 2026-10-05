@@ -144,7 +144,7 @@ jobs:
           test "$("$bash_path" --noprofile --norc -c 'printf "%s\\n" "$MACHTYPE"')" = "$expected_triplet"
           "$lipo" -archs "$bash_path" | tr ' ' '\n' | grep -Fxq arm64e
           file "$bash_path" | grep -Fq arm64e
-          grep -Fxq 'BASH_BOOTSTRAP_SCHEMA=3' "$marker"
+          grep -Fxq 'BASH_BOOTSTRAP_SCHEMA=4' "$marker"
           grep -Fxq 'BASH_ABI_VARIANT=arm64e' "$marker"
           grep -Fxq "BASH_HOST_TRIPLET=$expected_triplet" "$marker"
           printf 'WHP_BUILD_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
