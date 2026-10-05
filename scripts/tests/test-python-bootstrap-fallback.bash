@@ -5,8 +5,54 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$TMP/scripts" "$TMP/fakebin" "$TMP/build"
+mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build"
 cp "$ROOT/build.sh" "$TMP/build.sh"
+
+# Keep this fixture intentionally small, but provide the seed adapters and
+# sourced bootstrap modules that build.sh must traverse before it can prove the
+# bundled-Python fallback boundary.
+cat > "$TMP/sed.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-seed ]; then
+    printf '/bin/sed\\n'
+    exit 0
+fi
+exec /bin/sed "$@"
+EOF
+chmod +x "$TMP/sed.sh"
+
+cat > "$TMP/cc.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-cc ]; then
+    printf '/usr/bin/cc\\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/cc.sh"
+
+cat > "$TMP/scripts/whp-build/gnu-make.bash" <<'EOF'
+whp_resolve_gnu_make()
+{
+    return 1
+}
+
+whp_find_gnu_make()
+{
+    return 1
+}
+EOF
+
+cat > "$TMP/scripts/whp-build/host-tools.sh" <<'EOF'
+# No managed host tools are needed for this fallback-boundary fixture.
+EOF
+
+cat > "$TMP/scripts/whp-build/host-libraries.sh" <<'EOF'
+whp_prepare_qemu_host_libraries()
+{
+    :
+}
+EOF
 
 cat > "$TMP/fake-python" <<'EOF'
 #!/bin/sh
