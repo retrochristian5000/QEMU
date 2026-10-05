@@ -500,11 +500,19 @@ state, passes it through ``GNULIB_SRCDIR``, and invokes Make's bootstrap with
 commit-keyed cache is absent or invalid.
 
 The maintainer bootstrap then runs with the seed Make and regenerates the
-Autoconf inputs from the pinned source. The Autoconf suite is treated as one
-versioned tool family: ``autoconf``, ``autom4te``, ``autoheader``, and
-``autoreconf`` must agree on their GNU Autoconf version. The selected
-configuration shell is exported through both ``CONFIG_SHELL`` and ``SHELL``
-and participates in the Make bootstrap marker.
+Autoconf inputs from the pinned source. The required Automake and Autoconf
+versions are read from that Make revision's own ``bootstrap.conf``; the helper
+does not maintain a second hard-coded version floor. Automake/aclocal must
+identify as one GNU Automake version at or above that floor. Likewise,
+``autoconf``, ``autom4te``, ``autoheader``, and ``autoreconf`` must agree
+on one GNU Autoconf version at or above Make's declared requirement.
+
+The selected configuration shell is exported through both ``CONFIG_SHELL``
+and ``SHELL`` and participates in the Make bootstrap marker. Make's bootstrap
+library also contains literal ``sed`` calls, so the validated seed sed is
+mirrored as ``bootstrap/make/seed-bin/sed`` and that private directory leads
+``PATH``. The ``SED`` variable and literal command lookup therefore resolve
+to the same implementation.
 
 GNU Make's Git documentation warns that ordinary Git-tree VPATH builds are not
 supported. That warning does not mean this WHP path should ignore the
