@@ -70,6 +70,7 @@ on:
       - 'scripts/tests/test-libtool-bootstrap.py'
       - 'toolchains/libtool'
       - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
       - 'scripts/tests/test-wine-dependency-policy.py'
       - 'scripts/tests/test-whp-dependency-ledger.py'
       - 'scripts/ensure-bash.py'
@@ -110,6 +111,7 @@ jobs:
           /bin/sh -n build.sh
           bash -n scripts/whp-build/host-tools.sh
           python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-gnulib-cache.py
 
       - name: Test configuration model
         run: |
@@ -136,6 +138,7 @@ jobs:
           python3 scripts/tests/test-libisofs-bootstrap.py
           python3 scripts/tests/test-libtool-bootstrap.py
           python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-gnulib-cache.py
           python3 scripts/tests/test-wine-dependency-policy.py
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
@@ -196,6 +199,7 @@ jobs:
             scripts/tests/test-libisofs-bootstrap.py \
             scripts/tests/test-libtool-bootstrap.py \
             scripts/tests/test-make-dependency-policy.py \
+            scripts/tests/test-make-gnulib-cache.py \
             scripts/tests/test-wine-dependency-policy.py \
             scripts/tests/test-whp-dependency-ledger.py \
             scripts/tests/test-whp-config.py \
