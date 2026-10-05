@@ -10,7 +10,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
-PYTHON_BOOTSTRAP_SCHEMA=3
+PYTHON_BOOTSTRAP_SCHEMA=4
 JOBS=${JOBS:-}
 if [ -n "${SED:-}" ] && [ -z "${WHP_SED_SEED:-}" ]; then
     WHP_SED_SEED=$SED
@@ -121,7 +121,17 @@ ensure_pip()
     fi
 
     printf 'Repairing pip in bundled WHP Python: %s\n' "$candidate" >&2
-    "$candidate" -m ensurepip --upgrade --default-pip >/dev/null 2>&1 || return 1
+    pip_scripts_dir=$(
+        "$candidate" -c 'import sysconfig; print(sysconfig.get_path("scripts"))' \
+            2>/dev/null
+    ) || return 1
+    [ -n "$pip_scripts_dir" ] || return 1
+
+    # ensurepip ultimately invokes pip, whose script-location warning is useful
+    # when the runtime is actually misconfigured. Put the runtime's own scripts
+    # directory on PATH rather than suppressing that warning globally.
+    PATH="$pip_scripts_dir${PATH:+:$PATH}" \
+        "$candidate" -m ensurepip --upgrade --default-pip >/dev/null || return 1
     pip_usable "$candidate"
 }
 
@@ -285,9 +295,14 @@ case "$build_mode" in
             "$python_revision" "$host_tag" "$bootstrap_cc" >&2
         (
             cd "$build_dir"
+            # Keep pip out of the DESTDIR phase. CPython's install target would
+            # otherwise run ensurepip against the staged path and warn that the
+            # generated pip3/pipX.Y launchers are not on PATH. The runtime is
+            # atomically published below before ensure_pip() installs/validates
+            # pip against its final prefix.
             CC="$bootstrap_cc" "$PYTHON_SOURCE_DIR/configure" \
                 --prefix="$TOOLCHAIN_DIR" \
-                --with-ensurepip=install
+                --with-ensurepip=no
             if [ -n "$make_jobs" ]; then
                 "$bootstrap_make" "$make_jobs"
             else
