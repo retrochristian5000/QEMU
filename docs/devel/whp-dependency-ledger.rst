@@ -485,15 +485,26 @@ managed helper can run.
 After those prerequisites are available, ``BOOTSTRAP_MAKE=auto`` prefers the
 pinned fork on macOS, ``BOOTSTRAP_MAKE=1`` forces it, and
 ``BOOTSTRAP_MAKE=0`` retains the seed. ``scripts/ensure-make.py`` stages the
-exact QEMU gitlink, replaces GNU Make's moving ``stable-202507`` gnulib branch
-reference with the audited commit
-``b22f5a3037712a3c957a03071ce0b219cef4d65b``, runs the maintainer bootstrap
-with the seed Make, configures a tool-only profile, and invokes GNU Make's own
-``build.sh`` for the compile/link stage. The resulting binary is promoted
-through ``MAKE_CMD``, ``MAKE``, and ``PATH`` for GNU sed, Git, Bash, Libtool,
-libisofs, firmware, and the later QEMU build graph. This keeps the
-``Make -> Make`` edge visible as a seed boundary instead of pretending it does
-not exist.
+exact QEMU gitlink and replaces GNU Make's moving ``stable-202507`` gnulib
+branch reference with the audited commit
+``b22f5a3037712a3c957a03071ce0b219cef4d65b``.
+
+The Make output marker intentionally includes the seed Make, Autotools,
+compiler, sed, Git, autopoint, and pkg-config identities, so a change in any of
+those inputs may require Make to be regenerated even when the Make gitlink did
+not change. That regeneration must not imply another download of the unchanged
+gnulib revision. The helper therefore stores gnulib separately under
+``BUILD_DIR/cache/gnulib/<commit>``, verifies its exact Git HEAD and clean tracked
+state, passes it through ``GNULIB_SRCDIR``, and invokes Make's bootstrap with
+``--gen --no-git``. Network access is needed only when that immutable
+commit-keyed cache is absent or invalid.
+
+The maintainer bootstrap then runs with the seed Make, configures a tool-only
+profile, and invokes GNU Make's own ``build.sh`` for the compile/link stage.
+The resulting binary is promoted through ``MAKE_CMD``, ``MAKE``, and ``PATH``
+for GNU sed, Git, Bash, Libtool, libisofs, firmware, and the later QEMU build
+graph. This keeps the ``Make -> Make`` edge visible as a seed boundary instead
+of pretending it does not exist.
 
 GNU Libtool bootstrap boundary
 ------------------------------
