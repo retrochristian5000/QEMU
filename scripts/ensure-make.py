@@ -132,7 +132,7 @@ def select_automake_pair():
 
 def autoconf_version(path):
     line = first_line([path, "--version"])
-    match = re.search(r"([0-9]+(?:\\.[0-9]+)+)(?:[^0-9].*)?$", line)
+    match = re.search(r"([0-9]+(?:\.[0-9]+)+)(?:[^0-9].*)?$", line)
     if "GNU Autoconf" not in line or not match:
         raise RuntimeError(f"not a usable GNU Autoconf tool: {path}: {line}")
     return match.group(1)
