@@ -22,7 +22,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
 
-MAKE_BOOTSTRAP_SCHEMA = "4"
+MAKE_BOOTSTRAP_SCHEMA = "5"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
 GNULIB_URL = "https://github.com/coreutils/gnulib.git"
 
@@ -119,14 +119,66 @@ def select_seed_make():
     raise RuntimeError("a seed GNU Make is required before the managed GNU Make stage")
 
 
-def select_automake_pair():
+def numeric_version(value):
+    return tuple(int(part) for part in value.split("."))
+
+
+def version_at_least(actual, required):
+    left = numeric_version(actual)
+    right = numeric_version(required)
+    width = max(len(left), len(right))
+    return left + (0,) * (width - len(left)) >= right + (0,) * (width - len(right))
+
+
+def bootstrap_required_version(name):
+    text = (SUBMODULE_DIR / "bootstrap.conf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    match = re.search(
+        rf"(?m)^{re.escape(name)}[ \\t]+([0-9]+(?:\\.[0-9]+)+)[ \\t]*$",
+        text,
+    )
+    if not match:
+        raise RuntimeError(
+            f"GNU Make bootstrap.conf does not declare a {name} version"
+        )
+    return match.group(1)
+
+
+def automake_version(path):
+    line = first_line([path, "--version"])
+    match = re.search(r"([0-9]+(?:\.[0-9]+)+)(?:[^0-9].*)?$", line)
+    if "GNU automake" not in line or not match:
+        raise RuntimeError(f"not a usable GNU Automake tool: {path}: {line}")
+    return match.group(1)
+
+
+def select_automake_pair(required_version):
     automake = explicit_tool("AUTOMAKE") or executable("automake")
-    aclocal = explicit_tool("ACLOCAL") or executable("aclocal")
-    if not automake or not aclocal:
+    if not automake:
+        raise RuntimeError("Automake is required to bootstrap GNU Make")
+
+    suite_dir = pathlib.Path(automake).parent
+    aclocal = (
+        explicit_tool("ACLOCAL")
+        or executable(str(suite_dir / "aclocal"))
+        or executable("aclocal")
+    )
+    if not aclocal:
         raise RuntimeError("Automake/aclocal are required to bootstrap GNU Make")
-    for path in (automake, aclocal):
-        if "GNU automake" not in run_text([path, "--version"]):
-            raise RuntimeError(f"not a usable GNU Automake tool: {path}")
+
+    versions = {automake_version(path) for path in (automake, aclocal)}
+    if len(versions) != 1:
+        raise RuntimeError(
+            "mixed GNU Automake tool pair: "
+            f"{automake}={automake_version(automake)}, "
+            f"{aclocal}={automake_version(aclocal)}"
+        )
+    actual = next(iter(versions))
+    if not version_at_least(actual, required_version):
+        raise RuntimeError(
+            f"GNU Automake {required_version} or newer is required; found {actual}"
+        )
     return automake, aclocal
 
 
@@ -138,7 +190,7 @@ def autoconf_version(path):
     return match.group(1)
 
 
-def select_autoconf_suite():
+def select_autoconf_suite(required_version):
     autoconf = explicit_tool("AUTOCONF") or executable("autoconf")
     if not autoconf:
         raise RuntimeError("Autoconf is required to bootstrap GNU Make")
@@ -168,6 +220,12 @@ def select_autoconf_suite():
             f"{path}={autoconf_version(path)}" for path in suite
         )
         raise RuntimeError(f"mixed GNU Autoconf tool suite: {detail}")
+
+    actual = next(iter(versions))
+    if not version_at_least(actual, required_version):
+        raise RuntimeError(
+            f"GNU Autoconf {required_version} or newer is required; found {actual}"
+        )
 
     return autoconf, autom4te, autoheader, autoreconf
 
@@ -400,11 +458,13 @@ def ensure_gnulib_cache(build_root, git):
 
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
                 autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
-                config_shell):
+                config_shell, required_automake, required_autoconf):
     return (
         f"MAKE_BOOTSTRAP_SCHEMA={MAKE_BOOTSTRAP_SCHEMA}\n"
         f"MAKE_GIT_COMMIT={revision}\n"
         f"GNULIB_COMMIT={GNULIB_COMMIT}\n"
+        f"REQUIRED_AUTOMAKE={required_automake}\n"
+        f"REQUIRED_AUTOCONF={required_autoconf}\n"
         f"HOST_SYSTEM={platform.system()}\n"
         f"HOST_MACHINE={platform.machine()}\n"
         f"SEED_MAKE={seed_make}: {first_line([seed_make, '--version'])}\n"
@@ -428,9 +488,13 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
 
 def bootstrap(build_root):
     revision = ensure_source()
+    required_automake = bootstrap_required_version("automake")
+    required_autoconf = bootstrap_required_version("autoconf")
     seed_make = select_seed_make()
-    automake, aclocal = select_automake_pair()
-    autoconf, autom4te, autoheader, autoreconf = select_autoconf_suite()
+    automake, aclocal = select_automake_pair(required_automake)
+    autoconf, autom4te, autoheader, autoreconf = select_autoconf_suite(
+        required_autoconf
+    )
     cc = select_cc()
     sed = select_seed_sed()
     git = tool("git")
@@ -446,7 +510,7 @@ def bootstrap(build_root):
     marker = marker_text(
         revision, seed_make, automake, aclocal, autoconf, autom4te,
         autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
-        config_shell,
+        config_shell, required_automake, required_autoconf,
     )
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
@@ -458,6 +522,15 @@ def bootstrap(build_root):
     pin_gnulib(source)
     gnulib_source = ensure_gnulib_cache(build_root, git)
     objects.mkdir(parents=True, exist_ok=True)
+
+    seed_bin = work / "seed-bin"
+    seed_bin.mkdir(parents=True, exist_ok=True)
+    seed_sed = seed_bin / "sed"
+    try:
+        seed_sed.symlink_to(sed)
+    except OSError:
+        shutil.copy2(sed, seed_sed)
+        seed_sed.chmod(seed_sed.stat().st_mode | 0o111)
 
     env = os.environ.copy()
     for key in (
@@ -497,6 +570,7 @@ def bootstrap(build_root):
         "MAKEINFO": "true",
     })
     env["PATH"] = os.pathsep.join([
+        str(seed_bin),
         str(pathlib.Path(automake).parent),
         str(pathlib.Path(autoconf).parent),
         str(pathlib.Path(autopoint).parent),
