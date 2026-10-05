@@ -168,6 +168,14 @@ jobs:
           test -f "$build_root/bootstrap/make/build/src/config.h"
           test -f "$build_root/bootstrap/make/build/build.sh"
 
+          generated="$build_root/cache/make-generated"
+          test -f "$generated/.whp-make-generated"
+          grep -Fxq 'MAKE_GENERATED_SCHEMA=1' "$generated/.whp-make-generated"
+          test -f "$generated/configure"
+          test -f "$generated/Makefile.in"
+          test -f "$generated/lib/Makefile.in"
+          test -f "$generated/src/config.h.in"
+
       - name: Reconfigure Make without rerunning Autoconf or refetching gnulib
         shell: bash
         run: |
