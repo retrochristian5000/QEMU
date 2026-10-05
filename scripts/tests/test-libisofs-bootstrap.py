@@ -620,8 +620,8 @@ def main() -> int:
     require(helper, 'f"SED={sed}\\n"', "sed workspace identity")
     require(
         helper,
-        'libtool --mode=install 1',
-        "documented INSTALL collision regression",
+        '    "INSTALL",',
+        "INSTALL command-variable isolation",
     )
     require(helper, "WHP_INCREMENTAL_BUILD", "incremental libisofs policy")
     require(helper, "def prepare_workspace(", "incremental workspace planner")
