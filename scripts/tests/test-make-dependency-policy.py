@@ -59,7 +59,10 @@ def main() -> int:
     require(make_bootstrap, 'objects / "config.status"', "configure output validation")
     require(make_bootstrap, 'build_root / "cache" / "gnulib" / GNULIB_COMMIT', "persistent gnulib cache")
     require(make_bootstrap, 'build_root / "cache" / "make-generated"', "generated-source cache")
-    require(make_bootstrap, '"MAKE_GENERATED_SCHEMA=1', "generated-source schema")
+    require(make_bootstrap, '"MAKE_GENERATED_SCHEMA=2', "generated-source schema")
+    require(make_bootstrap, "def pkg_config_aclocal_dir", "pkg-config macro directory resolver")
+    require(make_bootstrap, 'macro_dir / "pkg.m4"', "pkg.m4 availability guard")
+    require(make_bootstrap, '"ACLOCAL_PATH": aclocal_path', "pkg.m4 aclocal handoff")
     require(make_bootstrap, "def generated_source_usable", "generated-source validation")
     require(make_bootstrap, "def ensure_generated_source", "generated-source cache producer")
     require(

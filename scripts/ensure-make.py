@@ -250,6 +250,27 @@ def resolve_shell(requested, env_name):
     return path
 
 
+def pkg_config_aclocal_dir(pkg_config):
+    candidates = []
+    for executable_path in (
+        pathlib.Path(pkg_config),
+        pathlib.Path(pkg_config).resolve(),
+    ):
+        macro_dir = executable_path.parent.parent / "share" / "aclocal"
+        if macro_dir not in candidates:
+            candidates.append(macro_dir)
+
+    for macro_dir in candidates:
+        if (macro_dir / "pkg.m4").is_file():
+            return str(macro_dir)
+
+    checked = ", ".join(str(path / "pkg.m4") for path in candidates)
+    raise RuntimeError(
+        "pkg-config is installed but pkg.m4 is unavailable; checked: "
+        + checked
+    )
+
+
 def select_config_shell():
     for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL"):
         requested = os.environ.get(env_name, "")
@@ -459,9 +480,10 @@ def ensure_gnulib_cache(build_root, git):
 def generation_marker_text(
     revision, automake, aclocal, autoconf, autom4te, autoheader, autoreconf,
     sed, autopoint, config_shell, required_automake, required_autoconf,
+    aclocal_path,
 ):
     return (
-        "MAKE_GENERATED_SCHEMA=1\n"
+        "MAKE_GENERATED_SCHEMA=2\n"
         f"MAKE_GIT_COMMIT={revision}\n"
         f"GNULIB_COMMIT={GNULIB_COMMIT}\n"
         f"REQUIRED_AUTOMAKE={required_automake}\n"
@@ -476,7 +498,7 @@ def generation_marker_text(
         f"CONFIG_SHELL={shell_identity(config_shell)}\n"
         f"SED={sed}\n"
         f"AUTOPOINT={autopoint}: {first_line([autopoint, '--version'])}\n"
-        f"ACLOCAL_PATH={os.environ.get('ACLOCAL_PATH', '')}\n"
+        f"ACLOCAL_PATH={aclocal_path}\n"
     )
 
 
@@ -574,7 +596,8 @@ def ensure_generated_source(
 
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
                 autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
-                config_shell, required_automake, required_autoconf):
+                config_shell, required_automake, required_autoconf,
+                aclocal_path):
     return (
         f"MAKE_BOOTSTRAP_SCHEMA={MAKE_BOOTSTRAP_SCHEMA}\n"
         f"MAKE_GIT_COMMIT={revision}\n"
@@ -596,7 +619,7 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
         f"GIT={git}: {first_line([git, '--version'])}\n"
         f"AUTOPOINT={autopoint}: {first_line([autopoint, '--version'])}\n"
         f"PKG_CONFIG={pkg_config}: {first_line([pkg_config, '--version'])}\n"
-        f"ACLOCAL_PATH={os.environ.get('ACLOCAL_PATH', '')}\n"
+        f"ACLOCAL_PATH={aclocal_path}\n"
         f"CONFIGURE_ARGS={shlex.join(MAKE_CONFIGURE_ARGS)}\n"
         "PROFILE=tool-only-no-nls-no-guile\n"
     )
@@ -616,6 +639,11 @@ def bootstrap(build_root):
     git = tool("git")
     autopoint = tool("autopoint", "AUTOPOINT")
     pkg_config = tool("pkg-config", "PKG_CONFIG", ("pkgconf",))
+    pkg_aclocal_dir = pkg_config_aclocal_dir(pkg_config)
+    inherited_aclocal_path = os.environ.get("ACLOCAL_PATH", "")
+    aclocal_path = pkg_aclocal_dir
+    if inherited_aclocal_path:
+        aclocal_path += os.pathsep + inherited_aclocal_path
     config_shell = select_config_shell()
 
     prefix = build_root / "deps" / "make"
@@ -626,7 +654,7 @@ def bootstrap(build_root):
     marker = marker_text(
         revision, seed_make, automake, aclocal, autoconf, autom4te,
         autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
-        config_shell, required_automake, required_autoconf,
+        config_shell, required_automake, required_autoconf, aclocal_path,
     )
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
@@ -682,6 +710,7 @@ def bootstrap(build_root):
         "CONFIG_SHELL": config_shell,
         "SHELL": config_shell,
         "MAKEINFO": "true",
+        "ACLOCAL_PATH": aclocal_path,
     })
     env["PATH"] = os.pathsep.join([
         str(seed_bin),
@@ -695,7 +724,7 @@ def bootstrap(build_root):
     generation_marker = generation_marker_text(
         revision, automake, aclocal, autoconf, autom4te, autoheader,
         autoreconf, sed, autopoint, config_shell, required_automake,
-        required_autoconf,
+        required_autoconf, aclocal_path,
     )
     generated_source = ensure_generated_source(
         build_root, revision, gnulib_source, env, config_shell,

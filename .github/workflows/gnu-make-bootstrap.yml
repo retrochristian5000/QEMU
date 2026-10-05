@@ -176,7 +176,8 @@ jobs:
 
           generated="$build_root/cache/make-generated"
           test -f "$generated/.whp-make-generated"
-          grep -Fxq 'MAKE_GENERATED_SCHEMA=1' "$generated/.whp-make-generated"
+          grep -Fxq 'MAKE_GENERATED_SCHEMA=2' "$generated/.whp-make-generated"
+          grep -Fq 'ACLOCAL_PATH=' "$generated/.whp-make-generated"
           test -f "$generated/configure"
           test -f "$generated/Makefile.in"
           test -f "$generated/lib/Makefile.in"
