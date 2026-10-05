@@ -22,7 +22,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
 
-MAKE_BOOTSTRAP_SCHEMA = "3"
+MAKE_BOOTSTRAP_SCHEMA = "4"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
 GNULIB_URL = "https://github.com/coreutils/gnulib.git"
 
@@ -464,10 +464,13 @@ def bootstrap(build_root):
         "BASH_ENV", "ENV", "POSIXLY_CORRECT",
         "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES",
         "MAKEOVERRIDES", "MAKELEVEL",
-        "CC", "CXX", "AR", "AS", "LD", "NM", "RANLIB", "STRIP",
+        "CC", "CXX", "CPP", "CXXCPP",
+        "AR", "ARFLAGS", "AS", "LD", "NM", "RANLIB", "STRIP",
         "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "OBJCFLAGS",
+        "LIBS", "GUILE_CFLAGS", "GUILE_LIBS",
         "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
         "CONFIG_SITE", "M4", "WARNINGS",
+        "build_alias", "host_alias", "target_alias",
     ):
         env.pop(key, None)
     for key in tuple(env):
