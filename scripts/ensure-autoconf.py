@@ -16,6 +16,7 @@ import hashlib
 import io
 import os
 import pathlib
+import platform
 import re
 import shlex
 import shutil
@@ -27,7 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "1"
+AUTOCONF_BOOTSTRAP_SCHEMA = "2"
 
 BUILD_TARGETS = (
     "bin/autoconf",
@@ -168,27 +169,82 @@ def select_gnu_make() -> str:
     raise RuntimeError("GNU Make is required to bootstrap GNU Autoconf")
 
 
+def gnu_m4_version(path: str) -> str:
+    completed = subprocess.run(
+        [path, "--gnu", "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    output = completed.stdout.strip()
+    if completed.returncode != 0 or "GNU M4" not in output:
+        detail = output.splitlines()[0] if output else "<no version output>"
+        raise RuntimeError(
+            f"not GNU M4 with --gnu support: {path}: {detail}"
+        )
+    return output.splitlines()[0]
+
+
 def select_gnu_m4() -> str:
     requested = explicit_tool("M4")
-    candidates: list[str] = []
     if requested:
-        candidates.append(requested)
-    else:
-        for name in ("gm4", "m4"):
-            path = executable(name)
-            if path and path not in candidates:
-                candidates.append(path)
+        gnu_m4_version(requested)
+        return requested
+
+    candidates: list[str] = []
+
+    def add_candidate(candidate: str | None) -> None:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    if platform.system() == "Darwin":
+        # Homebrew's GNU M4 is keg-only because macOS already provides M4
+        # compatibility tools. Prefer the keg before PATH so /usr/bin/gm4
+        # cannot silently become the embedded Autoconf M4 when a managed GNU
+        # M4 installation is available.
+        for candidate in (
+            "/opt/homebrew/opt/m4/bin/m4",
+            "/usr/local/opt/m4/bin/m4",
+        ):
+            add_candidate(executable(candidate))
+
+        brew = executable("brew")
+        if brew:
+            completed = subprocess.run(
+                [brew, "--prefix", "m4"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if completed.returncode == 0:
+                prefix = completed.stdout.strip()
+                if prefix:
+                    add_candidate(
+                        executable(str(pathlib.Path(prefix) / "bin" / "m4"))
+                    )
+
+    # Prefer the canonical m4 name. gm4 remains a validated seed fallback for
+    # hosts where GNU M4 is intentionally installed under that compatibility
+    # name, but it no longer wins merely because macOS exposes /usr/bin/gm4.
+    for name in ("m4", "gm4"):
+        add_candidate(executable(name))
+
+    rejected: list[str] = []
     for path in candidates:
-        completed = subprocess.run(
-            [path, "--version"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if completed.returncode == 0 and "GNU M4" in completed.stdout:
-            return path
-    raise RuntimeError("GNU M4 is required to bootstrap GNU Autoconf")
+        try:
+            gnu_m4_version(path)
+        except RuntimeError as exc:
+            rejected.append(str(exc))
+            continue
+        return path
+
+    detail = "; ".join(rejected) if rejected else "no candidates found"
+    raise RuntimeError(
+        "GNU M4 with --gnu support is required to bootstrap GNU Autoconf: "
+        + detail
+    )
 
 
 def select_automake_pair() -> tuple[str, str]:
@@ -383,7 +439,7 @@ def marker_text(
         f"AUTOCONF_GIT_COMMIT={revision}\n"
         f"AUTOMAKE={automake}: {first_line([automake, '--version'])}\n"
         f"ACLOCAL={aclocal}: {first_line([aclocal, '--version'])}\n"
-        f"M4={m4}: {first_line([m4, '--version'])}\n"
+        f"M4={m4}: {gnu_m4_version(m4)}\n"
         f"PERL={perl}: {first_line([perl, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
         f"SEED_SED={seed}\n"
@@ -431,6 +487,16 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
 
+    # Some Autotools helpers still invoke literal "m4" even when M4 is set.
+    # Mirror the validated executable under that canonical name so PATH and the
+    # M4 variable always resolve to the same implementation.
+    m4_link = seed_bin / "m4"
+    try:
+        m4_link.symlink_to(m4)
+    except OSError:
+        shutil.copy2(m4, m4_link)
+        m4_link.chmod(m4_link.stat().st_mode | 0o111)
+
     env = os.environ.copy()
     for key in (
         "BASH_ENV", "ENV", "POSIXLY_CORRECT",
@@ -446,9 +512,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["SED"] = seed
     env["EMACS"] = "no"
     env["PATH"] = (
-        str(pathlib.Path(automake).parent)
+        str(seed_bin)
         + os.pathsep
-        + str(seed_bin)
+        + str(pathlib.Path(automake).parent)
         + os.pathsep
         + env.get("PATH", "")
     )
@@ -456,7 +522,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
     print(
         f"WHP Autoconf bootstrap: {revision} -> {prefix} "
-        f"(Automake {automake}, seed sed {seed})",
+        f"(Automake {automake}, GNU M4 {m4}, seed sed {seed})",
         file=sys.stderr,
     )
 
