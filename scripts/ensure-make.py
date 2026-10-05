@@ -9,6 +9,8 @@ import hashlib
 import io
 import os
 import pathlib
+import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,9 +22,15 @@ SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
 
-MAKE_BOOTSTRAP_SCHEMA = "2"
+MAKE_BOOTSTRAP_SCHEMA = "3"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
 GNULIB_URL = "https://github.com/coreutils/gnulib.git"
+
+MAKE_CONFIGURE_ARGS = (
+    "--disable-dependency-tracking",
+    "--disable-nls",
+    "--without-guile",
+)
 
 
 def run_text(command, *, cwd=None, env=None):
@@ -122,16 +130,91 @@ def select_automake_pair():
     return automake, aclocal
 
 
+def autoconf_version(path):
+    line = first_line([path, "--version"])
+    match = re.search(r"([0-9]+(?:\\.[0-9]+)+)(?:[^0-9].*)?$", line)
+    if "GNU Autoconf" not in line or not match:
+        raise RuntimeError(f"not a usable GNU Autoconf tool: {path}: {line}")
+    return match.group(1)
+
+
 def select_autoconf_suite():
     autoconf = explicit_tool("AUTOCONF") or executable("autoconf")
-    autom4te = explicit_tool("AUTOM4TE") or executable("autom4te")
-    autoreconf = explicit_tool("AUTORECONF") or executable("autoreconf")
-    if not autoconf or not autom4te or not autoreconf:
-        raise RuntimeError("Autoconf/autom4te/autoreconf are required to bootstrap GNU Make")
-    for path in (autoconf, autom4te, autoreconf):
-        if "GNU Autoconf" not in run_text([path, "--version"]):
-            raise RuntimeError(f"not a usable GNU Autoconf tool: {path}")
-    return autoconf, autom4te, autoreconf
+    if not autoconf:
+        raise RuntimeError("Autoconf is required to bootstrap GNU Make")
+
+    suite_dir = pathlib.Path(autoconf).parent
+
+    def companion(name, env_name):
+        requested = explicit_tool(env_name)
+        if requested:
+            return requested
+        local = executable(str(suite_dir / name))
+        return local or executable(name)
+
+    autom4te = companion("autom4te", "AUTOM4TE")
+    autoheader = companion("autoheader", "AUTOHEADER")
+    autoreconf = companion("autoreconf", "AUTORECONF")
+    if not autom4te or not autoheader or not autoreconf:
+        raise RuntimeError(
+            "Autoconf/autom4te/autoheader/autoreconf are required "
+            "to bootstrap GNU Make"
+        )
+
+    suite = (autoconf, autom4te, autoheader, autoreconf)
+    versions = {autoconf_version(path) for path in suite}
+    if len(versions) != 1:
+        detail = ", ".join(
+            f"{path}={autoconf_version(path)}" for path in suite
+        )
+        raise RuntimeError(f"mixed GNU Autoconf tool suite: {detail}")
+
+    return autoconf, autom4te, autoheader, autoreconf
+
+
+def shell_usable(path):
+    completed = subprocess.run(
+        [path, "-c", "exit 0"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def resolve_shell(requested, env_name):
+    argv = shlex.split(requested)
+    if len(argv) != 1:
+        raise RuntimeError(f"{env_name} must name exactly one executable")
+    path = executable(argv[0])
+    if not path or not shell_usable(path):
+        raise RuntimeError(f"{env_name} is not a usable shell: {argv[0]}")
+    return path
+
+
+def select_config_shell():
+    for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL"):
+        requested = os.environ.get(env_name, "")
+        if requested:
+            return resolve_shell(requested, env_name)
+    if pathlib.Path("/bin/sh").is_file() and shell_usable("/bin/sh"):
+        return "/bin/sh"
+    path = executable("sh")
+    if path and shell_usable(path):
+        return path
+    raise RuntimeError("a usable configuration shell is required to bootstrap GNU Make")
+
+
+def shell_identity(path):
+    completed = subprocess.run(
+        [path, "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    first = completed.stdout.splitlines()[0] if completed.stdout else ""
+    return f"{path}|{first}"
 
 
 def select_seed_sed():
@@ -316,22 +399,29 @@ def ensure_gnulib_cache(build_root, git):
 
 
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
-                autoreconf, cc, sed, git, autopoint, pkg_config):
+                autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
+                config_shell):
     return (
         f"MAKE_BOOTSTRAP_SCHEMA={MAKE_BOOTSTRAP_SCHEMA}\n"
         f"MAKE_GIT_COMMIT={revision}\n"
         f"GNULIB_COMMIT={GNULIB_COMMIT}\n"
+        f"HOST_SYSTEM={platform.system()}\n"
+        f"HOST_MACHINE={platform.machine()}\n"
         f"SEED_MAKE={seed_make}: {first_line([seed_make, '--version'])}\n"
         f"AUTOMAKE={automake}: {first_line([automake, '--version'])}\n"
         f"ACLOCAL={aclocal}: {first_line([aclocal, '--version'])}\n"
         f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
         f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
+        f"AUTOHEADER={autoheader}: {first_line([autoheader, '--version'])}\n"
         f"AUTORECONF={autoreconf}: {first_line([autoreconf, '--version'])}\n"
+        f"CONFIG_SHELL={shell_identity(config_shell)}\n"
         f"CC={cc}: {first_line([cc, '--version'])}\n"
         f"SED={sed}\n"
         f"GIT={git}: {first_line([git, '--version'])}\n"
         f"AUTOPOINT={autopoint}: {first_line([autopoint, '--version'])}\n"
         f"PKG_CONFIG={pkg_config}: {first_line([pkg_config, '--version'])}\n"
+        f"ACLOCAL_PATH={os.environ.get('ACLOCAL_PATH', '')}\n"
+        f"CONFIGURE_ARGS={shlex.join(MAKE_CONFIGURE_ARGS)}\n"
         "PROFILE=tool-only-no-nls-no-guile\n"
     )
 
@@ -340,12 +430,13 @@ def bootstrap(build_root):
     revision = ensure_source()
     seed_make = select_seed_make()
     automake, aclocal = select_automake_pair()
-    autoconf, autom4te, autoreconf = select_autoconf_suite()
+    autoconf, autom4te, autoheader, autoreconf = select_autoconf_suite()
     cc = select_cc()
     sed = select_seed_sed()
     git = tool("git")
     autopoint = tool("autopoint", "AUTOPOINT")
     pkg_config = tool("pkg-config", "PKG_CONFIG", ("pkgconf",))
+    config_shell = select_config_shell()
 
     prefix = build_root / "deps" / "make"
     work = build_root / "bootstrap" / "make"
@@ -354,7 +445,8 @@ def bootstrap(build_root):
     marker_path = prefix / ".whp-make-bootstrap"
     marker = marker_text(
         revision, seed_make, automake, aclocal, autoconf, autom4te,
-        autoreconf, cc, sed, git, autopoint, pkg_config,
+        autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
+        config_shell,
     )
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
@@ -368,8 +460,20 @@ def bootstrap(build_root):
     objects.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    for key in ("BASH_ENV", "ENV", "POSIXLY_CORRECT", "MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
+    for key in (
+        "BASH_ENV", "ENV", "POSIXLY_CORRECT",
+        "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES",
+        "MAKEOVERRIDES", "MAKELEVEL",
+        "CC", "CXX", "AR", "AS", "LD", "NM", "RANLIB", "STRIP",
+        "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "OBJCFLAGS",
+        "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
+        "CONFIG_SITE", "M4", "WARNINGS",
+    ):
         env.pop(key, None)
+    for key in tuple(env):
+        if key.startswith(("ac_cv_", "gl_cv_", "make_cv_")):
+            env.pop(key, None)
+
     env.update({
         "MAKE": seed_make,
         "MAKE_CMD": seed_make,
@@ -378,12 +482,15 @@ def bootstrap(build_root):
         "ACLOCAL": aclocal,
         "AUTOCONF": autoconf,
         "AUTOM4TE": autom4te,
+        "AUTOHEADER": autoheader,
         "AUTORECONF": autoreconf,
         "AUTOPOINT": autopoint,
         "PKG_CONFIG": pkg_config,
         "SED": sed,
         "GNULIB_URL": GNULIB_URL,
         "GNULIB_SRCDIR": str(gnulib_source),
+        "CONFIG_SHELL": config_shell,
+        "SHELL": config_shell,
         "MAKEINFO": "true",
     })
     env["PATH"] = os.pathsep.join([
@@ -394,7 +501,6 @@ def bootstrap(build_root):
         env.get("PATH", ""),
     ])
 
-    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
     print(
         f"WHP GNU Make bootstrap: {revision} -> {prefix} "
         f"(seed {seed_make}, gnulib {GNULIB_COMMIT})",
@@ -412,10 +518,30 @@ def bootstrap(build_root):
     if not configure.is_file():
         raise RuntimeError("GNU Make bootstrap did not generate configure")
     run_logged(
-        [config_shell, str(configure), f"--prefix={prefix}", "--disable-nls", "--without-guile"],
+        [config_shell, str(configure), f"--prefix={prefix}", *MAKE_CONFIGURE_ARGS],
         cwd=objects, env=env,
     )
-    run_logged([config_shell, str(source / "build.sh")], cwd=objects, env=env)
+
+    configured_outputs = (
+        objects / "build.cfg",
+        objects / "config.status",
+        objects / "Makefile",
+        objects / "lib" / "Makefile",
+        objects / "src" / "config.h",
+        objects / "build.sh",
+    )
+    missing = [str(path) for path in configured_outputs if not path.is_file()]
+    if missing:
+        raise RuntimeError(
+            "GNU Make configure did not produce required bootstrap files: "
+            + ", ".join(missing)
+        )
+
+    # configure.ac deliberately AC_CONFIG_LINKS build.sh into the build tree.
+    # Consume that configured entry rather than bypassing config.status by
+    # reaching back into the staged source tree.
+    configured_build = objects / "build.sh"
+    run_logged([config_shell, str(configured_build)], cwd=objects, env=env)
 
     built = objects / "make"
     if not gnu_make_usable(built):
