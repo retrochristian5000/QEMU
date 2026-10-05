@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "ensure-make.py"
 
 
-def run(*args: str, cwd: pathlib.Path | None = None) -> str:
+def run(*args: str, cwd=None) -> str:
     completed = subprocess.run(
         args,
         cwd=cwd,
