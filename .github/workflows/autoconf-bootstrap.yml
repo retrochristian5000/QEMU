@@ -73,6 +73,29 @@ jobs:
           export PATH="$automake_prefix/bin:$PATH"
           "$AUTOMAKE" --version | grep -q 'GNU automake'
 
+          expected_m4=
+          poison_bin=
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            expected_m4="$(brew --prefix m4)/bin/m4"
+            test -x "$expected_m4"
+            poison_bin="$RUNNER_TEMP/poison-m4"
+            mkdir -p "$poison_bin"
+            cat > "$poison_bin/gm4" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --gnu ]; then
+  shift
+fi
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'GNU M4 99.99 poison'
+  exit 0
+fi
+printf '%s\n' 'error: poison gm4 was executed' >&2
+exit 99
+EOF
+            chmod +x "$poison_bin/gm4"
+            export PATH="$poison_bin:$PATH"
+          fi
+
           autoconf_prefix="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
             python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
           test -x "$autoconf_prefix/bin/autoconf"
@@ -81,6 +104,15 @@ jobs:
           test -x "$autoconf_prefix/bin/autoreconf"
           "$autoconf_prefix/bin/autoconf" --version | grep -q 'GNU Autoconf'
           "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
+
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            grep -Fq "M4=$expected_m4:" "$autoconf_prefix/.whp-autoconf-bootstrap"
+            grep -Fq "$expected_m4" "$autoconf_prefix/bin/autom4te"
+            if grep -Fq "$poison_bin/gm4" "$autoconf_prefix/bin/autom4te"; then
+              printf '%s\n' 'error: Autoconf embedded PATH gm4 instead of Homebrew GNU M4' >&2
+              exit 1
+            fi
+          fi
 
           again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
             python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
