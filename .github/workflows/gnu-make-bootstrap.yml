@@ -57,13 +57,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == macOS ]]; then
-            brew install autoconf automake gettext m4 pkg-config
+            brew install autoconf automake gettext m4 pkg-config texinfo
             echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
             echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
           else
             sudo apt-get update
             sudo apt-get install --no-install-recommends -y \
-              autoconf automake autopoint gettext gcc m4 make pkg-config
+              autoconf automake autopoint gettext gcc m4 make pkg-config texinfo
           fi
 
       - name: Prepare managed Automake and Autoconf
@@ -71,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == macOS ]]; then
-            export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$PATH"
+            export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
           fi
           seed="$(./sed.sh --print-seed)"
           automake_prefix="$(
