@@ -438,10 +438,18 @@ def suite_usable(prefix: pathlib.Path) -> bool:
         input="AC_INIT([whp-bootstrap-smoke],[1])\nAC_OUTPUT\n",
         text=True,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         check=False,
     )
-    return completed.returncode == 0 and completed.stdout.startswith("#!")
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        print(
+            "WHP Autoconf installed-runtime smoke failed"
+            + (f": {detail}" if detail else ""),
+            file=sys.stderr,
+        )
+        return False
+    return bool(completed.stdout.strip())
 
 
 def marker_text(
