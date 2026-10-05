@@ -50,7 +50,7 @@ OPTIONS = (
     Option('QEMU_C_STANDARD', 'Host features', 'QEMU C language standard', 'choice', 'gnu11', ('gnu11', 'gnu17', 'gnu23')),
     Option('QEMU_CXX_STANDARD', 'Host features', 'QEMU C++ language standard', 'choice', 'gnu++23', ('gnu++17', 'gnu++20', 'gnu++23', 'c++26')),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
-    Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '17', ('17', '20', '23', '26')),
+    Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '23', ('17', '20', '23', '26')),
     Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n'),
     Option('BOOTSTRAP_PYTHON', 'Host features', 'Bootstrap/use WHP Python', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_BASH', 'Host features', 'Bootstrap/use WHP Bash', 'choice', 'auto', ('auto', 'y', 'n')),

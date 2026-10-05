@@ -10,7 +10,7 @@ QEMU_HOST_CPU_TUNING|Host features|QEMU host CPU tuning flags|string|native||
 QEMU_C_STANDARD|Host features|QEMU C language standard|choice|gnu11|gnu11,gnu17,gnu23|
 QEMU_CXX_STANDARD|Host features|QEMU C++ language standard|choice|gnu++23|gnu++17,gnu++20,gnu++23,c++26|
 BOOTSTRAP_NATIVE_LLVM|Host features|Bootstrap/use WHP native LLVM|bool|n||
-NATIVE_LLVM_CXX_STANDARD|Host features|Native LLVM C++ language standard|choice|17|17,20,23,26|
+NATIVE_LLVM_CXX_STANDARD|Host features|Native LLVM C++ language standard|choice|23|17,20,23,26|
 NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|bool|n||
 BOOTSTRAP_PYTHON|Host features|Bootstrap/use WHP Python|choice|auto|auto,y,n|
 BOOTSTRAP_BASH|Host features|Bootstrap/use WHP Bash|choice|auto|auto,y,n|

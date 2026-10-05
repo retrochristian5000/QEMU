@@ -28,10 +28,10 @@ assert '"-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"' in bootstrap
 assert 'CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags' in bootstrap
 assert 'CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags' in bootstrap
 
-# The C++ language level is independent from release optimization. Keep the
-# default conservative, require the requested level instead of silently falling
-# back, and make it part of the installed-toolchain cache identity.
-assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"' in bootstrap
+# The C++ language level is independent from release optimization. Keep C++23
+# as the WHP native bootstrap baseline, require the requested level instead of
+# silently falling back, and make it part of the installed-toolchain cache identity.
+assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"' in bootstrap
 assert 'compiler_supports_cxx_standard()' in bootstrap
 assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
 assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap

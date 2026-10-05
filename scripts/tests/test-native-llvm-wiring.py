@@ -105,7 +105,7 @@ assert 'WHP native LLVM Ninja:' in bootstrap
 # The LLVM bootstrap language level is user-selectable but must be explicit and
 # cache-identifying. C++26 probes both the final spelling and Clang's c++2c
 # spelling so the bootstrap can work across compiler transition releases.
-assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"' in bootstrap
+assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"' in bootstrap
 assert 'compiler_supports_cxx_standard()' in bootstrap
 assert 'standards=(c++26 c++2c)' in bootstrap
 assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap

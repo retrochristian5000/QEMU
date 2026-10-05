@@ -14,7 +14,7 @@ LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
-LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-17}"
+LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
 LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Build one host-native LLVM executable set for QEMU plus the freestanding
 # firmware lanes. Target selection belongs at Clang invocation time via

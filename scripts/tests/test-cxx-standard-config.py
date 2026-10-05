@@ -50,8 +50,8 @@ def main() -> int:
             'NATIVE_LLVM_CXX_STANDARD is not a Host features option')
     require(llvm_option.kind == 'choice',
             'NATIVE_LLVM_CXX_STANDARD must be a choice')
-    require(llvm_option.default == '17',
-            'NATIVE_LLVM_CXX_STANDARD default must remain 17 during migration')
+    require(llvm_option.default == '23',
+            'NATIVE_LLVM_CXX_STANDARD default must remain 23')
     require(llvm_option.choices == ('17', '20', '23', '26'),
             'NATIVE_LLVM_CXX_STANDARD choices are incorrect')
 
