@@ -499,12 +499,31 @@ state, passes it through ``GNULIB_SRCDIR``, and invokes Make's bootstrap with
 ``--gen --no-git``. Network access is needed only when that immutable
 commit-keyed cache is absent or invalid.
 
-The maintainer bootstrap then runs with the seed Make, configures a tool-only
-profile, and invokes GNU Make's own ``build.sh`` for the compile/link stage.
-The resulting binary is promoted through ``MAKE_CMD``, ``MAKE``, and ``PATH``
-for GNU sed, Git, Bash, Libtool, libisofs, firmware, and the later QEMU build
-graph. This keeps the ``Make -> Make`` edge visible as a seed boundary instead
-of pretending it does not exist.
+The maintainer bootstrap then runs with the seed Make and regenerates the
+Autoconf inputs from the pinned source. The Autoconf suite is treated as one
+versioned tool family: ``autoconf``, ``autom4te``, ``autoheader``, and
+``autoreconf`` must agree on their GNU Autoconf version. The selected
+configuration shell is exported through both ``CONFIG_SHELL`` and ``SHELL``
+and participates in the Make bootstrap marker.
+
+GNU Make's Git documentation warns that ordinary Git-tree VPATH builds are not
+supported. That warning does not mean this WHP path should ignore the
+build-directory interface intentionally provided for the no-Make bootstrap:
+``configure.ac`` uses ``AC_CONFIG_LINKS([build.sh:build.sh])`` specifically to
+place ``build.sh`` in the configured build directory. WHP therefore runs
+``configure`` out-of-tree, verifies ``build.cfg``, ``config.status``,
+``Makefile``, ``lib/Makefile``, ``src/config.h``, and the configured
+``build.sh``, then executes that configured ``build.sh``. It does not bypass
+``config.status`` by reaching back to the source copy.
+
+Because this is a build-host tool, inherited target compiler/linker flags,
+archive tools, pkg-config search roots, ``CONFIG_SITE``, M4 overrides, and
+Autoconf cache variables are removed before configure runs. The fixed WHP
+configure profile disables dependency tracking, NLS, and Guile. The resulting
+binary is promoted through ``MAKE_CMD``, ``MAKE``, and ``PATH`` for GNU sed,
+Git, Bash, Libtool, libisofs, firmware, and the later QEMU build graph. This
+keeps the ``Make -> Make`` edge visible as a seed boundary instead of
+pretending it does not exist.
 
 GNU Libtool bootstrap boundary
 ------------------------------
