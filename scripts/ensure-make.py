@@ -20,7 +20,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
 
-MAKE_BOOTSTRAP_SCHEMA = "1"
+MAKE_BOOTSTRAP_SCHEMA = "2"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
 GNULIB_URL = "https://github.com/coreutils/gnulib.git"
 
@@ -245,6 +245,76 @@ def pin_gnulib(source):
     path.write_text(text.replace(old, "GNULIB_REVISION=" + GNULIB_COMMIT), encoding="utf-8")
 
 
+def gnulib_cache_usable(path, git):
+    if not (path / ".git").exists() or not (path / "gnulib-tool").is_file():
+        return False
+    try:
+        head = run_text([git, "-C", str(path), "rev-parse", "HEAD"])
+        dirty = run_text([
+            git, "-C", str(path), "status", "--porcelain",
+            "--untracked-files=no",
+        ])
+    except RuntimeError:
+        return False
+    return head == GNULIB_COMMIT and not dirty
+
+
+def ensure_gnulib_cache(build_root, git):
+    cache = build_root / "cache" / "gnulib" / GNULIB_COMMIT
+    if gnulib_cache_usable(cache, git):
+        print(f"WHP GNU Make gnulib cache: reused {cache}", file=sys.stderr)
+        return cache
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    staging = cache.parent / f".{GNULIB_COMMIT}.new.{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+
+    try:
+        run_logged([git, "init", str(staging)])
+        run_logged([git, "-C", str(staging), "remote", "add", "origin", GNULIB_URL])
+
+        fetched = subprocess.run(
+            [git, "-C", str(staging), "fetch", "--depth", "1",
+             "origin", GNULIB_COMMIT],
+            stdout=sys.stderr,
+            stderr=sys.stderr,
+            check=False,
+        )
+        if fetched.returncode == 0:
+            run_logged([
+                git, "-C", str(staging), "checkout", "--detach", "FETCH_HEAD",
+            ])
+        else:
+            # Some Git servers do not allow a shallow fetch by raw commit.
+            # Fall back to the remote history only when that capability is
+            # unavailable, then detach at the exact pinned commit.
+            run_logged([git, "-C", str(staging), "fetch", "origin"])
+            run_logged([
+                git, "-C", str(staging), "checkout", "--detach", GNULIB_COMMIT,
+            ])
+
+        if not gnulib_cache_usable(staging, git):
+            raise RuntimeError(
+                f"downloaded gnulib cache is not pinned at {GNULIB_COMMIT}"
+            )
+
+        # Another bootstrap may have populated the same immutable cache while
+        # this process was fetching. Prefer a valid existing copy.
+        if gnulib_cache_usable(cache, git):
+            shutil.rmtree(staging, ignore_errors=True)
+            print(f"WHP GNU Make gnulib cache: reused {cache}", file=sys.stderr)
+            return cache
+
+        shutil.rmtree(cache, ignore_errors=True)
+        os.replace(staging, cache)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    print(f"WHP GNU Make gnulib cache: populated {cache}", file=sys.stderr)
+    return cache
+
+
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
                 autoreconf, cc, sed, git, autopoint, pkg_config):
     return (
@@ -294,6 +364,7 @@ def bootstrap(build_root):
     work.mkdir(parents=True, exist_ok=True)
     copy_source(revision, source)
     pin_gnulib(source)
+    gnulib_source = ensure_gnulib_cache(build_root, git)
     objects.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
@@ -312,6 +383,7 @@ def bootstrap(build_root):
         "PKG_CONFIG": pkg_config,
         "SED": sed,
         "GNULIB_URL": GNULIB_URL,
+        "GNULIB_SRCDIR": str(gnulib_source),
         "MAKEINFO": "true",
     })
     env["PATH"] = os.pathsep.join([
@@ -329,7 +401,11 @@ def bootstrap(build_root):
         file=sys.stderr,
     )
     run_logged(
-        [config_shell, str(source / "bootstrap"), "--skip-po", "--force", "--no-bootstrap-sync"],
+        [
+            config_shell, str(source / "bootstrap"),
+            "--gen", "--no-git", "--skip-po", "--force",
+            "--no-bootstrap-sync",
+        ],
         cwd=source, env=env,
     )
     configure = source / "configure"
