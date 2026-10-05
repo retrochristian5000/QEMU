@@ -157,7 +157,7 @@ jobs:
 
           marker="$prefix/.whp-make-bootstrap"
           test -f "$marker"
-          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=5' "$marker"
+          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=6' "$marker"
           grep -Fq 'CONFIG_SHELL=/bin/sh|' "$marker"
           grep -Fq 'CONFIGURE_ARGS=--disable-dependency-tracking --disable-nls --without-guile' "$marker"
 
@@ -168,18 +168,23 @@ jobs:
           test -f "$build_root/bootstrap/make/build/src/config.h"
           test -f "$build_root/bootstrap/make/build/build.sh"
 
-      - name: Reconfigure Make without refetching gnulib
+      - name: Reconfigure Make without rerunning Autoconf or refetching gnulib
         shell: bash
         run: |
           set -euo pipefail
           build_root="$RUNNER_TEMP/whp-make"
           seed_make="$(command -v gmake || command -v make)"
-          mkdir -p "$RUNNER_TEMP/aclocal-extra"
+          real_cc="$(./cc.sh --print-cc)"
+          cc_wrapper="$RUNNER_TEMP/whp-make-cc-wrapper"
+          {
+            printf '%s\n' '#!/bin/sh'
+            printf 'exec %q "$@"\n' "$real_cc"
+          } > "$cc_wrapper"
+          chmod +x "$cc_wrapper"
 
           export WHP_MAKE_SEED="$seed_make"
-          export CC_FOR_BUILD="$(./cc.sh --print-cc)"
-          export WHP_BUILD_BASH=/bin/bash
-          export ACLOCAL_PATH="$RUNNER_TEMP/aclocal-extra"
+          export CC_FOR_BUILD="$cc_wrapper"
+          export CONFIG_SHELL=/bin/sh
 
           log="$RUNNER_TEMP/make-reconfigure.log"
           prefix="$(
@@ -189,4 +194,10 @@ jobs:
           test "$prefix" = "$build_root/deps/make"
           "$prefix/bin/make" --version | grep -Fq 'GNU Make'
           grep -Fq 'WHP GNU Make gnulib cache: reused' "$log"
-          grep -Fq 'CONFIG_SHELL=/bin/bash|' "$prefix/.whp-make-bootstrap"
+          grep -Fq 'WHP GNU Make generated source cache: reused' "$log"
+          grep -Fq "CC=$cc_wrapper:" "$prefix/.whp-make-bootstrap"
+          grep -Fq 'CONFIG_SHELL=/bin/sh|' "$prefix/.whp-make-bootstrap"
+          if grep -Fq 'autoreconf' "$log"; then
+            printf '%s\n'               'error: configure-only GNU Make rebuild reran Autoconf generation' >&2
+            exit 1
+          fi
