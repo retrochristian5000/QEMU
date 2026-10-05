@@ -80,18 +80,15 @@ jobs:
             test -x "$expected_m4"
             poison_bin="$RUNNER_TEMP/poison-m4"
             mkdir -p "$poison_bin"
-            cat > "$poison_bin/gm4" <<'EOF'
-#!/bin/sh
-if [ "${1:-}" = --gnu ]; then
-  shift
-fi
-if [ "${1:-}" = --version ]; then
-  printf '%s\n' 'GNU M4 99.99 poison'
-  exit 0
-fi
-printf '%s\n' 'error: poison gm4 was executed' >&2
-exit 99
-EOF
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'if [ "${1:-}" = --gnu ]; then shift; fi' \
+              'if [ "${1:-}" = --version ]; then' \
+              "  printf '%s\\n' 'GNU M4 99.99 poison'" \
+              '  exit 0' \
+              'fi' \
+              "printf '%s\\n' 'error: poison gm4 was executed' >&2" \
+              'exit 99' > "$poison_bin/gm4"
             chmod +x "$poison_bin/gm4"
             export PATH="$poison_bin:$PATH"
           fi
