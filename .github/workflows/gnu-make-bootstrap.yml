@@ -1,0 +1,138 @@
+name: WHP GNU Make bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/make'
+      - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/gnu-make-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/make'
+      - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/gnu-make-bootstrap.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: whp-gnu-make-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: false
+
+      - name: Install bootstrap prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install autoconf automake gettext m4 pkg-config
+            echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
+          else
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y \
+              autoconf automake autopoint gettext gcc m4 make pkg-config
+          fi
+
+      - name: Verify static Make bootstrap policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ensure-make.py \
+            scripts/tests/test-make-dependency-policy.py \
+            scripts/tests/test-make-gnulib-cache.py
+          python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-gnulib-cache.py
+
+      - name: Bootstrap managed GNU Make with target poison
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-make"
+          seed_make="$(command -v gmake || command -v make)"
+          "$seed_make" --version | grep -Fq 'GNU Make'
+
+          export WHP_MAKE_SEED="$seed_make"
+          export CC_FOR_BUILD="$(./cc.sh --print-cc)"
+          export CONFIG_SHELL=/bin/sh
+
+          # These values model target/cross state that must never leak into the
+          # build-host Make configure probe.
+          export AR=/bin/false
+          export RANLIB=/bin/false
+          export CFLAGS=-fwhp-target-poison
+          export CXXFLAGS=-fwhp-target-poison
+          export CPPFLAGS=-D_WHP_TARGET_POISON=
+          export LDFLAGS=-Wl,--whp-target-poison
+          export PKG_CONFIG_PATH=/whp/target/pkgconfig
+          export PKG_CONFIG_LIBDIR=/whp/target/pkgconfig
+          export PKG_CONFIG_SYSROOT_DIR=/whp/target/sysroot
+          export CONFIG_SITE=/whp/target/config.site
+          export ac_cv_func_waitpid=whp_target_poison
+          export make_cv_job_server=whp_target_poison
+
+          prefix="$(python3 scripts/ensure-make.py --build-dir "$build_root")"
+          test "$prefix" = "$build_root/deps/make"
+          test -x "$prefix/bin/make"
+          "$prefix/bin/make" --version | grep -Fq 'GNU Make'
+
+          marker="$prefix/.whp-make-bootstrap"
+          test -f "$marker"
+          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=3' "$marker"
+          grep -Fq 'CONFIG_SHELL=/bin/sh|' "$marker"
+          grep -Fq 'CONFIGURE_ARGS=--disable-dependency-tracking --disable-nls --without-guile' "$marker"
+
+          test -f "$build_root/bootstrap/make/build/build.cfg"
+          test -f "$build_root/bootstrap/make/build/config.status"
+          test -f "$build_root/bootstrap/make/build/Makefile"
+          test -f "$build_root/bootstrap/make/build/lib/Makefile"
+          test -f "$build_root/bootstrap/make/build/src/config.h"
+          test -f "$build_root/bootstrap/make/build/build.sh"
+
+      - name: Reconfigure Make without refetching gnulib
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-make"
+          seed_make="$(command -v gmake || command -v make)"
+          mkdir -p "$RUNNER_TEMP/aclocal-extra"
+
+          export WHP_MAKE_SEED="$seed_make"
+          export CC_FOR_BUILD="$(./cc.sh --print-cc)"
+          export WHP_BUILD_BASH=/bin/bash
+          export ACLOCAL_PATH="$RUNNER_TEMP/aclocal-extra"
+
+          log="$RUNNER_TEMP/make-reconfigure.log"
+          prefix="$(
+            python3 scripts/ensure-make.py --build-dir "$build_root" \
+              2> >(tee "$log" >&2)
+          )"
+          test "$prefix" = "$build_root/deps/make"
+          "$prefix/bin/make" --version | grep -Fq 'GNU Make'
+          grep -Fq 'WHP GNU Make gnulib cache: reused' "$log"
+          grep -Fq 'CONFIG_SHELL=/bin/bash|' "$prefix/.whp-make-bootstrap"
