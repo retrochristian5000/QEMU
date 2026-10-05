@@ -473,14 +473,22 @@ The pinned GNU Make ``master`` is currently a maintainer-source tree.  It
 contains GNU Make's ``build.sh``, which can compile Make without an existing
 Make program, but ``build.sh`` consumes ``build.cfg`` and other outputs
 created by ``configure``.  The Git tree does not carry the release-style
-generated ``configure``/``Makefile.in``/gnulib build inputs.  Regenerating
-those inputs from the Git tree requires the Autotools/gnulib maintainer path,
-whose documented prerequisites include GNU Make.
+generated ``configure``/``Makefile.in``/gnulib build inputs.
 
-The first GNU Make therefore remains an explicit seed rather than being
-silently replaced. Python's POSIX fallback and the Automake/Autoconf
-maintainer stages still consume that seed because they must exist before the
-managed helper can run.
+Those stages have different dependency boundaries. Make's
+``bootstrap --gen`` path consumes gnulib, Autoconf/Automake, autopoint, and
+the validated sed/configuration-shell environment, but its bootstrap scripts
+do not execute GNU Make. The generated ``configure``, however, contains
+Automake checks which execute ``${MAKE-make}``: for example
+``AM_MAKE_INCLUDE`` probes include behavior and Automake's sanity machinery
+can probe Make timestamp behavior. The seed Make is therefore a real
+**configure-time** input even though ``build.sh`` itself is the no-Make
+compile/link path.
+
+The first GNU Make consequently remains an explicit seed rather than being
+silently replaced. Python's POSIX fallback and the managed Automake stage also
+consume that seed upstream. Managed Autoconf is produced after Automake and is
+then used to generate GNU Make's configure machinery.
 
 After those prerequisites are available, ``BOOTSTRAP_MAKE=auto`` prefers the
 pinned fork on macOS, ``BOOTSTRAP_MAKE=1`` forces it, and
@@ -489,23 +497,34 @@ exact QEMU gitlink and replaces GNU Make's moving ``stable-202507`` gnulib
 branch reference with the audited commit
 ``b22f5a3037712a3c957a03071ce0b219cef4d65b``.
 
-The Make output marker intentionally includes the seed Make, Autotools,
-compiler, sed, Git, autopoint, and pkg-config identities, so a change in any of
-those inputs may require Make to be regenerated even when the Make gitlink did
-not change. That regeneration must not imply another download of the unchanged
-gnulib revision. The helper therefore stores gnulib separately under
-``BUILD_DIR/cache/gnulib/<commit>``, verifies its exact Git HEAD and clean tracked
-state, passes it through ``GNULIB_SRCDIR``, and invokes Make's bootstrap with
-``--gen --no-git``. Network access is needed only when that immutable
-commit-keyed cache is absent or invalid.
+The final Make output marker intentionally includes configure/build inputs
+such as the seed Make, compiler, configuration shell, pkg-config identity,
+Autotools identities, and the fixed configure profile. A change in those
+inputs can legitimately require ``configure`` and ``build.sh`` to run again
+even when the Make gitlink did not change. That rebuild must not imply another
+gnulib download or another Autoconf regeneration.
 
-The maintainer bootstrap then runs with the seed Make and regenerates the
-Autoconf inputs from the pinned source. The required Automake and Autoconf
-versions are read from that Make revision's own ``bootstrap.conf``; the helper
-does not maintain a second hard-coded version floor. Automake/aclocal must
-identify as one GNU Automake version at or above that floor. Likewise,
-``autoconf``, ``autom4te``, ``autoheader``, and ``autoreconf`` must agree
-on one GNU Autoconf version at or above Make's declared requirement.
+The helper therefore separates two reusable producer layers. Gnulib is stored
+under ``BUILD_DIR/cache/gnulib/<commit>``, with its exact Git HEAD and clean
+tracked state verified. Autoconf/Automake-generated Make source is stored
+separately under ``BUILD_DIR/cache/make-generated`` and is keyed by the Make
+revision, pinned gnulib commit, declared Autotools floors, actual generator
+tool identities, autopoint, seed sed, ``ACLOCAL_PATH``, host system, and
+configuration shell. Its generation runs with ``--gen --no-git`` and with
+the seed Make, compiler, and pkg-config removed from the generation
+environment. Consequently a compiler or seed-Make change can rerun
+``configure + build.sh`` while reusing both gnulib and the already-generated
+Autoconf source. Network access is needed only when the immutable gnulib cache
+is absent or invalid.
+
+When the generated-source cache itself is stale, the maintainer generation
+stage regenerates the Autoconf inputs from the pinned source. The required
+Automake and Autoconf versions are read from that Make revision's own
+``bootstrap.conf``; the helper does not maintain a second hard-coded version
+floor. Automake/aclocal must identify as one GNU Automake version at or above
+that floor. Likewise, ``autoconf``, ``autom4te``, ``autoheader``, and
+``autoreconf`` must agree on one GNU Autoconf version at or above Make's
+declared requirement.
 
 The selected configuration shell is exported through both ``CONFIG_SHELL``
 and ``SHELL`` and participates in the Make bootstrap marker. Make's bootstrap
@@ -844,10 +863,14 @@ Circularity guards
    already-built compatible native Wine tools tree; the target build must not
    recursively depend on itself to create those tools.
 #. The pinned GNU Make fork must not be promoted to the first Make executable
-   while its maintainer-source preparation still needs a seed GNU Make. The
-   seed remains explicit through Python plus Automake/Autoconf; only then may
-   ``ensure-make.py`` generate the configured inputs, use the no-Make
-   ``build.sh``, and promote the resulting managed Make for downstream work.
+   before its configure-time Make probes have run. The seed remains explicit
+   through Python and the managed Automake bootstrap, and GNU Make's generated
+   ``configure`` receives that same seed through ``MAKE``. The
+   ``bootstrap --gen`` stage and the compile/link ``build.sh`` stage do not
+   execute Make themselves, so seed-Make or compiler changes must not
+   invalidate the cached Autoconf-generated source unnecessarily. Only after
+   configure plus the no-Make ``build.sh`` succeed may the managed Make be
+   promoted for downstream work.
 #. Managed Autoconf must not bootstrap the Automake instance that it itself
    consumes. Seed Autoconf/autom4te feeds the first Automake stage; that
    Automake stage then builds the pinned Autoconf for later consumers.
