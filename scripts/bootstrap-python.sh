@@ -376,7 +376,7 @@ if [ "$build_mode" = pcbuild ]; then
 fi
 printf '%s\n' "$expected_marker" > "$staging_dir/.whp-python-runtime"
 
-old_dir="${TOOLCHAIN_DIR}.old.$$"
+old_dir="${TOOLCHAIN_DIR}.old.$"
 rm -rf "$old_dir"
 if [ -e "$TOOLCHAIN_DIR" ]; then
     mv "$TOOLCHAIN_DIR" "$old_dir"
@@ -386,15 +386,41 @@ if ! mv "$staging_dir" "$TOOLCHAIN_DIR"; then
     exit 1
 fi
 cleanup_path=
-rm -rf "$old_dir" "$WORK_DIR"
+
+rollback_published_runtime()
+{
+    failed_dir="${TOOLCHAIN_DIR}.failed.$"
+    rm -rf "$failed_dir"
+    if [ -e "$TOOLCHAIN_DIR" ]; then
+        mv "$TOOLCHAIN_DIR" "$failed_dir" || return 1
+    fi
+    if [ -e "$old_dir" ]; then
+        if ! mv "$old_dir" "$TOOLCHAIN_DIR"; then
+            [ ! -e "$failed_dir" ] || mv "$failed_dir" "$TOOLCHAIN_DIR"
+            return 1
+        fi
+    fi
+    rm -rf "$failed_dir" "$WORK_DIR"
+}
 
 installed_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
-python_core_usable "$installed_python" "$TOOLCHAIN_DIR" ||
+if ! python_core_usable "$installed_python" "$TOOLCHAIN_DIR"; then
+    rollback_published_runtime ||
+        fail 'installed bundled Python failed health check and rollback failed'
     fail 'installed bundled Python failed its semantic health check'
-ensure_pip "$installed_python" ||
+fi
+if ! ensure_pip "$installed_python"; then
+    rollback_published_runtime ||
+        fail 'installed bundled Python could not bootstrap pip and rollback failed'
     fail 'installed bundled Python could not bootstrap pip'
-python_usable "$installed_python" "$TOOLCHAIN_DIR" ||
+fi
+if ! python_usable "$installed_python" "$TOOLCHAIN_DIR"; then
+    rollback_published_runtime ||
+        fail 'installed bundled Python failed health check and rollback failed'
     fail 'installed bundled Python failed its semantic health check'
+fi
+
+rm -rf "$old_dir" "$WORK_DIR"
 printf 'WHP bundled Python ready: %s\n' "$installed_python" >&2
 printf '%s\n' "$installed_python" >&3
 trap - 0
