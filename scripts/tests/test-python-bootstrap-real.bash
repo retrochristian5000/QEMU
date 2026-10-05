@@ -30,10 +30,16 @@ actual_revision="$(git -C "$submodule_name" rev-parse HEAD)"
 cache_root="${RUNNER_TEMP:-$(mktemp -d)}/whp-python-bootstrap"
 rm -rf "$cache_root"
 
+bootstrap_log="${cache_root}.bootstrap.log"
 python_path="$(
     WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" JOBS="${JOBS:-2}" \
-        /bin/sh scripts/bootstrap-python.sh
+        /bin/sh scripts/bootstrap-python.sh \
+        2> >(tee "$bootstrap_log" >&2)
 )"
+if grep -F 'not on PATH' "$bootstrap_log" >/dev/null; then
+    printf 'error: bundled Python bootstrap emitted a pip script PATH warning\n' >&2
+    exit 1
+fi
 [[ -x "$python_path" ]] || {
     printf 'error: bundled Python bootstrap returned a non-executable: %s\n' \
         "$python_path" >&2
@@ -51,6 +57,16 @@ assert Path(sys.prefix).resolve() == Path(sys.argv[1]).resolve(), (sys.prefix, s
 ' "$cache_root"
 
 "$python_path" -m pip --version >/dev/null
+
+pip_scripts_dir="$("$python_path" -c 'import sysconfig; print(sysconfig.get_path("scripts"))')"
+python_mm="$("$python_path" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+for pip_launcher in pip pip3 "pip$python_mm"; do
+    [[ -x "$pip_scripts_dir/$pip_launcher" ]] || {
+        printf 'error: bundled Python pip launcher is missing: %s\n' \
+            "$pip_scripts_dir/$pip_launcher" >&2
+        exit 1
+    }
+done
 
 marker="$cache_root/.whp-python-runtime"
 [[ -f "$marker" ]]
