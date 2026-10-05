@@ -372,7 +372,11 @@ remain upstream developer/release tools, not requirements of the QEMU profile.
 
 The direct roots for this managed stage are Automake/aclocal, GNU M4, Perl,
 seed GNU Make, a primitive shell, ``realpath``/``mktemp``, and the validated
-sed seed.
+sed seed. An explicit ``M4`` remains authoritative. On Darwin, otherwise,
+the standard Homebrew M4 keg locations are checked before PATH so
+``/usr/bin/gm4`` cannot silently outrank an installed GNU M4. The selected
+executable is also mirrored as the bootstrap's literal ``m4`` command so
+Autotools subprocesses cannot rediscover a different implementation.
 
 sed/Automake bootstrap boundary
 -------------------------------
