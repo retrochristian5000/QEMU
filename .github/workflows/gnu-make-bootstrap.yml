@@ -6,6 +6,10 @@ on:
     paths:
       - '.gitmodules'
       - 'toolchains/make'
+      - 'toolchains/automake'
+      - 'toolchains/autoconf'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
       - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
@@ -15,6 +19,10 @@ on:
     paths:
       - '.gitmodules'
       - 'toolchains/make'
+      - 'toolchains/automake'
+      - 'toolchains/autoconf'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
       - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
@@ -57,6 +65,45 @@ jobs:
             sudo apt-get install --no-install-recommends -y \
               autoconf automake autopoint gettext gcc m4 make pkg-config
           fi
+
+      - name: Prepare managed Automake and Autoconf
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$PATH"
+          fi
+          seed="$(./sed.sh --print-seed)"
+          automake_prefix="$(
+            WHP_SED_SEED="$seed" \
+              python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake"
+          )"
+          export AUTOMAKE="$automake_prefix/bin/automake"
+          export ACLOCAL="$automake_prefix/bin/aclocal"
+          export PATH="$automake_prefix/bin:$PATH"
+
+          autoconf_prefix="$(
+            AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
+              python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf"
+          )"
+          export AUTOCONF="$autoconf_prefix/bin/autoconf"
+          export AUTOM4TE="$autoconf_prefix/bin/autom4te"
+          export AUTOHEADER="$autoconf_prefix/bin/autoheader"
+          export AUTORECONF="$autoconf_prefix/bin/autoreconf"
+          export PATH="$autoconf_prefix/bin:$PATH"
+
+          "$AUTOMAKE" --version | grep -Fq 'GNU automake'
+          "$AUTOCONF" --version | grep -Fq 'GNU Autoconf'
+
+          {
+            echo "AUTOMAKE=$AUTOMAKE"
+            echo "ACLOCAL=$ACLOCAL"
+            echo "AUTOCONF=$AUTOCONF"
+            echo "AUTOM4TE=$AUTOM4TE"
+            echo "AUTOHEADER=$AUTOHEADER"
+            echo "AUTORECONF=$AUTORECONF"
+            echo "PATH=$autoconf_prefix/bin:$automake_prefix/bin:$PATH"
+          } >> "$GITHUB_ENV"
 
       - name: Verify static Make bootstrap policy
         shell: bash
@@ -110,7 +157,7 @@ jobs:
 
           marker="$prefix/.whp-make-bootstrap"
           test -f "$marker"
-          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=4' "$marker"
+          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=5' "$marker"
           grep -Fq 'CONFIG_SHELL=/bin/sh|' "$marker"
           grep -Fq 'CONFIGURE_ARGS=--disable-dependency-tracking --disable-nls --without-guile' "$marker"
 
