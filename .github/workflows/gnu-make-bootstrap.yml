@@ -84,7 +84,14 @@ jobs:
           # These values model target/cross state that must never leak into the
           # build-host Make configure probe.
           export AR=/bin/false
+          export ARFLAGS=whp-target-poison
           export RANLIB=/bin/false
+          export CPP=/bin/false
+          export CXXCPP=/bin/false
+          export LIBS=-lwhp_target_poison
+          export build_alias=whp-target-build
+          export host_alias=whp-target-host
+          export target_alias=whp-target-target
           export CFLAGS=-fwhp-target-poison
           export CXXFLAGS=-fwhp-target-poison
           export CPPFLAGS=-D_WHP_TARGET_POISON=
@@ -103,7 +110,7 @@ jobs:
 
           marker="$prefix/.whp-make-bootstrap"
           test -f "$marker"
-          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=3' "$marker"
+          grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=4' "$marker"
           grep -Fq 'CONFIG_SHELL=/bin/sh|' "$marker"
           grep -Fq 'CONFIGURE_ARGS=--disable-dependency-tracking --disable-nls --without-guile' "$marker"
 
