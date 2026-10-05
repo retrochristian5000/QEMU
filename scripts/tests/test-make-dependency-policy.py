@@ -43,6 +43,9 @@ def main() -> int:
     make_bootstrap = (ROOT / "scripts/ensure-make.py").read_text(encoding="utf-8")
     require(make_bootstrap, "MAKE_BOOTSTRAP_SCHEMA", "GNU Make bootstrap schema")
     require(make_bootstrap, "GNULIB_COMMIT", "pinned gnulib revision")
+    require(make_bootstrap, 'build_root / "cache" / "gnulib" / GNULIB_COMMIT', "persistent gnulib cache")
+    require(make_bootstrap, '"GNULIB_SRCDIR": str(gnulib_source)', "local gnulib handoff")
+    require(make_bootstrap, '"--gen", "--no-git"', "offline gnulib regeneration")
     require(make_bootstrap, "build.sh", "GNU Make no-Make compiler stage")
     require(make_bootstrap, "WHP_MAKE_SEED", "GNU Make seed boundary")
 
