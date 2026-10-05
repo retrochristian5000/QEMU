@@ -41,7 +41,7 @@ def main() -> int:
     require(shell_menu, "BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make", "GNU Make shell menu option")
 
     make_bootstrap = (ROOT / "scripts/ensure-make.py").read_text(encoding="utf-8")
-    require(make_bootstrap, 'MAKE_BOOTSTRAP_SCHEMA = "5"', "GNU Make bootstrap schema")
+    require(make_bootstrap, 'MAKE_BOOTSTRAP_SCHEMA = "6"', "GNU Make bootstrap schema")
     require(make_bootstrap, "GNULIB_COMMIT", "pinned gnulib revision")
     require(make_bootstrap, '"--disable-dependency-tracking"', "Make configure profile")
     require(make_bootstrap, 'companion("autoheader", "AUTOHEADER")', "coherent Autoconf suite")
@@ -56,6 +56,20 @@ def main() -> int:
     require(make_bootstrap, 'configured_build = objects / "build.sh"', "configured build.sh handoff")
     require(make_bootstrap, 'objects / "config.status"', "configure output validation")
     require(make_bootstrap, 'build_root / "cache" / "gnulib" / GNULIB_COMMIT', "persistent gnulib cache")
+    require(make_bootstrap, 'build_root / "cache" / "make-generated"', "generated-source cache")
+    require(make_bootstrap, '"MAKE_GENERATED_SCHEMA=1', "generated-source schema")
+    require(make_bootstrap, "def generated_source_usable", "generated-source validation")
+    require(make_bootstrap, "def ensure_generated_source", "generated-source cache producer")
+    require(
+        make_bootstrap,
+        'for key in ("MAKE", "MAKE_CMD", "CC", "PKG_CONFIG")',
+        "generation/configure input separation",
+    )
+    require(
+        make_bootstrap,
+        "WHP GNU Make generated source cache: reused",
+        "generated-source reuse diagnostic",
+    )
     require(make_bootstrap, '"GNULIB_SRCDIR": str(gnulib_source)', "local gnulib handoff")
     require(make_bootstrap, '"--gen", "--no-git"', "offline gnulib regeneration")
     require(make_bootstrap, "build.sh", "GNU Make no-Make compiler stage")
