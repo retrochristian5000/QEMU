@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
@@ -431,17 +432,33 @@ def suite_usable(prefix: pathlib.Path) -> bool:
             return False
 
     # --version does not load Autom4te's Perl modules or the installed M4
-    # libraries.  Compile a tiny configure script from stdin so a cache hit is
-    # accepted only when the runtime-data half of the toolchain is usable too.
-    completed = subprocess.run(
-        [str(prefix / "bin" / "autoconf"), "-"],
-        input="AC_INIT([whp-bootstrap-smoke],[1])\nAC_OUTPUT\n",
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if completed.returncode != 0:
+    # libraries.  The bootstrap callers deliberately poison AUTOCONF/AUTOM4TE
+    # to prove self-host isolation, so do not let those seed-only sentinels
+    # leak into validation of the completed private installation.
+    smoke_env = os.environ.copy()
+    for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF"):
+        smoke_env.pop(key, None)
+
+    with tempfile.TemporaryDirectory(prefix="whp-autoconf-smoke-") as tmp:
+        smoke_dir = pathlib.Path(tmp)
+        configure_ac = smoke_dir / "configure.ac"
+        configure_ac.write_text(
+            "AC_INIT([whp-bootstrap-smoke],[1])\nAC_OUTPUT\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [str(prefix / "bin" / "autoconf")],
+            cwd=smoke_dir,
+            env=smoke_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        configure = smoke_dir / "configure"
+        if completed.returncode == 0 and configure.is_file():
+            return True
+
         detail = completed.stderr.strip() or completed.stdout.strip()
         print(
             "WHP Autoconf installed-runtime smoke failed"
@@ -449,7 +466,6 @@ def suite_usable(prefix: pathlib.Path) -> bool:
             file=sys.stderr,
         )
         return False
-    return bool(completed.stdout.strip())
 
 
 def marker_text(

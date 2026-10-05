@@ -54,7 +54,9 @@ def main() -> int:
     require(helper, '"install-dist_autotestlibDATA"', "Autotest source library install")
     require(helper, '"install-nodist_autotestlibDATA"', "Autotest frozen library install")
     require(helper, '"install-dist_buildauxDATA"', "Autoconf build-aux install")
-    require(helper, 'input="AC_INIT([whp-bootstrap-smoke],[1])', "installed runtime smoke")
+    require(helper, 'with tempfile.TemporaryDirectory(prefix="whp-autoconf-smoke-")', "runtime smoke workspace")
+    require(helper, 'smoke_env.pop(key, None)', "seed-poison runtime isolation")
+    require(helper, '"AC_INIT([whp-bootstrap-smoke],[1])', "installed runtime smoke")
     require(helper, '"pkgdata_DATA="', "documentation-free install override")
     for stale_target in (
         '"install-perllibDATA"',
