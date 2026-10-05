@@ -28,7 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "2"
+AUTOCONF_BOOTSTRAP_SCHEMA = "3"
 
 BUILD_TARGETS = (
     "bin/autoconf",
@@ -46,15 +46,22 @@ BUILD_TARGETS = (
     "lib/autotest/autotest.m4f",
 )
 
+# Automake keeps dist_/nodist_ in the generated rule name even though both
+# install into the same logical directory.  Name the generated rules exactly;
+# asking for collapsed names such as install-perllibDATA is not portable and
+# currently fails with the managed Automake tree.
 INSTALL_TARGETS = (
     "install-binSCRIPTS",
-    "install-perllibDATA",
-    "install-pkgdataDATA",
-    "install-autoconflibDATA",
-    "install-autoscanlibDATA",
-    "install-m4sugarlibDATA",
-    "install-autotestlibDATA",
-    "install-buildauxDATA",
+    "install-dist_perllibDATA",
+    "install-nodist_pkgdataDATA",
+    "install-dist_autoconflibDATA",
+    "install-nodist_autoconflibDATA",
+    "install-nodist_autoscanlibDATA",
+    "install-dist_m4sugarlibDATA",
+    "install-nodist_m4sugarlibDATA",
+    "install-dist_autotestlibDATA",
+    "install-nodist_autotestlibDATA",
+    "install-dist_buildauxDATA",
     "install-data-hook",
 )
 
@@ -422,7 +429,19 @@ def suite_usable(prefix: pathlib.Path) -> bool:
         )
         if completed.returncode != 0 or "GNU Autoconf" not in completed.stdout:
             return False
-    return True
+
+    # --version does not load Autom4te's Perl modules or the installed M4
+    # libraries.  Compile a tiny configure script from stdin so a cache hit is
+    # accepted only when the runtime-data half of the toolchain is usable too.
+    completed = subprocess.run(
+        [str(prefix / "bin" / "autoconf"), "-"],
+        input="AC_INIT([whp-bootstrap-smoke],[1])\nAC_OUTPUT\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    return completed.returncode == 0 and completed.stdout.startswith("#!")
 
 
 def marker_text(

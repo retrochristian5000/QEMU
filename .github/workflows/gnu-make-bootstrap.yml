@@ -11,6 +11,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -24,6 +25,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -111,9 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            scripts/ensure-autoconf.py \
             scripts/ensure-make.py \
+            scripts/tests/test-autoconf-bootstrap.py \
             scripts/tests/test-make-dependency-policy.py \
             scripts/tests/test-make-gnulib-cache.py
+          python3 scripts/tests/test-autoconf-bootstrap.py
           python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-make-gnulib-cache.py
 

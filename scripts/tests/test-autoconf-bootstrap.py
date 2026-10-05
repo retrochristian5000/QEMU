@@ -27,7 +27,7 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
-    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "2"', "bootstrap schema")
+    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "3"', "bootstrap schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
     require(
         helper,
@@ -44,9 +44,30 @@ def main() -> int:
     require(helper, '"AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF"', "self-host isolation")
     require(helper, 'str(source / "bootstrap")', "source self-bootstrap")
     require(helper, '"install-binSCRIPTS"', "tool-only executable install")
-    require(helper, '"install-autoconflibDATA"', "Autoconf library install")
-    require(helper, '"install-m4sugarlibDATA"', "M4sugar library install")
+    require(helper, '"install-dist_perllibDATA"', "Autom4te Perl library install")
+    require(helper, '"install-nodist_pkgdataDATA"', "generated package-data install")
+    require(helper, '"install-dist_autoconflibDATA"', "Autoconf source library install")
+    require(helper, '"install-nodist_autoconflibDATA"', "Autoconf frozen library install")
+    require(helper, '"install-nodist_autoscanlibDATA"', "Autoscan generated-data install")
+    require(helper, '"install-dist_m4sugarlibDATA"', "M4sugar source library install")
+    require(helper, '"install-nodist_m4sugarlibDATA"', "M4sugar frozen library install")
+    require(helper, '"install-dist_autotestlibDATA"', "Autotest source library install")
+    require(helper, '"install-nodist_autotestlibDATA"', "Autotest frozen library install")
+    require(helper, '"install-dist_buildauxDATA"', "Autoconf build-aux install")
+    require(helper, 'input="AC_INIT([whp-bootstrap-smoke],[1])', "installed runtime smoke")
     require(helper, '"pkgdata_DATA="', "documentation-free install override")
+    for stale_target in (
+        '"install-perllibDATA"',
+        '"install-autoconflibDATA"',
+        '"install-autoscanlibDATA"',
+        '"install-m4sugarlibDATA"',
+        '"install-autotestlibDATA"',
+        '"install-buildauxDATA"',
+    ):
+        if stale_target in helper:
+            raise SystemExit(
+                f"error: stale collapsed Automake install target remains: {stale_target}"
+            )
     require(
         config,
         "Option('BOOTSTRAP_AUTOCONF', 'Host features', 'Bootstrap/use WHP Autoconf'",
