@@ -754,12 +754,17 @@ QEMU-only linker policy such as ``-fuse-ld=lld`` or ``--read-workers`` from
 being appended a second time to libisofs.
 
 The helper reconstructs only its GNU C11/strict-prototype policy and the
-resolved Darwin ABI triplet in ``CFLAGS``. ``CPPFLAGS`` and ``LDFLAGS`` are
-empty at the dependency boundary; compiler-driver links consume the ABI
-triplet once through ``CFLAGS``. LLVM ``AR``/``RANLIB``/``NM``/``STRIP`` and
-``LIPO`` remain intentional tool selections, but QEMU's exported
-``LD=ld64.lld`` does not: Clang chooses the platform linker for libisofs
-Darwin/arm64e configure and link probes.
+resolved Darwin ABI triplet in ``CFLAGS``. Caller ``CPPFLAGS`` are still erased,
+but macOS receives one dependency-owned input define,
+``-D_DARWIN_C_SOURCE=1``, so Darwin system extensions are explicit on every
+libisofs compile path. Autoconf probe results such as
+``LIBISOFS_DARWIN_ABI64``, ``LIBISOFS_ARM64E_ABI``, large-file defines, and
+``HAVE_*`` remain configure-owned and are not predeclared by the wrapper.
+``LDFLAGS`` remains empty; compiler-driver links consume the ABI triplet once
+through ``CFLAGS``. LLVM ``AR``/``RANLIB``/``NM``/``STRIP`` and ``LIPO``
+remain intentional tool selections, but QEMU's exported ``LD=ld64.lld`` does
+not: Clang chooses the platform linker for libisofs Darwin/arm64e configure
+and link probes.
 
 QEMU configures the fork with ``--disable-debug``. The fork now respects an
 explicit caller ``CFLAGS`` and no longer prepends its historical debug/warning
