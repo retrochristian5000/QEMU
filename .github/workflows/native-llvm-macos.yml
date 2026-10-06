@@ -264,11 +264,18 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=12' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=14' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"
-          grep -Fxq 'CPPFLAGS=' "$marker"
+          grep -Fxq 'CPPFLAGS=-D_DARWIN_C_SOURCE=1' "$marker"
+          cppflags_line="$(grep '^CPPFLAGS=' "$marker")"
+          case "$cppflags_line" in
+            *LIBISOFS_DARWIN_ABI64*|*LIBISOFS_ARM64E_ABI*|*_FILE_OFFSET_BITS*|*HAVE_*)
+              echo "Autoconf probe result leaked into libisofs CPPFLAGS: $cppflags_line" >&2
+              exit 1
+              ;;
+          esac
           grep -Fxq 'LDFLAGS=' "$marker"
           grep -Fxq 'CXXFLAGS=UNUSED' "$marker"
           grep -Fxq 'LINKER_POLICY=COMPILER_DEFAULT' "$marker"
@@ -329,11 +336,18 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=12' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=14' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"
-          grep -Fxq 'CPPFLAGS=' "$marker"
+          grep -Fxq 'CPPFLAGS=-D_DARWIN_C_SOURCE=1' "$marker"
+          cppflags_line="$(grep '^CPPFLAGS=' "$marker")"
+          case "$cppflags_line" in
+            *LIBISOFS_DARWIN_ABI64*|*LIBISOFS_ARM64E_ABI*|*_FILE_OFFSET_BITS*|*HAVE_*)
+              echo "Autoconf probe result leaked into libisofs CPPFLAGS: $cppflags_line" >&2
+              exit 1
+              ;;
+          esac
           grep -Fxq 'LDFLAGS=' "$marker"
           grep -Fxq 'CXXFLAGS=UNUSED' "$marker"
           grep -Fxq 'LINKER_POLICY=COMPILER_DEFAULT' "$marker"
