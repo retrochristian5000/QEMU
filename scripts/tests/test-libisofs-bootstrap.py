@@ -764,6 +764,28 @@ def main() -> int:
             raise SystemExit(
                 "error: libisofs still uses external expr for version arithmetic"
             )
+        for option in (
+            "debug",
+            "libacl",
+            "xattr",
+            "xattr-h-pref-attr",
+            "lfa-flags",
+            "projid",
+            "zlib",
+            "libjte",
+            "dir-rec-size-check",
+            "versioned-libs",
+            "ldconfig-at-install",
+        ):
+            require(
+                libisofs_configure,
+                f"AS_HELP_STRING([--enable-{option}]",
+                f"modern Autoconf help string for --enable-{option}",
+            )
+        if "[  --enable-" in libisofs_configure:
+            raise SystemExit(
+                "error: libisofs configure.ac regained hand-formatted option help"
+            )
     if libisofs_acinclude:
         require(
             libisofs_acinclude,
@@ -773,6 +795,39 @@ def main() -> int:
         if "printf '%s\\n' \"$libdir\" | \"$SED\"" in libisofs_acinclude:
             raise SystemExit(
                 "error: libisofs still spawns sed for a simple /lib suffix rewrite"
+            )
+        for macro in (
+            "LIBBURNIA_SET_FLAGS",
+            "LIBISOFS_PREFER_LLVM_TOOLS",
+            "LIBISOFS_TARGET_SHIZZLE",
+            "LIBBURNIA_CHECK_ICONV",
+            "LIBBURNIA_ASSERT_ICONV",
+            "LIBISOFS_ASSERT_VERS_LIBS",
+            "LIBBURNIA_SET_PKGCONFIG",
+            "LIBBURNIA_TRY_TIMEZONE",
+        ):
+            require(
+                libisofs_acinclude,
+                f"AC_DEFUN_ONCE([{macro}]",
+                f"one-shot M4 definition for {macro}",
+            )
+        require(
+            libisofs_acinclude,
+            "AC_REQUIRE([AC_PROG_CC])",
+            "compiler prerequisite declaration",
+        )
+        require(
+            libisofs_acinclude,
+            "AC_REQUIRE([AC_CANONICAL_HOST])",
+            "canonical-host prerequisite declaration",
+        )
+        if "AC_DEFUN_ONCE([TARGET_SHIZZLE]" in libisofs_acinclude:
+            raise SystemExit(
+                "error: generic TARGET_SHIZZLE M4 namespace returned"
+            )
+        if "[  --enable-" in libisofs_acinclude:
+            raise SystemExit(
+                "error: libisofs acinclude.m4 regained hand-formatted option help"
             )
     if libisofs_makefile:
         require(
