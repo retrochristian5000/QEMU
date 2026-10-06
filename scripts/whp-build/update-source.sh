@@ -41,57 +41,78 @@ if ! git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 branch=$(git -C "$SOURCE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-upstream=$(git -C "$SOURCE_DIR" rev-parse --abbrev-ref --symbolic-full-name     '@{upstream}' 2>/dev/null || true)
+upstream_ref=$(git -C "$SOURCE_DIR" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+remote=
+merge_ref=
+if [ -n "$branch" ]; then
+    remote=$(git -C "$SOURCE_DIR" config --get "branch.$branch.remote" 2>/dev/null || true)
+    merge_ref=$(git -C "$SOURCE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
+fi
 
 root_dirty=0
 git -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all -- || root_dirty=1
 git -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all -- || root_dirty=1
 
 if [ "$root_dirty" = 1 ]; then
-    warn_or_fail 'tracked QEMU source changes prevent a safe fast-forward pull'
+    warn_or_fail 'tracked QEMU source changes prevent a safe fast-forward update'
 elif [ -z "$branch" ]; then
     warn_or_fail 'QEMU checkout is detached, so there is no branch to fast-forward'
-elif [ -z "$upstream" ]; then
-    warn_or_fail "QEMU branch '$branch' has no configured upstream"
+elif [ -z "$upstream_ref" ] || [ -z "$remote" ] || [ -z "$merge_ref" ]; then
+    warn_or_fail "QEMU branch '$branch' has no complete configured upstream"
 else
-    printf 'WHP source update: %s <- %s\n' "$branch" "$upstream" >&2
-    if ! git -C "$SOURCE_DIR" pull --ff-only --recurse-submodules=no; then
-        warn_or_fail "fast-forward pull from '$upstream' failed"
+    printf 'WHP source update: %s <- %s\n' "$branch" "$upstream_ref" >&2
+
+    # Query only the configured upstream ref. A no-op build transfers only the
+    # remote ref advertisement instead of running a full fetch negotiation.
+    if [ "$remote" = "." ]; then
+        remote_oid=$(git -C "$SOURCE_DIR" rev-parse "$merge_ref^{commit}" 2>/dev/null || true)
+    else
+        remote_line=$(git -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref" 2>/dev/null || true)
+        remote_oid=$(printf '%s\n' "$remote_line" | sed -n '1{s/[[:space:]].*//;p;}')
+        unset remote_line
     fi
-fi
 
-# QEMU records exact submodule revisions in the superproject.  Keep those
-# gitlinks authoritative: synchronize URLs, then materialize the newest pinned
-# revisions supplied by the refreshed QEMU commit.  Do not use --remote here;
-# branch-tip submodule updates would make the build non-reproducible and break
-# the WHP gitlink validation used by the toolchain/firmware bootstraps.
-if [ ! -f "$SOURCE_DIR/.gitmodules" ]; then
-    exit 0
-fi
+    if [ -z "$remote_oid" ]; then
+        warn_or_fail "could not resolve upstream ref '$merge_ref' from '$remote'"
+    else
+        upstream_oid=$(git -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
 
-dirty_submodules=$(
-    git -C "$SOURCE_DIR" submodule foreach --quiet --recursive '
-        if ! git diff --quiet --ignore-submodules=all -- ||
-           ! git diff --cached --quiet --ignore-submodules=all --; then
-            printf "%s\n" "$displaypath"
+        if [ "$remote_oid" != "$upstream_oid" ]; then
+            if [ "$remote" != "." ]; then
+                printf '%s\n' 'WHP source update: fetching configured branch only (no tags or submodules)' >&2
+                if ! git -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules \
+                    "$remote" "$merge_ref:$upstream_ref"; then
+                    warn_or_fail "targeted fetch from '$remote' failed"
+                    upstream_oid=
+                else
+                    upstream_oid=$(git -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
+                fi
+            else
+                upstream_oid=$remote_oid
+            fi
+        else
+            printf '%s\n' 'WHP source update: upstream ref unchanged; object fetch skipped' >&2
         fi
-    ' 2>/dev/null || true
-)
 
-if [ -n "$dirty_submodules" ]; then
-    printf '%s\n' 'warning: tracked submodule changes prevent a safe submodule refresh:' >&2
-    printf '%s\n' "$dirty_submodules" >&2
-    if [ "$mode" = 1 ]; then
-        exit 1
+        if [ -n "$upstream_oid" ]; then
+            if ! git -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"; then
+                warn_or_fail "fast-forward update from '$upstream_ref' failed"
+            fi
+        fi
+        unset upstream_oid
     fi
-    printf '%s\n' 'warning: keeping current submodule worktrees' >&2
-    exit 0
+    unset remote_oid
 fi
 
-git -C "$SOURCE_DIR" submodule sync --recursive
-if ! git -C "$SOURCE_DIR" submodule update --init --recursive; then
-    warn_or_fail 'pinned submodule update failed'
-    exit 0
+# Do not materialize every QEMU submodule here. The WHP dependency helpers
+# initialize only the pinned sources they actually consume, normally with
+# --depth 1 and gitlink verification. This keeps a routine source refresh from
+# downloading firmware/toolchains unrelated to the selected build.
+#
+# URL synchronization is local and cheap, so keep it global to make later lazy
+# initialization honor any .gitmodules URL changes from the refreshed QEMU tree.
+if [ -f "$SOURCE_DIR/.gitmodules" ]; then
+    git -C "$SOURCE_DIR" submodule sync --recursive >/dev/null
 fi
 
-printf '%s\n' 'WHP source update: QEMU and pinned submodules are current' >&2
+printf '%s\n' 'WHP source update: QEMU current; pinned submodules remain lazy' >&2

@@ -36,7 +36,7 @@ for needle in required_build:
     if needle not in build:
         errors.append(f"build.sh source refresh contract missing: {needle}")
 
-# Refresh must happen before Python/toolchain discovery so a newly pulled
+# Refresh must happen before Python/toolchain discovery so a newly updated
 # launcher can re-exec before mixing old and new orchestration code.
 refresh_index = build.find('/bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"')
 python_index = build.find("whp_python_usable()")
@@ -44,26 +44,33 @@ if refresh_index < 0 or python_index < 0 or refresh_index >= python_index:
     errors.append("source refresh must precede Python/toolchain discovery")
 
 required_update = (
-    "git -C \"$SOURCE_DIR\" pull --ff-only --recurse-submodules=no",
-    "git -C \"$SOURCE_DIR\" submodule sync --recursive",
-    "git -C \"$SOURCE_DIR\" submodule update --init --recursive",
-    "git -C \"$SOURCE_DIR\" diff --quiet --ignore-submodules=all --",
-    "git -C \"$SOURCE_DIR\" diff --cached --quiet --ignore-submodules=all --",
-    "tracked submodule changes prevent a safe submodule refresh",
+    'git -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref"',
+    'git -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules',
+    '"$remote" "$merge_ref:$upstream_ref"',
+    'git -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"',
+    'git -C "$SOURCE_DIR" submodule sync --recursive',
+    'upstream ref unchanged; object fetch skipped',
+    'pinned submodules remain lazy',
+    'git -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all --',
+    'git -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all --',
 )
 for needle in required_update:
     if needle not in update:
-        errors.append(f"update-source.sh safety contract missing: {needle}")
+        errors.append(f"update-source.sh download-minimization contract missing: {needle}")
 
 for forbidden in (
+    "git -C \"$SOURCE_DIR\" pull ",
+    "submodule update --init --recursive",
     "submodule update --remote",
+    "fetch --all",
+    "fetch --tags",
     "reset --hard",
     "clean -fd",
     "clean -fdx",
     "pull --rebase",
 ):
     if forbidden in update:
-        errors.append(f"source refresh must not use destructive/drifting command: {forbidden}")
+        errors.append(f"source refresh must not use broad/destructive command: {forbidden}")
 
 if "WHP_SOURCE_UPDATE must be auto, 0, or 1" not in build:
     errors.append("build.sh must validate WHP_SOURCE_UPDATE")
