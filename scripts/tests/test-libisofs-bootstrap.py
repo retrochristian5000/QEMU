@@ -529,7 +529,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "12"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "13"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -553,6 +553,30 @@ def main() -> int:
         '"-lpthread" not in static_flags',
         "pthread static dependency check",
     )
+    require(helper, "def select_automake_pair(", "GNU Automake pair selector")
+    require(helper, "def select_autoconf(", "GNU Autoconf selector")
+    require(
+        helper,
+        'raise RuntimeError("AUTOMAKE and ACLOCAL must be supplied as a pair")',
+        "Automake/aclocal pair admission",
+    )
+    require(
+        helper,
+        "if automake_version != aclocal_version:",
+        "Automake/aclocal version coherence",
+    )
+    require(
+        helper,
+        "GNU Autoconf 2.69 or newer is required by libisofs",
+        "Autoconf minimum-version guard",
+    )
+    require(helper, 'env["AUTOMAKE"] = automake', "Automake bootstrap handoff")
+    require(helper, 'env["ACLOCAL"] = aclocal', "aclocal bootstrap handoff")
+    require(helper, 'env["AUTOCONF"] = autoconf', "Autoconf bootstrap handoff")
+    require(helper, 'env["ACLOCAL_PATH"] = ""', "aclocal macro-path isolation")
+    require(helper, 'f"AUTOMAKE_VERSION={automake_version}\\n"', "Automake cache identity")
+    require(helper, 'f"AUTOCONF_VERSION={autoconf_version}\\n"', "Autoconf cache identity")
+    require(helper, '"ACLOCAL_PATH=ISOLATED\\n"', "aclocal cache identity")
     require(helper, "def select_gnu_libtool(", "GNU Libtool selector")
     require(helper, "def select_gnu_m4(", "GNU M4 selector")
     require(helper, '"--gnu", "--version"', "GNU M4 capability probe")
@@ -643,6 +667,19 @@ def main() -> int:
             "command -v glibtoolize",
             "glibtoolize capability-based selection",
         )
+        require(libisofs_bootstrap, 'ACLOCAL=${ACLOCAL:-aclocal}', "explicit aclocal selection")
+        require(libisofs_bootstrap, 'AUTOCONF=${AUTOCONF:-autoconf}', "explicit Autoconf selection")
+        require(libisofs_bootstrap, 'AUTOMAKE=${AUTOMAKE:-automake}', "explicit Automake selection")
+        require(libisofs_bootstrap, "ACLOCAL_PATH=", "aclocal macro-path isolation")
+        require(libisofs_bootstrap, '"$ACLOCAL" -I .', "selected aclocal invocation")
+        require(libisofs_bootstrap, '"$AUTOCONF"', "selected Autoconf invocation")
+        require(libisofs_bootstrap, '"$AUTOMAKE" --foreign', "selected Automake invocation")
+        if "\naclocal -I .\n" in libisofs_bootstrap:
+            raise SystemExit("error: libisofs bootstrap still invokes bare aclocal")
+        if "\nautoconf\n" in libisofs_bootstrap:
+            raise SystemExit("error: libisofs bootstrap still invokes bare autoconf")
+        if "\nautomake --foreign" in libisofs_bootstrap:
+            raise SystemExit("error: libisofs bootstrap still invokes bare automake")
     if libisofs_configure:
         require(
             libisofs_configure,

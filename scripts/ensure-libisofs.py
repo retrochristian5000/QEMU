@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "12"
+LIBISOFS_BOOTSTRAP_SCHEMA = "13"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -439,6 +439,71 @@ def select_gnu_libtool(env_name: str, names: tuple[str, ...]) -> str:
         f"({joined} not found)"
     )
 
+
+def resolve_autotool(env_name: str, default_name: str) -> str:
+    requested = os.environ.get(env_name, "")
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError(f"{env_name} must name exactly one executable")
+        candidate = argv[0]
+    else:
+        candidate = default_name
+
+    path = (
+        candidate
+        if pathlib.Path(candidate).is_absolute()
+        else shutil.which(candidate)
+    )
+    if not path or not pathlib.Path(path).is_file() or not os.access(path, os.X_OK):
+        raise RuntimeError(f"{env_name or default_name} is not executable: {candidate}")
+    return str(path)
+
+
+def gnu_automake_version(path: str) -> str:
+    line = run_text([path, "--version"]).splitlines()[0]
+    if "GNU automake" not in line:
+        raise RuntimeError(f"not a GNU Automake tool: {path}: {line}")
+    version = line.rsplit(" ", 1)[-1]
+    if not version_tuple(version):
+        raise RuntimeError(f"could not parse GNU Automake version: {path}: {line}")
+    return version
+
+
+def select_automake_pair() -> tuple[str, str, str]:
+    if bool(os.environ.get("AUTOMAKE")) != bool(os.environ.get("ACLOCAL")):
+        raise RuntimeError("AUTOMAKE and ACLOCAL must be supplied as a pair")
+
+    automake = resolve_autotool("AUTOMAKE", "automake")
+    aclocal = resolve_autotool("ACLOCAL", "aclocal")
+    automake_version = gnu_automake_version(automake)
+    aclocal_version = gnu_automake_version(aclocal)
+    if automake_version != aclocal_version:
+        raise RuntimeError(
+            "AUTOMAKE and ACLOCAL must come from the same GNU Automake "
+            f"version: {automake_version} != {aclocal_version}"
+        )
+    return automake, aclocal, automake_version
+
+
+def gnu_autoconf_version(path: str) -> str:
+    line = run_text([path, "--version"]).splitlines()[0]
+    if "GNU Autoconf" not in line:
+        raise RuntimeError(f"not GNU Autoconf: {path}: {line}")
+    version = line.rsplit(" ", 1)[-1]
+    parsed = version_tuple(version)
+    if not parsed:
+        raise RuntimeError(f"could not parse GNU Autoconf version: {path}: {line}")
+    if parsed < (2, 69):
+        raise RuntimeError(
+            f"GNU Autoconf 2.69 or newer is required by libisofs; found {version}"
+        )
+    return version
+
+
+def select_autoconf() -> tuple[str, str]:
+    autoconf = resolve_autotool("AUTOCONF", "autoconf")
+    return autoconf, gnu_autoconf_version(autoconf)
 
 def select_c_compiler() -> str:
     requested = os.environ.get("CC")
@@ -865,6 +930,11 @@ def workspace_marker_text(
     config_shell: str,
     libtoolize: str,
     libtoolize_id: str,
+    automake: str,
+    aclocal: str,
+    automake_version: str,
+    autoconf: str,
+    autoconf_version: str,
     m4: str,
     m4_id: str,
     sed: str,
@@ -884,6 +954,12 @@ def workspace_marker_text(
         f"CONFIG_SHELL={shell_identity(config_shell)}\n"
         f"LIBTOOLIZE={libtoolize}\n"
         f"LIBTOOLIZE_VERSION={libtoolize_id}\n"
+        f"AUTOMAKE={automake}\n"
+        f"ACLOCAL={aclocal}\n"
+        f"AUTOMAKE_VERSION={automake_version}\n"
+        f"AUTOCONF={autoconf}\n"
+        f"AUTOCONF_VERSION={autoconf_version}\n"
+        "ACLOCAL_PATH=ISOLATED\n"
         f"M4={m4}\n"
         f"M4_VERSION={m4_id}\n"
         f"SED={sed}\n"
@@ -981,6 +1057,8 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     sdkroot, arch, deployment = macos_settings()
     cc_id = compiler_version(cc)
     libtoolize_id = run_text([libtoolize, "--version"]).splitlines()[0]
+    automake, aclocal, automake_version = select_automake_pair()
+    autoconf, autoconf_version = select_autoconf()
     m4 = select_gnu_m4()
     m4_id = gnu_m4_version(m4)
     sed = select_sed()
@@ -1005,6 +1083,17 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env.pop("LIBTOOL", None)
     env["CC"] = cc
     env["LIBTOOLIZE"] = libtoolize
+    env["AUTOMAKE"] = automake
+    env["ACLOCAL"] = aclocal
+    env["AUTOCONF"] = autoconf
+    env["ACLOCAL_PATH"] = ""
+    autotools_dirs = [
+        str(pathlib.Path(automake).parent),
+        str(pathlib.Path(autoconf).parent),
+    ]
+    env["PATH"] = os.pathsep.join(
+        list(dict.fromkeys(autotools_dirs)) + [env.get("PATH", "")]
+    )
     env["M4"] = m4
     env["SED"] = sed
     env["CONFIG_SHELL"] = config_shell
@@ -1035,6 +1124,11 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         config_shell,
         libtoolize,
         libtoolize_id,
+        automake,
+        aclocal,
+        automake_version,
+        autoconf,
+        autoconf_version,
         m4,
         m4_id,
         sed,
