@@ -31,14 +31,17 @@ def load_config_module():
     return module
 
 
-def resolved_jobs() -> int:
+def resolved_jobs(power_profile: str | None = None) -> int:
     spec = importlib.util.spec_from_file_location('whp_job_budget', JOB_BUDGET_TOOL)
     if spec is None or spec.loader is None:
         raise RuntimeError(f'cannot load WHP job budget tool: {JOB_BUDGET_TOOL}')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    environ = dict(os.environ)
+    if power_profile and 'MACOS_BUILD_POWER' not in environ:
+        environ['MACOS_BUILD_POWER'] = power_profile
     try:
-        return module.resolve_jobs()
+        return module.resolve_jobs(environ)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
@@ -523,7 +526,7 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
 
     if platform.system() == 'Darwin':
-        configure_args.append(f'-Db_lto_threads={resolved_jobs()}')
+        configure_args.append(f"-Db_lto_threads={resolved_jobs(values['MACOS_BUILD_POWER'])}")
         optional_switch(configure_args, values['MACOS_ENABLE_COCOA'], 'cocoa')
         optional_switch(configure_args, values['MACOS_ENABLE_COREAUDIO'], 'coreaudio')
 
@@ -641,7 +644,7 @@ def main(argv: List[str]) -> int:
         append_module_build_target(build_dir, requested_targets, values)
 
         runner = select_runner()
-        jobs = str(resolved_jobs())
+        jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
         runner_name = pathlib.Path(runner[0]).name
         if runner_name.startswith('ninja'):
             build_command = [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
