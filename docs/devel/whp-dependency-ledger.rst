@@ -130,6 +130,10 @@ by the WHP account.
      - ``water`` (Wine)
      - yes
      - Wine 11.16 fork; ``planned`` Windows API/PE validation and cross-development layer. Normal source already carries ``configure``; basic build requirements include GNU Make, flex, bison, a host compiler, and platform development headers/tooling.
+   * - ``toolchains/xen``
+     - ``xen``
+     - yes
+     - Xen source/toolstack fork; ``planned`` managed source for QEMU's existing Xen backend. Current production discovery still enters through the feature-gated ``xencontrol`` pkg-config dependency rather than an unconditional Xen source build.
    * - ``toolchains/grub``
      - ``grub``
      - yes
@@ -274,6 +278,27 @@ full ``tests/lcitool/projects/qemu.yml`` profile adds feature-gated libraries
 such as ALSA, GTK, GnuTLS, libcurl, libiscsi, libnfs, libslirp, libssh,
 libusb, PipeWire, PulseAudio, SDL, SPICE, zstd, and others.  Those optional
 libraries stay feature-gated rather than becoming WHP bootstrap roots.
+
+Xen source boundary
+-------------------
+
+QEMU already carries native Xen accelerator, backend, bus, device, and PVH
+integration.  Its Meson dependency probe currently enters through
+``dependency('xencontrol', method: 'pkg-config')``, so Xen remains a
+feature-gated QEMU graph edge rather than a host bootstrap root.
+
+The WHP-owned ``toolchains/xen`` gitlink records the editable Xen source
+lineage without changing that production dependency contract yet.  The
+submodule is therefore ``planned``: it is pinned source/provenance for a
+future managed Xen toolstack/library build, but normal QEMU configuration may
+continue to consume a compatible externally prepared Xen installation.
+
+Routine QEMU source refresh must not materialize Xen merely because the
+gitlink exists.  A future Xen bootstrap helper must initialize the exact
+``toolchains/xen`` gitlink lazily when Xen support is selected, and it must
+publish the resulting headers/libraries through the same pkg-config-facing
+boundary QEMU already understands rather than bypassing Meson dependency
+resolution.
 
 Bootstrap phase ordering
 ------------------------
