@@ -766,6 +766,14 @@ remain intentional tool selections, but QEMU's exported ``LD=ld64.lld`` does
 not: Clang chooses the platform linker for libisofs Darwin/arm64e configure
 and link probes.
 
+The private install step deliberately avoids Automake's generated leaf target
+names. In particular, ``nodist_pkgconfig_DATA`` generates
+``install-nodist_pkgconfigDATA``, not ``install-pkgconfigDATA``. QEMU therefore
+installs the static library with ``install-libLTLIBRARIES`` and delegates headers
+and generated pkg-config metadata to Automake's stable ``install-data``
+aggregate. The exact install target set is part of the workspace identity so
+incremental reuse cannot hide a future install-contract change.
+
 QEMU configures the fork with ``--disable-debug``. The fork now respects an
 explicit caller ``CFLAGS`` and no longer prepends its historical debug/warning
 or optimization bundle on top of orchestrator-owned flags; only the

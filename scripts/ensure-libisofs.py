@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "14"
+LIBISOFS_BOOTSTRAP_SCHEMA = "15"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -39,8 +39,10 @@ LIBISOFS_CONFIGURE_ARGS = (
 )
 LIBISOFS_INSTALL_TARGETS = (
     "install-libLTLIBRARIES",
-    "install-libincludeHEADERS",
-    "install-pkgconfigDATA",
+    # Use Automake's stable aggregate for headers and generated pkg-config
+    # data. nodist_pkgconfig_DATA generates install-nodist_pkgconfigDATA, not
+    # install-pkgconfigDATA, so calling the leaf name directly is incorrect.
+    "install-data",
 )
 QEMU_UNUSED_SOURCE_DIRS = (
     "demo",
@@ -977,6 +979,7 @@ def workspace_marker_text(
         "CXXFLAGS=UNUSED\n"
         "LINKER_POLICY=COMPILER_DEFAULT\n"
         f"CONFIGURE_ARGS={shlex.join(LIBISOFS_CONFIGURE_ARGS)}\n"
+        f"INSTALL_TARGETS={shlex.join(LIBISOFS_INSTALL_TARGETS)}\n"
         "STRICT_PROTOTYPES=1\n"
         "SHARED=0\n"
         "STATIC=1\n"

@@ -394,6 +394,7 @@ def test_incremental_workspace() -> None:
             raise SystemExit("error: clean libisofs rebuild preserved old state")
 
 def main() -> int:
+    helper_module = load_helper_module()
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
@@ -553,7 +554,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "14"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "15"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -650,6 +651,25 @@ def main() -> int:
     require(helper, 'env["LDFLAGS"] = ""', "isolated LDFLAGS")
     require(helper, '"CXXFLAGS=UNUSED\\n"', "C++ flag non-participation marker")
     require(helper, '"LINKER_POLICY=COMPILER_DEFAULT\\n"', "linker policy marker")
+    expected_install_targets = (
+        "install-libLTLIBRARIES",
+        "install-data",
+    )
+    if helper_module.LIBISOFS_INSTALL_TARGETS != expected_install_targets:
+        raise SystemExit(
+            "error: libisofs private install targets drifted: "
+            + repr(helper_module.LIBISOFS_INSTALL_TARGETS)
+        )
+    if "install-pkgconfigDATA" in helper:
+        raise SystemExit(
+            "error: libisofs helper calls nonexistent Automake "
+            "install-pkgconfigDATA target"
+        )
+    require(
+        helper,
+        'f"INSTALL_TARGETS={shlex.join(LIBISOFS_INSTALL_TARGETS)}\\n"',
+        "libisofs install-target workspace identity",
+    )
     if "append_flags(" in helper:
         raise SystemExit("error: libisofs still appends QEMU caller flags")
     if "link_flags=architecture_flags" in helper:
@@ -834,6 +854,17 @@ def main() -> int:
             raise SystemExit(
                 "error: libisofs acinclude.m4 regained hand-formatted option help"
             )
+    if libisofs_makefile:
+        require(
+            libisofs_makefile,
+            "nodist_pkgconfig_DATA =",
+            "generated pkg-config data declaration",
+        )
+        require(
+            libisofs_makefile,
+            "libisofs-1.pc",
+            "libisofs pkg-config metadata",
+        )
     if libisofs_makefile:
         require(
             libisofs_makefile,
