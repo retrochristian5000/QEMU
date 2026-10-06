@@ -239,6 +239,68 @@ jobs:
             autoconf automake cmake glib help2man libslirp libtool m4 make \
             ninja pixman pkgconf texinfo xz
 
+      - name: Bootstrap pinned libisofs as arm64
+        shell: bash
+        env:
+          WHP_MACOS_ARCH: arm64
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/whp-libisofs-arm64"
+          export SED="$(./sed.sh --print-seed)"
+          libtool_prefix="$(python3 scripts/ensure-libtool.py --build-dir "$smoke_root" --mode force)"
+          export LIBTOOLIZE="$libtool_prefix/bin/libtoolize"
+          prefix="$(python3 scripts/ensure-libisofs.py --build-dir "$smoke_root" --mode force)"
+          marker="$prefix/.whp-libisofs-bootstrap"
+          archive="$(find "$prefix" -name libisofs.a -print -quit)"
+          pc_file="$(find "$prefix" -path '*/pkgconfig/libisofs-1.pc' -print -quit)"
+          pkgconf="$(command -v pkg-config || command -v pkgconf)"
+          lipo="$(xcrun --find lipo)"
+
+          test -n "$archive"
+          test -n "$pc_file"
+          test -f "$prefix/include/libisofs/libisofs.h"
+          archive_archs="$("$lipo" -archs "$archive")"
+          read -r -a archive_arch_list <<< "$archive_archs"
+          test "${#archive_arch_list[@]}" -eq 1
+          test "${archive_arch_list[0]}" = arm64
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=12' "$marker"
+          grep -Fxq 'WHP_MACOS_ARCH=arm64' "$marker"
+          grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
+          grep -Fxq "SED=$SED" "$marker"
+          grep -Fxq 'CPPFLAGS=' "$marker"
+          grep -Fxq 'LDFLAGS=' "$marker"
+          grep -Fxq 'CXXFLAGS=UNUSED' "$marker"
+          grep -Fxq 'LINKER_POLICY=COMPILER_DEFAULT' "$marker"
+
+          cflags_line="$(grep '^CFLAGS=' "$marker")"
+          case "$cflags_line" in
+            *"-fuse-ld=lld"*|*"--read-workers"*)
+              echo "QEMU linker policy leaked into arm64 libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+          esac
+          case "$cflags_line" in
+            *"-arch arm64 "*" -arch arm64"*)
+              echo "duplicate arm64 architecture flag in libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+            *"-arch arm64 "*) ;;
+            *)
+              echo "missing arm64 architecture flag in libisofs CFLAGS: $cflags_line" >&2
+              exit 1
+              ;;
+          esac
+
+          static_libs="$(PKG_CONFIG_PATH="$(dirname "$pc_file")" "$pkgconf" --static --libs libisofs-1)"
+          case " $static_libs " in
+            *" -lz "*) ;;
+            *) printf 'error: arm64 libisofs static metadata lost -lz: %s\n' "$static_libs" >&2; exit 1 ;;
+          esac
+          case " $static_libs " in
+            *" -lpthread "*) ;;
+            *) printf 'error: arm64 libisofs static metadata lost -lpthread: %s\n' "$static_libs" >&2; exit 1 ;;
+          esac
+
       - name: Bootstrap pinned libisofs as arm64e
         shell: bash
         env:
