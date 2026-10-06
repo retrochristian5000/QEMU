@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "15"
+LIBISOFS_BOOTSTRAP_SCHEMA = "16"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -1111,6 +1111,22 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env["SHELL"] = config_shell
     compile_flags = ["-O3", *libisofs_c_policy_flags()]
     cpp_flags = libisofs_cpp_policy_flags()
+    dependency_link_flags: list[str] = []
+    zlib_prefix_value = os.environ.get("WHP_ZLIB_PREFIX", "").strip()
+    if zlib_prefix_value:
+        zlib_prefix = pathlib.Path(zlib_prefix_value).expanduser().resolve()
+        zlib_include = zlib_prefix / "include"
+        zlib_lib = zlib_prefix / "lib"
+        if not (zlib_include / "zlib.h").is_file():
+            raise RuntimeError(
+                f"WHP_ZLIB_PREFIX has no zlib.h: {zlib_prefix}"
+            )
+        if not (zlib_lib / "libz.a").is_file():
+            raise RuntimeError(
+                f"WHP_ZLIB_PREFIX has no static libz.a: {zlib_prefix}"
+            )
+        cpp_flags.append(f"-I{zlib_include}")
+        dependency_link_flags.append(f"-L{zlib_lib}")
     if sdkroot:
         compile_flags += [
             "-arch", arch,
@@ -1125,7 +1141,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     # not duplicated and QEMU-specific linker policy cannot leak in.
     env["CFLAGS"] = " ".join(compile_flags)
     env["CPPFLAGS"] = " ".join(cpp_flags)
-    env["LDFLAGS"] = ""
+    env["LDFLAGS"] = " ".join(dependency_link_flags)
 
     workspace_marker = workspace_marker_text(
         cc,
@@ -1263,6 +1279,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         pkgconf,
         static=True,
         compile_flags=architecture_flags,
+        link_flags=dependency_link_flags,
         env=probe_env,
     ):
         raise RuntimeError(

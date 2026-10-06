@@ -770,6 +770,12 @@ remain intentional tool selections, but QEMU's exported ``LD=ld64.lld`` does
 not: Clang chooses the platform linker for libisofs Darwin/arm64e configure
 and link probes.
 
+When the managed zlib bootstrap publishes ``WHP_ZLIB_PREFIX``, the private
+libisofs configure receives that exact prefix through dependency-owned
+``CPPFLAGS``/ ``LDFLAGS`` search paths. This keeps libisofs on the same
+``zlib.h`` and static ``libz.a`` selected for QEMU instead of rediscovering
+an unrelated Homebrew or SDK copy.
+
 The private install step deliberately avoids Automake's generated leaf target
 names. In particular, ``nodist_pkgconfig_DATA`` generates
 ``install-nodist_pkgconfigDATA``, not ``install-pkgconfigDATA``. QEMU therefore
