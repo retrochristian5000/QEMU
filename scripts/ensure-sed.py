@@ -592,7 +592,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         env=env,
     )
     run_logged(
-        [make, "-j", str(max(1, os.cpu_count() or 1))],
+        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
         cwd=objects,
         env=env,
     )

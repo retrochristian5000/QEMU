@@ -334,6 +334,15 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+# Resolve one macOS compiler job budget before compiled dependencies or native
+# LLVM start. Explicit JOBS remains authoritative.
+if [ "$WHP_HOST_OS" = macos ]; then
+    JOBS=$("$PYTHON" "$SOURCE_DIR/scripts/job-budget.py" --print-jobs) || exit 1
+    export JOBS
+    printf 'WHP macOS compile power: %s (%s jobs)\n' \
+        "${MACOS_BUILD_POWER:-balanced}" "$JOBS" >&2
+fi
+
 # Keep host-tool bootstraps out of the public entrypoint. This module is sourced
 # here so its environment mutations preserve the historical build.sh ordering.
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"

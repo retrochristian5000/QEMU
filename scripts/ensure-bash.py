@@ -502,7 +502,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(configure_command, cwd=object_dir, env=env)
     run_logged(
-        [make, "-j", str(max(1, os.cpu_count() or 1))],
+        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
         cwd=object_dir, env=env,
     )
     run_logged([make, "install"], cwd=object_dir, env=env)

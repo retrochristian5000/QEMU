@@ -19,6 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 SELECTOR_TOOL = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
 USER_CONFIG = ROOT / '.whpconfig'
+JOB_BUDGET_TOOL = ROOT / 'scripts' / 'job-budget.py'
 
 
 def load_config_module():
@@ -28,6 +29,18 @@ def load_config_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def resolved_jobs() -> int:
+    spec = importlib.util.spec_from_file_location('whp_job_budget', JOB_BUDGET_TOOL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'cannot load WHP job budget tool: {JOB_BUDGET_TOOL}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.resolve_jobs()
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def normalize_bool(name: str, value: str) -> str:
@@ -510,6 +523,7 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
 
     if platform.system() == 'Darwin':
+        configure_args.append(f'-Db_lto_threads={resolved_jobs()}')
         optional_switch(configure_args, values['MACOS_ENABLE_COCOA'], 'cocoa')
         optional_switch(configure_args, values['MACOS_ENABLE_COREAUDIO'], 'coreaudio')
 
@@ -627,15 +641,7 @@ def main(argv: List[str]) -> int:
         append_module_build_target(build_dir, requested_targets, values)
 
         runner = select_runner()
-        jobs_env = os.environ.get('JOBS')
-        default_jobs = os.cpu_count() or 1
-        try:
-            jobs_int = int(jobs_env) if jobs_env is not None else default_jobs
-        except ValueError:
-            jobs_int = default_jobs
-        if jobs_int < 1:
-            jobs_int = default_jobs
-        jobs = str(jobs_int)
+        jobs = str(resolved_jobs())
         runner_name = pathlib.Path(runner[0]).name
         if runner_name.startswith('ninja'):
             build_command = [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]

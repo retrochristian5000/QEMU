@@ -1087,7 +1087,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
                 f"{generated_shell} != {config_shell}"
             )
 
-    jobs = str(max(1, os.cpu_count() or 1))
+    jobs = str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))
     run_logged(
         [tools["MAKE"], "-j", jobs],
         cwd=object_dir,

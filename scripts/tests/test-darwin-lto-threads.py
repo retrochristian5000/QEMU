@@ -18,10 +18,10 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn('b_lto_threads = 0', text)
         self.assertNotIn('b_lto_threads = 1', text)
 
-    def test_darwin_configure_identity_refreshes_lto_thread_policy(self):
+    def test_darwin_configure_uses_compile_power_budget_for_lto(self):
         text = PREPARE_BUILD.read_text(encoding='utf-8')
-        self.assertIn('configure_args+=(-Db_lto_threads=0)', text)
-        self.assertNotIn('-Db_lto_threads=1', text)
+        self.assertIn('configure_args+=("-Db_lto_threads=$JOBS")', text)
+        self.assertNotIn('configure_args+=(-Db_lto_threads=0)', text)
 
     def test_darwin_uses_cached_thinlto_for_incremental_links(self):
         text = DARWIN_MESON.read_text(encoding='utf-8')

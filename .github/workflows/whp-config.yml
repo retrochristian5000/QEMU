@@ -23,6 +23,7 @@ on:
       - 'toolchains/python-runtime'
       - 'build.sh'
       - 'builder.sh'
+      - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
@@ -123,6 +124,7 @@ jobs:
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-darwin-lto-threads.py
+          python3 scripts/tests/test-macos-power-budget.py
           python3 scripts/tests/test-darwin-user-recovery.py
           python3 scripts/tests/test-darwin-macho-abi.py
           python3 scripts/tests/test-darwin-ppc-abi.py
@@ -165,6 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            scripts/job-budget.py \
             scripts/ensure-ninja.py \
             scripts/ensure-sdl.py \
             scripts/ensure-libisofs.py \
@@ -180,6 +183,7 @@ jobs:
             scripts/tests/test-cxx-standard-config.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-darwin-lto-threads.py \
+            scripts/tests/test-macos-power-budget.py \
             scripts/tests/test-darwin-user-recovery.py \
             scripts/tests/test-darwin-macho-abi.py \
             scripts/tests/test-darwin-ppc-abi.py \

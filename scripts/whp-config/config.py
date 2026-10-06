@@ -70,6 +70,7 @@ OPTIONS = (
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('MACOS_BUILD_POWER', 'Build behavior', 'macOS compile power profile', 'choice', 'balanced', ('eco', 'balanced', 'performance')),
     Option('QEMU_WERROR', 'Diagnostics', 'Treat compiler warnings as errors', 'bool', 'y'),
     Option('QEMU_ASAN', 'Diagnostics', 'AddressSanitizer', 'bool', 'n'),
     Option('QEMU_UBSAN', 'Diagnostics', 'UndefinedBehaviorSanitizer', 'bool', 'n'),

@@ -1099,7 +1099,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             "libisofs configure did not generate its project-local libtool"
         )
     run_logged(
-        [make, "-j", str(max(1, os.cpu_count() or 1))],
+        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
         cwd=object_dir,
         env=env,
     )

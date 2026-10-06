@@ -30,6 +30,7 @@ MACOS_ENABLE_COCOA|Host features|Cocoa|choice|auto|auto,y,n|
 MACOS_ENABLE_COREAUDIO|Host features|CoreAudio|choice|auto|auto,y,n|
 MACOS_ENABLE_GTK|Host features|GTK|choice|auto|auto,y,n|
 MACOS_ENABLE_PA|Host features|PulseAudio|choice|auto|auto,y,n|
+MACOS_BUILD_POWER|Build behavior|macOS compile power profile|choice|balanced|eco,balanced,performance|
 QEMU_WERROR|Diagnostics|Treat compiler warnings as errors|bool|y||
 QEMU_ASAN|Diagnostics|AddressSanitizer|bool|n||
 QEMU_UBSAN|Diagnostics|UndefinedBehaviorSanitizer|bool|n||

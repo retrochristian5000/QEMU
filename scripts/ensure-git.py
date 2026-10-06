@@ -361,7 +361,7 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
         file=sys.stderr,
     )
     run_logged(
-        [make, "-C", str(source), "-j", str(max(1, os.cpu_count() or 1)), *variables],
+        [make, "-C", str(source), "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1)))), *variables],
         env=env,
     )
     run_logged([make, "-C", str(source), "install", *variables], env=env)

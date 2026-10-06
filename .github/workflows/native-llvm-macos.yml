@@ -50,6 +50,7 @@ on:
       - 'hw/display/trace-events'
       - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/portable-build.py'
+      - 'scripts/job-budget.py'
       - 'scripts/whp-config/config.py'
       - 'meson.build'
       - 'meson_options.txt'
