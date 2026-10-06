@@ -1,16 +1,9 @@
 # WHP host bootstrap tool selection.
 # Sourced by build.sh after Python, host identity, BUILD_DIR, and .whpconfig are ready.
 
-BOOTSTRAP_AUTOMAKE=${BOOTSTRAP_AUTOMAKE:-auto}
-case "$BOOTSTRAP_AUTOMAKE" in
-    y) BOOTSTRAP_AUTOMAKE=1 ;;
-    n) BOOTSTRAP_AUTOMAKE=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_AUTOMAKE must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+. "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+
+BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch BOOTSTRAP_AUTOMAKE "${BOOTSTRAP_AUTOMAKE:-auto}") || exit 1
 export BOOTSTRAP_AUTOMAKE
 
 whp_automake_pair_usable()
@@ -95,16 +88,7 @@ if [ -n "${AUTOMAKE:-}" ]; then
 fi
 unset WHP_AUTOMAKE_EXPLICIT
 
-BOOTSTRAP_AUTOCONF=${BOOTSTRAP_AUTOCONF:-auto}
-case "$BOOTSTRAP_AUTOCONF" in
-    y) BOOTSTRAP_AUTOCONF=1 ;;
-    n) BOOTSTRAP_AUTOCONF=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_AUTOCONF must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_AUTOCONF=$(whp_normalize_auto_switch BOOTSTRAP_AUTOCONF "${BOOTSTRAP_AUTOCONF:-auto}") || exit 1
 export BOOTSTRAP_AUTOCONF
 
 whp_autoconf_pair_usable()
@@ -198,16 +182,7 @@ fi
 unset WHP_AUTOCONF_EXPLICIT
 
 
-BOOTSTRAP_MAKE=${BOOTSTRAP_MAKE:-auto}
-case "$BOOTSTRAP_MAKE" in
-    y) BOOTSTRAP_MAKE=1 ;;
-    n) BOOTSTRAP_MAKE=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_MAKE must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_MAKE=$(whp_normalize_auto_switch BOOTSTRAP_MAKE "${BOOTSTRAP_MAKE:-auto}") || exit 1
 export BOOTSTRAP_MAKE
 
 # Keep the first GNU Make as an explicit seed through Python and the
@@ -260,16 +235,7 @@ if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
 fi
 unset WHP_PROMOTE_MAKE
 
-BOOTSTRAP_SED=${BOOTSTRAP_SED:-auto}
-case "$BOOTSTRAP_SED" in
-    y) BOOTSTRAP_SED=1 ;;
-    n) BOOTSTRAP_SED=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_SED must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_SED=$(whp_normalize_auto_switch BOOTSTRAP_SED "${BOOTSTRAP_SED:-auto}") || exit 1
 export BOOTSTRAP_SED
 
 whp_sed_usable()
@@ -351,16 +317,7 @@ fi
 printf 'QEMU sed: %s (%s)\n' "$SED" "$WHP_SED_KIND" >&2
 unset WHP_SED_DIR WHP_SED_KIND
 
-BOOTSTRAP_GIT=${BOOTSTRAP_GIT:-auto}
-case "$BOOTSTRAP_GIT" in
-    y) BOOTSTRAP_GIT=1 ;;
-    n) BOOTSTRAP_GIT=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_GIT must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_GIT=$(whp_normalize_auto_switch BOOTSTRAP_GIT "${BOOTSTRAP_GIT:-auto}") || exit 1
 export BOOTSTRAP_GIT
 
 WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
@@ -411,16 +368,7 @@ if [ "$BOOTSTRAP_GIT" != 0 ] &&
     fi
 fi
 
-BOOTSTRAP_BASH=${BOOTSTRAP_BASH:-auto}
-case "$BOOTSTRAP_BASH" in
-    y) BOOTSTRAP_BASH=1 ;;
-    n) BOOTSTRAP_BASH=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_BASH must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_BASH=$(whp_normalize_auto_switch BOOTSTRAP_BASH "${BOOTSTRAP_BASH:-auto}") || exit 1
 export BOOTSTRAP_BASH
 
 whp_bash_usable()
@@ -482,16 +430,7 @@ if [ -n "$WHP_BUILD_BASH" ]; then
     export WHP_BUILD_BASH CONFIG_SHELL
 fi
 
-BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}
-case "$BOOTSTRAP_NINJA" in
-    y) BOOTSTRAP_NINJA=1 ;;
-    n) BOOTSTRAP_NINJA=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_NINJA must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_NINJA=$(whp_normalize_auto_switch BOOTSTRAP_NINJA "${BOOTSTRAP_NINJA:-auto}") || exit 1
 export BOOTSTRAP_NINJA
 
 # QEMU's normal Meson path needs Ninja before configuration, not only when the

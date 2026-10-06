@@ -16,6 +16,7 @@ on:
       - 'scripts/tests/test-file-extension-standard.py'
       - 'scripts/tests/test-powershell-build-entry.py'
       - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-shell-functions.sh'
       - 'scripts/tests/test-whp-incremental.py'
       - '.github/workflows/whp-portable-build.yml'
   workflow_dispatch:
@@ -48,6 +49,9 @@ jobs:
         run: |
           python3 scripts/tests/test-file-extension-standard.py
           python3 scripts/tests/test-powershell-build-entry.py
+
+      - name: Verify shared shell function contract
+        run: /bin/sh scripts/tests/test-whp-shell-functions.sh
 
       - name: Install minimal QEMU build dependencies
         run: |
