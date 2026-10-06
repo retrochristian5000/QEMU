@@ -727,6 +727,11 @@ def main() -> int:
         )
         require(
             libisofs_configure,
+            "AC_CHECK_HEADERS_ONCE([stdint.h inttypes.h stdlib.h])",
+            "one-shot standard header probes",
+        )
+        require(
+            libisofs_configure,
             "AC_ARG_ENABLE([demo],",
             "optional libisofs demo configure switch",
         )
