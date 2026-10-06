@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "13"
+LIBISOFS_BOOTSTRAP_SCHEMA = "14"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -608,6 +608,14 @@ def libisofs_c_policy_flags() -> list[str]:
     ]
 
 
+def libisofs_cpp_policy_flags(host_system: str | None = None) -> list[str]:
+    """Return dependency-owned preprocessor inputs, never probe results."""
+    system = host_system or platform.system()
+    if system == "Darwin":
+        return ["-D_DARWIN_C_SOURCE=1"]
+    return []
+
+
 def pkg_config_flags(
     pkgconf: str,
     *,
@@ -1099,6 +1107,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     env["CONFIG_SHELL"] = config_shell
     env["SHELL"] = config_shell
     compile_flags = ["-O3", *libisofs_c_policy_flags()]
+    cpp_flags = libisofs_cpp_policy_flags()
     if sdkroot:
         compile_flags += [
             "-arch", arch,
@@ -1112,7 +1121,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     # compiler-driver link commands. LDFLAGS stays empty so those flags are
     # not duplicated and QEMU-specific linker policy cannot leak in.
     env["CFLAGS"] = " ".join(compile_flags)
-    env["CPPFLAGS"] = ""
+    env["CPPFLAGS"] = " ".join(cpp_flags)
     env["LDFLAGS"] = ""
 
     workspace_marker = workspace_marker_text(
