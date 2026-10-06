@@ -138,6 +138,30 @@ def test_c_standard_policy() -> None:
         )
 
 
+def test_cpp_define_policy() -> None:
+    helper = load_helper_module()
+    expected_darwin = ["-D_DARWIN_C_SOURCE=1"]
+    if helper.libisofs_cpp_policy_flags("Darwin") != expected_darwin:
+        raise SystemExit(
+            "error: libisofs Darwin preprocessor policy drifted"
+        )
+    if helper.libisofs_cpp_policy_flags("Linux") != []:
+        raise SystemExit(
+            "error: libisofs Darwin preprocessor policy leaked to Linux"
+        )
+    forbidden = (
+        "LIBISOFS_DARWIN_ABI64",
+        "LIBISOFS_ARM64E_ABI",
+        "_FILE_OFFSET_BITS",
+        "HAVE_",
+    )
+    joined = " ".join(expected_darwin)
+    if any(name in joined for name in forbidden):
+        raise SystemExit(
+            "error: libisofs wrapper predefines an Autoconf probe result"
+        )
+
+
 def test_qemu_bootstrap_source_pruning() -> None:
     helper = load_helper_module()
     with tempfile.TemporaryDirectory(prefix="whp-libisofs-prune-") as tmp:
@@ -529,7 +553,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "13"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "14"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -622,7 +646,7 @@ def main() -> int:
         "dependency compiler/linker flag isolation application",
     )
     require(helper, 'env["CFLAGS"] = " ".join(compile_flags)', "owned CFLAGS")
-    require(helper, 'env["CPPFLAGS"] = ""', "isolated CPPFLAGS")
+    require(helper, 'env["CPPFLAGS"] = " ".join(cpp_flags)', "owned CPPFLAGS")
     require(helper, 'env["LDFLAGS"] = ""', "isolated LDFLAGS")
     require(helper, '"CXXFLAGS=UNUSED\\n"', "C++ flag non-participation marker")
     require(helper, '"LINKER_POLICY=COMPILER_DEFAULT\\n"', "linker policy marker")
@@ -911,6 +935,7 @@ def main() -> int:
     test_autotools_utility_isolation()
     test_dependency_flag_isolation()
     test_c_standard_policy()
+    test_cpp_define_policy()
     test_qemu_bootstrap_source_pruning()
     test_private_install_surface_contract()
     test_macho_archive_architecture_contract()
