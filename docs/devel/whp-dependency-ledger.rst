@@ -166,6 +166,10 @@ by the WHP account.
      - ``jack``
      - yes
      - JACK client library for QEMU; Python/Waf + C/C++.  Full macOS server builds have a conditional Aften edge.
+   * - ``toolchains/zlib``
+     - ``ZLIB``
+     - yes
+     - Managed static zlib for QEMU compression/CRC consumers and downstream dependencies such as libisofs; native configure + Make + host C compiler.
    * - ``toolchains/aften``
      - ``aften``
      - yes

@@ -3,6 +3,48 @@
 
 whp_prepare_qemu_host_libraries()
 {
+    BOOTSTRAP_ZLIB=${BOOTSTRAP_ZLIB:-auto}
+    BOOTSTRAP_ZLIB=$(whp_normalize_auto_switch BOOTSTRAP_ZLIB "$BOOTSTRAP_ZLIB") || exit 1
+    export BOOTSTRAP_ZLIB
+
+    # zlib is a required QEMU host dependency and is also consumed by libisofs.
+    # auto keeps a usable host zlib; 1 forces the pinned WHP fork; 0 disables
+    # only the managed fallback. Publish one private prefix for Meson/CMake and
+    # downstream dependency bootstraps.
+    if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+       [ "$BOOTSTRAP_ZLIB" != 0 ]; then
+        ZLIB_BOOTSTRAP_MODE=auto
+        if [ "$BOOTSTRAP_ZLIB" = 1 ]; then
+            ZLIB_BOOTSTRAP_MODE=force
+        fi
+        WHP_ZLIB_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
+                --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE"
+        ) || exit 1
+        unset ZLIB_BOOTSTRAP_MODE
+
+        if [ -n "$WHP_ZLIB_PREFIX" ]; then
+            WHP_ZLIB_PC_PATH=
+            for WHP_ZLIB_PC_DIR in \
+                "$WHP_ZLIB_PREFIX/lib/pkgconfig" \
+                "$WHP_ZLIB_PREFIX/lib64/pkgconfig" \
+                "$WHP_ZLIB_PREFIX/libdata/pkgconfig"; do
+                if [ -d "$WHP_ZLIB_PC_DIR" ]; then
+                    WHP_ZLIB_PC_PATH="${WHP_ZLIB_PC_PATH:+$WHP_ZLIB_PC_PATH:}$WHP_ZLIB_PC_DIR"
+                fi
+            done
+            if [ -n "$WHP_ZLIB_PC_PATH" ]; then
+                PKG_CONFIG_PATH="$WHP_ZLIB_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH
+            fi
+            CMAKE_PREFIX_PATH="$WHP_ZLIB_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            ZLIB_ROOT="$WHP_ZLIB_PREFIX"
+            export WHP_ZLIB_PREFIX CMAKE_PREFIX_PATH ZLIB_ROOT
+            unset WHP_ZLIB_PC_PATH WHP_ZLIB_PC_DIR
+        fi
+    fi
+
     BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
     case "$BOOTSTRAP_SDL" in
         y) BOOTSTRAP_SDL=1 ;;

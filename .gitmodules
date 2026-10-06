@@ -90,6 +90,11 @@
 	url = https://github.com/retrochristian5000/jack.git
 	branch = master
 	shallow = true
+[submodule "toolchains/zlib"]
+	path = toolchains/zlib
+	url = https://github.com/retrochristian5000/ZLIB.git
+	branch = master
+	shallow = true
 [submodule "toolchains/aften"]
 	path = toolchains/aften
 	url = https://github.com/retrochristian5000/aften.git

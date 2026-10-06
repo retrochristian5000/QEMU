@@ -50,6 +50,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['BOOTSTRAP_PYTHON'], 'auto')
         self.assertEqual(values['BOOTSTRAP_MAKE'], 'auto')
         self.assertEqual(values['BOOTSTRAP_SDL'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_ZLIB'], 'auto')
         self.assertEqual(values['PREFIX'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
         self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'auto')
@@ -186,6 +187,20 @@ class WhpConfigTests(unittest.TestCase):
         values['BOOTSTRAP_SDL'] = 'y'
         assignments = mod.shell_assignments(mod.ConfigState(values), {})
         self.assertIn("BOOTSTRAP_SDL='1'", assignments)
+
+    def test_zlib_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_ZLIB']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP zlib')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_ZLIB'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_ZLIB='1'", assignments)
 
     def test_win9x_cross_tools_are_separate_and_opt_in(self):
         mod = load_module()

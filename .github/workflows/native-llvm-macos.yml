@@ -73,7 +73,9 @@ on:
       - 'scripts/tests/test-arm64e-block-write-hotpath.py'
       - 'scripts/tests/test-darwin-block-nocache.py'
       - 'scripts/tests/test-darwin-libisofs-metadata.py'
+      - 'scripts/tests/test-zlib-bootstrap.py'
       - 'scripts/tests/test-libisofs-bootstrap.py'
+      - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-libisofs.py'
       - 'toolchains/libisofs'
       - 'scripts/ensure-libtool.py'
@@ -217,6 +219,10 @@ jobs:
       - name: Audit Darwin libisofs metadata path
         shell: bash
         run: python3 scripts/tests/test-darwin-libisofs-metadata.py
+
+      - name: Audit WHP zlib fork wiring
+        shell: bash
+        run: python3 scripts/tests/test-zlib-bootstrap.py
 
       - name: Audit WHP libisofs fork wiring
         shell: bash
