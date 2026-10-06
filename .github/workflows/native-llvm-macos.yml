@@ -77,6 +77,7 @@ on:
       - 'scripts/tests/test-libisofs-bootstrap.py'
       - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-libisofs.py'
+      - 'toolchains/zlib'
       - 'toolchains/libisofs'
       - 'scripts/ensure-libtool.py'
       - 'scripts/tests/test-libtool-bootstrap.py'

@@ -764,8 +764,10 @@ but macOS receives one dependency-owned input define,
 libisofs compile path. Autoconf probe results such as
 ``LIBISOFS_DARWIN_ABI64``, ``LIBISOFS_ARM64E_ABI``, large-file defines, and
 ``HAVE_*`` remain configure-owned and are not predeclared by the wrapper.
-``LDFLAGS`` remains empty; compiler-driver links consume the ABI triplet once
-through ``CFLAGS``. LLVM ``AR``/``RANLIB``/``NM``/``STRIP`` and ``LIPO``
+``LDFLAGS`` remains empty unless a managed dependency such as
+``WHP_ZLIB_PREFIX`` contributes only its private library search path; compiler-driver
+links consume the Darwin ABI triplet once through ``CFLAGS``. LLVM
+``AR``/``RANLIB``/``NM``/``STRIP`` and ``LIPO``
 remain intentional tool selections, but QEMU's exported ``LD=ld64.lld`` does
 not: Clang chooses the platform linker for libisofs Darwin/arm64e configure
 and link probes.

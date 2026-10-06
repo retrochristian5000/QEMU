@@ -652,7 +652,11 @@ def main() -> int:
     require(helper, 'cpp_flags.append(f"-I{zlib_include}")', "managed zlib include path")
     require(helper, 'dependency_link_flags.append(f"-L{zlib_lib}")', "managed zlib library path")
     require(helper, 'link_flags=dependency_link_flags', "managed zlib link probe path")
-    require(helper, 'env["LDFLAGS"] = ""', "isolated LDFLAGS")
+    require(
+        helper,
+        'env["LDFLAGS"] = " ".join(dependency_link_flags)',
+        "dependency-owned LDFLAGS",
+    )
     require(helper, '"CXXFLAGS=UNUSED\\n"', "C++ flag non-participation marker")
     require(helper, '"LINKER_POLICY=COMPILER_DEFAULT\\n"', "linker policy marker")
     expected_install_targets = (
