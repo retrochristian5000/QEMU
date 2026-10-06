@@ -4,18 +4,12 @@ set -eu
 
 SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+. "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+
 # Normal local builds refresh the tracked QEMU branch before any tool or
 # configuration discovery.  Probe/menu invocations stay side-effect free unless
 # the caller explicitly sets WHP_SOURCE_UPDATE=1.
-WHP_SOURCE_UPDATE=${WHP_SOURCE_UPDATE:-auto}
-case "$WHP_SOURCE_UPDATE" in
-    auto|0|1) ;;
-    *)
-        printf 'error: WHP_SOURCE_UPDATE must be auto, 0, or 1: %s\n' \
-            "$WHP_SOURCE_UPDATE" >&2
-        exit 1
-        ;;
-esac
+WHP_SOURCE_UPDATE=$(whp_require_auto_switch WHP_SOURCE_UPDATE "${WHP_SOURCE_UPDATE:-auto}") || exit 1
 
 WHP_SOURCE_UPDATE_SKIP=0
 if [ "$WHP_SOURCE_UPDATE" = auto ]; then
@@ -80,15 +74,7 @@ whp_config_bootstrap_python()
 if [ -z "${BOOTSTRAP_PYTHON:-}" ]; then
     BOOTSTRAP_PYTHON=$(whp_config_bootstrap_python 2>/dev/null || printf 'auto\n')
 fi
-case "$BOOTSTRAP_PYTHON" in
-    y) BOOTSTRAP_PYTHON=1 ;;
-    n) BOOTSTRAP_PYTHON=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_PYTHON must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_PYTHON=$(whp_normalize_auto_switch BOOTSTRAP_PYTHON "$BOOTSTRAP_PYTHON") || exit 1
 export BOOTSTRAP_PYTHON
 unset whp_bootstrap_python_value whp_config_line
 
@@ -355,14 +341,7 @@ fi
 # use the seed compiler or the managed LLVM compiler. Portable-core builds do
 # not run the native LLVM bootstrap, so when LLVM is disabled the historical
 # early preparation path remains available.
-BOOTSTRAP_NATIVE_LLVM=${BOOTSTRAP_NATIVE_LLVM:-0}
-case "$BOOTSTRAP_NATIVE_LLVM" in
-    0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_NATIVE_LLVM must be 0 or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch BOOTSTRAP_NATIVE_LLVM "${BOOTSTRAP_NATIVE_LLVM:-0}") || exit 1
 export BOOTSTRAP_NATIVE_LLVM
 
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 0 ]; then
@@ -514,15 +493,7 @@ export WHP_BUILD_BASH CONFIG_SHELL WHP_BUILD_ENTRY_NORMALIZED
 # before llvm-ar/llvm-ranlib/llvm-nm exist and leak those stale choices into
 # libisofs and other downstream projects.
 BOOTSTRAP_LIBTOOL=${BOOTSTRAP_LIBTOOL:-auto}
-case "$BOOTSTRAP_LIBTOOL" in
-    y) BOOTSTRAP_LIBTOOL=1 ;;
-    n) BOOTSTRAP_LIBTOOL=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_LIBTOOL must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_LIBTOOL=$(whp_normalize_auto_switch BOOTSTRAP_LIBTOOL "$BOOTSTRAP_LIBTOOL") || exit 1
 export BOOTSTRAP_LIBTOOL
 
 # GNU Libtool is a host-side Autotools generator used by source dependencies
@@ -589,15 +560,7 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
 fi
 
 BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}
-case "$BOOTSTRAP_LIBISOFS" in
-    y) BOOTSTRAP_LIBISOFS=1 ;;
-    n) BOOTSTRAP_LIBISOFS=0 ;;
-    auto|0|1) ;;
-    *)
-        printf 'error: BOOTSTRAP_LIBISOFS must be auto, 0, or 1\n' >&2
-        exit 1
-        ;;
-esac
+BOOTSTRAP_LIBISOFS=$(whp_normalize_auto_switch BOOTSTRAP_LIBISOFS "$BOOTSTRAP_LIBISOFS") || exit 1
 export BOOTSTRAP_LIBISOFS
 
 # libisofs is used only by the Darwin metadata-assisted ISO path. Keep Meson's

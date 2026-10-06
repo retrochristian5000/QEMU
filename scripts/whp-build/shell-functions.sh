@@ -21,3 +21,35 @@ whp_normalize_auto_switch()
 
     printf '%s\n' "$whp_switch_value"
 )
+
+whp_require_auto_switch()
+(
+    whp_switch_name=${1:-}
+    whp_switch_value=${2:-}
+
+    case "$whp_switch_value" in
+        auto|0|1) ;;
+        *)
+            printf 'error: %s must be auto, 0, or 1\n' "$whp_switch_name" >&2
+            return 1
+            ;;
+    esac
+
+    printf '%s\n' "$whp_switch_value"
+)
+
+whp_require_binary_switch()
+(
+    whp_switch_name=${1:-}
+    whp_switch_value=${2:-}
+
+    case "$whp_switch_value" in
+        0|1) ;;
+        *)
+            printf 'error: %s must be 0 or 1\n' "$whp_switch_name" >&2
+            return 1
+            ;;
+    esac
+
+    printf '%s\n' "$whp_switch_value"
+)
