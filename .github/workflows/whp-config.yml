@@ -47,6 +47,7 @@ on:
       - 'scripts/tests/test-cxx-standard-config.py'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
+      - 'scripts/tests/test-macos-power-budget.py'
       - 'scripts/tests/test-darwin-user-recovery.py'
       - 'scripts/tests/test-darwin-macho-abi.py'
       - 'scripts/tests/test-darwin-ppc-abi.py'

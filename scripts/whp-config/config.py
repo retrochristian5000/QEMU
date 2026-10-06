@@ -70,7 +70,6 @@ OPTIONS = (
     Option('MACOS_ENABLE_COREAUDIO', 'Host features', 'CoreAudio', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_GTK', 'Host features', 'GTK', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_PA', 'Host features', 'PulseAudio', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('MACOS_BUILD_POWER', 'Build behavior', 'macOS compile power profile', 'choice', 'balanced', ('eco', 'balanced', 'performance')),
     Option('QEMU_WERROR', 'Diagnostics', 'Treat compiler warnings as errors', 'bool', 'y'),
     Option('QEMU_ASAN', 'Diagnostics', 'AddressSanitizer', 'bool', 'n'),
     Option('QEMU_UBSAN', 'Diagnostics', 'UndefinedBehaviorSanitizer', 'bool', 'n'),
@@ -87,6 +86,7 @@ OPTIONS = (
     Option('RUN_TESTS', 'Build behavior', 'Run tests after build', 'bool', 'y'),
     Option('QEMU_TEST_SCOPE', 'Build behavior', 'QEMU test scope', 'choice', 'changed', ('changed', 'full')),
     Option('INSTALL_AFTER_BUILD', 'Build behavior', 'Install after build', 'bool', 'n'),
+    Option('MACOS_BUILD_POWER', 'Build behavior', 'macOS compile power profile', 'choice', 'balanced', ('eco', 'balanced', 'performance')),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
     *tuple(
