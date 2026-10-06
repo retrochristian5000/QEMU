@@ -79,6 +79,26 @@ def main() -> int:
     require(make_bootstrap, '"--gen", "--no-git"', "offline gnulib regeneration")
     require(make_bootstrap, "build.sh", "GNU Make no-Make compiler stage")
     require(make_bootstrap, "WHP_MAKE_SEED", "GNU Make seed boundary")
+    require(
+        make_bootstrap,
+        "def validate_modern_c_prototypes():",
+        "GNU Make modern-C prototype guard",
+    )
+    require(
+        make_bootstrap,
+        '"extern char *getenv (const char *);"',
+        "GNU Make getenv prototype contract",
+    )
+    require(
+        make_bootstrap,
+        '"extern int getopt (int argc, char *const *argv, "',
+        "GNU Make getopt prototype contract",
+    )
+    require(
+        make_bootstrap,
+        "revision = ensure_source()\n    validate_modern_c_prototypes()",
+        "GNU Make prototype validation ordering",
+    )
 
     make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
     if "[[" in make_resolver or "local " in make_resolver:

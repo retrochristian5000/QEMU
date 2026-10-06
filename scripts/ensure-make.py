@@ -381,6 +381,37 @@ def ensure_source():
     return revision
 
 
+def validate_modern_c_prototypes():
+    getenv_prototype = "extern char *getenv (const char *);"
+    stale_getenv = "extern char *getenv ();"
+    for relpath in ("gl/lib/fnmatch.c", "src/getopt.c"):
+        path = SUBMODULE_DIR / relpath
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if stale_getenv in text or getenv_prototype not in text:
+            raise RuntimeError(
+                f"GNU Make {relpath} has a stale getenv declaration; "
+                "modern C requires getenv(const char *)"
+            )
+
+    getopt_header = (SUBMODULE_DIR / "src/getopt.h").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    getopt_prototype = (
+        "extern int getopt (int argc, char *const *argv, "
+        "const char *shortopts);"
+    )
+    stale_getopt_block = (
+        "#else /* not __GNU_LIBRARY__ */\n"
+        "extern int getopt ();\n"
+        "#endif /* __GNU_LIBRARY__ */"
+    )
+    if stale_getopt_block in getopt_header or getopt_prototype not in getopt_header:
+        raise RuntimeError(
+            "GNU Make src/getopt.h has a stale getopt declaration; "
+            "modern C must not reinterpret getopt() as getopt(void)"
+        )
+
+
 def copy_source(revision, destination):
     shutil.rmtree(destination, ignore_errors=True)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -627,6 +658,7 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
 
 def bootstrap(build_root):
     revision = ensure_source()
+    validate_modern_c_prototypes()
     required_automake = bootstrap_required_version("automake")
     required_autoconf = bootstrap_required_version("autoconf")
     seed_make = select_seed_make()
