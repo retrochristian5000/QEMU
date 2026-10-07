@@ -235,14 +235,27 @@ fi
 
 source "$SCRIPT_DIR/macos-compiler-policy.bash"
 
-# Keep Darwin's PATH-independent Apple binary tools as the fallback, but do
-# not overwrite an explicit tool family selected by build.sh.  In particular,
-# BOOTSTRAP_NATIVE_LLVM carries llvm-ar/llvm-nm/llvm-strip/llvm-lipo plus the
-# LLVM object readers through the build so one LLVM revision owns the host
-# binary pipeline instead of drifting back to ambient PATH tools.
+# Keep explicit archive-tool choices authoritative.  When the selected Clang
+# has a complete LLVM archive trio beside it, prefer that coherent family.
+# This covers managed LLVM and standalone LLVM installations without making
+# llvm-ar a platform-wide requirement.  If any sibling is missing, retain the
+# normal PATH-independent Apple tools rather than constructing a mixed family.
+if [[ -z "${AR:-}" && -z "${RANLIB:-}" && -z "${NM:-}" &&
+      "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
+    llvm_ar="$(whp_compiler_sibling_tool "$CC" llvm-ar || true)"
+    llvm_ranlib="$(whp_compiler_sibling_tool "$CC" llvm-ranlib || true)"
+    llvm_nm="$(whp_compiler_sibling_tool "$CC" llvm-nm || true)"
+    if [[ -n "$llvm_ar" && -n "$llvm_ranlib" && -n "$llvm_nm" ]]; then
+        AR="$llvm_ar"
+        RANLIB="$llvm_ranlib"
+        NM="$llvm_nm"
+    fi
+    unset llvm_ar llvm_ranlib llvm_nm
+fi
+
 export AR="${AR:-/usr/bin/ar}"
-export NM="${NM:-/usr/bin/nm}"
 export RANLIB="${RANLIB:-/usr/bin/ranlib}"
+export NM="${NM:-/usr/bin/nm}"
 export STRIP="${STRIP:-/usr/bin/strip}"
 export LIPO="${LIPO:-/usr/bin/lipo}"
 
@@ -309,6 +322,9 @@ printf '%s\n' \
     "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET ($deployment_target_source)" \
     "macOS Mach-O arch:       $WHP_MACOS_ARCH" \
     "compiler family:         $MACOS_EFFECTIVE_COMPILER_FAMILY" \
+    "QEMU archiver:           $AR" \
+    "QEMU archive indexer:    $RANLIB" \
+    "QEMU symbol reader:      $NM" \
     "WHP build shell:         $WHP_BUILD_BASH" \
     "QEMU build directory:    $BUILD_DIR" \
     "firmware tools:          $OPENBIOS_TOOLS_DIR" \
