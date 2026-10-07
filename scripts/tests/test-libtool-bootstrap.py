@@ -133,6 +133,29 @@ def test_archive_tool_selection_is_compiler_coherent() -> None:
                     f"{selected}"
                 )
 
+            clang_only = root / "clang-only"
+            tools_only = root / "tools-only"
+            clang_only.mkdir()
+            tools_only.mkdir()
+            clang_no_sibling = clang_only / "clang"
+            unrelated_llvm_ar = tools_only / "llvm-ar"
+            fallback_ar = tools_only / "ar"
+            write_fake_compiler(clang_no_sibling, "clang version 19.1.0")
+            write_fake_tool(unrelated_llvm_ar)
+            write_fake_tool(fallback_ar)
+            os.environ["PATH"] = str(tools_only)
+
+            selected = helper.select_llvm_tool(
+                "AR", "llvm-ar", ("ar",), str(clang_no_sibling)
+            )
+            if selected != str(fallback_ar):
+                raise SystemExit(
+                    "error: Clang without a sibling archive tool adopted "
+                    f"unrelated PATH llvm-ar: {selected}"
+                )
+
+            os.environ["PATH"] = str(root)
+
             os.environ["AR"] = str(native_ar)
             selected = helper.select_llvm_tool("AR", "llvm-ar", ("ar",), str(clang))
             if selected != str(native_ar):
