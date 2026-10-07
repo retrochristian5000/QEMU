@@ -1,20 +1,24 @@
+# 16-bit PC Card / PCMCIA configuration.
+#
+# QEMU's minikconf grammar intentionally supports only bool/default/depends/
+# select/imply/source-style clauses; descriptive text belongs in comments,
+# not Linux-style "help" blocks.
+
 config PCMCIA
     bool
 
+# 16-bit serial PC Card modem devices.
 config PCMCIA_MODEM
     bool
     default y if PCMCIA
     depends on PCMCIA
     select SERIAL
-    help
-      16-bit serial PC Card modem devices.
 
+# Intel 82092AA PCI-to-PCMCIA bridge.  The model exposes PPEC function 0
+# and its 82365SL-compatible ExCA socket-register interface with selectable
+# one-, two-, or four-socket hardware profiles.
 config I82092AA
     bool
     default y if PCI_DEVICES
     depends on PCI
     select PCMCIA
-    help
-      Intel 82092AA PCI-to-PCMCIA bridge.  The initial model exposes PPEC
-      function 0 and its 82365SL-compatible ExCA socket-register interface
-      with selectable one-, two-, or four-socket hardware profiles.
