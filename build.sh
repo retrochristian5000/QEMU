@@ -463,6 +463,9 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM \
         OBJCOPY OBJDUMP READELF STRIP OBJC PATH
 
+    whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
+    WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB"
+
     # Darwin host links must consume the same LLVM revision that produced the
     # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
     # direct LD consumers get the same linker explicitly.
@@ -624,7 +627,11 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     done
     unset whp_tool_spec whp_tool_name whp_tool_expected whp_tool_actual
 
-    whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
+    whp_archive_tool_signature_now="$AR|$RANLIB"
+    if [ "$whp_archive_tool_signature_now" != "$WHP_ARCHIVE_TOOL_SIGNATURE" ]; then
+        whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
+    fi
+    unset whp_archive_tool_signature_now WHP_ARCHIVE_TOOL_SIGNATURE
 fi
 
 
