@@ -18,15 +18,15 @@ PORTABLE_ENTRY_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 
 AUDIO_OPTIONS = {
-    'I386_AUDIO_SB16': ('Sound Blaster 16 (ISA)', 'CONFIG_SB16'),
-    'I386_AUDIO_ADLIB': ('AdLib (ISA)', 'CONFIG_ADLIB'),
-    'I386_AUDIO_GUS': ('Gravis UltraSound (ISA)', 'CONFIG_GUS'),
-    'I386_AUDIO_CS4231A': ('Crystal CS4231A (ISA)', 'CONFIG_CS4231A'),
+    'I386_AUDIO_SB16': ('Sound Blaster 16 (ISA bus)', 'CONFIG_SB16'),
+    'I386_AUDIO_ADLIB': ('AdLib (ISA bus)', 'CONFIG_ADLIB'),
+    'I386_AUDIO_GUS': ('Gravis UltraSound (ISA bus)', 'CONFIG_GUS'),
+    'I386_AUDIO_CS4231A': ('Crystal CS4231A (ISA bus)', 'CONFIG_CS4231A'),
     'I386_AUDIO_PCSPK': ('PC speaker', 'CONFIG_PCSPK'),
-    'I386_AUDIO_ES1370': ('Ensoniq ES1370 (PCI)', 'CONFIG_ES1370'),
-    'I386_AUDIO_AC97': ("Intel AC'97 (PCI)", 'CONFIG_AC97'),
-    'I386_AUDIO_CS4630': ('Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
-    'I386_AUDIO_HDA': ('Intel HD Audio (PCI)', 'CONFIG_HDA'),
+    'I386_AUDIO_ES1370': ('Ensoniq ES1370 (PCI bus)', 'CONFIG_ES1370'),
+    'I386_AUDIO_AC97': ("Intel AC'97 (PCI bus)", 'CONFIG_AC97'),
+    'I386_AUDIO_CS4630': ('Crystal CS4630 (PCI bus)', 'CONFIG_CS4630'),
+    'I386_AUDIO_HDA': ('Intel HD Audio (PCI bus)', 'CONFIG_HDA'),
 }
 PPC_AUDIO_KEYS = {
     key.replace('I386_', 'PPC_', 1) for key in AUDIO_OPTIONS
@@ -82,8 +82,8 @@ class WhpI386AudioMenuTests(unittest.TestCase):
             )
         self.assertIn('QEMU hardware', result.stdout)
         self.assertNotIn('QEMU i386 audio hardware', result.stdout)
-        self.assertEqual(result.stdout.count('Sound Blaster 16 (ISA)'), 1)
-        self.assertEqual(result.stdout.count('Intel HD Audio (PCI)'), 1)
+        self.assertEqual(result.stdout.count('Sound Blaster 16 (ISA bus)'), 1)
+        self.assertEqual(result.stdout.count('Intel HD Audio (PCI bus)'), 1)
         self.assertIn('    <n>        i386', result.stdout)
         self.assertIn('    <auto>     ppc', result.stdout)
 
