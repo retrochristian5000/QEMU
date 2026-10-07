@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "17"
+LIBISOFS_BOOTSTRAP_SCHEMA = "18"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -102,40 +102,137 @@ DEPENDENCY_FLAG_ENV = (
     "PKG_CONFIG_SYSROOT_DIR",
 )
 
-def run_text(command: List[str], *, cwd: pathlib.Path | None = None,
-             env: dict[str, str] | None = None) -> str:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
+COMMAND_OUTPUT_TAIL_LINES = 80
+
+
+def command_failure_detail(
+    stage: str,
+    command: List[str],
+    *,
+    cwd: pathlib.Path | None,
+    returncode: int | None,
+    output: str,
+    launch_error: BaseException | None = None,
+) -> str:
+    location = str(cwd if cwd is not None else pathlib.Path.cwd())
+    lines = output.rstrip().splitlines()
+    tail = lines[-COMMAND_OUTPUT_TAIL_LINES:]
+    rendered = [
+        f"libisofs bootstrap stage '{stage}' failed",
+        f"cwd: {location}",
+        f"command: {shlex.join(command)}",
+    ]
+    if returncode is not None:
+        rendered.append(f"exit status: {returncode}")
+    if launch_error is not None:
+        rendered.append(
+            f"launch error: {type(launch_error).__name__}: {launch_error}"
+        )
+    if tail:
+        omitted = len(lines) - len(tail)
+        label = "output"
+        if omitted:
+            label += f" (last {len(tail)} lines; {omitted} earlier lines omitted)"
+        rendered.append(label + ":")
+        rendered.extend(f"  {line}" for line in tail)
+    else:
+        rendered.append("output: <none>")
+    return "\n".join(rendered)
+
+
+def run_text(
+    command: List[str],
+    *,
+    stage: str | None = None,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    stage_name = stage or f"query {pathlib.Path(command[0]).name}"
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
         raise RuntimeError(
-            f"command failed: {' '.join(command)}"
-            + (f": {detail}" if detail else "")
+            command_failure_detail(
+                stage_name,
+                command,
+                cwd=cwd,
+                returncode=None,
+                output="",
+                launch_error=exc,
+            )
+        ) from exc
+    if completed.returncode != 0:
+        combined = "\n".join(
+            part for part in (completed.stderr.strip(), completed.stdout.strip())
+            if part
+        )
+        raise RuntimeError(
+            command_failure_detail(
+                stage_name,
+                command,
+                cwd=cwd,
+                returncode=completed.returncode,
+                output=combined,
+            )
         )
     return completed.stdout.strip()
 
 
-def run_logged(command: List[str], *, cwd: pathlib.Path | None = None,
-               env: dict[str, str] | None = None) -> None:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        stdout=sys.stderr,
-        stderr=sys.stderr,
-        check=False,
-    )
-    if completed.returncode != 0:
+def run_logged(
+    command: List[str],
+    *,
+    stage: str,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+        )
+    except OSError as exc:
         raise RuntimeError(
-            f"command failed with exit status {completed.returncode}: "
-            + " ".join(command)
+            command_failure_detail(
+                stage,
+                command,
+                cwd=cwd,
+                returncode=None,
+                output="",
+                launch_error=exc,
+            )
+        ) from exc
+
+    tail: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        sys.stderr.write(line)
+        sys.stderr.flush()
+        tail.append(line.rstrip("\n"))
+        if len(tail) > COMMAND_OUTPUT_TAIL_LINES:
+            del tail[0]
+    returncode = process.wait()
+    if returncode != 0:
+        raise RuntimeError(
+            command_failure_detail(
+                stage,
+                command,
+                cwd=cwd,
+                returncode=returncode,
+                output="\n".join(tail),
+            )
         )
 
 
@@ -188,10 +285,14 @@ def ensure_libisofs_source() -> str:
             current_revision = ""
 
     if current_revision != expected_revision:
-        run_logged([
-            "git", "-C", str(ROOT), "submodule", "update", "--init",
-            "--depth", "1", str(SUBMODULE_REL),
-        ])
+        run_logged(
+            [
+                "git", "-C", str(ROOT), "submodule", "update", "--init",
+                "--depth", "1", str(SUBMODULE_REL),
+            ],
+            stage="initialize pinned libisofs submodule",
+            cwd=ROOT,
+        )
         current_revision = run_text(
             ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
         )
@@ -651,19 +752,35 @@ def libisofs_link_probe(
     compile_flags: list[str] | None = None,
     link_flags: list[str] | None = None,
     env: dict[str, str] | None = None,
+    diagnostics: list[str] | None = None,
 ) -> bool:
-    if subprocess.run(
-        [pkgconf, "--atleast-version=1.1.2", PKG_NAME],
+    version_command = [pkgconf, "--atleast-version=1.1.2", PKG_NAME]
+    completed = subprocess.run(
+        version_command,
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         check=False,
-    ).returncode != 0:
+    )
+    if completed.returncode != 0:
+        if diagnostics is not None:
+            diagnostics.append(
+                command_failure_detail(
+                    "verify libisofs pkg-config minimum version",
+                    version_command,
+                    cwd=None,
+                    returncode=completed.returncode,
+                    output=completed.stdout,
+                )
+            )
         return False
 
     try:
         flags = pkg_config_flags(pkgconf, static=static, env=env)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if diagnostics is not None:
+            diagnostics.append(str(exc))
         return False
 
     source = """#include <sys/types.h>
@@ -711,32 +828,59 @@ int main(int argc, char **argv)
     with tempfile.TemporaryDirectory(prefix="qemu-libisofs-probe-") as tmp:
         probe = pathlib.Path(tmp) / "probe.c"
         binary = pathlib.Path(tmp) / "probe"
+        probe.write_text(source, encoding="utf-8")
+        compile_command = [
+            cc,
+            *libisofs_c_policy_flags(),
+            *(compile_flags or []),
+            str(probe),
+            *(link_flags or []),
+            *flags,
+            "-o",
+            str(binary),
+        ]
         completed = subprocess.run(
-            [
-                cc,
-                *libisofs_c_policy_flags(),
-                *(compile_flags or []),
-                str(probe),
-                *(link_flags or []),
-                *flags,
-                "-o",
-                str(binary),
-            ],
+            compile_command,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             check=False,
         )
         if completed.returncode != 0:
+            if diagnostics is not None:
+                diagnostics.append(
+                    command_failure_detail(
+                        "compile and link libisofs consumer probe",
+                        compile_command,
+                        cwd=pathlib.Path(tmp),
+                        returncode=completed.returncode,
+                        output=completed.stdout,
+                    )
+                )
             return False
+        run_command = [str(binary)]
         completed = subprocess.run(
-            [str(binary)],
+            run_command,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             check=False,
         )
-        return completed.returncode == 0
+        if completed.returncode != 0:
+            if diagnostics is not None:
+                diagnostics.append(
+                    command_failure_detail(
+                        "execute libisofs consumer probe",
+                        run_command,
+                        cwd=pathlib.Path(tmp),
+                        returncode=completed.returncode,
+                        output=completed.stdout,
+                    )
+                )
+            return False
+        return True
 
 
 def strict_header_probe(cc: str, pkgconf: str) -> bool:
@@ -1212,7 +1356,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             file=sys.stderr,
         )
 
-    run_logged([config_shell, "bootstrap"], cwd=source_copy, env=env)
+    run_logged(
+        [config_shell, "bootstrap"],
+        stage="generate libisofs Autotools files",
+        cwd=source_copy,
+        env=env,
+    )
     prune_qemu_bootstrap_source(source_copy)
 
     object_dir.mkdir(parents=True, exist_ok=True)
@@ -1224,6 +1373,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             f"--prefix={prefix}",
             *LIBISOFS_CONFIGURE_ARGS,
         ],
+        stage="configure private libisofs build",
         cwd=object_dir,
         env=env,
     )
@@ -1234,10 +1384,16 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         )
     run_logged(
         [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
+        stage="compile private libisofs archive",
         cwd=object_dir,
         env=env,
     )
-    run_logged([make, *LIBISOFS_INSTALL_TARGETS], cwd=object_dir, env=env)
+    run_logged(
+        [make, *LIBISOFS_INSTALL_TARGETS],
+        stage="install private libisofs artifacts",
+        cwd=object_dir,
+        env=env,
+    )
 
     prune_private_install_metadata(prefix)
     verify_private_install_surface(prefix)
@@ -1286,6 +1442,7 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         ]
         if sdkroot else []
     )
+    probe_diagnostics: list[str] = []
     if not libisofs_link_probe(
         cc,
         pkgconf,
@@ -1293,9 +1450,14 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
         compile_flags=architecture_flags,
         link_flags=dependency_link_flags,
         env=probe_env,
+        diagnostics=probe_diagnostics,
     ):
+        detail = "\n\n".join(probe_diagnostics) or (
+            "libisofs consumer probe returned failure without diagnostic output"
+        )
         raise RuntimeError(
-            "bootstrapped libisofs failed the static compile/link/runtime probe"
+            "bootstrapped libisofs failed post-install consumer validation:\n"
+            + detail
         )
 
     # Publish reuse state only after install and validation have succeeded.

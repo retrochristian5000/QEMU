@@ -747,6 +747,15 @@ and it must exactly equal the requested Mach-O architecture. This is
 significant for ``arm64e`` because it is a distinct Mach-O CPU subtype, not
 merely an ``arm64`` spelling alias.
 
+Bootstrap command failures are stage-labelled and retain the exact command,
+working directory, exit status, and the final bounded output tail while still
+streaming build output live. Post-install consumer validation keeps
+pkg-config-version, compile/link, and executable-runtime failures distinct
+instead of collapsing them into one boolean message. The consumer probe source
+is written to its temporary ``probe.c`` before Clang is invoked; this is part
+of the tested bootstrap contract so a missing probe input cannot be hidden by a
+generic validation failure.
+
 Do not use ``llvm-lipo -verify_arch`` on ``libisofs.a`` with the pinned LLVM
 fork. Its ``VerifyArch`` implementation handles Mach-O objects and universal
 binaries but not ``Archive`` inputs, whereas its ``-archs`` path explicitly

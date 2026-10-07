@@ -4,6 +4,7 @@
 import importlib.util
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -74,6 +75,41 @@ def test_gnu_m4_selector() -> None:
                 os.environ.pop("M4", None)
             else:
                 os.environ["M4"] = old_m4
+
+
+def test_command_failure_diagnostics() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-error-") as tmp:
+        cwd = Path(tmp)
+        command = [
+            sys.executable,
+            "-c",
+            "import sys; print('specific libisofs failure'); sys.exit(23)",
+        ]
+        try:
+            helper.run_logged(
+                command,
+                stage="diagnostic contract test",
+                cwd=cwd,
+            )
+        except RuntimeError as exc:
+            message = str(exc)
+            for needle in (
+                "libisofs bootstrap stage 'diagnostic contract test' failed",
+                "exit status: 23",
+                f"cwd: {cwd}",
+                "command:",
+                "specific libisofs failure",
+            ):
+                if needle not in message:
+                    raise SystemExit(
+                        "error: libisofs command failure diagnostic lost "
+                        f"{needle!r}: {message}"
+                    )
+        else:
+            raise SystemExit(
+                "error: failing libisofs command did not raise a diagnostic"
+            )
 
 
 def test_autotools_utility_isolation() -> None:
@@ -553,7 +589,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "17"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "18"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -561,6 +597,37 @@ def main() -> int:
     require(helper, 'local_libtool = object_dir / "libtool"', "local Libtool check")
     require(helper, '[config_shell, "bootstrap"]', "bootstrap interpreter")
     require(helper, "def libisofs_link_probe(", "consumer link probe")
+    require(
+        helper,
+        'probe.write_text(source, encoding="utf-8")',
+        "consumer probe source materialization",
+    )
+    require(helper, "def command_failure_detail(", "structured command diagnostics")
+    require(
+        helper,
+        "stage=\"generate libisofs Autotools files\"",
+        "Autotools generation stage diagnostic",
+    )
+    require(
+        helper,
+        "stage=\"configure private libisofs build\"",
+        "configure stage diagnostic",
+    )
+    require(
+        helper,
+        "stage=\"compile private libisofs archive\"",
+        "compile stage diagnostic",
+    )
+    require(
+        helper,
+        "stage=\"install private libisofs artifacts\"",
+        "install stage diagnostic",
+    )
+    require(
+        helper,
+        "bootstrapped libisofs failed post-install consumer validation:",
+        "post-install probe diagnostic",
+    )
     require(
         helper,
         'iso_set_local_charset((char *) "UTF-8", 0);',
@@ -1039,6 +1106,7 @@ def main() -> int:
         )
 
     test_gnu_m4_selector()
+    test_command_failure_diagnostics()
     test_autotools_utility_isolation()
     test_dependency_flag_isolation()
     test_c_standard_policy()
