@@ -480,6 +480,7 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
         export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS
     fi
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
+    printf 'QEMU host archiver: %s\n' "$AR"
 fi
 
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
@@ -610,7 +611,7 @@ fi
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     # RANLIB and NM remain part of the managed LLVM producer/consumer
     # boundary.  AR is intentionally looser: explicit compatible archivers
-    # are accepted after an actual compile/archive/index/link capability probe.
+    # are accepted after an actual compile/archive/index/read capability probe.
     for whp_tool_spec in \
         "RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
         "NM:$NATIVE_LLVM_DIR/bin/llvm-nm"; do
