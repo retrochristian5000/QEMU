@@ -42,6 +42,12 @@ def load_portable_build_module():
 
 
 class WhpConfigTests(unittest.TestCase):
+    def test_config_tool_has_single_program_body(self):
+        source = CONFIG_TOOL.read_text(encoding='utf-8')
+        self.assertEqual(source.count('class ConfigState:'), 1)
+        self.assertEqual(source.count('_DEVICE_CONFIG_LINE_RE = re.compile('), 1)
+        self.assertEqual(source.count("if __name__ == '__main__':"), 1)
+        self.assertTrue(source.rstrip().endswith('raise SystemExit(main())'))
     def test_defaults_are_portable_policy(self):
         mod = load_module()
         values = mod.default_values()
