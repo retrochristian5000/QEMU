@@ -450,7 +450,7 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
         "$SOURCE_DIR/scripts/bootstrap-native-clang.sh") || exit 1
     CC="$NATIVE_LLVM_DIR/bin/clang"
     CXX="$NATIVE_LLVM_DIR/bin/clang++"
-    AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
+    AR="${AR:-$NATIVE_LLVM_DIR/bin/llvm-ar}"
     RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
     NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
     OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"
@@ -605,8 +605,10 @@ if [ "$WHP_HOST_OS" = macos ] &&
 fi
 
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
+    # RANLIB and NM remain part of the managed LLVM producer/consumer
+    # boundary.  AR is intentionally looser: explicit compatible archivers
+    # are accepted after an actual compile/archive/index/link capability probe.
     for whp_tool_spec in \
-        "AR:$NATIVE_LLVM_DIR/bin/llvm-ar" \
         "RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
         "NM:$NATIVE_LLVM_DIR/bin/llvm-nm"; do
         whp_tool_name=${whp_tool_spec%%:*}
@@ -621,6 +623,8 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
         fi
     done
     unset whp_tool_spec whp_tool_name whp_tool_expected whp_tool_actual
+
+    whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
 fi
 
 
