@@ -190,7 +190,7 @@ configure_args=(--target-list=ppc-softmmu)
 source "$ROOT/scripts/whp-build/configure.bash"
 whp_configure_build
 grep -Fxq -- '--with-devices-ppc=whp-user' "$BUILD_DIR/configure-args.txt"
-grep -Fq 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=newworld=y;oldworld=n' "$BUILD_DIR/.whp-config"
+grep -Fq 'WHP_PPC_DEVICE_CONFIG_SIGNATURE=schema=2;newworld=y;oldworld=n' "$BUILD_DIR/.whp-config"
 test -f "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
 grep -Fxq 'CONFIG_MAC_NEWWORLD=y' "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
 grep -Fxq 'CONFIG_MAC_OLDWORLD=n' "$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
