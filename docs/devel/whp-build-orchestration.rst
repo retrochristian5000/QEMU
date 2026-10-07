@@ -154,12 +154,26 @@ build.
 The ``QEMU hardware`` section is device-first. Each currently exposed audio
 model appears once, with independent ``i386`` and ``ppc`` choices underneath:
 Sound Blaster 16, AdLib, Gravis UltraSound, Crystal CS4231A, PC speaker,
-Ensoniq ES1370, Intel AC'97, Crystal CS4630, and Intel HD Audio. Each target
-choice is three-state: ``auto``, ``y``, or ``n``. ``auto`` leaves QEMU's
-Kconfig decision and dependency handling unchanged for that architecture.
+Ensoniq ES1370, Intel AC'97, Crystal CS4630, and Intel HD Audio. Menu labels
+spell out ``ISA bus`` and ``PCI bus`` where relevant. PowerPC is the guest CPU
+instruction-set architecture; QEMU's ``ISA_BUS`` symbol names the unrelated
+legacy peripheral bus. Each target choice is three-state: ``auto``, ``y``, or
+``n``. ``auto`` leaves QEMU's Kconfig decision and dependency handling
+unchanged for that architecture.
 
-Explicit ``y`` or ``n`` values are written as only the requested ``CONFIG_*``
-overrides in the matching architecture preset, such as
+An explicit PowerPC ``y`` also writes the model's minimum Kconfig prerequisite
+closure into the PPC preset. ISA-bus audio models require
+``CONFIG_ISA_BUS=y``; PC speaker additionally requires ``CONFIG_I8254=y``;
+and PCI audio models require ``CONFIG_PCI=y``. These are compile-time device
+capabilities, not PowerPC machine selections: the resulting device can be used
+with a PPC machine that exposes the matching bus, while machines without that
+bus are not changed. ``CONFIG_PCI_DEVICES`` is deliberately left alone because
+it controls a broader set of default PCI devices rather than the PCI core
+required by the selected audio model.
+
+Explicit ``n`` values write only the requested device disable. Explicit ``y``
+values write the requested device plus the prerequisite closure described
+above in the matching architecture preset, such as
 ``configs/devices/i386-softmmu/whp-user.mak`` or
 ``configs/devices/ppc-softmmu/whp-user.mak``. QEMU then receives the supported
 ``--with-devices-i386=whp-user`` or ``--with-devices-ppc=whp-user`` configure
