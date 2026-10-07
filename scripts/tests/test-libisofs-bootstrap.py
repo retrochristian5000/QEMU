@@ -112,6 +112,75 @@ def test_command_failure_diagnostics() -> None:
             )
 
 
+def test_consumer_probe_materializes_source() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libisofs-probe-contract-") as tmp:
+        root = Path(tmp)
+        pkgconf = root / "pkg-config"
+        pkgconf.write_text(
+            """#!/bin/sh
+case " $* " in
+  *" --atleast-version=1.1.2 libisofs-1 "*) exit 0 ;;
+  *" --cflags --libs libisofs-1 "*) exit 0 ;;
+esac
+printf '%s\n' "unexpected pkg-config arguments: $*" >&2
+exit 31
+""",
+            encoding="utf-8",
+        )
+        pkgconf.chmod(pkgconf.stat().st_mode | stat.S_IXUSR)
+
+        compiler = root / "cc"
+        compiler.write_text(
+            """#!/bin/sh
+src=
+out=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        *.c) src=$1 ;;
+        -o)
+            shift
+            out=$1
+            ;;
+    esac
+    shift
+done
+test -n "$src" && test -f "$src" || {
+    printf '%s\n' 'probe source was not materialized' >&2
+    exit 41
+}
+grep -Fq 'iso_init()' "$src" || {
+    printf '%s\n' 'probe source lost libisofs API call' >&2
+    exit 42
+}
+test -n "$out" || exit 43
+cat > "$out" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$out"
+""",
+            encoding="utf-8",
+        )
+        compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
+
+        diagnostics: list[str] = []
+        if not helper.libisofs_link_probe(
+            str(compiler),
+            str(pkgconf),
+            static=True,
+            diagnostics=diagnostics,
+        ):
+            raise SystemExit(
+                "error: libisofs consumer probe contract failed: "
+                + "\n\n".join(diagnostics)
+            )
+        if diagnostics:
+            raise SystemExit(
+                "error: successful libisofs probe retained failure diagnostics"
+            )
+
+
 def test_autotools_utility_isolation() -> None:
     helper = load_helper_module()
     env = {name: f"poison-{name}" for name in helper.AUTOTOOLS_UTILITY_ENV}
@@ -1107,6 +1176,7 @@ def main() -> int:
 
     test_gnu_m4_selector()
     test_command_failure_diagnostics()
+    test_consumer_probe_materializes_source()
     test_autotools_utility_isolation()
     test_dependency_flag_isolation()
     test_c_standard_policy()
