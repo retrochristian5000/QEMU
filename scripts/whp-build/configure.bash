@@ -229,6 +229,9 @@ whp_configure_audio_signature()
 {
     local prefix="$1"
     local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local need_isa_bus=0
+    local need_i8254=0
+    local need_pci=0
     local name
 
     name="${prefix}_AUDIO_SB16"; sb16="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
@@ -280,6 +283,8 @@ whp_configure_append_i386_audio_override()
     whp_configure_append_audio_override "$@"
 }
 
+WHP_PPC_DEVICE_CONFIG_SCHEMA=2
+
 whp_configure_write_ppc_device_config()
 {
     local base="$1"
@@ -297,6 +302,23 @@ whp_configure_write_ppc_device_config()
     cs4630="$(whp_configure_hardware_value PPC_AUDIO_CS4630 "${PPC_AUDIO_CS4630:-auto}")" || return 1
     hda="$(whp_configure_hardware_value PPC_AUDIO_HDA "${PPC_AUDIO_HDA:-auto}")" || return 1
 
+    # PowerPC is the guest CPU ISA. These symbols describe peripheral
+    # buses/timers and are admitted independently when a compatible audio
+    # device is explicitly enabled for qemu-system-ppc.
+    if [[ "$sb16" == y || "$adlib" == y || "$gus" == y || "$cs4231a" == y ]]; then
+        need_isa_bus=1
+    fi
+    if [[ "$pcspk" == y ]]; then
+        need_isa_bus=1
+        need_i8254=1
+    fi
+    if [[ "$es1370" == y || "$ac97" == y || "$cs4630" == y || "$hda" == y ]]; then
+        need_pci=1
+    fi
+
+    [[ "$need_isa_bus" == 1 ]] && drop_re="$drop_re|^CONFIG_ISA_BUS="
+    [[ "$need_i8254" == 1 ]] && drop_re="$drop_re|^CONFIG_I8254="
+    [[ "$need_pci" == 1 ]] && drop_re="$drop_re|^CONFIG_PCI="
     [[ "$sb16" != auto ]] && drop_re="$drop_re|^CONFIG_SB16="
     [[ "$adlib" != auto ]] && drop_re="$drop_re|^CONFIG_ADLIB="
     [[ "$gus" != auto ]] && drop_re="$drop_re|^CONFIG_GUS="
@@ -312,6 +334,9 @@ whp_configure_write_ppc_device_config()
     printf '\n# WHP generated PPC device overrides; retained for Meson regeneration.\n' >> "$output"
     printf 'CONFIG_MAC_NEWWORLD=%s\n' "${CONFIG_MAC_NEWWORLD:-y}" >> "$output"
     printf 'CONFIG_MAC_OLDWORLD=%s\n' "${CONFIG_MAC_OLDWORLD:-y}" >> "$output"
+    [[ "$need_isa_bus" == 1 ]] && printf 'CONFIG_ISA_BUS=y\n' >> "$output"
+    [[ "$need_i8254" == 1 ]] && printf 'CONFIG_I8254=y\n' >> "$output"
+    [[ "$need_pci" == 1 ]] && printf 'CONFIG_PCI=y\n' >> "$output"
     whp_configure_append_audio_override "$output" PPC_AUDIO_SB16 "$sb16" CONFIG_SB16 || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_ADLIB "$adlib" CONFIG_ADLIB || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_GUS "$gus" CONFIG_GUS || return 1
@@ -402,7 +427,7 @@ case ",${QEMU_TARGET_LIST:-}," in
             fi
         else
             ppc_custom_devices=1
-            WHP_PPC_DEVICE_CONFIG_SIGNATURE="newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y};$ppc_audio_signature"
+            WHP_PPC_DEVICE_CONFIG_SIGNATURE="schema=$WHP_PPC_DEVICE_CONFIG_SCHEMA;newworld=${CONFIG_MAC_NEWWORLD:-y};oldworld=${CONFIG_MAC_OLDWORLD:-y};$ppc_audio_signature"
             configure_args+=(--with-devices-ppc=whp-user)
         fi
         ;;
