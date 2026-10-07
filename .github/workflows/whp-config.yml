@@ -89,6 +89,7 @@ on:
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-hardware-menu.py'
+      - 'scripts/tests/test-pcmcia-config.py'
       - 'scripts/tests/test-whp-i386-audio-menu.py'
       - 'scripts/tests/test-whp-incremental.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
