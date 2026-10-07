@@ -79,6 +79,74 @@ def test_gnu_m4_selector() -> None:
                 os.environ["M4"] = old_m4
 
 
+def write_fake_compiler(path: Path, banner: str) -> None:
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = --version ]; then\n"
+        f"    printf '%s\\n' {banner!r}\n"
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def write_fake_tool(path: Path) -> None:
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def test_archive_tool_selection_is_compiler_coherent() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-libtool-ar-") as tmp:
+        root = Path(tmp)
+        clang = root / "clang"
+        gcc = root / "gcc"
+        llvm_ar = root / "llvm-ar"
+        native_ar = root / "ar"
+        write_fake_compiler(clang, "clang version 19.1.0")
+        write_fake_compiler(gcc, "gcc (GCC) 14.2.0")
+        write_fake_tool(llvm_ar)
+        write_fake_tool(native_ar)
+
+        saved = {
+            name: os.environ.get(name)
+            for name in ("AR", "NATIVE_LLVM_DIR", "WHP_SHARED_LLVM_DIR", "PATH")
+        }
+        try:
+            os.environ.pop("AR", None)
+            os.environ.pop("NATIVE_LLVM_DIR", None)
+            os.environ.pop("WHP_SHARED_LLVM_DIR", None)
+            os.environ["PATH"] = str(root)
+
+            selected = helper.select_llvm_tool("AR", "llvm-ar", ("ar",), str(clang))
+            if selected != str(llvm_ar):
+                raise SystemExit(
+                    f"error: Clang sibling llvm-ar was not preferred: {selected}"
+                )
+
+            selected = helper.select_llvm_tool("AR", "llvm-ar", ("ar",), str(gcc))
+            if selected != str(native_ar):
+                raise SystemExit(
+                    "error: GCC incorrectly adopted unrelated llvm-ar: "
+                    f"{selected}"
+                )
+
+            os.environ["AR"] = str(native_ar)
+            selected = helper.select_llvm_tool("AR", "llvm-ar", ("ar",), str(clang))
+            if selected != str(native_ar):
+                raise SystemExit(
+                    f"error: explicit AR override was not authoritative: {selected}"
+                )
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+
 def test_autotools_utility_isolation() -> None:
     helper = load_helper_module()
     env = {name: f"poison-{name}" for name in helper.AUTOTOOLS_UTILITY_ENV}
@@ -259,6 +327,12 @@ def main() -> int:
             "error: Libtool tool selection still resolves LLVM multicall aliases"
         )
     require(helper, "def select_llvm_tool(", "LLVM host-tool selector")
+    require(helper, "def compiler_is_llvm(", "compiler family archive guard")
+    require(
+        helper,
+        "Do not search an unrelated global llvm-* executable here",
+        "PATH-independent LLVM archive fallback",
+    )
     require(helper, "def select_gnu_m4(", "GNU M4 capability selector")
     require(helper, '"--gnu", "--version"', "GNU M4 capability probe")
     require(helper, '"M4": select_gnu_m4()', "GNU M4 bootstrap selection")
@@ -451,6 +525,7 @@ def main() -> int:
         )
 
     test_gnu_m4_selector()
+    test_archive_tool_selection_is_compiler_coherent()
     test_autotools_utility_isolation()
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
