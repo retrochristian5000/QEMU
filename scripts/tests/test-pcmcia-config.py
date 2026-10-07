@@ -5,6 +5,7 @@ import importlib.util
 import pathlib
 import sys
 import unittest
+from typing import Optional
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -24,7 +25,7 @@ def load_minikconf():
 
 
 def resolved_pcmcia_config(*, pci: bool, pci_devices: bool,
-                           i82092aa: bool | None = None):
+                           i82092aa: Optional[bool] = None):
     minikconf = load_minikconf()
     data = minikconf.KconfigData()
 
