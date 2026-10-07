@@ -13,6 +13,7 @@ CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
 CONFIG_TOOL = CONFIG_DIR / 'config.py'
 MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
+MINIKCONF = ROOT / 'scripts' / 'minikconf.py'
 PPC_KCONFIG = ROOT / 'hw' / 'ppc' / 'Kconfig'
 ISA_KCONFIG = ROOT / 'hw' / 'isa' / 'Kconfig'
 AUDIO_KCONFIG = ROOT / 'hw' / 'audio' / 'Kconfig'
@@ -151,8 +152,93 @@ whp_configure_write_ppc_device_config "$1" "$2"
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=n', text)
 
-    def test_ppc_audio_requirements_match_qemu_kconfig(self):
-        audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
+    def test_config_prefix_validator_rejects_malformed_assignments(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_prefix_syntax')
+        config.validate_device_config_syntax(
+            '  # comment\n CONFIG_GOOD = y # trailing comment\nCONFIG_OTHER=n\n',
+            'valid-preset',
+        )
+        malformed = {
+            'CONFIG_=y\n': 'invalid QEMU device preset syntax',
+            'CONFIG_lower=y\n': 'invalid QEMU device preset syntax',
+            'CONFIG_BAD=1\n': 'invalid QEMU device preset syntax',
+            'CONFIG_BAD\n': 'invalid QEMU device preset syntax',
+            'CONFIG_DUP=y\nCONFIG_DUP=n\n': 'duplicate QEMU device preset symbol',
+        }
+        for text, message in malformed.items():
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ValueError, message):
+                    config.validate_device_config_syntax(text, 'bad-preset')
+
+    def test_bash_config_prefix_validator_reports_line_and_symbol(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            valid = root / 'valid.mak'
+            invalid = root / 'invalid.mak'
+            duplicate = root / 'duplicate.mak'
+            valid.write_text(
+                ' # comment\n CONFIG_FOO = y # comment\nCONFIG_BAR=n\n',
+                encoding='utf-8',
+            )
+            invalid.write_text('CONFIG_FOO=y\nCONFIG_bad=y\n', encoding='utf-8')
+            duplicate.write_text(
+                'CONFIG_FOO=y\nCONFIG_FOO=n\n',
+                encoding='utf-8',
+            )
+            script = f'''set -euo pipefail
+source {CONFIGURE_BASH!s}
+whp_configure_validate_device_config "$1"
+'''
+            subprocess.run(
+                ['bash', '-c', script, '_', str(valid)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            bad = subprocess.run(
+                ['bash', '-c', script, '_', str(invalid)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn(f'{invalid}:2', bad.stderr)
+            self.assertIn('CONFIG_bad=y', bad.stderr)
+            dup = subprocess.run(
+                ['bash', '-c', script, '_', str(duplicate)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(dup.returncode, 0)
+            self.assertIn(f'{duplicate}:2', dup.stderr)
+            self.assertIn('CONFIG_FOO', dup.stderr)
+
+    def test_generated_ppc_preset_is_accepted_by_qemu_minikconf(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_minikconf_contract')
+        minikconf = load_module(MINIKCONF, 'whp_qemu_minikconf_contract')
+        values = config.default_values()
+        for suffix in AUDIO_DEVICES:
+            values[f'PPC_AUDIO_{suffix}'] = 'y'
+        generated = config.render_ppc_device_config(
+            values,
+            (ROOT / 'configs/devices/ppc-softmmu/default.mak').read_text(
+                encoding='utf-8'
+            ),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            preset = pathlib.Path(td) / 'whp-user.mak'
+            preset.write_text(generated, encoding='utf-8')
+            data = minikconf.KconfigData()
+            with (ROOT / 'Kconfig').open('rt', encoding='utf-8') as stream:
+                minikconf.KconfigParser.parse(stream, data)
+            with preset.open('rt', encoding='utf-8') as stream:
+                minikconf.KconfigParser.parse(stream, data)
+            data.do_cmdline_assignment('CONFIG_PPC', True)
+            data.do_cmdline_assignment('CONFIG_TARGET_BIG_ENDIAN', True)
+            resolved = data.compute_config()
+        for _, symbol in AUDIO_DEVICES.values():
+            self.assertTrue(resolved[symbol.removeprefix('CONFIG_')], symbol)
+
+    def test_ppc_audio_requirements_match_qemu_kconfig(self):        audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
         timer_kconfig = TIMER_KCONFIG.read_text(encoding='utf-8')
         config = load_module(CONFIG_TOOL, 'whp_config_ppc_requirement_table')
         table = {
