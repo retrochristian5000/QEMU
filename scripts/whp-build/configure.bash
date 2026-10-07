@@ -295,19 +295,19 @@ whp_configure_validate_device_config()
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         number=$((number + 1))
-        case "$line" in
-            ''|'#'*) continue ;;
-        esac
+        if [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]]; then
+            continue
+        fi
 
-        if [[ ! "$line" =~ ^CONFIG_[A-Z0-9_]+=(y|n)$ ]]; then
+        if [[ ! "$line" =~ ^[[:space:]]*(CONFIG_[A-Z0-9_]+)[[:space:]]*=[[:space:]]*(y|n)([[:space:]]*#.*)?[[:space:]]*$ ]]; then
             printf '%s\n' \
                 "error: invalid QEMU device preset syntax at $path:$number" \
-                "expected: CONFIG_<UPPERCASE_SYMBOL>=y or CONFIG_<UPPERCASE_SYMBOL>=n" \
+                "expected a CONFIG_<UPPERCASE_SYMBOL>=y|n assignment, blank line, or comment" \
                 "found: $line" >&2
             return 1
         fi
 
-        symbol="${line%%=*}"
+        symbol="${BASH_REMATCH[1]}"
         case "$seen" in
             *"|$symbol|"*)
                 printf '%s\n' \
