@@ -604,8 +604,9 @@ vmdk_init_tables(BlockDriverState *bs, VmdkExtent *extent, Error **errp)
     int i;
 
     /* read the L1 table */
-    if (mul_overflow((size_t)extent->l1_size, (size_t)extent->entry_size,
-                     &l1_size)) {
+    if (extent->entry_size <= 0 ||
+        !g_size_checked_mul(&l1_size, (size_t)extent->l1_size,
+                            (size_t)extent->entry_size)) {
         return -EFBIG;
     }
     extent->l1_table = g_try_malloc(l1_size);
