@@ -741,7 +741,13 @@ def pkg_config_flags(
     if static:
         command.append("--static")
     command += ["--cflags", "--libs", PKG_NAME]
-    return shlex.split(run_text(command, env=env))
+    return shlex.split(
+        run_text(
+            command,
+            stage="resolve libisofs pkg-config compile/link flags",
+            env=env,
+        )
+    )
 
 
 def libisofs_link_probe(
@@ -755,25 +761,15 @@ def libisofs_link_probe(
     diagnostics: list[str] | None = None,
 ) -> bool:
     version_command = [pkgconf, "--atleast-version=1.1.2", PKG_NAME]
-    completed = subprocess.run(
-        version_command,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    if completed.returncode != 0:
+    try:
+        run_text(
+            version_command,
+            stage="verify libisofs pkg-config minimum version",
+            env=env,
+        )
+    except RuntimeError as exc:
         if diagnostics is not None:
-            diagnostics.append(
-                command_failure_detail(
-                    "verify libisofs pkg-config minimum version",
-                    version_command,
-                    cwd=None,
-                    returncode=completed.returncode,
-                    output=completed.stdout,
-                )
-            )
+            diagnostics.append(str(exc))
         return False
 
     try:
@@ -839,46 +835,29 @@ int main(int argc, char **argv)
             "-o",
             str(binary),
         ]
-        completed = subprocess.run(
-            compile_command,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if completed.returncode != 0:
+        try:
+            run_text(
+                compile_command,
+                stage="compile and link libisofs consumer probe",
+                cwd=pathlib.Path(tmp),
+                env=env,
+            )
+        except RuntimeError as exc:
             if diagnostics is not None:
-                diagnostics.append(
-                    command_failure_detail(
-                        "compile and link libisofs consumer probe",
-                        compile_command,
-                        cwd=pathlib.Path(tmp),
-                        returncode=completed.returncode,
-                        output=completed.stdout,
-                    )
-                )
+                diagnostics.append(str(exc))
             return False
+
         run_command = [str(binary)]
-        completed = subprocess.run(
-            run_command,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if completed.returncode != 0:
+        try:
+            run_text(
+                run_command,
+                stage="execute libisofs consumer probe",
+                cwd=pathlib.Path(tmp),
+                env=env,
+            )
+        except RuntimeError as exc:
             if diagnostics is not None:
-                diagnostics.append(
-                    command_failure_detail(
-                        "execute libisofs consumer probe",
-                        run_command,
-                        cwd=pathlib.Path(tmp),
-                        returncode=completed.returncode,
-                        output=completed.stdout,
-                    )
-                )
+                diagnostics.append(str(exc))
             return False
         return True
 
