@@ -32,15 +32,11 @@ whp_archive_toolchain_smoke()
 
     mkdir -p "$whp_work_root" || return 1
     whp_probe_dir=$(mktemp -d "$whp_work_root/.whp-ar-smoke.XXXXXX") || return 1
-    trap 'rm -rf "$whp_probe_dir"' EXIT HUP INT TERM
+    trap 'rm -rf "$whp_probe_dir"' 0 HUP INT TERM
     whp_log="$whp_probe_dir/probe.log"
 
     cat > "$whp_probe_dir/member.c" <<'EOF'
 int whp_archive_probe(void) { return 0; }
-EOF
-    cat > "$whp_probe_dir/main.c" <<'EOF'
-int whp_archive_probe(void);
-int main(void) { return whp_archive_probe(); }
 EOF
 
     if ! "$whp_cc" -c "$whp_probe_dir/member.c" \
@@ -52,10 +48,9 @@ EOF
     elif ! "$whp_ranlib" "$whp_probe_dir/libwhp-ar-smoke.a" \
         >"$whp_log" 2>&1; then
         whp_stage='index archive'
-    elif ! "$whp_cc" "$whp_probe_dir/main.c" \
-        "$whp_probe_dir/libwhp-ar-smoke.a" -o "$whp_probe_dir/probe" \
+    elif ! "$whp_ar" t "$whp_probe_dir/libwhp-ar-smoke.a" \
         >"$whp_log" 2>&1; then
-        whp_stage='link archive consumer'
+        whp_stage='read archive table'
     else
         return 0
     fi
