@@ -547,6 +547,11 @@ def select_gnu_m4() -> str:
     )
 
 
+def compiler_is_llvm(cc: str) -> bool:
+    version = compiler_version(cc).lower()
+    return "clang" in version or "llvm" in version
+
+
 def llvm_roots(cc: str) -> list[pathlib.Path]:
     roots: list[pathlib.Path] = []
     for env_name in ("NATIVE_LLVM_DIR", "WHP_SHARED_LLVM_DIR"):
@@ -556,9 +561,14 @@ def llvm_roots(cc: str) -> list[pathlib.Path]:
             if root not in roots:
                 roots.append(root)
 
-    cc_dir = pathlib.Path(cc).resolve().parent
-    if cc_dir not in roots:
-        roots.append(cc_dir)
+    # A tool next to the selected compiler belongs to the same installation
+    # only when that compiler is itself LLVM/Clang.  Do not let /usr/bin/gcc
+    # accidentally acquire an unrelated /usr/bin/llvm-ar merely because both
+    # executables share a broad system bin directory.
+    if compiler_is_llvm(cc):
+        cc_dir = pathlib.Path(cc).resolve().parent
+        if cc_dir not in roots:
+            roots.append(cc_dir)
     return roots
 
 
@@ -577,22 +587,10 @@ def select_llvm_tool(
         if path:
             return path
 
-    path = executable_path(llvm_name)
-    if path:
-        return path
-
-    if platform.system() == "Darwin" and shutil.which("xcrun"):
-        completed = subprocess.run(
-            ["xcrun", "--find", llvm_name],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if completed.returncode == 0:
-            path = executable_path(completed.stdout.strip())
-            if path:
-                return path
+    # Do not search an unrelated global llvm-* executable here.  If LLVM is
+    # not explicitly managed and no sibling exists beside the selected Clang,
+    # use the platform/native fallback below.  This keeps GCC and Apple tool
+    # families portable instead of cross-wiring archive tools by PATH order.
 
     for name in fallback_names:
         path = executable_path(name)
