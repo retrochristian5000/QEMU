@@ -544,8 +544,7 @@ def main() -> int:
     require(helper, '"--disable-dir-rec-size-check"', "QEMU directory-size debug disable")
     require(helper, '"--disable-debug"', "QEMU release CFLAGS policy")
     require(helper, '"install-libLTLIBRARIES"', "library install target")
-    require(helper, '"install-libincludeHEADERS"', "header install target")
-    require(helper, '"install-pkgconfigDATA"', "pkg-config install target")
+    require(helper, '"install-data"', "stable data install target")
     if '[make, "install"]' in helper:
         raise SystemExit("error: libisofs helper regressed to blanket make install")
     require(
@@ -554,7 +553,7 @@ def main() -> int:
         "static build source-path isolation",
     )
     require(helper, '"--disable-libjte"', "minimal libisofs bootstrap")
-    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "16"', "bootstrap schema")
+    require(helper, 'LIBISOFS_BOOTSTRAP_SCHEMA = "17"', "bootstrap schema")
     require(helper, "def select_config_shell(", "configuration shell selector")
     require(helper, 'env["CONFIG_SHELL"] = config_shell', "CONFIG_SHELL routing")
     require(helper, 'env["SHELL"] = config_shell', "make shell routing")
@@ -645,6 +644,15 @@ def main() -> int:
         helper,
         "isolate_dependency_flag_env(env)",
         "dependency compiler/linker flag isolation application",
+    )
+    require(helper, '"CPATH",', "ambient include-path isolation")
+    require(helper, '"LIBRARY_PATH",', "ambient library-path isolation")
+    require(helper, '"DYLD_FALLBACK_LIBRARY_PATH",', "Darwin runtime-path isolation")
+    require(helper, '"PKG_CONFIG_SYSROOT_DIR",', "pkg-config sysroot isolation")
+    require(
+        helper,
+        'probe_env["PKG_CONFIG_PATH"] = pc_dir',
+        "private pkg-config probe isolation",
     )
     require(helper, 'env["CFLAGS"] = " ".join(compile_flags)', "owned CFLAGS")
     require(helper, 'env["CPPFLAGS"] = " ".join(cpp_flags)', "owned CPPFLAGS")

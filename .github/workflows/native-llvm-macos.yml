@@ -271,7 +271,7 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=14' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=17' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"
@@ -343,7 +343,7 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64e
-          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=14' "$marker"
+          grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=17' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
           grep -Fxq "SED=$SED" "$marker"

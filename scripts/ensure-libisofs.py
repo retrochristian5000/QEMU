@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/libisofs")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-LIBISOFS_BOOTSTRAP_SCHEMA = "16"
+LIBISOFS_BOOTSTRAP_SCHEMA = "17"
 LIBISOFS_MIN_VERSION = (1, 1, 2)
 PKG_NAME = "libisofs-1"
 LIBISOFS_C_STANDARD = "gnu11"
@@ -88,6 +88,18 @@ DEPENDENCY_FLAG_ENV = (
     "LIBS",
     "CPP",
     "LD",
+    # Ambient dependency search roots can silently reintroduce Homebrew or
+    # another caller's libraries even after CPPFLAGS/LDFLAGS are cleared.
+    "CPATH",
+    "C_INCLUDE_PATH",
+    "CPLUS_INCLUDE_PATH",
+    "OBJC_INCLUDE_PATH",
+    "LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FALLBACK_LIBRARY_PATH",
+    "PKG_CONFIG_PATH",
+    "PKG_CONFIG_LIBDIR",
+    "PKG_CONFIG_SYSROOT_DIR",
 )
 
 def run_text(command: List[str], *, cwd: pathlib.Path | None = None,
@@ -1251,12 +1263,12 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             "pkg-config/pkgconf is required to validate bootstrapped libisofs"
         )
     probe_env = os.environ.copy()
+    isolate_dependency_flag_env(probe_env)
     pc_dir = str(pc_file.parent)
-    probe_env["PKG_CONFIG_PATH"] = (
-        pc_dir
-        + (":" + probe_env["PKG_CONFIG_PATH"]
-           if probe_env.get("PKG_CONFIG_PATH") else "")
-    )
+    # Validate exactly the private install. An inherited pkg-config sysroot or
+    # search path could otherwise make the smoke test pass against another
+    # libisofs or dependency set.
+    probe_env["PKG_CONFIG_PATH"] = pc_dir
     static_flags = pkg_config_flags(pkgconf, static=True, env=probe_env)
     if "-lz" not in static_flags:
         raise RuntimeError(

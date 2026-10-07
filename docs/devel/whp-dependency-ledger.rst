@@ -694,10 +694,12 @@ The prerequisites which must exist *before* libisofs are:
      - Supplies the platform headers/runtime and the pthread/iconv facilities
        used by the current Darwin profile.
    * - zlib
-     - root library
-     - libisofs links zlib during its own build and exports ``-lz`` to static
-       consumers.  This edge exists before QEMU's later Meson dependency
-       resolution and must not be modeled as a dependency on the QEMU build.
+     - managed/root library
+     - libisofs links the artifact zlib selected before this stage and exports
+       ``-lz`` to static consumers. When WHP stages a private zlib,
+       ``WHP_ZLIB_PREFIX`` supplies its exact headers/archive; otherwise the
+       usable host zlib remains authoritative. This edge exists before QEMU's
+       later Meson dependency resolution.
    * - pkg-config/pkgconf
      - root probe tool
      - Detects a usable host libisofs and validates the private static install.
@@ -744,10 +746,11 @@ function-pointer keys remain stored, compared, and invoked as the declared
 ``iso_node_xinfo_func`` type rather than being flattened through integer or
 data-pointer storage.
 The private QEMU install no longer invokes blanket ``make install``. It calls
-only Automake's generated ``install-libLTLIBRARIES``,
-``install-libincludeHEADERS``, and ``install-pkgconfigDATA`` targets. The
-library target uses Libtool's explicit ``--mode=install $(INSTALL)`` contract;
-the header and pkg-config targets use Automake's data installer path.
+Automake's generated ``install-libLTLIBRARIES`` for the archive and the stable
+``install-data`` aggregate for the public header plus generated pkg-config
+metadata. The fork's macOS CI uses the same contract; the old
+``install-pkgconfigDATA`` leaf was invalid because
+``nodist_pkgconfig_DATA`` generates a differently named leaf target.
 
 Caller overrides of ``INSTALL``, ``INSTALL_DATA``, ``INSTALL_PROGRAM``,
 ``INSTALL_SCRIPT``, ``INSTALL_STRIP_PROGRAM``, ``MKDIR_P``, ``mkdir_p``, and
@@ -778,10 +781,12 @@ generating ``doc/doxygen.conf`` at configure time when ``--disable-docs`` is
 active, so pruning ``doc/`` cannot create a configure-time dependency hole.
 The private libisofs build owns its compiler/linker flag boundary. QEMU global
 ``CFLAGS``, ``CPPFLAGS``, ``CXXFLAGS``, Objective-C flags, ``LDFLAGS``,
-``LIBS``, ``CPP``, and ``LD`` are removed before configure. This prevents the
-macOS wrapper's already-expanded ``-arch``/``-isysroot``/deployment flags and
-QEMU-only linker policy such as ``-fuse-ld=lld`` or ``--read-workers`` from
-being appended a second time to libisofs.
+``LIBS``, ``CPP``, and ``LD`` are removed before configure. Ambient search
+roots such as ``CPATH``, ``LIBRARY_PATH``, Darwin ``DYLD_*`` paths, and
+pkg-config search/sysroot variables are isolated as well. This prevents a
+Homebrew or caller dependency from re-entering the build after the explicit
+flags were cleared, and prevents QEMU-only linker policy such as
+``-fuse-ld=lld`` or ``--read-workers`` from being appended to libisofs.
 
 The helper reconstructs only its GNU C11/strict-prototype policy and the
 resolved Darwin ABI triplet in ``CFLAGS``. Caller ``CPPFLAGS`` are still erased,
@@ -800,9 +805,15 @@ and link probes.
 
 When the managed zlib bootstrap publishes ``WHP_ZLIB_PREFIX``, the private
 libisofs configure receives that exact prefix through dependency-owned
-``CPPFLAGS``/ ``LDFLAGS`` search paths. This keeps libisofs on the same
-``zlib.h`` and static ``libz.a`` selected for QEMU instead of rediscovering
-an unrelated Homebrew or SDK copy.
+``CPPFLAGS``/``LDFLAGS`` search paths. The post-install smoke test then
+replaces inherited pkg-config search state with the private libisofs directory
+and uses the explicit zlib library path. This keeps validation on the exact
+artifact pair rather than rediscovering a Homebrew/SDK copy.
+
+The fork's iconv probe is also kept out of global link state after configure
+validates it. On Darwin the required ``-liconv`` remains represented once by
+``ICONV_LIBS``/the static pkg-config metadata instead of appearing both in
+global ``LIBS`` and the library's explicit dependency list.
 
 The private install step deliberately avoids Automake's generated leaf target
 names. In particular, ``nodist_pkgconfig_DATA`` generates
