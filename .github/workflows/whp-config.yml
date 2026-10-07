@@ -24,6 +24,8 @@ on:
       - 'docs/user/main.rst'
       - 'toolchains/python-runtime'
       - 'build.sh'
+      - 'configure'
+      - 'block/vmdk.c'
       - 'builder.sh'
       - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
@@ -64,6 +66,8 @@ on:
       - 'scripts/tests/test-python-menu-fallback.py'
       - 'scripts/tests/test-python-menu-fallback.bash'
       - 'scripts/tests/test-native-llvm-build-entry.py'
+      - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-vmdk-overflow.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-host-optimization.py'
@@ -158,6 +162,8 @@ jobs:
           python3 scripts/tests/test-xen-dependency-policy.py
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
+          python3 scripts/tests/test-native-llvm-wiring.py
+          python3 scripts/tests/test-vmdk-overflow.py
           python3 scripts/tests/test-test-policy.py
           python3 scripts/tests/test-test-selection.py
           bash scripts/tests/test-whp-config-integration.bash
@@ -207,6 +213,8 @@ jobs:
             scripts/tests/test-menuconfig-scroll.py \
             scripts/tests/test-python-menu-fallback.py \
             scripts/tests/test-native-llvm-build-entry.py \
+            scripts/tests/test-native-llvm-wiring.py \
+            scripts/tests/test-vmdk-overflow.py \
             scripts/tests/test-host-cpu-tuning.py \
             scripts/tests/test-host-optimization.py \
             scripts/tests/test-test-policy.py \
