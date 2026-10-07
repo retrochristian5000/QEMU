@@ -26,15 +26,16 @@ class Option(NamedTuple):
 
 
 AUDIO_HARDWARE = (
-    ('SB16', 'Sound Blaster 16 (ISA)', 'CONFIG_SB16'),
-    ('ADLIB', 'AdLib (ISA)', 'CONFIG_ADLIB'),
-    ('GUS', 'Gravis UltraSound (ISA)', 'CONFIG_GUS'),
-    ('CS4231A', 'Crystal CS4231A (ISA)', 'CONFIG_CS4231A'),
-    ('PCSPK', 'PC speaker', 'CONFIG_PCSPK'),
-    ('ES1370', 'Ensoniq ES1370 (PCI)', 'CONFIG_ES1370'),
-    ('AC97', "Intel AC'97 (PCI)", 'CONFIG_AC97'),
-    ('CS4630', 'Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
-    ('HDA', 'Intel HD Audio (PCI)', 'CONFIG_HDA'),
+    ('SB16', 'Sound Blaster 16 (ISA bus)', 'CONFIG_SB16', ('CONFIG_ISA_BUS',)),
+    ('ADLIB', 'AdLib (ISA bus)', 'CONFIG_ADLIB', ('CONFIG_ISA_BUS',)),
+    ('GUS', 'Gravis UltraSound (ISA bus)', 'CONFIG_GUS', ('CONFIG_ISA_BUS',)),
+    ('CS4231A', 'Crystal CS4231A (ISA bus)', 'CONFIG_CS4231A', ('CONFIG_ISA_BUS',)),
+    # PCSPK depends on I8254, and I8254 itself depends on ISA_BUS.
+    ('PCSPK', 'PC speaker', 'CONFIG_PCSPK', ('CONFIG_ISA_BUS', 'CONFIG_I8254')),
+    ('ES1370', 'Ensoniq ES1370 (PCI bus)', 'CONFIG_ES1370', ('CONFIG_PCI',)),
+    ('AC97', "Intel AC'97 (PCI bus)", 'CONFIG_AC97', ('CONFIG_PCI',)),
+    ('CS4630', 'Crystal CS4630 (PCI bus)', 'CONFIG_CS4630', ('CONFIG_PCI',)),
+    ('HDA', 'Intel HD Audio (PCI bus)', 'CONFIG_HDA', ('CONFIG_PCI',)),
 )
 
 
@@ -92,7 +93,7 @@ OPTIONS = (
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
     *tuple(
         option
-        for suffix, group, _ in AUDIO_HARDWARE
+        for suffix, group, _, _ in AUDIO_HARDWARE
         for option in (
             Option(
                 f'I386_AUDIO_{suffix}', 'QEMU hardware', 'i386', 'choice',
@@ -300,11 +301,17 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
 def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
     overridden = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
     ppc_values = []
-    for suffix, _, symbol in AUDIO_HARDWARE:
+    required_symbols: List[str] = []
+    for suffix, _, symbol, requirements in AUDIO_HARDWARE:
         value = values.get(f'PPC_AUDIO_{suffix}', 'auto')
         ppc_values.append((symbol, value))
         if value != 'auto':
             overridden.add(symbol)
+        if value == 'y':
+            for requirement in requirements:
+                if requirement not in required_symbols:
+                    required_symbols.append(requirement)
+                    overridden.add(requirement)
 
     kept_lines = []
     for line in base.splitlines():
@@ -321,6 +328,8 @@ def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
         + f"CONFIG_MAC_NEWWORLD={values['CONFIG_MAC_NEWWORLD']}\n"
         + f"CONFIG_MAC_OLDWORLD={values['CONFIG_MAC_OLDWORLD']}\n"
     )
+    for requirement in required_symbols:
+        result += f'{requirement}=y\n'
     for symbol, value in ppc_values:
         if value != 'auto':
             result += f'{symbol}={value}\n'
