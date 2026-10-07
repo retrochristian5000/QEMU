@@ -23,11 +23,14 @@ def main() -> int:
     if parser[section].get("url") != "https://github.com/retrochristian5000/git-tools.git":
         raise SystemExit("error: toolchains/git does not point at the WHP Git fork")
 
-    build = (ROOT / "build.sh").read_text(encoding="utf-8")
-    require(build, "BOOTSTRAP_GIT=", "Git bootstrap policy")
-    require(build, '"$SOURCE_DIR/git.sh" --print-seed', "seed Git boundary")
-    require(build, "git-remote-https", "HTTPS promotion guard")
-    require(build, "WHP_GIT_LOCAL", "local Git fallback")
+    host_tools = (ROOT / "scripts/whp-build/host-tools.sh").read_text(
+        encoding="utf-8"
+    )
+    require(host_tools, "BOOTSTRAP_GIT=", "Git bootstrap policy")
+    require(host_tools, '"$SOURCE_DIR/git.sh" --print-seed', "seed Git boundary")
+    require(host_tools, "whp_prepare_foundation_zlib", "pre-Git zlib phase")
+    require(host_tools, "git-remote-https", "HTTPS promotion guard")
+    require(host_tools, "WHP_GIT_LOCAL", "local Git fallback")
 
     helper = (ROOT / "scripts/ensure-git.py").read_text(encoding="utf-8")
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/git")', "Git pin")
@@ -39,6 +42,8 @@ def main() -> int:
         )
     require(helper, "iconv_prefix", "Darwin iconv dependency")
     require(helper, '"DC_SHA1_SUBMODULE=YesPlease"', "collision-detection source")
+    require(helper, 'os.environ.get("WHP_ZLIB_PREFIX", "")', "managed zlib input")
+    require(helper, 'variables.append(f"ZLIB_PATH={zlib_dir}")', "Git zlib link path")
     require(helper, "has_https_transport", "managed transport probe")
 
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")

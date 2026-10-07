@@ -50,8 +50,24 @@ def run_logged(command: List[str], *, cwd: pathlib.Path | None = None,
         )
 
 
-def git_checkout_available() -> bool:
-    return shutil.which("git") is not None and (ROOT / ".git").exists()
+def select_git() -> str | None:
+    for env_name in ("WHP_GIT_SEED", "GIT"):
+        requested = os.environ.get(env_name, "")
+        if not requested:
+            continue
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError(f"{env_name} must name exactly one executable")
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if path and pathlib.Path(path).is_file() and os.access(path, os.X_OK):
+            return os.path.abspath(path)
+        raise RuntimeError(f"{env_name} is not executable: {candidate}")
+    return shutil.which("git")
+
+
+def git_checkout_available(git: str | None) -> bool:
+    return git is not None and (ROOT / ".git").exists()
 
 
 def archive_source_signature() -> str:
@@ -77,11 +93,12 @@ def archive_source_signature() -> str:
 
 
 def ensure_zlib_source() -> str:
-    if not git_checkout_available():
+    git = select_git()
+    if not git_checkout_available(git):
         return archive_source_signature()
 
     expected_line = run_text(
-        ["git", "-C", str(ROOT), "ls-tree", "HEAD", "--", str(SUBMODULE_REL)]
+        [git, "-C", str(ROOT), "ls-tree", "HEAD", "--", str(SUBMODULE_REL)]
     )
     fields = expected_line.split()
     if len(fields) < 3 or fields[1] != "commit":
@@ -94,7 +111,7 @@ def ensure_zlib_source() -> str:
     if (SUBMODULE_DIR / ".git").exists():
         try:
             current_revision = run_text(
-                ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
+                [git, "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
             )
         except RuntimeError:
             current_revision = ""
@@ -105,7 +122,7 @@ def ensure_zlib_source() -> str:
             "--depth", "1", str(SUBMODULE_REL),
         ])
         current_revision = run_text(
-            ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
+            [git, "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
         )
 
     if current_revision != expected_revision:

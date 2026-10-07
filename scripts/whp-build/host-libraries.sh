@@ -1,8 +1,12 @@
 # WHP QEMU-linked host library preparation.
 # Defines whp_prepare_qemu_host_libraries(); build.sh controls when it runs.
 
-whp_prepare_qemu_host_libraries()
+whp_prepare_foundation_zlib()
 {
+    if [ "${WHP_ZLIB_PREPARED:-0}" = 1 ]; then
+        return 0
+    fi
+
     BOOTSTRAP_ZLIB=${BOOTSTRAP_ZLIB:-auto}
     BOOTSTRAP_ZLIB=$(whp_normalize_auto_switch BOOTSTRAP_ZLIB "$BOOTSTRAP_ZLIB") || exit 1
     export BOOTSTRAP_ZLIB
@@ -44,6 +48,16 @@ whp_prepare_qemu_host_libraries()
             unset WHP_ZLIB_PC_PATH WHP_ZLIB_PC_DIR
         fi
     fi
+
+    WHP_ZLIB_PREPARED=1
+    export WHP_ZLIB_PREPARED
+}
+
+whp_prepare_qemu_host_libraries()
+{
+    # This call is an idempotent drift guard. Normal builds prepare zlib in the
+    # pre-Git host-tool phase so managed Git can consume the same pinned zlib.
+    whp_prepare_foundation_zlib
 
     BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
     case "$BOOTSTRAP_SDL" in

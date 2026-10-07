@@ -169,7 +169,9 @@ by the WHP account.
    * - ``toolchains/zlib``
      - ``ZLIB``
      - yes
-     - Managed static zlib for QEMU compression/CRC consumers and downstream dependencies such as libisofs; native configure + Make + host C compiler.
+     - Managed static zlib for managed Git, QEMU compression/CRC consumers,
+       and downstream dependencies such as libisofs; native configure + Make +
+       host C compiler. Its source is materialized by the seed Git boundary.
    * - ``toolchains/aften``
      - ``aften``
      - yes
@@ -216,11 +218,12 @@ graph.  A compact view is::
       |
       +--> cc.sh native C seed
       |      +--> Python fallback
-      |      +--> GNU sed / Git / Bash / SDL host builds
+      |      +--> GNU sed / zlib / Git / Bash / SDL host builds
       |      +--> lazy C++17 seed -> Ninja / JACK / native LLVM
       |
       +--> seed Git
       |      +--> QEMU source checkout/update
+      |      +--> pinned WHP zlib source
       |      +--> pinned WHP Git fork
       |             +--> managed full Git (HTTPS-capable) -> later submodules
       |             +--> managed local Git -> local repository operations only
@@ -239,7 +242,10 @@ graph.  A compact view is::
       |               +--> pinned WHP Make fork
       |                       |
       |                       +--> managed GNU Make
-      |                               +--> GNU sed / Git / Bash
+      |                               +--> GNU sed
+      |                               |      +--> managed static zlib
+      |                               |              +--> managed Git
+      |                               +--> Bash
       |                               +--> WHP Libtool bootstrap
       |                                       |
       |                                       +--> libisofs
@@ -310,13 +316,18 @@ Bootstrap phase ordering
 The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``cc.sh``, seed GNU Make, seed sed, Python, Automake,
-managed Autoconf, managed GNU sed, managed Git, Bash, and Ninja are available
-before native LLVM. These are generators/orchestration tools needed to reach
-the compiler build and therefore use build-machine roles. The seed GNU Make
-identity is established before the Python fallback and exported through both
-``MAKE_CMD`` and ``MAKE``. A single validated sed seed is likewise established
-before Python and Automake. Managed Autoconf is promoted after Automake, and
-managed GNU sed is promoted only after that suite is available.
+managed Autoconf, managed GNU Make, managed GNU sed, foundation zlib, managed
+Git, Bash, and Ninja are available before native LLVM. The enforced managed
+order is ``Automake -> Autoconf -> Make -> sed -> zlib -> Git -> Bash ->
+Ninja``. These are generators/orchestration inputs needed to reach the compiler
+build and therefore use build-machine roles. The seed GNU Make identity is
+established before the Python fallback and exported through both ``MAKE_CMD``
+and ``MAKE``. A single validated sed seed is likewise established before
+Python and Automake. The seed Git boundary materializes the pinned zlib source;
+that zlib is then published before managed Git so Git's own ``ZLIB_PATH`` edge
+cannot silently fall back to a different library. Managed Autoconf is promoted
+after Automake, managed Make after that Autotools pair, and managed GNU sed
+after Make.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
@@ -352,6 +363,13 @@ The WHP owns the pinned ``toolchains/git`` fork, but Git cannot be the first
 Git executable in the graph. An already usable seed Git is required to obtain
 the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
 ``toolchains/git`` plus its pinned ``sha1collisiondetection`` gitlink.
+
+After that seed boundary, the foundation zlib phase materializes the pinned
+``toolchains/zlib`` gitlink with the seed Git and publishes
+``WHP_ZLIB_PREFIX``. ``scripts/ensure-git.py`` then passes that prefix through
+Git's supported ``ZLIB_PATH`` Make variable. This breaks the apparent
+``Git -> zlib -> Git`` cycle at the seed-Git boundary: source materialization
+uses the seed, while the managed Git binary links the managed zlib.
 
 After that seed boundary, ``scripts/ensure-git.py`` builds a private Git.
 The preferred profile retains libcurl/HTTPS transport while disabling unrelated

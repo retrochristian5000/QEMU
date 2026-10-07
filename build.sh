@@ -329,13 +329,17 @@ if [ "$WHP_HOST_OS" = macos ]; then
         "${MACOS_BUILD_POWER:-balanced}" "$JOBS" >&2
 fi
 
-# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
-# here so its environment mutations preserve the historical build.sh ordering.
-. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
-
-# Host libraries are defined separately because native LLVM controls whether
-# they are prepared before or after compiler selection.
+# Host-library helpers are function-only at source time. Load them before the
+# host-tool phase so that low-level libraries can be scheduled at their real
+# dependency boundary without flattening them into the later QEMU artifact
+# library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"
+
+# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
+# here so its environment mutations preserve dependency order. It prepares the
+# foundation zlib edge before managed Git, then leaves SDL/JACK for the later
+# QEMU artifact-library phase.
+. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
 # Parse the LLVM switch before deciding whether QEMU-linked libraries should
 # use the seed compiler or the managed LLVM compiler. Portable-core builds do

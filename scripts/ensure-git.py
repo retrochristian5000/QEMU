@@ -23,7 +23,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
 GIT_ADAPTER = ROOT / "git.sh"
-GIT_BOOTSTRAP_SCHEMA = "1"
+GIT_BOOTSTRAP_SCHEMA = "2"
 
 
 def run_text(command: List[str], *, cwd=None, env=None) -> str:
@@ -258,6 +258,18 @@ def iconv_prefix() -> str:
     return ""
 
 
+def zlib_prefix() -> str:
+    explicit = os.environ.get("WHP_ZLIB_PREFIX", "")
+    if not explicit:
+        return ""
+    path = pathlib.Path(explicit).expanduser().resolve()
+    if not (path / "include" / "zlib.h").is_file():
+        raise RuntimeError(f"WHP_ZLIB_PREFIX lacks zlib.h: {path}")
+    if not (path / "lib" / "libz.a").is_file():
+        raise RuntimeError(f"WHP_ZLIB_PREFIX lacks static libz.a: {path}")
+    return str(path)
+
+
 def git_usable(path: pathlib.Path) -> bool:
     if not path.is_file() or not os.access(path, os.X_OK):
         return False
@@ -302,7 +314,7 @@ def smoke_local(git_path: pathlib.Path) -> bool:
     return True
 
 
-def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, iconv_dir) -> str:
+def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, iconv_dir, zlib_dir) -> str:
     return (
         f"GIT_BOOTSTRAP_SCHEMA={GIT_BOOTSTRAP_SCHEMA}\n"
         f"GIT_GIT_COMMIT={revision}\n"
@@ -313,10 +325,11 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
         f"PROFILE={profile}\n"
         f"CURLDIR={curl_dir}\n"
         f"ICONVDIR={iconv_dir}\n"
+        f"ZLIB_PATH={zlib_dir}\n"
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -355,6 +368,9 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
             f"ICONVDIR={iconv_dir}",
         ))
 
+    if zlib_dir:
+        variables.append(f"ZLIB_PATH={zlib_dir}")
+
     print(
         f"WHP Git bootstrap: {revision} -> {prefix} "
         f"(profile {profile}, seed {seed})",
@@ -379,6 +395,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     make = select_gnu_make()
     curl_dir = curl_prefix()
     iconv_dir = iconv_prefix()
+    zlib_dir = zlib_prefix()
     prefix = build_root / "deps" / "git"
     marker_path = prefix / ".whp-git-bootstrap"
     git_path = prefix / "bin" / "git"
@@ -391,7 +408,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         marker = marker_text(
             revision, sha1_revision, seed, cc, make, profile,
             curl_dir if profile == "full" else "",
-            iconv_dir,
+            iconv_dir, zlib_dir,
         )
         if (
             marker_path.is_file()
@@ -406,6 +423,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
                 profile, curl_dir if profile == "full" else "", iconv_dir,
+                zlib_dir,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:

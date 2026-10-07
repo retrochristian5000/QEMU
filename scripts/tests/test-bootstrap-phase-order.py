@@ -10,11 +10,19 @@ build = (ROOT / "build.sh").read_text(encoding="utf-8")
 host_libraries = (ROOT / "scripts/whp-build/host-libraries.sh").read_text(
     encoding="utf-8"
 )
+host_tools = (ROOT / "scripts/whp-build/host-tools.sh").read_text(
+    encoding="utf-8"
+)
 
 def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
 
+require(
+    host_libraries,
+    "whp_prepare_foundation_zlib()",
+    "foundation zlib phase helper definition",
+)
 require(
     host_libraries,
     "whp_prepare_qemu_host_libraries()",
@@ -35,6 +43,41 @@ require(
     'if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then\n    # These libraries are linked into QEMU itself.',
     "LLVM deferred host-library path",
 )
+
+library_module = build.index(
+    '. "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"'
+)
+tool_module = build.index(
+    '. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"'
+)
+if not library_module < tool_module:
+    raise SystemExit(
+        "error: host-library helper definitions must load before host-tool execution"
+    )
+
+automake_hook = host_tools.index("scripts/ensure-automake.py")
+autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
+make_hook = host_tools.index("scripts/ensure-make.py")
+sed_hook = host_tools.index("scripts/ensure-sed.py")
+zlib_hook = host_tools.index("whp_prepare_foundation_zlib")
+git_hook = host_tools.index("scripts/ensure-git.py")
+bash_hook = host_tools.index("scripts/ensure-bash.py")
+ninja_hook = host_tools.index("scripts/ensure-ninja.py")
+
+if not (
+    automake_hook
+    < autoconf_hook
+    < make_hook
+    < sed_hook
+    < zlib_hook
+    < git_hook
+    < bash_hook
+    < ninja_hook
+):
+    raise SystemExit(
+        "error: expected Automake -> Autoconf -> Make -> sed -> zlib -> "
+        "Git -> Bash -> Ninja pre-LLVM order"
+    )
 
 llvm_hook = build.index('scripts/bootstrap-native-clang.sh')
 deferred_comment = build.index(

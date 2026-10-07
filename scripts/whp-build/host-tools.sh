@@ -317,15 +317,22 @@ fi
 printf 'QEMU sed: %s (%s)\n' "$SED" "$WHP_SED_KIND" >&2
 unset WHP_SED_DIR WHP_SED_KIND
 
-BOOTSTRAP_GIT=$(whp_normalize_auto_switch BOOTSTRAP_GIT "${BOOTSTRAP_GIT:-auto}") || exit 1
-export BOOTSTRAP_GIT
-
+# Seed Git is a root boundary for both managed zlib source materialization and
+# the managed Git fork itself. Resolve it before either dependency so zlib does
+# not accidentally require the Git binary which is supposed to consume zlib.
 WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
 if [ -z "$WHP_GIT_SEED" ]; then
     printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
     exit 1
 fi
 export WHP_GIT_SEED
+
+# zlib is a low-level library edge for managed Git as well as QEMU/libisofs.
+# Prepare it after the managed Make/sed toolchain but before managed Git.
+whp_prepare_foundation_zlib
+
+BOOTSTRAP_GIT=$(whp_normalize_auto_switch BOOTSTRAP_GIT "${BOOTSTRAP_GIT:-auto}") || exit 1
+export BOOTSTRAP_GIT
 
 if [ "$BOOTSTRAP_GIT" != 0 ] &&
    [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
