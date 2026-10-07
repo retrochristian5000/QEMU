@@ -337,8 +337,8 @@ fi
 
 # Keep host-tool bootstraps out of the public entrypoint. This module is sourced
 # here so its environment mutations preserve dependency order. It prepares the
-# foundation zlib edge before managed Git, then leaves SDL/JACK for the later
-# QEMU artifact-library phase.
+# isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
+# SDL, and JACK remain in the later compiler-selected library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
 # Parse the LLVM switch before deciding whether QEMU-linked libraries should

@@ -327,9 +327,10 @@ if [ -z "$WHP_GIT_SEED" ]; then
 fi
 export WHP_GIT_SEED
 
-# zlib is a low-level library edge for managed Git as well as QEMU/libisofs.
-# Prepare it after the managed Make/sed toolchain but before managed Git.
-whp_prepare_foundation_zlib
+# Git needs zlib before native LLVM, but QEMU's zlib must not inherit that
+# build-machine compiler. Prepare an isolated bootstrap role here; the artifact
+# role is resolved again after compiler promotion.
+whp_prepare_bootstrap_zlib
 
 BOOTSTRAP_GIT=$(whp_normalize_auto_switch BOOTSTRAP_GIT "${BOOTSTRAP_GIT:-auto}") || exit 1
 export BOOTSTRAP_GIT

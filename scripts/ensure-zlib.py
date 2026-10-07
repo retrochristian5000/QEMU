@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/zlib")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-ZLIB_BOOTSTRAP_SCHEMA = "1"
+ZLIB_BOOTSTRAP_SCHEMA = "2"
 PKG_NAME = "zlib"
 
 
@@ -118,7 +118,7 @@ def ensure_zlib_source() -> str:
 
     if current_revision != expected_revision:
         run_logged([
-            "git", "-C", str(ROOT), "submodule", "update", "--init",
+            git, "-C", str(ROOT), "submodule", "update", "--init",
             "--depth", "1", str(SUBMODULE_REL),
         ])
         current_revision = run_text(
@@ -132,7 +132,7 @@ def ensure_zlib_source() -> str:
         )
 
     dirty = run_text([
-        "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
+        git, "-C", str(SUBMODULE_DIR), "status", "--porcelain",
         "--untracked-files=no",
     ])
     if dirty:
@@ -143,7 +143,17 @@ def ensure_zlib_source() -> str:
     return expected_revision
 
 
-def select_c_compiler() -> str:
+def select_c_compiler(explicit: str = "") -> str:
+    if explicit:
+        argv = shlex.split(explicit)
+        if len(argv) != 1:
+            raise RuntimeError("--cc must name exactly one executable")
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if path and pathlib.Path(path).exists():
+            return str(path)
+        raise RuntimeError(f"--cc is not executable: {candidate}")
+
     for env_name in ("CC", "CC_FOR_BUILD"):
         requested = os.environ.get(env_name, "")
         if not requested:
@@ -310,9 +320,10 @@ def find_pkgconfig_file(prefix: pathlib.Path) -> pathlib.Path | None:
 
 def workspace_marker_text(cc: str, cc_id: str, make: str, make_id: str,
                           shell: str, sdkroot: str, arch: str,
-                          deployment: str, cflags: str) -> str:
+                          deployment: str, cflags: str, role: str) -> str:
     return (
         f"ZLIB_BOOTSTRAP_SCHEMA={ZLIB_BOOTSTRAP_SCHEMA}\n"
+        f"ROLE={role}\n"
         f"HOST_SYSTEM={platform.system()}\n"
         f"HOST_MACHINE={platform.machine()}\n"
         f"CC={cc}\n"
@@ -364,7 +375,7 @@ def prepare_workspace(work_dir: pathlib.Path, prefix: pathlib.Path,
     return False
 
 
-def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
+def bootstrap(build_root: pathlib.Path, cc: str, role: str) -> pathlib.Path:
     revision = ensure_zlib_source()
     make = select_make()
     shell = os.environ.get("CONFIG_SHELL", "") or shutil.which("sh")
@@ -378,11 +389,17 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
     sdkroot, arch, deployment = macos_settings()
     cflags = " ".join(zlib_cflags(sdkroot, arch, deployment))
     incremental = incremental_build_enabled()
-    work_dir = build_root / "bootstrap" / "zlib"
-    prefix = build_root / "deps" / "zlib"
+    if role == "bootstrap":
+        work_name = "zlib-git-bootstrap"
+        prefix_name = "git-zlib"
+    else:
+        work_name = "zlib"
+        prefix_name = "zlib"
+    work_dir = build_root / "bootstrap" / work_name
+    prefix = build_root / "deps" / prefix_name
     workspace_marker = workspace_marker_text(
         cc, compiler_version(cc), make, make_version(make), shell,
-        sdkroot, arch, deployment, cflags,
+        sdkroot, arch, deployment, cflags, role,
     )
     marker = marker_text(revision, workspace_marker)
     if incremental and cache_valid(prefix, marker):
@@ -413,7 +430,10 @@ def bootstrap(build_root: pathlib.Path, cc: str) -> pathlib.Path:
             file=sys.stderr,
         )
     else:
-        print(f"WHP zlib bootstrap: {revision} -> {prefix}", file=sys.stderr)
+        print(
+            f"WHP zlib bootstrap ({role}): {revision} -> {prefix}",
+            file=sys.stderr,
+        )
 
     run_logged(
         [shell, str(SUBMODULE_DIR / "configure"), "--static",
@@ -450,15 +470,17 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--mode", choices=("auto", "force"), default="auto")
+    parser.add_argument("--role", choices=("bootstrap", "artifact"), default="artifact")
+    parser.add_argument("--cc", default="")
     args = parser.parse_args(argv)
 
     try:
-        cc = select_c_compiler()
+        cc = select_c_compiler(args.cc)
         if args.mode == "auto" and system_zlib_usable(cc):
             print("WHP zlib bootstrap: host zlib is usable", file=sys.stderr)
             return 0
         prefix = bootstrap(
-            pathlib.Path(args.build_dir).expanduser().resolve(), cc
+            pathlib.Path(args.build_dir).expanduser().resolve(), cc, args.role
         )
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
         if args.mode == "auto":

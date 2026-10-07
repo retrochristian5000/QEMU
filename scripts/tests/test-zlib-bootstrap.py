@@ -35,13 +35,21 @@ def main() -> int:
     require(config, "Option('BOOTSTRAP_ZLIB'", "zlib menu option")
     require(config, "'BOOTSTRAP_ZLIB',", "zlib tri-state shell policy")
     require(schema, "BOOTSTRAP_ZLIB|Host features|Bootstrap/use WHP zlib|choice|auto|auto,y,n|", "POSIX menu zlib option")
-    require(host, "whp_prepare_foundation_zlib()", "foundation zlib phase")
+    require(host, "whp_prepare_bootstrap_zlib()", "bootstrap zlib phase")
     require(host, 'BOOTSTRAP_ZLIB=${BOOTSTRAP_ZLIB:-auto}', "zlib host-library switch")
     require(host, "scripts/ensure-zlib.py", "zlib bootstrap handoff")
+    require(host, '--role bootstrap --cc "$CC_FOR_BUILD"', "Git zlib compiler boundary")
+    require(host, "--role artifact", "artifact zlib role")
+    require(host, "WHP_GIT_ZLIB_PREFIX", "Git-only zlib prefix")
     require(host, "WHP_ZLIB_PREFIX", "zlib downstream prefix")
     require(host, "ZLIB_ROOT", "CMake zlib root")
     require(helper_text, 'SUBMODULE_REL = pathlib.Path("toolchains/zlib")', "zlib gitlink path")
     require(helper_text, '("WHP_GIT_SEED", "GIT")', "seed Git source staging")
+    require(helper_text, 'choices=("bootstrap", "artifact")', "zlib role CLI")
+    require(helper_text, 'prefix_name = "git-zlib"', "Git zlib private prefix")
+    require(helper_text, 'prefix_name = "zlib"', "artifact zlib private prefix")
+    if '"git", "-C"' in helper_text:
+        raise SystemExit("error: zlib source staging bypasses the selected seed Git")
     require(helper_text, '"--static"', "static-only zlib configure")
     require(helper_text, 'os.environ.get("WHP_INCREMENTAL_BUILD", "1")', "incremental default")
     require(helper_text, ".whp-zlib-workspace", "incremental workspace marker")
@@ -49,7 +57,7 @@ def main() -> int:
     require(helper_text, '"libz.a"', "static archive verification")
     require(helper_text, '"zlib.pc"', "pkg-config verification")
 
-    if helper.ZLIB_BOOTSTRAP_SCHEMA != "1":
+    if helper.ZLIB_BOOTSTRAP_SCHEMA != "2":
         raise SystemExit("error: unexpected zlib bootstrap schema")
     if not helper.incremental_build_enabled():
         raise SystemExit("error: zlib incremental build must default on")

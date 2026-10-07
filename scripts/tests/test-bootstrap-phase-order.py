@@ -20,8 +20,8 @@ def require(text: str, needle: str, label: str) -> None:
 
 require(
     host_libraries,
-    "whp_prepare_foundation_zlib()",
-    "foundation zlib phase helper definition",
+    "whp_prepare_bootstrap_zlib()",
+    "bootstrap zlib phase helper definition",
 )
 require(
     host_libraries,
@@ -59,7 +59,7 @@ automake_hook = host_tools.index("scripts/ensure-automake.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
 make_hook = host_tools.index("scripts/ensure-make.py")
 sed_hook = host_tools.index("scripts/ensure-sed.py")
-zlib_hook = host_tools.index("whp_prepare_foundation_zlib")
+zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 git_hook = host_tools.index("scripts/ensure-git.py")
 bash_hook = host_tools.index("scripts/ensure-bash.py")
 ninja_hook = host_tools.index("scripts/ensure-ninja.py")
@@ -78,6 +78,11 @@ if not (
         "error: expected Automake -> Autoconf -> Make -> sed -> zlib -> "
         "Git -> Bash -> Ninja pre-LLVM order"
     )
+
+artifact_zlib_hook = host_libraries.index("whp_prepare_zlib_phase artifact")
+sdl_hook = host_libraries.index("BOOTSTRAP_SDL=")
+if not artifact_zlib_hook < sdl_hook:
+    raise SystemExit("error: artifact zlib must be resolved before SDL/JACK")
 
 llvm_hook = build.index('scripts/bootstrap-native-clang.sh')
 deferred_comment = build.index(

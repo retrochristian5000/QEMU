@@ -1,42 +1,61 @@
 # WHP QEMU-linked host library preparation.
 # Defines whp_prepare_qemu_host_libraries(); build.sh controls when it runs.
 
-whp_prepare_foundation_zlib()
+whp_prepare_zlib_phase()
 {
-    if [ "${WHP_ZLIB_PREPARED:-0}" = 1 ]; then
-        return 0
-    fi
+    WHP_ZLIB_ROLE=${1:-}
+    case "$WHP_ZLIB_ROLE" in
+        bootstrap|artifact) ;;
+        *) printf 'error: internal zlib role must be bootstrap or artifact: %s\n' "${WHP_ZLIB_ROLE:-<empty>}" >&2; exit 1 ;;
+    esac
 
     BOOTSTRAP_ZLIB=${BOOTSTRAP_ZLIB:-auto}
     BOOTSTRAP_ZLIB=$(whp_normalize_auto_switch BOOTSTRAP_ZLIB "$BOOTSTRAP_ZLIB") || exit 1
     export BOOTSTRAP_ZLIB
 
-    # zlib is a required QEMU host dependency and is also consumed by libisofs.
-    # auto keeps a usable host zlib; 1 forces the pinned WHP fork; 0 disables
-    # only the managed fallback. Publish one private prefix for Meson/CMake and
-    # downstream dependency bootstraps.
+    if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+        unset WHP_GIT_ZLIB_PREFIX
+    fi
+
     if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
        [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
        [ "$BOOTSTRAP_ZLIB" != 0 ]; then
         ZLIB_BOOTSTRAP_MODE=auto
-        if [ "$BOOTSTRAP_ZLIB" = 1 ]; then
-            ZLIB_BOOTSTRAP_MODE=force
+        [ "$BOOTSTRAP_ZLIB" != 1 ] || ZLIB_BOOTSTRAP_MODE=force
+
+        if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+            WHP_ZLIB_PHASE_PREFIX=$(
+                "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
+                    --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE" \
+                    --role bootstrap --cc "$CC_FOR_BUILD"
+            ) || exit 1
+        elif [ "${BOOTSTRAP_NATIVE_LLVM:-0}" != 1 ] &&
+             [ -n "${WHP_GIT_ZLIB_PREFIX:-}" ]; then
+            WHP_ZLIB_PHASE_PREFIX=$WHP_GIT_ZLIB_PREFIX
+        else
+            WHP_ZLIB_PHASE_PREFIX=$(
+                "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
+                    --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE" \
+                    --role artifact
+            ) || exit 1
         fi
-        WHP_ZLIB_PREFIX=$(
-            "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
-                --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE"
-        ) || exit 1
         unset ZLIB_BOOTSTRAP_MODE
 
+        if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+            if [ -n "$WHP_ZLIB_PHASE_PREFIX" ]; then
+                WHP_GIT_ZLIB_PREFIX=$WHP_ZLIB_PHASE_PREFIX
+                export WHP_GIT_ZLIB_PREFIX
+            fi
+            unset WHP_ZLIB_PHASE_PREFIX WHP_ZLIB_ROLE
+            return 0
+        fi
+
+        WHP_ZLIB_PREFIX=$WHP_ZLIB_PHASE_PREFIX
+        unset WHP_ZLIB_PHASE_PREFIX
         if [ -n "$WHP_ZLIB_PREFIX" ]; then
             WHP_ZLIB_PC_PATH=
-            for WHP_ZLIB_PC_DIR in \
-                "$WHP_ZLIB_PREFIX/lib/pkgconfig" \
-                "$WHP_ZLIB_PREFIX/lib64/pkgconfig" \
-                "$WHP_ZLIB_PREFIX/libdata/pkgconfig"; do
-                if [ -d "$WHP_ZLIB_PC_DIR" ]; then
-                    WHP_ZLIB_PC_PATH="${WHP_ZLIB_PC_PATH:+$WHP_ZLIB_PC_PATH:}$WHP_ZLIB_PC_DIR"
-                fi
+            for WHP_ZLIB_PC_DIR in "$WHP_ZLIB_PREFIX/lib/pkgconfig" "$WHP_ZLIB_PREFIX/lib64/pkgconfig" "$WHP_ZLIB_PREFIX/libdata/pkgconfig"; do
+                [ ! -d "$WHP_ZLIB_PC_DIR" ] || WHP_ZLIB_PC_PATH="${WHP_ZLIB_PC_PATH:+$WHP_ZLIB_PC_PATH:}$WHP_ZLIB_PC_DIR"
             done
             if [ -n "$WHP_ZLIB_PC_PATH" ]; then
                 PKG_CONFIG_PATH="$WHP_ZLIB_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
@@ -48,16 +67,19 @@ whp_prepare_foundation_zlib()
             unset WHP_ZLIB_PC_PATH WHP_ZLIB_PC_DIR
         fi
     fi
+    unset WHP_ZLIB_ROLE
+}
 
-    WHP_ZLIB_PREPARED=1
-    export WHP_ZLIB_PREPARED
+whp_prepare_bootstrap_zlib()
+{
+    whp_prepare_zlib_phase bootstrap
 }
 
 whp_prepare_qemu_host_libraries()
 {
-    # This call is an idempotent drift guard. Normal builds prepare zlib in the
-    # pre-Git host-tool phase so managed Git can consume the same pinned zlib.
-    whp_prepare_foundation_zlib
+    # Artifact zlib is compiler-selected. Reuse bootstrap zlib only when native
+    # LLVM did not promote CC; otherwise keep the two prefixes isolated.
+    whp_prepare_zlib_phase artifact
 
     BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
     case "$BOOTSTRAP_SDL" in

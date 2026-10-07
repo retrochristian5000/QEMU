@@ -28,7 +28,7 @@ def main() -> int:
     )
     require(host_tools, "BOOTSTRAP_GIT=", "Git bootstrap policy")
     require(host_tools, '"$SOURCE_DIR/git.sh" --print-seed', "seed Git boundary")
-    require(host_tools, "whp_prepare_foundation_zlib", "pre-Git zlib phase")
+    require(host_tools, "whp_prepare_bootstrap_zlib", "pre-Git zlib phase")
     require(host_tools, "git-remote-https", "HTTPS promotion guard")
     require(host_tools, "WHP_GIT_LOCAL", "local Git fallback")
 
@@ -42,8 +42,9 @@ def main() -> int:
         )
     require(helper, "iconv_prefix", "Darwin iconv dependency")
     require(helper, '"DC_SHA1_SUBMODULE=YesPlease"', "collision-detection source")
-    require(helper, 'os.environ.get("WHP_ZLIB_PREFIX", "")', "managed zlib input")
+    require(helper, 'os.environ.get("WHP_GIT_ZLIB_PREFIX", "")', "managed zlib input")
     require(helper, 'variables.append(f"ZLIB_PATH={zlib_dir}")', "Git zlib link path")
+    require(helper, 'f"ZLIB_ID={zlib_id}\\n"', "Git zlib cache identity")
     require(helper, "has_https_transport", "managed transport probe")
 
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")

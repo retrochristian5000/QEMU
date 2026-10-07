@@ -169,9 +169,10 @@ by the WHP account.
    * - ``toolchains/zlib``
      - ``ZLIB``
      - yes
-     - Managed static zlib for managed Git, QEMU compression/CRC consumers,
-       and downstream dependencies such as libisofs; native configure + Make +
-       host C compiler. Its source is materialized by the seed Git boundary.
+     - Managed static zlib has two explicit roles: an isolated Git-bootstrap
+       prefix built with ``CC_FOR_BUILD`` before managed Git, and an artifact
+       prefix for QEMU/libisofs resolved after compiler promotion. Both use the
+       same pinned source materialized through the seed-Git boundary.
    * - ``toolchains/aften``
      - ``aften``
      - yes
@@ -218,7 +219,7 @@ graph.  A compact view is::
       |
       +--> cc.sh native C seed
       |      +--> Python fallback
-      |      +--> GNU sed / zlib / Git / Bash / SDL host builds
+      |      +--> GNU sed / bootstrap-zlib / Git / Bash / SDL host builds
       |      +--> lazy C++17 seed -> Ninja / JACK / native LLVM
       |
       +--> seed Git
@@ -243,7 +244,7 @@ graph.  A compact view is::
       |                       |
       |                       +--> managed GNU Make
       |                               +--> GNU sed
-      |                               |      +--> managed static zlib
+      |                               |      +--> Git-bootstrap zlib
       |                               |              +--> managed Git
       |                               +--> Bash
       |                               +--> WHP Libtool bootstrap
@@ -253,6 +254,7 @@ graph.  A compact view is::
       +--> optional native LLVM
              |
              +--> QEMU host compiler
+             |      +--> artifact zlib
              |      +--> SDL3 host library
              |      +--> JACK client library
              |      +--> Libtool-configured downstream archives
@@ -316,16 +318,18 @@ Bootstrap phase ordering
 The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``cc.sh``, seed GNU Make, seed sed, Python, Automake,
-managed Autoconf, managed GNU Make, managed GNU sed, foundation zlib, managed
+managed Autoconf, managed GNU Make, managed GNU sed, bootstrap zlib, managed
 Git, Bash, and Ninja are available before native LLVM. The enforced managed
-order is ``Automake -> Autoconf -> Make -> sed -> zlib -> Git -> Bash ->
-Ninja``. These are generators/orchestration inputs needed to reach the compiler
+order is ``Automake -> Autoconf -> Make -> sed -> bootstrap-zlib -> Git ->
+Bash -> Ninja``. These are generators/orchestration inputs needed to reach the compiler
 build and therefore use build-machine roles. The seed GNU Make identity is
 established before the Python fallback and exported through both ``MAKE_CMD``
 and ``MAKE``. A single validated sed seed is likewise established before
-Python and Automake. The seed Git boundary materializes the pinned zlib source;
-that zlib is then published before managed Git so Git's own ``ZLIB_PATH`` edge
-cannot silently fall back to a different library. Managed Autoconf is promoted
+Python and Automake. The seed Git boundary materializes the pinned zlib source.
+If the host zlib is insufficient (or the WHP zlib is forced), an isolated
+``deps/git-zlib`` fallback is built with ``CC_FOR_BUILD`` before managed Git
+so Git's own ``ZLIB_PATH`` edge cannot silently consume the later QEMU
+artifact prefix. Managed Autoconf is promoted
 after Automake, managed Make after that Autotools pair, and managed GNU sed
 after Make.
 
@@ -333,12 +337,14 @@ after Make.
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
 archive/binutils replacements.
 
-**Artifact-library phase:** SDL and JACK are linked into QEMU, so in an LLVM
-build they are deliberately deferred until after compiler promotion. In a
-non-LLVM or portable build they remain preparable with the seed compiler.
-Libtool stays after compiler promotion because its configure/cache records
-archive and binary-tool identities, and libisofs remains downstream of that
-Libtool selection.
+**Artifact-library phase:** zlib, SDL, and JACK are linked into QEMU, so in an
+LLVM build their QEMU-facing preparation is deliberately deferred until after
+compiler promotion. Artifact zlib uses ``deps/zlib``, separate from the
+pre-Git ``deps/git-zlib`` fallback. In a non-LLVM build the bootstrap zlib
+archive may be reused because no compiler promotion occurred. Libtool stays
+after compiler promotion because its configure/cache records archive and
+binary-tool identities, and libisofs remains downstream of that Libtool
+selection.
 
 Bootstrap compiler boundary
 ---------------------------
@@ -364,12 +370,14 @@ Git executable in the graph. An already usable seed Git is required to obtain
 the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
 ``toolchains/git`` plus its pinned ``sha1collisiondetection`` gitlink.
 
-After that seed boundary, the foundation zlib phase materializes the pinned
-``toolchains/zlib`` gitlink with the seed Git and publishes
-``WHP_ZLIB_PREFIX``. ``scripts/ensure-git.py`` then passes that prefix through
-Git's supported ``ZLIB_PATH`` Make variable. This breaks the apparent
-``Git -> zlib -> Git`` cycle at the seed-Git boundary: source materialization
-uses the seed, while the managed Git binary links the managed zlib.
+After that seed boundary, the bootstrap-zlib phase materializes the pinned
+``toolchains/zlib`` gitlink with the seed Git. When a managed fallback is
+needed, it is built under ``deps/git-zlib`` with ``CC_FOR_BUILD`` and
+published only as ``WHP_GIT_ZLIB_PREFIX``. ``scripts/ensure-git.py`` passes
+that prefix through Git's supported ``ZLIB_PATH`` Make variable and records
+the zlib bootstrap marker hash in Git's cache identity. This breaks the
+apparent ``Git -> zlib -> Git`` cycle without leaking the build-machine zlib
+into QEMU's later artifact-library phase.
 
 After that seed boundary, ``scripts/ensure-git.py`` builds a private Git.
 The preferred profile retains libcurl/HTTPS transport while disabling unrelated
