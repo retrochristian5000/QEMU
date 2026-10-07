@@ -28,6 +28,9 @@ on:
       - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
       - 'configs/devices/**'
+      - 'hw/pcmcia/**'
+      - 'tests/qtest/i82092aa-test.c'
+      - 'tests/qtest/meson.build'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sdl.py'
@@ -128,6 +131,7 @@ jobs:
           python3 scripts/tests/test-bash-bootstrap.py
           python3 scripts/tests/test-whp-config.py
           python3 scripts/tests/test-whp-hardware-menu.py
+          python3 scripts/tests/test-pcmcia-config.py
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-darwin-lto-threads.py
@@ -219,6 +223,7 @@ jobs:
             scripts/tests/test-whp-dependency-ledger.py \
             scripts/tests/test-whp-config.py \
             scripts/tests/test-whp-hardware-menu.py \
+            scripts/tests/test-pcmcia-config.py \
             scripts/tests/test-whp-i386-audio-menu.py \
             scripts/tests/test-whp-incremental.py \
             scripts/tests/test-whp-sparc-menu.py
