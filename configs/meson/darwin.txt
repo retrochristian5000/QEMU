@@ -1,11 +1,11 @@
 # Darwin host tool selection is resolved before QEMU configure runs.
 #
-# scripts/macos-builder.bash supplies Apple ar/nm/ranlib/strip as defaults
-# while preserving explicit overrides such as the coherent llvm-ar, llvm-nm,
-# and llvm-ranlib installed by BOOTSTRAP_NATIVE_LLVM.  configure then records
-# those exact tools in config-meson.cross.  Do not override them in this later
-# native file: doing so can mix Apple archive tools with LLVM LTO objects and
-# hide the toolchain selected by the public build entry.
+# scripts/macos-builder.bash owns archive-tool selection.  Explicit choices
+# remain authoritative; a complete llvm-ar/llvm-ranlib/llvm-nm family beside
+# the selected Clang is preferred; otherwise PATH-independent Apple tools are
+# the fallback.  configure records that exact choice in config-meson.cross.
+# Do not override it here: doing so can mix archive tools with LTO objects from
+# another compiler/toolchain revision.
 
 [binaries]
 # Intentionally empty.  config-meson.cross owns Darwin binary selection.
