@@ -152,6 +152,15 @@ whp_configure_write_ppc_device_config "$1" "$2"
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=n', text)
 
+    def test_all_tracked_device_presets_parse_with_qemu_minikconf(self):
+        minikconf = load_module(MINIKCONF, 'whp_qemu_minikconf_all_presets')
+        presets = sorted((ROOT / 'configs/devices').glob('*/*.mak'))
+        self.assertTrue(presets)
+        for preset in presets:
+            with self.subTest(preset=preset.relative_to(ROOT)):
+                data = minikconf.KconfigData()
+                with preset.open('rt', encoding='utf-8') as stream:
+                    minikconf.KconfigParser.parse(stream, data)
     def test_config_prefix_validator_rejects_malformed_assignments(self):
         config = load_module(CONFIG_TOOL, 'whp_config_prefix_syntax')
         config.validate_device_config_syntax(
