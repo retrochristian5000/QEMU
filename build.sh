@@ -354,7 +354,26 @@ fi
 
 portable_core()
 {
-    if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
+    if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
+    for whp_tool_spec in \
+        "AR:$NATIVE_LLVM_DIR/bin/llvm-ar" \
+        "RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
+        "NM:$NATIVE_LLVM_DIR/bin/llvm-nm"; do
+        whp_tool_name=${whp_tool_spec%%:*}
+        whp_tool_expected=${whp_tool_spec#*:}
+        eval "whp_tool_actual=\${$whp_tool_name:-}"
+        if [ "$whp_tool_actual" != "$whp_tool_expected" ]; then
+            printf '%s\n' \
+                "error: native LLVM toolchain drifted before QEMU configure:" \
+                "  $whp_tool_name=$whp_tool_actual" \
+                "  expected $whp_tool_expected" >&2
+            exit 1
+        fi
+    done
+    unset whp_tool_spec whp_tool_name whp_tool_expected whp_tool_actual
+fi
+
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
         printf 'WHP build shell: unavailable (portable Python core)\n'
         printf 'CONFIG_SHELL: <QEMU configure default>\n'
         exit 0
