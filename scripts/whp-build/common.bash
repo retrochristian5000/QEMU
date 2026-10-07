@@ -10,6 +10,27 @@ whp_canonical_macos_arch()
     esac
 }
 
+whp_compiler_sibling_tool()
+{
+    local compiler="$1"
+    local tool="$2"
+    local compiler_path
+    local compiler_dir
+    local candidate
+
+    [[ -n "$compiler" && -n "$tool" ]] || return 1
+    case "$compiler" in
+        *[[:space:]]*) return 1 ;;
+    esac
+
+    compiler_path="$(command -v "$compiler" 2>/dev/null || true)"
+    [[ -n "$compiler_path" ]] || return 1
+    compiler_dir="$(cd -- "$(dirname -- "$compiler_path")" && pwd -P)" || return 1
+    candidate="$compiler_dir/$tool"
+    [[ -x "$candidate" ]] || return 1
+    printf '%s\n' "$candidate"
+}
+
 whp_append_flag()
 {
     local variable="$1"
