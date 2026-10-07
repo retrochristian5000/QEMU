@@ -313,8 +313,16 @@ EOF
 done
 
 llvm_archive_output="$TEST_DIR/llvm-archive-output"
-if ! AR= RANLIB= NM=    SDKROOT="$SELECTED_SDK"    MACOSX_DEPLOYMENT_TARGET=13.0    BUILD_DIR="$TEST_DIR/llvm-archive-build"    OPENBIOS_TOOLS_DIR="$TEST_DIR/llvm-archive-tools"    WHP_BUILD_BASH="$FAKE_BIN/build-bash"    bash "$SOURCE_DIR/scripts/macos-builder.bash"        >"$llvm_archive_output" 2>&1; then
-    printf '%s\n'         'error: macOS wrapper rejected a complete sibling LLVM archive family.' >&2
+if ! AR= RANLIB= NM= \
+   SDKROOT="$SELECTED_SDK" \
+   MACOSX_DEPLOYMENT_TARGET=13.0 \
+   BUILD_DIR="$TEST_DIR/llvm-archive-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/llvm-archive-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$llvm_archive_output" 2>&1; then
+    printf '%s\n' \
+        'error: macOS wrapper rejected a complete sibling LLVM archive family.' >&2
     cat "$llvm_archive_output" >&2
     exit 1
 fi
@@ -324,8 +332,16 @@ grep -Fq "QEMU symbol reader:      $FAKE_BIN/llvm-nm" "$llvm_archive_output"
 
 rm -f "$FAKE_BIN/llvm-ranlib"
 partial_archive_output="$TEST_DIR/partial-archive-output"
-if ! AR= RANLIB= NM=    SDKROOT="$SELECTED_SDK"    MACOSX_DEPLOYMENT_TARGET=13.0    BUILD_DIR="$TEST_DIR/partial-archive-build"    OPENBIOS_TOOLS_DIR="$TEST_DIR/partial-archive-tools"    WHP_BUILD_BASH="$FAKE_BIN/build-bash"    bash "$SOURCE_DIR/scripts/macos-builder.bash"        >"$partial_archive_output" 2>&1; then
-    printf '%s\n'         'error: macOS wrapper rejected the portable archive-tool fallback.' >&2
+if ! AR= RANLIB= NM= \
+   SDKROOT="$SELECTED_SDK" \
+   MACOSX_DEPLOYMENT_TARGET=13.0 \
+   BUILD_DIR="$TEST_DIR/partial-archive-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/partial-archive-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$partial_archive_output" 2>&1; then
+    printf '%s\n' \
+        'error: macOS wrapper rejected the portable archive-tool fallback.' >&2
     cat "$partial_archive_output" >&2
     exit 1
 fi
