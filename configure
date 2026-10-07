@@ -2013,6 +2013,7 @@ preserve_env PKG_CONFIG
 preserve_env PKG_CONFIG_LIBDIR
 preserve_env PKG_CONFIG_PATH
 preserve_env PYTHON
+preserve_env RANLIB
 preserve_env QEMU_GA_MANUFACTURER
 preserve_env QEMU_GA_DISTRO
 preserve_env QEMU_GA_VERSION
