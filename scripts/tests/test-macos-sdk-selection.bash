@@ -300,10 +300,44 @@ if SOURCE_DIR="$SOURCE_DIR" FOREIGN_BUILD="$foreign_build" \
     exit 1
 fi
 
+# A non-bootstrap Clang installation may carry its own LLVM archive tools.
+# Prefer them only when the complete archive family is available beside the
+# selected compiler.  A partial family must fall back to Apple's tools instead
+# of mixing object/archive toolchains.
+for tool in llvm-ar llvm-ranlib llvm-nm; do
+    cat > "$FAKE_BIN/$tool" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$FAKE_BIN/$tool"
+done
+
+llvm_archive_output="$TEST_DIR/llvm-archive-output"
+if ! AR= RANLIB= NM=    SDKROOT="$SELECTED_SDK"    MACOSX_DEPLOYMENT_TARGET=13.0    BUILD_DIR="$TEST_DIR/llvm-archive-build"    OPENBIOS_TOOLS_DIR="$TEST_DIR/llvm-archive-tools"    WHP_BUILD_BASH="$FAKE_BIN/build-bash"    bash "$SOURCE_DIR/scripts/macos-builder.bash"        >"$llvm_archive_output" 2>&1; then
+    printf '%s\n'         'error: macOS wrapper rejected a complete sibling LLVM archive family.' >&2
+    cat "$llvm_archive_output" >&2
+    exit 1
+fi
+grep -Fq "QEMU archiver:           $FAKE_BIN/llvm-ar" "$llvm_archive_output"
+grep -Fq "QEMU archive indexer:    $FAKE_BIN/llvm-ranlib" "$llvm_archive_output"
+grep -Fq "QEMU symbol reader:      $FAKE_BIN/llvm-nm" "$llvm_archive_output"
+
+rm -f "$FAKE_BIN/llvm-ranlib"
+partial_archive_output="$TEST_DIR/partial-archive-output"
+if ! AR= RANLIB= NM=    SDKROOT="$SELECTED_SDK"    MACOSX_DEPLOYMENT_TARGET=13.0    BUILD_DIR="$TEST_DIR/partial-archive-build"    OPENBIOS_TOOLS_DIR="$TEST_DIR/partial-archive-tools"    WHP_BUILD_BASH="$FAKE_BIN/build-bash"    bash "$SOURCE_DIR/scripts/macos-builder.bash"        >"$partial_archive_output" 2>&1; then
+    printf '%s\n'         'error: macOS wrapper rejected the portable archive-tool fallback.' >&2
+    cat "$partial_archive_output" >&2
+    exit 1
+fi
+grep -Fq 'QEMU archiver:           /usr/bin/ar' "$partial_archive_output"
+grep -Fq 'QEMU archive indexer:    /usr/bin/ranlib' "$partial_archive_output"
+grep -Fq 'QEMU symbol reader:      /usr/bin/nm' "$partial_archive_output"
+
 # Darwin's late Meson native file used to force /usr/bin/ar, nm, and ranlib
 # after build.sh had selected a coherent native LLVM tool family.  Keep Apple
-# tools as PATH-independent defaults in the wrapper, where explicit selections
-# survive, and leave the later native file unable to overwrite them.
+# tools as PATH-independent fallbacks in the wrapper, preserve explicit
+# selections, and allow a complete compiler-sibling LLVM archive family to win.
+# The later native file must remain unable to overwrite that decision.
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
 darwin_native="$SOURCE_DIR/configs/meson/darwin.txt"
 for expected in \
