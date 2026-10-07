@@ -437,10 +437,13 @@ The selected executable is mirrored as the bootstrap's literal ``m4``
 command so Autotools subprocesses cannot rediscover a different
 implementation. The completed Autoconf marker records ``M4_PATH`` and
 ``M4_VERSION`` separately. ``host-tools.sh`` validates that path again and
-exports it as the canonical ``M4`` for managed Make, sed, Libtool, libisofs,
-and other later maintainer-source bootstraps. The installed-runtime smoke
-test removes caller ``M4`` first, so an ambient Homebrew tool cannot hide a
-broken M4 path embedded in ``autom4te``.
+exports it as the canonical ``M4`` for later maintainer-source orchestration,
+including sed, Libtool, and libisofs. GNU Make receives the managed Autoconf
+suite generated with that M4, but its helper deliberately strips inherited
+``M4`` from Make's own artifact configure environment as part of its target
+contamination guard. The installed-runtime smoke test removes caller ``M4``
+first, so an ambient Homebrew tool cannot hide a broken M4 path embedded in
+``autom4te``.
 
 sed/Automake bootstrap boundary
 -------------------------------
