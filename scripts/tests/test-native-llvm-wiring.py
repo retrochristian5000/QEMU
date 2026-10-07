@@ -46,6 +46,11 @@ assert 'echo "ranlib = [$(meson_quote $ranlib)]" >> $cross' in configure
 assert 'preserve_env RANLIB' in configure
 assert 'native LLVM toolchain drifted before QEMU configure' in build
 assert '"RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+drift_index = build.index('native LLVM toolchain drifted before QEMU configure')
+portable_index = build.index('portable_core()')
+libisofs_index = build.index('BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}')
+shell_probe_index = build.index('WHP orchestration shell: %s')
+assert portable_index < libisofs_index < drift_index < shell_probe_index
 assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
 assert 'OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"' in build
 assert 'OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"' in build
