@@ -138,7 +138,13 @@ SHELL_TRI_STATE_KEYS = {
     'BOOTSTRAP_I386_TOOLCHAIN',
 }
 _TARGET_LIST_RE = re.compile(r'^[A-Za-z0-9_.,+:/-]+$')
-_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]*
+_KEY_RE = re.compile(r'[A-Z][A-Z0-9_]*\Z')
+_DEVICE_CONFIG_LINE_RE = re.compile(
+    r'\s*(CONFIG_[A-Z0-9_]+)\s*=\s*([yn])(?:\s*#.*)?\s*\Z'
+)
+
+
+class ConfigState:
     def __init__(self, values: Dict[str, str], unknown: Optional[Dict[str, str]] = None):
         self.values = values
         self.unknown = OrderedDict(unknown or {})
