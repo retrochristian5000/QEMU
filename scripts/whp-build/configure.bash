@@ -229,9 +229,6 @@ whp_configure_audio_signature()
 {
     local prefix="$1"
     local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
-    local need_isa_bus=0
-    local need_i8254=0
-    local need_pci=0
     local name
 
     name="${prefix}_AUDIO_SB16"; sb16="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
@@ -290,6 +287,9 @@ whp_configure_write_ppc_device_config()
     local base="$1"
     local output="$2"
     local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local need_isa_bus=0
+    local need_i8254=0
+    local need_pci=0
     local drop_re='^CONFIG_(MAC_NEWWORLD|MAC_OLDWORLD)='
 
     sb16="$(whp_configure_hardware_value PPC_AUDIO_SB16 "${PPC_AUDIO_SB16:-auto}")" || return 1
