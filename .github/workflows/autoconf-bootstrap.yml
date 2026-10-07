@@ -123,13 +123,13 @@ jobs:
 
           fake_m4="$RUNNER_TEMP/non-gnu-m4"
           cat > "$fake_m4" <<'EOF'
-#!/bin/sh
-if [ "${1:-}" = --gnu ] && [ "${2:-}" = --version ]; then
-  printf '%s\n' 'm4 (Apple Inc.) 1.4.18'
-  exit 0
-fi
-exit 2
-EOF
+          #!/bin/sh
+          if [ "${1:-}" = --gnu ] && [ "${2:-}" = --version ]; then
+            printf '%s\n' 'm4 (Apple Inc.) 1.4.18'
+            exit 0
+          fi
+          exit 2
+          EOF
           chmod +x "$fake_m4"
           if (
             cd toolchains/autoconf
