@@ -280,7 +280,47 @@ whp_configure_append_i386_audio_override()
     whp_configure_append_audio_override "$@"
 }
 
-WHP_PPC_DEVICE_CONFIG_SCHEMA=2
+whp_configure_validate_device_config()
+{
+    local path="$1"
+    local line
+    local number=0
+    local symbol
+    local seen='|'
+
+    [[ -f "$path" ]] || {
+        printf 'error: QEMU device preset does not exist: %s\n' "$path" >&2
+        return 1
+    }
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        number=$((number + 1))
+        case "$line" in
+            ''|'#'*) continue ;;
+        esac
+
+        if [[ ! "$line" =~ ^CONFIG_[A-Z0-9_]+=(y|n)$ ]]; then
+            printf '%s\n' \
+                "error: invalid QEMU device preset syntax at $path:$number" \
+                "expected: CONFIG_<UPPERCASE_SYMBOL>=y or CONFIG_<UPPERCASE_SYMBOL>=n" \
+                "found: $line" >&2
+            return 1
+        fi
+
+        symbol="${line%%=*}"
+        case "$seen" in
+            *"|$symbol|"*)
+                printf '%s\n' \
+                    "error: duplicate QEMU device preset symbol at $path:$number: $symbol" \
+                    'Each generated CONFIG_ symbol must be assigned exactly once.' >&2
+                return 1
+                ;;
+        esac
+        seen="$seen$symbol|"
+    done < "$path"
+}
+
+WHP_PPC_DEVICE_CONFIG_SCHEMA=3
 
 whp_configure_write_ppc_device_config()
 {
@@ -346,6 +386,7 @@ whp_configure_write_ppc_device_config()
     whp_configure_append_audio_override "$output" PPC_AUDIO_AC97 "$ac97" CONFIG_AC97 || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_CS4630 "$cs4630" CONFIG_CS4630 || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_HDA "$hda" CONFIG_HDA || return 1
+    whp_configure_validate_device_config "$output" || return 1
 }
 
 whp_configure_write_i386_audio_config()
@@ -375,6 +416,7 @@ whp_configure_write_i386_audio_config()
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_AC97 "${I386_AUDIO_AC97:-auto}" CONFIG_AC97 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_CS4630 "${I386_AUDIO_CS4630:-auto}" CONFIG_CS4630 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_HDA "${I386_AUDIO_HDA:-auto}" CONFIG_HDA || return 1
+    whp_configure_validate_device_config "$output" || return 1
 }
 
 whp_configure_build()
