@@ -103,13 +103,42 @@ jobs:
           "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
 
           if [[ "$RUNNER_OS" == macOS ]]; then
-            grep -Fq "M4=$expected_m4:" "$autoconf_prefix/.whp-autoconf-bootstrap"
+            grep -Fxq "M4_PATH=$expected_m4" "$autoconf_prefix/.whp-autoconf-bootstrap"
+            grep -Fq 'M4_VERSION=m4 (GNU M4)' "$autoconf_prefix/.whp-autoconf-bootstrap"
             grep -Fq "$expected_m4" "$autoconf_prefix/bin/autom4te"
             if grep -Fq "$poison_bin/gm4" "$autoconf_prefix/bin/autom4te"; then
               printf '%s\n' 'error: Autoconf embedded PATH gm4 instead of Homebrew GNU M4' >&2
               exit 1
             fi
           fi
+
+          runtime_smoke="$RUNNER_TEMP/autoconf-runtime-smoke"
+          mkdir -p "$runtime_smoke"
+          printf '%s\n' 'AC_INIT([whp-runtime],[1])' 'AC_OUTPUT' > "$runtime_smoke/configure.ac"
+          (
+            cd "$runtime_smoke"
+            env -u M4 "$autoconf_prefix/bin/autoconf"
+            test -f configure
+          )
+
+          fake_m4="$RUNNER_TEMP/non-gnu-m4"
+          cat > "$fake_m4" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --gnu ] && [ "${2:-}" = --version ]; then
+  printf '%s\n' 'm4 (Apple Inc.) 1.4.18'
+  exit 0
+fi
+exit 2
+EOF
+          chmod +x "$fake_m4"
+          if (
+            cd toolchains/autoconf
+            M4="$fake_m4" ./bootstrap >"$RUNNER_TEMP/non-gnu-m4.out" 2>&1
+          ); then
+            printf '%s\n' 'error: Autoconf source bootstrap accepted non-GNU M4' >&2
+            exit 1
+          fi
+          grep -Fq 'did not identify itself as GNU M4' "$RUNNER_TEMP/non-gnu-m4.out"
 
           again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
             python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"

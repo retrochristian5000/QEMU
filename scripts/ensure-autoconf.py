@@ -29,7 +29,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "3"
+AUTOCONF_BOOTSTRAP_SCHEMA = "4"
 
 BUILD_TARGETS = (
     "bin/autoconf",
@@ -186,12 +186,25 @@ def gnu_m4_version(path: str) -> str:
         check=False,
     )
     output = completed.stdout.strip()
+    first = output.splitlines()[0] if output else "<no version output>"
     if completed.returncode != 0 or "GNU M4" not in output:
-        detail = output.splitlines()[0] if output else "<no version output>"
         raise RuntimeError(
-            f"not GNU M4 with --gnu support: {path}: {detail}"
+            f"not GNU M4 with --gnu support: {path}: {first}"
         )
-    return output.splitlines()[0]
+
+    # Autoconf's maintainer bootstrap deliberately rejects the historical
+    # 1.4.11-1.4.15 strstr bugs. Enforce that boundary before entering the
+    # source bootstrap so macOS failures identify M4 directly.
+    match = re.search(r"(?<![0-9])([0-9]+)\.([0-9]+)(?:\.([0-9]+))?", first)
+    if not match:
+        raise RuntimeError(f"could not parse GNU M4 version: {path}: {first}")
+    version = tuple(int(piece or "0") for piece in match.groups())
+    if version < (1, 4, 16):
+        raise RuntimeError(
+            "GNU M4 1.4.16 or newer is required to bootstrap Autoconf: "
+            f"{path}: {first}"
+        )
+    return first
 
 
 def select_gnu_m4() -> str:
@@ -436,7 +449,7 @@ def suite_usable(prefix: pathlib.Path) -> bool:
     # to prove self-host isolation, so do not let those seed-only sentinels
     # leak into validation of the completed private installation.
     smoke_env = os.environ.copy()
-    for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF"):
+    for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF", "M4"):
         smoke_env.pop(key, None)
 
     with tempfile.TemporaryDirectory(prefix="whp-autoconf-smoke-") as tmp:
@@ -482,7 +495,8 @@ def marker_text(
         f"AUTOCONF_GIT_COMMIT={revision}\n"
         f"AUTOMAKE={automake}: {first_line([automake, '--version'])}\n"
         f"ACLOCAL={aclocal}: {first_line([aclocal, '--version'])}\n"
-        f"M4={m4}: {gnu_m4_version(m4)}\n"
+        f"M4_PATH={m4}\n"
+        f"M4_VERSION={gnu_m4_version(m4)}\n"
         f"PERL={perl}: {first_line([perl, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
         f"SEED_SED={seed}\n"

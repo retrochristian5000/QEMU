@@ -428,10 +428,19 @@ remain upstream developer/release tools, not requirements of the QEMU profile.
 The direct roots for this managed stage are Automake/aclocal, GNU M4, Perl,
 seed GNU Make, a primitive shell, ``realpath``/``mktemp``, and the validated
 sed seed. An explicit ``M4`` remains authoritative. On Darwin, otherwise,
-the standard Homebrew M4 keg locations are checked before PATH so
-``/usr/bin/gm4`` cannot silently outrank an installed GNU M4. The selected
-executable is also mirrored as the bootstrap's literal ``m4`` command so
-Autotools subprocesses cannot rediscover a different implementation.
+the standard Homebrew M4 keg locations are checked before PATH so Apple's
+compatibility M4 cannot silently outrank an installed GNU M4. Admission now
+requires GNU M4 1.4.16 or newer with working ``--gnu`` support, matching the
+maintainer bootstrap's exclusion of the historical strstr-bug releases.
+
+The selected executable is mirrored as the bootstrap's literal ``m4``
+command so Autotools subprocesses cannot rediscover a different
+implementation. The completed Autoconf marker records ``M4_PATH`` and
+``M4_VERSION`` separately. ``host-tools.sh`` validates that path again and
+exports it as the canonical ``M4`` for managed Make, sed, Libtool, libisofs,
+and other later maintainer-source bootstraps. The installed-runtime smoke
+test removes caller ``M4`` first, so an ambient Homebrew tool cannot hide a
+broken M4 path embedded in ``autom4te``.
 
 sed/Automake bootstrap boundary
 -------------------------------

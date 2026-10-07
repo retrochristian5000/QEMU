@@ -145,6 +145,29 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
             AUTOM4TE="$WHP_AUTOCONF_PREFIX/bin/autom4te"
             AUTOHEADER="$WHP_AUTOCONF_PREFIX/bin/autoheader"
             AUTORECONF="$WHP_AUTOCONF_PREFIX/bin/autoreconf"
+
+            # Autoconf embeds its selected GNU M4 path in autom4te.
+            # Promote that exact root dependency for later bootstraps
+            # instead of letting macOS/Homebrew/PATH rediscover M4.
+            WHP_AUTOCONF_MARKER="$WHP_AUTOCONF_PREFIX/.whp-autoconf-bootstrap"
+            M4=
+            while IFS= read -r WHP_AUTOCONF_MARKER_LINE; do
+                case "$WHP_AUTOCONF_MARKER_LINE" in
+                    M4_PATH=*)
+                        M4=${WHP_AUTOCONF_MARKER_LINE#M4_PATH=}
+                        break
+                        ;;
+                esac
+            done < "$WHP_AUTOCONF_MARKER"
+            if [ -z "$M4" ] || [ ! -x "$M4" ] ||
+               ! "$M4" --gnu --version 2>/dev/null | grep -q 'GNU M4'; then
+                printf '%s\n' \
+                    'error: managed Autoconf lost its validated GNU M4 dependency.' >&2
+                exit 1
+            fi
+            export M4
+            printf 'QEMU GNU M4: %s\n' "$M4" >&2
+            unset WHP_AUTOCONF_MARKER WHP_AUTOCONF_MARKER_LINE
         fi
     fi
 

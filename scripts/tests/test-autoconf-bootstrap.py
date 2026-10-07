@@ -27,8 +27,16 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
-    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "3"', "bootstrap schema")
+    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "4"', "bootstrap schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
+    require(helper, "GNU M4 1.4.16 or newer", "GNU M4 bootstrap floor")
+    require(helper, 'f"M4_PATH={m4}\\n"', "M4 path marker")
+    require(helper, 'f"M4_VERSION={gnu_m4_version(m4)}\\n"', "M4 version marker")
+    require(
+        helper,
+        '("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF", "M4")',
+        "installed-runtime M4 isolation",
+    )
     require(
         helper,
         '"/opt/homebrew/opt/m4/bin/m4"',
@@ -90,6 +98,9 @@ def main() -> int:
     require(ledger, "``toolchains/autoconf``", "Autoconf registry row")
     require(ledger, "Autoconf bootstrap boundary", "Autoconf boundary")
     require(ledger, "seed Autoconf/autom4te", "Autoconf cycle guard")
+    require(host_tools, "M4_PATH=", "Autoconf marker M4 promotion")
+    require(host_tools, "export M4", "downstream GNU M4 export")
+    require(host_tools, '"$M4" --gnu --version', "promoted GNU M4 validation")
 
     print("WHP Autoconf bootstrap wiring: verified")
     return 0
