@@ -44,6 +44,7 @@ on:
       - 'scripts/bootstrap-i386-efi-grub.bash'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/common.bash'
+      - 'scripts/whp-build/shell-functions.sh'
       - 'scripts/whp-build/configure.bash'
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/portable-build-entry.py'
@@ -67,6 +68,7 @@ on:
       - 'scripts/tests/test-python-menu-fallback.bash'
       - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-archive-tool-policy.bash'
       - 'scripts/tests/test-vmdk-overflow.py'
       - 'scripts/tests/test-host-cpu-tuning.py'
       - 'scripts/tests/test-host-cpu-tuning.bash'
@@ -163,6 +165,7 @@ jobs:
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-native-llvm-wiring.py
+          bash scripts/tests/test-archive-tool-policy.bash
           python3 scripts/tests/test-vmdk-overflow.py
           python3 scripts/tests/test-test-policy.py
           python3 scripts/tests/test-test-selection.py
@@ -249,6 +252,7 @@ jobs:
           bash -n scripts/whp-build/host-cpu-tuning.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
           bash -n scripts/tests/test-python-menu-fallback.bash
+          bash -n scripts/tests/test-archive-tool-policy.bash
           bash -n scripts/tests/test-whp-config-integration.bash
 
 
