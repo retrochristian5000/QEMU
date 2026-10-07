@@ -27,6 +27,7 @@ on:
       - 'builder.sh'
       - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
+      - 'configs/devices/**'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sdl.py'
