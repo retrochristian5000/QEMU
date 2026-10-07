@@ -37,7 +37,8 @@ printf '%s\n' 'intentional archive failure' >&2
 exit 23
 EOF
 chmod +x "$tmp/ar-broken"
-if whp_archive_toolchain_smoke "$cc" "$tmp/ar-broken" "$ranlib_tool" "$tmp"     >"$tmp/broken.out" 2>&1; then
+if whp_archive_toolchain_smoke "$cc" "$tmp/ar-broken" "$ranlib_tool" "$tmp" \
+    >"$tmp/broken.out" 2>&1; then
     printf '%s\n' 'error: broken AR wrapper passed the capability probe' >&2
     exit 1
 fi
