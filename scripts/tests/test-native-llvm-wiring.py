@@ -38,7 +38,7 @@ assert 'llvm-objdump llvm-readelf llvm-strip' in wrapper
 assert 'native LLVM bootstrap did not provide llvm-lipo' in wrapper
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
-assert 'AR="$NATIVE_LLVM_DIR/bin/llvm-ar"' in build
+assert 'AR="${AR:-$NATIVE_LLVM_DIR/bin/llvm-ar}"' in build
 assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
 configure = (ROOT / 'configure').read_text(encoding='utf-8')
 assert 'ranlib="${RANLIB-${cross_prefix}ranlib}"' in configure
@@ -46,6 +46,10 @@ assert 'echo "ranlib = [$(meson_quote $ranlib)]" >> $cross' in configure
 assert 'preserve_env RANLIB' in configure
 assert 'native LLVM toolchain drifted before QEMU configure' in build
 assert '"RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+assert '"AR:$NATIVE_LLVM_DIR/bin/llvm-ar"' not in build
+assert 'whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR"' in build
+assert 'WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB"' in build
+assert 'whp_archive_tool_signature_now="$AR|$RANLIB"' in build
 drift_index = build.index('native LLVM toolchain drifted before QEMU configure')
 portable_index = build.index('portable_core()')
 libisofs_index = build.index('BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}')
