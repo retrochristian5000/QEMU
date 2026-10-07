@@ -40,6 +40,12 @@ assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
 assert 'AR="$NATIVE_LLVM_DIR/bin/llvm-ar"' in build
 assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+configure = (ROOT / 'configure').read_text(encoding='utf-8')
+assert 'ranlib="${RANLIB-${cross_prefix}ranlib}"' in configure
+assert 'echo "ranlib = [$(meson_quote $ranlib)]" >> $cross' in configure
+assert 'preserve_env RANLIB' in configure
+assert 'native LLVM toolchain drifted before QEMU configure' in build
+assert '"RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
 assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
 assert 'OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"' in build
 assert 'OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"' in build
