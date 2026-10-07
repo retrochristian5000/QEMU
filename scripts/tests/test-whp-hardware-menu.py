@@ -15,20 +15,34 @@ MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 PPC_KCONFIG = ROOT / 'hw' / 'ppc' / 'Kconfig'
 ISA_KCONFIG = ROOT / 'hw' / 'isa' / 'Kconfig'
+AUDIO_KCONFIG = ROOT / 'hw' / 'audio' / 'Kconfig'
+TIMER_KCONFIG = ROOT / 'hw' / 'timer' / 'Kconfig'
 PPC_PREP = ROOT / 'hw' / 'ppc' / 'prep.c'
 I82378 = ROOT / 'hw' / 'isa' / 'i82378.c'
 sys.path.insert(0, str(CONFIG_DIR))
 
 AUDIO_DEVICES = {
-    'SB16': ('Sound Blaster 16 (ISA)', 'CONFIG_SB16'),
-    'ADLIB': ('AdLib (ISA)', 'CONFIG_ADLIB'),
-    'GUS': ('Gravis UltraSound (ISA)', 'CONFIG_GUS'),
-    'CS4231A': ('Crystal CS4231A (ISA)', 'CONFIG_CS4231A'),
+    'SB16': ('Sound Blaster 16 (ISA bus)', 'CONFIG_SB16'),
+    'ADLIB': ('AdLib (ISA bus)', 'CONFIG_ADLIB'),
+    'GUS': ('Gravis UltraSound (ISA bus)', 'CONFIG_GUS'),
+    'CS4231A': ('Crystal CS4231A (ISA bus)', 'CONFIG_CS4231A'),
     'PCSPK': ('PC speaker', 'CONFIG_PCSPK'),
-    'ES1370': ('Ensoniq ES1370 (PCI)', 'CONFIG_ES1370'),
-    'AC97': ("Intel AC'97 (PCI)", 'CONFIG_AC97'),
-    'CS4630': ('Crystal CS4630 (PCI)', 'CONFIG_CS4630'),
-    'HDA': ('Intel HD Audio (PCI)', 'CONFIG_HDA'),
+    'ES1370': ('Ensoniq ES1370 (PCI bus)', 'CONFIG_ES1370'),
+    'AC97': ("Intel AC'97 (PCI bus)", 'CONFIG_AC97'),
+    'CS4630': ('Crystal CS4630 (PCI bus)', 'CONFIG_CS4630'),
+    'HDA': ('Intel HD Audio (PCI bus)', 'CONFIG_HDA'),
+}
+
+PPC_AUDIO_REQUIREMENTS = {
+    'SB16': ('CONFIG_ISA_BUS',),
+    'ADLIB': ('CONFIG_ISA_BUS',),
+    'GUS': ('CONFIG_ISA_BUS',),
+    'CS4231A': ('CONFIG_ISA_BUS',),
+    'PCSPK': ('CONFIG_ISA_BUS', 'CONFIG_I8254'),
+    'ES1370': ('CONFIG_PCI',),
+    'AC97': ('CONFIG_PCI',),
+    'CS4630': ('CONFIG_PCI',),
+    'HDA': ('CONFIG_PCI',),
 }
 
 
@@ -137,6 +151,68 @@ whp_configure_write_ppc_device_config "$1" "$2"
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=n', text)
 
+    def test_ppc_audio_requirements_match_qemu_kconfig(self):
+        audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
+        timer_kconfig = TIMER_KCONFIG.read_text(encoding='utf-8')
+        config = load_module(CONFIG_TOOL, 'whp_config_ppc_requirement_table')
+        table = {
+            suffix: requirements
+            for suffix, _, _, requirements in config.AUDIO_HARDWARE
+        }
+        self.assertEqual(table, PPC_AUDIO_REQUIREMENTS)
+
+        for suffix, (_, symbol) in AUDIO_DEVICES.items():
+            block = kconfig_block(audio_kconfig, symbol.removeprefix('CONFIG_'))
+            direct = PPC_AUDIO_REQUIREMENTS[suffix][-1]
+            self.assertIn(
+                f"depends on {direct.removeprefix('CONFIG_')}",
+                block,
+                suffix,
+            )
+        self.assertIn(
+            'depends on ISA_BUS',
+            kconfig_block(timer_kconfig, 'I8254'),
+        )
+
+    def test_ppc_enabled_audio_adds_minimum_kconfig_requirements(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_ppc_requirements')
+        base = (
+            'CONFIG_ISA_BUS=n\n'
+            'CONFIG_I8254=n\n'
+            'CONFIG_PCI=n\n'
+            'CONFIG_PCI_DEVICES=n\n'
+            'CONFIG_MAC_NEWWORLD=y\n'
+            'CONFIG_MAC_OLDWORLD=y\n'
+        )
+        representative = {
+            'SB16': ('CONFIG_ISA_BUS',),
+            'PCSPK': ('CONFIG_ISA_BUS', 'CONFIG_I8254'),
+            'HDA': ('CONFIG_PCI',),
+        }
+        for suffix, requirements in representative.items():
+            values = config.default_values()
+            values[f'PPC_AUDIO_{suffix}'] = 'y'
+            rendered = config.render_ppc_device_config(values, base)
+            for requirement in requirements:
+                self.assertIn(f'{requirement}=y', rendered)
+                self.assertEqual(rendered.count(requirement + '='), 1)
+            _, device_symbol = AUDIO_DEVICES[suffix]
+            self.assertIn(f'{device_symbol}=y', rendered)
+            self.assertIn('CONFIG_PCI_DEVICES=n', rendered)
+
+    def test_ppc_disabled_audio_does_not_force_bus_requirements(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_ppc_no_requirements')
+        values = config.default_values()
+        values['PPC_AUDIO_SB16'] = 'n'
+        rendered = config.render_ppc_device_config(
+            values,
+            'CONFIG_MAC_NEWWORLD=y\nCONFIG_MAC_OLDWORLD=y\n',
+        )
+        self.assertIn('CONFIG_SB16=n', rendered)
+        self.assertNotIn('CONFIG_ISA_BUS=', rendered)
+        self.assertNotIn('CONFIG_I8254=', rendered)
+        self.assertNotIn('CONFIG_PCI=', rendered)
+
     def test_ppc_audio_hard_dependencies_are_optional(self):
         prep_kconfig = kconfig_block(PPC_KCONFIG.read_text(encoding='utf-8'), 'PREP')
         i82378_kconfig = kconfig_block(ISA_KCONFIG.read_text(encoding='utf-8'), 'I82378')
@@ -149,6 +225,45 @@ whp_configure_write_ppc_device_config "$1" "$2"
         self.assertNotIn('select PCSPK', i82378_kconfig)
         self.assertIn('isa_dev = isa_try_new("cs4231a");', prep_source)
         self.assertIn('pcspk = isa_try_new(TYPE_PC_SPEAKER);', i82378_source)
+
+    def test_ppc_bash_preset_adds_audio_requirements(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            base = td_path / 'default.mak'
+            output = td_path / 'whp-user.mak'
+            base.write_text(
+                'CONFIG_ISA_BUS=n\n'
+                'CONFIG_I8254=n\n'
+                'CONFIG_PCI=n\n'
+                'CONFIG_PCI_DEVICES=n\n'
+                'CONFIG_MAC_NEWWORLD=y\n'
+                'CONFIG_MAC_OLDWORLD=y\n',
+                encoding='utf-8',
+            )
+            script = f'''set -euo pipefail
+source {CONFIGURE_BASH!s}
+CONFIG_MAC_NEWWORLD=y
+CONFIG_MAC_OLDWORLD=y
+PPC_AUDIO_SB16=y
+PPC_AUDIO_PCSPK=y
+PPC_AUDIO_HDA=y
+whp_configure_write_ppc_device_config "$1" "$2"
+'''
+            subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(output)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            text = output.read_text(encoding='utf-8')
+
+        for symbol in (
+            'CONFIG_ISA_BUS', 'CONFIG_I8254', 'CONFIG_PCI',
+            'CONFIG_SB16', 'CONFIG_PCSPK', 'CONFIG_HDA',
+        ):
+            self.assertEqual(text.count(symbol + '='), 1)
+            self.assertIn(f'{symbol}=y', text)
+        self.assertIn('CONFIG_PCI_DEVICES=n', text)
 
     def test_ppc_audio_choice_alone_selects_ppc_custom_preset(self):
         with tempfile.TemporaryDirectory() as td:
