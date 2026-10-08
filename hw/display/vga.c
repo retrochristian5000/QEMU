@@ -1195,6 +1195,7 @@ static void vga_draw_text(VGACommonState *s, int full_update)
     DisplaySurface *surface = qemu_console_surface(s->con);
     int cx, cy, cheight, cw, ch, cattr, height, width, ch_attr;
     int cx_min, cx_max, linesize, x_incr, line, line1;
+    int dirty_start = -1, dirty_xmin = 0, dirty_xmax = 0;
     uint32_t offset, fgcol, bgcol, v, cursor_offset;
     uint8_t *d1, *d, *src, *dest, *cursor_ptr;
     const uint8_t *font_ptr, *font_base[2];
@@ -1378,9 +1379,27 @@ static void vga_draw_text(VGACommonState *s, int full_update)
             src += 4;
             ch_attr_ptr++;
         }
+        /*
+         * A scroll or text-mode redraw can dirty many consecutive rows.
+         * Merge their rectangles before notifying the display backend so
+         * Cocoa and other listeners need not process one event per row.
+         * A clean row terminates the run, keeping sparse updates small.
+         */
         if (cx_max != -1) {
-            qemu_console_update(s->con, cx_min * cw, cy * cheight,
-                                (cx_max - cx_min + 1) * cw, cheight);
+            if (dirty_start < 0) {
+                dirty_start = cy;
+                dirty_xmin = cx_min;
+                dirty_xmax = cx_max;
+            } else {
+                dirty_xmin = MIN(dirty_xmin, cx_min);
+                dirty_xmax = MAX(dirty_xmax, cx_max);
+            }
+        } else if (dirty_start >= 0) {
+            qemu_console_update(s->con, dirty_xmin * cw,
+                                dirty_start * cheight,
+                                (dirty_xmax - dirty_xmin + 1) * cw,
+                                (cy - dirty_start) * cheight);
+            dirty_start = -1;
         }
         dest += linesize * cheight;
         line1 = line + cheight;
@@ -1389,6 +1408,12 @@ static void vga_draw_text(VGACommonState *s, int full_update)
             offset = 0;
         }
         line = line1;
+    }
+    if (dirty_start >= 0) {
+        qemu_console_update(s->con, dirty_xmin * cw,
+                            dirty_start * cheight,
+                            (dirty_xmax - dirty_xmin + 1) * cw,
+                            (height - dirty_start) * cheight);
     }
 }
 
