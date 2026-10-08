@@ -5,7 +5,6 @@ Core99 currently supports a single vCPU.  Revisit the per-CPU hardware
 register contract before increasing that machine's max_cpus limit.
 """
 from pathlib import Path
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
