@@ -116,6 +116,29 @@ reject_managed_flags()
     done
 }
 
+# A bare -threads is not a Mach-O ld64.lld option. LLVM uses the distinct
+# --threads=N spelling; ELF linker switches must not leak into Mach-O links.
+# Reject bad user-supplied LDFLAGS before QEMU's compiler/linker probes.
+reject_invalid_macho_thread_flags()
+{
+    local arg
+    local -a ld_args=()
+
+    read -r -a ld_args <<< "${LDFLAGS:-}"
+    for arg in "${ld_args[@]}"; do
+        case "$arg" in
+            -threads|-threads=*|-Wl,-threads|-Wl,-threads,*|\
+            -Wl,-threads=*|-Xlinker=-threads|\
+            -Wl,--threads|-Xlinker=--threads)
+                printf '%s\n' \
+                    "error: unsupported Mach-O linker thread flag in LDFLAGS: $arg" \
+                    'LLVM ld64.lld uses --threads=N, not -threads.' \
+                    'Use the build JOBS/ThinLTO budget; do not copy ELF linker switches into macOS LDFLAGS.' >&2
+                exit 1
+                ;;
+        esac
+    done
+}
 if [[ "$(uname -s)" != Darwin ]]; then
     printf 'error: scripts/macos-builder.bash must run on macOS\n' >&2
     exit 1
@@ -260,6 +283,7 @@ export STRIP="${STRIP:-/usr/bin/strip}"
 export LIPO="${LIPO:-/usr/bin/lipo}"
 
 reject_managed_flags
+reject_invalid_macho_thread_flags
 WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
     "$MACOSX_DEPLOYMENT_TARGET" "$process_arch")" || exit 1
 export WHP_MACOS_ARCH
