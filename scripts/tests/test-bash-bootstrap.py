@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import importlib.util
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
@@ -59,6 +60,29 @@ def test_macos_arch_identity() -> None:
         pass
     else:
         raise SystemExit("error: unsupported Bash ABI was accepted")
+
+
+def test_arm64e_macho_subtype() -> None:
+    helper = load_helper_module()
+    with tempfile.TemporaryDirectory(prefix="whp-bash-arm64e-header-") as tmp:
+        binary = Path(tmp) / "bash"
+        cases = (
+            ("arm64e", 0xFEEDFACF, 0x0100000C, 2, True),
+            ("arm64e with capability bits", 0xFEEDFACF, 0x0100000C, 0x80000002, True),
+            ("arm64 fallback", 0xFEEDFACF, 0x0100000C, 0, False),
+            ("x86_64", 0xFEEDFACF, 0x01000007, 3, False),
+            ("fat header", 0xCAFEBABE, 0x0100000C, 2, False),
+        )
+        for label, magic, cpu_type, cpu_subtype, expected in cases:
+            binary.write_bytes(struct.pack("<III", magic, cpu_type, cpu_subtype))
+            if helper.mach_o_is_arm64e(binary) != expected:
+                raise SystemExit(f"error: Bash Mach-O subtype check: {label}")
+        binary.write_bytes(b"\\xcf\\xfa")
+        if helper.mach_o_is_arm64e(binary):
+            raise SystemExit("error: truncated Bash Mach-O header was accepted")
+        binary.unlink()
+        if helper.mach_o_is_arm64e(binary):
+            raise SystemExit("error: missing Bash Mach-O binary was accepted")
 
 
 def test_pinned_source_copy_ignores_dirty_checkout() -> None:
@@ -174,6 +198,11 @@ def main() -> int:
     )
     require(helper, '"-isysroot", sdkroot', "macOS Bash SDK routing")
     require(helper, "def macos_arch_usable(", "macOS Bash ABI probe")
+    require(helper, "def mach_o_is_arm64e(", "ARM64e binary subtype check")
+    require(
+        helper, 'arch != "arm64e" or mach_o_is_arm64e(bash_path)',
+        "ARM64e cache executable guard",
+    )
     require(helper, 'f"--build={host_triplet}"', "Bash build triplet routing")
     require(helper, 'f"--host={host_triplet}"', "Bash host triplet routing")
     require(helper, '"support" / "config.sub"', "Bash triplet canonicalization")
@@ -187,6 +216,7 @@ def main() -> int:
             "using the pinned committed source"
         )
     test_macos_arch_identity()
+    test_arm64e_macho_subtype()
     test_pinned_source_copy_ignores_dirty_checkout()
     print("WHP Bash bootstrap wiring: verified")
     return 0
