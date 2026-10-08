@@ -812,7 +812,8 @@ def main() -> int:
             "error: libisofs private install targets drifted: "
             + repr(helper_module.LIBISOFS_INSTALL_TARGETS)
         )
-    if "install-pkgconfigDATA" in helper:
+    # Inspect actual make targets, not comments describing rejected names.
+    if "install-pkgconfigDATA" in helper_module.LIBISOFS_INSTALL_TARGETS:
         raise SystemExit(
             "error: libisofs helper calls nonexistent Automake "
             "install-pkgconfigDATA target"
