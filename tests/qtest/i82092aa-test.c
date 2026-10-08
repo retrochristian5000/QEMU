@@ -12,6 +12,7 @@
 #include "qobject/qlist.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/pci/pci_regs.h"
+#include "hw/pcmcia/i365.h"
 
 #define I82092AA_PCICON         0x40
 #define I82092AA_SOCKET_MASK    0x06
@@ -31,16 +32,6 @@
 #define I82092AA_EXCA_MEM0      0x10
 #define I82092AA_SOCKET_STRIDE  0x40
 
-#define I365_CS_DETECT          0x0c
-#define I365_CS_READY           0x20
-#define I365_CS_POWERON         0x40
-#define I365_PWR_OUT            0x80
-#define I365_VCC_5V             0x10
-#define I365_PC_RESET           0x40
-#define I365_CSC_READY          0x04
-#define I365_CSC_DETECT         0x08
-#define I365_ENA_MEM0           0x01
-#define I365_ENA_IO0            0x40
 
 #define WORLDPORT_ATTR_BASE     0x000d0000
 #define WORLDPORT_IO_BASE       0x0300
@@ -281,7 +272,7 @@ static void test_i82092aa_worldport(void)
     exca_write(dev, bar, I82092AA_EXCA_MEM0 + 3, 0x00);
     exca_write(dev, bar, I82092AA_EXCA_MEM0 + 4, 0x30);
     exca_write(dev, bar, I82092AA_EXCA_MEM0 + 5, 0x7f);
-    exca_write(dev, bar, I82092AA_EXCA_ADDRWIN, I365_ENA_MEM0);
+    exca_write(dev, bar, I82092AA_EXCA_ADDRWIN, I365_ENA_MEM(0));
 
     /* A programmed window is not active until Vcc is on and reset released. */
     g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_STATUS) &
@@ -325,7 +316,7 @@ static void test_i82092aa_worldport(void)
     exca_write(dev, bar, I82092AA_EXCA_IO0 + 3,
                (WORLDPORT_IO_BASE + 7) >> 8);
     exca_write(dev, bar, I82092AA_EXCA_ADDRWIN,
-               I365_ENA_MEM0 | I365_ENA_IO0);
+               I365_ENA_MEM(0) | I365_ENA_IO(0));
 
     /* 16550 scratch-register round trip proves host I/O reaches the card. */
     qtest_outb(qts, WORLDPORT_IO_BASE + 7, 0x5a);
