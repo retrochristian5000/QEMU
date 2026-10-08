@@ -37,6 +37,11 @@
 #define UNINORTH_REG_POWER_MGMT     0x0030
 #define UNINORTH_REG_ARB_CTRL       0x0040
 #define UNINORTH_REG_CPU_NUMBER     0x0050
+/*
+ * Mac99/Core99 currently exposes only the bootstrap processor.  UniNorth
+ * CPU_NUMBER is not the same contract as QEMU's internal CPUState.cpu_index.
+ */
+#define UNINORTH_CPU_NUMBER_BOOT     0x00000000U
 #define UNINORTH_REG_HW_INIT_STATE  0x0070
 
 #define UNINORTH_CLOCK_CNTL_PCI     0x00000001
