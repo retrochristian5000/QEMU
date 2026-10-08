@@ -74,7 +74,7 @@ reject_embedded_lto()
                 -Xlinker=*lto*|-Xlinker=*LTO*)
                     printf '%s\n' \
                         "error: $variable contains an LTO option: $value" \
-                        'The macOS LTO probe adds -flto itself so the option' \
+                        'The macOS ThinLTO probe adds -flto=thin itself so the option' \
                         'cannot arrive through a global flag channel.' >&2
                     exit 1
                     ;;
@@ -100,8 +100,37 @@ cleanup()
 }
 trap cleanup EXIT
 
+set_archive_command()
+{
+    local variable="$1"
+    local fallback="$2"
+    local name="${!variable:-$fallback}"
+    local -a command=()
+
+    case "$name" in
+        *';'*|*'|'*|*'&'*|*'<'*|*'>'*)
+            printf 'error: %s command contains shell operators: %s\n' \
+                "$variable" "$name" >&2
+            exit 1
+            ;;
+    esac
+    read -r -a command <<< "$name"
+    if [[ "${#command[@]}" -eq 0 ]] ||
+       ! command -v "${command[0]}" >/dev/null 2>&1; then
+        printf 'error: unusable %s command: %s\n' "$variable" "$name" >&2
+        exit 1
+    fi
+    if [[ "$variable" == AR ]]; then
+        AR_CMD=("${command[@]}")
+    else
+        RANLIB_CMD=("${command[@]}")
+    fi
+}
 reject_embedded_lto
 set_command "$CC"
+# Match QEMU's archive-tool family as well as its compiler/linker.
+set_archive_command AR /usr/bin/ar
+set_archive_command RANLIB /usr/bin/ranlib
 split_flags "${CPPFLAGS:-}"
 CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 split_flags "${CFLAGS:-}"
@@ -113,6 +142,7 @@ source_a="$MACOS_LTO_PROBE_DIR/lto-a.c"
 source_main="$MACOS_LTO_PROBE_DIR/lto-main.c"
 object_a="$MACOS_LTO_PROBE_DIR/lto-a.o"
 object_main="$MACOS_LTO_PROBE_DIR/lto-main.o"
+archive="$MACOS_LTO_PROBE_DIR/liblto-probe.a"
 output="$MACOS_LTO_PROBE_DIR/lto-probe"
 pipeline="$MACOS_LTO_PROBE_DIR/LTO.link.pipeline"
 
@@ -133,15 +163,17 @@ SOURCE
 "${CC_CMD[@]}" \
     ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
-    -flto -c "$source_a" -o "$object_a"
+    -flto=thin -c "$source_a" -o "$object_a"
 "${CC_CMD[@]}" \
     ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
-    -flto -c "$source_main" -o "$object_main"
-"${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto \
-    "$object_a" "$object_main" -o "$output" \
+    -flto=thin -c "$source_main" -o "$object_main"
+# ThinLTO must survive the archive indexing and extraction used by QEMU.
+"${AR_CMD[@]}" rcs "$archive" "$object_a"
+"${RANLIB_CMD[@]}" "$archive"
+"${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
+    "$object_main" "$archive" -o "$output" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
-
 arches="$(output_arches "$output")"
 case " $arches " in
     *" $host_arch "*) ;;
@@ -158,26 +190,29 @@ if ! "$output"; then
 fi
 
 CCACHE_DISABLE=1 "${CC_CMD[@]}" \
-    ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto \
-    "$object_a" "$object_main" -o "$output.pipeline" \
+    ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
+    "$object_main" "$archive" -o "$output.pipeline" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"} \
     -### 2> "$pipeline" || true
 
 compiler_version="$("${CC_CMD[@]}" --version 2>&1 | sed -n '1p')"
 output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
 {
-    printf 'WHP_MACOS_LTO_SCHEMA=2\n'
+    printf 'WHP_MACOS_LTO_SCHEMA=3\n'
     printf 'QEMU_HOST_LTO=1\n'
     printf 'HOST_ARCH=%s\n' "$host_arch"
     printf 'SDKROOT=%s\n' "$SDKROOT"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
     printf 'CC=%s\n' "$CC"
+    printf 'AR=%s\n' "${AR:-/usr/bin/ar}"
+    printf 'RANLIB=%s\n' "${RANLIB:-/usr/bin/ranlib}"
     printf 'CC_VERSION=%s\n' "$compiler_version"
     printf 'LIPO=%s\n' "${LIPO:-xcrun lipo}"
     printf 'CFLAGS=%s\n' "${CFLAGS:-}"
     printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
     printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
-    printf 'LTO_MODE=full\n'
+    printf 'LTO_MODE=thin\n'
+    printf 'ARCHIVE=%s\n' "$archive"
     printf 'OUTPUT_ARCHES=%s\n' "$arches"
     printf 'OUTPUT_SIGNATURE=%s\n' "$output_signature"
     printf 'LINK_PIPELINE=%s\n' "$pipeline"
