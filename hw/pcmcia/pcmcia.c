@@ -40,6 +40,15 @@ static uint8_t pcmcia_default_attr_read(PCMCIACardState *card,
 {
     PCMCIACardClass *pcc = PCMCIA_CARD_GET_CLASS(card);
 
+    /*
+     * The 16-bit PC Card attribute space is byte-addressed, but CIS tuple
+     * bytes occupy the low byte of successive words (even addresses).
+     * Cards with special attribute layouts can override attr_read.
+     */
+    if ((address & 1) || !pcc->cis) {
+        return 0xff;
+    }
+    address >>= 1;
     if (address < pcc->cis_len) {
         return pcc->cis[address];
     }
