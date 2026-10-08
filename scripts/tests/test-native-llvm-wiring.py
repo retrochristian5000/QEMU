@@ -309,4 +309,18 @@ for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
         '"${cmake_parallel_args[@]}" -- -k 0'
     ) in llvm_bootstrap
 
+# Windows manifest merging is an opt-in native-host utility, independent of
+# QEMU's Meson version.rc resource compiler and Apple's arm64e Mach-O ABI.
+# No libxml2 or llvm-mt edge is allowed into the default LLVM distribution.
+assert 'LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"' in bootstrap
+assert 'NATIVE_LLVM_WINDOWS_MANIFEST must be 0 or 1' in bootstrap
+assert 'llvm_enable_libxml2=OFF' in bootstrap
+assert 'llvm_enable_libxml2=FORCE_ON' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-mt"' in bootstrap
+assert '"-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"' in bootstrap
+assert 'windows_manifest_tool_usable()' in bootstrap
+assert 'windows_manifest_tool_usable "$prefix" || return 1' in bootstrap
+assert '"$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest"' in bootstrap
+assert 'grep -Fq \'WHP.LLVM\'' in bootstrap
+
 print('native LLVM wiring tests: passed')
