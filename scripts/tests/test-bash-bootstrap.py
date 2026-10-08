@@ -77,7 +77,7 @@ def test_arm64e_macho_subtype() -> None:
             binary.write_bytes(struct.pack("<III", magic, cpu_type, cpu_subtype))
             if helper.mach_o_is_arm64e(binary) != expected:
                 raise SystemExit(f"error: Bash Mach-O subtype check: {label}")
-        binary.write_bytes(b"\\xcf\\xfa")
+        binary.write_bytes(bytes((0xCF, 0xFA)))
         if helper.mach_o_is_arm64e(binary):
             raise SystemExit("error: truncated Bash Mach-O header was accepted")
         binary.unlink()
