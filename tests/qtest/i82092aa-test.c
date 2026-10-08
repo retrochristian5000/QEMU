@@ -19,6 +19,10 @@
 
 #define I82092AA_EXCA_IDENT     0x00
 #define I82092AA_EXCA_STATUS    0x01
+#define I82092AA_EXCA_POWER     0x02
+#define I82092AA_EXCA_INTCTL    0x03
+#define I82092AA_EXCA_CSC       0x04
+#define I82092AA_EXCA_CSCINT    0x05
 #define I82092AA_EXCA_ADDRWIN   0x06
 #define I82092AA_EXCA_IO0       0x08
 #define I82092AA_EXCA_MEM0      0x10
@@ -26,6 +30,12 @@
 
 #define I365_CS_DETECT          0x0c
 #define I365_CS_READY           0x20
+#define I365_CS_POWERON         0x40
+#define I365_PWR_OUT            0x80
+#define I365_VCC_5V             0x10
+#define I365_PC_RESET           0x40
+#define I365_CSC_READY          0x04
+#define I365_CSC_DETECT         0x08
 #define I365_ENA_MEM0           0x01
 #define I365_ENA_IO0            0x40
 
@@ -142,8 +152,19 @@ static void test_i82092aa_worldport(void)
     bar = qpci_iomap(dev, 0, NULL);
 
     status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
-    g_assert_cmphex(status & (I365_CS_DETECT | I365_CS_READY), ==,
-                    I365_CS_DETECT | I365_CS_READY);
+    g_assert_cmphex(status & I365_CS_DETECT, ==, I365_CS_DETECT);
+    g_assert_cmphex(status & (I365_CS_READY | I365_CS_POWERON), ==, 0);
+
+    /* Insertion latches detect, but no PCI INTx is sent without a CSC mask. */
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, 0);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC) &
+                    I365_CSC_DETECT, ==, I365_CSC_DETECT);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC), ==, 0);
+
+    /* Enable detect/ready change notifications on the PCI interrupt. */
+    exca_write(dev, bar, I82092AA_EXCA_CSCINT,
+               I365_CSC_DETECT | I365_CSC_READY);
 
     /*
      * Map a 4 KiB host memory window at 0xd0000 to card attribute address 0.
@@ -158,6 +179,23 @@ static void test_i82092aa_worldport(void)
     exca_write(dev, bar, I82092AA_EXCA_MEM0 + 5, 0x7f);
     exca_write(dev, bar, I82092AA_EXCA_ADDRWIN, I365_ENA_MEM0);
 
+    /* A programmed window is not active until Vcc is on and reset released. */
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_STATUS) &
+                    I365_CS_READY, ==, 0);
+    exca_write(dev, bar, I82092AA_EXCA_POWER,
+               I365_PWR_OUT | I365_VCC_5V);
+    status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
+    g_assert_cmphex(status & I365_CS_POWERON, ==, I365_CS_POWERON);
+    g_assert_cmphex(status & I365_CS_READY, ==, 0);
+
+    exca_write(dev, bar, I82092AA_EXCA_INTCTL, I365_PC_RESET);
+    status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
+    g_assert_cmphex(status & (I365_CS_DETECT | I365_CS_READY |
+                              I365_CS_POWERON), ==,
+                    I365_CS_DETECT | I365_CS_READY | I365_CS_POWERON);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC) &
+                    I365_CSC_READY, ==, I365_CSC_READY);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC), ==, 0);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE), ==, 0x15);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 1), ==, 0xff);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 2), ==, 0x35);
@@ -182,6 +220,23 @@ static void test_i82092aa_worldport(void)
 
     /* 16550 scratch-register round trip proves host I/O reaches the card. */
     qtest_outb(qts, WORLDPORT_IO_BASE + 7, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x5a);
+
+    /* Power loss hides card memory/I/O while card-detect remains asserted. */
+    exca_write(dev, bar, I82092AA_EXCA_POWER, 0);
+    status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
+    g_assert_cmphex(status & I365_CS_DETECT, ==, I365_CS_DETECT);
+    g_assert_cmphex(status & (I365_CS_READY | I365_CS_POWERON), ==, 0);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC) &
+                    I365_CSC_READY, ==, I365_CSC_READY);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC), ==, 0);
+
+    /* Power cycling must not silently reset or rewrite the card's COR. */
+    exca_write(dev, bar, I82092AA_EXCA_POWER,
+               I365_PWR_OUT | I365_VCC_5V);
+    g_assert_cmphex(qtest_readb(qts,
+                               WORLDPORT_ATTR_BASE + WORLDPORT_CONFIG_BASE),
+                    ==, 0x01);
     g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x5a);
 
     qpci_iounmap(dev, bar);
