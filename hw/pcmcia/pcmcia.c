@@ -204,10 +204,19 @@ static void pcmcia_card_class_init(ObjectClass *oc, const void *data)
     dc->bus_type = TYPE_PCMCIA_BUS;
 }
 
+static void pcmcia_bus_class_init(ObjectClass *oc, const void *data)
+{
+    BusClass *bc = BUS_CLASS(oc);
+
+    /* One physical 16-bit PC Card fits in each socket. */
+    bc->max_dev = 1;
+}
+
 static const TypeInfo pcmcia_bus_type_info = {
     .name = TYPE_PCMCIA_BUS,
     .parent = TYPE_BUS,
     .instance_size = sizeof(PCMCIABus),
+    .class_init = pcmcia_bus_class_init,
 };
 
 static const TypeInfo pcmcia_card_type_info = {
