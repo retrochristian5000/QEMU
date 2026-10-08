@@ -19,6 +19,61 @@ command -v "$nm_tool" >/dev/null
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/whp-ar-policy.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
+# Required tool roles must fail early and name the missing variable.
+assert_missing_role()
+{
+    role=$1
+    shift
+    if whp_archive_toolchain_smoke "$@" >"$tmp/missing-role.log" 2>&1; then
+        printf 'error: empty %s tool name was accepted\n' "$role" >&2
+        exit 1
+    fi
+    grep -Fq "nonempty $role executable" "$tmp/missing-role.log"
+}
+assert_missing_role CC "" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool"
+assert_missing_role AR "$cc" "" "$ranlib_tool" "$tmp" "$nm_tool"
+assert_missing_role RANLIB "$cc" "$ar_tool" "" "$tmp" "$nm_tool"
+assert_missing_role NM "$cc" "$ar_tool" "$ranlib_tool" "$tmp" ""
+
+# Historical four-argument archive-only callers remain supported.
+whp_archive_toolchain_smoke "$cc" "$ar_tool" "$ranlib_tool" "$tmp"
+
+# The shared Libtool marker parser must reject missing, ambiguous, malformed,
+# relative, and non-executable tool paths without erasing valid selections.
+marker="$tmp/libtool-marker"
+tool_path="$(command -v "$ar_tool")"
+printf 'AR=%s|version unavailable\nARFLAGS=cr\n' "$tool_path" >"$marker"
+test "$(whp_marker_required_tool "$marker" AR)" = "$tool_path"
+test "$(whp_marker_required_value "$marker" ARFLAGS)" = cr
+
+reject_marker()
+{
+    expected=$1
+    if whp_marker_required_tool "$marker" AR >"$tmp/marker.out" 2>"$tmp/marker.err"; then
+        printf 'error: invalid Libtool marker was accepted: %s\n' "$expected" >&2
+        exit 1
+    fi
+    grep -Fq "$expected" "$tmp/marker.err"
+}
+: >"$marker"
+reject_marker 'exactly one AR tool name (found 0)'
+printf 'AR=|unknown\n' >"$marker"
+reject_marker 'empty AR tool name'
+printf 'AR=%s\n' "$tool_path" >"$marker"
+reject_marker 'malformed AR tool identity'
+printf 'AR=relative/ar|unknown\n' >"$marker"
+reject_marker 'AR tool path is not absolute'
+printf 'AR=%s|one\nAR=%s|two\n' "$tool_path" "$tool_path" >"$marker"
+reject_marker 'exactly one AR tool name (found 2)'
+printf 'AR=%s/missing-executable|unknown\n' "$tmp" >"$marker"
+reject_marker 'AR tool is not executable'
+printf 'AR=%s|version unavailable\nARFLAGS=\n' "$tool_path" >"$marker"
+if whp_marker_required_value "$marker" ARFLAGS >"$tmp/flags.out" 2>"$tmp/flags.err"; then
+    printf 'error: empty ARFLAGS marker value was accepted\n' >&2
+    exit 1
+fi
+grep -Fq 'one nonempty ARFLAGS value' "$tmp/flags.err"
+
 # The platform-native archive family should satisfy the capability contract.
 whp_archive_toolchain_smoke "$cc" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool"
 
