@@ -13,6 +13,7 @@
 #include "hw/pci/pci_ids.h"
 #include "hw/pci/pci_regs.h"
 #include "hw/pcmcia/i365.h"
+#include "hw/pcmcia/pcmcia.h"
 
 #define I82092AA_PCICON         0x40
 #define I82092AA_SOCKET_MASK    0x06
@@ -299,6 +300,35 @@ static void test_i82092aa_worldport(void)
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE), ==, 0x15);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 1), ==, 0xff);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 2), ==, 0x35);
+
+    /*
+     * Every CIS tuple must end at the next tuple boundary. This catches
+     * incomplete tuple-length definitions and misplaced attribute bytes.
+     * The synthetic WorldPort CIS is intentionally not a retail ROM dump.
+     */
+    {
+        static const uint8_t expected[] = {
+            CISTPL_VERS_1, CISTPL_FUNCID, CISTPL_FUNCE,
+            CISTPL_CONFIG, CISTPL_CFTABLE_ENTRY, CISTPL_END
+        };
+        unsigned offset = 0;
+
+        for (unsigned i = 0; i < ARRAY_SIZE(expected); i++) {
+            uint8_t code = qtest_readb(qts,
+                                       WORLDPORT_ATTR_BASE + 2 * offset);
+
+            g_assert_cmphex(code, ==, expected[i]);
+            g_assert_cmphex(qtest_readb(qts,
+                                       WORLDPORT_ATTR_BASE + 2 * offset + 1),
+                            ==, 0xff);
+            if (code == CISTPL_END) {
+                break;
+            }
+            offset += 2 + qtest_readb(qts,
+                                       WORLDPORT_ATTR_BASE + 2 * (offset + 1));
+            g_assert_cmpuint(offset, <, 256);
+        }
+    }
 
     /* Enable WorldPort configuration index 1 through its COR. */
     qtest_writeb(qts, WORLDPORT_ATTR_BASE + WORLDPORT_CONFIG_BASE, 0x01);
