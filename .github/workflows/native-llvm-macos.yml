@@ -548,6 +548,8 @@ jobs:
           sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT="$sdkroot"
           export CC="$NATIVE_LLVM_DIR/bin/clang"
+          export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
+          export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
           export LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
           source scripts/macos-arch-policy.bash
           selected_arch="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_MACOS_ARCH=auto \
@@ -562,6 +564,10 @@ jobs:
           scripts/verify-macos-lto.sh
           cat "$MACOS_LTO_MANIFEST"
           grep -Fxq 'QEMU_HOST_LTO=1' "$MACOS_LTO_MANIFEST"
+          grep -Fxq 'WHP_MACOS_LTO_SCHEMA=3' "$MACOS_LTO_MANIFEST"
+          grep -Fxq 'LTO_MODE=thin' "$MACOS_LTO_MANIFEST"
+          grep -Fxq "AR=$AR" "$MACOS_LTO_MANIFEST"
+          grep -Fxq "RANLIB=$RANLIB" "$MACOS_LTO_MANIFEST"
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
           test "$selected_arch" = arm64
