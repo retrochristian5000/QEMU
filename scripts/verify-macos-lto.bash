@@ -138,6 +138,20 @@ C_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 split_flags "${LDFLAGS:-}"
 LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 
+# Match Meson b_lto_threads for the actual link where a power budget exists.
+# Standalone probes without JOBS retain the linker default.
+THINLTO_JOBS_ARG=()
+if [[ -n "${JOBS:-}" ]]; then
+    case "$JOBS" in
+        *[!0-9]*|""|0)
+            printf 'error: ThinLTO JOBS must be a positive integer: %s\n' \
+                "$JOBS" >&2
+            exit 1
+            ;;
+    esac
+    THINLTO_JOBS_ARG=("-flto-jobs=$JOBS")
+fi
+
 source_a="$MACOS_LTO_PROBE_DIR/lto-a.c"
 source_main="$MACOS_LTO_PROBE_DIR/lto-main.c"
 object_a="$MACOS_LTO_PROBE_DIR/lto-a.o"
@@ -172,7 +186,7 @@ SOURCE
 "${AR_CMD[@]}" rcs "$archive" "$object_a"
 "${RANLIB_CMD[@]}" "$archive"
 "${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
-    "$object_main" "$archive" -o "$output" \
+    "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
 arches="$(output_arches "$output")"
 case " $arches " in
@@ -191,7 +205,7 @@ fi
 
 CCACHE_DISABLE=1 "${CC_CMD[@]}" \
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
-    "$object_main" "$archive" -o "$output.pipeline" \
+    "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output.pipeline" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"} \
     -### 2> "$pipeline" || true
 
@@ -212,6 +226,7 @@ output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
     printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
     printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
     printf 'LTO_MODE=thin\n'
+    printf 'LTO_JOBS=%s\n' "${JOBS:-auto}"
     printf 'ARCHIVE=%s\n' "$archive"
     printf 'OUTPUT_ARCHES=%s\n' "$arches"
     printf 'OUTPUT_SIGNATURE=%s\n' "$output_signature"
