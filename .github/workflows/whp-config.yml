@@ -29,6 +29,7 @@ on:
       - 'builder.sh'
       - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
+      - 'scripts/verify-macos-lto.bash'
       - 'configs/devices/**'
       - 'hw/pcmcia/**'
       - 'include/hw/pcmcia/**'
