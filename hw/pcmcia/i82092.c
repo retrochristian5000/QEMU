@@ -60,6 +60,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 #define I365_CSC_ANY               0x0f
 
 #define I365_ENA_IO(map)           (0x40 << (map))
+#define I365_IOCTL_16BIT(map)      (0x01 << ((map) << 2))
 #define I365_ENA_MEM(map)          (0x01 << (map))
 
 #define I365_MEM_REG               0x4000
@@ -169,7 +170,22 @@ static uint64_t i82092aa_card_io_read(void *opaque, hwaddr addr,
     I82092AAWindow *window = opaque;
     PCMCIABus *bus = &window->owner->socket_bus[window->socket];
 
-    return pcmcia_bus_io_read(bus, window->card_base + addr) & 0xff;
+    I82092AAState *s = window->owner;
+    uint32_t card_addr = window->card_base + addr;
+    uint16_t lo = pcmcia_bus_io_read(bus, card_addr) & 0xff;
+
+    if (size == 2) {
+        uint8_t ioctl = s->regs[window->socket * I82092AA_SOCKET_STRIDE +
+                                I365_IOCTL];
+
+        /* A 16-bit card window performs one word transaction. */
+        if (ioctl & I365_IOCTL_16BIT(window->map)) {
+            return pcmcia_bus_io_read(bus, card_addr);
+        }
+        /* In 8-bit mode, a host word access is two byte transactions. */
+        return lo | ((pcmcia_bus_io_read(bus, card_addr + 1) & 0xff) << 8);
+    }
+    return lo;
 }
 
 static void i82092aa_card_io_write(void *opaque, hwaddr addr,
@@ -178,7 +194,20 @@ static void i82092aa_card_io_write(void *opaque, hwaddr addr,
     I82092AAWindow *window = opaque;
     PCMCIABus *bus = &window->owner->socket_bus[window->socket];
 
-    pcmcia_bus_io_write(bus, window->card_base + addr, value);
+    I82092AAState *s = window->owner;
+    uint32_t card_addr = window->card_base + addr;
+
+    if (size == 2) {
+        uint8_t ioctl = s->regs[window->socket * I82092AA_SOCKET_STRIDE +
+                                I365_IOCTL];
+
+        if (!(ioctl & I365_IOCTL_16BIT(window->map))) {
+            pcmcia_bus_io_write(bus, card_addr, value & 0xff);
+            pcmcia_bus_io_write(bus, card_addr + 1, (value >> 8) & 0xff);
+            return;
+        }
+    }
+    pcmcia_bus_io_write(bus, card_addr, value);
 }
 
 static const MemoryRegionOps i82092aa_card_io_ops = {
@@ -187,11 +216,11 @@ static const MemoryRegionOps i82092aa_card_io_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 1,
-        .max_access_size = 1,
+        .max_access_size = 2,
     },
     .impl = {
         .min_access_size = 1,
-        .max_access_size = 1,
+        .max_access_size = 2,
     },
 };
 
