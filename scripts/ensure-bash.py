@@ -11,6 +11,7 @@ import pathlib
 import platform
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -287,6 +288,28 @@ def macos_host_triplet(arch: str, darwin_release: str) -> str:
     return f"{cpu}-apple-darwin{darwin_release}"
 
 
+def mach_o_is_arm64e(path: pathlib.Path) -> bool:
+    """Verify the Mach-O CPU subtype, not just a claimed Bash MACHTYPE.
+
+    A successful compiler invocation or --host=arm64e configure argument
+    does not prove that the linked executable contains an arm64e slice.
+    The managed -arch build is thin, so reject fat/unknown headers here.
+    """
+    try:
+        with path.open("rb") as binary:
+            header = binary.read(12)
+    except OSError:
+        return False
+    if len(header) != 12:
+        return False
+    magic, cpu_type, cpu_subtype = struct.unpack("<III", header)
+    return (
+        magic == 0xFEEDFACF  # MH_MAGIC_64, little-endian
+        and cpu_type == 0x0100000C  # CPU_TYPE_ARM64
+        and (cpu_subtype & 0x00FFFFFF) == 2  # CPU_SUBTYPE_ARM64E
+    )
+
+
 def macos_arch_usable(
     cc: str,
     sdkroot: str,
@@ -309,6 +332,8 @@ def macos_arch_usable(
             check=False,
         )
         if completed.returncode != 0:
+            return False
+        if arch == "arm64e" and not mach_o_is_arm64e(binary):
             return False
         completed = subprocess.run(
             [str(binary)],
@@ -437,6 +462,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         and marker_file.read_text(encoding="utf-8", errors="replace") == marker
         and bash_usable(bash_path)
         and bash_matches_host(bash_path, host_triplet)
+        and (arch != "arm64e" or mach_o_is_arm64e(bash_path))
     ):
         return bash_path
 
@@ -509,6 +535,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     if not bash_usable(bash_path):
         raise RuntimeError(f"bootstrapped Bash is not usable: {bash_path}")
+    if arch == "arm64e" and not mach_o_is_arm64e(bash_path):
+        raise RuntimeError(
+            "bootstrapped Bash is not a thin arm64e Mach-O executable"
+        )
     if host_triplet:
         actual_machtype = bash_machtype(bash_path)
         if actual_machtype != host_triplet:
