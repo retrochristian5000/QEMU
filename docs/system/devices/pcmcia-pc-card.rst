@@ -143,18 +143,28 @@ important limitations:
 Current WHP QEMU status
 -----------------------
 
-The current fork does not yet have a generic PC Card device bus or CardBus
-subsystem.  It now has an initial Intel 82092AA PCI-to-PCMCIA controller model,
-exposed as ``-device i82092aa``.  The model provides the PCI identity/class,
-the BAR0 ExCA index/data interface, one-, two- and four-socket strap profiles,
-the per-socket ``0x40`` register banks, Intel's ``0x84`` identification reset
-value, PCICON writable/strap bits and migration state.
+The fork now contains a reusable 16-bit PC Card bus and abstract card class
+(``hw/pcmcia/pcmcia.c``), an Intel 82092AA PCI-to-PCMCIA bridge
+(``-device i82092aa``), and an initial card profile
+(``-device usr-worldport-v34,bus=pcic.0`` with an 82092AA named
+``id=pcic``).  The bridge provides the PCI identity/class, BAR0 ExCA
+index/data interface, one-, two- and four-socket straps, per-socket
+``0x40`` register banks, Intel's ``0x84`` identification value,
+PCICON controls, and migration state.
 
-The sockets are currently empty: card attachment, CIS/attribute/common/I/O
-forwarding, host-window address translation, card detect and card IRQ delivery
-still depend on a reusable 16-bit PC Card core.  Keeping that boundary explicit
-prevents the controller profile from inventing a card or silently becoming a
-CardBus implementation.
+The core forwards attribute, common-memory and I/O accesses through a card
+model.  The bridge translates host I/O and memory windows into card address
+spaces, reports insertion/removal through card-detect and CSC bits, and
+aggregates card and enabled CSC interrupts onto PCI INTx.  Its windows and
+card-generated interrupts now require socket output power, a selected Vcc and
+a released reset.  Mechanical card detect remains visible without power;
+READY is not asserted while the card is unpowered or held in reset.
+
+This remains **16-bit PC Card** support, not a 32-bit CardBus implementation.
+The WorldPort CIS is explicitly reconstructed from product characteristics,
+not claimed as a recovered retail CIS ROM.  Detailed socket power-switch
+timing, complete voltage and IRQ routing, and additional card families still
+need their own validation.
 
 There are nevertheless useful surviving clues:
 
@@ -187,10 +197,12 @@ BAR0 is a four-byte PCI I/O aperture.  Only offsets ``BASE+0`` and ``BASE+1``
 are implemented as the ExCA index/data pair; the remaining two bytes are not
 invented as registers.  Each socket occupies a ``0x40``-byte indexed bank.
 
-This first-stage controller deliberately stops at the socket boundary.  It
-makes the real silicon profile visible to firmware and operating-system
-drivers, while card insertion, CIS data, memory/I/O window forwarding and
-card-generated interrupts remain work for the generic 16-bit PC Card layer.
+The 82092AA implementation now connects its socket buses to the reusable
+16-bit PC Card layer and supports host-window forwarding.  ExCA POWER and
+INTCTL control card READY and access, while CSCINT gates card-status-change
+PCI interrupts; reading CSC acknowledges pending changes.  This is a
+functional baseline rather than a claim of cycle-accurate power sequencing
+or complete 82365-compatible register behavior.
 
 The current ``i82092aa`` device represents PPEC PCI function 0 only.  The same
 physical 82092AA also exposes PCI function 1 as an Enhanced IDE controller
@@ -274,20 +286,17 @@ Implementation roadmap
 
 A conservative implementation order is:
 
-#. Restore a modernized 16-bit PC Card core from the former upstream QEMU
-   subsystem.  Keep CIS, attribute/common/I/O callbacks and card IRQ state in
-   the card layer, but do not label this core CardBus.
-#. Add an Intel 82365SL family ISA socket controller.  Start with the documented
-   Revision 1 identity, index/data registers, power/reset/status logic, IRQ
-   routing and the two I/O/five memory windows.
-#. Add explicit 82365SL Revision 0 and 82365SL-DF profiles once their differing
-   identification and voltage/power semantics are represented.
-#. Reuse that card-layer work with the existing ``i82092aa`` PCI controller,
-   replacing its currently empty socket boundary with real card attachment,
-   window translation, card-detect and interrupt delivery.
-#. Restore/adapt the former Microdrive/CompactFlash PC Card model as an initial
-   inserted card and add controller/card qtests for CIS reads, window mapping,
-   insertion/ejection and interrupt routing.
+#. **Implemented baseline:** reusable 16-bit PC Card core, the 82092AA PCI
+   controller, a reconstructed WorldPort serial modem card, and QTests for
+   socket profiles, CIS/attribute access, window translation, reset/power
+   gating and CSC reporting.
+#. **Outstanding:** add an Intel 82365SL family ISA controller, beginning with
+   its documented Revision 1 identification, ExCA control/IRQ behavior and
+   two I/O/five memory windows.
+#. **Outstanding:** add separate 82365SL Revision 0 and 82365SL-DF profiles
+   after verifying their differing identification and voltage/power semantics.
+#. **Outstanding:** adapt a historical Microdrive/CompactFlash PC Card model
+   and add storage-specific window, register, interrupt and migration tests.
 #. Add one well-documented ExCA-compatible clone family, preferably Cirrus
    CL-PD67xx, by sharing the 82365 core and implementing only verified
    extensions and power differences.
