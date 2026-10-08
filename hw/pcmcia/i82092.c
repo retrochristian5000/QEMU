@@ -172,20 +172,20 @@ static uint64_t i82092aa_card_io_read(void *opaque, hwaddr addr,
 
     I82092AAState *s = window->owner;
     uint32_t card_addr = window->card_base + addr;
-    uint16_t lo = pcmcia_bus_io_read(bus, card_addr) & 0xff;
 
     if (size == 2) {
         uint8_t ioctl = s->regs[window->socket * I82092AA_SOCKET_STRIDE +
                                 I365_IOCTL];
 
-        /* A 16-bit card window performs one word transaction. */
+        /* A 16-bit card window performs exactly one word transaction. */
         if (ioctl & I365_IOCTL_16BIT(window->map)) {
             return pcmcia_bus_io_read(bus, card_addr);
         }
         /* In 8-bit mode, a host word access is two byte transactions. */
-        return lo | ((pcmcia_bus_io_read(bus, card_addr + 1) & 0xff) << 8);
+        return (pcmcia_bus_io_read(bus, card_addr) & 0xff) |
+               ((pcmcia_bus_io_read(bus, card_addr + 1) & 0xff) << 8);
     }
-    return lo;
+    return pcmcia_bus_io_read(bus, card_addr) & 0xff;
 }
 
 static void i82092aa_card_io_write(void *opaque, hwaddr addr,
