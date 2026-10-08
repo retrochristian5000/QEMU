@@ -925,6 +925,19 @@ Wine has four distinct WHP roles and they must remain distinguishable:
    ``--with-wine-tools=DIR``. Native Wine tools and target Wine artifacts
    therefore form separate build roles.
 
+The native LLVM distribution includes ``llvm-rc`` and ``llvm-windres``
+for Windows resource scripts such as QEMU's ``version.rc``.  It does not
+require ``llvm-mt`` to build those resources.  ``llvm-mt`` merges Windows
+application XML manifests; it does not manage WHP build manifests or Mach-O
+metadata. A downstream PE/COFF CMake consumer may opt in with
+``NATIVE_LLVM_WINDOWS_MANIFEST=1`` when a compatible native libxml2 is
+available. That flag selects ``LLVM_ENABLE_LIBXML2=FORCE_ON`` and installs
+``llvm-mt`` only after checking an actual XML merge. Missing libxml2 is an
+explicit configure failure rather than an unusable manifest-tool executable.
+The default is off, preserving lean ARM64/ARM64e/macOS and other host builds.
+A consumer must select its manifest tool explicitly when necessary; simply
+installing ``llvm-mt`` does not add a QEMU manifest link step.
+
 Do not merge Windows ``arm64ec`` with Apple ``arm64e``. ``arm64ec``
 belongs to the Windows PE/ABI lane; ``arm64e`` belongs to Apple's
 pointer-authenticated Mach-O ABI lane. A spelling resemblance is not an ABI
