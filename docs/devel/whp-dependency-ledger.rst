@@ -142,6 +142,10 @@ by the WHP account.
      - ``ninja-builder``
      - yes
      - host Ninja fallback; requires Python plus a host C++17 compiler.
+   * - ``toolchains/meson``
+     - ``Meson``
+     - yes
+     - ``planned`` Meson source/tooling fork, pinned by gitlink; current QEMU configure uses its Python-venv Meson wheel and does not automatically execute this fork. Fork's current developer version is 1.12.99 and requires Python >= 3.10.
    * - ``toolchains/fast-linker``
      - ``fast-linker``
      - yes
@@ -280,6 +284,28 @@ the QEMU Python virtual environment.  Ninja is also required before normal
 Meson configuration.  A native WHP LLVM build is optional and must not become
 a prerequisite for bootstrapping the compiler that is needed to build LLVM
 itself.
+
+Pinned Meson source boundary
+---------------------------
+
+The WHP fork at ``toolchains/meson`` is available for controlled Meson
+development.  It is a lazily initialized, exact-gitlink-pinned source tree,
+not an unconditional dependency build or a replacement on ``PATH``.
+
+QEMU's configure still installs and invokes its vendored Meson via
+``python/scripts/mkvenv.py``, using the executable in ``pyvenv/bin/meson``.
+Simply pinning the Meson source must not override that selected executable or
+trigger a duplicate Python environment.  The pinned Meson fork currently
+identifies itself as development version ``1.12.99`` and requires Python >=
+3.10, while the existing QEMU Python selection accepts >= 3.9.  Switching to
+the fork must be a separately tested opt-in path with version and interpreter
+validation, not a silent change to production builds.
+
+To inspect the exact source when needed, use
+``git submodule update --init toolchains/meson``.  The configured
+``branch = master`` in ``.gitmodules`` is discovery metadata only; the
+QEMU gitlink determines the revision and must never be replaced by an
+unreviewed branch tip.
 
 Core QEMU dependencies represented by the minimal CI/build metadata include
 GLib/gmodule, zlib, pixman, libffi, and libfdt in addition to the shell,
