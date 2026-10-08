@@ -1,3 +1,8 @@
+config GAMEBLASTER
+    bool
+    default y
+    depends on ISA_BUS
+
 config SB16
     bool
     default y
