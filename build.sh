@@ -537,14 +537,36 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
         # different archiver/linker suite after the LLVM-first selection.
         WHP_LIBTOOL_MARKER="$WHP_LIBTOOL_PREFIX/.whp-libtool-bootstrap"
         whp_libtool_marker_tool()
-        {
-            sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
-                sed -n '1p'
-        }
+        (
+            whp_marker_name=$1
+            whp_marker_path=$(
+                sed -n "s#^$1=\\([^|]*\\)|.*$#\\1#p" "$WHP_LIBTOOL_MARKER" |
+                    sed -n '1p'
+            ) || return 1
+
+            if [ -z "$whp_marker_path" ]; then
+                printf 'error: Libtool marker has no usable %s tool name: %s\n' \
+                    "$whp_marker_name" "$WHP_LIBTOOL_MARKER" >&2
+                return 1
+            fi
+            if [ ! -f "$whp_marker_path" ] || [ ! -x "$whp_marker_path" ]; then
+                printf 'error: Libtool marker %s tool is not executable: %s\n' \
+                    "$whp_marker_name" "$whp_marker_path" >&2
+                return 1
+            fi
+            printf '%s\n' "$whp_marker_path"
+        )
         whp_libtool_marker_value()
-        {
-            sed -n "s#^$1=##p" "$WHP_LIBTOOL_MARKER" | sed -n '1p'
-        }
+        (
+            whp_marker_value=$(sed -n "s#^$1=##p" "$WHP_LIBTOOL_MARKER" |
+                sed -n '1p') || return 1
+            if [ -z "$whp_marker_value" ]; then
+                printf 'error: Libtool marker has no %s value: %s\n' \
+                    "$1" "$WHP_LIBTOOL_MARKER" >&2
+                return 1
+            fi
+            printf '%s\n' "$whp_marker_value"
+        )
         AR=$(whp_libtool_marker_tool AR)
         RANLIB=$(whp_libtool_marker_tool RANLIB)
         NM=$(whp_libtool_marker_tool NM)
