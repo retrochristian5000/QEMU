@@ -272,22 +272,32 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
 
-# Clang can lower known class messages to linker-synthesized symbols such as
-# _objc_msgSendClass$new$_OBJC_CLASS_$_NSTextField.  The pinned WHP ld64.lld
-# currently synthesizes the older _objc_msgSend$selector form only.  Keep that
-# optimization available, but force class sends back to the supported form for
-# this exact native LLVM linker/compiler pairing.  Apple's ld remains free to
-# use the newer class-selector stubs.
-#
-# Mach-O LLD also leaves eager input prefetching disabled by default.  Reuse the
-# build's established parallelism as the default page-in worker count so QEMU's
-# large object/archive set can be faulted in concurrently with linker work.
-# Keep this LLD-specific flag inside the same exact toolchain guard; callers can
-# set NATIVE_LLVM_READ_WORKERS=0 to disable it or choose another non-negative
-# worker count without exposing --read-workers to Apple's system linker.
+# Mach-O LLD's --read-workers is an optional performance extension. It
+# appeared after some of the LLVM versions supported by this fork and can be
+# rejected by a linker built without threading. Probe it through the actual
+# Clang driver before adding it to the host's LDFLAGS; --help alone does not
+# prove that the option works for this binary. Never pass it to Apple ld.
+whp_native_lld_accepts_read_workers()
+{
+    local workers="$1"
+    local -a probe_cc=()
+
+    read -r -a probe_cc <<< "${CC:-clang}"
+    [[ "${#probe_cc[@]}" -gt 0 ]] || return 1
+
+    printf 'int main(void) { return 0; }\n' |
+        "${probe_cc[@]}" -arch "$WHP_MACOS_ARCH" \
+            -isysroot "$SDKROOT" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            -fuse-ld=lld "-Wl,--read-workers=$workers" \
+            -x c - -o /dev/null >/dev/null 2>&1
+}
+
+native_macho_lld=0
 if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
       -n "${NATIVE_LLVM_DIR:-}" &&
       "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
+    native_macho_lld=1
     native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"
     case "$native_lld_read_workers" in
         ''|*[!0-9]*)
@@ -296,16 +306,30 @@ if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
             exit 1
             ;;
     esac
-    whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"
+    # Zero is opt-out: omit the argument entirely, even on new LLD versions.
+    if [[ "$native_lld_read_workers" != 0 ]]; then
+        if whp_native_lld_accepts_read_workers "$native_lld_read_workers"; then
+            whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"
+        elif [[ -n "${NATIVE_LLVM_READ_WORKERS+x}" ]]; then
+            printf 'error: selected ld64.lld does not accept --read-workers=%s\n' \
+                "$native_lld_read_workers" >&2
+            exit 1
+        else
+            printf 'warning: selected ld64.lld cannot use --read-workers; omitting optional link prefetch\n' >&2
+        fi
+    fi
+
+    # This pinned Mach-O LLD does not yet implement class-selector stubs.
     whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"
 fi
 
-# Apple ld applies only its essential optimization set by default.  Use the
-# release linker optimization pass and remove unreachable code/data from QEMU
-# host binaries.  Keep this on the supported Apple Clang path so experimental
-# GNU GCC builds retain their separate linker policy.
+# -dead_strip works with both Apple ld and Mach-O LLD. The Mach-O LLD -O
+# option describes output size, not Apple's release-linker optimization pass.
+# Keep Apple-specific -O2 off the LLVM linker command line.
 if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
-    whp_append_flag LDFLAGS "-Wl,-O2"
+    if [[ "$native_macho_lld" == 0 ]]; then
+        whp_append_flag LDFLAGS "-Wl,-O2"
+    fi
     whp_append_flag LDFLAGS "-Wl,-dead_strip"
 fi
 
