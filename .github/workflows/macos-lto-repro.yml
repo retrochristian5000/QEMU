@@ -33,7 +33,7 @@ jobs:
       BOOTSTRAP_I386_TOOLCHAIN: '0'
       # Keep the sentinel intentionally aggressive even though normal WHP
       # builds now default to -O2. This lane must continue to expose bugs that
-      # require the -O3 + full-LTO combination.
+      # require the -O3 + ThinLTO combination.
       QEMU_HOST_OPTIMIZATION: '3'
       QEMU_HOST_LTO: '1'
       COMPILER_CACHE: ccache
@@ -79,6 +79,22 @@ jobs:
           ./build.sh qemu-system-i386 2>&1 | tee macos-lto-repro.log
           test -x "$BUILD_DIR/qemu-system-i386"
           "$BUILD_DIR/qemu-system-i386" --version
+          grep -Fxq 'WHP_MACOS_LTO_SCHEMA=3' "$BUILD_DIR/.whp-macos-lto"
+          grep -Fxq 'LTO_MODE=thin' "$BUILD_DIR/.whp-macos-lto"
+          python3 - "$BUILD_DIR/meson-info/intro-buildoptions.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding='utf-8') as stream:
+              options = {option['name']: option['value']
+                         for option in json.load(stream)}
+          for name, expected in [('b_lto', True),
+                                 ('b_lto_mode', 'thin'),
+                                 ('b_thinlto_cache', True)]:
+              actual = options.get(name)
+              if actual != expected:
+                  raise SystemExit(f'QEMU Meson {name}: {actual!r} != {expected!r}')
+          PY
           grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
           grep -Fq -- '--extra-cflags=-O3' "$BUILD_DIR/.whp-config"
 
