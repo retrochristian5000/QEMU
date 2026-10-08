@@ -116,24 +116,48 @@ reject_managed_flags()
     done
 }
 
-# A bare -threads is not a Mach-O ld64.lld option. LLVM uses the distinct
-# --threads=N spelling; ELF linker switches must not leak into Mach-O links.
-# Reject bad user-supplied LDFLAGS before QEMU's compiler/linker probes.
-reject_invalid_macho_thread_flags()
+# The WHP LLVM fork accepts -threads and -threads=N. Through Clang, these
+# must be forwarded using -Wl,-threads[=N]; a bare compiler -threads
+# switch is still invalid. Apple ld and older LLD must remain protected.
+# Probe the exact selected Mach-O linker instead of relying on names alone.
+whp_native_lld_accepts_threads()
+{
+    local flag="$1"
+    local -a probe_cc=()
+    read -r -a probe_cc <<< "${CC:-clang}"
+    [[ "${#probe_cc[@]}" -gt 0 ]] || return 1
+
+    printf 'int main(void) { return 0; }\n' |
+        "${probe_cc[@]}" -arch "$WHP_MACOS_ARCH" \
+            -isysroot "$SDKROOT" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            -fuse-ld=lld "$flag" -x c - -o /dev/null >/dev/null 2>&1
+}
+
+validate_macho_thread_flags()
 {
     local arg
     local -a ld_args=()
-
     read -r -a ld_args <<< "${LDFLAGS:-}"
     for arg in "${ld_args[@]}"; do
         case "$arg" in
-            -threads|-threads=*|-Wl,-threads|-Wl,-threads,*|\
-            -Wl,-threads=*|-Xlinker=-threads|\
+            -Wl,-threads|-Wl,-threads=*)
+                if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld && \
+                      -n "${NATIVE_LLVM_DIR:-}" && \
+                      "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]] && \
+                   whp_native_lld_accepts_threads "$arg"; then
+                    continue
+                fi
+                printf '%s\n' \
+                    "error: selected Mach-O linker does not accept $arg" \
+                    'Use the WHP LLVM ld64.lld with -Wl,-threads[=N], or omit this optional flag.' >&2
+                exit 1
+                ;;
+            -threads|-threads=*|-Wl,-threads,*|-Xlinker=-threads|\
             -Wl,--threads|-Xlinker=--threads)
                 printf '%s\n' \
                     "error: unsupported Mach-O linker thread flag in LDFLAGS: $arg" \
-                    'LLVM ld64.lld uses --threads=N, not -threads.' \
-                    'Use the build JOBS/ThinLTO budget; do not copy ELF linker switches into macOS LDFLAGS.' >&2
+                    'Clang needs -Wl,-threads[=N] to forward the WHP LLVM compatibility option.' >&2
                 exit 1
                 ;;
         esac
@@ -283,7 +307,6 @@ export STRIP="${STRIP:-/usr/bin/strip}"
 export LIPO="${LIPO:-/usr/bin/lipo}"
 
 reject_managed_flags
-reject_invalid_macho_thread_flags
 WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
     "$MACOSX_DEPLOYMENT_TARGET" "$process_arch")" || exit 1
 export WHP_MACOS_ARCH
@@ -295,6 +318,8 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     whp_append_flag "$variable" "-isysroot $SDKROOT"
     whp_append_flag "$variable" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 done
+
+validate_macho_thread_flags
 
 # Mach-O LLD's --read-workers is an optional performance extension. It
 # appeared after some of the LLVM versions supported by this fork and can be
