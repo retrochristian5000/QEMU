@@ -104,10 +104,27 @@ Apple Silicon enables it by default. Do not place raw ``-flto`` or related LTO
 linker options in global compiler or linker flags; those flags could leak into
 firmware helpers or nested toolchain builds.
 
-When LTO is enabled, ``scripts/verify-macos-lto.sh`` compiles and links a small
-multi-file program, verifies the Mach-O architecture, executes the result, and
-records the effective linker pipeline. A failed preflight is a compiler/linker
-policy problem, not a reason to inject raw LTO flags globally.
+When LTO is enabled, ``configs/meson/darwin.txt`` requests
+``b_lto_mode=thin`` and ``b_thinlto_cache=true``. Both the Bash and portable
+build entries limit ``b_lto_threads`` to the established macOS job budget.
+Meson still owns compilation and linking: do not inject ``-flto=thin``
+globally, and do not infer that the option is enabled merely because ThinLTO
+mode and caching appear in the native file. Check ``b_lto`` in Meson's
+``meson-info/intro-buildoptions.json`` to verify actual activation.
+
+``scripts/verify-macos-lto.sh`` now compiles separate ``-flto=thin``
+translation units, indexes one with the selected ``AR`` and ``RANLIB``,
+then links through that archive with the selected Clang/linker pipeline.
+It checks the Mach-O architecture, runs the executable, and records
+``LTO_MODE=thin`` and the archive tools in ``.whp-macos-lto``. This catches
+a full-LTO preflight passing while the real ThinLTO link would fail, including
+bitcode archive extraction errors. A failed preflight signals an incompatible
+compiler/archive/linker combination, not permission to inject raw flags.
+
+ThinLTO's cache primarily helps **incremental** re-links; a clean link still
+runs the optimization backends. The cache belongs to the owned Meson build
+tree and is not a substitute for keeping the selected Clang, archiver, and
+Mach-O linker coherent.
 
 Dynamic QEMU modules
 --------------------
