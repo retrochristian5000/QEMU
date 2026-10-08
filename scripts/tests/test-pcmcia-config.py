@@ -80,6 +80,48 @@ class PcmciaConfigTests(unittest.TestCase):
             ],
         )
 
+    def test_qom_type_names_and_socket_cardinality(self):
+        # One source of truth per type, and exact QOM parent chains.
+        # These guard against accidental type renames and card/bus mixups.
+        header = (ROOT / 'include/hw/pcmcia/pcmcia.h').read_text(
+            encoding='utf-8'
+        )
+        core = (ROOT / 'hw/pcmcia/pcmcia.c').read_text(encoding='utf-8')
+        bridge = (ROOT / 'hw/pcmcia/i82092.c').read_text(
+            encoding='utf-8'
+        )
+        modem = (ROOT / 'hw/pcmcia/worldport.c').read_text(
+            encoding='utf-8'
+        )
+        qtest = (ROOT / 'tests/qtest/i82092aa-test.c').read_text(
+            encoding='utf-8'
+        )
+
+        self.assertIn('#define TYPE_PCMCIA_BUS "pcmcia-bus"', header)
+        self.assertIn('#define TYPE_PCMCIA_CARD "pcmcia-card"', header)
+        self.assertIn(
+            'OBJECT_DECLARE_SIMPLE_TYPE(PCMCIABus, PCMCIA_BUS)', header
+        )
+        self.assertIn(
+            'OBJECT_DECLARE_TYPE(PCMCIACardState, PCMCIACardClass, '
+            'PCMCIA_CARD)', header
+        )
+        self.assertIn('.name = TYPE_PCMCIA_BUS,', core)
+        self.assertIn('.parent = TYPE_BUS,', core)
+        self.assertIn('.name = TYPE_PCMCIA_CARD,', core)
+        self.assertIn('.parent = TYPE_DEVICE,', core)
+        self.assertIn('.abstract = true,', core)
+        self.assertIn('dc->bus_type = TYPE_PCMCIA_BUS;', core)
+        self.assertIn('bc->max_dev = 1;', core)
+        self.assertIn('.class_init = pcmcia_bus_class_init,', core)
+        self.assertIn('#define TYPE_I82092AA "i82092aa"', bridge)
+        self.assertIn('.parent = TYPE_PCI_DEVICE,', bridge)
+        self.assertIn('#define TYPE_USR_WORLDPORT_V34 "usr-worldport-v34"',
+                      modem)
+        self.assertIn('.parent = TYPE_PCMCIA_CARD,', modem)
+        self.assertIn('test_pcmcia_type_names', qtest)
+        self.assertIn("Bus 'pcic.0' is full", qtest)
+
     def test_default_pci_device_set_enables_bridge_core_and_card(self):
         resolved = resolved_pcmcia_config(pci=True, pci_devices=True)
         for symbol in ('I82092AA', 'PCMCIA', 'PCMCIA_MODEM', 'SERIAL'):
