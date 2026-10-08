@@ -126,6 +126,30 @@ runs the optimization backends. The cache belongs to the owned Meson build
 tree and is not a substitute for keeping the selected Clang, archiver, and
 Mach-O linker coherent.
 
+LLD-specific LDFLAGS
+--------------------
+
+The macOS wrapper keeps Apple ``ld`` and LLVM ``ld64.lld`` flag policies
+separate. ``-Wl,-dead_strip`` is supported by both. The Apple-style
+``-Wl,-O2`` is not automatically added when the managed Mach-O LLD linker
+is active: LLD's ``-O`` option is documented as an output-size option,
+not the same Apple linker optimization contract.
+
+``-Wl,--read-workers=N`` is an optional Mach-O LLD input-prefetch
+extension. The wrapper first checks that the **selected Clang and linker**
+can complete an actual link with it. If the default job-budget value is
+unsupported, it omits the flag with a warning; it never forwards that
+argument to Apple ``ld``. An explicitly requested unsupported positive
+``NATIVE_LLVM_READ_WORKERS`` fails with an error rather than being silently
+ignored. Setting ``NATIVE_LLVM_READ_WORKERS=0`` omits the option.
+
+The native LLVM bootstrap independently probes whether the previously
+installed ``ld64.lld`` can link before trying the optional worker
+extension. A missing extension must not force an otherwise usable linker
+back to Apple ``ld``. These rules protect both the QEMU host link and
+the LLVM bootstrap; they do not imply that all linker arguments are
+interchangeable between ELF ``ld.lld`` and Mach-O ``ld64.lld``.
+
 Dynamic QEMU modules
 --------------------
 
