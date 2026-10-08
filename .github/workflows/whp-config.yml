@@ -32,6 +32,11 @@ on:
       - 'configs/devices/**'
       - 'hw/pcmcia/**'
       - 'include/hw/pcmcia/**'
+      - 'hw/pci-host/uninorth.c'
+      - 'include/hw/pci-host/uninorth.h'
+      - 'hw/ppc/mac_newworld.c'
+      - 'tests/qtest/macio-timer-test.c'
+      - 'scripts/tests/test-uninorth-cpu-number.py'
       - 'tests/qtest/i82092aa-test.c'
       - 'tests/qtest/meson.build'
       - 'ui/cocoa.m'
@@ -140,6 +145,7 @@ jobs:
           python3 scripts/tests/test-whp-config.py
           python3 scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-pcmcia-config.py
+          python3 scripts/tests/test-uninorth-cpu-number.py
           printf '#include "hw/pcmcia/i365.h"\n_Static_assert(I365_IO(1) == 0x0c, "I/O map");\n_Static_assert(I365_MEM(4) == 0x30, "memory map");\n_Static_assert(I365_ENA_IO(1) == 0x80, "I/O enable");\n_Static_assert(I365_ENA_MEM(4) == 0x10, "memory enable");\n_Static_assert(I365_IOCTL_16BIT(1) == 0x10, "I/O width");\n' | cc -std=c11 -Wall -Wextra -Werror -fsyntax-only -x c -Iinclude -
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-compiler-cache-policy.py
