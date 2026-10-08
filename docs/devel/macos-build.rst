@@ -158,19 +158,25 @@ For LLVM/Clang, the workflow is:
    same TCG/device/I/O mix expected in normal operation; ``--version``
    or QEMU startup alone provides inadequate TCG coverage. Exit QEMU cleanly
    so its profiling runtime can write the profiles.
-3. With a compatible ``llvm-profdata``, merge the generated ``*.profraw``
-   files into ``"$BUILD_DIR/default.profdata"``. Example (from a shell
-   whose directory is the QEMU checkout, with ``BUILD_DIR`` already set)::
+3. Set ``QEMU_HOST_PGO=use``, retain that same ``BUILD_DIR``,
+   and rebuild with unchanged compiler and host ABI settings. Both WHP
+   build adapters run ``scripts/whp-build/pgo-profile.py`` on the validated
+   build tree first. The helper reuses an existing nonempty
+   ``default.profdata`` or, if raw profiles are newer, automatically merges
+   the nonempty ``pgo-raw/*.profraw`` files into it via the selected Clang's
+   sibling ``llvm-profdata`` (or ``LLVM_PROFDATA`` when explicitly set).
+   A failed merge leaves an older indexed profile untouched and stops
+   the build, rather than silently using stale data.
+4. If neither indexed nor raw training data exists, ``use`` fails with
+   instructions to collect a real profile. It does not launch arbitrary
+   QEMU startup probes as a substitute for representative TCG training.
+   When needed, the indexed profile can also be prepared manually::
 
        llvm-profdata merge -output="$BUILD_DIR/default.profdata" "$BUILD_DIR"/pgo-raw/*.profraw
 
-   Ensure the wildcard actually matches non-empty profile files. Meson does
-   **not** merge LLVM raw profiles automatically, and its Clang ``use``
-   compilation expects the indexed ``default.profdata`` in the build tree.
-4. Set ``QEMU_HOST_PGO=use``, keep that same ``BUILD_DIR``, and rebuild
-   with unchanged compiler and host ABI settings. If the build warns about
-   missing or mismatched profile data, stop and regenerate it rather than
-   silently accepting an unprofiled fallback.
+   Meson does not merge raw profiles itself. If the final compiler build
+   detects incompatible or mismatched data, regenerate the profile with
+   the compiler and source revision used for the intended release.
 
 Use an identical ``off`` baseline for benchmarks (same host ABI, compiler,
 LTO, optimization level, guest image, QEMU options and test machine), and

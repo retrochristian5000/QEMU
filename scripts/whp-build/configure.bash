@@ -440,6 +440,12 @@ local host_tag=""
 # configuration so a source checkout or host ABI can never silently take over
 # another tree.
 whp_configure_validate_build_tree_owner || return 1
+# Resolve indexed Clang PGO data before Meson configures -Db_pgo=use.
+# Keep this inside the validated, WHP-owned QEMU build directory.
+if [[ "${QEMU_HOST_PGO:-off}" == use ]]; then
+    "${PYTHON:-python3}" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
+        --build-dir "$BUILD_DIR" --compiler "${CC:-clang}" || return 1
+fi
 host_tag="$(whp_configure_host_tag)"
 
 # Incremental target selection is monotonic.  Reconfiguring QEMU in place to

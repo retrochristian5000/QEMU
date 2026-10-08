@@ -650,6 +650,12 @@ def main(argv: List[str]) -> int:
     artifacts: Dict[str, pathlib.Path] = {}
     try:
         validate_build_tree_owner(build_dir)
+        if resolved_values()['QEMU_HOST_PGO'] == 'use':
+            subprocess.run([
+                sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'),
+                '--build-dir', str(build_dir),
+                '--compiler', os.environ.get('CC', 'clang'),
+            ], check=True)
         write_build_tree_owner(build_dir)
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
         write_portable_config(build_dir, prefix, configure_args)

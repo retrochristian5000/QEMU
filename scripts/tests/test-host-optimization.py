@@ -6,7 +6,10 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shlex
 import subprocess
+import sys
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -14,6 +17,7 @@ CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
 PORTABLE_BUILD_ENTRY = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 BUILDER = ROOT / 'builder.bash'
+PGO_HELPER = ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'
 
 
 def load_config_module():
@@ -213,6 +217,57 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertIn('off|generate|use)', prepare)
         self.assertIn('configure_args+=("-Db_pgo=$QEMU_HOST_PGO")', prepare)
         self.assertNotIn('CFLAGS="-fprofile-', prepare)
+
+
+    def test_pgo_use_requires_profiles_not_just_a_tool(self):
+        with tempfile.TemporaryDirectory() as temp:
+            proc = subprocess.run(
+                [sys.executable, str(PGO_HELPER), '--build-dir', temp],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn('QEMU_HOST_PGO=use requires actual training data',
+                          proc.stderr)
+
+    def test_pgo_use_reuses_existing_indexed_profile(self):
+        with tempfile.TemporaryDirectory() as temp:
+            indexed = pathlib.Path(temp) / 'default.profdata'
+            indexed.write_bytes(b'nonempty test fixture')
+            proc = subprocess.run(
+                [sys.executable, str(PGO_HELPER), '--build-dir', temp],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn('using existing indexed profile', proc.stdout)
+
+    def test_pgo_use_auto_merges_when_raw_profile_is_present(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build_dir = pathlib.Path(temp)
+            raw_dir = build_dir / 'pgo-raw'
+            raw_dir.mkdir()
+            (raw_dir / 'example.profraw').write_bytes(b'raw fixture')
+            tool = build_dir / 'fake-profdata.py'
+            tool.write_text(
+                'import pathlib, sys\\n'
+                'if sys.argv[1] == "merge":\\n'
+                '    output = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("-output="))\\n'
+                '    pathlib.Path(output).write_bytes(b"indexed fixture")\\n'
+                'elif sys.argv[1] == "show":\\n'
+                '    sys.exit(0 if pathlib.Path(sys.argv[2]).read_bytes() == b"indexed fixture" else 1)\\n'
+                'else: sys.exit(1)\\n',
+                encoding='utf-8',
+            )
+            env = os.environ.copy()
+            env['LLVM_PROFDATA'] = (
+                shlex.quote(sys.executable) + ' ' + shlex.quote(str(tool)))
+            proc = subprocess.run(
+                [sys.executable, str(PGO_HELPER), '--build-dir', temp],
+                text=True, capture_output=True, check=False, env=env,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn('merged 1 raw profiles', proc.stdout)
+            self.assertEqual((build_dir / 'default.profdata').read_bytes(),
+                             b'indexed fixture')
 
 
 if __name__ == '__main__':
