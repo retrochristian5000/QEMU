@@ -551,6 +551,7 @@ jobs:
           export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
           export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
           export LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
+          export JOBS=2
           source scripts/macos-arch-policy.bash
           selected_arch="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_MACOS_ARCH=auto \
             whp_select_macos_arch "$CC" "$sdkroot" "$MACOSX_DEPLOYMENT_TARGET" "$(uname -m)")"
@@ -566,6 +567,7 @@ jobs:
           grep -Fxq 'QEMU_HOST_LTO=1' "$MACOS_LTO_MANIFEST"
           grep -Fxq 'WHP_MACOS_LTO_SCHEMA=3' "$MACOS_LTO_MANIFEST"
           grep -Fxq 'LTO_MODE=thin' "$MACOS_LTO_MANIFEST"
+          grep -Fxq 'LTO_JOBS=2' "$MACOS_LTO_MANIFEST"
           grep -Fxq "AR=$AR" "$MACOS_LTO_MANIFEST"
           grep -Fxq "RANLIB=$RANLIB" "$MACOS_LTO_MANIFEST"
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
