@@ -104,6 +104,57 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn('JOBS must be a positive integer', result.stderr)
 
+    def test_portable_lto_mode_controls_meson_and_enablement(self):
+        for mode, expected in (
+            ('auto', None),
+            ('thin', '-Db_lto_mode=thin'),
+            ('full', '-Db_lto_mode=default'),
+        ):
+            with self.subTest(mode=mode):
+                env = os.environ.copy()
+                env.update({
+                    'WHP_PORTABLE_PROBE_ONLY': '1',
+                    'BUILD_QEMU_SYSTEM_PPC': '0',
+                    'BUILD_QEMU_SYSTEM_I386': '1',
+                    'QEMU_HOST_LTO': 'auto',
+                    'QEMU_HOST_LTO_MODE': mode,
+                })
+                proc = subprocess.run(
+                    ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                    text=True, capture_output=True, check=False, env=env,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                if expected is None:
+                    self.assertNotIn('CONFIGURE_ARG=-Db_lto_mode=', proc.stdout)
+                else:
+                    self.assertIn('CONFIGURE_ARG=--enable-lto', proc.stdout)
+                    self.assertIn('CONFIGURE_ARG=' + expected, proc.stdout)
+                if mode == 'full':
+                    self.assertIn('CONFIGURE_ARG=-Db_thinlto_cache=false',
+                                  proc.stdout)
+
+    def test_portable_lto_mode_rejects_disabled_or_invalid_settings(self):
+        for mode, enabled, error in (
+            ('thin', 'n', 'conflicts with disabled QEMU_HOST_LTO'),
+            ('full', 'n', 'conflicts with disabled QEMU_HOST_LTO'),
+            ('invalid', 'auto', 'QEMU_HOST_LTO_MODE must be one of'),
+        ):
+            with self.subTest(mode=mode, enabled=enabled):
+                env = os.environ.copy()
+                env.update({
+                    'WHP_PORTABLE_PROBE_ONLY': '1',
+                    'BUILD_QEMU_SYSTEM_PPC': '0',
+                    'BUILD_QEMU_SYSTEM_I386': '1',
+                    'QEMU_HOST_LTO': enabled,
+                    'QEMU_HOST_LTO_MODE': mode,
+                })
+                proc = subprocess.run(
+                    ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                    text=True, capture_output=True, check=False, env=env,
+                )
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn(error, proc.stderr)
+
     def test_bash_path_applies_optimization_after_firmware_preparation(self):
         builder = BUILDER.read_text(encoding='utf-8')
         firmware_index = builder.index('whp_prepare_mold')
