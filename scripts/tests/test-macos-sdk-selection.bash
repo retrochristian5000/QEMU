@@ -120,6 +120,15 @@ EOF
 
 cat > "$CLANG" <<'EOF'
 #!/usr/bin/env bash
+for arg in "$@"; do
+    case "$arg" in
+        -Wl,--read-workers=*)
+            if [[ "${TEST_LLD_READ_WORKERS:-accept}" == reject ]]; then
+                exit 1
+            fi
+            ;;
+    esac
+done
 case "${1:-}" in
     --version) printf 'Apple clang version 16.0.0\n' ;;
     -dumpmachine|-print-target-triple)
@@ -139,6 +148,7 @@ cat > "$FAKE_BIN/build-bash" <<EOF
 #!/usr/bin/env bash
 for argument in "\$@"; do
     if [[ "\$argument" == "$SOURCE_DIR/builder.sh" ]]; then
+        printf 'LDFLAGS=%s\n' "\${LDFLAGS:-}"
         printf 'builder reached\n'
         exit 0
     fi
@@ -373,5 +383,71 @@ if grep -Eq '^(ar|nm|ranlib|strip)[[:space:]]*=' "$darwin_native"; then
     cat "$darwin_native" >&2
     exit 1
 fi
+
+# Native LLVM's --read-workers is optional: older / threadless ld64.lld
+# builds must not receive it, while the supported linker keeps it. The tests
+# capture the exported linker command actually handed to builder.sh.
+native_tools="$TEST_DIR/native-llvm"
+mkdir -p "$native_tools/bin"
+printf '#!/bin/sh\nexit 0\n' > "$native_tools/bin/ld64.lld"
+chmod +x "$native_tools/bin/ld64.lld"
+
+linker_env=(
+    SDKROOT="$SELECTED_SDK"
+    MACOSX_DEPLOYMENT_TARGET=13.0
+    WHP_BUILD_BASH="$FAKE_BIN/build-bash"
+    NATIVE_LLVM_DIR="$native_tools"
+    LD="$native_tools/bin/ld64.lld"
+    NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+    CC="$CLANG"
+    CXX="$CLANGXX"
+)
+link_reject="$TEST_DIR/llvm-reject-read-workers"
+if ! env "${linker_env[@]}" TEST_LLD_READ_WORKERS=reject \
+    JOBS=3 BUILD_DIR="$TEST_DIR/linker-reject-build" \
+    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-reject-tools" \
+    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_reject" 2>&1; then
+    cat "$link_reject" >&2
+    exit 1
+fi
+grep -Fq 'omitting optional link prefetch' "$link_reject"
+grep -Fq -- '-Wl,-dead_strip' "$link_reject"
+if grep '^LDFLAGS=' "$link_reject" | grep -Eq -- '(--read-workers|-Wl,-O2)'; then
+    printf 'error: unsupported LLVM LDFLAGS leaked into the host build\n' >&2
+    exit 1
+fi
+
+link_accept="$TEST_DIR/llvm-accept-read-workers"
+env "${linker_env[@]}" TEST_LLD_READ_WORKERS=accept \
+    JOBS=3 BUILD_DIR="$TEST_DIR/linker-accept-build" \
+    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-accept-tools" \
+    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_accept" 2>&1
+grep '^LDFLAGS=' "$link_accept" | grep -Fq -- '-Wl,--read-workers=3'
+if grep '^LDFLAGS=' "$link_accept" | grep -Fq -- '-Wl,-O2'; then
+    printf 'error: Apple-only -O2 was passed to Mach-O LLD\n' >&2
+    exit 1
+fi
+
+link_zero="$TEST_DIR/llvm-zero-read-workers"
+env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=0 \
+    TEST_LLD_READ_WORKERS=reject JOBS=3 \
+    BUILD_DIR="$TEST_DIR/linker-zero-build" \
+    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-zero-tools" \
+    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_zero" 2>&1
+if grep '^LDFLAGS=' "$link_zero" | grep -Fq -- '--read-workers'; then
+    printf 'error: explicit zero must omit optional LLD workers entirely\n' >&2
+    exit 1
+fi
+
+link_forced="$TEST_DIR/llvm-forced-read-workers"
+if env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=4 \
+    TEST_LLD_READ_WORKERS=reject JOBS=3 \
+    BUILD_DIR="$TEST_DIR/linker-forced-build" \
+    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-forced-tools" \
+    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_forced" 2>&1; then
+    printf 'error: unsupported explicit LLD read workers were silently accepted\n' >&2
+    exit 1
+fi
+grep -Fq 'does not accept --read-workers=4' "$link_forced"
 
 printf 'macOS SDK selection tests: passed\n'
