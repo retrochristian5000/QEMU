@@ -10,6 +10,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
+#include "hw/pcmcia/i365.h"
 #include "hw/pcmcia/pcmcia.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
@@ -30,40 +31,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 #define I82092AA_PCICON_WRMASK     0x39
 #define I82092AA_PPIRR             0x50
 
-#define I365_IDENT                 0x00
-#define I365_STATUS                0x01
-#define I365_POWER                 0x02
-#define I365_INTCTL                0x03
-#define I365_CSC                   0x04
-#define I365_CSCINT                0x05
-#define I365_ADDRWIN               0x06
-#define I365_IOCTL                 0x07
-#define I365_GENCTL                0x16
-#define I365_GBLCTL                0x1e
-
-#define I365_IO(map)               (0x08 + ((map) << 2))
-#define I365_MEM(map)              (0x10 + ((map) << 3))
-#define I365_W_START               0
-#define I365_W_STOP                2
-#define I365_W_OFF                 4
-
-#define I365_CS_DETECT             0x0c
-#define I365_CS_READY              0x20
-#define I365_CS_POWERON            0x40
-
-#define I365_PWR_OUT               0x80
-#define I365_VCC_MASK              0x18
-#define I365_PC_RESET              0x40
-
-#define I365_CSC_DETECT            0x08
-#define I365_CSC_READY             0x04
-#define I365_CSC_ANY               0x0f
-
-#define I365_ENA_IO(map)           (0x40 << (map))
-#define I365_IOCTL_16BIT(map)      (0x01 << ((map) << 2))
-#define I365_ENA_MEM(map)          (0x01 << (map))
-
-#define I365_MEM_REG               0x4000
 
 typedef struct I82092AAWindow {
     MemoryRegion mr;
