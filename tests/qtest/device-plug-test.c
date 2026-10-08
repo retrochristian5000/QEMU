@@ -53,6 +53,67 @@ static void process_device_remove(QTestState *qtest, const char *id)
     wait_device_deleted_event(qtest, id);
 }
 
+/*
+ * An unsuccessful PCI device_add must not reserve its acpi-index forever.
+ * Exercise both validation before bus registration (bad ROM size) and
+ * failure during registration (occupied PCI slot), then check duplicate
+ * rejection and successful unplug/reuse.
+ */
+static void test_pci_acpi_index_failure_cleanup(void)
+{
+    QTestState *qts;
+    QDict *response;
+
+    if (!qtest_has_device("virtio-mouse-pci")) {
+        g_test_skip("virtio-mouse-pci is not available");
+        return;
+    }
+
+    qts = qtest_init("-machine pc -nodefaults");
+
+    response = qtest_qmp(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'invalid-rom',"
+        " 'addr': '0x06', 'acpi-index': 101, 'romsize': 3}}");
+    g_assert(qdict_haskey(response, "error"));
+    qobject_unref(response);
+
+    /* The rejected ROM must not poison index 101. */
+    qtest_qmp_assert_success(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'index-owner',"
+        " 'addr': '0x06', 'acpi-index': 101}}");
+
+    response = qtest_qmp(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'occupied-slot',"
+        " 'addr': '0x06', 'acpi-index': 202}}");
+    g_assert(qdict_haskey(response, "error"));
+    qobject_unref(response);
+
+    /* The occupied-slot failure must also release index 202. */
+    qtest_qmp_assert_success(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'second-device',"
+        " 'addr': '0x07', 'acpi-index': 202}}");
+
+    /* Live duplicate indexes must still be rejected. */
+    response = qtest_qmp(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'duplicate-index',"
+        " 'addr': '0x08', 'acpi-index': 101}}");
+    g_assert(qdict_haskey(response, "error"));
+    qobject_unref(response);
+
+    process_device_remove(qts, "index-owner");
+    qtest_qmp_assert_success(qts,
+        "{'execute': 'device_add', 'arguments': {"
+        " 'driver': 'virtio-mouse-pci', 'id': 'reused-index',"
+        " 'addr': '0x06', 'acpi-index': 101}}");
+
+    qtest_quit(qts);
+}
+
 static void test_pci_unplug_request(void)
 {
     QTestState *qtest;
@@ -229,6 +290,12 @@ int main(int argc, char **argv)
                        test_spapr_memory_unplug_request);
         qtest_add_func("/device-plug/spapr-phb-unplug-request",
                        test_spapr_phb_unplug_request);
+    }
+
+    if ((!strcmp(arch, "i386") || !strcmp(arch, "x86_64")) &&
+        qtest_has_machine("pc")) {
+        qtest_add_func("/device-plug/pci-acpi-index-failure-cleanup",
+                       test_pci_acpi_index_failure_cleanup);
     }
 
     if (!strcmp(arch, "x86_64") && qtest_has_machine("q35")) {
