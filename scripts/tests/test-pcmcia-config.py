@@ -3,6 +3,7 @@
 
 import importlib.util
 import pathlib
+import re
 import sys
 import unittest
 from typing import Optional
@@ -121,6 +122,68 @@ class PcmciaConfigTests(unittest.TestCase):
         self.assertIn('.parent = TYPE_PCMCIA_CARD,', modem)
         self.assertIn('test_pcmcia_type_names', qtest)
         self.assertIn("Bus 'pcic.0' is full", qtest)
+
+    def test_shared_cis_and_exca_definitions(self):
+        cis = (ROOT / 'include/hw/pcmcia/pcmcia.h').read_text(
+            encoding='utf-8'
+        )
+        exca = (ROOT / 'include/hw/pcmcia/i365.h').read_text(
+            encoding='utf-8'
+        )
+        controller = (ROOT / 'hw/pcmcia/i82092.c').read_text(
+            encoding='utf-8'
+        )
+        qtest = (ROOT / 'tests/qtest/i82092aa-test.c').read_text(
+            encoding='utf-8'
+        )
+        modem = (ROOT / 'hw/pcmcia/worldport.c').read_text(
+            encoding='utf-8'
+        )
+
+        def check_definitions(source, expected):
+            found = dict(re.findall(
+                r'(?m)^#define\\s+(CISTPL_\\w+|I365_\\w+)\\s+'
+                r'(0x[0-9a-fA-F]+)\\b', source
+            ))
+            for name, value in expected.items():
+                self.assertIn(name, found)
+                self.assertEqual(int(found[name], 16), value, name)
+
+        check_definitions(cis, {
+            'CISTPL_CHECKSUM': 0x10,
+            'CISTPL_LONGLINK_A': 0x11,
+            'CISTPL_LONGLINK_C': 0x12,
+            'CISTPL_VERS_1': 0x15,
+            'CISTPL_CONFIG': 0x1a,
+            'CISTPL_CFTABLE_ENTRY': 0x1b,
+            'CISTPL_MANFID': 0x20,
+            'CISTPL_FUNCID': 0x21,
+            'CISTPL_FUNCE': 0x22,
+            'CISTPL_FUNCID_SERIAL': 0x02,
+            'CISTPL_SERIAL_UART_16550': 0x02,
+            'CISTPL_END': 0xff,
+        })
+        check_definitions(exca, {
+            'I365_IDENT': 0x00,
+            'I365_POWER': 0x02,
+            'I365_INTCTL': 0x03,
+            'I365_CSC': 0x04,
+            'I365_CSCINT': 0x05,
+            'I365_CS_DETECT': 0x0c,
+            'I365_CS_READY': 0x20,
+            'I365_PWR_OUT': 0x80,
+            'I365_VCC_5V': 0x10,
+            'I365_PC_RESET': 0x40,
+            'I365_CSC_DETECT': 0x08,
+            'I365_CSC_READY': 0x04,
+            'I365_MEM_REG': 0x4000,
+        })
+        for source in (controller, qtest):
+            self.assertIn('#include "hw/pcmcia/i365.h"', source)
+            self.assertNotRegex(source, r'(?m)^#define I365_')
+        self.assertIn('#include "hw/core/qdev-properties.h"', modem)
+        self.assertIn('CISTPL_CONFIG, CISTPL_CFTABLE_ENTRY, CISTPL_END',
+                      qtest)
 
     def test_default_pci_device_set_enables_bridge_core_and_card(self):
         resolved = resolved_pcmcia_config(pci=True, pci_devices=True)
