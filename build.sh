@@ -451,8 +451,8 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     CC="$NATIVE_LLVM_DIR/bin/clang"
     CXX="$NATIVE_LLVM_DIR/bin/clang++"
     AR="${AR:-$NATIVE_LLVM_DIR/bin/llvm-ar}"
-    RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
-    NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
+    RANLIB="${RANLIB:-$NATIVE_LLVM_DIR/bin/llvm-ranlib}"
+    NM="${NM:-$NATIVE_LLVM_DIR/bin/llvm-nm}"
     OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"
     OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"
     READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"
@@ -463,8 +463,8 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM \
         OBJCOPY OBJDUMP READELF STRIP OBJC PATH
 
-    whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
-    WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB"
+    whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" "$NM" || exit 1
+    WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB|$NM"
 
     # Darwin host links must consume the same LLVM revision that produced the
     # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
@@ -609,28 +609,13 @@ if [ "$WHP_HOST_OS" = macos ] &&
 fi
 
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
-    # RANLIB and NM remain part of the managed LLVM producer/consumer
-    # boundary.  AR is intentionally looser: explicit compatible archivers
-    # are accepted after an actual compile/archive/index/read capability probe.
-    for whp_tool_spec in \
-        "RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
-        "NM:$NATIVE_LLVM_DIR/bin/llvm-nm"; do
-        whp_tool_name=${whp_tool_spec%%:*}
-        whp_tool_expected=${whp_tool_spec#*:}
-        eval "whp_tool_actual=\${$whp_tool_name:-}"
-        if [ "$whp_tool_actual" != "$whp_tool_expected" ]; then
-            printf '%s\n' \
-                "error: native LLVM toolchain drifted before QEMU configure:" \
-                "  $whp_tool_name=$whp_tool_actual" \
-                "  expected $whp_tool_expected" >&2
-            exit 1
-        fi
-    done
-    unset whp_tool_spec whp_tool_name whp_tool_expected whp_tool_actual
-
-    whp_archive_tool_signature_now="$AR|$RANLIB"
+    # Libtool may select a different archive family. Keep explicit RANLIB/NM
+    # wrappers and compatible alternatives rather than enforcing binary paths,
+    # but require the exact Clang -> AR -> RANLIB -> NM capability chain to
+    # succeed whenever a tool changed. This also rejects wrong-format NM tools.
+    whp_archive_tool_signature_now="$AR|$RANLIB|$NM"
     if [ "$whp_archive_tool_signature_now" != "$WHP_ARCHIVE_TOOL_SIGNATURE" ]; then
-        whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" || exit 1
+        whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" "$NM" || exit 1
     fi
     unset whp_archive_tool_signature_now WHP_ARCHIVE_TOOL_SIGNATURE
 fi
