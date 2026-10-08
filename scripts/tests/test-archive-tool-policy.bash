@@ -30,7 +30,7 @@ cat > "$tmp/ar-wrapper" <<EOF
 exec "$real_ar" "\$@"
 EOF
 chmod +x "$tmp/ar-wrapper"
-whp_archive_toolchain_smoke "$cc" "$tmp/ar-wrapper" "$ranlib_tool" "$tmp"
+whp_archive_toolchain_smoke "$cc" "$tmp/ar-wrapper" "$ranlib_tool" "$tmp" "$nm_tool"
 
 # RANLIB and NM wrappers are also judged by capability, not pathname.
 real_ranlib="$(command -v "$ranlib_tool")"
