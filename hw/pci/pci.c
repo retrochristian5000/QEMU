@@ -122,7 +122,10 @@ static const VMStateDescription vmstate_pcibus = {
 
 static gint g_cmp_uint32(gconstpointer a, gconstpointer b, gpointer user_data)
 {
-    return a - b;
+    uint32_t lhs = GPOINTER_TO_UINT(a);
+    uint32_t rhs = GPOINTER_TO_UINT(b);
+
+    return (lhs > rhs) - (lhs < rhs);
 }
 
 static GSequence *pci_acpi_index_list(void)
@@ -133,6 +136,22 @@ static GSequence *pci_acpi_index_list(void)
         used_acpi_index_list = g_sequence_new(NULL);
     }
     return used_acpi_index_list;
+}
+
+static void pci_acpi_index_release(PCIDevice *dev)
+{
+    GSequence *used_indexes;
+    GSequenceIter *iter;
+
+    if (!dev->acpi_index) {
+        return;
+    }
+
+    used_indexes = pci_acpi_index_list();
+    iter = g_sequence_lookup(used_indexes, GINT_TO_POINTER(dev->acpi_index),
+                             g_cmp_uint32, NULL);
+    assert(iter);
+    g_sequence_remove(iter);
 }
 
 static void pci_set_master(PCIDevice *d, bool enable)
@@ -1520,16 +1539,8 @@ static void pci_qdev_unrealize(DeviceState *dev)
 
     pci_dev->msi_trigger = NULL;
 
-    /*
-     * clean up acpi-index so it could reused by another device
-     */
-    if (pci_dev->acpi_index) {
-        GSequence *used_indexes = pci_acpi_index_list();
-
-        g_sequence_remove(g_sequence_lookup(used_indexes,
-                          GINT_TO_POINTER(pci_dev->acpi_index),
-                          g_cmp_uint32, NULL));
-    }
+    /* Make this index available to subsequent PCI hotplug requests. */
+    pci_acpi_index_release(pci_dev);
 }
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
@@ -2306,6 +2317,12 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
+    /* Reject invalid ROM sizes before reserving an ACPI index. */
+    if (pci_dev->romsize != UINT32_MAX && !is_power_of_2(pci_dev->romsize)) {
+        error_setg(errp, "ROM size %u is not a power of two", pci_dev->romsize);
+        return;
+    }
+
     /*
      * make sure that acpi-index is unique across all present PCI devices
      */
@@ -2324,11 +2341,6 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
                                  g_cmp_uint32, NULL);
     }
 
-    if (pci_dev->romsize != UINT32_MAX && !is_power_of_2(pci_dev->romsize)) {
-        error_setg(errp, "ROM size %u is not a power of two", pci_dev->romsize);
-        return;
-    }
-
     /* initialize cap_present for pci_is_express() and pci_config_size(),
      * Note that hybrid PCIs are not set automatically and need to manage
      * QEMU_PCI_CAP_EXPRESS manually */
@@ -2344,14 +2356,17 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
     pci_dev = do_pci_register_device(pci_dev,
                                      object_get_typename(OBJECT(qdev)),
                                      pci_dev->devfn, errp);
-    if (pci_dev == NULL)
+    if (pci_dev == NULL) {
+        pci_acpi_index_release(PCI_DEVICE(qdev));
         return;
+    }
 
     if (pc->realize) {
         pc->realize(pci_dev, &local_err);
         if (local_err) {
             error_propagate(errp, local_err);
             do_pci_unregister_device(pci_dev);
+            pci_acpi_index_release(pci_dev);
             return;
         }
     }
