@@ -257,6 +257,7 @@ jobs:
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/verify-macos-lto.bash
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/host-cpu-tuning.bash
           bash -n scripts/tests/test-host-cpu-tuning.bash
