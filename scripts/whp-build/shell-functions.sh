@@ -10,6 +10,7 @@ whp_archive_toolchain_smoke()
     whp_ar=${2:-}
     whp_ranlib=${3:-}
     whp_work_root=${4:-${TMPDIR:-/tmp}}
+    whp_nm=${5:-}
 
     for whp_tool in "$whp_cc" "$whp_ar" "$whp_ranlib"; do
         [ -n "$whp_tool" ] || {
@@ -29,6 +30,23 @@ whp_archive_toolchain_smoke()
             return 1
         }
     done
+
+    # NM is optional for callers that only need archive creation. Native LLVM
+    # consumers pass it explicitly so the probe also qualifies symbol reading.
+    if [ -n "$whp_nm" ]; then
+        case "$whp_nm" in
+            *[[:space:]]*)
+                printf 'error: archive-tool smoke requires one executable for NM: %s\n' \
+                    "$whp_nm" >&2
+                return 1
+                ;;
+        esac
+        command -v "$whp_nm" >/dev/null 2>&1 || {
+            printf 'error: archive-tool NM executable is unavailable: %s\n' \
+                "$whp_nm" >&2
+            return 1
+        }
+    fi
 
     mkdir -p "$whp_work_root" || return 1
     whp_probe_dir=$(mktemp -d "$whp_work_root/.whp-ar-smoke.XXXXXX") || return 1
@@ -51,6 +69,14 @@ EOF
     elif ! "$whp_ar" t "$whp_probe_dir/libwhp-ar-smoke.a" \
         >"$whp_log" 2>&1; then
         whp_stage='read archive table'
+    elif [ -n "$whp_nm" ] &&
+         ! "$whp_nm" -P -g "$whp_probe_dir/libwhp-ar-smoke.a" \
+            >"$whp_log" 2>&1; then
+        whp_stage='inspect archive symbols'
+    elif [ -n "$whp_nm" ] &&
+         ! grep -Eq '(^|[[:space:]])_?whp_archive_probe[[:space:]]+T([[:space:]]|$)' \
+            "$whp_log"; then
+        whp_stage='verify archive symbols'
     else
         return 0
     fi
