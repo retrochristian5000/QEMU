@@ -197,6 +197,29 @@ static void test_keylargo_timer_precision(void)
     qtest_quit(qts);
 }
 
+/*
+ * QTest MMIO accesses are not issued by a guest execution thread.  Mac99
+ * nevertheless has a valid bootstrap CPU_NUMBER (zero) for its sole CPU,
+ * independent of the absent current_cpu context.
+ */
+static void test_mac99_uninorth_boot_cpu(void)
+{
+    QTestState *qts = qtest_init("-M mac99 -nodefaults");
+
+    g_assert_cmphex(read_be32(qts, UNINORTH_REG_BASE +
+                                   UNINORTH_REG_CPU_NUMBER),
+                    ==, UNINORTH_CPU_NUMBER_BOOT);
+    g_assert_cmphex(read_be32(qts, UNINORTH_REG_BASE +
+                                   UNINORTH_REG_VERSION),
+                    ==, UNINORTH_VERSION_10A);
+    /* Repeated accesses must not inherit a stale vCPU context. */
+    g_assert_cmphex(read_be32(qts, UNINORTH_REG_BASE +
+                                   UNINORTH_REG_CPU_NUMBER),
+                    ==, UNINORTH_CPU_NUMBER_BOOT);
+
+    qtest_quit(qts);
+}
+
 static void test_sawtooth_uninorth_registers(void)
 {
     QTestState *qts;
@@ -218,7 +241,7 @@ static void test_sawtooth_uninorth_registers(void)
                     ==, UNINORTH_VERSION_10A);
     g_assert_cmphex(read_be32(qts,
                              UNINORTH_REG_BASE + UNINORTH_REG_CPU_NUMBER),
-                    ==, 0);
+                    ==, UNINORTH_CPU_NUMBER_BOOT);
 
     write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_CLOCK_CNTL, clocks);
     g_assert_cmphex(read_be32(qts,
@@ -280,6 +303,8 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ppc/macio/keylargo-timer-precision",
                    test_keylargo_timer_precision);
+    qtest_add_func("/ppc/uninorth/mac99-boot-cpu",
+                   test_mac99_uninorth_boot_cpu);
     qtest_add_func("/ppc/uninorth/sawtooth-registers",
                    test_sawtooth_uninorth_registers);
     qtest_add_func("/ppc/macio/sawtooth-screamer-registers",
