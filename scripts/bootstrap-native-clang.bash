@@ -483,21 +483,35 @@ bootstrap_linker_args+=(
 bootstrap_linker_name=system
 if [[ "$host_os" == macos && "$darwin_cmake_arch" != arm64e &&
       -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
+    # First validate that the installed ld64.lld can link at all. Newer
+    # optional performance flags must not decide which linker is selected.
     if printf 'int main(void) { return 0; }\n' |
         PATH="$TOOLCHAIN_DIR/bin:$PATH" \
             "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
-            -Wl,--read-workers="$LLVM_LINK_JOBS" \
             -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
             -x c++ - -o /dev/null >/dev/null 2>&1; then
         PATH="$TOOLCHAIN_DIR/bin:$PATH"
         export PATH
         bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"
+
+        # --read-workers was added later than the basic Mach-O LLD link path.
+        # A thread-disabled or older linker may reject it. Probe separately
+        # and never carry an unsupported argument into CMake LDFLAGS.
+        bootstrap_lld_link_flags=
+        if printf 'int main(void) { return 0; }\n' |
+            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
+                -Wl,--read-workers="$LLVM_LINK_JOBS" \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -x c++ - -o /dev/null >/dev/null 2>&1; then
+            bootstrap_lld_link_flags="-Wl,--read-workers=$LLVM_LINK_JOBS"
+        fi
         bootstrap_linker_args=(
             "-DLLVM_USE_LINKER=lld"
-            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
-            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
-            "-DCMAKE_MODULE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"
+            "-DCMAKE_EXE_LINKER_FLAGS=$bootstrap_lld_link_flags"
+            "-DCMAKE_SHARED_LINKER_FLAGS=$bootstrap_lld_link_flags"
+            "-DCMAKE_MODULE_LINKER_FLAGS=$bootstrap_lld_link_flags"
         )
     fi
 fi
