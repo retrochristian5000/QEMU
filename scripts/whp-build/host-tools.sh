@@ -512,6 +512,15 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
             unset NINJA_DIR
             ;;
     esac
+    # The bundled Ninja supports a bounded *automatic* job count, which
+    # protects ad-hoc Meson/Ninja calls lacking -j.  Explicit -j remains
+    # authoritative, and host/system Ninja is not assigned a new policy.
+    case "$NINJA_CMD" in
+        */.whp-host-tools/ninja-*/ninja|*/.whp-host-tools/ninja-*/ninja.exe)
+            NINJA_AUTO_JOBS=${NINJA_AUTO_JOBS:-2}
+            export NINJA_AUTO_JOBS
+            ;;
+    esac
     NINJA=$NINJA_CMD
     export NINJA_CMD NINJA PATH
 fi

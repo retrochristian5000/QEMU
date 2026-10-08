@@ -406,6 +406,24 @@ def bootstrap_environment(
     return bootstrap_env
 
 
+def bootstrap_job_limit() -> int:
+    """Limit the final self-rebuild, not the serial first-stage compiler.
+
+    NINJA_BOOTSTRAP_JOBS is an explicit override. The ordinary QEMU JOBS
+    budget may further reduce the conservative two-job bootstrap default.
+    Neither setting changes the cached binary's ABI or artifact identity.
+    """
+    explicit = os.environ.get('NINJA_BOOTSTRAP_JOBS', '')
+    ordinary = os.environ.get('JOBS', '')
+    value = explicit or ordinary or '2'
+    if not value.isascii() or not value.isdecimal():
+        raise RuntimeError('NINJA_BOOTSTRAP_JOBS/JOBS must be a positive integer')
+    jobs = int(value)
+    if jobs < 1 or jobs > 2147483647:
+        raise RuntimeError('NINJA_BOOTSTRAP_JOBS/JOBS must be between 1 and 2147483647')
+    return jobs if explicit else min(2, jobs)
+
+
 def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
@@ -468,8 +486,11 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
             file=sys.stderr,
         )
     try:
+        jobs = bootstrap_job_limit()
+        print(f'Bundled Ninja final self-rebuild jobs: {jobs}', file=sys.stderr)
         subprocess.run(
-            [sys.executable, str(staged_source / 'configure.py'), '--bootstrap'],
+            [sys.executable, str(staged_source / 'configure.py'), '--bootstrap',
+             '--bootstrap-jobs', str(jobs)],
             cwd=bootstrap_dir,
             env=bootstrap_env,
             stdout=sys.stderr,

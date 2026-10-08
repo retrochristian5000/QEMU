@@ -14,6 +14,8 @@ on:
       - 'scripts/tests/test-bundled-ninja-fallback.py'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-ninja-macos-host-compiler.py'
+      - 'scripts/tests/test-ninja-memory-budget.py'
+      - 'scripts/whp-build/host-tools.sh'
       - '.github/workflows/bundled-ninja-fallback.yml'
   workflow_dispatch:
 
@@ -42,12 +44,14 @@ jobs:
             scripts/ensure-ninja.py \
             scripts/tests/test-bundled-ninja-fallback.py \
             scripts/tests/test-compiler-cache-policy.py \
-            scripts/tests/test-ninja-macos-host-compiler.py
+            scripts/tests/test-ninja-macos-host-compiler.py \
+            scripts/tests/test-ninja-memory-budget.py
           sh -n build.sh
           sh -n builder.sh
           python3 scripts/tests/test-bundled-ninja-fallback.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-ninja-macos-host-compiler.py
+          python3 scripts/tests/test-ninja-memory-budget.py
 
       - name: Bootstrap pinned Ninja through compiler cache
         shell: bash
@@ -89,6 +93,18 @@ jobs:
           first="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
           test -x "$first"
           "$first" --version
+
+          # The fork caps only automatically chosen jobs; an explicit -j
+          # remains authoritative.  Probe parser behavior on the built binary.
+          NINJA_AUTO_JOBS=1 "$first" -h >"$RUNNER_TEMP/ninja-auto-help" 2>&1 || true
+          grep -Fq '[default=1 on this system]' "$RUNNER_TEMP/ninja-auto-help"
+          NINJA_AUTO_JOBS=1 "$first" -j 3 -h >"$RUNNER_TEMP/ninja-explicit-help" 2>&1 || true
+          grep -Fq '[default=3 on this system]' "$RUNNER_TEMP/ninja-explicit-help"
+          if NINJA_AUTO_JOBS=invalid "$first" -h >"$RUNNER_TEMP/ninja-bad-budget" 2>&1; then
+            echo 'error: Ninja accepted invalid auto-job budget' >&2
+            exit 1
+          fi
+          grep -Fq 'invalid NINJA_AUTO_JOBS' "$RUNNER_TEMP/ninja-bad-budget"
           marker="$(dirname "$first")/.whp-ninja-tool"
           test -f "$marker"
           test -d "$RUNNER_TEMP/.whp-compiler-cache"
