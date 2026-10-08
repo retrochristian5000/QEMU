@@ -191,21 +191,22 @@ assert '${NATIVE_LLVM_LDFLAG:-}' in macos_builder
 assert '"${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld"' in macos_builder
 assert 'whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"' in macos_builder
 
-# Mach-O LLD's eager input-page prefetch path is disabled unless --read-workers
-# is supplied. Reuse QEMU's established JOBS policy by default, while allowing
-# a native-linker-only override (including 0 to disable) without leaking this
-# LLD-specific option to Apple's system linker.
+# --read-workers is a relatively new, optional LLD setting. Do not pass it
+# to Apple ld, older LLD, or LLD compiled without threads. A real link probe
+# gates the flag; an explicit unsupported request is rejected, while the
+# automatic default is safely omitted.
 assert 'native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"' in macos_builder
 assert 'NATIVE_LLVM_READ_WORKERS must be a non-negative integer' in macos_builder
+assert 'whp_native_lld_accepts_read_workers "$native_lld_read_workers"' in macos_builder
 assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' in macos_builder
+assert 'omitting optional link prefetch' in macos_builder
+assert 'if [[ "$native_macho_lld" == 0 ]]; then' in macos_builder
+assert 'whp_append_flag LDFLAGS "-Wl,-dead_strip"' in macos_builder
 
-# Rebuilding the native Darwin toolchain may reuse the previously installed
-# ld64.lld for ordinary arm64. arm64e is deliberately excluded because the
-# current WHP Mach-O LLD backend does not implement authenticated-pointer
-# relocations; those links must stay on Apple ld. Probe the exact reusable LLD,
-# keep the two-link Ninja pool, and use the same bounded count for Mach-O LLD's
-# input prefetch workers. A missing or incompatible installed linker must leave
-# the system-linker path untouched so cold bootstraps still work.
+# Rebuilding the native Darwin toolchain may reuse an installed ld64.lld,
+# except on arm64e. Test the base linker before optional read-workers so an
+# unsupported performance option cannot disable working Mach-O LLD reuse.
+# Missing or incompatible installed linkers retain the Apple ld fallback.
 assert 'bootstrap_linker_args=()' in bootstrap
 assert '"$host_os" == macos && "$darwin_cmake_arch" != arm64e &&' in bootstrap
 assert '-x "$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
@@ -213,7 +214,11 @@ assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
 assert '"$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld' in bootstrap
 assert '-Wl,--read-workers="$LLVM_LINK_JOBS"' in bootstrap
 assert '"-DLLVM_USE_LINKER=lld"' in bootstrap
-assert '"-DCMAKE_EXE_LINKER_FLAGS=-Wl,--read-workers=$LLVM_LINK_JOBS"' in bootstrap
+assert 'bootstrap_lld_link_flags=' in bootstrap
+assert '"-DCMAKE_EXE_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
+assert '"-DCMAKE_SHARED_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
+assert '"-DCMAKE_MODULE_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
+assert bootstrap.index('bootstrap_lld_link_flags=') < bootstrap.index('bootstrap_linker_args=(', bootstrap.index('bootstrap_lld_link_flags='))
 assert '"${bootstrap_linker_args[@]}"' in bootstrap
 assert 'WHP native LLVM bootstrap linker:' in bootstrap
 assert 'local clang_link_driver=("$prefix/bin/clang")' in bootstrap
