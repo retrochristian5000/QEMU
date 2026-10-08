@@ -8,6 +8,8 @@
 #include "libqtest.h"
 #include "libqos/pci.h"
 #include "libqos/pci-pc.h"
+#include "qobject/qdict.h"
+#include "qobject/qlist.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/pci/pci_regs.h"
 
@@ -107,6 +109,56 @@ static void test_i82092aa_profile(unsigned sockets, uint8_t socket_strap)
     qtest_quit(qts);
 }
 
+/* Guard the public QOM names and parent hierarchy against type drift. */
+static void test_pcmcia_type_names(void)
+{
+    QTestState *qts;
+    QDict *response;
+    QList *types;
+    QListEntry *entry;
+    bool have_bus = false;
+    bool have_card = false;
+    bool have_controller = false;
+    bool have_worldport = false;
+
+    qts = qtest_init("-nodefaults -M pc -display none");
+    response = qtest_qmp(qts,
+        "{'execute': 'qom-list-types', 'arguments': {'abstract': true}}");
+    g_assert_true(qdict_haskey(response, "return"));
+    types = qdict_get_qlist(response, "return");
+
+    QLIST_FOREACH_ENTRY(types, entry) {
+        QDict *type = qobject_to(QDict, qlist_entry_obj(entry));
+        const char *name = qdict_get_str(type, "name");
+        const char *parent = qdict_get_try_str(type, "parent");
+
+        if (!strcmp(name, "pcmcia-bus")) {
+            g_assert_cmpstr(parent, ==, "bus");
+            have_bus = true;
+        } else if (!strcmp(name, "pcmcia-card")) {
+            g_assert_cmpstr(parent, ==, "device");
+            g_assert_true(qdict_get_bool(type, "abstract"));
+            have_card = true;
+        } else if (!strcmp(name, "i82092aa")) {
+            g_assert_cmpstr(parent, ==, "pci-device");
+            have_controller = true;
+        } else if (!strcmp(name, "usr-worldport-v34")) {
+            g_assert_cmpstr(parent, ==, "pcmcia-card");
+            have_worldport = true;
+        }
+    }
+
+    g_assert_true(have_bus);
+    g_assert_true(have_card);
+    g_assert_true(have_controller);
+    if (qtest_has_device("usr-worldport-v34")) {
+        g_assert_true(have_worldport);
+    }
+
+    qobject_unref(response);
+    qtest_quit(qts);
+}
+
 static void test_i82092aa_1socket(void)
 {
     test_i82092aa_profile(1, I82092AA_SOCKET_1);
@@ -151,6 +203,23 @@ static void test_i82092aa_worldport(void)
     g_assert_nonnull(dev);
     qpci_device_enable(dev);
     bar = qpci_iomap(dev, 0, NULL);
+
+    /*
+     * QOM must recognize the socket as full before attempting to realize a
+     * second card on the same 16-bit PCMCIA bus.
+     */
+    {
+        QDict *reply = qtest_qmp(qts,
+            "{'execute': 'device_add', 'arguments': {"
+            " 'driver': 'usr-worldport-v34', 'id': 'duplicate-card',"
+            " 'bus': 'pcic.0'}}");
+        QDict *error = qdict_get_qdict(reply, "error");
+
+        g_assert_nonnull(error);
+        g_assert_nonnull(strstr(qdict_get_str(error, "desc"),
+                                "Bus 'pcic.0' is full"));
+        qobject_unref(reply);
+    }
 
     status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
     g_assert_cmphex(status & I365_CS_DETECT, ==, I365_CS_DETECT);
@@ -283,6 +352,7 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
+    qtest_add_func("/i82092aa/qom-type-names", test_pcmcia_type_names);
     qtest_add_func("/i82092aa/1-socket", test_i82092aa_1socket);
     qtest_add_func("/i82092aa/2-socket", test_i82092aa_2socket);
     qtest_add_func("/i82092aa/4-socket", test_i82092aa_4socket);
