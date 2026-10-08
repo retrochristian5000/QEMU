@@ -12,6 +12,7 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "hw/char/serial.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/pcmcia/pcmcia.h"
 #include "migration/vmstate.h"
 #include "system/memory.h"
