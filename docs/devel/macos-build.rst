@@ -104,7 +104,17 @@ Apple Silicon enables it by default. Do not place raw ``-flto`` or related LTO
 linker options in global compiler or linker flags; those flags could leak into
 firmware helpers or nested toolchain builds.
 
-When LTO is enabled, ``configs/meson/darwin.txt`` requests
+In menuconfig, **LTO mode (ThinLTO or full)** selects
+``QEMU_HOST_LTO_MODE=auto|thin|full``. The default ``auto`` preserves
+the previous behavior: Darwin prefers ThinLTO, other hosts retain Meson's
+default full-LTO mode. Explicit ``thin`` selects ``b_lto_mode=thin``;
+explicit ``full`` selects Meson's ``b_lto_mode=default`` and disables
+the ThinLTO cache. Either explicit mode enables the host LTO toggle if
+that toggle is ``auto``; choosing a mode while LTO is disabled is an
+error. The selected compiler and linker must support that mode. This
+does not enable LTO in firmware or native LLVM bootstrap stages.
+
+When LTO is enabled on Darwin, ``configs/meson/darwin.txt`` defaults to
 ``b_lto_mode=thin`` and ``b_thinlto_cache=true``. Both the Bash and portable
 build entries limit ``b_lto_threads`` to the established macOS job budget.
 Meson still owns compilation and linking: do not inject ``-flto=thin``
@@ -112,13 +122,13 @@ globally, and do not infer that the option is enabled merely because ThinLTO
 mode and caching appear in the native file. Check ``b_lto`` in Meson's
 ``meson-info/intro-buildoptions.json`` to verify actual activation.
 
-``scripts/verify-macos-lto.sh`` now compiles separate ``-flto=thin``
-translation units, indexes one with the selected ``AR`` and ``RANLIB``,
-then links through that archive with the selected Clang/linker pipeline.
-It checks the Mach-O architecture, runs the executable, and records
-``LTO_MODE=thin`` and the archive tools in ``.whp-macos-lto``. This catches
-a full-LTO preflight passing while the real ThinLTO link would fail, including
-bitcode archive extraction errors. A failed preflight signals an incompatible
+``scripts/verify-macos-lto.sh`` compiles separate translation units using
+the selected LTO mode, indexes one with the selected ``AR`` and ``RANLIB``,
+then links through that archive with the selected compiler/linker pipeline.
+It checks the Mach-O architecture, executes the result, and records the
+actual ``LTO_MODE`` and archive tools in ``.whp-macos-lto``. This catches
+mismatches where a full-LTO preflight passes but ThinLTO archive extraction
+fails (or vice versa). A failed preflight signals an incompatible
 compiler/archive/linker combination, not permission to inject raw flags.
 
 ThinLTO's cache primarily helps **incremental** re-links; a clean link still
@@ -221,6 +231,10 @@ Useful overrides
 
 ``QEMU_HOST_LTO``
   Enable or disable QEMU host LTO without leaking the policy into firmware.
+
+``QEMU_HOST_LTO_MODE``
+  Select ``auto``, ``thin``, or ``full`` through menuconfig. Defaults to
+  the original host policy; explicit modes require LTO to be enabled.
 
 ``QEMU_HOST_MODULES``
   Select dynamic QEMU modules. ``auto`` enables them on macOS, ``1`` forces

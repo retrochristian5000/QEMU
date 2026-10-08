@@ -99,6 +99,13 @@ whp_mold_link_probe "$fakebin/mold"
 grep -Fq 'ar rcs ' "$log"
 grep -Fq ' -flto -fuse-ld=mold ' "$log"
 
+# Explicit ThinLTO must reach the real compiler/archive/linker probe.
+: > "$log"
+QEMU_HOST_LTO_MODE=thin
+whp_mold_link_probe "$fakebin/mold"
+[[ "$(grep -Fc ' -flto=thin -c ' "$log")" -eq 2 ]]
+grep -Fq ' -flto=thin -fuse-ld=mold ' "$log"
+
 grep -Fq '[submodule "toolchains/fast-linker"]' "$SOURCE_DIR/.gitmodules"
 grep -Fq 'url = https://github.com/retrochristian5000/fast-linker.git' \
     "$SOURCE_DIR/.gitmodules"

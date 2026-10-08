@@ -52,6 +52,7 @@ class WhpConfigTests(unittest.TestCase):
         mod = load_module()
         values = mod.default_values()
         self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
+        self.assertEqual(values['QEMU_HOST_LTO_MODE'], 'auto')
         self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
         self.assertEqual(values['BOOTSTRAP_PYTHON'], 'auto')
         self.assertEqual(values['BOOTSTRAP_MAKE'], 'auto')
@@ -68,6 +69,24 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
+
+    def test_lto_mode_menu_shell_and_save_roundtrip(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['QEMU_HOST_LTO_MODE']
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.choices, ('auto', 'thin', 'full'))
+        values = mod.default_values()
+        values['QEMU_HOST_LTO_MODE'] = 'thin'
+        self.assertIn("QEMU_HOST_LTO_MODE='thin'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(mod.render_config(mod.ConfigState(values)),
+                            encoding='utf-8')
+            self.assertEqual(mod.load_config(path).values['QEMU_HOST_LTO_MODE'],
+                             'thin')
+        with self.assertRaises(ValueError):
+            mod.validate_value(option, 'invalid')
 
     def test_run_tests_is_user_controlled_build_behavior(self):
         mod = load_module()
@@ -152,6 +171,7 @@ class WhpConfigTests(unittest.TestCase):
         assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
         for key in (
             'QEMU_HOST_LTO',
+            'QEMU_HOST_LTO_MODE',
             'QEMU_HOST_MODULES',
             'BOOTSTRAP_SDL',
             'MACOS_ENABLE_COCOA',

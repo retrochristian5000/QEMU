@@ -233,6 +233,11 @@ case "$cc_family" in
                 'warning: disabling QEMU_HOST_LTO for the GNU GCC macOS path.' \
                 'GCC LTO requires a separate plugin-aware ar/nm/linker policy.' >&2
         fi
+        if [[ "${QEMU_HOST_LTO_MODE:-auto}" != auto ]]; then
+            printf '%s\n' \
+                'error: explicit QEMU_HOST_LTO_MODE requires a supported Clang LTO toolchain on macOS.' >&2
+            return 1 2>/dev/null || exit 1
+        fi
         export QEMU_HOST_LTO=0
         MACOS_EFFECTIVE_COMPILER_FAMILY=gcc
         ;;

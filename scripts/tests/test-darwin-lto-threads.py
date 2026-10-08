@@ -27,10 +27,11 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
 
     def test_macos_preflight_matches_meson_thinlto(self):
         text = LTO_PROBE.read_text(encoding='utf-8')
-        self.assertEqual(text.count('-flto=thin'), 5)
-        self.assertNotIn('LTO_MODE=full', text)
-        self.assertNotIn(' -flto -c ', text)
-        self.assertIn("printf 'LTO_MODE=thin\\n'", text)
+        self.assertIn('auto|thin) lto_mode=thin; lto_flag=-flto=thin', text)
+        self.assertIn('full) lto_mode=full; lto_flag=-flto', text)
+        self.assertIn('"$lto_flag" -c "$source_a"', text)
+        self.assertIn('"$lto_flag" -c "$source_main"', text)
+        self.assertIn("printf 'LTO_MODE=%s\\n' \"$lto_mode\"", text)
         self.assertIn('WHP_MACOS_LTO_SCHEMA=3', text)
         self.assertIn('"${AR_CMD[@]}" rcs "$archive" "$object_a"', text)
         self.assertIn('"${RANLIB_CMD[@]}" "$archive"', text)
@@ -46,8 +47,12 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         portable = PORTABLE_BUILD.read_text(encoding='utf-8')
         self.assertIn('configure_args+=("-Db_lto_threads=$JOBS")', bash)
         self.assertIn('f"-Db_lto_threads={resolved_jobs(', portable)
-        self.assertIn('optional_switch(configure_args, values[\'QEMU_HOST_LTO\'], \'lto\')', portable)
+        self.assertIn("optional_switch(configure_args, lto, 'lto')", portable)
         self.assertIn('whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto', bash)
+        self.assertIn('configure_args+=(-Db_lto_mode=thin)', bash)
+        self.assertIn('configure_args+=(-Db_lto_mode=default -Db_thinlto_cache=false)', bash)
+        self.assertIn("configure_args.append('-Db_lto_mode=thin')", portable)
+        self.assertIn("'-Db_lto_mode=default', '-Db_thinlto_cache=false'", portable)
 
     def test_darwin_uses_cached_thinlto_for_incremental_links(self):
         text = DARWIN_MESON.read_text(encoding='utf-8')
