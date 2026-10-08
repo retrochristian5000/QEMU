@@ -142,8 +142,8 @@ class PcmciaConfigTests(unittest.TestCase):
 
         def check_definitions(source, expected):
             found = dict(re.findall(
-                r'(?m)^#define\\s+(CISTPL_\\w+|I365_\\w+)\\s+'
-                r'(0x[0-9a-fA-F]+)\\b', source
+                r'(?m)^#define\s+(CISTPL_\w+|I365_\w+)\s+'
+                r'(0x[0-9a-fA-F]+)\b', source
             ))
             for name, value in expected.items():
                 self.assertIn(name, found)
