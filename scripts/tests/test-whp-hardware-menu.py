@@ -248,7 +248,8 @@ whp_configure_validate_device_config "$1"
         for _, symbol in AUDIO_DEVICES.values():
             self.assertTrue(resolved[symbol.removeprefix('CONFIG_')], symbol)
 
-    def test_ppc_audio_requirements_match_qemu_kconfig(self):        audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
+    def test_ppc_audio_requirements_match_qemu_kconfig(self):
+        audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
         timer_kconfig = TIMER_KCONFIG.read_text(encoding='utf-8')
         config = load_module(CONFIG_TOOL, 'whp_config_ppc_requirement_table')
         table = {
