@@ -248,13 +248,13 @@ class HostOptimizationTests(unittest.TestCase):
             (raw_dir / 'example.profraw').write_bytes(b'raw fixture')
             tool = build_dir / 'fake-profdata.py'
             tool.write_text(
-                'import pathlib, sys\\n'
-                'if sys.argv[1] == "merge":\\n'
-                '    output = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("-output="))\\n'
-                '    pathlib.Path(output).write_bytes(b"indexed fixture")\\n'
-                'elif sys.argv[1] == "show":\\n'
-                '    sys.exit(0 if pathlib.Path(sys.argv[2]).read_bytes() == b"indexed fixture" else 1)\\n'
-                'else: sys.exit(1)\\n',
+                'import pathlib, sys\n'
+                'if sys.argv[1] == "merge":\n'
+                '    output = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("-output="))\n'
+                '    pathlib.Path(output).write_bytes(b"indexed fixture")\n'
+                'elif sys.argv[1] == "show":\n'
+                '    sys.exit(0 if pathlib.Path(sys.argv[2]).read_bytes() == b"indexed fixture" else 1)\n'
+                'else: sys.exit(1)\n',
                 encoding='utf-8',
             )
             env = os.environ.copy()
