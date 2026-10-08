@@ -81,6 +81,30 @@ class PcmciaConfigTests(unittest.TestCase):
             ],
         )
 
+    def test_pci_device_class_declared_before_82092aa_use(self):
+        # pci.h alone does not declare PCIDeviceClass or PCI_DEVICE_CLASS.
+        # The 82092AA host is a PCI device, not just a generic PCI bus user.
+        bridge = (ROOT / 'hw/pcmcia/i82092.c').read_text(
+            encoding='utf-8'
+        )
+        pci_device_header = (
+            ROOT / 'include/hw/pci/pci_device.h'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn(
+            '#include "hw/pci/pci_device.h"', bridge
+        )
+        self.assertLess(
+            bridge.index('#include "hw/pci/pci_device.h"'),
+            bridge.index('PCIDeviceClass *pc = PCI_DEVICE_CLASS(klass);'),
+        )
+        self.assertIn('typedef struct PCIDeviceClass PCIDeviceClass;',
+                      pci_device_header)
+        self.assertIn('struct PCIDeviceClass {', pci_device_header)
+        self.assertIn('DECLARE_OBJ_CHECKERS(PCIDevice, PCIDeviceClass,',
+                      pci_device_header)
+        self.assertNotIn('PCIDevicCLass', bridge)
+
     def test_qom_type_names_and_socket_cardinality(self):
         # One source of truth per type, and exact QOM parent chains.
         # These guard against accidental type renames and card/bus mixups.
