@@ -143,6 +143,16 @@ argument to Apple ``ld``. An explicitly requested unsupported positive
 ``NATIVE_LLVM_READ_WORKERS`` fails with an error rather than being silently
 ignored. Setting ``NATIVE_LLVM_READ_WORKERS=0`` omits the option.
 
+Do not forward the bare ``-threads`` switch in ``LDFLAGS``: the
+LLVM **Mach-O** linker documents ``--threads=N`` (two hyphens and an
+explicit integer), whereas ``-threads`` is not that option. The wrapper
+rejects bare, ``-Wl,-threads``, and ``-Xlinker -threads`` forms early,
+rather than allowing an opaque ``ld64.lld: unknown argument`` error.
+Do not automatically translate the invalid switch to ``--threads=N``:
+the job count and the selected linker's support must be established first.
+Neither this flag nor ``--read-workers=N`` is a synonym for Meson's
+``b_lto_threads`` ThinLTO-backend limit.
+
 The native LLVM bootstrap independently probes whether the previously
 installed ``ld64.lld`` can link before trying the optional worker
 extension. A missing extension must not force an otherwise usable linker
