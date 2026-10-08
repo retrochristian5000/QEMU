@@ -12,41 +12,42 @@ whp_archive_toolchain_smoke()
     whp_work_root=${4:-${TMPDIR:-/tmp}}
     whp_nm=${5:-}
 
-    for whp_tool in "$whp_cc" "$whp_ar" "$whp_ranlib"; do
-        [ -n "$whp_tool" ] || {
-            printf 'error: archive-tool smoke received an empty tool name\n' >&2
-            return 1
-        }
-        case "$whp_tool" in
-            *' '*)
-                printf 'error: archive-tool smoke requires one executable per tool: %s\n' \
-                    "$whp_tool" >&2
-                return 1
-                ;;
-        esac
-        command -v "$whp_tool" >/dev/null 2>&1 || {
-            printf 'error: archive-tool executable is unavailable: %s\n' \
-                "$whp_tool" >&2
-            return 1
-        }
-    done
-
-    # NM is optional for callers that only need archive creation. Native LLVM
-    # consumers pass it explicitly so the probe also qualifies symbol reading.
-    if [ -n "$whp_nm" ]; then
-        case "$whp_nm" in
-            *[[:space:]]*)
-                printf 'error: archive-tool smoke requires one executable for NM: %s\n' \
-                    "$whp_nm" >&2
-                return 1
-                ;;
-        esac
-        command -v "$whp_nm" >/dev/null 2>&1 || {
-            printf 'error: archive-tool NM executable is unavailable: %s\n' \
-                "$whp_nm" >&2
-            return 1
-        }
+    # Fifth argument omitted: legacy archive-only qualification. Fifth
+    # argument explicitly supplied: NM is mandatory even if the value is
+    # empty, so a broken caller cannot silently skip symbol verification.
+    whp_nm_required=0
+    if [ "$#" -ge 5 ]; then
+        whp_nm_required=1
     fi
+
+    for whp_tool_role in CC AR RANLIB NM; do
+        case "$whp_tool_role" in
+            CC) whp_tool=$whp_cc ;;
+            AR) whp_tool=$whp_ar ;;
+            RANLIB) whp_tool=$whp_ranlib ;;
+            NM)
+                [ "$whp_nm_required" = 1 ] || continue
+                whp_tool=$whp_nm
+                ;;
+        esac
+        if [ -z "$whp_tool" ]; then
+            printf 'error: archive-tool smoke requires a nonempty %s executable\n' \
+                "$whp_tool_role" >&2
+            return 1
+        fi
+        case "$whp_tool" in
+            *[[:space:]]*)
+                printf 'error: archive-tool smoke requires one executable for %s: %s\n' \
+                    "$whp_tool_role" "$whp_tool" >&2
+                return 1
+                ;;
+        esac
+        if ! command -v "$whp_tool" >/dev/null 2>&1; then
+            printf 'error: archive-tool %s executable is unavailable: %s\n' \
+                "$whp_tool_role" "$whp_tool" >&2
+            return 1
+        fi
+    done
 
     mkdir -p "$whp_work_root" || return 1
     whp_probe_dir=$(mktemp -d "$whp_work_root/.whp-ar-smoke.XXXXXX") || return 1
