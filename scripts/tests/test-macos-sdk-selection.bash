@@ -450,4 +450,28 @@ if env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=4 \
 fi
 grep -Fq 'does not accept --read-workers=4' "$link_forced"
 
+# Bare -threads is not the LLVM Mach-O --threads=N option. Reject inherited
+# linker flags *before* fake Clang can silently accept them in a smoke test.
+bad_thread_flags=(
+    '-threads'
+    '-threads=2'
+    '-Wl,-threads'
+    '-Wl,-threads=2'
+    '-Wl,-threads,2'
+    '-Xlinker -threads'
+    '-Wl,--threads'
+)
+for i in "${!bad_thread_flags[@]}"; do
+    bad_flag="${bad_thread_flags[$i]}"
+    bad_output="$TEST_DIR/invalid-thread-option-$i.log"
+    if env "${linker_env[@]}" LDFLAGS="$bad_flag" \
+        BUILD_DIR="$TEST_DIR/invalid-thread-option-$i" \
+        OPENBIOS_TOOLS_DIR="$TEST_DIR/invalid-thread-tools-$i" \
+        bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$bad_output" 2>&1; then
+        printf 'error: invalid Mach-O thread flag accepted: %s\n' "$bad_flag" >&2
+        exit 1
+    fi
+    grep -Fq 'unsupported Mach-O linker thread flag in LDFLAGS' "$bad_output"
+    grep -Fq 'uses --threads=N, not -threads' "$bad_output"
+done
 printf 'macOS SDK selection tests: passed\n'
