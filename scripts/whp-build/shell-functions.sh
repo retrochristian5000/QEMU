@@ -85,7 +85,8 @@ EOF
         "error: QEMU archive toolchain failed: $whp_stage" \
         "  CC=$whp_cc" \
         "  AR=$whp_ar" \
-        "  RANLIB=$whp_ranlib" >&2
+        "  RANLIB=$whp_ranlib" \
+        "  NM=${whp_nm:-<not requested>}" >&2
     if [ -s "$whp_log" ]; then
         sed 's/^/  /' "$whp_log" >&2
     fi
