@@ -572,6 +572,28 @@ jobs:
           grep -Fxq "RANLIB=$RANLIB" "$MACOS_LTO_MANIFEST"
           grep -Fxq 'HOST_ARCH=arm64' "$MACOS_LTO_MANIFEST"
           grep -Fxq "CC=$NATIVE_LLVM_DIR/bin/clang" "$MACOS_LTO_MANIFEST"
+
+          # Exercise the fork's real Mach-O parser through Clang. The bare
+          # spelling retains default concurrency; =N selects explicit jobs.
+          for compat_flag in -Wl,-threads -Wl,-threads=1 -Wl,-threads=2; do
+            printf 'int main(void) { return 0; }\n' |
+              "$CC" -arch "$selected_arch" -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+                -fuse-ld=lld "$compat_flag" -x c - \
+                -o "$GITHUB_WORKSPACE/llvm-macho-threads-probe"
+            "$GITHUB_WORKSPACE/llvm-macho-threads-probe"
+          done
+          if printf 'int main(void) { return 0; }\n' |
+             "$CC" -arch "$selected_arch" -isysroot "$sdkroot" \
+               "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+               -fuse-ld=lld -Wl,-threads=0 -x c - \
+               -o "$GITHUB_WORKSPACE/llvm-macho-threads-probe" \
+               >"$GITHUB_WORKSPACE/llvm-macho-threads-invalid.log" 2>&1; then
+            echo 'error: Mach-O LLD accepted zero parallel threads' >&2
+            exit 1
+          fi
+          grep -Fq 'expected a positive integer' \
+            "$GITHUB_WORKSPACE/llvm-macho-threads-invalid.log"
           test "$selected_arch" = arm64
 
       - name: Build QEMU with bootstrapped LLVM and LTO
