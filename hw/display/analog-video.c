@@ -109,3 +109,49 @@ analog_video_receiver_lock(const AnalogVideoReceiverCaps *caps,
 
     return ANALOG_VIDEO_LOCK_LUMA;
 }
+
+/*
+ * An S-Video receiver can lock to sync/luma with Y alone, but cannot
+ * recover colour without the separate chroma lead.  Composite carries
+ * both over CVBS.  Neither connector implicitly converts into the other.
+ */
+AnalogVideoReceiverLock
+analog_video_baseband_lock(const AnalogVideoReceiverCaps *caps,
+                           AnalogVideoConnection selected_input,
+                           const AnalogVideoBaseband *source)
+{
+    AnalogVideoReceiverLock lock;
+    uint32_t permitted;
+    uint32_t required;
+
+    if (!source || selected_input <= ANALOG_VIDEO_CONNECTION_NONE ||
+        selected_input >= ANALOG_VIDEO_CONNECTION__MAX ||
+        source->connection != selected_input) {
+        return ANALOG_VIDEO_LOCK_NONE;
+    }
+
+    switch (source->connection) {
+    case ANALOG_VIDEO_CONNECTION_COMPOSITE:
+        permitted = required = ANALOG_VIDEO_WIRE_CVBS;
+        break;
+    case ANALOG_VIDEO_CONNECTION_SVIDEO:
+        permitted = ANALOG_VIDEO_WIRE_Y | ANALOG_VIDEO_WIRE_C;
+        required = ANALOG_VIDEO_WIRE_Y;
+        break;
+    default:
+        return ANALOG_VIDEO_LOCK_NONE;
+    }
+
+    if ((source->wires & required) != required ||
+        (source->wires & ~permitted) != 0) {
+        return ANALOG_VIDEO_LOCK_NONE;
+    }
+
+    lock = analog_video_receiver_lock(caps, &source->signal);
+    if (lock == ANALOG_VIDEO_LOCK_COLOR &&
+        source->connection == ANALOG_VIDEO_CONNECTION_SVIDEO &&
+        !(source->wires & ANALOG_VIDEO_WIRE_C)) {
+        return ANALOG_VIDEO_LOCK_LUMA;
+    }
+    return lock;
+}

@@ -76,6 +76,12 @@ The Bt8xx video side should consume the shared analogue-video description from
 
 The useful boundary is:
 
+The physical baseband input can be composite CVBS or separate S-Video Y/C.
+A missing S-Video chroma lead yields luminance-only lock.  The shared
+``analog_video_baseband_lock()`` routine validates connection and signal
+presence without implying a completed capture chip.
+
+
 * RF tuner/channel model selects and demodulates the broadcast signal;
 * the resulting baseband signal carries scan timing and a composite-colour
   encoding profile;
@@ -167,9 +173,10 @@ regional channel plans and television sound are already solved.
 QEMU status
 -----------
 
-The WHP fork currently has no Bt848/Bt878 device model.  The new analogue-video
-signal layer provides the first shared prerequisite but does not itself emulate
-colour decoding, RF tuning or capture DMA.
+The WHP fork currently has no Bt848/Bt878 device model.  Its shared
+analogue-video layer now validates composite versus S-Video connections
+and Y/C conductor presence.  This does not implement the Bt8xx register
+interface, analogue waveform, RF tuning or capture DMA.
 
 The family should be implemented under a reusable media/display boundary rather
 than directly in a GUI frontend.  Host Cocoa/GTK/SDL presentation is not part of

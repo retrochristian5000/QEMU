@@ -48,6 +48,31 @@ receiver includes the RF stages.  A PC TV-tuner card usually adds a capture
 engine after the decoder.  Those configurations may share signal descriptors
 without being the same emulated device.
 
+S-Video baseband wiring
+-----------------------
+
+S-Video is a separate Y/C **connection**, not a colour system, a framebuffer
+format, or component YPbPr.  Standard four-pin mini-DIN pins are 1 = Y
+ground, 2 = C ground, 3 = Y (luminance with sync), and 4 = C (modulated
+chroma).  They are separate 75-ohm signal/return paths, with nominal Y
+about 1 V peak-to-peak including sync and chroma burst about 0.3 V
+peak-to-peak for conventional NTSC/PAL systems.  This connector carries
+no audio.
+
+``AnalogVideoBaseband`` describes a physical connection and conductor
+availability independently of existing scan timing and colour encoding.
+``analog_video_baseband_lock()`` checks the receiver's selected input:
+composite requires CVBS, whereas S-Video requires Y and optionally C.
+S-Video Y alone permits luminance/sync lock, not colour lock.  Y and C
+together permit colour lock only when the receiver also supports the
+particular scanning and colour profile.  Incompatible connectors and
+mixed wiring fail instead of being silently converted.
+
+This is connection/decoder-lock logic, **not** an analogue voltage-sample
+generator, DAC, subcarrier modulator, video capture DMA engine, TV tuner,
+or guest-visible chip.  Waveforms, blanking pulses and board registers
+must be modelled using actual video-encoder or capture-chip evidence.
+
 Scanning is not colour coding
 -----------------------------
 

@@ -50,6 +50,35 @@ typedef struct AnalogVideoSignal {
     AnalogVideoColorEncoding color;
 } AnalogVideoSignal;
 
+/*
+ * Connection and conductor presence are independent of scan/color profiles.
+ * S-Video Y includes synchronization.  C carries modulated chrominance.
+ */
+typedef enum AnalogVideoConnection {
+    ANALOG_VIDEO_CONNECTION_NONE = 0,
+    ANALOG_VIDEO_CONNECTION_COMPOSITE,
+    ANALOG_VIDEO_CONNECTION_SVIDEO,
+    ANALOG_VIDEO_CONNECTION__MAX,
+} AnalogVideoConnection;
+
+#define ANALOG_VIDEO_WIRE_CVBS (1U << 0)
+#define ANALOG_VIDEO_WIRE_Y    (1U << 1)
+#define ANALOG_VIDEO_WIRE_C    (1U << 2)
+
+/* Standard S-Video four-pin mini-DIN numbering (grounds are not signals). */
+typedef enum AnalogSVideoPin {
+    ANALOG_SVIDEO_PIN_Y_GROUND = 1,
+    ANALOG_SVIDEO_PIN_C_GROUND = 2,
+    ANALOG_SVIDEO_PIN_Y = 3,
+    ANALOG_SVIDEO_PIN_C = 4,
+} AnalogSVideoPin;
+
+typedef struct AnalogVideoBaseband {
+    AnalogVideoSignal signal;
+    AnalogVideoConnection connection;
+    uint32_t wires;
+} AnalogVideoBaseband;
+
 #define ANALOG_VIDEO_SCAN_BIT(scan) (1U << (scan))
 #define ANALOG_VIDEO_COLOR_BIT(color) (1U << (color))
 
@@ -88,5 +117,11 @@ bool analog_video_get_line_rate(AnalogVideoScanSystem scan,
 AnalogVideoReceiverLock
 analog_video_receiver_lock(const AnalogVideoReceiverCaps *caps,
                            const AnalogVideoSignal *signal);
+
+/* Evaluate physical connection and Y/C presence before decoder lock. */
+AnalogVideoReceiverLock
+analog_video_baseband_lock(const AnalogVideoReceiverCaps *caps,
+                           AnalogVideoConnection selected_input,
+                           const AnalogVideoBaseband *source);
 
 #endif /* HW_DISPLAY_ANALOG_VIDEO_H */
