@@ -314,6 +314,25 @@ Hardware status
      - High
      - Partial
 
+UniNorth CPU identification
+---------------------------
+
+The UniNorth register at offset ``0x0050`` is historically described as a
+possible per-processor CPU-number indicator, used by firmware when deciding
+whether the boot processor or a secondary processor should start.  The exact
+hardware behavior is not fully established by that description.
+
+The existing ``mac99`` machine and its ``powermac3_1`` subclass currently
+limit QEMU to **one** CPU.  UniNorth therefore reads back bootstrap processor
+number ``0`` without consulting QEMU's execution-thread-local
+``current_cpu`` or internal ``CPUState.cpu_index``.  QTest MMIO reads may
+run outside a guest CPU thread and must still return the same register value.
+
+This is a single-CPU compatibility rule, **not** a validated SMP emulation.
+If the Core99 machine gains secondary CPUs, their guest-visible hardware
+identifiers, reset/firmware startup behavior and CPU_NUMBER reads need to be
+modeled and tested before increasing the machine's CPU limit.
+
 Current QEMU topology
 ---------------------
 
