@@ -4,6 +4,89 @@
 # Keep this module dependency-free: build.sh and host-tools.sh may source it
 # before GNU Bash or other managed host tools are available.
 
+# Read one Libtool bootstrap marker entry without constructing a sed program.
+# A missing, duplicate, or invalid producer tool must never silently turn into
+# an empty build variable. Marker tool identities use PATH|version.
+whp_marker_required_tool()
+(
+    whp_marker_file=$1
+    whp_marker_key=$2
+    whp_marker_seen=0
+    whp_marker_identity=
+
+    if [ ! -r "$whp_marker_file" ]; then
+        printf 'error: Libtool marker is unreadable: %s\n' "$whp_marker_file" >&2
+        return 1
+    fi
+    while IFS= read -r whp_marker_line || [ -n "$whp_marker_line" ]; do
+        case "$whp_marker_line" in
+            "$whp_marker_key"=*)
+                whp_marker_seen=$((whp_marker_seen + 1))
+                whp_marker_identity=${whp_marker_line#*=}
+                ;;
+        esac
+    done < "$whp_marker_file"
+    if [ "$whp_marker_seen" -ne 1 ]; then
+        printf 'error: Libtool marker needs exactly one %s tool name (found %s): %s\n' \
+            "$whp_marker_key" "$whp_marker_seen" "$whp_marker_file" >&2
+        return 1
+    fi
+    case "$whp_marker_identity" in
+        *'|'*) whp_marker_path=${whp_marker_identity%%|*} ;;
+        *)
+            printf 'error: Libtool marker has malformed %s tool identity: %s\n' \
+                "$whp_marker_key" "$whp_marker_identity" >&2
+            return 1
+            ;;
+    esac
+    if [ -z "$whp_marker_path" ]; then
+        printf 'error: Libtool marker has an empty %s tool name\n' \
+            "$whp_marker_key" >&2
+        return 1
+    fi
+    case "$whp_marker_path" in
+        /*) ;;
+        *)
+            printf 'error: Libtool marker %s tool path is not absolute: %s\n' \
+                "$whp_marker_key" "$whp_marker_path" >&2
+            return 1
+            ;;
+    esac
+    if [ ! -f "$whp_marker_path" ] || [ ! -x "$whp_marker_path" ]; then
+        printf 'error: Libtool marker %s tool is not executable: %s\n' \
+            "$whp_marker_key" "$whp_marker_path" >&2
+        return 1
+    fi
+    printf '%s\n' "$whp_marker_path"
+)
+
+whp_marker_required_value()
+(
+    whp_marker_file=$1
+    whp_marker_key=$2
+    whp_marker_seen=0
+    whp_marker_value=
+
+    if [ ! -r "$whp_marker_file" ]; then
+        printf 'error: Libtool marker is unreadable: %s\n' "$whp_marker_file" >&2
+        return 1
+    fi
+    while IFS= read -r whp_marker_line || [ -n "$whp_marker_line" ]; do
+        case "$whp_marker_line" in
+            "$whp_marker_key"=*)
+                whp_marker_seen=$((whp_marker_seen + 1))
+                whp_marker_value=${whp_marker_line#*=}
+                ;;
+        esac
+    done < "$whp_marker_file"
+    if [ "$whp_marker_seen" -ne 1 ] || [ -z "$whp_marker_value" ]; then
+        printf 'error: Libtool marker needs one nonempty %s value: %s\n' \
+            "$whp_marker_key" "$whp_marker_file" >&2
+        return 1
+    fi
+    printf '%s\n' "$whp_marker_value"
+)
+
 whp_archive_toolchain_smoke()
 (
     whp_cc=${1:-}
