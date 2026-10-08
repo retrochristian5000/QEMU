@@ -73,8 +73,9 @@ select_seed()
         if seed=$(resolve_candidate "$WHP_SED_SEED"); then
             printf '%s\n' "$seed"
             return 0
+        else
+            rc=$?
         fi
-        rc=$?
         if [ "$rc" -eq 3 ]; then
             printf '%s\n' \
                 'error: WHP_SED_SEED points back to the QEMU sed adapter' >&2
@@ -116,5 +117,23 @@ case "${1:-}" in
         exit 0
         ;;
 esac
+
+# Keep the normal hot path as an exec.  Only opt-in failure tracing keeps
+# the adapter alive to report the actual argv handed to the seed sed.  This
+# catches malformed generated substitutions without changing their semantics.
+if [ "${WHP_SED_TRACE:-0}" = errors ]; then
+    if "$seed" "$@"; then
+        exit 0
+    else
+        rc=$?
+        printf 'WHP sed seed failed (exit %s): %s\n' "$rc" "$seed" >&2
+        index=0
+        for arg do
+            printf '  argv[%s]=<%s>\n' "$index" "$arg" >&2
+            index=$((index + 1))
+        done
+        exit "$rc"
+    fi
+fi
 
 exec "$seed" "$@"
