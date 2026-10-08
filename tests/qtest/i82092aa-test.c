@@ -187,6 +187,38 @@ static uint8_t exca_read(QPCIDevice *dev, QPCIBar bar, uint8_t reg)
     return qpci_io_readb(dev, bar, 1);
 }
 
+/*
+ * Explicit PCMCIA bus names must keep their socket numbering.  Socket 1
+ * should accept a card independently of the empty socket 0.
+ */
+static void test_i82092aa_named_socket_bus(void)
+{
+    QTestState *qts;
+    QPCIBus *pcibus;
+    QPCIDevice *dev;
+    QPCIBar bar;
+
+    qts = qtest_init("-nodefaults -M pc -display none "
+                     "-device i82092aa,addr=04.0,sockets=2,id=pcic "
+                     "-device usr-worldport-v34,bus=pcic.1");
+    pcibus = qpci_new_pc(qts, NULL);
+    dev = qpci_device_find(pcibus, QPCI_DEVFN(0x4, 0x0));
+    g_assert_nonnull(dev);
+    qpci_device_enable(dev);
+    bar = qpci_iomap(dev, 0, NULL);
+
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_STATUS) &
+                    I365_CS_DETECT, ==, 0);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_SOCKET_STRIDE +
+                              I82092AA_EXCA_STATUS) & I365_CS_DETECT,
+                    ==, I365_CS_DETECT);
+
+    qpci_iounmap(dev, bar);
+    g_free(dev);
+    qpci_free_pc(pcibus);
+    qtest_quit(qts);
+}
+
 static void test_i82092aa_worldport(void)
 {
     QTestState *qts;
@@ -357,6 +389,8 @@ int main(int argc, char **argv)
     qtest_add_func("/i82092aa/2-socket", test_i82092aa_2socket);
     qtest_add_func("/i82092aa/4-socket", test_i82092aa_4socket);
     if (qtest_has_device("usr-worldport-v34")) {
+        qtest_add_func("/i82092aa/named-socket-bus",
+                       test_i82092aa_named_socket_bus);
         qtest_add_func("/i82092aa/worldport-v34", test_i82092aa_worldport);
     }
 
