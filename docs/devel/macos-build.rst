@@ -149,11 +149,16 @@ spellings ``-threads`` (retain the default parallel linking policy) and
 the existing positive-integer validation and ThinLTO default for the numeric
 alias; this is not a second threading implementation.
 
-From Clang, pass these as ``-Wl,-threads`` or ``-Wl,-threads=N``.
-The macOS wrapper allows them **only** with its selected native Mach-O LLD
-after a successful link probe. Older LLVM builds and Apple ``ld`` are
-protected by an explicit error. Raw compiler ``-threads``,
-``-Wl,-threads,N``, and other malformed forms remain unsupported.
+The WHP Clang Darwin driver forwards ``-flto-jobs=N`` to Mach-O LLD as
+``--threads=N``, rather than incorrectly passing ``-threads=N`` through
+the linker's ``-mllvm`` backend option. It also recognizes raw
+``-threads``, ``--threads``, and their ``=N`` variants for LLD links.
+Apple ``ld`` retains its existing LTO backend forwarding.
+
+The macOS QEMU wrapper accepts both raw and ``-Wl,`` spellings, normalizing
+raw forms to ``-Wl,--threads[=N]`` before probing the selected native LLD.
+Older linker builds and Apple ``ld`` are rejected by a link probe;
+malformed ``-Wl,-threads,N`` and ``-Xlinker -threads`` are not accepted.
 Use the build's established job budget rather than assuming that bare
 ``-threads`` limits concurrency. The option is distinct from input prefetch
 ``--read-workers=N`` and from Meson's ``b_lto_threads`` setting.

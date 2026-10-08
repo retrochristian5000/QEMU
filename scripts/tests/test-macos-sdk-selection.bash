@@ -127,7 +127,7 @@ for arg in "$@"; do
                 exit 1
             fi
             ;;
-        -Wl,-threads|-Wl,-threads=*)
+        -Wl,-threads|-Wl,-threads=*|-Wl,--threads|-Wl,--threads=*)
             if [[ "${TEST_LLD_THREADS:-accept}" == reject ]]; then
                 exit 1
             fi
@@ -455,14 +455,13 @@ if env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=4 \
 fi
 grep -Fq 'does not accept --read-workers=4' "$link_forced"
 
-# Clang does not treat its raw -threads argument as a Mach-O linker switch.
-# The WHP fork accepts -threads through -Wl only after a real link probe.
+# Complete threads options are normalized to the canonical linker spelling.
+# Comma-separated values and -Xlinker misuse remain unsupported.
 bad_thread_flags=(
-    '-threads'
-    '-threads=2'
     '-Wl,-threads,2'
+    '-Wl,--threads,2'
     '-Xlinker -threads'
-    '-Wl,--threads'
+    '-Xlinker=--threads'
 )
 for i in "${!bad_thread_flags[@]}"; do
     bad_flag="${bad_thread_flags[$i]}"
@@ -474,20 +473,29 @@ for i in "${!bad_thread_flags[@]}"; do
         printf 'error: invalid Mach-O thread flag accepted: %s\n' "$bad_flag" >&2
         exit 1
     fi
-    grep -Fq 'unsupported Mach-O linker thread flag in LDFLAGS' "$bad_output"
+    grep -Eq 'unsupported Mach-O linker thread flag (in LDFLAGS|after -Xlinker)' "$bad_output"
 done
 
-# The fork's -threads compatibility spellings are forwarded by Clang.
-for i in 0 1; do
-    if [[ "$i" == 0 ]]; then thread_flag='-Wl,-threads';
-    else thread_flag='-Wl,-threads=2'; fi
+# The supported spelling families converge on -Wl,--threads[=N].
+thread_options=(
+    '-threads' '-threads=2' '--threads' '--threads=2'
+    '-Wl,-threads' '-Wl,-threads=2'
+    '-Wl,--threads' '-Wl,--threads=2'
+)
+for i in "${!thread_options[@]}"; do
+    thread_flag="${thread_options[$i]}"
+    normalized_flag="$thread_flag"
+    case "$thread_flag" in
+        -threads|--threads) normalized_flag='-Wl,--threads' ;;
+        -threads=*|--threads=*) normalized_flag="-Wl,--threads=${thread_flag#*=}" ;;
+    esac
     supported_log="$TEST_DIR/supported-thread-option-$i.log"
     env "${linker_env[@]}" TEST_LLD_THREADS=accept \
         LDFLAGS="$thread_flag" \
         BUILD_DIR="$TEST_DIR/supported-thread-option-$i" \
         OPENBIOS_TOOLS_DIR="$TEST_DIR/supported-thread-tools-$i" \
         bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$supported_log" 2>&1
-    grep '^LDFLAGS=' "$supported_log" | grep -Fq -- "$thread_flag"
+    grep '^LDFLAGS=' "$supported_log" | grep -Fq -- "$normalized_flag"
 
     rejected_log="$TEST_DIR/rejected-thread-option-$i.log"
     if env "${linker_env[@]}" TEST_LLD_THREADS=reject \

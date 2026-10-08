@@ -29,11 +29,20 @@ jobs:
       - name: Check out QEMU source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Resolve the pinned LLVM gitlink
+        id: llvm_pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          test -n "$pin" || { echo 'error: missing LLVM gitlink' >&2; exit 1; }
+          echo "sha=$pin" >> "$GITHUB_OUTPUT"
+
       - name: Check out pinned LLVM source sparsely
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: retrochristian5000/LLVM
-          ref: ce207c7744dead9521acaaf8be043e969e7599a4
+          ref: ${{ steps.llvm_pin.outputs.sha }}
           path: llvm-project
           fetch-depth: 1
           sparse-checkout: |
