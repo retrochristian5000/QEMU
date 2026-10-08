@@ -58,3 +58,25 @@ jobs:
 
           # Explicit provenance must still resolve to the same underlying seed.
           test "$(WHP_SED_SEED="$seed" ./sed.sh --print-seed)" = "$seed"
+
+          # Verify that malformed substitutions retain the seed's failure
+          # status while opt-in tracing identifies the exact offending argv.
+          bad_log="$RUNNER_TEMP/whp-sed-malformed.log"
+          if WHP_SED_SEED="$seed" WHP_SED_TRACE=errors \
+            ./sed.sh -e 's/alpha/beta' </dev/null > /dev/null 2>"$bad_log"; then
+            echo "Malformed sed substitution unexpectedly succeeded" >&2
+            exit 1
+          fi
+          grep -Fq 'WHP sed seed failed (exit' "$bad_log"
+          grep -Fq 'argv[1]=<s/alpha/beta>' "$bad_log"
+          test "$(WHP_SED_TRACE=errors ./sed.sh -n 's/^alpha$/beta/p' \
+            <<<'alpha')" = beta
+
+          # The special recursion status must not be lost by the shell's if.
+          recursion_log="$RUNNER_TEMP/whp-sed-recursion.log"
+          if WHP_SED_SEED="$GITHUB_WORKSPACE/sed.sh" \
+            ./sed.sh --print-seed >/dev/null 2>"$recursion_log"; then
+            echo "Recursive sed seed unexpectedly accepted" >&2
+            exit 1
+          fi
+          grep -Fq 'points back to the QEMU sed adapter' "$recursion_log"
