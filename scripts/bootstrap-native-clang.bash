@@ -16,6 +16,9 @@ JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
 LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
+# Optional Windows PE manifest merging for downstream CMake/Windows clients.
+# The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
+LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
 # Build one host-native LLVM executable set for QEMU plus the freestanding
 # firmware lanes. Target selection belongs at Clang invocation time via
 # --target=..., not in separate host executable builds.
@@ -68,6 +71,14 @@ case "$LLVM_PCH" in
         ;;
 esac
 printf 'WHP native LLVM precompiled headers: %s\n' "$llvm_pch_state" >&2
+case "$LLVM_WINDOWS_MANIFEST" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_WINDOWS_MANIFEST must be 0 or 1: %s\n' \
+            "$LLVM_WINDOWS_MANIFEST" >&2
+        exit 1
+        ;;
+esac
 
 # build.sh owns host detection. Keep a direct-invocation fallback for this
 # helper, but never reinterpret a normalized host identity supplied by the
@@ -647,6 +658,13 @@ bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
 llvm_enable_projects='clang;lld'
 llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
+llvm_enable_libxml2=OFF
+if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
+    # LLVM's manifest merger is nonfunctional without native libxml2.
+    # FORCE_ON rejects missing/incompatible XML libraries at configure.
+    llvm_enable_libxml2=FORCE_ON
+    llvm_distribution_components="${llvm_distribution_components};llvm-mt"
+fi
 llvm_enable_runtimes=''
 llvm_include_runtimes=OFF
 if [[ "$host_os" == macos ]]; then
@@ -771,6 +789,27 @@ SOURCE
     return 0
 }
 
+windows_manifest_tool_usable()
+{
+    local prefix="$1"
+    local probe_dir
+    [[ -x "$prefix/bin/llvm-mt" ]] || return 1
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-mt.XXXXXX")" || return 1
+    cat >"$probe_dir/input.manifest" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="WHP.LLVM" version="1.0.0.0"/>
+</assembly>
+XML
+    if ! "$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest" \
+        "-out:$probe_dir/output.manifest" >/dev/null 2>&1 ||
+        ! grep -Fq 'WHP.LLVM' "$probe_dir/output.manifest"; then
+        rm -rf "$probe_dir"
+        return 1
+    fi
+    rm -rf "$probe_dir"
+}
+
 usable()
 {
     local prefix="$1"
@@ -789,6 +828,9 @@ usable()
                          llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
         [[ -x "$prefix/bin/$required_tool" ]] || return 1
     done
+    if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
+        windows_manifest_tool_usable "$prefix" || return 1
+    fi
     supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
     grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
@@ -930,7 +972,7 @@ cmake_args=(
     -DLLD_INCLUDE_TESTS=OFF
     -DLLVM_ENABLE_ZLIB=OFF
     -DLLVM_ENABLE_ZSTD=OFF
-    -DLLVM_ENABLE_LIBXML2=OFF
+    "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
     "${cmake_darwin_runtime_args[@]}"
     "${cmake_host_args[@]}"
 )
@@ -1018,5 +1060,7 @@ stage_root=""
 
 printf 'WHP native LLVM target backends: %s\n' "$LLVM_TARGETS_TO_BUILD" >&2
 printf 'WHP native LLVM LLD backends: %s\n' "$LLD_ENABLE_BACKENDS" >&2
+printf 'WHP native LLVM Windows manifest merger: %s\n' \
+    "$([[ "$LLVM_WINDOWS_MANIFEST" == 1 ]] && printf enabled || printf disabled)" >&2
 printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
 printf '%s\n' "$TOOLCHAIN_DIR" >&3
