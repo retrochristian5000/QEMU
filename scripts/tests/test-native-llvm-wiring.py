@@ -39,23 +39,23 @@ assert 'native LLVM bootstrap did not provide llvm-lipo' in wrapper
 assert 'CC="$NATIVE_LLVM_DIR/bin/clang"' in build
 assert 'CXX="$NATIVE_LLVM_DIR/bin/clang++"' in build
 assert 'AR="${AR:-$NATIVE_LLVM_DIR/bin/llvm-ar}"' in build
-assert 'RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+assert 'RANLIB="${RANLIB:-$NATIVE_LLVM_DIR/bin/llvm-ranlib}"' in build
 configure = (ROOT / 'configure').read_text(encoding='utf-8')
 assert 'ranlib="${RANLIB-${cross_prefix}ranlib}"' in configure
 assert 'echo "ranlib = [$(meson_quote $ranlib)]" >> $cross' in configure
 assert 'preserve_env RANLIB' in configure
-assert 'native LLVM toolchain drifted before QEMU configure' in build
-assert '"RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib"' in build
+assert 'native LLVM toolchain drifted before QEMU configure' not in build
+assert '"RANLIB:$NATIVE_LLVM_DIR/bin/llvm-ranlib"' not in build
 assert '"AR:$NATIVE_LLVM_DIR/bin/llvm-ar"' not in build
-assert 'whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR"' in build
-assert 'WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB"' in build
-assert 'whp_archive_tool_signature_now="$AR|$RANLIB"' in build
-drift_index = build.index('native LLVM toolchain drifted before QEMU configure')
+assert 'whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" "$NM"' in build
+assert 'WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB|$NM"' in build
+assert 'whp_archive_tool_signature_now="$AR|$RANLIB|$NM"' in build
+capability_index = build.index('whp_archive_tool_signature_now="$AR|$RANLIB|$NM"')
 portable_index = build.index('portable_core()')
 libisofs_index = build.index('BOOTSTRAP_LIBISOFS=${BOOTSTRAP_LIBISOFS:-auto}')
 shell_probe_index = build.index('WHP orchestration shell: %s')
-assert portable_index < libisofs_index < drift_index < shell_probe_index
-assert 'NM="$NATIVE_LLVM_DIR/bin/llvm-nm"' in build
+assert portable_index < libisofs_index < capability_index < shell_probe_index
+assert 'NM="${NM:-$NATIVE_LLVM_DIR/bin/llvm-nm}"' in build
 assert 'OBJCOPY="$NATIVE_LLVM_DIR/bin/llvm-objcopy"' in build
 assert 'OBJDUMP="$NATIVE_LLVM_DIR/bin/llvm-objdump"' in build
 assert 'READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"' in build
