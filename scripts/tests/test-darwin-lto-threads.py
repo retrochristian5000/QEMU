@@ -37,6 +37,9 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn('"$object_main" "$archive" -o "$output"', text)
         self.assertIn('set_archive_command AR /usr/bin/ar', text)
         self.assertIn('set_archive_command RANLIB /usr/bin/ranlib', text)
+        self.assertIn('THINLTO_JOBS_ARG=("-flto-jobs=$JOBS")', text)
+        self.assertIn('"${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive"', text)
+        self.assertIn("printf 'LTO_JOBS=%s\\n'", text)
 
     def test_bash_and_portable_paths_cap_link_workers(self):
         bash = PREPARE_BUILD.read_text(encoding='utf-8')
