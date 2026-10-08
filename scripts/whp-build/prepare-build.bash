@@ -161,6 +161,22 @@ whp_prepare_build_defaults()
     MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-auto}"
     MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-auto}"
     QEMU_HOST_LTO="${QEMU_HOST_LTO:-auto}"
+    QEMU_HOST_LTO_MODE="${QEMU_HOST_LTO_MODE:-auto}"
+    case "$QEMU_HOST_LTO_MODE" in
+        auto|thin|full) ;;
+        *)
+            printf 'error: QEMU_HOST_LTO_MODE must be auto, thin, or full: %s\n' "$QEMU_HOST_LTO_MODE" >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$QEMU_HOST_LTO_MODE" != auto ]]; then
+        if [[ "$QEMU_HOST_LTO" == 0 ]]; then
+            printf 'error: QEMU_HOST_LTO_MODE=%s conflicts with disabled QEMU_HOST_LTO\n' "$QEMU_HOST_LTO_MODE" >&2
+            exit 1
+        fi
+        [[ "$QEMU_HOST_LTO" != auto ]] || QEMU_HOST_LTO=1
+    fi
+    export QEMU_HOST_LTO QEMU_HOST_LTO_MODE
     QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
     QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
     QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
@@ -398,6 +414,10 @@ whp_prepare_configure_args()
     fi
 
     whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
+    case "$QEMU_HOST_LTO_MODE" in
+        thin) configure_args+=(-Db_lto_mode=thin) ;;
+        full) configure_args+=(-Db_lto_mode=default -Db_thinlto_cache=false) ;;
+    esac
     if [[ "$HOST_OS" == Darwin ]]; then
         # WHP macOS builds are intentionally TCG-only. KVM is Linux-only, and
         # auto-detected HVF would otherwise add host-hypervisor code and signing

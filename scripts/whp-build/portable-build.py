@@ -514,7 +514,19 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     configure_args.append(
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
-    optional_switch(configure_args, values['QEMU_HOST_LTO'], 'lto')
+    lto = values['QEMU_HOST_LTO']
+    lto_mode = values['QEMU_HOST_LTO_MODE']
+    if lto_mode != 'auto':
+        if lto == 'n':
+            raise RuntimeError(
+                f'QEMU_HOST_LTO_MODE={lto_mode} conflicts with disabled QEMU_HOST_LTO'
+            )
+        lto = 'y'
+    optional_switch(configure_args, lto, 'lto')
+    if lto_mode == 'thin':
+        configure_args.append('-Db_lto_mode=thin')
+    elif lto_mode == 'full':
+        configure_args.extend(['-Db_lto_mode=default', '-Db_thinlto_cache=false'])
     if platform.system() == 'Darwin':
         # WHP macOS builds deliberately use TCG instead of host hypervisors.
         configure_args.extend(['--disable-kvm', '--disable-hvf'])

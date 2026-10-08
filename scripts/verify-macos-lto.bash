@@ -16,6 +16,14 @@ esac
 
 MACOS_LTO_MANIFEST="${MACOS_LTO_MANIFEST:-.whp-macos-lto}"
 MACOS_LTO_PROBE_DIR="${MACOS_LTO_PROBE_DIR:-${MACOS_LTO_MANIFEST}.d}"
+# Match the effective Meson mode: Darwin's native file defaults to ThinLTO.
+case "${QEMU_HOST_LTO_MODE:-auto}" in
+    auto|thin) lto_mode=thin; lto_flag=-flto=thin ;;
+    full) lto_mode=full; lto_flag=-flto ;;
+    *)
+        printf 'error: invalid QEMU_HOST_LTO_MODE for macOS: %s\n' "$QEMU_HOST_LTO_MODE" >&2
+        exit 1 ;;
+esac
 
 if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
@@ -74,7 +82,7 @@ reject_embedded_lto()
                 -Xlinker=*lto*|-Xlinker=*LTO*)
                     printf '%s\n' \
                         "error: $variable contains an LTO option: $value" \
-                        'The macOS ThinLTO probe adds -flto=thin itself so the option' \
+                        'The macOS LTO probe sets its own compiler flag so the option' \
                         'cannot arrive through a global flag channel.' >&2
                     exit 1
                     ;;
@@ -141,7 +149,7 @@ LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 # Match Meson b_lto_threads for the actual link where a power budget exists.
 # Standalone probes without JOBS retain the linker default.
 THINLTO_JOBS_ARG=()
-if [[ -n "${JOBS:-}" ]]; then
+if [[ -n "${JOBS:-}" && "$lto_mode" == thin ]]; then
     case "$JOBS" in
         *[!0-9]*|""|0)
             printf 'error: ThinLTO JOBS must be a positive integer: %s\n' \
@@ -177,15 +185,15 @@ SOURCE
 "${CC_CMD[@]}" \
     ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
-    -flto=thin -c "$source_a" -o "$object_a"
+    "$lto_flag" -c "$source_a" -o "$object_a"
 "${CC_CMD[@]}" \
     ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
-    -flto=thin -c "$source_main" -o "$object_main"
+    "$lto_flag" -c "$source_main" -o "$object_main"
 # ThinLTO must survive the archive indexing and extraction used by QEMU.
 "${AR_CMD[@]}" rcs "$archive" "$object_a"
 "${RANLIB_CMD[@]}" "$archive"
-"${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
+"${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} "$lto_flag" \
     "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
 arches="$(output_arches "$output")"
@@ -204,7 +212,7 @@ if ! "$output"; then
 fi
 
 CCACHE_DISABLE=1 "${CC_CMD[@]}" \
-    ${C_FLAGS[@]+"${C_FLAGS[@]}"} -flto=thin \
+    ${C_FLAGS[@]+"${C_FLAGS[@]}"} "$lto_flag" \
     "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output.pipeline" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"} \
     -### 2> "$pipeline" || true
@@ -225,7 +233,7 @@ output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
     printf 'CFLAGS=%s\n' "${CFLAGS:-}"
     printf 'CPPFLAGS=%s\n' "${CPPFLAGS:-}"
     printf 'LDFLAGS=%s\n' "${LDFLAGS:-}"
-    printf 'LTO_MODE=thin\n'
+    printf 'LTO_MODE=%s\n' "$lto_mode"
     printf 'LTO_JOBS=%s\n' "${JOBS:-auto}"
     printf 'ARCHIVE=%s\n' "$archive"
     printf 'OUTPUT_ARCHES=%s\n' "$arches"

@@ -187,6 +187,8 @@ whp_mold_link_probe()
         local main_object="$probe_dir/main.o"
         local lib_object="$probe_dir/lib.o"
         local archive="$probe_dir/libprobe.a"
+        local lto_flag=-flto
+        [[ "${QEMU_HOST_LTO_MODE:-auto}" != thin ]] || lto_flag=-flto=thin
 
         if ! whp_mold_archiver_command; then
             printf 'error: cannot execute archiver for mold LTO probe: %s\n' \
@@ -213,15 +215,15 @@ EOF_LIB
         # objects and put one in an archive so we validate LLVM/GCC plugin
         # activation, archive indexing/extraction, and mold's final LTO link.
         if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            -flto -c "$main_source" -o "$main_object"; then
+            "$lto_flag" -c "$main_source" -o "$main_object"; then
             status=1
         elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            -flto -c "$lib_source" -o "$lib_object"; then
+            "$lto_flag" -c "$lib_source" -o "$lib_object"; then
             status=1
         elif ! "${WHP_MOLD_AR_CMD[@]}" rcs "$archive" "$lib_object"; then
             status=1
         elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            -flto -fuse-ld=mold "$main_object" "$archive" -o "$output" \
+            "$lto_flag" -fuse-ld=mold "$main_object" "$archive" -o "$output" \
             "${ld_flags[@]}"; then
             status=1
         elif ! "$output"; then
