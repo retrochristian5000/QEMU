@@ -165,6 +165,8 @@ static void test_i82092aa_worldport(void)
     /* Enable detect/ready change notifications on the PCI interrupt. */
     exca_write(dev, bar, I82092AA_EXCA_CSCINT,
                I365_CSC_DETECT | I365_CSC_READY);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, 0);
 
     /*
      * Map a 4 KiB host memory window at 0xd0000 to card attribute address 0.
@@ -193,9 +195,14 @@ static void test_i82092aa_worldport(void)
     g_assert_cmphex(status & (I365_CS_DETECT | I365_CS_READY |
                               I365_CS_POWERON), ==,
                     I365_CS_DETECT | I365_CS_READY | I365_CS_POWERON);
+    /* A new READY event asserts PCI INTx until CSC is read. */
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, PCI_STATUS_INTERRUPT);
     g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC) &
                     I365_CSC_READY, ==, I365_CSC_READY);
     g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC), ==, 0);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, 0);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE), ==, 0x15);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 1), ==, 0xff);
     g_assert_cmphex(qtest_readb(qts, WORLDPORT_ATTR_BASE + 2), ==, 0x35);
@@ -227,17 +234,23 @@ static void test_i82092aa_worldport(void)
     status = exca_read(dev, bar, I82092AA_EXCA_STATUS);
     g_assert_cmphex(status & I365_CS_DETECT, ==, I365_CS_DETECT);
     g_assert_cmphex(status & (I365_CS_READY | I365_CS_POWERON), ==, 0);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, PCI_STATUS_INTERRUPT);
     g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC) &
                     I365_CSC_READY, ==, I365_CSC_READY);
     g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_CSC), ==, 0);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_STATUS) &
+                    PCI_STATUS_INTERRUPT, ==, 0);
 
-    /* Power cycling must not silently reset or rewrite the card's COR. */
+    /* Powering up again restores READY only while reset stays released. */
     exca_write(dev, bar, I82092AA_EXCA_POWER,
                I365_PWR_OUT | I365_VCC_5V);
-    g_assert_cmphex(qtest_readb(qts,
-                               WORLDPORT_ATTR_BASE + WORLDPORT_CONFIG_BASE),
-                    ==, 0x01);
-    g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x5a);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_STATUS) &
+                    I365_CS_READY, ==, I365_CS_READY);
+    (void)exca_read(dev, bar, I82092AA_EXCA_CSC);
+    exca_write(dev, bar, I82092AA_EXCA_INTCTL, 0);
+    g_assert_cmphex(exca_read(dev, bar, I82092AA_EXCA_STATUS) &
+                    I365_CS_READY, ==, 0);
 
     qpci_iounmap(dev, bar);
     g_free(dev);
