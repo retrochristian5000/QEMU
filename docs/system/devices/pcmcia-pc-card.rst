@@ -153,9 +153,12 @@ index/data interface, one-, two- and four-socket straps, per-socket
 PCICON controls, and migration state.
 
 The core forwards attribute, common-memory and I/O accesses through a card
-model.  The bridge translates host I/O and memory windows into card address
-spaces, reports insertion/removal through card-detect and CSC bits, and
-aggregates card and enabled CSC interrupts onto PCI INTx.  Its windows and
+model.  Its generic CIS reader places logical tuple bytes on even attribute
+addresses; cards with their own layout can override attribute reads.  The
+bridge translates host I/O and memory windows into card address spaces,
+honors the ExCA I/O width bit for 8-bit versus 16-bit transactions, reports
+insertion/removal through card-detect and CSC bits, and aggregates card and
+enabled CSC interrupts onto PCI INTx.  Its windows and
 card-generated interrupts now require socket output power, a selected Vcc and
 a released reset.  Mechanical card detect remains visible without power;
 READY is not asserted while the card is unpowered or held in reset.
@@ -288,8 +291,8 @@ A conservative implementation order is:
 
 #. **Implemented baseline:** reusable 16-bit PC Card core, the 82092AA PCI
    controller, a reconstructed WorldPort serial modem card, and QTests for
-   socket profiles, CIS/attribute access, window translation, reset/power
-   gating and CSC reporting.
+   socket profiles, CIS/attribute access, window translation, 8/16-bit I/O
+   transfers, reset/power gating and CSC reporting.
 #. **Outstanding:** add an Intel 82365SL family ISA controller, beginning with
    its documented Revision 1 identification, ExCA control/IRQ behavior and
    two I/O/five memory windows.
