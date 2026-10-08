@@ -29,7 +29,7 @@ def profile_tool(compiler: str) -> list[str]:
     if pathlib.Path(command).name in ('ccache', 'sccache') and len(tokens) > 1:
         command = tokens[1]
     resolved = shutil.which(command)
-    version = re.search(r'-(\d+), pathlib.Path(command).name)
+    version = re.search(r'-(\d+)$', pathlib.Path(command).name)
     names = ([f'llvm-profdata-{version.group(1)}'] if version else []) + ['llvm-profdata']
     if resolved:
         for name in names:
