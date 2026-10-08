@@ -52,8 +52,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(I82092AAState, I82092AA)
 #define I365_CS_POWERON            0x40
 
 #define I365_PWR_OUT               0x80
+#define I365_VCC_MASK              0x18
+#define I365_PC_RESET              0x40
 
 #define I365_CSC_DETECT            0x08
+#define I365_CSC_READY             0x04
+#define I365_CSC_ANY               0x0f
 
 #define I365_ENA_IO(map)           (0x40 << (map))
 #define I365_ENA_MEM(map)          (0x01 << (map))
@@ -84,6 +88,67 @@ struct I82092AAState {
     I82092AAWindow io_window[I82092AA_MAX_SOCKETS][I82092AA_IO_WINDOWS];
     I82092AAWindow mem_window[I82092AA_MAX_SOCKETS][I82092AA_MEM_WINDOWS];
 };
+
+/* Card detect is mechanical; READY and access require power and released reset. */
+static bool i82092aa_socket_powered(I82092AAState *s, unsigned socket)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE;
+    uint8_t power = s->regs[base + I365_POWER];
+
+    return (power & I365_PWR_OUT) && (power & I365_VCC_MASK);
+}
+
+static bool i82092aa_card_ready(I82092AAState *s, unsigned socket)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE;
+
+    return pcmcia_bus_card_present(&s->socket_bus[socket]) &&
+           i82092aa_socket_powered(s, socket) &&
+           (s->regs[base + I365_INTCTL] & I365_PC_RESET);
+}
+
+static void i82092aa_update_irq(I82092AAState *s)
+{
+    bool level = false;
+    unsigned socket;
+
+    for (socket = 0; socket < s->sockets; socket++) {
+        unsigned base = socket * I82092AA_SOCKET_STRIDE;
+
+        if ((s->card_irq_levels & (1U << socket)) &&
+            i82092aa_card_ready(s, socket)) {
+            level = true;
+        }
+        if (s->regs[base + I365_CSC] &
+            s->regs[base + I365_CSCINT] & I365_CSC_ANY) {
+            level = true;
+        }
+    }
+    pci_set_irq(PCI_DEVICE(s), level);
+}
+
+static void i82092aa_update_socket_status(I82092AAState *s, unsigned socket)
+{
+    unsigned base = socket * I82092AA_SOCKET_STRIDE;
+    uint8_t *status = &s->regs[base + I365_STATUS];
+    bool was_ready = !!(*status & I365_CS_READY);
+    bool ready = i82092aa_card_ready(s, socket);
+
+    *status &= ~(I365_CS_DETECT | I365_CS_READY | I365_CS_POWERON);
+    if (pcmcia_bus_card_present(&s->socket_bus[socket])) {
+        *status |= I365_CS_DETECT;
+    }
+    if (i82092aa_socket_powered(s, socket)) {
+        *status |= I365_CS_POWERON;
+    }
+    if (ready) {
+        *status |= I365_CS_READY;
+    }
+    if (was_ready != ready) {
+        s->regs[base + I365_CSC] |= I365_CSC_READY;
+    }
+    i82092aa_update_irq(s);
+}
 
 static uint16_t i82092aa_reg16(I82092AAState *s, unsigned socket,
                                unsigned reg)
@@ -197,7 +262,7 @@ static void i82092aa_update_io_window(I82092AAState *s, unsigned socket,
     I82092AAWindow *window = &s->io_window[socket][map];
     uint16_t start = i82092aa_reg16(s, socket, I365_IO(map) + I365_W_START);
     uint16_t stop = i82092aa_reg16(s, socket, I365_IO(map) + I365_W_STOP);
-    bool enabled = pcmcia_bus_card_present(&s->socket_bus[socket]) &&
+    bool enabled = i82092aa_card_ready(s, socket) &&
                    (s->regs[base + I365_ADDRWIN] & I365_ENA_IO(map)) &&
                    stop >= start;
 
@@ -232,7 +297,7 @@ static void i82092aa_update_mem_window(I82092AAState *s, unsigned socket,
     }
     card_base = (int64_t)start + ((int64_t)page_offset << 12);
 
-    enabled = pcmcia_bus_card_present(&s->socket_bus[socket]) &&
+    enabled = i82092aa_card_ready(s, socket) &&
               (s->regs[base + I365_ADDRWIN] & I365_ENA_MEM(map)) &&
               stop >= start && card_base >= 0;
 
@@ -269,7 +334,7 @@ static void i82092aa_card_irq(void *opaque, int n, int level)
     } else {
         s->card_irq_levels &= ~(1U << n);
     }
-    pci_set_irq(PCI_DEVICE(s), s->card_irq_levels != 0);
+    i82092aa_update_irq(s);
 }
 
 static void i82092aa_card_event(PCMCIABus *bus, bool inserted, void *opaque)
@@ -277,12 +342,8 @@ static void i82092aa_card_event(PCMCIABus *bus, bool inserted, void *opaque)
     I82092AAState *s = opaque;
     unsigned base = bus->socket * I82092AA_SOCKET_STRIDE;
 
-    if (inserted) {
-        s->regs[base + I365_STATUS] |= I365_CS_DETECT | I365_CS_READY;
-    } else {
-        s->regs[base + I365_STATUS] &= ~(I365_CS_DETECT | I365_CS_READY);
-    }
     s->regs[base + I365_CSC] |= I365_CSC_DETECT;
+    i82092aa_update_socket_status(s, bus->socket);
     i82092aa_update_windows(s, bus->socket);
 }
 
@@ -331,6 +392,7 @@ static uint64_t i82092aa_io_read(void *opaque, hwaddr addr, unsigned size)
 
     if (reg == I365_CSC) {
         s->regs[s->index] = 0;
+        i82092aa_update_irq(s);
     }
 
     return value;
@@ -342,7 +404,6 @@ static void i82092aa_io_write(void *opaque, hwaddr addr,
     I82092AAState *s = opaque;
     uint8_t reg;
     uint8_t socket;
-    uint8_t socket_base;
 
     if (addr == 0) {
         s->index = value;
@@ -360,16 +421,14 @@ static void i82092aa_io_write(void *opaque, hwaddr addr,
 
     s->regs[s->index] = value;
 
-    if (reg == I365_POWER) {
-        socket_base = socket * I82092AA_SOCKET_STRIDE;
-        if (value & I365_PWR_OUT) {
-            s->regs[socket_base + I365_STATUS] |= I365_CS_POWERON;
-        } else {
-            s->regs[socket_base + I365_STATUS] &= ~I365_CS_POWERON;
-        }
+    if (reg == I365_POWER || reg == I365_INTCTL) {
+        i82092aa_update_socket_status(s, socket);
     }
-
-    if (reg == I365_ADDRWIN || (reg >= 0x08 && reg <= 0x35)) {
+    if (reg == I365_CSCINT) {
+        i82092aa_update_irq(s);
+    }
+    if (reg == I365_POWER || reg == I365_INTCTL ||
+        reg == I365_ADDRWIN || (reg >= 0x08 && reg <= 0x35)) {
         i82092aa_update_windows(s, socket);
     }
 }
@@ -420,9 +479,7 @@ static void i82092aa_reset(DeviceState *dev)
         unsigned base = i * I82092AA_SOCKET_STRIDE;
 
         s->regs[base + I365_IDENT] = 0x84;
-        if (pcmcia_bus_card_present(&s->socket_bus[i])) {
-            s->regs[base + I365_STATUS] |= I365_CS_DETECT | I365_CS_READY;
-        }
+        i82092aa_update_socket_status(s, i);
         i82092aa_update_windows(s, i);
     }
 
@@ -518,7 +575,7 @@ static int i82092aa_post_load(void *opaque, int version_id)
     for (socket = 0; socket < s->sockets; socket++) {
         i82092aa_update_windows(s, socket);
     }
-    pci_set_irq(PCI_DEVICE(s), s->card_irq_levels != 0);
+    i82092aa_update_irq(s);
     return 0;
 }
 
