@@ -163,6 +163,26 @@ card-generated interrupts now require socket output power, a selected Vcc and
 a released reset.  Mechanical card detect remains visible without power;
 READY is not asserted while the card is unpowered or held in reset.
 
+QOM device and bus type names
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following QOM names are stable guest-configuration identifiers, not
+interchangeable labels:
+
+* ``pcmcia-bus`` is the concrete 16-bit PC Card bus type derived from
+  QEMU's ``bus`` base class.  Each socket has capacity for **one** card.
+* ``pcmcia-card`` is the **abstract** device type derived from ``device``;
+  it cannot be instantiated directly by ``-device``.
+* ``i82092aa`` is a PCI device type derived from ``pci-device``,
+  representing the socket controller, not a PC Card.
+* ``usr-worldport-v34`` is a concrete ``pcmcia-card`` subclass.
+
+For example, ``-device i82092aa,id=pcic,sockets=2`` exposes socket buses
+``pcic.0`` and ``pcic.1``.  A WorldPort card can be attached to either
+bus using ``-device usr-worldport-v34,bus=pcic.1``, but a second card on
+that occupied socket is rejected as a full bus.  The QOM type names are not
+the same as these dynamically assigned bus *instance* names.
+
 This remains **16-bit PC Card** support, not a 32-bit CardBus implementation.
 The WorldPort CIS is explicitly reconstructed from product characteristics,
 not claimed as a recovered retail CIS ROM.  Detailed socket power-switch
