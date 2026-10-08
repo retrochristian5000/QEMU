@@ -163,6 +163,22 @@ card-generated interrupts now require socket output power, a selected Vcc and
 a released reset.  Mechanical card detect remains visible without power;
 READY is not asserted while the card is unpowered or held in reset.
 
+Shared PC Card definitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The PC Card core's public header (``include/hw/pcmcia/pcmcia.h``)
+contains standard CIS tuple IDs, card function IDs and serial UART
+identifiers.  The 82365SL-compatible ExCA register map and bit masks are
+kept in ``include/hw/pcmcia/i365.h``, used by the 82092AA model and its
+QTests.  Keeping the controller and the tests on the same register definitions
+prevents silent drift between the implementation and its regression checks.
+
+These constants describe documented register and CIS encodings; they are
+**not** evidence that all register side effects, card families, IRQ routing,
+Vcc/Vpp modes or CardBus features are implemented.  The WorldPort CIS remains
+a labeled reconstruction, and its tuple-length chain is checked independently
+from the controller's ExCA register definitions.
+
 QOM device and bus type names
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
