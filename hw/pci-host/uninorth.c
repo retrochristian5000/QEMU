@@ -31,7 +31,6 @@
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/uninorth.h"
 #include "system/system.h"
-#include "system/cpus.h"
 #include "trace.h"
 
 #define UNINORTH_POWER_NORMAL         0x00000000
@@ -607,7 +606,18 @@ static uint64_t unin_read(void *opaque, hwaddr addr, unsigned size)
         value = s->arb_ctrl;
         break;
     case UNINORTH_REG_CPU_NUMBER:
-        value = current_cpu ? current_cpu->cpu_index : 0;
+        /*
+         * Core99/mac99 (and its PowerMac3,1 subclass) currently supports
+         * exactly one CPU.  Return the bootstrap processor's hardware
+         * number without relying on QEMU's execution-thread-local
+         * current_cpu, which is absent for qtest and other MMIO callers.
+         *
+         * Do not use CPUState.cpu_index as a future SMP hardware ID:
+         * that index is QEMU's internal enumeration.  If Core99 gains SMP,
+         * provide a board-defined processor ID and test secondary-CPU
+         * firmware accesses before making this register per-CPU.
+         */
+        value = UNINORTH_CPU_NUMBER_BOOT;
         break;
     case UNINORTH_REG_HW_INIT_STATE:
         value = s->hw_init_state;
