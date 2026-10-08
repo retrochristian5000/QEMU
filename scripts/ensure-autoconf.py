@@ -566,7 +566,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["M4"] = m4
     env["PERL"] = perl
     env["WHP_SED_SEED"] = seed
-    env["SED"] = seed
+    # Route both $SED and literal sed through one traceable bootstrap adapter.
+    env["SED"] = str(SED_ADAPTER)
     env["EMACS"] = "no"
     env["PATH"] = (
         str(seed_bin)
