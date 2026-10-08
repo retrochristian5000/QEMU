@@ -8,7 +8,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/core/qdev-properties.h"
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/pcmcia/i365.h"
 #include "hw/pcmcia/pcmcia.h"
