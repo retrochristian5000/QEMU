@@ -274,8 +274,23 @@ def main() -> int:
     require(build, "whp_libtool_marker_tool()", "Libtool marker tool reader")
     require(
         build,
-        'sed -n "s#^$1=\\\\([^|]*\\\\)|.*$#\\\\1#p"',
-        "safe Libtool marker separator parsing",
+        'whp_marker_required_tool "$WHP_LIBTOOL_MARKER" "$1"',
+        "checked Libtool marker tool handoff",
+    )
+    require(
+        build,
+        'whp_marker_required_value "$WHP_LIBTOOL_MARKER" "$1"',
+        "checked Libtool marker value handoff",
+    )
+    marker_reader = (ROOT / "scripts/whp-build/shell-functions.sh").read_text(
+        encoding="utf-8"
+    )
+    require(marker_reader, "whp_marker_required_tool()", "tool marker reader")
+    require(marker_reader, "whp_marker_required_value()", "value marker reader")
+    require(
+        marker_reader,
+        'whp_marker_seen=$((whp_marker_seen + 1))',
+        "Libtool marker duplicate rejection",
     )
     require(build, "AR=$(whp_libtool_marker_tool AR)", "Libtool AR handoff")
     require(build, "whp_libtool_marker_value()", "Libtool marker value reader")
