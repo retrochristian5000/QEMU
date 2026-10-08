@@ -23,6 +23,7 @@
 #define I82092AA_EXCA_INTCTL    0x03
 #define I82092AA_EXCA_CSC       0x04
 #define I82092AA_EXCA_CSCINT    0x05
+#define I82092AA_EXCA_IOCTL     0x07
 #define I82092AA_EXCA_ADDRWIN   0x06
 #define I82092AA_EXCA_IO0       0x08
 #define I82092AA_EXCA_MEM0      0x10
@@ -228,6 +229,26 @@ static void test_i82092aa_worldport(void)
     /* 16550 scratch-register round trip proves host I/O reaches the card. */
     qtest_outb(qts, WORLDPORT_IO_BASE + 7, 0x5a);
     g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x5a);
+
+    /*
+     * Default ExCA I/O width is 8-bit. A host word write/read must split
+     * into byte accesses, with the high byte reaching the UART scratch
+     * register at offset 7.
+     */
+    qtest_outw(qts, WORLDPORT_IO_BASE + 6, 0x6600);
+    g_assert_cmphex(qtest_inb(qts, WORLDPORT_IO_BASE + 7), ==, 0x66);
+    g_assert_cmphex(qtest_inw(qts, WORLDPORT_IO_BASE + 6) >> 8,
+                    ==, 0x66);
+
+    /*
+     * 16-bit mode must make one card transaction, rather than combining
+     * two 8-bit UART register reads. This serial card returns only a byte
+     * from its first register and therefore a zero high byte.
+     */
+    exca_write(dev, bar, I82092AA_EXCA_IOCTL, 0x01);
+    g_assert_cmphex(qtest_inw(qts, WORLDPORT_IO_BASE + 6) >> 8,
+                    ==, 0);
+    exca_write(dev, bar, I82092AA_EXCA_IOCTL, 0);
 
     /* Power loss hides card memory/I/O while card-detect remains asserted. */
     exca_write(dev, bar, I82092AA_EXCA_POWER, 0);
