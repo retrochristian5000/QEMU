@@ -325,6 +325,13 @@ static bool cocoa_screen_refresh_rate(NSScreen *screen,
     CocoaConsole *console;
     QEMUScreen screen;
     pixman_image_t *pixman_image;
+    /*
+     * Coalesce display updates while the AppKit main queue is busy.
+     * Protected by @synchronized(self); coordinates are guest top-left.
+     */
+    NSRect pendingDisplayRects[8];
+    NSUInteger pendingDisplayCount;
+    BOOL displayFlushScheduled;
     /* The state surrounding mouse grabbing is potentially confusing.
      * isAbsoluteEnabled tracks qemu_input_is_absolute() [ie "is the emulated
      *   pointing device an absolute-position one?"], but is only updated on
@@ -345,6 +352,8 @@ static bool cocoa_screen_refresh_rate(NSScreen *screen,
 }
 - (id)initWithFrame:(NSRect)frameRect console:(CocoaConsole *)givenConsole;
 - (void) switchSurface:(pixman_image_t *)image;
+- (BOOL) queueDisplayRect:(NSRect)rect;
+- (void) flushDisplayRects;
 - (void) grabMouse;
 - (void) ungrabMouse;
 - (void) setFullGrab:(id)sender;
@@ -726,6 +735,72 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     });
 }
 
+/*
+ * Keep a bounded set of dirty areas instead of scheduling one main-thread
+ * block per VGA update.  Only overlapping/touching rectangles are merged;
+ * distant changes should not turn into a costly full-frame redraw.
+ */
+- (BOOL) queueDisplayRect:(NSRect)rect
+{
+    BOOL schedule = NO;
+
+    @synchronized(self) {
+        NSUInteger i = 0;
+
+        while (i < pendingDisplayCount) {
+            NSRect old = pendingDisplayRects[i];
+            if (NSMinX(old) <= NSMaxX(rect) &&
+                NSMinX(rect) <= NSMaxX(old) &&
+                NSMinY(old) <= NSMaxY(rect) &&
+                NSMinY(rect) <= NSMaxY(old)) {
+                rect = NSUnionRect(old, rect);
+                pendingDisplayRects[i] =
+                    pendingDisplayRects[--pendingDisplayCount];
+                i = 0;  // The merged area may touch another dirty region.
+            } else {
+                i++;
+            }
+        }
+
+        if (pendingDisplayCount < ARRAY_SIZE(pendingDisplayRects)) {
+            pendingDisplayRects[pendingDisplayCount++] = rect;
+        } else {
+            /*
+             * A pathological number of disjoint updates must not create
+             * an unbounded queue.  Conservatively merge the overflow.
+             */
+            pendingDisplayRects[0] = NSUnionRect(pendingDisplayRects[0], rect);
+        }
+
+        if (!displayFlushScheduled) {
+            displayFlushScheduled = YES;
+            schedule = YES;
+        }
+    }
+    return schedule;
+}
+
+- (void) flushDisplayRects
+{
+    NSRect rects[ARRAY_SIZE(pendingDisplayRects)];
+    NSUInteger count;
+
+    @synchronized(self) {
+        count = pendingDisplayCount;
+        memcpy(rects, pendingDisplayRects, count * sizeof(rects[0]));
+        pendingDisplayCount = 0;
+        displayFlushScheduled = NO;
+    }
+
+    /* Read screen geometry on the AppKit thread, not the emulation thread. */
+    CGFloat height = screen.height;
+    for (NSUInteger i = 0; i < count; i++) {
+        NSRect rect = rects[i];
+        rect.origin.y = height - NSMaxY(rect);
+        [self setNeedsDisplayInRect:rect];
+    }
+}
+
 - (void) switchSurface:(pixman_image_t *)image
 {
     COCOA_DEBUG("QemuCocoaView: switchSurface\n");
@@ -748,6 +823,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     }
 
     pixman_image = image;
+    // Dirty updates queued for the previous surface cannot replace this.
+    [self setNeedsDisplay:YES];
 }
 
 - (void) setFullGrab:(id)sender
@@ -2054,12 +2131,17 @@ static void cocoa_update(DisplayChangeListener *dcl,
     CocoaConsole *cocoa = container_of(dcl, CocoaConsole, dcl);
     QemuCocoaView *view = cocoa->view;
 
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
     COCOA_DEBUG("qemu_cocoa: cocoa_update\n");
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSRect rect = NSMakeRect(x, [view gscreen].height - y - h, w, h);
-        [view setNeedsDisplayInRect:rect];
-    });
+    if ([view queueDisplayRect:NSMakeRect(x, y, w, h)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [view flushDisplayRects];
+        });
+    }
 }
 
 static void cocoa_switch(DisplayChangeListener *dcl,
