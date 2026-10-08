@@ -127,6 +127,11 @@ for arg in "$@"; do
                 exit 1
             fi
             ;;
+        -Wl,-threads|-Wl,-threads=*)
+            if [[ "${TEST_LLD_THREADS:-accept}" == reject ]]; then
+                exit 1
+            fi
+            ;;
     esac
 done
 case "${1:-}" in
@@ -450,13 +455,11 @@ if env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=4 \
 fi
 grep -Fq 'does not accept --read-workers=4' "$link_forced"
 
-# Bare -threads is not the LLVM Mach-O --threads=N option. Reject inherited
-# linker flags *before* fake Clang can silently accept them in a smoke test.
+# Clang does not treat its raw -threads argument as a Mach-O linker switch.
+# The WHP fork accepts -threads through -Wl only after a real link probe.
 bad_thread_flags=(
     '-threads'
     '-threads=2'
-    '-Wl,-threads'
-    '-Wl,-threads=2'
     '-Wl,-threads,2'
     '-Xlinker -threads'
     '-Wl,--threads'
@@ -472,6 +475,43 @@ for i in "${!bad_thread_flags[@]}"; do
         exit 1
     fi
     grep -Fq 'unsupported Mach-O linker thread flag in LDFLAGS' "$bad_output"
-    grep -Fq 'uses --threads=N, not -threads' "$bad_output"
 done
+
+# The fork's -threads compatibility spellings are forwarded by Clang.
+for i in 0 1; do
+    if [[ "$i" == 0 ]]; then thread_flag='-Wl,-threads';
+    else thread_flag='-Wl,-threads=2'; fi
+    supported_log="$TEST_DIR/supported-thread-option-$i.log"
+    env "${linker_env[@]}" TEST_LLD_THREADS=accept \
+        LDFLAGS="$thread_flag" \
+        BUILD_DIR="$TEST_DIR/supported-thread-option-$i" \
+        OPENBIOS_TOOLS_DIR="$TEST_DIR/supported-thread-tools-$i" \
+        bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$supported_log" 2>&1
+    grep '^LDFLAGS=' "$supported_log" | grep -Fq -- "$thread_flag"
+
+    rejected_log="$TEST_DIR/rejected-thread-option-$i.log"
+    if env "${linker_env[@]}" TEST_LLD_THREADS=reject \
+        LDFLAGS="$thread_flag" \
+        BUILD_DIR="$TEST_DIR/rejected-thread-option-$i" \
+        OPENBIOS_TOOLS_DIR="$TEST_DIR/rejected-thread-tools-$i" \
+        bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$rejected_log" 2>&1; then
+        printf 'error: unsupported LLD accepted %s\n' "$thread_flag" >&2
+        exit 1
+    fi
+    grep -Fq 'selected Mach-O linker does not accept' "$rejected_log"
+
+    apple_log="$TEST_DIR/apple-thread-option-$i.log"
+    if env SDKROOT="$SELECTED_SDK" MACOSX_DEPLOYMENT_TARGET=13.0 \
+        WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+        CC="$CLANG" CXX="$CLANGXX" LDFLAGS="$thread_flag" \
+        NATIVE_LLVM_DIR= NATIVE_LLVM_LDFLAG= LD= \
+        BUILD_DIR="$TEST_DIR/apple-thread-option-$i" \
+        OPENBIOS_TOOLS_DIR="$TEST_DIR/apple-thread-tools-$i" \
+        bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$apple_log" 2>&1; then
+        printf 'error: Apple linker accepted LLVM-only %s\n' "$thread_flag" >&2
+        exit 1
+    fi
+    grep -Fq 'selected Mach-O linker does not accept' "$apple_log"
+done
+
 printf 'macOS SDK selection tests: passed\n'
