@@ -514,6 +514,7 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     configure_args.append(
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
+    configure_args.append(f"-Db_pgo={values['QEMU_HOST_PGO']}")
     lto = values['QEMU_HOST_LTO']
     lto_mode = values['QEMU_HOST_LTO_MODE']
     if lto_mode != 'auto':

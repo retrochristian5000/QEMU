@@ -46,6 +46,7 @@ OPTIONS = (
     Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_LTO_MODE', 'Host features', 'LTO mode (ThinLTO or full)', 'choice', 'auto', ('auto', 'thin', 'full')),
+    Option('QEMU_HOST_PGO', 'Host features', 'QEMU host profile-guided optimization', 'choice', 'off', ('off', 'generate', 'use')),
     Option('QEMU_HOST_MODULES', 'Host features', 'Dynamic QEMU modules', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_OPTIMIZATION', 'Host features', 'QEMU host optimization level', 'choice', '2', ('0', '1', '2', '3', 'g', 's')),
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),

@@ -177,6 +177,16 @@ whp_prepare_build_defaults()
         [[ "$QEMU_HOST_LTO" != auto ]] || QEMU_HOST_LTO=1
     fi
     export QEMU_HOST_LTO QEMU_HOST_LTO_MODE
+    # PGO belongs to QEMU's Meson host build, never firmware or LLVM bootstrap.
+    QEMU_HOST_PGO="${QEMU_HOST_PGO:-off}"
+    case "$QEMU_HOST_PGO" in
+        off|generate|use) ;;
+        *)
+            printf 'error: QEMU_HOST_PGO must be off, generate, or use: %s\n' "$QEMU_HOST_PGO" >&2
+            exit 1
+            ;;
+    esac
+    export QEMU_HOST_PGO
     QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
     QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
     QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
@@ -413,6 +423,7 @@ whp_prepare_configure_args()
         configure_args+=(--disable-tools)
     fi
 
+    configure_args+=("-Db_pgo=$QEMU_HOST_PGO")
     whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
     case "$QEMU_HOST_LTO_MODE" in
         thin) configure_args+=(-Db_lto_mode=thin) ;;

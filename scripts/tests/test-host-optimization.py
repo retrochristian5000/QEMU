@@ -172,5 +172,48 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertNotIn('-Ofast', builder)
 
 
+    def test_pgo_configuration_is_opt_in_and_matches_menu(self):
+        mod = load_config_module()
+        option = mod.OPTION_BY_KEY['QEMU_HOST_PGO']
+        self.assertEqual(option.default, 'off')
+        self.assertEqual(option.choices, ('off', 'generate', 'use'))
+        fallback = (ROOT / 'scripts' / 'whp-config' / 'menu-options.def').read_text(
+            encoding='utf-8')
+        self.assertIn(
+            'QEMU_HOST_PGO|Host features|QEMU host profile-guided optimization|'
+            'choice|off|off,generate,use|', fallback)
+        assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
+        self.assertIn("QEMU_HOST_PGO='off'", assignments)
+
+    def test_portable_pgo_modes_and_invalid_override(self):
+        for mode in ('off', 'generate', 'use', 'invalid'):
+            with self.subTest(mode=mode):
+                env = os.environ.copy()
+                env.update({
+                    'WHP_PORTABLE_PROBE_ONLY': '1',
+                    'BUILD_QEMU_SYSTEM_PPC': '0',
+                    'BUILD_QEMU_SYSTEM_I386': '1',
+                    'QEMU_HOST_PGO': mode,
+                })
+                proc = subprocess.run(
+                    ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                    text=True, capture_output=True, check=False, env=env,
+                )
+                if mode == 'invalid':
+                    self.assertEqual(proc.returncode, 2)
+                    self.assertIn('QEMU_HOST_PGO must be one of:', proc.stderr)
+                else:
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertIn('CONFIGURE_ARG=-Db_pgo=' + mode, proc.stdout)
+
+    def test_bash_pgo_is_meson_only_with_strict_validation(self):
+        prepare = (ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash').read_text(
+            encoding='utf-8')
+        self.assertIn('QEMU_HOST_PGO="${QEMU_HOST_PGO:-off}"', prepare)
+        self.assertIn('off|generate|use)', prepare)
+        self.assertIn('configure_args+=("-Db_pgo=$QEMU_HOST_PGO")', prepare)
+        self.assertNotIn('CFLAGS="-fprofile-', prepare)
+
+
 if __name__ == '__main__':
     unittest.main()

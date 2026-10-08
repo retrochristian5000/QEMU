@@ -136,6 +136,51 @@ runs the optimization backends. The cache belongs to the owned Meson build
 tree and is not a substitute for keeping the selected Clang, archiver, and
 Mach-O linker coherent.
 
+Profile-guided optimization (PGO)
+---------------------------------
+
+``QEMU_HOST_PGO=off|generate|use`` is an opt-in host-only setting exposed
+through menuconfig and both WHP build adapters. Its default is ``off``;
+the adapters pass Meson's ``-Db_pgo=<mode>`` to the QEMU build. It does
+not instrument OpenBIOS, SeaBIOS, LLVM's native bootstrap, or other
+out-of-tree toolchain preparation. Use a stable compiler, architecture,
+optimization level and LTO configuration across both PGO passes.
+
+For LLVM/Clang, the workflow is:
+
+1. Set ``QEMU_HOST_PGO=generate``, build QEMU, and retain the chosen
+   ``BUILD_DIR``. Check Meson's ``b_pgo`` setting rather than assuming the
+   profiling flags were applied.
+2. Run the **instrumented** QEMU emulators on representative, verified
+   guest workloads using ``LLVM_PROFILE_FILE="$BUILD_DIR/pgo-raw/%m-%p.profraw"``
+   after creating ``"$BUILD_DIR/pgo-raw"``. The ``%m`` and ``%p``
+   substitutions distinguish instrumented modules and processes. Use the
+   same TCG/device/I/O mix expected in normal operation; ``--version``
+   or QEMU startup alone provides inadequate TCG coverage. Exit QEMU cleanly
+   so its profiling runtime can write the profiles.
+3. With a compatible ``llvm-profdata``, merge the generated ``*.profraw``
+   files into ``"$BUILD_DIR/default.profdata"``. Example (from a shell
+   whose directory is the QEMU checkout, with ``BUILD_DIR`` already set)::
+
+       llvm-profdata merge -output="$BUILD_DIR/default.profdata" "$BUILD_DIR"/pgo-raw/*.profraw
+
+   Ensure the wildcard actually matches non-empty profile files. Meson does
+   **not** merge LLVM raw profiles automatically, and its Clang ``use``
+   compilation expects the indexed ``default.profdata`` in the build tree.
+4. Set ``QEMU_HOST_PGO=use``, keep that same ``BUILD_DIR``, and rebuild
+   with unchanged compiler and host ABI settings. If the build warns about
+   missing or mismatched profile data, stop and regenerate it rather than
+   silently accepting an unprofiled fallback.
+
+Use an identical ``off`` baseline for benchmarks (same host ABI, compiler,
+LTO, optimization level, guest image, QEMU options and test machine), and
+compare repeated **guest execution** times, not instrumented training times.
+Keep raw profiles and merged profile data in the owned build directory;
+do not commit generated profile files to the source tree. Clang's indexed
+profile format is distinct from GCC's ``.gcda``/profile-use workflow;
+the steps above are for LLVM/Clang. PGO is experimental until native macOS
+link/runtime and representative TCG speedup tests succeed.
+
 LLD-specific LDFLAGS
 --------------------
 
