@@ -29,6 +29,8 @@ on:
       - 'builder.sh'
       - 'scripts/job-budget.py'
       - 'configs/meson/darwin.txt'
+      - 'scripts/macos-builder.bash'
+      - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/verify-macos-lto.bash'
       - 'configs/devices/**'
       - 'hw/pcmcia/**'
@@ -174,6 +176,7 @@ jobs:
           python3 scripts/tests/test-whp-dependency-ledger.py
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-native-llvm-wiring.py
+          bash scripts/tests/test-macos-sdk-selection.bash
           bash scripts/tests/test-archive-tool-policy.bash
           python3 scripts/tests/test-vmdk-overflow.py
           python3 scripts/tests/test-test-policy.py
@@ -257,6 +260,9 @@ jobs:
           bash -n scripts/whp-build/common.bash
           bash -n scripts/whp-build/configure.bash
           bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/macos-builder.bash
+          bash -n scripts/bootstrap-native-clang.bash
+          bash -n scripts/tests/test-macos-sdk-selection.bash
           bash -n scripts/verify-macos-lto.bash
           bash -n scripts/whp-build/build-targets.bash
           bash -n scripts/whp-build/host-cpu-tuning.bash
