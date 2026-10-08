@@ -21,6 +21,9 @@ def main() -> int:
     automake = (ROOT / "scripts/ensure-automake.py").read_text(
         encoding="utf-8"
     )
+    autoconf = (ROOT / "scripts/ensure-autoconf.py").read_text(
+        encoding="utf-8"
+    )
     sed_helper = (ROOT / "scripts/ensure-sed.py").read_text(encoding="utf-8")
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(
         encoding="utf-8"
@@ -54,6 +57,8 @@ def main() -> int:
         'env["WHP_SED_SEED"] = seed',
         "GNU sed self-bootstrap seed handoff",
     )
+    for helper, name in ((automake, "Automake"), (autoconf, "Autoconf"), (sed_helper, "GNU sed")):
+        require(helper, 'env["SED"] = str(SED_ADAPTER)', f"{name} sed adapter handoff")
     require(ledger, "``toolchains/automake``", "Automake registry row")
     require(ledger, "``toolchains/sed``", "GNU sed registry row")
     require(ledger, "sed/Automake bootstrap boundary", "sed ordering ledger")
