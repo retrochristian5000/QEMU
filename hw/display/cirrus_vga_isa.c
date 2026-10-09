@@ -34,6 +34,7 @@
 #include "ui/console.h"
 
 #define TYPE_ISA_CIRRUS_VGA "isa-cirrus-vga"
+#define TYPE_ISA_CIRRUS_GD5426 "isa-cirrus-gd5426"
 OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusVGAState, ISA_CIRRUS_VGA)
 
 struct ISACirrusVGAState {
@@ -42,26 +43,26 @@ struct ISACirrusVGAState {
     CirrusVGAState cirrus_vga;
 };
 
-static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
+static void isa_cirrus_vga_realize(DeviceState *dev, Error **errp,
+                                   int device_id)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
     ISACirrusVGAState *d = ISA_CIRRUS_VGA(dev);
     VGACommonState *s = &d->cirrus_vga.vga;
 
     /*
-     * Model the ISA-capable CL-GD5428.  The CL-GD5430 previously used
-     * here is a local-bus part and does not support ISA.  A 2 MiB board
-     * also matches the maximum display memory supported by the GD5428.
+     * Both the GD5426 and GD5428 support ISA and up to 2 MiB VRAM.
+     * Keep the established isa-cirrus-vga name pinned to the GD5428.
      */
     if (s->vram_size_mb != 2) {
-        error_setg(errp, "Invalid isa-cirrus-vga ram size '%u', expected 2",
+        error_setg(errp, "Invalid Cirrus ISA VRAM size '%u', expected 2",
                    s->vram_size_mb);
         return;
     }
     if (!vga_common_init(s, OBJECT(dev), errp)) {
         return;
     }
-    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), CIRRUS_ID_CLGD5428,
+    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), device_id,
                        CIRRUS_BUSTYPE_ISA,
                        isa_address_space(isadev),
                        isa_address_space_io(isadev));
@@ -69,6 +70,16 @@ static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
     rom_add_vga(VGABIOS_CIRRUS_FILENAME);
     /* XXX ISA-LFB support */
     /* FIXME not qdev yet */
+}
+
+static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
+{
+    isa_cirrus_vga_realize(dev, errp, CIRRUS_ID_CLGD5428);
+}
+
+static void isa_cirrus_gd5426_realizefn(DeviceState *dev, Error **errp)
+{
+    isa_cirrus_vga_realize(dev, errp, CIRRUS_ID_CLGD5426);
 }
 
 static const Property isa_cirrus_vga_properties[] = {
@@ -97,9 +108,26 @@ static const TypeInfo isa_cirrus_vga_info = {
     .class_init = isa_cirrus_vga_class_init,
 };
 
+/* Inherit the ISA wiring, VRAM properties and migration state. */
+static void isa_cirrus_gd5426_class_init(ObjectClass *klass,
+                                          const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->realize = isa_cirrus_gd5426_realizefn;
+    dc->desc = "Cirrus Logic CL-GD5426 ISA VGA";
+}
+
+static const TypeInfo isa_cirrus_gd5426_info = {
+    .name = TYPE_ISA_CIRRUS_GD5426,
+    .parent = TYPE_ISA_CIRRUS_VGA,
+    .class_init = isa_cirrus_gd5426_class_init,
+};
+
 static void cirrus_vga_isa_register_types(void)
 {
     type_register_static(&isa_cirrus_vga_info);
+    type_register_static(&isa_cirrus_gd5426_info);
 }
 
 type_init(cirrus_vga_isa_register_types)

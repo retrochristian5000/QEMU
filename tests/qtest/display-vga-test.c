@@ -62,14 +62,14 @@ static uint8_t vga_gfx_read(QTestState *qts, uint8_t index)
     return qtest_inb(qts, VGA_GFX_D);
 }
 
-static void test_isa_cirrus_profile(void)
+static void test_isa_cirrus_profile_for(const char *model, uint8_t chip_id)
 {
-    QTestState *qts = qtest_init("-vga none -device isa-cirrus-vga");
+    QTestState *qts = qtest_initf("-vga none -device %s", model);
 
     qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
     vga_seq_write(qts, 0x06, 0x12);
 
-    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, 0x98);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, chip_id);
     g_assert_cmphex(vga_seq_read(qts, 0x17), ==, 0x38);
     g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==, 0x18);
 
@@ -80,7 +80,7 @@ static void test_isa_cirrus_profile(void)
 
     /*
      * SR17[2] enables BitBLT MMIO on later Cirrus chips, but the
-     * CL-GD5428 predates that capability.  Keep the B8000 aperture
+     * CL-GD5426/5428 predate that capability.  Keep the B8000 aperture
      * unmapped even if software sets the otherwise writable bit.
      */
     vga_gfx_write(qts, 0x00, 0x5a);
@@ -90,6 +90,16 @@ static void test_isa_cirrus_profile(void)
                     ==, 0xff);
 
     qtest_quit(qts);
+}
+
+static void test_isa_cirrus_profile(void)
+{
+    test_isa_cirrus_profile_for("isa-cirrus-vga", 0x98);
+}
+
+static void test_isa_cirrus_gd5426_profile(void)
+{
+    test_isa_cirrus_profile_for("isa-cirrus-gd5426", 0x90);
 }
 
 static void test_vlb_cirrus_decoder(gconstpointer data)
@@ -294,6 +304,12 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-profile",
                        test_isa_cirrus_profile);
+    }
+
+    if (qtest_has_device("isa-cirrus-gd5426") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/isa/cirrus-gd5426-profile",
+                       test_isa_cirrus_gd5426_profile);
     }
 
     if (qtest_has_device("cirrus-gd5430-vlb") &&
