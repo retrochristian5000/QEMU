@@ -957,7 +957,7 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
 {
     uint8_t blt_rop;
 
-    if (!s->enable_blitter) {
+    if (!s->enable_blitter || s->device_id == CIRRUS_ID_CLGD5422) {
         goto bitblt_ignore;
     }
 
@@ -2842,7 +2842,8 @@ static void cirrus_reset(void *opaque)
         s->vga.sr[0x15] = 0x04; /* memory size, 3=2MB, 4=4MB */
     } else {
         s->vga.sr[0x1F] = 0x22;         // MemClock
-        s->vga.sr[0x0F] = CIRRUS_MEMSIZE_2M;
+        s->vga.sr[0x0F] = s->device_id == CIRRUS_ID_CLGD5422 ?
+                         CIRRUS_MEMSIZE_1M : CIRRUS_MEMSIZE_2M;
         s->vga.sr[0x17] = s->bustype;
         if (s->device_id == CIRRUS_ID_CLGD5430) {
             s->vga.sr[0x15] = 0x03; /* memory size, 3=2MB, 4=4MB */
@@ -2966,8 +2967,9 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
                           "cirrus-mmio", CIRRUS_PNPMMIO_SIZE);
     memory_region_set_flush_coalesced(&s->cirrus_mmio_io);
 
-    s->real_vram_size =
-        (s->device_id == CIRRUS_ID_CLGD5446) ? 4 * MiB : 2 * MiB;
+    /* GD5422 has 1 MiB; preserve the PCI GD5446 4 MiB limit. */
+    s->real_vram_size = (s->device_id == CIRRUS_ID_CLGD5446) ?
+                        4 * MiB : s->vga.vram_size_mb * MiB;
 
     /* XXX: s->vga.vram_size must be a power of two */
     s->cirrus_addr_mask = s->real_vram_size - 1;

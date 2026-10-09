@@ -35,7 +35,9 @@
 
 #define TYPE_ISA_CIRRUS_VGA "isa-cirrus-vga"
 #define TYPE_ISA_CIRRUS_GD5426 "isa-cirrus-gd5426"
+#define TYPE_ISA_CIRRUS_GD5422 "isa-cirrus-gd5422"
 OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusVGAState, ISA_CIRRUS_VGA)
+OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusGD5422State, ISA_CIRRUS_GD5422)
 
 struct ISACirrusVGAState {
     ISADevice parent_obj;
@@ -43,26 +45,30 @@ struct ISACirrusVGAState {
     CirrusVGAState cirrus_vga;
 };
 
+/* Sibling type permits independent 1 MiB defaults without shadowing
+ * the inherited GD5428/GD5426 qdev properties. */
+struct ISACirrusGD5422State {
+    ISADevice parent_obj;
+
+    CirrusVGAState cirrus_vga;
+};
+
 static void isa_cirrus_vga_realize(DeviceState *dev, Error **errp,
-                                   int device_id)
+                                   CirrusVGAState *cirrus, int device_id,
+                                   unsigned int vram_mb)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
-    ISACirrusVGAState *d = ISA_CIRRUS_VGA(dev);
-    VGACommonState *s = &d->cirrus_vga.vga;
+    VGACommonState *s = &cirrus->vga;
 
-    /*
-     * Both the GD5426 and GD5428 support ISA and up to 2 MiB VRAM.
-     * Keep the established isa-cirrus-vga name pinned to the GD5428.
-     */
-    if (s->vram_size_mb != 2) {
-        error_setg(errp, "Invalid Cirrus ISA VRAM size '%u', expected 2",
-                   s->vram_size_mb);
+    if (s->vram_size_mb != vram_mb) {
+        error_setg(errp, "Invalid Cirrus ISA VRAM size '%u', expected %u",
+                   s->vram_size_mb, vram_mb);
         return;
     }
     if (!vga_common_init(s, OBJECT(dev), errp)) {
         return;
     }
-    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), device_id,
+    cirrus_init_common(cirrus, OBJECT(dev), device_id,
                        CIRRUS_BUSTYPE_ISA,
                        isa_address_space(isadev),
                        isa_address_space_io(isadev));
@@ -74,13 +80,35 @@ static void isa_cirrus_vga_realize(DeviceState *dev, Error **errp,
 
 static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
 {
-    isa_cirrus_vga_realize(dev, errp, CIRRUS_ID_CLGD5428);
+    ISACirrusVGAState *d = ISA_CIRRUS_VGA(dev);
+
+    isa_cirrus_vga_realize(dev, errp, &d->cirrus_vga,
+                           CIRRUS_ID_CLGD5428, 2);
 }
 
 static void isa_cirrus_gd5426_realizefn(DeviceState *dev, Error **errp)
 {
-    isa_cirrus_vga_realize(dev, errp, CIRRUS_ID_CLGD5426);
+    ISACirrusVGAState *d = ISA_CIRRUS_VGA(dev);
+
+    isa_cirrus_vga_realize(dev, errp, &d->cirrus_vga,
+                           CIRRUS_ID_CLGD5426, 2);
 }
+
+static void isa_cirrus_gd5422_realizefn(DeviceState *dev, Error **errp)
+{
+    ISACirrusGD5422State *d = ISA_CIRRUS_GD5422(dev);
+
+    d->cirrus_vga.enable_blitter = false;
+    isa_cirrus_vga_realize(dev, errp, &d->cirrus_vga,
+                           CIRRUS_ID_CLGD5422, 1);
+}
+
+static const Property isa_cirrus_gd5422_properties[] = {
+    DEFINE_PROP_UINT32("vgamem_mb", struct ISACirrusGD5422State,
+                       cirrus_vga.vga.vram_size_mb, 1),
+    DEFINE_PROP_BOOL("global-vmstate", struct ISACirrusGD5422State,
+                     cirrus_vga.vga.global_vmstate, false),
+};
 
 static const Property isa_cirrus_vga_properties[] = {
     DEFINE_PROP_UINT32("vgamem_mb", struct ISACirrusVGAState,
@@ -124,10 +152,29 @@ static const TypeInfo isa_cirrus_gd5426_info = {
     .class_init = isa_cirrus_gd5426_class_init,
 };
 
+static void isa_cirrus_gd5422_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->vmsd = &vmstate_cirrus_vga;
+    dc->realize = isa_cirrus_gd5422_realizefn;
+    device_class_set_props(dc, isa_cirrus_gd5422_properties);
+    set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
+    dc->desc = "Cirrus Logic CL-GD5422 ISA VGA (1 MiB, no BitBLT)";
+}
+
+static const TypeInfo isa_cirrus_gd5422_info = {
+    .name = TYPE_ISA_CIRRUS_GD5422,
+    .parent = TYPE_ISA_DEVICE,
+    .instance_size = sizeof(ISACirrusGD5422State),
+    .class_init = isa_cirrus_gd5422_class_init,
+};
+
 static void cirrus_vga_isa_register_types(void)
 {
     type_register_static(&isa_cirrus_vga_info);
     type_register_static(&isa_cirrus_gd5426_info);
+    type_register_static(&isa_cirrus_gd5422_info);
 }
 
 type_init(cirrus_vga_isa_register_types)

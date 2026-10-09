@@ -102,6 +102,24 @@ static void test_isa_cirrus_gd5426_profile(void)
     test_isa_cirrus_profile_for("isa-cirrus-gd5426", 0x90);
 }
 
+static void test_isa_cirrus_gd5422_profile(void)
+{
+    QTestState *qts = qtest_init("-vga none -device isa-cirrus-gd5422");
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, 0x8c);
+    g_assert_cmphex(vga_seq_read(qts, 0x17), ==, 0x38);
+    g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==, 0x10);
+
+    /* GD5422 has no BitBLT engine: a start request cannot leave it busy. */
+    vga_gfx_write(qts, 0x31, 0x02);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x03, ==, 0);
+
+    qtest_quit(qts);
+}
+
 static void test_vlb_cirrus_decoder(gconstpointer data)
 {
     uint32_t base = GPOINTER_TO_UINT(data);
@@ -310,6 +328,12 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-gd5426-profile",
                        test_isa_cirrus_gd5426_profile);
+    }
+
+    if (qtest_has_device("isa-cirrus-gd5422") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/isa/cirrus-gd5422-profile",
+                       test_isa_cirrus_gd5422_profile);
     }
 
     if (qtest_has_device("cirrus-gd5430-vlb") &&
