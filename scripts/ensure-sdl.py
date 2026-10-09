@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/sdl")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-SDL_BOOTSTRAP_SCHEMA = "1"
+SDL_BOOTSTRAP_SCHEMA = "2"
 SDL_MIN_VERSION = (3, 2, 0)
 
 
@@ -298,6 +298,25 @@ def installed_version(pc_file: pathlib.Path) -> str:
     return ""
 
 
+def find_shared_sdl(prefix: pathlib.Path) -> pathlib.Path | None:
+    """Verify that a dynamically loadable SDL3 library was installed."""
+    system = platform.system()
+    if system == "Darwin":
+        searches = ((prefix / "lib", "libSDL3*.dylib"),)
+    elif system == "Windows":
+        searches = ((prefix / "bin", "SDL3.dll"),)
+    else:
+        searches = (
+            (prefix / "lib", "libSDL3.so*"),
+            (prefix / "lib64", "libSDL3.so*"),
+        )
+    for directory, pattern in searches:
+        for candidate in sorted(directory.glob(pattern)):
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return candidate
+    return None
+
+
 def marker_text(
     revision: str,
     cmake: str,
@@ -323,8 +342,8 @@ def marker_text(
         f"CC_VERSION={cc_id}\n"
         f"SDKROOT={sdkroot}\n"
         f"SDL_MACOS_ARCH={arch}\n"
-        "SDL_SHARED=OFF\n"
-        "SDL_STATIC=ON\n"
+        "SDL_SHARED=ON\n"
+        "SDL_STATIC=OFF\n"
     )
 
 
@@ -337,7 +356,8 @@ def cache_valid(prefix: pathlib.Path, marker: str) -> bool:
     pc_file = find_pkgconfig_file(prefix)
     if pc_file is None:
         return False
-    return version_tuple(installed_version(pc_file)) >= SDL_MIN_VERSION
+    return (version_tuple(installed_version(pc_file)) >= SDL_MIN_VERSION
+            and find_shared_sdl(prefix) is not None)
 
 
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
@@ -385,8 +405,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         f"-DCMAKE_C_COMPILER={cc}",
         f"-DCMAKE_INSTALL_PREFIX={prefix}",
         "-DCMAKE_BUILD_TYPE=Release",
-        "-DSDL_SHARED=OFF",
-        "-DSDL_STATIC=ON",
+        "-DSDL_SHARED=ON",
+        "-DSDL_STATIC=OFF",
+        "-DCMAKE_INSTALL_LIBDIR=lib",
         "-DSDL_INSTALL=ON",
         "-DSDL_TEST_LIBRARY=OFF",
         "-DSDL_TESTS=OFF",
@@ -396,6 +417,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         command.append(f"-DCMAKE_OSX_SYSROOT={sdkroot}")
     if arch:
         command.append(f"-DCMAKE_OSX_ARCHITECTURES={arch}")
+        # We need a dylib, not an SDL framework bundle.
+        command.append("-DSDL_FRAMEWORK=OFF")
 
     print(f"WHP SDL3 bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(command)
@@ -409,6 +432,12 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         raise RuntimeError(
             f"bootstrapped SDL3 is too old for QEMU: {version or '<unknown>'} < 3.2.0"
         )
+    shared_library = find_shared_sdl(prefix)
+    if shared_library is None:
+        raise RuntimeError(
+            f"SDL3 bootstrap did not install a shared SDL3 library under {prefix}"
+        )
+    print(f"WHP SDL3 shared library: {shared_library}", file=sys.stderr)
 
     (prefix / ".whp-sdl-bootstrap").write_text(marker, encoding="utf-8")
     return prefix
