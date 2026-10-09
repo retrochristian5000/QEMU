@@ -17,7 +17,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/sdl")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-SDL_BOOTSTRAP_SCHEMA = "2"
+SDL_BOOTSTRAP_SCHEMA = "3"
 SDL_MIN_VERSION = (3, 2, 0)
 
 
@@ -248,6 +248,21 @@ def macos_arch() -> str:
     return requested
 
 
+def needs_objc_class_stub_fallback() -> bool:
+    """Match QEMU's native Mach-O LLD compatibility policy for SDL .m files.
+
+    Clang can emit _objc_msgSendClass$selector$_OBJC_CLASS_$_Class symbols
+    which the selected WHP ld64.lld does not yet synthesize. The main QEMU
+    wrapper adds the opt-out too late to affect SDL's earlier CMake bootstrap.
+    Do not change ObjC code generation when Apple ld is selected.
+    """
+    return (
+        platform.system() == "Darwin"
+        and os.environ.get("NATIVE_LLVM_LDFLAG") == "-fuse-ld=lld"
+        and pathlib.Path(os.environ.get("LD", "")).name == "ld64.lld"
+    )
+
+
 def version_tuple(value: str) -> tuple[int, ...]:
     pieces = []
     for part in value.strip().split("."):
@@ -342,6 +357,8 @@ def marker_text(
         f"CC_VERSION={cc_id}\n"
         f"SDKROOT={sdkroot}\n"
         f"SDL_MACOS_ARCH={arch}\n"
+        f"SDL_LINKER={os.environ.get('LD', '')}\n"
+        f"SDL_OBJC_CLASS_STUB_FALLBACK={int(needs_objc_class_stub_fallback())}\n"
         "SDL_SHARED=ON\n"
         "SDL_STATIC=OFF\n"
     )
@@ -424,6 +441,20 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             "-DCMAKE_MACOSX_RPATH=ON",
             "-DCMAKE_INSTALL_NAME_DIR=@rpath",
         ))
+        if needs_objc_class_stub_fallback():
+            # SDL's GameController backend sends class messages, including
+            # GCController.shouldMonitorBackgroundEvents. Pin its Objective-C
+            # compiler to the selected host Clang, and suppress just the
+            # class-selector stubs unsupported by the pinned Mach-O LLD.
+            command.extend((
+                f"-DCMAKE_OBJC_COMPILER={cc}",
+                "-DCMAKE_OBJC_FLAGS=-fno-objc-msgsend-class-selector-stubs",
+            ))
+            print(
+                "WHP SDL3: disabling unsupported Objective-C class-message "
+                "stubs for the selected Mach-O LLD.",
+                file=sys.stderr,
+            )
 
     print(f"WHP SDL3 bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(command)
