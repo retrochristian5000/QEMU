@@ -860,6 +860,45 @@ XML
     rm -rf "$probe_dir"
 }
 
+shared_host_libraries_usable()
+{
+    local prefix="$1"
+    local candidate
+    local llvm_found=0
+    local clang_found=0
+    [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]] || return 0
+
+    if [[ "$host_os" == macos ]]; then
+        for candidate in "$prefix"/lib/libLLVM*.dylib; do
+            [[ ! -f "$candidate" ]] || llvm_found=1
+        done
+        for candidate in "$prefix"/lib/libclang-cpp*.dylib; do
+            [[ ! -f "$candidate" ]] || clang_found=1
+        done
+    else
+        for candidate in "$prefix"/lib/libLLVM*.so*; do
+            [[ ! -f "$candidate" ]] || llvm_found=1
+        done
+        for candidate in "$prefix"/lib/libclang-cpp*.so*; do
+            [[ ! -f "$candidate" ]] || clang_found=1
+        done
+    fi
+    if [[ "$llvm_found" != 1 || "$clang_found" != 1 ]]; then
+        printf 'error: shared native LLVM lacks libLLVM or libclang-cpp\n' >&2
+        return 1
+    fi
+    if [[ "$host_os" == macos ]]; then
+        # The .dylib must be linked by the consumer, not merely installed.
+        # LLVM's own llvm_setup_rpath uses @loader_path/../lib for this.
+        if ! command -v otool >/dev/null 2>&1 ||
+           ! otool -L "$prefix/bin/clang" 2>/dev/null |
+               grep -Eq 'libclang-cpp[^[:space:]]*\.dylib'; then
+            printf 'error: installed Clang is not linked to libclang-cpp.dylib\n' >&2
+            return 1
+        fi
+    fi
+}
+
 usable()
 {
     local prefix="$1"
@@ -881,6 +920,7 @@ usable()
     if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
         windows_manifest_tool_usable "$prefix" || return 1
     fi
+    shared_host_libraries_usable "$prefix" || return 1
     supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
     grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
