@@ -706,6 +706,72 @@ def verify_requested_outputs(build_dir: pathlib.Path, requested_targets: List[st
     return artifacts
 
 
+def portable_pgo_stage(build_dir: pathlib.Path) -> str:
+    probe = subprocess.run([
+        sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'),
+        '--build-dir', str(build_dir), '--mode', 'status',
+    ], check=True, text=True, capture_output=True)
+    stage = probe.stdout.strip()
+    if stage not in ('generate', 'use'):
+        raise RuntimeError(f'unrecognized QEMU PGO stage: {stage!r}')
+    return stage
+
+
+def portable_pgo_generate(
+    build_dir: pathlib.Path, prefix: pathlib.Path, configure_args: List[str],
+    requested_targets: List[str], runner: List[str], jobs: str,
+    values: Dict[str, str],
+) -> None:
+    """Build an instrumented QEMU before use without recursively bootstrapping."""
+    if '-Db_pgo=use' not in configure_args:
+        raise RuntimeError('QEMU PGO use stage was not configured')
+    generate_args = [
+        '-Db_pgo=generate' if arg == '-Db_pgo=use' else arg
+        for arg in configure_args
+    ]
+    print('QEMU PGO: no saved training profiles; building generate stage first.',
+          flush=True)
+    subprocess.run([str(ROOT / 'configure'), *generate_args],
+                   cwd=build_dir, check=True)
+    write_portable_config(build_dir, prefix, generate_args)
+    append_module_build_target(build_dir, requested_targets, values)
+    runner_name = pathlib.Path(runner[0]).name
+    command = (
+        [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
+        if runner_name.startswith('ninja')
+        else [*runner, '-C', str(build_dir), f'-j{jobs}', *requested_targets]
+    )
+    subprocess.run(command, check=True)
+
+    raw_dir = build_dir / 'pgo-raw'
+    raw_dir.mkdir(exist_ok=True)
+    training_script = os.environ.get('QEMU_PGO_TRAIN_SCRIPT', '').strip()
+    if not training_script:
+        raise RuntimeError(
+            'instrumented QEMU generate build is ready in ' + str(build_dir)
+            + '. Run representative guest workloads with '
+            f'LLVM_PROFILE_FILE={raw_dir}/%m-%p.profraw; then retry '
+            'QEMU_HOST_PGO=use. For automatic training, set '
+            'QEMU_PGO_TRAIN_SCRIPT to an executable workload script.'
+        )
+    path = pathlib.Path(training_script).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise RuntimeError(
+            f'QEMU_PGO_TRAIN_SCRIPT is not an executable file: {path}'
+        )
+    env = os.environ.copy()
+    env['LLVM_PROFILE_FILE'] = str(raw_dir / '%m-%p.profraw')
+    env['WHP_PGO_BUILD_DIR'] = str(build_dir)
+    subprocess.run([str(path), *requested_targets], env=env, check=True)
+    if portable_pgo_stage(build_dir) != 'use':
+        raise RuntimeError(
+            'PGO training script completed but produced no nonempty raw '
+            'profiles; run the instrumented QEMU and exit cleanly.'
+        )
+
+
 def main(argv: List[str]) -> int:
     if sys.version_info < (3, 9):
         print('error: Python 3.9 or newer is required by QEMU', file=sys.stderr)
@@ -748,20 +814,25 @@ def main(argv: List[str]) -> int:
     artifacts: Dict[str, pathlib.Path] = {}
     try:
         validate_build_tree_owner(build_dir)
-        if resolved_values()['QEMU_HOST_PGO'] == 'use':
+        write_build_tree_owner(build_dir)
+        values = resolved_values()
+        runner = select_runner()
+        jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
+        if values['QEMU_HOST_PGO'] == 'use':
+            if portable_pgo_stage(build_dir) == 'generate':
+                portable_pgo_generate(
+                    build_dir, prefix, configure_args, requested_targets,
+                    runner, jobs, values,
+                )
             subprocess.run([
                 sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'),
                 '--build-dir', str(build_dir),
                 '--compiler', os.environ.get('CC', 'clang'),
             ], check=True)
-        write_build_tree_owner(build_dir)
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
         write_portable_config(build_dir, prefix, configure_args)
-        values = resolved_values()
         append_module_build_target(build_dir, requested_targets, values)
 
-        runner = select_runner()
-        jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
         runner_name = pathlib.Path(runner[0]).name
         if runner_name.startswith('ninja'):
             build_command = [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
