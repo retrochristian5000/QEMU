@@ -896,21 +896,6 @@ usable()
             return 1
         fi
         rm -f "$objc_exe" "$objc_log"
-
-        if [[ "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]]; then
-            asan_args=(
-                --clang "$prefix/bin/clang"
-                --readobj "$prefix/bin/llvm-readobj"
-                --arch "$darwin_cmake_arch"
-                --sdkroot "$sdkroot"
-                --deployment-target "$deployment_target"
-            )
-            if [[ "$darwin_cmake_arch" != arm64e ]]; then
-                asan_args+=(--use-lld)
-            fi
-            "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
-                "${asan_args[@]}" || return 1
-        fi
     fi
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
@@ -934,8 +919,32 @@ usable()
         "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || return 1
 }
 
+verify_asan_when_requested()
+{
+    local prefix="$1"
+    local asan_args=()
+
+    # A failing optional ASan linker is not evidence that the whole native
+    # LLVM cache needs recompilation. Check independently after usable() has
+    # accepted the toolchain, and before publishing a newly staged toolchain.
+    [[ "$host_os" == macos && "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]] || return 0
+    asan_args=(
+        --clang "$prefix/bin/clang"
+        --readobj "$prefix/bin/llvm-readobj"
+        --arch "$darwin_cmake_arch"
+        --sdkroot "$sdkroot"
+        --deployment-target "$deployment_target"
+    )
+    if [[ "$darwin_cmake_arch" != arm64e ]]; then
+        asan_args+=(--use-lld)
+    fi
+    "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
+        "${asan_args[@]}"
+}
+
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
       "$(cat "$marker")" == "$expected_marker" ]] && usable "$TOOLCHAIN_DIR"; then
+    verify_asan_when_requested "$TOOLCHAIN_DIR" || exit 1
     printf 'WHP native LLVM is current: %s\n' "$TOOLCHAIN_DIR" >&2
     printf '%s\n' "$TOOLCHAIN_DIR" >&3
     exit 0
@@ -1076,6 +1085,7 @@ usable "$staged_toolchain" || {
     printf 'error: staged WHP native LLVM toolchain is incomplete\n' >&2
     exit 1
 }
+verify_asan_when_requested "$staged_toolchain" || exit 1
 
 old_toolchain="${TOOLCHAIN_DIR}.old.$$"
 rm -rf "$old_toolchain"
