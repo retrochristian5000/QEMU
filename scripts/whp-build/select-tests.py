@@ -34,7 +34,9 @@ DOC_PREFIXES = (
 )
 
 SOURCE_SUFFIXES = {
-    '.c', '.h', '.inc', '.m', '.mm', '.py', '.rs', '.json', '.toml', '.yaml', '.yml',
+    '.C', '.S', '.s', '.asm', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh',
+    '.hpp', '.hxx', '.inc', '.m', '.mm', '.py', '.rs', '.json', '.toml',
+    '.yaml', '.yml',
 }
 
 
