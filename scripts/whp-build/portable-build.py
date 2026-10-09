@@ -597,6 +597,22 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
     configure_args.append(f"-Db_pgo={values['QEMU_HOST_PGO']}")
+    # build.sh stages private SDL3 under BUILD_DIR/deps/sdl3, where QEMU and
+    # its one-level-deep modules must locate the shared library at runtime.
+    # Keep firmware/toolchain builds unaffected by these QEMU-only link args.
+    if os.environ.get('WHP_SDL_PREFIX'):
+        if platform.system() == 'Darwin':
+            configure_args.extend((
+                '--extra-ldflags=-Wl,-rpath,@loader_path/deps/sdl3/lib',
+                '--extra-ldflags=-Wl,-rpath,@loader_path/../deps/sdl3/lib',
+            ))
+        elif platform.system() in (
+            'Linux', 'FreeBSD', 'NetBSD', 'OpenBSD', 'DragonFly', 'SunOS'
+        ):
+            configure_args.extend((
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/deps/sdl3/lib',
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/../deps/sdl3/lib',
+            ))
     lto = values['QEMU_HOST_LTO']
     lto_mode = values['QEMU_HOST_LTO_MODE']
     if lto_mode != 'auto':
