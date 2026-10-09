@@ -234,6 +234,30 @@ class WhpIncrementalTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'non-empty unowned'):
                 mod.validate_build_tree_owner(build_dir)
 
+    def test_public_claim_command_rehomes_owner_without_deleting_profiles(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-build-owner').write_text(
+                'SCHEMA=2\nSOURCE_DIR=/transferred/checkouts/QEMU\n'
+                f'HOST_TAG={mod.host_build_tag()}\n',
+                encoding='utf-8',
+            )
+            data = build_dir / 'default.profdata'
+            data.write_bytes(b'preserve-profile')
+            env = os.environ.copy()
+            env['BUILD_DIR'] = str(build_dir)
+            result = subprocess.run(
+                [os.environ.get('PYTHON', 'python3'),
+                 str(PORTABLE_BUILD_TOOL), '--claim-build-dir'],
+                env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(data.read_bytes(), b'preserve-profile')
+            owner = (build_dir / '.whp-build-owner').read_text(encoding='utf-8')
+            self.assertIn(f'PROJECT_ID={mod.PROJECT_ID}', owner)
+            self.assertIn(f'SOURCE_DIR={mod.ROOT}', owner)
+
     def test_bash_configure_delegates_owner_migration_to_portable_helper(self):
         source = (ROOT / 'scripts/whp-build/configure.bash').read_text(encoding='utf-8')
         self.assertIn('"$SOURCE_DIR/scripts/whp-build/portable-build.py"', source)
