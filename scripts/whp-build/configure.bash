@@ -42,6 +42,14 @@ whp_configure_metadata_value()
 
 whp_configure_validate_build_tree_owner()
 {
+    # Share the relocatable WHP project/ABI policy with the public launcher.
+    # Lightweight test fixtures without the full source tree retain the
+    # legacy shell fallback below.
+    if [[ -f "$SOURCE_DIR/scripts/whp-build/portable-build.py" ]]; then
+        "${PYTHON:-python3}" "$SOURCE_DIR/scripts/whp-build/portable-build.py" \
+            --claim-build-dir || return 1
+        return 0
+    fi
     local owner_file="$BUILD_DIR/.whp-build-owner"
     local config_file="$BUILD_DIR/.whp-config"
     local expected_tag
