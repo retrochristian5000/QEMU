@@ -233,7 +233,7 @@ class WhpIncrementalTests(unittest.TestCase):
             build_dir.mkdir()
             identity = build_dir / '.whp-macos-build-identity'
             identity.write_text(
-                f'SOURCE_DIR={mod.ROOT}\\nHOST_TAG={mod.host_build_tag()}\\n',
+                f'SOURCE_DIR={mod.ROOT}\nHOST_TAG={mod.host_build_tag()}\n',
                 encoding='utf-8',
             )
             (build_dir / 'default.profdata').write_bytes(b'indexed')
