@@ -136,6 +136,30 @@ runs the optimization backends. The cache belongs to the owned Meson build
 tree and is not a substitute for keeping the selected Clang, archiver, and
 Mach-O linker coherent.
 
+Shared SDL3 host library
+------------------------
+
+The pinned SDL3 fallback (``toolchains/sdl``) now builds a **shared**
+``libSDL3`` library instead of a static-only archive. CMake uses
+``SDL_SHARED=ON``, ``SDL_STATIC=OFF``, and a versioned bootstrap cache
+identity; stale static-only cache entries are rebuilt in place. The
+bootstrap verifies that a loadable ``.dylib``, ``.so``, or ``.dll``
+was installed before recording success. ``BOOTSTRAP_SDL=auto`` continues
+to prefer a suitable system SDL3 before trying the pinned fallback.
+
+QEMU links dynamically through its existing SDL3 Meson/pkg-config dependency.
+For private fallback builds, the QEMU host link receives build-tree-relative
+``@loader_path`` (macOS) or ``$ORIGIN`` (ELF) runtime paths for emulators
+and one-directory-deep loadable modules. Build/test processes also receive
+the fallback prefix's dynamic-library search path. This is not a general
+promise that an installed QEMU executable will find SDL3 after deleting the
+private build tree: package the shared library alongside the executable or
+depend on a compatible system SDL3 runtime for redistributed binaries.
+
+Dynamic linking avoids embedding the SDL3 archive in every linked consumer
+and may save space or rebuilding work, but does not guarantee higher TCG
+execution speed. Measure runtime separately from binary size and link time.
+
 Profile-guided optimization (PGO)
 ---------------------------------
 
