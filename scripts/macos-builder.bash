@@ -198,6 +198,19 @@ fi
 
 sanitize_macos_build_environment
 
+# build.sh has already staged and verified the private SDL3 shared library.
+# The hygiene step above discards all inherited search paths, including those
+# populated by the WHP SDL bootstrap. Restore only this validated, managed
+# prefix after sanitizing; do not reopen arbitrary user-supplied search paths.
+if [[ -n "${WHP_SDL_PREFIX:-}" &&
+      -f "$WHP_SDL_PREFIX/lib/pkgconfig/sdl3.pc" ]]; then
+    whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"
+    whp_append_colon_path CMAKE_PREFIX_PATH "$WHP_SDL_PREFIX"
+    if [[ -d "$WHP_SDL_PREFIX/lib" ]]; then
+        whp_append_colon_path DYLD_FALLBACK_LIBRARY_PATH "$WHP_SDL_PREFIX/lib"
+    fi
+fi
+
 for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
     basename mv ls; do
     if ! command -v "$required" >/dev/null 2>&1; then
