@@ -179,6 +179,75 @@ class WhpIncrementalTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'another QEMU source tree'):
                 mod.validate_build_tree_owner(build_dir)
 
+    def test_entry_claims_build_directory_before_compiled_dependencies(self):
+        launcher = (ROOT / 'build.sh').read_text(encoding='utf-8')
+        claim = launcher.index('--claim-build-dir')
+        libraries = launcher.index('. "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"')
+        native_llvm = launcher.index('if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then')
+        self.assertLess(claim, libraries)
+        self.assertLess(claim, native_llvm)
+        self.assertIn('WHP_PORTABLE_PROBE_ONLY:-0', launcher)
+
+    def test_claim_bootstrap_only_directory_preserves_pgo_data(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            mod.ROOT = pathlib.Path(td) / 'source'
+            build_dir = mod.ROOT / 'build' / ('whp-' + mod.host_build_tag())
+            (build_dir / 'bootstrap' / 'libtool').mkdir(parents=True)
+            (build_dir / 'deps' / 'libisofs').mkdir(parents=True)
+            (build_dir / 'pgo-raw').mkdir()
+            raw = build_dir / 'pgo-raw' / 'profile.profraw'
+            raw.write_bytes(b'profile-data')
+            mod.validate_build_tree_owner(build_dir)
+            mod.write_build_tree_owner(build_dir)
+            self.assertEqual(raw.read_bytes(), b'profile-data')
+            self.assertIn(
+                f'SOURCE_DIR={mod.ROOT}',
+                (build_dir / '.whp-build-owner').read_text(encoding='utf-8')
+            )
+            mod.validate_build_tree_owner(build_dir)
+
+    def test_bootstrap_adoption_rejects_unrelated_and_wrong_arch(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            mod.ROOT = pathlib.Path(td) / 'source'
+            build_dir = mod.ROOT / 'build' / ('whp-' + mod.host_build_tag())
+            build_dir.mkdir(parents=True)
+            (build_dir / 'not-qemu.txt').write_text('do not modify', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'non-empty unowned BUILD_DIR'):
+                mod.validate_build_tree_owner(build_dir)
+            self.assertFalse((build_dir / '.whp-build-owner').exists())
+            (build_dir / 'not-qemu.txt').unlink()
+            (build_dir / 'bootstrap' / 'libtool').mkdir(parents=True)
+            other = mod.ROOT / 'build' / 'whp-other-abi'
+            other.mkdir()
+            (other / 'bootstrap' / 'libtool').mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, 'non-empty unowned BUILD_DIR'):
+                mod.validate_build_tree_owner(other)
+
+    def test_legacy_macos_identity_can_be_adopted_without_clean(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            mod.ROOT = pathlib.Path(td) / 'source'
+            build_dir = pathlib.Path(td) / 'existing'
+            build_dir.mkdir()
+            identity = build_dir / '.whp-macos-build-identity'
+            identity.write_text(
+                f'SOURCE_DIR={mod.ROOT}\\nHOST_TAG={mod.host_build_tag()}\\n',
+                encoding='utf-8',
+            )
+            (build_dir / 'default.profdata').write_bytes(b'indexed')
+            mod.validate_build_tree_owner(build_dir)
+            mod.write_build_tree_owner(build_dir)
+            self.assertEqual((build_dir / 'default.profdata').read_bytes(), b'indexed')
+
+    def test_qemu_configure_reconfigures_existing_meson_without_wiping(self):
+        script = (ROOT / 'configure').read_text(encoding='utf-8')
+        self.assertIn('if test -f meson-private/coredata.dat; then', script)
+        self.assertIn('meson_reconfigure=--reconfigure', script)
+        self.assertIn('eval run_meson $meson_reconfigure $meson_options', script)
+        self.assertNotIn('rm -rf meson-private meson-info meson-logs', script)
+
     def test_bash_explicit_target_expands_configured_target_list(self):
         script = r'''
 set -euo pipefail
