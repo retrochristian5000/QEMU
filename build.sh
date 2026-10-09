@@ -320,6 +320,56 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+# PGO use implies an instrumented generate pass if there are no saved
+# profiles. Training requires running the instrumented emulator, not just
+# compiling it. Keep this before any firmware/LLVM bootstrap so the generate
+# pass can reuse the same build tree without a second bootstrap in the use
+# phase until a real profile is available.
+if [ "${QEMU_HOST_PGO:-off}" = use ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+    if [ "${WHP_PGO_GENERATION_CHILD:-0}" = 1 ]; then
+        printf 'error: nested QEMU PGO generation unexpectedly requested use\n' >&2
+        exit 2
+    fi
+    WHP_PGO_STAGE=$("$PYTHON" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
+        --mode status --build-dir "$BUILD_DIR") || exit 1
+    if [ "$WHP_PGO_STAGE" = generate ]; then
+        printf 'QEMU PGO: no training profiles; building generate stage first.\n' >&2
+        QEMU_HOST_PGO=generate WHP_PGO_GENERATION_CHILD=1 \
+            WHP_SOURCE_UPDATE_DONE=1 RUN_TESTS=0 INSTALL_AFTER_BUILD=0 \
+            "$SOURCE_DIR/build.sh" "$@" || exit 1
+        mkdir -p "$BUILD_DIR/pgo-raw" || exit 1
+        if [ -z "${QEMU_PGO_TRAIN_SCRIPT:-}" ]; then
+            printf '%s\n' \
+                'QEMU PGO: instrumented generate build is ready.' \
+                'Run representative guest workloads with:' \
+                "  LLVM_PROFILE_FILE=$BUILD_DIR/pgo-raw/%m-%p.profraw" \
+                'Then rerun QEMU_HOST_PGO=use ./build.sh with the same targets.' \
+                'For an automatic training+use pass, set QEMU_PGO_TRAIN_SCRIPT to an executable training script.' >&2
+            exit 2
+        fi
+        case "$QEMU_PGO_TRAIN_SCRIPT" in
+            /*) WHP_PGO_TRAIN_PATH="$QEMU_PGO_TRAIN_SCRIPT" ;;
+            *) WHP_PGO_TRAIN_PATH="$SOURCE_DIR/$QEMU_PGO_TRAIN_SCRIPT" ;;
+        esac
+        if [ ! -f "$WHP_PGO_TRAIN_PATH" ] || [ ! -x "$WHP_PGO_TRAIN_PATH" ]; then
+            printf 'error: QEMU_PGO_TRAIN_SCRIPT is not an executable file: %s\n' \
+                "$WHP_PGO_TRAIN_PATH" >&2
+            exit 2
+        fi
+        printf 'QEMU PGO: training instrumented QEMU via %s\n' \
+            "$WHP_PGO_TRAIN_PATH" >&2
+        LLVM_PROFILE_FILE="$BUILD_DIR/pgo-raw/%m-%p.profraw" \
+            WHP_PGO_BUILD_DIR="$BUILD_DIR" \
+            "$WHP_PGO_TRAIN_PATH" "$@" || exit 1
+        "$PYTHON" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
+            --build-dir "$BUILD_DIR" --compiler "${CC:-clang}" || exit 1
+        unset WHP_PGO_TRAIN_PATH
+    fi
+    unset WHP_PGO_STAGE
+fi
+
 # Seed tools and optional libraries write into BUILD_DIR before the macOS
 # wrapper runs. Record verified ownership first, without touching probes.
 # Never claim an unrelated nonempty directory or a different host ABI.
