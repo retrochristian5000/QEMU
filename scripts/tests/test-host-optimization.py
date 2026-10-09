@@ -316,14 +316,14 @@ class HostOptimizationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             script = build_dir / 'train.sh'
-            script.write_text('#!/bin/sh\\nexit 0\\n', encoding='utf-8')
+            script.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
             script.chmod(0o755)
             calls = []
 
             def fake_run(cmd, **kwargs):
                 calls.append((list(cmd), kwargs))
                 if '--mode' in cmd and 'status' in cmd:
-                    return subprocess.CompletedProcess(cmd, 0, stdout='use\\n')
+                    return subprocess.CompletedProcess(cmd, 0, stdout='use\n')
                 return subprocess.CompletedProcess(cmd, 0)
 
             with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': str(script)}), \\
