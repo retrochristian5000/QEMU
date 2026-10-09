@@ -320,6 +320,14 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+# Seed tools and optional libraries write into BUILD_DIR before the macOS
+# wrapper runs. Record verified ownership first, without touching probes.
+# Never claim an unrelated nonempty directory or a different host ABI.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+    "$PYTHON" "$WHP_PORTABLE_BUILD_TOOL" --claim-build-dir || exit 1
+fi
+
 # Resolve one macOS compiler job budget before compiled dependencies or native
 # LLVM start. Explicit JOBS remains authoritative.
 if [ "$WHP_HOST_OS" = macos ]; then
