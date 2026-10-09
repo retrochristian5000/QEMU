@@ -104,12 +104,29 @@ class NativeASanGlobalsTests(unittest.TestCase):
                 self.verify()
         self.assertEqual(len(self.calls), 3)
 
+    def test_lld_missing_symbol_isolated_by_successful_apple_ld(self):
+        def only_lld_fails(cmd):
+            if "-fsanitize=address" in cmd and "-c" not in cmd:
+                if "-fuse-ld=lld" in cmd:
+                    return subprocess.CompletedProcess(
+                        cmd, 1, stdout="",
+                        stderr="undefined symbol: __asan_globals_required",
+                    )
+            return self.fake_run(cmd)
+        with mock.patch.object(self.module, "run", side_effect=only_lld_fails):
+            with self.assertRaisesRegex(RuntimeError, "Apple ld linked"):
+                self.verify()
+        self.assertNotIn("-fuse-ld=lld", self.calls[-1])
+
     def test_native_bootstrap_runs_probe_only_for_requested_sanitizer(self):
         code = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIn('NATIVE_LLVM_VALIDATE_ASAN=', code)
-        self.assertIn('if [[ "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]]; then', code)
+        self.assertIn('verify_asan_when_requested()', code)
         self.assertIn('scripts/verify-native-asan-darwin.py', code)
         self.assertIn('asan_args+=(--use-lld)', code)
+        self.assertIn('verify_asan_when_requested "$TOOLCHAIN_DIR" || exit 1', code)
+        self.assertIn('verify_asan_when_requested "$staged_toolchain" || exit 1',
+                      code)
         self.assertNotIn('undefined dynamic_lookup', code)
 
 
