@@ -1936,7 +1936,13 @@ if test "$skip_meson" = no; then
     meson_add_machine_file $source_path/configs/meson/$host_os.txt
   fi
 
-  rm -rf meson-private meson-info meson-logs
+  # Reuse Meson's configured graph on PGO generate/use transitions and other
+  # incremental option changes. Never remove coredata, logs, or build outputs.
+  # First-time setup also accepts WHP-owned bootstrap/profile staging.
+  meson_reconfigure=
+  if test -f meson-private/coredata.dat; then
+    meson_reconfigure=--reconfigure
+  fi
 
   test "$download" = "disabled" && meson_option_add "--wrap-mode=nodownload"
   test "$default_feature" = no && meson_option_add -Dauto_features=disabled
@@ -1955,7 +1961,7 @@ if test "$skip_meson" = no; then
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"
   }
-  eval run_meson $meson_options
+  eval run_meson $meson_reconfigure $meson_options
   if test "$?" -ne 0 ; then
       error_exit "meson setup failed"
   fi
