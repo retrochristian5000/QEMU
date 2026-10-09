@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import pathlib
+import tempfile
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -20,6 +23,10 @@ def main() -> int:
     build += (ROOT / "scripts/whp-build/host-libraries.sh").read_text(encoding="utf-8")
     helper = (ROOT / "scripts/ensure-sdl.py").read_text(encoding="utf-8")
     meson = (ROOT / "meson.build").read_text(encoding="utf-8")
+    builder = (ROOT / "builder.bash").read_text(encoding="utf-8")
+    portable = (ROOT / "scripts/whp-build/portable-build.py").read_text(
+        encoding="utf-8"
+    )
 
     require(gitmodules, '[submodule "toolchains/sdl"]', "SDL submodule declaration")
     require(gitmodules, "path = toolchains/sdl", "SDL submodule path")
@@ -50,8 +57,11 @@ def main() -> int:
     require(helper, 'SDL_GIT_COMMIT=', "SDL cache revision identity")
     require(helper, 'SDL_BOOTSTRAP_SCHEMA', "SDL bootstrap cache schema")
     require(helper, '"--atleast-version=3.2.0"', "host SDL3 minimum version probe")
-    require(helper, '"-DSDL_SHARED=OFF"', "static-only SDL bootstrap")
-    require(helper, '"-DSDL_STATIC=ON"', "static SDL library bootstrap")
+    require(helper, '"-DSDL_SHARED=ON"', "dynamic SDL3 bootstrap")
+    require(helper, '"-DSDL_STATIC=OFF"', "disable static SDL3 archives")
+    require(helper, '"-DCMAKE_INSTALL_LIBDIR=lib"', "shared SDL3 lib location")
+    require(helper, 'SDL_BOOTSTRAP_SCHEMA = "2"', "SDL mode cache invalidation")
+    require(helper, "find_shared_sdl(prefix)", "verify installed shared SDL3 artifact")
     require(helper, '"-DSDL_INSTALL=ON"', "SDL install staging")
     require(helper, 'CMAKE_MAKE_PROGRAM', "selected Ninja handoff to SDL CMake")
 
@@ -60,8 +70,55 @@ def main() -> int:
         "dependency('sdl3', version: '>=3.2.0'",
         "QEMU SDL3 dependency contract",
     )
+    require(build, 'DYLD_FALLBACK_LIBRARY_PATH=', "macOS SDL runtime lookup")
+    require(build, 'LD_LIBRARY_PATH=', "POSIX SDL runtime lookup")
+    for path in (builder, portable):
+        require(path, "@loader_path/deps/sdl3/lib", "macOS SDL load rpath")
+        require(path, "$ORIGIN/deps/sdl3/lib", "ELF SDL load rpath")
+        require(path, "../deps/sdl3/lib", "one-level QEMU module load rpath")
 
-    print("WHP SDL3 bootstrap wiring: verified")
+    # Test actual cache admission with shared and static-only fixtures.
+    spec = importlib.util.spec_from_file_location(
+        "whp_sdl_bootstrap", ROOT / "scripts/ensure-sdl.py"
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit("error: cannot load SDL bootstrap helper")
+    helper_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper_module)
+    with tempfile.TemporaryDirectory() as td:
+        prefix = pathlib.Path(td)
+        lib = prefix / "lib"
+        pc_dir = lib / "pkgconfig"
+        pc_dir.mkdir(parents=True)
+        (pc_dir / "sdl3.pc").write_text(
+            "Name: sdl3\nVersion: 3.2.0\n", encoding="utf-8"
+        )
+        marker = helper_module.marker_text(
+            "revision", "cmake", "cmake-version", "ninja",
+            "ninja-version", "cc", "cc-version", "", "",
+        )
+        (prefix / ".whp-sdl-bootstrap").write_text(marker, encoding="utf-8")
+        with mock.patch.object(helper_module.platform, "system", return_value="Linux"):
+            assert not helper_module.cache_valid(prefix, marker), (
+                "a pkg-config file alone must not validate a shared SDL3 cache"
+            )
+            shared = lib / "libSDL3.so.0"
+            shared.write_bytes(b"nonempty test fixture")
+            assert helper_module.cache_valid(prefix, marker)
+            shared.unlink()
+            (lib / "libSDL3.a").write_bytes(b"static fixture")
+            assert not helper_module.cache_valid(prefix, marker), (
+                "a static archive must not satisfy the shared SDL3 cache"
+            )
+        with mock.patch.object(helper_module.platform, "system", return_value="Darwin"):
+            (lib / "libSDL3.0.dylib").write_bytes(b"shared fixture")
+            assert helper_module.cache_valid(prefix, marker)
+        with mock.patch.object(helper_module.platform, "system", return_value="Windows"):
+            (prefix / "bin").mkdir()
+            (prefix / "bin" / "SDL3.dll").write_bytes(b"shared fixture")
+            assert helper_module.cache_valid(prefix, marker)
+
+    print("WHP SDL3 shared bootstrap and runtime wiring: verified")
     return 0
 
 
