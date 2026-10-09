@@ -92,6 +92,26 @@ Use ``-NoSourceUpdate`` as the PowerShell spelling of a one-run
 ``WHP_SOURCE_UPDATE=0`` override.  All other WHP environment variables and
 positional targets are passed through to ``build.sh``.
 
+Build-tree transfers and ownership
+----------------------------------
+
+A WHP QEMU build directory is a persistent record, not a disposable scratch
+directory. The owner marker records ``PROJECT_ID=retrochristian5000/QEMU``
+alongside the current ``SOURCE_DIR`` and host ABI (``HOST_TAG``).
+``SOURCE_DIR`` is not an immutable identity: a moved checkout on the same
+host ABI can be adopted, including an older WHP owner marker or recognizable
+pre-PGO ``.whp-config`` metadata, without deleting prior outputs or
+``default.profdata`` and ``pgo-raw/``.
+
+The public ``build.sh`` claims the build tree before dependency bootstraps
+write to it; the Bash configuration stage uses the same ownership policy.
+Conflicting project IDs, unknown build directories, and incompatible host ABI
+records still stop safely. A successful ownership migration does not assert
+that Meson's compiled artifacts are portable across different source paths,
+SDKs, compilers, or hardware. Meson must reconfigure and may have to rebuild
+affected objects; existing PGO profiles also require compatible compiler
+instrumentation. The migration itself never deletes the directory.
+
 Source refresh
 --------------
 
