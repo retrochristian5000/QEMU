@@ -442,14 +442,11 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             "-DCMAKE_INSTALL_NAME_DIR=@rpath",
         ))
         if needs_objc_class_stub_fallback():
-            # SDL's GameController backend sends class messages, including
-            # GCController.shouldMonitorBackgroundEvents. Pin its Objective-C
-            # compiler to the selected host Clang, and suppress just the
-            # class-selector stubs unsupported by the pinned Mach-O LLD.
-            command.extend((
-                f"-DCMAKE_OBJC_COMPILER={cc}",
-                "-DCMAKE_OBJC_FLAGS=-fno-objc-msgsend-class-selector-stubs",
-            ))
+            # The pinned SDL fork compiles its .m files through a C target
+            # with -x objective-c. Its opt-in CMake policy attaches this flag
+            # to .m files only; CMAKE_OBJC_FLAGS alone would not affect them.
+            # Do not change compilation of ordinary C sources.
+            command.append("-DSDL_OBJC_NO_CLASS_SELECTOR_STUBS=ON")
             print(
                 "WHP SDL3: disabling unsupported Objective-C class-message "
                 "stubs for the selected Mach-O LLD.",
