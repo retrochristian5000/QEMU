@@ -129,6 +129,23 @@ whp_prepare_qemu_host_libraries()
             CMAKE_PREFIX_PATH="$WHP_SDL_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             SDL3_ROOT="$WHP_SDL_PREFIX"
             export WHP_SDL_PREFIX CMAKE_PREFIX_PATH SDL3_ROOT
+
+            # The pinned SDL3 library is now shared. Keep configure probes,
+            # build-tree QEMU, and QEMU tests able to locate it without
+            # installing into the host's system directories. The QEMU linker
+            # also receives a build-tree-relative runpath in builder.bash.
+            if [ -d "$WHP_SDL_PREFIX/lib" ]; then
+                case "$WHP_HOST_OS" in
+                    macos)
+                        DYLD_FALLBACK_LIBRARY_PATH="$WHP_SDL_PREFIX/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+                        export DYLD_FALLBACK_LIBRARY_PATH
+                        ;;
+                    linux|freebsd|netbsd|openbsd|dragonfly|solaris)
+                        LD_LIBRARY_PATH="$WHP_SDL_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                        export LD_LIBRARY_PATH
+                        ;;
+                esac
+            fi
             unset WHP_SDL_PC_PATH WHP_SDL_PC_DIR
         fi
     fi
