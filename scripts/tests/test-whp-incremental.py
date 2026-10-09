@@ -173,8 +173,8 @@ class WhpIncrementalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             (build_dir / '.whp-build-owner').write_text(
-                'SCHEMA=2\\nSOURCE_DIR=/old/computer/QEMU\\nHOST_TAG='
-                + mod.host_build_tag() + '\\n',
+                'SCHEMA=2\nSOURCE_DIR=/old/computer/QEMU\nHOST_TAG='
+                + mod.host_build_tag() + '\n',
                 encoding='utf-8',
             )
             profile = build_dir / 'default.profdata'
@@ -191,9 +191,9 @@ class WhpIncrementalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             (build_dir / '.whp-config').write_text(
-                'SCHEMA=1\\nSOURCE_DIR=/old/computer/QEMU\\n'
-                f'HOST_TAG={mod.host_build_tag()}\\n'
-                'QEMU_TARGET_LIST=ppc-softmmu\\n',
+                'SCHEMA=1\nSOURCE_DIR=/old/computer/QEMU\n'
+                f'HOST_TAG={mod.host_build_tag()}\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\n',
                 encoding='utf-8',
             )
             data = build_dir / 'default.profdata'
@@ -208,15 +208,15 @@ class WhpIncrementalTests(unittest.TestCase):
             build_dir = pathlib.Path(td)
             owner = build_dir / '.whp-build-owner'
             owner.write_text(
-                'SCHEMA=3\\nPROJECT_ID=foreign/QEMU\\n'
-                f'SOURCE_DIR={mod.ROOT}\\nHOST_TAG={mod.host_build_tag()}\\n',
+                'SCHEMA=3\nPROJECT_ID=foreign/QEMU\n'
+                f'SOURCE_DIR={mod.ROOT}\nHOST_TAG={mod.host_build_tag()}\n',
                 encoding='utf-8',
             )
             with self.assertRaisesRegex(RuntimeError, 'belongs to project'):
                 mod.validate_build_tree_owner(build_dir)
             owner.write_text(
-                'SCHEMA=2\\nSOURCE_DIR=/old/computer/QEMU\\n'
-                'HOST_TAG=incompatible-host\\n',
+                'SCHEMA=2\nSOURCE_DIR=/old/computer/QEMU\n'
+                'HOST_TAG=incompatible-host\n',
                 encoding='utf-8',
             )
             with self.assertRaisesRegex(RuntimeError, 'host ABI'):
@@ -227,8 +227,8 @@ class WhpIncrementalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             (build_dir / '.whp-config').write_text(
-                'SCHEMA=1\\nSOURCE_DIR=/old/computer/QEMU\\n'
-                'QEMU_TARGET_LIST=ppc-softmmu\\n',
+                'SCHEMA=1\nSOURCE_DIR=/old/computer/QEMU\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\n',
                 encoding='utf-8',
             )
             with self.assertRaisesRegex(RuntimeError, 'non-empty unowned'):
