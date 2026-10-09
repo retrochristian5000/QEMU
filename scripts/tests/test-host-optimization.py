@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
@@ -18,6 +19,7 @@ PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
 PORTABLE_BUILD_ENTRY = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 BUILDER = ROOT / 'builder.bash'
 PGO_HELPER = ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'
+BUILD_ENTRY = ROOT / 'build.sh'
 
 
 def load_config_module():
@@ -26,6 +28,14 @@ def load_config_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_portable_module():
+    spec = importlib.util.spec_from_file_location('whp_portable_core', PORTABLE_BUILD_TOOL)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def portable_probe(optimization: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -268,6 +278,90 @@ class HostOptimizationTests(unittest.TestCase):
             self.assertIn('merged 1 raw profiles', proc.stdout)
             self.assertEqual((build_dir / 'default.profdata').read_bytes(),
                              b'indexed fixture')
+
+
+    def test_pgo_status_requires_real_profile_data(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td)
+            def status():
+                return subprocess.run(
+                    [sys.executable, str(PGO_HELPER),
+                     '--mode', 'status', '--build-dir', td],
+                    capture_output=True, text=True, check=False,
+                )
+            self.assertEqual(status().stdout.strip(), 'generate')
+            raw_dir = path / 'pgo-raw'
+            raw_dir.mkdir()
+            (raw_dir / 'empty.profraw').touch()
+            self.assertEqual(status().stdout.strip(), 'generate')
+            (raw_dir / 'nonempty.profraw').write_bytes(b'raw')
+            self.assertEqual(status().stdout.strip(), 'use')
+            (raw_dir / 'nonempty.profraw').unlink()
+            (path / 'default.profdata').write_bytes(b'indexed')
+            self.assertEqual(status().stdout.strip(), 'use')
+
+    def test_public_use_launches_generate_without_tests_or_install(self):
+        build_entry = BUILD_ENTRY.read_text(encoding='utf-8')
+        self.assertIn('QEMU_HOST_PGO=generate WHP_PGO_GENERATION_CHILD=1', build_entry)
+        self.assertIn('WHP_SOURCE_UPDATE_DONE=1 RUN_TESTS=0 INSTALL_AFTER_BUILD=0',
+                      build_entry)
+        self.assertIn('"$SOURCE_DIR/build.sh" "$@"', build_entry)
+        self.assertIn('--mode status --build-dir "$BUILD_DIR"', build_entry)
+        self.assertIn('QEMU_PGO_TRAIN_SCRIPT', build_entry)
+        self.assertIn('LLVM_PROFILE_FILE="$BUILD_DIR/pgo-raw/%m-%p.profraw"',
+                      build_entry)
+
+    def test_portable_generate_stage_trains_before_pgo_use(self):
+        mod = load_portable_module()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            script = build_dir / 'train.sh'
+            script.write_text('#!/bin/sh\\nexit 0\\n', encoding='utf-8')
+            script.chmod(0o755)
+            calls = []
+
+            def fake_run(cmd, **kwargs):
+                calls.append((list(cmd), kwargs))
+                if '--mode' in cmd and 'status' in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout='use\\n')
+                return subprocess.CompletedProcess(cmd, 0)
+
+            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': str(script)}), \\
+                 mock.patch.object(mod.subprocess, 'run', side_effect=fake_run), \\
+                 mock.patch.object(mod, 'append_module_build_target'), \\
+                 mock.patch.object(mod, 'write_portable_config'):
+                mod.portable_pgo_generate(
+                    build_dir, build_dir / 'install',
+                    ['--disable-system', '-Db_pgo=use'], ['all'],
+                    ['ninja'], '2', {'QEMU_HOST_MODULES': 'auto'},
+                )
+            self.assertIn('-Db_pgo=generate', calls[0][0])
+            self.assertNotIn('-Db_pgo=use', calls[0][0])
+            self.assertEqual(calls[1][0][0], 'ninja')
+            self.assertEqual(calls[2][0][0], str(script))
+            self.assertIn('LLVM_PROFILE_FILE', calls[2][1]['env'])
+            self.assertEqual(calls[2][1]['env']['WHP_PGO_BUILD_DIR'],
+                             str(build_dir))
+            self.assertIn('--mode', calls[3][0])
+
+    def test_portable_use_generates_then_requests_training_when_missing(self):
+        mod = load_portable_module()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': ''}), \\
+                 mock.patch.object(mod.subprocess, 'run') as runner, \\
+                 mock.patch.object(mod, 'append_module_build_target'), \\
+                 mock.patch.object(mod, 'write_portable_config'):
+                with self.assertRaisesRegex(RuntimeError,
+                                            'instrumented QEMU generate build is ready'):
+                    mod.portable_pgo_generate(
+                        build_dir, build_dir / 'install',
+                        ['--disable-system', '-Db_pgo=use'],
+                        ['qemu-system-ppc'], ['ninja'], '2',
+                        {'QEMU_HOST_MODULES': 'auto'},
+                    )
+                self.assertTrue((build_dir / 'pgo-raw').is_dir())
+                self.assertEqual(runner.call_count, 2)
 
 
 if __name__ == '__main__':
