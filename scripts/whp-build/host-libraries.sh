@@ -146,6 +146,11 @@ whp_prepare_qemu_host_libraries()
                         ;;
                 esac
             fi
+            if [ "$WHP_HOST_OS" = windows ] &&
+               [ -d "$WHP_SDL_PREFIX/bin" ]; then
+                PATH="$WHP_SDL_PREFIX/bin:$PATH"
+                export PATH
+            fi
             unset WHP_SDL_PC_PATH WHP_SDL_PC_DIR
         fi
     fi
