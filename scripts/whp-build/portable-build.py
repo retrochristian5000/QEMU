@@ -18,6 +18,7 @@ from typing import Dict, List, Tuple
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 SELECTOR_TOOL = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
+PROJECT_ID = 'retrochristian5000/QEMU'
 USER_CONFIG = ROOT / '.whpconfig'
 JOB_BUDGET_TOOL = ROOT / 'scripts' / 'job-budget.py'
 
@@ -436,6 +437,31 @@ def _recover_bootstrap_only_tree(build_dir: pathlib.Path) -> bool:
     return True
 
 
+def _recorded_host_tag(data: Dict[str, str], kind: str) -> str:
+    if data.get('HOST_TAG'):
+        return data['HOST_TAG']
+    arch = data.get('HOST_ARCH')
+    if not arch:
+        return ''
+    system = data.get('HOST_OS') or (
+        'Darwin' if kind == '.whp-macos-build-identity' else platform.system()
+    )
+    return f'{canonical_host_arch(arch)}-{canonical_host_os(system)}'
+
+
+def _recognized_wHP_record(data: Dict[str, str], kind: str) -> bool:
+    if not data.get('SOURCE_DIR'):
+        return False
+    schema = data.get('SCHEMA')
+    if kind == '.whp-build-owner':
+        return schema in ('2', '3')
+    if kind == '.whp-config':
+        return schema in ('1', '2', '3') and any(
+            key in data for key in ('CONFIGURE_ARG', 'QEMU_TARGET_LIST', 'PORTABLE_CORE')
+        )
+    return schema in ('3', '4') and bool(data.get('HOST_ARCH'))
+
+
 def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
     if not build_dir.exists():
         return
@@ -446,52 +472,54 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
     if not has_files:
         return
 
-    expected_source = str(ROOT)
     expected_tag = host_build_tag()
-    owner_file = build_dir / '.whp-build-owner'
-    owner = _metadata(owner_file)
-    if owner:
-        if owner.get('SOURCE_DIR') != expected_source:
-            raise RuntimeError(
-                f'BUILD_DIR belongs to another QEMU source tree: {build_dir}'
-            )
-        recorded_tag = owner.get('HOST_TAG')
-        if recorded_tag and recorded_tag != expected_tag:
-            raise RuntimeError(
-                f'BUILD_DIR belongs to host ABI {recorded_tag}, not {expected_tag}: '
-                f'{build_dir}'
-            )
-        return
-
-    # Older WHP trees can carry one of two verified source identities.
-    # Neither case authorizes a different source checkout or host ABI.
-    for identity in ('.whp-config', '.whp-macos-build-identity'):
-        config = _metadata(build_dir / identity)
-        if config.get('SOURCE_DIR') != expected_source:
+    records = {
+        name: _metadata(build_dir / name)
+        for name in ('.whp-build-owner', '.whp-config', '.whp-macos-build-identity')
+    }
+    for name, data in records.items():
+        if not data:
             continue
-        recorded_tag = config.get('HOST_TAG')
-        if not recorded_tag:
-            recorded_arch = config.get('HOST_ARCH')
-            recorded_os = config.get('HOST_OS')
-            if recorded_arch:
-                recorded_tag = (
-                    f'{canonical_host_arch(recorded_arch)}-'
-                    f'{canonical_host_os(recorded_os or ("Darwin" if identity == ".whp-macos-build-identity" else platform.system()))}'
-                )
-        if recorded_tag and recorded_tag != expected_tag:
+        project = data.get('PROJECT_ID')
+        if project and project != PROJECT_ID:
             raise RuntimeError(
-                f'BUILD_DIR belongs to host ABI {recorded_tag}, not {expected_tag}: '
-                f'{build_dir}'
+                f'BUILD_DIR belongs to project {project}, not {PROJECT_ID}: {build_dir}'
             )
-        return
+        tag = _recorded_host_tag(data, name)
+        if tag and tag != expected_tag:
+            raise RuntimeError(
+                f'BUILD_DIR belongs to host ABI {tag}, not {expected_tag}: '
+                f'{build_dir}; existing files were preserved'
+            )
 
-    if _recover_bootstrap_only_tree(build_dir):
-        # Only WHP-managed bootstrap/PGO staging exists here. Claiming it now
-        # preserves interrupted work; unrelated build trees still fail closed.
+    owner = records['.whp-build-owner']
+    # An explicit owner is authoritative: never fall back to a different
+    # metadata file when it has an unrecognized project or missing identity.
+    candidates = [('.whp-build-owner', owner)] if owner else [
+        (name, records[name])
+        for name in ('.whp-config', '.whp-macos-build-identity')
+    ]
+    for name, data in candidates:
+        if not data:
+            continue
+        tag = _recorded_host_tag(data, name)
+        if data.get('SOURCE_DIR') == str(ROOT) and (
+            not owner or name == '.whp-build-owner'
+        ):
+            return
+        if data.get('PROJECT_ID') == PROJECT_ID or (
+            _recognized_wHP_record(data, name)
+            and (tag or build_dir.name in (
+                f'whp-{expected_tag}', f'whp-ppc-{expected_tag}'
+            ))
+        ):
+            return
+
+    if not owner and _recover_bootstrap_only_tree(build_dir):
         return
 
     raise RuntimeError(
-        f'refusing to use non-empty unowned BUILD_DIR: {build_dir}; '
+        f'refusing to use non-empty unrecognized WHP BUILD_DIR: {build_dir}; '
         'existing files were preserved'
     )
 
@@ -500,7 +528,8 @@ def write_build_tree_owner(build_dir: pathlib.Path) -> None:
     owner_file = build_dir / '.whp-build-owner'
     candidate = owner_file.with_name(owner_file.name + '.new')
     with candidate.open('w', encoding='utf-8') as handle:
-        handle.write('SCHEMA=2\n')
+        handle.write('SCHEMA=3\n')
+        handle.write(f'PROJECT_ID={PROJECT_ID}\n')
         handle.write(f'SOURCE_DIR={ROOT}\n')
         handle.write(f'HOST_TAG={host_build_tag()}\n')
     os.replace(candidate, owner_file)
@@ -693,6 +722,9 @@ def main(argv: List[str]) -> int:
             build_dir = resolve_build_dir()
             build_dir.mkdir(parents=True, exist_ok=True)
             validate_build_tree_owner(build_dir)
+            old = _metadata(build_dir / '.whp-build-owner').get('SOURCE_DIR')
+            if old and old != str(ROOT):
+                print(f'WHP QEMU: transferred checkout {old} -> {ROOT}; preserving owned build state')
             write_build_tree_owner(build_dir)
         except (OSError, RuntimeError, ValueError) as exc:
             print(f'error: {exc}', file=sys.stderr)
