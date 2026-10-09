@@ -19,6 +19,22 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
+# ASan is tested when QEMU actually requests it, without making otherwise
+# usable non-sanitized native LLVM compilers rebuild unnecessarily.
+NATIVE_LLVM_VALIDATE_ASAN="${NATIVE_LLVM_VALIDATE_ASAN:-auto}"
+case "$NATIVE_LLVM_VALIDATE_ASAN" in
+    auto)
+        case "${QEMU_ASAN:-0}" in
+            1|y) NATIVE_LLVM_VALIDATE_ASAN=1 ;;
+            *) NATIVE_LLVM_VALIDATE_ASAN=0 ;;
+        esac
+        ;;
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_VALIDATE_ASAN must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
 # Build one host-native LLVM executable set for QEMU plus the freestanding
 # firmware lanes. Target selection belongs at Clang invocation time via
 # --target=..., not in separate host executable builds.
@@ -880,6 +896,21 @@ usable()
             return 1
         fi
         rm -f "$objc_exe" "$objc_log"
+
+        if [[ "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]]; then
+            asan_args=(
+                --clang "$prefix/bin/clang"
+                --readobj "$prefix/bin/llvm-readobj"
+                --arch "$darwin_cmake_arch"
+                --sdkroot "$sdkroot"
+                --deployment-target "$deployment_target"
+            )
+            if [[ "$darwin_cmake_arch" != arm64e ]]; then
+                asan_args+=(--use-lld)
+            fi
+            "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
+                "${asan_args[@]}" || return 1
+        fi
     fi
     "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
     "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
