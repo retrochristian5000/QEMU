@@ -53,13 +53,28 @@ def profile_tool(compiler: str) -> list[str]:
     )
 
 
+def profile_inputs(build_dir: pathlib.Path) -> tuple[bool, list[pathlib.Path]]:
+    """Report saved PGO data without mistaking a build for a training run."""
+    profile = build_dir / 'default.profdata'
+    raw_dir = build_dir / 'pgo-raw'
+    raw = sorted(
+        path for path in raw_dir.glob('*.profraw')
+        if path.is_file() and path.stat().st_size > 0
+    )
+    return profile.is_file() and profile.stat().st_size > 0, raw
+
+
+def pgo_stage(build_dir: pathlib.Path) -> str:
+    indexed, raw = profile_inputs(build_dir)
+    return 'use' if indexed or raw else 'generate'
+
+
 def prepare_use(build_dir: pathlib.Path, compiler: str) -> str:
     if not build_dir.is_dir():
         raise RuntimeError(f'QEMU build directory does not exist: {build_dir}')
     profile = build_dir / 'default.profdata'
     raw_dir = build_dir / 'pgo-raw'
-    raw = sorted(p for p in raw_dir.glob('*.profraw') if p.is_file() and p.stat().st_size)
-    existing = profile.is_file() and profile.stat().st_size > 0
+    existing, raw = profile_inputs(build_dir)
 
     if existing and (not raw or max(p.stat().st_mtime_ns for p in raw) <= profile.stat().st_mtime_ns):
         return f'QEMU PGO: using existing indexed profile: {profile}'
@@ -91,9 +106,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', required=True, type=pathlib.Path)
     parser.add_argument('--compiler', default='clang')
+    parser.add_argument('--mode', choices=('prepare', 'status'), default='prepare')
     args = parser.parse_args()
     try:
-        print(prepare_use(args.build_dir, args.compiler))
+        if args.mode == 'status':
+            print(pgo_stage(args.build_dir))
+        else:
+            print(prepare_use(args.build_dir, args.compiler))
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f'error: PGO profile preparation failed: {exc}', file=sys.stderr)
         return 2
