@@ -303,7 +303,7 @@ def find_shared_sdl(prefix: pathlib.Path) -> pathlib.Path | None:
     system = platform.system()
     if system == "Darwin":
         searches = ((prefix / "lib", "libSDL3*.dylib"),)
-    elif system == "Windows":
+    elif system == "Windows" or system.startswith(("MINGW", "MSYS", "CYGWIN")):
         searches = ((prefix / "bin", "SDL3.dll"),)
     else:
         searches = (
