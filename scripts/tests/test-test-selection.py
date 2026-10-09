@@ -94,6 +94,28 @@ class SelectiveTestMappingTests(unittest.TestCase):
             ['check'],
         )
 
+    def test_compiled_source_extensions_are_not_silently_skipped(self):
+        # Compiled C++ and assembly code needs a conservative check when no
+        # narrower suite is mapped; the old suffix list missed these files.
+        for path in (
+            'util/entry.S',
+            'util/entry.s',
+            'util/entry.asm',
+            'util/core.cc',
+            'util/core.cpp',
+            'util/core.cxx',
+            'util/core.C',
+            'util/core.hpp',
+            'util/core.hxx',
+            'util/core.hh',
+            'ui/backend.mm',
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    self.mod.select_test_targets([path], self.targets),
+                    ['check'],
+                )
+
     def test_multiple_known_changes_are_deduplicated_in_stable_order(self):
         self.assertEqual(
             self.mod.select_test_targets(
