@@ -183,6 +183,47 @@ identity tracks the linker and mitigation selection so incompatible old SDL
 objects are not reused. If the linker gains the required support, retire the
 opt-out after a direct Objective-C compilation-and-link test.
 
+Darwin AddressSanitizer global-link validation
+----------------------------------------------
+
+Clang's Mach-O AddressSanitizer instrumentation emits
+``__DATA,__asan_globals`` metadata and calls
+``__asan_register_image_globals``. The final executable must link via
+the **selected Clang driver** with ``-fsanitize=address`` so that the
+matching ``libclang_rt.asan_osx_dynamic.dylib`` is selected. Defining
+a dummy ``__asan_globals_required`` or allowing unresolved symbols
+would conceal a broken compiler/runtime/linker pairing rather than repair it.
+
+WHP's native LLVM bootstrap now offers a focused ASan probe. It is enabled
+automatically for ``QEMU_ASAN=1`` and can also be requested directly
+with ``NATIVE_LLVM_VALIDATE_ASAN=1``. The probe:
+
+#. verifies the selected Clang's own dynamic ASan runtime exists;
+#. compiles a real ASan-instrumented global and checks the resulting
+   Mach-O object's ``__asan_globals`` section;
+#. links the object with that same Clang driver and the selected Mach-O
+   linker (``ld64.lld`` or Apple ``ld``);
+#. if ``ld64.lld`` fails on ``__asan_globals_required``, compares the
+   identical Clang/link invocation using Apple ``ld`` to isolate a
+   linker implementation problem from a runtime/SDK mismatch.
+
+A probe failure stops **only the requested ASan validation**. It does
+not invalidate or delete an otherwise usable incremental native LLVM
+installation, nor does it force a full LLVM rebuild. For a direct diagnostic
+on the installed compiler without starting QEMU, run::
+
+  python3 scripts/verify-native-asan-darwin.py \
+    --clang /path/to/llvm/bin/clang \
+    --readobj /path/to/llvm/bin/llvm-readobj \
+    --arch arm64 --sdkroot "$(xcrun --sdk macosx --show-sdk-path)" \
+    --deployment-target 15.0 --use-lld
+
+Replace the SDK/deployment target with those of the actual build. On
+``arm64e``, omit ``--use-lld`` while the WHP profile selects Apple
+``ld`` for authenticated relocations. The probe does not claim to repair
+the missing symbol; its output identifies whether the next code change
+belongs in Clang instrumentation, compiler-rt distribution, or Mach-O LLD.
+
 Profile-guided optimization (PGO)
 ---------------------------------
 
