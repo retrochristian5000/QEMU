@@ -81,12 +81,31 @@ def verify(
         if linked.returncode:
             detail = (linked.stderr or linked.stdout)[-6000:]
             if "__asan_globals_required" in detail:
+                comparison = ""
+                if use_lld:
+                    # One controlled comparison isolates linker support from
+                    # Clang's instrumentation and compiler-rt selection.
+                    apple_command = [
+                        str(clang), *flags, str(obj),
+                        "-o", str(root / "asan-globals-apple-ld"),
+                    ]
+                    apple = run(apple_command)
+                    if apple.returncode == 0:
+                        comparison = (
+                            "Apple ld linked the same ASan object successfully; "
+                            "the selected ld64.lld is the likely mismatch.\n"
+                        )
+                    else:
+                        comparison = (
+                            "Apple ld also failed on the same ASan object; "
+                            "investigate the Clang/compiler-rt/SDK pairing.\n"
+                            + (apple.stderr or apple.stdout)[-2000:] + "\n"
+                        )
                 raise RuntimeError(
                     "Mach-O linker failed on __asan_globals_required while "
                     "linking ASan-instrumented globals. Do not define a dummy "
                     "symbol: verify the selected linker and compiler-rt "
-                    "contract, and compare the same driver invocation with "
-                    "Apple ld.\n" + detail
+                    "contract.\n" + comparison + detail
                 )
             raise RuntimeError(
                 "Darwin ASan global instrumentation failed at the final "
