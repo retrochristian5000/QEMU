@@ -129,6 +129,26 @@ whp_strip_inherited_host_performance_overrides
 # EXTRA_CFLAGS path. This is intentionally applied after firmware/tool setup so
 # an explicit optimization level cannot alter OpenBIOS, SeaBIOS, LLVM, or mold.
 configure_args+=(--extra-cflags="-O$QEMU_HOST_OPTIMIZATION")
+# The pinned SDL3 fallback is a shared library. A QEMU binary launched from
+# BUILD_DIR (including after moving the build tree) must find it without
+# a global install. QEMU modules can be one directory below the executable.
+# Keep these paths QEMU-only; firmware/toolchain links must not inherit them.
+if [[ -n "${WHP_SDL_PREFIX:-}" ]]; then
+    case "$HOST_OS" in
+        Darwin)
+            configure_args+=(
+                '--extra-ldflags=-Wl,-rpath,@loader_path/deps/sdl3/lib'
+                '--extra-ldflags=-Wl,-rpath,@loader_path/../deps/sdl3/lib'
+            )
+            ;;
+        Linux|FreeBSD|NetBSD|OpenBSD|DragonFly|SunOS)
+            configure_args+=(
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/deps/sdl3/lib'
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/../deps/sdl3/lib'
+            )
+            ;;
+    esac
+fi
 # CPU code-generation flags belong to QEMU host objects only. Resolve and
 # apply them after firmware/tool bootstraps so -march/-mcpu/-mtune cannot leak
 # into SeaBIOS, OpenBIOS, LLVM bootstrap tools, or mold itself.
