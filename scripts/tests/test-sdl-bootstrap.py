@@ -24,6 +24,9 @@ def main() -> int:
     helper = (ROOT / "scripts/ensure-sdl.py").read_text(encoding="utf-8")
     meson = (ROOT / "meson.build").read_text(encoding="utf-8")
     builder = (ROOT / "builder.bash").read_text(encoding="utf-8")
+    macos_builder = (ROOT / "scripts/macos-builder.bash").read_text(
+        encoding="utf-8"
+    )
     portable = (ROOT / "scripts/whp-build/portable-build.py").read_text(
         encoding="utf-8"
     )
@@ -72,6 +75,18 @@ def main() -> int:
     )
     require(build, 'DYLD_FALLBACK_LIBRARY_PATH=', "macOS SDL runtime lookup")
     require(build, 'LD_LIBRARY_PATH=', "POSIX SDL runtime lookup")
+    require(
+        macos_builder,
+        'whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"',
+        "restore private SDL pkg-config after macOS sanitation",
+    )
+    require(
+        macos_builder,
+        'whp_append_colon_path DYLD_FALLBACK_LIBRARY_PATH "$WHP_SDL_PREFIX/lib"',
+        "restore private SDL runtime path after macOS sanitation",
+    )
+    require(helper, 'system.startswith(("MINGW", "MSYS", "CYGWIN"))',
+            "MSYS and MinGW SDL3 DLL discovery")
     for path in (builder, portable):
         require(path, "@loader_path/deps/sdl3/lib", "macOS SDL load rpath")
         require(path, "$ORIGIN/deps/sdl3/lib", "ELF SDL load rpath")
@@ -113,10 +128,11 @@ def main() -> int:
         with mock.patch.object(helper_module.platform, "system", return_value="Darwin"):
             (lib / "libSDL3.0.dylib").write_bytes(b"shared fixture")
             assert helper_module.cache_valid(prefix, marker)
-        with mock.patch.object(helper_module.platform, "system", return_value="Windows"):
-            (prefix / "bin").mkdir()
-            (prefix / "bin" / "SDL3.dll").write_bytes(b"shared fixture")
-            assert helper_module.cache_valid(prefix, marker)
+        for host in ("Windows", "MINGW64_NT-10.0", "MSYS_NT-10.0"):
+            with mock.patch.object(helper_module.platform, "system", return_value=host):
+                (prefix / "bin").mkdir(exist_ok=True)
+                (prefix / "bin" / "SDL3.dll").write_bytes(b"shared fixture")
+                assert helper_module.cache_valid(prefix, marker)
 
     print("WHP SDL3 shared bootstrap and runtime wiring: verified")
     return 0
