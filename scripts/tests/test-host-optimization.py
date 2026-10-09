@@ -326,9 +326,9 @@ class HostOptimizationTests(unittest.TestCase):
                     return subprocess.CompletedProcess(cmd, 0, stdout='use\n')
                 return subprocess.CompletedProcess(cmd, 0)
 
-            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': str(script)}), \\
-                 mock.patch.object(mod.subprocess, 'run', side_effect=fake_run), \\
-                 mock.patch.object(mod, 'append_module_build_target'), \\
+            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': str(script)}), \
+                 mock.patch.object(mod.subprocess, 'run', side_effect=fake_run), \
+                 mock.patch.object(mod, 'append_module_build_target'), \
                  mock.patch.object(mod, 'write_portable_config'):
                 mod.portable_pgo_generate(
                     build_dir, build_dir / 'install',
@@ -348,9 +348,9 @@ class HostOptimizationTests(unittest.TestCase):
         mod = load_portable_module()
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
-            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': ''}), \\
-                 mock.patch.object(mod.subprocess, 'run') as runner, \\
-                 mock.patch.object(mod, 'append_module_build_target'), \\
+            with mock.patch.dict(os.environ, {'QEMU_PGO_TRAIN_SCRIPT': ''}), \
+                 mock.patch.object(mod.subprocess, 'run') as runner, \
+                 mock.patch.object(mod, 'append_module_build_target'), \
                  mock.patch.object(mod, 'write_portable_config'):
                 with self.assertRaisesRegex(RuntimeError,
                                             'instrumented QEMU generate build is ready'):
