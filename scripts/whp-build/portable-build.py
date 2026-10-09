@@ -395,6 +395,47 @@ def _metadata(path: pathlib.Path) -> Dict[str, str]:
     return values
 
 
+def _recover_bootstrap_only_tree(build_dir: pathlib.Path) -> bool:
+    """Recover a WHP bootstrap interrupted before the owner marker was written.
+
+    This is only for the canonical host-scoped directory under this checkout.
+    An arbitrary nonempty build directory or an existing foreign Meson graph
+    must never acquire ownership just because it contains a familiar filename.
+    """
+    root = (ROOT / 'build').resolve()
+    if build_dir.is_symlink() or build_dir.resolve().parent != root:
+        return False
+    if build_dir.name not in (
+        f'whp-{host_build_tag()}', f'whp-ppc-{host_build_tag()}'
+    ):
+        return False
+
+    staged = {'bootstrap', 'deps', 'pgo-raw'}
+    files = {'default.profdata'}
+    permitted_tools = {'libtool', 'libisofs'}
+    entries = list(build_dir.iterdir())
+    if not entries:
+        return False
+    for entry in entries:
+        if entry.is_symlink():
+            return False
+        if entry.name in staged:
+            if not entry.is_dir():
+                return False
+            if entry.name in ('bootstrap', 'deps'):
+                for child in entry.iterdir():
+                    if child.is_symlink() or not child.is_dir() or (
+                        child.name not in permitted_tools
+                    ):
+                        return False
+        elif entry.name in files:
+            if not entry.is_file():
+                return False
+        else:
+            return False
+    return True
+
+
 def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
     if not build_dir.exists():
         return
@@ -422,24 +463,36 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
             )
         return
 
-    # Adopt build trees produced by older WHP revisions when their existing
-    # configuration proves source-tree ownership. Missing host metadata is
-    # tolerated once so old incremental work is not discarded.
-    config = _metadata(build_dir / '.whp-config')
-    if config.get('SOURCE_DIR') == expected_source:
-        recorded_arch = config.get('HOST_ARCH')
-        recorded_os = config.get('HOST_OS')
-        if recorded_arch and recorded_os:
-            recorded_tag = f'{canonical_host_arch(recorded_arch)}-{canonical_host_os(recorded_os)}'
-            if recorded_tag != expected_tag:
-                raise RuntimeError(
-                    f'BUILD_DIR belongs to host ABI {recorded_tag}, not {expected_tag}: '
-                    f'{build_dir}'
+    # Older WHP trees can carry one of two verified source identities.
+    # Neither case authorizes a different source checkout or host ABI.
+    for identity in ('.whp-config', '.whp-macos-build-identity'):
+        config = _metadata(build_dir / identity)
+        if config.get('SOURCE_DIR') != expected_source:
+            continue
+        recorded_tag = config.get('HOST_TAG')
+        if not recorded_tag:
+            recorded_arch = config.get('HOST_ARCH')
+            recorded_os = config.get('HOST_OS')
+            if recorded_arch:
+                recorded_tag = (
+                    f'{canonical_host_arch(recorded_arch)}-'
+                    f'{canonical_host_os(recorded_os or ("Darwin" if identity == ".whp-macos-build-identity" else platform.system()))}'
                 )
+        if recorded_tag and recorded_tag != expected_tag:
+            raise RuntimeError(
+                f'BUILD_DIR belongs to host ABI {recorded_tag}, not {expected_tag}: '
+                f'{build_dir}'
+            )
+        return
+
+    if _recover_bootstrap_only_tree(build_dir):
+        # Only WHP-managed bootstrap/PGO staging exists here. Claiming it now
+        # preserves interrupted work; unrelated build trees still fail closed.
         return
 
     raise RuntimeError(
-        f'refusing to use non-empty unowned BUILD_DIR: {build_dir}'
+        f'refusing to use non-empty unowned BUILD_DIR: {build_dir}; '
+        'existing files were preserved'
     )
 
 
@@ -631,6 +684,19 @@ def main(argv: List[str]) -> int:
 
     if argv == ['--print-build-dir']:
         print(resolve_build_dir())
+        return 0
+
+    if argv == ['--claim-build-dir']:
+        # Claim before any seed toolchain or optional library stages write to
+        # BUILD_DIR; this avoids a later false "non-empty unowned" rejection.
+        try:
+            build_dir = resolve_build_dir()
+            build_dir.mkdir(parents=True, exist_ok=True)
+            validate_build_tree_owner(build_dir)
+            write_build_tree_owner(build_dir)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f'error: {exc}', file=sys.stderr)
+            return 2
         return 0
 
     try:
