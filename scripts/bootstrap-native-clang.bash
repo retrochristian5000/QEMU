@@ -19,6 +19,16 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
+# Opt-in host LLVM/Clang shared libraries; preserve established static builds.
+NATIVE_LLVM_SHARED_TOOLCHAIN="${NATIVE_LLVM_SHARED_TOOLCHAIN:-0}"
+case "$NATIVE_LLVM_SHARED_TOOLCHAIN" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_SHARED_TOOLCHAIN must be 0 or 1: %s\n' \
+            "$NATIVE_LLVM_SHARED_TOOLCHAIN" >&2
+        exit 1
+        ;;
+esac
 # ASan is tested when QEMU actually requests it, without making otherwise
 # usable non-sanitized native LLVM compilers rebuild unnecessarily.
 NATIVE_LLVM_VALIDATE_ASAN="${NATIVE_LLVM_VALIDATE_ASAN:-auto}"
@@ -692,6 +702,24 @@ if [[ "$host_os" == macos ]]; then
     llvm_include_runtimes=ON
     llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"
 fi
+# The recommended libLLVM aggregate DSO, not one library per LLVM component.
+llvm_build_shared=OFF
+llvm_link_shared=OFF
+clang_link_shared=OFF
+if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
+    case "$host_os" in
+        macos|linux|freebsd|netbsd|openbsd|dragonfly|solaris) ;;
+        *)
+            printf 'error: NATIVE_LLVM_SHARED_TOOLCHAIN=1 is unsupported on %s\n' \
+                "$host_os" >&2
+            exit 1
+            ;;
+    esac
+    llvm_build_shared=ON
+    llvm_link_shared=ON
+    clang_link_shared=ON
+    llvm_distribution_components="${llvm_distribution_components};LLVM;clang-cpp"
+fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
 BOOTSTRAP_SCHEMA=12
@@ -741,6 +769,373 @@ SDKROOT=$sdkroot
 MACOSX_DEPLOYMENT_TARGET=$deployment_target
 EOF
 )"
+if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
+    # The unchanged option preserves schema 12 and the existing exact cache.
+    expected_marker="$expected_marker"
+{
+    local prefix="$1"
+    local smoke_dir
+    local headers
+
+    smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-native-llvm-windows.XXXXXX")" ||
+        return 1
+
+    cat >"$smoke_dir/win32.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef __i386__
+#error clang did not select the i686 Windows target
+#endif
+_Static_assert(sizeof(void *) == 4, "i686 Windows pointer width mismatch");
+int whp_windows_i686_object(void) { return 32; }
+SOURCE
+
+    cat >"$smoke_dir/win64.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef _WIN64
+#error clang did not select the 64-bit Windows ABI
+#endif
+#ifndef __x86_64__
+#error clang did not select the x86_64 Windows target
+#endif
+_Static_assert(sizeof(void *) == 8, "x86_64 Windows pointer width mismatch");
+__attribute__((noreturn)) void whp_windows_entry(void)
+{
+    for (;;) {
+    }
+}
+SOURCE
+
+    if ! "$prefix/bin/clang" --target=i686-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win32.c" -o "$smoke_dir/win32.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/clang" --target=x86_64-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win64.c" -o "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    headers="$("$prefix/bin/llvm-readobj" --file-headers         "$smoke_dir/win64.obj" 2>/dev/null)" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+    grep -Eq 'COFF-x86-64|IMAGE_FILE_MACHINE_AMD64' <<< "$headers" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+
+    if ! "$prefix/bin/lld-link" /machine:x64 /entry:whp_windows_entry             /subsystem:console /nodefaultlib             /out:"$smoke_dir/coff.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/ld.lld" -m i386pep --entry=whp_windows_entry             --subsystem=console --no-insert-timestamp             -o "$smoke_dir/mingw.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$smoke_dir"
+    return 0
+}
+
+windows_manifest_tool_usable()
+{
+    local prefix="$1"
+    local probe_dir
+    [[ -x "$prefix/bin/llvm-mt" ]] || return 1
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-mt.XXXXXX")" || return 1
+    cat >"$probe_dir/input.manifest" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="WHP.LLVM" version="1.0.0.0"/>
+</assembly>
+XML
+    if ! "$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest" \
+        "-out:$probe_dir/output.manifest" >/dev/null 2>&1 ||
+        ! grep -Fq 'WHP.LLVM' "$probe_dir/output.manifest"; then
+        rm -rf "$probe_dir"
+        return 1
+    fi
+    rm -rf "$probe_dir"
+}
+
+usable()
+{
+    local prefix="$1"
+    local target=''
+    local ubsan_exe=''
+    local objc_exe=''
+    local objc_log=''
+    local clang_link_driver=("$prefix/bin/clang")
+
+    local supported_targets=''
+    local required_tool
+
+    for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib \
+                         llvm-lib llvm-dlltool llvm-rc llvm-windres \
+                         llvm-nm llvm-objcopy llvm-objdump llvm-strip \
+                         llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
+        [[ -x "$prefix/bin/$required_tool" ]] || return 1
+    done
+    if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
+        windows_manifest_tool_usable "$prefix" || return 1
+    fi
+    supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
+    grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
+    grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
+    grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
+    windows_cross_target_usable "$prefix" || return 1
+    if [[ "$host_os" == macos ]]; then
+        [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
+        [[ -x "$prefix/bin/ld64.lld" ]] || return 1
+        [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
+        if [[ "$darwin_cmake_arch" != arm64e ]]; then
+            clang_link_driver+=(-fuse-ld=lld)
+        fi
+        ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
+            return 1
+        if ! printf 'int main(void) { return 0; }\n' |
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
+                -fsanitize=undefined \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
+            rm -f "$ubsan_exe"
+            return 1
+        fi
+        rm -f "$ubsan_exe"
+
+        # A Darwin compiler is not usable by QEMU merely because C links. The
+        # Cocoa UI is Objective-C, and Clang's runtime link adds -lobjc. Prove
+        # that the installed Clang can resolve both libobjc and a system
+        # framework from the selected macOS SDK. arm64e deliberately uses
+        # Apple ld until WHP Mach-O LLD supports authenticated relocations.
+        objc_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc.XXXXXX")" ||
+            return 1
+        objc_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc-log.XXXXXX")" || {
+            rm -f "$objc_exe"
+            return 1
+        }
+        if ! printf 'int main(void) { return 0; }\n' |
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -fobjc-link-runtime -x objective-c - -framework Cocoa \
+                -o "$objc_exe" >/dev/null 2>"$objc_log"; then
+            printf 'error: WHP native LLVM cannot link Objective-C against SDK %s\n' \
+                "$sdkroot" >&2
+            cat "$objc_log" >&2
+            rm -f "$objc_exe" "$objc_log"
+            return 1
+        fi
+        rm -f "$objc_exe" "$objc_log"
+    fi
+    "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
+    "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
+    target="$(query_target_triple "$prefix/bin/clang")"
+    native_target_matches_host "$target" || return 1
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
+    target="$(query_target_triple "$prefix/bin/clang++")"
+    native_target_matches_host "$target" || return 1
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
+    printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
+        "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_llvm_resource_size(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
+        "$prefix/bin/clang" -ffreestanding -x c -c - -o /dev/null \
+            >/dev/null 2>&1 || return 1
+    printf 'int whp_native_llvm_frame_pointer(void) { return 0; }\n' |
+        "$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+    printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
+        "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || return 1
+}
+
+verify_asan_when_requested()
+{
+    local prefix="$1"
+    local asan_args=()
+
+    # A failing optional ASan linker is not evidence that the whole native
+    # LLVM cache needs recompilation. Check independently after usable() has
+    # accepted the toolchain, and before publishing a newly staged toolchain.
+    [[ "$host_os" == macos && "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]] || return 0
+    asan_args=(
+        --clang "$prefix/bin/clang"
+        --readobj "$prefix/bin/llvm-readobj"
+        --arch "$darwin_cmake_arch"
+        --sdkroot "$sdkroot"
+        --deployment-target "$deployment_target"
+    )
+    if [[ "$darwin_cmake_arch" != arm64e ]]; then
+        asan_args+=(--use-lld)
+    fi
+    "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
+        "${asan_args[@]}"
+}
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
+      "$(cat "$marker")" == "$expected_marker" ]] && usable "$TOOLCHAIN_DIR"; then
+    verify_asan_when_requested "$TOOLCHAIN_DIR" || exit 1
+    printf 'WHP native LLVM is current: %s\n' "$TOOLCHAIN_DIR" >&2
+    printf '%s\n' "$TOOLCHAIN_DIR" >&3
+    exit 0
+fi
+
+# Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
+# revisions. Re-running CMake updates changed rules in place, while Ninja keeps
+# object dependency state and rebuilds only affected outputs. A stale or
+# partially installed toolchain is not evidence that the generated build graph
+# is corrupt, because installation is staged separately below.
+mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
+cmake_args=(
+    -S "$LLVM_SOURCE_DIR/llvm"
+    -B "$LLVM_BUILD_DIR"
+    -G Ninja
+    "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
+    -DCMAKE_BUILD_TYPE=Release
+    "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
+    "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
+    "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"
+    -DCMAKE_C_COMPILER="$bootstrap_cc"
+    -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
+    "${cmake_compiler_launcher_args[@]}"
+    "${bootstrap_linker_args[@]}"
+    -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+    -DCMAKE_INSTALL_MESSAGE=NEVER
+    "-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"
+    "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
+    "-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"
+    "-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"
+    "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
+    "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
+    "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
+    -DLLVM_APPEND_VC_REV=OFF
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
+    -DLLVM_ENABLE_LTO=OFF
+    -DLLVM_ENABLE_FATLTO=OFF
+    -DLLVM_BUILD_INSTRUMENTED=OFF
+    -DLLVM_ENABLE_ASSERTIONS=OFF
+    -DLLVM_ENABLE_MODULES=OFF
+    -DLLVM_ENABLE_PLUGINS=OFF
+    -DLLVM_ENABLE_BACKTRACES=OFF
+    -DLLVM_ENABLE_CRASH_OVERRIDES=OFF
+    -DLLVM_ENABLE_UNWIND_TABLES=OFF
+    -DLLVM_ENABLE_LIBEDIT=OFF
+    -DLLVM_ENABLE_LIBPFM=OFF
+    -DLLVM_ENABLE_Z3_SOLVER=OFF
+    -DLLVM_ENABLE_WARNINGS=OFF
+    -DLLVM_ENABLE_PEDANTIC=OFF
+    -DLLVM_INCLUDE_TESTS=OFF
+    -DLLVM_INCLUDE_EXAMPLES=OFF
+    -DLLVM_INCLUDE_BENCHMARKS=OFF
+    -DLLVM_INCLUDE_DOCS=OFF
+    -DLLVM_INCLUDE_UTILS=OFF
+    "-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"
+    -DLLVM_ENABLE_BINDINGS=OFF
+    -DLLVM_ENABLE_TELEMETRY=OFF
+    -DCLANG_INCLUDE_TESTS=OFF
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF
+    -DLLD_INCLUDE_TESTS=OFF
+    -DLLVM_ENABLE_ZLIB=OFF
+    -DLLVM_ENABLE_ZSTD=OFF
+    "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
+    "${cmake_darwin_runtime_args[@]}"
+    "${cmake_host_args[@]}"
+)
+cmake "${cmake_args[@]}"
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+fi
+
+# Keep traversing independent Ninja edges after a compile failure so the
+# persistent build tree contains every object that can be built. Ninja still
+# returns failure after exhausting the reachable graph, so errors remain fatal
+# and installation is never attempted from an incomplete distribution.
+cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+
+stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
+rm -rf "$stage_root"
+mkdir -p "$stage_root"
+DESTDIR="$stage_root" \
+    cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+        "${cmake_parallel_args[@]}"
+staged_toolchain="$stage_root$TOOLCHAIN_DIR"
+[[ -x "$staged_toolchain/bin/clang" ]] || {
+    printf 'error: WHP native LLVM did not install clang\n' >&2
+    exit 1
+}
+if [[ ! -x "$staged_toolchain/bin/clang++" ]]; then
+    ln -s clang "$staged_toolchain/bin/clang++"
+fi
+
+smoke_dir="$TOOLCHAIN_WORK_DIR/smoke"
+rm -rf "$smoke_dir"
+mkdir -p "$smoke_dir"
+cat >"$smoke_dir/smoke.c" <<EOF
+#ifndef $smoke_macro
+#error native LLVM selected the wrong host backend
+#endif
+int whp_native_llvm_smoke(void) { return 0; }
+EOF
+cat >"$smoke_dir/smoke.cc" <<'EOF'
+static_assert(sizeof(void *) >= 4, "unexpected native pointer width");
+int whp_native_llvm_cxx_smoke() { return 0; }
+EOF
+
+smoke_arch_args=()
+if [[ "$host_os" == macos ]]; then
+    smoke_arch_args=(
+        -arch "$darwin_cmake_arch"
+        -isysroot "$sdkroot"
+        "-mmacosx-version-min=$deployment_target"
+    )
+fi
+if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
+    cat >>"$smoke_dir/smoke.c" <<'EOF'
+#ifndef __arm64e__
+#error native LLVM lost the arm64e ABI during the installed-toolchain smoke test
+#endif
+static int whp_arm64e_target(int value) { return value + 1; }
+static int (*whp_arm64e_fp)(int) = whp_arm64e_target;
+int whp_native_llvm_arm64e_smoke(int value) { return whp_arm64e_fp(value); }
+EOF
+fi
+"$staged_toolchain/bin/clang" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+"$staged_toolchain/bin/clang++" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
+
+printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
+usable "$staged_toolchain" || {
+    printf 'error: staged WHP native LLVM toolchain is incomplete\n' >&2
+    exit 1
+}
+verify_asan_when_requested "$staged_toolchain" || exit 1
+
+old_toolchain="${TOOLCHAIN_DIR}.old.$$"
+rm -rf "$old_toolchain"
+if [[ -e "$TOOLCHAIN_DIR" ]]; then
+    mv "$TOOLCHAIN_DIR" "$old_toolchain"
+fi
+if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
+    [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+rm -rf "$old_toolchain" "$stage_root"
+stage_root=""
+
+printf 'WHP native LLVM target backends: %s\n' "$LLVM_TARGETS_TO_BUILD" >&2
+printf 'WHP native LLVM LLD backends: %s\n' "$LLD_ENABLE_BACKENDS" >&2
+printf 'WHP native LLVM Windows manifest merger: %s\n' \
+    "$([[ "$LLVM_WINDOWS_MANIFEST" == 1 ]] && printf enabled || printf disabled)" >&2
+printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
+printf '%s\n' "$TOOLCHAIN_DIR" >&3
+\nLLVM_SHARED_TOOLCHAIN=1\nLLVM_BUILD_LLVM_DYLIB=ON\nLLVM_LINK_LLVM_DYLIB=ON\nCLANG_LINK_CLANG_DYLIB=ON'
+fi
 
 windows_cross_target_usable()
 {
