@@ -63,7 +63,13 @@ def main() -> int:
     require(helper, '"-DSDL_SHARED=ON"', "dynamic SDL3 bootstrap")
     require(helper, '"-DSDL_STATIC=OFF"', "disable static SDL3 archives")
     require(helper, '"-DCMAKE_INSTALL_LIBDIR=lib"', "shared SDL3 lib location")
-    require(helper, 'SDL_BOOTSTRAP_SCHEMA = "2"', "SDL mode cache invalidation")
+    require(helper, 'SDL_BOOTSTRAP_SCHEMA = "3"', "SDL ObjC compatibility cache invalidation")
+    require(helper, '"-DCMAKE_OBJC_FLAGS=-fno-objc-msgsend-class-selector-stubs"',
+            "SDL Mach-O LLD class-selector fallback")
+    require(helper, 'f"-DCMAKE_OBJC_COMPILER={cc}"',
+            "SDL Objective-C compiler matches QEMU host compiler")
+    require(helper, 'and os.environ.get("NATIVE_LLVM_LDFLAG") == "-fuse-ld=lld"',
+            "only disable Objective-C class stubs for selected LLD")
     require(helper, "find_shared_sdl(prefix)", "verify installed shared SDL3 artifact")
     require(helper, '"-DSDL_INSTALL=ON"', "SDL install staging")
     require(helper, 'CMAKE_MAKE_PROGRAM', "selected Ninja handoff to SDL CMake")
@@ -100,6 +106,30 @@ def main() -> int:
         raise SystemExit("error: cannot load SDL bootstrap helper")
     helper_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper_module)
+
+    # Apple's ld handles new class-message stubs. Only the selected managed
+    # Mach-O LLD currently needs the narrowly scoped SDL Objective-C fallback.
+    native = {
+        "NATIVE_LLVM_LDFLAG": "-fuse-ld=lld",
+        "LD": "/private/whp/llvm/bin/ld64.lld",
+    }
+    for system, environment, expected in (
+        ("Darwin", native, True),
+        ("Darwin", {"NATIVE_LLVM_LDFLAG": "", "LD": "/usr/bin/ld"}, False),
+        ("Linux", native, False),
+        ("Darwin", {"NATIVE_LLVM_LDFLAG": "-fuse-ld=lld", "LD": "/usr/bin/ld"}, False),
+    ):
+        with mock.patch.object(helper_module.platform, "system", return_value=system):
+            with mock.patch.dict(helper_module.os.environ, environment):
+                assert helper_module.needs_objc_class_stub_fallback() == expected
+                identity = helper_module.marker_text(
+                    "revision", "cmake", "cmake-version", "ninja",
+                    "ninja-version", "cc", "cc-version", "", "",
+                )
+                assert (
+                    f"SDL_OBJC_CLASS_STUB_FALLBACK={int(expected)}" in identity
+                )
+
     with tempfile.TemporaryDirectory() as td:
         prefix = pathlib.Path(td)
         lib = prefix / "lib"
