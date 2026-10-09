@@ -64,10 +64,12 @@ def main() -> int:
     require(helper, '"-DSDL_STATIC=OFF"', "disable static SDL3 archives")
     require(helper, '"-DCMAKE_INSTALL_LIBDIR=lib"', "shared SDL3 lib location")
     require(helper, 'SDL_BOOTSTRAP_SCHEMA = "3"', "SDL ObjC compatibility cache invalidation")
-    require(helper, '"-DCMAKE_OBJC_FLAGS=-fno-objc-msgsend-class-selector-stubs"',
-            "SDL Mach-O LLD class-selector fallback")
-    require(helper, 'f"-DCMAKE_OBJC_COMPILER={cc}"',
-            "SDL Objective-C compiler matches QEMU host compiler")
+    require(helper, '"-DSDL_OBJC_NO_CLASS_SELECTOR_STUBS=ON"',
+            "SDL source-specific class-stub fallback option")
+    if "-DCMAKE_OBJC_FLAGS=-fno-objc-msgsend-class-selector-stubs" in helper:
+        raise SystemExit(
+            "error: SDL class-stub mitigation is scoped to Apple .m files, not CMake OBJC flags"
+        )
     require(helper, 'and os.environ.get("NATIVE_LLVM_LDFLAG") == "-fuse-ld=lld"',
             "only disable Objective-C class stubs for selected LLD")
     require(helper, "find_shared_sdl(prefix)", "verify installed shared SDL3 artifact")
