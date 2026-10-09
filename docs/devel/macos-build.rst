@@ -171,13 +171,17 @@ Objective-C class-message stub that the selected linker must synthesize,
 The WHP native ``ld64.lld`` has not yet been verified to synthesize class
 stubs, while Clang can emit them. QEMU already disables the unsupported
 optimization for its own Objective-C compilation, but its macOS wrapper runs
-**after** the SDL bootstrap. Therefore the SDL CMake step now selects the
-same Clang for Objective-C and uses
-``-fno-objc-msgsend-class-selector-stubs`` **only when the managed
-Mach-O LLD is selected**. Apple ``ld`` remains unaffected. The cache identity
-tracks this selection so incompatible old SDL objects are not reused.
-If the linker gains the required support, the opt-out can be retired after a
-direct Objective-C compilation-and-link test.
+**after** the SDL bootstrap. The pinned SDL fork's CMake build compiles Apple
+``.m`` files through its C target using ``-x objective-c``, so merely
+setting ``CMAKE_OBJC_FLAGS`` would not protect those sources. The SDL
+fork now has an opt-in ``SDL_OBJC_NO_CLASS_SELECTOR_STUBS`` CMake setting,
+which adds ``-fno-objc-msgsend-class-selector-stubs`` to its ``.m`` sources
+only. QEMU enables that setting **only with its managed Mach-O LLD**, and
+pins the corresponding SDL commit in ``toolchains/sdl``. Apple ``ld`` and
+ordinary C source compilation remain unaffected. The bootstrap cache
+identity tracks the linker and mitigation selection so incompatible old SDL
+objects are not reused. If the linker gains the required support, retire the
+opt-out after a direct Objective-C compilation-and-link test.
 
 Profile-guided optimization (PGO)
 ---------------------------------
