@@ -146,37 +146,45 @@ not instrument OpenBIOS, SeaBIOS, LLVM's native bootstrap, or other
 out-of-tree toolchain preparation. Use a stable compiler, architecture,
 optimization level and LTO configuration across both PGO passes.
 
-For LLVM/Clang, the workflow is:
+For LLVM/Clang, ``QEMU_HOST_PGO=use`` now implies ``generate``
+when there is neither a nonempty ``default.profdata`` nor any nonempty
+``pgo-raw/*.profraw``. The public ``build.sh`` automatically starts a
+``QEMU_HOST_PGO=generate`` build of the same requested targets, without
+running the normal test suites or installation during the intermediate pass.
+The direct portable Python core performs the same generate pass in process,
+without repeating its build-environment preparation. Both preserve the
+existing build tree and any prior profile files.
 
-1. Set ``QEMU_HOST_PGO=generate``, build QEMU, and retain the chosen
-   ``BUILD_DIR``. Check Meson's ``b_pgo`` setting rather than assuming the
-   profiling flags were applied.
-2. Run the **instrumented** QEMU emulators on representative, verified
-   guest workloads using ``LLVM_PROFILE_FILE="$BUILD_DIR/pgo-raw/%m-%p.profraw"``
-   after creating ``"$BUILD_DIR/pgo-raw"``. The ``%m`` and ``%p``
-   substitutions distinguish instrumented modules and processes. Use the
-   same TCG/device/I/O mix expected in normal operation; ``--version``
-   or QEMU startup alone provides inadequate TCG coverage. Exit QEMU cleanly
-   so its profiling runtime can write the profiles.
-3. Set ``QEMU_HOST_PGO=use``, retain that same ``BUILD_DIR``,
-   and rebuild with unchanged compiler and host ABI settings. Both WHP
-   build adapters run ``scripts/whp-build/pgo-profile.py`` on the validated
-   build tree first. The helper reuses an existing nonempty
-   ``default.profdata`` or, if raw profiles are newer, automatically merges
-   the nonempty ``pgo-raw/*.profraw`` files into it via the selected Clang's
-   sibling ``llvm-profdata`` (or ``LLVM_PROFDATA`` when explicitly set).
-   A failed merge leaves an older indexed profile untouched and stops
-   the build, rather than silently using stale data.
-4. If neither indexed nor raw training data exists, ``use`` fails with
-   instructions to collect a real profile. It does not launch arbitrary
-   QEMU startup probes as a substitute for representative TCG training.
-   When needed, the indexed profile can also be prepared manually::
+**Generation is not training.** The instrumented QEMU must execute
+representative guest workloads before ``use`` is meaningful. To make all
+three stages automatic, set ``QEMU_PGO_TRAIN_SCRIPT`` to an **executable
+script** that boots/exercises the generated QEMU binary. Relative script
+paths resolve from the source checkout. The script receives the requested
+targets as arguments and the following environment variables:
 
-       llvm-profdata merge -output="$BUILD_DIR/default.profdata" "$BUILD_DIR"/pgo-raw/*.profraw
+- ``WHP_PGO_BUILD_DIR``: the validated build directory holding the
+  instrumented emulators.
+- ``LLVM_PROFILE_FILE``: ``$BUILD_DIR/pgo-raw/%m-%p.profraw``, using
+  LLVM module/process substitutions to keep raw profile files distinct.
 
-   Meson does not merge raw profiles itself. If the final compiler build
-   detects incompatible or mismatched data, regenerate the profile with
-   the compiler and source revision used for the intended release.
+If a training script is configured, ``use`` generates, trains, verifies
+that nonempty profiles exist, merges them with the selected compiler's
+``llvm-profdata``, and runs the final ``b_pgo=use`` build. If no script
+is configured, the first ``use`` invocation builds the instrumented
+emulator but **stops with clear instructions** rather than pretending a
+version check or an untrained boot is representative. Run that emulator on
+the normal guest workloads with ``LLVM_PROFILE_FILE`` set, exit cleanly
+to flush the raw data, then repeat ``QEMU_HOST_PGO=use``. The next
+invocation will skip generation and use the collected profiles.
+
+On either path, existing indexed profiles are reused. Newer nonempty raw
+profiles are merged automatically into ``default.profdata``. A failed
+merge preserves an older indexed profile and stops the build. Clang, host
+ABI, LTO and source revision compatibility still matter; an incompatible
+profile is not repaired by manufacturing artificial training traffic.
+Meson itself does not merge Clang's raw profiles; see
+``scripts/whp-build/pgo-profile.py`` for the validated merge.
+
 
 Use an identical ``off`` baseline for benchmarks (same host ABI, compiler,
 LTO, optimization level, guest image, QEMU options and test machine), and
