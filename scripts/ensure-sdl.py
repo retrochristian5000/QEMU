@@ -417,8 +417,13 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         command.append(f"-DCMAKE_OSX_SYSROOT={sdkroot}")
     if arch:
         command.append(f"-DCMAKE_OSX_ARCHITECTURES={arch}")
-        # We need a dylib, not an SDL framework bundle.
-        command.append("-DSDL_FRAMEWORK=OFF")
+        # Force a relocatable dylib install name so @loader_path-backed
+        # QEMU runtime paths keep working when the build tree is moved.
+        command.extend((
+            "-DSDL_FRAMEWORK=OFF",
+            "-DCMAKE_MACOSX_RPATH=ON",
+            "-DCMAKE_INSTALL_NAME_DIR=@rpath",
+        ))
 
     print(f"WHP SDL3 bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(command)
