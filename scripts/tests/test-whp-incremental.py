@@ -168,16 +168,76 @@ class WhpIncrementalTests(unittest.TestCase):
         content = MACOS_HYGIENE.read_text(encoding='utf-8')
         self.assertNotIn('rm -rf "$BUILD_DIR"', content)
 
-    def test_portable_owner_rejects_different_source(self):
+    def test_portable_owner_accepts_transferred_checkout_and_retains_profile(self):
         mod = load_portable_build()
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             (build_dir / '.whp-build-owner').write_text(
-                'SCHEMA=2\nSOURCE_DIR=/different/source\nHOST_TAG=' + mod.host_build_tag() + '\n',
+                'SCHEMA=2\\nSOURCE_DIR=/old/computer/QEMU\\nHOST_TAG='
+                + mod.host_build_tag() + '\\n',
                 encoding='utf-8',
             )
-            with self.assertRaisesRegex(RuntimeError, 'another QEMU source tree'):
+            profile = build_dir / 'default.profdata'
+            profile.write_bytes(b'old-profile')
+            mod.validate_build_tree_owner(build_dir)
+            mod.write_build_tree_owner(build_dir)
+            self.assertEqual(profile.read_bytes(), b'old-profile')
+            owner = (build_dir / '.whp-build-owner').read_text(encoding='utf-8')
+            self.assertIn(f'PROJECT_ID={mod.PROJECT_ID}', owner)
+            self.assertIn(f'SOURCE_DIR={mod.ROOT}', owner)
+
+    def test_pre_pgo_tree_with_previous_source_is_adopted(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-config').write_text(
+                'SCHEMA=1\\nSOURCE_DIR=/old/computer/QEMU\\n'
+                f'HOST_TAG={mod.host_build_tag()}\\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\\n',
+                encoding='utf-8',
+            )
+            data = build_dir / 'default.profdata'
+            data.write_bytes(b'pgodata')
+            mod.validate_build_tree_owner(build_dir)
+            mod.write_build_tree_owner(build_dir)
+            self.assertEqual(data.read_bytes(), b'pgodata')
+
+    def test_foreign_project_and_incompatible_host_are_rejected(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            owner = build_dir / '.whp-build-owner'
+            owner.write_text(
+                'SCHEMA=3\\nPROJECT_ID=foreign/QEMU\\n'
+                f'SOURCE_DIR={mod.ROOT}\\nHOST_TAG={mod.host_build_tag()}\\n',
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(RuntimeError, 'belongs to project'):
                 mod.validate_build_tree_owner(build_dir)
+            owner.write_text(
+                'SCHEMA=2\\nSOURCE_DIR=/old/computer/QEMU\\n'
+                'HOST_TAG=incompatible-host\\n',
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(RuntimeError, 'host ABI'):
+                mod.validate_build_tree_owner(build_dir)
+
+    def test_unknown_host_from_transferred_custom_dir_stays_unowned(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-config').write_text(
+                'SCHEMA=1\\nSOURCE_DIR=/old/computer/QEMU\\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\\n',
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(RuntimeError, 'non-empty unowned'):
+                mod.validate_build_tree_owner(build_dir)
+
+    def test_bash_configure_delegates_owner_migration_to_portable_helper(self):
+        source = (ROOT / 'scripts/whp-build/configure.bash').read_text(encoding='utf-8')
+        self.assertIn('"$SOURCE_DIR/scripts/whp-build/portable-build.py"', source)
+        self.assertIn('--claim-build-dir', source)
 
     def test_entry_claims_build_directory_before_compiled_dependencies(self):
         launcher = (ROOT / 'build.sh').read_text(encoding='utf-8')
