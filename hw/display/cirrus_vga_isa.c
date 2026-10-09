@@ -61,7 +61,8 @@ static void isa_cirrus_vga_realizefn(DeviceState *dev, Error **errp)
     if (!vga_common_init(s, OBJECT(dev), errp)) {
         return;
     }
-    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), CIRRUS_ID_CLGD5428, 0,
+    cirrus_init_common(&d->cirrus_vga, OBJECT(dev), CIRRUS_ID_CLGD5428,
+                       CIRRUS_BUSTYPE_ISA,
                        isa_address_space(isadev),
                        isa_address_space_io(isadev));
     s->con = qemu_graphic_console_create(dev, 0, s->hw_ops, s);

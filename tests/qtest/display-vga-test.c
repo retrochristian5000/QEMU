@@ -92,6 +92,40 @@ static void test_isa_cirrus_profile(void)
     qtest_quit(qts);
 }
 
+static void test_vlb_cirrus_decoder(gconstpointer data)
+{
+    uint32_t base = GPOINTER_TO_UINT(data);
+    QTestState *qts = qtest_initf(
+        "-m 128 -vga none -device cirrus-gd5430-vlb,lfb-base=0x%x", base);
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, 0xa0);
+    g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x10);
+
+    /* At 64 MiB, disabled decoding must expose the underlying RAM. */
+    if (base == 0x04000000U) {
+        qtest_writeb(qts, base + 0x1234, 0x39);
+    }
+
+    /* SR07[7:4] enables the VLB window even when the low nibble is 0. */
+    vga_seq_write(qts, 0x07, 0x10);
+    qtest_writeb(qts, base + 0x1234, 0x56);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1234), ==, 0x56);
+    /* The 4 MiB VLB window wraps around the GD5430's 2 MiB VRAM. */
+    g_assert_cmphex(qtest_readb(qts, base + 0x200000 + 0x1234), ==, 0x56);
+
+    vga_seq_write(qts, 0x07, 0x00);
+    if (base == 0x04000000U) {
+        g_assert_cmphex(qtest_readb(qts, base + 0x1234), ==, 0x39);
+    }
+    vga_seq_write(qts, 0x07, 0x80);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1234), ==, 0x56);
+
+    qtest_quit(qts);
+}
+
 static void vga_attr_write(QTestState *qts, uint8_t index, uint8_t value)
 {
     qtest_inb(qts, VGA_IS1_RC);
@@ -260,6 +294,16 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-profile",
                        test_isa_cirrus_profile);
+    }
+
+    if (qtest_has_device("cirrus-gd5430-vlb") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_data_func("/display/vlb/gd5430/64mb",
+                            GUINT_TO_POINTER(0x04000000U),
+                            test_vlb_cirrus_decoder);
+        qtest_add_data_func("/display/vlb/gd5430/2gb",
+                            GUINT_TO_POINTER(0x80000000U),
+                            test_vlb_cirrus_decoder);
     }
 
     if (qtest_has_device("sierra-falcon64")) {

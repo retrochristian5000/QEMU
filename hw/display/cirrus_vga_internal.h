@@ -38,6 +38,12 @@
 #define CIRRUS_ID_CLGD5436  (0x2B << 2)
 #define CIRRUS_ID_CLGD5446  (0x2E << 2)
 
+/* SR17[5:3]: bus interface straps (read-only to guest software). */
+#define CIRRUS_BUSTYPE_VLBFAST 0x10
+#define CIRRUS_BUSTYPE_PCI     0x20
+#define CIRRUS_BUSTYPE_VLBSLOW 0x30
+#define CIRRUS_BUSTYPE_ISA     0x38
+
 extern const VMStateDescription vmstate_cirrus_vga;
 
 struct CirrusVGAState;
@@ -97,7 +103,7 @@ typedef struct CirrusVGAState {
 } CirrusVGAState;
 
 void cirrus_init_common(CirrusVGAState *s, Object *owner,
-                        int device_id, int is_pci,
+                        int device_id, int bustype,
                         MemoryRegion *system_memory, MemoryRegion *system_io);
 
 #endif

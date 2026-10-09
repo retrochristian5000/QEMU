@@ -86,10 +86,6 @@
 #define CIRRUS_CURSOR_LARGE        0x04 // 64x64 if set, 32x32 if clear
 
 // sequencer 0x17
-#define CIRRUS_BUSTYPE_VLBFAST   0x10
-#define CIRRUS_BUSTYPE_PCI       0x20
-#define CIRRUS_BUSTYPE_VLBSLOW   0x30
-#define CIRRUS_BUSTYPE_ISA       0x38
 #define CIRRUS_MMIO_ENABLE       0x04
 #define CIRRUS_MMIO_USE_PCIADDR  0x40   // 0xb8000 if cleared.
 #define CIRRUS_MEMSIZEEXT_DOUBLE 0x80
@@ -2503,6 +2499,13 @@ static void cirrus_update_memory_access(CirrusVGAState *s)
     unsigned mode;
 
     memory_region_transaction_begin();
+    /* VLB cards decode the board-strapped high aperture only when
+     * SR07[7:4] is nonzero. PCI uses BARs instead and is unaffected. */
+    if (s->bustype == CIRRUS_BUSTYPE_VLBFAST ||
+        s->bustype == CIRRUS_BUSTYPE_VLBSLOW) {
+        memory_region_set_enabled(&s->cirrus_linear_io,
+                                  (s->vga.sr[0x07] & 0xf0) != 0);
+    }
     if (cirrus_has_mmio(s) &&
          (s->vga.sr[0x17] & 0x44) == 0x44) {
         goto generic_io;
@@ -2846,6 +2849,11 @@ static void cirrus_reset(void *opaque)
         }
     }
     s->vga.cr[0x27] = s->device_id;
+    if (s->bustype == CIRRUS_BUSTYPE_VLBFAST ||
+        s->bustype == CIRRUS_BUSTYPE_VLBSLOW) {
+        memory_region_set_enabled(&s->cirrus_linear_io,
+                                  (s->vga.sr[0x07] & 0xf0) != 0);
+    }
 
     s->cirrus_hidden_dac_lockindex = 5;
     s->cirrus_hidden_dac_data = 0;
@@ -2872,7 +2880,7 @@ static const MemoryRegionOps cirrus_vga_io_ops = {
 };
 
 void cirrus_init_common(CirrusVGAState *s, Object *owner,
-                        int device_id, int is_pci,
+                        int device_id, int bustype,
                         MemoryRegion *system_memory, MemoryRegion *system_io)
 {
     int i;
@@ -2905,7 +2913,7 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
      * behind the process-wide ROP table initialization above.
      */
     s->device_id = device_id;
-    s->bustype = is_pci ? CIRRUS_BUSTYPE_PCI : CIRRUS_BUSTYPE_ISA;
+    s->bustype = bustype;
 
     /* Register ioport 0x3b0 - 0x3df */
     memory_region_init_io(&s->cirrus_vga_io, owner, &cirrus_vga_io_ops, s,
@@ -2936,8 +2944,13 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
     memory_region_set_coalescing(&s->low_mem);
 
     /* I/O handler for LFB */
+    /* On the VLB interface A[21:2] selects a 4 MiB window. GD5430
+     * physical VRAM is at most 2 MiB; the linear handler wraps accesses. */
     memory_region_init_io(&s->cirrus_linear_io, owner, &cirrus_linear_io_ops, s,
-                          "cirrus-linear-io", s->vga.vram_size_mb * MiB);
+                          "cirrus-linear-io",
+                          (bustype == CIRRUS_BUSTYPE_VLBFAST ||
+                           bustype == CIRRUS_BUSTYPE_VLBSLOW) ?
+                          4 * MiB : s->vga.vram_size_mb * MiB);
     memory_region_set_flush_coalesced(&s->cirrus_linear_io);
 
     /* I/O handler for LFB */
@@ -2998,7 +3011,8 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     if (!vga_common_init(&s->vga, OBJECT(dev), errp)) {
         return;
     }
-    cirrus_init_common(s, OBJECT(dev), device_id, 1, pci_address_space(dev),
+    cirrus_init_common(s, OBJECT(dev), device_id, CIRRUS_BUSTYPE_PCI,
+                       pci_address_space(dev),
                        pci_address_space_io(dev));
     s->vga.con = qemu_graphic_console_create(DEVICE(dev), 0, s->vga.hw_ops, &s->vga);
 
