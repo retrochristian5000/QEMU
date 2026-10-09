@@ -165,6 +165,15 @@ whp_build_tree_owned()
 {
     local build_dir="$1"
 
+    # build.sh has already checked PROJECT_ID and HOST_TAG with the shared
+    # ownership validator. The checkout pathname is not permanent ownership.
+    if [[ -f "$build_dir/.whp-build-owner" ]] &&
+       grep -Fqx 'PROJECT_ID=retrochristian5000/QEMU' \
+           "$build_dir/.whp-build-owner" &&
+       grep -Fqx "HOST_TAG=${host_arch}-apple-darwin" \
+           "$build_dir/.whp-build-owner"; then
+        return 0
+    fi
     if [[ -f "$build_dir/.whp-build-owner" ]] &&
        grep -Fqx "SOURCE_DIR=$SOURCE_DIR" "$build_dir/.whp-build-owner"; then
         return 0
@@ -363,7 +372,8 @@ prepare_macos_build_tree()
     fi
 
     {
-        printf 'SCHEMA=2\n'
+        printf 'SCHEMA=3\n'
+        printf 'PROJECT_ID=retrochristian5000/QEMU\n'
         printf 'SOURCE_DIR=%s\n' "$SOURCE_DIR"
         printf 'BUILD_DIR=%s\n' "$BUILD_DIR"
         printf 'HOST_TAG=%s-apple-darwin\n' "$host_arch"
