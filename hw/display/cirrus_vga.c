@@ -1384,8 +1384,6 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
         s->vga.hw_cursor_y = (val << 3) | (s->vga.sr_index >> 5);
         break;
     case 0x07:                  // Extended Sequencer Mode
-        cirrus_update_memory_access(s);
-        /* fall through */
     case 0x08:                  // EEPROM Control
     case 0x09:                  // Scratch Register 0
     case 0x0a:                  // Scratch Register 1
@@ -1407,6 +1405,10 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
     case 0x1e:                  // VCLK 3 Denominator & Post
     case 0x1f:                  // BIOS Write Enable and MCLK select
         s->vga.sr[s->vga.sr_index] = val;
+        if (s->vga.sr_index == 0x07) {
+            /* Bank aliases must reflect the newly written extended mode. */
+            cirrus_update_memory_access(s);
+        }
 #ifdef DEBUG_CIRRUS
         printf("cirrus: handled outport sr_index %02x, sr_value %02x\n",
                s->vga.sr_index, val);
