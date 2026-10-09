@@ -449,7 +449,7 @@ def _recorded_host_tag(data: Dict[str, str], kind: str) -> str:
     return f'{canonical_host_arch(arch)}-{canonical_host_os(system)}'
 
 
-def _recognized_wHP_record(data: Dict[str, str], kind: str) -> bool:
+def _recognized_whp_record(data: Dict[str, str], kind: str) -> bool:
     if not data.get('SOURCE_DIR'):
         return False
     schema = data.get('SCHEMA')
@@ -507,11 +507,11 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
             not owner or name == '.whp-build-owner'
         ):
             return
-        if data.get('PROJECT_ID') == PROJECT_ID or (
-            _recognized_wHP_record(data, name)
-            and (tag or build_dir.name in (
+        if (data.get('PROJECT_ID') == PROJECT_ID or
+                _recognized_whp_record(data, name)) and (
+            tag or build_dir.name in (
                 f'whp-{expected_tag}', f'whp-ppc-{expected_tag}'
-            ))
+            )
         ):
             return
 
@@ -519,7 +519,7 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
         return
 
     raise RuntimeError(
-        f'refusing to use non-empty unrecognized WHP BUILD_DIR: {build_dir}; '
+        f'refusing to use non-empty unowned BUILD_DIR: {build_dir}; '
         'existing files were preserved'
     )
 
