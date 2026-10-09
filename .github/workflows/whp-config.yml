@@ -78,6 +78,7 @@ on:
       - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-asan-global-link.py'
+      - 'scripts/tests/test-native-llvm-shared.py'
       - 'scripts/verify-native-asan-darwin.py'
       - 'scripts/tests/test-archive-tool-policy.bash'
       - 'scripts/tests/test-vmdk-overflow.py'
@@ -183,6 +184,7 @@ jobs:
           python3 scripts/tests/test-native-llvm-build-entry.py
           python3 scripts/tests/test-native-llvm-wiring.py
           python3 scripts/tests/test-native-asan-global-link.py
+          python3 scripts/tests/test-native-llvm-shared.py
           bash scripts/tests/test-macos-sdk-selection.bash
           bash scripts/tests/test-archive-tool-policy.bash
           python3 scripts/tests/test-vmdk-overflow.py
@@ -237,6 +239,7 @@ jobs:
             scripts/tests/test-native-llvm-build-entry.py \
             scripts/tests/test-native-llvm-wiring.py \
             scripts/tests/test-native-asan-global-link.py \
+            scripts/tests/test-native-llvm-shared.py \
             scripts/verify-native-asan-darwin.py \
             scripts/tests/test-vmdk-overflow.py \
             scripts/tests/test-host-cpu-tuning.py \
