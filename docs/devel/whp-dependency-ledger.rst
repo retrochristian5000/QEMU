@@ -165,7 +165,7 @@ by the WHP account.
    * - ``toolchains/sdl``
      - ``SDLosaurus``
      - yes
-     - SDL3 fallback; CMake + Ninja + host C compiler.
+     - SDL3 shared-library fallback (dylib/so/DLL), built by CMake + Ninja + the QEMU host C compiler. Static SDL3 archive output is disabled; QEMU retains normal pkg-config discovery.
    * - ``toolchains/jack``
      - ``jack``
      - yes
