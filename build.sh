@@ -363,8 +363,16 @@ if [ "${QEMU_HOST_PGO:-off}" = use ] &&
         LLVM_PROFILE_FILE="$BUILD_DIR/pgo-raw/%m-%p.profraw" \
             WHP_PGO_BUILD_DIR="$BUILD_DIR" \
             "$WHP_PGO_TRAIN_PATH" "$@" || exit 1
-        "$PYTHON" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
-            --build-dir "$BUILD_DIR" --compiler "${CC:-clang}" || exit 1
+        WHP_PGO_STAGE=$("$PYTHON" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
+            --mode status --build-dir "$BUILD_DIR") || exit 1
+        if [ "$WHP_PGO_STAGE" != use ]; then
+            printf '%s\n' \
+                'error: the PGO training script returned without writing nonempty .profraw files.' \
+                'Check LLVM_PROFILE_FILE and ensure the instrumented QEMU exits cleanly.' >&2
+            exit 2
+        fi
+        # Merge with the actual QEMU host compiler later in configure.bash,
+        # after optional native LLVM bootstrap selects CC.
         unset WHP_PGO_TRAIN_PATH
     fi
     unset WHP_PGO_STAGE
