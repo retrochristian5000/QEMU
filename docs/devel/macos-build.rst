@@ -160,6 +160,25 @@ Dynamic linking avoids embedding the SDL3 archive in every linked consumer
 and may save space or rebuilding work, but does not guarantee higher TCG
 execution speed. Measure runtime separately from binary size and link time.
 
+When linking SDL3 with WHP's native Mach-O ``ld64.lld``, a newer Clang may
+report an undefined symbol such as
+``_objc_msgSendClass$shouldMonitorBackgroundEvents$_OBJC_CLASS_$_GCController``.
+The SDL GameController backend reads and writes this class property in
+``src/joystick/apple/SDL_mfijoystick.m``. The symbol is a compiler-emitted
+Objective-C class-message stub that the selected linker must synthesize,
+**not** a missing GameController implementation or SDL export.
+
+The WHP native ``ld64.lld`` has not yet been verified to synthesize class
+stubs, while Clang can emit them. QEMU already disables the unsupported
+optimization for its own Objective-C compilation, but its macOS wrapper runs
+**after** the SDL bootstrap. Therefore the SDL CMake step now selects the
+same Clang for Objective-C and uses
+``-fno-objc-msgsend-class-selector-stubs`` **only when the managed
+Mach-O LLD is selected**. Apple ``ld`` remains unaffected. The cache identity
+tracks this selection so incompatible old SDL objects are not reused.
+If the linker gains the required support, the opt-out can be retired after a
+direct Objective-C compilation-and-link test.
+
 Profile-guided optimization (PGO)
 ---------------------------------
 
