@@ -269,3 +269,35 @@ The minimum pre-enable matrix is:
 
 The order is intentional: loader correctness and ABI boundaries come before
 large application compatibility.
+
+PowerPC standard input: bounded BSD read(0) boundary
+----------------------------------------------------
+
+The PPC32/PPC64 ABI uses r0 for the syscall number and r3 through r5 for
+the first three arguments. Darwin BSD syscall number 3 is
+read(fd, buffer, length) (XNU PPC-era bsd/kern/syscalls.master).
+The stdin descriptor is 0, and that guest descriptor must not be confused
+with the host's stdin FILE pointer or with the guest buffer address.
+
+The independent darwin-user/ppc/stdio.c interface recognizes direct
+read(0, ...) requests and exposes guest-writable validation, guest-memory
+copy, and translated host-I/O callbacks. It limits each request to 4096
+bytes, rejects a PPC32/PPC64 address-range overflow before consuming host
+data, and retains the difference between byte counts and Darwin errno.
+Zero length, EOF, host read errors, PPC32 and PPC64 addresses, and
+non-BSD calls have a pipe-backed regression in
+scripts/tests/test-darwin-ppc-stdin.bash.
+
+This is an ABI helper, not an enabled emulator. The host callback must
+map guest fd 0 into the QEMU host descriptor table and translate host
+errno into Darwin errno. A future guest-memory implementation must supply
+callbacks for safe writes; host pointers are never treated as guest
+pointers. The Darwin PowerPC syscall return/error convention must be
+verified separately against an executable fixture before wiring r3 and
+PPC condition-register behavior into the CPU exception loop.
+Neither an actual PPC Mach-O user process nor a ppc-darwin-user
+configuration has been enabled by this change.
+
+The historical reference implementation lives in QEMU's tree before
+0adb124659cfadf9f0b5c99874c476116f0cf74f. It used direct host
+pointers for many syscalls and must not be copied uncritically.

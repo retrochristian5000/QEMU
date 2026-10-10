@@ -71,6 +71,10 @@ on:
       - 'scripts/tests/test-darwin-macho-abi.py'
       - 'scripts/tests/test-darwin-ppc-abi.py'
       - 'scripts/tests/test-darwin-ppc-macho-format.py'
+      - 'scripts/tests/test-darwin-ppc-stdin.bash'
+      - 'darwin-user/ppc/stdio.c'
+      - 'darwin-user/ppc/stdio.h'
+      - 'tests/unit/test-darwin-ppc-stdin.c'
       - 'scripts/tests/test-macos-api-policy.py'
       - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-python-menu-fallback.py'
@@ -165,6 +169,7 @@ jobs:
           python3 scripts/tests/test-darwin-macho-abi.py
           python3 scripts/tests/test-darwin-ppc-abi.py
           python3 scripts/tests/test-darwin-ppc-macho-format.py
+          bash scripts/tests/test-darwin-ppc-stdin.bash
           python3 scripts/tests/test-macos-api-policy.py
           python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-python-menu-fallback.py
