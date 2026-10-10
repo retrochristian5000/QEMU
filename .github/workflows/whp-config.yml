@@ -71,6 +71,10 @@ on:
       - 'scripts/tests/test-darwin-macho-abi.py'
       - 'scripts/tests/test-darwin-ppc-abi.py'
       - 'scripts/tests/test-darwin-ppc-macho-format.py'
+      - 'scripts/tests/test-darwin-ppc-exec.bash'
+      - 'darwin-user/include/macho_exec.h'
+      - 'darwin-user/macho_exec.c'
+      - 'tests/unit/test-darwin-ppc-exec.c'
       - 'scripts/tests/test-darwin-ppc-stdin.bash'
       - 'darwin-user/ppc/stdio.c'
       - 'darwin-user/ppc/stdio.h'
@@ -169,6 +173,7 @@ jobs:
           python3 scripts/tests/test-darwin-macho-abi.py
           python3 scripts/tests/test-darwin-ppc-abi.py
           python3 scripts/tests/test-darwin-ppc-macho-format.py
+          bash scripts/tests/test-darwin-ppc-exec.bash
           bash scripts/tests/test-darwin-ppc-stdin.bash
           python3 scripts/tests/test-macos-api-policy.py
           python3 scripts/tests/test-menuconfig-scroll.py

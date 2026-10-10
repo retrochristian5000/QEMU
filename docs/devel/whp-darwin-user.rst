@@ -301,3 +301,38 @@ configuration has been enabled by this change.
 The historical reference implementation lives in QEMU's tree before
 0adb124659cfadf9f0b5c99874c476116f0cf74f. It used direct host
 pointers for many syscalls and must not be copied uncritically.
+
+PowerPC Mach-O executable image plan
+------------------------------------
+
+The standalone PPC32/PPC64 executable loader is split from the already
+recovered byte-order-safe Mach-O probe:
+
+* ``darwin-user/macho_exec.c`` selects the requested architecture from a thin
+  or universal image, reuses the existing load-command validator, and accepts
+  ``MH_EXECUTE`` files with a usable PPC ``LC_UNIXTHREAD`` entry.
+* The planner collects validated ``LC_SEGMENT``/``LC_SEGMENT_64`` regions,
+  rejecting file sizes larger than memory, guest-address wraparound, overlapping
+  regions, invalid VM protections, and executable entries in unmapped,
+  inaccessible, or zero-fill-only memory.
+* An apply interface passes the *selected slice's* file-backed segment bytes,
+  VM size and protections to the caller-provided guest VM mapper. The mapper
+  must reserve the whole region, copy file data, zero-fill the remainder and
+  enforce protections. A partial callback failure requires a complete
+  guest-address-space teardown by the caller.
+* ``MH_DYLDLINK``, ``LC_LOAD_DYLINKER``, ``LC_MAIN`` and dylib/dyld-required
+  commands report a **distinct needs-dyld result** rather than pretending
+  that a direct PowerPC thread PC is enough to launch them.
+
+``scripts/tests/test-darwin-ppc-exec.bash`` exercises PPC32, PPC64 and fat
+Mach-O fixtures, segment order, writable/executable protection bits, file
+backing and zero-fill sizes, entry selection, malformed mappings, dyld
+requirements, and rollback/error behavior. It is also run from the existing
+WHP configuration CI.
+
+This is an executable *image-planning and mapping interface*, not yet a
+``ppc-darwin-user`` program runner. A real QEMU guest VM backend, process
+stack, initial register state, host descriptor mapping, BSD/Mach syscall
+dispatch, dyld bootstrapping and signal processing are still required.
+The code is deliberately not made a QEMU ``*-darwin-user`` build target.
+
