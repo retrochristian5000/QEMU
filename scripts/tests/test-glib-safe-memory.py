@@ -19,7 +19,7 @@ SITES = {
     "linux-user/uaccess.c": 1,
     "system/vl.c": 1,
     "system/memory.c": 1,
-    "qapi/qapi-clone-visitor.c": 1,
+    "qapi/qapi-clone-visitor.c": 8,
 }
 
 def static_gate():
