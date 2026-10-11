@@ -163,9 +163,35 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
         as->gdbstub.can_reverse = true;
     }
 
+    /*
+     * Limit the automatic TCG cache for small system guests.  The normal
+     * default is based only on total host RAM, which can reserve a 1 GiB
+     * code buffer even when the guest has just 256 MiB of RAM.  Keep a
+     * 64 MiB floor to avoid penalizing small firmware-heavy guests, and
+     * preserve explicit tb-size settings.
+     *
+     * The host-memory and target-branch-range bounds in tcg/region.c
+     * still apply to the resulting buffer.
+     */
+    size_t tb_size = s->tb_size * MiB;
+
+#ifndef CONFIG_USER_ONLY
+    if (s->tb_size == 0 && ms->ram_size != 0) {
+        size_t host_ram = qemu_get_host_physmem();
+        size_t host_limit = host_ram ? host_ram / 8 : 1 * GiB;
+        size_t guest_limit = MAX(64 * MiB,
+                                 (size_t)MIN(ms->ram_size / 4,
+                                             (uint64_t)SIZE_MAX));
+
+        tb_size = MIN(host_limit, guest_limit);
+        tb_size = MAX(1 * MiB,
+                      QEMU_ALIGN_DOWN(tb_size, qemu_real_host_page_size()));
+    }
+#endif
+
     page_init();
     tb_htable_init();
-    tcg_init(s->tb_size * MiB, s->splitwx_enabled, max_threads);
+    tcg_init(tb_size, s->splitwx_enabled, max_threads);
 
 #if defined(CONFIG_SOFTMMU)
     /*
