@@ -35,6 +35,7 @@ on:
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
+      - 'scripts/bench-smp-memory.py'
       - 'scripts/tests/test-arm64e-ide-hotpath.py'
       - 'scripts/tests/test-arm64e-pic-hotpath.py'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
@@ -169,6 +170,10 @@ jobs:
       - name: Audit TCG memory budget and Darwin JIT allocations
         shell: bash
         run: python3 scripts/tests/test-tcg-memory-budget.py
+
+      - name: Audit SMP memory benchmark measurement logic
+        shell: bash
+        run: python3 scripts/bench-smp-memory.py --self-test
 
       - name: Audit arm64e IDE PIO hot path
         shell: bash
@@ -733,6 +738,32 @@ jobs:
             --loops 262144 \
             --rounds 1 \
             --tcg-thread single \
+            --split-wx on
+
+          # Compare peak resident memory as per-vCPU structures grow while
+          # guest RAM stays fixed at 256 MiB. APs are not given an explicit
+          # startup sequence by the benchmark; these are idle-vCPU costs.
+          echo "ARM64e SMP peak-RSS benchmark"
+          python3 scripts/bench-smp-memory.py \
+            --qemu "$BUILD_DIR/qemu-system-i386" \
+            --cpus 1,2,4,8 \
+            --guest-mib 256 \
+            --workload memory \
+            --loops 200000 \
+            --rounds 2 \
+            --tcg-thread multi \
+            --split-wx on
+
+          # Distinguish hotplug capacity from actual active-vCPU count.
+          python3 scripts/bench-smp-memory.py \
+            --qemu "$BUILD_DIR/qemu-system-i386" \
+            --cpus 2 \
+            --maxcpus 8 \
+            --guest-mib 256 \
+            --workload memory \
+            --loops 200000 \
+            --rounds 2 \
+            --tcg-thread multi \
             --split-wx on
 
       - name: Show native LLVM failure context
