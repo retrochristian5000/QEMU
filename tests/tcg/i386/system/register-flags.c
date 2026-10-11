@@ -80,15 +80,15 @@ static int test_fcomip_less_flags(void)
     u32 flags;
 
     asm volatile(
-        "fninit\\n\\t"
-        "fld1\\n\\t"
-        "fldz\\n\\t"
-        "movl $0x7fffffff, %%eax\\n\\t"
-        "addl $1, %%eax\\n\\t"
+        "fninit\n\t"
+        "fld1\n\t"
+        "fldz\n\t"
+        "movl $0x7fffffff, %%eax\n\t"
+        "addl $1, %%eax\n\t"
         /* FCOMIP ST(0), ST(1): zero is less than one, CF only. */
-        ".byte 0xdf, 0xf1\\n\\t"
-        "pushfl\\n\\t"
-        "popl %0\\n\\t"
+        ".byte 0xdf, 0xf1\n\t"
+        "pushfl\n\t"
+        "popl %0\n\t"
         : "=r" (flags)
         :
         : "eax", "cc");
@@ -101,15 +101,15 @@ static int test_fucomip_greater_flags(void)
     u32 flags;
 
     asm volatile(
-        "fninit\\n\\t"
-        "fldz\\n\\t"
-        "fld1\\n\\t"
-        "movl $0x7fffffff, %%eax\\n\\t"
-        "addl $1, %%eax\\n\\t"
+        "fninit\n\t"
+        "fldz\n\t"
+        "fld1\n\t"
+        "movl $0x7fffffff, %%eax\n\t"
+        "addl $1, %%eax\n\t"
         /* FUCOMIP ST(0), ST(1): one is greater than zero, none set. */
-        ".byte 0xdf, 0xe9\\n\\t"
-        "pushfl\\n\\t"
-        "popl %0\\n\\t"
+        ".byte 0xdf, 0xe9\n\t"
+        "pushfl\n\t"
+        "popl %0\n\t"
         : "=r" (flags)
         :
         : "eax", "cc");
