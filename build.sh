@@ -543,7 +543,15 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
             1:*|y:*|*:arm64e)
                 LD=$(xcrun --find ld) || exit 1
                 NATIVE_LLVM_LDFLAG=
-                printf 'QEMU native Mach-O linker: Apple ld (ASan/arm64e policy)\\n'
+                # This branch did not add -fuse-ld=lld. A caller that did
+                # so would silently switch the link back to the wrong tool.
+                case " ${LDFLAGS:-} " in
+                    *" -fuse-ld=lld "*)
+                        printf 'error: -fuse-ld=lld conflicts with the Darwin ASan/arm64e Apple linker policy\\n' >&2
+                        exit 1
+                        ;;
+                esac
+                printf 'QEMU native Mach-O linker: Apple ld (ASan/arm64e policy)\n'
                 ;;
             *)
                 LD="$NATIVE_LLVM_DIR/bin/ld64.lld"

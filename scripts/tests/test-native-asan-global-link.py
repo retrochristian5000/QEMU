@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -129,6 +130,58 @@ class NativeASanGlobalsTests(unittest.TestCase):
         self.assertIn("NATIVE_LLVM_LDFLAG=-fuse-ld=lld", build)
         self.assertIn('"${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y', bootstrap)
         self.assertIn("asan_args+=(--use-lld)", bootstrap)
+
+    def test_native_linker_selection_honors_asan_and_arm64e(self):
+        # Run the POSIX shell decision from build.sh against a fake xcrun.
+        # This detects misplaced branches that source-text assertions miss.
+        build = (ROOT / "build.sh").read_text(encoding="utf-8")
+        start = build.index("    # Keep the QEMU linker consistent with the LLVM")
+        start = build.index('    if [ "$WHP_HOST_OS" = macos ]; then', start)
+        end_text = "        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS\\n    fi"
+        end = build.index(end_text, start) + len(end_text)
+        shell_code = build[start:end] + (
+            '\\nprintf "%s|%s|%s\\n" "$LD" "$NATIVE_LLVM_LDFLAG" "$LDFLAGS"\\n'
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            bin_dir = pathlib.Path(temp)
+            xcrun = bin_dir / "xcrun"
+            xcrun.write_text(
+                '#!/bin/sh\\n'
+                '[ "$1" = "--find" ] && [ "$2" = "ld" ] || exit 1\\n'
+                'printf "/mock/Apple/ld\\\\n"\\n',
+                encoding="utf-8",
+            )
+            xcrun.chmod(0o755)
+            env = os.environ.copy()
+            env.update({
+                "PATH": str(bin_dir) + os.pathsep + env.get("PATH", ""),
+                "WHP_HOST_OS": "macos",
+                "NATIVE_LLVM_DIR": "/mock/llvm",
+            })
+            for asan, arch, expected in (
+                ("n", "arm64", "/mock/llvm/bin/ld64.lld|-fuse-ld=lld|-fuse-ld=lld"),
+                ("y", "arm64", "/mock/Apple/ld||"),
+                ("1", "arm64", "/mock/Apple/ld||"),
+                ("n", "arm64e", "/mock/Apple/ld||"),
+                ("n", "x86_64", "/mock/llvm/bin/ld64.lld|-fuse-ld=lld|-fuse-ld=lld"),
+            ):
+                with self.subTest(asan=asan, arch=arch):
+                    local = dict(env, QEMU_ASAN=asan, WHP_MACOS_ARCH=arch,
+                                 LDFLAGS="")
+                    proc = subprocess.run(
+                        ["sh", "-c", shell_code], text=True, capture_output=True,
+                        env=local, check=False,
+                    )
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(proc.stdout.splitlines()[-1], expected)
+            local = dict(env, QEMU_ASAN="y", WHP_MACOS_ARCH="arm64",
+                         LDFLAGS="-fuse-ld=lld")
+            proc = subprocess.run(
+                ["sh", "-c", shell_code], text=True, capture_output=True,
+                env=local, check=False,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("conflicts with", proc.stderr)
 
     def test_native_bootstrap_runs_probe_only_for_requested_sanitizer(self):
         code = BOOTSTRAP.read_text(encoding="utf-8")
