@@ -54,6 +54,7 @@
 
 #ifdef __APPLE__
 __thread int qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_UNKNOWN;
+bool qemu_jit_write_protect_needed;
 #endif
 
 #ifdef __FreeBSD__

@@ -10,6 +10,7 @@ tcg_aarch64 = (ROOT / 'tcg/aarch64/tcg-target.c.inc').read_text(encoding='utf-8'
 cpu_exec = (ROOT / 'accel/tcg/cpu-exec.c').read_text(encoding='utf-8')
 osdep = (ROOT / 'include/qemu/osdep.h').read_text(encoding='utf-8')
 oslib = (ROOT / 'util/oslib-posix.c').read_text(encoding='utf-8')
+tcg_region = (ROOT / 'tcg/region.c').read_text(encoding='utf-8')
 benchmark = (ROOT / 'scripts/bench-i386-tcg.py').read_text(encoding='utf-8')
 policy = (ROOT / 'scripts/macos-arch-policy.bash').read_text(encoding='utf-8')
 workflow = (ROOT / '.github/workflows/native-llvm-macos.yml').read_text(encoding='utf-8')
@@ -100,6 +101,17 @@ assert helper_ready, 'arm64e JIT -> C helper calls are not pointer-auth safe'
 assert entry_ready, 'arm64e C -> JIT entry is not signed as a C function pointer'
 assert return_ready, 'arm64e TCG prologue/epilogue does not authenticate LR'
 assert jit_mode_cache_ready, 'Darwin TCG does not cache per-thread JIT protection mode'
+
+# Only MAP_JIT requires pthread-based protection; split W^X does not.
+# A failed default-on (splitwx=-1) remap must still use MAP_JIT.
+assert 'pthread_jit_write_protect_supported_np()' in tcg_region
+assert 'tcg_splitwx_diff == 0 && pthread_jit_write_protect_supported_np()' in tcg_region
+assert 'bool qemu_jit_write_protect_needed;' in oslib
+assert 'extern bool qemu_jit_write_protect_needed;' in osdep
+assert osdep.count('if (qemu_jit_write_protect_needed &&') == 2
+assert 'flags |= MAP_JIT;' in tcg_region
+assert 'if (!splitwx) {\n        flags |= MAP_JIT;' not in tcg_region
+
 assert splitwx_benchmark_ready, 'ARM64e CI does not compare split W^X modes'
 assert tbsize_benchmark_ready, 'ARM64e CI does not compare TCG cache startup sizes'
 assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke test'

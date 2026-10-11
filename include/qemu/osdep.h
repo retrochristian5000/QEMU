@@ -858,10 +858,13 @@ enum {
  * with the kernel-provided state.
  */
 extern __thread int qemu_jit_write_protected;
+/* Initialized by TCG's code-buffer allocator before JIT execution. */
+extern bool qemu_jit_write_protect_needed;
 
 static inline void qemu_thread_jit_execute(void)
 {
-    if (qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_EXECUTE) {
+    if (qemu_jit_write_protect_needed &&
+        qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_EXECUTE) {
         pthread_jit_write_protect_np(true);
         qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_EXECUTE;
     }
@@ -869,7 +872,8 @@ static inline void qemu_thread_jit_execute(void)
 
 static inline void qemu_thread_jit_write(void)
 {
-    if (qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_WRITE) {
+    if (qemu_jit_write_protect_needed &&
+        qemu_jit_write_protected != QEMU_JIT_WRITE_PROTECT_WRITE) {
         pthread_jit_write_protect_np(false);
         qemu_jit_write_protected = QEMU_JIT_WRITE_PROTECT_WRITE;
     }

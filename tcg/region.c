@@ -720,10 +720,12 @@ static int alloc_code_gen_buffer(size_t size, int splitwx, Error **errp)
     prot = PROT_NONE;
     flags = MAP_PRIVATE | MAP_ANONYMOUS;
 #ifdef CONFIG_DARWIN
-    /* Applicable to both iOS and macOS (Apple Silicon). */
-    if (!splitwx) {
-        flags |= MAP_JIT;
-    }
+    /*
+     * This is the single-mapping path, including the fallback after an
+     * automatic split-W^X allocation fails. In that case splitwx remains
+     * -1, so testing !splitwx would incorrectly omit MAP_JIT.
+     */
+    flags |= MAP_JIT;
 #endif
 
     return alloc_code_gen_buffer_anon(size, prot, flags, errp);
@@ -779,6 +781,16 @@ void tcg_region_init(size_t tb_size, int splitwx, unsigned max_threads)
 
     have_prot = alloc_code_gen_buffer(tb_size, splitwx, &error_fatal);
     assert(have_prot >= 0);
+
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_TCG_INTERPRETER)
+    /*
+     * Split W^X uses two Mach VM aliases, not MAP_JIT. Only toggle
+     * per-thread JIT protection for a single MAP_JIT mapping on a host
+     * that supports it. Do this before translating code or starting vCPUs.
+     */
+    qemu_jit_write_protect_needed =
+        tcg_splitwx_diff == 0 && pthread_jit_write_protect_supported_np();
+#endif
 
     /* Request large pages for the buffer and the splitwx.  */
     qemu_madvise(region.start_aligned, region.total_size, QEMU_MADV_HUGEPAGE);
