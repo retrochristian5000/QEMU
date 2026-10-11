@@ -12,6 +12,7 @@
 #include "hw/isa/isa.h"
 #include "hw/isa/opti_486wb.h"
 #include "migration/vmstate.h"
+#include "system/address-spaces.h"
 #include "system/system.h"
 
 #define REG_FIRST 0x20
