@@ -105,6 +105,7 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
 {
     TCGState *s = TCG_STATE(as);
     unsigned max_threads = 1;
+    size_t tb_size = s->tb_size * MiB;
 
 #ifndef CONFIG_USER_ONLY
     CPUClass *cc = CPU_CLASS(object_class_by_name(target_cpu_type()));
@@ -173,8 +174,6 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
      * The host-memory and target-branch-range bounds in tcg/region.c
      * still apply to the resulting buffer.
      */
-    size_t tb_size = s->tb_size * MiB;
-
 #ifndef CONFIG_USER_ONLY
     if (s->tb_size == 0 && ms->ram_size != 0) {
         size_t host_ram = qemu_get_host_physmem();
