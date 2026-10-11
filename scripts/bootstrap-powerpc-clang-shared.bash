@@ -23,6 +23,20 @@ SHARED_LLVM_DIR="${WHP_SHARED_LLVM_DIR:-${NATIVE_LLVM_DIR:-}}"
     exit 1
 }
 SHARED_LLVM_DIR="$(cd -- "$SHARED_LLVM_DIR" && pwd -P)"
+case "$TOOLCHAIN_DIR" in
+    /*) ;;
+    *) TOOLCHAIN_DIR="$PWD/$TOOLCHAIN_DIR" ;;
+esac
+case "$TOOLCHAIN_WORK_DIR" in
+    /*) ;;
+    *) TOOLCHAIN_WORK_DIR="$PWD/$TOOLCHAIN_WORK_DIR" ;;
+esac
+case "$TOOLCHAIN_DIR/" in
+    "$SHARED_LLVM_DIR/"*)
+        printf 'error: PowerPC prefix must not be inside shared LLVM\n' >&2
+        exit 1
+        ;;
+esac
 case "$SHARED_LLVM_DIR/" in
     "$TOOLCHAIN_DIR/"*)
         printf 'error: shared LLVM must not reside inside the PowerPC prefix\n' >&2
@@ -101,7 +115,8 @@ MARKER
 # A previous standalone PowerPC prefix must never be treated as a shared
 # installation just because it happens to have a working Clang executable.
 current=0
-if [[ -f "$TOOLCHAIN_DIR/.whp-powerpc-toolchain" &&
+if [[ "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}" == 0 &&
+      -f "$TOOLCHAIN_DIR/.whp-powerpc-toolchain" &&
       -f "$TOOLCHAIN_DIR/.whp-powerpc-lld" &&
       "$(cat "$TOOLCHAIN_DIR/.whp-powerpc-toolchain")" == "$expected_marker" &&
       "$(cat "$TOOLCHAIN_DIR/.whp-powerpc-lld")" == "$expected_lld_marker" &&
@@ -113,14 +128,18 @@ fi
 
 staging_root=""
 old_toolchain=""
+old_moved=0
 published=0
 cleanup()
 {
     local status=$?
     trap - EXIT
-    if ((status != 0 && published == 1)); then
-        rm -rf "$TOOLCHAIN_DIR"
-        if [[ -n "$old_toolchain" && -e "$old_toolchain" ]]; then
+    if ((status != 0)); then
+        if ((published == 1)); then
+            rm -rf "$TOOLCHAIN_DIR"
+        fi
+        if ((old_moved == 1)) &&
+           [[ -n "$old_toolchain" && ( -e "$old_toolchain" || -L "$old_toolchain" ) ]]; then
             mv "$old_toolchain" "$TOOLCHAIN_DIR"
         fi
     fi
@@ -216,6 +235,7 @@ if ((current == 0)); then
     old_toolchain="$TOOLCHAIN_DIR.old.$$"
     if [[ -e "$TOOLCHAIN_DIR" || -L "$TOOLCHAIN_DIR" ]]; then
         mv "$TOOLCHAIN_DIR" "$old_toolchain"
+        old_moved=1
     fi
     mv "$staged_toolchain" "$TOOLCHAIN_DIR"
     published=1
