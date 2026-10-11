@@ -1197,7 +1197,7 @@ static int parse_fw_cfg(void *opaque, QemuOpts *opts, Error **errp)
     }
     if (nonempty_str(str)) {
         size = strlen(str); /* NUL terminator NOT included in fw_cfg blob */
-        buf = g_memdup(str, size);
+        buf = g_memdup2(str, size);
     } else if (nonempty_str(gen_id)) {
         if (!fw_cfg_add_file_from_generator(fw_cfg, object_get_objects_root(),
                                             gen_id, name, errp)) {
