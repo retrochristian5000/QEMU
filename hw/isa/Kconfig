@@ -5,6 +5,10 @@ config EISA_BUS
     bool
     select ISA_BUS
 
+config OPTI_486WB
+    bool
+    select ISA_BUS
+
 config APM
     bool
 

@@ -19,6 +19,8 @@
 #include "hw/ide/isa.h"
 #include "hw/ide/ide-bus.h"
 #include "hw/isa/eisa.h"
+#include "hw/isa/opti_486wb.h"
+#include "hw/core/sysbus.h"
 #include "system/kvm.h"
 #include "hw/i386/kvm/clock.h"
 #include "hw/xen/xen-x86.h"
@@ -33,7 +35,7 @@ static const int ide_irq[MAX_IDE_BUS] = { 14, 15 };
 
 static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
                                const char *eisa_system_id,
-                               bool with_et4000ax)
+                               bool with_et4000ax, bool with_opti)
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -41,6 +43,7 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *system_io = get_system_io();
     ISABus *isa_bus;
+    DeviceState *opti = NULL;
     uint32_t irq;
     GSIState *gsi_state;
     MemoryRegion *ram_memory;
@@ -68,6 +71,13 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
      * was designed for the 80486 local bus, so do not silently pair it with a
      * different CPU generation.
      */
+    if (with_opti &&
+        (strcmp(machine->cpu_type, X86_CPU_TYPE_NAME("486")) ||
+         machine->ram_size < MiB || machine->ram_size > 64 * MiB)) {
+        error_report("OPTi 486WB needs i486 and 1-64 MiB RAM");
+        exit(1);
+    }
+
     if (with_weitek4167 &&
         strcmp(machine->cpu_type, X86_CPU_TYPE_NAME("486"))) {
         error_report("Weitek 4167 machine requires -cpu 486");
@@ -150,6 +160,10 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
         eisa_bus = eisa_bus_new(NULL, system_memory, system_io, &error_abort);
         eisa_bus_set_slot_id(eisa_bus, 0, eisa_system_id, true, &error_abort);
         isa_bus = ISA_BUS(eisa_bus);
+    } else if (with_opti) {
+        opti = qdev_new(TYPE_OPTI_486WB);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(opti), &error_fatal);
+        isa_bus = ISA_BUS(qdev_get_child_bus(opti, "isa.0"));
     } else {
         isa_bus = isa_bus_new(NULL, system_memory, system_io, &error_abort);
     }
@@ -162,7 +176,7 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
                                    &error_fatal);
     isa_connect_gpio_out(ISA_DEVICE(x86ms->rtc), 0, irq);
 
-    i8257_dma_init(OBJECT(machine), isa_bus, 0);
+    i8257_dma_init(opti ? OBJECT(opti) : OBJECT(machine), isa_bus, 0);
     pcms->hpet_enabled = false;
 
     if (x86ms->pic == ON_OFF_AUTO_ON || x86ms->pic == ON_OFF_AUTO_AUTO) {
@@ -228,30 +242,35 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
 
 static void pc_init_isa(MachineState *machine)
 {
-    pc_init_isa_common(machine, false, NULL, false);
+    pc_init_isa_common(machine, false, NULL, false, false);
 }
 
 static void pc_init_isa_weitek(MachineState *machine)
 {
-    pc_init_isa_common(machine, true, NULL, false);
+    pc_init_isa_common(machine, true, NULL, false, false);
 }
 
 static void dell_system_425e_init(MachineState *machine)
 {
     /* Dell EISA system-board identifier DEL0001. */
-    pc_init_isa_common(machine, true, "DEL0001", false);
+    pc_init_isa_common(machine, true, "DEL0001", false, false);
 }
 
 static void dell_system_433e_init(MachineState *machine)
 {
     /* Dell EISA system-board identifier DEL0002. */
-    pc_init_isa_common(machine, true, "DEL0002", false);
+    pc_init_isa_common(machine, true, "DEL0002", false, false);
 }
 
 static void dell_powerline_433de_init(MachineState *machine)
 {
     /* Dell PowerLine Workstation 433DE system-board identifier DEL0005. */
-    pc_init_isa_common(machine, true, "DEL0005", true);
+    pc_init_isa_common(machine, true, "DEL0005", true, false);
+}
+
+static void opti_486wb_init(MachineState *machine)
+{
+    pc_init_isa_common(machine, false, NULL, false, true);
 }
 
 static void isapc_machine_options(MachineClass *m)
@@ -272,6 +291,13 @@ static void isapc_machine_options(MachineClass *m)
     m->default_cpu_type = X86_CPU_TYPE_NAME("486");
     m->no_floppy = !module_object_class_by_name(TYPE_ISA_FDC);
     m->no_parallel = !module_object_class_by_name(TYPE_ISA_PARALLEL);
+}
+
+static void opti_options(MachineClass *m)
+{
+    isapc_machine_options(m);
+    m->desc = "OPTi 486WB PC/AT chipset (82C491/82C392/82C206, partial)";
+    m->default_ram_size = 4 * MiB;
 }
 
 static void isapc_weitek_machine_options(MachineClass *m)
@@ -308,6 +334,7 @@ static void dell_powerline_433de_machine_options(MachineClass *m)
 
 DEFINE_PC_MACHINE(isapc, "isapc", pc_init_isa,
                   isapc_machine_options);
+DEFINE_PC_MACHINE(opti_486wb, "opti-486wb", opti_486wb_init, opti_options);
 DEFINE_PC_MACHINE(isapc_weitek, "isapc-weitek", pc_init_isa_weitek,
                   isapc_weitek_machine_options);
 DEFINE_PC_MACHINE(dell_system_425e, "dell-system-425e", dell_system_425e_init,

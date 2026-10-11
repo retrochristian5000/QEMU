@@ -103,6 +103,7 @@ config ISAPC
     select VGA_TSENG_ET4000AX
     select ISA_BUS
     select EISA_BUS
+    select OPTI_486WB
     select OR_IRQ
     select PC
     select IDE_ISA
