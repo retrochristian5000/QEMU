@@ -639,8 +639,8 @@ static int alloc_code_gen_buffer_splitwx_vmremap(size_t size, Error **errp)
     vm_prot_t cur_prot, max_prot;
 
     /* Map the read-write portion via normal anon memory. */
-    if (!alloc_code_gen_buffer_anon(size, PROT_READ | PROT_WRITE,
-                                    MAP_PRIVATE | MAP_ANONYMOUS, errp)) {
+    if (alloc_code_gen_buffer_anon(size, PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANONYMOUS, errp) < 0) {
         return -1;
     }
 
