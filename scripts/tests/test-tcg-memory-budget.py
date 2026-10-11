@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Source-level regression gates for automatic TCG sizing and Darwin JIT VM."""
 from pathlib import Path
-import re
 
 root = Path(__file__).resolve().parents[2]
 accel = (root / "accel/tcg/tcg-all.c").read_text(encoding="utf-8")
@@ -37,11 +36,6 @@ assert auto_cache_mib(0, 256) == 64
 # failure. !return_value is incorrect: !-1 is false, so a failed mmap would
 # continue to mach_vm_remap with an invalid source mapping.
 assert "if (!alloc_code_gen_buffer_anon" not in region
-assert re.search(
-    r"if \\(alloc_code_gen_buffer_anon\\(size, PROT_READ \\| PROT_WRITE,"
-    r".*?MAP_PRIVATE \\| MAP_ANONYMOUS, errp\\) < 0\\) \\{"
-    r"\\s*return -1;",
-    region,
-    re.S,
-)
+assert "if (alloc_code_gen_buffer_anon(size, PROT_READ | PROT_WRITE," in region
+assert "MAP_PRIVATE | MAP_ANONYMOUS, errp) < 0) {\\n        return -1;" in region
 print("TCG memory-budget and Darwin JIT allocation source checks passed")
