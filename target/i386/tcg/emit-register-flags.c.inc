@@ -24,16 +24,3 @@ static void gen_SAHF(DisasContext *s, X86DecodedInsn *decode)
     decode->cc_op = CC_OP_EFLAGS;
 }
 
-static inline void gen_fcomi_register_flags(TCGv_env env)
-{
-    gen_helper_fcomi_ST0_FT0(env);
-    tcg_gen_andi_tl(cpu_cc_src, cpu_cc_src,
-                    ~(target_ulong)(CC_O | CC_S | CC_A));
-}
-
-static inline void gen_fucomi_register_flags(TCGv_env env)
-{
-    gen_helper_fucomi_ST0_FT0(env);
-    tcg_gen_andi_tl(cpu_cc_src, cpu_cc_src,
-                    ~(target_ulong)(CC_O | CC_S | CC_A));
-}
