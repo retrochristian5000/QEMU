@@ -50,6 +50,16 @@ toolchain_clean_env=(
     SHELL="$config_shell"
 )
 
+# The native LLVM bootstrap already includes the PowerPC backend and ELF LLD.
+# Use the same pinned executable set for OpenBIOS instead of compiling
+# another Clang, LLVM libraries, TableGen, and standalone LLD. Without a
+# shared installation, preserve the existing independent PowerPC bootstrap.
+if [[ -n "${WHP_SHARED_LLVM_DIR:-${NATIVE_LLVM_DIR:-}}" ]]; then
+    "${toolchain_clean_env[@]}" \
+        bash "$SCRIPT_DIR/bootstrap-powerpc-clang-shared.bash"
+    exit 0
+fi
+
 # The compiler foundation intentionally owns no public assembler command. Clear
 # the downstream LLVM-MC interface before base validation, then republish it
 # after LLD. This lets the base keep rejecting stale GNU-as installations
