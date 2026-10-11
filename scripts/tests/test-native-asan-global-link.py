@@ -118,6 +118,18 @@ class NativeASanGlobalsTests(unittest.TestCase):
                 self.verify()
         self.assertNotIn("-fuse-ld=lld", self.calls[-1])
 
+    def test_asan_and_arm64e_use_apple_ld_consistently(self):
+        build = (ROOT / "build.sh").read_text(encoding="utf-8")
+        bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn('case "${QEMU_ASAN:-n}:${WHP_MACOS_ARCH:-auto}" in', build)
+        self.assertIn("1:*|y:*|*:arm64e)", build)
+        self.assertIn("LD=$(xcrun --find ld) || exit 1", build)
+        self.assertIn("NATIVE_LLVM_LDFLAG=", build)
+        self.assertIn('LD="$NATIVE_LLVM_DIR/bin/ld64.lld"', build)
+        self.assertIn("NATIVE_LLVM_LDFLAG=-fuse-ld=lld", build)
+        self.assertIn('"${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y', bootstrap)
+        self.assertIn("asan_args+=(--use-lld)", bootstrap)
+
     def test_native_bootstrap_runs_probe_only_for_requested_sanitizer(self):
         code = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIn('NATIVE_LLVM_VALIDATE_ASAN=', code)

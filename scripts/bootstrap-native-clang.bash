@@ -1009,7 +1009,11 @@ verify_asan_when_requested()
         --sdkroot "$sdkroot"
         --deployment-target "$deployment_target"
     )
-    if [[ "$darwin_cmake_arch" != arm64e ]]; then
+    # A QEMU ASan build uses Apple ld until Mach-O LLD has passed the
+    # instrumented-global link contract. Keep an explicit standalone
+    # NATIVE_LLVM_VALIDATE_ASAN=1 test of LLD available with ASan off.
+    if [[ "$darwin_cmake_arch" != arm64e &&
+          "${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y ]]; then
         asan_args+=(--use-lld)
     fi
     "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \

@@ -532,16 +532,27 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" "$NM" || exit 1
     WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB|$NM"
 
-    # Darwin host links must consume the same LLVM revision that produced the
-    # LTO objects. Use the installed Mach-O LLD sibling through Clang's driver;
-    # direct LD consumers get the same linker explicitly.
+    # Keep the QEMU linker consistent with the LLVM sanitizer/runtime ABI.
+    # This Mach-O LLD revision still has ASan global-link and arm64e
+    # authenticated-relocation gaps. Apple ld can consume this Clang's LTO
+    # bitcode via the installed matching libLTO.dylib. Only use LLD for the
+    # established unsanitized arm64/x86_64 path.
     if [ "$WHP_HOST_OS" = macos ]; then
-        LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
         LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
-        NATIVE_LLVM_LDFLAG=-fuse-ld=lld
-        case " ${LDFLAGS:-} " in
-            *" $NATIVE_LLVM_LDFLAG "*) ;;
-            *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
+        case "${QEMU_ASAN:-n}:${WHP_MACOS_ARCH:-auto}" in
+            1:*|y:*|*:arm64e)
+                LD=$(xcrun --find ld) || exit 1
+                NATIVE_LLVM_LDFLAG=
+                printf 'QEMU native Mach-O linker: Apple ld (ASan/arm64e policy)\\n'
+                ;;
+            *)
+                LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
+                NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+                case " ${LDFLAGS:-} " in
+                    *" $NATIVE_LLVM_LDFLAG "*) ;;
+                    *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
+                esac
+                ;;
         esac
         export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS
     fi
