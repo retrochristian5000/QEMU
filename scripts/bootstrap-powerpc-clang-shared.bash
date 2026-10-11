@@ -37,6 +37,19 @@ case "$TOOLCHAIN_DIR/" in
         exit 1
         ;;
 esac
+if [[ -d "$TOOLCHAIN_DIR" ]]; then
+    prefix_real="$(cd -- "$TOOLCHAIN_DIR" && pwd -P)"
+    case "$prefix_real/" in
+        "$SHARED_LLVM_DIR/"*)
+            printf 'error: PowerPC prefix resolves inside shared LLVM\n' >&2
+            exit 1
+            ;;
+    esac
+    [[ "$prefix_real" != "$SHARED_LLVM_DIR" ]] || {
+        printf 'error: PowerPC prefix resolves to shared LLVM\n' >&2
+        exit 1
+    }
+fi
 case "$SHARED_LLVM_DIR/" in
     "$TOOLCHAIN_DIR/"*)
         printf 'error: shared LLVM must not reside inside the PowerPC prefix\n' >&2
@@ -130,6 +143,7 @@ staging_root=""
 old_toolchain=""
 old_moved=0
 published=0
+smoke=""
 cleanup()
 {
     local status=$?
@@ -144,6 +158,7 @@ cleanup()
         fi
     fi
     [[ -z "$staging_root" ]] || rm -rf "$staging_root"
+    [[ -z "$smoke" ]] || rm -rf "$smoke"
     if ((status == 0)) && [[ -n "$old_toolchain" ]]; then
         rm -rf "$old_toolchain"
     fi
@@ -230,6 +245,7 @@ linker="$("$toolchain/bin/$TOOLCHAIN_TARGET-gcc" -print-prog-name=ld)"
     exit 1
 }
 rm -rf "$smoke"
+smoke=""
 
 if ((current == 0)); then
     old_toolchain="$TOOLCHAIN_DIR.old.$$"
