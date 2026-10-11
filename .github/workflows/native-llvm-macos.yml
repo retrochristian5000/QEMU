@@ -10,6 +10,8 @@ on:
       - 'configs/meson/darwin.txt'
       - 'tcg/aarch64/tcg-target.c.inc'
       - 'tcg/tcg.c'
+      - 'tcg/region.c'
+      - 'accel/tcg/tcg-all.c'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-builder.sh'
@@ -32,6 +34,7 @@ on:
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
+      - 'scripts/tests/test-tcg-memory-budget.py'
       - 'scripts/tests/test-arm64e-ide-hotpath.py'
       - 'scripts/tests/test-arm64e-pic-hotpath.py'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
@@ -162,6 +165,10 @@ jobs:
       - name: Audit arm64e TCG pointer authentication gate
         shell: bash
         run: python3 scripts/tests/test-tcg-arm64e-ptrauth.py
+
+      - name: Audit TCG memory budget and Darwin JIT allocations
+        shell: bash
+        run: python3 scripts/tests/test-tcg-memory-budget.py
 
       - name: Audit arm64e IDE PIO hot path
         shell: bash
