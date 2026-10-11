@@ -521,6 +521,25 @@ jobs:
           ./native-llvm-ubsan
           ./native-llvm-arm64e
 
+      - name: Verify PowerPC uses native LLVM without a second bootstrap
+        shell: bash
+        env:
+          WHP_SHARED_LLVM_DIR: ${{ github.workspace }}/build-native-llvm/toolchain
+          POWERPC_TOOLCHAIN_DIR: ${{ github.workspace }}/build-native-llvm/firmware-powerpc
+          POWERPC_TOOLCHAIN_WORK_DIR: ${{ github.workspace }}/build-native-llvm/powerpc-work
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/test-powerpc-native-llvm-reuse.py
+          bash scripts/bootstrap-powerpc-clang.sh
+          test "$(readlink "$POWERPC_TOOLCHAIN_DIR/llvm")" = "$NATIVE_LLVM_DIR"
+          grep -Fxq "LLVM_EXECUTABLE_SOURCE=shared:$NATIVE_LLVM_DIR" \
+            "$POWERPC_TOOLCHAIN_DIR/.whp-powerpc-toolchain"
+          test -x "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-gcc"
+          test -x "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-ld"
+          test -x "$POWERPC_TOOLCHAIN_DIR/bin/powerpc-elf-strip"
+          # The second invocation must reuse the same native LLVM and wrappers.
+          bash scripts/bootstrap-powerpc-clang.sh
+
       - name: Run ARM64e display callback ABI probe
         shell: bash
         run: |
