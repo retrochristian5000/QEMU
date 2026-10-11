@@ -45,6 +45,9 @@ jobs:
       - name: Test qemu-nbd include hygiene
         run: python3 scripts/tests/test-qemu-nbd-includes.py
 
+      - name: Guard GLib 2.66 compatibility and memory-copy calls
+        run: python3 scripts/tests/test-glib-safe-memory.py
+
       - name: Test dirtyrate sparse-vCPU indexing
         run: python3 scripts/tests/test-dirtyrate-sparse-vcpu.py
 
@@ -131,6 +134,10 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Exercise GLib g_memdup2 copy semantics
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-glib-safe-memory.py --runtime
 
       - name: Build and smoke-test qemu-nbd
         if: matrix.target == 'x86'
