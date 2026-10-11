@@ -8,6 +8,9 @@ on:
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-core.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-clang-shared.bash'
+      - 'scripts/whp-build/powerpc-clang-driver.bash'
+      - 'scripts/tests/test-powerpc-native-llvm-reuse.py'
       - 'scripts/bootstrap-powerpc-llvm-mc.sh'
       - 'scripts/bootstrap-powerpc-llvm-ar.sh'
       - 'scripts/bootstrap-powerpc-llvm-nm.sh'
@@ -83,6 +86,9 @@ jobs:
             "$(git ls-tree HEAD -- toolchains/llvm-project | awk '{print $3}')"
           test "$(git -C roms/openbios rev-parse HEAD)" = \
             "$(git ls-tree HEAD -- roms/openbios | awk '{print $3}')"
+
+      - name: Verify native LLVM reuse boundary
+        run: python3 scripts/tests/test-powerpc-native-llvm-reuse.py
 
       - name: Verify LLVM-only binary-tool policy
         run: |
