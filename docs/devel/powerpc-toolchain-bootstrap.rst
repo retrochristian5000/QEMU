@@ -135,6 +135,31 @@ LLVM source caches are not independent revision pins. An offline build requires
 the submodule to be initialized already, and tracked LLVM changes must be
 committed before QEMU advances the submodule pointer.
 
+Shared native LLVM (no second LLVM build)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When ``BOOTSTRAP_NATIVE_LLVM=1`` has completed, ``build.sh`` exports
+``WHP_SHARED_LLVM_DIR`` for the firmware build. The native LLVM distribution
+already contains ``AArch64;X86;PowerPC`` targets and ELF LLD. The default
+PowerPC Clang bootstrap therefore **reuses the same installed executables**
+through an absolute ``powerpc-elf/llvm`` symlink. Only the target-specific
+``powerpc-elf-*`` compatibility interfaces and their smoke checks are run.
+No second LLVM CMake build, LLVM source-cache clone, or standalone LLD build
+is performed.
+
+The shared path checks the QEMU LLVM gitlink against the native bootstrap
+marker, verifies the PowerPC backend and ELF32 big-endian linking, and uses the
+same qualified archive, assembler, symbol, and strip stages as the standalone
+firmware lane. An invalid explicit shared LLVM path is a hard error: silently
+building an unrelated second compiler would hide the original problem.
+
+If ``BOOTSTRAP_NATIVE_LLVM=0`` (or no shared executable set was selected),
+the existing standalone PowerPC LLVM bootstrap remains available and preserves
+its own independent CMake/Ninja cache. A forced PowerPC toolchain rebuild with
+shared LLVM regenerates the firmware wrappers without deleting or rebuilding
+the shared native compiler. To rebuild the underlying native LLVM, use its
+separate ``NATIVE_LLVM_FORCE_REBUILD`` switch.
+
 OpenBIOS continues to consume the GNU-style ``powerpc-elf-`` interface. The
 migration publishes compatibility entry points while changing the underlying
 implementation one stage at a time:
