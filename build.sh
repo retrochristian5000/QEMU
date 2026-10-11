@@ -547,7 +547,7 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
                 # so would silently switch the link back to the wrong tool.
                 case " ${LDFLAGS:-} " in
                     *" -fuse-ld=lld "*)
-                        printf 'error: -fuse-ld=lld conflicts with the Darwin ASan/arm64e Apple linker policy\\n' >&2
+                        printf 'error: -fuse-ld=lld conflicts with the Darwin ASan/arm64e Apple linker policy\n' >&2
                         exit 1
                         ;;
                 esac
