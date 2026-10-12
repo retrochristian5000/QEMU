@@ -122,6 +122,7 @@ static void cocoa_switch(DisplayChangeListener *dcl,
 static void cocoa_refresh(DisplayChangeListener *dcl);
 static void cocoa_mouse_set(DisplayChangeListener *dcl, int x, int y, bool on);
 static void cocoa_cursor_define(DisplayChangeListener *dcl, QEMUCursor *cursor);
+static void cocoa_mouse_mode_change_notify(Notifier *notifier, void *data);
 
 static const DisplayChangeListenerOps dcl_ops = {
     .dpy_name          = "cocoa",
@@ -1351,8 +1352,14 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
                                        <NSWindowDelegate, NSApplicationDelegate>
 {
     CocoaConsole console;
+    GPtrArray *extraConsoles;
 }
 - (CocoaConsole *)console;
+- (GPtrArray *)extraConsoles;
+- (QemuCocoaView *)viewForWindow:(NSWindow *)window;
+- (QemuCocoaView *)activeView;
+- (void)createAdditionalConsoleWindows;
+- (void)showConsoleWindow:(id)sender;
 - (void)doToggleFullScreen:(id)sender;
 - (void)showQEMUDoc:(id)sender;
 - (void)zoomToFit:(id) sender;
@@ -1380,6 +1387,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
     self = [super init];
     if (self) {
+        extraConsoles = g_ptr_array_new();
 
         // create a view and add it to the window
         console.view = [[QemuCocoaView alloc]
@@ -1426,10 +1434,135 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     return &console;
 }
 
+- (GPtrArray *)extraConsoles
+{
+    return extraConsoles;
+}
+
+- (QemuCocoaView *)viewForWindow:(NSWindow *)window
+{
+    NSView *view = [window contentView];
+
+    return [view isKindOfClass:[QemuCocoaView class]] ?
+        (QemuCocoaView *)view : nil;
+}
+
+- (QemuCocoaView *)activeView
+{
+    QemuCocoaView *view = [self viewForWindow:[NSApp keyWindow]];
+
+    return view ? view : console.view;
+}
+
+/* Each graphical QEMU head receives its own listener, keyboard state, view,
+ * and window. The legacy View menu still selects text/monitor consoles. */
+- (void)createAdditionalConsoleWindows
+{
+    NSArray *screens = [NSScreen screens];
+    NSUInteger screenCount = [screens count];
+    NSMenu *windowMenu = [[[NSApp mainMenu] itemWithTitle:@"Window"] submenu];
+    unsigned int index;
+
+    for (index = 0; ; index++) {
+        QemuConsole *guest = qemu_console_lookup_by_index(index);
+        CocoaConsole *extra;
+        NSWindow *window;
+        NSScreen *target;
+        NSRect visible, frame;
+        g_autofree char *label = NULL;
+        NSMenuItem *menuItem;
+
+        if (!guest) {
+            break;
+        }
+        if (!qemu_console_is_graphic(guest) || guest == console.con) {
+            continue;
+        }
+
+        extra = g_new0(CocoaConsole, 1);
+        extra->con = guest;
+        extra->view = [[QemuCocoaView alloc]
+            initWithFrame:NSMakeRect(0, 0, 640, 480) console:extra];
+        if (!extra->view) {
+            error_report("(cocoa) cannot create additional display view");
+            exit(1);
+        }
+        window = [[NSWindow alloc]
+            initWithContentRect:[extra->view frame]
+                      styleMask:NSWindowStyleMaskTitled |
+                                NSWindowStyleMaskMiniaturizable |
+                                NSWindowStyleMaskClosable |
+                                NSWindowStyleMaskResizable
+                        backing:NSBackingStoreBuffered defer:NO];
+        if (!window) {
+            error_report("(cocoa) cannot create additional display window");
+            exit(1);
+        }
+
+        [window setReleasedWhenClosed:NO];
+        [window setAcceptsMouseMovedEvents:YES];
+        [window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+        label = qemu_console_get_label(guest);
+        [window setTitle:[NSString stringWithFormat:@"QEMU - %s",
+                          label ? label : "Display"]];
+        [window setContentView:extra->view];
+        [window setDelegate:self];
+
+        /* NSScreen coordinates are global and may have negative origins.
+         * Spread guest heads over actual attached monitors when available. */
+        target = screenCount ? [screens objectAtIndex:
+                 (1 + extraConsoles->len) % screenCount] : nil;
+        if (target) {
+            visible = [target visibleFrame];
+            frame = [window frame];
+            [window setFrameOrigin:NSMakePoint(
+                NSMinX(visible) + MAX(0, (NSWidth(visible) - NSWidth(frame)) / 2),
+                NSMinY(visible) + MAX(0, (NSHeight(visible) - NSHeight(frame)) / 2))];
+        }
+
+        g_ptr_array_add(extraConsoles, extra);
+        qemu_console_register_listener(guest, &extra->dcl, &dcl_ops);
+        extra->kbd = qkbd_state_init(extra->dcl.con);
+        extra->mouse_mode_change_notifier.notify =
+            cocoa_mouse_mode_change_notify;
+        qemu_add_mouse_mode_change_notifier(
+            &extra->mouse_mode_change_notifier);
+        [window makeKeyAndOrderFront:self];
+        [extra->view notifyMouseModeChange];
+        [extra->view updateUIInfo];
+
+        menuItem = [windowMenu addItemWithTitle:[window title]
+                                         action:@selector(showConsoleWindow:)
+                                  keyEquivalent:@""];
+        [menuItem setTag:extraConsoles->len - 1];
+    }
+
+    /* Keep the first guest screen as the focused display at startup. */
+    [[console.view window] makeKeyAndOrderFront:self];
+}
+
+- (void)showConsoleWindow:(id)sender
+{
+    NSInteger index = [sender tag];
+
+    if (index >= 0 && (NSUInteger)index < extraConsoles->len) {
+        CocoaConsole *extra = g_ptr_array_index(extraConsoles, index);
+        [[extra->view window] makeKeyAndOrderFront:self];
+    }
+}
+
 - (void) dealloc
 {
     COCOA_DEBUG("QemuCocoaAppController: dealloc\n");
 
+    for (guint i = 0; i < extraConsoles->len; i++) {
+        CocoaConsole *extra = g_ptr_array_index(extraConsoles, i);
+        [[extra->view window] setDelegate:nil];
+        [[extra->view window] close];
+        [extra->view release];
+        g_free(extra);
+    }
+    g_ptr_array_free(extraConsoles, TRUE);
     [console.view release];
     console.view = nil;
 
@@ -1474,30 +1607,40 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void)windowDidChangeScreen:(NSNotification *)notification
 {
-    [console.view updateUIInfo];
+    [[self viewForWindow:[notification object]] updateUIInfo];
 }
 
 - (void)windowDidEnterFullScreen:(NSNotification *)notification
 {
-    [console.view grabMouse];
+    [[self viewForWindow:[notification object]] grabMouse];
 }
 
 - (void)windowDidExitFullScreen:(NSNotification *)notification
 {
-    [console.view resizeWindow];
-    [console.view ungrabMouse];
+    QemuCocoaView *view = [self viewForWindow:[notification object]];
+
+    [view resizeWindow];
+    [view ungrabMouse];
 }
 
 - (void)windowDidResize:(NSNotification *)notification
 {
-    [console.view updateBounds];
-    [console.view updateUIInfo];
+    QemuCocoaView *view = [self viewForWindow:[notification object]];
+
+    [view updateBounds];
+    [view updateUIInfo];
 }
 
 /* Called when the user clicks on a window's close button */
 - (BOOL)windowShouldClose:(id)sender
 {
     COCOA_DEBUG("QemuCocoaAppController: windowShouldClose\n");
+    if (sender != [console.view window]) {
+        /* Hide a secondary guest head, without shutting down the VM or
+         * freeing its display listener. The Window menu can reopen it. */
+        [sender orderOut:self];
+        return NO;
+    }
     [NSApp terminate: sender];
     /* If the user allows the application to quit then the call to
      * NSApp terminate will never return. If we get here then the user
@@ -1523,9 +1666,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
  */
 - (void) windowDidResignKey: (NSNotification *)aNotification
 {
+    QemuCocoaView *view = [self viewForWindow:[aNotification object]];
+
     COCOA_DEBUG("%s\n", __func__);
-    [console.view ungrabMouse];
-    [console.view raiseAllKeys];
+    [view ungrabMouse];
+    [view raiseAllKeys];
 }
 
 /* We abstract the method called by the Enter Fullscreen menu item
@@ -1534,7 +1679,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
  */
 - (void) doToggleFullScreen:(id)sender
 {
-    [[console.view window] toggleFullScreen:sender];
+    [[[self activeView] window] toggleFullScreen:sender];
 }
 
 - (void) setFullGrab:(id)sender
@@ -1581,11 +1726,12 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 /* Stretches video to fit host monitor size */
 - (void)zoomToFit:(id) sender
 {
-    NSWindowStyleMask styleMask = [[console.view window] styleMask] ^ NSWindowStyleMaskResizable;
+    QemuCocoaView *view = [self activeView];
+    NSWindowStyleMask styleMask = [[view window] styleMask] ^ NSWindowStyleMaskResizable;
 
-    [[console.view window] setStyleMask:styleMask];
+    [[view window] setStyleMask:styleMask];
     [sender setState:styleMask & NSWindowStyleMaskResizable ? NSControlStateValueOn : NSControlStateValueOff];
-    [console.view resizeWindow];
+    [view resizeWindow];
 }
 
 - (void)toggleZoomInterpolation:(id) sender
@@ -1811,10 +1957,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     QemuCocoaAppController *controller =
         (QemuCocoaAppController *)[NSApp delegate];
-    CocoaConsole *cocoa = controller ? [controller console] : NULL;
+    NSWindow *window = [event window] ?: [NSApp keyWindow];
+    QemuCocoaView *view = controller ? [controller viewForWindow:window] : nil;
 
     COCOA_DEBUG("QemuApplication: sendEvent\n");
-    if (!cocoa || !cocoa->view || ![cocoa->view handleEvent:event]) {
+    if (!view || ![view handleEvent:event]) {
         [super sendEvent: event];
     }
 }
@@ -2287,6 +2434,7 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     qemu_add_mouse_mode_change_notifier(&cocoa->mouse_mode_change_notifier);
     [cocoa->view notifyMouseModeChange];
     [cocoa->view updateUIInfo];
+    [controller createAdditionalConsoleWindows];
 
     qemu_event_init(&cbevent, false);
     cbowner = [[QemuCocoaPasteboardTypeOwner alloc] init];
@@ -2316,6 +2464,15 @@ static void cocoa_display_cleanup(void)
     cocoa->con = NULL;
     qemu_remove_mouse_mode_change_notifier(
         &cocoa->mouse_mode_change_notifier);
+    GPtrArray *extras = [controller extraConsoles];
+    for (guint i = 0; i < extras->len; i++) {
+        CocoaConsole *extra = g_ptr_array_index(extras, i);
+        qemu_console_unregister_listener(&extra->dcl);
+        g_clear_pointer(&extra->kbd, qkbd_state_free);
+        extra->con = NULL;
+        qemu_remove_mouse_mode_change_notifier(
+            &extra->mouse_mode_change_notifier);
+    }
 
     qemu_clipboard_peer_unregister(&cbpeer);
     g_clear_pointer(&cbinfo, qemu_clipboard_info_unref);
