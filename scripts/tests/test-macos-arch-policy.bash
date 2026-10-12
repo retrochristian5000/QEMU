@@ -146,19 +146,19 @@ for variable in CC CXX CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
         CXX) override='clang++ -fuse-ld=lld' ;;
         *) override='-fuse-ld=lld' ;;
     esac
-    if audit_linker_flags apple "$variable" "$override"             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    if audit_linker_flags apple "$variable" "$override" >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
         printf 'error: Apple ld accepted LLVM override via %s\n' "$variable" >&2
         exit 1
     fi
     grep -Fq "$variable" "$TEST_DIR/linker.err"
 
-    if audit_linker_flags apple "$variable" '--ld-path=/mock/other/ld'             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    if audit_linker_flags apple "$variable" '--ld-path=/mock/other/ld' >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
         printf 'error: Apple ld accepted --ld-path via %s\n' "$variable" >&2
         exit 1
     fi
     grep -Fq "$variable" "$TEST_DIR/linker.err"
 
-    if audit_linker_flags lld "$variable" '-fuse-ld=ld'             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    if audit_linker_flags lld "$variable" '-fuse-ld=ld' >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
         printf 'error: Mach-O LLD accepted Apple override via %s\n' "$variable" >&2
         exit 1
     fi
@@ -166,7 +166,7 @@ for variable in CC CXX CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
 done
 
 for bad in '-Wl,-O2' '--ld-path=/mock/other/ld'; do
-    if audit_linker_flags lld CXXFLAGS "$bad"             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    if audit_linker_flags lld CXXFLAGS "$bad" >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
         printf 'error: Mach-O LLD accepted conflicting C++ link flag %s\n' "$bad" >&2
         exit 1
     fi
