@@ -111,7 +111,7 @@ class CompilerCachePolicyTests(unittest.TestCase):
 
     def test_sccache_daemon_idle_policy_respects_user_configuration(self):
         policy = ROOT / 'scripts' / 'whp-build' / 'sccache-policy.sh'
-        shell = '. "$1"; whp_sccache_memory_policy; ' \
+        shell = 'set -e; . "$1"; whp_sccache_memory_policy; ' \
                 'printf "%s|%s|%s" "${SCCACHE_IDLE_TIMEOUT-unset}" ' \
                 '"${SCCACHE_CACHE_SIZE-unset}" "${SCCACHE_CLIENT_SIDE-unset}"'
 
