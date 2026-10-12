@@ -1,0 +1,47 @@
+name: Internal DTC libfdt macOS link smoke
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'meson.build'
+      - 'system/meson.build'
+      - 'system/device_tree.c'
+      - 'subprojects/dtc.wrap'
+      - 'scripts/tests/test-fdt-ninja-link.py'
+      - 'scripts/tests/test-sam460ex-fdt-nop.py'
+      - '.github/workflows/dtc-libfdt-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libfdt:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install native build dependencies
+        run: brew install pkg-config meson ninja glib pixman
+
+      - name: Configure pinned internal DTC provider
+        run: |
+          mkdir build-fdt
+          cd build-fdt
+          ../configure --target-list=ppc-softmmu -Dfdt=internal \
+            --disable-docs --disable-tools
+
+      - name: Verify Ninja emulator link dependencies
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal
+
+      - name: Build only the libfdt archive
+        run: ninja -C build-fdt subprojects/dtc/libfdt/libfdt.a
+
+      - name: Verify exported fdt_nop_node and Mach-O link
+        run: |
+          python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --built
+          python3 scripts/tests/test-sam460ex-fdt-nop.py \
+            --runtime --build-dir build-fdt
