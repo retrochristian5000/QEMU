@@ -64,6 +64,8 @@ on:
       - 'scripts/whp-build/select-tests.py'
       - 'scripts/tests/test-qapi-c23-keywords.py'
       - 'scripts/tests/test-cxx-standard-config.py'
+      - 'scripts/whp-build/sccache-policy.sh'
+      - 'docs/devel/sccache-build-memory.rst'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-power-budget.py'
