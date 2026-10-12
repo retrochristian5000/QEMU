@@ -67,5 +67,11 @@ jobs:
             echo 'Native DTC failure lines (complete Meson test log):'
             grep -nE 'FAIL|error:|ld:|clang:|assembler:|fatal:' \
               build-dtc-native/meson-logs/testlog.txt | head -n 110 || true
+            if [[ -f build-dtc-native/tests/oasm_test_tree1.dts.test.s ]]; then
+              echo 'Reproducing one Mach-O assembly link with stderr enabled:'
+              cc -dynamiclib -o build-dtc-native/tests/oasm-debug.so \
+                subprojects/dtc/tests/data.S \
+                build-dtc-native/tests/oasm_test_tree1.dts.test.s || true
+            fi
           fi
           exit "$status"
