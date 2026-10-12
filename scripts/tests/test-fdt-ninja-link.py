@@ -88,6 +88,22 @@ def check_archive(build_dir):
     archive = build_dir / "subprojects" / "dtc" / "libfdt" / "libfdt.a"
     if not archive.is_file():
         fail("internal libfdt archive not found: " + str(archive))
+    # Check the actual archive members, not only Meson's intended source list.
+    # fdt_nop_node lives in fdt_wip.c; a stale or incomplete archive could
+    # otherwise pass the graph audit while omitting its implementation.
+    ar = shutil.which("llvm-ar") or shutil.which("ar")
+    if not ar:
+        fail("ar/llvm-ar missing; cannot inspect libfdt archive members")
+    members = subprocess.run(
+        [ar, "-t", str(archive)], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if members.returncode:
+        fail("ar could not inspect internal libfdt: " + members.stderr.strip())
+    if not any(pathlib.PurePath(name.strip()).name == "fdt_wip.c.o"
+               for name in members.stdout.splitlines()):
+        fail("internal libfdt.a omits fdt_wip.c.o (fdt_nop_node provider)")
+    print("Verified: internal libfdt.a includes fdt_wip.c.o")
     nm = shutil.which("llvm-nm") or shutil.which("nm")
     if not nm:
         fail("nm/llvm-nm missing; cannot verify symbols")
