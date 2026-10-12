@@ -18,6 +18,12 @@ assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in text
 assert 'darwin_cmake_arch=arm64e' in text
 assert 'darwin_cmake_arch=arm64' in text
 assert 'WHP native LLVM macOS arch:' in text
+# Unlike the QEMU wrapper, a direct LLVM bootstrap used to have no explicit
+# Apple Silicon macOS 11 deployment floor before CMake and compiler-rt.
+assert '"$host_tag" == aarch64' in text
+assert '10#${deployment_target%%.*} < 11' in text
+assert 'native LLVM arm64/arm64e deployment target must be macOS 11.0 or newer' in text
+
 assert '"$output" >/dev/null 2>&1' in text
 
 # The selected Mach-O ABI must be part of the cached toolchain identity so an
