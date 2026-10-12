@@ -1566,9 +1566,17 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
             visible = [target visibleFrame];
             frame = [window frame];
             CGFloat cascade = MIN(120.0, (extraConsoles->len + 1) * 24.0);
+            /*
+             * The macOS desktop may include displays to the left or below
+             * the main monitor (negative origins). Keep the guest window
+             * inside the selected screen's visible area whenever it fits;
+             * a cascade offset alone could push the right edge off-screen.
+             */
+            CGFloat roomX = MAX(0, NSWidth(visible) - NSWidth(frame));
+            CGFloat roomY = MAX(0, NSHeight(visible) - NSHeight(frame));
             [window setFrameOrigin:NSMakePoint(
-                NSMinX(visible) + MAX(0, (NSWidth(visible) - NSWidth(frame)) / 2 + cascade),
-                NSMinY(visible) + MAX(0, (NSHeight(visible) - NSHeight(frame)) / 2 - cascade))];
+                NSMinX(visible) + MIN(roomX, MAX(0, roomX / 2 + cascade)),
+                NSMinY(visible) + MIN(roomY, MAX(0, roomY / 2 - cascade)))];
         }
 
         g_ptr_array_add(extraConsoles, extra);
