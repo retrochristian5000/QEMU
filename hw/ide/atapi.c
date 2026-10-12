@@ -336,7 +336,7 @@ static void ide_atapi_cmd_check_status(IDEState *s)
 static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
 {
     IDEState *s = opaque;
-    int data_offset, n;
+    int data_offset, n, dma_result;
 
     if (ret < 0) {
         if (ide_handle_rw_error(s, -ret, ide_dma_cmd_to_retry(s->dma_cmd))) {
@@ -366,7 +366,7 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
             s->lba += n;
         }
         s->packet_transfer_size -= s->io_buffer_size;
-        int dma_result = s->bus->dma->ops->rw_buf(s->bus->dma, true);
+        dma_result = s->bus->dma->ops->rw_buf(s->bus->dma, true);
 
         if (dma_result <= 0) {
             if (dma_result < 0) {
