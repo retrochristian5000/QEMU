@@ -239,8 +239,14 @@ static int32_t bmdma_prepare_buf(const IDEDMA *dma, int32_t limit)
                 (bm->cur_addr - bm->addr) >= BMDMA_PAGE_SIZE) {
                 break;
             }
-            pci_dma_read(pci_dev, bm->cur_addr, &prd, 8);
-            bm->cur_addr += 8;
+            /* PRD fetches can fail when bus mastering is disabled or
+             * guest DMA memory is not accessible. Never parse stale data. */
+            if (pci_dma_read(pci_dev, bm->cur_addr, &prd,
+                             sizeof(prd)) != MEMTX_OK) {
+                bm->status |= BM_STATUS_ERROR;
+                return -1;
+            }
+            bm->cur_addr += sizeof(prd);
             prd.addr = le32_to_cpu(prd.addr);
             prd.size = le32_to_cpu(prd.size);
             len = prd.size & 0xfffe;
@@ -269,7 +275,7 @@ static int32_t bmdma_prepare_buf(const IDEDMA *dma, int32_t limit)
     return s->sg.size;
 }
 
-/* return 0 if buffer completed */
+/* Return 1 when transferred, 0 for incomplete PRDs, -1 on DMA fault. */
 static int bmdma_rw_buf(const IDEDMA *dma, bool is_write)
 {
     BMDMAState *bm = DO_UPCAST(BMDMAState, dma, dma);
@@ -290,8 +296,14 @@ static int bmdma_rw_buf(const IDEDMA *dma, bool is_write)
             if (bm->cur_prd_last ||
                 (bm->cur_addr - bm->addr) >= BMDMA_PAGE_SIZE)
                 return 0;
-            pci_dma_read(pci_dev, bm->cur_addr, &prd, 8);
-            bm->cur_addr += 8;
+            /* PRD fetches can fail when bus mastering is disabled or
+             * guest DMA memory is not accessible. Never parse stale data. */
+            if (pci_dma_read(pci_dev, bm->cur_addr, &prd,
+                             sizeof(prd)) != MEMTX_OK) {
+                bm->status |= BM_STATUS_ERROR;
+                return -1;
+            }
+            bm->cur_addr += sizeof(prd);
             prd.addr = le32_to_cpu(prd.addr);
             prd.size = le32_to_cpu(prd.size);
             len = prd.size & 0xfffe;
@@ -304,12 +316,18 @@ static int bmdma_rw_buf(const IDEDMA *dma, bool is_write)
         if (l > bm->cur_prd_len)
             l = bm->cur_prd_len;
         if (l > 0) {
+            MemTxResult result;
+
             if (is_write) {
-                pci_dma_write(pci_dev, bm->cur_prd_addr,
-                              s->io_buffer + s->io_buffer_index, l);
+                result = pci_dma_write(pci_dev, bm->cur_prd_addr,
+                                       s->io_buffer + s->io_buffer_index, l);
             } else {
-                pci_dma_read(pci_dev, bm->cur_prd_addr,
-                             s->io_buffer + s->io_buffer_index, l);
+                result = pci_dma_read(pci_dev, bm->cur_prd_addr,
+                                      s->io_buffer + s->io_buffer_index, l);
+            }
+            if (result != MEMTX_OK) {
+                bm->status |= BM_STATUS_ERROR;
+                return -1;
             }
             bm->cur_prd_addr += l;
             bm->cur_prd_len -= l;
