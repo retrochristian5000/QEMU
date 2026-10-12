@@ -24,7 +24,23 @@ whp_macos_arch_probe_arm64e()
     fi
 
     output="$(mktemp "${TMPDIR:-/tmp}/whp-arm64e-probe.XXXXXX")" || return 1
-    if printf 'int main(void) { return 0; }\n' |
+    # A successful -arch arm64e link alone cannot prove that Clang selected
+    # the pointer-authenticated arm64e language ABI.  Validate the ABI macros
+    # and exercise an indirect C call (which arm64e authenticates).
+    # Do not execute the probe: older macOS versions may link arm64e but
+    # disallow launching third-party arm64e binaries.
+    if printf '%s\n' \
+           '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' \
+           '#error "Clang did not select the arm64e pointer-authentication ABI"' \
+           '#endif' \
+           '#if !__has_feature(ptrauth_calls)' \
+           '#error "Clang arm64e indirect-call authentication is unavailable"' \
+           '#endif' \
+           'static int whp_arm64e_callback(void) { return 0; }' \
+           'int main(void) {' \
+           '    int (*volatile callback)(void) = whp_arm64e_callback;' \
+           '    return callback();' \
+           '}' |
        "${compiler_command[@]}" -arch arm64e \
            -isysroot "$sdkroot" \
            "-mmacosx-version-min=$deployment_target" \
