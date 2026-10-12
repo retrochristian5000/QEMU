@@ -6,6 +6,11 @@ on:
       - master
     paths:
       - 'toolchains/llvm-project'
+      - 'scripts/whp-build/arm64e-lld-probe.bash'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/macos-arch-policy.bash'
+      - 'scripts/verify-macos-toolchain.bash'
+      - 'build.sh'
       - '.github/workflows/lld-arm64e-auth.yml'
   workflow_dispatch:
 
@@ -110,3 +115,14 @@ jobs:
             --macho --chained-fixups libtest.dylib >fixups.txt
           grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' fixups.txt
           grep -Fq '_foo' fixups.txt
+
+      - name: Verify QEMU's shared ARM64e LLD capability probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/whp-build/arm64e-lld-probe.bash \
+            "$(xcrun --find clang)" \
+            "$(xcrun --sdk macosx --show-sdk-path)" \
+            13.0 \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
