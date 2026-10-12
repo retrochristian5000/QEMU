@@ -969,6 +969,15 @@ They remain inside QEMU's Meson dependency graph.  Do not pre-build them from
 the WHP launcher merely to make them look like the top-level
 ``toolchains/*`` sources.
 
+The DTC wrap in ``subprojects/dtc.wrap`` resolves the internal libfdt
+fallback from the WHP-owned ``retrochristian5000/dtc`` fork at an immutable
+commit.  This is a Meson-owned subproject, not a second vendored copy or a
+new top-level git submodule.  QEMU continues to prefer usable system libfdt
+when selected; the internal fallback builds only libfdt (without DTC tools,
+Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
+do not replace it with a floating branch or rebuild DTC separately in the
+WHP launcher.
+
 Aften and JACK
 --------------
 
