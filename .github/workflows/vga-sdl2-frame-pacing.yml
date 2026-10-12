@@ -1,0 +1,24 @@
+name: VGA SDL2 frame pacing contract
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'ui/sdl2-2d.c'
+      - 'ui/sdl2.c'
+      - 'include/ui/sdl2.h'
+      - 'include/ui/console.h'
+      - 'scripts/tests/test-vga-sdl2-frame-pacing.py'
+      - '.github/workflows/vga-sdl2-frame-pacing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdl2-cadence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Guard active VGA frame cadence and one present per refresh
+        run: python3 scripts/tests/test-vga-sdl2-frame-pacing.py
