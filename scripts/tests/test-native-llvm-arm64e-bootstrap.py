@@ -50,12 +50,15 @@ assert '"${smoke_arch_args[@]}"' in text
 assert '#ifndef __arm64e__' in text
 assert 'whp_arm64e_fp' in text
 
-# The WHP Mach-O LLD fork does not yet implement ARM64_RELOC_AUTHENTICATED_POINTER.
-# A trivial arm64e link probe can therefore succeed even though real LLVM objects
-# later fail with "INVALID relocation has invalid width".  Never reuse the old
-# ld64.lld for an arm64e bootstrap; keep Apple ld as that build's linker until
-# the backend gains a real authenticated-relocation capability probe.
-assert '"$darwin_cmake_arch" != arm64e' in text
-assert text.index('"$darwin_cmake_arch" != arm64e') < text.index('-fuse-ld=lld')
+# LLD ARM64e support is admitted by an authenticated-relocation link probe,
+# not by architecture spelling, a trivial link, or an old blanket prohibition.
+assert 'whp_bootstrap_arm64e_lld_auth_probe()' in text
+assert 'WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"' in text
+assert '.quad _whp_auth_target@AUTH(ia,42,addr)' in text
+assert 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' in text
+assert 'bootstrap_lld_arch_ok=0' in text
+assert '"$WHP_ARM64E_USE_LLD" == 1' in text
+assert '"$bootstrap_lld_arch_ok" == 1' in text
+assert text.index('whp_bootstrap_arm64e_lld_auth_probe()') < text.index('-fuse-ld=lld')
 
 print('native LLVM arm64e bootstrap policy: verified')
