@@ -29,8 +29,7 @@ reuses the already installed executable.
 ``WHP_SCCACHE_BUILD_JOBS`` defaults to 2 and independently limits Cargo
 concurrency. The Rust bootstrap clears inherited compiler wrappers to avoid
 building sccache recursively through sccache. On success, it exports
-``WHP_COMPILER_CACHE_CMD`` and ``COMPILER_CACHE=sccache`` before LLVM and
-QEMU builds. Explicit conflicting cache settings are rejected. Cargo
+``WHP_COMPILER_CACHE_CMD`` and ``COMPILER_CACHE=sccache`` before bundled Ninja, LLVM, and QEMU builds. Explicit conflicting cache settings are rejected. Cargo
 dependencies may require an initial network fetch unless already cached.
 
 A new executable does not automatically stop an old running sccache server:

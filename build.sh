@@ -401,15 +401,9 @@ fi
 # library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"
 
-# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
-# here so its environment mutations preserve dependency order. It prepares the
-# isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
-# SDL, and JACK remain in the later compiler-selected library phase.
-. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
-
 # Only an explicit opt-in builds the pinned Rust cache frontend. Keep this
-# after host-tool discovery and before LLVM so the same binary serves both
-# the native LLVM and QEMU compilation phases.
+# before host-tool discovery and LLVM so it can serve Ninja, Clang, and QEMU.
+# without requiring an independently installed sccache executable.
 BOOTSTRAP_SCCACHE=$(whp_require_binary_switch BOOTSTRAP_SCCACHE "${BOOTSTRAP_SCCACHE:-0}") || exit 1
 export BOOTSTRAP_SCCACHE
 if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
@@ -433,6 +427,12 @@ if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
     export WHP_COMPILER_CACHE_CMD COMPILER_CACHE
     printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
 fi
+
+# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
+# here so its environment mutations preserve dependency order. It prepares the
+# isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
+# SDL, and JACK remain in the later compiler-selected library phase.
+. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
 # Parse the LLVM switch before deciding whether QEMU-linked libraries should
 # use the seed compiler or the managed LLVM compiler. Portable-core builds do

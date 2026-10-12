@@ -78,6 +78,8 @@ class ManagedSccacheTests(unittest.TestCase):
     def test_qemu_selects_fork_before_native_llvm(self):
         text = (ROOT / 'build.sh').read_text(encoding='utf-8')
         self.assertLess(text.index('scripts/ensure-sccache.py'),
+                        text.index('scripts/whp-build/host-tools.sh'))
+        self.assertLess(text.index('scripts/ensure-sccache.py'),
                         text.index('scripts/bootstrap-native-clang.sh'))
         self.assertIn('WHP_COMPILER_CACHE_CMD=$(', text)
         self.assertIn('COMPILER_CACHE=sccache', text)
