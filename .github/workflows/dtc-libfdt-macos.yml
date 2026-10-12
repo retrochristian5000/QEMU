@@ -57,4 +57,15 @@ jobs:
           meson compile -C build-dtc-native
 
       - name: Test native DTC and libfdt runtime paths
-        run: meson test -C build-dtc-native --print-errorlogs libfdt utilfdt dtc
+        shell: bash
+        run: |
+          set +e
+          meson test -C build-dtc-native --print-errorlogs libfdt utilfdt dtc
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            echo 'Native DTC failure lines (complete Meson test log):'
+            grep -nE 'FAIL|error:|ld:|clang:|assembler:|fatal:' \
+              build-dtc-native/meson-logs/testlog.txt | head -n 110 || true
+          fi
+          exit "$status"
