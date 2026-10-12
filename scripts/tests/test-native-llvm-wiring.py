@@ -285,9 +285,16 @@ assert 'CLANG_ENABLE_ARCMT' not in bootstrap
 for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
     assert 'LLVM_ENABLE_TERMINFO' not in llvm_bootstrap
 
-# LLVM's large executable links need their own Ninja pool. Keep compilation
-# fully parallel while capping concurrent links so a many-core host does not
-# turn link-time memory pressure into paging or intermittent bootstrap failure.
+# LLVM's large executable links retain a separate Ninja pool. Native macOS
+# also limits compilation and TableGen work independently to reduce paging.
+# Native LLVM pool overrides must stay independent of the ABI cache marker.
+assert 'LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"' in bootstrap
+assert 'LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"' in bootstrap
+assert '[[ -n "${NATIVE_LLVM_COMPILE_JOBS+x}" ]] || LLVM_COMPILE_JOBS=2' in bootstrap
+assert '[[ -n "${NATIVE_LLVM_TABLEGEN_JOBS+x}" ]] || LLVM_TABLEGEN_JOBS=1' in bootstrap
+assert '"-DLLVM_PARALLEL_COMPILE_JOBS=$LLVM_COMPILE_JOBS"' in bootstrap
+assert '"-DLLVM_PARALLEL_TABLEGEN_JOBS=$LLVM_TABLEGEN_JOBS"' in bootstrap
+assert 'if [[ "$pool_jobs" == 0 ]]; then' in bootstrap
 link_job_policies = (
     (bootstrap, 'NATIVE_LLVM_LINK_JOBS'),
     (i386_bootstrap, 'I386_LLVM_LINK_JOBS'),

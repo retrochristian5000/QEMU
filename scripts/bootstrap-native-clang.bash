@@ -14,6 +14,8 @@ LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
 JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
+LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"
+LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
 LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
@@ -159,6 +161,28 @@ case "$host_os" in
         ;;
 esac
 
+# Cap expensive LLVM compile and TableGen work independently of -j and links.
+# Scheduling controls do not affect the installed compiler ABI or cache key.
+if [[ "$host_os" == macos ]]; then
+    [[ -n "${NATIVE_LLVM_COMPILE_JOBS+x}" ]] || LLVM_COMPILE_JOBS=2
+    [[ -n "${NATIVE_LLVM_TABLEGEN_JOBS+x}" ]] || LLVM_TABLEGEN_JOBS=1
+fi
+for pool_name in COMPILE TABLEGEN; do
+    pool_var="LLVM_${pool_name}_JOBS"
+    pool_jobs="${!pool_var}"
+    if [[ -n "$pool_jobs" && ! "$pool_jobs" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        printf 'error: NATIVE_LLVM_%s_JOBS must be 0 or a positive integer: %s\n' \
+            "$pool_name" "$pool_jobs" >&2
+        exit 1
+    fi
+    if [[ "$pool_jobs" == 0 ]]; then
+        printf -v "$pool_var" "%s" ""
+    fi
+done
+unset pool_name pool_var pool_jobs
+printf 'WHP native LLVM pools: compile=%s, link=%s, tablegen=%s\n' \
+    "${LLVM_COMPILE_JOBS:-unlimited}" "$LLVM_LINK_JOBS" \
+    "${LLVM_TABLEGEN_JOBS:-unlimited}" >&2
 host_id="$host_tag-$host_platform"
 TOOLCHAIN_DIR="${NATIVE_LLVM_DIR:-$SOURCE_DIR/build/toolchains/native-llvm/$host_id}"
 TOOLCHAIN_WORK_DIR="${NATIVE_LLVM_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/native-llvm-$host_id}"
@@ -1070,7 +1094,9 @@ cmake_args=(
     "-DCLANG_LINK_CLANG_DYLIB=$clang_link_shared"
     -DLLVM_DYLIB_COMPONENTS=all
     -DLLVM_APPEND_VC_REV=OFF
+    "-DLLVM_PARALLEL_COMPILE_JOBS=$LLVM_COMPILE_JOBS"
     "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
+    "-DLLVM_PARALLEL_TABLEGEN_JOBS=$LLVM_TABLEGEN_JOBS"
     -DLLVM_ENABLE_LTO=OFF
     -DLLVM_ENABLE_FATLTO=OFF
     -DLLVM_BUILD_INSTRUMENTED=OFF

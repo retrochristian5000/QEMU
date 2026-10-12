@@ -43,14 +43,22 @@ Compiler and linker memory
 
 Parallel processes typically dominate peak memory during LLVM builds, not
 the on-disk cache. The QEMU build accepts ``JOBS``; native LLVM additionally
-limits simultaneous links with ``NATIVE_LLVM_LINK_JOBS``. On macOS,
-``MACOS_BUILD_POWER=eco|balanced|performance`` selects a default job budget
-unless ``JOBS`` is explicit. Avoid pretending that
+limits simultaneous links with ``NATIVE_LLVM_LINK_JOBS`` (default 2).
+On macOS the native LLVM bootstrap also caps concurrent compile jobs at 2
+(``NATIVE_LLVM_COMPILE_JOBS``) and TableGen jobs at 1
+(``NATIVE_LLVM_TABLEGEN_JOBS``), using separate Ninja pools. Explicit positive
+integers override each limit; setting either pool variable to ``0`` disables
+its limit. Other hosts keep uncapped compile and TableGen pools by default.
+These scheduling controls do not change the compiler ABI or invalidate the
+installed toolchain. ``MACOS_BUILD_POWER=eco|balanced|performance`` selects
+the outer macOS job budget unless ``JOBS`` is explicit. Pool limits are not a
+whole-build RSS cap: compile, link, and TableGen jobs may run concurrently. Avoid pretending that
 ``SCCACHE_CACHE_SIZE`` limits RSS.
 
 For a more memory-conservative build, for example::
 
-    COMPILER_CACHE=sccache JOBS=2 NATIVE_LLVM_LINK_JOBS=1 \
+    COMPILER_CACHE=sccache JOBS=2 NATIVE_LLVM_COMPILE_JOBS=1 \
+      NATIVE_LLVM_LINK_JOBS=1 NATIVE_LLVM_TABLEGEN_JOBS=1 \
       SCCACHE_IDLE_TIMEOUT=120 SCCACHE_CACHE_SIZE=4G ./build.sh
 
 These settings affect the build machine, not the guest CPU ABI or installed
