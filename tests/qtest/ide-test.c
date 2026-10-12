@@ -632,10 +632,10 @@ static void test_bmdma_no_busmaster(void)
     status = send_dma_request(qts, CMD_READ_DMA | CMDF_NO_BM, 0, 512,
                               prdt, ARRAY_SIZE(prdt), NULL);
 
-    /* Not entirely clear what the expected result is, but this is what we get
-     * in practice. At least we want to be aware of any changes. */
-    g_assert_cmphex(status, ==, BM_STS_ACTIVE | BM_STS_INTR);
-    assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), DF | ERR);
+    /* A disabled PCI bus master must fail the PRD fetch instead of
+     * interpreting a failed DMA read as a valid descriptor. */
+    g_assert_cmphex(status, ==, BM_STS_ERROR | BM_STS_INTR);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
     free_pci_device(dev);
     test_bmdma_teardown(qts);
 }
@@ -1169,6 +1169,44 @@ static void test_cdrom_dma(void)
     test_bmdma_teardown(qts);
 }
 
+static void test_cdrom_dma_no_busmaster(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    uint8_t status;
+    char pattern[ATAPI_BLOCK_SIZE] = { 0 };
+    FILE *fh;
+    uintptr_t guest_buf;
+    PrdtEntry prdt[1];
+
+    fh = fopen(tmp_path[0], "wb+");
+    g_assert_nonnull(fh);
+    g_assert_cmpuint(fwrite(pattern, 1, sizeof(pattern), fh),
+                     ==, sizeof(pattern));
+    fclose(fh);
+
+    qts = ide_test_start(
+        "-drive if=none,file=%s,media=cdrom,format=raw,id=sr0,index=0 "
+        "-device ide-cd,drive=sr0,bus=ide.0", tmp_path[0]);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    guest_buf = guest_alloc(&guest_malloc, ATAPI_BLOCK_SIZE);
+    prdt[0].addr = cpu_to_le32(guest_buf);
+    prdt[0].size = cpu_to_le32(ATAPI_BLOCK_SIZE | PRDT_EOT);
+
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    status = send_dma_request_dev(qts, dev, bmdma_bar, ide_bar,
+                                  CMD_PACKET | CMDF_NO_BM, 0, 1,
+                                  prdt, ARRAY_SIZE(prdt),
+                                  send_scsi_cdb_read10);
+    g_assert_cmphex(status, ==, BM_STS_ERROR | BM_STS_INTR);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+
+    free_pci_device(dev);
+    test_bmdma_teardown(qts);
+}
+
 int main(int argc, char **argv)
 {
     const char *base;
@@ -1228,6 +1266,8 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);
     qtest_add_func("/ide/cdrom/pio_large", test_cdrom_pio_large);
     qtest_add_func("/ide/cdrom/dma", test_cdrom_dma);
+    qtest_add_func("/ide/cdrom/dma_no_busmaster",
+                   test_cdrom_dma_no_busmaster);
 
     ret = g_test_run();
 
