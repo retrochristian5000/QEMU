@@ -199,6 +199,10 @@ grep -Fq 'link_arch="${WHP_MACOS_ARCH:-$host_arch}"' "$toolchain_verifier"
 grep -Fq 'compile_c_probe CC "$CC" "$link_arch"' "$toolchain_verifier"
 grep -Fq 'require_output_arch CXX "$output" "$link_arch"' "$toolchain_verifier"
 grep -Fq 'require_output_arch OBJC "$output" "$link_arch"' "$toolchain_verifier"
+grep -Fq 'compile_arm64e_cxx_unwind_probe()' "$toolchain_verifier"
+grep -Fq 'throw std::runtime_error("arm64e-lld")' "$toolchain_verifier"
+grep -Fq 'require_output_arch CXX_UNWIND "$output" "$link_arch"' "$toolchain_verifier"
+grep -Fq 'if [[ "$link_arch" == arm64e && "${WHP_ARM64E_USE_LLD:-0}" == 1 ]]; then' "$toolchain_verifier"
 
 # Integration contract: the macOS QEMU wrapper owns the final Apple -arch
 # choice and applies it consistently to C, C++, Objective-C, and links.
