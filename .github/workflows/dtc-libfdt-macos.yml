@@ -40,6 +40,9 @@ jobs:
       - name: Verify Ninja emulator link dependencies
         run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal
 
+      - name: Regress Mach-O ARM64 and ARM64e archive/consumer ABI mismatches
+        run: python3 scripts/tests/test-fdt-macho-abi.py
+
       - name: Build only the libfdt archive
         run: ninja -C build-fdt subprojects/dtc/libfdt/libfdt.a
 
