@@ -54,8 +54,10 @@ assert 'whp_arm64e_fp' in text
 # not by architecture spelling, a trivial link, or an old blanket prohibition.
 assert 'whp_bootstrap_arm64e_lld_auth_probe()' in text
 assert 'WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"' in text
-assert '.quad _whp_auth_target@AUTH(ia,42,addr)' in text
-assert 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' in text
+probe = (ROOT / 'scripts' / 'whp-build' / 'arm64e-lld-probe.bash').read_text(encoding='utf-8')
+assert 'arm64e-lld-probe.bash' in text
+assert '.quad _whp_auth_target@AUTH(ia,42,addr)' in probe
+assert 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' in probe
 assert 'bootstrap_lld_arch_ok=0' in text
 assert '"$WHP_ARM64E_USE_LLD" == 1' in text
 assert '"$bootstrap_lld_arch_ok" == 1' in text
