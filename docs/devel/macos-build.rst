@@ -261,11 +261,39 @@ on the installed compiler without starting QEMU, run::
     --arch arm64 --sdkroot "$(xcrun --sdk macosx --show-sdk-path)" \
     --deployment-target 15.0 --use-lld
 
-Replace the SDK/deployment target with those of the actual build. On
-``arm64e``, omit ``--use-lld`` while the WHP profile selects Apple
-``ld`` for authenticated relocations. The probe does not claim to repair
-the missing symbol; its output identifies whether the next code change
-belongs in Clang instrumentation, compiler-rt distribution, or Mach-O LLD.
+Replace the SDK/deployment target with those of the actual build.
+For AddressSanitizer, omit ``--use-lld``: the WHP profile still selects
+Apple ``ld`` for this runtime contract, including ARM64e. The probe does
+not claim to repair the missing symbol; its output identifies whether the
+next code change belongs in Clang instrumentation, compiler-rt distribution,
+or Mach-O LLD.
+
+ARM64e LLD development lane
+---------------------------
+
+The pinned LLVM Mach-O LLD implements authenticated ARM64e relocations and
+chained fixups. The ordinary QEMU ARM64e build still uses Apple ``ld``
+until the full C/C++/Objective-C/TCG runtime path is verified. To select
+LLD *explicitly* for a non-ASan ARM64e experiment::
+
+  WHP_MACOS_ARCH=arm64e WHP_ARM64E_USE_LLD=1 \
+    BOOTSTRAP_NATIVE_LLVM=1 ./build.sh qemu-system-ppc
+
+This is a developer option, **not** the default ARM64 ABI. It validates
+``-arch arm64e`` with Clang, the actual Clang and Clang++ linker selection,
+and an authenticated ``ARM64_RELOC_AUTHENTICATED_POINTER`` link through the
+installed ``ld64.lld``, checking its chained-fixup pointer format using
+``llvm-objdump``. A trivial ``main()`` link is not sufficient. The
+native LLVM bootstrap can also reuse a previously installed ARM64e-capable
+LLD when this option is enabled; otherwise it preserves Apple ``ld``.
+
+An explicit ARM64e LLD request requires the managed native LLVM compiler
+and cannot be combined with ``QEMU_ASAN=1`` or ``QEMU_ASAN=y``.
+A failed capability probe must stop the requested QEMU host link rather
+than silently substituting Apple ``ld``. The shared probe only links an
+ARM64e dylib; it does not prove runtime compatibility or TCG correctness.
+The separate macOS CI workflow ``lld-arm64e-auth.yml`` runs a focused
+native link check before this lane can be promoted.
 
 Profile-guided optimization (PGO)
 ---------------------------------
