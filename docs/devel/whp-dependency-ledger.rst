@@ -976,10 +976,12 @@ new top-level git submodule.  QEMU continues to prefer usable system libfdt
 when selected; the internal fallback builds only libfdt (without DTC tools,
 Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
 do not replace it with a floating branch or rebuild DTC separately in the
-WHP launcher.
+WHP launcher.  The October 2026 fork update modernizes the macOS native
+shared-library test link and macOS Flex/Bison CI coverage; it does not add
+Apple-specific APIs to the portable libfdt ABI.
 
 FDT symbol-link verification
-````````````````````````````````````````````````````````
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``system/device_tree.c`` calls the libfdt function ``fdt_nop_node``.
 Our pinned DTC fork defines it in ``libfdt/fdt_wip.c``; the DTC Meson
