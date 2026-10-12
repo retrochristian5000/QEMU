@@ -82,5 +82,56 @@ int main(void)
         self.assertLess(allow, refresh)
 
 
+    def test_multihead_selection_keeps_one_window_per_graphic_console(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void) selectConsoleLocked:(unsigned int)index')
+        end = text.index('\n- (void) hideCursor', start)
+        body = text[start:end]
+
+        # View-menu and Ctrl+Alt+1..9 selection must focus existing graphic
+        # windows before any listener is detached or rebound.
+        focus = body.index('view->console->con == con')
+        rebind = body.index('qemu_console_unregister_listener(&console->dcl)')
+        self.assertLess(focus, rebind)
+        self.assertIn('[window makeKeyAndOrderFront:self];', body[:rebind])
+        self.assertIn('if (!console->is_primary)', body[:rebind])
+        self.assertIn('view->console->is_primary', body[:rebind])
+        self.assertIn('[view selectConsoleLocked:index];', body[:rebind])
+
+        # An extra guest head must be represented by an independent listener
+        # and view, not by stealing the primary window's console.
+        self.assertIn('qemu_console_register_listener(guest, &extra->dcl,',
+                      text)
+        self.assertIn('qkbd_state_init(extra->dcl.con)', text)
+
+    def test_extra_windows_stay_within_physical_monitor_bounds(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void)createAdditionalConsoleWindows\n{')
+        end = text.index('\n- (void)showConsoleWindow:', start)
+        body = text[start:end]
+
+        self.assertIn('NSArray *screens = [NSScreen screens];', body)
+        self.assertIn('(1 + extraConsoles->len) % screenCount', body)
+        self.assertIn('NSMinX(visible) + MIN(roomX, MAX(0,', body)
+        self.assertIn('NSMinY(visible) + MIN(roomY, MAX(0,', body)
+
+        # Screen rectangles can begin at negative desktop coordinates.
+        # For a window fitting on the physical screen, both axes must stay
+        # inside visibleFrame, including when the cascade exceeds room.
+        for left, bottom, width, height, w, h, cascade in (
+            (-1920, 0, 1920, 1080, 640, 480, 24),
+            (0, -900, 1440, 900, 640, 480, 120),
+            (0, 0, 800, 600, 640, 480, 250),
+            (-1024, -768, 1024, 768, 800, 600, 300),
+        ):
+            room_x, room_y = max(0, width - w), max(0, height - h)
+            x = left + min(room_x, max(0, room_x / 2 + cascade))
+            y = bottom + min(room_y, max(0, room_y / 2 - cascade))
+            self.assertGreaterEqual(x, left)
+            self.assertLessEqual(x + w, left + width)
+            self.assertGreaterEqual(y, bottom)
+            self.assertLessEqual(y + h, bottom + height)
+
+
 if __name__ == '__main__':
     unittest.main()
