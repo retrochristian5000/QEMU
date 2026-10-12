@@ -422,7 +422,7 @@ bool st_init(void)
         return false;
     }
 
-    /* g_atexit() is deprecated and this backend already uses the C runtime.
+    /* GLib's exit registration wrapper is deprecated; use the C runtime.
      * Do not silently accept a trace worker without its exit-time flush. */
     if (atexit(st_flush_trace_buffer) != 0) {
         warn_report("unable to register simple trace backend exit flush");
