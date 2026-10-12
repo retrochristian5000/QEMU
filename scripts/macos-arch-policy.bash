@@ -161,7 +161,7 @@ whp_macos_audit_linker_driver_flags()
         for driver_var in CC CXX; do
             driver_command=()
             read -r -a driver_command <<< "${!driver_var:-}"
-            [[ ${#driver_command[@]} -gt 0 ]] || return 1
+            [[ -n "${driver_command[0]:-}" ]] || return 1
             if [[ "$driver_var" == CXX ]]; then
                 language=c++
             else
