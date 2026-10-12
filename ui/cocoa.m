@@ -110,6 +110,7 @@ typedef struct CocoaConsole {
     QKbdState *kbd;
     QemuConsole *con;
     QemuCocoaView *view;
+    bool is_primary;
     Notifier mouse_mode_change_notifier;
 } CocoaConsole;
 
@@ -730,7 +731,6 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
          * Don't tell QEMU about UI information until this view has its own
          * registered display listener (secondary windows may be positioned
          * and resized before registration).
-         * layer.
          * When cocoa_display_init() does register the dcl, the UI layer
          * will call cocoa_switch(), which will call updateUIInfo, so
          * we don't lose any information here.
@@ -1305,6 +1305,9 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 }
 
 - (void) notifyMouseModeChange {
+    if (!console->con || !console->kbd) {
+        return;
+    }
     bool tIsAbsoluteEnabled = bool_with_bql(^{
         return qemu_input_is_absolute(console->con);
     });
@@ -1334,16 +1337,20 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (void) raiseAllKeys
 {
     with_bql(^{
-        qkbd_state_lift_all_keys(console->kbd);
+        if (console->kbd) {
+            qkbd_state_lift_all_keys(console->kbd);
+        }
     });
 }
 
 - (void) raiseAllButtons
 {
     with_bql(^{
-        qemu_input_queue_btn(console->con, INPUT_BUTTON_LEFT, false);
-        qemu_input_queue_btn(console->con, INPUT_BUTTON_RIGHT, false);
-        qemu_input_queue_btn(console->con, INPUT_BUTTON_MIDDLE, false);
+        if (console->con) {
+            qemu_input_queue_btn(console->con, INPUT_BUTTON_LEFT, false);
+            qemu_input_queue_btn(console->con, INPUT_BUTTON_RIGHT, false);
+            qemu_input_queue_btn(console->con, INPUT_BUTTON_MIDDLE, false);
+        }
     });
 }
 @end
@@ -2346,7 +2353,11 @@ static void cocoa_refresh(DisplayChangeListener *dcl)
     COCOA_DEBUG("qemu_cocoa: cocoa_refresh\n");
     qemu_console_hw_update(dcl->con);
 
-    if (cbchangecount != [[NSPasteboard generalPasteboard] changeCount]) {
+    /* Shared clipboard polling belongs to one listener, not every monitor.
+     * This avoids multiplied AppKit work on multi-head guests. */
+    CocoaConsole *cocoa = container_of(dcl, CocoaConsole, dcl);
+    if (cocoa->is_primary &&
+        cbchangecount != [[NSPasteboard generalPasteboard] changeCount]) {
         qemu_clipboard_info_unref(cbinfo);
         cbinfo = qemu_clipboard_info_new(&cbpeer, QEMU_CLIPBOARD_SELECTION_CLIPBOARD);
         if ([[NSPasteboard generalPasteboard] availableTypeFromArray:@[NSPasteboardTypeString]]) {
@@ -2439,6 +2450,7 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     addRemovableDevicesMenuItems();
 
     cocoa->con = qemu_console_lookup_default();
+    cocoa->is_primary = true;
     qemu_console_register_listener(cocoa->con, &cocoa->dcl, &dcl_ops);
     cocoa->kbd = qkbd_state_init(cocoa->dcl.con);
     cocoa->mouse_mode_change_notifier.notify = cocoa_mouse_mode_change_notify;
