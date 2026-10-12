@@ -48,6 +48,9 @@ jobs:
       - name: Audit GLib atomic integer read contracts
         run: python3 scripts/tests/test-glib-atomic-int-get.py
 
+      - name: Guard deprecated GLib exit API usage
+        run: python3 scripts/tests/test-glib-exit-api.py
+
       - name: Guard GLib 2.66 compatibility and memory-copy calls
         run: python3 scripts/tests/test-glib-safe-memory.py
 
