@@ -978,6 +978,39 @@ Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
 do not replace it with a floating branch or rebuild DTC separately in the
 WHP launcher.
 
+FDT symbol-link verification
+````````````````````````````````````````````````````````
+
+``system/device_tree.c`` calls the libfdt function ``fdt_nop_node``.
+Our pinned DTC fork defines it in ``libfdt/fdt_wip.c``; the DTC Meson
+``libfdt`` target includes that source.  QEMU's ``system/meson.build``
+attaches the ``fdt`` dependency to the conditional device-tree source,
+and the top-level ``meson.build`` explicitly keeps ``fdt`` on the
+system-emulator executable's link dependencies after extracting system
+objects.  Do not replace this with a copied libfdt implementation or
+hard-coded linker flags in the WHP Ninja launcher.
+
+For a persistent Meson build configured with the internal DTC provider,
+audit the generated graph without rebuilding or resetting it::
+
+    python3 scripts/tests/test-fdt-ninja-link.py build --internal
+
+The audit checks ``build.ninja`` through ``ninja -t commands``, verifies
+that the DTC checkout matches the pinned wrap commit, and checks that
+the link includes the internal ``libfdt.a`` and builds ``fdt_wip.c``.
+After successful compilation, append ``--built`` to inspect the
+archive's exported ``fdt_nop_node`` symbol with ``nm``.
+
+If an existing build still selects an unsuitable system libfdt,
+reconfigure that *same* build directory with ``-Dfdt=internal`` through
+Meson and allow Ninja to regenerate its dependency graph.  Never delete
+the whole build tree merely to change the libfdt provider.  If a source
+checkout is stale relative to the DTC wrap pin, repair only that
+Meson-owned subproject, respecting local modifications and the recorded
+revision.  The PPC CI lane explicitly selects ``-Dfdt=internal`` and
+uses the resulting archive for the FDT node-removal runtime test;
+a host ``-lfdt`` runtime test alone does not validate the WHP fork.
+
 Aften and JACK
 --------------
 
