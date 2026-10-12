@@ -98,7 +98,8 @@ whp_macos_audit_linker_driver_flags()
         value="${!variable:-}"
         tokens=()
         read -r -a tokens <<< "$value"
-        for token in "${tokens[@]}"; do
+        # Bash 3.2 treats an empty array as unset under nounset.
+        for token in ${tokens[@]+"${tokens[@]}"}; do
             case "$token" in
                 -fuse-ld=lld)
                     if [[ "$linker_kind" != lld ]]; then
