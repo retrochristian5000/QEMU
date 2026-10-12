@@ -28,6 +28,24 @@
 #include "ui/input.h"
 #include "ui/sdl2.h"
 
+/* ~60 polls/s while the guest is changing the display; idle stays slower. */
+#define SDL2_2D_ACTIVE_REFRESH_INTERVAL 16
+
+static void sdl2_2d_present(struct sdl2_console *scon)
+{
+    if (!scon->frame_dirty || !scon->texture || !scon->real_renderer) {
+        return;
+    }
+
+    /* Present once after all dirty VGA scanline bands have been uploaded. */
+    if (SDL_RenderClear(scon->real_renderer) < 0 ||
+        SDL_RenderCopy(scon->real_renderer, scon->texture, NULL, NULL) < 0) {
+        return;
+    }
+    SDL_RenderPresent(scon->real_renderer);
+    scon->frame_dirty = false;
+}
+
 void sdl2_2d_update(DisplayChangeListener *dcl,
                     int x, int y, int w, int h)
 {
@@ -37,7 +55,7 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
     size_t surface_data_offset;
     assert(!scon->opengl);
 
-    if (!scon->texture) {
+    if (!scon->texture || !surf || w <= 0 || h <= 0) {
         return;
     }
 
@@ -48,12 +66,13 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
     rect.w = w;
     rect.h = h;
 
-    SDL_UpdateTexture(scon->texture, &rect,
-                      surface_data(surf) + surface_data_offset,
-                      surface_stride(surf));
-    SDL_RenderClear(scon->real_renderer);
-    SDL_RenderCopy(scon->real_renderer, scon->texture, NULL, NULL);
-    SDL_RenderPresent(scon->real_renderer);
+    /* Many VGA dirty bands can arrive per refresh. Upload each band, but
+     * defer the full-frame render/present until the refresh callback. */
+    if (SDL_UpdateTexture(scon->texture, &rect,
+                          surface_data(surf) + surface_data_offset,
+                          surface_stride(surf)) == 0) {
+        scon->frame_dirty = true;
+    }
 }
 
 void sdl2_2d_switch(DisplayChangeListener *dcl,
@@ -66,6 +85,7 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
     assert(!scon->opengl);
 
     scon->surface = new_surface;
+    scon->frame_dirty = false;
 
     if (scon->texture) {
         SDL_DestroyTexture(scon->texture);
@@ -131,6 +151,17 @@ void sdl2_2d_refresh(DisplayChangeListener *dcl)
     assert(!scon->opengl);
     qemu_console_hw_update(dcl->con);
     sdl2_poll_events(scon);
+
+    /* Guest animation counts as activity even without keyboard/mouse input.
+     * Preserve the faster input-event interval when one is already active. */
+    if (scon->frame_dirty) {
+        scon->idle_counter = 0;
+        if (!scon->dcl.update_interval ||
+            scon->dcl.update_interval > SDL2_2D_ACTIVE_REFRESH_INTERVAL) {
+            scon->dcl.update_interval = SDL2_2D_ACTIVE_REFRESH_INTERVAL;
+        }
+    }
+    sdl2_2d_present(scon);
 }
 
 void sdl2_2d_redraw(struct sdl2_console *scon)
