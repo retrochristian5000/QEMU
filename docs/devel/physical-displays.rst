@@ -62,6 +62,64 @@ face scaler is not a deinterlacer and must not be treated as one.  A future
 analogue monitor path can use field parity/timing to reproduce scan behaviour
 while keeping phosphor persistence in presentation-only state.
 
+PC Super VGA monitors and Windows 98
+------------------------------------
+
+Windows 98 distinguished the video *adapter* from the physical *monitor*.
+Contemporary installation instructions for Rockwell Automation 6185 monitors
+list Windows 98's ``Standard monitor types`` selections, including
+``Plug and Play Monitor`` and ``Super VGA 800x600``, ``Super VGA 1024x768``,
+or ``Super VGA 1280x1024`` profiles (depending on the monitor and manual).
+These are evidence for selectable monitor compatibility descriptions; they
+are **not** substitute graphics adapters or proof of a particular refresh
+rate, colour depth, or Windows 98 video driver.
+
+Historical sources: Rockwell Automation, *6185 Economy User Manual*,
+publication 6185-UM003A-EN-P, "Setting the Monitor Type" /
+"Setting Up Video Resolution", and publication 6185-5.1,
+"Procedures for Accessing Monitor Type Manually".
+Archived manual:
+https://manualzilla.com/doc/6905490/6185-um003a-en-p--6185-economy-user-manual
+
+The guest chooses modes through the actual adapter/driver.  A PC graphics
+model (e.g. Cirrus GD5446 or QEMU Standard VGA) produces a framebuffer.
+``ui/console.c`` then hands it to an optional physical monitor model,
+which can validate supported *timings*, resample it onto a stable face,
+and present the face through Cocoa/GTK/SDL/VNC.  The selected Windows
+monitor label must not silently change the PCI identity, VGA registers,
+graphics driver, host window dimensions, or pixel format.
+
+An SVGA monitor capability model needs manufacturer/model provenance and,
+where known, horizontal scan limits, vertical refresh limits, supported
+sync/connection conventions, and any explicitly published mode timings.
+Do not convert a resolution label into invented fixed pixel clocks or CRT
+refresh rates.  For Plug and Play models, EDID and driver discovery are a
+separate evidence path: QEMU Standard VGA can expose EDID in PCI BAR2,
+but that does not establish that every Windows 98 driver reads it.
+
+There is already a ``qemu_console_set_fixed_display_face()`` presentation
+API, but as of this audit no emulated PC monitor calls it.  Consequently
+the existence of this scaler must not be reported as operational Windows 98
+SVGA monitor emulation.  Connect a real monitor model before enabling
+this path for a guest.  Never force the fixed-face policy on all VGA
+devices merely because Windows 98 offers a generic monitor selection.
+
+Validation plan (not yet completed):
+
+* On an x86 PC machine, establish the guest graphics driver and display
+  adapter separately from the Windows 98 monitor selection.
+* Exercise standard VGA text and 640x480 graphics, then monitor-profile
+  candidates 800x600, 1024x768, and 1280x1024 only where the selected
+  adapter/driver and monitor timings support those modes.
+* Record guest colour depth, measured mode timing or driver-reported
+  refresh, framebuffer size/stride, and any rejected combinations.
+* Observe transitions on Cocoa and at least one other backend for
+  full-frame redraw, clipping, aspect ratio, cursor coordinates, and
+  stable physical-face size.  Do not infer successful guest mode changes
+  solely from host window resize.
+* Re-test the existing PowerPC OpenBIOS VGA BAR0/BAR2/EDID path separately:
+  Windows 98 PC monitor selection cannot repair OpenFirmware PCI discovery.
+
 Current scanout boundary
 ------------------------
 
