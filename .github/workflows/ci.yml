@@ -48,6 +48,9 @@ jobs:
       - name: Audit GLib atomic integer read contracts
         run: python3 scripts/tests/test-glib-atomic-int-get.py
 
+      - name: Audit Sam460ex FDT node removal and link probe
+        run: python3 scripts/tests/test-sam460ex-fdt-nop.py
+
       - name: Guard deprecated GLib exit API usage
         run: python3 scripts/tests/test-glib-exit-api.py
 
@@ -144,6 +147,10 @@ jobs:
       - name: Test concurrent GLib atomic counter draining
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-glib-atomic-int-get.py --runtime
+
+      - name: Exercise libfdt node removal on PowerPC build host
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-sam460ex-fdt-nop.py --runtime
 
       - name: Exercise GLib g_memdup2 copy semantics
         if: matrix.target == 'ppc'
