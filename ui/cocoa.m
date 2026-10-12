@@ -111,6 +111,7 @@ typedef struct CocoaConsole {
     QemuConsole *con;
     QemuCocoaView *view;
     bool is_primary;
+    NSString *windowTitle;
     Notifier mouse_mode_change_notifier;
 } CocoaConsole;
 
@@ -1281,10 +1282,9 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     COCOA_DEBUG("QemuCocoaView: grabMouse\n");
 
-    if (qemu_name)
-        [[self window] setTitle:[NSString stringWithFormat:@"QEMU %s - (Press  " UC_CTRL_KEY " " UC_ALT_KEY " G  to release Mouse)", qemu_name]];
-    else
-        [[self window] setTitle:@"QEMU - (Press  " UC_CTRL_KEY " " UC_ALT_KEY " G  to release Mouse)"];
+    [[self window] setTitle:[NSString stringWithFormat:
+        @"%@ - (Press  " UC_CTRL_KEY " " UC_ALT_KEY " G  to release Mouse)",
+        console->windowTitle ?: @"QEMU"]];
     [self hideCursor];
     CGAssociateMouseAndMouseCursorPosition(isAbsoluteEnabled);
     isMouseGrabbed = TRUE; // while isMouseGrabbed = TRUE, QemuCocoaApp sends all events to this view
@@ -1293,11 +1293,10 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (void) ungrabMouse
 {
     COCOA_DEBUG("QemuCocoaView: ungrabMouse\n");
-
-    if (qemu_name)
-        [[self window] setTitle:[NSString stringWithFormat:@"QEMU %s", qemu_name]];
-    else
-        [[self window] setTitle:@"QEMU"];
+    if (!isMouseGrabbed) {
+        return;
+    }
+    [[self window] setTitle:console->windowTitle ?: @"QEMU"];
     [self unhideCursor];
     CGAssociateMouseAndMouseCursorPosition(TRUE);
     isMouseGrabbed = FALSE;
@@ -1423,6 +1422,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [window setAcceptsMouseMovedEvents:YES];
         [window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
         [window setTitle:qemu_name ? [NSString stringWithFormat:@"QEMU %s", qemu_name] : @"QEMU"];
+        console.windowTitle = [[window title] retain];
         [window setContentView:console.view];
         [window makeKeyAndOrderFront:self];
         [window center];
@@ -1519,6 +1519,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         label = qemu_console_get_label(guest);
         [window setTitle:[NSString stringWithFormat:@"QEMU - %s",
                           label ? label : "Display"]];
+        extra->windowTitle = [[window title] retain];
         [window setContentView:extra->view];
         [window setDelegate:self];
 
@@ -1529,9 +1530,10 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         if (target) {
             visible = [target visibleFrame];
             frame = [window frame];
+            CGFloat cascade = MIN(120.0, (extraConsoles->len + 1) * 24.0);
             [window setFrameOrigin:NSMakePoint(
-                NSMinX(visible) + MAX(0, (NSWidth(visible) - NSWidth(frame)) / 2),
-                NSMinY(visible) + MAX(0, (NSHeight(visible) - NSHeight(frame)) / 2))];
+                NSMinX(visible) + MAX(0, (NSWidth(visible) - NSWidth(frame)) / 2 + cascade),
+                NSMinY(visible) + MAX(0, (NSHeight(visible) - NSHeight(frame)) / 2 - cascade))];
         }
 
         g_ptr_array_add(extraConsoles, extra);
@@ -1574,9 +1576,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [[extra->view window] setDelegate:nil];
         [[extra->view window] close];
         [extra->view release];
+        [extra->windowTitle release];
         g_free(extra);
     }
     g_ptr_array_free(extraConsoles, TRUE);
+    [console.windowTitle release];
     [console.view release];
     console.view = nil;
 
