@@ -12,6 +12,8 @@ on:
       - 'scripts/ensure-ninja.py'
       - 'scripts/whp-config/config.py'
       - 'scripts/tests/test-bundled-ninja-fallback.py'
+      - 'scripts/whp-build/sccache-policy.sh'
+      - 'docs/devel/sccache-build-memory.rst'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - 'scripts/tests/test-ninja-memory-budget.py'
