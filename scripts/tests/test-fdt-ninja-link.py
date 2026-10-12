@@ -3,8 +3,8 @@
 """Audit the Meson-generated Ninja link edge for QEMU's libfdt provider.
 
 This reads an existing build graph; it never deletes or rebuilds the tree.
-Use --internal for the pinned DTC wrap and --built after a successful build
-to verify that the archive actually defines fdt_nop_node.
+Use --internal for the pinned DTC wrap, --built to inspect its archive,
+and --linked after a complete emulator link to verify the final executable.
 """
 
 import argparse
@@ -105,6 +105,37 @@ def check_archive(build_dir):
     print("Verified: internal libfdt.a defines fdt_nop_node")
 
 
+def check_linked_emulator(build_dir, target):
+    # On Darwin the executable is linked as *-unsigned, then postprocessed
+    # into the installed qemu-system-* file. Inspect the true link product.
+    candidates = [build_dir / (target + "-unsigned"), build_dir / target]
+    executable = next((p for p in candidates if p.is_file()), None)
+    if executable is None:
+        fail("emulator link output missing: " +
+             ", ".join(str(p) for p in candidates))
+
+    nm = shutil.which("llvm-nm") or shutil.which("nm")
+    if not nm:
+        fail("nm/llvm-nm missing; cannot inspect linked emulator")
+    output = subprocess.run(
+        [nm, "-g", str(executable)], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if output.returncode:
+        fail("nm could not inspect linked emulator: " + output.stderr.strip())
+
+    # For -Dfdt=internal the symbol must be defined in the actual program.
+    # A U (undefined/imported) entry would not prove the pinned libfdt.a
+    # supplied it. A system-provider dynamic symbol is a separate case.
+    if not re.search(
+        r"(?m)^\s*(?:[0-9a-fA-F]+\s+)?[A-TV-Z]\s+_?fdt_nop_node\s*$",
+        output.stdout,
+    ):
+        fail("linked emulator does not define fdt_nop_node from internal libfdt;"
+             " inspect its final link command, symbol map and dead stripping")
+    print("Verified: linked emulator defines fdt_nop_node:", executable)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build_dir", type=pathlib.Path)
@@ -113,6 +144,8 @@ def main():
                         help="require the pinned internal DTC subproject")
     parser.add_argument("--built", action="store_true",
                         help="also inspect the compiled internal archive with nm")
+    parser.add_argument("--linked", action="store_true",
+                        help="check the actual linked qemu-system-* binary (internal provider)")
     args = parser.parse_args()
     build_dir = args.build_dir.resolve()
     if not (build_dir / "build.ninja").is_file():
@@ -133,10 +166,12 @@ def main():
             fail("Ninja graph omits libfdt/fdt_wip.c (the fdt_nop_node definition)")
     elif "-lfdt" not in link and "libfdt." not in link:
         fail("final emulator link has no visible libfdt dependency")
-    if args.built:
+    if args.built or args.linked:
         if not args.internal:
-            fail("--built requires --internal to identify the built archive")
+            fail("--built/--linked requires --internal to identify the provider")
         check_archive(build_dir)
+    if args.linked:
+        check_linked_emulator(build_dir, args.target)
     print("FDT Ninja link audit passed: provider=" + str(provider)
           + ", target=" + args.target)
 
