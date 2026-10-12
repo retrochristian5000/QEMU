@@ -52,8 +52,15 @@ jobs:
       - name: Link the actual PowerPC emulator with pinned libfdt
         run: ninja -C build-fdt qemu-system-ppc-unsigned
 
-      - name: Verify fdt_nop_node in the final QEMU Mach-O executable
+      - name: Audit final QEMU Mach-O FDT resolution
         run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --linked
+
+      - name: Smoke-test linked PowerPC executable and machine registration
+        run: |
+          build-fdt/qemu-system-ppc-unsigned -version
+          build-fdt/qemu-system-ppc-unsigned -machine help > build-fdt/ppc-machines.txt
+          grep -w mac99 build-fdt/ppc-machines.txt
+          grep -w sam460ex build-fdt/ppc-machines.txt
 
       - name: Configure and build standalone DTC tools on macOS
         run: |
