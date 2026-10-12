@@ -181,7 +181,30 @@ class NativeASanGlobalsTests(unittest.TestCase):
                 env=local, check=False,
             )
             self.assertNotEqual(proc.returncode, 0)
-            self.assertIn("conflicts with", proc.stderr)
+            self.assertIn("overrides", proc.stderr)
+
+            # This early POSIX guard must protect both driver commands and
+            # per-language flags before the macOS Bash wrapper runs.
+            for variable, injected in (
+                ("CC", "clang -fuse-ld=lld"),
+                ("CXX", "clang++ -fuse-ld=lld"),
+                ("CFLAGS", "--ld-path=/mock/llvm/bin/ld64.lld"),
+                ("CXXFLAGS", "-fuse-ld=lld"),
+                ("OBJCFLAGS", "-fuse-ld=lld"),
+                ("CPPFLAGS", "--ld-path=/mock/other/ld"),
+                ("LDFLAGS", "--ld-path=/mock/other/ld"),
+            ):
+                with self.subTest(early_linker_override=variable):
+                    local = dict(env, QEMU_ASAN="n", WHP_MACOS_ARCH="arm64e",
+                                 CC="", CXX="", CFLAGS="", CXXFLAGS="",
+                                 OBJCFLAGS="", CPPFLAGS="", LDFLAGS="")
+                    local[variable] = injected
+                    proc = subprocess.run(
+                        ["sh", "-c", shell_code], text=True,
+                        capture_output=True, env=local, check=False,
+                    )
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertIn(variable, proc.stderr)
 
     def test_native_bootstrap_runs_probe_only_for_requested_sanitizer(self):
         code = BOOTSTRAP.read_text(encoding="utf-8")
