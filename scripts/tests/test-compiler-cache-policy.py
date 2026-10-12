@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import subprocess
 import unittest
 from unittest import mock
 
@@ -107,6 +108,89 @@ class CompilerCachePolicyTests(unittest.TestCase):
 
         for key in inherited:
             self.assertNotIn(key, env, key)
+
+    def test_sccache_daemon_idle_policy_respects_user_configuration(self):
+        policy = ROOT / 'scripts' / 'whp-build' / 'sccache-policy.sh'
+        shell = '. "$1"; whp_sccache_memory_policy; ' \
+                'printf "%s|%s|%s" "${SCCACHE_IDLE_TIMEOUT-unset}" ' \
+                '"${SCCACHE_CACHE_SIZE-unset}" "${SCCACHE_CLIENT_SIDE-unset}"'
+
+        def run(vars):
+            return subprocess.run(
+                ['/bin/sh', '-c', shell, 'sh', str(policy)],
+                env=vars, text=True, capture_output=True,
+            )
+
+        result = run({})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '180|unset|unset')
+
+        result = run({'SCCACHE_IDLE_TIMEOUT': '0',
+                      'SCCACHE_CACHE_SIZE': '4G',
+                      'SCCACHE_CLIENT_SIDE': '0'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '0|4G|0')
+
+        result = run({'SCCACHE_CONF': '/tmp/whp-custom-sccache.toml'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'unset|unset|unset')
+
+        result = run({'SCCACHE_IDLE_TIMEOUT': 'not-seconds'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('SCCACHE_IDLE_TIMEOUT must be seconds', result.stderr)
+
+    def test_sccache_ninja_bootstrap_inherits_idle_and_client_overrides(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_sccache_env_test')
+        cache_dir = pathlib.Path('/tmp/whp-sccache')
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env = ninja.bootstrap_environment(
+                '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
+            )
+        self.assertEqual(env['SCCACHE_DIR'], str(cache_dir))
+        self.assertEqual(env['SCCACHE_IDLE_TIMEOUT'], '180')
+        self.assertNotIn('SCCACHE_CLIENT_SIDE', env)
+
+        with mock.patch.dict(os.environ, {
+            'SCCACHE_IDLE_TIMEOUT': '0',
+            'SCCACHE_CLIENT_SIDE': '1',
+            'SCCACHE_CACHE_SIZE': '3G',
+        }, clear=True):
+            env = ninja.bootstrap_environment(
+                '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
+            )
+        self.assertEqual(env['SCCACHE_IDLE_TIMEOUT'], '0')
+        self.assertEqual(env['SCCACHE_CLIENT_SIDE'], '1')
+        self.assertEqual(env['SCCACHE_CACHE_SIZE'], '3G')
+
+        with mock.patch.dict(os.environ, {
+            'SCCACHE_CONF': '/tmp/sccache.conf',
+        }, clear=True):
+            env = ninja.bootstrap_environment(
+                '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
+            )
+        self.assertNotIn('SCCACHE_IDLE_TIMEOUT', env)
+
+        with mock.patch.dict(os.environ, {
+            'SCCACHE_IDLE_TIMEOUT': '20m',
+        }, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'SCCACHE_IDLE_TIMEOUT'):
+                ninja.bootstrap_environment(
+                    '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
+                )
+
+    def test_sccache_cache_roots_align_with_shell_wrappers(self):
+        ninja = NINJA_BOOTSTRAP.read_text(encoding='utf-8')
+        native = (ROOT / 'scripts' / 'bootstrap-native-clang.bash').read_text(
+            encoding='utf-8')
+        wrapper = BUILD_WRAPPER.read_text(encoding='utf-8')
+        for source in (native, wrapper):
+            self.assertIn('sccache-policy.sh', source)
+            self.assertIn('whp_sccache_memory_policy', source)
+            self.assertIn('sccache-$cache_tag', source)
+        self.assertIn("cache_tag = f'{platform.system()}-{platform.machine()}'", ninja)
+        self.assertIn("requested = os.environ.get('SCCACHE_DIR')", ninja)
+        self.assertIn("'WHP_COMPILER_CACHE_ROOT'", ninja)
 
     def test_qemu_host_cache_is_build_time_only(self):
         text = BUILD_WRAPPER.read_text(encoding='utf-8')
