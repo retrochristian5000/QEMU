@@ -54,6 +54,97 @@ whp_macos_arch_probe_arm64e()
     return 1
 }
 
+# Audit the actual compiler-driver command and flag sources, not the WHP INI
+# documentation lists.  Clang's --ld-path= overrides -fuse-ld=, and C/C++
+# commands can each carry different selectors.  Match the established linker
+# choice before the wrapper adds QEMU's managed flags.
+whp_macos_audit_linker_driver_flags()
+{
+    local linker_kind variable value token selected_ld
+    local -a tokens=()
+
+    selected_ld="${LD:-}"
+    case "${NATIVE_LLVM_LDFLAG:-}" in
+        '') linker_kind=apple ;;
+        -fuse-ld=lld) linker_kind=lld ;;
+        *)
+            printf 'error: unknown macOS linker selection: %s\\n' \\
+                "$NATIVE_LLVM_LDFLAG" >&2
+            return 1
+            ;;
+    esac
+    if [[ "$linker_kind" == lld ]]; then
+        if [[ -z "${NATIVE_LLVM_DIR:-}" ||
+              "$selected_ld" != "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
+            printf 'error: native Mach-O LLD selection disagrees with LD: %s\\n' \\
+                "${selected_ld:-<unset>}" >&2
+            return 1
+        fi
+    elif [[ "$selected_ld" == */ld64.lld || "$selected_ld" == ld64.lld ]]; then
+        printf 'error: Apple ld policy conflicts with LD=%s\\n' "$selected_ld" >&2
+        return 1
+    fi
+
+    case "${WHP_MACOS_ARCH:-auto}:${QEMU_ASAN:-n}" in
+        arm64e:*|*:1|*:y)
+            if [[ "$linker_kind" == lld ]]; then
+                printf 'error: ARM64e/ASan needs Apple ld, not Mach-O LLD\\n' >&2
+                return 1
+            fi
+            ;;
+    esac
+
+    for variable in CC CXX OBJC CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+        value="${!variable:-}"
+        tokens=()
+        read -r -a tokens <<< "$value"
+        for token in "${tokens[@]}"; do
+            case "$token" in
+                -fuse-ld=lld)
+                    if [[ "$linker_kind" != lld ]]; then
+                        printf 'error: %s overrides Apple ld with %s\\n' \\
+                            "$variable" "$token" >&2
+                        return 1
+                    fi
+                    ;;
+                -fuse-ld=*|-fuse-ld)
+                    printf 'error: %s conflicts with selected %s linker: %s\\n' \\
+                        "$variable" "$linker_kind" "$token" >&2
+                    return 1
+                    ;;
+                --ld-path=*)
+                    # Even with -fuse-ld=lld, this option takes precedence.
+                    if [[ "$linker_kind" != lld ||
+                          "${token#--ld-path=}" != "$selected_ld" ]]; then
+                        printf 'error: %s overrides selected %s linker: %s\\n' \\
+                            "$variable" "$linker_kind" "$token" >&2
+                        return 1
+                    fi
+                    ;;
+                --ld-path)
+                    printf 'error: %s uses incomplete linker selector: %s\\n' \\
+                        "$variable" "$token" >&2
+                    return 1
+                    ;;
+                -Wl,-O2)
+                    if [[ "$linker_kind" == lld ]]; then
+                        printf 'error: %s uses Apple ld -O2 with Mach-O LLD\\n' \\
+                            "$variable" >&2
+                        return 1
+                    fi
+                    ;;
+                -Wl,--read-workers=*|-Wl,--threads=*)
+                    if [[ "$linker_kind" != lld ]]; then
+                        printf 'error: %s uses Mach-O LLD worker option with Apple ld: %s\\n' \\
+                            "$variable" "$token" >&2
+                        return 1
+                    fi
+                    ;;
+            esac
+        done
+    done
+}
+
 whp_select_macos_arch()
 {
     local compiler="$1"
