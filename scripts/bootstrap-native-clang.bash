@@ -544,31 +544,9 @@ esac
 
 whp_bootstrap_arm64e_lld_auth_probe()
 {
-    local probe_dir output
-    [[ -x "$TOOLCHAIN_DIR/bin/ld64.lld" &&
-       -x "$TOOLCHAIN_DIR/bin/llvm-objdump" ]] || return 1
-    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-lld-arm64e.XXXXXX")" || return 1
-    printf '%s\n' \
-        '.text' '.globl _whp_auth_target' '_whp_auth_target:' '  ret' \
-        '.data' '.p2align 3' \
-        '.quad _whp_auth_target@AUTH(ia,42,addr)' > "$probe_dir/auth.s"
-    output="$probe_dir/libwhp_auth.dylib"
-    if "$bootstrap_cc" -arch arm64e -isysroot "$sdkroot" \
-           "-mmacosx-version-min=$deployment_target" \
-           -x assembler -c "$probe_dir/auth.s" -o "$probe_dir/auth.o" \
-           >/dev/null 2>&1 &&
-       "$TOOLCHAIN_DIR/bin/ld64.lld" -arch arm64e \
-           -platform_version macos "$deployment_target" "$deployment_target" \
-           -dylib -install_name @rpath/libwhp_auth.dylib \
-           "$probe_dir/auth.o" -o "$output" >/dev/null 2>&1 &&
-       "$TOOLCHAIN_DIR/bin/llvm-objdump" --macho --chained-fixups "$output" \
-           > "$probe_dir/fixups.txt" 2>/dev/null &&
-       grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"; then
-        rm -rf "$probe_dir"
-        return 0
-    fi
-    rm -rf "$probe_dir"
-    return 1
+    "$BASH" "$SOURCE_DIR/scripts/whp-build/arm64e-lld-probe.bash" \
+        "$bootstrap_cc" "$sdkroot" "$deployment_target" \
+        "$TOOLCHAIN_DIR/bin/ld64.lld" "$TOOLCHAIN_DIR/bin/llvm-objdump"
 }
 
 bootstrap_lld_arch_ok=1
