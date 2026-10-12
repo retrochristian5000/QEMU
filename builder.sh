@@ -89,6 +89,8 @@ if [ -n "$cache_cmd" ]; then
         sccache)
             SCCACHE_DIR=${SCCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/sccache-$cache_tag}
             export SCCACHE_DIR
+            . "$script_dir/scripts/whp-build/sccache-policy.sh"
+            whp_sccache_memory_policy
             ;;
         *)
             printf 'error: unsupported compiler cache command: %s\n' "$cache_cmd" >&2
