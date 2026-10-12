@@ -50,6 +50,9 @@ on:
       - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-libisofs.py'
       - 'scripts/qapi/common.py'
+      - 'scripts/modinfo-collect.py'
+      - 'scripts/modinfo-generate.py'
+      - 'scripts/tests/test-modinfo-memory.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/bootstrap-i386-efi-grub.bash'
@@ -162,6 +165,7 @@ jobs:
           # Fail early on Python syntax errors before running config or Meson tests.
           python3 -m py_compile scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-qapi-c23-keywords.py
+          python3 scripts/tests/test-modinfo-memory.py
           python3 scripts/tests/test-cxx-standard-config.py
           python3 scripts/tests/test-bash-bootstrap.py
           python3 scripts/tests/test-whp-config.py

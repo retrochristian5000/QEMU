@@ -3,7 +3,7 @@
 import argparse
 import os
 import sys
-from typing import Optional
+from typing import Iterable, Optional
 
 
 def print_array(name: str, values: list[str]) -> None:
@@ -34,7 +34,7 @@ def parse_line(line: str) -> tuple[str, str]:
             continue
     return (kind, data)
 
-def parse_modinfo(name: str, lines: list[str], enabled: set[str]) -> Optional[dict]:
+def parse_modinfo(name: str, lines: Iterable[str], enabled: set[str]) -> Optional[dict]:
     """Parse a modinfo file and return module metadata, or None if disabled."""
     arch = ""
     objs = []
@@ -115,7 +115,7 @@ def main() -> None:
     enabled = set()
     if args.devices:
         with open(args.devices) as file:
-            for line in file.readlines():
+            for line in file:
                 config = line.split('=')
                 if config[1].rstrip() == 'y':
                     enabled.add(config[0][7:])  # remove CONFIG_
@@ -123,10 +123,9 @@ def main() -> None:
     # all_modules: modinfo path -> (basename, parsed module or None, skip_reason)
     all_modules = {}
     for modinfo in args.modinfo:
-        with open(modinfo) as f:
-            lines = f.readlines()
         (basename, _) = os.path.splitext(modinfo)
-        mod = parse_modinfo(basename, lines, enabled)
+        with open(modinfo) as f:
+            mod = parse_modinfo(basename, f, enabled)
         skip_reason = "kconfig" if mod is None else None
         all_modules[modinfo] = (basename, mod, skip_reason)
 
