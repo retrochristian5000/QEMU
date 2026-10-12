@@ -48,14 +48,14 @@ def find_link_command(lines, target):
     # The macOS executable is linked as *-unsigned before entitlement signing.
     output_name = target + "-unsigned"
     for line in reversed(lines):
-        if not re.search(r"(?:^|\\s)-o\\s+", line):
+        if not re.search(r"(?:^|\s)-o\s+", line):
             continue
         if re.search(
-            r"(?:^|\\s)-o\\s+(?:\\S*/)?"
-            + re.escape(output_name) + r"(?:\\s|$)", line
+            r"(?:^|\s)-o\s+(?:\S*/)?"
+            + re.escape(output_name) + r"(?:\s|$)", line
         ) or re.search(
-            r"(?:^|\\s)-o\\s+(?:\\S*/)?"
-            + re.escape(target) + r"(?:\\s|$)", line
+            r"(?:^|\s)-o\s+(?:\S*/)?"
+            + re.escape(target) + r"(?:\s|$)", line
         ):
             return line
     fail("no final compiler/linker command for " + target)
@@ -75,7 +75,7 @@ def check_archive(build_dir):
     if output.returncode:
         fail("nm could not inspect internal libfdt: " + output.stderr.strip())
     if not re.search(
-        r"(?m)^\\s*(?:[0-9a-fA-F]+\\s+)?[A-TV-Z]\\s+_?fdt_nop_node\\s*$",
+        r"(?m)^\s*(?:[0-9a-fA-F]+\s+)?[A-TV-Z]\s+_?fdt_nop_node\s*$",
         output.stdout,
     ):
         fail("libfdt.a does not define fdt_nop_node; inspect fdt_wip.c compilation")
