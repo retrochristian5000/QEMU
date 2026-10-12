@@ -2086,14 +2086,17 @@ if fdt_opt in ['enabled', 'system'] or (fdt_opt == 'auto' and have_system)
   if fdt.found() and cc.links('''
      #include <libfdt.h>
      #include <libfdt_env.h>
-     int main(void) { fdt_find_max_phandle(NULL, NULL); return 0; }''',
+     int main(void) {
+       fdt_find_max_phandle(NULL, NULL);
+       return fdt_nop_node(NULL, 0);
+     }''',
        dependencies: fdt)
     fdt_opt = 'system'
   elif fdt_opt != 'system'
     fdt_opt = get_option('wrap_mode') == 'nodownload' ? 'disabled' : 'internal'
     fdt = not_found
   else
-    error('system libfdt is too old (1.5.1 or newer required)')
+    error('system libfdt is too old or missing required FDT symbols (fdt_find_max_phandle, fdt_nop_node)')
   endif
 endif
 if fdt_opt == 'internal'
