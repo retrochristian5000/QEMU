@@ -14,6 +14,17 @@ cat > "$FAKE_CLANG" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${TEST_COMPILER_LOG:?}"
+source_text="$(cat)"
+# The fake driver cannot preprocess, so require the regression fixture to
+# contain ABI feature checks before simulating Clang's accept/reject decision.
+[[ "$source_text" == *'__arm64e__'* &&
+   "$source_text" == *'__PTRAUTH__'* &&
+   "$source_text" == *'__has_feature(ptrauth_calls)'* &&
+   "$source_text" == *'int (*volatile callback)(void)'* ]] || exit 1
+if [[ " $* " == *' -arch arm64e '* &&
+      "${TEST_ARM64E_PTRAUTH:-1}" != 1 ]]; then
+    exit 1
+fi
 if [[ " $* " == *' -arch arm64e '* && "${TEST_ARM64E_SUPPORTED:-1}" != 1 ]]; then
     exit 1
 fi
@@ -50,6 +61,16 @@ selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=arm64e \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
 [[ "$selected" == arm64e ]]
 grep -Fq -- '-arch arm64e' "$TEST_COMPILER_LOG"
+
+# A driver accepting -arch arm64e without the arm64e call-authentication ABI
+# is not a valid compiler for the explicit development lane.
+if TEST_ARM64E_PTRAUTH=0 WHP_MACOS_ARCH=arm64e \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 \
+        >"$TEST_DIR/no-ptrauth.out" 2>"$TEST_DIR/no-ptrauth.err"; then
+    printf '%s\n' 'error: arm64e without authenticated calls unexpectedly succeeded' >&2
+    exit 1
+fi
+grep -Fq 'requested arm64e' "$TEST_DIR/no-ptrauth.err"
 
 if TEST_ARM64E_SUPPORTED=0 WHP_MACOS_ARCH=arm64e \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 \
