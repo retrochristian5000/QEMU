@@ -66,7 +66,7 @@ def check_pinned_dtc():
     root = pathlib.Path(__file__).resolve().parents[2]
     wrap = root / "subprojects" / "dtc.wrap"
     match = re.search(
-        r"(?m)^revision\\s*=\\s*([0-9a-fA-F]{40})\\s*$",
+        r"(?m)^revision\s*=\s*([0-9a-fA-F]{40})\s*$",
         wrap.read_text(encoding="utf-8"),
     )
     if not match:
