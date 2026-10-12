@@ -361,6 +361,17 @@ if [[ "$host_os" == macos ]]; then
         printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2
         exit 1
     }
+    # The standalone LLVM bootstrap does not always run through QEMU's
+    # macos-builder policy. Do not pass a pre-Apple-Silicon deployment
+    # target into CMake/compiler-rt even if an installed compiler accepts it.
+    if [[ "$host_tag" == aarch64 ]]; then
+        if [[ ! "$deployment_target" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] ||
+           (( 10#${deployment_target%%.*} < 11 )); then
+            printf 'error: native LLVM arm64/arm64e deployment target must be macOS 11.0 or newer: %s\n' \
+                "$deployment_target" >&2
+            exit 1
+        fi
+    fi
 fi
 unset seed_cc seed_cxx
 
