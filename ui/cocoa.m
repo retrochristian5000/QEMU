@@ -450,7 +450,42 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (void) selectConsoleLocked:(unsigned int)index
 {
     QemuConsole *con = qemu_console_lookup_by_index(index);
+
     if (!con) {
+        return;
+    }
+
+    /*
+     * Every graphical head has its own Cocoa window. Selecting it from the
+     * View menu or via Ctrl+Alt+1..9 must focus that window, not steal its
+     * display listener and show the same guest head in two windows.
+     */
+    for (NSWindow *window in [NSApp windows]) {
+        QemuCocoaView *view = (QemuCocoaView *)[window contentView];
+
+        if ([view isKindOfClass:[QemuCocoaView class]] &&
+            view->console->con == con) {
+            [window makeKeyAndOrderFront:self];
+            return;
+        }
+    }
+
+    /*
+     * Console switching for unbound or text consoles belongs to the main
+     * window. In particular, never repurpose a secondary graphical window
+     * when a guest requests QEMU's monitor console.
+     */
+    if (!console->is_primary) {
+        for (NSWindow *window in [NSApp windows]) {
+            QemuCocoaView *view = (QemuCocoaView *)[window contentView];
+
+            if ([view isKindOfClass:[QemuCocoaView class]] &&
+                view->console->is_primary) {
+                [view selectConsoleLocked:index];
+                [window makeKeyAndOrderFront:self];
+                return;
+            }
+        }
         return;
     }
 
