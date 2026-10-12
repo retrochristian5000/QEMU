@@ -45,7 +45,7 @@ def source_test():
     assert "config SAM460EX\n    bool\n    default y\n    depends on PPC && FDT" in kconfig
 
 
-def runtime_test():
+def runtime_test(build_dir=None):
     code = r"""
 #include <libfdt.h>
 #include <libfdt_env.h>
@@ -78,13 +78,25 @@ int main(void)
 }
 """
     cc = shlex.split(os.environ.get("CC", "cc"))
+    include_flags = []
+    fdt_link = ["-lfdt"]
+    if build_dir is not None:
+        # The CI build uses our pinned Meson DTC fallback, not libfdt-dev.
+        archive = build_dir / "subprojects" / "dtc" / "libfdt" / "libfdt.a"
+        headers = ROOT / "subprojects" / "dtc" / "libfdt"
+        if not archive.is_file() or not (headers / "libfdt.h").is_file():
+            raise SystemExit("internal DTC archive/headers unavailable: " +
+                             str(archive))
+        include_flags = ["-I", str(headers)]
+        fdt_link = [str(archive)]
+
     with tempfile.TemporaryDirectory(prefix="whp-sam460ex-fdt-") as folder:
         file = Path(folder) / "fdt-nop.c"
         binary = Path(folder) / "fdt-nop"
         file.write_text(code, encoding="utf-8")
         subprocess.run(
             [*cc, "-std=gnu11", "-Wall", "-Wextra", "-Werror",
-             str(file), "-o", str(binary), "-lfdt"],
+             *include_flags, str(file), "-o", str(binary), *fdt_link],
             check=True,
         )
         subprocess.run([str(binary)], check=True)
@@ -94,10 +106,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime", action="store_true",
                         help="compile and run a libfdt node removal smoke test")
+    parser.add_argument("--build-dir", type=Path,
+                        help="use this Meson build's pinned internal libfdt.a")
     args = parser.parse_args()
     source_test()
     if args.runtime:
-        runtime_test()
+        runtime_test(args.build_dir.resolve() if args.build_dir else None)
     print("Sam460ex libfdt node removal contract passed")
 
 
