@@ -125,16 +125,30 @@ jobs:
           mkdir build-ci
           cd build-ci
           set -o pipefail
+          fdt_args=()
+          if [[ "${{ matrix.target }}" == ppc ]]; then
+            # Test the pinned WHP DTC fallback, not the runner's libfdt-dev.
+            fdt_args=(-Dfdt=internal)
+          fi
           ../configure \
             --target-list=${{ matrix.target }}-softmmu \
+            "${fdt_args[@]}" \
             --disable-docs \
             2>&1 | tee configure.log
+
+      - name: Audit internal DTC Ninja link graph
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal
 
       - name: Build ${{ matrix.target }}
         shell: bash
         run: |
           set -o pipefail
           ninja -C build-ci qemu-system-${{ matrix.target }} 2>&1 | tee build-ci/build.log
+
+      - name: Verify linked libfdt archive exports fdt_nop_node
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal --built
 
       - name: Smoke-test ${{ matrix.target }}
         run: |
