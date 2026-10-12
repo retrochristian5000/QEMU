@@ -162,9 +162,9 @@ jobs:
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-glib-atomic-int-get.py --runtime
 
-      - name: Exercise libfdt node removal on PowerPC build host
+      - name: Exercise pinned DTC libfdt node removal on PowerPC build host
         if: matrix.target == 'ppc'
-        run: python3 scripts/tests/test-sam460ex-fdt-nop.py --runtime
+        run: python3 scripts/tests/test-sam460ex-fdt-nop.py --runtime --build-dir build-ci
 
       - name: Exercise GLib g_memdup2 copy semantics
         if: matrix.target == 'ppc'
