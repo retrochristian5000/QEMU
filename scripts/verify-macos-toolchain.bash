@@ -472,6 +472,43 @@ SOURCE
     require_output_arch CXX "$output" "$link_arch"
 }
 
+# ARM64e C++ unwind personality references require authenticated pointer
+# handling that a simple vector/main test does not exercise. Link only.
+compile_arm64e_cxx_unwind_probe()
+{
+    local source="$MACOS_COMPILER_PROBE_DIR/CXX-unwind.cc"
+    local output="$MACOS_COMPILER_PROBE_DIR/CXX-unwind"
+
+    cat > "$source" <<'SOURCE'
+#include <stdexcept>
+static int check_unwind(int value) {
+    if (value)
+        throw std::runtime_error("arm64e-lld");
+    return 0;
+}
+int main(int argc, char **) {
+    try {
+        return check_unwind(argc);
+    } catch (const std::exception &) {
+        return 0;
+    }
+}
+SOURCE
+    set_command "$CXX"
+    split_flags "${CXXFLAGS:-}"
+    CXX_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    split_flags "${CPPFLAGS:-}"
+    CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    split_flags "${LDFLAGS:-}"
+    LD_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
+    "${COMPILER_CMD[@]}" \
+        ${CPP_FLAGS[@]+"${CPP_FLAGS[@]}"} \
+        ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} \
+        -fexceptions -x c++ "$source" -o "$output" \
+        ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
+    require_output_arch CXX_UNWIND "$output" "$link_arch"
+}
+
 compile_objc_probe()
 {
     local source="$MACOS_COMPILER_PROBE_DIR/OBJC.m"
@@ -512,6 +549,9 @@ write_identity CC_FOR_BUILD "$CC_FOR_BUILD" "$host_arch" c
 
 compile_c_probe CC "$CC" "$link_arch"
 compile_cxx_probe
+if [[ "$link_arch" == arm64e && "${WHP_ARM64E_USE_LLD:-0}" == 1 ]]; then
+    compile_arm64e_cxx_unwind_probe
+fi
 compile_objc_probe
 compile_build_probe
 
