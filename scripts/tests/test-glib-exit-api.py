@@ -21,7 +21,7 @@ runstate = (ROOT / "system/runstate.c").read_text(encoding="utf-8")
 # names must not be reintroduced in compiled sources, including C++.
 result = subprocess.run(
     ["git", "-C", str(ROOT), "grep", "-n", "-E",
-     r"(^|[^[:alnum:]_])(g_atexit|g_ATEXIT|ATEXIT)[[:space:]]*\\(",
+     r"(^|[^[:alnum:]_])(g_atexit|g_ATEXIT|ATEXIT)[[:space:]]*\(",
      "--", "*.c", "*.h", "*.cc", "*.cpp"],
     text=True, capture_output=True,
 )
