@@ -644,7 +644,13 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (NSSize) screenSafeAreaSize
 {
-    NSScreen *windowScreen = [[self window] screen];
+    NSScreen *windowScreen = [[self window] screen] ?: [NSScreen mainScreen];
+
+    /* During a monitor unplug or window move, AppKit can temporarily have
+     * no NSScreen for a window. Never shrink a guest display to zero. */
+    if (!windowScreen) {
+        return [self frame].size;
+    }
     NSSize size = [windowScreen frame].size;
     NSEdgeInsets insets = cocoa_screen_safe_area_insets(windowScreen);
     size.width -= insets.left + insets.right;
@@ -685,7 +691,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         return;
     }
 
-    if ([self window]) {
+    if ([self window] && [[self window] screen]) {
         NSScreen *windowScreen = [[self window] screen];
         CGDirectDisplayID display = cocoa_screen_display_id(windowScreen);
         NSSize screenSize = [windowScreen frame].size;
@@ -719,10 +725,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void) updateUIInfo
 {
-    if (!allow_events) {
+    if (!allow_events || !console->dcl.con || !console->con) {
         /*
-         * Don't try to tell QEMU about UI information in the application
-         * startup phase -- we haven't yet registered dcl with the QEMU UI
+         * Don't tell QEMU about UI information until this view has its own
+         * registered display listener (secondary windows may be positioned
+         * and resized before registration).
          * layer.
          * When cocoa_display_init() does register the dcl, the UI layer
          * will call cocoa_switch(), which will call updateUIInfo, so
@@ -1574,6 +1581,10 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     COCOA_DEBUG("QemuCocoaAppController: applicationDidFinishLaunching\n");
     allow_events = true;
     [console.view updateUIInfo];
+    for (guint i = 0; i < extraConsoles->len; i++) {
+        CocoaConsole *extra = g_ptr_array_index(extraConsoles, i);
+        [extra->view updateUIInfo];
+    }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification
