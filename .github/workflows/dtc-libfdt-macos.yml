@@ -25,7 +25,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install native build dependencies
-        run: brew install pkg-config meson ninja glib pixman
+        run: |
+          brew install pkg-config meson ninja glib pixman flex bison
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
 
       - name: Configure pinned internal DTC provider
         run: |
@@ -45,3 +48,13 @@ jobs:
           python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --built
           python3 scripts/tests/test-sam460ex-fdt-nop.py \
             --runtime --build-dir build-fdt
+
+      - name: Configure and build standalone DTC tools on macOS
+        run: |
+          meson setup build-dtc-native subprojects/dtc \
+            -Dtools=true -Dtests=true -Dpython=disabled \
+            -Dyaml=disabled -Dvalgrind=disabled
+          meson compile -C build-dtc-native
+
+      - name: Test native DTC and libfdt runtime paths
+        run: meson test -C build-dtc-native --print-errorlogs libfdt utilfdt dtc
