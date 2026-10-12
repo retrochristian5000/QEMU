@@ -32,6 +32,7 @@ struct sdl2_console {
     DisplaySurface *surface;
     DisplayOptions *opts;
     SDL_Texture *texture;
+    bool frame_dirty; /* Uploaded damage awaiting one frame presentation. */
     SDL_Window *real_window;
     SDL_Renderer *real_renderer;
     int idx;
