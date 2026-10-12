@@ -151,6 +151,47 @@ def macho_object_abi(contents, label):
     return abi, cpu_subtype
 
 
+def macho_minimum_macos(contents, label):
+    """Extract the object/executable deployment floor from Mach-O commands."""
+    import struct
+
+    if len(contents) < 32 or contents[:4] != b"\xcf\xfa\xed\xfe":
+        fail(label + ": expected a thin little-endian 64-bit Mach-O image")
+    header = struct.unpack_from("<8I", contents)
+    ncmds, sizecmds = header[4], header[5]
+    end = 32 + sizecmds
+    if end > len(contents):
+        fail(label + ": Mach-O load commands exceed file size")
+    offset = 32
+    result = None
+    for _ in range(ncmds):
+        if offset + 8 > end:
+            fail(label + ": truncated Mach-O load-command header")
+        cmd, size = struct.unpack_from("<II", contents, offset)
+        if size < 8 or offset + size > end:
+            fail(label + ": malformed Mach-O load command")
+        packed = None
+        if cmd == 0x32 and size >= 24:  # LC_BUILD_VERSION
+            platform, minimum = struct.unpack_from("<II", contents, offset + 8)
+            if platform == 1:  # PLATFORM_MACOS
+                packed = minimum
+        elif cmd == 0x24 and size >= 16:  # LC_VERSION_MIN_MACOSX
+            packed, = struct.unpack_from("<I", contents, offset + 8)
+        if packed is not None:
+            result = (packed >> 16, (packed >> 8) & 255, packed & 255)
+        offset += size
+    if offset != end:
+        fail(label + ": inconsistent Mach-O load-command lengths")
+    if result is None:
+        fail(label + ": missing LC_BUILD_VERSION or LC_VERSION_MIN_MACOSX "
+             "deployment metadata")
+    return result
+
+
+def macos_version_string(version):
+    return ".".join(str(n) for n in version)
+
+
 def check_macho_abi(build_dir, expected_arch=None):
     """Audit actual DTC archive members against QEMU's device-tree object."""
     archive = build_dir / "subprojects" / "dtc" / "libfdt" / "libfdt.a"
@@ -162,6 +203,19 @@ def check_macho_abi(build_dir, expected_arch=None):
     expected_abi, expected_subtype = macho_object_abi(
         qemu_object.read_bytes(), str(qemu_object)
     )
+    consumer_min = macho_minimum_macos(
+        qemu_object.read_bytes(), str(qemu_object)
+    )
+    if consumer_min < (11, 0, 0):
+        fail("QEMU ARM64 object targets macOS " +
+             macos_version_string(consumer_min) + "; minimum is 11.0")
+    linked = build_dir / "qemu-system-ppc-unsigned"
+    output_min = macho_minimum_macos(
+        linked.read_bytes(), str(linked)
+    ) if linked.is_file() else consumer_min
+    if output_min < (11, 0, 0):
+        fail("PowerPC emulator targets macOS " +
+             macos_version_string(output_min) + "; ARM64 requires 11.0+")
     if expected_arch is not None and expected_abi != expected_arch:
         fail("QEMU device-tree object uses " + expected_abi +
              ", expected " + expected_arch + " (CPU subtype " +
@@ -189,6 +243,17 @@ def check_macho_abi(build_dir, expected_arch=None):
             fail("could not read libfdt.a member " + name + ": " +
                  member.stderr.decode(errors="replace").strip())
         abi, subtype = macho_object_abi(member.stdout, name)
+        member_min = macho_minimum_macos(member.stdout, name)
+        if member_min < (11, 0, 0):
+            fail("libfdt.a(" + name + ") targets macOS " +
+                 macos_version_string(member_min) +
+                 "; ARM64/ARM64e requires 11.0+")
+        if member_min > output_min:
+            fail("libfdt.a(" + name + ") requires macOS " +
+                 macos_version_string(member_min) +
+                 ", newer than QEMU executable deployment target " +
+                 macos_version_string(output_min) +
+                 "; align QEMU and DTC MACOSX_DEPLOYMENT_TARGET")
         if abi != expected_abi or (abi == "arm64e" and
                                    subtype != expected_subtype):
             fail("Mach-O ABI mismatch: QEMU device_tree.c.o is " +
@@ -199,7 +264,8 @@ def check_macho_abi(build_dir, expected_arch=None):
                  "with the selected -arch; do not add a duplicate symbol")
     print("Verified: " + str(len(names)) +
           " libfdt.a Mach-O objects match QEMU device_tree.c.o: " +
-          expected_abi + "/" + hex(expected_subtype))
+          expected_abi + "/" + hex(expected_subtype) +
+          "; executable minimum macOS " + macos_version_string(output_min))
 
 
 def check_linked_emulator(build_dir, target):
