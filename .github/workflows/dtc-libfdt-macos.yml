@@ -19,7 +19,7 @@ permissions:
 jobs:
   libfdt:
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - name: Check out QEMU
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -48,6 +48,12 @@ jobs:
           python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --built
           python3 scripts/tests/test-sam460ex-fdt-nop.py \
             --runtime --build-dir build-fdt
+
+      - name: Link the actual PowerPC emulator with pinned libfdt
+        run: ninja -C build-fdt qemu-system-ppc-unsigned
+
+      - name: Verify fdt_nop_node in the final QEMU Mach-O executable
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --linked
 
       - name: Configure and build standalone DTC tools on macOS
         run: |
