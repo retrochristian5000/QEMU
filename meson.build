@@ -2102,8 +2102,9 @@ endif
 if fdt_opt == 'internal'
   assert(not fdt.found())
   libfdt_proj = subproject('dtc', required: true,
-                           default_options: ['tools=false',  'yaml=disabled',
-                                             'python=disabled', 'default_library=static'])
+                           default_options: ['tools=false', 'yaml=disabled',
+                                             'python=disabled', 'tests=false',
+                                             'default_library=static'])
   fdt = libfdt_proj.get_variable('libfdt_dep')
 endif
 
