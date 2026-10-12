@@ -13,7 +13,6 @@ import pathlib
 import re
 import shutil
 import subprocess
-import sys
 
 
 def fail(message):
@@ -61,6 +60,30 @@ def find_link_command(lines, target):
     fail("no final compiler/linker command for " + target)
 
 
+def check_pinned_dtc():
+    # A persistent Meson source checkout does not necessarily move when its
+    # wrap file changes. Catch a stale DTC checkout before blaming Ninja.
+    root = pathlib.Path(__file__).resolve().parents[2]
+    wrap = root / "subprojects" / "dtc.wrap"
+    match = re.search(
+        r"(?m)^revision\\s*=\\s*([0-9a-fA-F]{40})\\s*$",
+        wrap.read_text(encoding="utf-8"),
+    )
+    if not match:
+        fail("DTC wrap does not contain an immutable 40-character revision")
+    checkout = root / "subprojects" / "dtc"
+    revision = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if revision.returncode:
+        fail("internal DTC checkout missing or unreadable: " + str(checkout))
+    if revision.stdout.strip() != match.group(1):
+        fail("DTC checkout is not at pinned wrap revision " + match.group(1)
+             + "; update the Meson-owned DTC checkout, preserving your build")
+    print("Verified: internal DTC checkout matches pinned wrap revision")
+
+
 def check_archive(build_dir):
     archive = build_dir / "subprojects" / "dtc" / "libfdt" / "libfdt.a"
     if not archive.is_file():
@@ -103,6 +126,7 @@ def main():
     link = find_link_command(commands, args.target)
     archive_name = "subprojects/dtc/libfdt/libfdt.a"
     if args.internal:
+        check_pinned_dtc()
         if archive_name not in link:
             fail("final emulator link omits the internal DTC libfdt.a archive")
         if not any("fdt_wip.c" in cmd for cmd in commands):
