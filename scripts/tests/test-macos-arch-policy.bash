@@ -176,6 +176,30 @@ if audit_linker_flags apple CXXFLAGS '-Wl,--read-workers=8'         >"$TEST_DIR/
     exit 1
 fi
 
+# Explicit ARM64e LLD cannot accidentally become the default.
+if (
+    LD=/mock/llvm/bin/ld64.lld
+    NATIVE_LLVM_DIR=/mock/llvm
+    NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+    WHP_MACOS_ARCH=arm64e
+    WHP_ARM64E_USE_LLD=0
+    QEMU_ASAN=n
+    CC=clang CXX=clang++ OBJC=clang
+    CFLAGS= CXXFLAGS= OBJCFLAGS= CPPFLAGS= LDFLAGS=
+    whp_macos_audit_linker_driver_flags
+) >"$TEST_DIR/disabled-lld.out" 2>"$TEST_DIR/disabled-lld.err"; then
+    printf 'error: ARM64e LLD unexpectedly enabled without opt-in\n' >&2
+    exit 1
+fi
+grep -Fq 'WHP_ARM64E_USE_LLD=1' "$TEST_DIR/disabled-lld.err"
+
+# Check selected output ABI separately from the executing process ABI.
+toolchain_verifier="$SOURCE_DIR/scripts/verify-macos-toolchain.bash"
+grep -Fq 'link_arch="${WHP_MACOS_ARCH:-$host_arch}"' "$toolchain_verifier"
+grep -Fq 'compile_c_probe CC "$CC" "$link_arch"' "$toolchain_verifier"
+grep -Fq 'require_output_arch CXX "$output" "$link_arch"' "$toolchain_verifier"
+grep -Fq 'require_output_arch OBJC "$output" "$link_arch"' "$toolchain_verifier"
+
 # Integration contract: the macOS QEMU wrapper owns the final Apple -arch
 # choice and applies it consistently to C, C++, Objective-C, and links.
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
