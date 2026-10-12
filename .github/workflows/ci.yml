@@ -45,6 +45,9 @@ jobs:
       - name: Test qemu-nbd include hygiene
         run: python3 scripts/tests/test-qemu-nbd-includes.py
 
+      - name: Audit GLib atomic integer read contracts
+        run: python3 scripts/tests/test-glib-atomic-int-get.py
+
       - name: Guard GLib 2.66 compatibility and memory-copy calls
         run: python3 scripts/tests/test-glib-safe-memory.py
 
@@ -134,6 +137,10 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Test concurrent GLib atomic counter draining
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-glib-atomic-int-get.py --runtime
 
       - name: Exercise GLib g_memdup2 copy semantics
         if: matrix.target == 'ppc'
