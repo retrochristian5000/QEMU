@@ -50,9 +50,9 @@ enum {
 };
 
 uint8_t trace_buf[TRACE_BUF_LEN];
-static volatile gint trace_idx;
+static gint trace_idx;
 static unsigned int writeout_idx;
-static volatile gint dropped_events;
+static gint dropped_events;
 static uint32_t trace_pid;
 static FILE *trace_fp;
 static char *trace_file_name;
