@@ -36,6 +36,12 @@ def source_test():
     assert "fdt_find_max_phandle(NULL, NULL);" in meson
     assert "return fdt_nop_node(NULL, 0);" in meson
     assert "dependencies: fdt" in meson
+    # The library probe is insufficient if the final emulator link drops
+    # the dependency after extracting system/device_tree.c from libsystem.
+    assert "if 'CONFIG_DEVICE_TREE' in config_target" in meson
+    assert "arch_deps += [fdt]" in meson
+    assert "dependencies: arch_deps + exe['dependencies']" in meson
+    assert 'fdt_nop_mode' not in device_tree
     assert "config SAM460EX\n    bool\n    default y\n    depends on PPC && FDT" in kconfig
 
 

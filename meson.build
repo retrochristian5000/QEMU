@@ -4393,6 +4393,12 @@ foreach target : target_dirs
     src = system_ss.apply(config_target, strict: false)
     objects += libsystem.extract_objects(src.sources())
     arch_deps += src.dependencies()
+    if 'CONFIG_DEVICE_TREE' in config_target
+      # The final emulator links objects extracted from libsystem, not
+      # libsystem itself. Keep libfdt on the executable's link dependency
+      # list so fdt_nop_node and the other FDT entry points are resolved.
+      arch_deps += [fdt]
+    endif
   endif
   if target_type == 'user'
     src = user_ss.apply(config_target, strict: false)
