@@ -19,7 +19,7 @@ objdump="$5"
 
 compiler_command=()
 read -r -a compiler_command <<< "$compiler"
-[[ ${#compiler_command[@]} -gt 0 ]] || exit 1
+[[ -n "${compiler_command[0]:-}" ]] || exit 1
 
 probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-lld-arm64e.XXXXXX")"
 trap 'rm -rf "$probe_dir"' EXIT
