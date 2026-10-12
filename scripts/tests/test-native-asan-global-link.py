@@ -123,7 +123,9 @@ class NativeASanGlobalsTests(unittest.TestCase):
         build = (ROOT / "build.sh").read_text(encoding="utf-8")
         bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIn('case "${QEMU_ASAN:-n}:${WHP_MACOS_ARCH:-auto}" in', build)
-        self.assertIn("1:*|y:*|*:arm64e)", build)
+        self.assertIn("1:*|y:*)", build)
+        self.assertIn("*:arm64e)", build)
+        self.assertIn('WHP_ARM64E_USE_LLD', build)
         self.assertIn("LD=$(xcrun --find ld) || exit 1", build)
         self.assertIn("NATIVE_LLVM_LDFLAG=", build)
         self.assertIn('LD="$NATIVE_LLVM_DIR/bin/ld64.lld"', build)
@@ -135,9 +137,9 @@ class NativeASanGlobalsTests(unittest.TestCase):
         # Run the POSIX shell decision from build.sh against a fake xcrun.
         # This detects misplaced branches that source-text assertions miss.
         build = (ROOT / "build.sh").read_text(encoding="utf-8")
-        start = build.index("    # Keep the QEMU linker consistent with the LLVM")
+        start = build.index("    # Keep Clang, compiler-rt, and Mach-O linker selection coherent.")
         start = build.index('    if [ "$WHP_HOST_OS" = macos ]; then', start)
-        end_text = "        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS\\n    fi"
+        end_text = "        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS WHP_ARM64E_USE_LLD\\n    fi"
         end = build.index(end_text, start) + len(end_text)
         shell_code = build[start:end] + (
             '\\nprintf "%s|%s|%s\\n" "$LD" "$NATIVE_LLVM_LDFLAG" "$LDFLAGS"\\n'
@@ -167,15 +169,30 @@ class NativeASanGlobalsTests(unittest.TestCase):
             ):
                 with self.subTest(asan=asan, arch=arch):
                     local = dict(env, QEMU_ASAN=asan, WHP_MACOS_ARCH=arch,
-                                 LDFLAGS="")
+                                 WHP_ARM64E_USE_LLD="0", LDFLAGS="")
                     proc = subprocess.run(
                         ["sh", "-c", shell_code], text=True, capture_output=True,
                         env=local, check=False,
                     )
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     self.assertEqual(proc.stdout.splitlines()[-1], expected)
+            # The arm64e Mach-O LLD path is explicitly opt-in. This tests
+            # the POSIX selection logic; a separate probe checks actual
+            # authenticated relocations before the macOS wrapper links QEMU.
+            local = dict(env, QEMU_ASAN="n", WHP_MACOS_ARCH="arm64e",
+                         WHP_ARM64E_USE_LLD="1", LDFLAGS="")
+            proc = subprocess.run(
+                ["sh", "-c", shell_code], text=True, capture_output=True,
+                env=local, check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(
+                proc.stdout.splitlines()[-1],
+                "/mock/llvm/bin/ld64.lld|-fuse-ld=lld|-fuse-ld=lld",
+            )
+
             local = dict(env, QEMU_ASAN="y", WHP_MACOS_ARCH="arm64",
-                         LDFLAGS="-fuse-ld=lld")
+                         WHP_ARM64E_USE_LLD="0", LDFLAGS="-fuse-ld=lld")
             proc = subprocess.run(
                 ["sh", "-c", shell_code], text=True, capture_output=True,
                 env=local, check=False,
@@ -196,6 +213,7 @@ class NativeASanGlobalsTests(unittest.TestCase):
             ):
                 with self.subTest(early_linker_override=variable):
                     local = dict(env, QEMU_ASAN="n", WHP_MACOS_ARCH="arm64e",
+                                 WHP_ARM64E_USE_LLD="0",
                                  CC="", CXX="", CFLAGS="", CXXFLAGS="",
                                  OBJCFLAGS="", CPPFLAGS="", LDFLAGS="")
                     local[variable] = injected
