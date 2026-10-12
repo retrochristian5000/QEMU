@@ -352,6 +352,12 @@ WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
     "$MACOSX_DEPLOYMENT_TARGET" "$process_arch")" || exit 1
 export WHP_MACOS_ARCH
 
+# The linker selection must agree across both Clang drivers and all active
+# user flag sources.  A successful C-only probe must not hide a C++ override.
+if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
+    whp_macos_audit_linker_driver_flags || exit 1
+fi
+
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
         whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"
