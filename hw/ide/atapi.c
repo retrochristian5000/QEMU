@@ -366,8 +366,17 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
             s->lba += n;
         }
         s->packet_transfer_size -= s->io_buffer_size;
-        if (s->bus->dma->ops->rw_buf(s->bus->dma, 1) == 0)
+        int dma_result = s->bus->dma->ops->rw_buf(s->bus->dma, true);
+
+        if (dma_result <= 0) {
+            if (dma_result < 0) {
+                /* The guest DMA memory access failed; do not report the
+                 * ATAPI transfer as successfully completed. */
+                ret = -EIO;
+                ide_atapi_io_error(s, ret);
+            }
             goto eot;
+        }
     }
 
     if (s->packet_transfer_size <= 0) {
