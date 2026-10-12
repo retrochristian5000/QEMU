@@ -976,9 +976,13 @@ new top-level git submodule.  QEMU continues to prefer usable system libfdt
 when selected; the internal fallback builds only libfdt (without DTC tools,
 Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
 do not replace it with a floating branch or rebuild DTC separately in the
-WHP launcher.  The October 2026 fork update modernizes the macOS native
-shared-library test link and macOS Flex/Bison CI coverage; it does not add
-Apple-specific APIs to the portable libfdt ABI.
+WHP launcher.  The October 2026 fork update modernizes macOS native
+shared-library test linking and Flex/Bison CI coverage.  It also fixes
+``dtc -O asm`` on Mach-O: the generated DTB header uses C-computed
+big-endian offsets instead of assembler shifts of forward label
+differences (which Apple Clang rejects as non-relocatable).  Existing
+assembly labels remain exported.  These are host toolchain portability
+changes, not new Apple API dependencies in the portable libfdt ABI.
 
 FDT symbol-link verification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
