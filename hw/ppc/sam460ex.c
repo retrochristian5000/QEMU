@@ -181,10 +181,15 @@ static int sam460ex_load_device_tree(MachineState *machine,
     qemu_fdt_setprop_cell(fdt, "/cpus/cpu@0", "timebase-frequency",
                               tb_freq);
 
-    /* Remove cpm node if it exists (it is not emulated) */
+    /* Drop the unimplemented CPM only when it exists in the board DTB.
+     * Use QEMU's path-based helper for the deletion and error reporting. */
     offset = fdt_path_offset(fdt, "/cpm");
     if (offset >= 0) {
-        _FDT(fdt_nop_node(fdt, offset));
+        qemu_fdt_nop_node(fdt, "/cpm");
+    } else if (offset != -FDT_ERR_NOTFOUND) {
+        error_report("Cannot find /cpm in Sam460ex device tree: %s",
+                     fdt_strerror(offset));
+        exit(1);
     }
 
     /* set serial port clocks */
