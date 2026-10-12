@@ -52,8 +52,10 @@ jobs:
       - name: Link the actual PowerPC emulator with pinned libfdt
         run: ninja -C build-fdt qemu-system-ppc-unsigned
 
-      - name: Audit final QEMU Mach-O FDT resolution
-        run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --linked
+      - name: Audit linked QEMU and DTC Mach-O object ABI
+        run: |
+          python3 scripts/tests/test-fdt-ninja-link.py build-fdt \
+            --internal --linked --macho-abi --expected-arch arm64
 
       - name: Smoke-test linked PowerPC executable and machine registration
         run: |
