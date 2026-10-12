@@ -68,6 +68,7 @@ OPTIONS = (
     Option('BOOTSTRAP_ZLIB', 'Host features', 'Bootstrap/use WHP zlib', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_LIBTOOL', 'Host features', 'Bootstrap/use WHP Libtool', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_LIBISOFS', 'Host features', 'Bootstrap/use WHP libisofs', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_SCCACHE', 'Host features', 'Bootstrap/use WHP sccacher', 'bool', 'n'),
     Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice', 'auto', ('auto', 'ccache', 'sccache', 'none')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold (ELF hosts)', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),

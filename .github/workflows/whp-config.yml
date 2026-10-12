@@ -10,6 +10,7 @@ on:
       - 'toolchains/jack'
       - 'toolchains/zlib'
       - 'toolchains/make'
+      - 'toolchains/sccacher'
       - 'toolchains/wine'
       - 'toolchains/xen'
       - 'toolchains/sdl'
@@ -44,6 +45,7 @@ on:
       - 'tests/qtest/meson.build'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
+      - 'scripts/ensure-sccache.py'
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-libisofs.py'
@@ -67,6 +69,7 @@ on:
       - 'scripts/whp-build/sccache-policy.sh'
       - 'docs/devel/sccache-build-memory.rst'
       - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-power-budget.py'
       - 'scripts/tests/test-darwin-user-recovery.py'
@@ -169,6 +172,7 @@ jobs:
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-qtest-meson.py
           python3 scripts/tests/test-compiler-cache-policy.py
+          python3 scripts/tests/test-sccache-bootstrap.py
           python3 scripts/tests/test-darwin-lto-threads.py
           python3 scripts/tests/test-macos-power-budget.py
           python3 scripts/tests/test-darwin-user-recovery.py
@@ -225,6 +229,7 @@ jobs:
           python3 -m py_compile \
             scripts/job-budget.py \
             scripts/ensure-ninja.py \
+            scripts/ensure-sccache.py \
             scripts/ensure-sdl.py \
             scripts/ensure-zlib.py \
             scripts/ensure-libisofs.py \

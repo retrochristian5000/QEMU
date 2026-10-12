@@ -407,6 +407,33 @@ fi
 # SDL, and JACK remain in the later compiler-selected library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
+# Only an explicit opt-in builds the pinned Rust cache frontend. Keep this
+# after host-tool discovery and before LLVM so the same binary serves both
+# the native LLVM and QEMU compilation phases.
+BOOTSTRAP_SCCACHE=$(whp_require_binary_switch BOOTSTRAP_SCCACHE "${BOOTSTRAP_SCCACHE:-0}") || exit 1
+export BOOTSTRAP_SCCACHE
+if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+    case "${COMPILER_CACHE:-auto}" in
+        auto|sccache) ;;
+        *)
+            printf "error: BOOTSTRAP_SCCACHE=1 conflicts with COMPILER_CACHE=%s\n" \
+                "$COMPILER_CACHE" >&2
+            exit 1
+            ;;
+    esac
+    if [ -n "${WHP_COMPILER_CACHE_CMD:-}" ]; then
+        printf "error: BOOTSTRAP_SCCACHE=1 conflicts with WHP_COMPILER_CACHE_CMD\n" >&2
+        exit 1
+    fi
+    WHP_COMPILER_CACHE_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-sccache.py" \
+        --build-dir "$BUILD_DIR") || exit 1
+    COMPILER_CACHE=sccache
+    export WHP_COMPILER_CACHE_CMD COMPILER_CACHE
+    printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
+fi
+
 # Parse the LLVM switch before deciding whether QEMU-linked libraries should
 # use the seed compiler or the managed LLVM compiler. Portable-core builds do
 # not run the native LLVM bootstrap, so when LLVM is disabled the historical

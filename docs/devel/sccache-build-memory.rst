@@ -6,6 +6,37 @@ use ``COMPILER_CACHE=sccache`` without installing cache data in the target
 toolchain. The defaults are intentionally conservative: sccache cannot limit
 the memory consumed by an arbitrary compiler or linker process.
 
+Managed WHP sccacher fork
+-------------------------
+
+Set ``BOOTSTRAP_SCCACHE=y`` in ``.whpconfig`` (or export
+``BOOTSTRAP_SCCACHE=1``) to build the pinned
+``retrochristian5000/sccacher`` source under ``toolchains/sccacher``.
+This is explicitly opt-in: ordinary builds retain existing system
+ccache/sccache discovery and do not require Rust. The fork must be pinned by
+the QEMU gitlink; the bootstrap refuses a dirty or mismatched checkout.
+The output is installed under the build directory, not QEMU's install prefix.
+
+The fork needs Rust 1.91 or newer and Cargo. The managed build uses
+``cargo build --locked --release --no-default-features --bin sccache``,
+keeping local compilation caching without building the optional distributed
+and cloud backends. Its Cargo release profile overrides full LTO
+(``false``), uses 8 codegen units, and disables debug info, avoiding
+single-codegen-unit LTO memory pressure. The persistent Cargo target tree
+is reused on rebuilds; a matching pinned source/compiler/profile identity
+reuses the already installed executable.
+
+``WHP_SCCACHE_BUILD_JOBS`` defaults to 2 and independently limits Cargo
+concurrency. The Rust bootstrap clears inherited compiler wrappers to avoid
+building sccache recursively through sccache. On success, it exports
+``WHP_COMPILER_CACHE_CMD`` and ``COMPILER_CACHE=sccache`` before LLVM and
+QEMU builds. Explicit conflicting cache settings are rejected. Cargo
+dependencies may require an initial network fetch unless already cached.
+
+A new executable does not automatically stop an old running sccache server:
+restart only when other builds have finished. Check hit rates and measure
+actual compiler/linker peak memory; the fork does not itself cap Clang RSS.
+
 Build-time settings
 -------------------
 

@@ -27,6 +27,7 @@ BOOTSTRAP_JACK|Host features|Bootstrap/use WHP JACK|choice|auto|auto,y,n|
 BOOTSTRAP_ZLIB|Host features|Bootstrap/use WHP zlib|choice|auto|auto,y,n|
 BOOTSTRAP_LIBTOOL|Host features|Bootstrap/use WHP Libtool|choice|auto|auto,y,n|
 BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n|
+BOOTSTRAP_SCCACHE|Host features|Bootstrap/use WHP sccacher|bool|n||
 COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,none|
 BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold (ELF hosts)|choice|auto|auto,y,n|
 MACOS_ENABLE_COCOA|Host features|Cocoa|choice|auto|auto,y,n|

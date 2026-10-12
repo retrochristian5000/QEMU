@@ -149,6 +149,12 @@
 	branch = master
 	shallow = true
 
+[submodule "toolchains/sccacher"]
+	path = toolchains/sccacher
+	url = https://github.com/retrochristian5000/sccacher.git
+	branch = main
+	shallow = true
+
 [submodule "toolchains/git"]
 	path = toolchains/git
 	url = https://github.com/retrochristian5000/git-tools.git
