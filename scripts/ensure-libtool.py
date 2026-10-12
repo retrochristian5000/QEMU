@@ -696,10 +696,10 @@ def select_arflags(ar: str) -> str | None:
 
 
 def select_linker(cc: str, arch: str) -> str:
-    # Our Mach-O LLD still lacks ARM64_RELOC_AUTHENTICATED_POINTER support.
-    # Keep Apple ld for arm64e even if the surrounding native-LLVM build has
-    # already exported LD=ld64.lld. The relocation constraint is stronger
-    # than the general LLVM-tool preference.
+    # The pinned Mach-O LLD supports authenticated arm64e relocations, but
+    # bundled Libtool's own Darwin link/runtime path has not been validated
+    # with the QEMU ARM64e LLD opt-in. Preserve Apple ld for this independent
+    # bootstrap instead of leaking QEMU's experimental linker selection.
     if platform.system() == "Darwin" and arch == "arm64e":
         if shutil.which("xcrun"):
             return run_text(["xcrun", "--find", "ld"])
