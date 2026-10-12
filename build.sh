@@ -570,14 +570,25 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
             1:*|y:*|*:arm64e)
                 LD=$(xcrun --find ld) || exit 1
                 NATIVE_LLVM_LDFLAG=
-                # This branch did not add -fuse-ld=lld. A caller that did
-                # so would silently switch the link back to the wrong tool.
-                case " ${LDFLAGS:-} " in
-                    *" -fuse-ld=lld "*)
-                        printf 'error: -fuse-ld=lld conflicts with the Darwin ASan/arm64e Apple linker policy\n' >&2
-                        exit 1
-                        ;;
-                esac
+                # Detect driver-level overrides before the macOS wrapper
+                # runs.  Both clang and clang++ can carry their own -fuse-ld
+                # or --ld-path selector, independently of LDFLAGS.
+                for whp_link_input in \
+                    "CC:${CC:-}" "CXX:${CXX:-}" "OBJC:${OBJC:-}" \
+                    "CFLAGS:${CFLAGS:-}" "CXXFLAGS:${CXXFLAGS:-}" \
+                    "OBJCFLAGS:${OBJCFLAGS:-}" "CPPFLAGS:${CPPFLAGS:-}" \
+                    "LDFLAGS:${LDFLAGS:-}"; do
+                    whp_link_name=${whp_link_input%%:*}
+                    whp_link_value=${whp_link_input#*:}
+                    case " $whp_link_value " in
+                        *" -fuse-ld="*|*" --ld-path="*)
+                            printf 'error: %s overrides the Darwin ASan/arm64e Apple linker: %s\n' \
+                                "$whp_link_name" "$whp_link_value" >&2
+                            exit 1
+                            ;;
+                    esac
+                done
+                unset whp_link_input whp_link_name whp_link_value
                 printf 'QEMU native Mach-O linker: Apple ld (ASan/arm64e policy)\n'
                 ;;
             *)
