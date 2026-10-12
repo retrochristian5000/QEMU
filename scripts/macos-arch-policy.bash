@@ -86,9 +86,16 @@ whp_macos_audit_linker_driver_flags()
     fi
 
     case "${WHP_MACOS_ARCH:-auto}:${QEMU_ASAN:-n}" in
-        arm64e:*|*:1|*:y)
+        *:1|*:y)
             if [[ "$linker_kind" == lld ]]; then
-                printf 'error: ARM64e/ASan needs Apple ld, not Mach-O LLD\n' >&2
+                printf 'error: ASan needs Apple ld until its LLD runtime contract passes\n' >&2
+                return 1
+            fi
+            ;;
+        arm64e:*)
+            if [[ "$linker_kind" == lld &&
+                  "${WHP_ARM64E_USE_LLD:-0}" != 1 ]]; then
+                printf 'error: ARM64e LLD requires WHP_ARM64E_USE_LLD=1\n' >&2
                 return 1
             fi
             ;;
@@ -144,6 +151,19 @@ whp_macos_audit_linker_driver_flags()
             esac
         done
     done
+
+    # The installed LLD must consume authenticated relocations and emit
+    # versioned arm64e chained fixups, not merely link main().
+    if [[ "$linker_kind" == lld && "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
+        local probe_script
+        probe_script="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/arm64e-lld-probe.bash"
+        if ! "$BASH" "$probe_script" "$CC" "$SDKROOT" \
+                "$MACOSX_DEPLOYMENT_TARGET" "$LD" \
+                "$NATIVE_LLVM_DIR/bin/llvm-objdump"; then
+            printf 'error: selected ARM64e LLD failed authenticated fixup validation\n' >&2
+            return 1
+        fi
+    fi
 }
 
 whp_select_macos_arch()
