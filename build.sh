@@ -538,6 +538,23 @@ fi
 export WHP_INCREMENTAL_BUILD OPENBIOS_FORCE_RECONFIGURE \
     POWERPC_TOOLCHAIN_FORCE_REBUILD NATIVE_LLVM_FORCE_REBUILD
 
+# An explicit ARM64e LLD request must not silently fall back to Apple ld,
+# nor combine with ASan while the linker/runtime contract is unverified.
+if [ "${WHP_HOST_OS:-}" = macos ] &&
+   [ "${WHP_MACOS_ARCH:-auto}" = arm64e ] &&
+   [ "${WHP_ARM64E_USE_LLD:-0}" = 1 ]; then
+    if [ "$BOOTSTRAP_NATIVE_LLVM" != 1 ]; then
+        printf 'error: ARM64e LLD requires BOOTSTRAP_NATIVE_LLVM=1\n' >&2
+        exit 1
+    fi
+    case "${QEMU_ASAN:-n}" in
+        1|y)
+            printf 'error: ARM64e LLD is not enabled for QEMU_ASAN; use Apple ld\n' >&2
+            exit 1
+            ;;
+    esac
+fi
+
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     NATIVE_LLVM_DIR=$("$WHP_BUILD_BASH" --noprofile --norc \
         "$SOURCE_DIR/scripts/bootstrap-native-clang.sh") || exit 1
@@ -559,48 +576,62 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     whp_archive_toolchain_smoke "$CC" "$AR" "$RANLIB" "$BUILD_DIR" "$NM" || exit 1
     WHP_ARCHIVE_TOOL_SIGNATURE="$AR|$RANLIB|$NM"
 
-    # Keep the QEMU linker consistent with the LLVM sanitizer/runtime ABI.
-    # This Mach-O LLD revision still has ASan global-link and arm64e
-    # authenticated-relocation gaps. Apple ld can consume this Clang's LTO
-    # bitcode via the installed matching libLTO.dylib. Only use LLD for the
-    # established unsanitized arm64/x86_64 path.
+    # Keep Clang, compiler-rt, and Mach-O linker selection coherent. ARM64e
+    # LLD is an opt-in development lane: ASan still requires the Apple linker.
+    # Never silently promote arm64e just because an LLD executable exists.
+    WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"
+    case "$WHP_ARM64E_USE_LLD" in
+        0|1) ;;
+        *)
+            printf 'error: WHP_ARM64E_USE_LLD must be 0 or 1\n' >&2
+            exit 1
+            ;;
+    esac
     if [ "$WHP_HOST_OS" = macos ]; then
         LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
+        whp_use_apple_linker=0
         case "${QEMU_ASAN:-n}:${WHP_MACOS_ARCH:-auto}" in
-            1:*|y:*|*:arm64e)
-                LD=$(xcrun --find ld) || exit 1
-                NATIVE_LLVM_LDFLAG=
-                # Detect driver-level overrides before the macOS wrapper
-                # runs.  Both clang and clang++ can carry their own -fuse-ld
-                # or --ld-path selector, independently of LDFLAGS.
-                for whp_link_input in \
-                    "CC:${CC:-}" "CXX:${CXX:-}" "OBJC:${OBJC:-}" \
-                    "CFLAGS:${CFLAGS:-}" "CXXFLAGS:${CXXFLAGS:-}" \
-                    "OBJCFLAGS:${OBJCFLAGS:-}" "CPPFLAGS:${CPPFLAGS:-}" \
-                    "LDFLAGS:${LDFLAGS:-}"; do
-                    whp_link_name=${whp_link_input%%:*}
-                    whp_link_value=${whp_link_input#*:}
-                    case " $whp_link_value " in
-                        *" -fuse-ld="*|*" --ld-path="*)
-                            printf 'error: %s overrides the Darwin ASan/arm64e Apple linker: %s\n' \
-                                "$whp_link_name" "$whp_link_value" >&2
-                            exit 1
-                            ;;
-                    esac
-                done
-                unset whp_link_input whp_link_name whp_link_value
-                printf 'QEMU native Mach-O linker: Apple ld (ASan/arm64e policy)\n'
-                ;;
-            *)
-                LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
-                NATIVE_LLVM_LDFLAG=-fuse-ld=lld
-                case " ${LDFLAGS:-} " in
-                    *" $NATIVE_LLVM_LDFLAG "*) ;;
-                    *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
-                esac
+            1:*|y:*) whp_use_apple_linker=1 ;;
+            *:arm64e)
+                if [ "$WHP_ARM64E_USE_LLD" != 1 ]; then
+                    whp_use_apple_linker=1
+                fi
                 ;;
         esac
-        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS
+        if [ "$whp_use_apple_linker" = 1 ]; then
+            LD=$(xcrun --find ld) || exit 1
+            NATIVE_LLVM_LDFLAG=
+            # Reject inherited overrides before the Bash macOS wrapper runs.
+            for whp_link_input in \
+                "CC:${CC:-}" "CXX:${CXX:-}" "OBJC:${OBJC:-}" \
+                "CFLAGS:${CFLAGS:-}" "CXXFLAGS:${CXXFLAGS:-}" \
+                "OBJCFLAGS:${OBJCFLAGS:-}" "CPPFLAGS:${CPPFLAGS:-}" \
+                "LDFLAGS:${LDFLAGS:-}"; do
+                whp_link_name=${whp_link_input%%:*}
+                whp_link_value=${whp_link_input#*:}
+                case " $whp_link_value " in
+                    *" -fuse-ld="*|*" --ld-path="*)
+                        printf 'error: %s overrides the Darwin Apple linker: %s\n' \
+                            "$whp_link_name" "$whp_link_value" >&2
+                        exit 1
+                        ;;
+                esac
+            done
+            unset whp_link_input whp_link_name whp_link_value
+            printf 'QEMU native Mach-O linker: Apple ld (ASan/default arm64e)\n'
+        else
+            LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
+            NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+            case " ${LDFLAGS:-} " in
+                *" $NATIVE_LLVM_LDFLAG "*) ;;
+                *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
+            esac
+            if [ "${WHP_MACOS_ARCH:-auto}" = arm64e ]; then
+                printf 'QEMU native Mach-O linker: LLD (explicit ARM64e development mode)\n'
+            fi
+        fi
+        unset whp_use_apple_linker
+        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS WHP_ARM64E_USE_LLD
     fi
     printf 'QEMU native compiler: WHP LLVM (%s)\n' "$NATIVE_LLVM_DIR"
     printf 'QEMU host archiver: %s\n' "$AR"
