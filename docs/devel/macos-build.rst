@@ -398,6 +398,33 @@ back to Apple ``ld``. These rules protect both the QEMU host link and
 the LLVM bootstrap; they do not imply that all linker arguments are
 interchangeable between ELF ``ld.lld`` and Mach-O ``ld64.lld``.
 
+Cocoa multi-monitor and multi-head windows
+------------------------------------
+
+The native Cocoa backend now opens a separate ``NSWindow`` for each
+additional graphical QEMU console present at display initialization.
+Each head has its own ``DisplayChangeListener``, keyboard state, Cocoa view,
+Metal rendering state (when available), and windowed/fullscreen lifecycle.
+The original window remains the primary display; text consoles remain in
+the existing View menu. Closing an extra window hides that guest head
+without stopping the VM, and the Window menu can reopen it.
+
+Physical macOS monitors and guest graphics heads are separate concepts.
+``NSScreen screens`` provides host display placement, not extra guest
+graphics hardware. When two or more physical monitors are connected, the
+additional graphical windows start on other host displays. Additional
+guest heads still require hardware exposing multiple QEMU consoles (for
+example a suitable multi-output guest graphics device). With one physical
+monitor, multiple guest windows share the host desktop.
+
+Monitor movements and resize callbacks update the active head's host
+screen geometry and refresh metadata. A disappearing ``NSScreen`` does not
+make the UI dereference a null screen. Guest-head creation after the Cocoa
+backend has initialized, automatic guest-desktop positioning, and the
+behavior of multiple simultaneous fullscreen Spaces require separate
+native macOS runtime validation. This is *not* a claim that a single-head
+virtual graphics card becomes a multi-head card.
+
 Dynamic QEMU modules
 --------------------
 
