@@ -1169,7 +1169,7 @@ static void test_cdrom_dma(void)
     test_bmdma_teardown(qts);
 }
 
-static void test_cdrom_dma_no_busmaster(void)
+static void test_cdrom_dma_fault(bool no_busmaster)
 {
     QTestState *qts;
     QPCIDevice *dev;
@@ -1191,13 +1191,20 @@ static void test_cdrom_dma_no_busmaster(void)
         "-device ide-cd,drive=sr0,bus=ide.0", tmp_path[0]);
     qtest_irq_intercept_in(qts, "ioapic");
 
-    guest_buf = guest_alloc(&guest_malloc, ATAPI_BLOCK_SIZE);
-    prdt[0].addr = cpu_to_le32(guest_buf);
+    if (no_busmaster) {
+        guest_buf = guest_alloc(&guest_malloc, ATAPI_BLOCK_SIZE);
+        prdt[0].addr = cpu_to_le32(guest_buf);
+    } else {
+        /* PC guest RAM is below this address; DMA must report a fault
+         * instead of pretending the ATAPI data was transferred. */
+        prdt[0].addr = cpu_to_le32(0xe0000000);
+    }
     prdt[0].size = cpu_to_le32(ATAPI_BLOCK_SIZE | PRDT_EOT);
 
     dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
     status = send_dma_request_dev(qts, dev, bmdma_bar, ide_bar,
-                                  CMD_PACKET | CMDF_NO_BM, 0, 1,
+                                  CMD_PACKET | (no_busmaster ? CMDF_NO_BM : 0),
+                                  0, 1,
                                   prdt, ARRAY_SIZE(prdt),
                                   send_scsi_cdb_read10);
     g_assert_cmphex(status, ==, BM_STS_ERROR | BM_STS_INTR);
@@ -1205,6 +1212,16 @@ static void test_cdrom_dma_no_busmaster(void)
 
     free_pci_device(dev);
     test_bmdma_teardown(qts);
+}
+
+static void test_cdrom_dma_no_busmaster(void)
+{
+    test_cdrom_dma_fault(true);
+}
+
+static void test_cdrom_dma_bad_buffer(void)
+{
+    test_cdrom_dma_fault(false);
 }
 
 int main(int argc, char **argv)
@@ -1268,6 +1285,8 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/cdrom/dma", test_cdrom_dma);
     qtest_add_func("/ide/cdrom/dma_no_busmaster",
                    test_cdrom_dma_no_busmaster);
+    qtest_add_func("/ide/cdrom/dma_bad_buffer",
+                   test_cdrom_dma_bad_buffer);
 
     ret = g_test_run();
 
