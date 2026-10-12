@@ -529,14 +529,58 @@ if ! compiler_supports_cxx_standard "$LLVM_CXX_STANDARD"; then
 fi
 printf 'WHP native LLVM C++ standard: C++%s\n' "$LLVM_CXX_STANDARD" >&2
 
-# Native LLVM rebuilds already have a linker from the previous successful
-# toolchain. On Darwin, reuse that ld64.lld only after proving Apple Clang can
-# drive it against the selected SDK. The current WHP Mach-O LLD backend does
-# not yet implement ARM64_RELOC_AUTHENTICATED_POINTER, so an arm64e bootstrap
-# must stay on Apple's linker even when a previous ld64.lld is available.
-# Explicitly clear the linker cache entries first so an incremental CMake graph
-# cannot retain a stale LLD selection when the prior toolchain is missing,
-# unsupported for the selected ABI, or no longer passes the probe.
+# The pinned Mach-O LLD now implements arm64e authenticated relocations.
+# Reuse it only after proving the actual installed binary can emit an
+# authenticated chained fixup. A trivial main() link is insufficient.
+# Reset the CMake linker cache before choosing a linker for this rebuild.
+WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"
+case "$WHP_ARM64E_USE_LLD" in
+    0|1) ;;
+    *)
+        printf 'error: WHP_ARM64E_USE_LLD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+
+whp_bootstrap_arm64e_lld_auth_probe()
+{
+    local probe_dir output
+    [[ -x "$TOOLCHAIN_DIR/bin/ld64.lld" &&
+       -x "$TOOLCHAIN_DIR/bin/llvm-objdump" ]] || return 1
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-lld-arm64e.XXXXXX")" || return 1
+    printf '%s\n' \
+        '.text' '.globl _whp_auth_target' '_whp_auth_target:' '  ret' \
+        '.data' '.p2align 3' \
+        '.quad _whp_auth_target@AUTH(ia,42,addr)' > "$probe_dir/auth.s"
+    output="$probe_dir/libwhp_auth.dylib"
+    if "$bootstrap_cc" -arch arm64e -isysroot "$sdkroot" \
+           "-mmacosx-version-min=$deployment_target" \
+           -x assembler -c "$probe_dir/auth.s" -o "$probe_dir/auth.o" \
+           >/dev/null 2>&1 &&
+       "$TOOLCHAIN_DIR/bin/ld64.lld" -arch arm64e \
+           -platform_version macos "$deployment_target" "$deployment_target" \
+           -dylib -install_name @rpath/libwhp_auth.dylib \
+           "$probe_dir/auth.o" -o "$output" >/dev/null 2>&1 &&
+       "$TOOLCHAIN_DIR/bin/llvm-objdump" --macho --chained-fixups "$output" \
+           > "$probe_dir/fixups.txt" 2>/dev/null &&
+       grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"; then
+        rm -rf "$probe_dir"
+        return 0
+    fi
+    rm -rf "$probe_dir"
+    return 1
+}
+
+bootstrap_lld_arch_ok=1
+if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
+    bootstrap_lld_arch_ok=0
+    if [[ "$WHP_ARM64E_USE_LLD" == 1 ]] &&
+       whp_bootstrap_arm64e_lld_auth_probe; then
+        bootstrap_lld_arch_ok=1
+    elif [[ "$WHP_ARM64E_USE_LLD" == 1 ]]; then
+        printf 'warning: previous arm64e ld64.lld failed authenticated relocation probe; using Apple ld for LLVM bootstrap\n' >&2
+    fi
+fi
 bootstrap_linker_args=()
 bootstrap_linker_args+=(
     -DLLVM_USE_LINKER=
@@ -545,7 +589,7 @@ bootstrap_linker_args+=(
     -DCMAKE_MODULE_LINKER_FLAGS=
 )
 bootstrap_linker_name=system
-if [[ "$host_os" == macos && "$darwin_cmake_arch" != arm64e &&
+if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
       -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
     # First validate that the installed ld64.lld can link at all. Newer
     # optional performance flags must not decide which linker is selected.
