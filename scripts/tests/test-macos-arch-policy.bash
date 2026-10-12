@@ -102,6 +102,80 @@ selected="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld \
 [[ "$selected" == arm64e ]]
 grep -Fq -- '-fuse-ld=lld' "$TEST_COMPILER_LOG"
 
+# Validate both Clang driver commands and flags against one selected linker.
+# Each fixture uses an isolated environment: no user's compiler flags leak in.
+audit_linker_flags()
+{
+    (
+        local kind="$1"
+        local variable="${2:-}"
+        local setting="${3:-}"
+        CC=clang
+        CXX=clang++
+        OBJC=clang
+        CFLAGS=
+        CXXFLAGS=
+        OBJCFLAGS=
+        CPPFLAGS=
+        LDFLAGS=
+        QEMU_ASAN=n
+        NATIVE_LLVM_DIR=/mock/llvm
+        if [[ "$kind" == lld ]]; then
+            LD=/mock/llvm/bin/ld64.lld
+            NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+            WHP_MACOS_ARCH=arm64
+        else
+            LD=/mock/Apple/ld
+            NATIVE_LLVM_LDFLAG=
+            WHP_MACOS_ARCH=arm64e
+        fi
+        if [[ -n "$variable" ]]; then
+            printf -v "$variable" '%s' "$setting"
+        fi
+        whp_macos_audit_linker_driver_flags
+    )
+}
+
+audit_linker_flags apple
+audit_linker_flags lld LDFLAGS '-fuse-ld=lld'
+audit_linker_flags lld CC 'clang -fuse-ld=lld'
+audit_linker_flags lld CXX 'clang++ --ld-path=/mock/llvm/bin/ld64.lld'
+for variable in CC CXX CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+    case "$variable" in
+        CC) override='clang -fuse-ld=lld' ;;
+        CXX) override='clang++ -fuse-ld=lld' ;;
+        *) override='-fuse-ld=lld' ;;
+    esac
+    if audit_linker_flags apple "$variable" "$override"             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+        printf 'error: Apple ld accepted LLVM override via %s\n' "$variable" >&2
+        exit 1
+    fi
+    grep -Fq "$variable" "$TEST_DIR/linker.err"
+
+    if audit_linker_flags apple "$variable" '--ld-path=/mock/other/ld'             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+        printf 'error: Apple ld accepted --ld-path via %s\n' "$variable" >&2
+        exit 1
+    fi
+    grep -Fq "$variable" "$TEST_DIR/linker.err"
+
+    if audit_linker_flags lld "$variable" '-fuse-ld=ld'             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+        printf 'error: Mach-O LLD accepted Apple override via %s\n' "$variable" >&2
+        exit 1
+    fi
+    grep -Fq "$variable" "$TEST_DIR/linker.err"
+done
+
+for bad in '-Wl,-O2' '--ld-path=/mock/other/ld'; do
+    if audit_linker_flags lld CXXFLAGS "$bad"             >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+        printf 'error: Mach-O LLD accepted conflicting C++ link flag %s\n' "$bad" >&2
+        exit 1
+    fi
+done
+if audit_linker_flags apple CXXFLAGS '-Wl,--read-workers=8'         >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    printf 'error: Apple ld accepted Mach-O LLD worker flags\n' >&2
+    exit 1
+fi
+
 # Integration contract: the macOS QEMU wrapper owns the final Apple -arch
 # choice and applies it consistently to C, C++, Objective-C, and links.
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
