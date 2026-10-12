@@ -402,7 +402,7 @@ fi
 . "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"
 
 # Only an explicit opt-in builds the pinned Rust cache frontend. Keep this
-# before host-tool discovery and LLVM so it can serve Ninja, Clang, and QEMU.
+# before host-tool discovery and LLVM so it can serve Ninja, Clang, and QEMU
 # without requiring an independently installed sccache executable.
 BOOTSTRAP_SCCACHE=$(whp_require_binary_switch BOOTSTRAP_SCCACHE "${BOOTSTRAP_SCCACHE:-0}") || exit 1
 export BOOTSTRAP_SCCACHE
