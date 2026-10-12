@@ -121,6 +121,87 @@ def check_archive(build_dir):
     print("Verified: internal libfdt.a defines fdt_nop_node")
 
 
+
+def macho_object_abi(contents, label):
+    """Read a thin, little-endian 64-bit ARM64 Mach-O object header.
+
+    Unlike CPU-family guesses from uname or compiler identity, Mach-O
+    cpusubtype identifies the ABI actually used to generate each object.
+    """
+    import struct
+
+    if len(contents) < 12 or contents[:4] != b"\xcf\xfa\xed\xfe":
+        fail(label + ": not a thin little-endian 64-bit Mach-O object")
+    _magic, cpu_type, cpu_subtype = struct.unpack_from("<III", contents)
+    if cpu_type != 0x0100000c:
+        fail(label + ": expected ARM64 Mach-O CPU type, got "
+             + hex(cpu_type))
+    # Mach-O stores ARM64e pointer-authentication ABI version and kernel
+    # flags in the high bits.  Do not mistake a versioned 0x80000002 object
+    # for generic arm64 (0x00000000).
+    base_subtype = cpu_subtype & 0x00ffffff
+    if base_subtype in (0, 1):
+        abi = "arm64"
+    elif base_subtype == 2:
+        abi = "arm64e"
+    elif base_subtype == 12:
+        abi = "arm64e.x1"
+    else:
+        fail(label + ": unknown ARM64 CPU subtype " + hex(cpu_subtype))
+    return abi, cpu_subtype
+
+
+def check_macho_abi(build_dir, expected_arch=None):
+    """Audit actual DTC archive members against QEMU's device-tree object."""
+    archive = build_dir / "subprojects" / "dtc" / "libfdt" / "libfdt.a"
+    qemu_object = build_dir / "libsystem.a.p" / "system_device_tree.c.o"
+    if not archive.is_file() or not qemu_object.is_file():
+        fail("Mach-O ABI check needs a built libfdt.a and "
+             "libsystem.a.p/system_device_tree.c.o; build qemu-system-ppc "
+             "before running --macho-abi")
+    expected_abi, expected_subtype = macho_object_abi(
+        qemu_object.read_bytes(), str(qemu_object)
+    )
+    if expected_arch is not None and expected_abi != expected_arch:
+        fail("QEMU device-tree object uses " + expected_abi +
+             ", expected " + expected_arch + " (CPU subtype " +
+             hex(expected_subtype) + ")")
+    ar = shutil.which("llvm-ar") or shutil.which("ar")
+    if not ar:
+        fail("ar/llvm-ar missing; cannot inspect archive objects")
+    members = subprocess.run(
+        [ar, "-t", str(archive)], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if members.returncode:
+        fail("could not list libfdt.a: " + members.stderr.strip())
+    names = [name.strip() for name in members.stdout.splitlines()
+             if name.strip()]
+    if not names or not any(pathlib.PurePath(name).name == "fdt_wip.c.o"
+                            for name in names):
+        fail("libfdt.a does not contain the fdt_wip.c.o provider")
+    for name in names:
+        member = subprocess.run(
+            [ar, "-p", str(archive), name],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if member.returncode:
+            fail("could not read libfdt.a member " + name + ": " +
+                 member.stderr.decode(errors="replace").strip())
+        abi, subtype = macho_object_abi(member.stdout, name)
+        if abi != expected_abi or (abi == "arm64e" and
+                                   subtype != expected_subtype):
+            fail("Mach-O ABI mismatch: QEMU device_tree.c.o is " +
+                 expected_abi + "/" + hex(expected_subtype) +
+                 " but libfdt.a(" + name + ") is " +
+                 abi + "/" + hex(subtype) +
+                 "; rebuild or reconfigure only the mismatched provider "
+                 "with the selected -arch; do not add a duplicate symbol")
+    print("Verified: " + str(len(names)) +
+          " libfdt.a Mach-O objects match QEMU device_tree.c.o: " +
+          expected_abi + "/" + hex(expected_subtype))
+
+
 def check_linked_emulator(build_dir, target):
     # On Darwin the executable is linked as *-unsigned, then postprocessed
     # into the installed qemu-system-* file. Inspect the true link product.
@@ -167,6 +248,10 @@ def main():
                         help="also inspect the compiled internal archive with nm")
     parser.add_argument("--linked", action="store_true",
                         help="check the actual linked qemu-system-* binary (internal provider)")
+    parser.add_argument("--macho-abi", action="store_true",
+                        help="compare archived DTC Mach-O objects with QEMU's device-tree object")
+    parser.add_argument("--expected-arch", choices=("arm64", "arm64e"),
+                        help="require this Mach-O ABI with --macho-abi")
     args = parser.parse_args()
     build_dir = args.build_dir.resolve()
     if not (build_dir / "build.ninja").is_file():
@@ -191,6 +276,12 @@ def main():
         if not args.internal:
             fail("--built/--linked requires --internal to identify the provider")
         check_archive(build_dir)
+    if args.expected_arch and not args.macho_abi:
+        fail("--expected-arch requires --macho-abi")
+    if args.macho_abi:
+        if not args.internal:
+            fail("--macho-abi requires --internal to identify the provider")
+        check_macho_abi(build_dir, args.expected_arch)
     if args.linked:
         check_linked_emulator(build_dir, args.target)
     print("FDT Ninja link audit passed: provider=" + str(provider)
