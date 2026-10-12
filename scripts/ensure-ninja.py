@@ -385,6 +385,15 @@ def bootstrap_environment(
                 bootstrap_env['CCACHE_DIR'] = str(compiler_cache_dir)
             else:
                 bootstrap_env['SCCACHE_DIR'] = str(compiler_cache_dir)
+                # Match the shell wrappers' conservative sccache daemon policy.
+                # Keep custom sccache configuration and explicit env intact.
+                if ('SCCACHE_IDLE_TIMEOUT' not in bootstrap_env
+                        and not bootstrap_env.get('SCCACHE_CONF')):
+                    bootstrap_env['SCCACHE_IDLE_TIMEOUT'] = '180'
+                if 'SCCACHE_IDLE_TIMEOUT' in bootstrap_env:
+                    timeout = bootstrap_env['SCCACHE_IDLE_TIMEOUT']
+                    if not timeout or not timeout.isascii() or not timeout.isdecimal():
+                        raise RuntimeError('SCCACHE_IDLE_TIMEOUT must be seconds (0 means never)')
 
     if sdkroot:
         flags = []
@@ -460,9 +469,24 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     compiler_cache_dir = None
     if compiler_cache:
         cache_name = pathlib.Path(compiler_cache).name
-        compiler_cache_dir = (
-            qemu_build_dir.parent / '.whp-compiler-cache' / f'{cache_name}-{host_tag}'
-        )
+        if cache_name == 'sccache':
+            # sccache has one local daemon. Align this cache with QEMU's
+            # builder.sh and native LLVM bootstrap, not Ninja's lowercase
+            # host tool installation tag. Preserve an explicit cache path.
+            requested = os.environ.get('SCCACHE_DIR')
+            if requested:
+                compiler_cache_dir = pathlib.Path(requested).expanduser().resolve()
+            else:
+                root = pathlib.Path(os.environ.get(
+                    'WHP_COMPILER_CACHE_ROOT',
+                    str(qemu_build_dir.parent / '.whp-compiler-cache'),
+                )).expanduser()
+                cache_tag = f'{platform.system()}-{platform.machine()}'
+                compiler_cache_dir = root / f'sccache-{cache_tag}'
+        else:
+            compiler_cache_dir = (
+                qemu_build_dir.parent / '.whp-compiler-cache' / f'{cache_name}-{host_tag}'
+            )
         compiler_cache_dir.mkdir(parents=True, exist_ok=True)
     bootstrap_env = bootstrap_environment(
         cxx,
