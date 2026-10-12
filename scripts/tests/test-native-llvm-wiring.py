@@ -204,12 +204,13 @@ assert 'omitting optional link prefetch' in macos_builder
 assert 'if [[ "$native_macho_lld" == 0 ]]; then' in macos_builder
 assert 'whp_append_flag LDFLAGS "-Wl,-dead_strip"' in macos_builder
 
-# Rebuilding the native Darwin toolchain may reuse an installed ld64.lld,
-# except on arm64e. Test the base linker before optional read-workers so an
-# unsupported performance option cannot disable working Mach-O LLD reuse.
-# Missing or incompatible installed linkers retain the Apple ld fallback.
+# Native LLVM may reuse a proven Mach-O LLD, including ARM64e when its
+# authenticated-relocation probe passes and the developer explicitly opts in.
+# Test the base linker before optional worker flags. Failed probes preserve
+# the Apple ld fallback instead of mislabelling unsupported links.
 assert 'bootstrap_linker_args=()' in bootstrap
-assert '"$host_os" == macos && "$darwin_cmake_arch" != arm64e &&' in bootstrap
+assert 'whp_bootstrap_arm64e_lld_auth_probe()' in bootstrap
+assert '"$bootstrap_lld_arch_ok" == 1' in bootstrap
 assert '-x "$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
 assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
 assert '"$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld' in bootstrap
