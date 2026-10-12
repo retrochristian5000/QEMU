@@ -17,6 +17,17 @@ case "$(uname -m)" in
         ;;
 esac
 
+# The compiler target triple tracks the executing host, while -arch may
+# select the distinct arm64e Mach-O slice for QEMU host binaries.
+link_arch="${WHP_MACOS_ARCH:-$host_arch}"
+case "$host_arch:$link_arch" in
+    arm64:arm64|arm64:arm64e|x86_64:x86_64) ;;
+    *)
+        printf 'error: macOS linker output arch %s is incompatible with process %s\n' \
+            "$link_arch" "$host_arch" >&2
+        exit 1
+        ;;
+esac
 MACOS_COMPILER_MANIFEST="${MACOS_COMPILER_MANIFEST:-.whp-macos-toolchain}"
 MACOS_COMPILER_PROBE_DIR="${MACOS_COMPILER_PROBE_DIR:-${MACOS_COMPILER_MANIFEST}.d}"
 MACOS_COMPILER_INPUTS="${MACOS_COMPILER_MANIFEST}.inputs"
@@ -236,6 +247,7 @@ write_toolchain_cache_identity()
     write_cached_value WHP_MACOS_TOOLCHAIN_INPUT_SCHEMA 1
     write_cached_value VERIFIER_SIGNATURE "$verifier_signature"
     write_cached_value HOST_ARCH "$host_arch"
+    write_cached_value LINK_ARCH "$link_arch"
     write_cached_value SDKROOT "$SDKROOT"
     write_cached_value SDKROOT_STAT "$(file_metadata_signature "$SDKROOT")"
     write_cached_value SDK_VERSION "$sdk_version"
@@ -457,7 +469,7 @@ SOURCE
         ${CXX_FLAGS[@]+"${CXX_FLAGS[@]}"} \
         -x c++ "$source" -o "$output" \
         ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
-    require_output_arch CXX "$output" "$host_arch"
+    require_output_arch CXX "$output" "$link_arch"
 }
 
 compile_objc_probe()
@@ -481,12 +493,13 @@ SOURCE
         ${OBJC_FLAGS[@]+"${OBJC_FLAGS[@]}"} \
         -x objective-c "$source" -o "$output" -framework Cocoa \
         ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
-    require_output_arch OBJC "$output" "$host_arch"
+    require_output_arch OBJC "$output" "$link_arch"
 }
 
 {
     printf 'WHP_MACOS_TOOLCHAIN_SCHEMA=2\n'
     printf 'HOST_ARCH=%s\n' "$host_arch"
+    printf 'LINK_ARCH=%s\n' "$link_arch"
     printf 'SDKROOT=%s\n' "$SDKROOT"
     printf 'MACOSX_DEPLOYMENT_TARGET=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-}"
     printf 'LIPO=%s\n' "${LIPO:-xcrun lipo}"
@@ -497,7 +510,7 @@ write_identity CXX "$CXX" "$host_arch" cxx
 write_identity OBJC "$OBJC" "$host_arch" objc
 write_identity CC_FOR_BUILD "$CC_FOR_BUILD" "$host_arch" c
 
-compile_c_probe CC "$CC" "$host_arch"
+compile_c_probe CC "$CC" "$link_arch"
 compile_cxx_probe
 compile_objc_probe
 compile_build_probe
