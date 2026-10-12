@@ -152,6 +152,34 @@ whp_macos_audit_linker_driver_flags()
         done
     done
 
+    # The CLANG and CLANG++ drivers must actually resolve our selected LLD.
+    # -fuse-ld=lld is not proof: -B or a driver configuration could redirect
+    # one frontend to a different linker, even when LD is correct.
+    if [[ "$linker_kind" == lld && "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
+        local driver_var language pipeline
+        local -a driver_command=()
+        for driver_var in CC CXX; do
+            driver_command=()
+            read -r -a driver_command <<< "${!driver_var:-}"
+            [[ ${#driver_command[@]} -gt 0 ]] || return 1
+            if [[ "$driver_var" == CXX ]]; then
+                language=c++
+            else
+                language=c
+            fi
+            pipeline="$("${driver_command[@]}" -### -arch arm64e \
+                -isysroot "$SDKROOT" \
+                "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+                -fuse-ld=lld -x "$language" /dev/null -o /dev/null 2>&1)" ||
+                return 1
+            if [[ "$pipeline" != *"$LD"* ]]; then
+                printf 'error: %s resolves a linker other than selected %s\n' \
+                    "$driver_var" "$LD" >&2
+                return 1
+            fi
+        done
+    fi
+
     # The installed LLD must consume authenticated relocations and emit
     # versioned arm64e chained fixups, not merely link main().
     if [[ "$linker_kind" == lld && "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
