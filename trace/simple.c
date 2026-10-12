@@ -169,15 +169,18 @@ static gpointer writeout_thread(gpointer opaque)
     for (;;) {
         wait_for_trace_records_available();
 
-        if (g_atomic_int_get(&dropped_events)) {
+        /* Reuse the initial atomic read as the CAS expectation.  Only
+         * reload it if a producer increments the counter meanwhile. */
+        dropped_count = g_atomic_int_get(&dropped_events);
+        if (dropped_count) {
             dropped.rec.event = DROPPED_EVENT_ID;
             dropped.rec.timestamp_ns = get_clock();
             dropped.rec.length = sizeof(TraceRecord) + sizeof(uint64_t);
             dropped.rec.pid = trace_pid;
-            do {
+            while (!g_atomic_int_compare_and_exchange(&dropped_events,
+                                                      dropped_count, 0)) {
                 dropped_count = g_atomic_int_get(&dropped_events);
-            } while (!g_atomic_int_compare_and_exchange(&dropped_events,
-                                                        dropped_count, 0));
+            }
             dropped.rec.arguments[0] = dropped_count;
             unused = fwrite(&type, sizeof(type), 1, trace_fp);
             unused = fwrite(&dropped.rec, dropped.rec.length, 1, trace_fp);
