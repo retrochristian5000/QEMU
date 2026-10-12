@@ -140,6 +140,10 @@ jobs:
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal
 
+      - name: Regression-test FDT Mach-O ABI archive audit
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-macho-abi.py
+
       - name: Build ${{ matrix.target }}
         shell: bash
         run: |
