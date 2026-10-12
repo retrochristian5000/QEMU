@@ -52,8 +52,9 @@ its limit. Other hosts keep uncapped compile and TableGen pools by default.
 These scheduling controls do not change the compiler ABI or invalidate the
 installed toolchain. ``MACOS_BUILD_POWER=eco|balanced|performance`` selects
 the outer macOS job budget unless ``JOBS`` is explicit. Pool limits are not a
-whole-build RSS cap: compile, link, and TableGen jobs may run concurrently. Avoid pretending that
-``SCCACHE_CACHE_SIZE`` limits RSS.
+whole-build RSS cap: compile, link, and TableGen jobs may run concurrently.
+
+``SCCACHE_CACHE_SIZE`` limits disk cache space, not resident memory.
 
 For a more memory-conservative build, for example::
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from pathlib import Path
+import os
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -295,6 +296,42 @@ assert '[[ -n "${NATIVE_LLVM_TABLEGEN_JOBS+x}" ]] || LLVM_TABLEGEN_JOBS=1' in bo
 assert '"-DLLVM_PARALLEL_COMPILE_JOBS=$LLVM_COMPILE_JOBS"' in bootstrap
 assert '"-DLLVM_PARALLEL_TABLEGEN_JOBS=$LLVM_TABLEGEN_JOBS"' in bootstrap
 assert 'if [[ "$pool_jobs" == 0 ]]; then' in bootstrap
+
+# Exercise the extracted pool policy without launching a native LLVM build.
+# This checks macOS defaults, non-macOS behavior, explicit unlimits, and errors.
+pool_policy = bootstrap.split(
+    '# Cap expensive LLVM compile and TableGen work independently of -j and links.\n', 1
+)[1].split('host_id="$host_tag-$host_platform"', 1)[0]
+pool_probe = (
+    'set -euo pipefail\n'
+    'host_os="${WHP_HOST_OS}"\n'
+    'LLVM_LINK_JOBS=2\n'
+    'LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"\n'
+    'LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"\n'
+    + pool_policy
+    + 'printf "%s|%s\\n" "${LLVM_COMPILE_JOBS:-unlimited}" '
+      '"${LLVM_TABLEGEN_JOBS:-unlimited}"\n'
+)
+def check_native_pool(host, overrides, expected_output=None):
+    env = os.environ.copy()
+    for name in ('NATIVE_LLVM_COMPILE_JOBS', 'NATIVE_LLVM_TABLEGEN_JOBS'):
+        env.pop(name, None)
+    env['WHP_HOST_OS'] = host
+    env.update(overrides)
+    outcome = subprocess.run(
+        ['bash', '-c', pool_probe], env=env, capture_output=True, text=True
+    )
+    if expected_output is None:
+        assert outcome.returncode != 0 and 'must be 0 or a positive integer' in outcome.stderr
+    else:
+        assert outcome.returncode == 0, outcome.stderr
+        assert outcome.stdout.strip() == expected_output
+
+check_native_pool('macos', {}, '2|1')
+check_native_pool('linux', {}, 'unlimited|unlimited')
+check_native_pool('macos', {'NATIVE_LLVM_COMPILE_JOBS': '0', 'NATIVE_LLVM_TABLEGEN_JOBS': '0'}, 'unlimited|unlimited')
+check_native_pool('macos', {'NATIVE_LLVM_COMPILE_JOBS': '4', 'NATIVE_LLVM_TABLEGEN_JOBS': '2'}, '4|2')
+check_native_pool('macos', {'NATIVE_LLVM_COMPILE_JOBS': 'invalid'})
 link_job_policies = (
     (bootstrap, 'NATIVE_LLVM_LINK_JOBS'),
     (i386_bootstrap, 'I386_LLVM_LINK_JOBS'),
