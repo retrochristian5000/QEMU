@@ -268,6 +268,57 @@ not claim to repair the missing symbol; its output identifies whether the
 next code change belongs in Clang instrumentation, compiler-rt distribution,
 or Mach-O LLD.
 
+ARM64e AddressSanitizer runtime admission
+-----------------------------------------
+
+ARM64e ASan cannot be approved just because Clang emitted
+``__DATA,__asan_globals`` or Apple ``ld`` linked an executable. On Darwin,
+ASan relies on the Clang-linked
+``libclang_rt.asan_osx_dynamic.dylib`` and dyld. The pinned LLVM
+compiler-rt also has ARM64e-specific test deployment logic. Do not
+silently substitute an unrelated runtime or assume ARM64 and ARM64e
+sanitizer compatibility without executing instrumented code.
+
+``scripts/verify-native-asan-darwin.py`` retains the original
+``__asan_globals_required`` link diagnostic. Use ``--execute``
+to add two ARM64e C++ runtime checks after the metadata link, or
+``--runtime-only`` to run them without needing ``llvm-readobj``.
+The checks:
+
+#. verify that Clang and Clang++ select the same compiler-rt resource;
+#. require the dynamic Darwin ASan runtime to exist;
+#. link and execute an instrumented C++ callback using the requested
+   ``-arch``, checking the ARM64e PAC ABI macros when appropriate;
+#. run a separate instrumented heap-out-of-bounds case and require
+   a nonzero exit **and** an actual AddressSanitizer report;
+#. clear inherited ``DYLD_*`` variables during execution so a user's
+   injection/fallback search paths cannot conceal dyld resolution errors.
+
+For a direct check with Apple's toolchain::
+
+  python3 scripts/verify-native-asan-darwin.py \
+    --clang "$(xcrun --find clang)" \
+    --clangxx "$(xcrun --find clang++)" \
+    --arch arm64e \
+    --sdkroot "$(xcrun --sdk macosx --show-sdk-path)" \
+    --deployment-target "$(sw_vers -productVersion | cut -d. -f1,2)" \
+    --runtime-only
+
+An explicit ``WHP_MACOS_ARCH=arm64e QEMU_ASAN=1`` host build now
+requires that runtime test to pass **before** expensive firmware or QEMU
+compilation. Default ASan builds remain on arm64 in auto mode, and ASan
+continues to use Apple ``ld`` rather than the experimental Mach-O LLD
+lane. The bootstrap also runs the execution test when explicitly
+validating an ARM64e native LLVM compiler with
+``NATIVE_LLVM_VALIDATE_ASAN=1``.
+
+The separate ``asan-arm64e-runtime.yml`` workflow uses ordinary ARM64 as
+a control before testing ARM64e with Apple's Clang. A positive result
+establishes the tested macOS/compiler-rt/runtime combination; it does
+not prove that every ASan-instrumented QEMU module or coroutine works.
+Leave compiler-rt's PAC signal-context handling intact without evidence
+for an ISA-level modification.
+
 ARM64e host auto-detection
 ---------------------------
 
