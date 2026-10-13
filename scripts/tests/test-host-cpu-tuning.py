@@ -82,6 +82,51 @@ class HostCpuTuningTests(unittest.TestCase):
             ['-mtune=native'],
         )
 
+    def test_arm64e_darwin_tuning_uses_selected_abi_for_both_compilers(self):
+        # A Clang++ accepting flags under its default arm64 target is not
+        # evidence those flags work with the selected arm64e target.
+        guarded = pathlib.Path(self.tmp.name) / 'darwin-cc'
+        guarded.write_text(
+            '#!/bin/sh\n'
+            'case " $* " in\n'
+            '  *" -arch arm64e -isysroot /fake/MacOSX.sdk '
+            '-mmacosx-version-min=15.0 "*) ;;\n'
+            '  *) exit 1 ;;\n'
+            'esac\n'
+            'case " $* " in\n'
+            '  *" -### "*) printf \'"-cc1" "-target-cpu" '
+            '"apple-a18-pro"\\n\' >&2 ;;\n'
+            'esac\n'
+            'exit 0\n',
+            encoding='utf-8',
+        )
+        guarded.chmod(0o755)
+        target = ('-arch', 'arm64e', '-isysroot', '/fake/MacOSX.sdk',
+                  '-mmacosx-version-min=15.0')
+        self.assertEqual(
+            mod.resolve_cpu_tuning('native', 'arm64', str(guarded),
+                                   str(guarded), str(guarded), target),
+            ['-mtune=apple-a18-pro'],
+        )
+        self.assertEqual(
+            mod.resolve_cpu_tuning('native', 'arm64', str(guarded),
+                                   str(guarded), str(guarded)),
+            [],
+        )
+
+    def test_rejects_malformed_managed_darwin_flags(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(TOOL), '--value', 'portable',
+             '--host-arch', 'arm64', '--target-flag=-arch',
+             '--target-flag=arm64e', '--target-flag=-isysroot',
+             '--target-flag=/fake/MacOSX.sdk',
+             '--target-flag=-mmacosx-version-min=15.0-extra'],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('invalid managed Darwin target flags', result.stderr)
+
     def test_x86_native_uses_march_and_mtune(self):
         self.assertEqual(
             self.resolve('native', 'x86_64'),
