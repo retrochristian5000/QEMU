@@ -12,6 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = ROOT / "toolchains/llvm-project/llvm/lib/Target/AArch64/AArch64Processors.td"
 HOST = ROOT / "toolchains/llvm-project/llvm/lib/TargetParser/Host.cpp"
+SCHED = ROOT / "toolchains/llvm-project/llvm/lib/Target/AArch64/AArch64SchedAppleA18Pro.td"
+TARGET = ROOT / "toolchains/llvm-project/llvm/lib/Target/AArch64/AArch64.td"
 A18_PRO_FAMILY = 0x75D4ACB9
 
 # LLVM's feature names mapped to the Darwin sysctls already used by Host.cpp.
@@ -61,6 +63,27 @@ def source_profile():
     unproven = features.intersection(UNPROVEN)
     if unproven:
         raise ValueError(f"Unverified A18 Pro extensions: {sorted(unproven)}")
+    # A18 Pro must not silently inherit the old Cyclone pipeline schedule.
+    # The new model intentionally preserves only coarse *provisional*
+    # assumptions until measured resource and per-opcode timings are available.
+    sched = SCHED.read_text(encoding="utf-8")
+    target = TARGET.read_text(encoding="utf-8")
+    if not re.search(r'ProcessorModel<"apple-a18-pro",\s*AppleA18ProModel,',
+                     text):
+        raise ValueError("A18 Pro is no longer using its independent scheduler")
+    if 'include "AArch64SchedAppleA18Pro.td"' not in target:
+        raise ValueError("A18 Pro scheduler is not included by AArch64.td")
+    if not re.search(r'def AppleA18ProModel\s*:\s*SchedMachineModel',
+                     sched):
+        raise ValueError("A18 Pro model definition missing")
+    if not re.search(r'let CompleteModel\s*=\s*0\s*;', sched):
+        raise ValueError("Unmeasured A18 Pro model must remain incomplete")
+    if "let SchedModel = AppleA18ProModel" in sched:
+        raise ValueError("A18 Pro schedules added without audit")
+    for field, value in (("IssueWidth", 6), ("MicroOpBufferSize", 192),
+                         ("LoadLatency", 4), ("MispredictPenalty", 16)):
+        if not re.search(rf'let {field}\s*=\s*{value}\s*;', sched):
+            raise ValueError(f"{field} changed without a measured baseline")
     mapping = (r'case\s+0x75d4acb9\s*:\s*//\s*TAHITI: A18 Pro'
                r'\s*return\s+"apple-a18-pro";')
     if not re.search(mapping, host):
