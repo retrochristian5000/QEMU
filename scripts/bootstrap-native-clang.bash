@@ -65,6 +65,11 @@ case "$NATIVE_LLVM_VALIDATE_ASAN" in
         exit 1
         ;;
 esac
+if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]]; then
+    # An explicit debugging request must not silently skip the ASan validation
+    # just because QEMU_ASAN was unset.
+    NATIVE_LLVM_VALIDATE_ASAN=1
+fi
 # Build one host-native LLVM executable set for QEMU plus the freestanding
 # firmware lanes. Target selection belongs at Clang invocation time via
 # --target=..., not in separate host executable builds.
@@ -818,7 +823,8 @@ if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
         exit 1
     fi
     llvm_enable_projects="${llvm_enable_projects};lldb"
-    llvm_distribution_components="${llvm_distribution_components};lldb"
+    # The lldb executable loads a shared liblldb; install both components.
+    llvm_distribution_components="${llvm_distribution_components};lldb;liblldb"
 fi
 if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
     # LLVM's manifest merger is nonfunctional without native libxml2.
