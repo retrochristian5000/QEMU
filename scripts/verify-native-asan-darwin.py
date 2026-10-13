@@ -117,24 +117,163 @@ def verify(
             raise RuntimeError("ASan link returned success without an executable")
 
 
+import os
+
+# Explicit ARM64e runtime admission. This is deliberately separate from
+# verify(): a Mach-O global section and a successful link do not show that
+# dyld can load the matching compiler-rt runtime or that ASan works.
+RUNTIME_OK = """
+#if defined(WHP_REQUIRE_ARM64E)
+#if !defined(__arm64e__) || !defined(__PTRAUTH__)
+#error requested ARM64e C++ ABI was not selected
+#endif
+#endif
+__attribute__((noinline)) static int whp_add(int x) { return x + 41; }
+int (*volatile whp_callback)(int) = whp_add;
+int main() {
+    int *data = new int[4];
+    data[0] = whp_callback(1);
+    int ok = data[0] == 42;
+    delete[] data;
+    return ok ? 0 : 1;
+}
+"""
+
+RUNTIME_BAD = """
+#if defined(WHP_REQUIRE_ARM64E)
+#if !defined(__arm64e__) || !defined(__PTRAUTH__)
+#error requested ARM64e C++ ABI was not selected
+#endif
+#endif
+__attribute__((noinline)) static int out_of_bounds(int *data) {
+    volatile int *p = data;
+    return p[8];
+}
+int main() {
+    int *data = new int[4];
+    data[0] = 1;
+    return out_of_bounds(data);
+}
+"""
+
+
+def verify_runtime(
+    clang: pathlib.Path, clangxx: pathlib.Path, arch: str,
+    sdkroot: pathlib.Path, deployment: str, use_lld: bool,
+) -> None:
+    """Require working ASan in a real C++ ARM64e process, not only a link."""
+    if arch not in ("arm64", "arm64e", "x86_64"):
+        raise RuntimeError(f"unsupported Darwin ASan architecture: {arch}")
+
+    cc_resource = run([str(clang), "--print-resource-dir"])
+    cxx_resource = run([str(clangxx), "--print-resource-dir"])
+    if (cc_resource.returncode or cxx_resource.returncode or
+            not cc_resource.stdout.strip() or not cxx_resource.stdout.strip() or
+            pathlib.Path(cc_resource.stdout.strip()).resolve() !=
+            pathlib.Path(cxx_resource.stdout.strip()).resolve()):
+        raise RuntimeError(
+            "Clang and Clang++ do not select the same compiler-rt resource directory"
+        )
+    runtime = (pathlib.Path(cc_resource.stdout.strip()) / "lib" / "darwin" /
+               "libclang_rt.asan_osx_dynamic.dylib")
+    if not runtime.is_file():
+        raise RuntimeError(f"matching Darwin ASan runtime dylib is missing: {runtime}")
+
+    flags = ["-arch", arch, "-isysroot", str(sdkroot),
+             f"-mmacosx-version-min={deployment}",
+             "-fsanitize=address", "-O1", "-fno-omit-frame-pointer"]
+    if arch == "arm64e":
+        flags.append("-DWHP_REQUIRE_ARM64E=1")
+    if use_lld:
+        flags.append("-fuse-ld=lld")
+
+    with tempfile.TemporaryDirectory(prefix="whp-asan-runtime-") as td:
+        root = pathlib.Path(td)
+        runtime_env = dict(os.environ)
+        # Successful loading must not depend on a user's dyld insertion or
+        # fallback search path; the Clang driver owns the ASan runtime link.
+        for name in tuple(runtime_env):
+            if name.startswith("DYLD_"):
+                runtime_env.pop(name)
+        runtime_env["ASAN_OPTIONS"] = (
+            "detect_leaks=0:halt_on_error=1:symbolize=0"
+        )
+        for label, source, should_fail in (
+            ("healthy", RUNTIME_OK, False),
+            ("overflow", RUNTIME_BAD, True),
+        ):
+            input_file = root / f"{label}.cc"
+            output_file = root / label
+            input_file.write_text(source, encoding="utf-8")
+            command = [str(clangxx), *flags, str(input_file),
+                       "-o", str(output_file)]
+            linked = run(command)
+            if linked.returncode or not output_file.is_file():
+                raise RuntimeError(
+                    f"ASan C++ {arch} {label} link failed with " +
+                    ("Mach-O LLD" if use_lld else "Apple ld") + ":\n" +
+                    (linked.stderr or linked.stdout)[-5000:]
+                )
+            try:
+                executed = subprocess.run(
+                    [str(output_file)], capture_output=True, text=True,
+                    check=False, env=runtime_env, timeout=25,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    f"ASan C++ {arch} {label} executable timed out"
+                ) from exc
+            if not should_fail:
+                if executed.returncode:
+                    raise RuntimeError(
+                        f"ASan C++ {arch} healthy process failed to load/run "
+                        f"(exit {executed.returncode}):\n" +
+                        (executed.stderr or executed.stdout)[-5000:]
+                    )
+            elif (executed.returncode == 0 or
+                  "AddressSanitizer" not in executed.stderr or
+                  "heap-buffer-overflow" not in executed.stderr):
+                raise RuntimeError(
+                    f"ASan C++ {arch} did not diagnose the intentional "
+                    f"heap-buffer-overflow (exit {executed.returncode}):\n" +
+                    (executed.stderr or executed.stdout)[-5000:]
+                )
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--clang", type=pathlib.Path, required=True)
-    parser.add_argument("--readobj", type=pathlib.Path, required=True)
+    parser.add_argument("--readobj", type=pathlib.Path)
+    parser.add_argument("--clangxx", type=pathlib.Path)
     parser.add_argument("--arch", choices=("arm64", "arm64e", "x86_64"), required=True)
     parser.add_argument("--sdkroot", type=pathlib.Path, required=True)
     parser.add_argument("--deployment-target", required=True)
     parser.add_argument("--use-lld", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--execute", action="store_true",
+                       help="after the link probe, execute positive/negative ASan C++ tests")
+    modes.add_argument("--runtime-only", action="store_true",
+                       help="run C++ ASan ABI tests without needing llvm-readobj")
     args = parser.parse_args()
+    if not args.runtime_only and args.readobj is None:
+        parser.error("--readobj is required unless --runtime-only is selected")
+    clangxx = args.clangxx or args.clang.with_name("clang++")
     try:
-        verify(
-            args.clang, args.readobj, args.arch, args.sdkroot,
-            args.deployment_target, args.use_lld,
-        )
+        if not args.runtime_only:
+            verify(
+                args.clang, args.readobj, args.arch, args.sdkroot,
+                args.deployment_target, args.use_lld,
+            )
+        if args.execute or args.runtime_only:
+            verify_runtime(
+                args.clang, clangxx, args.arch, args.sdkroot,
+                args.deployment_target, args.use_lld,
+            )
     except (OSError, RuntimeError) as exc:
         print(f"error: WHP Darwin ASan global-link check: {exc}", file=sys.stderr)
         return 1
-    print("WHP Darwin ASan: instrumented globals linked with matching compiler-rt")
+    print("WHP Darwin ASan: " + ("runtime detects memory corruption" if
+          (args.execute or args.runtime_only) else
+          "instrumented globals linked with matching compiler-rt"))
     return 0
 
 
