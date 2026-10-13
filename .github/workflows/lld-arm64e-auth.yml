@@ -60,6 +60,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             cmake
+            compiler-rt/cmake/Modules
             libc
             lld
             llvm
