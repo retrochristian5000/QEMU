@@ -531,6 +531,22 @@ jobs:
           ./native-llvm-ubsan
           ./native-llvm-arm64e
 
+      - name: Inspect Mach-O with bootstrapped llvm-otool
+        shell: bash
+        run: |
+          set -euo pipefail
+          otool="$NATIVE_LLVM_DIR/bin/llvm-otool"
+          objdump="$NATIVE_LLVM_DIR/bin/llvm-objdump"
+          test -x "$otool"
+          "$otool" --version
+          "$objdump" --version >/dev/null
+          "$otool" -h native-llvm-arm64e > native-llvm-otool-header.txt
+          grep -Fq 'Mach header' native-llvm-otool-header.txt
+          "$otool" -l native-llvm-arm64e > native-llvm-otool-loads.txt
+          grep -Fq 'LC_SEGMENT_64' native-llvm-otool-loads.txt
+          "$otool" -t -v -mcpu=apple-a18-pro native-llvm-c.o > native-llvm-otool-disasm.txt
+          grep -Eq '(^|[[:space:]])ret([[:space:]]|$)' native-llvm-otool-disasm.txt
+
       - name: Verify PowerPC uses native LLVM without a second bootstrap
         shell: bash
         env:
