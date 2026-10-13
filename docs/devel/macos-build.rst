@@ -408,13 +408,16 @@ After explicitly building a compatible Mach-O LLD, its own runtime lane is::
     bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e lld
 
 The test builds a separate dynamic library with a global function pointer,
-links its client through ``@rpath``, checks ``LC_RPATH``, ``LC_LOAD_DYLIB``
-(via ``otool -L``) and ``LC_ID_DYLIB``, then moves the executable
-and dylib together to a path containing spaces. With
-``DYLD_LIBRARY_PATH`` and ``DYLD_FALLBACK_LIBRARY_PATH`` unset, dyld must
-still resolve the direct call, imported pointer, ``dlopen`` and ``dlsym``
-followed by an indirect call. A non-zero result is an unresolved runtime
-failure, not a reason to silently accept the earlier static LLD probe.
+links its client through ``@rpath``, then builds a QEMU-style late-loaded
+module that depends on the same dylib with its own
+``@loader_path/../lib`` runpath. It verifies ``LC_RPATH``,
+``LC_LOAD_DYLIB`` (via ``otool -L``) and ``LC_ID_DYLIB``, then relocates
+the executable and both libraries to a path containing spaces. With
+``DYLD_LIBRARY_PATH`` and ``DYLD_FALLBACK_LIBRARY_PATH`` unset,
+dyld must still resolve the direct call, imported pointer, both
+``dlopen`` calls, ``dlsym`` and their indirect calls. A non-zero result
+is an unresolved runtime failure, not a reason to silently accept the
+earlier static LLD probe.
 
 The final QEMU macOS build adapter no longer reintroduces the private SDL3
 directory through ``DYLD_FALLBACK_LIBRARY_PATH`` after sanitation. QEMU
