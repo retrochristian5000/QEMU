@@ -88,6 +88,43 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF
           cmake --build build-lld --target lld llvm-objdump -- -j4
 
+      - name: Reject malformed ARM64e relocation pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d "$RUNNER_TEMP/whp-reloc-pairs.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          source_test="llvm-project/lld/test/MachO/arm64e-reloc-pair-validation.s"
+          # LLVM lit directives precede the self-contained assembly fixture.
+          awk '/^\.text$/{emit=1} emit {print}' "$source_test" > "$work/input.s"
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c "$work/input.s" -o "$work/good.o"
+          python3 llvm-project/lld/test/MachO/Inputs/arm64e-reloc-pairs.py \
+            "$work/good.o" "$work"
+
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib "$work/good.o" -o "$work/good.dylib"
+          cases=(missing-addend auth-after-addend \
+                 missing-subtractor auth-after-subtractor)
+          messages=('ARM64_RELOC_ADDEND missing its paired relocation'
+                    'invalid ARM64_RELOC_ADDEND relocation pair'
+                    'SUBTRACTOR missing its paired relocation'
+                    'invalid SUBTRACTOR relocation pair')
+          for i in "${!cases[@]}"; do
+            if "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+                -dylib "$work/${cases[$i]}.o" \
+                -o "$work/rejected-$i.dylib" > "$work/error.log" 2>&1; then
+              echo "error: malformed ARM64e relocation was accepted: ${cases[$i]}" >&2
+              exit 1
+            fi
+            grep -Fq "${messages[$i]}" "$work/error.log" || {
+              cat "$work/error.log" >&2
+              exit 1
+            }
+          done
+          echo 'ARM64e relocation pair validation: passed'
+
       - name: Compare Apple ld64 and LLD dyld fixup options
         shell: bash
         run: |
