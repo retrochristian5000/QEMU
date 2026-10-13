@@ -77,6 +77,11 @@ probe = (ROOT / 'scripts' / 'whp-build' / 'arm64e-lld-probe.bash').read_text(enc
 assert 'arm64e-lld-probe.bash' in text
 assert '.quad _whp_auth_target@AUTH(ia,42,addr)' in probe
 assert 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' in probe
+# The otool-style driver shares llvm-objdump's decoder and should provide a
+# second public Mach-O inspection interface without replacing PAC bit tests.
+assert 'llvm-otool' in probe
+assert ' -chained_fixups ' in probe
+assert ' -dyld_info ' in probe
 assert 'bootstrap_lld_arch_ok=0' in text
 assert '"$WHP_ARM64E_USE_LLD" == 1' in text
 assert '"$bootstrap_lld_arch_ok" == 1' in text
