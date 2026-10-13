@@ -359,6 +359,24 @@ if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
     whp_macos_audit_linker_driver_flags || exit 1
 fi
 
+# A user-selected ARM64e+ASan QEMU build needs more than a working C++ link.
+# Fail early if dyld cannot load the matching compiler-rt or if the ASan
+# runtime fails to diagnose a real heap overflow under authenticated calls.
+# The ordinary arm64 ASan and non-sanitized arm64e lanes are unchanged.
+case "${QEMU_ASAN:-0}:$WHP_MACOS_ARCH" in
+    1:arm64e|y:arm64e)
+        if [[ -n "${NATIVE_LLVM_LDFLAG:-}" ]]; then
+            printf 'error: ARM64e ASan runtime admission requires Apple ld\n' >&2
+            exit 1
+        fi
+        "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
+            --clang "$CC" --clangxx "$CXX" --arch arm64e \
+            --sdkroot "$SDKROOT" \
+            --deployment-target "$MACOSX_DEPLOYMENT_TARGET" \
+            --runtime-only || exit 1
+        ;;
+esac
+
 for variable in CFLAGS CXXFLAGS OBJCFLAGS LDFLAGS; do
     if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
         whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"
