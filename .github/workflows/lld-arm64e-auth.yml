@@ -15,6 +15,8 @@ on:
       - 'scripts/tests/test-lld-arm64e-thinlto.bash'
       - 'scripts/tests/test-compiler-rt-arm64e-policy.py'
       - 'scripts/verify-native-asan-darwin.py'
+      - 'scripts/whp-lldb-autodebug.py'
+      - 'scripts/tests/test-whp-lldb-autodebug.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -81,6 +83,10 @@ jobs:
 
       - name: Install build dependencies
         run: brew install cmake ninja
+
+      - name: Verify fork LLDB auto-debug contract (no debugserver needed)
+        shell: bash
+        run: python3 scripts/tests/test-whp-lldb-autodebug.py
 
       - name: Verify compiler-rt ARM64e ASan ABI policy
         shell: bash
