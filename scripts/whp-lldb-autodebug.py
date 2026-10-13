@@ -70,8 +70,11 @@ def capture(
         output = result.stdout + "\n" + result.stderr
         # LLDB can return success after the debuggee exits unsuccessfully.
         exited = re.search(r"exited with status = ([0-9]+)", output)
-        failed = (result.returncode != 0 or
-                  bool(re.search(r"stop reason = (?:EXC_|SIG|signal)", output)) or
+        stopped = bool(re.search(r"stop reason = (?:EXC_|SIG|signal)", output))
+        # A debugger that could not launch the target might exit with 0 and
+        # print only an LLDB diagnostic. Require evidence of a process stop
+        # or a completed target run before declaring success.
+        failed = (result.returncode != 0 or stopped or exited is None or
                   (exited is not None and int(exited.group(1)) != 0))
         status = 1 if failed else 0
         explanation = f"lldb exit={result.returncode}; target_failed={failed}\n"
