@@ -724,10 +724,11 @@ native_target_matches_host()
     case "$host_os" in
         macos)
             [[ "$target_vendor" == apple ]] || return 1
-            case "$target_os" in
-                darwin*|macos*) ;;
-                *) return 1 ;;
-            esac
+            # Reject non-macOS Apple environments and extra target fields.
+            [[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1
+            # Darwin is a legacy macOS spelling, but arbitrary prefix matches
+            # must not become valid platform names.
+            [[ "$target_os" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
             ;;
         linux)
             case "$target" in
@@ -767,6 +768,15 @@ bootstrap_cxx_target_canonical="$(canonical_native_target_triple "$bootstrap_cxx
         "$bootstrap_cxx_target" >&2
     exit 1
 }
+# Keep C and C++ on one host target ABI rather than silently mixing SDK
+# and deployment assumptions from different bootstrap compilers.
+if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C and C++ compiler target triples differ.' \
+        "C:   $bootstrap_cc_target_canonical" \
+        "C++: $bootstrap_cxx_target_canonical" >&2
+    exit 1
+fi
 llvm_host_triple="$bootstrap_cc_target_canonical"
 llvm_default_target_triple="$llvm_host_triple"
 
