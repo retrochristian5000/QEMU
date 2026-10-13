@@ -2,15 +2,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Verify ARM64e ThinLTO native output and PAC fixups using the pinned LLVM.
 set -euo pipefail
-if [[ $# != 4 ]]; then
-    echo 'usage: test-lld-arm64e-thinlto.bash <ld64.lld> <opt> <llvm-readobj> <llvm-objdump>' >&2
+if [[ $# != 5 ]]; then
+    echo 'usage: test-lld-arm64e-thinlto.bash <ld64.lld> <opt> <llvm-readobj> <llvm-objdump> <llvm-lto2>' >&2
     exit 2
 fi
 ld="$1"
 opt="$2"
 readobj="$3"
 objdump="$4"
-for tool in "$ld" "$opt" "$readobj" "$objdump"; do
+lto2="$5"
+for tool in "$ld" "$opt" "$readobj" "$objdump" "$lto2"; do
     [[ -x "$tool" ]] || { echo "missing LLVM tool: $tool" >&2; exit 1; }
 done
 
@@ -86,4 +87,41 @@ done
     -dylib "$work/arm64.o" -o "$work/libarm64.dylib"
 "$readobj" --file-headers "$work/libarm64.dylib" >"$work/plain-headers.txt"
 grep -Fq 'CpuSubType: CPU_SUBTYPE_ARM64_ALL (0x0)' "$work/plain-headers.txt"
+# The shared LLVM LTO engine is also used by clients other than ld64.lld.
+# Test it directly, including reversal of the input module order.
+shared_fixture="llvm-project/llvm/test/ThinLTO/AArch64/darwin-arm64e-abi-mix.ll"
+[[ -f "$shared_fixture" ]] || {
+    echo "missing shared ThinLTO ARM64e regression" >&2
+    exit 1
+}
+mkdir -p "$work/lto-shared"
+awk -v dir="$work/lto-shared" '
+    /^;--- / {file=$2; next}
+    file!="" {print > (dir "/" file)}
+' "$shared_fixture"
+for target in arm64 arm64e; do
+    "$opt" -thinlto-bc "$work/lto-shared/$target.ll" -o "$work/lto-shared/$target.bc"
+done
+for order in forward reverse; do
+    if [[ "$order" == forward ]]; then
+        first=arm64
+        second=arm64e
+    else
+        first=arm64e
+        second=arm64
+    fi
+    if "$lto2" run "$work/lto-shared/$first.bc" "$work/lto-shared/$second.bc" \
+         -o "$work/lto-shared/$order" \
+         -r="$work/lto-shared/arm64.bc,plain_entry,px" \
+         -r="$work/lto-shared/arm64e.bc,auth_entry,px" \
+         >"$work/lto-shared/error.log" 2>&1; then
+        echo "shared LLVM ThinLTO accepted mixed Darwin ARM64 ABIs" >&2
+        exit 1
+    fi
+    grep -Fq 'cannot mix Darwin arm64 and arm64e bitcode in one LTO link' \
+        "$work/lto-shared/error.log" || {
+        cat "$work/lto-shared/error.log" >&2
+        exit 1
+    }
+done
 echo 'ARM64e ThinLTO PAC, native ABI, caching, and cross-ABI guards: passed'
