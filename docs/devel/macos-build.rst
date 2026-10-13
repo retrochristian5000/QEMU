@@ -484,6 +484,47 @@ References: Apple dyld ``include/mach-o/fixup-chains.h`` and
 ``dyld/Loader.cpp``, and Apple's *Run-Path Dependent Libraries* and
 *Embedding nonstandard code structures in a bundle* documentation.
 
+Apple ld64 flag compatibility: chained fixups
+---------------------------------------------
+
+Apple's public ``ld64`` source distinguishes ``-fixup_chains`` (force on)
+from ``-no_fixup_chains`` (force off), with force-on taking precedence if
+both appear, regardless of argument order. Apple's
+``ld::supportsChainedFixups`` target-version table sets the default macOS
+boundary at **12.0**. The pinned WHP ``ld64.lld`` used to assume macOS
+13.0 and interpret conflicting options using the last flag. Both
+differences have been corrected in the LLVM fork.
+
+This change affects ordinary ARM64's default dynamic-linker load commands.
+It does **not** relax the ARM64e requirement for PAC-compatible chained
+fixups: ``-no_fixup_chains`` alone remains an error on ARM64e; an explicit
+``-fixup_chains`` overrides the negative flag even when it appeared first.
+A macOS 11 ARM64 build defaults to classic ``LC_DYLD_INFO_ONLY``; an
+ordinary macOS 12 ARM64 dylib defaults to ``LC_DYLD_CHAINED_FIXUPS``.
+
+On a macOS host with the lean LLD test toolchain, compare Apple ``ld``
+with the pinned ``ld64.lld`` using the exact same ARM64 object file::
+
+  bash scripts/tests/test-macos-ld64-fixup-flags.bash \
+    /path/to/llvm/bin/ld64.lld /path/to/llvm/bin/llvm-objdump
+
+The comparison exercises macOS 11/12 default behavior, both explicit
+flags, and both conflicting-flag orders; it is wired into the existing
+``lld-arm64e-auth.yml`` CI lane, which builds LLD once. The upstream
+LLD Lit tests separately guard ARM64e mandatory PAC fixups.
+
+Not all Apple ld flags are equivalent to LLD merely because an option
+exists in ``Options.td``. For example, Apple documents
+``-fixup_chains_section_vm`` for static/preload outputs; treating it as
+an alias for dynamic dylib chained fixups would be incorrect. Keep that
+special format outside this change until a verified writer and tests exist.
+Likewise, do not claim ``-mac_public_arm64e`` compatibility based solely
+on compiler-rt probing the flag. The test validates linker metadata,
+not a fully successful dyld load or code-signing contract.
+
+Sources: Apple ``ld64/src/ld/Options.cpp``,
+``ld64/src/ld/ld.hpp``, and Apple's ``ld(1)`` option reference.
+
 ARM64e LLD development lane
 ---------------------------
 
