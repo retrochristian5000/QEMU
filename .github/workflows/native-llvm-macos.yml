@@ -30,6 +30,7 @@ on:
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
       - 'scripts/tests/test-macos-arch-policy.bash'
+      - 'scripts/tests/test-aarch64-darwin-sysctl.py'
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
@@ -162,6 +163,10 @@ jobs:
       - name: Verify macOS architecture policy
         shell: bash
         run: bash scripts/tests/test-macos-arch-policy.bash
+
+      - name: Test Darwin AArch64 host ISA feature detection
+        shell: bash
+        run: python3 scripts/tests/test-aarch64-darwin-sysctl.py
 
       - name: Audit arm64e TCG pointer authentication gate
         shell: bash
