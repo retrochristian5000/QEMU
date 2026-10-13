@@ -279,10 +279,56 @@ assert '"$prefix/bin/clang++" -x c++ -c - -o /dev/null' in bootstrap
 assert 'native_target_matches_host "$target"' in bootstrap
 assert "IFS='-' read -r arch target_vendor target_os _ <<< \"$target\"" in bootstrap
 assert '[[ "$target_vendor" == apple ]] || return 1' in bootstrap
-assert 'darwin*|macos*)' in bootstrap
+assert '[[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1' in bootstrap
+assert '[[ "$target_os" =~ ^(darwin|macosx|macos)' in bootstrap
+assert 'if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; then' in bootstrap
+assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
+assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
+
 for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert loose_match not in bootstrap
 assert '*-linux-*|*-linux' in bootstrap
+
+# Evaluate the actual shell matcher so a broad prefix check cannot silently
+# re-admit simulator, Catalyst, or malformed Darwin targets.
+def extract_bootstrap_function(name):
+    start = bootstrap.index(f'{name}()\n{{')
+    end = bootstrap.index('\n}\n', start) + len('\n}\n')
+    return bootstrap[start:end]
+
+target_probe = '\n'.join([
+    'set -euo pipefail',
+    'host_os=macos',
+    'host_tag=aarch64',
+    extract_bootstrap_function('canonical_native_arch'),
+    extract_bootstrap_function('native_target_matches_host'),
+    'if native_target_matches_host "$1"; then echo accept; else echo reject; fi',
+])
+for target in (
+    'arm64-apple-darwin25.0.0',
+    'aarch64-apple-macos26.0',
+    'aarch64-apple-macosx15.6',
+    'aarch64-apple-darwin',
+):
+    result = subprocess.run(['bash', '-c', target_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'accept', (target, result.stderr)
+for target in (
+    'aarch64-apple-ios19.0',
+    'aarch64-apple-tvos26.0',
+    'aarch64-apple-watchos11',
+    'aarch64-apple-xros2',
+    'aarch64-apple-driverkit25',
+    'aarch64-apple-darwin25-simulator',
+    'aarch64-apple-darwin25-macabi',
+    'aarch64-apple-darwin25-unknown',
+    'aarch64-unknown-apple-darwin25',
+    'aarch64-apple-macosgarbage',
+    'arm64-apple-darwinX',
+):
+    result = subprocess.run(['bash', '-c', target_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'reject', (target, result.stderr)
 
 # Do not pass CMake cache variables that the pinned LLVM revision no longer
 # defines. CMake reports these as manually-specified variables that were not
