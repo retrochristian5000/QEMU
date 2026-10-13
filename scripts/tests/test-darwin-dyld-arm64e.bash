@@ -28,7 +28,7 @@ fi
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/whp-dyld-arm64e.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/app/lib"
+mkdir -p "$work/app/lib" "$work/app/modules"
 cat > "$work/library.c" <<'C'
 __attribute__((visibility("default"), noinline))
 int whp_dyld_answer(int value) { return value + 41; }
@@ -36,6 +36,13 @@ int whp_dyld_answer(int value) { return value + 41; }
    in the client require binds against a separate Mach-O image. */
 __attribute__((visibility("default")))
 int (*whp_dyld_callback)(int) = whp_dyld_answer;
+C
+cat > "$work/plugin.c" <<'C'
+/* Like a QEMU GModule .dylib: the module binds a private dependency and
+   carries its own loader-relative search path to that dependency. */
+extern int whp_dyld_answer(int);
+__attribute__((visibility("default")))
+int whp_dyld_plugin(int value) { return whp_dyld_answer(value); }
 C
 cat > "$work/main.c" <<'C'
 #include <dlfcn.h>
@@ -57,7 +64,19 @@ int main(void) {
     }
     if (dlclose(handle) != 0)
         return 14;
-    puts("dyld relocatable bind/rebase: passed");
+    /* A real late-loaded module with its own LC_RPATH, like QEMU modules. */
+    void *module = dlopen("@loader_path/modules/libwhp-dyld-plugin.dylib",
+                          RTLD_NOW | RTLD_LOCAL);
+    if (!module) {
+        fprintf(stderr, "dyld module dlopen: %s\n", dlerror());
+        return 15;
+    }
+    int (*plug)(int) = (int (*)(int))dlsym(module, "whp_dyld_plugin");
+    if (!plug || plug(1) != 42)
+        return 16;
+    if (dlclose(module) != 0)
+        return 17;
+    puts("dyld relocatable bind/rebase and module load: passed");
     return 0;
 }
 C
@@ -65,6 +84,11 @@ C
 "$cc" "${flags[@]}" -dynamiclib "$work/library.c" \
     -Wl,-install_name,@rpath/libwhp-dyld-test.dylib \
     -o "$work/app/lib/libwhp-dyld-test.dylib"
+"$cc" "${flags[@]}" -dynamiclib "$work/plugin.c" \
+    "$work/app/lib/libwhp-dyld-test.dylib" \
+    -Wl,-install_name,@rpath/libwhp-dyld-plugin.dylib \
+    -Wl,-rpath,@loader_path/../lib \
+    -o "$work/app/modules/libwhp-dyld-plugin.dylib"
 "$cc" "${flags[@]}" "$work/main.c" \
     "$work/app/lib/libwhp-dyld-test.dylib" \
     -Wl,-rpath,@loader_path/lib \
@@ -78,6 +102,10 @@ grep -Fq '@rpath/libwhp-dyld-test.dylib' "$work/deps.txt"
 grep -Fq 'cmd LC_RPATH' "$work/commands.txt"
 grep -Fq 'path @loader_path/lib (' "$work/commands.txt"
 grep -Fq '@rpath/libwhp-dyld-test.dylib' "$work/id.txt"
+"$otool" -L "$work/app/modules/libwhp-dyld-plugin.dylib" > "$work/plugin-deps.txt"
+"$otool" -l "$work/app/modules/libwhp-dyld-plugin.dylib" > "$work/plugin-loads.txt"
+grep -Fq '@rpath/libwhp-dyld-test.dylib' "$work/plugin-deps.txt"
+grep -Fq 'path @loader_path/../lib (' "$work/plugin-loads.txt"
 
 # Relocate the bundle to a path with spaces, and leave cwd unrelated to it.
 mv "$work/app" "$work/moved bundle"
