@@ -58,15 +58,17 @@ class HostCpuTuningTests(unittest.TestCase):
         self.assertEqual(self.resolve('native', 'arm64'), ['-mtune=apple-m4'])
 
     def test_arm64_a18_pro_uses_native_tuning_without_raising_isa(self):
-        # A18 Pro reports apple-a18 through Darwin's hw.cpufamily; do not
-        # turn its M4-compatible ISA alias into mandatory host ISA flags.
+        # Darwin identifies the A18 Pro family as apple-a18-pro. Preserve
+        # its distinct tuning model without implicitly enabling optional
+        # ARMv9.2-A instructions in every QEMU host translation unit.
         self.compiler.write_text(
             self.compiler.read_text(encoding='utf-8').replace(
-                'apple-m4', 'apple-a18'
+                'apple-m4', 'apple-a18-pro'
             ),
             encoding='utf-8',
         )
-        self.assertEqual(self.resolve('native', 'arm64'), ['-mtune=apple-a18'])
+        self.assertEqual(self.resolve('native', 'arm64'),
+                         ['-mtune=apple-a18-pro'])
 
     def test_arm64_native_falls_back_to_mtune_native_when_cpu_name_is_hidden(self):
         hidden = pathlib.Path(self.tmp.name) / 'hidden-native-cc'
