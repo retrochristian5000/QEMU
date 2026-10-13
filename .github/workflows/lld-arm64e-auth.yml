@@ -10,6 +10,7 @@ on:
       - 'scripts/tests/test-macos-ld64-fixup-flags.bash'
       - 'scripts/tests/test-darwin-dyld-arm64e.bash'
       - 'scripts/tests/test-lld-arm64e-symbol-resolution.bash'
+      - 'scripts/tests/test-lld-fat-arm64e.bash'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -87,7 +88,14 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=lld \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
-          cmake --build build-lld --target lld llvm-objdump -- -j4
+          cmake --build build-lld --target lld llvm-objdump llvm-lipo -- -j4
+
+      - name: Validate universal Mach-O ARM64e slice selection
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-fat-arm64e.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lipo"
 
       - name: Reject malformed ARM64e relocation pairs
         shell: bash
