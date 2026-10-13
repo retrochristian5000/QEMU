@@ -349,7 +349,7 @@ export LIPO="${LIPO:-/usr/bin/lipo}"
 
 reject_managed_flags
 WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
-    "$MACOSX_DEPLOYMENT_TARGET" "$process_arch")" || exit 1
+    "$MACOSX_DEPLOYMENT_TARGET" "$process_arch" "$CXX")" || exit 1
 export WHP_MACOS_ARCH
 
 # The linker selection must agree across both Clang drivers and all active
