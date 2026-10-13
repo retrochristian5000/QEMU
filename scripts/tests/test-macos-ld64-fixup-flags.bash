@@ -61,7 +61,8 @@ for linker in apple lld; do
     else
         selected="$lld"
     fi
-    for case_name in default11 default12 optout12 optin11; do
+    for case_name in default11 default12 optout12 optin11 \
+        forceon_first12 forceon_last12; do
         version=12.0
         extra=()
         expected=chained
@@ -70,6 +71,8 @@ for linker in apple lld; do
             default12) ;;
             optout12) extra=(-no_fixup_chains); expected=legacy ;;
             optin11) version=11.0; extra=(-fixup_chains) ;;
+            forceon_first12) extra=(-fixup_chains -no_fixup_chains) ;;
+            forceon_last12) extra=(-no_fixup_chains -fixup_chains) ;;
         esac
         output="$work/$linker-$case_name.dylib"
         "$selected" -arch arm64 \
