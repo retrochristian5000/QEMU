@@ -110,6 +110,17 @@ def main():
                     ((word >> 48) & 1)) == (key, div, addr)
         assert relocs[32] == (0, 3, 0, 1)
 
+        # Do not let plain arm64 inherit ARM64e pointer-signing relocations.
+        # The rejected case proves we are running the corrected LLVM MC
+        # object writer rather than merely a capable external assembler.
+        rejected = subprocess.run(
+            [args.clang, "-target", "arm64-apple-macosx13.0", "-c",
+             str(root / "auth.s"), "-o", str(root / "invalid-arm64.o")],
+            text=True, capture_output=True, check=False)
+        assert rejected.returncode != 0, "plain arm64 accepted @AUTH"
+        assert "authenticated pointer relocation requires arm64e Mach-O" in rejected.stderr, (
+            f"unexpected rejection diagnostic: {rejected.stderr}")
+
         _, csec = emit(args.clang, "arm64e-apple-macosx13.0",
                        root / "callback.c", root / "callback-arm64e.o")
         assert [r[0] for r in csec[(b"__DATA", b"__data")][1].values()] == [11]
