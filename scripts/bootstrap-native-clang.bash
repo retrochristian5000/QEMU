@@ -21,6 +21,23 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
+# Optional fork LLDB; don't enlarge the ordinary QEMU native LLVM bootstrap.
+NATIVE_LLVM_ENABLE_LLDB="${NATIVE_LLVM_ENABLE_LLDB:-0}"
+NATIVE_LLVM_ASAN_AUTO_DEBUG="${NATIVE_LLVM_ASAN_AUTO_DEBUG:-0}"
+for whp_lldb_flag in NATIVE_LLVM_ENABLE_LLDB NATIVE_LLVM_ASAN_AUTO_DEBUG; do
+    case "${!whp_lldb_flag}" in
+        0|1) ;;
+        *)
+            printf 'error: %s must be 0 or 1\n' "$whp_lldb_flag" >&2
+            exit 1
+            ;;
+    esac
+done
+if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 &&
+      "$NATIVE_LLVM_ENABLE_LLDB" != 1 ]]; then
+    printf 'error: auto-debug requires NATIVE_LLVM_ENABLE_LLDB=1\n' >&2
+    exit 1
+fi
 # An experimental host-only libLLVM/libclang-cpp shared linking profile.
 # Static component archives remain default for stable incremental builds.
 NATIVE_LLVM_SHARED_TOOLCHAIN="${NATIVE_LLVM_SHARED_TOOLCHAIN:-0}"
@@ -795,6 +812,14 @@ bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
 llvm_enable_projects='clang;lld'
 llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 llvm_enable_libxml2=OFF
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    if [[ "$host_os" != macos ]]; then
+        printf 'error: fork-built LLDB auto-debug currently supports macOS only\n' >&2
+        exit 1
+    fi
+    llvm_enable_projects="${llvm_enable_projects};lldb"
+    llvm_distribution_components="${llvm_distribution_components};lldb"
+fi
 if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
     # LLVM's manifest merger is nonfunctional without native libxml2.
     # FORCE_ON rejects missing/incompatible XML libraries at configure.
@@ -882,6 +907,9 @@ SDKROOT=$sdkroot
 MACOSX_DEPLOYMENT_TARGET=$deployment_target
 EOF
 )"
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    expected_marker="$expected_marker"$'\nNATIVE_LLVM_ENABLE_LLDB=1\nLLDB_ENABLE_PYTHON=OFF\nLLDB_USE_SYSTEM_DEBUGSERVER=ON'
+fi
 if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
     # Default mode must retain the exact previous schema-12 cache marker.
     expected_marker="$expected_marker"$'\nLLVM_SHARED_TOOLCHAIN=1\nLLVM_BUILD_LLVM_DYLIB=ON\nLLVM_LINK_LLVM_DYLIB=ON\nCLANG_LINK_CLANG_DYLIB=ON'
@@ -1031,6 +1059,10 @@ usable()
     if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
         windows_manifest_tool_usable "$prefix" || return 1
     fi
+    if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+        [[ -x "$prefix/bin/lldb" ]] || return 1
+        "$prefix/bin/lldb" --version >/dev/null 2>&1 || return 1
+    fi
     shared_host_libraries_usable "$prefix" || return 1
     supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
     grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
@@ -1136,6 +1168,9 @@ verify_asan_when_requested()
     if [[ "$darwin_cmake_arch" == arm64e ]]; then
         asan_args+=(--execute)
     fi
+    if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]]; then
+        asan_args+=(--debug-on-crash --lldb "$prefix/bin/lldb")
+    fi
     "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
         "${asan_args[@]}"
 }
@@ -1216,6 +1251,18 @@ cmake_args=(
     -DCLANG_INCLUDE_TESTS=OFF
     -DCLANG_ENABLE_STATIC_ANALYZER=OFF
     -DLLD_INCLUDE_TESTS=OFF
+    -DLLDB_ENABLE_PYTHON=OFF
+    -DLLDB_ENABLE_SWIG=OFF
+    -DLLDB_ENABLE_LUA=OFF
+    -DLLDB_ENABLE_LIBEDIT=OFF
+    -DLLDB_ENABLE_CURSES=OFF
+    -DLLDB_ENABLE_LZMA=OFF
+    -DLLDB_ENABLE_LIBXML2=OFF
+    -DLLDB_ENABLE_TREESITTER=OFF
+    -DLLDB_ENABLE_PROTOCOL_SERVERS=OFF
+    -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
+    -DLLDB_ENABLE_LIBCXX_TESTS=OFF
+    -DLLDB_INCLUDE_TESTS=OFF
     -DLLVM_ENABLE_ZLIB=OFF
     -DLLVM_ENABLE_ZSTD=OFF
     "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
