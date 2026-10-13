@@ -68,6 +68,17 @@ class AutoDebugTests(unittest.TestCase):
             )
         self.assertEqual(status, 1)
 
+    def test_failed_debugger_launch_not_treated_as_healthy(self):
+        result = subprocess.CompletedProcess(
+            [], 0, "", "error: process launch failed: permission denied\\n",
+        )
+        with mock.patch.object(runner.subprocess, "run", return_value=result):
+            status, report = runner.capture(
+                self.lldb, ["/bin/true"], "denied", self.dir, 5,
+            )
+        self.assertEqual(status, 1)
+        self.assertIn("permission denied", report.read_text())
+
     def test_debugger_timeout_keeps_partial_diagnostics(self):
         timeout = subprocess.TimeoutExpired(
             cmd=["lldb"], timeout=5, output=b"frame #0: partial\n",
