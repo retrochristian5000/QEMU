@@ -165,6 +165,23 @@ class NativeASanGlobalsTests(unittest.TestCase):
                         self.prefix / "MacOSX.sdk", "15.0", False,
                     )
 
+    def test_arm64e_asan_reports_healthy_process_load_failure(self):
+        def dyld_error(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="",
+                stderr="dyld: Library not loaded: libclang_rt.asan_osx_dynamic.dylib",
+            )
+
+        with mock.patch.object(self.module, "run", side_effect=self.fake_run):
+            with mock.patch.object(self.module.subprocess, "run",
+                                   side_effect=dyld_error):
+                with self.assertRaisesRegex(RuntimeError,
+                                            "healthy process failed to load/run"):
+                    self.module.verify_runtime(
+                        self.prefix / "clang", self.prefix / "clang++", "arm64e",
+                        self.prefix / "MacOSX.sdk", "15.0", False,
+                    )
+
     def test_arm64e_asan_rejects_mixed_clang_runtime_directories(self):
         def mixed_runtimes(cmd):
             if cmd[-1] == "--print-resource-dir" and "clang++" in str(cmd[0]):
@@ -194,6 +211,12 @@ class NativeASanGlobalsTests(unittest.TestCase):
         self.assertIn("NATIVE_LLVM_LDFLAG=-fuse-ld=lld", build)
         self.assertIn('"${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y', bootstrap)
         self.assertIn("asan_args+=(--use-lld)", bootstrap)
+        self.assertIn('asan_args+=(--execute)', bootstrap)
+        self.assertIn('--clangxx "$prefix/bin/clang++"', bootstrap)
+        macos = (ROOT / "scripts/macos-builder.bash").read_text(encoding="utf-8")
+        self.assertIn('1:arm64e|y:arm64e)', macos)
+        self.assertIn('--runtime-only || exit 1', macos)
+        self.assertIn('ARM64e ASan runtime admission requires Apple ld', macos)
 
     def test_native_linker_selection_honors_asan_and_arm64e(self):
         # Run the POSIX shell decision from build.sh against a fake xcrun.
