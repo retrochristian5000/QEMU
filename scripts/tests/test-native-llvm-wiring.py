@@ -149,7 +149,7 @@ assert "grep -Fxq 'BOOTSTRAP_SCHEMA=12' \"$marker\"" in macos_workflow
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
 # load a matching reader. The same Darwin distribution also owns compiler-rt,
 # so keep LTO and both runtime umbrella components in one exact platform policy.
-assert 'llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
 
