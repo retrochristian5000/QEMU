@@ -37,7 +37,13 @@ while (($#)); do
     fi
     shift
 done
-[[ -z "$out" || "$out" == /dev/null ]] || : > "$out"
+if [[ " $* " == *' -x c++ '* && "${TEST_ARM64E_CXX_SUPPORTED:-1}" != 1 ]]; then
+    exit 1
+fi
+if [[ -n "$out" && "$out" != /dev/null ]]; then
+    printf '%s\n' '#!/bin/sh' 'exit "${TEST_ARM64E_RUNTIME:-0}"' > "$out"
+    chmod +x "$out"
+fi
 EOF
 chmod +x "$FAKE_CLANG"
 
@@ -46,12 +52,39 @@ chmod +x "$FAKE_CLANG"
 # arm64e with a separate LLVM backend.
 source "$SOURCE_DIR/scripts/macos-arch-policy.bash"
 
-# Auto must stay on the established arm64 ABI until TCG handles pointer
-# authentication at both C -> JIT and JIT -> C call boundaries.  Merely having
-# a compiler and SDK that can link arm64e is not enough.
+# Auto selects arm64e only if both C and C++ compile/link/run PAC calls.
 : > "$TEST_COMPILER_LOG"
 selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
-    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64)"
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64e ]]
+grep -Fq -- '-x c -' "$TEST_COMPILER_LOG"
+grep -Fq -- '-x c++ -' "$TEST_COMPILER_LOG"
+
+# An unusable macOS runtime must fall back even if compilation works.
+selected="$(TEST_ARM64E_RUNTIME=1 WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+
+# An incorrect ABI on either compiler must also fall back.
+selected="$(TEST_ARM64E_PTRAUTH=0 WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+selected="$(TEST_ARM64E_CXX_SUPPORTED=0 WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+
+# An LLD linker without the authenticated-fixup opt-in is never auto-selected.
+: > "$TEST_COMPILER_LOG"
+selected="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_ARM64E_USE_LLD=0 \
+    WHP_MACOS_ARCH=auto whp_select_macos_arch \
+    "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+[[ ! -s "$TEST_COMPILER_LOG" ]]
+
+# ASan retains the established arm64 lane in automatic mode.
+: > "$TEST_COMPILER_LOG"
+selected="$(QEMU_ASAN=1 WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
 [[ ! -s "$TEST_COMPILER_LOG" ]]
 
@@ -82,7 +115,7 @@ grep -Fq 'requested arm64e' "$TEST_DIR/explicit.err"
 
 : > "$TEST_COMPILER_LOG"
 selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
-    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 x86_64)"
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 x86_64 "$FAKE_CLANG")"
 [[ "$selected" == x86_64 ]]
 [[ ! -s "$TEST_COMPILER_LOG" ]]
 
@@ -209,6 +242,7 @@ grep -Fq 'if [[ "$link_arch" == arm64e && "${WHP_ARM64E_USE_LLD:-0}" == 1 ]]; th
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
 grep -Fq 'source "$SCRIPT_DIR/macos-arch-policy.bash"' "$macos_builder"
 grep -Fq 'whp_select_macos_arch "$CC" "$SDKROOT"' "$macos_builder"
+grep -Fq '"$process_arch" "$CXX")"' "$macos_builder"
 grep -Fq 'whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"' "$macos_builder"
 grep -Fq "*' -arch '*)" "$macos_builder"
 
