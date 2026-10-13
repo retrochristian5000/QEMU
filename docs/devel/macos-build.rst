@@ -331,6 +331,29 @@ References: Apple's ``Apple Silicon CPU Optimization Guide`` and
 ``Preparing your app to work with pointer authentication``, plus Apple
 XNU ``doc/arm/sme.md``.
 
+LLVM Mach-O inspection with llvm-otool
+------------------------------------
+
+The pinned LLVM source defines ``llvm-otool`` as an ``llvm-objdump``
+symlink with an otool-compatible argument parser. The WHP Darwin native
+LLVM distribution includes this entry point alongside ``llvm-objdump``.
+It does not compile a second disassembler or independently verify LLVM's
+Mach-O decoder. Inspect a linked executable using::
+
+  "$NATIVE_LLVM_DIR/bin/llvm-otool" -h ./qemu-system-ppc
+  "$NATIVE_LLVM_DIR/bin/llvm-otool" -l ./qemu-system-ppc
+  "$NATIVE_LLVM_DIR/bin/llvm-otool" -t -v -mcpu=apple-a18-pro ./qemu-system-ppc
+  "$NATIVE_LLVM_DIR/bin/llvm-otool" -chained_fixups ./qemu-system-ppc
+  "$NATIVE_LLVM_DIR/bin/llvm-otool" -dyld_info ./qemu-system-ppc
+
+The ``-mcpu=`` option configures the disassembler; it does not verify the
+running machine's ISA capabilities or change the target of the original
+build. Not every Mach-O file has chained fixups or dyld rebases. For the
+ARM64e-authenticated relocation fixture, the WHP LLD probe checks the
+versioned pointer format using both LLVM command interfaces when
+``llvm-otool`` is installed, while the existing ``llvm-objdump``
+metadata decoder still validates PAC keys and discriminators.
+
 ARM64e LLD development lane
 ---------------------------
 
