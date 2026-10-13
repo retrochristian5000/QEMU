@@ -1107,6 +1107,7 @@ verify_asan_when_requested()
     [[ "$host_os" == macos && "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]] || return 0
     asan_args=(
         --clang "$prefix/bin/clang"
+        --clangxx "$prefix/bin/clang++"
         --readobj "$prefix/bin/llvm-readobj"
         --arch "$darwin_cmake_arch"
         --sdkroot "$sdkroot"
@@ -1118,6 +1119,12 @@ verify_asan_when_requested()
     if [[ "$darwin_cmake_arch" != arm64e &&
           "${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y ]]; then
         asan_args+=(--use-lld)
+    fi
+    # The arm64e Clang/ASan runtime may fail after a successful Mach-O link.
+    # Validate real PAC-aware C++ execution and error reporting before reusing
+    # or publishing this native toolchain in an explicit ASan validation run.
+    if [[ "$darwin_cmake_arch" == arm64e ]]; then
+        asan_args+=(--execute)
     fi
     "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
         "${asan_args[@]}"
