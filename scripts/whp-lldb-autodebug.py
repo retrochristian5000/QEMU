@@ -23,8 +23,13 @@ CRASH_COMMANDS = (
     "thread backtrace all",
     "frame info",
     "register read pc lr fp sp x8 x16 x17 x22",
+    # Preserve instructions preceding a BLRAAZ X8 call, not only the
+    # faulting instruction: the pointer producer is the critical evidence.
+    "disassemble --frame --bytes --count 80",
     "disassemble --pc --count 24",
     "image list -o -f",
+    "image lookup --address `$pc`",
+    "image lookup --address `$x8`",
 )
 
 
