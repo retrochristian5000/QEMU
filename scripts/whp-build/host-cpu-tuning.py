@@ -56,14 +56,15 @@ def _command(command: str) -> List[str]:
     return parts
 
 
-def compiler_accepts(command: str, language: str, flags: Sequence[str]) -> bool:
+def compiler_accepts(command: str, language: str, flags: Sequence[str],
+                     target_flags: Sequence[str] = ()) -> bool:
     cmd = _command(command)
     with tempfile.TemporaryDirectory(prefix='whp-host-cpu-') as td:
         source = pathlib.Path(td) / 'probe.c'
         output = pathlib.Path(td) / 'probe.o'
         source.write_text('int main(void) { return 0; }\n', encoding='utf-8')
         result = subprocess.run(
-            [*cmd, *flags, '-x', language, '-c', str(source), '-o', str(output)],
+            [*cmd, *target_flags, *flags, '-x', language, '-c', str(source), '-o', str(output)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -76,22 +77,25 @@ def compilers_accept(
     cc: str,
     cxx: str,
     objc: Optional[str] = None,
+    target_flags: Sequence[str] = (),
 ) -> bool:
-    if not compiler_accepts(cc, 'c', flags):
+    if not compiler_accepts(cc, 'c', flags, target_flags):
         return False
-    if not compiler_accepts(cxx, 'c++', flags):
+    if not compiler_accepts(cxx, 'c++', flags, target_flags):
         return False
-    if objc and not compiler_accepts(objc, 'objective-c', flags):
+    if objc and not compiler_accepts(objc, 'objective-c', flags, target_flags):
         return False
     return True
 
 
-def compiler_native_cpu(command: str, language: str = 'c') -> Optional[str]:
+def compiler_native_cpu(command: str, language: str = 'c',
+                        target_flags: Sequence[str] = ()) -> Optional[str]:
     """Return Clang's concrete host CPU name without enabling it for codegen."""
     cmd = _command(command)
     result = subprocess.run(
         [
             *cmd,
+            *target_flags,
             '-mcpu=native',
             '-###',
             '-x',
@@ -146,6 +150,7 @@ def resolve_cpu_tuning(
     cc: str,
     cxx: str,
     objc: Optional[str] = None,
+    target_flags: Sequence[str] = (),
 ) -> List[str]:
     requested = value.strip()
     if requested == 'portable':
@@ -153,18 +158,18 @@ def resolve_cpu_tuning(
     if requested == 'native':
         arch = host_arch.lower()
         if arch in ('arm64', 'aarch64'):
-            native_cpu = compiler_native_cpu(cc)
+            native_cpu = compiler_native_cpu(cc, target_flags=target_flags)
             if native_cpu:
                 concrete_tune = (f'-mtune={native_cpu}',)
-                if compilers_accept(concrete_tune, cc, cxx, objc):
+                if compilers_accept(concrete_tune, cc, cxx, objc, target_flags):
                     return list(concrete_tune)
         for candidate in native_candidates(host_arch):
-            if compilers_accept(candidate, cc, cxx, objc):
+            if compilers_accept(candidate, cc, cxx, objc, target_flags):
                 return list(candidate)
         return []
 
     flags = parse_custom_flags(requested)
-    if not compilers_accept(flags, cc, cxx, objc):
+    if not compilers_accept(flags, cc, cxx, objc, target_flags):
         raise ValueError(
             f'active QEMU host compilers reject CPU tuning: {requested}'
         )
@@ -178,10 +183,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--cc', default='cc')
     parser.add_argument('--cxx', default='c++')
     parser.add_argument('--objc')
+    parser.add_argument('--target-flag', action='append', default=[],
+                        help='one managed target/SDK flag per occurrence')
     args = parser.parse_args(argv)
+    # Never allow arbitrary compiler overrides through the managed target-flag
+    # channel. Each macOS build has one selected arch, SDK and deployment target.
+    target = args.target_flag
+    if target and not (
+        len(target) == 5
+        and target[0] == '-arch'
+        and target[1] in ('arm64', 'arm64e', 'x86_64')
+        and target[2] == '-isysroot'
+        and bool(target[3])
+        and re.fullmatch(r'-mmacosx-version-min=[0-9]+(?:\\.[0-9]+){1,2}',
+                         target[4])
+    ):
+        parser.error('invalid managed Darwin target flags')
     try:
         flags = resolve_cpu_tuning(
-            args.value, args.host_arch, args.cc, args.cxx, args.objc
+            args.value, args.host_arch, args.cc, args.cxx, args.objc,
+            args.target_flag
         )
     except (OSError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
