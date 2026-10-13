@@ -17,6 +17,7 @@ on:
       - 'scripts/verify-native-asan-darwin.py'
       - 'scripts/whp-lldb-autodebug.py'
       - 'scripts/tests/test-whp-lldb-autodebug.py'
+      - 'scripts/tests/test-native-lldb-default.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -90,6 +91,7 @@ jobs:
           bash -n scripts/bootstrap-native-clang.bash
           python3 -m py_compile scripts/whp-lldb-autodebug.py scripts/verify-native-asan-darwin.py
           python3 scripts/tests/test-whp-lldb-autodebug.py
+          python3 scripts/tests/test-native-lldb-default.py
 
       - name: Verify compiler-rt ARM64e ASan ABI policy
         shell: bash
