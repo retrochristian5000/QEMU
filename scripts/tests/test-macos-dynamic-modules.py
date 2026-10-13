@@ -19,6 +19,9 @@ block = (ROOT / "block/meson.build").read_text(encoding="utf-8")
 usb = (ROOT / "hw/usb/meson.build").read_text(encoding="utf-8")
 display = (ROOT / "hw/display/meson.build").read_text(encoding="utf-8")
 coreaudio = (ROOT / "audio/coreaudio.m").read_text(encoding="utf-8")
+dyld_test = (ROOT / "scripts/tests/test-darwin-dyld-arm64e.bash").read_text(
+    encoding="utf-8"
+)
 
 # Preserve upstream's conservative global default. WHP policy chooses modules
 # at the build-adapter layer instead of silently changing every QEMU build.
@@ -75,6 +78,19 @@ for token in (
 # Darwin modules are .dylib files and are loaded through GLib/GModule. The
 # build stamp prevents accidentally mixing modules from different QEMU builds.
 assert "host_dsosuf = '.dylib'" in meson
+# The suffix does not define the Mach-O file type. Meson's shared_module()
+# selects -bundle on macOS, unlike -dynamiclib (MH_DYLIB). Exercise the
+# corresponding PAC-authenticated dynamic_lookup import in the dyld probe.
+for token in (
+    '-bundle -Wl,-undefined,dynamic_lookup',
+    '-Wl,-export_dynamic',
+    'static int (*volatile whp_dyld_host_callback)(int)',
+    'MH_DYLIB, MH_DYLIB, MH_BUNDLE, MH_EXECUTE',
+    'expected_subtype = 0x80000002 if arch == "arm64e" else 0',
+    'incorrect LC_ID_DYLIB for Mach-O type',
+):
+    assert token in dyld_test, f"missing native Mach-O module ABI check: {token}"
+assert '-dynamiclib "$work/plugin.c"' not in dyld_test
 assert "g_module = g_module_open(fname, flags);" in module_c
 assert "G_MODULE_BIND_LOCAL" in module_c
 assert "DSO_STAMP_FUN_STR" in module_c
