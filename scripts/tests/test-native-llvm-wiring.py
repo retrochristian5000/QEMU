@@ -72,7 +72,11 @@ assert 'toolchains/llvm-project' in bootstrap
 assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
-assert 'llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
+assert '[[ -x "$prefix/bin/llvm-otool" ]] || return 1' in bootstrap
+assert '"$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || return 1' in bootstrap
+# Keep llvm-objdump primary; the otool-style interface comes from its symlink.
+assert 'llvm-objdump;llvm-strip' in bootstrap
 assert '"-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"' in bootstrap
 assert 'for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib' in bootstrap
 assert 'llvm-nm llvm-objcopy llvm-objdump llvm-strip' in bootstrap
