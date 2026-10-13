@@ -49,6 +49,7 @@ on:
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'scripts/tests/test-arm64e-display-hotpath.py'
       - 'scripts/tests/test-macos-dynamic-modules.py'
+      - 'scripts/tests/test-darwin-dyld-arm64e.bash'
       - 'scripts/tests/arm64e-display-abi-probe.m'
       - 'scripts/tests/arm64e-metal-shared-surface-probe.m'
       - 'ui/cocoa.m'
@@ -566,6 +567,17 @@ jobs:
           grep -Fq 'LC_SEGMENT_64' native-llvm-otool-loads.txt
           "$otool" -t -v -mcpu=apple-a18-pro native-llvm-c.o > native-llvm-otool-disasm.txt
           grep -Eq '(^|[[:space:]])ret([[:space:]]|$)' native-llvm-otool-disasm.txt
+
+      - name: Exercise Apple dyld ARM64e bindings and relocatable rpaths
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The native Clang host executable has already passed its ARM64e
+          # execution gate; now require dyld to resolve actual dylib imports.
+          WHP_DYLD_CC="$NATIVE_LLVM_DIR/bin/clang" \
+            bash scripts/tests/test-darwin-dyld-arm64e.bash arm64 apple
+          WHP_DYLD_CC="$NATIVE_LLVM_DIR/bin/clang" \
+            bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e apple
 
       - name: Verify PowerPC uses native LLVM without a second bootstrap
         shell: bash
