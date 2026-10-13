@@ -195,7 +195,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         and target[1] in ('arm64', 'arm64e', 'x86_64')
         and target[2] == '-isysroot'
         and bool(target[3])
-        and re.fullmatch(r'-mmacosx-version-min=[0-9]+(?:\\.[0-9]+){1,2}',
+        and re.fullmatch(r'-mmacosx-version-min=[0-9]+(?:\.[0-9]+){1,2}',
                          target[4])
     ):
         parser.error('invalid managed Darwin target flags')
