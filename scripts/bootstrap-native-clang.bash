@@ -1257,6 +1257,17 @@ cmake_args=(
     -DCLANG_INCLUDE_TESTS=OFF
     -DCLANG_ENABLE_STATIC_ANALYZER=OFF
     -DLLD_INCLUDE_TESTS=OFF
+    "${cmake_lldb_args[@]}"
+    -DLLVM_ENABLE_ZLIB=OFF
+    -DLLVM_ENABLE_ZSTD=OFF
+    "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
+    "${cmake_darwin_runtime_args[@]}"
+    "${cmake_host_args[@]}"
+)
+cmake_lldb_args=()
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    # Keep disabled LLDB CMake knobs out of the ordinary Clang/LLD cache.
+    cmake_lldb_args=(
     -DLLDB_ENABLE_PYTHON=OFF
     -DLLDB_ENABLE_SWIG=OFF
     -DLLDB_ENABLE_LUA=OFF
@@ -1269,12 +1280,9 @@ cmake_args=(
     -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
     -DLLDB_ENABLE_LIBCXX_TESTS=OFF
     -DLLDB_INCLUDE_TESTS=OFF
-    -DLLVM_ENABLE_ZLIB=OFF
-    -DLLVM_ENABLE_ZSTD=OFF
-    "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
-    "${cmake_darwin_runtime_args[@]}"
-    "${cmake_host_args[@]}"
-)
+    )
+fi
+
 cmake "${cmake_args[@]}"
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
