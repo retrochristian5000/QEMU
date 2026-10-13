@@ -86,7 +86,10 @@ jobs:
 
       - name: Verify fork LLDB auto-debug contract (no debugserver needed)
         shell: bash
-        run: python3 scripts/tests/test-whp-lldb-autodebug.py
+        run: |
+          bash -n scripts/bootstrap-native-clang.bash
+          python3 -m py_compile scripts/whp-lldb-autodebug.py scripts/verify-native-asan-darwin.py
+          python3 scripts/tests/test-whp-lldb-autodebug.py
 
       - name: Verify compiler-rt ARM64e ASan ABI policy
         shell: bash
