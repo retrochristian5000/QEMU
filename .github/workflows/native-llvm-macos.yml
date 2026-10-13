@@ -34,6 +34,7 @@ on:
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
+      - 'scripts/tests/test-arm64e-object-emission.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
       - 'scripts/tests/test-macos-lld-clangxx-flags.py'
       - 'scripts/whp-build/host-cpu-tuning.py'
@@ -443,6 +444,15 @@ jobs:
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
           grep -Fq 'WHP native LLVM bootstrap linker: system' native-llvm.log
           grep -Fq 'WHP native LLVM C++ standard: C++26' native-llvm.log
+
+      - name: Audit native Clang ARM64e object emission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/test-arm64e-object-emission.py \
+            --clang "$NATIVE_LLVM_DIR/bin/clang" \
+            --clangxx "$NATIVE_LLVM_DIR/bin/clang++" \
+            --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
 
       - name: Verify Apple A18 Pro ISA policy against pinned LLVM
         shell: bash
