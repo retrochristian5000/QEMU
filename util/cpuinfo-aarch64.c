@@ -40,17 +40,17 @@ static bool sysctl_for_bool(const char *name)
     int val = 0;
     size_t len = sizeof(val);
 
-    if (sysctlbyname(name, &val, &len, NULL, 0) == 0) {
+    if (sysctlbyname(name, &val, &len, NULL, 0) == 0 &&
+        len == sizeof(val)) {
         return val != 0;
     }
 
     /*
-     * We might in the future ask for properties not present in older kernels,
-     * but we're only asking about static properties, all of which should be
-     * 'int'.  So we shouldn't see ENOMEM (val too small), or any of the other
-     * more exotic errors.
+     * Optional AArch64 instructions must be advertised by macOS before TCG
+     * emits them.  Absent, restricted, or unexpectedly sized sysctl results
+     * are all inconclusive: fall back to the baseline instruction sequence.
+     * In particular, an unknown FEAT_CSSC key must not abort startup.
      */
-    assert(errno == ENOENT);
     return false;
 }
 #endif
