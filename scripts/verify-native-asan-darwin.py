@@ -218,8 +218,14 @@ def verify_runtime(
         for name in tuple(runtime_env):
             if name.startswith("DYLD_"):
                 runtime_env.pop(name)
+        # Preserve deterministic validation while collecting enough signal
+        # context to diagnose arm64e PAC faults and broken shadow accesses.
+        # Symbolization is left offline: this toolchain need not ship a native
+        # llvm-symbolizer, and the loaded image/ASLR slide is crash-specific.
         runtime_env["ASAN_OPTIONS"] = (
-            "detect_leaks=0:halt_on_error=1:symbolize=0"
+            "detect_leaks=0:halt_on_error=1:symbolize=0:"
+            "dump_registers=1:dump_instruction_bytes=1:"
+            "fast_unwind_on_fatal=0"
         )
         for label, source, should_fail in (
             ("healthy", RUNTIME_OK, False),
