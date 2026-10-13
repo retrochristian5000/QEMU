@@ -27,7 +27,10 @@ trap 'rm -rf "$probe_dir"' EXIT
 printf '%s\n' \
     '.text' '.globl _whp_auth_target' '_whp_auth_target:' '  ret' \
     '.data' '.p2align 3' \
-    '.quad _whp_auth_target@AUTH(ia,42,addr)' > "$probe_dir/auth.s"
+    '.quad _whp_auth_target@AUTH(ia,42,addr)' \
+    '.quad _whp_auth_target@AUTH(ib,4660)' \
+    '.quad _whp_auth_target@AUTH(da,48879,addr)' \
+    '.quad _whp_auth_target@AUTH(db,65535)' > "$probe_dir/auth.s"
 
 "${compiler_command[@]}" -arch arm64e -isysroot "$sdkroot" \
     "-mmacosx-version-min=$deployment_target" -x assembler -c \
@@ -41,3 +44,50 @@ printf '%s\n' \
 "$objdump" --macho --chained-fixups "$probe_dir/libwhp_auth.dylib" \
     > "$probe_dir/fixups.txt" 2>/dev/null
 grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"
+
+# The format label alone cannot prove LLD has preserved signing metadata.
+# Inspect all four PAC keys, 16-bit discriminators and address diversity in
+# the encoded authenticated rebases, rather than only checking the pointer format.
+"$objdump" --macho --dyld-info "$probe_dir/libwhp_auth.dylib" \
+    > "$probe_dir/dyld.txt" 2>/dev/null
+python3 - "$probe_dir/dyld.txt" <<'PY'
+import pathlib
+import sys
+
+words = []
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    fields = line.split()
+    if (len(fields) >= 5 and fields[0] == "__DATA" and
+            fields[1] == "__data" and fields[4] == "rebase"):
+        words.append(int(fields[3], 16))
+
+expected = ((0, 42, 1), (1, 4660, 0), (2, 48879, 1),
+            (3, 65535, 0))
+if len(words) != len(expected):
+    sys.exit(f"arm64e PAC probe: expected 4 authenticated rebases, "
+             f"found {len(words)}")
+for index, (word, schema) in enumerate(zip(words, expected)):
+    actual = ((word >> 49) & 3, (word >> 32) & 65535,
+              (word >> 48) & 1)
+    if (word >> 63 != 1 or ((word >> 62) & 1) != 0 or actual != schema):
+        sys.exit(f"arm64e PAC probe: relocation {index} lost metadata "
+                 f"(expected {schema}, got {actual})")
+if len({word & 0xffffffff for word in words}) != 1:
+    sys.exit("arm64e PAC probe: authenticated rebase target drift")
+PY
+
+# A successful link is not enough: the compiler must emit authenticated
+# indirect calls under the arm64e C ABI instead of plain BLR.
+cat > "$probe_dir/call.c" <<'C'
+__attribute__((noinline))
+int whp_indirect_call(int (*volatile callback)(void)) {
+    return callback();
+}
+C
+"${compiler_command[@]}" -arch arm64e -isysroot "$sdkroot" \
+    "-mmacosx-version-min=$deployment_target" -O0 -S \
+    "$probe_dir/call.c" -o "$probe_dir/call.s" >/dev/null 2>&1
+if ! grep -Eiq '(^|[[:space:]])blraa(z)?[[:space:]]' "$probe_dir/call.s"; then
+    printf 'error: ARM64e Clang did not emit an authenticated indirect call\n' >&2
+    exit 1
+fi
