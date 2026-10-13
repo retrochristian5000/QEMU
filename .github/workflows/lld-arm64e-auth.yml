@@ -90,7 +90,7 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=lld \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
-          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt -- -j4
+          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt llvm-lto2 -- -j4
 
       - name: Audit ThinLTO ARM64e native output and PAC
         shell: bash
@@ -99,7 +99,8 @@ jobs:
             "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
             "$GITHUB_WORKSPACE/build-lld/bin/opt" \
             "$GITHUB_WORKSPACE/build-lld/bin/llvm-readobj" \
-            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lto2"
 
       - name: Check ARM64e dylib install names and version propagation
         shell: bash
