@@ -386,6 +386,48 @@ Run the isolated regression checks using::
   bash scripts/tests/test-host-cpu-tuning.bash
   python3 scripts/tests/test-macos-lld-clangxx-flags.py
 
+Apple dyld: ARM64e rebases, binds and runpaths
+------------------------------------------------
+
+Apple's open-source dyld separates rebases within an image from binds to
+symbols in other Mach-O images. Authenticated ARM64e chained pointers
+add PAC key, diversity and address-diversity metadata. The WHP Mach-O LLD
+probe checks the four PAC keys in authenticated **rebases**, while the
+existing LLD fixture validates chained authenticated binds. Neither
+metadata check by itself proves that dyld accepts and executes a linked
+process on the selected macOS release.
+
+On macOS, run the native load/link test::
+
+  bash scripts/tests/test-darwin-dyld-arm64e.bash arm64 apple
+  bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e apple
+
+After explicitly building a compatible Mach-O LLD, its own runtime lane is::
+
+  WHP_DYLD_LLD_DIR=/absolute/path/to/llvm/bin \
+    bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e lld
+
+The test builds a separate dynamic library with a global function pointer,
+links its client through ``@rpath``, checks ``LC_RPATH``, ``LC_LOAD_DYLIB``
+(via ``otool -L``) and ``LC_ID_DYLIB``, then moves the executable
+and dylib together to a path containing spaces. With
+``DYLD_LIBRARY_PATH`` and ``DYLD_FALLBACK_LIBRARY_PATH`` unset, dyld must
+still resolve the direct call, imported pointer, ``dlopen`` and ``dlsym``
+followed by an indirect call. A non-zero result is an unresolved runtime
+failure, not a reason to silently accept the earlier static LLD probe.
+
+The final QEMU macOS build adapter no longer reintroduces the private SDL3
+directory through ``DYLD_FALLBACK_LIBRARY_PATH`` after sanitation. QEMU
+and its modules already receive ``@loader_path/deps/sdl3/lib`` and
+``@loader_path/../deps/sdl3/lib`` runpaths, and the SDL3 dylib uses an
+``@rpath`` install name. Keep the bootstrap-only host-library environment
+separate; a binary that works only with a DYLD_* override is not a verified
+relocatable QEMU binary.
+
+References: Apple dyld ``include/mach-o/fixup-chains.h`` and
+``dyld/Loader.cpp``, and Apple's *Run-Path Dependent Libraries* and
+*Embedding nonstandard code structures in a bundle* documentation.
+
 ARM64e LLD development lane
 ---------------------------
 
