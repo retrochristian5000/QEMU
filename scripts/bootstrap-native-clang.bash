@@ -780,7 +780,9 @@ if [[ "$host_os" == macos ]]; then
     # compiler-rt also belongs to the same installed compiler runtime family.
     llvm_enable_runtimes=compiler-rt
     llvm_include_runtimes=ON
-    llvm_distribution_components="${llvm_distribution_components};llvm-lipo;LTO;builtins;runtimes"
+    # llvm-otool is llvm-objdump's Mach-O/otool-compatible entry point.
+    # Package that tool on Darwin without building another disassembler.
+    llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"
 fi
 # Link host tools against the aggregate libLLVM/libclang-cpp libraries,
 # never build individual LLVM components as separate shared libraries.
@@ -1006,6 +1008,8 @@ usable()
     grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
     windows_cross_target_usable "$prefix" || return 1
     if [[ "$host_os" == macos ]]; then
+        [[ -x "$prefix/bin/llvm-otool" ]] || return 1
+        "$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || return 1
         [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
