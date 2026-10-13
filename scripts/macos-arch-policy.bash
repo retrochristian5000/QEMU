@@ -4,17 +4,17 @@
 # an ABI variant of the AArch64 backend, not a separate LLVM target backend, so
 # keep this policy independent from WHP_HOST_ARCH/LLVM_TARGETS_TO_BUILD.
 #
-# QEMU's TCG JIT still needs explicit arm64e pointer-authentication handling at
-# both C -> JIT and JIT -> C call boundaries.  Keep auto on the established
-# arm64 ABI until those paths execute translated guest code under CI.  Explicit
-# arm64e remains available as a probe-gated audit/development lane.
+# Auto selects arm64e only after the C/C++ PAC execution and linker probes.
+# Explicit arm64e remains a link-only, probe-gated development lane.
 
 whp_macos_arch_probe_arm64e()
 {
     local compiler="$1"
     local sdkroot="$2"
     local deployment_target="$3"
-    local output
+    local language="${4:-c}"
+    local run_probe="${5:-no}"
+    local probe_dir output
     local compiler_command=()
     local linker_flag="${NATIVE_LLVM_LDFLAG:-}"
 
@@ -23,12 +23,10 @@ whp_macos_arch_probe_arm64e()
         return 1
     fi
 
-    output="$(mktemp "${TMPDIR:-/tmp}/whp-arm64e-probe.XXXXXX")" || return 1
-    # A successful -arch arm64e link alone cannot prove that Clang selected
-    # the pointer-authenticated arm64e language ABI.  Validate the ABI macros
-    # and exercise an indirect C call (which arm64e authenticates).
-    # Do not execute the probe: older macOS versions may link arm64e but
-    # disallow launching third-party arm64e binaries.
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-arm64e-probe.XXXXXX")" || return 1
+    output="$probe_dir/arm64e"
+    # Auto mode compiles and executes this authenticated indirect-call probe.
+    # An explicit arm64e request retains the compile/link-only development lane.
     if printf '%s\n' \
            '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' \
            '#error "Clang did not select the arm64e pointer-authentication ABI"' \
@@ -45,13 +43,35 @@ whp_macos_arch_probe_arm64e()
            -isysroot "$sdkroot" \
            "-mmacosx-version-min=$deployment_target" \
            ${linker_flag:+"$linker_flag"} \
-           -x c - -o "$output" >/dev/null 2>&1; then
-        rm -f "$output"
-        return 0
+           -x "$language" - -o "$output" >/dev/null 2>&1; then
+        if [[ "$run_probe" != yes ]] || "$output" >/dev/null 2>&1; then
+            rm -rf "$probe_dir"
+            return 0
+        fi
     fi
 
-    rm -f "$output"
+    rm -rf "$probe_dir"
     return 1
+}
+
+
+# Mach-O LLD is only eligible for auto arm64e after proving it can preserve
+# authenticated relocations. An explicit opt-in still controls LLD adoption.
+whp_macos_arm64e_auto_linker_ready()
+{
+    if [[ "${NATIVE_LLVM_LDFLAG:-}" != -fuse-ld=lld ]]; then
+        return 0
+    fi
+    [[ "${WHP_ARM64E_USE_LLD:-0}" == 1 &&
+       -n "${NATIVE_LLVM_DIR:-}" &&
+       "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" &&
+       -x "$NATIVE_LLVM_DIR/bin/ld64.lld" &&
+       -x "$NATIVE_LLVM_DIR/bin/llvm-objdump" ]] || return 1
+
+    local probe_script
+    probe_script="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/arm64e-lld-probe.bash"
+    "${BASH:-bash}" "$probe_script" "$1" "$2" "$3" "$LD" \
+        "$NATIVE_LLVM_DIR/bin/llvm-objdump" >/dev/null 2>&1
 }
 
 # Audit the actual compiler-driver command and flag sources, not the WHP INI
@@ -201,6 +221,7 @@ whp_select_macos_arch()
     local deployment_target="$3"
     local process_arch="$4"
     local requested="${WHP_MACOS_ARCH:-auto}"
+    local cxx_compiler="${5:-${CXX:-$compiler}}"
     local native_arch
 
     case "$requested" in
@@ -223,7 +244,21 @@ whp_select_macos_arch()
     esac
 
     if [[ "$requested" == auto ]]; then
-        printf '%s\n' "$native_arch"
+        # Keep the default on arm64 unless the current macOS runtime can
+        # actually execute PAC-authenticated calls compiled by both drivers.
+        # ASan and unapproved Mach-O LLD configurations do not auto-promote.
+        if [[ "$native_arch" == arm64 &&
+              "${QEMU_ASAN:-n}" != 1 && "${QEMU_ASAN:-n}" != y ]] &&
+           whp_macos_arm64e_auto_linker_ready \
+               "$compiler" "$sdkroot" "$deployment_target" &&
+           whp_macos_arch_probe_arm64e \
+               "$compiler" "$sdkroot" "$deployment_target" c yes &&
+           whp_macos_arch_probe_arm64e \
+               "$cxx_compiler" "$sdkroot" "$deployment_target" c++ yes; then
+            printf '%s\n' arm64e
+        else
+            printf '%s\n' "$native_arch"
+        fi
         return 0
     fi
 
