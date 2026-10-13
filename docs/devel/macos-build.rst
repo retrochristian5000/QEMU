@@ -295,6 +295,16 @@ Both currently share the Apple M4-derived ISA feature baseline. This is
 provisional and is **not** evidence of matching pipeline latencies, cache
 sizes, or availability of every optional Armv9.2-A extension.
 
+LLVM's ``apple-a18-pro`` now selects a separate
+``AppleA18ProModel`` rather than the Apple A7-era ``CycloneModel``.
+The new scheduling model is deliberately incomplete: it does not inherit
+Cyclone's integer, floating-point, or branch resource reservations and
+per-opcode latencies. Its coarse values (issue width 6, buffer 192, load
+latency 4, misprediction penalty 16) are **temporary Cyclone-derived
+assumptions**, not measured A18 Pro properties. Code-generation and runtime
+performance must be compared against the previous model before attempting
+to promote complete scheduling or claim a performance improvement.
+
 Apple's public CPU Optimization Guide identifies ISA feature queries and
 SME as relevant to Apple silicon; per-chip instruction and latency details
 in the guide require additional developer access. Apple's public XNU SME
