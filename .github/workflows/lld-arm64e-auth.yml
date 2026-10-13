@@ -7,6 +7,7 @@ on:
     paths:
       - 'toolchains/llvm-project'
       - 'scripts/whp-build/arm64e-lld-probe.bash'
+      - 'scripts/tests/test-macos-ld64-fixup-flags.bash'
       - 'scripts/tests/test-darwin-dyld-arm64e.bash'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
@@ -86,6 +87,14 @@ jobs:
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
           cmake --build build-lld --target lld llvm-objdump -- -j4
+
+      - name: Compare Apple ld64 and LLD dyld fixup options
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/tests/test-macos-ld64-fixup-flags.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
 
       - name: Link authenticated ARM64e pointer with WHP LLD
         shell: bash
