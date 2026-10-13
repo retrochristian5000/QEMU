@@ -28,6 +28,9 @@ fi
 if [[ " $* " == *' -arch arm64e '* && "${TEST_ARM64E_SUPPORTED:-1}" != 1 ]]; then
     exit 1
 fi
+if [[ " $* " == *' -x c++ '* && "${TEST_ARM64E_CXX_SUPPORTED:-1}" != 1 ]]; then
+    exit 1
+fi
 out=''
 while (($#)); do
     if [[ "$1" == -o && $# -ge 2 ]]; then
@@ -37,9 +40,6 @@ while (($#)); do
     fi
     shift
 done
-if [[ " $* " == *' -x c++ '* && "${TEST_ARM64E_CXX_SUPPORTED:-1}" != 1 ]]; then
-    exit 1
-fi
 if [[ -n "$out" && "$out" != /dev/null ]]; then
     printf '%s\n' '#!/bin/sh' 'exit "${TEST_ARM64E_RUNTIME:-0}"' > "$out"
     chmod +x "$out"
