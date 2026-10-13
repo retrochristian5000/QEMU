@@ -287,6 +287,40 @@ compile/link-only development override, but it does not prove that
 the resulting QEMU executable can launch or that its TCG runtime passes.
 The macOS runtime and TCG smoke tests remain necessary validation.
 
+Apple A18 Pro CPU-profile evidence
+----------------------------------
+
+The pinned LLVM fork names ``apple-a18-pro`` separately from ``apple-a18``.
+Both currently share the Apple M4-derived ISA feature baseline. This is
+provisional and is **not** evidence of matching pipeline latencies, cache
+sizes, or availability of every optional Armv9.2-A extension.
+
+Apple's public CPU Optimization Guide identifies ISA feature queries and
+SME as relevant to Apple silicon; per-chip instruction and latency details
+in the guide require additional developer access. Apple's public XNU SME
+documentation says its implementation does not expose ordinary non-streaming
+SVE and does not currently implement ``FEAT_SME_FA64``. Apple's arm64e
+guidance also distinguishes ordinary PAC from the newer PAuth_LR / arm64e.x1
+contract. Do not add these features just because the CPU implements
+Armv9.2-A or an earlier arm64e ABI.
+
+To audit the pinned LLVM source against the feature-policy guard and collect
+Darwin sysctl observations on an A18 Pro host, run::
+
+  python3 scripts/tests/test-apple-a18-pro-profile.py
+
+The script fails if the current pinned profile unexpectedly enables an
+unverified feature or an A18 Pro host explicitly reports a required ISA
+feature as unavailable. Unknown sysctls are recorded as unknown, not zero.
+The source check requires an initialized ``toolchains/llvm-project``
+submodule; ``--hardware-only`` permits a runtime-only report. The CI
+source check does not substitute for execution tests on actual A18 Pro
+hardware.
+
+References: Apple's ``Apple Silicon CPU Optimization Guide`` and
+``Preparing your app to work with pointer authentication``, plus Apple
+XNU ``doc/arm/sme.md``.
+
 ARM64e LLD development lane
 ---------------------------
 
