@@ -35,6 +35,10 @@ on:
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
+      - 'scripts/whp-build/host-cpu-tuning.py'
+      - 'scripts/whp-build/host-cpu-tuning.bash'
+      - 'scripts/tests/test-host-cpu-tuning.py'
+      - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-apple-a18-pro-profile.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
@@ -265,6 +269,12 @@ jobs:
       - name: Test Clang++ bootstrap flag probes
         shell: bash
         run: python3 scripts/tests/test-native-llvm-cxx-flag-probes.py
+
+      - name: Test QEMU C and C++ host CPU tuning
+        shell: bash
+        run: |
+          python3 scripts/tests/test-host-cpu-tuning.py
+          bash scripts/tests/test-host-cpu-tuning.bash
 
       - name: Install native LLVM and QEMU build dependencies
         run: |
