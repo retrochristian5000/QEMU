@@ -106,6 +106,23 @@ whp_prepare_host_cpu_tuning()
     if [[ -n "${OBJC:-}" ]]; then
         args+=(--objc "$OBJC")
     fi
+    # The selected Mach-O ABI and SDK are already resolved by macos-builder.
+    # Probe CPU tuning with the SAME target flags for Clang, Clang++ and ObjC;
+    # default-architecture acceptance cannot authorize an arm64e build.
+    if [[ "${HOST_OS:-}" == Darwin ]]; then
+        [[ -n "${WHP_MACOS_ARCH:-}" && -n "${SDKROOT:-}" &&
+           -n "${MACOSX_DEPLOYMENT_TARGET:-}" ]] || {
+            printf 'error: Darwin CPU tuning needs selected arch, SDK, and deployment target\n' >&2
+            return 1
+        }
+        args+=(
+            --target-flag=-arch
+            "--target-flag=$WHP_MACOS_ARCH"
+            --target-flag=-isysroot
+            "--target-flag=$SDKROOT"
+            "--target-flag=-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+        )
+    fi
 
     QEMU_HOST_CPU_FLAGS_RESOLVED="$("$PYTHON" "$tool" "${args[@]}")" || return 1
     QEMU_HOST_NATIVE_CPU=""
