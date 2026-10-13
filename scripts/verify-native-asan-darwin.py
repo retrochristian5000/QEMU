@@ -27,6 +27,28 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, text=True, capture_output=True, check=False)
 
 
+def require_runtime_arch(
+    clang: pathlib.Path, runtime: pathlib.Path, arch: str,
+) -> None:
+    """Reject ABI-compatible-looking libraries without the requested slice.
+
+    macOS can accept arm64 dylibs as dependencies of arm64e code, but that
+    fallback is not proof that compiler-rt itself was built with PAC-aware
+    arm64e callbacks and metadata. ASan needs its actual runtime tested.
+    """
+    if arch != "arm64e":
+        return
+    lipo = clang.with_name("llvm-lipo")
+    if not lipo.is_file():
+        raise RuntimeError(f"cannot audit ASan arm64e runtime: missing {lipo}")
+    result = run([str(lipo), "-archs", str(runtime)])
+    if result.returncode or "arm64e" not in result.stdout.split():
+        raise RuntimeError(
+            "matching Darwin ASan runtime lacks an arm64e slice: " +
+            str(runtime) + "\n" + (result.stderr or result.stdout)[-2000:]
+        )
+
+
 def verify(
     clang: pathlib.Path, readobj: pathlib.Path, arch: str,
     sdkroot: pathlib.Path, deployment: str, use_lld: bool,
@@ -45,6 +67,7 @@ def verify(
             f"matching Clang AddressSanitizer dylib is missing: {runtime}. "
             "Build/install compiler-rt runtimes for the native Clang."
         )
+    require_runtime_arch(clang, runtime, arch)
 
     flags = [
         "-arch", arch, "-isysroot", str(sdkroot),
@@ -177,6 +200,7 @@ def verify_runtime(
                "libclang_rt.asan_osx_dynamic.dylib")
     if not runtime.is_file():
         raise RuntimeError(f"matching Darwin ASan runtime dylib is missing: {runtime}")
+    require_runtime_arch(clang, runtime, arch)
 
     flags = ["-arch", arch, "-isysroot", str(sdkroot),
              f"-mmacosx-version-min={deployment}",
