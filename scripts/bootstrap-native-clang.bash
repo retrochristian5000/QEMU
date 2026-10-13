@@ -520,6 +520,7 @@ compiler_supports_cxx_standard()
     local standard="$1"
     local candidate
     local standards=()
+    local probe_source='constexpr int whp_cxx_standard_probe = 1;'
 
     case "$standard" in
         17|20|23)
@@ -527,6 +528,16 @@ compiler_supports_cxx_standard()
             ;;
         26)
             standards=(c++26 c++2c)
+            # Accept either spelling only when the driver actually selects
+            # the C++26 language mode; a successful C++11 constexpr compile
+            # is not evidence of C++26 support.
+            probe_source="$(cat <<'SOURCE'
+#if !defined(__cplusplus) || __cplusplus < 202400L
+#error selected compiler did not enable C++26 mode
+#endif
+constexpr int whp_cxx_standard_probe = 1;
+SOURCE
+)"
             ;;
         *)
             return 1
@@ -535,14 +546,14 @@ compiler_supports_cxx_standard()
 
     for candidate in "${standards[@]}"; do
         if [[ "$host_os" == macos ]]; then
-            if printf 'constexpr int whp_cxx_standard_probe = 1;\n' |
+            if printf '%s\n' "$probe_source" |
                 "$bootstrap_cxx" -arch "$darwin_cmake_arch" \
                     "-std=$candidate" -isysroot "$sdkroot" \
                     "-mmacosx-version-min=$deployment_target" \
                     -x c++ -c - -o /dev/null >/dev/null 2>&1; then
                 return 0
             fi
-        elif printf 'constexpr int whp_cxx_standard_probe = 1;\n' |
+        elif printf '%s\n' "$probe_source" |
             "$bootstrap_cxx" "-std=$candidate" -x c++ -c - -o /dev/null \
                 >/dev/null 2>&1; then
             return 0
@@ -638,10 +649,19 @@ compiler_accepts_native_tune()
 {
     local compiler="$1"
     local language="$2"
+    local target_flags=()
+
+    # Compiler flags must be tested for the ABI that CMake actually builds.
+    # Apple's default arm64 target accepting -mtune=native does not prove the
+    # same option is usable with the requested arm64e architecture and SDK.
+    if [[ "$host_os" == macos ]]; then
+        target_flags=(-arch "$darwin_cmake_arch" -isysroot "$sdkroot"
+                      "-mmacosx-version-min=$deployment_target")
+    fi
 
     printf 'int whp_native_llvm_tune_probe(void) { return 0; }\n' |
-        "$compiler" -mtune=native -x "$language" -c - -o /dev/null \
-            >/dev/null 2>&1
+        "$compiler" "${target_flags[@]}" -mtune=native \
+            -x "$language" -c - -o /dev/null >/dev/null 2>&1
 }
 
 # LLVM itself is a build tool here. -O2 retains Release/NDEBUG semantics while
