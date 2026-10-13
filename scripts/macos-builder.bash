@@ -206,9 +206,10 @@ if [[ -n "${WHP_SDL_PREFIX:-}" &&
       -f "$WHP_SDL_PREFIX/lib/pkgconfig/sdl3.pc" ]]; then
     whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"
     whp_append_colon_path CMAKE_PREFIX_PATH "$WHP_SDL_PREFIX"
-    if [[ -d "$WHP_SDL_PREFIX/lib" ]]; then
-        whp_append_colon_path DYLD_FALLBACK_LIBRARY_PATH "$WHP_SDL_PREFIX/lib"
-    fi
+    # Do not restore DYLD_FALLBACK_LIBRARY_PATH for the QEMU host build:
+    # dyld may ignore DYLD_* overrides for protected processes, and the
+    # shipped executable must load SDL from its embedded @loader_path rpaths.
+    # Keeping the fallback here could mask broken LC_RPATH commands in CI.
 fi
 
 for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
