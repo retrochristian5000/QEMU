@@ -268,6 +268,25 @@ not claim to repair the missing symbol; its output identifies whether the
 next code change belongs in Clang instrumentation, compiler-rt distribution,
 or Mach-O LLD.
 
+ARM64e host auto-detection
+---------------------------
+
+On Apple Silicon, ``WHP_MACOS_ARCH=auto`` (the default) first checks
+whether the selected C and C++ drivers can compile, link **and execute**
+an indirect call with the arm64e pointer-authentication ABI. If either
+probe fails, QEMU uses the ordinary ``arm64`` host ABI. This is a host
+capability test; a compiler merely accepting ``-arch arm64e`` is not
+sufficient. Intel builds remain ``x86_64``. AddressSanitizer stays on
+``arm64`` in automatic mode.
+
+The selected linker also participates in detection: Mach-O LLD may
+auto-select arm64e only with ``WHP_ARM64E_USE_LLD=1`` and a successful
+authenticated-fixup probe. Explicit ``WHP_MACOS_ARCH=arm64`` disables
+auto-promotion. Explicit ``WHP_MACOS_ARCH=arm64e`` retains the
+compile/link-only development override, but it does not prove that
+the resulting QEMU executable can launch or that its TCG runtime passes.
+The macOS runtime and TCG smoke tests remain necessary validation.
+
 ARM64e LLD development lane
 ---------------------------
 
@@ -279,7 +298,7 @@ LLD *explicitly* for a non-ASan ARM64e experiment::
   WHP_MACOS_ARCH=arm64e WHP_ARM64E_USE_LLD=1 \
     BOOTSTRAP_NATIVE_LLVM=1 ./build.sh qemu-system-ppc
 
-This is a developer option, **not** the default ARM64 ABI. It validates
+This is a developer option, **not** an unconditional ARM64e default. It validates
 ``-arch arm64e`` with Clang, the actual Clang and Clang++ linker selection,
 and an authenticated ``ARM64_RELOC_AUTHENTICATED_POINTER`` link through the
 installed ``ld64.lld``, checking its chained-fixup pointer format using
