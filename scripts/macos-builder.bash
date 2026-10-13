@@ -377,17 +377,32 @@ validate_macho_thread_flags
 whp_native_lld_accepts_read_workers()
 {
     local workers="$1"
-    local -a probe_cc=()
+    local driver_var language
+    local -a probe_driver=()
 
-    read -r -a probe_cc <<< "${CC:-clang}"
-    [[ "${#probe_cc[@]}" -gt 0 ]] || return 1
+    # LDFLAGS are shared by both Clang and Clang++. The C-only driver can
+    # accept --read-workers even when the C++ driver uses a different wrapper
+    # or forwards the option to a different linker.
+    for driver_var in CC CXX; do
+        probe_driver=()
+        read -r -a probe_driver <<< "${!driver_var:-}"
+        [[ "${#probe_driver[@]}" -gt 0 ]] || return 1
+        if [[ "$driver_var" == CXX ]]; then
+            language=c++
+        else
+            language=c
+        fi
 
-    printf 'int main(void) { return 0; }\n' |
-        "${probe_cc[@]}" -arch "$WHP_MACOS_ARCH" \
-            -isysroot "$SDKROOT" \
-            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-            -fuse-ld=lld "-Wl,--read-workers=$workers" \
-            -x c - -o /dev/null >/dev/null 2>&1
+        if ! printf 'int main(void) { return 0; }\n' |
+            "${probe_driver[@]}" -arch "$WHP_MACOS_ARCH" \
+                -isysroot "$SDKROOT" \
+                "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+                -fuse-ld=lld "-Wl,--read-workers=$workers" \
+                -x "$language" - -o /dev/null >/dev/null 2>&1; then
+            return 1
+        fi
+    done
+    return 0
 }
 
 native_macho_lld=0
