@@ -120,8 +120,11 @@ assert runtime_ready, 'macOS CI does not execute an arm64e TCG runtime smoke tes
 assert 'ptrauth_strip' not in cpu_exec
 assert 'ptrauth_sign_unauthenticated' not in cpu_exec
 
-# Promotion of WHP_MACOS_ARCH=auto remains a separate policy decision made only
-# after the implementation and runtime lane above are both present and green.
+# Auto-detection now requires an executable C/C++ arm64e PAC probe; the
+# full TCG runtime CI lane remains an independent integration check.
 assert 'whp_select_macos_arch' in policy
+assert 'whp_macos_arch_probe_arm64e' in policy
+assert 'whp_macos_arm64e_auto_linker_ready' in policy
+assert '"$cxx_compiler" "$sdkroot" "$deployment_target" c++ yes' in policy
 
 print('arm64e TCG pointer-auth audit: calls, return path, and runtime smoke wired')
