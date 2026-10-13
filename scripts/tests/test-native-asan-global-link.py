@@ -201,18 +201,18 @@ class NativeASanGlobalsTests(unittest.TestCase):
         build = (ROOT / "build.sh").read_text(encoding="utf-8")
         start = build.index("    # Keep Clang, compiler-rt, and Mach-O linker selection coherent.")
         start = build.index('    if [ "$WHP_HOST_OS" = macos ]; then', start)
-        end_text = "        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS WHP_ARM64E_USE_LLD\\n    fi"
+        end_text = "        export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS WHP_ARM64E_USE_LLD\n    fi"
         end = build.index(end_text, start) + len(end_text)
         shell_code = build[start:end] + (
-            '\\nprintf "%s|%s|%s\\n" "$LD" "$NATIVE_LLVM_LDFLAG" "$LDFLAGS"\\n'
+            '\nprintf "%s|%s|%s\\n" "$LD" "$NATIVE_LLVM_LDFLAG" "$LDFLAGS"\n'
         )
         with tempfile.TemporaryDirectory() as temp:
             bin_dir = pathlib.Path(temp)
             xcrun = bin_dir / "xcrun"
             xcrun.write_text(
-                '#!/bin/sh\\n'
-                '[ "$1" = "--find" ] && [ "$2" = "ld" ] || exit 1\\n'
-                'printf "/mock/Apple/ld\\\\n"\\n',
+                '#!/bin/sh\n'
+                '[ "$1" = "--find" ] && [ "$2" = "ld" ] || exit 1\n'
+                'printf "/mock/Apple/ld\\n"\n',
                 encoding="utf-8",
             )
             xcrun.chmod(0o755)
