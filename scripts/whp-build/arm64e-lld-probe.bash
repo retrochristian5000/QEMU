@@ -45,6 +45,25 @@ printf '%s\n' \
     > "$probe_dir/fixups.txt" 2>/dev/null
 grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"
 
+# llvm-otool is the same LLVM Mach-O parser accessed via the otool-compatible
+# CLI. If installed next to llvm-objdump, verify that it can expose the same
+# authenticated chain format. This is a CLI compatibility check, NOT an
+# independent verification of fixup correctness (the Python decoder below
+# remains the primary metadata test).
+if [[ "$objdump" == */llvm-objdump ]]; then
+    otool="${objdump%/llvm-objdump}/llvm-otool"
+    if [[ -x "$otool" ]]; then
+        "$otool" -chained_fixups "$probe_dir/libwhp_auth.dylib" \
+            > "$probe_dir/otool-fixups.txt" 2>/dev/null
+        grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' \
+            "$probe_dir/otool-fixups.txt"
+        "$otool" -dyld_info "$probe_dir/libwhp_auth.dylib" \
+            > "$probe_dir/otool-dyld.txt" 2>/dev/null
+        grep -Eq '(^|[[:space:]])rebase([[:space:]]|$)' \
+            "$probe_dir/otool-dyld.txt"
+    fi
+fi
+
 # The format label alone cannot prove LLD has preserved signing metadata.
 # Inspect all four PAC keys, 16-bit discriminators and address diversity in
 # the encoded authenticated rebases, rather than only checking the pointer format.
