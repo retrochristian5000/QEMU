@@ -74,4 +74,29 @@ grep -Fq 'only valid with -dylib' "$work/reject.log" || {
   cat "$work/reject.log" >&2
   exit 1
 }
+# Explicitly supplied zero-major versions and empty components are invalid,
+# even though the *omitted* version fields legitimately default to zero.
+for test_case in zero dots; do
+  if [[ "$test_case" == zero ]]; then
+    vers=(-current_version 0.1 -compatibility_version 0)
+    expected=('-current_version 0.1: malformed version'
+              '-compatibility_version 0: malformed version')
+  else
+    vers=(-current_version 2..3 -compatibility_version 1.2.)
+    expected=('-current_version 2..3: malformed version'
+              '-compatibility_version 1.2.: malformed version')
+  fi
+  if "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+      -dylib "${vers[@]}" "$work/provider.o" -o "$work/bad-$test_case.dylib" \
+      > "$work/version-error.log" 2>&1; then
+    echo "LLD accepted invalid dylib version ($test_case)" >&2
+    exit 1
+  fi
+  for message in "${expected[@]}"; do
+    grep -Fq -- "$message" "$work/version-error.log" || {
+      cat "$work/version-error.log" >&2
+      exit 1
+    }
+  done
+done
 echo 'ARM64e dylib install-name/version identity and consumer propagation: passed'
