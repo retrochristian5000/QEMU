@@ -354,6 +354,38 @@ versioned pointer format using both LLVM command interfaces when
 ``llvm-otool`` is installed, while the existing ``llvm-objdump``
 metadata decoder still validates PAC keys and discriminators.
 
+Clang++ flag validation on Apple Silicon
+----------------------------------------
+
+Native LLVM bootstrap C++ flags are intentionally separate from QEMU's
+host-object ``CXXFLAGS``. Both preserve the compiler's selected Mach-O
+architecture and deployment target. An Apple ``arm64e`` compiler accepting
+``-mtune=native`` when targeting ordinary ``arm64`` is insufficient:
+the bootstrap now tests the requested ``-arch``, ``-isysroot``, and
+``-mmacosx-version-min`` together for both C and C++.
+
+``NATIVE_LLVM_CXX_STANDARD=26`` accepts the compiler's ``-std=c++26``
+or historical ``-std=c++2c`` spelling only when the ``__cplusplus``
+macro reports the corresponding language mode. It does not imply complete
+implementation of all C++26 library or language features. CMake is still
+configured with ``CMAKE_CXX_STANDARD=26`` and
+``CMAKE_CXX_STANDARD_REQUIRED=ON``.
+
+QEMU's ``QEMU_HOST_CPU_TUNING=native`` mode deliberately uses
+``-mtune=<detected CPU>`` on AArch64 rather than ``-mcpu=native``.
+Its C, C++, and Objective-C probes now consume the managed Mach-O target
+arguments, rejecting malformed architecture/SDK tuples. The optional Mach-O
+LLD ``--read-workers`` link flag is admitted only if **both** Clang and
+Clang++ accept it. These are build-policy checks, not instructions to add
+ARMv9.2-A or ARM64e-specific ISA extensions globally.
+
+Run the isolated regression checks using::
+
+  python3 scripts/tests/test-native-llvm-cxx-flag-probes.py
+  python3 scripts/tests/test-host-cpu-tuning.py
+  bash scripts/tests/test-host-cpu-tuning.bash
+  python3 scripts/tests/test-macos-lld-clangxx-flags.py
+
 ARM64e LLD development lane
 ---------------------------
 
