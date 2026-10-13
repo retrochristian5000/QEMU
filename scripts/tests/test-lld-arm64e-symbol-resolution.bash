@@ -44,6 +44,11 @@ for needle in 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' '_external' '_weak' '_host'; 
     }
 done
 
+# Verify the actual dyld import ordinals (dylib, weak, flat lookup) and PAC
+# schema in the chained pointers, not just the displayed symbol names.
+python3 llvm-project/lld/test/MachO/Inputs/arm64e-symbol-resolution.py \
+    "$work/valid.bundle"
+
 cases=(strong weak flat)
 symbols=(_external _weak _host)
 for i in "${!cases[@]}"; do
