@@ -88,11 +88,11 @@ def main() -> int:
         'whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"',
         "restore private SDL pkg-config after macOS sanitation",
     )
-    require(
-        macos_builder,
-        'whp_append_colon_path DYLD_FALLBACK_LIBRARY_PATH "$WHP_SDL_PREFIX/lib"',
-        "restore private SDL runtime path after macOS sanitation",
-    )
+    # dyld must use LC_RPATH/@loader_path for QEMU's private SDL dylib, not
+    # a DYLD_FALLBACK_LIBRARY_PATH injected by the final macOS build adapter.
+    # The bootstrap-only host-libraries script may still prepare its own tools.
+    if 'whp_append_colon_path DYLD_FALLBACK_LIBRARY_PATH' in macos_builder:
+        raise SystemExit("error: dyld runtime fallback masks missing SDL rpaths")
     require(helper, 'system.startswith(("MINGW", "MSYS", "CYGWIN"))',
             "MSYS and MinGW SDL3 DLL discovery")
     for path in (builder, portable):
