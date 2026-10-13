@@ -119,6 +119,68 @@ class NativeASanGlobalsTests(unittest.TestCase):
                 self.verify()
         self.assertNotIn("-fuse-ld=lld", self.calls[-1])
 
+    def test_arm64e_asan_runtime_accepts_pac_calls_and_detects_overflow(self):
+        observed = []
+
+        def executed(cmd, **kwargs):
+            observed.append((list(cmd), kwargs))
+            self.assertNotIn("DYLD_FALLBACK_LIBRARY_PATH", kwargs["env"])
+            self.assertNotIn("DYLD_INSERT_LIBRARIES", kwargs["env"])
+            self.assertIn("detect_leaks=0", kwargs["env"]["ASAN_OPTIONS"])
+            if pathlib.Path(cmd[0]).name == "healthy":
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="",
+                stderr="ERROR: AddressSanitizer: heap-buffer-overflow",
+            )
+
+        with mock.patch.object(self.module, "run", side_effect=self.fake_run):
+            with mock.patch.object(self.module.subprocess, "run",
+                                   side_effect=executed):
+                self.module.verify_runtime(
+                    self.prefix / "clang", self.prefix / "clang++", "arm64e",
+                    self.prefix / "MacOSX.sdk", "15.0", False,
+                )
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(len(self.calls), 4)
+        for command in self.calls[2:]:
+            self.assertIn("-arch", command)
+            self.assertIn("arm64e", command)
+            self.assertIn("-DWHP_REQUIRE_ARM64E=1", command)
+            self.assertIn("-fsanitize=address", command)
+            self.assertNotIn("-fuse-ld=lld", command)
+        self.assertIn("__PTRAUTH__", self.module.RUNTIME_OK)
+
+    def test_arm64e_asan_must_report_real_heap_overflow(self):
+        def silent_execution(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with mock.patch.object(self.module, "run", side_effect=self.fake_run):
+            with mock.patch.object(self.module.subprocess, "run",
+                                   side_effect=silent_execution):
+                with self.assertRaisesRegex(RuntimeError,
+                                            "did not diagnose"):
+                    self.module.verify_runtime(
+                        self.prefix / "clang", self.prefix / "clang++", "arm64e",
+                        self.prefix / "MacOSX.sdk", "15.0", False,
+                    )
+
+    def test_arm64e_asan_rejects_mixed_clang_runtime_directories(self):
+        def mixed_runtimes(cmd):
+            if cmd[-1] == "--print-resource-dir" and "clang++" in str(cmd[0]):
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout=str(self.resource / "different"),
+                )
+            return self.fake_run(cmd)
+
+        with mock.patch.object(self.module, "run", side_effect=mixed_runtimes):
+            with self.assertRaisesRegex(RuntimeError,
+                                        "same compiler-rt resource"):
+                self.module.verify_runtime(
+                    self.prefix / "clang", self.prefix / "clang++", "arm64e",
+                    self.prefix / "MacOSX.sdk", "15.0", False,
+                )
+
     def test_asan_and_arm64e_use_apple_ld_consistently(self):
         build = (ROOT / "build.sh").read_text(encoding="utf-8")
         bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
