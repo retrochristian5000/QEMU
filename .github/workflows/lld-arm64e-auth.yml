@@ -12,6 +12,7 @@ on:
       - 'scripts/tests/test-lld-arm64e-symbol-resolution.bash'
       - 'scripts/tests/test-lld-fat-arm64e.bash'
       - 'scripts/tests/test-lld-arm64e-dylib-identity.bash'
+      - 'scripts/tests/test-lld-arm64e-thinlto.bash'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -89,7 +90,16 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=lld \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
-          cmake --build build-lld --target lld llvm-objdump llvm-lipo -- -j4
+          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt -- -j4
+
+      - name: Audit ThinLTO ARM64e native output and PAC
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-thinlto.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/opt" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-readobj" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
 
       - name: Check ARM64e dylib install names and version propagation
         shell: bash
