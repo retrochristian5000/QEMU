@@ -13,6 +13,8 @@ on:
       - 'scripts/tests/test-lld-fat-arm64e.bash'
       - 'scripts/tests/test-lld-arm64e-dylib-identity.bash'
       - 'scripts/tests/test-lld-arm64e-thinlto.bash'
+      - 'scripts/tests/test-compiler-rt-arm64e-policy.py'
+      - 'scripts/verify-native-asan-darwin.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -78,6 +80,10 @@ jobs:
 
       - name: Install build dependencies
         run: brew install cmake ninja
+
+      - name: Verify compiler-rt ARM64e ASan ABI policy
+        shell: bash
+        run: python3 scripts/tests/test-compiler-rt-arm64e-policy.py
 
       - name: Build lean Mach-O LLD
         shell: bash
