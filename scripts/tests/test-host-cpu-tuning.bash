@@ -12,6 +12,9 @@ cat > "$fake" <<'COMPILER'
 #!/bin/sh
 probe=0
 native=0
+if [ -n "${WHP_FAKE_COMPILER_LOG:-}" ]; then
+    printf '%s\n' "$*" >> "$WHP_FAKE_COMPILER_LOG"
+fi
 for arg in "$@"; do
     case "$arg" in
         -###) probe=1 ;;
@@ -76,5 +79,20 @@ whp_apply_host_cpu_tuning
 [[ "$CXXFLAGS" == '-Wall' ]]
 [[ "$OBJCFLAGS" == '-Wextra' ]]
 [[ -z "$QEMU_HOST_NATIVE_CPU" ]]
+
+# Darwin must forward its ABI, SDK and deployment flags into the Python
+# C, C++ and Objective-C tuning probes (not just the eventual CXXFLAGS).
+HOST_OS=Darwin
+WHP_MACOS_ARCH=arm64e
+SDKROOT=/fake/MacOSX.sdk
+MACOSX_DEPLOYMENT_TARGET=15.0
+WHP_FAKE_COMPILER_LOG="$tmpdir/darwin-probes.log"
+QEMU_HOST_CPU_TUNING=native
+export HOST_OS WHP_MACOS_ARCH SDKROOT MACOSX_DEPLOYMENT_TARGET \
+       WHP_FAKE_COMPILER_LOG QEMU_HOST_CPU_TUNING
+whp_prepare_host_cpu_tuning >/dev/null
+[[ "$QEMU_HOST_CPU_FLAGS_RESOLVED" == '-mtune=apple-m4' ]]
+grep -Fq -- '-arch arm64e -isysroot /fake/MacOSX.sdk -mmacosx-version-min=15.0' \
+    "$WHP_FAKE_COMPILER_LOG"
 
 printf 'host CPU tuning wrapper tests: passed\n'
