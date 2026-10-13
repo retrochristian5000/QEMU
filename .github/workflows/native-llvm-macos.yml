@@ -50,6 +50,7 @@ on:
       - 'scripts/tests/test-arm64e-display-hotpath.py'
       - 'scripts/tests/test-macos-dynamic-modules.py'
       - 'scripts/tests/test-darwin-dyld-arm64e.bash'
+      - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/arm64e-display-abi-probe.m'
       - 'scripts/tests/arm64e-metal-shared-surface-probe.m'
       - 'ui/cocoa.m'
@@ -207,6 +208,10 @@ jobs:
       - name: Audit macOS dynamic QEMU modules
         shell: bash
         run: python3 scripts/tests/test-macos-dynamic-modules.py
+
+      - name: Audit embedded SDL3 dyld runpath policy
+        shell: bash
+        run: python3 scripts/tests/test-sdl-bootstrap.py
 
       - name: Audit arm64e PCI config hot path
         shell: bash
