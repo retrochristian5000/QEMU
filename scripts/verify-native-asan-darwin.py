@@ -9,6 +9,7 @@ do not provide a fake __asan_globals_required or relax undefined symbols.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -116,8 +117,6 @@ def verify(
         if not exe.is_file():
             raise RuntimeError("ASan link returned success without an executable")
 
-
-import os
 
 # Explicit ARM64e runtime admission. This is deliberately separate from
 # verify(): a Mach-O global section and a successful link do not show that
