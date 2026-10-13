@@ -34,6 +34,7 @@ on:
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
+      - 'scripts/tests/test-apple-a18-pro-profile.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
       - 'scripts/bench-smp-memory.py'
@@ -416,6 +417,10 @@ jobs:
           grep -Fq 'WHP native LLVM macOS arch: arm64e' native-llvm.log
           grep -Fq 'WHP native LLVM bootstrap linker: system' native-llvm.log
           grep -Fq 'WHP native LLVM C++ standard: C++26' native-llvm.log
+
+      - name: Verify Apple A18 Pro ISA policy against pinned LLVM
+        shell: bash
+        run: python3 scripts/tests/test-apple-a18-pro-profile.py
 
       - name: Verify native LLVM incremental CMake graph reuse
         shell: bash
