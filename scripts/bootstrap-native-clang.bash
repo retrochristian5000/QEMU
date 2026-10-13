@@ -1195,6 +1195,25 @@ fi
 # partially installed toolchain is not evidence that the generated build graph
 # is corrupt, because installation is staged separately below.
 mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
+cmake_lldb_args=()
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    # Keep disabled LLDB CMake knobs out of the ordinary Clang/LLD cache.
+    cmake_lldb_args=(
+    -DLLDB_ENABLE_PYTHON=OFF
+    -DLLDB_ENABLE_SWIG=OFF
+    -DLLDB_ENABLE_LUA=OFF
+    -DLLDB_ENABLE_LIBEDIT=OFF
+    -DLLDB_ENABLE_CURSES=OFF
+    -DLLDB_ENABLE_LZMA=OFF
+    -DLLDB_ENABLE_LIBXML2=OFF
+    -DLLDB_ENABLE_TREESITTER=OFF
+    -DLLDB_ENABLE_PROTOCOL_SERVERS=OFF
+    -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
+    -DLLDB_ENABLE_LIBCXX_TESTS=OFF
+    -DLLDB_INCLUDE_TESTS=OFF
+    )
+fi
+
 cmake_args=(
     -S "$LLVM_SOURCE_DIR/llvm"
     -B "$LLVM_BUILD_DIR"
@@ -1264,25 +1283,6 @@ cmake_args=(
     "${cmake_darwin_runtime_args[@]}"
     "${cmake_host_args[@]}"
 )
-cmake_lldb_args=()
-if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
-    # Keep disabled LLDB CMake knobs out of the ordinary Clang/LLD cache.
-    cmake_lldb_args=(
-    -DLLDB_ENABLE_PYTHON=OFF
-    -DLLDB_ENABLE_SWIG=OFF
-    -DLLDB_ENABLE_LUA=OFF
-    -DLLDB_ENABLE_LIBEDIT=OFF
-    -DLLDB_ENABLE_CURSES=OFF
-    -DLLDB_ENABLE_LZMA=OFF
-    -DLLDB_ENABLE_LIBXML2=OFF
-    -DLLDB_ENABLE_TREESITTER=OFF
-    -DLLDB_ENABLE_PROTOCOL_SERVERS=OFF
-    -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
-    -DLLDB_ENABLE_LIBCXX_TESTS=OFF
-    -DLLDB_INCLUDE_TESTS=OFF
-    )
-fi
-
 cmake "${cmake_args[@]}"
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
