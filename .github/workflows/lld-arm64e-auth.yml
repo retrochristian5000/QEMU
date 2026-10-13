@@ -18,6 +18,7 @@ on:
       - 'scripts/whp-lldb-autodebug.py'
       - 'scripts/tests/test-whp-lldb-autodebug.py'
       - 'scripts/tests/test-native-lldb-default.py'
+      - 'scripts/tests/test-lldb-cxx23-incomplete-type.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -66,6 +67,8 @@ jobs:
             compiler-rt/cmake/Modules
             libc
             lld
+            lldb/include/lldb/Core
+            lldb/source/Core
             llvm
             third-party
 
@@ -92,6 +95,7 @@ jobs:
           python3 -m py_compile scripts/whp-lldb-autodebug.py scripts/verify-native-asan-darwin.py
           python3 scripts/tests/test-whp-lldb-autodebug.py
           python3 scripts/tests/test-native-lldb-default.py
+          python3 scripts/tests/test-lldb-cxx23-incomplete-type.py
 
       - name: Verify compiler-rt ARM64e ASan ABI policy
         shell: bash
