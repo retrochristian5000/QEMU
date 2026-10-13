@@ -116,6 +116,36 @@ jobs:
           grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' fixups.txt
           grep -Fq '_foo' fixups.txt
 
+      - name: Verify all ARM64e PAC keys in chained rebases and binds
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reuse the pinned LLVM regression fixture; no extra LLVM build or
+          # divergent copy of the authentication encoding is needed.
+          python3 - <<'PY'
+          from pathlib import Path
+          fixture = Path("llvm-project/lld/test/MachO/arm64e-auth-metadata.s").read_text()
+          for piece in fixture.split("#--- ")[1:]:
+              name, contents = piece.split("\n", 1)
+              assert name in ("producer.s", "consumer.s"), name
+              Path(name).write_text(contents)
+          PY
+
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c producer.s -o producer.o
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c consumer.s -o consumer.o
+
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -install_name @rpath/libauth-producer.dylib \
+            producer.o -o libauth-producer.dylib
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -fixup_chains consumer.o libauth-producer.dylib \
+            -o auth-consumer.dylib
+          python3 llvm-project/lld/test/MachO/Inputs/arm64e-auth-metadata.py \
+            auth-consumer.dylib
+
       - name: Verify QEMU's shared ARM64e LLD capability probe
         shell: bash
         run: |
