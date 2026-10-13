@@ -34,6 +34,7 @@ on:
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
+      - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
       - 'scripts/tests/test-apple-a18-pro-profile.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
@@ -260,6 +261,10 @@ jobs:
       - name: Verify native LLVM arm64e bootstrap policy
         shell: bash
         run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
+
+      - name: Test Clang++ bootstrap flag probes
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-cxx-flag-probes.py
 
       - name: Install native LLVM and QEMU build dependencies
         run: |
