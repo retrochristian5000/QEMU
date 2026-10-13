@@ -390,7 +390,27 @@ compiler_supports_macos_arch()
     local output
 
     output="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-arch.XXXXXX")" || return 1
-    if printf 'int main(void) { return 0; }\n' |
+    local probe_source='int main(void) { return 0; }'
+    if [[ "$arch" == arm64e ]]; then
+        # Running a trivial binary does not prove that the compiler selected
+        # the arm64e language ABI.  Require pointer-authenticated indirect
+        # calls from both C and C++ before admitting this bootstrap mode.
+        probe_source="$(cat <<'SOURCE'
+#if !defined(__arm64e__) || !defined(__PTRAUTH__)
+#error arm64e pointer-authentication ABI is not enabled
+#endif
+#if !__has_feature(ptrauth_calls)
+#error arm64e indirect-call authentication is unavailable
+#endif
+static int whp_arm64e_callback(void) { return 0; }
+int main(void) {
+    int (*volatile callback)(void) = whp_arm64e_callback;
+    return callback();
+}
+SOURCE
+)"
+    fi
+    if printf '%s\n' "$probe_source" |
         "$compiler" -arch "$arch" \
             -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
@@ -1215,9 +1235,25 @@ if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
 #ifndef __arm64e__
 #error native LLVM lost the arm64e ABI during the installed-toolchain smoke test
 #endif
+#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)
+#error native LLVM lost arm64e indirect-call pointer authentication
+#endif
 static int whp_arm64e_target(int value) { return value + 1; }
 static int (*whp_arm64e_fp)(int) = whp_arm64e_target;
 int whp_native_llvm_arm64e_smoke(int value) { return whp_arm64e_fp(value); }
+EOF
+    cat >>"$smoke_dir/smoke.cc" <<'EOF'
+#ifndef __arm64e__
+#error native LLVM C++ lost the arm64e ABI
+#endif
+#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)
+#error native LLVM C++ lost arm64e indirect-call pointer authentication
+#endif
+static int whp_arm64e_cxx_callback(void) { return 0; }
+int whp_arm64e_cxx_smoke(void) {
+    int (*volatile callback)(void) = whp_arm64e_cxx_callback;
+    return callback();
+}
 EOF
 fi
 "$staged_toolchain/bin/clang" "${smoke_arch_args[@]}" \

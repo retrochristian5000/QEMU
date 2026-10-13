@@ -14,6 +14,17 @@ text = BOOTSTRAP.read_text(encoding='utf-8')
 # that ABI; older macOS releases must retain arm64 as the compatibility path.
 assert 'NATIVE_LLVM_MACOS_ARCH' in text
 assert 'compiler_supports_macos_arch()' in text
+# Even a successfully executed arm64e main() can conceal missing compiler
+# pointer-authentication semantics. Both C and C++ probes must check the ABI
+# and exercise an authenticated indirect function-pointer call.
+arch_probe = text.split('compiler_supports_macos_arch()', 1)[1].split(
+    'if [[ "$host_os" == macos ]]; then', 1
+)[0]
+assert 'if [[ "$arch" == arm64e ]]; then' in arch_probe
+assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in arch_probe
+assert '#if !__has_feature(ptrauth_calls)' in arch_probe
+assert 'int (*volatile callback)(void)' in arch_probe
+assert 'return callback();' in arch_probe
 assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in text
 assert 'darwin_cmake_arch=arm64e' in text
 assert 'darwin_cmake_arch=arm64' in text
@@ -55,6 +66,8 @@ assert '-arch "$darwin_cmake_arch"' in text
 assert '"${smoke_arch_args[@]}"' in text
 assert '#ifndef __arm64e__' in text
 assert 'whp_arm64e_fp' in text
+assert '#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)' in text
+assert 'whp_arm64e_cxx_smoke' in text
 
 # LLD ARM64e support is admitted by an authenticated-relocation link probe,
 # not by architecture spelling, a trivial link, or an old blanket prohibition.
