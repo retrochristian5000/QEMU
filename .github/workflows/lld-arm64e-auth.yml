@@ -7,6 +7,7 @@ on:
     paths:
       - 'toolchains/llvm-project'
       - 'scripts/whp-build/arm64e-lld-probe.bash'
+      - 'scripts/tests/test-darwin-dyld-arm64e.bash'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -156,3 +157,12 @@ jobs:
             13.0 \
             "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
             "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+
+      - name: Exercise Apple dyld with LLD ARM64e bound dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Metadata acceptance is not dyld runtime acceptance. This stage
+          # must keep LLD selected rather than silently falling back to ld64.
+          WHP_DYLD_LLD_DIR="$GITHUB_WORKSPACE/build-lld/bin" \
+            bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e lld
