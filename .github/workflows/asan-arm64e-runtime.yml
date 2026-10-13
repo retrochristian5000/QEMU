@@ -1,0 +1,49 @@
+name: WHP Darwin ARM64e AddressSanitizer runtime
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/verify-native-asan-darwin.py'
+      - 'scripts/tests/test-native-asan-global-link.py'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/macos-builder.bash'
+      - '.github/workflows/asan-arm64e-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-arm64e-asan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  asan-runtime:
+    name: ARM64 / ARM64e ASan-dyld admission
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Check out pinned QEMU source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Exercise mocked sanitizer admission edge cases
+        run: python3 scripts/tests/test-native-asan-global-link.py
+      - name: Verify system Clang ASan runtime on ARM64 and ARM64e
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang="$(xcrun --find clang)"
+          clangxx="$(xcrun --find clang++)"
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          deployment="$(sw_vers -productVersion | cut -d. -f1,2)"
+          # Ordinary ARM64 is a control for the installed Xcode and ASan.
+          python3 scripts/verify-native-asan-darwin.py \
+            --clang "$clang" --clangxx "$clangxx" \
+            --arch arm64 --sdkroot "$sdkroot" \
+            --deployment-target "$deployment" --runtime-only
+          # A successful ARM64e link without ASan execution is not sufficient.
+          python3 scripts/verify-native-asan-darwin.py \
+            --clang "$clang" --clangxx "$clangxx" \
+            --arch arm64e --sdkroot "$sdkroot" \
+            --deployment-target "$deployment" --runtime-only
