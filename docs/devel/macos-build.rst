@@ -409,8 +409,10 @@ After explicitly building a compatible Mach-O LLD, its own runtime lane is::
 
 The test builds a separate dynamic library with a global function pointer,
 links its client through ``@rpath``, then builds a QEMU-style late-loaded
-module that depends on the same dylib with its own
-``@loader_path/../lib`` runpath. It verifies ``LC_RPATH``,
+module with a *different* private dylib dependency, reachable only through
+the module's ``@loader_path/../plugin-private/lib`` runpath. Reusing
+the executable's already loaded dylib would give a false positive. It
+verifies ``LC_RPATH``,
 ``LC_LOAD_DYLIB`` (via ``otool -L``) and ``LC_ID_DYLIB``, then relocates
 the executable and both libraries to a path containing spaces. With
 ``DYLD_LIBRARY_PATH`` and ``DYLD_FALLBACK_LIBRARY_PATH`` unset,
