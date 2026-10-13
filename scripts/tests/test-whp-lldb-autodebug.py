@@ -44,6 +44,10 @@ class AutoDebugTests(unittest.TestCase):
         self.assertEqual(report.stat().st_mode & 0o777, 0o600)
         self.assertIn("stop reason = EXC_BAD_ACCESS", report.read_text())
         self.assertIn("x8 x16 x17 x22", " ".join(call.call_args.args[0]))
+        self.assertIn("disassemble --frame --bytes --count 80",
+                      call.call_args.args[0])
+        self.assertIn("image lookup --address `$x8`",
+                      call.call_args.args[0])
         self.assertIn("--one-line-on-crash", call.call_args.args[0])
         self.assertEqual(call.call_args.args[0][-2:], ["--", "/bin/false"])
 
