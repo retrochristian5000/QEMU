@@ -207,9 +207,34 @@ int main() {
 """
 
 
+def crash_autopsy(
+    program: pathlib.Path, label: str, environ: dict[str, str],
+    lldb: pathlib.Path, report_dir: pathlib.Path | None,
+) -> str:
+    """Reproduce a failed test under LLDB; keep the original failure primary."""
+    helper = pathlib.Path(__file__).with_name("whp-lldb-autodebug.py")
+    command = [sys.executable, str(helper), "--lldb", str(lldb),
+               "--label", label, "--timeout", "65"]
+    if report_dir is not None:
+        command.extend(["--report-dir", str(report_dir)])
+    command.extend(["--", str(program)])
+    try:
+        result = subprocess.run(command, text=True, capture_output=True,
+                                check=False, env=environ, timeout=75)
+        # A reported LLDB failure must never make a failed ASan check pass.
+        return ("\nWHP fork LLDB replay (exit " +
+                str(result.returncode) + "):\n" +
+                (result.stdout + result.stderr)[-4000:])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "\nWHP fork LLDB replay unavailable: " + str(exc)
+
+
 def verify_runtime(
     clang: pathlib.Path, clangxx: pathlib.Path, arch: str,
     sdkroot: pathlib.Path, deployment: str, use_lld: bool,
+    debug_on_crash: bool = False,
+    lldb: pathlib.Path | None = None,
+    debug_report_dir: pathlib.Path | None = None,
 ) -> None:
     """Require working ASan in a real C++ ARM64e process, not only a link."""
     if arch not in ("arm64", "arm64e", "x86_64"):
@@ -285,20 +310,33 @@ def verify_runtime(
                 raise RuntimeError(
                     f"ASan C++ {arch} {label} executable timed out"
                 ) from exc
-            if not should_fail:
-                if executed.returncode:
-                    raise RuntimeError(
-                        f"ASan C++ {arch} healthy process failed to load/run "
-                        f"(exit {executed.returncode}):\n" +
-                        (executed.stderr or executed.stdout)[-5000:]
+            # Only unexpected failures are replayed: ASan's intentional
+            # heap-buffer-overflow is a PASS when it reports correctly.
+            expected_error = (
+                should_fail and executed.returncode != 0 and
+                "AddressSanitizer" in executed.stderr and
+                "heap-buffer-overflow" in executed.stderr
+            )
+            unexpected = (not should_fail and executed.returncode != 0) or (
+                should_fail and not expected_error
+            )
+            if unexpected:
+                detail = (executed.stderr or executed.stdout)[-5000:]
+                if debug_on_crash:
+                    debugger = lldb or clang.with_name("lldb")
+                    detail += crash_autopsy(
+                        output_file, label, runtime_env, debugger,
+                        debug_report_dir,
                     )
-            elif (executed.returncode == 0 or
-                  "AddressSanitizer" not in executed.stderr or
-                  "heap-buffer-overflow" not in executed.stderr):
+                if should_fail:
+                    raise RuntimeError(
+                        f"ASan C++ {arch} did not diagnose the intentional "
+                        f"heap-buffer-overflow (exit {executed.returncode}), "
+                        f"phase={label}:\n" + detail
+                    )
                 raise RuntimeError(
-                    f"ASan C++ {arch} did not diagnose the intentional "
-                    f"heap-buffer-overflow (exit {executed.returncode}):\n" +
-                    (executed.stderr or executed.stdout)[-5000:]
+                    f"ASan C++ {arch} {label} process failed to load/run "
+                    f"(exit {executed.returncode}):\n" + detail
                 )
 
 def main() -> int:
@@ -310,6 +348,12 @@ def main() -> int:
     parser.add_argument("--sdkroot", type=pathlib.Path, required=True)
     parser.add_argument("--deployment-target", required=True)
     parser.add_argument("--use-lld", action="store_true")
+    parser.add_argument("--debug-on-crash", action="store_true",
+                        help="automatically replay unexpected ASan crashes under fork LLDB")
+    parser.add_argument("--lldb", type=pathlib.Path,
+                        help="path to fork-built LLDB; defaults to Clang's sibling lldb")
+    parser.add_argument("--debug-report-dir", type=pathlib.Path,
+                        help="retain private LLDB diagnostic logs here")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--execute", action="store_true",
                        help="after the link probe, execute positive/negative ASan C++ tests")
@@ -329,6 +373,9 @@ def main() -> int:
             verify_runtime(
                 args.clang, clangxx, args.arch, args.sdkroot,
                 args.deployment_target, args.use_lld,
+                debug_on_crash=args.debug_on_crash,
+                lldb=args.lldb,
+                debug_report_dir=args.debug_report_dir,
             )
     except (OSError, RuntimeError) as exc:
         print(f"error: WHP Darwin ASan global-link check: {exc}", file=sys.stderr)
