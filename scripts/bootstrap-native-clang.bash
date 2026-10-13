@@ -21,23 +21,25 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
-# Optional fork LLDB; don't enlarge the ordinary QEMU native LLVM bootstrap.
-NATIVE_LLVM_ENABLE_LLDB="${NATIVE_LLVM_ENABLE_LLDB:-0}"
+# Default fork LLDB on macOS, where our ARM64e ASan/PAC diagnostics need it.
+# Keep Linux builds lean and allow an explicit 0 opt-out. Resolve "auto"
+# after host detection; do not confuse the debugger with ASan auto-replay.
+NATIVE_LLVM_ENABLE_LLDB="${NATIVE_LLVM_ENABLE_LLDB:-auto}"
 NATIVE_LLVM_ASAN_AUTO_DEBUG="${NATIVE_LLVM_ASAN_AUTO_DEBUG:-0}"
-for whp_lldb_flag in NATIVE_LLVM_ENABLE_LLDB NATIVE_LLVM_ASAN_AUTO_DEBUG; do
-    case "${!whp_lldb_flag}" in
-        0|1) ;;
-        *)
-            printf 'error: %s must be 0 or 1\n' "$whp_lldb_flag" >&2
-            exit 1
-            ;;
-    esac
-done
-if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 &&
-      "$NATIVE_LLVM_ENABLE_LLDB" != 1 ]]; then
-    printf 'error: auto-debug requires NATIVE_LLVM_ENABLE_LLDB=1\n' >&2
-    exit 1
-fi
+case "$NATIVE_LLVM_ENABLE_LLDB" in
+    auto|0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_ENABLE_LLDB must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$NATIVE_LLVM_ASAN_AUTO_DEBUG" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_ASAN_AUTO_DEBUG must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
 # An experimental host-only libLLVM/libclang-cpp shared linking profile.
 # Static component archives remain default for stable incremental builds.
 NATIVE_LLVM_SHARED_TOOLCHAIN="${NATIVE_LLVM_SHARED_TOOLCHAIN:-0}"
@@ -151,6 +153,21 @@ if [[ -z "$host_os" ]]; then
         *) host_os=other ;;
     esac
 fi
+
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == auto ]]; then
+    case "$host_os" in
+        macos) NATIVE_LLVM_ENABLE_LLDB=1 ;;
+        *) NATIVE_LLVM_ENABLE_LLDB=0 ;;
+    esac
+fi
+if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 &&
+      "$NATIVE_LLVM_ENABLE_LLDB" != 1 ]]; then
+    printf 'error: auto-debug requires NATIVE_LLVM_ENABLE_LLDB=1\n' >&2
+    exit 1
+fi
+printf 'WHP native LLVM LLDB: %s (ASan replay: %s)\n' \
+    "$([[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]] && printf enabled || printf disabled)" \
+    "$([[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]] && printf enabled || printf disabled)" >&2
 
 case "$host_arch" in
     arm64|aarch64)
@@ -819,7 +836,7 @@ llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranl
 llvm_enable_libxml2=OFF
 if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
     if [[ "$host_os" != macos ]]; then
-        printf 'error: fork-built LLDB auto-debug currently supports macOS only\n' >&2
+        printf 'error: fork-built LLDB currently supports macOS only\n' >&2
         exit 1
     fi
     llvm_enable_projects="${llvm_enable_projects};lldb"
