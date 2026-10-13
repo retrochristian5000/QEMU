@@ -144,6 +144,34 @@ def verify(
 # Explicit ARM64e runtime admission. This is deliberately separate from
 # verify(): a Mach-O global section and a successful link do not show that
 # dyld can load the matching compiler-rt runtime or that ASan works.
+#
+# Split startup, allocator interception, PAC indirect calls, and the expected
+# ASan report into separately named processes. A frame in Apple's libSystem or
+# dyld is not enough to decide which phase broke, and we cannot patch dyld.
+RUNTIME_STARTUP = """
+#if defined(WHP_REQUIRE_ARM64E)
+#if !defined(__arm64e__) || !defined(__PTRAUTH__)
+#error requested ARM64e C++ ABI was not selected
+#endif
+#endif
+int main() { return 0; }
+"""
+
+RUNTIME_ALLOCATOR = """
+#if defined(WHP_REQUIRE_ARM64E)
+#if !defined(__arm64e__) || !defined(__PTRAUTH__)
+#error requested ARM64e C++ ABI was not selected
+#endif
+#endif
+int main() {
+    int *data = new int[4];
+    data[0] = 42;
+    volatile int observed = data[0];
+    delete[] data;
+    return observed == 42 ? 0 : 1;
+}
+"""
+
 RUNTIME_OK = """
 #if defined(WHP_REQUIRE_ARM64E)
 #if !defined(__arm64e__) || !defined(__PTRAUTH__)
@@ -227,7 +255,12 @@ def verify_runtime(
             "dump_registers=1:dump_instruction_bytes=1:"
             "fast_unwind_on_fatal=0"
         )
+        # A failing startup-only case implicates runtime loading or ASan
+        # initialization before allocator/PAC calls. The next stages isolate
+        # allocator interceptors and authenticated indirect calls.
         for label, source, should_fail in (
+            ("startup", RUNTIME_STARTUP, False),
+            ("allocator", RUNTIME_ALLOCATOR, False),
             ("healthy", RUNTIME_OK, False),
             ("overflow", RUNTIME_BAD, True),
         ):
