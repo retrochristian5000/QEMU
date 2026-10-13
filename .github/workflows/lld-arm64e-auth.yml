@@ -9,6 +9,7 @@ on:
       - 'scripts/whp-build/arm64e-lld-probe.bash'
       - 'scripts/tests/test-macos-ld64-fixup-flags.bash'
       - 'scripts/tests/test-darwin-dyld-arm64e.bash'
+      - 'scripts/tests/test-lld-arm64e-symbol-resolution.bash'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/verify-macos-toolchain.bash'
@@ -124,6 +125,12 @@ jobs:
             }
           done
           echo 'ARM64e relocation pair validation: passed'
+
+      - name: Validate ARM64e imported-symbol resolution
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-symbol-resolution.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
 
       - name: Compare Apple ld64 and LLD dyld fixup options
         shell: bash
