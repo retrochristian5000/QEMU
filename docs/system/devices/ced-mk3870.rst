@@ -93,6 +93,39 @@ The QEMU fork's ``master`` target inventory on 2026-10-14 contains
 **no** ``target/f8``.  The existing ``hw/block/ced-sft100*.c`` uses
 high-level mechanics and virtual-field timing, **not** firmware execution.
 
+
+Decoder milestone (2026-10-14)
+-------------------------------
+
+A CPU-independent, **non-executing** opcode metadata decoder is now
+implemented in ``target/f8/isa.c`` and ``target/f8/isa.h``.
+
+* Classifies all 256 opcode bytes, including 10 reserved and four disputed
+  short-port encodings (A2/A3 and B2/B3).
+* Records mnemonic, instruction length (1/2/3 bytes), operand category
+  and encoded small-register/port/mask arguments.
+* Rejects truncated immediate streams without looking beyond the input.
+  It does **not** disassemble operand *values* or execute instructions.
+* Adds strict, sanitizer-tested TAP regressions via ``test-f8-isa``.
+* Does **not** register ``target/f8`` with the system target Meson
+  build yet: no CPU object, TCG translations or firmware ROM loader
+  have been implemented.
+
+The port 2/3 short I/O opcodes are deliberately marked *disputed*, not
+NOPs: the tertiary opcode compilation at
+https://tobiasvl.github.io/optable/f8/ lists them as input/output,
+while MAME's independent disassembler omits these forms:
+https://github.com/mamedev/mame/blob/master/src/devices/cpu/f8/f8dasm.cpp
+Their silicon-specific meaning awaits the original Mostek opcode and
+I/O restrictions checked against hardware.  Reserved opcode handling
+is similarly unspecified for execution.
+
+The F8 decoder has **no reference to RCA or Zenith**.  If a primary
+Zenith board or ROM dump contradicts the VP2000 controller attribution,
+change that device's CPU binding and provenance, not the independently
+valid F8 instruction map.  Do not replace the original 3870 attribution
+without board-specific hard evidence.
+
 Next implementation gates
 -------------------------
 
