@@ -186,6 +186,14 @@ class HostOptimizationTests(unittest.TestCase):
         self.assertNotIn('-Ofast', builder)
 
 
+    def test_asan_instruments_objc_without_changing_normal_builds(self):
+        meson = (ROOT / 'meson.build').read_text(encoding='utf-8')
+        self.assertIn("if 'objc' in all_languages", meson)
+        self.assertIn("if not objc.has_argument('-fsanitize=address')", meson)
+        self.assertIn("objc_asan_flags = ['-fsanitize=address', '-fno-omit-frame-pointer']", meson)
+        self.assertIn('qemu_common_flags + objc_asan_flags + warn_flags', meson)
+        self.assertIn("objc_asan_flags = []", meson)
+
     def test_pgo_configuration_is_opt_in_and_matches_menu(self):
         mod = load_config_module()
         option = mod.OPTION_BY_KEY['QEMU_HOST_PGO']
