@@ -237,6 +237,14 @@ matching ``libclang_rt.asan_osx_dynamic.dylib`` is selected. Defining
 a dummy ``__asan_globals_required`` or allowing unresolved symbols
 would conceal a broken compiler/runtime/linker pairing rather than repair it.
 
+QEMU's host build strips inherited optimization and sanitizer overrides from
+``CFLAGS``, ``CXXFLAGS``, and ``OBJCFLAGS`` after firmware preparation,
+including negative ``-fno-sanitize=...`` settings and frame-pointer overrides.
+The selected ``QEMU_ASAN=1`` profile then applies its instrumentation through
+Meson to C, C++, and Objective-C host sources. Do not put sanitizer policy in
+``CPPFLAGS`` or force ``-fsanitize=address`` into ``LDFLAGS``: use
+``QEMU_ASAN=1`` so the Clang driver links the matching runtime.
+
 WHP's native LLVM bootstrap now offers a focused ASan probe. It is enabled
 automatically for ``QEMU_ASAN=1`` and can also be requested directly
 with ``NATIVE_LLVM_VALIDATE_ASAN=1``. The probe:
