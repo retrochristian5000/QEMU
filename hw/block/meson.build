@@ -3,7 +3,7 @@ system_ss.add(files(
   'cdrom.c',
   'hd-geometry.c'
 ))
-system_ss.add(files('ced.c', 'ced-sft100-control.c', 'ced-sft100.c'))
+system_ss.add(files('ced.c', 'ced-sft100-control.c', 'ced-sft100-audio.c', 'ced-sft100.c'))
 system_ss.add(when: 'CONFIG_FDC', if_true: files('fdc.c'))
 system_ss.add(when: 'CONFIG_FDC_ISA', if_true: files('fdc-isa.c'))
 system_ss.add(when: 'CONFIG_FDC_SYSBUS', if_true: files('fdc-sysbus.c'))

@@ -148,6 +148,11 @@ if have_system
       meson.project_source_root() / 'hw/block/ced.c',
       meson.project_source_root() / 'hw/block/ced-sft100-control.c',
     ],
+    'test-ced-sft100-audio': [
+      meson.project_source_root() / 'hw/block/ced.c',
+      meson.project_source_root() / 'hw/block/ced-sft100-control.c',
+      meson.project_source_root() / 'hw/block/ced-sft100-audio.c',
+    ],
     'test-f8-isa': [meson.project_source_root() / 'target/f8/isa.c'],
     'test-f8-regs': [meson.project_source_root() / 'target/f8/regs.c'],
     'test-vmstate': [migration, io],

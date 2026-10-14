@@ -42,6 +42,42 @@ its VMState and virtual media restore semantics are implemented, avoiding
 silent state loss.  Tests cover the controller separately from its QOM
 wrapper.  The SFT100 wrapper is not yet connected to a QEMU machine.
 
+Decoded mono audio output (2026-10-14)
+------------------------------------
+
+The original SFT100 delivers monaural sound extracted from a **716 kHz
+audio FM carrier** on the capacitance disc. RCA service literature shows
+a band-pass filter, FM demodulator and audio routing toward the VHF RF
+modulator. The later 905 kHz stereo carrier is **not** an SFT100 stereo
+output capability. Independent engineering reference:
+https://www.stason.org/TULARC/pc/videodisc-selectavision/1-3-What-are-the-technical-specifications-of-the-RCA-VideoDi.html
+RCA SFT100 service reference:
+https://www.manualslib.com/manual/4050471/Sams-Rca-Sft100w.html
+
+The QOM SFT100 now exposes an ``audiodev`` property and opens a QEMU
+output voice with **48 kHz, signed 16-bit, mono, host-endian PCM**.
+This is a *host interface convention*, **not** the rate or encoding
+recorded in the disc groove. The decoder (not implemented) must
+supply already demodulated, mono, resampled PCM using
+``rca_sft100_submit_pcm()`` in the emulation thread.
+
+``ced-sft100-audio.c`` provides a fixed 4096-frame FIFO with bounded
+partial writes and no dynamic allocations. Playback is enabled only
+while the SFT100 is in active normal PLAY. Pause, search, rapid access,
+power-off, and end-of-side mute playback and discard stale decoded
+samples. Audio voice setup failures abort device realization, clean
+up the migration blocker, and do not leave a running timer.
+
+The original SFT100's **RF television output** is not yet emulated;
+QEMU host sound is a diagnostic output route and must not be
+mistaken for an RCA rear-panel analog audio jack. Real sample data
+can be heard only after a decoder/media source submits PCM; no
+Disney recording, test song, or FM signal is synthesized.
+
+Test with ``meson test test-ced-sft100-audio`` in the configured
+QEMU build. The isolated test also has a QOM/audio callback mock
+covering partial backend writes, muting, and realize cleanup.
+
 Explicit limitations
 --------------------
 

@@ -7,6 +7,7 @@
 #define HW_BLOCK_CED_SFT100_H
 
 #include "hw/block/ced-sft100-control.h"
+#include <stddef.h>
 #include "hw/core/qdev.h"
 #include "qom/object.h"
 
@@ -37,5 +38,11 @@ bool rca_sft100_rapid_access(RcaSft100State *s, uint32_t target_field);
 bool rca_sft100_select_channel(RcaSft100State *s, uint8_t channel);
 /* Read a coherent host-side snapshot.  No analog RF or picture samples. */
 void rca_sft100_get_status(RcaSft100State *s, RcaSft100Status *out);
+/* Backend-only post-demodulation mono signed16 PCM at 48000 Hz.
+ * Calls must originate on the device emulation thread.  No FM decoder yet.
+ * Returns frames queued (may be less than requested), zero if muted.
+ */
+size_t rca_sft100_submit_pcm(RcaSft100State *s,
+                             const int16_t *samples, size_t frames);
 
 #endif /* HW_BLOCK_CED_SFT100_H */

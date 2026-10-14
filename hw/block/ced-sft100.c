@@ -7,6 +7,9 @@
  */
 #include "qemu/osdep.h"
 #include "hw/block/ced-sft100.h"
+#include "hw/block/ced-sft100-audio.h"
+#include "hw/core/qdev-properties.h"
+#include "qemu/audio.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "migration/blocker.h"
@@ -18,10 +21,46 @@
 struct RcaSft100State {
     DeviceState parent_obj;
     CedSft100Control control;
+    CedSft100Audio audio;
+    AudioBackend *audio_be;
+    SWVoiceOut *voice;
     QEMUTimer *timer;
     Error *migration_blocker;
     int64_t last_ns;
 };
+
+/* Audio is supplied by a future 716 kHz FM decoder as mono 48 kHz PCM. */
+static void rca_sft100_update_audio(RcaSft100State *s)
+{
+    ced_sft100_audio_gate(&s->audio, &s->control);
+    if (s->voice) {
+        audio_be_set_active_out(s->audio_be, s->voice,
+            s->audio.count && ced_sft100_audio_audible(&s->control));
+    }
+}
+
+static void rca_sft100_audio_callback(void *opaque, int free_bytes)
+{
+    RcaSft100State *s = opaque;
+    const int16_t *samples;
+    size_t frames, written;
+
+    ced_sft100_audio_gate(&s->audio, &s->control);
+    while (free_bytes >= (int)sizeof(int16_t) && s->audio.count) {
+        frames = ced_sft100_audio_peek(&s->audio, &samples);
+        frames = MIN(frames, (size_t)free_bytes / sizeof(int16_t));
+        written = audio_be_write(s->audio_be, s->voice,
+                                 (void *)samples, frames * sizeof(int16_t));
+        if (!written || written % sizeof(int16_t)) {
+            break;
+        }
+        ced_sft100_audio_consume(&s->audio, written / sizeof(int16_t));
+        free_bytes -= written;
+    }
+    if (!s->audio.count || !ced_sft100_audio_audible(&s->control)) {
+        audio_be_set_active_out(s->audio_be, s->voice, false);
+    }
+}
 
 /* The virtual clock stops when VM execution stops. */
 static void rca_sft100_sync(RcaSft100State *s)
@@ -38,6 +77,7 @@ static void rca_sft100_sync(RcaSft100State *s)
     }
     /* A restored or reset clock must never produce unsigned time wrap. */
     s->last_ns = now;
+    rca_sft100_update_audio(s);
 }
 
 static void rca_sft100_reschedule(RcaSft100State *s)
@@ -48,6 +88,7 @@ static void rca_sft100_reschedule(RcaSft100State *s)
         return;
     }
     timer_del(s->timer);
+    rca_sft100_update_audio(s);
     if (!ced_sft100_clock_active(&s->control)) {
         return;
     }
@@ -78,6 +119,21 @@ static void rca_sft100_tick(void *opaque)
         rca_sft100_reschedule(dev);         \
         return ok;                          \
     } while (0)
+
+size_t rca_sft100_submit_pcm(RcaSft100State *s,
+                             const int16_t *samples, size_t frames)
+{
+    size_t accepted;
+
+    if (!s || !s->voice) {
+        return 0;
+    }
+    rca_sft100_sync(s);
+    accepted = ced_sft100_audio_feed(&s->audio, &s->control,
+                                     samples, frames);
+    rca_sft100_update_audio(s);
+    return accepted;
+}
 
 bool rca_sft100_set_lever(RcaSft100State *s, CedSft100Lever lever)
 {
@@ -200,6 +256,12 @@ static void rca_sft100_instance_init(Object *obj)
 static void rca_sft100_realize(DeviceState *dev, Error **errp)
 {
     RcaSft100State *s = RCA_SFT100(dev);
+    struct audsettings settings = {
+        .freq = CED_SFT100_PCM_RATE,
+        .nchannels = 1,
+        .fmt = AUDIO_FORMAT_S16,
+        .big_endian = HOST_BIG_ENDIAN,
+    };
 
     /* Until there is a VMState schema, never silently drop player state. */
     error_setg(&s->migration_blocker,
@@ -207,6 +269,18 @@ static void rca_sft100_realize(DeviceState *dev, Error **errp)
     if (migrate_add_blocker(&s->migration_blocker, errp) < 0) {
         return;
     }
+    if (!audio_be_check(&s->audio_be, errp)) {
+        migrate_del_blocker(&s->migration_blocker);
+        return;
+    }
+    s->voice = audio_be_open_out(s->audio_be, NULL, "rca-sft100.mono",
+                                  s, rca_sft100_audio_callback, &settings);
+    if (!s->voice) {
+        error_setg(errp, "RCA SFT100 could not open monaural audio voice");
+        migrate_del_blocker(&s->migration_blocker);
+        return;
+    }
+    audio_be_set_active_out(s->audio_be, s->voice, false);
     s->last_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rca_sft100_tick, s);
 }
@@ -219,8 +293,17 @@ static void rca_sft100_unrealize(DeviceState *dev)
         timer_free(s->timer);
         s->timer = NULL;
     }
+    if (s->voice) {
+        audio_be_close_out(s->audio_be, s->voice);
+        s->voice = NULL;
+    }
+    ced_sft100_audio_reset(&s->audio);
     migrate_del_blocker(&s->migration_blocker);
 }
+
+static const Property rca_sft100_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(RcaSft100State, audio_be),
+};
 
 static void rca_sft100_class_init(ObjectClass *oc, const void *data)
 {
@@ -230,6 +313,7 @@ static void rca_sft100_class_init(ObjectClass *oc, const void *data)
     dc->desc = "RCA SelectaVision SFT100 CED transport (no RF decoder)";
     dc->realize = rca_sft100_realize;
     dc->unrealize = rca_sft100_unrealize;
+    device_class_set_props(dc, rca_sft100_properties);
     /* External standalone appliance: no virtual machine port/TV attached. */
     dc->user_creatable = false;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
