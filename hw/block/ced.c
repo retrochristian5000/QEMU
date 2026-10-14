@@ -87,6 +87,7 @@ void ced_player_init(CedPlayer *player, CedTransportProfile profile)
     memset(player, 0, sizeof(*player));
     player->profile = profile;
     player->rf_channel = profile == CED_TRANSPORT_RCA_SFT100 ? 3 : 0;
+    player->search_direction = 1;
 }
 
 bool ced_player_insert(CedPlayer *player, const CedMedia *media, uint8_t side)
@@ -161,15 +162,21 @@ bool ced_player_stop(CedPlayer *player)
     return true;
 }
 
-bool ced_player_visual_search(CedPlayer *player)
+bool ced_player_visual_search_direction(CedPlayer *player, bool forward)
 {
-    /* Only RCA SFT100's nominal 16x forward visual search is defined. */
+    /* RCA SFT100 has nominal 16x visual search in both directions. */
     if (!player || player->profile != CED_TRANSPORT_RCA_SFT100 ||
         player->state != CED_PLAYING) {
         return false;
     }
+    player->search_direction = forward ? 1 : -1;
     player->state = CED_VISUAL_SEARCH;
     return true;
+}
+
+bool ced_player_visual_search(CedPlayer *player)
+{
+    return ced_player_visual_search_direction(player, true);
 }
 
 bool ced_player_rapid_seek(CedPlayer *player, uint32_t target_field)
@@ -210,6 +217,17 @@ void ced_player_step_fields(CedPlayer *player, uint64_t elapsed_fields)
     }
     if (player->state != CED_PLAYING &&
         player->state != CED_VISUAL_SEARCH) {
+        return;
+    }
+    if (player->state == CED_VISUAL_SEARCH &&
+        player->search_direction < 0) {
+        remaining = player->position_fields;
+        advance = elapsed_fields >= (remaining + 15) / 16 ?
+                  remaining : elapsed_fields * 16;
+        player->position_fields -= (uint32_t)advance;
+        if (!player->position_fields) {
+            player->state = CED_PAUSED;
+        }
         return;
     }
     remaining = side_length - player->position_fields;

@@ -29,7 +29,7 @@ Emulated today
 * Caddy loading and retention, physical side selection on re-insertion,
   stopping and ejection, playing and pausing with stylus/video/audio gates.
 * An RCA SFT100 transport profile with *approximate* 480-field startup
-  (about eight seconds), 16x forward visual-search position advance,
+  (about eight seconds), 16x forward/reverse visual-search position advance,
   silent rapid seek, and end-of-side clamping.  Rapid seek completion is
   currently abstract, without mechanical travel-duration modeling.
 * CH3/CH4 switch state (not actual RF transmission).
@@ -75,8 +75,19 @@ Not yet emulated
 * Analog NTSC composite encoding, antenna pass-through, and VHF RF carrier
   synthesis; these require a later output stage coupled to the existing
   ``analog-video`` descriptions.
-* Guest-visible QOM device/front panel, machine-specific control/firmware,
+* Guest-visible front-panel integration, machine-specific control/firmware,
   actual CED captured media playback and migration/snapshot support.
+
+RCA SFT100 standalone appliance wrapper
+---------------------------------------
+
+The registered QOM device ``rca-sft100`` models RCA's OFF/LOAD-UNLOAD/PLAY
+lever, direction-based search controls, caddy, TV output source selection
+and rational virtual-clock playback. It is **not** command-line creatable:
+there is no AV playback path, television attachment or machine-specific
+front-end. See ``ced-sft100.rst`` for interfaces and explicit limits.
+Migration and snapshots are blocked until player state has a VMState
+schema. The legacy CED transport helpers remain reusable independently.
 
 The core is deliberately independent of a CPU architecture.  A CED disc is
 not a machine target and should not create a ``qemu-system-ced`` binary.

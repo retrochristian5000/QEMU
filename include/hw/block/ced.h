@@ -85,6 +85,7 @@ typedef struct CedPlayer {
     uint32_t start_remaining_fields;
     uint8_t side;      /* 1 or 2 while retained, 0 when empty */
     uint8_t rf_channel; /* SFT100 external CH3/CH4 switch (not RF synthesis) */
+    int8_t search_direction; /* 1 forward, -1 reverse; no servo model */
 } CedPlayer;
 
 void ced_player_init(CedPlayer *player, CedTransportProfile profile);
@@ -94,6 +95,7 @@ bool ced_player_play(CedPlayer *player);
 bool ced_player_pause(CedPlayer *player);
 bool ced_player_stop(CedPlayer *player);
 bool ced_player_visual_search(CedPlayer *player);
+bool ced_player_visual_search_direction(CedPlayer *player, bool forward);
 bool ced_player_rapid_seek(CedPlayer *player, uint32_t target_field);
 void ced_player_step_fields(CedPlayer *player, uint64_t elapsed_fields);
 bool ced_player_set_rf_channel(CedPlayer *player, uint8_t channel);
