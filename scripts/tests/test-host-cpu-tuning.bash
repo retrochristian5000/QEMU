@@ -37,13 +37,13 @@ export PYTHON CC CXX OBJC HOST_ARCH QEMU_HOST_CPU_TUNING
 # CPU-specific flags must be removed before firmware/tool preparation. Host
 # optimization and instrumentation overrides are stripped later so firmware can
 # retain its own policy while QEMU leaves optimization ownership to Meson.
-CFLAGS='-O0 -march=old -g -DKEEP=1 -fsanitize=address'
-CXXFLAGS='-mcpu old -Og -Wall -fno-inline'
-OBJCFLAGS='-Oz -mtune=old -Wextra --coverage'
+CFLAGS='-O0 -march=old -g -DKEEP=1 -fsanitize=address -fno-sanitize=address -fomit-frame-pointer'
+CXXFLAGS='-mcpu old -Og -Wall -fno-inline -fno-sanitize=address,undefined -foptimize-sibling-calls'
+OBJCFLAGS='-Oz -mtune=old -Wextra --coverage -fno-sanitize=address -fomit-frame-pointer'
 whp_strip_inherited_host_cpu_tuning
-[[ "$CFLAGS" == '-O0 -g -DKEEP=1 -fsanitize=address' ]]
-[[ "$CXXFLAGS" == '-Og -Wall -fno-inline' ]]
-[[ "$OBJCFLAGS" == '-Oz -Wextra --coverage' ]]
+[[ "$CFLAGS" == '-O0 -g -DKEEP=1 -fsanitize=address -fno-sanitize=address -fomit-frame-pointer' ]]
+[[ "$CXXFLAGS" == '-Og -Wall -fno-inline -fno-sanitize=address,undefined -foptimize-sibling-calls' ]]
+[[ "$OBJCFLAGS" == '-Oz -Wextra --coverage -fno-sanitize=address -fomit-frame-pointer' ]]
 
 whp_strip_inherited_host_performance_overrides
 [[ "$CFLAGS" == '-g -DKEEP=1' ]]
