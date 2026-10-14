@@ -58,12 +58,16 @@ whp_strip_host_performance_overrides_from()
         case "$token" in
             -O|-O0|-O1|-O2|-O3|-Og|-Os|-Oz|-Ofast|\
             -fno-inline|-fno-inline-functions|-fno-inline-small-functions|\
-            -fno-omit-frame-pointer|-fno-optimize-sibling-calls|\
+            -fno-omit-frame-pointer|-fomit-frame-pointer|\
+            -fno-optimize-sibling-calls|-foptimize-sibling-calls|\
             -fno-vectorize|-fno-slp-vectorize|\
             -pg|--coverage|-fprofile-arcs|-ftest-coverage|\
             -finstrument-functions|-fcoverage-mapping|\
-            -fsanitize=*|-fsanitize-coverage=*|-fsanitize-recover=*|\
-            -fno-sanitize-recover=*|-fprofile-generate|\
+            -fsanitize=*|-fno-sanitize=*|\
+            -fsanitize-coverage=*|-fno-sanitize-coverage=*|\
+            -fsanitize-recover=*|-fno-sanitize-recover=*|\
+            -fsanitize-address-use-after-scope|-fno-sanitize-address-use-after-scope|\
+            -fprofile-generate|\
             -fprofile-generate=*|-fprofile-instr-generate|\
             -fprofile-instr-generate=*)
                 ;;
