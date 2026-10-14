@@ -785,8 +785,16 @@ if 'cpp' in all_languages
   add_project_arguments(cxx.get_supported_arguments(warn_flags), native: false, language: 'cpp')
 endif
 if 'objc' in all_languages
-  # Note sanitizer flags are not applied to Objective-C sources!
-  add_project_arguments(objc.get_supported_arguments(qemu_common_flags + warn_flags),
+  # macOS Cocoa sources must receive ASan instrumentation as well as C/C++.
+  # Otherwise an ASan build silently leaves part of the host uninstrumented.
+  objc_asan_flags = []
+  if get_option('asan')
+    if not objc.has_argument('-fsanitize=address')
+      error('Your Objective-C compiler does not support -fsanitize=address')
+    endif
+    objc_asan_flags = ['-fsanitize=address', '-fno-omit-frame-pointer']
+  endif
+  add_project_arguments(objc.get_supported_arguments(qemu_common_flags + objc_asan_flags + warn_flags),
                         native: false, language: 'objc')
 endif
 if host_os == 'linux'
