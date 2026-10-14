@@ -149,6 +149,7 @@ if have_system
       meson.project_source_root() / 'hw/block/ced-sft100-control.c',
     ],
     'test-f8-isa': [meson.project_source_root() / 'target/f8/isa.c'],
+    'test-f8-regs': [meson.project_source_root() / 'target/f8/regs.c'],
     'test-vmstate': [migration, io],
     'test-yank': ['socket-helpers.c', qom, io, chardev],
     'test-ram-discard-manager': [

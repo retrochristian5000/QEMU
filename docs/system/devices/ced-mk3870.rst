@@ -126,6 +126,21 @@ change that device's CPU binding and provenance, not the independently
 valid F8 instruction map.  Do not replace the original 3870 attribution
 without board-specific hard evidence.
 
+Register-file milestone (2026-10-14)
+------------------------------------
+
+Core register storage and helpers are implemented and tested in
+``target/f8/regs.c`` and ``target/f8/regs.h``; see
+``docs/system/devices/f8-registers.rst``.
+
+The implementation deliberately separates the F3850's accumulator,
+status, ISAR and 64-byte scratchpad from the program/data counters
+originally located on F8 memory-support devices.  The integrated
+MK3870 can combine them without confusing the physical chip layout.
+
+The read/write helpers are *not* hardware boot code, instruction
+execution or a complete processor reset.  No TCG target is registered.
+
 Next implementation gates
 -------------------------
 
