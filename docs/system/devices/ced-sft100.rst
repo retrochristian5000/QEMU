@@ -1,6 +1,14 @@
 RCA SelectaVision SFT100 front-panel emulation
 ===============================================
 
+The real SFT100's **main controller is a Mostek MK3870**, implementing
+the **Fairchild F8 instruction-set architecture** with 2 KB of mask ROM.
+The Zenith VP2000 is documented as an SFT100-based clone; its actual
+chip markings and ROM revision still require direct verification.
+See ``ced-mk3870.rst`` for primary/secondary evidence, the unresolved
+RCA stock-number discrepancy, and CPU integration requirements.
+No ``target/f8`` backend or ROM execution is implemented yet.
+
 The QOM type ``rca-sft100`` is a non-user-creatable standalone appliance
 model backed by the existing CED transport.  It does **not** add fictional
 ISA, PCI, IDE, CD-ROM or memory-mapped interfaces to a physical 1981 RCA
