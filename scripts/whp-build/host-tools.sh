@@ -165,9 +165,20 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
                     'error: managed Autoconf lost its validated GNU M4 dependency.' >&2
                 exit 1
             fi
+            # Check the promoted executable itself, not merely a GNU-looking
+            # version banner.  An unusable M4 must not reach later bootstraps.
+            WHP_M4_PROBE=$(
+                printf '%s\n' "patsubst(\`ab12cd', \`[0-9]+', \`X')" |
+                    "$M4" --gnu --fatal-warnings 2>/dev/null
+            ) || WHP_M4_PROBE=
+            if [ "$WHP_M4_PROBE" != 'abXcd' ]; then
+                printf '%s\n' \
+                    'error: managed Autoconf GNU M4 failed its macro execution check.' >&2
+                exit 1
+            fi
             export M4
             printf 'QEMU GNU M4: %s\n' "$M4" >&2
-            unset WHP_AUTOCONF_MARKER WHP_AUTOCONF_MARKER_LINE
+            unset WHP_AUTOCONF_MARKER WHP_AUTOCONF_MARKER_LINE WHP_M4_PROBE
         fi
     fi
 
