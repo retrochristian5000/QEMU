@@ -1,9 +1,17 @@
 # WHP QEMU Fork AI Rules
 
 ## Development Rules
-- Always update the submodules after working on them
+- Always advance and commit the parent-repository gitlinks after working on submodules; pushing the child repository alone does not complete the task.
 - Never generate branches
 - Never create or commit Superpowers planning/spec artifacts in this repository; keep planning outside the repo
+
+## Required Gitlink Synchronization
+- First commit and push the actual changes in the submodule repository on its existing intended branch, then read that branch's new **remote HEAD SHA**. Do not mistake an unpushed local commit or an outdated checkout for the latest commit.
+- Within the same work round, advance every **known** parent repository that records a gitlink to the changed submodule, not just the repository currently being edited. LLVM is a shared toolchain: QEMU's `toolchains/llvm-project` is one consumer, not a reason to assume other consumers do not exist. Discover additional consumer relationships from verified repository configuration and trees; do not invent them.
+- For each verified consumer, update the actual gitlink tree entry to the intended latest pushed submodule commit, preserving Git mode `160000`. Commit and push the parent repository on its existing branch. A submodule checkout, `git submodule update --remote`, or a changed `.gitmodules` entry alone is **not** a committed gitlink update.
+- After a submodule changes, do not deliberately leave its known consumer pinned to an older revision simply because it is used by other projects or because full integration tests have not run. Update the gitlink and separately state the test/validation status. If there is a confirmed incompatibility or the parent push is blocked, record the exact blocker and old/new SHA; never report propagation as complete.
+- Independently re-read each remote parent branch's Git tree after pushing and verify that the `160000` gitlink SHA equals the intended remote child HEAD. Report the child SHA, parent commit, affected consumers, and any consumers not yet verified or advanced.
+- Follow the Permission Rules for both submodule and ordinary files; never alter unrelated submodule pins as collateral changes. Preserve the no-new-branches rule throughout propagation.
 
 ## Permission Rules
 - Never change a tracked file's mode or executable bit unless the user explicitly authorizes that specific permission change. Editing contents is not permission to change modes.
