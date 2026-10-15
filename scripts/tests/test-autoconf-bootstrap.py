@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib.util
 from pathlib import Path
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -9,6 +11,35 @@ ROOT = Path(__file__).resolve().parents[2]
 def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
+
+
+def check_m4_runtime_guard() -> None:
+    """Reject an M4 impostor that prints a valid banner but cannot expand macros."""
+    helper_path = ROOT / "scripts/ensure-autoconf.py"
+    spec = importlib.util.spec_from_file_location("whp_ensure_autoconf", helper_path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("error: cannot import the Autoconf bootstrap helper")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with tempfile.TemporaryDirectory(prefix="whp-m4-regression-") as directory:
+        fake = Path(directory) / "fake-m4"
+        fake.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = --gnu ] && [ "$2" = --version ]; then\n'
+            "  printf '%s\\n' 'm4 (GNU M4) 99.99'\n"
+            '  exit 0\n'
+            'fi\n'
+            "printf '%s\\n' 'not-expanded'\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        try:
+            module.gnu_m4_version(str(fake))
+        except RuntimeError as exc:
+            require(str(exc), "GNU M4 macro expansion failed", "M4 runtime guard")
+        else:
+            raise SystemExit("error: accepted M4 with a forged version banner")
 
 
 def main() -> int:
@@ -29,6 +60,7 @@ def main() -> int:
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
     require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "4"', "bootstrap schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
+    require(helper, '[path, "--gnu", "--fatal-warnings"]', "GNU M4 runtime probe")
     require(helper, "GNU M4 1.4.16 or newer", "GNU M4 bootstrap floor")
     require(helper, 'f"M4_PATH={m4}\\n"', "M4 path marker")
     require(helper, 'f"M4_VERSION={gnu_m4_version(m4)}\\n"', "M4 version marker")
@@ -101,6 +133,8 @@ def main() -> int:
     require(host_tools, "M4_PATH=", "Autoconf marker M4 promotion")
     require(host_tools, "export M4", "downstream GNU M4 export")
     require(host_tools, '"$M4" --gnu --version', "promoted GNU M4 validation")
+    require(host_tools, '"$M4" --gnu --fatal-warnings', "promoted M4 runtime probe")
+    check_m4_runtime_guard()
 
     print("WHP Autoconf bootstrap wiring: verified")
     return 0
