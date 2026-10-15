@@ -458,13 +458,19 @@ the standard Homebrew M4 keg locations are checked before PATH so Apple's
 compatibility M4 cannot silently outrank an installed GNU M4. Admission now
 requires GNU M4 1.4.16 or newer with working ``--gnu`` support, matching the
 maintainer bootstrap's exclusion of the historical strstr-bug releases.
+Admission also executes GNU ``patsubst`` under ``--gnu --fatal-warnings`` and checks
+its exact output. A plausible version banner alone cannot admit a broken or
+non-expanding executable. This is a compatibility floor, not a pin to an older
+M4 release; newer GNU M4 installations remain eligible.
 
 The selected executable is mirrored as the bootstrap's literal ``m4``
 command so Autotools subprocesses cannot rediscover a different
 implementation. The completed Autoconf marker records ``M4_PATH`` and
 ``M4_VERSION`` separately. ``host-tools.sh`` validates that path again and
 exports it as the canonical ``M4`` for later maintainer-source orchestration,
-including sed, Libtool, and libisofs. GNU Make receives the managed Autoconf
+including sed, Libtool, and libisofs. The promotion path repeats the GNU macro
+execution check so a binary replaced after initial bootstrap cannot silently
+be used downstream. GNU Make receives the managed Autoconf
 suite generated with that M4, but its helper deliberately strips inherited
 ``M4`` from Make's own artifact configure environment as part of its target
 contamination guard. The installed-runtime smoke test removes caller ``M4``
