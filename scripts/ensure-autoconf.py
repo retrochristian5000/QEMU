@@ -204,6 +204,25 @@ def gnu_m4_version(path: str) -> str:
             "GNU M4 1.4.16 or newer is required to bootstrap Autoconf: "
             f"{path}: {first}"
         )
+
+    # A version banner alone does not prove that the binary can execute
+    # GNU extensions.  Exercise a GNU-only macro before Autoconf embeds
+    # this path in autom4te and passes it to subsequent bootstrap stages.
+    probe = subprocess.run(
+        [path, "--gnu", "--fatal-warnings"],
+        input="patsubst(`ab12cd', `[0-9]+', `X')\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if probe.returncode != 0 or probe.stdout.strip() != "abXcd":
+        detail = (
+            probe.stderr.strip()
+            or probe.stdout.strip()
+            or f"exit status {probe.returncode}"
+        )
+        raise RuntimeError(f"GNU M4 macro expansion failed: {path}: {detail}")
     return first
 
 
