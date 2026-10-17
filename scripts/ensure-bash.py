@@ -411,6 +411,51 @@ def bash_usable(path: pathlib.Path) -> bool:
     return completed.returncode == 0
 
 
+def bootstrap_job_limit() -> int:
+    """Limit implicit bootstrap parallelism; honor validated explicit JOBS."""
+    explicit = os.environ.get("JOBS", "")
+    if not explicit:
+        return min(2, os.cpu_count() or 1)
+    if not explicit.isascii() or not explicit.isdecimal() or len(explicit) > 10:
+        raise RuntimeError("Bash bootstrap JOBS must be a positive integer")
+    jobs = int(explicit)
+    if jobs < 1 or jobs > 2147483647:
+        raise RuntimeError("Bash bootstrap JOBS must be between 1 and 2147483647")
+    return jobs
+
+
+def publish_bash(
+    built_binary: pathlib.Path,
+    prefix: pathlib.Path,
+    marker: str,
+) -> None:
+    """Publish only the validated build shell, retaining the previous on failure."""
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    staging = pathlib.Path(tempfile.mkdtemp(
+        prefix=f"{prefix.name}.new.", dir=prefix.parent,
+    ))
+    backup = prefix.with_name(f"{prefix.name}.old.{os.getpid()}")
+    try:
+        installed = staging / "bin" / "bash"
+        installed.parent.mkdir(parents=True)
+        shutil.copy2(built_binary, installed)
+        (staging / ".whp-bash-bootstrap").write_text(marker, encoding="utf-8")
+
+        if backup.exists():
+            raise RuntimeError(f"old Bash backup already exists: {backup}")
+        if prefix.exists():
+            prefix.rename(backup)
+        try:
+            staging.rename(prefix)
+        except OSError:
+            if backup.exists() and not prefix.exists():
+                backup.rename(prefix)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def marker_text(
     revision: str,
     cc: str,
@@ -474,7 +519,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             "deployment target cannot compile, link, and execute it"
         )
 
-    shutil.rmtree(prefix, ignore_errors=True)
+    # Keep the previously validated Bash available until its replacement
+    # passes the full runtime/ABI probes and is ready for atomic publication.
     shutil.rmtree(work_dir, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -527,26 +573,28 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
     run_logged(configure_command, cwd=object_dir, env=env)
-    run_logged(
-        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
-        cwd=object_dir, env=env,
-    )
-    run_logged([make, "install"], cwd=object_dir, env=env)
+    jobs = bootstrap_job_limit()
+    print(f"WHP Bash bootstrap build jobs: {jobs}", file=sys.stderr)
+    run_logged([make, "-j", str(jobs)], cwd=object_dir, env=env)
 
-    if not bash_usable(bash_path):
-        raise RuntimeError(f"bootstrapped Bash is not usable: {bash_path}")
-    if arch == "arm64e" and not mach_o_is_arm64e(bash_path):
+    # QEMU needs only the executable shell. Bash's 'make install' also
+    # recurses through manual pages, translations, docs and loadables.
+    # Verify the actual built program before replacing the cached installation.
+    built_bash = object_dir / "bash"
+    if not bash_usable(built_bash):
+        raise RuntimeError(f"bootstrapped Bash is not usable: {built_bash}")
+    if arch == "arm64e" and not mach_o_is_arm64e(built_bash):
         raise RuntimeError(
             "bootstrapped Bash is not a thin arm64e Mach-O executable"
         )
     if host_triplet:
-        actual_machtype = bash_machtype(bash_path)
+        actual_machtype = bash_machtype(built_bash)
         if actual_machtype != host_triplet:
             raise RuntimeError(
                 "bootstrapped Bash reported the wrong MACHTYPE: "
                 f"{actual_machtype} != {host_triplet}"
             )
-    marker_file.write_text(marker, encoding="utf-8")
+    publish_bash(built_bash, prefix, marker)
     return bash_path
 
 
