@@ -337,6 +337,16 @@ assert 'CLANG_ENABLE_ARCMT' not in bootstrap
 for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
     assert 'LLVM_ENABLE_TERMINFO' not in llvm_bootstrap
 
+# WHP Ninja reuses recorded compile/link durations to prioritize the critical
+# path on subsequent LLVM builds. It is a scheduling-only switch, not an ABI
+# or installed-compiler cache input. Preserve Ninja's job and link pools.
+assert 'LLVM_NINJA_CRITICAL_PATH_TIMES="${NATIVE_LLVM_CRITICAL_PATH_TIMES:-1}"' in bootstrap
+assert 'NATIVE_LLVM_CRITICAL_PATH_TIMES must be 0 or 1' in bootstrap
+assert 'NINJA_CRITICAL_PATH_TIMES="$LLVM_NINJA_CRITICAL_PATH_TIMES" \\' in bootstrap
+assert 'cmake --build "$LLVM_BUILD_DIR" --target distribution ' in bootstrap
+marker_block = bootstrap.split('expected_marker="$(cat <<EOF', 1)[1].split('\nEOF\n)', 1)[0]
+assert 'CRITICAL_PATH_TIMES' not in marker_block
+
 # LLVM's large executable links retain a separate Ninja pool. Native macOS
 # also limits compilation and TableGen work independently to reduce paging.
 # Native LLVM pool overrides must stay independent of the ABI cache marker.
