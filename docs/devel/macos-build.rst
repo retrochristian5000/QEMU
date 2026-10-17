@@ -96,6 +96,22 @@ intentional external search environment. ``MACOS_AUTO_CLEAN=0`` converts a
 required clean reconfiguration into an error instead of automatically
 recreating the owned build directory.
 
+Lean Bash bootstrap
+-------------------
+
+The managed Bash fork is built as a noninteractive host shell. QEMU needs the
+resulting executable, not the Bash manuals, translations, or loadable builtins,
+so its bootstrap copies only the tested ``bash`` binary rather than running
+the recursive upstream ``make install`` target. The prior installed Bash
+remains available during compilation; the replacement is staged with a
+rollback path if publication fails. The existing executable, ABI and
+``MACHTYPE`` runtime checks still gate publication.
+
+If ``JOBS`` is unset, this small host-tool bootstrap uses at most two make
+jobs (or one on a single-core host) instead of using every logical CPU.
+An explicit positive ``JOBS`` value remains authoritative. This budget is
+independent of native LLVM compile, TableGen, and linker pools.
+
 Link-time optimization
 ----------------------
 
