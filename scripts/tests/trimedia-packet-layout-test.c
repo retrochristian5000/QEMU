@@ -2,6 +2,9 @@
  * all 1024 format combinations. SPDX-License-Identifier: GPL-2.0-or-later */
 #include "packet.h"
 #include <assert.h>
+#if defined(NDEBUG)
+#error "Assertions must stay enabled in TriMedia decoder regressions"
+#endif
 #include <stdint.h>
 #include <stdio.h>
 
