@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import os
 import pathlib
 import platform
@@ -119,28 +118,49 @@ def copy_bash_source(revision: str, destination: pathlib.Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
-        completed = subprocess.run(
-            [
-                "git", "-C", str(SUBMODULE_DIR),
-                "archive", "--format=tar", revision,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        if completed.returncode != 0:
-            detail = completed.stderr.decode(
-                "utf-8", errors="replace"
-            ).strip()
-            raise RuntimeError(
-                f"could not archive pinned Bash revision {revision}"
-                + (f": {detail}" if detail else "")
+        # A captured git archive holds the entire source tar in Python's
+        # heap (and BytesIO can retain another large buffer). Stream directly
+        # to tarfile instead; macOS Bash bootstrapping must not need RAM
+        # proportional to the size of the complete source tree.
+        # Spool stderr to disk to avoid deadlocking on a full stderr pipe.
+        with tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(
+                [
+                    "git", "-C", str(SUBMODULE_DIR),
+                    "archive", "--format=tar", revision,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=errors,
             )
-        destination.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(
-            fileobj=io.BytesIO(completed.stdout), mode="r:"
-        ) as archive:
-            archive.extractall(destination)
+            try:
+                destination.mkdir(parents=True, exist_ok=True)
+                if process.stdout is None:
+                    raise RuntimeError("git archive stdout is unavailable")
+                with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                    archive.extractall(destination)
+                # Consume any tar padding while keeping memory bounded.
+                while process.stdout.read(65536):
+                    pass
+                if process.wait() != 0:
+                    errors.seek(0)
+                    detail = errors.read(16384).decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise RuntimeError(
+                        f"could not archive pinned Bash revision {revision}"
+                        + (f": {detail}" if detail else "")
+                    )
+            except Exception:
+                # A malformed archive or failed git must not leave a partial
+                # Bash source tree that a later configure could accidentally use.
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+                shutil.rmtree(destination, ignore_errors=True)
+                raise
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
         return
 
     shutil.copytree(
