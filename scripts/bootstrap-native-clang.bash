@@ -684,37 +684,12 @@ if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
 fi
 printf 'WHP native LLVM bootstrap linker: %s\n' "$bootstrap_linker_name" >&2
 
-compiler_accepts_native_tune()
-{
-    local compiler="$1"
-    local language="$2"
-    local target_flags=()
-
-    # Compiler flags must be tested for the ABI that CMake actually builds.
-    # Apple's default arm64 target accepting -mtune=native does not prove the
-    # same option is usable with the requested arm64e architecture and SDK.
-    if [[ "$host_os" == macos ]]; then
-        target_flags=(-arch "$darwin_cmake_arch" -isysroot "$sdkroot"
-                      "-mmacosx-version-min=$deployment_target")
-    fi
-
-    printf 'int whp_native_llvm_tune_probe(void) { return 0; }\n' |
-        "$compiler" "${target_flags[@]}" -mtune=native \
-            -x "$language" -c - -o /dev/null >/dev/null 2>&1
-}
-
-# LLVM itself is a build tool here. -O2 retains Release/NDEBUG semantics while
-# reducing expensive optimizer work versus CMake's usual Release -O3. Native
-# tuning is scheduling-only and therefore does not raise the generated
-# toolchain's minimum ISA the way -mcpu=native or -march=native would.
+# LLVM is a host build tool. Keep Release/NDEBUG and use -O2 instead of
+# CMake's usual -O3 to reduce bootstrap optimization cost. Avoid implicit CPU
+# model tuning: the installed-toolchain cache key records only the host arch.
+# QEMU's host-object tuning policy remains independent of this bootstrap.
 llvm_bootstrap_cflags='-O2 -DNDEBUG'
 llvm_bootstrap_cxxflags='-O2 -DNDEBUG'
-if compiler_accepts_native_tune "$bootstrap_cc" c; then
-    llvm_bootstrap_cflags="$llvm_bootstrap_cflags -mtune=native"
-fi
-if compiler_accepts_native_tune "$bootstrap_cxx" c++; then
-    llvm_bootstrap_cxxflags="$llvm_bootstrap_cxxflags -mtune=native"
-fi
 printf 'WHP native LLVM C flags: %s\n' "$llvm_bootstrap_cflags" >&2
 printf 'WHP native LLVM C++ flags: %s\n' "$llvm_bootstrap_cxxflags" >&2
 
