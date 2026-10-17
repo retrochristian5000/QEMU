@@ -64,6 +64,12 @@ typedef struct CPUArchState {
     uint32_t spc;
     uint32_t excvec;
     uint64_t cccount;
+    /*
+     * QEMU diagnostic: successfully executed VLIW packets, one count for
+     * any number of issue slots. Not the architectural cycle counter:
+     * interlocks, pipeline stalls, and bus wait states remain unmodeled.
+     */
+    uint64_t issued_packets;
 
     /* TIMER1, TIMER2, TIMER3, then the system-software SYSTIMER. */
     TrimediaTimerState timers[TRIMEDIA_NUM_TIMERS];

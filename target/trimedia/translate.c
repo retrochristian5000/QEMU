@@ -28,6 +28,8 @@ typedef struct TrimediaPendingWrite {
 
 static TCGv_i32 cpu_gpr[TRIMEDIA_NUM_GPRS];
 static TCGv_i32 cpu_pc;
+/* QEMU-only packet tally: never an alias of guest CCCOUNT. */
+static TCGv_i64 cpu_issued_packets;
 static char cpu_gpr_name[TRIMEDIA_NUM_GPRS][8];
 
 static const char *trimedia_opcode_name(uint8_t opcode)
@@ -477,8 +479,14 @@ static bool trimedia_gen_packet(const TrimediaDecodedPacket *packet,
         trimedia_commit_write(&write[i]);
     }
 
+    /*
+     * One issue packet is one QEMU translator instruction, whether it
+     * contains zero, one, or five operations. The 64-bit diagnostic counts
+     * executed packets, not physical elapsed cycles or guest CCCOUNT.
+     */
+    tcg_gen_addi_i64(cpu_issued_packets, cpu_issued_packets, 1);
     return true;
-}
+
 
 /*
  * Decode the packed TriMedia instruction stream into up to five operations.
@@ -522,34 +530,25 @@ static void trimedia_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
     uint8_t unsupported_opcode = 0xff;
 
     if (!trimedia_decode_packet(ctx, &packet)) {
-        qemu_log_mask(LOG_UNIMP,
-                      "TriMedia: VLIW packet decoder not implemented at "
-                      "0x%08x\n", (uint32_t)ctx->base.pc_next);
-        tcg_gen_movi_i32(cpu_pc, (uint32_t)ctx->base.pc_next);
-        tcg_gen_exit_tb(NULL, 0);
-        ctx->base.is_jmp = DISAS_NORETURN;
-        return;
+        /*
+         * Until decoder/exception support exists, fail explicitly.
+         * Exiting a TB at the same PC would cause an endless host-side
+         * loop and fictitious icount/time progress.
+         */
+        cpu_abort(cs, "TriMedia: VLIW packet decoder unavailable at "
+                  "0x%08x", (uint32_t)ctx->base.pc_next);
     }
 
     if (packet.encoded_size == 0) {
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "TriMedia: decoded zero-length packet at 0x%08x\n",
-                      (uint32_t)ctx->base.pc_next);
-        tcg_gen_movi_i32(cpu_pc, (uint32_t)ctx->base.pc_next);
-        tcg_gen_exit_tb(NULL, 0);
-        ctx->base.is_jmp = DISAS_NORETURN;
-        return;
+        cpu_abort(cs, "TriMedia: decoded zero-length packet at 0x%08x",
+                  (uint32_t)ctx->base.pc_next);
     }
 
     if (!trimedia_gen_packet(&packet, &unsupported_opcode)) {
-        qemu_log_mask(LOG_UNIMP,
-                      "TriMedia: operation %s (0x%02x) not implemented at "
-                      "0x%08x\n", trimedia_opcode_name(unsupported_opcode),
-                      unsupported_opcode, (uint32_t)ctx->base.pc_next);
-        tcg_gen_movi_i32(cpu_pc, (uint32_t)ctx->base.pc_next);
-        tcg_gen_exit_tb(NULL, 0);
-        ctx->base.is_jmp = DISAS_NORETURN;
-        return;
+        cpu_abort(cs, "TriMedia: invalid or unimplemented operation "
+                  "%s (0x%02x) at 0x%08x",
+                  trimedia_opcode_name(unsupported_opcode),
+                  unsupported_opcode, (uint32_t)ctx->base.pc_next);
     }
 
     ctx->base.pc_next += packet.encoded_size;
@@ -595,4 +594,7 @@ void trimedia_translate_init(void)
 
     cpu_pc = tcg_global_mem_new_i32(tcg_env,
                                     offsetof(CPUTrimediaState, pc), "pc");
+    cpu_issued_packets = tcg_global_mem_new_i64(
+        tcg_env, offsetof(CPUTrimediaState, issued_packets),
+        "qemu-issued-packets");
 }

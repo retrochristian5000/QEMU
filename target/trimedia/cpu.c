@@ -144,6 +144,8 @@ static void trimedia_cpu_dump_state(CPUState *cs, FILE *f, int flags)
                  "dpc=0x%08x spc=0x%08x excvec=0x%08x "
                  "cccount=0x%016" PRIx64 "\n",
                  env->dpc, env->spc, env->excvec, env->cccount);
+    qemu_fprintf(f, "qemu-issued-packets=%" PRIu64 "\n",
+                 env->issued_packets);
     for (i = 0; i < TRIMEDIA_NUM_TIMERS; i++) {
         const TrimediaTimerState *timer = &env->timers[i];
 

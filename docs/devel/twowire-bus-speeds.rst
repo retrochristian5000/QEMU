@@ -48,10 +48,16 @@ Observed QEMU implementation blockers
 1. ``target/trimedia/translate.c`` implements
    ``trimedia_decode_packet()`` as an unconditional false
    return. Actual firmware cannot execute until packet decoding
-   is implemented; clock modeling alone does not fix that.
+   is implemented; clock modeling alone does not fix that. Missing
+   decoding now invokes ``cpu_abort()`` rather than endlessly
+   reentering at the same PC with fictitious icount progress.
 2. ``target/trimedia/cpu.h`` stores ``cccount`` and four
    timer-state structures. Inspected CPU/translator sources do
    not implement a clock source ticking those state variables.
+   ``issued_packets`` is a distinct QEMU-only diagnostic,
+   incremented once per successfully issued VLIW packet, not
+   once per operation and not once per actual hardware cycle.
+   Pipeline stalls and memory/bus delays can add cycles.
    Do not infer CPU cycles from host CPU speed or wall clock.
 3. The general TriMedia CPU header contains PNX15xx timer/VIC
    identifiers. A PNX-specific peripheral enumeration must not
