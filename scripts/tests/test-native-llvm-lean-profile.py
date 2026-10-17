@@ -26,6 +26,16 @@ assert '"-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"' in bootstrap
 assert 'CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags' in bootstrap
 assert 'CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags' in bootstrap
 
+# CPPFLAGS is an outer QEMU policy, not a native LLVM performance knob.
+# CMake may retain old global C/CXX flags in an existing CMakeCache.txt even
+# after inherited CFLAGS/CXXFLAGS are unset. Clear those cache entries, while
+# preserving the controlled Release flags and changing the installed ABI key.
+assert 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' in bootstrap
+assert '    -DCMAKE_C_FLAGS=\n' in bootstrap
+assert '    -DCMAKE_CXX_FLAGS=\n' in bootstrap
+assert 'CMAKE_C_FLAGS=\nCMAKE_CXX_FLAGS=\n' in bootstrap
+assert 'CPPFLAGS=' not in bootstrap[bootstrap.index('cmake_args=('):]
+
 # The C++ language level is independent from release optimization. Keep C++23
 # as the WHP native bootstrap baseline, require the requested level instead of
 # silently falling back, and make it part of the installed-toolchain cache identity.
@@ -75,7 +85,7 @@ assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"' in bootstrap
 assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
 
 # Any of these policy changes must invalidate an older installed compiler cache.
-assert 'BOOTSTRAP_SCHEMA=12' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=13' in bootstrap
 for policy in runtime_off + runtime_on:
     assert policy in bootstrap[bootstrap.index('expected_marker='):], policy
 

@@ -871,7 +871,7 @@ if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=12
+BOOTSTRAP_SCHEMA=13
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -886,6 +886,8 @@ LLVM_ENABLE_PROJECTS=$llvm_enable_projects
 LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
 LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
+CMAKE_C_FLAGS=
+CMAKE_CXX_FLAGS=
 CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
 CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
 CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
@@ -922,7 +924,7 @@ if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
     expected_marker="$expected_marker"$'\nNATIVE_LLVM_ENABLE_LLDB=1\nLLDB_ENABLE_PYTHON=OFF\nLLDB_USE_SYSTEM_DEBUGSERVER=ON'
 fi
 if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
-    # Default mode must retain the exact previous schema-12 cache marker.
+    # Keep the schema-13 baseline separate from the opt-in shared profile.
     expected_marker="$expected_marker"$'\nLLVM_SHARED_TOOLCHAIN=1\nLLVM_BUILD_LLVM_DYLIB=ON\nLLVM_LINK_LLVM_DYLIB=ON\nCLANG_LINK_CLANG_DYLIB=ON'
 fi
 
@@ -1225,6 +1227,10 @@ cmake_args=(
     -G Ninja
     "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
     -DCMAKE_BUILD_TYPE=Release
+    # Explicitly clear persistent CMakeCache global flags from older builds.
+    # Only the controlled Release options may carry preprocessing macros.
+    -DCMAKE_C_FLAGS=
+    -DCMAKE_CXX_FLAGS=
     "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
     "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
     "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"

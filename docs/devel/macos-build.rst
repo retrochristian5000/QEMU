@@ -473,6 +473,27 @@ the staged toolchain still passes its ABI/runtime checks before publication.
 Skipping redundant CMake configuration saves a potential setup pass, not the
 underlying LLVM C++ compilation or linking work.
 
+LLVM CPPFLAGS and cached global compiler flags
+---------------------------------------------
+
+The native LLVM bootstrap deliberately unsets inherited ``CPPFLAGS``,
+``CFLAGS``, and ``CXXFLAGS``. CMake does not automatically consume
+``CPPFLAGS`` as a compilation flag; setting it in the outer QEMU shell
+therefore does not speed up the LLVM compiler build. The native Release
+profile already passes ``-DNDEBUG`` explicitly in both C and C++ flags.
+
+CMake does, however, retain global ``CMAKE_C_FLAGS`` and
+``CMAKE_CXX_FLAGS`` from older configurations. The bootstrap now clears
+these two cached fields explicitly and keeps all native LLVM optimization
+flags in its controlled Release profile. This prevents stale QEMU or host
+preprocessor definitions and instrumentation switches from adding work or
+changing ABI assumptions on later incremental compilations.
+
+The policy changes the installed LLVM cache marker to schema 13. An older
+schema-12 installed compiler will be rebuilt once; its persistent CMake/Ninja
+build tree is retained. This is a correctness and reproducibility repair,
+not a demonstrated standalone CPPFLAGS-based compilation speedup.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
