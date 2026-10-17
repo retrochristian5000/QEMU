@@ -33,5 +33,10 @@ Period sources (model-specific variations still require checking):
 https://manuzoid.com/manuals/GwMNK-2Wire%202701hg-b%20User%20manual
 https://manuzoid.com/manuals/xkG0b-2Wire%202701hg-b%20Owner%27s%20manual
 
+Voltage-domain evidence and the boundary between physical LED drive and
+logical QEMU output are tracked in
+``docs/devel/twowire-voltage-domains.rst``. Do not connect the 5.1 V
+adapter directly to an LED GPIO merely because it shares this model.
+
 Static integration test:
 python3 scripts/tests/test-twowire-led-panel.py
