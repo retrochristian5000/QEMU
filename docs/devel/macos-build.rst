@@ -413,6 +413,24 @@ versioned pointer format using both LLVM command interfaces when
 ``llvm-otool`` is installed, while the existing ``llvm-objdump``
 metadata decoder still validates PAC keys and discriminators.
 
+Incremental LLVM builds and Ninja scheduling
+-------------------------------------------
+
+The pinned WHP Ninja fork can prioritize the longest remaining dependency
+chains using previous command durations from ``.ninja_log``. The native LLVM
+distribution build enables this scheduler hint by default when it invokes
+CMake/Ninja; a clean build has no timing history, so it retains the normal
+depth-based priorities. Ninja parallel job limits, LLVM compile/link pools,
+and the installation cache identity are unchanged.
+
+To compare the old and new scheduling policy, set
+``NATIVE_LLVM_CRITICAL_PATH_TIMES=0`` to disable the hint or
+``NATIVE_LLVM_CRITICAL_PATH_TIMES=1`` to enable it. The setting only affects
+build scheduling, not the generated machine ABI. System Ninja binaries that
+lack the WHP extension ignore ``NINJA_CRITICAL_PATH_TIMES``. This is a
+potential incremental-build speedup, not a verified wall-clock improvement;
+measure before adopting a tighter job limit or changing the LLVM cache.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
