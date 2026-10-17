@@ -6,6 +6,7 @@ import os
 import struct
 import subprocess
 import tempfile
+import tracemalloc
 from pathlib import Path
 from unittest import mock
 
@@ -108,7 +109,15 @@ def test_pinned_source_copy_ignores_dirty_checkout() -> None:
         )
         tracked = source / "configure"
         tracked.write_text("committed\n", encoding="utf-8")
-        subprocess.run(["git", "-C", str(source), "add", "configure"], check=True)
+        # An incompressible-size source member exercises the peak memory
+        # behavior of git archive without requiring an actual Bash checkout.
+        payload = source / "large-source.dat"
+        payload_size = 8 * 1024 * 1024
+        payload.write_bytes(b"0123456789abcdef" * (payload_size // 16))
+        subprocess.run(
+            ["git", "-C", str(source), "add", "configure", "large-source.dat"],
+            check=True,
+        )
         subprocess.run(
             ["git", "-C", str(source), "commit", "-q", "-m", "fixture"],
             check=True,
@@ -124,7 +133,38 @@ def test_pinned_source_copy_ignores_dirty_checkout() -> None:
         original = helper.SUBMODULE_DIR
         try:
             helper.SUBMODULE_DIR = source
-            helper.copy_bash_source(revision, destination)
+            tracemalloc.start()
+            try:
+                # The legacy subprocess.run(stdout=PIPE) path retains the
+                # entire tar archive in memory. A streaming extraction must
+                # not call it and must keep peak allocations bounded.
+                with mock.patch.object(
+                    helper.subprocess, "run",
+                    side_effect=AssertionError("git archive must be streamed"),
+                ):
+                    helper.copy_bash_source(revision, destination)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+            if peak >= payload_size // 2:
+                raise SystemExit(
+                    f"error: Bash source extraction buffered too much RAM: "
+                    f"{peak} bytes for {payload_size} archive payload bytes"
+                )
+            if (destination / "large-source.dat").stat().st_size != payload_size:
+                raise SystemExit("error: Bash archive streaming lost source bytes")
+
+            # A failed git archive must never leave a half-extracted tree.
+            failed_destination = root / "failed-copy"
+            try:
+                helper.copy_bash_source("0" * 40, failed_destination)
+            except RuntimeError as exc:
+                if "could not archive pinned Bash revision" not in str(exc):
+                    raise
+            else:
+                raise SystemExit("error: invalid Bash archive revision accepted")
+            if failed_destination.exists():
+                raise SystemExit("error: failed Bash archive left source files")
         finally:
             helper.SUBMODULE_DIR = original
 
