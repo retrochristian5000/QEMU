@@ -1288,7 +1288,38 @@ cmake_args=(
     "${cmake_darwin_runtime_args[@]}"
     "${cmake_host_args[@]}"
 )
-cmake "${cmake_args[@]}"
+# Reuse the generated Ninja graph when the invocation is unchanged.
+# Ninja's RERUN_CMAKE rule still regenerates that graph if tracked CMake
+# inputs have changed, including CMakeLists.txt updates in the LLVM submodule.
+# This avoids paying for a full LLVM CMake configure again on an interrupted
+# build or an install-validation retry. Never use the installed-toolchain ABI
+# marker for this decision: configuration and installation are distinct states.
+cmake_config_marker="$LLVM_BUILD_DIR/.whp-native-llvm-cmake-config"
+cmake_config_identity="$(
+    printf 'WHP_CMAKE_CONFIG_SCHEMA=1\n'
+    printf 'CMAKE=%q\n' "$(command -v cmake)"
+    cmake --version | sed -n '1p'
+    printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"
+    printf 'CXX_VERSION=%q\n' "$bootstrap_cxx_version"
+    for env_name in CMAKE_PREFIX_PATH CMAKE_LIBRARY_PATH CMAKE_INCLUDE_PATH \
+                    CMAKE_TOOLCHAIN_FILE PKG_CONFIG_PATH PKG_CONFIG_LIBDIR \
+                    PKG_CONFIG_SYSROOT_DIR SDKROOT MACOSX_DEPLOYMENT_TARGET; do
+        printf '%s=%q\n' "$env_name" "${!env_name-}"
+    done
+    printf 'ARG=%q\n' "${cmake_args[@]}"
+)"
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
+      -f "$LLVM_BUILD_DIR/CMakeCache.txt" &&
+      -f "$LLVM_BUILD_DIR/build.ninja" &&
+      -f "$cmake_config_marker" &&
+      "$(cat "$cmake_config_marker")" == "$cmake_config_identity" ]]; then
+    printf 'WHP native LLVM: reusing existing CMake/Ninja configuration\n' >&2
+else
+    # A failed configure must not leave behind a valid reuse marker.
+    rm -f "$cmake_config_marker"
+    cmake "${cmake_args[@]}"
+    printf '%s\n' "$cmake_config_identity" > "$cmake_config_marker"
+fi
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
     cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
