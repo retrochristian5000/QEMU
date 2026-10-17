@@ -417,11 +417,13 @@ Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
 Native LLVM bootstrap C++ flags are intentionally separate from QEMU's
-host-object ``CXXFLAGS``. Both preserve the compiler's selected Mach-O
-architecture and deployment target. An Apple ``arm64e`` compiler accepting
-``-mtune=native`` when targeting ordinary ``arm64`` is insufficient:
-the bootstrap now tests the requested ``-arch``, ``-isysroot``, and
-``-mmacosx-version-min`` together for both C and C++.
+host-object ``CXXFLAGS``. The LLVM Release profile uses ``-O2 -DNDEBUG``
+for both C and C++; it does not add CPU-native tuning by default. This keeps
+the installed compiler reproducible across machines with the same host
+architecture without assuming they use the same CPU microarchitecture.
+The bootstrap still tests the requested Mach-O ``-arch``, ``-isysroot``,
+and ``-mmacosx-version-min`` together for C and C++ when admitting an
+Apple ``arm64e`` build.
 
 ``NATIVE_LLVM_CXX_STANDARD=26`` accepts the compiler's ``-std=c++26``
 or historical ``-std=c++2c`` spelling only when the ``__cplusplus``
