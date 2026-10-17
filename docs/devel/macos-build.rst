@@ -112,6 +112,20 @@ jobs (or one on a single-core host) instead of using every logical CPU.
 An explicit positive ``JOBS`` value remains authoritative. This budget is
 independent of native LLVM compile, TableGen, and linker pools.
 
+The pinned Bash source is taken from a Git archive, not from a potentially
+dirty checkout. Its extraction now streams the archive directly from Git
+rather than retaining the complete tar in Python's memory; Git errors are
+spooled to a temporary file and failed extractions remove their partial
+workspace. This reduces peak *bootstrap* memory use without changing the
+resulting shell binary. The archive-extraction regression test includes an
+8 MiB source file and checks peak Python allocations.
+
+Darwin uses the macOS system allocator: the Bash fork selects it for Darwin,
+and the managed bootstrap explicitly passes ``--without-bash-malloc``.
+This is an allocator compatibility safeguard, not a claim that Bash has no
+runtime memory leaks. Runtime heap behavior on arm64 and arm64e still requires
+native macOS profiling; the streaming change affects source extraction only.
+
 Link-time optimization
 ----------------------
 
