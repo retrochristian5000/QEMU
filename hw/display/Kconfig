@@ -21,6 +21,10 @@ config G364FB
 config JAZZ_LED
     bool
 
+config TWOWIRE_LED_PANEL
+    bool
+    select LED
+
 config PL110
     bool
     select FRAMEBUFFER
