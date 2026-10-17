@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import importlib.util
+import os
 import struct
 import subprocess
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -134,6 +136,55 @@ def test_pinned_source_copy_ignores_dirty_checkout() -> None:
         if tracked.read_text(encoding="utf-8") != "dirty working tree\n":
             raise SystemExit("error: Bash source copy modified the checkout")
 
+def test_bash_jobs_and_lean_publication() -> None:
+    helper = load_helper_module()
+    with mock.patch.dict(os.environ, {"JOBS": ""}):
+        with mock.patch.object(helper.os, "cpu_count", return_value=16):
+            assert helper.bootstrap_job_limit() == 2
+        with mock.patch.object(helper.os, "cpu_count", return_value=1):
+            assert helper.bootstrap_job_limit() == 1
+    with mock.patch.dict(os.environ, {"JOBS": "7"}):
+        assert helper.bootstrap_job_limit() == 7
+    for invalid in ("0", "-2", "+3", "1.5", "7 jobs", "2147483648"):
+        with mock.patch.dict(os.environ, {"JOBS": invalid}):
+            try:
+                helper.bootstrap_job_limit()
+            except RuntimeError:
+                pass
+            else:
+                raise SystemExit(f"error: Bash accepted invalid JOBS={invalid!r}")
+
+    with tempfile.TemporaryDirectory(prefix="whp-bash-publish-") as tmp:
+        root = Path(tmp)
+        prefix = root / "deps" / "bash"
+        old_bin = prefix / "bin" / "bash"
+        old_bin.parent.mkdir(parents=True)
+        old_bin.write_bytes(b"old shell")
+        new_bin = root / "new-bash"
+        new_bin.write_bytes(b"new shell")
+        new_bin.chmod(0o755)
+
+        # A failed staging copy must not destroy the old usable installation.
+        with mock.patch.object(helper.shutil, "copy2",
+                               side_effect=OSError("simulated disk error")):
+            try:
+                helper.publish_bash(new_bin, prefix, "MARKER=new\\n")
+            except OSError:
+                pass
+            else:
+                raise SystemExit("error: Bash staging failure was not reported")
+        if old_bin.read_bytes() != b"old shell":
+            raise SystemExit("error: Bash publication destroyed prior installation")
+
+        helper.publish_bash(new_bin, prefix, "MARKER=new\\n")
+        if old_bin.read_bytes() != b"new shell" or not os.access(old_bin, os.X_OK):
+            raise SystemExit("error: Bash publication lost the executable")
+        if (prefix / ".whp-bash-bootstrap").read_text() != "MARKER=new\\n":
+            raise SystemExit("error: Bash publication lost its cache marker")
+        if list(prefix.parent.glob("bash.old.*")):
+            raise SystemExit("error: Bash publication left a stale backup")
+
+
 def main() -> int:
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
@@ -161,6 +212,12 @@ def main() -> int:
     require(helper, "toolchains/bash", "pinned Bash source")
     require(helper, '"submodule", "update"', "lazy Bash submodule initialization")
     require(helper, 'BASH_BOOTSTRAP_SCHEMA = "4"', "Bash cache schema")
+    require(helper, "def bootstrap_job_limit()", "Bash bounded build jobs")
+    require(helper, 'run_logged([make, "-j", str(jobs)]', "Bash make job handoff")
+    require(helper, "def publish_bash(", "atomic lean Bash publication")
+    require(helper, "publish_bash(built_bash, prefix, marker)", "Bash publication wiring")
+    if 'run_logged([make, "install"]' in helper:
+        raise SystemExit("error: Bash bootstrap invokes full legacy make install")
     require(helper, "BASH_GIT_COMMIT=", "Bash cache revision identity")
     require(helper, "BASH_HOST_TRIPLET=", "Bash host triplet cache identity")
     require(helper, "BASH_ABI_VARIANT=", "Bash ABI cache identity")
@@ -218,6 +275,7 @@ def main() -> int:
     test_macos_arch_identity()
     test_arm64e_macho_subtype()
     test_pinned_source_copy_ignores_dirty_checkout()
+    test_bash_jobs_and_lean_publication()
     print("WHP Bash bootstrap wiring: verified")
     return 0
 
