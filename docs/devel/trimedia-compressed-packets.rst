@@ -32,6 +32,9 @@ Implementation and verification
 * In the public sample, initial format 0x02aa describes a
   28-byte packet beginning 7c 47. It supplies next format
   0x477c, describing a following 9-byte packet.
+  The first 42-bit operation reconstructs to ``0x11581604381``,
+  whose fields independently decode as ``asli(7) r1 -> r34``;
+  24-bit core bytes are combined least-significant-first.
 * The helper is built into ``trimedia_ss`` through Meson,
   but is **not yet invoked for guest execution**.
 

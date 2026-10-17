@@ -34,9 +34,18 @@ int main(void)
                 assert(p.slots[j].core_byte_offset == 2 + 3*j + (j >= 3));
                 assert(p.slots[j].extension_byte_offset == 18 + j*2);
             }
+            /*
+             * Public tinytest first op: asli(7) r1 -> r34, guarded
+             * by r1. Verify full operation fields, not just length.
+             */
             assert(p.slots[0].raw_operation ==
                    ((UINT64_C(0x4560) << 26) | (UINT64_C(1) << 24) |
-                    UINT64_C(0x814360)));
+                    UINT64_C(0x604381)));
+            assert(((p.slots[0].raw_operation >> 21) & 0xff) == 11);
+            assert(((p.slots[0].raw_operation >> 14) & 0x7f) == 1);
+            assert(((p.slots[0].raw_operation >> 7) & 0x7f) == 7);
+            assert((p.slots[0].raw_operation & 0x7f) == 1);
+            assert(((p.slots[0].raw_operation >> 35) & 0x7f) == 34);
         } else if (i == 1) {
             assert(p.num_ops == 2 && p.slots[0].encoded_bits == 26);
             assert(!p.slots[1].present && !p.slots[2].present);

@@ -56,8 +56,14 @@ bool trimedia_unpack_packet(const uint8_t *stream, size_t available,
         }
         s->core_byte_offset = core;
         s->extension_byte_offset = s->extension_bytes ? ext : 0;
-        low = ((unsigned int)stream[core] << 16) |
-              ((unsigned int)stream[core + 1] << 8) | stream[core + 2];
+        /*
+         * The three core bytes are least-significant first in the
+         * compressed stream. Reversing this silently changes opcode,
+         * source register, guard and immediate, even when packet
+         * length/extension offsets are correct.
+         */
+        low = ((unsigned int)stream[core + 2] << 16) |
+              ((unsigned int)stream[core + 1] << 8) | stream[core];
         top = ordinal < 3 ?
               ((stream[1] >> (6 - 2 * ordinal)) & 3) :
               ((stream[11] >> (6 - 2 * (ordinal - 3))) & 3);
