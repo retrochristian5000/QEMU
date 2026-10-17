@@ -399,10 +399,12 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
     check_reconfigure('-DTEST=2', prefix='/changed/prefix', expected_calls=4)
     check_reconfigure('-DTEST=2', prefix='/changed/prefix', force=True,
                       expected_calls=5)
-    check_reconfigure('-DTEST=2', prefix='/changed/prefix', fail=True,
+    # A failing configure requires changed inputs; identical inputs must
+    # correctly reuse the previous graph instead of invoking CMake.
+    check_reconfigure('-DTEST=3', prefix='/changed/prefix', fail=True,
                       expected_calls=6, expected_ok=False)
     assert not (build_root / '.whp-native-llvm-cmake-config').exists()
-    check_reconfigure('-DTEST=2', prefix='/changed/prefix',
+    check_reconfigure('-DTEST=3', prefix='/changed/prefix',
                       expected_calls=7)
 
 # WHP Ninja reuses recorded compile/link durations to prioritize the critical
