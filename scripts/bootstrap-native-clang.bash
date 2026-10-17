@@ -16,6 +16,19 @@ JOBS="${JOBS:-}"
 LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
 LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"
 LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"
+# The WHP Ninja fork can use timings from .ninja_log to schedule the expensive
+# chain first on later incremental LLVM builds. A first build still uses normal
+# graph depth; system Ninja ignores this optional environment setting.
+# Keep it out of the installed LLVM toolchain's ABI/cache identity.
+LLVM_NINJA_CRITICAL_PATH_TIMES="${NATIVE_LLVM_CRITICAL_PATH_TIMES:-1}"
+case "$LLVM_NINJA_CRITICAL_PATH_TIMES" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_CRITICAL_PATH_TIMES must be 0 or 1: %s\n' \
+            "$LLVM_NINJA_CRITICAL_PATH_TIMES" >&2
+        exit 1
+        ;;
+esac
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
 LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
@@ -1285,7 +1298,8 @@ fi
 # persistent build tree contains every object that can be built. Ninja still
 # returns failure after exhausting the reachable graph, so errors remain fatal
 # and installation is never attempted from an incomplete distribution.
-cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+NINJA_CRITICAL_PATH_TIMES="$LLVM_NINJA_CRITICAL_PATH_TIMES" \
+    cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 rm -rf "$stage_root"
