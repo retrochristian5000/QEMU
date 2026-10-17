@@ -447,6 +447,32 @@ lack the WHP extension ignore ``NINJA_CRITICAL_PATH_TIMES``. This is a
 potential incremental-build speedup, not a verified wall-clock improvement;
 measure before adopting a tighter job limit or changing the LLVM cache.
 
+Avoiding repeated LLVM CMake configuration
+-------------------------------------------
+
+Native LLVM retains its generated Ninja build tree between interrupted builds,
+source updates and failed installation checks. If CMake was successfully
+configured previously, the bootstrap now compares the current CMake executable
+and version, compiler versions, configuration arguments and relevant discovery
+environment against a marker stored alongside ``CMakeCache.txt`` and
+``build.ninja``. When these match, it avoids an extra CMake configuration
+pass. Ninja still regenerates its build graph automatically when tracked CMake
+inputs change, including changes to LLVM's ``CMakeLists.txt`` files.
+
+The marker is not the installed-compiler ABI marker: neither an incomplete
+installation nor an interrupted build invalidates reusable object files. A
+failed configure removes the reuse marker, and an explicit
+``NATIVE_LLVM_FORCE_REBUILD=1`` retains the existing forced clean/reconfigure
+behavior. When discovery inputs change outside the recorded policy, removing
+``.whp-native-llvm-cmake-config`` from the LLVM build directory forces the
+next incremental invocation to configure again without cleaning its objects.
+
+The ``distribution`` build and staged ``install-distribution`` remain
+separate on purpose. Compilation failures must not trigger installation, and
+the staged toolchain still passes its ABI/runtime checks before publication.
+Skipping redundant CMake configuration saves a potential setup pass, not the
+underlying LLVM C++ compilation or linking work.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
