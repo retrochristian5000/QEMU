@@ -2,9 +2,10 @@
 =================================
 
 This component is an incremental front-panel output for the historical AT&T
-2Wire 2701HG-B research target. The modem's Ares ASIC identity, physical
-GPIO numbers, polarity, and MMIO remain unverified. There is no complete
-2701HG-B machine definition yet: this system-bus device is available for
+2Wire 2701HG-B research target. Evidence associates Ares with the
+TriMedia TM32/TM3260 processor family, but exact silicon markings,
+physical GPIO numbers, polarity and MMIO remain unverified. See ``docs/devel/twowire-ares-identity.rst`` for its IDCODE evidence.
+There is no complete 2701HG-B machine definition yet: this system-bus device is available for
 later board wiring and produces a separate QEMU graphical console when
 instantiated.
 

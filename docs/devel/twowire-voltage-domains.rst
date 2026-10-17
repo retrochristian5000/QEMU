@@ -4,7 +4,8 @@ AT&T 2Wire 2701HG-B: voltage domains and wiring evidence
 Purpose and scope
 -----------------
 
-This ledger complements ``docs/devel/twowire-led-panel.rst``. The
+This ledger complements ``docs/devel/twowire-led-panel.rst`` and
+``docs/devel/twowire-ares-identity.rst``. The
 2701HG-B is not yet a bootable QEMU machine. This is a board-level
 electrical evidence ledger, NOT a claim that the Ares SoC has known
 GPIO/MMIO mappings or that Clang/LLVM emits working modem firmware.
@@ -45,11 +46,11 @@ Evidence ledger: rails and peripherals
      - REFERENCE SCHEMATIC
      - Different core/analogue and I/O power domains are plausible,
        but the exact modem-board net assignments remain UNKNOWN.
-   * - 2Wire Ares SoC
+   * - 2Wire Ares SoC (TM32/TM3260-related)
      - Core and I/O rails UNKNOWN
      - UNKNOWN
      - No GPIO electrical thresholds, reset regulator, or pin
-       assignment may be fabricated from a hypothetical TM3260.
+       assignment may be transferred from Philips/NXP PNX15xx/TM3260.
    * - Marvell 88E6061 Ethernet switch
      - Exact rail(s) UNKNOWN
      - UNKNOWN
