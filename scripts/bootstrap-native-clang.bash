@@ -1301,9 +1301,11 @@ cmake_config_identity="$(
     cmake --version | sed -n '1p'
     printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"
     printf 'CXX_VERSION=%q\n' "$bootstrap_cxx_version"
-    for env_name in CMAKE_PREFIX_PATH CMAKE_LIBRARY_PATH CMAKE_INCLUDE_PATH \
-                    CMAKE_TOOLCHAIN_FILE PKG_CONFIG_PATH PKG_CONFIG_LIBDIR \
-                    PKG_CONFIG_SYSROOT_DIR SDKROOT MACOSX_DEPLOYMENT_TARGET; do
+    for env_name in PATH AR RANLIB PKG_CONFIG \
+                    CMAKE_PREFIX_PATH CMAKE_LIBRARY_PATH CMAKE_INCLUDE_PATH \
+                    CMAKE_TOOLCHAIN_FILE CMAKE_FIND_ROOT_PATH \
+                    PKG_CONFIG_PATH PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR \
+                    SDKROOT MACOSX_DEPLOYMENT_TARGET; do
         printf '%s=%q\n' "$env_name" "${!env_name-}"
     done
     printf 'ARG=%q\n' "${cmake_args[@]}"
