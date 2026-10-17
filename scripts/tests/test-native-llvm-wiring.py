@@ -347,6 +347,8 @@ configure_guard = bootstrap.split(
     '# Reuse the generated Ninja graph when the invocation is unchanged.\n', 1
 )[1].split('\nif [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then', 1)[0]
 assert 'WHP_CMAKE_CONFIG_SCHEMA=1' in configure_guard
+assert 'for env_name in PATH AR RANLIB PKG_CONFIG' in configure_guard
+assert 'CMAKE_FIND_ROOT_PATH' in configure_guard
 assert 'CMakeCache.txt' in configure_guard and 'build.ninja' in configure_guard
 assert 'cmake "${cmake_args[@]}"' in configure_guard
 assert 'rm -f "$cmake_config_marker"' in configure_guard
