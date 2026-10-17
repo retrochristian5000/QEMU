@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "board": "AT&T 2Wire 2701HG-B",
+  "source_kinds": {
+    "pnx": {
+      "kind": "reference-only",
+      "url": "https://www.nxp.com/docs/en/data-sheet/PNX15XX_PNX952X_SER_N.pdf"
+    },
+    "ddr": {
+      "kind": "part-datasheet",
+      "url": "https://datasheet.ciiva.com/26786/k4h561638j-lccc-26786739.pdf"
+    },
+    "nand": {
+      "kind": "part-datasheet",
+      "url": "https://www.alldatasheet.com/html-pdf/94116/STMICROELECTRONICS/NAND128W3A/13027/8/NAND128W3A.html"
+    },
+    "ethernet": {
+      "kind": "manufacturer-selector",
+      "url": "https://pf05.ickimg.com/datasheet/7a/4b/bcd9/7a/121618cacf2e3e091a08745f5cbc1b59.pdf"
+    },
+    "mii": {
+      "kind": "comparison-only-88E6060-not-88E6061",
+      "url": "https://www.insidegadgets.com/wp-content/uploads/2014/07/88E6060.pdf"
+    },
+    "wifi": {
+      "kind": "part-brief",
+      "url": "https://deviwiki.com/files/Atheros/specsheets/AR5005G_%28AR2413%29.pdf"
+    }
+  },
+  "domains": {
+    "cpu": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "reference_max_hz": 300000000,
+      "source": "pnx",
+      "note": "PNX15xx TM3260 speed-grade limit, not measured Ares CPU clock"
+    },
+    "mmio": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "reference_choices_hz": [
+        54000000,
+        102000000,
+        108000000,
+        115000000,
+        123000000,
+        133000000,
+        144000000,
+        157000000
+      ],
+      "source": "pnx",
+      "note": "PNX15xx DCS options, not proven Ares MMIO clock"
+    },
+    "ddr": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "part": "Samsung K4H561638J-LCCC",
+      "chip_clock_max_hz": 200000000,
+      "transfers_per_clock": 2,
+      "part_data_bits": 16,
+      "capacity_bits": 268435456,
+      "theoretical_single_chip_peak_Bps": 800000000,
+      "source": "ddr",
+      "note": "DDR400 CC speed grade; not verified motherboard DDR clock or bus topology"
+    },
+    "nand": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "part": "ST NAND128W3A28N6 (NAND128W3A)",
+      "part_data_bits": 8,
+      "main_page_bytes": 512,
+      "spare_page_bytes": 16,
+      "seq_cycle_min_ns": 50,
+      "read_page_max_ns": 12000,
+      "page_program_typ_ns": 200000,
+      "block_erase_typ_ns": 2000000,
+      "theoretical_sequential_ceiling_Bps": 20000000,
+      "source": "nand",
+      "note": "Asynchronous interface. 50ns is a minimum access cycle, not a synchronous NAND clock."
+    },
+    "ethernet": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "part": "Marvell 88E6061/B",
+      "port_count": 6,
+      "phy_count": 5,
+      "link_rates_bps": [
+        10000000,
+        100000000
+      ],
+      "reference_mii_10_hz": 2500000,
+      "reference_mii_100_hz": 25000000,
+      "source": "ethernet",
+      "comparison_source": "mii",
+      "note": "25/2.5MHz MII timings come from 88E6060 comparison. 88E6061 mode, straps, clock source and Ares link unverified."
+    },
+    "wifi": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "part": "Atheros AR2413A",
+      "max_radio_phy_rate_bps": 54000000,
+      "host_interfaces_capable": [
+        "PCI",
+        "CardBus",
+        "miniPCI"
+      ],
+      "source": "wifi",
+      "note": "54Mb/s is radio PHY rate, not measured WLAN throughput, DMA bandwidth or host bus frequency"
+    },
+    "dsl": {
+      "actual_hz": null,
+      "actual_provenance": null,
+      "part": "unverified DSL interface",
+      "source": null,
+      "note": "No measured DSL interface clock or negotiated line rate"
+    }
+  },
+  "scope": "Capabilities and comparisons, NOT observed board clock configuration"
+}
