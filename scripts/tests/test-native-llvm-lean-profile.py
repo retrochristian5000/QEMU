@@ -13,16 +13,14 @@ bootstrap = BOOTSTRAP_PATH.read_text(encoding='utf-8')
 # CI even though the lean runtime profile is consumed only by Darwin builds.
 subprocess.run(['bash', '-n', str(BOOTSTRAP_PATH)], check=True)
 
-# Building the compiler at -O3 spends considerably more optimizer work than the
-# WHP host toolchain needs.  Keep Release/NDEBUG semantics, use -O2, and allow
-# scheduling-only host tuning when the bootstrap compiler accepts it.  Do not
-# raise the generated toolchain's ISA floor with -mcpu/-march native flags.
+# Release must retain NDEBUG while avoiding the extra optimizer work of -O3.
+# Keep native LLVM C/C++ compilation independent from QEMU host CPU tuning.
 assert "llvm_bootstrap_cflags='-O2 -DNDEBUG'" in bootstrap
 assert "llvm_bootstrap_cxxflags='-O2 -DNDEBUG'" in bootstrap
-assert 'compiler_accepts_native_tune()' in bootstrap
-assert '-mtune=native' in bootstrap
-assert 'llvm_bootstrap_cflags="$llvm_bootstrap_cflags -mtune=native"' in bootstrap
-assert 'llvm_bootstrap_cxxflags="$llvm_bootstrap_cxxflags -mtune=native"' in bootstrap
+assert 'compiler_accepts_native_tune()' not in bootstrap
+assert '-mtune=native' not in bootstrap
+assert '-march=native' not in bootstrap
+assert '-mcpu=native' not in bootstrap
 assert '"-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"' in bootstrap
 assert '"-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"' in bootstrap
 assert 'CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags' in bootstrap
