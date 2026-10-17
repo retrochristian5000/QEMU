@@ -150,13 +150,22 @@ def copy_bash_source(revision: str, destination: pathlib.Path) -> None:
                         f"could not archive pinned Bash revision {revision}"
                         + (f": {detail}" if detail else "")
                     )
-            except Exception:
+            except Exception as exc:
                 # A malformed archive or failed git must not leave a partial
                 # Bash source tree that a later configure could accidentally use.
                 if process.poll() is None:
                     process.kill()
                 process.wait()
                 shutil.rmtree(destination, ignore_errors=True)
+                if isinstance(exc, tarfile.TarError):
+                    errors.seek(0)
+                    detail = errors.read(16384).decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise RuntimeError(
+                        f"could not archive pinned Bash revision {revision}: "
+                        + (detail or str(exc))
+                    ) from exc
                 raise
             finally:
                 if process.stdout is not None:
