@@ -7,6 +7,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build"
 cp "$ROOT/build.sh" "$TMP/build.sh"
+# build.sh loads these shared POSIX helpers before entering the fallback probe.
+cp "$ROOT/scripts/whp-build/shell-functions.sh" \
+   "$TMP/scripts/whp-build/shell-functions.sh"
 
 # Keep this fixture intentionally small, but provide the seed adapters and
 # sourced bootstrap modules that build.sh must traverse before it can prove the
