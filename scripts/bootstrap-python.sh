@@ -19,6 +19,7 @@ fi
 SED="$SOURCE_DIR/sed.sh"
 export SED
 cleanup_path=
+lock_dir=
 
 # This interpreter is a host prerequisite, not a QEMU target object. Never let
 # target/guest flags or cross-binutils choices leak into CPython's host build.
@@ -28,6 +29,9 @@ unset PYTHONHOME PYTHONPATH
 
 cleanup()
 {
+    if [ -n "$lock_dir" ]; then
+        rmdir "$lock_dir" || printf 'warning: failed to release Python bootstrap lock: %s\n' "$lock_dir" >&2
+    fi
     if [ -n "$cleanup_path" ]; then
         rm -rf "$cleanup_path"
     fi
@@ -146,6 +150,7 @@ python_usable()
 require_tool git
 require_tool "$SED"
 require_tool mkdir
+require_tool rmdir
 require_tool rm
 require_tool mv
 require_tool uname
@@ -238,6 +243,19 @@ BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
 EOF
 )
 
+# The prefix, work tree and rollback directory are shared across invocations.
+# Fail closed on contention instead of deleting another bootstrap's staging
+# tree or publishing a partially built Python. Never auto-remove a stale lock:
+# first verify that the previous bootstrap is no longer running.
+parent_dir=$(dirname -- "$TOOLCHAIN_DIR")
+mkdir -p "$parent_dir"
+lock_candidate="$TOOLCHAIN_DIR.lock"
+if ! mkdir "$lock_candidate" 2>/dev/null; then
+    fail "bundled Python prefix is locked or inaccessible: $lock_candidate"
+fi
+lock_dir=$lock_candidate
+unset lock_candidate
+
 cached_python=$(python_from_prefix "$TOOLCHAIN_DIR" 2>/dev/null || true)
 if [ -f "$marker" ] &&
    [ "$(cat "$marker")" = "$expected_marker" ] &&
@@ -247,7 +265,6 @@ if [ -f "$marker" ] &&
     printf 'Reused bundled WHP Python: %s\n' "$cached_python" >&2
     printf '%s\n' "$cached_python" >&3
     cleanup_path=
-    trap - 0
     exit 0
 fi
 
@@ -258,8 +275,6 @@ actual_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
 [ "$actual_revision" = "$python_revision" ] ||
     fail "Python submodule revision mismatch: ${actual_revision:-<missing>} != $python_revision"
 
-parent_dir=$(dirname -- "$TOOLCHAIN_DIR")
-mkdir -p "$parent_dir"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
@@ -376,7 +391,7 @@ if [ "$build_mode" = pcbuild ]; then
 fi
 printf '%s\n' "$expected_marker" > "$staging_dir/.whp-python-runtime"
 
-old_dir="${TOOLCHAIN_DIR}.old.$"
+old_dir="${TOOLCHAIN_DIR}.old.$$"
 rm -rf "$old_dir"
 if [ -e "$TOOLCHAIN_DIR" ]; then
     mv "$TOOLCHAIN_DIR" "$old_dir"
@@ -389,7 +404,7 @@ cleanup_path=
 
 rollback_published_runtime()
 {
-    failed_dir="${TOOLCHAIN_DIR}.failed.$"
+    failed_dir="${TOOLCHAIN_DIR}.failed.$$"
     rm -rf "$failed_dir"
     if [ -e "$TOOLCHAIN_DIR" ]; then
         mv "$TOOLCHAIN_DIR" "$failed_dir" || return 1
@@ -423,4 +438,3 @@ fi
 rm -rf "$old_dir" "$WORK_DIR"
 printf 'WHP bundled Python ready: %s\n' "$installed_python" >&2
 printf '%s\n' "$installed_python" >&3
-trap - 0
