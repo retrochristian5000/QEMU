@@ -68,6 +68,21 @@ for pip_launcher in pip pip3 "pip$python_mm"; do
     }
 done
 
+[[ ! -e "$cache_root.lock" ]] || {
+    printf 'error: bundled Python left its bootstrap lock behind\n' >&2
+    exit 1
+}
+
+# A second bootstrap must not touch the cached prefix while it is locked.
+mkdir "$cache_root.lock"
+if WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" /bin/sh scripts/bootstrap-python.sh \
+        >"$cache_root.lock.stdout" 2>"$cache_root.lock.stderr"; then
+    printf 'error: locked Python prefix was unexpectedly reused\n' >&2
+    exit 1
+fi
+grep -Fq 'bundled Python prefix is locked' "$cache_root.lock.stderr"
+rmdir "$cache_root.lock"
+
 marker="$cache_root/.whp-python-runtime"
 [[ -f "$marker" ]]
 grep -Eq '^BOOTSTRAP_CC=.+$' "$marker"
