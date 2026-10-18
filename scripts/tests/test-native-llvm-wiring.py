@@ -32,7 +32,7 @@ for bash_path in (
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
-assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n')" in config
+assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'choice', 'auto', ('auto', 'y', 'n'))" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 wrapper = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
 assert 'llvm-nm llvm-objcopy' in wrapper
@@ -136,12 +136,39 @@ assert 'CMAKE_C_FLAGS=\nCMAKE_CXX_FLAGS=\n' in bootstrap
 assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
 assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
-assert 'LLVM_PCH="${NATIVE_LLVM_PCH:-0}"' in bootstrap
+assert 'LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"' in bootstrap
 assert 'cmake_disable_precompile_headers=ON' in bootstrap
 assert 'cmake_disable_precompile_headers=OFF' in bootstrap
 assert '"-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"' in bootstrap
 assert 'CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers' in bootstrap
 assert 'WHP native LLVM precompiled headers:' in bootstrap
+
+# The public build exports menu choices as shell integers. 'auto' must remain
+# unset so the native LLVM bootstrap can resolve the host compiler and cache
+# itself; saved y/n must continue to mean explicit on/off.
+assert "    'NATIVE_LLVM_PCH',\n" in config
+assert 'NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|choice|auto|auto,y,n|' in (
+    ROOT / 'scripts/whp-config/menu-options.def'
+).read_text(encoding='utf-8')
+with tempfile.TemporaryDirectory() as temporary:
+    pch_config = Path(temporary) / '.whpconfig'
+    for selected, expected in (('auto', None), ('y', "NATIVE_LLVM_PCH='1'"),
+                               ('n', "NATIVE_LLVM_PCH='0'")):
+        pch_config.write_text(
+            'WHP_CONFIG_VERSION=3\nNATIVE_LLVM_PCH=' + selected + '\n',
+            encoding='utf-8',
+        )
+        env = os.environ.copy()
+        env.pop('NATIVE_LLVM_PCH', None)
+        result = subprocess.run(
+            ['python3', str(ROOT / 'scripts/whp-config/config.py'),
+             '--shell', str(pch_config)],
+            env=env, text=True, capture_output=True, check=True,
+        )
+        if expected is None:
+            assert 'NATIVE_LLVM_PCH=' not in result.stdout
+        else:
+            assert expected in result.stdout, (selected, result.stdout)
 assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
 assert "WHP native LLVM C++ standard: C++26" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow

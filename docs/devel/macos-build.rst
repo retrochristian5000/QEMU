@@ -453,6 +453,10 @@ LLVM Clang 18+ and the compiler launcher is not ``sccache``. Linux and other
 hosts retain PCH disabled by default. ``NATIVE_LLVM_PCH=0`` explicitly disables
 PCH; ``NATIVE_LLVM_PCH=1`` requests it even outside the automatic profile.
 
+A saved ``.whpconfig`` entry of ``NATIVE_LLVM_PCH=n`` remains an explicit
+opt-out after this change; select ``auto`` in ``menuconfig`` to activate the
+new default without overwriting user preferences.
+
 ``sccache`` is deliberately excluded because the pinned LLVM fork documents
 unsafe PCH cache reuse when macro definitions change. An explicit PCH request
 with ``sccache`` fails early: select ``COMPILER_CACHE=ccache`` (Clang) or

@@ -54,7 +54,7 @@ OPTIONS = (
     Option('QEMU_CXX_STANDARD', 'Host features', 'QEMU C++ language standard', 'choice', 'gnu++23', ('gnu++17', 'gnu++20', 'gnu++23', 'c++26')),
     Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
     Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '23', ('17', '20', '23', '26')),
-    Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'bool', 'n'),
+    Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_PYTHON', 'Host features', 'Bootstrap/use WHP Python', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_BASH', 'Host features', 'Bootstrap/use WHP Bash', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_AUTOMAKE', 'Host features', 'Bootstrap/use WHP Automake', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -115,6 +115,7 @@ PORTABLE_BOOL_KEYS = {option.key for option in OPTIONS if option.kind == 'bool'}
 RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
 SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
+    'NATIVE_LLVM_PCH',
     'QEMU_HOST_LTO',
     'QEMU_HOST_MODULES',
     'BOOTSTRAP_PYTHON',
