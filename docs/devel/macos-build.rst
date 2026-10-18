@@ -443,6 +443,31 @@ versioned pointer format using both LLVM command interfaces when
 ``llvm-otool`` is installed, while the existing ``llvm-objdump``
 metadata decoder still validates PAC keys and discriminators.
 
+Native LLVM precompiled headers
+-------------------------------
+
+The pinned LLVM fork defines a real ``LLVMSupport`` precompiled header and
+reuses it in eligible C++ targets. ``NATIVE_LLVM_PCH=auto`` (the default) enables
+PCH for native macOS LLVM builds when the host C++ compiler is Apple Clang or
+LLVM Clang 18+ and the compiler launcher is not ``sccache``. Linux and other
+hosts retain PCH disabled by default. ``NATIVE_LLVM_PCH=0`` explicitly disables
+PCH; ``NATIVE_LLVM_PCH=1`` requests it even outside the automatic profile.
+
+``sccache`` is deliberately excluded because the pinned LLVM fork documents
+unsafe PCH cache reuse when macro definitions change. An explicit PCH request
+with ``sccache`` fails early: select ``COMPILER_CACHE=ccache`` (Clang) or
+``COMPILER_CACHE=none`` instead. With ``ccache``, LLVM adds Clang's
+``-fno-pch-timestamp`` option for reproducible PCH inputs.
+
+The chosen ``CMAKE_DISABLE_PRECOMPILE_HEADERS`` value belongs to both the
+installed-toolchain marker and the CMake configuration identity, so switching
+PCH policy reconfigures the existing Ninja graph rather than silently reusing
+incompatible objects. To verify that PCH is *actually* generated, inspect the
+native LLVM ``build.ninja`` for ``cmake_pch`` rules; a CMake OFF value alone
+cannot establish a performance improvement. PCH adds initial build work,
+memory and disk use, so benchmark clean and incremental builds before
+claiming a speedup.
+
 Incremental LLVM builds and Ninja scheduling
 -------------------------------------------
 

@@ -30,7 +30,7 @@ case "$LLVM_NINJA_CRITICAL_PATH_TIMES" in
         ;;
 esac
 LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
-LLVM_PCH="${NATIVE_LLVM_PCH:-0}"
+LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"
 # Optional Windows PE manifest merging for downstream CMake/Windows clients.
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
@@ -123,20 +123,12 @@ case "$LLVM_CXX_STANDARD" in
         ;;
 esac
 case "$LLVM_PCH" in
-    0)
-        cmake_disable_precompile_headers=ON
-        llvm_pch_state=disabled
-        ;;
-    1)
-        cmake_disable_precompile_headers=OFF
-        llvm_pch_state=enabled
-        ;;
+    auto|0|1) ;;
     *)
-        printf 'error: NATIVE_LLVM_PCH must be 0 or 1: %s\n' "$LLVM_PCH" >&2
+        printf 'error: NATIVE_LLVM_PCH must be auto, 0, or 1: %s\n' "$LLVM_PCH" >&2
         exit 1
         ;;
 esac
-printf 'WHP native LLVM precompiled headers: %s\n' "$llvm_pch_state" >&2
 case "$LLVM_WINDOWS_MANIFEST" in
     0|1) ;;
     *)
@@ -819,6 +811,43 @@ git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
 llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
 bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
 bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
+# WHP_NATIVE_LLVM_PCH_POLICY_BEGIN
+# This fork has a real LLVMSupport PCH and target reuse. Select PCH only
+# after discovering the build compiler and cache launcher. Apple's Clang
+# has its own versioning; upstream LLVM Clang needs >=18 for safe defaults.
+pch_compiler_usable=0
+if [[ "$bootstrap_cxx_version" == Apple\ clang\ version\ * ]]; then
+    pch_compiler_usable=1
+elif [[ "$bootstrap_cxx_version" =~ (^|[[:space:]])clang[[:space:]]version[[:space:]]([0-9]+) ]] &&
+     (( 10#${BASH_REMATCH[2]} >= 18 )); then
+    pch_compiler_usable=1
+fi
+
+if [[ "$LLVM_PCH" == auto ]]; then
+    # Do not silently override LLVM's sccache safety policy: PCH may reuse
+    # stale definitions when a macro changes. Keep non-macOS defaults stable.
+    if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 &&
+          "${compiler_cache_cmd##*/}" != sccache ]]; then
+        LLVM_PCH=1
+    else
+        LLVM_PCH=0
+    fi
+fi
+if [[ "$LLVM_PCH" == 1 && "${compiler_cache_cmd##*/}" == sccache ]]; then
+    printf '%s\n' \
+        'error: NATIVE_LLVM_PCH=1 is incompatible with sccache; use COMPILER_CACHE=ccache or none.' >&2
+    exit 1
+fi
+if [[ "$LLVM_PCH" == 1 ]]; then
+    cmake_disable_precompile_headers=OFF
+    llvm_pch_state=enabled
+else
+    cmake_disable_precompile_headers=ON
+    llvm_pch_state=disabled
+fi
+printf 'WHP native LLVM precompiled headers: %s\n' "$llvm_pch_state" >&2
+# WHP_NATIVE_LLVM_PCH_POLICY_END
+
 llvm_enable_projects='clang;lld'
 llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 llvm_enable_libxml2=OFF

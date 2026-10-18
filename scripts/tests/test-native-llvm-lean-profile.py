@@ -46,6 +46,52 @@ assert '-DCMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 assert 'CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD' in bootstrap
 assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 
+
+# PCH is an actual LLVM target feature (LLVMSupport + dependent reuse), not
+# merely a disabled CMake global flag. Exercise the bootstrap selection itself
+# with hermetic compiler/cache identities; do not invoke a full LLVM build.
+assert 'LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"' in bootstrap
+assert 'CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers' in bootstrap
+assert '"-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"' in bootstrap
+start = bootstrap.index('# WHP_NATIVE_LLVM_PCH_POLICY_BEGIN')
+end = bootstrap.index('# WHP_NATIVE_LLVM_PCH_POLICY_END', start)
+pch_policy = bootstrap[start:end]
+
+for host, compiler, launcher, mode, disabled, expected_rc in (
+    ('macos', 'Apple clang version 17.0.0', '', 'auto', 'OFF', 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/ccache', 'auto', 'OFF', 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', 'auto', 'ON', 0),
+    ('macos', 'clang version 19.1.0', '', 'auto', 'OFF', 0),
+    ('macos', 'clang version 17.0.0', '', 'auto', 'ON', 0),
+    ('macos', 'gcc (GCC) 15.1.0', '', 'auto', 'ON', 0),
+    ('linux', 'clang version 20.0.0', '', 'auto', 'ON', 0),
+    ('macos', 'Apple clang version 17.0.0', '', '0', 'ON', 0),
+    ('macos', 'Apple clang version 17.0.0', '', '1', 'OFF', 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', '1', '', 1),
+):
+    result = subprocess.run(
+        ['bash', '-c', 'set -euo pipefail\n' + pch_policy +
+         '\nprintf "%s" "$cmake_disable_precompile_headers"'],
+        env={
+            'PATH': '/usr/bin:/bin',
+            'host_os': host,
+            'bootstrap_cxx_version': compiler,
+            'compiler_cache_cmd': launcher,
+            'LLVM_PCH': mode,
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == expected_rc, (
+        host, compiler, launcher, mode, result.stderr)
+    if expected_rc == 0:
+        assert result.stdout == disabled, (
+            host, compiler, launcher, mode, result.stdout)
+    else:
+        assert 'incompatible with sccache' in result.stderr, result.stderr
+
 # LLVM telemetry is not part of the QEMU compiler/linker contract.
 assert '-DLLVM_ENABLE_TELEMETRY=OFF' in bootstrap
 assert 'LLVM_ENABLE_TELEMETRY=OFF' in bootstrap
