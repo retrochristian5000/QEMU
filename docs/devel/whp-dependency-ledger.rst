@@ -142,6 +142,10 @@ by the WHP account.
      - ``ninja-builder``
      - yes
      - host Ninja fallback; requires Python plus a host C++17 compiler.
+   * - ``toolchains/sccacher``
+     - ``sccacher``
+     - yes
+     - Optional pinned sccache compiler-cache helper; requires Cargo and Rust >= 1.91. LLVM precompiled headers remain disabled while sccache is selected because PCH cache reuse is not reliable.
    * - ``toolchains/meson``
      - ``Meson``
      - yes
