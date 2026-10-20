@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import signal
 import statistics
 import subprocess
 import sys
@@ -129,7 +130,13 @@ def measure(command: list[str], boot_seconds: float,
         finally:
             qmp.close()
             if not reaped:
-                process.kill()
+                # Popen.kill() can poll/reap the child before wait4(), losing
+                # the exit status (and raising ChildProcessError on macOS).
+                # Send the signal directly, then reap exactly once via wait4().
+                try:
+                    os.kill(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass  # Child already exited but still needs reaping.
                 _, status, _ = os.wait4(process.pid, 0)
                 process.returncode = os.waitstatus_to_exitcode(status)
             if process.stdin is not None:
@@ -171,7 +178,7 @@ for line in sys.stdin:
                                     0.02, 10)
     assert 0 < paused and 0 < running and peak >= min(paused, running)
     failed = '''import sys
-sys.stderr.write("controlled QEMU failure\n")
+sys.stderr.write("controlled QEMU failure\\n")
 sys.exit(4)
 '''
     try:
