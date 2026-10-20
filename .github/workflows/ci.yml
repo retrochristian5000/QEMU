@@ -247,6 +247,14 @@ jobs:
         if: matrix.target == 'i386'
         run: bash scripts/tests/test-cdrom-hdc.bash build-ci/qemu-system-i386
 
+      - name: Validate IDE HDD/SSD TRIM scatter-gather handling
+        if: matrix.target == 'i386'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/ide-test
+          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+            qtest-i386/ide-test
+
       - name: Test original 16-bit x86 target
         if: matrix.target == 'x86'
         run: |
