@@ -219,7 +219,7 @@ Hardware status
      - Partial
    * - Graphics card
      - ATI RAGE 128 PRO with 16 MiB SDRAM in the AGP slot
-     - QEMU ``ati-vga`` with ``model=rage128p`` and 16 MiB VRAM is installed at
+     - QEMU's fixed-identity ``ati-rage128p`` with 16 MiB VRAM is installed at
        AGP device ``0x10`` by default.  The ATI model is intentionally partial:
        it implements enough register/framebuffer behavior for basic display and
        some 2D use.  Rage128's 24-bpp packed 2D color fills are supported

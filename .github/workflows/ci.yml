@@ -51,6 +51,9 @@ jobs:
       - name: Guard PPC TCG virtual-time helper calls
         run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
 
+      - name: Guard separate ATI Rage 128 Pro and RV100 devices
+        run: python3 scripts/tests/test-ati-device-profiles.py
+
       - name: Guard Rage128 Pro 2D framebuffer operations
         run: python3 scripts/tests/test-powermac3_1-rage128-2d.py
 

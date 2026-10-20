@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[2]
 source = (root / "hw/display/ati_2d.c").read_text(encoding="utf-8")
 machine = (root / "hw/ppc/powermac3_1.c").read_text(encoding="utf-8")
 regs = (root / "hw/display/ati_regs.h").read_text(encoding="utf-8")
-assert 'qdev_prop_set_string(DEVICE(dev), "model", "rage128p")' in machine
+assert 'pci_new(PCI_DEVFN(16, 0), "ati-rage128p")' in machine
 assert 'qdev_prop_set_uint32(DEVICE(dev), "vgamem_mb", 16)' in machine
 assert "#define DST_24BPP" in regs
 

@@ -140,35 +140,47 @@ static void test_device_intro_settable_only(void)
 {
     QTestState *qts = qtest_init(common_args);
     QList *types = device_type_list(qts, false);
+    static const char *const ati_types[] = {
+        "ati-vga", "ati-rage128p", "ati-rv100",
+    };
     QDict *resp;
     QList *props;
     char *help;
+    size_t i;
 
     if (!type_list_find(types, "ati-vga")) {
-        g_test_skip("ati-vga is not available for this target");
+        g_test_skip("ATI VGA is not available for this target");
         qobject_unref(types);
         qtest_quit(qts);
         return;
     }
 
-    resp = qtest_qmp(qts, "{'execute': 'device-list-properties',"
-                          " 'arguments': {'typename': 'ati-vga'}}");
-    g_assert(qdict_haskey(resp, "return"));
-    props = qdict_get_qlist(resp, "return");
+    for (i = 0; i < ARRAY_SIZE(ati_types); i++) {
+        const char *name = ati_types[i];
 
-    g_assert_true(property_list_has_name(props, "model"));
-    g_assert_false(property_list_has_name(props, "busnr"));
-    g_assert_false(property_list_has_name(props, "edid"));
-    g_assert_false(property_list_has_name(props, "sriov-pf"));
+        g_assert_nonnull(type_list_find(types, name));
+        resp = qtest_qmp(qts, "{'execute': 'device-list-properties',"
+                              " 'arguments': {'typename': %s}}", name);
+        g_assert_true(qdict_haskey(resp, "return"));
+        props = qdict_get_qlist(resp, "return");
 
-    help = qtest_hmp(qts, "device_add \"ati-vga,help\"");
-    g_assert_nonnull(strstr(help, "model="));
-    g_assert_null(strstr(help, "busnr="));
-    g_assert_null(strstr(help, "edid="));
-    g_assert_null(strstr(help, "sriov-pf="));
-    g_free(help);
+        g_assert_true(property_list_has_name(props, "vgamem_mb"));
+        g_assert_false(property_list_has_name(props, "model"));
+        g_assert_false(property_list_has_name(props, "x-device-id"));
+        g_assert_false(property_list_has_name(props, "busnr"));
+        g_assert_false(property_list_has_name(props, "edid"));
+        g_assert_false(property_list_has_name(props, "sriov-pf"));
 
-    qobject_unref(resp);
+        help = qtest_hmp(qts, "device_add \"%s,help\"", name);
+        g_assert_null(strstr(help, "model="));
+        g_assert_null(strstr(help, "x-device-id="));
+        g_assert_null(strstr(help, "busnr="));
+        g_assert_null(strstr(help, "edid="));
+        g_assert_null(strstr(help, "sriov-pf="));
+        g_free(help);
+        qobject_unref(resp);
+    }
+
     qobject_unref(types);
     qtest_quit(qts);
 }

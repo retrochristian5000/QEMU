@@ -35,7 +35,9 @@
 #define ATI_R100_LINEAR_APER_SIZE (128 * MiB)
 #define ATI_HOST_DATA_ACC_BITS 128
 
-#define TYPE_ATI_VGA "ati-vga"
+#define TYPE_ATI_VGA "ati-vga" /* Legacy, fixed Rage 128 Pro identity */
+#define TYPE_ATI_RAGE128P "ati-rage128p"
+#define TYPE_ATI_RV100 "ati-rv100"
 OBJECT_DECLARE_SIMPLE_TYPE(ATIVGAState, ATI_VGA)
 
 typedef struct ATIVGARegs {
@@ -108,7 +110,6 @@ typedef struct ATIHostDataState {
 struct ATIVGAState {
     PCIDevice dev;
     VGACommonState vga;
-    char *model;
     uint16_t dev_id;
     uint8_t mode;
     uint8_t use_pixman;

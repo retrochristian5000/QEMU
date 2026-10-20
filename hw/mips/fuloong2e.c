@@ -312,10 +312,9 @@ static void mips_fuloong2e_init(MachineState *machine)
     /* GPU */
     if (vga_interface_type != VGA_NONE) {
         vga_interface_created = true;
-        pci_dev = pci_new(-1, "ati-vga");
+        pci_dev = pci_new(-1, "ati-rv100");
         dev = DEVICE(pci_dev);
         qdev_prop_set_uint32(dev, "vgamem_mb", 16);
-        qdev_prop_set_uint16(dev, "x-device-id", 0x5159);
         qdev_prop_set_uint64(dev, "x-linear-aper-size", 16 * MiB);
         pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
     }

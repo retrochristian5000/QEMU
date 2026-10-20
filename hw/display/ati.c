@@ -38,13 +38,8 @@
 #define DEFAULT_X_PIXMAN 0
 #endif
 
-static const struct {
-    const char *name;
-    uint16_t dev_id;
-} ati_model_aliases[] = {
-    { "rage128p", PCI_DEVICE_ID_ATI_RAGE128_PF },
-    { "rv100", PCI_DEVICE_ID_ATI_RADEON_QY },
-};
+/* Each GPU family has a fixed QOM device type and PCI identity.
+ * The legacy ati-vga name remains Rage 128 Pro for -vga ati. */
 
 enum { VGA_MODE, EXT_MODE };
 
@@ -1065,19 +1060,7 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
     }
 #endif
 
-    if (s->model) {
-        int i;
-        for (i = 0; i < ARRAY_SIZE(ati_model_aliases); i++) {
-            if (!strcmp(s->model, ati_model_aliases[i].name)) {
-                s->dev_id = ati_model_aliases[i].dev_id;
-                break;
-            }
-        }
-        if (i >= ARRAY_SIZE(ati_model_aliases)) {
-            warn_report("Unknown ATI VGA model name, "
-                        "using default rage128p");
-        }
-    }
+    /* The type-specific instance initializer supplies the immutable ID. */
     if (s->dev_id != PCI_DEVICE_ID_ATI_RAGE128_PF &&
         s->dev_id != PCI_DEVICE_ID_ATI_RADEON_QY) {
         error_setg(errp, "Unknown ATI VGA device id, "
@@ -1181,9 +1164,6 @@ static void ati_vga_exit(PCIDevice *dev)
 
 static const Property ati_vga_properties[] = {
     DEFINE_PROP_UINT32("vgamem_mb", ATIVGAState, vga.vram_size_mb, 16),
-    DEFINE_PROP_STRING("model", ATIVGAState, model),
-    DEFINE_PROP_UINT16("x-device-id", ATIVGAState, dev_id,
-                       PCI_DEVICE_ID_ATI_RAGE128_PF),
     DEFINE_PROP_BOOL("guest_hwcursor", ATIVGAState, cursor_guest_mode, false),
     /* this is a debug option, prefer PROP_UINT over PROP_BIT for simplicity */
     DEFINE_PROP_UINT8("x-pixman", ATIVGAState, use_pixman, DEFAULT_X_PIXMAN),
@@ -1199,7 +1179,7 @@ static void ati_vga_class_init(ObjectClass *klass, const void *data)
     device_class_set_legacy_reset(dc, ati_vga_reset);
     device_class_set_props(dc, ati_vga_properties);
     dc->hotpluggable = false;
-    dc->desc = "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller";
+    dc->desc = "ATI Rage 128 Pro PCI VGA (legacy ati-vga name)";
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 
     k->class_id = PCI_CLASS_DISPLAY_VGA;
@@ -1214,6 +1194,7 @@ static void ati_vga_init(Object *o)
 {
     ATIVGAState *s = ATI_VGA(o);
 
+    s->dev_id = PCI_DEVICE_ID_ATI_RAGE128_PF;
     object_initialize_child(o, "edid", &s->i2cddc, TYPE_I2CDDC);
     object_property_set_description(o, "x-pixman", "Use pixman for: "
                                     "1: fill, 2: blit");
@@ -1231,9 +1212,49 @@ static const TypeInfo ati_vga_info = {
     },
 };
 
+/* Canonical Rage 128 Pro and RV100 are separate, non-interchangeable
+ * PCI device types.  Common framebuffer and 2D primitives stay shared. */
+static void ati_rage128p_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    dc->desc = "ATI Rage 128 Pro GL (PCI 1002:5046)";
+    k->device_id = PCI_DEVICE_ID_ATI_RAGE128_PF;
+}
+
+static void ati_rv100_instance_init(Object *obj)
+{
+    ATI_VGA(obj)->dev_id = PCI_DEVICE_ID_ATI_RADEON_QY;
+}
+
+static void ati_rv100_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    dc->desc = "ATI Radeon RV100 VE (PCI 1002:5159)";
+    k->device_id = PCI_DEVICE_ID_ATI_RADEON_QY;
+}
+
+static const TypeInfo ati_rage128p_info = {
+    .name = TYPE_ATI_RAGE128P,
+    .parent = TYPE_ATI_VGA,
+    .class_init = ati_rage128p_class_init,
+};
+
+static const TypeInfo ati_rv100_info = {
+    .name = TYPE_ATI_RV100,
+    .parent = TYPE_ATI_VGA,
+    .instance_init = ati_rv100_instance_init,
+    .class_init = ati_rv100_class_init,
+};
+
 static void ati_vga_register_types(void)
 {
     type_register_static(&ati_vga_info);
+    type_register_static(&ati_rage128p_info);
+    type_register_static(&ati_rv100_info);
 }
 
 type_init(ati_vga_register_types)

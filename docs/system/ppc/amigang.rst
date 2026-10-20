@@ -53,14 +53,14 @@ To boot the system run:
 
   $ qemu-system-ppc -machine amigaone -bios u-boot-amigaone.bin \
                     -cdrom "A1 Linux Net Installer.iso" \
-                    -device ati-vga,model=rv100,romfile=VGABIOS-lgpl-latest.bin
+                    -device ati-rv100,romfile=VGABIOS-lgpl-latest.bin
 
 If a firmware menu appears, select ``Boot sequence`` → ``Amiga Multiboot Options``
 and set ``Boot device 1`` to ``Onboard VIA IDE CDROM``. Then hit escape until
 the main screen appears again, hit escape once more and from the exit menu that
 appears select either ``Save settings and exit`` or ``Use settings for this
 session only``. It may take a long time loading the kernel into memory but
-eventually it boots and the installer becomes visible. The ``ati-vga`` RV100
+eventually it boots and the installer becomes visible. The ``ati-rv100``
 emulation is not complete yet so only frame buffer works, DRM and 3D is not
 available.
 

@@ -75,8 +75,7 @@ if 'fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_CLOCKFREQ, CLOCKFREQ);' not in mac_newworl
 # The factory display substitute is QEMU's Rage128-family model with the same
 # 16 MiB VRAM size as the launch card, installed at Sawtooth's AGP slot 0x10.
 required_video = (
-    'pci_new(PCI_DEVFN(16, 0), "ati-vga")',
-    'qdev_prop_set_string(DEVICE(dev), "model", "rage128p")',
+    'pci_new(PCI_DEVFN(16, 0), "ati-rage128p")',
     'qdev_prop_set_uint32(DEVICE(dev), "vgamem_mb", 16)',
     'case VGA_STD:',
     'return powermac3_1_rage128_init(bus);',
@@ -127,7 +126,7 @@ for needle in required_usb_profile:
     if needle not in power_mac:
         errors.append(f"PowerMac3,1 KeyLargo USB profile missing: {needle}")
 
-# Since the machine creates ati-vga as a default device, the NewWorld build
+# Since the machine creates ati-rage128p by default, the NewWorld build
 # must guarantee that model is present rather than merely hoping Kconfig chose it.
 newworld_start = kconfig.find("config MAC_NEWWORLD")
 newworld_end = kconfig.find("\nconfig ", newworld_start + 1)

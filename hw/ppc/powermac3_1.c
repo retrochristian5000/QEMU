@@ -38,15 +38,13 @@ static void (*powermac3_1_parent_init)(MachineState *machine);
 
 static PCIDevice *powermac3_1_rage128_init(PCIBus *bus)
 {
-    PCIDevice *dev = pci_new(PCI_DEVFN(16, 0), "ati-vga");
+    PCIDevice *dev = pci_new(PCI_DEVFN(16, 0), "ati-rage128p");
 
     /*
      * The launch PowerMac3,1 paired its 450 MHz G4 configuration with a
-     * 16 MiB ATI Rage 128 in the dedicated AGP-2X slot.  QEMU's rage128p
-     * model is the closest available device and already implements the
-     * Rage128-family PCI identity used by Mac OS drivers.
+     * 16 MiB ATI Rage 128 in the dedicated AGP-2X slot.  Use the fixed
+     * Rage 128 Pro PCI identity; never switch it to the later RV100.
      */
-    qdev_prop_set_string(DEVICE(dev), "model", "rage128p");
     qdev_prop_set_uint32(DEVICE(dev), "vgamem_mb", 16);
     pci_realize_and_unref(dev, bus, &error_fatal);
     return dev;
