@@ -249,13 +249,19 @@ Hardware status
      - High
      - Under validation
    * - Internal modem path
-     - Separate modem module attached to the KeyLargo communication slot; the
-       module contains a modem controller, datapump and telephone-line DAA
-     - The default Sawtooth configuration attaches a modem chardev to SCC
-       channel A.  It represents the serial communications path, not the
-       physical modem module.
-     - High
-     - Substitute
+     - Optional Apple 56K K56flex/V.90 module (fax up to 14.4 Kbps) in a
+       proprietary 70-pin slot with separate telephone-line filter. KeyLargo
+       connects a serial port and alternative I2S signals to the slot with
+       DB-DMA; an internal USB signal pair also reaches the connector.
+     - Sawtooth's default configuration attaches QEMU's Hayes 2400-class
+       substitute to SCC A. The KeyLargo modem-reset GPIO at offset ``0x6d``
+       resets it. ``-machine powermac3_1,modem=off`` or ``-nodefaults``
+       leaves the module absent. The Apple controller IC, V.90 datapump,
+       telephone-line DAA/fax, I2S DB-DMA, call-progress audio, and optional
+       USB-mode modem remain unimplemented; the generic Hayes personality
+       must not be described as a hardware-accurate Apple 56K modem.
+     - High for slot and reset wiring; unresolved modem silicon
+     - Partial / substitute
    * - NVRAM
      - NewWorld non-volatile parameter storage used by Open Firmware
      - QEMU MacIO NVRAM device with persistent storage available through the
@@ -437,6 +443,10 @@ hardware behaviors that firmware and operating systems can observe:
   behavior instead of relying only on the generic PCI-bridge core;
 * map QEMU's two PMAC IDE interfaces to the Sawtooth Ultra DMA/66 and EIDE
   channels at the transfer-mode, DMA and Open Firmware-node levels;
+* implement the Apple 56K modem-controller datapump/DAA, K56flex/V.90
+  modulation, fax, I2S DB-DMA and call-progress audio only after identifying
+  the module's exact chipset and host interface; preserve the present Hayes
+  substitute as a clearly named approximation;
 * identify and connect the remaining KeyLargo GPIO pins, interrupt polarity and
   board-level functions instead of treating most GPIOs as storage only;
 * connect KeyLargo and UniNorth power-control bits to actual USB, IDE, PCI and

@@ -31,6 +31,7 @@
 #include "io/channel-socket.h"
 #include "io/task.h"
 #include "chardev/char.h"
+#include "chardev/modem.h"
 #include "chardev/char-serial.h"
 #include "qom/object.h"
 
@@ -334,6 +335,16 @@ static void modem_reset(ModemChardev *modem)
     modem_hangup(modem, false);
     modem_model_defaults(modem);
     modem->command_len = 0;
+}
+
+void qemu_modem_hardware_reset(Chardev *chr)
+{
+    ModemChardev *modem = CHARDEV_MODEM(chr);
+
+    /* Physical reset drops pending data, unlike the ATZ soft reset. */
+    fifo8_reset(&modem->outbuf);
+    fifo8_reset(&modem->net_txbuf);
+    modem_reset(modem);
 }
 
 static int modem_parse_number(const char **command, int default_value)

@@ -12,6 +12,7 @@
 #include "qemu/module.h"
 #include "qemu/option.h"
 #include "chardev/char-fe.h"
+#include "chardev/modem.h"
 #include "system/system.h"
 
 typedef struct ModemOutput {
@@ -201,6 +202,24 @@ static void test_voice_transport_is_not_advertised(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_hardware_reset(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-hardware-reset", "rockwell-voice-14400");
+    const char *response;
+
+    modem_frontend_init(&fe, &out, chr);
+    response = modem_command(&fe, &out, "AT+FCLASS=8\r");
+    assert_response_contains(response, "\r\nOK\r\n");
+
+    qemu_modem_hardware_reset(chr);
+
+    response = modem_command(&fe, &out, "AT+FCLASS?\r");
+    assert_response_contains(response, "\r\n0\r\n");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 int main(int argc, char **argv)
 {
     qemu_init_main_loop(&error_abort);
@@ -216,6 +235,7 @@ int main(int argc, char **argv)
                     test_voice_configuration);
     g_test_add_func("/modem/voice/transport-not-advertised",
                     test_voice_transport_is_not_advertised);
+    g_test_add_func("/modem/hardware-reset", test_hardware_reset);
 
     return g_test_run();
 }

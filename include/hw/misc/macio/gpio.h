@@ -53,6 +53,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(MacIOGPIOState, MACIO_GPIO)
                                       MACIO_GPIO_NORMAL_COUNT)
 #define MACIO_GPIO_MIG_REG_COUNT     36
 #define MACIO_GPIO_MMIO_SIZE         0x30
+/* Original KeyLargo modem reset in the MacIO BAR. */
+#define MACIO_GPIO_MODEM_RESET_OFFSET 0x6d
 
 struct MacIOGPIOState {
     /*< private >*/
@@ -61,6 +63,7 @@ struct MacIOGPIOState {
 
     MemoryRegion gpiomem;
     qemu_irq gpio_extirqs[MACIO_GPIO_EXTINT_COUNT];
+    qemu_irq modem_reset;
     uint8_t gpio_levels[MACIO_GPIO_LEVEL_BYTES];
     uint8_t gpio_regs[MACIO_GPIO_MIG_REG_COUNT];
 };

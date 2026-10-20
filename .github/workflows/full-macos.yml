@@ -14,6 +14,12 @@ on:
       - 'util/oslib-posix.c'
       - 'tests/qtest/boot-serial-test.c'
       - 'hw/ppc/prep.c'
+      - 'hw/ppc/mac_newworld.c'
+      - 'hw/misc/macio/gpio.c'
+      - 'include/hw/misc/macio/gpio.h'
+      - 'chardev/modem.c'
+      - 'include/chardev/modem.h'
+      - 'scripts/tests/test-powermac3_1-modem.py'
       - 'hw/isa/pc87312.c'
       - 'roms/openbios'
       - 'pc-bios/openbios-ppc'
@@ -52,6 +58,9 @@ jobs:
 
       - name: Check Darwin host RAM discovery
         run: python3 scripts/tests/test-darwin-host-physmem.py
+
+      - name: Verify Sawtooth modem slot and reset routing
+        run: python3 scripts/tests/test-powermac3_1-modem.py
 
       - name: Test Cocoa multi-monitor routing and placement
         run: python3 scripts/tests/test-cocoa-metal-dirty.py

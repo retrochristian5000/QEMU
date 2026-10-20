@@ -51,6 +51,9 @@ jobs:
       - name: Guard PPC TCG virtual-time helper calls
         run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
 
+      - name: Guard optional Sawtooth modem reset routing
+        run: python3 scripts/tests/test-powermac3_1-modem.py
+
       - name: Audit Sam460ex FDT node removal and link probe
         run: python3 scripts/tests/test-sam460ex-fdt-nop.py
 
@@ -164,6 +167,13 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Test modem hardware reset and AT configuration
+        if: matrix.target == 'ppc'
+        run: |
+          set -eux
+          ninja -C build-ci tests/unit/test-modem-voice
+          build-ci/tests/unit/test-modem-voice --tap -k
 
       - name: Test concurrent GLib atomic counter draining
         if: matrix.target == 'ppc'

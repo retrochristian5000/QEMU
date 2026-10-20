@@ -51,6 +51,8 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "chardev/char.h"
+#include "chardev/modem.h"
+#include "hw/core/irq.h"
 #include "qom/compat-properties.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
@@ -117,6 +119,7 @@ struct Core99MachineState {
 
     Core99ViaConfig via_config;
     uint64_t firmware_entry;
+    bool modem_present;
 };
 
 static void fw_cfg_boot_set(void *opaque, const char *boot_device,
@@ -128,6 +131,14 @@ static void fw_cfg_boot_set(void *opaque, const char *boot_device,
 static uint64_t translate_kernel_address(void *opaque, uint64_t addr)
 {
     return (addr & 0x0fffffff) + KERNEL_LOAD_ADDR;
+}
+
+/* KeyLargo's active-low reset GPIO resets the fitted modem module. */
+static void sawtooth_modem_reset(void *opaque, int n, int level)
+{
+    if (level) {
+        qemu_modem_hardware_reset(opaque);
+    }
 }
 
 static void ppc_core99_reset(void *opaque)
@@ -427,11 +438,12 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_bit(dev, "has-screamer", sawtooth_topology);
 
     /*
-     * Sawtooth's internal modem is attached to KeyLargo SCC channel A.
-     * Model the installed module as a default device so -nodefaults leaves
-     * channel A free for an explicitly supplied serial backend.
+     * Original Sawtooth modem slot: KeyLargo SCC A carries the serial path.
+     * The Hayes backend is a substitute, not a claim about the Apple chip.
+     * -nodefaults and -machine modem=off leave the module absent.
      */
-    if (sawtooth_topology && defaults_enabled()) {
+    if (sawtooth_topology && core99_machine->modem_present &&
+        defaults_enabled()) {
         modem_chr = qemu_chardev_new(NULL, "chardev-modem", NULL, NULL,
                                      &error_fatal);
     }
@@ -441,6 +453,14 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_chr(dev, "chrB", serial_hd(1));
 
     pci_realize_and_unref(PCI_DEVICE(macio), south_pci_bus, &error_fatal);
+
+    if (modem_chr) {
+        /* The modem-reset register is at MacIO offset 0x6d. */
+        DeviceState *gpio = DEVICE(object_resolve_path_component(macio,
+                                                                  "gpio"));
+        qdev_connect_gpio_out_named(gpio, "modem-reset", 0,
+            qemu_allocate_irq(sawtooth_modem_reset, modem_chr, 0));
+    }
 
     pic_dev = DEVICE(object_resolve_path_component(macio, "pic"));
     for (i = 0; i < 4; i++) {
@@ -752,6 +772,16 @@ static void core99_set_via_config(Object *obj, const char *value, Error **errp)
     }
 }
 
+static bool core99_get_modem(Object *obj, Error **errp)
+{
+    return CORE99_MACHINE(obj)->modem_present;
+}
+
+static void core99_set_modem(Object *obj, bool value, Error **errp)
+{
+    CORE99_MACHINE(obj)->modem_present = value;
+}
+
 static void core99_instance_init(Object *obj)
 {
     Core99MachineState *cms = CORE99_MACHINE(obj);
@@ -759,6 +789,7 @@ static void core99_instance_init(Object *obj)
     /* Default via_config is CORE99_VIA_CONFIG_CUDA */
     cms->via_config = CORE99_VIA_CONFIG_CUDA;
     cms->firmware_entry = 0;
+    cms->modem_present = true;
     object_property_add_str(obj, "via", core99_get_via_config,
                             core99_set_via_config);
     object_property_set_description(obj, "via",
@@ -770,6 +801,13 @@ static void core99_instance_init(Object *obj)
     object_property_set_description(obj, "firmware-entry",
                                     "Override the Mac99 firmware reset entry. "
                                     "Zero selects the reset vector 0xfff00100");
+    if (object_dynamic_cast(obj, MACHINE_TYPE_NAME("powermac3_1"))) {
+        object_property_add_bool(obj, "modem", core99_get_modem,
+                                 core99_set_modem);
+        object_property_set_description(obj, "modem",
+            "Fit the optional Sawtooth internal modem substitute "
+            "(default on; -nodefaults suppresses automatic devices)");
+    }
 }
 
 static const TypeInfo core99_machine_info = {

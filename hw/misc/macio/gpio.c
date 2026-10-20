@@ -124,15 +124,31 @@ static void macio_gpio_write(void *opaque, hwaddr addr, uint64_t value,
 
     addr -= MACIO_GPIO_LEVEL_BYTES;
     if (addr < MACIO_GPIO_REG_COUNT) {
+        uint8_t old = s->gpio_regs[addr];
+
         value &= ~IN_DATA;
 
         if (value & OUT_ENABLE) {
             ibit = (value & OUT_DATA) << 1;
         } else {
-            ibit = s->gpio_regs[addr] & IN_DATA;
+            ibit = old & IN_DATA;
         }
 
         s->gpio_regs[addr] = value | ibit;
+
+        /*
+         * KeyLargo modem-reset GPIO3 (BAR offset 0x6d) is active low.
+         * Driving the pin as an input must not reset a fitted modem.
+         */
+        if (addr == MACIO_GPIO_MODEM_RESET_OFFSET - 0x50 -
+                    MACIO_GPIO_LEVEL_BYTES) {
+            bool was_reset = (old & OUT_ENABLE) && !(old & OUT_DATA);
+            bool reset = (value & OUT_ENABLE) && !(value & OUT_DATA);
+
+            if (reset != was_reset) {
+                qemu_set_irq(s->modem_reset, reset);
+            }
+        }
     }
 }
 
@@ -175,6 +191,7 @@ static void macio_gpio_init(Object *obj)
     for (i = 0; i < MACIO_GPIO_EXTINT_COUNT; i++) {
         sysbus_init_irq(sbd, &s->gpio_extirqs[i]);
     }
+    qdev_init_gpio_out_named(DEVICE(obj), &s->modem_reset, "modem-reset", 1);
 
     memory_region_init_io(&s->gpiomem, OBJECT(s), &macio_gpio_ops, obj,
                           "gpio", MACIO_GPIO_MMIO_SIZE);
