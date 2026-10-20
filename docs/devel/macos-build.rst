@@ -449,19 +449,22 @@ Native LLVM precompiled headers
 The pinned LLVM fork defines a real ``LLVMSupport`` precompiled header and
 reuses it in eligible C++ targets. ``NATIVE_LLVM_PCH=auto`` (the default) enables
 PCH for native macOS LLVM builds when the host C++ compiler is Apple Clang or
-LLVM Clang 18+ and the compiler launcher is not ``sccache``. Linux and other
-hosts retain PCH disabled by default. ``NATIVE_LLVM_PCH=0`` explicitly disables
+LLVM Clang 18+, including when ``sccache`` is selected. Linux and other hosts
+retain PCH disabled by default. ``NATIVE_LLVM_PCH=0`` explicitly disables
 PCH; ``NATIVE_LLVM_PCH=1`` requests it even outside the automatic profile.
 
 A saved ``.whpconfig`` entry of ``NATIVE_LLVM_PCH=n`` remains an explicit
 opt-out after this change; select ``auto`` in ``menuconfig`` to activate the
 new default without overwriting user preferences.
 
-``sccache`` is deliberately excluded because the pinned LLVM fork documents
-unsafe PCH cache reuse when macro definitions change. An explicit PCH request
-with ``sccache`` fails early: select ``COMPILER_CACHE=ccache`` (Clang) or
-``COMPILER_CACHE=none`` instead. With ``ccache``, LLVM adds Clang's
-``-fno-pch-timestamp`` option for reproducible PCH inputs.
+When PCH is enabled together with ``sccache``, the native LLVM bootstrap
+keeps ``CMAKE_C_COMPILER_LAUNCHER=sccache`` but clears
+``CMAKE_CXX_COMPILER_LAUNCHER``. PCH generation and every LLVM C++ compile
+(including PCH consumers) bypass sccache; this avoids unsupported cache reuse
+and preserves C-object caching. It does **not** enable C++ sccache hits for
+LLVM in PCH mode. With PCH disabled, both C and C++ retain sccache. The QEMU
+build's separate cache launcher is unaffected. With ``ccache``, LLVM adds
+Clang's ``-fno-pch-timestamp`` option for reproducible PCH inputs.
 
 The chosen ``CMAKE_DISABLE_PRECOMPILE_HEADERS`` value belongs to both the
 installed-toolchain marker and the CMake configuration identity, so switching
