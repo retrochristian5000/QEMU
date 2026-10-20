@@ -60,18 +60,26 @@ pch_policy = bootstrap[start:end]
 for host, compiler, launcher, mode, disabled, expected_rc in (
     ('macos', 'Apple clang version 17.0.0', '', 'auto', 'OFF', 0),
     ('macos', 'Apple clang version 17.0.0', '/usr/bin/ccache', 'auto', 'OFF', 0),
-    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', 'auto', 'ON', 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', 'auto', 'OFF', 0),
     ('macos', 'clang version 19.1.0', '', 'auto', 'OFF', 0),
     ('macos', 'clang version 17.0.0', '', 'auto', 'ON', 0),
     ('macos', 'gcc (GCC) 15.1.0', '', 'auto', 'ON', 0),
     ('linux', 'clang version 20.0.0', '', 'auto', 'ON', 0),
     ('macos', 'Apple clang version 17.0.0', '', '0', 'ON', 0),
     ('macos', 'Apple clang version 17.0.0', '', '1', 'OFF', 0),
-    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', '1', '', 1),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', '1', 'OFF', 0),
+    ('macos', 'clang version 19.1.0', '/usr/bin/sccache', '1', 'OFF', 0),
+    ('linux', 'clang version 20.0.0', '/usr/bin/sccache', 'auto', 'ON', 0),
+    ('linux', 'clang version 20.0.0', '/usr/bin/sccache', '1', 'OFF', 0),
+    ('macos', 'gcc (GCC) 15.1.0', '/usr/bin/sccache', 'auto', 'ON', 0),
 ):
     result = subprocess.run(
-        ['bash', '-c', 'set -euo pipefail\n' + pch_policy +
-         '\nprintf "%s" "$cmake_disable_precompile_headers"'],
+        ['bash', '-c', 'set -euo pipefail\n' +
+         'cmake_compiler_launcher_args=("-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd" '
+         '"-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd")\n' +
+         pch_policy +
+         '\nprintf "%s|%s|%s" "$cmake_disable_precompile_headers" '
+         '"${cmake_compiler_launcher_args[0]}" "${cmake_compiler_launcher_args[1]}"'],
         env={
             'PATH': '/usr/bin:/bin',
             'host_os': host,
@@ -86,11 +94,15 @@ for host, compiler, launcher, mode, disabled, expected_rc in (
     )
     assert result.returncode == expected_rc, (
         host, compiler, launcher, mode, result.stderr)
-    if expected_rc == 0:
-        assert result.stdout == disabled, (
-            host, compiler, launcher, mode, result.stdout)
-    else:
-        assert 'incompatible with sccache' in result.stderr, result.stderr
+    assert expected_rc == 0, (host, compiler, launcher, mode)
+    c_launcher = f'-DCMAKE_C_COMPILER_LAUNCHER={launcher}'
+    # LLVM C++ compilation must not pass through sccache when PCH is on.
+    # Non-PCH builds, including explicit opt-out, keep both launchers.
+    cpp_launcher = ('-DCMAKE_CXX_COMPILER_LAUNCHER='
+                    if launcher.endswith('/sccache') and disabled == 'OFF'
+                    else f'-DCMAKE_CXX_COMPILER_LAUNCHER={launcher}')
+    assert result.stdout == f'{disabled}|{c_launcher}|{cpp_launcher}', (
+        host, compiler, launcher, mode, result.stdout)
 
 # LLVM telemetry is not part of the QEMU compiler/linker contract.
 assert '-DLLVM_ENABLE_TELEMETRY=OFF' in bootstrap
