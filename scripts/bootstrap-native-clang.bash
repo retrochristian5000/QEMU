@@ -826,17 +826,20 @@ fi
 if [[ "$LLVM_PCH" == auto ]]; then
     # Do not silently override LLVM's sccache safety policy: PCH may reuse
     # stale definitions when a macro changes. Keep non-macOS defaults stable.
-    if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 &&
-          "${compiler_cache_cmd##*/}" != sccache ]]; then
+    if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 ]]; then
         LLVM_PCH=1
     else
         LLVM_PCH=0
     fi
 fi
 if [[ "$LLVM_PCH" == 1 && "${compiler_cache_cmd##*/}" == sccache ]]; then
+    # sccache does not reliably support Clang PCH producers/consumers.
+    # Keep cached C compiles, but compile LLVM's entire C++ graph directly
+    # rather than risk stale PCH objects or depending on fragile flag parsing.
+    # This affects only LLVM's CMake launcher, not the QEMU cache selection.
+    cmake_compiler_launcher_args[1]=-DCMAKE_CXX_COMPILER_LAUNCHER=
     printf '%s\n' \
-        'error: NATIVE_LLVM_PCH=1 is incompatible with sccache; use COMPILER_CACHE=ccache or none.' >&2
-    exit 1
+        'WHP native LLVM PCH: C++ bypasses sccache; C caching remains enabled' >&2
 fi
 if [[ "$LLVM_PCH" == 1 ]]; then
     cmake_disable_precompile_headers=OFF
