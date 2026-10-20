@@ -23,6 +23,15 @@
 #define MACIO_SCREAMER_CODEC  (MACIO_BAR_BASE + 0x14010)
 #define MACIO_SCREAMER_STATUS (MACIO_BAR_BASE + 0x14020)
 #define MACIO_SCREAMER_SWAP   (MACIO_BAR_BASE + 0x14040)
+/* KeyLargo's DB-DMA channel 0x10 drives Screamer playback. */
+#define MACIO_DBDMA_TX        (MACIO_BAR_BASE + 0x08000 + (0x10U << 7))
+#define MACIO_DBDMA_TX_CTRL   (MACIO_DBDMA_TX + 0x00)
+#define MACIO_DBDMA_TX_STAT   (MACIO_DBDMA_TX + 0x04)
+#define MACIO_DBDMA_TX_CMDPTR (MACIO_DBDMA_TX + 0x0c)
+#define DBDMA_TEST_RUN        0x8000U
+#define DBDMA_TEST_PAUSE      0x4000U
+#define DBDMA_TEST_ACTIVE     0x0400U
+#define DBDMA_TEST_DEAD       0x0800U
 #define SCREAMER_STATUS_FIXED  0x00403100U
 #define SAWTOOTH_BRIDGE_SLOT    13
 #define SAWTOOTH_SECONDARY_BUS  1
@@ -308,6 +317,91 @@ static void test_sawtooth_screamer_registers(void)
     qtest_quit(qts);
 }
 
+static void test_sawtooth_dbdma_registers(void)
+{
+    const uint32_t descriptor_addr = 0x00102000;
+    const uint32_t next_descriptor = 0x00103000;
+    uint32_t status;
+    QTestState *qts;
+
+    if (g_str_equal(qtest_get_arch(), "ppc64")) {
+        g_test_skip("PowerMac3,1 is a 32-bit NewWorld machine");
+        return;
+    }
+
+    qts = qtest_init("-M powermac3_1 -nodefaults -boot c");
+    map_sawtooth_keylargo(qts);
+
+    /* CMDPTR may be changed while stopped. */
+    write_le32(qts, MACIO_DBDMA_TX_CMDPTR, descriptor_addr);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_CMDPTR),
+                    ==, descriptor_addr);
+
+    /* RUN | PAUSE is running but inactive: CMDPTR still must be locked. */
+    write_le32(qts, MACIO_DBDMA_TX_CTRL, 0xc000c000U);
+    status = read_le32(qts, MACIO_DBDMA_TX_STAT);
+    g_assert_cmphex(status & (DBDMA_TEST_RUN | DBDMA_TEST_PAUSE |
+                              DBDMA_TEST_ACTIVE),
+                    ==, DBDMA_TEST_RUN | DBDMA_TEST_PAUSE);
+    write_le32(qts, MACIO_DBDMA_TX_CMDPTR, next_descriptor);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_CMDPTR),
+                    ==, descriptor_addr);
+
+    /* STATUS reflects hardware state; it cannot be overwritten by the CPU. */
+    write_le32(qts, MACIO_DBDMA_TX_STAT, 0xffffffffU);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_STAT), ==, status);
+
+    /* Clearing RUN releases CMDPTR for the next descriptor program. */
+    write_le32(qts, MACIO_DBDMA_TX_CTRL, 0xc0000000U);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_STAT) &
+                    (DBDMA_TEST_RUN | DBDMA_TEST_PAUSE | DBDMA_TEST_ACTIVE),
+                    ==, 0);
+    write_le32(qts, MACIO_DBDMA_TX_CMDPTR, next_descriptor);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_CMDPTR),
+                    ==, next_descriptor);
+
+    qtest_quit(qts);
+}
+
+/* Verify a legitimate physical buffer at address zero via Screamer DMA. */
+static void test_sawtooth_dbdma_zero_address(void)
+{
+    const uint32_t descriptor_addr = 0x00104000;
+    uint8_t descriptor[32] = { 0 };
+    uint8_t complete[16];
+    QTestState *qts;
+
+    if (g_str_equal(qtest_get_arch(), "ppc64")) {
+        g_test_skip("PowerMac3,1 is a 32-bit NewWorld machine");
+        return;
+    }
+
+    qts = qtest_init("-M powermac3_1 -nodefaults -boot c");
+    map_sawtooth_keylargo(qts);
+
+    /* OUTPUT_LAST of one stereo frame from guest physical RAM address 0. */
+    stw_le_p(descriptor + 0, 4);
+    stw_le_p(descriptor + 2, 0x1000);
+    stl_le_p(descriptor + 4, 0);
+    /* End the program without executing an unrelated DMA descriptor. */
+    stw_le_p(descriptor + 16 + 2, 0x7000);
+    qtest_memwrite(qts, descriptor_addr, descriptor, sizeof(descriptor));
+
+    write_le32(qts, MACIO_DBDMA_TX_CMDPTR, descriptor_addr);
+    write_le32(qts, MACIO_DBDMA_TX_CTRL, 0x80008000U);
+    qtest_clock_step(qts, 1000);
+
+    qtest_memread(qts, descriptor_addr, complete, sizeof(complete));
+    g_assert_cmphex(lduw_le_p(complete + 12), ==, 0);
+    g_assert_cmphex(lduw_le_p(complete + 14) & DBDMA_TEST_DEAD, ==, 0);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_STAT) &
+                    (DBDMA_TEST_ACTIVE | DBDMA_TEST_DEAD), ==, 0);
+    g_assert_cmphex(read_le32(qts, MACIO_DBDMA_TX_CMDPTR),
+                    ==, descriptor_addr + 16);
+
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -319,5 +413,9 @@ int main(int argc, char **argv)
                    test_sawtooth_uninorth_registers);
     qtest_add_func("/ppc/macio/sawtooth-screamer-registers",
                    test_sawtooth_screamer_registers);
+    qtest_add_func("/ppc/macio/sawtooth-dbdma-registers",
+                   test_sawtooth_dbdma_registers);
+    qtest_add_func("/ppc/macio/sawtooth-dbdma-zero-address",
+                   test_sawtooth_dbdma_zero_address);
     return g_test_run();
 }

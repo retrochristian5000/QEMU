@@ -314,7 +314,7 @@ static void start_output(DBDMA_channel *ch, int key, uint32_t addr,
      */
 
     DBDMA_DPRINTFCH(ch, "addr 0x%x key 0x%x\n", addr, key);
-    if (!addr || key > KEY_STREAM3) {
+    if (key > KEY_STREAM3) {
         kill_channel(ch);
         return;
     }
@@ -340,7 +340,7 @@ static void start_input(DBDMA_channel *ch, int key, uint32_t addr,
      */
 
     DBDMA_DPRINTFCH(ch, "addr 0x%x key 0x%x\n", addr, key);
-    if (!addr || key > KEY_STREAM3) {
+    if (key > KEY_STREAM3) {
         kill_channel(ch);
         return;
     }
@@ -709,9 +709,15 @@ static void dbdma_write(void *opaque, hwaddr addr,
     DBDMA_DPRINTFCH(ch, "channel 0x%x reg 0x%x\n",
                     (uint32_t)addr >> DBDMA_CHANNEL_SHIFT, reg);
 
-    /* cmdptr cannot be modified if channel is ACTIVE */
-
-    if (reg == DBDMA_CMDPTR_LO && (ch->regs[DBDMA_STATUS] & ACTIVE)) {
+    /*
+     * Command pointers cannot be rewritten while RUN is set, even while
+     * PAUSE has deasserted ACTIVE.  Hardware status is not guest writable.
+     */
+    if (reg == DBDMA_CMDPTR_LO &&
+        (ch->regs[DBDMA_STATUS] & (RUN | ACTIVE))) {
+        return;
+    }
+    if (reg == DBDMA_STATUS) {
         return;
     }
 

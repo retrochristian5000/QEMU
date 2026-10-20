@@ -16,6 +16,8 @@ on:
       - 'hw/ppc/prep.c'
       - 'hw/ppc/mac_newworld.c'
       - 'hw/ide/macio.c'
+      - 'hw/misc/macio/mac_dbdma.c'
+      - 'scripts/tests/test-powermac3_1-dbdma.py'
       - 'hw/display/ati_2d.c'
       - 'hw/display/ati.c'
       - 'hw/display/ati_int.h'
@@ -81,6 +83,9 @@ jobs:
 
       - name: Guard Rage128 Pro 2D framebuffer operations
         run: python3 scripts/tests/test-powermac3_1-rage128-2d.py
+
+      - name: Guard Sawtooth KeyLargo DB-DMA rules
+        run: python3 scripts/tests/test-powermac3_1-dbdma.py
 
       - name: Guard ATA vs ATAPI DMA completion on macOS
         run: python3 scripts/tests/test-powermac3_1-ata-dma.py

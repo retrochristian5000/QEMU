@@ -360,7 +360,11 @@ Hardware status
        descriptors and circular-buffer boundaries, avoiding partial-frame
        writes to the host sound backend. Capture
        currently returns silence; detailed analog jack/speaker sensing and
-       migration are not modeled.
+       migration are not modeled. The shared KeyLargo DB-DMA controller
+       accepts physical buffer address zero, exposes read-only channel
+       status, and prevents descriptor-pointer changes while RUN is set
+       (including a paused channel). These register/descriptor rules affect
+       both Screamer audio and MacIO IDE transfers.
      - High
      - Partial
    * - Power management

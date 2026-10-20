@@ -60,6 +60,9 @@ jobs:
       - name: Guard Classic Macintosh SMI/NDIF format
         run: python3 scripts/tests/test-smi-image.py
 
+      - name: Guard Sawtooth KeyLargo DB-DMA register and descriptor rules
+        run: python3 scripts/tests/test-powermac3_1-dbdma.py
+
       - name: Guard MacIO ATA disk vs ATAPI DMA completion
         run: python3 scripts/tests/test-powermac3_1-ata-dma.py
 
