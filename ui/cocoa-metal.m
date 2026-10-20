@@ -209,7 +209,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         return nil;
     }
 
-    metalDevice = [device retain];
+    /* MTLCreateSystemDefaultDevice returns an owned device reference. */
+    metalDevice = device;
     metalQueue = [metalDevice newCommandQueue];
     if (!metalQueue) {
         [self release];

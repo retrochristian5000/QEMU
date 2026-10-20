@@ -195,6 +195,7 @@ static void QEMU_Alert(NSString *message)
     alert = [NSAlert new];
     [alert setMessageText: message];
     [alert runModal];
+    [alert release];
 }
 
 /* Handles any errors that happen with a device transaction */
@@ -1409,6 +1410,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (void)createAdditionalConsoleWindows;
 - (void)showConsoleWindow:(id)sender;
 - (void)doToggleFullScreen:(id)sender;
+- (void)setFullGrab:(id)sender;
+- (void)toggleZoomInterpolation:(id)sender;
 - (void)showQEMUDoc:(id)sender;
 - (void)zoomToFit:(id) sender;
 - (void)displayConsole:(id)sender;
@@ -2038,11 +2041,11 @@ static void create_initial_menus(CocoaConsole *cocoa)
     NSMenu      *menu;
     NSMenuItem  *menuItem;
 
-    [NSApp setMainMenu:[[NSMenu alloc] init]];
-    [NSApp setServicesMenu:[[NSMenu alloc] initWithTitle:@"Services"]];
+    [NSApp setMainMenu:[[[NSMenu alloc] init] autorelease]];
+    [NSApp setServicesMenu:[[[NSMenu alloc] initWithTitle:@"Services"] autorelease]];
 
     // Application menu
-    menu = [[NSMenu alloc] initWithTitle:@""];
+    menu = [[[NSMenu alloc] initWithTitle:@""] autorelease];
     [menu addItemWithTitle:@"About QEMU" action:@selector(do_about_menu_item:) keyEquivalent:@""]; // About QEMU
     [menu addItem:[NSMenuItem separatorItem]]; //Separator
     menuItem = [menu addItemWithTitle:@"Services" action:nil keyEquivalent:@""];
@@ -2054,13 +2057,13 @@ static void create_initial_menus(CocoaConsole *cocoa)
     [menu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""]; // Show All
     [menu addItem:[NSMenuItem separatorItem]]; //Separator
     [menu addItemWithTitle:@"Quit QEMU" action:@selector(terminate:) keyEquivalent:@"q"];
-    menuItem = [[NSMenuItem alloc] initWithTitle:@"Apple" action:nil keyEquivalent:@""];
+    menuItem = [[[NSMenuItem alloc] initWithTitle:@"QEMU" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
-    [NSApp performSelector:@selector(setAppleMenu:) withObject:menu]; // Workaround (this method is private since 10.4+)
+    /* AppKit uses the first main-menu item as the application menu. */
 
     // Machine menu
-    menu = [[NSMenu alloc] initWithTitle: @"Machine"];
+    menu = [[[NSMenu alloc] initWithTitle: @"Machine"] autorelease];
     [menu setAutoenablesItems: NO];
     [menu addItem: [[[NSMenuItem alloc] initWithTitle: @"Pause" action: @selector(pauseQEMU:) keyEquivalent: @""] autorelease]];
     menuItem = [[[NSMenuItem alloc] initWithTitle: @"Resume" action: @selector(resumeQEMU:) keyEquivalent: @""] autorelease];
@@ -2074,7 +2077,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
     [[NSApp mainMenu] addItem:menuItem];
 
     // View menu
-    menu = [[NSMenu alloc] initWithTitle:@"View"];
+    menu = [[[NSMenu alloc] initWithTitle:@"View"] autorelease];
     [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Enter Fullscreen" action:@selector(doToggleFullScreen:) keyEquivalent:@"f"] autorelease]]; // Fullscreen
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom To Fit" action:@selector(zoomToFit:) keyEquivalent:@""] autorelease];
     [menuItem setState: [[cocoa->view window] styleMask] & NSWindowStyleMaskResizable ? NSControlStateValueOn : NSControlStateValueOff];
@@ -2087,7 +2090,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
     [[NSApp mainMenu] addItem:menuItem];
 
     // Speed menu
-    menu = [[NSMenu alloc] initWithTitle:@"Speed"];
+    menu = [[[NSMenu alloc] initWithTitle:@"Speed"] autorelease];
 
     // Add the rest of the Speed menu items
     int p, percentage, throttle_pct;
@@ -2112,7 +2115,7 @@ static void create_initial_menus(CocoaConsole *cocoa)
     [[NSApp mainMenu] addItem:menuItem];
 
     // Window menu
-    menu = [[NSMenu alloc] initWithTitle:@"Window"];
+    menu = [[[NSMenu alloc] initWithTitle:@"Window"] autorelease];
     [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"] autorelease]]; // Miniaturize
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
@@ -2120,9 +2123,9 @@ static void create_initial_menus(CocoaConsole *cocoa)
     [NSApp setWindowsMenu:menu];
 
     // Help menu
-    menu = [[NSMenu alloc] initWithTitle:@"Help"];
+    menu = [[[NSMenu alloc] initWithTitle:@"Help"] autorelease];
     [menu addItem: [[[NSMenuItem alloc] initWithTitle:@"QEMU Documentation" action:@selector(showQEMUDoc:) keyEquivalent:@"?"] autorelease]]; // QEMU Help
-    menuItem = [[[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""] autorelease];
+    menuItem = [[[NSMenuItem alloc] initWithTitle:@"Help" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
 }

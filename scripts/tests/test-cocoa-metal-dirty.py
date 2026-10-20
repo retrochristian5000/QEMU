@@ -133,5 +133,17 @@ int main(void)
             self.assertLessEqual(y + h, bottom + height)
 
 
+    def test_metal_default_device_balances_non_arc_ownership(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('    device = metal_create_default_device();')
+        end = text.index('    metalQueue = [metalDevice newCommandQueue];', start)
+        setup = text[start:end]
+
+        # The Metal Create function returns a +1 reference. Keep that
+        # single ownership until -dealloc, rather than retaining twice.
+        self.assertIn('metalDevice = device;', setup)
+        self.assertNotIn('[device retain]', setup)
+        self.assertIn('[metalDevice release];', text)
+
 if __name__ == '__main__':
     unittest.main()

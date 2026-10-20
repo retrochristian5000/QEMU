@@ -73,5 +73,37 @@ class MacOSApiPolicyTests(unittest.TestCase):
                       text)
 
 
+    def test_cocoa_menu_selectors_and_retains_are_stable(self):
+        text = COCOA.read_text(encoding='utf-8')
+        start = text.index('static void create_initial_menus(')
+        end = text.index('\n}\n', start)
+        menu = text[start:end]
+
+        # AppKit's first main-menu item is the application menu; do not
+        # call the removed/undocumented NSApplication setAppleMenu: selector.
+        self.assertNotIn('setAppleMenu:', menu)
+        self.assertIn('initWithTitle:@"QEMU" action:nil', menu)
+        self.assertIn('initWithTitle:@"Help" action:nil', menu)
+        self.assertIn('[NSApp setMainMenu:[[[NSMenu alloc] init] autorelease]];', menu)
+        self.assertIn('setServicesMenu:[[[NSMenu alloc] initWithTitle:', menu)
+        self.assertEqual(menu.count('menu = [[[NSMenu alloc] initWithTitle:'), 6)
+        self.assertNotIn('menu = [[NSMenu alloc] initWithTitle:', menu)
+
+    def test_alert_and_controller_selectors_balance_ownership(self):
+        text = COCOA.read_text(encoding='utf-8')
+        start = text.index('static void QEMU_Alert(')
+        end = text.index('\n}\n', start)
+        alert = text[start:end]
+        self.assertIn('[NSAlert new]', alert)
+        self.assertIn('[alert runModal];', alert)
+        self.assertIn('[alert release];', alert)
+        self.assertLess(alert.index('[alert runModal];'),
+                        alert.index('[alert release];'))
+
+        interface = text[text.index('@interface QemuCocoaAppController'):]
+        interface = interface[:interface.index('@end')]
+        self.assertIn('- (void)setFullGrab:(id)sender;', interface)
+        self.assertIn('- (void)toggleZoomInterpolation:(id)sender;', interface)
+
 if __name__ == '__main__':
     unittest.main()
