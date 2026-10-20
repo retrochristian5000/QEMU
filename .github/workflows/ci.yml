@@ -51,6 +51,9 @@ jobs:
       - name: Guard PPC TCG virtual-time helper calls
         run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
 
+      - name: Guard Classic Macintosh SMI/NDIF format
+        run: python3 scripts/tests/test-smi-image.py
+
       - name: Guard MacIO ATA disk vs ATAPI DMA completion
         run: python3 scripts/tests/test-powermac3_1-ata-dma.py
 
@@ -170,6 +173,12 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+
+      - name: Test Classic Macintosh SMI image conversion
+        if: matrix.target == 'ppc'
+        run: |
+          ninja -C build-ci qemu-img
+          python3 scripts/tests/test-smi-image.py --qemu-img build-ci/qemu-img
 
       - name: Test modem hardware reset and AT configuration
         if: matrix.target == 'ppc'

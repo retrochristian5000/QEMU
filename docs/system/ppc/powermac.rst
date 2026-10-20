@@ -120,6 +120,25 @@ A typical Mac OS 9 test command is::
   qemu-system-ppc -machine powermac3_1 -m 128M \
     -bios pc-bios/openbios-ppc -boot d -cdrom macos9.iso
 
+Classic Mac OS self-mounting images
+-----------------------------------
+
+Classic Mac OS Disk Copy self-mounting ``.smi`` files are applications that
+contain NDIF disk data. Preservation of the resource fork is essential.
+MacBinary archives (often ``.smi.bin``) retain both forks and are supported
+read-only by this fork's ``smi`` block-image driver for zero, raw and
+ADC-compressed NDIF chunks. Other compression types, segmented disks and
+missing ``bcem`` metadata are rejected rather than treated as raw sectors.
+
+Use a preserved MacBinary archive for conversion::
+
+  qemu-img info -f smi "Installer.smi.bin"
+  qemu-img convert -f smi -O raw "Installer.smi.bin" "Installer.img"
+
+The extracted volume may be HFS rather than a bootable hard disk or ISO CD,
+and the embedded Classic Macintosh program is not executed. A standalone
+``.smi`` with its resource fork lost cannot be recovered by renaming it.
+
 Classic Mac OS disk-driver updates
 ----------------------------------
 

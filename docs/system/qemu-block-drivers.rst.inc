@@ -389,7 +389,17 @@ More disk image file formats are supported in a read-only mode.
 .. program:: image-formats
 .. option:: dmg
 
-  Apple disk image.
+  Apple UDIF disk image.
+
+.. program:: image-formats
+.. option:: smi
+
+  Classic Macintosh Disk Copy NDIF self-mounting image, preserved in
+  MacBinary format (usually ``.smi.bin``). The ``bcem`` resource fork
+  describes sectors in the data fork. Read-only support includes raw,
+  zero-filled, and ADC-compressed chunks. Multi-part images, missing resource
+  forks and unsupported chunk types are rejected. QEMU does not run the
+  original self-mounting Macintosh application.
 
 .. program:: image-formats
 .. option:: parallels
