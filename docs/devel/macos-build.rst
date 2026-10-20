@@ -463,8 +463,10 @@ keeps ``CMAKE_C_COMPILER_LAUNCHER=sccache`` but clears
 (including PCH consumers) bypass sccache; this avoids unsupported cache reuse
 and preserves C-object caching. It does **not** enable C++ sccache hits for
 LLVM in PCH mode. With PCH disabled, both C and C++ retain sccache. The QEMU
-build's separate cache launcher is unaffected. With ``ccache``, LLVM adds
-Clang's ``-fno-pch-timestamp`` option for reproducible PCH inputs.
+build's separate cache launcher is unaffected. The bootstrap forces
+``LLVM_CCACHE_BUILD=OFF`` so LLVM's legacy compile-launch rule cannot
+override the per-language CMake launchers. With ``ccache``, LLVM adds Clang's
+``-fno-pch-timestamp`` option for reproducible PCH inputs.
 
 The chosen ``CMAKE_DISABLE_PRECOMPILE_HEADERS`` value belongs to both the
 installed-toolchain marker and the CMake configuration identity, so switching
