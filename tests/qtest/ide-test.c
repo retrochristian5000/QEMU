@@ -481,6 +481,59 @@ static void test_bmdma_trim(void)
     test_bmdma_teardown(qts);
 }
 
+static void test_bmdma_trim_split_descriptor(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    PrdtEntry prdt[2];
+    uint8_t payload[512] = { 0 };
+    uint64_t entry;
+    uintptr_t first, second;
+    uint8_t status;
+
+    qts = test_bmdma_setup();
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+
+    /*
+     * A 512-byte DSM payload can use multiple DMA PRDs. Split its first
+     * 8-byte TRIM range in half: neither PRD contains a complete range.
+     * The descriptor must be decoded across the PRD boundary.
+     */
+    first = guest_alloc(&guest_malloc, 4);
+    second = guest_alloc(&guest_malloc, sizeof(payload) - 4);
+    prdt[0].addr = cpu_to_le32(first);
+    prdt[0].size = cpu_to_le32(4);
+    prdt[1].addr = cpu_to_le32(second);
+    prdt[1].size = cpu_to_le32(sizeof(payload) - 4 | PRDT_EOT);
+
+    /* The whole split descriptor describes an out-of-range discard. */
+    entry = trim_range_le(TEST_IMAGE_SIZE / 512 - 1, 2);
+    memcpy(payload, &entry, sizeof(entry));
+    qtest_memwrite(qts, first, payload, 4);
+    qtest_memwrite(qts, second, payload + 4, sizeof(payload) - 4);
+
+    status = send_dma_request(qts, CMD_DSM, 0, 1, prdt,
+                              ARRAY_SIZE(prdt), NULL);
+    g_assert_cmphex(status, ==, BM_STS_INTR);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+
+    /* The same split across PRDs must also accept an in-range descriptor. */
+    entry = trim_range_le(0, 1);
+    memcpy(payload, &entry, sizeof(entry));
+    qtest_memwrite(qts, first, payload, 4);
+    qtest_memwrite(qts, second, payload + 4, sizeof(payload) - 4);
+
+    status = send_dma_request(qts, CMD_DSM, 0, 1, prdt,
+                              ARRAY_SIZE(prdt), NULL);
+    g_assert_cmphex(status, ==, BM_STS_INTR);
+    assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), DF | ERR);
+
+    free_pci_device(dev);
+    test_bmdma_teardown(qts);
+}
+
 static void test_bmdma_trim_reset(void)
 {
     QTestState *qts;
@@ -1271,6 +1324,8 @@ int main(int argc, char **argv)
 
     qtest_add_func("/ide/bmdma/simple_rw", test_bmdma_simple_rw);
     qtest_add_func("/ide/bmdma/trim", test_bmdma_trim);
+    qtest_add_func("/ide/bmdma/trim_split_descriptor",
+                   test_bmdma_trim_split_descriptor);
     qtest_add_func("/ide/bmdma/trim_reset", test_bmdma_trim_reset);
     qtest_add_func("/ide/bmdma/various_prdts", test_bmdma_various_prdts);
     qtest_add_func("/ide/bmdma/no_busmaster", test_bmdma_no_busmaster);
