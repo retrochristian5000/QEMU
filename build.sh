@@ -404,6 +404,9 @@ fi
 # Only an explicit opt-in builds the pinned Rust cache frontend. Keep this
 # before host-tool discovery and LLVM so it can serve Ninja, Clang, and QEMU
 # without requiring an independently installed sccache executable.
+# Do not trust an inherited marker from a previous shell or build. Only a
+# successful ensure-sccache invocation below may publish it for LLVM.
+unset WHP_MANAGED_SCCACHE
 BOOTSTRAP_SCCACHE=$(whp_require_binary_switch BOOTSTRAP_SCCACHE "${BOOTSTRAP_SCCACHE:-0}") || exit 1
 export BOOTSTRAP_SCCACHE
 if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
