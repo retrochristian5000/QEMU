@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import contextmanager
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
@@ -233,6 +234,112 @@ class WhpIncrementalTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RuntimeError, 'non-empty unowned'):
                 mod.validate_build_tree_owner(build_dir)
+
+    def test_linux_arm64_does_not_relabel_macos_arm64_build(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(mod.platform, 'machine', return_value='aarch64'), \
+             mock.patch.object(mod.platform, 'system', return_value='Linux'):
+            build_dir = pathlib.Path(td)
+            owner = build_dir / '.whp-build-owner'
+            old = ('SCHEMA=3\nPROJECT_ID=retrochristian5000/QEMU\n'
+                   f'SOURCE_DIR={mod.ROOT}\nHOST_TAG=arm64-apple-darwin\n')
+            owner.write_text(old, encoding='utf-8')
+            (build_dir / 'default.profdata').write_bytes(b'old-macos')
+            with self.assertRaisesRegex(
+                RuntimeError, r'arm64-apple-darwin, not arm64-linux'
+            ):
+                mod.validate_build_tree_owner(build_dir)
+            self.assertEqual(owner.read_text(encoding='utf-8'), old)
+            self.assertEqual(
+                (build_dir / 'default.profdata').read_bytes(), b'old-macos'
+            )
+
+    def test_incomplete_arm64_tag_preserves_original_tree(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(mod.platform, 'machine', return_value='aarch64'), \
+             mock.patch.object(mod.platform, 'system', return_value='Linux'):
+            build_dir = pathlib.Path(td)
+            owner = build_dir / '.whp-build-owner'
+            old = ('SCHEMA=3\nPROJECT_ID=retrochristian5000/QEMU\n'
+                   f'SOURCE_DIR={mod.ROOT}\nHOST_TAG=arm64-\n')
+            owner.write_text(old, encoding='utf-8')
+            (build_dir / 'default.profdata').write_bytes(b'preserve')
+            with self.assertRaisesRegex(RuntimeError,
+                                        r'incomplete host ABI marker'):
+                mod.validate_build_tree_owner(build_dir)
+            self.assertEqual(owner.read_text(encoding='utf-8'), old)
+            self.assertEqual(
+                (build_dir / 'default.profdata').read_bytes(), b'preserve'
+            )
+            self.assertEqual(mod.host_build_tag(), 'arm64-linux')
+
+    def test_legacy_arch_without_os_does_not_claim_linux(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(mod.platform, 'machine', return_value='aarch64'), \
+             mock.patch.object(mod.platform, 'system', return_value='Linux'):
+            build_dir = pathlib.Path(td)
+            record = build_dir / '.whp-config'
+            record.write_text(
+                f'SCHEMA=1\nSOURCE_DIR={mod.ROOT}\nHOST_ARCH=arm64\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(
+                mod._recorded_host_tag(mod._metadata(record), '.whp-config'),
+                '',
+            )
+            with self.assertRaisesRegex(RuntimeError,
+                                        r'non-empty unowned BUILD_DIR'):
+                mod.validate_build_tree_owner(build_dir)
+            self.assertFalse((build_dir / '.whp-build-owner').exists())
+
+    def test_explicit_linux_legacy_record_remains_adoptable(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(mod.platform, 'machine', return_value='aarch64'), \
+             mock.patch.object(mod.platform, 'system', return_value='Linux'):
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-config').write_text(
+                'SCHEMA=1\nSOURCE_DIR=/moved/QEMU\nHOST_ARCH=aarch64\n'
+                'HOST_OS=Linux\nQEMU_TARGET_LIST=ppc-softmmu\n',
+                encoding='utf-8',
+            )
+            profile = build_dir / 'default.profdata'
+            profile.write_bytes(b'incremental')
+            mod.validate_build_tree_owner(build_dir)
+            mod.write_build_tree_owner(build_dir)
+            self.assertIn('HOST_TAG=arm64-linux',
+                          (build_dir / '.whp-build-owner').read_text())
+            self.assertEqual(profile.read_bytes(), b'incremental')
+
+    def test_darwin_host_aliases_preserve_old_arm64_build(self):
+        mod = load_portable_build()
+        with mock.patch.object(mod.platform, 'machine', return_value='arm64'), \
+             mock.patch.object(mod.platform, 'system', return_value='Darwin'):
+            self.assertEqual(mod.host_build_tag(), 'arm64-apple-darwin')
+            self.assertEqual(mod.canonical_host_os('macos'), 'apple-darwin')
+            self.assertEqual(
+                mod._recorded_host_tag(
+                    {'HOST_TAG': 'aarch64-macos'}, '.whp-build-owner'
+                ), 'arm64-apple-darwin'
+            )
+
+    def test_bash_host_tag_refuses_missing_os(self):
+        source = ROOT / 'scripts/whp-build/configure.bash'
+        script = (
+            'source "$1"; HOST_ARCH=arm64; unset HOST_OS; '
+            'whp_configure_host_tag'
+        )
+        run = subprocess.run(
+            ['bash', '-c', script, 'bash', str(source)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('without HOST_ARCH and HOST_OS', run.stderr)
+        self.assertEqual(run.stdout, '')
 
     def test_public_claim_command_rehomes_owner_without_deleting_profiles(self):
         mod = load_portable_build()

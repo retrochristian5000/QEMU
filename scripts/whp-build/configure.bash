@@ -21,6 +21,11 @@ whp_configure_canonical_host_os()
 
 whp_configure_host_tag()
 {
+    # Neither a blank OS nor "arm64-" identifies a valid Linux/Darwin ABI.
+    if [[ -z "${HOST_ARCH:-}" || -z "${HOST_OS:-}" ]]; then
+        printf 'error: cannot claim BUILD_DIR without HOST_ARCH and HOST_OS\n' >&2
+        return 1
+    fi
     printf '%s-%s\n' \
         "$(whp_configure_canonical_host_arch "$HOST_ARCH")" \
         "$(whp_configure_canonical_host_os "$HOST_OS")"
@@ -60,7 +65,7 @@ whp_configure_validate_build_tree_owner()
     local adopted=0
 
     mkdir -p "$BUILD_DIR"
-    expected_tag="$(whp_configure_host_tag)"
+    expected_tag="$(whp_configure_host_tag)" || return 1
 
     if [[ -f "$owner_file" ]]; then
         recorded_source="$(whp_configure_metadata_value "$owner_file" SOURCE_DIR)"

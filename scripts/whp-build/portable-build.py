@@ -108,7 +108,7 @@ def canonical_host_arch(value: str | None = None) -> str:
 
 def canonical_host_os(value: str | None = None) -> str:
     system = (value or platform.system() or 'unknown').lower()
-    if system == 'darwin':
+    if system in ('darwin', 'macos', 'apple-darwin'):
         return 'apple-darwin'
     if system == 'windows' or system.startswith(('mingw', 'msys', 'cygwin')):
         return 'windows'
@@ -438,14 +438,28 @@ def _recover_bootstrap_only_tree(build_dir: pathlib.Path) -> bool:
 
 
 def _recorded_host_tag(data: Dict[str, str], kind: str) -> str:
-    if data.get('HOST_TAG'):
-        return data['HOST_TAG']
+    tag = data.get('HOST_TAG')
+    if tag is not None:
+        # Older launchers sometimes recorded a spelling alias in HOST_TAG.
+        # Canonicalize the architecture and OS independently, but never
+        # fill in a missing OS from the *current* host.
+        for prefix in ('aarch64-', 'arm64-', 'amd64-', 'x86_64-'):
+            if tag.startswith(prefix):
+                return (f'{canonical_host_arch(prefix[:-1])}-'
+                        f'{canonical_host_os(tag[len(prefix):])}'
+                        if tag[len(prefix):] else tag)
+        return tag
+
     arch = data.get('HOST_ARCH')
     if not arch:
         return ''
-    system = data.get('HOST_OS') or (
-        'Darwin' if kind == '.whp-macos-build-identity' else platform.system()
-    )
+    system = data.get('HOST_OS')
+    if not system:
+        if kind != '.whp-macos-build-identity':
+            # A former build's HOST_ARCH is not enough to infer its OS.
+            # In particular, Linux must not claim a macOS ARM64 tree.
+            return ''
+        system = 'Darwin'
     return f'{canonical_host_arch(arch)}-{canonical_host_os(system)}'
 
 
@@ -486,10 +500,27 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
                 f'BUILD_DIR belongs to project {project}, not {PROJECT_ID}: {build_dir}'
             )
         tag = _recorded_host_tag(data, name)
+        # A recorded "arm64-" is an incomplete ABI, not a Linux/Darwin
+        # alias. Do not guess which OS owns a partially marked build graph.
+        if 'HOST_TAG' in data and (
+            not data['HOST_TAG'] or
+            data['HOST_TAG'].startswith('-') or
+            data['HOST_TAG'].endswith('-') or
+            any(character.isspace() for character in data['HOST_TAG'])
+        ):
+            raise RuntimeError(
+                f'BUILD_DIR has an incomplete host ABI marker '
+                f'HOST_TAG={data["HOST_TAG"]!r} in {name}: {build_dir}; '
+                f'cannot determine the previous build OS. '
+                f'Use BUILD_DIR={default_build_dir()} for {expected_tag} '
+                f'without reusing this tree; existing files were preserved'
+            )
         if tag and tag != expected_tag:
             raise RuntimeError(
                 f'BUILD_DIR belongs to host ABI {tag}, not {expected_tag}: '
-                f'{build_dir}; existing files were preserved'
+                f'{build_dir}; use BUILD_DIR={default_build_dir()} for '
+                f'{expected_tag} without mixing host artifacts; '
+                f'existing files were preserved'
             )
 
     owner = records['.whp-build-owner']
@@ -503,16 +534,17 @@ def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
         if not data:
             continue
         tag = _recorded_host_tag(data, name)
+        # A source checkout alone does not prove the host ABI. Do not
+        # relabel an untagged tree (including a legacy same-checkout tree)
+        # as the current OS merely because its SOURCE_DIR still matches.
+        if not tag:
+            continue
         if data.get('SOURCE_DIR') == str(ROOT) and (
             not owner or name == '.whp-build-owner'
         ):
             return
         if (data.get('PROJECT_ID') == PROJECT_ID or
-                _recognized_whp_record(data, name)) and (
-            tag or build_dir.name in (
-                f'whp-{expected_tag}', f'whp-ppc-{expected_tag}'
-            )
-        ):
+                _recognized_whp_record(data, name)):
             return
 
     if not owner and _recover_bootstrap_only_tree(build_dir):

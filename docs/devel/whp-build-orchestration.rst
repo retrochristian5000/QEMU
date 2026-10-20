@@ -112,6 +112,14 @@ SDKs, compilers, or hardware. Meson must reconfigure and may have to rebuild
 affected objects; existing PGO profiles also require compatible compiler
 instrumentation. The migration itself never deletes the directory.
 
+Linux and macOS require separate build trees even on the same ARM64 CPU:
+``build/whp-arm64-linux`` and ``build/whp-arm64-apple-darwin``. If an
+inherited ``BUILD_DIR`` names a directory owned by the other OS, the build
+stops with a suggested host-specific directory and preserves all previous
+artifacts. ``HOST_TAG=arm64-`` is incomplete, not an alias for either host;
+never infer the previous operating system from the current one or relabel
+an unverified build to bypass the guard.
+
 Source refresh
 --------------
 
