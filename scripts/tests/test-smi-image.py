@@ -107,6 +107,23 @@ def main():
     s = (root / "block/smi.c").read_text(encoding="utf-8")
     meson = (root / "block/meson.build").read_text(encoding="utf-8")
     assert "'smi.c'" in meson
+    # Regressions observed in Werror PowerPC CI: this tree's coroutine API
+    # takes CoMutex*, and qemu/bswap.h provides lduw_be_p/ldl_be_p.
+    # Implicit function declarations and an undefined lock type must not
+    # leak into the disk image reader again.
+    bswap = (root / "include/qemu/bswap.h").read_text(encoding="utf-8")
+    coroutine = (root / "include/qemu/coroutine-core.h").read_text(
+        encoding="utf-8")
+    assert "CoMutex lock;" in s
+    assert "QemuCoMutex" not in s
+    for name, header in (("lduw_be_p", bswap), ("ldl_be_p", bswap),
+                         ("qemu_co_mutex_init", coroutine),
+                         ("qemu_co_mutex_lock", coroutine),
+                         ("qemu_co_mutex_unlock", coroutine)):
+        assert name in header, f"missing QEMU API: {name}"
+        assert name + "(" in s, f"missing SMI call: {name}"
+    assert "ld_be16(" not in s and "ld_be32(" not in s
+    assert "rsrc_size" not in s
     for required in ("smi_bcem(", "smi_adc_decode(", "smi_range(",
                      "bdrv_apply_auto_read_only", "SMI_FORK_MAX",
                      "SMI_CHUNK_MAX", "chunk->type == 131",

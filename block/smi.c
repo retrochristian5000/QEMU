@@ -37,7 +37,7 @@ typedef struct BDRVSmiState {
     uint8_t *compressed;
     uint8_t *decoded;
     uint32_t cached;
-    QemuCoMutex lock;
+    CoMutex lock;
 } BDRVSmiState;
 
 static bool smi_range(uint64_t pos, uint64_t len, uint64_t size)
@@ -56,7 +56,7 @@ static int smi_probe(const uint8_t *buf, int size, const char *filename)
 
     /* Never confuse an arbitrary MacBinary application with a disk image. */
     if (!filename || size < 128 || buf[0] || buf[1] == 0 ||
-        buf[1] > 63 || !ld_be32(buf + 83) || !ld_be32(buf + 87)) {
+        buf[1] > 63 || !ldl_be_p(buf + 83) || !ldl_be_p(buf + 87)) {
         return 0;
     }
     len = strlen(filename);
@@ -79,20 +79,20 @@ static const uint8_t *smi_bcem(const uint8_t *fork, uint32_t fork_size,
     if (fork_size < 16) {
         return NULL;
     }
-    data_off = ld_be32(fork);
-    map_off = ld_be32(fork + 4);
-    data_size = ld_be32(fork + 8);
-    map_size = ld_be32(fork + 12);
+    data_off = ldl_be_p(fork);
+    map_off = ldl_be_p(fork + 4);
+    data_size = ldl_be_p(fork + 8);
+    map_size = ldl_be_p(fork + 12);
     if (!smi_range(data_off, data_size, fork_size) ||
         !smi_range(map_off, map_size, fork_size) || map_size < 30) {
         return NULL;
     }
 
-    type_start = map_off + ld_be16(fork + map_off + 24);
+    type_start = map_off + lduw_be_p(fork + map_off + 24);
     if (!smi_range(type_start, 2, map_off + map_size)) {
         return NULL;
     }
-    ntypes = (uint32_t)ld_be16(fork + type_start) + 1;
+    ntypes = (uint32_t)lduw_be_p(fork + type_start) + 1;
     if (ntypes > 4096 || !smi_range(type_start + 2, ntypes * 8,
                                      map_off + map_size)) {
         return NULL;
@@ -104,8 +104,8 @@ static const uint8_t *smi_bcem(const uint8_t *fork, uint32_t fork_size,
         if (memcmp(type, "bcem", 4)) {
             continue;
         }
-        nrefs = (uint32_t)ld_be16(type + 4) + 1;
-        refs = type_start + ld_be16(type + 6);
+        nrefs = (uint32_t)lduw_be_p(type + 4) + 1;
+        refs = type_start + lduw_be_p(type + 6);
         if (nrefs > 8192 ||
             !smi_range(refs, nrefs * 12, map_off + map_size)) {
             return NULL;
@@ -115,14 +115,14 @@ static const uint8_t *smi_bcem(const uint8_t *fork, uint32_t fork_size,
             uint64_t rsrc_pos;
             uint32_t size;
 
-            if (ld_be16(ref) != 128) {
+            if (lduw_be_p(ref) != 128) {
                 continue;
             }
             rsrc_pos = (uint64_t)data_off + smi_be24(ref + 5);
             if (!smi_range(rsrc_pos, 4, data_off + data_size)) {
                 return NULL;
             }
-            size = ld_be32(fork + rsrc_pos);
+            size = ldl_be_p(fork + rsrc_pos);
             if (!smi_range(rsrc_pos + 4, size, data_off + data_size)) {
                 return NULL;
             }
@@ -186,7 +186,7 @@ static int smi_open(BlockDriverState *bs, QDict *options, int flags,
     uint8_t header[128];
     uint8_t *fork = NULL;
     const uint8_t *bcem;
-    uint32_t data_length, fork_length, rsrc_size, bcem_size;
+    uint32_t data_length, fork_length, bcem_size;
     uint32_t sectors, n_chunks, max_blocks, i, prev;
     uint64_t file_size, data_base, rsrc_base, max_compressed = 0;
     bool has_adc = false;
@@ -217,8 +217,8 @@ static int smi_open(BlockDriverState *bs, QDict *options, int flags,
     if (ret < 0) {
         return ret;
     }
-    data_length = ld_be32(header + 83);
-    fork_length = ld_be32(header + 87);
+    data_length = ldl_be_p(header + 83);
+    fork_length = ldl_be_p(header + 87);
     data_base = sizeof(header);
     rsrc_base = data_base + QEMU_ALIGN_UP((uint64_t)data_length, 128);
     if (header[0] || !header[1] || header[1] > 63 ||
@@ -240,15 +240,15 @@ static int smi_open(BlockDriverState *bs, QDict *options, int flags,
     if (!bcem || bcem_size < SMI_RESOURCE_HEADER) {
         goto invalid;
     }
-    if (ld_be16(bcem) < 10 || ld_be16(bcem) > 12 ||
-        ld_be32(bcem + 84) != 0) {
+    if (lduw_be_p(bcem) < 10 || lduw_be_p(bcem) > 12 ||
+        ldl_be_p(bcem + 84) != 0) {
         error_setg(errp, "SMI NDIF version or segmented image is unsupported");
         goto unsupported;
     }
-    sectors = ld_be32(bcem + 68);
-    max_blocks = ld_be32(bcem + 72);
-    s->backing_offset = ld_be32(bcem + 76);
-    n_chunks = ld_be32(bcem + 124);
+    sectors = ldl_be_p(bcem + 68);
+    max_blocks = ldl_be_p(bcem + 72);
+    s->backing_offset = ldl_be_p(bcem + 76);
+    n_chunks = ldl_be_p(bcem + 124);
     if (!sectors || !max_blocks ||
         (uint64_t)max_blocks * SMI_SECTOR_SIZE > SMI_CHUNK_MAX ||
         !n_chunks || n_chunks > (SMI_FORK_MAX - 128) / SMI_CHUNK_ENTRY ||
@@ -271,8 +271,8 @@ static int smi_open(BlockDriverState *bs, QDict *options, int flags,
 
         chunk->sector = smi_be24(entry);
         chunk->type = entry[3];
-        chunk->position = ld_be32(entry + 4);
-        chunk->length = ld_be32(entry + 8);
+        chunk->position = ldl_be_p(entry + 4);
+        chunk->length = ldl_be_p(entry + 8);
         if (i && chunk->sector <= prev) {
             goto invalid;
         }
