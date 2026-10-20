@@ -1270,6 +1270,9 @@ cmake_args=(
     "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"
     -DCMAKE_C_COMPILER="$bootstrap_cc"
     -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
+    # Never let LLVM's legacy RULE_LAUNCH_COMPILE cache option override
+    # the independent C/C++ launchers selected above for PCH safety.
+    -DLLVM_CCACHE_BUILD=OFF
     "${cmake_compiler_launcher_args[@]}"
     "${bootstrap_linker_args[@]}"
     -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
