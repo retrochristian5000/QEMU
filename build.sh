@@ -424,7 +424,10 @@ if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
     WHP_COMPILER_CACHE_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-sccache.py" \
         --build-dir "$BUILD_DIR") || exit 1
     COMPILER_CACHE=sccache
-    export WHP_COMPILER_CACHE_CMD COMPILER_CACHE
+    # Only the managed pinned fork has the PCH consumer hash/invalidation
+    # guarantees needed to cache LLVM C++ objects while PCH is enabled.
+    WHP_MANAGED_SCCACHE=1
+    export WHP_COMPILER_CACHE_CMD COMPILER_CACHE WHP_MANAGED_SCCACHE
     printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
 fi
 
