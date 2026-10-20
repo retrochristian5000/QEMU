@@ -824,8 +824,8 @@ elif [[ "$bootstrap_cxx_version" =~ (^|[[:space:]])clang[[:space:]]version[[:spa
 fi
 
 if [[ "$LLVM_PCH" == auto ]]; then
-    # Do not silently override LLVM's sccache safety policy: PCH may reuse
-    # stale definitions when a macro changes. Keep non-macOS defaults stable.
+    # Keep non-macOS defaults stable. With sccache, the separate C++ launcher
+    # gate below bypasses caching for every PCH producer and consumer.
     if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 ]]; then
         LLVM_PCH=1
     else
