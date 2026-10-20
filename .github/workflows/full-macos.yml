@@ -15,6 +15,8 @@ on:
       - 'tests/qtest/boot-serial-test.c'
       - 'hw/ppc/prep.c'
       - 'hw/ppc/mac_newworld.c'
+      - 'hw/ide/macio.c'
+      - 'scripts/tests/test-powermac3_1-ata-dma.py'
       - 'hw/misc/macio/gpio.c'
       - 'include/hw/misc/macio/gpio.h'
       - 'chardev/modem.c'
@@ -61,6 +63,9 @@ jobs:
 
       - name: Verify Sawtooth modem slot and reset routing
         run: python3 scripts/tests/test-powermac3_1-modem.py
+
+      - name: Guard ATA vs ATAPI DMA completion on macOS
+        run: python3 scripts/tests/test-powermac3_1-ata-dma.py
 
       - name: Test Cocoa multi-monitor routing and placement
         run: python3 scripts/tests/test-cocoa-metal-dirty.py

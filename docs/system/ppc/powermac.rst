@@ -120,6 +120,34 @@ A typical Mac OS 9 test command is::
   qemu-system-ppc -machine powermac3_1 -m 128M \
     -bios pc-bios/openbios-ppc -boot d -cdrom macos9.iso
 
+Classic Mac OS disk-driver updates
+----------------------------------
+
+Classic Mac OS 8.6/9.x installer options such as **Update Apple Hard Disk
+Drivers** modify Apple driver partitions *on the guest disk*. Those partitions
+may include ``Apple_Driver_ATA`` and are distinct from the MacIO/KeyLargo
+controller model and QEMU's host-side image format. QEMU must not silently
+replace or rewrite them.
+
+The MacIO IDE controller's ATA DBDMA read completion path is now separated
+from the ATAPI CD-ROM packet-command callback. Previously an ATA hard-disk DMA
+read completed through ATAPI status and error handling; that could destabilize
+disk-driver installation or subsequent boot. This repairs an emulator defect,
+not every possible Apple installer or driver incompatibility.
+
+For a new Mac OS 9 installation, initialize the disk with the matching
+installer's Drive Setup utility, then disable **Update Apple Hard Disk
+Drivers** in the Installer Options unless driver replacement is intentional.
+Keep a backup of any image before enabling this operation. To investigate an
+existing installation, run the test on a disposable image copy or under
+``-snapshot``; do not assume that disabling the checkbox repairs driver
+partitions already replaced by a previous installer run.
+
+The Sawtooth-specific Mac OS 8.6 recovery-media driver version may differ
+from later Drive Setup releases. The known historical workaround of restoring
+the 8.6-era driver is a compatibility observation, not a substitute for
+validating ``Apple_Driver_ATA`` partitions or a complete MacIO DMA test.
+
 Hardware status
 ---------------
 

@@ -51,6 +51,9 @@ jobs:
       - name: Guard PPC TCG virtual-time helper calls
         run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
 
+      - name: Guard MacIO ATA disk vs ATAPI DMA completion
+        run: python3 scripts/tests/test-powermac3_1-ata-dma.py
+
       - name: Guard optional Sawtooth modem reset routing
         run: python3 scripts/tests/test-powermac3_1-modem.py
 
