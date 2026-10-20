@@ -160,6 +160,9 @@ jobs:
           python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-make-gnulib-cache.py
 
+      - name: Test incremental planning
+        run: python3 scripts/tests/test-whp-incremental.py
+
       - name: Test configuration model
         run: |
           # Fail early on Python syntax errors before running config or Meson tests.
@@ -211,9 +214,6 @@ jobs:
           python3 scripts/tests/test-test-policy.py
           python3 scripts/tests/test-test-selection.py
           bash scripts/tests/test-whp-config-integration.bash
-
-      - name: Test incremental planning
-        run: python3 scripts/tests/test-whp-incremental.py
 
       - name: Test host CPU tuning policy
         run: |
