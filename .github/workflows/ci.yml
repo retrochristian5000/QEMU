@@ -148,6 +148,12 @@ jobs:
             --disable-docs \
             2>&1 | tee configure.log
 
+      - name: Test Classic Macintosh SMI image conversion
+        if: matrix.target == 'ppc'
+        run: |
+          ninja -C build-ci qemu-img
+          python3 scripts/tests/test-smi-image.py --qemu-img build-ci/qemu-img
+
       - name: Audit internal DTC Ninja link graph
         if: matrix.target == 'ppc'
         run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal
@@ -173,12 +179,6 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
-
-      - name: Test Classic Macintosh SMI image conversion
-        if: matrix.target == 'ppc'
-        run: |
-          ninja -C build-ci qemu-img
-          python3 scripts/tests/test-smi-image.py --qemu-img build-ci/qemu-img
 
       - name: Test modem hardware reset and AT configuration
         if: matrix.target == 'ppc'
