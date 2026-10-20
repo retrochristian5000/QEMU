@@ -824,8 +824,8 @@ elif [[ "$bootstrap_cxx_version" =~ (^|[[:space:]])clang[[:space:]]version[[:spa
 fi
 
 if [[ "$LLVM_PCH" == auto ]]; then
-    # Keep non-macOS defaults stable. With sccache, the separate C++ launcher
-    # gate below bypasses caching for every PCH producer and consumer.
+    # Keep non-macOS defaults stable. The launcher gate below uses the
+    # managed fork for PCH consumers; a system sccache stays conservative.
     if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 ]]; then
         LLVM_PCH=1
     else
@@ -833,13 +833,18 @@ if [[ "$LLVM_PCH" == auto ]]; then
     fi
 fi
 if [[ "$LLVM_PCH" == 1 && "${compiler_cache_cmd##*/}" == sccache ]]; then
-    # sccache does not reliably support Clang PCH producers/consumers.
-    # Keep cached C compiles, but compile LLVM's entire C++ graph directly
-    # rather than risk stale PCH objects or depending on fragile flag parsing.
-    # This affects only LLVM's CMake launcher, not the QEMU cache selection.
-    cmake_compiler_launcher_args[1]=-DCMAKE_CXX_COMPILER_LAUNCHER=
-    printf '%s\n' \
-        'WHP native LLVM PCH: C++ bypasses sccache; C caching remains enabled' >&2
+    if [[ "${WHP_MANAGED_SCCACHE:-0}" == 1 ]]; then
+        # The pinned fork hashes -include-pch binary contents for C++ object
+        # keys. -emit-pch and -x c++-header producers are not cached; sccache
+        # forwards those compilations directly to Clang. Do not grant this
+        # capability to an unrelated system sccache.
+        printf '%s\n' \
+            'WHP native LLVM PCH: managed sccache caches C++ consumers; PCH producers compile directly' >&2
+    else
+        cmake_compiler_launcher_args[1]=-DCMAKE_CXX_COMPILER_LAUNCHER=
+        printf '%s\n' \
+            'WHP native LLVM PCH: system sccache bypassed for C++; C caching remains enabled' >&2
+    fi
 fi
 if [[ "$LLVM_PCH" == 1 ]]; then
     cmake_disable_precompile_headers=OFF
