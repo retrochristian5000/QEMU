@@ -726,13 +726,16 @@ void spr_read_tbu(DisasContext *ctx, int gprn, int sprn)
     gen_helper_load_tbu(cpu_gpr[gprn], tcg_env);
 }
 
+/* Alternate TB accesses use the virtual clock, like TBL/TBU. */
 void spr_read_atbl(DisasContext *ctx, int gprn, int sprn)
 {
+    translator_io_start(&ctx->base);
     gen_helper_load_atbl(cpu_gpr[gprn], tcg_env);
 }
 
 void spr_read_atbu(DisasContext *ctx, int gprn, int sprn)
 {
+    translator_io_start(&ctx->base);
     gen_helper_load_atbu(cpu_gpr[gprn], tcg_env);
 }
 
@@ -759,11 +762,13 @@ void spr_write_tbu(DisasContext *ctx, int sprn, int gprn)
 
 void spr_write_atbl(DisasContext *ctx, int sprn, int gprn)
 {
+    translator_io_start(&ctx->base);
     gen_helper_store_atbl(tcg_env, cpu_gpr[gprn]);
 }
 
 void spr_write_atbu(DisasContext *ctx, int sprn, int gprn)
 {
+    translator_io_start(&ctx->base);
     gen_helper_store_atbu(tcg_env, cpu_gpr[gprn]);
 }
 

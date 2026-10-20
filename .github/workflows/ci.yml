@@ -48,6 +48,9 @@ jobs:
       - name: Audit GLib atomic integer read contracts
         run: python3 scripts/tests/test-glib-atomic-int-get.py
 
+      - name: Guard PPC TCG virtual-time helper calls
+        run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
+
       - name: Audit Sam460ex FDT node removal and link probe
         run: python3 scripts/tests/test-sam460ex-fdt-nop.py
 
