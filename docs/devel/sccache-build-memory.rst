@@ -40,13 +40,28 @@ LLVM precompiled headers with sccache
 -------------------------------------
 
 With ``NATIVE_LLVM_PCH=auto``, native macOS builds using Apple Clang or LLVM
-Clang 18+ now enable LLVM's LLVMSupport PCH even when the managed sccacher is
-selected. ``NATIVE_LLVM_PCH=1`` explicitly requests PCH, and ``0`` retains
-the previous opt-out. Because sccache PCH reuse is not established as safe,
-the bootstrap clears the **LLVM C++** CMake compiler launcher while PCH is on.
-It keeps sccache enabled for LLVM C objects and for the later QEMU build;
-with PCH off, LLVM C++ objects are cacheable again. This conservative split
-does not attempt to classify individual PCH compiler arguments.
+Clang 18+ enable LLVM's LLVMSupport PCH. ``NATIVE_LLVM_PCH=1`` explicitly
+requests PCH, and ``0`` retains the opt-out. The **managed WHP sccacher**
+fork now allows C++ object compilation through sccache when PCH is enabled.
+For PCH-consuming objects it hashes the actual ``.pch`` bytes in addition to
+the source, macros, compiler, and arguments. PCH **production** remains
+uncacheable and is forwarded to Clang; it must rebuild when its header or
+compiler inputs change. This is not producer-side PCH artifact caching.
+
+Only a successful ``BOOTSTRAP_SCCACHE=1`` setup in ``build.sh`` exports the
+``WHP_MANAGED_SCCACHE=1`` capability marker. An ordinary system sccache,
+including ``COMPILER_CACHE=sccache`` without the managed bootstrap, still
+uses the conservative split: LLVM C++ bypasses sccache with PCH enabled,
+while LLVM C and later QEMU compilation retain their normal cache policies.
+The native LLVM CMake cache identity includes both launcher options; changing
+from system to managed sccache reconfigures the existing build tree.
+
+The fork's ``tests/integration/scripts/test-clang.sh`` now requires
+**real PCH consumer cache hits** and verifies invalidation when the PCH bytes,
+header macro values, or consumer-side ``-D`` macros change, including
+CMake's ``-Xclang -emit-pch`` and ``-Xclang -include-pch`` forms.
+This behavior still needs validation in a full native LLVM/LLDB build on the
+target host. Do not assume reduced memory or faster clean builds.
 
 For example::
 
