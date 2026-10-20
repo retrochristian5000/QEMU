@@ -222,7 +222,10 @@ Hardware status
      - QEMU ``ati-vga`` with ``model=rage128p`` and 16 MiB VRAM is installed at
        AGP device ``0x10`` by default.  The ATI model is intentionally partial:
        it implements enough register/framebuffer behavior for basic display and
-       some 2D use, but not the complete accelerator or 3D engine.
+       some 2D use.  Rage128's 24-bpp packed 2D color fills are supported
+       through a non-pixman fallback; source/destination blits use bounded
+       visible rectangles and clipped VRAM dirty tracking.  This does not
+       implement the complete accelerator, 3D commands, or AGP protocol.
      - High
      - Partial
    * - Secondary PCI bridge

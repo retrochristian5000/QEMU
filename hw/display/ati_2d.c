@@ -59,21 +59,48 @@ typedef struct {
     int dst_stride;
     uint8_t *dst_bits;
     uint32_t dst_offset;
+    uint32_t src_offset;
 
     QemuRect src;
     int src_stride;
     const uint8_t *src_bits;
 } ATI2DCtx;
 
+/* Check the final visible pixel by offset, not by guest-controlled pointers. */
+static bool ati_2d_rect_in_vram(const ATI2DCtx *ctx, const QemuRect *rect,
+                                uint32_t offset, int stride)
+{
+    uint64_t end;
+
+    if (rect->x < 0 || rect->y < 0 || rect->width <= 0 ||
+        rect->height <= 0 || stride <= 0 ||
+        offset >= ctx->vga->vram_size) {
+        return false;
+    }
+    end = (uint64_t)offset +
+          ((uint64_t)rect->y + rect->height - 1) * stride +
+          ((uint64_t)rect->x + rect->width) * (ctx->bpp / 8);
+    return end <= ctx->vga->vram_size;
+}
+
 static void ati_set_dirty(const ATI2DCtx *ctx)
 {
     VGACommonState *vga = ctx->vga;
     DisplaySurface *ds = qemu_console_surface(vga->con);
     unsigned int bypp = ctx->bpp / 8;
-    hwaddr dirty_start = ctx->dst_offset + ctx->dst.x * bypp +
-                         ctx->dst.y * ctx->dst_stride;
-    hwaddr dirty_end = dirty_start + (hwaddr)ctx->dst.width * bypp +
-                       (hwaddr)(ctx->dst.height - 1) * ctx->dst_stride;
+    QemuRect clipped;
+    hwaddr dirty_start, dirty_end;
+
+    qemu_rect_intersect(&ctx->dst, &ctx->scissor, &clipped);
+    if (!ati_2d_rect_in_vram(ctx, &clipped, ctx->dst_offset,
+                             ctx->dst_stride)) {
+        return;
+    }
+    dirty_start = (hwaddr)ctx->dst_offset +
+                  (hwaddr)clipped.x * bypp +
+                  (hwaddr)clipped.y * ctx->dst_stride;
+    dirty_end = dirty_start + (hwaddr)clipped.width * bypp +
+                (hwaddr)(clipped.height - 1) * ctx->dst_stride;
     /*
      * The blit may be outside of the visible screen (e.g. virtual desktops.)
      * Dirty only the intersection of the visible screen and the blit.
@@ -118,7 +145,8 @@ static void setup_2d_blt_ctx(ATIVGAState *s, ATI2DCtx *ctx)
     ctx->dst.y = (ctx->top_to_bottom ?
                  s->regs.dst_y : s->regs.dst_y + 1 - ctx->dst.height);
     ctx->dst_stride = s->regs.dst_pitch;
-    ctx->dst_bits = s->vga.vram_ptr + s->regs.dst_offset;
+    ctx->dst_bits = s->regs.dst_offset < s->vga.vram_size ?
+                    s->vga.vram_ptr + s->regs.dst_offset : NULL;
     if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
         ctx->dst_stride *= ctx->bpp;
     }
@@ -128,7 +156,9 @@ static void setup_2d_blt_ctx(ATIVGAState *s, ATI2DCtx *ctx)
     ctx->src.y = (ctx->top_to_bottom ?
                  s->regs.src_y : s->regs.src_y + 1 - ctx->dst.height);
     ctx->src_stride = s->regs.src_pitch;
-    ctx->src_bits = s->vga.vram_ptr + s->regs.src_offset;
+    ctx->src_offset = s->regs.src_offset;
+    ctx->src_bits = s->regs.src_offset < s->vga.vram_size ?
+                    s->vga.vram_ptr + s->regs.src_offset : NULL;
     if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
         ctx->src_stride *= ctx->bpp;
     }
@@ -156,7 +186,6 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
 {
     QemuRect vis_src, vis_dst;
     unsigned int x, y, i, j, bypp = ctx->bpp / 8;
-    const uint8_t *vram_end = ctx->vga->vram_ptr + ctx->vga->vram_size;
 
     if (!ctx->bpp) {
         qemu_log_mask(LOG_GUEST_ERROR, "Invalid bpp\n");
@@ -166,15 +195,17 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
         qemu_log_mask(LOG_GUEST_ERROR, "Zero dest pitch\n");
         return false;
     }
-    if (ctx->dst.x > 0x3fff || ctx->dst.y > 0x3fff ||
-        ctx->dst_bits >= vram_end - bypp || ctx->dst_bits + ctx->dst.x * bypp +
-        (ctx->dst.y + ctx->dst.height) * ctx->dst_stride >= vram_end - bypp) {
-        qemu_log_mask(LOG_UNIMP, "blt outside vram not implemented\n");
+    if (ctx->dst.width <= 0 || ctx->dst.height <= 0) {
         return false;
     }
     qemu_rect_intersect(&ctx->dst, &ctx->scissor, &vis_dst);
-    if (!vis_dst.height || !vis_dst.width) {
-        /* Nothing is visible, completely clipped */
+    if (vis_dst.height <= 0 || vis_dst.width <= 0) {
+        /* Nothing is visible, completely clipped. */
+        return false;
+    }
+    if (!ati_2d_rect_in_vram(ctx, &vis_dst, ctx->dst_offset,
+                             ctx->dst_stride)) {
+        qemu_log_mask(LOG_GUEST_ERROR, "2D destination outside VRAM\n");
         return false;
     }
     /*
@@ -204,11 +235,9 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
             return false;
         }
         if (!ctx->host_data_active &&
-            (vis_src.x > 0x3fff || vis_src.y > 0x3fff ||
-            ctx->src_bits >= vram_end - bypp ||
-            ctx->src_bits + vis_src.x * bypp + (vis_src.y + vis_dst.height) *
-            ctx->src_stride >= vram_end - bypp)) {
-            qemu_log_mask(LOG_UNIMP, "blt outside vram not implemented\n");
+            !ati_2d_rect_in_vram(ctx, &vis_src, ctx->src_offset,
+                                 ctx->src_stride)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "2D source outside VRAM\n");
             return false;
         }
 
@@ -277,10 +306,6 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
         const uint8_t *palette = ctx->vga->palette;
         uint32_t filler = 0;
 
-        if (ctx->bpp == 24) {
-            qemu_log_mask(LOG_UNIMP, "Fill blt unsupported in 24 bits\n");
-            return false;
-        }
         switch (ctx->rop3) {
         case ROP3_PATCOPY:
             filler = make_filler(ctx->bpp, ctx->frgd_clr);
@@ -297,22 +322,41 @@ static bool ati_2d_do_blt(const ATI2DCtx *ctx, uint8_t use_pixman)
         DPRINTF("pixman_fill(%p, %ld, %d, %d, %d, %d, %d, %x)\n",
                 ctx->dst_bits, ctx->dst_stride / sizeof(uint32_t), ctx->bpp,
                 vis_dst.x, vis_dst.y, vis_dst.width, vis_dst.height, filler);
-        if (ctx->need_swap) {
-            bswap32s(&filler);
-        }
-#ifdef CONFIG_PIXMAN
-        if (!(use_pixman & BIT(0)) ||
-            !pixman_fill((uint32_t *)ctx->dst_bits,
-                         ctx->dst_stride / sizeof(uint32_t), ctx->bpp,
-                         vis_dst.x, vis_dst.y, vis_dst.width, vis_dst.height,
-                         filler))
-#endif
-        {
-            /* fallback when pixman failed or we don't want to call it */
+        if (ctx->bpp == 24) {
+            /*
+             * 24-bpp packed pixels cannot use pixman_fill or stn_he_p.
+             * Honor the configured framebuffer byte order explicitly.
+             */
+            uint8_t pixel[3];
+            bool big_endian = ctx->vga->big_endian_fb;
+
+            pixel[0] = big_endian ? filler >> 16 : filler;
+            pixel[1] = filler >> 8;
+            pixel[2] = big_endian ? filler : filler >> 16;
             for (y = 0; y < vis_dst.height; y++) {
                 i = vis_dst.x * bypp + (vis_dst.y + y) * ctx->dst_stride;
                 for (x = 0; x < vis_dst.width; x++, i += bypp) {
-                    stn_he_p(&ctx->dst_bits[i], bypp, filler);
+                    memcpy(&ctx->dst_bits[i], pixel, sizeof(pixel));
+                }
+            }
+        } else {
+            if (ctx->need_swap) {
+                bswap32s(&filler);
+            }
+#ifdef CONFIG_PIXMAN
+            if (!(use_pixman & BIT(0)) ||
+                !pixman_fill((uint32_t *)ctx->dst_bits,
+                             ctx->dst_stride / sizeof(uint32_t), ctx->bpp,
+                             vis_dst.x, vis_dst.y, vis_dst.width,
+                             vis_dst.height, filler))
+#endif
+            {
+                /* Fallback when pixman is absent or rejects the fill. */
+                for (y = 0; y < vis_dst.height; y++) {
+                    i = vis_dst.x * bypp + (vis_dst.y + y) * ctx->dst_stride;
+                    for (x = 0; x < vis_dst.width; x++, i += bypp) {
+                        stn_he_p(&ctx->dst_bits[i], bypp, filler);
+                    }
                 }
             }
         }
