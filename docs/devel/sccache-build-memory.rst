@@ -50,7 +50,7 @@ does not attempt to classify individual PCH compiler arguments.
 
 For example::
 
-    BOOTSTRAP_SCCACHE=1 NATIVE_LLVM_PCH=1 ./build.sh
+    BOOTSTRAP_NATIVE_LLVM=1 BOOTSTRAP_SCCACHE=1 NATIVE_LLVM_PCH=1 ./build.sh
 
 PCH creation can increase peak memory, so compare native LLVM clean and
 incremental builds before claiming a speedup or RSS reduction. The LLVM
