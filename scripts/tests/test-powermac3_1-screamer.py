@@ -69,4 +69,18 @@ require(MACIO_C, "KL_FCR1_SCREAMER_POWER_MASK", "KeyLargo Screamer enable mask")
 require(MACIO_C, "KL_FCR1_SCREAMER_DEFAULT_MASK", "Sawtooth Screamer firmware default")
 require(MACIO_C, "keylargo_update_screamer(ns);", "FCR1 to Screamer propagation")
 require(SCREAMER_C, ".unmigratable = 1", "migration safety guard")
+# A four-byte stereo frame must not be split across host audio writes.
+require(SCREAMER_C, "while (free_b >= SCREAMER_SAMPLE_BYTES)",
+        "frame-sized host output loop")
+require(SCREAMER_C, "if (s->tx_count < SCREAMER_SAMPLE_BYTES && s->dbdma)",
+        "refill a partly buffered stereo frame")
+require(SCREAMER_C, "len -= len % SCREAMER_SAMPLE_BYTES;",
+        "never submit a partial frame")
+require(SCREAMER_C, "uint8_t wrapped_frame[SCREAMER_SAMPLE_BYTES];",
+        "wrap-safe stereo frame storage")
+require(SCREAMER_C, "(s->tx_rpos + i) % SCREAMER_BUFFER_SIZE",
+        "wrap-safe stereo frame gathering")
+require(SCREAMER_C, "written / SCREAMER_SAMPLE_BYTES",
+        "frame-count readback in complete frames")
+require(QTEST, "0x2340", "Screamer selected codec readback runtime check")
 print("PowerMac3,1 Screamer contract: ok")

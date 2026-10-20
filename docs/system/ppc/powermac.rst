@@ -355,7 +355,10 @@ Hardware status
        22 MHz-family sample rates, codec readback, output A/C attenuation
        and mute controls, and DAV byte swapping. KeyLargo FCR1 now gates
        the Screamer audio cell/clock path, so guest power-management writes
-       stop and resume codec activity instead of being readback-only. Capture
+       stop and resume codec activity instead of being readback-only. Playback
+       now buffers complete four-byte stereo frames across fragmented DB-DMA
+       descriptors and circular-buffer boundaries, avoiding partial-frame
+       writes to the host sound backend. Capture
        currently returns silence; detailed analog jack/speaker sensing and
        migration are not modeled.
      - High

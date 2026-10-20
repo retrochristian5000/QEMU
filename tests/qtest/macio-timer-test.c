@@ -295,6 +295,16 @@ static void test_sawtooth_screamer_registers(void)
     write_le32(qts, MACIO_SCREAMER_SWAP, 1);
     g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_SWAP), ==, 1);
 
+    /*
+     * Screamer codec register 7 selects a single readback of register 2.
+     * The next status read must return the ordinary revision/valid field.
+     */
+    write_le32(qts, MACIO_SCREAMER_CODEC, (2U << 12) | 0x234);
+    write_le32(qts, MACIO_SCREAMER_CODEC, (7U << 12) | (2U << 1) | 1U);
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_STATUS), ==, 0x2340);
+    g_assert_cmphex(read_le32(qts, MACIO_SCREAMER_STATUS),
+                    ==, SCREAMER_STATUS_FIXED);
+
     qtest_quit(qts);
 }
 

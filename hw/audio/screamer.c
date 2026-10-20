@@ -178,11 +178,18 @@ static void screamer_output_cb(void *opaque, int free_b)
         return;
     }
 
-    while (free_b > 0) {
+    /*
+     * Screamer transfers stereo S16 frames (four bytes).  DB-DMA may
+     * deliver fragments shorter than a frame; refill before concluding
+     * playback has stalled, and never offer partial frames to the host.
+     */
+    while (free_b >= SCREAMER_SAMPLE_BYTES) {
         size_t len;
         size_t written;
+        uint8_t wrapped_frame[SCREAMER_SAMPLE_BYTES];
+        uint8_t *pcm;
 
-        if (s->tx_count == 0 && s->dbdma) {
+        if (s->tx_count < SCREAMER_SAMPLE_BYTES && s->dbdma) {
             DBDMA_io *io = &s->dbdma->channels[s->tx_channel].io;
 
             if (io->processing) {
@@ -190,16 +197,29 @@ static void screamer_output_cb(void *opaque, int free_b)
             }
         }
 
-        if (s->tx_count == 0) {
+        if (s->tx_count < SCREAMER_SAMPLE_BYTES) {
             break;
         }
 
         len = MIN((size_t)free_b,
                   (size_t)MIN(s->tx_count,
                               SCREAMER_BUFFER_SIZE - s->tx_rpos));
-        written = audio_be_write(s->audio_be, s->voice,
-                                 &s->tx_buffer[s->tx_rpos], len);
-        if (written == 0) {
+        len -= len % SCREAMER_SAMPLE_BYTES;
+
+        if (len) {
+            pcm = &s->tx_buffer[s->tx_rpos];
+        } else {
+            /* A stereo frame may straddle the circular-buffer boundary. */
+            for (unsigned int i = 0; i < SCREAMER_SAMPLE_BYTES; i++) {
+                wrapped_frame[i] = s->tx_buffer[
+                    (s->tx_rpos + i) % SCREAMER_BUFFER_SIZE];
+            }
+            pcm = wrapped_frame;
+            len = SCREAMER_SAMPLE_BYTES;
+        }
+
+        written = audio_be_write(s->audio_be, s->voice, pcm, len);
+        if (!written) {
             break;
         }
 
