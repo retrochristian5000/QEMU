@@ -145,7 +145,7 @@ by the WHP account.
    * - ``toolchains/sccacher``
      - ``sccacher``
      - yes
-     - Optional pinned sccache compiler-cache helper; requires Cargo and Rust >= 1.91. LLVM precompiled headers remain disabled while sccache is selected because PCH cache reuse is not reliable.
+     - Optional pinned sccache compiler-cache helper; requires Cargo and Rust >= 1.91. When native LLVM PCH is on, sccache caches only LLVM C compilation; LLVM C++ compilation bypasses sccache to prevent unsupported PCH cache reuse. The QEMU cache policy remains separate.
    * - ``toolchains/meson``
      - ``Meson``
      - yes
