@@ -53,6 +53,8 @@ assert 'CMAKE_CXX_STANDARD_REQUIRED=ON' in bootstrap
 assert 'LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"' in bootstrap
 assert 'CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers' in bootstrap
 assert '"-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"' in bootstrap
+# Avoid re-enabling cache launches through LLVM_CCACHE_BUILD/RULE_LAUNCH_COMPILE.
+assert '-DLLVM_CCACHE_BUILD=OFF' in bootstrap
 start = bootstrap.index('# WHP_NATIVE_LLVM_PCH_POLICY_BEGIN')
 end = bootstrap.index('# WHP_NATIVE_LLVM_PCH_POLICY_END', start)
 pch_policy = bootstrap[start:end]
