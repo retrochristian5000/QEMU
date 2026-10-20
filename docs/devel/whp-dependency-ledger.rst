@@ -22,6 +22,31 @@ The gitlink recorded by the QEMU commit is authoritative.  A branch named in
 ``.gitmodules`` is discovery metadata, not permission to build an arbitrary
 branch tip.
 
+LLVM fork-to-QEMU pin propagation
+---------------------------------
+
+An LLVM source repair is not integrated into the WHP QEMU bootstrap merely
+because it was pushed to ``retrochristian5000/LLVM`` ``main``.  At the end of
+each LLVM fork edit round, update ``toolchains/llvm-project`` to the intended
+published LLVM commit and push the corresponding QEMU gitlink commit to
+``master`` in the same round.  A local gitlink change or an unpushed commit
+does not complete the handoff.
+
+Before advancing the pin, verify that the LLVM commit exists on the fork and
+is a fast-forward descendant of the current gitlink.  Do not overwrite local
+submodule changes, silently switch to ``main`` at build time, force-push a
+rewound gitlink, or rebuild unrelated toolchains.  Record the target LLVM SHA
+and the resulting QEMU SHA; verify the remote ``master`` tree still contains
+that exact gitlink.  If the update cannot be pushed, report it explicitly as
+an unintegrated LLVM repair rather than calling the bootstrap fixed.
+
+QEMU's bootstrap must continue to materialize the recorded gitlink via
+``git submodule update --init --depth 1 toolchains/llvm-project``.  It must
+not use ``--remote``, which would replace an audited revision with an
+unreviewed moving branch tip.  Publishing the pin makes fixes available to
+the bootstrap; actual compiler and LLDB build success still requires
+separate compilation and test evidence.
+
 Dependency states
 -----------------
 
