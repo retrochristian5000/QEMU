@@ -465,51 +465,69 @@ static void coroutine_fn ide_trim_co_entry(void *opaque)
 {
     TrimAIOCB *iocb = opaque;
     IDEState *s = iocb->s;
-    int i, j;
+    size_t offset;
     int ret;
 
     /* Paired with blk_end_request in ide_trim_bh_cb() */
     blk_co_start_request(s->blk);
 
-    for (j = 0; j < iocb->qiov->niov; j++) {
-        for (i = 0; i < iocb->qiov->iov[j].iov_len / 8; i++) {
-            uint64_t *buffer = iocb->qiov->iov[j].iov_base;
+    /*
+     * ATA DSM TRIM uses 8-byte descriptors in the *logical* DMA stream.
+     * PCI PRD boundaries do not have to coincide with descriptor boundaries.
+     * In particular, a descriptor may be split across two iovecs.
+     */
+    if (iocb->qiov->size % sizeof(uint64_t)) {
+        block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_UNMAP);
+        iocb->ret = -EINVAL;
+        goto done;
+    }
 
-            /* 6-byte LBA + 2-byte range per entry */
-            uint64_t entry = le64_to_cpu(buffer[i]);
-            uint64_t sector = entry & 0x0000ffffffffffffULL;
-            uint16_t count = entry >> 48;
+    for (offset = 0; offset < iocb->qiov->size; offset += sizeof(uint64_t)) {
+        uint64_t raw_entry;
+        uint64_t entry;
+        uint64_t sector;
+        uint16_t count;
 
-            if (count == 0) {
-                continue;
-            }
+        if (qemu_iovec_to_buf(iocb->qiov, offset, &raw_entry,
+                              sizeof(raw_entry)) != sizeof(raw_entry)) {
+            block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_UNMAP);
+            iocb->ret = -EINVAL;
+            goto done;
+        }
 
-            if (iocb->canceled) {
-                iocb->ret = -ECANCELED;
-                goto done;
-            }
+        /* 6-byte LBA + 2-byte range per entry */
+        entry = le64_to_cpu(raw_entry);
+        sector = entry & 0x0000ffffffffffffULL;
+        count = entry >> 48;
 
-            if (!ide_sect_range_ok(s, sector, count)) {
-                block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_UNMAP);
-                iocb->ret = -EINVAL;
-                goto done;
-            }
+        if (count == 0) {
+            continue;
+        }
 
-            block_acct_start(blk_get_stats(s->blk), &s->acct,
-                             count << BDRV_SECTOR_BITS, BLOCK_ACCT_UNMAP);
+        if (iocb->canceled) {
+            iocb->ret = -ECANCELED;
+            goto done;
+        }
 
-            /* Got an entry! Submit and exit.  */
-            ret = blk_co_pdiscard(s->blk,
-                                  sector << BDRV_SECTOR_BITS,
-                                  count << BDRV_SECTOR_BITS,
-                                  BDRV_REQ_NO_QUEUE);
-            if (ret >= 0) {
-                block_acct_done(blk_get_stats(s->blk), &s->acct);
-            } else {
-                iocb->ret = ret;
-                block_acct_failed(blk_get_stats(s->blk), &s->acct);
-                goto done;
-            }
+        if (!ide_sect_range_ok(s, sector, count)) {
+            block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_UNMAP);
+            iocb->ret = -EINVAL;
+            goto done;
+        }
+
+        block_acct_start(blk_get_stats(s->blk), &s->acct,
+                         count << BDRV_SECTOR_BITS, BLOCK_ACCT_UNMAP);
+
+        ret = blk_co_pdiscard(s->blk,
+                              sector << BDRV_SECTOR_BITS,
+                              count << BDRV_SECTOR_BITS,
+                              BDRV_REQ_NO_QUEUE);
+        if (ret >= 0) {
+            block_acct_done(blk_get_stats(s->blk), &s->acct);
+        } else {
+            iocb->ret = ret;
+            block_acct_failed(blk_get_stats(s->blk), &s->acct);
+            goto done;
         }
     }
 
