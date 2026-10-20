@@ -36,6 +36,28 @@ A new executable does not automatically stop an old running sccache server:
 restart only when other builds have finished. Check hit rates and measure
 actual compiler/linker peak memory; the fork does not itself cap Clang RSS.
 
+LLVM precompiled headers with sccache
+-------------------------------------
+
+With ``NATIVE_LLVM_PCH=auto``, native macOS builds using Apple Clang or LLVM
+Clang 18+ now enable LLVM's LLVMSupport PCH even when the managed sccacher is
+selected. ``NATIVE_LLVM_PCH=1`` explicitly requests PCH, and ``0`` retains
+the previous opt-out. Because sccache PCH reuse is not established as safe,
+the bootstrap clears the **LLVM C++** CMake compiler launcher while PCH is on.
+It keeps sccache enabled for LLVM C objects and for the later QEMU build;
+with PCH off, LLVM C++ objects are cacheable again. This conservative split
+does not attempt to classify individual PCH compiler arguments.
+
+For example::
+
+    BOOTSTRAP_SCCACHE=1 NATIVE_LLVM_PCH=1 ./build.sh
+
+PCH creation can increase peak memory, so compare native LLVM clean and
+incremental builds before claiming a speedup or RSS reduction. The LLVM
+CMake config identity includes both launcher options and the PCH setting:
+changing modes reconfigures the existing Ninja tree without requiring a
+fresh checkout or re-bootstrap of sccacher.
+
 Build-time settings
 -------------------
 
