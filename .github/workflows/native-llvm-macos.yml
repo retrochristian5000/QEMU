@@ -33,6 +33,8 @@ on:
       - 'scripts/tests/test-aarch64-darwin-sysctl.py'
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-lean-profile.py'
+      - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
@@ -182,6 +184,14 @@ jobs:
       - name: Audit arm64e TCG pointer authentication gate
         shell: bash
         run: python3 scripts/tests/test-tcg-arm64e-ptrauth.py
+
+      - name: Audit native LLVM PCH and sccache launcher selection
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-lean-profile.py
+
+      - name: Audit pinned sccacher bootstrap
+        shell: bash
+        run: python3 scripts/tests/test-sccache-bootstrap.py
 
       - name: Audit TCG memory budget and Darwin JIT allocations
         shell: bash
