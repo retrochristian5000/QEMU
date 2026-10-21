@@ -27,6 +27,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Validate MC6809 ISA reference and CPU skeleton
+        run: |
+          python3 scripts/tests/test-m6809-isa.py
+          python3 scripts/tests/test-m6809-skeleton.py
+
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
@@ -83,9 +88,6 @@ jobs:
 
       - name: Test automatic source refresh policy
         run: python3 scripts/tests/test-build-source-update.py
-
-      - name: Audit Motorola MC6809 ISA opcode metadata
-        run: python3 scripts/tests/test-m6809-isa.py
 
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
@@ -192,6 +194,9 @@ jobs:
           test -x "${binary}"
           "${binary}" -version
           "${binary}" -machine help >/dev/null
+          if [[ "${{ matrix.target }}" == m6809 ]]; then
+            "${binary}" -cpu help | grep -E '(6809|6809e)'
+          fi
 
       - name: Test modem hardware reset and AT configuration
         if: matrix.target == 'ppc'
