@@ -10,13 +10,15 @@ FAKE_BIN="$TEST_DIR/bin"
 ACTIVE_SDK="$TEST_DIR/MacOSX15.0.sdk"
 SELECTED_SDK="$TEST_DIR/MacOSX13.3.sdk"
 BETA_SDK="$TEST_DIR/MacOSX16.0.sdk"
+IPHONE_SDK="$TEST_DIR/iPhoneOS18.0.sdk"
+SIMULATOR_SDK="$TEST_DIR/iPhoneSimulator18.0.sdk"
 DEVELOPER_DIR_FIXTURE="$TEST_DIR/Developer"
 CLANG="$FAKE_BIN/clang"
 CLANGXX="$FAKE_BIN/clang++"
 STRIP="$FAKE_BIN/strip"
 
 mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK" \
-    "$DEVELOPER_DIR_FIXTURE"
+    "$IPHONE_SDK" "$SIMULATOR_SDK" "$DEVELOPER_DIR_FIXTURE"
 : > "$ACTIVE_SDK/SDKSettings.json"
 : > "$SELECTED_SDK/SDKSettings.json"
 : > "$BETA_SDK/SDKSettings.json"
@@ -120,6 +122,21 @@ EOF
 
 cat > "$CLANG" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${TEST_REJECT_CXX_SDK_PROBE:-0}" == 1 ]]; then
+    has_cxx=0
+    has_syntax=0
+    previous=
+    for arg in "$@"; do
+        if [[ "$previous" == -x && "$arg" == c++ ]]; then
+            has_cxx=1
+        fi
+        [[ "$arg" == -fsyntax-only ]] && has_syntax=1
+        previous="$arg"
+    done
+    if [[ "$has_cxx" == 1 && "$has_syntax" == 1 ]]; then
+        exit 2
+    fi
+fi
 for arg in "$@"; do
     case "$arg" in
         -Wl,--read-workers=*)
@@ -192,6 +209,34 @@ if ! grep -Fq 'Apple Darwin/macOS target triple' "$non_darwin_output"; then
     cat "$non_darwin_output" >&2
     exit 1
 fi
+
+# A pre-existing iOS/iPad SDKROOT may be valid for cross-compilation, but
+# cannot become CMAKE_OSX_SYSROOT for the macOS build-machine tools.
+for non_macos_sdk in "$IPHONE_SDK" "$SIMULATOR_SDK"; do
+    sdk_bleed_output="$TEST_DIR/sdk-bleed-${non_macos_sdk##*/}.out"
+    if SDKROOT="$non_macos_sdk" \
+       BUILD_DIR="$TEST_DIR/sdk-bleed-build" \
+       WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+       bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+           >"$sdk_bleed_output" 2>&1; then
+        printf 'error: iOS SDK reached macOS host bootstrap: %s\n' "$non_macos_sdk" >&2
+        exit 1
+    fi
+    grep -Fq 'host build requires a MacOSX.sdk' "$sdk_bleed_output"
+done
+
+# A valid MacOSX.sdk can still have incompatible C++ headers; make sure a
+# failing C++ probe aborts before the generic builder is called.
+bad_cxx_sdk="$TEST_DIR/sdk-bad-cxx.out"
+if TEST_REJECT_CXX_SDK_PROBE=1 SDKROOT="$SELECTED_SDK" \
+   MACOSX_DEPLOYMENT_TARGET=13.0 \
+   BUILD_DIR="$TEST_DIR/sdk-bad-cxx-build" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" >"$bad_cxx_sdk" 2>&1; then
+    printf 'error: macOS wrapper accepted failing C++ SDK probe\n' >&2
+    exit 1
+fi
+grep -Fq 'macOS host C++ SDK/libc++ probe failed' "$bad_cxx_sdk"
 
 wrapper_output="$TEST_DIR/wrapper-output"
 if SDKROOT="$SELECTED_SDK" \
