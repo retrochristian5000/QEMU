@@ -201,12 +201,43 @@ if [[ "$(uname -s)" == Darwin ]]; then
         printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
         exit 1
     fi
+    # The standalone PowerPC bootstrap does not necessarily pass through
+    # macos-builder. Never substitute an inherited iOS/iPad simulator SDK for
+    # the native macOS headers used to compile the LLVM host binaries.
+    sdk_real_path="$(cd "$SDKROOT" && pwd -P)" || exit 1
+    case "${sdk_real_path##*/}" in
+        MacOSX*.sdk) ;;
+        *)
+            printf 'error: LLVM macOS host bootstrap requires a MacOSX.sdk; got: %s\n' "$SDKROOT" >&2
+            exit 1
+            ;;
+    esac
+    unset sdk_real_path
     case "$SDKROOT" in
         *' '*)
             printf 'error: macOS SDK path contains spaces: %s\n' "$SDKROOT" >&2
             exit 1
             ;;
     esac
+
+    # TargetConditionals.h distinguishes macOS from iOS, Mac Catalyst, and
+    # simulator SDKs. Check the actual header wiring before creating CMake's
+    # CMAKE_OSX_SYSROOT cache entry.
+    if ! "$TOOLCHAIN_HOST_CC" -arch "$darwin_arch" -isysroot "$SDKROOT" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            -x c -fsyntax-only - <<'WHP_LLVM_MACOS_SDK'
+#include <TargetConditionals.h>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX || \
+    (defined(TARGET_OS_IOS) && TARGET_OS_IOS) || \
+    (defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST) || \
+    (defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR)
+#error The LLVM host SDK must provide macOS headers
+#endif
+WHP_LLVM_MACOS_SDK
+    then
+        printf 'error: LLVM host SDK header probe failed: %s\n' "$SDKROOT" >&2
+        exit 1
+    fi
 
     host_cflags="-arch $darwin_arch -isysroot $SDKROOT -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
     host_cxxflags="$host_cflags"
