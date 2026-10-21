@@ -13,7 +13,8 @@ whp_mold_default_tools_dir()
     local host_tag
 
     host_tag="$(printf '%s-%s' "$HOST_ARCH" "$HOST_OS" |
-        tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_.-\n' '-')"
+        LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c '[:alnum:]_.-' '-')" || return 1
+    [[ -n "$host_tag" ]] || return 1
     printf '%s/whp-mold-%s\n' "$(dirname "$BUILD_DIR")" "$host_tag"
 }
 
@@ -248,8 +249,13 @@ whp_prepare_mold()
     local mode="${BOOTSTRAP_MOLD:-auto}"
     local submodule_path="${MOLD_SUBMODULE_PATH:-toolchains/fast-linker}"
     local source_dir="${MOLD_SOURCE_DIR:-$SOURCE_DIR/$submodule_path}"
-    local tools_dir="${MOLD_TOOLS_DIR:-$(whp_mold_default_tools_dir)}"
-    local linker="$tools_dir/install/bin/mold"
+    local tools_dir="${MOLD_TOOLS_DIR:-}"
+    local linker
+
+    if [[ -z "$tools_dir" ]]; then
+        tools_dir="$(whp_mold_default_tools_dir)" || return 1
+    fi
+    linker="$tools_dir/install/bin/mold"
 
     case "$mode" in
         auto|0|1) ;;
