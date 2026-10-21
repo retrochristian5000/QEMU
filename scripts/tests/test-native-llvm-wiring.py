@@ -274,17 +274,17 @@ assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
 
-# Apple calls the backend architecture arm64/aarch64 while arm64e is a Darwin
-# Mach-O ABI variant. Keep those namespaces separate: CMake may select arm64e
-# for the bootstrap program, but the LLVM host/default triple and WHP cache
-# identity remain aarch64-apple-darwin so downstream target selection stays
-# stable.
+# Apple Silicon uses aarch64 as the backend architecture; arm64e is a
+# Mach-O ABI choice. The host triple may contain the Darwin kernel version,
+# while Clang's default target must be versioned macOS, not iOS/iPadOS.
 assert 'host_tag=aarch64' in bootstrap
 assert 'darwin_cmake_arch=arm64' in bootstrap
 assert "arm64|aarch64) printf 'aarch64\\n'" in bootstrap
 assert 'canonical_native_target_triple()' in bootstrap
 assert 'llvm_host_triple="$bootstrap_cc_target_canonical"' in bootstrap
+assert 'llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"' in bootstrap
 assert 'llvm_default_target_triple="$llvm_host_triple"' in bootstrap
+assert '-DLLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE=ON' in bootstrap
 assert '"-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"' in bootstrap
 assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in bootstrap
 assert '"-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"' in bootstrap
@@ -315,6 +315,7 @@ assert '[[ "$target_os" =~ ^(darwin|macosx|macos)' in bootstrap
 assert 'if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; then' in bootstrap
 assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
 assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
+assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('git -C "$SOURCE_DIR" submodule update')
 
 for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert loose_match not in bootstrap

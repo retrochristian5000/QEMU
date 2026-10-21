@@ -553,6 +553,7 @@ if [[ "$host_os" == macos ]]; then
     printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
     cmake_host_args=(
         -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
+        -DLLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE=ON
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
@@ -824,8 +825,16 @@ if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; 
         "C++: $bootstrap_cxx_target_canonical" >&2
     exit 1
 fi
+# The bootstrap compiler may report the Darwin *kernel* host triple.
+# Retain that for LLVM's host-tool identity. Clang's default compilation
+# target must instead identify macOS and its deployment version explicitly;
+# Darwin versions (25/26) are not macOS product/deployment versions.
 llvm_host_triple="$bootstrap_cc_target_canonical"
-llvm_default_target_triple="$llvm_host_triple"
+if [[ "$host_os" == macos ]]; then
+    llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"
+else
+    llvm_default_target_triple="$llvm_host_triple"
+fi
 
 # The WHP LLVM fork is already a QEMU submodule and is the single source for
 # firmware, legacy-target, and native compiler profiles. Keep the native lane

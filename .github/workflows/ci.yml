@@ -32,6 +32,9 @@ jobs:
           python3 scripts/tests/test-m6809-isa.py
           python3 scripts/tests/test-m6809-skeleton.py
 
+      - name: Verify native macOS triple does not select iOS or Darwin deployment
+        run: python3 scripts/tests/test-native-llvm-macos-default-triple.py
+
       - name: Guard native Darwin compiler-rt ABI isolation
         run: python3 scripts/tests/test-native-llvm-darwin-abi-isolation.py
 

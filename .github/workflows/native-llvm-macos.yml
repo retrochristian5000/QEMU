@@ -526,7 +526,7 @@ jobs:
           grep -Fxq 'HOST_ARCH=arm64' "$marker"
           grep -Fxq 'MACOS_BOOTSTRAP_ARCH=arm64e' "$marker"
           grep -Eq '^LLVM_HOST_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
-          grep -Eq '^LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
+          grep -Fxq "LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-macosx$MACOSX_DEPLOYMENT_TARGET" "$marker"
           grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
@@ -551,7 +551,12 @@ jobs:
           "$clang" --version >/dev/null
           "$clangxx" --version >/dev/null
           "$ld" --version >/dev/null
-          "$clang" -print-target-triple | grep -Eq '^aarch64-apple-(darwin|macos|macosx)'
+          test "$("$clang" -print-target-triple)" = "aarch64-apple-macosx$MACOSX_DEPLOYMENT_TARGET"
+          "$clang" -dM -E -x c /dev/null | grep -q '^#define __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ '
+          if "$clang" -dM -E -x c /dev/null | grep -Eq '^#define __ENVIRONMENT_(IPHONE_OS|IOS)_VERSION_MIN_REQUIRED__ '; then
+            echo 'error: native macOS Clang selected an iOS or iPadOS ABI' >&2
+            exit 1
+          fi
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
             "$clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
