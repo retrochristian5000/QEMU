@@ -49,7 +49,7 @@ whp_linker_driver_probe()
             printf 'int main() { return 0; }\n' > "$temp_dir/probe.cpp"
             source="$temp_dir/probe.cpp"
         fi
-        output="$temp_dir/${compiler_var,,}"
+        output="$temp_dir/$compiler_var"
         if ! PATH="${path_prefix:+$path_prefix:}$PATH" "${command[@]}" \
             -x "$language" "$source" -fuse-ld="$selected" \
             "${flags[@]}" -o "$output" || ! "$output"; then
