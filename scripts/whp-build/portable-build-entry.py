@@ -6,7 +6,10 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shlex
+import subprocess
 import sys
+import tempfile
 from typing import List
 
 CORE_PATH = pathlib.Path(__file__).with_name('portable-build.py')
@@ -52,6 +55,81 @@ def validate_jobs() -> None:
         raise ValueError(f'JOBS must be a positive integer when set: {value}')
 
 
+def add_portable_host_linker(values, configure_args: List[str]) -> None:
+    """Select a host linker without assuming an ELF/Mach-O/COFF OS mapping."""
+    selected = values['QEMU_HOST_LINKER']
+    mold_policy = values['BOOTSTRAP_MOLD']
+    if mold_policy == 'y':
+        raise RuntimeError(
+            'BOOTSTRAP_MOLD=y requires the Bash toolchain bootstrap; '
+            'portable builds can use an installed mold via QEMU_HOST_LINKER=mold'
+        )
+    if selected == 'auto':
+        return
+
+    for variable in ('CC', 'CXX', 'OBJC', 'CFLAGS', 'CXXFLAGS',
+                     'OBJCFLAGS', 'CPPFLAGS', 'LDFLAGS'):
+        tokens = shlex.split(os.environ.get(variable, ''))
+        for token in tokens:
+            if token.startswith('-fuse-ld='):
+                requested = token.split('=', 1)[1]
+                if requested != selected and not (
+                    selected == 'system' and requested == 'ld'
+                ):
+                    raise RuntimeError(
+                        f'QEMU_HOST_LINKER={selected} conflicts with {variable}: {token}'
+                    )
+            elif token.startswith('--ld-path'):
+                raise RuntimeError(
+                    f'QEMU_HOST_LINKER={selected} conflicts with {variable}: {token}'
+                )
+    if selected == 'system':
+        return
+
+    flag = f'-fuse-ld={selected}'
+    extra_flags = shlex.split(os.environ.get('LDFLAGS', ''))
+    with tempfile.TemporaryDirectory(prefix='whp-linker-') as directory:
+        for variable, default, extension, language in (
+            ('CC', 'cc', '.c', 'c'),
+            ('CXX', 'c++', '.cpp', 'c++'),
+        ):
+            compiler = shlex.split(os.environ.get(variable, default))
+            if not compiler:
+                raise RuntimeError(f'{variable} is empty during linker probe')
+            source = pathlib.Path(directory) / ('probe' + extension)
+            source.write_text(
+                'int main(void) { return 0; }\n' if language == 'c'
+                else 'int main() { return 0; }\n',
+                encoding='utf-8',
+            )
+            output = pathlib.Path(directory) / (
+                'probe-' + variable + ('.exe' if os.name == 'nt' else '')
+            )
+            cmd = [*compiler, '-x', language, str(source), flag,
+                   *extra_flags, '-o', str(output)]
+            try:
+                result = subprocess.run(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, check=False,
+                )
+            except OSError as exc:
+                raise RuntimeError(
+                    f'{variable} cannot execute the {selected} linker probe: {exc}'
+                ) from exc
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f'{variable} cannot link with {selected}: {result.stderr.strip()}'
+                )
+            try:
+                subprocess.run([str(output)], check=True, timeout=10,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                raise RuntimeError(
+                    f'{selected} produced an unusable {variable} host executable: {exc}'
+                ) from exc
+    configure_args.append(f'--extra-ldflags={flag}')
+
+
 def install_diagnostic_policy(core) -> None:
     original_build_plan = core.build_plan
 
@@ -59,6 +137,7 @@ def install_diagnostic_policy(core) -> None:
         build_dir, prefix, configure_args, requested_targets, declines = \
             original_build_plan(argv)
         values = core.resolved_values()
+        add_portable_host_linker(values, configure_args)
 
         # The portable Python entry skips the Bash bootstrap graph entirely.
         # Fail closed when native LLVM was explicitly requested instead of
