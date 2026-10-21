@@ -385,6 +385,22 @@ then
     printf 'error: macOS host SDK header probe failed: %s\n' "$SDKROOT" >&2
     exit 1
 fi
+if ! "$CXX" "${sdk_probe_arch[@]}" -isysroot "$SDKROOT" \
+        "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+        -std=c++17 -x c++ -fsyntax-only - <<'WHP_MACOS_HOST_CXX_SDK'
+#include <TargetConditionals.h>
+#include <memory>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX || \
+    (defined(TARGET_OS_IOS) && TARGET_OS_IOS) || \
+    (defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST) || \
+    (defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR)
+#error The selected C++ SDK must provide native macOS headers
+#endif
+WHP_MACOS_HOST_CXX_SDK
+then
+    printf 'error: macOS host C++ SDK/libc++ probe failed: %s\n' "$SDKROOT" >&2
+    exit 1
+fi
 unset sdk_probe_arch
 
 # The linker selection must agree across both Clang drivers and all active
