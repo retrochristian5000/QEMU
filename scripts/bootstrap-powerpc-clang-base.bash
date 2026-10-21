@@ -212,6 +212,8 @@ if [[ "$(uname -s)" == Darwin ]]; then
             exit 1
             ;;
     esac
+    SDKROOT="$sdk_real_path"
+    export SDKROOT
     unset sdk_real_path
     case "$SDKROOT" in
         *' '*)
