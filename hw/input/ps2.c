@@ -950,6 +950,14 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             s->mouse_resolution = 2;
             s->mouse_status = 0;
             s->mouse_type = 0;
+            /* Reset also leaves wrap mode and cancels pending ID detection. */
+            s->mouse_wrap = 0;
+            s->mouse_detect_state = 0;
+            /* Do not replay movement accumulated before the device reset. */
+            s->mouse_dx = 0;
+            s->mouse_dy = 0;
+            s->mouse_dz = 0;
+            s->mouse_dw = 0;
             ps2_reset_queue(ps2);
             ps2_queue_3(ps2,
                 AUX_ACK,
