@@ -1,0 +1,79 @@
+Motorola MC6809/MC6809E ISA coverage (no CPU target yet)
+========================================================
+
+Status: reference metadata and host-level regression tests only.  The QEMU
+fork does **not** yet implement a Motorola MC6809 CPU, TCG translator,
+interrupt controller, reset logic, device model, or system emulator target.
+The implemented \`target/m68k\` is the distinct MC68000 family and must not
+be used to decode MC6809 instructions.  MC6809E uses the same programmer ISA
+as MC6809; external clock/bus interfacing differs.
+
+Reference data
+--------------
+
+* Motorola, *MC6809/MC6809E 8-Bit Microprocessor Programming Manual*
+  (M6809PM/AD, 1981), Appendix C: machine-code cross reference.
+  https://www.maddes.net/m6809pm/appendix_c.htm
+* Same manual, Appendix F: three opcode pages and indexed postbyte table.
+  https://www.maddes.net/m6809pm/appendix_f.htm
+* Same manual, Section 3: reset, IRQ, FIRQ, NMI and SWI vectors.
+  https://www.maddes.net/m6809pm/sections.htm
+
+\`scripts/m6809_isa.py\` provides documented, legal opcode metadata for
+the base page (221 entries), 10h-prefixed page (38), and 11h-prefixed
+page (9): 268 entries in total.  A prefix is not a standalone opcode.
+Undefined encodings are not granted MC6809 semantics merely because an
+HD6309 or a particular physical chip might execute something there.
+
+The helper reports mnemonic, addressing class, and instruction length
+including indexed postbyte displacement bytes.  It does **not** implement
+effective-address calculations, memory effects, register state, instruction
+timing, condition-code changes, illegal-opcode hardware behavior, or
+instruction-specific restrictions on indexed postbytes.  These remain
+explicitly unimplemented, not implied by a positive opcode lookup.
+
+To inspect the data or run the host-side checks:
+
+::
+
+   python3 scripts/m6809_isa.py --list
+   python3 scripts/m6809_isa.py --decode "10 AE 88 FE"
+   python3 scripts/tests/test-m6809-isa.py
+
+Minimum CPU-core requirements
+-----------------------------
+
+* 8-bit A, B, DP and CC; 16-bit X, Y, U, S, PC.  D is A:B.
+* 16-bit big-endian address/word semantics, direct-page addressing,
+  immediate and extended addressing, 5/8/16-bit indexed displacements,
+  accumulator-based indexes, auto-increment/decrement, indirect and
+  PC-relative indexed forms.
+* Separate decode for 10h and 11h opcode pages; source-size and
+  destination-size checks for TFR/EXG; PSHS/PULS/PSHU/PULU masks.
+* Separate IRQ, FIRQ, NMI, SWI, SWI2, SWI3 and reset vectors.
+  FIRQ's short stack frame versus full-state IRQ entry, and CWAI,
+  SYNC, RTI E-bit behavior all need dedicated tests.
+* Instruction- and postbyte-dependent cycle costs from Appendix F.
+  Instruction lookup alone is **not** cycle-accurate emulation.
+
+Candidate system hardware (separate implementation work)
+--------------------------------------------------------
+
+The TRS-80 Color Computer 1/2 is a plausible first MC6809E machine target.
+The documented main components are MC6809E CPU, MC6883 SAM (address
+multiplexer/timing), MC6847 video display generator, and two MC6821/MC6822
+peripheral interface adapters.  The QEMU fork has no matching, identified
+machine/CPU/peripheral model for that family.
+
+The SAM is not just a RAM map: its memory decode, clocks and video address
+generation interact with the MC6847.  A CPU-only test machine may be useful
+for ISA tests, but must not be advertised as a functional Color Computer
+until these devices, interrupts and firmware/ROM boot paths are modeled.
+
+Hardware references:
+
+* https://www.cocopedia.com/wiki/index.php/TRS-80_Color_Computer
+* https://www.maddes.net/m6809pm/sections.htm
+
+Hold the Hitachi HD6309 extended ISA and its native-mode timing behind a
+distinct CPU variant; do not silently merge those instructions with MC6809.
