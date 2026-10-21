@@ -101,6 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         target:
+          - m6809
           - s2650
           - trimedia
           - ppc

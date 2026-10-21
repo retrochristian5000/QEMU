@@ -1,10 +1,10 @@
 Motorola MC6809/MC6809E ISA coverage (no CPU target yet)
 ========================================================
 
-Status: reference metadata and host-level regression tests only.  The QEMU
-fork does **not** yet implement a Motorola MC6809 CPU, TCG translator,
-interrupt controller, reset logic, device model, or system emulator target.
-The implemented \`target/m68k\` is the distinct MC68000 family and must not
+Status: QOM CPU models and a minimal TCG skeleton now exist under
+`target/m6809`. Only opcode 12h (NOP) is executable. A real MC6809 board,
+peripherals, interrupt execution and all other instructions remain missing.
+The implemented `target/m68k` is the distinct MC68000 family and must not
 be used to decode MC6809 instructions.  MC6809E uses the same programmer ISA
 as MC6809; external clock/bus interfacing differs.
 
@@ -19,7 +19,7 @@ Reference data
 * Same manual, Section 3: reset, IRQ, FIRQ, NMI and SWI vectors.
   https://www.maddes.net/m6809pm/sections.htm
 
-\`scripts/m6809_isa.py\` provides documented, legal opcode metadata for
+`scripts/m6809_isa.py` provides documented, legal opcode metadata for
 the base page (221 entries), 10h-prefixed page (38), and 11h-prefixed
 page (9): 268 entries in total.  A prefix is not a standalone opcode.
 Undefined encodings are not granted MC6809 semantics merely because an
@@ -77,3 +77,23 @@ Hardware references:
 
 Hold the Hitachi HD6309 extended ISA and its native-mode timing behind a
 distinct CPU variant; do not silently merge those instructions with MC6809.
+
+Skeleton scope and build
+------------------------
+
+The experimental system-only target registers CPU names 6809 and 6809e.
+MC6809E differs in external bus timing, not the programmer ISA. The target
+build produces qemu-system-m6809 but there is no Color Computer machine.
+
+The CPU reset code sets DP to zero, masks IRQ and FIRQ, and fetches the
+big-endian 16-bit vector at FFFE:FFFF from physical memory. An eventual
+board must map its reset ROM before the system-wide reset. Other register
+reset states are intentionally left unspecified by the emulator.
+
+Only NOP advances PC. Every other opcode logs unimplemented behavior and
+leaves PC at that instruction. This skeleton is not yet usable for running
+OS firmware. There is no HD6309 ISA bleed, instruction timing, device IRQ
+delivery, complete illegal opcode handling, or register-level GDB support.
+
+The existing scripts/m6809_isa.py remains reference metadata. It is not
+automatically imported as an executing decoder into the TCG translator.
