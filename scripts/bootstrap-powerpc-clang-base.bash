@@ -262,6 +262,7 @@ WHP_LLVM_MACOS_CXX_SDK
     host_cppflags="$host_cflags"
     host_ldflags="$host_cflags"
     cmake_darwin_args=(
+        -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
         "-DCMAKE_OSX_SYSROOT=$SDKROOT"
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
