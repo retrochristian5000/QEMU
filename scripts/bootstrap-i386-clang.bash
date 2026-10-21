@@ -293,10 +293,20 @@ else
         -DLLVM_ENABLE_LIBXML2=OFF
     )
     # SeaBIOS targets i386-none-elf, but LLVM itself is a host executable.
-    # Resolve the native macOS SDK inside CMake before compiler detection.
-    # This also works when the i386 bootstrap runs without macos-builder.
+    # Supply the current host SDK explicitly, even when reusing an old CMake
+    # cache. A stale CMAKE_OSX_SYSROOT cache must not outrank SDKROOT selected
+    # by macos-builder or xcrun on a directly invoked bootstrap.
     if [[ "$(uname -s)" == Darwin ]]; then
-        cmake_args+=(-DLLVM_MACOS_HOST_SDK_RESOLVE=ON)
+        i386_host_sdk="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+        if [[ -z "$i386_host_sdk" ]]; then
+            printf 'error: cannot select macOS SDK for i386 LLVM host bootstrap\n' >&2
+            exit 1
+        fi
+        cmake_args+=(
+            -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
+            "-DCMAKE_OSX_SYSROOT=$i386_host_sdk"
+        )
+        unset i386_host_sdk
     fi
     cmake "${cmake_args[@]}"
     
