@@ -418,6 +418,9 @@ if [[ "$host_os" == macos ]]; then
             exit 1
             ;;
     esac
+    # Use this same canonical SDK path for the parent CMake configuration and
+    # the separately configured compiler-rt/builtins runtime projects.
+    sdkroot="$sdk_real_path"
     unset sdk_real_path
     # The standalone LLVM bootstrap does not always run through QEMU's
     # macos-builder policy. Do not pass a pre-Apple-Silicon deployment
