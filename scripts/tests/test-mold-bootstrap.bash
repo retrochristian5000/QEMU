@@ -13,17 +13,23 @@ trap 'rm -rf "$tmpdir"' EXIT
 BUILD_DIR="$tmpdir/build"
 HOST_ARCH=arm64
 HOST_OS=Darwin
-BOOTSTRAP_MOLD=1
+BOOTSTRAP_MOLD=0
+QEMU_HOST_LINKER=mold
 MOLD_TOOLS_DIR="$tmpdir/mold-tools"
 LDFLAGS=
 mkdir -p "$BUILD_DIR"
 
+# An explicit conflicting selection fails even on Darwin; it is never silently
+# changed to Apple ld based on an OS-name restriction.
 stderr="$tmpdir/darwin.stderr"
-whp_prepare_mold 2> "$stderr"
-[[ "$BOOTSTRAP_MOLD" == 0 ]]
+if whp_prepare_mold 2> "$stderr"; then
+    printf 'error: an explicit conflicting mold selection succeeded\n' >&2
+    exit 1
+fi
+grep -Fq 'conflicts with BOOTSTRAP_MOLD=0' "$stderr"
 [[ -z "${MOLD_LINKER:-}" ]]
 [[ -z "$LDFLAGS" ]]
-grep -Fq 'cannot link macOS Mach-O binaries' "$stderr"
+QEMU_HOST_LINKER=auto
 
 HOST_ARCH=x86_64
 HOST_OS=Linux
@@ -90,10 +96,44 @@ chmod +x "$fakebin/cc" "$fakebin/ar" "$fakebin/mold"
 
 export WHP_MOLD_TEST_LOG="$log"
 CC="$fakebin/cc"
+CXX="$fakebin/cc"
 AR="$fakebin/ar"
 QEMU_HOST_LTO=1
 LDFLAGS=
-export CC AR QEMU_HOST_LTO LDFLAGS
+export CC CXX AR QEMU_HOST_LTO LDFLAGS
+
+# A Darwin host is admitted when its chosen linker passes real compiler
+# probes.  The fake driver exercises orchestration without relying on Mach-O.
+mkdir -p "$MOLD_TOOLS_DIR/install/bin"
+cp "$fakebin/mold" "$MOLD_TOOLS_DIR/install/bin/mold"
+BOOTSTRAP_MOLD=auto
+QEMU_HOST_LINKER=auto
+whp_prepare_mold
+[[ "$BOOTSTRAP_MOLD" == 1 ]]
+[[ " $LDFLAGS " == *' -fuse-ld=mold '* ]]
+grep -Fq -- ' -x c++ ' "$log"
+
+# Linker changes are permitted on the same host, rather than requiring a new
+# operating system or rebuild tree.
+LDFLAGS=
+BOOTSTRAP_MOLD=auto
+QEMU_HOST_LINKER=lld
+whp_prepare_mold
+[[ "$BOOTSTRAP_MOLD" == 0 ]]
+[[ " $LDFLAGS " == *' -fuse-ld=lld '* ]]
+grep -Fq -- ' -fuse-ld=lld ' "$log"
+QEMU_HOST_LINKER=system
+if whp_prepare_mold > /dev/null 2> "$stderr"; then
+    printf 'error: the system linker ignored an inherited LLD override\n' >&2
+    exit 1
+fi
+grep -Fq 'inherited linker override' "$stderr"
+LDFLAGS=
+whp_prepare_mold
+[[ -z "$LDFLAGS" ]]
+[[ "$BOOTSTRAP_MOLD" == 0 ]]
+QEMU_HOST_LINKER=auto
+
 whp_mold_link_probe "$fakebin/mold"
 [[ "$(grep -Fc ' -flto -c ' "$log")" -eq 2 ]]
 grep -Fq 'ar rcs ' "$log"
