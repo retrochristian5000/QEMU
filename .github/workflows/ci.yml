@@ -32,6 +32,9 @@ jobs:
           python3 scripts/tests/test-m6809-isa.py
           python3 scripts/tests/test-m6809-skeleton.py
 
+      - name: Guard native Darwin compiler-rt ABI isolation
+        run: python3 scripts/tests/test-native-llvm-darwin-abi-isolation.py
+
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 

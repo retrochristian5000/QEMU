@@ -378,6 +378,7 @@ fi
 
 cmake_host_args=()
 cmake_darwin_runtime_args=()
+darwin_runtime_native_arch_only=OFF
 sdkroot=""
 deployment_target=""
 seed_cc="${CC_FOR_BUILD:-}"
@@ -556,10 +557,12 @@ if [[ "$host_os" == macos ]]; then
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
     )
-    # LLVM's builtins and runtimes are separate ExternalProject configurations.
-    # Carry Darwin ABI inputs into both, but keep compiler-rt-only feature
-    # policy out of builtins so CMake does not report irrelevant cache entries.
-    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd"
+    # Runtime and builtins ExternalProjects must agree with the selected
+    # native Mach-O ABI.  Only runtime-specific feature knobs stay separate.
+    # This prevents compiler-rt's legacy i386 probes from entering an ARM64
+    # or ARM64e native bootstrap; Clang's X86 cross backend remains available.
+    darwin_runtime_native_arch_only=ON
+    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCOMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=ON"
     darwin_runtimes_cmake_args="$darwin_external_cmake_args"
     for compiler_rt_option in \
         -DCOMPILER_RT_ENABLE_IOS=OFF \
@@ -933,7 +936,7 @@ if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
 fi
 marker="$TOOLCHAIN_DIR/.whp-native-llvm"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=13
+BOOTSTRAP_SCHEMA=14
 LLVM_GIT_COMMIT=$llvm_revision
 HOST=$host_id
 HOST_OS=$host_os
@@ -956,6 +959,7 @@ CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
 CMAKE_CXX_STANDARD_REQUIRED=ON
 CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers
 LLVM_ENABLE_TELEMETRY=OFF
+COMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=$darwin_runtime_native_arch_only
 COMPILER_RT_ENABLE_IOS=OFF
 COMPILER_RT_ENABLE_MACCATALYST=OFF
 COMPILER_RT_ENABLE_WATCHOS=OFF
