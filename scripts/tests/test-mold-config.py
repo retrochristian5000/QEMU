@@ -2,15 +2,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import importlib.util
+import os
 import pathlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
 CONFIG_TOOL = CONFIG_DIR / 'config.py'
 MENU_TOOL = CONFIG_DIR / 'menuconfig.py'
+PORTABLE_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 sys.path.insert(0, str(CONFIG_DIR))
 
 
@@ -34,6 +37,55 @@ class MoldConfigTests(unittest.TestCase):
             values['QEMU_HOST_LINKER'] = linker
             output = config.shell_assignments(config.ConfigState(values), {})
             self.assertIn(f"QEMU_HOST_LINKER='{linker}'", output)
+
+    def test_portable_system_does_not_inject_linker_flags(self):
+        portable = load_module(PORTABLE_TOOL, 'portable_host_system')
+        flags = []
+        with patch.dict(os.environ, {'LDFLAGS': '', 'CC': 'cc', 'CXX': 'c++'}):
+            portable.add_portable_host_linker(
+                {'QEMU_HOST_LINKER': 'system', 'BOOTSTRAP_MOLD': 'auto'}, flags,
+            )
+        self.assertEqual(flags, [])
+
+    def test_portable_rejects_conflicting_linker_overrides(self):
+        portable = load_module(PORTABLE_TOOL, 'portable_host_conflict')
+        flags = []
+        with patch.dict(os.environ, {'LDFLAGS': '-fuse-ld=lld'}):
+            with self.assertRaisesRegex(RuntimeError, 'conflicts with LDFLAGS'):
+                portable.add_portable_host_linker(
+                    {'QEMU_HOST_LINKER': 'system', 'BOOTSTRAP_MOLD': 'auto'},
+                    flags,
+                )
+        self.assertEqual(flags, [])
+
+    def test_portable_linker_probes_both_compilers(self):
+        portable = load_module(PORTABLE_TOOL, 'portable_host_lld')
+        with tempfile.TemporaryDirectory() as td:
+            fake = pathlib.Path(td) / 'fake-compiler'
+            log = pathlib.Path(td) / 'calls'
+            fake.write_text(
+                '#!/usr/bin/env python3\n'
+                'import os, pathlib, sys\n'
+                'args = sys.argv[1:]\n'
+                'assert "-fuse-ld=lld" in args\n'
+                'with open(os.environ["WHP_FAKE_LINK_LOG"], "a") as stream:\n'
+                '    stream.write(" ".join(args) + "\\n")\n'
+                'output = pathlib.Path(args[args.index("-o") + 1])\n'
+                'output.write_text("#!/usr/bin/env python3\\n")\n'
+                'output.chmod(0o755)\n',
+                encoding='utf-8',
+            )
+            fake.chmod(0o755)
+            flags = []
+            with patch.dict(os.environ, {
+                'CC': str(fake), 'CXX': str(fake), 'LDFLAGS': '',
+                'WHP_FAKE_LINK_LOG': str(log),
+            }):
+                portable.add_portable_host_linker(
+                    {'QEMU_HOST_LINKER': 'lld', 'BOOTSTRAP_MOLD': 'auto'}, flags,
+                )
+            self.assertEqual(flags, ['--extra-ldflags=-fuse-ld=lld'])
+            self.assertEqual(len(log.read_text().splitlines()), 2)
 
     def test_mold_bootstrap_is_a_host_feature(self):
         config = load_module(CONFIG_TOOL, 'whp_mold_config')
