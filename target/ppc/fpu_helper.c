@@ -2154,8 +2154,11 @@ VSX_MADDQ(XSNMSUBQPO, NMSUB_FLGS, 0)
         }                                                                     \
     }                                                                         \
                                                                               \
-    memset(xt, 0, sizeof(*xt));                                               \
-    memset(&xt->fld, -r, sizeof(xt->fld));                                    \
+    /* Preserve XT when the invalid-operation exception is enabled. */    \
+    if (!(flags & float_flag_invalid) || !(env->fpscr & FP_VE)) {         \
+        memset(xt, 0, sizeof(*xt));                                       \
+        memset(&xt->fld, -r, sizeof(xt->fld));                            \
+    }                                                                     \
     do_float_check_status(env, false, GETPC());                               \
 }
 
@@ -2494,19 +2497,18 @@ uint32_t helper_##op(CPUPPCState *env, ppc_vsr_t *xt,                     \
     int i;                                                                \
     int all_true = 1;                                                     \
     int all_false = 1;                                                    \
+    bool vxsnan = false;                                                  \
+    bool vxvc = false;                                                    \
                                                                           \
     helper_reset_fpstatus(env);                                           \
                                                                           \
     for (i = 0; i < nels; i++) {                                          \
         if (unlikely(tp##_is_any_nan(xa->fld) ||                          \
                      tp##_is_any_nan(xb->fld))) {                         \
-            if (tp##_is_signaling_nan(xa->fld, &env->fp_status) ||        \
-                tp##_is_signaling_nan(xb->fld, &env->fp_status)) {        \
-                float_invalid_op_vxsnan(env, GETPC());                    \
-            }                                                             \
-            if (svxvc) {                                                  \
-                float_invalid_op_vxvc(env, 0, GETPC());                   \
-            }                                                             \
+            bool snan = tp##_is_signaling_nan(xa->fld, &env->fp_status) ||\
+                        tp##_is_signaling_nan(xb->fld, &env->fp_status);  \
+            vxsnan |= snan;                                               \
+            vxvc |= svxvc && (!snan || !(env->fpscr & FP_VE));            \
             t.fld = 0;                                                    \
             all_true = 0;                                                 \
         } else {                                                          \
@@ -2520,7 +2522,18 @@ uint32_t helper_##op(CPUPPCState *env, ppc_vsr_t *xt,                     \
         }                                                                 \
     }                                                                     \
                                                                           \
-    *xt = t;                                                              \
+    /* Record all invalid causes before raising the enabled exception. */ \
+    if (vxvc) {                                                           \
+        float_invalid_op_vxvc(env, 0, GETPC());                           \
+    }                                                                     \
+    if (vxsnan) {                                                         \
+        float_invalid_op_vxsnan(env, GETPC());                            \
+    }                                                                     \
+    /* Suppress XT update for enabled invalid-operation exceptions. */    \
+    if (!(env->fpscr & FP_VE) || (!vxsnan && !vxvc)) {                    \
+        *xt = t;                                                          \
+    }                                                                     \
+    do_float_check_status(env, false, GETPC());                           \
     crf6 = (all_true ? 0x8 : 0) | (all_false ? 0x2 : 0);                  \
     return crf6;                                                          \
 }
