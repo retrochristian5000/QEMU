@@ -459,7 +459,12 @@ fi
 # Keep Apple-specific -O2 off the LLVM linker command line.
 if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
     if [[ "$native_macho_lld" == 0 ]]; then
-        whp_append_flag LDFLAGS "-Wl,-O2"
+        # This flag is Apple-ld-specific; explicit LLD/mold selections are
+        # capability-probed later and must not inherit Apple ld optimizations.
+        case "${QEMU_HOST_LINKER:-auto}" in
+            lld|mold) ;;
+            *) whp_append_flag LDFLAGS "-Wl,-O2" ;;
+        esac
     fi
     whp_append_flag LDFLAGS "-Wl,-dead_strip"
 fi
