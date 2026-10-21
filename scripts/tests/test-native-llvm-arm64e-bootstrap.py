@@ -14,6 +14,9 @@ text = BOOTSTRAP.read_text(encoding='utf-8')
 # Explicit arm64e remains gated by C/C++ ABI + pointer-authentication probes.
 assert 'NATIVE_LLVM_MACOS_ARCH' in text
 assert 'compiler_supports_macos_arch()' in text
+assert 'sdk_real_path="$(cd "$sdkroot" && pwd -P)" || exit 1' in text
+assert 'MacOSX*.sdk) ;;' in text
+assert 'native LLVM host build requires a MacOSX.sdk' in text
 # Even a successfully executed arm64e main() can conceal missing compiler
 # pointer-authentication semantics. Both C and C++ probes must check the ABI
 # and exercise an authenticated indirect function-pointer call.
@@ -52,6 +55,24 @@ assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
 # selected architecture; otherwise clang could be arm64e while its runtimes are
 # silently built for a different ABI.
 assert text.count('-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch') >= 2
+
+# LLVM's CMake-side check must consume CMake's configured Apple target and
+# effective compiler predefines, not infer an arm64e ABI from host hardware.
+llvm_cmake = ROOT / 'toolchains' / 'llvm-project' / 'llvm' / 'CMakeLists.txt'
+llvm_config = ROOT / 'toolchains' / 'llvm-project' / 'llvm' / 'cmake' / 'config-ix.cmake'
+if llvm_cmake.is_file() and llvm_config.is_file():
+    cmake_text = llvm_cmake.read_text(encoding='utf-8')
+    config_text = llvm_config.read_text(encoding='utf-8')
+    assert 'CMAKE_SYSTEM_NAME STREQUAL "Darwin"' in cmake_text
+    assert 'NOT CMAKE_CROSSCOMPILING' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "arm64e"' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"' in cmake_text
+    assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in cmake_text
+    assert 'check_cxx_source_compiles' in cmake_text
+    assert 'LLVM_HOST_TRIPLE' in config_text
+    assert 'CMAKE_HOST_APPLE AND CMAKE_SYSTEM_NAME STREQUAL "Darwin"' in config_text
+    assert 'Native macOS LLVM host triple must describe macOS/Darwin' in config_text
 
 # Apple compiler-rt's SME assembly path uses the armv8a+sme driver spelling.
 # Do not normalize it to armv8-a+sme: that form is accepted in other AArch64
