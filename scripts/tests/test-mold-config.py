@@ -23,6 +23,18 @@ def load_module(path, name):
 
 
 class MoldConfigTests(unittest.TestCase):
+    def test_host_linker_is_selectable_across_os(self):
+        config = load_module(CONFIG_TOOL, 'whp_linker_config')
+        option = config.OPTION_BY_KEY['QEMU_HOST_LINKER']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'system', 'lld', 'mold'))
+        values = config.default_values()
+        for linker in ('system', 'lld', 'mold'):
+            values['QEMU_HOST_LINKER'] = linker
+            output = config.shell_assignments(config.ConfigState(values), {})
+            self.assertIn(f"QEMU_HOST_LINKER='{linker}'", output)
+
     def test_mold_bootstrap_is_a_host_feature(self):
         config = load_module(CONFIG_TOOL, 'whp_mold_config')
         option = config.OPTION_BY_KEY['BOOTSTRAP_MOLD']
