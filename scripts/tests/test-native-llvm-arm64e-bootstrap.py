@@ -9,9 +9,9 @@ BOOTSTRAP = ROOT / 'scripts' / 'bootstrap-native-clang.bash'
 text = BOOTSTRAP.read_text(encoding='utf-8')
 
 # Native LLVM is a host tool, so its Darwin architecture policy is independent
-# from QEMU TCG's WHP_MACOS_ARCH=auto safety gate.  On Apple Silicon, auto may
-# select arm64e only when both bootstrap compilers can compile, link, and run
-# that ABI; older macOS releases must retain arm64 as the compatibility path.
+# from QEMU TCG's WHP_MACOS_ARCH=auto safety gate. Apple Silicon auto must
+# always use the normal macOS arm64 ABI, even when arm64e is available.
+# Explicit arm64e remains gated by C/C++ ABI + pointer-authentication probes.
 assert 'NATIVE_LLVM_MACOS_ARCH' in text
 assert 'compiler_supports_macos_arch()' in text
 # Even a successfully executed arm64e main() can conceal missing compiler
@@ -26,6 +26,13 @@ assert '#if !__has_feature(ptrauth_calls)' in arch_probe
 assert 'int (*volatile callback)(void)' in arch_probe
 assert 'return callback();' in arch_probe
 assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in text
+arch_selection = text.split('case "$requested_macos_arch" in', 2)[2]
+auto_block = arch_selection.split('auto)', 1)[1].split(';;', 1)[0]
+assert 'darwin_cmake_arch=arm64' in auto_block
+assert 'darwin_cmake_arch=arm64e' not in auto_block
+assert 'compiler_supports_macos_arch' not in auto_block
+assert 'if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch"' in text
+assert 'if ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"' in text
 assert 'darwin_cmake_arch=arm64e' in text
 assert 'darwin_cmake_arch=arm64' in text
 assert 'WHP native LLVM macOS arch:' in text
