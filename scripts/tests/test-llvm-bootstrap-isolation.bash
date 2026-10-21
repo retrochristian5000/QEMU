@@ -55,6 +55,18 @@ grep -Fq -- '-DLLVM_MACOS_HOST_SDK_RESOLVE=ON' "$i386" || {
     printf 'error: i386 LLVM does not request CMake host SDK resolution\n' >&2
     exit 1
 }
+grep -Fq '"-DCMAKE_OSX_SYSROOT=$i386_host_sdk"' "$i386" || {
+    printf 'error: i386 LLVM can reuse a stale CMake SDK cache entry\n' >&2
+    exit 1
+}
+grep -Fq 'sdkroot="$sdk_real_path"' "$native" || {
+    printf 'error: native LLVM builtins/runtimes do not use the canonical SDK\n' >&2
+    exit 1
+}
+grep -Fq 'SDKROOT="$sdk_real_path"' "$powerpc_base" || {
+    printf 'error: PowerPC LLVM does not propagate its canonical SDK\n' >&2
+    exit 1
+}
 
 # The standalone PowerPC LLVM bootstrap can be called without macos-builder.
 # It must independently keep iPad/iPhone/simulator headers out of native tools.
