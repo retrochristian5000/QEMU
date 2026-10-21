@@ -113,6 +113,15 @@ whp_prepare_mold
 [[ " $LDFLAGS " == *' -fuse-ld=mold '* ]]
 grep -Fq -- ' -x c++ ' "$log"
 
+# Automatic mold must not displace the macOS linker required by ASan.
+QEMU_ASAN=1
+LDFLAGS=
+BOOTSTRAP_MOLD=auto
+whp_prepare_mold
+[[ "$BOOTSTRAP_MOLD" == 0 ]]
+[[ -z "$LDFLAGS" ]]
+QEMU_ASAN=n
+
 # Linker changes are permitted on the same host, rather than requiring a new
 # operating system or rebuild tree.
 LDFLAGS=
