@@ -229,11 +229,22 @@ if [[ -z "$DEVELOPER_DIR" || ! -d "$DEVELOPER_DIR" ]]; then
 fi
 
 export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
 if [[ ! -d "$SDKROOT" ]]; then
     printf 'error: selected macOS SDK does not exist: %s\n' "$SDKROOT" >&2
     exit 1
 fi
+# CMAKE_OSX_SYSROOT accepts iPhoneOS and iPhoneSimulator SDKs too. A native
+# QEMU/LLVM host bootstrap must never inherit one from an iPad/iOS build.
+sdk_real_path="$(cd "$SDKROOT" && pwd -P)" || exit 1
+case "${sdk_real_path##*/}" in
+    MacOSX*.sdk) ;;
+    *)
+        printf 'error: macOS host build requires a MacOSX.sdk; got: %s\n' "$SDKROOT" >&2
+        exit 1
+        ;;
+esac
+unset sdk_real_path
+export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
 case "$SDKROOT" in
     *' '*)
         printf '%s\n' \
@@ -352,6 +363,29 @@ reject_managed_flags
 WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
     "$MACOSX_DEPLOYMENT_TARGET" "$process_arch" "$CXX")" || exit 1
 export WHP_MACOS_ARCH
+
+# The directory name guards SDK family selection; these native header macros
+# also reject mislabeled SDK content before CMake creates an invalid cache.
+sdk_probe_arch=()
+if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
+    sdk_probe_arch=(-arch "$WHP_MACOS_ARCH")
+fi
+if ! "$CC" "${sdk_probe_arch[@]}" -isysroot "$SDKROOT" \
+        "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+        -x c -fsyntax-only - <<'WHP_MACOS_HOST_SDK'
+#include <TargetConditionals.h>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX || \
+    (defined(TARGET_OS_IOS) && TARGET_OS_IOS) || \
+    (defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST) || \
+    (defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR)
+#error The selected SDK must provide native macOS host headers
+#endif
+WHP_MACOS_HOST_SDK
+then
+    printf 'error: macOS host SDK header probe failed: %s\n' "$SDKROOT" >&2
+    exit 1
+fi
+unset sdk_probe_arch
 
 # The linker selection must agree across both Clang drivers and all active
 # user flag sources.  A successful C-only probe must not hide a C++ override.
