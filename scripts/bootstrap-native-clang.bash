@@ -483,12 +483,11 @@ if [[ "$host_os" == macos ]]; then
         aarch64)
             case "$requested_macos_arch" in
                 auto)
-                    if compiler_supports_macos_arch "$bootstrap_cc" c arm64e &&
-                       compiler_supports_macos_arch "$bootstrap_cxx" c++ arm64e; then
-                        darwin_cmake_arch=arm64e
-                    else
-                        darwin_cmake_arch=arm64
-                    fi
+                    # The normal macOS Apple Silicon host ABI is arm64.
+                    # Being able to compile and run an arm64e probe does not
+                    # authorize changing the LLVM/LLDB host ABI. Keep pointer
+                    # authentication ABI selection an explicit user choice.
+                    darwin_cmake_arch=arm64
                     ;;
                 arm64)
                     darwin_cmake_arch=arm64
@@ -525,6 +524,14 @@ if [[ "$host_os" == macos ]]; then
             ;;
     esac
 
+    # The effective host compiler ABI is the selected macOS target, not just
+    # the processor reported by uname. Probe both languages for the exact ABI.
+    if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch" ||
+       ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"; then
+        printf 'error: native LLVM macOS host ABI is unavailable: %s\n' \
+            "$darwin_cmake_arch" >&2
+        exit 1
+    fi
     printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
     cmake_host_args=(
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
