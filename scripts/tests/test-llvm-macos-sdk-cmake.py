@@ -16,6 +16,11 @@ LLVM_CMAKE = ROOT / "toolchains/llvm-project/llvm/CMakeLists.txt"
 
 
 def main() -> int:
+    # The fixture uses a POSIX xcrun wrapper and SDK symlinks. Native Windows
+    # LLVM configurations are separate and must not require these fixtures.
+    if os.name == "nt":
+        print("LLVM macOS SDK CMake tests: skipped on Windows")
+        return 0
     if not LLVM_CMAKE.is_file():
         print("LLVM macOS SDK CMake tests: skipped (LLVM submodule absent)")
         return 0
