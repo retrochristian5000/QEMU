@@ -233,24 +233,20 @@ trap cleanup EXIT
 
 mkdir -p "$TOOLCHAIN_WORK_DIR"
 
-# LLVM links several very large host executables. Prefer a faster linker when
-# the selected C and C++ drivers can actually use it, but keep the system linker
-# as a zero-dependency fallback. On Darwin, Clang routes non-LLD linkers through
-# the ld64 compatibility path and may inject -lto_library. mold can accept the
-# link while warning about that Apple-specific option, so leave Darwin to LLD
-# or the system linker. Other hosts retain the mold-first fast path.
+# LLVM links large host tools.  Detect the fastest usable linker by the
+# selected C/C++ drivers and execute the result.  Linker support must not be
+# guessed from the host OS (Mach-O and ELF backends differ by implementation).
 if [[ "$host_gcc_compatible" == 1 ]]; then
-    linker_probe="$TOOLCHAIN_WORK_DIR/.whp-linker-probe.$$"
+    linker_probe="$TOOLCHAIN_WORK_DIR/.whp-linker-probe.$"
     for candidate in mold lld; do
-        if [[ "$(uname -s)" == Darwin && "$candidate" == mold ]]; then
-            continue
-        fi
         if printf 'int main(void) { return 0; }\n' |
                "$TOOLCHAIN_HOST_CC" -x c - -fuse-ld="$candidate" \
                    -o "$linker_probe" >/dev/null 2>&1 &&
+           "$linker_probe" >/dev/null 2>&1 &&
            printf 'int main() { return 0; }\n' |
                "$TOOLCHAIN_HOST_CXX" -x c++ - -fuse-ld="$candidate" \
-                   -o "$linker_probe" >/dev/null 2>&1; then
+                   -o "$linker_probe" >/dev/null 2>&1 &&
+           "$linker_probe" >/dev/null 2>&1; then
             host_linker="$candidate"
             cmake_host_linker_args=("-DLLVM_USE_LINKER=$candidate")
             break
