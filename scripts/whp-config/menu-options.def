@@ -29,7 +29,8 @@ BOOTSTRAP_LIBTOOL|Host features|Bootstrap/use WHP Libtool|choice|auto|auto,y,n|
 BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n|
 BOOTSTRAP_SCCACHE|Host features|Bootstrap/use WHP sccacher|bool|n||
 COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,none|
-BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold (ELF hosts)|choice|auto|auto,y,n|
+QEMU_HOST_LINKER|Host features|QEMU host linker|choice|auto|auto,system,lld,mold|
+BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold|choice|auto|auto,y,n|
 MACOS_ENABLE_COCOA|Host features|Cocoa|choice|auto|auto,y,n|
 MACOS_ENABLE_COREAUDIO|Host features|CoreAudio|choice|auto|auto,y,n|
 MACOS_ENABLE_GTK|Host features|GTK|choice|auto|auto,y,n|
