@@ -173,7 +173,7 @@ assert "NATIVE_LLVM_CXX_STANDARD: '26'" in macos_workflow
 assert "WHP native LLVM C++ standard: C++26" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD=26' \"$marker\"" in macos_workflow
 assert "grep -Fxq 'CMAKE_CXX_STANDARD_REQUIRED=ON' \"$marker\"" in macos_workflow
-assert "grep -Fxq 'BOOTSTRAP_SCHEMA=13' \"$marker\"" in macos_workflow
+assert "grep -Fxq 'BOOTSTRAP_SCHEMA=14' \"$marker\"" in macos_workflow
 
 # Darwin Clang passes -lto_library <InstalledDir>/../lib/libLTO.dylib to ld64
 # when LTO is active. A Clang-only distribution therefore creates a producer /
@@ -197,7 +197,7 @@ assert '"-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"' in bootstrap
 assert 'LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes' in bootstrap
 assert '-fsanitize=undefined' in bootstrap
 assert '-fsanitize=undefined' in macos_workflow
-assert 'BOOTSTRAP_SCHEMA=13' in bootstrap
+assert 'BOOTSTRAP_SCHEMA=14' in bootstrap
 
 # LLVM configures builtins and runtimes as separate ExternalProjects on Darwin.
 # The parent CMAKE_OSX_SYSROOT is not a strong enough contract for every lane:

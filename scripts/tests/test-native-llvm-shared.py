@@ -53,7 +53,7 @@ class SharedLLVMProfileTests(unittest.TestCase):
         self.assertIn('NATIVE_LLVM_SHARED_TOOLCHAIN=', code)
         self.assertIn('expected_marker="$expected_marker"$', code)
         self.assertIn("LLVM_SHARED_TOOLCHAIN=1", code)
-        self.assertIn("BOOTSTRAP_SCHEMA=13", code)
+        self.assertIn("BOOTSTRAP_SCHEMA=14", code)
         self.assertIn('LLVM;clang-cpp"', code)
         self.assertIn("-DBUILD_SHARED_LIBS=OFF", code)
         self.assertIn("-DLLVM_ENABLE_PIC=ON", code)
