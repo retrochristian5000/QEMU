@@ -34,8 +34,14 @@ auto_block = arch_selection.split('auto)', 1)[1].split(';;', 1)[0]
 assert 'darwin_cmake_arch=arm64' in auto_block
 assert 'darwin_cmake_arch=arm64e' not in auto_block
 assert 'compiler_supports_macos_arch' not in auto_block
-assert 'if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch"' in text
-assert 'if ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"' in text
+# The shell combines the C and C++ probes with || across two lines.
+# Match the compound condition while tolerating harmless whitespace changes.
+import re
+assert re.search(
+    r'if\s+!\s+compiler_supports_macos_arch\s+"\$bootstrap_cc"\s+c\s+"\$darwin_cmake_arch"\s*\|\|\s*'
+    r'!\s+compiler_supports_macos_arch\s+"\$bootstrap_cxx"\s+c\+\+\s+"\$darwin_cmake_arch"\s*;\s*then',
+    text,
+) is not None
 assert 'darwin_cmake_arch=arm64e' in text
 assert 'darwin_cmake_arch=arm64' in text
 assert 'WHP native LLVM macOS arch:' in text
@@ -70,6 +76,14 @@ if llvm_cmake.is_file() and llvm_config.is_file():
     assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"' in cmake_text
     assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in cmake_text
     assert 'check_cxx_source_compiles' in cmake_text
+    assert 'check_cxx_source_compiles("${_llvm_macos_cxx_sdk_check}"' in cmake_text
+    assert 'set(_llvm_macos_cxx_sdk_check "${_llvm_macos_sdk_check}")' in cmake_text
+    assert '#include <cstddef>' in cmake_text
+    assert '#include <memory>' in cmake_text
+    # A backslash-continued #if can lose its continuation in CMake's
+    # try_compile source string and reject an otherwise valid macOS SDK.
+    sdk_probe_source = cmake_text.split('set(_llvm_macos_sdk_check [[', 1)[1].split(']])', 1)[0]
+    assert '\\' + '\n' not in sdk_probe_source
     assert 'LLVM_HOST_TRIPLE' in config_text
     assert 'CMAKE_HOST_APPLE AND CMAKE_SYSTEM_NAME STREQUAL "Darwin"' in config_text
     assert 'Native macOS LLVM host triple must describe macOS/Darwin' in config_text
