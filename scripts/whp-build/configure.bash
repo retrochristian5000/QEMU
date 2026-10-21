@@ -6,7 +6,7 @@ whp_configure_canonical_host_arch()
     case "$1" in
         amd64|x86_64) printf 'x86_64\n' ;;
         aarch64|arm64) printf 'arm64\n' ;;
-        *) printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_.-\n' '-' ;;
+        *) printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c '[:alnum:]_.-' '-' ;;
     esac
 }
 
@@ -15,20 +15,26 @@ whp_configure_canonical_host_os()
     case "$1" in
         Darwin) printf 'apple-darwin\n' ;;
         Windows|MINGW*|MSYS*|CYGWIN*) printf 'windows\n' ;;
-        *) printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_.-\n' '-' ;;
+        *) printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c '[:alnum:]_.-' '-' ;;
     esac
 }
 
 whp_configure_host_tag()
 {
+    local canonical_arch canonical_os
+
     # Neither a blank OS nor "arm64-" identifies a valid Linux/Darwin ABI.
     if [[ -z "${HOST_ARCH:-}" || -z "${HOST_OS:-}" ]]; then
         printf 'error: cannot claim BUILD_DIR without HOST_ARCH and HOST_OS\n' >&2
         return 1
     fi
-    printf '%s-%s\n' \
-        "$(whp_configure_canonical_host_arch "$HOST_ARCH")" \
-        "$(whp_configure_canonical_host_os "$HOST_OS")"
+    canonical_arch="$(whp_configure_canonical_host_arch "$HOST_ARCH")" || return 1
+    canonical_os="$(whp_configure_canonical_host_os "$HOST_OS")" || return 1
+    if [[ -z "$canonical_arch" || -z "$canonical_os" ]]; then
+        printf 'error: failed to normalize QEMU host ABI identity\n' >&2
+        return 1
+    fi
+    printf '%s-%s\n' "$canonical_arch" "$canonical_os"
 }
 
 whp_configure_metadata_value()
