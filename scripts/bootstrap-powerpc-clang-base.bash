@@ -239,6 +239,24 @@ WHP_LLVM_MACOS_SDK
         exit 1
     fi
 
+    # C++ SDK/stdlib availability is distinct from the C header check.
+    if ! "$TOOLCHAIN_HOST_CXX" -arch "$darwin_arch" -isysroot "$SDKROOT" \
+            "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+            -std=c++17 -x c++ -fsyntax-only - <<'WHP_LLVM_MACOS_CXX_SDK'
+#include <TargetConditionals.h>
+#include <memory>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX || \
+    (defined(TARGET_OS_IOS) && TARGET_OS_IOS) || \
+    (defined(TARGET_OS_MACCATALYST) && TARGET_OS_MACCATALYST) || \
+    (defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR)
+#error The LLVM host C++ SDK must provide macOS headers
+#endif
+WHP_LLVM_MACOS_CXX_SDK
+    then
+        printf 'error: LLVM host C++ SDK/libc++ probe failed: %s\n' "$SDKROOT" >&2
+        exit 1
+    fi
+
     host_cflags="-arch $darwin_arch -isysroot $SDKROOT -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
     host_cxxflags="$host_cflags"
     host_cppflags="$host_cflags"
