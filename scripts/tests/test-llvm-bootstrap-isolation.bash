@@ -41,6 +41,22 @@ grep -Fq 'host_os="${WHP_HOST_OS:-}"' "$native" || {
     exit 1
 }
 
+# The standalone PowerPC LLVM bootstrap can be called without macos-builder.
+# It must independently keep iPad/iPhone/simulator headers out of native tools.
+for required in \
+    'MacOSX*.sdk) ;;' \
+    'WHP_LLVM_MACOS_SDK' \
+    'WHP_LLVM_MACOS_CXX_SDK' \
+    '#include <TargetConditionals.h>' \
+    '#include <memory>' \
+    '"-DCMAKE_OSX_SYSROOT=$SDKROOT"'; do
+    if ! grep -Fq "$required" "$powerpc_base"; then
+        printf 'error: missing standalone LLVM macOS SDK guard: %s\n' \
+            "$required" >&2
+        exit 1
+    fi
+done
+
 for script in "$native" "$i386"; do
     grep -Fq 'unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS' "$script" || {
         printf 'error: LLVM bootstrap inherits QEMU host flags: %s\n' "$script" >&2
