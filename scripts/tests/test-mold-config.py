@@ -58,6 +58,7 @@ class MoldConfigTests(unittest.TestCase):
                 )
         self.assertEqual(flags, [])
 
+    @unittest.skipIf(os.name == 'nt', 'the fake linker driver uses a POSIX shebang')
     def test_portable_linker_probes_both_compilers(self):
         portable = load_module(PORTABLE_TOOL, 'portable_host_lld')
         with tempfile.TemporaryDirectory() as td:
