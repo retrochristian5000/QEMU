@@ -604,6 +604,18 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
                 fi
                 ;;
         esac
+        # QEMU's final host linker is selectable independently of the host OS.
+        # Select a compatible LLVM bootstrap linker first; the QEMU-only mold
+        # probe runs later, after firmware and toolchain preparation.
+        case "${QEMU_HOST_LINKER:-auto}" in
+            system|mold) whp_use_apple_linker=1 ;;
+            lld)
+                if [ "$whp_use_apple_linker" = 1 ]; then
+                    printf 'error: selected LLD cannot satisfy this macOS ASan/ARM64e policy\n' >&2
+                    exit 1
+                fi
+                ;;
+        esac
         if [ "$whp_use_apple_linker" = 1 ]; then
             LD=$(xcrun --find ld) || exit 1
             NATIVE_LLVM_LDFLAG=
