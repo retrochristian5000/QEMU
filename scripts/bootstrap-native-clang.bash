@@ -548,6 +548,7 @@ if [[ "$host_os" == macos ]]; then
     fi
     printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
     cmake_host_args=(
+        -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
         "-DCMAKE_OSX_SYSROOT=$sdkroot"
         "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
         "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
