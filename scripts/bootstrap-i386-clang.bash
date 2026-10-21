@@ -292,6 +292,12 @@ else
         -DLLVM_ENABLE_ZSTD=OFF
         -DLLVM_ENABLE_LIBXML2=OFF
     )
+    # SeaBIOS targets i386-none-elf, but LLVM itself is a host executable.
+    # Resolve the native macOS SDK inside CMake before compiler detection.
+    # This also works when the i386 bootstrap runs without macos-builder.
+    if [[ "$(uname -s)" == Darwin ]]; then
+        cmake_args+=(-DLLVM_MACOS_HOST_SDK_RESOLVE=ON)
+    fi
     cmake "${cmake_args[@]}"
     
     if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
