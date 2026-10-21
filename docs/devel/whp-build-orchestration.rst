@@ -92,6 +92,36 @@ Use ``-NoSourceUpdate`` as the PowerShell spelling of a one-run
 ``WHP_SOURCE_UPDATE=0`` override.  All other WHP environment variables and
 positional targets are passed through to ``build.sh``.
 
+Host linker selection
+---------------------
+
+``QEMU_HOST_LINKER`` is a host-feature choice in ``./build.sh menuconfig``.
+It accepts ``auto`` (preserve automatic selection), ``system`` (the compiler
+driver's default linker), ``lld``, and ``mold``.  The choice does not depend
+on ``HOST_OS``: the selected compiler, executable format, ABI, and runtime
+probe determine compatibility.
+
+Examples that preserve the existing build-tree ownership::
+
+  QEMU_HOST_LINKER=system ./build.sh qemu-system-ppc
+  QEMU_HOST_LINKER=lld ./build.sh qemu-system-ppc
+  QEMU_HOST_LINKER=mold ./build.sh qemu-system-ppc
+
+The Bash path probes C and C++ compiler-driver links and executes the host
+results before selecting an alternative linker.  The mold path also retains
+its archive/LTO probe. Explicit probe failures stop without silently changing
+linkers. The portable Python path uses installed linkers with dual-language
+link/run probes; it does not bootstrap the pinned mold submodule.
+
+``BOOTSTRAP_MOLD`` remains a separate control for the WHP mold fork.
+Conflicting explicit choices, including ``QEMU_HOST_LINKER=lld`` plus
+``BOOTSTRAP_MOLD=1``, are rejected.  ARM64e authenticated-fixup and macOS
+AddressSanitizer runtime admissions are not bypassed by trivial link tests.
+
+The Bash build records effective LDFLAGS in its incremental configuration
+identity. Switching linkers triggers ordinary QEMU reconfiguration without
+resetting or relabeling the persistent build directory.
+
 Build-tree transfers and ownership
 ----------------------------------
 
