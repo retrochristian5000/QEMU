@@ -52,7 +52,15 @@ whp_linker_driver_probe()
         output="$temp_dir/$compiler_var"
         if ! PATH="${path_prefix:+$path_prefix:}$PATH" "${command[@]}" \
             -x "$language" "$source" -fuse-ld="$selected" \
-            "${flags[@]}" -o "$output" || ! "$output"; then
+            "${flags[@]}" -o "$output"; then
+            status=1
+            break
+        fi
+        # Some Windows compiler drivers append .exe to the requested output.
+        if [[ ! -x "$output" && -x "$output.exe" ]]; then
+            output="$output.exe"
+        fi
+        if ! "$output"; then
             status=1
             break
         fi
