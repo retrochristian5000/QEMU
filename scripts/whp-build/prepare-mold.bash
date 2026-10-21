@@ -334,6 +334,16 @@ whp_prepare_mold()
                 printf 'error: macOS ASan requires the validated Apple linker path\n' >&2
                 return 1
                 ;;
+            1:auto|y:auto)
+                if [[ "$mode" == 1 ]]; then
+                    printf 'error: forced mold requires a validated macOS ASan runtime\n' >&2
+                    return 1
+                fi
+                BOOTSTRAP_MOLD=0
+                MOLD_LINKER=
+                export BOOTSTRAP_MOLD MOLD_LINKER
+                return 0
+                ;;
         esac
         if [[ "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
             if [[ "$selected" == lld &&
