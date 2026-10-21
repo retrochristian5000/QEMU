@@ -405,6 +405,20 @@ if [[ "$host_os" == macos ]]; then
         printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2
         exit 1
     }
+    # The standalone native LLVM entry can bypass macos-builder. Resolve SDK
+    # symlinks before allowing the CMake host build to inherit SDKROOT.
+    # iPhoneOS, iPadOS (iPhoneOS), and simulator SDKs belong to cross-target
+    # toolchains, not the LLVM executables running on this macOS host.
+    sdk_real_path="$(cd "$sdkroot" && pwd -P)" || exit 1
+    case "${sdk_real_path##*/}" in
+        MacOSX*.sdk) ;;
+        *)
+            printf 'error: native LLVM host build requires a MacOSX.sdk: %s\n' \
+                "$sdkroot" >&2
+            exit 1
+            ;;
+    esac
+    unset sdk_real_path
     # The standalone LLVM bootstrap does not always run through QEMU's
     # macos-builder policy. Do not pass a pre-Apple-Silicon deployment
     # target into CMake/compiler-rt even if an installed compiler accepts it.
