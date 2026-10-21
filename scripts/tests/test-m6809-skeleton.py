@@ -21,6 +21,9 @@ assert "TYPE_M6809_6809E_CPU" in qom
 assert "env->dp = 0;" in cpu
 assert "env->cc |= M6809_CC_I | M6809_CC_F;" in cpu
 assert "address_space_lduw_be" in cpu
+assert "#define CPU_INTERRUPT_NMI CPU_INTERRUPT_TGT_EXT_0" in h
+assert "#define CPU_INTERRUPT_FIR CPU_INTERRUPT_TGT_EXT_1" in h
+assert "'m6809'" in read("qapi/machine.json")
 assert "case 0x12:" in tcg and "translator_ldub" in tcg
 assert "LOG_UNIMP" in tcg and "DISAS_NORETURN" in tcg
 assert "target_arch += {'m6809': m6809_ss}" in read("target/m6809/meson.build")

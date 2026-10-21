@@ -23,6 +23,10 @@
 #define M6809_CC_F 0x40
 #define M6809_CC_E 0x80
 
+/* Target-local interrupt requests; hardware delivery is not yet modeled. */
+#define CPU_INTERRUPT_NMI CPU_INTERRUPT_TGT_EXT_0
+#define CPU_INTERRUPT_FIR CPU_INTERRUPT_TGT_EXT_1
+
 typedef struct CPUArchState {
     /* D = (A << 8) | B, not a host-endian overlay. */
     uint32_t a, b;            /* architecturally 8-bit */
