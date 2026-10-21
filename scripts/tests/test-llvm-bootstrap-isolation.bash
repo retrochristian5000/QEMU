@@ -41,6 +41,21 @@ grep -Fq 'host_os="${WHP_HOST_OS:-}"' "$native" || {
     exit 1
 }
 
+# Every LLVM host executable build on macOS must opt in to CMake's positive
+# SDK selection. The compiler's target (PowerPC/i386) is not the host SDK.
+grep -Fq -- '-DLLVM_MACOS_HOST_SDK_RESOLVE=ON' "$native" || {
+    printf 'error: native LLVM does not request CMake host SDK resolution\n' >&2
+    exit 1
+}
+grep -Fq -- '-DLLVM_MACOS_HOST_SDK_RESOLVE=ON' "$powerpc_base" || {
+    printf 'error: PowerPC LLVM does not request CMake host SDK resolution\n' >&2
+    exit 1
+}
+grep -Fq -- '-DLLVM_MACOS_HOST_SDK_RESOLVE=ON' "$i386" || {
+    printf 'error: i386 LLVM does not request CMake host SDK resolution\n' >&2
+    exit 1
+}
+
 # The standalone PowerPC LLVM bootstrap can be called without macos-builder.
 # It must independently keep iPad/iPhone/simulator headers out of native tools.
 for required in \
