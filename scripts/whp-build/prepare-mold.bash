@@ -325,6 +325,37 @@ whp_prepare_mold()
         return 1
     fi
 
+    # The ARM64e authenticated-fixup and macOS ASan runtime contracts are
+    # more specific than the host OS and need their own validation.  Do not
+    # bypass those contracts with a trivial C/C++ linker smoke test.
+    if [[ "${HOST_OS:-}" == Darwin ]]; then
+        case "${QEMU_ASAN:-n}:$selected" in
+            1:lld|y:lld|1:mold|y:mold)
+                printf 'error: macOS ASan requires the validated Apple linker path\n' >&2
+                return 1
+                ;;
+        esac
+        if [[ "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
+            if [[ "$selected" == lld &&
+                  ( "${WHP_ARM64E_USE_LLD:-0}" != 1 ||
+                    "${NATIVE_LLVM_LDFLAG:-}" != -fuse-ld=lld ) ]]; then
+                printf 'error: ARM64e LLD requires the authenticated-fixup linker selection\n' >&2
+                return 1
+            fi
+            if [[ "$selected" == mold || ( "$selected" == auto && "$mode" == 1 ) ]]; then
+                printf 'error: ARM64e mold needs authenticated-fixup validation before use\n' >&2
+                return 1
+            fi
+            if [[ "$selected" == auto ]]; then
+                # Keep the already-validated native linker for this ABI.
+                BOOTSTRAP_MOLD=0
+                MOLD_LINKER=
+                export BOOTSTRAP_MOLD MOLD_LINKER
+                return 0
+            fi
+        fi
+    fi
+
     if [[ "$selected" == system || "$selected" == lld ]]; then
         if ! whp_linker_flags_compatible "$selected"; then
             printf 'error: QEMU_HOST_LINKER=%s conflicts with an inherited linker override\n' "$selected" >&2
