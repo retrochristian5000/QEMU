@@ -66,7 +66,7 @@ jobs:
           )
           muon_bin="$muon_src/build/muon"
           test -x "$muon_bin"
-          "$muon_bin" -v
+          "$muon_bin" fmt -h >/dev/null
           printf 'MUON_BIN=%s\n' "$muon_bin" >> "$GITHUB_ENV"
 
       - name: Prepare reference Meson parser
