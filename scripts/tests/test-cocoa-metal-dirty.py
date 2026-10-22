@@ -145,5 +145,29 @@ int main(void)
         self.assertNotIn('[device retain]', setup)
         self.assertIn('[metalDevice release];', text)
 
+    def test_metal_layer_matches_srgb_and_validates_drawable(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        self.assertIn('CGColorSpaceCreateWithName(kCGColorSpaceSRGB)', text)
+        self.assertIn('[layer setColorspace:colorspace];', text)
+        self.assertIn('[metalLayer setContentsScale:backing.width];', text)
+        self.assertIn('CGSizeEqualToSize(', text)
+        self.assertIn('[drawableTexture width] != (NSUInteger)width', text)
+        self.assertIn('[drawableTexture height] != (NSUInteger)height', text)
+        self.assertIn('[drawableTexture pixelFormat] !=', text)
+        self.assertLess(text.index('[drawableTexture width] != (NSUInteger)width'),
+                        text.index('[commandBuffer presentDrawable:drawable];'))
+
+    def test_appkit_window_removal_and_retina_repaint(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void) viewDidMoveToWindow\n{')
+        end = text.index('\n- (void) selectConsoleLocked:', start)
+        body = text[start:end]
+        self.assertIn('[super viewDidMoveToWindow];', body)
+        self.assertIn('if ([self window])', body)
+        self.assertIn('[self setNeedsDisplay:YES];', body)
+        self.assertIn('- (void) viewDidChangeBackingProperties', body)
+        self.assertIn('[super viewDidChangeBackingProperties];', body)
+
+
 if __name__ == '__main__':
     unittest.main()
