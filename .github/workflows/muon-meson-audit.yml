@@ -32,6 +32,10 @@ on:
         description: 'Tracked Meson definition for file scope'
         type: string
         default: meson.build
+      analyze:
+        description: 'Also run advisory Muon project analyzer in audit mode'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -102,6 +106,22 @@ jobs:
             bash scripts/tests/muon-meson-audit.bash \
               "$REQUEST_MODE" "$REQUEST_SCOPE" "$REQUEST_PATH"
 
+      - name: Optional Muon project static analysis (advisory)
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'audit' && inputs.analyze == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # QEMU uses Meson features not necessarily supported by Muon;
+          # collect the analyzer diagnostics without changing build admission.
+          if timeout 90 "$MUON_BIN" analyze -q \
+            > "$RUNNER_TEMP/muon-meson-analyze.txt" 2>&1; then
+            echo 'Muon project analyzer completed.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            code=$?
+            printf 'Muon analyzer returned status %s (advisory, inspect artifact).\n' \
+              "$code" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Report and retain reviewable cleanup patch
         if: always()
         shell: bash
@@ -123,5 +143,6 @@ jobs:
           path: |
             ${{ runner.temp }}/muon-meson-report.txt
             ${{ runner.temp }}/muon-meson-cleanup.patch
+            ${{ runner.temp }}/muon-meson-analyze.txt
           if-no-files-found: warn
           retention-days: 14
