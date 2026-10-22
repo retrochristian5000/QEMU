@@ -417,6 +417,25 @@ cross compiler cannot leak backward into Python, GNU sed, Git, Bash, SDL,
 Ninja, JACK, or the native LLVM bootstrap. Explicit seed overrides use
 ``WHP_CC_SEED`` and ``WHP_CXX_SEED``.
 
+Bootstrap linker boundary
+-------------------------
+
+``ld.sh`` is a POSIX native-linker seed adapter paired with ``cc.sh``.
+``./ld.sh --print-ld`` (alias ``--print-seed``) resolves a linker that
+can consume the selected native compiler's relocatable object; ``--check``
+runs the same capability probe. Normal invocations pass arguments unchanged to
+the resolved executable. Explicit seed overrides are ``WHP_LD_SEED`` and
+``LD_FOR_BUILD``; broken overrides fail rather than silently selecting a
+different ABI. Selection rejects recursion into the adapter itself.
+
+``build.sh`` exports ``LD_FOR_BUILD`` before bootstrapping Python and LLVM,
+but never replaces QEMU artifact ``LD`` with this script. Darwin selects the
+Apple developer linker through ``xcrun`` at the seed boundary, not automatic
+``ld64.lld``; final host links still use the Clang driver's selected linker,
+and ASan, ARM64e, optional mold, and firmware cross-linker policies retain
+their separate probes. The relocatable probe is not evidence that an executable
+link, LTO, sanitizers, or a particular target ABI succeeds.
+
 Git bootstrap boundary
 ----------------------
 

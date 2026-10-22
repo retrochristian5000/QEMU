@@ -26,6 +26,17 @@ def main() -> int:
     require(build, '"$SOURCE_DIR/cc.sh" --print-cc', "early C seed")
     require(build, "CC_FOR_BUILD=", "build-machine C handoff")
 
+    linker = (ROOT / "ld.sh").read_text(encoding="utf-8")
+    require(linker, "linker_links_native_object", "native linker object probe")
+    require(linker, "WHP_LD_SEED LD_FOR_BUILD", "linker seed overrides")
+    require(linker, 'exec "$seed" "$@"', "linker argument passthrough")
+    require(linker, "xcrun --sdk macosx --find ld", "Apple linker seed")
+    require(linker, "Never auto-select ld64.lld", "ARM64e and ASan guard")
+    require(build, '"$SOURCE_DIR/ld.sh" --print-ld', "early linker seed")
+    require(build, "LD_FOR_BUILD=", "build-machine linker handoff")
+    if 'LD="$SOURCE_DIR/ld.sh"' in build:
+        raise SystemExit("error: bootstrap linker must not replace QEMU artifact LD")
+
     python = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")
     require(python, "CC_FOR_BUILD", "Python build compiler handoff")
     require(python, '"$SOURCE_DIR/cc.sh" --print-cc', "Python adapter fallback")

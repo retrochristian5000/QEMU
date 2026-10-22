@@ -1,10 +1,11 @@
-name: compiler seed adapter
+name: native compiler and linker seed adapters
 
 on:
   push:
     branches: [master]
     paths:
       - 'cc.sh'
+      - 'ld.sh'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/bootstrap-native-clang.bash'
@@ -20,6 +21,7 @@ on:
   pull_request:
     paths:
       - 'cc.sh'
+      - 'ld.sh'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/bootstrap-native-clang.bash'
@@ -91,4 +93,32 @@ jobs:
           if WHP_CC_SEED="$tmp/fake-cc" ./cc.sh --print-cc; then
               echo 'fake compiler unexpectedly passed native probe' >&2
               exit 1
+          fi
+
+      - name: Exercise native linker adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          linker="$(./ld.sh --print-ld)"
+          test -x "$linker"
+          ./ld.sh --check
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf '%s\n' 'int whp_link_test(void) { return 1; }' > "$tmp/probe.c"
+          ./cc.sh -c "$tmp/probe.c" -o "$tmp/probe.o"
+          ./ld.sh -r -o "$tmp/reloc.o" "$tmp/probe.o"
+          test -s "$tmp/reloc.o"
+
+          mkdir "$tmp/shim"
+          ln -s "$GITHUB_WORKSPACE/ld.sh" "$tmp/shim/ld"
+          PATH="$tmp/shim:$PATH" WHP_LD_SEED="$linker" \
+            "$tmp/shim/ld" --check
+          if WHP_LD_SEED="$GITHUB_WORKSPACE/ld.sh" ./ld.sh --print-ld; then
+            echo 'recursive linker unexpectedly accepted' >&2
+            exit 1
+          fi
+          if WHP_LD_SEED=/bin/false ./ld.sh --print-ld; then
+            echo 'unusable linker unexpectedly accepted' >&2
+            exit 1
           fi

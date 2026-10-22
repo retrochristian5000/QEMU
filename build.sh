@@ -214,6 +214,17 @@ case "$(uname -s 2>/dev/null || true)" in
         ;;
 esac
 
+# Resolve a native relocatable linker once, without changing the QEMU/firmware
+# artifact LD policy. Darwin ASan/arm64e and LLD selection still happen later.
+case "$(uname -s 2>/dev/null || true)" in
+    CYGWIN*|MINGW*|MSYS*) ;;
+    *)
+        LD_FOR_BUILD=$("$SOURCE_DIR/ld.sh" --print-ld) || exit 1
+        export LD_FOR_BUILD
+        printf 'QEMU bootstrap native linker: %s\n' "$LD_FOR_BUILD" >&2
+        ;;
+esac
+
 # Explicit PYTHON remains authoritative. Otherwise BOOTSTRAP_PYTHON follows the
 # same auto/force/disable policy as the other WHP-managed dependencies:
 # auto uses a usable host Python and falls back to the pinned fork, 1 forces
