@@ -445,7 +445,18 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void) viewDidMoveToWindow
 {
-    [self resizeWindow];
+    [super viewDidMoveToWindow];
+    if ([self window]) {
+        [self resizeWindow];
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void) viewDidChangeBackingProperties
+{
+    [super viewDidChangeBackingProperties];
+    /* A display move can change Retina scale without a guest update. */
+    [self setNeedsDisplay:YES];
 }
 
 - (void) selectConsoleLocked:(unsigned int)index
