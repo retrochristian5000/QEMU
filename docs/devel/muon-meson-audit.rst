@@ -9,7 +9,9 @@ The ``Muon Meson lint and cleanup`` GitHub Actions workflow runs on Meson
 definition changes and can also be launched manually. It bootstraps an
 **exact pinned upstream Muon revision**, separate from QEMU's toolchains,
 and audits tracked ``meson.build``, ``meson_options.txt``, and
-``meson.options`` files with ``muon check`` and ``muon fmt -q``.
+``meson.options`` files with non-mutating ``muon fmt`` parsing and ``muon fmt -q``
+style checks. The authoritative syntax check remains the existing Meson
+parser (Muon's old ``check`` command is not supported by this revision).
 
 Parsing errors fail CI. Legacy formatting drift is reported but does not
 block unrelated code: wholesale normalization of inherited QEMU source is
