@@ -45,6 +45,8 @@ typedef struct CocoaConsole CocoaConsole;
 - (void)setPixelFormat:(NSUInteger)pixelFormat;
 - (void)setFramebufferOnly:(BOOL)framebufferOnly;
 - (void)setDrawableSize:(CGSize)size;
+- (CGSize)drawableSize;
+- (void)setColorspace:(CGColorSpaceRef)colorspace;
 - (id)nextDrawable;
 @end
 
@@ -184,6 +186,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     Class<QEMUMetalLayerRuntime> layerClass;
     id<QEMUMetalLayerRuntime> layer;
     id<QEMUMetalDeviceRuntime> device;
+    CGColorSpaceRef colorspace;
 
     self = [super init];
     if (!self) {
@@ -227,6 +230,15 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     [layer setDevice:metalDevice];
     [layer setPixelFormat:QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM];
     [layer setFramebufferOnly:NO];
+
+    /* Match the sRGB Pixman/Core Graphics output on wide-gamut displays. */
+    colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    if (colorspace) {
+        if ([layer respondsToSelector:@selector(setColorspace:)]) {
+            [layer setColorspace:colorspace];
+        }
+        CGColorSpaceRelease(colorspace);
+    }
 
     [metalLayer setOpaque:YES];
     [metalLayer setFrame:[view bounds]];
@@ -349,6 +361,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     bool fullUpload = false;
     QEMUMetalOrigin origin = { 0, 0, 0 };
     QEMUMetalSize size;
+    NSSize backing;
+    CGSize desiredDrawableSize;
 
     if (nativeTexture) {
         width = (int)nativeTextureWidth;
@@ -453,8 +467,20 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
     size = (QEMUMetalSize){ (NSUInteger)width, (NSUInteger)height, 1 };
 
-    [(id<QEMUMetalLayerRuntime>)metalLayer
-        setDrawableSize:CGSizeMake(width, height)];
+    /* AppKit points and display pixels differ on Retina and external screens. */
+    backing = [view convertSizeToBacking:NSMakeSize(1.0, 1.0)];
+    if (isfinite(backing.width) && backing.width > 0.0 &&
+        [metalLayer contentsScale] != backing.width) {
+        [metalLayer setContentsScale:backing.width];
+    }
+
+    /* The guest image is already a texture: let Core Animation scale it. */
+    desiredDrawableSize = CGSizeMake(width, height);
+    if (!CGSizeEqualToSize([(id<QEMUMetalLayerRuntime>)metalLayer drawableSize],
+                           desiredDrawableSize)) {
+        [(id<QEMUMetalLayerRuntime>)metalLayer
+            setDrawableSize:desiredDrawableSize];
+    }
 
     drawable = [(id<QEMUMetalLayerRuntime>)metalLayer nextDrawable];
     if (!drawable) {
@@ -463,8 +489,17 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     }
 
     drawableTexture = [drawable texture];
+    /* A backing-store transition must never create an out-of-bounds blit. */
+    if (!drawableTexture ||
+        [drawableTexture width] != (NSUInteger)width ||
+        [drawableTexture height] != (NSUInteger)height ||
+        [drawableTexture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
     commandBuffer = [metalQueue commandBuffer];
-    if (!drawableTexture || !commandBuffer) {
+    if (!commandBuffer) {
         [metalLayer setHidden:YES];
         return false;
     }
