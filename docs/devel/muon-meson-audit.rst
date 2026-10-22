@@ -26,3 +26,8 @@ The resulting ``muon-meson-cleanup.patch`` is published as a workflow
 artifact for review. **It is not pushed or committed automatically**.
 Apply reviewed patches manually to avoid silent, large formatting churn.
 The workflow has only ``contents: read`` permission.
+
+Muon's project-wide static analyzer is optional. A manual ``mode=audit``
+run may enable ``analyze=true`` to run ``muon analyze -q``; its diagnostics
+are archived separately and are advisory while QEMU's Meson extensions and
+feature coverage are assessed. It does not change Meson parser results.
