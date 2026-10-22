@@ -1,0 +1,127 @@
+name: Muon Meson lint and cleanup
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '**/meson.build'
+      - '**/meson_options.txt'
+      - '**/meson.options'
+      - 'scripts/tests/muon-meson-audit.bash'
+      - '.github/workflows/muon-meson-audit.yml'
+  pull_request:
+    paths:
+      - '**/meson.build'
+      - '**/meson_options.txt'
+      - '**/meson.options'
+      - 'scripts/tests/muon-meson-audit.bash'
+      - '.github/workflows/muon-meson-audit.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'audit (read-only) or cleanup (reviewable patch, no push)'
+        type: choice
+        options: [audit, cleanup]
+        default: audit
+      scope:
+        description: 'All tracked Meson definitions or one tracked path'
+        type: choice
+        options: [file, all]
+        default: file
+      path:
+        description: 'Tracked Meson definition for file scope'
+        type: string
+        default: meson.build
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-muon-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source (pinned action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build pinned Muon, separate from QEMU toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          muon_rev=c9c8f7d51b063ed9a94af2878e8483c27c2ca618
+          muon_src="$RUNNER_TEMP/whp-muon"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/muon-build/muon.git "$muon_src"
+          git -C "$muon_src" checkout --detach "$muon_rev"
+          test "$(git -C "$muon_src" rev-parse HEAD)" = "$muon_rev"
+          (
+            cd "$muon_src"
+            ./bootstrap.sh build
+            build/muon-bootstrap setup build
+            build/muon-bootstrap -C build samu
+          )
+          muon_bin="$muon_src/build/muon"
+          test -x "$muon_bin"
+          "$muon_bin" -v
+          printf 'MUON_BIN=%s\n' "$muon_bin" >> "$GITHUB_ENV"
+
+      - name: Prepare reference Meson parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/whp-muon-meson"
+          "$RUNNER_TEMP/whp-muon-meson/bin/python" -m pip install -q \
+            --disable-pip-version-check meson==1.12.1
+          "$RUNNER_TEMP/whp-muon-meson/bin/python" \
+            scripts/tests/check-meson-syntax.py
+          echo "MESON_PYTHON=$RUNNER_TEMP/whp-muon-meson/bin/python" >> "$GITHUB_ENV"
+
+      - name: Audit Meson files (no repository modifications)
+        if: github.event_name != 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          MUON_REPORT="$RUNNER_TEMP/muon-meson-report.txt" \
+            bash scripts/tests/muon-meson-audit.bash audit all
+
+      - name: Run requested audit or create reviewable cleanup
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          REQUEST_MODE: ${{ inputs.mode }}
+          REQUEST_SCOPE: ${{ inputs.scope }}
+          REQUEST_PATH: ${{ inputs.path }}
+        run: |
+          set -euo pipefail
+          MUON_REPORT="$RUNNER_TEMP/muon-meson-report.txt" \
+          MUON_PATCH="$RUNNER_TEMP/muon-meson-cleanup.patch" \
+            bash scripts/tests/muon-meson-audit.bash \
+              "$REQUEST_MODE" "$REQUEST_SCOPE" "$REQUEST_PATH"
+
+      - name: Report and retain reviewable cleanup patch
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/muon-meson-report.txt" ]]; then
+            cat "$RUNNER_TEMP/muon-meson-report.txt" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f "$RUNNER_TEMP/muon-meson-cleanup.patch" && \
+                -s "$RUNNER_TEMP/muon-meson-cleanup.patch" ]]; then
+            echo "Muon cleanup was generated in the runner only; no git push or branch." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Muon diagnostics and proposed patch
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: muon-meson-report
+          path: |
+            ${{ runner.temp }}/muon-meson-report.txt
+            ${{ runner.temp }}/muon-meson-cleanup.patch
+          if-no-files-found: warn
+          retention-days: 14
