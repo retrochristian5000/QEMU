@@ -66,7 +66,10 @@ format_drift=0
 format_errors=0
 changed=0
 for file in "${selected[@]}"; do
-    if ! "$muon" check "$file" >>"$report" 2>&1; then
+    # Current Muon dropped the old 'check' CLI command. A successful
+    # stdout-only formatting pass verifies that Muon can parse this file;
+    # Meson's own parser remains authoritative for language compatibility.
+    if ! "$muon" fmt "$file" >/dev/null 2>>"$report"; then
         printf 'PARSE_ERROR %s\n' "$file" | tee -a "$report"
         parse_errors=$((parse_errors + 1))
         continue
@@ -80,7 +83,7 @@ for file in "${selected[@]}"; do
 
     if [[ "$mode" == cleanup ]]; then
         if ! "$muon" fmt -i "$file" >>"$report" 2>&1 ||
-           ! "$muon" check "$file" >>"$report" 2>&1 ||
+           ! "$muon" fmt "$file" >/dev/null 2>>"$report" ||
            ! "$muon" fmt -q "$file" >>"$report" 2>&1; then
             printf 'FORMAT_ERROR %s\n' "$file" | tee -a "$report"
             format_errors=$((format_errors + 1))
