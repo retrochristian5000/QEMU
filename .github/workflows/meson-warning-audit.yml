@@ -7,6 +7,9 @@ on:
     paths:
       - '**/meson.build'
       - 'meson_options.txt'
+      - '**/meson_options.txt'
+      - '**/meson.options'
+      - 'scripts/tests/check-meson-syntax.py'
       - 'configure'
       - 'pc-bios/**'
       - 'scripts/meson-buildoptions.py'
@@ -56,6 +59,17 @@ jobs:
       - name: Install macOS configure dependencies
         if: runner.os == 'macOS'
         run: brew install glib ninja pixman pkgconf
+
+      - name: Parse every tracked Meson file (minimum and current syntax)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/whp-meson-syntax"
+          parser_python="$RUNNER_TEMP/whp-meson-syntax/bin/python"
+          for version in 1.5.2 1.12.1; do
+            "$parser_python" -m pip install --disable-pip-version-check -q "meson==$version"
+            "$parser_python" scripts/tests/check-meson-syntax.py
+          done
 
       - name: Test Meson warning classifier
         run: bash scripts/tests/test-meson-warning-audit.bash
