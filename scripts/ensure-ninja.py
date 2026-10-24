@@ -147,6 +147,25 @@ def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
     if not argv or platform.system() != 'Darwin' or not sdkroot:
         return False
 
+    # Match QEMU's own ARM64e admission gate: verify the ABI feature macros
+    # and execute an indirect function-pointer call, not just a trivial main.
+    # The C++ helper must exercise pointer authentication on supported hosts.
+    source = 'int main() { return 0; }\n'
+    if arch == 'arm64e':
+        source = (
+            '#if !defined(__arm64e__) || !defined(__PTRAUTH__)\n'
+            '#error "Clang did not select the ARM64e pointer-authentication ABI"\n'
+            '#endif\n'
+            '#if !__has_feature(ptrauth_calls)\n'
+            '#error "Clang ARM64e indirect-call authentication is unavailable"\n'
+            '#endif\n'
+            'static int whp_ninja_probe_callback(void) { return 0; }\n'
+            'int main(void) {\n'
+            '    int (*volatile callback)(void) = whp_ninja_probe_callback;\n'
+            '    return callback();\n'
+            '}\n'
+        )
+
     with tempfile.TemporaryDirectory(prefix='whp-ninja-arch-') as tmp:
         output = pathlib.Path(tmp) / 'probe'
         completed = subprocess.run(
@@ -157,7 +176,7 @@ def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
                 '-x', 'c++', '-',
                 '-o', str(output),
             ],
-            input='int main() { return 0; }\n',
+            input=source,
             text=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -165,10 +184,10 @@ def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:
         )
         if completed.returncode != 0 or not output.is_file():
             return False
-        # A bootstrap architecture is useful only if the host can execute it.
-        # macOS 15 can compile/link arm64e user programs but intentionally
-        # rejects them at launch; macOS 26 supports third-party arm64e directly.
-        return binary_is_usable(output)
+        # Require the actual Mach-O subtype and a successful execution; an
+        # accepted compiler flag or an arm64-only binary is not proof of arm64e.
+        # macOS 15 can link arm64e while rejecting it at launch.
+        return binary_has_macos_arch(output, arch) and binary_is_usable(output)
 
 
 def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
