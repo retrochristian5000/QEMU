@@ -35,6 +35,7 @@ on:
       - 'scripts/tests/test-aarch64-darwin-sysctl.py'
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-install-validation.py'
       - 'scripts/tests/test-native-llvm-lean-profile.py'
       - 'scripts/tests/test-native-llvm-isa-boundary.py'
       - 'meson.build'
@@ -202,6 +203,10 @@ jobs:
       - name: Audit native LLVM PCH and sccache launcher selection
         shell: bash
         run: python3 scripts/tests/test-native-llvm-lean-profile.py
+
+      - name: Check native LLVM installed-toolchain linker validation boundary
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-install-validation.py
 
       - name: Reject x86 SSE4.2 assembler flags in non-x86 LLVM hosts
         shell: bash
