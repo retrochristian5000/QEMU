@@ -606,6 +606,45 @@ lack the WHP extension ignore ``NINJA_CRITICAL_PATH_TIMES``. This is a
 potential incremental-build speedup, not a verified wall-clock improvement;
 measure before adopting a tighter job limit or changing the LLVM cache.
 
+ARM64e Mach-O LLD authenticated import linking
+----------------------------------------------
+
+The pinned ``ld64.lld`` implements ARM64e authenticated-pointer
+relocations and USERLAND24 chained fixups, but its ability to *link* is
+distinct from Apple's willingness to execute a third-party arm64e image.
+WHP therefore keeps Apple ld as the native arm64e default and admits
+Mach-O LLD only with explicit ``WHP_ARM64E_USE_LLD=1`` and a real
+link-only PAC capability test. Do not automatically promote LLD based on
+its version or the existence of ``ld64.lld`` alone.
+
+The shared ``scripts/whp-build/arm64e-lld-probe.bash`` previously
+validated four authenticated **local rebases** and authenticated indirect
+call generation. That does not test dyld's imported-symbol binding path.
+The probe now builds an ARM64e producer dylib plus a consumer dylib
+containing four local authenticated rebases and four authenticated
+**imported binds**, covering IA, IB, DA and DB keys, 16-bit discriminator
+values and address-diversity bits. It checks the imported symbol and the
+USERLAND24 chained-pointer format, then runs the pinned LLVM fork's
+existing ``lld/test/MachO/Inputs/arm64e-auth-metadata.py`` decoder
+against the *linked Mach-O bytes*, including eight-byte chain-next
+fields and bind/rebase markers. A failing or missing decoder prevents
+LLD selection; Apple ld remains available for the default host build.
+No ABI version, code-signing policy or executable-runtime acceptance is
+inferred from a successful link-only test.
+
+The macOS CI workflow now includes a portable source/Bash-syntax guard::
+
+  python3 scripts/tests/test-arm64e-lld-binding-policy.py
+
+After building the pinned native compiler, that workflow also runs the
+real ARM64e LLD probe as a **nonfatal capability diagnostic**. It does
+not silently turn on ``WHP_ARM64E_USE_LLD``. Explicit LLD selection in
+``macos-arch-policy.bash`` still requires the same strict test to pass.
+A diagnostic failure cannot mark a working Apple-linked Clang toolchain
+incomplete. The macOS CI marker check also distinguishes the current
+macOS default ``clang;lld;lldb`` project list from a deliberately
+LLDB-disabled ``clang;lld`` build.
+
 Native LLVM installation versus linker capability
 -------------------------------------------------
 
