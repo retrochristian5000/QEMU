@@ -4,6 +4,7 @@
 
 import argparse
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tempfile
@@ -163,11 +164,9 @@ def main():
             assert not any(x in unsafe_dis for x in (
                 "blraa", "blrab", "braa", "brab"
             )), f"{opt}: PAC opt-out did not disable signed virtual calls"
-            assert any(
-                " br\t" in line or " blr\t" in line or
-                "\tbr " in line or "\tblr " in line
-                for line in unsafe_dis.splitlines()
-            ), f"{opt}: expected an unsigned branch from PAC opt-out"
+            assert re.search(r"\b(?:blr|br)\s+x[0-9]+\b", unsafe_dis), (
+                f"{opt}: expected an unsigned branch from PAC opt-out"
+            )
     print("ARM64e object emission: subtype, PAC, signed/unsigned C++ virtual calls, C callbacks, ARM64 control passed")
 
 
