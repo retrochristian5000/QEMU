@@ -23,6 +23,7 @@ on:
       - 'scripts/ensure-bash.py'
       - 'scripts/tests/test-bash-bootstrap.py'
       - 'toolchains/bash'
+      - 'toolchains/bash'
       - 'scripts/verify-macos-lto.sh'
       - 'scripts/verify-macos-lto.bash'
       - 'scripts/whp-build/prepare-build.bash'
@@ -175,6 +176,13 @@ jobs:
           grep -Fxq 'BASH_ABI_VARIANT=arm64e' "$marker"
           grep -Fxq "BASH_HOST_TRIPLET=$expected_triplet" "$marker"
           printf 'WHP_BUILD_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
+
+      - name: Smoke-test pinned Bash POSIX descriptor handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "${WHP_BUILD_BASH:?}"
+          sh toolchains/bash/tests/whp-posix-fd.sh "$WHP_BUILD_BASH"
 
       - name: Verify macOS architecture policy
         shell: bash
