@@ -116,6 +116,10 @@ _whp_auth_external:
 ASM
 cat > "$probe_dir/consumer.s" <<'ASM'
 .text
+.globl _whp_auth_caller
+_whp_auth_caller:
+  bl _whp_auth_external
+  ret
 _whp_auth_local:
   ret
 .data
@@ -176,6 +180,22 @@ if ! grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' \
 fi
 if ! python3 "$auth_decoder" "$probe_dir/libwhp_auth_consumer.dylib"; then
     printf 'error: ARM64e LLD PAC imported bind or local rebase metadata invalid\n' >&2
+    exit 1
+fi
+
+# The imported direct call must pass through __auth_stubs, loading a signed
+# __auth_got pointer and authenticating it against its slot address. Regular
+# ARM64's unsigned BR x16 stub can link successfully but is not ARM64e-safe.
+if ! "$objdump" --macho -d --no-show-raw-insn \
+        --section=__TEXT,__auth_stubs "$probe_dir/libwhp_auth_consumer.dylib" \
+        >"$probe_dir/import-stubs.txt" 2>"$probe_dir/import-stubs.log"; then
+    printf 'error: ARM64e LLD imported authenticated stubs unreadable\n' >&2
+    cat "$probe_dir/import-stubs.log" >&2
+    exit 1
+fi
+if ! grep -Eq '[[:space:]]braa[[:space:]]+x16,[[:space:]]*x17' \
+        "$probe_dir/import-stubs.txt"; then
+    printf 'error: ARM64e LLD imported branch lost authenticated BRAA stub\n' >&2
     exit 1
 fi
 
