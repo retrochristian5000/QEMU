@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     # this temporary prefix: a dangling symlink was being misdiagnosed as
     # a missing ld.lld before the real native LLVM build even started.
     fixture_tool = bin_dir / "whp-fixture-tool"
-    fixture_tool.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    fixture_tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fixture_tool.chmod(0o755)
     for name in required:
         (bin_dir / name).symlink_to("whp-fixture-tool")
