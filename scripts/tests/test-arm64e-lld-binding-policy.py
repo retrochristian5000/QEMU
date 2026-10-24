@@ -53,6 +53,8 @@ for index, (symbol, key, diversity, address) in enumerate(slots):
         exp_key, exp_div, exp_addr
     )
 
+assert ".globl _whp_auth_caller" in source
+assert "bl _whp_auth_external" in source
 assert 'cat > "$probe_dir/provider.s"' in probe
 assert '"$probe_dir/provider.o" -o "$probe_dir/libwhp_auth_provider.dylib"' in probe
 assert '-dylib -fixup_chains -install_name @rpath/libwhp_auth_consumer.dylib' in probe
@@ -66,6 +68,9 @@ assert "ARM64e LLD PAC consumer dylib bind link failed" in probe
 assert "ARM64e LLD PAC consumer lost USERLAND24 or imported symbol" in probe
 assert 'grep -Fq \'_whp_auth_external\'' in probe
 assert 'grep -Fq \'DYLD_CHAINED_PTR_ARM64E_USERLAND24\'' in probe
+assert "ARM64e LLD imported branch lost authenticated BRAA stub" in probe
+assert "--section=__TEXT,__auth_stubs" in probe
+assert "braa[[:space:]]+x16," in probe
 
 # Every LLD selection path must still call the shared probe. On a failing
 # imported bind, don't promote arm64e to the native Mach-O linker.
