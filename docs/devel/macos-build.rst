@@ -945,6 +945,30 @@ classification, PAC capability-bit masking, and the unchanged ABI-v0
 subtype. None of these tests establishes runtime execution of an x1
 binary or changes WHP's selected macOS host ABI.
 
+Clang ARM64e ``__PTRAUTH__`` predefinition
+---------------------------------------------
+
+Clang's documented arm64e feature contract uses ``__arm64e__``,
+``__PTRAUTH__``, and ``__has_feature(ptrauth_calls)``.
+``__PTRAUTH__`` indicates support for pointer-authentication intrinsics
+and qualifiers; ``ptrauth_calls`` indicates that indirect control-flow
+transfers are authenticated. Historically the pinned upstream Apple
+AArch64 macro path defined ``__arm64e__`` and the legacy
+``__PTRAUTH_INTRINSICS__`` spelling but did not emit ``__PTRAUTH__``
+itself. WHP's native LLVM ABI admission requires the documented name,
+so this could reject a usable ARM64e compiler before even reaching the
+Mach-O linker.
+
+The fork now emits ``__PTRAUTH__=1`` **only** under the existing
+``Triple.isArm64e()`` branch, adjacent to the legacy macro. It does not
+enable PAC on plain ``arm64`` or force the unsupported
+``arm64e.x1`` code-generation lane. Its Clang preprocessor test compiles
+the same feature assertions in C and C++ for both ``arm64e`` and
+``arm64``; the QEMU macOS workflow also checks predefines emitted by
+the **installed pinned Clang and Clang++**, not just the build source.
+This is macro/ABI admission alignment, not proof that a final binary
+is executable or that a linker produces correct authenticated fixups.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
