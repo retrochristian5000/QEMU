@@ -100,10 +100,11 @@ whp_macos_audit_linker_driver_flags()
                 "${selected_ld:-<unset>}" >&2
             return 1
         fi
-    elif [[ "$selected_ld" == */ld64.lld || "$selected_ld" == ld64.lld ]]; then
-        printf 'error: Apple ld policy conflicts with LD=%s\n' "$selected_ld" >&2
-        return 1
     fi
+
+    # In the Apple-linker lane, inherited LD does not select QEMU's host
+    # linker through Clang. Keep the driver-option audit below; the managed
+    # native LLD lane still requires the exact LD-to-installation match above.
 
     case "${WHP_MACOS_ARCH:-auto}:${QEMU_ASAN:-n}" in
         *:1|*:y)
