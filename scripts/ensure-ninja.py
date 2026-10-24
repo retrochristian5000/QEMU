@@ -323,6 +323,26 @@ def binary_has_macos_arch(path: pathlib.Path, arch: str) -> bool:
     return completed.returncode == 0 and arch in completed.stdout.split()
 
 
+def cached_auto_arm64e_ninja(
+    binary: pathlib.Path, marker: pathlib.Path, expected_marker: str,
+) -> bool:
+    """Reuse an already validated ARM64e helper without re-linking a probe.
+
+    Still verify both the Mach-O slice and actual execution. A cached marker
+    alone cannot prove that the current macOS host can launch ARM64e.
+    Explicit NINJA_MACOS_ARCH choices keep their usual probe/selection path.
+    """
+    return (
+        platform.system() == 'Darwin'
+        and platform.machine().lower() in ('arm64', 'aarch64')
+        and os.environ.get('NINJA_MACOS_ARCH', 'auto') == 'auto'
+        and marker.is_file()
+        and marker.read_text(encoding='utf-8') == expected_marker
+        and binary_has_macos_arch(binary, 'arm64e')
+        and binary_is_usable(binary)
+    )
+
+
 def atomic_install(staging: pathlib.Path, final: pathlib.Path) -> None:
     backup = final.with_name(final.name + f'.old.{os.getpid()}')
     shutil.rmtree(backup, ignore_errors=True)
@@ -437,10 +457,8 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     revision = ensure_ninja_source()
     cxx = select_host_cxx()
     sdkroot = select_host_sdkroot()
-    macos_arch = select_host_macos_arch(cxx, sdkroot)
     compiler_cache = select_compiler_cache()
     cxx_version = compiler_version(cxx)
-    expected_marker = marker_text(revision, cxx, cxx_version, sdkroot, macos_arch)
 
     host_tag = f'{platform.system().lower()}-{platform.machine().lower()}'
     host_tools_root = qemu_build_dir.parent / '.whp-host-tools'
@@ -448,6 +466,16 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
     marker = final_dir / '.whp-ninja-tool'
     binary = ninja_binary(final_dir)
 
+    # On repeated Apple Silicon builds, a matching installed ARM64e Ninja
+    # is already a stronger runtime check than another temporary C++ link.
+    # This fast path avoids the compiler probe only for auto selection.
+    arm64e_marker = marker_text(revision, cxx, cxx_version, sdkroot, 'arm64e')
+    if cached_auto_arm64e_ninja(binary, marker, arm64e_marker):
+        print(f'Reused bundled Ninja: {binary}', file=sys.stderr)
+        return binary.resolve()
+
+    macos_arch = select_host_macos_arch(cxx, sdkroot)
+    expected_marker = marker_text(revision, cxx, cxx_version, sdkroot, macos_arch)
     if (
         marker.is_file()
         and marker.read_text(encoding='utf-8') == expected_marker
