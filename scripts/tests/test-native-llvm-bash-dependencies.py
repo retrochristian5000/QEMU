@@ -33,13 +33,15 @@ with tempfile.TemporaryDirectory(prefix="whp-llvm-bash-") as tmp:
     hook = root / "startup.sh"
     hook.write_text("exit 79\n")
     tainted = os.environ.copy()
-    tainted.update(BASH_ENV=str(hook), ENV=str(hook),
-                   POSIXLY_CORRECT="y")
+    tainted.update(BASH_ENV=str(hook), ENV=str(hook))
+    # In POSIX mode Bash can ignore BASH_ENV. Reproduce the regular Bash
+    # startup failure first; test the POSIXLY_CORRECT contaminant separately.
     negative = subprocess.run(
         [bash, "--noprofile", "--norc", "-c", "exit 0"],
         env=tainted, capture_output=True, check=False
     )
     assert negative.returncode == 79, negative.returncode
+    tainted["POSIXLY_CORRECT"] = "y"
     with mock.patch.dict(os.environ, tainted, clear=True):
         clean = helper.bash_probe_env()
         assert not set(helper.BASH_PROBE_ENV_VARS).intersection(clean)
