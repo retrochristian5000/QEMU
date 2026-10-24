@@ -133,5 +133,79 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
         self.assertIn('NINJA_MACOS_ARCH=arm64e\n', marker)
 
 
+    def test_cached_auto_arm64e_requires_current_marker_slice_and_runtime(self):
+        import tempfile
+
+        mod = load_bootstrap_module()
+        with tempfile.TemporaryDirectory(prefix='whp-ninja-cache-test-') as tmp:
+            binary = pathlib.Path(tmp) / 'ninja'
+            marker = pathlib.Path(tmp) / '.whp-ninja-tool'
+            binary.write_bytes(b'cached')
+            marker.write_text('expected', encoding='utf-8')
+
+            with mock.patch.dict(os.environ, {}, clear=True), \
+                 mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
+                 mock.patch.object(mod.platform, 'machine', return_value='arm64'), \
+                 mock.patch.object(mod, 'binary_has_macos_arch', return_value=True) as arch, \
+                 mock.patch.object(mod, 'binary_is_usable', return_value=True) as run:
+                self.assertTrue(mod.cached_auto_arm64e_ninja(
+                    binary, marker, 'expected'))
+                arch.assert_called_once_with(binary, 'arm64e')
+                run.assert_called_once_with(binary)
+
+                marker.write_text('stale', encoding='utf-8')
+                self.assertFalse(mod.cached_auto_arm64e_ninja(
+                    binary, marker, 'expected'))
+                marker.write_text('expected', encoding='utf-8')
+
+                with mock.patch.object(mod, 'binary_has_macos_arch',
+                                       return_value=False):
+                    self.assertFalse(mod.cached_auto_arm64e_ninja(
+                        binary, marker, 'expected'))
+                with mock.patch.object(mod, 'binary_is_usable',
+                                       return_value=False):
+                    self.assertFalse(mod.cached_auto_arm64e_ninja(
+                        binary, marker, 'expected'))
+                with mock.patch.dict(os.environ, {'NINJA_MACOS_ARCH': 'arm64'}):
+                    self.assertFalse(mod.cached_auto_arm64e_ninja(
+                        binary, marker, 'expected'))
+                with mock.patch.dict(os.environ, {'NINJA_MACOS_ARCH': 'arm64e'}):
+                    self.assertFalse(mod.cached_auto_arm64e_ninja(
+                        binary, marker, 'expected'))
+                with mock.patch.object(mod.platform, 'machine', return_value='x86_64'):
+                    self.assertFalse(mod.cached_auto_arm64e_ninja(
+                        binary, marker, 'expected'))
+
+    def test_valid_cached_arm64e_skips_compiler_link_probe(self):
+        import tempfile
+
+        mod = load_bootstrap_module()
+        with tempfile.TemporaryDirectory(prefix='whp-ninja-cache-test-') as tmp:
+            build = pathlib.Path(tmp) / 'qemu-build'
+            installation = pathlib.Path(tmp) / '.whp-host-tools' / 'ninja-darwin-arm64'
+            installation.mkdir(parents=True)
+            binary = installation / 'ninja'
+            binary.write_bytes(b'cached')
+
+            with mock.patch.dict(os.environ, {}, clear=True), \
+                 mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
+                 mock.patch.object(mod.platform, 'machine', return_value='arm64'), \
+                 mock.patch.object(mod, 'ensure_ninja_source', return_value='revision'), \
+                 mock.patch.object(mod, 'select_host_cxx', return_value='/usr/bin/clang++'), \
+                 mock.patch.object(mod, 'select_host_sdkroot', return_value='/SDKs/MacOSX.sdk'), \
+                 mock.patch.object(mod, 'select_compiler_cache', return_value=''), \
+                 mock.patch.object(mod, 'compiler_version', return_value='clang version'), \
+                 mock.patch.object(mod, 'binary_has_macos_arch', return_value=True), \
+                 mock.patch.object(mod, 'binary_is_usable', return_value=True), \
+                 mock.patch.object(mod, 'select_host_macos_arch') as arch_probe:
+                expected = mod.marker_text(
+                    'revision', '/usr/bin/clang++', 'clang version',
+                    '/SDKs/MacOSX.sdk', 'arm64e')
+                (installation / '.whp-ninja-tool').write_text(
+                    expected, encoding='utf-8')
+                self.assertEqual(mod.ensure_bundled_ninja(build), binary.resolve())
+                arch_probe.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
