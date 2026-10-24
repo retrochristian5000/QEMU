@@ -262,7 +262,7 @@ assert 'local clang_link_driver=("$prefix/bin/clang")' in bootstrap
 # A native macOS toolchain can use the Apple linker even if Mach-O LLD
 # cannot yet link a new SDK's UBSan / Objective-C framework relocations.
 # LLD is still installed and independently probed for explicit use.
-usable_section = bootstrap.split('usable()\n{', 1)[1].split(
+usable_section = bootstrap.split('\nusable()\n{', 1)[1].split(
     '\n}\n\nverify_asan_when_requested()', 1)[0]
 assert 'clang_link_driver+=(-fuse-ld=lld)' not in usable_section
 assert 'local clang_link_driver=("$prefix/bin/clang")' in usable_section
