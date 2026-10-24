@@ -48,6 +48,7 @@ probe = (
     'darwin_cmake_arch="$WHP_TEST_ARCH"\n'
     "sdkroot=/mock/MacOSX.sdk\n"
     "deployment_target=15.0\n"
+    "llvm_default_target_triple=aarch64-apple-macosx15.0\n"
     "LLVM_WINDOWS_MANIFEST=0\n"
     "NATIVE_LLVM_ENABLE_LLDB=0\n"
     "NATIVE_LLVM_SHARED_TOOLCHAIN=0\n"
