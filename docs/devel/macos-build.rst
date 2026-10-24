@@ -642,16 +642,47 @@ therefore does not speed up the LLVM compiler build. The native Release
 profile already passes ``-DNDEBUG`` explicitly in both C and C++ flags.
 
 CMake does, however, retain global ``CMAKE_C_FLAGS`` and
-``CMAKE_CXX_FLAGS`` from older configurations. The bootstrap now clears
-these two cached fields explicitly and keeps all native LLVM optimization
+``CMAKE_CXX_FLAGS`` from older configurations. The bootstrap clears
+these cached fields explicitly and keeps all native LLVM C/C++ optimization
 flags in its controlled Release profile. This prevents stale QEMU or host
-preprocessor definitions and instrumentation switches from adding work or
-changing ABI assumptions on later incremental compilations.
+preprocessor definitions and instrumentation switches from changing ABI
+assumptions on later incremental compilations.
 
-The policy changes the installed LLVM cache marker to schema 13. An older
-schema-12 installed compiler will be rebuilt once; its persistent CMake/Ninja
-build tree is retained. This is a correctness and reproducibility repair,
-not a demonstrated standalone CPPFLAGS-based compilation speedup.
+The earlier C/C++ cleanup invalidated the old schema-12 LLVM installation
+marker. The current installation marker is schema 14; its explicit flag
+identity determines whether an existing staged toolchain remains reusable.
+An identity change does not by itself delete the persistent LLVM Ninja tree.
+These are correctness and reproducibility repairs, not demonstrated
+CPPFLAGS-based compilation speedups.
+
+LLVM x86 SSE4.2 and non-x86 assembler isolation
+-----------------------------------------------
+
+The WHP LLVM host toolchain enables ``AArch64;X86;PowerPC`` backends
+together. Backend selection is **not** a license to pass x86-only instruction
+flags into the host compiler on Apple Silicon or PowerPC. QEMU's own
+``-msse4.2`` Meson setting is scoped to an ``x86_64`` **host**
+and does not govern LLVM's embedded compilation targets.
+
+The native LLVM bootstrap already clears C/C++ flag caches and uses
+``-O2 -DNDEBUG`` for Release. It now also unsets inherited ``ASMFLAGS``
+and explicitly empties ``CMAKE_ASM_FLAGS`` and
+``CMAKE_ASM_FLAGS_RELEASE`` on every CMake configure. This closes a
+separate stale-assembly-cache path through which old ``-msse4.2``
+flags could enter a non-x86 LLVM build graph. The new values are included
+in the installed-toolchain marker and CMake configuration identity, so a
+changed policy reconfigures the existing tree without a general reset.
+
+Run the targeted check::
+
+  python3 scripts/tests/test-native-llvm-isa-boundary.py
+
+The test checks the QEMU host-only guard and LLVM bootstrap boundaries,
+then (when CMake and Ninja are installed) reproduces a poisoned assembly
+CMake cache and verifies that the generated Ninja commands lose
+``-msse4.2`` after reset. It does not claim the previously installed
+WHP LLVM compiler was actually contaminated. A native arm64e build and
+compile-command audit remain required to confirm the live generated graph.
 
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
