@@ -141,7 +141,34 @@ def main():
         assert count >= 3, f"C++ vtable lost authenticated pointers: {count}"
         v_dis = run([args.objdump, "-d", str(root / "virtual-arm64e.o")]).lower()
         assert "blraa" in v_dis
-    print("ARM64e object emission: header, PAC, C callbacks, C++ virtual calls, ARM64 control passed")
+
+        # An ARM64e subtype alone cannot guarantee PAC-call ABI conformance.
+        # Clang++ deliberately permits -fno-ptrauth-calls; it produces the
+        # same Mach-O subtype but unsigned BR/BLR virtual calls, which cannot
+        # safely consume authenticated ARM64e vtables. Verify that both
+        # unoptimized and release-like codegen expose this hazard.
+        for opt in ("-O0", "-O2"):
+            secure = root / ("virtual-pac-" + opt[1:] + ".o")
+            insecure = root / ("virtual-unsigned-" + opt[1:] + ".o")
+            emit(args.clangxx, "arm64e-apple-macosx13.0",
+                 root / "virtual.cc", secure, "-std=c++17", opt)
+            secure_dis = run([args.objdump, "-d", str(secure)]).lower()
+            assert any(x in secure_dis for x in ("blraa", "blrab", "braa", "brab")), (
+                f"{opt}: Clang++ lost authenticated C++ virtual calls"
+            )
+            emit(args.clangxx, "arm64e-apple-macosx13.0",
+                 root / "virtual.cc", insecure, "-std=c++17", opt,
+                 "-fno-ptrauth-calls")
+            unsafe_dis = run([args.objdump, "-d", str(insecure)]).lower()
+            assert not any(x in unsafe_dis for x in (
+                "blraa", "blrab", "braa", "brab"
+            )), f"{opt}: PAC opt-out did not disable signed virtual calls"
+            assert any(
+                " br\t" in line or " blr\t" in line or
+                "\tbr " in line or "\tblr " in line
+                for line in unsafe_dis.splitlines()
+            ), f"{opt}: expected an unsigned branch from PAC opt-out"
+    print("ARM64e object emission: subtype, PAC, signed/unsigned C++ virtual calls, C callbacks, ARM64 control passed")
 
 
 if __name__ == "__main__":
