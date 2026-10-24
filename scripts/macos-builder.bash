@@ -364,6 +364,11 @@ WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \
     "$MACOSX_DEPLOYMENT_TARGET" "$process_arch" "$CXX")" || exit 1
 export WHP_MACOS_ARCH
 
+# The selected CPU subtype does not prevent Clang++ from compiling unsigned
+# C++ virtual calls when an inherited flag disables pointer authentication.
+# Validate user/compiler sources before mutating any managed compile flags.
+whp_macos_audit_arm64e_codegen_flags || exit 1
+
 # The directory name guards SDK family selection; these native header macros
 # also reject mislabeled SDK content before CMake creates an invalid cache.
 sdk_probe_arch=()
