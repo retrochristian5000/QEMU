@@ -684,6 +684,41 @@ CMake cache and verifies that the generated Ninja commands lose
 WHP LLVM compiler was actually contaminated. A native arm64e build and
 compile-command audit remain required to confirm the live generated graph.
 
+LLDB incomplete Clang expression ownership on macOS
+--------------------------------------------------
+
+``NATIVE_LLVM_ENABLE_LLDB=auto`` enables LLDB for the managed macOS native
+LLVM host build. Apple's libc++ diagnoses a C++ ``std::unique_ptr<T>``
+deletion when the owning constructor, destructor or ``reset()`` is
+instantiated in a translation unit where ``T`` is only forward-declared.
+An error mentioning ``sizeof(_Tp) >= 0`` and
+``lldb_private::ClangExpressionDeclMap`` is this source-level
+incomplete-type issue, **not** evidence that the macOS SDK or Apple ABI is
+wrong. Do not disable the static assertion or alter SDK headers.
+
+The pinned LLVM fork already moved the ``ClangUserExpressionHelper`` owner
+lifetime out of the header. The second owner,
+``ClangUtilityFunctionHelper``, also held a
+``unique_ptr<ClangExpressionDeclMap>`` with an inline ``reset()`` and an
+implicit destructor. Both lifetime operations, and the constructor, now
+reside in ``ClangUtilityFunction.cpp`` after the complete declaration-map
+include. The adjacent ``ClangFunctionCallerHelper`` similarly owns a
+forward-declared ``ASTStructExtractor``; its constructor and destructor
+are now defined in ``ClangFunctionCaller.cpp``, which includes that type.
+These are ordinary out-of-line C++ definitions, with no new macOS-only
+branches or layout changes.
+
+Run the fork's quick source contract check after initializing the submodule::
+
+  python3 toolchains/llvm-project/lldb/scripts/test-declmap-incomplete-lifetime.py
+
+The native macOS bootstrap performs the actual Clang/LLDB compile when LLDB
+is enabled; the upstream fork also has an opt-in native macOS LLDB smoke
+workflow. A source-contract check is not proof that Apple's complete SDK
+build passes. Preserve the incremental Ninja tree on failure and examine the
+first compiler instantiation stack to distinguish a remaining incomplete
+owner from a stale object, header or CMake configuration.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
