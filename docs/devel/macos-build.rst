@@ -730,6 +730,20 @@ with a fixture toolchain, without recompiling LLVM::
 
   python3 scripts/tests/test-native-llvm-bash-dependencies.py
 
+One real macOS CI blocker was distinct from the compiled toolchain:
+``test-native-llvm-install-validation.py`` created its fake required
+tools as symlinks to ``/bin/true``. The macOS runner did not provide
+that executable at the assumed location, so ``test -x`` failed on the
+fake ``ld.lld`` and the test reported a missing tool **before LLVM
+was even built**. The fixture now creates one executable shell stub
+inside its own temporary prefix and uses relative symlinks to it,
+checking their executability before entering the production
+``usable()`` function. The real LLVM install still requires the
+complete LLD and LLVM tool distribution; this corrects a false
+negative in the hermetic fixture, not the production completeness
+rules. The failure was visible in macOS Actions job 121014389238
+(run 40141572202), at the installed-toolchain linker-validation step.
+
 This is separate from missing-library diagnostics. The current lean LLVM
 profile deliberately sets ``LLVM_ENABLE_ZLIB=OFF``,
 ``LLVM_ENABLE_ZSTD=OFF``, and ``LLVM_ENABLE_LIBEDIT=OFF``. It also
