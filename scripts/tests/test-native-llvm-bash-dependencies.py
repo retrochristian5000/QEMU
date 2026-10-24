@@ -92,6 +92,9 @@ with tempfile.TemporaryDirectory(prefix="whp-llvm-bash-") as tmp:
         exe.chmod(0o755)
     (prefix / "lib").mkdir()
     (prefix / "lib/libLTO.dylib").write_bytes(b"fixture")
+    # Keep ordinary noninteractive Bash mode here so BASH_ENV actually
+    # executes if the launcher ever loses its startup isolation.
+    tainted.pop("POSIXLY_CORRECT", None)
     tainted.update(WHP_BUILD_BASH=bash, WHP_TEST_PREFIX=str(prefix))
     wrapped = subprocess.run(
         ["/bin/sh", str(directory / "bootstrap-native-clang.sh")],
