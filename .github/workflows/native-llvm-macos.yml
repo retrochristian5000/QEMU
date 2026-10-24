@@ -35,6 +35,8 @@ on:
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-lean-profile.py'
+      - 'scripts/tests/test-native-llvm-isa-boundary.py'
+      - 'meson.build'
       - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
@@ -199,6 +201,10 @@ jobs:
       - name: Audit native LLVM PCH and sccache launcher selection
         shell: bash
         run: python3 scripts/tests/test-native-llvm-lean-profile.py
+
+      - name: Reject x86 SSE4.2 assembler flags in non-x86 LLVM hosts
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-isa-boundary.py
 
       - name: Audit pinned sccacher bootstrap
         shell: bash
