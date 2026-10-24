@@ -1060,6 +1060,9 @@ void qemu_init_exec_dir(const char *argv0)
 #else
     char *p = NULL;
     char buf[PATH_MAX];
+#if defined(__APPLE__)
+    char *resolved_path = NULL;
+#endif
 
     if (exec_dir) {
         return;
@@ -1095,12 +1098,23 @@ void qemu_init_exec_dir(const char *argv0)
     {
         char fpath[PATH_MAX];
         uint32_t len = sizeof(fpath);
-        if (_NSGetExecutablePath(fpath, &len) == 0) {
-            p = realpath(fpath, buf);
-            if (!p) {
-                return;
+        int ret = _NSGetExecutablePath(fpath, &len);
+
+        if (ret == 0) {
+            resolved_path = realpath(fpath, NULL);
+        } else if (len > sizeof(fpath)) {
+            /*
+             * dyld may report an executable path longer than PATH_MAX.
+             * Retry with its required size instead of losing relocation.
+             */
+            g_autofree char *long_path = g_malloc(len);
+
+            if (_NSGetExecutablePath(long_path, &len) == 0) {
+                resolved_path = realpath(long_path, NULL);
             }
         }
+        /* If resolving the dyld path fails, try argv0 below. */
+        p = resolved_path;
     }
 #elif defined(__HAIKU__)
     {
@@ -1128,6 +1142,9 @@ void qemu_init_exec_dir(const char *argv0)
     } else {
         exec_dir = CONFIG_BINDIR;
     }
+#if defined(__APPLE__)
+    free(resolved_path);
+#endif
 #endif
 }
 
