@@ -1135,6 +1135,7 @@ usable()
     local prefix="$1"
     local target=''
     local ubsan_exe=''
+    local ubsan_log=''
     local objc_exe=''
     local objc_log=''
     # Native macOS usability uses Apple ld for mandatory host/runtime smoke.
@@ -1149,7 +1150,10 @@ usable()
                          llvm-lib llvm-dlltool llvm-rc llvm-windres \
                          llvm-nm llvm-objcopy llvm-objdump llvm-strip \
                          llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
-        [[ -x "$prefix/bin/$required_tool" ]] || return 1
+        [[ -x "$prefix/bin/$required_tool" ]] || {
+            printf 'error: native LLVM missing required tool: %s\n' "$required_tool" >&2
+            return 1
+        }
     done
     if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
         windows_manifest_tool_usable "$prefix" || return 1
@@ -1163,7 +1167,10 @@ usable()
     grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
     grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
-    windows_cross_target_usable "$prefix" || return 1
+    windows_cross_target_usable "$prefix" || {
+        printf 'error: native LLVM Windows COFF/MinGW cross-target check failed\n' >&2
+        return 1
+    }
     if [[ "$host_os" == macos ]]; then
         [[ -x "$prefix/bin/llvm-otool" ]] || return 1
         "$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || return 1
@@ -1172,16 +1179,22 @@ usable()
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
+        ubsan_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan-log.XXXXXX")" || {
+            rm -f "$ubsan_exe"
+            return 1
+        }
         if ! printf 'int main(void) { return 0; }\n' |
             "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
                 -fsanitize=undefined \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
-                -x c - -o "$ubsan_exe" >/dev/null 2>&1; then
-            rm -f "$ubsan_exe"
+                -x c - -o "$ubsan_exe" >/dev/null 2>"$ubsan_log"; then
+            printf 'error: native LLVM UBSan link failed with Apple ld; check compiler-rt and SDK\n' >&2
+            cat "$ubsan_log" >&2
+            rm -f "$ubsan_exe" "$ubsan_log"
             return 1
         fi
-        rm -f "$ubsan_exe"
+        rm -f "$ubsan_exe" "$ubsan_log"
 
         # A Darwin compiler is not usable by QEMU merely because C links. The
         # Cocoa UI is Objective-C, and Clang's runtime link adds -lobjc. Prove
