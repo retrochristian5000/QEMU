@@ -763,6 +763,39 @@ build passes. Preserve the incremental Ninja tree on failure and examine the
 first compiler instantiation stack to distinguish a remaining incomplete
 owner from a stale object, header or CMake configuration.
 
+ARM64E_X1 Mach-O subtype and Apple SDK macro collision
+-----------------------------------------------------
+
+The Apple Mach-O SDK uses ``#define CPU_SUBTYPE_ARM64E_X1
+((cpu_subtype_t) 12)`` while LLVM models the same subtype as the
+``CPU_SUBTYPE_ARM64E_X1 = 12`` enum member in
+``llvm/BinaryFormat/MachO.h``. Both denote **the same numeric subtype**;
+the SDK's ``cpu_subtype_t`` cast is not a conflicting architecture code.
+However, including ``mach/machine.h`` first can cause the preprocessor
+to replace LLVM's enum member name with a cast expression, breaking C++
+compilation.
+
+LLDB's ``lldb/Host/SafeMachO.h`` already removes colliding SDK CPU
+subtype macros before including LLVM's Mach-O header. The pinned LLVM fork
+extends that existing cleanup to ``CPU_SUBTYPE_ARM64E_X1`` instead of
+changing the SDK, renaming the LLVM enum, or altering the Mach-O binary
+format. The rule is to include required Darwin system headers **before**
+``SafeMachO.h`` when a translation unit needs both; the wrapper does not
+promise safety if an Apple header redefines a macro afterward.
+
+The fast portable regression injects the typed macro, demonstrates the raw
+enum collision, and verifies the same source compiles through the real
+``SafeMachO.h`` wrapper using a minimal header fixture::
+
+  python3 toolchains/llvm-project/lldb/scripts/test-safemacho-arm64e-x1.py
+
+The opt-in LLVM fork macOS host smoke also compiles the **real** Apple SDK
+``mach/machine.h`` and LLVM ``MachO.h`` after the SafeMachO wrapper,
+simulating the X1 macro on SDKs that do not yet provide it. These tests
+check header compatibility, not arm64e.x1 instruction emission or pointer
+authentication. They do not authorize changing WHP's selected macOS host
+ABI or the LLVM target triple.
+
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
 
