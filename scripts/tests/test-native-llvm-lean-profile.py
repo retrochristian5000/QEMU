@@ -139,14 +139,20 @@ runtime_on = (
 )
 
 assert 'darwin_runtimes_cmake_args=' in bootstrap
-runtime_start = bootstrap.index('darwin_runtimes_cmake_args=')
+runtime_start = bootstrap.index('darwin_external_cmake_args=')
 runtime_end = bootstrap.index('cmake_darwin_runtime_args=(', runtime_start)
 runtime_block = bootstrap[runtime_start:runtime_end]
 for policy in runtime_off + runtime_on:
     assert policy in runtime_block, policy
     assert policy in bootstrap, policy
 
-# Do not leak compiler-rt-only variables into the separate builtins project.
+# The Apple-host iOS=OFF policy must reach both independently configured
+# projects. Other sanitizer/profile toggles remain runtime-only.
+external_block = bootstrap[bootstrap.index('darwin_external_cmake_args='):
+                           bootstrap.index('darwin_runtimes_cmake_args=',
+                                           bootstrap.index('darwin_external_cmake_args='))]
+assert ';-DCOMPILER_RT_ENABLE_IOS=OFF"' in external_block
+assert 'COMPILER_RT_BUILD_SANITIZERS=' not in external_block
 assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"' in bootstrap
 assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in bootstrap
 
