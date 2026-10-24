@@ -42,7 +42,8 @@
 
 void os_setup_early_signal_handling(void)
 {
-    struct sigaction act;
+    struct sigaction act = { 0 };
+
     sigfillset(&act.sa_mask);
     act.sa_flags = 0;
     act.sa_handler = SIG_IGN;
@@ -251,9 +252,18 @@ void os_daemonize(void)
         }
         umask(027);
 
-        signal(SIGTSTP, SIG_IGN);
-        signal(SIGTTOU, SIG_IGN);
-        signal(SIGTTIN, SIG_IGN);
+        /*
+         * Use sigaction for the daemon's job-control dispositions, as for
+         * the other POSIX startup signals. Leave the inherited signal mask
+         * untouched and preserve the existing ignored-signal behavior.
+         */
+        struct sigaction ignore = { 0 };
+
+        sigemptyset(&ignore.sa_mask);
+        ignore.sa_handler = SIG_IGN;
+        sigaction(SIGTSTP, &ignore, NULL);
+        sigaction(SIGTTOU, &ignore, NULL);
+        sigaction(SIGTTIN, &ignore, NULL);
     }
 }
 
