@@ -87,6 +87,10 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     fixture_tool.chmod(0o755)
     for name in required:
         (bin_dir / name).symlink_to("whp-fixture-tool")
+    # Fail with the actual fixture defect before extracting usable(). A
+    # dangling symlink would otherwise be attributed to missing native LLVM.
+    assert fixture_tool.is_file() and os.access(fixture_tool, os.X_OK)
+    assert all(os.access(bin_dir / name, os.X_OK) for name in required)
     trace = base / "clang-invocations.log"
 
     def run_probe(arch, fail_ubsan=False):
