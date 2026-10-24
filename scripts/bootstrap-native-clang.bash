@@ -1137,6 +1137,9 @@ usable()
     local ubsan_exe=''
     local objc_exe=''
     local objc_log=''
+    # Native macOS usability uses Apple ld for mandatory host/runtime smoke.
+    # The fork's ld64.lld is distributed and has a separate capability probe;
+    # rejecting Clang because LLD cannot link the current SDK is too strict.
     local clang_link_driver=("$prefix/bin/clang")
 
     local supported_targets=''
@@ -1167,9 +1170,6 @@ usable()
         [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
         [[ -x "$prefix/bin/ld64.lld" ]] || return 1
         [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
-        if [[ "$darwin_cmake_arch" != arm64e ]]; then
-            clang_link_driver+=(-fuse-ld=lld)
-        fi
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             return 1
         if ! printf 'int main(void) { return 0; }\n' |
