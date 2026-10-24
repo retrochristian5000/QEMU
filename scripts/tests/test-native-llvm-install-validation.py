@@ -78,8 +78,15 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     clang.write_text(driver, encoding="utf-8")
     clang.chmod(0o755)
     (bin_dir / "clang++").symlink_to("clang")
+    # macOS runners need not provide /bin/true (the normal location is
+    # /usr/bin/true). Keep every fixture executable and symlink *inside*
+    # this temporary prefix: a dangling symlink was being misdiagnosed as
+    # a missing ld.lld before the real native LLVM build even started.
+    fixture_tool = bin_dir / "whp-fixture-tool"
+    fixture_tool.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    fixture_tool.chmod(0o755)
     for name in required:
-        (bin_dir / name).symlink_to("/bin/true")
+        (bin_dir / name).symlink_to("whp-fixture-tool")
     trace = base / "clang-invocations.log"
 
     def run_probe(arch, fail_ubsan=False):
