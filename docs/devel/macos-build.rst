@@ -693,6 +693,54 @@ incomplete. The macOS CI marker check also distinguishes the current
 macOS default ``clang;lld;lldb`` project list from a deliberately
 LLDB-disabled ``clang;lld`` build.
 
+Bash startup hooks and LLVM bootstrap dependency isolation
+-----------------------------------------------------------
+
+WHP's native LLVM producer runs through the POSIX
+``scripts/bootstrap-native-clang.sh`` launcher into the managed Bash
+implementation. Bash's ``--noprofile`` and ``--norc`` switches do **not**
+block ``BASH_ENV`` for a noninteractive script. An inherited startup hook
+can exit or change flags *before* the LLVM bootstrap has had an opportunity
+to clear QEMU's CFLAGS/CXXFLAGS/CPPFLAGS/LDFLAGS. An exported
+``SHELLOPTS``, ``BASHOPTS``, ``ENV``, or ``POSIXLY_CORRECT`` can
+likewise change shell parsing/execution behavior. These are shell startup
+controls, not intentional native LLVM build inputs.
+
+The POSIX launcher now invokes Bash with a clean startup environment,
+removing only those five controls while preserving selected
+``SDKROOT``, ``MACOSX_DEPLOYMENT_TARGET``, build compilers, CMake/Ninja
+paths and the explicit toolchain ABI configuration. Bash's cached executable
+probe and ``MACHTYPE`` identity check apply the same cleanup so that a
+healthy pinned Bash does not get misdiagnosed and rebuilt because an
+unrelated user shell hook exited nonzero.
+
+WHP's host-tools selection previously accepted any Bash reporting version
+3.2 or newer. It now also executes the feature contract already used
+inside ``scripts/ensure-bash.py``: indexed arrays, arithmetic, and
+process substitution. A version-compatible Bash built without these
+features must not be published as ``WHP_BUILD_BASH`` or exported as
+``CONFIG_SHELL`` to the downstream CMake/Autoconf tools. Explicit
+``WHP_BUILD_BASH`` still takes precedence when selected, but the
+ordinary native LLVM launch protects itself from startup hooks.
+
+The targeted regression exercises a **real** Bash startup failure,
+the managed Bash cache/identity probes, the production host shell
+qualification function, and the production POSIX native LLVM wrapper
+with a fixture toolchain, without recompiling LLVM::
+
+  python3 scripts/tests/test-native-llvm-bash-dependencies.py
+
+This is separate from missing-library diagnostics. The current lean LLVM
+profile deliberately sets ``LLVM_ENABLE_ZLIB=OFF``,
+``LLVM_ENABLE_ZSTD=OFF``, and ``LLVM_ENABLE_LIBEDIT=OFF``. It also
+disables LLDB Python and LZMA; those optional libraries should not be
+invented as causes of a native compiler failure. An explicit Windows
+manifest-merger request can still force native libxml2 detection, and
+required Git, CMake, Ninja, Clang and macOS SDK failures remain fatal.
+The staged install, ABI checks and incremental CMake/Ninja graph are
+unchanged. Passing this shell regression is **not** a completed
+native macOS LLVM or ARM64e runtime validation.
+
 Native LLVM installation versus linker capability
 -------------------------------------------------
 
