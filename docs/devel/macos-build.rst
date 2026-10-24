@@ -606,6 +606,50 @@ lack the WHP extension ignore ``NINJA_CRITICAL_PATH_TIMES``. This is a
 potential incremental-build speedup, not a verified wall-clock improvement;
 measure before adopting a tighter job limit or changing the LLVM cache.
 
+LLVM ar / ranlib ARM64e archive and ABI integrity
+-----------------------------------------------
+
+LLVM's ``llvm-ar`` packages object files, while ``llvm-ranlib`` builds
+the archive symbol index consumed by the linker. A normal successful archive
+command does **not** establish that all members use the same Mach-O ABI.
+Unlike ``llvm-lipo``'s fat-archive slice validation, a regular archive
+may contain both plain ``arm64`` and ``arm64e`` members. Such mixing
+is not automatically a defect in ``llvm-ar``; it is a reason to validate
+the actual members before admitting an ARM64e QEMU static library.
+
+The WHP regression compiles two signed ARM64e Mach-O objects without an
+Apple SDK. It builds Darwin-format archives using the selected LLVM
+``llvm-ar`` and ``llvm-ranlib``, then checks that member bytes are
+unchanged, the CPU type is ARM64, the subtype is the versioned
+``0x80000002`` (ARM64e pointer-authentication ABI version 0), and the
+BSD ``__.SYMDEF`` symbol index points to the actual defining members.
+It checks deterministic output, updates a member and reindexes it, then
+deliberately mixes an ``arm64`` member and corrupts an index offset to
+ensure both faults are rejected by the independent reader.
+
+Run the SDK-independent test with the pinned toolchain::
+
+  python3 scripts/tests/test-llvm-ar-arm64e.py \
+    --clang "$NATIVE_LLVM_DIR/bin/clang" \
+    --ar "$NATIVE_LLVM_DIR/bin/llvm-ar" \
+    --ranlib "$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+
+On a real Mac, add ``--sdkroot "$SDKROOT"``,
+``--deployment-target "$MACOSX_DEPLOYMENT_TARGET"`` and
+``--objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"``. The extended check
+links an executable with **Apple ld** and confirms that both indexed
+members are extracted and the final Mach-O subtype survives. It deliberately
+does not execute the image: runtime eligibility for third-party ARM64e
+binaries is a separate macOS policy issue.
+
+The native macOS workflow now runs this test with the **installed pinned
+LLVM tools** and audits the actual pinned libisofs ``arm64e`` static
+archive using ``--audit-archive PATH``. That check reads real Mach-O
+members and confirms indexed symbols resolve to the correct members, rather
+than relying only on the ``lipo -archs`` label. It is an archive integrity
+check, not permission to combine ARM64e with ARM64, change PAC semantics,
+or select Mach-O LLD before its authenticated-link gate passes.
+
 ARM64e Mach-O LLD authenticated import linking
 ----------------------------------------------
 
