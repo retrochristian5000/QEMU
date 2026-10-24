@@ -650,6 +650,51 @@ than relying only on the ``lipo -archs`` label. It is an archive integrity
 check, not permission to combine ARM64e with ARM64, change PAC semantics,
 or select Mach-O LLD before its authenticated-link gate passes.
 
+ARM64e Clang++ flags and authenticated virtual dispatch
+----------------------------------------------------------
+
+Do not accept an arm64e Mach-O header as proof that all C++ calls obey
+the pointer-authentication ABI. Clang++ permits the explicit
+``-fno-ptrauth-calls`` opt-out: a C++ virtual-call object still reports
+ARM64, subtype ``0x80000002`` (arm64e ABI v0), but the virtual branch
+becomes ordinary ``BR`` or ``BLR`` instead of authenticated
+``BRAA`` or ``BLRAA``. That mismatch can break callers of signed
+virtual-table function pointers even though ``llvm-objdump`` and
+``llvm-lipo`` classify the object as arm64e.
+
+In explicit WHP ``WHP_MACOS_ARCH=arm64e`` builds,
+``whp_macos_audit_arm64e_codegen_flags`` now rejects
+``-fno-ptrauth-calls`` in ``CC``, ``CXX``, ``OBJC``,
+``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``, ``CPPFLAGS``
+or ``LDFLAGS`` before managed SDK and linker flags are appended.
+The ordinary ``arm64`` lane is unaffected. Return-address signing
+policy is separate from this C++ authenticated-indirect-call requirement;
+do not infer that ``-fno-ptrauth-returns`` has the same effects.
+
+The pre-build policy regression exercises the **production** guard,
+including all eight input sources and both CPU families::
+
+  python3 scripts/tests/test-arm64e-clangxx-flag-guard.py
+
+The installed toolchain's object test compiles real ARM64e C++ virtual
+calls both at ``-O0`` and ``-O2``, with and without the opt-out,
+checks the Mach-O subtype, and disassembles the resulting signed or
+unsigned branch. This prevents a false pass from a correct subtype
+alone::
+
+  python3 scripts/tests/test-arm64e-object-emission.py \
+    --clang "$NATIVE_LLVM_DIR/bin/clang" \
+    --clangxx "$NATIVE_LLVM_DIR/bin/clang++" \
+    --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
+
+The LLVM bootstrap itself continues using clean, pinned Release flags
+(``-O2 -DNDEBUG``), no inherited CXXFLAGS, and the existing Apple
+linker fallback. This is an ARM64e **code-generation flag** boundary,
+not evidence of a flaw in LLVM's Mach-O writer or a claim that macOS
+will execute an arbitrary third-party ARM64e executable. Compiler
+driver configuration and response files also require scrutiny when
+they are allowed from external inputs.
+
 ARM64e Mach-O LLD authenticated import linking
 ----------------------------------------------
 
