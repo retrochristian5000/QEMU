@@ -133,6 +133,39 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
         self.assertIn('NINJA_MACOS_ARCH=arm64e\n', marker)
 
 
+    def test_arm64e_probe_requires_pointer_auth_and_executable_slice(self):
+        mod = load_bootstrap_module()
+        source_seen = []
+
+        def compile_probe(command, **kwargs):
+            source_seen.append(kwargs['input'])
+            pathlib.Path(command[command.index('-o') + 1]).write_bytes(b'probe')
+            return mock.Mock(returncode=0)
+
+        with mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
+             mock.patch.object(mod.subprocess, 'run', side_effect=compile_probe), \
+             mock.patch.object(mod, 'binary_has_macos_arch', return_value=True) as check_slice, \
+             mock.patch.object(mod, 'binary_is_usable', return_value=True) as run:
+            self.assertTrue(mod.compiler_supports_macos_arch(
+                '/usr/bin/clang++', '/SDKs/MacOSX.sdk', 'arm64e'))
+            check_slice.assert_called_once()
+            self.assertEqual(check_slice.call_args.args[1], 'arm64e')
+            run.assert_called_once()
+            self.assertIn('__arm64e__', source_seen[0])
+            self.assertIn('__PTRAUTH__', source_seen[0])
+            self.assertIn('__has_feature(ptrauth_calls)', source_seen[0])
+            self.assertIn('int (*volatile callback)(void)', source_seen[0])
+
+            # A successful link is not sufficient if lipo sees an arm64
+            # slice or if macOS cannot launch this exact binary.
+            with mock.patch.object(mod, 'binary_has_macos_arch',
+                                   return_value=False):
+                self.assertFalse(mod.compiler_supports_macos_arch(
+                    '/usr/bin/clang++', '/SDKs/MacOSX.sdk', 'arm64e'))
+            with mock.patch.object(mod, 'binary_is_usable', return_value=False):
+                self.assertFalse(mod.compiler_supports_macos_arch(
+                    '/usr/bin/clang++', '/SDKs/MacOSX.sdk', 'arm64e'))
+
     def test_cached_auto_arm64e_requires_current_marker_slice_and_runtime(self):
         import tempfile
 
