@@ -22,7 +22,9 @@ on:
       - 'scripts/macos-compiler-policy.bash'
       - 'scripts/macos-arch-policy.bash'
       - 'scripts/ensure-bash.py'
+      - 'scripts/whp-build/host-tools.sh'
       - 'scripts/tests/test-bash-bootstrap.py'
+      - 'scripts/tests/test-native-llvm-bash-dependencies.py'
       - 'toolchains/bash'
       - 'toolchains/bash'
       - 'scripts/verify-macos-lto.sh'
@@ -190,6 +192,10 @@ jobs:
           set -euo pipefail
           test -x "${WHP_BUILD_BASH:?}"
           sh toolchains/bash/tests/whp-posix-fd.sh "$WHP_BUILD_BASH"
+
+      - name: Check Bash startup isolation and native LLVM prerequisites
+        shell: bash
+        run: python3 scripts/tests/test-native-llvm-bash-dependencies.py
 
       - name: Verify macOS architecture policy
         shell: bash
