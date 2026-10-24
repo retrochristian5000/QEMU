@@ -187,6 +187,32 @@ This is an allocator compatibility safeguard, not a claim that Bash has no
 runtime memory leaks. Runtime heap behavior on arm64 and arm64e still requires
 native macOS profiling; the streaming change affects source extraction only.
 
+Bash POSIX descriptor duplication
+---------------------------------
+
+The pinned WHP Bash fork now prefers ``fcntl(F_DUPFD_CLOEXEC)`` when it
+saves the shell's private, buffered script-input descriptor. On hosts that
+support the command (including modern macOS), a single descriptor-duplication
+operation sets ``FD_CLOEXEC`` atomically instead of using the historical
+``F_DUPFD`` followed by ``F_SETFD``. This also avoids one ``fcntl``
+call on successful saves. A kernel that rejects the command with ``EINVAL``
+and systems without the constant retain the old two-step path. An
+explicitly supplied destination fd still receives the traditional
+close-on-exec handling.
+
+Only this private script descriptor is changed. Bash pipelines, coprocesses,
+job control, ordinary shell redirections, and the double-fork/QEMU daemon
+path retain their established descriptor inheritance rules. In particular,
+``pipe2`` is not adopted blindly on Darwin, where it is not uniformly
+available. The ``toolchains/bash`` gitlink remains authoritative; the
+native macOS Bash bootstrap workflow runs the fork's
+``tests/whp-posix-fd.sh`` smoke test with the actual built Bash after
+checking the selected ARM64e ABI.
+
+The smoke test detects changed script and pipeline behavior but cannot by
+itself establish an atomicity race or benchmark wall-clock startup.
+Do not claim a boot-time gain without repeated native measurements.
+
 Link-time optimization
 ----------------------
 
