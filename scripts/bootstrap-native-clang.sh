@@ -17,8 +17,13 @@ fi
 # stdout. Validate that producer/consumer handoff here instead of allowing an
 # empty or partial prefix to become /bin/clang, /bin/llvm-ar, or /bin/ld64.lld
 # in build.sh after a bootstrap-side failure.
+# Bash executes BASH_ENV before entering a noninteractive .bash script.
+# Clear startup hooks/options at the POSIX launcher boundary so unrelated
+# user shell customizations cannot alter CMake dependency resolution or make
+# a healthy LLVM build look incomplete. Keep SDK/toolchain policy unchanged.
 native_llvm_dir=$(
-    "$bash_runner" "$script_dir/$bash_name" "$@"
+    env -u BASH_ENV -u ENV -u POSIXLY_CORRECT -u SHELLOPTS -u BASHOPTS \
+        "$bash_runner" --noprofile --norc "$script_dir/$bash_name" "$@"
 ) || exit $?
 if [ -z "$native_llvm_dir" ] || [ ! -d "$native_llvm_dir" ]; then
     printf 'error: native LLVM bootstrap returned an invalid prefix: %s\n' \
