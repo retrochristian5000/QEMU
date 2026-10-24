@@ -97,7 +97,7 @@ stage_root=""
 # object build. Do not let outer optimization, sanitizer, coverage, or frame-
 # pointer policy become part of LLVM's bootstrap ABI. Platform ABI inputs such
 # as SDKROOT and MACOSX_DEPLOYMENT_TARGET are handled explicitly below.
-unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS ASMFLAGS
 
 case "$TOOLCHAIN_FORCE_REBUILD" in
     0|1) ;;
@@ -962,6 +962,8 @@ LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
 LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
 CMAKE_C_FLAGS=
 CMAKE_CXX_FLAGS=
+CMAKE_ASM_FLAGS=
+CMAKE_ASM_FLAGS_RELEASE=
 CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
 CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
 CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
@@ -1303,9 +1305,13 @@ cmake_args=(
     "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
     -DCMAKE_BUILD_TYPE=Release
     # Explicitly clear persistent CMakeCache global flags from older builds.
-    # Only the controlled Release options may carry preprocessing macros.
+    # Assembly flags can retain host-only ISA options (e.g. -msse4.2)
+    # across an x86 -> AArch64 build-tree change, independently of C/C++.
+    # Only the controlled Release C/C++ options may carry macros.
     -DCMAKE_C_FLAGS=
     -DCMAKE_CXX_FLAGS=
+    -DCMAKE_ASM_FLAGS=
+    -DCMAKE_ASM_FLAGS_RELEASE=
     "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
     "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
     "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"
