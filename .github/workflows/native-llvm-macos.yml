@@ -42,6 +42,7 @@ on:
       - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
+      - 'scripts/tests/test-llvm-ar-arm64e.py'
       - 'scripts/whp-build/arm64e-lld-probe.bash'
       - 'scripts/tests/test-arm64e-lld-binding-policy.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
@@ -434,6 +435,10 @@ jobs:
           read -r -a archive_arch_list <<< "$archive_archs"
           test "${#archive_arch_list[@]}" -eq 1
           test "${archive_arch_list[0]}" = arm64e
+          # lipo only reports the selected slice name. Verify that *every*
+          # Mach-O archive member carries versioned arm64e ABI 0 and that
+          # Darwin ranlib points to real exports in the correct member.
+          python3 scripts/tests/test-llvm-ar-arm64e.py --audit-archive "$archive"
           grep -Fxq 'LIBISOFS_BOOTSTRAP_SCHEMA=18' "$marker"
           grep -Fxq 'WHP_MACOS_ARCH=arm64e' "$marker"
           grep -Fq "CONFIG_SHELL=$WHP_BUILD_BASH|" "$marker"
@@ -497,6 +502,19 @@ jobs:
             --clang "$NATIVE_LLVM_DIR/bin/clang" \
             --clangxx "$NATIVE_LLVM_DIR/bin/clang++" \
             --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
+
+      - name: Audit pinned llvm-ar and ranlib ARM64e member extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          python3 scripts/tests/test-llvm-ar-arm64e.py \
+            --clang "$NATIVE_LLVM_DIR/bin/clang" \
+            --ar "$NATIVE_LLVM_DIR/bin/llvm-ar" \
+            --ranlib "$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
+            --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump" \
+            --sdkroot "$sdkroot" \
+            --deployment-target "$MACOSX_DEPLOYMENT_TARGET"
 
       - name: Inspect authenticated ARM64e Mach-O LLD relocation support
         shell: bash
