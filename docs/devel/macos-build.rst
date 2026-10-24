@@ -906,26 +906,44 @@ However, including ``mach/machine.h`` first can cause the preprocessor
 to replace LLVM's enum member name with a cast expression, breaking C++
 compilation.
 
-LLDB's ``lldb/Host/SafeMachO.h`` already removes colliding SDK CPU
-subtype macros before including LLVM's Mach-O header. The pinned LLVM fork
-extends that existing cleanup to ``CPU_SUBTYPE_ARM64E_X1`` instead of
-changing the SDK, renaming the LLVM enum, or altering the Mach-O binary
-format. The rule is to include required Darwin system headers **before**
-``SafeMachO.h`` when a translation unit needs both; the wrapper does not
-promise safety if an Apple header redefines a macro afterward.
+Apple's Xcode 27 ``mach/machine.h`` adds related subtype-family
+definitions, not merely ``ARM64E_X1``. They include
+``CPU_SUBTYPE_ARM64_X1=3``, ``CPU_SUBTYPE_ARM64_MAX=20``, and the
+function-like ``CPU_SUBTYPE_HAS_ARM64E(subtype)`` and
+``CPU_SUBTYPE_HAS_ARM64X1(subtype)`` classification macros. The MAX
+constant is the reserved upper bound, **not an executable CPU subtype**.
+The two family tests differ: arm64e (2) belongs only to the PAC family,
+plain arm64.x1 (3) only to the X1 family, and arm64e.x1 (12) belongs to
+both. Mask the upper capability byte before classifying; this preserves
+the existing arm64e ABI-v0 encoding ``0x80000002``.
 
-The fast portable regression injects the typed macro, demonstrates the raw
-enum collision, and verifies the same source compiles through the real
-``SafeMachO.h`` wrapper using a minimal header fixture::
+The LLVM fork now models those metadata constants and exposes the two
+SDK-equivalent helpers within ``llvm::MachO``. LLDB's
+``lldb/Host/SafeMachO.h`` undefines all five colliding Apple macro
+spellings before including LLVM's header, including the function-like
+ones. This does **not** authorize arm64e.x1 code generation; LLVM still
+rejects arm64e.x1 object emission until its PAuth_LR and unwind ABI
+requirements are supported. The rule remains: include required Darwin
+system headers **before** ``SafeMachO.h`` when a translation unit
+needs both. Subsequent SDK includes that redefine these macros must
+also be guarded.
+
+The fast regression extracts the actual CPU subtype enum and helper
+definitions from the pinned LLVM header and compiles them through the
+real LLDB wrapper with simulated Xcode 27 macros. It first verifies that
+direct inclusion with the colliding macros fails, then checks that the
+wrapper compiles and correctly classifies both subtype families::
 
   python3 toolchains/llvm-project/lldb/scripts/test-safemacho-arm64e-x1.py
 
-The opt-in LLVM fork macOS host smoke also compiles the **real** Apple SDK
-``mach/machine.h`` and LLVM ``MachO.h`` after the SafeMachO wrapper,
-simulating the X1 macro on SDKs that do not yet provide it. These tests
-check header compatibility, not arm64e.x1 instruction emission or pointer
-authentication. They do not authorize changing WHP's selected macOS host
-ABI or the LLVM target triple.
+The opt-in LLVM fork macOS host smoke compiles the **real** Apple SDK
+``mach/machine.h`` against the **real** LLVM Mach-O header and checks
+the SDK and LLVM helper semantics. Missing SDK macros are injected only
+for this compile test on older SDKs. LLVM's
+``llvm/unittests/BinaryFormat/MachOTest.cpp`` also covers family
+classification, PAC capability-bit masking, and the unchanged ABI-v0
+subtype. None of these tests establishes runtime execution of an x1
+binary or changes WHP's selected macOS host ABI.
 
 Clang++ flag validation on Apple Silicon
 ----------------------------------------
