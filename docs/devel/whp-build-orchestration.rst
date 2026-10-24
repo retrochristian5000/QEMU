@@ -107,6 +107,14 @@ Examples that preserve the existing build-tree ownership::
   QEMU_HOST_LINKER=lld ./build.sh qemu-system-ppc
   QEMU_HOST_LINKER=mold ./build.sh qemu-system-ppc
 
+On macOS, an inherited ``LD=/opt/homebrew/bin/ld64.lld`` alone does
+not select the linker used by Clang's C/C++ drivers. Use
+``QEMU_HOST_LINKER=lld`` to request LLD with the host link probes.
+The macOS flag audit still rejects conflicting ``-fuse-ld`` and
+``--ld-path`` options. Managed native LLVM keeps its exact
+``ld64.lld`` identity check; ASan and default arm64e safety gates
+remain unchanged.
+
 The Bash path probes C and C++ compiler-driver links and executes the host
 results before selecting an alternative linker.  The mold path also retains
 its archive/LTO probe. Explicit probe failures stop without silently changing
