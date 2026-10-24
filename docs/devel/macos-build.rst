@@ -873,6 +873,39 @@ for six explicit/automatic iOS configurations, including when the iPhoneOS
 SDK is missing. Native Apple Silicon runtime compilation and published
 sanitizer tests still require a real macOS SDK and build environment.
 
+LLVM CMake syntax versus SDK and dependency failures
+---------------------------------------------------
+
+The pinned LLVM fork's ``compiler-rt/cmake/base-config-ix.cmake`` used
+an unquoted ``EXISTS`` operand for the Darwin SDK path. In CMake,
+unquoted expansion can split a path containing a semicolon into multiple
+list arguments. Instead of diagnosing SDK availability, configuration
+then fails with ``Unknown arguments specified``. Quote the full
+``OSX_SYSROOT`` value inside the ``if(NOT OSX_SYSROOT OR NOT EXISTS
+"...")`` expression. This is CMake argument parsing, not an arm64e
+or linker defect.
+
+The pinned LLVM fork now contains a standalone syntax and SDK-path test::
+
+  python3 toolchains/llvm-project/compiler-rt/cmake/tests/darwin-sysroot-condition.py
+
+It extracts and executes the **real** compiler-rt SDK condition with
+existing paths, paths with spaces and semicolons, a missing path, and an
+empty path. A negative control using the unquoted form must fail. The
+test also lexically parses LLVM's main CMake file, host configuration
+file and two compiler-rt files without executing a full project or
+requiring macOS. The compiler-rt Darwin CI workflow runs it on Ubuntu.
+This parser test does not validate actual compiler/library discovery,
+which is exercised separately by native macOS CMake/Ninja CI.
+
+A failure of the fork's GitHub ``CMake on multiple platforms`` workflow
+at ``Set up job`` does not prove CMake configuration failed: no CMake
+command ran in that job. The native QEMU bootstrap's staged toolchain
+remains subject to its real compiler-rt, SDK, linker and ABI checks.
+Do not loosen those validation boundaries to accommodate a syntax
+failure; correct the expression and preserve the incremental Ninja
+build graph.
+
 LLVM CPPFLAGS and cached global compiler flags
 ---------------------------------------------
 
