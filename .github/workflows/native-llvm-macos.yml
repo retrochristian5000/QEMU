@@ -46,6 +46,9 @@ on:
       - 'scripts/tests/test-apple-a18-pro-profile.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
+      - 'scripts/tests/test-system-posix-startup.py'
+      - 'util/cutils.c'
+      - 'os-posix.c'
       - 'scripts/bench-host-memory.py'
       - 'scripts/bench-smp-memory.py'
       - 'scripts/tests/test-arm64e-ide-hotpath.py'
@@ -196,6 +199,10 @@ jobs:
       - name: Audit TCG memory budget and Darwin JIT allocations
         shell: bash
         run: python3 scripts/tests/test-tcg-memory-budget.py
+
+      - name: Audit shared POSIX system executable startup
+        shell: bash
+        run: python3 scripts/tests/test-system-posix-startup.py
 
       - name: Audit SMP memory benchmark measurement logic
         shell: bash
