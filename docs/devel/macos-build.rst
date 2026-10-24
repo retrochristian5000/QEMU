@@ -77,6 +77,34 @@ effective compiler pipeline. It checks target triples, Clang resource paths,
 compiler configuration files, representative C/C++/Objective-C links,
 build-machine execution, and resulting Mach-O architecture slices.
 
+TCG code cache and macOS memory measurement
+-------------------------------------------
+
+The fork budgets automatic system-mode TCG cache size using both host and
+guest RAM. A reserved JIT mapping does not consume its full size in resident
+RAM. The two virtual addresses used by split-W^X can alias the same pages,
+so their virtual sizes must not be added as physical memory consumption.
+
+The existing QMP/RSS benchmark can report live code-cache occupancy, TB count
+and TB flush count beside paused, running and peak process RSS::
+
+  python3 scripts/bench-host-memory.py --qemu /path/to/qemu-system-ppc \
+    --machine mac99 --guest-mib 256 --boot-seconds 5 --jit-stats
+
+Compare the automatic policy with a smaller explicit code cache, keeping
+guest RAM, virtual CPU count, split-W^X mode and workload identical::
+
+  python3 scripts/bench-host-memory.py --qemu /path/to/qemu-system-ppc \
+    --machine mac99 --guest-mib 256 --boot-seconds 5 --jit-stats \
+    --tb-size 32
+
+The ``--jit-stats`` option reads the experimental QMP ``x-query-jit``
+interface; a missing or changed counter is an error, not a fabricated
+measurement. JIT cache occupancy and TB flushes do not attribute all RSS
+to TCG, measure macOS physical footprint or establish sustained throughput.
+Compare repeated runs under a representative workload before changing
+runtime cache sizing defaults.
+
 Environment hygiene and build identity
 --------------------------------------
 
