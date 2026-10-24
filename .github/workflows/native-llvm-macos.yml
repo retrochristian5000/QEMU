@@ -44,6 +44,7 @@ on:
       - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
+      - 'scripts/tests/test-arm64e-clangxx-flag-guard.py'
       - 'scripts/tests/test-llvm-ar-arm64e.py'
       - 'scripts/whp-build/arm64e-lld-probe.bash'
       - 'scripts/tests/test-arm64e-lld-binding-policy.py'
@@ -328,6 +329,10 @@ jobs:
       - name: Test Clang++ bootstrap flag probes
         shell: bash
         run: python3 scripts/tests/test-native-llvm-cxx-flag-probes.py
+
+      - name: Reject unauthenticated ARM64e C++ call flags
+        shell: bash
+        run: python3 scripts/tests/test-arm64e-clangxx-flag-guard.py
 
       - name: Test Clang++ Mach-O linker worker flags
         shell: bash
