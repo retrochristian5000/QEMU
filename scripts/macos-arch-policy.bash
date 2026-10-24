@@ -74,6 +74,32 @@ whp_macos_arm64e_auto_linker_ready()
         "$NATIVE_LLVM_DIR/bin/llvm-objdump" >/dev/null 2>&1
 }
 
+# The arm64e Mach-O subtype does not guarantee that its C++ code follows
+# the authenticated-call ABI. Clang++ accepts -fno-ptrauth-calls and still
+# writes cputype ARM64, subtype 0x80000002, but replaces virtual BRAA/BLRAA
+# calls with unsigned BR/BLR. Check every active compiler/flag source before
+# the wrapper appends -arch; leave ordinary arm64 builds unrestricted.
+whp_macos_audit_arm64e_codegen_flags()
+{
+    [[ "${WHP_MACOS_ARCH:-auto}" == arm64e ]] || return 0
+    local variable token value
+    local -a tokens=()
+    for variable in CC CXX OBJC CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+        value="${!variable:-}"
+        tokens=()
+        read -r -a tokens <<< "$value"
+        for token in ${tokens[@]+"${tokens[@]}"}; do
+            case "$token" in
+                -fno-ptrauth-calls)
+                    printf 'error: %s disables authenticated ARM64e calls: %s\n' \
+                        "$variable" "$token" >&2
+                    return 1
+                    ;;
+            esac
+        done
+    done
+}
+
 # Audit the actual compiler-driver command and flag sources, not the WHP INI
 # documentation lists.  Clang's --ld-path= overrides -fuse-ld=, and C/C++
 # commands can each carry different selectors.  Match the established linker
