@@ -632,10 +632,12 @@ jobs:
           # __PTRAUTH__ advertises an arm64e PAC ABI and is not permitted
           # on the ordinary arm64 slice. clang -dM requires no SDK headers.
           for whp_frontend in "$clang" "$clangxx"; do
+            whp_language=c
+            [ "$whp_frontend" != "$clangxx" ] || whp_language=c++
             for whp_arch in arm64e arm64; do
               whp_defines="$("$whp_frontend" \
                 "--target=$whp_arch-apple-macosx$MACOSX_DEPLOYMENT_TARGET" \
-                -dM -E -x c /dev/null)" || exit 1
+                -dM -E -x "$whp_language" /dev/null)" || exit 1
               if [ "$whp_arch" = arm64e ]; then
                 for whp_macro in __arm64e__ __PTRAUTH__ __PTRAUTH_INTRINSICS__; do
                   if ! grep -Fq "#define $whp_macro 1" <<< "$whp_defines"; then
@@ -652,7 +654,7 @@ jobs:
               fi
             done
           done
-          unset whp_frontend whp_arch whp_defines whp_macro
+          unset whp_frontend whp_language whp_arch whp_defines whp_macro
 
           printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_ci(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
             "$clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
