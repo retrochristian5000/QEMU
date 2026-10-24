@@ -170,6 +170,16 @@ audit_linker_flags()
 }
 
 audit_linker_flags apple
+# Inherited Homebrew LD does not override the Clang driver.
+audit_linker_flags apple LD '/opt/homebrew/bin/ld64.lld'
+audit_linker_flags apple LD 'ld64.lld'
+# Managed native LLD must still match its own installation exactly.
+if audit_linker_flags lld LD '/opt/homebrew/bin/ld64.lld' \
+    >"$TEST_DIR/linker.out" 2>"$TEST_DIR/linker.err"; then
+    printf 'error: native LLD accepted an unrelated Homebrew LD\n' >&2
+    exit 1
+fi
+grep -Fq 'disagrees with LD' "$TEST_DIR/linker.err"
 audit_linker_flags lld LDFLAGS '-fuse-ld=lld'
 audit_linker_flags lld CC 'clang -fuse-ld=lld'
 audit_linker_flags lld CXX 'clang++ --ld-path=/mock/llvm/bin/ld64.lld'
