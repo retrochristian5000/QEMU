@@ -632,6 +632,39 @@ the staged toolchain still passes its ABI/runtime checks before publication.
 Skipping redundant CMake configuration saves a potential setup pass, not the
 underlying LLVM C++ compilation or linking work.
 
+Compiler-rt iPhoneOS SDK detection in native macOS builds
+---------------------------------------------------------
+
+The WHP native LLVM bootstrap builds ``compiler-rt`` for **macOS**, with
+``compiler-rt`` builtins and runtimes configured as separate CMake projects.
+The macOS host compiler and sanitizer libraries do not require iPhoneOS,
+iPhoneSimulator, watchOS, tvOS or xrOS SDKs. Lack of an iPhoneOS SDK is
+therefore not itself a build defect.
+
+Compiler-rt's ``cmake/base-config-ix.cmake`` previously called
+``find_darwin_sdk_dir(HAS_IOS_SDK "iphoneos")`` and emitted
+``iOS SDK not found! Building compiler-rt without iOS support.`` even
+when ``COMPILER_RT_ENABLE_IOS=OFF`` had been explicitly requested.
+The fork now skips that SDK discovery and warning when iOS is disabled.
+Unspecified iOS support retains automatic SDK detection; an explicit
+iOS-enabled cross-target build retains its previous probe behavior.
+
+The native macOS bootstrap sends ``-DCOMPILER_RT_ENABLE_IOS=OFF`` through
+**both** ``BUILTINS_CMAKE_ARGS`` and ``RUNTIMES_CMAKE_ARGS``. The
+runtime-only flags still enable macOS sanitizers, libFuzzer and profiling.
+The selected ``MacOSX.sdk``, ``CMAKE_OSX_ARCHITECTURES``, deployment
+target and ARM64e policy are unchanged. The updated LLVM gitlink contains
+the fork fix; existing CMake/Ninja graphs remain incremental.
+
+Run the focused policy test from an initialized LLVM submodule::
+
+  python3 toolchains/llvm-project/compiler-rt/cmake/tests/ios-sdk-option-isolation.py
+
+It executes the production CMake option block with a mocked SDK locator
+for six explicit/automatic iOS configurations, including when the iPhoneOS
+SDK is missing. Native Apple Silicon runtime compilation and published
+sanitizer tests still require a real macOS SDK and build environment.
+
 LLVM CPPFLAGS and cached global compiler flags
 ---------------------------------------------
 
