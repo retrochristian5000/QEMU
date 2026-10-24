@@ -77,6 +77,39 @@ effective compiler pipeline. It checks target triples, Clang resource paths,
 compiler configuration files, representative C/C++/Objective-C links,
 build-machine execution, and resulting Mach-O architecture slices.
 
+Shared executable POSIX startup
+-------------------------------
+
+All ``qemu-system-*`` binaries enter the common ``system/main.c`` and
+``system/vl.c`` startup path, but each emulator still has target-specific
+devices and machine initialization. The common ``qemu_init_exec_dir()``
+helper also serves several QEMU host tools and resolves relocated firmware,
+module and data paths.
+
+On Darwin, the ``_NSGetExecutablePath()`` result may exceed
+``PATH_MAX``. The helper now retries only oversized paths using the size
+returned by dyld, resolves the executable's symlinks using
+``realpath(path, NULL)``, and frees that temporary allocation. If dyld
+or ``realpath`` cannot supply the canonical location, startup continues
+through the existing ``argv[0]`` and configured bindir fallbacks rather
+than returning with an unset directory.
+
+POSIX startup and daemon job-control dispositions use ``sigaction`` with
+initialized structures. The double-fork daemonization protocol and existing
+close-on-exec pipe are unchanged; substituting ``posix_spawn`` here would
+not preserve daemon semantics.
+
+To verify the source contract without building the full host toolchain::
+
+  python3 scripts/tests/test-system-posix-startup.py
+
+On a native macOS build, smoke-test the exact emulator binary with
+``--version`` and ``-machine help``, and verify that relocated module
+and firmware lookups still succeed. Repeat with the same binary under a
+symlinked path. These changes repair known path and signal-handling edge
+cases, but **do not establish a wall-clock startup speedup**. Timing and
+system-call tracing are required before claiming one.
+
 TCG code cache and macOS memory measurement
 -------------------------------------------
 
