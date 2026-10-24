@@ -606,6 +606,50 @@ lack the WHP extension ignore ``NINJA_CRITICAL_PATH_TIMES``. This is a
 potential incremental-build speedup, not a verified wall-clock improvement;
 measure before adopting a tighter job limit or changing the LLVM cache.
 
+Native LLVM installation versus linker capability
+-------------------------------------------------
+
+The managed native LLVM bootstrap first completes the ``distribution`` build
+and then installs it under a temporary ``DESTDIR``. Only after Clang and
+Clang++ compile host-ABI objects and the installed tools pass usability checks
+does WHP replace the live toolchain. A failure never publishes that partial
+installation; the existing LLVM CMake/Ninja tree remains available for an
+incremental retry.
+
+The old usability check mixed two different linker contracts: native macOS
+runtime validation and the optional Mach-O LLD capability. On ``arm64``
+(not ``arm64e``) it forced ``-fuse-ld=lld`` for both UBSan and Objective-C
+Cocoa framework links. That could reject an otherwise working native Clang
+and compiler-rt distribution when the fork's ``ld64.lld`` could not yet
+handle a newer Apple SDK. The bootstrap already had an independent probe
+before selecting Mach-O LLD for the LLVM build; the usability check must not
+silently override that choice.
+
+The required native macOS UBSan and Cocoa probes now use the installed Clang
+driver's normal **Apple linker** selection. They still require the correct
+macOS SDK, architecture, deployment target, installed ``libLTO.dylib``,
+compiler-rt runtime linking and libobjc/framework resolution. The ``ld64.lld``
+executable must still exist; explicit LLD use retains the independent
+capability checks. Windows cross-object/link validation, backend coverage,
+and the opt-in ASan check are unchanged. This fixes the overly strict
+*linker selection*, not the completeness rules for required artifacts.
+
+Missing required executables, Windows COFF/MinGW probe failures, and UBSan
+link failures now report which check failed rather than only the final
+``staged WHP native LLVM toolchain is incomplete`` message. UBSan compiler
+diagnostics are preserved in the failure output, while temporary probe files
+are deleted. A genuine failed UBSan or Cocoa test is still fatal.
+
+The focused regression extracts the real bootstrap usability function and
+runs it against a deliberately constrained fake Clang that rejects
+``-fuse-ld=lld``; it covers both ``arm64`` and ``arm64e``, missing
+required tools, and a failed UBSan link::
+
+  python3 scripts/tests/test-native-llvm-install-validation.py
+
+This fixture cannot establish that a full real Apple SDK/LLD toolchain builds.
+The normal native macOS CI path remains the integration verification gate.
+
 Avoiding repeated LLVM CMake configuration
 -------------------------------------------
 
