@@ -566,9 +566,18 @@ def llvm_roots(cc: str) -> list[pathlib.Path]:
     # accidentally acquire an unrelated /usr/bin/llvm-ar merely because both
     # executables share a broad system bin directory.
     if compiler_is_llvm(cc):
-        cc_dir = pathlib.Path(cc).resolve().parent
-        if cc_dir not in roots:
-            roots.append(cc_dir)
+        # Prefer the sibling of the *invoked* compiler path. On macOS,
+        # /var/... and /private/var/... are aliases, and Path.resolve()
+        # silently canonicalizes them. A canonical sibling changes the
+        # selected path even when the caller supplied a coherent toolchain
+        # directory. Preserve argv[0] and keep a realpath fallback when
+        # the invoked compiler is a symlink to the actual LLVM bin dir.
+        candidate = cc if "/" in cc else (shutil.which(cc) or cc)
+        cc_invoked_dir = pathlib.Path(os.path.abspath(candidate)).parent
+        cc_real_dir = pathlib.Path(candidate).resolve().parent
+        for cc_dir in (cc_invoked_dir, cc_real_dir):
+            if cc_dir not in roots:
+                roots.append(cc_dir)
     return roots
 
 
