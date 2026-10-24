@@ -259,7 +259,15 @@ assert bootstrap.index('bootstrap_lld_link_flags=') < bootstrap.index('bootstrap
 assert '"${bootstrap_linker_args[@]}"' in bootstrap
 assert 'WHP native LLVM bootstrap linker:' in bootstrap
 assert 'local clang_link_driver=("$prefix/bin/clang")' in bootstrap
-assert 'clang_link_driver+=(-fuse-ld=lld)' in bootstrap
+# A native macOS toolchain can use the Apple linker even if Mach-O LLD
+# cannot yet link a new SDK's UBSan / Objective-C framework relocations.
+# LLD is still installed and independently probed for explicit use.
+usable_section = bootstrap.split('usable()\n{', 1)[1].split(
+    '\n}\n\nverify_asan_when_requested()', 1)[0]
+assert 'clang_link_driver+=(-fuse-ld=lld)' not in usable_section
+assert 'local clang_link_driver=("$prefix/bin/clang")' in usable_section
+assert '[[ -x "$prefix/bin/ld64.lld" ]] || return 1' in usable_section
+assert 'bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
 assert '"${clang_link_driver[@]}" -arch "$darwin_cmake_arch"' in bootstrap
 assert 'linker_driver_args' not in bootstrap
 
