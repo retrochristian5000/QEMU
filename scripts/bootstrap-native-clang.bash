@@ -1509,7 +1509,9 @@ fi
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
 usable "$staged_toolchain" || {
-    printf 'error: staged WHP native LLVM toolchain is incomplete\n' >&2
+    # "Incomplete" can mean missing files or a failed SDK/runtime capability
+    # probe. Keep the old installed toolchain and the incremental Ninja graph.
+    printf 'error: staged WHP native LLVM failed required tool/ABI/runtime validation; see probe above\n' >&2
     exit 1
 }
 verify_asan_when_requested "$staged_toolchain" || exit 1
