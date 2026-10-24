@@ -741,6 +741,17 @@ are now defined in ``ClangFunctionCaller.cpp``, which includes that type.
 These are ordinary out-of-line C++ definitions, with no new macOS-only
 branches or layout changes.
 
+A separate diagnostic, ``unknown type name 'ClangPersistentVariables'``,
+came from ``ClangUserExpression.h`` storing a
+``ClangPersistentVariables *m_clang_state`` pointer without declaring the
+plugin-local class. The LLVM fork now forward-declares that type alongside
+``ClangExpressionDeclMap`` and ``ClangExpressionParser`` in
+``namespace lldb_private``. Only ``ClangUserExpression.cpp`` needs to
+include the complete ``ClangPersistentVariables.h`` definition for casts
+and member calls; adding the full header to the public expression header
+would increase dependencies and obscure the actual include contract. This
+repair does not change the member layout or the LLVM/macOS ABI.
+
 Run the fork's quick source contract check after initializing the submodule::
 
   python3 toolchains/llvm-project/lldb/scripts/test-declmap-incomplete-lifetime.py
