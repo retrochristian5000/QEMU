@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 bootstrap = (ROOT / "scripts/bootstrap-native-clang.bash").read_text(
     encoding="utf-8"
 )
-start = bootstrap.index("usable()\n{")
+start = bootstrap.index("\nusable()\n{") + 1
 end = bootstrap.index("\n}\n\nverify_asan_when_requested()", start) + 3
 usable = bootstrap[start:end]
 
