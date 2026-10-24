@@ -505,6 +505,30 @@ cannot establish a performance improvement. PCH adds initial build work,
 memory and disk use, so benchmark clean and incremental builds before
 claiming a speedup.
 
+Bundled Ninja ARM64e admission and reuse
+---------------------------------------
+
+The pinned Ninja host helper chooses ``arm64e`` in
+``NINJA_MACOS_ARCH=auto`` mode only when its selected C++ compiler
+exposes the pointer-authentication ABI and a compiled indirect-call
+probe has the ``arm64e`` Mach-O slice **and executes successfully**.
+Otherwise Apple Silicon retains the ordinary ``arm64`` fallback.
+An explicit ``NINJA_MACOS_ARCH=arm64`` remains authoritative, and an
+explicit ``arm64e`` request must pass the active runtime probe.
+
+For an unchanged, already-installed automatic ``arm64e`` Ninja,
+``scripts/ensure-ninja.py`` first verifies the exact bootstrap marker,
+Mach-O slice and actual executable, then reuses that binary without
+compiling and linking another temporary probe. A stale marker, wrong
+slice or failed execution restores the normal admission path. The
+bootstrap does not modify the pinned Ninja submodule, invoke a new
+linker policy or change any QEMU build jobs.
+
+The bundled-Ninja workflow tests the direct ``posix_spawn`` lane, the
+shell fallback and a no-op incremental build when its selected binary
+is ``arm64e``. These checks establish runtime behavior, **not** a
+wall-clock performance advantage over ``arm64``.
+
 Incremental LLVM builds and Ninja scheduling
 -------------------------------------------
 
