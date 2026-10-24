@@ -33,6 +33,10 @@ with tempfile.TemporaryDirectory(prefix="whp-llvm-bash-") as tmp:
     hook = root / "startup.sh"
     hook.write_text("exit 79\n")
     tainted = os.environ.copy()
+    # Make the negative control deterministic on developer machines where
+    # inherited POSIX options would otherwise suppress BASH_ENV execution.
+    for key in ("POSIXLY_CORRECT", "SHELLOPTS", "BASHOPTS"):
+        tainted.pop(key, None)
     tainted.update(BASH_ENV=str(hook), ENV=str(hook))
     # In POSIX mode Bash can ignore BASH_ENV. Reproduce the regular Bash
     # startup failure first; test the POSIXLY_CORRECT contaminant separately.
