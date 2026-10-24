@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import selectors
 import signal
@@ -67,7 +68,7 @@ class QMP:
                 raise RuntimeError("QEMU closed QMP before responding")
             self.buffer.extend(chunk)
 
-    def command(self, name: str, timeout: float) -> None:
+    def command(self, name: str, timeout: float) -> dict:
         assert self.process.stdin is not None
         request = {"execute": name, "id": name}
         self.process.stdin.write(json.dumps(request).encode() + b"\n")
@@ -83,8 +84,38 @@ class QMP:
                     raise RuntimeError(f"QMP {name}: {response['error']}")
                 if "return" not in response:
                     raise RuntimeError(f"QMP {name} returned no result")
-                return
+                return response["return"]
             # Events are asynchronous and do not complete the command.
+
+
+def parse_jit_stats(report: str) -> tuple[int, int, int, int]:
+    """Read the fork's live TCG code use, capacity and flush counters."""
+    code = re.search(r"^gen code size\s+(\d+)/(\d+)\s*$",
+                     report, re.MULTILINE)
+    blocks = re.search(r"^TB count\s+(\d+)\s*$", report, re.MULTILINE)
+    flushes = re.search(r"^TB flush count\s+(\d+)\s*$",
+                        report, re.MULTILINE)
+    if not all((code, blocks, flushes)):
+        raise RuntimeError("x-query-jit did not report TCG cache/flush counters")
+    used, capacity = (int(v) for v in code.groups())
+    if capacity == 0 or used > capacity:
+        raise RuntimeError("x-query-jit reported an invalid TCG code capacity")
+    return used, capacity, int(blocks.group(1)), int(flushes.group(1))
+
+
+def read_jit_stats(qmp: QMP, timeout: float) -> tuple[int, int, int, int]:
+    response = qmp.command("x-query-jit", timeout)
+    if not isinstance(response, dict) or not isinstance(
+            response.get("human-readable-text"), str):
+        raise RuntimeError("x-query-jit returned no human-readable-text")
+    return parse_jit_stats(response["human-readable-text"])
+
+
+def jit_summary(stats: tuple[int, int, int, int]) -> str:
+    used, capacity, blocks, flushes = stats
+    return (f"JIT code={used / 1048576:.2f}/{capacity / 1048576:.2f} MiB "
+            f"({100 * used / capacity:.1f}% used), "
+            f"TBs={blocks}, TB flushes={flushes}")
 
 
 def reap(pid: int, timeout: float) -> tuple[int, float]:
@@ -99,7 +130,8 @@ def reap(pid: int, timeout: float) -> tuple[int, float]:
 
 
 def measure(command: list[str], boot_seconds: float,
-            timeout: float) -> tuple[float, float, float]:
+            timeout: float, jit_stats: bool = False
+            ) -> tuple[float, float, float, tuple[int, int, int, int] | None]:
     with tempfile.TemporaryFile(mode="w+t") as errors:
         process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=errors)
@@ -114,13 +146,14 @@ def measure(command: list[str], boot_seconds: float,
             qmp.command("cont", timeout)
             time.sleep(boot_seconds)
             running = rss_mib(process.pid)
+            jit = read_jit_stats(qmp, timeout) if jit_stats else None
             qmp.command("quit", timeout)
             status, peak = reap(process.pid, timeout)
             reaped = True
             process.returncode = status
             if status != 0:
                 raise RuntimeError(f"QEMU exited with status {status}")
-            return paused, running, peak
+            return paused, running, peak, jit
         except Exception as exc:
             errors.seek(0)
             diagnostic = errors.read(4096).strip()
@@ -174,9 +207,26 @@ for line in sys.stdin:
     if message["execute"] == "quit":
         break
 '''
-    paused, running, peak = measure([sys.executable, "-u", "-c", fake],
-                                    0.02, 10)
+    paused, running, peak, jit = measure([sys.executable, "-u", "-c", fake],
+                                         0.02, 10)
+    assert jit is None
     assert 0 < paused and 0 < running and peak >= min(paused, running)
+    fixture = ("Translation buffer state:\n"
+               "gen code size       1024/65536\n"
+               "TB count            12\n"
+               "Statistics:\nTB flush count      2\n")
+    assert parse_jit_stats(fixture) == (1024, 65536, 12, 2)
+    class FakeJitQMP:
+        def command(self, name: str, timeout: float) -> dict:
+            assert name == "x-query-jit" and timeout == 1
+            return {"human-readable-text": fixture}
+    assert read_jit_stats(FakeJitQMP(), 1) == (1024, 65536, 12, 2)
+    try:
+        parse_jit_stats("gen code size 1024/65536\nTB count 12\n")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("incomplete TCG statistics must fail")
     failed = '''import sys
 sys.stderr.write("controlled QEMU failure\\n")
 sys.exit(4)
@@ -203,6 +253,8 @@ def main() -> int:
     parser.add_argument("--boot-seconds", type=float, default=2.0)
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--jit-stats", action="store_true",
+                        help="also query TCG code use, capacity and flushes")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if sys.platform not in ("darwin", "linux") or not hasattr(os, "wait4"):
@@ -232,15 +284,23 @@ def main() -> int:
     print("round    paused_MiB   running_MiB   peak_MiB   boot_delta_MiB")
     samples = []
     for round_number in range(1, args.rounds + 1):
-        values = measure(command, args.boot_seconds, args.timeout)
-        paused, running, peak = values
+        values = measure(command, args.boot_seconds, args.timeout,
+                         args.jit_stats)
+        paused, running, peak, jit = values
         print(f"{round_number:5} {paused:13.1f} {running:13.1f} "
               f"{peak:10.1f} {running - paused:16.1f}")
         samples.append(values)
+        if jit is not None:
+            print("      " + jit_summary(jit))
     paused, running, peak = [statistics.median(column)
-                             for column in zip(*samples)]
+                             for column in zip(*(s[:3] for s in samples))]
     print(f"median {paused:13.1f} {running:13.1f} "
           f"{peak:10.1f} {running - paused:16.1f}")
+    if args.jit_stats:
+        snapshots = [s[3] for s in samples]
+        medians = tuple(int(statistics.median(column))
+                        for column in zip(*snapshots))
+        print("median " + jit_summary(medians))
     return 0
 
 
