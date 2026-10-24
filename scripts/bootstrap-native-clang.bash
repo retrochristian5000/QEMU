@@ -563,10 +563,12 @@ if [[ "$host_os" == macos ]]; then
     # This prevents compiler-rt's legacy i386 probes from entering an ARM64
     # or ARM64e native bootstrap; Clang's X86 cross backend remains available.
     darwin_runtime_native_arch_only=ON
-    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCOMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=ON"
+    # Separate builtins and runtimes CMake projects both load compiler-rt's
+    # Darwin configuration. Neither should discover the iPhoneOS SDK while
+    # building the native macOS host toolchain.
+    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCOMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=ON;-DCOMPILER_RT_ENABLE_IOS=OFF"
     darwin_runtimes_cmake_args="$darwin_external_cmake_args"
     for compiler_rt_option in \
-        -DCOMPILER_RT_ENABLE_IOS=OFF \
         -DCOMPILER_RT_ENABLE_MACCATALYST=OFF \
         -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
         -DCOMPILER_RT_ENABLE_TVOS=OFF \
