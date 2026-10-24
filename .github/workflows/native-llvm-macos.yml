@@ -42,6 +42,8 @@ on:
       - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
+      - 'scripts/whp-build/arm64e-lld-probe.bash'
+      - 'scripts/tests/test-arm64e-lld-binding-policy.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
       - 'scripts/tests/test-macos-lld-clangxx-flags.py'
       - 'scripts/whp-build/host-cpu-tuning.py'
@@ -496,6 +498,23 @@ jobs:
             --clangxx "$NATIVE_LLVM_DIR/bin/clang++" \
             --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
 
+      - name: Inspect authenticated ARM64e Mach-O LLD relocation support
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/test-arm64e-lld-binding-policy.py
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          if bash scripts/whp-build/arm64e-lld-probe.bash \
+              "$NATIVE_LLVM_DIR/bin/clang" "$sdkroot" \
+              "$MACOSX_DEPLOYMENT_TARGET" \
+              "$NATIVE_LLVM_DIR/bin/ld64.lld" \
+              "$NATIVE_LLVM_DIR/bin/llvm-objdump"; then
+            echo 'PASS: Mach-O LLD preserves ARM64e authenticated rebase and dylib bind metadata'
+          else
+            echo 'diagnostic: Mach-O LLD ARM64e authenticated link is not yet ready; Apple ld remains the default' >&2
+            # Informational unless the user explicitly selects this linker.
+          fi
+
       - name: Verify Apple A18 Pro ISA policy against pinned LLVM
         shell: bash
         run: python3 scripts/tests/test-apple-a18-pro-profile.py
@@ -513,9 +532,8 @@ jobs:
           # The old implementation deleted LLVM_BUILD_DIR here and restarted
           # compilation from zero. The incremental implementation must retain
           # the generated graph and let CMake/Ninja determine that outputs are
-          # already current. arm64e must also keep Apple ld rather than reusing
-          # the just-installed Mach-O LLD, whose backend does not yet handle
-          # ARM64_RELOC_AUTHENTICATED_POINTER.
+          # already current. arm64e retains Apple ld unless opt-in Mach-O
+          # LLD passes authenticated rebase and dylib import binding probes.
           rm -f "$NATIVE_LLVM_DIR/.whp-native-llvm"
           ./build.sh >native-llvm-incremental.out 2>native-llvm-incremental.log
           cat native-llvm-incremental.log
@@ -554,7 +572,14 @@ jobs:
           grep -Fxq 'MACOS_BOOTSTRAP_ARCH=arm64e' "$marker"
           grep -Eq '^LLVM_HOST_TRIPLE=aarch64-apple-(darwin|macos|macosx)' "$marker"
           grep -Fxq "LLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-macosx$MACOSX_DEPLOYMENT_TARGET" "$marker"
-          grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
+          # Native macOS builds enable LLDB by default; do not enforce an
+          # outdated Clang/LLD-only project list after a successful build.
+          if grep -Fxq 'NATIVE_LLVM_ENABLE_LLDB=1' "$marker"; then
+            grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld;lldb' "$marker"
+            test -x "$NATIVE_LLVM_DIR/bin/lldb"
+          else
+            grep -Fxq 'LLVM_ENABLE_PROJECTS=clang;lld' "$marker"
+          fi
           grep -Fxq 'LLVM_ENABLE_RUNTIMES=compiler-rt' "$marker"
           grep -Fxq 'LLVM_INCLUDE_RUNTIMES=ON' "$marker"
           grep -Fxq 'CMAKE_CXX_STANDARD=26' "$marker"
