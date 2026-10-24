@@ -145,6 +145,28 @@ jobs:
                 grep -Fxq "NINJA_MACOS_ARCH=$expected_arch" "$marker"
                 lipo -archs "$first" | tr ' ' '\n' | grep -Fxq "$expected_arch"
                 file "$first" | grep -Fq "$expected_arch"
+                if [[ "$expected_arch" == arm64e ]]; then
+                  # Exercise real ARM64e process creation in addition to --version:
+                  # an absolute-path command takes Ninja's direct spawn path,
+                  # while a pipeline must retain /bin/sh semantics.
+                  smoke_dir="$RUNNER_TEMP/ninja-arm64e-smoke"
+                  mkdir -p "$smoke_dir"
+                  printf '%s\n' \
+                    'rule direct' \
+                    '  command = /usr/bin/touch $out' \
+                    'rule shell' \
+                    '  command = echo arm64e | /usr/bin/tee $out' \
+                    'build first: direct' \
+                    'build second: direct' \
+                    'build result: shell first second' \
+                    'default result' > "$smoke_dir/build.ninja"
+                  NINJA_CRITICAL_PATH_TIMES=1 "$first" -C "$smoke_dir" -j 3
+                  test -f "$smoke_dir/first"
+                  test -f "$smoke_dir/second"
+                  grep -Fxq arm64e "$smoke_dir/result"
+                  no_op_output="$("$first" -C "$smoke_dir" -j 3)"
+                  [[ "$no_op_output" == *'no work to do.'* ]]
+                fi
                 ;;
               x86_64)
                 grep -Fxq 'NINJA_MACOS_ARCH=x86_64' "$marker"
