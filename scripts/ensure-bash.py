@@ -373,11 +373,27 @@ def macos_arch_usable(
         return completed.returncode == 0
 
 
+# Bash reads BASH_ENV for non-interactive invocations, even with --noprofile
+# and --norc. A user's hook or imported SHELLOPTS must not turn a healthy
+# cached build shell into a false cache miss or invalidate its MACHTYPE.
+# Only sanitize Bash's startup controls, not the selected ABI/SDK inputs.
+BASH_PROBE_ENV_VARS = (
+    "BASH_ENV", "ENV", "POSIXLY_CORRECT", "SHELLOPTS", "BASHOPTS",
+)
+
+
+def bash_probe_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in BASH_PROBE_ENV_VARS:
+        env.pop(key, None)
+    return env
+
+
 def bash_machtype(path: pathlib.Path) -> str:
     return run_text([
         str(path), "--noprofile", "--norc", "-c",
         'printf "%s\\n" "$MACHTYPE"',
-    ])
+    ], env=bash_probe_env())
 
 
 def bash_matches_host(path: pathlib.Path, expected: str) -> bool:
@@ -435,6 +451,7 @@ def bash_usable(path: pathlib.Path) -> bool:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=bash_probe_env(),
         check=False,
     )
     return completed.returncode == 0
