@@ -744,6 +744,21 @@ negative in the hermetic fixture, not the production completeness
 rules. The failure was visible in macOS Actions job 121014389238
 (run 40141572202), at the installed-toolchain linker-validation step.
 
+The next CI host-dependency issue involved Libtool's archive-tool
+selection test. The resolver used ``Path(cc).resolve().parent``, which
+canonicalized Clang's invoked path. On macOS, a temporary executable
+created under ``/var/folders/...`` can resolve to
+``/private/var/folders/...``; the chosen ``llvm-ar`` was therefore
+in the correct installation but had a different *spelling* from the
+path used to select the compiler. LLVM multicall/symlink tools should
+not have their invoked paths rewritten unnecessarily. The resolver
+now tries a Clang sibling beside the invoked path first, then the
+canonical bin directory as a fallback for real symlinked compilers.
+Unqualified Clang names resolve through PATH before the sibling
+search. Explicit AR overrides and the separate GCC/non-LLVM fallback
+policy remain authoritative. A regression covers both a symlinked
+bin-directory alias and PATH-only Clang selection.
+
 This is separate from missing-library diagnostics. The current lean LLVM
 profile deliberately sets ``LLVM_ENABLE_ZLIB=OFF``,
 ``LLVM_ENABLE_ZSTD=OFF``, and ``LLVM_ENABLE_LIBEDIT=OFF``. It also
