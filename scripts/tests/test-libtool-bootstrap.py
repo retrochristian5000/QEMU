@@ -126,6 +126,33 @@ def test_archive_tool_selection_is_compiler_coherent() -> None:
                     f"error: Clang sibling llvm-ar was not preferred: {selected}"
                 )
 
+            # macOS may invoke the same toolchain through /var and
+            # /private/var aliases. Preserve a sibling path under the
+            # caller's alias, not the canonical path of Clang's binary.
+            alias_dir = root / "aliased-llvm-bin"
+            alias_dir.symlink_to(root, target_is_directory=True)
+            aliased_cc = alias_dir / "clang"
+            aliased_ar = alias_dir / "llvm-ar"
+            selected = helper.select_llvm_tool(
+                "AR", "llvm-ar", ("ar",), str(aliased_cc)
+            )
+            if selected != str(aliased_ar):
+                raise SystemExit(
+                    "error: Clang symlink alias selected a different "
+                    f"llvm-ar path: {selected} != {aliased_ar}"
+                )
+
+            # Unqualified compiler names must resolve via PATH before
+            # attempting the LLVM sibling policy, rather than treating a
+            # nonexistent ./clang as the compiler's own directory.
+            selected = helper.select_llvm_tool(
+                "AR", "llvm-ar", ("ar",), "clang"
+            )
+            if selected != str(llvm_ar):
+                raise SystemExit(
+                    f"error: PATH-selected Clang lost sibling llvm-ar: {selected}"
+                )
+
             selected = helper.select_llvm_tool("AR", "llvm-ar", ("ar",), str(gcc))
             if selected != str(native_ar):
                 raise SystemExit(
