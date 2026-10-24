@@ -32,18 +32,34 @@ printf '%s\n' \
     '.quad _whp_auth_target@AUTH(da,48879,addr)' \
     '.quad _whp_auth_target@AUTH(db,65535)' > "$probe_dir/auth.s"
 
-"${compiler_command[@]}" -arch arm64e -isysroot "$sdkroot" \
-    "-mmacosx-version-min=$deployment_target" -x assembler -c \
-    "$probe_dir/auth.s" -o "$probe_dir/auth.o" >/dev/null 2>&1
-
-"$linker" -arch arm64e \
-    -platform_version macos "$deployment_target" "$deployment_target" \
-    -dylib -install_name @rpath/libwhp_auth.dylib \
-    "$probe_dir/auth.o" -o "$probe_dir/libwhp_auth.dylib" >/dev/null 2>&1
-
-"$objdump" --macho --chained-fixups "$probe_dir/libwhp_auth.dylib" \
-    > "$probe_dir/fixups.txt" 2>/dev/null
-grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"
+if ! "${compiler_command[@]}" -arch arm64e -isysroot "$sdkroot" \
+        "-mmacosx-version-min=$deployment_target" -x assembler -c \
+        "$probe_dir/auth.s" -o "$probe_dir/auth.o" \
+        >"$probe_dir/rebase-compile.log" 2>&1; then
+    printf 'error: ARM64e LLD PAC local rebase assembly failed\n' >&2
+    cat "$probe_dir/rebase-compile.log" >&2
+    exit 1
+fi
+if ! "$linker" -arch arm64e \
+        -platform_version macos "$deployment_target" "$deployment_target" \
+        -dylib -install_name @rpath/libwhp_auth.dylib \
+        "$probe_dir/auth.o" -o "$probe_dir/libwhp_auth.dylib" \
+        >"$probe_dir/rebase-link.log" 2>&1; then
+    printf 'error: ARM64e LLD PAC local rebase dylib link failed\n' >&2
+    cat "$probe_dir/rebase-link.log" >&2
+    exit 1
+fi
+if ! "$objdump" --macho --chained-fixups \
+        "$probe_dir/libwhp_auth.dylib" \
+        >"$probe_dir/fixups.txt" 2>"$probe_dir/rebase-objdump.log"; then
+    printf 'error: ARM64e LLD PAC local rebase fixups unreadable\n' >&2
+    cat "$probe_dir/rebase-objdump.log" >&2
+    exit 1
+fi
+if ! grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$probe_dir/fixups.txt"; then
+    printf 'error: ARM64e LLD PAC local rebase lost USERLAND24 format\n' >&2
+    exit 1
+fi
 
 # llvm-otool is the same LLVM Mach-O parser accessed via the otool-compatible
 # CLI. If installed next to llvm-objdump, verify that it can expose the same
@@ -67,8 +83,12 @@ fi
 # The format label alone cannot prove LLD has preserved signing metadata.
 # Inspect all four PAC keys, 16-bit discriminators and address diversity in
 # the encoded authenticated rebases, rather than only checking the pointer format.
-"$objdump" --macho --dyld-info "$probe_dir/libwhp_auth.dylib" \
-    > "$probe_dir/dyld.txt" 2>/dev/null
+if ! "$objdump" --macho --dyld-info "$probe_dir/libwhp_auth.dylib" \
+        >"$probe_dir/dyld.txt" 2>"$probe_dir/rebase-dyld.log"; then
+    printf 'error: ARM64e LLD PAC local rebase dyld info unreadable\n' >&2
+    cat "$probe_dir/rebase-dyld.log" >&2
+    exit 1
+fi
 python3 - "$probe_dir/dyld.txt" <<'PY'
 import pathlib
 import sys
