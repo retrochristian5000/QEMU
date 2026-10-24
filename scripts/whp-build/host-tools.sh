@@ -417,11 +417,20 @@ whp_bash_usable()
 {
     [ -n "${1:-}" ] || return 1
     [ -x "$1" ] || return 1
-    "$1" --noprofile --norc -c '
+    # --noprofile/--norc do NOT suppress BASH_ENV in noninteractive shells.
+    # Use one clean startup environment for version and required LLVM/WHP
+    # build features; prevent unrelated user hooks from causing false misses.
+    env -u BASH_ENV -u ENV -u POSIXLY_CORRECT -u SHELLOPTS -u BASHOPTS \
+        "$1" --noprofile --norc -c '
         test -n "${BASH_VERSION:-}" || exit 1
-        test "${BASH_VERSINFO[0]}" -gt 3 ||
-            { test "${BASH_VERSINFO[0]}" -eq 3 &&
-              test "${BASH_VERSINFO[1]}" -ge 2; }
+        (( BASH_VERSINFO[0] > 3 ||
+           (BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] >= 2) )) || exit 1
+        whp_probe_array=(one two)
+        [[ "${#whp_probe_array[@]}" -eq 2 ]] || exit 1
+        (( whp_probe_value = 1 + 1 ))
+        [[ "$whp_probe_value" -eq 2 ]] || exit 1
+        IFS= read -r whp_probe_line < <(printf "%s\\n" process-substitution)
+        [[ "$whp_probe_line" == process-substitution ]] || exit 1
     ' >/dev/null 2>&1
 }
 
