@@ -627,8 +627,12 @@ values and address-diversity bits. It checks the imported symbol and the
 USERLAND24 chained-pointer format, then runs the pinned LLVM fork's
 existing ``lld/test/MachO/Inputs/arm64e-auth-metadata.py`` decoder
 against the *linked Mach-O bytes*, including eight-byte chain-next
-fields and bind/rebase markers. A failing or missing decoder prevents
-LLD selection; Apple ld remains available for the default host build.
+fields and bind/rebase markers. It also links a branch to the imported
+function and disassembles ``__TEXT,__auth_stubs``: the branch must
+pass through a ``BRAA x16, x17`` authentication stub rather than
+an unsigned ARM64 ``BR``. A failing or missing decoder, or an
+unauthenticated import stub, prevents LLD selection; Apple ld remains
+available for the default host build.
 No ABI version, code-signing policy or executable-runtime acceptance is
 inferred from a successful link-only test.
 
