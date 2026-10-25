@@ -1130,6 +1130,11 @@ shared_host_libraries_usable()
     fi
 }
 
+native_llvm_validation_error()
+{
+    printf 'error: staged WHP native LLVM [%s]: %s\n' "$1" "$2" >&2
+}
+
 usable()
 {
     local prefix="$1"
@@ -1151,36 +1156,64 @@ usable()
                          llvm-nm llvm-objcopy llvm-objdump llvm-strip \
                          llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
         [[ -x "$prefix/bin/$required_tool" ]] || {
-            printf 'error: native LLVM missing required tool: %s\n' "$required_tool" >&2
+            native_llvm_validation_error tool "missing required tool: $required_tool"
             return 1
         }
     done
     if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
-        windows_manifest_tool_usable "$prefix" || return 1
+        windows_manifest_tool_usable "$prefix" || {
+            native_llvm_validation_error tool 'Windows manifest merger llvm-mt failed validation'
+            return 1
+        }
     fi
     if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
-        [[ -x "$prefix/bin/lldb" ]] || return 1
-        "$prefix/bin/lldb" --version >/dev/null 2>&1 || return 1
+        [[ -x "$prefix/bin/lldb" ]] || {
+            native_llvm_validation_error tool 'missing required tool: lldb'
+            return 1
+        }
+        "$prefix/bin/lldb" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool 'lldb --version failed'
+            return 1
+        }
     fi
-    shared_host_libraries_usable "$prefix" || return 1
-    supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || return 1
-    grep -Eq '(^|[[:space:]])aarch64([[:space:]]|$)' <<< "$supported_targets" || return 1
-    grep -Eq '(^|[[:space:]])x86([[:space:]]|$)' <<< "$supported_targets" || return 1
-    grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$supported_targets" || return 1
+    shared_host_libraries_usable "$prefix" || {
+        native_llvm_validation_error runtime 'shared host library validation failed'
+        return 1
+    }
+    supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || {
+        native_llvm_validation_error tool 'clang --print-targets failed'
+        return 1
+    }
+    for target in aarch64 x86 ppc32; do
+        grep -Eq "(^|[[:space:]])${target}([[:space:]]|$)" <<< "$supported_targets" || {
+            native_llvm_validation_error ABI "missing required LLVM target backend: $target"
+            return 1
+        }
+    done
     windows_cross_target_usable "$prefix" || {
-        printf 'error: native LLVM Windows COFF/MinGW cross-target check failed\n' >&2
+        native_llvm_validation_error ABI 'Windows COFF/MinGW cross-target compilation or linking failed'
         return 1
     }
     if [[ "$host_os" == macos ]]; then
-        [[ -x "$prefix/bin/llvm-otool" ]] || return 1
-        "$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || return 1
-        [[ -x "$prefix/bin/llvm-lipo" ]] || return 1
-        [[ -x "$prefix/bin/ld64.lld" ]] || return 1
-        [[ -f "$prefix/lib/libLTO.dylib" ]] || return 1
-        ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
+        for required_tool in llvm-otool llvm-lipo ld64.lld; do
+            [[ -x "$prefix/bin/$required_tool" ]] || {
+                native_llvm_validation_error tool "missing required tool: $required_tool"
+                return 1
+            }
+        done
+        "$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool 'llvm-otool --version failed'
             return 1
+        }
+        [[ -f "$prefix/lib/libLTO.dylib" ]] || {
+            native_llvm_validation_error runtime 'missing libLTO.dylib for Darwin linking'
+            return 1
+        }
+        ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
+            { native_llvm_validation_error runtime 'cannot create UBSan smoke executable'; return 1; }
         ubsan_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan-log.XXXXXX")" || {
             rm -f "$ubsan_exe"
+            native_llvm_validation_error runtime 'cannot create UBSan smoke log'
             return 1
         }
         if ! printf 'int main(void) { return 0; }\n' |
@@ -1189,7 +1222,7 @@ usable()
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>"$ubsan_log"; then
-            printf 'error: native LLVM UBSan link failed with Apple ld; check compiler-rt and SDK\n' >&2
+            native_llvm_validation_error runtime 'native LLVM UBSan link failed with Apple ld; check compiler-rt and SDK'
             cat "$ubsan_log" >&2
             rm -f "$ubsan_exe" "$ubsan_log"
             return 1
@@ -1202,9 +1235,10 @@ usable()
         # framework from the selected macOS SDK. arm64e deliberately uses
         # Apple ld until WHP Mach-O LLD supports authenticated relocations.
         objc_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc.XXXXXX")" ||
-            return 1
+            { native_llvm_validation_error runtime 'cannot create Objective-C smoke executable'; return 1; }
         objc_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc-log.XXXXXX")" || {
             rm -f "$objc_exe"
+            native_llvm_validation_error runtime 'cannot create Objective-C smoke log'
             return 1
         }
         if ! printf 'int main(void) { return 0; }\n' |
@@ -1213,34 +1247,61 @@ usable()
                 "-mmacosx-version-min=$deployment_target" \
                 -fobjc-link-runtime -x objective-c - -framework Cocoa \
                 -o "$objc_exe" >/dev/null 2>"$objc_log"; then
-            printf 'error: WHP native LLVM cannot link Objective-C against SDK %s\n' \
-                "$sdkroot" >&2
+            native_llvm_validation_error runtime "cannot link Objective-C against SDK $sdkroot"
             cat "$objc_log" >&2
             rm -f "$objc_exe" "$objc_log"
             return 1
         fi
         rm -f "$objc_exe" "$objc_log"
     fi
-    "$prefix/bin/clang" --version >/dev/null 2>&1 || return 1
-    "$prefix/bin/clang++" --version >/dev/null 2>&1 || return 1
+    for required_tool in clang clang++; do
+        "$prefix/bin/$required_tool" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool "$required_tool --version failed"
+            return 1
+        }
+    done
     target="$(query_target_triple "$prefix/bin/clang")"
-    native_target_matches_host "$target" || return 1
+    native_target_matches_host "$target" || {
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} does not match host $host_id"
+        return 1
+    }
     target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
-    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
+    [[ "$target" == "$llvm_default_target_triple" ]] || {
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} differs from expected $llvm_default_target_triple"
+        return 1
+    }
     target="$(query_target_triple "$prefix/bin/clang++")"
-    native_target_matches_host "$target" || return 1
+    native_target_matches_host "$target" || {
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} does not match host $host_id"
+        return 1
+    }
     target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
-    [[ "$target" == "$llvm_default_target_triple" ]] || return 1
+    [[ "$target" == "$llvm_default_target_triple" ]] || {
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} differs from expected $llvm_default_target_triple"
+        return 1
+    }
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
-        "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+        "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'native Clang C object compilation failed'
+            return 1
+        }
     printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_llvm_resource_size(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
         "$prefix/bin/clang" -ffreestanding -x c -c - -o /dev/null \
-            >/dev/null 2>&1 || return 1
+            >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'freestanding C resource-header compilation failed'
+            return 1
+        }
     printf 'int whp_native_llvm_frame_pointer(void) { return 0; }\n' |
         "$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
-            -x c -c - -o /dev/null >/dev/null 2>&1 || return 1
+            -x c -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'frame-pointer C compilation failed'
+            return 1
+        }
     printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
-        "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || return 1
+        "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'native Clang++ C++ object compilation failed'
+            return 1
+        }
 }
 
 verify_asan_when_requested()
@@ -1508,12 +1569,9 @@ fi
     -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
 
 printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
-usable "$staged_toolchain" || {
-    # "Incomplete" can mean missing files or a failed SDK/runtime capability
-    # probe. Keep the old installed toolchain and the incremental Ninja graph.
-    printf 'error: staged WHP native LLVM failed required tool/ABI/runtime validation; see probe above\n' >&2
-    exit 1
-}
+# Each failed probe now prints its own category and specific reason.
+# Keep the old installed toolchain and incremental Ninja graph on failure.
+usable "$staged_toolchain" || exit 1
 verify_asan_when_requested "$staged_toolchain" || exit 1
 
 old_toolchain="${TOOLCHAIN_DIR}.old.$$"

@@ -74,8 +74,8 @@ assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
 assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
-assert '[[ -x "$prefix/bin/llvm-otool" ]] || return 1' in bootstrap
-assert '"$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || return 1' in bootstrap
+assert 'for required_tool in llvm-otool llvm-lipo ld64.lld; do' in bootstrap
+assert '"$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || {' in bootstrap
 # Keep llvm-objdump primary; the otool-style interface comes from its symlink.
 assert 'llvm-objdump;llvm-strip' in bootstrap
 assert '"-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"' in bootstrap
@@ -88,14 +88,14 @@ assert '--target=i686-w64-windows-gnu' in bootstrap
 assert '--target=x86_64-w64-windows-gnu' in bootstrap
 assert '"$prefix/bin/lld-link" /machine:x64' in bootstrap
 assert '"$prefix/bin/ld.lld" -m i386pep' in bootstrap
-assert '[[ -x "$prefix/bin/ld64.lld" ]] || return 1' in bootstrap
+assert 'native_llvm_validation_error tool "missing required tool: $required_tool"' in bootstrap
 assert 'clang;clang-resource-headers' in bootstrap
 assert "LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'" in bootstrap
 assert "LLD_ENABLE_BACKENDS='ELF;COFF;MinGW;MachO'" in bootstrap
 assert '"-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"' in bootstrap
 assert '"-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"' in bootstrap
-assert "grep -Eq '(^|[[:space:]])x86([[:space:]]|$)'" in bootstrap
-assert "grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)'" in bootstrap
+assert 'for target in aarch64 x86 ppc32; do' in bootstrap
+assert 'missing required LLVM target backend: $target' in bootstrap
 assert 'WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"' in build
 assert 'bootstrap-native-clang.sh' in inventory
 
@@ -182,7 +182,7 @@ assert "grep -Fxq 'BOOTSTRAP_SCHEMA=14' \"$marker\"" in macos_workflow
 # so keep LTO and both runtime umbrella components in one exact platform policy.
 assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
-assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || return 1' in bootstrap
+assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || {' in bootstrap
 
 # A Darwin Clang driver accepts -fsanitize=undefined even when its matching
 # compiler-rt runtime was never built or installed. Native macOS toolchains must
@@ -266,7 +266,7 @@ usable_section = bootstrap.split('\nusable()\n{', 1)[1].split(
     '\n}\n\nverify_asan_when_requested()', 1)[0]
 assert 'clang_link_driver+=(-fuse-ld=lld)' not in usable_section
 assert 'local clang_link_driver=("$prefix/bin/clang")' in usable_section
-assert '[[ -x "$prefix/bin/ld64.lld" ]] || return 1' in usable_section
+assert 'native_llvm_validation_error tool "missing required tool: $required_tool"' in usable_section
 assert 'bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
 assert '"${clang_link_driver[@]}" -arch "$darwin_cmake_arch"' in bootstrap
 assert 'linker_driver_args' not in bootstrap
@@ -300,7 +300,7 @@ assert 'LLVM_HOST_TRIPLE=$llvm_host_triple' in bootstrap
 assert 'LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple' in bootstrap
 assert 'BOOTSTRAP_CC_TARGET_TRIPLE_CANONICAL=$bootstrap_cc_target_canonical' in bootstrap
 assert 'BOOTSTRAP_CXX_TARGET_TRIPLE_CANONICAL=$bootstrap_cxx_target_canonical' in bootstrap
-assert bootstrap.count('[[ "$target" == "$llvm_default_target_triple" ]] || return 1') >= 2
+assert bootstrap.count('[[ "$target" == "$llvm_default_target_triple" ]] || {') >= 2
 
 # A cached compiler must exercise the frontend, resource headers, IR verifier,
 # and backend before reuse. --version alone cannot detect mixed LLVM objects
@@ -535,7 +535,7 @@ assert 'llvm_enable_libxml2=FORCE_ON' in bootstrap
 assert 'llvm_distribution_components="${llvm_distribution_components};llvm-mt"' in bootstrap
 assert '"-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"' in bootstrap
 assert 'windows_manifest_tool_usable()' in bootstrap
-assert 'windows_manifest_tool_usable "$prefix" || return 1' in bootstrap
+assert 'windows_manifest_tool_usable "$prefix" || {' in bootstrap
 assert '"$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest"' in bootstrap
 assert 'grep -Fq \'WHP.LLVM\'' in bootstrap
 

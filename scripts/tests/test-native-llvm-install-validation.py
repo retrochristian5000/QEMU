@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 bootstrap = (ROOT / "scripts/bootstrap-native-clang.bash").read_text(
     encoding="utf-8"
 )
-start = bootstrap.index("\nusable()\n{") + 1
+start = bootstrap.index("\nnative_llvm_validation_error()\n{") + 1
 end = bootstrap.index("\n}\n\nverify_asan_when_requested()", start) + 3
 usable = bootstrap[start:end]
 
@@ -37,7 +37,10 @@ for arg in "$@"; do
     fi
 done
 if [ "$1" = --print-targets ]; then
-    printf '  aarch64    - AArch64\n  x86        - X86\n  ppc32      - PowerPC\n'
+    printf '  aarch64    - AArch64\n  x86        - X86\n'
+    if [ "$WHP_TEST_MISSING_BACKEND" != 1 ]; then
+        printf '  ppc32      - PowerPC\n'
+    fi
 fi
 exit 0
 """
@@ -55,7 +58,7 @@ probe = (
     "shared_host_libraries_usable() { return 0; }\n"
     "windows_cross_target_usable() { return 0; }\n"
     "native_target_matches_host() { return 0; }\n"
-    "query_target_triple() { echo aarch64-apple-macosx15.0; }\n"
+    'query_target_triple() { printf "%s\\n" "$WHP_TEST_TARGET"; }\n'
     'canonical_native_target_triple() { printf "%s\\n" "$1"; }\n'
     + usable + '\nusable "$1"\n'
 )
@@ -93,13 +96,16 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     assert all(os.access(bin_dir / name, os.X_OK) for name in required)
     trace = base / "clang-invocations.log"
 
-    def run_probe(arch, fail_ubsan=False):
+    def run_probe(arch, fail_ubsan=False, missing_backend=False,
+                  target="aarch64-apple-macosx15.0"):
         trace.write_text("", encoding="utf-8")
         env = os.environ.copy()
         env.update({
             "WHP_PROBE_LOG": str(trace),
             "WHP_TEST_ARCH": arch,
             "WHP_FAIL_UBSAN": "1" if fail_ubsan else "0",
+            "WHP_TEST_MISSING_BACKEND": "1" if missing_backend else "0",
+            "WHP_TEST_TARGET": target,
         })
         p = subprocess.run(
             ["bash", "-c", probe, "--", str(prefix)],
@@ -119,12 +125,43 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     # requirement that it use LLVM's Mach-O linker is removed.
     result, _ = run_probe("arm64", fail_ubsan=True)
     assert result.returncode != 0
+    assert "[runtime]" in result.stderr, result.stderr
     assert "native LLVM UBSan link failed" in result.stderr, result.stderr
+    assert "simulated missing compiler-rt runtime" in result.stderr, result.stderr
+
+    # Darwin linker payloads also get an explicit category and filename.
+    (prefix / "lib/libLTO.dylib").rename(prefix / "lib/libLTO.missing")
+    result, _ = run_probe("arm64")
+    assert result.returncode != 0
+    assert "[runtime]" in result.stderr, result.stderr
+    assert "libLTO.dylib" in result.stderr, result.stderr
+    (prefix / "lib/libLTO.missing").rename(prefix / "lib/libLTO.dylib")
+
+    (bin_dir / "llvm-lipo").unlink()
+    result, _ = run_probe("arm64")
+    assert result.returncode != 0
+    assert "[tool]" in result.stderr, result.stderr
+    assert "missing required tool: llvm-lipo" in result.stderr, result.stderr
+    (bin_dir / "llvm-lipo").symlink_to("whp-fixture-tool")
+
+    # A missing backend is an ABI-capability failure, not a missing executable.
+    result, _ = run_probe("arm64", missing_backend=True)
+    assert result.returncode != 0
+    assert "[ABI]" in result.stderr, result.stderr
+    assert "ppc32" in result.stderr, result.stderr
+
+    # Report both sides of a target mismatch so a rebuilt Clang can be audited.
+    result, _ = run_probe("arm64", target="x86_64-apple-macosx15.0")
+    assert result.returncode != 0
+    assert "[ABI]" in result.stderr, result.stderr
+    assert "x86_64-apple-macosx15.0" in result.stderr, result.stderr
+    assert "aarch64-apple-macosx15.0" in result.stderr, result.stderr
 
     # A missing installed tool remains a fatal incomplete distribution.
     (bin_dir / "llvm-ar").unlink()
     result, _ = run_probe("arm64")
     assert result.returncode != 0
+    assert "[tool]" in result.stderr, result.stderr
     assert "missing required tool: llvm-ar" in result.stderr, result.stderr
 
 print("native LLVM macOS usability linker isolation: passed")
