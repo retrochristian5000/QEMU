@@ -105,6 +105,10 @@ manifest_candidate="${MACOS_LTO_MANIFEST}.new.$$"
 cleanup()
 {
     rm -f "$manifest_candidate"
+    if [[ -n "${archive_stage_dir:-}" ]]; then
+        rm -f "$archive_stage_dir/liblto-probe.a"
+        rmdir "$archive_stage_dir" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -191,8 +195,15 @@ SOURCE
     ${C_FLAGS[@]+"${C_FLAGS[@]}"} \
     "$lto_flag" -c "$source_main" -o "$object_main"
 # ThinLTO must survive the archive indexing and extraction used by QEMU.
-"${AR_CMD[@]}" rcs "$archive" "$object_a"
-"${RANLIB_CMD[@]}" "$archive"
+# Always build a fresh archive: llvm-ar rejects an existing incomplete or
+# malformed archive rather than replacing it. Publish only after indexing.
+archive_stage_dir="$(mktemp -d "$MACOS_LTO_PROBE_DIR/.lto-archive.XXXXXX")"
+archive_candidate="$archive_stage_dir/liblto-probe.a"
+"${AR_CMD[@]}" rcs "$archive_candidate" "$object_a"
+"${RANLIB_CMD[@]}" "$archive_candidate"
+mv -f "$archive_candidate" "$archive"
+rmdir "$archive_stage_dir"
+archive_stage_dir=
 "${CC_CMD[@]}" ${C_FLAGS[@]+"${C_FLAGS[@]}"} "$lto_flag" \
     "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
