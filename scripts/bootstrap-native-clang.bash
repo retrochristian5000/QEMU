@@ -9,6 +9,7 @@ exec 1>&2
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"
 LLVM_SUBMODULE_PATH="${NATIVE_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
 TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
@@ -795,44 +796,11 @@ native_target_matches_host()
 # macOS product version. Keep the original triple for LLVM_HOST_TRIPLE below.
 native_target_abi_key()
 {
-    local target="$1"
-    local arch os_name os_kind version major minor patch
-
     if [[ "$host_os" != macos ]]; then
-        printf '%s\n' "$target"
+        printf '%s\n' "$1"
         return 0
     fi
-    [[ "$target" == *-apple-* ]] || return 1
-    arch="${target%%-*}"
-    os_name="${target#*-apple-}"
-    [[ "$os_name" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
-    os_kind="${BASH_REMATCH[1]}"
-    version="${BASH_REMATCH[2]:-}"
-    if [[ -z "$version" ]]; then
-        printf '%s-apple-macosx\n' "$arch"
-        return 0
-    fi
-
-    IFS=. read -r major minor patch <<< "$version"
-    major=$((10#$major))
-    minor=$((10#${minor:-0}))
-    patch=$((10#${patch:-0}))
-    if [[ "$os_kind" == darwin ]]; then
-        if (( major < 4 )); then
-            return 1
-        elif (( major <= 19 )); then
-            # Darwin 19.6 is macOS 10.15.6, not macOS 19.6.
-            patch=$minor
-            minor=$((major - 4))
-            major=10
-        elif (( major <= 24 )); then
-            major=$((major - 9))
-        elif (( major <= 26 )); then
-            major=$((major + 1))
-        fi
-        # Darwin 27 onward uses the same major as macOS.
-    fi
-    printf '%s-apple-macosx%d.%d.%d\n' "$arch" "$major" "$minor" "$patch"
+    macos_target_abi_key "$1"
 }
 
 bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
@@ -1197,6 +1165,8 @@ usable()
 {
     local prefix="$1"
     local target=''
+    local target_abi=''
+    local expected_target_abi=''
     local ubsan_exe=''
     local ubsan_log=''
     local objc_exe=''
@@ -1318,24 +1288,30 @@ usable()
             return 1
         }
     done
+    expected_target_abi="$(native_target_abi_key "$llvm_default_target_triple")" || {
+        native_llvm_validation_error ABI "invalid expected target $llvm_default_target_triple"
+        return 1
+    }
     target="$(query_target_triple "$prefix/bin/clang")"
     native_target_matches_host "$target" || {
-        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} does not match host $host_id"
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
         return 1
     }
     target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
-    [[ "$target" == "$llvm_default_target_triple" ]] || {
-        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} differs from expected $llvm_default_target_triple"
+    target_abi="$(native_target_abi_key "$target" 2>/dev/null || true)"
+    [[ -n "$target_abi" && "$target_abi" == "$expected_target_abi" ]] || {
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} (ABI ${target_abi:-<invalid>}) differs from expected $llvm_default_target_triple (ABI $expected_target_abi)"
         return 1
     }
     target="$(query_target_triple "$prefix/bin/clang++")"
     native_target_matches_host "$target" || {
-        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} does not match host $host_id"
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
         return 1
     }
     target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
-    [[ "$target" == "$llvm_default_target_triple" ]] || {
-        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} differs from expected $llvm_default_target_triple"
+    target_abi="$(native_target_abi_key "$target" 2>/dev/null || true)"
+    [[ -n "$target_abi" && "$target_abi" == "$expected_target_abi" ]] || {
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} (ABI ${target_abi:-<invalid>}) differs from expected $llvm_default_target_triple (ABI $expected_target_abi)"
         return 1
     }
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |

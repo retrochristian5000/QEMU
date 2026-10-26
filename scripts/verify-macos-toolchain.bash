@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"
 
 : "${CC:?CC is required}"
 : "${CXX:?CXX is required}"
@@ -295,8 +297,8 @@ write_identity()
     local command_string="$2"
     local expected_arch="$3"
     local language_role="$4"
-    local version target target_arch resource_dir driver_base
-    local default_config_state no_default_target no_default_arch
+    local version target target_arch target_abi resource_dir driver_base
+    local default_config_state no_default_target no_default_arch no_default_abi
 
     set_identity_command "$command_string"
     driver_base="$(basename "$DRIVER_PATH")"
@@ -332,6 +334,11 @@ write_identity()
             "command: $command_string" >&2
         exit 1
     fi
+    target_abi="$(macos_target_abi_key "$target")" || {
+        printf 'error: %s reported an invalid macOS target triple: %s\n' \
+            "$role" "$target" >&2
+        exit 1
+    }
 
     resource_dir="$("${QUERY_CMD[@]}" -print-resource-dir 2>/dev/null || true)"
     resource_dir="$(printf '%s\n' "$resource_dir" | first_line)"
@@ -351,13 +358,16 @@ write_identity()
                               -print-target-triple 2>/dev/null | first_line)"
         no_default_arch="$(canonical_arch_from_triple "$no_default_target" \
                             2>/dev/null || true)"
-        if [[ "$no_default_target" != "$target" ]]; then
+        no_default_abi="$(macos_target_abi_key "$no_default_target" 2>/dev/null || true)"
+        if [[ "$no_default_abi" != "$target_abi" ]]; then
             default_config_state=changes-target
             if [[ "$MACOS_ALLOW_COMPILER_CONFIG" != "1" ]]; then
                 printf '%s\n' \
                     "error: a default Clang configuration changes $role's target." \
                     "configured target: $target" \
                     "without config:    $no_default_target" \
+                    "configured ABI:    $target_abi" \
+                    "without config ABI: ${no_default_abi:-<invalid>}" \
                     'set MACOS_ALLOW_COMPILER_CONFIG=1 only when this is intentional.' >&2
                 exit 1
             fi

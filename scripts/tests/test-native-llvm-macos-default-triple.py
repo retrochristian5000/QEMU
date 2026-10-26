@@ -42,6 +42,7 @@ for host_os, arch, version, seed, wanted in [
 helpers = 'canonical_native_arch()\n' + s.split(
     'canonical_native_arch()\n', 1)[1].split(
         '\nbootstrap_cc_target="$(query_target_triple', 1)[0]
+helpers = (root / 'scripts/whp-build/macos-target-abi.bash').read_text() + '\n' + helpers
 guard = '# Keep C and C++ on one host target ABI' + s.split(
     '# Keep C and C++ on one host target ABI', 1)[1].split(
         '\n# The bootstrap compiler may report', 1)[0]

@@ -56,6 +56,10 @@ EOF
 cat > "$CLANG" <<'EOF'
 #!/usr/bin/env bash
 
+no_default_config=0
+for argument in "$@"; do
+    [[ "$argument" != --no-default-config ]] || no_default_config=1
+done
 for argument in "$@"; do
     case "$argument" in
         --version)
@@ -63,7 +67,11 @@ for argument in "$@"; do
             exit 0
             ;;
         -print-target-triple|-dumpmachine)
-            printf 'arm64-apple-darwin24.0.0\n'
+            if [[ "$no_default_config" == 1 ]]; then
+                printf '%s\n' "${TEST_NO_CONFIG_TARGET:-arm64-apple-darwin24.0.0}"
+            else
+                printf '%s\n' "${TEST_CONFIG_TARGET:-arm64-apple-darwin24.0.0}"
+            fi
             exit 0
             ;;
         -print-resource-dir)
@@ -199,5 +207,50 @@ if [[ "$missing_identity_count" -le "$version_count" ]]; then
     cat "$missing_identity_output" >&2
     exit 1
 fi
+
+# Clang's configured and no-config triples may encode the same macOS ABI
+# using different Darwin kernel/product versions and CPU aliases.
+for pair in \
+    'arm64-apple-darwin24.0.0 aarch64-apple-macosx15.0' \
+    'aarch64-apple-macosx15.0 arm64-apple-darwin24' \
+    'arm64-apple-macos15.0 aarch64-apple-macosx15.0.0'; do
+    read -r configured unconfigured <<< "$pair"
+    output="$TEST_DIR/abi-equivalent.out"
+    if ! run_verifier "$output" "TEST_CONFIG_TARGET=$configured" \
+        "TEST_NO_CONFIG_TARGET=$unconfigured"; then
+        printf 'error: equivalent macOS compiler triples were rejected: %s\n' "$pair" >&2
+        cat "$output" >&2
+        exit 1
+    fi
+done
+
+for pair in \
+    'arm64-apple-darwin24.0.0 arm64-apple-macosx15.1' \
+    'arm64-apple-macosx15.0 arm64-apple-ios15.0' \
+    'arm64-apple-macosx15.0 arm64-unknown-apple-macosx15.0'; do
+    read -r configured unconfigured <<< "$pair"
+    output="$TEST_DIR/abi-mismatch.out"
+    if run_verifier "$output" "TEST_CONFIG_TARGET=$configured" \
+        "TEST_NO_CONFIG_TARGET=$unconfigured"; then
+        printf 'error: different target ABIs were accepted: %s\n' "$pair" >&2
+        exit 1
+    fi
+    if ! grep -Fq 'default Clang configuration changes' "$output"; then
+        printf 'error: wrong failure reason for target ABI mismatch: %s\n' "$pair" >&2
+        cat "$output" >&2
+        exit 1
+    fi
+done
+
+# A configured compiler must use an actual Apple macOS triple, even if its
+# unconfigured spelling is identically malformed.
+output="$TEST_DIR/invalid-configured-target.out"
+if run_verifier "$output" \
+    TEST_CONFIG_TARGET=arm64-unknown-apple-macosx15.0 \
+    TEST_NO_CONFIG_TARGET=arm64-unknown-apple-macosx15.0; then
+    printf 'error: malformed configured macOS target was accepted\n' >&2
+    exit 1
+fi
+grep -Fq 'invalid macOS target triple' "$output"
 
 printf 'macOS toolchain cache tests: passed\n'

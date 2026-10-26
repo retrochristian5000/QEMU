@@ -20,6 +20,22 @@ start = bootstrap.index("\nnative_llvm_validation_error()\n{") + 1
 end = bootstrap.index("\n}\n\nverify_asan_when_requested()", start) + 3
 usable = bootstrap[start:end]
 
+
+def bootstrap_function(name):
+    start = bootstrap.index(f"\n{name}()\n{{") + 1
+    end = bootstrap.index("\n}\n", start) + 3
+    return bootstrap[start:end]
+
+
+# Exercise the same target guards used by the real bootstrap. In particular,
+# an installed compiler may report a Darwin kernel version while CMake used
+# the equivalent macOS product/deployment version for its default target.
+target_helpers = (ROOT / "scripts/whp-build/macos-target-abi.bash").read_text() + "\n"
+target_helpers += "\n".join(bootstrap_function(name) for name in (
+    "canonical_native_arch", "canonical_native_target_triple",
+    "native_target_matches_host", "native_target_abi_key",
+))
+
 # Keep the real LLVM function under test. Stub only architecture helpers,
 # unrelated Windows cross-link validation, and the compiler executables.
 driver = r"""#!/bin/sh
@@ -48,18 +64,21 @@ exit 0
 probe = (
     "set -euo pipefail\n"
     "host_os=macos\n"
+    "host_tag=aarch64\n"
+    "host_id=aarch64-apple-darwin\n"
     'darwin_cmake_arch="$WHP_TEST_ARCH"\n'
     "sdkroot=/mock/MacOSX.sdk\n"
-    "deployment_target=15.0\n"
-    "llvm_default_target_triple=aarch64-apple-macosx15.0\n"
+    'deployment_target="$WHP_TEST_DEPLOYMENT"\n'
+    'llvm_default_target_triple="aarch64-apple-macosx$deployment_target"\n'
     "LLVM_WINDOWS_MANIFEST=0\n"
     "NATIVE_LLVM_ENABLE_LLDB=0\n"
     "NATIVE_LLVM_SHARED_TOOLCHAIN=0\n"
     "shared_host_libraries_usable() { return 0; }\n"
     "windows_cross_target_usable() { return 0; }\n"
-    "native_target_matches_host() { return 0; }\n"
-    'query_target_triple() { printf "%s\\n" "$WHP_TEST_TARGET"; }\n'
-    'canonical_native_target_triple() { printf "%s\\n" "$1"; }\n'
+    + target_helpers + '\n'
+    'query_target_triple() { case "$1" in */clang++) printf "%s\\n" '
+        '"$WHP_TEST_CXX_TARGET" ;; *) printf "%s\\n" '
+        '"$WHP_TEST_TARGET" ;; esac; }\n'
     + usable + '\nusable "$1"\n'
 )
 
@@ -97,7 +116,8 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     trace = base / "clang-invocations.log"
 
     def run_probe(arch, fail_ubsan=False, missing_backend=False,
-                  target="aarch64-apple-macosx15.0"):
+                  target="aarch64-apple-macosx15.0", cxx_target=None,
+                  deployment="15.0"):
         trace.write_text("", encoding="utf-8")
         env = os.environ.copy()
         env.update({
@@ -106,6 +126,8 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
             "WHP_FAIL_UBSAN": "1" if fail_ubsan else "0",
             "WHP_TEST_MISSING_BACKEND": "1" if missing_backend else "0",
             "WHP_TEST_TARGET": target,
+            "WHP_TEST_CXX_TARGET": cxx_target if cxx_target is not None else target,
+            "WHP_TEST_DEPLOYMENT": deployment,
         })
         p = subprocess.run(
             ["bash", "-c", probe, "--", str(prefix)],
@@ -120,6 +142,37 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         assert "-fsanitize=undefined" in calls, (arch, calls)
         assert "-framework Cocoa" in calls, (arch, calls)
         assert f"-arch {arch}" in calls, (arch, calls)
+
+    # Version punctuation, CPU aliases, and Darwin/macOS spellings should not
+    # invalidate a complete native LLVM installation with the same ABI.
+    for c_target, cxx_target in (
+        ("aarch64-apple-macosx15.0.0", "aarch64-apple-macosx15"),
+        ("arm64-apple-darwin24.0.0", "aarch64-apple-macosx15.0"),
+        ("aarch64-apple-macos15.0", "arm64-apple-darwin24"),
+    ):
+        result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
+        assert result.returncode == 0, (c_target, cxx_target, result.stderr)
+    result, _ = run_probe(
+        "arm64", target="aarch64-apple-darwin27.2.0",
+        cxx_target="arm64-apple-macosx27.2.0", deployment="27.2",
+    )
+    assert result.returncode == 0, result.stderr
+
+    result, _ = run_probe(
+        "arm64", target="aarch64-apple-darwin27.2.1",
+        cxx_target="arm64-apple-macosx27.2", deployment="27.2",
+    )
+    assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+
+    # Real version drift must still fail, even if one compiler matches.
+    for c_target, cxx_target in (
+        ("aarch64-apple-darwin24.1.0", "aarch64-apple-macosx15.0"),
+        ("aarch64-apple-macosx15.0", "aarch64-apple-macosx15.0.1"),
+        ("aarch64-apple-macosx15.0", "aarch64-apple-ios15.0"),
+    ):
+        result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
+        assert result.returncode != 0, (c_target, cxx_target)
+        assert "[ABI]" in result.stderr, result.stderr
 
     # A failed sanitizer link still fails closed: only the unrelated
     # requirement that it use LLVM's Mach-O linker is removed.

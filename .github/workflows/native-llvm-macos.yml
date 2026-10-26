@@ -14,6 +14,7 @@ on:
       - 'accel/tcg/tcg-all.c'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/whp-build/macos-target-abi.bash'
       - 'toolchains/llvm-project'
       - 'scripts/macos-builder.sh'
       - 'scripts/macos-builder.bash'

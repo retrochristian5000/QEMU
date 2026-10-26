@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - 'scripts/verify-macos-toolchain.sh'
+      - 'scripts/verify-macos-toolchain.bash'
+      - 'scripts/whp-build/macos-target-abi.bash'
       - 'scripts/tests/test-macos-toolchain-cache.bash'
       - '.github/workflows/macos-toolchain-cache.yml'
   workflow_dispatch:

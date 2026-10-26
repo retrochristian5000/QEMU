@@ -300,7 +300,9 @@ assert 'LLVM_HOST_TRIPLE=$llvm_host_triple' in bootstrap
 assert 'LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple' in bootstrap
 assert 'BOOTSTRAP_CC_TARGET_TRIPLE_CANONICAL=$bootstrap_cc_target_canonical' in bootstrap
 assert 'BOOTSTRAP_CXX_TARGET_TRIPLE_CANONICAL=$bootstrap_cxx_target_canonical' in bootstrap
-assert bootstrap.count('[[ "$target" == "$llvm_default_target_triple" ]] || {') >= 2
+assert 'expected_target_abi="$(native_target_abi_key "$llvm_default_target_triple")"' in bootstrap
+assert bootstrap.count('target_abi="$(native_target_abi_key "$target" 2>/dev/null || true)"') >= 2
+assert bootstrap.count('"$target_abi" == "$expected_target_abi"') >= 2
 
 # A cached compiler must exercise the frontend, resource headers, IR verifier,
 # and backend before reuse. --version alone cannot detect mixed LLVM objects
@@ -321,6 +323,7 @@ assert '[[ "$target_vendor" == apple ]] || return 1' in bootstrap
 assert '[[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1' in bootstrap
 assert '[[ "$target_os" =~ ^(darwin|macosx|macos)' in bootstrap
 assert 'native_target_abi_key()' in bootstrap
+assert 'source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"' in bootstrap
 assert 'bootstrap_cc_abi="$(native_target_abi_key "$bootstrap_cc_target_canonical")"' in bootstrap
 assert 'bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")"' in bootstrap
 assert 'if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then' in bootstrap
