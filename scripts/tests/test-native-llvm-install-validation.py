@@ -42,6 +42,11 @@ driver = r"""#!/bin/sh
 set -eu
 printf '%s\n' "$*" >> "$WHP_PROBE_LOG"
 for arg in "$@"; do
+    # Consume source on stdin like a real compiler. Otherwise the mock can
+    # exit before the producing printf writes, tripping Bash pipefail.
+    if [ "$arg" = "-" ]; then
+        cat >/dev/null
+    fi
     if [ "$arg" = "-fuse-ld=lld" ]; then
         printf 'simulated unsupported Mach-O LLD\n' >&2
         exit 83

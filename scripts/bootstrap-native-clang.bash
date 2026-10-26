@@ -762,10 +762,38 @@ canonical_native_target_triple()
     printf '%s-%s\n' "$canonical_arch" "${target#*-}"
 }
 
+# GNU/Linux triples may vary in vendor spelling and x86 CPU generation without
+# changing their calling ABI. Keep the libc/ABI environment, though: GNU x32
+# and AArch64 ILP32 are not interchangeable with their LP64 counterparts.
+# This only compares ABIs; native host support and CPU requirements are checked
+# separately, so recognizing i386/i686 here does not enable 32-bit hosts.
+linux_target_abi_key()
+{
+    local target="$1" arch vendor os environment extra
+
+    IFS=- read -r arch vendor os environment extra <<< "$target"
+    case "$arch" in
+        i386|i486|i586|i686) arch=i386 ;;
+        x86_64|amd64) arch=x86_64 ;;
+        arm64|aarch64) arch=aarch64 ;;
+        *) return 1 ;;
+    esac
+    [[ -n "$vendor" && -z "$extra" ]] || return 1
+    if [[ "$vendor" == linux ]]; then
+        [[ -z "$environment" ]] || return 1
+        environment="${os:-unknown}"
+    else
+        [[ "$os" == linux ]] || return 1
+        environment="${environment:-unknown}"
+    fi
+    [[ "$environment" =~ ^[a-z0-9_]+$ ]] || return 1
+    printf '%s-linux-%s\n' "$arch" "$environment"
+}
+
 native_target_matches_host()
 {
     local target="$1"
-    local arch target_arch target_vendor target_os
+    local arch target_arch target_vendor target_os target_abi
 
     [[ -n "$target" ]] || return 1
     IFS='-' read -r arch target_vendor target_os _ <<< "$target"
@@ -782,9 +810,11 @@ native_target_matches_host()
             [[ "$target_os" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
             ;;
         linux)
-            case "$target" in
-                *-linux-*|*-linux) ;;
-                *) return 1 ;;
+            target_abi="$(linux_target_abi_key "$target")" || return 1
+            # The native LLVM lane builds LP64 host tools. An x32/ILP32
+            # compiler can report the host CPU while emitting 32-bit pointers.
+            case "${target_abi#"$host_tag"-linux-}" in
+                *x32|*ilp32*) return 1 ;;
             esac
             ;;
         *) return 1 ;;
@@ -793,14 +823,15 @@ native_target_matches_host()
 
 # Compare the ABI represented by native C/C++ triples, not their spelling.
 # Clang can report the same macOS release as a Darwin kernel version or as a
-# macOS product version. Keep the original triple for LLVM_HOST_TRIPLE below.
+# macOS product version; Linux compiler vendors can differ without changing
+# the ABI. Keep the original triple for LLVM_HOST_TRIPLE below.
 native_target_abi_key()
 {
-    if [[ "$host_os" != macos ]]; then
-        printf '%s\n' "$1"
-        return 0
-    fi
-    macos_target_abi_key "$1"
+    case "$host_os" in
+        macos) macos_target_abi_key "$1" ;;
+        linux) linux_target_abi_key "$1" ;;
+        *) return 1 ;;
+    esac
 }
 
 bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
@@ -852,6 +883,26 @@ if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then
         "C ABI:   $bootstrap_cc_abi" \
         "C++ ABI: $bootstrap_cxx_abi" >&2
     exit 1
+fi
+# A compiler wrapper can still add -mx32/-mabi=ilp32 while reporting an LP64
+# target triple. Check the actual C and C++ data models before configuring
+# LLVM; the native toolchain cache does not distinguish 32-bit pointer ABIs.
+native_bootstrap_lp64_probe()
+{
+    printf 'typedef char whp_native_lp64[(sizeof(void *) == 8 && sizeof(long) == 8) ? 1 : -1];\n' |
+        "$1" -x "$2" -fsyntax-only - >/dev/null 2>&1
+}
+if [[ "$host_os" == linux ]]; then
+    if ! native_bootstrap_lp64_probe "$bootstrap_cc" c; then
+        printf 'error: native LLVM bootstrap C compiler does not use the LP64 host ABI: %s\n' \
+            "$bootstrap_cc_target" >&2
+        exit 1
+    fi
+    if ! native_bootstrap_lp64_probe "$bootstrap_cxx" c++; then
+        printf 'error: native LLVM bootstrap C++ compiler does not use the LP64 host ABI: %s\n' \
+            "$bootstrap_cxx_target" >&2
+        exit 1
+    fi
 fi
 # The bootstrap compiler may report the Darwin *kernel* host triple.
 # Retain that for LLVM's host-tool identity. Clang's default compilation

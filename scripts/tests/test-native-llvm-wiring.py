@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from pathlib import Path
+import ctypes
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -333,7 +335,8 @@ assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deplo
 
 for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert loose_match not in bootstrap
-assert '*-linux-*|*-linux' in bootstrap
+assert 'linux_target_abi_key "$target"' in bootstrap
+assert '*x32|*ilp32*' in bootstrap
 
 # Evaluate the actual shell matcher so a broad prefix check cannot silently
 # re-admit simulator, Catalyst, or malformed Darwin targets.
@@ -375,6 +378,66 @@ for target in (
     result = subprocess.run(['bash', '-c', target_probe, '--', target],
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == 'reject', (target, result.stderr)
+
+# The Linux guard must accept vendor aliases without accidentally allowing
+# x32/ILP32 compilers to emit the wrong native pointer-width ABI.
+linux_probe = '\n'.join([
+    'set -euo pipefail',
+    'host_os=linux',
+    'host_tag=x86_64',
+    extract_bootstrap_function('canonical_native_arch'),
+    extract_bootstrap_function('linux_target_abi_key'),
+    extract_bootstrap_function('native_target_matches_host'),
+    'if native_target_matches_host "$1"; then echo accept; else echo reject; fi',
+])
+for target in ('x86_64-pc-linux-gnu', 'amd64-linux-gnu',
+               'x86_64-unknown-linux-musl'):
+    result = subprocess.run(['bash', '-c', linux_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'accept', (target, result.stderr)
+for target in ('x86_64-unknown-linux-gnux32', 'x86_64-linux-muslx32',
+               'x86_64-unknown-linux-gnu_ilp32',
+               'x86_64-unknown-linux-gnu-extra', 'i686-linux-gnu'):
+    result = subprocess.run(['bash', '-c', linux_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'reject', (target, result.stderr)
+
+arm_linux_probe = linux_probe.replace('host_tag=x86_64', 'host_tag=aarch64')
+for target in ('aarch64-unknown-linux-gnu', 'arm64-linux-musl'):
+    result = subprocess.run(['bash', '-c', arm_linux_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'accept', (target, result.stderr)
+for target in ('aarch64-unknown-linux-gnu_ilp32', 'aarch64-linux-gnuilp32'):
+    result = subprocess.run(['bash', '-c', arm_linux_probe, '--', target],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == 'reject', (target, result.stderr)
+
+# Triple metadata is insufficient if a compiler wrapper silently injects
+# -mx32 or an ILP32 ABI flag. Exercise the actual C/C++ LP64 compile probe
+# using a host compiler when one is available, without producing binaries.
+lp64_probe = extract_bootstrap_function('native_bootstrap_lp64_probe')
+assert 'sizeof(void *) == 8 && sizeof(long) == 8' in lp64_probe
+assert 'native_bootstrap_lp64_probe "$bootstrap_cc" c' in bootstrap
+assert 'native_bootstrap_lp64_probe "$bootstrap_cxx" c++' in bootstrap
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+    for compiler, language in (('gcc', 'c'), ('g++', 'c++')):
+        if shutil.which(compiler):
+            result = subprocess.run(
+                ['bash', '-c', lp64_probe + '\nnative_bootstrap_lp64_probe "$1" "$2"',
+                 '--', compiler, language],
+                capture_output=True, text=True)
+            assert result.returncode == 0, (compiler, result.stderr)
+    if shutil.which('gcc'):
+        source = ('typedef char check[(sizeof(void *) == 8 && '
+                  'sizeof(long) == 8) ? 1 : -1];\n')
+        x32 = subprocess.run(['gcc', '-mx32', '-x', 'c', '-fsyntax-only', '-'],
+                             input=source, capture_output=True, text=True)
+        if x32.returncode != 0 and 'size of array' in x32.stderr:
+            wrapped = lp64_probe + ('\nwhp_x32() { gcc -mx32 "$@"; }\n'
+                                    'native_bootstrap_lp64_probe whp_x32 c')
+            result = subprocess.run(['bash', '-c', wrapped],
+                                    capture_output=True, text=True)
+            assert result.returncode != 0, result.stderr
 
 # Do not pass CMake cache variables that the pinned LLVM revision no longer
 # defines. CMake reports these as manually-specified variables that were not
