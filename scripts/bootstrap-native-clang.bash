@@ -790,6 +790,51 @@ native_target_matches_host()
     esac
 }
 
+# Compare the ABI represented by native C/C++ triples, not their spelling.
+# Clang can report the same macOS release as a Darwin kernel version or as a
+# macOS product version. Keep the original triple for LLVM_HOST_TRIPLE below.
+native_target_abi_key()
+{
+    local target="$1"
+    local arch os_name os_kind version major minor patch
+
+    if [[ "$host_os" != macos ]]; then
+        printf '%s\n' "$target"
+        return 0
+    fi
+    [[ "$target" == *-apple-* ]] || return 1
+    arch="${target%%-*}"
+    os_name="${target#*-apple-}"
+    [[ "$os_name" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
+    os_kind="${BASH_REMATCH[1]}"
+    version="${BASH_REMATCH[2]:-}"
+    if [[ -z "$version" ]]; then
+        printf '%s-apple-macosx\n' "$arch"
+        return 0
+    fi
+
+    IFS=. read -r major minor patch <<< "$version"
+    major=$((10#$major))
+    minor=$((10#${minor:-0}))
+    patch=$((10#${patch:-0}))
+    if [[ "$os_kind" == darwin ]]; then
+        if (( major < 4 )); then
+            return 1
+        elif (( major <= 19 )); then
+            # Darwin 19.6 is macOS 10.15.6, not macOS 19.6.
+            patch=$minor
+            minor=$((major - 4))
+            major=10
+        elif (( major <= 24 )); then
+            major=$((major - 9))
+        elif (( major <= 26 )); then
+            major=$((major + 1))
+        fi
+        # Darwin 27 onward uses the same major as macOS.
+    fi
+    printf '%s-apple-macosx%d.%d.%d\n' "$arch" "$major" "$minor" "$patch"
+}
+
 bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
 bootstrap_cxx_target="$(query_target_triple "$bootstrap_cxx")"
 if ! native_target_matches_host "$bootstrap_cc_target"; then
@@ -819,12 +864,25 @@ bootstrap_cxx_target_canonical="$(canonical_native_target_triple "$bootstrap_cxx
     exit 1
 }
 # Keep C and C++ on one host target ABI rather than silently mixing SDK
-# and deployment assumptions from different bootstrap compilers.
-if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; then
+# and deployment assumptions from different bootstrap compilers. The macOS
+# architecture/SDK/deployment link probes above also exercise both languages.
+bootstrap_cc_abi="$(native_target_abi_key "$bootstrap_cc_target_canonical")" || {
+    printf 'error: invalid native LLVM bootstrap C target ABI: %s\n' \
+        "$bootstrap_cc_target_canonical" >&2
+    exit 1
+}
+bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")" || {
+    printf 'error: invalid native LLVM bootstrap C++ target ABI: %s\n' \
+        "$bootstrap_cxx_target_canonical" >&2
+    exit 1
+}
+if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then
     printf '%s\n' \
         'error: native LLVM bootstrap C and C++ compiler target triples differ.' \
         "C:   $bootstrap_cc_target_canonical" \
-        "C++: $bootstrap_cxx_target_canonical" >&2
+        "C++: $bootstrap_cxx_target_canonical" \
+        "C ABI:   $bootstrap_cc_abi" \
+        "C++ ABI: $bootstrap_cxx_abi" >&2
     exit 1
 fi
 # The bootstrap compiler may report the Darwin *kernel* host triple.

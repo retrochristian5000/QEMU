@@ -320,7 +320,10 @@ assert "IFS='-' read -r arch target_vendor target_os _ <<< \"$target\"" in boots
 assert '[[ "$target_vendor" == apple ]] || return 1' in bootstrap
 assert '[[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1' in bootstrap
 assert '[[ "$target_os" =~ ^(darwin|macosx|macos)' in bootstrap
-assert 'if [[ "$bootstrap_cc_target_canonical" != "$bootstrap_cxx_target_canonical" ]]; then' in bootstrap
+assert 'native_target_abi_key()' in bootstrap
+assert 'bootstrap_cc_abi="$(native_target_abi_key "$bootstrap_cc_target_canonical")"' in bootstrap
+assert 'bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")"' in bootstrap
+assert 'if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then' in bootstrap
 assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
 assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
 assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('git -C "$SOURCE_DIR" submodule update')
