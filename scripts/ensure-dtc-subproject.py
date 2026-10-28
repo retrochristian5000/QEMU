@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Align an existing Meson-owned DTC checkout with QEMU's immutable wrap.
+"""Align an existing DTC Git checkout with QEMU's immutable Meson wrap.
 
-This runs before Meson setup, not as a separate configuration pass.  It does
-not replace the build directory, reset Git, or alter a developer's work.
+This runs before Meson setup, with Git as the source updater.  It does not
+run Meson's subproject updater, reset Git, or alter the build directory.
 """
 
 import argparse
 import configparser
 import hashlib
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 
 OLD_DTC_URLS = {
@@ -37,7 +39,24 @@ def git(checkout, *args):
     return result.stdout.strip()
 
 
-def ensure_dtc(source, meson, no_download=False):
+def refresh_wrap_cache(cache_file, wrap_hash):
+    # This is Meson's own SHA-256 text-file marker.  Write it only after
+    # verifying the Git revision, and replace it atomically.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=cache_file.parent,
+            prefix=".meson-wrap-", delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(wrap_hash + "\n")
+        os.replace(temporary, cache_file)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def ensure_dtc(source, no_download=False):
     wrap_file = source / "subprojects" / "dtc.wrap"
     checkout = source / "subprojects" / "dtc"
     config = configparser.ConfigParser(interpolation=None)
@@ -86,18 +105,18 @@ def ensure_dtc(source, meson, no_download=False):
     changed_origin = origin != url
     if changed_origin:
         git(checkout, "remote", "set-url", "origin", url)
-    print(f"Synchronizing DTC to pinned revision {revision} using Meson", flush=True)
+    print(f"Synchronizing DTC to pinned Git revision {revision}", flush=True)
     try:
-        command = [str(meson), "subprojects", "update", "--sourcedir", str(source), "dtc"]
-        result = subprocess.run(command, check=False)
-        if result.returncode:
-            raise DTCError(f"Meson DTC subproject update failed (exit {result.returncode})")
+        if current != revision:
+            git(checkout, "fetch", "--depth=1", "--no-tags", "origin", revision)
+            git(checkout, "checkout", "--detach", revision, "--")
         if git(checkout, "rev-parse", "HEAD") != revision:
-            raise DTCError("Meson update returned without selecting QEMU's pinned DTC revision")
+            raise DTCError("Git did not select QEMU's pinned DTC revision")
+        refresh_wrap_cache(cache_file, wrap_hash)
         if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
-            raise DTCError("Meson did not refresh DTC's wrap revision cache")
+            raise DTCError("DTC wrap revision cache did not refresh")
     except (DTCError, OSError):
-        if changed_origin:
+        if changed_origin and git(checkout, "rev-parse", "HEAD") != revision:
             git(checkout, "remote", "set-url", "origin", origin)
         raise
     return True
@@ -106,11 +125,10 @@ def ensure_dtc(source, meson, no_download=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
-    parser.add_argument("--meson", required=True)
     parser.add_argument("--no-download", action="store_true")
     args = parser.parse_args()
     try:
-        ensure_dtc(args.source.resolve(), args.meson, args.no_download)
+        ensure_dtc(args.source.resolve(), args.no_download)
     except (DTCError, OSError) as exc:
         print(f"DTC subproject: {exc}", file=sys.stderr)
         return 1

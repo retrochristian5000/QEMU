@@ -1963,11 +1963,11 @@ if test "$skip_meson" = no; then
   # only that clean, detached subproject before the normal incremental setup.
   if test "$download" = disabled; then
     $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" --meson "$meson" --no-download || \
+      --source "$source_path" --no-download || \
       error_exit "DTC subproject reconciliation failed"
   else
     $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" --meson "$meson" || \
+      --source "$source_path" || \
       error_exit "DTC subproject reconciliation failed"
   fi
 

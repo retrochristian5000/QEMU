@@ -11,6 +11,8 @@ on:
       - 'subprojects/dtc.wrap'
       - 'scripts/ensure-dtc-subproject.py'
       - 'scripts/tests/test-ensure-dtc-subproject.py'
+      - 'scripts/git-submodule.sh'
+      - 'scripts/tests/test-git-submodule.py'
       - 'scripts/tests/test-fdt-ninja-link.py'
       - 'scripts/tests/test-sam460ex-fdt-nop.py'
       - '.github/workflows/dtc-libfdt-macos.yml'
@@ -35,6 +37,9 @@ jobs:
 
       - name: Check safe DTC wrap reconciliation without rebuilding
         run: python3 scripts/tests/test-ensure-dtc-subproject.py
+
+      - name: Check pinned Git-submodule updates
+        run: python3 scripts/tests/test-git-submodule.py
 
       - name: Configure pinned internal DTC provider
         run: |

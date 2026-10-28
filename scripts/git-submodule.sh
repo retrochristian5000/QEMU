@@ -69,7 +69,7 @@ if is_git; then
         if test $? = 0
         then
             modules="$modules $m"
-            grep $m $substat > /dev/null 2>&1 || $GIT submodule status $module >> $substat
+            grep $m $substat > /dev/null 2>&1 || $GIT submodule status $m >> $substat
         else
             echo "warn: ignoring non-existent submodule $m"
         fi
@@ -103,10 +103,10 @@ update)
         check_updated $module || echo Updated "$module"
     done
 
-    (while read -r REPLY; do
+    (while IFS= read -r REPLY; do
         for module in $modules; do
             case $REPLY in
-                *" $module "*) continue 2 ;;
+                *" $module"|*" $module "*) continue 2 ;;
             esac
         done
         printf '%s\n' "$REPLY"
