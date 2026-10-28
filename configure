@@ -1958,6 +1958,19 @@ if test "$skip_meson" = no; then
   test "$tcg" != enabled && meson_option_add "-Dtcg=$tcg"
   test -n "$gdb_bin" && meson_option_add "-Dgdb=$gdb_bin"
 
+  # An existing Meson checkout can remain at pre-wrap DTC (for example 1.6.1)
+  # even when QEMU pins a newer fork that supports dtc:tests.  Synchronize
+  # only that clean, detached subproject before the normal incremental setup.
+  if test "$download" = disabled; then
+    $python "$source_path/scripts/ensure-dtc-subproject.py" \
+      --source "$source_path" --meson "$meson" --no-download || \
+      error_exit "DTC subproject reconciliation failed"
+  else
+    $python "$source_path/scripts/ensure-dtc-subproject.py" \
+      --source "$source_path" --meson "$meson" || \
+      error_exit "DTC subproject reconciliation failed"
+  fi
+
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"
   }
@@ -2046,3 +2059,4 @@ if test "$rust" != disabled; then
   echo 'this case you must pass the path to `clang` and `libclang` to your build'
   echo 'command invocation using the environment variables CLANG_PATH and LIBCLANG_PATH'
 fi
+
