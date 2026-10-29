@@ -22,7 +22,17 @@ class LldbDefaultTests(unittest.TestCase):
         source = BOOTSTRAP.read_text(encoding="utf-8")
         if source.count(BOUNDARY) != 1:
             raise RuntimeError("cannot isolate the pre-build host/LLDB policy")
-        cls.prebuild = source.split(BOUNDARY, 1)[0] + (
+        cls.prebuild = source.split(BOUNDARY, 1)[0]
+        # bash -c has no BASH_SOURCE[0]. The isolated policy must resolve
+        # the same real scripts directory without pretending that this
+        # synthetic snippet was executed from bootstrap-native-clang.bash.
+        entry = 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"'
+        if cls.prebuild.count(entry) != 1:
+            raise RuntimeError("cannot identify the native LLVM script path")
+        cls.prebuild = cls.prebuild.replace(
+            entry, 'SCRIPT_DIR="${WHP_TEST_NATIVE_LLVM_SCRIPT_DIR:?}"', 1
+        )
+        cls.prebuild += (
             '\nprintf "WHP_LLDB_RESULT=%s:%s\\n" '
             '"$NATIVE_LLVM_ENABLE_LLDB" "$NATIVE_LLVM_ASAN_AUTO_DEBUG" >&2\n'
         )
@@ -30,6 +40,7 @@ class LldbDefaultTests(unittest.TestCase):
     def check_policy(self, host, enabled=None, auto_debug=None):
         env = dict(os.environ)
         env["WHP_HOST_OS"] = host
+        env["WHP_TEST_NATIVE_LLVM_SCRIPT_DIR"] = str(BOOTSTRAP.parent)
         env["WHP_HOST_ARCH"] = "aarch64"
         env["NATIVE_LLVM_ASAN_AUTO_DEBUG"] = "0" if auto_debug is None else auto_debug
         if enabled is None:
