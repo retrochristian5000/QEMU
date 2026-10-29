@@ -36,7 +36,15 @@ class EnsureDTCTest(unittest.TestCase):
         cmd("git", "config", "user.email", "test@example.org", cwd=self.repo)
         options = self.repo / "meson_options.txt"
         options.write_text("option('tools', type: 'boolean', value: true)\n", encoding="utf-8")
-        cmd("git", "add", "meson_options.txt", cwd=self.repo)
+        (self.repo / "meson.build").write_text(
+            "project('dtc', 'c')\nsubdir('libfdt')\n", encoding="utf-8"
+        )
+        (self.repo / "libfdt").mkdir()
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "# fixture libfdt\n", encoding="utf-8"
+        )
+        cmd("git", "add", "meson_options.txt", "meson.build", "libfdt/meson.build",
+            cwd=self.repo)
         cmd("git", "commit", "-qm", "old DTC", cwd=self.repo)
         self.old = cmd("git", "rev-parse", "HEAD", cwd=self.repo)
         options.write_text("option('tests', type: 'boolean', value: true)\n", encoding="utf-8")
@@ -128,6 +136,50 @@ class EnsureDTCTest(unittest.TestCase):
         (self.repo / "meson_options.txt").write_text("vendored")
         self.assertFalse(dtc.ensure_dtc(self.root))
         self.assertEqual((self.repo / "meson_options.txt").read_text(), "vendored")
+
+    def test_missing_checkout_git_prefetch_preserves_meson_layout(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        self.assertTrue(dtc.ensure_dtc(self.root, fetch_missing=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.git("remote", "get-url", "origin"), self.target_url)
+        self.assertIn("option('tests'", (self.repo / "meson_options.txt").read_text())
+        self.assertTrue((self.repo / "libfdt" / "meson.build").is_file())
+        self.assertEqual(self.cache.read_text().strip(),
+                         hashlib.sha256(self.wrap.read_bytes()).hexdigest())
+        self.assertFalse(list(self.subprojects.glob(".dtc-fetch-*")))
+
+    def test_git_prefetch_honors_no_download(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        with self.assertRaisesRegex(dtc.DTCError, "downloads are disabled"):
+            dtc.ensure_dtc(self.root, no_download=True, fetch_missing=True)
+        self.assertFalse(self.repo.exists())
+
+    def test_failed_git_prefetch_leaves_no_partial_checkout(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        self.wrap.write_text(
+            "[wrap-git]\nurl = " + (self.root / "missing.git").as_uri()
+            + "\nrevision = " + self.pin + "\ndepth = 1\n"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "git fetch"):
+            dtc.ensure_dtc(self.root, fetch_missing=True)
+        self.assertFalse(self.repo.exists())
+        self.assertFalse(list(self.subprojects.glob(".dtc-fetch-*")))
+
+    def test_matching_pin_with_missing_tests_option_is_rejected(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(hashlib.sha256(self.wrap.read_bytes()).hexdigest())
+        (self.repo / "meson_options.txt").write_text(
+            "option('tools', type: 'boolean', value: true)\n"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "Meson 'tests' option"):
+            dtc.ensure_dtc(self.root)
+
+    def test_matching_pin_with_missing_libfdt_project_is_rejected(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(hashlib.sha256(self.wrap.read_bytes()).hexdigest())
+        (self.repo / "libfdt" / "meson.build").unlink()
+        with self.assertRaisesRegex(dtc.DTCError, "Meson libfdt project"):
+            dtc.ensure_dtc(self.root)
 
     def test_missing_checkout_is_normal_meson_case(self):
         self.repo.rename(self.subprojects / "old-dtc")

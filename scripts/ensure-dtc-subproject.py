@@ -56,7 +56,42 @@ def refresh_wrap_cache(cache_file, wrap_hash):
             temporary.unlink(missing_ok=True)
 
 
-def ensure_dtc(source, no_download=False):
+def validate_meson_dtc(checkout):
+    """Detect the old dtc:tests mismatch before Meson configures its graph."""
+    options = checkout / "meson_options.txt"
+    if not (checkout / "meson.build").is_file() or not (checkout / "libfdt" / "meson.build").is_file():
+        raise DTCError("pinned DTC checkout lacks its Meson libfdt project")
+    if not options.is_file() or not re.search(
+        r"""(?m)^\s*option\s*\(\s*['"]tests['"]\s*,""",
+        options.read_text(encoding="utf-8") if options.is_file() else "",
+    ):
+        raise DTCError("pinned DTC checkout does not declare the Meson 'tests' option")
+
+
+def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
+    """Fetch Git to a staging directory; publish only a verified checkout."""
+    with tempfile.TemporaryDirectory(prefix=".dtc-fetch-", dir=checkout.parent) as staging:
+        pending = Path(staging) / "dtc"
+        result = subprocess.run(
+            ["git", "init", "-q", str(pending)],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if result.returncode:
+            raise DTCError("git init for DTC failed: " + result.stderr.strip())
+        git(pending, "remote", "add", "origin", url)
+        git(pending, "fetch", "--depth=1", "--no-tags", "origin", revision)
+        git(pending, "checkout", "--detach", revision, "--")
+        if git(pending, "rev-parse", "HEAD") != revision:
+            raise DTCError("fresh DTC download did not resolve the pinned revision")
+        validate_meson_dtc(pending)
+        refresh_wrap_cache(pending / ".meson-subproject-wrap-hash.txt", wrap_hash)
+        if checkout.exists() or checkout.is_symlink():
+            raise DTCError("DTC checkout appeared during fetch; refusing to overwrite it")
+        pending.rename(checkout)
+    return True
+
+
+def ensure_dtc(source, no_download=False, fetch_missing=False):
     wrap_file = source / "subprojects" / "dtc.wrap"
     checkout = source / "subprojects" / "dtc"
     config = configparser.ConfigParser(interpolation=None)
@@ -67,9 +102,19 @@ def ensure_dtc(source, no_download=False):
     if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
         raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
 
-    # A missing directory is Meson's normal first-use download case.
+    wrap_hash = hashlib.sha256(wrap_file.read_bytes()).hexdigest()
+    # Normal first use remains a Meson wrap download.  Opt-in Git prefetch
+    # repairs hosts where the wrap checkout cannot be materialized safely.
     if not checkout.exists():
-        return False
+        if checkout.is_symlink():
+            raise DTCError("DTC checkout is a dangling symlink")
+        if not fetch_missing:
+            return False
+        if no_download:
+            raise DTCError("DTC download requested but downloads are disabled")
+        if not (source / ".git").exists():
+            return False  # Do not mutate release archives.
+        return fetch_missing_dtc(source, checkout, url, revision, wrap_hash)
     if not (source / ".git").exists():
         # Release archives may include a pre-extracted (non-Git) DTC source.
         # Such vendored source is not ours to mutate during configure.
@@ -80,10 +125,10 @@ def ensure_dtc(source, no_download=False):
         raise DTCError("DTC checkout belongs to another Git working tree")
 
     current = git(checkout, "rev-parse", "HEAD")
-    wrap_hash = hashlib.sha256(wrap_file.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
     cache_file = checkout / ".meson-subproject-wrap-hash.txt"
     cached_hash = cache_file.read_text(encoding="utf-8").strip() if cache_file.exists() else None
     if current == revision and cached_hash in (None, wrap_hash):
+        validate_meson_dtc(checkout)
         return False
 
     # Do not let Meson's update helper stash/rebase local work or move a branch.
@@ -112,6 +157,7 @@ def ensure_dtc(source, no_download=False):
             git(checkout, "checkout", "--detach", revision, "--")
         if git(checkout, "rev-parse", "HEAD") != revision:
             raise DTCError("Git did not select QEMU's pinned DTC revision")
+        validate_meson_dtc(checkout)
         refresh_wrap_cache(cache_file, wrap_hash)
         if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
             raise DTCError("DTC wrap revision cache did not refresh")
@@ -126,9 +172,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--no-download", action="store_true")
+    parser.add_argument("--fetch-missing", action="store_true",
+                        help="fetch pinned DTC from Git before Meson setup")
     args = parser.parse_args()
     try:
-        ensure_dtc(args.source.resolve(), args.no_download)
+        ensure_dtc(args.source.resolve(), args.no_download, args.fetch_missing)
     except (DTCError, OSError) as exc:
         print(f"DTC subproject: {exc}", file=sys.stderr)
         return 1
