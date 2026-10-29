@@ -333,6 +333,10 @@ runs ``toolchains/meson/meson.py``; no duplicate Python environment is
 created.  The fork reports development version ``1.12.99`` and requires
 Python >= 3.10, whereas the default QEMU Python selection accepts >= 3.9.
 The selected provider is retained by ``config.status``.
+The menuconfig ``QEMU Meson provider`` choice maps to
+``WHP_MESON_PROVIDER=venv|fork`` and is an explicit opt-in, not a silent change to production builds.
+The existing incremental configuration identity includes this selection so
+changing providers requests configuration without wiping existing build outputs.
 
 Use this provider to compare DTC wrap and incremental configuration behavior
 with the default venv Meson in isolated or already compatible build trees.
@@ -1048,6 +1052,16 @@ checkout's ``origin`` remote.  A custom remote or a missing ``origin``
 therefore cannot block a verified pinned Git fetch.  Local source edits and
 attached stale branches are still protected.  The helper's ``--diagnose``
 mode reports the Git boundary without fetching or modifying sources.
+
+In ``menuconfig``, ``QEMU libfdt provider`` maps to Meson's existing
+``fdt`` option (``auto``, ``system``, ``internal``, ``enabled``,
+or ``disabled``).  The default is ``auto``, preserving native QEMU
+dependency selection.  The separate ``Prefetch missing pinned DTC checkout``
+switch maps to ``WHP_DTC_FETCH_MISSING=1`` and opts into the existing
+pre-Meson ``--fetch-missing`` helper; by default DTC remains Meson-lazy.
+With downloads disabled, prefetch cannot obtain an absent pinned commit.
+Neither choice rewrites ``dtc.wrap``, switches a development branch, or
+cleans the incremental build directory.
 
 DTC wrap upgrade protocol
 ~~~~~~~~~~~~~~~~~~~~~~~~~
