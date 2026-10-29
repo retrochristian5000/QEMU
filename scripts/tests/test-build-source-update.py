@@ -8,9 +8,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build.sh"
 UPDATE = ROOT / "scripts" / "whp-build" / "update-source.sh"
+SHARED_SHELL = ROOT / "scripts" / "whp-build" / "shell-functions.sh"
 
 build = BUILD.read_text(encoding="utf-8")
 update = UPDATE.read_text(encoding="utf-8")
+shared_shell = SHARED_SHELL.read_text(encoding="utf-8")
 errors: list[str] = []
 
 for script in (BUILD, UPDATE):
@@ -25,7 +27,7 @@ for script in (BUILD, UPDATE):
         errors.append(f"{script.relative_to(ROOT)} is not valid POSIX shell: {proc.stderr}")
 
 required_build = (
-    "WHP_SOURCE_UPDATE=${WHP_SOURCE_UPDATE:-auto}",
+    'WHP_SOURCE_UPDATE=$(whp_require_auto_switch WHP_SOURCE_UPDATE "${WHP_SOURCE_UPDATE:-auto}")',
     '/bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"',
     'WHP_SOURCE_UPDATE_DONE=1',
     'exec "$SOURCE_DIR/build.sh" "$@"',
@@ -74,8 +76,11 @@ for forbidden in (
     if forbidden in update:
         errors.append(f"source refresh must not use broad/destructive command: {forbidden}")
 
-if "WHP_SOURCE_UPDATE must be auto, 0, or 1" not in build:
-    errors.append("build.sh must validate WHP_SOURCE_UPDATE")
+# build.sh delegates strict enum validation to the shared POSIX shell
+# helper; searching for the old inline error text is an obsolete test.
+if ("whp_require_auto_switch()" not in shared_shell or
+        "must be auto, 0, or 1" not in shared_shell):
+    errors.append("shared shell must validate auto/0/1 source-update mode")
 if "WHP_SOURCE_UPDATE must be auto, 0, or 1" not in update:
     errors.append("update-source.sh must validate WHP_SOURCE_UPDATE")
 if "WHP source update: skipped under CI" not in update:
