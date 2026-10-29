@@ -10,6 +10,8 @@ on:
       - 'system/device_tree.c'
       - 'subprojects/dtc.wrap'
       - 'scripts/ensure-dtc-subproject.py'
+      - 'scripts/whp-build/update-source.sh'
+      - 'scripts/tests/test-build-source-update.py'
       - 'scripts/tests/test-ensure-dtc-subproject.py'
       - 'scripts/git-submodule.sh'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -38,6 +40,9 @@ jobs:
 
       - name: Check safe DTC wrap reconciliation without rebuilding
         run: python3 scripts/tests/test-ensure-dtc-subproject.py
+
+      - name: Verify source updater refreshes legacy DTC wrap markers
+        run: python3 scripts/tests/test-build-source-update.py
 
       - name: Check pinned Git-submodule updates
         run: python3 scripts/tests/test-git-submodule.py

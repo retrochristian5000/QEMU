@@ -115,4 +115,38 @@ if [ -f "$SOURCE_DIR/.gitmodules" ]; then
     git -C "$SOURCE_DIR" submodule sync --recursive >/dev/null
 fi
 
+# The Meson-managed DTC directory is NOT a QEMU Git submodule. A parent
+# fast-forward cannot reconcile its separate checkout or old wrap hash marker.
+# Repair an existing checkout so source refresh updates the pinned DTC too.
+# Do not prefetch missing DTC; Meson/configure keeps that dependency lazy.
+# Source refresh precedes host Python bootstrap, so defer if unavailable.
+if [ -d "$SOURCE_DIR/subprojects/dtc" ] &&
+   [ -f "$SOURCE_DIR/subprojects/dtc.wrap" ]; then
+    dtc_python=
+    if [ -n "${PYTHON:-}" ] &&
+       "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 9))' \
+           >/dev/null 2>&1; then
+        dtc_python=$PYTHON
+    else
+        for candidate in python3 python; do
+            if command -v "$candidate" >/dev/null 2>&1 &&
+               "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 9))' \
+                   >/dev/null 2>&1; then
+                dtc_python=$candidate
+                break
+            fi
+        done
+    fi
+    if [ -z "$dtc_python" ]; then
+        printf '%s\n' 'WHP source update: DTC reconciliation deferred until Python/configure is available' >&2
+    else
+        printf '%s\n' 'WHP source update: reconciling existing DTC wrap with pinned Git revision' >&2
+        if ! "$dtc_python" "$SOURCE_DIR/scripts/ensure-dtc-subproject.py" \
+                 --source "$SOURCE_DIR"; then
+            warn_or_fail 'DTC source or Meson wrap marker could not be reconciled'
+        fi
+    fi
+    unset dtc_python candidate
+fi
+
 printf '%s\n' 'WHP source update: QEMU current; pinned submodules remain lazy' >&2

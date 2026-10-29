@@ -1080,6 +1080,16 @@ that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads
 the helper for both existing and proposed revisions.  Future versions
 such as 1.9.0 may still pass when their Meson interface is compatible.
 The DTC version is independent of the version of the Meson executable.
+The WHP source fast-forward updater also reconciles an existing DTC Git
+checkout using the pinned wrap revision, even when QEMU itself is already
+up-to-date. A parent Git refresh alone does not change the Meson-owned
+DTC source or its stored hash. This post-update repair never fetches a
+missing DTC checkout, modifies an attached development branch, stashes
+local changes, or touches build outputs. If Python is not yet available
+during early bootstrap, reconciliation is deferred to ``configure``.
+Use the mutating helper without ``--diagnose`` to perform an explicit
+repair; ``--diagnose`` reports state only.
+
 A further independent identity is the DTC commit tree, visible through
 ``git -C subprojects/dtc rev-parse HEAD^{tree}``.  Its hash identifies the
 committed DTC source, unlike the SHA-256 wrap marker.  Even matching Git
