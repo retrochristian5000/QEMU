@@ -108,6 +108,28 @@ class WhpHardwareMenuTests(unittest.TestCase):
         self.assertIn('<n>        i386', result.stdout)
         self.assertIn('<y>        ppc', result.stdout)
 
+    def test_audio_signature_default_gate_tracks_added_creative_hardware(self):
+        # An auto selection cannot trigger a custom device preset. The gate
+        # must also notice an explicit setting on the newly added model.
+        script = f'''set -euo pipefail
+source {CONFIGURE_BASH!s}
+for target in I386 PPC; do
+    signature="$(whp_configure_audio_signature "$target")"
+    [[ "$signature" == *'gameblaster=auto'* ]]
+    whp_configure_audio_all_auto "$signature"
+done
+I386_AUDIO_GAMEBLASTER=n
+if whp_configure_audio_all_auto "$(whp_configure_audio_signature I386)"; then
+    exit 1
+fi
+PPC_AUDIO_GAMEBLASTER=y
+if whp_configure_audio_all_auto "$(whp_configure_audio_signature PPC)"; then
+    exit 1
+fi
+'''
+        subprocess.run(['bash', '-c', script], text=True,
+                       capture_output=True, check=True)
+
     def test_ppc_auto_preserves_upstream_audio_defaults(self):
         config = load_module(CONFIG_TOOL, 'whp_config_ppc_auto')
         values = config.default_values()

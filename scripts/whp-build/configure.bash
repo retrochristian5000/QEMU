@@ -281,6 +281,17 @@ whp_configure_i386_audio_signature()
     whp_configure_audio_signature I386
 }
 
+# Do not enumerate model names here: new hardware must not turn an all-auto
+# configuration into a custom preset and break incremental regeneration.
+# All signature values have already been validated as auto, y, or n.
+whp_configure_audio_all_auto()
+{
+    local signature="$1"
+
+    [[ -n "$signature" && "$signature" != *'=y'* &&
+       "$signature" != *'=n'* ]]
+}
+
 whp_configure_append_audio_override()
 {
     local output="$1"
@@ -488,9 +499,8 @@ case ",${QEMU_TARGET_LIST:-}," in
     *,ppc-softmmu,*)
         ppc_audio_signature="$(whp_configure_ppc_audio_signature)" || return 1
         if [[ "${CONFIG_MAC_NEWWORLD:-y}" == y &&
-              "${CONFIG_MAC_OLDWORLD:-y}" == y &&
-              "$ppc_audio_signature" == \
-              'sb16=auto;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;es1370=auto;ac97=auto;cs4630=auto;hda=auto' ]]; then
+              "${CONFIG_MAC_OLDWORLD:-y}" == y ]] &&
+           whp_configure_audio_all_auto "$ppc_audio_signature"; then
             WHP_PPC_DEVICE_CONFIG_SIGNATURE=tracked-defaults
             stale_ppc_config="$SOURCE_DIR/configs/devices/ppc-softmmu/whp-user.mak"
             if [[ -f "$stale_ppc_config" ]] &&
@@ -514,8 +524,7 @@ WHP_I386_AUDIO_CONFIG_SIGNATURE=not-requested
 case ",${QEMU_TARGET_LIST:-}," in
     *,i386-softmmu,*)
         i386_audio_signature="$(whp_configure_i386_audio_signature)" || return 1
-        if [[ "$i386_audio_signature" == \
-              'sb16=auto;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;es1370=auto;ac97=auto;cs4630=auto;hda=auto' ]]; then
+        if whp_configure_audio_all_auto "$i386_audio_signature"; then
             WHP_I386_AUDIO_CONFIG_SIGNATURE=tracked-defaults
             stale_i386_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
             if [[ -f "$stale_i386_config" ]] &&
