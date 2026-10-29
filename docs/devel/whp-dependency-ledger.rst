@@ -1058,6 +1058,15 @@ without re-fetching the Git revision.  Its
 text; a mismatch warns of changed metadata, but does not verify DTC HEAD.
 The WHP reconciliation step must therefore check the pinned Git revision,
 validate DTC's Meson interface, and only then refresh that marker.
+A further independent identity is the DTC commit tree, visible through
+``git -C subprojects/dtc rev-parse HEAD^{tree}``.  Its hash identifies the
+committed DTC source, unlike the SHA-256 wrap marker.  Even matching Git
+HEAD and wrap marker cannot prove an unchanged local working tree: the
+reconciliation helper now checks nonignored Git source changes on its
+matching-pin fast path.  Ignored generated build files remain untouched.
+The read-only ``--diagnose`` output shows HEAD, pinned revision,
+their tree hashes (when available), local changes, DTC version and
+Meson interface status, so source changes cannot hide behind metadata.
 
 For a future fork revision, update only the immutable ``revision`` in
 ``subprojects/dtc.wrap`` after reviewing the new DTC source.  QEMU

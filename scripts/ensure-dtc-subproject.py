@@ -165,6 +165,14 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     current = git(checkout, "rev-parse", "HEAD")
     cache_file = checkout / ".meson-subproject-wrap-hash.txt"
     cached_hash = cache_file.read_text(encoding="utf-8").strip() if cache_file.exists() else None
+    # A matching wrap checksum and HEAD are not evidence that DTC's tracked
+    # source files are unchanged.  Check Git's actual nonignored worktree
+    # state even on the no-op path; ignored build outputs remain untouched.
+    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
+    dirty = "\n".join(line for line in status.splitlines()
+                      if line[3:] != ".meson-subproject-wrap-hash.txt")
+    if dirty:
+        raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
     if current == revision and cached_hash in (None, wrap_hash):
         validate_meson_dtc(checkout)
         return False
@@ -172,11 +180,6 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     # A stale wrap marker is not a reason to detach a development branch.
     # If the source is already pinned and clean, repair just Meson's marker:
     # no Git fetch, branch switch, or modification of the build directory.
-    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
-    dirty = "\n".join(line for line in status.splitlines()
-                      if line[3:] != ".meson-subproject-wrap-hash.txt")
-    if dirty:
-        raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
     if current == revision:
         validate_meson_dtc(checkout)
         refresh_wrap_cache(cache_file, wrap_hash)
@@ -231,6 +234,7 @@ def diagnose_dtc(source, stream=None):
         print("  Git command: " + shlex.join(git_command()), file=out)
     except DTCError as exc:
         print("  Git command: invalid (" + str(exc) + ")", file=out)
+    revision = None
     try:
         config = configparser.ConfigParser(interpolation=None)
         config.read(wrap, encoding="utf-8")
@@ -248,22 +252,56 @@ def diagnose_dtc(source, stream=None):
         print("  Checkout: existing non-Git directory", file=out)
         return
     print("  Checkout: existing Git repository", file=out)
+    try:
+        head = git(checkout, "rev-parse", "HEAD")
+        print("  HEAD: " + head, file=out)
+        if revision:
+            print("  Git revision vs wrap: " +
+                  ("pinned" if head == revision else "different"), file=out)
+    except (DTCError, OSError) as exc:
+        print("  HEAD: unavailable (" + str(exc) + ")", file=out)
     for label, argv in (
-        ("HEAD", ("rev-parse", "HEAD")),
         ("Branch", ("rev-parse", "--abbrev-ref", "HEAD")),
+        ("HEAD tree SHA", ("rev-parse", "HEAD^{tree}")),
     ):
         try:
             print("  " + label + ": " + git(checkout, *argv), file=out)
         except (DTCError, OSError) as exc:
             print("  " + label + ": unavailable (" + str(exc) + ")", file=out)
+    if revision and re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        try:
+            print("  Pinned tree SHA: " +
+                  git(checkout, "rev-parse", "--verify", revision + "^{tree}"),
+                  file=out)
+        except (DTCError, OSError) as exc:
+            print("  Pinned tree SHA: unavailable locally (" + str(exc) + ")", file=out)
     try:
         changes = git(checkout, "status", "--porcelain", "--untracked-files=all")
         changed = [line for line in changes.splitlines()
                    if line[3:] != ".meson-subproject-wrap-hash.txt"]
         print("  Local changes: " + str(len(changed)) +
-              " (excluding Meson's wrap marker)", file=out)
+              " (nonignored, excluding Meson's wrap marker)", file=out)
+        for line in changed[:8]:
+            print("  Changed source: " + line, file=out)
     except (DTCError, OSError) as exc:
         print("  Local changes: unavailable (" + str(exc) + ")", file=out)
+    try:
+        version_file = checkout / "VERSION.txt"
+        if version_file.is_file():
+            print("  DTC VERSION.txt: " + version_file.read_text(encoding="utf-8").strip(),
+                  file=out)
+        else:
+            project_file = checkout / "meson.build"
+            if project_file.is_file():
+                match = re.search(r"\bversion\s*:\s*['\"]([^'\"]+)['\"]",
+                                  project_file.read_text(encoding="utf-8"))
+                print("  DTC Meson version: " + (match.group(1) if match else "unknown"),
+                      file=out)
+        validate_meson_dtc(checkout)
+        print("  DTC Meson interface: compatible with QEMU", file=out)
+    except (DTCError, OSError, UnicodeError) as exc:
+        print("  DTC Meson interface: incompatible or unreadable (" + str(exc) + ")",
+              file=out)
     marker = checkout / ".meson-subproject-wrap-hash.txt"
     try:
         expected = meson_wrap_hash(wrap)

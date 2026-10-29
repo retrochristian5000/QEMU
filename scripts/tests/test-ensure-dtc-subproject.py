@@ -131,12 +131,59 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("Git command:", out)
         self.assertIn("Wrap revision: " + self.pin, out)
         self.assertIn("HEAD: " + self.old, out)
+        self.assertIn("Git revision vs wrap: different", out)
+        self.assertIn("HEAD tree SHA: " + self.git("rev-parse", "HEAD^{tree}"), out)
+        self.assertIn("Pinned tree SHA: " + self.git("rev-parse", self.pin + "^{tree}"), out)
+        self.assertIn("DTC Meson interface: compatible with QEMU", out)
         self.assertIn("Meson wrap marker: stale", out)
         self.assertIn("Expected wrap SHA256 (Meson text): " +
                       hashlib.sha256(self.wrap.read_text().encode()).hexdigest(), out)
         self.assertIn("Stored wrap SHA256: old-wrap-hash", out)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
         self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
+
+    def test_matching_marker_does_not_mask_modified_dtc_source(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "libfdt_dep = declare_dependency()\n# modified library build\n",
+            encoding="utf-8"
+        )
+        marker_before = self.cache.read_bytes()
+        head_before = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(dtc.DTCError, "local changes"):
+            dtc.ensure_dtc(self.root)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head_before)
+        self.assertEqual(self.cache.read_bytes(), marker_before)
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Git revision vs wrap: pinned", out.getvalue())
+        self.assertIn("Local changes: 1", out.getvalue())
+        self.assertIn("Changed source:  M libfdt/meson.build", out.getvalue())
+        self.assertIn("Meson wrap marker: current", out.getvalue())
+
+    def test_matching_marker_ignores_generated_dtc_build_files(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / ".git" / "info" / "exclude").write_text("build/\n")
+        build = self.repo / "build"
+        build.mkdir()
+        (build / "libfdt.o").write_text("generated\n")
+        self.assertFalse(dtc.ensure_dtc(self.root))
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Git revision vs wrap: pinned", out.getvalue())
+        self.assertIn("Local changes: 0", out.getvalue())
+        self.assertIn("Meson wrap marker: current", out.getvalue())
+        self.assertEqual((build / "libfdt.o").read_text(), "generated\n")
+
+    def test_diagnostic_reports_dtc_version_independent_of_wrap_hash(self):
+        (self.repo / "VERSION.txt").write_text("1.8.1\n")
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("DTC VERSION.txt: 1.8.1", out.getvalue())
+        self.assertIn("Meson wrap marker: stale", out.getvalue())
+        self.assertIn("Git revision vs wrap: different", out.getvalue())
 
     def test_crlf_wrap_marker_matches_mesons_text_hash(self):
         # Meson reads the wrap as UTF-8 text and normalizes CRLF, whereas
