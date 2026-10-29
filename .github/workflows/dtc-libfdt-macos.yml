@@ -66,6 +66,11 @@ jobs:
           grep -F 'WHP_MESON_PROVIDER=' config.status
           python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
 
+      - name: Verify pinned Meson uses one snapshot for wrap SHA-256
+        run: |
+          cd toolchains/meson
+          ../../build-fdt-fork/pyvenv/bin/python3 -m unittest unittests.wraptests
+
       - name: Verify fork's incremental Meson reconfiguration
         run: |
           cd build-fdt-fork

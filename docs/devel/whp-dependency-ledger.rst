@@ -1067,6 +1067,11 @@ rechecks the wrap before writing the marker, and refreshes a missing
 marker.  A changed revision, URL, or fetch depth changes the computed
 wrap checksum; a DTC source modification without a wrap change does not.
 A concurrent wrap edit prevents a stale marker from being installed.
+The pinned WHP Meson fork also parses and SHA-256 hashes a single UTF-8
+wrap snapshot, instead of reading the changing wrap file twice.  Its wrap
+unit tests are invoked during QEMU's internal-DTC macOS workflow.  This
+complements QEMU's pre-Meson reconciliation; Meson's generic existing-source
+wrap validator does not replace the exact DTC Git-revision check.
 The WHP reconciliation step must therefore check the pinned Git revision,
 validate DTC's Meson interface and declared version, and only then refresh
 that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads
