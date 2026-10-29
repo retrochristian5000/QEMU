@@ -134,7 +134,8 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("Git revision vs wrap: different", out)
         self.assertIn("HEAD tree SHA: " + self.git("rev-parse", "HEAD^{tree}"), out)
         self.assertIn("Pinned tree SHA: " + self.git("rev-parse", self.pin + "^{tree}"), out)
-        self.assertIn("DTC Meson interface: compatible with QEMU", out)
+        self.assertIn("DTC Meson interface: incompatible or unreadable", out)
+        self.assertIn("Meson 'tests' option", out)
         self.assertIn("Meson wrap marker: stale", out)
         self.assertIn("Expected wrap SHA256 (Meson text): " +
                       hashlib.sha256(self.wrap.read_text().encode()).hexdigest(), out)
