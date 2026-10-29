@@ -3,6 +3,7 @@
 """Regression tests for pre-Meson DTC wrap reconciliation."""
 
 import hashlib
+from io import StringIO
 import importlib.util
 import os
 from pathlib import Path
@@ -115,6 +116,32 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
         self.assertIn("init -q", trace.read_text())
         self.assertIn("fetch --depth=1", trace.read_text())
+
+    def test_diagnostic_exposes_git_boundary_without_changes(self):
+        buffer = StringIO()
+        dtc.diagnose_dtc(self.root, stream=buffer)
+        out = buffer.getvalue()
+        self.assertIn("phase=pre-Meson", out)
+        self.assertIn("Git command:", out)
+        self.assertIn("Wrap revision: " + self.pin, out)
+        self.assertIn("HEAD: " + self.old, out)
+        self.assertIn("Meson wrap marker: stale", out)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
+        self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
+
+    def test_diagnostic_handles_missing_checkout_without_git_fetch(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        buffer = StringIO()
+        dtc.diagnose_dtc(self.root, stream=buffer)
+        self.assertIn("Checkout: missing", buffer.getvalue())
+        self.assertFalse(self.repo.exists())
+
+    def test_diagnostic_handles_broken_git_selection(self):
+        buffer = StringIO()
+        with mock.patch.dict(os.environ, {"GIT": "does-not-exist-git"}):
+            dtc.diagnose_dtc(self.root, stream=buffer)
+        self.assertIn("HEAD: unavailable", buffer.getvalue())
+        self.assertIn("Wrap revision: " + self.pin, buffer.getvalue())
 
     def test_matching_checkout_is_noop(self):
         self.git("checkout", "--detach", self.pin)

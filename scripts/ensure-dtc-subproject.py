@@ -191,17 +191,78 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     return True
 
 
+def diagnose_dtc(source, stream=None):
+    """Report pre-Meson Git state without fetching or modifying the checkout."""
+    out = stream if stream is not None else sys.stderr
+    wrap = source / "subprojects" / "dtc.wrap"
+    checkout = source / "subprojects" / "dtc"
+    print("DTC diagnosis: phase=pre-Meson (after Sphinx/PIE, before meson setup)", file=out)
+    try:
+        print("  Git command: " + shlex.join(git_command()), file=out)
+    except DTCError as exc:
+        print("  Git command: invalid (" + str(exc) + ")", file=out)
+    try:
+        config = configparser.ConfigParser(interpolation=None)
+        config.read(wrap, encoding="utf-8")
+        revision = config.get("wrap-git", "revision", fallback="unknown")
+        print("  Wrap revision: " + revision, file=out)
+    except (OSError, configparser.Error) as exc:
+        print("  Wrap revision: unreadable (" + str(exc) + ")", file=out)
+    if checkout.is_symlink():
+        print("  Checkout: symlink (requires manual inspection)", file=out)
+        return
+    if not checkout.exists():
+        print("  Checkout: missing (Meson wrap fetches on first use)", file=out)
+        return
+    if not (checkout / ".git").exists():
+        print("  Checkout: existing non-Git directory", file=out)
+        return
+    print("  Checkout: existing Git repository", file=out)
+    for label, argv in (
+        ("HEAD", ("rev-parse", "HEAD")),
+        ("Branch", ("rev-parse", "--abbrev-ref", "HEAD")),
+    ):
+        try:
+            print("  " + label + ": " + git(checkout, *argv), file=out)
+        except (DTCError, OSError) as exc:
+            print("  " + label + ": unavailable (" + str(exc) + ")", file=out)
+    try:
+        changes = git(checkout, "status", "--porcelain", "--untracked-files=all")
+        changed = [line for line in changes.splitlines()
+                   if line[3:] != ".meson-subproject-wrap-hash.txt"]
+        print("  Local changes: " + str(len(changed)) +
+              " (excluding Meson's wrap marker)", file=out)
+    except (DTCError, OSError) as exc:
+        print("  Local changes: unavailable (" + str(exc) + ")", file=out)
+    marker = checkout / ".meson-subproject-wrap-hash.txt"
+    try:
+        expected = hashlib.sha256(wrap.read_bytes()).hexdigest()
+        actual = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+        print("  Meson wrap marker: " +
+              ("current" if actual == expected else "stale" if actual else "missing"),
+              file=out)
+    except OSError as exc:
+        print("  Meson wrap marker: unreadable (" + str(exc) + ")", file=out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--no-download", action="store_true")
     parser.add_argument("--fetch-missing", action="store_true",
                         help="fetch pinned DTC from Git before Meson setup")
+    parser.add_argument("--diagnose", action="store_true",
+                        help="inspect the DTC Git/Meson boundary without changing sources")
     args = parser.parse_args()
+    source = args.source.resolve()
+    if args.diagnose:
+        diagnose_dtc(source)
+        return 0
     try:
-        ensure_dtc(args.source.resolve(), args.no_download, args.fetch_missing)
+        ensure_dtc(source, args.no_download, args.fetch_missing)
     except (DTCError, OSError) as exc:
         print(f"DTC subproject: {exc}", file=sys.stderr)
+        diagnose_dtc(source)
         return 1
     return 0
 
