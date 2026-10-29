@@ -58,6 +58,18 @@ whp_apple_require_under_root()
 whp_apple_find_tool()
 (
     name=$1
+    tool_class=${2:-developer}
+    # /usr/bin carries legitimate Apple shims for native system utilities.
+    # Accept those only for a narrow allowlist, never for compiler drivers.
+    case "$tool_class" in
+        developer) ;;
+        system)
+            case "$name" in ar|ranlib|nm|strip|lipo|ld) ;;
+                *) printf 'error: unsupported Apple system tool: %s\n' "$name" >&2; exit 1 ;;
+            esac
+            ;;
+        *) printf 'error: invalid Apple tool class: %s\n' "$tool_class" >&2; exit 1 ;;
+    esac
     whp_apple_developer_root >/dev/null || exit 1
     command -v xcrun >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
@@ -71,6 +83,12 @@ whp_apple_find_tool()
         printf 'error: selected Apple tool is not executable: %s\n' "$tool" >&2
         exit 1
     }
+    # xcrun --find may resolve an Apple system shim outside the selected
+    # developer root. An exact /usr/bin/name is valid only for system tools.
+    if [ "$tool_class" = system ] && [ "$tool" = "/usr/bin/$name" ]; then
+        printf '%s\n' "$tool"
+        exit 0
+    fi
     whp_apple_require_under_root "${tool%/*}" "$name tool" || exit 1
     printf '%s\n' "$tool"
 )

@@ -460,7 +460,11 @@ different ABI. Selection rejects recursion into the adapter itself.
 ``build.sh`` exports ``LD_FOR_BUILD`` before bootstrapping Python and LLVM,
 but never replaces QEMU artifact ``LD`` with this script. Darwin selects the
 Apple developer linker through ``xcrun`` at the seed boundary, not automatic
-``ld64.lld``; final host links still use the Clang driver's selected linker,
+``ld64.lld``. Broken Xcode/CLT linker discovery now fails closed instead of
+falling back to ``/usr/bin/ld`` or an unrelated PATH linker. The default
+native ``ar``, ``ranlib``, ``nm``, ``strip``, and ``lipo`` drivers
+are also resolved with ``xcrun`` when not explicitly set, allowing exact
+Apple-provided ``/usr/bin/<tool>`` shims for system utilities; final host links still use the Clang driver's selected linker,
 and ASan, ARM64e, optional mold, and firmware cross-linker policies retain
 their separate probes. The relocatable probe is not evidence that an executable
 link, LTO, sanitizers, or a particular target ABI succeeds.

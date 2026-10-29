@@ -38,6 +38,12 @@ def main() -> int:
         encoding="utf-8"
     )
     require(policy, "whp_apple_find_tool clang++", "Apple compiler root guard")
+    require(apple, '"/usr/bin/$name"', "Apple system shim support")
+    require(macos, "whp_apple_find_tool ranlib system", "Apple archive tool selection")
+    prepare = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(
+        encoding="utf-8"
+    )
+    require(prepare, "whp_apple_find_tool strip system", "Apple host strip selection")
     if "select_cxx()" in adapter or "select_cc()" in cxx_adapter:
         raise SystemExit("error: compiler selectors cross language roles")
 
@@ -49,7 +55,8 @@ def main() -> int:
     require(linker, "linker_links_native_object", "native linker object probe")
     require(linker, "WHP_LD_SEED LD_FOR_BUILD", "linker seed overrides")
     require(linker, 'exec "$seed" "$@"', "linker argument passthrough")
-    require(linker, "xcrun --sdk macosx --find ld", "Apple linker seed")
+    require(linker, "whp_apple_find_tool ld system", "active Apple linker seed")
+    require(linker, "whp_ld_root", "linker symlink root guard")
     require(linker, "Never auto-select ld64.lld", "ARM64e and ASan guard")
     require(build, '"$SOURCE_DIR/ld.sh" --print-ld', "early linker seed")
     require(build, "LD_FOR_BUILD=", "build-machine linker handoff")

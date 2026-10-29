@@ -355,11 +355,15 @@ if [[ -z "${AR:-}" && -z "${RANLIB:-}" && -z "${NM:-}" &&
     unset llvm_ar llvm_ranlib llvm_nm
 fi
 
-export AR="${AR:-/usr/bin/ar}"
-export RANLIB="${RANLIB:-/usr/bin/ranlib}"
-export NM="${NM:-/usr/bin/nm}"
-export STRIP="${STRIP:-/usr/bin/strip}"
-export LIPO="${LIPO:-/usr/bin/lipo}"
+# Select matching Xcode/CLT utilities through xcrun. The resolver accepts
+# Apple's /usr/bin shims, explicit overrides, and the managed LLVM archive
+# trio selected above without a second toolchain promotion.
+if [[ -z "${AR:-}" ]]; then AR="$(whp_apple_find_tool ar system)" || exit 1; fi
+if [[ -z "${RANLIB:-}" ]]; then RANLIB="$(whp_apple_find_tool ranlib system)" || exit 1; fi
+if [[ -z "${NM:-}" ]]; then NM="$(whp_apple_find_tool nm system)" || exit 1; fi
+if [[ -z "${STRIP:-}" ]]; then STRIP="$(whp_apple_find_tool strip system)" || exit 1; fi
+if [[ -z "${LIPO:-}" ]]; then LIPO="$(whp_apple_find_tool lipo system)" || exit 1; fi
+export AR RANLIB NM STRIP LIPO
 
 reject_managed_flags
 WHP_MACOS_ARCH="$(whp_select_macos_arch "$CC" "$SDKROOT" \

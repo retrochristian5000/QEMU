@@ -307,7 +307,8 @@ whp_prepare_host_tools()
         : "${OBJC_FOR_BUILD:?macOS wrapper did not set OBJC_FOR_BUILD}"
 
         if [[ -z "${STRIP_FOR_BUILD:-}" ]]; then
-            STRIP_FOR_BUILD="$(xcrun --sdk macosx --find strip)"
+            source "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+            STRIP_FOR_BUILD="$(whp_apple_find_tool strip system)" || return 1
             export STRIP_FOR_BUILD
         fi
         export PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"

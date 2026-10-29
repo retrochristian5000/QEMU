@@ -15,6 +15,29 @@ if [ "${1:-}" = --whp-ld-adapter-probe ]; then
     exit 0
 fi
 
+# Resolve the physical adapter path; a PATH symlink must still pair the
+# native linker object probe with this checkout's cc.sh, not an unrelated CC.
+whp_ld_entry=$0
+case "$whp_ld_entry" in
+    */*) ;;
+    *) whp_ld_entry=$(command -v "$whp_ld_entry" 2>/dev/null || true) ;;
+esac
+[ -n "$whp_ld_entry" ] || exit 1
+whp_ld_depth=0
+while [ -L "$whp_ld_entry" ]; do
+    whp_ld_depth=$((whp_ld_depth + 1))
+    [ "$whp_ld_depth" -le 16 ] || {
+        printf '%s\n' 'error: linker adapter symlink loop' >&2
+        exit 1
+    }
+    whp_ld_link=$(readlink "$whp_ld_entry") || exit 1
+    case "$whp_ld_link" in
+        /*) whp_ld_entry=$whp_ld_link ;;
+        *) whp_ld_entry=${whp_ld_entry%/*}/$whp_ld_link ;;
+    esac
+done
+whp_ld_root=$(CDPATH= cd -P -- "${whp_ld_entry%/*}" && pwd -P) || exit 1
+
 is_self()
 {
     candidate=$1
@@ -46,14 +69,13 @@ resolve_executable()
 linker_links_native_object()
 (
     candidate=$1
-    source_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-    if [ -x "$source_dir/cc.sh" ]; then
-        compiler=$("$source_dir/cc.sh" --print-cc 2>/dev/null) || exit 1
+    if [ -x "$whp_ld_root/cc.sh" ]; then
+        compiler=$("$whp_ld_root/cc.sh" --print-cc 2>/dev/null) || exit 1
     elif [ -n "${CC_FOR_BUILD:-}" ]; then
         compiler=$CC_FOR_BUILD
     else
-        # Keep a PATH-installed symlink to ld.sh usable without duplicating
-        # cc.sh's selection logic; the native-object probe rejects cross tools.
+        # A standalone adapter can still use a native CC, but never QEMU's
+        # target compiler. Symlinks into this checkout resolve above.
         compiler=$(command -v cc 2>/dev/null || true)
     fi
     [ -n "$compiler" ] || exit 1
@@ -99,14 +121,17 @@ select_seed()
     if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
         # Never auto-select ld64.lld here: QEMU's ASan/arm64e policy is
         # checked separately before artifact linker promotion.
-        if command -v xcrun >/dev/null 2>&1; then
-            value=$(xcrun --sdk macosx --find ld 2>/dev/null || true)
-            if [ -n "$value" ] && seed=$(try_candidate "$value"); then
-                printf '%s\n' "$seed"
-                return 0
-            fi
+        # xcrun --sdk macosx --find ld selects the Apple developer linker.
+        # Its /usr/bin/ld shim is valid, but a failed Xcode/CLT lookup must
+        # never silently fall back to a different linker from PATH.
+        . "$whp_ld_root/scripts/whp-build/macos-developer-tools.sh"
+        value=$(whp_apple_find_tool ld system) || return 1
+        if seed=$(try_candidate "$value"); then
+            printf '%s\n' "$seed"
+            return 0
         fi
-        candidates='/usr/bin/ld ld'
+        printf 'error: selected Apple linker cannot link native objects: %s\n' "$value" >&2
+        return 1
     else
         candidates='ld ld.lld /usr/bin/ld'
     fi
