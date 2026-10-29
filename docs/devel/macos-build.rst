@@ -835,7 +835,15 @@ before selecting Mach-O LLD for the LLVM build; the usability check must not
 silently override that choice.
 
 The required native macOS UBSan and Cocoa probes now use the installed Clang
-driver's normal **Apple linker** selection. They still require the correct
+driver's normal **Apple linker** selection. The UBSan probe resolves the
+**installed Clang resource directory**, requires the matching Darwin UBSan
+compiler-rt dylib and verifies its exact Mach-O architecture with the
+installed ``llvm-lipo``. For an explicit ``arm64e`` bootstrap, an ``arm64``-only
+runtime is a precise ABI failure, not a reason to silently change the
+compiler target. The linker probe now compiles an actual instrumented signed
+overflow expression to exercise sanitizer handler references; it is still a
+link-only check, not evidence that a third-party arm64e binary can execute.
+They still require the correct
 macOS SDK, architecture, deployment target, installed ``libLTO.dylib``,
 compiler-rt runtime linking and libobjc/framework resolution. The ``ld64.lld``
 executable must still exist; explicit LLD use retains the independent

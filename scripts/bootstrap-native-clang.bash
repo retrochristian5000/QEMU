@@ -1220,6 +1220,9 @@ usable()
     local expected_target_abi=''
     local ubsan_exe=''
     local ubsan_log=''
+    local ubsan_resource_dir=''
+    local ubsan_runtime=''
+    local ubsan_runtime_archs=''
     local objc_exe=''
     local objc_log=''
     # Native macOS usability uses Apple ld for mandatory host/runtime smoke.
@@ -1288,6 +1291,28 @@ usable()
             native_llvm_validation_error runtime 'missing libLTO.dylib for Darwin linking'
             return 1
         }
+        # LLVM's driver accepts -fsanitize=undefined even if compiler-rt
+        # did not install a runtime for the chosen Mach-O ABI. Inspect the
+        # *installed Clang's* resource tree rather than using an unrelated
+        # Apple Clang runtime or treating a plain arm64 slice as arm64e.
+        ubsan_resource_dir="$("$prefix/bin/clang" -print-resource-dir 2>/dev/null)" || {
+            native_llvm_validation_error runtime 'Clang cannot resolve its installed compiler-rt resource directory'
+            return 1
+        }
+        ubsan_runtime="$ubsan_resource_dir/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
+        if [[ ! -f "$ubsan_runtime" ]]; then
+            native_llvm_validation_error runtime "missing installed compiler-rt UBSan dylib: $ubsan_runtime (LLVM runtimes distribution)"
+            return 1
+        fi
+        ubsan_runtime_archs="$("$prefix/bin/llvm-lipo" -archs "$ubsan_runtime" 2>/dev/null)" || {
+            native_llvm_validation_error ABI "cannot inspect compiler-rt UBSan Mach-O architectures: $ubsan_runtime"
+            return 1
+        }
+        if ! printf '%s\n' "$ubsan_runtime_archs" | tr '[:space:]' '\n' |
+            grep -Fxq "$darwin_cmake_arch"; then
+            native_llvm_validation_error ABI "compiler-rt UBSan runtime lacks $darwin_cmake_arch slice (available: $ubsan_runtime_archs): $ubsan_runtime"
+            return 1
+        fi
         ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
             { native_llvm_validation_error runtime 'cannot create UBSan smoke executable'; return 1; }
         ubsan_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan-log.XXXXXX")" || {
@@ -1295,13 +1320,16 @@ usable()
             native_llvm_validation_error runtime 'cannot create UBSan smoke log'
             return 1
         }
-        if ! printf 'int main(void) { return 0; }\n' |
+        # A real signed-overflow expression makes Clang emit UBSan handler
+        # references. Merely linking main(){return 0;} is not proof that the
+        # selected compiler and compiler-rt agree on sanitizer instrumentation.
+        if ! printf '#include <limits.h>\nvolatile int whp_ubsan_value = INT_MAX;\nint main(void) { return whp_ubsan_value + 1; }\n' |
             "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
                 -fsanitize=undefined \
                 -isysroot "$sdkroot" \
                 "-mmacosx-version-min=$deployment_target" \
                 -x c - -o "$ubsan_exe" >/dev/null 2>"$ubsan_log"; then
-            native_llvm_validation_error runtime 'native LLVM UBSan link failed with Apple ld; check compiler-rt and SDK'
+            native_llvm_validation_error runtime "native LLVM UBSan link failed with Apple ld for $darwin_cmake_arch; runtime=$ubsan_runtime; check compiler-rt and SDK"
             cat "$ubsan_log" >&2
             rm -f "$ubsan_exe" "$ubsan_log"
             return 1

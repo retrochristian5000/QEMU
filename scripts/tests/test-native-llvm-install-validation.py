@@ -57,6 +57,9 @@ for arg in "$@"; do
         exit 84
     fi
 done
+if [ "$1" = -print-resource-dir ]; then
+    printf '%s\n' "$WHP_TEST_RESOURCE_DIR"
+fi
 if [ "$1" = --print-targets ]; then
     printf '  aarch64    - AArch64\n  x86        - X86\n'
     if [ "$WHP_TEST_MISSING_BACKEND" != 1 ]; then
@@ -101,6 +104,12 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     (prefix / "lib").mkdir(parents=True)
     bin_dir.mkdir()
     (prefix / "lib/libLTO.dylib").write_bytes(b"test fixture")
+    # The sanitizer dylib must belong to this Clang resource directory.
+    resource = prefix / "lib/clang/whp-test"
+    darwin_runtime = resource / "lib/darwin"
+    darwin_runtime.mkdir(parents=True)
+    ubsan_dylib = darwin_runtime / "libclang_rt.ubsan_osx_dynamic.dylib"
+    ubsan_dylib.write_bytes(b"mock Mach-O UBSan runtime")
     clang = bin_dir / "clang"
     clang.write_text(driver, encoding="utf-8")
     clang.chmod(0o755)
@@ -114,6 +123,17 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     fixture_tool.chmod(0o755)
     for name in required:
         (bin_dir / name).symlink_to("whp-fixture-tool")
+    # Mimic llvm-lipo's architecture list without a macOS host. An arm64
+    # dylib alone must never satisfy an explicit arm64e ABI request.
+    (bin_dir / "llvm-lipo").unlink()
+    lipo = bin_dir / "llvm-lipo"
+    lipo.write_text(
+        '#!/bin/sh\n'
+        'test "$1" = "-archs" || exit 1\n'
+        'printf "%s\\n" "$WHP_TEST_RUNTIME_ARCHS"\n',
+        encoding="utf-8",
+    )
+    lipo.chmod(0o755)
     # Fail with the actual fixture defect before extracting usable(). A
     # dangling symlink would otherwise be attributed to missing native LLVM.
     assert fixture_tool.is_file() and os.access(fixture_tool, os.X_OK)
@@ -122,11 +142,13 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
 
     def run_probe(arch, fail_ubsan=False, missing_backend=False,
                   target="aarch64-apple-macosx15.0", cxx_target=None,
-                  deployment="15.0"):
+                  deployment="15.0", runtime_archs="arm64 arm64e"):
         trace.write_text("", encoding="utf-8")
         env = os.environ.copy()
         env.update({
             "WHP_PROBE_LOG": str(trace),
+            "WHP_TEST_RESOURCE_DIR": str(resource),
+            "WHP_TEST_RUNTIME_ARCHS": runtime_archs,
             "WHP_TEST_ARCH": arch,
             "WHP_FAIL_UBSAN": "1" if fail_ubsan else "0",
             "WHP_TEST_MISSING_BACKEND": "1" if missing_backend else "0",
@@ -145,6 +167,7 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         assert result.returncode == 0, (arch, result.stderr)
         assert "-fuse-ld=lld" not in calls, (arch, calls)
         assert "-fsanitize=undefined" in calls, (arch, calls)
+        assert "-print-resource-dir" in calls, (arch, calls)
         assert "-framework Cocoa" in calls, (arch, calls)
         assert f"-arch {arch}" in calls, (arch, calls)
 
@@ -178,6 +201,21 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
         assert result.returncode != 0, (c_target, cxx_target)
         assert "[ABI]" in result.stderr, result.stderr
+
+    # Clang accepting the flag does not prove compiler-rt was installed.
+    # Catch a missing dylib before a confusing linker error occurs.
+    ubsan_dylib.unlink()
+    result, _ = run_probe("arm64")
+    assert result.returncode != 0, result.stderr
+    assert "[runtime]" in result.stderr and "missing installed compiler-rt UBSan dylib" in result.stderr
+    ubsan_dylib.write_bytes(b"mock Mach-O UBSan runtime")
+
+    # An ordinary arm64 compiler-rt dylib cannot satisfy arm64e PAC ABI.
+    result, calls = run_probe("arm64e", runtime_archs="arm64")
+    assert result.returncode != 0, result.stderr
+    assert "[ABI]" in result.stderr
+    assert "lacks arm64e slice" in result.stderr
+    assert "-fsanitize=undefined" not in calls, calls
 
     # A failed sanitizer link still fails closed: only the unrelated
     # requirement that it use LLVM's Mach-O linker is removed.
