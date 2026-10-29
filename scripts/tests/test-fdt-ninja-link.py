@@ -228,6 +228,12 @@ def check_macho_abi(build_dir, expected_arch=None):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     if members.returncode:
+        # Apple ar may emit a universal/fat archive when fixture members use
+        # incompatible Mach-O subtypes.  This is itself an ABI mismatch, not
+        # a failed DTC build or a reason to accept the provider.
+        if "is a fat file" in members.stderr or "fat archive" in members.stderr:
+            fail("Mach-O ABI mismatch: libfdt.a is a fat/universal archive; "
+                 "QEMU requires one matching ARM64 object ABI throughout")
         fail("could not list libfdt.a: " + members.stderr.strip())
     names = [name.strip() for name in members.stdout.splitlines()
              if name.strip()]
