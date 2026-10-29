@@ -70,6 +70,62 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
+    def test_dtc_and_meson_menu_settings_are_wired(self):
+        mod = load_module()
+        self.assertEqual(
+            mod.OPTION_BY_KEY['QEMU_FDT_MODE'].choices,
+            ('auto', 'system', 'internal', 'enabled', 'disabled'),
+        )
+        self.assertEqual(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'].choices,
+                         ('venv', 'fork'))
+        self.assertEqual(mod.OPTION_BY_KEY['WHP_DTC_FETCH_MISSING'].default, 'n')
+        values = mod.default_values()
+        self.assertEqual(values['QEMU_FDT_MODE'], 'auto')
+        self.assertEqual(values['WHP_MESON_PROVIDER'], 'venv')
+        self.assertEqual(values['WHP_DTC_FETCH_MISSING'], 'n')
+        for mode in ('internal', 'system', 'enabled', 'disabled'):
+            values['QEMU_FDT_MODE'] = mode
+            with tempfile.TemporaryDirectory() as td:
+                config_path = pathlib.Path(td) / '.whpconfig'
+                mod.save_config(config_path, mod.ConfigState(values))
+                self.assertEqual(mod.load_config(config_path).values['QEMU_FDT_MODE'],
+                                 mode)
+        values['QEMU_FDT_MODE'] = 'internal'
+        values['WHP_MESON_PROVIDER'] = 'fork'
+        values['WHP_DTC_FETCH_MISSING'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("QEMU_FDT_MODE='internal'", assignments)
+        self.assertIn("WHP_MESON_PROVIDER='fork'", assignments)
+        self.assertIn("WHP_DTC_FETCH_MISSING='1'", assignments)
+        self.assertNotIn("QEMU_FDT_MODE=", mod.shell_assignments(
+            mod.ConfigState(mod.default_values()), {}))
+        with self.assertRaises(ValueError):
+            mod.validate_value(mod.OPTION_BY_KEY['QEMU_FDT_MODE'], 'dtc')
+        with self.assertRaises(ValueError):
+            mod.validate_value(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'], 'system')
+
+    def test_portable_dtc_fdt_probe_matches_menu(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_QEMU_SYSTEM_I386': '1',
+            'QEMU_FDT_MODE': 'internal',
+            'WHP_MESON_PROVIDER': 'fork',
+            'WHP_DTC_FETCH_MISSING': '1',
+        })
+        result = subprocess.run(
+            [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn('CONFIGURE_ARG=-Dfdt=internal', result.stdout)
+        env['QEMU_FDT_MODE'] = 'auto'
+        result = subprocess.run(
+            [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertNotIn('CONFIGURE_ARG=-Dfdt=', result.stdout)
+
     def test_lto_mode_menu_shell_and_save_roundtrip(self):
         mod = load_module()
         option = mod.OPTION_BY_KEY['QEMU_HOST_LTO_MODE']

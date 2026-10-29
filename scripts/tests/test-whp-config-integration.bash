@@ -30,6 +30,9 @@ grep -Fq 'LTO mode (ThinLTO or full)' <<< "$menu_output"
 grep -Fq 'Bootstrap/use WHP Bash' <<< "$menu_output"
 grep -Fq 'Bootstrap/use WHP GNU Make' <<< "$menu_output"
 grep -Fq 'Bootstrap/use WHP SDL3' <<< "$menu_output"
+grep -Fq 'QEMU Meson provider' <<< "$menu_output"
+grep -Fq 'QEMU libfdt provider' <<< "$menu_output"
+grep -Fq 'Prefetch missing pinned DTC checkout' <<< "$menu_output"
 grep -Fq 'Cocoa' <<< "$menu_output"
 grep -Fq 'CoreAudio' <<< "$menu_output"
 grep -Fq 'GTK' <<< "$menu_output"
@@ -88,6 +91,16 @@ grep -Fq 'CONFIGURE_ARG=--enable-werror' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-asan' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-ubsan' <<< "$portable_probe"
 grep -Fq 'CONFIGURE_ARG=--disable-tsan' <<< "$portable_probe"
+if grep -Fq 'CONFIGURE_ARG=-Dfdt=' <<< "$portable_probe"; then
+    printf 'error: default libfdt selection must remain automatic\n' >&2
+    exit 1
+fi
+portable_dtc_probe="$(
+    WHP_FORCE_PORTABLE_CORE=1 WHP_PORTABLE_PROBE_ONLY=1 \
+    QEMU_FDT_MODE=internal WHP_MESON_PROVIDER=fork WHP_DTC_FETCH_MISSING=1 \
+    /bin/sh "$COPY/build.sh" qemu-system-i386
+)"
+grep -Fq 'CONFIGURE_ARG=-Dfdt=internal' <<< "$portable_dtc_probe"
 if [[ "$(uname -s)" == Darwin ]]; then
     grep -Fq 'CONFIGURE_ARG=--enable-modules' <<< "$portable_probe"
 fi
@@ -226,6 +239,9 @@ MACOS_ENABLE_GTK=auto
 MACOS_ENABLE_PA=auto
 QEMU_HOST_LTO=auto
 QEMU_HOST_MODULES=auto
+QEMU_FDT_MODE=internal
+WHP_MESON_PROVIDER=fork
+WHP_DTC_FETCH_MISSING=1
 QEMU_C_STANDARD=gnu23
 QEMU_CXX_STANDARD=c++26
 whp_prepare_configure_args
@@ -233,6 +249,7 @@ generic_args="$(printf '%s\n' "${configure_args[@]}")"
 grep -Fxq -- '--prefix=/portable-prefix' <<< "$generic_args"
 grep -Fxq -- '-Dc_std=gnu23' <<< "$generic_args"
 grep -Fxq -- '-Dcpp_std=c++26' <<< "$generic_args"
+grep -Fxq -- '-Dfdt=internal' <<< "$generic_args"
 if grep -Eq -- '--(enable|disable)-(gtk|pa|lto)' <<< "$generic_args"; then
     printf 'error: auto host features must be left to QEMU/Meson detection\n' >&2
     exit 1

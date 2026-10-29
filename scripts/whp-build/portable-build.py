@@ -629,6 +629,8 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
     )
     configure_args.append(f"-Db_pgo={values['QEMU_HOST_PGO']}")
+    if values['QEMU_FDT_MODE'] != 'auto':
+        configure_args.append(f"-Dfdt={values['QEMU_FDT_MODE']}")
     # build.sh stages private SDL3 under BUILD_DIR/deps/sdl3, where QEMU and
     # its one-level-deep modules must locate the shared library at runtime.
     # Keep firmware/toolchain builds unaffected by these QEMU-only link args.
@@ -864,6 +866,13 @@ def main(argv: List[str]) -> int:
         validate_build_tree_owner(build_dir)
         write_build_tree_owner(build_dir)
         values = resolved_values()
+        # The portable runner bypasses build.sh's shell assignments. Publish
+        # these validated menu settings for QEMU's existing configure logic,
+        # including the optional pre-Meson DTC prefetch path.
+        os.environ['WHP_MESON_PROVIDER'] = values['WHP_MESON_PROVIDER']
+        os.environ['WHP_DTC_FETCH_MISSING'] = (
+            '1' if values['WHP_DTC_FETCH_MISSING'] == 'y' else '0'
+        )
         runner = select_runner()
         jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
         if values['QEMU_HOST_PGO'] == 'use':

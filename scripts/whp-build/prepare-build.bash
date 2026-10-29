@@ -188,6 +188,24 @@ whp_prepare_build_defaults()
     esac
     export QEMU_HOST_PGO
     QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
+    QEMU_FDT_MODE="${QEMU_FDT_MODE:-auto}"
+    case "$QEMU_FDT_MODE" in
+        auto|system|internal|enabled|disabled) ;;
+        *)
+            printf 'error: QEMU_FDT_MODE must be auto, system, internal, enabled, or disabled: %s\n' "$QEMU_FDT_MODE" >&2
+            exit 1
+            ;;
+    esac
+    WHP_MESON_PROVIDER="${WHP_MESON_PROVIDER:-venv}"
+    case "$WHP_MESON_PROVIDER" in
+        venv|fork) ;;
+        *)
+            printf 'error: WHP_MESON_PROVIDER must be venv or fork: %s\n' "$WHP_MESON_PROVIDER" >&2
+            exit 1
+            ;;
+    esac
+    WHP_DTC_FETCH_MISSING="${WHP_DTC_FETCH_MISSING:-0}"
+    export WHP_MESON_PROVIDER WHP_DTC_FETCH_MISSING
     QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
     QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
     BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"
@@ -207,7 +225,7 @@ whp_prepare_build_defaults()
     whp_require_boolean_values \
         BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \
         RUN_TESTS INSTALL_AFTER_BUILD OPENBIOS_FORCE_RECONFIGURE \
-        POWERPC_TOOLCHAIN_FORCE_REBUILD || exit 1
+        POWERPC_TOOLCHAIN_FORCE_REBUILD WHP_DTC_FETCH_MISSING || exit 1
     whp_require_tristate_values \
         MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO MACOS_ENABLE_GTK \
         MACOS_ENABLE_PA QEMU_HOST_LTO QEMU_HOST_MODULES BUILD_OPENBIOS \
@@ -424,6 +442,9 @@ whp_prepare_configure_args()
     fi
 
     configure_args+=("-Db_pgo=$QEMU_HOST_PGO")
+    if [[ "$QEMU_FDT_MODE" != auto ]]; then
+        configure_args+=("-Dfdt=$QEMU_FDT_MODE")
+    fi
     whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
     case "$QEMU_HOST_LTO_MODE" in
         thin) configure_args+=(-Db_lto_mode=thin) ;;

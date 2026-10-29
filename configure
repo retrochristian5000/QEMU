@@ -2007,15 +2007,23 @@ if test "$skip_meson" = no; then
   # only that clean, detached subproject before the normal incremental setup.
   # The preflight is Git/Python-owned; Meson has not run setup at this point.
   echo "QEMU DTC: pre-Meson Git reconciliation (downloads=$download)"
+  # Missing checkouts stay Meson-lazy unless menuconfig explicitly opts in.
+  # Reuse the existing helper; the offline path must never fetch.
+  case "${WHP_DTC_FETCH_MISSING:-0}" in
+    0) dtc_prefetch= ;;
+    1) dtc_prefetch=--fetch-missing ;;
+    *) error_exit "WHP_DTC_FETCH_MISSING must be 0 or 1" ;;
+  esac
   if test "$download" = disabled; then
     $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" --no-download || \
+      --source "$source_path" --no-download $dtc_prefetch || \
       error_exit "DTC subproject reconciliation failed"
   else
     $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" || \
+      --source "$source_path" $dtc_prefetch || \
       error_exit "DTC subproject reconciliation failed"
   fi
+  unset dtc_prefetch
 
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"
