@@ -451,6 +451,29 @@ fi
 # SDL, and JACK remain in the later compiler-selected library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
+# WHP DTC post-host bootstrap reconciliation
+# The parent QEMU source update has already run (and re-execed if necessary).
+# DTC needs the final PYTHON and GIT selected by host-tools.sh, not an early
+# PATH fallback. Inspect existing DTC on normal builds, even when an unchanged
+# incremental build would skip configure. Keep absent DTC Meson-lazy unless
+# the user explicitly enables the menuconfig prefetch switch.
+WHP_DTC_FETCH_MISSING=$(whp_require_binary_switch WHP_DTC_FETCH_MISSING "${WHP_DTC_FETCH_MISSING:-0}") || exit 1
+export WHP_DTC_FETCH_MISSING
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ -f "$SOURCE_DIR/subprojects/dtc.wrap" ] &&
+   { [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] || [ "$WHP_DTC_FETCH_MISSING" = 1 ]; } &&
+   { [ -d "$SOURCE_DIR/subprojects/dtc" ] || [ "$WHP_DTC_FETCH_MISSING" = 1 ]; }; then
+    printf '%s\n' 'WHP DTC: reconciling pinned wrap after host Git/Python selection' >&2
+    if [ "$WHP_DTC_FETCH_MISSING" = 1 ]; then
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-dtc-subproject.py" \
+            --source "$SOURCE_DIR" --fetch-missing || exit 1
+    else
+        "$PYTHON" "$SOURCE_DIR/scripts/ensure-dtc-subproject.py" \
+            --source "$SOURCE_DIR" || exit 1
+    fi
+fi
+
 # Parse the LLVM switch before deciding whether QEMU-linked libraries should
 # use the seed compiler or the managed LLVM compiler. Portable-core builds do
 # not run the native LLVM bootstrap, so when LLVM is disabled the historical

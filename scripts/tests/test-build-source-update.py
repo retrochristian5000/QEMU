@@ -53,8 +53,7 @@ required_update = (
     'git -C "$SOURCE_DIR" submodule sync --recursive',
     'upstream ref unchanged; object fetch skipped',
     'pinned submodules remain lazy',
-    'reconciling existing DTC wrap',
-    'scripts/ensure-dtc-subproject.py',
+    'DTC is reconciled by build.sh after the selected Python and Git bootstrap',
     'git -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all --',
     'git -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all --',
 )
@@ -76,6 +75,18 @@ for forbidden in (
     if forbidden in update:
         errors.append(f"source refresh must not use broad/destructive command: {forbidden}")
 
+# Parent fast-forward stays first; DTC reconciliation runs only after
+# selected host Git/Python and menuconfig have been loaded.
+host_index = build.find('. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"')
+dtc_index = build.find("# WHP DTC post-host bootstrap reconciliation")
+config_index = build.find('eval "$WHP_CONFIG_ENV"')
+portable_index = build.find('portable_core()')
+if not (refresh_index < python_index < config_index < host_index <
+        dtc_index < portable_index):
+    errors.append("DTC reconciliation must follow config and host tool selection")
+if 'scripts/ensure-dtc-subproject.py' in update:
+    errors.append("early source updater must not reconcile DTC before host tools")
+
 # build.sh delegates strict enum validation to the shared POSIX shell
 # helper; searching for the old inline error text is an obsolete test.
 if ("whp_require_auto_switch()" not in shared_shell or
@@ -96,8 +107,9 @@ for probe in (
         errors.append(f"automatic source refresh must preserve probe purity: {probe}")
 
 
-# Exercise the actual source updater with a historical DTC marker.  Merely
-# testing the stand-alone helper does not check that the updater invokes it.
+# Exercise the two real execution phases using a historical DTC marker:
+# parent refresh must not touch DTC, and the extracted post-host-tools block
+# must use the exact promoted GIT/PYTHON without rebuilding or resetting.
 import hashlib
 import os
 import shutil
@@ -111,7 +123,7 @@ def git(*args, cwd=None):
     ).stdout.strip()
 
 
-def test_existing_dtc_reconciles_from_source_updater():
+def test_dtc_reconciles_after_host_tools():
     with tempfile.TemporaryDirectory(prefix="whp-updater-dtc-") as tmp:
         root = Path(tmp)
         (root / "scripts" / "whp-build").mkdir(parents=True)
@@ -171,53 +183,97 @@ def test_existing_dtc_reconciles_from_source_updater():
         env.pop("CI", None)  # Updater intentionally skips automatic CI refresh.
         env["WHP_SOURCE_UPDATE"] = "auto"
         env["PYTHON"] = sys.executable
-        cmd = ["/bin/sh", str(root / "scripts/whp-build/update-source.sh")]
-        first = subprocess.run(cmd, cwd=root, env=env,
+        # A parent source refresh must leave the old DTC commit/marker alone.
+        updater = ["/bin/sh", str(root / "scripts/whp-build/update-source.sh")]
+        refreshed = subprocess.run(updater, cwd=root, env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, check=True)
+        assert "WHP DTC:" not in refreshed.stderr, refreshed.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == old_revision
+        assert marker.read_text().strip() == legacy
+
+        # Run the exact shell block from build.sh with the selected managed
+        # Git represented by a tracing wrapper. No source download is needed
+        # because the fixture already has the pinned commit in its object store.
+        start_tag = "# WHP DTC post-host bootstrap reconciliation"
+        block = build.split(start_tag, 1)[1].split("# Parse the LLVM switch", 1)[0]
+        selected = root / "selected-git"
+        trace = root / "git-commands.log"
+        selected.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$WHP_DTC_GIT_TRACE"\n'
+            'exec "$WHP_DTC_TEST_GIT" "$@"\n', encoding="utf-8"
+        )
+        selected.chmod(0o755)
+        env["GIT"] = str(selected)
+        env["WHP_DTC_TEST_GIT"] = shutil.which("git")
+        env["WHP_DTC_GIT_TRACE"] = str(trace)
+        env["SOURCE_DIR"] = str(root)
+        env["WHP_DTC_FETCH_MISSING"] = "0"
+        late = ["/bin/sh", "-c",
+                '. "$WHP_SHARED_SHELL"\n' + block]
+        env["WHP_SHARED_SHELL"] = str(SHARED_SHELL)
+        first = subprocess.run(late, cwd=root, env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, check=True)
-        assert "reconciling existing DTC wrap" in first.stderr, first.stderr
+        assert "reconciling pinned wrap after host Git/Python selection" in first.stderr
+        assert "cat-file -e" in trace.read_text()
         assert git("rev-parse", "HEAD", cwd=checkout) == pin
         assert marker.read_text().strip() == expected
         assert marker.read_text().strip() != legacy
 
-        second = subprocess.run(cmd, cwd=root, env=env,
+        marker_bytes = marker.read_bytes()
+        second = subprocess.run(late, cwd=root, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, check=True)
-        assert "reconciling existing DTC wrap" in second.stderr, second.stderr
-        assert marker.read_text().strip() == expected
+        assert marker.read_bytes() == marker_bytes
+        assert "reconciling pinned wrap" in second.stderr
 
-        # False-valued CI flags on a normal workstation must not block
-        # reconciliation; true CI must retain the skip.
-        for flag in ("false", "0"):
-            marker.write_text(legacy + "\n")
-            env["CI"] = flag
-            resumed = subprocess.run(cmd, cwd=root, env=env,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     text=True, check=True)
-            assert "reconciling existing DTC wrap" in resumed.stderr, resumed.stderr
-            assert marker.read_text().strip() == expected
-
+        # A probe must not mutate even a stale marker.
         marker.write_text(legacy + "\n")
-        env["CI"] = "true"
-        skipped = subprocess.run(cmd, cwd=root, env=env,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 text=True, check=True)
-        assert "skipped under CI" in skipped.stderr, skipped.stderr
+        env["WHP_PORTABLE_PROBE_ONLY"] = "1"
+        subprocess.run(late, cwd=root, env=env, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert marker.read_text().strip() == legacy
-        env.pop("CI")
+        env.pop("WHP_PORTABLE_PROBE_ONLY")
+        env["WHP_SHELL_PROBE_ONLY"] = "1"
+        subprocess.run(late, cwd=root, env=env, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert marker.read_text().strip() == legacy
+        env.pop("WHP_SHELL_PROBE_ONLY")
 
-        # Explicit opt-out must remain inert even if the old marker returns.
-        marker.write_text(legacy + "\n")
+        # Source-update opt-out controls the automatic late repair.
         env["WHP_SOURCE_UPDATE"] = "0"
-        subprocess.run(cmd, cwd=root, env=env, check=True,
+        subprocess.run(late, cwd=root, env=env, check=True,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert marker.read_text().strip() == legacy
 
+        # The menu's explicit prefetch request remains authoritative even
+        # with automatic source updates switched off.
+        env["WHP_DTC_FETCH_MISSING"] = "1"
+        subprocess.run(late, cwd=root, env=env, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert marker.read_text().strip() == expected
+
+        # Parent refresh stays independent of DTC whether or not CI is active.
+        marker.write_text(legacy + "\n")
+        env["WHP_DTC_FETCH_MISSING"] = "0"
+        env["WHP_SOURCE_UPDATE"] = "auto"
+        for flag in ("false", "0", "true"):
+            env["CI"] = flag
+            proc = subprocess.run(updater, cwd=root, env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, check=True)
+            assert marker.read_text().strip() == legacy
+            assert "reconciling" not in proc.stderr
+            if flag == "true":
+                assert "skipped under CI" in proc.stderr
+        env.pop("CI")
+
 
 try:
-    test_existing_dtc_reconciles_from_source_updater()
+    test_dtc_reconciles_after_host_tools()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
-    errors.append(f"DTC source-update integration: {exc}")
+    errors.append(f"DTC post-host-tools integration: {exc}")
 
 if errors:
     for error in errors:

@@ -1084,9 +1084,9 @@ A concurrent wrap edit prevents a stale marker from being installed.
 The digest is independent of ``CI``, ``PYTHONHASHSEED``,
 ``WHP_SOURCE_UPDATE``, ``WHP_MESON_PROVIDER`` and
 ``MESON_PACKAGE_CACHE_DIR``; these affect workflow execution or
-source resolution, not the SHA-256 input.  The source updater now treats
-``CI=0`` and ``CI=false`` as disabled CI flags rather than silently
-skipping reconciliation.  The read-only DTC diagnostics expose both
+source resolution, not the SHA-256 input.  The early parent source updater
+treats ``CI=0`` and ``CI=false`` as disabled CI flags rather than silently
+skipping the parent refresh.  The read-only DTC diagnostics expose both
 the hash input and relevant environment controls without rewriting the
 stored marker.
 The pinned WHP Meson fork also parses and SHA-256 hashes a single UTF-8
@@ -1102,13 +1102,18 @@ that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads
 the helper for both existing and proposed revisions.  Future versions
 such as 1.9.0 may still pass when their Meson interface is compatible.
 The DTC version is independent of the version of the Meson executable.
-The WHP source fast-forward updater also reconciles an existing DTC Git
-checkout using the pinned wrap revision, even when QEMU itself is already
-up-to-date. A parent Git refresh alone does not change the Meson-owned
-DTC source or its stored hash. This post-update repair never fetches a
-missing DTC checkout, modifies an attached development branch, stashes
-local changes, or touches build outputs. If Python is not yet available
-during early bootstrap, reconciliation is deferred to ``configure``.
+The early QEMU source fast-forward updater handles only the parent Git
+revision and submodule URL metadata. The launcher reconciles an existing DTC
+checkout **after** loading saved menuconfig settings and selecting the
+requested Python and Git in ``host-tools.sh``, even when the incremental
+QEMU build would otherwise skip ``configure``. This avoids invoking a seed
+Git or incidental system Python before the requested host tools exist.
+A parent Git refresh alone cannot change the Meson-owned DTC source or its
+stored hash. The post-host-tools repair preserves local changes, attached
+development branches, and build outputs. It leaves missing DTC checkouts lazy
+unless ``WHP_DTC_FETCH_MISSING=1`` explicitly requests prefetch; disabling
+source updates with ``WHP_SOURCE_UPDATE=0`` skips the automatic post-host-tools
+repair, although QEMU ``configure`` retains its own required pre-Meson check.
 Use the mutating helper without ``--diagnose`` to perform an explicit
 repair; ``--diagnose`` reports state only.
 
