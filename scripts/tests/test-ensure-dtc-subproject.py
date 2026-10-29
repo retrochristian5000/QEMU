@@ -95,10 +95,39 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
         self.assertEqual(self.git("remote", "get-url", "origin"), self.legacy_url)
 
-    def test_attached_branch_is_preserved(self):
-        self.git("checkout", "-q", self.initial_branch)
+    def test_attached_stale_branch_is_preserved(self):
+        self.git("checkout", "-q", "-b", "stale-fixture", self.old)
         with self.assertRaisesRegex(dtc.DTCError, "development branch"):
             dtc.ensure_dtc(self.root)
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), "stale-fixture")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
+
+    def test_attached_pinned_branch_refreshes_only_wrap_marker(self):
+        self.git("checkout", "-q", self.initial_branch)
+        old_origin = self.git("remote", "get-url", "origin")
+        self.assertTrue(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), self.initial_branch)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.git("remote", "get-url", "origin"), old_origin)
+        self.assertEqual(self.cache.read_text().strip(),
+                         hashlib.sha256(self.wrap.read_bytes()).hexdigest())
+        self.assertFalse(dtc.ensure_dtc(self.root))
+
+    def test_offline_pinned_branch_refreshes_wrap_marker(self):
+        self.git("checkout", "-q", self.initial_branch)
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), self.initial_branch)
+
+    def test_pinned_branch_with_local_edits_is_preserved(self):
+        self.git("checkout", "-q", self.initial_branch)
+        (self.repo / "meson.build").write_text(
+            "project('dtc', 'c')\nsubdir('libfdt')\n# user edit\n",
+            encoding="utf-8"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "local changes"):
+            dtc.ensure_dtc(self.root)
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), self.initial_branch)
+        self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
 
     def test_unknown_origin_is_preserved(self):
         self.git("remote", "set-url", "origin", "https://example.com/custom.git")

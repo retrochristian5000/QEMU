@@ -131,12 +131,21 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
         validate_meson_dtc(checkout)
         return False
 
-    # Do not let Meson's update helper stash/rebase local work or move a branch.
+    # A stale wrap marker is not a reason to detach a development branch.
+    # If the source is already pinned and clean, repair just Meson's marker:
+    # no Git fetch, branch switch, or modification of the build directory.
     status = git(checkout, "status", "--porcelain", "--untracked-files=all")
     dirty = "\n".join(line for line in status.splitlines()
                       if line[3:] != ".meson-subproject-wrap-hash.txt")
     if dirty:
         raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
+    if current == revision:
+        validate_meson_dtc(checkout)
+        refresh_wrap_cache(cache_file, wrap_hash)
+        return True
+
+    # Only an out-of-date source revision needs an actual Git transition.
+    # Do not let Meson's updater stash/rebase local work or move a branch.
     branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD")
     if branch != "HEAD":
         raise DTCError(f"DTC is on branch {branch!r}; refusing to switch a development branch")
