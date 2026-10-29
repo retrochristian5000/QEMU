@@ -234,7 +234,14 @@ def check_macho_abi(build_dir, expected_arch=None):
     if not names or not any(pathlib.PurePath(name).name == "fdt_wip.c.o"
                             for name in names):
         fail("libfdt.a does not contain the fdt_wip.c.o provider")
-    for name in names:
+    # BSD ar may list its Mach-O ranlib index as a pseudo-member.
+    # GNU ar can expose analogous index or long-name table entries.
+    # Neither contains object code, so audit the actual members only.
+    metadata = {"__.SYMDEF", "__.SYMDEF SORTED", "/", "//", "/SYM64/"}
+    objects = [name for name in names if name not in metadata]
+    if not objects:
+        fail("libfdt.a contains no object members")
+    for name in objects:
         member = subprocess.run(
             [ar, "-p", str(archive), name],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
