@@ -26,6 +26,8 @@ class Option(NamedTuple):
 
 
 AUDIO_HARDWARE = (
+    ('GAMEBLASTER', 'Creative Music System / Game Blaster (ISA bus)',
+     'CONFIG_GAMEBLASTER', ('CONFIG_ISA_BUS',)),
     ('SB16', 'Sound Blaster 16 (ISA bus)', 'CONFIG_SB16', ('CONFIG_ISA_BUS',)),
     ('ADLIB', 'AdLib (ISA bus)', 'CONFIG_ADLIB', ('CONFIG_ISA_BUS',)),
     ('GUS', 'Gravis UltraSound (ISA bus)', 'CONFIG_GUS', ('CONFIG_ISA_BUS',)),

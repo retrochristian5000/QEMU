@@ -18,6 +18,7 @@ PORTABLE_ENTRY_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build-entry.py'
 CONFIGURE_BASH = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
 
 AUDIO_OPTIONS = {
+    'I386_AUDIO_GAMEBLASTER': ('Creative Music System / Game Blaster (ISA bus)', 'CONFIG_GAMEBLASTER'),
     'I386_AUDIO_SB16': ('Sound Blaster 16 (ISA bus)', 'CONFIG_SB16'),
     'I386_AUDIO_ADLIB': ('AdLib (ISA bus)', 'CONFIG_ADLIB'),
     'I386_AUDIO_GUS': ('Gravis UltraSound (ISA bus)', 'CONFIG_GUS'),
@@ -95,12 +96,14 @@ class WhpI386AudioMenuTests(unittest.TestCase):
             base.write_text(
                 '# repository defaults\n'
                 'CONFIG_TEST_DEVICES=n\n'
+                'CONFIG_GAMEBLASTER=y\n'
                 'CONFIG_SB16=y\n'
                 'CONFIG_HDA=n\n',
                 encoding='utf-8',
             )
             script = f'''set -euo pipefail
 source {CONFIGURE_BASH!s}
+I386_AUDIO_GAMEBLASTER=n
 I386_AUDIO_SB16=n
 I386_AUDIO_HDA=y
 whp_configure_write_i386_audio_config "$1" "$2"
@@ -116,6 +119,8 @@ whp_configure_i386_audio_signature
             text = output.read_text(encoding='utf-8')
 
         self.assertIn('CONFIG_TEST_DEVICES=n', text)
+        self.assertEqual(text.count('CONFIG_GAMEBLASTER='), 1)
+        self.assertIn('CONFIG_GAMEBLASTER=n', text)
         self.assertEqual(text.count('CONFIG_SB16='), 1)
         self.assertEqual(text.count('CONFIG_HDA='), 1)
         self.assertIn('CONFIG_SB16=n', text)
@@ -123,7 +128,7 @@ whp_configure_i386_audio_signature
         self.assertNotIn('CONFIG_ADLIB=', text)
         self.assertEqual(
             result.stdout.strip(),
-            'sb16=n;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;'
+            'gameblaster=n;sb16=n;adlib=auto;gus=auto;cs4231a=auto;pcspk=auto;'
             'es1370=auto;ac97=auto;cs4630=auto;hda=y',
         )
 

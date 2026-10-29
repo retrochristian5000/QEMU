@@ -54,6 +54,8 @@ INSTALL_AFTER_BUILD|Build behavior|Install after build|bool|n||
 MACOS_BUILD_POWER|Build behavior|macOS compile power profile|choice|balanced|eco,balanced,performance|
 CONFIG_MAC_NEWWORLD|QEMU machines|New World Macintosh|bool|y||
 CONFIG_MAC_OLDWORLD|QEMU machines|Old World Macintosh|bool|y||
+I386_AUDIO_GAMEBLASTER|QEMU hardware|i386|choice|auto|auto,y,n|Creative Music System / Game Blaster (ISA bus)
+PPC_AUDIO_GAMEBLASTER|QEMU hardware|ppc|choice|auto|auto,y,n|Creative Music System / Game Blaster (ISA bus)
 I386_AUDIO_SB16|QEMU hardware|i386|choice|auto|auto,y,n|Sound Blaster 16 (ISA bus)
 PPC_AUDIO_SB16|QEMU hardware|ppc|choice|auto|auto,y,n|Sound Blaster 16 (ISA bus)
 I386_AUDIO_ADLIB|QEMU hardware|i386|choice|auto|auto,y,n|AdLib (ISA bus)

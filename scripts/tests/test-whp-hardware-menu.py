@@ -23,6 +23,7 @@ I82378 = ROOT / 'hw' / 'isa' / 'i82378.c'
 sys.path.insert(0, str(CONFIG_DIR))
 
 AUDIO_DEVICES = {
+    'GAMEBLASTER': ('Creative Music System / Game Blaster (ISA bus)', 'CONFIG_GAMEBLASTER'),
     'SB16': ('Sound Blaster 16 (ISA bus)', 'CONFIG_SB16'),
     'ADLIB': ('AdLib (ISA bus)', 'CONFIG_ADLIB'),
     'GUS': ('Gravis UltraSound (ISA bus)', 'CONFIG_GUS'),
@@ -35,6 +36,7 @@ AUDIO_DEVICES = {
 }
 
 PPC_AUDIO_REQUIREMENTS = {
+    'GAMEBLASTER': ('CONFIG_ISA_BUS',),
     'SB16': ('CONFIG_ISA_BUS',),
     'ADLIB': ('CONFIG_ISA_BUS',),
     'GUS': ('CONFIG_ISA_BUS',),
@@ -282,6 +284,7 @@ whp_configure_validate_device_config "$1"
             'CONFIG_MAC_OLDWORLD=y\n'
         )
         representative = {
+            'GAMEBLASTER': ('CONFIG_ISA_BUS',),
             'SB16': ('CONFIG_ISA_BUS',),
             'PCSPK': ('CONFIG_ISA_BUS', 'CONFIG_I8254'),
             'HDA': ('CONFIG_PCI',),
@@ -341,6 +344,7 @@ whp_configure_validate_device_config "$1"
 source {CONFIGURE_BASH!s}
 CONFIG_MAC_NEWWORLD=y
 CONFIG_MAC_OLDWORLD=y
+PPC_AUDIO_GAMEBLASTER=y
 PPC_AUDIO_SB16=y
 PPC_AUDIO_PCSPK=y
 PPC_AUDIO_HDA=y
@@ -356,7 +360,7 @@ whp_configure_write_ppc_device_config "$1" "$2"
 
         for symbol in (
             'CONFIG_ISA_BUS', 'CONFIG_I8254', 'CONFIG_PCI',
-            'CONFIG_SB16', 'CONFIG_PCSPK', 'CONFIG_HDA',
+            'CONFIG_GAMEBLASTER', 'CONFIG_SB16', 'CONFIG_PCSPK', 'CONFIG_HDA',
         ):
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=y', text)

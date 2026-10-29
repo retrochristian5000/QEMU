@@ -247,9 +247,10 @@ whp_configure_hardware_value()
 whp_configure_audio_signature()
 {
     local prefix="$1"
-    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local gameblaster sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
     local name
 
+    name="${prefix}_AUDIO_GAMEBLASTER"; gameblaster="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
     name="${prefix}_AUDIO_SB16"; sb16="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
     name="${prefix}_AUDIO_ADLIB"; adlib="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
     name="${prefix}_AUDIO_GUS"; gus="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
@@ -260,8 +261,8 @@ whp_configure_audio_signature()
     name="${prefix}_AUDIO_CS4630"; cs4630="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
     name="${prefix}_AUDIO_HDA"; hda="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
 
-    printf 'sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
-        "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
+    printf 'gameblaster=%s;sb16=%s;adlib=%s;gus=%s;cs4231a=%s;pcspk=%s;es1370=%s;ac97=%s;cs4630=%s;hda=%s\n' \
+        "$gameblaster" "$sb16" "$adlib" "$gus" "$cs4231a" "$pcspk" "$es1370" "$ac97" "$cs4630" "$hda"
 }
 
 whp_configure_ppc_audio_signature()
@@ -345,12 +346,13 @@ whp_configure_write_ppc_device_config()
 {
     local base="$1"
     local output="$2"
-    local sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
+    local gameblaster sb16 adlib gus cs4231a pcspk es1370 ac97 cs4630 hda
     local need_isa_bus=0
     local need_i8254=0
     local need_pci=0
     local drop_re='^CONFIG_(MAC_NEWWORLD|MAC_OLDWORLD)='
 
+    gameblaster="$(whp_configure_hardware_value PPC_AUDIO_GAMEBLASTER "${PPC_AUDIO_GAMEBLASTER:-auto}")" || return 1
     sb16="$(whp_configure_hardware_value PPC_AUDIO_SB16 "${PPC_AUDIO_SB16:-auto}")" || return 1
     adlib="$(whp_configure_hardware_value PPC_AUDIO_ADLIB "${PPC_AUDIO_ADLIB:-auto}")" || return 1
     gus="$(whp_configure_hardware_value PPC_AUDIO_GUS "${PPC_AUDIO_GUS:-auto}")" || return 1
@@ -364,7 +366,7 @@ whp_configure_write_ppc_device_config()
     # PowerPC is the guest CPU ISA. These symbols describe peripheral
     # buses/timers and are admitted independently when a compatible audio
     # device is explicitly enabled for qemu-system-ppc.
-    if [[ "$sb16" == y || "$adlib" == y || "$gus" == y || "$cs4231a" == y ]]; then
+    if [[ "$gameblaster" == y || "$sb16" == y || "$adlib" == y || "$gus" == y || "$cs4231a" == y ]]; then
         need_isa_bus=1
     fi
     if [[ "$pcspk" == y ]]; then
@@ -378,6 +380,7 @@ whp_configure_write_ppc_device_config()
     [[ "$need_isa_bus" == 1 ]] && drop_re="$drop_re|^CONFIG_ISA_BUS="
     [[ "$need_i8254" == 1 ]] && drop_re="$drop_re|^CONFIG_I8254="
     [[ "$need_pci" == 1 ]] && drop_re="$drop_re|^CONFIG_PCI="
+    [[ "$gameblaster" != auto ]] && drop_re="$drop_re|^CONFIG_GAMEBLASTER="
     [[ "$sb16" != auto ]] && drop_re="$drop_re|^CONFIG_SB16="
     [[ "$adlib" != auto ]] && drop_re="$drop_re|^CONFIG_ADLIB="
     [[ "$gus" != auto ]] && drop_re="$drop_re|^CONFIG_GUS="
@@ -396,6 +399,7 @@ whp_configure_write_ppc_device_config()
     [[ "$need_isa_bus" == 1 ]] && printf 'CONFIG_ISA_BUS=y\n' >> "$output"
     [[ "$need_i8254" == 1 ]] && printf 'CONFIG_I8254=y\n' >> "$output"
     [[ "$need_pci" == 1 ]] && printf 'CONFIG_PCI=y\n' >> "$output"
+    whp_configure_append_audio_override "$output" PPC_AUDIO_GAMEBLASTER "$gameblaster" CONFIG_GAMEBLASTER || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_SB16 "$sb16" CONFIG_SB16 || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_ADLIB "$adlib" CONFIG_ADLIB || return 1
     whp_configure_append_audio_override "$output" PPC_AUDIO_GUS "$gus" CONFIG_GUS || return 1
@@ -414,6 +418,7 @@ whp_configure_write_i386_audio_config()
     local output="$2"
 
     awk '
+        !/^CONFIG_GAMEBLASTER=/ &&
         !/^CONFIG_SB16=/ &&
         !/^CONFIG_ADLIB=/ &&
         !/^CONFIG_GUS=/ &&
@@ -426,6 +431,7 @@ whp_configure_write_i386_audio_config()
     ' "$base" > "$output" || return 1
 
     printf '\n# WHP generated i386 audio overrides; retained for Meson regeneration.\n' >> "$output"
+    whp_configure_append_i386_audio_override "$output" I386_AUDIO_GAMEBLASTER "${I386_AUDIO_GAMEBLASTER:-auto}" CONFIG_GAMEBLASTER || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}" CONFIG_SB16 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}" CONFIG_ADLIB || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_GUS "${I386_AUDIO_GUS:-auto}" CONFIG_GUS || return 1

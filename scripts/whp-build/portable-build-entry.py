@@ -14,6 +14,7 @@ from typing import List
 
 CORE_PATH = pathlib.Path(__file__).with_name('portable-build.py')
 I386_AUDIO_KEYS = (
+    'I386_AUDIO_GAMEBLASTER',
     'I386_AUDIO_SB16',
     'I386_AUDIO_ADLIB',
     'I386_AUDIO_GUS',
@@ -25,6 +26,7 @@ I386_AUDIO_KEYS = (
     'I386_AUDIO_HDA',
 )
 PPC_AUDIO_KEYS = (
+    'PPC_AUDIO_GAMEBLASTER',
     'PPC_AUDIO_SB16',
     'PPC_AUDIO_ADLIB',
     'PPC_AUDIO_GUS',

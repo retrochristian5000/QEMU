@@ -15,6 +15,13 @@ Example::
 
 Select a real host audio backend to hear the PSG output.
 
+The WHP hardware menu exposes ``I386_AUDIO_GAMEBLASTER`` and
+``PPC_AUDIO_GAMEBLASTER`` as independent ``auto``/``y``/``n`` choices.
+``auto`` retains QEMU's default Kconfig decision; an explicit ``y``
+requires an ISA bus. PowerPC here names the emulated CPU target, not a
+claim that this ISA card was native to Macintosh hardware. The device
+remains distinct from ``sb16`` and must not overlap its I/O window.
+
 Guest ISA port map, relative to ``iobase`` (default 0x220):
 
 ======= ==============================================================
