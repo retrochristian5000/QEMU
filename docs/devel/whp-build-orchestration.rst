@@ -25,6 +25,20 @@ That ledger distinguishes a source that is merely available from one that is a
 production build dependency, and records which pinned sources are WHP-owned
 forks that may be edited directly.
 
+Host identity boundary
+----------------------
+
+The public POSIX ``build.sh`` entry reads ``uname -s`` and ``uname -m``
+once, before Python and native compiler/linker bootstraps. It normalizes the
+kernel to ``WHP_HOST_OS`` and exports ``WHP_HOST_KERNEL`` and
+``WHP_HOST_ARCH`` for downstream helpers. The Bash preparation stage
+reuses those readings; the portable Python runner prefers them over
+``platform.system()`` and ``platform.machine()`` while retaining normal
+fallbacks for direct standalone invocation. An inherited host identity cannot
+override the public entry's fresh readings. No build-directory tag or owner
+schema is changed, and the macOS physical-vs-process architecture check still
+uses its separate ``sysctl`` evidence.
+
 Shell contract
 --------------
 

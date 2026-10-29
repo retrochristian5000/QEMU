@@ -97,8 +97,18 @@ def _safe_tag(value: str) -> str:
     return cleaned.strip('-') or 'unknown'
 
 
+def host_kernel() -> str:
+    # The public build entry owns host detection; direct Python calls retain
+    # platform.system() as a fallback rather than selecting a different ABI.
+    return os.environ.get('WHP_HOST_KERNEL') or platform.system()
+
+
+def host_machine() -> str:
+    return os.environ.get('WHP_HOST_ARCH') or platform.machine()
+
+
 def canonical_host_arch(value: str | None = None) -> str:
-    machine = (value or platform.machine() or 'unknown').lower()
+    machine = (value or host_machine() or 'unknown').lower()
     if machine in ('amd64', 'x86_64'):
         return 'x86_64'
     if machine in ('aarch64', 'arm64'):
@@ -107,12 +117,16 @@ def canonical_host_arch(value: str | None = None) -> str:
 
 
 def canonical_host_os(value: str | None = None) -> str:
-    system = (value or platform.system() or 'unknown').lower()
+    system = (value or host_kernel() or 'unknown').lower()
     if system in ('darwin', 'macos', 'apple-darwin'):
         return 'apple-darwin'
     if system == 'windows' or system.startswith(('mingw', 'msys', 'cygwin')):
         return 'windows'
     return _safe_tag(system)
+
+
+def host_is_macos() -> bool:
+    return canonical_host_os() == 'apple-darwin'
 
 
 def host_build_tag() -> str:
@@ -321,7 +335,7 @@ def append_unique(values: List[str], value: str) -> None:
 
 def dynamic_modules_enabled(values: Dict[str, str]) -> bool:
     state = values['QEMU_HOST_MODULES']
-    return state == 'y' or (state == 'auto' and platform.system() == 'Darwin')
+    return state == 'y' or (state == 'auto' and host_is_macos())
 
 
 def append_module_build_target(
@@ -635,13 +649,13 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     # its one-level-deep modules must locate the shared library at runtime.
     # Keep firmware/toolchain builds unaffected by these QEMU-only link args.
     if os.environ.get('WHP_SDL_PREFIX'):
-        if platform.system() == 'Darwin':
+        if host_is_macos():
             configure_args.extend((
                 '--extra-ldflags=-Wl,-rpath,@loader_path/deps/sdl3/lib',
                 '--extra-ldflags=-Wl,-rpath,@loader_path/../deps/sdl3/lib',
             ))
-        elif platform.system() in (
-            'Linux', 'FreeBSD', 'NetBSD', 'OpenBSD', 'DragonFly', 'SunOS'
+        elif canonical_host_os() in (
+            'linux', 'freebsd', 'netbsd', 'openbsd', 'dragonfly', 'sunos'
         ):
             configure_args.extend((
                 '--extra-ldflags=-Wl,-rpath,$ORIGIN/deps/sdl3/lib',
@@ -660,17 +674,17 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         configure_args.append('-Db_lto_mode=thin')
     elif lto_mode == 'full':
         configure_args.extend(['-Db_lto_mode=default', '-Db_thinlto_cache=false'])
-    if platform.system() == 'Darwin':
+    if host_is_macos():
         # WHP macOS builds deliberately use TCG instead of host hypervisors.
         configure_args.extend(['--disable-kvm', '--disable-hvf'])
-    if platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto':
+    if host_is_macos() and values['QEMU_HOST_MODULES'] == 'auto':
         configure_args.append('--enable-modules')
     else:
         optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')
     optional_switch(configure_args, values['MACOS_ENABLE_GTK'], 'gtk')
     optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
 
-    if platform.system() == 'Darwin':
+    if host_is_macos():
         configure_args.append(f"-Db_lto_threads={resolved_jobs(values['MACOS_BUILD_POWER'])}")
         optional_switch(configure_args, values['MACOS_ENABLE_COCOA'], 'cocoa')
         optional_switch(configure_args, values['MACOS_ENABLE_COREAUDIO'], 'coreaudio')

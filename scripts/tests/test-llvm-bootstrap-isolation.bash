@@ -22,6 +22,29 @@ for script in "$native" "$i386" "$powerpc" "$powerpc_base" "$seabios_config"; do
     }
 done
 
+# Public host identification precedes the bootstrap dependencies and is
+# consumed by Bash and portable Python without taking a new reading.
+python3 - "$build" "$ROOT/scripts/whp-build/prepare-build.bash" \
+    "$ROOT/scripts/whp-build/portable-build.py" <<'PY'
+import pathlib
+import sys
+entry, bash, portable = [pathlib.Path(p).read_text() for p in sys.argv[1:]]
+if entry.index('WHP_HOST_KERNEL=$(uname -s') >= entry.index('whp_python_usable()'):
+    raise SystemExit('error: host reading occurs after Python discovery')
+if entry.count('$(uname -s') != 1 or entry.count('$(uname -m') != 1:
+    raise SystemExit('error: public build reads uname more than once')
+if entry.count('case "$WHP_HOST_OS" in') < 3:
+    raise SystemExit('error: early bootstrap bypasses normalized host OS')
+if 'HOST_OS="${WHP_HOST_KERNEL:-$(uname -s)}"' not in bash:
+    raise SystemExit('error: Bash stage ignores public kernel')
+if 'PROCESS_ARCH="${WHP_HOST_ARCH:-$(uname -m)}"' not in bash:
+    raise SystemExit('error: Bash stage ignores public architecture')
+if "os.environ.get('WHP_HOST_KERNEL')" not in portable:
+    raise SystemExit('error: portable Python ignores public kernel')
+if "os.environ.get('WHP_HOST_ARCH')" not in portable:
+    raise SystemExit('error: portable Python ignores public architecture')
+PY
+
 for host_os in macos linux windows; do
     grep -Fq "WHP_HOST_OS=$host_os" "$build" || {
         printf 'error: build entry does not normalize host OS %s\n' "$host_os" >&2

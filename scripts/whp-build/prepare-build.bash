@@ -54,8 +54,10 @@ reject_global_lto_flags()
 
 whp_prepare_host_identity()
 {
-    HOST_OS="$(uname -s)"
-    PROCESS_ARCH="$(uname -m)"
+    # Reuse the public build entry's single host reading. Direct invocation
+    # alone falls back to uname; don't redetect halfway through bootstrap.
+    HOST_OS="${WHP_HOST_KERNEL:-$(uname -s)}"
+    PROCESS_ARCH="${WHP_HOST_ARCH:-$(uname -m)}"
     HOST_ARCH="$PROCESS_ARCH"
     PHYSICAL_ARCH="$PROCESS_ARCH"
     ROSETTA_TRANSLATED=0

@@ -6,6 +6,55 @@ SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 
+# Public host snapshot: capture once before Python, seed compilers and linkers.
+# Ignore inherited WHP_HOST_*: these values describe the current build machine.
+WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)
+WHP_HOST_ARCH=$(uname -m 2>/dev/null || printf unknown)
+case "$WHP_HOST_KERNEL" in
+    Darwin)
+        WHP_HOST_OS=macos
+        WHP_HOST_NAME=macOS
+        ;;
+    Linux)
+        WHP_HOST_OS=linux
+        WHP_HOST_NAME=Linux
+        ;;
+    CYGWIN*|MINGW*|MSYS*)
+        WHP_HOST_OS=windows
+        WHP_HOST_NAME=Windows
+        ;;
+    FreeBSD)
+        WHP_HOST_OS=freebsd
+        WHP_HOST_NAME=FreeBSD
+        ;;
+    NetBSD)
+        WHP_HOST_OS=netbsd
+        WHP_HOST_NAME=NetBSD
+        ;;
+    OpenBSD)
+        WHP_HOST_OS=openbsd
+        WHP_HOST_NAME=OpenBSD
+        ;;
+    DragonFly)
+        WHP_HOST_OS=dragonfly
+        WHP_HOST_NAME=DragonFlyBSD
+        ;;
+    SunOS)
+        WHP_HOST_OS=solaris
+        WHP_HOST_NAME=Solaris
+        ;;
+    Haiku)
+        WHP_HOST_OS=haiku
+        WHP_HOST_NAME=Haiku
+        ;;
+    *)
+        WHP_HOST_OS=other
+        WHP_HOST_NAME="$WHP_HOST_KERNEL"
+        ;;
+esac
+export WHP_HOST_OS WHP_HOST_KERNEL WHP_HOST_ARCH
+
+
 # Normal local builds refresh the tracked QEMU branch before any tool or
 # configuration discovery.  Probe/menu invocations stay side-effect free unless
 # the caller explicitly sets WHP_SOURCE_UPDATE=1.
@@ -129,8 +178,8 @@ else
     # the real interpreter so downstream configure/Meson calls receive an
     # executable path rather than launcher-specific semantics.
     if [ -z "$HOST_PYTHON" ]; then
-        case "$(uname -s 2>/dev/null || true)" in
-            CYGWIN*|MINGW*|MSYS*)
+        case "$WHP_HOST_OS" in
+            windows)
                 python_launcher=$(command -v py 2>/dev/null || true)
                 if [ -n "$python_launcher" ]; then
                     python_candidate=$(
@@ -199,8 +248,8 @@ unset WHP_MAKE_REQUESTED
 
 # Select a native build-machine C compiler before any compiled fallback can
 # run. Target CC is intentionally excluded from this root dependency.
-case "$(uname -s 2>/dev/null || true)" in
-    CYGWIN*|MINGW*|MSYS*)
+case "$WHP_HOST_OS" in
+    windows)
         # Python's PCbuild path owns Visual Studio discovery on Windows.
         ;;
     *)
@@ -216,8 +265,8 @@ esac
 
 # Resolve a native relocatable linker once, without changing the QEMU/firmware
 # artifact LD policy. Darwin ASan/arm64e and LLD selection still happen later.
-case "$(uname -s 2>/dev/null || true)" in
-    CYGWIN*|MINGW*|MSYS*) ;;
+case "$WHP_HOST_OS" in
+    windows) ;;
     *)
         LD_FOR_BUILD=$("$SOURCE_DIR/ld.sh" --print-ld) || exit 1
         export LD_FOR_BUILD
@@ -259,54 +308,7 @@ fi
 export PYTHON WHP_USER_CONFIG
 unset HOST_PYTHON PYTHON_EXPLICIT
 
-# Detect the host once at the public build boundary. Helpers consume this
-# normalized identity instead of independently interpreting uname output, which
-# differs across Darwin, Linux, MSYS2/MinGW/Cygwin, BSD, and other hosts.
-WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)
-WHP_HOST_ARCH=$(uname -m 2>/dev/null || printf unknown)
-case "$WHP_HOST_KERNEL" in
-    Darwin)
-        WHP_HOST_OS=macos
-        WHP_HOST_NAME=macOS
-        ;;
-    Linux)
-        WHP_HOST_OS=linux
-        WHP_HOST_NAME=Linux
-        ;;
-    CYGWIN*|MINGW*|MSYS*)
-        WHP_HOST_OS=windows
-        WHP_HOST_NAME=Windows
-        ;;
-    FreeBSD)
-        WHP_HOST_OS=freebsd
-        WHP_HOST_NAME=FreeBSD
-        ;;
-    NetBSD)
-        WHP_HOST_OS=netbsd
-        WHP_HOST_NAME=NetBSD
-        ;;
-    OpenBSD)
-        WHP_HOST_OS=openbsd
-        WHP_HOST_NAME=OpenBSD
-        ;;
-    DragonFly)
-        WHP_HOST_OS=dragonfly
-        WHP_HOST_NAME=DragonFlyBSD
-        ;;
-    SunOS)
-        WHP_HOST_OS=solaris
-        WHP_HOST_NAME=Solaris
-        ;;
-    Haiku)
-        WHP_HOST_OS=haiku
-        WHP_HOST_NAME=Haiku
-        ;;
-    *)
-        WHP_HOST_OS=other
-        WHP_HOST_NAME="$WHP_HOST_KERNEL"
-        ;;
-esac
-export WHP_HOST_OS WHP_HOST_KERNEL WHP_HOST_ARCH
+# Report the already captured host after Python bootstrap; no second uname.
 printf 'WHP host: %s (%s/%s)\n' \
     "$WHP_HOST_NAME" "$WHP_HOST_KERNEL" "$WHP_HOST_ARCH" >&2
 unset WHP_HOST_NAME

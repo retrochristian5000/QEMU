@@ -55,6 +55,30 @@ def configured_target_value(configure_args):
 
 
 class WhpIncrementalTests(unittest.TestCase):
+    def test_public_host_snapshot_prevents_portable_abi_drift(self):
+        mod = load_portable_build()
+        # Python's own platform report can differ under alternate launchers.
+        # The public build's host readings must still select the same ABI.
+        with temporary_environment({
+            'WHP_HOST_KERNEL': 'Darwin',
+            'WHP_HOST_ARCH': 'arm64',
+        }):
+            with mock.patch.object(mod.platform, 'system', return_value='Linux'), \
+                    mock.patch.object(mod.platform, 'machine', return_value='x86_64'):
+                self.assertEqual(mod.host_build_tag(), 'arm64-apple-darwin')
+                self.assertTrue(mod.host_is_macos())
+                self.assertTrue(mod.dynamic_modules_enabled({'QEMU_HOST_MODULES': 'auto'}))
+                self.assertEqual(mod.canonical_host_os('Linux'), 'linux')
+                self.assertEqual(mod.canonical_host_arch('amd64'), 'x86_64')
+
+        with temporary_environment({
+            'WHP_HOST_KERNEL': 'MSYS_NT-10.0',
+            'WHP_HOST_ARCH': 'AMD64',
+        }):
+            with mock.patch.object(mod.platform, 'system', return_value='Darwin'):
+                self.assertEqual(mod.host_build_tag(), 'x86_64-windows')
+                self.assertFalse(mod.host_is_macos())
+
     def test_portable_explicit_target_overrides_disabled_saved_output_for_run(self):
         mod = load_portable_build()
         with tempfile.TemporaryDirectory() as td, temporary_environment({
