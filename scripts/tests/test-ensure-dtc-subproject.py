@@ -45,13 +45,19 @@ class EnsureDTCTest(unittest.TestCase):
         )
         (self.repo / "libfdt").mkdir()
         (self.repo / "libfdt" / "meson.build").write_text(
-            "# fixture libfdt\n", encoding="utf-8"
+            "libfdt_dep = declare_dependency()\n", encoding="utf-8"
         )
         cmd("git", "add", "meson_options.txt", "meson.build", "libfdt/meson.build",
             cwd=self.repo)
         cmd("git", "commit", "-qm", "old DTC", cwd=self.repo)
         self.old = cmd("git", "rev-parse", "HEAD", cwd=self.repo)
-        options.write_text("option('tests', type: 'boolean', value: true)\n", encoding="utf-8")
+        options.write_text(
+            "option('tools', type: 'boolean', value: true)\n"
+            "option('yaml', type: 'feature', value: 'auto')\n"
+            "option('python', type: 'feature', value: 'auto')\n"
+            "option('tests', type: 'boolean', value: true)\n",
+            encoding="utf-8"
+        )
         cmd("git", "add", "meson_options.txt", cwd=self.repo)
         cmd("git", "commit", "-qm", "current DTC", cwd=self.repo)
         self.pin = cmd("git", "rev-parse", "HEAD", cwd=self.repo)
@@ -321,9 +327,11 @@ class EnsureDTCTest(unittest.TestCase):
 
     def test_matching_pin_with_missing_tests_option_is_rejected(self):
         self.git("checkout", "--detach", self.pin)
-        self.cache.write_text(hashlib.sha256(self.wrap.read_bytes()).hexdigest())
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap))
         (self.repo / "meson_options.txt").write_text(
             "option('tools', type: 'boolean', value: true)\n"
+            "option('yaml', type: 'feature', value: 'auto')\n"
+            "option('python', type: 'feature', value: 'auto')\n"
         )
         with self.assertRaisesRegex(dtc.DTCError, "Meson 'tests' option"):
             dtc.ensure_dtc(self.root)
@@ -333,6 +341,70 @@ class EnsureDTCTest(unittest.TestCase):
         self.cache.write_text(hashlib.sha256(self.wrap.read_bytes()).hexdigest())
         (self.repo / "libfdt" / "meson.build").unlink()
         with self.assertRaisesRegex(dtc.DTCError, "Meson libfdt project"):
+            dtc.ensure_dtc(self.root)
+
+    def test_new_dtc_pin_upgrades_offline_without_build_reset(self):
+        build = self.root / "build" / "meson-private"
+        build.mkdir(parents=True)
+        (build / "coredata.dat").write_text("incremental-build-data")
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "libfdt_dep = declare_dependency()\n# upgraded DTC\n", encoding="utf-8"
+        )
+        self.git("add", "libfdt/meson.build")
+        self.git("commit", "-qm", "new compatible DTC release")
+        next_pin = self.git("rev-parse", "HEAD")
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\nrevision = {next_pin}\ndepth = 1\n"
+        )
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), next_pin)
+        self.assertEqual(self.cache.read_text().strip(), dtc.meson_wrap_hash(self.wrap))
+        self.assertEqual((build / "coredata.dat").read_text(), "incremental-build-data")
+
+    def test_future_incompatible_dtc_pin_cannot_change_checkout(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        old_cache = self.cache.read_bytes()
+        (self.repo / "meson_options.txt").write_text(
+            "option('tools', type: 'boolean', value: true)\n",
+            encoding="utf-8"
+        )
+        self.git("add", "meson_options.txt")
+        self.git("commit", "-qm", "incompatible DTC release")
+        incompatible = self.git("rev-parse", "HEAD")
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\nrevision = {incompatible}\ndepth = 1\n"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "Meson 'yaml' option"):
+            dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.cache.read_bytes(), old_cache)
+
+    def test_upgrade_accepts_new_meson_options_filename(self):
+        self.git("checkout", "--detach", self.pin)
+        self.git("mv", "meson_options.txt", "meson.options")
+        self.git("commit", "-qm", "move Meson options file")
+        next_pin = self.git("rev-parse", "HEAD")
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\nrevision = {next_pin}\ndepth = 1\n"
+        )
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), next_pin)
+        self.assertTrue((self.repo / "meson.options").is_file())
+        self.assertEqual(self.cache.read_text().strip(), dtc.meson_wrap_hash(self.wrap))
+
+    def test_pinned_source_missing_libfdt_dep_is_rejected(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "# removed dependency variable\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "no longer exports"):
             dtc.ensure_dtc(self.root)
 
     def test_missing_checkout_is_normal_meson_case(self):

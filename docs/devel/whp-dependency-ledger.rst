@@ -1048,6 +1048,35 @@ checkout's ``origin`` remote.  A custom remote or a missing ``origin``
 therefore cannot block a verified pinned Git fetch.  Local source edits and
 attached stale branches are still protected.  The helper's ``--diagnose``
 mode reports the Git boundary without fetching or modifying sources.
+
+DTC wrap upgrade protocol
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Meson first resolves an existing DTC directory containing ``meson.build``
+without re-fetching the Git revision.  Its
+``.meson-subproject-wrap-hash.txt`` stores a checksum of the UTF-8 wrap
+text; a mismatch warns of changed metadata, but does not verify DTC HEAD.
+The WHP reconciliation step must therefore check the pinned Git revision,
+validate DTC's Meson interface, and only then refresh that marker.
+
+For a future fork revision, update only the immutable ``revision`` in
+``subprojects/dtc.wrap`` after reviewing the new DTC source.  QEMU
+currently passes DTC options ``tools``, ``yaml``, ``python``,
+and ``tests``, and consumes ``libfdt_dep``.  The helper validates these
+before checking out a *new* revision using read-only Git object access.
+It understands both ``meson_options.txt`` and newer ``meson.options``.
+Incompatible upgrades are rejected while preserving the old HEAD, marker,
+and Meson build graph; they require an explicit coordinated QEMU change,
+not a forced marker update.  New revisions can reuse already-fetched commits
+offline and are not taken from a floating branch.
+
+After reviewing a candidate, run the DTC reconciliation tests and both the
+venv and pinned-fork Meson internal-DTC configure checks.  Retain the
+incremental-reconfigure check and the libfdt Ninja/link validation.  An
+upgrade is not complete merely because its wrap hash changed.  Never
+``git stash``, reset DTC sources, or wipe an existing QEMU build just
+to make a marker match.
+
 QEMU continues to prefer usable system libfdt
 when selected; the internal fallback builds only libfdt (without DTC tools,
 Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;

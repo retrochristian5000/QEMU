@@ -71,16 +71,39 @@ def refresh_wrap_cache(cache_file, wrap_hash):
             temporary.unlink(missing_ok=True)
 
 
-def validate_meson_dtc(checkout):
-    """Detect the old dtc:tests mismatch before Meson configures its graph."""
-    options = checkout / "meson_options.txt"
-    if not (checkout / "meson.build").is_file() or not (checkout / "libfdt" / "meson.build").is_file():
+def validate_meson_dtc(checkout, revision=None):
+    """Verify QEMU's DTC Meson contract, optionally in a future Git revision.
+
+    Use "git show" to inspect a proposed revision before checking it out, so
+    incompatible DTC upgrades leave HEAD and the old marker untouched.
+    """
+    def source_text(name):
+        if revision is not None:
+            try:
+                return git(checkout, "show", f"{revision}:{name}")
+            except DTCError:
+                return None
+        path = checkout / name
+        return path.read_text(encoding="utf-8") if path.is_file() else None
+
+    project = source_text("meson.build")
+    libfdt = source_text("libfdt/meson.build")
+    if project is None or libfdt is None:
         raise DTCError("pinned DTC checkout lacks its Meson libfdt project")
-    if not options.is_file() or not re.search(
-        r"""(?m)^\s*option\s*\(\s*['"]tests['"]\s*,""",
-        options.read_text(encoding="utf-8") if options.is_file() else "",
-    ):
-        raise DTCError("pinned DTC checkout does not declare the Meson 'tests' option")
+    if not re.search(r"\bsubdir\s*\(\s*['\"]libfdt['\"]", project):
+        raise DTCError("pinned DTC Meson project no longer enters libfdt")
+    if not re.search(r"\blibfdt_dep\b", libfdt):
+        raise DTCError("pinned DTC no longer exports QEMU's libfdt_dep")
+
+    # Meson 1.1+ supports meson.options; legacy DTC uses meson_options.txt.
+    options = source_text("meson.options")
+    if options is None:
+        options = source_text("meson_options.txt")
+    if options is None:
+        raise DTCError("pinned DTC checkout lacks meson.options/meson_options.txt")
+    for name in ("tools", "yaml", "python", "tests"):
+        if not re.search(r"(?m)^\s*option\s*\(\s*['\"]" + name + r"['\"]\s*,", options):
+            raise DTCError(f"pinned DTC checkout does not declare the Meson {name!r} option")
 
 
 def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
@@ -185,6 +208,9 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
         # potentially stale or developer-specific "origin".  This preserves
         # configured remotes and avoids rejecting otherwise safe detached trees.
         git(checkout, "fetch", "--depth=1", "--no-tags", url, revision)
+    # Reject incompatible *future* revisions before touching the working
+    # checkout, Meson marker, or incremental build directory.
+    validate_meson_dtc(checkout, revision=revision)
     git(checkout, "checkout", "--detach", revision, "--")
     if git(checkout, "rev-parse", "HEAD") != revision:
         raise DTCError("Git did not select QEMU's pinned DTC revision")
