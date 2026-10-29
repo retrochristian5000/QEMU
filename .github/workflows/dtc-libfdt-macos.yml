@@ -12,6 +12,7 @@ on:
       - 'scripts/ensure-dtc-subproject.py'
       - 'scripts/tests/test-ensure-dtc-subproject.py'
       - 'scripts/git-submodule.sh'
+      - 'docs/devel/whp-dependency-ledger.rst'
       - 'scripts/tests/test-git-submodule.py'
       - 'scripts/tests/test-fdt-ninja-link.py'
       - 'scripts/tests/test-sam460ex-fdt-nop.py'
@@ -47,6 +48,24 @@ jobs:
           cd build-fdt
           ../configure --target-list=ppc-softmmu -Dfdt=internal \
             --disable-docs --disable-tools
+
+      - name: Configure internal DTC using pinned WHP Meson fork
+        run: |
+          mkdir build-fdt-fork
+          cd build-fdt-fork
+          WHP_MESON_PROVIDER=fork ../configure --target-list=ppc-softmmu \
+            -Dfdt=internal --disable-docs --disable-tools
+          grep -F 'toolchains/meson/meson.py' config-host.mak
+          grep -F 'WHP_MESON_PROVIDER=' config.status
+          python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
+
+      - name: Verify fork's incremental Meson reconfiguration
+        run: |
+          cd build-fdt-fork
+          WHP_MESON_PROVIDER=fork ../configure --target-list=ppc-softmmu \
+            -Dfdt=internal --disable-docs --disable-tools
+          test -s meson-private/coredata.dat
+          python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
 
       - name: Verify Ninja emulator link dependencies
         run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal

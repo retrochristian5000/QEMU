@@ -985,6 +985,50 @@ if test "$host_os" = "haiku" && test ! -e "$meson" ; then
     meson="$(cd pyvenv/non-packaged/bin; get_pwd)/meson"
 fi
 
+# The WHP Meson fork is an explicit opt-in provider. Do not silently change
+# Meson versions in existing build directories, and keep QEMU's venv Python.
+case "${WHP_MESON_PROVIDER:-venv}" in
+  venv) ;;
+  fork)
+    if ! $python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+      error_exit "WHP Meson fork requires Python >= 3.10"
+    fi
+    whp_meson_pin=$(${GIT:-git} -C "$source_path" ls-tree HEAD -- toolchains/meson |
+      sed -n 's/^160000 commit \([0-9a-f]*\)[[:space:]].*/\1/p')
+    if test -z "$whp_meson_pin"; then
+      error_exit "WHP Meson fork has no pinned gitlink in QEMU HEAD"
+    fi
+    if test ! -f "$source_path/toolchains/meson/meson.py"; then
+      if test "$download" = disabled; then
+        error_exit "WHP Meson fork is missing and downloads are disabled"
+      fi
+      ${GIT:-git} -C "$source_path" submodule update --init --depth 1 -- toolchains/meson ||
+        error_exit "Could not fetch the pinned WHP Meson fork"
+    fi
+    whp_meson_current=$(${GIT:-git} -C "$source_path/toolchains/meson" rev-parse HEAD 2>/dev/null) ||
+      error_exit "WHP Meson fork is not a valid Git checkout"
+    if test "$whp_meson_current" != "$whp_meson_pin"; then
+      error_exit "WHP Meson fork revision differs from QEMU's gitlink; preserving local checkout"
+    fi
+    whp_meson_status=$(${GIT:-git} -C "$source_path/toolchains/meson" status --porcelain --untracked-files=all) ||
+      error_exit "Could not inspect WHP Meson fork changes"
+    if test -n "$whp_meson_status"; then
+      error_exit "WHP Meson fork has local edits; refusing to run modified pinned source"
+    fi
+    if test ! -f "$source_path/toolchains/meson/mesonbuild/coredata.py"; then
+      error_exit "WHP Meson fork lacks its Python implementation"
+    fi
+    meson="$python $source_path/toolchains/meson/meson.py"
+    whp_meson_version=$($meson --version) ||
+      error_exit "WHP Meson fork cannot run using QEMU's selected Python"
+    echo "WHP Meson provider: pinned fork $whp_meson_pin ($whp_meson_version)"
+    unset whp_meson_pin whp_meson_current whp_meson_status whp_meson_version
+    ;;
+  *)
+    error_exit "WHP_MESON_PROVIDER must be venv or fork"
+    ;;
+esac
+
 mkvenv_online_flag=""
 if test "$download" = "enabled" ; then
     mkvenv_online_flag=" --online"
@@ -2028,6 +2072,7 @@ preserve_env NM
 preserve_env OBJCFLAGS
 preserve_env OBJCOPY
 preserve_env PATH
+preserve_env WHP_MESON_PROVIDER
 preserve_env PKG_CONFIG
 preserve_env PKG_CONFIG_LIBDIR
 preserve_env PKG_CONFIG_PATH

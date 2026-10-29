@@ -321,14 +321,25 @@ The WHP fork at ``toolchains/meson`` is available for controlled Meson
 development.  It is a lazily initialized, exact-gitlink-pinned source tree,
 not an unconditional dependency build or a replacement on ``PATH``.
 
-QEMU's configure still installs and invokes its vendored Meson via
-``python/scripts/mkvenv.py``, using the executable in ``pyvenv/bin/meson``.
-Simply pinning the Meson source must not override that selected executable or
-trigger a duplicate Python environment.  The pinned Meson fork currently
-identifies itself as development version ``1.12.99`` and requires Python >=
-3.10, while the existing QEMU Python selection accepts >= 3.9.  Switching to
-the fork must be a separately tested opt-in path with version and interpreter
-validation, not a silent change to production builds.
+QEMU's default configure path installs and invokes its venv Meson via
+``python/scripts/mkvenv.py`` at ``pyvenv/bin/meson``.  To exercise the
+QEMU-pinned WHP Meson fork without changing that default, export
+``WHP_MESON_PROVIDER=fork`` before running ``configure``; the only other
+accepted value is ``venv``.  The fork is initialized from the exact
+``toolchains/meson`` gitlink only when downloads are enabled.  A different
+checkout revision or local source edits cause an explicit failure, not a reset
+or a branch switch.  The selected Python from QEMU's existing ``pyvenv``
+runs ``toolchains/meson/meson.py``; no duplicate Python environment is
+created.  The fork reports development version ``1.12.99`` and requires
+Python >= 3.10, whereas the default QEMU Python selection accepts >= 3.9.
+The selected provider is retained by ``config.status``.
+
+Use this provider to compare DTC wrap and incremental configuration behavior
+with the default venv Meson in isolated or already compatible build trees.
+Changing providers does not repair Git checkout failures in
+``scripts/ensure-dtc-subproject.py``, which runs before Meson setup.  Never
+wipe an incremental build directory to switch providers, and do not infer
+successful end-to-end integration from Meson version selection alone.
 
 To inspect the exact source when needed, use
 ``git submodule update --init toolchains/meson``.  The configured
