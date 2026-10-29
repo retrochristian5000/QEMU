@@ -241,6 +241,37 @@ whp_macos_audit_linker_driver_flags()
     fi
 }
 
+# An explicit arm64e UBSan build must not silently load a plain arm64
+# compiler-rt dylib. The selected Clang owns its resource directory; do not
+# borrow Apple's runtime when running the WHP LLVM driver. This is only an ABI
+# admission test; Meson still checks the instrumented link against the SDK.
+whp_macos_verify_ubsan_abi()
+{
+    local compiler="$1"
+    local lipo="$2"
+    local arch="$3"
+    local resource runtime slices
+
+    resource="$("$compiler" -print-resource-dir 2>/dev/null)" || {
+        printf 'error: UBSan Clang resource directory is unavailable: %s\n' "$compiler" >&2
+        return 1
+    }
+    runtime="$resource/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
+    if [[ ! -f "$runtime" ]]; then
+        printf 'error: matching compiler-rt UBSan dylib is missing: %s\n' "$runtime" >&2
+        return 1
+    fi
+    slices="$("$lipo" -archs "$runtime" 2>/dev/null)" || {
+        printf 'error: cannot inspect UBSan runtime architecture: %s\n' "$runtime" >&2
+        return 1
+    }
+    if ! printf '%s\n' "$slices" | tr '[:space:]' '\n' | grep -Fxq "$arch"; then
+        printf 'error: UBSan runtime lacks %s ABI (available: %s): %s\n' \
+            "$arch" "$slices" "$runtime" >&2
+        return 1
+    fi
+}
+
 whp_select_macos_arch()
 {
     local compiler="$1"
@@ -273,9 +304,12 @@ whp_select_macos_arch()
     if [[ "$requested" == auto ]]; then
         # Keep the default on arm64 unless the current macOS runtime can
         # actually execute PAC-authenticated calls compiled by both drivers.
-        # ASan and unapproved Mach-O LLD configurations do not auto-promote.
+        # ASan, UBSan and unapproved Mach-O LLD configurations do not
+        # auto-promote: native LLVM defaults to an arm64-only compiler-rt
+        # resource tree unless arm64e is explicitly selected for bootstrap.
         if [[ "$native_arch" == arm64 &&
-              "${QEMU_ASAN:-n}" != 1 && "${QEMU_ASAN:-n}" != y ]] &&
+              "${QEMU_ASAN:-n}" != 1 && "${QEMU_ASAN:-n}" != y &&
+              "${QEMU_UBSAN:-n}" != 1 && "${QEMU_UBSAN:-n}" != y ]] &&
            whp_macos_arm64e_auto_linker_ready \
                "$compiler" "$sdkroot" "$deployment_target" &&
            whp_macos_arch_probe_arm64e \

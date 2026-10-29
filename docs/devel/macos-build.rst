@@ -840,7 +840,12 @@ driver's normal **Apple linker** selection. The UBSan probe resolves the
 compiler-rt dylib and verifies its exact Mach-O architecture with the
 installed ``llvm-lipo``. For an explicit ``arm64e`` bootstrap, an ``arm64``-only
 runtime is a precise ABI failure, not a reason to silently change the
-compiler target. The linker probe now compiles an actual instrumented signed
+compiler target. QEMU's default ``WHP_MACOS_ARCH=auto`` policy likewise
+keeps ``QEMU_UBSAN=1`` on ordinary ``arm64``, matching the native LLVM
+bootstrap default. An explicit ``WHP_MACOS_ARCH=arm64e`` plus UBSan
+requires the selected Clang's runtime to contain an ``arm64e`` Mach-O slice
+before QEMU configuration, not a fallback to Apple Clang or arm64. The
+linker probe now compiles an actual instrumented signed
 overflow expression to exercise sanitizer handler references; it is still a
 link-only check, not evidence that a third-party arm64e binary can execute.
 They still require the correct

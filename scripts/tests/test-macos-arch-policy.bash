@@ -88,6 +88,52 @@ selected="$(QEMU_ASAN=1 WHP_MACOS_ARCH=auto \
 [[ "$selected" == arm64 ]]
 [[ ! -s "$TEST_COMPILER_LOG" ]]
 
+# UBSan also requires a matching compiler-rt runtime, unlike an ordinary
+# arm64e C/C++ link. Do not promote auto to arm64e under UBSan.
+: > "$TEST_COMPILER_LOG"
+selected="$(QEMU_UBSAN=1 WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+[[ ! -s "$TEST_COMPILER_LOG" ]]
+
+# A requested arm64e UBSan ABI must have a matching Clang runtime slice.
+UBSAN_RESOURCE="$TEST_DIR/clang-resource"
+UBSAN_RUNTIME="$UBSAN_RESOURCE/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
+mkdir -p "$(dirname "$UBSAN_RUNTIME")"
+printf 'fake compiler-rt dylib\n' > "$UBSAN_RUNTIME"
+FAKE_RESOURCE_CLANG="$TEST_DIR/ubsan-resource-clang"
+cat > "$FAKE_RESOURCE_CLANG" <<'EOF'
+#!/bin/sh
+test "$1" = -print-resource-dir || exit 1
+printf '%s\n' "$UBSAN_RESOURCE"
+EOF
+chmod +x "$FAKE_RESOURCE_CLANG"
+FAKE_LIPO="$TEST_DIR/ubsan-lipo"
+cat > "$FAKE_LIPO" <<'EOF'
+#!/bin/sh
+test "$1" = -archs || exit 1
+printf '%s\n' "$UBSAN_TEST_SLICES"
+EOF
+chmod +x "$FAKE_LIPO"
+export UBSAN_RESOURCE
+UBSAN_TEST_SLICES=arm64e whp_macos_verify_ubsan_abi \
+    "$FAKE_RESOURCE_CLANG" "$FAKE_LIPO" arm64e
+if UBSAN_TEST_SLICES=arm64 whp_macos_verify_ubsan_abi \
+        "$FAKE_RESOURCE_CLANG" "$FAKE_LIPO" arm64e \
+        >"$TEST_DIR/ubsan.out" 2>"$TEST_DIR/ubsan.err"; then
+    printf '%s\n' 'error: arm64e UBSan wrongly accepted arm64-only runtime' >&2
+    exit 1
+fi
+grep -Fq 'UBSan runtime lacks arm64e ABI' "$TEST_DIR/ubsan.err"
+rm "$UBSAN_RUNTIME"
+if UBSAN_TEST_SLICES=arm64e whp_macos_verify_ubsan_abi \
+        "$FAKE_RESOURCE_CLANG" "$FAKE_LIPO" arm64e \
+        >"$TEST_DIR/ubsan.out" 2>"$TEST_DIR/ubsan.err"; then
+    printf '%s\n' 'error: arm64e UBSan wrongly accepted a missing runtime' >&2
+    exit 1
+fi
+grep -Fq 'matching compiler-rt UBSan dylib is missing' "$TEST_DIR/ubsan.err"
+
 # Explicit arm64e remains a probe-gated development lane.
 : > "$TEST_COMPILER_LOG"
 selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=arm64e \
@@ -252,6 +298,7 @@ grep -Fq 'if [[ "$link_arch" == arm64e && "${WHP_ARM64E_USE_LLD:-0}" == 1 ]]; th
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
 grep -Fq 'source "$SCRIPT_DIR/macos-arch-policy.bash"' "$macos_builder"
 grep -Fq 'whp_select_macos_arch "$CC" "$SDKROOT"' "$macos_builder"
+grep -Fq 'whp_macos_verify_ubsan_abi "$CC" "$LIPO" "$WHP_MACOS_ARCH"' "$macos_builder"
 grep -Fq '"$process_arch" "$CXX")"' "$macos_builder"
 grep -Fq 'whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"' "$macos_builder"
 grep -Fq "*' -arch '*)" "$macos_builder"

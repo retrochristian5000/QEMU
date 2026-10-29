@@ -414,6 +414,15 @@ if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
     whp_macos_audit_linker_driver_flags || exit 1
 fi
 
+# UBSan may be enabled for QEMU while native LLVM still owns an arm64-only
+# compiler-rt distribution. Automatic builds remain arm64; an explicit
+# arm64e request must have the matching UBSan dylib before expensive work.
+case "${QEMU_UBSAN:-0}:$WHP_MACOS_ARCH" in
+    1:arm64e|y:arm64e)
+        whp_macos_verify_ubsan_abi "$CC" "$LIPO" "$WHP_MACOS_ARCH" || exit 1
+        ;;
+esac
+
 # A user-selected ARM64e+ASan QEMU build needs more than a working C++ link.
 # Fail early if dyld cannot load the matching compiler-rt or if the ASan
 # runtime fails to diagnose a real heap overflow under authenticated calls.
