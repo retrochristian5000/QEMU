@@ -49,6 +49,13 @@ jobs:
           ../configure --target-list=ppc-softmmu -Dfdt=internal \
             --disable-docs --disable-tools
 
+      - name: Verify DTC ignores Meson wrap metadata
+        run: |
+          git -C subprojects/dtc check-ignore -q .meson-subproject-wrap-hash.txt
+          test -f subprojects/dtc/.meson-subproject-wrap-hash.txt
+          test -z "$(git -C subprojects/dtc status --porcelain --untracked-files=all)"
+          python3 scripts/ensure-dtc-subproject.py --source . --diagnose
+
       - name: Configure internal DTC using pinned WHP Meson fork
         run: |
           mkdir build-fdt-fork
