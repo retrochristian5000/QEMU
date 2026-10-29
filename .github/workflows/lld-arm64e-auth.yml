@@ -114,6 +114,39 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF
           cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt llvm-lto2 -- -j4
 
+      - name: Reject unsafe ARM64e non-PIE links before emitting an image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          objdump="$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+          cat >"$RUNNER_TEMP/arm64e-pac-guard.s" <<'ASM'
+          .text
+          .globl _main
+          _main:
+            ret
+          .data
+          .p2align 3
+          .quad _main@AUTH(ia,42,addr)
+          ASM
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 -c \
+            "$RUNNER_TEMP/arm64e-pac-guard.s" -o "$RUNNER_TEMP/arm64e-pac-guard.o"
+          rm -f "$RUNNER_TEMP/unsafe-arm64e"
+          if "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+              -execute -no_pie -e _main "$RUNNER_TEMP/arm64e-pac-guard.o" \
+              -o "$RUNNER_TEMP/unsafe-arm64e" >"$RUNNER_TEMP/nonpie.out" \
+              2>"$RUNNER_TEMP/nonpie.err"; then
+            echo 'error: arm64e non-PIE link accepted without authenticated fixups' >&2
+            exit 1
+          fi
+          grep -Fq -- '-no_pie is incompatible with arm64e' "$RUNNER_TEMP/nonpie.err"
+          test ! -e "$RUNNER_TEMP/unsafe-arm64e"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -execute -pie -e _main "$RUNNER_TEMP/arm64e-pac-guard.o" \
+            -o "$RUNNER_TEMP/arm64e-pac-guard"
+          "$objdump" --macho --chained-fixups "$RUNNER_TEMP/arm64e-pac-guard" |
+            grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24'
+
       - name: Audit ThinLTO ARM64e native output and PAC
         shell: bash
         run: |
