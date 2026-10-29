@@ -41,7 +41,7 @@ select_cxx()
 {
     for value in "${WHP_CXX_SEED:-}" "${CXX_FOR_BUILD:-}"; do
         [ -n "$value" ] || continue
-        if compiler=$(try_compiler c++ "$value"); then
+        if compiler=$(try_compiler c++ "$value" report); then
             printf '%s\n' "$compiler"
             return 0
         fi
@@ -63,7 +63,7 @@ select_cxx()
     if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
         . "$seed_root/scripts/whp-build/macos-developer-tools.sh"
         value=$(whp_apple_find_tool clang++) || return 1
-        if compiler=$(try_compiler c++ "$value"); then
+        if compiler=$(try_compiler c++ "$value" report); then
             printf '%s\n' "$compiler"
             return 0
         fi

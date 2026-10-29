@@ -429,7 +429,13 @@ The build-machine roles are ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD``.
 Target ``CC``/``CXX`` are deliberately excluded from seed discovery so a
 cross compiler cannot leak backward into Python, GNU sed, Git, Bash, SDL,
 Ninja, JACK, or the native LLVM bootstrap. Explicit seed overrides use
-``WHP_CC_SEED`` and ``WHP_CXX_SEED``.
+``WHP_CC_SEED`` and ``WHP_CXX_SEED``. When a selected compiler fails
+its version, compile/link, or native execution probe, the adapters now show
+the actual stderr/stdout from that failed stage, its exit status, and the
+driver name. Failed optional PATH candidates remain quiet, and successful
+seed selection emits only the path on stdout. Each native probe uses a
+private ``mktemp`` directory so interrupted/incremental builds do not
+collide with an earlier probe process.
 
 macOS developer selection
 -------------------------

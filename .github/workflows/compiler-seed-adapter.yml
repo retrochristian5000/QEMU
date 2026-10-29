@@ -22,6 +22,7 @@ on:
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'scripts/tests/test-compiler-seed-diagnostics.bash'
       - 'docs/devel/whp-dependency-ledger.rst'
       - '.github/workflows/compiler-seed-adapter.yml'
   pull_request:
@@ -44,6 +45,7 @@ on:
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'scripts/tests/test-compiler-seed-diagnostics.bash'
       - 'docs/devel/whp-dependency-ledger.rst'
       - '.github/workflows/compiler-seed-adapter.yml'
 
@@ -62,6 +64,10 @@ jobs:
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py
+
+      - name: Verify failed compiler probes expose diagnostics
+        shell: bash
+        run: bash scripts/tests/test-compiler-seed-diagnostics.bash
 
       - name: Verify Xcode and Command Line Tools search precedence
         shell: bash
