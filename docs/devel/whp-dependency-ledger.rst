@@ -1057,7 +1057,11 @@ without re-fetching the Git revision.  Its
 ``.meson-subproject-wrap-hash.txt`` stores a checksum of the UTF-8 wrap
 text; a mismatch warns of changed metadata, but does not verify DTC HEAD.
 The expected SHA-256 is derived from the live ``dtc.wrap`` text, not
-an embedded digest or the DTC source files.  Reconciliation parses the
+an embedded digest or the DTC source files.
+The DTC fork now ignores its generated ``.meson-subproject-wrap-hash.txt``
+so Meson's metadata does not falsely mark DTC's own Git source as dirty
+or alter Git-based ``vcs_tag`` results.  That change is pinned through
+QEMU's immutable DTC wrap revision rather than by following a branch.  Reconciliation parses the
 pinned Git revision and computes this digest from one UTF-8 snapshot,
 rechecks the wrap before writing the marker, and refreshes a missing
 marker.  A changed revision, URL, or fetch depth changes the computed
