@@ -145,19 +145,23 @@ select_cxx()
         return 1
     done
 
+    # The build-machine C++ compiler must first follow the selected C driver.
+    # On macOS, trying xcrun before this pairing could silently mix a pinned
+    # LLVM Clang C seed with an unrelated Apple Clang++ and even hide an invalid
+    # explicit C seed from --print-cxx.
+    cc=$(select_cc) || return 1
+    value=$(derived_cxx_candidates "$cc" 2>/dev/null || true)
+    if [ -n "$value" ] && compiler=$(try_compiler c++ "$value"); then
+        printf '%s\n' "$compiler"
+        return 0
+    fi
+
     if command -v xcrun >/dev/null 2>&1; then
         value=$(xcrun --sdk macosx --find clang++ 2>/dev/null || true)
         if [ -n "$value" ] && compiler=$(try_compiler c++ "$value"); then
             printf '%s\n' "$compiler"
             return 0
         fi
-    fi
-
-    cc=$(select_cc) || return 1
-    value=$(derived_cxx_candidates "$cc" 2>/dev/null || true)
-    if [ -n "$value" ] && compiler=$(try_compiler c++ "$value"); then
-        printf '%s\n' "$compiler"
-        return 0
     fi
 
     for value in c++ clang++ g++; do
