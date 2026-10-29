@@ -94,6 +94,31 @@ jobs:
               echo 'fake compiler unexpectedly passed native probe' >&2
               exit 1
           fi
+          # C++ selection must not mask an unusable explicitly selected C
+          # compiler (notably when macOS xcrun provides a fallback Clang++).
+          if WHP_CC_SEED="$tmp/fake-cc" ./cc.sh --print-cxx; then
+              echo 'C++ probe ignored an unusable explicit C compiler' >&2
+              exit 1
+          fi
+
+          # A valid pinned C seed must select its adjacent C++ companion,
+          # ahead of an unrelated macOS xcrun or system C++ fallback.
+          mkdir "$tmp/compiler-pair"
+          cat > "$tmp/compiler-pair/clang" <<'EOF'
+          #!/bin/sh
+          exec "$WHP_TEST_CC" "$@"
+          EOF
+          cat > "$tmp/compiler-pair/clang++" <<'EOF'
+          #!/bin/sh
+          exec "$WHP_TEST_CXX" "$@"
+          EOF
+          chmod +x "$tmp/compiler-pair/clang" "$tmp/compiler-pair/clang++"
+          export WHP_TEST_CC="$cc" WHP_TEST_CXX="$cxx"
+          paired_cxx="$(WHP_CC_SEED="$tmp/compiler-pair/clang" ./cc.sh --print-cxx)"
+          test "$paired_cxx" = "$tmp/compiler-pair/clang++"
+          WHP_CC_SEED="$tmp/compiler-pair/clang" \
+            ./cc.sh --cxx -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-paired-cxx"
+          "$tmp/probe-paired-cxx"
 
       - name: Exercise native linker adapter
         shell: bash
