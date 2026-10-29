@@ -24,6 +24,20 @@ def main() -> int:
     require(cxx_adapter, "CXX_FOR_BUILD", "C++ build-machine role")
     require(adapter, "use cxx.sh for C++", "C-only guard")
     require(cxx_adapter, "use cc.sh for C", "C++-only guard")
+    require(adapter, "whp_apple_find_tool clang", "active Apple C selection")
+    require(cxx_adapter, "whp_apple_find_tool clang++", "active Apple C++ selection")
+    apple = (ROOT / "scripts/whp-build/macos-developer-tools.sh").read_text(
+        encoding="utf-8"
+    )
+    require(apple, "DEVELOPER_DIR", "developer directory override")
+    require(apple, "xcode-select -p", "active developer fallback")
+    require(apple, "whp_apple_check_sdkroot", "SDK/developer root guard")
+    macos = (ROOT / "scripts/macos-builder.bash").read_text(encoding="utf-8")
+    require(macos, 'whp_apple_check_sdkroot "$SDKROOT"', "macOS SDK coherence")
+    policy = (ROOT / "scripts/macos-compiler-policy.bash").read_text(
+        encoding="utf-8"
+    )
+    require(policy, "whp_apple_find_tool clang++", "Apple compiler root guard")
     if "select_cxx()" in adapter or "select_cc()" in cxx_adapter:
         raise SystemExit("error: compiler selectors cross language roles")
 

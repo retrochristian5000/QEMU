@@ -35,12 +35,16 @@ select_cc()
         return 1
     done
 
-    if command -v xcrun >/dev/null 2>&1; then
-        value=$(xcrun --sdk macosx --find clang 2>/dev/null || true)
-        if [ -n "$value" ] && compiler=$(try_compiler c "$value"); then
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        # Invalid Xcode/CLT selection must not silently fall back to PATH.
+        . "$seed_root/scripts/whp-build/macos-developer-tools.sh"
+        value=$(whp_apple_find_tool clang) || return 1
+        if compiler=$(try_compiler c "$value"); then
             printf '%s\n' "$compiler"
             return 0
         fi
+        printf 'error: selected Apple C compiler cannot build native tools: %s\n' "$value" >&2
+        return 1
     fi
 
     for value in cc clang gcc; do

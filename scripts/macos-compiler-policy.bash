@@ -135,8 +135,10 @@ require_apple_darwin_target()
     printf '%s\n' "$triple"
 }
 
-APPLE_CLANG="$(xcrun --sdk macosx --find clang)"
-APPLE_CLANGXX="$(xcrun --sdk macosx --find clang++)"
+# Apple defaults must follow the active Xcode or standalone CLT root.
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/macos-developer-tools.sh"
+APPLE_CLANG="$(whp_apple_find_tool clang)" || return 1 2>/dev/null || exit 1
+APPLE_CLANGXX="$(whp_apple_find_tool clang++)" || return 1 2>/dev/null || exit 1
 
 cc_was_set=0
 cxx_was_set=0

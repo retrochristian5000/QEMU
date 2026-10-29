@@ -401,7 +401,14 @@ if [[ "$host_os" == macos ]]; then
             exit 1
         }
     done
-    sdkroot="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+    # Standalone LLVM bootstrap can bypass macos-builder: check SDK origin.
+    source "$SCRIPT_DIR/whp-build/macos-developer-tools.sh"
+    if [[ -n "${SDKROOT:-}" ]]; then
+        sdkroot="$SDKROOT"
+        whp_apple_check_sdkroot "$sdkroot" || exit 1
+    else
+        sdkroot="$(whp_apple_find_sdk)" || exit 1
+    fi
     deployment_target="${MACOSX_DEPLOYMENT_TARGET:-$(sw_vers -productVersion | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')}"
     [[ -d "$sdkroot" ]] || {
         printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2

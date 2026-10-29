@@ -220,19 +220,21 @@ for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
     fi
 done
 
-export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
-if [[ -z "$DEVELOPER_DIR" || ! -d "$DEVELOPER_DIR" ]]; then
-    printf '%s\n' \
-        'error: no active Apple developer directory was found.' \
-        'Install the Xcode Command Line Tools or select Xcode with xcode-select.' >&2
-    exit 1
+# Normalize DEVELOPER_DIR (including Xcode.app) ahead of SDK selection.
+source "$SCRIPT_DIR/whp-build/macos-developer-tools.sh"
+apple_developer_dir="$(whp_apple_developer_root)" || exit 1
+export DEVELOPER_DIR="$apple_developer_dir"
+selected_apple_sdk="$(whp_apple_find_sdk)" || exit 1
+if [[ -n "${SDKROOT:-}" ]]; then
+    # An explicit older macOS SDK is supported inside this developer root,
+    # but never pair Xcode's compiler with CLT's SDK or vice versa.
+    whp_apple_check_sdkroot "$SDKROOT" || exit 1
+else
+    SDKROOT="$selected_apple_sdk"
 fi
-
-export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-if [[ ! -d "$SDKROOT" ]]; then
-    printf 'error: selected macOS SDK does not exist: %s\n' "$SDKROOT" >&2
-    exit 1
-fi
+export SDKROOT
+apple_developer_kind="$(whp_apple_developer_kind "$DEVELOPER_DIR")"
+unset apple_developer_dir selected_apple_sdk
 # CMAKE_OSX_SYSROOT accepts iPhoneOS and iPhoneSimulator SDKs too. A native
 # QEMU/LLVM host bootstrap must never inherit one from an iPad/iOS build.
 sdk_real_path="$(cd "$SDKROOT" && pwd -P)" || exit 1
@@ -539,6 +541,7 @@ export CONFIG_SHELL
 prepare_macos_build_tree
 
 printf '%s\n' \
+    "macOS developer source:  $apple_developer_kind ($DEVELOPER_DIR)" \
     "macOS SDK:               $SDKROOT" \
     "macOS SDK version:       $MACOS_SDK_VERSION" \
     "macOS SDK target range:  ${sdk_minimum_deployment_target:-unknown}..$sdk_maximum_deployment_target" \

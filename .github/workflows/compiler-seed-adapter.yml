@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - 'cc.sh'
+      - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'scripts/tests/test-macos-developer-tools.bash'
       - 'cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'ld.sh'
@@ -23,6 +25,8 @@ on:
   pull_request:
     paths:
       - 'cc.sh'
+      - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'scripts/tests/test-macos-developer-tools.bash'
       - 'cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'ld.sh'
@@ -54,6 +58,10 @@ jobs:
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py
+
+      - name: Verify Xcode and Command Line Tools search precedence
+        shell: bash
+        run: bash scripts/tests/test-macos-developer-tools.bash
 
       - name: Exercise native compiler adapter
         shell: bash

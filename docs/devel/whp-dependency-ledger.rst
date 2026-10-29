@@ -431,6 +431,21 @@ cross compiler cannot leak backward into Python, GNU sed, Git, Bash, SDL,
 Ninja, JACK, or the native LLVM bootstrap. Explicit seed overrides use
 ``WHP_CC_SEED`` and ``WHP_CXX_SEED``.
 
+macOS developer selection
+-------------------------
+
+Full Xcode (usually ``Xcode.app/Contents/Developer``) and standalone Apple
+Command Line Tools (``/Library/Developer/CommandLineTools``) have separate
+compiler/SDK roots. An explicit ``DEVELOPER_DIR`` overrides ``xcode-select -p``.
+The ``xcrun --sdk macosx`` tools and default SDK must belong to the selected
+root. Explicit ``WHP_*_SEED`` and ``*_FOR_BUILD`` compiler overrides retain
+precedence, but automatic Apple discovery does not silently fall through to
+unrelated ``PATH`` compilers when a developer installation is broken.
+An explicitly supplied ``SDKROOT`` may select an older MacOSX SDK inside
+that same developer root, never a different Xcode/CLT installation. Both
+standalone LLVM bootstrap and QEMU's macOS wrapper validate that boundary.
+No global ``xcode-select --switch`` or developer installation is changed.
+
 Bootstrap linker boundary
 -------------------------
 
