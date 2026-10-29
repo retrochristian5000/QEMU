@@ -272,7 +272,9 @@ def diagnose_dtc(source, stream=None):
     checkout = source / "subprojects" / "dtc"
     print("DTC diagnosis: phase=pre-Meson (after Sphinx/PIE, before meson setup)", file=out)
     print("  SHA256 input: UTF-8 dtc.wrap text (universal newlines), not DTC source or environment", file=out)
-    for name in ("WHP_SOURCE_UPDATE", "CI", "WHP_MESON_PROVIDER",
+    for name in ("WHP_SOURCE_UPDATE", "WHP_SOURCE_UPDATE_DONE", "CI",
+                 "WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
+                 "WHP_PORTABLE_PROBE_ONLY", "PYTHON", "WHP_MESON_PROVIDER",
                  "MESON_PACKAGE_CACHE_DIR", "PYTHONHASHSEED"):
         value = os.environ.get(name)
         print("  Environment " + name + ": " +
@@ -281,6 +283,14 @@ def diagnose_dtc(source, stream=None):
     update = os.environ.get("WHP_SOURCE_UPDATE", "auto")
     if update == "0":
         reason = "disabled (WHP_SOURCE_UPDATE=0)"
+    elif os.environ.get("WHP_SOURCE_UPDATE_DONE") == "1":
+        reason = "build.sh marked source refresh as already done"
+    elif update == "auto" and any(
+        os.environ.get(name) == "1"
+        for name in ("WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
+                     "WHP_PORTABLE_PROBE_ONLY")
+    ):
+        reason = "build.sh probe-only mode skips automatic source refresh"
     elif update == "auto" and ci not in ("", "0", "false", "FALSE", "False", "no", "NO"):
         reason = "skipped in CI mode"
     else:

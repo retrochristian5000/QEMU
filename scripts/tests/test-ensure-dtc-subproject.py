@@ -331,6 +331,32 @@ class EnsureDTCTest(unittest.TestCase):
                               output)
                 self.assertIn("read-only", output)
 
+    def test_diagnosis_exposes_build_launcher_skip_flags(self):
+        baseline = dtc.meson_wrap_hash(self.wrap)
+        cases = (
+            ("WHP_SOURCE_UPDATE_DONE", "1", "already done"),
+            ("WHP_SHELL_PROBE_ONLY", "1", "probe-only mode"),
+            ("WHP_BUILD_DIR_PROBE_ONLY", "1", "probe-only mode"),
+            ("WHP_PORTABLE_PROBE_ONLY", "1", "probe-only mode"),
+        )
+        for name, value, outcome in cases:
+            with self.subTest(name=name):
+                env = {
+                    "CI": "false", "WHP_SOURCE_UPDATE": "auto",
+                    "WHP_SOURCE_UPDATE_DONE": "0",
+                    "WHP_SHELL_PROBE_ONLY": "0",
+                    "WHP_BUILD_DIR_PROBE_ONLY": "0",
+                    "WHP_PORTABLE_PROBE_ONLY": "0",
+                    name: value,
+                }
+                with mock.patch.dict(os.environ, env):
+                    output = StringIO()
+                    dtc.diagnose_dtc(self.root, stream=output)
+                self.assertIn("Environment " + name + ": '" + value + "'",
+                              output.getvalue())
+                self.assertIn(outcome, output.getvalue())
+                self.assertEqual(dtc.meson_wrap_hash(self.wrap), baseline)
+
     def test_expected_hash_is_live_for_metadata_only_wrap_changes(self):
         self.git("checkout", "--detach", self.pin)
         before = dtc.meson_wrap_hash(self.wrap)
