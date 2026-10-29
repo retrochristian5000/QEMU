@@ -54,16 +54,19 @@ def git(checkout, *args):
     return result.stdout.rstrip("\r\n")
 
 
-def meson_wrap_hash(wrap_file):
+def meson_wrap_hash(wrap_file, wrap_text=None):
     """Match Meson's SHA-256 of UTF-8 text (with universal newlines)."""
-    return hashlib.sha256(
-        wrap_file.read_text(encoding="utf-8").encode("utf-8")
-    ).hexdigest()
+    if wrap_text is None:
+        wrap_text = wrap_file.read_text(encoding="utf-8")
+    return hashlib.sha256(wrap_text.encode("utf-8")).hexdigest()
 
 
-def refresh_wrap_cache(cache_file, wrap_hash):
-    # This is Meson's own SHA-256 text-file marker.  Write it only after
-    # verifying the Git revision, and replace it atomically.
+def refresh_wrap_cache(cache_file, wrap_hash, wrap_file):
+    # The expected hash must still describe the CURRENT wrap file, not a
+    # stale snapshot from before a simultaneous source/pin update.  Refuse
+    # to install a mismatched marker.  Keep Meson's atomic update behavior.
+    if meson_wrap_hash(wrap_file) != wrap_hash:
+        raise DTCError("DTC wrap changed during reconciliation; marker not updated")
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -148,7 +151,8 @@ def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
         if git(pending, "rev-parse", "HEAD") != revision:
             raise DTCError("fresh DTC download did not resolve the pinned revision")
         validate_meson_dtc(pending)
-        refresh_wrap_cache(pending / ".meson-subproject-wrap-hash.txt", wrap_hash)
+        refresh_wrap_cache(pending / ".meson-subproject-wrap-hash.txt",
+                           wrap_hash, source / "subprojects" / "dtc.wrap")
         if checkout.exists() or checkout.is_symlink():
             raise DTCError("DTC checkout appeared during fetch; refusing to overwrite it")
         pending.rename(checkout)
@@ -158,15 +162,23 @@ def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
 def ensure_dtc(source, no_download=False, fetch_missing=False):
     wrap_file = source / "subprojects" / "dtc.wrap"
     checkout = source / "subprojects" / "dtc"
+    # Parse and hash the same UTF-8 text snapshot.  Reading the file again
+    # after parsing could mix an older revision with a newer checksum when a
+    # source updater changes dtc.wrap concurrently.
+    wrap_text = wrap_file.read_text(encoding="utf-8")
     config = configparser.ConfigParser(interpolation=None)
-    if not config.read(wrap_file, encoding="utf-8") or not config.has_section("wrap-git"):
+    try:
+        config.read_string(wrap_text, source=str(wrap_file))
+    except configparser.Error as exc:
+        raise DTCError(f"invalid DTC wrap {wrap_file}: {exc}") from exc
+    if not config.has_section("wrap-git"):
         raise DTCError(f"missing [wrap-git] specification: {wrap_file}")
     revision = config.get("wrap-git", "revision", fallback="").strip()
     url = config.get("wrap-git", "url", fallback="").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
         raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
 
-    wrap_hash = meson_wrap_hash(wrap_file)
+    wrap_hash = meson_wrap_hash(wrap_file, wrap_text)
     # Normal first use remains a Meson wrap download.  Opt-in Git prefetch
     # repairs hosts where the wrap checkout cannot be materialized safely.
     if not checkout.exists():
@@ -203,7 +215,7 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
                       if line[3:] != ".meson-subproject-wrap-hash.txt")
     if dirty:
         raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
-    if current == revision and cached_hash in (None, wrap_hash):
+    if current == revision and cached_hash == wrap_hash:
         return False
 
     # A stale wrap marker is not a reason to detach a development branch.
@@ -211,7 +223,7 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     # no Git fetch, branch switch, or modification of the build directory.
     if current == revision:
         validate_meson_dtc(checkout)
-        refresh_wrap_cache(cache_file, wrap_hash)
+        refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
         return True
 
     # Only an out-of-date source revision needs an actual Git transition.
@@ -247,7 +259,7 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     if git(checkout, "rev-parse", "HEAD") != revision:
         raise DTCError("Git did not select QEMU's pinned DTC revision")
     validate_meson_dtc(checkout)
-    refresh_wrap_cache(cache_file, wrap_hash)
+    refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
     if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
         raise DTCError("DTC wrap revision cache did not refresh")
     return True

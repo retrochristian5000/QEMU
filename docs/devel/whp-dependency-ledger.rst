@@ -1056,6 +1056,13 @@ Meson first resolves an existing DTC directory containing ``meson.build``
 without re-fetching the Git revision.  Its
 ``.meson-subproject-wrap-hash.txt`` stores a checksum of the UTF-8 wrap
 text; a mismatch warns of changed metadata, but does not verify DTC HEAD.
+The expected SHA-256 is derived from the live ``dtc.wrap`` text, not
+an embedded digest or the DTC source files.  Reconciliation parses the
+pinned Git revision and computes this digest from one UTF-8 snapshot,
+rechecks the wrap before writing the marker, and refreshes a missing
+marker.  A changed revision, URL, or fetch depth changes the computed
+wrap checksum; a DTC source modification without a wrap change does not.
+A concurrent wrap edit prevents a stale marker from being installed.
 The WHP reconciliation step must therefore check the pinned Git revision,
 validate DTC's Meson interface and declared version, and only then refresh
 that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads

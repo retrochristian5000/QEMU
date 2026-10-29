@@ -295,6 +295,46 @@ class EnsureDTCTest(unittest.TestCase):
         with self.assertRaisesRegex(dtc.DTCError, "unrecognized DTC Meson version"):
             dtc.ensure_dtc(self.root)
 
+    def test_expected_hash_is_live_for_metadata_only_wrap_changes(self):
+        self.git("checkout", "--detach", self.pin)
+        before = dtc.meson_wrap_hash(self.wrap)
+        self.cache.write_text(before + "\n", encoding="utf-8")
+        original = self.wrap.read_text(encoding="utf-8")
+        self.wrap.write_text(original.replace("depth = 1", "depth = 2"),
+                             encoding="utf-8")
+        after = dtc.meson_wrap_hash(self.wrap)
+        self.assertNotEqual(after, before)
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.cache.read_text().strip(), after)
+        self.assertFalse(dtc.ensure_dtc(self.root, no_download=True))
+
+    def test_missing_marker_is_recreated_from_current_wrap(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.unlink()
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.cache.read_text(encoding="utf-8").strip(),
+                         dtc.meson_wrap_hash(self.wrap))
+        self.assertFalse(dtc.ensure_dtc(self.root, no_download=True))
+
+    def test_refuses_to_install_checksum_from_previous_wrap_snapshot(self):
+        original = dtc.meson_wrap_hash(self.wrap)
+        self.wrap.write_text(self.wrap.read_text().replace("depth = 1",
+                                                          "depth = 2"))
+        before = self.cache.read_bytes()
+        with self.assertRaisesRegex(dtc.DTCError, "wrap changed during reconciliation"):
+            dtc.refresh_wrap_cache(self.cache, original, self.wrap)
+        self.assertEqual(self.cache.read_bytes(), before)
+        self.assertNotEqual(dtc.meson_wrap_hash(self.wrap), original)
+
+    def test_live_hash_uses_mesons_utf8_text_normalization(self):
+        text = self.wrap.read_text(encoding="utf-8")
+        self.wrap.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+        self.assertEqual(dtc.meson_wrap_hash(self.wrap, text),
+                         dtc.meson_wrap_hash(self.wrap))
+        self.assertNotEqual(hashlib.sha256(self.wrap.read_bytes()).hexdigest(),
+                            dtc.meson_wrap_hash(self.wrap))
+
     def test_matching_checkout_is_noop(self):
         self.git("checkout", "--detach", self.pin)
         self.cache.write_text(hashlib.sha256(self.wrap.read_text().encode()).hexdigest())
