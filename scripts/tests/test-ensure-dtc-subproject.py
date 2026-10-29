@@ -333,7 +333,8 @@ class EnsureDTCTest(unittest.TestCase):
     def test_pinned_branch_with_local_edits_is_preserved(self):
         self.git("checkout", "-q", self.initial_branch)
         (self.repo / "meson.build").write_text(
-            "project('dtc', 'c')\nsubdir('libfdt')\n# user edit\n",
+            "project('dtc', 'c', version: files('VERSION.txt'))\n"
+            "subdir('libfdt')\n# user edit\n",
             encoding="utf-8"
         )
         with self.assertRaisesRegex(dtc.DTCError, "local changes"):
