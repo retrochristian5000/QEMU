@@ -571,6 +571,9 @@ meson_option_build_array() {
 . "$source_path/scripts/meson-buildoptions.sh"
 
 meson_options=
+# Track the effective FDT selection from the actual configure arguments.
+# WHP menuconfig is only one caller; direct configure also accepts -Dfdt.
+fdt_provider=auto
 meson_option_add() {
   local arg
   for arg; do
@@ -641,6 +644,12 @@ for opt do
   --cross-prefix-*)
   ;;
   --enable-docs) docs=enabled
+  ;;
+  --disable-fdt) fdt_provider=disabled
+                 meson_option_parse "$opt" "$optarg"
+  ;;
+  --enable-fdt=*) fdt_provider="$optarg"
+                  meson_option_parse "$opt" "$optarg"
   ;;
   --disable-docs) docs=disabled
   ;;
@@ -756,6 +765,9 @@ for opt do
   --*) meson_option_parse "$opt" "$optarg"
   ;;
   # Pass through -Dxxxx options to meson
+  -Dfdt=*) fdt_provider="$optarg"
+           meson_option_add "$opt"
+  ;;
   -D*) meson_option_add "$opt"
   ;;
   esac
@@ -2002,28 +2014,34 @@ if test "$skip_meson" = no; then
   test "$tcg" != enabled && meson_option_add "-Dtcg=$tcg"
   test -n "$gdb_bin" && meson_option_add "-Dgdb=$gdb_bin"
 
-  # An existing Meson checkout can remain at pre-wrap DTC 1.6.0
-  # even when QEMU pins DTC 1.8.1, which supports dtc:tests.  Synchronize
-  # only that clean, detached subproject before the normal incremental setup.
-  # The preflight is Git/Python-owned; Meson has not run setup at this point.
-  echo "QEMU DTC: pre-Meson Git reconciliation (downloads=$download)"
-  # Missing checkouts stay Meson-lazy unless menuconfig explicitly opts in.
-  # Reuse the existing helper; the offline path must never fetch.
-  case "${WHP_DTC_FETCH_MISSING:-0}" in
-    0) dtc_prefetch= ;;
-    1) dtc_prefetch=--fetch-missing ;;
-    *) error_exit "WHP_DTC_FETCH_MISSING must be 0 or 1" ;;
-  esac
-  if test "$download" = disabled; then
-    $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" --no-download $dtc_prefetch || \
-      error_exit "DTC subproject reconciliation failed"
+  # The system and disabled libfdt providers never enter Meson's DTC
+  # subproject. Do not let an unrelated stale DTC checkout prevent QEMU
+  # from testing the requested system library or completing this build.
+  # Auto/enabled may still fall back to internal DTC and need preflight.
+  if test "$fdt_provider" = system || test "$fdt_provider" = disabled; then
+    echo "QEMU DTC: skipped (fdt=$fdt_provider; internal DTC not selected)"
   else
-    $python "$source_path/scripts/ensure-dtc-subproject.py" \
-      --source "$source_path" $dtc_prefetch || \
-      error_exit "DTC subproject reconciliation failed"
+    # Existing pre-wrap DTC 1.6.0 cannot satisfy QEMU's dtc:tests option.
+    # Reconcile only clean, detached checkouts before the incremental setup.
+    echo "QEMU DTC: pre-Meson Git reconciliation (downloads=$download)"
+    # Missing checkouts stay lazy unless menuconfig explicitly opts in.
+    # The offline path must never fetch.
+    case "${WHP_DTC_FETCH_MISSING:-0}" in
+      0) dtc_prefetch= ;;
+      1) dtc_prefetch=--fetch-missing ;;
+      *) error_exit "WHP_DTC_FETCH_MISSING must be 0 or 1" ;;
+    esac
+    if test "$download" = disabled; then
+      $python "$source_path/scripts/ensure-dtc-subproject.py" \
+        --source "$source_path" --no-download $dtc_prefetch || \
+        error_exit "DTC subproject reconciliation failed"
+    else
+      $python "$source_path/scripts/ensure-dtc-subproject.py" \
+        --source "$source_path" $dtc_prefetch || \
+        error_exit "DTC subproject reconciliation failed"
+    fi
+    unset dtc_prefetch
   fi
-  unset dtc_prefetch
 
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"

@@ -1111,9 +1111,16 @@ Git or incidental system Python before the requested host tools exist.
 A parent Git refresh alone cannot change the Meson-owned DTC source or its
 stored hash. The post-host-tools repair preserves local changes, attached
 development branches, and build outputs. It leaves missing DTC checkouts lazy
-unless ``WHP_DTC_FETCH_MISSING=1`` explicitly requests prefetch; disabling
-source updates with ``WHP_SOURCE_UPDATE=0`` skips the automatic post-host-tools
-repair, although QEMU ``configure`` retains its own required pre-Meson check.
+unless ``WHP_DTC_FETCH_MISSING=1`` explicitly requests prefetch. When
+``QEMU_FDT_MODE=system`` or ``disabled``, neither the launcher nor
+``configure`` reconciles DTC, because those libfdt modes never enter
+Meson's internal DTC subproject. The actual system library is still checked
+by Meson; an absent or incompatible system libfdt remains a proper configure
+error. For ``auto`` and ``enabled``, the internal fallback remains possible
+and reconciliation is retained. Disabling source updates with
+``WHP_SOURCE_UPDATE=0`` skips automatic post-host-tools repair, although
+QEMU ``configure`` retains its required pre-Meson check when the libfdt
+provider might be internal.
 Use the mutating helper without ``--diagnose`` to perform an explicit
 repair; ``--diagnose`` reports state only.
 

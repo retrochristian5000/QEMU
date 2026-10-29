@@ -7,10 +7,12 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build.sh"
+CONFIGURE = ROOT / "configure"
 UPDATE = ROOT / "scripts" / "whp-build" / "update-source.sh"
 SHARED_SHELL = ROOT / "scripts" / "whp-build" / "shell-functions.sh"
 
 build = BUILD.read_text(encoding="utf-8")
+configure = CONFIGURE.read_text(encoding="utf-8")
 update = UPDATE.read_text(encoding="utf-8")
 shared_shell = SHARED_SHELL.read_text(encoding="utf-8")
 errors: list[str] = []
@@ -86,6 +88,28 @@ if not (refresh_index < python_index < config_index < host_index <
     errors.append("DTC reconciliation must follow config and host tool selection")
 if 'scripts/ensure-dtc-subproject.py' in update:
     errors.append("early source updater must not reconcile DTC before host tools")
+
+# A system libfdt selection must bypass DTC in BOTH entry points. It must
+# continue into Meson rather than dying inside the DTC diagnosis helper.
+post_dtc = build[dtc_index:portable_index]
+for guard in (
+    '[ "${QEMU_FDT_MODE:-auto}" != system ]',
+    '[ "${QEMU_FDT_MODE:-auto}" != disabled ]',
+):
+    if guard not in post_dtc:
+        errors.append(f"post-host-tools DTC path missing provider guard: {guard}")
+if not (
+    'fdt_provider=auto' in configure and
+    '-Dfdt=*) fdt_provider="$optarg"' in configure and
+    '--disable-fdt) fdt_provider=disabled' in configure and
+    '--enable-fdt=*) fdt_provider="$optarg"' in configure
+):
+    errors.append("configure must track the effective fdt selection")
+if not (
+    'if test "$fdt_provider" = system || test "$fdt_provider" = disabled; then'
+    in configure
+):
+    errors.append("configure must bypass DTC for system/disabled libfdt")
 
 # build.sh delegates strict enum validation to the shared POSIX shell
 # helper; searching for the old inline error text is an obsolete test.
@@ -212,6 +236,47 @@ def test_dtc_reconciles_after_host_tools():
         late = ["/bin/sh", "-c",
                 '. "$WHP_SHARED_SHELL"\n' + block]
         env["WHP_SHARED_SHELL"] = str(SHARED_SHELL)
+
+        # The reported regression: system libfdt must not run DTC
+        # reconciliation or prevent the build from reaching configure.
+        for provider in ("system", "disabled"):
+            env["QEMU_FDT_MODE"] = provider
+            env["WHP_DTC_FETCH_MISSING"] = "1"
+            skipped = subprocess.run(late, cwd=root, env=env,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, text=True,
+                                     check=True)
+            assert "reconciling pinned wrap" not in skipped.stderr
+            assert git("rev-parse", "HEAD", cwd=checkout) == old_revision
+            assert marker.read_text().strip() == legacy
+            assert not trace.exists(), trace
+
+        # QEMU configure has another reconciliation entry point. Reuse
+        # its actual preflight block without requiring a full compiler/Meson
+        # installation in this isolated Git fixture.
+        start_comment = "  # The system and disabled libfdt providers"
+        preflight = start_comment + configure.split(
+            start_comment, 1
+        )[1].split("  run_meson() {", 1)[0]
+        env["source_path"] = str(root)
+        env["python"] = sys.executable
+        env["download"] = "enabled"
+        run_preflight = ["/bin/sh", "-c",
+                         'error_exit() { echo "$*" >&2; exit 2; }\n' + preflight]
+        for provider in ("system", "disabled"):
+            env["fdt_provider"] = provider
+            skipped = subprocess.run(run_preflight, cwd=root, env=env,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE,
+                                     text=True, check=True)
+            assert f"skipped (fdt={provider};" in skipped.stdout
+            assert "pre-Meson Git reconciliation" not in skipped.stdout
+            assert git("rev-parse", "HEAD", cwd=checkout) == old_revision
+            assert marker.read_text().strip() == legacy
+
+        # Internal libfdt must still reconcile and reject unsafe changes.
+        env["QEMU_FDT_MODE"] = "internal"
+        env["WHP_DTC_FETCH_MISSING"] = "0"
         first = subprocess.run(late, cwd=root, env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, check=True)
@@ -220,6 +285,15 @@ def test_dtc_reconciles_after_host_tools():
         assert git("rev-parse", "HEAD", cwd=checkout) == pin
         assert marker.read_text().strip() == expected
         assert marker.read_text().strip() != legacy
+
+        # The direct configure path must also remain enabled for internal.
+        env["fdt_provider"] = "internal"
+        marker.write_text(legacy + "\n")
+        checked = subprocess.run(run_preflight, cwd=root, env=env,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, check=True)
+        assert "pre-Meson Git reconciliation" in checked.stdout
+        assert marker.read_text().strip() == expected
 
         marker_bytes = marker.read_bytes()
         second = subprocess.run(late, cwd=root, env=env,
