@@ -47,6 +47,13 @@ def git(checkout, *args):
     return result.stdout.strip()
 
 
+def meson_wrap_hash(wrap_file):
+    """Match Meson's SHA-256 of UTF-8 text (with universal newlines)."""
+    return hashlib.sha256(
+        wrap_file.read_text(encoding="utf-8").encode("utf-8")
+    ).hexdigest()
+
+
 def refresh_wrap_cache(cache_file, wrap_hash):
     # This is Meson's own SHA-256 text-file marker.  Write it only after
     # verifying the Git revision, and replace it atomically.
@@ -110,7 +117,7 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
         raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
 
-    wrap_hash = hashlib.sha256(wrap_file.read_bytes()).hexdigest()
+    wrap_hash = meson_wrap_hash(wrap_file)
     # Normal first use remains a Meson wrap download.  Opt-in Git prefetch
     # repairs hosts where the wrap checkout cannot be materialized safely.
     if not checkout.exists():
@@ -221,12 +228,19 @@ def diagnose_dtc(source, stream=None):
         print("  Local changes: unavailable (" + str(exc) + ")", file=out)
     marker = checkout / ".meson-subproject-wrap-hash.txt"
     try:
-        expected = hashlib.sha256(wrap.read_bytes()).hexdigest()
+        expected = meson_wrap_hash(wrap)
+        raw = hashlib.sha256(wrap.read_bytes()).hexdigest()
         actual = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
         print("  Meson wrap marker: " +
               ("current" if actual == expected else "stale" if actual else "missing"),
               file=out)
-    except OSError as exc:
+        print("  Expected wrap SHA256 (Meson text): " + expected, file=out)
+        print("  Stored wrap SHA256: " + (actual if actual else "(missing)"), file=out)
+        if raw != expected:
+            print("  Wrap line endings: text-normalized hash differs from raw-byte hash",
+                  file=out)
+            print("  Raw-byte wrap SHA256: " + raw, file=out)
+    except (OSError, UnicodeError) as exc:
         print("  Meson wrap marker: unreadable (" + str(exc) + ")", file=out)
 
 

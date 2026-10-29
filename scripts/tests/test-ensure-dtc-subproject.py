@@ -124,8 +124,40 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("Wrap revision: " + self.pin, out)
         self.assertIn("HEAD: " + self.old, out)
         self.assertIn("Meson wrap marker: stale", out)
+        self.assertIn("Expected wrap SHA256 (Meson text): " +
+                      hashlib.sha256(self.wrap.read_text().encode()).hexdigest(), out)
+        self.assertIn("Stored wrap SHA256: old-wrap-hash", out)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
         self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
+
+    def test_crlf_wrap_marker_matches_mesons_text_hash(self):
+        # Meson reads the wrap as UTF-8 text and normalizes CRLF, whereas
+        # hashing raw bytes would incorrectly claim its own marker is stale.
+        raw = self.wrap.read_bytes().replace(b"\n", b"\r\n")
+        self.wrap.write_bytes(raw)
+        expected = hashlib.sha256(self.wrap.read_text(encoding="utf-8").encode()).hexdigest()
+        self.assertNotEqual(hashlib.sha256(raw).hexdigest(), expected)
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(expected + "\n")
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Meson wrap marker: current", out.getvalue())
+        self.assertIn("Wrap line endings: text-normalized hash differs", out.getvalue())
+        self.assertFalse(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.cache.read_text().strip(), expected)
+
+    def test_crlf_stale_marker_repairs_without_git_update(self):
+        raw = self.wrap.read_bytes().replace(b"\n", b"\r\n")
+        self.wrap.write_bytes(raw)
+        self.git("checkout", "--detach", self.pin)
+        self.assertTrue(dtc.ensure_dtc(self.root))
+        expected = hashlib.sha256(self.wrap.read_text(encoding="utf-8").encode()).hexdigest()
+        self.assertEqual(self.cache.read_text().strip(), expected)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.git("remote", "get-url", "origin"), self.legacy_url)
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Meson wrap marker: current", out.getvalue())
 
     def test_diagnostic_handles_missing_checkout_without_git_fetch(self):
         self.repo.rename(self.subprojects / "old-dtc")
