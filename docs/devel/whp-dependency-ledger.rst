@@ -1041,7 +1041,14 @@ new top-level git submodule.  The top-level gitlink updater rejects
 ``subprojects/*`` paths before updating any gitlink, while DTC's own
 reconciliation helper honors the selected ``GIT`` command from the WHP
 host-tool bootstrap.  Git implementation changes therefore must not silently
-split the DTC fetch path from the other pinned dependency fetches.  QEMU continues to prefer usable system libfdt
+split the DTC fetch path from the other pinned dependency fetches.
+On a clean, detached, stale DTC checkout the helper fetches the exact wrap
+revision directly from the wrap URL without relying on or changing the
+checkout's ``origin`` remote.  A custom remote or a missing ``origin``
+therefore cannot block a verified pinned Git fetch.  Local source edits and
+attached stale branches are still protected.  The helper's ``--diagnose``
+mode reports the Git boundary without fetching or modifying sources.
+QEMU continues to prefer usable system libfdt
 when selected; the internal fallback builds only libfdt (without DTC tools,
 Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
 do not replace it with a floating branch or rebuild DTC separately in the

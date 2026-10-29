@@ -18,12 +18,6 @@ import sys
 import tempfile
 
 
-OLD_DTC_URLS = {
-    "https://gitlab.com/qemu-project/dtc.git",
-    "https://github.com/qemu/dtc.git",
-}
-
-
 class DTCError(Exception):
     pass
 
@@ -166,28 +160,19 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     if no_download and current != revision:
         raise DTCError("DTC revision is stale but downloads are disabled")
 
-    origin = git(checkout, "remote", "get-url", "origin")
-    if origin != url and origin not in OLD_DTC_URLS:
-        raise DTCError(f"DTC origin differs from the wrap URL: {origin!r}; refusing to replace it")
-
-    changed_origin = origin != url
-    if changed_origin:
-        git(checkout, "remote", "set-url", "origin", url)
+    # Fetch by the immutable URL from dtc.wrap, never by the checkout's
+    # potentially stale or developer-specific "origin".  This preserves
+    # configured remotes and avoids rejecting otherwise safe detached trees.
     print(f"Synchronizing DTC to pinned Git revision {revision}", flush=True)
-    try:
-        if current != revision:
-            git(checkout, "fetch", "--depth=1", "--no-tags", "origin", revision)
-            git(checkout, "checkout", "--detach", revision, "--")
-        if git(checkout, "rev-parse", "HEAD") != revision:
-            raise DTCError("Git did not select QEMU's pinned DTC revision")
-        validate_meson_dtc(checkout)
-        refresh_wrap_cache(cache_file, wrap_hash)
-        if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
-            raise DTCError("DTC wrap revision cache did not refresh")
-    except (DTCError, OSError):
-        if changed_origin and git(checkout, "rev-parse", "HEAD") != revision:
-            git(checkout, "remote", "set-url", "origin", origin)
-        raise
+    if current != revision:
+        git(checkout, "fetch", "--depth=1", "--no-tags", url, revision)
+        git(checkout, "checkout", "--detach", revision, "--")
+    if git(checkout, "rev-parse", "HEAD") != revision:
+        raise DTCError("Git did not select QEMU's pinned DTC revision")
+    validate_meson_dtc(checkout)
+    refresh_wrap_cache(cache_file, wrap_hash)
+    if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
+        raise DTCError("DTC wrap revision cache did not refresh")
     return True
 
 

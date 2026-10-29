@@ -60,8 +60,6 @@ class EnsureDTCTest(unittest.TestCase):
         cmd("git", "clone", "--bare", str(self.repo), str(self.remote))
         self.target_url = self.remote.as_uri()
         self.legacy_url = (self.root / "legacy.git").as_uri()
-        dtc.OLD_DTC_URLS.add(self.legacy_url)
-        self.addCleanup(dtc.OLD_DTC_URLS.discard, self.legacy_url)
         cmd("git", "checkout", "--detach", self.old, cwd=self.repo)
         cmd("git", "remote", "add", "origin", self.legacy_url, cwd=self.repo)
         self.wrap = self.subprojects / "dtc.wrap"
@@ -81,7 +79,7 @@ class EnsureDTCTest(unittest.TestCase):
         (build / "coredata.dat").write_text("untouched")
         self.assertTrue(dtc.ensure_dtc(self.root))
         self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
-        self.assertEqual(self.git("remote", "get-url", "origin"), self.target_url)
+        self.assertEqual(self.git("remote", "get-url", "origin"), self.legacy_url)
         self.assertIn("option('tests'", (self.repo / "meson_options.txt").read_text())
         self.assertEqual(self.cache.read_text().strip(),
                          hashlib.sha256(self.wrap.read_text().encode()).hexdigest())
@@ -189,10 +187,18 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), self.initial_branch)
         self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
 
-    def test_unknown_origin_is_preserved(self):
+    def test_custom_origin_kept_while_fetching_exact_wrap_revision(self):
         self.git("remote", "set-url", "origin", "https://example.com/custom.git")
-        with self.assertRaisesRegex(dtc.DTCError, "origin differs"):
-            dtc.ensure_dtc(self.root)
+        self.assertTrue(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.git("remote", "get-url", "origin"),
+                         "https://example.com/custom.git")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+
+    def test_missing_origin_does_not_block_pinned_wrap_fetch(self):
+        self.git("remote", "remove", "origin")
+        self.assertTrue(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertFalse(self.git("remote"))
 
     def test_offline_rejects_old_revision(self):
         with self.assertRaisesRegex(dtc.DTCError, "downloads are disabled"):
