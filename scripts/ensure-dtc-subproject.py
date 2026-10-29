@@ -338,12 +338,28 @@ def diagnose_dtc(source, stream=None):
         except (DTCError, OSError) as exc:
             print("  " + label + ": unavailable (" + str(exc) + ")", file=out)
     if revision and re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        # A shallow checkout can contain HEAD without containing the *new*
+        # wrapped revision. Distinguish a missing commit from a missing tree:
+        # without the commit, rev-parse cannot peel its tree locally.
         try:
-            print("  Pinned tree SHA: " +
-                  git(checkout, "rev-parse", "--verify", revision + "^{tree}"),
+            git(checkout, "cat-file", "-e", revision + "^{commit}")
+        except (DTCError, OSError):
+            print("  Pinned commit object: unavailable locally (unfetched or inaccessible)",
                   file=out)
-        except (DTCError, OSError) as exc:
-            print("  Pinned tree SHA: unavailable locally (" + str(exc) + ")", file=out)
+            print("  Pinned tree SHA: unavailable locally (requires pinned commit)",
+                  file=out)
+            print("  Recovery: pre-Meson reconciliation fetches the immutable wrap pin"
+                  " when downloads are enabled and DTC is clean and detached",
+                  file=out)
+        else:
+            print("  Pinned commit object: available locally", file=out)
+            try:
+                print("  Pinned tree SHA: " +
+                      git(checkout, "rev-parse", "--verify", revision + "^{tree}"),
+                      file=out)
+            except (DTCError, OSError) as exc:
+                print("  Pinned tree SHA: unavailable locally (" + str(exc) + ")",
+                      file=out)
     try:
         changes = git(checkout, "status", "--porcelain", "--untracked-files=all")
         changed = [line for line in changes.splitlines()

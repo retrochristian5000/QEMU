@@ -130,6 +130,50 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("init -q", trace.read_text())
         self.assertIn("fetch --depth=1", trace.read_text())
 
+    def test_shallow_checkout_reports_unfetched_pin_and_recovers_without_reset(self):
+        # Recreate a genuinely shallow old-revision checkout. The target pin
+        # exists on the wrap remote, but not in the local Git object database.
+        self.repo.rename(self.subprojects / "previous-dtc")
+        cmd("git", "--git-dir", str(self.remote), "branch", "old", self.old)
+        cmd("git", "clone", "-q", "--depth=1", "--branch", "old",
+            self.target_url, str(self.repo))
+        self.git("checkout", "--detach", self.old)
+        self.cache.write_text("old-wrap-hash\n", encoding="utf-8")
+        missing = subprocess.run(
+            ["git", "-C", str(self.repo), "cat-file", "-e",
+             self.pin + "^{commit}"], check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.assertNotEqual(missing.returncode, 0)
+        original_head = self.git("rev-parse", "HEAD")
+        original_tree = self.git("rev-parse", "HEAD^{tree}")
+
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Pinned commit object: unavailable locally", out.getvalue())
+        self.assertIn("Pinned tree SHA: unavailable locally (requires pinned commit)",
+                      out.getvalue())
+        self.assertIn("Recovery: pre-Meson reconciliation", out.getvalue())
+        self.assertIn("HEAD tree SHA: " + original_tree, out.getvalue())
+        self.assertEqual(self.git("rev-parse", "HEAD"), original_head)
+        self.assertEqual(self.cache.read_text(), "old-wrap-hash\n")
+
+        with self.assertRaisesRegex(dtc.DTCError, "downloads are disabled"):
+            dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), original_head)
+        self.assertTrue(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.git("rev-parse", "HEAD^{tree}"),
+                         self.git("rev-parse", self.pin + "^{tree}"))
+        self.assertEqual(self.cache.read_text().strip(),
+                         dtc.meson_wrap_hash(self.wrap))
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Pinned commit object: available locally", out.getvalue())
+        self.assertIn("Pinned tree SHA: " +
+                      self.git("rev-parse", self.pin + "^{tree}"),
+                      out.getvalue())
+
     def test_diagnostic_exposes_git_boundary_without_changes(self):
         buffer = StringIO()
         dtc.diagnose_dtc(self.root, stream=buffer)
@@ -141,6 +185,7 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("HEAD: " + self.old, out)
         self.assertIn("Git revision vs wrap: different", out)
         self.assertIn("HEAD tree SHA: " + self.git("rev-parse", "HEAD^{tree}"), out)
+        self.assertIn("Pinned commit object: available locally", out)
         self.assertIn("Pinned tree SHA: " + self.git("rev-parse", self.pin + "^{tree}"), out)
         self.assertIn("DTC Meson interface: incompatible or unreadable", out)
         self.assertIn("Meson 'yaml' option", out)
