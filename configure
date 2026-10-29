@@ -2002,8 +2002,8 @@ if test "$skip_meson" = no; then
   test "$tcg" != enabled && meson_option_add "-Dtcg=$tcg"
   test -n "$gdb_bin" && meson_option_add "-Dgdb=$gdb_bin"
 
-  # An existing Meson checkout can remain at pre-wrap DTC (for example 1.6.1)
-  # even when QEMU pins a newer fork that supports dtc:tests.  Synchronize
+  # An existing Meson checkout can remain at pre-wrap DTC 1.6.0
+  # even when QEMU pins DTC 1.8.1, which supports dtc:tests.  Synchronize
   # only that clean, detached subproject before the normal incremental setup.
   # The preflight is Git/Python-owned; Meson has not run setup at this point.
   echo "QEMU DTC: pre-Meson Git reconciliation (downloads=$download)"

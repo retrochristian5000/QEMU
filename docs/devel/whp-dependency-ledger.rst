@@ -1057,7 +1057,13 @@ without re-fetching the Git revision.  Its
 ``.meson-subproject-wrap-hash.txt`` stores a checksum of the UTF-8 wrap
 text; a mismatch warns of changed metadata, but does not verify DTC HEAD.
 The WHP reconciliation step must therefore check the pinned Git revision,
-validate DTC's Meson interface, and only then refresh that marker.
+validate DTC's Meson interface and declared version, and only then refresh
+that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads
+``VERSION.txt``; original DTC 1.6.0 is not compatible with QEMU's
+``dtc:tests`` option.  A minimum DTC version of 1.8.1 is enforced in
+the helper for both existing and proposed revisions.  Future versions
+such as 1.9.0 may still pass when their Meson interface is compatible.
+The DTC version is independent of the version of the Meson executable.
 A further independent identity is the DTC commit tree, visible through
 ``git -C subprojects/dtc rev-parse HEAD^{tree}``.  Its hash identifies the
 committed DTC source, unlike the SHA-256 wrap marker.  Even matching Git

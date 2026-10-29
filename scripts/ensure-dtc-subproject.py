@@ -22,6 +22,11 @@ class DTCError(Exception):
     pass
 
 
+# QEMU's internal libfdt integration requires the DTC 1.8.1-era Meson
+# contract. Newer revisions are acceptable only if the interface still passes.
+MIN_DTC_VERSION = (1, 8, 1)
+
+
 def git_command():
     # WHP host-tools.sh may promote a managed Git and export its exact command.
     # Match the submodule updater's GIT selection instead of rediscovering PATH.
@@ -106,6 +111,25 @@ def validate_meson_dtc(checkout, revision=None):
     for name in ("tools", "yaml", "python", "tests"):
         if not re.search(r"(?m)^\s*option\s*\(\s*['\"]" + name + r"['\"]\s*,", options):
             raise DTCError(f"pinned DTC checkout does not declare the Meson {name!r} option")
+
+    # Read the *version Meson actually declares*, not an incidental version
+    # file that might be present in an unrelated or outdated checkout.
+    if re.search(r"""\bversion\s*:\s*files\s*\(\s*['"]VERSION\.txt['"]\s*\)""", project):
+        version_text = source_text("VERSION.txt")
+        if version_text is None:
+            raise DTCError("DTC Meson project references a missing VERSION.txt")
+        version = version_text.strip()
+    else:
+        match = re.search(r"""\bversion\s*:\s*['"]([^'"]+)['"]""", project)
+        if match is None:
+            raise DTCError("DTC Meson project has no verifiable version (minimum 1.8.1)")
+        version = match.group(1).strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise DTCError(f"unrecognized DTC Meson version {version!r}; expected MAJOR.MINOR.PATCH")
+    detected = tuple(int(part) for part in version.split("."))
+    if detected < MIN_DTC_VERSION:
+        required = ".".join(str(part) for part in MIN_DTC_VERSION)
+        raise DTCError(f"DTC {version} is older than QEMU's required DTC {required}")
 
 
 def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
@@ -245,6 +269,8 @@ def diagnose_dtc(source, stream=None):
         config.read(wrap, encoding="utf-8")
         revision = config.get("wrap-git", "revision", fallback="unknown")
         print("  Wrap revision: " + revision, file=out)
+        print("  Minimum DTC version: " +
+              ".".join(map(str, MIN_DTC_VERSION)), file=out)
     except (OSError, configparser.Error) as exc:
         print("  Wrap revision: unreadable (" + str(exc) + ")", file=out)
     if checkout.is_symlink():

@@ -41,7 +41,8 @@ class EnsureDTCTest(unittest.TestCase):
         options = self.repo / "meson_options.txt"
         options.write_text("option('tools', type: 'boolean', value: true)\n", encoding="utf-8")
         (self.repo / "meson.build").write_text(
-            "project('dtc', 'c')\nsubdir('libfdt')\n", encoding="utf-8"
+            "project('dtc', 'c', version: '1.6.0')\nsubdir('libfdt')\n",
+            encoding="utf-8"
         )
         (self.repo / "libfdt").mkdir()
         (self.repo / "libfdt" / "meson.build").write_text(
@@ -58,7 +59,13 @@ class EnsureDTCTest(unittest.TestCase):
             "option('tests', type: 'boolean', value: true)\n",
             encoding="utf-8"
         )
-        cmd("git", "add", "meson_options.txt", cwd=self.repo)
+        (self.repo / "VERSION.txt").write_text("1.8.1\n", encoding="utf-8")
+        (self.repo / "meson.build").write_text(
+            "project('dtc', 'c', version: files('VERSION.txt'))\n"
+            "subdir('libfdt')\n", encoding="utf-8"
+        )
+        cmd("git", "add", "meson_options.txt", "meson.build",
+            "VERSION.txt", cwd=self.repo)
         cmd("git", "commit", "-qm", "current DTC", cwd=self.repo)
         self.pin = cmd("git", "rev-parse", "HEAD", cwd=self.repo)
         self.initial_branch = cmd("git", "symbolic-ref", "--short", "HEAD", cwd=self.repo)
@@ -130,6 +137,7 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("phase=pre-Meson", out)
         self.assertIn("Git command:", out)
         self.assertIn("Wrap revision: " + self.pin, out)
+        self.assertIn("Minimum DTC version: 1.8.1", out)
         self.assertIn("HEAD: " + self.old, out)
         self.assertIn("Git revision vs wrap: different", out)
         self.assertIn("HEAD tree SHA: " + self.git("rev-parse", "HEAD^{tree}"), out)
@@ -240,6 +248,52 @@ class EnsureDTCTest(unittest.TestCase):
             dtc.diagnose_dtc(self.root, stream=buffer)
         self.assertIn("HEAD: unavailable", buffer.getvalue())
         self.assertIn("Wrap revision: " + self.pin, buffer.getvalue())
+
+    def test_legacy_1_6_0_is_rejected_even_with_current_options(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "VERSION.txt").write_text("1.6.0\n", encoding="utf-8")
+        with self.assertRaisesRegex(dtc.DTCError, r"DTC 1\.6\.0 is older than QEMU's required DTC 1\.8\.1"):
+            dtc.ensure_dtc(self.root)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+
+    def test_later_1_9_0_dtc_version_can_be_pinned(self):
+        self.git("checkout", "--detach", self.pin)
+        (self.repo / "VERSION.txt").write_text("1.9.0\n", encoding="utf-8")
+        self.git("add", "VERSION.txt")
+        self.git("commit", "-qm", "future DTC release 1.9.0")
+        next_pin = self.git("rev-parse", "HEAD")
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\nrevision = {next_pin}\ndepth = 1\n"
+        )
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), next_pin)
+        self.assertEqual(self.cache.read_text().strip(), dtc.meson_wrap_hash(self.wrap))
+
+    def test_future_legacy_version_preflight_preserves_head_and_marker(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        saved_marker = self.cache.read_bytes()
+        (self.repo / "VERSION.txt").write_text("1.6.0\n", encoding="utf-8")
+        self.git("add", "VERSION.txt")
+        self.git("commit", "-qm", "incompatible old version in new candidate")
+        incompatible = self.git("rev-parse", "HEAD")
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\nrevision = {incompatible}\ndepth = 1\n"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, r"older than QEMU's required DTC 1\.8\.1"):
+            dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.cache.read_bytes(), saved_marker)
+
+    def test_unverifiable_version_fails_closed(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "VERSION.txt").write_text("unknown\n", encoding="utf-8")
+        with self.assertRaisesRegex(dtc.DTCError, "unrecognized DTC Meson version"):
+            dtc.ensure_dtc(self.root)
 
     def test_matching_checkout_is_noop(self):
         self.git("checkout", "--detach", self.pin)
