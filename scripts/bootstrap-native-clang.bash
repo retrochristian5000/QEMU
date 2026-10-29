@@ -388,7 +388,7 @@ if [[ -z "$seed_cc" ]]; then
     seed_cc="$("$SOURCE_DIR/cc.sh" --print-cc)"
 fi
 if [[ -z "$seed_cxx" ]]; then
-    seed_cxx="$("$SOURCE_DIR/cc.sh" --print-cxx)"
+    seed_cxx="$("$SOURCE_DIR/cxx.sh" --print-cxx)"
 fi
 
 bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-$seed_cc}"

@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - 'cc.sh'
+      - 'cxx.sh'
+      - 'scripts/whp-build/compiler-seed-common.sh'
       - 'ld.sh'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
@@ -21,6 +23,8 @@ on:
   pull_request:
     paths:
       - 'cc.sh'
+      - 'cxx.sh'
+      - 'scripts/whp-build/compiler-seed-common.sh'
       - 'ld.sh'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
@@ -56,11 +60,11 @@ jobs:
         run: |
           set -euo pipefail
           cc="$(./cc.sh --print-cc)"
-          cxx="$(./cc.sh --print-cxx)"
+          cxx="$(./cxx.sh --print-cxx)"
           test -x "$cc"
           test -x "$cxx"
           ./cc.sh --check
-          ./cc.sh --check-cxx
+          ./cxx.sh --check
 
           tmp="$RUNNER_TEMP/whp-cc-adapter"
           rm -rf "$tmp"
@@ -71,8 +75,11 @@ jobs:
           "$tmp/probe-c"
 
           printf '%s\n' 'int main() { return 0; }' > "$tmp/probe.cc"
-          ./cc.sh --cxx -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-cxx"
+          ./cxx.sh -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-cxx"
           "$tmp/probe-cxx"
+          if ./cc.sh --print-cxx || ./cxx.sh --print-cc; then
+              echo "wrong-language selector unexpectedly accepted" >&2; exit 1
+          fi
 
           shim="$tmp/bin"
           mkdir -p "$shim"
@@ -80,6 +87,9 @@ jobs:
           PATH="$shim:$PATH" WHP_CC_SEED="$cc" \
             "$shim/cc" "$tmp/probe.c" -o "$tmp/probe-shim"
           "$tmp/probe-shim"
+          ln -s "$GITHUB_WORKSPACE/cxx.sh" "$shim/c++"
+          PATH="$shim:$PATH" WHP_CXX_SEED="$cxx" "$shim/c++" "$tmp/probe.cc" -o "$tmp/probe-cxx-shim"
+          "$tmp/probe-cxx-shim"
 
           cat > "$tmp/fake-cc" <<'EOF'
           #!/bin/sh
@@ -96,11 +106,17 @@ jobs:
           fi
           # C++ selection must not mask an unusable explicitly selected C
           # compiler (notably when macOS xcrun provides a fallback Clang++).
-          if WHP_CC_SEED="$tmp/fake-cc" ./cc.sh --print-cxx; then
+          if WHP_CC_SEED="$tmp/fake-cc" ./cxx.sh --print-cxx; then
               echo 'C++ probe ignored an unusable explicit C compiler' >&2
               exit 1
           fi
 
+          if WHP_CXX_SEED="$tmp/fake-cc" ./cxx.sh --print-cxx; then
+              echo "fake C++ compiler unexpectedly passed" >&2; exit 1
+          fi
+          if WHP_CXX_SEED="$GITHUB_WORKSPACE/cc.sh" ./cxx.sh --print-cxx; then
+              echo "recursive C/C++ adapter unexpectedly passed" >&2; exit 1
+          fi
           # A valid pinned C seed must select its adjacent C++ companion,
           # ahead of an unrelated macOS xcrun or system C++ fallback.
           mkdir "$tmp/compiler-pair"
@@ -114,10 +130,10 @@ jobs:
           EOF
           chmod +x "$tmp/compiler-pair/clang" "$tmp/compiler-pair/clang++"
           export WHP_TEST_CC="$cc" WHP_TEST_CXX="$cxx"
-          paired_cxx="$(WHP_CC_SEED="$tmp/compiler-pair/clang" ./cc.sh --print-cxx)"
+          paired_cxx="$(WHP_CC_SEED="$tmp/compiler-pair/clang" ./cxx.sh --print-cxx)"
           test "$paired_cxx" = "$tmp/compiler-pair/clang++"
           WHP_CC_SEED="$tmp/compiler-pair/clang" \
-            ./cc.sh --cxx -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-paired-cxx"
+            ./cxx.sh -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-paired-cxx"
           "$tmp/probe-paired-cxx"
 
       - name: Exercise native linker adapter

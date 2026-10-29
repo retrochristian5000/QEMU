@@ -253,7 +253,7 @@ graph.  A compact view is::
       +--> cc.sh native C seed
       |      +--> Python fallback
       |      +--> GNU sed / bootstrap-zlib / Git / Bash / SDL host builds
-      |      +--> lazy C++17 seed -> Ninja / JACK / native LLVM
+      +--> cxx.sh native C++17 seed -> Ninja / JACK / native LLVM
       |
       +--> seed Git
       |      +--> QEMU source checkout/update
@@ -387,7 +387,7 @@ Bootstrap phase ordering
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh``, seed GNU Make, seed sed, Python, Automake,
+**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed sed, Python, Automake,
 managed Autoconf, managed GNU Make, managed GNU sed, bootstrap zlib, managed
 Git, Bash, and Ninja are available before native LLVM. The enforced managed
 order is ``Automake -> Autoconf -> Make -> sed -> bootstrap-zlib -> Git ->
@@ -419,12 +419,11 @@ selection.
 Bootstrap compiler boundary
 ---------------------------
 
-``cc.sh`` is the pre-LLVM native compiler adapter. It is intentionally a
-root-boundary selector rather than a compiler implementation: a usable host
-compiler must already exist before the WHP LLVM fork can build itself. The
-adapter validates that its selected C compiler can compile, link, and execute a
-native probe, and it exposes a separate lazy C++17 selection for components
-that actually need C++.
+``cc.sh`` and ``cxx.sh`` are separate C and C++17 seed entry points.
+They share the native compile/link/run probe, but each selects only its own
+language driver. C++ selection first tries the driver paired with the native
+C seed. Both adapters reject self-references and cross-adapter recursion;
+``cc.sh --print-cxx`` is retired in favor of ``cxx.sh --print-cxx``.
 
 The build-machine roles are ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD``.
 Target ``CC``/``CXX`` are deliberately excluded from seed discovery so a

@@ -171,7 +171,7 @@ def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:
             return str(path)
         raise RuntimeError(f"{build_env} is not executable: {candidate}")
 
-    adapter = ROOT / "cc.sh"
+    adapter = ROOT / ("cc.sh" if env_name == "CC" else "cxx.sh")
     if adapter.is_file() and os.access(adapter, os.X_OK):
         mode = "--print-cc" if env_name == "CC" else "--print-cxx"
         completed = subprocess.run(
@@ -186,7 +186,7 @@ def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:
             return found
         detail = completed.stderr.strip()
         raise RuntimeError(
-            f"QEMU cc.sh could not resolve JACK {env_name}"
+            f"QEMU {adapter.name} could not resolve JACK {env_name}"
             + (f": {detail}" if detail else "")
         )
 

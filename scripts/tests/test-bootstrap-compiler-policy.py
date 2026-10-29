@@ -15,12 +15,17 @@ def require(text: str, needle: str, label: str) -> None:
 
 def main() -> int:
     adapter = (ROOT / "cc.sh").read_text(encoding="utf-8")
-    require(adapter, "compiler_runs_native", "native execution probe")
+    cxx_adapter = (ROOT / "cxx.sh").read_text(encoding="utf-8")
+    shared = (ROOT / "scripts/whp-build/compiler-seed-common.sh").read_text(encoding="utf-8")
+    require(shared, "compiler_runs_native", "native execution probe")
+    require(shared, "-std=c++17", "C++17 seed requirement")
+    require(shared, "whp-qemu-cxx-seed-adapter", "cross-adapter recursion guard")
     require(adapter, "CC_FOR_BUILD", "C build-machine role")
-    require(adapter, "CXX_FOR_BUILD", "C++ build-machine role")
-    require(adapter, "-std=c++17", "C++17 seed requirement")
-    if 'Target/cross CC and CXX' not in adapter:
-        raise SystemExit("error: cc.sh does not document target compiler exclusion")
+    require(cxx_adapter, "CXX_FOR_BUILD", "C++ build-machine role")
+    require(adapter, "use cxx.sh for C++", "C-only guard")
+    require(cxx_adapter, "use cc.sh for C", "C++-only guard")
+    if "select_cxx()" in adapter or "select_cc()" in cxx_adapter:
+        raise SystemExit("error: compiler selectors cross language roles")
 
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
     require(build, '"$SOURCE_DIR/cc.sh" --print-cc', "early C seed")
@@ -52,7 +57,7 @@ def main() -> int:
 
     ninja = (ROOT / "scripts/ensure-ninja.py").read_text(encoding="utf-8")
     require(ninja, "CXX_FOR_BUILD", "Ninja build C++ role")
-    require(ninja, "'--print-cxx'", "Ninja C++ adapter")
+    require(ninja, "ROOT / 'cxx.sh'", "Ninja C++ adapter")
     if "os.environ.get('CXX')" in ninja:
         raise SystemExit("error: Ninja bootstrap must not inherit target CXX")
 
@@ -64,10 +69,11 @@ def main() -> int:
     require(jack, 'command_path("clang++", "CXX"', "JACK artifact C++ role")
     require(jack, '"CC_FOR_BUILD"', "JACK C fallback")
     require(jack, '"CXX_FOR_BUILD"', "JACK C++ fallback")
+    require(jack, '"cc.sh" if env_name == "CC" else "cxx.sh"', "JACK split")
 
     llvm = (ROOT / "scripts/bootstrap-native-clang.bash").read_text(encoding="utf-8")
     require(llvm, '"$SOURCE_DIR/cc.sh" --print-cc', "LLVM C seed")
-    require(llvm, '"$SOURCE_DIR/cc.sh" --print-cxx', "LLVM C++ seed")
+    require(llvm, '"$SOURCE_DIR/cxx.sh" --print-cxx', "LLVM C++ seed")
 
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
     require(ledger, "Bootstrap compiler boundary", "compiler ledger section")

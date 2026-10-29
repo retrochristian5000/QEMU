@@ -110,7 +110,7 @@ def select_host_cxx() -> str:
     if requested:
         return requested
 
-    adapter = ROOT / 'cc.sh'
+    adapter = ROOT / 'cxx.sh'
     if adapter.is_file() and os.access(adapter, os.X_OK):
         completed = subprocess.run(
             [str(adapter), '--print-cxx'],
@@ -124,7 +124,7 @@ def select_host_cxx() -> str:
             return candidate
         detail = completed.stderr.strip()
         raise RuntimeError(
-            'QEMU cc.sh could not resolve the Ninja build C++ compiler'
+            'QEMU cxx.sh could not resolve the Ninja build C++ compiler'
             + (f': {detail}' if detail else '')
         )
 
