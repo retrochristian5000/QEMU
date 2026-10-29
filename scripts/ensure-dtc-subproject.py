@@ -12,6 +12,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -27,9 +28,22 @@ class DTCError(Exception):
     pass
 
 
+def git_command():
+    # WHP host-tools.sh may promote a managed Git and export its exact command.
+    # Match the submodule updater's GIT selection instead of rediscovering PATH.
+    command = os.environ.get("GIT") or "git"
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise DTCError(f"invalid GIT command: {exc}") from exc
+    if not argv:
+        raise DTCError("GIT must name a Git executable")
+    return argv
+
+
 def git(checkout, *args):
     result = subprocess.run(
-        ["git", "-C", str(checkout), *args],
+        [*git_command(), "-C", str(checkout), *args],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     if result.returncode:
@@ -73,7 +87,7 @@ def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
     with tempfile.TemporaryDirectory(prefix=".dtc-fetch-", dir=checkout.parent) as staging:
         pending = Path(staging) / "dtc"
         result = subprocess.run(
-            ["git", "init", "-q", str(pending)],
+            [*git_command(), "init", "-q", str(pending)],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
         )
         if result.returncode:

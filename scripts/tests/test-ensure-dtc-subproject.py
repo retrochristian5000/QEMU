@@ -4,10 +4,13 @@
 
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 HELPER = Path(__file__).resolve().parents[1] / "ensure-dtc-subproject.py"
@@ -82,6 +85,36 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertEqual(self.cache.read_text().strip(),
                          hashlib.sha256(self.wrap.read_text().encode()).hexdigest())
         self.assertEqual((build / "coredata.dat").read_text(), "untouched")
+
+    def tracked_git(self):
+        trace = self.root / "git-selection.log"
+        wrapper = self.root / "selected-git"
+        wrapper.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$WHP_DTC_GIT_TRACE"\n'
+            'exec "$WHP_DTC_TEST_GIT" "$@"\n', encoding="utf-8"
+        )
+        wrapper.chmod(0o755)
+        return {
+            "GIT": str(wrapper),
+            "WHP_DTC_GIT_TRACE": str(trace),
+            "WHP_DTC_TEST_GIT": shutil.which("git"),
+        }, trace
+
+    def test_git_promotion_is_honored_for_revision_reconciliation(self):
+        env, trace = self.tracked_git()
+        with mock.patch.dict(os.environ, env):
+            self.assertTrue(dtc.ensure_dtc(self.root))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertIn("fetch --depth=1", trace.read_text())
+
+    def test_git_promotion_is_honored_for_fresh_prefetch(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        env, trace = self.tracked_git()
+        with mock.patch.dict(os.environ, env):
+            self.assertTrue(dtc.ensure_dtc(self.root, fetch_missing=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertIn("init -q", trace.read_text())
+        self.assertIn("fetch --depth=1", trace.read_text())
 
     def test_matching_checkout_is_noop(self):
         self.git("checkout", "--detach", self.pin)

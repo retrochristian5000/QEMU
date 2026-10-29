@@ -78,6 +78,21 @@ class GitSubmoduleTest(unittest.TestCase):
         self.assertEqual(len(record.read_text().splitlines()), 2)
         self.assertEqual(self.updater("validate", "modules/b").returncode, 0)
 
+    def test_mesons_dtc_is_not_a_git_submodule(self):
+        dtc = self.clone / "subprojects" / "dtc"
+        dtc.mkdir(parents=True)
+        marker = dtc / "user-source"
+        marker.write_text("preserve DTC checkout\n", encoding="utf-8")
+
+        # A mistaken mixed invocation must fail before updating modules/a.
+        result = self.updater("update", "modules/a", "subprojects/dtc")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Meson-owned", result.stderr)
+        self.assertEqual(marker.read_text(), "preserve DTC checkout\n")
+        self.assertFalse((self.clone / ".git-submodule-status").exists())
+        self.assertTrue(git("submodule", "status", "modules/a",
+                            cwd=self.clone).startswith("-"))
+
     def test_detects_changed_submodule_checkout(self):
         result = self.updater("update", "modules/a")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

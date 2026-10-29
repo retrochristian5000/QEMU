@@ -1026,7 +1026,11 @@ the WHP launcher merely to make them look like the top-level
 The DTC wrap in ``subprojects/dtc.wrap`` resolves the internal libfdt
 fallback from the WHP-owned ``retrochristian5000/dtc`` fork at an immutable
 commit.  This is a Meson-owned subproject, not a second vendored copy or a
-new top-level git submodule.  QEMU continues to prefer usable system libfdt
+new top-level git submodule.  The top-level gitlink updater rejects
+``subprojects/*`` paths before updating any gitlink, while DTC's own
+reconciliation helper honors the selected ``GIT`` command from the WHP
+host-tool bootstrap.  Git implementation changes therefore must not silently
+split the DTC fetch path from the other pinned dependency fetches.  QEMU continues to prefer usable system libfdt
 when selected; the internal fallback builds only libfdt (without DTC tools,
 Python bindings, or DTC's standalone tests).  Keep the wrap revision pinned;
 do not replace it with a floating branch or rebuild DTC separately in the

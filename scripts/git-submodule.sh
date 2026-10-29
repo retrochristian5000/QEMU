@@ -10,6 +10,18 @@ shift
 maybe_modules="$@"
 
 test -z "$maybe_modules" && exit 0
+
+# Meson wraps such as subprojects/dtc are not QEMU Git submodules.
+# Reject them before touching the submodule status ledger or any gitlink.
+for m in $maybe_modules; do
+    case "$m" in
+        subprojects/*)
+            echo "$0: refusing Meson-owned source '$m'; use its Meson wrap instead" >&2
+            exit 1
+            ;;
+    esac
+done
+
 test -z "$GIT" && GIT=$(command -v git)
 
 cd "$(dirname "$0")/.."
