@@ -164,16 +164,28 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD")
     if branch != "HEAD":
         raise DTCError(f"DTC is on branch {branch!r}; refusing to switch a development branch")
-    if no_download and current != revision:
-        raise DTCError("DTC revision is stale but downloads are disabled")
+    # A Git source updater does not touch Meson-owned wrap checkouts.  The
+    # requested commit may nonetheless already be in DTC's own object store
+    # (e.g. after an interrupted previous reconciliation).  Reuse it before
+    # attempting network access; --no-download forbids fetch, not a safe local
+    # detached checkout.  Never reset/stash or move a development branch.
+    pin_is_local = False
+    try:
+        git(checkout, "cat-file", "-e", revision + "^{commit}")
+        pin_is_local = True
+    except DTCError:
+        pass
 
-    # Fetch by the immutable URL from dtc.wrap, never by the checkout's
-    # potentially stale or developer-specific "origin".  This preserves
-    # configured remotes and avoids rejecting otherwise safe detached trees.
+    if no_download and not pin_is_local:
+        raise DTCError("DTC revision is stale, the pinned commit is not available locally, and downloads are disabled")
+
     print(f"Synchronizing DTC to pinned Git revision {revision}", flush=True)
-    if current != revision:
+    if not pin_is_local:
+        # Fetch by the immutable URL from dtc.wrap, never by the checkout's
+        # potentially stale or developer-specific "origin".  This preserves
+        # configured remotes and avoids rejecting otherwise safe detached trees.
         git(checkout, "fetch", "--depth=1", "--no-tags", url, revision)
-        git(checkout, "checkout", "--detach", revision, "--")
+    git(checkout, "checkout", "--detach", revision, "--")
     if git(checkout, "rev-parse", "HEAD") != revision:
         raise DTCError("Git did not select QEMU's pinned DTC revision")
     validate_meson_dtc(checkout)

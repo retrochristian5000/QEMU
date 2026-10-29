@@ -104,7 +104,9 @@ class EnsureDTCTest(unittest.TestCase):
         with mock.patch.dict(os.environ, env):
             self.assertTrue(dtc.ensure_dtc(self.root))
         self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
-        self.assertIn("fetch --depth=1", trace.read_text())
+        self.assertIn("cat-file -e", trace.read_text())
+        self.assertIn("checkout --detach", trace.read_text())
+        self.assertNotIn("fetch --depth=1", trace.read_text())
 
     def test_git_promotion_is_honored_for_fresh_prefetch(self):
         self.repo.rename(self.subprojects / "old-dtc")
@@ -232,18 +234,43 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
         self.assertFalse(self.git("remote"))
 
-    def test_offline_rejects_old_revision(self):
-        with self.assertRaisesRegex(dtc.DTCError, "downloads are disabled"):
+    def test_offline_reuses_present_pinned_commit_with_old_wrap_marker(self):
+        # This checkout and its ignored build artifacts are independent of
+        # the parent QEMU Git source updater and require no stash.
+        (self.repo / ".git" / "info" / "exclude").write_text(
+            "build/\n", encoding="utf-8"
+        )
+        build = self.repo / "build"
+        build.mkdir()
+        (build / "libfdt.o").write_text("ignored generated artifact\n")
+        before = self.git("remote", "get-url", "origin")
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+        self.assertEqual(self.git("remote", "get-url", "origin"), before)
+        self.assertEqual((build / "libfdt.o").read_text(), "ignored generated artifact\n")
+        self.assertEqual(self.cache.read_text().strip(),
+                         dtc.meson_wrap_hash(self.wrap))
+
+    def test_offline_rejects_missing_pinned_commit(self):
+        missing = "f" * 40
+        self.wrap.write_text(
+            f"[wrap-git]\nurl = {self.target_url}\n"
+            f"revision = {missing}\ndepth = 1\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "not available locally"):
             dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
+        self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
 
     def test_offline_can_refresh_cache_of_pinned_revision(self):
         self.git("checkout", "--detach", self.pin)
         self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
 
-    def test_git_fetch_failure_restores_original_url(self):
+    def test_git_fetch_failure_preserves_original_url(self):
         unavailable = (self.root / "missing-fork.git").as_uri()
+        missing = "f" * 40
         self.wrap.write_text(
-            f"[wrap-git]\nurl = {unavailable}\nrevision = {self.pin}\ndepth = 1\n"
+            f"[wrap-git]\nurl = {unavailable}\nrevision = {missing}\ndepth = 1\n"
         )
         with self.assertRaisesRegex(dtc.DTCError, "git fetch"):
             dtc.ensure_dtc(self.root)
