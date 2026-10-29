@@ -44,7 +44,9 @@ def git(checkout, *args):
         raise DTCError(
             f"git {' '.join(args)} failed: {result.stderr.strip()}"
         )
-    return result.stdout.strip()
+    # Git porcelain output begins with two significant status columns.
+    # Strip only line terminators, never leading spaces from the first row.
+    return result.stdout.rstrip("\r\n")
 
 
 def meson_wrap_hash(wrap_file):
@@ -168,13 +170,16 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     # A matching wrap checksum and HEAD are not evidence that DTC's tracked
     # source files are unchanged.  Check Git's actual nonignored worktree
     # state even on the no-op path; ignored build outputs remain untouched.
+    if current == revision:
+        # Report an incompatible DTC project precisely before checking its
+        # separate worktree-integrity condition. Both checks remain enforced.
+        validate_meson_dtc(checkout)
     status = git(checkout, "status", "--porcelain", "--untracked-files=all")
     dirty = "\n".join(line for line in status.splitlines()
                       if line[3:] != ".meson-subproject-wrap-hash.txt")
     if dirty:
         raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
     if current == revision and cached_hash in (None, wrap_hash):
-        validate_meson_dtc(checkout)
         return False
 
     # A stale wrap marker is not a reason to detach a development branch.

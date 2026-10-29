@@ -135,7 +135,7 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("HEAD tree SHA: " + self.git("rev-parse", "HEAD^{tree}"), out)
         self.assertIn("Pinned tree SHA: " + self.git("rev-parse", self.pin + "^{tree}"), out)
         self.assertIn("DTC Meson interface: incompatible or unreadable", out)
-        self.assertIn("Meson 'tests' option", out)
+        self.assertIn("Meson 'yaml' option", out)
         self.assertIn("Meson wrap marker: stale", out)
         self.assertIn("Expected wrap SHA256 (Meson text): " +
                       hashlib.sha256(self.wrap.read_text().encode()).hexdigest(), out)
@@ -162,6 +162,18 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertIn("Local changes: 1", out.getvalue())
         self.assertIn("Changed source:  M libfdt/meson.build", out.getvalue())
         self.assertIn("Meson wrap marker: current", out.getvalue())
+
+    def test_porcelain_status_preserves_leading_xy_columns(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "libfdt_dep = declare_dependency()\n# dirty file\n", encoding="utf-8"
+        )
+        actual = dtc.git(self.repo, "status", "--porcelain", "--untracked-files=all")
+        self.assertTrue(actual.startswith(" M libfdt/meson.build"), repr(actual))
+        out = StringIO()
+        dtc.diagnose_dtc(self.root, stream=out)
+        self.assertIn("Changed source:  M libfdt/meson.build", out.getvalue())
 
     def test_matching_marker_ignores_generated_dtc_build_files(self):
         self.git("checkout", "--detach", self.pin)
