@@ -186,6 +186,26 @@ def test_existing_dtc_reconciles_from_source_updater():
         assert "reconciling existing DTC wrap" in second.stderr, second.stderr
         assert marker.read_text().strip() == expected
 
+        # False-valued CI flags on a normal workstation must not block
+        # reconciliation; true CI must retain the skip.
+        for flag in ("false", "0"):
+            marker.write_text(legacy + "\n")
+            env["CI"] = flag
+            resumed = subprocess.run(cmd, cwd=root, env=env,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True, check=True)
+            assert "reconciling existing DTC wrap" in resumed.stderr, resumed.stderr
+            assert marker.read_text().strip() == expected
+
+        marker.write_text(legacy + "\n")
+        env["CI"] = "true"
+        skipped = subprocess.run(cmd, cwd=root, env=env,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, check=True)
+        assert "skipped under CI" in skipped.stderr, skipped.stderr
+        assert marker.read_text().strip() == legacy
+        env.pop("CI")
+
         # Explicit opt-out must remain inert even if the old marker returns.
         marker.write_text(legacy + "\n")
         env["WHP_SOURCE_UPDATE"] = "0"

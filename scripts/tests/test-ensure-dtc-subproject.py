@@ -295,6 +295,42 @@ class EnsureDTCTest(unittest.TestCase):
         with self.assertRaisesRegex(dtc.DTCError, "unrecognized DTC Meson version"):
             dtc.ensure_dtc(self.root)
 
+    def test_expected_sha256_ignores_environment_flags(self):
+        baseline = dtc.meson_wrap_hash(self.wrap)
+        with mock.patch.dict(os.environ, {
+            "WHP_SOURCE_UPDATE": "0",
+            "CI": "true",
+            "WHP_MESON_PROVIDER": "fork",
+            "MESON_PACKAGE_CACHE_DIR": str(self.root / "other-packagecache"),
+            "PYTHONHASHSEED": "7",
+            "GIT": "git -c core.autocrlf=true",
+        }):
+            self.assertEqual(dtc.meson_wrap_hash(self.wrap), baseline)
+        self.assertEqual(dtc.meson_wrap_hash(self.wrap), baseline)
+        self.assertEqual(self.cache.read_text().strip(), "old-wrap-hash")
+
+    def test_diagnosis_distinguishes_environment_from_hash_input(self):
+        for ci, update, indicator in (
+            ("false", "auto", "eligible;"),
+            ("0", "auto", "eligible;"),
+            ("true", "auto", "skipped in CI mode"),
+            ("false", "0", "disabled (WHP_SOURCE_UPDATE=0)"),
+        ):
+            with self.subTest(ci=ci, update=update):
+                buffer = StringIO()
+                with mock.patch.dict(os.environ, {
+                    "CI": ci,
+                    "WHP_SOURCE_UPDATE": update,
+                    "WHP_MESON_PROVIDER": "fork",
+                }):
+                    dtc.diagnose_dtc(self.root, stream=buffer)
+                output = buffer.getvalue()
+                self.assertIn("SHA256 input: UTF-8 dtc.wrap text", output)
+                self.assertIn("Environment CI: '" + ci + "'", output)
+                self.assertIn("Automatic source reconciliation: " + indicator,
+                              output)
+                self.assertIn("read-only", output)
+
     def test_expected_hash_is_live_for_metadata_only_wrap_changes(self):
         self.git("checkout", "--detach", self.pin)
         before = dtc.meson_wrap_hash(self.wrap)

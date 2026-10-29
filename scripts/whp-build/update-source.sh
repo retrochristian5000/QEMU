@@ -25,9 +25,16 @@ warn_or_fail()
     return 0
 }
 
-if [ "$mode" = auto ] && [ -n "${CI:-}" ]; then
-    printf '%s\n' 'WHP source update: skipped under CI' >&2
-    exit 0
+# Many local shells export CI=false or CI=0.  A nonempty string is
+# not proof of CI; reserve the automatic-update skip for enabled CI flags.
+if [ "$mode" = auto ]; then
+    case "${CI:-}" in
+        ''|0|false|FALSE|False|no|NO) ;;
+        *)
+            printf '%s\n' 'WHP source update: skipped under CI' >&2
+            exit 0
+            ;;
+    esac
 fi
 
 if ! command -v git >/dev/null 2>&1; then

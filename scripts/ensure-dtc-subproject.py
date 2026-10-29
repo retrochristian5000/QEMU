@@ -271,6 +271,22 @@ def diagnose_dtc(source, stream=None):
     wrap = source / "subprojects" / "dtc.wrap"
     checkout = source / "subprojects" / "dtc"
     print("DTC diagnosis: phase=pre-Meson (after Sphinx/PIE, before meson setup)", file=out)
+    print("  SHA256 input: UTF-8 dtc.wrap text (universal newlines), not DTC source or environment", file=out)
+    for name in ("WHP_SOURCE_UPDATE", "CI", "WHP_MESON_PROVIDER",
+                 "MESON_PACKAGE_CACHE_DIR", "PYTHONHASHSEED"):
+        value = os.environ.get(name)
+        print("  Environment " + name + ": " +
+              (repr(value) if value is not None else "(unset)"), file=out)
+    ci = os.environ.get("CI", "")
+    update = os.environ.get("WHP_SOURCE_UPDATE", "auto")
+    if update == "0":
+        reason = "disabled (WHP_SOURCE_UPDATE=0)"
+    elif update == "auto" and ci not in ("", "0", "false", "FALSE", "False", "no", "NO"):
+        reason = "skipped in CI mode"
+    else:
+        reason = "eligible; checkout guards and Python availability still apply"
+    print("  Automatic source reconciliation: " + reason, file=out)
+    print("  This diagnosis is read-only; it never refreshes the stored marker", file=out)
     try:
         print("  Git command: " + shlex.join(git_command()), file=out)
     except DTCError as exc:

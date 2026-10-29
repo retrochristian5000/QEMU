@@ -1067,6 +1067,14 @@ rechecks the wrap before writing the marker, and refreshes a missing
 marker.  A changed revision, URL, or fetch depth changes the computed
 wrap checksum; a DTC source modification without a wrap change does not.
 A concurrent wrap edit prevents a stale marker from being installed.
+The digest is independent of ``CI``, ``PYTHONHASHSEED``,
+``WHP_SOURCE_UPDATE``, ``WHP_MESON_PROVIDER`` and
+``MESON_PACKAGE_CACHE_DIR``; these affect workflow execution or
+source resolution, not the SHA-256 input.  The source updater now treats
+``CI=0`` and ``CI=false`` as disabled CI flags rather than silently
+skipping reconciliation.  The read-only DTC diagnostics expose both
+the hash input and relevant environment controls without rewriting the
+stored marker.
 The pinned WHP Meson fork also parses and SHA-256 hashes a single UTF-8
 wrap snapshot, instead of reading the changing wrap file twice.  Its wrap
 unit tests are invoked during QEMU's internal-DTC macOS workflow.  This
