@@ -25,7 +25,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import clean_host_environment, select_native_cc
+from bootstrap_env import clean_host_environment, select_native_cc, select_native_sdk
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
@@ -352,6 +352,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     autoconf = tool("autoconf", "AUTOCONF")
     autom4te = tool("autom4te", "AUTOM4TE")
     make = select_gnu_make()
+    sdkroot = select_native_sdk(ROOT)
+    if sdkroot:
+        # cc.sh validates the same SDK; configure must receive it as well.
+        os.environ["SDKROOT"] = sdkroot
     cc = select_native_cc(ROOT)
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
 

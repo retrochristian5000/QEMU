@@ -629,7 +629,11 @@ explicitly, including the compiler verified by ``cc.sh``, the GNU Make
 seed, configuration shell, GNU M4, Perl and Autotools.
 
 Automake and Autoconf cache markers now include native CC/version,
-configuration shell, selected SDK and deployment target. Git's cache
+configuration shell, selected SDK and deployment target. Both early
+generators now validate the selected Xcode/CLT SDK before resolving the
+native compiler and export the same ``SDKROOT`` to configure. This avoids
+the split between a successful seed CC probe and a native configure that
+cannot find ``unistd.h`` or other SDK headers. Git's cache
 schema changes with its corrected environment contract. GNU Make rejects
 malformed or nonexistent inherited ``ACLOCAL_PATH`` entries before using
 them in generation and cache markers; valid absolute macro paths survive.

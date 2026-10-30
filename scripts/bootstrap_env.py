@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import platform
 import subprocess
 from collections.abc import Mapping
 
@@ -37,6 +38,37 @@ def clean_host_environment(source: Mapping[str, str]) -> dict[str, str]:
         key: val for key, val in source.items()
         if key not in DROP and not key.startswith(DROP_PREFIXES)
     }
+
+
+def select_native_sdk(root: pathlib.Path) -> str:
+    """Preserve the exact selected Xcode/CLT SDK for all native tools."""
+    if platform.system() != "Darwin":
+        return ""
+    script = (
+        '. "$1" || exit 1; '
+        'if [ -n "$2" ]; then '
+        'whp_apple_check_sdkroot "$2" || exit 1; '
+        'printf "%s\\n" "$2"; '
+        'else whp_apple_find_sdk; fi'
+    )
+    result = subprocess.run(
+        [
+            "/bin/sh", "-c", script, "whp-native-bootstrap-sdk",
+            str(root / "scripts/whp-build/macos-developer-tools.sh"),
+            os.environ.get("SDKROOT", ""),
+        ],
+        text=True, capture_output=True, check=False,
+    )
+    sdkroot = result.stdout.strip()
+    if (
+        result.returncode or not sdkroot or "\n" in sdkroot or
+        not pathlib.Path(sdkroot).is_dir()
+    ):
+        raise RuntimeError(
+            "selected macOS SDK is unavailable for native bootstrap"
+            + (f": {result.stderr.strip()}" if result.stderr.strip() else "")
+        )
+    return sdkroot
 
 
 def select_native_cc(root: pathlib.Path) -> str:

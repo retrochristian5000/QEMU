@@ -8,6 +8,7 @@ import importlib.util
 import pathlib
 import stat
 import tempfile
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
@@ -60,6 +61,37 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-env-") as td:
     else:
         raise AssertionError("accepted invalid CC seed")
 
+# A Darwin bootstrap must validate SDKROOT through the same selected
+# Xcode/CLT helper; never assume cc.sh's test SDK is inherited by configure.
+with tempfile.TemporaryDirectory(prefix="whp-bootstrap-sdk-") as td:
+    base = pathlib.Path(td)
+    helper = base / "scripts/whp-build/macos-developer-tools.sh"
+    helper.parent.mkdir(parents=True)
+    sdk = base / "MacOSX.sdk"
+    sdk.mkdir()
+    helper.write_text(
+        'whp_apple_check_sdkroot() { [ -d "$1" ]; }\n'
+        'whp_apple_find_sdk() { printf "%s\\n" "$TEST_NATIVE_SDK"; }\n',
+        encoding="utf-8",
+    )
+    with mock.patch.object(module.platform, "system", return_value="Darwin"):
+        with mock.patch.dict(
+            module.os.environ,
+            {"SDKROOT": str(sdk), "TEST_NATIVE_SDK": str(sdk)},
+        ):
+            assert module.select_native_sdk(base) == str(sdk)
+            module.os.environ["SDKROOT"] = ""
+            assert module.select_native_sdk(base) == str(sdk)
+            module.os.environ["SDKROOT"] = str(base / "missing")
+            try:
+                module.select_native_sdk(base)
+            except RuntimeError as exc:
+                assert "selected macOS SDK" in str(exc)
+            else:
+                raise AssertionError("accepted nonexistent Darwin SDK")
+    with mock.patch.object(module.platform, "system", return_value="Linux"):
+        assert module.select_native_sdk(base) == ""
+
 for filename in ("ensure-automake.py", "ensure-autoconf.py", "ensure-git.py"):
     source = (ROOT / "scripts" / filename).read_text(encoding="utf-8")
     assert "clean_host_environment(os.environ)" in source, filename
@@ -68,6 +100,8 @@ for filename in ("ensure-automake.py", "ensure-autoconf.py", "ensure-git.py"):
 for filename in ("ensure-automake.py", "ensure-autoconf.py"):
     source = (ROOT / "scripts" / filename).read_text(encoding="utf-8")
     assert "cc = select_native_cc(ROOT)" in source, filename
+    assert "sdkroot = select_native_sdk(ROOT)" in source, filename
+    assert 'os.environ["SDKROOT"] = sdkroot' in source, filename
     assert 'f"CONFIG_SHELL={config_shell}' in source, filename
     assert 'f"CC_FOR_BUILD={cc}' in source, filename
 print("WHP native bootstrap environment and cache provenance: verified")
