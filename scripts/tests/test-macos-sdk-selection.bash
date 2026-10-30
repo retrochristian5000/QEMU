@@ -226,7 +226,13 @@ for non_macos_sdk in "$IPHONE_SDK" "$SIMULATOR_SDK"; do
         printf 'error: iOS SDK reached macOS host bootstrap: %s\n' "$non_macos_sdk" >&2
         exit 1
     fi
-    grep -Fq 'host build requires a MacOSX.sdk' "$sdk_bleed_output"
+    # The developer-root guard rejects the foreign SDK before the later
+    # macOS builder suffix guard can run; either stage must identify it.
+    if ! grep -Eq 'not a native macOS SDK|host build requires a MacOSX.sdk' "$sdk_bleed_output"; then
+        printf 'error: non-macOS SDK rejection lacked an SDK-specific diagnostic: %s\n' "$non_macos_sdk" >&2
+        cat "$sdk_bleed_output" >&2
+        exit 1
+    fi
 done
 
 # A valid MacOSX.sdk can still have incompatible C++ headers; make sure a

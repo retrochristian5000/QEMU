@@ -73,6 +73,22 @@ compiler_runs_native()
     fi
     trap 'rm -rf -- "$tmp_dir"' 0
     trap 'exit 1' HUP INT TERM
+
+    # Apple Clang invoked by its absolute path does not always infer the
+    # selected Xcode/CLT SDK. Probe against that *same* SDK, not a Linux
+    # or stale command-line default that cannot resolve libSystem.
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        . "$seed_root/scripts/whp-build/macos-developer-tools.sh"
+        if [ -n "${SDKROOT:-}" ]; then
+            whp_apple_check_sdkroot "$SDKROOT" || exit 1
+            seed_sdk=$SDKROOT
+        else
+            seed_sdk=$(whp_apple_find_sdk) || exit 1
+        fi
+        set -- -isysroot "$seed_sdk"
+    else
+        set --
+    fi
     output=$tmp_dir/probe
     log=$tmp_dir/output.log
     case "$language" in
@@ -90,7 +106,7 @@ compiler_runs_native()
             exit 1 ;;
     esac
     if [ "$language" = c++ ]; then
-        if "$compiler" -std=c++17 "$src" -o "$output" > "$log" 2>&1; then
+        if "$compiler" "$@" -std=c++17 "$src" -o "$output" > "$log" 2>&1; then
             :
         else
             code=$?
@@ -102,7 +118,7 @@ compiler_runs_native()
             exit 1
         fi
     else
-        if "$compiler" "$src" -o "$output" > "$log" 2>&1; then
+        if "$compiler" "$@" "$src" -o "$output" > "$log" 2>&1; then
             :
         else
             code=$?
