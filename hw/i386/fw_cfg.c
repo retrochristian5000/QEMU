@@ -19,11 +19,13 @@
 #include "hw/acpi/aml-build.h"
 #include "hw/firmware/smbios.h"
 #include "hw/i386/fw_cfg.h"
+#include "hw/i386/host-battery.h"
 #include "hw/timer/hpet.h"
 #include "hw/nvram/fw_cfg.h"
 #include "e820_memory_layout.h"
 #include "kvm/kvm_i386.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include CONFIG_DEVICES
 #include "target/i386/cpu.h"
 
@@ -178,6 +180,26 @@ FWCfgState *fw_cfg_arch_create(MachineState *ms,
     }
     fw_cfg_add_i32(fw_cfg, FW_CFG_IRQ0_OVERRIDE, 1);
     fw_cfg_add_qemu_display_mode(fw_cfg);
+
+    /*
+     * An explicit host-battery=on samples the laptop host at VM startup.
+     * SeaBIOS currently caches this eight-byte APM record at POST; no
+     * periodic or guest-initiated host battery access is implied.
+     */
+    if (PC_MACHINE(ms)->host_battery) {
+        WHPHostBattery host = {0};
+        uint8_t *wire = g_malloc(WHP_APM_WIRE_SIZE);
+
+        if (!whp_host_battery_read(&host) ||
+            !whp_host_battery_encode(&host, wire)) {
+            g_free(wire);
+            error_report("-machine host-battery=on requires exactly one "
+                         "readable internal host battery (macOS IOKit or "
+                         "Linux sysfs)");
+            exit(1);
+        }
+        fw_cfg_add_file(fw_cfg, WHP_APM_FILE, wire, WHP_APM_WIRE_SIZE);
+    }
 
     fw_cfg_add_bytes(fw_cfg, FW_CFG_HPET, &hpet_fw_cfg, sizeof(hpet_fw_cfg));
     /* allocate memory for the NUMA channel: one (64bit) word for the number

@@ -214,6 +214,20 @@ static void test_fw_cfg_no_reboot_timeout(void)
     qtest_quit(s);
 }
 
+static void test_host_battery_default_off(void)
+{
+    QTestState *s = qtest_init("-machine pc,host-battery=off");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t wire[8] = {0};
+
+    /* Generic PC guests must not receive host battery information. */
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg,
+                                     "opt/org.seabios/whp-laptop-apm",
+                                     wire, sizeof(wire)), ==, 0);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 static void test_fw_cfg_splash_time(void)
 {
     QFWCFG *fw_cfg;
@@ -249,6 +263,8 @@ int main(int argc, char **argv)
     qtest_add_func("fw_cfg/reboot_timeout", test_fw_cfg_reboot_timeout);
     qtest_add_func("fw_cfg/no_reboot_timeout", test_fw_cfg_no_reboot_timeout);
     qtest_add_func("fw_cfg/splash_time", test_fw_cfg_splash_time);
+    qtest_add_func("fw_cfg/host_battery_default_off",
+                   test_host_battery_default_off);
 
     return g_test_run();
 }

@@ -95,6 +95,14 @@ jobs:
       - name: Test automatic source refresh policy
         run: python3 scripts/tests/test-build-source-update.py
 
+      - name: Test host battery APM wire-format encoder
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -o "$test_bin" scripts/tests/test-host-battery-codec.c
+          "$test_bin"
+
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 

@@ -1503,6 +1503,16 @@ static void pc_machine_set_i8042(Object *obj, bool value, Error **errp)
     pcms->i8042_enabled = value;
 }
 
+static bool pc_machine_get_host_battery(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->host_battery;
+}
+
+static void pc_machine_set_host_battery(Object *obj, bool value, Error **errp)
+{
+    PC_MACHINE(obj)->host_battery = value;
+}
+
 static bool pc_machine_get_default_bus_bypass_iommu(Object *obj, Error **errp)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
@@ -1631,6 +1641,7 @@ static void pc_machine_initfn(Object *obj)
     pcms->smbus_enabled = true;
     pcms->sata_enabled = true;
     pcms->i8042_enabled = true;
+    pcms->host_battery = false; /* host telemetry is always opt-in */
     pcms->max_fw_size = 8 * MiB;
 #if defined(CONFIG_HPET)
     pcms->hpet_enabled = true;
@@ -1747,6 +1758,11 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
         pc_machine_get_hpet, pc_machine_set_hpet);
     object_class_property_set_description(oc, "hpet",
         "Enable/disable high precision event timer emulation");
+
+    object_class_property_add_bool(oc, "host-battery",
+        pc_machine_get_host_battery, pc_machine_set_host_battery);
+    object_class_property_set_description(oc, "host-battery",
+        "Opt-in host battery POST snapshot for SeaBIOS APM");
 
     object_class_property_add_bool(oc, PC_MACHINE_I8042,
         pc_machine_get_i8042, pc_machine_set_i8042);

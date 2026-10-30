@@ -1,6 +1,7 @@
 i386_ss = ss.source_set()
 i386_ss.add(files(
   'fw_cfg.c',
+  'host-battery.c',
   'e820_memory_layout.c',
   'monitor.c',
   'multiboot.c',
@@ -8,6 +9,13 @@ i386_ss.add(files(
   'x86.c',
   'x86-cpu.c',
 ))
+
+# macOS IOKit battery access is only linked for the x86 firmware bridge.
+if host_os == 'darwin'
+  if iokit.found()
+    i386_ss.add(iokit, coref)
+  endif
+endif
 
 i386_ss.add(when: 'CONFIG_APIC', if_true: files('vapic.c'))
 i386_ss.add(when: 'CONFIG_X86_IOMMU', if_true: files('x86-iommu.c'),
