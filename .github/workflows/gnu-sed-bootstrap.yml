@@ -112,7 +112,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            autoconf gettext gperf m4 texinfo wget xz-utils
+            autoconf autopoint gettext gperf m4 texinfo wget xz-utils
 
       - name: Bootstrap pinned GNU sed
         shell: bash
