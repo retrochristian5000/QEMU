@@ -92,6 +92,26 @@ jobs:
           ./cc.sh "$tmp/probe.c" -o "$tmp/probe-c"
           "$tmp/probe-c"
 
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            # Test the exact SDK passed to the final compiler, not only
+            # the separate seed-validation probe.
+            sdk="$(./scripts/whp-build/macos-developer-tools.sh 2>/dev/null || true)"
+            unset sdk
+            cat > "$tmp/sdk-recording-cc" <<'EOF'
+          #!/bin/sh
+          printf 'SDKROOT=%s\n' "${SDKROOT:-}" >> "$WHP_TEST_SDK_RECORD"
+          exec "$WHP_TEST_REAL_CC" "$@"
+          EOF
+            chmod +x "$tmp/sdk-recording-cc"
+            export WHP_TEST_REAL_CC="$cc"
+            export WHP_TEST_SDK_RECORD="$tmp/sdk-record"
+            WHP_CC_SEED="$tmp/sdk-recording-cc" ./cc.sh "$tmp/probe.c" -o "$tmp/probe-sdk"
+            "$tmp/probe-sdk"
+            expected_sdk="$(. ./scripts/whp-build/macos-developer-tools.sh; whp_apple_find_sdk)"
+            grep -Fxq "SDKROOT=$expected_sdk" "$tmp/sdk-record"
+          fi
+
+
           printf '%s\n' 'int main() { return 0; }' > "$tmp/probe.cc"
           ./cxx.sh -std=c++17 "$tmp/probe.cc" -o "$tmp/probe-cxx"
           "$tmp/probe-cxx"

@@ -88,4 +88,13 @@ case "${1:-}" in
     --print-cc|--cc) echo "error: use cc.sh for C" >&2; exit 2 ;;
 esac
 compiler=$(select_cxx)
+if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+    # The admission probe used -isysroot; carry the exact validated SDK
+    # into the real invocation too. Never let Clang silently fall back
+    # to a different SDK (or fail to find libSystem).
+    seed_sdk=$(whp_native_sdkroot) || exit 1
+    SDKROOT=$seed_sdk
+    export SDKROOT
+    exec "$compiler" -isysroot "$seed_sdk" "$@"
+fi
 exec "$compiler" "$@"

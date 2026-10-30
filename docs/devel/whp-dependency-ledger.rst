@@ -448,6 +448,14 @@ selection.
 Bootstrap compiler boundary
 ---------------------------
 
+The shared ``whp_native_sdkroot`` resolves the selected Apple SDK once
+per native probe or actual compiler invocation, validates explicit SDKROOT
+against the selected Xcode/CLT developer directory, and passes the same
+``-isysroot`` to both real ``cc.sh`` and ``cxx.sh`` invocations.
+This repairs the case where the probe succeeded with an SDK but a
+subsequent absolute-path Clang invocation failed to locate libSystem.
+Linux compiler arguments and execution paths are unchanged.
+
 The ``cc.sh`` and ``cxx.sh`` native admission probes now compile
 against C/C++ standard and POSIX ``unistd.h`` headers, link a libc
 ``access()`` call, and execute it. An empty ``main()`` alone could

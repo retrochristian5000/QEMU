@@ -12,6 +12,19 @@ is_self()
     return 1
 }
 
+# Keep SDK validation identical for the native probe and real compiler
+# execution. A user's explicit SDKROOT must belong to the selected Xcode/CLT.
+whp_native_sdkroot()
+(
+    . "$seed_root/scripts/whp-build/macos-developer-tools.sh" || exit 1
+    if [ -n "${SDKROOT:-}" ]; then
+        whp_apple_check_sdkroot "$SDKROOT" || exit 1
+        printf '%s\n' "$SDKROOT"
+    else
+        whp_apple_find_sdk
+    fi
+)
+
 # Validate build-machine toolchain behavior without target flags or loader
 # overrides. This helper is used only in compiler-selection subshells.
 whp_native_probe_environment()
@@ -113,13 +126,7 @@ compiler_runs_native()
     # selected Xcode/CLT SDK. Probe against that *same* SDK, not a Linux
     # or stale command-line default that cannot resolve libSystem.
     if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
-        . "$seed_root/scripts/whp-build/macos-developer-tools.sh"
-        if [ -n "${SDKROOT:-}" ]; then
-            whp_apple_check_sdkroot "$SDKROOT" || exit 1
-            seed_sdk=$SDKROOT
-        else
-            seed_sdk=$(whp_apple_find_sdk) || exit 1
-        fi
+        seed_sdk=$(whp_native_sdkroot) || exit 1
         set -- -isysroot "$seed_sdk"
     else
         set --

@@ -19,6 +19,7 @@ def main() -> int:
     shared = (ROOT / "scripts/whp-build/compiler-seed-common.sh").read_text(encoding="utf-8")
     require(shared, "compiler_runs_native", "native execution probe")
     require(shared, 'whp_apple_find_sdk', "native Apple SDK seed lookup")
+    require(shared, 'whp_native_sdkroot()', "shared Apple SDK identity")
     require(shared, 'whp_apple_check_sdkroot "$SDKROOT"', "explicit SDK root guard")
     require(shared, 'set -- -isysroot "$seed_sdk"', "native Apple SDK link probe")
     require(shared, 'mktemp -d', "unique native probe directory")
@@ -40,6 +41,11 @@ def main() -> int:
     require(adapter, "CC_FOR_BUILD", "C build-machine role")
     require(cxx_adapter, "CXX_FOR_BUILD", "C++ build-machine role")
     require(adapter, "use cxx.sh for C++", "C-only guard")
+    require(adapter, 'seed_sdk=$(whp_native_sdkroot)', "real C compiler SDK validation")
+    require(adapter, 'exec "$compiler" -isysroot "$seed_sdk" "$@"',
+            "real C compiler uses validated SDK")
+    require(cxx_adapter, 'exec "$compiler" -isysroot "$seed_sdk" "$@"',
+            "real C++ compiler uses validated SDK")
     require(cxx_adapter, "use cc.sh for C", "C++-only guard")
     require(adapter, "whp_apple_find_tool clang", "active Apple C selection")
     require(cxx_adapter, "whp_apple_find_tool clang++", "active Apple C++ selection")
