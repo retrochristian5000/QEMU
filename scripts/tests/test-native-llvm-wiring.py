@@ -454,13 +454,13 @@ assert '# Reuse the generated Ninja graph when the invocation is unchanged.' in 
 configure_guard = bootstrap.split(
     '# Reuse the generated Ninja graph when the invocation is unchanged.\n', 1
 )[1].split('\nif [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then', 1)[0]
-assert 'WHP_CMAKE_CONFIG_SCHEMA=1' in configure_guard
+assert 'WHP_CMAKE_CONFIG_SCHEMA=2' in configure_guard
 assert 'for env_name in PATH AR RANLIB PKG_CONFIG' in configure_guard
 assert 'CMAKE_FIND_ROOT_PATH' in configure_guard
 assert 'CMakeCache.txt' in configure_guard and 'build.ninja' in configure_guard
 assert 'cmake "${cmake_args[@]}"' in configure_guard
 assert 'rm -f "$cmake_config_marker"' in configure_guard
-assert 'LLVM_GIT_COMMIT=' not in configure_guard
+assert 'LLVM_GIT_COMMIT=' in configure_guard
 assert 'cmake --build "$LLVM_BUILD_DIR" --target distribution' in bootstrap
 
 with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
@@ -473,7 +473,8 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
         'if [ "$1" = "--version" ]; then echo "cmake version fixture"; exit 0; fi\n'
         'printf "configure\\n" >> "$WHP_CMAKE_TEST_LOG"\n'
         'mkdir -p "$LLVM_BUILD_DIR"\n'
-        'touch "$LLVM_BUILD_DIR/CMakeCache.txt" "$LLVM_BUILD_DIR/build.ninja"\n'
+        'printf "CMAKE_GENERATOR:INTERNAL=Ninja\\n" > "$LLVM_BUILD_DIR/CMakeCache.txt"\n'
+        'touch "$LLVM_BUILD_DIR/build.ninja"\n'
         '[ "${WHP_CMAKE_TEST_FAIL:-0}" != 1 ]\n', encoding='utf-8'
     )
     fake_cmake.chmod(0o755)
@@ -493,6 +494,8 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
             'cmake_args=(-S test -B "$LLVM_BUILD_DIR" ' + args + ')\n'
             'bootstrap_cc_version="clang test"\n'
             'bootstrap_cxx_version="clang++ test"\n'
+            'llvm_revision="fixture-revision"\n'
+            'LLVM_SOURCE_DIR="/fixture/llvm"\n'
             + '# Reuse the generated Ninja graph when the invocation is unchanged.\n'
             + configure_guard
         )
@@ -516,6 +519,15 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
     assert not (build_root / '.whp-native-llvm-cmake-config').exists()
     check_reconfigure('-DTEST=3', prefix='/changed/prefix',
                       expected_calls=7)
+    # Even if marker text matches, an injected cross toolchain forces
+    # another in-place configure rather than preserving a poisoned cache.
+    (build_root / 'CMakeCache.txt').write_text(
+        'CMAKE_GENERATOR:INTERNAL=Ninja\n'
+        'CMAKE_TOOLCHAIN_FILE:FILEPATH=/cross/toolchain.cmake\n',
+        encoding='utf-8',
+    )
+    check_reconfigure('-DTEST=3', prefix='/changed/prefix',
+                      expected_calls=8)
 
 # WHP Ninja reuses recorded compile/link durations to prioritize the critical
 # path on subsequent LLVM builds. It is a scheduling-only switch, not an ABI
