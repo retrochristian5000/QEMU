@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -28,7 +29,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
 SED_ADAPTER = ROOT / "sed.sh"
-SED_BOOTSTRAP_SCHEMA = "3"
+SED_BOOTSTRAP_SCHEMA = "4"
 
 
 def run_text(
@@ -444,37 +445,100 @@ def copy_source(
         )
 
 
+def select_macos_sdkroot() -> str:
+    """Use the same selected Xcode/CLT SDK guard as the compiler adapter."""
+    helper = ROOT / "scripts/whp-build/macos-developer-tools.sh"
+    requested = os.environ.get("SDKROOT", "")
+    script = (
+        '. "$1"; '
+        'if [ -n "$2" ]; then '
+        'whp_apple_check_sdkroot "$2" && printf "%s\\n" "$2"; '
+        'else whp_apple_find_sdk; fi'
+    )
+    return run_text([
+        "/bin/sh", "-c", script, "whp-sed-sdk", str(helper), requested
+    ])
+
+
 def macos_environment(env: dict[str, str]) -> tuple[str, str, str]:
     if platform.system() != "Darwin":
         return "", "", ""
 
     arch = os.environ.get("WHP_MACOS_ARCH", "auto")
-    if arch == "auto":
-        return "", "", ""
-    if arch not in ("arm64", "arm64e", "x86_64"):
+    if arch not in ("auto", "arm64", "arm64e", "x86_64"):
         raise RuntimeError(f"unsupported WHP_MACOS_ARCH for GNU sed: {arch}")
-    if not shutil.which("xcrun"):
-        raise RuntimeError("xcrun is required for an explicit macOS sed ABI")
 
-    sdkroot = os.environ.get("SDKROOT") or run_text(
-        ["xcrun", "--sdk", "macosx", "--show-sdk-path"]
-    )
+    sdkroot = select_macos_sdkroot()
+    env["SDKROOT"] = sdkroot
     deployment = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "")
+    if arch == "auto":
+        # Even without explicit -arch flags, SDKROOT is a build dependency:
+        # include it in the cache marker and share it with the CC probe.
+        return sdkroot, "", deployment
+
     if not deployment:
         version = platform.mac_ver()[0]
         parts = version.split(".")
         deployment = ".".join(parts[:2]) if version else "11.0"
+    if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){0,2}", deployment):
+        raise RuntimeError(
+            f"invalid macOS deployment target for GNU sed: {deployment}"
+        )
+    if any(char.isspace() for char in sdkroot):
+        raise RuntimeError(
+            "macOS SDKROOT containing whitespace cannot be passed safely "
+            "through Autoconf CFLAGS/LDFLAGS for explicit GNU sed -arch"
+        )
 
-    flags = shlex.join([
+    # Autoconf expands CFLAGS/LDFLAGS as shell words, not a shell command.
+    # shlex.join would insert quotes that become literal arguments there.
+    flags = " ".join([
         "-arch", arch,
         "-isysroot", sdkroot,
         f"-mmacosx-version-min={deployment}",
     ])
     env["CFLAGS"] = flags
     env["LDFLAGS"] = flags
-    env["SDKROOT"] = sdkroot
     env["MACOSX_DEPLOYMENT_TARGET"] = deployment
     return sdkroot, arch, deployment
+
+
+def validate_configure_compiler(
+    cc: str, env: dict[str, str], work: pathlib.Path
+) -> None:
+    """Compile/link/run with exactly the sanitized sed configure flags."""
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="whp-sed-cc-", dir=work) as tmp:
+        directory = pathlib.Path(tmp)
+        source = directory / "probe.c"
+        output = directory / "probe"
+        source.write_text(
+            '#include <stdio.h>\\n'
+            'int main(void) { return puts("whp-sed-native-cc") < 0; }\\n',
+            encoding="utf-8",
+        )
+        command = [
+            cc,
+            *shlex.split(env.get("CPPFLAGS", "")),
+            *shlex.split(env.get("CFLAGS", "")),
+            str(source), "-o", str(output),
+            *shlex.split(env.get("LDFLAGS", "")),
+        ]
+        try:
+            run_text(command, cwd=directory, env=env)
+            message = run_text([str(output)], cwd=directory, env=env)
+            if message != "whp-sed-native-cc":
+                raise RuntimeError(
+                    f"unexpected native compiler probe output: {message!r}"
+                )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "GNU sed configure compiler cannot compile/link/run "
+                "with the sanitized build flags "
+                f"(CC={cc}, SDKROOT={env.get('SDKROOT', '')}, "
+                f"CFLAGS={env.get('CFLAGS', '')}, "
+                f"LDFLAGS={env.get('LDFLAGS', '')}): {exc}"
+            ) from exc
 
 
 def marker_text(
@@ -515,16 +579,33 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     marker_path = prefix / ".whp-sed-bootstrap"
 
     env = os.environ.copy()
+    # Keep target-toolchain, inherited make, and Autoconf cache settings
+    # out of this native host-tool bootstrap. Managed Autotools stay on PATH.
     for key in (
         "BASH_ENV", "ENV", "POSIXLY_CORRECT",
-        "CFLAGS", "CPPFLAGS", "LDFLAGS",
-        "AR", "AS", "LD", "NM", "RANLIB", "STRIP",
+        "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES",
+        "MAKEOVERRIDES", "MAKELEVEL",
+        "CC", "CXX", "CPP", "CXXCPP",
+        "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
+        "OBJCFLAGS", "OBJCXXFLAGS", "LIBS",
+        "AR", "ARFLAGS", "AS", "LD", "NM", "RANLIB", "STRIP",
+        "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
+        "CONFIG_SITE", "build_alias", "host_alias", "target_alias",
+        "GNULIB_SRCDIR",
     ):
         env.pop(key, None)
+    for key in tuple(env):
+        if key.startswith(("ac_cv_", "gl_cv_", "sed_cv_")):
+            env.pop(key, None)
     env["CC"] = cc
     env["WHP_SED_SEED"] = seed
     env["SED"] = str(SED_ADAPTER)
     sdkroot, arch, deployment = macos_environment(env)
+
+    # The seed compiler probe alone does not validate sed's final flags.
+    # Check the actual sanitized configure environment before touching any
+    # cached installation or staging directory.
+    validate_configure_compiler(cc, env, work)
 
     marker = marker_text(
         revision, nested_revision, cc, seed, sdkroot, arch, deployment
