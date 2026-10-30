@@ -484,6 +484,21 @@ probe is skipped. On a miss, it still runs *before* deleting installed or
 staged files. No persistent cross-run compiler attestation or force-true
 CMake compiler-workaround variable is introduced.
 
+Native LLVM compiler-selection shortcut
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``scripts/bootstrap-native-clang.bash`` reuses ``CC_FOR_BUILD`` and
+``CXX_FOR_BUILD`` when they are available from the public build entry.
+Explicit ``NATIVE_LLVM_BOOTSTRAP_CC`` and ``NATIVE_LLVM_BOOTSTRAP_CXX``
+take precedence and are validated directly with their native seed adapters;
+the unused default candidates are not probed first. A standalone LLVM build
+without either seed still uses the adapters. Only the duplicate arm64e
+C/C++ ABI compile/link/run is skipped after both languages have succeeded
+earlier in that same shell invocation. Neither LP64 checks, target-triple
+consistency, C++ standard selection, the CMake compiler tests, nor installed
+LLVM runtime checks are bypassed. No persistent compiler-success token is
+introduced.
+
 The ``cc.sh`` and ``cxx.sh`` native admission probes now compile
 against C/C++ standard and POSIX ``unistd.h`` headers, link a libc
 ``access()`` call, and execute it. An empty ``main()`` alone could

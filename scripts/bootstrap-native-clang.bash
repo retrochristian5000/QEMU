@@ -391,17 +391,28 @@ cmake_darwin_runtime_args=()
 darwin_runtime_native_arch_only=OFF
 sdkroot=""
 deployment_target=""
-seed_cc="${CC_FOR_BUILD:-}"
-seed_cxx="${CXX_FOR_BUILD:-}"
-if [[ -z "$seed_cc" ]]; then
-    seed_cc="$("$SOURCE_DIR/cc.sh" --print-cc)"
+# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN
+# Do not probe an unrelated default compiler when an explicit LLVM seed is
+# selected. Explicit overrides must still pass the normal native adapter
+# compile/link/run check; an inherited build role was already admitted by
+# build.sh and can be reused without re-running cc.sh/cxx.sh.
+if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CC:-}" ]]; then
+    bootstrap_cc="$(WHP_CC_SEED="$NATIVE_LLVM_BOOTSTRAP_CC" \
+        "$SOURCE_DIR/cc.sh" --print-cc)" || exit 1
+elif [[ -n "${CC_FOR_BUILD:-}" ]]; then
+    bootstrap_cc="$CC_FOR_BUILD"
+else
+    bootstrap_cc="$("$SOURCE_DIR/cc.sh" --print-cc)" || exit 1
 fi
-if [[ -z "$seed_cxx" ]]; then
-    seed_cxx="$("$SOURCE_DIR/cxx.sh" --print-cxx)"
+if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CXX:-}" ]]; then
+    bootstrap_cxx="$(WHP_CXX_SEED="$NATIVE_LLVM_BOOTSTRAP_CXX" \
+        "$SOURCE_DIR/cxx.sh" --print-cxx)" || exit 1
+elif [[ -n "${CXX_FOR_BUILD:-}" ]]; then
+    bootstrap_cxx="$CXX_FOR_BUILD"
+else
+    bootstrap_cxx="$("$SOURCE_DIR/cxx.sh" --print-cxx)" || exit 1
 fi
-
-bootstrap_cc="${NATIVE_LLVM_BOOTSTRAP_CC:-$seed_cc}"
-bootstrap_cxx="${NATIVE_LLVM_BOOTSTRAP_CXX:-$seed_cxx}"
+# WHP_NATIVE_LLVM_SEED_SELECTION_END
 
 if [[ "$host_os" == macos ]]; then
     for tool in xcrun sw_vers; do
@@ -504,6 +515,9 @@ SOURCE
 }
 
 if [[ "$host_os" == macos ]]; then
+    # Only a successful explicit arm64e C *and* C++ admission may set this
+    # local shortcut. Reuse it only inside this invocation, never on disk.
+    macos_arm64e_prechecked=0
     requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"
     case "$requested_macos_arch" in
         auto|arm64|arm64e|x86_64) ;;
@@ -539,6 +553,7 @@ if [[ "$host_os" == macos ]]; then
                         exit 1
                     fi
                     darwin_cmake_arch=arm64e
+                    macos_arm64e_prechecked=1
                     ;;
                 *)
                     printf 'error: requested native LLVM macOS architecture is not native to Apple Silicon: %s\n' \
@@ -561,11 +576,17 @@ if [[ "$host_os" == macos ]]; then
 
     # The effective host compiler ABI is the selected macOS target, not just
     # the processor reported by uname. Probe both languages for the exact ABI.
-    if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch" ||
-       ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"; then
-        printf 'error: native LLVM macOS host ABI is unavailable: %s\n' \
-            "$darwin_cmake_arch" >&2
-        exit 1
+    # Explicit arm64e already compiled, linked and executed both authenticated
+    # function-pointer probes above. Do not repeat them a second time.
+    if [[ "$macos_arm64e_prechecked" != 1 ]]; then
+        if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch" ||
+           ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"; then
+            printf 'error: native LLVM macOS host ABI is unavailable: %s\n' \
+                "$darwin_cmake_arch" >&2
+            exit 1
+        fi
+    else
+        printf 'WHP native LLVM: reusing verified C/C++ arm64e host ABI\n' >&2
     fi
     printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
     cmake_host_args=(
