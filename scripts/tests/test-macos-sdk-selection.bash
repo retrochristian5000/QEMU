@@ -5,6 +5,8 @@ set -euo pipefail
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/whp-macos-sdk-test.XXXXXX")"
 trap 'rm -rf "$TEST_DIR"' EXIT
+# Expose the exact failed assertion instead of an empty CI exit status.
+trap 'status=$?; printf "error: macOS SDK selection check failed at line %s (exit %s): %s\\n" "$LINENO" "$status" "$BASH_COMMAND" >&2' ERR
 
 # Test tools and SDKs must belong to the selected Apple developer root,
 # rather than being rejected before compiler/SDK validation can run.
