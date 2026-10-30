@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Native seed probes must explain real failures without contaminating stdout.
-set -euo pipefail
+set -Eeuo pipefail
+# A bare 'test' or 'grep' can fail silently under -e; keep the exact
+# regression line visible without logging secrets or compiler flags.
+trap 'code=$?; printf "error: compiler regression check failed at line %s (exit %s)\n" "$LINENO" "$code" >&2' ERR
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/whp-build/compiler-seed-common.sh"
 seed_root="$ROOT"  # Same source root as cc.sh and cxx.sh.
