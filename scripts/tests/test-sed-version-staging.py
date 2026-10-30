@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
+import shutil
 import tempfile
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "ensure-sed.py"
@@ -72,4 +75,71 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-version-") as td:
     finally:
         mod.run_text = original_run_text
 
-print("GNU sed version staging policy: verified")
+
+
+# The selected CC must work with the *final* sanitized Autoconf environment,
+# rather than only pass the earlier adapter's no-flags native seed test.
+with tempfile.TemporaryDirectory(prefix="whp-sed-cc-contract-") as td:
+    work = pathlib.Path(td)
+    cc = shutil.which("cc") or shutil.which("clang")
+    if not cc:
+        raise SystemExit("error: no native C compiler for GNU sed smoke regression")
+    env = os.environ.copy()
+    for key in ("CFLAGS", "CPPFLAGS", "LDFLAGS"):
+        env.pop(key, None)
+    mod.validate_configure_compiler(cc, env, work)
+
+    invalid = dict(env, CFLAGS="-fwhp-sed-deliberately-invalid-option")
+    try:
+        mod.validate_configure_compiler(cc, invalid, work)
+    except RuntimeError as exc:
+        if "GNU sed configure compiler cannot compile/link/run" not in str(exc):
+            raise
+        if "CFLAGS=-fwhp-sed-deliberately-invalid-option" not in str(exc):
+            raise SystemExit("error: sed failed CC probe without flag diagnostics")
+    else:
+        raise SystemExit("error: GNU sed accepted unusable configure compiler flags")
+
+    if list(work.glob("whp-sed-cc-*")):
+        raise SystemExit("error: GNU sed compiler probe leaked a staging directory")
+
+# Explicit -arch must be checked against its matching SDK and deployment.
+# Auto mode still pins the SDK identity to prevent stale bootstrap reuse.
+with patch.object(mod.platform, "system", return_value="Darwin"), \
+     patch.object(mod, "select_macos_sdkroot", return_value="/mock/MacOSX.sdk"):
+    with patch.dict(os.environ, {
+        "WHP_MACOS_ARCH": "auto",
+        "MACOSX_DEPLOYMENT_TARGET": "",
+    }):
+        apple_env = {}
+        sdk, arch, deployment = mod.macos_environment(apple_env)
+        if sdk != "/mock/MacOSX.sdk" or arch or deployment:
+            raise SystemExit("error: sed auto SDK cache identity was lost")
+        if apple_env.get("SDKROOT") != sdk or "CFLAGS" in apple_env:
+            raise SystemExit("error: sed auto SDK selection changed build flags")
+
+    with patch.dict(os.environ, {
+        "WHP_MACOS_ARCH": "arm64e",
+        "MACOSX_DEPLOYMENT_TARGET": "15.0",
+    }):
+        apple_env = {}
+        sdk, arch, deployment = mod.macos_environment(apple_env)
+        expected = "-arch arm64e -isysroot /mock/MacOSX.sdk -mmacosx-version-min=15.0"
+        if (arch != "arm64e" or deployment != "15.0" or
+            apple_env.get("CFLAGS") != expected or
+            apple_env.get("LDFLAGS") != expected):
+            raise SystemExit("error: sed explicit arm64e flags are inconsistent")
+
+    with patch.dict(os.environ, {
+        "WHP_MACOS_ARCH": "arm64e",
+        "MACOSX_DEPLOYMENT_TARGET": "invalid",
+    }):
+        try:
+            mod.macos_environment({})
+        except RuntimeError as exc:
+            if "invalid macOS deployment target" not in str(exc):
+                raise
+        else:
+            raise SystemExit("error: malformed deployment target was accepted")
+
+print("GNU sed version and compiler staging policy: verified")
