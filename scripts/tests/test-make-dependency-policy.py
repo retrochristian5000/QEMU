@@ -45,6 +45,12 @@ def main() -> int:
     make_bootstrap = (ROOT / "scripts/ensure-make.py").read_text(encoding="utf-8")
     require(make_bootstrap, 'MAKE_BOOTSTRAP_SCHEMA = "6"', "GNU Make bootstrap schema")
     require(make_bootstrap, "GNULIB_COMMIT", "pinned gnulib revision")
+    require(make_bootstrap, "def validate_autoconf_contract():",
+            "Make fork Autoconf contract check")
+    require(make_bootstrap, '"AC_TRY_COMPILE(" in macros or "AC_FD_MSG" in macros',
+            "obsolete Autoconf macro rejection")
+    require(make_bootstrap, "validate_autoconf_contract()",
+            "Autoconf contract validation runs during Make bootstrap")
     require(make_bootstrap, '"--disable-dependency-tracking"', "Make configure profile")
     require(make_bootstrap, 'companion("autoheader", "AUTOHEADER")', "coherent Autoconf suite")
     require(make_bootstrap, 'bootstrap_required_version("automake")', "Make-declared Automake minimum")

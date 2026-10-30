@@ -18,6 +18,21 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+GNU Make source Autoconf compatibility
+------------------------------------
+
+The WHP Make fork and its QEMU gitlink must agree on declared Autoconf and
+Automake minima: ``configure.ac`` matches the versions in
+``bootstrap.conf`` (currently Autoconf 2.72, Automake 1.16.5).
+The legacy Make-specific ``gl/m4/acinclude.m4`` timestamp probe now uses
+``AC_COMPILE_IFELSE`` rather than obsolete ``AC_TRY_COMPILE``, and
+its network-library detection reports cache hits with ``AC_MSG_RESULT``
+rather than the obsolete ``AC_FD_MSG`` descriptor. The Make helper checks
+these source contracts before generating Autoconf output. These corrections
+remove real obsolescence warnings; they are distinct from the previously
+repaired macOS SDK/libSystem handoff. Source/gnulib caches remain keyed to
+their pinned revisions, without clearing them to mask failures.
+
 GNU Make native SDK handoff
 ----------------------------
 

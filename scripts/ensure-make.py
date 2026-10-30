@@ -419,6 +419,37 @@ def ensure_source():
     return revision
 
 
+def validate_autoconf_contract():
+    """Reject obsolete Make-side M4 probes before source regeneration."""
+    source = (SUBMODULE_DIR / "configure.ac").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    macros = (SUBMODULE_DIR / "gl/m4/acinclude.m4").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    required_autoconf = bootstrap_required_version("autoconf")
+    required_automake = bootstrap_required_version("automake")
+    if f"AC_PREREQ([{required_autoconf}])" not in source:
+        raise RuntimeError(
+            "GNU Make configure.ac Autoconf minimum does not match "
+            f"bootstrap.conf ({required_autoconf})"
+        )
+    if f"AM_INIT_AUTOMAKE([{required_automake} " not in source:
+        raise RuntimeError(
+            "GNU Make configure.ac Automake minimum does not match "
+            f"bootstrap.conf ({required_automake})"
+        )
+    if "AC_TRY_COMPILE(" in macros or "AC_FD_MSG" in macros:
+        raise RuntimeError(
+            "GNU Make macro source still uses obsolete Autoconf probes"
+        )
+    if ("AC_COMPILE_IFELSE(" not in macros
+        or "AC_MSG_RESULT([$cf_cv_netlibs])" not in macros):
+        raise RuntimeError(
+            "GNU Make is missing the compatible replacement Autoconf macros"
+        )
+
+
 def validate_modern_c_prototypes():
     getenv_prototype = "extern char *getenv (const char *);"
     stale_getenv = "extern char *getenv ();"
@@ -697,6 +728,7 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
 
 def bootstrap(build_root):
     revision = ensure_source()
+    validate_autoconf_contract()
     validate_modern_c_prototypes()
     required_automake = bootstrap_required_version("automake")
     required_autoconf = bootstrap_required_version("autoconf")
