@@ -9,7 +9,7 @@ from contextlib import ExitStack
 import pathlib
 import shutil
 import tempfile
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "ensure-sed.py"
@@ -245,14 +245,7 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-cc-reuse-") as td:
     # downloading sources, configuring sed or invoking a compiler.
     with ExitStack() as stack:
         for name, value in fixtures.items():
-            if name == "macos_environment":
-                stack.enter_context(
-                    patch.object(mod, name, return_value=value)
-                )
-            else:
-                stack.enter_context(
-                    patch.object(mod, name, return_value=value)
-                )
+            stack.enter_context(patch.object(mod, name, return_value=value))
         compile_probe = stack.enter_context(
             patch.object(mod, "validate_configure_compiler")
         )
