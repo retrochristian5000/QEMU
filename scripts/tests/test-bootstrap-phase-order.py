@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 build = (ROOT / "build.sh").read_text(encoding="utf-8")
@@ -107,5 +108,23 @@ require(jack, 'build_env = "CC_FOR_BUILD"', "JACK seed fallback")
 ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
 require(ledger, "Bootstrap phase ordering", "phase-order ledger")
 require(ledger, "Artifact-library phase", "artifact phase ledger")
+
+# GitHub policy rejects floating checkout tags before any bootstrap can run.
+checkout_use = re.compile(r"^\s*(?:-\s*)?uses:\s*actions/checkout@([^\s#]+)", re.M)
+for name in (
+    "compiler-seed-adapter.yml",
+    "git-bootstrap.yml",
+    "windows-python-launcher.yml",
+    "bundled-ninja-fallback.yml",
+    "sdl-bootstrap.yml",
+):
+    workflow = (ROOT / ".github/workflows" / name).read_text(
+        encoding="utf-8"
+    )
+    refs = checkout_use.findall(workflow)
+    if not refs or any(not re.fullmatch(r"[a-f0-9]{40}", ref) for ref in refs):
+        raise SystemExit(
+            f"error: {name} must pin all actions/checkout calls to full SHAs"
+        )
 
 print("WHP bootstrap phase ordering: verified")

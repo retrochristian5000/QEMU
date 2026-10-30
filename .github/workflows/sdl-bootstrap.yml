@@ -71,8 +71,8 @@ jobs:
               raise SystemExit(f"SDL3 bootstrap is too old: {sys.argv[1]}")
           PY
 
-          if ! find "$prefix" -type f -name 'libSDL3*.a' -print -quit | grep -q .; then
-            echo "error: SDL3 bootstrap did not install a static library" >&2
+          if ! find "$prefix" -type f -name 'libSDL3.so*' -size +0c -print -quit | grep -q .; then
+            echo "error: SDL3 bootstrap did not install a shared ELF library" >&2
             exit 1
           fi
 

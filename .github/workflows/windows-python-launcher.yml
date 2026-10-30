@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Reproduce Windows Python launcher discovery
         run: bash scripts/tests/test-windows-python-launcher.bash
@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Verify Windows launcher path boundary
         shell: bash

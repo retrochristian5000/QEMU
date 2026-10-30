@@ -18,6 +18,13 @@ on:
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/tests/test-zlib-bootstrap.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/compiler-seed-adapter.yml'
+      - '.github/workflows/git-bootstrap.yml'
+      - '.github/workflows/windows-python-launcher.yml'
+      - '.github/workflows/bundled-ninja-fallback.yml'
+      - '.github/workflows/sdl-bootstrap.yml'
+      - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-sdl-bootstrap.py'
       - '.github/workflows/bootstrap-phase-order.yml'
   pull_request:
     paths:
@@ -35,6 +42,13 @@ on:
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/tests/test-zlib-bootstrap.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - '.github/workflows/compiler-seed-adapter.yml'
+      - '.github/workflows/git-bootstrap.yml'
+      - '.github/workflows/windows-python-launcher.yml'
+      - '.github/workflows/bundled-ninja-fallback.yml'
+      - '.github/workflows/sdl-bootstrap.yml'
+      - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-sdl-bootstrap.py'
       - '.github/workflows/bootstrap-phase-order.yml'
 
 permissions:

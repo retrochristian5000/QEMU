@@ -107,11 +107,25 @@ def main() -> int:
         '"extern int getopt (int argc, char *const *argv, "',
         "GNU Make getopt prototype contract",
     )
-    require(
-        make_bootstrap,
-        "revision = ensure_source()\n    validate_modern_c_prototypes()",
-        "GNU Make prototype validation ordering",
+    # Validate actual bootstrap call order without requiring adjacency.
+    bootstrap_body = make_bootstrap.split("def bootstrap(build_root):", 1)[1]
+    stages = (
+        "revision = ensure_source()",
+        "validate_autoconf_contract()",
+        "validate_modern_c_prototypes()",
+        'required_automake = bootstrap_required_version("automake")',
     )
+    try:
+        offsets = tuple(bootstrap_body.index(stage) for stage in stages)
+    except ValueError as exc:
+        raise SystemExit(
+            f"error: missing GNU Make validation bootstrap call: {exc}"
+        ) from exc
+    if tuple(sorted(offsets)) != offsets:
+        raise SystemExit(
+            "error: GNU Make must validate Autoconf and C prototypes "
+            "before selecting bootstrap tools"
+        )
 
     make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
     if "[[" in make_resolver or "local " in make_resolver:

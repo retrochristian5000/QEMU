@@ -75,6 +75,12 @@ def main() -> int:
     require(helper, "find_shared_sdl(prefix)", "verify installed shared SDL3 artifact")
     require(helper, '"-DSDL_INSTALL=ON"', "SDL install staging")
     require(helper, 'CMAKE_MAKE_PROGRAM', "selected Ninja handoff to SDL CMake")
+    workflow = (ROOT / ".github/workflows/sdl-bootstrap.yml").read_text(
+        encoding="utf-8"
+    )
+    require(workflow, "libSDL3.so*", "SDL CI verifies shared ELF library")
+    if "libSDL3*.a" in workflow or "did not install a static library" in workflow:
+        raise SystemExit("error: SDL CI requires static output from shared-only bootstrap")
 
     require(
         meson,
