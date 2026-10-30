@@ -69,6 +69,17 @@ jobs:
               autoconf automake autopoint gettext gcc m4 make pkg-config texinfo
           fi
 
+      - name: Validate native macOS SDK before bootstrap tools
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/whp-build/macos-developer-tools.sh
+          sdk="$(whp_apple_find_sdk)"
+          test -d "$sdk"
+          printf 'SDKROOT=%s\n' "$sdk" >> "$GITHUB_ENV"
+          echo "WHP GNU Make native SDK: $sdk"
+
       - name: Prepare managed Automake and Autoconf
         shell: bash
         run: |
@@ -117,9 +128,11 @@ jobs:
             scripts/ensure-make.py \
             scripts/tests/test-autoconf-bootstrap.py \
             scripts/tests/test-make-dependency-policy.py \
+            scripts/tests/test-make-configure-sdk.py \
             scripts/tests/test-make-gnulib-cache.py
           python3 scripts/tests/test-autoconf-bootstrap.py
           python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-configure-sdk.py
           python3 scripts/tests/test-make-gnulib-cache.py
 
       - name: Bootstrap managed GNU Make with target poison
@@ -165,6 +178,9 @@ jobs:
           test -f "$marker"
           grep -Fxq 'MAKE_BOOTSTRAP_SCHEMA=6' "$marker"
           grep -Fq 'CONFIG_SHELL=/bin/sh|' "$marker"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            grep -Fxq "SDKROOT=$SDKROOT" "$marker"
+          fi
           grep -Fq 'CONFIGURE_ARGS=--disable-dependency-tracking --disable-nls --without-guile' "$marker"
 
           test -f "$build_root/bootstrap/make/build/build.cfg"

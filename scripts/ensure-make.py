@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/make")
@@ -308,6 +309,43 @@ def select_seed_sed():
     if completed.returncode != 0 or not seed:
         raise RuntimeError("QEMU sed.sh could not resolve the GNU Make bootstrap seed")
     return seed
+
+
+def select_macos_sdkroot():
+    """Select an SDK bound to the active Xcode/CLT installation."""
+    if platform.system() != "Darwin":
+        return ""
+    helper = ROOT / "scripts" / "whp-build" / "macos-developer-tools.sh"
+    requested = os.environ.get("SDKROOT", "")
+    script = (
+        '. "$1" || exit 1; '
+        'if [ -n "$2" ]; then '
+        'whp_apple_check_sdkroot "$2" || exit 1; '
+        'printf "%s\\n" "$2"; '
+        'else whp_apple_find_sdk; fi'
+    )
+    sdkroot = run_text(["/bin/sh", "-c", script, "whp-make-sdk",
+                        str(helper), requested])
+    if not sdkroot or not pathlib.Path(sdkroot).is_dir():
+        raise RuntimeError("selected macOS SDK is not available for GNU Make")
+    return sdkroot
+
+
+def validate_configure_compiler(cc, env, work):
+    """Compile, link and execute with the exact sanitized configure env."""
+    with tempfile.TemporaryDirectory(prefix="make-cc-probe-", dir=work) as tmp:
+        directory = pathlib.Path(tmp)
+        source = directory / "probe.c"
+        output = directory / "probe"
+        source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+        try:
+            run_text([cc, str(source), "-o", str(output)], cwd=directory, env=env)
+            run_text([str(output)], cwd=directory, env=env)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "GNU Make configure host compiler cannot link/run a native "
+                f"binary (CC={cc}, SDKROOT={env.get('SDKROOT', '')}): {exc}"
+            ) from exc
 
 
 def select_cc():
@@ -628,7 +666,7 @@ def ensure_generated_source(
 def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
                 autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
                 config_shell, required_automake, required_autoconf,
-                aclocal_path):
+                aclocal_path, sdkroot):
     return (
         f"MAKE_BOOTSTRAP_SCHEMA={MAKE_BOOTSTRAP_SCHEMA}\n"
         f"MAKE_GIT_COMMIT={revision}\n"
@@ -637,6 +675,7 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
         f"REQUIRED_AUTOCONF={required_autoconf}\n"
         f"HOST_SYSTEM={platform.system()}\n"
         f"HOST_MACHINE={platform.machine()}\n"
+        f"SDKROOT={sdkroot}\n"
         f"SEED_MAKE={seed_make}: {first_line([seed_make, '--version'])}\n"
         f"AUTOMAKE={automake}: {first_line([automake, '--version'])}\n"
         f"ACLOCAL={aclocal}: {first_line([aclocal, '--version'])}\n"
@@ -666,6 +705,10 @@ def bootstrap(build_root):
     autoconf, autom4te, autoheader, autoreconf = select_autoconf_suite(
         required_autoconf
     )
+    sdkroot = select_macos_sdkroot()
+    if sdkroot:
+        # Reuse the exact SDK for the cc.sh probe, configure, and build.sh.
+        os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
     sed = select_seed_sed()
     git = tool("git")
@@ -687,6 +730,7 @@ def bootstrap(build_root):
         revision, seed_make, automake, aclocal, autoconf, autom4te,
         autoheader, autoreconf, cc, sed, git, autopoint, pkg_config,
         config_shell, required_automake, required_autoconf, aclocal_path,
+        sdkroot,
     )
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
@@ -744,6 +788,8 @@ def bootstrap(build_root):
         "MAKEINFO": "true",
         "ACLOCAL_PATH": aclocal_path,
     })
+    if sdkroot:
+        env["SDKROOT"] = sdkroot
     env["PATH"] = os.pathsep.join([
         str(seed_bin),
         str(pathlib.Path(automake).parent),
@@ -752,6 +798,8 @@ def bootstrap(build_root):
         str(pathlib.Path(pkg_config).parent),
         env.get("PATH", ""),
     ])
+
+    validate_configure_compiler(cc, env, work)
 
     generation_marker = generation_marker_text(
         revision, automake, aclocal, autoconf, autom4te, autoheader,

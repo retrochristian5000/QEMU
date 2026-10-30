@@ -18,6 +18,20 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+GNU Make native SDK handoff
+----------------------------
+
+On macOS, a compiler that links a bootstrap probe with explicit
+``-isysroot`` is not proof that GNU Make's later Autoconf ``configure`` and
+no-Make ``build.sh`` steps inherit the SDK. The managed Make helper validates
+the selected Xcode/CLT root and exports the same ``SDKROOT`` through compiler
+selection, configure, and the build stage, rather than falling back to an
+unrelated developer root. A compile/link/execute probe using the sanitized
+configure environment catches missing libSystem before source generation.
+The configured-tool marker includes ``SDKROOT`` so output from a different
+SDK cannot be reused. Target compiler/linker flags and Autoconf cache
+variables remain isolated.
+
 The gitlink recorded by the QEMU commit is authoritative.  A branch named in
 ``.gitmodules`` is discovery metadata, not permission to build an arbitrary
 branch tip.

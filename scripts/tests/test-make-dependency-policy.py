@@ -53,6 +53,13 @@ def main() -> int:
     require(make_bootstrap, 'versions = {autoconf_version(path) for path in suite}', "Autoconf suite version guard")
     require(make_bootstrap, 'for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL")', "configuration shell selection")
     require(make_bootstrap, '"CONFIG_SHELL": config_shell', "configuration shell export")
+    require(make_bootstrap, "def select_macos_sdkroot():", "macOS Make SDK resolver")
+    require(make_bootstrap, 'whp_apple_check_sdkroot "$2"', "selected native Apple SDK")
+    require(make_bootstrap, 'os.environ["SDKROOT"] = sdkroot', "compiler seed SDK")
+    require(make_bootstrap, 'env["SDKROOT"] = sdkroot', "Make configure SDK")
+    require(make_bootstrap, 'f"SDKROOT={sdkroot}', "SDK in Make cache identity")
+    require(make_bootstrap, "validate_configure_compiler(cc, env, work)",
+            "configure compiler link-and-run preflight")
     require(make_bootstrap, '"build_alias", "host_alias", "target_alias"', "configure environment isolation")
     require(make_bootstrap, 'key.startswith(("ac_cv_", "gl_cv_", "make_cv_"))', "Autoconf cache isolation")
     require(make_bootstrap, 'configured_build = objects / "build.sh"', "configured build.sh handoff")
