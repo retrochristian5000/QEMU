@@ -26,7 +26,9 @@ assert 'native LLVM host build requires a MacOSX.sdk' in text
 arch_probe = text.split('compiler_supports_macos_arch()', 1)[1].split(
     'if [[ "$host_os" == macos ]]; then', 1
 )[0]
-assert 'if [[ "$arch" == arm64e ]]; then' in arch_probe
+assert 'arm64e)' in arch_probe
+assert 'arm64)' in arch_probe
+assert 'x86_64)' in arch_probe
 assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in arch_probe
 assert '#if !__has_feature(ptrauth_calls)' in arch_probe
 assert 'int (*volatile callback)(void)' in arch_probe
@@ -191,3 +193,102 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-arm64e-once-') as td:
     assert 'unsupported' in failing.stderr, failing.stderr
 
 print('native LLVM one-shot arm64e C/C++ probe: verified')
+
+
+# Exercise the actual bootstrap ABI function with a controlled compiler
+# driver. Static string checks cannot establish that the selected ISA is
+# included in the compilation source or that failures remain diagnosable.
+arch_function = (
+    'compiler_supports_macos_arch()\n{' +
+    text.split('compiler_supports_macos_arch()\n{', 1)[1].split(
+        '\nif [[ "$host_os" == macos ]]; then', 1
+    )[0]
+)
+with tempfile.TemporaryDirectory(prefix='whp-llvm-abi-stage-') as td:
+    root = Path(td)
+    fake_cc = root / 'mock-cc'
+    source_file = root / 'source.c'
+    fake_cc.write_text(
+        '#!/bin/sh\n'
+        'out=""\n'
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case "$1" in\n'
+        '    -o) out=$2; shift 2 ;;\n'
+        '    *) shift ;;\n'
+        '  esac\n'
+        'done\n'
+        'cat > "$WHP_ABI_SOURCE_LOG"\n'
+        'if [ "$WHP_ABI_MOCK_MODE" = compile ]; then\n'
+        '  echo "WHP_MOCK_ABI_COMPILE_LINK_FAILURE" >&2\n'
+        '  exit 61\n'
+        'fi\n'
+        'cat > "$out" <<\'SOURCE\'\n'
+        '#!/bin/sh\n'
+        'if [ "$WHP_ABI_MOCK_MODE" = execute ]; then\n'
+        '  echo "WHP_MOCK_ABI_EXEC_FAILURE" >&2\n'
+        '  exit 62\n'
+        'fi\n'
+        'exit 0\n'
+        'SOURCE\n'
+        'chmod +x "$out"\n',
+        encoding='utf-8',
+    )
+    fake_cc.chmod(0o755)
+
+    def run_probe(arch: str, language='c', mode='ok'):
+        source_file.unlink(missing_ok=True)
+        env = dict(
+            os.environ, TMPDIR=str(root),
+            WHP_ABI_SOURCE_LOG=str(source_file),
+            WHP_ABI_MOCK_MODE=mode,
+        )
+        shell = (
+            'set -euo pipefail\n'
+            'sdkroot=/mock/MacOSX.sdk\n'
+            'deployment_target=26.0\n' + arch_function +
+            '\ncompiler_supports_macos_arch "$1" "$2" "$3"\n'
+        )
+        result = subprocess.run(
+            ['bash', '-c', shell, 'whp-abi-probe', str(fake_cc),
+             language, arch],
+            env=env, text=True, capture_output=True, check=False,
+        )
+        # No successful or rejected native probe may leak temporary files.
+        assert not list(root.glob('whp-native-llvm-arch.*'))
+        return result, (
+            source_file.read_text(encoding='utf-8')
+            if source_file.exists() else ''
+        )
+
+    for arch, arch_guard in (
+        ('arm64', '#if !defined(__aarch64__) || defined(__arm64e__)'),
+        ('arm64e', '#if !defined(__arm64e__) || !defined(__PTRAUTH__)'),
+        ('x86_64', '#if !defined(__x86_64__) || defined(__arm64e__)'),
+    ):
+        for language in ('c', 'c++'):
+            outcome, c_source = run_probe(arch, language)
+            assert outcome.returncode == 0, (arch, language, outcome.stderr)
+            assert arch_guard in c_source, (arch, language, c_source)
+            assert '#include <TargetConditionals.h>' in c_source
+            assert 'sizeof(void *) == 8 && sizeof(long) == 8' in c_source
+            assert ('int (*volatile callback)(void)' in c_source) == (
+                arch == 'arm64e'
+            )
+
+    failed, _ = run_probe('arm64', 'c', 'compile')
+    assert failed.returncode != 0
+    assert 'ABI compile/link failed (exit 61)' in failed.stderr
+    assert 'WHP_MOCK_ABI_COMPILE_LINK_FAILURE' in failed.stderr
+    assert 'SDK: /mock/MacOSX.sdk' in failed.stderr
+    assert 'deployment: 26.0' in failed.stderr
+
+    failed, _ = run_probe('arm64e', 'c++', 'execute')
+    assert failed.returncode != 0
+    assert 'ABI executable failed (exit 62)' in failed.stderr
+    assert 'WHP_MOCK_ABI_EXEC_FAILURE' in failed.stderr
+
+    failed, _ = run_probe('other')
+    assert failed.returncode != 0
+    assert 'unsupported native LLVM macOS ABI probe architecture' in failed.stderr
+
+print('native LLVM C/C++ ABI-stage failure diagnostics: verified')
