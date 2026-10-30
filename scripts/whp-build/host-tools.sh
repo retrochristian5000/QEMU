@@ -62,13 +62,17 @@ if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
     fi
 
     if ! whp_automake_pair_usable "${AUTOMAKE:-}" "${ACLOCAL:-}"; then
-        if whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
-            AUTOMAKE=$WHP_HOST_AUTOMAKE
-            ACLOCAL=$WHP_HOST_ACLOCAL
-        elif [ "$BOOTSTRAP_AUTOMAKE" = 1 ]; then
+        # Probes intentionally skip expensive bootstraps. Normal force mode
+        # must never silently accept the system Automake after a failed pin.
+        if [ "$BOOTSTRAP_AUTOMAKE" = 1 ] &&
+           [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+           [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
             printf '%s\n' \
                 'error: BOOTSTRAP_AUTOMAKE=1 requested the pinned WHP Automake, but its bootstrap failed.' >&2
             exit 1
+        elif whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
+            AUTOMAKE=$WHP_HOST_AUTOMAKE
+            ACLOCAL=$WHP_HOST_ACLOCAL
         else
             AUTOMAKE=
             ACLOCAL=
@@ -183,13 +187,16 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
     fi
 
     if ! whp_autoconf_pair_usable "${AUTOCONF:-}" "${AUTOM4TE:-}"; then
-        if whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
-            AUTOCONF=$WHP_HOST_AUTOCONF
-            AUTOM4TE=$WHP_HOST_AUTOM4TE
-        elif [ "$BOOTSTRAP_AUTOCONF" = 1 ]; then
+        # Keep the same force/probe distinction as the Automake stage.
+        if [ "$BOOTSTRAP_AUTOCONF" = 1 ] &&
+           [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+           [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
             printf '%s\n' \
                 'error: BOOTSTRAP_AUTOCONF=1 requested the pinned WHP Autoconf, but its bootstrap failed.' >&2
             exit 1
+        elif whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
+            AUTOCONF=$WHP_HOST_AUTOCONF
+            AUTOM4TE=$WHP_HOST_AUTOM4TE
         else
             AUTOCONF=
             AUTOM4TE=

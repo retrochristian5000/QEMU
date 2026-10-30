@@ -127,4 +127,21 @@ for name in (
             f"error: {name} must pin all actions/checkout calls to full SHAs"
         )
 
+# Forced tool bootstraps must reject failed pinned tools before considering
+# host fallback. Probe-only modes still avoid expensive bootstrap work.
+for tool, helper in (
+    ("AUTOMAKE", "whp_automake_pair_usable"),
+    ("AUTOCONF", "whp_autoconf_pair_usable"),
+):
+    block_start = host_tools.index(f'if ! {helper} "${{')
+    block_end = host_tools.index("    unset WHP_HOST_", block_start)
+    block = host_tools[block_start:block_end]
+    if block.index(f'if [ "$BOOTSTRAP_{tool}" = 1 ] &&') > block.index(
+        f'elif {helper} "$WHP_HOST_'
+    ):
+        raise SystemExit(f"error: forced {tool} can silently use host fallback")
+    for probe in ("WHP_SHELL_PROBE_ONLY", "WHP_PORTABLE_PROBE_ONLY"):
+        if probe not in block:
+            raise SystemExit(f"error: forced {tool} guard blocks probe-only mode")
+
 print("WHP bootstrap phase ordering: verified")

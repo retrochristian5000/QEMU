@@ -610,6 +610,16 @@ that same validated executable. The locked fast path avoids re-probing every
 literal grep invocation. The wrapper is in the tracked source tree, so no
 temporary PATH shim, new grep submodule or recursive grep bootstrap is needed.
 
+Bootstrap force-mode failure contract
+-------------------------------------
+
+Automake and Autoconf are promoted in dependency order. In ordinary
+``BOOTSTRAP_AUTOMAKE=1`` or ``BOOTSTRAP_AUTOCONF=1`` mode, failure to
+produce the pinned tool is fatal even if a usable system version exists.
+Only ``auto`` can fall back to the host toolchain. Shell-only and portable
+probe modes intentionally skip expensive bootstraps; they retain host
+discovery without claiming a pinned tool was built.
+
 sed/Automake bootstrap boundary
 -------------------------------
 
