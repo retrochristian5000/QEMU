@@ -104,4 +104,47 @@ for filename in ("ensure-automake.py", "ensure-autoconf.py"):
     assert 'os.environ["SDKROOT"] = sdkroot' in source, filename
     assert 'f"CONFIG_SHELL={config_shell}' in source, filename
     assert 'f"CC_FOR_BUILD={cc}' in source, filename
+# Cache reuse must be sensitive to the actual native producer identity.
+# Check both marker implementations rather than only searching their sources.
+with mock.patch.dict(module.os.environ, {
+    "SDKROOT": "/first/MacOSX.sdk",
+    "MACOSX_DEPLOYMENT_TARGET": "15.0",
+}):
+    def helper(name):
+        path = ROOT / "scripts" / name
+        info = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
+        assert info is not None and info.loader is not None
+        loaded = importlib.util.module_from_spec(info)
+        info.loader.exec_module(loaded)
+        return loaded
+
+    automake = helper("ensure-automake.py")
+    with (
+        mock.patch.object(automake, "first_line", return_value="version"),
+        mock.patch.object(automake, "tolerant_identity", return_value="seed"),
+    ):
+        args = ("revision", "seed", "perl", "autoconf", "autom4te", "make")
+        first = automake.marker_text(*args, "/native/cc", "/bin/sh")
+        assert "CC_FOR_BUILD=/native/cc" in first
+        assert "SDKROOT=/first/MacOSX.sdk" in first
+        assert automake.marker_text(*args, "/other/cc", "/bin/sh") != first
+        assert automake.marker_text(*args, "/native/cc", "/other/sh") != first
+        module.os.environ["SDKROOT"] = "/second/MacOSX.sdk"
+        assert automake.marker_text(*args, "/native/cc", "/bin/sh") != first
+
+    module.os.environ["SDKROOT"] = "/first/MacOSX.sdk"
+    autoconf = helper("ensure-autoconf.py")
+    with (
+        mock.patch.object(autoconf, "first_line", return_value="version"),
+        mock.patch.object(autoconf, "gnu_m4_version", return_value="GNU M4"),
+    ):
+        args = ("revision", "automake", "aclocal", "m4", "perl", "make", "seed")
+        first = autoconf.marker_text(*args, "/native/cc", "/bin/sh")
+        assert "CC_FOR_BUILD=/native/cc" in first
+        assert "SDKROOT=/first/MacOSX.sdk" in first
+        assert autoconf.marker_text(*args, "/other/cc", "/bin/sh") != first
+        assert autoconf.marker_text(*args, "/native/cc", "/other/sh") != first
+        module.os.environ["SDKROOT"] = "/second/MacOSX.sdk"
+        assert autoconf.marker_text(*args, "/native/cc", "/bin/sh") != first
+
 print("WHP native bootstrap environment and cache provenance: verified")
