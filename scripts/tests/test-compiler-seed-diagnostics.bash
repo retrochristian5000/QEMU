@@ -4,6 +4,7 @@
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/whp-build/compiler-seed-common.sh"
+seed_root="$ROOT"  # Same source root as cc.sh and cxx.sh.
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 export TMPDIR="$tmp"
@@ -87,4 +88,54 @@ for directory in "$tmp"/whp-cc-seed.*; do
         exit 1
     fi
 done
+
+# Reject a compiler with working link but missing C/POSIX SDK headers.
+cat > "$tmp/headerless" <<'SH'
+#!/bin/sh
+if [ "$1" = --version ]; then printf '%s\n' 'mock headerless cc'; exit 0; fi
+for item in "$@"; do
+    case "$item" in *.c|*.cc)
+        if grep -Fq '#include <unistd.h>' "$item"; then
+            printf '%s\n' 'WHP_HEADERLESS_CC: missing unistd.h' >&2
+            exit 71
+        fi ;;
+    esac
+done
+exec "$WHP_REAL_NATIVE_CC" "$@"
+SH
+chmod +x "$tmp/headerless"
+export WHP_REAL_NATIVE_CC="$(command -v cc)"
+if WHP_CC_SEED="$tmp/headerless" "$ROOT/cc.sh" --print-cc \
+    > "$tmp/stdout" 2> "$tmp/stderr"; then
+    echo 'error: headerless native C compiler passed' >&2
+    exit 1
+fi
+test ! -s "$tmp/stdout"
+grep -Fq 'WHP_HEADERLESS_CC' "$tmp/stderr"
+
+# No target include or library search override may influence seed admission.
+cat > "$tmp/env-tainted" <<'SH'
+#!/bin/sh
+if [ "$1" = --version ]; then printf '%s\n' 'mock native cc'; exit 0; fi
+for key in CPATH LIBRARY_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LD_LIBRARY_PATH; do
+    if printenv "$key" >/dev/null 2>&1; then
+        printf '%s\n' "WHP_PROBE_ENV_POISON: $key" >&2
+        exit 72
+    fi
+done
+exec "$WHP_REAL_NATIVE_CC" "$@"
+SH
+chmod +x "$tmp/env-tainted"
+selected="$(CPATH=/target/include LIBRARY_PATH=/target/lib \
+    C_INCLUDE_PATH=/target/c CPLUS_INCLUDE_PATH=/target/cxx \
+    LD_LIBRARY_PATH=/target/lib \
+    try_compiler c "$tmp/env-tainted" report)"
+test "$selected" = "$tmp/env-tainted"
+mkdir -p "$tmp/relative"
+cp "$tmp/env-tainted" "$tmp/relative/relative-cc"
+(
+    cd "$tmp"
+    selected="$(try_compiler c relative/relative-cc report)"
+    test "$selected" = "$tmp/relative/relative-cc"
+)
 printf '%s\n' 'WHP compiler seed failure diagnostics: verified'

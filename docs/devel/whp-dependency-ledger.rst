@@ -448,6 +448,14 @@ selection.
 Bootstrap compiler boundary
 ---------------------------
 
+The ``cc.sh`` and ``cxx.sh`` native admission probes now compile
+against C/C++ standard and POSIX ``unistd.h`` headers, link a libc
+``access()`` call, and execute it. An empty ``main()`` alone could
+accept a compiler with a missing macOS SDK. Probe subprocesses isolate
+target include/library variables and injected loader search paths;
+normal compiler invocations still receive all caller arguments and flags.
+Relative explicit compiler seed paths are made absolute before promotion.
+
 ``cc.sh`` and ``cxx.sh`` are separate C and C++17 seed entry points.
 They share the native compile/link/run probe, but each selects only its own
 language driver. C++ selection first tries the driver paired with the native

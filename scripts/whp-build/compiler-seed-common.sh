@@ -22,17 +22,26 @@ resolve_executable()
         [ "$report" = report ] && printf 'error: empty build compiler selection\n' >&2
         exit 1
     fi
-    if [ -x "$value" ]; then
-        candidate=$value
-    else
-        case "$value" in
-            */*|*[[:space:]]*)
+    case "$value" in
+        */*)
+            if [ ! -x "$value" ]; then
                 [ "$report" = report ] &&
                     printf 'error: compiler path is not executable: %s\n' "$value" >&2
+                exit 1
+            fi
+            # A relative seed must survive configure's working-directory change.
+            dir=$(CDPATH= cd -P -- "${value%/*}" && pwd -P) || exit 1
+            candidate=$dir/${value##*/}
+            ;;
+        *)
+            case "$value" in *[[:space:]]*)
+                [ "$report" = report ] &&
+                    printf 'error: compiler command must be one token: %s\n' "$value" >&2
                 exit 1 ;;
-        esac
-        candidate=$(command -v "$value" 2>/dev/null || true)
-    fi
+            esac
+            candidate=$(command -v "$value" 2>/dev/null || true)
+            ;;
+    esac
     if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
         [ "$report" = report ] &&
             printf 'error: build compiler cannot be found or executed: %s\n' "$value" >&2
@@ -61,6 +70,13 @@ compiler_runs_native()
     language=$1
     compiler=$2
     report=${3:-quiet}
+    # Clean probe-only target search paths. Real compiler invocations retain
+    # all caller flags and environment outside this subshell.
+    unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
+    unset LIBRARY_PATH LD_LIBRARY_PATH LD_PRELOAD
+    unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+    unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS OBJCXXFLAGS LIBS
+    unset COMPILER_PATH GCC_EXEC_PREFIX
     # A PID-only directory can outlive a killed bootstrap. Keep retried and
     # concurrent probes separate without leaking temporary output on success.
     if tmp_dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-cc-seed.XXXXXX"); then
@@ -94,11 +110,20 @@ compiler_runs_native()
     case "$language" in
         c)
             src=$tmp_dir/probe.c
-            printf '%s\n' 'int main(void) { return 0; }' > "$src" || exit 1
+            # Include SDK/POSIX headers so a headerless compiler cannot pass.
+            printf '%s\n' \
+                '#include <stddef.h>' \
+                '#include <stdlib.h>' \
+                '#include <unistd.h>' \
+                'int main(void) { return access(".", F_OK) != 0; }' > "$src" || exit 1
             ;;
         c++)
             src=$tmp_dir/probe.cc
-            printf '%s\n' 'int main() { return 0; }' > "$src" || exit 1
+            printf '%s\n' \
+                '#include <cstddef>' \
+                '#include <cstdlib>' \
+                '#include <unistd.h>' \
+                'int main() { return access(".", F_OK) != 0; }' > "$src" || exit 1
             ;;
         *)
             [ "$report" = report ] &&
