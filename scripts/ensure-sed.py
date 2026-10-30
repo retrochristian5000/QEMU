@@ -480,7 +480,7 @@ def macos_environment(env: dict[str, str]) -> tuple[str, str, str]:
         version = platform.mac_ver()[0]
         parts = version.split(".")
         deployment = ".".join(parts[:2]) if version else "11.0"
-    if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){0,2}", deployment):
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", deployment):
         raise RuntimeError(
             f"invalid macOS deployment target for GNU sed: {deployment}"
         )
@@ -513,8 +513,8 @@ def validate_configure_compiler(
         source = directory / "probe.c"
         output = directory / "probe"
         source.write_text(
-            '#include <stdio.h>\\n'
-            'int main(void) { return puts("whp-sed-native-cc") < 0; }\\n',
+            '#include <stdio.h>\n'
+            'int main(void) { return puts("whp-sed-native-cc") < 0; }\n',
             encoding="utf-8",
         )
         command = [
