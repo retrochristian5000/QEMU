@@ -95,10 +95,14 @@ jobs:
           if [[ "$RUNNER_OS" == macOS ]]; then
             # Test the exact SDK passed to the final compiler, not only
             # the separate seed-validation probe.
-            sdk="$(./scripts/whp-build/macos-developer-tools.sh 2>/dev/null || true)"
-            unset sdk
             cat > "$tmp/sdk-recording-cc" <<'EOF'
           #!/bin/sh
+          if [ -n "${SDKROOT:-}" ]; then
+              if [ "${1:-}" != -isysroot ] || [ "${2:-}" != "$SDKROOT" ]; then
+                  printf '%s\n' 'error: actual C driver lost selected macOS SDK' >&2
+                  exit 79
+              fi
+          fi
           printf 'SDKROOT=%s\n' "${SDKROOT:-}" >> "$WHP_TEST_SDK_RECORD"
           exec "$WHP_TEST_REAL_CC" "$@"
           EOF
