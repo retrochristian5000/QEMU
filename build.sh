@@ -208,6 +208,25 @@ if [ "${1:-}" = menuconfig ]; then
     fi
     exec /bin/sh "$WHP_MENUCONFIG_SHELL" "$WHP_USER_CONFIG" "$@"
 fi
+# Establish one validated grep implementation before Python, sed and the
+# maintainer-source Autotools bootstraps. Do not bootstrap GNU grep here:
+# grep is itself needed by those source bootstraps.
+if [ -z "${WHP_GREP_SEED:-}" ] && [ -n "${GREP:-}" ]; then
+    WHP_GREP_SEED=$GREP
+fi
+WHP_GREP_SEED=$("$SOURCE_DIR/grep.sh" --print-seed) || exit 1
+GREP=$WHP_GREP_SEED
+WHP_GREP_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"
+if [ ! -x "$WHP_GREP_BIN_DIR/grep" ]; then
+    printf 'error: QEMU literal grep bridge is unavailable: %s\n' "$WHP_GREP_BIN_DIR/grep" >&2
+    exit 1
+fi
+WHP_GREP_LOCKED=1
+PATH="$WHP_GREP_BIN_DIR:$PATH"
+export WHP_GREP_SEED WHP_GREP_LOCKED GREP PATH
+printf 'QEMU seed grep: %s\n' "$WHP_GREP_SEED" >&2
+unset WHP_GREP_BIN_DIR
+
 # Establish one validated seed sed before any bootstrap that needs sed.
 # Managed GNU sed cannot occupy this slot because its maintainer-source
 # bootstrap requires Automake, while the Python/Automake bootstraps already

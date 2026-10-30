@@ -29,12 +29,22 @@ def main() -> int:
         encoding="utf-8"
     )
 
+    grep_seed = 'WHP_GREP_SEED=$("$SOURCE_DIR/grep.sh" --print-seed)'
+    require(build, grep_seed, "early grep seed selection")
+    require(build, "WHP_GREP_LOCKED=1", "validated grep fast path")
+    require(build, 'PATH="$WHP_GREP_BIN_DIR:$PATH"', "literal grep PATH binding")
+    require(build, "export WHP_GREP_SEED WHP_GREP_LOCKED GREP PATH",
+            "same grep implementation for literal and variable calls")
+    shim = ROOT / "scripts/whp-build/seed-bin/grep"
+    if not shim.is_file():
+        raise SystemExit("error: literal grep bridge is missing")
+
     seed = 'WHP_SED_SEED=$("$SOURCE_DIR/sed.sh" --print-seed)'
     python_bootstrap = '"$SOURCE_DIR/scripts/bootstrap-python.sh"'
     require(build, seed, "early seed sed selection")
     require(build, "export WHP_SED_SEED", "seed sed export")
-    if build.index(seed) > build.index(python_bootstrap):
-        raise SystemExit("error: seed sed is selected after the Python fallback")
+    if not build.index(grep_seed) < build.index(seed) < build.index(python_bootstrap):
+        raise SystemExit("error: grep, sed, Python bootstrap order has drifted")
 
     automake_pos = host_tools.index("BOOTSTRAP_AUTOMAKE=")
     autoconf_pos = host_tools.index("BOOTSTRAP_AUTOCONF=")

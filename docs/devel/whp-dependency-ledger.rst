@@ -593,6 +593,23 @@ contamination guard. The installed-runtime smoke test removes caller ``M4``
 first, so an ambient Homebrew tool cannot hide a broken M4 path embedded in
 ``autom4te``.
 
+grep seed bridge
+----------------
+
+The first grep used by QEMU is a host-side root capability rather than a
+self-built GNU grep fork. ``grep.sh`` probes literal, extended and fixed-string
+matching, quiet and inverted matching, and patterns beginning with a hyphen.
+It rejects an unusable explicit ``GREP`` or ``WHP_GREP_SEED`` and rejects
+selection of its own bridge as the seed.
+
+``build.sh`` resolves ``WHP_GREP_SEED`` before the sed/Python/Autotools
+bootstrap stages, publishes ``GREP`` as the exact selected executable, and
+prepends the single-purpose ``scripts/whp-build/seed-bin`` directory to
+``PATH``. Its ``grep`` launcher forwards every argument and exit code to
+that same validated executable. The locked fast path avoids re-probing every
+literal grep invocation. The wrapper is in the tracked source tree, so no
+temporary PATH shim, new grep submodule or recursive grep bootstrap is needed.
+
 sed/Automake bootstrap boundary
 -------------------------------
 

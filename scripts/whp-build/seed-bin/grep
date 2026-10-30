@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Canonical name for literal grep calls; never install it over host utilities.
+set -eu
+if [ "${WHP_GREP_LOCKED:-0}" = 1 ]; then
+    [ -n "${WHP_GREP_SEED:-}" ] && [ -x "$WHP_GREP_SEED" ] || {
+        printf '%s\n' 'error: locked WHP grep has no usable seed' >&2
+        exit 1
+    }
+    exec "$WHP_GREP_SEED" "$@"
+fi
+case "$0" in
+    */*) exec "${0%/*}/../../../grep.sh" "$@" ;;
+    *) printf '%s\n' 'error: grep bootstrap launcher must be invoked by path' >&2; exit 1 ;;
+esac

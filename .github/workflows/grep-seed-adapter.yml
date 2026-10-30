@@ -1,0 +1,39 @@
+name: grep seed bridge
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'grep.sh'
+      - 'scripts/whp-build/seed-bin/grep'
+      - 'build.sh'
+      - 'scripts/tests/test-grep-seed-adapter.bash'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
+      - '.github/workflows/grep-seed-adapter.yml'
+  pull_request:
+    paths:
+      - 'grep.sh'
+      - 'scripts/whp-build/seed-bin/grep'
+      - 'build.sh'
+      - 'scripts/tests/test-grep-seed-adapter.bash'
+      - 'scripts/tests/test-sed-bootstrap-order.py'
+      - '.github/workflows/grep-seed-adapter.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify early grep seed, recursion and grep semantics
+        run: bash scripts/tests/test-grep-seed-adapter.bash
+      - name: Verify grep before sed, Python, and Autotools
+        run: python3 scripts/tests/test-sed-bootstrap-order.py
+      - name: Validate portable shell entrypoints
+        run: sh -n grep.sh scripts/whp-build/seed-bin/grep build.sh

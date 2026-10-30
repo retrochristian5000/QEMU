@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - '.gitmodules'
+      - 'grep.sh'
+      - 'scripts/whp-build/seed-bin/grep'
       - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
@@ -21,6 +23,8 @@ on:
   pull_request:
     paths:
       - '.gitmodules'
+      - 'grep.sh'
+      - 'scripts/whp-build/seed-bin/grep'
       - 'sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
@@ -63,6 +67,9 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
+          grep_seed="$(./grep.sh --print-seed)"
+          export WHP_GREP_SEED="$grep_seed" GREP="$grep_seed" WHP_GREP_LOCKED=1
+          export PATH="$GITHUB_WORKSPACE/scripts/whp-build/seed-bin:$PATH"
           seed="$(WHP_SED_SEED=/usr/bin/sed ./sed.sh --print-seed)"
           test -x "$seed"
           test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
@@ -118,6 +125,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          grep_seed="$(./grep.sh --print-seed)"
+          export WHP_GREP_SEED="$grep_seed" GREP="$grep_seed" WHP_GREP_LOCKED=1
+          export PATH="$GITHUB_WORKSPACE/scripts/whp-build/seed-bin:$PATH"
           seed="$(./sed.sh --print-seed)"
           test -x "$seed"
           test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
