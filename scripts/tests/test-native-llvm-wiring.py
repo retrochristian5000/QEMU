@@ -724,3 +724,75 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
         'CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n', encoding='utf-8',
     )
     assert not cache_clean(), 'non-Ninja generator cache was reused'
+
+# Prove shortcut precedence with the actual native seed-selection fragment.
+# A prevalidated CC_FOR_BUILD is never re-probed; explicit LLVM overrides
+# are admitted by cc.sh/cxx.sh *before* the default compiler is consulted.
+native_seed_selection = bootstrap.split(
+    '# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN\n', 1
+)[1].split('# WHP_NATIVE_LLVM_SEED_SELECTION_END', 1)[0]
+with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
+    root = Path(td)
+    log = root / 'calls'
+    for lang, adapter, override in (
+        ('c', 'cc.sh', 'WHP_CC_SEED'),
+        ('cxx', 'cxx.sh', 'WHP_CXX_SEED'),
+    ):
+        script = root / adapter
+        command = '--print-cc' if lang == 'c' else '--print-cxx'
+        script.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n" "' + adapter + '" >> "$WHP_LLVM_TEST_SEED_CALLS"\n'
+            '[ "$1" = "' + command + '" ] || exit 81\n'
+            'case "$' + override + '" in\n'
+            '  FAIL) exit 82 ;;\n'
+            '  "") printf "/mock/default-' + lang + '\\n" ;;\n'
+            '  *) printf "/mock/%s\\n" "$' + override + '" ;;\n'
+            'esac\n', encoding='utf-8',
+        )
+        script.chmod(0o755)
+
+    def selected(cc='', cxx='', override_cc='', override_cxx=''):
+        log.unlink(missing_ok=True)
+        env = dict(os.environ, SOURCE_DIR=str(root),
+                   WHP_LLVM_TEST_SEED_CALLS=str(log),
+                   CC_FOR_BUILD=cc, CXX_FOR_BUILD=cxx,
+                   NATIVE_LLVM_BOOTSTRAP_CC=override_cc,
+                   NATIVE_LLVM_BOOTSTRAP_CXX=override_cxx)
+        result = subprocess.run(
+            ['bash', '-c', 'set -euo pipefail\n' +
+             native_seed_selection +
+             '\nprintf "%s|%s\\n" "$bootstrap_cc" "$bootstrap_cxx"\n'],
+            env=env, text=True, capture_output=True, check=False,
+        )
+        calls = log.read_text().splitlines() if log.exists() else []
+        return result, calls
+
+    chosen, calls = selected(cc='/known/cc', cxx='/known/cxx')
+    assert chosen.returncode == 0, chosen.stderr
+    assert chosen.stdout == '/known/cc|/known/cxx\n'
+    assert not calls, 'LLVM re-ran the already admitted native C/C++ probes'
+    chosen, calls = selected(cc='/known/cc')
+    assert chosen.returncode == 0, chosen.stderr
+    assert chosen.stdout == '/known/cc|/mock/default-cxx\n'
+    assert calls == ['cxx.sh'], calls
+    chosen, calls = selected()
+    assert chosen.returncode == 0, chosen.stderr
+    assert chosen.stdout == '/mock/default-c|/mock/default-cxx\n'
+    assert calls == ['cc.sh', 'cxx.sh'], calls
+    chosen, calls = selected(cc='/known/cc', cxx='/known/cxx',
+                             override_cc='explicit-cc',
+                             override_cxx='explicit-cxx')
+    assert chosen.returncode == 0, chosen.stderr
+    assert chosen.stdout == '/mock/explicit-cc|/mock/explicit-cxx\n'
+    assert calls == ['cc.sh', 'cxx.sh'], calls
+    chosen, calls = selected(cc='/known/cc', cxx='/known/cxx',
+                             override_cc='FAIL')
+    assert chosen.returncode != 0
+    assert calls == ['cc.sh'], 'bad C override fell through to default'
+    chosen, calls = selected(cc='/known/cc', cxx='/known/cxx',
+                             override_cxx='FAIL')
+    assert chosen.returncode != 0
+    assert calls == ['cxx.sh'], 'bad C++ override fell through to default'
+
+print('native LLVM compiler-role shortcut regressions: passed')

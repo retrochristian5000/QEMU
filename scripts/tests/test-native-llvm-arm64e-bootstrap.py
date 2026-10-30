@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from pathlib import Path
+import os
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = ROOT / 'scripts' / 'bootstrap-native-clang.bash'
@@ -130,3 +133,55 @@ assert '"$bootstrap_lld_arch_ok" == 1' in text
 assert text.index('whp_bootstrap_arm64e_lld_auth_probe()') < text.index('-fuse-ld=lld')
 
 print('native LLVM arm64e bootstrap policy: verified')
+
+# Execute the actual Apple architecture selection with synthetic ABI
+# validators. A requested arm64e build used to probe both compilers twice.
+# The same verified C/C++ pair can be reused only inside that invocation.
+arch_begin = text.index(
+    'if [[ "$host_os" == macos ]]; then\n'
+    '    # Only a successful explicit arm64e C *and* C++ admission'
+)
+arch_end = text.index('\ncompiler_supports_cxx_standard()', arch_begin)
+arch_selection = text[arch_begin:arch_end]
+with tempfile.TemporaryDirectory(prefix='whp-llvm-arm64e-once-') as td:
+    probe_log = Path(td) / 'arch-probes'
+
+    def run_arch(requested: str, reject=''):
+        probe_log.unlink(missing_ok=True)
+        env = {
+            **os.environ, 'NATIVE_LLVM_MACOS_ARCH': requested,
+            'WHP_LLVM_ARCH_LOG': str(probe_log),
+            'WHP_LLVM_ARCH_REJECT': reject,
+        }
+        shell = (
+            'set -euo pipefail\n'
+            'host_os=macos\nhost_tag=aarch64\n'
+            'bootstrap_cc=/mock/native-c\nbootstrap_cxx=/mock/native-cxx\n'
+            'sdkroot=/mock/MacOSX.sdk\ndeployment_target=15.0\n'
+            'compiler_cache_cmd=""\n'
+            'compiler_supports_macos_arch() {\n'
+            '  printf "%s|%s\\n" "$2" "$3" >> "$WHP_LLVM_ARCH_LOG"\n'
+            '  [[ "$2" != "$WHP_LLVM_ARCH_REJECT" ]]\n'
+            '}\n' + arch_selection +
+            '\nprintf "selected=%s\\n" "$darwin_cmake_arch"\n'
+        )
+        result = subprocess.run(
+            ['bash', '-c', shell], env=env, text=True,
+            capture_output=True, check=False,
+        )
+        calls = probe_log.read_text().splitlines() if probe_log.exists() else []
+        return result, calls
+
+    passing, calls = run_arch('arm64e')
+    assert passing.returncode == 0, passing.stderr
+    assert passing.stdout == 'selected=arm64e\n', passing.stdout
+    assert calls == ['c|arm64e', 'c++|arm64e'], calls
+    passing, calls = run_arch('auto')
+    assert passing.returncode == 0, passing.stderr
+    assert calls == ['c|arm64', 'c++|arm64'], calls
+    failing, calls = run_arch('arm64e', reject='c++')
+    assert failing.returncode != 0
+    assert calls == ['c|arm64e', 'c++|arm64e'], calls
+    assert 'unsupported' in failing.stderr, failing.stderr
+
+print('native LLVM one-shot arm64e C/C++ probe: verified')
