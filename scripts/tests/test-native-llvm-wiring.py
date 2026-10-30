@@ -609,3 +609,17 @@ assert '"$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest"' in bootstra
 assert 'grep -Fq \'WHP.LLVM\'' in bootstrap
 
 print('native LLVM wiring tests: passed')
+
+# A native LLVM graph must not silently reuse CMake/Ninja state after an LLVM
+# source change, even if timestamps do not trigger the RERUN_CMAKE rule.
+assert 'WHP_CMAKE_CONFIG_SCHEMA=2' in bootstrap
+assert 'LLVM_GIT_COMMIT=%q' in bootstrap
+assert 'LLVM_SOURCE_DIR=%q' in bootstrap
+assert 'unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM' in bootstrap
+assert 'unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE' in bootstrap
+for entry in (
+    '-UCMAKE_TOOLCHAIN_FILE', '-UCMAKE_SYSROOT',
+    '-UCMAKE_FIND_ROOT_PATH', '-UCMAKE_PROJECT_TOP_LEVEL_INCLUDES',
+):
+    assert entry in bootstrap[bootstrap.index('cmake_args=('):], entry
+assert 'rm -rf "$LLVM_BUILD_DIR"' not in bootstrap

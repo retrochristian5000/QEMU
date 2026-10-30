@@ -448,6 +448,18 @@ selection.
 Bootstrap compiler boundary
 ---------------------------
 
+Native LLVM CMake configuration cache integrity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The LLVM CMake/Ninja configuration marker now contains the pinned LLVM Git
+revision and source checkout location, independently of the installed host
+toolchain's cache identity. Changes to the gitlink reconfigure CMake in
+place even if source timestamps do not trigger Ninja's regeneration rule.
+The native bootstrap excludes inherited cross-target CMake toolchains,
+alternate generators, project injection hooks and pkg-config cross sysroots.
+CMake ``-U`` removes stale cross-target entries from an existing cache
+without deleting the incremental Ninja build directory.
+
 The shared ``whp_native_sdkroot`` resolves the selected Apple SDK once
 per native probe or actual compiler invocation, validates explicit SDKROOT
 against the selected Xcode/CLT developer directory, and passes the same

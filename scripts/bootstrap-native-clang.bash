@@ -99,6 +99,15 @@ stage_root=""
 # pointer policy become part of LLVM's bootstrap ABI. Platform ABI inputs such
 # as SDKROOT and MACOSX_DEPLOYMENT_TARGET are handled explicitly below.
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS ASMFLAGS
+# WHP_NATIVE_LLVM_CMAKE_ENV_BEGIN
+# Do not let a host-tool LLVM build consume an outer cross-target CMake
+# toolchain, generator, project injection or pkg-config cross sysroot.
+# Host dependency search prefixes remain available.
+unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM
+unset CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
+unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE
+unset CMAKE_PROJECT_INCLUDE_BEFORE PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR
+# WHP_NATIVE_LLVM_CMAKE_ENV_END
 
 case "$TOOLCHAIN_FORCE_REBUILD" in
     0|1) ;;
@@ -1500,6 +1509,14 @@ cmake_args=(
     -G Ninja
     "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
     -DCMAKE_BUILD_TYPE=Release
+    # Drop old cross-target cache entries without removing the incremental
+    # Ninja graph or its compiled objects and depfiles.
+    -UCMAKE_TOOLCHAIN_FILE
+    -UCMAKE_SYSROOT
+    -UCMAKE_FIND_ROOT_PATH
+    -UCMAKE_PROJECT_TOP_LEVEL_INCLUDES
+    -UCMAKE_PROJECT_INCLUDE
+    -UCMAKE_PROJECT_INCLUDE_BEFORE
     # Explicitly clear persistent CMakeCache global flags from older builds.
     # Assembly flags can retain host-only ISA options (e.g. -msse4.2)
     # across an x86 -> AArch64 build-tree change, independently of C/C++.
@@ -1582,7 +1599,11 @@ cmake_args=(
 # marker for this decision: configuration and installation are distinct states.
 cmake_config_marker="$LLVM_BUILD_DIR/.whp-native-llvm-cmake-config"
 cmake_config_identity="$(
-    printf 'WHP_CMAKE_CONFIG_SCHEMA=1\n'
+    printf 'WHP_CMAKE_CONFIG_SCHEMA=2\n'
+    # A gitlink revision switch may leave timestamps older than build.ninja.
+    # Include the exact source producer, not only compiler options.
+    printf 'LLVM_GIT_COMMIT=%q\n' "$llvm_revision"
+    printf 'LLVM_SOURCE_DIR=%q\n' "$LLVM_SOURCE_DIR"
     printf 'CMAKE=%q\n' "$(command -v cmake)"
     cmake --version | sed -n '1p'
     printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"

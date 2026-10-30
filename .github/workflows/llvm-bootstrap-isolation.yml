@@ -49,7 +49,7 @@ jobs:
       - name: Verify LLVM TableGen duplicate-edge policy
         run: python3 scripts/tests/test-llvm-tablegen-dedup.py
 
-      - name: Verify native LLVM wiring
+      - name: Verify native LLVM wiring and CMake cache boundaries
         run: python3 scripts/tests/test-native-llvm-wiring.py
 
       - name: Verify native LLVM arm64e bootstrap policy
