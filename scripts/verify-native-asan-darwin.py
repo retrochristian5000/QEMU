@@ -40,7 +40,14 @@ def require_runtime_arch(
         return
     lipo = clang.with_name("llvm-lipo")
     if not lipo.is_file():
-        raise RuntimeError(f"cannot audit ASan arm64e runtime: missing {lipo}")
+        # Apple's Xcode Clang does not ship llvm-lipo beside the driver.
+        # /usr/bin/lipo is Apple's system Mach-O slice inspector, and has
+        # the same -archs interface. Never bypass the arm64e slice check.
+        apple_lipo = pathlib.Path("/usr/bin/lipo")
+        if sys.platform == "darwin" and apple_lipo.is_file():
+            lipo = apple_lipo
+        else:
+            raise RuntimeError(f"cannot audit ASan arm64e runtime: missing {lipo}")
     result = run([str(lipo), "-archs", str(runtime)])
     if result.returncode or "arm64e" not in result.stdout.split():
         raise RuntimeError(

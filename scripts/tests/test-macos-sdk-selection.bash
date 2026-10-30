@@ -246,7 +246,11 @@ if TEST_REJECT_CXX_SDK_PROBE=1 SDKROOT="$SELECTED_SDK" \
     printf 'error: macOS wrapper accepted failing C++ SDK probe\n' >&2
     exit 1
 fi
-grep -Fq 'macOS host C++ SDK/libc++ probe failed' "$bad_cxx_sdk"
+if ! grep -Fq 'macOS host C++ SDK/libc++ probe failed' "$bad_cxx_sdk"; then
+    printf 'error: failing C++ SDK probe was rejected for the wrong reason:\n' >&2
+    cat "$bad_cxx_sdk" >&2
+    exit 1
+fi
 
 wrapper_output="$TEST_DIR/wrapper-output"
 if SDKROOT="$SELECTED_SDK" \

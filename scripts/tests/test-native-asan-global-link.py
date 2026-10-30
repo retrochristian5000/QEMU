@@ -156,6 +156,32 @@ class NativeASanGlobalsTests(unittest.TestCase):
             self.assertNotIn("-fuse-ld=lld", command)
         self.assertIn("__PTRAUTH__", self.module.RUNTIME_OK)
 
+    def test_apple_lipo_fallback_keeps_arm64e_slice_validation(self):
+        self.prefix.joinpath("llvm-lipo").unlink()
+        checked = []
+
+        def inspect(command):
+            checked.append(list(command))
+            if "-archs" in command:
+                return subprocess.CompletedProcess(command, 0, stdout="arm64")
+            return self.fake_run(command)
+
+        with mock.patch.object(self.module.sys, "platform", "darwin"):
+            with mock.patch.object(pathlib.Path, "is_file", autospec=True,
+                                   side_effect=lambda path: (
+                                       True if str(path) == "/usr/bin/lipo"
+                                       else path.exists()
+                                   )):
+                with mock.patch.object(self.module, "run", side_effect=inspect):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "lacks an arm64e slice"
+                    ):
+                        self.module.require_runtime_arch(
+                            self.prefix / "clang", self.runtime, "arm64e"
+                        )
+        self.assertIn("/usr/bin/lipo", checked[0][0])
+        self.assertEqual(checked[0][1], "-archs")
+
     def test_arm64e_asan_must_report_real_heap_overflow(self):
         def silent_execution(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
