@@ -58,7 +58,7 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
-    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "4"', "bootstrap schema")
+    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "5"', "native environment schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
     require(helper, '[path, "--gnu", "--fatal-warnings"]', "GNU M4 runtime probe")
     require(helper, "GNU M4 1.4.16 or newer", "GNU M4 bootstrap floor")

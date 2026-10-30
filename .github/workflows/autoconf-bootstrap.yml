@@ -13,6 +13,8 @@ on:
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/autoconf-bootstrap.yml'
   pull_request:
     paths:
@@ -25,6 +27,8 @@ on:
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/autoconf-bootstrap.yml'
 
 permissions:
@@ -57,6 +61,9 @@ jobs:
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
+
+      - name: Reject corrupt bootstrap variables
+        run: python3 scripts/tests/test-bootstrap-env.py
 
       - name: Bootstrap managed Automake then Autoconf
         shell: bash

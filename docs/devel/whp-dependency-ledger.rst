@@ -617,6 +617,24 @@ that same validated executable. The locked fast path avoids re-probing every
 literal grep invocation. The wrapper is in the tracked source tree, so no
 temporary PATH shim, new grep submodule or recursive grep bootstrap is needed.
 
+Native bootstrap variable and cache integrity
+---------------------------------------------
+
+The early Automake, Autoconf and Git builders sanitize their child native
+tool environments through ``scripts/bootstrap_env.py``. Poisoned target
+``CC``, flags, Make overrides, Autoconf cache answers, pkg-config sysroots,
+macro search paths and injected runtime-library variables cannot silently
+reach their source configure or Make invocations. Selected tools are restored
+explicitly, including the compiler verified by ``cc.sh``, the GNU Make
+seed, configuration shell, GNU M4, Perl and Autotools.
+
+Automake and Autoconf cache markers now include native CC/version,
+configuration shell, selected SDK and deployment target. Git's cache
+schema changes with its corrected environment contract. GNU Make rejects
+malformed or nonexistent inherited ``ACLOCAL_PATH`` entries before using
+them in generation and cache markers; valid absolute macro paths survive.
+Only affected producer caches become stale. No global cache purge is needed.
+
 Bootstrap force-mode failure contract
 -------------------------------------
 

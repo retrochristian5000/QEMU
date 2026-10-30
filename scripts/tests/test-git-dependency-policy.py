@@ -46,7 +46,7 @@ def main() -> int:
     require(helper, 'variables.append(f"ZLIB_PATH={zlib_dir}")', "Git zlib link path")
     require(helper, 'f"ZLIB_ID={zlib_id}\\n"', "Git zlib cache identity")
     require(helper, "has_https_transport", "managed transport probe")
-    require(helper, 'GIT_BOOTSTRAP_SCHEMA = "4"', "Git SDK cache invalidation")
+    require(helper, 'GIT_BOOTSTRAP_SCHEMA = "5"', "Git native environment cache invalidation")
     require(helper, 'sdkroot = select_macos_sdkroot()', "Git native SDK resolution")
     require(helper, 'os.environ["SDKROOT"] = sdkroot', "CC seed SDK handoff")
     require(helper, 'env["SDKROOT"] = sdkroot', "Git Make SDK handoff")

@@ -20,11 +20,14 @@ import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import clean_host_environment, select_native_cc
 SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
 GIT_ADAPTER = ROOT / "git.sh"
-GIT_BOOTSTRAP_SCHEMA = "4"
+GIT_BOOTSTRAP_SCHEMA = "5"
 
 
 def run_text(command: List[str], *, cwd=None, env=None) -> str:
@@ -392,15 +395,11 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     work.mkdir(parents=True, exist_ok=True)
     copy_source(seed, revision, sha1_revision, source)
 
-    env = os.environ.copy()
-    for key in (
-        "BASH_ENV", "ENV", "POSIXLY_CORRECT",
-        "CFLAGS", "CPPFLAGS", "LDFLAGS",
-        "AR", "AS", "LD", "NM", "RANLIB", "STRIP",
-        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
-    ):
+    env = clean_host_environment(os.environ)
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(key, None)
     env["CC"] = cc
+    env["MAKE"] = make
     env["GIT_BUILT_FROM_COMMIT"] = revision
     if sdkroot:
         env["SDKROOT"] = sdkroot

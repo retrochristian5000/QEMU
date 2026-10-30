@@ -16,6 +16,8 @@ on:
       - 'scripts/tests/test-make-configure-sdk.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/gnu-make-bootstrap.yml'
   pull_request:
     paths:
@@ -31,6 +33,8 @@ on:
       - 'scripts/tests/test-make-configure-sdk.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/gnu-make-bootstrap.yml'
   workflow_dispatch:
 
@@ -128,10 +132,13 @@ jobs:
           python3 -m py_compile \
             scripts/ensure-autoconf.py \
             scripts/ensure-make.py \
+            scripts/bootstrap_env.py \
+            scripts/tests/test-bootstrap-env.py \
             scripts/tests/test-autoconf-bootstrap.py \
             scripts/tests/test-make-dependency-policy.py \
             scripts/tests/test-make-configure-sdk.py \
             scripts/tests/test-make-gnulib-cache.py
+          python3 scripts/tests/test-bootstrap-env.py
           python3 scripts/tests/test-autoconf-bootstrap.py
           python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-make-configure-sdk.py

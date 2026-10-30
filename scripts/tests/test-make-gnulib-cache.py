@@ -115,6 +115,27 @@ def main() -> int:
                 "error: GNU Make retained cache after gettext macro vanished"
             )
 
+    with tempfile.TemporaryDirectory(prefix="whp-aclocal-path-") as td:
+        root = pathlib.Path(td)
+        primary = root / "macros"
+        extra = root / "extra"
+        primary.mkdir()
+        extra.mkdir()
+        expected = os.pathsep.join((str(primary), str(extra)))
+        if module.validated_aclocal_path(str(primary), str(extra)) != expected:
+            raise SystemExit("error: a valid macro path was not preserved")
+        for invalid in (":/missing", str(root / "missing"), "relative/m4",
+                        str(extra) + "\\npoison", str(extra) + os.pathsep):
+            try:
+                module.validated_aclocal_path(str(primary), invalid)
+            except RuntimeError as exc:
+                if "ACLOCAL_PATH" not in str(exc):
+                    raise
+            else:
+                raise SystemExit(
+                    f"error: GNU Make accepted corrupt ACLOCAL_PATH: {invalid!r}"
+                )
+
     print("GNU Make gnulib cache reuse: verified")
     return 0
 

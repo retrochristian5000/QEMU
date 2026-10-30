@@ -23,10 +23,13 @@ import tarfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import clean_host_environment, select_native_cc
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
-AUTOMAKE_BOOTSTRAP_SCHEMA = "2"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "3"
 
 
 def run_text(
@@ -324,6 +327,8 @@ def marker_text(
     autoconf: str,
     autom4te: str,
     make: str,
+    cc: str,
+    config_shell: str,
 ) -> str:
     return (
         f"AUTOMAKE_BOOTSTRAP_SCHEMA={AUTOMAKE_BOOTSTRAP_SCHEMA}\n"
@@ -333,6 +338,10 @@ def marker_text(
         f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
         f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
+        f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
+        f"CONFIG_SHELL={config_shell}\n"
+        f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={os.environ.get('MACOSX_DEPLOYMENT_TARGET', '')}\n"
     )
 
 
@@ -343,6 +352,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     autoconf = tool("autoconf", "AUTOCONF")
     autom4te = tool("autom4te", "AUTOM4TE")
     make = select_gnu_make()
+    cc = select_native_cc(ROOT)
+    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
 
     prefix = build_root / "deps" / "automake"
     work = build_root / "bootstrap" / "automake"
@@ -351,7 +362,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     marker_path = prefix / ".whp-automake-bootstrap"
 
     marker = marker_text(
-        revision, seed, perl, autoconf, autom4te, make
+        revision, seed, perl, autoconf, autom4te, make, cc, config_shell
     )
     if (
         marker_path.is_file()
@@ -376,20 +387,19 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
 
-    env = os.environ.copy()
-    for key in (
-        "BASH_ENV", "ENV", "POSIXLY_CORRECT",
-        "AUTOMAKE", "ACLOCAL",
-    ):
-        env.pop(key, None)
+    env = clean_host_environment(os.environ)
+    env["CC"] = cc
+    env["CC_FOR_BUILD"] = cc
+    env["MAKE"] = make
+    env["MAKE_CMD"] = make
+    env["CONFIG_SHELL"] = config_shell
+    env["SHELL"] = config_shell
     env["PERL"] = perl
     env["AUTOCONF"] = autoconf
     env["AUTOM4TE"] = autom4te
     env["WHP_SED_SEED"] = seed
     env["SED"] = str(SED_ADAPTER)
     env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
-
-    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
 
     print(
         f"WHP Automake bootstrap: {revision} -> {prefix} "

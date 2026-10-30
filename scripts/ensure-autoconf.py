@@ -26,10 +26,13 @@ import tarfile
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import clean_host_environment, select_native_cc
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "4"
+AUTOCONF_BOOTSTRAP_SCHEMA = "5"
 
 BUILD_TARGETS = (
     "bin/autoconf",
@@ -508,6 +511,8 @@ def marker_text(
     perl: str,
     make: str,
     seed: str,
+    cc: str,
+    config_shell: str,
 ) -> str:
     return (
         f"AUTOCONF_BOOTSTRAP_SCHEMA={AUTOCONF_BOOTSTRAP_SCHEMA}\n"
@@ -519,6 +524,10 @@ def marker_text(
         f"PERL={perl}: {first_line([perl, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
         f"SEED_SED={seed}\n"
+        f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
+        f"CONFIG_SHELL={config_shell}\n"
+        f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={os.environ.get('MACOSX_DEPLOYMENT_TARGET', '')}\n"
         "PROFILE=tool-only-no-docs\n"
     )
 
@@ -530,6 +539,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     perl = tool("perl", "PERL")
     make = select_gnu_make()
     seed = select_seed_sed()
+    cc = select_native_cc(ROOT)
+    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
     tool("realpath")
     tool("mktemp")
 
@@ -539,7 +550,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     objects = work / "build"
     marker_path = prefix / ".whp-autoconf-bootstrap"
 
-    marker = marker_text(revision, automake, aclocal, m4, perl, make, seed)
+    marker = marker_text(
+        revision, automake, aclocal, m4, perl, make, seed, cc, config_shell
+    )
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -573,12 +586,16 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         shutil.copy2(m4, m4_link)
         m4_link.chmod(m4_link.stat().st_mode | 0o111)
 
-    env = os.environ.copy()
-    for key in (
-        "BASH_ENV", "ENV", "POSIXLY_CORRECT",
-        "AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF",
-        "MAKEINFO", "HELP2MAN",
-    ):
+    env = clean_host_environment(os.environ)
+    env["CC"] = cc
+    env["CC_FOR_BUILD"] = cc
+    env["MAKE"] = make
+    env["MAKE_CMD"] = make
+    env["CONFIG_SHELL"] = config_shell
+    env["SHELL"] = config_shell
+    # Never consume a partially bootstrapped Autoconf executable.
+    for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF",
+                "MAKEINFO", "HELP2MAN"):
         env.pop(key, None)
     env["AUTOMAKE"] = automake
     env["ACLOCAL"] = aclocal
@@ -596,7 +613,6 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         + env.get("PATH", "")
     )
 
-    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
     print(
         f"WHP Autoconf bootstrap: {revision} -> {prefix} "
         f"(Automake {automake}, GNU M4 {m4}, seed sed {seed})",

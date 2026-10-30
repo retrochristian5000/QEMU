@@ -272,6 +272,21 @@ def pkg_config_aclocal_dir(pkg_config):
     )
 
 
+def validated_aclocal_path(pkg_dir: str, inherited: str) -> str:
+    """Reject malformed macro paths before caching a generated source."""
+    values = [pkg_dir]
+    if inherited:
+        values.extend(inherited.split(os.pathsep))
+    for value in values:
+        path = pathlib.Path(value)
+        if (not value or "\n" in value or "\r" in value or
+                not path.is_absolute() or not path.is_dir()):
+            raise RuntimeError(
+                f"GNU Make ACLOCAL_PATH contains invalid macro directory: {value!r}"
+            )
+    return os.pathsep.join(dict.fromkeys(values))
+
+
 def select_config_shell():
     for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL"):
         requested = os.environ.get(env_name, "")
@@ -751,9 +766,9 @@ def bootstrap(build_root):
     pkg_config = tool("pkg-config", "PKG_CONFIG", ("pkgconf",))
     pkg_aclocal_dir = pkg_config_aclocal_dir(pkg_config)
     inherited_aclocal_path = os.environ.get("ACLOCAL_PATH", "")
-    aclocal_path = pkg_aclocal_dir
-    if inherited_aclocal_path:
-        aclocal_path += os.pathsep + inherited_aclocal_path
+    aclocal_path = validated_aclocal_path(
+        pkg_aclocal_dir, inherited_aclocal_path
+    )
     config_shell = select_config_shell()
 
     prefix = build_root / "deps" / "make"

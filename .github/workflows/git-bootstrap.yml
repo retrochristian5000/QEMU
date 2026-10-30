@@ -12,6 +12,8 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/git-bootstrap.yml'
   pull_request:
     paths:
@@ -23,6 +25,8 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'docs/devel/whp-dependency-ledger.rst'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
       - '.github/workflows/git-bootstrap.yml'
 
 permissions:
@@ -51,6 +55,9 @@ jobs:
           brew install curl libiconv
           echo "WHP_GIT_CURLDIR=$(brew --prefix curl)" >> "$GITHUB_ENV"
           echo "WHP_GIT_ICONVDIR=$(brew --prefix libiconv)" >> "$GITHUB_ENV"
+
+      - name: Reject corrupt bootstrap variables
+        run: python3 scripts/tests/test-bootstrap-env.py
 
       - name: Verify dependency policy
         run: python3 scripts/tests/test-git-dependency-policy.py
