@@ -8,6 +8,7 @@ import importlib.util
 import os
 import pathlib
 import shutil
+import sys
 import tempfile
 from unittest import mock
 
@@ -85,7 +86,10 @@ def main() -> int:
         # Exercise a native link+run with the environment that configure
         # receives, then prove a failed compiler is not silently accepted.
         native_env = os.environ.copy()
-        native_env["SDKROOT"] = str(sdk)
+        native_env["SDKROOT"] = (
+            helper.select_macos_sdkroot() if sys.platform == "darwin"
+            else str(sdk)
+        )
         helper.validate_configure_compiler(cc, native_env, tmp)
         invalid_cc = shutil.which("false")
         if invalid_cc:
