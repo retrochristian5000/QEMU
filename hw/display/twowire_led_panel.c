@@ -5,6 +5,7 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/misc/led.h"
 #include "hw/display/twowire-led-panel.h"
 #include "ui/console.h"

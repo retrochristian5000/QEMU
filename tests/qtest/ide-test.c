@@ -505,7 +505,7 @@ static void test_bmdma_trim_split_descriptor(void)
     prdt[0].addr = cpu_to_le32(first);
     prdt[0].size = cpu_to_le32(4);
     prdt[1].addr = cpu_to_le32(second);
-    prdt[1].size = cpu_to_le32(sizeof(payload) - 4 | PRDT_EOT);
+    prdt[1].size = cpu_to_le32((sizeof(payload) - 4) | PRDT_EOT);
 
     /* The whole split descriptor describes an out-of-range discard. */
     entry = trim_range_le(TEST_IMAGE_SIZE / 512 - 1, 2);
