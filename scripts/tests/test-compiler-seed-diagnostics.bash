@@ -141,4 +141,11 @@ cp "$tmp/env-tainted" "$tmp/relative/relative-cc"
     selected="$(try_compiler c relative/relative-cc report)"
     test "$selected" = "$(cd -P -- "$tmp/relative" && pwd -P)/relative-cc"
 )
+mkdir -p "$tmp/relative-path"
+cp "$tmp/env-tainted" "$tmp/relative-path/nativecc"
+(
+    cd "$tmp"
+    selected="$(PATH="relative-path:$PATH" try_compiler c nativecc report)"
+    test "$selected" = "$(cd -P -- "$tmp/relative-path" && pwd -P)/nativecc"
+)
 printf '%s\n' 'WHP compiler seed failure diagnostics: verified'

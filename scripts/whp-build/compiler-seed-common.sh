@@ -29,9 +29,7 @@ resolve_executable()
                     printf 'error: compiler path is not executable: %s\n' "$value" >&2
                 exit 1
             fi
-            # A relative seed must survive configure's working-directory change.
-            dir=$(CDPATH= cd -P -- "${value%/*}" && pwd -P) || exit 1
-            candidate=$dir/${value##*/}
+            candidate=$value
             ;;
         *)
             case "$value" in *[[:space:]]*)
@@ -47,6 +45,19 @@ resolve_executable()
             printf 'error: build compiler cannot be found or executed: %s\n' "$value" >&2
         exit 1
     fi
+    # PATH can contain relative entries as well as explicit relative
+    # overrides. Publish only physical absolute compiler seed paths.
+    case "$candidate" in
+        /*) ;;
+        */*)
+            dir=$(CDPATH= cd -P -- "${candidate%/*}" && pwd -P) || exit 1
+            candidate=$dir/${candidate##*/}
+            ;;
+        *)
+            [ "$report" = report ] &&
+                printf 'error: compiler resolution is not a pathname: %s\n' "$candidate" >&2
+            exit 1 ;;
+    esac
     if is_self "$candidate"; then
         [ "$report" = report ] &&
             printf 'error: compiler selection loops into WHP adapter: %s\n' "$candidate" >&2
