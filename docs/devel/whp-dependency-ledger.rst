@@ -458,7 +458,9 @@ place even if source timestamps do not trigger Ninja's regeneration rule.
 The native bootstrap excludes inherited cross-target CMake toolchains,
 alternate generators, project injection hooks and pkg-config cross sysroots.
 CMake ``-U`` removes stale cross-target entries from an existing cache
-without deleting the incremental Ninja build directory.
+without deleting the incremental Ninja build directory. The cache-reuse
+guard also checks ``CMakeCache.txt`` for injected toolchains/sysroots
+and the Ninja generator, so a matching text marker alone is insufficient.
 
 The shared ``whp_native_sdkroot`` resolves the selected Apple SDK once
 per native probe or actual compiler invocation, validates explicit SDKROOT

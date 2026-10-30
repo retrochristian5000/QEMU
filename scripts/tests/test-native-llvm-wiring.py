@@ -681,3 +681,34 @@ filtered = subprocess.run(
     env=poisoned_cmake_env, text=True, capture_output=True, check=True,
 )
 assert filtered.stdout == 'unset|unset|/native/deps|/native/pkgconfig'
+
+# A matching marker must not hide an injected cross-toolchain cache entry.
+cache_guard = bootstrap.split(
+    '# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_BEGIN\n', 1
+)[1].split('# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_END', 1)[0]
+assert 'native_llvm_cmake_cache_clean; then' in bootstrap
+with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
+    cache = Path(td) / 'CMakeCache.txt'
+
+    def cache_clean() -> bool:
+        result = subprocess.run(
+            ['bash', '-c',
+             'set -euo pipefail\nLLVM_BUILD_DIR="$1"\n' +
+             cache_guard + '\nnative_llvm_cmake_cache_clean',
+             'whp-llvm-cmake-guard', td],
+            text=True, capture_output=True, check=False,
+        )
+        return result.returncode == 0
+
+    cache.write_text('CMAKE_GENERATOR:INTERNAL=Ninja\n', encoding='utf-8')
+    assert cache_clean(), 'valid native Ninja graph was rejected'
+    cache.write_text(
+        'CMAKE_GENERATOR:INTERNAL=Ninja\n'
+        'CMAKE_TOOLCHAIN_FILE:FILEPATH=/foreign/target.cmake\n',
+        encoding='utf-8',
+    )
+    assert not cache_clean(), 'foreign toolchain cache entry was reused'
+    cache.write_text(
+        'CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n', encoding='utf-8',
+    )
+    assert not cache_clean(), 'non-Ninja generator cache was reused'

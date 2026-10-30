@@ -1617,11 +1617,27 @@ cmake_config_identity="$(
     done
     printf 'ARG=%q\n' "${cmake_args[@]}"
 )"
+# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_BEGIN
+native_llvm_cmake_cache_clean()
+{
+    local cache="$LLVM_BUILD_DIR/CMakeCache.txt"
+    [[ -f "$cache" ]] || return 1
+    # Even when our marker matches, another producer may have inserted a
+    # cross-target CMake variable into the persistent cache.
+    if grep -Eq '^(CMAKE_TOOLCHAIN_FILE|CMAKE_SYSROOT|CMAKE_FIND_ROOT_PATH|CMAKE_PROJECT_TOP_LEVEL_INCLUDES|CMAKE_PROJECT_INCLUDE|CMAKE_PROJECT_INCLUDE_BEFORE):[^=]*=.+$' "$cache"; then
+        printf 'WHP native LLVM: stale CMake cross-target variables; reconfiguring in place\n' >&2
+        return 1
+    fi
+    grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache"
+}
+# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_END
+
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
       -f "$LLVM_BUILD_DIR/CMakeCache.txt" &&
       -f "$LLVM_BUILD_DIR/build.ninja" &&
       -f "$cmake_config_marker" &&
-      "$(cat "$cmake_config_marker")" == "$cmake_config_identity" ]]; then
+      "$(cat "$cmake_config_marker")" == "$cmake_config_identity" ]] &&
+   native_llvm_cmake_cache_clean; then
     printf 'WHP native LLVM: reusing existing CMake/Ninja configuration\n' >&2
 else
     # A failed configure must not leave behind a valid reuse marker.
