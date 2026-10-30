@@ -238,7 +238,15 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     assert result.returncode != 0
     assert "[tool]" in result.stderr, result.stderr
     assert "missing required tool: llvm-lipo" in result.stderr, result.stderr
-    (bin_dir / "llvm-lipo").symlink_to("whp-fixture-tool")
+    # Restore the slice-reporting mock, not the success-only stub; otherwise
+    # later ABI mismatch tests are intercepted by an empty lipo result.
+    lipo.write_text(
+        '#!/bin/sh\n'
+        'test "$1" = "-archs" || exit 1\n'
+        'printf "%s\\n" "$WHP_TEST_RUNTIME_ARCHS"\n',
+        encoding="utf-8",
+    )
+    lipo.chmod(0o755)
 
     # A missing backend is an ABI-capability failure, not a missing executable.
     result, _ = run_probe("arm64", missing_backend=True)
