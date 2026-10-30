@@ -649,6 +649,14 @@ declares gettext, makeinfo, and Perl as build prerequisites. In the current
 WHP invocation, ``--skip-po`` avoids PO refresh/download work but does not
 remove those prerequisite checks, and the gettext path can still run
 ``autopoint`` because ``configure.ac`` uses GNU gettext macros.
+The selected ``AUTOPOINT`` is pinned in the sed bootstrap marker.
+On Homebrew, its executable need not share a prefix with an installed
+``share/aclocal/gettext.m4``; that external file is optional.
+The real invariant is that autopoint stages ``m4/gettext.m4`` into
+the isolated sed source, verified immediately after bootstrap and before
+configure. The system macro search path is included only when it exists,
+so a relocated gettext installation cannot cause a false prerequisite
+failure or an empty ``ACLOCAL_PATH`` element.
 
 The resulting order is therefore::
 

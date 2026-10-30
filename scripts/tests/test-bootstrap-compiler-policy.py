@@ -77,10 +77,14 @@ def main() -> int:
     require(python, '"$SOURCE_DIR/cc.sh" --print-cc', "Python adapter fallback")
 
     sed = (ROOT / "scripts/ensure-sed.py").read_text(encoding="utf-8")
-    require(sed, 'SED_BOOTSTRAP_SCHEMA = "4"', "sed compiler/SDK cache schema")
+    require(sed, 'SED_BOOTSTRAP_SCHEMA = "5"', "sed compiler/SDK/gettext cache schema")
     require(sed, "validate_configure_compiler(cc, env, work)", "sed configured CC probe")
     require(sed, 'env["SDKROOT"] = sdkroot', "sed pinned native SDK")
-    require(sed, "gettext_aclocal_dir()", "sed gettext macro source")
+    require(sed, 'gettext_aclocal_dir(autopoint)', "optional external gettext macros")
+    require(sed, "require_staged_gettext_macro(source)",
+            "staged gettext macro prerequisite")
+    require(sed, 'env["AUTOPOINT"] = autopoint',
+            "selected autopoint propagated to source bootstrap")
     require(sed, 'report_configure_failure(objects / "config.log")',
             "sed configure failure diagnostics")
     require(sed, '"CONFIG_SITE"', "sed inherited site cache isolation")

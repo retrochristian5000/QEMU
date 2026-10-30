@@ -142,4 +142,55 @@ with patch.object(mod.platform, "system", return_value="Darwin"), \
         else:
             raise SystemExit("error: malformed deployment target was accepted")
 
-print("GNU sed version and compiler staging policy: verified")
+
+# Autopoint may be installed in a gettext keg without system aclocal macros.
+# GNU sed must instead validate the staged m4/gettext.m4 copied at bootstrap.
+with tempfile.TemporaryDirectory(prefix="whp-sed-gettext-") as td:
+    root = pathlib.Path(td)
+    keg = root / "Cellar" / "gettext" / "1.0"
+    bin_dir = keg / "bin"
+    bin_dir.mkdir(parents=True)
+    autopoint = bin_dir / "autopoint"
+    autopoint.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    autopoint.chmod(0o755)
+
+    if mod.gettext_aclocal_dir(str(autopoint)) != "":
+        raise SystemExit("error: nonexistent system gettext macro dir was accepted")
+
+    staged = root / "sed-source"
+    (staged / "m4").mkdir(parents=True)
+    try:
+        mod.require_staged_gettext_macro(staged)
+    except RuntimeError as exc:
+        if "m4/gettext.m4" not in str(exc):
+            raise
+    else:
+        raise SystemExit("error: unstaged gettext macro was accepted")
+    (staged / "m4" / "gettext.m4").write_text(
+        "dnl staged by autopoint\\n", encoding="utf-8"
+    )
+    mod.require_staged_gettext_macro(staged)
+
+    aclocal = keg / "share" / "aclocal"
+    aclocal.mkdir(parents=True)
+    (aclocal / "gettext.m4").write_text(
+        "dnl external gettext macro\\n", encoding="utf-8"
+    )
+    if mod.gettext_aclocal_dir(str(autopoint)) != str(aclocal):
+        raise SystemExit("error: adjacent gettext macro dir was not recognized")
+
+    # Resolve without losing a Homebrew-style prefix-side macro directory.
+    prefix = root / "prefix"
+    prefix_bin = prefix / "bin"
+    prefix_bin.mkdir(parents=True)
+    link = prefix_bin / "autopoint"
+    link.symlink_to(autopoint)
+    prefix_aclocal = prefix / "share" / "aclocal"
+    prefix_aclocal.mkdir(parents=True)
+    (prefix_aclocal / "gettext.m4").write_text(
+        "dnl prefix gettext macro\\n", encoding="utf-8"
+    )
+    if mod.gettext_aclocal_dir(str(link)) != str(prefix_aclocal):
+        raise SystemExit("error: gettext macro prefix symlink was ignored")
+
+print("GNU sed version, gettext and compiler staging policy: verified")

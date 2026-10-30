@@ -29,7 +29,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
 SED_ADAPTER = ROOT / "sed.sh"
-SED_BOOTSTRAP_SCHEMA = "4"
+SED_BOOTSTRAP_SCHEMA = "5"
 
 
 def run_text(
@@ -445,20 +445,27 @@ def copy_source(
         )
 
 
-def gettext_aclocal_dir() -> str:
-    """Find gettext's macros beside the selected autopoint installation."""
-    autopoint = shutil.which("autopoint")
-    if not autopoint:
+def gettext_aclocal_dir(autopoint: str) -> str:
+    """Optional external macro dir, not an autopoint prerequisite.
+
+    GNU gettext can install autopoint separately from its system aclocal
+    macros (notably on Homebrew). The sed maintainer bootstrap copies
+    gettext.m4 into its own m4/ directory; check that staged result instead.
+    """
+    path = pathlib.Path(autopoint)
+    for candidate in (path, path.resolve()):
+        directory = candidate.parent.parent / "share" / "aclocal"
+        if (directory / "gettext.m4").is_file():
+            return str(directory)
+    return ""
+
+
+def require_staged_gettext_macro(source: pathlib.Path) -> None:
+    if not (source / "m4" / "gettext.m4").is_file():
         raise RuntimeError(
-            "GNU sed bootstrap needs autopoint even with --skip-po; "
-            "install the autopoint package or expose gettext's bin on PATH"
+            "GNU sed bootstrap did not stage m4/gettext.m4; verify the "
+            "selected autopoint installation and its gettext data files"
         )
-    directory = pathlib.Path(autopoint).resolve().parent.parent / "share" / "aclocal"
-    if not (directory / "gettext.m4").is_file():
-        raise RuntimeError(
-            f"GNU sed gettext.m4 not found beside autopoint: {directory}"
-        )
-    return str(directory)
 
 
 def report_configure_failure(log: pathlib.Path) -> None:
@@ -585,6 +592,7 @@ def marker_text(
     arch: str,
     deployment: str,
     aclocal_path: str,
+    autopoint: str,
 ) -> str:
     return (
         f"SED_BOOTSTRAP_SCHEMA={SED_BOOTSTRAP_SCHEMA}\n"
@@ -599,6 +607,7 @@ def marker_text(
         f"WHP_MACOS_ARCH={arch}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
         f"ACLOCAL_PATH={aclocal_path}\n"
+        f"AUTOPOINT={autopoint}: {run_text([autopoint, '--version']).splitlines()[0]}\n"
     )
 
 
@@ -637,13 +646,14 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["CC"] = cc
     env["WHP_SED_SEED"] = seed
     env["SED"] = str(SED_ADAPTER)
-    # --skip-po suppresses translation downloads, not gettext macros.
-    # The WHP Automake installation needs the actual gettext macro directory
-    # to expand AM_GNU_GETTEXT rather than leave unresolved calls.
-    gettext_m4 = gettext_aclocal_dir()
+    # --skip-po still needs autopoint, but a system-wide gettext.m4 is
+    # optional: autopoint stages its own macros in the isolated sed source.
+    autopoint = command_path("autopoint", "AUTOPOINT")
+    env["AUTOPOINT"] = autopoint
+    gettext_m4 = gettext_aclocal_dir(autopoint)
     inherited_aclocal = env.get("ACLOCAL_PATH", "")
-    env["ACLOCAL_PATH"] = gettext_m4 + (
-        os.pathsep + inherited_aclocal if inherited_aclocal else ""
+    env["ACLOCAL_PATH"] = os.pathsep.join(
+        part for part in (gettext_m4, inherited_aclocal) if part
     )
     sdkroot, arch, deployment = macos_environment(env)
 
@@ -654,7 +664,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     marker = marker_text(
         revision, nested_revision, cc, seed, sdkroot, arch, deployment,
-        env["ACLOCAL_PATH"],
+        env["ACLOCAL_PATH"], autopoint,
     )
     if (
         marker_path.is_file()
@@ -702,6 +712,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         cwd=source,
         env=env,
     )
+    require_staged_gettext_macro(source)
 
     configure = source / "configure"
     if not configure.is_file():
