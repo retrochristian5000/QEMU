@@ -7,6 +7,8 @@
 #include "qemu/osdep.h"
 
 #include "libqtest.h"
+#include "libqos/fw_cfg.h"
+#include "qemu/bswap.h"
 
 #define EISA_VENDOR_ID 0x0c80
 #define EISA_CONTROL   0x0c84
@@ -21,6 +23,7 @@
 typedef struct DellEISATestData {
     const char *machine;
     uint8_t product_low;
+    uint32_t model_id;
 } DellEISATestData;
 
 static void test_dell_system_board(const void *opaque)
@@ -45,6 +48,17 @@ static void test_dell_system_board(const void *opaque)
 
     /* No EISA adapter has been installed in slot 1. */
     g_assert_cmphex(qtest_inb(s, EISA_SLOT_SIZE + EISA_VENDOR_ID), ==, 0xff);
+
+    /* SeaBIOS receives the real model ID over read-only fw_cfg; no cosmetic
+     * identity must be inferred from an unrelated generic ISA machine. */
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint32_t model_id = 0;
+    size_t size = qfw_cfg_get_file(fw_cfg,
+                                  "opt/org.seabios/whp-dell-model",
+                                  &model_id, sizeof(model_id));
+    g_assert_cmpuint(size, ==, sizeof(model_id));
+    g_assert_cmpuint(le32_to_cpu(model_id), ==, data->model_id);
+    pc_fw_cfg_uninit(fw_cfg);
 
     qtest_quit(s);
 }
@@ -80,9 +94,9 @@ static void test_dell_433de_et4000ax(void)
 int main(int argc, char **argv)
 {
     static const DellEISATestData dell_systems[] = {
-        { "dell-system-425e",  0x01 },
-        { "dell-system-433e",  0x02 },
-        { "dell-system-433de", 0x05 },
+        { "dell-system-425e",  0x01, 1 },
+        { "dell-system-433e",  0x02, 2 },
+        { "dell-system-433de", 0x05, 3 },
     };
     int i;
 

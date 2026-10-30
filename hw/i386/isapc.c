@@ -16,6 +16,7 @@
 #include "hw/dma/i8257.h"
 #include "hw/i386/pc.h"
 #include "hw/i386/weitek4167.h"
+#include "hw/nvram/fw_cfg.h"
 #include "hw/ide/isa.h"
 #include "hw/ide/ide-bus.h"
 #include "hw/isa/eisa.h"
@@ -149,6 +150,33 @@ static void pc_init_isa_common(MachineState *machine, bool with_weitek4167,
         if (machine->kernel_filename != NULL) {
             /* For xen HVM direct kernel boot, load linux here */
             xen_load_linux(pcms);
+        }
+    }
+
+    /*
+     * Describe only the Dell platform QEMU is actually emulating.  SeaBIOS
+     * keeps its historical default POST behavior; a separate user opt-in
+     * enables the modern Dell-inspired F2/F12 convenience interface.
+     * Allocate the fw_cfg payload for the lifetime of the device.
+     */
+    if (eisa_system_id && x86ms->fw_cfg) {
+        uint32_t model = 0;
+        uint32_t *model_file;
+
+        if (strcmp(eisa_system_id, "DEL0001") == 0) {
+            model = 1; /* System 425E */
+        } else if (strcmp(eisa_system_id, "DEL0002") == 0) {
+            model = 2; /* System 433E */
+        } else if (strcmp(eisa_system_id, "DEL0005") == 0) {
+            model = 3; /* PowerLine 433DE */
+        }
+
+        if (model) {
+            model_file = g_new(uint32_t, 1);
+            *model_file = cpu_to_le32(model);
+            fw_cfg_add_file(x86ms->fw_cfg,
+                            "opt/org.seabios/whp-dell-model",
+                            model_file, sizeof(*model_file));
         }
     }
 
