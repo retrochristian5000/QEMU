@@ -627,6 +627,22 @@ Only ``auto`` can fall back to the host toolchain. Shell-only and portable
 probe modes intentionally skip expensive bootstraps; they retain host
 discovery without claiming a pinned tool was built.
 
+Bootstrap memory-corruption validation
+--------------------------------------
+
+The normal bootstrap compilers and their cache markers remain free of
+experimental sanitizer flags. The GNU sed Linux bootstrap CI instead
+reconfigures the exact pinned/generated sed source in a distinct
+``whp-sed-sanitized`` object directory using a native C compiler with
+AddressSanitizer and UndefinedBehaviorSanitizer. It executes deterministic
+basic, capture/backreference, binary-NUL and large-record cases, failing
+on sanitizer diagnostics or abnormal exit. Leak detection is enabled for
+the runtime smoke, but disabled only during Autoconf feature probes.
+The macOS ARM64e sanitizer runtime has its own explicit
+``asan-arm64e-runtime.yml`` validation; CI does not silently impose
+Linux sanitizer flags on Apple bootstrap executables. A clean smoke
+does not prove the absence of all memory-safety defects.
+
 sed/Automake bootstrap boundary
 -------------------------------
 

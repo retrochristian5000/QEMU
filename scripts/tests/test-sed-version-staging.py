@@ -193,4 +193,27 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-gettext-") as td:
     if mod.gettext_aclocal_dir(str(link)) != str(prefix_aclocal):
         raise SystemExit("error: gettext macro prefix symlink was ignored")
 
-print("GNU sed version, gettext and compiler staging policy: verified")
+
+# Bootstrap memory-corruption checks build the exact pinned sed source with
+# ASan/UBSan in a separate Linux-only object tree, never the macOS arm64e
+# production toolchain.
+workflow = (ROOT / ".github/workflows/gnu-sed-bootstrap.yml").read_text(
+    encoding="utf-8"
+)
+if workflow.count("  linux:") != 1 or workflow.count("  macos:") != 1:
+    raise SystemExit("error: GNU sed sanitizer check lost CI platform boundaries")
+macos, linux = workflow.split("\n  linux:", 1)
+for item in (
+    "Check bootstrapped GNU sed under ASan and UBSan (Linux)",
+    "whp-sed-sanitized",
+    "CFLAGS=\"-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined",
+    "ASAN_OPTIONS=\"detect_leaks=1:halt_on_error=1",
+    "UBSAN_OPTIONS=\"halt_on_error=1:print_stacktrace=1",
+    'test -f "$source_dir/m4/gettext.m4"',
+):
+    if item not in linux:
+        raise SystemExit(f"error: GNU sed sanitized runtime check lost {item}")
+if "whp-sed-sanitized" in macos or "-fsanitize=address,undefined" in macos:
+    raise SystemExit("error: GNU sed ASan leaked into macOS bootstrap")
+
+print("GNU sed version, gettext, compiler and sanitizer policy: verified")

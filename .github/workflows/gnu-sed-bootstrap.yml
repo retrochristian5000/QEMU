@@ -157,3 +157,53 @@ jobs:
           again="$(WHP_SED_SEED="$seed" \
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test "$again" = "$sed_path"
+      
+      - name: Check bootstrapped GNU sed under ASan and UBSan (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep the normal sed installation untouched. This is an isolated
+          # second build of the same pinned, already-generated sed sources.
+          source_dir="$RUNNER_TEMP/whp-sed/bootstrap/sed/source"
+          object_dir="$RUNNER_TEMP/whp-sed-sanitized"
+          test -f "$source_dir/configure"
+          test -f "$source_dir/m4/gettext.m4"
+          mkdir -p "$object_dir"
+          cc="$(./cc.sh --print-cc)"
+          test -x "$cc"
+          make_cmd="$(command -v gmake || command -v make)"
+          "$make_cmd" --version | grep -Fq 'GNU Make'
+
+          # Configuring instrumented binaries can trigger platform-specific
+          # leak noise in Autoconf probes. Leak detection is enabled for the
+          # actual sed runtime tests below; nothing escapes this CI step.
+          (
+            cd "$object_dir"
+            if ! env CC="$cc" \
+              CFLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all" \
+              LDFLAGS="-fsanitize=address,undefined" \
+              ASAN_OPTIONS="detect_leaks=0:halt_on_error=1" \
+              UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
+              "$source_dir/configure" \
+                "--prefix=$object_dir/prefix" \
+                --disable-nls --disable-gcc-warnings > configure.log 2>&1; then
+              tail -n 100 configure.log >&2
+              exit 1
+            fi
+            if ! "$make_cmd" -j2 sed/sed > build.log 2>&1; then
+              tail -n 100 build.log >&2
+              exit 1
+            fi
+          )
+          instrumented="$object_dir/sed/sed"
+          test -x "$instrumented"
+          export ASAN_OPTIONS="detect_leaks=1:halt_on_error=1:detect_stack_use_after_return=1"
+          export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
+
+          test "$(printf 'alpha\n' | "$instrumented" -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' | \
+            "$instrumented" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
+          test "$(printf 'alpha\0beta\0' | "$instrumented" -z 's/beta/gamma/g' | tr '\0' '|')" = 'alpha|gamma|'
+          test "$(python3 -c 'import sys; sys.stdout.write("a" * 131072 + "\n")' | \
+            "$instrumented" -n 's/^a*$/ok/p')" = ok
+          echo 'GNU sed ASan/UBSan native runtime: verified'
