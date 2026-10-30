@@ -24,7 +24,7 @@ SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
 GIT_ADAPTER = ROOT / "git.sh"
-GIT_BOOTSTRAP_SCHEMA = "3"
+GIT_BOOTSTRAP_SCHEMA = "4"
 
 
 def run_text(command: List[str], *, cwd=None, env=None) -> str:
@@ -132,6 +132,51 @@ def select_cc() -> str:
         )
 
     raise RuntimeError("a native build C compiler is required to bootstrap Git")
+
+
+def select_macos_sdkroot() -> str:
+    """Reuse the selected Apple developer/SDK contract for the build C role."""
+    if platform.system() != "Darwin":
+        return ""
+    helper = ROOT / "scripts/whp-build/macos-developer-tools.sh"
+    requested = os.environ.get("SDKROOT", "")
+    script = (
+        '. "$1"; '
+        'if [ -n "$2" ]; then '
+        'whp_apple_check_sdkroot "$2" && printf "%s\n" "$2"; '
+        'else whp_apple_find_sdk; fi'
+    )
+    sdkroot = run_text([
+        "/bin/sh", "-c", script, "whp-git-sdk", str(helper), requested,
+    ])
+    if not sdkroot or not pathlib.Path(sdkroot).is_dir():
+        raise RuntimeError("selected macOS SDK is unavailable for GNU Git")
+    return sdkroot
+
+
+def validate_build_compiler(
+    cc: str, env: dict[str, str], work: pathlib.Path
+) -> None:
+    """Prove Git can include POSIX headers, link and run before make starts."""
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="whp-git-cc-", dir=work) as tmp:
+        directory = pathlib.Path(tmp)
+        source = directory / "probe.c"
+        output = directory / "probe"
+        source.write_text(
+            "#include <unistd.h>\n"
+            "int main(void) { return access(\".\", F_OK) != 0; }\n",
+            encoding="utf-8",
+        )
+        try:
+            run_text([cc, str(source), "-o", str(output)],
+                     cwd=directory, env=env)
+            run_text([str(output)], cwd=directory, env=env)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "Git bootstrap compiler cannot include unistd.h, link and "
+                f"run (CC={cc}, SDKROOT={env.get('SDKROOT', '')}): {exc}"
+            ) from exc
 
 
 def gitlink(seed: str, repo: pathlib.Path, relpath: pathlib.Path) -> str:
@@ -319,7 +364,7 @@ def smoke_local(git_path: pathlib.Path) -> bool:
     return True
 
 
-def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, iconv_dir, zlib_dir, zlib_id) -> str:
+def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, iconv_dir, zlib_dir, zlib_id, sdkroot) -> str:
     return (
         f"GIT_BOOTSTRAP_SCHEMA={GIT_BOOTSTRAP_SCHEMA}\n"
         f"GIT_GIT_COMMIT={revision}\n"
@@ -332,10 +377,12 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
         f"ICONVDIR={iconv_dir}\n"
         f"ZLIB_PATH={zlib_dir}\n"
         f"ZLIB_ID={zlib_id}\n"
+        f"SDKROOT={sdkroot}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={os.environ.get('MACOSX_DEPLOYMENT_TARGET', '')}\n"
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -355,6 +402,12 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
         env.pop(key, None)
     env["CC"] = cc
     env["GIT_BUILT_FROM_COMMIT"] = revision
+    if sdkroot:
+        env["SDKROOT"] = sdkroot
+
+    # This is the same sanitized environment handed to Git Make. Catch
+    # missing Xcode/CLT headers before compilation fans out to many files.
+    validate_build_compiler(cc, env, work)
 
     variables = [
         f"prefix={prefix}", f"CC={cc}",
@@ -397,6 +450,10 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
 def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     seed = seed_git()
     revision, sha1_revision = ensure_source(seed)
+    sdkroot = select_macos_sdkroot()
+    if sdkroot:
+        # Resolve once before cc.sh's native probe, then retain for Git make.
+        os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
     make = select_gnu_make()
     curl_dir = curl_prefix()
@@ -414,7 +471,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         marker = marker_text(
             revision, sha1_revision, seed, cc, make, profile,
             curl_dir if profile == "full" else "",
-            iconv_dir, zlib_dir, zlib_id,
+            iconv_dir, zlib_dir, zlib_id, sdkroot,
         )
         if (
             marker_path.is_file()
@@ -429,7 +486,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
                 profile, curl_dir if profile == "full" else "", iconv_dir,
-                zlib_dir,
+                zlib_dir, sdkroot,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:

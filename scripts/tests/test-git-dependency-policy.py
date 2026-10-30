@@ -46,6 +46,15 @@ def main() -> int:
     require(helper, 'variables.append(f"ZLIB_PATH={zlib_dir}")', "Git zlib link path")
     require(helper, 'f"ZLIB_ID={zlib_id}\\n"', "Git zlib cache identity")
     require(helper, "has_https_transport", "managed transport probe")
+    require(helper, 'GIT_BOOTSTRAP_SCHEMA = "4"', "Git SDK cache invalidation")
+    require(helper, 'sdkroot = select_macos_sdkroot()', "Git native SDK resolution")
+    require(helper, 'os.environ["SDKROOT"] = sdkroot', "CC seed SDK handoff")
+    require(helper, 'env["SDKROOT"] = sdkroot', "Git Make SDK handoff")
+    require(helper, "whp_apple_check_sdkroot", "selected Xcode/CLT SDK guard")
+    require(helper, "validate_build_compiler(cc, env, work)",
+            "Git C compiler header, link and execution preflight")
+    require(helper, '"#include <unistd.h>\\n"', "missing POSIX header regression")
+    require(helper, 'f"SDKROOT={sdkroot}', "SDK in Git cache identity")
 
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
     require(ledger, "Git bootstrap boundary", "Git circularity section")

@@ -507,6 +507,13 @@ link, LTO, sanitizers, or a particular target ABI succeeds.
 Git bootstrap boundary
 ----------------------
 
+Git's native Make invocation now validates the same macOS SDK used
+by the seed Clang. The selected Xcode/CLT SDK is checked before compiler
+selection and exported as ``SDKROOT`` into the sanitized Git build,
+which probes ``<unistd.h>`` compilation, linking, and execution.
+The SDK and deployment target participate in the Git cache marker;
+a changed SDK cannot silently reuse an incompatible Git executable.
+
 The WHP owns the pinned ``toolchains/git`` fork, but Git cannot be the first
 Git executable in the graph. An already usable seed Git is required to obtain
 the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
