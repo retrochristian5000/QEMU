@@ -470,6 +470,20 @@ This repairs the case where the probe succeeded with an SDK but a
 subsequent absolute-path Clang invocation failed to locate libSystem.
 Linux compiler arguments and execution paths are unchanged.
 
+Native C compiler admission versus bootstrap cache reuse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``build.sh`` validates the native C seed once and exports the selected
+absolute compiler as ``CC_FOR_BUILD``. Python bootstraps prefer that
+resolved path over probing ``cc.sh`` again. Separate configure checks
+remain necessary when an actual tool rebuild changes the flags/SDK used.
+GNU Make already checks its installation marker before its configure-C
+smoke; GNU sed now follows the same ordering. On a valid sed producer
+marker and usable installed binary, the extra configure compile/link/run
+probe is skipped. On a miss, it still runs *before* deleting installed or
+staged files. No persistent cross-run compiler attestation or force-true
+CMake compiler-workaround variable is introduced.
+
 The ``cc.sh`` and ``cxx.sh`` native admission probes now compile
 against C/C++ standard and POSIX ``unistd.h`` headers, link a libc
 ``access()`` call, and execute it. An empty ``main()`` alone could

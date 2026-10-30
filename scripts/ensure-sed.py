@@ -657,11 +657,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     )
     sdkroot, arch, deployment = macos_environment(env)
 
-    # The seed compiler probe alone does not validate sed's final flags.
-    # Check the actual sanitized configure environment before touching any
-    # cached installation or staging directory.
-    validate_configure_compiler(cc, env, work)
-
+    # A successful installed sed with matching CC/SDK/architecture and
+    # configuration inputs needs no second throwaway compiler smoke. Only
+    # actual rebuilds must validate the final sanitized configure flags.
     marker = marker_text(
         revision, nested_revision, cc, seed, sdkroot, arch, deployment,
         env["ACLOCAL_PATH"], autopoint,
@@ -672,6 +670,11 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         and gnu_sed_usable(str(sed_path))
     ):
         return sed_path
+
+    # The seed admission probe does not validate sed's final configure flags.
+    # Test only on a cache miss, BEFORE deleting any prior installation or
+    # staging directory. An unusable compiler cannot destroy the cached sed.
+    validate_configure_compiler(cc, env, work)
 
     shutil.rmtree(prefix, ignore_errors=True)
     shutil.rmtree(work, ignore_errors=True)

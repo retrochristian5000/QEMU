@@ -5,10 +5,11 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from contextlib import ExitStack
 import pathlib
 import shutil
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts" / "ensure-sed.py"
@@ -215,5 +216,76 @@ for item in (
         raise SystemExit(f"error: GNU sed sanitized runtime check lost {item}")
 if "whp-sed-sanitized" in macos or "-fsanitize=address,undefined" in macos:
     raise SystemExit("error: GNU sed ASan leaked into macOS bootstrap")
+
+
+# An already validated sed installation must not run another native C
+# compile/link smoke. Its cache marker includes compiler version, SDK,
+# architecture and sed source; a cache miss still requires a compiler check
+# *before* replacing any existing installed files.
+with tempfile.TemporaryDirectory(prefix="whp-sed-cc-reuse-") as td:
+    build_root = pathlib.Path(td)
+    prefix = build_root / "deps" / "sed"
+    sed_path = prefix / "bin" / "sed"
+    marker_path = prefix / ".whp-sed-bootstrap"
+    sed_path.parent.mkdir(parents=True)
+    sed_path.write_text("cached sed fixture\n", encoding="utf-8")
+    marker_path.write_text("locked-producer\n", encoding="utf-8")
+    fixtures = {
+        "ensure_source": ("sed-revision", "gnulib-revision"),
+        "seed_sed": "/native/sed",
+        "select_cc": "/native/cc",
+        "select_gnu_make": "/native/make",
+        "command_path": "/native/autopoint",
+        "gettext_aclocal_dir": "",
+        "macos_environment": ("", "", ""),
+        "marker_text": "locked-producer\n",
+        "gnu_sed_usable": True,
+    }
+    # One hermetic fixture exercises the real bootstrap control flow without
+    # downloading sources, configuring sed or invoking a compiler.
+    with ExitStack() as stack:
+        for name, value in fixtures.items():
+            if name == "macos_environment":
+                stack.enter_context(
+                    patch.object(mod, name, return_value=value)
+                )
+            else:
+                stack.enter_context(
+                    patch.object(mod, name, return_value=value)
+                )
+        compile_probe = stack.enter_context(
+            patch.object(mod, "validate_configure_compiler")
+        )
+        deletion = stack.enter_context(
+            patch.object(mod.shutil, "rmtree")
+        )
+        assert mod.bootstrap(build_root) == sed_path
+        compile_probe.assert_not_called()
+        deletion.assert_not_called()
+
+        # A marker mismatch cannot reuse sed, and invalid configure flags
+        # must abort without deleting either the cached install or work tree.
+        marker_path.write_text("stale-producer\n", encoding="utf-8")
+        compile_probe.side_effect = RuntimeError("bad sanitized configure CC")
+        try:
+            mod.bootstrap(build_root)
+        except RuntimeError as exc:
+            assert "bad sanitized configure CC" in str(exc)
+        else:
+            raise SystemExit("error: GNU sed accepted a stale cached compiler")
+        compile_probe.assert_called_once()
+        deletion.assert_not_called()
+
+        # Even with a matching marker, a broken installed sed is a miss.
+        marker_path.write_text("locked-producer\n", encoding="utf-8")
+        mod.gnu_sed_usable.return_value = False
+        try:
+            mod.bootstrap(build_root)
+        except RuntimeError as exc:
+            assert "bad sanitized configure CC" in str(exc)
+        else:
+            raise SystemExit("error: GNU sed ignored unusable cached installation")
+        assert compile_probe.call_count == 2
+        deletion.assert_not_called()
 
 print("GNU sed version, gettext, compiler and sanitizer policy: verified")
