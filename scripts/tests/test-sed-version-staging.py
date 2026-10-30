@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-gettext-") as td:
     bin_dir = keg / "bin"
     bin_dir.mkdir(parents=True)
     autopoint = bin_dir / "autopoint"
-    autopoint.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    autopoint.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     autopoint.chmod(0o755)
 
     if mod.gettext_aclocal_dir(str(autopoint)) != "":
@@ -167,14 +167,14 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-gettext-") as td:
     else:
         raise SystemExit("error: unstaged gettext macro was accepted")
     (staged / "m4" / "gettext.m4").write_text(
-        "dnl staged by autopoint\\n", encoding="utf-8"
+        "dnl staged by autopoint\n", encoding="utf-8"
     )
     mod.require_staged_gettext_macro(staged)
 
     aclocal = keg / "share" / "aclocal"
     aclocal.mkdir(parents=True)
     (aclocal / "gettext.m4").write_text(
-        "dnl external gettext macro\\n", encoding="utf-8"
+        "dnl external gettext macro\n", encoding="utf-8"
     )
     if mod.gettext_aclocal_dir(str(autopoint)) != str(aclocal):
         raise SystemExit("error: adjacent gettext macro dir was not recognized")
@@ -188,7 +188,7 @@ with tempfile.TemporaryDirectory(prefix="whp-sed-gettext-") as td:
     prefix_aclocal = prefix / "share" / "aclocal"
     prefix_aclocal.mkdir(parents=True)
     (prefix_aclocal / "gettext.m4").write_text(
-        "dnl prefix gettext macro\\n", encoding="utf-8"
+        "dnl prefix gettext macro\n", encoding="utf-8"
     )
     if mod.gettext_aclocal_dir(str(link)) != str(prefix_aclocal):
         raise SystemExit("error: gettext macro prefix symlink was ignored")
