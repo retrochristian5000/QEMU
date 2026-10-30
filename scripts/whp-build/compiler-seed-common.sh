@@ -45,10 +45,10 @@ resolve_executable()
             printf 'error: build compiler cannot be found or executed: %s\n' "$value" >&2
         exit 1
     fi
-    # PATH can contain relative entries as well as explicit relative
-    # overrides. Publish only physical absolute compiler seed paths.
+    # Both absolute and relative paths may traverse symlinked parents
+    # (notably macOS /var -> /private/var). Return one physical, stable
+    # compiler path regardless of how PATH or an override spelled it.
     case "$candidate" in
-        /*) ;;
         */*)
             dir=$(CDPATH= cd -P -- "${candidate%/*}" && pwd -P) || exit 1
             candidate=$dir/${candidate##*/}

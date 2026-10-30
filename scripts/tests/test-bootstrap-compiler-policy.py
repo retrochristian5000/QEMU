@@ -27,6 +27,8 @@ def main() -> int:
     require(shared, 'unset CPATH C_INCLUDE_PATH', "probe-only include isolation")
     require(shared, 'unset LIBRARY_PATH LD_LIBRARY_PATH', "probe-only library isolation")
     require(shared, 'candidate=$dir/', "absolute bootstrap compiler identity")
+    if '/*) ;;' in shared:
+        raise SystemExit("error: absolute compiler seed path bypasses physical canonicalization")
     require(shared, 'cat "$log" >&2', "compiler stderr on failure")
     require(shared, 'executable probe failed', "native execution failure stage")
     require(shared, 'compiler --version failed', "compiler version failure stage")

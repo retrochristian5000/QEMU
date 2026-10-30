@@ -141,6 +141,10 @@ cp "$tmp/env-tainted" "$tmp/relative/relative-cc"
     selected="$(try_compiler c relative/relative-cc report)"
     test "$selected" = "$(cd -P -- "$tmp/relative" && pwd -P)/relative-cc"
 )
+mkdir -p "$tmp/absolute-path"
+ln -s "$tmp" "$tmp/absolute-alias"
+selected="$(try_compiler c "$tmp/absolute-alias/env-tainted" report)"
+test "$selected" = "$(cd -P -- "$tmp" && pwd -P)/env-tainted"
 mkdir -p "$tmp/relative-path"
 cp "$tmp/env-tainted" "$tmp/relative-path/nativecc"
 (
