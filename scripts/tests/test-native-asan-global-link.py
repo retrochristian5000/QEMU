@@ -38,6 +38,8 @@ class NativeASanGlobalsTests(unittest.TestCase):
         )
         self.runtime.parent.mkdir(parents=True)
         self.runtime.write_bytes(b"runtime fixture")
+        # A real arm64e ASan probe requires llvm-lipo to inspect the runtime.
+        (self.prefix / "llvm-lipo").write_text("lipo fixture", encoding="utf-8")
         self.calls = []
 
     def fake_run(self, cmd):
@@ -45,6 +47,8 @@ class NativeASanGlobalsTests(unittest.TestCase):
         self.calls.append(command)
         if command[-1] == "--print-resource-dir":
             return subprocess.CompletedProcess(command, 0, stdout=str(self.resource))
+        if "-archs" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="arm64e\n")
         if "--sections" in command:
             return subprocess.CompletedProcess(
                 command, 0, stdout="Section { Name: __asan_globals }\n"
@@ -127,7 +131,7 @@ class NativeASanGlobalsTests(unittest.TestCase):
             self.assertNotIn("DYLD_FALLBACK_LIBRARY_PATH", kwargs["env"])
             self.assertNotIn("DYLD_INSERT_LIBRARIES", kwargs["env"])
             self.assertIn("detect_leaks=0", kwargs["env"]["ASAN_OPTIONS"])
-            if pathlib.Path(cmd[0]).name == "healthy":
+            if pathlib.Path(cmd[0]).name in {"startup", "allocator", "healthy"}:
                 return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
             return subprocess.CompletedProcess(
                 cmd, 1, stdout="",
@@ -141,9 +145,10 @@ class NativeASanGlobalsTests(unittest.TestCase):
                     self.prefix / "clang", self.prefix / "clang++", "arm64e",
                     self.prefix / "MacOSX.sdk", "15.0", False,
                 )
-        self.assertEqual(len(observed), 2)
-        self.assertEqual(len(self.calls), 4)
-        for command in self.calls[2:]:
+        self.assertEqual(len(observed), 4)
+        self.assertEqual(len(self.calls), 7)
+        self.assertEqual(self.calls[2][1], "-archs")
+        for command in self.calls[3:]:
             self.assertIn("-arch", command)
             self.assertIn("arm64e", command)
             self.assertIn("-DWHP_REQUIRE_ARM64E=1", command)
@@ -167,6 +172,8 @@ class NativeASanGlobalsTests(unittest.TestCase):
 
     def test_arm64e_asan_reports_healthy_process_load_failure(self):
         def dyld_error(cmd, **kwargs):
+            if pathlib.Path(cmd[0]).name in {"startup", "allocator"}:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
             return subprocess.CompletedProcess(
                 cmd, 1, stdout="",
                 stderr="dyld: Library not loaded: libclang_rt.asan_osx_dynamic.dylib",
