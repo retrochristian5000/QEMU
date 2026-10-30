@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Hermetic Xcode/CLT search-order tests: no global developer selection change.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'code=$?; printf "error: developer-tools fixture failed at line %s (exit %s)\n" "$LINENO" "$code" >&2' ERR
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/whp-build/macos-developer-tools.sh"
 tmp="$(mktemp -d)"
+tmp="$(CDPATH= cd -P -- "$tmp" && pwd -P)"
 trap 'rm -rf -- "$tmp"' EXIT
 clt="$tmp/CommandLineTools"
 xcode_app="$tmp/Xcode-beta.app"
