@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import shutil
 import subprocess
@@ -125,7 +126,7 @@ def main() -> int:
         if module.validated_aclocal_path(str(primary), str(extra)) != expected:
             raise SystemExit("error: a valid macro path was not preserved")
         for invalid in (":/missing", str(root / "missing"), "relative/m4",
-                        str(extra) + "\\npoison", str(extra) + os.pathsep):
+                        str(extra) + "\npoison", str(extra) + os.pathsep):
             try:
                 module.validated_aclocal_path(str(primary), invalid)
             except RuntimeError as exc:
