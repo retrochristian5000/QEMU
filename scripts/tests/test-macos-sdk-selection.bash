@@ -6,13 +6,15 @@ SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/whp-macos-sdk-test.XXXXXX")"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
-FAKE_BIN="$TEST_DIR/bin"
-ACTIVE_SDK="$TEST_DIR/MacOSX15.0.sdk"
-SELECTED_SDK="$TEST_DIR/MacOSX13.3.sdk"
-BETA_SDK="$TEST_DIR/MacOSX16.0.sdk"
-IPHONE_SDK="$TEST_DIR/iPhoneOS18.0.sdk"
-SIMULATOR_SDK="$TEST_DIR/iPhoneSimulator18.0.sdk"
+# Test tools and SDKs must belong to the selected Apple developer root,
+# rather than being rejected before compiler/SDK validation can run.
 DEVELOPER_DIR_FIXTURE="$TEST_DIR/Developer"
+FAKE_BIN="$DEVELOPER_DIR_FIXTURE/usr/bin"
+ACTIVE_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/MacOSX15.0.sdk"
+SELECTED_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/MacOSX13.3.sdk"
+BETA_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/MacOSX16.0.sdk"
+IPHONE_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/iPhoneOS18.0.sdk"
+SIMULATOR_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/iPhoneSimulator18.0.sdk"
 CLANG="$FAKE_BIN/clang"
 CLANGXX="$FAKE_BIN/clang++"
 STRIP="$FAKE_BIN/strip"

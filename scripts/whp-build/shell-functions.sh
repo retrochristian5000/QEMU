@@ -1,3 +1,4 @@
+#!/bin/sh
 # Shared POSIX-shell policy helpers for the WHP build bootstrap.
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
