@@ -77,6 +77,8 @@ def main() -> int:
     require(make_bootstrap, 'macro_dir / "pkg.m4"', "pkg.m4 availability guard")
     require(make_bootstrap, '"ACLOCAL_PATH": aclocal_path', "pkg.m4 aclocal handoff")
     require(make_bootstrap, "def generated_source_usable", "generated-source validation")
+    require(make_bootstrap, 'path / "m4" / "gettext.m4"',
+            "GNU Make gettext generated-cache completeness")
     require(make_bootstrap, "def ensure_generated_source", "generated-source cache producer")
     require(
         make_bootstrap,

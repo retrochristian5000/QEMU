@@ -615,6 +615,9 @@ def generated_source_usable(path, marker):
         path / "build.cfg.in",
         path / "src" / "config.h.in",
         path / "build.sh",
+        # GNU Make uses AM_GNU_GETTEXT in configure.ac. Autopoint must
+        # have staged the macro, or this cache cannot be safely reused.
+        path / "m4" / "gettext.m4",
     )
     return all(item.is_file() for item in required)
 

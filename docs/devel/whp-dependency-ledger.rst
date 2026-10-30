@@ -761,7 +761,11 @@ such as the seed Make, compiler, configuration shell, pkg-config identity,
 Autotools identities, and the fixed configure profile. A change in those
 inputs can legitimately require ``configure`` and ``build.sh`` to run again
 even when the Make gitlink did not change. That rebuild must not imply another
-gnulib download or another Autoconf regeneration.
+gnulib download or another Autoconf regeneration. Because the Make
+source uses ``AM_GNU_GETTEXT``, its generated-source cache must also
+contain ``m4/gettext.m4`` staged by autopoint. A cache missing that
+macro is rejected and regenerated; merely having ``configure`` or a
+matching marker is insufficient.
 
 The helper therefore separates two reusable producer layers. Gnulib is stored
 under ``BUILD_DIR/cache/gnulib/<commit>``, with its exact Git HEAD and clean
