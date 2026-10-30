@@ -477,41 +477,78 @@ compiler_supports_macos_arch()
     local compiler="$1"
     local language="$2"
     local arch="$3"
-    local output
+    local output log status probe_source
 
     output="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-arch.XXXXXX")" || return 1
-    local probe_source='int main(void) { return 0; }'
-    if [[ "$arch" == arm64e ]]; then
-        # Running a trivial binary does not prove that the compiler selected
-        # the arm64e language ABI.  Require pointer-authenticated indirect
-        # calls from both C and C++ before admitting this bootstrap mode.
-        probe_source="$(cat <<'SOURCE'
-#if !defined(__arm64e__) || !defined(__PTRAUTH__)
-#error arm64e pointer-authentication ABI is not enabled
+    log="${output}.log"
+    # An ignored -arch can produce a runnable Rosetta binary. Require the
+    # effective C/C++ target ABI, macOS SDK and LP64 data model, not only a link.
+    probe_source="$(cat <<'SOURCE'
+#include <TargetConditionals.h>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX
+#error native LLVM compiler selected a non-macOS SDK
 #endif
-#if !__has_feature(ptrauth_calls)
-#error arm64e indirect-call authentication is unavailable
+#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
+#error native LLVM compiler selected simulator headers
 #endif
-static int whp_arm64e_callback(void) { return 0; }
-int main(void) {
-    int (*volatile callback)(void) = whp_arm64e_callback;
-    return callback();
-}
+typedef char whp_native_lp64[(sizeof(void *) == 8 && sizeof(long) == 8) ? 1 : -1];
 SOURCE
 )"
+    case "$arch" in
+        arm64)
+            probe_source+=$'\n#if !defined(__aarch64__) || defined(__arm64e__)\n#error compiler did not select native arm64 Mach-O ABI\n#endif'
+            ;;
+        arm64e)
+            # The arm64e path must still exercise authenticated indirect calls
+            # in both languages, not merely test a compiler argument spelling.
+            probe_source+=$'\n#if !defined(__arm64e__) || !defined(__PTRAUTH__)\n#error arm64e pointer-authentication ABI is not enabled\n#endif'
+            probe_source+=$'\n#if !__has_feature(ptrauth_calls)\n#error arm64e indirect-call authentication is unavailable\n#endif'
+            probe_source+=$'\nstatic int whp_arm64e_callback(void) { return 0; }\nint main(void) {\n    int (*volatile callback)(void) = whp_arm64e_callback;\n    return callback();\n}'
+            ;;
+        x86_64)
+            probe_source+=$'\n#if !defined(__x86_64__) || defined(__arm64e__)\n#error compiler did not select native x86_64 Mach-O ABI\n#endif'
+            ;;
+        *)
+            printf 'error: unsupported native LLVM macOS ABI probe architecture: %s\n' "$arch" >&2
+            rm -f "$output"
+            return 1
+            ;;
+    esac
+    if [[ "$arch" != arm64e ]]; then
+        probe_source+=$'\nint main(void) { return 0; }'
     fi
+
+    # Surface the responsible stage and actual compiler/linker diagnostics.
+    # Missing SDK/libSystem, wrong ISA and failing executable differ.
     if printf '%s\n' "$probe_source" |
         "$compiler" -arch "$arch" \
             -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
-            -x "$language" - -o "$output" >/dev/null 2>&1; then
-        if "$output" >/dev/null 2>&1; then
-            rm -f "$output"
-            return 0
-        fi
+            -x "$language" - -o "$output" >"$log" 2>&1; then
+        :
+    else
+        status=$?
+        printf 'error: native macOS %s %s ABI compile/link failed (exit %s)\n' \
+            "$language" "$arch" "$status" >&2
+        printf '  compiler: %s\n  SDK: %s\n  deployment: %s\n' \
+            "$compiler" "$sdkroot" "$deployment_target" >&2
+        cat "$log" >&2
+        rm -f "$output" "$log"
+        return 1
     fi
-    rm -f "$output"
-    return 1
+    if "$output" >"$log" 2>&1; then
+        rm -f "$output" "$log"
+        return 0
+    else
+        status=$?
+        printf 'error: native macOS %s %s ABI executable failed (exit %s)\n' \
+            "$language" "$arch" "$status" >&2
+        printf '  compiler: %s\n  SDK: %s\n  deployment: %s\n' \
+            "$compiler" "$sdkroot" "$deployment_target" >&2
+        cat "$log" >&2
+        rm -f "$output" "$log"
+        return 1
+    fi
 }
 
 if [[ "$host_os" == macos ]]; then

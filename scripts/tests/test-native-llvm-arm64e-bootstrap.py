@@ -54,7 +54,13 @@ assert '"$host_tag" == aarch64' in text
 assert '10#${deployment_target%%.*} < 11' in text
 assert 'native LLVM arm64/arm64e deployment target must be macOS 11.0 or newer' in text
 
-assert '"$output" >/dev/null 2>&1' in text
+assert '"$output" >"$log" 2>&1' in text
+assert '#include <TargetConditionals.h>' in arch_probe
+assert 'sizeof(void *) == 8 && sizeof(long) == 8' in arch_probe
+assert 'compiler did not select native arm64 Mach-O ABI' in arch_probe
+assert 'compiler did not select native x86_64 Mach-O ABI' in arch_probe
+assert 'ABI compile/link failed' in arch_probe
+assert 'ABI executable failed' in arch_probe
 
 # The selected Mach-O ABI must be part of the cached toolchain identity so an
 # older arm64 toolchain cannot be reused after an arm64e-capable host switches.

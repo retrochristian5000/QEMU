@@ -487,6 +487,13 @@ CMake compiler-workaround variable is introduced.
 Native LLVM compiler-selection shortcut
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+The native macOS C/C++ ABI probe now verifies each requested architecture's
+actual arm64, arm64e or x86_64 predefines, macOS SDK platform and LP64 data
+model. An ignored ``-arch arm64`` cannot pass simply because Rosetta runs
+an x86_64 executable. Compile/link and execution failures retain their
+individual diagnostics, selected compiler, SDK and deployment target. The
+arm64e authenticated indirect-call checks remain mandatory.
+
 ``scripts/bootstrap-native-clang.bash`` reuses ``CC_FOR_BUILD`` and
 ``CXX_FOR_BUILD`` when they are available from the public build entry.
 Explicit ``NATIVE_LLVM_BOOTSTRAP_CC`` and ``NATIVE_LLVM_BOOTSTRAP_CXX``

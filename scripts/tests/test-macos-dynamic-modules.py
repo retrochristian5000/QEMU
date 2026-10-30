@@ -35,7 +35,8 @@ assert "Dynamic QEMU modules" in config
 assert '[[ "$HOST_OS" == Darwin && "$QEMU_HOST_MODULES" == auto ]]' in prepare
 assert 'configure_args+=(--enable-modules)' in prepare
 assert 'whp_add_optional_configure_switch "$QEMU_HOST_MODULES" modules' in prepare
-assert "platform.system() == 'Darwin' and values['QEMU_HOST_MODULES'] == 'auto'" in portable
+assert "if host_is_macos() and values['QEMU_HOST_MODULES'] == 'auto':" in portable
+assert "def host_is_macos(" in portable
 assert "configure_args.append('--enable-modules')" in portable
 assert "optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')" in portable
 
