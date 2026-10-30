@@ -88,6 +88,17 @@ fi
 if [ "$(uname -s)" = Linux ]; then
     native_cc=$(command -v cc)
     native_ld=$(command -v ld)
+    # The synthetic Apple Clang above deliberately only tests discovery.
+    # For the *linker* smoke, delegate the mock to the real Linux compiler.
+    # The Linux driver must not receive a nonexistent fake MacOSX.sdk via
+    # -isysroot; the developer/SDK root checks remain exercised separately.
+    cat > "$xcode/usr/bin/clang" <<'SH'
+#!/bin/sh
+if [ "${1:-}" = -isysroot ]; then shift 2; fi
+exec "$WHP_TEST_NATIVE_CC" "$@"
+SH
+    chmod +x "$xcode/usr/bin/clang"
+    export WHP_TEST_NATIVE_CC="$native_cc"
     printf '#!/bin/sh\nexec "$WHP_TEST_NATIVE_LD" "$@"\n' > "$xcode/usr/bin/ld"
     chmod +x "$xcode/usr/bin/ld"
     cat > "$tmp/bin/uname" <<'EOF'
