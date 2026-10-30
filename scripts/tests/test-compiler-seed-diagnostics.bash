@@ -133,12 +133,12 @@ selected="$(CPATH=/target/include LIBRARY_PATH=/target/lib \
     C_INCLUDE_PATH=/target/c CPLUS_INCLUDE_PATH=/target/cxx \
     LD_LIBRARY_PATH=/target/lib \
     try_compiler c "$tmp/env-tainted" report)"
-test "$selected" = "$tmp/env-tainted"
+test "$selected" = "$(cd -P -- "$tmp" && pwd -P)/env-tainted"
 mkdir -p "$tmp/relative"
 cp "$tmp/env-tainted" "$tmp/relative/relative-cc"
 (
     cd "$tmp"
     selected="$(try_compiler c relative/relative-cc report)"
-    test "$selected" = "$tmp/relative/relative-cc"
+    test "$selected" = "$(cd -P -- "$tmp/relative" && pwd -P)/relative-cc"
 )
 printf '%s\n' 'WHP compiler seed failure diagnostics: verified'
