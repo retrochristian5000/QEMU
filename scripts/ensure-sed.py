@@ -445,6 +445,41 @@ def copy_source(
         )
 
 
+def gettext_aclocal_dir() -> str:
+    """Find gettext's macros beside the selected autopoint installation."""
+    autopoint = shutil.which("autopoint")
+    if not autopoint:
+        raise RuntimeError(
+            "GNU sed bootstrap needs autopoint even with --skip-po; "
+            "install the autopoint package or expose gettext's bin on PATH"
+        )
+    directory = pathlib.Path(autopoint).resolve().parent.parent / "share" / "aclocal"
+    if not (directory / "gettext.m4").is_file():
+        raise RuntimeError(
+            f"GNU sed gettext.m4 not found beside autopoint: {directory}"
+        )
+    return str(directory)
+
+
+def report_configure_failure(log: pathlib.Path) -> None:
+    """Report the C compiler failure block without dumping env settings."""
+    if not log.is_file():
+        print(f"GNU sed configure diagnostic unavailable: {log}", file=sys.stderr)
+        return
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    hits = [
+        i for i, line in enumerate(lines)
+        if "checking whether the C compiler works" in line
+    ]
+    if not hits:
+        print(f"GNU sed configure failed; inspect {log}", file=sys.stderr)
+        return
+    start = hits[-1]
+    print("GNU sed configure compiler diagnostics (config.log):", file=sys.stderr)
+    for line in lines[start:min(len(lines), start + 65)]:
+        print(line, file=sys.stderr)
+
+
 def select_macos_sdkroot() -> str:
     """Use the same selected Xcode/CLT SDK guard as the compiler adapter."""
     helper = ROOT / "scripts/whp-build/macos-developer-tools.sh"
@@ -549,6 +584,7 @@ def marker_text(
     sdkroot: str,
     arch: str,
     deployment: str,
+    aclocal_path: str,
 ) -> str:
     return (
         f"SED_BOOTSTRAP_SCHEMA={SED_BOOTSTRAP_SCHEMA}\n"
@@ -562,6 +598,7 @@ def marker_text(
         f"SDKROOT={sdkroot}\n"
         f"WHP_MACOS_ARCH={arch}\n"
         f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
+        f"ACLOCAL_PATH={aclocal_path}\n"
     )
 
 
@@ -600,6 +637,14 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["CC"] = cc
     env["WHP_SED_SEED"] = seed
     env["SED"] = str(SED_ADAPTER)
+    # --skip-po suppresses translation downloads, not gettext macros.
+    # The WHP Automake installation needs the actual gettext macro directory
+    # to expand AM_GNU_GETTEXT rather than leave unresolved calls.
+    gettext_m4 = gettext_aclocal_dir()
+    inherited_aclocal = env.get("ACLOCAL_PATH", "")
+    env["ACLOCAL_PATH"] = gettext_m4 + (
+        os.pathsep + inherited_aclocal if inherited_aclocal else ""
+    )
     sdkroot, arch, deployment = macos_environment(env)
 
     # The seed compiler probe alone does not validate sed's final flags.
@@ -608,7 +653,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     validate_configure_compiler(cc, env, work)
 
     marker = marker_text(
-        revision, nested_revision, cc, seed, sdkroot, arch, deployment
+        revision, nested_revision, cc, seed, sdkroot, arch, deployment,
+        env["ACLOCAL_PATH"],
     )
     if (
         marker_path.is_file()
@@ -661,17 +707,21 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     if not configure.is_file():
         raise RuntimeError("GNU sed bootstrap did not generate configure")
 
-    run_logged(
-        [
-            config_shell,
-            str(configure),
-            f"--prefix={prefix}",
-            "--disable-gcc-warnings",
-            "--disable-nls",
-        ],
-        cwd=objects,
-        env=env,
-    )
+    try:
+        run_logged(
+            [
+                config_shell,
+                str(configure),
+                f"--prefix={prefix}",
+                "--disable-gcc-warnings",
+                "--disable-nls",
+            ],
+            cwd=objects,
+            env=env,
+        )
+    except RuntimeError:
+        report_configure_failure(objects / "config.log")
+        raise
     run_logged(
         [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
         cwd=objects,
