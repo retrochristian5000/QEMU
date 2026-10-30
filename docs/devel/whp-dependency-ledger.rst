@@ -631,7 +631,9 @@ subset needed by the bootstrap and rejects recursion back into itself. The
 public ``build.sh`` resolves this seed once as ``WHP_SED_SEED`` before the
 Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
 self-bootstrap therefore consume one provenance identity rather than
-independently rediscovering host sed implementations.
+independently rediscovering host sed implementations. The promoted
+``SED`` is a distinct downstream tool; host-tools must not unset
+``WHP_SED_SEED`` after the managed sed builder runs.
 
 **Managed GNU sed** remains downstream of Automake and managed Autoconf. The pinned sed fork is a
 maintainer-source checkout whose bootstrap explicitly requires Automake and

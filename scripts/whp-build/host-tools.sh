@@ -319,6 +319,12 @@ else
         printf 'error: QEMU sed.sh could not resolve a working host sed seed\n' >&2
         exit 1
     fi
+    # build.sh published the seed before Python. Do not erase that identity
+    # merely because the managed GNU sed executable was promoted for $SED.
+    if [ -z "${WHP_SED_SEED:-}" ]; then
+        WHP_SED_SEED=$WHP_HOST_SED
+        export WHP_SED_SEED
+    fi
 
     SED=
     if [ "$BOOTSTRAP_SED" != 1 ] && whp_sed_is_gnu "$WHP_HOST_SED"; then
@@ -326,12 +332,9 @@ else
     elif [ "$BOOTSTRAP_SED" != 0 ] &&
          [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
          [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
-        WHP_SED_SEED=$WHP_HOST_SED
-        export WHP_SED_SEED
         SED=$(
             "$PYTHON" "$SOURCE_DIR/scripts/ensure-sed.py" --build-dir "$BUILD_DIR"
         ) || SED=
-        unset WHP_SED_SEED
     fi
 
     if [ -z "$SED" ]; then

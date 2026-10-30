@@ -43,6 +43,10 @@ def main() -> int:
     python_bootstrap = '"$SOURCE_DIR/scripts/bootstrap-python.sh"'
     require(build, seed, "early seed sed selection")
     require(build, "export WHP_SED_SEED", "seed sed export")
+    require(host_tools, 'if [ -z "${WHP_SED_SEED:-}" ]; then',
+            "sed bootstrap retains build.sh seed provenance")
+    if "unset WHP_SED_SEED" in host_tools:
+        raise SystemExit("error: managed sed bootstrap destroys seed provenance")
     if not build.index(grep_seed) < build.index(seed) < build.index(python_bootstrap):
         raise SystemExit("error: grep, sed, Python bootstrap order has drifted")
 
