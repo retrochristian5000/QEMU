@@ -12,12 +12,24 @@ is_self()
     return 1
 }
 
+# Validate build-machine toolchain behavior without target flags or loader
+# overrides. This helper is used only in compiler-selection subshells.
+whp_native_probe_environment()
+{
+    unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
+    unset LIBRARY_PATH LD_LIBRARY_PATH LD_PRELOAD
+    unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+    unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS OBJCXXFLAGS LIBS
+    unset COMPILER_PATH GCC_EXEC_PREFIX
+}
+
 # Report genuine compiler failures only for explicit choices or selected
 # Apple defaults; keep exploratory PATH discovery quiet.
 resolve_executable()
 (
     value=$1
     report=${2:-quiet}
+    whp_native_probe_environment
     if [ -z "$value" ]; then
         [ "$report" = report ] && printf 'error: empty build compiler selection\n' >&2
         exit 1
@@ -81,13 +93,9 @@ compiler_runs_native()
     language=$1
     compiler=$2
     report=${3:-quiet}
-    # Clean probe-only target search paths. Real compiler invocations retain
-    # all caller flags and environment outside this subshell.
-    unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
-    unset LIBRARY_PATH LD_LIBRARY_PATH LD_PRELOAD
-    unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
-    unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS OBJCXXFLAGS LIBS
-    unset COMPILER_PATH GCC_EXEC_PREFIX
+    # Apply the same environment policy to version/recursion checks and
+    # native compilation. The caller's real compilation stays untouched.
+    whp_native_probe_environment
     # A PID-only directory can outlive a killed bootstrap. Keep retried and
     # concurrent probes separate without leaking temporary output on success.
     if tmp_dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-cc-seed.XXXXXX"); then

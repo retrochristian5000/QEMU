@@ -119,13 +119,13 @@ grep -Fq 'WHP_HEADERLESS_CC' "$tmp/stderr"
 # No target include or library search override may influence seed admission.
 cat > "$tmp/env-tainted" <<'SH'
 #!/bin/sh
-if [ "$1" = --version ]; then printf '%s\n' 'mock native cc'; exit 0; fi
 for key in CPATH LIBRARY_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LD_LIBRARY_PATH; do
     if printenv "$key" >/dev/null 2>&1; then
         printf '%s\n' "WHP_PROBE_ENV_POISON: $key" >&2
         exit 72
     fi
 done
+if [ "$1" = --version ]; then printf '%s\n' 'mock native cc'; exit 0; fi
 exec "$WHP_REAL_NATIVE_CC" "$@"
 SH
 chmod +x "$tmp/env-tainted"

@@ -25,6 +25,7 @@ def main() -> int:
     require(shared, '#include <unistd.h>', "native POSIX SDK header probe")
     require(shared, 'access(".", F_OK)', "real libc link/run probe")
     require(shared, 'unset CPATH C_INCLUDE_PATH', "probe-only include isolation")
+    require(shared, 'whp_native_probe_environment', "shared compiler probe sanitation")
     require(shared, 'unset LIBRARY_PATH LD_LIBRARY_PATH', "probe-only library isolation")
     require(shared, 'candidate=$dir/', "absolute bootstrap compiler identity")
     if '/*) ;;' in shared:
