@@ -623,3 +623,61 @@ for entry in (
 ):
     assert entry in bootstrap[bootstrap.index('cmake_args=('):], entry
 assert 'rm -rf "$LLVM_BUILD_DIR"' not in bootstrap
+
+# Execute the actual native LLVM CMake cache marker, without a full LLVM build.
+identity_body = bootstrap.split('cmake_config_identity="$(', 1)[1].split(
+    '\n)"\n', 1
+)[0]
+
+
+def native_cmake_identity(revision: str, source_dir: str) -> str:
+    script = (
+        'set -euo pipefail\n'
+        'llvm_revision="$1"\n'
+        'LLVM_SOURCE_DIR="$2"\n'
+        'bootstrap_cc_version=seed-cc\n'
+        'bootstrap_cxx_version=seed-cxx\n'
+        'cmake_args=(-S /test/llvm -B /test/build -G Ninja)\n'
+        'cmake_config_identity="$(\n' + identity_body + '\n)"\n'
+        'printf "%s\n" "$cmake_config_identity"\n'
+    )
+    return subprocess.run(
+        ['bash', '-c', script, 'native-llvm-cmake-test', revision, source_dir],
+        text=True, capture_output=True, check=True,
+    ).stdout
+
+
+baseline_identity = native_cmake_identity('a' * 40, '/checkout/llvm-project')
+assert baseline_identity != native_cmake_identity(
+    'b' * 40, '/checkout/llvm-project'
+), 'LLVM gitlink drift reused the native CMake graph'
+assert baseline_identity != native_cmake_identity(
+    'a' * 40, '/different/llvm-project'
+), 'LLVM source path drift reused the native CMake graph'
+
+# Run the exact host CMake environment filter with adversarial toolchain and
+# generator settings. Host library discovery prefixes must remain unchanged.
+cmake_env_isolation = bootstrap.split(
+    '# WHP_NATIVE_LLVM_CMAKE_ENV_BEGIN\n', 1
+)[1].split('# WHP_NATIVE_LLVM_CMAKE_ENV_END', 1)[0]
+poisoned_cmake_env = {
+    **os.environ,
+    'CMAKE_TOOLCHAIN_FILE': '/cross/target.cmake',
+    'CMAKE_GENERATOR': 'Unix Makefiles',
+    'CMAKE_GENERATOR_PLATFORM': 'arm64',
+    'CMAKE_PROJECT_TOP_LEVEL_INCLUDES': '/cross/inject.cmake',
+    'PKG_CONFIG_SYSROOT_DIR': '/cross/sysroot',
+    'PKG_CONFIG_LIBDIR': '/cross/pkgconfig',
+    'CMAKE_PREFIX_PATH': '/native/deps',
+    'PKG_CONFIG_PATH': '/native/pkgconfig',
+}
+filtered = subprocess.run(
+    [
+        'bash', '-c', 'set -euo pipefail\n' + cmake_env_isolation +
+        '\nprintf "%s|%s|%s|%s" "${CMAKE_TOOLCHAIN_FILE-unset}" '
+        '"${CMAKE_GENERATOR-unset}" "${CMAKE_PREFIX_PATH-unset}" '
+        '"${PKG_CONFIG_PATH-unset}"\n',
+    ],
+    env=poisoned_cmake_env, text=True, capture_output=True, check=True,
+)
+assert filtered.stdout == 'unset|unset|/native/deps|/native/pkgconfig'
