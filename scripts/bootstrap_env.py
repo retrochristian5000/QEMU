@@ -119,13 +119,16 @@ def select_bootstrap_cflags(
                     f"fragment: {fragment!r}", file=sys.stderr,
                 )
                 continue
+            # A previous successful probe must not mask a compile-only or
+            # syntax-only flag that reports success without linking anything.
+            output.unlink(missing_ok=True)
             probe = subprocess.run(
                 [cc, *selected, fragment, str(test), "-o", str(output)],
                 cwd=directory, env=env, text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
             )
             diagnostics = (probe.stdout + probe.stderr).lower()
-            if probe.returncode or (
+            if probe.returncode or not output.is_file() or (
                 "unknown warning option" in diagnostics
                 or "unrecognized command-line option" in diagnostics
             ):

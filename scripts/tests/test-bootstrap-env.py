@@ -155,9 +155,22 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
     cc = base / "fake-native-cc"
     cc.write_text(
         "#!/bin/sh\n"
+        "output=\n"
+        "previous=\n"
+        "syntax_only=0\n"
         "for arg do\n"
-        "    case \"$arg\" in -fwhp-unsupported) exit 1 ;; esac\n"
+        "    if [ \"$previous\" = -o ]; then\n"
+        "        output=$arg; previous=; continue\n"
+        "    fi\n"
+        "    case \"$arg\" in\n"
+        "        -o) previous=-o ;;\n"
+        "        -fwhp-unsupported) exit 1 ;;\n"
+        "        -fsyntax-only) syntax_only=1 ;;\n"
+        "    esac\n"
         "done\n"
+        "[ \"$syntax_only\" = 1 ] && exit 0\n"
+        "[ -n \"$output\" ] || exit 1\n"
+        "printf x > \"$output\"\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -190,7 +203,8 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
     else:
         raise AssertionError("accepted malformed common flags")
     for bad in ("-target", "--sysroot=/sdk", "-isysroot",
-                "-flto=thin", "-fsanitize=address", "-march=native"):
+                "-flto=thin", "-fsanitize=address", "-march=native",
+                "-fsyntax-only"):
         assert module.select_bootstrap_cflags("git", str(cc), {
             "WHP_BOOTSTRAP_GIT_CFLAGS": bad,
         }) == "", bad
