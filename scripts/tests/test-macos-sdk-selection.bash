@@ -464,9 +464,8 @@ if grep -Eq '^(ar|nm|ranlib|strip)[[:space:]]*=' "$darwin_native"; then
     exit 1
 fi
 
-# Native LLVM's --read-workers is optional: older / threadless ld64.lld
-# builds must not receive it, while the supported linker keeps it. The tests
-# capture the exported linker command actually handed to builder.sh.
+# Configure must not inherit optional LLD prefetch-worker flags.
+# The Ninja/LLVM parallel job budget is independent of linker options.
 native_tools="$TEST_DIR/native-llvm"
 mkdir -p "$native_tools/bin"
 printf '#!/bin/sh\nexit 0\n' > "$native_tools/bin/ld64.lld"
@@ -482,53 +481,29 @@ linker_env=(
     CC="$CLANG"
     CXX="$CLANGXX"
 )
-link_reject="$TEST_DIR/llvm-reject-read-workers"
-if ! env "${linker_env[@]}" TEST_LLD_READ_WORKERS=reject \
-    JOBS=3 BUILD_DIR="$TEST_DIR/linker-reject-build" \
-    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-reject-tools" \
-    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_reject" 2>&1; then
-    cat "$link_reject" >&2
-    exit 1
-fi
-grep -Fq 'omitting optional link prefetch' "$link_reject"
-grep -Fq -- '-Wl,-dead_strip' "$link_reject"
-if grep '^LDFLAGS=' "$link_reject" | grep -Eq -- '(--read-workers|-Wl,-O2)'; then
-    printf 'error: unsupported LLVM LDFLAGS leaked into the host build\n' >&2
+link_default="$TEST_DIR/llvm-no-config-workers"
+env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=2 JOBS=3 \
+    BUILD_DIR="$TEST_DIR/linker-no-workers-build" \
+    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-no-workers-tools" \
+    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_default" 2>&1
+grep -Fq 'NATIVE_LLVM_READ_WORKERS is ignored' "$link_default"
+grep '^LDFLAGS=' "$link_default" | grep -Fq -- '-Wl,-dead_strip'
+if grep '^LDFLAGS=' "$link_default" | grep -Eq -- '(--read-workers|-Wl,-O2)'; then
+    printf 'error: unportable worker or Apple linker option reached QEMU configure\n' >&2
     exit 1
 fi
 
-link_accept="$TEST_DIR/llvm-accept-read-workers"
-env "${linker_env[@]}" TEST_LLD_READ_WORKERS=accept \
-    JOBS=3 BUILD_DIR="$TEST_DIR/linker-accept-build" \
-    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-accept-tools" \
-    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_accept" 2>&1
-grep '^LDFLAGS=' "$link_accept" | grep -Fq -- '-Wl,--read-workers=3'
-if grep '^LDFLAGS=' "$link_accept" | grep -Fq -- '-Wl,-O2'; then
-    printf 'error: Apple-only -O2 was passed to Mach-O LLD\n' >&2
-    exit 1
-fi
-
-link_zero="$TEST_DIR/llvm-zero-read-workers"
-env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=0 \
-    TEST_LLD_READ_WORKERS=reject JOBS=3 \
-    BUILD_DIR="$TEST_DIR/linker-zero-build" \
-    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-zero-tools" \
-    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_zero" 2>&1
-if grep '^LDFLAGS=' "$link_zero" | grep -Fq -- '--read-workers'; then
-    printf 'error: explicit zero must omit optional LLD workers entirely\n' >&2
-    exit 1
-fi
-
-link_forced="$TEST_DIR/llvm-forced-read-workers"
-if env "${linker_env[@]}" NATIVE_LLVM_READ_WORKERS=4 \
-    TEST_LLD_READ_WORKERS=reject JOBS=3 \
-    BUILD_DIR="$TEST_DIR/linker-forced-build" \
-    OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-forced-tools" \
-    bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_forced" 2>&1; then
-    printf 'error: unsupported explicit LLD read workers were silently accepted\n' >&2
-    exit 1
-fi
-grep -Fq 'does not accept --read-workers=4' "$link_forced"
+for bad_flag in '-Wl,--read-workers=2' '-Xlinker --read-workers=2'; do
+    link_invalid="$TEST_DIR/llvm-invalid-workers"
+    if env "${linker_env[@]}" LDFLAGS="$bad_flag" \
+        BUILD_DIR="$TEST_DIR/linker-invalid-workers-build" \
+        OPENBIOS_TOOLS_DIR="$TEST_DIR/linker-invalid-workers-tools" \
+        bash "$SOURCE_DIR/scripts/macos-builder.bash" > "$link_invalid" 2>&1; then
+        printf 'error: configure accepted unsupported worker flags: %s\n' "$bad_flag" >&2
+        exit 1
+    fi
+    grep -Fq 'cannot appear in global LDFLAGS during QEMU configure' "$link_invalid"
+done
 
 # Complete threads options are normalized to the canonical linker spelling.
 # Comma-separated values and -Xlinker misuse remain unsupported.
