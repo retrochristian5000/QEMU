@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Verify optional Mach-O LLD flags are accepted by both Clang driver lanes."""
+"""Verify native LLD C++ links and isolate optional worker flags from configure."""
 
 import os
 from pathlib import Path
@@ -8,133 +8,117 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILDER = ROOT / 'scripts/macos-builder.bash'
-source = BUILDER.read_text(encoding='utf-8')
-start = source.index('whp_native_lld_accepts_read_workers()\n{')
-end = source.index('\n}\n', start) + len('\n}\n')
-function = source[start:end]
+BUILDER = ROOT / "scripts/macos-builder.bash"
+BOOTSTRAP = ROOT / "scripts/bootstrap-native-clang.bash"
+builder = BUILDER.read_text(encoding="utf-8")
+bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
 
-with tempfile.TemporaryDirectory(prefix='whp-cxx-lld-flags-') as temp:
-    directory = Path(temp)
-    log = directory / 'calls.txt'
-    for name in ('fake-c', 'fake-cxx'):
-        executable = directory / name
-        executable.write_text("""#!/bin/sh
-printf '%s %s\\n' "$0" "$*" >> "$WHP_DRIVER_LOG"
-case " $* " in
-  *' -arch arm64e '*) ;;
-  *) exit 2 ;;
-esac
-case " $* " in
-  *' -isysroot /fake/MacOSX.sdk '*) ;;
-  *) exit 3 ;;
-esac
-case " $* " in
-  *' -mmacosx-version-min=15.0 '*) ;;
-  *) exit 4 ;;
-esac
-case " $* " in
-  *' -fuse-ld=lld '*) ;;
-  *) exit 5 ;;
-esac
-case " $* " in
-  *' -Wl,--read-workers=4 '*|*' -Wl,--read-workers=2 '*) ;;
-  *) exit 6 ;;
-esac
-case "$0:$*" in
-  *fake-cxx*' -x c++ '*) ;;
-  *fake-c*' -x c '*) ;;
-  *) exit 7 ;;
-esac
-if [ "$WHP_REJECT_CXX" = 1 ]; then
-    case "$0" in *fake-cxx) exit 8 ;; esac
+# Keep native LLD selected only after a clean C++ link. No optional input
+# worker setting may enter native LLVM CMake or QEMU's global LDFLAGS.
+assert "bootstrap_lld_link_probe()\n{" in bootstrap
+assert "if bootstrap_lld_link_probe; then" in bootstrap
+assert "--read-workers" not in bootstrap
+assert '"-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"' in bootstrap
+assert 'whp_native_lld_accepts_read_workers' not in builder
+assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=' not in builder
+assert 'global LDFLAGS during QEMU configure' in builder
+
+start = bootstrap.index("bootstrap_lld_link_probe()\n{")
+end = bootstrap.index("\n}\n", start) + len("\n}\n")
+base_link_probe = bootstrap[start:end]
+
+start = builder.index("validate_macho_thread_flags()\n{")
+end = builder.index("\n}\n", start) + len("\n}\n")
+validate_flags = builder[start:end]
+
+with tempfile.TemporaryDirectory(prefix="whp-native-lld-cxx-") as temp:
+    folder = Path(temp)
+    log = folder / "calls.log"
+    driver = folder / "fake-cxx"
+    driver.write_text(r"""#!/bin/sh
+printf '%s\n' "$*" >> "$WHP_DRIVER_LOG"
+case " $* " in *' -Wl,--read-workers='*) exit 12 ;; esac
+case " $* " in *' -arch arm64e '*) ;; *) exit 2 ;; esac
+case " $* " in *' -isysroot /fake/MacOSX.sdk '*) ;; *) exit 3 ;; esac
+case " $* " in *' -mmacosx-version-min=15.0 '*) ;; *) exit 4 ;; esac
+case " $* " in *' -fuse-ld=lld '*) ;; *) exit 5 ;; esac
+case " $* " in *' -x c++ '*) ;; *) exit 6 ;; esac
+if [ "$WHP_DRIVER_REJECT" = 1 ]; then exit 7; fi
+if [ "$WHP_DRIVER_WARN" = 1 ]; then
+    printf 'ld: warning: incompatible linker\n' >&2
 fi
-if [ "$WHP_WARN" = 1 ]; then
-    printf 'ld: warning: ignoring unsupported read-workers option\n' >&2
-fi
-if [ "$WHP_SKIP_OUTPUT" = 1 ]; then exit 0; fi
+if [ "$WHP_DRIVER_SKIP_OUTPUT" = 1 ]; then exit 0; fi
 output=
 previous=
 for arg do
     if [ "$previous" = -o ]; then output=$arg; break; fi
     previous=$arg
 done
-[ -n "$output" ] || exit 9
+[ -n "$output" ] || exit 8
 printf '#!/bin/sh\nexit 0\n' > "$output"
 chmod +x "$output"
 exit 0
-""", encoding='utf-8')
-        executable.chmod(0o755)
+""", encoding="utf-8")
+    driver.chmod(0o755)
 
-    script = '\n'.join([
-        'set -e',
-        f'CC="{directory / "fake-c"}"',
-        f'CXX="{directory / "fake-cxx"}"',
-        'WHP_MACOS_ARCH=arm64e',
-        'SDKROOT=/fake/MacOSX.sdk',
-        'MACOSX_DEPLOYMENT_TARGET=15.0',
-        function,
-        'whp_native_lld_accepts_read_workers "${WHP_WORKERS:-4}"',
+    script = "\n".join([
+        "set -e",
+        f'bootstrap_cxx="{driver}"',
+        f'TOOLCHAIN_DIR="{folder}"',
+        "darwin_cmake_arch=arm64e",
+        "sdkroot=/fake/MacOSX.sdk",
+        "deployment_target=15.0",
+        base_link_probe,
+        "bootstrap_lld_link_probe",
     ])
-    common = {**os.environ, 'WHP_DRIVER_LOG': str(log)}
-    accepted = subprocess.run(['bash', '-c', script],
-                              env={**common, 'WHP_REJECT_CXX': '0'},
-                              capture_output=True, text=True, check=False)
-    assert accepted.returncode == 0, accepted.stderr
-    lines = log.read_text(encoding='utf-8').splitlines()
-    assert len(lines) == 2, lines
-    assert 'fake-c ' in lines[0]
-    assert 'fake-cxx ' in lines[1]
-
-    log.unlink()
-    rejected = subprocess.run(['bash', '-c', script],
-                              env={**common, 'WHP_REJECT_CXX': '1'},
-                              capture_output=True, text=True, check=False)
-    assert rejected.returncode != 0, 'Clang++ rejection must disable LLD workers'
-    assert len(log.read_text(encoding='utf-8').splitlines()) == 2
-
-    # Two workers are supported only when a real link completes cleanly.
-    for workers, extra, expected in (
-        ('2', {}, True),
-        ('4', {'WHP_SKIP_OUTPUT': '1'}, False),
-        ('2', {'WHP_WARN': '1'}, False),
+    base_env = {**os.environ, "WHP_DRIVER_LOG": str(log)}
+    for name, extra, expected in (
+        ("normal", {}, True),
+        ("unsupported-driver", {"WHP_DRIVER_REJECT": "1"}, False),
+        ("missing-linked-output", {"WHP_DRIVER_SKIP_OUTPUT": "1"}, False),
+        ("warning-treated-as-failure", {"WHP_DRIVER_WARN": "1"}, False),
     ):
-        log.unlink()
+        if log.exists():
+            log.unlink()
         result = subprocess.run(
-            ['bash', '-c', script],
-            env={**common, 'WHP_REJECT_CXX': '0',
-                 'WHP_WORKERS': workers, **extra},
-            capture_output=True, text=True, check=False,
+            ["bash", "-c", script], env={**base_env, **extra},
+            text=True, capture_output=True, check=False,
         )
-        assert (result.returncode == 0) == expected, (workers, extra, result.stderr)
-        assert log.read_text(encoding='utf-8').splitlines()
+        assert (result.returncode == 0) == expected, (
+            name, result.returncode, result.stderr
+        )
+        calls = log.read_text(encoding="utf-8").splitlines()
+        assert len(calls) == 1, (name, calls)
+        assert "--read-workers" not in calls[0], (name, calls)
 
-    # The native LLVM bootstrap must reject the same false positives.
-    llvm_source = (ROOT / 'scripts/bootstrap-native-clang.bash').read_text(
-        encoding='utf-8')
-    begin = llvm_source.index('bootstrap_lld_link_probe()\n{')
-    end = llvm_source.index('\n}\n', begin) + len('\n}\n')
-    llvm_function = llvm_source[begin:end]
-    llvm_script = '\n'.join([
-        'set -e',
-        f'bootstrap_cxx="{directory / "fake-cxx"}"',
-        f'TOOLCHAIN_DIR="{directory}"',
-        'darwin_cmake_arch=arm64e',
-        'sdkroot=/fake/MacOSX.sdk',
-        'deployment_target=15.0',
-        llvm_function,
-        'bootstrap_lld_link_probe -Wl,--read-workers=2',
+    # Execute the QEMU wrapper's real input validation, not a reimplementation.
+    # A perfectly valid LLD must not authorize --read-workers inside global
+    # configure flags; normal -Wl,--threads=2 remains a separate contract.
+    validate_script = "\n".join([
+        "set -e",
+        'NATIVE_LLVM_DIR="/fake/native-llvm"',
+        'LD="/fake/native-llvm/bin/ld64.lld"',
+        'NATIVE_LLVM_LDFLAG=-fuse-ld=lld',
+        "whp_native_lld_accepts_threads() { return 0; }",
+        validate_flags,
+        "validate_macho_thread_flags",
     ])
-    for extra, expected in (
-        ({}, True),
-        ({'WHP_SKIP_OUTPUT': '1'}, False),
-        ({'WHP_WARN': '1'}, False),
+    for value, accepted in (
+        ("", True),
+        ("-Wl,--read-workers=2", False),
+        ("-Xlinker --read-workers=2", False),
+        ("--read-workers=2", False),
+        ("-Wl,--threads=2", True),
     ):
         result = subprocess.run(
-            ['bash', '-c', llvm_script],
-            env={**common, 'WHP_REJECT_CXX': '0', **extra},
+            ["bash", "-c", validate_script],
+            env={**os.environ, "LDFLAGS": value},
             capture_output=True, text=True, check=False,
         )
-        assert (result.returncode == 0) == expected, (extra, result.stderr)
+        assert (result.returncode == 0) == accepted, (
+            value, result.returncode, result.stderr
+        )
+        if not accepted:
+            assert "cannot appear in global LDFLAGS" in result.stderr
 
-print('Mach-O LLD Clang++ flag probes: verified')
+print("Mach-O LLD Clang++ and configure flag isolation: verified")
