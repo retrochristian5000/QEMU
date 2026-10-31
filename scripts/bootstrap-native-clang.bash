@@ -751,6 +751,32 @@ if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
         printf 'warning: previous arm64e ld64.lld failed authenticated relocation probe; using Apple ld for LLVM bootstrap\n' >&2
     fi
 fi
+# A successful driver exit is not enough; require a clean native output.
+bootstrap_lld_link_probe()
+{
+    local extra_flag="${1:-}"
+    local probe_dir probe_output probe_log
+    local -a extra_args=()
+    [[ -z "$extra_flag" ]] || extra_args=("$extra_flag")
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-lld-probe.XXXXXX")" || return 1
+    probe_output="$probe_dir/probe"
+    probe_log="$probe_dir/link.log"
+    if ! printf 'int main(void) { return 0; }\n' |
+        PATH="$TOOLCHAIN_DIR/bin:$PATH" \
+            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
+            "${extra_args[@]}" -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -x c++ - -o "$probe_output" >"$probe_log" 2>&1 ||
+        [[ ! -s "$probe_output" || ! -x "$probe_output" ]] ||
+        grep -Eiq '(^|[[:space:]])warning:' "$probe_log" ||
+        ! "$probe_output" >/dev/null 2>&1; then
+        rm -rf -- "$probe_dir"
+        return 1
+    fi
+    rm -rf -- "$probe_dir"
+    return 0
+}
+
 bootstrap_linker_args=()
 bootstrap_linker_args+=(
     -DLLVM_USE_LINKER=
@@ -761,28 +787,16 @@ bootstrap_linker_args+=(
 bootstrap_linker_name=system
 if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
       -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
-    # First validate that the installed ld64.lld can link at all. Newer
-    # optional performance flags must not decide which linker is selected.
-    if printf 'int main(void) { return 0; }\n' |
-        PATH="$TOOLCHAIN_DIR/bin:$PATH" \
-            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
-            -isysroot "$sdkroot" \
-            "-mmacosx-version-min=$deployment_target" \
-            -x c++ - -o /dev/null >/dev/null 2>&1; then
+    # First prove the installed linker can emit a real native executable.
+    # Optional worker settings do not determine the base linker selection.
+    if bootstrap_lld_link_probe; then
         PATH="$TOOLCHAIN_DIR/bin:$PATH"
         export PATH
         bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"
 
-        # --read-workers was added later than the basic Mach-O LLD link path.
-        # A thread-disabled or older linker may reject it. Probe separately
-        # and never carry an unsupported argument into CMake LDFLAGS.
+        # A Mach-O LLD build may not implement --read-workers=2.
         bootstrap_lld_link_flags=
-        if printf 'int main(void) { return 0; }\n' |
-            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
-                -Wl,--read-workers="$LLVM_LINK_JOBS" \
-                -isysroot "$sdkroot" \
-                "-mmacosx-version-min=$deployment_target" \
-                -x c++ - -o /dev/null >/dev/null 2>&1; then
+        if bootstrap_lld_link_probe -Wl,--read-workers="$LLVM_LINK_JOBS"; then
             bootstrap_lld_link_flags="-Wl,--read-workers=$LLVM_LINK_JOBS"
         fi
         bootstrap_linker_args=(

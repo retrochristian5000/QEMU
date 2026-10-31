@@ -466,32 +466,44 @@ validate_macho_thread_flags
 whp_native_lld_accepts_read_workers()
 {
     local workers="$1"
-    local driver_var language
+    local driver_var language probe_dir probe_output probe_log
     local -a probe_driver=()
 
-    # LDFLAGS are shared by both Clang and Clang++. The C-only driver can
-    # accept --read-workers even when the C++ driver uses a different wrapper
-    # or forwards the option to a different linker.
+    # Both C and C++ drivers must produce and run a native executable. A
+    # zero exit without a linked binary, or with warnings, is not support.
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-lld-workers.XXXXXX")" || return 1
+    probe_output="$probe_dir/probe"
+    probe_log="$probe_dir/link.log"
     for driver_var in CC CXX; do
         probe_driver=()
         read -r -a probe_driver <<< "${!driver_var:-}"
-        [[ "${#probe_driver[@]}" -gt 0 ]] || return 1
+        if [[ "${#probe_driver[@]}" -eq 0 ]]; then
+            rm -rf -- "$probe_dir"
+            return 1
+        fi
         if [[ "$driver_var" == CXX ]]; then
             language=c++
         else
             language=c
         fi
-
+        rm -f -- "$probe_output"
         if ! printf 'int main(void) { return 0; }\n' |
             "${probe_driver[@]}" -arch "$WHP_MACOS_ARCH" \
                 -isysroot "$SDKROOT" \
                 "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
                 -fuse-ld=lld "-Wl,--read-workers=$workers" \
-                -x "$language" - -o /dev/null >/dev/null 2>&1; then
+                -x "$language" - -o "$probe_output" \
+                >"$probe_log" 2>&1 ||
+            [[ ! -s "$probe_output" || ! -x "$probe_output" ]] ||
+            grep -Eiq '(^|[[:space:]])warning:' "$probe_log" ||
+            ! "$probe_output" >/dev/null 2>&1; then
+            rm -rf -- "$probe_dir"
             return 1
         fi
     done
+    rm -rf -- "$probe_dir"
     return 0
+}
 }
 
 native_macho_lld=0

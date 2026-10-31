@@ -1355,8 +1355,9 @@ is active: LLD's ``-O`` option is documented as an output-size option,
 not the same Apple linker optimization contract.
 
 ``-Wl,--read-workers=N`` is an optional Mach-O LLD input-prefetch
-extension. The wrapper first checks that the **selected Clang and linker**
-can complete an actual link with it. If the default job-budget value is
+extension. The wrapper checks that the selected C and C++ Clang drivers can produce
+and execute native outputs without linker warnings. Returning success without
+a linked executable is not evidence of support. If the default job-budget value is
 unsupported, it omits the flag with a warning; it never forwards that
 argument to Apple ``ld``. An explicitly requested unsupported positive
 ``NATIVE_LLVM_READ_WORKERS`` fails with an error rather than being silently
@@ -1383,8 +1384,9 @@ Use the build's established job budget rather than assuming that bare
 ``--read-workers=N`` and from Meson's ``b_lto_threads`` setting.
 
 The native LLVM bootstrap independently probes whether the previously
-installed ``ld64.lld`` can link before trying the optional worker
-extension. A missing extension must not force an otherwise usable linker
+installed ``ld64.lld`` can produce and run a native executable without
+warnings before trying the optional worker extension (usually
+``--read-workers=2``). A missing extension must not force an otherwise usable linker
 back to Apple ``ld``. These rules protect both the QEMU host link and
 the LLVM bootstrap; they do not imply that all linker arguments are
 interchangeable between ELF ``ld.lld`` and Mach-O ``ld64.lld``.

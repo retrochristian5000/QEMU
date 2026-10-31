@@ -245,6 +245,10 @@ assert 'whp_append_flag LDFLAGS "-Wl,-dead_strip"' in macos_builder
 # authenticated-relocation probe passes and the developer explicitly opts in.
 # Test the base linker before optional worker flags. Failed probes preserve
 # the Apple ld fallback instead of mislabelling unsupported links.
+assert 'bootstrap_lld_link_probe()' in bootstrap
+assert 'if bootstrap_lld_link_probe;' in bootstrap
+assert 'if bootstrap_lld_link_probe -Wl,--read-workers="$LLVM_LINK_JOBS"; then' in bootstrap
+assert '[[ ! -s "$probe_output" || ! -x "$probe_output" ]]' in bootstrap
 assert 'bootstrap_linker_args=()' in bootstrap
 assert 'whp_bootstrap_arm64e_lld_auth_probe()' in bootstrap
 assert '"$bootstrap_lld_arch_ok" == 1' in bootstrap

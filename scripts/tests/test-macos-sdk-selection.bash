@@ -161,7 +161,23 @@ case "${1:-}" in
         printf '%s\n' "${TEST_TARGET_TRIPLE:-arm64-apple-darwin24.0.0}"
         ;;
     -print-resource-dir) printf '/tmp\n' ;;
-    *) exit 0 ;;
+    *)
+        # Only mock the optional LLD-worker link; a zero-status compiler
+        # without an output is not sufficient evidence of linker support.
+        has_worker=0
+        output=
+        previous=
+        for arg in "$@"; do
+            [[ "$arg" == -Wl,--read-workers=* ]] && has_worker=1
+            if [[ "$previous" == -o ]]; then output="$arg"; fi
+            previous="$arg"
+        done
+        if [[ "$has_worker" == 1 && -n "$output" && "$output" != /dev/null ]]; then
+            printf '#!/bin/sh\nexit 0\n' > "$output"
+            chmod +x "$output"
+        fi
+        exit 0
+        ;;
 esac
 EOF
 cp "$CLANG" "$CLANGXX"

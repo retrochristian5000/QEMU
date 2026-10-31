@@ -38,7 +38,7 @@ case " $* " in
   *) exit 5 ;;
 esac
 case " $* " in
-  *' -Wl,--read-workers=4 '*) ;;
+  *' -Wl,--read-workers=4 '*|*' -Wl,--read-workers=2 '*) ;;
   *) exit 6 ;;
 esac
 case "$0:$*" in
@@ -49,6 +49,19 @@ esac
 if [ "$WHP_REJECT_CXX" = 1 ]; then
     case "$0" in *fake-cxx) exit 8 ;; esac
 fi
+if [ "$WHP_WARN" = 1 ]; then
+    printf 'ld: warning: ignoring unsupported read-workers option\n' >&2
+fi
+if [ "$WHP_SKIP_OUTPUT" = 1 ]; then exit 0; fi
+output=
+previous=
+for arg do
+    if [ "$previous" = -o ]; then output=$arg; break; fi
+    previous=$arg
+done
+[ -n "$output" ] || exit 9
+printf '#!/bin/sh\nexit 0\n' > "$output"
+chmod +x "$output"
 exit 0
 """, encoding='utf-8')
         executable.chmod(0o755)
@@ -61,7 +74,7 @@ exit 0
         'SDKROOT=/fake/MacOSX.sdk',
         'MACOSX_DEPLOYMENT_TARGET=15.0',
         function,
-        'whp_native_lld_accepts_read_workers 4',
+        'whp_native_lld_accepts_read_workers "${WHP_WORKERS:-4}"',
     ])
     common = {**os.environ, 'WHP_DRIVER_LOG': str(log)}
     accepted = subprocess.run(['bash', '-c', script],
@@ -79,5 +92,49 @@ exit 0
                               capture_output=True, text=True, check=False)
     assert rejected.returncode != 0, 'Clang++ rejection must disable LLD workers'
     assert len(log.read_text(encoding='utf-8').splitlines()) == 2
+
+    # Two workers are supported only when a real link completes cleanly.
+    for workers, extra, expected in (
+        ('2', {}, True),
+        ('4', {'WHP_SKIP_OUTPUT': '1'}, False),
+        ('2', {'WHP_WARN': '1'}, False),
+    ):
+        log.unlink()
+        result = subprocess.run(
+            ['bash', '-c', script],
+            env={**common, 'WHP_REJECT_CXX': '0',
+                 'WHP_WORKERS': workers, **extra},
+            capture_output=True, text=True, check=False,
+        )
+        assert (result.returncode == 0) == expected, (workers, extra, result.stderr)
+        assert log.read_text(encoding='utf-8').splitlines()
+
+    # The native LLVM bootstrap must reject the same false positives.
+    llvm_source = (ROOT / 'scripts/bootstrap-native-clang.bash').read_text(
+        encoding='utf-8')
+    begin = llvm_source.index('bootstrap_lld_link_probe()\n{')
+    end = llvm_source.index('\n}\n', begin) + len('\n}\n')
+    llvm_function = llvm_source[begin:end]
+    llvm_script = '\n'.join([
+        'set -e',
+        f'bootstrap_cxx="{directory / "fake-cxx"}"',
+        f'TOOLCHAIN_DIR="{directory}"',
+        'darwin_cmake_arch=arm64e',
+        'sdkroot=/fake/MacOSX.sdk',
+        'deployment_target=15.0',
+        llvm_function,
+        'bootstrap_lld_link_probe -Wl,--read-workers=2',
+    ])
+    for extra, expected in (
+        ({}, True),
+        ({'WHP_SKIP_OUTPUT': '1'}, False),
+        ({'WHP_WARN': '1'}, False),
+    ):
+        result = subprocess.run(
+            ['bash', '-c', llvm_script],
+            env={**common, 'WHP_REJECT_CXX': '0', **extra},
+            capture_output=True, text=True, check=False,
+        )
+        assert (result.returncode == 0) == expected, (extra, result.stderr)
 
 print('Mach-O LLD Clang++ flag probes: verified')
