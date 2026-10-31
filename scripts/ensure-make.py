@@ -18,9 +18,10 @@ import sys
 import tarfile
 import tempfile
 
-from bootstrap_env import select_bootstrap_cflags
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import select_bootstrap_cflags
 SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"

@@ -24,9 +24,10 @@ import tarfile
 import tempfile
 from typing import List
 
-from bootstrap_env import select_bootstrap_cflags
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import select_bootstrap_cflags
 SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
