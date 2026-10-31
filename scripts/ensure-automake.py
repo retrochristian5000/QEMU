@@ -26,7 +26,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import (clean_host_environment, select_native_cc,
-                           select_native_sdk, select_bootstrap_cflags)
+                           select_native_sdk, select_bootstrap_cflags,
+                           select_bootstrap_ldflags)
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
@@ -359,6 +360,9 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         os.environ["SDKROOT"] = sdkroot
     cc = select_native_cc(ROOT)
     bootstrap_cflags = select_bootstrap_cflags("automake", cc)
+    bootstrap_ldflags = select_bootstrap_ldflags(
+        "automake", cc, cflags=bootstrap_cflags
+    )
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
 
     prefix = build_root / "deps" / "automake"
@@ -372,6 +376,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
+    if bootstrap_ldflags:
+        marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -399,6 +405,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["CC"] = cc
     if bootstrap_cflags:
         env["CFLAGS"] = bootstrap_cflags
+    if bootstrap_ldflags:
+        env["LDFLAGS"] = bootstrap_ldflags
     env["CC_FOR_BUILD"] = cc
     env["MAKE"] = make
     env["MAKE_CMD"] = make

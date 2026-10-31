@@ -158,6 +158,7 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
         "output=\n"
         "previous=\n"
         "syntax_only=0\n"
+        "no_output=0\n"
         "for arg do\n"
         "    if [ \"$previous\" = -o ]; then\n"
         "        output=$arg; previous=; continue\n"
@@ -166,11 +167,14 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
         "        -o) previous=-o ;;\n"
         "        -fwhp-unsupported) exit 1 ;;\n"
         "        -fsyntax-only) syntax_only=1 ;;\n"
+        "        -Wl,-z,now) no_output=1 ;;\n"
         "    esac\n"
         "done\n"
         "[ \"$syntax_only\" = 1 ] && exit 0\n"
+        "[ \"$no_output\" = 1 ] && exit 0\n"
         "[ -n \"$output\" ] || exit 1\n"
-        "printf x > \"$output\"\n"
+        "printf '#!/bin/sh\\nexit 0\\n' > \"$output\"\n"
+        "chmod +x \"$output\"\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -209,12 +213,58 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
             "WHP_BOOTSTRAP_GIT_CFLAGS": bad,
         }) == "", bad
 
+
+    # Inherited LDFLAGS never reach native dependencies. Linker hardening is
+    # admitted only from its own lane after a linked *runnable* smoke test.
+    link_source = {
+        "PATH": "/usr/bin:/bin",
+        "LDFLAGS": "-Wl,-rpath,/untrusted -flto -static",
+        "WHP_BOOTSTRAP_COMMON_LDFLAGS":
+            "-pthread -Wl,-z,relro -flto -Wl,-rpath,/untrusted",
+        "WHP_BOOTSTRAP_AUTOMAKE_LDFLAGS":
+            "-Wl,-z,now -Wl,-dead_strip",
+        "WHP_BOOTSTRAP_GIT_LDFLAGS": "-Wl,-z,noexecstack",
+    }
+    assert module.select_bootstrap_ldflags(
+        "automake", str(cc), link_source, cflags="-O2"
+    ) == "-pthread -Wl,-z,relro -Wl,-dead_strip"
+    assert module.select_bootstrap_ldflags(
+        "git", str(cc), link_source
+    ) == "-pthread -Wl,-z,relro -Wl,-z,noexecstack"
+    assert module.select_bootstrap_ldflags(
+        "sed", str(cc), link_source
+    ) == "-pthread -Wl,-z,relro"
+    assert module.select_bootstrap_ldflags("make", str(cc), {
+        "LDFLAGS": "-Wl,-z,now"
+    }) == ""
+    for forbidden in (
+        "-static", "-shared", "-flto=thin", "-fsanitize=address",
+        "-arch", "-target", "--sysroot=/x", "-L/tmp", "-lcrypto",
+        "-Wl,-rpath,/tmp", "-Wl,-z,execstack", "-fuse-ld=lld",
+        "-Wl,-z,now",
+    ):
+        # Last flag is whitelisted locally but our fake compiler deliberately
+        # returns success without creating an executable; it must be rejected.
+        assert module.select_bootstrap_ldflags("git", str(cc), {
+            "WHP_BOOTSTRAP_GIT_LDFLAGS": forbidden
+        }) == "", forbidden
+    try:
+        module.select_bootstrap_ldflags("make", str(cc), {
+            "WHP_BOOTSTRAP_COMMON_LDFLAGS": "'unterminated"
+        })
+    except ValueError as exc:
+        assert "invalid quoting" in str(exc)
+    else:
+        raise AssertionError("accepted malformed linker flags")
+
 # Require all five native C bootstrap owners to use the same role selector.
 for project in ("git", "automake", "autoconf", "make", "sed"):
     source = (ROOT / "scripts" / f"ensure-{project}.py").read_text(
         encoding="utf-8"
     )
     assert f'select_bootstrap_cflags("{project}", cc)' in source, project
+    assert f'select_bootstrap_ldflags(\n        "{project}", cc,' in source, project
     assert 'BOOTSTRAP_CFLAGS={bootstrap_cflags}' in source, project
+    assert 'BOOTSTRAP_LDFLAGS={bootstrap_ldflags}' in source, project
 
 print("WHP native bootstrap environment and cache provenance: verified")

@@ -21,7 +21,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import select_bootstrap_cflags
+from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
 SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
@@ -357,7 +357,11 @@ def validate_configure_compiler(cc, env, work):
         output = directory / "probe"
         source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
         try:
-            run_text([cc, str(source), "-o", str(output)], cwd=directory, env=env)
+            run_text([
+                cc, *shlex.split(env.get("CFLAGS", "")),
+                str(source), "-o", str(output),
+                *shlex.split(env.get("LDFLAGS", "")),
+            ], cwd=directory, env=env)
             run_text([str(output)], cwd=directory, env=env)
         except RuntimeError as exc:
             raise RuntimeError(
@@ -764,6 +768,9 @@ def bootstrap(build_root):
         os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
     bootstrap_cflags = select_bootstrap_cflags("make", cc)
+    bootstrap_ldflags = select_bootstrap_ldflags(
+        "make", cc, cflags=bootstrap_cflags
+    )
     sed = select_seed_sed()
     git = tool("git")
     autopoint = tool("autopoint", "AUTOPOINT")
@@ -788,6 +795,8 @@ def bootstrap(build_root):
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
+    if bootstrap_ldflags:
+        marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
 
@@ -848,6 +857,8 @@ def bootstrap(build_root):
         env["SDKROOT"] = sdkroot
     if bootstrap_cflags:
         env["CFLAGS"] = bootstrap_cflags
+    if bootstrap_ldflags:
+        env["LDFLAGS"] = bootstrap_ldflags
     env["PATH"] = os.pathsep.join([
         str(seed_bin),
         str(pathlib.Path(automake).parent),

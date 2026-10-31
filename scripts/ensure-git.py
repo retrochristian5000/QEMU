@@ -23,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import (clean_host_environment, select_native_cc,
-                           select_bootstrap_cflags)
+                           select_bootstrap_cflags, select_bootstrap_ldflags)
 SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
@@ -173,8 +173,11 @@ def validate_build_compiler(
             encoding="utf-8",
         )
         try:
-            run_text([cc, str(source), "-o", str(output)],
-                     cwd=directory, env=env)
+            run_text([
+                cc, *shlex.split(env.get("CFLAGS", "")),
+                str(source), "-o", str(output),
+                *shlex.split(env.get("LDFLAGS", "")),
+            ], cwd=directory, env=env)
             run_text([str(output)], cwd=directory, env=env)
         except RuntimeError as exc:
             raise RuntimeError(
@@ -386,7 +389,7 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -399,6 +402,8 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     env = clean_host_environment(os.environ)
     if bootstrap_cflags:
         env["CFLAGS"] = bootstrap_cflags
+    if bootstrap_ldflags:
+        env["LDFLAGS"] = bootstrap_ldflags
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(key, None)
     env["CC"] = cc
@@ -458,6 +463,9 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
     bootstrap_cflags = select_bootstrap_cflags("git", cc)
+    bootstrap_ldflags = select_bootstrap_ldflags(
+        "git", cc, cflags=bootstrap_cflags
+    )
     make = select_gnu_make()
     curl_dir = curl_prefix()
     iconv_dir = iconv_prefix()
@@ -478,6 +486,8 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         )
         if bootstrap_cflags:
             marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
+        if bootstrap_ldflags:
+            marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
         if (
             marker_path.is_file()
             and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -491,7 +501,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
                 profile, curl_dir if profile == "full" else "", iconv_dir,
-                zlib_dir, sdkroot, bootstrap_cflags,
+                zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:

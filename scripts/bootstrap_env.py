@@ -141,6 +141,102 @@ def select_bootstrap_cflags(
     return " ".join(selected)
 
 
+
+# Link flags are independent from compiler flags. Common choices are tightly
+# limited to host-link features; local choices opt into linker hardening.
+# Never inherit arbitrary -L/-l, rpaths, alternate linkers, -static/-shared,
+# sysroots, deployment targets, architecture flags, sanitizers, or LTO.
+_COMMON_LDFLAGS = frozenset(("-pthread", "-Wl,-z,relro"))
+_LOCAL_LDFLAGS = _COMMON_LDFLAGS | frozenset((
+    "-Wl,-z,now", "-Wl,-z,noexecstack",
+    "-Wl,-dead_strip", "-Wl,-headerpad_max_install_names",
+))
+
+
+def select_bootstrap_ldflags(
+    repository: str, cc: str, source: Mapping[str, str] | None = None,
+    cflags: str = "",
+) -> str:
+    """Return native, runnable link flags from isolated bootstrap pools.
+
+    Successful compiler exit is not sufficient: each cumulative flag set
+    must link a fresh executable and run it on the build machine, including
+    this repository's admitted CFLAGS.
+    """
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", repository):
+        raise ValueError(f"invalid bootstrap repository name: {repository}")
+    if source is None:
+        source = os.environ
+    common = "WHP_BOOTSTRAP_COMMON_LDFLAGS"
+    local = f"WHP_BOOTSTRAP_{repository.upper()}_LDFLAGS"
+    requested: list[tuple[str, str]] = []
+    for variable in (common, local):
+        try:
+            fragments = shlex.split(source.get(variable, ""))
+        except ValueError as exc:
+            raise ValueError(f"{variable} has invalid quoting: {exc}") from exc
+        requested.extend((variable, fragment) for fragment in fragments)
+    if not requested:
+        return ""
+
+    env = clean_host_environment(source)
+    cflag_tokens = shlex.split(cflags)
+    selected: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="whp-bootstrap-ldflags-") as name:
+        directory = pathlib.Path(name)
+        test = directory / "probe.c"
+        output = directory / "probe"
+        test.write_text(
+            "#include <stddef.h>\n"
+            "int main(void) { return sizeof(size_t) == 0; }\n",
+            encoding="utf-8",
+        )
+        for variable, fragment in requested:
+            allowed = _COMMON_LDFLAGS if variable == common else _LOCAL_LDFLAGS
+            if fragment not in allowed:
+                print(
+                    f"WHP {repository}: ignoring unsafe {variable} "
+                    f"fragment: {fragment!r}", file=sys.stderr,
+                )
+                continue
+            if fragment in selected:
+                continue
+            output.unlink(missing_ok=True)
+            probe = subprocess.run(
+                [cc, *cflag_tokens, str(test), "-o", str(output),
+                 *selected, fragment],
+                cwd=directory, env=env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            diagnostics = (probe.stdout + probe.stderr).lower()
+            ignored = "warning:" in diagnostics and any(
+                word in diagnostics for word in
+                ("unknown", "unrecognized", "unsupported", "ignored", "unused")
+            )
+            if probe.returncode or ignored or not output.is_file():
+                print(
+                    f"WHP {repository}: linker rejected {variable} "
+                    f"fragment: {fragment!r}", file=sys.stderr,
+                )
+                continue
+            try:
+                run = subprocess.run(
+                    [str(output)], cwd=directory, env=env, check=False,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                )
+                usable = run.returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                usable = False
+            if not usable:
+                print(
+                    f"WHP {repository}: native executable failed for "
+                    f"{variable} fragment: {fragment!r}", file=sys.stderr,
+                )
+                continue
+            selected.append(fragment)
+    return " ".join(selected)
+
+
 def select_native_sdk(root: pathlib.Path) -> str:
     """Preserve the exact selected Xcode/CLT SDK for all native tools."""
     if platform.system() != "Darwin":

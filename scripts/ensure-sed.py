@@ -27,7 +27,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import select_bootstrap_cflags
+from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
 SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
@@ -660,9 +660,18 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     )
     sdkroot, arch, deployment = macos_environment(env)
     bootstrap_cflags = select_bootstrap_cflags("sed", cc)
+    bootstrap_ldflags = select_bootstrap_ldflags(
+        "sed", cc, cflags=" ".join(
+            part for part in (env.get("CFLAGS", ""), bootstrap_cflags) if part
+        )
+    )
     if bootstrap_cflags:
         env["CFLAGS"] = " ".join(
             part for part in (env.get("CFLAGS", ""), bootstrap_cflags) if part
+        )
+    if bootstrap_ldflags:
+        env["LDFLAGS"] = " ".join(
+            part for part in (env.get("LDFLAGS", ""), bootstrap_ldflags) if part
         )
 
     # A successful installed sed with matching CC/SDK/architecture and
@@ -674,6 +683,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
+    if bootstrap_ldflags:
+        marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
