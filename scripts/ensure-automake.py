@@ -25,7 +25,8 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import clean_host_environment, select_native_cc, select_native_sdk
+from bootstrap_env import (clean_host_environment, select_native_cc,
+                           select_native_sdk, select_bootstrap_cflags)
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "sed.sh"
@@ -357,6 +358,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         # cc.sh validates the same SDK; configure must receive it as well.
         os.environ["SDKROOT"] = sdkroot
     cc = select_native_cc(ROOT)
+    bootstrap_cflags = select_bootstrap_cflags("automake", cc)
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
 
     prefix = build_root / "deps" / "automake"
@@ -368,6 +370,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     marker = marker_text(
         revision, seed, perl, autoconf, autom4te, make, cc, config_shell
     )
+    if bootstrap_cflags:
+        marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -393,6 +397,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     env = clean_host_environment(os.environ)
     env["CC"] = cc
+    if bootstrap_cflags:
+        env["CFLAGS"] = bootstrap_cflags
     env["CC_FOR_BUILD"] = cc
     env["MAKE"] = make
     env["MAKE_CMD"] = make

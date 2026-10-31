@@ -24,6 +24,8 @@ import tarfile
 import tempfile
 from typing import List
 
+from bootstrap_env import select_bootstrap_cflags
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
@@ -656,6 +658,11 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         part for part in (gettext_m4, inherited_aclocal) if part
     )
     sdkroot, arch, deployment = macos_environment(env)
+    bootstrap_cflags = select_bootstrap_cflags("sed", cc)
+    if bootstrap_cflags:
+        env["CFLAGS"] = " ".join(
+            part for part in (env.get("CFLAGS", ""), bootstrap_cflags) if part
+        )
 
     # A successful installed sed with matching CC/SDK/architecture and
     # configuration inputs needs no second throwaway compiler smoke. Only
@@ -664,6 +671,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         revision, nested_revision, cc, seed, sdkroot, arch, deployment,
         env["ACLOCAL_PATH"], autopoint,
     )
+    if bootstrap_cflags:
+        marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker

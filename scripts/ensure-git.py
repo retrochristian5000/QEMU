@@ -22,7 +22,8 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import clean_host_environment, select_native_cc
+from bootstrap_env import (clean_host_environment, select_native_cc,
+                           select_bootstrap_cflags)
 SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
@@ -385,7 +386,7 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -396,6 +397,8 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     copy_source(seed, revision, sha1_revision, source)
 
     env = clean_host_environment(os.environ)
+    if bootstrap_cflags:
+        env["CFLAGS"] = bootstrap_cflags
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(key, None)
     env["CC"] = cc
@@ -454,6 +457,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
         # Resolve once before cc.sh's native probe, then retain for Git make.
         os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
+    bootstrap_cflags = select_bootstrap_cflags("git", cc)
     make = select_gnu_make()
     curl_dir = curl_prefix()
     iconv_dir = iconv_prefix()
@@ -472,6 +476,8 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             curl_dir if profile == "full" else "",
             iconv_dir, zlib_dir, zlib_id, sdkroot,
         )
+        if bootstrap_cflags:
+            marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
         if (
             marker_path.is_file()
             and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -485,7 +491,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
                 profile, curl_dir if profile == "full" else "", iconv_dir,
-                zlib_dir, sdkroot,
+                zlib_dir, sdkroot, bootstrap_cflags,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:

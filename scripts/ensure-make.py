@@ -18,6 +18,8 @@ import sys
 import tarfile
 import tempfile
 
+from bootstrap_env import select_bootstrap_cflags
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
@@ -760,6 +762,7 @@ def bootstrap(build_root):
         # Reuse the exact SDK for the cc.sh probe, configure, and build.sh.
         os.environ["SDKROOT"] = sdkroot
     cc = select_cc()
+    bootstrap_cflags = select_bootstrap_cflags("make", cc)
     sed = select_seed_sed()
     git = tool("git")
     autopoint = tool("autopoint", "AUTOPOINT")
@@ -782,6 +785,8 @@ def bootstrap(build_root):
         config_shell, required_automake, required_autoconf, aclocal_path,
         sdkroot,
     )
+    if bootstrap_cflags:
+        marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
 
@@ -840,6 +845,8 @@ def bootstrap(build_root):
     })
     if sdkroot:
         env["SDKROOT"] = sdkroot
+    if bootstrap_cflags:
+        env["CFLAGS"] = bootstrap_cflags
     env["PATH"] = os.pathsep.join([
         str(seed_bin),
         str(pathlib.Path(automake).parent),

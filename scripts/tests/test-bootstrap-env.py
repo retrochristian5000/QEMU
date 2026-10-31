@@ -147,4 +147,60 @@ with mock.patch.dict(module.os.environ, {
         module.os.environ["SDKROOT"] = "/second/MacOSX.sdk"
         assert autoconf.marker_text(*args, "/native/cc", "/bin/sh") != first
 
+
+# Common flags are deliberately narrow; repository flags never bleed into
+# another submodule. A rejected compiler option must not break a valid build.
+with tempfile.TemporaryDirectory(prefix="whp-bootstrap-flags-") as td:
+    base = pathlib.Path(td)
+    cc = base / "fake-native-cc"
+    cc.write_text(
+        "#!/bin/sh\n"
+        "for arg do\n"
+        "    case \"$arg\" in -fwhp-unsupported) exit 1 ;; esac\n"
+        "done\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    cc.chmod(cc.stat().st_mode | stat.S_IXUSR)
+    source = {
+        "PATH": "/usr/bin:/bin",
+        "CFLAGS": "-fpoison-target",
+        "WHP_BOOTSTRAP_COMMON_CFLAGS":
+            "-O2 -g -pipe -march=native -flto -fsanitize=address",
+        "WHP_BOOTSTRAP_AUTOMAKE_CFLAGS":
+            "-Wextra -fwhp-unsupported -DPROJECT_AUTOMAKE=1",
+        "WHP_BOOTSTRAP_GIT_CFLAGS": "-fno-omit-frame-pointer",
+    }
+    assert module.select_bootstrap_cflags("automake", str(cc), source) == (
+        "-O2 -g -pipe -Wextra -DPROJECT_AUTOMAKE=1"
+    )
+    assert module.select_bootstrap_cflags("git", str(cc), source) == (
+        "-O2 -g -pipe -fno-omit-frame-pointer"
+    )
+    assert module.select_bootstrap_cflags("sed", str(cc), source) == "-O2 -g -pipe"
+    assert module.select_bootstrap_cflags("make", str(cc), {
+        "CFLAGS": "-O3 -flto"
+    }) == ""
+    try:
+        module.select_bootstrap_cflags("make", str(cc), {
+            "WHP_BOOTSTRAP_COMMON_CFLAGS": "'unterminated"
+        })
+    except ValueError as exc:
+        assert "invalid quoting" in str(exc)
+    else:
+        raise AssertionError("accepted malformed common flags")
+    for bad in ("-target", "--sysroot=/sdk", "-isysroot",
+                "-flto=thin", "-fsanitize=address", "-march=native"):
+        assert module.select_bootstrap_cflags("git", str(cc), {
+            "WHP_BOOTSTRAP_GIT_CFLAGS": bad,
+        }) == "", bad
+
+# Require all five native C bootstrap owners to use the same role selector.
+for project in ("git", "automake", "autoconf", "make", "sed"):
+    source = (ROOT / "scripts" / f"ensure-{project}.py").read_text(
+        encoding="utf-8"
+    )
+    assert f'select_bootstrap_cflags("{project}", cc)' in source, project
+    assert 'BOOTSTRAP_CFLAGS={bootstrap_cflags}' in source, project
+
 print("WHP native bootstrap environment and cache provenance: verified")
