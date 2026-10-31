@@ -718,6 +718,27 @@ filtered = subprocess.run(
 )
 assert filtered.stdout == 'unset|unset|/native/deps|/native/pkgconfig'
 
+# The seed compiler admission already ignores foreign headers and loaders.
+# The subsequent native LLVM CMake/build phase must reject them as well.
+poisoned_include_loader_vars = (
+    'CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH',
+    'OBJC_INCLUDE_PATH', 'OBJCPLUS_INCLUDE_PATH',
+    'LD_LIBRARY_PATH', 'LIBS', 'OBJCXXFLAGS', 'ASFLAGS',
+)
+for name in poisoned_include_loader_vars:
+    poisoned_cmake_env[name] = '/foreign/target'
+filtered_paths = subprocess.run(
+    ['bash', '-c', 'set -euo pipefail\n' + cmake_env_isolation +
+     '\nfor name in CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH '
+     'OBJC_INCLUDE_PATH OBJCPLUS_INCLUDE_PATH LD_LIBRARY_PATH '
+     'LIBS OBJCXXFLAGS ASFLAGS; do\n'
+     '    if [[ ${!name+x} ]]; then printf "leaked: %s\\n" "$name"; '
+     'exit 1; fi\n'
+     'done\n'],
+    env=poisoned_cmake_env, text=True, capture_output=True, check=True,
+)
+assert filtered_paths.stdout == ''
+
 # A matching marker must not hide an injected cross-toolchain cache entry.
 cache_guard = bootstrap.split(
     '# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_BEGIN\n', 1
