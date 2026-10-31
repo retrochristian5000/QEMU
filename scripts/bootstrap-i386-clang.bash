@@ -322,12 +322,22 @@ else
             printf 'error: cannot select macOS SDK for i386 LLVM host bootstrap\n' >&2
             exit 1
         fi
+        # Preserve an explicitly validated macOS host ABI (including arm64e)
+        # instead of overriding it with uname's generic processor family.
+        case "${WHP_MACOS_ARCH:-auto}" in
+            auto) i386_host_arch="$(uname -m)" ;;
+            arm64|arm64e|x86_64) i386_host_arch="$WHP_MACOS_ARCH" ;;
+            *)
+                printf 'error: unsupported i386 LLVM host architecture: %s\n' "$WHP_MACOS_ARCH" >&2
+                exit 1
+                ;;
+        esac
         cmake_args+=(
             -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
             "-DCMAKE_OSX_SYSROOT=$i386_host_sdk"
-            "-DCMAKE_OSX_ARCHITECTURES=$(uname -m)"
+            "-DCMAKE_OSX_ARCHITECTURES=$i386_host_arch"
         )
-        unset i386_host_sdk
+        unset i386_host_sdk i386_host_arch
     fi
     cmake "${cmake_args[@]}"
     

@@ -81,7 +81,9 @@ for source in (i386_bootstrap, powerpc_bootstrap):
         assert f'-UCMAKE_{lang}_COMPILER_TARGET' in source
     assert 'unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD' in source
     assert 'unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES' in source
-assert '"-DCMAKE_OSX_ARCHITECTURES=$(uname -m)"' in i386_bootstrap
+assert 'case "${WHP_MACOS_ARCH:-auto}" in' in i386_bootstrap
+assert 'arm64|arm64e|x86_64) i386_host_arch="$WHP_MACOS_ARCH"' in i386_bootstrap
+assert '"-DCMAKE_OSX_ARCHITECTURES=$i386_host_arch"' in i386_bootstrap
 assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
