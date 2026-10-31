@@ -241,25 +241,21 @@ assert '${NATIVE_LLVM_LDFLAG:-}' in macos_builder
 assert '"${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld"' in macos_builder
 assert 'whp_append_flag OBJCFLAGS "-fno-objc-msgsend-class-selector-stubs"' in macos_builder
 
-# --read-workers is a relatively new, optional LLD setting. Do not pass it
-# to Apple ld, older LLD, or LLD compiled without threads. A real link probe
-# gates the flag; an explicit unsupported request is rejected, while the
-# automatic default is safely omitted.
-assert 'native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"' in macos_builder
-assert 'NATIVE_LLVM_READ_WORKERS must be a non-negative integer' in macos_builder
-assert 'whp_native_lld_accepts_read_workers "$native_lld_read_workers"' in macos_builder
-assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"' in macos_builder
-assert 'omitting optional link prefetch' in macos_builder
+# Input-prefetch worker flags cannot be global configure LDFLAGS.
+# Even a successful standalone ld64.lld link does not establish compatibility
+# with CMake, compiler-rt and QEMU's other probe links.
+assert 'whp_native_lld_accepts_read_workers' not in macos_builder
+assert 'whp_append_flag LDFLAGS "-Wl,--read-workers=' not in macos_builder
+assert 'global LDFLAGS during QEMU configure' in macos_builder
+assert 'NATIVE_LLVM_READ_WORKERS is ignored' in macos_builder
 assert 'if [[ "$native_macho_lld" == 0 ]]; then' in macos_builder
 assert 'whp_append_flag LDFLAGS "-Wl,-dead_strip"' in macos_builder
 
-# Native LLVM may reuse a proven Mach-O LLD, including ARM64e when its
-# authenticated-relocation probe passes and the developer explicitly opts in.
-# Test the base linker before optional worker flags. Failed probes preserve
-# the Apple ld fallback instead of mislabelling unsupported links.
+# Retain the proven Mach-O LLD selection and native executable probe without
+# inserting optional flag values into any CMake linker-flag cache category.
 assert 'bootstrap_lld_link_probe()' in bootstrap
 assert 'if bootstrap_lld_link_probe;' in bootstrap
-assert 'if bootstrap_lld_link_probe -Wl,--read-workers="$LLVM_LINK_JOBS"; then' in bootstrap
+assert '--read-workers' not in bootstrap
 assert '[[ ! -s "$probe_output" || ! -x "$probe_output" ]]' in bootstrap
 assert 'bootstrap_linker_args=()' in bootstrap
 assert 'whp_bootstrap_arm64e_lld_auth_probe()' in bootstrap
@@ -267,13 +263,11 @@ assert '"$bootstrap_lld_arch_ok" == 1' in bootstrap
 assert '-x "$TOOLCHAIN_DIR/bin/ld64.lld"' in bootstrap
 assert 'PATH="$TOOLCHAIN_DIR/bin:$PATH"' in bootstrap
 assert '"$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld' in bootstrap
-assert '-Wl,--read-workers="$LLVM_LINK_JOBS"' in bootstrap
-assert '"-DLLVM_USE_LINKER=lld"' in bootstrap
-assert 'bootstrap_lld_link_flags=' in bootstrap
-assert '"-DCMAKE_EXE_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
-assert '"-DCMAKE_SHARED_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
-assert '"-DCMAKE_MODULE_LINKER_FLAGS=$bootstrap_lld_link_flags"' in bootstrap
-assert bootstrap.index('bootstrap_lld_link_flags=') < bootstrap.index('bootstrap_linker_args=(', bootstrap.index('bootstrap_lld_link_flags='))
+assert '-DLLVM_USE_LINKER=lld' in bootstrap
+assert 'bootstrap_lld_link_flags' not in bootstrap
+for kind in ('EXE', 'SHARED', 'MODULE', 'STATIC'):
+    assert f'-DCMAKE_{kind}_LINKER_FLAGS=' in bootstrap
+    assert f'-DCMAKE_{kind}_LINKER_FLAGS_RELEASE=' in bootstrap
 assert '"${bootstrap_linker_args[@]}"' in bootstrap
 assert 'WHP native LLVM bootstrap linker:' in bootstrap
 assert 'local clang_link_driver=("$prefix/bin/clang")' in bootstrap
