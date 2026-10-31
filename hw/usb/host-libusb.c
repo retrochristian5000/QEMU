@@ -889,7 +889,7 @@ static void usb_host_ep_update(USBHostDevice *s)
     struct libusb_ss_endpoint_companion_descriptor *endp_ss_comp;
 #endif
     uint8_t devep, type;
-    int pid, ep, alt;
+    int pid, ep, ifnum, alt, a;
     int rc, i, e;
 
     usb_ep_reset(udev);
@@ -902,17 +902,34 @@ static void usb_host_ep_update(USBHostDevice *s)
 
     for (i = 0; i < conf->bNumInterfaces; i++) {
         /*
-         * The udev->altsetting array indexes alternate settings
-         * by the interface number. Get the 0th alternate setting
-         * first so that we can grab the interface number, and
-         * then correct the alternate setting value if necessary.
+         * Interface numbers and alternate-setting values are USB descriptor
+         * fields, not indexes into libusb's interface/altsetting arrays.
+         * Composite devices can have sparse interface numbers or alt values.
          */
+        if (conf->interface[i].num_altsetting < 1) {
+            trace_usb_host_parse_error(s->bus_num, s->addr,
+                                       "interface has no alternate settings");
+            goto out;
+        }
         intf = &conf->interface[i].altsetting[0];
-        alt = udev->altsetting[intf->bInterfaceNumber];
+        ifnum = intf->bInterfaceNumber;
+        if (ifnum >= USB_MAX_INTERFACES) {
+            trace_usb_host_parse_error(s->bus_num, s->addr,
+                                       "interface number out of range");
+            goto out;
+        }
 
-        if (alt != 0) {
-            assert(alt < conf->interface[i].num_altsetting);
-            intf = &conf->interface[i].altsetting[alt];
+        alt = udev->altsetting[ifnum];
+        for (a = 0; a < conf->interface[i].num_altsetting; a++) {
+            intf = &conf->interface[i].altsetting[a];
+            if (intf->bAlternateSetting == alt) {
+                break;
+            }
+        }
+        if (a == conf->interface[i].num_altsetting) {
+            trace_usb_host_parse_error(s->bus_num, s->addr,
+                                       "selected alternate setting not found");
+            goto out;
         }
 
         trace_usb_host_parse_interface(s->bus_num, s->addr,
@@ -929,12 +946,12 @@ static void usb_host_ep_update(USBHostDevice *s)
             if (ep == 0) {
                 trace_usb_host_parse_error(s->bus_num, s->addr,
                                            "invalid endpoint address");
-                return;
+                goto out;
             }
             if (usb_ep_get_type(udev, pid, ep) != USB_ENDPOINT_XFER_INVALID) {
                 trace_usb_host_parse_error(s->bus_num, s->addr,
                                            "duplicate endpoint address");
-                return;
+                goto out;
             }
 
             trace_usb_host_parse_endpoint(s->bus_num, s->addr, ep,
@@ -943,7 +960,7 @@ static void usb_host_ep_update(USBHostDevice *s)
             usb_ep_set_max_packet_size(udev, pid, ep,
                                        endp->wMaxPacketSize);
             usb_ep_set_type(udev, pid, ep, type);
-            usb_ep_set_ifnum(udev, pid, ep, i);
+            usb_ep_set_ifnum(udev, pid, ep, ifnum);
             usb_ep_set_halted(udev, pid, ep, 0);
 #ifdef HAVE_STREAMS
             if (type == LIBUSB_TRANSFER_TYPE_BULK &&
@@ -957,6 +974,7 @@ static void usb_host_ep_update(USBHostDevice *s)
         }
     }
 
+out:
     libusb_free_config_descriptor(conf);
 }
 
@@ -1310,25 +1328,31 @@ static void usb_host_cancel_packet(USBDevice *udev, USBPacket *p)
 static void usb_host_detach_kernel(USBHostDevice *s)
 {
     struct libusb_config_descriptor *conf;
-    int rc, i;
+    int rc, i, ifnum;
 
     rc = libusb_get_active_config_descriptor(s->dev, &conf);
     if (rc != 0) {
         return;
     }
-    for (i = 0; i < USB_MAX_INTERFACES; i++) {
-        rc = libusb_kernel_driver_active(s->dh, i);
-        usb_host_libusb_error("libusb_kernel_driver_active", rc);
-        if (rc != 1) {
-            if (rc == 0) {
-                s->ifs[i].detached = true;
-            }
+    for (i = 0; i < conf->bNumInterfaces; i++) {
+        if (conf->interface[i].num_altsetting < 1) {
             continue;
         }
-        trace_usb_host_detach_kernel(s->bus_num, s->addr, i);
-        rc = libusb_detach_kernel_driver(s->dh, i);
+        ifnum = conf->interface[i].altsetting[0].bInterfaceNumber;
+        if (ifnum >= USB_MAX_INTERFACES) {
+            continue;
+        }
+        rc = libusb_kernel_driver_active(s->dh, ifnum);
+        usb_host_libusb_error("libusb_kernel_driver_active", rc);
+        if (rc != 1) {
+            continue;
+        }
+        trace_usb_host_detach_kernel(s->bus_num, s->addr, ifnum);
+        rc = libusb_detach_kernel_driver(s->dh, ifnum);
         usb_host_libusb_error("libusb_detach_kernel_driver", rc);
-        s->ifs[i].detached = true;
+        if (rc == 0) {
+            s->ifs[ifnum].detached = true;
+        }
     }
     libusb_free_config_descriptor(conf);
 }
@@ -1357,15 +1381,13 @@ static int usb_host_claim_interfaces(USBHostDevice *s, int configuration)
 {
     USBDevice *udev = USB_DEVICE(s);
     struct libusb_config_descriptor *conf;
-    int rc, i, claimed;
+    int rc, i, ifnum;
 
     for (i = 0; i < USB_MAX_INTERFACES; i++) {
         udev->altsetting[i] = 0;
     }
     udev->ninterfaces   = 0;
     udev->configuration = 0;
-
-    usb_host_detach_kernel(s);
 
     rc = libusb_get_active_config_descriptor(s->dev, &conf);
     if (rc != 0) {
@@ -1376,19 +1398,32 @@ static int usb_host_claim_interfaces(USBHostDevice *s, int configuration)
         return USB_RET_STALL;
     }
 
-    claimed = 0;
-    for (i = 0; i < USB_MAX_INTERFACES; i++) {
-        trace_usb_host_claim_interface(s->bus_num, s->addr, configuration, i);
-        rc = libusb_claim_interface(s->dh, i);
-        if (rc == 0) {
-            s->ifs[i].claimed = true;
-            if (++claimed == conf->bNumInterfaces) {
-                break;
-            }
+    /* Validate all descriptor interface numbers before taking ownership. */
+    if (conf->bNumInterfaces > USB_MAX_INTERFACES) {
+        goto fail;
+    }
+    for (i = 0; i < conf->bNumInterfaces; i++) {
+        if (conf->interface[i].num_altsetting < 1 ||
+            conf->interface[i].altsetting[0].bInterfaceNumber >=
+                USB_MAX_INTERFACES) {
+            goto fail;
         }
     }
-    if (claimed != conf->bNumInterfaces) {
-        return USB_RET_STALL;
+
+    usb_host_detach_kernel(s);
+    for (i = 0; i < conf->bNumInterfaces; i++) {
+        ifnum = conf->interface[i].altsetting[0].bInterfaceNumber;
+        if (s->ifs[ifnum].claimed) {
+            goto fail;
+        }
+        trace_usb_host_claim_interface(s->bus_num, s->addr, configuration,
+                                       ifnum);
+        rc = libusb_claim_interface(s->dh, ifnum);
+        if (rc != 0) {
+            usb_host_libusb_error("libusb_claim_interface", rc);
+            goto fail;
+        }
+        s->ifs[ifnum].claimed = true;
     }
 
     udev->ninterfaces   = conf->bNumInterfaces;
@@ -1396,6 +1431,11 @@ static int usb_host_claim_interfaces(USBHostDevice *s, int configuration)
 
     libusb_free_config_descriptor(conf);
     return USB_RET_SUCCESS;
+
+fail:
+    usb_host_release_interfaces(s);
+    libusb_free_config_descriptor(conf);
+    return USB_RET_STALL;
 }
 
 static void usb_host_release_interfaces(USBHostDevice *s)
