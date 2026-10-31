@@ -1159,10 +1159,11 @@ configured with ``CMAKE_CXX_STANDARD=26`` and
 QEMU's ``QEMU_HOST_CPU_TUNING=native`` mode deliberately uses
 ``-mtune=<detected CPU>`` on AArch64 rather than ``-mcpu=native``.
 Its C, C++, and Objective-C probes now consume the managed Mach-O target
-arguments, rejecting malformed architecture/SDK tuples. The optional Mach-O
-LLD ``--read-workers`` link flag is admitted only if **both** Clang and
-Clang++ accept it. These are build-policy checks, not instructions to add
-ARMv9.2-A or ARM64e-specific ISA extensions globally.
+arguments, rejecting malformed architecture/SDK tuples. Optional Mach-O
+LLD input-prefetch workers are deliberately omitted from global configure
+linker flags; the normal Ninja/LLVM job budgets remain in effect. These
+are build-policy checks, not instructions to add ARMv9.2-A or
+ARM64e-specific ISA extensions globally.
 
 Run the isolated regression checks using::
 
@@ -1355,13 +1356,15 @@ is active: LLD's ``-O`` option is documented as an output-size option,
 not the same Apple linker optimization contract.
 
 ``-Wl,--read-workers=N`` is an optional Mach-O LLD input-prefetch
-extension. The wrapper checks that the selected C and C++ Clang drivers can produce
-and execute native outputs without linker warnings. Returning success without
-a linked executable is not evidence of support. If the default job-budget value is
-unsupported, it omits the flag with a warning; it never forwards that
-argument to Apple ``ld``. An explicitly requested unsupported positive
-``NATIVE_LLVM_READ_WORKERS`` fails with an error rather than being silently
-ignored. Setting ``NATIVE_LLVM_READ_WORKERS=0`` omits the option.
+extension, not a portable CMake or Meson linker option. The native LLVM
+bootstrap no longer puts it in any ``CMAKE_*_LINKER_FLAGS`` setting, and
+the macOS QEMU wrapper does not append it to exported ``LDFLAGS``.
+An inherited worker flag is rejected before QEMU configuration starts.
+For compatibility, a nonzero ``NATIVE_LLVM_READ_WORKERS`` setting
+produces a warning and is ignored; ``0`` remains a no-op. Use
+``LLVM_PARALLEL_LINK_JOBS``, Ninja ``-j``, and the established build
+job budget to limit parallel work, without changing individual linker
+command syntax.
 
 The WHP LLVM fork's Mach-O ``ld64.lld`` now recognizes the compatibility
 spellings ``-threads`` (retain the default parallel linking policy) and
@@ -1385,9 +1388,10 @@ Use the build's established job budget rather than assuming that bare
 
 The native LLVM bootstrap independently probes whether the previously
 installed ``ld64.lld`` can produce and run a native executable without
-warnings before trying the optional worker extension (usually
-``--read-workers=2``). A missing extension must not force an otherwise usable linker
-back to Apple ``ld``. These rules protect both the QEMU host link and
+warnings. It selects LLD based on that probe, not on optional input-prefetch
+flags. Its CMake cache guard rejects stale linker flags from a prior
+configuration so an earlier ``--read-workers=2`` setting cannot survive
+an incremental rebuild. These rules protect both the QEMU host link and
 the LLVM bootstrap; they do not imply that all linker arguments are
 interchangeable between ELF ``ld.lld`` and Mach-O ``ld64.lld``.
 
