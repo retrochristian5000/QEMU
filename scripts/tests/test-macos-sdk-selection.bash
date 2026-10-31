@@ -162,17 +162,17 @@ case "${1:-}" in
         ;;
     -print-resource-dir) printf '/tmp\n' ;;
     *)
-        # Only mock the optional LLD-worker link; a zero-status compiler
-        # without an output is not sufficient evidence of linker support.
-        has_worker=0
+        # Native seed admission checks require compile, link and execution.
+        # Do not report success for a link that produces no executable.
         output=
         previous=
+        object_only=0
         for arg in "$@"; do
-            [[ "$arg" == -Wl,--read-workers=* ]] && has_worker=1
+            case "$arg" in -c|-E|-fsyntax-only) object_only=1 ;; esac
             if [[ "$previous" == -o ]]; then output="$arg"; fi
             previous="$arg"
         done
-        if [[ "$has_worker" == 1 && -n "$output" && "$output" != /dev/null ]]; then
+        if [[ "$object_only" == 0 && -n "$output" && "$output" != /dev/null ]]; then
             printf '#!/bin/sh\nexit 0\n' > "$output"
             chmod +x "$output"
         fi
