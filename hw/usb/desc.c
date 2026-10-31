@@ -451,15 +451,17 @@ static int usb_desc_set_config(USBDevice *dev, int value)
     } else {
         for (i = 0; i < dev->device->bNumConfigurations; i++) {
             if (dev->device->confs[i].bConfigurationValue == value) {
-                dev->configuration = value;
-                dev->ninterfaces   = dev->device->confs[i].bNumInterfaces;
-                dev->config = dev->device->confs + i;
-                assert(dev->ninterfaces <= USB_MAX_INTERFACES);
+                break;
             }
         }
-        if (i < dev->device->bNumConfigurations) {
+        if (i == dev->device->bNumConfigurations) {
+            /* Reject unknown configurations without changing device state. */
             return -1;
         }
+        dev->configuration = value;
+        dev->ninterfaces   = dev->device->confs[i].bNumInterfaces;
+        dev->config = dev->device->confs + i;
+        assert(dev->ninterfaces <= USB_MAX_INTERFACES);
     }
 
     for (i = 0; i < dev->ninterfaces; i++) {
