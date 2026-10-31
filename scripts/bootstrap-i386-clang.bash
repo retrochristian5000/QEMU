@@ -21,6 +21,9 @@ stage_root=""
 # object build. Keep ambient optimization, sanitizer, coverage, linker, and
 # frame-pointer flags outside LLVM's CMake configuration.
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+# Keep foreign library paths and runtime injection out of this host LLVM ABI.
+unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
+unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
 
 cleanup()
 {
@@ -254,6 +257,23 @@ else
         -B "$LLVM_BUILD_DIR"
         -G Ninja
         -DCMAKE_BUILD_TYPE=Release
+        # i386 is an LLVM output target, not a host linker ABI.
+        -UCMAKE_TOOLCHAIN_FILE
+        -UCMAKE_SYSROOT
+        -UCMAKE_FIND_ROOT_PATH
+        -UCMAKE_C_COMPILER_TARGET
+        -UCMAKE_CXX_COMPILER_TARGET
+        -UCMAKE_ASM_COMPILER_TARGET
+        -UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN
+        -UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN
+        -DCMAKE_EXE_LINKER_FLAGS=
+        -DCMAKE_SHARED_LINKER_FLAGS=
+        -DCMAKE_MODULE_LINKER_FLAGS=
+        -DCMAKE_STATIC_LINKER_FLAGS=
+        -DCMAKE_EXE_LINKER_FLAGS_RELEASE=
+        -DCMAKE_SHARED_LINKER_FLAGS_RELEASE=
+        -DCMAKE_MODULE_LINKER_FLAGS_RELEASE=
+        -DCMAKE_STATIC_LINKER_FLAGS_RELEASE=
         -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR/llvm"
         -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
         -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
@@ -305,6 +325,7 @@ else
         cmake_args+=(
             -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
             "-DCMAKE_OSX_SYSROOT=$i386_host_sdk"
+            "-DCMAKE_OSX_ARCHITECTURES=$(uname -m)"
         )
         unset i386_host_sdk
     fi

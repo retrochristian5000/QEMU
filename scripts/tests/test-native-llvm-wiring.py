@@ -72,6 +72,16 @@ assert '$ENV{"OBJDUMP"} || "objdump"' in disas_objdump
 assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
 assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
 assert 'toolchains/llvm-project' in bootstrap
+# Firmware LLVM variants must not accept cached cross-linker ABI choices.
+for source in (i386_bootstrap, powerpc_bootstrap):
+    for kind in ('EXE', 'SHARED', 'MODULE', 'STATIC'):
+        assert f'-DCMAKE_{kind}_LINKER_FLAGS_RELEASE=' in source
+        assert f'-DCMAKE_{kind}_LINKER_FLAGS=' in source
+    for lang in ('C', 'CXX', 'ASM'):
+        assert f'-UCMAKE_{lang}_COMPILER_TARGET' in source
+    assert 'unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD' in source
+    assert 'unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES' in source
+assert '"-DCMAKE_OSX_ARCHITECTURES=$(uname -m)"' in i386_bootstrap
 assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap

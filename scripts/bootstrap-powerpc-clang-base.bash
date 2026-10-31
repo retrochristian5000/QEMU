@@ -7,6 +7,9 @@ set -euo pipefail
 # platform ABI inputs such as SDKROOT and MACOSX_DEPLOYMENT_TARGET are supplied
 # explicitly below.
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
+# Keep foreign library paths and runtime injection out of this host LLVM ABI.
+unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
+unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
@@ -422,8 +425,26 @@ mkdir -p "$stage_root"
 # CMakeCache.txt and rebuilding the project graph from scratch.
 bootstrap_stage="configuring PowerPC-only Clang"
 llvm_distribution_components='clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
+# The PowerPC backend is a cross target, but this compiler runs natively.
+# Clear old host linker cache options without discarding the Ninja graph.
 cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
+    -UCMAKE_TOOLCHAIN_FILE \
+    -UCMAKE_SYSROOT \
+    -UCMAKE_FIND_ROOT_PATH \
+    -UCMAKE_C_COMPILER_TARGET \
+    -UCMAKE_CXX_COMPILER_TARGET \
+    -UCMAKE_ASM_COMPILER_TARGET \
+    -UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN \
+    -UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN \
+    -DCMAKE_EXE_LINKER_FLAGS= \
+    -DCMAKE_SHARED_LINKER_FLAGS= \
+    -DCMAKE_MODULE_LINKER_FLAGS= \
+    -DCMAKE_STATIC_LINKER_FLAGS= \
+    -DCMAKE_EXE_LINKER_FLAGS_RELEASE= \
+    -DCMAKE_SHARED_LINKER_FLAGS_RELEASE= \
+    -DCMAKE_MODULE_LINKER_FLAGS_RELEASE= \
+    -DCMAKE_STATIC_LINKER_FLAGS_RELEASE= \
     -DCMAKE_C_COMPILER="$TOOLCHAIN_HOST_CC" \
     -DCMAKE_CXX_COMPILER="$TOOLCHAIN_HOST_CXX" \
     "${cmake_host_release_args[@]}" \
