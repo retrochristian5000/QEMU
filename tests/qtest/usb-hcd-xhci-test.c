@@ -77,6 +77,61 @@ static void test_xhci_unplug_finalize(void)
     qtest_quit(qtest);
 }
 
+/*
+ * Exercise xHCI USB enumeration with historical and modern x86 CPU profiles.
+ * CPUID/APIC features do not provide cellular modem support; check both
+ * legacy pin interrupts and the MSI/MSI-X-capable controller path.
+ * usb-net is a CDC/RNDIS stand-in, not an MBIM/QMI or 5G radio emulator.
+ */
+typedef struct XHCICpuProfile {
+    const char *test_name;
+    const char *model;
+    const char *features;
+    bool legacy_irq;
+} XHCICpuProfile;
+
+static const XHCICpuProfile xhci_cpu_profiles[] = {
+    { "/xhci/pci/cpu/486/intx", "486", NULL, true },
+    { "/xhci/pci/cpu/pentium3/intx", "pentium3", NULL, true },
+    { "/xhci/pci/cpu/core2duo/intx", "core2duo", NULL, true },
+    { "/xhci/pci/cpu/qemu32/intx", "qemu32", NULL, true },
+    { "/xhci/pci/cpu/qemu64/intx", "qemu64", NULL, true },
+    { "/xhci/pci/cpu/qemu64/msi", "qemu64", NULL, false },
+    { "/xhci/pci/cpu/max/msi", "max", NULL, false },
+    { "/xhci/pci/cpu/max/no-x2apic", "max", "x2apic=off", false },
+};
+
+static void test_xhci_cpu_profile(const void *opaque)
+{
+    const XHCICpuProfile *profile = opaque;
+    QTestState *qtest;
+    const char *irq = profile->legacy_irq ? "off" : "auto";
+
+    if (!qtest_has_cpu_model(profile->model)) {
+        g_test_skip("CPU model not available for this QEMU binary");
+        return;
+    }
+
+    qtest = qtest_initf("-machine pc -nic none -cpu %s%s%s "
+                        "-device nec-usb-xhci,id=xhci-profile,"
+                        "msi=%s,msix=%s",
+                        profile->model,
+                        profile->features ? "," : "",
+                        profile->features ? profile->features : "",
+                        irq, irq);
+
+    /* Smoke-test USB attach/detach with the selected CPU and IRQ mode. */
+    usb_test_hotplug(qtest, "xhci-profile", "1", NULL);
+
+    if (qtest_has_device("usb-net")) {
+        qtest_qmp_device_add(qtest, "usb-net", "usb-net-profile",
+                             "{'bus': 'xhci-profile.0', 'port': '2'}");
+        qtest_qmp_device_del(qtest, "usb-net-profile");
+    }
+
+    qtest_quit(qtest);
+}
+
 static void test_xhci_hotplug(void)
 {
     usb_test_hotplug(global_qtest, "xhci", "1", NULL);
@@ -117,6 +172,14 @@ int main(int argc, char **argv)
 
     qtest_add_func("/xhci/pci/hotplug", test_xhci_hotplug);
     qtest_add_func("/xhci/pci/unplug/finalize", test_xhci_unplug_finalize);
+    if ((!strcmp(qtest_get_arch(), "i386") ||
+         !strcmp(qtest_get_arch(), "x86_64")) &&
+        qtest_has_device("nec-usb-xhci")) {
+        for (int i = 0; i < G_N_ELEMENTS(xhci_cpu_profiles); i++) {
+            qtest_add_data_func(xhci_cpu_profiles[i].test_name,
+                                &xhci_cpu_profiles[i], test_xhci_cpu_profile);
+        }
+    }
     if (qtest_has_device("usb-uas")) {
         qtest_add_func("/xhci/pci/hotplug/usb-uas", test_usb_uas_hotplug);
     }
