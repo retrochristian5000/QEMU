@@ -762,17 +762,14 @@ fi
 # A successful driver exit is not enough; require a clean native output.
 bootstrap_lld_link_probe()
 {
-    local extra_flag="${1:-}"
     local probe_dir probe_output probe_log
-    local -a extra_args=()
-    [[ -z "$extra_flag" ]] || extra_args=("$extra_flag")
     probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-lld-probe.XXXXXX")" || return 1
     probe_output="$probe_dir/probe"
     probe_log="$probe_dir/link.log"
     if ! printf 'int main(void) { return 0; }\n' |
         PATH="$TOOLCHAIN_DIR/bin:$PATH" \
             "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
-            "${extra_args[@]}" -isysroot "$sdkroot" \
+            -isysroot "$sdkroot" \
             "-mmacosx-version-min=$deployment_target" \
             -x c++ - -o "$probe_output" >"$probe_log" 2>&1 ||
         [[ ! -s "$probe_output" || ! -x "$probe_output" ]] ||
@@ -804,12 +801,11 @@ if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
 
         # Never forward optional input-prefetch knobs into global CMake
         # linker flags. Configure and compiler-rt exercise other link modes.
-        bootstrap_lld_link_flags=
         bootstrap_linker_args=(
-            "-DLLVM_USE_LINKER=lld"
-            "-DCMAKE_EXE_LINKER_FLAGS=$bootstrap_lld_link_flags"
-            "-DCMAKE_SHARED_LINKER_FLAGS=$bootstrap_lld_link_flags"
-            "-DCMAKE_MODULE_LINKER_FLAGS=$bootstrap_lld_link_flags"
+            -DLLVM_USE_LINKER=lld
+            -DCMAKE_EXE_LINKER_FLAGS=
+            -DCMAKE_SHARED_LINKER_FLAGS=
+            -DCMAKE_MODULE_LINKER_FLAGS=
         )
     fi
 fi
@@ -1732,11 +1728,7 @@ native_llvm_cmake_cache_clean()
     for kind in EXE SHARED MODULE STATIC; do
         recorded="$(grep -E "^CMAKE_${kind}_LINKER_FLAGS:[^=]*=" "$cache" || true)"
         if [[ -n "$recorded" ]]; then
-            if [[ "$kind" == STATIC ]]; then
-                [[ "${recorded#*=}" == "" ]] || return 1
-            else
-                [[ "${recorded#*=}" == "${bootstrap_lld_link_flags:-}" ]] || return 1
-            fi
+            [[ "${recorded#*=}" == "" ]] || return 1
         fi
     done
     grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache"
