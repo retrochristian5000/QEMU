@@ -170,6 +170,10 @@ validate_macho_thread_flags()
     read -r -a ld_args <<< "${LDFLAGS:-}"
     for arg in "${ld_args[@]}"; do
         case "$arg" in
+            *--read-workers*)
+                printf 'error: --read-workers cannot appear in global LDFLAGS during QEMU configure: %s\n' "$arg" >&2
+                exit 1
+                ;;
             -Wl,-threads|-Wl,-threads=*|-Wl,--threads|-Wl,--threads=*)
                 if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld && \
                       -n "${NATIVE_LLVM_DIR:-}" && \
@@ -458,78 +462,18 @@ done
 normalize_macho_thread_flags
 validate_macho_thread_flags
 
-# Mach-O LLD's --read-workers is an optional performance extension. It
-# appeared after some of the LLVM versions supported by this fork and can be
-# rejected by a linker built without threading. Probe it through the actual
-# Clang driver before adding it to the host's LDFLAGS; --help alone does not
-# prove that the option works for this binary. Never pass it to Apple ld.
-whp_native_lld_accepts_read_workers()
-{
-    local workers="$1"
-    local driver_var language probe_dir probe_output probe_log
-    local -a probe_driver=()
-
-    # Both C and C++ drivers must produce and run a native executable. A
-    # zero exit without a linked binary, or with warnings, is not support.
-    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-lld-workers.XXXXXX")" || return 1
-    probe_output="$probe_dir/probe"
-    probe_log="$probe_dir/link.log"
-    for driver_var in CC CXX; do
-        probe_driver=()
-        read -r -a probe_driver <<< "${!driver_var:-}"
-        if [[ "${#probe_driver[@]}" -eq 0 ]]; then
-            rm -rf -- "$probe_dir"
-            return 1
-        fi
-        if [[ "$driver_var" == CXX ]]; then
-            language=c++
-        else
-            language=c
-        fi
-        rm -f -- "$probe_output"
-        if ! printf 'int main(void) { return 0; }\n' |
-            "${probe_driver[@]}" -arch "$WHP_MACOS_ARCH" \
-                -isysroot "$SDKROOT" \
-                "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-                -fuse-ld=lld "-Wl,--read-workers=$workers" \
-                -x "$language" - -o "$probe_output" \
-                >"$probe_log" 2>&1 ||
-            [[ ! -s "$probe_output" || ! -x "$probe_output" ]] ||
-            grep -Eiq '(^|[[:space:]])warning:' "$probe_log" ||
-            ! "$probe_output" >/dev/null 2>&1; then
-            rm -rf -- "$probe_dir"
-            return 1
-        fi
-    done
-    rm -rf -- "$probe_dir"
-    return 0
-}
-}
+# Do not inject optional input-prefetch workers into global LDFLAGS.
+# They flow into QEMU configure/Meson and third-party link probes, even
+# when a standalone Mach-O LLD probe succeeds.  LLVM_PARALLEL_LINK_JOBS
+# and Ninja's -j budget already bound parallel build/link scheduling.
 
 native_macho_lld=0
 if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
       -n "${NATIVE_LLVM_DIR:-}" &&
       "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
     native_macho_lld=1
-    native_lld_read_workers="${NATIVE_LLVM_READ_WORKERS:-${JOBS:-1}}"
-    case "$native_lld_read_workers" in
-        ''|*[!0-9]*)
-            printf 'error: NATIVE_LLVM_READ_WORKERS must be a non-negative integer: %s\n' \
-                "$native_lld_read_workers" >&2
-            exit 1
-            ;;
-    esac
-    # Zero is opt-out: omit the argument entirely, even on new LLD versions.
-    if [[ "$native_lld_read_workers" != 0 ]]; then
-        if whp_native_lld_accepts_read_workers "$native_lld_read_workers"; then
-            whp_append_flag LDFLAGS "-Wl,--read-workers=$native_lld_read_workers"
-        elif [[ -n "${NATIVE_LLVM_READ_WORKERS+x}" ]]; then
-            printf 'error: selected ld64.lld does not accept --read-workers=%s\n' \
-                "$native_lld_read_workers" >&2
-            exit 1
-        else
-            printf 'warning: selected ld64.lld cannot use --read-workers; omitting optional link prefetch\n' >&2
-        fi
+    if [[ "${NATIVE_LLVM_READ_WORKERS:-0}" != 0 ]]; then
+        printf 'warning: NATIVE_LLVM_READ_WORKERS is ignored; global configure LDFLAGS must not contain --read-workers\n' >&2
     fi
 
     # This pinned Mach-O LLD does not yet implement class-selector stubs.
