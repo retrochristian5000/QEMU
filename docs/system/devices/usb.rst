@@ -260,6 +260,42 @@ device visible to the guest. The workflow looks like this:
 #. optionally add more devices (luns 1 ... 15)
 #. ``scripts/qmp/qom-set foo.attached = true``
 
+Cellular (4G/5G) modem connectivity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A 4G/LTE or 5G NR home-internet gateway normally connects to the host
+through Ethernet or Wi-Fi.  In that case QEMU guests use a regular
+network backend such as ``-netdev user`` and an emulated Ethernet NIC;
+the guest does not see or control the cellular radio.
+
+For a separate, USB-attached cellular modem, ``usb-host`` can pass the
+physical USB device to the guest when QEMU was built with libusb support
+and the host permits access.  For example, on a PC guest with XHCI::
+
+    -device qemu-xhci,id=xhci \\
+    -device usb-host,bus=xhci.0,vendorid=0x1234,productid=0x5678
+
+Replace the sample USB IDs with the actual modem's vendor and product
+IDs; do not use the sample values as a device match.  The guest must
+provide drivers and connection-management software for the modem's
+actual interface, which may use USB MBIM, QMI, or vendor-specific
+protocols.  The ``usb-net`` CDC Ethernet/RNDIS device is not a
+cellular modem and does not implement those protocols.
+
+The passthrough path carries USB commands and data to physical hardware.
+It does not emulate 5G NR radio signaling, a cellular base station,
+SIM/eSIM provisioning, or cellular network registration.  A USB-C
+connector on a home gateway alone does not imply that the gateway
+exposes its modem over USB.
+
+On macOS and other hosts, verify that the particular modem is exposed
+to libusb, is not exclusively claimed by a host driver, and can be
+opened by QEMU.  Passthrough and guest driver support depend on the
+device and operating systems; neither should be assumed merely because
+a modem supports 5G.  Keep a regular virtual NIC as the fallback when
+direct modem access is unavailable.
+
+
 .. _host_005fusb_005fdevices:
 
 Using host USB devices on a Linux host
