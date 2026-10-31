@@ -162,10 +162,8 @@ enum commands {
 #define RFD_STATUS_NOBUFS     0x0200
 
 /* TX Error flags */
-#define TX_COLLISIONS       0x0020
 #define TX_HEARTBEAT_ERRORS 0x0040
 #define TX_CARRIER_ERRORS   0x0400
-#define TX_COLLISIONS_ALT   0x0800
 #define TX_ABORTED_ERRORS   0x1000
 
 static void i82596_update_scb_irq(I82596State *s, bool trigger);
@@ -179,8 +177,7 @@ static void i82596_bus_throttle_timer(void *opaque);
 static void i82596_flush_queue_timer(void *opaque);
 static int i82596_flush_packet_queue(I82596State *s);
 static void i82596_update_statistics(I82596State *s, bool is_tx,
-                                      uint16_t error_flags,
-                                      uint16_t collision_count);
+                                      uint16_t error_flags);
 
 static uint8_t get_byte(uint32_t addr)
 {
@@ -630,7 +627,7 @@ static int i82596_tx_process_frame(I82596State *s, bool insert_crc)
 
 static void i82596_tx_update_status(I82596State *s, hwaddr tfd_addr,
                                     struct i82596_tx_descriptor *desc,
-                                    uint16_t tx_status, bool success)
+                                    bool success)
 {
     desc->status_bits = STAT_C;
 
@@ -690,7 +687,7 @@ static void i82596_transmit(I82596State *s, uint32_t addr)
     }
 
 tx_complete:
-    i82596_tx_update_status(s, tfd_addr, &tfd, tx_status, success);
+    i82596_tx_update_status(s, tfd_addr, &tfd, success);
     i82596_update_statistics(s, true, tx_status);
     if (tfd.command & CMD_INTR) {
         i82596_update_cu_status(s, tfd.status_bits, true);
