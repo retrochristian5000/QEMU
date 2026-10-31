@@ -632,10 +632,18 @@ assert 'WHP_CMAKE_CONFIG_SCHEMA=2' in bootstrap
 assert 'LLVM_GIT_COMMIT=%q' in bootstrap
 assert 'LLVM_SOURCE_DIR=%q' in bootstrap
 assert 'unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM' in bootstrap
+assert 'unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD' in bootstrap
+assert 'unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES' in bootstrap
+for stage in ('EXE', 'SHARED', 'MODULE', 'STATIC'):
+    assert f'-DCMAKE_{stage}_LINKER_FLAGS_RELEASE=' in bootstrap
+assert '-DCMAKE_STATIC_LINKER_FLAGS=' in bootstrap
 assert 'unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE' in bootstrap
 for entry in (
     '-UCMAKE_TOOLCHAIN_FILE', '-UCMAKE_SYSROOT',
     '-UCMAKE_FIND_ROOT_PATH', '-UCMAKE_PROJECT_TOP_LEVEL_INCLUDES',
+    '-UCMAKE_C_COMPILER_TARGET', '-UCMAKE_CXX_COMPILER_TARGET',
+    '-UCMAKE_ASM_COMPILER_TARGET', '-UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN',
+    '-UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN',
 ):
     assert entry in bootstrap[bootstrap.index('cmake_args=('):], entry
 assert 'rm -rf "$LLVM_BUILD_DIR"' not in bootstrap
@@ -728,6 +736,32 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
         'CMAKE_GENERATOR:INTERNAL=Unix Makefiles\n', encoding='utf-8',
     )
     assert not cache_clean(), 'non-Ninja generator cache was reused'
+    for stale in (
+        'CMAKE_EXE_LINKER_FLAGS_RELEASE:STRING=-arch x86_64',
+        'CMAKE_SHARED_LINKER_FLAGS_RELEASE:STRING=-Wl,-rpath,/cross/lib',
+        'CMAKE_MODULE_LINKER_FLAGS_RELEASE:STRING=-fsanitize=address',
+        'CMAKE_STATIC_LINKER_FLAGS_RELEASE:STRING=-arch x86_64',
+        'CMAKE_EXE_LINKER_FLAGS:STRING=-Wl,-rpath,/target/lib',
+        'CMAKE_SHARED_LINKER_FLAGS:STRING=-fuse-ld=lld',
+        'CMAKE_STATIC_LINKER_FLAGS:STRING=--plugin=/foreign/lto.so',
+        'CMAKE_C_COMPILER_TARGET:STRING=x86_64-unknown-linux-gnu',
+        'CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN:PATH=/foreign/cross',
+    ):
+        cache.write_text(
+            'CMAKE_GENERATOR:INTERNAL=Ninja\n' + stale + '\n',
+            encoding='utf-8',
+        )
+        assert not cache_clean(), f'poisoned native LLVM cache reused: {stale}'
+    cache.write_text(
+        'CMAKE_GENERATOR:INTERNAL=Ninja\n'
+        'CMAKE_EXE_LINKER_FLAGS:STRING=\n'
+        'CMAKE_SHARED_LINKER_FLAGS:STRING=\n'
+        'CMAKE_MODULE_LINKER_FLAGS:STRING=\n'
+        'CMAKE_STATIC_LINKER_FLAGS:STRING=\n'
+        'CMAKE_EXE_LINKER_FLAGS_RELEASE:STRING=\n',
+        encoding='utf-8',
+    )
+    assert cache_clean(), 'a sanitized native linker cache was rejected'
 
 # Prove shortcut precedence with the actual native seed-selection fragment.
 # A prevalidated CC_FOR_BUILD is never re-probed; explicit LLVM overrides

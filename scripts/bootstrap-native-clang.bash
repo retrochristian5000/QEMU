@@ -99,6 +99,9 @@ stage_root=""
 # pointer policy become part of LLVM's bootstrap ABI. Platform ABI inputs such
 # as SDKROOT and MACOSX_DEPLOYMENT_TARGET are handled explicitly below.
 unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS ASMFLAGS
+# Block foreign target libraries and runtime injection into the host LLVM ABI.
+unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
+unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
 # WHP_NATIVE_LLVM_CMAKE_ENV_BEGIN
 # Do not let a host-tool LLVM build consume an outer cross-target CMake
 # toolchain, generator, project injection or pkg-config cross sysroot.
@@ -807,6 +810,15 @@ if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
         )
     fi
 fi
+# An incremental Release cache retains link flags after ambient LDFLAGS are
+# erased. Clear each linker class for both Apple ld and Mach-O LLD.
+bootstrap_linker_args+=(
+    -DCMAKE_STATIC_LINKER_FLAGS=
+    -DCMAKE_EXE_LINKER_FLAGS_RELEASE=
+    -DCMAKE_SHARED_LINKER_FLAGS_RELEASE=
+    -DCMAKE_MODULE_LINKER_FLAGS_RELEASE=
+    -DCMAKE_STATIC_LINKER_FLAGS_RELEASE=
+)
 printf 'WHP native LLVM bootstrap linker: %s\n' "$bootstrap_linker_name" >&2
 
 # LLVM is a host build tool. Keep Release/NDEBUG and use -O2 instead of
@@ -1589,6 +1601,12 @@ cmake_args=(
     -UCMAKE_PROJECT_TOP_LEVEL_INCLUDES
     -UCMAKE_PROJECT_INCLUDE
     -UCMAKE_PROJECT_INCLUDE_BEFORE
+    # Cached C/C++ targets and external toolchains must not outlive the host ABI.
+    -UCMAKE_C_COMPILER_TARGET
+    -UCMAKE_CXX_COMPILER_TARGET
+    -UCMAKE_ASM_COMPILER_TARGET
+    -UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN
+    -UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN
     # Explicitly clear persistent CMakeCache global flags from older builds.
     # Assembly flags can retain host-only ISA options (e.g. -msse4.2)
     # across an x86 -> AArch64 build-tree change, independently of C/C++.
@@ -1693,13 +1711,31 @@ cmake_config_identity="$(
 native_llvm_cmake_cache_clean()
 {
     local cache="$LLVM_BUILD_DIR/CMakeCache.txt"
+    local kind recorded
     [[ -f "$cache" ]] || return 1
-    # Even when our marker matches, another producer may have inserted a
-    # cross-target CMake variable into the persistent cache.
-    if grep -Eq '^(CMAKE_TOOLCHAIN_FILE|CMAKE_SYSROOT|CMAKE_FIND_ROOT_PATH|CMAKE_PROJECT_TOP_LEVEL_INCLUDES|CMAKE_PROJECT_INCLUDE|CMAKE_PROJECT_INCLUDE_BEFORE):[^=]*=.+$' "$cache"; then
+    # An unchanged marker does not guarantee that another producer did not
+    # inject foreign target options into the persistent CMake cache.
+    if grep -Eq '^(CMAKE_TOOLCHAIN_FILE|CMAKE_SYSROOT|CMAKE_FIND_ROOT_PATH|CMAKE_PROJECT_TOP_LEVEL_INCLUDES|CMAKE_PROJECT_INCLUDE|CMAKE_PROJECT_INCLUDE_BEFORE|CMAKE_C_COMPILER_TARGET|CMAKE_CXX_COMPILER_TARGET|CMAKE_ASM_COMPILER_TARGET|CMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN|CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN):[^=]*=.+$' "$cache"; then
         printf 'WHP native LLVM: stale CMake cross-target variables; reconfiguring in place\n' >&2
         return 1
     fi
+    # Per-configuration Release flags are independent of base LDFLAGS and
+    # can reintroduce architecture, LTO, runtimes and sysroots silently.
+    if grep -Eq '^CMAKE_(EXE|SHARED|MODULE|STATIC)_LINKER_FLAGS_RELEASE:[^=]*=.+$' "$cache"; then
+        printf 'WHP native LLVM: stale Release linker flags; reconfiguring in place\n' >&2
+        return 1
+    fi
+    # A cached base link setting must still match the selected native linker.
+    for kind in EXE SHARED MODULE STATIC; do
+        recorded="$(grep -E "^CMAKE_${kind}_LINKER_FLAGS:[^=]*=" "$cache" || true)"
+        if [[ -n "$recorded" ]]; then
+            if [[ "$kind" == STATIC ]]; then
+                [[ "${recorded#*=}" == "" ]] || return 1
+            else
+                [[ "${recorded#*=}" == "${bootstrap_lld_link_flags:-}" ]] || return 1
+            fi
+        fi
+    done
     grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache"
 }
 # WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_END
