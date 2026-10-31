@@ -296,6 +296,54 @@ a modem supports 5G.  Keep a regular virtual NIC as the fallback when
 direct modem access is unavailable.
 
 
+Windows INF and USB descriptor evidence
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+INF files select Windows drivers from device identifiers; they do not
+implement a cellular protocol.  The Microsoft inbox USB class inventory
+(https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/supported-usb-classes)
+documents these distinct paths:
+
+* ``Netwmbclass.inf``: USB CDC class 0x02, subclass 0x0e (MBIM),
+  handled by the Windows 10/11 mobile broadband class driver.
+* ``UsbNcm.inf``: USB CDC class 0x02, subclass 0x0d (NCM), a
+  generic network interface, not inherently a cellular modem.
+* ``Usbser.inf``: USB CDC class 0x02, subclass 0x02 (ACM),
+  a serial interface, not the MBIM control/data protocol.
+* QMI: vendor-specific interfaces require matching actual device
+  hardware IDs and an appropriate driver; there is no generic
+  QMI ID proven by the three inbox class entries above.
+
+Primary INF example:
+https://github.com/microsoft/UDE/blob/master/UDEMbimClientSample/UDEMbimClient.inf
+
+Microsoft's ``UDEMbimClient.inf`` matches ``ROOT\\UDEMbimClientSample``:
+this is the root-enumerated Windows USB emulation sample driver,
+**not** a real modem's ``USB\\VID_...&PID_...`` identifier.  Its
+device-facing USB descriptor example is separate:
+https://github.com/microsoft/UDE/blob/master/UDEMbimClientSample/udembimdescriptors.h
+
+The descriptor example has composite class/subclass/protocol
+0xef/0x02/0x01, separate MBIM control and CDC data interfaces,
+and data-interface alternate settings 0 (inactive) and 1 (bulk).
+Do not reuse its sample USB vendor/product IDs for QEMU or a modem.
+
+To establish a physical-modem match, compare the source INF's
+``[Manufacturer]`` models with actual USB descriptors, including
+``USB\\VID_xxxx&PID_yyyy&MI_zz`` interface IDs,
+class/subclass/protocol, IAD or union descriptors, and alternate
+settings.  Background:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/enumeration-of-the-composite-parent-device
+
+On supported Windows guests, inspect connected device IDs with
+``pnputil /enum-devices /connected /deviceids`` and an individual
+device's driver matches with
+``pnputil /enum-devices /instanceid <ID> /drivers``.
+``pnputil /enum-drivers /files`` lists third-party packages,
+not all Windows inbox drivers.  INF inspection neither imports
+Windows drivers into QEMU nor implements missing MBIM commands.
+
+
 .. _host_005fusb_005fdevices:
 
 Using host USB devices on a Linux host
