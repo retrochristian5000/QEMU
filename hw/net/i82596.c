@@ -133,10 +133,6 @@ enum commands {
 #define I596_EOF        0x8000
 #define SIZE_MASK       0x3fff
 
-#define CSMA_SLOT_TIME         51
-#define CSMA_MAX_RETRIES       16
-#define CSMA_BACKOFF_LIMIT     10
-
 /* Global Flags fetched from config bytes */
 #define I596_PREFETCH       (s->config[0] & 0x80)
 #define SAVE_BAD_FRAMES     (s->config[2] & 0x80)
@@ -177,8 +173,6 @@ static void i82596_update_cu_status(I82596State *s, uint16_t cmd_status,
                                      bool generate_interrupt);
 static void update_scb_status(I82596State *s);
 static void examine_scb(I82596State *s);
-static bool i82596_check_medium_status(I82596State *s);
-static int i82596_csma_backoff(I82596State *s, int retry_count);
 static uint16_t i82596_calculate_crc16(const uint8_t *data, size_t len);
 static size_t i82596_append_crc(I82596State *s, uint8_t *buffer, size_t len);
 static void i82596_bus_throttle_timer(void *opaque);
@@ -221,39 +215,69 @@ static void set_uint32(uint32_t addr, uint32_t val)
     set_uint16(addr + 2, val >> 16);
 }
 
+/* The SCB has four 16-bit counters in 82586 mode, and six 32-bit
+ * counters in the 82596 segmented and linear modes.  The throttle
+ * registers immediately follow them and must never be overwritten
+ * with internal TX statistics.  See Intel 82596CA, figures 18-20.
+ */
+enum I82596SCBCounter {
+    I82596_SCB_CRC,
+    I82596_SCB_ALIGNMENT,
+    I82596_SCB_RESOURCE,
+    I82596_SCB_OVERRUN,
+    I82596_SCB_RCVCDT,
+    I82596_SCB_SHORT_FRAME,
+};
+
+static void i82596_write_scb_counter(I82596State *s,
+                                     enum I82596SCBCounter counter,
+                                     uint32_t value)
+{
+    if (s->mode == I82586_MODE) {
+        if (counter <= I82596_SCB_OVERRUN) {
+            set_uint16(s->scb + 8 + 2 * counter, value);
+        }
+        return;
+    }
+
+    uint32_t base = (s->mode == I82596_MODE_LINEAR) ? 12 : 8;
+
+    set_uint32(s->scb + base + 4 * counter, value);
+}
+
 /* Centralized error detection and update mechanism */
 static void i82596_record_error(I82596State *s, uint16_t error_type, bool is_tx)
 {
     if (is_tx) {
         if (error_type & TX_ABORTED_ERRORS) {
             s->tx_aborted_errors++;
-            set_uint32(s->scb + 28, s->tx_aborted_errors);
         }
     } else {
         if (error_type & RX_CRC_ERRORS) {
             s->crc_err++;
-            set_uint32(s->scb + 16, s->crc_err);
+            i82596_write_scb_counter(s, I82596_SCB_CRC, s->crc_err);
         }
 
         if (error_type & (RX_LENGTH_ERRORS | RX_LENGTH_ERRORS_ALT |
                           RX_FRAME_ERRORS)) {
             s->align_err++;
-            set_uint32(s->scb + 18, s->align_err);
+            i82596_write_scb_counter(s, I82596_SCB_ALIGNMENT, s->align_err);
         }
 
         if (error_type & RFD_STATUS_NOBUFS) {
             s->resource_err++;
-            set_uint32(s->scb + 20, s->resource_err);
+            i82596_write_scb_counter(s, I82596_SCB_RESOURCE, s->resource_err);
         }
 
         if (error_type & (RX_OVER_ERRORS | RX_FIFO_ERRORS)) {
             s->over_err++;
-            set_uint32(s->scb + 22, s->over_err);
+            i82596_write_scb_counter(s, I82596_SCB_OVERRUN, s->over_err);
         }
 
         if (error_type & RFD_STATUS_TRUNC) {
             s->short_fr_error++;
-            set_uint32(s->scb + 26, s->short_fr_error);
+            i82596_write_scb_counter(s, I82596_SCB_SHORT_FRAME,
+                                     s->short_fr_error);
         }
     }
 }
@@ -606,9 +630,7 @@ static int i82596_tx_process_frame(I82596State *s, bool insert_crc)
 
 static void i82596_tx_update_status(I82596State *s, hwaddr tfd_addr,
                                     struct i82596_tx_descriptor *desc,
-                                    uint16_t tx_status,
-                                    uint16_t collision_count,
-                                    bool success)
+                                    uint16_t tx_status, bool success)
 {
     desc->status_bits = STAT_C;
 
@@ -618,50 +640,20 @@ static void i82596_tx_update_status(I82596State *s, hwaddr tfd_addr,
         desc->status_bits |= STAT_A;
     }
 
-    if (collision_count > 0) {
-        desc->status_bits |= (collision_count & 0x0F);
-    }
-
     i82596_tx_tfd_write(s, tfd_addr, desc);
 }
 
-static int i82596_tx_csma_cd(I82596State *s, uint16_t *tx_status)
-{
-    int retry_count = 0;
-    bool medium_available;
-
-    if (I596_FULL_DUPLEX || I596_LOOPBACK) {
-        return 0;
-    }
-
-    while (retry_count < CSMA_MAX_RETRIES) {
-        medium_available = i82596_check_medium_status(s);
-
-        if (medium_available) {
-            break;
-        }
-        i82596_csma_backoff(s, retry_count);
-        retry_count++;
-        s->total_collisions++;
-    }
-    if (retry_count >= CSMA_MAX_RETRIES) {
-        *tx_status |= TX_ABORTED_ERRORS;
-        return -1;
-    }
-    if (retry_count > 0) {
-        *tx_status |= TX_COLLISIONS;
-        s->collision_events++;
-    }
-
-    return retry_count;
-}
+/* The QEMU network backend is a point-to-point link, not an emulated
+ * shared Ethernet medium.  Do not fabricate collisions from virtual
+ * clock values: that can abort perfectly valid half-duplex frames.
+ * Bus-master throttling is separate from Ethernet collision handling.
+ */
 
 static void i82596_transmit(I82596State *s, uint32_t addr)
 {
     struct i82596_tx_descriptor tfd;
     hwaddr tfd_addr = addr;
     uint16_t tx_status = 0;
-    int collision_count = 0;
     int frame_len;
     bool success = true;
     bool insert_crc;
@@ -673,11 +665,6 @@ static void i82596_transmit(I82596State *s, uint32_t addr)
     s->current_tx_desc = tfd_addr;
     insert_crc = (I596_NOCRC_INS == 0) && ((tfd.command & 0x10) == 0) &&
                  !I596_LOOPBACK;
-    collision_count = i82596_tx_csma_cd(s, &tx_status);
-    if (collision_count < 0) {
-        success = false;
-        goto tx_complete;
-    }
     frame_len = i82596_tx_copy_buffers(s, tfd_addr, &tfd);
     if (frame_len < 0) {
         tx_status |= TX_ABORTED_ERRORS;
@@ -703,9 +690,8 @@ static void i82596_transmit(I82596State *s, uint32_t addr)
     }
 
 tx_complete:
-    i82596_tx_update_status(s, tfd_addr, &tfd, tx_status, collision_count,
-                            success);
-    i82596_update_statistics(s, true, tx_status, collision_count);
+    i82596_tx_update_status(s, tfd_addr, &tfd, tx_status, success);
+    i82596_update_statistics(s, true, tx_status);
     if (tfd.command & CMD_INTR) {
         i82596_update_cu_status(s, tfd.status_bits, true);
     }
@@ -1211,8 +1197,6 @@ ssize_t i82596_receive(NetClientState *nc, const uint8_t *buf, size_t size)
     if (s->rx_status != RX_READY) {
         if (s->queue_count >= PACKET_QUEUE_SIZE) {
             trace_i82596_receive_queue_full();
-            s->over_err++;
-            set_uint32(s->scb + 22, s->over_err);
             i82596_record_error(s, RX_OVER_ERRORS, false);
             return size;
         }
@@ -1308,35 +1292,6 @@ void i82596_set_link_status(NetClientState *nc)
     }
 }
 
-static bool i82596_check_medium_status(I82596State *s)
-{
-    if (I596_FULL_DUPLEX) {
-        return true;
-    }
-
-    if (!s->throttle_state) {
-        return false;
-    }
-
-    if (!I596_LOOPBACK && (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) % 100 < 5)) {
-        s->collision_events++;
-        return false;
-    }
-
-    return true;
-}
-
-static int i82596_csma_backoff(I82596State *s, int retry_count)
-{
-    int backoff_factor, slot_count, backoff_time;
-
-    backoff_factor = MIN(retry_count + 1, CSMA_BACKOFF_LIMIT);
-    slot_count = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) % (1 << backoff_factor);
-    backoff_time = slot_count * CSMA_SLOT_TIME;
-
-    return backoff_time;
-}
-
 static uint16_t i82596_calculate_crc16(const uint8_t *data, size_t len)
 {
     uint16_t crc = 0xFFFF;
@@ -1375,31 +1330,21 @@ static size_t i82596_append_crc(I82596State *s, uint8_t *buffer, size_t len)
 }
 
 static void i82596_update_statistics(I82596State *s, bool is_tx,
-                                      uint16_t error_flags,
-                                      uint16_t collision_count)
+                                      uint16_t error_flags)
 {
     if (is_tx) {
-        if (collision_count > 0) {
-            s->tx_collisions += collision_count;
-            s->collision_events++;
-            s->total_collisions += collision_count;
-            set_uint32(s->scb + 32, s->tx_collisions);
-        }
         if (error_flags) {
             i82596_record_error(s, error_flags, true);
         }
         if (!(error_flags & (TX_ABORTED_ERRORS | TX_CARRIER_ERRORS))) {
             s->tx_good_frames++;
-            set_uint32(s->scb + 36, s->tx_good_frames);
         }
     } else {
         s->total_frames++;
-        set_uint32(s->scb + 40, s->total_frames);
         if (error_flags) {
             i82596_record_error(s, error_flags, false);
         } else {
             s->total_good_frames++;
-            set_uint32(s->scb + 44, s->total_good_frames);
         }
     }
 }
@@ -1432,8 +1377,15 @@ static void i82596_load_throttle_timers(I82596State *s, bool start_now)
 {
     uint16_t previous_t_on = s->t_on;
     uint16_t previous_t_off = s->t_off;
-    s->t_on = get_uint16(s->scb + 36);
-    s->t_off = get_uint16(s->scb + 38);
+    uint32_t timer_offset;
+
+    if (s->mode == I82586_MODE) {
+        return; /* 82586 mode has no bus throttle timer registers */
+    }
+
+    timer_offset = (s->mode == I82596_MODE_LINEAR) ? 36 : 32;
+    s->t_on = get_uint16(s->scb + timer_offset);
+    s->t_off = get_uint16(s->scb + timer_offset + 2);
 
     bool values_changed = (s->t_on != previous_t_on ||
                            s->t_off != previous_t_off);
@@ -1651,16 +1603,12 @@ static void update_scb_status(I82596State *s)
         | (s->cu_status << 8) | (s->rx_status << 4) | (s->lnkst >> 8);
     set_uint16(s->scb, s->scb_status);
 
-    set_uint32(s->scb + 28, s->tx_aborted_errors);
-    set_uint32(s->scb + 32, s->tx_collisions);
-    set_uint32(s->scb + 36, s->tx_good_frames);
-
-    set_uint32(s->scb + 16, s->crc_err);
-    set_uint32(s->scb + 18, s->align_err);
-    set_uint32(s->scb + 20, s->resource_err);
-    set_uint32(s->scb + 22, s->over_err);
-    set_uint32(s->scb + 24, s->rcvdt_err);
-    set_uint32(s->scb + 26, s->short_fr_error);
+    i82596_write_scb_counter(s, I82596_SCB_CRC, s->crc_err);
+    i82596_write_scb_counter(s, I82596_SCB_ALIGNMENT, s->align_err);
+    i82596_write_scb_counter(s, I82596_SCB_RESOURCE, s->resource_err);
+    i82596_write_scb_counter(s, I82596_SCB_OVERRUN, s->over_err);
+    i82596_write_scb_counter(s, I82596_SCB_RCVCDT, s->rcvdt_err);
+    i82596_write_scb_counter(s, I82596_SCB_SHORT_FRAME, s->short_fr_error);
 }
 
 static void command_loop(I82596State *s)
