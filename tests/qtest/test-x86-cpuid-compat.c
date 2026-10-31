@@ -365,6 +365,30 @@ static const CpuidTestArgs cpuid_tests[] = {
  * using cmdline
  */
 static const FeatureTestArgs feature_tests[] = {
+    /*
+     * Legacy USB/xHCI IRQ diagnostics: preserve the CPUID differences
+     * between CPU generations.  The xHCI test exercises INTx versus
+     * MSI/MSI-X independently of these CPU feature bits.
+     */
+    { "x86/cpuid/usb/486/apic",       "486",      NULL,
+      1, 0, "EDX", 9, false },
+    { "x86/cpuid/usb/486/tsc",        "486",      NULL,
+      1, 0, "EDX", 4, false },
+    { "x86/cpuid/usb/pentium3/apic",  "pentium3", NULL,
+      1, 0, "EDX", 9, true },
+    { "x86/cpuid/usb/core2duo/apic",  "core2duo", NULL,
+      1, 0, "EDX", 9, true },
+    { "x86/cpuid/usb/core2duo/x2apic", "core2duo", NULL,
+      1, 0, "ECX", 21, false },
+    { "x86/cpuid/usb/qemu32/apic",    "qemu32",   NULL,
+      1, 0, "EDX", 9, true },
+    { "x86/cpuid/usb/qemu32/x2apic",  "qemu32",   NULL,
+      1, 0, "ECX", 21, false },
+    { "x86/cpuid/usb/qemu64/apic",    "qemu64",   NULL,
+      1, 0, "EDX", 9, true },
+    { "x86/cpuid/usb/qemu64/x2apic",  "qemu64",   NULL,
+      1, 0, "ECX", 21, false },
+
     /* Test feature parsing */
     {
         "x86/cpuid/features/plus",
