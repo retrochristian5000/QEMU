@@ -802,11 +802,9 @@ if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
         export PATH
         bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"
 
-        # A Mach-O LLD build may not implement --read-workers=2.
+        # Never forward optional input-prefetch knobs into global CMake
+        # linker flags. Configure and compiler-rt exercise other link modes.
         bootstrap_lld_link_flags=
-        if bootstrap_lld_link_probe -Wl,--read-workers="$LLVM_LINK_JOBS"; then
-            bootstrap_lld_link_flags="-Wl,--read-workers=$LLVM_LINK_JOBS"
-        fi
         bootstrap_linker_args=(
             "-DLLVM_USE_LINKER=lld"
             "-DCMAKE_EXE_LINKER_FLAGS=$bootstrap_lld_link_flags"
