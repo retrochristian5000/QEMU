@@ -46,6 +46,42 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertNotIn('BUILD_SEABIOS=', assignments)
         self.assertNotIn('BOOTSTRAP_I386_TOOLCHAIN=', assignments)
 
+    def test_seabios_auto_selects_i386_and_x86_64_but_not_8086_target(self):
+        # Build-selection contract: an x86_64-only (including deduplicated
+        # i386 alias) build must not fall back to QEMU's shipped stock ROM.
+        sources = (ROOT / 'scripts/whp-build/prepare-sources.bash').read_text(
+            encoding='utf-8')
+        self.assertIn(
+            '*,i386-softmmu,*|*,x86_64-softmmu,*) BUILD_SEABIOS=1 ;;',
+            sources)
+        self.assertNotIn('*,x86-softmmu,*) BUILD_SEABIOS=1 ;;', sources)
+
+        meson = (ROOT / 'pc-bios/meson.build').read_text(encoding='utf-8')
+        self.assertIn(
+            "build_by_default: 'i386-softmmu' in target_dirs or "
+            "'x86_64-softmmu' in target_dirs,",
+            meson)
+        self.assertNotIn("'x86-softmmu' in target_dirs", meson)
+
+        grub = (ROOT / 'scripts/whp-build/prepare-seabios-grub.bash').read_text(
+            encoding='utf-8')
+        self.assertIn('*,i386-softmmu,*|*,x86_64-softmmu,*)', grub)
+
+        # The 8086 and 8088 boards require a user-specified <=64KiB BIOS.
+        original_x86 = (ROOT / 'hw/i386/x86-16bit.c').read_text(
+            encoding='utf-8')
+        self.assertIn('if (!machine->firmware)', original_x86)
+        self.assertIn('X86_16BIT_ROM_SIZE (64 * KiB)', original_x86)
+
+    def test_seabios_cross_toolchain_remains_i386_not_x86_64(self):
+        build = (ROOT / 'scripts/whp-build/configure-seabios.bash').read_text(
+            encoding='utf-8')
+        self.assertIn('i386-none-elf', build)
+        self.assertIn('SEABIOS_CROSS_COMPILE', build)
+        firmware = (ROOT / 'roms/config.seabios-256k').read_text(
+            encoding='utf-8')
+        self.assertIn('CONFIG_ROM_SIZE=256', firmware)
+
     def test_pc_bios_uses_ata_dma_but_isapc_stays_conservative(self):
         normal = (ROOT / 'roms' / 'config.seabios-256k').read_text(encoding='utf-8')
         isapc = (ROOT / 'roms' / 'config.seabios-128k').read_text(encoding='utf-8')

@@ -33,8 +33,11 @@ whp_prepare_sources()
     case "$seabios_mode" in
         auto)
             seabios_auto=1
+            # SeaBIOS is one legacy PC firmware for both 32-bit and 64-bit
+            # x86 system targets. The original 8086/8088 x86-softmmu target
+            # cannot execute SeaBIOS's 80386-era POST code.
             case ",${QEMU_TARGET_LIST:-}," in
-                *,i386-softmmu,*) BUILD_SEABIOS=1 ;;
+                *,i386-softmmu,*|*,x86_64-softmmu,*) BUILD_SEABIOS=1 ;;
                 *) BUILD_SEABIOS=0 ;;
             esac
             ;;

@@ -60,3 +60,32 @@ This option defaults to **off**. It refuses to reuse a build directory
 already configured with ``i386-softmmu``, and it does not silently
 discard explicit i386 audio Kconfig choices. Select a distinct build
 directory without modifying or deleting your previous WHP output.
+
+Firmware mapping for original 16-bit, i386, and x86_64 guests
+-------------------------------------------------------------
+
+The emulator executable family must **not** be confused with the BIOS's
+CPU execution modes:
+
+* ``x86-softmmu`` is the distinct original 8086/8088 target. Its
+  ``x86-8086`` and ``x86-8088`` boards require an explicit, genuine
+  8086/8088-compatible ``-bios FILE`` ROM of up to 64 KiB. The current
+  SeaBIOS binary is **not** such a ROM: its POST switches to 32-bit
+  protected mode and requires 80386-class instructions. The names
+  ``bios.bin`` and ``bios-256k.bin`` do not indicate a 16-bit-only ROM.
+* ``i386-softmmu`` uses standard SeaBIOS for legacy PC boot, including
+  its real-mode BIOS entry points and 32-bit initialization code.
+* ``x86_64-softmmu`` uses the same SeaBIOS images for legacy BIOS boot,
+  including through the opt-in ``qemu-system-i386`` symlink. A 64-bit
+  guest is entered by its operating-system boot loader; SeaBIOS itself is
+  **not** built as an x86_64 firmware executable.
+* IA32 UEFI and x86_64 UEFI are different firmware ABI targets, provided
+  separately by EDK2/OVMF. Do not replace them with a SeaBIOS symlink.
+
+The WHP ``BUILD_SEABIOS=auto`` selection and Meson firmware target
+now check both ``i386-softmmu`` and ``x86_64-softmmu`` without
+matching ``x86-softmmu``. The SeaBIOS compiler remains the
+``i386-none-elf`` toolchain. The three named ROM outputs
+(``bios.bin``, ``bios-256k.bin``, and ``bios-microvm.bin``)
+are distinct **machine-profile** images and must not be deduplicated
+based only on the guest CPU bitness.

@@ -135,7 +135,9 @@ if whp_seabios_enabled
     output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin'],
     command: [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
               '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@'],
-    build_by_default: 'i386-softmmu' in target_dirs,
+    # One 16/32-bit legacy BIOS image serves i386 and x86_64 guest PCs.
+    # Do not enable it for the original 8086/8088 x86-softmmu target.
+    build_by_default: 'i386-softmmu' in target_dirs or 'x86_64-softmmu' in target_dirs,
     build_always_stale: true,
     console: true,
     install: get_option('install_blobs'),
