@@ -3864,6 +3864,20 @@ void qemu_init(int argc, char **argv)
     current_machine->cpu_type = machine_default_cpu_type(current_machine);
     if (cpu_option) {
         current_machine->cpu_type = parse_cpu_option(cpu_option);
+    } else if (!strcmp(target_name(), "x86_64")) {
+        /*
+         * A POSIX qemu-system-i386 -> qemu-system-x86_64 symlink shares the
+         * system emulator without changing its compiled target architecture.
+         * Preserve the legacy PC default CPU for this exact invocation name.
+         * Other machines (notably the 8086 board) keep their own defaults.
+         */
+        g_autofree char *program = g_path_get_basename(argv[0]);
+
+        if (!strcmp(program, "qemu-system-i386") &&
+            current_machine->cpu_type &&
+            g_str_has_prefix(current_machine->cpu_type, "qemu64-")) {
+            current_machine->cpu_type = parse_cpu_option("qemu32");
+        }
     }
     /* NB: for machine none cpu_type could STILL be NULL here! */
 
