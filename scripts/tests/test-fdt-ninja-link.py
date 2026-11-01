@@ -57,7 +57,14 @@ def find_link_command(lines, target):
             + re.escape(target) + r"(?:\s|$)", line
         ):
             return line
-    fail("no final compiler/linker command for " + target)
+    # Retain a bounded sample of the actual Ninja command graph.  A
+    # complete command dump can contain megabytes of object file names.
+    # Prefer entries mentioning the requested target to unrelated edges.
+    samples = [line for line in lines if target in line]
+    samples = (samples or lines)[-3:]
+    detail = " | ".join(repr(line[:600]) for line in samples)
+    fail("no final compiler/linker command for " + target
+         + " (" + str(len(lines)) + " Ninja commands); samples: " + detail)
 
 
 def check_pinned_dtc():
