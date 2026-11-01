@@ -6,6 +6,7 @@ whp_build_targets()
 local build_target_list=()
 local build_runner=()
 local target
+local index
 local run_qemu_tests=0
 local test_plan=
 local test_source_dir="${SOURCE_DIR:-$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -172,9 +173,9 @@ fi
 # avoids making an otherwise successful unprivileged build fail on a prefix.
 if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
     if [[ -n "${NINJA_CMD:-}" ]]; then
-        "$NINJA_CMD" -C "$BUILD_DIR" install
+        "$NINJA_CMD" -C "$BUILD_DIR" install || return 1
     elif [[ -n "${MAKE_CMD:-}" ]]; then
-        "$MAKE_CMD" -C "$BUILD_DIR" install
+        "$MAKE_CMD" -C "$BUILD_DIR" install || return 1
     fi
     if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
         case ",${QEMU_TARGET_LIST:-}," in

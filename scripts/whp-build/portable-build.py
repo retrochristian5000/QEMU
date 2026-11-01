@@ -618,6 +618,11 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
             raise RuntimeError('QEMU_X86_FAMILY_LINK requires a POSIX symlink host')
         if values['QEMU_HOST_PGO'] != 'off':
             raise RuntimeError('QEMU_X86_FAMILY_LINK currently requires QEMU_HOST_PGO=off')
+        if os.path.lexists(build_dir / 'qemu-system-i386'):
+            raise RuntimeError(
+                'existing i386 executable would be overwritten; select a '
+                'distinct BUILD_DIR for QEMU_X86_FAMILY_LINK'
+            )
         if 'i386-softmmu' in previous_configured_targets(build_dir):
             raise RuntimeError(
                 'existing build tree includes i386-softmmu; select a distinct '

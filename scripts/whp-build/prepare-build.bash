@@ -154,7 +154,7 @@ whp_prepare_build_defaults()
         1)
             case "$HOST_OS" in
                 Windows|MINGW*|MSYS*|CYGWIN*)
-                    printf 'error: QEMU_X86_FAMILY_LINK requires a POSIX symlink host\\n' >&2
+                    printf 'error: QEMU_X86_FAMILY_LINK requires a POSIX symlink host\n' >&2
                     return 1 ;;
             esac
             # i386 device menu filters are not yet mapped to x86_64 Kconfig.
@@ -165,12 +165,12 @@ whp_prepare_build_defaults()
                              I386_AUDIO_ES1370 I386_AUDIO_AC97 I386_AUDIO_CS4630 \
                              I386_AUDIO_HDA; do
                 if [[ "${!audio_key:-auto}" != auto ]]; then
-                    printf 'error: %s requires a separate i386 target; disable QEMU_X86_FAMILY_LINK\\n' "$audio_key" >&2
+                    printf 'error: %s requires a separate i386 target; disable QEMU_X86_FAMILY_LINK\n' "$audio_key" >&2
                     return 1
                 fi
             done
             ;;
-        *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\\n' >&2; return 1 ;;
+        *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\n' >&2; return 1 ;;
     esac
     QEMU_TARGET_LIST=
     if [[ "$BUILD_QEMU_SYSTEM_PPC" == 1 ]]; then
