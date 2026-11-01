@@ -221,10 +221,10 @@ jobs:
           fi
 
       - name: Test floppy read/write accounting for activity indicators
-        if: matrix.target == 'x86'
+        if: matrix.target == 'i386'
         run: |
           ninja -C build-ci tests/qtest/fdc-test
-          QTEST_QEMU_BINARY="$GITHUB_WORKSPACE/build-ci/qemu-system-x86" \
+          QTEST_QEMU_BINARY="$GITHUB_WORKSPACE/build-ci/qemu-system-i386" \
             build-ci/tests/qtest/fdc-test
 
       - name: Test modem hardware reset and AT configuration

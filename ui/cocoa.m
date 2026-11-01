@@ -141,6 +141,8 @@ static bool swap_opt_cmd;
 
 static CGInterpolationQuality zoom_interpolation = kCGInterpolationNone;
 static NSTextField *pauseLabel;
+/* Shutdown gate: AppKit's timer may outlive QEMU's device model. */
+static bool cocoa_drive_activity_enabled;
 
 static bool allow_events;
 
@@ -1421,6 +1423,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     gint64 driveActivityUntil[DRIVE_ACTIVITY_COUNT];
 }
 - (void)updateDriveActivity:(NSTimer *)timer;
+- (void)stopDriveActivity;
 - (CocoaConsole *)console;
 - (GPtrArray *)extraConsoles;
 - (QemuCocoaView *)viewForWindow:(NSWindow *)window;
@@ -1533,12 +1536,24 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     return self;
 }
 
+- (void)stopDriveActivity
+{
+    [driveActivityTimer invalidate];
+    [driveActivityTimer release];
+    driveActivityTimer = nil;
+}
+
 - (void)updateDriveActivity:(NSTimer *)timer
 {
     DriveActivitySnapshot snapshot;
     DriveActivitySnapshot *output = &snapshot;
-    gint64 now = g_get_monotonic_time();
+    gint64 now;
 
+    if (!qatomic_read(&cocoa_drive_activity_enabled)) {
+        [self stopDriveActivity];
+        return;
+    }
+    now = g_get_monotonic_time();
     with_bql(^{
         blk_get_drive_activity_snapshot(output);
     });
@@ -1695,8 +1710,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     COCOA_DEBUG("QemuCocoaAppController: dealloc\n");
 
-    [driveActivityTimer invalidate];
-    [driveActivityTimer release];
+    [self stopDriveActivity];
     for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
         [driveActivityLabels[i] release];
     }
@@ -2531,6 +2545,7 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     CocoaConsole *cocoa;
 
     COCOA_DEBUG("qemu_cocoa: cocoa_display_init\n");
+    qatomic_set(&cocoa_drive_activity_enabled, true);
 
     // Pull this console process up to being a fully-fledged graphical
     // app with a menubar and Dock icon
@@ -2607,6 +2622,8 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
 
 static void cocoa_display_cleanup(void)
 {
+    /* The AppKit timer stops itself on its next main-runloop invocation. */
+    qatomic_set(&cocoa_drive_activity_enabled, false);
     QemuCocoaAppController *controller =
         (QemuCocoaAppController *)[NSApp delegate];
     CocoaConsole *cocoa = controller ? [controller console] : NULL;
