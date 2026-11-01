@@ -96,6 +96,32 @@ class WhpConfigTests(unittest.TestCase):
             self.assertIn('--target-list=x86_64-softmmu', result.stdout)
             self.assertNotIn('i386-softmmu', result.stdout)
 
+    def test_x86_family_repeat_build_does_not_reject_own_symlink(self):
+        mod = load_portable_build_module()
+        if os.name == 'nt':
+            self.skipTest('POSIX symlinks required')
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            backend = root / 'qemu-system-x86_64'
+            backend.write_bytes(b'not executed by build-plan probe')
+            (root / 'qemu-system-i386').symlink_to(backend.name)
+            settings = {
+                'QEMU_X86_FAMILY_LINK': 'y',
+                'QEMU_HOST_PGO': 'off',
+                'BUILD_QEMU_SYSTEM_PPC': 'n',
+                'BUILD_QEMU_SYSTEM_I386': 'y',
+            }
+            with mock.patch.object(mod, 'resolved_values') as get_values, \
+                 mock.patch.object(mod, 'resolve_build_dir', return_value=root), \
+                 mock.patch.object(mod, 'host_is_macos', return_value=False):
+                original = mod.load_config_module().default_values()
+                original.update(settings)
+                get_values.return_value = original
+                plan = mod.build_plan(['qemu-system-i386'])
+            self.assertTrue(
+                any(arg == '--target-list=x86_64-softmmu' for arg in plan[2])
+            )
+
     def test_dtc_and_meson_menu_settings_are_wired(self):
         mod = load_module()
         self.assertEqual(

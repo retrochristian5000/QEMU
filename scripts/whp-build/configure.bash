@@ -488,8 +488,12 @@ host_tag="$(whp_configure_host_tag)"
 # without overwriting a user artifact. Require a separate build directory:
 # old WHP files and the incremental target graph are left untouched.
 if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
-    if [[ -e "$BUILD_DIR/qemu-system-i386" ||
-          -L "$BUILD_DIR/qemu-system-i386" ]]; then
+    if [[ -L "$BUILD_DIR/qemu-system-i386" ]]; then
+        if [[ "$(readlink "$BUILD_DIR/qemu-system-i386")" != qemu-system-x86_64 ]]; then
+            printf '%s\n' 'error: foreign i386 symlink exists; refusing to overwrite it' >&2
+            return 1
+        fi
+    elif [[ -e "$BUILD_DIR/qemu-system-i386" ]]; then
         printf '%s\n' 'error: i386 executable already exists in the build directory;' \
             'select a distinct BUILD_DIR for the x86 family link' >&2
         return 1
