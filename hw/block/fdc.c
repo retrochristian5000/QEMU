@@ -63,6 +63,33 @@
     } while (0)
 
 
+
+/* Account each actual controller sector access, including DMA and PIO.
+ * blk_pread()/blk_pwrite() do not automatically update device I/O stats.
+ * Failed media operations must not illuminate a successful-I/O indicator.
+ */
+static int fdctrl_accounted_sector_io(BlockBackend *blk, int64_t offset,
+                                      void *buffer, bool write)
+{
+    BlockAcctStats *stats = blk_get_stats(blk);
+    BlockAcctCookie cookie;
+    int ret;
+
+    block_acct_start(stats, &cookie, BDRV_SECTOR_SIZE,
+                     write ? BLOCK_ACCT_WRITE : BLOCK_ACCT_READ);
+    if (write) {
+        ret = blk_pwrite(blk, offset, BDRV_SECTOR_SIZE, buffer, 0);
+    } else {
+        ret = blk_pread(blk, offset, BDRV_SECTOR_SIZE, buffer, 0);
+    }
+    if (ret < 0) {
+        block_acct_failed(stats, &cookie);
+    } else {
+        block_acct_done(stats, &cookie);
+    }
+    return ret;
+}
+
 /* Anonymous BlockBackend for empty drive */
 static BlockBackend *blk_create_empty_drive(void)
 {
@@ -1684,8 +1711,8 @@ int fdctrl_transfer_handler(void *opaque, int nchan, int dma_pos, int dma_len)
         if (fdctrl->data_dir != FD_DIR_WRITE ||
             len < FD_SECTOR_LEN || rel_pos != 0) {
             /* READ & SCAN commands and realign to a sector for WRITE */
-            if (blk_pread(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
-                          fdctrl->fifo, 0) < 0) {
+            if (fdctrl_accounted_sector_io(cur_drv->blk, fd_offset(cur_drv),
+                                      fdctrl->fifo, false) < 0) {
                 FLOPPY_DPRINTF("Floppy: error getting sector %d\n",
                                fd_sector(cur_drv));
                 /* Sure, image size is too small... */
@@ -1712,8 +1739,8 @@ int fdctrl_transfer_handler(void *opaque, int nchan, int dma_pos, int dma_len)
 
             k->read_memory(fdctrl->dma, nchan, fdctrl->fifo + rel_pos,
                            fdctrl->data_pos, len);
-            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
-                           fdctrl->fifo, 0) < 0) {
+            if (fdctrl_accounted_sector_io(cur_drv->blk, fd_offset(cur_drv),
+                                      fdctrl->fifo, true) < 0) {
                 FLOPPY_DPRINTF("error writing sector %d\n",
                                fd_sector(cur_drv));
                 fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
@@ -1796,8 +1823,8 @@ static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
                                    fd_sector(cur_drv));
                     return 0;
                 }
-            if (blk_pread(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
-                          fdctrl->fifo, 0)
+            if (fdctrl_accounted_sector_io(cur_drv->blk, fd_offset(cur_drv),
+                                      fdctrl->fifo, false)
                 < 0) {
                 FLOPPY_DPRINTF("error getting sector %d\n",
                                fd_sector(cur_drv));
@@ -1876,8 +1903,8 @@ static void fdctrl_format_sector(FDCtrl *fdctrl)
     }
     memset(fdctrl->fifo, 0, FD_SECTOR_LEN);
     if (cur_drv->blk == NULL ||
-        blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
-                   fdctrl->fifo, 0) < 0) {
+        fdctrl_accounted_sector_io(cur_drv->blk, fd_offset(cur_drv),
+                                      fdctrl->fifo, true) < 0) {
         FLOPPY_DPRINTF("error formatting sector %d\n", fd_sector(cur_drv));
         fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
     } else {
@@ -2300,8 +2327,8 @@ static void fdctrl_write_data(FDCtrl *fdctrl, uint32_t value)
         if (pos == FD_SECTOR_LEN - 1 ||
             fdctrl->data_pos == fdctrl->data_len) {
             cur_drv = get_cur_drv(fdctrl);
-            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
-                           fdctrl->fifo, 0) < 0) {
+            if (fdctrl_accounted_sector_io(cur_drv->blk, fd_offset(cur_drv),
+                                      fdctrl->fifo, true) < 0) {
                 FLOPPY_DPRINTF("error writing sector %d\n",
                                fd_sector(cur_drv));
                 break;

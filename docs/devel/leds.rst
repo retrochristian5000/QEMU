@@ -80,7 +80,11 @@ for 180 ms so short transfers remain visible.  It does not pretend to model
 spindle motors, seek activity, colours or electrical LED wiring.  Controller
 signals and physical TYPE_LED objects remain authoritative when available.
 
-No extra emulated timers, migrated fields, or block I/O paths are introduced.
+No extra emulated timers or migrated fields are introduced.  The classic
+floppy controller now accounts its actual DMA/PIO sector transfers (and
+format writes) through the same BlockBackend counters as IDE/ATAPI.  Failed
+sector transfers are not counted as successful activity.  A qtest checks
+that a floppy PIO read increments the query-blockstats read count.
 Indicators hide automatically when no such drives are attached.
 
 Observation and migration

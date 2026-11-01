@@ -1512,7 +1512,8 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [activityAccessory release];
         [activityBar release];
 
-        [self updateDriveActivity:nil];
+        /* Start sampling after the AppKit runloop begins, not while
+         * QEMU's initialization thread is holding the BQL. */
         driveActivityTimer = [[NSTimer scheduledTimerWithTimeInterval:0.08
             target:self selector:@selector(updateDriveActivity:)
             userInfo:nil repeats:YES] retain];

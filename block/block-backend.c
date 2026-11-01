@@ -570,7 +570,8 @@ static DriveActivityKind blk_drive_activity_kind(BlockBackend *blk)
     DeviceState *dev = blk->dev;
     DriveInfo *dinfo = blk->legacy_dinfo;
 
-    if (object_dynamic_cast(OBJECT(dev), "floppy")) {
+    if (object_dynamic_cast(OBJECT(dev), "floppy") ||
+        object_dynamic_cast(OBJECT(dev), "swim-drive")) {
         return DRIVE_ACTIVITY_FLOPPY;
     }
     if (object_dynamic_cast(OBJECT(dev), "ide-cd") ||

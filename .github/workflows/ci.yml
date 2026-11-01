@@ -144,6 +144,10 @@ jobs:
             libpixman-1-dev \
             python3-venv \
             zlib1g-dev
+          # Compile the GTK drive-activity indicator on one CI target.
+          if [[ "${{ matrix.target }}" == x86 ]]; then
+            sudo apt-get install -y --no-install-recommends libgtk-3-dev
+          fi
 
       - name: Restore compiler cache
         id: ccache-restore
@@ -167,6 +171,10 @@ jobs:
           cd build-ci
           set -o pipefail
           fdt_args=()
+          if [[ "${{ matrix.target }}" == x86 ]]; then
+            # Compile the optional GTK frontend, not just the block API.
+            fdt_args=(-Dgtk=enabled)
+          fi
           if [[ "${{ matrix.target }}" == ppc ]]; then
             # Test the pinned WHP DTC fallback, not the runner's libfdt-dev.
             fdt_args=(-Dfdt=internal)
@@ -211,6 +219,13 @@ jobs:
           if [[ "${{ matrix.target }}" == m6809 ]]; then
             "${binary}" -cpu help | grep -E '(6809|6809e)'
           fi
+
+      - name: Test floppy read/write accounting for activity indicators
+        if: matrix.target == 'x86'
+        run: |
+          ninja -C build-ci tests/qtest/fdc-test
+          QTEST_QEMU_BINARY="$GITHUB_WORKSPACE/build-ci/qemu-system-x86" \
+            build-ci/tests/qtest/fdc-test
 
       - name: Test modem hardware reset and AT configuration
         if: matrix.target == 'ppc'

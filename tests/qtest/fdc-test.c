@@ -27,6 +27,7 @@
 
 #include "libqtest-single.h"
 #include "qobject/qdict.h"
+#include "qobject/qlist.h"
 
 #define DRIVE_FLOPPY_BLANK \
     "-drive if=floppy,file=null-co://,file.read-zeroes=on,format=raw,size=1440k"
@@ -493,14 +494,39 @@ static void test_read_id(void)
     g_assert_cmpint(st0, ==, head << 2);
 }
 
+
+/* I/O activity indicators use the same per-backend counts as blockstats. */
+static uint64_t floppy_read_operations(void)
+{
+    QDict *reply = qtest_qmp(global_qtest,
+                            "{ 'execute': 'query-blockstats' }");
+    QList *items = qdict_get_qlist(reply, "return");
+    const QListEntry *entry;
+    uint64_t operations = 0;
+
+    g_assert_nonnull(items);
+    QLIST_FOREACH_ENTRY(items, entry) {
+        QDict *info = qobject_to(QDict, qlist_entry_obj(entry));
+        QDict *stats = qdict_get_qdict(info, "stats");
+
+        if (stats) {
+            operations += qdict_get_uint(stats, "rd_operations");
+        }
+    }
+    qobject_unref(reply);
+    return operations;
+}
+
 static void test_read_no_dma_1(void)
 {
     uint8_t ret;
+    uint64_t before = floppy_read_operations();
 
     outb(FLOPPY_BASE + reg_dor, inb(FLOPPY_BASE + reg_dor) & ~0x08);
     send_seek(0);
     ret = send_read_no_dma_command(1, 0x04);
     g_assert(ret == 0);
+    g_assert_cmpuint(floppy_read_operations(), >, before);
 }
 
 static void test_read_no_dma_18(void)

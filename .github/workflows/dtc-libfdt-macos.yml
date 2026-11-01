@@ -18,6 +18,8 @@ on:
       - 'scripts/tests/test-git-submodule.py'
       - 'scripts/tests/test-fdt-ninja-link.py'
       - 'block/block-backend.c'
+      - 'hw/block/fdc.c'
+      - 'tests/qtest/fdc-test.c'
       - 'include/system/block-backend-global-state.h'
       - 'ui/cocoa.m'
       - 'ui/gtk.c'
