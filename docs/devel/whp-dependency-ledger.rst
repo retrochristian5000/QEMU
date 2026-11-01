@@ -1386,8 +1386,9 @@ audit the generated graph without rebuilding or resetting it::
 
     python3 scripts/tests/test-fdt-ninja-link.py build --internal
 
-The audit checks ``build.ninja`` through ``ninja -t commands``, verifies
-that the DTC checkout matches the pinned wrap commit, and checks that
+The audit checks ``build.ninja`` through Ninja's query and expanded
+compilation database (including response files), verifies that the DTC
+checkout matches the pinned wrap commit, and checks that
 the link includes the internal ``libfdt.a`` and builds ``fdt_wip.c``.
 After successful compilation, append ``--built`` to inspect the
 archive's exported ``fdt_nop_node`` symbol with ``nm``.

@@ -43,28 +43,51 @@ def ninja_commands(build_dir, target):
     return process.stdout.splitlines()
 
 
-def find_link_command(lines, target):
-    # The macOS executable is linked as *-unsigned before entitlement signing.
-    output_name = target + "-unsigned"
-    for line in reversed(lines):
-        if not re.search(r"(?:^|\s)-o\s+", line):
+def find_link_command(build_dir, target):
+    """Read the exact Ninja linker edge, expanding response-file contents.
+
+    Meson may use a command like 'gcc @qemu-system-ppc.rsp'.  The compiler
+    output and library arguments are then hidden from 'ninja -t commands'.
+    Ninja's compilation database with -x expands its own rspfile_content,
+    even before the executable (and its .rsp file) has been built.
+    """
+    ninja = shutil.which("ninja")
+    if not ninja:
+        fail("Ninja is not installed")
+
+    # Darwin signs a postprocessed target; the -unsigned edge is its linker.
+    for output in (target + "-unsigned", target):
+        query = subprocess.run(
+            [ninja, "-C", str(build_dir), "-t", "query", output],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False,
+        )
+        if query.returncode:
             continue
-        if re.search(
-            r"(?:^|\s)-o\s+(?:\S*/)?"
-            + re.escape(output_name) + r"(?:\s|$)", line
-        ) or re.search(
-            r"(?:^|\s)-o\s+(?:\S*/)?"
-            + re.escape(target) + r"(?:\s|$)", line
-        ):
-            return line
-    # Retain a bounded sample of the actual Ninja command graph.  A
-    # complete command dump can contain megabytes of object file names.
-    # Prefer entries mentioning the requested target to unrelated edges.
-    samples = [line for line in lines if target in line]
-    samples = (samples or lines)[-3:]
-    detail = " | ".join(repr(line[:600]) for line in samples)
-    fail("no final compiler/linker command for " + target
-         + " (" + str(len(lines)) + " Ninja commands); samples: " + detail)
+        match = re.search(r"(?m)^\\s*input:\\s+(\\S+)", query.stdout)
+        if not match or "LINKER" not in match.group(1).upper():
+            continue
+        rule = match.group(1)
+        expanded = subprocess.run(
+            [ninja, "-C", str(build_dir), "-t", "compdb", "-x", rule],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False,
+        )
+        if expanded.returncode:
+            fail("cannot expand Ninja linker response files for " + output +
+                 ": " + expanded.stderr.strip())
+        try:
+            entries = json.loads(expanded.stdout)
+        except (ValueError, TypeError) as exc:
+            fail("invalid expanded Ninja linker database for " + output +
+                 ": " + str(exc))
+        for entry in entries:
+            if (pathlib.PurePath(entry.get("output", "")).name == output and
+                    isinstance(entry.get("command"), str)):
+                return entry["command"]
+
+    fail("no expanded Ninja linker edge for " + target +
+         "; inspect 'ninja -t query' and 'ninja -t compdb -x' for the target")
 
 
 def check_pinned_dtc():
@@ -348,7 +371,7 @@ def main():
         fail("expected -Dfdt=internal, but configured fdt=" + str(provider))
 
     commands = ninja_commands(build_dir, args.target)
-    link = find_link_command(commands, args.target)
+    link = find_link_command(build_dir, args.target)
     archive_name = "subprojects/dtc/libfdt/libfdt.a"
     if args.internal:
         check_pinned_dtc()
