@@ -315,8 +315,8 @@
 #
 # @channels: a list of `SpiceChannel` for each active spice channel
 #
-# @max-refresh-rate: Configured maximum rate of SPICE encoding requests,
-#     in FPS.  This is not a measurement of guest rendering speed.
+# @max-refresh-rate: SPICE encoding request cap, in FPS.
+#     This does not measure guest rendering performance.
 #     (since: 11.1)
 #
 # Since: 0.14
@@ -1597,12 +1597,12 @@
 #
 # @refresh-callback: Whether this listener uses the GUI refresh timer.
 #
-# @requested-interval-ms: Raw listener request, with zero meaning default.
+# @requested-interval-ms: Raw request in ms; zero uses the default.
 #
-# @poll-interval-ms: Resolved polling request in milliseconds.  This is
-#     not an actual frame rate or a hard rendering FPS limit.
+# @poll-interval-ms: Resolved polling interval in ms.
+#     This is not an observed frame rate or rendering cap.
 #
-# @ui-refresh-millihz: UI-reported display refresh rate, when available.
+# @ui-refresh-millihz: Reported UI display rate, if known.
 #
 # Since: 11.1
 ##
