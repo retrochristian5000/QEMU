@@ -18,6 +18,16 @@ else
     read -r -a build_target_list <<< "$BUILD_TARGETS"
 fi
 
+# Only the x86_64 emulator is linked in shared-family mode. A requested
+# legacy command name is a post-build symlink, not a separate Ninja target.
+if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+    for index in "${!build_target_list[@]}"; do
+        if [[ "${build_target_list[$index]}" == qemu-system-i386 ]]; then
+            build_target_list[$index]=qemu-system-x86_64
+        fi
+    done
+fi
+
 # Meson keeps QEMU DSOs as separate build targets. A named emulator build does
 # not automatically traverse build-by-default module targets, so carry the
 # module alias when WHP dynamic modules are active. An all build already covers
@@ -51,7 +61,7 @@ if [[ "${BUILD_OPENBIOS:-0}" == 1 ]]; then
 fi
 if [[ "${BUILD_SEABIOS:-0}" == 1 ]]; then
     for target in "${build_target_list[@]}"; do
-        if [[ "$target" == qemu-system-i386 ]]; then
+        if [[ "$target" == qemu-system-i386 || "$target" == qemu-system-x86_64 ]]; then
             build_target_list+=(whp-seabios-x86)
             break
         fi
@@ -75,7 +85,26 @@ else
     return 1
 fi
 
-"${build_runner[@]}" "${build_target_list[@]}"
+"${build_runner[@]}" "${build_target_list[@]}" || return 1
+
+# Run only after the backend was actually requested and built. Do not
+# overwrite a pre-existing standalone i386 executable.
+local x86_alias_requested=0
+if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+    case ",${QEMU_TARGET_LIST:-}," in
+        *,x86_64-softmmu,*)
+            for target in "${build_target_list[@]}"; do
+                if [[ "$target" == all || "$target" == qemu-system-x86_64 ]]; then
+                    x86_alias_requested=1
+                    break
+                fi
+            done
+            if [[ "$x86_alias_requested" == 1 ]]; then
+                "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/x86-family-alias.py" \
+                    --directory "$BUILD_DIR" || return 1
+            fi ;;
+    esac
+fi
 
 # RUN_TESTS controls QEMU regression testing after core QEMU builds.  The
 # default changed-only scope asks the selector which documented Make suites are
@@ -146,6 +175,13 @@ if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
         "$NINJA_CMD" -C "$BUILD_DIR" install
     elif [[ -n "${MAKE_CMD:-}" ]]; then
         "$MAKE_CMD" -C "$BUILD_DIR" install
+    fi
+    if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+        case ",${QEMU_TARGET_LIST:-}," in
+            *,x86_64-softmmu,*)
+                "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/x86-family-alias.py" \
+                    --directory "$PREFIX/bin" || return 1 ;;
+        esac
     fi
 fi
 }

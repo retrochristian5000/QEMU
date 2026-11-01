@@ -70,6 +70,32 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
+    def test_x86_family_link_is_opt_in_and_portable_plan_uses_x86_64(self):
+        mod = load_module()
+        self.assertEqual(mod.OPTION_BY_KEY['QEMU_X86_FAMILY_LINK'].default, 'n')
+        values = mod.default_values()
+        values['QEMU_X86_FAMILY_LINK'] = 'y'
+        self.assertIn("QEMU_X86_FAMILY_LINK='1'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        if sys.platform == 'win32':
+            return
+        with tempfile.TemporaryDirectory() as td:
+            env = os.environ.copy()
+            env.update({
+                'BUILD_DIR': str(pathlib.Path(td) / 'fresh'),
+                'WHP_PORTABLE_PROBE_ONLY': '1',
+                'BUILD_QEMU_SYSTEM_PPC': '0',
+                'BUILD_QEMU_SYSTEM_I386': '1',
+                'QEMU_X86_FAMILY_LINK': '1',
+                'QEMU_HOST_PGO': 'off',
+            })
+            result = subprocess.run(
+                [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertIn('--target-list=x86_64-softmmu', result.stdout)
+            self.assertNotIn('i386-softmmu', result.stdout)
+
     def test_dtc_and_meson_menu_settings_are_wired(self):
         mod = load_module()
         self.assertEqual(

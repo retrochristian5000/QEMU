@@ -148,12 +148,40 @@ whp_prepare_build_defaults()
     BUILD_QEMU_IMG="${BUILD_QEMU_IMG:-1}"
     BUILD_QEMU_SYSTEM_I386="${BUILD_QEMU_SYSTEM_I386:-1}"
     BUILD_QEMU_SYSTEM_PPC="${BUILD_QEMU_SYSTEM_PPC:-1}"
+    QEMU_X86_FAMILY_LINK="${QEMU_X86_FAMILY_LINK:-0}"
+    case "$QEMU_X86_FAMILY_LINK" in
+        0) ;;
+        1)
+            case "$HOST_OS" in
+                Windows|MINGW*|MSYS*|CYGWIN*)
+                    printf 'error: QEMU_X86_FAMILY_LINK requires a POSIX symlink host\\n' >&2
+                    return 1 ;;
+            esac
+            # i386 device menu filters are not yet mapped to x86_64 Kconfig.
+            # Never silently discard explicit user hardware selections.
+            local audio_key
+            for audio_key in I386_AUDIO_GAMEBLASTER I386_AUDIO_SB16 I386_AUDIO_ADLIB \
+                             I386_AUDIO_GUS I386_AUDIO_CS4231A I386_AUDIO_PCSPK \
+                             I386_AUDIO_ES1370 I386_AUDIO_AC97 I386_AUDIO_CS4630 \
+                             I386_AUDIO_HDA; do
+                if [[ "${!audio_key:-auto}" != auto ]]; then
+                    printf 'error: %s requires a separate i386 target; disable QEMU_X86_FAMILY_LINK\\n' "$audio_key" >&2
+                    return 1
+                fi
+            done
+            ;;
+        *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\\n' >&2; return 1 ;;
+    esac
     QEMU_TARGET_LIST=
     if [[ "$BUILD_QEMU_SYSTEM_PPC" == 1 ]]; then
         QEMU_TARGET_LIST=ppc-softmmu
     fi
     if [[ "$BUILD_QEMU_SYSTEM_I386" == 1 ]]; then
-        QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}i386-softmmu"
+        if [[ "$QEMU_X86_FAMILY_LINK" == 1 ]]; then
+            QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}x86_64-softmmu"
+        else
+            QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}i386-softmmu"
+        fi
     fi
     BUILD_TARGETS="${BUILD_TARGETS:-all}"
     RUN_TESTS="${RUN_TESTS:-1}"
@@ -284,6 +312,9 @@ whp_apply_requested_build_targets()
                 ;;
             qemu-system-*)
                 arch="${target#qemu-system-}"
+                if [[ "$arch" == i386 && "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+                    arch=x86_64
+                fi
                 [[ -n "$arch" ]] && whp_qemu_target_list_add "${arch}-softmmu"
                 ;;
         esac

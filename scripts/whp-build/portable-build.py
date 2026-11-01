@@ -612,13 +612,32 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     prefix_value = values['PREFIX']
     prefix = default_prefix(build_dir) if prefix_value == 'auto' else pathlib.Path(prefix_value).expanduser()
 
+    alias_enabled = values['QEMU_X86_FAMILY_LINK'] == 'y'
+    if alias_enabled:
+        if canonical_host_os() == 'windows':
+            raise RuntimeError('QEMU_X86_FAMILY_LINK requires a POSIX symlink host')
+        if values['QEMU_HOST_PGO'] != 'off':
+            raise RuntimeError('QEMU_X86_FAMILY_LINK currently requires QEMU_HOST_PGO=off')
+        if 'i386-softmmu' in previous_configured_targets(build_dir):
+            raise RuntimeError(
+                'existing build tree includes i386-softmmu; select a distinct '
+                'BUILD_DIR for QEMU_X86_FAMILY_LINK (old tree preserved)'
+            )
+        for key, value in values.items():
+            if key.startswith('I386_AUDIO_') and value != 'auto':
+                raise RuntimeError(
+                    f'{key} requires standalone i386 configuration; '
+                    'disable QEMU_X86_FAMILY_LINK'
+                )
     selected_targets: List[str] = []
     if values['BUILD_QEMU_SYSTEM_PPC'] == 'y':
         append_unique(selected_targets, 'ppc-softmmu')
     if values['BUILD_QEMU_SYSTEM_I386'] == 'y':
-        append_unique(selected_targets, 'i386-softmmu')
+        append_unique(selected_targets, 'x86_64-softmmu' if alias_enabled else 'i386-softmmu')
     for target in requested_system_targets(argv):
-        append_unique(selected_targets, target)
+        append_unique(selected_targets,
+                      'x86_64-softmmu' if alias_enabled and target == 'i386-softmmu'
+                      else target)
 
     targets: List[str] = []
     if values['WHP_INCREMENTAL_BUILD'] == 'y':
@@ -902,19 +921,40 @@ def main(argv: List[str]) -> int:
             ], check=True)
         subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
         write_portable_config(build_dir, prefix, configure_args)
-        append_module_build_target(build_dir, requested_targets, values)
+        build_targets = [
+            'qemu-system-x86_64' if values['QEMU_X86_FAMILY_LINK'] == 'y'
+            and target == 'qemu-system-i386' else target
+            for target in requested_targets
+        ]
+        append_module_build_target(build_dir, build_targets, values)
 
         runner_name = pathlib.Path(runner[0]).name
         if runner_name.startswith('ninja'):
-            build_command = [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
+            build_command = [*runner, '-C', str(build_dir), '-j', jobs, *build_targets]
         else:
-            build_command = [*runner, '-C', str(build_dir), f'-j{jobs}', *requested_targets]
+            build_command = [*runner, '-C', str(build_dir), f'-j{jobs}', *build_targets]
         subprocess.run(build_command, check=True)
+
+        x86_alias = (
+            values['QEMU_X86_FAMILY_LINK'] == 'y'
+            and any(a.startswith('--target-list=') and 'x86_64-softmmu' in a
+                    for a in configure_args)
+        )
+        if x86_alias and ('all' in build_targets or 'qemu-system-x86_64' in build_targets):
+            subprocess.run([
+                sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'x86-family-alias.py'),
+                '--directory', str(build_dir),
+            ], check=True)
 
         if values['RUN_TESTS'] == 'y':
             run_qemu_tests(build_dir, jobs)
         if values['INSTALL_AFTER_BUILD'] == 'y':
             subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
+            if x86_alias:
+                subprocess.run([
+                    sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'x86-family-alias.py'),
+                    '--directory', str(prefix / 'bin'),
+                ], check=True)
 
         artifacts = verify_requested_outputs(build_dir, requested_targets)
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:

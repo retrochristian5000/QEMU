@@ -47,3 +47,16 @@ metadata, retain the separately built i386 emulator.
 Other architectures must not be aliased merely because they share a CPU
 family: ABI, endianness, machine models, firmware, and migration formats
 can differ.
+
+Menu-driven builds
+------------------
+
+Set ``QEMU_X86_FAMILY_LINK=y`` in WHP menuconfig to substitute
+``x86_64-softmmu`` when ``BUILD_QEMU_SYSTEM_I386=y``. The Bash and
+portable runners build the x86_64 backend, create the legacy i386 symlink,
+and repeat that operation after opt-in installation.
+
+This option defaults to **off**. It refuses to reuse a build directory
+already configured with ``i386-softmmu``, and it does not silently
+discard explicit i386 audio Kconfig choices. Select a distinct build
+directory without modifying or deleting your previous WHP output.

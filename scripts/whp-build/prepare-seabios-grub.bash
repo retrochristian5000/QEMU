@@ -94,7 +94,7 @@ whp_prepare_seabios_grub_sources()
         0) normal_seabios=0 ;;
         auto)
             case ",${QEMU_TARGET_LIST:-}," in
-                *,i386-softmmu,*) normal_seabios=1 ;;
+                *,i386-softmmu,*|*,x86_64-softmmu,*) normal_seabios=1 ;;
                 *) normal_seabios=0 ;;
             esac
             ;;

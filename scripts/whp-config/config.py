@@ -44,6 +44,7 @@ AUDIO_HARDWARE = (
 OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
+    Option('QEMU_X86_FAMILY_LINK', 'Build outputs', 'Use x86_64 system binary for i386 alias (POSIX)', 'bool', 'n'),
     Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
     Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),

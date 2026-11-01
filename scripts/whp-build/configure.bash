@@ -484,6 +484,17 @@ if [[ "${QEMU_HOST_PGO:-off}" == use ]]; then
 fi
 host_tag="$(whp_configure_host_tag)"
 
+# A pre-existing i386 target cannot be relinked into a shared x86_64 alias
+# without overwriting a user artifact. Require a separate build directory:
+# old WHP files and the incremental target graph are left untouched.
+if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+    case ",$(whp_configure_previous_target_list "$config_file")," in
+        *,i386-softmmu,*)
+            printf '%s\\n' 'error: existing build tree already includes i386-softmmu;' \
+                'choose a distinct BUILD_DIR for QEMU_X86_FAMILY_LINK (old tree preserved)' >&2
+            return 1 ;;
+    esac
+fi
 # Incremental target selection is monotonic.  Reconfiguring QEMU in place to
 # add a target is safe; removing an already-configured target would make old
 # outputs disappear from the same build tree and turns a small follow-up build
