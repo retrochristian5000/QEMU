@@ -64,7 +64,7 @@ def find_link_command(build_dir, target):
         )
         if query.returncode:
             continue
-        match = re.search(r"(?m)^\\s*input:\\s+(\\S+)", query.stdout)
+        match = re.search(r"(?m)^\s*input:\s+(\S+)", query.stdout)
         if not match or "LINKER" not in match.group(1).upper():
             continue
         rule = match.group(1)
