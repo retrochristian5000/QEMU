@@ -395,6 +395,20 @@ SRST
 ERST
 
     {
+        .name       = "display-refresh",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show display polling intervals (not measured FPS)",
+        .cmd        = hmp_info_display_refresh,
+    },
+
+SRST
+  ``info display-refresh``
+    Show the GUI refresh timer, per-listener polling requests, and
+    reported display refresh rates.  These are not measured guest FPS.
+ERST
+
+    {
         .name       = "mice",
         .args_type  = "",
         .params     = "",

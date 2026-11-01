@@ -315,12 +315,17 @@
 #
 # @channels: a list of `SpiceChannel` for each active spice channel
 #
+# @max-refresh-rate: Configured maximum rate of SPICE encoding requests,
+#     in FPS.  This is not a measurement of guest rendering speed.
+#     (since: 11.1)
+#
 # Since: 0.14
 ##
 { 'struct': 'SpiceInfo',
   'data': {'enabled': 'bool', 'migrated': 'bool', '*host': 'str', '*port': 'int',
            '*tls-port': 'int', '*auth': 'str', '*compiled-version': 'str',
-           'mouse-mode': 'SpiceQueryMouseMode', '*channels': ['SpiceChannel']},
+           'mouse-mode': 'SpiceQueryMouseMode', '*channels': ['SpiceChannel'],
+           '*max-refresh-rate': 'uint32'},
   'if': 'CONFIG_SPICE' }
 
 ##
@@ -1580,6 +1585,63 @@
 ##
 { 'command': 'query-display-options',
   'returns': 'DisplayOptions' }
+
+##
+# @DisplayRefreshListenerInfo:
+#
+# The UI refresh scheduler settings for one display listener.
+#
+# @name: Display backend listener name.
+#
+# @console: Attached console index, when available.
+#
+# @refresh-callback: Whether this listener uses the GUI refresh timer.
+#
+# @requested-interval-ms: Raw listener request, with zero meaning default.
+#
+# @poll-interval-ms: Resolved polling request in milliseconds.  This is
+#     not an actual frame rate or a hard rendering FPS limit.
+#
+# @ui-refresh-millihz: UI-reported display refresh rate, when available.
+#
+# Since: 11.1
+##
+{ 'struct': 'DisplayRefreshListenerInfo',
+  'data': { 'name': 'str',
+            '*console': 'int',
+            'refresh-callback': 'bool',
+            'requested-interval-ms': 'uint64',
+            'poll-interval-ms': 'uint64',
+            '*ui-refresh-millihz': 'uint32' } }
+
+##
+# @DisplayRefreshInfo:
+#
+# State of the shared UI polling scheduler.
+#
+# @timer-active: Whether the GUI refresh timer exists.
+#
+# @timer-interval-ms: Last selected timer interval, if initialized.
+#
+# @listeners: Registered display listeners and their polling settings.
+#
+# Since: 11.1
+##
+{ 'struct': 'DisplayRefreshInfo',
+  'data': { 'timer-active': 'bool',
+            '*timer-interval-ms': 'uint64',
+            'listeners': ['DisplayRefreshListenerInfo'] } }
+
+##
+# @query-display-refresh:
+#
+# Return the display refresh scheduler state and listener requests.
+# The polling rates are not measured FPS or GPU rendering limits.
+#
+# Since: 11.1
+##
+{ 'command': 'query-display-refresh',
+  'returns': 'DisplayRefreshInfo' }
 
 ##
 # @DisplayReloadType:

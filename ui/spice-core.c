@@ -543,6 +543,8 @@ static SpiceInfo *qmp_query_spice_real(Error **errp)
 
     info->enabled = true;
     info->migrated = spice_migration_completed;
+    info->has_max_refresh_rate = true;
+    info->max_refresh_rate = spice_max_refresh_rate;
 
     addr = qemu_opt_get(opts, "addr");
     port = qemu_opt_get_number(opts, "port", 0);

@@ -30,6 +30,7 @@
 #include "hw/core/qdev.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-ui.h"
+#include "qapi/util.h"
 #include "qapi/visitor.h"
 #include "qemu/coroutine.h"
 #include "qemu/error-report.h"
@@ -142,6 +143,58 @@ static void gui_setup_refresh(DisplayState *ds)
         timer_free(ds->gui_timer);
         ds->gui_timer = NULL;
     }
+}
+
+/*
+ * Report the polling scheduler without changing its cadence.  A listener's
+ * interval is a request for UI refresh callbacks, not measured guest FPS.
+ */
+DisplayRefreshInfo *qmp_query_display_refresh(Error **errp)
+{
+    DisplayRefreshInfo *info = g_new0(DisplayRefreshInfo, 1);
+    DisplayRefreshListenerInfoList **tail = &info->listeners;
+    DisplayChangeListener *dcl;
+    DisplayState *ds = display_state;
+
+    if (!ds) {
+        return info;
+    }
+
+    info->timer_active = ds->gui_timer != NULL;
+    if (info->timer_active && ds->update_interval) {
+        info->has_timer_interval_ms = true;
+        info->timer_interval_ms = ds->update_interval;
+    }
+
+    QLIST_FOREACH(dcl, &ds->listeners, next) {
+        DisplayRefreshListenerInfo *item =
+            g_new0(DisplayRefreshListenerInfo, 1);
+
+        item->name = g_strdup(dcl->ops->dpy_name ?
+                              dcl->ops->dpy_name : "unknown");
+        item->refresh_callback = dcl->ops->dpy_refresh != NULL;
+        item->requested_interval_ms = dcl->update_interval;
+        item->poll_interval_ms = dcl->update_interval ?
+            dcl->update_interval : GUI_REFRESH_INTERVAL_DEFAULT;
+
+        if (dcl->con) {
+            const QemuUIInfo *ui_info;
+
+            item->has_console = true;
+            item->console = qemu_console_get_index(dcl->con);
+            if (qemu_console_ui_info_supported(dcl->con)) {
+                ui_info = qemu_console_get_ui_info(dcl->con);
+                if (ui_info->refresh_rate) {
+                    item->has_ui_refresh_millihz = true;
+                    item->ui_refresh_millihz = ui_info->refresh_rate;
+                }
+            }
+        }
+
+        QAPI_LIST_APPEND(tail, item);
+    }
+
+    return info;
 }
 
 void qemu_console_hw_update_done(QemuConsole *con)

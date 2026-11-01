@@ -99,6 +99,50 @@ void hmp_info_mice(Monitor *mon, const QDict *qdict)
     qapi_free_MouseInfoList(mice_list);
 }
 
+void hmp_info_display_refresh(Monitor *mon, const QDict *qdict)
+{
+    DisplayRefreshInfo *info = qmp_query_display_refresh(NULL);
+    DisplayRefreshListenerInfoList *entry;
+
+    if (!info->timer_active) {
+        monitor_printf(mon, "UI refresh timer: inactive\n");
+    } else if (info->has_timer_interval_ms) {
+        monitor_printf(mon, "UI refresh timer: %" PRIu64
+                       " ms (~%.2f polls/s)\n",
+                       info->timer_interval_ms,
+                       1000.0 / info->timer_interval_ms);
+    } else {
+        monitor_printf(mon, "UI refresh timer: active, first tick pending\n");
+    }
+
+    if (!info->listeners) {
+        monitor_printf(mon, "Display listeners: none\n");
+    } else {
+        monitor_printf(mon, "Display listeners (not measured FPS):\n");
+    }
+
+    for (entry = info->listeners; entry; entry = entry->next) {
+        const DisplayRefreshListenerInfo *item = entry->value;
+
+        monitor_printf(mon, "  %s: ", item->name);
+        if (item->has_console) {
+            monitor_printf(mon, "console %" PRId64 ", ", item->console);
+        }
+        monitor_printf(mon, "timer callback=%s, requested=%" PRIu64
+                       " ms, poll=%" PRIu64 " ms",
+                       item->refresh_callback ? "yes" : "no",
+                       item->requested_interval_ms,
+                       item->poll_interval_ms);
+        if (item->has_ui_refresh_millihz) {
+            monitor_printf(mon, ", UI-reported=%.3f Hz",
+                           item->ui_refresh_millihz / 1000.0);
+        }
+        monitor_printf(mon, "\n");
+    }
+
+    qapi_free_DisplayRefreshInfo(info);
+}
+
 #ifdef CONFIG_VNC
 /* Helper for hmp_info_vnc_clients, _servers */
 static void hmp_info_VncBasicInfo(Monitor *mon, VncBasicInfo *info,
@@ -228,6 +272,10 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
                    info->migrated ? "true" : "false");
     monitor_printf(mon, "        auth: %s\n", info->auth);
     monitor_printf(mon, "    compiled: %s\n", info->compiled_version);
+    if (info->has_max_refresh_rate) {
+        monitor_printf(mon, "max-refresh-rate: %u FPS (encoding requests)\n",
+                       info->max_refresh_rate);
+    }
     monitor_printf(mon, "  mouse-mode: %s\n",
                    SpiceQueryMouseMode_str(info->mouse_mode));
 
