@@ -45,6 +45,7 @@
 #include "qapi/qapi-commands-machine.h"
 #include "qapi/qapi-commands-misc.h"
 #include "system/blockdev.h"
+#include "system/block-backend.h"
 #include "qemu-version.h"
 #include "qemu/cutils.h"
 #include "qemu/main-loop.h"
@@ -1413,7 +1414,13 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     CocoaConsole console;
     GPtrArray *extraConsoles;
+    NSTimer *driveActivityTimer;
+    NSTextField *driveActivityLabels[DRIVE_ACTIVITY_COUNT];
+    uint64_t driveReadOps[DRIVE_ACTIVITY_COUNT];
+    uint64_t driveWriteOps[DRIVE_ACTIVITY_COUNT];
+    gint64 driveActivityUntil[DRIVE_ACTIVITY_COUNT];
 }
+- (void)updateDriveActivity:(NSTimer *)timer;
 - (CocoaConsole *)console;
 - (GPtrArray *)extraConsoles;
 - (QemuCocoaView *)viewForWindow:(NSWindow *)window;
@@ -1477,6 +1484,39 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [window center];
         [window setDelegate: self];
 
+        /* Native titlebar indicators: presentation-only storage activity. */
+        NSView *activityBar = [[NSView alloc]
+            initWithFrame:NSMakeRect(0, 0, 190, 23)];
+        NSArray *names = @[ @"FDD", @"CD", @"Disk" ];
+        for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
+            driveActivityLabels[i] = [[NSTextField alloc]
+                initWithFrame:NSMakeRect(63 * i, 0, 63, 22)];
+            [driveActivityLabels[i] setBezeled:NO];
+            [driveActivityLabels[i] setDrawsBackground:NO];
+            [driveActivityLabels[i] setEditable:NO];
+            [driveActivityLabels[i] setSelectable:NO];
+            [driveActivityLabels[i] setAlignment:NSTextAlignmentCenter];
+            [driveActivityLabels[i] setFont:[NSFont systemFontOfSize:11]];
+            [driveActivityLabels[i] setTextColor:[NSColor secondaryLabelColor]];
+            [driveActivityLabels[i]
+                setStringValue:[NSString stringWithFormat:@"● %@", names[i]]];
+            [driveActivityLabels[i]
+                setToolTip:@"Completed read/write I/O; not a physical LED"];
+            [activityBar addSubview:driveActivityLabels[i]];
+        }
+        NSTitlebarAccessoryViewController *activityAccessory =
+            [[NSTitlebarAccessoryViewController alloc] init];
+        [activityAccessory setView:activityBar];
+        [activityAccessory setLayoutAttribute:NSLayoutAttributeRight];
+        [window addTitlebarAccessoryViewController:activityAccessory];
+        [activityAccessory release];
+        [activityBar release];
+
+        [self updateDriveActivity:nil];
+        driveActivityTimer = [[NSTimer scheduledTimerWithTimeInterval:0.08
+            target:self selector:@selector(updateDriveActivity:)
+            userInfo:nil repeats:YES] retain];
+
         /* Used for displaying pause on the screen */
         pauseLabel = [NSTextField new];
         [pauseLabel setBezeled:YES];
@@ -1490,6 +1530,32 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [pauseLabel sizeToFit];
     }
     return self;
+}
+
+- (void)updateDriveActivity:(NSTimer *)timer
+{
+    DriveActivitySnapshot snapshot;
+    DriveActivitySnapshot *output = &snapshot;
+    gint64 now = g_get_monotonic_time();
+
+    with_bql(^{
+        blk_get_drive_activity_snapshot(output);
+    });
+    for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
+        BOOL active;
+
+        if (snapshot.read_ops[i] > driveReadOps[i] ||
+            snapshot.write_ops[i] > driveWriteOps[i]) {
+            driveActivityUntil[i] = now + 180000;
+        }
+        driveReadOps[i] = snapshot.read_ops[i];
+        driveWriteOps[i] = snapshot.write_ops[i];
+        active = snapshot.drives[i] && now < driveActivityUntil[i];
+        [driveActivityLabels[i] setHidden:!snapshot.drives[i]];
+        [driveActivityLabels[i] setTextColor:
+            active ? [NSColor systemOrangeColor] :
+                     [NSColor secondaryLabelColor]];
+    }
 }
 
 - (CocoaConsole *)console
@@ -1628,6 +1694,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 {
     COCOA_DEBUG("QemuCocoaAppController: dealloc\n");
 
+    [driveActivityTimer invalidate];
+    [driveActivityTimer release];
+    for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
+        [driveActivityLabels[i] release];
+    }
     for (guint i = 0; i < extraConsoles->len; i++) {
         CocoaConsole *extra = g_ptr_array_index(extraConsoles, i);
         [[extra->view window] setDelegate:nil];

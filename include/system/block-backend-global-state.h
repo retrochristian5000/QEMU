@@ -48,6 +48,26 @@ void coroutine_fn no_co_wrapper blk_co_unref(BlockBackend *blk);
 
 void blk_remove_all_bs(void);
 BlockBackend *blk_by_name(const char *name);
+/*
+ * Host frontend I/O activity.  These are completed guest block requests,
+ * NOT emulated electrical LED states, motor signals, or migration state.
+ * Call under the BQL; the individual I/O counters have their own locks.
+ */
+typedef enum DriveActivityKind {
+    DRIVE_ACTIVITY_FLOPPY,
+    DRIVE_ACTIVITY_OPTICAL,
+    DRIVE_ACTIVITY_DISK,
+    DRIVE_ACTIVITY_COUNT,
+} DriveActivityKind;
+
+typedef struct DriveActivitySnapshot {
+    unsigned drives[DRIVE_ACTIVITY_COUNT];
+    uint64_t read_ops[DRIVE_ACTIVITY_COUNT];
+    uint64_t write_ops[DRIVE_ACTIVITY_COUNT];
+} DriveActivitySnapshot;
+
+void blk_get_drive_activity_snapshot(DriveActivitySnapshot *snapshot);
+
 BlockBackend *blk_next(BlockBackend *blk);
 BlockBackend *blk_all_next(BlockBackend *blk);
 bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp);

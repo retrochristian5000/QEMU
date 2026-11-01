@@ -561,6 +561,57 @@ BlockBackend *blk_all_next(BlockBackend *blk)
                : QTAILQ_FIRST(&block_backends);
 }
 
+/*
+ * The GTK and Cocoa status indicators show observed storage I/O, not guest
+ * hardware LEDs.  Device models take precedence over legacy -drive hints.
+ */
+static DriveActivityKind blk_drive_activity_kind(BlockBackend *blk)
+{
+    DeviceState *dev = blk->dev;
+    DriveInfo *dinfo = blk->legacy_dinfo;
+
+    if (object_dynamic_cast(OBJECT(dev), "floppy")) {
+        return DRIVE_ACTIVITY_FLOPPY;
+    }
+    if (object_dynamic_cast(OBJECT(dev), "ide-cd") ||
+        object_dynamic_cast(OBJECT(dev), "scsi-cd")) {
+        return DRIVE_ACTIVITY_OPTICAL;
+    }
+    if (dinfo) {
+        if (dinfo->type == IF_FLOPPY) {
+            return DRIVE_ACTIVITY_FLOPPY;
+        }
+        if (dinfo->media_cd) {
+            return DRIVE_ACTIVITY_OPTICAL;
+        }
+    }
+    /* Includes HDDs and other disk-backed devices; do not label them HDDs. */
+    return DRIVE_ACTIVITY_DISK;
+}
+
+void blk_get_drive_activity_snapshot(DriveActivitySnapshot *snapshot)
+{
+    BlockBackend *blk;
+
+    GLOBAL_STATE_CODE();
+    memset(snapshot, 0, sizeof(*snapshot));
+
+    QTAILQ_FOREACH(blk, &block_backends, link) {
+        DriveActivityKind kind;
+
+        /* Ignore unattached backends, e.g. backup jobs and image tooling. */
+        if (!blk->dev) {
+            continue;
+        }
+        kind = blk_drive_activity_kind(blk);
+        snapshot->drives[kind]++;
+        WITH_QEMU_LOCK_GUARD(&blk->stats.lock) {
+            snapshot->read_ops[kind] += blk->stats.nr_ops[BLOCK_ACCT_READ];
+            snapshot->write_ops[kind] += blk->stats.nr_ops[BLOCK_ACCT_WRITE];
+        }
+    }
+}
+
 void blk_remove_all_bs(void)
 {
     BlockBackend *blk = NULL;

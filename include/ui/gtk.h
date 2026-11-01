@@ -20,6 +20,7 @@
 
 #include "ui/clipboard.h"
 #include "ui/console.h"
+#include "system/block-backend.h"
 #include "ui/kbd-state.h"
 #if defined(CONFIG_OPENGL)
 #include "ui/egl-helpers.h"
@@ -127,6 +128,12 @@ struct GtkDisplayState {
 
     GtkWidget *vbox;
     GtkWidget *notebook;
+    GtkWidget *drive_activity_box;
+    GtkWidget *drive_activity_labels[DRIVE_ACTIVITY_COUNT];
+    guint drive_activity_timer;
+    uint64_t drive_read_ops[DRIVE_ACTIVITY_COUNT];
+    uint64_t drive_write_ops[DRIVE_ACTIVITY_COUNT];
+    gint64 drive_activity_until[DRIVE_ACTIVITY_COUNT];
     int button_mask;
     gboolean last_set;
     int last_x;

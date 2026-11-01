@@ -65,6 +65,24 @@ Do not represent unrelated technologies such as incandescent lamps, neon
 lamps or LCD segments as LEDs solely to reuse a UI element.  They can share a
 future front-panel presentation layer while keeping distinct device physics.
 
+Host drive-activity indicators
+------------------------------
+
+The GTK status strip and Cocoa titlebar report observed block-backend read
+and write requests for attached floppy, optical, and disk devices.  Disk here
+means all non-floppy/non-optical storage, including HDDs and solid-state
+devices; it is not a claim about the medium's physical construction.
+Legacy drive media hints and realized device types classify the indicators.
+
+This is explicitly a **host presentation**, not a guest-visible hardware LED.
+The host aggregates completed I/O counters and retains an active indicator
+for 180 ms so short transfers remain visible.  It does not pretend to model
+spindle motors, seek activity, colours or electrical LED wiring.  Controller
+signals and physical TYPE_LED objects remain authoritative when available.
+
+No extra emulated timers, migrated fields, or block I/O paths are introduced.
+Indicators hide automatically when no such drives are attached.
+
 Observation and migration
 -------------------------
 

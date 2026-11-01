@@ -58,6 +58,7 @@
 #include "standard-headers/linux/input-event-codes.h"
 #include "ui/input.h"
 #include "system/runstate.h"
+#include "system/block-backend.h"
 #include "system/system.h"
 #include "keymaps.h"
 #include "chardev/char.h"
@@ -2699,6 +2700,51 @@ static void gd_vc_free(void *p)
     g_free(vc);
 }
 
+/* Presentation-only persistence for otherwise invisible short I/O bursts. */
+#define GD_DRIVE_ACTIVITY_POLL_MS 80
+#define GD_DRIVE_ACTIVITY_HOLD_US 180000
+
+static gboolean gd_update_drive_activity(gpointer opaque)
+{
+    GtkDisplayState *s = opaque;
+    DriveActivitySnapshot snapshot;
+    static const char *const names[] = { "FDD", "CD", "Disk" };
+    gint64 now = g_get_monotonic_time();
+    bool held = bql_locked();
+    unsigned total = 0;
+
+    if (!held) {
+        bql_lock();
+    }
+    blk_get_drive_activity_snapshot(&snapshot);
+    if (!held) {
+        bql_unlock();
+    }
+
+    for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
+        bool active;
+
+        if (snapshot.read_ops[i] > s->drive_read_ops[i] ||
+            snapshot.write_ops[i] > s->drive_write_ops[i]) {
+            s->drive_activity_until[i] = now + GD_DRIVE_ACTIVITY_HOLD_US;
+        }
+        s->drive_read_ops[i] = snapshot.read_ops[i];
+        s->drive_write_ops[i] = snapshot.write_ops[i];
+        active = snapshot.drives[i] &&
+                 now < s->drive_activity_until[i];
+        total += snapshot.drives[i];
+        g_autofree char *markup = g_strdup_printf(
+            "<span foreground='%s'>●</span> %s",
+            active ? "#e6ad21" : "#757575", names[i]);
+        gtk_label_set_markup(GTK_LABEL(s->drive_activity_labels[i]),
+                             markup);
+        gtk_widget_set_visible(s->drive_activity_labels[i],
+                               snapshot.drives[i] != 0);
+    }
+    gtk_widget_set_visible(s->drive_activity_box, total != 0);
+    return G_SOURCE_CONTINUE;
+}
+
 static GtkDisplayState *gtk_display_state;
 static gboolean gtkinit;
 
@@ -2776,9 +2822,26 @@ static void gtk_display_init(DisplayState *ds, DisplayOptions *opts)
     gtk_box_pack_start(GTK_BOX(s->vbox), s->menu_bar, FALSE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(s->vbox), s->notebook, TRUE, TRUE, 0);
 
+    /* The front-panel display is host UI, not guest-visible LED hardware. */
+    s->drive_activity_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_container_set_border_width(GTK_CONTAINER(s->drive_activity_box), 4);
+    for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
+        s->drive_activity_labels[i] = gtk_label_new(NULL);
+        gtk_widget_set_tooltip_text(s->drive_activity_labels[i],
+                                    "Completed drive read/write I/O; "
+                                    "not a physical LED or motor signal");
+        gtk_box_pack_start(GTK_BOX(s->drive_activity_box),
+                           s->drive_activity_labels[i], FALSE, FALSE, 0);
+    }
+    gtk_box_pack_end(GTK_BOX(s->vbox), s->drive_activity_box,
+                     FALSE, FALSE, 0);
+
     gtk_container_add(GTK_CONTAINER(s->window), s->vbox);
 
     gtk_widget_show_all(s->window);
+    gd_update_drive_activity(s);
+    s->drive_activity_timer = g_timeout_add(GD_DRIVE_ACTIVITY_POLL_MS,
+                                            gd_update_drive_activity, s);
 
     for (idx = 0; idx < s->vcs->len; idx++) {
         VirtualConsole *v = g_ptr_array_index(s->vcs, idx);
@@ -2884,6 +2947,9 @@ static void gtk_display_cleanup(void)
 
     if (!s) {
         return;
+    }
+    if (s->drive_activity_timer) {
+        g_source_remove(s->drive_activity_timer);
     }
     qemu_del_vm_change_state_handler(s->vmse);
     qemu_console_remove_notifier(&s->console_notifier);

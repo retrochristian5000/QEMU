@@ -17,6 +17,12 @@ on:
       - 'docs/devel/whp-dependency-ledger.rst'
       - 'scripts/tests/test-git-submodule.py'
       - 'scripts/tests/test-fdt-ninja-link.py'
+      - 'block/block-backend.c'
+      - 'include/system/block-backend-global-state.h'
+      - 'ui/cocoa.m'
+      - 'ui/gtk.c'
+      - 'include/ui/gtk.h'
+      - 'docs/devel/leds.rst'
       - 'scripts/tests/test-sam460ex-fdt-nop.py'
       - '.github/workflows/dtc-libfdt-macos.yml'
   workflow_dispatch:
