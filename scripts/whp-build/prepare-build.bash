@@ -351,25 +351,83 @@ whp_prepare_host_tools()
             whp_append_flag LDFLAGS "-arch $HOST_ARCH"
         fi
 
-        if command -v brew >/dev/null 2>&1; then
-            HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-$(brew --prefix)}"
-            case "$HOST_ARCH" in
-                arm64) expected_homebrew_prefix=/opt/homebrew ;;
-                x86_64) expected_homebrew_prefix=/usr/local ;;
-            esac
-            if [[ "$HOMEBREW_PREFIX" != "$expected_homebrew_prefix" &&
-                  "$MACOS_ALLOW_MIXED_HOMEBREW" != 1 ]]; then
-                printf '%s\n' \
-                    "error: Homebrew prefix $HOMEBREW_PREFIX does not match $HOST_ARCH." \
-                    "expected: $expected_homebrew_prefix" \
-                    'set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional custom layout.' >&2
-                exit 1
+        # Meson's host discovery uses one selected package-manager prefix.
+        # Firmware and compiler bootstraps keep their own tools/ABI settings.
+        WHP_MACOS_DEPENDENCY_PROVIDER="${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}"
+        case "$WHP_MACOS_DEPENDENCY_PROVIDER" in
+            auto|homebrew|macports|system) ;;
+            *)
+                printf 'error: invalid WHP_MACOS_DEPENDENCY_PROVIDER: %s\n' \
+                    "$WHP_MACOS_DEPENDENCY_PROVIDER" >&2
+                return 1
+                ;;
+        esac
+        if [[ "$WHP_MACOS_DEPENDENCY_PROVIDER" == auto ]]; then
+            if command -v brew >/dev/null 2>&1; then
+                WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
+            elif [[ -x "${MACPORTS_PREFIX:-/opt/local}/bin/port" ]]; then
+                WHP_MACOS_DEPENDENCY_PROVIDER=macports
+            else
+                WHP_MACOS_DEPENDENCY_PROVIDER=system
             fi
-            export PATH="$HOMEBREW_PREFIX/bin:$PATH"
-            homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
-            export PKG_CONFIG_PATH="$homebrew_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-            export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
         fi
+
+        case "$WHP_MACOS_DEPENDENCY_PROVIDER" in
+            homebrew)
+                if ! command -v brew >/dev/null 2>&1; then
+                    printf 'error: Homebrew selected but brew is unavailable\n' >&2
+                    return 1
+                fi
+                HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-$(brew --prefix)}"
+                case "$HOST_ARCH" in
+                    arm64) expected_homebrew_prefix=/opt/homebrew ;;
+                    x86_64) expected_homebrew_prefix=/usr/local ;;
+                esac
+                if [[ "$HOMEBREW_PREFIX" != "$expected_homebrew_prefix" &&
+                      "$MACOS_ALLOW_MIXED_HOMEBREW" != 1 ]]; then
+                    printf '%s\n' \
+                        "error: Homebrew prefix $HOMEBREW_PREFIX does not match $HOST_ARCH." \
+                        "expected: $expected_homebrew_prefix" \
+                        'set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional custom layout.' >&2
+                    return 1
+                fi
+                export PATH="$HOMEBREW_PREFIX/bin:$PATH"
+                homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
+                export PKG_CONFIG_PATH="$homebrew_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
+                export CMAKE_PREFIX_PATH="$HOMEBREW_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                ;;
+            macports)
+                MACPORTS_PREFIX="${MACPORTS_PREFIX:-/opt/local}"
+                if [[ ! -x "$MACPORTS_PREFIX/bin/port" ]]; then
+                    printf 'error: MacPorts selected but %s/bin/port is unavailable\n' \
+                        "$MACPORTS_PREFIX" >&2
+                    return 1
+                fi
+                if [[ -x "$MACPORTS_PREFIX/bin/pkg-config" ]]; then
+                    macports_pc_tool="$MACPORTS_PREFIX/bin/pkg-config"
+                elif [[ -x "$MACPORTS_PREFIX/bin/pkgconf" ]]; then
+                    macports_pc_tool="$MACPORTS_PREFIX/bin/pkgconf"
+                else
+                    printf 'error: MacPorts needs pkg-config or pkgconf under %s/bin\n' \
+                        "$MACPORTS_PREFIX" >&2
+                    return 1
+                fi
+                export MACPORTS_PREFIX
+                export PATH="$MACPORTS_PREFIX/bin:$PATH"
+                # Prevent fallback to another manager's built-in pkg-config
+                # directories while allowing deliberate custom overlays.
+                export PKG_CONFIG="$macports_pc_tool"
+                export PKG_CONFIG_FOR_BUILD="$macports_pc_tool"
+                macports_pc="$MACPORTS_PREFIX/lib/pkgconfig:$MACPORTS_PREFIX/share/pkgconfig"
+                export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$macports_pc}"
+                export PKG_CONFIG_PATH="$macports_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
+                export CMAKE_PREFIX_PATH="$MACPORTS_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                ;;
+            system) ;;
+        esac
+        export WHP_MACOS_DEPENDENCY_PROVIDER
     else
         export CC_FOR_BUILD="${CC_FOR_BUILD:-${CC:-cc}}"
         export CXX_FOR_BUILD="${CXX_FOR_BUILD:-${CXX:-c++}}"

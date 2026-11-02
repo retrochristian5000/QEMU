@@ -182,5 +182,49 @@ if ! grep -Fq 'WHP_HOMEBREW_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"; then
     exit 1
 fi
 
-printf 'Homebrew dependency refresh: PASS (%s -> %s)\n' \
+# MacPorts must refresh Meson dependency identity after installed-port changes.
+ports="$TMP_ROOT/ports.txt"
+fake_port="$TMP_ROOT/port"
+cat > "$fake_port" <<'EOF'
+#!/bin/sh
+[ "$1" = -q ] && [ "$2" = installed ] || exit 2
+cat "$WHP_TEST_MACPORTS_INSTALLED"
+EOF
+chmod +x "$fake_port"
+export WHP_TEST_MACPORTS_INSTALLED="$ports"
+export WHP_MACPORTS_PORT="$fake_port"
+printf '%s\n' '  glib2 @2.82.0_0 (active)' '  pixman @0.44.0_0 (active)' > "$ports"
+WHP_MACOS_DEPENDENCY_PROVIDER=macports
+MACPORTS_PREFIX=/opt/local
+HOMEBREW_PREFIX=
+PKG_CONFIG_PATH=/opt/local/lib/pkgconfig
+PKG_CONFIG_PATH_FOR_BUILD="$PKG_CONFIG_PATH"
+BUILD_DIR="$TMP_ROOT/macports-build"
+mkdir -p "$BUILD_DIR"
+port_first="$(whp_macports_dependency_signature "$fake_port")"
+whp_refresh_macos_dependency_identity
+whp_configure_build
+port_count_first="$(cat "$BUILD_DIR/configure-count")"
+whp_refresh_macos_dependency_identity
+whp_configure_build
+port_count_stable="$(cat "$BUILD_DIR/configure-count")"
+printf '%s\n' '  glib2 @2.84.0_0 (active)' '  pixman @0.44.0_0 (active)' > "$ports"
+port_second="$(whp_macports_dependency_signature "$fake_port")"
+whp_refresh_macos_dependency_identity
+grep -Fq 'WHP_MACPORTS_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"
+whp_configure_build
+port_count_changed="$(cat "$BUILD_DIR/configure-count")"
+if [[ "$port_first" == "$port_second" ||
+      "$port_count_first" != 1 || "$port_count_stable" != 1 ||
+      "$port_count_changed" != 2 ]]; then
+    printf 'error: MacPorts inventory refresh did not reconfigure once\n' >&2
+    exit 1
+fi
+if grep -Fq 'WHP_MACPORTS_DEPENDENCIES_STALE=' "$BUILD_DIR/.whp-config"; then
+    printf 'error: MacPorts stale marker survived configure\n' >&2
+    exit 1
+fi
+grep -Fq 'PACKAGE=  glib2 @2.84.0_0 (active)' "$BUILD_DIR/.whp-macports-deps"
+
+printf 'Homebrew and MacPorts dependency refresh: PASS (%s -> %s)\n' \
     "$old_signature" "$new_signature"

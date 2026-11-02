@@ -112,7 +112,7 @@ if [[ "$BUILD_QEMU_SYSTEM_SPARC" == 1 ]]; then
 fi
 whp_apply_qemu_diagnostics
 if [[ "$HOST_OS" == Darwin ]]; then
-    whp_refresh_homebrew_dependency_identity
+    whp_refresh_macos_dependency_identity
 fi
 if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then
     source "$SOURCE_DIR/scripts/macos-gtk-environment.bash"

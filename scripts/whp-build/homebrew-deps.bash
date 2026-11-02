@@ -38,6 +38,7 @@ whp_prepare_homebrew_pkg_config()
     local real_pkg_config="${PKG_CONFIG:-pkg-config}"
 
     [[ "${HOST_OS:-$(uname -s)}" == Darwin ]] || return 0
+    [[ "${WHP_MACOS_DEPENDENCY_PROVIDER:-homebrew}" == homebrew ]] || return 0
     [[ -x "$wrapper" ]] || {
         printf 'error: Homebrew pkg-config wrapper is missing: %s\n' "$wrapper" >&2
         return 1
@@ -52,33 +53,79 @@ whp_prepare_homebrew_pkg_config()
     export PKG_CONFIG PKG_CONFIG_FOR_BUILD
 }
 
-whp_refresh_homebrew_dependency_identity()
+# MacPorts installs use stable paths, but Meson's dependency and version
+# results must be refreshed after an active-port upgrade.
+whp_macports_port_command()
 {
-    local brew_cmd
-    local signature
-    local manifest
-    local candidate
-    local config_file
-    local config_new
+    if [[ -n "${WHP_MACPORTS_PORT:-}" && -x "$WHP_MACPORTS_PORT" ]]; then
+        printf '%s\n' "$WHP_MACPORTS_PORT"
+    elif [[ -x "${MACPORTS_PREFIX:-/opt/local}/bin/port" ]]; then
+        printf '%s\n' "${MACPORTS_PREFIX:-/opt/local}/bin/port"
+    fi
+}
+
+whp_macports_dependency_inventory()
+{
+    local port_cmd="$1"
+    [[ -x "$port_cmd" ]] || return 1
+    "$port_cmd" -q installed 2>/dev/null | LC_ALL=C sort
+}
+
+whp_macports_dependency_signature()
+{
+    local inventory
+    inventory="$(whp_macports_dependency_inventory "$1")" || return 1
+    printf '%s\n' "$inventory" | cksum | awk '{ printf "%s:%s\n", $1, $2 }'
+}
+
+# The existing Homebrew manifest and stale-key names remain compatible with
+# old build trees. MacPorts shares the same non-destructive refresh mechanism.
+whp_refresh_macos_dependency_identity()
+{
+    local provider="${WHP_MACOS_DEPENDENCY_PROVIDER:-homebrew}"
+    local manager inventory signature manifest candidate config_file config_new
+    local stale_key manager_key item_key
 
     [[ "${HOST_OS:-$(uname -s)}" == Darwin ]] || return 0
-
-    brew_cmd="$(whp_homebrew_brew_command)"
-    [[ -n "$brew_cmd" && -x "$brew_cmd" ]] || return 0
-    signature="$(whp_homebrew_dependency_signature "$brew_cmd")" || return 0
-    [[ -n "$signature" ]] || return 0
-
+    case "$provider" in
+        homebrew)
+            manager="$(whp_homebrew_brew_command)"
+            [[ -n "$manager" && -x "$manager" ]] || return 0
+            inventory="$(whp_homebrew_dependency_inventory "$manager")" || return 0
+            manifest="$BUILD_DIR/.whp-homebrew-deps"
+            stale_key=WHP_HOMEBREW_DEPENDENCIES_STALE
+            manager_key=BREW
+            item_key=FORMULA
+            ;;
+        macports)
+            manager="$(whp_macports_port_command)"
+            if [[ -z "$manager" || ! -x "$manager" ]]; then
+                printf 'error: MacPorts inventory tool is unavailable\n' >&2
+                return 1
+            fi
+            inventory="$(whp_macports_dependency_inventory "$manager")" || {
+                printf 'error: unable to list installed MacPorts dependencies\n' >&2
+                return 1
+            }
+            manifest="$BUILD_DIR/.whp-macports-deps"
+            stale_key=WHP_MACPORTS_DEPENDENCIES_STALE
+            manager_key=PORT
+            item_key=PACKAGE
+            ;;
+        system) return 0 ;;
+        *) printf 'error: unknown macOS dependency provider: %s\n' "$provider" >&2; return 1 ;;
+    esac
+    signature="$(printf '%s\n' "$inventory" | cksum | awk '{ printf "%s:%s\n", $1, $2 }')"
     mkdir -p "$BUILD_DIR"
-    manifest="$BUILD_DIR/.whp-homebrew-deps"
     candidate="$manifest.new"
     config_file="$BUILD_DIR/.whp-config"
-    config_new="$config_file.homebrew-new"
+    config_new="$config_file.${provider}-new"
 
     {
         printf 'SCHEMA=2\n'
         printf 'SIGNATURE=%s\n' "$signature"
-        printf 'BREW=%s\n' "$brew_cmd"
-        whp_homebrew_dependency_inventory "$brew_cmd" | sed 's/^/FORMULA=/'
+        printf '%s=%s\n' "$manager_key" "$manager"
+        printf '%s\n' "$inventory" | sed "s/^/$item_key=/"
     } > "$candidate"
 
     if [[ -f "$manifest" ]] && cmp -s "$candidate" "$manifest"; then
@@ -86,16 +133,19 @@ whp_refresh_homebrew_dependency_identity()
         return 0
     fi
 
-    # A persistent tree may predate this manifest, so the first run must also
-    # invalidate stale Meson paths. Preserve .whp-config and its target history;
-    # the unknown one-shot line forces a single in-place configure refresh.
+    # Preserve existing outputs and force exactly one configure refresh.
     if [[ -f "$config_file" && -f "$BUILD_DIR/build.ninja" ]]; then
-        awk '!/^WHP_HOMEBREW_DEPENDENCIES_STALE=/' "$config_file" > "$config_new"
-        printf 'WHP_HOMEBREW_DEPENDENCIES_STALE=%s\n' "$signature" >> "$config_new"
+        awk -v key="$stale_key" '$0 !~ "^" key "=" { print }' \
+            "$config_file" > "$config_new"
+        printf '%s=%s\n' "$stale_key" "$signature" >> "$config_new"
         mv "$config_new" "$config_file"
-        printf '%s\n' \
-            'Homebrew dependency paths changed; QEMU will reconfigure in place.'
+        printf '%s dependencies changed; QEMU will reconfigure in place.\n' "$provider"
     fi
-
     mv "$candidate" "$manifest"
+}
+
+whp_refresh_homebrew_dependency_identity()
+{
+    local WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
+    whp_refresh_macos_dependency_identity
 }
