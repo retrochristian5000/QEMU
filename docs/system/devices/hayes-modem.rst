@@ -24,6 +24,15 @@ Supported models are:
   A Rockwell-compatible 14.4 Kbit/s voice/fax/data profile intended for
   Windows 9x voice-modem probing and telephony software.
 
+``att-paradyne-dataport-3711``
+  AT&T/Paradyne DataPort Express 3711 command profile. The historical 3711
+  was an ISA 14.4 Kbit/s data/fax modem; QEMU models only its serial command
+  interface, not the ISA board or a physical telephone line.
+
+``att-paradyne-dataport-3740``
+  Paradyne DataPort Express 3740 command profile. The historical 3740 was
+  an external 28.8 Kbit/s data/fax modem with a serial connection.
+
 An unsupported model name stops chardev creation with an error.
 
 The default backend identifies as a Hayes Accura 2400-class modem and
@@ -45,6 +54,51 @@ For example, the Windows 9x initialization string::
   AT&FE0V0W1&C1&D2S95=47
 
 is accepted as a single combined command.
+
+AT&T/Paradyne DataPort Express command profiles
+------------------------------------------------
+
+The DataPort Express profiles reuse the existing Hayes command/serial layer.
+They provide separate maximum *emulated* DCE speeds (14,400 and 28,800 bit/s),
+model-specific identification strings clearly marked as QEMU emulation, and
+profile-scoped Paradyne configuration commands:
+
+* ``\N0`` through ``\N7`` on the 3711, ``\N0`` through ``\N6`` on the 3740:
+  record the requested connection/reliability mode
+* ``\Q0`` through ``\Q4``: record the configured flow-control mode
+* ``%B<rate>``: select an attested discrete line-speed setting no higher than
+  the selected model's maximum; invalid values return ``ERROR``
+* ``AT&V``: inspect the current ``\N``, ``\Q``, and DCE speed settings
+* ``ATZ`` and ``AT&F``: restore the model's initial settings
+
+For example, to exercise a Windows 9x-style DataPort setup, attach::
+
+  -chardev modem,id=modem0,model=att-paradyne-dataport-3711 \
+    -serial chardev:modem0
+
+Then send the following from the guest serial terminal::
+
+  ATE1V1&F\N7\Q3%C1S7=60
+  AT&V
+  AT%B12000
+  AT&V
+
+The 3740 accepts ``%B28800`` but rejects ``\N7``. The 3711 accepts
+``\N7`` but rejects ``%B28800``. The generic Hayes and Rockwell profiles
+do not acquire these Paradyne-specific commands.
+
+**Scope:** Settings for flow control and reliability are retained and
+reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
+compression, analogue signaling, fax frames, real manufacturer ROM responses,
+and historical bus-level hardware are **not** implemented by this patch.
+The existing TCP carrier simulation remains the only data path. ``ATI``
+identification is emulated, not a byte-for-byte firmware fingerprint.
+Do not equate the selected DCE setting with actual network throughput.
+
+Reference evidence for these profile boundaries:
+
+* DataPort Express 3711: https://stason.org/TULARC/pc/modems-telephone-ISDN/P-R/PARADYNE-CORPORATION-Modem-DATAPORT-EXPRESS-3711.html
+* DataPort Express 3740: https://stason.org/TULARC/pc/modems-telephone-ISDN/P-R/PARADYNE-CORPORATION-Modem-DATAPORT-EXPRESS-3740.html
 
 Voice control-plane compatibility
 ---------------------------------
