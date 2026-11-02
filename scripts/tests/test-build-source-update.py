@@ -458,7 +458,19 @@ def test_initialized_submodules_follow_parent_gitlinks():
         git("clone", "-q", str(source), str(clone))
         env = os.environ.copy()
         env.pop("CI", None)
-        env["GIT"] = shutil.which("git")
+        seed = shutil.which("git")
+        selected = base / "selected-git"
+        trace = base / "git-provider.log"
+        selected.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$*" >> "$WHP_GIT_TRACE"\n'
+            'exec "$WHP_GIT_SEED" "$@"\n',
+            encoding="utf-8",
+        )
+        selected.chmod(0o755)
+        env["GIT"] = str(selected)
+        env["WHP_GIT_SEED"] = seed
+        env["WHP_GIT_TRACE"] = str(trace)
         env["GIT_ALLOW_PROTOCOL"] = "file"
         env["WHP_SOURCE_UPDATE"] = "auto"
         subprocess.run(["git", "submodule", "update", "--init", "--",
@@ -497,6 +509,7 @@ def test_initialized_submodules_follow_parent_gitlinks():
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
         assert not (clone / "modules/b/.git").exists()
         assert "refreshed 1 of 1 initialized" in first.stderr
+        assert "submodule update --init" in trace.read_text()
         again = refresh()
         assert again.returncode == 0, again.stderr
         assert "1 initialized and pinned" in again.stderr
