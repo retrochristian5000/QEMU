@@ -78,8 +78,11 @@ if [ "${WHP_SOURCE_UPDATE_DONE:-0}" != 1 ] &&
     WHP_SOURCE_REVISION_BEFORE=$(
         git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
     )
-    WHP_SOURCE_UPDATE="$WHP_SOURCE_UPDATE" \
-        /bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"
+    if ! WHP_SOURCE_UPDATE="$WHP_SOURCE_UPDATE" \
+        /bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"; then
+        printf '%s\n' 'error: QEMU parent source update failed' >&2
+        exit 1
+    fi
     WHP_SOURCE_REVISION_AFTER=$(
         git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
     )
@@ -471,6 +474,17 @@ fi
 # isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
 # SDL, and JACK remain in the later compiler-selected library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
+
+# Reconcile only already-initialized Git submodules after the selected Git
+# bootstrap. Uninitialized firmware/toolchains remain lazy; dirty sources and
+# attached developer branches are never changed.
+if [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+    "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
+        --source "$SOURCE_DIR" || exit 1
+fi
 
 # WHP DTC post-host bootstrap reconciliation
 # The parent QEMU source update has already run (and re-execed if necessary).
