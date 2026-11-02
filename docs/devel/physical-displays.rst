@@ -175,12 +175,23 @@ normal (255) and dimmed (166) texture RGB modulation. These levels
 are software preview values, not measurements of Nintendo hardware.
 The state is per-window and persists across guest video-mode changes.
 
-The implementation uses ``SDL_SetTextureColorMod()`` and does not change
-guest VRAM, the emulated graphics adapter, or the host monitor's actual
-brightness. SDL2 OpenGL and other frontends remain unchanged. Do not use
-SDL2 ``SDL_SetWindowBrightness()``, which can adjust the entire host
-display. Actual emulation of an AGS-001 or AGS-101 requires separate
-button, light-source, display and power hardware models.
+The SDL2 implementation uses ``SDL_SetTextureColorMod()`` and does not
+change guest VRAM, the emulated graphics adapter, or the host monitor's
+actual brightness. SDL2 OpenGL remains unchanged; do not use
+``SDL_SetWindowBrightness()``, which can affect the entire host monitor.
+
+The Cocoa View menu now has **Toggle Display Brightness**, with a
+Ctrl+Option+B shortcut. The same 255/166 preview states apply to the
+active QEMU Cocoa window. A black Core Animation layer, with opacity
+``(255 - level) / 255``, is above both the Core Graphics backing and
+the CAMetalLayer, including native AppleGFX textures. It sits below the
+host cursor and resizes with the view. The setting belongs to each
+QemuCocoaView and is not shared across other guest display heads or
+macOS applications. Animations are disabled on button presses.
+
+This is a software preview, not measured AGS-101 luminance or a substitute
+for the GBA's actual light circuit, power switching, and button wiring.
+Those remain requirements for a dedicated handheld hardware model.
 
 Source: Nintendo `Game Boy Advance SP manual
 <https://csassets.nintendo.com/noaext/image/private/t_KA_PDF/agsmanual_english>`_.

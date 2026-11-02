@@ -246,6 +246,10 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                                     kCALayerHeightSizable];
     [metalLayer setMagnificationFilter:kCAFilterNearest];
     [metalLayer setMinificationFilter:kCAFilterNearest];
+    /*
+     * Insert scanout behind QemuCocoaView's brightness overlay, leaving
+     * native AppleGFX and Pixman textures intact and the host cursor above.
+     */
     [[view layer] insertSublayer:metalLayer atIndex:0];
 
     return self;

@@ -169,5 +169,60 @@ int main(void)
         self.assertIn('[super viewDidChangeBackingProperties];', body)
 
 
+    def test_cocoa_metal_brightness_button_and_overlay(self):
+        cocoa = COCOA_SOURCE.read_text(encoding="utf-8")
+        metal = SOURCE.read_text(encoding="utf-8")
+        shared = (ROOT / "include/ui/display-brightness.h").read_text(
+            encoding="utf-8")
+
+        self.assertIn("QEMU_DISPLAY_BRIGHTNESS_FULL 255u", shared)
+        self.assertIn("QEMU_DISPLAY_BRIGHTNESS_DIM  166u", shared)
+        self.assertIn('#include "ui/display-brightness.h"', cocoa)
+        self.assertIn("uint8_t brightnessLevel;", cocoa)
+        self.assertIn("CALayer *brightnessLayer;", cocoa)
+        self.assertIn("brightnessLevel = QEMU_DISPLAY_BRIGHTNESS_FULL;", cocoa)
+        self.assertIn("qemu_display_brightness_next(brightnessLevel)", cocoa)
+        self.assertIn("[CATransaction setDisableActions:YES];", cocoa)
+        self.assertIn("[brightnessLayer setOpacity:", cocoa)
+        self.assertIn("[brightnessLayer setHidden:", cocoa)
+        self.assertIn("[brightnessLayer setAutoresizingMask:", cocoa)
+        self.assertIn("[brightnessLayer release];", cocoa)
+
+        # Metal stays at index zero, then the per-view black overlay, then
+        # the cursor. This applies to both Pixman and direct AppleGFX textures.
+        self.assertLess(
+            cocoa.index("[[self layer] addSublayer:brightnessLayer];"),
+            cocoa.index("[[self layer] addSublayer:cursorLayer];"))
+        self.assertIn("[[view layer] insertSublayer:metalLayer atIndex:0];",
+                      metal)
+        self.assertIn("cocoa_draw_imp(self, selector, rect);", metal)
+        self.assertNotIn("CGDisplaySet", cocoa)
+        self.assertNotIn("setBrightness:", cocoa)
+
+        # Hardware-key shortcut must never reach the guest and cannot
+        # repeatedly cycle while the key is held.
+        down = cocoa.index("case NSEventTypeKeyDown:")
+        up = cocoa.index("case NSEventTypeKeyUp:", down)
+        self.assertIn("kVK_ANSI_B", cocoa[down:up])
+        self.assertIn("[event isARepeat]", cocoa[down:up])
+        self.assertIn("NSEventModifierFlagControl", cocoa[down:up])
+        self.assertIn("NSEventModifierFlagOption", cocoa[down:up])
+        self.assertIn("kVK_ANSI_B", cocoa[up:up + 700])
+        self.assertIn('@"Toggle Display Brightness"', cocoa)
+        self.assertIn('[[self activeView] toggleDisplayBrightness];', cocoa)
+        self.assertIn("extra->view = [[QemuCocoaView alloc]", cocoa)
+
+    def test_shared_display_brightness_switch(self):
+        cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+        self.assertIsNotNone(cc, "a C compiler is required")
+        source = ROOT / "scripts/tests/test-display-brightness.c"
+        with tempfile.TemporaryDirectory(prefix="cocoa-brightness-") as td:
+            binary = pathlib.Path(td) / "test"
+            subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-I", str(ROOT / "include"), str(source),
+                            "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+
 if __name__ == '__main__':
     unittest.main()

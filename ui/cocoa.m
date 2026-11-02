@@ -34,6 +34,7 @@
 #include "ui/clipboard.h"
 #include "ui/console.h"
 #include "ui/cocoa-metal.h"
+#include "ui/display-brightness.h"
 #include "ui/input.h"
 #include "ui/kbd-state.h"
 #include "system/system.h"
@@ -352,6 +353,8 @@ static bool cocoa_screen_refresh_rate(NSScreen *screen,
     CFMachPortRef eventsTap;
     CGColorSpaceRef colorspace;
     CALayer *cursorLayer;
+    CALayer *brightnessLayer;
+    uint8_t brightnessLevel;
     QEMUCursor *cursor;
     int mouseX;
     int mouseY;
@@ -364,6 +367,7 @@ static bool cocoa_screen_refresh_rate(NSScreen *screen,
 - (void) grabMouse;
 - (void) ungrabMouse;
 - (void) setFullGrab:(id)sender;
+- (void) toggleDisplayBrightness;
 - (void) handleMonitorInput:(NSEvent *)event;
 - (bool) handleEvent:(NSEvent *)event;
 - (bool) handleEventLocked:(NSEvent *)event;
@@ -413,6 +417,22 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         [self setWantsLayer:YES];
         cocoa_set_clips_to_bounds(self, YES);
+
+        /*
+         * The screen-light simulation is a host-side black layer.
+         * It dims Core Graphics and Metal output while leaving guest
+         * VRAM and the macOS display's hardware brightness unchanged.
+         * Keep the host cursor above it.
+         */
+        brightnessLevel = QEMU_DISPLAY_BRIGHTNESS_FULL;
+        brightnessLayer = [[CALayer alloc] init];
+        [brightnessLayer setFrame:[self bounds]];
+        [brightnessLayer setAutoresizingMask:kCALayerWidthSizable |
+                                               kCALayerHeightSizable];
+        [brightnessLayer setBackgroundColor:[[NSColor blackColor] CGColor]];
+        [brightnessLayer setHidden:YES];
+        [[self layer] addSublayer:brightnessLayer];
+
         cursorLayer = [[CALayer alloc] init];
         [cursorLayer setAnchorPoint:CGPointMake(0, 1)];
         [cursorLayer setAutoresizingMask:kCALayerMaxXMargin |
@@ -437,6 +457,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
     CGColorSpaceRelease(colorspace);
     [cursorLayer release];
+    [brightnessLayer release];
     cursor_unref(cursor);
     [super dealloc];
 }
@@ -444,6 +465,24 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (BOOL) isOpaque
 {
     return YES;
+}
+
+/* Per-window presentation only; do not darken unrelated host windows. */
+- (void) toggleDisplayBrightness
+{
+    if (!console || !qemu_console_is_graphic(console->con)) {
+        return;
+    }
+
+    brightnessLevel = qemu_display_brightness_next(brightnessLevel);
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [brightnessLayer setOpacity:
+        (float)(QEMU_DISPLAY_BRIGHTNESS_FULL - brightnessLevel) /
+        QEMU_DISPLAY_BRIGHTNESS_FULL];
+    [brightnessLayer setHidden:
+        brightnessLevel == QEMU_DISPLAY_BRIGHTNESS_FULL];
+    [CATransaction commit];
 }
 
 - (void) viewDidMoveToWindow
@@ -1151,7 +1190,21 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
                 return false;
             }
 
-            // default
+            /*
+             * Physical B is consistent with SDL's scancode shortcut even
+             * when Option changes text input. Suppress key repeat and
+             * consume both host-only key events before guest dispatch.
+             */
+            if ([event keyCode] == kVK_ANSI_B &&
+                (modifiers & (NSEventModifierFlagControl |
+                              NSEventModifierFlagOption)) ==
+                (NSEventModifierFlagControl | NSEventModifierFlagOption) &&
+                qemu_console_is_graphic(console->con)) {
+                if (![event isARepeat]) {
+                    [self toggleDisplayBrightness];
+                }
+                return true;
+            }
 
             // handle control + alt Key Combos (ctrl+alt+[1..9,g] is reserved for QEMU)
             if (([event modifierFlags] & NSEventModifierFlagControl) && ([event modifierFlags] & NSEventModifierFlagOption)) {
@@ -1180,6 +1233,13 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
             }
             return true;
         case NSEventTypeKeyUp:
+            if ([event keyCode] == kVK_ANSI_B &&
+                (modifiers & (NSEventModifierFlagControl |
+                              NSEventModifierFlagOption)) ==
+                (NSEventModifierFlagControl | NSEventModifierFlagOption) &&
+                qemu_console_is_graphic(console->con)) {
+                return true;
+            }
             keycode = cocoa_keycode_to_linux([event keyCode]);
 
             // don't pass the guest a spurious key-up if we treated this
@@ -1448,6 +1508,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 - (void)openDocumentation:(NSString *)filename;
 - (IBAction) do_about_menu_item: (id) sender;
 - (void)adjustSpeed:(id)sender;
+- (void)toggleDisplayBrightness:(id)sender;
 @end
 
 @implementation QemuCocoaAppController
@@ -1847,6 +1908,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     [[[self activeView] window] toggleFullScreen:sender];
 }
 
+- (void)toggleDisplayBrightness:(id)sender
+{
+    [[self activeView] toggleDisplayBrightness];
+}
+
 - (void) setFullGrab:(id)sender
 {
     COCOA_DEBUG("QemuCocoaAppController: setFullGrab\n");
@@ -2182,6 +2248,11 @@ static void create_initial_menus(CocoaConsole *cocoa)
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"Zoom Interpolation" action:@selector(toggleZoomInterpolation:) keyEquivalent:@""] autorelease];
     [menuItem setState: zoom_interpolation == kCGInterpolationLow ? NSControlStateValueOn : NSControlStateValueOff];
     [menu addItem: menuItem];
+    menuItem = [menu addItemWithTitle:@"Toggle Display Brightness"
+                              action:@selector(toggleDisplayBrightness:)
+                       keyEquivalent:@"b"];
+    [menuItem setKeyEquivalentModifierMask:
+        NSEventModifierFlagControl | NSEventModifierFlagOption];
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
