@@ -68,6 +68,7 @@ jobs:
           test -f subprojects/dtc/.meson-subproject-wrap-hash.txt
           test -z "$(git -C subprojects/dtc status --porcelain --untracked-files=all)"
           python3 scripts/ensure-dtc-subproject.py --source . --diagnose
+          python3 scripts/ensure-dtc-subproject.py --source . --verify
 
       - name: Configure internal DTC using pinned WHP Meson fork
         run: |
@@ -78,6 +79,7 @@ jobs:
           grep -F 'toolchains/meson/meson.py' config-host.mak
           grep -F 'WHP_MESON_PROVIDER=' config.status
           python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
+          python3 ../scripts/ensure-dtc-subproject.py --source .. --verify
 
       - name: Verify pinned Meson uses one snapshot for wrap SHA-256
         run: |
@@ -91,6 +93,7 @@ jobs:
             -Dfdt=internal --disable-docs --disable-tools
           test -s meson-private/coredata.dat
           python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
+          python3 ../scripts/ensure-dtc-subproject.py --source .. --verify
 
       - name: Verify Ninja emulator link dependencies
         run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal
