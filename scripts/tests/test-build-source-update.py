@@ -111,6 +111,20 @@ if not (
 ):
     errors.append("configure must bypass DTC for system/disabled libfdt")
 
+# Only the explicitly requested internal provider is verified *after* the
+# actual Meson setup; system/disabled keep their independent path. The check
+# must never reset or reconfigure a successful incremental build.
+post_meson = configure.split('  run_meson() {', 1)[-1].split(
+    '  echo "$meson" > build.ninja.stamp', 1
+)[0]
+for required in (
+    'if test "$fdt_provider" = internal &&',
+    '--source "$source_path" --verify',
+    'internal DTC Meson wrap verification failed',
+):
+    if required not in post_meson:
+        errors.append(f"post-Meson DTC verification contract missing: {required}")
+
 # build.sh delegates strict enum validation to the shared POSIX shell
 # helper; searching for the old inline error text is an obsolete test.
 if ("whp_require_auto_switch()" not in shared_shell or
