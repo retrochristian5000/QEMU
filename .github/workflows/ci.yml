@@ -41,6 +41,9 @@ jobs:
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
+      - name: Test Homebrew and MacPorts dependency refresh
+        run: bash scripts/tests/test-homebrew-dependency-refresh.bash
+
       - name: Test native LLVM incremental bootstrap contract
         run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
 
