@@ -714,12 +714,26 @@ class EnsureDTCTest(unittest.TestCase):
     def test_post_meson_verification_checks_ignored_marker(self):
         self.git("checkout", "--detach", self.pin)
         self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
-        (self.repo / ".gitignore").write_text("*.o\n")
-        with self.assertRaisesRegex(dtc.DTCError, "local source changes"):
-            dtc.verify_dtc(self.root)
-        self.git("checkout", "--", ".gitignore")
-        (self.repo / ".git" / "info" / "exclude").write_text("")
+        real_git = dtc.git
+
+        def reject_ignore(checkout, *args):
+            if args[:2] == ("check-ignore", "-q"):
+                raise dtc.DTCError("ignored-marker fixture")
+            return real_git(checkout, *args)
+
+        with mock.patch.object(dtc, "git", side_effect=reject_ignore):
+            with self.assertRaisesRegex(dtc.DTCError, "must ignore"):
+                dtc.verify_dtc(self.root)
         self.assertTrue(dtc.verify_dtc(self.root))
+
+    def test_post_meson_verification_requires_real_marker_file(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.unlink()
+        with self.assertRaisesRegex(dtc.DTCError, "missing or is a symlink"):
+            dtc.verify_dtc(self.root)
+        self.cache.symlink_to(self.wrap)
+        with self.assertRaisesRegex(dtc.DTCError, "missing or is a symlink"):
+            dtc.verify_dtc(self.root)
 
     def test_post_meson_verify_cli_reports_failure_without_side_effects(self):
         self.git("checkout", "--detach", self.pin)
