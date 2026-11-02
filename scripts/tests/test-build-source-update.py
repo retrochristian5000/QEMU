@@ -35,6 +35,8 @@ required_build = (
     'exec "$SOURCE_DIR/build.sh" "$@"',
     'WHP_SOURCE_REVISION_BEFORE',
     'WHP_SOURCE_REVISION_AFTER',
+    'error: QEMU parent source update failed',
+    'scripts/whp-build/update-submodules.py',
 )
 for needle in required_build:
     if needle not in build:
@@ -88,6 +90,13 @@ if not (refresh_index < python_index < config_index < host_index <
     errors.append("DTC reconciliation must follow config and host tool selection")
 if 'scripts/ensure-dtc-subproject.py' in update:
     errors.append("early source updater must not reconcile DTC before host tools")
+
+# Parent refresh and post-host-tool submodule alignment are separate phases.
+submodule_index = build.find('scripts/whp-build/update-submodules.py')
+if not (host_index < submodule_index < dtc_index):
+    errors.append("initialized submodules must refresh after Git promotion and before DTC")
+if not (ROOT / "scripts/whp-build/update-submodules.py").is_file():
+    errors.append("missing initialized-submodule reconciliation helper")
 
 # A system libfdt selection must bypass DTC in BOTH entry points. It must
 # continue into Meson rather than dying inside the DTC diagnosis helper.
@@ -358,10 +367,106 @@ def test_dtc_reconciles_after_host_tools():
         env.pop("CI")
 
 
+def test_initialized_submodules_follow_parent_gitlinks():
+    # A local pinned-submodule graph exercises both Git phases without any
+    # public remote, destructive reset, or initialized-unused download.
+    helper = ROOT / "scripts/whp-build/update-submodules.py"
+    with tempfile.TemporaryDirectory(prefix="whp-source-submodules-") as tmp:
+        base = Path(tmp)
+        source = base / "parent"
+        source.mkdir()
+        modules = {}
+        for name in ("a", "b"):
+            module = base / name
+            module.mkdir()
+            git("init", "-q", "-b", "master", cwd=module)
+            git("config", "user.name", "WHP Test", cwd=module)
+            git("config", "user.email", "whp@example.invalid", cwd=module)
+            (module / "README").write_text(name + " v1\\n")
+            git("add", ".", cwd=module)
+            git("commit", "-qm", name + " v1", cwd=module)
+            modules[name] = module
+
+        git("init", "-q", "-b", "master", cwd=source)
+        git("config", "user.name", "WHP Test", cwd=source)
+        git("config", "user.email", "whp@example.invalid", cwd=source)
+        for name, module in modules.items():
+            git("-c", "protocol.file.allow=always", "submodule", "add",
+                "-q", str(module), "modules/" + name, cwd=source)
+        git("commit", "-qam", "initial parent gitlinks", cwd=source)
+
+        clone = base / "clone"
+        git("clone", "-q", str(source), str(clone))
+        env = os.environ.copy()
+        env.pop("CI", None)
+        env["GIT"] = shutil.which("git")
+        env["GIT_ALLOW_PROTOCOL"] = "file"
+        env["WHP_SOURCE_UPDATE"] = "auto"
+        subprocess.run(["git", "submodule", "update", "--init", "--",
+                        "modules/a"], cwd=clone, env=env,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       text=True, check=True)
+        old = git("rev-parse", "HEAD", cwd=clone / "modules/a")
+        assert not (clone / "modules/b/.git").exists()
+
+        def pin_next_version(version):
+            module = modules["a"]
+            (module / "README").write_text("a v" + str(version) + "\\n")
+            git("add", ".", cwd=module)
+            git("commit", "-qm", "a v" + str(version), cwd=module)
+            new_pin = git("rev-parse", "HEAD", cwd=module)
+            git("fetch", "--no-tags", str(module), new_pin,
+                cwd=source / "modules/a")
+            git("checkout", "--detach", new_pin,
+                cwd=source / "modules/a")
+            git("add", "modules/a", cwd=source)
+            git("commit", "-qm", "pin a v" + str(version), cwd=source)
+            git("pull", "--ff-only", str(source), "master", cwd=clone)
+            return new_pin
+
+        def refresh():
+            return subprocess.run(
+                [sys.executable, str(helper), "--source", str(clone)],
+                cwd=clone, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True,
+            )
+
+        current = pin_next_version(2)
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == old
+        first = refresh()
+        assert first.returncode == 0, first.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
+        assert not (clone / "modules/b/.git").exists()
+        assert "refreshed 1 of 1 initialized" in first.stderr
+        again = refresh()
+        assert again.returncode == 0, again.stderr
+        assert "1 initialized and pinned" in again.stderr
+
+        # An advancing parent gitlink cannot overwrite local submodule edits.
+        new_pin = pin_next_version(3)
+        (clone / "modules/a/README").write_text("local preservation\\n")
+        failure = refresh()
+        assert failure.returncode != 0
+        assert "local changes" in failure.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
+        assert (clone / "modules/a/README").read_text() == "local preservation\\n"
+        assert new_pin != current
+
+        # Source refresh can be opted out without touching the stale checkout.
+        env["WHP_SOURCE_UPDATE"] = "0"
+        skipped = refresh()
+        assert skipped.returncode == 0, skipped.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
+
 try:
     test_dtc_reconciles_after_host_tools()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
     errors.append(f"DTC post-host-tools integration: {exc}")
+
+try:
+    test_initialized_submodules_follow_parent_gitlinks()
+except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
+    errors.append(f"initialized submodule refresh integration: {exc}")
 
 if errors:
     for error in errors:
