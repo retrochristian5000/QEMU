@@ -284,11 +284,39 @@ class EnsureDTCTest(unittest.TestCase):
         dtc.diagnose_dtc(self.root, stream=out)
         self.assertIn("Meson wrap marker: current", out.getvalue())
 
+    def test_dtc_environment_gate_is_distinct_from_parent_updater(self):
+        cases = (
+            ({"CI": "true", "WHP_SOURCE_UPDATE_DONE": "1",
+              "WHP_SOURCE_UPDATE": "auto"}, "eligible"),
+            ({"QEMU_FDT_MODE": "system"}, "skipped (QEMU_FDT_MODE=system)"),
+            ({"QEMU_FDT_MODE": "disabled"}, "skipped (QEMU_FDT_MODE=disabled)"),
+            ({"WHP_SOURCE_UPDATE": "0"},
+             "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"),
+            ({"WHP_SOURCE_UPDATE": "0", "WHP_DTC_FETCH_MISSING": "1"},
+             "eligible"),
+            ({"WHP_SHELL_PROBE_ONLY": "1"}, "skipped (shell/portable probe-only)"),
+        )
+        for env, reason in cases:
+            with self.subTest(env=env):
+                clean = {"CI": "false", "WHP_SOURCE_UPDATE_DONE": "0",
+                         "WHP_SOURCE_UPDATE": "auto", "QEMU_FDT_MODE": "internal",
+                         "WHP_DTC_FETCH_MISSING": "0",
+                         "WHP_SHELL_PROBE_ONLY": "0",
+                         "WHP_PORTABLE_PROBE_ONLY": "0"}
+                with mock.patch.dict(os.environ, {**clean, **env}):
+                    out = StringIO()
+                    dtc.diagnose_dtc(self.root, stream=out)
+                self.assertIn("DTC post-host reconciliation: " + reason,
+                              out.getvalue())
+
     def test_diagnostic_handles_missing_checkout_without_git_fetch(self):
         self.repo.rename(self.subprojects / "old-dtc")
         buffer = StringIO()
         dtc.diagnose_dtc(self.root, stream=buffer)
         self.assertIn("Checkout: missing", buffer.getvalue())
+        self.assertIn("Expected wrap SHA256 (Meson text): " +
+                      dtc.meson_wrap_hash(self.wrap), buffer.getvalue())
+        self.assertIn("Meson wrap marker: missing", buffer.getvalue())
         self.assertFalse(self.repo.exists())
 
     def test_diagnostic_handles_broken_git_selection(self):

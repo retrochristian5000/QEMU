@@ -311,7 +311,8 @@ def diagnose_dtc(source, stream=None):
     print("  SHA256 input: UTF-8 dtc.wrap text (universal newlines), not DTC source or environment", file=out)
     for name in ("WHP_SOURCE_UPDATE", "WHP_SOURCE_UPDATE_DONE", "CI",
                  "WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
-                 "WHP_PORTABLE_PROBE_ONLY", "PYTHON", "WHP_MESON_PROVIDER",
+                 "WHP_PORTABLE_PROBE_ONLY", "QEMU_FDT_MODE",
+                 "WHP_DTC_FETCH_MISSING", "PYTHON", "WHP_MESON_PROVIDER",
                  "MESON_PACKAGE_CACHE_DIR", "PYTHONHASHSEED"):
         value = os.environ.get(name)
         print("  Environment " + name + ": " +
@@ -333,6 +334,25 @@ def diagnose_dtc(source, stream=None):
     else:
         reason = "eligible; checkout guards and Python availability still apply"
     print("  Automatic source reconciliation: " + reason, file=out)
+
+    # The post-host DTC phase is distinct from the parent QEMU updater:
+    # CI and WHP_SOURCE_UPDATE_DONE alone do not disable this code path.
+    provider = os.environ.get("QEMU_FDT_MODE", "auto")
+    fetch_missing = os.environ.get("WHP_DTC_FETCH_MISSING", "0") == "1"
+    if provider in ("system", "disabled"):
+        dtc_reason = f"skipped (QEMU_FDT_MODE={provider})"
+    elif os.environ.get("WHP_SOURCE_UPDATE", "auto") == "0" and not fetch_missing:
+        dtc_reason = "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"
+    elif any(os.environ.get(name) == "1" for name in
+             ("WHP_SHELL_PROBE_ONLY", "WHP_PORTABLE_PROBE_ONLY")):
+        dtc_reason = "skipped (shell/portable probe-only mode)"
+    elif checkout.is_dir() or fetch_missing:
+        dtc_reason = "eligible (subject to DTC Git and file safety checks)"
+    else:
+        dtc_reason = "deferred (DTC checkout missing; Meson may fetch lazily)"
+    print("  DTC post-host reconciliation: " + dtc_reason, file=out)
+    print("  CI and WHP_SOURCE_UPDATE_DONE do not disable this separate DTC phase",
+          file=out)
     print("  This diagnosis is read-only; it never refreshes the stored marker", file=out)
     try:
         print("  Git command: " + shlex.join(git_command()), file=out)
@@ -348,6 +368,23 @@ def diagnose_dtc(source, stream=None):
               ".".join(map(str, MIN_DTC_VERSION)), file=out)
     except (OSError, configparser.Error) as exc:
         print("  Wrap revision: unreadable (" + str(exc) + ")", file=out)
+    marker = checkout / ".meson-subproject-wrap-hash.txt"
+    try:
+        expected = meson_wrap_hash(wrap)
+        raw = hashlib.sha256(wrap.read_bytes()).hexdigest()
+        actual = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+        print("  Meson wrap marker: " +
+              ("current" if actual == expected else "stale" if actual else "missing"),
+              file=out)
+        print("  Expected wrap SHA256 (Meson text): " + expected, file=out)
+        print("  Stored wrap SHA256: " + (actual if actual else "(missing)"), file=out)
+        if raw != expected:
+            print("  Wrap line endings: text-normalized hash differs from raw-byte hash",
+                  file=out)
+            print("  Raw-byte wrap SHA256: " + raw, file=out)
+    except (OSError, UnicodeError) as exc:
+        print("  Meson wrap marker: unreadable (" + str(exc) + ")", file=out)
+
     if checkout.is_symlink():
         print("  Checkout: symlink (requires manual inspection)", file=out)
         return
@@ -424,22 +461,6 @@ def diagnose_dtc(source, stream=None):
     except (DTCError, OSError, UnicodeError) as exc:
         print("  DTC Meson interface: incompatible or unreadable (" + str(exc) + ")",
               file=out)
-    marker = checkout / ".meson-subproject-wrap-hash.txt"
-    try:
-        expected = meson_wrap_hash(wrap)
-        raw = hashlib.sha256(wrap.read_bytes()).hexdigest()
-        actual = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
-        print("  Meson wrap marker: " +
-              ("current" if actual == expected else "stale" if actual else "missing"),
-              file=out)
-        print("  Expected wrap SHA256 (Meson text): " + expected, file=out)
-        print("  Stored wrap SHA256: " + (actual if actual else "(missing)"), file=out)
-        if raw != expected:
-            print("  Wrap line endings: text-normalized hash differs from raw-byte hash",
-                  file=out)
-            print("  Raw-byte wrap SHA256: " + raw, file=out)
-    except (OSError, UnicodeError) as exc:
-        print("  Meson wrap marker: unreadable (" + str(exc) + ")", file=out)
 
 
 def main():

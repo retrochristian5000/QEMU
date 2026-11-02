@@ -1292,7 +1292,19 @@ A concurrent wrap edit prevents a stale marker from being installed.
 The digest is independent of ``CI``, ``PYTHONHASHSEED``,
 ``WHP_SOURCE_UPDATE``, ``WHP_MESON_PROVIDER`` and
 ``MESON_PACKAGE_CACHE_DIR``; these affect workflow execution or
-source resolution, not the SHA-256 input.  The early parent source updater
+source resolution, not the SHA-256 input. ``CI`` and
+``WHP_SOURCE_UPDATE_DONE`` affect the parent QEMU source updater, not
+the independent post-host DTC step. ``QEMU_FDT_MODE=system/disabled``
+skips internal DTC; ``WHP_SOURCE_UPDATE=0`` also skips it unless
+``WHP_DTC_FETCH_MISSING=1`` requests a prefetch. A missing DTC
+checkout normally remains Meson-lazy. Read-only diagnosis now prints
+the expected text checksum even before DTC has been fetched, and
+reports DTC eligibility separately from the parent source updater.
+
+The tracked QEMU ``configure`` must be executable (``100755``).
+Without that Git file mode, direct ``../configure`` invocations
+fail with permission denied *before* Meson can verify a DTC wrap.
+Do not attribute that failure to SHA-256.  The early parent source updater
 treats ``CI=0`` and ``CI=false`` as disabled CI flags rather than silently
 skipping the parent refresh.  The read-only DTC diagnostics expose both
 the hash input and relevant environment controls without rewriting the

@@ -40,6 +40,11 @@ jobs:
       - name: Check out QEMU
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Verify tracked configure entry point is executable
+        run: |
+          test -x configure
+          test "$(git ls-files --stage configure | awk '{print $1}')" = 100755
+
       - name: Install native build dependencies
         run: |
           brew install pkg-config meson ninja glib pixman flex bison
