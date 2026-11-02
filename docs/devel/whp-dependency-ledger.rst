@@ -1365,7 +1365,21 @@ configuration path, and system/disabled libfdt providers bypass this check.
 The macOS workflow verifies both the default venv Meson and pinned WHP
 Meson fork after configuration and again following incremental reconfigure.
 The early QEMU source fast-forward updater handles only the parent Git
-revision and submodule URL metadata. The launcher reconciles an existing DTC
+revision and submodule URL metadata. It must fail the launcher when
+``WHP_SOURCE_UPDATE=1`` fails, rather than silently continuing with stale
+QEMU source. After ``host-tools.sh`` selects WHP-managed or verified seed
+Git, ``scripts/whp-build/update-submodules.py`` compares the pinned gitlinks
+from QEMU's current ``HEAD`` with **already initialized** submodule working
+trees and updates clean, detached, stale checkouts to the exact gitlink.
+Locally available pinned commits require no fetch; missing pinned commits
+may be fetched only for their initialized submodule. Every differing
+checkout is preflighted for local modifications and attached branches
+before any checkout is moved; failures stop the build instead of hiding
+source drift. Never use ``git submodule update --remote`` or a hard reset
+here. Uninitialized firmware/toolchains stay lazy, and Meson-owned wraps
+remain outside the Git submodule updater. ``WHP_SOURCE_UPDATE=0`` skips
+both automatic Git phases; automatic mode skips network refresh in CI.
+The launcher reconciles an existing DTC
 checkout **after** loading saved menuconfig settings and selecting the
 requested Python and Git in ``host-tools.sh``, even when the incremental
 QEMU build would otherwise skip ``configure``. This avoids invoking a seed
