@@ -133,7 +133,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(mod.OPTION_BY_KEY['WHP_DTC_FETCH_MISSING'].default, 'n')
         values = mod.default_values()
         self.assertEqual(values['QEMU_FDT_MODE'], 'auto')
-        self.assertEqual(values['WHP_MESON_PROVIDER'], 'venv')
+        self.assertEqual(values['WHP_MESON_PROVIDER'], 'fork')
         self.assertEqual(values['WHP_DTC_FETCH_MISSING'], 'n')
         for mode in ('internal', 'system', 'enabled', 'disabled'):
             values['QEMU_FDT_MODE'] = mode
@@ -155,6 +155,19 @@ class WhpConfigTests(unittest.TestCase):
             mod.validate_value(mod.OPTION_BY_KEY['QEMU_FDT_MODE'], 'dtc')
         with self.assertRaises(ValueError):
             mod.validate_value(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'], 'system')
+
+    def test_fork_meson_default_does_not_install_unrelated_venv_meson(self):
+        configure = (ROOT / 'configure').read_text(encoding='utf-8')
+        selector = 'case "${WHP_MESON_PROVIDER:-fork}" in'
+        self.assertIn(selector, configure)
+        self.assertNotIn('pythondeps.toml meson || exit 1',
+                         configure.split(selector)[0])
+        self.assertIn('  venv)\n', configure)
+        self.assertIn('  fork)\n', configure)
+        self.assertIn('meson="$python $source_path/toolchains/meson/meson.py"', configure)
+        stage = (ROOT / 'scripts/whp-build/configure.bash').read_text(encoding='utf-8')
+        self.assertIn('WHP_MESON_GITLINK=%s', stage)
+        self.assertIn('whp_configure_meson_identity', stage)
 
     def test_portable_dtc_fdt_probe_matches_menu(self):
         env = os.environ.copy()

@@ -226,7 +226,7 @@ whp_prepare_build_defaults()
             exit 1
             ;;
     esac
-    WHP_MESON_PROVIDER="${WHP_MESON_PROVIDER:-venv}"
+    WHP_MESON_PROVIDER="${WHP_MESON_PROVIDER:-fork}"
     case "$WHP_MESON_PROVIDER" in
         venv|fork) ;;
         *)
@@ -236,6 +236,7 @@ whp_prepare_build_defaults()
     esac
     WHP_DTC_FETCH_MISSING="${WHP_DTC_FETCH_MISSING:-0}"
     export WHP_MESON_PROVIDER WHP_DTC_FETCH_MISSING
+    printf 'WHP Meson provider selection: %s\n' "$WHP_MESON_PROVIDER"
     QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
     QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
     BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"

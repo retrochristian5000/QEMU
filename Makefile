@@ -110,8 +110,8 @@ Makefile.ninja: build.ninja
 endif
 
 ifneq ($(MESON),)
-# The path to meson always points to pyvenv/bin/meson, but the absolute
-# paths could change.  In that case, force a regeneration of build.ninja.
+# MESON points to the pinned WHP fork by default, or the explicit venv
+# provider. A changed provider or command forces build.ninja regeneration.
 # Note that this invocation of $(NINJA), just like when Make rebuilds
 # Makefiles, does not include -n.
 build.ninja: build.ninja.stamp

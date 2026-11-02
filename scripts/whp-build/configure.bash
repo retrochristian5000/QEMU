@@ -455,6 +455,48 @@ whp_configure_write_i386_audio_config()
     whp_configure_validate_device_config "$output" || return 1
 }
 
+# Check the pinned fork on incremental builds, not just configure passes.
+# A gitlink change must invalidate the build identity rather than reusing an
+# unrelated Meson backend. Never reset or update a modified checkout here.
+whp_configure_meson_identity()
+{
+    if [[ "${WHP_MESON_PROVIDER:-fork}" != fork ]]; then
+        printf '%s\n' not-selected
+        return 0
+    fi
+    if [[ ! -d "$SOURCE_DIR/.git" && ! -f "$SOURCE_DIR/.git" ]]; then
+        printf '%s\n' no-parent-git
+        return 0
+    fi
+
+    local pin current status
+    pin="$(git -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/meson |
+        awk '$1 == "160000" && $2 == "commit" { print $3 }')" || return 1
+    if [[ -z "$pin" ]]; then
+        printf 'error: WHP Meson fork has no gitlink in QEMU HEAD\n' >&2
+        return 1
+    fi
+    if [[ -f "$SOURCE_DIR/toolchains/meson/meson.py" ]]; then
+        current="$(git -C "$SOURCE_DIR/toolchains/meson" rev-parse HEAD 2>/dev/null)" || {
+            printf 'error: WHP Meson fork checkout is invalid\n' >&2
+            return 1
+        }
+        if [[ "$current" != "$pin" ]]; then
+            printf 'error: WHP Meson checkout %s differs from pinned %s; preserving source\n' "$current" "$pin" >&2
+            return 1
+        fi
+        status="$(git -C "$SOURCE_DIR/toolchains/meson" status --porcelain --untracked-files=all)" || return 1
+        if [[ -n "$status" ]]; then
+            printf 'error: WHP Meson fork has local edits; preserving source\n' >&2
+            return 1
+        fi
+    elif [[ -f "$BUILD_DIR/build.ninja" ]]; then
+        printf 'error: configured WHP Meson fork checkout is missing; refusing stale build graph\n' >&2
+        return 1
+    fi
+    printf '%s\n' "$pin"
+}
+
 whp_configure_build()
 {
 local ppc_custom_devices=0
@@ -471,11 +513,13 @@ local config_candidate="$BUILD_DIR/.whp-config.new"
 local stale_ppc_config=""
 local stale_i386_config=""
 local host_tag=""
+local meson_gitlink=""
 
 # BUILD_DIR is persistent state, not scratch space.  Establish ownership before
 # configuration so a source checkout or host ABI can never silently take over
 # another tree.
 whp_configure_validate_build_tree_owner || return 1
+meson_gitlink="$(whp_configure_meson_identity)" || return 1
 # Resolve indexed Clang PGO data before Meson configures -Db_pgo=use.
 # Keep this inside the validated, WHP-owned QEMU build directory.
 if [[ "${QEMU_HOST_PGO:-off}" == use ]]; then
@@ -669,7 +713,8 @@ fi
     printf 'QEMU_CXX_STANDARD=%s\n' "${QEMU_CXX_STANDARD:-gnu++23}"
     printf 'QEMU_HOST_LTO=%s\n' "$QEMU_HOST_LTO"
     printf 'QEMU_HOST_MODULES=%s\n' "${QEMU_HOST_MODULES:-auto}"
-    printf 'WHP_MESON_PROVIDER=%s\n' "${WHP_MESON_PROVIDER:-venv}"
+    printf 'WHP_MESON_PROVIDER=%s\n' "${WHP_MESON_PROVIDER:-fork}"
+    printf 'WHP_MESON_GITLINK=%s\n' "$meson_gitlink"
     printf 'WHP_DTC_FETCH_MISSING=%s\n' "${WHP_DTC_FETCH_MISSING:-0}"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"

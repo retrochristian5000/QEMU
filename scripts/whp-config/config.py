@@ -75,7 +75,7 @@ OPTIONS = (
     Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice', 'auto', ('auto', 'ccache', 'sccache', 'none')),
     Option('QEMU_HOST_LINKER', 'Host features', 'QEMU host linker', 'choice', 'auto', ('auto', 'system', 'lld', 'mold')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('WHP_MESON_PROVIDER', 'Host features', 'QEMU Meson provider', 'choice', 'venv', ('venv', 'fork')),
+    Option('WHP_MESON_PROVIDER', 'Host features', 'QEMU Meson provider', 'choice', 'fork', ('venv', 'fork')),
     Option('QEMU_FDT_MODE', 'Host features', 'QEMU libfdt provider', 'choice', 'auto', ('auto', 'system', 'internal', 'enabled', 'disabled')),
     Option('WHP_DTC_FETCH_MISSING', 'Host features', 'Prefetch missing pinned DTC checkout', 'bool', 'n'),
     Option('MACOS_ENABLE_COCOA', 'Host features', 'Cocoa', 'choice', 'auto', ('auto', 'y', 'n')),

@@ -965,19 +965,9 @@ fi
 python="$python -B"
 mkvenv="$python ${source_path}/python/scripts/mkvenv.py"
 
-# Finish preparing the virtual environment using vendored .whl files.
-# Even if PyPI is allowed, we disallow it here to force installation
-# from our preferred vendored versions.
-
-$mkvenv ensuregroup --dir "${source_path}/python/wheels" \
-     ${source_path}/pythondeps.toml meson || exit 1
-
-# At this point, we expect Meson to be installed and available.
-# We expect mkvenv or pip to have created pyvenv/bin/meson for us.
-# We ignore PATH completely here: we want to use the venv's Meson
-# *exclusively*.
-
-# for msys2
+# WHP's default is the exact Meson Git pin. Do not install the unrelated
+# Meson wheel unless the caller explicitly chooses the venv compatibility lane.
+# Both providers use QEMU's selected virtual-environment Python.
 get_pwd() {
     if pwd -W >/dev/null 2>&1; then
         pwd -W
@@ -986,24 +976,31 @@ get_pwd() {
     fi
 }
 
-meson="$(cd pyvenv/bin; get_pwd)/meson"
-if [ -f "$meson$EXESUF" ]; then
-  meson="$meson$EXESUF"
-fi
-
-# On Haiku, meson might show up in a "non-packaged" subfolder instead, see
-# https://github.com/haiku/haiku/blob/r1beta5/docs/user/storage/storageintro.dox
-if test "$host_os" = "haiku" && test ! -e "$meson" ; then
-    meson="$(cd pyvenv/non-packaged/bin; get_pwd)/meson"
-fi
-
-# The WHP Meson fork is an explicit opt-in provider. Do not silently change
-# Meson versions in existing build directories, and keep QEMU's venv Python.
-case "${WHP_MESON_PROVIDER:-venv}" in
-  venv) ;;
+case "${WHP_MESON_PROVIDER:-fork}" in
+  venv)
+    $mkvenv ensuregroup --dir "${source_path}/python/wheels" \
+         ${source_path}/pythondeps.toml meson || exit 1
+    meson="$(cd pyvenv/bin; get_pwd)/meson"
+    if [ -f "$meson$EXESUF" ]; then
+      meson="$meson$EXESUF"
+    fi
+    
+    # On Haiku, meson might show up in a "non-packaged" subfolder instead, see
+    # https://github.com/haiku/haiku/blob/r1beta5/docs/user/storage/storageintro.dox
+    if test "$host_os" = "haiku" && test ! -e "$meson" ; then
+        meson="$(cd pyvenv/non-packaged/bin; get_pwd)/meson"
+    fi
+    if test ! -f "$meson"; then
+      error_exit "WHP venv Meson provider has no executable at $meson"
+    fi
+    venv_meson_version=$($meson --version) ||
+      error_exit "WHP venv Meson cannot run using QEMU's selected Python"
+    echo "WHP Meson provider: explicit venv $meson ($venv_meson_version)"
+    unset venv_meson_version
+    ;;
   fork)
     if ! $python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
-      error_exit "WHP Meson fork requires Python >= 3.10"
+      error_exit "WHP Meson fork requires Python >= 3.10 (select WHP_MESON_PROVIDER=venv for compatibility)"
     fi
     whp_meson_pin=$(${GIT:-git} -C "$source_path" ls-tree HEAD -- toolchains/meson |
       sed -n 's/^160000 commit \([0-9a-f]*\)[[:space:]].*/\1/p')

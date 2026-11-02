@@ -350,11 +350,12 @@ The WHP fork at ``toolchains/meson`` is available for controlled Meson
 development.  It is a lazily initialized, exact-gitlink-pinned source tree,
 not an unconditional dependency build or a replacement on ``PATH``.
 
-QEMU's default configure path installs and invokes its venv Meson via
-``python/scripts/mkvenv.py`` at ``pyvenv/bin/meson``.  To exercise the
-QEMU-pinned WHP Meson fork without changing that default, export
-``WHP_MESON_PROVIDER=fork`` before running ``configure``; the only other
-accepted value is ``venv``.  The fork is initialized from the exact
+QEMU defaults to the exact pinned WHP Meson fork for new configurations.
+QEMU's own virtual-environment Python invokes ``toolchains/meson/meson.py``
+directly, without installing a separate Meson wheel.  The explicit
+``WHP_MESON_PROVIDER=venv`` compatibility option installs and uses
+``pyvenv/bin/meson``.  Existing saved ``.whpconfig`` selections remain
+authoritative; a saved ``venv`` selection is never silently migrated.  The fork is initialized from the exact
 ``toolchains/meson`` gitlink only when downloads are enabled.  A different
 checkout revision or local source edits cause an explicit failure, not a reset
 or a branch switch.  The selected Python from QEMU's existing ``pyvenv``
@@ -363,12 +364,14 @@ created.  The fork reports development version ``1.12.99`` and requires
 Python >= 3.10, whereas the default QEMU Python selection accepts >= 3.9.
 The selected provider is retained by ``config.status``.
 The menuconfig ``QEMU Meson provider`` choice maps to
-``WHP_MESON_PROVIDER=venv|fork`` and is an explicit opt-in, not a silent change to production builds.
-The existing incremental configuration identity includes this selection so
-changing providers requests configuration without wiping existing build outputs.
+``WHP_MESON_PROVIDER=fork|venv``.  Incremental configuration identity
+tracks both the provider and the QEMU-pinned Meson gitlink; existing fork
+checkouts are verified for source edits and SHA mismatch even when configuration
+is otherwise up-to-date. Changing providers requests reconfiguration without
+wiping existing build outputs.
 
-Use this provider to compare DTC wrap and incremental configuration behavior
-with the default venv Meson in isolated or already compatible build trees.
+Use the explicit venv provider to compare DTC wrap and incremental
+configuration behavior in isolated or already compatible build trees.
 Changing providers does not repair Git checkout failures in
 ``scripts/ensure-dtc-subproject.py``, which runs before Meson setup.  Never
 wipe an incremental build directory to switch providers, and do not infer
