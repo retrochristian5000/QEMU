@@ -48,8 +48,12 @@ class EnsureDTCTest(unittest.TestCase):
         (self.repo / "libfdt" / "meson.build").write_text(
             "libfdt_dep = declare_dependency()\n", encoding="utf-8"
         )
-        cmd("git", "add", "meson_options.txt", "meson.build", "libfdt/meson.build",
-            cwd=self.repo)
+        (self.repo / ".gitignore").write_text(
+            "/.meson-subproject-wrap-hash.txt\\n",
+            encoding="utf-8"
+        )
+        cmd("git", "add", ".gitignore", "meson_options.txt", "meson.build",
+            "libfdt/meson.build", cwd=self.repo)
         cmd("git", "commit", "-qm", "old DTC", cwd=self.repo)
         self.old = cmd("git", "rev-parse", "HEAD", cwd=self.repo)
         options.write_text(
@@ -668,6 +672,83 @@ class EnsureDTCTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(dtc.DTCError, "no longer exports"):
             dtc.ensure_dtc(self.root)
+
+    def test_post_meson_verification_is_read_only_and_accepts_pinned_fork(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\\n")
+        original_marker = self.cache.read_bytes()
+        original_head = self.git("rev-parse", "HEAD")
+        self.assertTrue(dtc.verify_dtc(self.root))
+        self.assertEqual(self.cache.read_bytes(), original_marker)
+        self.assertEqual(self.git("rev-parse", "HEAD"), original_head)
+
+    def test_post_meson_verification_rejects_old_marker_without_repairing(self):
+        self.git("checkout", "--detach", self.pin)
+        marker_before = self.cache.read_bytes()
+        with self.assertRaisesRegex(dtc.DTCError, "marker mismatch"):
+            dtc.verify_dtc(self.root)
+        self.assertEqual(self.cache.read_bytes(), marker_before)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
+
+    def test_post_meson_verification_checks_pin_even_when_marker_matches(self):
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\\n")
+        with self.assertRaisesRegex(dtc.DTCError, "differs from wrap pin"):
+            dtc.verify_dtc(self.root)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
+
+    def test_post_meson_verification_rejects_missing_checkout(self):
+        self.repo.rename(self.subprojects / "old-dtc")
+        with self.assertRaisesRegex(dtc.DTCError, "standalone Git checkout"):
+            dtc.verify_dtc(self.root)
+        self.assertFalse(self.repo.exists())
+
+    def test_post_meson_verification_rejects_dirty_source(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\\n")
+        (self.repo / "libfdt" / "meson.build").write_text(
+            "libfdt_dep = declare_dependency()\\n# local edit\\n"
+        )
+        with self.assertRaisesRegex(dtc.DTCError, "local source changes"):
+            dtc.verify_dtc(self.root)
+
+    def test_post_meson_verification_checks_ignored_marker(self):
+        self.git("checkout", "--detach", self.pin)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\\n")
+        (self.repo / ".gitignore").write_text("*.o\\n")
+        with self.assertRaisesRegex(dtc.DTCError, "local source changes"):
+            dtc.verify_dtc(self.root)
+        self.git("checkout", "--", ".gitignore")
+        (self.repo / ".git" / "info" / "exclude").write_text("")
+        self.assertTrue(dtc.verify_dtc(self.root))
+
+    def test_post_meson_verify_cli_reports_failure_without_side_effects(self):
+        self.git("checkout", "--detach", self.pin)
+        original_marker = self.cache.read_bytes()
+        command = [str(HELPER), "--source", str(self.root), "--verify"]
+        proc = subprocess.run(
+            [os.sys.executable, *command], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("marker mismatch", proc.stderr)
+        self.assertEqual(self.cache.read_bytes(), original_marker)
+        self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\\n")
+        proc = subprocess.run(
+            [os.sys.executable, *command], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("pinned checkout and wrap marker match", proc.stdout)
+
+    def test_uppercase_wrap_pin_keeps_immutable_revision(self):
+        self.git("checkout", "--detach", self.pin)
+        self.wrap.write_text(
+            self.wrap.read_text().replace(self.pin, self.pin.upper()),
+            encoding="utf-8"
+        )
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertTrue(dtc.verify_dtc(self.root))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.pin)
 
     def test_missing_checkout_is_normal_meson_case(self):
         self.repo.rename(self.subprojects / "old-dtc")
