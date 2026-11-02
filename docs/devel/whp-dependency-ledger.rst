@@ -1260,6 +1260,21 @@ They remain inside QEMU's Meson dependency graph.  Do not pre-build them from
 the WHP launcher merely to make them look like the top-level
 ``toolchains/*`` sources.
 
+Berkeley SoftFloat/TestFloat use ``patch_directory`` to supply their
+``meson.build`` and ``meson_options.txt`` from the tracked QEMU
+``subprojects/packagefiles/`` trees. The upstream Git checkouts do not
+necessarily contain these Meson files. An older interrupted fetch or an
+external checkout can leave the source directory present but unpatched.
+The pinned WHP Meson wrap resolver now restores *only absent* package files
+when the existing checkout lacks its build file, including in offline
+``wrap_mode=nodownload`` builds. It preflights all existing patch-file
+collisions, refuses conflicting files and unsafe patch paths, and does not
+reset, fetch, change branches, or recreate the source directory.
+An existing ``meson.build`` continues to use Meson's original validation
+path; files already present are never silently replaced by this recovery.
+The fork's ``unittests.wraptests`` guard successful restoration, conflict
+preservation, and subsequent no-op resolution.
+
 The DTC wrap in ``subprojects/dtc.wrap`` resolves the internal libfdt
 fallback from the WHP-owned ``retrochristian5000/dtc`` fork at an immutable
 commit.  This is a Meson-owned subproject, not a second vendored copy or a
