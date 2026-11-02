@@ -141,6 +141,13 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
                                       SDL_TEXTUREACCESS_STREAMING,
                                       surface_width(new_surface),
                                       surface_height(new_surface));
+    if (scon->texture &&
+        SDL_SetTextureColorMod(scon->texture, scon->brightness,
+                               scon->brightness, scon->brightness) < 0) {
+        /* A renderer may lack texture modulation; avoid false state. */
+        fprintf(stderr, "SDL2 brightness unavailable: %s\n", SDL_GetError());
+        scon->brightness = 255;
+    }
     sdl2_2d_redraw(scon);
 }
 
@@ -162,6 +169,19 @@ void sdl2_2d_refresh(DisplayChangeListener *dcl)
         }
     }
     sdl2_2d_present(scon);
+}
+
+/* Presentation-only: SDL_SetWindowBrightness would affect the host screen. */
+bool sdl2_2d_set_brightness(struct sdl2_console *scon, uint8_t brightness)
+{
+    if (!scon || scon->opengl || !scon->texture ||
+        SDL_SetTextureColorMod(scon->texture, brightness,
+                               brightness, brightness) < 0) {
+        return false;
+    }
+    scon->brightness = brightness;
+    sdl2_2d_redraw(scon);
+    return true;
 }
 
 void sdl2_2d_redraw(struct sdl2_console *scon)

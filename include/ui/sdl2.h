@@ -33,6 +33,7 @@ struct sdl2_console {
     DisplayOptions *opts;
     SDL_Texture *texture;
     bool frame_dirty; /* Uploaded damage awaiting one frame presentation. */
+    uint8_t brightness; /* presentation only; do not alter guest VRAM */
     SDL_Window *real_window;
     SDL_Renderer *real_renderer;
     int idx;
@@ -71,6 +72,7 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
                     DisplaySurface *new_surface);
 void sdl2_2d_refresh(DisplayChangeListener *dcl);
 void sdl2_2d_redraw(struct sdl2_console *scon);
+bool sdl2_2d_set_brightness(struct sdl2_console *scon, uint8_t brightness);
 bool sdl2_2d_check_format(DisplayChangeListener *dcl,
                           pixman_format_code_t format);
 

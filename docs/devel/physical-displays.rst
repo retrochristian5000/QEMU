@@ -160,6 +160,31 @@ surface and are not transformed yet.  Historical monitor models which require
 the fixed-face path should therefore use software-surface scanout until a
 corresponding physical-display transform exists for direct scanout.
 
+Brightness button preview
+-------------------------
+
+Game Boy Advance screen controls differ by model. AGB-001 had no built-in
+light. Nintendo's AGS-001 Game Boy Advance SP (2003) used a frontlight
+ON/OFF switch, while the later AGS-101 backlit SP offered two brightness
+settings rather than an off state. Game Boy micro brightness adjustment
+requires holding L while operating the volume/brightness switch.
+
+The active SDL2 2D UI has a **host-only** brightness-button preview.
+Press the SDL grab-key modifier (normally Ctrl-Alt) with ``B`` to toggle
+normal (255) and dimmed (166) texture RGB modulation. These levels
+are software preview values, not measurements of Nintendo hardware.
+The state is per-window and persists across guest video-mode changes.
+
+The implementation uses ``SDL_SetTextureColorMod()`` and does not change
+guest VRAM, the emulated graphics adapter, or the host monitor's actual
+brightness. SDL2 OpenGL and other frontends remain unchanged. Do not use
+SDL2 ``SDL_SetWindowBrightness()``, which can adjust the entire host
+display. Actual emulation of an AGS-001 or AGS-101 requires separate
+button, light-source, display and power hardware models.
+
+Source: Nintendo `Game Boy Advance SP manual
+<https://csassets.nintendo.com/noaext/image/private/t_KA_PDF/agsmanual_english>`_.
+
 Future physical effects
 -----------------------
 

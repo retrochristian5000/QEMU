@@ -29,6 +29,7 @@
 #include "ui/console.h"
 #include "ui/input.h"
 #include "ui/sdl2.h"
+#include "ui/display-brightness.h"
 #include "system/runstate.h"
 #include "system/runstate-action.h"
 #include "system/system.h"
@@ -417,6 +418,13 @@ static void handle_keydown(SDL_Event *ev)
                     }
                 }
                 sdl2_release_modifiers(scon);
+                scon->gui_keysym = true;
+            }
+            break;
+        case SDL_SCANCODE_B:
+            /* Simulated screen brightness button; never guest input. */
+            if (!scon->opengl && sdl2_2d_set_brightness(
+                    scon, qemu_display_brightness_next(scon->brightness))) {
                 scon->gui_keysym = true;
             }
             break;
@@ -960,6 +968,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
             sdl2_console[i].hidden = true;
         }
         sdl2_console[i].idx = i;
+        sdl2_console[i].brightness = QEMU_DISPLAY_BRIGHTNESS_FULL;
         sdl2_console[i].opts = o;
 #ifdef CONFIG_OPENGL
         sdl2_console[i].opengl = display_opengl;
