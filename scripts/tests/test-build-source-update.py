@@ -379,21 +379,22 @@ def test_initialized_submodules_follow_parent_gitlinks():
         for name in ("a", "b"):
             module = base / name
             module.mkdir()
-            git("init", "-q", "-b", "master", cwd=module)
+            git("init", "-q", cwd=module)
             git("config", "user.name", "WHP Test", cwd=module)
             git("config", "user.email", "whp@example.invalid", cwd=module)
-            (module / "README").write_text(name + " v1\\n")
+            (module / "README").write_text(name + " v1\n")
             git("add", ".", cwd=module)
             git("commit", "-qm", name + " v1", cwd=module)
             modules[name] = module
 
-        git("init", "-q", "-b", "master", cwd=source)
+        git("init", "-q", cwd=source)
         git("config", "user.name", "WHP Test", cwd=source)
         git("config", "user.email", "whp@example.invalid", cwd=source)
         for name, module in modules.items():
             git("-c", "protocol.file.allow=always", "submodule", "add",
                 "-q", str(module), "modules/" + name, cwd=source)
         git("commit", "-qam", "initial parent gitlinks", cwd=source)
+        parent_branch = git("symbolic-ref", "--short", "HEAD", cwd=source)
 
         clone = base / "clone"
         git("clone", "-q", str(source), str(clone))
@@ -411,7 +412,7 @@ def test_initialized_submodules_follow_parent_gitlinks():
 
         def pin_next_version(version):
             module = modules["a"]
-            (module / "README").write_text("a v" + str(version) + "\\n")
+            (module / "README").write_text("a v" + str(version) + "\n")
             git("add", ".", cwd=module)
             git("commit", "-qm", "a v" + str(version), cwd=module)
             new_pin = git("rev-parse", "HEAD", cwd=module)
@@ -421,7 +422,7 @@ def test_initialized_submodules_follow_parent_gitlinks():
                 cwd=source / "modules/a")
             git("add", "modules/a", cwd=source)
             git("commit", "-qm", "pin a v" + str(version), cwd=source)
-            git("pull", "--ff-only", str(source), "master", cwd=clone)
+            git("pull", "--ff-only", str(source), parent_branch, cwd=clone)
             return new_pin
 
         def refresh():
@@ -444,12 +445,12 @@ def test_initialized_submodules_follow_parent_gitlinks():
 
         # An advancing parent gitlink cannot overwrite local submodule edits.
         new_pin = pin_next_version(3)
-        (clone / "modules/a/README").write_text("local preservation\\n")
+        (clone / "modules/a/README").write_text("local preservation\n")
         failure = refresh()
         assert failure.returncode != 0
         assert "local changes" in failure.stderr
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
-        assert (clone / "modules/a/README").read_text() == "local preservation\\n"
+        assert (clone / "modules/a/README").read_text() == "local preservation\n"
         assert new_pin != current
 
         # Source refresh can be opted out without touching the stale checkout.
