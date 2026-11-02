@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include <limits.h>
 #include "qapi/error.h"
 #include "qapi/qapi-types-sockets.h"
 #include "qemu/fifo8.h"
@@ -44,6 +45,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_SREG_COUNT 100
 #define MODEM_DEFAULT_MODEL "hayes-accura-2400"
 #define MODEM_VOICE_MODEL "rockwell-voice-14400"
+#define MODEM_PARADYNE_3711 "att-paradyne-dataport-3711"
+#define MODEM_PARADYNE_3740 "att-paradyne-dataport-3740"
 
 #define MODEM_INPUT_LINES (CHR_TIOCM_DTR | CHR_TIOCM_RTS)
 #define MODEM_OUTPUT_LINES \
@@ -64,6 +67,8 @@ typedef struct ModemModel {
     const char *name;
     int connect_speed;
     bool supports_voice;
+    bool paradyne_commands;
+    int max_reliable_mode;
     const char *identification[11];
     const char *fallback_identification;
 } ModemModel;
@@ -107,6 +112,46 @@ static const ModemModel modem_models[] = {
         },
         .fallback_identification = "QEMU Rockwell-compatible voice modem",
     },
+    {
+        .name = MODEM_PARADYNE_3711,
+        .connect_speed = 14400,
+        .paradyne_commands = true,
+        .max_reliable_mode = 7,
+        .identification = {
+            "144",
+            "000",
+            "ROM NOT EMULATED",
+            "Paradyne DataPort Express 3711 (QEMU emulation)",
+            "QEMU Paradyne-compatible serial modem",
+            "V1.0",
+            "DATAPORT3711",
+            "Paradyne-compatible data modem",
+            "14400",
+            "QEMU",
+            "SERIAL MODEM",
+        },
+        .fallback_identification = "QEMU DataPort Express 3711 profile",
+    },
+    {
+        .name = MODEM_PARADYNE_3740,
+        .connect_speed = 28800,
+        .paradyne_commands = true,
+        .max_reliable_mode = 6,
+        .identification = {
+            "288",
+            "000",
+            "ROM NOT EMULATED",
+            "Paradyne DataPort Express 3740 (QEMU emulation)",
+            "QEMU Paradyne-compatible serial modem",
+            "V1.0",
+            "DATAPORT3740",
+            "Paradyne-compatible data modem",
+            "28800",
+            "QEMU",
+            "SERIAL MODEM",
+        },
+        .fallback_identification = "QEMU DataPort Express 3740 profile",
+    },
 };
 
 struct ModemChardev {
@@ -141,6 +186,8 @@ struct ModemChardev {
     int dtr_mode;
     int x_mode;
     int w_mode;
+    int reliable_mode;
+    int flow_control_mode;
 
     int service_class;
     int voice_line;
@@ -309,6 +356,9 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->dtr_mode = 2;
     modem->x_mode = 4;
     modem->w_mode = 1;
+    /* These are requested settings; no analogue negotiation is simulated. */
+    modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
+    modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
     modem->connect_speed = modem->model->connect_speed;
     modem->service_class = 0;
     modem_voice_defaults(modem);
@@ -355,7 +405,11 @@ static int modem_parse_number(const char **command, int default_value)
 
     while (g_ascii_isdigit(*p)) {
         found = true;
-        value = value * 10 + (*p - '0');
+        int digit = *p - '0';
+
+        /* Keep malformed oversized AT numbers from overflowing a signed int. */
+        value = value > (INT_MAX - digit) / 10 ?
+                INT_MAX : value * 10 + digit;
         p++;
     }
     *command = p;
@@ -404,6 +458,13 @@ static void modem_report_profile(ModemChardev *modem)
                            modem->sreg[0], modem->sreg[7],
                            modem->sreg[30], modem->sreg[95]);
     modem_queue_line(modem, line);
+    if (modem->model->paradyne_commands) {
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("\\N%d \\Q%d DCE:%d",
+                               modem->reliable_mode, modem->flow_control_mode,
+                               modem->connect_speed);
+        modem_queue_line(modem, line);
+    }
 }
 
 static void modem_connect(ModemChardev *modem)
@@ -800,6 +861,27 @@ static bool modem_handle_extended(ModemChardev *modem, const char **command)
     return false;
 }
 
+static bool modem_paradyne_speed_valid(const ModemChardev *modem,
+                                       int speed)
+{
+    static const int speeds[] = {
+        300, 1200, 2400, 4800, 7200, 9600, 12000, 14400,
+        16800, 19200, 21600, 24000, 26400, 28800,
+    };
+    size_t i;
+
+    if (!modem->model->paradyne_commands ||
+        speed > modem->model->connect_speed) {
+        return false;
+    }
+    for (i = 0; i < ARRAY_SIZE(speeds); i++) {
+        if (speed == speeds[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void modem_execute_command(ModemChardev *modem, const char *input)
 {
     g_autofree char *normalized = modem_normalize_command(input);
@@ -936,6 +1018,14 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             break;
         case '%':
             switch (*p++) {
+            case 'B':
+                value = modem_parse_number(&p, -1);
+                if (!modem_paradyne_speed_valid(modem, value)) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->connect_speed = value;
+                break;
             case 'C':
                 modem->compression = modem_parse_number(&p, 0) != 0;
                 break;
@@ -956,13 +1046,35 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             }
             break;
         case '\\':
-            if (*p == 'N') {
-                p++;
-                modem_parse_number(&p, 0);
+            switch (*p++) {
+            case 'N':
+                value = modem_parse_number(&p, -1);
+                if (modem->model->paradyne_commands) {
+                    if (value < 0 ||
+                        value > modem->model->max_reliable_mode) {
+                        modem_result(modem, MODEM_RESULT_ERROR);
+                        return;
+                    }
+                    modem->reliable_mode = value;
+                }
                 break;
+            case 'Q':
+                if (!modem->model->paradyne_commands) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                value = modem_parse_number(&p, -1);
+                if (value < 0 || value > 4) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->flow_control_mode = value;
+                break;
+            default:
+                modem_result(modem, MODEM_RESULT_ERROR);
+                return;
             }
-            modem_result(modem, MODEM_RESULT_ERROR);
-            return;
+            break;
         case ';':
             break;
         default:
