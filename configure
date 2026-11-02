@@ -2050,6 +2050,16 @@ if test "$skip_meson" = no; then
   if test "$?" -ne 0 ; then
       error_exit "meson setup failed"
   fi
+  # An explicit internal provider must resolve the exact WHP DTC Git pin
+  # and its Meson wrap checksum. This is read-only: no reset, reconfigure,
+  # or source mutation after Meson has chosen the subproject. Release
+  # archives lacking a parent Git checkout keep their vendored-source path.
+  if test "$fdt_provider" = internal &&
+     { test -d "$source_path/.git" || test -f "$source_path/.git"; }; then
+    $python "$source_path/scripts/ensure-dtc-subproject.py" \
+      --source "$source_path" --verify ||
+      error_exit "internal DTC Meson wrap verification failed"
+  fi
   echo "$meson" > build.ninja.stamp
 else
   if test -f meson-private/cmd_line.txt; then
