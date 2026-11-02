@@ -10,6 +10,8 @@ on:
       - 'hw/display/ati_2d.c'
       - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
+      - 'hw/display/Kconfig'
+      - 'scripts/tests/test-display-device-provenance.py'
       - 'hw/net/sungem.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
@@ -39,6 +41,8 @@ on:
       - 'hw/display/ati_2d.c'
       - 'hw/display/ati_regs.h'
       - 'hw/display/vga-pci.c'
+      - 'hw/display/Kconfig'
+      - 'scripts/tests/test-display-device-provenance.py'
       - 'hw/net/sungem.c'
       - 'hw/misc/Kconfig'
       - 'hw/misc/meson.build'
@@ -69,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Guard physical VGA and opt-in VMware virtual graphics
+        run: python3 scripts/tests/test-display-device-provenance.py
       - name: Verify standard VGA keeps its PCI option ROM
         run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
       - name: Verify Sawtooth retail defaults

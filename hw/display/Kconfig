@@ -74,7 +74,10 @@ config VGA_MMIO
 
 config VMWARE_VGA
     bool
-    default y if PCI_DEVICES && (PC_PCI || MIPS)
+    # VMware SVGA II is a guest-visible virtual PCI graphics adapter,
+    # not a historical physical graphics card. Opt in via a target
+    # CONFIG_VMWARE_VGA=y device preset for VMware driver compatibility.
+    default n
     depends on PCI
     select VGA
 

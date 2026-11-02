@@ -27,6 +27,34 @@ The user remains free to resize the host window.  Normal frontend scaling then
 maps the already-normalized physical display face into that window.  This is a
 host presentation choice and is not guest-visible state.
 
+Graphics adapter provenance
+---------------------------
+
+A physical video standard, a historical graphics chip and guest-visible
+virtual hardware are different identities. VGA register compatibility is
+historically grounded, but a compatible implementation is not necessarily
+the exact hardware of a retail graphics card.
+
+* QEMU Standard VGA (PCI ``1234:1111``) implements legacy VGA plus
+  Bochs VBE extensions. Retain this generic compatibility adapter, but do
+  not label it a particular manufacturer's physical VGA card.
+* Cirrus Logic, S3 and ATI represent actual commercially produced graphics
+  chip families. Verify the particular chip identity, registers and ROMs
+  before treating a QEMU implementation as faithful historical hardware.
+* VMware SVGA II (PCI ``15ad:0405``) is a VMware-defined virtual graphics
+  interface, not physical retail graphics hardware. It is excluded from
+  normal QEMU builds by ``CONFIG_VMWARE_VGA=n`` in the display Kconfig.
+  The source, migration state and option ROM remain available. Set
+  ``CONFIG_VMWARE_VGA=y`` in an explicit target device preset and rebuild
+  to use ``-vga vmware`` or ``-device vmware-svga`` for compatibility.
+* VirtIO VGA and QXL are intentional paravirtual interfaces, not physical
+  graphics cards or nonexistent devices. Their default-build status requires
+  its own compatibility and machine-type audit before changing it.
+
+Build-time exclusion of a compatibility device must not discard existing
+guest data, remove migration descriptions, or silently change the default
+graphics device of an established machine type.
+
 Generic consoles
 ----------------
 

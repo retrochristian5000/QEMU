@@ -2583,9 +2583,11 @@ SRST
         2.2)
 
     ``vmware``
-        VMWare SVGA-II compatible adapter. Use it if you have
-        sufficiently recent XFree86/XOrg server or Windows guest with a
-        driver for this card.
+        VMware SVGA-II virtual graphics adapter for guests with a
+        compatible VMware display driver. It is not a physical VGA
+        card. WHP builds disable it by default; enable
+        ``CONFIG_VMWARE_VGA=y`` in the target device preset at build
+        time before using this option.
 
     ``qxl``
         QXL paravirtual graphic card. It is VGA compatible (including
