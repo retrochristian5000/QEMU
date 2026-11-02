@@ -96,6 +96,18 @@ jobs:
             https://github.com/retrochristian5000/git-tools.git HEAD \
             | grep -Eq '^[0-9a-f]{40}[[:space:]]+HEAD$'
 
+          # HTTPS helper existence and ls-remote do not prove fetch-by-SHA.
+          # Use the exact QEMU DTC wrap pin to guard the managed Git transport.
+          dtc_repo="$RUNNER_TEMP/whp-dtc-fetch-smoke"
+          "$git_path" init -q "$dtc_repo"
+          "$git_path" -C "$dtc_repo" fetch --depth=1 --no-tags \
+            https://github.com/retrochristian5000/dtc.git \
+            02e7b73dda8188fcf8b39a3722fdd77a03e17cfd
+          test "$("$git_path" -C "$dtc_repo" cat-file -t \
+            02e7b73dda8188fcf8b39a3722fdd77a03e17cfd)" = commit
+          test "$("$git_path" -C "$dtc_repo" rev-parse \
+            '02e7b73dda8188fcf8b39a3722fdd77a03e17cfd^{tree}') = d37f0d8eda2f3667bc2313f272a24cbcd351cfe6
+
           again="$(WHP_GIT_SEED="$seed" \
             python3 scripts/ensure-git.py \
               --build-dir "$RUNNER_TEMP/whp-git" --mode force)"
