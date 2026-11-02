@@ -106,7 +106,7 @@ jobs:
           test "$("$git_path" -C "$dtc_repo" cat-file -t \
             02e7b73dda8188fcf8b39a3722fdd77a03e17cfd)" = commit
           test "$("$git_path" -C "$dtc_repo" rev-parse \
-            '02e7b73dda8188fcf8b39a3722fdd77a03e17cfd^{tree}') = d37f0d8eda2f3667bc2313f272a24cbcd351cfe6
+            '02e7b73dda8188fcf8b39a3722fdd77a03e17cfd^{tree}')" = d37f0d8eda2f3667bc2313f272a24cbcd351cfe6
 
           again="$(WHP_GIT_SEED="$seed" \
             python3 scripts/ensure-git.py \
