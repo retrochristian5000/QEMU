@@ -613,6 +613,20 @@ before the managed Git is placed on ``PATH``. This keeps the
 ``Git -> checkout Git`` edge visible as a seed boundary rather than a hidden
 self-cycle.
 
+QEMU's early parent source fast-forward runs before host-tool promotion, so it
+uses a host Git seed. After host-tool selection, a full HTTPS-capable managed
+Git sets ``GIT`` and prefixes its ``bin`` directory to ``PATH``. If no managed
+Git is promoted and the caller has not supplied ``GIT``, the bootstrap exports
+the verified ``WHP_GIT_SEED`` explicitly instead of relying on a possibly
+different ``PATH`` lookup. A caller-supplied Git override remains intentional.
+``scripts/ensure-dtc-subproject.py`` uses that selected ``GIT`` for its
+pinned-commit reconciliation. Its read-only ``--diagnose`` output identifies
+the selected executable, version and HTTPS helper; if the pinned object probe
+fails, it independently checks the same local object with the seed Git when
+available. A failed selected-Git probe alone must not be interpreted as proof
+that the pinned commit is absent: the Git executable itself may have failed.
+Neither diagnostic changes the checkout, wrap marker, or build directory.
+
 Autoconf bootstrap boundary
 ---------------------------
 
