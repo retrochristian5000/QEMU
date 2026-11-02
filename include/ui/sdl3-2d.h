@@ -8,6 +8,7 @@ typedef struct QemuSDL3Display2D {
     SDL_Renderer *renderer;
     SDL_Texture *texture;
     SDL_PixelFormat format;
+    uint8_t brightness; /* texture color modulation, not guest pixels */
     int width;
     int height;
 } QemuSDL3Display2D;
@@ -21,6 +22,8 @@ bool qemu_sdl3_2d_update(QemuSDL3Display2D *display,
                          const SDL_Rect *rect,
                          const void *pixels,
                          int pitch);
+bool qemu_sdl3_2d_set_brightness(QemuSDL3Display2D *display,
+                                 uint8_t brightness);
 void qemu_sdl3_2d_destroy(QemuSDL3Display2D *display);
 
 #endif /* QEMU_UI_SDL3_2D_H */

@@ -7,6 +7,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "ui/sdl3-display.h"
+#include "ui/display-brightness.h"
 
 SDL_PixelFormat qemu_sdl3_pixman_format(pixman_format_code_t format)
 {
@@ -150,7 +151,22 @@ bool qemu_sdl3_display_2d_init(QemuSDL3Console *scon,
 bool qemu_sdl3_display_2d_event(QemuSDL3Console *scon,
                                 const SDL_Event *event)
 {
-    return scon && qemu_sdl3_input_event(&scon->input, event);
+    if (!scon || !event) {
+        return false;
+    }
+    /* The frontend owns event polling; the button belongs to this window. */
+    if (event->type == SDL_EVENT_KEY_DOWN &&
+        event->key.windowID == scon->input.window_id &&
+        event->key.scancode == SDL_SCANCODE_B &&
+        !event->key.repeat &&
+        (event->key.mod & SDL_KMOD_CTRL) &&
+        (event->key.mod & SDL_KMOD_ALT) &&
+        qemu_console_is_graphic(scon->input.con)) {
+        return qemu_sdl3_2d_set_brightness(
+            &scon->display2d,
+            qemu_display_brightness_next(scon->display2d.brightness));
+    }
+    return qemu_sdl3_input_event(&scon->input, event);
 }
 
 void qemu_sdl3_display_2d_destroy(QemuSDL3Console *scon)

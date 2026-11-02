@@ -51,7 +51,7 @@ for pixman_name, sdl_name in formats.items():
     required[f"format {pixman_name}"] = pixman_name in source and sdl_name in source
 
 forbidden = {
-    "input/event migration deferred": "SDL_PollEvent" in source or "SDL_Event" in source,
+    "event-polling remains in the frontend": "SDL_PollEvent" in source,
     "OpenGL migration deferred": "SDL_GL_" in source,
     "SDL2 bridge dependency": "sdl2" in source.lower() or "ui/sdl2.h" in source,
 }

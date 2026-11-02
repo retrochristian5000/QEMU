@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "ui/sdl3-2d.h"
+#include "ui/display-brightness.h"
 
 static bool qemu_sdl3_2d_main_thread(void)
 {
@@ -29,6 +30,7 @@ bool qemu_sdl3_2d_init(QemuSDL3Display2D *display, SDL_Window *window)
     }
 
     memset(display, 0, sizeof(*display));
+    display->brightness = QEMU_DISPLAY_BRIGHTNESS_FULL;
     display->renderer = SDL_CreateRenderer(window, NULL);
     if (!display->renderer) {
         return false;
@@ -66,6 +68,8 @@ bool qemu_sdl3_2d_configure(QemuSDL3Display2D *display,
     }
 
     if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST) ||
+        !SDL_SetTextureColorMod(texture, display->brightness,
+                                display->brightness, display->brightness) ||
         !SDL_SetRenderLogicalPresentation(display->renderer,
                                           width, height,
                                           SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
@@ -105,6 +109,28 @@ bool qemu_sdl3_2d_update(QemuSDL3Display2D *display,
     }
 
     return true;
+}
+
+/* Host-side brightness button: keep existing guest pixels and redraw now. */
+bool qemu_sdl3_2d_set_brightness(QemuSDL3Display2D *display,
+                                 uint8_t brightness)
+{
+    if (!display || !display->renderer || !qemu_sdl3_2d_main_thread()) {
+        return false;
+    }
+    if (display->texture &&
+        !SDL_SetTextureColorMod(display->texture, brightness,
+                                brightness, brightness)) {
+        return false;
+    }
+    display->brightness = brightness;
+    if (!display->texture) {
+        return true;
+    }
+
+    return SDL_RenderClear(display->renderer) &&
+           SDL_RenderTexture(display->renderer, display->texture, NULL, NULL) &&
+           SDL_RenderPresent(display->renderer);
 }
 
 void qemu_sdl3_2d_destroy(QemuSDL3Display2D *display)

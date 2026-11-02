@@ -12,10 +12,12 @@ on:
       - 'ui/sdl3-input.c'
       - 'include/ui/sdl3-core.h'
       - 'include/ui/sdl3-2d.h'
+      - 'include/ui/display-brightness.h'
       - 'include/ui/sdl3-display.h'
       - 'include/ui/sdl3-input.h'
       - 'scripts/tests/test-sdl3-video-core.py'
       - 'scripts/tests/test-sdl3-2d.py'
+      - 'scripts/tests/test-display-brightness.py'
       - 'scripts/tests/test-sdl3-display-surface.py'
       - 'scripts/tests/test-sdl3-input.py'
       - '.github/workflows/sdl3-video-core-macos.yml'
@@ -38,6 +40,9 @@ jobs:
 
       - name: Install SDL build dependencies
         run: brew install pkg-config meson ninja glib pixman sdl2 sdl3
+
+      - name: Verify renderer brightness and input shortcut
+        run: python3 scripts/tests/test-display-brightness.py
 
       - name: Verify core contract
         run: python3 scripts/tests/test-sdl3-video-core.py
