@@ -1307,6 +1307,19 @@ that marker.  The present fork pin is DTC 1.8.1, whose Meson project reads
 the helper for both existing and proposed revisions.  Future versions
 such as 1.9.0 may still pass when their Meson interface is compatible.
 The DTC version is independent of the version of the Meson executable.
+A post-Meson read-only verification of explicit ``-Dfdt=internal``
+builds now confirms that the resolved DTC checkout's Git HEAD matches the
+immutable wrap revision, DTC's Meson libfdt interface remains compatible,
+the checkout has no nonignored source changes, the generated marker is
+Git-ignored, and its SHA-256 equals the current UTF-8 wrap text digest.
+``--verify`` returns a failure on a missing/stale marker, an unexpected
+checkout, or source drift without refreshing the marker or moving HEAD.
+The existing pre-Meson reconciliation remains responsible for any safe
+repair; the post-Meson verification does not turn a diagnostic into a
+source update. Parent Git release archives keep their vendored-source
+configuration path, and system/disabled libfdt providers bypass this check.
+The macOS workflow verifies both the default venv Meson and pinned WHP
+Meson fork after configuration and again following incremental reconfigure.
 The early QEMU source fast-forward updater handles only the parent Git
 revision and submodule URL metadata. The launcher reconciles an existing DTC
 checkout **after** loading saved menuconfig settings and selecting the
