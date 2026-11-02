@@ -420,6 +420,16 @@ if [ "$BOOTSTRAP_GIT" != 0 ] &&
     fi
 fi
 
+# A reduced local-only WHP Git cannot fetch HTTPS dependencies.
+# Bind the already-validated seed when no full managed Git or caller-selected
+# Git was promoted. Avoid an untracked PATH fallback in the DTC updater.
+if [ -z "${GIT:-}" ]; then
+    GIT="$WHP_GIT_SEED"
+    export GIT
+    printf 'QEMU Git: verified seed %s (%s)\n' \
+        "$GIT" "$("$GIT" --version 2>/dev/null || printf unknown)" >&2
+fi
+
 BOOTSTRAP_BASH=$(whp_normalize_auto_switch BOOTSTRAP_BASH "${BOOTSTRAP_BASH:-auto}") || exit 1
 export BOOTSTRAP_BASH
 
