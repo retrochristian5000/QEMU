@@ -136,9 +136,21 @@ bool qemu_sdl3_display_2d_init(QemuSDL3Console *scon,
     if (!qemu_sdl3_2d_init(&scon->display2d, window)) {
         return false;
     }
+    if (!qemu_sdl3_input_init(&scon->input, con, window)) {
+        qemu_sdl3_2d_destroy(&scon->display2d);
+        scon->window = NULL;
+        return false;
+    }
 
     qemu_console_register_listener(con, &scon->dcl, &sdl3_2d_ops);
     return true;
+}
+
+/* The SDL3 frontend will dispatch its polled events here by window ID. */
+bool qemu_sdl3_display_2d_event(QemuSDL3Console *scon,
+                                const SDL_Event *event)
+{
+    return scon && qemu_sdl3_input_event(&scon->input, event);
 }
 
 void qemu_sdl3_display_2d_destroy(QemuSDL3Console *scon)
@@ -150,6 +162,7 @@ void qemu_sdl3_display_2d_destroy(QemuSDL3Console *scon)
     if (scon->dcl.ds) {
         qemu_console_unregister_listener(&scon->dcl);
     }
+    qemu_sdl3_input_destroy(&scon->input);
     qemu_sdl3_2d_destroy(&scon->display2d);
     scon->surface = NULL;
     scon->window = NULL;

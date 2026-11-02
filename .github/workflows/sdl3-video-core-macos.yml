@@ -9,12 +9,15 @@ on:
       - 'ui/sdl3-core.c'
       - 'ui/sdl3-2d.c'
       - 'ui/sdl3-display.c'
+      - 'ui/sdl3-input.c'
       - 'include/ui/sdl3-core.h'
       - 'include/ui/sdl3-2d.h'
       - 'include/ui/sdl3-display.h'
+      - 'include/ui/sdl3-input.h'
       - 'scripts/tests/test-sdl3-video-core.py'
       - 'scripts/tests/test-sdl3-2d.py'
       - 'scripts/tests/test-sdl3-display-surface.py'
+      - 'scripts/tests/test-sdl3-input.py'
       - '.github/workflows/sdl3-video-core-macos.yml'
   workflow_dispatch:
 
@@ -45,7 +48,10 @@ jobs:
       - name: Verify DisplaySurface bridge contract
         run: python3 scripts/tests/test-sdl3-display-surface.py
 
-      - name: Compile DisplaySurface bridge in QEMU build
+      - name: Verify SDL3 keyboard, UTF-8 text and focus-loss bridge
+        run: python3 scripts/tests/test-sdl3-input.py
+
+      - name: Compile DisplaySurface and input bridge in QEMU build
         run: |
           ./configure --target-list=ppc-softmmu \
             --enable-sdl --disable-sdl-image \

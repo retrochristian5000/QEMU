@@ -164,7 +164,8 @@ endif
 
 if sdl3_video.found()
   static_library('qemu-sdl3-core',
-                 files('sdl3-core.c', 'sdl3-2d.c', 'sdl3-display.c') + genh,
+                 files('sdl3-core.c', 'sdl3-2d.c', 'sdl3-display.c',
+                       'sdl3-input.c') + genh,
                  dependencies: [sdl3_video, pixman, glib],
                  build_by_default: true)
 endif
