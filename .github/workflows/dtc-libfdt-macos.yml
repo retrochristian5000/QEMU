@@ -21,6 +21,8 @@ on:
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/update-submodules.py'
+      - 'scripts/whp-build/host-tools.sh'
       - 'scripts/tests/test-ensure-dtc-subproject.py'
       - 'scripts/git-submodule.sh'
       - 'docs/devel/whp-dependency-ledger.rst'
