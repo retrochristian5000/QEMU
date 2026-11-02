@@ -27,6 +27,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Guard executable QEMU configure entry point
+        run: |
+          test -x configure
+          test "$(git ls-files --stage configure | awk '{print $1}')" = 100755
+
       - name: Validate MC6809 ISA reference and CPU skeleton
         run: |
           python3 scripts/tests/test-m6809-isa.py
