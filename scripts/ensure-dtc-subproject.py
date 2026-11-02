@@ -61,6 +61,24 @@ def meson_wrap_hash(wrap_file, wrap_text=None):
     return hashlib.sha256(wrap_text.encode("utf-8")).hexdigest()
 
 
+def load_dtc_wrap(source):
+    """Read the immutable pin and Meson checksum from one wrap text snapshot."""
+    wrap_file = source / "subprojects" / "dtc.wrap"
+    wrap_text = wrap_file.read_text(encoding="utf-8")
+    config = configparser.ConfigParser(interpolation=None)
+    try:
+        config.read_string(wrap_text, source=str(wrap_file))
+    except configparser.Error as exc:
+        raise DTCError(f"invalid DTC wrap {wrap_file}: {exc}") from exc
+    if not config.has_section("wrap-git"):
+        raise DTCError(f"missing [wrap-git] specification: {wrap_file}")
+    revision = config.get("wrap-git", "revision", fallback="").strip()
+    url = config.get("wrap-git", "url", fallback="").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
+        raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
+    return wrap_file, revision.lower(), url, meson_wrap_hash(wrap_file, wrap_text)
+
+
 def refresh_wrap_cache(cache_file, wrap_hash, wrap_file):
     # The expected hash must still describe the CURRENT wrap file, not a
     # stale snapshot from before a simultaneous source/pin update.  Refuse
@@ -160,25 +178,8 @@ def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
 
 
 def ensure_dtc(source, no_download=False, fetch_missing=False):
-    wrap_file = source / "subprojects" / "dtc.wrap"
+    wrap_file, revision, url, wrap_hash = load_dtc_wrap(source)
     checkout = source / "subprojects" / "dtc"
-    # Parse and hash the same UTF-8 text snapshot.  Reading the file again
-    # after parsing could mix an older revision with a newer checksum when a
-    # source updater changes dtc.wrap concurrently.
-    wrap_text = wrap_file.read_text(encoding="utf-8")
-    config = configparser.ConfigParser(interpolation=None)
-    try:
-        config.read_string(wrap_text, source=str(wrap_file))
-    except configparser.Error as exc:
-        raise DTCError(f"invalid DTC wrap {wrap_file}: {exc}") from exc
-    if not config.has_section("wrap-git"):
-        raise DTCError(f"missing [wrap-git] specification: {wrap_file}")
-    revision = config.get("wrap-git", "revision", fallback="").strip()
-    url = config.get("wrap-git", "url", fallback="").strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
-        raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
-
-    wrap_hash = meson_wrap_hash(wrap_file, wrap_text)
     # Normal first use remains a Meson wrap download.  Opt-in Git prefetch
     # repairs hosts where the wrap checkout cannot be materialized safely.
     if not checkout.exists():
@@ -262,6 +263,42 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
     if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
         raise DTCError("DTC wrap revision cache did not refresh")
+    return True
+
+
+def verify_dtc(source):
+    """Verify Meson's resolved DTC pin and marker without changing either."""
+    wrap_file, revision, _url, expected_hash = load_dtc_wrap(source)
+    checkout = source / "subprojects" / "dtc"
+    if (checkout.is_symlink() or not checkout.is_dir()
+            or not (checkout / ".git").exists()):
+        raise DTCError("internal DTC must be a standalone Git checkout after Meson setup")
+    if Path(git(checkout, "rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+        raise DTCError("DTC checkout belongs to another Git working tree")
+    head = git(checkout, "rev-parse", "HEAD")
+    if head != revision:
+        raise DTCError(f"internal DTC HEAD {head} differs from wrap pin {revision}")
+    validate_meson_dtc(checkout)
+    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
+    dirty = [line for line in status.splitlines()
+             if line[3:] != ".meson-subproject-wrap-hash.txt"]
+    if dirty:
+        raise DTCError("internal DTC has local source changes: " + "\\n".join(dirty))
+    try:
+        git(checkout, "check-ignore", "-q", ".meson-subproject-wrap-hash.txt")
+    except DTCError as exc:
+        raise DTCError("DTC must ignore Meson's generated wrap marker") from exc
+    marker = checkout / ".meson-subproject-wrap-hash.txt"
+    if marker.is_symlink() or not marker.is_file():
+        raise DTCError("Meson DTC wrap marker is missing or is a symlink")
+    actual_hash = marker.read_text(encoding="utf-8").strip()
+    if actual_hash != expected_hash:
+        raise DTCError(
+            f"Meson DTC wrap marker mismatch: stored {actual_hash!r}, "
+            f"expected {expected_hash} from {wrap_file}"
+        )
+    if meson_wrap_hash(wrap_file) != expected_hash:
+        raise DTCError("DTC wrap changed during post-Meson verification")
     return True
 
 
@@ -411,12 +448,23 @@ def main():
     parser.add_argument("--no-download", action="store_true")
     parser.add_argument("--fetch-missing", action="store_true",
                         help="fetch pinned DTC from Git before Meson setup")
-    parser.add_argument("--diagnose", action="store_true",
-                        help="inspect the DTC Git/Meson boundary without changing sources")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--diagnose", action="store_true",
+                      help="inspect the DTC Git/Meson boundary without changing sources")
+    mode.add_argument("--verify", action="store_true",
+                      help="require a verified post-Meson DTC checkout and wrap marker")
     args = parser.parse_args()
     source = args.source.resolve()
     if args.diagnose:
         diagnose_dtc(source)
+        return 0
+    if args.verify:
+        try:
+            verify_dtc(source)
+        except (DTCError, OSError, UnicodeError) as exc:
+            print(f"DTC post-Meson verification: {exc}", file=sys.stderr)
+            return 1
+        print("DTC post-Meson verification: pinned checkout and wrap marker match")
         return 0
     try:
         ensure_dtc(source, args.no_download, args.fetch_missing)
