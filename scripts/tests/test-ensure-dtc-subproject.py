@@ -154,8 +154,8 @@ class EnsureDTCTest(unittest.TestCase):
 
         out = StringIO()
         dtc.diagnose_dtc(self.root, stream=out)
-        self.assertIn("Pinned commit object: unavailable locally", out.getvalue())
-        self.assertIn("Pinned tree SHA: unavailable locally (requires pinned commit)",
+        self.assertIn("Pinned commit object: not verified by selected Git", out.getvalue())
+        self.assertIn("Pinned tree SHA: unresolved (commit probe failed)",
                       out.getvalue())
         self.assertIn("Recovery: pre-Meson reconciliation", out.getvalue())
         self.assertIn("HEAD tree SHA: " + original_tree, out.getvalue())
@@ -325,6 +325,37 @@ class EnsureDTCTest(unittest.TestCase):
             dtc.diagnose_dtc(self.root, stream=buffer)
         self.assertIn("HEAD: unavailable", buffer.getvalue())
         self.assertIn("Wrap revision: " + self.pin, buffer.getvalue())
+
+    def test_git_provider_is_identified_when_seed_is_selected(self):
+        seed = shutil.which("git")
+        buffer = StringIO()
+        with mock.patch.dict(os.environ, {"GIT": seed, "WHP_GIT_SEED": seed}):
+            dtc.diagnose_dtc(self.root, stream=buffer)
+        output = buffer.getvalue()
+        self.assertIn("Git provider: verified host seed", output)
+        self.assertIn("Git selected executable: " + str(Path(seed).resolve()), output)
+        self.assertIn("Git selected version: git version", output)
+        self.assertIn("Git HTTPS helper:", output)
+
+    def test_seed_git_exposes_broken_selected_git_pin_probe(self):
+        seed = shutil.which("git")
+        original_head = self.git("rev-parse", "HEAD")
+        original_marker = self.cache.read_bytes()
+        buffer = StringIO()
+        with mock.patch.dict(os.environ, {
+            "GIT": "does-not-exist-git",
+            "WHP_GIT_SEED": seed,
+        }):
+            dtc.diagnose_dtc(self.root, stream=buffer)
+        output = buffer.getvalue()
+        self.assertIn("Git provider: environment override", output)
+        self.assertIn("Git selected version/HTTPS helper: unavailable", output)
+        self.assertIn("Pinned commit object: not verified by selected Git", output)
+        self.assertIn("Selected Git pin probe error:", output)
+        self.assertIn("Seed Git pinned commit: available locally", output)
+        self.assertIn("Pinned tree SHA: unresolved", output)
+        self.assertEqual(self.git("rev-parse", "HEAD"), original_head)
+        self.assertEqual(self.cache.read_bytes(), original_marker)
 
     def test_legacy_1_6_0_is_rejected_even_with_current_options(self):
         self.git("checkout", "--detach", self.pin)
