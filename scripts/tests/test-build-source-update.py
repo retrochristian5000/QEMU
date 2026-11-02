@@ -367,6 +367,64 @@ def test_dtc_reconciles_after_host_tools():
         env.pop("CI")
 
 
+def test_parent_fast_forward_and_explicit_error():
+    with tempfile.TemporaryDirectory(prefix='whp-source-parent-') as tmp:
+        base = Path(tmp)
+        upstream = base / 'upstream'
+        upstream.mkdir()
+        git('init', '-q', cwd=upstream)
+        git('config', 'user.name', 'WHP Test', cwd=upstream)
+        git('config', 'user.email', 'whp@example.invalid', cwd=upstream)
+        (upstream / 'README').write_text('parent v1\n')
+        git('add', 'README', cwd=upstream)
+        git('commit', '-qm', 'parent v1', cwd=upstream)
+
+        source = base / 'source'
+        git('clone', '-q', str(upstream), str(source))
+        script = source / 'scripts/whp-build/update-source.sh'
+        script.parent.mkdir(parents=True)
+        shutil.copy2(UPDATE, script)
+        original = git('rev-parse', 'HEAD', cwd=source)
+        (upstream / 'README').write_text('parent v2\n')
+        git('add', 'README', cwd=upstream)
+        git('commit', '-qm', 'parent v2', cwd=upstream)
+        pinned = git('rev-parse', 'HEAD', cwd=upstream)
+
+        env = os.environ.copy()
+        env.pop('CI', None)
+        env['WHP_SOURCE_UPDATE'] = 'auto'
+        updater = ['/bin/sh', str(script)]
+        first = subprocess.run(updater, cwd=source, env=env, text=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert first.returncode == 0, first.stderr
+        assert git('rev-parse', 'HEAD', cwd=source) == pinned
+        assert original != pinned
+        assert (source / 'README').read_text() == 'parent v2\n'
+
+        unchanged = subprocess.run(updater, cwd=source, env=env, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert unchanged.returncode == 0, unchanged.stderr
+        assert 'upstream ref unchanged; object fetch skipped' in unchanged.stderr
+
+        (upstream / 'README').write_text('parent v3\n')
+        git('add', 'README', cwd=upstream)
+        git('commit', '-qm', 'parent v3', cwd=upstream)
+        (source / 'README').write_text('preserve local edit\n')
+        env['WHP_SOURCE_UPDATE'] = '1'
+        refused = subprocess.run(updater, cwd=source, env=env, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert refused.returncode != 0
+        assert 'tracked QEMU source changes' in refused.stderr
+        assert git('rev-parse', 'HEAD', cwd=source) == pinned
+        assert (source / 'README').read_text() == 'preserve local edit\n'
+
+        env['WHP_SOURCE_UPDATE'] = '0'
+        disabled = subprocess.run(updater, cwd=source, env=env, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert disabled.returncode == 0
+        assert git('rev-parse', 'HEAD', cwd=source) == pinned
+
+
 def test_initialized_submodules_follow_parent_gitlinks():
     # A local pinned-submodule graph exercises both Git phases without any
     # public remote, destructive reset, or initialized-unused download.
@@ -468,6 +526,11 @@ try:
     test_initialized_submodules_follow_parent_gitlinks()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
     errors.append(f"initialized submodule refresh integration: {exc}")
+
+try:
+    test_parent_fast_forward_and_explicit_error()
+except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
+    errors.append(f"parent source fast-forward integration: {exc}")
 
 if errors:
     for error in errors:
