@@ -294,7 +294,7 @@ class EnsureDTCTest(unittest.TestCase):
              "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"),
             ({"WHP_SOURCE_UPDATE": "0", "WHP_DTC_FETCH_MISSING": "1"},
              "eligible"),
-            ({"WHP_SHELL_PROBE_ONLY": "1"}, "skipped (shell/portable probe-only)"),
+            ({"WHP_SHELL_PROBE_ONLY": "1"}, "skipped (shell/portable probe-only mode)"),
         )
         for env, reason in cases:
             with self.subTest(env=env):
