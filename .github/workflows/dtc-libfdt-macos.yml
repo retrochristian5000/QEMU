@@ -10,6 +10,8 @@ on:
       - 'system/device_tree.c'
       - 'subprojects/dtc.wrap'
       - 'scripts/ensure-dtc-subproject.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
       - 'scripts/tests/test-ensure-dtc-subproject.py'
