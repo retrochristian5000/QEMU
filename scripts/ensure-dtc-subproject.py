@@ -283,7 +283,7 @@ def verify_dtc(source):
     dirty = [line for line in status.splitlines()
              if line[3:] != ".meson-subproject-wrap-hash.txt"]
     if dirty:
-        raise DTCError("internal DTC has local source changes: " + "\\n".join(dirty))
+        raise DTCError("internal DTC has local source changes: " + "\n".join(dirty))
     try:
         git(checkout, "check-ignore", "-q", ".meson-subproject-wrap-hash.txt")
     except DTCError as exc:
