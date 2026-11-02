@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -302,6 +303,76 @@ def verify_dtc(source):
     return True
 
 
+def diagnose_git_selection(out):
+    """Report which Git executable DTC will actually use, without changes."""
+    try:
+        argv = git_command()
+    except DTCError as exc:
+        print("  Git command: invalid (" + str(exc) + ")", file=out)
+        return
+    print("  Git command: " + shlex.join(argv), file=out)
+    resolved = shutil.which(argv[0]) or argv[0]
+    selected = Path(resolved).resolve()
+    seed = os.environ.get("WHP_GIT_SEED", "")
+    managed = os.environ.get("WHP_GIT_PREFIX", "")
+    if managed and selected == (Path(managed) / "bin/git").resolve():
+        provider = "WHP managed"
+    elif seed and selected == Path(seed).resolve():
+        provider = "verified host seed"
+    elif os.environ.get("GIT"):
+        provider = "environment override"
+    else:
+        provider = "PATH fallback"
+    print("  Git provider: " + provider, file=out)
+    print("  Git selected executable: " + str(selected), file=out)
+    print("  Git seed executable: " + (seed or "(unset)"), file=out)
+
+    try:
+        version = subprocess.run(
+            [*argv, "--version"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        detail = version.stdout.strip() if version.returncode == 0 else (
+            version.stderr.strip() or f"exit {version.returncode}"
+        )
+        print("  Git selected version: " + detail, file=out)
+        exec_path = subprocess.run(
+            [*argv, "--exec-path"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        if exec_path.returncode == 0 and exec_path.stdout.strip():
+            helper = Path(exec_path.stdout.strip()) / "git-remote-https"
+            print("  Git HTTPS helper: " + str(helper) +
+                  (" (executable)" if os.access(helper, os.X_OK) else " (missing or unusable)"),
+                  file=out)
+        else:
+            print("  Git HTTPS helper: unknown (Git --exec-path failed)", file=out)
+    except OSError as exc:
+        print("  Git selected version/HTTPS helper: unavailable (" + str(exc) + ")",
+              file=out)
+
+
+def diagnose_seed_commit(checkout, revision, out):
+    """Compare the exact pinned commit with the seed Git independently."""
+    seed = os.environ.get("WHP_GIT_SEED", "")
+    if not seed:
+        print("  Seed Git pinned commit: not tested (seed unavailable)", file=out)
+        return
+    try:
+        result = subprocess.run(
+            [seed, "-C", str(checkout), "cat-file", "-e", revision + "^{commit}"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if result.returncode == 0:
+            print("  Seed Git pinned commit: available locally", file=out)
+        else:
+            print("  Seed Git pinned commit: unavailable (" +
+                  (result.stderr.strip() or f"exit {result.returncode}") + ")",
+                  file=out)
+    except OSError as exc:
+        print("  Seed Git pinned commit: probe failed (" + str(exc) + ")", file=out)
+
+
 def diagnose_dtc(source, stream=None):
     """Report pre-Meson Git state without fetching or modifying the checkout."""
     out = stream if stream is not None else sys.stderr
@@ -354,10 +425,7 @@ def diagnose_dtc(source, stream=None):
     print("  CI and WHP_SOURCE_UPDATE_DONE do not disable this separate DTC phase",
           file=out)
     print("  This diagnosis is read-only; it never refreshes the stored marker", file=out)
-    try:
-        print("  Git command: " + shlex.join(git_command()), file=out)
-    except DTCError as exc:
-        print("  Git command: invalid (" + str(exc) + ")", file=out)
+    diagnose_git_selection(out)
     revision = None
     try:
         config = configparser.ConfigParser(interpolation=None)
@@ -417,11 +485,12 @@ def diagnose_dtc(source, stream=None):
         # without the commit, rev-parse cannot peel its tree locally.
         try:
             git(checkout, "cat-file", "-e", revision + "^{commit}")
-        except (DTCError, OSError):
-            print("  Pinned commit object: unavailable locally (unfetched or inaccessible)",
-                  file=out)
-            print("  Pinned tree SHA: unavailable locally (requires pinned commit)",
-                  file=out)
+        except (DTCError, OSError) as exc:
+            print("  Pinned commit object: not verified by selected Git "
+                  "(missing, inaccessible, or Git failed)", file=out)
+            print("  Selected Git pin probe error: " + str(exc), file=out)
+            diagnose_seed_commit(checkout, revision, out)
+            print("  Pinned tree SHA: unresolved (commit probe failed)", file=out)
             print("  Recovery: pre-Meson reconciliation fetches the immutable wrap pin"
                   " when downloads are enabled and DTC is clean and detached",
                   file=out)
