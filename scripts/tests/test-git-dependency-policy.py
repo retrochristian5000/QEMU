@@ -31,6 +31,11 @@ def main() -> int:
     require(host_tools, "whp_prepare_bootstrap_zlib", "pre-Git zlib phase")
     require(host_tools, "git-remote-https", "HTTPS promotion guard")
     require(host_tools, "WHP_GIT_LOCAL", "local Git fallback")
+    require(host_tools, 'GIT="$WHP_GIT_SEED"',
+            "explicit validated-seed fallback for DTC")
+    require(host_tools, 'if [ -z "${GIT:-}" ]; then',
+            "caller Git override preservation")
+
 
     helper = (ROOT / "scripts/ensure-git.py").read_text(encoding="utf-8")
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/git")', "Git pin")
