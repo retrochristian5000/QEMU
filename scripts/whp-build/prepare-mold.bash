@@ -98,7 +98,7 @@ whp_mold_prepare_submodule()
     fi
 
     git -C "$SOURCE_DIR" submodule sync -- "$submodule_path" &&
-        git -C "$SOURCE_DIR" submodule update --init --depth 1 -- "$submodule_path"
+        whp_git_submodule_prepare "$SOURCE_DIR" "$submodule_path"
 }
 
 whp_mold_source_signature()

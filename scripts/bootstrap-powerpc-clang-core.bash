@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 BASE_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-clang-base.sh"
 AR_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-llvm-ar.sh"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
@@ -73,16 +74,12 @@ if [[ ! -f "$BASE_BOOTSTRAP" ]]; then
     exit 1
 fi
 
-# QEMU's gitlink is the LLVM revision pin. Initialize the checkout only when
-# network access is allowed; an offline build must already have the submodule.
-if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
-    if [[ "$LLVM_GIT_OFFLINE" == 1 ]]; then
-        printf 'error: LLVM submodule is not initialized in offline mode: %s\n' \
-            "$LLVM_SUBMODULE_PATH" >&2
-        exit 1
-    fi
-    git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
-fi
+# Reconcile ancestry even if LLVM is already present. Never overwrite a
+# newer local descendant or download history in offline mode.
+llvm_access=online
+[[ "$LLVM_GIT_OFFLINE" != 1 ]] || llvm_access=offline
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH" git "$llvm_access"
+unset llvm_access
 if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ||
       ! -f "$LLVM_SUBMODULE_DIR/clang/CMakeLists.txt" ||
       ! -f "$LLVM_SUBMODULE_DIR/lld/CMakeLists.txt" ]]; then
@@ -100,12 +97,9 @@ if [[ -z "$expected_llvm_revision" ]]; then
         "$LLVM_SUBMODULE_PATH" >&2
     exit 1
 fi
-if [[ "$llvm_revision" != "$expected_llvm_revision" ]]; then
-    printf '%s\n' \
-        'error: LLVM checkout does not match the QEMU submodule pointer.' \
-        "checked out: $llvm_revision" \
-        "QEMU expects: $expected_llvm_revision" \
-        "run: git submodule update --init $LLVM_SUBMODULE_PATH" >&2
+if [[ "$llvm_revision" != "$expected_llvm_revision" ]] &&
+   ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor "$expected_llvm_revision" "$llvm_revision"; then
+    printf 'error: LLVM checkout diverges from QEMU gitlink or history is incomplete\n' >&2
     exit 1
 fi
 if [[ -n "$(git -C "$LLVM_SUBMODULE_DIR" status --porcelain --untracked-files=no)" ]]; then

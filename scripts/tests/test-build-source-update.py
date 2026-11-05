@@ -570,6 +570,115 @@ def test_initialized_submodules_follow_parent_gitlinks():
         assert skipped.returncode == 0, skipped.stderr
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
 
+def test_bootstrap_ancestry_guards():
+    # Exercise the real pre-Python POSIX helper and the Python host-tool helper
+    # with Git fixtures. Neither may move a newer or divergent checkout.
+    with tempfile.TemporaryDirectory(prefix="whp-bootstrap-ancestry-") as tmp:
+        base = Path(tmp)
+        child = base / "child"
+        parent = base / "parent"
+        child.mkdir()
+        parent.mkdir()
+        for directory in (child, parent):
+            git("init", "-q", cwd=directory)
+            git("config", "user.name", "WHP Test", cwd=directory)
+            git("config", "user.email", "whp@example.invalid", cwd=directory)
+        (child / "README").write_text("v1\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "child v1", cwd=child)
+        v1 = git("rev-parse", "HEAD", cwd=child)
+        git("-c", "protocol.file.allow=always", "submodule", "add",
+            "-q", str(child), "modules/a", cwd=parent)
+        git("commit", "-qam", "initial parent pin", cwd=parent)
+        branch = git("symbolic-ref", "--short", "HEAD", cwd=parent)
+        clone = base / "clone"
+        git("clone", "-q", str(parent), str(clone))
+        env = os.environ.copy()
+        env.pop("CI", None)
+        env["GIT_ALLOW_PROTOCOL"] = "file"
+        env["PYTHONPATH"] = str(ROOT / "scripts")
+        subprocess.run(
+            ["git", "submodule", "update", "--init", "--", "modules/a"],
+            cwd=clone, env=env, check=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        )
+
+        shell_cmd = [
+            "/bin/sh", "-c",
+            '. "$1"; whp_git_submodule_prepare "$2" modules/a',
+            "sh", str(SHARED_SHELL), str(clone),
+        ]
+        python_cmd = [
+            sys.executable, "-c",
+            "from bootstrap_env import reconcile_submodule; "
+            "from pathlib import Path; "
+            "reconcile_submodule(Path(__import__('sys').argv[1]), Path('modules/a'))",
+            str(clone),
+        ]
+
+        def invoke(argv):
+            return subprocess.run(
+                argv, env=env, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        (child / "README").write_text("v2\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "child v2", cwd=child)
+        v2 = git("rev-parse", "HEAD", cwd=child)
+        git("fetch", "--no-tags", str(child), v2, cwd=parent / "modules/a")
+        git("checkout", "--detach", v2, cwd=parent / "modules/a")
+        git("add", "modules/a", cwd=parent)
+        git("commit", "-qm", "pin child v2", cwd=parent)
+        git("pull", "--ff-only", str(parent), branch, cwd=clone)
+
+        # Python bootstrap can only move v1 -> v2 (a fast-forward).
+        behind = invoke(python_cmd)
+        assert behind.returncode == 0, behind.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v2
+
+        (child / "README").write_text("v3\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "child v3", cwd=child)
+        v3 = git("rev-parse", "HEAD", cwd=child)
+        git("fetch", "--no-tags", str(child), v3, cwd=clone / "modules/a")
+        git("checkout", "--detach", v3, cwd=clone / "modules/a")
+        for invocation in (shell_cmd, python_cmd):
+            ahead = invoke(invocation)
+            assert ahead.returncode == 0, ahead.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
+
+        # A newer checkout with uncommitted edits must not be checked out.
+        (clone / "modules/a/README").write_text("local edits\n")
+        ahead_dirty = invoke(shell_cmd)
+        assert ahead_dirty.returncode == 0, ahead_dirty.stderr
+        assert (clone / "modules/a/README").read_text() == "local edits\n"
+        git("restore", "--", "README", cwd=clone / "modules/a")
+
+        # A locally committed branch from v1 is divergent from parent pin v2.
+        git("checkout", "--detach", v1, cwd=clone / "modules/a")
+        git("config", "user.name", "WHP Test", cwd=clone / "modules/a")
+        git("config", "user.email", "whp@example.invalid",
+            cwd=clone / "modules/a")
+        (clone / "modules/a/README").write_text("independent local history\n")
+        git("add", "README", cwd=clone / "modules/a")
+        git("commit", "-qm", "local diverged", cwd=clone / "modules/a")
+        local = git("rev-parse", "HEAD", cwd=clone / "modules/a")
+        for invocation in (shell_cmd, python_cmd):
+            diverged = invoke(invocation)
+            assert diverged.returncode != 0, diverged.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == local
+
+        # A dirty, behind checkout is likewise preserved.
+        git("checkout", "--detach", v1, cwd=clone / "modules/a")
+        (clone / "modules/a/README").write_text("dirty old source\n")
+        for invocation in (shell_cmd, python_cmd):
+            dirty = invoke(invocation)
+            assert dirty.returncode != 0, dirty.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v1
+            assert (clone / "modules/a/README").read_text() == "dirty old source\n"
+
+
 try:
     test_dtc_reconciles_after_host_tools()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
@@ -579,6 +688,11 @@ try:
     test_initialized_submodules_follow_parent_gitlinks()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
     errors.append(f"initialized submodule refresh integration: {exc}")
+
+try:
+    test_bootstrap_ancestry_guards()
+except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
+    errors.append(f"bootstrap ancestry guard integration: {exc}")
 
 try:
     test_parent_fast_forward_and_explicit_error()

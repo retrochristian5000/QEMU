@@ -9,6 +9,7 @@ exec 1>&2
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"
 LLVM_SUBMODULE_PATH="${NATIVE_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
 LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
@@ -1017,7 +1018,7 @@ fi
 # The WHP LLVM fork is already a QEMU submodule and is the single source for
 # firmware, legacy-target, and native compiler profiles. Keep the native lane
 # on that gitlink rather than cloning or pinning a second LLVM lineage.
-git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"
 [[ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" &&
    -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" ]] || {
     printf 'error: WHP LLVM submodule is incomplete: %s\n' "$LLVM_SOURCE_DIR" >&2

@@ -26,6 +26,7 @@ import tarfile
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+from bootstrap_env import reconcile_submodule
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import (clean_host_environment, select_native_cc,
@@ -339,17 +340,6 @@ def git_checkout_available() -> bool:
     return shutil.which("git") is not None and (ROOT / ".git").exists()
 
 
-def gitlink_revision() -> str:
-    line = run_text([
-        "git", "-C", str(ROOT), "ls-tree", "HEAD", "--", str(SUBMODULE_REL),
-    ])
-    fields = line.split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError(
-            f"Autoconf gitlink is not registered in QEMU: {SUBMODULE_REL}"
-        )
-    return fields[2]
-
 
 def archive_source_signature() -> str:
     candidates = (
@@ -377,23 +367,8 @@ def ensure_source() -> str:
     if not git_checkout_available():
         return archive_source_signature()
 
-    revision = gitlink_revision()
-    current = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        try:
-            current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-        except RuntimeError:
-            current = ""
-    if current != revision:
-        run_logged([
-            "git", "-C", str(ROOT), "submodule", "update", "--init",
-            "--depth", "1", str(SUBMODULE_REL),
-        ])
-        current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-    if current != revision:
-        raise RuntimeError(
-            f"Autoconf submodule revision mismatch: {current} != {revision}"
-        )
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
+
     return revision
 
 

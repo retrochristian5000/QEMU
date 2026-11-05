@@ -15,6 +15,9 @@ import sys
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
 SUBMODULE_REL = pathlib.Path("toolchains/jack")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 JACK_BOOTSTRAP_SCHEMA = "2"
@@ -88,46 +91,7 @@ def ensure_jack_source() -> str:
     if not git_checkout_available():
         return archive_source_signature()
 
-    expected_line = run_text(
-        ["git", "-C", str(ROOT), "ls-tree", "HEAD", "--", str(SUBMODULE_REL)]
-    )
-    fields = expected_line.split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError(f"JACK gitlink is not registered in QEMU: {SUBMODULE_REL}")
-    expected_revision = fields[2]
-
-    current_revision = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        try:
-            current_revision = run_text(
-                ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
-            )
-        except RuntimeError:
-            current_revision = ""
-
-    if current_revision != expected_revision:
-        run_logged(
-            [
-                "git",
-                "-C",
-                str(ROOT),
-                "submodule",
-                "update",
-                "--init",
-                "--depth",
-                "1",
-                str(SUBMODULE_REL),
-            ]
-        )
-        current_revision = run_text(
-            ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
-        )
-
-    if current_revision != expected_revision:
-        raise RuntimeError(
-            "bundled JACK checkout does not match the QEMU gitlink: "
-            f"{current_revision} != {expected_revision}"
-        )
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
 
     dirty = run_text(
         [
@@ -144,7 +108,7 @@ def ensure_jack_source() -> str:
             "bundled JACK submodule has tracked changes; commit them in the JACK "
             "fork and update the QEMU gitlink"
         )
-    return expected_revision
+    return revision
 
 
 def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:

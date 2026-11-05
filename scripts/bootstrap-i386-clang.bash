@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 TOOLCHAIN_TARGET="${I386_TOOLCHAIN_TARGET:-i386-none-elf}"
 TOOLCHAIN_DIR="${I386_TOOLCHAIN_DIR:-$SOURCE_DIR/build/firmware-tools/$TOOLCHAIN_TARGET}"
 TOOLCHAIN_WORK_DIR="${I386_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/$TOOLCHAIN_TARGET-clang}"
@@ -81,7 +82,7 @@ done
 # The standalone i386 bootstrap must honor the QEMU gitlink just like the
 # integrated source-preparation path.  An already-populated submodule is not
 # proof that its checkout matches the revision selected by this QEMU tree.
-git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"
 [[ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" &&
    -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" &&
    -f "$LLVM_SOURCE_DIR/lld/CMakeLists.txt" ]] || {

@@ -21,6 +21,11 @@ git()
 {
     printf '%s\n' "$*" >> "$git_log"
 }
+whp_git_submodule_prepare()
+{
+    printf 'prepare %s\n' "$*" >> "$git_log"
+}
+
 
 cat > "$bash_shim" <<EOF
 #!/usr/bin/env bash
@@ -60,8 +65,8 @@ run_default_clang_case()
 
     grep -Fx -- "-C $ROOT submodule sync -- roms/openbios toolchains/llvm-project" \
         "$git_log"
-    grep -Fx -- "-C $ROOT submodule update --init -- roms/openbios toolchains/llvm-project" \
-        "$git_log"
+    grep -Fx -- "prepare $ROOT roms/openbios" "$git_log"
+    grep -Fx -- "prepare $ROOT toolchains/llvm-project" "$git_log"
     grep -Fq 'compiler=clang ' "$bash_log"
 }
 
@@ -75,7 +80,7 @@ run_explicit_gcc_case()
     whp_prepare_sources
 
     grep -Fx -- "-C $ROOT submodule sync -- roms/openbios" "$git_log"
-    grep -Fx -- "-C $ROOT submodule update --init -- roms/openbios" "$git_log"
+    grep -Fx -- "prepare $ROOT roms/openbios" "$git_log"
     if grep -Fq 'toolchains/llvm-project' "$git_log"; then
         printf 'error: GCC OpenBIOS lane initialized the LLVM toolchain submodule\n' >&2
         exit 1

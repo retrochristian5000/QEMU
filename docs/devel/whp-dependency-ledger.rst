@@ -69,12 +69,14 @@ and the resulting QEMU SHA; verify the remote ``master`` tree still contains
 that exact gitlink.  If the update cannot be pushed, report it explicitly as
 an unintegrated LLVM repair rather than calling the bootstrap fixed.
 
-QEMU's bootstrap must continue to materialize the recorded gitlink via
-``git submodule update --init --depth 1 toolchains/llvm-project``.  It must
-not use ``--remote``, which would replace an audited revision with an
-unreviewed moving branch tip.  Publishing the pin makes fixes available to
-the bootstrap; actual compiler and LLDB build success still requires
-separate compilation and test evidence.
+QEMU's bootstrap initializes absent LLVM sources at the recorded gitlink
+and advances an initialized detached checkout only when the pin is a proven
+fast-forward descendant.  A newer local descendant is retained and its actual
+commit is recorded in bootstrap cache identities; divergence or incomplete
+history fails without moving the checkout.  Bootstrap never uses
+``--remote`` or silently rewrites the parent gitlink.  Publishing a new
+pin still requires an explicit, separately pushed QEMU gitlink commit;
+compiler and LLDB success requires separate compilation and test evidence.
 
 Dependency states
 -----------------
@@ -347,26 +349,27 @@ Pinned Meson source boundary
 ---------------------------
 
 The WHP fork at ``toolchains/meson`` is available for controlled Meson
-development.  It is a lazily initialized, exact-gitlink-pinned source tree,
+development.  It is a lazily initialized, gitlink-baselined source tree,
 not an unconditional dependency build or a replacement on ``PATH``.
 
-QEMU defaults to the exact pinned WHP Meson fork for new configurations.
+QEMU defaults to the WHP Meson fork for new configurations.
 QEMU's own virtual-environment Python invokes ``toolchains/meson/meson.py``
 directly, without installing a separate Meson wheel.  The explicit
 ``WHP_MESON_PROVIDER=venv`` compatibility option installs and uses
 ``pyvenv/bin/meson``.  Existing saved ``.whpconfig`` selections remain
 authoritative; a saved ``venv`` selection is never silently migrated.  The fork is initialized from the exact
-``toolchains/meson`` gitlink only when downloads are enabled.  A different
-checkout revision or local source edits cause an explicit failure, not a reset
-or a branch switch.  The selected Python from QEMU's existing ``pyvenv``
+``toolchains/meson`` gitlink only when downloads are enabled.  An initialized
+checkout at a newer descendant is preserved, while divergent or unverifiable
+history and local source edits cause an explicit failure, never a reset or
+branch switch.  The selected Python from QEMU's existing ``pyvenv``
 runs ``toolchains/meson/meson.py``; no duplicate Python environment is
 created.  The fork reports development version ``1.12.99`` and requires
 Python >= 3.10, whereas the default QEMU Python selection accepts >= 3.9.
 The selected provider is retained by ``config.status``.
 The menuconfig ``QEMU Meson provider`` choice maps to
 ``WHP_MESON_PROVIDER=fork|venv``.  Incremental configuration identity
-tracks both the provider and the QEMU-pinned Meson gitlink; existing fork
-checkouts are verified for source edits and SHA mismatch even when configuration
+tracks the provider and the effective Meson checkout commit; existing fork
+checkouts are verified for source edits and ancestry even when configuration
 is otherwise up-to-date. Changing providers requests reconfiguration without
 wiping existing build outputs.
 

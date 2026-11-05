@@ -481,8 +481,9 @@ whp_configure_meson_identity()
             printf 'error: WHP Meson fork checkout is invalid\n' >&2
             return 1
         }
-        if [[ "$current" != "$pin" ]]; then
-            printf 'error: WHP Meson checkout %s differs from pinned %s; preserving source\n' "$current" "$pin" >&2
+        if [[ "$current" != "$pin" ]] &&
+           ! git -C "$SOURCE_DIR/toolchains/meson" merge-base --is-ancestor "$pin" "$current"; then
+            printf 'error: WHP Meson checkout is divergent or has incomplete pin history (%s vs %s)\n' "$current" "$pin" >&2
             return 1
         fi
         status="$(git -C "$SOURCE_DIR/toolchains/meson" status --porcelain --untracked-files=all)" || return 1
@@ -494,7 +495,7 @@ whp_configure_meson_identity()
         printf 'error: configured WHP Meson fork checkout is missing; refusing stale build graph\n' >&2
         return 1
     fi
-    printf '%s\n' "$pin"
+    printf '%s\n' "${current:-$pin}"
 }
 
 whp_configure_build()

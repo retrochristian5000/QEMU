@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 BUILD_ROOT="${BUILD_DIR:-$SOURCE_DIR/build}"
 INSTALL_PREFIX="${GRUB_I386_INSTALL_PREFIX:-$BUILD_ROOT/firmware-tools/grub-i386-efi}"
@@ -230,7 +231,7 @@ if [[ -n "$SOURCE_ARCHIVE" ]]; then
     source_marker="SOURCE_CKSUM=$source_id"
 else
     git -C "$SOURCE_DIR" submodule sync -- "$GRUB_SUBMODULE_PATH" >/dev/null
-    git -C "$SOURCE_DIR" submodule update --init --depth 1 -- "$GRUB_SUBMODULE_PATH"
+    whp_git_submodule_prepare "$SOURCE_DIR" "$GRUB_SUBMODULE_PATH"
     [[ -f "$GRUB_SUBMODULE_DIR/configure.ac" ]] || {
         printf 'error: GRUB submodule is not initialized: %s\n' "$GRUB_SUBMODULE_DIR" >&2
         exit 1
@@ -241,11 +242,11 @@ else
         printf 'error: QEMU GRUB gitlink is not a full commit: %s\n' "$expected_revision" >&2
         exit 1
     }
-    [[ "$GRUB_REVISION" == "$expected_revision" ]] || {
-        printf 'error: GRUB submodule is at %s but QEMU pins %s\n' \
-            "$GRUB_REVISION" "$expected_revision" >&2
+    if [[ "$GRUB_REVISION" != "$expected_revision" ]] &&
+       ! git -C "$GRUB_SUBMODULE_DIR" merge-base --is-ancestor "$expected_revision" "$GRUB_REVISION"; then
+        printf 'error: GRUB checkout diverges from QEMU gitlink or history is incomplete\n' >&2
         exit 1
-    }
+    fi
     source_marker="$(cat <<EOF_SOURCE
 SOURCE_SUBMODULE=$GRUB_SUBMODULE_PATH
 SOURCE_REVISION=$GRUB_REVISION

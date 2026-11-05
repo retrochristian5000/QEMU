@@ -1,6 +1,14 @@
 # WHP source, toolchain-probe, and firmware preparation stage.
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+whp_prepare_submodules()
+{
+    local whp_module
+    for whp_module in "$@"; do
+        whp_git_submodule_prepare "$SOURCE_DIR" "$whp_module" || return 1
+    done
+}
+
 whp_prepare_sources()
 {
     local openbios_mode="${BUILD_OPENBIOS:-auto}"
@@ -153,7 +161,7 @@ whp_prepare_sources()
             fi
             source_prepare_failed=0
             if ! git -C "$SOURCE_DIR" submodule sync -- "${powerpc_source_submodules[@]}" ||
-               ! git -C "$SOURCE_DIR" submodule update --init -- "${powerpc_source_submodules[@]}"; then
+               ! whp_prepare_submodules "${powerpc_source_submodules[@]}"; then
                 source_prepare_failed=1
             fi
             if [[ "$source_prepare_failed" == 1 ]]; then
@@ -186,7 +194,7 @@ whp_prepare_sources()
             fi
             source_prepare_failed=0
             if ! git -C "$SOURCE_DIR" submodule sync -- "${i386_source_submodules[@]}" ||
-               ! git -C "$SOURCE_DIR" submodule update --init -- "${i386_source_submodules[@]}"; then
+               ! whp_prepare_submodules "${i386_source_submodules[@]}"; then
                 source_prepare_failed=1
             fi
             if [[ "$source_prepare_failed" == 1 ]]; then
@@ -208,7 +216,7 @@ whp_prepare_sources()
             return 1
         fi
         if ! git -C "$SOURCE_DIR" submodule sync -- "$i386_llvm_submodule_path" ||
-           ! git -C "$SOURCE_DIR" submodule update --init -- "$i386_llvm_submodule_path"; then
+           ! whp_prepare_submodules "$i386_llvm_submodule_path"; then
             printf 'error: failed to prepare LLVM for Windows 9x cross-tools\n' >&2
             return 1
         fi

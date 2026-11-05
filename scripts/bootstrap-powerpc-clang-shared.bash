@@ -66,10 +66,11 @@ llvm_source="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
     exit 1
 }
 llvm_revision="$(git -C "$llvm_source" rev-parse HEAD)"
-[[ "$llvm_revision" == "$expected_revision" ]] || {
-    printf 'error: LLVM checkout does not match the QEMU gitlink\n' >&2
+if [[ "$llvm_revision" != "$expected_revision" ]] &&
+   ! git -C "$llvm_source" merge-base --is-ancestor "$expected_revision" "$llvm_revision"; then
+    printf 'error: LLVM checkout diverges from QEMU gitlink or history is incomplete\n' >&2
     exit 1
-}
+fi
 if [[ -n "$(git -C "$llvm_source" status --porcelain --untracked-files=no)" ]]; then
     printf 'error: tracked LLVM submodule changes must be committed first\n' >&2
     exit 1

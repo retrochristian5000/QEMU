@@ -33,7 +33,9 @@ fi
 
 expected_revision="$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$LLVM_SUBMODULE_PATH" | awk '{print $3}')"
 submodule_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
-if [[ -z "$expected_revision" || "$submodule_revision" != "$expected_revision" ]]; then
+if [[ -z "$expected_revision" ]] ||
+   { [[ "$submodule_revision" != "$expected_revision" ]] &&
+     ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor "$expected_revision" "$submodule_revision"; }; then
     printf '%s\n' \
         'error: LLVM submodule does not match the QEMU gitlink.' \
         "checked out: ${submodule_revision:-missing}" \

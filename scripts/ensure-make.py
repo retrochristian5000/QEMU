@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+from bootstrap_env import reconcile_submodule
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
@@ -388,14 +389,6 @@ def git_checkout_available():
     return shutil.which("git") is not None and (ROOT / ".git").exists()
 
 
-def gitlink_revision():
-    fields = run_text([
-        "git", "-C", str(ROOT), "ls-tree", "HEAD", "--", str(SUBMODULE_REL)
-    ]).split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError("GNU Make gitlink is not registered in QEMU")
-    return fields[2]
-
 
 def archive_source_signature():
     required = (
@@ -417,21 +410,8 @@ def archive_source_signature():
 def ensure_source():
     if not git_checkout_available():
         return archive_source_signature()
-    revision = gitlink_revision()
-    current = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        try:
-            current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-        except RuntimeError:
-            pass
-    if current != revision:
-        run_logged([
-            "git", "-C", str(ROOT), "submodule", "update", "--init",
-            "--depth", "1", str(SUBMODULE_REL),
-        ])
-        current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-    if current != revision:
-        raise RuntimeError(f"GNU Make submodule revision mismatch: {current} != {revision}")
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
+
     dirty = run_text([
         "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
         "--untracked-files=no",

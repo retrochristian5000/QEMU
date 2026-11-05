@@ -16,6 +16,9 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
 SCHEMA = 1
 
@@ -34,29 +37,15 @@ def call(argv, *, cwd=None, env=None, capture=False):
 
 
 def pinned_source():
-    line = call(['git', '-C', str(ROOT), 'ls-tree', 'HEAD', '--', str(SUBMODULE)],
-                capture=True)
-    fields = line.split()
-    if len(fields) != 4 or fields[0] != '160000' or fields[1] != 'commit' or not re.fullmatch(r'[0-9a-f]{40}', fields[2]):
-        raise RuntimeError('QEMU is missing the pinned sccacher gitlink')
     source = ROOT / SUBMODULE
-    if (source / '.git').exists():
-        dirty = call(['git', '-C', str(source), 'status', '--porcelain',
-                      '--untracked-files=no'], capture=True)
-        if dirty:
-            raise RuntimeError('sccacher submodule has uncommitted changes; refusing checkout')
-    current = ''
-    if (source / '.git').exists():
-        current = call(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture=True)
-    if current != fields[2]:
-        call(['git', '-C', str(ROOT), 'submodule', 'update', '--init',
-              '--depth', '1', '--', str(SUBMODULE)])
-    actual = call(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture=True)
-    if actual != fields[2]:
-        raise RuntimeError('sccacher checkout does not match the QEMU gitlink')
+    revision = reconcile_submodule(ROOT, SUBMODULE)
+    dirty = call(['git', '-C', str(source), 'status', '--porcelain',
+                  '--untracked-files=no'], capture=True)
+    if dirty:
+        raise RuntimeError('sccacher submodule has uncommitted changes; refusing build')
     if not (source / 'Cargo.toml').is_file() or not (source / 'Cargo.lock').is_file():
         raise RuntimeError('sccacher source must contain Cargo.toml and Cargo.lock')
-    return source, actual
+    return source, revision
 
 
 def build_jobs(environ):

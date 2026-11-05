@@ -17,6 +17,9 @@ import tarfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
 SUBMODULE_REL = pathlib.Path("toolchains/libtool")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_SUBMODULES = (
@@ -89,56 +92,25 @@ def git_checkout_available() -> bool:
     return shutil.which("git") is not None and (ROOT / ".git").exists()
 
 
-def gitlink_revision(repo_dir: pathlib.Path, relpath: pathlib.Path) -> str:
-    line = run_text(
-        ["git", "-C", str(repo_dir), "ls-tree", "HEAD", "--", str(relpath)]
-    )
-    fields = line.split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError(
-            f"gitlink is not registered in {repo_dir}: {relpath}"
-        )
-    return fields[2]
-
 
 def ensure_nested_submodules() -> dict[pathlib.Path, str]:
-    expected: dict[pathlib.Path, str] = {}
+    run_logged([
+        "git", "-C", str(SUBMODULE_DIR), "submodule", "sync", "--",
+        *[str(path) for path in NESTED_SUBMODULES],
+    ])
+    revisions: dict[pathlib.Path, str] = {}
     for relpath in NESTED_SUBMODULES:
-        expected[relpath] = gitlink_revision(SUBMODULE_DIR, relpath)
-
-    run_logged(
-        [
-            "git", "-C", str(SUBMODULE_DIR), "submodule", "sync", "--",
-            *[str(path) for path in NESTED_SUBMODULES],
-        ]
-    )
-    run_logged(
-        [
-            "git", "-C", str(SUBMODULE_DIR), "submodule", "update", "--init",
-            "--depth", "1", "--",
-            *[str(path) for path in NESTED_SUBMODULES],
-        ]
-    )
-
-    for relpath, revision in expected.items():
+        revisions[relpath] = reconcile_submodule(SUBMODULE_DIR, relpath)
         nested = SUBMODULE_DIR / relpath
-        current = run_text(["git", "-C", str(nested), "rev-parse", "HEAD"])
-        if current != revision:
-            raise RuntimeError(
-                f"nested Libtool submodule does not match gitlink: "
-                f"{relpath}: {current} != {revision}"
-            )
-        dirty = run_text(
-            [
-                "git", "-C", str(nested), "status", "--porcelain",
-                "--untracked-files=no",
-            ]
-        )
+        dirty = run_text([
+            "git", "-C", str(nested), "status", "--porcelain",
+            "--untracked-files=no",
+        ])
         if dirty:
             raise RuntimeError(
                 f"nested Libtool submodule has tracked changes: {relpath}"
             )
-    return expected
+    return revisions
 
 
 def archive_source_signature() -> str:
@@ -177,45 +149,18 @@ def ensure_libtool_source() -> tuple[str, dict[pathlib.Path, str]]:
     if not git_checkout_available():
         return archive_source_signature(), {}
 
-    expected = gitlink_revision(ROOT, SUBMODULE_REL)
-    current = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        try:
-            current = run_text(
-                ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
-            )
-        except RuntimeError:
-            current = ""
-
-    if current != expected:
-        run_logged(
-            [
-                "git", "-C", str(ROOT), "submodule", "update", "--init",
-                "--depth", "1", str(SUBMODULE_REL),
-            ]
-        )
-        current = run_text(
-            ["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"]
-        )
-    if current != expected:
-        raise RuntimeError(
-            "bundled Libtool checkout does not match the QEMU gitlink: "
-            f"{current} != {expected}"
-        )
-
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
     nested = ensure_nested_submodules()
-    dirty = run_text(
-        [
-            "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
-            "--untracked-files=no",
-        ]
-    )
+    dirty = run_text([
+        "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
+        "--untracked-files=no",
+    ])
     if dirty:
         raise RuntimeError(
             "bundled Libtool submodule has tracked changes; commit them in "
             "the Libtool fork and update the QEMU gitlink"
         )
-    return expected, nested
+    return revision, nested
 
 
 def extract_git_archive(

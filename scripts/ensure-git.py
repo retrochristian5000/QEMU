@@ -20,6 +20,7 @@ import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+from bootstrap_env import reconcile_submodule
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import (clean_host_environment, select_native_cc,
@@ -186,45 +187,13 @@ def validate_build_compiler(
             ) from exc
 
 
-def gitlink(seed: str, repo: pathlib.Path, relpath: pathlib.Path) -> str:
-    line = run_text([seed, "-C", str(repo), "ls-tree", "HEAD", "--", str(relpath)])
-    fields = line.split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError(f"Git gitlink is not registered: {repo}:{relpath}")
-    return fields[2]
-
 
 def ensure_source(seed: str) -> tuple[str, str]:
-    revision = gitlink(seed, ROOT, SUBMODULE_REL)
-    current = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        current = run_text([seed, "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-    if current != revision:
-        run_logged([
-            seed, "-C", str(ROOT), "submodule", "update", "--init",
-            "--depth", "1", "--", str(SUBMODULE_REL),
-        ])
-        current = run_text([seed, "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-    if current != revision:
-        raise RuntimeError(
-            f"Git submodule revision mismatch: {current} != {revision}"
-        )
-
-    sha1_revision = gitlink(seed, SUBMODULE_DIR, SHA1_REL)
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL, git=seed)
     run_logged([
         seed, "-C", str(SUBMODULE_DIR), "submodule", "sync", "--", str(SHA1_REL),
     ])
-    run_logged([
-        seed, "-C", str(SUBMODULE_DIR), "submodule", "update", "--init",
-        "--depth", "1", "--", str(SHA1_REL),
-    ])
-    sha1_dir = SUBMODULE_DIR / SHA1_REL
-    sha1_current = run_text([seed, "-C", str(sha1_dir), "rev-parse", "HEAD"])
-    if sha1_current != sha1_revision:
-        raise RuntimeError(
-            "Git SHA-1 collision submodule revision mismatch: "
-            f"{sha1_current} != {sha1_revision}"
-        )
+    sha1_revision = reconcile_submodule(SUBMODULE_DIR, SHA1_REL, git=seed)
     return revision, sha1_revision
 
 

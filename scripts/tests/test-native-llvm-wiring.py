@@ -341,7 +341,7 @@ assert 'bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canoni
 assert 'if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then' in bootstrap
 assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
 assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
-assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('git -C "$SOURCE_DIR" submodule update')
+assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"')
 
 for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert loose_match not in bootstrap

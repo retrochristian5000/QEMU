@@ -25,7 +25,7 @@ grep -Fq 'GRUB_SUBMODULE_PATH="${GRUB_I386_SUBMODULE_PATH:-toolchains/grub}"' "$
     printf 'IA32 EFI GRUB does not default to the QEMU GRUB gitlink\n' >&2
     exit 1
 }
-grep -Fq 'git -C "$SOURCE_DIR" submodule update --init --depth 1 -- "$GRUB_SUBMODULE_PATH"' "$bootstrap" || {
+grep -Fq 'whp_git_submodule_prepare "$SOURCE_DIR" "$GRUB_SUBMODULE_PATH"' "$bootstrap" || {
     printf 'IA32 EFI GRUB does not initialize the pinned submodule\n' >&2
     exit 1
 }

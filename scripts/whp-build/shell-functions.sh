@@ -5,6 +5,80 @@
 # Keep this module dependency-free: build.sh and host-tools.sh may source it
 # before GNU Bash or other managed host tools are available.
 
+# Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
+# A gitlink is a reproducibility baseline, not permission to rewind an
+# initialized checkout containing newer descendant commits.
+whp_git_submodule_prepare()
+(
+    whp_parent=$1
+    whp_path=$2
+    whp_git=${3:-git}
+    whp_access=${4:-online}
+    case "$whp_path" in
+        ""|/*|../*|*/../*|*/..) printf 'error: invalid submodule path: %s\n' "$whp_path" >&2; return 1 ;;
+    esac
+    whp_target="$whp_parent/$whp_path"
+    if [ -L "$whp_target" ]; then
+        printf 'error: refusing symlinked submodule %s\n' "$whp_path" >&2
+        return 1
+    fi
+    whp_entry=$("$whp_git" -C "$whp_parent" ls-tree HEAD -- "$whp_path") || return 1
+    set -- $whp_entry
+    if [ "${1:-}" != 160000 ] || [ "${2:-}" != commit ]; then
+        printf 'error: missing gitlink: %s\n' "$whp_path" >&2
+        return 1
+    fi
+    whp_pin=$3
+    if [ ! -e "$whp_target/.git" ]; then
+        if [ "$whp_access" = offline ]; then
+            printf 'error: submodule %s is missing in offline mode\n' "$whp_path" >&2
+            return 1
+        fi
+        "$whp_git" -C "$whp_parent" submodule update --init --depth 1 -- "$whp_path" || return 1
+    else
+        whp_top=$("$whp_git" -C "$whp_target" rev-parse --show-toplevel) || return 1
+        whp_actual_top=$(CDPATH= cd -- "$whp_target" && pwd -P) || return 1
+        if [ "$whp_top" != "$whp_actual_top" ]; then
+            printf 'error: %s has an unexpected Git worktree\n' "$whp_path" >&2
+            return 1
+        fi
+        whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1
+        if [ "$whp_current" != "$whp_pin" ]; then
+            if ! "$whp_git" -C "$whp_target" cat-file -e "$whp_pin^{commit}" 2>/dev/null; then
+                if [ "$whp_access" = offline ]; then
+                    printf 'error: pin history missing for offline submodule %s\n' "$whp_path" >&2
+                    return 1
+                fi
+                "$whp_git" -C "$whp_target" fetch --no-tags --no-recurse-submodules origin "$whp_pin" || return 1
+            fi
+            if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_pin" "$whp_current"; then
+                printf 'WHP submodule: preserving newer %s at %s (pin %s)\n' \
+                    "$whp_path" "$whp_current" "$whp_pin" >&2
+                return 0
+            fi
+            if ! "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
+                printf 'error: %s is divergent or history is incomplete; refusing checkout\n' "$whp_path" >&2
+                return 1
+            fi
+            if [ -n "$("$whp_git" -C "$whp_target" status --porcelain --untracked-files=all)" ]; then
+                printf 'error: %s has local edits; refusing checkout\n' "$whp_path" >&2
+                return 1
+            fi
+            if "$whp_git" -C "$whp_target" symbolic-ref -q HEAD >/dev/null 2>&1; then
+                printf 'error: %s has an attached branch; refusing checkout\n' "$whp_path" >&2
+                return 1
+            fi
+            "$whp_git" -C "$whp_parent" submodule update --init --no-fetch -- "$whp_path" || return 1
+        fi
+    fi
+    whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1
+    if [ "$whp_current" != "$whp_pin" ]; then
+        printf 'error: %s did not reach pinned commit %s\n' "$whp_path" "$whp_pin" >&2
+        return 1
+    fi
+)
+
+
 # Read one Libtool bootstrap marker entry without constructing a sed program.
 # A missing, duplicate, or invalid producer tool must never silently turn into
 # an empty build variable. Marker tool identities use PATH|version.

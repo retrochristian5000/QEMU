@@ -70,6 +70,10 @@ export WIN9X_GIT_LOG="$git_log"
 export PATH="$fake_bin:$PATH"
 
 source "$prepare_sources"
+whp_git_submodule_prepare()
+{
+    printf 'prepare %s\n' "$*" >> "$git_log"
+}
 
 BOOTSTRAP_WIN9X_TOOLCHAIN=0
 whp_prepare_sources
@@ -86,6 +90,6 @@ whp_prepare_sources
 }
 grep -Fxq 'toolchains/llvm-project' "$marker"
 grep -Fq 'submodule sync -- toolchains/llvm-project' "$git_log"
-grep -Fq 'submodule update --init -- toolchains/llvm-project' "$git_log"
+grep -Fq "prepare $source_dir toolchains/llvm-project" "$git_log"
 
 printf 'Win9x LLVM target and menu wiring look correct\n'

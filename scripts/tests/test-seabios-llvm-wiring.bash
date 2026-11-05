@@ -45,10 +45,9 @@ grep -Fq -- 'shared_llvm_is_usable()' "$bootstrap"
 grep -Fq -- 'LLVM_EXECUTABLE_SOURCE=$llvm_executable_source' "$bootstrap"
 grep -Fq -- 'ln -s "$SHARED_LLVM_DIR" "$staged_toolchain/llvm"' "$bootstrap"
 
-# The i386 LLVM lane must always synchronize the shared LLVM gitlink, even when
-# a previous checkout already populated the directory.  Reusing whatever HEAD
-# happens to be present can pair the wrong source revision with the QEMU build.
-grep -Fq -- 'git -C "$SOURCE_DIR" submodule update --init --depth 1 "$LLVM_SUBMODULE_PATH"' "$bootstrap"
+# The i386 LLVM lane must reconcile ancestry on every build, preserving a
+# descendant checkout and rejecting divergence instead of forcibly pinning.
+grep -Fq -- 'whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"' "$bootstrap"
 if grep -Fq -- 'if [[ ! -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" ]]; then' "$bootstrap"; then
     printf 'i386 LLVM bootstrap only refreshes the submodule when it is missing\n' >&2
     exit 1

@@ -8,6 +8,7 @@ exec 1>&2
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+. "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
 PYTHON_BOOTSTRAP_SCHEMA=4
@@ -202,6 +203,15 @@ set -- $gitlink
 [ "$2" = commit ] || fail "Python runtime gitlink has unexpected type: $2"
 python_revision=$3
 
+# Validate initialized sources before computing the persistent cache identity.
+# The effective source revision may be a descendant of the recorded gitlink.
+if [ -e "$PYTHON_SOURCE_DIR/.git" ]; then
+    whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" ||
+        fail "Python submodule cannot be safely reconciled"
+    python_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD) ||
+        fail "Python submodule is not a valid Git checkout"
+fi
+
 # Resolve the host compiler policy before checking the cache so a compiler
 # upgrade or an explicit compiler change cannot silently reuse an older runtime.
 case "$build_mode" in
@@ -270,7 +280,7 @@ fi
 
 # Cache miss: initialize only the pinned Python submodule, never an unpinned
 # clone or a moving remote branch.
-git -C "$SOURCE_DIR" submodule update --init --depth 1 "$PYTHON_SUBMODULE_PATH"
+whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" || fail "Python submodule preparation failed"
 actual_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
 [ "$actual_revision" = "$python_revision" ] ||
     fail "Python submodule revision mismatch: ${actual_revision:-<missing>} != $python_revision"

@@ -25,6 +25,7 @@ import tempfile
 from typing import List
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+from bootstrap_env import reconcile_submodule
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
@@ -249,13 +250,6 @@ def git_checkout_available() -> bool:
     return shutil.which("git") is not None and (ROOT / ".git").exists()
 
 
-def gitlink_revision(repo: pathlib.Path, relpath: pathlib.Path) -> str:
-    line = run_text(["git", "-C", str(repo), "ls-tree", "HEAD", "--", str(relpath)])
-    fields = line.split()
-    if len(fields) < 3 or fields[1] != "commit":
-        raise RuntimeError(f"gitlink is not registered in {repo}: {relpath}")
-    return fields[2]
-
 
 def archive_source_signature() -> tuple[str, str]:
     required = (
@@ -287,40 +281,12 @@ def ensure_source() -> tuple[str, str]:
     if not git_checkout_available():
         return archive_source_signature()
 
-    revision = gitlink_revision(ROOT, SUBMODULE_REL)
-    current = ""
-    if (SUBMODULE_DIR / ".git").exists():
-        try:
-            current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-        except RuntimeError:
-            current = ""
-    if current != revision:
-        run_logged([
-            "git", "-C", str(ROOT), "submodule", "update", "--init",
-            "--depth", "1", str(SUBMODULE_REL),
-        ])
-        current = run_text(["git", "-C", str(SUBMODULE_DIR), "rev-parse", "HEAD"])
-    if current != revision:
-        raise RuntimeError(
-            f"GNU sed submodule revision mismatch: {current} != {revision}"
-        )
-
-    nested_revision = gitlink_revision(SUBMODULE_DIR, NESTED_REL)
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
     run_logged([
         "git", "-C", str(SUBMODULE_DIR), "submodule", "sync", "--",
         str(NESTED_REL),
     ])
-    run_logged([
-        "git", "-C", str(SUBMODULE_DIR), "submodule", "update", "--init",
-        "--depth", "1", "--", str(NESTED_REL),
-    ])
-    nested_dir = SUBMODULE_DIR / NESTED_REL
-    nested_current = run_text(["git", "-C", str(nested_dir), "rev-parse", "HEAD"])
-    if nested_current != nested_revision:
-        raise RuntimeError(
-            "GNU sed gnulib revision mismatch: "
-            f"{nested_current} != {nested_revision}"
-        )
+    nested_revision = reconcile_submodule(SUBMODULE_DIR, NESTED_REL)
 
     dirty = run_text([
         "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",

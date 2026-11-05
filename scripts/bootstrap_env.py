@@ -14,6 +14,106 @@ import sys
 import tempfile
 from collections.abc import Mapping
 
+def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
+                        *, git: str = "git") -> str:
+    """Initialize or fast-forward one submodule; never rewind local history.
+
+    Return the *actual* checkout SHA, which may be newer than the parent's
+    gitlink. Callers must use it for build/cache provenance, not the old pin.
+    """
+    parent = pathlib.Path(parent).resolve()
+    relpath = pathlib.Path(relpath)
+    if relpath.is_absolute() or ".." in relpath.parts or not relpath.parts:
+        raise RuntimeError(f"invalid submodule path: {relpath}")
+    target = parent / relpath
+    if target.is_symlink():
+        raise RuntimeError(f"refusing symlinked submodule: {relpath}")
+
+    def run(repo: pathlib.Path, *args: str, check: bool = True):
+        command = [git, "-C", str(repo), *map(str, args)]
+        result = subprocess.run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, check=False,
+        )
+        if check and result.returncode:
+            raise RuntimeError(
+                f"Git {' '.join(map(str, args))} failed in {repo}: "
+                f"{result.stderr.strip() or f'exit {result.returncode}'}"
+            )
+        return result
+
+    entry = run(parent, "ls-tree", "HEAD", "--", str(relpath)).stdout.split()
+    if len(entry) != 4 or entry[0] != "160000" or entry[1] != "commit":
+        raise RuntimeError(f"missing gitlink for {relpath} in {parent}")
+    pin = entry[2]
+
+    if not (target / ".git").exists():
+        run(parent, "submodule", "update", "--init", "--depth", "1",
+            "--", str(relpath))
+        current = run(target, "rev-parse", "--verify", "HEAD").stdout.strip()
+        if current != pin:
+            raise RuntimeError(f"new submodule {relpath} differs from pin {pin}")
+        return current
+
+    top = run(target, "rev-parse", "--show-toplevel").stdout.strip()
+    if pathlib.Path(top).resolve() != target.resolve():
+        raise RuntimeError(f"submodule {relpath} has an unexpected worktree")
+    current = run(target, "rev-parse", "--verify", "HEAD").stdout.strip()
+    if current == pin:
+        return current
+
+    if run(target, "cat-file", "-e", pin + "^{commit}",
+           check=False).returncode:
+        # Fetch objects only. Do not switch branches or check out a revision.
+        run(target, "fetch", "--no-tags", "--no-recurse-submodules",
+            "origin", pin)
+
+    def ancestor(older: str, newer: str) -> bool:
+        result = run(target, "merge-base", "--is-ancestor", older, newer,
+                     check=False)
+        if result.returncode not in (0, 1):
+            raise RuntimeError(
+                f"cannot establish submodule ancestry for {relpath}: "
+                f"{result.stderr.strip()}"
+            )
+        return result.returncode == 0
+
+    if ancestor(pin, current):
+        print(
+            f"WHP submodule {relpath}: preserving newer {current[:12]} "
+            f"(parent pin {pin[:12]})", file=sys.stderr,
+        )
+        return current
+    if not ancestor(current, pin):
+        raise RuntimeError(
+            f"submodule {relpath} diverges from pin or has incomplete history "
+            f"({current[:12]} vs {pin[:12]}); refusing checkout"
+        )
+    dirty = run(target, "status", "--porcelain",
+                "--untracked-files=all").stdout
+    if dirty.strip():
+        raise RuntimeError(
+            f"submodule {relpath} has local changes; refusing checkout"
+        )
+    attached = run(target, "symbolic-ref", "--quiet", "--short", "HEAD",
+                   check=False)
+    if attached.returncode == 0:
+        raise RuntimeError(
+            f"submodule {relpath} is on branch {attached.stdout.strip()}; "
+            "refusing checkout"
+        )
+    if attached.returncode != 1:
+        raise RuntimeError(f"cannot inspect submodule {relpath} branch")
+    run(parent, "submodule", "update", "--init", "--no-fetch",
+        "--", str(relpath))
+    advanced = run(target, "rev-parse", "--verify", "HEAD").stdout.strip()
+    if advanced != pin:
+        raise RuntimeError(
+            f"submodule {relpath} did not fast-forward to {pin}"
+        )
+    return advanced
+
+
 # Never erase the caller's environment. Preserve PATH, HOME, SDKROOT,
 # DEVELOPER_DIR, CC_FOR_BUILD and WHP seed identities. Tool-specific
 # executables are restored explicitly by each native bootstrap stage.

@@ -178,13 +178,20 @@ Source refresh
 Normal local ``./build.sh`` runs refresh the checkout before Python,
 toolchain, or QEMU configuration discovery.  ``WHP_SOURCE_UPDATE=auto`` is
 the default.  It fast-forwards only the current QEMU branch from its configured
-upstream and then synchronizes and initializes the exact recursive submodule
-revisions recorded by that QEMU commit.
+upstream and synchronizes submodule URL metadata.  After host Git and
+Python preparation, only already-initialized submodules are reconciled; unused
+firmware and toolchains remain lazy.
 
-The refresh deliberately uses ``git pull --ff-only`` and never resets,
-cleans, rebases, or follows arbitrary submodule branch tips.  QEMU's gitlinks
-remain authoritative because firmware and toolchain bootstrap guards depend on
-those exact revisions for reproducible builds.
+The refresh performs targeted fetches and a fast-forward-only merge.  Bootstrap
+guards then compare commit ancestry before touching any initialized submodule:
+a clean detached ancestor may fast-forward to QEMU's gitlink, but a checkout
+ahead of the gitlink is preserved.  Divergence, insufficient history, local
+edits on a behind checkout, and an attached branch never authorize a checkout.
+Lazy initialization still starts at the recorded pin.  Build-cache identities
+use the actual checked-out revision, including when that revision is a verified
+descendant of the parent pin.  QEMU's recorded gitlink is never silently
+advanced; integrating a newer checkout requires a separately pushed gitlink
+commit.
 
 If the QEMU commit changes, the launcher re-executes the newly pulled
 ``build.sh`` before continuing.  This prevents an older launcher from driving
