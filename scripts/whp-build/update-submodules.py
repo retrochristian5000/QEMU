@@ -54,6 +54,17 @@ def pinned_gitlinks(source):
             yield path, revision
 
 
+def is_ancestor(target, older, newer):
+    result = git(target, "merge-base", "--is-ancestor", older, newer,
+                 check=False)
+    if result.returncode not in (0, 1):
+        raise UpdateError(
+            f"cannot compare submodule history in {target}: "
+            f"{result.stderr.strip() or 'Git merge-base failed'}"
+        )
+    return result.returncode == 0
+
+
 def refresh(source):
     mode = os.environ.get("WHP_SOURCE_UPDATE", "auto")
     if mode not in ("auto", "0", "1"):
@@ -69,6 +80,7 @@ def refresh(source):
     parent = git(source, "rev-parse", "--verify", "HEAD").stdout.strip()
     pending = []
     initialized = 0
+    ahead = 0
     for path, pin in pinned_gitlinks(source):
         target = source / path
         if not (target / ".git").exists():
@@ -83,7 +95,39 @@ def refresh(source):
         if current == pin:
             continue
 
-        # Preflight every changed submodule before moving any checkout.
+        # Obtain missing pin history without touching HEAD, the index, or files.
+        # Never ask 'submodule update' to check out a pin before ancestry is
+        # known: that would rewind a newer detached local checkout.
+        if git(target, "cat-file", "-e", pin + "^{commit}",
+               check=False).returncode:
+            git(target, "fetch", "--no-tags", "--no-recurse-submodules",
+                "origin", pin)
+            if git(target, "cat-file", "-e", pin + "^{commit}",
+                   check=False).returncode:
+                raise UpdateError(
+                    f"submodule {path} cannot locate pinned commit {pin}; "
+                    "no checkout was updated"
+                )
+
+        if is_ancestor(target, pin, current):
+            ahead += 1
+            print(
+                f"WHP submodules: {path}: local {current[:12]} descends from "
+                f"pin {pin[:12]}; preserving newer checkout (gitlink unchanged)",
+                file=sys.stderr,
+            )
+            continue
+
+        # Only a verified fast-forward may change an initialized checkout.
+        # Divergent and shallow/unprovable histories must never be rewound.
+        if not is_ancestor(target, current, pin):
+            raise UpdateError(
+                f"submodule {path} has divergent or incomplete history "
+                f"(local {current[:12]}, pin {pin[:12]}); "
+                "refusing non-fast-forward checkout"
+            )
+
+        # Preflight every behind-the-pin submodule before moving any checkout.
         modified = git(target, "status", "--porcelain",
                        "--untracked-files=all").stdout
         if modified.strip():
@@ -103,18 +147,23 @@ def refresh(source):
         pending.append((path, pin, target))
 
     if not pending:
-        print(f"WHP submodules: {initialized} initialized and pinned; "
-              "uninitialized sources remain lazy", file=sys.stderr)
+        if ahead:
+            print(
+                f"WHP submodules: preserved {ahead} ahead of pins among "
+                f"{initialized} initialized checkouts; uninitialized sources "
+                "remain lazy", file=sys.stderr,
+            )
+        else:
+            print(f"WHP submodules: {initialized} initialized and pinned; "
+                  "uninitialized sources remain lazy", file=sys.stderr)
         return
 
     for path, pin, target in pending:
         if git(source, "rev-parse", "HEAD").stdout.strip() != parent:
             raise UpdateError("parent QEMU HEAD changed during submodule refresh")
-        # A local pin requires no fetch; an absent object permits only the
-        # specific initialized submodule to download its pinned revision.
-        local = git(target, "cat-file", "-e", pin + "^{commit}", check=False)
-        options = ["--no-fetch"] if local.returncode == 0 else ["--depth=1"]
-        git(source, "submodule", "update", "--init", *options, "--", path)
+        # The pin was fetched and its ancestry verified during preflight.
+        # Avoid unexpected network access or a forced checkout.
+        git(source, "submodule", "update", "--init", "--no-fetch", "--", path)
         current = git(target, "rev-parse", "--verify", "HEAD").stdout.strip()
         if current != pin:
             raise UpdateError(
@@ -122,7 +171,8 @@ def refresh(source):
             )
         print(f"WHP submodules: {path} -> {pin[:12]}", file=sys.stderr)
     print(f"WHP submodules: refreshed {len(pending)} of {initialized} initialized "
-          "checkouts; uninitialized sources remain lazy", file=sys.stderr)
+          f"checkouts; preserved {ahead} ahead of pins; "
+          "uninitialized sources remain lazy", file=sys.stderr)
 
 
 def main():

@@ -524,6 +524,46 @@ def test_initialized_submodules_follow_parent_gitlinks():
         assert (clone / "modules/a/README").read_text() == "local preservation\n"
         assert new_pin != current
 
+        # A divergent local commit must never be replaced by the parent pin.
+        git("restore", "--", "README", cwd=clone / "modules/a")
+        git("config", "user.name", "WHP Test", cwd=clone / "modules/a")
+        git("config", "user.email", "whp@example.invalid",
+            cwd=clone / "modules/a")
+        (clone / "modules/a/README").write_text("local divergent commit\n")
+        git("add", "README", cwd=clone / "modules/a")
+        git("commit", "-qm", "local divergence", cwd=clone / "modules/a")
+        divergent = git("rev-parse", "HEAD", cwd=clone / "modules/a")
+        refused = refresh()
+        assert refused.returncode != 0
+        assert "divergent or incomplete history" in refused.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == divergent
+
+        # A descendant of the parent pin is newer, even if it is detached.
+        # Local source development must not be silently rolled back to v3.
+        module = modules["a"]
+        (module / "README").write_text("a v4\n")
+        git("add", ".", cwd=module)
+        git("commit", "-qm", "a v4 (not yet pinned)", cwd=module)
+        newer = git("rev-parse", "HEAD", cwd=module)
+        git("fetch", "--no-tags", str(module), newer,
+            cwd=clone / "modules/a")
+        git("checkout", "--detach", newer, cwd=clone / "modules/a")
+        update_calls_before = trace.read_text().count("submodule update --init")
+        ahead = refresh()
+        assert ahead.returncode == 0, ahead.stderr
+        assert "preserving newer checkout" in ahead.stderr
+        assert "preserved 1 ahead of pins" in ahead.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        assert trace.read_text().count("submodule update --init") == update_calls_before
+        assert not (clone / "modules/b/.git").exists()
+
+        # Even uncommitted edits atop a newer descendant are left untouched.
+        (clone / "modules/a/README").write_text("newer local edits\n")
+        dirty_ahead = refresh()
+        assert dirty_ahead.returncode == 0, dirty_ahead.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        assert (clone / "modules/a/README").read_text() == "newer local edits\n"
+
         # Source refresh can be opted out without touching the stale checkout.
         env["WHP_SOURCE_UPDATE"] = "0"
         skipped = refresh()
