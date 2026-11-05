@@ -19,9 +19,9 @@ import tarfile
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-from bootstrap_env import reconcile_submodule
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
 from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
 SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL

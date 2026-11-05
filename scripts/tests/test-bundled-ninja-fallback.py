@@ -9,6 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 GITMODULES = ROOT / '.gitmodules'
 CONFIG = ROOT / 'scripts' / 'whp-config' / 'config.py'
 BUILD_ENTRY = ROOT / 'build.sh'
+HOST_TOOLS = ROOT / 'scripts' / 'whp-build' / 'host-tools.sh'
 BOOTSTRAP = ROOT / 'scripts' / 'ensure-ninja.py'
 NATIVE_LLVM_BOOTSTRAP = ROOT / 'scripts' / 'bootstrap-native-clang.bash'
 
@@ -37,19 +38,20 @@ def main() -> int:
     require(config, "'BOOTSTRAP_NINJA',", 'Ninja tri-state shell export')
 
     entry = BUILD_ENTRY.read_text(encoding='utf-8')
-    require(entry, 'scripts/ensure-ninja.py', 'bundled Ninja resolver hook')
-    require(entry, 'BOOTSTRAP_NINJA=${BOOTSTRAP_NINJA:-auto}', 'Ninja bootstrap default')
-    require(entry, '[ "$BOOTSTRAP_NINJA" != 1 ]', 'forced bundled Ninja policy')
-    require(entry, '[ "$BOOTSTRAP_NINJA" != 0 ]', 'disabled bundled Ninja policy')
-    require(
-        entry,
-        '[ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]',
-        'macOS auto preference for WHP Ninja',
-    )
-    require(entry, 'WHP_PREFER_BUNDLED_NINJA=1', 'macOS bundled Ninja preference state')
-    require(entry, 'NINJA_CMD=', 'Ninja command export')
-    require(entry, 'NINJA=$NINJA_CMD', 'QEMU Ninja environment handoff')
-    require(entry, 'export NINJA_CMD NINJA PATH', 'Ninja PATH propagation before configure')
+    host_tools = HOST_TOOLS.read_text(encoding='utf-8')
+    require(entry, 'scripts/whp-build/host-tools.sh', 'host-tool bootstrap handoff')
+    require(host_tools, 'scripts/ensure-ninja.py', 'bundled Ninja resolver hook')
+    require(host_tools, 'BOOTSTRAP_NINJA=$(whp_normalize_auto_switch',
+            'Ninja bootstrap default and validation')
+    require(host_tools, '[ "$BOOTSTRAP_NINJA" != 1 ]', 'forced bundled Ninja policy')
+    require(host_tools, '[ "$BOOTSTRAP_NINJA" != 0 ]', 'disabled bundled Ninja policy')
+    require(host_tools, '[ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]',
+            'macOS auto preference for WHP Ninja')
+    require(host_tools, 'WHP_PREFER_BUNDLED_NINJA=1', 'macOS bundled Ninja preference state')
+    require(host_tools, 'NINJA_CMD=', 'Ninja command export')
+    require(host_tools, 'NINJA=$NINJA_CMD', 'QEMU Ninja environment handoff')
+    require(host_tools, 'export NINJA_CMD NINJA PATH',
+            'Ninja PATH propagation before configure')
 
     if not BOOTSTRAP.is_file():
         raise SystemExit(f'error: bundled Ninja bootstrap is missing: {BOOTSTRAP}')

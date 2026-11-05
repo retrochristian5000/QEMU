@@ -56,7 +56,7 @@ def main() -> int:
     require(build, 'SDL3_ROOT=', "SDL prefix identity handoff")
 
     require(helper, 'toolchains/sdl', "pinned SDL source path")
-    require(helper, '"submodule",', "lazy SDL submodule initialization")
+    require(helper, 'reconcile_submodule(ROOT, SUBMODULE_REL)', "ancestry-safe SDL submodule initialization")
     require(helper, 'SDL_GIT_COMMIT=', "SDL cache revision identity")
     require(helper, 'SDL_BOOTSTRAP_SCHEMA', "SDL bootstrap cache schema")
     require(helper, '"--atleast-version=3.2.0"', "host SDL3 minimum version probe")
