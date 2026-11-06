@@ -568,7 +568,8 @@ def test_initialized_submodules_follow_parent_gitlinks():
         env["WHP_SOURCE_UPDATE"] = "0"
         skipped = refresh()
         assert skipped.returncode == 0, skipped.stderr
-        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        assert (clone / "modules/a/README").read_text() == "newer local edits\n"
 
 def test_bootstrap_ancestry_guards():
     # Exercise the real pre-Python POSIX helper and the Python host-tool helper

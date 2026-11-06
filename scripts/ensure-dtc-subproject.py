@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Align an existing DTC Git checkout with QEMU's immutable Meson wrap.
+"""Reconcile DTC with the immutable Meson wrap without rewinding descendants.
 
-This runs before Meson setup, with Git as the source updater.  It does not
-run Meson's subproject updater, reset Git, or alter the build directory.
+This runs before Meson setup, with Git as the source updater. It preserves
+compatible newer local commits and never resets Git or the build directory.
 """
 
 import argparse
@@ -53,6 +53,24 @@ def git(checkout, *args):
     # Git porcelain output begins with two significant status columns.
     # Strip only line terminators, never leading spaces from the first row.
     return result.stdout.rstrip("\r\n")
+
+
+def git_ancestor(checkout, older, newer):
+    """Distinguish a true non-ancestor from Git errors."""
+    result = subprocess.run(
+        [*git_command(), "-C", str(checkout), "merge-base",
+         "--is-ancestor", older, newer],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    raise DTCError(
+        "cannot establish DTC ancestry: " +
+        (result.stderr.strip() or f"exit {result.returncode}")
+    )
 
 
 def meson_wrap_hash(wrap_file, wrap_text=None):
@@ -228,47 +246,75 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
         refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
         return True
 
-    # Only an out-of-date source revision needs an actual Git transition.
-    # Do not let Meson's updater stash/rebase local work or move a branch.
-    branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD")
-    if branch != "HEAD":
-        raise DTCError(f"DTC is on branch {branch!r}; refusing to switch a development branch")
-    # A Git source updater does not touch Meson-owned wrap checkouts.  The
-    # requested commit may nonetheless already be in DTC's own object store
-    # (e.g. after an interrupted previous reconciliation).  Reuse it before
-    # attempting network access; --no-download forbids fetch, not a safe local
-    # detached checkout.  Never reset/stash or move a development branch.
+    # A different checkout need not be stale: developers may have committed
+    # compatible changes after the immutable wrap pin. Prove ancestry first,
+    # including shallow-history recovery, before any checkout is considered.
     pin_is_local = False
     try:
         git(checkout, "cat-file", "-e", revision + "^{commit}")
         pin_is_local = True
     except DTCError:
         pass
-
-    if no_download and not pin_is_local:
-        raise DTCError("DTC revision is stale, the pinned commit is not available locally, and downloads are disabled")
-
-    print(f"Synchronizing DTC to pinned Git revision {revision}", flush=True)
     if not pin_is_local:
-        # Fetch by the immutable URL from dtc.wrap, never by the checkout's
-        # potentially stale or developer-specific "origin".  This preserves
-        # configured remotes and avoids rejecting otherwise safe detached trees.
-        git(checkout, "fetch", "--depth=1", "--no-tags", url, revision)
-    # Reject incompatible *future* revisions before touching the working
-    # checkout, Meson marker, or incremental build directory.
+        if no_download:
+            raise DTCError(
+                "DTC wrap pin is unavailable locally and downloads are disabled"
+            )
+        # Use the immutable wrap URL, never a developer's customized origin.
+        # Avoid a depth=1 fetch, which could hide ancestry needed to preserve
+        # a newer local checkout.
+        git(checkout, "fetch", "--no-tags", url, revision)
+        git(checkout, "cat-file", "-e", revision + "^{commit}")
+
+    newer = git_ancestor(checkout, revision, current)
+    older = False if newer else git_ancestor(checkout, current, revision)
+    if not newer and not older:
+        if (not no_download and
+                git(checkout, "rev-parse", "--is-shallow-repository") == "true"):
+            # History-only repair; --unshallow never moves HEAD or files.
+            git(checkout, "fetch", "--unshallow", "--no-tags", url, revision)
+            newer = git_ancestor(checkout, revision, current)
+            older = False if newer else git_ancestor(checkout, current, revision)
+        if not newer and not older:
+            raise DTCError(
+                "DTC checkout diverges from wrap pin or has incomplete history; "
+                "preserving the local checkout"
+            )
+
+    if newer:
+        # Existing Meson sources are not reset merely because dtc.wrap records
+        # an older baseline. This is safe only for a clean, compatible descendent.
+        validate_meson_dtc(checkout)
+        if cached_hash == wrap_hash:
+            return False
+        refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
+        print(
+            f"DTC: preserving compatible newer checkout {current[:12]} "
+            f"(wrap pin {revision[:12]})", file=sys.stderr,
+        )
+        return True
+
+    # A verified ancestor may advance only when detached and clean.
+    branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD")
+    if branch != "HEAD":
+        raise DTCError(
+            f"DTC is on branch {branch!r}; refusing to switch a development branch"
+        )
+    # An untracked file may be overwritten when a pinned revision introduces
+    # that path; retain the strict collision guard on the checkout-changing path.
     validate_meson_dtc(checkout, revision=revision)
     git(checkout, "checkout", "--detach", revision, "--")
     if git(checkout, "rev-parse", "HEAD") != revision:
         raise DTCError("Git did not select QEMU's pinned DTC revision")
     validate_meson_dtc(checkout)
     refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
-    if not cache_file.is_file() or cache_file.read_text(encoding="utf-8").strip() != wrap_hash:
+    if (not cache_file.is_file() or
+            cache_file.read_text(encoding="utf-8").strip() != wrap_hash):
         raise DTCError("DTC wrap revision cache did not refresh")
     return True
 
-
 def verify_dtc(source):
-    """Verify Meson's resolved DTC pin and marker without changing either."""
+    """Verify the pinned or compatible descendant DTC source without changing it."""
     wrap_file, revision, _url, expected_hash = load_dtc_wrap(source)
     checkout = source / "subprojects" / "dtc"
     if (checkout.is_symlink() or not checkout.is_dir()
@@ -278,7 +324,16 @@ def verify_dtc(source):
         raise DTCError("DTC checkout belongs to another Git working tree")
     head = git(checkout, "rev-parse", "HEAD")
     if head != revision:
-        raise DTCError(f"internal DTC HEAD {head} differs from wrap pin {revision}")
+        try:
+            git(checkout, "cat-file", "-e", revision + "^{commit}")
+        except DTCError as exc:
+            raise DTCError(
+                "internal DTC wrap pin is unavailable locally for ancestry verification"
+            ) from exc
+        if not git_ancestor(checkout, revision, head):
+            raise DTCError(
+                f"internal DTC HEAD {head} does not descend from wrap pin {revision}"
+            )
     validate_meson_dtc(checkout)
     status = git(checkout, "status", "--porcelain", "--untracked-files=all")
     dirty = [line for line in status.splitlines()
@@ -554,7 +609,8 @@ def main():
         except (DTCError, OSError, UnicodeError) as exc:
             print(f"DTC post-Meson verification: {exc}", file=sys.stderr)
             return 1
-        print("DTC post-Meson verification: pinned checkout and wrap marker match")
+        print("DTC post-Meson verification: pinned or compatible descendant "
+              "checkout and wrap marker match")
         return 0
     try:
         ensure_dtc(source, args.no_download, args.fetch_missing)

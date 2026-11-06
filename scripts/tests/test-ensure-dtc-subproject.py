@@ -505,6 +505,63 @@ class EnsureDTCTest(unittest.TestCase):
         self.assertNotEqual(hashlib.sha256(self.wrap.read_bytes()).hexdigest(),
                             dtc.meson_wrap_hash(self.wrap))
 
+    def test_compatible_newer_detached_checkout_is_preserved(self):
+        self.git("checkout", "--detach", self.pin)
+        (self.repo / "libfdt/meson.build").write_text(
+            "libfdt_dep = declare_dependency()\n# compatible local update\n",
+            encoding="utf-8",
+        )
+        self.git("add", "libfdt/meson.build")
+        self.git("commit", "-qm", "local compatible DTC update")
+        advanced = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(advanced, self.pin)
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), advanced)
+        self.assertEqual(self.cache.read_text().strip(),
+                         dtc.meson_wrap_hash(self.wrap))
+        self.assertFalse(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertTrue(dtc.verify_dtc(self.root))
+
+    def test_compatible_newer_developer_branch_is_not_detached(self):
+        self.git("checkout", "-q", "-b", "user-dtc", self.pin)
+        (self.repo / "VERSION.txt").write_text("1.9.0\n", encoding="utf-8")
+        self.git("add", "VERSION.txt")
+        self.git("commit", "-qm", "user compatible DTC")
+        advanced = self.git("rev-parse", "HEAD")
+        self.assertTrue(dtc.ensure_dtc(self.root, no_download=True))
+        self.assertEqual(self.git("rev-parse", "HEAD"), advanced)
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"), "user-dtc")
+        self.assertTrue(dtc.verify_dtc(self.root))
+
+    def test_incompatible_newer_checkout_is_rejected_without_rollback(self):
+        self.git("checkout", "--detach", self.pin)
+        (self.repo / "meson_options.txt").write_text(
+            "option('tools', type: 'boolean', value: true)\n",
+            encoding="utf-8",
+        )
+        self.git("add", "meson_options.txt")
+        self.git("commit", "-qm", "remove required DTC option")
+        advanced = self.git("rev-parse", "HEAD")
+        marker_before = self.cache.read_bytes()
+        with self.assertRaisesRegex(dtc.DTCError, "Meson 'yaml' option"):
+            dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), advanced)
+        self.assertEqual(self.cache.read_bytes(), marker_before)
+
+    def test_divergent_dtc_checkout_is_not_force_selected(self):
+        self.git("checkout", "-q", "-b", "divergent", self.old)
+        (self.repo / "VERSION.txt").write_text("1.9.0\n", encoding="utf-8")
+        self.git("add", "VERSION.txt")
+        self.git("commit", "-qm", "diverge from wrap baseline")
+        divergent = self.git("rev-parse", "HEAD")
+        marker_before = self.cache.read_bytes()
+        with self.assertRaisesRegex(dtc.DTCError, "diverges from wrap pin"):
+            dtc.ensure_dtc(self.root, no_download=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), divergent)
+        self.assertEqual(self.git("symbolic-ref", "--short", "HEAD"),
+                         "divergent")
+        self.assertEqual(self.cache.read_bytes(), marker_before)
+
     def test_matching_checkout_is_noop(self):
         self.git("checkout", "--detach", self.pin)
         self.cache.write_text(hashlib.sha256(self.wrap.read_text().encode()).hexdigest())
@@ -751,7 +808,7 @@ class EnsureDTCTest(unittest.TestCase):
 
     def test_post_meson_verification_checks_pin_even_when_marker_matches(self):
         self.cache.write_text(dtc.meson_wrap_hash(self.wrap) + "\n")
-        with self.assertRaisesRegex(dtc.DTCError, "differs from wrap pin"):
+        with self.assertRaisesRegex(dtc.DTCError, "does not descend from wrap pin"):
             dtc.verify_dtc(self.root)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.old)
 
@@ -811,7 +868,7 @@ class EnsureDTCTest(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("pinned checkout and wrap marker match", proc.stdout)
+        self.assertIn("pinned or compatible descendant checkout", proc.stdout)
 
     def test_uppercase_wrap_pin_keeps_immutable_revision(self):
         self.git("checkout", "--detach", self.pin)
