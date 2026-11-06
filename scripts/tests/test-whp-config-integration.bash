@@ -11,6 +11,15 @@ COPY="$TMP/copy"
 mkdir -p "$COPY/scripts/whp-config" "$COPY/scripts/whp-build" \
     "$COPY/configs/devices/ppc-softmmu"
 cp "$ROOT/build.sh" "$COPY/build.sh"
+# Seed adapters are required before the portable Python bootstrap and probes.
+for adapter in grep.sh sed.sh cc.sh ld.sh; do
+    cp "$ROOT/$adapter" "$COPY/$adapter"
+done
+mkdir -p "$COPY/scripts/whp-build/seed-bin"
+cp "$ROOT/scripts/whp-build/seed-bin/grep" \
+   "$COPY/scripts/whp-build/seed-bin/grep"
+cp "$ROOT/scripts/whp-build/gnu-make.bash" \
+   "$COPY/scripts/whp-build/gnu-make.bash"
 # Public entry reads this shared guard even for side-effect-free probes.
 cp "$ROOT/scripts/whp-build/shell-functions.sh" \
    "$COPY/scripts/whp-build/shell-functions.sh"

@@ -7,6 +7,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build"
 cp "$ROOT/build.sh" "$TMP/build.sh"
+# The pre-Python entry locks a verified literal grep seed.
+mkdir -p "$TMP/scripts/whp-build/seed-bin"
+cp "$ROOT/grep.sh" "$TMP/grep.sh"
+cp "$ROOT/scripts/whp-build/seed-bin/grep" "$TMP/scripts/whp-build/seed-bin/grep"
 # build.sh loads these shared POSIX helpers before entering the fallback probe.
 cp "$ROOT/scripts/whp-build/shell-functions.sh" \
    "$TMP/scripts/whp-build/shell-functions.sh"
@@ -33,6 +37,17 @@ fi
 exit 2
 EOF
 chmod +x "$TMP/cc.sh"
+
+# Linker discovery is exercised, but this boundary fixture never links.
+cat > "$TMP/ld.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-ld ]; then
+    printf '/usr/bin/ld\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/ld.sh"
 
 cat > "$TMP/scripts/whp-build/gnu-make.bash" <<'EOF'
 whp_resolve_gnu_make()
