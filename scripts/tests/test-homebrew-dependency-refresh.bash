@@ -118,6 +118,9 @@ configure_args=(--disable-system --disable-tools)
 
 source "$ROOT/scripts/whp-build/configure.bash"
 
+# Model build.sh's early ownership claim before dependency markers are written.
+whp_configure_validate_build_tree_owner
+
 printf '%s\n' \
     'glib 2.86.0' \
     'libslirp 4.9.3' \
@@ -201,6 +204,7 @@ PKG_CONFIG_PATH=/opt/local/lib/pkgconfig
 PKG_CONFIG_PATH_FOR_BUILD="$PKG_CONFIG_PATH"
 BUILD_DIR="$TMP_ROOT/macports-build"
 mkdir -p "$BUILD_DIR"
+whp_configure_validate_build_tree_owner
 port_first="$(whp_macports_dependency_signature "$fake_port")"
 whp_refresh_macos_dependency_identity
 whp_configure_build

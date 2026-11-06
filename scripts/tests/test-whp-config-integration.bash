@@ -11,6 +11,9 @@ COPY="$TMP/copy"
 mkdir -p "$COPY/scripts/whp-config" "$COPY/scripts/whp-build" \
     "$COPY/configs/devices/ppc-softmmu"
 cp "$ROOT/build.sh" "$COPY/build.sh"
+# Public entry reads this shared guard even for side-effect-free probes.
+cp "$ROOT/scripts/whp-build/shell-functions.sh" \
+   "$COPY/scripts/whp-build/shell-functions.sh"
 cp "$ROOT/scripts/whp-config/config.py" "$COPY/scripts/whp-config/config.py"
 cp "$ROOT/scripts/whp-config/menuconfig.py" "$COPY/scripts/whp-config/menuconfig.py"
 cp "$ROOT/scripts/whp-build/portable-build.py" "$COPY/scripts/whp-build/portable-build.py"
