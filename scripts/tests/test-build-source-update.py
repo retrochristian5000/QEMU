@@ -517,9 +517,15 @@ def test_initialized_submodules_follow_parent_gitlinks():
         # An advancing parent gitlink cannot overwrite local submodule edits.
         new_pin = pin_next_version(3)
         (clone / "modules/a/README").write_text("local preservation\n")
+        preserved = refresh()
+        assert preserved.returncode == 0, preserved.stderr
+        assert "preserving protected checkout" in preserved.stderr
+        assert "local changes" in preserved.stderr
+        env["WHP_SOURCE_UPDATE"] = "1"
         failure = refresh()
         assert failure.returncode != 0
         assert "local changes" in failure.stderr
+        env["WHP_SOURCE_UPDATE"] = "auto"
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == current
         assert (clone / "modules/a/README").read_text() == "local preservation\n"
         assert new_pin != current
@@ -533,9 +539,15 @@ def test_initialized_submodules_follow_parent_gitlinks():
         git("add", "README", cwd=clone / "modules/a")
         git("commit", "-qm", "local divergence", cwd=clone / "modules/a")
         divergent = git("rev-parse", "HEAD", cwd=clone / "modules/a")
+        preserved_divergence = refresh()
+        assert preserved_divergence.returncode == 0, preserved_divergence.stderr
+        assert "preserving protected checkout" in preserved_divergence.stderr
+        assert "divergent or incomplete history" in preserved_divergence.stderr
+        env["WHP_SOURCE_UPDATE"] = "1"
         refused = refresh()
         assert refused.returncode != 0
         assert "divergent or incomplete history" in refused.stderr
+        env["WHP_SOURCE_UPDATE"] = "auto"
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == divergent
 
         # A descendant of the parent pin is newer, even if it is detached.

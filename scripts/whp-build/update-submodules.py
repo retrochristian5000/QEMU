@@ -81,6 +81,20 @@ def refresh(source):
     pending = []
     initialized = 0
     ahead = 0
+    protected = 0
+
+    def preserve_if_auto(path, reason):
+        # A separate, explicitly selected toolchain still enforces its own
+        # source requirements. An unrelated developer checkout must not block
+        # automatic QEMU bootstrap or be moved to an older commit.
+        if mode != "auto":
+            return False
+        print(
+            f"warning: WHP submodules: {path}: preserving protected checkout "
+            f"({reason}); the required toolchain will verify its own source",
+            file=sys.stderr,
+        )
+        return True
     for path, pin in pinned_gitlinks(source):
         target = source / path
         if not (target / ".git").exists():
@@ -121,6 +135,9 @@ def refresh(source):
         # Only a verified fast-forward may change an initialized checkout.
         # Divergent and shallow/unprovable histories must never be rewound.
         if not is_ancestor(target, current, pin):
+            if preserve_if_auto(path, "divergent or incomplete history"):
+                protected += 1
+                continue
             raise UpdateError(
                 f"submodule {path} has divergent or incomplete history "
                 f"(local {current[:12]}, pin {pin[:12]}); "
@@ -131,6 +148,9 @@ def refresh(source):
         modified = git(target, "status", "--porcelain",
                        "--untracked-files=all").stdout
         if modified.strip():
+            if preserve_if_auto(path, "local changes on older checkout"):
+                protected += 1
+                continue
             raise UpdateError(
                 f"submodule {path} differs from pin {pin[:12]} and has local "
                 "changes; no checkout was updated"
@@ -140,6 +160,9 @@ def refresh(source):
         if attached.returncode not in (0, 1):
             raise UpdateError(f"cannot inspect submodule branch for {path}")
         if attached.returncode == 0:
+            if preserve_if_auto(path, "attached development branch"):
+                protected += 1
+                continue
             raise UpdateError(
                 f"submodule {path} is on development branch "
                 f"{attached.stdout.strip()!r}; no checkout was updated"
@@ -147,11 +170,12 @@ def refresh(source):
         pending.append((path, pin, target))
 
     if not pending:
-        if ahead:
+        if ahead or protected:
             print(
-                f"WHP submodules: preserved {ahead} ahead of pins among "
-                f"{initialized} initialized checkouts; uninitialized sources "
-                "remain lazy", file=sys.stderr,
+                f"WHP submodules: preserved {ahead} ahead of pins and "
+                f"{protected} protected checkout(s) among {initialized} "
+                "initialized; uninitialized sources remain lazy",
+                file=sys.stderr,
             )
         else:
             print(f"WHP submodules: {initialized} initialized and pinned; "
@@ -171,7 +195,8 @@ def refresh(source):
             )
         print(f"WHP submodules: {path} -> {pin[:12]}", file=sys.stderr)
     print(f"WHP submodules: refreshed {len(pending)} of {initialized} initialized "
-          f"checkouts; preserved {ahead} ahead of pins; "
+          f"checkouts; preserved {ahead} ahead of pins and "
+          f"{protected} protected checkouts; "
           "uninitialized sources remain lazy", file=sys.stderr)
 
 
