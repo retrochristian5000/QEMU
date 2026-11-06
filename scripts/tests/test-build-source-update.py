@@ -692,6 +692,105 @@ def test_bootstrap_ancestry_guards():
             assert (clone / "modules/a/README").read_text() == "dirty old source\n"
 
 
+
+def test_bootstrap_shallow_newer_descendants():
+    # Reproduce a real builder with pin X initialized at depth one, followed
+    # by a fresh GitHub checkout at newer Y with a disconnected shallow edge.
+    # Both the public pre-Python shell and managed Python host-tool reconciler
+    # must fetch only history, preserve Y and never silently check out X.
+    with tempfile.TemporaryDirectory(prefix="whp-shallow-python-") as tmp:
+        base = Path(tmp)
+        upstream = base / "upstream"
+        upstream.mkdir()
+        git("init", "-q", cwd=upstream)
+        git("config", "user.name", "WHP Test", cwd=upstream)
+        git("config", "user.email", "whp@example.invalid", cwd=upstream)
+        (upstream / "README").write_text("Python fork X\\n")
+        git("add", ".", cwd=upstream)
+        git("commit", "-qm", "Python pin X", cwd=upstream)
+        pin = git("rev-parse", "HEAD", cwd=upstream)
+
+        parent = base / "parent"
+        parent.mkdir()
+        git("init", "-q", cwd=parent)
+        git("config", "user.name", "WHP Test", cwd=parent)
+        git("config", "user.email", "whp@example.invalid", cwd=parent)
+        path = "toolchains/python-runtime"
+        git("-c", "protocol.file.allow=always", "submodule", "add",
+            "-q", upstream.as_uri(), path, cwd=parent)
+        git("commit", "-qam", "pin Python X", cwd=parent)
+
+        (upstream / "README").write_text("Python fork Y\\n")
+        git("add", ".", cwd=upstream)
+        git("commit", "-qm", "Python newer Y", cwd=upstream)
+        newer = git("rev-parse", "HEAD", cwd=upstream)
+        env = os.environ.copy()
+        env["GIT_ALLOW_PROTOCOL"] = "file"
+        env["PYTHONPATH"] = str(ROOT / "scripts")
+
+        for lane in ("shell", "python"):
+            clone = base / lane
+            git("clone", "-q", str(parent), str(clone))
+            checkout = clone / path
+            subprocess.run(
+                ["git", "submodule", "update", "--init", "--depth", "1",
+                 "--", path],
+                cwd=clone, env=env, check=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            assert git("rev-parse", "HEAD", cwd=checkout) == pin
+            git("fetch", "--depth=1", "origin", newer, cwd=checkout)
+            git("checkout", "--detach", newer, cwd=checkout)
+            assert git("rev-parse", "--is-shallow-repository",
+                       cwd=checkout) == "true"
+            hidden = subprocess.run(
+                ["git", "-C", str(checkout), "merge-base",
+                 "--is-ancestor", pin, newer],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            assert hidden.returncode == 1, hidden.stderr
+
+            if lane == "shell":
+                base_cmd = [
+                    "/bin/sh", "-c",
+                    '. "$1"; whp_git_submodule_prepare "$2" '
+                    'toolchains/python-runtime "$3" "$4"',
+                    "sh", str(SHARED_SHELL), str(clone), "git",
+                ]
+                offline = subprocess.run(
+                    [*base_cmd, "offline"], env=env, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                assert offline.returncode != 0, offline.stderr
+                assert git("rev-parse", "HEAD", cwd=checkout) == newer
+                command = [*base_cmd, "online"]
+            else:
+                command = [
+                    sys.executable, "-c",
+                    "from pathlib import Path; "
+                    "from bootstrap_env import reconcile_submodule; "
+                    "import sys; "
+                    "reconcile_submodule(Path(sys.argv[1]), "
+                    "Path('toolchains/python-runtime'))",
+                    str(clone),
+                ]
+            result = subprocess.run(
+                command, env=env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            assert result.returncode == 0, result.stderr
+            assert git("rev-parse", "HEAD", cwd=checkout) == newer
+            assert "newer shallow" in result.stderr, result.stderr
+            proven = subprocess.run(
+                ["git", "-C", str(checkout), "merge-base",
+                 "--is-ancestor", pin, newer],
+                check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            assert proven.returncode == 0, result.stderr
+            assert (checkout / "README").read_text() == "Python fork Y\\n"
+
+
 try:
     test_dtc_reconciles_after_host_tools()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
@@ -706,6 +805,11 @@ try:
     test_bootstrap_ancestry_guards()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
     errors.append(f"bootstrap ancestry guard integration: {exc}")
+
+try:
+    test_bootstrap_shallow_newer_descendants()
+except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
+    errors.append(f"shallow Python and host bootstrap reconciliation: {exc}")
 
 try:
     test_parent_fast_forward_and_explicit_error()

@@ -40,11 +40,14 @@ if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
     exit 1
 fi
 llvm_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
-if [[ "$llvm_revision" != "$expected_llvm_revision" ]]; then
+# Accept a verified newer descendant; never silently admit a divergent fork.
+if [[ "$llvm_revision" != "$expected_llvm_revision" ]] &&
+   ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor \
+       "$expected_llvm_revision" "$llvm_revision"; then
     printf '%s\n' \
-        'error: LLVM checkout does not match the QEMU submodule pointer.' \
+        'error: LLVM checkout diverges from QEMU gitlink or history is incomplete.' \
         "checked out: $llvm_revision" \
-        "QEMU expects: $expected_llvm_revision" >&2
+        "QEMU baseline: $expected_llvm_revision" >&2
     exit 1
 fi
 

@@ -19,13 +19,17 @@ if [[ "$gitlink_mode" != 160000 || "$gitlink_type" != commit ||
     exit 1
 fi
 
-git submodule update --init --depth 1 "$submodule_name"
+# Exercise the same non-rewinding reconciler used by the public bootstrap.
+. "$ROOT/scripts/whp-build/shell-functions.sh"
+whp_git_submodule_prepare "$ROOT" "$submodule_name"
 actual_revision="$(git -C "$submodule_name" rev-parse HEAD)"
-[[ "$actual_revision" == "$expected_revision" ]] || {
-    printf 'error: Python gitlink mismatch: %s != %s\n' \
+if [[ "$actual_revision" != "$expected_revision" ]] &&
+   ! git -C "$submodule_name" merge-base --is-ancestor \
+       "$expected_revision" "$actual_revision"; then
+    printf 'error: Python runtime checkout has unverifiable ancestry: %s vs %s\n' \
         "$actual_revision" "$expected_revision" >&2
     exit 1
-}
+fi
 
 cache_root="${RUNNER_TEMP:-$(mktemp -d)}/whp-python-bootstrap"
 rm -rf "$cache_root"
@@ -85,7 +89,22 @@ rmdir "$cache_root.lock"
 
 marker="$cache_root/.whp-python-runtime"
 [[ -f "$marker" ]]
-grep -Eq '^BOOTSTRAP_CC=.+$' "$marker"
+grep -Fxq "PYTHON_GIT_COMMIT=$actual_revision" "$marker"
+grep -Eq '^BOOTSTRAP_CC=.+
+grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
+
+python_path_reused="$(
+    WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" JOBS="${JOBS:-2}" \
+        /bin/sh scripts/bootstrap-python.sh
+)"
+[[ "$python_path_reused" == "$python_path" ]] || {
+    printf 'error: bundled Python cache path changed: %s != %s\n' \
+        "$python_path_reused" "$python_path" >&2
+    exit 1
+}
+
+printf 'real bundled Python bootstrap test: passed (%s)\n' "$python_path"
+ "$marker"
 grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
 
 python_path_reused="$(

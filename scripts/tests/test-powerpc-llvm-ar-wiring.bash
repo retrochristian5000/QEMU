@@ -38,6 +38,12 @@ grep -Fq 'bootstrap-powerpc-llvm-ar.sh' "$orchestrator"
 grep -Fq 'No private GNU as/ar/nm/strip fallbacks survive' "$orchestrator"
 grep -Fq 'POWERPC_TOOLCHAIN_FORCE_REBUILD=0' "$orchestrator"
 
+# Archive, symbol and strip stages must all permit a verified newer LLVM tip.
+for stage in "$ar_stage" "$nm_stage" "$ROOT/scripts/bootstrap-powerpc-llvm-strip.bash"; do
+    grep -Fq 'merge-base --is-ancestor' "$stage"
+    grep -Fq '"$expected_llvm_revision" "$llvm_revision"' "$stage"
+done
+
 base_line="$(grep -nF 'bash "$BASE_BOOTSTRAP"' "$orchestrator" | head -n1 | cut -d: -f1)"
 ar_line="$(grep -nF 'bootstrap-powerpc-llvm-ar.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"
 core_line="$(grep -nF 'bootstrap-powerpc-clang-core.sh' "$orchestrator" | tail -n1 | cut -d: -f1)"

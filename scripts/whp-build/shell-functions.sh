@@ -56,8 +56,27 @@ whp_git_submodule_prepare()
                     "$whp_path" "$whp_current" "$whp_pin" >&2
                 return 0
             fi
+            # Depth-one Git clones can hide the ancestry of a newer tip.
+            # Recover only missing history, never switch a branch or HEAD.
+            # Keep the fetch bounded for very large LLVM/Python repositories.
+            if [ "$whp_access" != offline ] &&
+               [ "$("$whp_git" -C "$whp_target" rev-parse --is-shallow-repository)" = true ] &&
+               ! "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
+                for whp_deepen in 64 256 1024; do
+                    "$whp_git" -C "$whp_target" fetch "--deepen=$whp_deepen" \
+                        --no-tags --no-recurse-submodules origin "$whp_current" || return 1
+                    if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_pin" "$whp_current"; then
+                        printf 'WHP submodule: preserved newer shallow checkout %s at %s (pin %s)\n' \
+                            "$whp_path" "$whp_current" "$whp_pin" >&2
+                        return 0
+                    fi
+                    if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
+                        break
+                    fi
+                done
+            fi
             if ! "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
-                printf 'error: %s is divergent or history is incomplete; refusing checkout\n' "$whp_path" >&2
+                printf 'error: %s is divergent or history is incomplete; refusing checkout (deepen Git history if shallow)\n' "$whp_path" >&2
                 return 1
             fi
             if [ -n "$("$whp_git" -C "$whp_target" status --porcelain --untracked-files=all)" ]; then

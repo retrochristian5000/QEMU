@@ -84,10 +84,28 @@ def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
             f"(parent pin {pin[:12]})", file=sys.stderr,
         )
         return current
-    if not ancestor(current, pin):
+    behind = ancestor(current, pin)
+    if not behind and run(target, "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        # Recover a depth-one descendant without ever moving HEAD or changing
+        # source files. Bound network work for large Python/LLVM repositories.
+        for depth in (64, 256, 1024):
+            run(target, "fetch", f"--deepen={depth}", "--no-tags",
+                "--no-recurse-submodules", "origin", current)
+            if ancestor(pin, current):
+                print(
+                    f"WHP submodule {relpath}: preserving newer shallow "
+                    f"{current[:12]} (parent pin {pin[:12]})",
+                    file=sys.stderr,
+                )
+                return current
+            if ancestor(current, pin):
+                behind = True
+                break
+    if not behind:
         raise RuntimeError(
             f"submodule {relpath} diverges from pin or has incomplete history "
-            f"({current[:12]} vs {pin[:12]}); refusing checkout"
+            f"({current[:12]} vs {pin[:12]}); refusing checkout "
+            "(deepen Git history if shallow)"
         )
     dirty = run(target, "status", "--porcelain",
                 "--untracked-files=all").stdout

@@ -194,8 +194,9 @@ esac
 WORK_DIR=${WHP_PYTHON_BOOTSTRAP_WORK_DIR:-"${TOOLCHAIN_DIR}.work"}
 marker="$TOOLCHAIN_DIR/.whp-python-runtime"
 
-# The QEMU gitlink is the source-of-truth pin. `branch = main` in .gitmodules
-# describes where updates come from; builds always use this exact commit.
+# The QEMU gitlink is the ancestry baseline. `branch = main` in .gitmodules
+# does not authorize a forced checkout; compatible newer commits are retained
+# and the effective source HEAD determines the Python cache identity.
 gitlink=$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$PYTHON_SUBMODULE_PATH" 2>/dev/null || true)
 set -- $gitlink
 [ "$#" -ge 3 ] || fail "Python runtime gitlink is missing: $PYTHON_SUBMODULE_PATH"
@@ -278,8 +279,8 @@ if [ -f "$marker" ] &&
     exit 0
 fi
 
-# Cache miss: initialize only the pinned Python submodule, never an unpinned
-# clone or a moving remote branch.
+# Cache miss: initialize missing source from the gitlink or preserve an
+# existing verified descendant. Never select a moving remote branch.
 whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" || fail "Python submodule preparation failed"
 actual_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
 [ "$actual_revision" = "$python_revision" ] ||
