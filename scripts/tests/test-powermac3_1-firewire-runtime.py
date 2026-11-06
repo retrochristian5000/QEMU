@@ -24,6 +24,7 @@ proc = subprocess.run(
         binary,
         "-machine", "powermac3_1",
         "-display", "none",
+        "-audio", "none",  # No host audio backend needed for PCI enumeration.
         "-monitor", "none",
         "-serial", "none",
         "-nodefaults",

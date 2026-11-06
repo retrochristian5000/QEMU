@@ -21,6 +21,7 @@ CLANG="$FAKE_BIN/clang"
 CLANGXX="$FAKE_BIN/clang++"
 STRIP="$FAKE_BIN/strip"
 FAKE_LD="$FAKE_BIN/ld"
+FAKE_LIPO="$FAKE_BIN/lipo"
 
 mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK" \
     "$IPHONE_SDK" "$SIMULATOR_SDK" "$DEVELOPER_DIR_FIXTURE"
@@ -84,6 +85,10 @@ case "${1:-}" in
             clang++) printf '%s\n' "$TEST_CLANGXX" ;;
             strip) printf '%s\n' "$TEST_STRIP" ;;
             ld) printf '%s\n' "$TEST_LD" ;;
+            ar) printf '/usr/bin/ar\n' ;;
+            ranlib) printf '/usr/bin/ranlib\n' ;;
+            nm) printf '/usr/bin/nm\n' ;;
+            lipo) printf '%s\n' "$TEST_LIPO" ;;
             *) exit 1 ;;
         esac
         ;;
@@ -191,6 +196,10 @@ cat > "$STRIP" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
+cat > "$FAKE_LIPO" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
 cat > "$FAKE_LD" <<'EOF'
 #!/usr/bin/env bash
 output=
@@ -217,7 +226,7 @@ EOF
 
 chmod +x "$FAKE_BIN/uname" "$FAKE_BIN/xcode-select" \
     "$FAKE_BIN/sw_vers" "$FAKE_BIN/xcrun" "$FAKE_BIN/plutil" \
-    "$FAKE_BIN/build-bash" "$CLANG" "$CLANGXX" "$STRIP" "$FAKE_LD"
+    "$FAKE_BIN/build-bash" "$CLANG" "$CLANGXX" "$STRIP" "$FAKE_LD" "$FAKE_LIPO"
 
 export PATH="$FAKE_BIN:$PATH"
 export TEST_ACTIVE_SDK="$ACTIVE_SDK"
@@ -228,6 +237,9 @@ export TEST_CLANG="$CLANG"
 export TEST_CLANGXX="$CLANGXX"
 export TEST_STRIP="$STRIP"
 export TEST_LD="$FAKE_LD"
+export TEST_LIPO="$FAKE_LIPO"
+# Test the normalized macOS wrapper, not build.sh's real Linux bootstrap.
+export WHP_BUILD_ENTRY_NORMALIZED=1
 
 non_darwin_output="$TEST_DIR/non-darwin-output"
 if TEST_TARGET_TRIPLE=arm64-unknown-linux-gnu \

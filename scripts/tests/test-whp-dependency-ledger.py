@@ -28,8 +28,8 @@ def main() -> int:
             + ", ".join(sorted(missing))
         )
 
-    # The Meson source fork is registered and pinned without overriding the
-    # Meson version selected by QEMU's own Python virtual environment.
+    # The pinned Meson fork is the default; an explicitly saved venv
+    # selection must remain authoritative without silent migration.
     meson_section = 'submodule "toolchains/meson"'
     if meson_section not in parser:
         raise SystemExit("error: WHP Meson source submodule is missing")
@@ -43,8 +43,9 @@ def main() -> int:
         "pinned Meson source boundary": (
             "Pinned Meson source boundary",
             "toolchains/meson",
-            "pyvenv/bin/meson",
-            "not a silent change to production builds",
+            "toolchains/meson/meson.py",
+            "WHP_MESON_PROVIDER=venv",
+            "never silently migrated",
         ),
         "Aften/JACK conditional edge": (
             "Full macOS server builds have a conditional Aften edge",

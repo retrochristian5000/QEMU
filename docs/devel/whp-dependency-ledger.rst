@@ -205,7 +205,7 @@ by the WHP account.
    * - ``toolchains/meson``
      - ``Meson``
      - yes
-     - ``planned`` Meson source/tooling fork, pinned by gitlink; current QEMU configure uses its Python-venv Meson wheel and does not automatically execute this fork. Fork's current developer version is 1.12.99 and requires Python >= 3.10.
+     - Default WHP Meson fork for new QEMU configurations, invoked through the selected virtual-environment Python and pinned by gitlink. Explicit ``WHP_MESON_PROVIDER=venv`` retains the Meson wheel; saved provider selections are preserved. The fork requires Python >= 3.10.
    * - ``toolchains/fast-linker``
      - ``fast-linker``
      - yes
