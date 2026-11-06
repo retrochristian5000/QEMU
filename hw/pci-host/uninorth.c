@@ -363,7 +363,8 @@ static void unin_agp_pci_host_realize(PCIDevice *d, Error **errp)
     pci_set_long(d->wmask + UNINORTH_CFG_GART_CTRL,
                  UNINORTH_GART_CTRL_WRITABLE_MASK);
 
-    /* An idle bridge reports no pending internal-status condition. */
+    /* Internal status is read-only even on guests writing all bits. */
+    pci_set_long(d->wmask + UNINORTH_CFG_INTERNAL_STATUS, 0);
     pci_set_long(d->config + UNINORTH_CFG_INTERNAL_STATUS, 0);
 }
 

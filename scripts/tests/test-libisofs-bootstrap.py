@@ -598,7 +598,8 @@ def main() -> int:
     require(build, "PKG_CONFIG_PATH=", "libisofs pkg-config handoff")
 
     require(helper, 'toolchains/libisofs', "pinned libisofs source path")
-    require(helper, '"submodule", "update"', "lazy submodule initialization")
+    require(helper, "reconcile_submodule(ROOT, SUBMODULE_REL)",
+            "non-rollback libisofs submodule reconciliation")
     require(helper, "LIBISOFS_GIT_COMMIT=", "libisofs cache revision identity")
     require(helper, 'PKG_NAME = "libisofs-1"', "pkg-config identity")
     require(

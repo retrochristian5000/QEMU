@@ -250,7 +250,8 @@ def main() -> int:
     require(build, "scripts/ensure-bash.py", "Bash bootstrap hook")
     require(build, "WHP_BUILD_BASH_EXPLICIT", "explicit Bash override")
     require(helper, "toolchains/bash", "pinned Bash source")
-    require(helper, '"submodule", "update"', "lazy Bash submodule initialization")
+    require(helper, "reconcile_submodule(ROOT, SUBMODULE_REL)",
+            "non-rollback Bash submodule reconciliation")
     require(helper, 'BASH_BOOTSTRAP_SCHEMA = "4"', "Bash cache schema")
     require(helper, "def bootstrap_job_limit()", "Bash bounded build jobs")
     require(helper, 'run_logged([make, "-j", str(jobs)]', "Bash make job handoff")
