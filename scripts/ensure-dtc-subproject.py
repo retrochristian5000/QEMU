@@ -258,7 +258,7 @@ def ensure_dtc(source, no_download=False, fetch_missing=False):
     if not pin_is_local:
         if no_download:
             raise DTCError(
-                "DTC wrap pin is unavailable locally and downloads are disabled"
+                "DTC wrap pin is not available locally and downloads are disabled"
             )
         # Use the immutable wrap URL, never a developer's customized origin.
         # Avoid a depth=1 fetch, which could hide ancestry needed to preserve

@@ -599,7 +599,9 @@ for i in "${!thread_options[@]}"; do
         printf 'error: Apple linker accepted LLVM-only %s\n' "$thread_flag" >&2
         exit 1
     fi
-    grep -Fq 'selected Mach-O linker does not accept' "$apple_log"
+    # The earlier driver guard may reject the same invalid Apple-ld flag
+    # before the lower-level Mach-O linker probe sees it.
+    grep -Eq 'selected Mach-O linker does not accept|uses Mach-O LLD worker option with Apple ld' "$apple_log"
 done
 
 printf 'macOS SDK selection tests: passed\n'
