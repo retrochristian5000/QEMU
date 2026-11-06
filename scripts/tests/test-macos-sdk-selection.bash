@@ -477,11 +477,11 @@ grep -Fq 'QEMU symbol reader:      /usr/bin/nm' "$partial_archive_output"
 macos_builder="$SOURCE_DIR/scripts/macos-builder.bash"
 darwin_native="$SOURCE_DIR/configs/meson/darwin.txt"
 for expected in \
-    'export AR="${AR:-/usr/bin/ar}"' \
-    'export NM="${NM:-/usr/bin/nm}"' \
-    'export RANLIB="${RANLIB:-/usr/bin/ranlib}"' \
-    'export STRIP="${STRIP:-/usr/bin/strip}"' \
-    'export LIPO="${LIPO:-/usr/bin/lipo}"'; do
+    'AR="$(whp_apple_find_tool ar system)"' \
+    'NM="$(whp_apple_find_tool nm system)"' \
+    'RANLIB="$(whp_apple_find_tool ranlib system)"' \
+    'STRIP="$(whp_apple_find_tool strip system)"' \
+    'LIPO="$(whp_apple_find_tool lipo system)"'; do
     if ! grep -Fq "$expected" "$macos_builder"; then
         printf 'error: missing Darwin tool default: %s\n' "$expected" >&2
         exit 1
