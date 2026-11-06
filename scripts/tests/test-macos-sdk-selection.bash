@@ -20,6 +20,7 @@ SIMULATOR_SDK="$DEVELOPER_DIR_FIXTURE/SDKs/iPhoneSimulator18.0.sdk"
 CLANG="$FAKE_BIN/clang"
 CLANGXX="$FAKE_BIN/clang++"
 STRIP="$FAKE_BIN/strip"
+FAKE_LD="$FAKE_BIN/ld"
 
 mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK" \
     "$IPHONE_SDK" "$SIMULATOR_SDK" "$DEVELOPER_DIR_FIXTURE"
@@ -82,6 +83,7 @@ case "${1:-}" in
             clang) printf '%s\n' "$TEST_CLANG" ;;
             clang++) printf '%s\n' "$TEST_CLANGXX" ;;
             strip) printf '%s\n' "$TEST_STRIP" ;;
+            ld) printf '%s\n' "$TEST_LD" ;;
             *) exit 1 ;;
         esac
         ;;
@@ -172,9 +174,13 @@ case "${1:-}" in
             if [[ "$previous" == -o ]]; then output="$arg"; fi
             previous="$arg"
         done
-        if [[ "$object_only" == 0 && -n "$output" && "$output" != /dev/null ]]; then
-            printf '#!/bin/sh\nexit 0\n' > "$output"
-            chmod +x "$output"
+        if [[ -n "$output" && "$output" != /dev/null ]]; then
+            if [[ "$object_only" == 1 ]]; then
+                printf 'fixture native object\n' > "$output"
+            else
+                printf '#!/bin/sh\nexit 0\n' > "$output"
+                chmod +x "$output"
+            fi
         fi
         exit 0
         ;;
@@ -184,6 +190,17 @@ cp "$CLANG" "$CLANGXX"
 cat > "$STRIP" <<'EOF'
 #!/usr/bin/env bash
 exit 0
+EOF
+cat > "$FAKE_LD" <<'EOF'
+#!/usr/bin/env bash
+output=
+previous=
+for arg in "$@"; do
+    if [[ "$previous" == -o ]]; then output="$arg"; fi
+    previous="$arg"
+done
+[[ -n "$output" ]] || exit 1
+printf 'fixture relocatable object\n' > "$output"
 EOF
 
 cat > "$FAKE_BIN/build-bash" <<EOF
@@ -200,7 +217,7 @@ EOF
 
 chmod +x "$FAKE_BIN/uname" "$FAKE_BIN/xcode-select" \
     "$FAKE_BIN/sw_vers" "$FAKE_BIN/xcrun" "$FAKE_BIN/plutil" \
-    "$FAKE_BIN/build-bash" "$CLANG" "$CLANGXX" "$STRIP"
+    "$FAKE_BIN/build-bash" "$CLANG" "$CLANGXX" "$STRIP" "$FAKE_LD"
 
 export PATH="$FAKE_BIN:$PATH"
 export TEST_ACTIVE_SDK="$ACTIVE_SDK"
@@ -210,6 +227,7 @@ export TEST_DEVELOPER_DIR="$DEVELOPER_DIR_FIXTURE"
 export TEST_CLANG="$CLANG"
 export TEST_CLANGXX="$CLANGXX"
 export TEST_STRIP="$STRIP"
+export TEST_LD="$FAKE_LD"
 
 non_darwin_output="$TEST_DIR/non-darwin-output"
 if TEST_TARGET_TRIPLE=arm64-unknown-linux-gnu \

@@ -15,6 +15,7 @@
 #include "qemu-file.h"
 #include "migration.h"
 #include "migration/vmstate.h"
+#include "qemu/fifo8.h"
 #include "migration/client-options.h"
 #include "qemu/error-report.h"
 #include "qemu/queue.h"
@@ -951,4 +952,17 @@ const VMStateInfo vmstate_info_g_byte_array = {
     .name = "GByteArray",
     .get  = get_g_byte_array,
     .put  = put_g_byte_array,
+};
+
+/* FIFO migration metadata belongs to migration, not the generic util library. */
+const VMStateDescription vmstate_fifo8 = {
+    .name = "Fifo8",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_VBUFFER_UINT32(data, Fifo8, 1, NULL, capacity),
+        VMSTATE_UINT32(head, Fifo8),
+        VMSTATE_UINT32(num, Fifo8),
+        VMSTATE_END_OF_LIST()
+    }
 };

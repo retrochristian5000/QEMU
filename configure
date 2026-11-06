@@ -1021,7 +1021,7 @@ case "${WHP_MESON_PROVIDER:-fork}" in
        ! ${GIT:-git} -C "$source_path/toolchains/meson" merge-base --is-ancestor "$whp_meson_pin" "$whp_meson_current"; then
       error_exit "WHP Meson fork diverges from QEMU's gitlink; preserving local checkout"
     fi
-    whp_meson_status=$(${GIT:-git} -C "$source_path/toolchains/meson" status --porcelain --untracked-files=all) ||
+    whp_meson_status=$(${GIT:-git} -C "$source_path/toolchains/meson" status --porcelain --untracked-files=no) ||
       error_exit "Could not inspect WHP Meson fork changes"
     if test -n "$whp_meson_status"; then
       error_exit "WHP Meson fork has local edits; refusing to run modified pinned source"

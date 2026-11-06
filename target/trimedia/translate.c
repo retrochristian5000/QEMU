@@ -486,7 +486,7 @@ static bool trimedia_gen_packet(const TrimediaDecodedPacket *packet,
      */
     tcg_gen_addi_i64(cpu_issued_packets, cpu_issued_packets, 1);
     return true;
-
+}
 
 /*
  * Decode the packed TriMedia instruction stream into up to five operations.

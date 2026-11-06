@@ -50,9 +50,27 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertIn('https://github.com/retrochristian5000/sccacher.git', modules)
         self.assertEqual(bootstrap.SUBMODULE, pathlib.Path('toolchains/sccacher'))
         source = BOOTSTRAP.read_text(encoding='utf-8')
-        self.assertIn("'ls-tree', 'HEAD'", source)
+        self.assertIn('reconcile_submodule(ROOT, SUBMODULE)', source)
         self.assertIn("'--locked'", source)
         self.assertIn("'--no-default-features'", source)
+
+    def test_pinned_source_uses_reconciled_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / bootstrap.SUBMODULE
+            source.mkdir(parents=True)
+            (source / 'Cargo.toml').write_text('[package]\nname = "dummy"\n', encoding='utf-8')
+            (source / 'Cargo.lock').write_text('version = 3\n', encoding='utf-8')
+            revision = 'a' * 40
+            with mock.patch.object(bootstrap, 'ROOT', root), \
+                 mock.patch.object(bootstrap, 'reconcile_submodule',
+                                   return_value=revision) as reconcile, \
+                 mock.patch.object(bootstrap, 'call', return_value='') as call:
+                self.assertEqual(bootstrap.pinned_source(), (source, revision))
+                reconcile.assert_called_once_with(root, bootstrap.SUBMODULE)
+                call.assert_called_once_with(
+                    ['git', '-C', str(source), 'status', '--porcelain',
+                     '--untracked-files=no'], capture=True)
 
     def test_cached_binary_skips_cargo(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -25,16 +25,14 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
     def test_darwin_ignores_target_cxx_when_build_cxx_is_unset(self):
         mod = load_bootstrap_module()
 
-        def fake_which(name: str):
-            if name == 'xcrun':
-                return '/usr/bin/xcrun'
-            return None
-
+        # The adapter, not an independent xcrun lookup, selects host C++.
+        resolved = mock.Mock(returncode=0, stdout='/usr/bin/clang++\n', stderr='')
         with mock.patch.dict(os.environ, {'CXX': '/tmp/target-clang++'}, clear=True), \
              mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
-             mock.patch.object(mod.shutil, 'which', side_effect=fake_which), \
-             mock.patch.object(mod, 'run_text', return_value='/usr/bin/clang++'):
+             mock.patch.object(mod.subprocess, 'run', return_value=resolved) as run:
             self.assertEqual(mod.select_host_cxx(), '/usr/bin/clang++')
+            self.assertEqual(run.call_args.args[0],
+                             [str(mod.ROOT / 'cxx.sh'), '--print-cxx'])
 
     def test_explicit_build_cxx_remains_authoritative_on_darwin(self):
         mod = load_bootstrap_module()

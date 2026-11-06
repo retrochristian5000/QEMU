@@ -287,7 +287,7 @@ jobs:
         run: |
           set -eux
           ninja -C build-ci tests/qtest/macio-timer-test
-          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
             qtest-ppc/macio-timer-test
 
       - name: Verify live Sawtooth FireWire PCI device
@@ -335,7 +335,7 @@ jobs:
         run: |
           set -eux
           ninja -C build-ci tests/qtest/ide-test
-          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
             qtest-i386/ide-test
 
       - name: Test original 16-bit x86 target
@@ -343,7 +343,7 @@ jobs:
         run: |
           set -eux
           ninja -C build-ci tests/qtest/x86-16bit-test
-          build-ci/pyvenv/bin/meson test -C build-ci --print-errorlogs \
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
             qtest-x86/x86-16bit-test
 
       - name: Show build failure context

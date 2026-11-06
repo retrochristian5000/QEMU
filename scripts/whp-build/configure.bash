@@ -486,7 +486,7 @@ whp_configure_meson_identity()
             printf 'error: WHP Meson checkout is divergent or has incomplete pin history (%s vs %s)\n' "$current" "$pin" >&2
             return 1
         fi
-        status="$(git -C "$SOURCE_DIR/toolchains/meson" status --porcelain --untracked-files=all)" || return 1
+        status="$(git -C "$SOURCE_DIR/toolchains/meson" status --porcelain --untracked-files=no)" || return 1
         if [[ -n "$status" ]]; then
             printf 'error: WHP Meson fork has local edits; preserving source\n' >&2
             return 1
