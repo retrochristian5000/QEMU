@@ -38,8 +38,18 @@ whp_git_submodule_prepare()
     else
         whp_top=$("$whp_git" -C "$whp_target" rev-parse --show-toplevel) || return 1
         whp_actual_top=$(CDPATH= cd -- "$whp_target" && pwd -P) || return 1
-        if [ "$whp_top" != "$whp_actual_top" ]; then
-            printf 'error: %s has an unexpected Git worktree\n' "$whp_path" >&2
+        # Git and the shell may spell the same root differently (logical
+        # symlink, /var vs /private/var, or a relocated submodule gitfile).
+        # Compare physical worktree locations, not raw path strings. A genuine
+        # different root must still fail before any checkout/ancestry action.
+        whp_top_physical=$(CDPATH= cd -- "$whp_top" && pwd -P) || {
+            printf 'error: %s has an inaccessible Git worktree: %s\n' \
+                "$whp_path" "$whp_top" >&2
+            return 1
+        }
+        if [ "$whp_top_physical" != "$whp_actual_top" ]; then
+            printf 'error: %s has an unexpected Git worktree (Git: %s; expected: %s)\n' \
+                "$whp_path" "$whp_top_physical" "$whp_actual_top" >&2
             return 1
         fi
         whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1

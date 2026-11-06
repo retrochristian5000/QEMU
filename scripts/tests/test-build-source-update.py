@@ -668,6 +668,61 @@ def test_bootstrap_ancestry_guards():
         assert (clone / "modules/a/README").read_text() == "local edits\n"
         git("restore", "--", "README", cwd=clone / "modules/a")
 
+        # An initialized submodule normally has a .git *file* referring to
+        # metadata elsewhere. Its actual top-level working directory, not the
+        # metadata location or literal path spelling, is the security boundary.
+        assert (clone / "modules/a/.git").is_file()
+        git_wrapper = base / "worktree-git"
+        git_wrapper.write_text(
+            '#!/bin/sh\n'
+            'if [ "${3:-}" = rev-parse ] && '
+            '[ "${4:-}" = --show-toplevel ]; then\n'
+            '    printf "%s\\n" "$WHP_TEST_GIT_TOP"\n'
+            '    exit 0\n'
+            'fi\n'
+            'exec "$WHP_TEST_REAL_GIT" "$@"\n',
+            encoding="utf-8",
+        )
+        git_wrapper.chmod(0o755)
+        alias = base / "same-worktree-alias"
+        alias.symlink_to(clone / "modules/a", target_is_directory=True)
+        report_env = env.copy()
+        report_env["WHP_TEST_REAL_GIT"] = shutil.which("git")
+        report_env["WHP_TEST_GIT_TOP"] = str(alias)
+        shell_worktree_cmd = [
+            "/bin/sh", "-c",
+            '. "$1"; whp_git_submodule_prepare "$2" modules/a "$3"',
+            "sh", str(SHARED_SHELL), str(clone), str(git_wrapper),
+        ]
+        python_worktree_cmd = [
+            sys.executable, "-c",
+            "from bootstrap_env import reconcile_submodule; "
+            "from pathlib import Path; import sys; "
+            "reconcile_submodule(Path(sys.argv[1]), Path('modules/a'), "
+            "git=sys.argv[2])",
+            str(clone), str(git_wrapper),
+        ]
+        for invocation in (shell_worktree_cmd, python_worktree_cmd):
+            equivalent = subprocess.run(
+                invocation, env=report_env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            assert equivalent.returncode == 0, equivalent.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
+
+        # The same newer commit must not excuse *another* worktree root.
+        report_env["WHP_TEST_GIT_TOP"] = str(child)
+        for invocation in (shell_worktree_cmd, python_worktree_cmd):
+            foreign = subprocess.run(
+                invocation, env=report_env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            assert foreign.returncode != 0, foreign.stderr
+            assert "unexpected" in foreign.stderr, foreign.stderr
+            assert "Git:" in foreign.stderr, foreign.stderr
+            assert "expected:" in foreign.stderr, foreign.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
+
         # A locally committed branch from v1 is divergent from parent pin v2.
         git("checkout", "--detach", v1, cwd=clone / "modules/a")
         git("config", "user.name", "WHP Test", cwd=clone / "modules/a")

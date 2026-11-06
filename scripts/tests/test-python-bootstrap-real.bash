@@ -90,21 +90,7 @@ rmdir "$cache_root.lock"
 marker="$cache_root/.whp-python-runtime"
 [[ -f "$marker" ]]
 grep -Fxq "PYTHON_GIT_COMMIT=$actual_revision" "$marker"
-grep -Eq '^BOOTSTRAP_CC=.+
-grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
-
-python_path_reused="$(
-    WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" JOBS="${JOBS:-2}" \
-        /bin/sh scripts/bootstrap-python.sh
-)"
-[[ "$python_path_reused" == "$python_path" ]] || {
-    printf 'error: bundled Python cache path changed: %s != %s\n' \
-        "$python_path_reused" "$python_path" >&2
-    exit 1
-}
-
-printf 'real bundled Python bootstrap test: passed (%s)\n' "$python_path"
- "$marker"
+grep -Eq '^BOOTSTRAP_CC=.+$' "$marker"
 grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
 
 python_path_reused="$(

@@ -57,7 +57,10 @@ def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
 
     top = run(target, "rev-parse", "--show-toplevel").stdout.strip()
     if pathlib.Path(top).resolve() != target.resolve():
-        raise RuntimeError(f"submodule {relpath} has an unexpected worktree")
+        raise RuntimeError(
+            f"submodule {relpath} has an unexpected worktree "
+            f"(Git: {pathlib.Path(top).resolve()}; expected: {target.resolve()})"
+        )
     current = run(target, "rev-parse", "--verify", "HEAD").stdout.strip()
     if current == pin:
         return current
