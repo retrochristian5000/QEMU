@@ -576,11 +576,11 @@ def test_initialized_submodules_follow_parent_gitlinks():
         preserved_divergence = refresh()
         assert preserved_divergence.returncode == 0, preserved_divergence.stderr
         assert "preserving protected checkout" in preserved_divergence.stderr
-        assert "divergent or incomplete history" in preserved_divergence.stderr
+        assert "divergent history" in preserved_divergence.stderr
         env["WHP_SOURCE_UPDATE"] = "1"
         refused = refresh()
         assert refused.returncode != 0
-        assert "divergent or incomplete history" in refused.stderr
+        assert "divergent history" in refused.stderr
         env["WHP_SOURCE_UPDATE"] = "auto"
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == divergent
 
