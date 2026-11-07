@@ -65,6 +65,140 @@ def is_ancestor(target, older, newer):
     return result.returncode == 0
 
 
+def indexed_gitlink(source, path, pin):
+    """Never let an unrelated staged gitlink redirect a checkout."""
+    indexed = git(source, "ls-files", "--stage", "--", path).stdout.strip()
+    return indexed == f"160000 {pin} 0\t{path}"
+
+
+def remote_refresh(source, path):
+    """Explicit, single-submodule remote update; normal builds stay pinned."""
+    links = dict(pinned_gitlinks(source))
+    if path not in links:
+        raise UpdateError(f"{path}: not a recorded QEMU Git submodule")
+    pin = links[path]
+    if not indexed_gitlink(source, path, pin):
+        raise UpdateError(
+            f"{path}: staged gitlink differs from QEMU HEAD; "
+            "preserve the index before remote refresh"
+        )
+    records = git(source, "config", "-f", ".gitmodules", "--get-regexp",
+                  r"^submodule\..*\.path$", check=False)
+    if records.returncode not in (0, 1):
+        raise UpdateError(f"{path}: cannot read .gitmodules path declarations")
+    names = []
+    for line in records.stdout.splitlines():
+        key, sep, configured_path = line.partition(" ")
+        if sep and configured_path == path:
+            names.append(key[len("submodule."):-len(".path")])
+    if len(names) != 1:
+        raise UpdateError(f"{path}: expected exactly one .gitmodules declaration")
+    key = f"submodule.{names[0]}.branch"
+    configured = git(source, "config", "--get", key, check=False)
+    if configured.returncode == 1:
+        configured = git(source, "config", "-f", ".gitmodules", "--get", key,
+                         check=False)
+    if configured.returncode != 0 or not configured.stdout.strip():
+        raise UpdateError(
+            f"{path}: --remote requires a configured submodule branch"
+        )
+    branch = configured.stdout.strip()
+    if (branch == "." or
+            git(source, "check-ref-format", "--branch", branch,
+                check=False).returncode):
+        raise UpdateError(f"{path}: unsupported tracking branch {branch!r}")
+
+    target = source / path
+    if target.is_symlink() or not (target / ".git").exists():
+        raise UpdateError(
+            f"{path}: initialize the non-symlinked pinned submodule "
+            "before --remote"
+        )
+    top = git(target, "rev-parse", "--show-toplevel").stdout.strip()
+    if Path(top).resolve() != target.resolve():
+        raise UpdateError(f"{path}: unexpected Git worktree")
+    current = git(target, "rev-parse", "--verify", "HEAD").stdout.strip()
+    attached = git(target, "symbolic-ref", "--quiet", "--short", "HEAD",
+                   check=False)
+    if attached.returncode not in (0, 1):
+        raise UpdateError(f"{path}: cannot inspect current branch")
+    if attached.returncode == 0:
+        raise UpdateError(
+            f"{path}: attached development branch "
+            f"{attached.stdout.strip()!r} preserved"
+        )
+    if git(target, "status", "--porcelain",
+           "--untracked-files=all").stdout.strip():
+        raise UpdateError(
+            f"{path}: local edits preserved; refusing --remote checkout"
+        )
+
+    parent = git(source, "rev-parse", "HEAD").stdout.strip()
+    ref = f"refs/heads/{branch}:refs/remotes/origin/{branch}"
+    git(target, "fetch", "--no-tags", "--no-recurse-submodules", "origin", ref)
+    tip_ref = f"refs/remotes/origin/{branch}^{{commit}}"
+    tip = git(target, "rev-parse", "--verify", tip_ref).stdout.strip()
+    # Shallow histories can conceal genuine descendant relationships.
+    # Deepen only on an ambiguous result, without moving either checkout.
+    shallow = git(target, "rev-parse",
+                  "--is-shallow-repository").stdout.strip() == "true"
+    if shallow and (
+        not is_ancestor(target, pin, tip) or
+        not (is_ancestor(target, current, tip) or
+             is_ancestor(target, tip, current))
+    ):
+        for depth in (64, 256, 1024):
+            git(target, "fetch", f"--deepen={depth}", "--no-tags",
+                "--no-recurse-submodules", "origin", ref)
+            if is_ancestor(target, pin, tip) and (
+                is_ancestor(target, current, tip) or
+                is_ancestor(target, tip, current)
+            ):
+                break
+
+    if not is_ancestor(target, pin, tip):
+        raise UpdateError(
+            f"{path}: remote {branch} does not provably descend "
+            "from recorded gitlink"
+        )
+    if current == tip:
+        print(f"WHP submodules: {path}: remote {branch} "
+              f"already at {tip[:12]}", file=sys.stderr)
+        return
+    if is_ancestor(target, tip, current):
+        print(f"WHP submodules: {path}: preserving newer local "
+              f"{current[:12]} ahead of remote {tip[:12]}",
+              file=sys.stderr)
+        return
+    if not is_ancestor(target, current, tip):
+        raise UpdateError(
+            f"{path}: local history diverges from remote {branch}; "
+            "refusing checkout"
+        )
+    if (
+        git(source, "rev-parse", "HEAD").stdout.strip() != parent or
+        not indexed_gitlink(source, path, pin) or
+        git(target, "rev-parse", "HEAD").stdout.strip() != current or
+        git(target, "status", "--porcelain",
+            "--untracked-files=all").stdout.strip() or
+        git(target, "rev-parse", "--verify", tip_ref).stdout.strip() != tip
+    ):
+        raise UpdateError(f"{path}: source state changed during remote refresh")
+    # --no-fetch ensures that the SHA checked above is the one selected.
+    # --checkout overrides developer-configured merge/rebase update modes.
+    git(source, "submodule", "update", "--remote", "--no-fetch",
+        "--checkout", "--", path)
+    if git(target, "rev-parse", "HEAD").stdout.strip() != tip:
+        raise UpdateError(
+            f"{path}: --remote failed to reach verified commit {tip}"
+        )
+    print(
+        f"WHP submodules: {path}: remote {branch} -> {tip[:12]}; "
+        "parent gitlink unchanged; review and commit separately",
+        file=sys.stderr,
+    )
+
+
 def refresh(source):
     mode = os.environ.get("WHP_SOURCE_UPDATE", "auto")
     if mode not in ("auto", "0", "1"):
@@ -181,6 +315,14 @@ def refresh(source):
                 f"submodule {path} is on development branch "
                 f"{attached.stdout.strip()!r}; no checkout was updated"
             )
+        if not indexed_gitlink(source, path, pin):
+            if preserve_if_auto(path, "staged gitlink differs from HEAD"):
+                protected += 1
+                continue
+            raise UpdateError(
+                f"submodule {path} has a staged gitlink differing from HEAD; "
+                "no checkout was updated"
+            )
         pending.append((path, pin, target))
 
     if not pending:
@@ -201,6 +343,8 @@ def refresh(source):
             raise UpdateError("parent QEMU HEAD changed during submodule refresh")
         # The pin was fetched and its ancestry verified during preflight.
         # Avoid unexpected network access or a forced checkout.
+        if not indexed_gitlink(source, path, pin):
+            raise UpdateError(f"submodule {path} index changed during refresh")
         git(source, "submodule", "update", "--init", "--no-fetch", "--", path)
         current = git(target, "rev-parse", "--verify", "HEAD").stdout.strip()
         if current != pin:
@@ -217,9 +361,20 @@ def refresh(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--remote", action="store_true",
+                        help="explicitly follow one submodule tracking branch")
+    parser.add_argument("paths", nargs="*",
+                        help="exactly one submodule path when using --remote")
     args = parser.parse_args()
     try:
-        refresh(args.source.resolve())
+        if args.remote:
+            if len(args.paths) != 1:
+                raise UpdateError("--remote needs exactly one submodule path")
+            remote_refresh(args.source.resolve(), args.paths[0])
+        else:
+            if args.paths:
+                raise UpdateError("submodule paths require --remote")
+            refresh(args.source.resolve())
     except UpdateError as exc:
         print(f"error: WHP submodule update: {exc}", file=sys.stderr)
         return 1

@@ -25,6 +25,31 @@ That ledger distinguishes a source that is merely available from one that is a
 production build dependency, and records which pinned sources are WHP-owned
 forks that may be edited directly.
 
+Explicit Git submodule remote refresh
+-------------------------------------
+
+Normal ``./build.sh`` runs reconcile initialized submodules only to QEMU's
+recorded Gitlink revisions. Remote branch updates are **never automatic**.
+A developer may explicitly advance one initialized, detached, clean
+submodule whose ``.gitmodules`` entry declares a tracking branch::
+
+  python3 scripts/whp-build/update-submodules.py --source . --remote toolchains/llvm-project
+
+This guarded operation fetches only the selected branch and uses
+``git submodule update --remote --no-fetch --checkout`` after verifying
+ancestry, the unchanged parent index, worktree cleanliness, and the expected
+remote tip. It refuses attached developer branches, divergence, unknown paths,
+missing checkouts, and unprovable histories; newer descendant checkouts are
+preserved. For a missing checkout, first initialize the exact recorded pin::
+
+  git submodule update --init -- toolchains/llvm-project
+
+The remote checkout does **not** update the parent repository's recorded
+Gitlink. After validating the new source revision and build, explicitly
+``git add toolchains/llvm-project``, commit and push QEMU ``master``, and
+verify the remote tree's mode-``160000`` Gitlink. Meson-owned DTC wraps are not
+Git submodules and do not belong in this operation.
+
 Host identity boundary
 ----------------------
 

@@ -905,6 +905,114 @@ def test_bootstrap_shallow_newer_descendants():
             assert (checkout / "README").read_text() == "Python fork Y\\n"
 
 
+def test_explicit_remote_submodule_refresh():
+    # Single-path remote updates are opt-in; parent gitlinks and other
+    # submodule working trees must remain pinned/lazy.
+    helper = ROOT / "scripts/whp-build/update-submodules.py"
+    with tempfile.TemporaryDirectory(prefix="whp-submodule-remote-") as tmp:
+        base = Path(tmp)
+        child, parent, clone = (base / name for name in ("child", "parent", "clone"))
+        child.mkdir()
+        parent.mkdir()
+        for directory in (child, parent):
+            git("init", "-q", cwd=directory)
+            git("config", "user.name", "WHP Test", cwd=directory)
+            git("config", "user.email", "whp@example.invalid", cwd=directory)
+        (child / "README").write_text("v1\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "v1", cwd=child)
+        old = git("rev-parse", "HEAD", cwd=child)
+        child_branch = git("symbolic-ref", "--short", "HEAD", cwd=child)
+        git("-c", "protocol.file.allow=always", "submodule", "add", "-q",
+            str(child), "modules/a", cwd=parent)
+        git("config", "-f", ".gitmodules", "submodule.modules/a.branch",
+            child_branch, cwd=parent)
+        git("add", ".gitmodules", cwd=parent)
+        git("commit", "-qam", "pin v1", cwd=parent)
+        git("clone", "-q", str(parent), str(clone))
+        env = os.environ.copy()
+        env.pop("CI", None)
+        env["GIT_ALLOW_PROTOCOL"] = "file"
+        env["WHP_SOURCE_UPDATE"] = "1"
+        subprocess.run(
+            ["git", "submodule", "update", "--init", "--", "modules/a"],
+            cwd=clone, env=env, check=True, capture_output=True, text=True,
+        )
+        checkout = clone / "modules/a"
+
+        def invoke(*args):
+            return subprocess.run(
+                [sys.executable, str(helper), "--source", str(clone), *args],
+                cwd=clone, env=env, capture_output=True, text=True,
+            )
+
+        (child / "README").write_text("v2\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "v2", cwd=child)
+        remote_tip = git("rev-parse", "HEAD", cwd=child)
+        # A normal pinned refresh must never follow the tracking branch.
+        pinned = invoke()
+        assert pinned.returncode == 0, pinned.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == old
+        assert invoke("--remote").returncode != 0
+        assert invoke("modules/a").returncode != 0
+        assert invoke("--remote", "modules/unknown").returncode != 0
+
+        updated = invoke("--remote", "modules/a")
+        assert updated.returncode == 0, updated.stderr
+        assert "parent gitlink unchanged" in updated.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == remote_tip
+        assert git("rev-parse", "HEAD:modules/a", cwd=clone) == old
+        assert old in git("ls-files", "--stage", "modules/a", cwd=clone)
+        assert invoke("--remote", "modules/a").returncode == 0
+
+        # The index can already contain an unrelated staged gitlink. Never
+        # let a native submodule command redirect to that staged revision.
+        git("add", "modules/a", cwd=clone)
+        staged = invoke("--remote", "modules/a")
+        assert staged.returncode != 0
+        assert "staged gitlink" in staged.stderr
+        git("reset", "-q", "--", "modules/a", cwd=clone)
+
+        (child / "README").write_text("v3\n")
+        git("add", ".", cwd=child)
+        git("commit", "-qm", "v3", cwd=child)
+        (checkout / "README").write_text("local edits\n")
+        dirty = invoke("--remote", "modules/a")
+        assert dirty.returncode != 0
+        assert "local edits" in dirty.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == remote_tip
+        git("restore", "--", "README", cwd=checkout)
+        git("checkout", "-qb", "development", cwd=checkout)
+        branch = invoke("--remote", "modules/a")
+        assert branch.returncode != 0
+        assert "attached development branch" in branch.stderr
+        git("checkout", "-q", "--detach", remote_tip, cwd=checkout)
+        advanced = invoke("--remote", "modules/a")
+        assert advanced.returncode == 0, advanced.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == git(
+            "rev-parse", "HEAD", cwd=child
+        )
+
+        # A local descendant must be kept when the remote has not caught up.
+        git("config", "user.name", "WHP Test", cwd=checkout)
+        git("config", "user.email", "whp@example.invalid", cwd=checkout)
+        (checkout / "README").write_text("local newer\n")
+        git("add", ".", cwd=checkout)
+        git("commit", "-qm", "local newer", cwd=checkout)
+        newer = git("rev-parse", "HEAD", cwd=checkout)
+        preserved = invoke("--remote", "modules/a")
+        assert preserved.returncode == 0, preserved.stderr
+        assert "preserving newer local" in preserved.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == newer
+        assert git("rev-parse", "HEAD:modules/a", cwd=clone) == old
+
+
+try:
+    test_explicit_remote_submodule_refresh()
+except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
+    errors.append(f"explicit remote submodule update integration: {exc}")
+
 try:
     test_dtc_reconciles_after_host_tools()
 except (AssertionError, OSError, subprocess.CalledProcessError) as exc:
