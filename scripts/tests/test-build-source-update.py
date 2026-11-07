@@ -842,7 +842,7 @@ def test_bootstrap_shallow_newer_descendants():
         env["GIT_ALLOW_PROTOCOL"] = "file"
         env["PYTHONPATH"] = str(ROOT / "scripts")
 
-        for lane in ("shell", "python"):
+        for lane in ("shell", "python", "updater", "legacy"):
             clone = base / lane
             git("clone", "-q", str(parent), str(clone))
             checkout = clone / path
@@ -879,7 +879,7 @@ def test_bootstrap_shallow_newer_descendants():
                 assert offline.returncode != 0, offline.stderr
                 assert git("rev-parse", "HEAD", cwd=checkout) == newer
                 command = [*base_cmd, "online"]
-            else:
+            elif lane == "python":
                 command = [
                     sys.executable, "-c",
                     "from pathlib import Path; "
@@ -889,13 +889,41 @@ def test_bootstrap_shallow_newer_descendants():
                     "Path('toolchains/python-runtime'))",
                     str(clone),
                 ]
+            elif lane == "updater":
+                env["WHP_SOURCE_UPDATE"] = "1"  # CI skips auto mode.
+                command = [
+                    sys.executable,
+                    str(ROOT / "scripts/whp-build/update-submodules.py"),
+                    "--source", str(clone),
+                ]
+            else:
+                scripts = clone / "scripts"
+                shared = scripts / "whp-build"
+                shared.mkdir(parents=True)
+                shutil.copy2(ROOT / "scripts/git-submodule.sh",
+                             scripts / "git-submodule.sh")
+                shutil.copy2(SHARED_SHELL, shared / "shell-functions.sh")
+                command = ["/bin/sh", "scripts/git-submodule.sh",
+                           "update", path]
+                validation = subprocess.run(
+                    ["/bin/sh", "scripts/git-submodule.sh",
+                     "validate", path],
+                    cwd=clone, env=env, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                assert validation.returncode != 0
+                assert not (clone / ".git-submodule-status").exists()
+
             result = subprocess.run(
-                command, env=env, text=True,
+                command, cwd=clone, env=env, text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
             assert result.returncode == 0, result.stderr
             assert git("rev-parse", "HEAD", cwd=checkout) == newer
-            assert "newer shallow" in result.stderr, result.stderr
+            if lane == "updater":
+                assert "preserving newer checkout" in result.stderr, result.stderr
+            else:
+                assert "newer shallow" in result.stderr, result.stderr
             proven = subprocess.run(
                 ["git", "-C", str(checkout), "merge-base",
                  "--is-ancestor", pin, newer],

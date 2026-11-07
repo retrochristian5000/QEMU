@@ -97,7 +97,7 @@ check_updated() {
 }
 
 if is_git; then
-    test -e $substat || touch $substat
+    # Read-only status and validation must not create or rewrite the ledger.
     modules=""
     for m in $maybe_modules
     do
@@ -105,7 +105,7 @@ if is_git; then
         if test $? = 0
         then
             modules="$modules $m"
-            grep $m $substat > /dev/null 2>&1 || $GIT submodule status $m >> $substat
+            # The ledger is observational and never an ancestry authority.
         else
             echo "warn: ignoring non-existent submodule $m"
         fi
@@ -142,17 +142,22 @@ update)
         check_updated "$module" || update_error "invalid history for module $module"
     done
 
-    (while IFS= read -r REPLY; do
-        for module in $modules; do
-            case $REPLY in
-                *" $module"|*" $module "*) continue 2 ;;
-            esac
-        done
-        printf '%s\n' "$REPLY"
-    done
-    $GIT submodule status $modules
-    test $? -ne 0 && update_error "failed to save git submodule status" >&2) < $substat > $substat.new
-    mv -f $substat.new $substat
+    (if test -f "$substat"; then
+         while IFS= read -r REPLY; do
+             for module in $modules; do
+                 case $REPLY in
+                     *" $module"|*" $module "*) continue 2 ;;
+                 esac
+             done
+             printf '%s\n' "$REPLY"
+         done < "$substat"
+     fi
+     $GIT submodule status $modules
+    ) > "$substat.new" || {
+        rm -f "$substat.new"
+        update_error "failed to save git submodule status"
+    }
+    mv -f "$substat.new" "$substat" || update_error "failed to install status ledger"
     ;;
 esac
 

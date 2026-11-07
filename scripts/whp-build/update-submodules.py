@@ -65,6 +65,34 @@ def is_ancestor(target, older, newer):
     return result.returncode == 0
 
 
+def classify_checkout(target, pin, current):
+    """Prove ancestry before classifying; shallow gaps are not divergence."""
+    if is_ancestor(target, pin, current):
+        return "ahead"
+    if is_ancestor(target, current, pin):
+        return "behind"
+    if git(target, "rev-parse", "--is-shallow-repository").stdout.strip() != "true":
+        return "divergent"
+
+    # Pin X and newer tip Y can both exist in a depth-one checkout without
+    # their intermediate ancestry. Fetch only Git history, never files or HEAD.
+    for deepen in (64, 256, 1024):
+        fetched = git(
+            target, "fetch", f"--deepen={deepen}", "--no-tags",
+            "--no-recurse-submodules", "origin", check=False,
+        )
+        if fetched.returncode:
+            raise UpdateError(
+                f"cannot deepen shallow submodule history in {target}: "
+                f"{fetched.stderr.strip() or f'Git exited {fetched.returncode}'}"
+            )
+        if is_ancestor(target, pin, current):
+            return "ahead"
+        if is_ancestor(target, current, pin):
+            return "behind"
+    return "incomplete"
+
+
 def indexed_gitlink(source, path, pin):
     """Never let an unrelated staged gitlink redirect a checkout."""
     indexed = git(source, "ls-files", "--stage", "--", path).stdout.strip()
@@ -271,7 +299,16 @@ def refresh(source):
                     "no checkout was updated"
                 )
 
-        if is_ancestor(target, pin, current):
+        # Recover intervening history before mistaking a shallow descendant
+        # for a divergent checkout. An unreachable origin still cannot prove it.
+        try:
+            relation = classify_checkout(target, pin, current)
+        except UpdateError as exc:
+            if preserve_if_auto(path, str(exc)):
+                protected += 1
+                continue
+            raise
+        if relation == "ahead":
             ahead += 1
             print(
                 f"WHP submodules: {path}: local {current[:12]} descends from "
@@ -281,13 +318,14 @@ def refresh(source):
             continue
 
         # Only a verified fast-forward may change an initialized checkout.
-        # Divergent and shallow/unprovable histories must never be rewound.
-        if not is_ancestor(target, current, pin):
-            if preserve_if_auto(path, "divergent or incomplete history"):
+        if relation != "behind":
+            reason = ("incomplete shallow history" if relation == "incomplete"
+                      else "divergent history")
+            if preserve_if_auto(path, reason):
                 protected += 1
                 continue
             raise UpdateError(
-                f"submodule {path} has divergent or incomplete history "
+                f"submodule {path} has {reason} "
                 f"(local {current[:12]}, pin {pin[:12]}); "
                 "refusing non-fast-forward checkout"
             )

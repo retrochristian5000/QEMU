@@ -44,11 +44,21 @@ preserved. For a missing checkout, first initialize the exact recorded pin::
 
   git submodule update --init -- toolchains/llvm-project
 
+Depth-one Git checkouts with a newer remote tip can contain the pinned
+commit and current tip but not their intervening ancestry. The automatic
+initialized-submodule updater now fetches bounded Git history (64, 256, and
+1024 additional commits) before classifying such a checkout. It never moves
+the checkout HEAD or parent gitlink merely to establish ancestry. When
+history cannot be recovered, automatic mode preserves the checkout and strict
+mode reports the blocker without resetting source files.
+
 The legacy ``scripts/git-submodule.sh`` (used by firmware configuration)
 now uses the same non-rewinding policy: ``update`` preserves proven descendants
 and ``validate`` accepts them even when its status ledger has an older SHA.
-It still rejects missing, divergent, or unprovable checkouts. This does not
-change the Python bootstrap cache contract, which uses the actual checkout SHA.
+It still rejects missing, divergent, or unprovable checkouts. Read-only
+``status`` and ``validate`` do not create or rewrite the status
+ledger; only a successful explicit ``update`` does so. This does not change
+the Python bootstrap cache contract, which uses the actual checkout SHA.
 
 The remote checkout does **not** update the parent repository's recorded
 Gitlink. After validating the new source revision and build, explicitly

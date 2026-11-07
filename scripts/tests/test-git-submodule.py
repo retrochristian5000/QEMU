@@ -61,6 +61,11 @@ class GitSubmoduleTest(unittest.TestCase):
         )
 
     def test_updates_only_selected_gitlinks_and_tracks_them(self):
+        # Read-only operations must not write status metadata.
+        self.assertNotEqual(self.updater("validate", "modules/a").returncode, 0)
+        self.assertFalse((self.clone / ".git-submodule-status").exists())
+        self.assertNotEqual(self.updater("status", "modules/a").returncode, 0)
+        self.assertFalse((self.clone / ".git-submodule-status").exists())
         result = self.updater("update", "modules/a")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         record = self.clone / ".git-submodule-status"
