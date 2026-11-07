@@ -415,8 +415,8 @@ def test_parent_fast_forward_and_explicit_error():
         selected_git = base / 'selected-git'
         trace = base / 'selected-git.log'
         selected_git.write_text(
-            '#!/bin/sh\\nprintf "%s\\\\n" "$*" >> "$WHP_SELECTED_GIT_TRACE"\\n'
-            'exec "$WHP_TEST_REAL_GIT" "$@"\\n', encoding='utf-8'
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$WHP_SELECTED_GIT_TRACE"\n'
+            'exec "$WHP_TEST_REAL_GIT" "$@"\n', encoding='utf-8'
         )
         selected_git.chmod(0o755)
         env['WHP_GIT_SEED'] = str(selected_git)
