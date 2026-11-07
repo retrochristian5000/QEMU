@@ -327,6 +327,30 @@ case "$WHP_HOST_OS" in
         ;;
 esac
 
+# Lock the native C preprocessor before Python and managed LLVM can replace
+# toolchain selections. CPP_FOR_BUILD is a callable bridge; CPP (the target
+# preprocessor, including firmware cross-CPP) remains untouched.
+case "$WHP_HOST_OS" in
+    windows) ;;
+    *)
+        if [ -z "${WHP_CPP_SEED:-}" ]; then
+            WHP_CPP_SEED=$CC_FOR_BUILD
+        fi
+        WHP_CPP_SEED=$("$SOURCE_DIR/cpp.sh" --print-seed) || exit 1
+        WHP_CPP_LOCKED=1
+        if [ -z "${CPP_FOR_BUILD:-}" ]; then
+            CPP_FOR_BUILD="$SOURCE_DIR/cpp.sh"
+        elif [ "$CPP_FOR_BUILD" != "$SOURCE_DIR/cpp.sh" ]; then
+            # Caller-selected host preprocessor remains authoritative; never
+            # silently replace an explicit build-machine tool override.
+            printf 'QEMU seed cpp: preserving explicit CPP_FOR_BUILD: %s\n' \
+                "$CPP_FOR_BUILD" >&2
+        fi
+        export WHP_CPP_SEED WHP_CPP_LOCKED CPP_FOR_BUILD
+        printf 'QEMU seed cpp: %s (-E, host only)\n' "$WHP_CPP_SEED" >&2
+        ;;
+esac
+
 # Resolve a native relocatable linker once, without changing the QEMU/firmware
 # artifact LD policy. Darwin ASan/arm64e and LLD selection still happen later.
 case "$WHP_HOST_OS" in
