@@ -288,9 +288,9 @@ graph.  A compact view is::
       |
       +--> seed Git
       |      +--> QEMU source checkout/update
-      |      +--> pinned WHP zlib source
+      |      +--> pinned WHP zlib source -> bootstrap zlib (seed C + seed Make)
       |      +--> pinned WHP Git fork
-      |             +--> managed full Git (HTTPS-capable) -> later submodules
+      |             +--> managed full Git (HTTPS-capable, needs bootstrap zlib) -> later submodules
       |             +--> managed local Git -> local repository operations only
       |
       +--> Python >= 3.9
@@ -302,15 +302,16 @@ graph.  A compact view is::
       |
       +--> GNU Make seed
       |      +--> Python POSIX fallback
+      |      +--> Git-bootstrap zlib (after seed Git, before Autotools)
       |      +--> Automake / Autoconf maintainer stages
       |               |
       |               +--> pinned WHP Make fork
       |                       |
       |                       +--> managed GNU Make
       |                               +--> GNU sed
-      |                               |      +--> Git-bootstrap zlib
-      |                               |              +--> managed Git
-      |                               +--> Bash
+      |                               |      +--> managed Git
+      |                               |              +--> Ninja (native C++17)
+      |                               |              +--> Bash
       |                               +--> WHP Libtool bootstrap
       |                                       |
       |                                       +--> libisofs
@@ -422,21 +423,30 @@ Bootstrap phase ordering
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed sed, Python, Automake,
-managed Autoconf, managed GNU Make, managed GNU sed, bootstrap zlib, managed
-Git, Bash, and Ninja are available before native LLVM. The enforced managed
-order is ``Automake -> Autoconf -> Make -> sed -> bootstrap-zlib -> Git ->
-Bash -> Ninja``. These are generators/orchestration inputs needed to reach the compiler
-build and therefore use build-machine roles. The seed GNU Make identity is
-established before the Python fallback and exported through both ``MAKE_CMD``
-and ``MAKE``. A single validated sed seed is likewise established before
-Python and Automake. The seed Git boundary materializes the pinned zlib source.
-If the host zlib is insufficient (or the WHP zlib is forced), an isolated
-``deps/git-zlib`` fallback is built with ``CC_FOR_BUILD`` before managed Git
-so Git's own ``ZLIB_PATH`` edge cannot silently consume the later QEMU
-artifact prefix. Managed Autoconf is promoted
-after Automake, managed Make after that Autotools pair, and managed GNU sed
-after Make.
+**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed sed,
+seed Git, and Python form the bootstrap roots. The low-dependency order is
+``seed Git -> bootstrap-zlib -> Automake -> Autoconf -> managed Make ->
+managed sed -> managed Git -> Ninja -> Bash``. Independent small sources
+are prepared before larger trees when their own prerequisites are satisfied;
+size never overrides required dependency edges. These generators and host
+tools are resolved before the optional native LLVM compiler build.
+
+The seed GNU Make identity is established before the Python fallback and
+exported through both ``MAKE_CMD`` and ``MAKE``. A validated sed seed is
+available before Python and Automake. The seed Git boundary materializes
+the pinned zlib source and Git fork. Bootstrap zlib uses the **seed** GNU
+Make and ``CC_FOR_BUILD``, so it does not need to wait for the heavier
+Automake/Autoconf/managed Make chain. If host zlib is insufficient or the
+WHP fork is forced, its isolated ``deps/git-zlib`` prefix is later used
+by managed Git. Git's ``ZLIB_PATH`` thus remains independent of both
+the managed Git being built and the subsequent QEMU artifact zlib.
+
+Managed Autoconf remains after Automake, managed Make after that pair, and
+managed sed after Make. Ninja is prepared after Git selection but before
+the larger Bash bootstrap: Ninja needs native C++17 and Python rather
+than Bash or the Autotools source-generation chain. The explicit optional
+sccache bootstrap remains before host tools because it is requested to
+cache Ninja and LLVM; Rust is not a prerequisite in the normal QEMU path.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM

@@ -61,5 +61,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Verify bootstrap phase order
         run: python3 scripts/tests/test-bootstrap-phase-order.py
-      - name: Check public build shell syntax
-        run: bash -n build.sh
+      - name: Check public and host-tool shell syntax
+        run: |
+          bash -n build.sh
+          sh -n scripts/whp-build/host-tools.sh

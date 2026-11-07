@@ -3,6 +3,21 @@
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 
+# Resolve the seed Git before any managed source bootstrap. In particular,
+# small static zlib needs only the seed C compiler, GNU Make, and seed Git;
+# it must not wait for Automake, Autoconf, managed Make, or managed sed.
+WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
+if [ -z "$WHP_GIT_SEED" ]; then
+    printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
+    exit 1
+fi
+export WHP_GIT_SEED
+
+# Git needs zlib before native LLVM, but QEMU's zlib must not inherit that
+# build-machine compiler. Prepare an isolated bootstrap role here; the artifact
+# role is resolved again after compiler promotion.
+whp_prepare_bootstrap_zlib
+
 BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch BOOTSTRAP_AUTOMAKE "${BOOTSTRAP_AUTOMAKE:-auto}") || exit 1
 export BOOTSTRAP_AUTOMAKE
 
@@ -361,21 +376,6 @@ fi
 printf 'QEMU sed: %s (%s)\n' "$SED" "$WHP_SED_KIND" >&2
 unset WHP_SED_DIR WHP_SED_KIND
 
-# Seed Git is a root boundary for both managed zlib source materialization and
-# the managed Git fork itself. Resolve it before either dependency so zlib does
-# not accidentally require the Git binary which is supposed to consume zlib.
-WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
-if [ -z "$WHP_GIT_SEED" ]; then
-    printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
-    exit 1
-fi
-export WHP_GIT_SEED
-
-# Git needs zlib before native LLVM, but QEMU's zlib must not inherit that
-# build-machine compiler. Prepare an isolated bootstrap role here; the artifact
-# role is resolved again after compiler promotion.
-whp_prepare_bootstrap_zlib
-
 BOOTSTRAP_GIT=$(whp_normalize_auto_switch BOOTSTRAP_GIT "${BOOTSTRAP_GIT:-auto}") || exit 1
 export BOOTSTRAP_GIT
 
@@ -428,6 +428,73 @@ if [ -z "${GIT:-}" ]; then
     export GIT
     printf 'QEMU Git: verified seed %s (%s)\n' \
         "$GIT" "$("$GIT" --version 2>/dev/null || printf unknown)" >&2
+fi
+
+# Ninja is a small, independent C++ host tool. After selecting Git,
+# prepare it before the larger Bash source build; it needs Python and a
+# native C++ compiler, not a managed Bash or Autotools environment.
+BOOTSTRAP_NINJA=$(whp_normalize_auto_switch BOOTSTRAP_NINJA "${BOOTSTRAP_NINJA:-auto}") || exit 1
+export BOOTSTRAP_NINJA
+
+# QEMU's normal Meson path needs Ninja before configuration, not only when the
+# final build command is launched. An explicit NINJA_CMD is authoritative.
+# On macOS, auto prefers the pinned WHP Ninja so the process-launch fast path
+# is used even when Homebrew Ninja is installed; it falls back to a host Ninja
+# if the optional bundled bootstrap is unavailable. Other hosts keep the
+# host-first auto policy. 1 forces the pinned fork, and 0 requires a host Ninja.
+# Export NINJA as well as NINJA_CMD so QEMU/Meson and WHP helpers consume one
+# exact executable.
+if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
+    WHP_PREFER_BUNDLED_NINJA=0
+    WHP_BUNDLED_NINJA_TRIED=0
+    if [ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]; then
+        WHP_PREFER_BUNDLED_NINJA=1
+    fi
+
+    if [ -z "${NINJA_CMD:-}" ] && [ "$WHP_PREFER_BUNDLED_NINJA" = 1 ]; then
+        WHP_BUNDLED_NINJA_TRIED=1
+        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
+            --build-dir "$BUILD_DIR") || NINJA_CMD=
+    fi
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
+        NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
+    fi
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ] && \
+       [ "$WHP_BUNDLED_NINJA_TRIED" != 1 ]; then
+        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
+            --build-dir "$BUILD_DIR") || exit 1
+    fi
+    if [ -z "${NINJA_CMD:-}" ]; then
+        if [ "$BOOTSTRAP_NINJA" = 0 ]; then
+            printf '%s\n' \
+                'error: Ninja is required, but BOOTSTRAP_NINJA=0 disables the bundled fallback.' \
+                'Install Ninja or set NINJA_CMD.' >&2
+        else
+            printf '%s\n' \
+                'error: no usable Ninja was found and the pinned WHP Ninja bootstrap failed.' \
+                'Install Ninja, set NINJA_CMD, or check the bundled Ninja bootstrap diagnostics.' >&2
+        fi
+        exit 1
+    fi
+    unset WHP_PREFER_BUNDLED_NINJA WHP_BUNDLED_NINJA_TRIED
+    case "$NINJA_CMD" in
+        */*)
+            NINJA_DIR=$(dirname -- "$NINJA_CMD")
+            PATH="$NINJA_DIR:$PATH"
+            unset NINJA_DIR
+            ;;
+    esac
+    # The bundled Ninja supports a bounded *automatic* job count, which
+    # protects ad-hoc Meson/Ninja calls lacking -j.  Explicit -j remains
+    # authoritative, and host/system Ninja is not assigned a new policy.
+    case "$NINJA_CMD" in
+        */.whp-host-tools/ninja-*/ninja|*/.whp-host-tools/ninja-*/ninja.exe)
+            NINJA_AUTO_JOBS=${NINJA_AUTO_JOBS:-2}
+            export NINJA_AUTO_JOBS
+            ;;
+    esac
+    NINJA=$NINJA_CMD
+    export NINJA_CMD NINJA PATH
 fi
 
 BOOTSTRAP_BASH=$(whp_normalize_auto_switch BOOTSTRAP_BASH "${BOOTSTRAP_BASH:-auto}") || exit 1
@@ -501,66 +568,3 @@ if [ -n "$WHP_BUILD_BASH" ]; then
     export WHP_BUILD_BASH CONFIG_SHELL
 fi
 
-BOOTSTRAP_NINJA=$(whp_normalize_auto_switch BOOTSTRAP_NINJA "${BOOTSTRAP_NINJA:-auto}") || exit 1
-export BOOTSTRAP_NINJA
-
-# QEMU's normal Meson path needs Ninja before configuration, not only when the
-# final build command is launched. An explicit NINJA_CMD is authoritative.
-# On macOS, auto prefers the pinned WHP Ninja so the process-launch fast path
-# is used even when Homebrew Ninja is installed; it falls back to a host Ninja
-# if the optional bundled bootstrap is unavailable. Other hosts keep the
-# host-first auto policy. 1 forces the pinned fork, and 0 requires a host Ninja.
-# Export NINJA as well as NINJA_CMD so QEMU/Meson and WHP helpers consume one
-# exact executable.
-if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
-    WHP_PREFER_BUNDLED_NINJA=0
-    WHP_BUNDLED_NINJA_TRIED=0
-    if [ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]; then
-        WHP_PREFER_BUNDLED_NINJA=1
-    fi
-
-    if [ -z "${NINJA_CMD:-}" ] && [ "$WHP_PREFER_BUNDLED_NINJA" = 1 ]; then
-        WHP_BUNDLED_NINJA_TRIED=1
-        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
-            --build-dir "$BUILD_DIR") || NINJA_CMD=
-    fi
-    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
-        NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
-    fi
-    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ] && \
-       [ "$WHP_BUNDLED_NINJA_TRIED" != 1 ]; then
-        NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
-            --build-dir "$BUILD_DIR") || exit 1
-    fi
-    if [ -z "${NINJA_CMD:-}" ]; then
-        if [ "$BOOTSTRAP_NINJA" = 0 ]; then
-            printf '%s\n' \
-                'error: Ninja is required, but BOOTSTRAP_NINJA=0 disables the bundled fallback.' \
-                'Install Ninja or set NINJA_CMD.' >&2
-        else
-            printf '%s\n' \
-                'error: no usable Ninja was found and the pinned WHP Ninja bootstrap failed.' \
-                'Install Ninja, set NINJA_CMD, or check the bundled Ninja bootstrap diagnostics.' >&2
-        fi
-        exit 1
-    fi
-    unset WHP_PREFER_BUNDLED_NINJA WHP_BUNDLED_NINJA_TRIED
-    case "$NINJA_CMD" in
-        */*)
-            NINJA_DIR=$(dirname -- "$NINJA_CMD")
-            PATH="$NINJA_DIR:$PATH"
-            unset NINJA_DIR
-            ;;
-    esac
-    # The bundled Ninja supports a bounded *automatic* job count, which
-    # protects ad-hoc Meson/Ninja calls lacking -j.  Explicit -j remains
-    # authoritative, and host/system Ninja is not assigned a new policy.
-    case "$NINJA_CMD" in
-        */.whp-host-tools/ninja-*/ninja|*/.whp-host-tools/ninja-*/ninja.exe)
-            NINJA_AUTO_JOBS=${NINJA_AUTO_JOBS:-2}
-            export NINJA_AUTO_JOBS
-            ;;
-    esac
-    NINJA=$NINJA_CMD
-    export NINJA_CMD NINJA PATH
-fi

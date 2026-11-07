@@ -56,29 +56,57 @@ if not library_module < tool_module:
         "error: host-library helper definitions must load before host-tool execution"
     )
 
+# Schedule independent, small host dependencies before larger Autotools and
+# Bash trees, but never move a consumer before the tools needed to build it.
+seed_git_hook = host_tools.index(
+    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed'
+)
+zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 automake_hook = host_tools.index("scripts/ensure-automake.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
 make_hook = host_tools.index("scripts/ensure-make.py")
 sed_hook = host_tools.index("scripts/ensure-sed.py")
-zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 git_hook = host_tools.index("scripts/ensure-git.py")
-bash_hook = host_tools.index("scripts/ensure-bash.py")
 ninja_hook = host_tools.index("scripts/ensure-ninja.py")
+bash_hook = host_tools.index("scripts/ensure-bash.py")
 
 if not (
-    automake_hook
+    seed_git_hook
+    < zlib_hook
+    < automake_hook
     < autoconf_hook
     < make_hook
     < sed_hook
-    < zlib_hook
     < git_hook
-    < bash_hook
     < ninja_hook
+    < bash_hook
 ):
     raise SystemExit(
-        "error: expected Automake -> Autoconf -> Make -> sed -> zlib -> "
-        "Git -> Bash -> Ninja pre-LLVM order"
+        "error: expected seed Git -> bootstrap-zlib -> Automake -> "
+        "Autoconf -> Make -> sed -> Git -> Ninja -> Bash pre-LLVM order"
     )
+if host_tools.count("whp_prepare_bootstrap_zlib") != 1:
+    raise SystemExit("error: bootstrap zlib must have exactly one host-tool call")
+if host_tools.count("scripts/ensure-ninja.py") != 2:
+    raise SystemExit("error: Ninja should have one resolver stage with two fallbacks")
+
+# Early zlib must stay on the seed GNU Make/C toolchain; the two roles are
+# separate so native LLVM does not retroactively change Git's zlib ABI.
+require(
+    host_libraries,
+    '--role bootstrap --cc "$CC_FOR_BUILD"',
+    "zlib build-machine compiler admission before managed Make",
+)
+require(
+    build,
+    'export WHP_MAKE_SEED MAKE_CMD MAKE',
+    "seed Make must exist before host-tool execution",
+)
+require(
+    build,
+    'export CC_FOR_BUILD',
+    "native C seed must exist before host-tool execution",
+)
 
 artifact_zlib_hook = host_libraries.index("whp_prepare_zlib_phase artifact")
 sdl_hook = host_libraries.index("BOOTSTRAP_SDL=")
