@@ -6,6 +6,25 @@ SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 
+# Establish one POSIX AWK seed before source refresh, shell menuconfig, Python,
+# and later compiler/firmware bootstraps. Keep literal awk calls and $AWK on
+# the same validated interpreter; do not introduce an AWK self-bootstrap cycle.
+if [ -z "${WHP_AWK_SEED:-}" ] && [ -n "${AWK:-}" ]; then
+    WHP_AWK_SEED=$AWK
+fi
+WHP_AWK_SEED=$("$SOURCE_DIR/awk.sh" --print-seed) || exit 1
+AWK=$WHP_AWK_SEED
+WHP_AWK_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"
+if [ ! -x "$WHP_AWK_BIN_DIR/awk" ]; then
+    printf 'error: QEMU literal awk bridge is unavailable: %s\n' "$WHP_AWK_BIN_DIR/awk" >&2
+    exit 1
+fi
+WHP_AWK_LOCKED=1
+PATH="$WHP_AWK_BIN_DIR:$PATH"
+export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
+printf 'QEMU seed AWK: %s\n' "$WHP_AWK_SEED" >&2
+unset WHP_AWK_BIN_DIR
+
 # Public host snapshot: capture once before Python, seed compilers and linkers.
 # Ignore inherited WHP_HOST_*: these values describe the current build machine.
 WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)

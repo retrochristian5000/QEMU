@@ -423,8 +423,8 @@ Bootstrap phase ordering
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed sed,
-seed Git, and Python form the bootstrap roots. The low-dependency order is
+**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed AWK,
+seed sed, seed Git, and Python form the bootstrap roots. The low-dependency order is
 ``seed Git -> bootstrap-zlib -> Automake -> Autoconf -> managed Make ->
 managed sed -> managed Git -> Ninja -> Bash``. Independent small sources
 are prepared before larger trees when their own prerequisites are satisfied;
@@ -432,8 +432,9 @@ size never overrides required dependency edges. These generators and host
 tools are resolved before the optional native LLVM compiler build.
 
 The seed GNU Make identity is established before the Python fallback and
-exported through both ``MAKE_CMD`` and ``MAKE``. A validated sed seed is
-available before Python and Automake. The seed Git boundary materializes
+exported through both ``MAKE_CMD`` and ``MAKE``. Validated AWK and sed seeds are
+available before Python and Automake; AWK also precedes the shell menu and
+parent source-refresh steps. The seed Git boundary materializes
 the pinned zlib source and Git fork. Bootstrap zlib uses the **seed** GNU
 Make and ``CC_FOR_BUILD``, so it does not need to wait for the heavier
 Automake/Autoconf/managed Make chain. If host zlib is insufficient or the
@@ -695,6 +696,24 @@ suite generated with that M4, but its helper deliberately strips inherited
 contamination guard. The installed-runtime smoke test removes caller ``M4``
 first, so an ambient Homebrew tool cannot hide a broken M4 path embedded in
 ``autom4te``.
+
+awk seed bridge
+---------------
+
+The first AWK is a validated host seed, not a recursively compiled managed
+AWK. ``awk.sh`` accepts an explicit ``WHP_AWK_SEED`` or ``AWK`` and rejects
+unusable overrides rather than silently falling back. It verifies the POSIX
+subset used by QEMU's bootstrap: ``-F`` and ``-v``, field and record counters,
+regular expressions, substitutions, and array splitting. Both the adapter and
+the literal ``scripts/whp-build/seed-bin/awk`` launcher reject recursion.
+
+``build.sh`` resolves AWK **before** the parent source refresh and portable
+shell ``menuconfig`` entry. It exports the exact native executable through
+``AWK`` and ``WHP_AWK_SEED``, prepends the canonical literal launcher to
+``PATH``, and locks the selection via ``WHP_AWK_LOCKED=1``. Later CMake,
+OpenBIOS, LLVM, and post-build scripts using a literal ``awk`` therefore
+consume the same seed without repeated capability probes. No host AWK binary
+is overwritten, and no new AWK source pin or compiler dependency is created.
 
 grep seed bridge
 ----------------

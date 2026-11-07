@@ -1,9 +1,12 @@
-name: grep seed bridge
+name: AWK and grep seed bridges
 
 on:
   push:
     branches: [master]
     paths:
+      - 'awk.sh'
+      - 'scripts/whp-build/seed-bin/awk'
+      - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
@@ -12,6 +15,9 @@ on:
       - '.github/workflows/grep-seed-adapter.yml'
   pull_request:
     paths:
+      - 'awk.sh'
+      - 'scripts/whp-build/seed-bin/awk'
+      - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
@@ -31,9 +37,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify early AWK seed, recursion and AWK semantics
+        run: bash scripts/tests/test-awk-seed-adapter.bash
       - name: Verify early grep seed, recursion and grep semantics
         run: bash scripts/tests/test-grep-seed-adapter.bash
-      - name: Verify grep before sed, Python, and Autotools
+      - name: Verify AWK and grep before sed, Python, and Autotools
         run: python3 scripts/tests/test-sed-bootstrap-order.py
       - name: Validate portable shell entrypoints
-        run: sh -n grep.sh scripts/whp-build/seed-bin/grep build.sh
+        run: sh -n awk.sh scripts/whp-build/seed-bin/awk grep.sh scripts/whp-build/seed-bin/grep build.sh

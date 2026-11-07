@@ -29,6 +29,20 @@ def main() -> int:
         encoding="utf-8"
     )
 
+    awk_seed = 'WHP_AWK_SEED=$("$SOURCE_DIR/awk.sh" --print-seed)'
+    require(build, awk_seed, "early POSIX AWK seed selection")
+    require(build, "WHP_AWK_LOCKED=1", "validated AWK fast path")
+    require(build, 'PATH="$WHP_AWK_BIN_DIR:$PATH"', "literal AWK PATH binding")
+    require(build, "export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH",
+            "same AWK for literal and variable calls")
+    awk_shim = ROOT / "scripts/whp-build/seed-bin/awk"
+    if not awk_shim.is_file():
+        raise SystemExit("error: literal AWK bridge is missing")
+    if not build.index(awk_seed) < build.index("WHP_SOURCE_UPDATE=$("):
+        raise SystemExit("error: AWK must be available before source refresh")
+    if not build.index(awk_seed) < build.index('if [ "${1:-}" = menuconfig ]'):
+        raise SystemExit("error: AWK must precede shell menuconfig dispatch")
+
     grep_seed = 'WHP_GREP_SEED=$("$SOURCE_DIR/grep.sh" --print-seed)'
     require(build, grep_seed, "early grep seed selection")
     require(build, "WHP_GREP_LOCKED=1", "validated grep fast path")
@@ -47,8 +61,8 @@ def main() -> int:
             "sed bootstrap retains build.sh seed provenance")
     if "unset WHP_SED_SEED" in host_tools:
         raise SystemExit("error: managed sed bootstrap destroys seed provenance")
-    if not build.index(grep_seed) < build.index(seed) < build.index(python_bootstrap):
-        raise SystemExit("error: grep, sed, Python bootstrap order has drifted")
+    if not build.index(awk_seed) < build.index(grep_seed) < build.index(seed) < build.index(python_bootstrap):
+        raise SystemExit("error: AWK, grep, sed, Python bootstrap order has drifted")
 
     automake_pos = host_tools.index("BOOTSTRAP_AUTOMAKE=")
     autoconf_pos = host_tools.index("BOOTSTRAP_AUTOCONF=")
