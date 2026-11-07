@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import os
@@ -358,7 +359,7 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags, marker):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -429,6 +430,9 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
             raise RuntimeError(f"bootstrapped Git failed local checks: {git_path}")
         if profile == "full" and not has_https_transport(git_path):
             raise RuntimeError("bootstrapped full Git lacks HTTPS transport")
+        # Cache provenance is part of the transaction. If finalization fails,
+        # restore the previous validated Git rather than keeping an unmarked one.
+        (prefix / ".whp-git-bootstrap").write_text(marker, encoding="utf-8")
     except BaseException:
         if prefix.is_dir() and not prefix.is_symlink():
             shutil.rmtree(prefix)
@@ -442,7 +446,36 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     return prefix
 
 
+@contextmanager
+def git_bootstrap_lock(build_root: pathlib.Path):
+    """Serialize Git cache checks/replacement without an abandoned lock dir."""
+    import fcntl  # POSIX-only; main() rejects Windows.
+
+    directory = build_root / "deps"
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / ".whp-git.lock"
+    descriptor = os.open(
+        lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600
+    )
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                f"another WHP Git bootstrap is using {build_root}; "
+                "existing cache was not modified"
+            ) from exc
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
+    with git_bootstrap_lock(build_root):
+        return _bootstrap_locked(build_root, mode)
+
+
+def _bootstrap_locked(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     seed = seed_git()
     revision, sha1_revision = ensure_source(seed)
     sdkroot = select_macos_sdkroot()
@@ -496,6 +529,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
                 seed, revision, sha1_revision, cc, make, build_root,
                 profile, curl_dir if profile == "full" else "", iconv_dir,
                 zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags,
+                marker,
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:
@@ -506,8 +540,6 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             )
             continue
 
-        marker_path = built / ".whp-git-bootstrap"
-        marker_path.write_text(marker, encoding="utf-8")
         return built
 
     raise RuntimeError("no WHP Git bootstrap profile succeeded")

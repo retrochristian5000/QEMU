@@ -80,7 +80,7 @@ def verify_git_cache_recovery() -> None:
             try:
                 helper.build_profile(
                     "seed", "revision", "sha1", "cc", "make", build,
-                    "core", "", "", "", "", "", "",
+                    "core", "", "", "", "", "", "", "replacement-cache\n",
                 )
             except RuntimeError as exc:
                 assert "simulated Git install failure" in str(exc)
@@ -90,6 +90,55 @@ def verify_git_cache_recovery() -> None:
         assert binary.read_text(encoding="utf-8") == "previous Git\n"
         assert marker.read_text(encoding="utf-8") == "core-cache\n"
         assert not (prefix.parent / ".whp-git-previous").exists()
+
+        # An unusable cache marker is also a failed install. Restore the old
+        # Git executable and its provenance, not just the executable itself.
+        def install_replacement(argv, **kwargs):
+            if "install" in argv:
+                (prefix / "bin").mkdir(parents=True, exist_ok=True)
+                (prefix / "bin/git").write_text(
+                    "replacement Git\n", encoding="utf-8"
+                )
+
+        original_write = pathlib.Path.write_text
+
+        def reject_new_marker(path, content, **kwargs):
+            if path == marker:
+                raise OSError("simulated cache marker failure")
+            return original_write(path, content, **kwargs)
+
+        with (
+            mock.patch.object(helper, "copy_source"),
+            mock.patch.object(helper, "validate_build_compiler"),
+            mock.patch.object(helper, "run_logged", side_effect=install_replacement),
+            mock.patch.object(helper, "git_usable", return_value=True),
+            mock.patch.object(helper, "smoke_local", return_value=True),
+            mock.patch.object(helper.pathlib.Path, "write_text", autospec=True,
+                              side_effect=reject_new_marker),
+        ):
+            try:
+                helper.build_profile(
+                    "seed", "revision", "sha1", "cc", "make", build,
+                    "core", "", "", "", "", "", "", "replacement-cache\n",
+                )
+            except OSError as exc:
+                assert "simulated cache marker failure" in str(exc)
+            else:
+                raise AssertionError("Git marker write failure was not reported")
+
+        assert binary.read_text(encoding="utf-8") == "previous Git\n"
+        assert marker.read_text(encoding="utf-8") == "core-cache\n"
+        assert not (prefix.parent / ".whp-git-previous").exists()
+
+        # A concurrent bootstrap must not alter the active source or Git cache.
+        with helper.git_bootstrap_lock(build):
+            try:
+                with helper.git_bootstrap_lock(build):
+                    raise AssertionError("nested Git bootstrap acquired the lock")
+            except RuntimeError as exc:
+                assert "another WHP Git bootstrap" in str(exc)
+        with helper.git_bootstrap_lock(build):
+            pass
 
 def main() -> int:
     parser = configparser.ConfigParser()

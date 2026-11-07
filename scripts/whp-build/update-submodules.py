@@ -114,10 +114,24 @@ def refresh(source):
         # known: that would rewind a newer detached local checkout.
         if git(target, "cat-file", "-e", pin + "^{commit}",
                check=False).returncode:
-            git(target, "fetch", "--no-tags", "--no-recurse-submodules",
-                "origin", pin)
+            fetched = git(
+                target, "fetch", "--no-tags", "--no-recurse-submodules",
+                "origin", pin, check=False,
+            )
+            if fetched.returncode:
+                reason = fetched.stderr.strip() or f"Git exited {fetched.returncode}"
+                if preserve_if_auto(path, f"pinned history fetch failed: {reason}"):
+                    protected += 1
+                    continue
+                raise UpdateError(
+                    f"submodule {path} cannot fetch pinned commit {pin}: "
+                    f"{reason}; no checkout was updated"
+                )
             if git(target, "cat-file", "-e", pin + "^{commit}",
                    check=False).returncode:
+                if preserve_if_auto(path, "pinned commit absent after fetch"):
+                    protected += 1
+                    continue
                 raise UpdateError(
                     f"submodule {path} cannot locate pinned commit {pin}; "
                     "no checkout was updated"

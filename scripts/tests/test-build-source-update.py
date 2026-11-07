@@ -492,7 +492,8 @@ def test_initialized_submodules_follow_parent_gitlinks():
                 cwd=source / "modules/a")
             git("add", "modules/a", cwd=source)
             git("commit", "-qm", "pin a v" + str(version), cwd=source)
-            git("pull", "--ff-only", str(source), parent_branch, cwd=clone)
+            git("-c", "fetch.recurseSubmodules=false", "pull", "--ff-only",
+                str(source), parent_branch, cwd=clone)
             return new_pin
 
         def refresh():
@@ -575,6 +576,31 @@ def test_initialized_submodules_follow_parent_gitlinks():
         assert dirty_ahead.returncode == 0, dirty_ahead.stderr
         assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
         assert (clone / "modules/a/README").read_text() == "newer local edits\n"
+
+        # Optional initialized submodule with unavailable pin history must
+        # not block auto bootstrap or overwrite a newer local checkout.
+        missing_pin = pin_next_version(5)
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        missing_object = subprocess.run(
+            ["git", "-C", str(clone / "modules/a"), "cat-file", "-e",
+             missing_pin + "^{commit}"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert missing_object.returncode != 0, "fixture fetched pin prematurely"
+        git("remote", "set-url", "origin", str(base / "missing-module-origin"),
+            cwd=clone / "modules/a")
+        env["WHP_SOURCE_UPDATE"] = "auto"
+        unavailable = refresh()
+        assert unavailable.returncode == 0, unavailable.stderr
+        assert "pinned history fetch failed" in unavailable.stderr
+        assert "preserving protected checkout" in unavailable.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        env["WHP_SOURCE_UPDATE"] = "1"
+        strict = refresh()
+        assert strict.returncode != 0, strict.stderr
+        assert "cannot fetch pinned commit" in strict.stderr
+        assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == newer
+        env["WHP_SOURCE_UPDATE"] = "auto"
 
         # Source refresh can be opted out without touching the stale checkout.
         env["WHP_SOURCE_UPDATE"] = "0"
