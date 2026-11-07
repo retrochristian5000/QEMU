@@ -10,7 +10,7 @@
 # the COPYING file in the top-level directory.
 
 error() {
-    printf %s\\n "$*" >&2
+    printf '%s\n' "$*" >&2
     exit 1
 }
 
@@ -67,7 +67,7 @@ function tree_ish() {
     then
         retval=$(git stash create)
     fi
-    echo "$retval"
+    printf '%s\n' "$retval"
 }
 
 function subproject_dir() {
@@ -88,7 +88,7 @@ function subproject_dir() {
       -e '}' \
       "subprojects/$1.wrap")
 
-    echo "${dir:-$1}"
+    printf '%s\n' "${dir:-$1}"
 }
 
 git archive --format tar "$(tree_ish)" > "$tar_file"

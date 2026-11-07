@@ -16,9 +16,9 @@ get_ipv6_addr() {
     [ $? -eq 0 ] || return
 
     if [[ "$ipv6" =~ ^fe80: ]]; then
-        echo -n "[$ipv6%$1]"
+        printf '[%s%%%s]' "$ipv6" "$1"
     else
-        echo -n "[$ipv6]"
+        printf '[%s]' "$ipv6"
     fi
 }
 
@@ -57,19 +57,19 @@ rdma_rxe_setup()
     for i in $("$family"_interfaces)
     do
         if rdma_interfaces | grep -qw $i; then
-            echo "$family: Reuse the existing rdma/rxe ${i}_rxe" \
-                 "for $i with $(get_"$family"_addr $i)"
+            printf '%s: Reuse the existing rdma/rxe %s_rxe for %s with %s\n' \
+                "$family" "$i" "$i" "$(get_"$family"_addr "$i")"
             return
         fi
 
         rdma link add "${i}_rxe" type rxe netdev "$i" && {
-            echo "$family: Setup new rdma/rxe ${i}_rxe" \
-                 "for $i with $(get_"$family"_addr $i)"
+            printf '%s: Setup new rdma/rxe %s_rxe for %s with %s\n' \
+                "$family" "$i" "$i" "$(get_"$family"_addr "$i")"
             return
         }
     done
 
-    echo "$family: Failed to setup any new rdma/rxe link" >&2
+    printf '%s: Failed to setup any new rdma/rxe link\n' "$family" >&2
     return 1
 }
 
@@ -80,7 +80,7 @@ rdma_rxe_clean()
 
 IP_FAMILY=${IP_FAMILY:-ipv4}
 if [ "$IP_FAMILY" != "ipv6" ] && [ "$IP_FAMILY" != "ipv4" ]; then
-    echo "Unknown ip family '$IP_FAMILY', only ipv4 or ipv6 is supported." >&2
+    printf "Unknown ip family '%s', only ipv4 or ipv6 is supported.\n" "$IP_FAMILY" >&2
     exit 1
 fi
 
@@ -105,5 +105,5 @@ if [ "$operation" == "setup" ] || [ "$operation" == "clean" ]; then
 elif [ "$operation" == "detect" ]; then
     rdma_rxe_detect "$IP_FAMILY"
 else
-    echo "Usage: $0 [setup | detect | clean]"
+    printf 'Usage: %s [setup | detect | clean]\n' "$0"
 fi

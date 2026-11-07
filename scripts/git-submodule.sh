@@ -16,7 +16,7 @@ test -z "$maybe_modules" && exit 0
 for m in $maybe_modules; do
     case "$m" in
         subprojects/*)
-            echo "$0: refusing Meson-owned source '$m'; use its Meson wrap instead" >&2
+            printf "%s: refusing Meson-owned source '%s'; use its Meson wrap instead\n" "$0" "$m" >&2
             exit 1
             ;;
     esac
@@ -47,9 +47,9 @@ is_git() {
 }
 
 update_error() {
-    echo "$0: $*"
+    printf '%s: %s\n' "$0" "$*"
     echo
-    echo "Unable to automatically checkout GIT submodules '$modules'."
+    printf "Unable to automatically checkout GIT submodules '%s'.\n" "$modules"
     echo "If you require use of an alternative GIT binary (for example to"
     echo "enable use of a transparent proxy), please disable automatic"
     echo "GIT submodule checkout with:"
@@ -58,7 +58,7 @@ update_error() {
     echo
     echo "and then manually update submodules prior to running make, with:"
     echo
-    echo " $ GIT='tsocks git' scripts/git-submodule.sh update $modules"
+    printf " $ GIT='tsocks git' scripts/git-submodule.sh update %s\n" "$modules"
     echo
     exit 1
 }
@@ -67,7 +67,7 @@ validate_error() {
     if is_git && test "$1" = "validate"; then
         echo "GIT submodules checkout is out of date, and submodules"
         echo "configured for validate only. Please run"
-        echo "  scripts/git-submodule.sh update $maybe_modules"
+        printf '  scripts/git-submodule.sh update %s\n' "$maybe_modules"
         echo "from the source directory or call configure with"
         echo "  --enable-download"
     fi
@@ -107,7 +107,7 @@ if is_git; then
             modules="$modules $m"
             # The ledger is observational and never an ancestry authority.
         else
-            echo "warn: ignoring non-existent submodule $m"
+            printf 'warn: ignoring non-existent submodule %s\n' "$m"
         fi
     done
 else
@@ -121,7 +121,7 @@ status|validate)
             check_updated $module || validate_error "$command"
         elif ! (set xyz "$module"/* && test -e "$2"); then
             # The directory does not exist or it contains no files
-            echo "$0: sources not available for $module and $no_git_error"
+            printf '%s: sources not available for %s and %s\n' "$0" "$module" "$no_git_error"
             validate_error "$command"
         fi
     done
@@ -129,7 +129,7 @@ status|validate)
 
 update)
     is_git || {
-        echo "$0: unexpectedly called with submodules but $no_git_error"
+        printf '%s: unexpectedly called with submodules but %s\n' "$0" "$no_git_error"
         exit 1
     }
 

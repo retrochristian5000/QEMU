@@ -175,7 +175,7 @@ qemu_normalize() {
         echo "aarch64"
         ;;
     *)
-        echo "$cpu"
+        printf '%s\n' "$cpu"
         ;;
     esac
 }
@@ -232,7 +232,7 @@ EOF
 
 qemu_check_access() {
     if [ ! -w "$1" ] ; then
-        echo "ERROR: cannot write to $1" 1>&2
+        printf 'ERROR: cannot write to %s\n' "$1" >&2
         exit 1
     fi
 }
@@ -285,16 +285,17 @@ qemu_generate_register() {
         flags="${flags}P"
     fi
 
-    echo ":qemu-$cpu:M::$magic:$mask:$qemu:$flags"
+    # Preserve literal backslash-x escapes in the kernel registration string.
+    printf ':qemu-%s:M::%s:%s:%s:%s\n' "$cpu" "$magic" "$mask" "$qemu" "$flags"
 }
 
 qemu_register_interpreter() {
-    echo "Setting $qemu as binfmt interpreter for $cpu"
+    printf 'Setting %s as binfmt interpreter for %s\n' "$qemu" "$cpu"
     qemu_generate_register > /proc/sys/fs/binfmt_misc/register
 }
 
 qemu_generate_systemd() {
-    echo "Setting $qemu as binfmt interpreter for $cpu for systemd-binfmt.service"
+    printf 'Setting %s as binfmt interpreter for %s for systemd-binfmt.service\n' "$qemu" "$cpu"
     qemu_generate_register > "$EXPORTDIR/qemu-$cpu.conf"
 }
 
@@ -310,22 +311,37 @@ fix_binary $PERSISTENT
 EOF
 }
 
+# Read an indirect CPU table field exactly, including literal backslashes.
+# Only plain identifier characters can be used in the evaluated variable name.
+qemu_cpu_field() (
+    qemu_field_cpu=$1
+    qemu_field_name=$2
+    case "$qemu_field_cpu" in
+        ""|*[!a-zA-Z0-9_]*) return 1 ;;
+    esac
+    case "$qemu_field_name" in
+        magic|mask|family) ;;
+        *) return 1 ;;
+    esac
+    eval "printf '%s\n' \"\${${qemu_field_cpu}_${qemu_field_name}-}\""
+)
+
 qemu_set_binfmts() {
     # probe cpu type
     host_cpu=$(qemu_normalize ${HOST_ARCH:-$(uname -m)})
-    host_family=$(eval echo \$${host_cpu}_family)
+    host_family=$(qemu_cpu_field "$host_cpu" family) || host_family=
 
     if [ "$host_family" = "" ] ; then
-        echo "INTERNAL ERROR: unknown host cpu $host_cpu" 1>&2
+        printf 'INTERNAL ERROR: unknown host cpu %s\n' "$host_cpu" >&2
         exit 1
     fi
 
     # register the interpreter for each cpu except for the native one
 
     for cpu in ${qemu_target_list} ; do
-        magic=$(eval echo \$${cpu}_magic)
-        mask=$(eval echo \$${cpu}_mask)
-        family=$(eval echo \$${cpu}_family)
+        magic=$(qemu_cpu_field "$cpu" magic) || magic=
+        mask=$(qemu_cpu_field "$cpu" mask) || mask=
+        family=$(qemu_cpu_field "$cpu" family) || family=
 
         target="$cpu"
         if [ "$cpu" = "i486" ] ; then
@@ -335,7 +351,7 @@ qemu_set_binfmts() {
         qemu="$QEMU_PATH/qemu-$target$QEMU_SUFFIX"
 
         if [ "$magic" = "" ] || [ "$mask" = "" ] || [ "$family" = "" ] ; then
-            echo "INTERNAL ERROR: unknown cpu $cpu" 1>&2
+            printf 'INTERNAL ERROR: unknown cpu %s\n' "$cpu" >&2
             continue
         fi
 
@@ -393,7 +409,7 @@ while true ; do
             if [ "$cpu" = "$1" ] ; then
                 qemu_target_list="$1"
             else
-                echo "ERROR: unknown CPU \"$1\"" 1>&2
+                printf 'ERROR: unknown CPU "%s"\n' "$1" >&2
                 usage
                 exit 1
             fi
