@@ -58,7 +58,47 @@ select_seed()
         return 0
     fi
 
-    for candidate in /usr/bin/git /opt/homebrew/bin/git /usr/local/bin/git git; do
+    # Honor a non-Apple Git explicitly selected through PATH. A default
+    # /usr/bin/git at the front of macOS PATH must not hide Homebrew Git.
+    host_kernel=${WHP_HOST_KERNEL:-}
+    if [ -z "$host_kernel" ]; then
+        host_kernel=$(uname -s 2>/dev/null || printf unknown)
+    fi
+    if [ "$host_kernel" = Darwin ]; then
+        path_git=$(command -v git 2>/dev/null || true)
+        case "$path_git" in
+            /usr/bin/git|/bin/git|'') ;;
+            *)
+                if seed=$(resolve_candidate "$path_git"); then
+                    printf '%s\n' "$seed"
+                    return 0
+                fi
+                ;;
+        esac
+
+        # No dependency on the brew command: linked and keg-only Git
+        # installations work in the standard Apple Silicon/Intel prefixes.
+        # A custom prefix can be supplied by Homebrew's shell environment.
+        if [ -n "${HOMEBREW_PREFIX:-}" ]; then
+            for candidate in "$HOMEBREW_PREFIX/bin/git" "$HOMEBREW_PREFIX/opt/git/bin/git"; do
+                if seed=$(resolve_candidate "$candidate"); then
+                    printf '%s\n' "$seed"
+                    return 0
+                fi
+            done
+        fi
+        for candidate in /opt/homebrew/bin/git /usr/local/bin/git \
+                         /opt/homebrew/opt/git/bin/git /usr/local/opt/git/bin/git; do
+            if seed=$(resolve_candidate "$candidate"); then
+                printf '%s\n' "$seed"
+                return 0
+            fi
+        done
+    fi
+
+    # On non-Darwin hosts, follow PATH first. Apple's Git remains the final
+    # Darwin fallback, after any available Homebrew installation.
+    for candidate in git /usr/bin/git; do
         if seed=$(resolve_candidate "$candidate"); then
             printf '%s\n' "$seed"
             return 0
