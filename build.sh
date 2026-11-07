@@ -22,7 +22,7 @@ fi
 WHP_AWK_LOCKED=1
 PATH="$WHP_AWK_BIN_DIR:$PATH"
 export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
-printf 'QEMU seed AWK: %s\n' "$WHP_AWK_SEED" >&2
+printf 'QEMU seed awk: %s\n' "$WHP_AWK_SEED" >&2
 unset WHP_AWK_BIN_DIR
 
 # Public host snapshot: capture once before Python, seed compilers and linkers.
@@ -283,7 +283,7 @@ if [ -n "$MAKE_CMD" ]; then
     WHP_MAKE_SEED=$MAKE_CMD
     MAKE=$MAKE_CMD
     export WHP_MAKE_SEED MAKE_CMD MAKE
-    printf 'QEMU seed GNU Make: %s\n' "$MAKE_CMD" >&2
+    printf 'QEMU seed make: %s\n' "$MAKE_CMD" >&2
 fi
 unset WHP_MAKE_REQUESTED
 
@@ -300,7 +300,7 @@ case "$WHP_HOST_OS" in
         fi
         CC_FOR_BUILD=$("$SOURCE_DIR/cc.sh" --print-cc) || exit 1
         export CC_FOR_BUILD
-        printf 'QEMU bootstrap C compiler: %s\n' "$CC_FOR_BUILD" >&2
+        printf 'QEMU seed cc: %s\n' "$CC_FOR_BUILD" >&2
         ;;
 esac
 
@@ -311,7 +311,7 @@ case "$WHP_HOST_OS" in
     *)
         LD_FOR_BUILD=$("$SOURCE_DIR/ld.sh" --print-ld) || exit 1
         export LD_FOR_BUILD
-        printf 'QEMU bootstrap native linker: %s\n' "$LD_FOR_BUILD" >&2
+        printf 'QEMU seed ld: %s\n' "$LD_FOR_BUILD" >&2
         ;;
 esac
 

@@ -432,7 +432,16 @@ size never overrides required dependency edges. These generators and host
 tools are resolved before the optional native LLVM compiler build.
 
 The seed GNU Make identity is established before the Python fallback and
-exported through both ``MAKE_CMD`` and ``MAKE``. Validated AWK and sed seeds are
+exported through both ``MAKE_CMD`` and ``MAKE``. The build's visible seed
+diagnostics use generic lowercase role names: ``QEMU seed awk:``,
+``QEMU seed grep:``, ``QEMU seed sed:``, ``QEMU seed make:``,
+``QEMU seed cc:``, ``QEMU seed ld:``, and ``QEMU seed git:``.
+The Git seed is selected by ``git.sh --print-seed`` immediately before the
+bootstrap-zlib role and logged explicitly rather than silently suppressed.
+These role labels do not assert the tool's brand. The current QEMU and
+maintainer-tree Make consumers still validate GNU Make where their source
+contracts require it; changing the label does not pretend an unverified
+non-GNU implementation will build those trees. Validated AWK and sed seeds are
 available before Python and Automake; AWK also precedes the shell menu and
 parent source-refresh steps. The seed Git boundary materializes
 the pinned zlib source and Git fork. Bootstrap zlib uses the **seed** GNU

@@ -6,12 +6,13 @@
 # Resolve the seed Git before any managed source bootstrap. In particular,
 # small static zlib needs only the seed C compiler, GNU Make, and seed Git;
 # it must not wait for Automake, Autoconf, managed Make, or managed sed.
-WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed 2>/dev/null || true)
+WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || exit 1
 if [ -z "$WHP_GIT_SEED" ]; then
     printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
     exit 1
 fi
 export WHP_GIT_SEED
+printf 'QEMU seed git: %s\n' "$WHP_GIT_SEED" >&2
 
 # Git needs zlib before native LLVM, but QEMU's zlib must not inherit that
 # build-machine compiler. Prepare an isolated bootstrap role here; the artifact
@@ -274,7 +275,7 @@ if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
             WHP_MAKE_BIN_DIR=$(dirname -- "$MAKE_CMD")
             PATH="$WHP_MAKE_BIN_DIR:$PATH"
             export WHP_MAKE_PREFIX MAKE_CMD MAKE PATH
-            printf 'QEMU GNU Make: WHP managed %s\n' \
+            printf 'QEMU make: WHP managed %s\n' \
                 "$("$MAKE_CMD" --version 2>/dev/null | sed -n '1p')" >&2
             unset WHP_MAKE_BIN_DIR
         elif [ "$BOOTSTRAP_MAKE" = 1 ]; then
@@ -284,7 +285,7 @@ if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
             MAKE_CMD=$WHP_MAKE_SEED
             MAKE=$MAKE_CMD
             export MAKE_CMD MAKE
-            printf 'WHP GNU Make bootstrap unavailable; retaining seed: %s\n' "$MAKE_CMD" >&2
+            printf 'QEMU make: managed bootstrap unavailable; retaining seed: %s\n' "$MAKE_CMD" >&2
         fi
         unset WHP_MAKE_PREFIX
     fi

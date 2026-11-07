@@ -61,6 +61,18 @@ if not library_module < tool_module:
 seed_git_hook = host_tools.index(
     'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed'
 )
+# Require the verified seed to be visible and a failing Git probe to stop the
+# bootstrap instead of returning an empty seed from a swallowed error.
+require(
+    host_tools,
+    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || exit 1',
+    "Git seed fail-closed selection",
+)
+require(
+    host_tools,
+    "printf 'QEMU seed git: %s\\n' \"$WHP_GIT_SEED\" >&2",
+    "Git seed diagnostic",
+)
 zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 automake_hook = host_tools.index("scripts/ensure-automake.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
@@ -106,6 +118,20 @@ require(
     build,
     'export CC_FOR_BUILD',
     "native C seed must exist before host-tool execution",
+)
+
+# Log labels describe the generic tool role, not the selected implementation.
+for label in ("awk", "grep", "sed", "make", "cc", "ld"):
+    require(build, f"QEMU seed {label}:", f"{label} seed diagnostic")
+for previous in (
+    "QEMU seed AWK:", "QEMU seed GNU Make:",
+    "QEMU bootstrap C compiler:", "QEMU bootstrap native linker:",
+):
+    if previous in build:
+        raise SystemExit(f"error: obsolete seed diagnostic: {previous}")
+require(
+    host_tools, "QEMU make: WHP managed",
+    "generic managed Make diagnostic",
 )
 
 artifact_zlib_hook = host_libraries.index("whp_prepare_zlib_phase artifact")
