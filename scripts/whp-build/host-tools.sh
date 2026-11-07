@@ -99,7 +99,7 @@ if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
 fi
 
 if [ -n "${AUTOMAKE:-}" ]; then
-    WHP_AUTOMAKE_BIN_DIR=$(dirname -- "$AUTOMAKE")
+    WHP_AUTOMAKE_BIN_DIR=$(whp_command_dir "$AUTOMAKE")
     PATH="$WHP_AUTOMAKE_BIN_DIR:$PATH"
     export AUTOMAKE ACLOCAL PATH
     printf 'QEMU Automake: %s\n' "$AUTOMAKE" >&2
@@ -223,7 +223,7 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
 fi
 
 if [ -n "${AUTOCONF:-}" ]; then
-    WHP_AUTOCONF_BIN_DIR=$(dirname -- "$AUTOCONF")
+    WHP_AUTOCONF_BIN_DIR=$(whp_command_dir "$AUTOCONF")
     if [ -z "${AUTOHEADER:-}" ] && [ -x "$WHP_AUTOCONF_BIN_DIR/autoheader" ]; then
         AUTOHEADER="$WHP_AUTOCONF_BIN_DIR/autoheader"
     fi
@@ -271,7 +271,7 @@ if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
         fi
         if [ -n "$MAKE_CMD" ]; then
             MAKE=$MAKE_CMD
-            WHP_MAKE_BIN_DIR=$(dirname -- "$MAKE_CMD")
+            WHP_MAKE_BIN_DIR=$(whp_command_dir "$MAKE_CMD")
             PATH="$WHP_MAKE_BIN_DIR:$PATH"
             export WHP_MAKE_PREFIX MAKE_CMD MAKE PATH
             printf 'QEMU make: WHP managed %s\n' \
@@ -365,7 +365,7 @@ else
     unset WHP_HOST_SED
 fi
 
-WHP_SED_DIR=$(dirname -- "$SED")
+WHP_SED_DIR=$(whp_command_dir "$SED")
 PATH="$WHP_SED_DIR:$PATH"
 export SED PATH
 if whp_sed_is_gnu "$SED"; then
@@ -479,7 +479,7 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
     unset WHP_PREFER_BUNDLED_NINJA WHP_BUNDLED_NINJA_TRIED
     case "$NINJA_CMD" in
         */*)
-            NINJA_DIR=$(dirname -- "$NINJA_CMD")
+            NINJA_DIR=$(whp_command_dir "$NINJA_CMD")
             PATH="$NINJA_DIR:$PATH"
             unset NINJA_DIR
             ;;

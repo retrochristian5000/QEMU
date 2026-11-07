@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "$0" in
+    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+    *) whp_entry_dir=. ;;
+esac
+script_dir=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
+unset whp_entry_dir
 script_name=${0##*/}
 bash_name=${script_name%.sh}.bash
 
@@ -78,7 +83,12 @@ if [ -n "$cache_cmd" ]; then
 
     WHP_COMPILER_CACHE_CMD=$cache_cmd
     cache_build_dir=${BUILD_DIR:-$script_dir/build}
-    WHP_COMPILER_CACHE_ROOT=${WHP_COMPILER_CACHE_ROOT:-$(dirname -- "$cache_build_dir")/.whp-compiler-cache}
+    case "$cache_build_dir" in
+        */*) cache_parent=${cache_build_dir%/*}; [ -n "$cache_parent" ] || cache_parent=/ ;;
+        *) cache_parent=. ;;
+    esac
+    WHP_COMPILER_CACHE_ROOT=${WHP_COMPILER_CACHE_ROOT:-$cache_parent/.whp-compiler-cache}
+    unset cache_parent
     cache_tag=$(uname -s 2>/dev/null || printf unknown)-$(uname -m 2>/dev/null || printf unknown)
     cache_base=${cache_cmd##*/}
     case "$cache_base" in

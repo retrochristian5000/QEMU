@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 
-SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+case "$0" in
+    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+    *) whp_entry_dir=. ;;
+esac
+SOURCE_DIR=$(CDPATH= cd -- "$whp_entry_dir/../.." && pwd)
+unset whp_entry_dir
 mode=${WHP_SOURCE_UPDATE:-auto}
 
 case "$mode" in
@@ -78,7 +83,9 @@ else
         remote_oid=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse "$merge_ref^{commit}" 2>/dev/null || true)
     else
         remote_line=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref" 2>/dev/null || true)
-        remote_oid=$(printf '%s\n' "$remote_line" | sed -n '1{s/[[:space:]].*//;p;}')
+        # Git advertises "<oid><TAB><ref>"; keep only its first field.
+        # This runs before the sed seed is guaranteed to exist.
+        remote_oid=${remote_line%%[[:space:]]*}
         unset remote_line
     fi
 

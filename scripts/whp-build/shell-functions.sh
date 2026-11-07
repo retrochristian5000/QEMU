@@ -5,6 +5,17 @@
 # Keep this module dependency-free: build.sh and host-tools.sh may source it
 # before GNU Bash or other managed host tools are available.
 
+# Resolve a command's parent directory without an external dirname process.
+# Callers pass executable file paths, not paths ending in a slash.
+whp_command_dir()
+(
+    case "$1" in
+        */*) whp_dir=${1%/*}; [ -n "$whp_dir" ] || whp_dir=/ ;;
+        *) whp_dir=. ;;
+    esac
+    printf '%s\n' "$whp_dir"
+)
+
 # Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
 # A gitlink is a reproducibility baseline, not permission to rewind an
 # initialized checkout containing newer descendant commits.

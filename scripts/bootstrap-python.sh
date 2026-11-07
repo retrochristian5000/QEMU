@@ -6,7 +6,12 @@ set -eu
 exec 3>&1
 exec 1>&2
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "$0" in
+    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+    *) whp_entry_dir=. ;;
+esac
+SCRIPT_DIR=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
+unset whp_entry_dir
 SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
@@ -155,7 +160,6 @@ require_tool rmdir
 require_tool rm
 require_tool mv
 require_tool uname
-require_tool dirname
 require_tool cat
 
 host_kernel=$(uname -s 2>/dev/null || printf unknown)
@@ -258,7 +262,9 @@ EOF
 # Fail closed on contention instead of deleting another bootstrap's staging
 # tree or publishing a partially built Python. Never auto-remove a stale lock:
 # first verify that the previous bootstrap is no longer running.
-parent_dir=$(dirname -- "$TOOLCHAIN_DIR")
+# TOOLCHAIN_DIR is checked as absolute above; its parent needs no dirname process.
+parent_dir=${TOOLCHAIN_DIR%/*}
+[ -n "$parent_dir" ] || parent_dir=/
 mkdir -p "$parent_dir"
 lock_candidate="$TOOLCHAIN_DIR.lock"
 if ! mkdir "$lock_candidate" 2>/dev/null; then

@@ -2,7 +2,12 @@
 
 set -eu
 
-SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "$0" in
+    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+    *) whp_entry_dir=. ;;
+esac
+SOURCE_DIR=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
+unset whp_entry_dir
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 
