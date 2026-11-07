@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - '.gitmodules'
-      - 'git.sh'
+      - 'seeds/git.sh'
       - 'toolchains/git'
       - 'build.sh'
       - 'scripts/whp-build/update-source.sh'
@@ -23,7 +23,7 @@ on:
   pull_request:
     paths:
       - '.gitmodules'
-      - 'git.sh'
+      - 'seeds/git.sh'
       - 'toolchains/git'
       - 'build.sh'
       - 'scripts/whp-build/update-source.sh'
@@ -73,9 +73,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          seed="$(./git.sh --print-seed)"
+          seed="$(./seeds/git.sh --print-seed)"
           test -x "$seed"
-          ./git.sh --check
+          ./seeds/git.sh --check
 
           prefix="$(WHP_GIT_SEED="$seed" \
             python3 scripts/ensure-git.py \

@@ -82,7 +82,7 @@ def select_host_cxx() -> str:
     if requested:
         return requested
 
-    adapter = ROOT / 'cxx.sh'
+    adapter = ROOT / 'seeds' / 'cxx.sh'
     if adapter.is_file() and os.access(adapter, os.X_OK):
         completed = subprocess.run(
             [str(adapter), '--print-cxx'],

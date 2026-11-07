@@ -26,7 +26,7 @@ from bootstrap_env import reconcile_submodule
 from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
 SUBMODULE_REL = pathlib.Path("toolchains/make")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-SED_ADAPTER = ROOT / "sed.sh"
+SED_ADAPTER = ROOT / "seeds" / "sed.sh"
 
 MAKE_BOOTSTRAP_SCHEMA = "6"
 GNULIB_COMMIT = "b22f5a3037712a3c957a03071ce0b219cef4d65b"
@@ -377,7 +377,7 @@ def select_cc():
     if requested:
         return requested
     completed = subprocess.run(
-        [str(ROOT / "cc.sh"), "--print-cc"], text=True,
+        [str(ROOT / "seeds" / "cc.sh"), "--print-cc"], text=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     cc = completed.stdout.strip()

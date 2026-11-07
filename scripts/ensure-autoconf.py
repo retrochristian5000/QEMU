@@ -34,7 +34,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
                            select_bootstrap_ldflags)
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-SED_ADAPTER = ROOT / "sed.sh"
+SED_ADAPTER = ROOT / "seeds" / "sed.sh"
 AUTOCONF_BOOTSTRAP_SCHEMA = "5"
 
 BUILD_TARGETS = (

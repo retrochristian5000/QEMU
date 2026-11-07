@@ -358,7 +358,7 @@ jobs:
         run: |
           set -euo pipefail
           smoke_root="$RUNNER_TEMP/whp-libisofs-arm64"
-          export SED="$(./sed.sh --print-seed)"
+          export SED="$(./seeds/sed.sh --print-seed)"
           libtool_prefix="$(python3 scripts/ensure-libtool.py --build-dir "$smoke_root" --mode force)"
           export LIBTOOLIZE="$libtool_prefix/bin/libtoolize"
           prefix="$(python3 scripts/ensure-libisofs.py --build-dir "$smoke_root" --mode force)"
@@ -427,7 +427,7 @@ jobs:
         run: |
           set -euo pipefail
           smoke_root="$RUNNER_TEMP/whp-libisofs-arm64e"
-          export SED="$(./sed.sh --print-seed)"
+          export SED="$(./seeds/sed.sh --print-seed)"
           libtool_prefix="$(python3 scripts/ensure-libtool.py --build-dir "$smoke_root" --mode force)"
           export LIBTOOLIZE="$libtool_prefix/bin/libtoolize"
           prefix="$(python3 scripts/ensure-libisofs.py --build-dir "$smoke_root" --mode force)"

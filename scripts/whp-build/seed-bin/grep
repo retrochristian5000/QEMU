@@ -10,6 +10,6 @@ if [ "${WHP_GREP_LOCKED:-0}" = 1 ]; then
     exec "$WHP_GREP_SEED" "$@"
 fi
 case "$0" in
-    */*) exec "${0%/*}/../../../grep.sh" "$@" ;;
+    */*) exec "${0%/*}/../../../seeds/grep.sh" "$@" ;;
     *) printf '%s\n' 'error: grep bootstrap launcher must be invoked by path' >&2; exit 1 ;;
 esac

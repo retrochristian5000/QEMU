@@ -9,15 +9,21 @@ trap 'rm -rf "$TMP"' EXIT
 # so tests can never overwrite a real user's .whpconfig.
 COPY="$TMP/copy"
 mkdir -p "$COPY/scripts/whp-config" "$COPY/scripts/whp-build" \
-    "$COPY/configs/devices/ppc-softmmu"
+    "$COPY/configs/devices/ppc-softmmu" "$COPY/seeds"
 cp "$ROOT/build.sh" "$COPY/build.sh"
 # Seed adapters are required before the portable Python bootstrap and probes.
-for adapter in grep.sh sed.sh cc.sh ld.sh; do
-    cp "$ROOT/$adapter" "$COPY/$adapter"
+for adapter in awk.sh git.sh grep.sh sed.sh cc.sh cxx.sh cpp.sh ld.sh; do
+    cp "$ROOT/seeds/$adapter" "$COPY/seeds/$adapter"
 done
 mkdir -p "$COPY/scripts/whp-build/seed-bin"
 cp "$ROOT/scripts/whp-build/seed-bin/grep" \
    "$COPY/scripts/whp-build/seed-bin/grep"
+cp "$ROOT/scripts/whp-build/seed-bin/awk" \
+   "$COPY/scripts/whp-build/seed-bin/awk"
+cp "$ROOT/scripts/whp-build/compiler-seed-common.sh" \
+   "$COPY/scripts/whp-build/compiler-seed-common.sh"
+cp "$ROOT/scripts/whp-build/macos-developer-tools.sh" \
+   "$COPY/scripts/whp-build/macos-developer-tools.sh"
 cp "$ROOT/scripts/whp-build/gnu-make.bash" \
    "$COPY/scripts/whp-build/gnu-make.bash"
 # Public entry reads this shared guard even for side-effect-free probes.

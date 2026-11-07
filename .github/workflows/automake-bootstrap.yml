@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - '.gitmodules'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-automake.py'
@@ -16,7 +16,7 @@ on:
   pull_request:
     paths:
       - '.gitmodules'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-automake.py'
@@ -57,8 +57,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          seed="$(./sed.sh --print-seed)"
-          test "$(printf 'alpha\n' | ./sed.sh -n 's/^alpha$/beta/p')" = beta
+          seed="$(./seeds/sed.sh --print-seed)"
+          test "$(printf 'alpha\n' | ./seeds/sed.sh -n 's/^alpha$/beta/p')" = beta
           prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           test -x "$prefix/bin/automake"

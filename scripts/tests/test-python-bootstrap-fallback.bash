@@ -5,12 +5,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build"
+mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build" "$TMP/seeds"
 cp "$ROOT/build.sh" "$TMP/build.sh"
 # The pre-Python entry locks a verified literal grep seed.
 mkdir -p "$TMP/scripts/whp-build/seed-bin"
-cp "$ROOT/grep.sh" "$TMP/grep.sh"
+cp "$ROOT/seeds/grep.sh" "$TMP/seeds/grep.sh"
 cp "$ROOT/scripts/whp-build/seed-bin/grep" "$TMP/scripts/whp-build/seed-bin/grep"
+cp "$ROOT/seeds/awk.sh" "$TMP/seeds/awk.sh"
+cp "$ROOT/scripts/whp-build/seed-bin/awk" "$TMP/scripts/whp-build/seed-bin/awk"
 # build.sh loads these shared POSIX helpers before entering the fallback probe.
 cp "$ROOT/scripts/whp-build/shell-functions.sh" \
    "$TMP/scripts/whp-build/shell-functions.sh"
@@ -18,28 +20,28 @@ cp "$ROOT/scripts/whp-build/shell-functions.sh" \
 # Keep this fixture intentionally small, but provide the seed adapters and
 # sourced bootstrap modules that build.sh must traverse before it can prove the
 # bundled-Python fallback boundary.
-cat > "$TMP/sed.sh" <<'EOF'
+cat > "$TMP/seeds/sed.sh" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = --print-seed ]; then
-    printf '/bin/sed\\n'
+    printf '/bin/sed\n'
     exit 0
 fi
 exec /bin/sed "$@"
 EOF
-chmod +x "$TMP/sed.sh"
+chmod +x "$TMP/seeds/sed.sh"
 
-cat > "$TMP/cc.sh" <<'EOF'
+cat > "$TMP/seeds/cc.sh" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = --print-cc ]; then
-    printf '/usr/bin/cc\\n'
+    printf '/usr/bin/cc\n'
     exit 0
 fi
 exit 2
 EOF
-chmod +x "$TMP/cc.sh"
+chmod +x "$TMP/seeds/cc.sh"
 
 # Linker discovery is exercised, but this boundary fixture never links.
-cat > "$TMP/ld.sh" <<'EOF'
+cat > "$TMP/seeds/ld.sh" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = --print-ld ]; then
     printf '/usr/bin/ld\n'
@@ -47,7 +49,17 @@ if [ "${1:-}" = --print-ld ]; then
 fi
 exit 2
 EOF
-chmod +x "$TMP/ld.sh"
+chmod +x "$TMP/seeds/ld.sh"
+
+cat > "$TMP/seeds/cpp.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-seed ]; then
+    printf '/usr/bin/cc\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/seeds/cpp.sh"
 
 cat > "$TMP/scripts/whp-build/gnu-make.bash" <<'EOF'
 whp_resolve_gnu_make()

@@ -35,7 +35,7 @@ chmod +x "$outfile"
 SH
 chmod +x "$tmp/bad-compile" "$tmp/bad-version" "$tmp/bad-run"
 
-if WHP_CC_SEED="$tmp/bad-compile" "$ROOT/cc.sh" --print-cc \
+if WHP_CC_SEED="$tmp/bad-compile" "$ROOT/seeds/cc.sh" --print-cc \
     > "$tmp/stdout" 2> "$tmp/stderr"; then
     echo 'error: failing C compiler passed' >&2; exit 1
 fi
@@ -44,7 +44,7 @@ grep -Fq 'native C compile/link probe failed (exit 43)' "$tmp/stderr"
 grep -Fq 'WHP_FAKE_COMPILE_FAILURE' "$tmp/stderr"
 grep -Fq 'requested build C compiler is not native/usable' "$tmp/stderr"
 
-if WHP_CXX_SEED="$tmp/bad-compile" "$ROOT/cxx.sh" --print-cxx \
+if WHP_CXX_SEED="$tmp/bad-compile" "$ROOT/seeds/cxx.sh" --print-cxx \
     > "$tmp/stdout" 2> "$tmp/stderr"; then
     echo 'error: failing C++ compiler passed' >&2; exit 1
 fi
@@ -53,7 +53,7 @@ grep -Fq 'native C++17 compile/link probe failed (exit 43)' "$tmp/stderr"
 grep -Fq -- '-std=c++17' "$tmp/stderr"
 grep -Fq 'WHP_FAKE_COMPILE_FAILURE' "$tmp/stderr"
 
-if WHP_CC_SEED="$tmp/bad-version" "$ROOT/cc.sh" --print-cc \
+if WHP_CC_SEED="$tmp/bad-version" "$ROOT/seeds/cc.sh" --print-cc \
     > "$tmp/stdout" 2> "$tmp/stderr"; then
     echo 'error: broken compiler --version passed' >&2; exit 1
 fi
@@ -61,7 +61,7 @@ test ! -s "$tmp/stdout"
 grep -Fq 'compiler --version failed (exit 47)' "$tmp/stderr"
 grep -Fq 'WHP_FAKE_VERSION_FAILURE' "$tmp/stderr"
 
-if WHP_CC_SEED="$tmp/bad-run" "$ROOT/cc.sh" --check \
+if WHP_CC_SEED="$tmp/bad-run" "$ROOT/seeds/cc.sh" --check \
     > "$tmp/stdout" 2> "$tmp/stderr"; then
     echo 'error: failing native executable passed' >&2; exit 1
 fi
@@ -108,7 +108,7 @@ exec "$WHP_REAL_NATIVE_CC" "$@"
 SH
 chmod +x "$tmp/headerless"
 export WHP_REAL_NATIVE_CC="$(command -v cc)"
-if WHP_CC_SEED="$tmp/headerless" "$ROOT/cc.sh" --print-cc \
+if WHP_CC_SEED="$tmp/headerless" "$ROOT/seeds/cc.sh" --print-cc \
     > "$tmp/stdout" 2> "$tmp/stderr"; then
     echo 'error: headerless native C compiler passed' >&2
     exit 1

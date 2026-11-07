@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-bridge="$ROOT/awk.sh"
+bridge="$ROOT/seeds/awk.sh"
 shim="$ROOT/scripts/whp-build/seed-bin/awk"
 test -x "$bridge" && test -x "$shim"
 test "$("$bridge" --whp-awk-adapter-probe)" = whp-qemu-awk-seed-adapter

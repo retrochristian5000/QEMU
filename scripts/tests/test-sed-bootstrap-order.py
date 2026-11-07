@@ -29,7 +29,7 @@ def main() -> int:
         encoding="utf-8"
     )
 
-    awk_seed = 'WHP_AWK_SEED=$("$SOURCE_DIR/awk.sh" --print-seed)'
+    awk_seed = 'WHP_AWK_SEED=$("$SOURCE_DIR/seeds/awk.sh" --print-seed)'
     require(build, awk_seed, "early POSIX AWK seed selection")
     require(build, "WHP_AWK_LOCKED=1", "validated AWK fast path")
     require(build, 'PATH="$WHP_AWK_BIN_DIR:$PATH"', "literal AWK PATH binding")
@@ -43,7 +43,7 @@ def main() -> int:
     if not build.index(awk_seed) < build.index('if [ "${1:-}" = menuconfig ]'):
         raise SystemExit("error: AWK must precede shell menuconfig dispatch")
 
-    grep_seed = 'WHP_GREP_SEED=$("$SOURCE_DIR/grep.sh" --print-seed)'
+    grep_seed = 'WHP_GREP_SEED=$("$SOURCE_DIR/seeds/grep.sh" --print-seed)'
     require(build, grep_seed, "early grep seed selection")
     require(build, "WHP_GREP_LOCKED=1", "validated grep fast path")
     require(build, 'PATH="$WHP_GREP_BIN_DIR:$PATH"', "literal grep PATH binding")
@@ -53,7 +53,7 @@ def main() -> int:
     if not shim.is_file():
         raise SystemExit("error: literal grep bridge is missing")
 
-    seed = 'WHP_SED_SEED=$("$SOURCE_DIR/sed.sh" --print-seed)'
+    seed = 'WHP_SED_SEED=$("$SOURCE_DIR/seeds/sed.sh" --print-seed)'
     python_bootstrap = '"$SOURCE_DIR/scripts/bootstrap-python.sh"'
     require(build, seed, "early seed sed selection")
     require(build, "export WHP_SED_SEED", "seed sed export")

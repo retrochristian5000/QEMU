@@ -110,10 +110,10 @@ EOF
     chmod +x "$tmp/bin/uname"
     export WHP_TEST_UNAME="$(command -v /usr/bin/uname)"
     export WHP_TEST_NATIVE_LD="$native_ld"
-    selected_ld="$(WHP_CC_SEED="$xcode/usr/bin/clang" "$ROOT/ld.sh" --print-ld)"
+    selected_ld="$(WHP_CC_SEED="$xcode/usr/bin/clang" "$ROOT/seeds/ld.sh" --print-ld)"
     test "$selected_ld" = "$xcode/usr/bin/ld"
     if WHP_TEST_XCRUN_FAIL=1 WHP_CC_SEED="$xcode/usr/bin/clang" \
-        "$ROOT/ld.sh" --print-ld >/dev/null 2>&1; then
+        "$ROOT/seeds/ld.sh" --print-ld >/dev/null 2>&1; then
         echo 'error: broken Apple developer selection fell back to PATH ld' >&2
         exit 1
     fi

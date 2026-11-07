@@ -21,7 +21,7 @@ while [ -L "$seed_entry" ]; do
         *) seed_entry=${seed_entry%/*}/$seed_link ;;
     esac
 done
-seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}" && pwd -P) || exit 1
+seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}/.." && pwd -P) || exit 1
 . "$seed_root/scripts/whp-build/compiler-seed-common.sh"
 select_cc()
 {

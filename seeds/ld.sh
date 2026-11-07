@@ -36,7 +36,7 @@ while [ -L "$whp_ld_entry" ]; do
         *) whp_ld_entry=${whp_ld_entry%/*}/$whp_ld_link ;;
     esac
 done
-whp_ld_root=$(CDPATH= cd -P -- "${whp_ld_entry%/*}" && pwd -P) || exit 1
+whp_ld_root=$(CDPATH= cd -P -- "${whp_ld_entry%/*}/.." && pwd -P) || exit 1
 
 is_self()
 {
@@ -69,8 +69,8 @@ resolve_executable()
 linker_links_native_object()
 (
     candidate=$1
-    if [ -x "$whp_ld_root/cc.sh" ]; then
-        compiler=$("$whp_ld_root/cc.sh" --print-cc 2>/dev/null) || exit 1
+    if [ -x "$whp_ld_root/seeds/cc.sh" ]; then
+        compiler=$("$whp_ld_root/seeds/cc.sh" --print-cc 2>/dev/null) || exit 1
     elif [ -n "${CC_FOR_BUILD:-}" ]; then
         compiler=$CC_FOR_BUILD
     else

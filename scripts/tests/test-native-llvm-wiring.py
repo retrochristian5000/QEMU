@@ -799,11 +799,12 @@ native_seed_selection = bootstrap.split(
 with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
     root = Path(td)
     log = root / 'calls'
+    (root / 'seeds').mkdir()
     for lang, adapter, override in (
         ('c', 'cc.sh', 'WHP_CC_SEED'),
         ('cxx', 'cxx.sh', 'WHP_CXX_SEED'),
     ):
-        script = root / adapter
+        script = root / 'seeds' / adapter
         command = '--print-cc' if lang == 'c' else '--print-cxx'
         script.write_text(
             '#!/bin/sh\n'

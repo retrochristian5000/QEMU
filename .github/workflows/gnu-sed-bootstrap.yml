@@ -5,9 +5,9 @@ on:
     branches: [master]
     paths:
       - '.gitmodules'
-      - 'grep.sh'
+      - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'toolchains/autoconf'
@@ -23,9 +23,9 @@ on:
   pull_request:
     paths:
       - '.gitmodules'
-      - 'grep.sh'
+      - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'toolchains/autoconf'
@@ -67,12 +67,12 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$(brew --prefix gettext)/bin:$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
-          grep_seed="$(./grep.sh --print-seed)"
+          grep_seed="$(./seeds/grep.sh --print-seed)"
           export WHP_GREP_SEED="$grep_seed" GREP="$grep_seed" WHP_GREP_LOCKED=1
           export PATH="$GITHUB_WORKSPACE/scripts/whp-build/seed-bin:$PATH"
-          seed="$(WHP_SED_SEED=/usr/bin/sed ./sed.sh --print-seed)"
+          seed="$(WHP_SED_SEED=/usr/bin/sed ./seeds/sed.sh --print-seed)"
           test -x "$seed"
-          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./seeds/sed.sh -n 's/^alpha$/beta/p')" = beta
           automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           export PATH="$automake_prefix/bin:$PATH"
@@ -125,12 +125,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep_seed="$(./grep.sh --print-seed)"
+          grep_seed="$(./seeds/grep.sh --print-seed)"
           export WHP_GREP_SEED="$grep_seed" GREP="$grep_seed" WHP_GREP_LOCKED=1
           export PATH="$GITHUB_WORKSPACE/scripts/whp-build/seed-bin:$PATH"
-          seed="$(./sed.sh --print-seed)"
+          seed="$(./seeds/sed.sh --print-seed)"
           test -x "$seed"
-          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./sed.sh -n 's/^alpha$/beta/p')" = beta
+          test "$(printf 'alpha\n' | WHP_SED_SEED="$seed" ./seeds/sed.sh -n 's/^alpha$/beta/p')" = beta
           automake_prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           export PATH="$automake_prefix/bin:$PATH"
@@ -169,7 +169,7 @@ jobs:
           test -f "$source_dir/configure"
           test -f "$source_dir/m4/gettext.m4"
           mkdir -p "$object_dir"
-          cc="$(./cc.sh --print-cc)"
+          cc="$(./seeds/cc.sh --print-cc)"
           test -x "$cc"
           make_cmd="$(command -v gmake || command -v make)"
           "$make_cmd" --version | grep -Fq 'GNU Make'

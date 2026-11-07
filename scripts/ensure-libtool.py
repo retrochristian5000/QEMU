@@ -602,7 +602,7 @@ def select_sed() -> str:
             raise RuntimeError(f"SED is not a usable sed executable: {candidate}")
         return str(path)
 
-    adapter = ROOT / "sed.sh"
+    adapter = ROOT / "seeds" / "sed.sh"
     if not adapter.is_file() or not os.access(adapter, os.X_OK):
         raise RuntimeError(f"QEMU sed seed adapter is unavailable: {adapter}")
     completed = subprocess.run(

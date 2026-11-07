@@ -37,7 +37,7 @@ required_build = (
     'WHP_SOURCE_REVISION_AFTER',
     'error: QEMU parent source update failed',
     'whp_select_seed_git()',
-    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1',
+    'WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed) || return 1',
     'whp_select_seed_git || exit 1',
     '"$WHP_GIT_SEED" -C "$SOURCE_DIR" rev-parse HEAD',
     'scripts/whp-build/update-submodules.py',

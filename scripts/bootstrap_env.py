@@ -392,7 +392,7 @@ def select_native_sdk(root: pathlib.Path) -> str:
 def select_native_cc(root: pathlib.Path) -> str:
     """Resolve the validated C role via the existing cc.sh adapter."""
     result = subprocess.run(
-        [str(root / "cc.sh"), "--print-cc"],
+        [str(root / "seeds" / "cc.sh"), "--print-cc"],
         text=True, capture_output=True, check=False,
     )
     path = result.stdout.strip()

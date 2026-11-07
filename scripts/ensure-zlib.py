@@ -138,7 +138,7 @@ def select_c_compiler(explicit: str = "") -> str:
             return str(path)
         raise RuntimeError(f"{env_name} is not executable: {candidate}")
 
-    adapter = ROOT / "cc.sh"
+    adapter = ROOT / "seeds" / "cc.sh"
     if adapter.is_file() and os.access(adapter, os.X_OK):
         completed = subprocess.run(
             [str(adapter), "--print-cc"], text=True,

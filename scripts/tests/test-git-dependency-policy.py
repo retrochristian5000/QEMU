@@ -157,8 +157,8 @@ def main() -> int:
     updater = (ROOT / "scripts/whp-build/update-source.sh").read_text(
         encoding="utf-8"
     )
-    adapter = (ROOT / "git.sh").read_text(encoding="utf-8")
-    require(build, 'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed)',
+    adapter = (ROOT / "seeds" / "git.sh").read_text(encoding="utf-8")
+    require(build, 'WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed)',
             "early Git seed boundary")
     require(build, 'whp_select_seed_git || exit 1',
             "Git selection before updater")
@@ -167,7 +167,7 @@ def main() -> int:
             "parent updater selects the same Git seed")
     require(host_tools, 'WHP_GIT_SEED_SELECTED:-0',
             "managed stages reuse selected Git seed")
-    if '"$SOURCE_DIR/git.sh" --print-seed' in host_tools:
+    if '"$SOURCE_DIR/seeds/git.sh" --print-seed' in host_tools:
         raise SystemExit("error: Git seed must not be reselected after source update")
     if "| grep -q '^git version '" in adapter:
         raise SystemExit("error: early Git seed still depends on late grep")

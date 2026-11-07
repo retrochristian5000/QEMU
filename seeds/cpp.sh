@@ -31,7 +31,7 @@ while [ -L "$seed_entry" ]; do
         *) seed_entry=${seed_entry%/*}/$seed_link ;;
     esac
 done
-seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}" && pwd -P) || exit 1
+seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}/.." && pwd -P) || exit 1
 . "$seed_root/scripts/whp-build/compiler-seed-common.sh"
 
 cpp_is_self()
@@ -90,7 +90,7 @@ select_seed()
         fi
     else
         # cc.sh already probes native compilation, linkage and SDK selection.
-        driver=$("$seed_root/cc.sh" --print-cc) || return 1
+        driver=$("$seed_root/seeds/cc.sh" --print-cc) || return 1
     fi
     if ! cpp_semantic_probe "$driver"; then
         printf 'error: native C preprocessor probe failed: %s\n' "$driver" >&2
@@ -114,7 +114,7 @@ esac
 if [ "${WHP_CPP_LOCKED:-0}" = 1 ] && [ -n "${WHP_CPP_SEED:-}" ]; then
     driver=$WHP_CPP_SEED
     case "$driver" in
-        "$seed_root/cpp.sh")
+        "$seed_root/seeds/cpp.sh"|*/seeds/cpp.sh)
             printf '%s\n' 'error: locked C preprocessor points at cpp.sh' >&2
             exit 1 ;;
     esac

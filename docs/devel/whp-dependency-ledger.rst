@@ -281,10 +281,10 @@ graph.  A compact view is::
 
   primitive host tools / SDK / compiler
       |
-      +--> cc.sh native C seed
+      +--> seeds/cc.sh native C seed
       |      +--> Python fallback
       |      +--> GNU sed / bootstrap-zlib / Git / Bash / SDL host builds
-      +--> cxx.sh native C++17 seed -> Ninja / JACK / native LLVM
+      +--> seeds/cxx.sh native C++17 seed -> Ninja / JACK / native LLVM
       |
       +--> seed Git
       |      +--> QEMU source checkout/update
@@ -418,12 +418,30 @@ publish the resulting headers/libraries through the same pkg-config-facing
 boundary QEMU already understands rather than bypassing Meson dependency
 resolution.
 
+Root seed adapter namespace
+---------------------------
+
+Only host seed adapters live under the repository-root ``seeds/`` directory:
+``awk.sh``, ``grep.sh``, ``sed.sh``, ``git.sh``, ``cc.sh``,
+``cxx.sh``, ``cpp.sh``, and ``ld.sh``. Their invocation is explicitly
+``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public build
+entry. This naming boundary leaves ``seeds/install.sh`` unambiguously
+available for a future *host install-program* seed, without suggesting it
+installs QEMU. No install bridge is currently provided.
+
+The C preprocessor bridge selects the validated native C compiler driver
+with ``-E`` and publishes ``CPP_FOR_BUILD`` without replacing target
+``CPP`` (including cross-firmware preprocessors). Seed links and native
+compiler checks stay bound to the source tree when the bridges are invoked
+through symlinks. Old root-level adapter entrypoints are intentionally absent;
+callers, tests, and CI use the namespaced paths.
+
 Bootstrap phase ordering
 ------------------------
 
 The host bootstrap is split into phases rather than one flat dependency list.
 
-**Seed/tool phase:** ``cc.sh`` and ``cxx.sh``, seed GNU Make, seed AWK,
+**Seed/tool phase:** ``seeds/cc.sh``, ``seeds/cpp.sh``, and ``seeds/cxx.sh``, seed GNU Make, seed AWK,
 seed sed, seed Git, and Python form the bootstrap roots. The low-dependency order is
 ``seed Git -> bootstrap-zlib -> Automake -> Autoconf -> managed Make ->
 managed sed -> managed Git -> Ninja -> Bash``. Independent small sources
@@ -435,8 +453,8 @@ The seed GNU Make identity is established before the Python fallback and
 exported through both ``MAKE_CMD`` and ``MAKE``. The build's visible seed
 diagnostics use generic lowercase role names: ``QEMU seed awk:``,
 ``QEMU seed grep:``, ``QEMU seed sed:``, ``QEMU seed make:``,
-``QEMU seed cc:``, ``QEMU seed ld:``, and ``QEMU seed git:``.
-The Git seed is selected by ``git.sh --print-seed`` before the parent
+``QEMU seed cc:``, ``QEMU seed cpp:``, ``QEMU seed ld:``, and ``QEMU seed git:``.
+The Git seed is selected by ``seeds/git.sh --print-seed`` before the parent
 source updater invokes any Git command. Both the pre/post-update HEAD checks
 and the updater use that exact executable, and its selected path is logged as
 ``QEMU seed git:``. When source refresh is disabled or skipped, the same
@@ -496,7 +514,7 @@ and the Ninja generator, so a matching text marker alone is insufficient.
 The shared ``whp_native_sdkroot`` resolves the selected Apple SDK once
 per native probe or actual compiler invocation, validates explicit SDKROOT
 against the selected Xcode/CLT developer directory, and passes the same
-``-isysroot`` to both real ``cc.sh`` and ``cxx.sh`` invocations.
+``-isysroot`` to both real ``seeds/cc.sh`` and ``seeds/cxx.sh`` invocations.
 This repairs the case where the probe succeeded with an SDK but a
 subsequent absolute-path Clang invocation failed to locate libSystem.
 Linux compiler arguments and execution paths are unchanged.
@@ -506,7 +524,7 @@ Native C compiler admission versus bootstrap cache reuse
 
 ``build.sh`` validates the native C seed once and exports the selected
 absolute compiler as ``CC_FOR_BUILD``. Python bootstraps prefer that
-resolved path over probing ``cc.sh`` again. Separate configure checks
+resolved path over probing ``seeds/cc.sh`` again. Separate configure checks
 remain necessary when an actual tool rebuild changes the flags/SDK used.
 GNU Make already checks its installation marker before its configure-C
 smoke; GNU sed now follows the same ordering. On a valid sed producer
@@ -537,7 +555,7 @@ consistency, C++ standard selection, the CMake compiler tests, nor installed
 LLVM runtime checks are bypassed. No persistent compiler-success token is
 introduced.
 
-The ``cc.sh`` and ``cxx.sh`` native admission probes now compile
+The ``seeds/cc.sh`` and ``seeds/cxx.sh`` native admission probes now compile
 against C/C++ standard and POSIX ``unistd.h`` headers, link a libc
 ``access()`` call, and execute it. An empty ``main()`` alone could
 accept a compiler with a missing macOS SDK. Probe subprocesses isolate
@@ -545,11 +563,11 @@ target include/library variables and injected loader search paths;
 normal compiler invocations still receive all caller arguments and flags.
 Relative explicit compiler seed paths are made absolute before promotion.
 
-``cc.sh`` and ``cxx.sh`` are separate C and C++17 seed entry points.
+``seeds/cc.sh`` and ``seeds/cxx.sh`` are separate C and C++17 seed entry points.
 They share the native compile/link/run probe, but each selects only its own
 language driver. C++ selection first tries the driver paired with the native
 C seed. Both adapters reject self-references and cross-adapter recursion;
-``cc.sh --print-cxx`` is retired in favor of ``cxx.sh --print-cxx``.
+``seeds/cc.sh --print-cxx`` is retired in favor of ``seeds/cxx.sh --print-cxx``.
 
 The build-machine roles are ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD``.
 Target ``CC``/``CXX`` are deliberately excluded from seed discovery so a
@@ -581,8 +599,8 @@ No global ``xcode-select --switch`` or developer installation is changed.
 Bootstrap linker boundary
 -------------------------
 
-``ld.sh`` is a POSIX native-linker seed adapter paired with ``cc.sh``.
-``./ld.sh --print-ld`` (alias ``--print-seed``) resolves a linker that
+``seeds/ld.sh`` is a POSIX native-linker seed adapter paired with ``seeds/cc.sh``.
+``./seeds/ld.sh --print-ld`` (alias ``--print-seed``) resolves a linker that
 can consume the selected native compiler's relocatable object; ``--check``
 runs the same capability probe. Normal invocations pass arguments unchanged to
 the resolved executable. Explicit seed overrides are ``WHP_LD_SEED`` and
@@ -715,7 +733,7 @@ awk seed bridge
 ---------------
 
 The first AWK is a validated host seed, not a recursively compiled managed
-AWK. ``awk.sh`` accepts an explicit ``WHP_AWK_SEED`` or ``AWK`` and rejects
+AWK. ``seeds/awk.sh`` accepts an explicit ``WHP_AWK_SEED`` or ``AWK`` and rejects
 unusable overrides rather than silently falling back. It verifies the POSIX
 subset used by QEMU's bootstrap: ``-F`` and ``-v``, field and record counters,
 regular expressions, substitutions, and array splitting. Both the adapter and
@@ -733,7 +751,7 @@ grep seed bridge
 ----------------
 
 The first grep used by QEMU is a host-side root capability rather than a
-self-built GNU grep fork. ``grep.sh`` probes literal, extended and fixed-string
+self-built GNU grep fork. ``seeds/grep.sh`` probes literal, extended and fixed-string
 matching, quiet and inverted matching, and patterns beginning with a hyphen.
 It rejects an unusable explicit ``GREP`` or ``WHP_GREP_SEED`` and rejects
 selection of its own bridge as the seed.
@@ -754,7 +772,7 @@ tool environments through ``scripts/bootstrap_env.py``. Poisoned target
 ``CC``, flags, Make overrides, Autoconf cache answers, pkg-config sysroots,
 macro search paths and injected runtime-library variables cannot silently
 reach their source configure or Make invocations. Selected tools are restored
-explicitly, including the compiler verified by ``cc.sh``, the GNU Make
+explicitly, including the compiler verified by ``seeds/cc.sh``, the GNU Make
 seed, configuration shell, GNU M4, Perl and Autotools.
 
 Automake and Autoconf cache markers now include native CC/version,
@@ -800,7 +818,7 @@ sed/Automake bootstrap boundary
 GNU sed has two different roles in the WHP bootstrap and they must not be
 flattened into one executable slot.
 
-**Seed sed** is a root capability. ``sed.sh`` validates the small semantic
+**Seed sed** is a root capability. ``seeds/sed.sh`` validates the small semantic
 subset needed by the bootstrap and rejects recursion back into itself. The
 public ``build.sh`` resolves this seed once as ``WHP_SED_SEED`` before the
 Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
@@ -1545,7 +1563,7 @@ claimed as already implemented.
 Circularity guards
 ------------------
 
-#. The native compiler selected by ``cc.sh`` is a seed dependency. The WHP
+#. The native compiler selected by ``seeds/cc.sh`` is a seed dependency. The WHP
    LLVM fork may replace compilers only after LLVM has been built; LLVM must
    never be selected as the compiler required to bootstrap its own first stage.
 #. Seed Git remains mandatory for the initial QEMU checkout/source refresh and

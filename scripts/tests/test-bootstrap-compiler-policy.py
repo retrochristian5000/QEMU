@@ -14,8 +14,8 @@ def require(text: str, needle: str, label: str) -> None:
 
 
 def main() -> int:
-    adapter = (ROOT / "cc.sh").read_text(encoding="utf-8")
-    cxx_adapter = (ROOT / "cxx.sh").read_text(encoding="utf-8")
+    adapter = (ROOT / "seeds" / "cc.sh").read_text(encoding="utf-8")
+    cxx_adapter = (ROOT / "seeds" / "cxx.sh").read_text(encoding="utf-8")
     shared = (ROOT / "scripts/whp-build/compiler-seed-common.sh").read_text(encoding="utf-8")
     require(shared, "compiler_runs_native", "native execution probe")
     require(shared, 'whp_apple_find_sdk', "native Apple SDK seed lookup")
@@ -71,24 +71,24 @@ def main() -> int:
         raise SystemExit("error: compiler selectors cross language roles")
 
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
-    require(build, '"$SOURCE_DIR/cc.sh" --print-cc', "early C seed")
+    require(build, '"$SOURCE_DIR/seeds/cc.sh" --print-cc', "early C seed")
     require(build, "CC_FOR_BUILD=", "build-machine C handoff")
 
-    linker = (ROOT / "ld.sh").read_text(encoding="utf-8")
+    linker = (ROOT / "seeds" / "ld.sh").read_text(encoding="utf-8")
     require(linker, "linker_links_native_object", "native linker object probe")
     require(linker, "WHP_LD_SEED LD_FOR_BUILD", "linker seed overrides")
     require(linker, 'exec "$seed" "$@"', "linker argument passthrough")
     require(linker, "whp_apple_find_tool ld system", "active Apple linker seed")
     require(linker, "whp_ld_root", "linker symlink root guard")
     require(linker, "Never auto-select ld64.lld", "ARM64e and ASan guard")
-    require(build, '"$SOURCE_DIR/ld.sh" --print-ld', "early linker seed")
+    require(build, '"$SOURCE_DIR/seeds/ld.sh" --print-ld', "early linker seed")
     require(build, "LD_FOR_BUILD=", "build-machine linker handoff")
-    if 'LD="$SOURCE_DIR/ld.sh"' in build:
+    if 'LD="$SOURCE_DIR/seeds/ld.sh"' in build:
         raise SystemExit("error: bootstrap linker must not replace QEMU artifact LD")
 
     python = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")
     require(python, "CC_FOR_BUILD", "Python build compiler handoff")
-    require(python, '"$SOURCE_DIR/cc.sh" --print-cc', "Python adapter fallback")
+    require(python, '"$SOURCE_DIR/seeds/cc.sh" --print-cc', "Python adapter fallback")
 
     sed = (ROOT / "scripts/ensure-sed.py").read_text(encoding="utf-8")
     require(sed, 'SED_BOOTSTRAP_SCHEMA = "5"', "sed compiler/SDK/gettext cache schema")
@@ -114,7 +114,7 @@ def main() -> int:
 
     ninja = (ROOT / "scripts/ensure-ninja.py").read_text(encoding="utf-8")
     require(ninja, "CXX_FOR_BUILD", "Ninja build C++ role")
-    require(ninja, "ROOT / 'cxx.sh'", "Ninja C++ adapter")
+    require(ninja, "ROOT / 'seeds' / 'cxx.sh'", "Ninja C++ adapter")
     if "os.environ.get('CXX')" in ninja:
         raise SystemExit("error: Ninja bootstrap must not inherit target CXX")
 
@@ -129,8 +129,8 @@ def main() -> int:
     require(jack, '"cc.sh" if env_name == "CC" else "cxx.sh"', "JACK split")
 
     llvm = (ROOT / "scripts/bootstrap-native-clang.bash").read_text(encoding="utf-8")
-    require(llvm, '"$SOURCE_DIR/cc.sh" --print-cc', "LLVM C seed")
-    require(llvm, '"$SOURCE_DIR/cxx.sh" --print-cxx', "LLVM C++ seed")
+    require(llvm, '"$SOURCE_DIR/seeds/cc.sh" --print-cc', "LLVM C seed")
+    require(llvm, '"$SOURCE_DIR/seeds/cxx.sh" --print-cxx', "LLVM C++ seed")
 
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
     require(ledger, "Bootstrap compiler boundary", "compiler ledger section")

@@ -17,7 +17,7 @@ unset whp_entry_dir
 if [ -z "${WHP_AWK_SEED:-}" ] && [ -n "${AWK:-}" ]; then
     WHP_AWK_SEED=$AWK
 fi
-WHP_AWK_SEED=$("$SOURCE_DIR/awk.sh" --print-seed) || exit 1
+WHP_AWK_SEED=$("$SOURCE_DIR/seeds/awk.sh" --print-seed) || exit 1
 AWK=$WHP_AWK_SEED
 WHP_AWK_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"
 if [ ! -x "$WHP_AWK_BIN_DIR/awk" ]; then
@@ -91,7 +91,7 @@ WHP_SOURCE_UPDATE=$(whp_require_auto_switch WHP_SOURCE_UPDATE "${WHP_SOURCE_UPDA
 WHP_GIT_SEED_SELECTED=0
 whp_select_seed_git()
 {
-    WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1
+    WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed) || return 1
     [ -n "$WHP_GIT_SEED" ] || {
         printf '%s\n' 'error: QEMU git.sh returned an empty Git seed' >&2
         return 1
@@ -259,7 +259,7 @@ fi
 if [ -z "${WHP_GREP_SEED:-}" ] && [ -n "${GREP:-}" ]; then
     WHP_GREP_SEED=$GREP
 fi
-WHP_GREP_SEED=$("$SOURCE_DIR/grep.sh" --print-seed) || exit 1
+WHP_GREP_SEED=$("$SOURCE_DIR/seeds/grep.sh" --print-seed) || exit 1
 GREP=$WHP_GREP_SEED
 WHP_GREP_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"
 if [ ! -x "$WHP_GREP_BIN_DIR/grep" ]; then
@@ -280,7 +280,7 @@ unset WHP_GREP_BIN_DIR
 if [ -z "${WHP_SED_SEED:-}" ] && [ -n "${SED:-}" ]; then
     WHP_SED_SEED=$SED
 fi
-WHP_SED_SEED=$("$SOURCE_DIR/sed.sh" --print-seed) || exit 1
+WHP_SED_SEED=$("$SOURCE_DIR/seeds/sed.sh" --print-seed) || exit 1
 export WHP_SED_SEED
 printf 'QEMU seed sed: %s\n' "$WHP_SED_SEED" >&2
 
@@ -321,7 +321,7 @@ case "$WHP_HOST_OS" in
             WHP_CC_SEED=$CC_FOR_BUILD
             export WHP_CC_SEED
         fi
-        CC_FOR_BUILD=$("$SOURCE_DIR/cc.sh" --print-cc) || exit 1
+        CC_FOR_BUILD=$("$SOURCE_DIR/seeds/cc.sh" --print-cc) || exit 1
         export CC_FOR_BUILD
         printf 'QEMU seed cc: %s\n' "$CC_FOR_BUILD" >&2
         ;;
@@ -336,11 +336,11 @@ case "$WHP_HOST_OS" in
         if [ -z "${WHP_CPP_SEED:-}" ]; then
             WHP_CPP_SEED=$CC_FOR_BUILD
         fi
-        WHP_CPP_SEED=$("$SOURCE_DIR/cpp.sh" --print-seed) || exit 1
+        WHP_CPP_SEED=$("$SOURCE_DIR/seeds/cpp.sh" --print-seed) || exit 1
         WHP_CPP_LOCKED=1
         if [ -z "${CPP_FOR_BUILD:-}" ]; then
-            CPP_FOR_BUILD="$SOURCE_DIR/cpp.sh"
-        elif [ "$CPP_FOR_BUILD" != "$SOURCE_DIR/cpp.sh" ]; then
+            CPP_FOR_BUILD="$SOURCE_DIR/seeds/cpp.sh"
+        elif [ "$CPP_FOR_BUILD" != "$SOURCE_DIR/seeds/cpp.sh" ]; then
             # Caller-selected host preprocessor remains authoritative; never
             # silently replace an explicit build-machine tool override.
             printf 'QEMU seed cpp: preserving explicit CPP_FOR_BUILD: %s\n' \
@@ -356,7 +356,7 @@ esac
 case "$WHP_HOST_OS" in
     windows) ;;
     *)
-        LD_FOR_BUILD=$("$SOURCE_DIR/ld.sh" --print-ld) || exit 1
+        LD_FOR_BUILD=$("$SOURCE_DIR/seeds/ld.sh" --print-ld) || exit 1
         export LD_FOR_BUILD
         printf 'QEMU seed ld: %s\n' "$LD_FOR_BUILD" >&2
         ;;

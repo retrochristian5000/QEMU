@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - 'build.sh'
-      - 'git.sh'
+      - 'seeds/git.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
       - 'scripts/whp-build/host-libraries.sh'
@@ -32,7 +32,7 @@ on:
   pull_request:
     paths:
       - 'build.sh'
-      - 'git.sh'
+      - 'seeds/git.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
       - 'scripts/whp-build/host-libraries.sh'
@@ -69,5 +69,5 @@ jobs:
         run: python3 scripts/tests/test-bootstrap-phase-order.py
       - name: Check public and host-tool shell syntax
         run: |
-          sh -n build.sh git.sh scripts/whp-build/update-source.sh
+          sh -n build.sh seeds/git.sh scripts/whp-build/update-source.sh
           sh -n scripts/whp-build/host-tools.sh

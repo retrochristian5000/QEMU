@@ -7,7 +7,7 @@ on:
       - '.gitmodules'
       - 'toolchains/autoconf'
       - 'toolchains/automake'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
@@ -21,7 +21,7 @@ on:
       - '.gitmodules'
       - 'toolchains/autoconf'
       - 'toolchains/automake'
-      - 'sed.sh'
+      - 'seeds/sed.sh'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
@@ -72,7 +72,7 @@ jobs:
           if [[ "$RUNNER_OS" == macOS ]]; then
             export PATH="$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
           fi
-          seed="$(./sed.sh --print-seed)"
+          seed="$(./seeds/sed.sh --print-seed)"
           automake_prefix="$(WHP_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           export AUTOMAKE="$automake_prefix/bin/automake"

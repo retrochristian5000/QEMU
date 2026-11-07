@@ -29,7 +29,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/git")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SHA1_REL = pathlib.Path("sha1collisiondetection")
-GIT_ADAPTER = ROOT / "git.sh"
+GIT_ADAPTER = ROOT / "seeds" / "git.sh"
 GIT_BOOTSTRAP_SCHEMA = "5"
 
 
@@ -119,7 +119,7 @@ def select_cc() -> str:
     if requested:
         return requested
 
-    adapter = ROOT / "cc.sh"
+    adapter = ROOT / "seeds" / "cc.sh"
     if adapter.is_file() and os.access(adapter, os.X_OK):
         completed = subprocess.run(
             [str(adapter), "--print-cc"],

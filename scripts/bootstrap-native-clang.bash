@@ -407,19 +407,19 @@ deployment_target=""
 # build.sh and can be reused without re-running cc.sh/cxx.sh.
 if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CC:-}" ]]; then
     bootstrap_cc="$(WHP_CC_SEED="$NATIVE_LLVM_BOOTSTRAP_CC" \
-        "$SOURCE_DIR/cc.sh" --print-cc)" || exit 1
+        "$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
 elif [[ -n "${CC_FOR_BUILD:-}" ]]; then
     bootstrap_cc="$CC_FOR_BUILD"
 else
-    bootstrap_cc="$("$SOURCE_DIR/cc.sh" --print-cc)" || exit 1
+    bootstrap_cc="$("$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
 fi
 if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CXX:-}" ]]; then
     bootstrap_cxx="$(WHP_CXX_SEED="$NATIVE_LLVM_BOOTSTRAP_CXX" \
-        "$SOURCE_DIR/cxx.sh" --print-cxx)" || exit 1
+        "$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
 elif [[ -n "${CXX_FOR_BUILD:-}" ]]; then
     bootstrap_cxx="$CXX_FOR_BUILD"
 else
-    bootstrap_cxx="$("$SOURCE_DIR/cxx.sh" --print-cxx)" || exit 1
+    bootstrap_cxx="$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
 fi
 # WHP_NATIVE_LLVM_SEED_SELECTION_END
 

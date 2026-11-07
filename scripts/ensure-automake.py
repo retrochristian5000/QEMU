@@ -31,7 +31,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
                            select_bootstrap_ldflags)
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
-SED_ADAPTER = ROOT / "sed.sh"
+SED_ADAPTER = ROOT / "seeds" / "sed.sh"
 AUTOMAKE_BOOTSTRAP_SCHEMA = "3"
 
 

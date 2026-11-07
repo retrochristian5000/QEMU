@@ -216,7 +216,7 @@ an unverified build to bypass the guard.
 Source refresh
 --------------
 
-Normal local ``./build.sh`` runs resolve ``git.sh --print-seed``
+Normal local ``./build.sh`` runs resolve ``seeds/git.sh --print-seed``
 before the parent checkout updater (and before Python, managed toolchain,
 or QEMU configuration discovery). ``WHP_SOURCE_UPDATE=auto`` is the
 default. The pre/post-refresh HEAD checks and every command in

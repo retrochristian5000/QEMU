@@ -32,7 +32,7 @@ from bootstrap_env import select_bootstrap_cflags, select_bootstrap_ldflags
 SUBMODULE_REL = pathlib.Path("toolchains/sed")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NESTED_REL = pathlib.Path("gnulib")
-SED_ADAPTER = ROOT / "sed.sh"
+SED_ADAPTER = ROOT / "seeds" / "sed.sh"
 SED_BOOTSTRAP_SCHEMA = "5"
 
 
@@ -209,7 +209,7 @@ def select_cc() -> str:
     if requested:
         return requested
 
-    adapter = ROOT / "cc.sh"
+    adapter = ROOT / "seeds" / "cc.sh"
     if adapter.is_file() and os.access(adapter, os.X_OK):
         completed = subprocess.run(
             [str(adapter), "--print-cc"],

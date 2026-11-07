@@ -3,7 +3,7 @@
 # Check the native grep seed without building or modifying any source tree.
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-bridge="$ROOT/grep.sh"
+bridge="$ROOT/seeds/grep.sh"
 shim="$ROOT/scripts/whp-build/seed-bin/grep"
 test -x "$bridge" && test -x "$shim"
 

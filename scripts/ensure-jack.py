@@ -135,7 +135,7 @@ def command_path(value: str, env_name: str, fallbacks: tuple[str, ...]) -> str:
             return str(path)
         raise RuntimeError(f"{build_env} is not executable: {candidate}")
 
-    adapter = ROOT / ("cc.sh" if env_name == "CC" else "cxx.sh")
+    adapter = ROOT / "seeds" / ("cc.sh" if env_name == "CC" else "cxx.sh")
     if adapter.is_file() and os.access(adapter, os.X_OK):
         mode = "--print-cc" if env_name == "CC" else "--print-cxx"
         completed = subprocess.run(

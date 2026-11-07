@@ -46,7 +46,8 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-env-") as td:
     cc = base / "native-cc"
     cc.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     cc.chmod(cc.stat().st_mode | stat.S_IXUSR)
-    adapter = base / "cc.sh"
+    (base / "seeds").mkdir()
+    adapter = base / "seeds" / "cc.sh"
     adapter.write_text(
         "#!/bin/sh\nprintf '%s\\n' '" + str(cc) + "'\n",
         encoding="utf-8",

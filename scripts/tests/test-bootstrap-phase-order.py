@@ -60,7 +60,7 @@ if not library_module < tool_module:
 # Bash trees, but never move a consumer before the tools needed to build it.
 # Seed Git is selected by build.sh ahead of the parent source updater;
 # host-tools only consumes the already validated choice.
-seed_git_hook = build.index('WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed)')
+seed_git_hook = build.index('WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed)')
 source_update_hook = build.index(
     '/bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"'
 )
@@ -68,7 +68,7 @@ late_git_hook = build.index(
     '. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"'
 )
 require(
-    build, 'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1',
+    build, 'WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed) || return 1',
     "Git seed fail-closed selection",
 )
 require(

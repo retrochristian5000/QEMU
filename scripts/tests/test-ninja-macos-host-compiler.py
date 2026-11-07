@@ -32,7 +32,7 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
              mock.patch.object(mod.subprocess, 'run', return_value=resolved) as run:
             self.assertEqual(mod.select_host_cxx(), '/usr/bin/clang++')
             self.assertEqual(run.call_args.args[0],
-                             [str(mod.ROOT / 'cxx.sh'), '--print-cxx'])
+                             [str(mod.ROOT / 'seeds' / 'cxx.sh'), '--print-cxx'])
 
     def test_explicit_build_cxx_remains_authoritative_on_darwin(self):
         mod = load_bootstrap_module()

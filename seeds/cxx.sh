@@ -21,7 +21,7 @@ while [ -L "$seed_entry" ]; do
         *) seed_entry=${seed_entry%/*}/$seed_link ;;
     esac
 done
-seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}" && pwd -P) || exit 1
+seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}/.." && pwd -P) || exit 1
 . "$seed_root/scripts/whp-build/compiler-seed-common.sh"
 derived_cxx_candidates()
 {
@@ -53,7 +53,7 @@ select_cxx()
     # On macOS, trying xcrun before this pairing could silently mix a pinned
     # LLVM Clang C seed with an unrelated Apple Clang++ and even hide an invalid
     # explicit C seed from --print-cxx.
-    cc=$("$seed_root/cc.sh" --print-cc) || return 1
+    cc=$("$seed_root/seeds/cc.sh" --print-cc) || return 1
     value=$(derived_cxx_candidates "$cc" 2>/dev/null || true)
     if [ -n "$value" ] && compiler=$(try_compiler c++ "$value"); then
         printf '%s\n' "$compiler"

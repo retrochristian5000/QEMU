@@ -4,10 +4,10 @@ on:
   push:
     branches: [master]
     paths:
-      - 'awk.sh'
+      - 'seeds/awk.sh'
       - 'scripts/whp-build/seed-bin/awk'
       - 'scripts/tests/test-awk-seed-adapter.bash'
-      - 'grep.sh'
+      - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
@@ -15,10 +15,10 @@ on:
       - '.github/workflows/grep-seed-adapter.yml'
   pull_request:
     paths:
-      - 'awk.sh'
+      - 'seeds/awk.sh'
       - 'scripts/whp-build/seed-bin/awk'
       - 'scripts/tests/test-awk-seed-adapter.bash'
-      - 'grep.sh'
+      - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
@@ -44,4 +44,4 @@ jobs:
       - name: Verify AWK and grep before sed, Python, and Autotools
         run: python3 scripts/tests/test-sed-bootstrap-order.py
       - name: Validate portable shell entrypoints
-        run: sh -n awk.sh scripts/whp-build/seed-bin/awk grep.sh scripts/whp-build/seed-bin/grep build.sh
+        run: sh -n seeds/awk.sh scripts/whp-build/seed-bin/awk seeds/grep.sh scripts/whp-build/seed-bin/grep build.sh

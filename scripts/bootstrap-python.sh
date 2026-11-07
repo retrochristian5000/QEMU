@@ -22,7 +22,7 @@ if [ -n "${SED:-}" ] && [ -z "${WHP_SED_SEED:-}" ]; then
     WHP_SED_SEED=$SED
     export WHP_SED_SEED
 fi
-SED="$SOURCE_DIR/sed.sh"
+SED="$SOURCE_DIR/seeds/sed.sh"
 export SED
 cleanup_path=
 lock_dir=
@@ -225,8 +225,8 @@ case "$build_mode" in
             bootstrap_cc=$WHP_PYTHON_BOOTSTRAP_CC
         elif [ -n "${CC_FOR_BUILD:-}" ]; then
             bootstrap_cc=$CC_FOR_BUILD
-        elif [ -x "$SOURCE_DIR/cc.sh" ]; then
-            bootstrap_cc=$("$SOURCE_DIR/cc.sh" --print-cc 2>/dev/null || true)
+        elif [ -x "$SOURCE_DIR/seeds/cc.sh" ]; then
+            bootstrap_cc=$("$SOURCE_DIR/seeds/cc.sh" --print-cc 2>/dev/null || true)
         else
             bootstrap_cc=
         fi
