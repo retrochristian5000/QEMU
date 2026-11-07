@@ -4,7 +4,12 @@
 from __future__ import annotations
 
 import configparser
+from contextlib import ExitStack
+import importlib.util
 import pathlib
+import sys
+import tempfile
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -13,6 +18,78 @@ def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
 
+
+
+def verify_git_cache_recovery() -> None:
+    """Exercise cache-before-build and failed-install rollback without network."""
+    spec = importlib.util.spec_from_file_location(
+        "whp_git_bootstrap_test", ROOT / "scripts/ensure-git.py"
+    )
+    assert spec is not None and spec.loader is not None
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    with tempfile.TemporaryDirectory(prefix="whp-git-cache-") as temp:
+        build = pathlib.Path(temp)
+        prefix = build / "deps/git"
+        (prefix / "bin").mkdir(parents=True)
+        binary = prefix / "bin/git"
+        binary.write_text("previous Git\n", encoding="utf-8")
+        marker = prefix / ".whp-git-bootstrap"
+        marker.write_text("core-cache\n", encoding="utf-8")
+
+        overrides = {
+            "seed_git": mock.Mock(return_value="seed"),
+            "ensure_source": mock.Mock(return_value=("revision", "sha1")),
+            "select_macos_sdkroot": mock.Mock(return_value=""),
+            "select_cc": mock.Mock(return_value="cc"),
+            "select_bootstrap_cflags": mock.Mock(return_value=""),
+            "select_bootstrap_ldflags": mock.Mock(return_value=""),
+            "select_gnu_make": mock.Mock(return_value="make"),
+            "curl_prefix": mock.Mock(return_value=""),
+            "iconv_prefix": mock.Mock(return_value=""),
+            "zlib_prefix": mock.Mock(return_value=("", "")),
+            "marker_text": mock.Mock(
+                side_effect=lambda *args: args[5] + "-cache\n"
+            ),
+            "git_usable": mock.Mock(return_value=True),
+            "smoke_local": mock.Mock(return_value=True),
+            "has_https_transport": mock.Mock(return_value=False),
+            "build_profile": mock.Mock(
+                side_effect=AssertionError("cache hit must not rebuild Git")
+            ),
+        }
+        with ExitStack() as patches:
+            for name, replacement in overrides.items():
+                patches.enter_context(mock.patch.object(helper, name, replacement))
+            assert helper.bootstrap(build, "auto") == prefix
+            overrides["build_profile"].assert_not_called()
+
+        def install_fails(argv, **kwargs):
+            if "install" in argv:
+                raise RuntimeError("simulated Git install failure")
+
+        with (
+            mock.patch.object(helper, "copy_source"),
+            mock.patch.object(helper, "validate_build_compiler"),
+            mock.patch.object(helper, "run_logged", side_effect=install_fails),
+            mock.patch.dict(helper.os.environ, {"JOBS": "1"}),
+        ):
+            try:
+                helper.build_profile(
+                    "seed", "revision", "sha1", "cc", "make", build,
+                    "core", "", "", "", "", "", "",
+                )
+            except RuntimeError as exc:
+                assert "simulated Git install failure" in str(exc)
+            else:
+                raise AssertionError("Git install failure was not reported")
+
+        assert binary.read_text(encoding="utf-8") == "previous Git\n"
+        assert marker.read_text(encoding="utf-8") == "core-cache\n"
+        assert not (prefix.parent / ".whp-git-previous").exists()
 
 def main() -> int:
     parser = configparser.ConfigParser()
@@ -66,6 +143,17 @@ def main() -> int:
     require(ledger, "seed Git", "seed Git root")
     require(ledger, "Git -> checkout Git", "self-cycle warning")
 
+    prepare = (ROOT / "scripts/whp-build/prepare-sources.bash").read_text(
+        encoding="utf-8"
+    )
+    require(
+        prepare,
+        'whp_git_submodule_prepare "$SOURCE_DIR" "$whp_module" "${GIT:-git}"',
+        "promoted Git for submodule ancestry",
+    )
+    if prepare.count('"${GIT:-git}" -C "$SOURCE_DIR" submodule sync --') != 3:
+        raise SystemExit("error: firmware source sync bypasses promoted Git")
+    verify_git_cache_recovery()
     print("WHP Git dependency policy: verified")
     return 0
 

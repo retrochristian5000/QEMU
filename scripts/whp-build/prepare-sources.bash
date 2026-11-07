@@ -5,7 +5,7 @@ whp_prepare_submodules()
 {
     local whp_module
     for whp_module in "$@"; do
-        whp_git_submodule_prepare "$SOURCE_DIR" "$whp_module" || return 1
+        whp_git_submodule_prepare "$SOURCE_DIR" "$whp_module" "${GIT:-git}" || return 1
     done
 }
 
@@ -145,7 +145,7 @@ whp_prepare_sources()
     fi
 
     if [[ "$BUILD_OPENBIOS" == 1 && -e "$SOURCE_DIR/.git" ]]; then
-        if ! command -v git >/dev/null 2>&1; then
+        if ! "${GIT:-git}" --version >/dev/null 2>&1; then
             if [[ "$openbios_auto" == 1 ]]; then
                 printf '%s\n' 'OpenBIOS auto: git is unavailable; continuing without WHP firmware build.' >&2
                 BUILD_OPENBIOS=0
@@ -160,7 +160,7 @@ whp_prepare_sources()
                 powerpc_source_submodules+=("$llvm_submodule_path")
             fi
             source_prepare_failed=0
-            if ! git -C "$SOURCE_DIR" submodule sync -- "${powerpc_source_submodules[@]}" ||
+            if ! "${GIT:-git}" -C "$SOURCE_DIR" submodule sync -- "${powerpc_source_submodules[@]}" ||
                ! whp_prepare_submodules "${powerpc_source_submodules[@]}"; then
                 source_prepare_failed=1
             fi
@@ -178,7 +178,7 @@ whp_prepare_sources()
     fi
 
     if [[ "$BUILD_SEABIOS" == 1 && -e "$SOURCE_DIR/.git" ]]; then
-        if ! command -v git >/dev/null 2>&1; then
+        if ! "${GIT:-git}" --version >/dev/null 2>&1; then
             if [[ "$seabios_auto" == 1 ]]; then
                 printf '%s\n' 'SeaBIOS auto: git is unavailable; continuing without WHP firmware build.' >&2
                 BUILD_SEABIOS=0
@@ -193,7 +193,7 @@ whp_prepare_sources()
                 i386_source_submodules+=("$i386_llvm_submodule_path")
             fi
             source_prepare_failed=0
-            if ! git -C "$SOURCE_DIR" submodule sync -- "${i386_source_submodules[@]}" ||
+            if ! "${GIT:-git}" -C "$SOURCE_DIR" submodule sync -- "${i386_source_submodules[@]}" ||
                ! whp_prepare_submodules "${i386_source_submodules[@]}"; then
                 source_prepare_failed=1
             fi
@@ -211,11 +211,11 @@ whp_prepare_sources()
     fi
 
     if [[ "$BOOTSTRAP_WIN9X_TOOLCHAIN" == 1 && -e "$SOURCE_DIR/.git" ]]; then
-        if ! command -v git >/dev/null 2>&1; then
+        if ! "${GIT:-git}" --version >/dev/null 2>&1; then
             printf 'error: git is required to prepare Windows 9x cross-tools\n' >&2
             return 1
         fi
-        if ! git -C "$SOURCE_DIR" submodule sync -- "$i386_llvm_submodule_path" ||
+        if ! "${GIT:-git}" -C "$SOURCE_DIR" submodule sync -- "$i386_llvm_submodule_path" ||
            ! whp_prepare_submodules "$i386_llvm_submodule_path"; then
             printf 'error: failed to prepare LLVM for Windows 9x cross-tools\n' >&2
             return 1

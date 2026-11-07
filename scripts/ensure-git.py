@@ -362,7 +362,7 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
-    shutil.rmtree(prefix, ignore_errors=True)
+    # Preserve a working Git prefix until its replacement passes validation.
     shutil.rmtree(work, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
@@ -415,11 +415,30 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
         [make, "-C", str(source), "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1)))), *variables],
         env=env,
     )
-    run_logged([make, "-C", str(source), "install", *variables], env=env)
-
-    git_path = prefix / "bin" / "git"
-    if not git_usable(git_path) or not smoke_local(git_path):
-        raise RuntimeError(f"bootstrapped Git failed local checks: {git_path}")
+    # Never discard a usable installation before replacement validation.
+    # A leftover recovery directory is a hard stop, not scratch to overwrite.
+    previous = prefix.with_name(".whp-git-previous")
+    if prefix.is_symlink() or previous.exists() or previous.is_symlink():
+        raise RuntimeError(f"Git bootstrap prefix/recovery is not safe: {prefix}")
+    if prefix.exists():
+        prefix.rename(previous)
+    try:
+        run_logged([make, "-C", str(source), "install", *variables], env=env)
+        git_path = prefix / "bin" / "git"
+        if not git_usable(git_path) or not smoke_local(git_path):
+            raise RuntimeError(f"bootstrapped Git failed local checks: {git_path}")
+        if profile == "full" and not has_https_transport(git_path):
+            raise RuntimeError("bootstrapped full Git lacks HTTPS transport")
+    except BaseException:
+        if prefix.is_dir() and not prefix.is_symlink():
+            shutil.rmtree(prefix)
+        elif prefix.exists() or prefix.is_symlink():
+            prefix.unlink()
+        if previous.exists():
+            previous.rename(prefix)
+        raise
+    if previous.exists():
+        shutil.rmtree(previous)
     return prefix
 
 
@@ -447,6 +466,7 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     if mode == "core":
         profiles = ["core"]
 
+    markers = {}
     for profile in profiles:
         marker = marker_text(
             revision, sha1_revision, seed, cc, make, profile,
@@ -457,15 +477,20 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
         if bootstrap_ldflags:
             marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
-        if (
-            marker_path.is_file()
-            and marker_path.read_text(encoding="utf-8", errors="replace") == marker
-            and git_usable(git_path)
-            and smoke_local(git_path)
-            and (profile != "full" or has_https_transport(git_path))
-        ):
-            return prefix
+        markers[profile] = marker
 
+    # Reuse a verified existing core profile before attempting a full rebuild.
+    # Force mode still requires the full HTTPS-capable profile.
+    if marker_path.is_file():
+        cached = marker_path.read_text(encoding="utf-8", errors="replace")
+        for profile in profiles:
+            if (cached == markers[profile] and git_usable(git_path)
+                    and smoke_local(git_path) and
+                    (profile != "full" or has_https_transport(git_path))):
+                return prefix
+
+    for profile in profiles:
+        marker = markers[profile]
         try:
             built = build_profile(
                 seed, revision, sha1_revision, cc, make, build_root,
@@ -479,12 +504,6 @@ def bootstrap(build_root: pathlib.Path, mode: str) -> pathlib.Path:
                 "WHP Git full profile unavailable; retrying local profile",
                 file=sys.stderr,
             )
-            continue
-
-        git_path = built / "bin" / "git"
-        if profile == "full" and not has_https_transport(git_path):
-            if mode == "force":
-                raise RuntimeError("forced WHP Git build lacks git-remote-https")
             continue
 
         marker_path = built / ".whp-git-bootstrap"
