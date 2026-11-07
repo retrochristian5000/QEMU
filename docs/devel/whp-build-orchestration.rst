@@ -44,6 +44,12 @@ preserved. For a missing checkout, first initialize the exact recorded pin::
 
   git submodule update --init -- toolchains/llvm-project
 
+The legacy ``scripts/git-submodule.sh`` (used by firmware configuration)
+now uses the same non-rewinding policy: ``update`` preserves proven descendants
+and ``validate`` accepts them even when its status ledger has an older SHA.
+It still rejects missing, divergent, or unprovable checkouts. This does not
+change the Python bootstrap cache contract, which uses the actual checkout SHA.
+
 The remote checkout does **not** update the parent repository's recorded
 Gitlink. After validating the new source revision and build, explicitly
 ``git add toolchains/llvm-project``, commit and push QEMU ``master``, and

@@ -26,6 +26,15 @@ test -z "$GIT" && GIT=$(command -v git)
 
 cd "$(dirname "$0")/.."
 
+# Use the same non-rewinding source guard as the WHP host bootstraps.
+. ./scripts/whp-build/shell-functions.sh
+
+# Preserve the historical GIT='wrapper git' interface for this QEMU helper.
+whp_legacy_git() {
+    # Intentional splitting of the caller's Git command and optional wrapper.
+    $GIT "$@"
+}
+
 no_git_error=
 if ! test -e ".git"; then
     no_git_error='no git checkout exists'
@@ -66,10 +75,25 @@ validate_error() {
 }
 
 check_updated() {
-    local CURSTATUS OLDSTATUS
-    CURSTATUS=$($GIT submodule status $module)
-    OLDSTATUS=$(grep $module $substat)
-    test "$CURSTATUS" = "$OLDSTATUS"
+    # The ledger records checkout status, not a fixed SHA requirement.
+    # Accept the recorded commit or a proven descendant; a different SHA
+    # by itself is not evidence that an initialized checkout is unusable.
+    module=$1
+    test ! -L "$module" && test -e "$module/.git" || return 1
+    entry=$(whp_legacy_git ls-tree HEAD -- "$module") || return 1
+    set -- $entry
+    test "${1:-}" = 160000 && test "${2:-}" = commit || return 1
+    pin=$3
+    current=$(whp_legacy_git -C "$module" rev-parse --verify HEAD) || return 1
+
+    # Refuse a submodule checkout resolving to an unrelated Git worktree.
+    top=$(whp_legacy_git -C "$module" rev-parse --show-toplevel) || return 1
+    actual=$(CDPATH= cd -- "$module" && pwd -P) || return 1
+    physical_top=$(CDPATH= cd -- "$top" && pwd -P) || return 1
+    test "$actual" = "$physical_top" || return 1
+
+    test "$current" = "$pin" && return 0
+    whp_legacy_git -C "$module" merge-base --is-ancestor "$pin" "$current"
 }
 
 if is_git; then
@@ -109,10 +133,13 @@ update)
         exit 1
     }
 
-    $GIT submodule update --init $modules 1>/dev/null
-    test $? -ne 0 && update_error "failed to update modules"
+    # A plain 'submodule update --init' can rewind a newer detached checkout.
+    # The shared helper instead fast-forwards stale pins and preserves proven
+    # descendants, including remote tips selected with 'update --remote'.
     for module in $modules; do
-        check_updated $module || echo Updated "$module"
+        whp_git_submodule_prepare "$(pwd -P)" "$module" whp_legacy_git ||
+            update_error "failed to prepare module $module"
+        check_updated "$module" || update_error "invalid history for module $module"
     done
 
     (while IFS= read -r REPLY; do
