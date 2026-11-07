@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import configparser
+import importlib.util
 import pathlib
+import sys
+import tempfile
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -12,6 +16,145 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 def require(text: str, needle: str, label: str) -> None:
     if needle not in text:
         raise SystemExit(f"error: missing {label}: {needle}")
+
+
+
+def verify_make_install_recovery() -> None:
+    """Offline checks for Make's staged publication, rollback and cache lock."""
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "whp_make_install_regression", ROOT / "scripts/ensure-make.py"
+    )
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    with tempfile.TemporaryDirectory(prefix="whp-make-install-") as tmp:
+        root = pathlib.Path(tmp)
+        prefix = root / "deps" / "make"
+        (prefix / "bin").mkdir(parents=True)
+        old_bin = prefix / "bin" / "make"
+        old_bin.write_text(
+            "#!/bin/sh\nprintf 'GNU Make old\\n'\n", encoding="utf-8"
+        )
+        old_bin.chmod(0o755)
+        old_marker = prefix / ".whp-make-bootstrap"
+        old_marker.write_text("old-cache\n", encoding="utf-8")
+        assert helper.gnu_make_usable(old_bin)
+
+        built = root / "new-make"
+        built.write_text(
+            "#!/bin/sh\nprintf 'GNU Make new\\n'\n", encoding="utf-8"
+        )
+        built.chmod(0o755)
+        assert helper.gnu_make_usable(built)
+
+        def unchanged():
+            assert old_marker.read_text(encoding="utf-8") == "old-cache\n"
+            assert old_bin.read_text(encoding="utf-8").find("GNU Make old") >= 0
+            assert not prefix.with_name(".whp-make-previous").exists()
+            assert not list(prefix.parent.glob(".whp-make-stage-*"))
+
+        # Work/source regeneration failure must not delete a working install.
+        with mock.patch.object(
+            helper, "_bootstrap_locked",
+            side_effect=RuntimeError("simulated source-generation failure"),
+        ):
+            try:
+                helper.bootstrap(root)
+            except RuntimeError as exc:
+                assert "simulated source-generation failure" in str(exc)
+            else:
+                raise AssertionError("bootstrap suppressed source-generation error")
+        unchanged()
+
+        # Failed stage validation never reaches the existing installation.
+        with mock.patch.object(helper, "gnu_make_usable", return_value=False):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except RuntimeError as exc:
+                assert "failed validation" in str(exc)
+            else:
+                raise AssertionError("published an invalid staged Make")
+        unchanged()
+
+        # Final marker failure must not destroy the existing installation.
+        original_write = pathlib.Path.write_text
+
+        def fail_marker(path, content, **kwargs):
+            if path.name == ".whp-make-bootstrap":
+                raise OSError("simulated marker failure")
+            return original_write(path, content, **kwargs)
+
+        with mock.patch.object(
+            helper.pathlib.Path, "write_text", autospec=True,
+            side_effect=fail_marker,
+        ):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except OSError as exc:
+                assert "simulated marker failure" in str(exc)
+            else:
+                raise AssertionError("published Make without a valid marker")
+        unchanged()
+
+        # If the final directory rename fails after moving the old prefix,
+        # restore the old version and never lose the old provenance marker.
+        original_rename = pathlib.Path.rename
+
+        def fail_publication(path, target):
+            if path.name.startswith(".whp-make-stage-") and target == prefix:
+                raise OSError("simulated publish failure")
+            return original_rename(path, target)
+
+        with mock.patch.object(
+            helper.pathlib.Path, "rename", autospec=True,
+            side_effect=fail_publication,
+        ):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except OSError as exc:
+                assert "simulated publish failure" in str(exc)
+            else:
+                raise AssertionError("published Make after failed rename")
+        unchanged()
+
+        # An interrupted swap with a missing final prefix can recover without
+        # deleting either source or locally built artifacts.
+        previous = prefix.with_name(".whp-make-previous")
+        prefix.rename(previous)
+        helper.recover_make_install(prefix)
+        unchanged()
+
+        # Both a current and previous install are ambiguous: fail closed.
+        previous.mkdir()
+        try:
+            helper.recover_make_install(prefix)
+        except RuntimeError as exc:
+            assert "ambiguous previous installation" in str(exc)
+        else:
+            raise AssertionError("accepted ambiguous Make backup")
+        previous.rmdir()
+
+        # Serializing installations must not strand stale lock directories.
+        with helper.make_bootstrap_lock(root):
+            try:
+                with helper.make_bootstrap_lock(root):
+                    raise AssertionError("second Make bootstrap took the lock")
+            except RuntimeError as exc:
+                assert "another WHP GNU Make bootstrap" in str(exc)
+        with helper.make_bootstrap_lock(root):
+            pass
+
+        # A fully staged installation publishes executable aliases + marker.
+        helper.publish_make_install(prefix, built, "new-cache\n")
+        assert (prefix / ".whp-make-bootstrap").read_text() == "new-cache\n"
+        assert helper.gnu_make_usable(prefix / "bin" / "make")
+        assert helper.gnu_make_usable(prefix / "bin" / "gmake")
+        assert "GNU Make new" in (prefix / "bin" / "make").read_text()
+        assert not previous.exists()
+        assert not list(prefix.parent.glob(".whp-make-stage-*"))
 
 
 def main() -> int:
@@ -187,6 +330,7 @@ def main() -> int:
     require(libtool, 'os.environ.get("MAKE_CMD"', "Libtool MAKE_CMD handoff")
     require(libtool, '"GNU Make" in output', "Libtool GNU Make identity check")
 
+    verify_make_install_recovery()
     print("GNU Make dependency policy: verified")
     return 0
 

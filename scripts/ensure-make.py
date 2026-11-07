@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import os
@@ -731,7 +732,97 @@ def marker_text(revision, seed_make, automake, aclocal, autoconf, autom4te,
     )
 
 
+@contextmanager
+def make_bootstrap_lock(build_root):
+    """Keep concurrent Make bootstraps from replacing the same prefix/work."""
+    import fcntl  # The QEMU POSIX bootstrap runs on Linux and macOS.
+
+    directory = build_root / "deps"
+    directory.mkdir(parents=True, exist_ok=True)
+    lock = directory / ".whp-make.lock"
+    descriptor = os.open(
+        lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600
+    )
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                f"another WHP GNU Make bootstrap is using {build_root}; "
+                "the existing installation was not modified"
+            ) from exc
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def recover_make_install(prefix):
+    """Restore an interrupted publication before inspecting the Make cache."""
+    previous = prefix.with_name(".whp-make-previous")
+    if prefix.is_symlink() or previous.is_symlink():
+        raise RuntimeError(f"refusing symlinked GNU Make install/recovery: {prefix}")
+    if previous.exists():
+        if prefix.exists() or not previous.is_dir():
+            raise RuntimeError(
+                f"GNU Make has an ambiguous previous installation: {previous}; "
+                "refusing to delete or overwrite either directory"
+            )
+        previous.rename(prefix)
+
+
+def publish_make_install(prefix, built, marker):
+    """Stage and validate Make before replacing any existing installation."""
+    previous = prefix.with_name(".whp-make-previous")
+    if prefix.is_symlink() or previous.exists() or previous.is_symlink():
+        raise RuntimeError(f"GNU Make prefix/recovery is not safe: {prefix}")
+    if prefix.exists() and not prefix.is_dir():
+        raise RuntimeError(f"GNU Make install is not a directory: {prefix}")
+
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    staged = pathlib.Path(tempfile.mkdtemp(
+        prefix=".whp-make-stage-", dir=prefix.parent
+    ))
+    try:
+        bindir = staged / "bin"
+        bindir.mkdir()
+        installed = bindir / "make"
+        shutil.copy2(built, installed)
+        installed.chmod(installed.stat().st_mode | 0o111)
+        gmake = bindir / "gmake"
+        try:
+            gmake.symlink_to("make")
+        except OSError:
+            shutil.copy2(installed, gmake)
+            gmake.chmod(gmake.stat().st_mode | 0o111)
+
+        (staged / ".whp-make-bootstrap").write_text(
+            marker, encoding="utf-8"
+        )
+        if not gnu_make_usable(installed) or not gnu_make_usable(gmake):
+            raise RuntimeError("staged GNU Make binaries failed validation")
+
+        if prefix.exists():
+            prefix.rename(previous)
+        try:
+            staged.rename(prefix)
+        except BaseException:
+            if previous.exists():
+                previous.rename(prefix)
+            raise
+        if previous.exists():
+            shutil.rmtree(previous)
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+
+
 def bootstrap(build_root):
+    with make_bootstrap_lock(build_root):
+        recover_make_install(build_root / "deps" / "make")
+        return _bootstrap_locked(build_root)
+
+
+def _bootstrap_locked(build_root):
     revision = ensure_source()
     validate_autoconf_contract()
     validate_modern_c_prototypes()
@@ -780,7 +871,8 @@ def bootstrap(build_root):
     if marker_path.is_file() and marker_path.read_text(encoding="utf-8") == marker and gnu_make_usable(prefix / "bin" / "make"):
         return prefix
 
-    shutil.rmtree(prefix, ignore_errors=True)
+    # The old managed Make remains available throughout source preparation,
+    # configuration and compilation; only publication changes the prefix.
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True, exist_ok=True)
     gnulib_source = ensure_gnulib_cache(build_root, git)
@@ -901,19 +993,7 @@ def bootstrap(build_root):
     if not gnu_make_usable(built):
         raise RuntimeError("GNU Make build.sh did not produce a usable binary")
 
-    bindir = prefix / "bin"
-    bindir.mkdir(parents=True, exist_ok=True)
-    installed = bindir / "make"
-    shutil.copy2(built, installed)
-    installed.chmod(installed.stat().st_mode | 0o111)
-    gmake = bindir / "gmake"
-    try:
-        gmake.symlink_to("make")
-    except OSError:
-        shutil.copy2(installed, gmake)
-        gmake.chmod(gmake.stat().st_mode | 0o111)
-
-    marker_path.write_text(marker, encoding="utf-8")
+    publish_make_install(prefix, built, marker)
     return prefix
 
 
