@@ -175,12 +175,15 @@ an unverified build to bypass the guard.
 Source refresh
 --------------
 
-Normal local ``./build.sh`` runs refresh the checkout before Python,
-toolchain, or QEMU configuration discovery.  ``WHP_SOURCE_UPDATE=auto`` is
-the default.  It fast-forwards only the current QEMU branch from its configured
-upstream and synchronizes submodule URL metadata.  After host Git and
-Python preparation, only already-initialized submodules are reconciled; unused
-firmware and toolchains remain lazy.
+Normal local ``./build.sh`` runs resolve ``git.sh --print-seed``
+before the parent checkout updater (and before Python, managed toolchain,
+or QEMU configuration discovery). ``WHP_SOURCE_UPDATE=auto`` is the
+default. The pre/post-refresh HEAD checks and every command in
+``update-source.sh`` use this same validated Git executable. The updater
+fast-forwards only the current QEMU branch from its configured upstream and
+synchronizes submodule URL metadata. After host Git and Python preparation,
+only already-initialized submodules are reconciled; unused firmware and
+toolchains remain lazy.
 
 The refresh performs targeted fetches and a fast-forward-only merge.  Bootstrap
 guards then compare commit ancestry before touching any initialized submodule:

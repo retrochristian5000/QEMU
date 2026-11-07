@@ -79,6 +79,23 @@ export WHP_HOST_OS WHP_HOST_KERNEL WHP_HOST_ARCH
 # the caller explicitly sets WHP_SOURCE_UPDATE=1.
 WHP_SOURCE_UPDATE=$(whp_require_auto_switch WHP_SOURCE_UPDATE "${WHP_SOURCE_UPDATE:-auto}") || exit 1
 
+# The parent updater runs before Python and managed host tools. When a refresh
+# is requested, bind and report the real seed Git before the updater starts.
+# Other builds select it at the later host-tool boundary, leaving standalone
+# shell menuconfig and read-only probes independent of Git.
+WHP_GIT_SEED_SELECTED=0
+whp_select_seed_git()
+{
+    WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1
+    [ -n "$WHP_GIT_SEED" ] || {
+        printf '%s\n' 'error: QEMU git.sh returned an empty Git seed' >&2
+        return 1
+    }
+    WHP_GIT_SEED_SELECTED=1
+    export WHP_GIT_SEED
+    printf 'QEMU seed git: %s\n' "$WHP_GIT_SEED" >&2
+}
+
 WHP_SOURCE_UPDATE_SKIP=0
 if [ "$WHP_SOURCE_UPDATE" = auto ]; then
     case "${1:-}" in
@@ -94,8 +111,9 @@ fi
 if [ "${WHP_SOURCE_UPDATE_DONE:-0}" != 1 ] &&
    [ "$WHP_SOURCE_UPDATE" != 0 ] &&
    [ "$WHP_SOURCE_UPDATE_SKIP" != 1 ]; then
+    whp_select_seed_git || exit 1
     WHP_SOURCE_REVISION_BEFORE=$(
-        git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
+        "$WHP_GIT_SEED" -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
     )
     if ! WHP_SOURCE_UPDATE="$WHP_SOURCE_UPDATE" \
         /bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"; then
@@ -103,7 +121,7 @@ if [ "${WHP_SOURCE_UPDATE_DONE:-0}" != 1 ] &&
         exit 1
     fi
     WHP_SOURCE_REVISION_AFTER=$(
-        git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
+        "$WHP_GIT_SEED" -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true
     )
 
     WHP_SOURCE_UPDATE_DONE=1
@@ -492,6 +510,11 @@ fi
 # here so its environment mutations preserve dependency order. It prepares the
 # isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
 # SDL, and JACK remain in the later compiler-selected library phase.
+# If source refresh was disabled or skipped, select Git only when downstream
+# managed host tools actually need it; never probe the seed twice per run.
+if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
+    whp_select_seed_git || exit 1
+fi
 . "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
 # Reconcile only already-initialized Git submodules after the selected Git

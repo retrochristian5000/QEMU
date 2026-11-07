@@ -58,21 +58,32 @@ if not library_module < tool_module:
 
 # Schedule independent, small host dependencies before larger Autotools and
 # Bash trees, but never move a consumer before the tools needed to build it.
-seed_git_hook = host_tools.index(
-    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed'
+# Seed Git is selected by build.sh ahead of the parent source updater;
+# host-tools only consumes the already validated choice.
+seed_git_hook = build.index('WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed)')
+source_update_hook = build.index(
+    '/bin/sh "$SOURCE_DIR/scripts/whp-build/update-source.sh"'
 )
-# Require the verified seed to be visible and a failing Git probe to stop the
-# bootstrap instead of returning an empty seed from a swallowed error.
+late_git_hook = build.index(
+    '. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"'
+)
 require(
-    host_tools,
-    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || exit 1',
+    build, 'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1',
     "Git seed fail-closed selection",
 )
 require(
-    host_tools,
+    build,
     "printf 'QEMU seed git: %s\\n' \"$WHP_GIT_SEED\" >&2",
     "Git seed diagnostic",
 )
+require(
+    host_tools, 'WHP_GIT_SEED_SELECTED:-0',
+    "host tools consume one already validated seed Git",
+)
+if 'git.sh" --print-seed' in host_tools:
+    raise SystemExit("error: Git seed selected twice in host tools")
+if not seed_git_hook < source_update_hook < late_git_hook:
+    raise SystemExit("error: Git seed must be selected before source updater")
 zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 automake_hook = host_tools.index("scripts/ensure-automake.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
@@ -83,8 +94,7 @@ ninja_hook = host_tools.index("scripts/ensure-ninja.py")
 bash_hook = host_tools.index("scripts/ensure-bash.py")
 
 if not (
-    seed_git_hook
-    < zlib_hook
+    zlib_hook
     < automake_hook
     < autoconf_hook
     < make_hook
@@ -94,8 +104,8 @@ if not (
     < bash_hook
 ):
     raise SystemExit(
-        "error: expected seed Git -> bootstrap-zlib -> Automake -> "
-        "Autoconf -> Make -> sed -> Git -> Ninja -> Bash pre-LLVM order"
+        "error: expected bootstrap-zlib -> Automake -> Autoconf -> "
+        "Make -> sed -> managed Git -> Ninja -> Bash pre-LLVM order"
     )
 if host_tools.count("whp_prepare_bootstrap_zlib") != 1:
     raise SystemExit("error: bootstrap zlib must have exactly one host-tool call")

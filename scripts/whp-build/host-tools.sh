@@ -3,16 +3,15 @@
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 
-# Resolve the seed Git before any managed source bootstrap. In particular,
-# small static zlib needs only the seed C compiler, GNU Make, and seed Git;
-# it must not wait for Automake, Autoconf, managed Make, or managed sed.
-WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || exit 1
-if [ -z "$WHP_GIT_SEED" ]; then
-    printf 'error: QEMU git.sh could not resolve a usable bootstrap Git\n' >&2
+# build.sh selects and logs the host Git seed once, before its early
+# source updater (or here, when an opt-out/probe skipped that stage).
+# Do not select or log a second Git identity: the initial bootstrap zlib
+# must use exactly the same seed as the parent source updater.
+if [ "${WHP_GIT_SEED_SELECTED:-0}" != 1 ] ||
+   [ -z "${WHP_GIT_SEED:-}" ] || [ ! -x "$WHP_GIT_SEED" ]; then
+    printf '%s\n' 'error: QEMU Git seed was not selected before host tools' >&2
     exit 1
 fi
-export WHP_GIT_SEED
-printf 'QEMU seed git: %s\n' "$WHP_GIT_SEED" >&2
 
 # Git needs zlib before native LLVM, but QEMU's zlib must not inherit that
 # build-machine compiler. Prepare an isolated bootstrap role here; the artifact

@@ -436,8 +436,13 @@ exported through both ``MAKE_CMD`` and ``MAKE``. The build's visible seed
 diagnostics use generic lowercase role names: ``QEMU seed awk:``,
 ``QEMU seed grep:``, ``QEMU seed sed:``, ``QEMU seed make:``,
 ``QEMU seed cc:``, ``QEMU seed ld:``, and ``QEMU seed git:``.
-The Git seed is selected by ``git.sh --print-seed`` immediately before the
-bootstrap-zlib role and logged explicitly rather than silently suppressed.
+The Git seed is selected by ``git.sh --print-seed`` before the parent
+source updater invokes any Git command. Both the pre/post-update HEAD checks
+and the updater use that exact executable, and its selected path is logged as
+``QEMU seed git:``. When source refresh is disabled or skipped, the same
+selector runs once immediately before host-tool preparation instead; a
+shell-only ``menuconfig`` invocation does not require Git. The downstream
+managed Git promotion does not reselect the seed.
 These role labels do not assert the tool's brand. The current QEMU and
 maintainer-tree Make consumers still validate GNU Make where their source
 contracts require it; changing the label does not pretend an unverified

@@ -153,7 +153,24 @@ def main() -> int:
         encoding="utf-8"
     )
     require(host_tools, "BOOTSTRAP_GIT=", "Git bootstrap policy")
-    require(host_tools, '"$SOURCE_DIR/git.sh" --print-seed', "seed Git boundary")
+    build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    updater = (ROOT / "scripts/whp-build/update-source.sh").read_text(
+        encoding="utf-8"
+    )
+    adapter = (ROOT / "git.sh").read_text(encoding="utf-8")
+    require(build, 'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed)',
+            "early Git seed boundary")
+    require(build, 'whp_select_seed_git || exit 1',
+            "Git selection before updater")
+    require(build, 'printf \'QEMU seed git:', "single seed diagnostic")
+    require(updater, 'WHP_UPDATE_GIT=${WHP_GIT_SEED:-git}',
+            "parent updater selects the same Git seed")
+    require(host_tools, 'WHP_GIT_SEED_SELECTED:-0',
+            "managed stages reuse selected Git seed")
+    if '"$SOURCE_DIR/git.sh" --print-seed' in host_tools:
+        raise SystemExit("error: Git seed must not be reselected after source update")
+    if "| grep -q '^git version '" in adapter:
+        raise SystemExit("error: early Git seed still depends on late grep")
     require(host_tools, "whp_prepare_bootstrap_zlib", "pre-Git zlib phase")
     require(host_tools, "git-remote-https", "HTTPS promotion guard")
     require(host_tools, "WHP_GIT_LOCAL", "local Git fallback")

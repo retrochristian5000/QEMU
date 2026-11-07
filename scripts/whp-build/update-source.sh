@@ -37,28 +37,31 @@ if [ "$mode" = auto ]; then
     esac
 fi
 
-if ! command -v git >/dev/null 2>&1; then
+# build.sh selects a single Git seed before entering this updater. When run
+# directly for diagnostics, retain the historical PATH-based Git fallback.
+WHP_UPDATE_GIT=${WHP_GIT_SEED:-git}
+if ! command -v "$WHP_UPDATE_GIT" >/dev/null 2>&1; then
     warn_or_fail 'git is unavailable, so source refresh cannot run'
     exit 0
 fi
 
-if ! git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if ! "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     warn_or_fail 'source tree is not a Git worktree'
     exit 0
 fi
 
-branch=$(git -C "$SOURCE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-upstream_ref=$(git -C "$SOURCE_DIR" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+branch=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+upstream_ref=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)
 remote=
 merge_ref=
 if [ -n "$branch" ]; then
-    remote=$(git -C "$SOURCE_DIR" config --get "branch.$branch.remote" 2>/dev/null || true)
-    merge_ref=$(git -C "$SOURCE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
+    remote=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" config --get "branch.$branch.remote" 2>/dev/null || true)
+    merge_ref=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
 fi
 
 root_dirty=0
-git -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all -- || root_dirty=1
-git -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all -- || root_dirty=1
+"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all -- || root_dirty=1
+"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all -- || root_dirty=1
 
 if [ "$root_dirty" = 1 ]; then
     warn_or_fail 'tracked QEMU source changes prevent a safe fast-forward update'
@@ -72,9 +75,9 @@ else
     # Query only the configured upstream ref. A no-op build transfers only the
     # remote ref advertisement instead of running a full fetch negotiation.
     if [ "$remote" = "." ]; then
-        remote_oid=$(git -C "$SOURCE_DIR" rev-parse "$merge_ref^{commit}" 2>/dev/null || true)
+        remote_oid=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse "$merge_ref^{commit}" 2>/dev/null || true)
     else
-        remote_line=$(git -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref" 2>/dev/null || true)
+        remote_line=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref" 2>/dev/null || true)
         remote_oid=$(printf '%s\n' "$remote_line" | sed -n '1{s/[[:space:]].*//;p;}')
         unset remote_line
     fi
@@ -82,17 +85,17 @@ else
     if [ -z "$remote_oid" ]; then
         warn_or_fail "could not resolve upstream ref '$merge_ref' from '$remote'"
     else
-        upstream_oid=$(git -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
+        upstream_oid=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
 
         if [ "$remote_oid" != "$upstream_oid" ]; then
             if [ "$remote" != "." ]; then
                 printf '%s\n' 'WHP source update: fetching configured branch only (no tags or submodules)' >&2
-                if ! git -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules \
+                if ! "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules \
                     "$remote" "$merge_ref:$upstream_ref"; then
                     warn_or_fail "targeted fetch from '$remote' failed"
                     upstream_oid=
                 else
-                    upstream_oid=$(git -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
+                    upstream_oid=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
                 fi
             else
                 upstream_oid=$remote_oid
@@ -102,7 +105,7 @@ else
         fi
 
         if [ -n "$upstream_oid" ]; then
-            if ! git -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"; then
+            if ! "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"; then
                 warn_or_fail "fast-forward update from '$upstream_ref' failed"
             fi
         fi
@@ -119,7 +122,7 @@ fi
 # URL synchronization is local and cheap, so keep it global to make later lazy
 # initialization honor any .gitmodules URL changes from the refreshed QEMU tree.
 if [ -f "$SOURCE_DIR/.gitmodules" ]; then
-    git -C "$SOURCE_DIR" submodule sync --recursive >/dev/null
+    "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" submodule sync --recursive >/dev/null
 fi
 
 # DTC is reconciled by build.sh after the selected Python and Git bootstrap.

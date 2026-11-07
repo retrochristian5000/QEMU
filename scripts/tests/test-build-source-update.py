@@ -36,6 +36,10 @@ required_build = (
     'WHP_SOURCE_REVISION_BEFORE',
     'WHP_SOURCE_REVISION_AFTER',
     'error: QEMU parent source update failed',
+    'whp_select_seed_git()',
+    'WHP_GIT_SEED=$("$SOURCE_DIR/git.sh" --print-seed) || return 1',
+    'whp_select_seed_git || exit 1',
+    '"$WHP_GIT_SEED" -C "$SOURCE_DIR" rev-parse HEAD',
     'scripts/whp-build/update-submodules.py',
 )
 for needle in required_build:
@@ -48,22 +52,35 @@ refresh_index = build.find('/bin/sh "$SOURCE_DIR/scripts/whp-build/update-source
 python_index = build.find("whp_python_usable()")
 if refresh_index < 0 or python_index < 0 or refresh_index >= python_index:
     errors.append("source refresh must precede Python/toolchain discovery")
+seed_selection_index = build.find("    whp_select_seed_git || exit 1")
+if not (0 <= seed_selection_index < refresh_index):
+    errors.append("the validated Git seed must be bound before parent refresh")
+host_tools_index = build.find('. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"')
+if not (refresh_index < host_tools_index and
+        build.find('if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then',
+                   refresh_index, host_tools_index) >= 0):
+    errors.append("skipped source refresh must select Git once at host tools")
 
 required_update = (
-    'git -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref"',
-    'git -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules',
+    'WHP_UPDATE_GIT=${WHP_GIT_SEED:-git}',
+    'command -v "$WHP_UPDATE_GIT"',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" ls-remote "$remote" "$merge_ref"',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" fetch --no-tags --no-recurse-submodules',
     '"$remote" "$merge_ref:$upstream_ref"',
-    'git -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"',
-    'git -C "$SOURCE_DIR" submodule sync --recursive',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" submodule sync --recursive',
     'upstream ref unchanged; object fetch skipped',
     'pinned submodules remain lazy',
     'DTC is reconciled by build.sh after the selected Python and Git bootstrap',
-    'git -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all --',
-    'git -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all --',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all --',
+    '"$WHP_UPDATE_GIT" -C "$SOURCE_DIR" diff --cached --quiet --ignore-submodules=all --',
 )
 for needle in required_update:
     if needle not in update:
         errors.append(f"update-source.sh download-minimization contract missing: {needle}")
+
+if 'git -C "$SOURCE_DIR"' in update:
+    errors.append("early updater rediscovered ambient Git instead of its seed")
 
 for forbidden in (
     "git -C \"$SOURCE_DIR\" pull ",
@@ -393,10 +410,26 @@ def test_parent_fast_forward_and_explicit_error():
         env = os.environ.copy()
         env.pop('CI', None)
         env['WHP_SOURCE_UPDATE'] = 'auto'
+        # Use a distinct selected Git wrapper. The parent updater must use it
+        # for every Git command, not rediscover an unrelated PATH git.
+        selected_git = base / 'selected-git'
+        trace = base / 'selected-git.log'
+        selected_git.write_text(
+            '#!/bin/sh\\nprintf "%s\\\\n" "$*" >> "$WHP_SELECTED_GIT_TRACE"\\n'
+            'exec "$WHP_TEST_REAL_GIT" "$@"\\n', encoding='utf-8'
+        )
+        selected_git.chmod(0o755)
+        env['WHP_GIT_SEED'] = str(selected_git)
+        env['WHP_SELECTED_GIT_TRACE'] = str(trace)
+        env['WHP_TEST_REAL_GIT'] = shutil.which('git')
         updater = ['/bin/sh', str(script)]
         first = subprocess.run(updater, cwd=source, env=env, text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert first.returncode == 0, first.stderr
+        traced = trace.read_text(encoding='utf-8')
+        for command in ('rev-parse --is-inside-work-tree', 'ls-remote',
+                        'fetch --no-tags', 'merge --ff-only'):
+            assert command in traced, (command, traced)
         assert git('rev-parse', 'HEAD', cwd=source) == pinned
         assert original != pinned
         assert (source / 'README').read_text() == 'parent v2\n'

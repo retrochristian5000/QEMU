@@ -36,7 +36,13 @@ resolve_candidate()
     fi
     [ -n "$candidate" ] && [ -x "$candidate" ] || return 1
     is_self "$candidate" && return 1
-    "$candidate" --version 2>/dev/null | grep -q '^git version ' || return 1
+    # The early parent updater runs before the grep seed is selected. Parse
+    # the Git banner with the POSIX shell, without rediscovering host grep.
+    git_version=$("$candidate" --version 2>/dev/null) || return 1
+    case "$git_version" in
+        'git version '*) ;;
+        *) return 1 ;;
+    esac
     printf '%s\n' "$candidate"
 }
 
