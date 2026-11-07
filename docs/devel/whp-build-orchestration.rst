@@ -88,6 +88,13 @@ They locate GNU Bash 3.2 or newer, clear shell startup inputs such as
 ``BASH_ENV``, ``ENV``, ``POSIXLY_CORRECT``, ``SHELLOPTS``, and ``BASHOPTS``,
 and then enter the Bash orchestration layer with ``--noprofile --norc``.
 
+The terminal POSIX-to-Bash wrappers share ``whp_exec_bash`` from
+``scripts/whp-build/shell-functions.sh``. Its ``exec`` handoff preserves
+arguments and the child's exit status while removing inherited startup hooks
+and shell-mode switches. The native LLVM bootstrap is deliberately different:
+its POSIX parent must return from the Bash child to validate the installed
+prefix and tools before reporting success.
+
 ``WHP_BUILD_BASH`` is the single public shell selector. The selected Bash path
 is also used as ``CONFIG_SHELL`` for nested configure recursion. There is no
 separate QEMU or PowerPC-toolchain shell selector. ``BOOTSTRAP_BASH=auto``

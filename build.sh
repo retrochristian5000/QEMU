@@ -937,7 +937,7 @@ fi
 
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" = 1 ]; then
     printf 'WHP orchestration shell: %s\n' "$WHP_BUILD_FRONTEND_KIND"
-    exec "$WHP_BUILD_BASH" --noprofile --norc -c '
+    whp_exec_bash -c '
         printf "WHP build shell: %s\n" "$BASH_VERSION"
         printf "CONFIG_SHELL: %s\n" "$CONFIG_SHELL"
         case ":${SHELLOPTS:-}:" in
@@ -957,15 +957,10 @@ if [ "$WHP_HOST_OS" = macos ] &&
                 "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
             ;;
         bash)
-            exec "$WHP_BUILD_BASH" --noprofile --norc \
-                "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
+            whp_exec_bash "$SOURCE_DIR/scripts/macos-builder.sh" "$@"
             ;;
     esac
 fi
 
-# Non-interactive Bash can source BASH_ENV. Remove user startup hooks before
-# handing the rest of the build to the normalized helper graph.
-unset BASH_ENV ENV
-
-exec "$WHP_BUILD_BASH" --noprofile --norc \
-    "$SOURCE_DIR/builder.sh" "$@"
+# Terminal Bash handoff: the shared executor clears startup hooks/options.
+whp_exec_bash "$SOURCE_DIR/builder.sh" "$@"

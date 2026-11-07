@@ -341,3 +341,33 @@ whp_require_binary_switch()
 
     printf '%s\n' "$whp_switch_value"
 )
+
+# Terminal POSIX -> Bash handoff. Keep this separate from child invocations
+# that return output or require validation/cleanup in the parent shell.
+# Noninteractive Bash reads BASH_ENV despite --noprofile --norc; env -u
+# also strips inherited shell-mode switches that can alter build semantics.
+whp_exec_bash()
+{
+    if [ "$#" -eq 0 ]; then
+        printf 'error: Bash handoff needs a command or script\n' >&2
+        return 2
+    fi
+    whp_exec_bash_runner=${WHP_BUILD_BASH:-}
+    if [ -z "$whp_exec_bash_runner" ]; then
+        whp_exec_bash_runner=$(command -v bash 2>/dev/null || true)
+    fi
+    if [ -z "$whp_exec_bash_runner" ] ||
+       ! command -v "$whp_exec_bash_runner" >/dev/null 2>&1; then
+        printf 'error: GNU Bash is unavailable for shell handoff: %s\n' \
+            "${whp_exec_bash_runner:-<missing>}" >&2
+        return 1
+    fi
+    whp_exec_bash_env=$(command -v env 2>/dev/null || true)
+    if [ -z "$whp_exec_bash_env" ]; then
+        printf 'error: env is required for a clean Bash handoff\n' >&2
+        return 1
+    fi
+    exec "$whp_exec_bash_env" -u BASH_ENV -u ENV -u POSIXLY_CORRECT \
+        -u SHELLOPTS -u BASHOPTS \
+        "$whp_exec_bash_runner" --noprofile --norc "$@"
+}

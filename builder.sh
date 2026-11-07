@@ -7,6 +7,11 @@ case "$0" in
 esac
 script_dir=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
 unset whp_entry_dir
+
+# Direct calls must enter through the public policy boundary first.
+if [ "${WHP_BUILD_ENTRY_NORMALIZED:-0}" != 1 ]; then
+    exec "$script_dir/build.sh" "$@"
+fi
 script_name=${0##*/}
 bash_name=${script_name%.sh}.bash
 
@@ -134,12 +139,5 @@ elif [ "$COMPILER_CACHE" = none ]; then
     printf 'WHP compiler cache: disabled\n' >&2
 fi
 
-bash_runner=${WHP_BUILD_BASH:-}
-if [ -z "$bash_runner" ]; then
-    bash_runner=$(command -v bash 2>/dev/null || true)
-fi
-if [ -z "$bash_runner" ]; then
-    printf 'error: GNU Bash is required for %s\n' "$script_name" >&2
-    exit 1
-fi
-exec "$bash_runner" "$script_dir/$bash_name" "$@"
+. "$script_dir/scripts/whp-build/shell-functions.sh"
+whp_exec_bash "$script_dir/$bash_name" "$@"
