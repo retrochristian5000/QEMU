@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
 TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/$TOOLCHAIN_TARGET-clang}"
 LLVM_SUBMODULE_PATH="${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
@@ -31,17 +32,10 @@ if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
     exit 1
 fi
 
-expected_revision="$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$LLVM_SUBMODULE_PATH" | awk '{print $3}')"
+# Reuse the pre-bootstrap ancestry guard: it recovers shallow history and
+# retains verified descendants without moving an already newer checkout.
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"
 submodule_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
-if [[ -z "$expected_revision" ]] ||
-   { [[ "$submodule_revision" != "$expected_revision" ]] &&
-     ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor "$expected_revision" "$submodule_revision"; }; then
-    printf '%s\n' \
-        'error: LLVM submodule does not match the QEMU gitlink.' \
-        "checked out: ${submodule_revision:-missing}" \
-        "QEMU expects: ${expected_revision:-missing}" >&2
-    exit 1
-fi
 
 cache_is_reusable=0
 if [[ -d "$LLVM_CACHE_DIR/.git" ]] &&
