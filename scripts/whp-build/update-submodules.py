@@ -117,11 +117,8 @@ def remote_refresh(source, path):
     if path not in links:
         raise UpdateError(f"{path}: not a recorded QEMU Git submodule")
     pin = links[path]
-    if not indexed_gitlink(source, path, pin):
-        raise UpdateError(
-            f"{path}: staged gitlink differs from QEMU HEAD; "
-            "preserve the index before remote refresh"
-        )
+    # A fetch-only/no-op refresh need not reject an intentionally staged
+    # newer gitlink. Protect the index only if checkout must actually move.
     records = git(source, "config", "-f", ".gitmodules", "--get-regexp",
                   r"^submodule\..*\.path$", check=False)
     if records.returncode not in (0, 1):
@@ -217,6 +214,13 @@ def remote_refresh(source, path):
             f"{path}: attached development branch "
             f"{attached.stdout.strip()!r} preserved; "
             "refusing remote checkout"
+        )
+    # Git submodule update may use an indexed gitlink, so checkout-changing
+    # refreshes must still reject an unrelated staged pointer.
+    if not indexed_gitlink(source, path, pin):
+        raise UpdateError(
+            f"{path}: staged gitlink differs from QEMU HEAD; "
+            "refusing checkout while preserving the index"
         )
     if (
         git(source, "rev-parse", "HEAD").stdout.strip() != parent or

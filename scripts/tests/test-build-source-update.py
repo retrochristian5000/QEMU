@@ -1016,17 +1016,23 @@ def test_explicit_remote_submodule_refresh():
         assert old in git("ls-files", "--stage", "modules/a", cwd=clone)
         assert invoke("--remote", "modules/a").returncode == 0
 
-        # The index can already contain an unrelated staged gitlink. Never
-        # let a native submodule command redirect to that staged revision.
+        # A staged newer descendant must not block a no-op remote refresh.
         git("add", "modules/a", cwd=clone)
         staged = invoke("--remote", "modules/a")
-        assert staged.returncode != 0
-        assert "staged gitlink" in staged.stderr
-        git("reset", "-q", "--", "modules/a", cwd=clone)
+        assert staged.returncode == 0, staged.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == remote_tip
+        assert remote_tip in git("ls-files", "--stage", "modules/a", cwd=clone)
 
         (child / "README").write_text("v3\n")
         git("add", ".", cwd=child)
         git("commit", "-qm", "v3", cwd=child)
+        # Moving the checkout remains forbidden while its gitlink is staged.
+        blocked = invoke("--remote", "modules/a")
+        assert blocked.returncode != 0
+        assert "staged gitlink" in blocked.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == remote_tip
+        assert remote_tip in git("ls-files", "--stage", "modules/a", cwd=clone)
+        git("reset", "-q", "--", "modules/a", cwd=clone)
         (checkout / "README").write_text("local edits\n")
         dirty = invoke("--remote", "modules/a")
         assert dirty.returncode != 0
