@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
 TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$SOURCE_DIR/build/toolchains/$TOOLCHAIN_TARGET}"
 TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/$TOOLCHAIN_TARGET-clang}"
@@ -26,30 +27,19 @@ for required in git awk grep cksum cmp ln mkdir rm readlink; do
     fi
 done
 
-expected_llvm_revision="$(
-    git -C "$SOURCE_DIR" ls-tree HEAD -- "$LLVM_SUBMODULE_PATH" | awk '{print $3}'
-)"
-if [[ -z "$expected_llvm_revision" ]]; then
-    printf 'error: LLVM submodule is not registered in QEMU: %s\n' \
-        "$LLVM_SUBMODULE_PATH" >&2
-    exit 1
-fi
+# The shared guard proves gitlink ancestry (including shallow history
+# recovery) and preserves a verified newer checkout. This lane checks only
+# the source layout and tool capabilities after that preparation.
+llvm_access=online
+[[ "${POWERPC_LLVM_GIT_OFFLINE:-0}" != 1 ]] || llvm_access=offline
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH" git "$llvm_access"
+unset llvm_access
 if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ]]; then
-    printf 'error: LLVM submodule is not initialized: %s\n' \
+    printf 'error: LLVM submodule lacks llvm/CMakeLists.txt: %s\n' \
         "$LLVM_SUBMODULE_PATH" >&2
     exit 1
 fi
 llvm_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
-# Accept a verified newer descendant; never silently admit a divergent fork.
-if [[ "$llvm_revision" != "$expected_llvm_revision" ]] &&
-   ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor \
-       "$expected_llvm_revision" "$llvm_revision"; then
-    printf '%s\n' \
-        'error: LLVM checkout diverges from QEMU gitlink or history is incomplete.' \
-        "checked out: $llvm_revision" \
-        "QEMU baseline: $expected_llvm_revision" >&2
-    exit 1
-fi
 
 clang="$TOOLCHAIN_DIR/llvm/bin/clang"
 llvm_ar="$TOOLCHAIN_DIR/llvm/bin/llvm-ar"

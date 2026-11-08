@@ -38,10 +38,15 @@ grep -Fq 'bootstrap-powerpc-llvm-ar.sh' "$orchestrator"
 grep -Fq 'No private GNU as/ar/nm/strip fallbacks survive' "$orchestrator"
 grep -Fq 'POWERPC_TOOLCHAIN_FORCE_REBUILD=0' "$orchestrator"
 
-# Archive, symbol and strip stages must all permit a verified newer LLVM tip.
+# All three stages must use the same descendant-aware preparation and
+# shallow-history recovery, rather than duplicating bare ancestry checks.
 for stage in "$ar_stage" "$nm_stage" "$ROOT/scripts/bootstrap-powerpc-llvm-strip.bash"; do
-    grep -Fq 'merge-base --is-ancestor' "$stage"
-    grep -Fq '"$expected_llvm_revision" "$llvm_revision"' "$stage"
+    grep -Fq 'whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH" git "$llvm_access"' "$stage"
+    grep -Fq 'POWERPC_LLVM_GIT_OFFLINE:-0' "$stage"
+    if grep -Fq 'merge-base --is-ancestor' "$stage"; then
+        printf 'error: duplicate LLVM ancestry guard in %s\n' "$stage" >&2
+        exit 1
+    fi
 done
 
 base_line="$(grep -nF 'bash "$BASE_BOOTSTRAP"' "$orchestrator" | head -n1 | cut -d: -f1)"

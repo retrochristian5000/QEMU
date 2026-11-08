@@ -23,13 +23,9 @@ fi
 . "$ROOT/scripts/whp-build/shell-functions.sh"
 whp_git_submodule_prepare "$ROOT" "$submodule_name"
 actual_revision="$(git -C "$submodule_name" rev-parse HEAD)"
-if [[ "$actual_revision" != "$expected_revision" ]] &&
-   ! git -C "$submodule_name" merge-base --is-ancestor \
-       "$expected_revision" "$actual_revision"; then
-    printf 'error: Python runtime checkout has unverifiable ancestry: %s vs %s\n' \
-        "$actual_revision" "$expected_revision" >&2
-    exit 1
-fi
+# whp_git_submodule_prepare has already verified the effective revision
+# against the gitlink, recovering shallow history without moving newer HEAD.
+
 
 cache_root="${RUNNER_TEMP:-$(mktemp -d)}/whp-python-bootstrap"
 rm -rf "$cache_root"
