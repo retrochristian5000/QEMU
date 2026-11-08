@@ -15,9 +15,9 @@
 
 #define ROM_SIZE (64 * KiB)
 
-static char *create_test_bios(void)
+static char *create_test_bios(uint8_t invalid_opcode)
 {
-    static const uint8_t code[] = {
+    const uint8_t code[] = {
         0xfa,                         /* cli */
         0x31, 0xc0,                   /* xor ax, ax */
         0x8e, 0xd8,                   /* mov ds, ax */
@@ -42,7 +42,7 @@ static char *create_test_bios(void)
         0x0e,                         /* push cs */
         0x0f,                         /* pop cs on 8086/8088 */
         0xc6, 0x06, 0x02, 0x02, 0x01, /* phase = 1 */
-        0x60,                         /* PUSHA must raise #UD */
+        invalid_opcode,               /* unsupported opcode must raise #UD */
         0xeb, 0x0b,                   /* jmp fail */
         0x80, 0x3e, 0x02, 0x02, 0x01, /* #UD: cmp phase, 1 */
         0x75, 0x04,                   /* jne fail */
@@ -85,7 +85,7 @@ static void test_cpu_model_filter(void)
 
 static uint64_t get_external_bus_width(const char *machine)
 {
-    g_autofree char *bios = create_test_bios();
+    g_autofree char *bios = create_test_bios(0x60);
     g_autofree char *args = g_strdup_printf("-machine %s -bios %s",
                                             machine, bios);
     QTestState *qts = qtest_init(args);
@@ -139,7 +139,7 @@ static char *run_qemu_expect_failure(char **argv)
 static void test_machine_contract_failures(void)
 {
     const char *qemu = qtest_qemu_binary(NULL);
-    g_autofree char *bios = create_test_bios();
+    g_autofree char *bios = create_test_bios(0x60);
     g_autofree char *stderr_text = NULL;
     char *missing_bios_argv[] = {
         (char *)qemu,
@@ -169,11 +169,17 @@ static void test_machine_contract_failures(void)
 }
 
 #ifndef _WIN32
+typedef struct InvalidOpcodeTest {
+    const char *machine;
+    uint8_t opcode;
+} InvalidOpcodeTest;
+
 static void test_literal_rom(const void *opaque)
 {
-    const char *machine = opaque;
+    const InvalidOpcodeTest *test = opaque;
+    const char *machine = test->machine;
     const char *qemu = qtest_qemu_binary(NULL);
-    g_autofree char *bios = create_test_bios();
+    g_autofree char *bios = create_test_bios(test->opcode);
     GError *error = NULL;
     GPid pid;
     int stdout_fd, stderr_fd;
@@ -216,7 +222,8 @@ static void test_literal_rom(const void *opaque)
     unlink(bios);
 
     if (output != 'T') {
-        g_test_message("QEMU stderr: %s", errors);
+        g_test_message("machine %s opcode 0x%02x: QEMU stderr: %s",
+                       machine, test->opcode, errors);
     }
     g_assert_cmpint(output, ==, 'T');
 }
@@ -224,6 +231,15 @@ static void test_literal_rom(const void *opaque)
 
 int main(int argc, char **argv)
 {
+#ifndef _WIN32
+    static InvalidOpcodeTest invalid_opcodes[2 * (16 + 5)];
+    static const char * const machines[] = { "x86-8086", "x86-8088" };
+    static const uint8_t later_opcodes[] = {
+        0xc0, 0xc1, 0xc8, 0xc9, 0xf1,
+    };
+    size_t n = 0;
+#endif
+
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("/x86-16bit/cpu/model-filter", test_cpu_model_filter);
@@ -232,10 +248,28 @@ int main(int argc, char **argv)
     qtest_add_func("/x86-16bit/machine/contract-failures",
                    test_machine_contract_failures);
 #ifndef _WIN32
-    qtest_add_data_func("/x86-16bit/execute/8086", "x86-8086",
-                        test_literal_rom);
-    qtest_add_data_func("/x86-16bit/execute/8088", "x86-8088",
-                        test_literal_rom);
+    /* Check 80186+ instructions and later encodings on both original CPUs. */
+    for (size_t m = 0; m < G_N_ELEMENTS(machines); m++) {
+        for (unsigned opcode = 0x60; opcode <= 0x6f; opcode++) {
+            g_autofree char *name = g_strdup_printf(
+                "/x86-16bit/execute/%s/reject-%02x", machines[m], opcode);
+
+            invalid_opcodes[n] = (InvalidOpcodeTest) {
+                .machine = machines[m], .opcode = opcode,
+            };
+            qtest_add_data_func(name, &invalid_opcodes[n++], test_literal_rom);
+        }
+        for (size_t i = 0; i < G_N_ELEMENTS(later_opcodes); i++) {
+            uint8_t opcode = later_opcodes[i];
+            g_autofree char *name = g_strdup_printf(
+                "/x86-16bit/execute/%s/reject-%02x", machines[m], opcode);
+
+            invalid_opcodes[n] = (InvalidOpcodeTest) {
+                .machine = machines[m], .opcode = opcode,
+            };
+            qtest_add_data_func(name, &invalid_opcodes[n++], test_literal_rom);
+        }
+    }
 #endif
 
     return g_test_run();
