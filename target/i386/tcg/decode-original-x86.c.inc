@@ -2821,30 +2821,11 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
     case 0x26:
         s->override = R_ES;
         goto next_byte;
-    case 0x64:
-        if (s->is_original_x86) {
-            break;
-        }
-        s->override = R_FS;
-        goto next_byte;
-    case 0x65:
-        if (s->is_original_x86) {
-            break;
-        }
-        s->override = R_GS;
-        goto next_byte;
-    case 0x66:
-        if (s->is_original_x86) {
-            break;
-        }
-        s->prefix |= PREFIX_DATA;
-        goto next_byte;
-    case 0x67:
-        if (s->is_original_x86) {
-            break;
-        }
-        s->prefix |= PREFIX_ADR;
-        goto next_byte;
+    case 0x64: /* FS override, 80386+ */
+    case 0x65: /* GS override, 80386+ */
+    case 0x66: /* Operand-size override, 80386+ */
+    case 0x67: /* Address-size override, 80386+ */
+        goto illegal_op;
 #ifdef TARGET_X86_64
     case 0x40 ... 0x4f:
         if (CODE64(s)) {
@@ -2920,9 +2901,8 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
         break;
     }
 
-    if (s->is_original_x86 &&
-        ((b >= 0x60 && b <= 0x6f) || b == 0xc0 || b == 0xc1 ||
-         b == 0xc8 || b == 0xc9 || b == 0xf1)) {
+    if ((b >= 0x60 && b <= 0x6f) || b == 0xc0 || b == 0xc1 ||
+        b == 0xc8 || b == 0xc9 || b == 0xf1) {
         goto illegal_op;
     }
 
