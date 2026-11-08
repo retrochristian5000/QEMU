@@ -11,6 +11,13 @@ maybe_modules="$@"
 
 test -z "$maybe_modules" && exit 0
 
+# This helper runs as its own process. Prevent inherited Git repository
+# overrides from redirecting validation and status calls to the parent tree.
+# -C alone does not clear GIT_WORK_TREE or GIT_DIR.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+unset GIT_PREFIX GIT_NAMESPACE
+
 # Meson wraps such as subprojects/dtc are not QEMU Git submodules.
 # Reject them before touching the submodule status ledger or any gitlink.
 for m in $maybe_modules; do
