@@ -34,7 +34,10 @@ fi
 
 # Reuse the pre-bootstrap ancestry guard: it recovers shallow history and
 # retains verified descendants without moving an already newer checkout.
-whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"
+llvm_access=online
+[[ "${POWERPC_LLVM_GIT_OFFLINE:-0}" != 1 ]] || llvm_access=offline
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH" git "$llvm_access"
+unset llvm_access
 submodule_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
 
 cache_is_reusable=0
