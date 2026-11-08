@@ -673,25 +673,32 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
             0, //interpolate
             kCGRenderingIntentDefault //intent
         );
-        // selective drawing code (draws only dirty rectangles) (OS X >= 10.4)
-        const NSRect *rectList;
-        NSInteger rectCount;
-        int i;
-        CGImageRef clipImageRef;
-        CGRect clipRect;
+        /*
+         * AppKit supplies the dirty rectangles in view coordinates. Clip
+         * once and draw the whole guest image into its stable view bounds:
+         * cropping a CGImage for each dirty rectangle allocates extra image
+         * objects and needlessly repeats the Core Graphics draw call.
+         */
+        if (imageRef) {
+            const NSRect *rectList;
+            NSInteger rectCount;
 
-        [self getRectsBeingDrawn:&rectList count:&rectCount];
-        for (i = 0; i < rectCount; i++) {
-            clipRect = rectList[i];
-            clipRect.origin.y = (float)h - (clipRect.origin.y + clipRect.size.height);
-            clipImageRef = CGImageCreateWithImageInRect(
-                                                        imageRef,
-                                                        clipRect
-                                                        );
-            CGContextDrawImage (viewContextRef, cgrect(rectList[i]), clipImageRef);
-            CGImageRelease (clipImageRef);
+            [self getRectsBeingDrawn:&rectList count:&rectCount];
+            CGContextSaveGState(viewContextRef);
+            CGContextBeginPath(viewContextRef);
+            if (rectCount > 0) {
+                for (NSInteger i = 0; i < rectCount; i++) {
+                    CGContextAddRect(viewContextRef, NSRectToCGRect(rectList[i]));
+                }
+            } else {
+                CGContextAddRect(viewContextRef, NSRectToCGRect(rect));
+            }
+            CGContextClip(viewContextRef);
+            CGContextDrawImage(viewContextRef, CGRectMake(0, 0, w, h),
+                               imageRef);
+            CGContextRestoreGState(viewContextRef);
+            CGImageRelease(imageRef);
         }
-        CGImageRelease (imageRef);
         CGDataProviderRelease(dataProviderRef);
     }
 }

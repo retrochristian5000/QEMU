@@ -36,6 +36,29 @@ class MacOSApiPolicyTests(unittest.TestCase):
         legacy = text.index('cocoa_legacy_refresh_rate')
         self.assertLess(modern, legacy)
 
+    def test_coregraphics_fallback_draws_once_per_dirty_batch(self):
+        text = COCOA.read_text(encoding='utf-8')
+        start = text.index('- (void) drawRect:(NSRect) rect')
+        end = text.index('- (NSSize)fixAspectRatio:', start)
+        draw = text[start:end]
+
+        # A single full-frame image draw, clipped to the union of the
+        # AppKit dirty regions, avoids a CGImage crop per damaged rect.
+        self.assertIn('[self getRectsBeingDrawn:&rectList count:&rectCount];',
+                      draw)
+        self.assertIn('CGContextSaveGState(viewContextRef);', draw)
+        self.assertIn('CGContextBeginPath(viewContextRef);', draw)
+        self.assertIn('CGContextAddRect(viewContextRef, NSRectToCGRect(rectList[i]));',
+                      draw)
+        self.assertIn('CGContextAddRect(viewContextRef, NSRectToCGRect(rect));',
+                      draw)
+        self.assertIn('CGContextClip(viewContextRef);', draw)
+        self.assertIn('CGContextDrawImage(viewContextRef, CGRectMake(0, 0, w, h),',
+                      draw)
+        self.assertIn('CGContextRestoreGState(viewContextRef);', draw)
+        self.assertNotIn('CGImageCreateWithImageInRect(', draw)
+        self.assertEqual(draw.count('CGContextDrawImage('), 1)
+
     def test_graphical_consoles_have_independent_cocoa_windows(self):
         text = COCOA.read_text(encoding='utf-8')
         start = text.index('- (void)createAdditionalConsoleWindows\n{')
