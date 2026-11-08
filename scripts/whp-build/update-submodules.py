@@ -19,6 +19,15 @@ class UpdateError(Exception):
     pass
 
 
+# Git -C does not cancel GIT_WORK_TREE or other inherited repository routing.
+# Strip these for submodule operations; retain protocol and credential config.
+GIT_REPOSITORY_ENV = (
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX", "GIT_NAMESPACE",
+)
+
+
 def git_argv():
     selected = shlex.split(os.environ.get("GIT") or "git")
     if not selected:
@@ -28,10 +37,13 @@ def git_argv():
 
 def git(directory, *args, check=True):
     argv = [*git_argv(), "-C", str(directory), *args]
+    env = os.environ.copy()
+    for key in GIT_REPOSITORY_ENV:
+        env.pop(key, None)
     try:
         result = subprocess.run(
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            check=False,
+            check=False, env=env,
         )
     except OSError as exc:
         raise UpdateError(f"cannot execute selected Git {argv[0]!r}: {exc}") from exc

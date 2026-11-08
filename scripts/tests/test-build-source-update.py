@@ -720,6 +720,28 @@ def test_bootstrap_ancestry_guards():
             assert ahead.returncode == 0, ahead.stderr
             assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
 
+        # A Git command launched from a parent repository can inherit a
+        # worktree override. It must not misidentify a valid newer child as
+        # an unexpected Git worktree or redirect a write to the parent.
+        contaminated = env.copy()
+        contaminated["GIT_WORK_TREE"] = str(clone)
+        contaminated["GIT_DIR"] = str(clone / ".git")
+        contaminated["GIT_INDEX_FILE"] = str(clone / ".git/index")
+        updater_cmd = [
+            sys.executable,
+            str(ROOT / "scripts/whp-build/update-submodules.py"),
+            "--source", str(clone),
+        ]
+        contaminated["WHP_SOURCE_UPDATE"] = "1"
+        for invocation in (shell_cmd, python_cmd, updater_cmd):
+            result = subprocess.run(
+                invocation, cwd=clone, env=contaminated,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            assert result.returncode == 0, result.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
+            assert git("rev-parse", "HEAD:modules/a", cwd=clone) == v2
+
         # A newer checkout with uncommitted edits must not be checked out.
         (clone / "modules/a/README").write_text("local edits\n")
         ahead_dirty = invoke(shell_cmd)

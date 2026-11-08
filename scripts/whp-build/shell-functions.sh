@@ -25,6 +25,13 @@ whp_git_submodule_prepare()
     whp_path=$2
     whp_git=${3:-git}
     whp_access=${4:-online}
+    # Git -C does not override inherited repository-routing variables.
+    # In particular GIT_WORK_TREE can make --show-toplevel name the parent
+    # instead of this submodule. This function runs in a subshell, so only
+    # its own Git calls are isolated; the caller's environment is untouched.
+    unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+    unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    unset GIT_PREFIX GIT_NAMESPACE
     case "$whp_path" in
         ""|/*|../*|*/../*|*/..) printf 'error: invalid submodule path: %s\n' "$whp_path" >&2; return 1 ;;
     esac

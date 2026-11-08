@@ -14,6 +14,16 @@ import sys
 import tempfile
 from collections.abc import Mapping
 
+# Git -C is not sufficient when the caller exports repository overrides.
+# Keep connection/authentication settings while clearing only the variables
+# that would redirect Git away from the requested worktree and object store.
+GIT_REPOSITORY_ENV = (
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX", "GIT_NAMESPACE",
+)
+
+
 def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
                         *, git: str = "git") -> str:
     """Initialize or fast-forward one submodule; never rewind local history.
@@ -31,9 +41,12 @@ def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
 
     def run(repo: pathlib.Path, *args: str, check: bool = True):
         command = [git, "-C", str(repo), *map(str, args)]
+        env = os.environ.copy()
+        for key in GIT_REPOSITORY_ENV:
+            env.pop(key, None)
         result = subprocess.run(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, check=False,
+            text=True, check=False, env=env,
         )
         if check and result.returncode:
             raise RuntimeError(
