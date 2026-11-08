@@ -1035,6 +1035,17 @@ def test_explicit_remote_submodule_refresh():
         assert git("rev-parse", "HEAD", cwd=checkout) == newer
         assert git("rev-parse", "HEAD:modules/a", cwd=clone) == old
 
+        # An attached branch already ahead of the verified remote is usable
+        # without changing its HEAD or the recorded parent gitlink.
+        git("checkout", "-qb", "newer-development", cwd=checkout)
+        attached_newer = invoke("--remote", "modules/a")
+        assert attached_newer.returncode == 0, attached_newer.stderr
+        assert "preserving newer local" in attached_newer.stderr
+        assert git("symbolic-ref", "--short", "HEAD",
+                   cwd=checkout) == "newer-development"
+        assert git("rev-parse", "HEAD", cwd=checkout) == newer
+        assert git("rev-parse", "HEAD:modules/a", cwd=clone) == old
+
 
 try:
     test_explicit_remote_submodule_refresh()
