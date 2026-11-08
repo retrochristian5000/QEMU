@@ -152,7 +152,7 @@ def remote_refresh(source, path):
             "before --remote"
         )
     top = git(target, "rev-parse", "--show-toplevel").stdout.strip()
-    if Path(top).resolve() != target.resolve():
+    if not Path(top).samefile(target):
         raise UpdateError(f"{path}: unexpected Git worktree")
     current = git(target, "rev-parse", "--verify", "HEAD").stdout.strip()
     attached = git(target, "symbolic-ref", "--quiet", "--short", "HEAD",
@@ -283,7 +283,7 @@ def refresh(source):
         if target.is_symlink():
             raise UpdateError(f"refusing symlinked submodule {path}")
         top = git(target, "rev-parse", "--show-toplevel").stdout.strip()
-        if Path(top).resolve() != target.resolve():
+        if not Path(top).samefile(target):
             raise UpdateError(f"submodule {path} resolves outside its own checkout")
         initialized += 1
         current = git(target, "rev-parse", "--verify", "HEAD").stdout.strip()

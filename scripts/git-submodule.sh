@@ -97,7 +97,9 @@ check_updated() {
     top=$(whp_legacy_git -C "$module" rev-parse --show-toplevel) || return 1
     actual=$(CDPATH= cd -- "$module" && pwd -P) || return 1
     physical_top=$(CDPATH= cd -- "$top" && pwd -P) || return 1
-    test "$actual" = "$physical_top" || return 1
+    # Treat case-only aliases on case-insensitive filesystems as the same
+    # worktree, but never accept an unrelated directory.
+    test "$actual" = "$physical_top" || test "$actual" -ef "$physical_top" || return 1
 
     test "$current" = "$pin" && return 0
     whp_legacy_git -C "$module" merge-base --is-ancestor "$pin" "$current"

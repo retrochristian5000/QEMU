@@ -65,7 +65,10 @@ whp_git_submodule_prepare()
                 "$whp_path" "$whp_top" >&2
             return 1
         }
-        if [ "$whp_top_physical" != "$whp_actual_top" ]; then
+        # macOS may preserve different letter casing for the same inode.
+        # -ef verifies filesystem identity, not just the path spelling.
+        if [ "$whp_top_physical" != "$whp_actual_top" ] &&
+           ! [ "$whp_top_physical" -ef "$whp_actual_top" ]; then
             printf 'error: %s has an unexpected Git worktree (Git: %s; expected: %s)\n' \
                 "$whp_path" "$whp_top_physical" "$whp_actual_top" >&2
             return 1

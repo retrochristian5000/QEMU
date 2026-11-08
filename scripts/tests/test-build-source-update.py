@@ -791,6 +791,20 @@ def test_bootstrap_ancestry_guards():
             assert equivalent.returncode == 0, equivalent.stderr
             assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
 
+        # On case-insensitive APFS/HFS+, a case-only spelling of the same
+        # directory is a valid worktree. Linux case-sensitive filesystems
+        # skip this scenario because the alternate path does not exist.
+        case_alias = clone / "MODULES" / "A"
+        if case_alias.exists() and case_alias.samefile(clone / "modules/a"):
+            report_env["WHP_TEST_GIT_TOP"] = str(case_alias)
+            for invocation in (shell_worktree_cmd, python_worktree_cmd):
+                equivalent_case = subprocess.run(
+                    invocation, env=report_env, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                assert equivalent_case.returncode == 0, equivalent_case.stderr
+                assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v3
+
         # The same newer commit must not excuse *another* worktree root.
         report_env["WHP_TEST_GIT_TOP"] = str(child)
         for invocation in (shell_worktree_cmd, python_worktree_cmd):

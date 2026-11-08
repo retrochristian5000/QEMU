@@ -69,7 +69,9 @@ def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
         return current
 
     top = run(target, "rev-parse", "--show-toplevel").stdout.strip()
-    if pathlib.Path(top).resolve() != target.resolve():
+    # resolve() alone does not normalize case on case-insensitive APFS/HFS+.
+    # samefile() compares device/inode identity and still rejects foreign trees.
+    if not pathlib.Path(top).samefile(target):
         raise RuntimeError(
             f"submodule {relpath} has an unexpected worktree "
             f"(Git: {pathlib.Path(top).resolve()}; expected: {target.resolve()})"
