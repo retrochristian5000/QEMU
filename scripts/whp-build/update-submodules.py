@@ -150,11 +150,8 @@ def remote_refresh(source, path):
                    check=False)
     if attached.returncode not in (0, 1):
         raise UpdateError(f"{path}: cannot inspect current branch")
-    if attached.returncode == 0:
-        raise UpdateError(
-            f"{path}: attached development branch "
-            f"{attached.stdout.strip()!r} preserved"
-        )
+    # Inspect remote ancestry before deciding whether a branch must move.
+    # A clean attached branch already ahead of the remote is safe to retain.
     if git(target, "status", "--porcelain",
            "--untracked-files=all").stdout.strip():
         raise UpdateError(
@@ -202,6 +199,12 @@ def remote_refresh(source, path):
         raise UpdateError(
             f"{path}: local history diverges from remote {branch}; "
             "refusing checkout"
+        )
+    if attached.returncode == 0:
+        raise UpdateError(
+            f"{path}: attached development branch "
+            f"{attached.stdout.strip()!r} preserved; "
+            "refusing remote checkout"
         )
     if (
         git(source, "rev-parse", "HEAD").stdout.strip() != parent or
