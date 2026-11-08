@@ -79,7 +79,7 @@ static void gen_lea_modrm(DisasContext *s, X86DecodedInsn *decode)
         /* Extract memory displacement from the second operand.  */
         assert(decode->op[2].unit == X86_OP_INT && decode->op[2].ot != MO_8);
         tcg_gen_sextract_tl(ofs, cpu_regs[opn], 3, poslen - 3);
-        tcg_gen_andi_tl(ofs, ofs, -1 << ot);
+        tcg_gen_andi_tl(ofs, ofs, -(1 << ot));
         tcg_gen_add_tl(s->A0, ea, ofs);
         ea = s->A0;
     }
