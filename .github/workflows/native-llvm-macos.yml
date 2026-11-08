@@ -11,6 +11,11 @@ on:
       - 'tcg/aarch64/tcg-target.c.inc'
       - 'tcg/tcg.c'
       - 'tcg/region.c'
+      # Guest decode and emission changes also need a Darwin AArch64 TCG build.
+      - 'target/i386/tcg/**'
+      - 'target/i386/cpu.c'
+      - 'target/i386/cpu.h'
+      - 'tests/qtest/x86-16bit-test.c'
       - 'accel/tcg/tcg-all.c'
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
