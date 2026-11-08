@@ -97,11 +97,8 @@ if [[ -z "$expected_llvm_revision" ]]; then
         "$LLVM_SUBMODULE_PATH" >&2
     exit 1
 fi
-if [[ "$llvm_revision" != "$expected_llvm_revision" ]] &&
-   ! git -C "$LLVM_SUBMODULE_DIR" merge-base --is-ancestor "$expected_llvm_revision" "$llvm_revision"; then
-    printf 'error: LLVM checkout diverges from QEMU gitlink or history is incomplete\n' >&2
-    exit 1
-fi
+# The shared prepare guard above already establishes ancestry, including
+# bounded recovery of shallow history. Do not reclassify the checkout here.
 if [[ -n "$(git -C "$LLVM_SUBMODULE_DIR" status --porcelain --untracked-files=no)" ]]; then
     printf '%s\n' \
         'error: LLVM submodule has uncommitted tracked changes.' \
