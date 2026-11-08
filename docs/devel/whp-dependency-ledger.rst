@@ -102,6 +102,38 @@ Dependency states
   Source is present and intentionally retained for a future direct consumer,
   but the current production QEMU graph does not link it.
 
+Required dependency guard policy
+--------------------------------
+
+This ledger is the dependency inventory and classification authority; it is
+not a second source of immutable commit gates.  The parent Git gitlink records
+the reproducible baseline, while an initialized checkout may use a newer
+*provable descendant*.  Its effective HEAD supplies build/cache identity.
+A published gitlink update remains required when integrating source changes.
+
+Apply checks at the owning boundary, without repeating equivalent guards in
+each downstream consumer:
+
+* ``root``: require a working host capability, such as a compiler that can
+  compile and link.  Prefer actual capability checks over redundant exact
+  version or Git revision gates; a missing root blocks only its consumers.
+* ``managed``: use common submodule reconciliation once to prove ancestry,
+  recover bounded shallow history, and preserve newer descendants.  Downstream
+  build stages must not introduce separate ``HEAD == gitlink`` or bare
+  ancestry tests.  Verify only source interfaces and ABI actually consumed.
+* ``graph``: let QEMU configure, Meson, or Ninja resolve the dependency;
+  do not impose a duplicate pre-configuration source pin check.
+* ``conditional``: check only when the feature or target is enabled.
+  Failure of an unrelated optional dependency must not stop a required path.
+* ``planned``: do not initialize or block normal builds for inactive sources.
+
+Preserve guards against checkout rewinds, unexpected worktrees, overwriting
+local edits, and unverified ancestry.  Do not bypass real compiler, linker,
+ABI, checksum, or source-interface failures.  Incomplete ancestry is
+unverified, not proof of divergence: history recovery must not move HEAD.
+Report the failing dependency and active consumer rather than globally
+rejecting unrelated build stages.
+
 Top-level submodule registry
 ----------------------------
 

@@ -64,6 +64,13 @@ def main() -> int:
         "gitlink authority": (
             "The gitlink recorded by the QEMU commit is authoritative",
         ),
+        "required dependency guard policy": (
+            "Required dependency guard policy",
+            "not a second source of immutable commit gates",
+            "Downstream",
+            "Failure of an unrelated optional dependency must not stop",
+            "Incomplete ancestry is",
+        ),
     }
     for label, needles in required_contracts.items():
         for needle in needles:
