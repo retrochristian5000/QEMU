@@ -9,6 +9,7 @@ CONFIGURE_OPENBIOS="$ROOT/scripts/whp-build/configure-openbios.bash"
 CLANG_ORCHESTRATOR="$ROOT/scripts/bootstrap-powerpc-clang.bash"
 CLANG_BOOTSTRAP="$ROOT/scripts/bootstrap-powerpc-clang-base.bash"
 CLANG_CORE="$ROOT/scripts/bootstrap-powerpc-clang-core.bash"
+LLVM_SOURCE_CACHE="$ROOT/scripts/bootstrap-powerpc-llvm-source-cache.bash"
 REAL_BASH="$(command -v bash)"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -164,6 +165,17 @@ grep -Fq 'host_cxx_release_flags="$LLVM_CXX_OPTIMIZATION -DNDEBUG -fno-function-
 grep -Fq 'for candidate in mold lld; do' "$CLANG_BOOTSTRAP"
 grep -Fq -- '-fuse-ld="$candidate"' "$CLANG_BOOTSTRAP"
 grep -Fq 'HOST_LINKER=' "$CLANG_BOOTSTRAP"
+
+# Both stages must use the same descendant/shallow-history guard. Duplicated
+# bare merge-base tests can reject a source already accepted by preparation.
+grep -Fq 'whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"' "$CLANG_CORE"
+grep -Fq 'whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH" git "$llvm_access"' "$LLVM_SOURCE_CACHE"
+grep -Fq 'POWERPC_LLVM_GIT_OFFLINE:-0' "$LLVM_SOURCE_CACHE"
+if grep -Fq 'merge-base --is-ancestor' "$CLANG_CORE" ||
+   grep -Fq 'merge-base --is-ancestor' "$LLVM_SOURCE_CACHE"; then
+    printf 'error: PowerPC LLVM bootstraps duplicated the shared ancestry guard\n' >&2
+    exit 1
+fi
 
 if grep -Fq 'rm -rf "$LLD_BUILD_DIR"' "$CLANG_CORE"; then
     printf 'error: LLD bootstrap still destroys its CMake build directory\n' >&2
