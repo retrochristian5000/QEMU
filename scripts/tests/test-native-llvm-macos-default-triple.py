@@ -63,6 +63,13 @@ for host_os, c_target, cxx_target, accepted in [
     ('macos', 'aarch64-apple-darwin27.2.0', 'aarch64-apple-macosx27.3', False),
     ('macos', 'aarch64-apple-darwin27.2.1', 'aarch64-apple-macosx27.2', False),
     ('macos', 'aarch64-apple-darwin27.2.0', 'x86_64-apple-macosx27.2', False),
+    # A bare Darwin/macOS triple is not a versioned native seed identity.
+    ('macos', 'aarch64-apple-darwin', 'aarch64-apple-macosx27.2', False),
+    ('macos', 'aarch64-apple-darwin27.2.0', 'aarch64-apple-darwin', False),
+    ('macos', 'aarch64-apple-macosx', 'aarch64-apple-macosx27.2', False),
+    ('macos', 'aarch64-apple-darwin27.2.0', 'aarch64-apple-ios27.2', False),
+    ('macos', 'aarch64-apple-darwin27.2.0', 'aarch64-apple-ios27.2-simulator', False),
+    ('macos', 'aarch64-apple-darwin27.2.0', 'aarch64-apple-ios27.2-macabi', False),
     ('linux', 'x86_64-unknown-linux-gnu', 'x86_64-unknown-linux-gnu', True),
     ('linux', 'x86_64-pc-linux-gnu', 'x86_64-unknown-linux-gnu', True),
     ('linux', 'amd64-linux-gnu', 'x86_64-unknown-linux-gnu', True),
