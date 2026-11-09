@@ -905,9 +905,12 @@ native_target_matches_host()
             [[ "$target_vendor" == apple ]] || return 1
             # Reject non-macOS Apple environments and extra target fields.
             [[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1
-            # Darwin is a legacy macOS spelling, but arbitrary prefix matches
-            # must not become valid platform names.
-            [[ "$target_os" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
+            # Darwin is a valid macOS host spelling when versioned, not a
+            # deployment target or a synonym for every Apple platform.
+            # Reject unversioned Apple triples: they cannot establish that
+            # seed C and C++ describe the same macOS release. iOS, tvOS,
+            # watchOS, simulators and Catalyst must remain cross targets.
+            [[ "$target_os" =~ ^(darwin|macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
             ;;
         linux)
             target_abi="$(linux_target_abi_key "$target")" || return 1
