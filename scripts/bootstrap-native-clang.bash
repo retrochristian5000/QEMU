@@ -905,12 +905,11 @@ native_target_matches_host()
             [[ "$target_vendor" == apple ]] || return 1
             # Reject non-macOS Apple environments and extra target fields.
             [[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1
-            # Darwin is a valid macOS host spelling when versioned, not a
-            # deployment target or a synonym for every Apple platform.
-            # Reject unversioned Apple triples: they cannot establish that
-            # seed C and C++ describe the same macOS release. iOS, tvOS,
-            # watchOS, simulators and Catalyst must remain cross targets.
-            [[ "$target_os" =~ ^(darwin|macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+            # The seed compiler may report an unversioned Darwin/macOS
+            # host triple. It is not a deployment target: the selected
+            # MacOSX SDK and -mmacosx-version-min control compilation.
+            # Reject iOS, Catalyst, simulators and extra target fields.
+            [[ "$target_os" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
             ;;
         linux)
             target_abi="$(linux_target_abi_key "$target")" || return 1
@@ -978,7 +977,20 @@ bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")" |
         "$bootstrap_cxx_target_canonical" >&2
     exit 1
 }
-if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then
+# An unversioned Darwin/macOS seed triple has no deployment version to
+# compare. Accept that valid host identity when the architecture matches;
+# the C and C++ MacOSX SDK, explicit deployment, LP64 and executable probes
+# above verify their effective native ABI. Compare versions strictly when
+# both compilers report one.
+bootstrap_seed_abis_match=0
+if [[ "$bootstrap_cc_abi" == "$bootstrap_cxx_abi" ]]; then
+    bootstrap_seed_abis_match=1
+elif [[ "$host_os" == macos ]] &&
+     { [[ "$bootstrap_cc_abi" == "$host_tag-apple-macosx" ]] ||
+       [[ "$bootstrap_cxx_abi" == "$host_tag-apple-macosx" ]]; }; then
+    bootstrap_seed_abis_match=1
+fi
+if [[ "$bootstrap_seed_abis_match" != 1 ]]; then
     printf '%s\n' \
         'error: native LLVM bootstrap C and C++ compiler target triples differ.' \
         "C:   $bootstrap_cc_target_canonical" \
