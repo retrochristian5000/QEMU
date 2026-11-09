@@ -30,6 +30,19 @@ export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
 printf 'QEMU seed awk: %s\n' "$WHP_AWK_SEED" >&2
 unset WHP_AWK_BIN_DIR
 
+# Pin one POSIX copy implementation before source refresh, tool generation,
+# and LLVM bootstraps. Literal cp calls inherit the same selected executable.
+WHP_CP_SEED=$("$SOURCE_DIR/seeds/cp.sh" --print-seed) || exit 1
+WHP_CP_BRIDGE="$SOURCE_DIR/scripts/whp-build/seed-bin/cp"
+if [ ! -x "$WHP_CP_BRIDGE" ]; then
+    printf 'error: QEMU literal cp bridge is unavailable: %s\n' "$WHP_CP_BRIDGE" >&2
+    exit 1
+fi
+WHP_CP_LOCKED=1
+export WHP_CP_SEED WHP_CP_LOCKED
+printf 'QEMU seed cp: %s\n' "$WHP_CP_SEED" >&2
+unset WHP_CP_BRIDGE
+
 # Public host snapshot: capture once before Python, seed compilers and linkers.
 # Ignore inherited WHP_HOST_*: these values describe the current build machine.
 WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)

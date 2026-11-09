@@ -1,0 +1,24 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Literal cp command bound to the QEMU bootstrap host copy seed.
+set -eu
+if [ "${1:-}" = --whp-cp-adapter-probe ]; then
+    printf '%s\n' whp-qemu-cp-seed-adapter
+    exit 0
+fi
+if [ "${WHP_CP_LOCKED:-0}" = 1 ]; then
+    [ -n "${WHP_CP_SEED:-}" ] && [ -x "$WHP_CP_SEED" ] || {
+        printf '%s\n' 'error: locked cp has no usable seed' >&2
+        exit 1
+    }
+    case "$WHP_CP_SEED" in
+        */cp.sh|*/scripts/whp-build/seed-bin/cp)
+            printf '%s\n' 'error: locked cp points back to its seed adapter' >&2
+            exit 1 ;;
+    esac
+    exec "$WHP_CP_SEED" "$@"
+fi
+case "$0" in
+    */*) exec "${0%/*}/../../../seeds/cp.sh" "$@" ;;
+    *) printf '%s\n' 'error: cp bootstrap launcher must be invoked by path' >&2; exit 1 ;;
+esac
