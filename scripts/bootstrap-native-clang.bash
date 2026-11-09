@@ -827,6 +827,32 @@ printf 'WHP native LLVM bootstrap linker: %s\n' "$bootstrap_linker_name" >&2
 # QEMU's host-object tuning policy remains independent of this bootstrap.
 llvm_bootstrap_cflags='-O2 -DNDEBUG'
 llvm_bootstrap_cxxflags='-O2 -DNDEBUG'
+# LLVM Support is built by the seed pair before clang-tblgen can generate
+# resource headers. Its hash implementations have portable paths when a
+# seed lacks usable NEON headers. Keep the selected macOS ABI in either case.
+macos_seed_has_neon()
+{
+    local compiler="$1" language="$2"
+
+    "$compiler" -arch "$darwin_cmake_arch" -isysroot "$sdkroot" \
+        "-mmacosx-version-min=$deployment_target" \
+        -x "$language" -fsyntax-only - >/dev/null 2>&1 <<'EOF'
+#include <arm_neon.h>
+EOF
+}
+
+if [[ "$host_os" == macos && "$host_tag" == aarch64 ]]; then
+    if ! macos_seed_has_neon "$bootstrap_cc" c; then
+        llvm_bootstrap_cflags+=' -DBLAKE3_USE_NEON=0'
+        printf 'WHP native LLVM: %s cannot include <arm_neon.h>; using portable BLAKE3\n' \
+            "$bootstrap_cc" >&2
+    fi
+    if ! macos_seed_has_neon "$bootstrap_cxx" c++; then
+        llvm_bootstrap_cxxflags+=' -DLLVM_XXH_USE_NEON=0'
+        printf 'WHP native LLVM: %s cannot include <arm_neon.h>; using portable xxHash\n' \
+            "$bootstrap_cxx" >&2
+    fi
+fi
 printf 'WHP native LLVM C flags: %s\n' "$llvm_bootstrap_cflags" >&2
 printf 'WHP native LLVM C++ flags: %s\n' "$llvm_bootstrap_cxxflags" >&2
 
@@ -1662,25 +1688,6 @@ if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
     -DLLDB_ENABLE_LIBCXX_TESTS=OFF
     -DLLDB_INCLUDE_TESTS=OFF
     )
-fi
-
-# LLVM Support builds before clang-tblgen can generate resource headers.
-# Check the seed drivers with the same architecture and SDK as CMake.
-if [[ "$host_os" == macos && "$host_tag" == aarch64 ]]; then
-    for seed_language in c c++; do
-        seed_driver="$bootstrap_cc"
-        [[ "$seed_language" != c++ ]] || seed_driver="$bootstrap_cxx"
-        if ! printf '%s\n' '#include <arm_neon.h>' |
-            "$seed_driver" -arch "$darwin_cmake_arch" -isysroot "$sdkroot" \
-                "-mmacosx-version-min=$deployment_target" \
-                -x "$seed_language" -fsyntax-only -; then
-            seed_resource_dir="$("$seed_driver" -print-resource-dir 2>/dev/null || true)"
-            printf 'error: native LLVM %s seed cannot compile <arm_neon.h>: %s (arch=%s, SDK=%s, resource directory=%s)\n' \
-                "$seed_language" "$seed_driver" "$darwin_cmake_arch" "$sdkroot" \
-                "${seed_resource_dir:-unknown}" >&2
-            exit 1
-        fi
-    done
 fi
 
 cmake_args=(
