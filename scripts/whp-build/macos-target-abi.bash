@@ -14,6 +14,7 @@ macos_target_abi_key()
     arch="$target_arch"
     case "$arch" in
         arm64|aarch64) arch=aarch64 ;;
+        arm64e) arch=arm64e ;;
         x86_64|amd64) arch=x86_64 ;;
         *) return 1 ;;
     esac

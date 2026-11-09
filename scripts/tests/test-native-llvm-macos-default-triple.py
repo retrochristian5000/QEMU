@@ -115,6 +115,19 @@ for target in ('i386-linux-gnu', 'i486-pc-linux-gnu',
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == 'i386-linux-gnu', (target, result.stdout)
 
+# Apple arm64e has a distinct pointer-authentication ABI. It must remain
+# different from ordinary arm64 even when the OS/version spelling agrees.
+macos_key_probe = ('set -euo pipefail\n' + helpers + '\n'
+                   + 'macos_target_abi_key "$1"\n')
+for triple, expected in (
+    ('arm64-apple-macosx27.2', 'aarch64-apple-macosx27.2.0'),
+    ('arm64e-apple-macosx27.2', 'arm64e-apple-macosx27.2.0'),
+    ('arm64e-apple-darwin27.2.0', 'arm64e-apple-macosx27.2.0'),
+):
+    result = subprocess.run(['bash', '-c', macos_key_probe, '--', triple],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == expected, (triple, result.stdout)
+
 # Keep the compiler-rt, native LLVM default, and platform checks distinct.
 assert '"-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"' in s
 assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in s
