@@ -107,6 +107,10 @@ assert 'clang;clang-resource-headers' in bootstrap
 assert "LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'" in bootstrap
 assert "LLD_ENABLE_BACKENDS='ELF;COFF;MinGW;MachO'" in bootstrap
 assert '"-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"' in bootstrap
+# Native LLVM must ignore a stale CMakeCache LLVM_TARGET_ARCH from a previous host.
+assert '-DLLVM_TARGET_ARCH=host' in bootstrap
+assert 'LLVM_TARGET_ARCH=host' in bootstrap
+assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in bootstrap
 assert '"-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"' in bootstrap
 assert 'for target in aarch64 x86 ppc32; do' in bootstrap
 assert 'missing required LLVM target backend: $target' in bootstrap
