@@ -323,6 +323,15 @@ if [ -n "$MAKE_CMD" ]; then
 fi
 unset WHP_MAKE_REQUESTED
 
+# Use the same SDK for seed checks and the native tools they bootstrap.
+if [ "$WHP_HOST_OS" = macos ]; then
+    . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+    DEVELOPER_DIR=$(whp_apple_developer_root) || exit 1
+    export DEVELOPER_DIR
+    SDKROOT=$(whp_apple_select_sdk) || exit 1
+    export SDKROOT
+fi
+
 # Select a native build-machine C compiler before any compiled fallback can
 # run. Target CC is intentionally excluded from this root dependency.
 case "$WHP_HOST_OS" in

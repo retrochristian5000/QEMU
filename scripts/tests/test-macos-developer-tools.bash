@@ -49,7 +49,7 @@ EOF
 chmod +x "$tmp/bin/xcode-select" "$tmp/bin/xcrun"
 export WHP_TEST_CLT="$clt"
 export PATH="$tmp/bin:$PATH"
-unset DEVELOPER_DIR || true
+unset DEVELOPER_DIR SDKROOT
 test "$(whp_apple_developer_root)" = "$clt"
 test "$(whp_apple_find_tool clang)" = "$clt/usr/bin/clang"
 test "$(whp_apple_find_sdk)" = "$clt/SDKs/MacOSX.sdk"
@@ -84,6 +84,11 @@ if WHP_TEST_FOREIGN=1 whp_apple_find_sdk >/dev/null 2>&1; then
     echo 'error: foreign CLT SDK discovery accepted with Xcode selected' >&2
     exit 1
 fi
+if missing_xcrun="$(PATH="$tmp/no-tools" whp_apple_find_sdk 2>&1)"; then
+    echo 'error: SDK discovery succeeded without xcrun' >&2
+    exit 1
+fi
+[[ "$missing_xcrun" == *'xcrun is unavailable'* ]]
 # On Linux the native linker can be exercised against a synthetic Apple
 # selection with the real GNU C/linker drivers. A failed xcrun must fail
 # closed even when /usr/bin/ld is available on PATH.

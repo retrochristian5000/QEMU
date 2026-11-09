@@ -59,7 +59,7 @@ def main() -> int:
     require(apple, "xcode-select -p", "active developer fallback")
     require(apple, "whp_apple_check_sdkroot", "SDK/developer root guard")
     macos = (ROOT / "scripts/macos-builder.bash").read_text(encoding="utf-8")
-    require(macos, 'whp_apple_check_sdkroot "$SDKROOT"', "macOS SDK coherence")
+    require(macos, "whp_apple_select_sdk", "macOS SDK coherence")
     policy = (ROOT / "scripts/macos-compiler-policy.bash").read_text(
         encoding="utf-8"
     )

@@ -18,7 +18,7 @@ from typing import List
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import reconcile_submodule
+from bootstrap_env import reconcile_submodule, select_native_sdk
 SUBMODULE_REL = pathlib.Path('toolchains/ninja-builder')
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 NINJA_BOOTSTRAP_SCHEMA='5'
@@ -104,14 +104,7 @@ def select_host_cxx() -> str:
 
 
 def select_host_sdkroot() -> str:
-    if platform.system() != 'Darwin':
-        return ''
-    if not shutil.which('xcrun'):
-        raise RuntimeError('xcrun is required to locate the macOS SDK for bundled Ninja')
-    sdkroot = run_text(['xcrun', '--sdk', 'macosx', '--show-sdk-path'])
-    if not sdkroot:
-        raise RuntimeError('xcrun did not return a macOS SDK path for bundled Ninja')
-    return sdkroot
+    return select_native_sdk(ROOT)
 
 
 def compiler_supports_macos_arch(cxx: str, sdkroot: str, arch: str) -> bool:

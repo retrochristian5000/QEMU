@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 
@@ -43,15 +44,33 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
         ), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
             self.assertEqual(mod.select_host_cxx(), '/opt/host-clang++')
 
-    def test_darwin_sdkroot_comes_from_xcrun(self):
+    def test_darwin_sdkroot_preserves_explicit_selection(self):
         mod = load_bootstrap_module()
-        with mock.patch.object(mod.platform, 'system', return_value='Darwin'), \
-             mock.patch.object(mod.shutil, 'which', return_value='/usr/bin/xcrun'), \
-             mock.patch.object(mod, 'run_text', return_value='/SDKs/MacOSX.sdk') as run_text:
-            self.assertEqual(mod.select_host_sdkroot(), '/SDKs/MacOSX.sdk')
-            run_text.assert_called_once_with(
-                ['xcrun', '--sdk', 'macosx', '--show-sdk-path']
+        with tempfile.TemporaryDirectory(prefix='whp-ninja-sdk-test-') as tmp:
+            developer = pathlib.Path(tmp).resolve()
+            active = developer / 'MacOSX26.0.sdk'
+            selected = developer / 'MacOSX15.0.sdk'
+            active.mkdir()
+            selected.mkdir()
+            alias = developer / 'selected-sdk'
+            alias.symlink_to(selected, target_is_directory=True)
+            xcrun = developer / 'xcrun'
+            xcrun.write_text(
+                '#!/bin/sh\n'
+                'test "$*" = "--sdk macosx --show-sdk-path" || exit 1\n'
+                'printf "%s\\n" "$TEST_ACTIVE_SDK"\n',
+                encoding='utf-8',
             )
+            xcrun.chmod(0o755)
+            with mock.patch.dict(os.environ, {
+                'PATH': f'{developer}{os.pathsep}{os.environ["PATH"]}',
+                'DEVELOPER_DIR': str(developer),
+                'SDKROOT': str(alias),
+                'TEST_ACTIVE_SDK': str(active),
+            }), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
+                self.assertEqual(mod.select_host_sdkroot(), str(alias))
+                with mock.patch.dict(os.environ, {'SDKROOT': ''}):
+                    self.assertEqual(mod.select_host_sdkroot(), str(active))
 
     def test_arm64_macos_auto_prefers_arm64e_when_link_probe_succeeds(self):
         mod = load_bootstrap_module()

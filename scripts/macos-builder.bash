@@ -226,30 +226,11 @@ done
 
 # Normalize DEVELOPER_DIR (including Xcode.app) ahead of SDK selection.
 source "$SCRIPT_DIR/whp-build/macos-developer-tools.sh"
-apple_developer_dir="$(whp_apple_developer_root)" || exit 1
-export DEVELOPER_DIR="$apple_developer_dir"
-selected_apple_sdk="$(whp_apple_find_sdk)" || exit 1
-if [[ -n "${SDKROOT:-}" ]]; then
-    # An explicit older macOS SDK is supported inside this developer root,
-    # but never pair Xcode's compiler with CLT's SDK or vice versa.
-    whp_apple_check_sdkroot "$SDKROOT" || exit 1
-else
-    SDKROOT="$selected_apple_sdk"
-fi
+DEVELOPER_DIR="$(whp_apple_developer_root)" || exit 1
+export DEVELOPER_DIR
+SDKROOT="$(whp_apple_select_sdk)" || exit 1
 export SDKROOT
 apple_developer_kind="$(whp_apple_developer_kind "$DEVELOPER_DIR")"
-unset apple_developer_dir selected_apple_sdk
-# CMAKE_OSX_SYSROOT accepts iPhoneOS and iPhoneSimulator SDKs too. A native
-# QEMU/LLVM host bootstrap must never inherit one from an iPad/iOS build.
-sdk_real_path="$(cd "$SDKROOT" && pwd -P)" || exit 1
-case "${sdk_real_path##*/}" in
-    MacOSX*.sdk) ;;
-    *)
-        printf 'error: macOS host build requires a MacOSX.sdk; got: %s\n' "$SDKROOT" >&2
-        exit 1
-        ;;
-esac
-unset sdk_real_path
 export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
 case "$SDKROOT" in
     *' '*)

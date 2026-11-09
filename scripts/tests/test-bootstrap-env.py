@@ -65,20 +65,29 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-env-") as td:
 # A Darwin bootstrap must validate SDKROOT through the same selected
 # Xcode/CLT helper; never assume cc.sh's test SDK is inherited by configure.
 with tempfile.TemporaryDirectory(prefix="whp-bootstrap-sdk-") as td:
-    base = pathlib.Path(td)
+    base = pathlib.Path(td).resolve()
     helper = base / "scripts/whp-build/macos-developer-tools.sh"
     helper.parent.mkdir(parents=True)
     sdk = base / "MacOSX.sdk"
     sdk.mkdir()
-    helper.write_text(
-        'whp_apple_check_sdkroot() { [ -d "$1" ]; }\n'
-        'whp_apple_find_sdk() { printf "%s\\n" "$TEST_NATIVE_SDK"; }\n',
+    helper.write_bytes(
+        (ROOT / "scripts/whp-build/macos-developer-tools.sh").read_bytes()
+    )
+    xcrun = base / "xcrun"
+    xcrun.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$TEST_NATIVE_SDK"\n',
         encoding="utf-8",
     )
+    xcrun.chmod(0o755)
     with mock.patch.object(module.platform, "system", return_value="Darwin"):
         with mock.patch.dict(
             module.os.environ,
-            {"SDKROOT": str(sdk), "TEST_NATIVE_SDK": str(sdk)},
+            {
+                "DEVELOPER_DIR": str(base),
+                "PATH": str(base) + module.os.pathsep + module.os.environ["PATH"],
+                "SDKROOT": str(sdk),
+                "TEST_NATIVE_SDK": str(sdk),
+            },
         ):
             assert module.select_native_sdk(base) == str(sdk)
             module.os.environ["SDKROOT"] = ""

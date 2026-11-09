@@ -19,10 +19,12 @@ Use the normal launcher::
 
   ./build.sh
 
-On macOS it enters ``scripts/macos-builder.sh`` automatically. The wrapper
-selects the active Apple developer directory and SDK with ``xcode-select`` and
-``xcrun`` unless ``DEVELOPER_DIR`` or ``SDKROOT`` is supplied. SDK identity
-and deployment policy are kept separate: the wrapper reads the macOS target
+The launcher selects the active Apple developer directory and SDK with
+``xcode-select`` and ``xcrun`` unless ``DEVELOPER_DIR`` or ``SDKROOT`` is
+supplied. It exports an absolute SDK path before selecting the native
+compiler seeds so Cargo, bundled Ninja, LLVM and QEMU can use that SDK
+from their own working directories. The build then enters
+``scripts/macos-builder.sh`` automatically. The wrapper reads the macOS target
 minimum/default/maximum from ``SDKSettings.json`` or ``SDKSettings.plist`` when
 available. The automatic deployment target is the running macOS major/minor
 version while that version is supported by the selected SDK. If the host is

@@ -70,12 +70,17 @@ whp_apple_find_tool()
             ;;
         *) printf 'error: invalid Apple tool class: %s\n' "$tool_class" >&2; exit 1 ;;
     esac
-    whp_apple_developer_root >/dev/null || exit 1
+    sdk=macosx
+    if [ -n "${SDKROOT:-}" ]; then
+        sdk=$(whp_apple_select_sdk) || exit 1
+    else
+        whp_apple_developer_root >/dev/null || exit 1
+    fi
     command -v xcrun >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
     }
-    tool=$(xcrun --sdk macosx --find "$name" 2>/dev/null) || {
+    tool=$(xcrun --sdk "$sdk" --find "$name" 2>/dev/null) || {
         printf 'error: selected Apple developer directory has no %s tool\n' "$name" >&2
         exit 1
     }
@@ -114,11 +119,31 @@ whp_apple_check_sdkroot()
 whp_apple_find_sdk()
 (
     whp_apple_developer_root >/dev/null || exit 1
-    command -v xcrun >/dev/null 2>&1 || exit 1
+    command -v xcrun >/dev/null 2>&1 || {
+        printf '%s\n' 'error: xcrun is unavailable' >&2
+        exit 1
+    }
     sdk=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null) || {
         printf '%s\n' 'error: selected Apple developer directory has no macOS SDK' >&2
         exit 1
     }
     whp_apple_check_sdkroot "$sdk" || exit 1
+    printf '%s\n' "$sdk"
+)
+
+# Resolve the SDK once for consumers that build from another directory.
+whp_apple_select_sdk()
+(
+    sdk=${SDKROOT:-}
+    if [ -n "$sdk" ]; then
+        whp_apple_check_sdkroot "$sdk" || exit 1
+    else
+        sdk=$(whp_apple_find_sdk) || exit 1
+    fi
+    # Retain the selected path spelling, including a space-free SDK alias.
+    case "$sdk" in
+        /*) ;;
+        *) sdk=$(pwd)/$sdk || exit 1 ;;
+    esac
     printf '%s\n' "$sdk"
 )

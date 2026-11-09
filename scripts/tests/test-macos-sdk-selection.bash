@@ -63,6 +63,9 @@ if [[ "${1:-}" == "--sdk" ]]; then
     sdk="$2"
     shift 2
 fi
+if [[ "$sdk" == macosx && "${TEST_MISSING_ACTIVE_SDK:-0}" == 1 ]]; then
+    exit 1
+fi
 
 case "${1:-}" in
     --show-sdk-path)
@@ -321,10 +324,10 @@ if ! grep -Fq \
 fi
 
 # When the running OS is newer than an explicitly selected older SDK, the
-# automatic deployment target should clamp to the SDK default instead of
-# rejecting the build.
+# automatic deployment target should clamp to the SDK default. The explicitly
+# selected SDK works even if xcrun cannot locate the default SDK.
 older_sdk_output="$TEST_DIR/older-sdk-output"
-if ! SDKROOT="$SELECTED_SDK" \
+if ! TEST_MISSING_ACTIVE_SDK=1 SDKROOT="$SELECTED_SDK" \
    MACOSX_DEPLOYMENT_TARGET= \
    BUILD_DIR="$TEST_DIR/older-sdk-build" \
    OPENBIOS_TOOLS_DIR="$TEST_DIR/older-sdk-tools" \

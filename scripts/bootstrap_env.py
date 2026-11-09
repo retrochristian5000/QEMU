@@ -377,18 +377,11 @@ def select_native_sdk(root: pathlib.Path) -> str:
     """Preserve the exact selected Xcode/CLT SDK for all native tools."""
     if platform.system() != "Darwin":
         return ""
-    script = (
-        '. "$1" || exit 1; '
-        'if [ -n "$2" ]; then '
-        'whp_apple_check_sdkroot "$2" || exit 1; '
-        'printf "%s\\n" "$2"; '
-        'else whp_apple_find_sdk; fi'
-    )
     result = subprocess.run(
         [
-            "/bin/sh", "-c", script, "whp-native-bootstrap-sdk",
+            "/bin/sh", "-c", '. "$1" && whp_apple_select_sdk',
+            "whp-native-bootstrap-sdk",
             str(root / "scripts/whp-build/macos-developer-tools.sh"),
-            os.environ.get("SDKROOT", ""),
         ],
         text=True, capture_output=True, check=False,
     )
