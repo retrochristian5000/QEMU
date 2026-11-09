@@ -1328,6 +1328,66 @@ native_llvm_validation_error()
     printf 'error: staged WHP native LLVM [%s]: %s\n' "$1" "$2" >&2
 }
 
+native_neon_headers_usable()
+{
+    local prefix="$1"
+    local resource_dir='' header='' driver='' language=''
+
+    # Check the installed resource tree rather than a source or SDK copy.
+    [[ "$host_os" == macos && "$host_tag" == aarch64 ]] || return 0
+    resource_dir="$("$prefix/bin/clang" -print-resource-dir 2>/dev/null)" || {
+        native_llvm_validation_error resource 'cannot locate Clang resource directory'
+        return 1
+    }
+    for header in arm_neon.h arm_bf16.h arm_vector_types.h; do
+        [[ -s "$resource_dir/include/$header" ]] || {
+            native_llvm_validation_error resource "missing generated NEON header: $resource_dir/include/$header"
+            return 1
+        }
+    done
+
+    # The same generated header must work in C and C++ with the selected
+    # macOS ABI, including arm64e. Never execute the probe on the host.
+    for driver in clang clang++; do
+        language=c
+        [[ "$driver" != clang++ ]] || language=c++
+        if ! printf '%s\n' \
+            '#include <arm_neon.h>' \
+            '#ifndef __ARM_NEON' \
+            '#error "NEON is disabled for AArch64"' \
+            '#endif' \
+            'uint8x16_t whp_neon_xor(uint8x16_t a, uint8x16_t b) {' \
+            '    return veorq_u8(a, b);' \
+            '}' |
+            "$prefix/bin/$driver" -arch "$darwin_cmake_arch" \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -ffreestanding -Werror -x "$language" -fsyntax-only - \
+                >/dev/null; then
+            native_llvm_validation_error resource "$driver cannot compile installed NEON intrinsics for $darwin_cmake_arch"
+            return 1
+        fi
+    done
+
+    # Select A18 Pro features explicitly. This must not enable BF16 in
+    # generic ARM binaries merely because the compiler runs on an A18 Pro.
+    if ! printf '%s\n' \
+        '#include <arm_neon.h>' \
+        '#ifndef __ARM_FEATURE_BF16' \
+        '#error "Apple A18 Pro feature model lacks BF16"' \
+        '#endif' \
+        'float32x4_t whp_a18_bf16(float32x4_t sum, bfloat16x8_t a, bfloat16x8_t b) {' \
+        '    return vbfdotq_f32(sum, a, b);' \
+        '}' |
+        "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
+            -mcpu=apple-a18-pro -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -ffreestanding -Werror -x c -fsyntax-only - >/dev/null; then
+        native_llvm_validation_error resource "installed NEON/BF16 header or A18 Pro feature model failed for $darwin_cmake_arch"
+        return 1
+    fi
+}
+
 usable()
 {
     local prefix="$1"
@@ -1509,6 +1569,7 @@ usable()
         native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} (ABI ${target_abi:-<invalid>}) differs from expected $llvm_default_target_triple (ABI $expected_target_abi)"
         return 1
     }
+    native_neon_headers_usable "$prefix" || return 1
     printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
         "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || {
             native_llvm_validation_error ABI 'native Clang C object compilation failed'
