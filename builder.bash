@@ -29,8 +29,9 @@ case "${WHP_RUNTIME_PREFLIGHT:-0}" in
 esac
 
 # Keep module loading beside the execution order so the build has one
-# production orchestrator.  The modules define stages; builder.sh owns how
-# those stages are assembled and run.
+# production orchestrator. Load the shared shell helpers again in this
+# Bash process, since the launcher's exec discards its function definitions.
+source "$BUILD_SYSTEM_DIR/shell-functions.sh"
 source "$BUILD_SYSTEM_DIR/common.bash"
 source "$BUILD_SYSTEM_DIR/prepare-build.bash"
 source "$BUILD_SYSTEM_DIR/diagnostics.bash"

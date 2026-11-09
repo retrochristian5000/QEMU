@@ -5,9 +5,10 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SYSTEM_DIR="$SOURCE_DIR/scripts/whp-build"
-BUILDER="$SOURCE_DIR/builder.sh"
+BUILDER="$SOURCE_DIR/builder.bash"
 
 for module in \
+    shell-functions.sh \
     common.bash \
     prepare-build.bash \
     prepare-sources.bash \
@@ -18,7 +19,7 @@ for module in \
     build-targets.bash; do
     source_line="source \"\$BUILD_SYSTEM_DIR/$module\""
     if ! grep -Fqx "$source_line" "$BUILDER"; then
-        printf 'error: builder.sh does not directly load build module: %s\n' \
+        printf 'error: builder.bash does not directly load build module: %s\n' \
             "$module" >&2
         exit 1
     fi
@@ -26,6 +27,7 @@ for module in \
 done
 
 for module in \
+    "$BUILD_SYSTEM_DIR/shell-functions.sh" \
     "$BUILD_SYSTEM_DIR/common.bash" \
     "$BUILD_SYSTEM_DIR/prepare-build.bash" \
     "$BUILD_SYSTEM_DIR/prepare-sources.bash" \

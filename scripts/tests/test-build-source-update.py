@@ -677,7 +677,7 @@ def test_bootstrap_ancestry_guards():
 
         shell_cmd = [
             "/bin/sh", "-c",
-            '. "$1"; whp_git_submodule_prepare "$2" modules/a',
+            '. "$1"; whp_git_submodule_prepare "$2" modules/a "${3:-git}"',
             "sh", str(SHARED_SHELL), str(clone),
         ]
         python_cmd = [
@@ -703,6 +703,29 @@ def test_bootstrap_ancestry_guards():
         git("add", "modules/a", cwd=parent)
         git("commit", "-qm", "pin child v2", cwd=parent)
         git("pull", "--ff-only", str(parent), branch, cwd=clone)
+
+        # Git errors must not look like a clean, detached checkout.
+        failed_probe_git = base / "failed-probe-git"
+        failed_probe_git.write_text(
+            '#!/bin/sh\n'
+            'if [ "${3:-}" = "$WHP_TEST_FAILED_PROBE" ]; then\n'
+            '    printf "Git test probe failed: %s\\n" "$3" >&2\n'
+            '    exit 128\n'
+            'fi\n'
+            'exec "$WHP_TEST_REAL_GIT" "$@"\n',
+            encoding="utf-8",
+        )
+        failed_probe_git.chmod(0o755)
+        for probe in ("status", "symbolic-ref"):
+            blocked = subprocess.run(
+                [*shell_cmd, str(failed_probe_git)],
+                env=dict(env, WHP_TEST_REAL_GIT=shutil.which("git"),
+                         WHP_TEST_FAILED_PROBE=probe),
+                capture_output=True, text=True,
+            )
+            assert blocked.returncode != 0, f"ignored Git {probe} failure"
+            assert f"Git test probe failed: {probe}" in blocked.stderr
+            assert git("rev-parse", "HEAD", cwd=clone / "modules/a") == v1
 
         # Python bootstrap can only move v1 -> v2 (a fast-forward).
         behind = invoke(python_cmd)

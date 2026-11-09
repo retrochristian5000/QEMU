@@ -110,12 +110,16 @@ whp_git_submodule_prepare()
                 printf 'error: %s is divergent or history is incomplete; refusing checkout (deepen Git history if shallow)\n' "$whp_path" >&2
                 return 1
             fi
-            if [ -n "$("$whp_git" -C "$whp_target" status --porcelain --untracked-files=all)" ]; then
+            whp_status=$("$whp_git" -C "$whp_target" status --porcelain --untracked-files=all) || return 1
+            if [ -n "$whp_status" ]; then
                 printf 'error: %s has local edits; refusing checkout\n' "$whp_path" >&2
                 return 1
             fi
-            if "$whp_git" -C "$whp_target" symbolic-ref -q HEAD >/dev/null 2>&1; then
+            if "$whp_git" -C "$whp_target" symbolic-ref -q HEAD >/dev/null; then
                 printf 'error: %s has an attached branch; refusing checkout\n' "$whp_path" >&2
+                return 1
+            elif [ "$?" -ne 1 ]; then
+                # Only status 1 identifies a detached HEAD.
                 return 1
             fi
             "$whp_git" -C "$whp_parent" submodule update --init --no-fetch -- "$whp_path" || return 1
