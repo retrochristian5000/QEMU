@@ -1132,6 +1132,7 @@ HOST_KERNEL=$host_kernel
 HOST_ARCH=$host_arch
 MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch
 LLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD
+LLVM_TARGET_ARCH=host
 LLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS
 LLVM_HOST_TRIPLE=$llvm_host_triple
 LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
@@ -1635,6 +1636,9 @@ cmake_args=(
     "-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"
     "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
     "-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"
+    # Prevent a stale CMakeCache from selecting a different native backend.
+    # LLVM derives host from the separately validated LLVM_HOST_TRIPLE.
+    -DLLVM_TARGET_ARCH=host
     "-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"
     "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
     "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
