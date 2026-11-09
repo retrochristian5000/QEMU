@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import pathlib
+import os
+import subprocess
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -135,6 +138,51 @@ def main() -> int:
     ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
     require(ledger, "Bootstrap compiler boundary", "compiler ledger section")
     require(ledger, "cross compiler cannot leak backward", "target bleed guard")
+
+    # A native C seed selected explicitly must never be paired silently with
+    # an unrelated Apple C++ driver if its sibling fails C++17 admission.
+    with tempfile.TemporaryDirectory(prefix="whp-cxx-pair-") as tmp:
+        fixture = pathlib.Path(tmp)
+        (fixture / "seeds").mkdir()
+        shared_dir = fixture / "scripts" / "whp-build"
+        shared_dir.mkdir(parents=True)
+        (fixture / "seeds" / "cxx.sh").write_text(cxx_adapter)
+        (fixture / "seeds" / "cc.sh").write_text(
+            '#!/bin/sh\nprintf "%s\\n" /mock/custom/clang\n'
+        )
+        (fixture / "seeds" / "cc.sh").chmod(0o755)
+        (shared_dir / "compiler-seed-common.sh").write_text(
+            'try_compiler() {\n'
+            '  case "$2" in\n'
+            '    /mock/custom/clang++) return 1 ;;\n'
+            '    /mock/apple/clang++) printf "%s\\n" "$2" ;;\n'
+            '    *) return 1 ;;\n'
+            '  esac\n'
+            '}\n'
+        )
+        (shared_dir / "macos-developer-tools.sh").write_text(
+            'whp_apple_find_tool() { printf "%s\\n" /mock/apple/clang++; }\n'
+        )
+        commands = fixture / "commands"
+        commands.mkdir()
+        (commands / "uname").write_text('#!/bin/sh\nprintf "Darwin\\n"\n')
+        (commands / "uname").chmod(0o755)
+        env = dict(os.environ, PATH=f'{commands}:{os.environ["PATH"]}')
+        for key in ("WHP_CXX_SEED", "CXX_FOR_BUILD", "WHP_CC_SEED",
+                    "CC_FOR_BUILD"):
+            env.pop(key, None)
+        script = str(fixture / "seeds" / "cxx.sh")
+        automatic = subprocess.run(["sh", script, "--print-cxx"],
+                                   env=env, capture_output=True, text=True)
+        assert automatic.returncode == 0, automatic.stderr
+        assert automatic.stdout.strip() == "/mock/apple/clang++"
+        for key in ("WHP_CC_SEED", "CC_FOR_BUILD"):
+            explicit = subprocess.run(
+                ["sh", script, "--print-cxx"],
+                env={**env, key: "/mock/custom/clang"},
+                capture_output=True, text=True)
+            assert explicit.returncode != 0, (key, explicit.stdout)
+            assert "no usable paired C++17 compiler" in explicit.stderr
 
     print("WHP bootstrap compiler policy: verified")
     return 0

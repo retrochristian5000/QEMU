@@ -59,6 +59,13 @@ select_cxx()
         printf '%s\n' "$compiler"
         return 0
     fi
+    # An explicitly selected native C compiler is a toolchain contract.
+    # Do not silently substitute Apple Clang++ when its sibling is missing
+    # or cannot compile C++17: LLVM must not mix unrelated bootstrap drivers.
+    if [ -n "${WHP_CC_SEED:-}${CC_FOR_BUILD:-}" ]; then
+        printf 'error: selected C compiler has no usable paired C++17 compiler: %s\n' "$cc" >&2
+        return 1
+    fi
 
     if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
         . "$seed_root/scripts/whp-build/macos-developer-tools.sh"
