@@ -37,6 +37,30 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertEqual(env['CARGO_TARGET_DIR'], '/tmp/sccache-target')
         self.assertEqual(env['SCCACHE_DIR'], '/cache')
 
+    def test_cargo_build_uses_native_compiler_environment(self):
+        qemu_flags = {
+            'CPPFLAGS': '-I/guest/include',
+            'CFLAGS': '-include guest-config.h',
+            'CXXFLAGS': '-include guest-config.h',
+            'LDFLAGS': '-L/guest/lib',
+            'CPATH': '/guest/include',
+            'C_INCLUDE_PATH': '/guest/c-headers',
+        }
+        native = {
+            'CC_FOR_BUILD': '/native/clang',
+            'SDKROOT': '/native/MacOSX.sdk',
+            'DEVELOPER_DIR': '/native/Developer',
+            'MACOSX_DEPLOYMENT_TARGET': '15.0',
+            'CARGO_HOME': '/cargo',
+        }
+        env = bootstrap.cargo_environment(
+            {**qemu_flags, **native, 'CC': 'sccache /guest/cc'},
+            pathlib.Path('/tmp/sccache-target'),
+        )
+        self.assertEqual(qemu_flags.keys() & env.keys(), set())
+        self.assertEqual(env['CC'], native['CC_FOR_BUILD'])
+        self.assertEqual({key: env[key] for key in native}, native)
+
     def test_job_override_is_strict(self):
         self.assertEqual(bootstrap.build_jobs({}), 2)
         self.assertEqual(bootstrap.build_jobs({'WHP_SCCACHE_BUILD_JOBS': '1'}), 1)

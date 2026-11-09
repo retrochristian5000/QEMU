@@ -28,7 +28,12 @@ reuses the already installed executable.
 
 ``WHP_SCCACHE_BUILD_JOBS`` defaults to 2 and independently limits Cargo
 concurrency. The Rust bootstrap clears inherited compiler wrappers to avoid
-building sccache recursively through sccache. On success, it exports
+building sccache recursively through sccache. It also clears QEMU's
+``CPPFLAGS``, ``CFLAGS``, and other target compiler settings from Cargo's
+environment. The native C dependencies use the build-machine compiler
+selected via ``CC_FOR_BUILD`` and retain the selected SDK. A versioned Cargo
+target directory prevents reuse of C objects built before this isolation.
+On success, the bootstrap exports
 ``WHP_COMPILER_CACHE_CMD`` and ``COMPILER_CACHE=sccache`` before bundled Ninja, LLVM, and QEMU builds. Explicit conflicting cache settings are rejected. Cargo
 dependencies may require an initial network fetch unless already cached.
 

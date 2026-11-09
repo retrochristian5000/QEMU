@@ -18,9 +18,9 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_env import reconcile_submodule
+from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 1
+SCHEMA = 2
 
 
 def call(argv, *, cwd=None, env=None, capture=False):
@@ -56,7 +56,10 @@ def build_jobs(environ):
 
 
 def cargo_environment(environ, target):
-    env = dict(environ)
+    # Cargo's BLAKE3 and zstd dependencies compile native C code.
+    env = clean_host_environment(environ)
+    if env.get('CC_FOR_BUILD'):
+        env['CC'] = env['CC_FOR_BUILD']
     for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
                 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
@@ -101,7 +104,8 @@ def ensure(build_dir):
                 return executable
         except (ValueError, RuntimeError, OSError):
             pass
-    target = build_dir / 'toolchain-work' / 'sccacher' / host
+    # BLAKE3's Cargo rebuild triggers omit inherited header search paths.
+    target = build_dir / 'toolchain-work' / 'sccacher' / f'{host}-v{SCHEMA}'
     target.mkdir(parents=True, exist_ok=True)
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
     call([cargo, 'build', '--locked', '--release', '--no-default-features',
