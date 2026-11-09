@@ -54,11 +54,16 @@ class ManagedSccacheTests(unittest.TestCase):
             'CARGO_HOME': '/cargo',
         }
         env = bootstrap.cargo_environment(
-            {**qemu_flags, **native, 'CC': 'sccache /guest/cc'},
+            {
+                **qemu_flags, **native,
+                'CC': 'sccache /guest/cc',
+                'HOST_CC': '/old/clang',
+            },
             pathlib.Path('/tmp/sccache-target'),
         )
         self.assertEqual(qemu_flags.keys() & env.keys(), set())
         self.assertEqual(env['CC'], native['CC_FOR_BUILD'])
+        self.assertEqual(env['HOST_CC'], native['CC_FOR_BUILD'])
         self.assertEqual({key: env[key] for key in native}, native)
 
     def test_job_override_is_strict(self):
