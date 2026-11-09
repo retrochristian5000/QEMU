@@ -3,6 +3,9 @@
 
 import importlib.util
 import pathlib
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -87,6 +90,64 @@ class SeaBiosConfigTests(unittest.TestCase):
         isapc = (ROOT / 'roms' / 'config.seabios-128k').read_text(encoding='utf-8')
         self.assertIn('CONFIG_ATA_DMA=y', normal)
         self.assertIn('CONFIG_ATA_DMA=n', isapc)
+
+    def test_new_firmware_revision_replaces_stale_make_dependencies(self):
+        with tempfile.TemporaryDirectory(prefix='whp-seabios-revision-') as tmp:
+            root = pathlib.Path(tmp)
+            roms = root / 'roms'
+            firmware = roms / 'seabios'
+            firmware.mkdir(parents=True)
+            (root / 'pc-bios').mkdir()
+            shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            (roms / 'config.vga-cirrus').write_text('CONFIG_VGA_CIRRUS=y\n')
+
+            def git(*args):
+                subprocess.run(['git', *args], cwd=firmware, check=True)
+
+            def build():
+                result = subprocess.run(
+                    ['make', 'seavgabios-cirrus', 'SEABIOS_CROSS_PREFIX='],
+                    cwd=roms, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            git('init', '-q')
+            git('config', 'user.name', 'WHP Test')
+            git('config', 'user.email', 'whp@example.invalid')
+            (firmware / 'Makefile').write_text(
+                'all: $(OUT)vgabios.bin\n'
+                'oldnoconfig:\n\t@:\n'
+                '$(OUT)vgabios.bin: payload\n'
+                '\tcp payload $@\n'
+                '\t@if test -f old.h; then printf "%s: old.h\\n" "$@" > $(OUT)pin.d; fi\n'
+                '-include $(OUT)pin.d\n'
+            )
+            (firmware / 'old.h').touch()
+            (firmware / 'payload').write_text('old firmware\n')
+            git('add', '.')
+            git('commit', '-qm', 'old firmware')
+            build()
+            output = root / 'pc-bios' / 'vgabios-cirrus.bin'
+            cache = root / 'build' / 'firmware' / 'seabios' / 'vga-cirrus'
+            self.assertEqual(output.read_text(), 'old firmware\n')
+            dependency = cache / 'pin.d'
+            self.assertIn('old.h', dependency.read_text())
+            before = dependency.read_text() + '# Retained when the cache is reused.\n'
+            dependency.write_text(before)
+            build()
+            self.assertEqual(dependency.read_text(), before)
+
+            other_variant = cache.parent / 'seabios-128k'
+            other_variant.mkdir()
+            other_output = other_variant / 'bios.bin'
+            other_output.write_text('other variant\n')
+            git('rm', '-q', 'old.h')
+            (firmware / 'payload').write_text('new firmware\n')
+            git('commit', '-qam', 'new firmware')
+            build()
+            self.assertEqual(output.read_text(), 'new firmware\n')
+            self.assertFalse(dependency.exists())
+            self.assertEqual(other_output.read_text(), 'other variant\n')
 
 
 if __name__ == '__main__':

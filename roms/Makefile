@@ -45,6 +45,7 @@ riscv64_cross_prefix := $(call find-cross-prefix,riscv64)
 SEABIOS_CROSS_PREFIX ?= $(x86_64_cross_prefix)
 SEABIOS_OUTPUT_DIR ?= ../pc-bios
 SEABIOS_BUILD_ROOT ?= $(abspath ../build/firmware/seabios)
+GIT ?= git
 
 # tag our firmware builds
 FIRMWARE_EXTRAVERSION = -prebuilt.qemu.org
@@ -103,8 +104,33 @@ seavgabios-isavga: build-seabios-config-vga-isavga
 seavgabios-%: build-seabios-config-vga-%
 	cp $(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin ../pc-bios/vgabios-$*.bin
 
+# A new checkout can remove files still named in a previous build's .d files.
+# Keep each variant incremental within one source revision.
 build-seabios-config-%: config.%
-	mkdir -p $(SEABIOS_BUILD_ROOT)/$*
+	@set -e; \
+		build_root="$(SEABIOS_BUILD_ROOT)"; \
+		: "$${build_root:?SEABIOS_BUILD_ROOT is required}"; \
+		out="$$build_root/$*"; \
+		source_dir=$$(cd seabios && pwd -P); \
+		revision=source-archive; \
+		if test -e "$$source_dir/.git"; then \
+			revision=$$(unset GIT_COMMON_DIR; \
+				"$(GIT)" --git-dir="$$source_dir/.git" rev-parse --verify HEAD); \
+		fi; \
+		stamp="$$out/.whp-seabios-source"; \
+		if printf '%s\n' "$$source_dir $$revision" | cmp -s - "$$stamp"; then \
+			exit 0; \
+		fi; \
+		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
+			printf 'WHP SeaBIOS: rebuilding %s for source %s\n' "$*" "$$revision"; \
+			stale=$$(mktemp -d "$$out.stale.XXXXXX"); \
+			trap 'rm -rf -- "$$stale"' EXIT; \
+			mv "$$out" "$$stale/"; \
+		fi; \
+		mkdir -p "$$out"; \
+		tmp="$$stamp.new.$$$$"; \
+		printf '%s\n' "$$source_dir $$revision" > "$$tmp"; \
+		mv "$$tmp" "$$stamp"
 	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
 		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config" && \
