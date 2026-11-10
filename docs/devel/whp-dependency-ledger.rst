@@ -527,7 +527,7 @@ Autotools generation. It accepts explicit ``WHP_M4_SEED`` or ``M4``
 without silent fallback, prefers a Homebrew GNU M4 keg on macOS before
 checking ``m4`` and ``gm4`` on PATH, and rejects obsolete GNU M4
 versions below 1.4.16 or implementations failing the GNU
-``patsubst`` execution check. Autoconf and Libtool resolve the same host
+``patsubst`` execution check. Autoconf, Libtool and libisofs resolve the same host
 M4 identity before recording their own bootstrap cache markers. The seed
 is not a universal runtime QEMU dependency: it belongs to maintainer-source
 regeneration, rather than builds using existing generated inputs.
