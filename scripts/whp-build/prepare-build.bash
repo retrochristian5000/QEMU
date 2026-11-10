@@ -3,21 +3,6 @@
 
 source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 
-compiler_has_cache_wrapper()
-{
-    local token base
-    local cache_command=()
-
-    read -r -a cache_command <<< "$1"
-    for token in "${cache_command[@]}"; do
-        base="$(basename "$token")"
-        case "$base" in
-            ccache|sccache|distcc|icecc) return 0 ;;
-        esac
-    done
-    return 1
-}
-
 flag_string_has_lto()
 {
     local value="$1"
@@ -437,18 +422,8 @@ whp_prepare_host_tools()
         export PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
     fi
 
-    if command -v ccache >/dev/null 2>&1; then
-        if [[ -z "${CC:-}" ]]; then
-            export CC="ccache cc"
-        elif ! compiler_has_cache_wrapper "$CC"; then
-            export CC="ccache $CC"
-        fi
-        if [[ -z "${CXX:-}" ]]; then
-            export CXX="ccache c++"
-        elif ! compiler_has_cache_wrapper "$CXX"; then
-            export CXX="ccache $CXX"
-        fi
-    fi
+    # Compiler cache wrapping belongs to builder.sh after COMPILER_CACHE is
+    # resolved. Host-tool discovery must not enable caching implicitly.
 }
 
 whp_prepare_build_tools()
