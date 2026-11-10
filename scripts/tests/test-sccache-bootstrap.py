@@ -242,12 +242,23 @@ class ManagedSccacheTests(unittest.TestCase):
 
     def test_qemu_selects_fork_after_host_dependencies_before_native_llvm(self):
         text = (ROOT / 'build.sh').read_text(encoding='utf-8')
-        self.assertLess(text.index('scripts/whp-build/host-tools.sh'),
-                        text.index('scripts/ensure-sccache.py'))
+        host_tools = (ROOT / 'scripts/whp-build/host-tools.sh').read_text(
+            encoding='utf-8')
+        self.assertIn('whp_prepare_git_dependent_cache()', text)
         self.assertLess(text.index('scripts/whp-build/update-submodules.py'),
                         text.index('scripts/ensure-sccache.py'))
         self.assertLess(text.index('scripts/ensure-sccache.py'),
                         text.index('scripts/bootstrap-native-clang.sh'))
+        # The function is declared before the host-tool module is sourced,
+        # but called only once Git has been promoted and before Ninja/Bash.
+        self.assertLess(text.index('whp_prepare_git_dependent_cache()'),
+                        text.index('. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"'))
+        self.assertLess(host_tools.index('WHP_GIT_SEED"'),
+                        host_tools.index('whp_prepare_git_dependent_cache || exit 1'))
+        self.assertLess(host_tools.index('whp_prepare_git_dependent_cache || exit 1'),
+                        host_tools.index('BOOTSTRAP_NINJA=$('))
+        self.assertLess(host_tools.index('whp_prepare_git_dependent_cache || exit 1'),
+                        host_tools.index('BOOTSTRAP_BASH=$('))
         self.assertIn('WHP_COMPILER_CACHE_CMD=$(', text)
         self.assertIn('COMPILER_CACHE=sccache', text)
         self.assertLess(text.index('seeds/cxx.sh" --print-cxx'),
