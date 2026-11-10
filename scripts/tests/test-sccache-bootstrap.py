@@ -60,7 +60,38 @@ class ManagedSccacheTests(unittest.TestCase):
     def test_sccacher_uses_cargo_seed(self):
         source = BOOTSTRAP.read_text(encoding='utf-8')
         self.assertIn("str(ROOT / 'seeds/cargo.sh')", source)
+        self.assertIn("str(ROOT / 'seeds/rustc.sh')", source)
         self.assertNotIn("shutil.which('cargo')", source)
+        self.assertNotIn("shutil.which('rustc')", source)
+
+    def test_rustc_seed_selection_and_rejection(self):
+        seed = ROOT / 'seeds' / 'rustc.sh'
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            rustc = base / 'rustc'
+            rustc.write_text(
+                '#!/bin/sh\\n'
+                'case "$1" in\\n'
+                '  --version) echo "rustc 1.91.0 (fixture)" ;;\\n'
+                '  --whp-rustc-adapter-probe) exit 2 ;;\\n'
+                '  *) echo "rustc fixture: $1" ;;\\n'
+                'esac\\n', encoding='utf-8')
+            rustc.chmod(0o755)
+            env = {**os.environ, 'WHP_RUSTC_SEED': str(rustc)}
+            chosen = subprocess.run(
+                ['/bin/sh', str(seed), '--print-seed'],
+                env=env, capture_output=True, text=True, check=True)
+            self.assertEqual(chosen.stdout.strip(), str(rustc.resolve()))
+            forwarded = subprocess.run(
+                ['/bin/sh', str(seed), '--version'],
+                env=env, capture_output=True, text=True, check=True)
+            self.assertIn('rustc 1.91.0', forwarded.stdout)
+            for invalid in (base / 'missing', seed):
+                env['WHP_RUSTC_SEED'] = str(invalid)
+                rejected = subprocess.run(
+                    ['/bin/sh', str(seed), '--print-seed'],
+                    env=env, capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(rejected.returncode, 0)
 
     def test_cargo_build_is_memory_conservative(self):
         env = bootstrap.cargo_environment({
@@ -190,12 +221,13 @@ class ManagedSccacheTests(unittest.TestCase):
             binary.chmod(0o755)
             identity = {
                 'schema': bootstrap.SCHEMA, 'gitlink': 'a' * 40,
-                'rustc': 'rustc 1.91.0', 'cargo': 'cargo 1.91.0',
+                'rustc_path': '/native/rustc', 'rustc': 'rustc 1.91.0',
+                'cargo': 'cargo 1.91.0',
                 'features': 'local-only', 'profile': 'lto=false,codegen-units=8,debug=0',
             }
             (prefix / '.whp-sccacher.json').write_text(json.dumps(identity))
             with mock.patch.object(bootstrap, 'pinned_source', return_value=(build, 'a' * 40)), \
-                 mock.patch.object(bootstrap, 'host_tools', return_value=('cargo', 'rustc 1.91.0', 'cargo 1.91.0')), \
+                 mock.patch.object(bootstrap, 'host_tools', return_value=('cargo', '/native/rustc', 'rustc 1.91.0', 'cargo 1.91.0')), \
                  mock.patch.object(bootstrap, 'call', return_value='sccache-0.18.0') as run:
                 self.assertEqual(bootstrap.ensure(build), binary)
                 run.assert_called_once_with([str(binary), '--version'], capture=True)
