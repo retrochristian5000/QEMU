@@ -933,6 +933,20 @@ Autom4te/Autoconf/M4sugar/Autotest data, autoscan data, and auxiliary config
 scripts are installed without Info or manual generation. Help2man and Texinfo
 remain upstream developer/release tools, not requirements of the QEMU profile.
 
+The native ``seeds/perl.sh`` bridge selects an existing Perl before the
+managed Automake and Autoconf source-generation stages. It accepts
+``WHP_PERL_SEED`` or ``PERL`` as an authoritative one-executable override,
+then discovers ``perl`` on PATH or the conventional ``/usr/bin/perl``.
+Admission executes a small ``-e`` program with ``use 5.006``,
+``strict``, and ``warnings`` rather than trusting a successful
+``--version`` or an executable bit alone. This corresponds to the pinned
+Automake source's Perl 5.6 minimum and requires no additional Perl package
+or cross-target interpreter. ``--print-seed`` returns the actual selected
+binary, ``--check`` reports it, and regular invocation delegates arguments
+unchanged. ``scripts/tests/test-perl-seed.py`` covers missing, bad, recursive
+and explicit seeds. Only consumers needing Perl request the seed; QEMU itself
+does not impose Perl as a new global prerequisite.
+
 The direct roots for this managed stage are Automake/aclocal, GNU M4, Perl,
 seed GNU Make, a primitive shell, ``mktemp``, and the validated
 sed seed. The pinned Autoconf source bootstrap invokes ``mktemp`` for a
