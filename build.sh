@@ -18,6 +18,8 @@ if [ -z "${WHP_AWK_SEED:-}" ] && [ -n "${AWK:-}" ]; then
     WHP_AWK_SEED=$AWK
 fi
 WHP_AWK_SEED=$("$SOURCE_DIR/seeds/awk.sh" --print-seed) || exit 1
+# Preserve the root dependency even after a managed Gawk is promoted.
+WHP_AWK_BOOTSTRAP_SEED=$WHP_AWK_SEED
 AWK=$WHP_AWK_SEED
 WHP_AWK_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"
 if [ ! -x "$WHP_AWK_BIN_DIR/awk" ]; then
@@ -26,7 +28,7 @@ if [ ! -x "$WHP_AWK_BIN_DIR/awk" ]; then
 fi
 WHP_AWK_LOCKED=1
 PATH="$WHP_AWK_BIN_DIR:$PATH"
-export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
+export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
 printf 'QEMU seed awk: %s\n' "$WHP_AWK_SEED" >&2
 unset WHP_AWK_BIN_DIR
 
