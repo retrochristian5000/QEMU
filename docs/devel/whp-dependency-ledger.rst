@@ -509,7 +509,7 @@ Root seed adapter namespace
 
 Only host seed adapters live under the repository-root ``seeds/`` directory:
 ``awk.sh``, ``grep.sh``, ``sed.sh``, ``git.sh``, ``cc.sh``,
-``cxx.sh``, ``cpp.sh``, ``ld.sh``, and ``pkg-config.sh``. Their invocation is explicitly
+``cxx.sh``, ``cpp.sh``, ``ld.sh``, ``pkg-config.sh``, and ``m4.sh``. Their invocation is explicitly
 ``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public build
 entry. This naming boundary leaves ``seeds/install.sh`` unambiguously
 available for a future *host install-program* seed, without suggesting it
@@ -521,6 +521,16 @@ with ``-E`` and publishes ``CPP_FOR_BUILD`` without replacing target
 compiler checks stay bound to the source tree when the bridges are invoked
 through symlinks. Old root-level adapter entrypoints are intentionally absent;
 callers, tests, and CI use the namespaced paths.
+
+The native ``m4.sh`` seed selects GNU M4 for maintainer-source
+Autotools generation. It accepts explicit ``WHP_M4_SEED`` or ``M4``
+without silent fallback, prefers a Homebrew GNU M4 keg on macOS before
+checking ``m4`` and ``gm4`` on PATH, and rejects obsolete GNU M4
+versions below 1.4.16 or implementations failing the GNU
+``patsubst`` execution check. Autoconf and Libtool resolve the same host
+M4 identity before recording their own bootstrap cache markers. The seed
+is not a universal runtime QEMU dependency: it belongs to maintainer-source
+regeneration, rather than builds using existing generated inputs.
 
 The native ``pkg-config.sh`` seed selects a usable ``pkg-config`` or
 ``pkgconf`` executable for build-machine dependency detection. Explicit
