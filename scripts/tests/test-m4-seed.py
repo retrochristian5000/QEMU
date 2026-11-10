@@ -18,6 +18,9 @@ class M4SeedTest(unittest.TestCase):
         self.directory = Path(self.work.name)
         self.m4 = self.fake("m4")
         self.gm4 = self.fake("gm4")
+        uname = self.directory / "uname"
+        uname.write_text("#!/bin/sh\\nprintf 'Linux\\\\n'\\n", encoding="utf-8")
+        uname.chmod(0o755)
 
     def fake(self, name, version="1.4.21", expansion="abXcd"):
         path = self.directory / name
@@ -42,7 +45,7 @@ class M4SeedTest(unittest.TestCase):
         env = os.environ.copy()
         for key in ("WHP_M4_SEED", "M4", "HOMEBREW_PREFIX"):
             env.pop(key, None)
-        env["PATH"] = str(self.directory) + os.pathsep + "/usr/bin:/bin"
+        env["PATH"] = str(self.directory)
         env.update(overrides)
         return subprocess.run(
             ["/bin/sh", str(SEED), *arguments],
