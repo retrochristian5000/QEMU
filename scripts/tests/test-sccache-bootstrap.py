@@ -108,6 +108,14 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertEqual(env['CARGO_PROFILE_RELEASE_CODEGEN_UNITS'], '8')
         self.assertEqual(env['CARGO_TARGET_DIR'], '/tmp/sccache-target')
         self.assertEqual(env['SCCACHE_DIR'], '/cache')
+        # An outer Rust compiler is target state, not a host seed.
+        self.assertNotIn('RUSTC', bootstrap.cargo_environment(
+            {'CC_FOR_BUILD': '/native/clang', 'RUSTC': '/guest/rustc'},
+            pathlib.Path('/tmp/sccache-target')))
+        chosen = bootstrap.cargo_environment(
+            {'CC_FOR_BUILD': '/native/clang', 'RUSTC': '/guest/rustc'},
+            pathlib.Path('/tmp/sccache-target'), rustc='/native/rustc')
+        self.assertEqual(chosen['RUSTC'], '/native/rustc')
 
     def test_cargo_build_uses_native_compiler_environment(self):
         qemu_flags = {
