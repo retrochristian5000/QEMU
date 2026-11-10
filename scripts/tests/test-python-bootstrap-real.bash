@@ -99,4 +99,23 @@ python_path_reused="$(
     exit 1
 }
 
+# The seed supplied by the caller must win over PATH Git, and a bad explicit
+# choice must fail before cache reuse or source reconciliation can proceed.
+selected_git="$(command -v git)"
+python_path_seed_reused="$(
+    WHP_GIT_SEED="$selected_git" WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" \
+        JOBS="${JOBS:-2}" /bin/sh scripts/bootstrap-python.sh
+)"
+[[ "$python_path_seed_reused" == "$python_path" ]] || {
+    printf 'error: explicit Git seed changed bundled Python cache reuse\n' >&2
+    exit 1
+}
+if WHP_GIT_SEED=/bin/false WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" \
+        /bin/sh scripts/bootstrap-python.sh \
+        >"$cache_root.bad-git.stdout" 2>"$cache_root.bad-git.stderr"; then
+    printf 'error: bundled Python accepted an invalid explicit Git seed\n' >&2
+    exit 1
+fi
+grep -Fq 'selected Git seed cannot execute' "$cache_root.bad-git.stderr"
+
 printf 'real bundled Python bootstrap test: passed (%s)\n' "$python_path"
