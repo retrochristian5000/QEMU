@@ -313,14 +313,14 @@ if [ "$BOOTSTRAP_GAWK" != 0 ] &&
             AWK=$WHP_GAWK_CMD
             WHP_AWK_LOCKED=1
             export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK
-            printf 'QEMU managed Gawk: %s (root seed %s)\\n' \\
+            printf 'QEMU managed Gawk: %s (root seed %s)\n' \\
                 "$AWK" "$WHP_AWK_BOOTSTRAP_SEED" >&2
         elif [ "$BOOTSTRAP_GAWK" = 1 ]; then
-            printf '%s\\n' \\
+            printf '%s\n' \\
                 'error: BOOTSTRAP_GAWK=1 requires a passing pinned Gawk build.' >&2
             exit 1
         else
-            printf 'WHP managed Gawk unavailable; retaining native AWK seed: %s\\n' \\
+            printf 'WHP managed Gawk unavailable; retaining native AWK seed: %s\n' \\
                 "$WHP_HOST_AWK_FOR_BOOTSTRAP" >&2
         fi
         unset WHP_GAWK_CMD
