@@ -68,6 +68,8 @@ on:
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/whp-build/select-tests.py'
       - 'scripts/tests/test-qapi-c23-keywords.py'
+      - 'scripts/tests/test-vof-property-format.py'
+      - 'hw/ppc/vof.c'
       - 'scripts/tests/test-cxx-standard-config.py'
       - 'scripts/whp-build/sccache-policy.sh'
       - 'docs/devel/sccache-build-memory.rst'
@@ -161,6 +163,9 @@ jobs:
           bash -n scripts/whp-build/host-tools.sh
           python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-make-gnulib-cache.py
+
+      - name: Test bounded VOF trace formatting with native C11 compiler
+        run: python3 scripts/tests/test-vof-property-format.py
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
