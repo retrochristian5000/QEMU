@@ -559,14 +559,38 @@ fi
 # library phase.
 . "$SOURCE_DIR/scripts/whp-build/host-libraries.sh"
 
-# Only an explicit opt-in builds the pinned Rust cache frontend. Keep this
-# before host-tool discovery and LLVM so it can serve Ninja, Clang, and QEMU
-# without requiring an independently installed sccache executable.
-# Do not trust an inherited marker from a previous shell or build. Only a
-# successful ensure-sccache invocation below may publish it for LLVM.
+# The managed sccacher fork is scheduled after host Git, bootstrap zlib,
+# and submodule reconciliation, but before native LLVM consumes its cache.
+# Never trust an inherited successful-build marker.
 unset WHP_MANAGED_SCCACHE
 BOOTSTRAP_SCCACHE=$(whp_require_binary_switch BOOTSTRAP_SCCACHE "${BOOTSTRAP_SCCACHE:-0}") || exit 1
 export BOOTSTRAP_SCCACHE
+
+# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
+# here so its environment mutations preserve dependency order. It prepares the
+# isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
+# SDL, and JACK remain in the later compiler-selected library phase.
+# If source refresh was disabled or skipped, select Git only when downstream
+# managed host tools actually need it; never probe the seed twice per run.
+if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
+    whp_select_seed_git || exit 1
+fi
+. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
+
+# Reconcile only already-initialized Git submodules after the selected Git
+# bootstrap. Uninitialized firmware/toolchains remain lazy; dirty sources and
+# attached developer branches are never changed.
+if [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+    "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
+        --source "$SOURCE_DIR" || exit 1
+fi
+
+# Cargo and its native C dependencies must not run ahead of the managed
+# Git/zlib bootstrap or QEMU submodule reconciliation. Keep the cache ready
+# before the native LLVM configure/build starts.
 if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
    [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
    [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
@@ -592,27 +616,6 @@ if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
     printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
 fi
 
-# Keep host-tool bootstraps out of the public entrypoint. This module is sourced
-# here so its environment mutations preserve dependency order. It prepares the
-# isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
-# SDL, and JACK remain in the later compiler-selected library phase.
-# If source refresh was disabled or skipped, select Git only when downstream
-# managed host tools actually need it; never probe the seed twice per run.
-if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
-    whp_select_seed_git || exit 1
-fi
-. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
-
-# Reconcile only already-initialized Git submodules after the selected Git
-# bootstrap. Uninitialized firmware/toolchains remain lazy; dirty sources and
-# attached developer branches are never changed.
-if [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] &&
-   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
-    "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
-        --source "$SOURCE_DIR" || exit 1
-fi
 
 # WHP DTC post-host bootstrap reconciliation
 # The parent QEMU source update has already run (and re-execed if necessary).
