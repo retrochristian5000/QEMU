@@ -63,6 +63,19 @@ export DEVELOPER_DIR="$xcode_app"
 test "$(whp_apple_developer_root)" = "$xcode"
 test "$(whp_apple_find_tool clang++)" = "$xcode/usr/bin/clang++"
 test "$(whp_apple_find_sdk)" = "$xcode/SDKs/MacOSX.sdk"
+# The SDK selected for all downstream compiler/header consumers must be the
+# physical directory validated above, not a relative or symlink spelling.
+ln -s MacOSX.sdk "$xcode/SDKs/MacOSX-current.sdk"
+test "$(SDKROOT="$xcode/SDKs/MacOSX-current.sdk" whp_apple_select_sdk)" = \
+    "$xcode/SDKs/MacOSX.sdk"
+test "$(cd "$tmp" && SDKROOT="Xcode-beta.app/Contents/Developer/SDKs/MacOSX.sdk" \
+    whp_apple_select_sdk)" = "$xcode/SDKs/MacOSX.sdk"
+# A symlink spelling inside Xcode may not smuggle a CLT SDK into its build.
+ln -s "$clt/SDKs/MacOSX.sdk" "$xcode/SDKs/MacOSX-foreign.sdk"
+if SDKROOT="$xcode/SDKs/MacOSX-foreign.sdk" whp_apple_select_sdk >/dev/null 2>&1; then
+    echo 'error: foreign SDK symlink was accepted' >&2
+    exit 1
+fi
 # The SDK name alone is insufficient when developer headers are missing.
 rm "$xcode/SDKs/MacOSX.sdk/usr/include/stdio.h"
 if whp_apple_find_sdk >/dev/null 2>&1; then
