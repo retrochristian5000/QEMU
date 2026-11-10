@@ -308,6 +308,19 @@ case "$COMPILER_CACHE" in
 esac
 
 compiler_cache_cmd="${WHP_COMPILER_CACHE_CMD:-}"
+# Cache selection is explicit policy, not evidence from a previous stage.
+if [[ -n "$compiler_cache_cmd" ]]; then
+    if [[ "$COMPILER_CACHE" == none ]]; then
+        printf 'error: COMPILER_CACHE=none conflicts with WHP_COMPILER_CACHE_CMD\n' >&2
+        exit 1
+    fi
+    if [[ "$COMPILER_CACHE" != auto &&
+          "${compiler_cache_cmd##*/}" != "$COMPILER_CACHE" ]]; then
+        printf 'error: COMPILER_CACHE=%s conflicts with WHP_COMPILER_CACHE_CMD=%s\n' \
+            "$COMPILER_CACHE" "$compiler_cache_cmd" >&2
+        exit 1
+    fi
+fi
 if [[ -z "$compiler_cache_cmd" ]]; then
     case "$COMPILER_CACHE" in
         auto)
