@@ -233,65 +233,26 @@ def gnu_m4_version(path: str) -> str:
 
 
 def select_gnu_m4() -> str:
-    requested = explicit_tool("M4")
-    if requested:
-        gnu_m4_version(requested)
-        return requested
-
-    candidates: list[str] = []
-
-    def add_candidate(candidate: str | None) -> None:
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-
-    if platform.system() == "Darwin":
-        # Homebrew's GNU M4 is keg-only because macOS already provides M4
-        # compatibility tools. Prefer the keg before PATH so /usr/bin/gm4
-        # cannot silently become the embedded Autoconf M4 when a managed GNU
-        # M4 installation is available.
-        for candidate in (
-            "/opt/homebrew/opt/m4/bin/m4",
-            "/usr/local/opt/m4/bin/m4",
-        ):
-            add_candidate(executable(candidate))
-
-        brew = executable("brew")
-        if brew:
-            completed = subprocess.run(
-                [brew, "--prefix", "m4"],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            if completed.returncode == 0:
-                prefix = completed.stdout.strip()
-                if prefix:
-                    add_candidate(
-                        executable(str(pathlib.Path(prefix) / "bin" / "m4"))
-                    )
-
-    # Prefer the canonical m4 name. gm4 remains a validated seed fallback for
-    # hosts where GNU M4 is intentionally installed under that compatibility
-    # name, but it no longer wins merely because macOS exposes /usr/bin/gm4.
-    for name in ("m4", "gm4"):
-        add_candidate(executable(name))
-
-    rejected: list[str] = []
-    for path in candidates:
-        try:
-            gnu_m4_version(path)
-        except RuntimeError as exc:
-            rejected.append(str(exc))
-            continue
-        return path
-
-    detail = "; ".join(rejected) if rejected else "no candidates found"
-    raise RuntimeError(
-        "GNU M4 with --gnu support is required to bootstrap GNU Autoconf: "
-        + detail
+    # One validated GNU M4 selection for all maintainer-source consumers.
+    # The seed checks the Autoconf 1.4.16 floor and GNU macro execution,
+    # including explicitly requested M4/WHP_M4_SEED implementations.
+    adapter = ROOT / "seeds" / "m4.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU GNU M4 seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-
+    selected = completed.stdout.strip()
+    if completed.returncode or not selected:
+        raise RuntimeError(
+            "GNU M4 selection failed: "
+            + (completed.stderr.strip() or "no usable GNU M4")
+        )
+    return selected
 
 def select_automake_pair() -> tuple[str, str]:
     automake = explicit_tool("AUTOMAKE") or executable("automake")
