@@ -139,6 +139,13 @@ save_config()
     mv "$SAVE_TMP" "$CONFIG"
 }
 
+# The Python menu refuses unexpected extra arguments; keep the POSIX
+# fallback equally strict instead of silently ignoring malformed calls.
+if [ "$#" -gt 1 ]; then
+    printf 'error: shell menuconfig accepts only --dump: %s\\n' "$*" >&2
+    exit 2
+fi
+
 case "${1:-}" in
     --dump)
         dump_menu
@@ -198,16 +205,12 @@ while :; do
         continue
     fi
 
-    old_ifs=$IFS
-    IFS='|'
-    set -- $line
-    IFS=$old_ifs
-    key=$1
-    section=$2
-    label=$3
-    kind=$4
-    default_value=$5
-    choices=$6
+    # A schema row is data, not a shell command line. Unquoted
+    # "set -- $line" also expands pathname globs from labels and groups.
+    # read performs IFS field splitting without executing glob expansion.
+    IFS='|' read -r key section label kind default_value choices group <<EOF
+$line
+EOF
 
     current=$(get_value "$key")
     if [ -z "$current" ]; then
