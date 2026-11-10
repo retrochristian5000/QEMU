@@ -875,7 +875,23 @@ Automake/aclocal. The valid order is therefore::
 
 Managed Autoconf must not be fed back into the same Automake bootstrap that
 produces the Automake instance it consumes. The seed Autoconf dependency is
-therefore narrowed to the first Automake stage.
+therefore narrowed to the first Automake stage. This is a genuine source-stage
+cycle broken by an existing, independent Autoconf/autom4te installation, not
+a recursive build in the correctly ordered QEMU host graph. The managed
+Automake bootstrap now rejects a seed path inside the current build's
+``deps/autoconf`` output and gives an explicit diagnostic when the seed is
+missing. The ``test-automake-seed-cycle.py`` regression covers independent
+seeds, missing seeds, and attempts to feed managed output back upstream.
+
+The pinned Automake source ``bootstrap`` invokes ``$AUTOCONF -Wall -Werror``
+after creating temporary Perl-based Automake and aclocal helpers, and its
+``configure.ac`` also checks that Autoconf works. The pinned Autoconf source
+``bootstrap`` invokes ``$ACLOCAL`` and ``$AUTOMAKE``. Merely moving the
+bootstrap ordering or claiming self-hosting removes these commands would
+reintroduce the cycle. A completely seedless host is therefore not supported
+by these two Git maintainer-source bootstraps without a separately validated
+source-generation strategy; the guard prevents a misleading fallback but
+does not eliminate the minimum external seed.
 
 ``scripts/ensure-autoconf.py`` uses a tool-only install profile: executables,
 Autom4te/Autoconf/M4sugar/Autotest data, autoscan data, and auxiliary config
