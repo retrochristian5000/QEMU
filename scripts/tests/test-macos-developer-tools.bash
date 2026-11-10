@@ -42,6 +42,10 @@ if [ "${WHP_TEST_FOREIGN:-0}" = 1 ]; then developer=$WHP_TEST_CLT; fi
 if [ "${WHP_TEST_XCRUN_FAIL:-0}" = 1 ]; then exit 1; fi
 case "$1" in
     --find)
+        if [ -n "${WHP_TEST_PLATFORM_TOOL:-}" ]; then
+            printf '%s\n' "$WHP_TEST_PLATFORM_TOOL"
+            exit 0
+        fi
         if [ "${WHP_TEST_SYSTEM_SHIM:-0}" = 1 ]; then
             printf '/usr/bin/%s\n' "$2"
         else
@@ -84,6 +88,49 @@ ln -s "$clt/SDKs/MacOSX.sdk" "$xcode/SDKs/MacOSX-foreign.sdk"
 if SDKROOT="$xcode/SDKs/MacOSX-foreign.sdk" whp_apple_select_sdk >/dev/null 2>&1; then
     echo 'error: foreign SDK symlink was accepted' >&2
     exit 1
+fi
+# Platform identity must be macOS, not merely MacOSX.sdk's basename.
+# A valid macOS platform subtree remains acceptable inside selected Xcode.
+mac_platform="$xcode/Platforms/MacOSX.platform/Developer"
+iphone_platform="$xcode/Platforms/iPhoneOS.platform/Developer"
+simulator_platform="$xcode/Platforms/iPhoneSimulator.platform/Developer"
+for platform_root in "$mac_platform" "$iphone_platform" "$simulator_platform"; do
+    sdk="$platform_root/SDKs/MacOSX.sdk"
+    mkdir -p "$sdk/usr/include/sys" "$platform_root/usr/bin"
+    for header in stdio.h stdlib.h unistd.h sys/types.h TargetConditionals.h; do
+        : > "$sdk/usr/include/$header"
+    done
+    printf '#!/bin/sh\nexit 0\n' > "$platform_root/usr/bin/clang"
+    chmod +x "$platform_root/usr/bin/clang"
+done
+test "$(SDKROOT="$mac_platform/SDKs/MacOSX.sdk" whp_apple_select_sdk)" = \
+    "$mac_platform/SDKs/MacOSX.sdk"
+for foreign_platform in "$iphone_platform" "$simulator_platform"; do
+    if SDKROOT="$foreign_platform/SDKs/MacOSX.sdk" \
+        whp_apple_select_sdk >/dev/null 2>&1; then
+        printf 'error: SDK from foreign Apple platform accepted: %s\n' \
+            "$foreign_platform" >&2
+        exit 1
+    fi
+    if WHP_TEST_PLATFORM_TOOL="$foreign_platform/usr/bin/clang" \
+        whp_apple_find_tool clang >/dev/null 2>&1; then
+        printf 'error: compiler from foreign Apple platform accepted: %s\n' \
+            "$foreign_platform" >&2
+        exit 1
+    fi
+done
+test "$(WHP_TEST_PLATFORM_TOOL="$mac_platform/usr/bin/clang" \
+    whp_apple_find_tool clang)" = "$mac_platform/usr/bin/clang"
+# Reject a platform subtree that lacks MacOSX.platform even if it nests
+# an identically named developer SDK.
+bad_platform="$xcode/Platforms/SomeFutureOS.platform/Developer"
+mkdir -p "$bad_platform/SDKs"
+if ln -s "$xcode/SDKs/MacOSX.sdk" "$bad_platform/SDKs/MacOSX.sdk"; then
+    if SDKROOT="$bad_platform/SDKs/MacOSX.sdk" \
+        whp_apple_select_sdk >/dev/null 2>&1; then
+        printf '%s\n' 'error: foreign platform SDK alias was accepted' >&2
+        exit 1
+    fi
 fi
 # The SDK name alone is insufficient when developer headers are missing.
 rm "$xcode/SDKs/MacOSX.sdk/usr/include/stdio.h"
