@@ -855,12 +855,32 @@ llvm_bootstrap_cxxflags='-O2 -DNDEBUG'
 macos_seed_has_neon()
 {
     local compiler="$1" language="$2"
+    local resource_dir=''
 
-    "$compiler" -arch "$darwin_cmake_arch" -isysroot "$sdkroot" \
-        "-mmacosx-version-min=$deployment_target" \
-        -x "$language" -fsyntax-only - >/dev/null 2>&1 <<'EOF'
-#include <arm_neon.h>
-EOF
+    # This is the *seed* compiler, not the LLVM Clang currently being built.
+    # Its resource headers must already exist. Never inspect the ungenerated
+    # LLVM source tree or the destination install prefix at this stage.
+    resource_dir="$("$compiler" -print-resource-dir 2>/dev/null)" || return 1
+    [[ -n "$resource_dir" && -s "$resource_dir/include/arm_neon.h" ]] || return 1
+
+    # Check an actual intrinsic, not merely a successful include. Disable
+    # ambient header overrides just as compiler-seed-common.sh does for the
+    # native compiler admission probe.
+    (
+        unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
+        unset COMPILER_PATH GCC_EXEC_PREFIX
+        printf '%s\\n' \
+            '#include <arm_neon.h>' \
+            '#ifndef __ARM_NEON' \
+            '#error missing AArch64 NEON support' \
+            '#endif' \
+            'uint8x16_t whp_seed_neon_xor(uint8x16_t a, uint8x16_t b) {' \
+            '    return veorq_u8(a, b);' \
+            '}' |
+            "$compiler" -arch "$darwin_cmake_arch" -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -Werror -x "$language" -fsyntax-only - >/dev/null 2>&1
+    )
 }
 
 if [[ "$host_os" == macos && "$host_tag" == aarch64 ]]; then
