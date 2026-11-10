@@ -422,67 +422,24 @@ def gnu_m4_version(path: str) -> str:
 
 
 def select_gnu_m4() -> str:
-    requested = os.environ.get("M4", "")
-    candidates: list[str] = []
-
-    def add_candidate(candidate: str | None) -> None:
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-
-    if requested:
-        argv = shlex.split(requested)
-        if len(argv) != 1:
-            raise RuntimeError("M4 must name exactly one executable")
-        candidate = argv[0]
-        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
-        if not path or not pathlib.Path(path).is_file() or not os.access(path, os.X_OK):
-            raise RuntimeError(f"M4 is not executable: {candidate}")
-        gnu_m4_version(str(path))
-        return str(path)
-
-    if platform.system() == "Darwin":
-        for candidate in (
-            "/opt/homebrew/opt/m4/bin/m4",
-            "/usr/local/opt/m4/bin/m4",
-        ):
-            if pathlib.Path(candidate).is_file() and os.access(candidate, os.X_OK):
-                add_candidate(candidate)
-
-        brew = shutil.which("brew")
-        if brew:
-            completed = subprocess.run(
-                [brew, "--prefix", "m4"],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            if completed.returncode == 0:
-                prefix = completed.stdout.strip()
-                candidate = pathlib.Path(prefix) / "bin" / "m4" if prefix else None
-                if candidate and candidate.is_file() and os.access(candidate, os.X_OK):
-                    add_candidate(str(candidate))
-
-    names = ("gm4", "m4") if platform.system() == "Darwin" else ("m4", "gm4")
-    for name in names:
-        path = shutil.which(name)
-        if path:
-            add_candidate(path)
-
-    rejected: list[str] = []
-    for path in candidates:
-        try:
-            gnu_m4_version(path)
-        except RuntimeError as exc:
-            rejected.append(str(exc))
-            continue
-        return path
-
-    detail = "; ".join(rejected) if rejected else "no candidates found"
-    raise RuntimeError(
-        "GNU M4 with --gnu support is required to bootstrap libisofs: " + detail
+    # Share the Autoconf/Libtool GNU M4 admission and candidate priority.
+    adapter = ROOT / "seeds" / "m4.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU GNU M4 seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-
+    selected = completed.stdout.strip()
+    if completed.returncode or not selected:
+        raise RuntimeError(
+            "GNU M4 selection failed: "
+            + (completed.stderr.strip() or "no usable GNU M4")
+        )
+    return selected
 
 def select_gnu_libtool(env_name: str, names: tuple[str, ...]) -> str:
     requested = os.environ.get(env_name, "")
