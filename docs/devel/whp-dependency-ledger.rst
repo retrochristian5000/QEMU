@@ -431,6 +431,7 @@ A missing-tool preflight alone does not establish a universal dependency.
 Check whether the tool is used before or after a validated cache hit, which
 feature activates it, and whether failure is fatal, a fallback or a deliberate
 skip. Do not promote download or source-generation tools into the common root.
+
 Pinned Meson source boundary
 ---------------------------
 
