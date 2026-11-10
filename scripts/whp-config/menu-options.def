@@ -19,6 +19,7 @@ BOOTSTRAP_PYTHON|Host features|Bootstrap/use WHP Python|choice|auto|auto,y,n|
 BOOTSTRAP_BASH|Host features|Bootstrap/use WHP Bash|choice|auto|auto,y,n|
 BOOTSTRAP_AUTOMAKE|Host features|Bootstrap/use WHP Automake|choice|auto|auto,y,n|
 BOOTSTRAP_AUTOCONF|Host features|Bootstrap/use WHP Autoconf|choice|auto|auto,y,n|
+BOOTSTRAP_GAWK|Host features|Bootstrap/use WHP Gawk|choice|auto|auto,y,n|
 BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make|choice|auto|auto,y,n|
 BOOTSTRAP_SED|Host features|Bootstrap/use WHP GNU sed|choice|auto|auto,y,n|
 BOOTSTRAP_GIT|Host features|Bootstrap/use WHP Git|choice|auto|auto,y,n|
