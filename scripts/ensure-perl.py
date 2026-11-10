@@ -132,10 +132,10 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     executable = prefix / "bin" / "perl"
     marker_path = prefix / ".whp-perl-bootstrap"
     marker = (
-        f"SCHEMA={SCHEMA}\\nSOURCE_REVISION={revision}\\n"
-        f"SEED_PERL={seed}\\nCC_FOR_BUILD={cc}\\n"
-        f"MAKE={make}\\nSDKROOT={sdk}\\n"
-        f"CFLAGS={cflags}\\nLDFLAGS={ldflags}\\n"
+        f"SCHEMA={SCHEMA}\nSOURCE_REVISION={revision}\n"
+        f"SEED_PERL={seed}\nCC_FOR_BUILD={cc}\n"
+        f"MAKE={make}\nSDKROOT={sdk}\n"
+        f"CFLAGS={cflags}\nLDFLAGS={ldflags}\n"
     )
     if marker_path.is_file() and marker_path.read_text() == marker:
         if valid_perl(executable):
