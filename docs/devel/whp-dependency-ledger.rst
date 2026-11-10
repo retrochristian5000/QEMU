@@ -625,6 +625,19 @@ fallback; the final selected helper is checked again before export.
 ``scripts/tests/test-ninja-bootstrap-call-contract.py`` exercises the
 POSIX resolver independently of the expensive toolchain bootstrap.
 
+Versioned Autotools handoffs distinguish two separate requirements:
+``automake`` and ``aclocal`` must be from the same GNU Automake release,
+and ``autoconf`` and ``autom4te`` must be from the same GNU Autoconf
+release. GNU branding and successful ``--version`` calls alone do not
+establish a coherent pair. The POSIX host-tool resolver now parses matching
+numeric release strings and rejects a mixed pair before exporting tools to
+downstream dependencies; explicit mismatches fail without fallback. A
+**minimum** supported version is still determined by each downstream source
+(e.g. the pinned GNU Make bootstrap requirements described below), rather
+than guessed globally from the selected host tools. The focused
+``scripts/tests/test-autotools-version-pairs.py`` fixture covers matching
+and conflicting versions and malformed commands.
+
 Managed Autoconf remains after Automake, managed Make after that pair, and
 managed sed after Make. Ninja is prepared after Git selection but before
 the larger Bash bootstrap: Ninja needs native C++17 and Python rather
