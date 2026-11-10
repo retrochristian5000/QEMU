@@ -62,9 +62,10 @@ def cargo_environment(environ, target):
     # the ordinary CC/CFLAGS variables. Remove inherited cross-target choices
     # before restoring the single validated build-machine C compiler.
     for key in tuple(env):
-        if (key.startswith(('CC_', 'CFLAGS_', 'HOST_CC_', 'HOST_CFLAGS_'))
-                or key in ('TARGET_CC', 'TARGET_CFLAGS', 'HOST_CFLAGS',
-                           'HOST_CPPFLAGS', 'HOST_CXXFLAGS')):
+        if (key != 'CC_FOR_BUILD' and
+                (key.startswith(('CC_', 'CFLAGS_', 'HOST_CC_', 'HOST_CFLAGS_'))
+                 or key in ('TARGET_CC', 'TARGET_CFLAGS', 'HOST_CFLAGS',
+                            'HOST_CPPFLAGS', 'HOST_CXXFLAGS'))):
             env.pop(key, None)
     cc = env.get('CC_FOR_BUILD')
     if not cc:
