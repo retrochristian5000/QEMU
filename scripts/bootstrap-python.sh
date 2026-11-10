@@ -153,7 +153,22 @@ python_usable()
     pip_usable "$candidate"
 }
 
-require_tool git
+# Bundled Python needs Git before managed Git exists. Use the selected host
+# seed, not an unrelated PATH lookup, and preserve standalone invocation.
+if [ -n "${WHP_GIT_SEED:-}" ]; then
+    bootstrap_git=$WHP_GIT_SEED
+    bootstrap_git_version=$("$bootstrap_git" --version 2>/dev/null) ||
+        fail "selected Git seed cannot execute: $bootstrap_git"
+    case "$bootstrap_git_version" in
+        'git version '*) ;;
+        *) fail "selected Git seed is not Git: $bootstrap_git" ;;
+    esac
+else
+    bootstrap_git=$("$SOURCE_DIR/seeds/git.sh" --print-seed) ||
+        fail 'no usable host Git seed is available for the Python bootstrap'
+fi
+unset bootstrap_git_version
+
 require_tool "$SED"
 require_tool mkdir
 require_tool rmdir
@@ -201,7 +216,8 @@ marker="$TOOLCHAIN_DIR/.whp-python-runtime"
 # The QEMU gitlink is the ancestry baseline. `branch = main` in .gitmodules
 # does not authorize a forced checkout; compatible newer commits are retained
 # and the effective source HEAD determines the Python cache identity.
-gitlink=$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$PYTHON_SUBMODULE_PATH" 2>/dev/null || true)
+gitlink=$("$bootstrap_git" -C "$SOURCE_DIR" ls-tree HEAD -- "$PYTHON_SUBMODULE_PATH") ||
+    fail "selected Git seed could not read Python runtime gitlink: $PYTHON_SUBMODULE_PATH"
 set -- $gitlink
 [ "$#" -ge 3 ] || fail "Python runtime gitlink is missing: $PYTHON_SUBMODULE_PATH"
 [ "$1" = 160000 ] || fail "Python runtime path is not a gitlink: $PYTHON_SUBMODULE_PATH"
@@ -211,9 +227,9 @@ python_revision=$3
 # Validate initialized sources before computing the persistent cache identity.
 # The effective source revision may be a descendant of the recorded gitlink.
 if [ -e "$PYTHON_SOURCE_DIR/.git" ]; then
-    whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" ||
+    whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" "$bootstrap_git" ||
         fail "Python submodule cannot be safely reconciled"
-    python_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD) ||
+    python_revision=$("$bootstrap_git" -C "$PYTHON_SOURCE_DIR" rev-parse HEAD) ||
         fail "Python submodule is not a valid Git checkout"
 fi
 
@@ -287,8 +303,9 @@ fi
 
 # Cache miss: initialize missing source from the gitlink or preserve an
 # existing verified descendant. Never select a moving remote branch.
-whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" || fail "Python submodule preparation failed"
-actual_revision=$(git -C "$PYTHON_SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" "$bootstrap_git" || fail "Python submodule preparation failed"
+actual_revision=$("$bootstrap_git" -C "$PYTHON_SOURCE_DIR" rev-parse HEAD) ||
+    fail "selected Git seed could not read Python runtime HEAD"
 [ "$actual_revision" = "$python_revision" ] ||
     fail "Python submodule revision mismatch: ${actual_revision:-<missing>} != $python_revision"
 
