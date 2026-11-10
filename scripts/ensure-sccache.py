@@ -20,7 +20,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 4
+SCHEMA = 5
 
 
 def call(argv, *, cwd=None, env=None, capture=False):
@@ -93,6 +93,11 @@ def cargo_environment(environ, target):
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
                 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
         env.pop(key, None)
+    # Remove Cargo's rustc path overrides and pin the validated rustc seed.
+    # Cargo must not independently rediscover a different rustup/toolchain.
+    env['RUSTC'] = environ.get('RUSTC', env.get('RUSTC', ''))
+    if not env['RUSTC']:
+        env.pop('RUSTC', None)
     env.update({
         'CARGO_TARGET_DIR': str(target),
         'CARGO_PROFILE_RELEASE_LTO': 'false',
@@ -109,25 +114,25 @@ def host_tools():
     # that did not preserve executable file modes.
     cargo = call(['/bin/sh', str(ROOT / 'seeds/cargo.sh'), '--print-seed'],
                  capture=True)
-    rustc = shutil.which('rustc')
-    if not rustc:
-        raise RuntimeError('BOOTSTRAP_SCCACHE=1 requires Rust 1.91 or newer')
+    rustc = call(['/bin/sh', str(ROOT / 'seeds/rustc.sh'), '--print-seed'],
+                 capture=True)
     version = call([rustc, '--version'], capture=True)
     match = re.match(r'^rustc (\d+)\.(\d+)\.(\d+)', version)
     if not match or tuple(map(int, match.groups())) < (1, 91, 0):
         raise RuntimeError('sccacher requires Rust 1.91.0 or newer: ' + version)
-    return cargo, version, call([cargo, '--version'], capture=True)
+    return cargo, rustc, version, call([cargo, '--version'], capture=True)
 
 
 def ensure(build_dir):
     source, revision = pinned_source()
-    cargo, rust_version, cargo_version = host_tools()
+    cargo, rustc, rust_version, cargo_version = host_tools()
     jobs = build_jobs(os.environ)
     host = f'{platform.system().lower()}-{platform.machine().lower()}'
     prefix = build_dir / 'toolchains' / 'sccache' / host
     executable = prefix / 'bin' / 'sccache'
     marker = prefix / '.whp-sccacher.json'
-    identity = {'schema': SCHEMA, 'gitlink': revision, 'rustc': rust_version,
+    identity = {'schema': SCHEMA, 'gitlink': revision,
+                'rustc_path': rustc, 'rustc': rust_version,
                 'cargo': cargo_version, 'features': 'local-only',
                 'profile': 'lto=false,codegen-units=8,debug=0'}
     if executable.is_file() and os.access(executable, os.X_OK) and marker.is_file():
@@ -143,7 +148,7 @@ def ensure(build_dir):
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
     call([cargo, 'build', '--locked', '--release', '--no-default-features',
           '--bin', 'sccache', '--jobs', str(jobs)], cwd=source,
-         env=cargo_environment(os.environ, target))
+         env=cargo_environment({**os.environ, 'RUSTC': rustc}, target))
     built = target / 'release' / 'sccache'
     if not built.is_file():
         raise RuntimeError('Cargo succeeded without producing the sccache executable')
