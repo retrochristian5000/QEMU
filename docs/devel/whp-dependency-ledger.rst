@@ -917,7 +917,7 @@ Libtool, sccache, Automake and mold are not common build-machine roots:
   preparation and initialized submodule reconciliation, but before native
   Ninja/Bash source builds and native LLVM. QEMU artifact zlib, SDL, and JACK
   remain compiler-selected, later libraries, not inputs to the sccache seed.
-  **sccache/sccacher:** Opt-in compiler caching is separate from C/C++,
+  Opt-in compiler caching is separate from C/C++,
   Meson and Ninja correctness. The pinned local-only build needs the selected
   Git, Cargo and Rust >= 1.91 when requested. Its cache marker includes the
   Rust/Cargo identities and source revision; removing these checks without an
