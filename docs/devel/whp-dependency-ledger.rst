@@ -666,6 +666,13 @@ Git executable in the graph. An already usable seed Git is required to obtain
 the QEMU checkout, refresh ``master``, read the QEMU gitlink, and materialize
 ``toolchains/git`` plus its pinned ``sha1collisiondetection`` gitlink.
 
+The bundled Python fallback also reads its gitlink and reconciles its source
+through this validated seed. When the public updater already selected
+``WHP_GIT_SEED``, Python reuses it; standalone Python bootstraps discover
+Git with ``seeds/git.sh``. Neither path assumes that bare ``git`` on
+``PATH`` is the selected implementation. Git invocation failures are fatal
+rather than being misreported as missing gitlinks.
+
 After that seed boundary, the bootstrap-zlib phase materializes the pinned
 ``toolchains/zlib`` gitlink with the seed Git. When a managed fallback is
 needed, it is built under ``deps/git-zlib`` with ``CC_FOR_BUILD`` and
