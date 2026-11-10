@@ -191,7 +191,7 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertNotIn('CARGO_BUILD_RUSTFLAGS', env)
         self.assertNotIn('RUSTDOCFLAGS', env)
         self.assertNotIn('CARGO_ENCODED_RUSTDOCFLAGS', env)
-        self.assertFalse(any(key.startswith('CARGO_TARGET_') for key in env))
+        self.assertFalse(any(key.startswith('CARGO_TARGET_') and key != 'CARGO_TARGET_DIR' for key in env))
 
     def test_cargo_target_dir_is_native_and_replaces_inherited_override(self):
         env = bootstrap.cargo_environment({
