@@ -6,6 +6,7 @@ on:
     paths:
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
+      - 'scripts/tests/test-cpp-homebrew-seed.bash'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-macos-developer-tools.bash'
       - 'seeds/cxx.sh'
@@ -30,6 +31,7 @@ on:
     paths:
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
+      - 'scripts/tests/test-cpp-homebrew-seed.bash'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-macos-developer-tools.bash'
       - 'seeds/cxx.sh'
@@ -70,6 +72,10 @@ jobs:
       - name: Verify failed compiler probes expose diagnostics
         shell: bash
         run: bash scripts/tests/test-compiler-seed-diagnostics.bash
+
+      - name: Verify optional Homebrew C preprocessor selection
+        shell: bash
+        run: bash scripts/tests/test-cpp-homebrew-seed.bash
 
       - name: Verify Xcode and Command Line Tools search precedence
         shell: bash
