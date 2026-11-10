@@ -22,6 +22,16 @@ def check() -> None:
     assert "command -v" in function
     assert 'if [ "$BOOTSTRAP_NINJA" = 1 ]; then' in text[end:]
     assert 'whp_ninja_command_usable "$NINJA_CMD"' in text[end:]
+    host_probe = text.index('NINJA_CMD=$(command -v ninja', end)
+    bundled_fallback = text.index(
+        'if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ]', end
+    )
+    retry_probe = text.index(
+        'if [ -n "${NINJA_CMD:-}" ] &&\n'
+        '       ! whp_ninja_command_usable "$NINJA_CMD"; then', host_probe
+    )
+    assert host_probe < retry_probe < bundled_fallback
+    assert text.count('! whp_ninja_command_usable "$NINJA_CMD"') == 3
 
     with tempfile.TemporaryDirectory(prefix="whp-ninja-call-") as temp:
         directory = Path(temp)
