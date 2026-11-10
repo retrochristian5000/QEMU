@@ -70,12 +70,12 @@ class ManagedSccacheTests(unittest.TestCase):
             base = pathlib.Path(directory)
             rustc = base / 'rustc'
             rustc.write_text(
-                '#!/bin/sh\\n'
-                'case "$1" in\\n'
-                '  --version) echo "rustc 1.91.0 (fixture)" ;;\\n'
-                '  --whp-rustc-adapter-probe) exit 2 ;;\\n'
-                '  *) echo "rustc fixture: $1" ;;\\n'
-                'esac\\n', encoding='utf-8')
+                '#!/bin/sh\n'
+                'case "$1" in\n'
+                '  --version) echo "rustc 1.91.0 (fixture)" ;;\n'
+                '  --whp-rustc-adapter-probe) exit 2 ;;\n'
+                '  *) echo "rustc fixture: $1" ;;\n'
+                'esac\n', encoding='utf-8')
             rustc.chmod(0o755)
             env = {**os.environ, 'WHP_RUSTC_SEED': str(rustc)}
             chosen = subprocess.run(
