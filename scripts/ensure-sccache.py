@@ -73,10 +73,16 @@ def cargo_environment(environ, target, *, rustc=None):
             continue
         if (key.startswith(('CC_', 'CXX_', 'CPP_', 'CFLAGS_', 'CXXFLAGS_',
                             'CPPFLAGS_', 'HOST_CC_', 'HOST_CXX_', 'HOST_CPP_',
-                            'HOST_CFLAGS_', 'HOST_CXXFLAGS_', 'HOST_CPPFLAGS_'))
+                            'HOST_CFLAGS_', 'HOST_CXXFLAGS_', 'HOST_CPPFLAGS_',
+                            'CARGO_TARGET_'))
                 or key in ('TARGET_CC', 'TARGET_CXX', 'TARGET_CPP',
                            'TARGET_CFLAGS', 'TARGET_CXXFLAGS', 'TARGET_CPPFLAGS',
-                           'HOST_CFLAGS', 'HOST_CXXFLAGS', 'HOST_CPPFLAGS')):
+                           'HOST_CFLAGS', 'HOST_CXXFLAGS', 'HOST_CPPFLAGS',
+                           'CARGO_BUILD_TARGET', 'CARGO_BUILD_RUSTC',
+                           'CARGO_BUILD_RUSTDOC', 'CARGO_BUILD_RUSTFLAGS')):
+            # Cargo target/linker/runner overrides can redirect a native
+            # sccache build to a QEMU guest architecture. The build's
+            # selected Cargo/Rust toolchain is supplied explicitly below.
             env.pop(key, None)
     cc = env.get('CC_FOR_BUILD')
     if not cc:
@@ -91,7 +97,8 @@ def cargo_environment(environ, target, *, rustc=None):
         env['HOST_CXX'] = cxx
     for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
-                'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
+                'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS',
+                'RUSTDOCFLAGS', 'CARGO_ENCODED_RUSTDOCFLAGS'):
         env.pop(key, None)
     # Ignore inherited target Rust compiler selections; only the admitted
     # rustc seed may be passed to Cargo by ensure().
