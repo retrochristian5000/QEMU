@@ -584,11 +584,11 @@ Managed Perl fork and independent interpreter seed
 -------------------------------------------------
 
 The pinned ``toolchains/perl`` gitlink references the
-``retrochristian5000/perl`` fork on ``main``. The earliest GNU
-Automake/Autoconf source-generation stages continue to consume a working,
-preinstalled Perl selected by ``seeds/perl.sh``. This independent
-interpreter remains ``WHP_PERL_BOOTSTRAP_SEED`` after promotion, so
-managed Perl never depends on an unbuilt version of itself.
+``retrochristian5000/perl`` fork on ``main``. A working preinstalled Perl selected by ``seeds/perl.sh`` remains the
+bootstrap root. The managed Perl stage now runs **before** managed
+Automake/Autoconf, so their source-generation steps can use the validated
+managed interpreter where available. The original interpreter remains
+``WHP_PERL_BOOTSTRAP_SEED`` after promotion, avoiding any self-dependency.
 
 ``scripts/ensure-perl.py`` reconciles the recorded submodule commit and
 stages a Git archive under ``$BUILD_DIR/bootstrap/perl/source``, leaving
@@ -601,13 +601,17 @@ matching core modules rather than promoting a binary alone. The final
 ``Config`` and report the native host OS. Compiler/SDK/bootstrap-seed,
 source revision and Make identities enter the incremental cache marker.
 
-After managed Autoconf, ``BOOTSTRAP_PERL=auto`` attempts this fork on
-macOS and keeps the original Perl seed on failure. ``BOOTSTRAP_PERL=1``
+Before managed Automake and Autoconf, ``BOOTSTRAP_PERL=auto`` attempts
+this fork on macOS and keeps the original Perl seed on failure. ``BOOTSTRAP_PERL=1``
 requires the managed interpreter; ``BOOTSTRAP_PERL=0`` disables
 promotion. Auto on other supported hosts retains the original seed unless
 explicitly forced. A successful build exports ``PERL``, promotes
 ``WHP_PERL_SEED``, and places the managed Perl directory ahead of PATH
-for later host consumers without changing the independent root interpreter.
+for the later Autotools stages and other host consumers without changing
+the independent root interpreter. The native Perl stage depends on seed
+Git, seed Make, an existing C compiler, and the original Perl/AWK/sed
+host tools, **not** the managed Autotools tools; moving it earlier does not
+create an Autoconf/Automake/Perl cycle.
 
 ``scripts/tests/test-perl-bootstrap.py`` checks source pinning,
 bootstrap order, interpreter semantics, and the preserved seed.
