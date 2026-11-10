@@ -73,6 +73,14 @@ def main() -> int:
             "macOS toolchain and LTO manifests",
             "Optional mold linker",
         ),
+        "optional toolchain boundaries": (
+            "Optional toolchain bootstrap requirements",
+            "BOOTSTRAP_AUTOMAKE=auto",
+            "Libtool/libtoolize",
+            "sccache/sccacher",
+            "CMake is checked after the cache miss",
+            "Rust/Cargo identities",
+        ),
         "required dependency guard policy": (
             "Required dependency guard policy",
             "not a second source of immutable commit gates",
@@ -109,6 +117,45 @@ def main() -> int:
     early_checks = powerpc[:cache_hit]
     if 'for required in tar bzip2 gzip perl' in early_checks:
         raise SystemExit("error: PowerPC source tools became universal roots")
+
+    # Capability-first auto must not rebuild Automake/Autoconf merely
+    # because the host is Darwin. Force modes still select their fork.
+    host_tools = (ROOT / "scripts/whp-build/host-tools.sh").read_text(
+        encoding="utf-8"
+    )
+    for name, probe in (
+        ("AUTOMAKE", "whp_automake_pair_usable"),
+        ("AUTOCONF", "whp_autoconf_pair_usable"),
+    ):
+        start = host_tools.index("WHP_NEED_" + name + "=0")
+        end = host_tools.index("WHP_NEED_" + name + "=1", start)
+        segment = host_tools[start:end]
+        if '"$WHP_HOST_OS" = macos' in segment:
+            raise SystemExit(
+                f"error: macOS auto forces managed {name} without a capability miss"
+            )
+        if f'if [ "$BOOTSTRAP_{name}" = 1 ]; then' not in segment:
+            raise SystemExit(f"error: explicit {name} force mode was lost")
+        if probe not in host_tools:
+            raise SystemExit(f"error: missing host capability test for {name}")
+
+    mold = (ROOT / "scripts/whp-build/prepare-mold.bash").read_text(
+        encoding="utf-8"
+    )
+    cache_hit = mold.index('if [[ -x "$linker" && -f "$signature_file"')
+    cmake_guard = mold.index('if ! command -v "$cmake_cmd"')
+    if cmake_guard <= cache_hit:
+        raise SystemExit("error: mold CMake check precedes installed cache reuse")
+
+    # Keep the sccache marker anchored to the source and selected Rust/Cargo
+    # pair; these checks determine whether a cached binary is still valid.
+    sccache = (ROOT / "scripts/ensure-sccache.py").read_text(
+        encoding="utf-8"
+    )
+    for field in ("'gitlink': revision", "'rustc_path': rustc",
+                  "'cargo': cargo_version"):
+        if field not in sccache:
+            raise SystemExit("error: sccache lost cache identity: " + field)
 
     if len(paths) != len(set(paths)):
         raise SystemExit("error: duplicate submodule paths in .gitmodules")
