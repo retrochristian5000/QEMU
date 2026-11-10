@@ -9,6 +9,8 @@ on:
       - 'toolchains/automake'
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
+      - 'seeds/automake.sh'
+      - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
@@ -26,6 +28,8 @@ on:
       - 'toolchains/automake'
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
+      - 'seeds/automake.sh'
+      - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
@@ -73,6 +77,9 @@ jobs:
 
       - name: Verify independent Autoconf bootstrap seed
         run: python3 scripts/tests/test-automake-seed-cycle.py
+
+      - name: Verify coherent Automake seed and aclocal forwarding
+        run: python3 scripts/tests/test-automake-seed.py
 
       - name: Reject corrupt bootstrap variables
         run: python3 scripts/tests/test-bootstrap-env.py
