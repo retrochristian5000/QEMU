@@ -35,6 +35,10 @@ if [ "$1" = --gnu ] && [ "$2" = --version ]; then
     printf '%s\\n' 'm4 (GNU M4) 1.4.21'
     exit 0
 fi
+if [ "$1" = --gnu ] && [ "$2" = --fatal-warnings ]; then
+    printf '%s\\n' abXcd
+    exit 0
+fi
 exit 2
 """
     else:
@@ -60,7 +64,7 @@ def test_gnu_m4_selector() -> None:
             try:
                 helper.select_gnu_m4()
             except RuntimeError as exc:
-                if "--gnu support" not in str(exc):
+                if "GNU M4" not in str(exc):
                     raise SystemExit(
                         "error: invalid libisofs M4 diagnostic lost capability detail"
                     )
