@@ -77,15 +77,15 @@ select_homebrew_cpp()
         [ -x "$candidate" ] || continue
         if driver=$(try_compiler c "$candidate" report) &&
            cpp_semantic_probe "$driver"; then
-            printf '%s\\n' "$driver"
+            printf '%s\n' "$driver"
             return 0
         fi
         # The first installed Homebrew candidate is authoritative. Do not
         # hide its failure by silently switching developer toolchains.
-        printf 'error: selected Homebrew CPP is not native/usable: %s\\n' "$candidate" >&2
+        printf 'error: selected Homebrew CPP is not native/usable: %s\n' "$candidate" >&2
         return 1
     done
-    printf '%s\\n' 'error: no usable native Homebrew Clang for WHP CPP' >&2
+    printf '%s\n' 'error: no usable native Homebrew Clang for WHP CPP' >&2
     return 1
 }
 
@@ -122,13 +122,13 @@ select_seed()
                 ;;
             1)
                 [ "$(uname -s 2>/dev/null || true)" = Darwin ] || {
-                    printf '%s\\n' 'error: Homebrew CPP preference is macOS-only' >&2
+                    printf '%s\n' 'error: Homebrew CPP preference is macOS-only' >&2
                     return 1
                 }
                 driver=$(select_homebrew_cpp) || return 1
                 ;;
             *)
-                printf '%s\\n' 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1' >&2
+                printf '%s\n' 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1' >&2
                 return 1
                 ;;
         esac
