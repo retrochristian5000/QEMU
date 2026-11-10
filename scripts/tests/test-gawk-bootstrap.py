@@ -42,6 +42,9 @@ def check():
     assert 'WHP_AWK_SEED=$WHP_GAWK_CMD' in host
     assert 'WHP_AWK_LOCKED=1' in host
     assert "BOOTSTRAP_GAWK=1 requires" in host
+    config = (ROOT / "scripts/whp-config/config.py").read_text()
+    assert "Option('BOOTSTRAP_GAWK', 'Host features'" in config
+    assert "'BOOTSTRAP_GAWK'," in config
     build = (ROOT / "build.sh").read_text()
     assert 'WHP_AWK_BOOTSTRAP_SEED=$WHP_AWK_SEED' in build
     assert 'export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED' in build
