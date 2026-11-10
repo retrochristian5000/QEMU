@@ -678,30 +678,50 @@ compiler_supports_cxx_standard()
 {
     local standard="$1"
     local candidate
+    local minimum_cplusplus
     local standards=()
-    local probe_source='constexpr int whp_cxx_standard_probe = 1;'
+    local probe_source
 
+    # A C++11 constexpr declaration alone cannot distinguish C++17/20/23.
+    # Read real C++ standard-library headers and verify the requested mode
+    # before admitting a driver to LLVM's native host build.
     case "$standard" in
-        17|20|23)
-            standards=("c++$standard")
+        17)
+            minimum_cplusplus=201703
+            standards=(c++17)
+            ;;
+        20)
+            minimum_cplusplus=202002
+            standards=(c++20)
+            ;;
+        23)
+            minimum_cplusplus=202302
+            standards=(c++23)
             ;;
         26)
+            minimum_cplusplus=202400
             standards=(c++26 c++2c)
-            # Accept either spelling only when the driver actually selects
-            # the C++26 language mode; a successful C++11 constexpr compile
-            # is not evidence of C++26 support.
-            probe_source="$(cat <<'SOURCE'
-#if !defined(__cplusplus) || __cplusplus < 202400L
-#error selected compiler did not enable C++26 mode
-#endif
-constexpr int whp_cxx_standard_probe = 1;
-SOURCE
-)"
             ;;
         *)
             return 1
             ;;
     esac
+
+    probe_source="$(cat <<SOURCE
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <vector>
+#if !defined(__cplusplus) || __cplusplus < ${minimum_cplusplus}L
+#error selected compiler did not enable the requested C++ language mode
+#endif
+static_assert(std::is_same_v<std::vector<int>::value_type, int>);
+static_assert(sizeof(std::string) > 0);
+constexpr std::size_t whp_cxx_standard_probe = sizeof(std::vector<int>);
+SOURCE
+)" || return 1
 
     for candidate in "${standards[@]}"; do
         if [[ "$host_os" == macos ]]; then
@@ -720,7 +740,6 @@ SOURCE
     done
     return 1
 }
-
 if ! compiler_supports_cxx_standard "$LLVM_CXX_STANDARD"; then
     printf '%s\n' \
         'error: native LLVM bootstrap C++ compiler does not support the selected standard.' \
