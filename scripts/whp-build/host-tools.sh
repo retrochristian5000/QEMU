@@ -158,6 +158,13 @@ whp_autoconf_pair_usable()
     whp_gnu_tool_pair_usable "$1" "$2" 'GNU Autoconf'
 }
 
+# A direct autom4te seed is also an Autoconf release contract. Resolve
+# both names together before the managed Autoconf stage can replace them.
+if [ -n "${WHP_AUTOM4TE_SEED:-}" ] || [ -n "${WHP_AUTOCONF_SEED:-}" ]; then
+    AUTOCONF=$(/bin/sh "$SOURCE_DIR/seeds/autom4te.sh" --print-autoconf) || exit 1
+    AUTOM4TE=$(/bin/sh "$SOURCE_DIR/seeds/autom4te.sh" --print-seed) || exit 1
+fi
+
 WHP_AUTOCONF_EXPLICIT=0
 if [ -n "${AUTOCONF:-}" ] || [ -n "${AUTOM4TE:-}" ]; then
     WHP_AUTOCONF_EXPLICIT=1
@@ -180,8 +187,12 @@ if [ -n "${AUTOCONF:-}" ] || [ -n "${AUTOM4TE:-}" ]; then
 fi
 
 if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
-    WHP_HOST_AUTOCONF=$(command -v autoconf 2>/dev/null || true)
-    WHP_HOST_AUTOM4TE=$(command -v autom4te 2>/dev/null || true)
+    # Do not combine unrelated PATH Autoconf and autom4te executables.
+    WHP_HOST_AUTOM4TE=$(/bin/sh "$SOURCE_DIR/seeds/autom4te.sh" --print-seed 2>/dev/null || true)
+    WHP_HOST_AUTOCONF=
+    if [ -n "$WHP_HOST_AUTOM4TE" ]; then
+        WHP_HOST_AUTOCONF=$(/bin/sh "$SOURCE_DIR/seeds/autom4te.sh" --print-autoconf 2>/dev/null || true)
+    fi
     WHP_NEED_AUTOCONF=0
     if [ "$BOOTSTRAP_AUTOCONF" = 1 ]; then
         WHP_NEED_AUTOCONF=1
