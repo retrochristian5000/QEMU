@@ -4,6 +4,16 @@
 #
 # WHP extension policy is internal-only: .sh launchers are POSIX-compatible,
 # .bash implementations require GNU Bash, and .ps1 launchers require PowerShell.
+# POSIX .sh files use the POSIX.1-2017-compatible subset: command
+# substitution, arithmetic expansion, printf, case, ordinary functions and
+# explicit failure checks are allowed. Do not introduce Bash-only arrays,
+# [[ ]], source, here-strings, process substitution, local, or pipefail.
+# Bash .bash files may use those features under the fork's GNU Bash >= 3.2
+# baseline, but must be invoked/sourced only after Bash selection.
+# Keep .sh launchers thin at the Bash handoff: the entire .sh file must parse
+# under /bin/sh, not merely the branch that happens to run.
+# The inventory covers WHP-owned build entrypoints/modules; the separate
+# QEMU upstream .sh scripts are not automatically rewritten or reclassified.
 # This inventory never constrains file names supplied by QEMU users for
 # firmware, disks, logs, or other runtime data.
 
