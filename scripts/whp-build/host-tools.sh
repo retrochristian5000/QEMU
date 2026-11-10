@@ -18,6 +18,9 @@ fi
 # role is resolved again after compiler promotion.
 whp_prepare_bootstrap_zlib
 
+# On macOS, the system is not presumed invalid: auto uses a passing
+# host pair and builds the managed fork only when absent or unusable.
+# BOOTSTRAP_AUTOMAKE=1 and BOOTSTRAP_AUTOCONF=1 remain explicit force modes.
 BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch BOOTSTRAP_AUTOMAKE "${BOOTSTRAP_AUTOMAKE:-auto}") || exit 1
 export BOOTSTRAP_AUTOMAKE
 
@@ -57,8 +60,7 @@ if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
     if [ "$BOOTSTRAP_AUTOMAKE" = 1 ]; then
         WHP_NEED_AUTOMAKE=1
     elif [ "$BOOTSTRAP_AUTOMAKE" = auto ]; then
-        if [ "$WHP_HOST_OS" = macos ] ||
-           ! whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
+        if ! whp_automake_pair_usable "$WHP_HOST_AUTOMAKE" "$WHP_HOST_ACLOCAL"; then
             WHP_NEED_AUTOMAKE=1
         fi
     fi
@@ -146,8 +148,7 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
     if [ "$BOOTSTRAP_AUTOCONF" = 1 ]; then
         WHP_NEED_AUTOCONF=1
     elif [ "$BOOTSTRAP_AUTOCONF" = auto ]; then
-        if [ "$WHP_HOST_OS" = macos ] ||
-           ! whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
+        if ! whp_autoconf_pair_usable "$WHP_HOST_AUTOCONF" "$WHP_HOST_AUTOM4TE"; then
             WHP_NEED_AUTOCONF=1
         fi
     fi
