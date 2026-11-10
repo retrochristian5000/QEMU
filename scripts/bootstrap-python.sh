@@ -324,9 +324,13 @@ case "$build_mode" in
             make_jobs=
         fi
 
-        if [ "$host_kernel" = Darwin ] && command -v xcrun >/dev/null 2>&1 &&
-           [ -z "${SDKROOT:-}" ]; then
-            SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+        # Preserve the SDK already selected by build.sh. Standalone Python
+        # bootstrap only discovers one when the caller supplied none, using
+        # the same developer-root and SDK-header validation as the launcher.
+        if [ "$host_kernel" = Darwin ] && [ -z "${SDKROOT:-}" ]; then
+            . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+            SDKROOT=$(whp_apple_select_sdk) ||
+                fail "cannot select a native macOS SDK for Python bootstrap"
             export SDKROOT
         fi
 
