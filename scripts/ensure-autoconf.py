@@ -160,6 +160,25 @@ def first_line(command: list[str]) -> str:
     return output.splitlines()[0] if output else ""
 
 
+def select_seed_perl() -> str:
+    # A native Perl is required by source generation. Validate it once
+    # through the same seed adapter instead of trusting a path-only probe.
+    adapter = ROOT / "seeds" / "perl.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    selected = completed.stdout.strip()
+    if completed.returncode != 0 or not selected:
+        raise RuntimeError(
+            "Autotools bootstrap requires a usable native Perl seed: "
+            + (completed.stderr.strip() or "Perl >= 5.6 is unavailable")
+        )
+    return selected
+
+
 def select_gnu_make() -> str:
     requested = explicit_tool("MAKE_CMD") or explicit_tool("MAKE")
     candidates: list[str] = []
@@ -481,7 +500,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_source()
     automake, aclocal = select_automake_pair()
     m4 = select_gnu_m4()
-    perl = tool("perl", "PERL")
+    perl = select_seed_perl()
     make = select_gnu_make()
     seed = select_seed_sed()
     sdkroot = select_native_sdk(ROOT)
