@@ -80,6 +80,10 @@ select_homebrew_cpp()
             printf '%s\\n' "$driver"
             return 0
         fi
+        # The first installed Homebrew candidate is authoritative. Do not
+        # hide its failure by silently switching developer toolchains.
+        printf 'error: selected Homebrew CPP is not native/usable: %s\\n' "$candidate" >&2
+        return 1
     done
     printf '%s\\n' 'error: no usable native Homebrew Clang for WHP CPP' >&2
     return 1
