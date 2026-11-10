@@ -147,6 +147,17 @@ class ManagedSccacheTests(unittest.TestCase):
             'TARGET_CPP': '/guest/target-cpp',
             'TARGET_CXXFLAGS': '-I/guest/cxx-target',
             'TARGET_CPPFLAGS': '-DWRONG_CPP=1',
+            # Cargo has its own cross-target controls, separate from CFLAGS
+            # and QEMU's CC/CXX. None may redirect the native sccache build.
+            'CARGO_BUILD_TARGET': 'aarch64-unknown-linux-gnu',
+            'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER': '/guest/ld',
+            'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS': '-Ctarget-cpu=native',
+            'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER': '/guest/runner',
+            'CARGO_BUILD_RUSTC': '/guest/rustc',
+            'CARGO_BUILD_RUSTDOC': '/guest/rustdoc',
+            'CARGO_BUILD_RUSTFLAGS': '-Clinker=/guest/ld',
+            'RUSTDOCFLAGS': '-L/guest/rustlib',
+            'CARGO_ENCODED_RUSTDOCFLAGS': '-L\\x1f/guest/rustlib',
         }
         native = {
             'CC_FOR_BUILD': '/native/clang',
@@ -174,6 +185,37 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertNotIn('CXXFLAGS', env)
         self.assertNotIn('CPPFLAGS', env)
         self.assertEqual({key: env[key] for key in native}, native)
+        self.assertNotIn('CARGO_BUILD_TARGET', env)
+        self.assertNotIn('CARGO_BUILD_RUSTC', env)
+        self.assertNotIn('CARGO_BUILD_RUSTDOC', env)
+        self.assertNotIn('CARGO_BUILD_RUSTFLAGS', env)
+        self.assertNotIn('RUSTDOCFLAGS', env)
+        self.assertNotIn('CARGO_ENCODED_RUSTDOCFLAGS', env)
+        self.assertFalse(any(key.startswith('CARGO_TARGET_') for key in env))
+
+    def test_cargo_target_dir_is_native_and_replaces_inherited_override(self):
+        env = bootstrap.cargo_environment({
+            'CC_FOR_BUILD': '/native/clang',
+            'CXX_FOR_BUILD': '/native/clang++',
+            'CARGO_BUILD_TARGET': 'x86_64-pc-windows-gnu',
+            'CARGO_TARGET_DIR': '/guest/cache',
+            'CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER': '/guest/ld',
+            'CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS': '-Clinker=/guest/ld',
+            'CARGO_BUILD_RUSTC': '/guest/rustc',
+            'CARGO_BUILD_RUSTFLAGS': '-Ctarget-feature=+unknown',
+            'RUSTC': '/guest/rustc',
+        }, pathlib.Path('/native/build/work'), rustc='/native/rustc')
+        self.assertEqual(env['CC'], '/native/clang')
+        self.assertEqual(env['HOST_CC'], '/native/clang')
+        self.assertEqual(env['CXX'], '/native/clang++')
+        self.assertEqual(env['HOST_CXX'], '/native/clang++')
+        self.assertEqual(env['RUSTC'], '/native/rustc')
+        self.assertEqual(env['CARGO_TARGET_DIR'], '/native/build/work')
+        self.assertNotIn('CARGO_BUILD_TARGET', env)
+        self.assertNotIn('CARGO_BUILD_RUSTC', env)
+        self.assertNotIn('CARGO_BUILD_RUSTFLAGS', env)
+        self.assertNotIn('CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER', env)
+        self.assertNotIn('CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS', env)
 
     def test_cargo_requires_explicit_native_compiler(self):
         with self.assertRaisesRegex(RuntimeError, 'CC_FOR_BUILD'):
