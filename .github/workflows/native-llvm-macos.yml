@@ -48,6 +48,8 @@ on:
       - 'scripts/tests/test-native-llvm-isa-boundary.py'
       - 'meson.build'
       - 'scripts/tests/test-sccache-bootstrap.py'
+      - 'seeds/rustc.sh'
+      - 'seeds/cargo.sh'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
       - 'scripts/tests/test-arm64e-clangxx-flag-guard.py'
