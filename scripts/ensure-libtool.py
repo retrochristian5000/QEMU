@@ -438,59 +438,26 @@ def gnu_m4_version(path: str) -> str:
 
 
 def select_gnu_m4() -> str:
-    requested = explicit_tool("M4")
-    if requested:
-        gnu_m4_version(requested)
-        return requested
-
-    candidates: list[str] = []
-
-    def add_candidate(candidate: str | None) -> None:
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-
-    if platform.system() == "Darwin":
-        # Homebrew's GNU m4 formula is keg-only because macOS already ships an
-        # m4. Search the normal keg locations before PATH so Xcode's m4/gm4
-        # compatibility tools cannot win merely because their names match.
-        for candidate in (
-            "/opt/homebrew/opt/m4/bin/m4",
-            "/usr/local/opt/m4/bin/m4",
-        ):
-            add_candidate(executable_path(candidate))
-
-        brew = shutil.which("brew")
-        if brew:
-            completed = subprocess.run(
-                [brew, "--prefix", "m4"],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            if completed.returncode == 0:
-                prefix = completed.stdout.strip()
-                if prefix:
-                    add_candidate(executable_path(str(pathlib.Path(prefix) / "bin" / "m4")))
-
-    names = ("gm4", "m4") if platform.system() == "Darwin" else ("m4", "gm4")
-    for name in names:
-        add_candidate(executable_path(name))
-
-    rejected: list[str] = []
-    for path in candidates:
-        try:
-            gnu_m4_version(path)
-        except RuntimeError as exc:
-            rejected.append(str(exc))
-            continue
-        return path
-
-    detail = "; ".join(rejected) if rejected else "no candidates found"
-    raise RuntimeError(
-        "GNU M4 with --gnu support is required to bootstrap Libtool: " + detail
+    # One validated GNU M4 selection for all maintainer-source consumers.
+    # The seed checks the Autoconf 1.4.16 floor and GNU macro execution,
+    # including explicitly requested M4/WHP_M4_SEED implementations.
+    adapter = ROOT / "seeds" / "m4.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU GNU M4 seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-
+    selected = completed.stdout.strip()
+    if completed.returncode or not selected:
+        raise RuntimeError(
+            "GNU M4 selection failed: "
+            + (completed.stderr.strip() or "no usable GNU M4")
+        )
+    return selected
 
 def compiler_is_llvm(cc: str) -> bool:
     version = compiler_version(cc).lower()
