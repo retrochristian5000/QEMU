@@ -158,6 +158,15 @@ class ManagedSccacheTests(unittest.TestCase):
             'CARGO_BUILD_RUSTFLAGS': '-Clinker=/guest/ld',
             'RUSTDOCFLAGS': '-L/guest/rustlib',
             'CARGO_ENCODED_RUSTDOCFLAGS': '-L\\x1f/guest/rustlib',
+            'IPHONEOS_DEPLOYMENT_TARGET': '18.0',
+            'IPHONESIMULATOR_DEPLOYMENT_TARGET': '18.0',
+            'TVOS_DEPLOYMENT_TARGET': '18.0',
+            'WATCHOS_DEPLOYMENT_TARGET': '11.0',
+            'XROS_DEPLOYMENT_TARGET': '2.0',
+            'DRIVERKIT_DEPLOYMENT_TARGET': '24.0',
+            'PLATFORM_NAME': 'iphoneos',
+            'EFFECTIVE_PLATFORM_NAME': '-iphoneos',
+            'SDK_NAME': 'iphoneos18.0',
         }
         native = {
             'CC_FOR_BUILD': '/native/clang',
@@ -185,6 +194,17 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertNotIn('CXXFLAGS', env)
         self.assertNotIn('CPPFLAGS', env)
         self.assertEqual({key: env[key] for key in native}, native)
+        # Host macOS SDK and deployment identity remain; unrelated Apple
+        # platform state must not reach Cargo's native C/Rust dependencies.
+        self.assertEqual(env['SDKROOT'], '/native/MacOSX.sdk')
+        self.assertEqual(env['MACOSX_DEPLOYMENT_TARGET'], '15.0')
+        for platform_key in (
+            'IPHONEOS_DEPLOYMENT_TARGET', 'IPHONESIMULATOR_DEPLOYMENT_TARGET',
+            'TVOS_DEPLOYMENT_TARGET', 'WATCHOS_DEPLOYMENT_TARGET',
+            'XROS_DEPLOYMENT_TARGET', 'DRIVERKIT_DEPLOYMENT_TARGET',
+            'PLATFORM_NAME', 'EFFECTIVE_PLATFORM_NAME', 'SDK_NAME',
+        ):
+            self.assertNotIn(platform_key, env)
         self.assertNotIn('CARGO_BUILD_TARGET', env)
         self.assertNotIn('CARGO_BUILD_RUSTC', env)
         self.assertNotIn('CARGO_BUILD_RUSTDOC', env)
