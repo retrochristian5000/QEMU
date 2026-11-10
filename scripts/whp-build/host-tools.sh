@@ -60,6 +60,14 @@ whp_automake_pair_usable()
     whp_gnu_tool_pair_usable "$1" "$2" 'GNU automake'
 }
 
+# The native Automake seed resolves a coherent automake/aclocal pair and
+# accepts explicit WHP_*_SEED choices without requiring another bootstrap.
+# Keep the managed Automake phase and its source-cycle guard downstream.
+if [ -n "${WHP_AUTOMAKE_SEED:-}" ] || [ -n "${WHP_ACLOCAL_SEED:-}" ]; then
+    AUTOMAKE=$(/bin/sh "$SOURCE_DIR/seeds/automake.sh" --print-seed) || exit 1
+    ACLOCAL=$(/bin/sh "$SOURCE_DIR/seeds/automake.sh" --print-aclocal) || exit 1
+fi
+
 WHP_AUTOMAKE_EXPLICIT=0
 if [ -n "${AUTOMAKE:-}" ] || [ -n "${ACLOCAL:-}" ]; then
     WHP_AUTOMAKE_EXPLICIT=1
@@ -82,8 +90,13 @@ if [ -n "${AUTOMAKE:-}" ] || [ -n "${ACLOCAL:-}" ]; then
 fi
 
 if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
-    WHP_HOST_AUTOMAKE=$(command -v automake 2>/dev/null || true)
-    WHP_HOST_ACLOCAL=$(command -v aclocal 2>/dev/null || true)
+    # Seed admission checks GNU identity and paired numeric versions
+    # rather than accidentally mixing PATH Automake with another aclocal.
+    WHP_HOST_AUTOMAKE=$(/bin/sh "$SOURCE_DIR/seeds/automake.sh" --print-seed 2>/dev/null || true)
+    WHP_HOST_ACLOCAL=
+    if [ -n "$WHP_HOST_AUTOMAKE" ]; then
+        WHP_HOST_ACLOCAL=$(/bin/sh "$SOURCE_DIR/seeds/automake.sh" --print-aclocal 2>/dev/null || true)
+    fi
     WHP_NEED_AUTOMAKE=0
     if [ "$BOOTSTRAP_AUTOMAKE" = 1 ]; then
         WHP_NEED_AUTOMAKE=1
