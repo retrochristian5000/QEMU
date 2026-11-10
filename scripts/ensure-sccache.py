@@ -79,7 +79,15 @@ def cargo_environment(environ, target, *, rustc=None):
                            'TARGET_CFLAGS', 'TARGET_CXXFLAGS', 'TARGET_CPPFLAGS',
                            'HOST_CFLAGS', 'HOST_CXXFLAGS', 'HOST_CPPFLAGS',
                            'CARGO_BUILD_TARGET', 'CARGO_BUILD_RUSTC',
-                           'CARGO_BUILD_RUSTDOC', 'CARGO_BUILD_RUSTFLAGS')):
+                           'CARGO_BUILD_RUSTDOC', 'CARGO_BUILD_RUSTFLAGS',
+                           'IPHONEOS_DEPLOYMENT_TARGET',
+                           'IPHONESIMULATOR_DEPLOYMENT_TARGET',
+                           'TVOS_DEPLOYMENT_TARGET',
+                           'WATCHOS_DEPLOYMENT_TARGET',
+                           'XROS_DEPLOYMENT_TARGET',
+                           'DRIVERKIT_DEPLOYMENT_TARGET',
+                           'PLATFORM_NAME', 'EFFECTIVE_PLATFORM_NAME',
+                           'SDK_NAME')):
             # Cargo target/linker/runner overrides can redirect a native
             # sccache build to a QEMU guest architecture. The build's
             # selected Cargo/Rust toolchain is supplied explicitly below.
