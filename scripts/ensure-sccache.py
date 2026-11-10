@@ -78,10 +78,14 @@ def cargo_environment(environ, target):
 
 
 def host_tools():
-    cargo = shutil.which('cargo')
+    # Cargo is a pre-QEMU root capability, selected through the WHP seed.
+    # Use /bin/sh explicitly so the seed also works from source archives
+    # that did not preserve executable file modes.
+    cargo = call(['/bin/sh', str(ROOT / 'seeds/cargo.sh'), '--print-seed'],
+                 capture=True)
     rustc = shutil.which('rustc')
-    if not cargo or not rustc:
-        raise RuntimeError('BOOTSTRAP_SCCACHE=1 requires Cargo and Rust 1.91 or newer')
+    if not rustc:
+        raise RuntimeError('BOOTSTRAP_SCCACHE=1 requires Rust 1.91 or newer')
     version = call([rustc, '--version'], capture=True)
     match = re.match(r'^rustc (\d+)\.(\d+)\.(\d+)', version)
     if not match or tuple(map(int, match.groups())) < (1, 91, 0):
