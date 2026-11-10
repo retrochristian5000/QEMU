@@ -873,6 +873,21 @@ Automake/aclocal. The valid order is therefore::
                               +--> managed GNU sed
                               +--> later Autotools consumers
 
+The QEMU ``seeds/automake.sh`` adapter resolves a validated native
+GNU Automake/aclocal pair before downstream maintainer-source generation.
+It prefers an ``aclocal`` beside the selected ``automake``, honors
+explicit ``WHP_AUTOMAKE_SEED`` and ``WHP_ACLOCAL_SEED`` choices, and rejects
+mixed or malformed version banners. ``--print-seed`` and
+``--print-aclocal`` expose the two resolved executables; ordinary arguments
+delegate to Automake and ``--aclocal`` delegates to aclocal. Host discovery
+and the managed Autoconf bootstrap consume this bridge rather than selecting
+two unrelated executables from PATH. No new source dependency is introduced:
+a seed selects already installed tools and does not build Automake itself.
+The paired seed is not a substitute for the separate **seed Autoconf**
+needed to generate the managed Automake source. The offline
+``scripts/tests/test-automake-seed.py`` checks release pairing, overrides,
+recursion and argument forwarding.
+
 Managed Autoconf must not be fed back into the same Automake bootstrap that
 produces the Automake instance it consumes. The seed Autoconf dependency is
 therefore narrowed to the first Automake stage. This is a genuine source-stage
