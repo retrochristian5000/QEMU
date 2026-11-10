@@ -487,7 +487,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "autoconf", cc, cflags=bootstrap_cflags
     )
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
-    tool("realpath")
+    # The pinned source bootstrap actually invokes mktemp. It does not
+    # invoke the standalone realpath command: Python's pathlib resolves
+    # our paths already. Do not reject a native host merely for lacking
+    # GNU coreutils realpath (not present on some older macOS systems).
     tool("mktemp")
 
     prefix = build_root / "deps" / "autoconf"
