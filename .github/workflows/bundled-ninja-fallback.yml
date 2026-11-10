@@ -17,6 +17,7 @@ on:
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - 'scripts/tests/test-ninja-memory-budget.py'
+      - 'scripts/tests/test-ninja-bootstrap-call-contract.py'
       - 'scripts/whp-build/host-tools.sh'
       - '.github/workflows/bundled-ninja-fallback.yml'
   workflow_dispatch:
@@ -47,13 +48,15 @@ jobs:
             scripts/tests/test-bundled-ninja-fallback.py \
             scripts/tests/test-compiler-cache-policy.py \
             scripts/tests/test-ninja-macos-host-compiler.py \
-            scripts/tests/test-ninja-memory-budget.py
+            scripts/tests/test-ninja-memory-budget.py \
+            scripts/tests/test-ninja-bootstrap-call-contract.py
           sh -n build.sh
           sh -n builder.sh
           python3 scripts/tests/test-bundled-ninja-fallback.py
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-ninja-macos-host-compiler.py
           python3 scripts/tests/test-ninja-memory-budget.py
+          python3 scripts/tests/test-ninja-bootstrap-call-contract.py
 
       - name: Bootstrap pinned Ninja through compiler cache
         shell: bash
