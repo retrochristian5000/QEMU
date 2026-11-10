@@ -139,22 +139,20 @@ whp_apple_find_sdk()
         exit 1
     }
     whp_apple_check_sdkroot "$sdk" || exit 1
-    printf '%s\n' "$sdk"
+    # Return the same physical SDK path that was actually validated.
+    CDPATH= cd -P -- "$sdk" && pwd -P
 )
 
 # Resolve the SDK once for consumers that build from another directory.
+# No caller should have to interpret a relative SDKROOT or re-resolve a
+# symlink after the developer-root and header checks have completed.
 whp_apple_select_sdk()
 (
     sdk=${SDKROOT:-}
     if [ -n "$sdk" ]; then
         whp_apple_check_sdkroot "$sdk" || exit 1
+        CDPATH= cd -P -- "$sdk" && pwd -P
     else
-        sdk=$(whp_apple_find_sdk) || exit 1
+        whp_apple_find_sdk
     fi
-    # Retain the selected path spelling, including a space-free SDK alias.
-    case "$sdk" in
-        /*) ;;
-        *) sdk=$(pwd)/$sdk || exit 1 ;;
-    esac
-    printf '%s\n' "$sdk"
 )
