@@ -93,6 +93,26 @@ def main() -> int:
     require(python, "CC_FOR_BUILD", "Python build compiler handoff")
     require(python, '"$SOURCE_DIR/seeds/cc.sh" --print-cc', "Python adapter fallback")
 
+    # Standalone Darwin bootstraps must use the same validated Xcode/CLT
+    # SDK identity; a fully selected environment is not silently rewritten.
+    require(macos, 'if [[ "${DEVELOPER_DIR:-}" != "$selected_developer_dir" ]]',
+            "macOS developer selection handoff")
+    require(macos, 'if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]',
+            "macOS SDK selection handoff")
+    require(python, 'SDKROOT=$(whp_apple_select_sdk)',
+            "Python bootstrap native SDK selector")
+    if 'SDKROOT=$(xcrun --sdk macosx --show-sdk-path)' in python:
+        raise SystemExit("error: Python bootstrap bypasses native SDK validation")
+    for path in ("bootstrap-powerpc-toolchain.bash",
+                 "bootstrap-powerpc-clang-base.bash"):
+        powerpc = (ROOT / "scripts" / path).read_text(encoding="utf-8")
+        require(powerpc, 'selected_sdkroot="$(whp_apple_select_sdk)"',
+                f"{path} native SDK selector")
+        require(powerpc, 'if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]',
+                f"{path} canonical SDK handoff")
+        if 'SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"' in powerpc:
+            raise SystemExit(f"error: {path} independently rewrites SDKROOT")
+
     sed = (ROOT / "scripts/ensure-sed.py").read_text(encoding="utf-8")
     require(sed, 'SED_BOOTSTRAP_SCHEMA = "5"', "sed compiler/SDK/gettext cache schema")
     require(sed, "validate_configure_compiler(cc, env, work)", "sed configured CC probe")
