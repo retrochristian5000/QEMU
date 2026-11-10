@@ -11,6 +11,8 @@ on:
       - 'seeds/m4.sh'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
+      - 'seeds/perl.sh'
+      - 'scripts/tests/test-perl-seed.py'
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
@@ -32,6 +34,8 @@ on:
       - 'seeds/m4.sh'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
+      - 'seeds/perl.sh'
+      - 'scripts/tests/test-perl-seed.py'
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
@@ -87,6 +91,9 @@ jobs:
 
       - name: Verify direct autom4te seed and Autoconf release matching
         run: python3 scripts/tests/test-autom4te-seed.py
+
+      - name: Verify native Perl seed semantics
+        run: python3 scripts/tests/test-perl-seed.py
 
       - name: Reject corrupt bootstrap variables
         run: python3 scripts/tests/test-bootstrap-env.py
