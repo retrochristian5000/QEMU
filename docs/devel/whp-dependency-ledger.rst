@@ -504,6 +504,32 @@ publish the resulting headers/libraries through the same pkg-config-facing
 boundary QEMU already understands rather than bypassing Meson dependency
 resolution.
 
+WHP shell interpreter boundary
+------------------------------
+
+The universal programming standard's POSIX Shell (``sh``) and Bash
+(``bash``) profiles are separate language contracts. In this QEMU fork,
+WHP-owned ``*.sh`` launchers, seeds and POSIX modules use the widely
+deployed POSIX.1-2017 shell subset; ``*.bash`` implementations use GNU
+Bash (minimum 3.2 for the WHP build path). A Bash implementation may use
+``[[ ... ]]``, arrays, ``local``, process substitution and
+``pipefail``, but those constructs must not enter a POSIX launcher.
+Conversely, ``$(...)``, ``$((...))``, ``printf``, ``case`` and
+ordinary shell functions remain valid POSIX syntax, not Bash features.
+
+The scope is WHP-owned scripts, not arbitrary upstream QEMU sources or user
+filenames. The canonical build subset is
+``scripts/whp-build/shell-inventory.bash``; first-stage programs under
+``seeds/*.sh`` and shared ``scripts/whp-build/*.sh`` modules are also
+checked. The lightweight regression
+``scripts/tests/test-shell-dialect-contract.py`` runs ``sh -n`` for
+these POSIX paths and ``bash -n`` for inventoried Bash paths; it rejects
+Bash-only constructs in seed implementations. Sourced modules may have no
+shebang; a launcher with one must declare the correct interpreter. These
+checks establish syntax and interpreter intent, not cross-host runtime
+compatibility or complete security validation. Preserve explicit error
+checks, safe quoting, caller statuses and the sh-to-Bash handoff.
+
 Root seed adapter namespace
 ---------------------------
 
