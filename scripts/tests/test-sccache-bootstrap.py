@@ -29,12 +29,12 @@ class ManagedSccacheTests(unittest.TestCase):
             base = pathlib.Path(directory)
             cargo = base / 'cargo'
             cargo.write_text(
-                '#!/bin/sh\\n'
-                'case "$1" in\\n'
-                '  --version) echo "cargo 1.91.0 (fixture)" ;;\\n'
-                '  --whp-cargo-adapter-probe) exit 2 ;;\\n'
-                '  *) echo "cargo fixture: $1" ;;\\n'
-                'esac\\n', encoding='utf-8')
+                '#!/bin/sh\n'
+                'case "$1" in\n'
+                '  --version) echo "cargo 1.91.0 (fixture)" ;;\n'
+                '  --whp-cargo-adapter-probe) exit 2 ;;\n'
+                '  *) echo "cargo fixture: $1" ;;\n'
+                'esac\n', encoding='utf-8')
             cargo.chmod(0o755)
             env = {**os.environ, 'WHP_CARGO_SEED': str(cargo)}
             chosen = subprocess.run(
