@@ -60,7 +60,7 @@ def build_jobs(environ):
     return int(raw)
 
 
-def cargo_environment(environ, target):
+def cargo_environment(environ, target, *, rustc=None):
     # Cargo's BLAKE3 and zstd dependencies compile native C code.
     env = clean_host_environment(environ)
     # Cargo build scripts (including cc-rs) can read target-qualified compiler
@@ -93,11 +93,11 @@ def cargo_environment(environ, target):
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
                 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
         env.pop(key, None)
-    # Remove Cargo's rustc path overrides and pin the validated rustc seed.
-    # Cargo must not independently rediscover a different rustup/toolchain.
-    env['RUSTC'] = environ.get('RUSTC', env.get('RUSTC', ''))
-    if not env['RUSTC']:
-        env.pop('RUSTC', None)
+    # Ignore inherited target Rust compiler selections; only the admitted
+    # rustc seed may be passed to Cargo by ensure().
+    env.pop('RUSTC', None)
+    if rustc is not None:
+        env['RUSTC'] = rustc
     env.update({
         'CARGO_TARGET_DIR': str(target),
         'CARGO_PROFILE_RELEASE_LTO': 'false',
@@ -148,7 +148,7 @@ def ensure(build_dir):
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
     call([cargo, 'build', '--locked', '--release', '--no-default-features',
           '--bin', 'sccache', '--jobs', str(jobs)], cwd=source,
-         env=cargo_environment({**os.environ, 'RUSTC': rustc}, target))
+         env=cargo_environment(os.environ, target, rustc=rustc))
     built = target / 'release' / 'sccache'
     if not built.is_file():
         raise RuntimeError('Cargo succeeded without producing the sccache executable')
