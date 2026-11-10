@@ -77,6 +77,7 @@ on:
       - 'seeds/pkg-config.sh'
       - 'scripts/tests/test-pkg-config-seed.py'
       - 'scripts/tests/test-sccache-bootstrap.py'
+      - 'scripts/tests/test-autotools-version-pairs.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-power-budget.py'
       - 'scripts/tests/test-darwin-user-recovery.py'
@@ -188,6 +189,7 @@ jobs:
           python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-pkg-config-seed.py
           python3 scripts/tests/test-sccache-bootstrap.py
+          python3 scripts/tests/test-autotools-version-pairs.py
           python3 scripts/tests/test-darwin-lto-threads.py
           python3 scripts/tests/test-macos-power-budget.py
           python3 scripts/tests/test-darwin-user-recovery.py
@@ -256,6 +258,7 @@ jobs:
             scripts/tests/test-qapi-c23-keywords.py \
             scripts/tests/test-cxx-standard-config.py \
             scripts/tests/test-compiler-cache-policy.py \
+            scripts/tests/test-autotools-version-pairs.py \
             scripts/tests/test-darwin-lto-threads.py \
             scripts/tests/test-macos-power-budget.py \
             scripts/tests/test-darwin-user-recovery.py \
