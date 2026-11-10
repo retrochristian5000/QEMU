@@ -37,7 +37,11 @@ Rust compiler selections. The native ``CARGO_TARGET_DIR`` is set explicitly
 to the private sccacher work tree; the selected Rust compiler and host
 C/C++ drivers remain authoritative. This prevents target-qualified Cargo
 configuration passed through the QEMU build environment from redirecting
-sccacher's own native ``cargo build``. Cargo configuration files outside
+sccacher's own native ``cargo build``. The same environment isolation
+drops iPhoneOS, simulator, tvOS, watchOS, visionOS and DriverKit deployment
+variables and inherited ``PLATFORM_NAME``/``SDK_NAME``; the validated
+``SDKROOT`` and ``MACOSX_DEPLOYMENT_TARGET`` stay native macOS inputs.
+Cargo configuration files outside
 the environment are a separate input and are not covered by this filter.
 When ``CC_FOR_BUILD`` is set, Cargo gets it as both ``CC`` and
 ``HOST_CC`` along with the selected SDK. For native builds, ``cc-rs`` checks
