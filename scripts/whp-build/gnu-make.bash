@@ -27,6 +27,26 @@ whp_resolve_gnu_make()
 
 whp_find_gnu_make()
 (
+    # GNU Make is needed before the macOS dependency provider adds Homebrew
+    # to PATH. Probe the native Homebrew prefix directly, without exposing its
+    # other tools to the early bootstrap. Never cross Rosetta architectures.
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        case "$(uname -m 2>/dev/null || true)" in
+            arm64|aarch64) whp_make_brew_prefix=/opt/homebrew ;;
+            x86_64) whp_make_brew_prefix=/usr/local ;;
+            *) whp_make_brew_prefix= ;;
+        esac
+        if [ -n "$whp_make_brew_prefix" ]; then
+            for whp_make_candidate in \
+                "$whp_make_brew_prefix/bin/gmake" \
+                "$whp_make_brew_prefix/opt/make/bin/gmake"; do
+                if whp_make_resolved=$(whp_resolve_gnu_make "$whp_make_candidate"); then
+                    printf '%s\n' "$whp_make_resolved"
+                    return 0
+                fi
+            done
+        fi
+    fi
     for whp_make_candidate in gmake make; do
         if whp_make_resolved=$(whp_resolve_gnu_make "$whp_make_candidate"); then
             printf '%s\n' "$whp_make_resolved"
