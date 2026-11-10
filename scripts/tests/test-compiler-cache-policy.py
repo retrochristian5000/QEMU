@@ -7,6 +7,7 @@ import importlib.util
 import os
 import pathlib
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -70,6 +71,61 @@ class CompilerCachePolicyTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {'COMPILER_CACHE': 'sccache'}, clear=True), \
              mock.patch.object(ninja.shutil, 'which', return_value='/usr/local/bin/sccache'):
             self.assertEqual(ninja.select_compiler_cache(), '/usr/local/bin/sccache')
+
+    def test_ninja_cache_override_must_match_policy_and_be_executable(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_boundary_test')
+        with tempfile.TemporaryDirectory() as directory:
+            cache = pathlib.Path(directory) / 'ccache'
+            cache.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+            cache.chmod(0o755)
+            explicit = {'WHP_COMPILER_CACHE_CMD': str(cache)}
+
+            with mock.patch.dict(os.environ, {**explicit, 'COMPILER_CACHE': 'none'}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, 'conflicts'):
+                    ninja.select_compiler_cache()
+            with mock.patch.dict(os.environ, {**explicit, 'COMPILER_CACHE': 'sccache'}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, 'conflicts'):
+                    ninja.select_compiler_cache()
+            with mock.patch.dict(os.environ, {**explicit, 'COMPILER_CACHE': 'ccache'}, clear=True):
+                self.assertEqual(ninja.select_compiler_cache(), str(cache))
+
+            cache.chmod(0o644)
+            with mock.patch.dict(os.environ, {**explicit, 'COMPILER_CACHE': 'ccache'}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, 'not executable'):
+                    ninja.select_compiler_cache()
+
+    def test_shell_cache_handoffs_reject_inherited_conflicts(self):
+        runner = BUILD_WRAPPER.read_text(encoding='utf-8')
+        prefix, separator, _ = runner.partition(
+            '\n. "$script_dir/scripts/whp-build/shell-functions.sh"'
+        )
+        self.assertTrue(separator)
+        native = (ROOT / 'scripts' / 'bootstrap-native-clang.bash').read_text(
+            encoding='utf-8')
+        start = native.index('COMPILER_CACHE="${COMPILER_CACHE:-auto}"')
+        end = native.index('\ncmake_host_args=()', start)
+        segments = (('/bin/sh', prefix), ('bash', 'set -euo pipefail\n' + native[start:end]))
+
+        for shell, body in segments:
+            for policy, override, succeeds in (
+                ('none', '', True),
+                ('none', '/unused/sccache', False),
+                ('sccache', '/unused/ccache', False),
+            ):
+                with self.subTest(shell=shell, policy=policy, override=override):
+                    env = {**os.environ, 'COMPILER_CACHE': policy,
+                           'WHP_BUILD_ENTRY_NORMALIZED': '1', 'CC': 'cc', 'CXX': 'c++'}
+                    if override:
+                        env['WHP_COMPILER_CACHE_CMD'] = override
+                    else:
+                        env.pop('WHP_COMPILER_CACHE_CMD', None)
+                    completed = subprocess.run(
+                        [shell, '-c', body], cwd=ROOT, env=env,
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(completed.returncode == 0, succeeds, completed.stderr)
+                    if not succeeds:
+                        self.assertIn('conflicts with WHP_COMPILER_CACHE_CMD', completed.stderr)
 
     def test_ninja_bootstrap_uses_cache_and_helper_only_macos_ldflags(self):
         ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_env_test')
