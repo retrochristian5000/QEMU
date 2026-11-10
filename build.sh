@@ -575,53 +575,59 @@ export BOOTSTRAP_SCCACHE
 if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
     whp_select_seed_git || exit 1
 fi
-. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
-
-# Reconcile only already-initialized Git submodules after the selected Git
-# bootstrap. Uninitialized firmware/toolchains remain lazy; dirty sources and
-# attached developer branches are never changed.
-if [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] &&
-   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
-    "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
-        --source "$SOURCE_DIR" || exit 1
-fi
-
-# Cargo and its native C dependencies must not run ahead of the managed
-# Git/zlib bootstrap or QEMU submodule reconciliation. Keep the cache ready
-# before the native LLVM configure/build starts.
-if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
-   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
-    case "${COMPILER_CACHE:-auto}" in
-        auto|sccache) ;;
-        *)
-            printf "error: BOOTSTRAP_SCCACHE=1 conflicts with COMPILER_CACHE=%s\n" \
-                "$COMPILER_CACHE" >&2
+# Run immediately after host-tools.sh has finalized Git, before its Ninja
+# and Bash source builds. Do not move this earlier than bootstrap zlib / Git,
+# or later than optional native LLVM. Source reconciliation is still performed
+# once, at this same boundary, without repeating the selected Git seed.
+whp_prepare_git_dependent_cache()
+{
+    # Reconcile only already-initialized Git submodules after the selected Git
+    # bootstrap. Uninitialized firmware/toolchains remain lazy; dirty sources and
+    # attached developer branches are never changed.
+    if [ "${WHP_SOURCE_UPDATE:-auto}" != 0 ] &&
+       [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+        "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
+            --source "$SOURCE_DIR" || exit 1
+    fi
+    
+    # Cargo and its native C dependencies must not run ahead of the managed
+    # Git/zlib bootstrap or QEMU submodule reconciliation. Keep the cache ready
+    # before the native LLVM configure/build starts.
+    if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
+       [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ]; then
+        case "${COMPILER_CACHE:-auto}" in
+            auto|sccache) ;;
+            *)
+                printf "error: BOOTSTRAP_SCCACHE=1 conflicts with COMPILER_CACHE=%s\n" \
+                    "$COMPILER_CACHE" >&2
+                exit 1
+                ;;
+        esac
+        if [ -n "${WHP_COMPILER_CACHE_CMD:-}" ]; then
+            printf "error: BOOTSTRAP_SCCACHE=1 conflicts with WHP_COMPILER_CACHE_CMD\n" >&2
             exit 1
-            ;;
-    esac
-    if [ -n "${WHP_COMPILER_CACHE_CMD:-}" ]; then
-        printf "error: BOOTSTRAP_SCCACHE=1 conflicts with WHP_COMPILER_CACHE_CMD\n" >&2
-        exit 1
+        fi
+        # Cargo's native C++ build scripts need the same validated host tool
+        # identity as C. This happens after host tools but before managed LLVM.
+        if [ -z "${CXX_FOR_BUILD:-}" ]; then
+            CXX_FOR_BUILD=$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx) || exit 1
+            export CXX_FOR_BUILD
+        fi
+        WHP_COMPILER_CACHE_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-sccache.py" \
+            --build-dir "$BUILD_DIR") || exit 1
+        COMPILER_CACHE=sccache
+        # Only the managed pinned fork has the PCH consumer hash/invalidation
+        # guarantees needed to cache LLVM C++ objects while PCH is enabled.
+        WHP_MANAGED_SCCACHE=1
+        export WHP_COMPILER_CACHE_CMD COMPILER_CACHE WHP_MANAGED_SCCACHE
+        printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
     fi
-    # Cargo's native C++ build scripts need the same validated host tool
-    # identity as C. This happens after host tools but before managed LLVM.
-    if [ -z "${CXX_FOR_BUILD:-}" ]; then
-        CXX_FOR_BUILD=$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx) || exit 1
-        export CXX_FOR_BUILD
-    fi
-    WHP_COMPILER_CACHE_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-sccache.py" \
-        --build-dir "$BUILD_DIR") || exit 1
-    COMPILER_CACHE=sccache
-    # Only the managed pinned fork has the PCH consumer hash/invalidation
-    # guarantees needed to cache LLVM C++ objects while PCH is enabled.
-    WHP_MANAGED_SCCACHE=1
-    export WHP_COMPILER_CACHE_CMD COMPILER_CACHE WHP_MANAGED_SCCACHE
-    printf "WHP compiler cache: managed sccacher (%s)\n" "$WHP_COMPILER_CACHE_CMD" >&2
-fi
+}
 
+. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"
 
 # WHP DTC post-host bootstrap reconciliation
 # The parent QEMU source update has already run (and re-execed if necessary).
