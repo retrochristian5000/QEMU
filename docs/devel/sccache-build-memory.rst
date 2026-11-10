@@ -30,7 +30,16 @@ reuses the already installed executable.
 concurrency. The Rust bootstrap clears inherited compiler wrappers to avoid
 building sccache recursively through sccache. It also clears QEMU's
 ``CPPFLAGS``, ``CFLAGS``, and other target compiler settings from Cargo's
-environment. When ``CC_FOR_BUILD`` is set, Cargo gets it as both ``CC`` and
+environment. The same isolation applies to inherited Cargo cross-target
+variables (for example ``CARGO_BUILD_TARGET`` and
+``CARGO_TARGET_<TRIPLE>_LINKER`` or ``_RUSTFLAGS``) and alternate Cargo
+Rust compiler selections. The native ``CARGO_TARGET_DIR`` is set explicitly
+to the private sccacher work tree; the selected Rust compiler and host
+C/C++ drivers remain authoritative. This prevents target-qualified Cargo
+configuration passed through the QEMU build environment from redirecting
+sccacher's own native ``cargo build``. Cargo configuration files outside
+the environment are a separate input and are not covered by this filter.
+When ``CC_FOR_BUILD`` is set, Cargo gets it as both ``CC`` and
 ``HOST_CC`` along with the selected SDK. For native builds, ``cc-rs`` checks
 ``HOST_CC`` ahead of ``CC`` and gives target-qualified compiler settings
 the highest priority. A versioned Cargo target directory keeps C objects
@@ -92,6 +101,16 @@ LLVM and the final QEMU runner. An inherited ``WHP_COMPILER_CACHE_CMD``
 must match an explicitly selected ``ccache`` or ``sccache``; combining it
 with ``COMPILER_CACHE=none`` is an error, not permission to re-enable
 caching. Explicit cache commands must be executable files.
+
+The final QEMU runner rejects a prewrapped ``CC`` or ``CXX`` whose
+leading cache launcher conflicts with the selected cache; a compiler flag
+merely mentioning ``sccache`` is not a launcher. For the managed WHP
+sccacher path, inherited cache-prefixed compiler commands are rejected
+altogether: accepting a separate ``sccache`` executable would incorrectly
+claim the managed fork's PCH behavior. An unwrapped C/C++ compiler is wrapped
+with the validated selected cache at the QEMU build handoff. The dedicated
+``test-sccache-bootstrap.py`` and ``test-compiler-cache-policy.py`` suites
+check environment and wrapper conflicts without a full LLVM rebuild.
 
 * ``SCCACHE_IDLE_TIMEOUT=180`` (seconds) is the WHP default whenever the
   sccache launcher is selected and no explicit ``SCCACHE_CONF`` is set.
