@@ -127,6 +127,58 @@ class CompilerCachePolicyTests(unittest.TestCase):
                     if not succeeds:
                         self.assertIn('conflicts with WHP_COMPILER_CACHE_CMD', completed.stderr)
 
+    def test_sccache_rejects_conflicting_inherited_compiler_launchers(self):
+        runner = BUILD_WRAPPER.read_text(encoding='utf-8')
+        prefix, separator, _ = runner.partition(
+            '\\n. "$script_dir/scripts/whp-build/shell-functions.sh"'
+        )
+        self.assertTrue(separator)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = pathlib.Path(directory) / 'sccache'
+            cache.write_text('#!/bin/sh\\nexit 0\\n', encoding='utf-8')
+            cache.chmod(0o755)
+
+            for cc, cxx, managed, succeeds in (
+                ('ccache cc', 'c++', '0', False),
+                ('cc', '/usr/bin/ccache c++', '0', False),
+                ('distcc cc', 'c++', '0', False),
+                ('sccache cc', 'c++', '0', True),
+                ('cc -DNAME=sccache', 'c++', '0', True),
+                ('sccache cc', 'c++', '1', False),
+                ('cc', 'c++', '1', True),
+            ):
+                with self.subTest(cc=cc, cxx=cxx, managed=managed):
+                    env = {
+                        **os.environ,
+                        'WHP_BUILD_ENTRY_NORMALIZED': '1',
+                        'COMPILER_CACHE': 'sccache',
+                        'WHP_COMPILER_CACHE_CMD': str(cache),
+                        'WHP_MANAGED_SCCACHE': managed,
+                        'CC': cc,
+                        'CXX': cxx,
+                        'BUILD_DIR': str(pathlib.Path(directory) / 'build'),
+                    }
+                    script = prefix + (
+                        '\\nprintf "CC=%s\\\\nCXX=%s\\\\n" "$CC" "$CXX"\\n'
+                    )
+                    completed = subprocess.run(
+                        ['/bin/sh', '-c', script], cwd=ROOT, env=env,
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(completed.returncode == 0, succeeds,
+                                     completed.stderr)
+                    if succeeds:
+                        self.assertIn('CC=', completed.stdout)
+                        if cc == 'cc -DNAME=sccache':
+                            self.assertIn('CC=' + str(cache) +
+                                          ' cc -DNAME=sccache',
+                                          completed.stdout)
+                        elif cc == 'sccache cc':
+                            self.assertIn('CC=sccache cc', completed.stdout)
+                    else:
+                        self.assertIn('error:', completed.stderr)
+
     def test_ninja_bootstrap_uses_cache_and_helper_only_macos_ldflags(self):
         ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_env_test')
         cache_dir = pathlib.Path('/tmp/whp-cache')
