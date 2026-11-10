@@ -455,7 +455,7 @@ Root seed adapter namespace
 
 Only host seed adapters live under the repository-root ``seeds/`` directory:
 ``awk.sh``, ``grep.sh``, ``sed.sh``, ``git.sh``, ``cc.sh``,
-``cxx.sh``, ``cpp.sh``, and ``ld.sh``. Their invocation is explicitly
+``cxx.sh``, ``cpp.sh``, ``ld.sh``, and ``pkg-config.sh``. Their invocation is explicitly
 ``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public build
 entry. This naming boundary leaves ``seeds/install.sh`` unambiguously
 available for a future *host install-program* seed, without suggesting it
@@ -467,6 +467,16 @@ with ``-E`` and publishes ``CPP_FOR_BUILD`` without replacing target
 compiler checks stay bound to the source tree when the bridges are invoked
 through symlinks. Old root-level adapter entrypoints are intentionally absent;
 callers, tests, and CI use the namespaced paths.
+
+The native ``pkg-config.sh`` seed selects a usable ``pkg-config`` or
+``pkgconf`` executable for build-machine dependency detection. Explicit
+``WHP_PKG_CONFIG_SEED``, ``PKG_CONFIG_FOR_BUILD``, and ``PKG_CONFIG``
+are honored in that order; invalid explicit choices fail without falling back
+to an unrelated package manager. The seed does not alter the package search
+database, Meson target flags, or Homebrew's existing output-normalizing
+wrapper. Host-tool preparation selects it only after the dependency provider
+has been chosen, and retains the prior optional fallback when no
+pkg-config implementation is installed.
 
 Bootstrap phase ordering
 ------------------------
