@@ -126,10 +126,11 @@ class ManagedSccacheTests(unittest.TestCase):
             },
             pathlib.Path('/tmp/sccache-target'),
         )
-        self.assertEqual((qemu_flags.keys() - {'HOST_CC'}) & env.keys(), set())
+        self.assertEqual((qemu_flags.keys() - {'HOST_CC', 'HOST_CXX', 'CXX'}) & env.keys(), set())
         self.assertEqual(env['CC'], native['CC_FOR_BUILD'])
         self.assertEqual(env['HOST_CC'], native['CC_FOR_BUILD'])
-        self.assertNotIn('CXX', env)
+        self.assertEqual(env['CXX'], native['CXX_FOR_BUILD'])
+        self.assertEqual(env['HOST_CXX'], native['CXX_FOR_BUILD'])
         self.assertNotIn('CPP', env)
         self.assertNotIn('CXXFLAGS', env)
         self.assertNotIn('CPPFLAGS', env)
