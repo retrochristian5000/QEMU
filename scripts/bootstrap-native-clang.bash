@@ -417,7 +417,10 @@ if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CXX:-}" ]]; then
     bootstrap_cxx="$(WHP_CXX_SEED="$NATIVE_LLVM_BOOTSTRAP_CXX" \
         "$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
 elif [[ -n "${CXX_FOR_BUILD:-}" ]]; then
-    bootstrap_cxx="$CXX_FOR_BUILD"
+    # Standalone LLVM invocation may inherit CXX_FOR_BUILD without build.sh
+    # having admitted it. Reuse the same native C++17 link/run and SDK probe.
+    bootstrap_cxx="$(WHP_CXX_SEED="$CXX_FOR_BUILD" \
+        "$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
 else
     bootstrap_cxx="$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
 fi
