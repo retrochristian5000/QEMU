@@ -17,12 +17,9 @@ is_self()
 whp_native_sdkroot()
 (
     . "$seed_root/scripts/whp-build/macos-developer-tools.sh" || exit 1
-    if [ -n "${SDKROOT:-}" ]; then
-        whp_apple_check_sdkroot "$SDKROOT" || exit 1
-        printf '%s\n' "$SDKROOT"
-    else
-        whp_apple_find_sdk
-    fi
+    # Always return the normalized absolute SDK path, including when the
+    # caller supplied a relative SDKROOT. Bootstrap stages change directories.
+    whp_apple_select_sdk
 )
 
 # Validate build-machine toolchain behavior without target flags or loader
