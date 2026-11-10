@@ -7,6 +7,7 @@ on:
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
+      - 'scripts/tests/test-cpp-seed-contract.py'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-macos-developer-tools.bash'
       - 'seeds/cxx.sh'
@@ -34,6 +35,7 @@ on:
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
+      - 'scripts/tests/test-cpp-seed-contract.py'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-macos-developer-tools.bash'
       - 'seeds/cxx.sh'
@@ -79,6 +81,9 @@ jobs:
       - name: Verify failed compiler probes expose diagnostics
         shell: bash
         run: bash scripts/tests/test-compiler-seed-diagnostics.bash
+
+      - name: Verify native C preprocessing-only driver handoff
+        run: python3 scripts/tests/test-cpp-seed-contract.py
 
       - name: Verify optional Homebrew C preprocessor selection
         shell: bash
