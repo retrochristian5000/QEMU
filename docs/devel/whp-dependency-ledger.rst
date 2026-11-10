@@ -378,6 +378,59 @@ Meson configuration.  A native WHP LLVM build is optional and must not become
 a prerequisite for bootstrapping the compiler that is needed to build LLVM
 itself.
 
+External host-tool edges by active consumer
+------------------------------------------
+
+The submodule registry covers managed source, not every executable invoked
+by a bootstrap script. Classify external dependencies at their active consumer
+boundary; a root for one build lane is not automatically a universal QEMU root.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 19 27 54
+
+   * - Classification
+     - Consumer
+     - Required capability / behavior
+   * - ``root`` (normal configuration)
+     - QEMU configure and Meson
+     - Python, native compiler, Ninja, and pkg-config-compatible dependency
+       discovery. The ``pkg-config.sh`` seed's *early host-tool* fallback
+       does not make pkg-config optional once QEMU configuration requires it.
+       The default pinned Meson fork needs Python >= 3.10, even though the
+       fallback Python bootstrap accepts >= 3.9.
+   * - ``conditional``
+     - PowerPC GCC/binutils **source rebuild**
+     - GNU Make; tar with ``.tar.xz`` extraction support; bzip2, gzip, Perl,
+       ln, mv and rm; curl **or** wget for downloads; shasum **or** sha256sum
+       for checksum validation. Source extraction and GCC's
+       ``contrib/download_prerequisites`` belong to this rebuild lane.
+       Reusing a validated installed PowerPC toolchain does **not** require
+       these rebuild-only tools. Early host identity probes remain separate.
+   * - ``conditional``
+     - OpenBIOS / SeaBIOS preparation
+     - GNU Make and Git for selected firmware source preparation. Auto mode
+       can disable that firmware lane on failure without blocking core QEMU;
+       explicit enablement reports an error instead.
+   * - ``conditional``
+     - IA32 EFI GRUB source/LLVM expansion
+     - GNU Make plus tar, mktemp, cksum, awk and Git for its helper; CMake
+       and source generators are needed when rebuilding the optional toolchain.
+       Homebrew auto-install is not a universal core QEMU prerequisite.
+   * - ``conditional``
+     - macOS toolchain and LTO manifests
+     - ``cksum`` and ``awk`` sign verification manifests when
+       ``MACOS_VERIFY_TOOLCHAIN=1`` or ``QEMU_HOST_LTO=1``, respectively;
+       these checks do not apply to disabled or unrelated host lanes.
+   * - ``conditional``
+     - Optional mold linker
+     - CMake and native C/C++ linking only if mold preparation is selected;
+       mold is not a universal linker or a Darwin Mach-O prerequisite.
+
+A missing-tool preflight alone does not establish a universal dependency.
+Check whether the tool is used before or after a validated cache hit, which
+feature activates it, and whether failure is fatal, a fallback or a deliberate
+skip. Do not promote download or source-generation tools into the common root.
 Pinned Meson source boundary
 ---------------------------
 
