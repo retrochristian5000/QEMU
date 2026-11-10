@@ -13,6 +13,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-configure-unattended.py'
       - '.github/workflows/managed-perl.yml'
   pull_request:
     paths:
@@ -25,6 +26,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-configure-unattended.py'
       - '.github/workflows/managed-perl.yml'
 
 permissions:
@@ -46,6 +48,7 @@ jobs:
         run: |
           python3 scripts/tests/test-perl-seed.py
           python3 scripts/tests/test-perl-bootstrap.py
+          python3 scripts/tests/test-perl-configure-unattended.py
 
       - name: Initialize pinned Perl fork
         run: git submodule update --init --depth 1 -- toolchains/perl
