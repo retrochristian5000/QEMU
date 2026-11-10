@@ -117,6 +117,25 @@ def tool(name: str, env_name: str | None = None, aliases: tuple[str, ...] = ()) 
     raise RuntimeError(f"{name} is required to bootstrap GNU Automake")
 
 
+def select_seed_perl() -> str:
+    # A native Perl is required by source generation. Validate it once
+    # through the same seed adapter instead of trusting a path-only probe.
+    adapter = ROOT / "seeds" / "perl.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    selected = completed.stdout.strip()
+    if completed.returncode != 0 or not selected:
+        raise RuntimeError(
+            "Autotools bootstrap requires a usable native Perl seed: "
+            + (completed.stderr.strip() or "Perl >= 5.6 is unavailable")
+        )
+    return selected
+
+
 def select_gnu_make() -> str:
     requested = explicit_tool("MAKE_CMD") or explicit_tool("MAKE")
     candidates: list[str] = []
@@ -356,7 +375,7 @@ def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_source()
     seed = select_seed_sed()
-    perl = tool("perl", "PERL")
+    perl = select_seed_perl()
     autoconf, autom4te = select_seed_autoconf_pair(build_root)
     make = select_gnu_make()
     sdkroot = select_native_sdk(ROOT)
