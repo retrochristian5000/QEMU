@@ -574,8 +574,16 @@ Managed Autoconf remains after Automake, managed Make after that pair, and
 managed sed after Make. Ninja is prepared after Git selection but before
 the larger Bash bootstrap: Ninja needs native C++17 and Python rather
 than Bash or the Autotools source-generation chain. The explicit optional
-sccache bootstrap remains before host tools because it is requested to
-cache Ninja and LLVM; Rust is not a prerequisite in the normal QEMU path.
+sccache bootstrap runs at the Git-ready boundary *within* host-tool
+preparation: seed/managed Git, bootstrap zlib, Automake/Autoconf, Make and
+sed are already selected, then initialized submodules are reconciled, and
+sccache can be built before Ninja and Bash. Cargo's native C/C++ dependencies
+use the previously validated ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD`` seeds,
+while Rust/Cargo are required only when sccache is explicitly enabled.
+The sccache executable is available before native LLVM. This order makes
+caching earlier Ninja/Bash compilation possible only if those independent
+source builds explicitly opt in to using the cache; it does not imply they
+are automatically wrapped.
 
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
@@ -905,7 +913,11 @@ Libtool, sccache, Automake and mold are not common build-machine roots:
   ``ensure-libtool.py`` resolves source and tool identities before evaluating
   its marker; those identities are inputs to cache correctness, not evidence
   that every QEMU build requires the Libtool maintainer tools.
-* **sccache/sccacher:** Opt-in compiler caching is separate from C/C++,
+* **sccache/sccacher:** Placed after final Git promotion, bootstrap-zlib
+  preparation and initialized submodule reconciliation, but before native
+  Ninja/Bash source builds and native LLVM. QEMU artifact zlib, SDL, and JACK
+  remain compiler-selected, later libraries, not inputs to the sccache seed.
+  **sccache/sccacher:** Opt-in compiler caching is separate from C/C++,
   Meson and Ninja correctness. The pinned local-only build needs the selected
   Git, Cargo and Rust >= 1.91 when requested. Its cache marker includes the
   Rust/Cargo identities and source revision; removing these checks without an
