@@ -224,12 +224,21 @@ for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
     fi
 done
 
-# Normalize DEVELOPER_DIR (including Xcode.app) ahead of SDK selection.
+# build.sh normally supplies canonical, validated developer and SDK paths.
+# Check them again at the standalone implementation boundary, but avoid
+# rewriting either exported selection when it is already canonical.
 source "$SCRIPT_DIR/whp-build/macos-developer-tools.sh"
-DEVELOPER_DIR="$(whp_apple_developer_root)" || exit 1
-export DEVELOPER_DIR
-SDKROOT="$(whp_apple_select_sdk)" || exit 1
-export SDKROOT
+selected_developer_dir="$(whp_apple_developer_root)" || exit 1
+if [[ "${DEVELOPER_DIR:-}" != "$selected_developer_dir" ]]; then
+    DEVELOPER_DIR="$selected_developer_dir"
+    export DEVELOPER_DIR
+fi
+selected_sdkroot="$(whp_apple_select_sdk)" || exit 1
+if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]; then
+    SDKROOT="$selected_sdkroot"
+    export SDKROOT
+fi
+unset selected_developer_dir selected_sdkroot
 apple_developer_kind="$(whp_apple_developer_kind "$DEVELOPER_DIR")"
 export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"
 case "$SDKROOT" in
