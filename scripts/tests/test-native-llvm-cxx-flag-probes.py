@@ -68,7 +68,16 @@ if '-std=c++2c' in args:
     valid = '__cplusplus < 202400L' in source and '-arch' in args
     sys.exit(0 if valid else 1)
 if '-std=c++23' in args:
-    sys.exit(0)
+    valid = ('__cplusplus < 202302L' in source
+             and '#include <vector>' in source
+             and '#include <memory>' in source
+             and '#include <string>' in source
+             and 'std::is_same_v' in source)
+    sys.exit(0 if valid else 1)
+if '-std=c++20' in args:
+    sys.exit(0 if '__cplusplus < 202002L' in source else 1)
+if '-std=c++17' in args:
+    sys.exit(0 if '__cplusplus < 201703L' in source else 1)
 sys.exit(1)
 """, encoding="utf-8")
     fake.chmod(0o755)
@@ -90,5 +99,15 @@ sys.exit(1)
     assert result.returncode == 0, result.stderr
     assert len(calls(log)) == 1
     assert "-std=c++23" in calls(log)[0]["args"]
+    assert "#include <vector>" in calls(log)[0]["source"]
+    assert "__cplusplus < 202302L" in calls(log)[0]["source"]
 
-print("native LLVM Clang++ language standard probes: verified")
+    for standard in (17, 20):
+        log.unlink()
+        result = run_probe(std_probe, f"compiler_supports_cxx_standard {standard}",
+                           fake, log)
+        assert result.returncode == 0, result.stderr
+        assert len(calls(log)) == 1
+        assert f"-std=c++{standard}" in calls(log)[0]["args"]
+
+print("native LLVM Clang++ language standard and header probes: verified")
