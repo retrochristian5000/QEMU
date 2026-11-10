@@ -63,6 +63,28 @@ whp_cpp_seed_ok_417') exit 0 ;;
     exit 1
 )
 
+# Homebrew Clang is an opt-in host preprocessor, never a silent override
+# of the native C driver chosen by cc.sh. LLVM is usually keg-only.
+select_homebrew_cpp()
+{
+    for candidate in \
+        "${HOMEBREW_PREFIX:-/opt/homebrew}/opt/llvm/bin/clang" \
+        "${HOMEBREW_PREFIX:-/opt/homebrew}/bin/clang" \
+        /opt/homebrew/opt/llvm/bin/clang \
+        /usr/local/opt/llvm/bin/clang \
+        /opt/homebrew/bin/clang \
+        /usr/local/bin/clang; do
+        [ -x "$candidate" ] || continue
+        if driver=$(try_compiler c "$candidate" report) &&
+           cpp_semantic_probe "$driver"; then
+            printf '%s\\n' "$driver"
+            return 0
+        fi
+    done
+    printf '%s\\n' 'error: no usable native Homebrew Clang for WHP CPP' >&2
+    return 1
+}
+
 select_seed()
 {
     if [ -n "${WHP_CPP_SEED:-}" ]; then
@@ -89,8 +111,23 @@ select_seed()
             driver=$(try_compiler c "$driver" report) || return 1
         fi
     else
-        # cc.sh already probes native compilation, linkage and SDK selection.
-        driver=$("$seed_root/seeds/cc.sh" --print-cc) || return 1
+        case "${WHP_CPP_PREFER_HOMEBREW:-0}" in
+            0)
+                # cc.sh already probes native compilation, linkage and SDK.
+                driver=$("$seed_root/seeds/cc.sh" --print-cc) || return 1
+                ;;
+            1)
+                [ "$(uname -s 2>/dev/null || true)" = Darwin ] || {
+                    printf '%s\\n' 'error: Homebrew CPP preference is macOS-only' >&2
+                    return 1
+                }
+                driver=$(select_homebrew_cpp) || return 1
+                ;;
+            *)
+                printf '%s\\n' 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1' >&2
+                return 1
+                ;;
+        esac
     fi
     if ! cpp_semantic_probe "$driver"; then
         printf 'error: native C preprocessor probe failed: %s\n' "$driver" >&2
