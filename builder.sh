@@ -20,10 +20,10 @@ bash_name=${script_name%.sh}.bash
 compiler_cache_wrapper_name()
 {
     case "${1:-}" in
-        ccache\ *|*/ccache\ *) printf '%s\\n' ccache ;;
-        sccache\ *|*/sccache\ *) printf '%s\\n' sccache ;;
-        distcc\ *|*/distcc\ *) printf '%s\\n' distcc ;;
-        icecc\ *|*/icecc\ *) printf '%s\\n' icecc ;;
+        ccache\ *|*/ccache\ *) printf '%s\n' ccache ;;
+        sccache\ *|*/sccache\ *) printf '%s\n' sccache ;;
+        distcc\ *|*/distcc\ *) printf '%s\n' distcc ;;
+        icecc\ *|*/icecc\ *) printf '%s\n' icecc ;;
     esac
 }
 
@@ -137,14 +137,14 @@ if [ -n "$cache_cmd" ]; then
     cxx_cache_wrapper=$(compiler_cache_wrapper_name "${CXX:-}")
     for inherited_wrapper in "$cc_cache_wrapper" "$cxx_cache_wrapper"; do
         if [ -n "$inherited_wrapper" ] && [ "$inherited_wrapper" != "$cache_base" ]; then
-            printf 'error: selected %s cache conflicts with compiler launcher %s\\n' \\
+            printf 'error: selected %s cache conflicts with compiler launcher %s\n' \
                 "$cache_base" "$inherited_wrapper" >&2
             exit 1
         fi
         if [ -n "$inherited_wrapper" ] && [ "${WHP_MANAGED_SCCACHE:-0}" = 1 ]; then
             # Managed sccache has fork-specific PCH guarantees. Do not accept
             # an inherited, potentially different sccache binary as equivalent.
-            printf '%s\\n' 'error: managed sccache requires unwrapped CC/CXX compiler commands' >&2
+            printf '%s\n' 'error: managed sccache requires unwrapped CC/CXX compiler commands' >&2
             exit 1
         fi
     done
