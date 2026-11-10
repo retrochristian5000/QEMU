@@ -30,6 +30,9 @@ poison = {
     "ASAN_OPTIONS": "detect_leaks=0", "ac_cv_func_malloc_0_nonnull": "yes",
     "gl_cv_func_test": "poison", "make_cv_jobserver": "bad",
     "lt_cv_sys_max_cmd_len": "1",
+    "HOST_CC": "/target/cc", "HOST_CFLAGS": "-I/target/headers",
+    "HOST_CPPFLAGS": "-DWRONG=1", "HOSTCFLAGS": "-I/legacy/headers",
+    "CFLAGS_FOR_BUILD": "-I/untrusted/host",
 }
 env = module.clean_host_environment(poison)
 for key in ("PATH", "SDKROOT", "DEVELOPER_DIR", "CC_FOR_BUILD",
