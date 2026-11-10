@@ -62,6 +62,9 @@ def test_driver_invocation() -> None:
             assert result.returncode == 0, result.stderr
             assert result.stdout.strip() == "preprocessed"
             passed = record.read_text(encoding="utf-8").splitlines()
+            if passed[0] == "-isysroot":
+                assert len(passed) >= 3 and passed[1], passed
+                passed = passed[2:]
             assert passed[0] == "-E", passed
             assert passed[1:] == list(args), passed
 
