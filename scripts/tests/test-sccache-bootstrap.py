@@ -155,7 +155,7 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertIn('https://github.com/retrochristian5000/sccacher.git', modules)
         self.assertEqual(bootstrap.SUBMODULE, pathlib.Path('toolchains/sccacher'))
         source = BOOTSTRAP.read_text(encoding='utf-8')
-        self.assertIn('reconcile_submodule(ROOT, SUBMODULE)', source)
+        self.assertIn('reconcile_submodule(ROOT, SUBMODULE, git=git)', source)
         self.assertIn("'--locked'", source)
         self.assertIn("'--no-default-features'", source)
 
