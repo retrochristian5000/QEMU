@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -22,6 +23,45 @@ spec.loader.exec_module(bootstrap)
 
 
 class ManagedSccacheTests(unittest.TestCase):
+    def test_cargo_seed_selection_and_rejection(self):
+        seed = ROOT / 'seeds' / 'cargo.sh'
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            cargo = base / 'cargo'
+            cargo.write_text(
+                '#!/bin/sh\\n'
+                'case "$1" in\\n'
+                '  --version) echo "cargo 1.91.0 (fixture)" ;;\\n'
+                '  --whp-cargo-adapter-probe) exit 2 ;;\\n'
+                '  *) echo "cargo fixture: $1" ;;\\n'
+                'esac\\n', encoding='utf-8')
+            cargo.chmod(0o755)
+            env = {**os.environ, 'WHP_CARGO_SEED': str(cargo)}
+            chosen = subprocess.run(
+                ['/bin/sh', str(seed), '--print-seed'],
+                env=env, capture_output=True, text=True, check=True)
+            self.assertEqual(chosen.stdout.strip(), str(cargo.resolve()))
+            forwarded = subprocess.run(
+                ['/bin/sh', str(seed), '--version'],
+                env=env, capture_output=True, text=True, check=True)
+            self.assertIn('cargo 1.91.0', forwarded.stdout)
+            env['WHP_CARGO_SEED'] = str(base / 'missing')
+            rejected = subprocess.run(
+                ['/bin/sh', str(seed), '--print-seed'],
+                env=env, capture_output=True, text=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('WHP_CARGO_SEED', rejected.stderr)
+            env['WHP_CARGO_SEED'] = str(seed)
+            recursive = subprocess.run(
+                ['/bin/sh', str(seed), '--print-seed'],
+                env=env, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(recursive.returncode, 0)
+
+    def test_sccacher_uses_cargo_seed(self):
+        source = BOOTSTRAP.read_text(encoding='utf-8')
+        self.assertIn("str(ROOT / 'seeds/cargo.sh')", source)
+        self.assertNotIn("shutil.which('cargo')", source)
+
     def test_cargo_build_is_memory_conservative(self):
         env = bootstrap.cargo_environment({
             'RUSTC_WRAPPER': '/old/sccache',
