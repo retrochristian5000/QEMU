@@ -606,6 +606,16 @@ WHP fork is forced, its isolated ``deps/git-zlib`` prefix is later used
 by managed Git. Git's ``ZLIB_PATH`` thus remains independent of both
 the managed Git being built and the subsequent QEMU artifact zlib.
 
+Ninja command handoff validation: an explicitly supplied ``NINJA_CMD``
+must identify an executable that responds to ``--version`` before it is
+passed to CMake, Meson or the native LLVM bootstrap. Explicit
+``NINJA_CMD`` conflicts with ``BOOTSTRAP_NINJA=1`` rather than silently
+bypassing the forced pinned fork. In automatic mode, an unusable discovered
+host Ninja is rejected before deciding whether to attempt the pinned
+fallback; the final selected helper is checked again before export.
+``scripts/tests/test-ninja-bootstrap-call-contract.py`` exercises the
+POSIX resolver independently of the expensive toolchain bootstrap.
+
 Managed Autoconf remains after Automake, managed Make after that pair, and
 managed sed after Make. Ninja is prepared after Git selection but before
 the larger Bash bootstrap: Ninja needs native C++17 and Python rather
