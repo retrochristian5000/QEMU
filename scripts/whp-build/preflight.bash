@@ -24,9 +24,15 @@ whp_validate_build_scripts()
         printf 'error: sh is required to validate POSIX build entry points\n' >&2
         return 1
     fi
-    if [[ ! -x "$bash_runner" ]]; then
+    # WHP_BUILD_BASH may be an absolute path or an executable name on PATH.
+    # Check the resolved interpreter, not an arbitrary relative file named bash.
+    case "$bash_runner" in
+        */*) ;;
+        *) bash_runner="$(command -v "$bash_runner" 2>/dev/null || true)" ;;
+    esac
+    if [[ -z "$bash_runner" || ! -x "$bash_runner" ]]; then
         printf 'error: build preflight cannot execute Bash: %s\n' \
-            "$bash_runner" >&2
+            "${WHP_BUILD_BASH:-${BASH:-bash}}" >&2
         return 1
     fi
 
