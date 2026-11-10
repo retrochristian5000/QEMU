@@ -12,7 +12,10 @@ clt="$tmp/CommandLineTools"
 xcode_app="$tmp/Xcode-beta.app"
 xcode="$xcode_app/Contents/Developer"
 for developer in "$clt" "$xcode"; do
-    mkdir -p "$developer/usr/bin" "$developer/SDKs/MacOSX.sdk"
+    mkdir -p "$developer/usr/bin" "$developer/SDKs/MacOSX.sdk/usr/include/sys"
+    for header in stdio.h stdlib.h unistd.h sys/types.h TargetConditionals.h; do
+        : > "$developer/SDKs/MacOSX.sdk/usr/include/$header"
+    done
     printf '#!/bin/sh\nexit 0\n' > "$developer/usr/bin/clang"
     printf '#!/bin/sh\nexit 0\n' > "$developer/usr/bin/clang++"
     printf '#!/bin/sh\nexit 0\n' > "$developer/usr/bin/ld"
@@ -59,6 +62,14 @@ test "$(whp_apple_find_tool strip system)" = "$clt/usr/bin/strip"
 export DEVELOPER_DIR="$xcode_app"
 test "$(whp_apple_developer_root)" = "$xcode"
 test "$(whp_apple_find_tool clang++)" = "$xcode/usr/bin/clang++"
+test "$(whp_apple_find_sdk)" = "$xcode/SDKs/MacOSX.sdk"
+# The SDK name alone is insufficient when developer headers are missing.
+rm "$xcode/SDKs/MacOSX.sdk/usr/include/stdio.h"
+if whp_apple_find_sdk >/dev/null 2>&1; then
+    echo 'error: selected SDK without stdio.h was accepted' >&2
+    exit 1
+fi
+: > "$xcode/SDKs/MacOSX.sdk/usr/include/stdio.h"
 test "$(whp_apple_find_sdk)" = "$xcode/SDKs/MacOSX.sdk"
 test "$(whp_apple_find_tool ld system)" = "$xcode/usr/bin/ld"
 if [ -x /usr/bin/strip ]; then
