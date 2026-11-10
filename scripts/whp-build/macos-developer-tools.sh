@@ -121,6 +121,9 @@ whp_apple_check_sdkroot()
         printf 'error: selected macOS SDK does not exist: %s\n' "$sdk" >&2
         exit 1
     }
+    # Check the requested path as well as the resolved one: an alias inside
+    # iPhoneOS.platform must not launder an otherwise valid MacOSX.sdk.
+    whp_apple_require_macos_platform "$sdk" || exit 1
     canonical=$(CDPATH= cd -P -- "$sdk" && pwd -P) || exit 1
     case "${canonical##*/}" in
         MacOSX*.sdk) ;;
