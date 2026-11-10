@@ -26,7 +26,7 @@ else
     {
         printf '%s\n' '# WHP QEMU portable user configuration'
         printf '%s\n' '# Minimal shell fallback file; omitted settings use repository defaults.'
-        printf '%s\n' 'WHP_CONFIG_VERSION=2'
+        printf '%s\n' 'WHP_CONFIG_VERSION=3'
     } > "$WORK"
 fi
 
