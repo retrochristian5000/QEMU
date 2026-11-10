@@ -12,6 +12,7 @@ on:
       - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
@@ -28,6 +29,7 @@ on:
       - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
@@ -68,6 +70,9 @@ jobs:
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
+
+      - name: Verify independent Autoconf bootstrap seed
+        run: python3 scripts/tests/test-automake-seed-cycle.py
 
       - name: Reject corrupt bootstrap variables
         run: python3 scripts/tests/test-bootstrap-env.py
