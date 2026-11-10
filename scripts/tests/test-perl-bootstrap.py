@@ -46,8 +46,11 @@ def check():
     host = (ROOT / "scripts/whp-build/host-tools.sh").read_text(
         encoding="utf-8"
     )
-    assert host.index("BOOTSTRAP_AUTOCONF=") < host.index("BOOTSTRAP_PERL=")
-    assert host.index("BOOTSTRAP_PERL=") < host.index("BOOTSTRAP_GAWK=")
+    assert host.index("whp_prepare_bootstrap_zlib") < host.index("BOOTSTRAP_PERL=")
+    assert host.index("BOOTSTRAP_PERL=") < host.index("BOOTSTRAP_AUTOMAKE=")
+    assert host.index("BOOTSTRAP_AUTOMAKE=") < host.index("BOOTSTRAP_AUTOCONF=")
+    assert host.index("BOOTSTRAP_AUTOCONF=") < host.index("BOOTSTRAP_GAWK=")
+    assert host.index("WHP_PERL_SEED=$WHP_MANAGED_PERL") < host.index("BOOTSTRAP_AUTOMAKE=")
     assert 'WHP_PERL_BOOTSTRAP_SEED=$WHP_PERL_ROOT' in host
     assert 'WHP_PERL_SEED=$WHP_MANAGED_PERL' in host
     assert "BOOTSTRAP_PERL=1 requested" in host
