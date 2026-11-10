@@ -493,6 +493,10 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
     if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
         NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
     fi
+    if [ -n "${NINJA_CMD:-}" ] &&
+       ! whp_ninja_command_usable "$NINJA_CMD"; then
+        NINJA_CMD=
+    fi
     if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 0 ] && \
        [ "$WHP_BUNDLED_NINJA_TRIED" != 1 ]; then
         NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
