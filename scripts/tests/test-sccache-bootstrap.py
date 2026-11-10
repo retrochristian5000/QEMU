@@ -93,6 +93,21 @@ class ManagedSccacheTests(unittest.TestCase):
             'CC_aarch64_apple_darwin': '/guest/cross-cc',
             'CFLAGS_aarch64_apple_darwin': '-I/guest/target-headers',
             'TARGET_CC': '/guest/target-cc',
+            'CXX': '/guest/cross-cxx',
+            'CPP': '/guest/cross-cpp',
+            'HOST_CXX': '/guest/host-cxx',
+            'HOST_CPP': '/guest/host-cpp',
+            'HOST_CXXFLAGS': '-std=c++11 -I/guest/cxx',
+            'CXXFLAGS_aarch64_apple_darwin': '-I/guest/cxx-target',
+            'CPPFLAGS_aarch64_apple_darwin': '-DWRONG_SDK=1',
+            'CXX_aarch64_apple_darwin': '/guest/cross-cxx',
+            'CPP_aarch64_apple_darwin': '/guest/cross-cpp',
+            'HOST_CXXFLAGS_aarch64_apple_darwin': '-I/guest/host',
+            'HOST_CPPFLAGS_aarch64_apple_darwin': '-DHOST_WRONG=1',
+            'TARGET_CXX': '/guest/target-cxx',
+            'TARGET_CPP': '/guest/target-cpp',
+            'TARGET_CXXFLAGS': '-I/guest/cxx-target',
+            'TARGET_CPPFLAGS': '-DWRONG_CPP=1',
         }
         native = {
             'CC_FOR_BUILD': '/native/clang',
@@ -112,6 +127,10 @@ class ManagedSccacheTests(unittest.TestCase):
         self.assertEqual((qemu_flags.keys() - {'HOST_CC'}) & env.keys(), set())
         self.assertEqual(env['CC'], native['CC_FOR_BUILD'])
         self.assertEqual(env['HOST_CC'], native['CC_FOR_BUILD'])
+        self.assertNotIn('CXX', env)
+        self.assertNotIn('CPP', env)
+        self.assertNotIn('CXXFLAGS', env)
+        self.assertNotIn('CPPFLAGS', env)
         self.assertEqual({key: env[key] for key in native}, native)
 
     def test_cargo_requires_explicit_native_compiler(self):
