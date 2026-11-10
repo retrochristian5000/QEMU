@@ -38,8 +38,13 @@ def call(argv, *, cwd=None, env=None, capture=False):
 
 def pinned_source():
     source = ROOT / SUBMODULE
-    revision = reconcile_submodule(ROOT, SUBMODULE)
-    dirty = call(['git', '-C', str(source), 'status', '--porcelain',
+    # Use the Git selected by host-tools.sh, not an unrelated PATH fallback.
+    # The parent bootstrap now schedules sccacher after Git promotion.
+    git = os.environ.get('GIT') or os.environ.get('WHP_GIT_SEED')
+    if not git:
+        raise RuntimeError('sccacher requires a selected host Git (GIT or WHP_GIT_SEED)')
+    revision = reconcile_submodule(ROOT, SUBMODULE, git=git)
+    dirty = call([git, '-C', str(source), 'status', '--porcelain',
                   '--untracked-files=no'], capture=True)
     if dirty:
         raise RuntimeError('sccacher submodule has uncommitted changes; refusing build')
