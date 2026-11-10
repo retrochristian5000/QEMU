@@ -46,6 +46,7 @@ def check():
         assert result.returncode == 0, result.stderr
         saved = config.read_text(encoding="utf-8")
         assert "BUILD_QEMU_IMG=n\n" in saved, saved
+        assert "WHP_CONFIG_VERSION=3\n" in saved, saved
         assert "Changed qemu-img *: y -> n" in result.stdout, result.stdout
 
         # A second positional argument must not be silently discarded.
