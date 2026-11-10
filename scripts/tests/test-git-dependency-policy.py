@@ -163,6 +163,18 @@ def main() -> int:
     require(build, 'whp_select_seed_git || exit 1',
             "Git selection before updater")
     require(build, 'printf \'QEMU seed git:', "single seed diagnostic")
+    python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(
+        encoding="utf-8")
+    require(python_bootstrap, 'bootstrap_git=$WHP_GIT_SEED',
+            "reuse selected Git seed for bundled Python")
+    require(python_bootstrap, '"$SOURCE_DIR/seeds/git.sh" --print-seed',
+            "standalone Python Git seed selection")
+    require(python_bootstrap, 'whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" "$bootstrap_git"',
+            "Python gitlink reconciliation with seed Git")
+    require(python_bootstrap, '"$bootstrap_git" -C "$SOURCE_DIR" ls-tree HEAD',
+            "Python gitlink inspection with seed Git")
+    if "require_tool git" in python_bootstrap or "git -C " in python_bootstrap:
+        raise SystemExit("error: bundled Python bootstrap still assumes PATH Git")
     require(updater, 'WHP_UPDATE_GIT=${WHP_GIT_SEED:-git}',
             "parent updater selects the same Git seed")
     require(host_tools, 'WHP_GIT_SEED_SELECTED:-0',
