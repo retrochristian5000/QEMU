@@ -58,6 +58,14 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
+    # Python already resolves the bootstrap work and build directories.
+    # The pinned Autoconf bootstrap invokes mktemp, not standalone realpath.
+    # A missing realpath executable must not reject otherwise valid hosts.
+    if 'tool("realpath")' in helper:
+        raise SystemExit("error: unused realpath CLI dependency reintroduced")
+    require(helper, 'tool("mktemp")', "Autoconf source bootstrap temporary directory")
+    require(helper, 'pathlib.Path(args.build_dir).expanduser().resolve()',
+            "native Python path normalization")
     require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "5"', "native environment schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
     require(helper, '[path, "--gnu", "--fatal-warnings"]', "GNU M4 runtime probe")
