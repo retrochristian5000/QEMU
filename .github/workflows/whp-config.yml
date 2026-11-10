@@ -95,6 +95,7 @@ on:
       - 'scripts/tests/test-macos-api-policy.py'
       - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-python-menu-fallback.py'
+      - 'scripts/tests/test-menuconfig-shell-contract.py'
       - 'scripts/tests/test-python-menu-fallback.bash'
       - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
@@ -201,6 +202,7 @@ jobs:
           python3 scripts/tests/test-macos-api-policy.py
           python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-python-menu-fallback.py
+          python3 scripts/tests/test-menuconfig-shell-contract.py
           bash scripts/tests/test-python-menu-fallback.bash
           python3 scripts/tests/test-whp-sparc-menu.py
           python3 scripts/tests/test-mold-config.py
@@ -268,6 +270,7 @@ jobs:
             scripts/tests/test-macos-api-policy.py \
             scripts/tests/test-menuconfig-scroll.py \
             scripts/tests/test-python-menu-fallback.py \
+            scripts/tests/test-menuconfig-shell-contract.py \
             scripts/tests/test-native-llvm-build-entry.py \
             scripts/tests/test-native-llvm-wiring.py \
             scripts/tests/test-native-asan-global-link.py \
