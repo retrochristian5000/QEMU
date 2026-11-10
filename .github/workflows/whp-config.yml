@@ -72,6 +72,8 @@ on:
       - 'scripts/whp-build/sccache-policy.sh'
       - 'docs/devel/sccache-build-memory.rst'
       - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'seeds/pkg-config.sh'
+      - 'scripts/tests/test-pkg-config-seed.py'
       - 'scripts/tests/test-sccache-bootstrap.py'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-macos-power-budget.py'
@@ -179,6 +181,7 @@ jobs:
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-qtest-meson.py
           python3 scripts/tests/test-compiler-cache-policy.py
+          python3 scripts/tests/test-pkg-config-seed.py
           python3 scripts/tests/test-sccache-bootstrap.py
           python3 scripts/tests/test-darwin-lto-threads.py
           python3 scripts/tests/test-macos-power-budget.py
