@@ -288,6 +288,46 @@ fi
 unset WHP_AUTOCONF_EXPLICIT
 
 
+# AWK is a pre-Python root; preserve it for source configuration and build
+# the pinned Gawk fork only after the Autotools source generators are ready.
+# Do not require managed Gawk to generate itself. A passing managed binary
+# replaces literal awk (through the existing locked shim) and $AWK together.
+BOOTSTRAP_GAWK=$(whp_normalize_auto_switch BOOTSTRAP_GAWK "${BOOTSTRAP_GAWK:-auto}") || exit 1
+export BOOTSTRAP_GAWK
+
+WHP_HOST_AWK_FOR_BOOTSTRAP=${WHP_AWK_BOOTSTRAP_SEED:-${WHP_AWK_SEED:-}}
+if [ "$BOOTSTRAP_GAWK" != 0 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$WHP_HOST_OS" != windows ]; then
+    if [ "$BOOTSTRAP_GAWK" = 1 ] || [ "$WHP_HOST_OS" = macos ]; then
+        WHP_GAWK_CMD=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-gawk.py" --build-dir "$BUILD_DIR"
+        ) || WHP_GAWK_CMD=
+        if [ -n "$WHP_GAWK_CMD" ] && [ -x "$WHP_GAWK_CMD" ]; then
+            # The helper validates GNU Awk's native execution and semantic
+            # behavior before promotion. Keep the old binary as root seed.
+            WHP_AWK_BOOTSTRAP_SEED=$WHP_HOST_AWK_FOR_BOOTSTRAP
+            WHP_AWK_SEED=$WHP_GAWK_CMD
+            AWK=$WHP_GAWK_CMD
+            WHP_AWK_LOCKED=1
+            export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK
+            printf 'QEMU managed Gawk: %s (root seed %s)\\n' \\
+                "$AWK" "$WHP_AWK_BOOTSTRAP_SEED" >&2
+        elif [ "$BOOTSTRAP_GAWK" = 1 ]; then
+            printf '%s\\n' \\
+                'error: BOOTSTRAP_GAWK=1 requires a passing pinned Gawk build.' >&2
+            exit 1
+        else
+            printf 'WHP managed Gawk unavailable; retaining native AWK seed: %s\\n' \\
+                "$WHP_HOST_AWK_FOR_BOOTSTRAP" >&2
+        fi
+        unset WHP_GAWK_CMD
+    fi
+fi
+unset WHP_HOST_AWK_FOR_BOOTSTRAP
+
 BOOTSTRAP_MAKE=$(whp_normalize_auto_switch BOOTSTRAP_MAKE "${BOOTSTRAP_MAKE:-auto}") || exit 1
 export BOOTSTRAP_MAKE
 
