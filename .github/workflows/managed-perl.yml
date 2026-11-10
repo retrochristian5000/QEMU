@@ -1,0 +1,74 @@
+name: WHP managed Perl bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/perl'
+      - 'seeds/perl.sh'
+      - 'scripts/ensure-perl.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/whp-config/menu-options.def'
+      - 'scripts/tests/test-perl-bootstrap.py'
+      - '.github/workflows/managed-perl.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/perl'
+      - 'seeds/perl.sh'
+      - 'scripts/ensure-perl.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/whp-config/menu-options.def'
+      - 'scripts/tests/test-perl-bootstrap.py'
+      - '.github/workflows/managed-perl.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  managed-perl:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: false
+
+      - name: Verify native Perl seed and pinned build graph
+        run: |
+          python3 scripts/tests/test-perl-seed.py
+          python3 scripts/tests/test-perl-bootstrap.py
+
+      - name: Initialize pinned Perl fork
+        run: git submodule update --init --depth 1 -- toolchains/perl
+
+      - name: Build and validate native managed Perl
+        shell: bash
+        run: |
+          set -euo pipefail
+          export WHP_PERL_BOOTSTRAP_SEED="$(sh seeds/perl.sh --print-seed)"
+          export WHP_PERL_SEED="$WHP_PERL_BOOTSTRAP_SEED"
+          export PERL="$WHP_PERL_BOOTSTRAP_SEED"
+          export MAKE_CMD="$(command -v make)"
+          result="$(python3 scripts/ensure-perl.py --build-dir "$RUNNER_TEMP/whp-perl")"
+          test -x "$result"
+          "$result" -e 'use strict; use warnings; use Config; print "$Config{osname}\n";'
+
+      - name: Reuse validated native Perl build
+        shell: bash
+        run: |
+          set -euo pipefail
+          export WHP_PERL_BOOTSTRAP_SEED="$(sh seeds/perl.sh --print-seed)"
+          export WHP_PERL_SEED="$WHP_PERL_BOOTSTRAP_SEED"
+          export PERL="$WHP_PERL_BOOTSTRAP_SEED"
+          export MAKE_CMD="$(command -v make)"
+          result="$(python3 scripts/ensure-perl.py --build-dir "$RUNNER_TEMP/whp-perl")"
+          test -x "$result"
