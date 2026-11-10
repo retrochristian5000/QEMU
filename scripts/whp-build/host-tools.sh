@@ -471,13 +471,11 @@ whp_ninja_command_usable()
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
     if [ -n "${NINJA_CMD:-}" ]; then
         if [ "$BOOTSTRAP_NINJA" = 1 ]; then
-            printf '%s\\n' \\
-                'error: BOOTSTRAP_NINJA=1 conflicts with an explicit NINJA_CMD; select auto or remove NINJA_CMD.' >&2
+            printf '%s\n' 'error: BOOTSTRAP_NINJA=1 conflicts with explicit NINJA_CMD.' >&2
             exit 1
         fi
         if ! whp_ninja_command_usable "$NINJA_CMD"; then
-            printf 'error: NINJA_CMD is not a runnable Ninja command: %s\\n' \\
-                "$NINJA_CMD" >&2
+            printf 'error: NINJA_CMD is not a runnable Ninja command: %s\n' "$NINJA_CMD" >&2
             exit 1
         fi
     fi
