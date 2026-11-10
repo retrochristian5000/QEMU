@@ -107,6 +107,26 @@ if not (
         "error: expected bootstrap-zlib -> Automake -> Autoconf -> "
         "Make -> sed -> managed Git -> Ninja -> Bash pre-LLVM order"
     )
+# The Git-dependent cache stage executes *inside* host-tools, between the
+# final Git selection and the Ninja/Bash stages. It is declared in build.sh
+# before host-tools is sourced, and reconciles initialized source before Cargo.
+cache_hook = host_tools.index("whp_prepare_git_dependent_cache || exit 1")
+git_final = host_tools.index('GIT="$WHP_GIT_SEED"')
+if not git_final < cache_hook < ninja_hook < bash_hook:
+    raise SystemExit(
+        "error: sccache must run after final Git and before Ninja/Bash"
+    )
+cache_definition = build.index("whp_prepare_git_dependent_cache()")
+host_source = build.index('. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"')
+if not cache_definition < host_source:
+    raise SystemExit("error: Git-dependent cache callback was defined too late")
+if not (
+    build.index('scripts/whp-build/update-submodules.py')
+    < build.index('scripts/ensure-sccache.py')
+    < build.index('scripts/bootstrap-native-clang.sh')
+):
+    raise SystemExit("error: Git reconciliation -> sccache -> LLVM boundary shifted")
+
 if host_tools.count("whp_prepare_bootstrap_zlib") != 1:
     raise SystemExit("error: bootstrap zlib must have exactly one host-tool call")
 if host_tools.count("scripts/ensure-ninja.py") != 2:
