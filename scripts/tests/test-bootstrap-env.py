@@ -70,6 +70,13 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-sdk-") as td:
     helper.parent.mkdir(parents=True)
     sdk = base / "MacOSX.sdk"
     sdk.mkdir()
+    # The shared SDK validator requires real header paths, not just a
+    # MacOSX.sdk directory. Keep this fixture aligned with shell probes.
+    for header in ("stdio.h", "stdlib.h", "unistd.h",
+                   "sys/types.h", "TargetConditionals.h"):
+        target = sdk / "usr/include" / header
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
     helper.write_bytes(
         (ROOT / "scripts/whp-build/macos-developer-tools.sh").read_bytes()
     )
@@ -90,6 +97,14 @@ with tempfile.TemporaryDirectory(prefix="whp-bootstrap-sdk-") as td:
             },
         ):
             assert module.select_native_sdk(base) == str(sdk)
+            (sdk / "usr/include/unistd.h").unlink()
+            try:
+                module.select_native_sdk(base)
+            except RuntimeError as exc:
+                assert "unistd.h" in str(exc)
+            else:
+                raise AssertionError("accepted SDK with missing POSIX header")
+            (sdk / "usr/include/unistd.h").touch()
             module.os.environ["SDKROOT"] = ""
             assert module.select_native_sdk(base) == str(sdk)
             module.os.environ["SDKROOT"] = str(base / "missing")
