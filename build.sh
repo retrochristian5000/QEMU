@@ -222,13 +222,38 @@ if [ -n "${PYTHON:-}" ]; then
     fi
     HOST_PYTHON=$PYTHON
 else
-    for python_name in python3 python; do
-        python_candidate=$(command -v "$python_name" 2>/dev/null || true)
-        if whp_python_usable "$python_candidate"; then
-            HOST_PYTHON=$python_candidate
-            break
+    # Python is selected before the later macOS Homebrew provider setup.
+    # Prefer an already installed native Homebrew Python without importing
+    # unrelated Homebrew executables into the bootstrap PATH.
+    if [ "$WHP_HOST_OS" = macos ]; then
+        case "$WHP_HOST_ARCH" in
+            arm64|aarch64) whp_early_brew=/opt/homebrew ;;
+            x86_64) whp_early_brew=/usr/local ;;
+            *) whp_early_brew= ;;
+        esac
+        if [ -n "$whp_early_brew" ]; then
+            for python_candidate in \
+                "$whp_early_brew/bin/python3" \
+                "$whp_early_brew/opt/python@3.14/bin/python3.14" \
+                "$whp_early_brew/opt/python@3.13/bin/python3.13" \
+                "$whp_early_brew/opt/python@3.12/bin/python3.12"; do
+                if whp_python_usable "$python_candidate"; then
+                    HOST_PYTHON=$python_candidate
+                    break
+                fi
+            done
         fi
-    done
+        unset whp_early_brew
+    fi
+    if [ -z "$HOST_PYTHON" ]; then
+        for python_name in python3 python; do
+            python_candidate=$(command -v "$python_name" 2>/dev/null || true)
+            if whp_python_usable "$python_candidate"; then
+                HOST_PYTHON=$python_candidate
+                break
+            fi
+        done
+    fi
 
     # Windows installations may expose only the Python launcher even when a
     # runtime is installed, and Store aliases named python/python3 may exist
