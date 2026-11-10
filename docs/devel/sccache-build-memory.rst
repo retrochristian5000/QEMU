@@ -83,6 +83,12 @@ fresh checkout or re-bootstrap of sccacher.
 Build-time settings
 -------------------
 
+The requested ``COMPILER_CACHE`` value is authoritative across Ninja, native
+LLVM and the final QEMU runner. An inherited ``WHP_COMPILER_CACHE_CMD``
+must match an explicitly selected ``ccache`` or ``sccache``; combining it
+with ``COMPILER_CACHE=none`` is an error, not permission to re-enable
+caching. Explicit cache commands must be executable files.
+
 * ``SCCACHE_IDLE_TIMEOUT=180`` (seconds) is the WHP default whenever the
   sccache launcher is selected and no explicit ``SCCACHE_CONF`` is set.
   This makes the local server exit sooner after builds become idle. Explicit
