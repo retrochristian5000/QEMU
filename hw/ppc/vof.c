@@ -76,31 +76,53 @@ static bool cmpservice(const char *s, unsigned nargs, unsigned nret,
 
 static void prop_format(char *tval, int tlen, const void *prop, int len)
 {
+    const unsigned char *bytes = prop;
+    size_t used = 0;
     int i;
-    const unsigned char *c;
-    char *t;
-    const char bin[] = "...";
 
-    for (i = 0, c = prop; i < len; ++i, ++c) {
-        if (*c == '\0' && i == len - 1) {
-            strncpy(tval, prop, tlen - 1);
+    if (tlen <= 0) {
+        return;
+    }
+    tval[0] = '\0';
+    if (!prop || len <= 0) {
+        return;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (bytes[i] == '\0' && i == len - 1) {
+            /*
+             * The input is known to be NUL-terminated, but it may be
+             * longer than the diagnostic buffer. Always terminate output.
+             */
+            g_strlcpy(tval, (const char *)prop, (size_t)tlen);
             return;
         }
-        if (*c < 0x20 || *c >= 0x80) {
+        if (bytes[i] < 0x20 || bytes[i] >= 0x80) {
             break;
         }
     }
 
-    for (i = 0, c = prop, t = tval; i < len; ++i, ++c) {
-        if (t >= tval + tlen - sizeof(bin) - 1 - 2 - 1) {
-            strcpy(t, bin);
+    for (i = 0; i < len; i++) {
+        int written;
+        size_t remaining = (size_t)tlen - used;
+        bool separator = i && i % 4 == 0 && i != len - 1;
+
+        /* Reserve space for the ellipsis and final NUL on truncation. */
+        if (remaining <= (separator ? 4 : 3)) {
+            g_strlcpy(tval + used, "...", remaining);
             return;
         }
-        if (i && i % 4 == 0 && i != len - 1) {
-            strcat(t, " ");
-            ++t;
+        if (separator) {
+            tval[used++] = ' ';
+            tval[used] = '\0';
+            remaining--;
         }
-        t += snprintf(t, tlen - (t - tval), "%02X", *c & 0xFF);
+        written = snprintf(tval + used, remaining, "%02X", bytes[i]);
+        if (written < 0 || (size_t)written >= remaining) {
+            tval[used] = '\0';
+            return;
+        }
+        used += written;
     }
 }
 
