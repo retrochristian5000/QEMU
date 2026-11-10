@@ -19,7 +19,7 @@ class M4SeedTest(unittest.TestCase):
         self.m4 = self.fake("m4")
         self.gm4 = self.fake("gm4")
         uname = self.directory / "uname"
-        uname.write_text("#!/bin/sh\\nprintf 'Linux\\\\n'\\n", encoding="utf-8")
+        uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n", encoding="utf-8")
         uname.chmod(0o755)
 
     def fake(self, name, version="1.4.21", expansion="abXcd"):
