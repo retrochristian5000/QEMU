@@ -40,6 +40,19 @@ case "$COMPILER_CACHE" in
 esac
 
 cache_cmd=${WHP_COMPILER_CACHE_CMD:-}
+# Inherited cache state is not authority over this invocation's selection.
+if [ -n "$cache_cmd" ]; then
+    if [ "$COMPILER_CACHE" = none ]; then
+        printf 'error: COMPILER_CACHE=none conflicts with WHP_COMPILER_CACHE_CMD\n' >&2
+        exit 1
+    fi
+    if [ "$COMPILER_CACHE" != auto ] &&
+       [ "${cache_cmd##*/}" != "$COMPILER_CACHE" ]; then
+        printf 'error: COMPILER_CACHE=%s conflicts with WHP_COMPILER_CACHE_CMD=%s\n' \
+            "$COMPILER_CACHE" "$cache_cmd" >&2
+        exit 1
+    fi
+fi
 if [ -z "$cache_cmd" ]; then
     case "$COMPILER_CACHE" in
         auto)
