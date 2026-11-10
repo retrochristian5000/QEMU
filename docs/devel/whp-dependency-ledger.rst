@@ -889,6 +889,39 @@ malformed or nonexistent inherited ``ACLOCAL_PATH`` entries before using
 them in generation and cache markers; valid absolute macro paths survive.
 Only affected producer caches become stale. No global cache purge is needed.
 
+Optional toolchain bootstrap requirements
+-----------------------------------------
+
+Libtool, sccache, Automake and mold are not common build-machine roots:
+
+* **Automake/aclocal:** In ``BOOTSTRAP_AUTOMAKE=auto``, use a working host
+  pair even on macOS. Only an absent/unusable pair, or explicit
+  ``BOOTSTRAP_AUTOMAKE=1``, activates the pinned source bootstrap. Its Perl,
+  Autoconf/autom4te, GNU Make and sed inputs are requirements of that
+  *generation* lane, not of a usable host Automake installation.
+* **Libtool/libtoolize:** A working system pair avoids the managed fallback.
+  Building the maintainer-source fork requires GNU Make, the Autotools suite,
+  GNU M4, Help2man, Texinfo, xz and the pinned nested source graph. Current
+  ``ensure-libtool.py`` resolves source and tool identities before evaluating
+  its marker; those identities are inputs to cache correctness, not evidence
+  that every QEMU build requires the Libtool maintainer tools.
+* **sccache/sccacher:** Opt-in compiler caching is separate from C/C++,
+  Meson and Ninja correctness. The pinned local-only build needs the selected
+  Git, Cargo and Rust >= 1.91 when requested. Its cache marker includes the
+  Rust/Cargo identities and source revision; removing these checks without an
+  equivalent identity would risk reusing a mismatched binary. A disabled
+  sccache lane must not force Cargo or Rust into the core build.
+* **mold:** Automatic selection does not build mold just because the source
+  submodule exists. An already installed, marker-matching mold linker can be
+  reused without CMake; CMake is checked after the cache miss. Compiler/link
+  validation still runs before the linker is adopted. Explicit mold requests
+  fail on incompatible ABI/linker flags rather than silently substituting it,
+  especially for Darwin ARM64e authenticated fixups.
+
+``BOOTSTRAP_AUTOMAKE=1`` and ``BOOTSTRAP_AUTOCONF=1`` remain forced modes;
+``auto`` is a capability-first selection, not a request to rebuild solely
+because the host is macOS. Retain real source/ABI and cache identity guards.
+
 Bootstrap force-mode failure contract
 -------------------------------------
 
