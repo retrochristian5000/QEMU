@@ -14,6 +14,7 @@ import io
 import os
 import pathlib
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -27,16 +28,24 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "1"
+SCHEMA = "2"
 
 
 def run(argv: list[str], *, cwd: pathlib.Path | None = None,
-        env: dict[str, str] | None = None, capture: bool = False):
-    result = subprocess.run(
-        argv, cwd=cwd, env=env, text=True, check=False,
-        stdout=subprocess.PIPE if capture else sys.stderr,
-        stderr=subprocess.PIPE if capture else sys.stderr,
-    )
+        env: dict[str, str] | None = None, capture: bool = False,
+        unattended: bool = False, timeout: int | None = None):
+    try:
+        result = subprocess.run(
+            argv, cwd=cwd, env=env, text=True, check=False,
+            stdin=subprocess.DEVNULL if unattended else None,
+            stdout=subprocess.PIPE if capture else sys.stderr,
+            stderr=subprocess.PIPE if capture else sys.stderr,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"unattended Perl Configure exceeded {timeout}s: {argv!r}"
+        ) from exc
     if result.returncode:
         message = result.stderr.strip() if capture else ""
         raise RuntimeError(
@@ -109,6 +118,34 @@ def stage_source(revision: str, destination: pathlib.Path, *, git: str) -> None:
         tar.extractall(destination)
 
 
+
+def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
+                        compiler: str) -> list[str]:
+    """Use Perl's supported noninteractive mode and explicit devel consent.
+
+    Perl Configure -des alone refuses odd-numbered development series:
+    its devel confirmation defaults to 'no'. Never feed interactive
+    answers on stdin, and never consent without checking patchlevel.h.
+    """
+    patchlevel = (source / "patchlevel.h").read_text(encoding="utf-8")
+    match = re.search(
+        r"^#define\\s+PERL_VERSION\\s+(\\d+)\\b",
+        patchlevel, re.MULTILINE,
+    )
+    if match is None:
+        raise RuntimeError("pinned Perl lacks a recognizable PERL_VERSION")
+    minor = int(match.group(1))
+    options = [
+        "/bin/sh", "./Configure", "-des",
+        f"-Dprefix={prefix}", f"-Dcc={compiler}",
+        "-Uuseshrplib",
+    ]
+    if minor % 2:
+        options.append("-Dusedevel")
+    return options
+
+
+
 def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     seed = root_perl()
     git = os.environ.get("WHP_GIT_SEED") or shutil.which("git")
@@ -166,8 +203,10 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     # Perl's source tree has a generated, non-Autotools Configure. Configure
     # produces Makefile.SH derivatives in the staged source directory, not in
     # the checkout. Use the validated native compiler and a private prefix.
-    run(["/bin/sh", "./Configure", "-des", f"-Dprefix={prefix}",
-         f"-Dcc={cc}", "-Uuseshrplib"], cwd=source, env=env)
+    # Even unexpected prompts cannot consume the user's terminal or stall
+    # an automatic incremental build. A blocked Configure fails promptly.
+    run(configure_arguments(source, prefix, cc),
+        cwd=source, env=env, unattended=True, timeout=900)
     run([make, "perl"], cwd=source, env=env)
     built = source / "perl"
     if not built.is_file() or not os.access(built, os.X_OK):
