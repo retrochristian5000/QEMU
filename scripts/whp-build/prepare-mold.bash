@@ -132,10 +132,6 @@ whp_mold_bootstrap()
     local mold_cxx="${MOLD_CXX:-${CXX_FOR_BUILD:-c++}}"
     local signature
 
-    if ! command -v "$cmake_cmd" >/dev/null 2>&1; then
-        printf 'error: CMake is required to bootstrap the WHP mold linker\n' >&2
-        return 1
-    fi
     case "$mold_cc:$mold_cxx" in
         *' '*|*';'*|*'|'*|*'&'*|*'<'*|*'>')
             printf '%s\n' \
@@ -160,6 +156,12 @@ whp_mold_bootstrap()
         MOLD_LINKER="$linker"
         export MOLD_LINKER
         return 0
+    fi
+
+    # Existing validated installations do not need CMake. Only rebuilds do.
+    if ! command -v "$cmake_cmd" >/dev/null 2>&1; then
+        printf 'error: CMake is required to bootstrap the WHP mold linker\n' >&2
+        return 1
     fi
 
     mkdir -p "$build_dir" "$install_dir/bin"
