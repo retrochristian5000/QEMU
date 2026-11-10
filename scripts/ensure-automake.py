@@ -316,12 +316,42 @@ def marker_text(
     )
 
 
+
+def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
+    """Demand an independent seed, never the managed suite being produced next.
+
+    Autoconf's Git bootstrap needs Automake, while Automake's Git bootstrap
+    invokes Autoconf. The seed must break this cycle before either managed
+    stage starts, not point back into the current build's managed output.
+    """
+    managed_root = (build_root / "deps" / "autoconf").resolve()
+    selected = []
+    for name, variable in (("autoconf", "AUTOCONF"),
+                           ("autom4te", "AUTOM4TE")):
+        try:
+            candidate = tool(name, variable)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "Automake bootstrap requires an independent seed "
+                "Autoconf/autom4te pair to break the Autoconf ↔ Automake "
+                "source-bootstrap cycle; " + str(exc)
+            ) from exc
+        resolved = pathlib.Path(candidate).resolve()
+        if resolved == managed_root or managed_root in resolved.parents:
+            raise RuntimeError(
+                f"{variable} points into managed Autoconf output ({candidate}); "
+                "Automake bootstrap needs an independent seed Autoconf/autom4te "
+                "pair to break the source-bootstrap cycle"
+            )
+        selected.append(candidate)
+    return selected[0], selected[1]
+
+
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_source()
     seed = select_seed_sed()
     perl = tool("perl", "PERL")
-    autoconf = tool("autoconf", "AUTOCONF")
-    autom4te = tool("autom4te", "AUTOM4TE")
+    autoconf, autom4te = select_seed_autoconf_pair(build_root)
     make = select_gnu_make()
     sdkroot = select_native_sdk(ROOT)
     if sdkroot:
