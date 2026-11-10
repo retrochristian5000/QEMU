@@ -24,12 +24,40 @@ whp_prepare_bootstrap_zlib
 BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch BOOTSTRAP_AUTOMAKE "${BOOTSTRAP_AUTOMAKE:-auto}") || exit 1
 export BOOTSTRAP_AUTOMAKE
 
+# The toolchain binaries may both be GNU while coming from incompatible
+# releases. Compare their advertised numeric release, not merely their brand.
+# Keep this check POSIX-sh compatible: the host-tool stage precedes managed Bash.
+whp_gnu_tool_version()
+(
+    whp_tool=${1:-}
+    whp_family=${2:-}
+    [ -n "$whp_tool" ] && [ -x "$whp_tool" ] || exit 1
+    whp_banner=$("$whp_tool" --version 2>/dev/null) || exit 1
+    whp_line=${whp_banner%%'
+'*}
+    case "$whp_line" in
+        *"($whp_family)"*) ;;
+        *) exit 1 ;;
+    esac
+    whp_version=${whp_line##* }
+    case "$whp_version" in
+        [0-9]*.[0-9]*)
+            case "$whp_version" in *[!0-9.]*|*..*|*.) exit 1 ;; esac ;;
+        *) exit 1 ;;
+    esac
+    printf '%s\\n' "$whp_version"
+)
+
+whp_gnu_tool_pair_usable()
+{
+    whp_pair_version_1=$(whp_gnu_tool_version "$1" "$3") || return 1
+    whp_pair_version_2=$(whp_gnu_tool_version "$2" "$3") || return 1
+    [ "$whp_pair_version_1" = "$whp_pair_version_2" ]
+}
+
 whp_automake_pair_usable()
 {
-    [ -n "${1:-}" ] && [ -x "$1" ] || return 1
-    [ -n "${2:-}" ] && [ -x "$2" ] || return 1
-    "$1" --version 2>/dev/null | grep -q 'GNU automake' || return 1
-    "$2" --version 2>/dev/null | grep -q 'GNU automake'
+    whp_gnu_tool_pair_usable "$1" "$2" 'GNU automake'
 }
 
 WHP_AUTOMAKE_EXPLICIT=0
@@ -114,10 +142,7 @@ export BOOTSTRAP_AUTOCONF
 
 whp_autoconf_pair_usable()
 {
-    [ -n "${1:-}" ] && [ -x "$1" ] || return 1
-    [ -n "${2:-}" ] && [ -x "$2" ] || return 1
-    "$1" --version 2>/dev/null | grep -q 'GNU Autoconf' || return 1
-    "$2" --version 2>/dev/null | grep -q 'GNU Autoconf'
+    whp_gnu_tool_pair_usable "$1" "$2" 'GNU Autoconf'
 }
 
 WHP_AUTOCONF_EXPLICIT=0
