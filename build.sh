@@ -591,8 +591,7 @@ whp_prepare_git_dependent_cache()
         "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
             --source "$SOURCE_DIR" || exit 1
     fi
-    
-    # Cargo and its native C dependencies must not run ahead of the managed
+\n    # Cargo and its native C dependencies must not run ahead of the managed
     # Git/zlib bootstrap or QEMU submodule reconciliation. Keep the cache ready
     # before the native LLVM configure/build starts.
     if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
@@ -611,7 +610,7 @@ whp_prepare_git_dependent_cache()
             exit 1
         fi
         # Cargo's native C++ build scripts need the same validated host tool
-        # identity as C. This happens after host tools but before managed LLVM.
+        # identity as C. This happens after host Git but before managed Ninja/LLVM.
         if [ -z "${CXX_FOR_BUILD:-}" ]; then
             CXX_FOR_BUILD=$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx) || exit 1
             export CXX_FOR_BUILD
