@@ -328,7 +328,6 @@ whp_prepare_host_tools()
             STRIP_FOR_BUILD="$(whp_apple_find_tool strip system)" || return 1
             export STRIP_FOR_BUILD
         fi
-        export PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
 
         if [[ "$MACOS_ARCH_FLAGS" == 1 ]]; then
             whp_append_flag CFLAGS "-arch $HOST_ARCH"
@@ -419,8 +418,21 @@ whp_prepare_host_tools()
         export CXX_FOR_BUILD="${CXX_FOR_BUILD:-${CXX:-c++}}"
         export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-${OBJC:-$CC_FOR_BUILD}}"
         export STRIP_FOR_BUILD="${STRIP_FOR_BUILD:-strip}"
-        export PKG_CONFIG_FOR_BUILD="${PKG_CONFIG_FOR_BUILD:-${PKG_CONFIG:-pkg-config}}"
     fi
+
+    # Resolve build-machine metadata once after Homebrew/MacPorts selection.
+    # Do not replace PKG_CONFIG, whose provider wrapper and target role are
+    # resolved separately. Missing optional pkg-config retains the old
+    # fallback; an invalid explicit override fails closed.
+    if [[ -n "${WHP_PKG_CONFIG_SEED:-}" || -n "${PKG_CONFIG_FOR_BUILD:-}" ||
+          -n "${PKG_CONFIG:-}" ]] ||
+       command -v pkg-config >/dev/null 2>&1 ||
+       command -v pkgconf >/dev/null 2>&1; then
+        PKG_CONFIG_FOR_BUILD="$(/bin/sh "$SOURCE_DIR/seeds/pkg-config.sh" --print-seed)" || return 1
+    else
+        PKG_CONFIG_FOR_BUILD=pkg-config
+    fi
+    export PKG_CONFIG_FOR_BUILD
 
     # Compiler cache wrapping belongs to builder.sh after COMPILER_CACHE is
     # resolved. Host-tool discovery must not enable caching implicitly.
