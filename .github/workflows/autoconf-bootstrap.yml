@@ -8,6 +8,8 @@ on:
       - 'toolchains/autoconf'
       - 'toolchains/automake'
       - 'seeds/sed.sh'
+      - 'seeds/m4.sh'
+      - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
@@ -22,6 +24,8 @@ on:
       - 'toolchains/autoconf'
       - 'toolchains/automake'
       - 'seeds/sed.sh'
+      - 'seeds/m4.sh'
+      - 'scripts/tests/test-m4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
@@ -58,6 +62,9 @@ jobs:
             sudo apt-get update
             sudo apt-get install --no-install-recommends -y autoconf m4 texinfo
           fi
+
+      - name: Test GNU M4 seed
+        run: python3 scripts/tests/test-m4-seed.py
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
