@@ -542,11 +542,20 @@ available for a future *host install-program* seed, without suggesting it
 installs QEMU. No install bridge is currently provided.
 
 The C preprocessor bridge selects the validated native C compiler driver
-with ``-E`` and publishes ``CPP_FOR_BUILD`` without replacing target
-``CPP`` (including cross-firmware preprocessors). Seed links and native
-compiler checks stay bound to the source tree when the bridges are invoked
-through symlinks. Old root-level adapter entrypoints are intentionally absent;
-callers, tests, and CI use the namespaced paths.
+and invokes it with ``-E`` (and the selected macOS ``-isysroot``).
+``CPP_FOR_BUILD`` is always the callable ``seeds/cpp.sh`` bridge, not a
+bare Clang/GCC driver that might compile instead of preprocessing. An explicit
+``CPP_FOR_BUILD`` naming a native compiler is admitted via ``WHP_CPP_SEED``,
+then normalized to that same bridge; command strings such as ``clang -E``
+are rejected because the bridge itself adds ``-E``. Conflicting explicit
+``WHP_CPP_SEED`` and ``CPP_FOR_BUILD`` choices fail closed. The native
+compiler used for host preprocessing is recorded separately, and target
+``CPP`` (including cross-firmware preprocessors) remains untouched. Seed
+links and native compiler checks stay bound to the source tree when the bridges
+are invoked through symlinks. The ``test-cpp-seed-contract.py`` regression
+checks actual driver arguments in both ordinary and SDK-root handoffs.
+Old root-level adapter entrypoints are intentionally absent; callers, tests,
+and CI use the namespaced paths.
 
 The native ``m4.sh`` seed selects GNU M4 for maintainer-source
 Autotools generation. It accepts explicit ``WHP_M4_SEED`` or ``M4``
