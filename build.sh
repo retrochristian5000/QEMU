@@ -387,22 +387,36 @@ case "$WHP_HOST_OS" in
                     "$WHP_CPP_PREFER_HOMEBREW" >&2
                 exit 1 ;;
         esac
+        # CPP_FOR_BUILD is a callable preprocessor, not a compiler command
+        # string. If a caller selects a driver, validate the native executable
+        # through cpp.sh, then publish the bridge that supplies -E. A bare
+        # "clang" in CPP_FOR_BUILD must never compile instead of preprocess.
+        WHP_CPP_ADAPTER="$SOURCE_DIR/seeds/cpp.sh"
+        if [ -n "${CPP_FOR_BUILD:-}" ] &&
+           [ "$CPP_FOR_BUILD" != "$WHP_CPP_ADAPTER" ]; then
+            if [ -n "${WHP_CPP_SEED:-}" ]; then
+                printf '%s\n' \
+                    'error: choose WHP_CPP_SEED or CPP_FOR_BUILD, not both.' >&2
+                exit 1
+            fi
+            case "$CPP_FOR_BUILD" in
+                *[[:space:]]*)
+                    printf 'error: CPP_FOR_BUILD must name one compiler driver (no -E): %s\n' \
+                        "$CPP_FOR_BUILD" >&2
+                    exit 1 ;;
+            esac
+            WHP_CPP_SEED=$CPP_FOR_BUILD
+        fi
         # An explicit Homebrew CPP preference must reach cpp.sh discovery;
         # otherwise the default CC_FOR_BUILD lock would mask it.
         if [ -z "${WHP_CPP_SEED:-}" ] &&
            [ "${WHP_CPP_PREFER_HOMEBREW:-0}" != 1 ]; then
             WHP_CPP_SEED=$CC_FOR_BUILD
         fi
-        WHP_CPP_SEED=$("$SOURCE_DIR/seeds/cpp.sh" --print-seed) || exit 1
+        WHP_CPP_SEED=$("$WHP_CPP_ADAPTER" --print-seed) || exit 1
         WHP_CPP_LOCKED=1
-        if [ -z "${CPP_FOR_BUILD:-}" ]; then
-            CPP_FOR_BUILD="$SOURCE_DIR/seeds/cpp.sh"
-        elif [ "$CPP_FOR_BUILD" != "$SOURCE_DIR/seeds/cpp.sh" ]; then
-            # Caller-selected host preprocessor remains authoritative; never
-            # silently replace an explicit build-machine tool override.
-            printf 'QEMU seed cpp: preserving explicit CPP_FOR_BUILD: %s\n' \
-                "$CPP_FOR_BUILD" >&2
-        fi
+        CPP_FOR_BUILD=$WHP_CPP_ADAPTER
+        unset WHP_CPP_ADAPTER
         export WHP_CPP_SEED WHP_CPP_LOCKED CPP_FOR_BUILD
         printf 'QEMU seed cpp: %s (-E, host only)\n' "$WHP_CPP_SEED" >&2
         ;;
