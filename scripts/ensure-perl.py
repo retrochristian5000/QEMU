@@ -129,7 +129,7 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
     """
     patchlevel = (source / "patchlevel.h").read_text(encoding="utf-8")
     match = re.search(
-        r"^#define\\s+PERL_VERSION\\s+(\\d+)\\b",
+        r"^#define\s+PERL_VERSION\s+(\d+)\b",
         patchlevel, re.MULTILINE,
     )
     if match is None:
