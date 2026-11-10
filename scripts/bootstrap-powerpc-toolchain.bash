@@ -218,11 +218,15 @@ if [[ "$(uname -s)" == Darwin ]]; then
             ;;
     esac
 
-    SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-    if [[ ! -d "$SDKROOT" ]]; then
-        printf 'error: macOS SDK does not exist: %s\n' "$SDKROOT" >&2
-        exit 1
+    # Keep the caller's SDKROOT intact. Standalone operation resolves
+    # a native SDK only when none was supplied; both paths are validated.
+    source "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+    selected_sdkroot="$(whp_apple_select_sdk)" || exit 1
+    if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]; then
+        SDKROOT="$selected_sdkroot"
+        export SDKROOT
     fi
+    unset selected_sdkroot
     case "$SDKROOT" in
         *' '*)
             printf 'error: macOS SDK path contains spaces: %s\n' "$SDKROOT" >&2
