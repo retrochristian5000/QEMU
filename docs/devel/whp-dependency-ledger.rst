@@ -580,6 +580,41 @@ pkg-config implementation is installed.
 Bootstrap phase ordering
 ------------------------
 
+Managed Perl fork and independent interpreter seed
+-------------------------------------------------
+
+The pinned ``toolchains/perl`` gitlink references the
+``retrochristian5000/perl`` fork on ``main``. The earliest GNU
+Automake/Autoconf source-generation stages continue to consume a working,
+preinstalled Perl selected by ``seeds/perl.sh``. This independent
+interpreter remains ``WHP_PERL_BOOTSTRAP_SEED`` after promotion, so
+managed Perl never depends on an unbuilt version of itself.
+
+``scripts/ensure-perl.py`` reconciles the recorded submodule commit and
+stages a Git archive under ``$BUILD_DIR/bootstrap/perl/source``, leaving
+the source checkout alone. Perl's own generated POSIX ``Configure`` is
+run with the native compiler and a private
+``$BUILD_DIR/deps/perl`` prefix; its ordinary Makefile builds the
+self-hosting miniperl/full interpreter. The install stage includes Perl's
+matching core modules rather than promoting a binary alone. The final
+``bin/perl`` must execute ``use strict``, ``warnings`` and
+``Config`` and report the native host OS. Compiler/SDK/bootstrap-seed,
+source revision and Make identities enter the incremental cache marker.
+
+After managed Autoconf, ``BOOTSTRAP_PERL=auto`` attempts this fork on
+macOS and keeps the original Perl seed on failure. ``BOOTSTRAP_PERL=1``
+requires the managed interpreter; ``BOOTSTRAP_PERL=0`` disables
+promotion. Auto on other supported hosts retains the original seed unless
+explicitly forced. A successful build exports ``PERL``, promotes
+``WHP_PERL_SEED``, and places the managed Perl directory ahead of PATH
+for later host consumers without changing the independent root interpreter.
+
+``scripts/tests/test-perl-bootstrap.py`` checks source pinning,
+bootstrap order, interpreter semantics, and the preserved seed.
+``.github/workflows/managed-perl.yml`` exercises native builds on
+macOS/Linux when CI runs; source and workflow checks alone do not confirm
+that those native builds pass.
+
 Managed Gawk fork and AWK bootstrap boundary
 -------------------------------------------
 
