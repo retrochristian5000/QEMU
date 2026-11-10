@@ -445,6 +445,21 @@ fi
 BOOTSTRAP_NINJA=$(whp_normalize_auto_switch BOOTSTRAP_NINJA "${BOOTSTRAP_NINJA:-auto}") || exit 1
 export BOOTSTRAP_NINJA
 
+# An explicit Ninja path is a command contract, not a hint to be accepted
+# before the next CMake/Meson stage. Resolve and probe it at this boundary.
+whp_ninja_command_usable()
+{
+    [ -n "${1:-}" ] || return 1
+    case "$1" in
+        */*) whp_ninja_candidate=$1 ;;
+        *) whp_ninja_candidate=$(command -v "$1" 2>/dev/null) || return 1 ;;
+    esac
+    [ -f "$whp_ninja_candidate" ] && [ -x "$whp_ninja_candidate" ] || return 1
+    whp_ninja_version=$("$whp_ninja_candidate" --version 2>/dev/null) || return 1
+    [ -n "$whp_ninja_version" ] || return 1
+    NINJA_CMD=$whp_ninja_candidate
+}
+
 # QEMU's normal Meson path needs Ninja before configuration, not only when the
 # final build command is launched. An explicit NINJA_CMD is authoritative.
 # On macOS, auto prefers the pinned WHP Ninja so the process-launch fast path
@@ -454,6 +469,18 @@ export BOOTSTRAP_NINJA
 # Export NINJA as well as NINJA_CMD so QEMU/Meson and WHP helpers consume one
 # exact executable.
 if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
+    if [ -n "${NINJA_CMD:-}" ]; then
+        if [ "$BOOTSTRAP_NINJA" = 1 ]; then
+            printf '%s\\n' \\
+                'error: BOOTSTRAP_NINJA=1 conflicts with an explicit NINJA_CMD; select auto or remove NINJA_CMD.' >&2
+            exit 1
+        fi
+        if ! whp_ninja_command_usable "$NINJA_CMD"; then
+            printf 'error: NINJA_CMD is not a runnable Ninja command: %s\\n' \\
+                "$NINJA_CMD" >&2
+            exit 1
+        fi
+    fi
     WHP_PREFER_BUNDLED_NINJA=0
     WHP_BUNDLED_NINJA_TRIED=0
     if [ "$BOOTSTRAP_NINJA" = auto ] && [ "$WHP_HOST_OS" = macos ]; then
@@ -472,6 +499,10 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
        [ "$WHP_BUNDLED_NINJA_TRIED" != 1 ]; then
         NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
             --build-dir "$BUILD_DIR") || exit 1
+    fi
+    if [ -n "${NINJA_CMD:-}" ] &&
+       ! whp_ninja_command_usable "$NINJA_CMD"; then
+        NINJA_CMD=
     fi
     if [ -z "${NINJA_CMD:-}" ]; then
         if [ "$BOOTSTRAP_NINJA" = 0 ]; then
