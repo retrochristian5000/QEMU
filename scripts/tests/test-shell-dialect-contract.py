@@ -59,6 +59,28 @@ def main() -> int:
     modules = sorted((ROOT / "scripts/whp-build").glob("*.sh"))
     posix = sorted(set(posix + seeds + modules))
 
+    # Seeds are first-stage POSIX programs, not containers for Bash-specific
+    # commands. Reject obvious Bash tokens that some sh parsers accept at -n
+    # time but fail to execute (notably [[ ]] and array expansions).
+    bash_extensions = (
+        re.compile(r"(^|\\s)\\[\\[\\s"),
+        re.compile(r"(^|\\s)(?:source|local|declare|shopt|mapfile|readarray)\\s+"),
+        re.compile(r"<<<"),
+        re.compile(r"\\$\\{[^}]+\\[@\\]\\}"),
+        re.compile(r"(^|\\s)set\\s+[-+]o\\s+pipefail"),
+    )
+    for seed in seeds:
+        for number, line in enumerate(
+            seed.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            if line.lstrip().startswith("#"):
+                continue
+            if any(pattern.search(line) for pattern in bash_extensions):
+                raise RuntimeError(
+                    f"{seed.relative_to(ROOT)}:{number}: "
+                    "Bash-specific syntax in a POSIX seed"
+                )
+
     for path in posix:
         if not path.is_file() or path.suffix != ".sh":
             raise RuntimeError(f"missing/non-sh POSIX shell script: {path}")
