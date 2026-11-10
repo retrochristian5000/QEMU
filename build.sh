@@ -355,6 +355,13 @@ esac
 case "$WHP_HOST_OS" in
     windows) ;;
     *)
+        case "${WHP_CPP_PREFER_HOMEBREW:-0}" in
+            0|1) ;;
+            *)
+                printf 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1: %s\\n' \
+                    "$WHP_CPP_PREFER_HOMEBREW" >&2
+                exit 1 ;;
+        esac
         # An explicit Homebrew CPP preference must reach cpp.sh discovery;
         # otherwise the default CC_FOR_BUILD lock would mask it.
         if [ -z "${WHP_CPP_SEED:-}" ] &&
