@@ -255,21 +255,28 @@ def select_gnu_m4() -> str:
     return selected
 
 def select_automake_pair() -> tuple[str, str]:
-    automake = explicit_tool("AUTOMAKE") or executable("automake")
-    aclocal = explicit_tool("ACLOCAL") or executable("aclocal")
-    if not automake or not aclocal:
-        raise RuntimeError("Automake/aclocal are required to bootstrap GNU Autoconf")
-    for path in (automake, aclocal):
+    # Resolve both tools through the same seed. PATH may contain a different
+    # aclocal release from the Automake selected by the caller.
+    adapter = ROOT / "seeds" / "automake.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU Automake seed adapter is unavailable: {adapter}")
+    selected = []
+    for flag in ("--print-seed", "--print-aclocal"):
         completed = subprocess.run(
-            [path, "--version"],
+            ["/bin/sh", str(adapter), flag],
             text=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.PIPE,
             check=False,
         )
-        if completed.returncode != 0 or "GNU automake" not in completed.stdout:
-            raise RuntimeError(f"not a usable GNU Automake tool: {path}")
-    return automake, aclocal
+        path = completed.stdout.strip()
+        if completed.returncode or not path:
+            raise RuntimeError(
+                "QEMU Automake/aclocal seed resolution failed: "
+                + (completed.stderr.strip() or flag)
+            )
+        selected.append(path)
+    return selected[0], selected[1]
 
 
 def select_seed_sed() -> str:
