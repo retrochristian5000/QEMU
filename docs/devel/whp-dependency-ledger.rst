@@ -663,8 +663,10 @@ The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``seeds/cc.sh``, ``seeds/cpp.sh``, and ``seeds/cxx.sh``, seed GNU Make, seed AWK,
 seed sed, seed Git, and Python form the bootstrap roots. The low-dependency order is
-``seed Git -> bootstrap-zlib -> Automake -> Autoconf -> managed Make ->
-managed sed -> managed Git -> Ninja -> Bash``. Independent small sources
+``seed Git -> bootstrap-zlib -> managed Perl -> Automake -> Autoconf ->
+managed Gawk -> managed Make -> managed sed -> managed Git -> Ninja ->
+Bash``. The root Perl seed is selected before managed Perl and remains
+available for rebuilding it. Independent small sources
 are prepared before larger trees when their own prerequisites are satisfied;
 size never overrides required dependency edges. These generators and host
 tools are resolved before the optional native LLVM compiler build.
