@@ -196,26 +196,33 @@ def select_host_macos_arch(cxx: str, sdkroot: str) -> str:
 
 
 def select_compiler_cache() -> str:
+    policy = os.environ.get('COMPILER_CACHE', 'auto')
+    if policy not in ('auto', 'ccache', 'sccache', 'none'):
+        raise RuntimeError(
+            f'COMPILER_CACHE must be auto, ccache, sccache, or none: {policy}'
+        )
+
     explicit = os.environ.get('WHP_COMPILER_CACHE_CMD', '')
+    if policy == 'none':
+        if explicit:
+            raise RuntimeError('COMPILER_CACHE=none conflicts with WHP_COMPILER_CACHE_CMD')
+        return ''
     if explicit:
         argv = shlex.split(explicit)
         if len(argv) != 1:
             raise RuntimeError('WHP_COMPILER_CACHE_CMD must name exactly one executable')
         candidate = argv[0]
         path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
-        if not path or not pathlib.Path(path).exists():
+        if not path or not pathlib.Path(path).is_file() or not os.access(path, os.X_OK):
             raise RuntimeError(f'compiler cache is not executable: {candidate}')
-        if pathlib.Path(path).name not in ('ccache', 'sccache'):
+        cache_kind = pathlib.Path(path).name
+        if cache_kind not in ('ccache', 'sccache'):
             raise RuntimeError(f'unsupported compiler cache command: {path}')
+        if policy != 'auto' and policy != cache_kind:
+            raise RuntimeError(
+                f'COMPILER_CACHE={policy} conflicts with WHP_COMPILER_CACHE_CMD={explicit}'
+            )
         return str(path)
-
-    policy = os.environ.get('COMPILER_CACHE', 'auto')
-    if policy not in ('auto', 'ccache', 'sccache', 'none'):
-        raise RuntimeError(
-            f'COMPILER_CACHE must be auto, ccache, sccache, or none: {policy}'
-        )
-    if policy == 'none':
-        return ''
 
     names = ('ccache', 'sccache') if policy == 'auto' else (policy,)
     for name in names:
