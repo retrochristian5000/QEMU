@@ -888,6 +888,26 @@ needed to generate the managed Automake source. The offline
 ``scripts/tests/test-automake-seed.py`` checks release pairing, overrides,
 recursion and argument forwarding.
 
+The separate ``seeds/autom4te.sh`` adapter admits an existing GNU
+Autoconf/``autom4te`` **pair** and supports direct consumers of the
+``autom4te`` executable. ``--print-seed`` returns the selected
+``autom4te``; ``--print-autoconf`` returns the paired ``autoconf``;
+``--check`` reports both; ordinary arguments execute ``autom4te``,
+while ``--autoconf`` delegates to ``autoconf``. Explicit
+``WHP_AUTOM4TE_SEED`` and ``WHP_AUTOCONF_SEED`` take precedence,
+and contradictory pair versions fail instead of falling back to PATH.
+For an implicitly selected pair, the companion executable next to the
+selected tool is preferred. The host bootstrap and managed Automake
+source stage use the seed for a coherent versioned handoff, without
+creating a new dependency or attempting to generate the missing tool.
+
+The adapter does not break the Autotools source-level cycle by itself:
+the initial ``autoconf`` and ``autom4te`` must be installed and
+independent of the pending managed Autoconf output. The cycle guard
+checks both selected paths. The offline
+``scripts/tests/test-autom4te-seed.py`` and
+``scripts/tests/test-automake-seed-cycle.py`` exercise this boundary.
+
 Managed Autoconf must not be fed back into the same Automake bootstrap that
 produces the Automake instance it consumes. The seed Autoconf dependency is
 therefore narrowed to the first Automake stage. This is a genuine source-stage
