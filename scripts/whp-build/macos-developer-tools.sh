@@ -55,6 +55,21 @@ whp_apple_require_under_root()
     esac
 )
 
+# Reject non-macOS platform subtrees even if a misplaced SDK is named
+# MacOSX.sdk or a compiler executable has the expected name.
+whp_apple_require_macos_platform()
+(
+    whp_apple_path=$1
+    case "$whp_apple_path" in
+        */Platforms/MacOSX.platform/Developer/*) ;;
+        */Platforms/*)
+            printf 'error: non-macOS Apple platform in native bootstrap: %s\n' \
+                "$whp_apple_path" >&2
+            exit 1
+            ;;
+    esac
+)
+
 whp_apple_find_tool()
 (
     name=$1
@@ -95,6 +110,7 @@ whp_apple_find_tool()
         exit 0
     fi
     whp_apple_require_under_root "${tool%/*}" "$name tool" || exit 1
+    whp_apple_require_macos_platform "$tool" || exit 1
     printf '%s\n' "$tool"
 )
 
@@ -114,6 +130,7 @@ whp_apple_check_sdkroot()
             ;;
     esac
     whp_apple_require_under_root "$canonical" "macOS SDK" || exit 1
+    whp_apple_require_macos_platform "$canonical" || exit 1
     # A directory named MacOSX.sdk is not sufficient: bootstrap components
     # consume POSIX, C library, and Apple platform headers before QEMU builds.
     # Validate their source in the selected SDK rather than searching /usr/include
