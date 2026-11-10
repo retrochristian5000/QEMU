@@ -128,7 +128,7 @@ def main() -> int:
         ("AUTOCONF", "whp_autoconf_pair_usable"),
     ):
         start = host_tools.index("WHP_NEED_" + name + "=0")
-        end = host_tools.index("WHP_NEED_" + name + "=1", start)
+        end = host_tools.index('if [ "$WHP_NEED_' + name + '" = 1 ]', start)
         segment = host_tools[start:end]
         if '"$WHP_HOST_OS" = macos' in segment:
             raise SystemExit(
