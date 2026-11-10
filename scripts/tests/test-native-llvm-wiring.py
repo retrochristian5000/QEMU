@@ -146,6 +146,13 @@ assert 'WHP native LLVM Ninja:' in bootstrap
 # spelling so the bootstrap can work across compiler transition releases.
 assert 'LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"' in bootstrap
 assert 'compiler_supports_cxx_standard()' in bootstrap
+assert 'minimum_cplusplus=202302' in bootstrap
+assert '#include <vector>' in bootstrap
+assert '#include <memory>' in bootstrap
+assert 'std::is_same_v<std::vector<int>::value_type, int>' in bootstrap
+# LLVM's standalone entry must not trust an inherited CXX_FOR_BUILD as
+# already validated: rerun the native seed admission probe before CMake.
+assert 'bootstrap_cxx="$(WHP_CXX_SEED="$CXX_FOR_BUILD"' in bootstrap
 assert 'standards=(c++26 c++2c)' in bootstrap
 assert '"-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"' in bootstrap
 assert '    -DCMAKE_C_FLAGS=\n' in bootstrap
