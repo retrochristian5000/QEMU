@@ -28,6 +28,35 @@ QEMU authorities
 * ``scripts/whp-config/config.py``: QEMU configuration schema and handoff.
 * ``seeds/`` and ``scripts/whp-build/seed-bin/``: QEMU host-tool selection.
 
+C language compatibility and targeted modernization
+-------------------------------------------------
+
+The universal C profile is guidance, not a command to adopt C23 everywhere.
+QEMU's ``meson.build`` currently defaults to ``c_std=gnu11``; keep that
+baseline unless a separate compatibility decision changes the supported
+compiler matrix. The ``macio-c23.yml`` workflow checks selected PowerPC
+MacIO sources under ``gnu23`` and does not establish whole-tree C23 support.
+Modern C11 source may retain QEMU-approved GCC/Clang extensions; do not
+silently substitute a target compiler for ``CC_FOR_BUILD`` or conflate the
+host SDK, ABI, object format and C language edition.
+
+Classify K&R definitions, missing prototypes, obsolete libraries, historical
+compiler workarounds and older C keywords by their *actual* semantics. A
+keyword introduced in C23 is not evidence that a legitimate guest-visible
+field should be renamed globally. Changes to firmware formats, wire layouts,
+guest APIs or calling conventions require their own compatibility tests.
+
+One bounded remediation is ``hw/ppc/vof.c::prop_format``: Open Firmware
+property trace output must not rely on ``strncpy`` termination or unchecked
+string concatenation. The formatter now terminates within the supplied
+diagnostic buffer and bounds binary-hex output; the firmware property payload
+and its on-wire representation remain untouched. The focused host-side C11
+regression ``scripts/tests/test-vof-property-format.py`` compiles that
+function and probes zero/small buffers, text and binary inputs, and byte
+canaries. It is not an end-to-end guest Open Firmware test. Validate the
+affected subsystem and guest behavior separately before making wider
+compatibility claims.
+
 Host compiler and copy seed contracts
 -------------------------------------
 
