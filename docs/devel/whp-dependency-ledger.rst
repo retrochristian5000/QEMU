@@ -580,6 +580,46 @@ pkg-config implementation is installed.
 Bootstrap phase ordering
 ------------------------
 
+Managed Gawk fork and AWK bootstrap boundary
+-------------------------------------------
+
+The pinned ``toolchains/gawk`` gitlink references
+``https://github.com/retrochristian5000/gawk.git``. A functional host
+``seeds/awk.sh`` selection is needed **before** Python, source menus,
+Autotools, GNU Make and later toolchain builds can run. That seed must not
+be removed or replaced with an unbuilt Gawk executable. QEMU retains its
+identity in ``WHP_AWK_BOOTSTRAP_SEED`` and uses it when compiling Gawk.
+
+After Automake/Autoconf are available, ``scripts/ensure-gawk.py`` can
+initialize the **pinned** fork, stage it into
+``$BUILD_DIR/bootstrap/gawk/source``, configure a native-only host build,
+compile ``support/libsupport.a`` and the ``gawk`` executable using the
+selected native C compiler and GNU Make, and install only the validated
+binary under ``$BUILD_DIR/deps/gawk/bin/gawk``. The fork contains generated
+Autoconf/Automake inputs and Bison-generated C files; the helper preserves
+these for tool-only builds rather than requiring documentation/extension
+installation. Its marker includes actual source revision, root seed,
+compiler, GNU Make, macOS SDK and selected bootstrap flags. Cache reuse
+requires both matching identity and a passing executable semantics probe.
+
+``BOOTSTRAP_GAWK=auto`` tries the fork on macOS after the Autotools
+stage, falling back to the unchanged host AWK seed if it cannot build.
+``BOOTSTRAP_GAWK=1`` explicitly requires the pinned fork, and
+``BOOTSTRAP_GAWK=0`` retains the system seed. On other hosts, automatic
+mode retains the host seed unless explicitly forced. Successful promotion
+sets ``AWK`` and ``WHP_AWK_SEED`` to the built executable; the existing
+locked ``seed-bin/awk`` bridge provides the same implementation to
+literal ``awk`` commands. The original seed is preserved separately
+to prevent a circular Gawk build dependency. No guest-target compiler,
+architecture, or Apple platform SDK is used to build native Gawk.
+
+The pinned Gawk fork is a real dependency rather than a substitute for
+the native seed. If its generated files become outdated or absent, an
+explicit forced build fails visibly; it does not silently fetch external
+dependencies or make a new upstream source pin. The policy regression is
+``scripts/tests/test-gawk-bootstrap.py``, with a focused macOS/Linux
+native-build job in ``.github/workflows/managed-gawk.yml``.
+
 The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``seeds/cc.sh``, ``seeds/cpp.sh``, and ``seeds/cxx.sh``, seed GNU Make, seed AWK,
