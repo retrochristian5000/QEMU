@@ -14,6 +14,10 @@ on:
       - 'scripts/whp-build/**'
       - 'scripts/tests/test-whp-config.py'
       - 'scripts/tests/test-file-extension-standard.py'
+      - 'scripts/tests/test-shell-dialect-contract.py'
+      - 'seeds/**'
+      - 'scripts/bootstrap-*.sh'
+      - 'scripts/bootstrap-*.bash'
       - 'scripts/tests/test-powershell-build-entry.py'
       - 'scripts/tests/test-whp-config-integration.bash'
       - 'scripts/tests/test-whp-shell-functions.sh'
@@ -50,6 +54,9 @@ jobs:
         run: |
           python3 scripts/tests/test-file-extension-standard.py
           python3 scripts/tests/test-powershell-build-entry.py
+
+      - name: Verify WHP POSIX sh and GNU Bash dialect contracts
+        run: python3 scripts/tests/test-shell-dialect-contract.py
 
       - name: Verify shared shell function contract
         run: /bin/sh scripts/tests/test-whp-shell-functions.sh
