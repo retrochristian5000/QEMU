@@ -606,6 +606,12 @@ if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
         printf "error: BOOTSTRAP_SCCACHE=1 conflicts with WHP_COMPILER_CACHE_CMD\n" >&2
         exit 1
     fi
+    # Cargo's native C++ build scripts need the same validated host tool
+    # identity as C. This happens after host tools but before managed LLVM.
+    if [ -z "${CXX_FOR_BUILD:-}" ]; then
+        CXX_FOR_BUILD=$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx) || exit 1
+        export CXX_FOR_BUILD
+    fi
     WHP_COMPILER_CACHE_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-sccache.py" \
         --build-dir "$BUILD_DIR") || exit 1
     COMPILER_CACHE=sccache
