@@ -58,14 +58,19 @@ def build_jobs(environ):
 def cargo_environment(environ, target):
     # Cargo's BLAKE3 and zstd dependencies compile native C code.
     env = clean_host_environment(environ)
-    # cc-rs recognizes target-qualified CC/CFLAGS and HOST_CFLAGS as well as
-    # the ordinary CC/CFLAGS variables. Remove inherited cross-target choices
-    # before restoring the single validated build-machine C compiler.
+    # Cargo build scripts (including cc-rs) can read target-qualified compiler
+    # and flag overrides. A parent's QEMU C++/preprocessor options must never
+    # become flags for the native C/C++ code compiled while building sccache.
+    # Keep the validated build-machine tool identity, not target selections.
     for key in tuple(env):
-        if (key != 'CC_FOR_BUILD' and
-                (key.startswith(('CC_', 'CFLAGS_', 'HOST_CC_', 'HOST_CFLAGS_'))
-                 or key in ('TARGET_CC', 'TARGET_CFLAGS', 'HOST_CFLAGS',
-                            'HOST_CPPFLAGS', 'HOST_CXXFLAGS'))):
+        if key == 'CC_FOR_BUILD':
+            continue
+        if (key.startswith(('CC_', 'CXX_', 'CPP_', 'CFLAGS_', 'CXXFLAGS_',
+                            'CPPFLAGS_', 'HOST_CC_', 'HOST_CXX_', 'HOST_CPP_',
+                            'HOST_CFLAGS_', 'HOST_CXXFLAGS_', 'HOST_CPPFLAGS_'))
+                or key in ('TARGET_CC', 'TARGET_CXX', 'TARGET_CPP',
+                           'TARGET_CFLAGS', 'TARGET_CXXFLAGS', 'TARGET_CPPFLAGS',
+                           'HOST_CFLAGS', 'HOST_CXXFLAGS', 'HOST_CPPFLAGS')):
             env.pop(key, None)
     cc = env.get('CC_FOR_BUILD')
     if not cc:
