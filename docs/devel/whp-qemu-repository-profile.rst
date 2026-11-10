@@ -57,6 +57,29 @@ canaries. It is not an end-to-end guest Open Firmware test. Validate the
 affected subsystem and guest behavior separately before making wider
 compatibility claims.
 
+macOS platform and SDK provenance
+---------------------------------
+
+Native QEMU seed, LLVM and managed host-tool builds must use the selected
+macOS developer directory and macOS SDK, not the iPhoneOS, iPhoneSimulator
+or other Apple platform. This is distinct from selecting an AArch64 CPU:
+``arm64`` alone does not establish the OS, runtime, ABI or sysroot.
+``scripts/whp-build/macos-developer-tools.sh`` validates physical SDK
+directories, required macOS headers and selected developer-root containment,
+then rejects non-macOS ``Platforms/*.platform`` subtrees for both SDKs and
+developer tools. Legitimate Xcode ``Platforms/MacOSX.platform/Developer``
+paths and standalone Command Line Tools SDK paths remain permitted.
+
+The native LLVM stage separately checks compiler target triples and effective
+``TargetConditionals.h`` host-platform macros and passes explicit
+``CMAKE_OSX_SYSROOT`` and deployment targets to its CMake subprojects.
+These guards must not be repurposed to prohibit deliberate QEMU guest
+cross-compilation; native build tools and guest objects have different target
+contracts. The synthetic regression in
+``scripts/tests/test-macos-developer-tools.bash`` exercises developer
+SDK/tool origin, wrong-platform SDKs named ``MacOSX.sdk``, and legitimate
+macOS platform paths. Fixture checks are not a native macOS build.
+
 Host compiler and copy seed contracts
 -------------------------------------
 
