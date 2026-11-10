@@ -318,24 +318,31 @@ def marker_text(
 
 
 def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
-    """Demand an independent seed, never the managed suite being produced next.
+    """Use one verified external Autoconf/autom4te seed to break the cycle.
 
-    Autoconf's Git bootstrap needs Automake, while Automake's Git bootstrap
-    invokes Autoconf. The seed must break this cycle before either managed
-    stage starts, not point back into the current build's managed output.
+    Automake's Git bootstrap invokes Autoconf; the managed Autoconf build
+    itself needs Automake. Neither may select Autoconf output being built
+    later in this same tree.
     """
-    managed_root = (build_root / "deps" / "autoconf").resolve()
+    adapter = ROOT / "seeds" / "autom4te.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU autom4te seed adapter is unavailable: {adapter}")
     selected = []
-    for name, variable in (("autoconf", "AUTOCONF"),
-                           ("autom4te", "AUTOM4TE")):
-        try:
-            candidate = tool(name, variable)
-        except RuntimeError as exc:
+    for flag in ("--print-autoconf", "--print-seed"):
+        completed = subprocess.run(
+            ["/bin/sh", str(adapter), flag], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode or not candidate:
             raise RuntimeError(
                 "Automake bootstrap requires an independent seed "
-                "Autoconf/autom4te pair to break the Autoconf ↔ Automake "
-                "source-bootstrap cycle; " + str(exc)
-            ) from exc
+                "Autoconf/autom4te pair to break the source-bootstrap cycle: "
+                + (completed.stderr.strip() or flag)
+            )
+        selected.append(candidate)
+    managed_root = (build_root / "deps" / "autoconf").resolve()
+    for variable, candidate in zip(("AUTOCONF", "AUTOM4TE"), selected):
         resolved = pathlib.Path(candidate).resolve()
         if resolved == managed_root or managed_root in resolved.parents:
             raise RuntimeError(
@@ -343,7 +350,6 @@ def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
                 "Automake bootstrap needs an independent seed Autoconf/autom4te "
                 "pair to break the source-bootstrap cycle"
             )
-        selected.append(candidate)
     return selected[0], selected[1]
 
 
