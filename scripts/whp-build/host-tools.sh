@@ -431,6 +431,14 @@ if [ -z "${GIT:-}" ]; then
         "$GIT" "$("$GIT" --version 2>/dev/null || printf unknown)" >&2
 fi
 
+# The public launcher defers its Git-dependent cache stage until the
+# finalized Git executable is available. This reconciles initialized source
+# once and builds optional sccache before Ninja/Bash source compilation.
+# Standalone host-tool fixtures without this callback remain usable.
+if command -v whp_prepare_git_dependent_cache >/dev/null 2>&1; then
+    whp_prepare_git_dependent_cache || exit 1
+fi
+
 # Ninja is a small, independent C++ host tool. After selecting Git,
 # prepare it before the larger Bash source build; it needs Python and a
 # native C++ compiler, not a managed Bash or Autotools environment.
