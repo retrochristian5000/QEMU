@@ -68,6 +68,7 @@ class ManagedSccacheTests(unittest.TestCase):
             'CARGO_BUILD_RUSTC_WRAPPER': '/other/cache',
             'CARGO_ENCODED_RUSTFLAGS': '-Copt-level=3',
             'SCCACHE_DIR': '/cache',
+            'CC_FOR_BUILD': '/native/clang',
         }, pathlib.Path('/tmp/sccache-target'))
         self.assertNotIn('RUSTC_WRAPPER', env)
         self.assertNotIn('CARGO_BUILD_RUSTC_WRAPPER', env)
@@ -85,6 +86,13 @@ class ManagedSccacheTests(unittest.TestCase):
             'LDFLAGS': '-L/guest/lib',
             'CPATH': '/guest/include',
             'C_INCLUDE_PATH': '/guest/c-headers',
+            'HOST_CFLAGS': '-I/guest/host-headers',
+            'HOST_CC': '/guest/host-cc',
+            'HOST_CPPFLAGS': '-DWRONG_HEADER=1',
+            'HOSTCFLAGS': '-I/guest/legacy-headers',
+            'CC_aarch64_apple_darwin': '/guest/cross-cc',
+            'CFLAGS_aarch64_apple_darwin': '-I/guest/target-headers',
+            'TARGET_CC': '/guest/target-cc',
         }
         native = {
             'CC_FOR_BUILD': '/native/clang',
@@ -101,10 +109,16 @@ class ManagedSccacheTests(unittest.TestCase):
             },
             pathlib.Path('/tmp/sccache-target'),
         )
-        self.assertEqual(qemu_flags.keys() & env.keys(), set())
+        self.assertEqual((qemu_flags.keys() - {'HOST_CC'}) & env.keys(), set())
         self.assertEqual(env['CC'], native['CC_FOR_BUILD'])
         self.assertEqual(env['HOST_CC'], native['CC_FOR_BUILD'])
         self.assertEqual({key: env[key] for key in native}, native)
+
+    def test_cargo_requires_explicit_native_compiler(self):
+        with self.assertRaisesRegex(RuntimeError, 'CC_FOR_BUILD'):
+            bootstrap.cargo_environment(
+                {'HOST_CC': '/guest/cc', 'HOST_CFLAGS': '-I/guest/include'},
+                pathlib.Path('/tmp/sccache-target'))
 
     def test_job_override_is_strict(self):
         self.assertEqual(bootstrap.build_jobs({}), 2)
