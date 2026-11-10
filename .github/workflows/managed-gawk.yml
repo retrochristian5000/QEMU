@@ -1,0 +1,81 @@
+name: WHP managed Gawk bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/gawk'
+      - 'seeds/awk.sh'
+      - 'scripts/ensure-gawk.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'build.sh'
+      - 'scripts/tests/test-gawk-bootstrap.py'
+      - '.github/workflows/managed-gawk.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/gawk'
+      - 'seeds/awk.sh'
+      - 'scripts/ensure-gawk.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'build.sh'
+      - 'scripts/tests/test-gawk-bootstrap.py'
+      - '.github/workflows/managed-gawk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  managed-gawk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: false
+
+      - name: Audit pinned Gawk and native seed handoffs
+        run: python3 scripts/tests/test-gawk-bootstrap.py
+
+      - name: Initialize only the pinned Gawk fork
+        run: git submodule update --init --depth 1 -- toolchains/gawk
+
+      - name: Build and execute the pinned native Gawk
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(./seeds/awk.sh --print-seed)"
+          export WHP_AWK_BOOTSTRAP_SEED="$seed"
+          export WHP_AWK_SEED="$seed"
+          export AWK="$seed"
+          if command -v gmake >/dev/null 2>&1; then
+            export MAKE_CMD="$(command -v gmake)"
+          else
+            export MAKE_CMD="$(command -v make)"
+          fi
+          result="$(python3 scripts/ensure-gawk.py --build-dir "$RUNNER_TEMP/whp-gawk")"
+          test -x "$result"
+          "$result" --version
+          test "$(printf 'left|right\n' | "$result" -F '|' '{print $2}')" = right
+
+      - name: Reuse validated native Gawk artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="$(./seeds/awk.sh --print-seed)"
+          export WHP_AWK_BOOTSTRAP_SEED="$seed"
+          export WHP_AWK_SEED="$seed"
+          export AWK="$seed"
+          if command -v gmake >/dev/null 2>&1; then
+            export MAKE_CMD="$(command -v gmake)"
+          else
+            export MAKE_CMD="$(command -v make)"
+          fi
+          result="$(python3 scripts/ensure-gawk.py --build-dir "$RUNNER_TEMP/whp-gawk")"
+          test -x "$result"
