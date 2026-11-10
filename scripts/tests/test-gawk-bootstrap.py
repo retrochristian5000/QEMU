@@ -32,8 +32,8 @@ def check():
     src = SCRIPT.read_text(encoding="utf-8")
     assert 'reconcile_submodule(ROOT, REL)' in src
     assert 'stage_source(revision, source)' in src
-    assert 'validate_awk(built)' in src
-    assert 'validate_awk(executable)' in src
+    assert 'validate_managed_gawk(built)' in src
+    assert 'validate_managed_gawk(executable)' in src
     assert '"SOURCE_REVISION="' in src
 
     host = (ROOT / "scripts/whp-build/host-tools.sh").read_text()
@@ -55,9 +55,18 @@ def check():
         fake.write_text("#!/bin/sh\nprintf '%s\\n' 'GNU Awk 99.99'\n")
         fake.chmod(0o755)
         assert not gawk.validate_awk(fake)
+        assert not gawk.validate_managed_gawk(fake)
         native = shutil.which("awk")
         if native:
             assert gawk.validate_awk(Path(native))
+            # POSIX-compatible but non-GNU AWK is acceptable as a root seed,
+            # not as a substitute for the pinned managed Gawk build.
+            version = subprocess.run(
+                [native, "--version"], capture_output=True, text=True,
+                check=False,
+            )
+            if version.returncode or not version.stdout.startswith("GNU Awk "):
+                assert not gawk.validate_managed_gawk(Path(native))
 
     # Prove the builder recovers the *root* seed after $AWK has been promoted.
     original = shutil.which("awk")
