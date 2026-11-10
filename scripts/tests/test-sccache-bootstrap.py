@@ -167,13 +167,15 @@ class ManagedSccacheTests(unittest.TestCase):
             (source / 'Cargo.lock').write_text('version = 3\n', encoding='utf-8')
             revision = 'a' * 40
             with mock.patch.object(bootstrap, 'ROOT', root), \
+                 mock.patch.dict(os.environ, {'GIT': '/native/bin/git'}), \
                  mock.patch.object(bootstrap, 'reconcile_submodule',
                                    return_value=revision) as reconcile, \
                  mock.patch.object(bootstrap, 'call', return_value='') as call:
                 self.assertEqual(bootstrap.pinned_source(), (source, revision))
-                reconcile.assert_called_once_with(root, bootstrap.SUBMODULE)
+                reconcile.assert_called_once_with(
+                    root, bootstrap.SUBMODULE, git='/native/bin/git')
                 call.assert_called_once_with(
-                    ['git', '-C', str(source), 'status', '--porcelain',
+                    ['/native/bin/git', '-C', str(source), 'status', '--porcelain',
                      '--untracked-files=no'], capture=True)
 
     def test_cached_binary_skips_cargo(self):
@@ -197,10 +199,12 @@ class ManagedSccacheTests(unittest.TestCase):
                 self.assertEqual(bootstrap.ensure(build), binary)
                 run.assert_called_once_with([str(binary), '--version'], capture=True)
 
-    def test_qemu_selects_fork_before_native_llvm(self):
+    def test_qemu_selects_fork_after_host_dependencies_before_native_llvm(self):
         text = (ROOT / 'build.sh').read_text(encoding='utf-8')
-        self.assertLess(text.index('scripts/ensure-sccache.py'),
-                        text.index('scripts/whp-build/host-tools.sh'))
+        self.assertLess(text.index('scripts/whp-build/host-tools.sh'),
+                        text.index('scripts/ensure-sccache.py'))
+        self.assertLess(text.index('scripts/whp-build/update-submodules.py'),
+                        text.index('scripts/ensure-sccache.py'))
         self.assertLess(text.index('scripts/ensure-sccache.py'),
                         text.index('scripts/bootstrap-native-clang.sh'))
         self.assertIn('WHP_COMPILER_CACHE_CMD=$(', text)
