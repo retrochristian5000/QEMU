@@ -63,7 +63,8 @@ def cargo_environment(environ, target):
     # become flags for the native C/C++ code compiled while building sccache.
     # Keep the validated build-machine tool identity, not target selections.
     for key in tuple(env):
-        if key == 'CC_FOR_BUILD':
+        # Native tool identities are distinct from target-qualified overrides.
+        if key in ('CC_FOR_BUILD', 'CXX_FOR_BUILD', 'CPP_FOR_BUILD'):
             continue
         if (key.startswith(('CC_', 'CXX_', 'CPP_', 'CFLAGS_', 'CXXFLAGS_',
                             'CPPFLAGS_', 'HOST_CC_', 'HOST_CXX_', 'HOST_CPP_',
