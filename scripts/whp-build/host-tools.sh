@@ -18,6 +18,54 @@ fi
 # role is resolved again after compiler promotion.
 whp_prepare_bootstrap_zlib
 
+# Build managed Perl before the Autotools source generators. Perl's own
+# Configure/miniperl bootstraps using the independent host seeds.
+# Perl's built-in Configure/miniperl does not require Autotools. Preserve
+# the original seed for rebuilding Perl; promote only after native validation
+# so managed Automake/Autoconf can consume the newer interpreter.
+BOOTSTRAP_PERL=$(whp_normalize_auto_switch BOOTSTRAP_PERL "${BOOTSTRAP_PERL:-auto}") || exit 1
+export BOOTSTRAP_PERL
+if [ "$BOOTSTRAP_PERL" != 0 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
+   [ "$WHP_HOST_OS" != windows ]; then
+    if [ "$BOOTSTRAP_PERL" = 1 ] || [ "$WHP_HOST_OS" = macos ]; then
+        WHP_PERL_ROOT=$(
+            /bin/sh "$SOURCE_DIR/seeds/perl.sh" --print-seed
+        ) || WHP_PERL_ROOT=
+        if [ -z "$WHP_PERL_ROOT" ]; then
+            if [ "$BOOTSTRAP_PERL" = 1 ]; then
+                printf '%s\n' 'error: BOOTSTRAP_PERL=1 needs an independent Perl seed.' >&2
+                exit 1
+            fi
+        else
+            WHP_PERL_BOOTSTRAP_SEED=$WHP_PERL_ROOT
+            export WHP_PERL_BOOTSTRAP_SEED
+            WHP_MANAGED_PERL=$(
+                "$PYTHON" "$SOURCE_DIR/scripts/ensure-perl.py" --build-dir "$BUILD_DIR"
+            ) || WHP_MANAGED_PERL=
+            if [ -n "$WHP_MANAGED_PERL" ] && [ -x "$WHP_MANAGED_PERL" ]; then
+                PERL=$WHP_MANAGED_PERL
+                WHP_PERL_SEED=$WHP_MANAGED_PERL
+                PATH="${WHP_MANAGED_PERL%/*}:$PATH"
+                export PERL WHP_PERL_SEED PATH
+                printf 'QEMU managed Perl: %s (original seed %s)\n' \
+                    "$PERL" "$WHP_PERL_BOOTSTRAP_SEED" >&2
+            elif [ "$BOOTSTRAP_PERL" = 1 ]; then
+                printf '%s\n' \
+                    'error: BOOTSTRAP_PERL=1 requested pinned Perl but its native build failed.' >&2
+                exit 1
+            else
+                printf 'WHP managed Perl unavailable; retaining seed: %s\n' \
+                    "$WHP_PERL_ROOT" >&2
+            fi
+            unset WHP_MANAGED_PERL
+        fi
+        unset WHP_PERL_ROOT
+    fi
+fi
+
 # On macOS, the system is not presumed invalid: auto uses a passing
 # host pair and builds the managed fork only when absent or unusable.
 # BOOTSTRAP_AUTOMAKE=1 and BOOTSTRAP_AUTOCONF=1 remain explicit force modes.
@@ -287,52 +335,6 @@ if [ -n "${AUTOCONF:-}" ]; then
 fi
 unset WHP_AUTOCONF_EXPLICIT
 
-
-# Perl's built-in Configure and miniperl can build the fork without another
-# Autotools dependency. The preinstalled seed must survive for the earliest
-# source generators; the managed fork is for *later* host-tool consumers.
-BOOTSTRAP_PERL=$(whp_normalize_auto_switch BOOTSTRAP_PERL "${BOOTSTRAP_PERL:-auto}") || exit 1
-export BOOTSTRAP_PERL
-if [ "$BOOTSTRAP_PERL" != 0 ] &&
-   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
-   [ "${WHP_BUILD_DIR_PROBE_ONLY:-0}" != 1 ] &&
-   [ "$WHP_HOST_OS" != windows ]; then
-    if [ "$BOOTSTRAP_PERL" = 1 ] || [ "$WHP_HOST_OS" = macos ]; then
-        WHP_PERL_ROOT=$(
-            /bin/sh "$SOURCE_DIR/seeds/perl.sh" --print-seed
-        ) || WHP_PERL_ROOT=
-        if [ -z "$WHP_PERL_ROOT" ]; then
-            if [ "$BOOTSTRAP_PERL" = 1 ]; then
-                printf '%s\n' 'error: BOOTSTRAP_PERL=1 needs an independent Perl seed.' >&2
-                exit 1
-            fi
-        else
-            WHP_PERL_BOOTSTRAP_SEED=$WHP_PERL_ROOT
-            export WHP_PERL_BOOTSTRAP_SEED
-            WHP_MANAGED_PERL=$(
-                "$PYTHON" "$SOURCE_DIR/scripts/ensure-perl.py" --build-dir "$BUILD_DIR"
-            ) || WHP_MANAGED_PERL=
-            if [ -n "$WHP_MANAGED_PERL" ] && [ -x "$WHP_MANAGED_PERL" ]; then
-                PERL=$WHP_MANAGED_PERL
-                WHP_PERL_SEED=$WHP_MANAGED_PERL
-                PATH="${WHP_MANAGED_PERL%/*}:$PATH"
-                export PERL WHP_PERL_SEED PATH
-                printf 'QEMU managed Perl: %s (original seed %s)\n' \
-                    "$PERL" "$WHP_PERL_BOOTSTRAP_SEED" >&2
-            elif [ "$BOOTSTRAP_PERL" = 1 ]; then
-                printf '%s\n' \
-                    'error: BOOTSTRAP_PERL=1 requested pinned Perl but its native build failed.' >&2
-                exit 1
-            else
-                printf 'WHP managed Perl unavailable; retaining seed: %s\n' \
-                    "$WHP_PERL_ROOT" >&2
-            fi
-            unset WHP_MANAGED_PERL
-        fi
-        unset WHP_PERL_ROOT
-    fi
-fi
 
 # AWK is a pre-Python root; preserve it for source configuration and build
 # the pinned Gawk fork only after the Autotools source generators are ready.
