@@ -248,6 +248,36 @@ class CompilerCachePolicyTests(unittest.TestCase):
         self.assertIn("requested = os.environ.get('SCCACHE_DIR')", ninja)
         self.assertIn("'WHP_COMPILER_CACHE_ROOT'", ninja)
 
+    def test_host_tool_discovery_does_not_implicitly_wrap_compilers(self):
+        # A cache executable on PATH does not authorize early CC/CXX mutation.
+        prepare = ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash'
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = pathlib.Path(directory)
+            fake_cache = bin_dir / 'ccache'
+            fake_cache.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+            fake_cache.chmod(0o755)
+            script = (
+                'set -e; source "$1"; whp_prepare_host_tools; '
+                'printf "%s|%s|%s|%s" "$CC" "$CXX" '
+                '"$CC_FOR_BUILD" "$CXX_FOR_BUILD"'
+            )
+            for choice in ('none', 'auto', 'sccache'):
+                with self.subTest(policy=choice):
+                    env = {
+                        **os.environ, 'SOURCE_DIR': str(ROOT),
+                        'HOST_OS': 'Linux', 'CC': 'user-cc',
+                        'CXX': 'user-cxx', 'COMPILER_CACHE': choice,
+                        'PATH': str(bin_dir) + os.pathsep + os.environ.get('PATH', ''),
+                    }
+                    run = subprocess.run(
+                        ['bash', '-c', script, 'bash', str(prepare)],
+                        env=env, text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(run.returncode, 0, run.stderr)
+                    self.assertEqual(
+                        run.stdout, 'user-cc|user-cxx|user-cc|user-cxx'
+                    )
+
     def test_qemu_host_cache_is_build_time_only(self):
         text = BUILD_WRAPPER.read_text(encoding='utf-8')
         self.assertIn('COMPILER_CACHE=${COMPILER_CACHE:-auto}', text)
