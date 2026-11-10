@@ -358,7 +358,7 @@ case "$WHP_HOST_OS" in
         case "${WHP_CPP_PREFER_HOMEBREW:-0}" in
             0|1) ;;
             *)
-                printf 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1: %s\\n' \
+                printf 'error: WHP_CPP_PREFER_HOMEBREW must be 0 or 1: %s\n' \
                     "$WHP_CPP_PREFER_HOMEBREW" >&2
                 exit 1 ;;
         esac
