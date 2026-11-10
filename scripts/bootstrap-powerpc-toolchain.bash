@@ -80,24 +80,6 @@ for required in tar sed grep awk bzip2 gzip perl ln mkdir mv rm; do
     fi
 done
 
-if command -v curl >/dev/null 2>&1; then
-    download_cmd=curl
-elif command -v wget >/dev/null 2>&1; then
-    download_cmd=wget
-else
-    printf 'error: curl or wget is required to download the toolchain sources\n' >&2
-    exit 1
-fi
-
-if command -v shasum >/dev/null 2>&1; then
-    hash_cmd=(shasum -a 256)
-elif command -v sha256sum >/dev/null 2>&1; then
-    hash_cmd=(sha256sum)
-else
-    printf 'error: shasum or sha256sum is required to verify downloads\n' >&2
-    exit 1
-fi
-
 set_command()
 {
     local command_string="$1"
@@ -342,6 +324,26 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
     printf 'PowerPC bootstrap toolchain is current: %s/bin/%s-\n' \
         "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     exit 0
+fi
+
+# Download and integrity utilities are required only for a cache miss.
+# A validated existing cross-toolchain must not depend on network tooling.
+if command -v curl >/dev/null 2>&1; then
+    download_cmd=curl
+elif command -v wget >/dev/null 2>&1; then
+    download_cmd=wget
+else
+    printf 'error: curl or wget is required to download the toolchain sources\n' >&2
+    exit 1
+fi
+
+if command -v shasum >/dev/null 2>&1; then
+    hash_cmd=(shasum -a 256)
+elif command -v sha256sum >/dev/null 2>&1; then
+    hash_cmd=(sha256sum)
+else
+    printf 'error: shasum or sha256sum is required to verify downloads\n' >&2
+    exit 1
 fi
 
 mkdir -p "$TOOLCHAIN_DOWNLOAD_DIR" "$TOOLCHAIN_WORK_DIR"
