@@ -83,6 +83,12 @@ def cargo_environment(environ, target):
         raise RuntimeError('sccacher requires the validated CC_FOR_BUILD seed')
     env['CC'] = cc
     env['HOST_CC'] = cc
+    # cc-rs also compiles C++ in some native Cargo dependencies. Never let it
+    # independently rediscover a different compiler or target CXX on PATH.
+    cxx = env.get('CXX_FOR_BUILD')
+    if cxx:
+        env['CXX'] = cxx
+        env['HOST_CXX'] = cxx
     for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
                 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
