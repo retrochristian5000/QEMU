@@ -46,9 +46,14 @@ def command(argv: list[str], *, cwd: pathlib.Path | None = None,
 
 def seed_awk() -> str:
     adapter = ROOT / "seeds" / "awk.sh"
+    env = os.environ.copy()
+    original = env.get("WHP_AWK_BOOTSTRAP_SEED", "")
+    if original:
+        env["WHP_AWK_SEED"] = original
+        env["AWK"] = original
     proc = subprocess.run(
         ["/bin/sh", str(adapter), "--print-seed"],
-        text=True, capture_output=True, check=False,
+        env=env, text=True, capture_output=True, check=False,
     )
     value = proc.stdout.strip()
     if proc.returncode or not value:
