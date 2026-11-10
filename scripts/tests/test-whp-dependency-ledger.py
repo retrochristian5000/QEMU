@@ -64,6 +64,15 @@ def main() -> int:
         "gitlink authority": (
             "The gitlink recorded by the QEMU commit is authoritative",
         ),
+        "external active-consumer classification": (
+            "External host-tool edges by active consumer",
+            "PowerPC GCC/binutils **source rebuild**",
+            "Reusing a validated installed PowerPC toolchain",
+            "OpenBIOS / SeaBIOS preparation",
+            "IA32 EFI GRUB source/LLVM expansion",
+            "macOS toolchain and LTO manifests",
+            "Optional mold linker",
+        ),
         "required dependency guard policy": (
             "Required dependency guard policy",
             "not a second source of immutable commit gates",
@@ -78,6 +87,28 @@ def main() -> int:
                 raise SystemExit(
                     f"error: WHP dependency ledger lost {label}: {needle}"
                 )
+
+    # The PowerPC cross-toolchain can be reused without network/download,
+    # archive, checksum or GNU Make prerequisites. These checks belong after
+    # the installed-toolchain marker and capability check, not at entry.
+    powerpc = (ROOT / "scripts" / "bootstrap-powerpc-toolchain.bash").read_text(
+        encoding="utf-8"
+    )
+    cache_hit = powerpc.index('toolchain_is_usable "$TOOLCHAIN_DIR"')
+    for needle in (
+        'make_banner=$("$MAKE_CMD" --version',
+        'for required in tar bzip2 gzip perl ln mv rm; do',
+        'if command -v curl >/dev/null 2>&1; then',
+        'if command -v shasum >/dev/null 2>&1; then',
+    ):
+        if needle not in powerpc or powerpc.index(needle) < cache_hit:
+            raise SystemExit(
+                "error: PowerPC rebuild-only prerequisite precedes cache reuse: "
+                + needle
+            )
+    early_checks = powerpc[:cache_hit]
+    if 'for required in tar bzip2 gzip perl' in early_checks:
+        raise SystemExit("error: PowerPC source tools became universal roots")
 
     if len(paths) != len(set(paths)):
         raise SystemExit("error: duplicate submodule paths in .gitmodules")
