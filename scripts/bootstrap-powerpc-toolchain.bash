@@ -72,7 +72,8 @@ if ! "$MAKE_CMD" --version 2>/dev/null | head -n 1 | grep -q 'GNU Make'; then
     exit 1
 fi
 
-for required in tar sed grep awk bzip2 gzip perl ln mkdir mv rm; do
+# Only tools used by host identity/probes are required before cache reuse.
+for required in sed grep awk mkdir; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: PowerPC toolchain bootstrap dependency not found: %s\n' \
             "$required" >&2
@@ -325,6 +326,16 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
         "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     exit 0
 fi
+
+# Source extraction, GCC prerequisite fetching, and staged installation are
+# conditional on rebuilding; none is needed to reuse an installed toolchain.
+for required in tar bzip2 gzip perl ln mv rm; do
+    if ! command -v "$required" >/dev/null 2>&1; then
+        printf 'error: PowerPC source-build dependency not found: %s\\n' \\
+            "$required" >&2
+        exit 1
+    fi
+done
 
 # Download and integrity utilities are required only for a cache miss.
 # A validated existing cross-toolchain must not depend on network tooling.
