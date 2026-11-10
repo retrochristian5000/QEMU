@@ -89,6 +89,26 @@ def validate_awk(path: pathlib.Path) -> bool:
     return True
 
 
+
+def validate_managed_gawk(path: pathlib.Path) -> bool:
+    """Require GNU Awk identity and actual AWK execution, not a banner alone."""
+    if not validate_awk(path):
+        return False
+    try:
+        banner = subprocess.run(
+            [str(path), "--version"], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return (
+        banner.returncode == 0
+        and bool(banner.stdout.splitlines())
+        and banner.stdout.splitlines()[0].startswith("GNU Awk ")
+    )
+
+
 def stage_source(revision: str, destination: pathlib.Path) -> None:
     subprocess_env = os.environ.copy()
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
@@ -136,7 +156,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
               + "CFLAGS=" + cflags + "\n"
               + "LDFLAGS=" + ldflags + "\n")
     if (marker_path.is_file() and marker_path.read_text() == marker
-            and validate_awk(executable)):
+            and validate_managed_gawk(executable)):
         return executable
 
     work = build_dir / "bootstrap" / "gawk"
@@ -183,12 +203,12 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     command([str(make_path), "-C", str(objects), "gawk"],
             cwd=objects, env=env)
     built = objects / "gawk"
-    if not validate_awk(built):
+    if not validate_managed_gawk(built):
         raise RuntimeError("built Gawk failed native AWK semantic probes")
     (prefix / "bin").mkdir(parents=True, exist_ok=True)
     shutil.copy2(built, executable)
     executable.chmod(executable.stat().st_mode | 0o111)
-    if not validate_awk(executable):
+    if not validate_managed_gawk(executable):
         raise RuntimeError("installed Gawk failed native AWK semantic probes")
     marker_path.write_text(marker)
     return executable
