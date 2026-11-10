@@ -66,12 +66,6 @@ if [[ ! -x "$config_shell" ]]; then
     exit 1
 fi
 
-if ! "$MAKE_CMD" --version 2>/dev/null | head -n 1 | grep -q 'GNU Make'; then
-    printf 'error: PowerPC toolchain bootstrap requires GNU Make\n' >&2
-    printf 'set MAKE_CMD to gmake or another GNU Make executable\n' >&2
-    exit 1
-fi
-
 # Only tools used by host identity/probes are required before cache reuse.
 for required in sed grep awk mkdir; do
     if ! command -v "$required" >/dev/null 2>&1; then
@@ -326,6 +320,18 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
         "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     exit 0
 fi
+
+# GNU Make is necessary only when materializing a cross-toolchain. Reuse
+# of an already validated installed toolchain does not invoke Make.
+make_banner=$("$MAKE_CMD" --version 2>/dev/null) || make_banner=
+case "$make_banner" in
+    'GNU Make '* ) ;;
+    *)
+        printf 'error: PowerPC toolchain bootstrap requires GNU Make\n' >&2
+        printf 'set MAKE_CMD to gmake or another GNU Make executable\n' >&2
+        exit 1 ;;
+esac
+unset make_banner
 
 # Source extraction, GCC prerequisite fetching, and staged installation are
 # conditional on rebuilding; none is needed to reuse an installed toolchain.
