@@ -355,7 +355,10 @@ esac
 case "$WHP_HOST_OS" in
     windows) ;;
     *)
-        if [ -z "${WHP_CPP_SEED:-}" ]; then
+        # An explicit Homebrew CPP preference must reach cpp.sh discovery;
+        # otherwise the default CC_FOR_BUILD lock would mask it.
+        if [ -z "${WHP_CPP_SEED:-}" ] &&
+           [ "${WHP_CPP_PREFER_HOMEBREW:-0}" != 1 ]; then
             WHP_CPP_SEED=$CC_FOR_BUILD
         fi
         WHP_CPP_SEED=$("$SOURCE_DIR/seeds/cpp.sh" --print-seed) || exit 1
