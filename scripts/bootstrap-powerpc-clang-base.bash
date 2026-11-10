@@ -190,7 +190,15 @@ if [[ "$(uname -s)" == Darwin ]]; then
         exit 1
     fi
 
-    SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+    # Resolve a standalone native SDK with the same Xcode/CLT containment
+    # policy as build.sh, without overwriting an already-canonical selection.
+    source "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+    selected_sdkroot="$(whp_apple_select_sdk)" || exit 1
+    if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]; then
+        SDKROOT="$selected_sdkroot"
+        export SDKROOT
+    fi
+    unset selected_sdkroot
     MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-$(sw_vers -productVersion | awk -F. '{print $1 "." $2}')}"
     case "$(uname -m)" in
         arm64|aarch64) darwin_arch=arm64 ;;
