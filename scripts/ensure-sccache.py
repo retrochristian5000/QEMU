@@ -20,7 +20,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 3
+SCHEMA = 4
 
 
 def call(argv, *, cwd=None, env=None, capture=False):
@@ -58,11 +58,19 @@ def build_jobs(environ):
 def cargo_environment(environ, target):
     # Cargo's BLAKE3 and zstd dependencies compile native C code.
     env = clean_host_environment(environ)
+    # cc-rs recognizes target-qualified CC/CFLAGS and HOST_CFLAGS as well as
+    # the ordinary CC/CFLAGS variables. Remove inherited cross-target choices
+    # before restoring the single validated build-machine C compiler.
+    for key in tuple(env):
+        if (key.startswith(('CC_', 'CFLAGS_', 'HOST_CC_', 'HOST_CFLAGS_'))
+                or key in ('TARGET_CC', 'TARGET_CFLAGS', 'HOST_CFLAGS',
+                           'HOST_CPPFLAGS', 'HOST_CXXFLAGS')):
+            env.pop(key, None)
     cc = env.get('CC_FOR_BUILD')
-    if cc:
-        # cc-rs gives HOST_CC precedence over CC on a native Cargo build.
-        env['CC'] = cc
-        env['HOST_CC'] = cc
+    if not cc:
+        raise RuntimeError('sccacher requires the validated CC_FOR_BUILD seed')
+    env['CC'] = cc
+    env['HOST_CC'] = cc
     for key in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
                 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER',
                 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_RUSTFLAGS'):
