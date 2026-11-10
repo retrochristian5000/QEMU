@@ -55,6 +55,7 @@ on:
       - 'scripts/whp-build/arm64e-lld-probe.bash'
       - 'scripts/tests/test-arm64e-lld-binding-policy.py'
       - 'scripts/tests/test-native-llvm-cxx-flag-probes.py'
+      - 'scripts/tests/test-native-llvm-neon-seed.py'
       - 'scripts/tests/test-macos-lld-clangxx-flags.py'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
@@ -335,6 +336,9 @@ jobs:
       - name: Test Clang++ bootstrap flag probes
         shell: bash
         run: python3 scripts/tests/test-native-llvm-cxx-flag-probes.py
+
+      - name: Verify native Clang NEON resource/header seed ordering
+        run: python3 scripts/tests/test-native-llvm-neon-seed.py
 
       - name: Reject unauthenticated ARM64e C++ call flags
         shell: bash
