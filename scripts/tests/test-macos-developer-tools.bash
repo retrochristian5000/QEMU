@@ -27,6 +27,9 @@ mkdir "$tmp/bin"
 cat > "$tmp/bin/xcode-select" <<'EOF'
 #!/bin/sh
 test "$1" = -p || exit 1
+if [ -n "${WHP_TEST_XCODE_LOG:-}" ]; then
+    printf 'developer-root\n' >> "$WHP_TEST_XCODE_LOG"
+fi
 printf '%s\n' "$WHP_TEST_CLT"
 EOF
 cat > "$tmp/bin/xcrun" <<'EOF'
@@ -56,6 +59,12 @@ unset DEVELOPER_DIR SDKROOT
 test "$(whp_apple_developer_root)" = "$clt"
 test "$(whp_apple_find_tool clang)" = "$clt/usr/bin/clang"
 test "$(whp_apple_find_sdk)" = "$clt/SDKs/MacOSX.sdk"
+# One SDK discovery must not repeat the developer-root lookup before its
+# mandatory SDK containment and header validation.
+: > "$tmp/developer-lookups.log"
+test "$(WHP_TEST_XCODE_LOG="$tmp/developer-lookups.log" whp_apple_find_sdk)" = \
+    "$clt/SDKs/MacOSX.sdk"
+test "$(wc -l < "$tmp/developer-lookups.log" | tr -d '[:space:]')" = 1
 test "$(whp_apple_find_tool ld system)" = "$clt/usr/bin/ld"
 test "$(whp_apple_find_tool strip system)" = "$clt/usr/bin/strip"
 # Explicit Xcode.app override takes precedence over selected standalone CLT.
