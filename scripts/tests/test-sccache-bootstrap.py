@@ -210,6 +210,9 @@ class ManagedSccacheTests(unittest.TestCase):
                         text.index('scripts/bootstrap-native-clang.sh'))
         self.assertIn('WHP_COMPILER_CACHE_CMD=$(', text)
         self.assertIn('COMPILER_CACHE=sccache', text)
+        self.assertLess(text.index('seeds/cxx.sh" --print-cxx'),
+                        text.index('scripts/ensure-sccache.py'))
+        self.assertIn('export CXX_FOR_BUILD', text)
 
 
 if __name__ == '__main__':
