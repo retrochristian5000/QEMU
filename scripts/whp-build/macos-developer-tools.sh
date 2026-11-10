@@ -113,7 +113,18 @@ whp_apple_check_sdkroot()
             exit 1
             ;;
     esac
-    whp_apple_require_under_root "$canonical" "macOS SDK"
+    whp_apple_require_under_root "$canonical" "macOS SDK" || exit 1
+    # A directory named MacOSX.sdk is not sufficient: bootstrap components
+    # consume POSIX, C library, and Apple platform headers before QEMU builds.
+    # Validate their source in the selected SDK rather than searching /usr/include
+    # (which is intentionally absent on current macOS installations).
+    for header in stdio.h stdlib.h unistd.h sys/types.h TargetConditionals.h; do
+        if [ ! -f "$canonical/usr/include/$header" ]; then
+            printf 'error: selected macOS SDK is missing system header %s: %s\\n' \\
+                "$header" "$canonical/usr/include/$header" >&2
+            exit 1
+        fi
+    done
 )
 
 whp_apple_find_sdk()
