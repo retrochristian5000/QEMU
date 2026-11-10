@@ -331,7 +331,7 @@ fi
 # conditional on rebuilding; none is needed to reuse an installed toolchain.
 for required in tar bzip2 gzip perl ln mv rm; do
     if ! command -v "$required" >/dev/null 2>&1; then
-        printf 'error: PowerPC source-build dependency not found: %s\\n' \\
+        printf 'error: PowerPC source-build dependency not found: %s\n' \
             "$required" >&2
         exit 1
     fi
