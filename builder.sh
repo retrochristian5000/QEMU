@@ -15,15 +15,16 @@ fi
 script_name=${0##*/}
 bash_name=${script_name%.sh}.bash
 
-compiler_has_cache_wrapper()
+# Only a leading compiler launcher is a cache wrapper. A flag or compiler
+# argument mentioning "sccache" is not evidence that CC/CXX is wrapped.
+compiler_cache_wrapper_name()
 {
-    command_string=${1:-}
-    for cache_name in ccache sccache distcc icecc; do
-        case " $command_string " in
-            *" $cache_name "*|*"/$cache_name "*) return 0 ;;
-        esac
-    done
-    return 1
+    case "${1:-}" in
+        ccache\ *|*/ccache\ *) printf '%s\\n' ccache ;;
+        sccache\ *|*/sccache\ *) printf '%s\\n' sccache ;;
+        distcc\ *|*/distcc\ *) printf '%s\\n' distcc ;;
+        icecc\ *|*/icecc\ *) printf '%s\\n' icecc ;;
+    esac
 }
 
 # Compiler caches are build accelerators only. Keep their storage beside the
@@ -132,14 +133,31 @@ if [ -n "$cache_cmd" ]; then
     CXX_FOR_BUILD=${CXX_FOR_BUILD:-${CXX:-c++}}
     export CC_FOR_BUILD CXX_FOR_BUILD
 
-    if ! compiler_has_cache_wrapper "${CC:-}"; then
+    cc_cache_wrapper=$(compiler_cache_wrapper_name "${CC:-}")
+    cxx_cache_wrapper=$(compiler_cache_wrapper_name "${CXX:-}")
+    for inherited_wrapper in "$cc_cache_wrapper" "$cxx_cache_wrapper"; do
+        if [ -n "$inherited_wrapper" ] && [ "$inherited_wrapper" != "$cache_base" ]; then
+            printf 'error: selected %s cache conflicts with compiler launcher %s\\n' \\
+                "$cache_base" "$inherited_wrapper" >&2
+            exit 1
+        fi
+        if [ -n "$inherited_wrapper" ] && [ "${WHP_MANAGED_SCCACHE:-0}" = 1 ]; then
+            # Managed sccache has fork-specific PCH guarantees. Do not accept
+            # an inherited, potentially different sccache binary as equivalent.
+            printf '%s\\n' 'error: managed sccache requires unwrapped CC/CXX compiler commands' >&2
+            exit 1
+        fi
+    done
+    unset inherited_wrapper
+    if [ -z "$cc_cache_wrapper" ]; then
         CC="$cache_cmd ${CC:-cc}"
         export CC
     fi
-    if ! compiler_has_cache_wrapper "${CXX:-}"; then
+    if [ -z "$cxx_cache_wrapper" ]; then
         CXX="$cache_cmd ${CXX:-c++}"
         export CXX
     fi
+    unset cc_cache_wrapper cxx_cache_wrapper
     export WHP_COMPILER_CACHE_CMD WHP_COMPILER_CACHE_ROOT
     printf 'WHP compiler cache: %s (%s)\n' "$cache_base" "$WHP_COMPILER_CACHE_ROOT" >&2
 elif [ "$COMPILER_CACHE" = none ]; then
