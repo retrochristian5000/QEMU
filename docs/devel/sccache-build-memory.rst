@@ -83,6 +83,10 @@ fresh checkout or re-bootstrap of sccacher.
 Build-time settings
 -------------------
 
+Host-tool discovery does not implicitly wrap CC/CXX with ccache, even when
+ccache is installed. QEMU host cache wrapping belongs to the later policy-aware
+``builder.sh`` handoff; build-machine tool identity remains separate.
+
 The requested ``COMPILER_CACHE`` value is authoritative across Ninja, native
 LLVM and the final QEMU runner. An inherited ``WHP_COMPILER_CACHE_CMD``
 must match an explicitly selected ``ccache`` or ``sccache``; combining it
