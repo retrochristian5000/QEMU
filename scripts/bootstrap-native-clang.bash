@@ -2021,7 +2021,7 @@ fi
 # its executable, so a passing staging probe does not prove the published
 # toolchain has the same usable resource directory.
 if ! usable "$TOOLCHAIN_DIR"; then
-    printf '%s\\n' 'error: relocated native LLVM failed final compiler/header validation; restoring previous toolchain' >&2
+    printf '%s\n' 'error: relocated native LLVM failed final compiler/header validation; restoring previous toolchain' >&2
     rm -rf "$TOOLCHAIN_DIR"
     if [[ -e "$old_toolchain" ]]; then
         mv "$old_toolchain" "$TOOLCHAIN_DIR"
