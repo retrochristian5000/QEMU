@@ -590,6 +590,25 @@ Automake/Autoconf, so their source-generation steps can use the validated
 managed interpreter where available. The original interpreter remains
 ``WHP_PERL_BOOTSTRAP_SEED`` after promotion, avoiding any self-dependency.
 
+Perl's generated ``Configure`` is question-driven when invoked without
+options, but the managed build must never require a user to answer its
+prompts. QEMU invokes it with ``-des`` (defaults, exit after configuration,
+terse output), disconnects stdin from the terminal, and bounds the
+configuration subprocess with a timeout. The pinned Perl source is currently
+a development series (``PERL_VERSION=45`` in ``patchlevel.h``): its
+default confirmation would otherwise **reject** that release, even under
+``-des``. QEMU reads the staged source's ``PERL_VERSION`` before
+Configure and explicitly supplies ``-Dusedevel`` only for odd-numbered
+development series. Stable even-numbered series do not receive development
+consent. Unknown source version formats fail rather than guessing.
+
+The staged source tree is reconstructed on cache invalidation, so previous
+``config.sh`` answers cannot silently become defaults for a different
+revision or toolchain. The bootstrap marker schema changes when this
+configuration policy changes. ``scripts/tests/test-perl-configure-unattended.py``
+checks both development and stable option selection, noninteractive stdin,
+failure propagation, and bounded configuration execution.
+
 ``scripts/ensure-perl.py`` reconciles the recorded submodule commit and
 stages a Git archive under ``$BUILD_DIR/bootstrap/perl/source``, leaving
 the source checkout alone. Perl's own generated POSIX ``Configure`` is
