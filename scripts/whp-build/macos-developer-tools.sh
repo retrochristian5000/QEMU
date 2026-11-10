@@ -129,7 +129,8 @@ whp_apple_check_sdkroot()
 
 whp_apple_find_sdk()
 (
-    whp_apple_developer_root >/dev/null || exit 1
+    # whp_apple_check_sdkroot below verifies the selected developer root and
+    # SDK containment. Avoid resolving that same root twice for one lookup.
     command -v xcrun >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
