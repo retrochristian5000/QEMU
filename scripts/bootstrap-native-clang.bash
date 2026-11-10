@@ -1407,6 +1407,31 @@ native_neon_headers_usable()
         native_llvm_validation_error resource 'cannot locate Clang resource directory'
         return 1
     }
+    # A stale driver config or relocated staging path may still point to a
+    # real Clang installation. Require resource headers belonging to this
+    # exact prefix, not merely any directory that contains arm_neon.h.
+    local prefix_real='' resource_real='' cxx_resource=''
+    prefix_real="$(cd -P -- "$prefix" && pwd -P)" || return 1
+    [[ -n "$resource_dir" && -d "$resource_dir" ]] || {
+        native_llvm_validation_error resource "Clang resource directory is absent: ${resource_dir:-<empty>}"
+        return 1
+    }
+    resource_real="$(cd -P -- "$resource_dir" && pwd -P)" || return 1
+    case "$resource_real" in
+        "$prefix_real"/*) ;;
+        *)
+            native_llvm_validation_error resource "Clang resource directory is outside toolchain: $resource_real (expected under $prefix_real)"
+            return 1 ;;
+    esac
+    cxx_resource="$("$prefix/bin/clang++" -print-resource-dir 2>/dev/null)" || {
+        native_llvm_validation_error resource 'cannot locate Clang++ resource directory'
+        return 1
+    }
+    [[ -d "$cxx_resource" &&
+       "$(cd -P -- "$cxx_resource" && pwd -P)" == "$resource_real" ]] || {
+        native_llvm_validation_error resource "Clang and Clang++ disagree on resource directory: $resource_real vs ${cxx_resource:-<empty>}"
+        return 1
+    }
     for header in arm_neon.h arm_bf16.h arm_vector_types.h; do
         [[ -s "$resource_dir/include/$header" ]] || {
             native_llvm_validation_error resource "missing generated NEON header: $resource_dir/include/$header"
@@ -1990,6 +2015,17 @@ if [[ -e "$TOOLCHAIN_DIR" ]]; then
 fi
 if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
     [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+# Recheck *after relocation*. Clang discovers builtin headers relative to
+# its executable, so a passing staging probe does not prove the published
+# toolchain has the same usable resource directory.
+if ! usable "$TOOLCHAIN_DIR"; then
+    printf '%s\\n' 'error: relocated native LLVM failed final compiler/header validation; restoring previous toolchain' >&2
+    rm -rf "$TOOLCHAIN_DIR"
+    if [[ -e "$old_toolchain" ]]; then
+        mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    fi
     exit 1
 fi
 rm -rf "$old_toolchain" "$stage_root"
