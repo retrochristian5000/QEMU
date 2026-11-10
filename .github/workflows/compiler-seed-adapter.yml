@@ -24,6 +24,8 @@ on:
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'scripts/tests/test-early-homebrew-selection.py'
+      - 'scripts/whp-build/gnu-make.bash'
       - 'scripts/tests/test-compiler-seed-diagnostics.bash'
       - 'docs/devel/whp-dependency-ledger.rst'
       - '.github/workflows/compiler-seed-adapter.yml'
@@ -49,6 +51,8 @@ on:
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-sed.py'
       - 'scripts/tests/test-bootstrap-compiler-policy.py'
+      - 'scripts/tests/test-early-homebrew-selection.py'
+      - 'scripts/whp-build/gnu-make.bash'
       - 'scripts/tests/test-compiler-seed-diagnostics.bash'
       - 'docs/devel/whp-dependency-ledger.rst'
       - '.github/workflows/compiler-seed-adapter.yml'
@@ -68,6 +72,9 @@ jobs:
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py
+
+      - name: Verify Homebrew discovery before early seed locks
+        run: python3 scripts/tests/test-early-homebrew-selection.py
 
       - name: Verify failed compiler probes expose diagnostics
         shell: bash
