@@ -34,7 +34,7 @@ if [[ ! -f "$CORE_BOOTSTRAP" ]]; then
     exit 1
 fi
 
-for required in git tar xz shasum awk sed cut rm mkdir mv bison flex; do
+for required in git tar xz shasum awk sed cut rm mkdir mv flex; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: official-Git bootstrap dependency not found: %s\n' \
             "$required" >&2
@@ -42,10 +42,13 @@ for required in git tar xz shasum awk sed cut rm mkdir mv bison flex; do
     fi
 done
 
-if ! bison --version 2>/dev/null | sed -n '1p' | grep -Eq '[[:space:]][3-9][0-9]*\.'; then
-    printf 'error: official GCC Git sources require GNU Bison 3.x or newer\n' >&2
-    exit 1
-fi
+# GCC/binutils generated parsers require Bison, not macOS's legacy yacc.
+# Resolve once through the QEMU seed so version checks and source builds use
+# the same binary even when Homebrew installs a keg-only Bison.
+YACC="$(/bin/sh "$SOURCE_DIR/seeds/yacc.sh" --print-seed)" || exit 1
+BISON="$YACC"
+export YACC BISON
+
 if ! flex --version 2>/dev/null | sed -n '1p' | grep -Eq '[[:space:]]2\.'; then
     printf 'error: official GCC Git sources require Flex 2.x\n' >&2
     exit 1
