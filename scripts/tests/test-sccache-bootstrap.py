@@ -111,6 +111,8 @@ class ManagedSccacheTests(unittest.TestCase):
         }
         native = {
             'CC_FOR_BUILD': '/native/clang',
+            'CXX_FOR_BUILD': '/native/clang++',
+            'CPP_FOR_BUILD': '/native/cpp',
             'SDKROOT': '/native/MacOSX.sdk',
             'DEVELOPER_DIR': '/native/Developer',
             'MACOSX_DEPLOYMENT_TARGET': '15.0',
