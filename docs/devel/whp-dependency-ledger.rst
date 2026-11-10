@@ -883,8 +883,13 @@ scripts are installed without Info or manual generation. Help2man and Texinfo
 remain upstream developer/release tools, not requirements of the QEMU profile.
 
 The direct roots for this managed stage are Automake/aclocal, GNU M4, Perl,
-seed GNU Make, a primitive shell, ``realpath``/``mktemp``, and the validated
-sed seed. An explicit ``M4`` remains authoritative. On Darwin, otherwise,
+seed GNU Make, a primitive shell, ``mktemp``, and the validated
+sed seed. The pinned Autoconf source bootstrap invokes ``mktemp`` for a
+temporary tool directory, but not a standalone ``realpath`` command.
+The Python bootstrap already resolves its source/build paths with
+``pathlib``, so requiring a separate ``realpath`` program would add an
+unnecessary portability gate (particularly on older macOS hosts).
+An explicit ``M4`` remains authoritative. On Darwin, otherwise,
 the standard Homebrew M4 keg locations are checked before PATH so Apple's
 compatibility M4 cannot silently outrank an installed GNU M4. Admission now
 requires GNU M4 1.4.16 or newer with working ``--gnu`` support, matching the
