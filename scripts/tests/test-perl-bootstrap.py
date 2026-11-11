@@ -31,6 +31,16 @@ def check():
 
     source = SCRIPT.read_text(encoding="utf-8")
     assert "reconcile_submodule(ROOT, REL, git=git)" in source
+    # Missing native archive dependencies must fail before source checkout.
+    assert source.index('str(ROOT / "seeds" / "ar.sh")') < source.index(
+        "reconcile_submodule(ROOT, REL, git=git)"
+    )
+    assert source.index('str(ROOT / "seeds" / "ranlib.sh")') < source.index(
+        "reconcile_submodule(ROOT, REL, git=git)"
+    )
+    assert source.index("select_native_sdk(ROOT)") < source.index(
+        "reconcile_submodule(ROOT, REL, git=git)"
+    )
     assert 'stage_source(revision, source, git=git)' in source
     assert '"./Configure", "-des"' in source
     assert 'run([make, "perl"]' in source
