@@ -58,4 +58,33 @@ if whp_require_binary_switch TEST_SWITCH auto >/dev/null 2>&1; then
     exit 1
 fi
 
+# Identity checks must accept the same path even on older shells, and
+# accept genuine aliases only when the running shell supports -ef.
+if ! whp_same_directory "$SOURCE_DIR" "$SOURCE_DIR"; then
+    printf '%s\n' 'error: identical directories were rejected' >&2
+    exit 1
+fi
+whp_parent_dir=${SOURCE_DIR%/*}
+if whp_same_directory "$SOURCE_DIR" "$whp_parent_dir"; then
+    printf '%s\n' 'error: distinct directories were accepted' >&2
+    exit 1
+else
+    whp_status=$?
+    case "$whp_status" in
+        1|2) ;;
+        *) printf 'error: unexpected directory identity status %s\n' "$whp_status" >&2; exit 1 ;;
+    esac
+fi
+if [ "$whp_status" -eq 1 ]; then
+    # A symlinked spelling should resolve to the same underlying inode.
+    whp_probe_dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ef-probe.XXXXXX") || exit 1
+    trap 'rm -rf "$whp_probe_dir"' 0
+    mkdir "$whp_probe_dir/original"
+    ln -s original "$whp_probe_dir/alias"
+    if ! whp_same_directory "$whp_probe_dir/original" "$whp_probe_dir/alias"; then
+        printf '%s\n' 'error: shell -ef rejected a directory symlink alias' >&2
+        exit 1
+    fi
+fi
+
 printf '%s\n' 'WHP shared shell functions: verified'
