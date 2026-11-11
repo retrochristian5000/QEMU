@@ -97,7 +97,15 @@ prefix and tools before reporting success.
 
 ``WHP_BUILD_BASH`` is the single public shell selector. The selected Bash path
 is also used as ``CONFIG_SHELL`` for nested configure recursion. There is no
-separate QEMU or PowerPC-toolchain shell selector. ``BOOTSTRAP_BASH=auto``
+separate QEMU or PowerPC-toolchain shell selector. The POSIX
+``seeds/bash.sh`` adapter validates an independent GNU Bash before the managed
+fork is available. ``WHP_BASH_SEED`` explicitly chooses this root interpreter
+and fails closed if unusable; ``WHP_BUILD_BASH`` still takes precedence.
+When used, the root is recorded in ``WHP_BASH_BOOTSTRAP_SEED`` separately
+from any later managed Bash promotion. The adapter guards recursion and
+suppresses inherited Bash startup hooks during selection and forwarding.
+
+``BOOTSTRAP_BASH=auto``
 uses the pinned WHP Bash fork by default on macOS, where the system Bash is
 historically old, while other hosts keep a usable host Bash first and fall
 back to the pinned fork when needed. An explicit ``WHP_BUILD_BASH`` always

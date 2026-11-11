@@ -4,6 +4,9 @@ on:
   push:
     branches: [master]
     paths:
+      - 'seeds/bash.sh'
+      - 'scripts/tests/test-bash-seed.py'
+      - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
@@ -32,6 +35,9 @@ on:
       - '.github/workflows/compiler-seed-adapter.yml'
   pull_request:
     paths:
+      - 'seeds/bash.sh'
+      - 'scripts/tests/test-bash-seed.py'
+      - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
@@ -71,6 +77,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify independent GNU Bash seed
+        run: |
+          /bin/sh -n seeds/bash.sh
+          python3 scripts/tests/test-bash-seed.py
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py

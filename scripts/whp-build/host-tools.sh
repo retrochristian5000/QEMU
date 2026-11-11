@@ -700,6 +700,23 @@ whp_bash_usable()
     ' >/dev/null 2>&1
 }
 
+# Select an independent root Bash before the managed Bash fork. Explicit
+# WHP_BUILD_BASH remains the public shell authority; WHP_BASH_SEED only
+# controls root discovery when the public selector was not provided.
+if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ]; then
+    WHP_HOST_BASH=$(/bin/sh "$SOURCE_DIR/seeds/bash.sh" --print-seed 2>/dev/null) || WHP_HOST_BASH=
+    if [ -z "$WHP_HOST_BASH" ] && [ -n "${WHP_BASH_SEED:-}" ]; then
+        printf 'error: invalid independent WHP_BASH_SEED: %s\n' "$WHP_BASH_SEED" >&2
+        exit 1
+    fi
+    if [ -n "$WHP_HOST_BASH" ]; then
+        WHP_BASH_BOOTSTRAP_SEED=$WHP_HOST_BASH
+        WHP_BUILD_BASH=$WHP_HOST_BASH
+        export WHP_BASH_BOOTSTRAP_SEED
+    fi
+    unset WHP_HOST_BASH
+fi
+
 if [ -z "$WHP_BUILD_BASH" ]; then
     if [ "$WHP_HOST_OS" = macos ] && [ -x /bin/bash ]; then
         WHP_BUILD_BASH=/bin/bash
