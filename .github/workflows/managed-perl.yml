@@ -7,6 +7,7 @@ on:
       - '.gitmodules'
       - 'toolchains/perl'
       - 'seeds/perl.sh'
+      - 'seeds/ranlib.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -20,6 +21,7 @@ on:
       - '.gitmodules'
       - 'toolchains/perl'
       - 'seeds/perl.sh'
+      - 'seeds/ranlib.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -49,6 +51,8 @@ jobs:
           python3 scripts/tests/test-perl-seed.py
           python3 scripts/tests/test-perl-bootstrap.py
           python3 scripts/tests/test-perl-configure-unattended.py
+          sh -n seeds/ranlib.sh
+          sh seeds/ranlib.sh --check
 
       - name: Initialize pinned Perl fork
         run: git submodule update --init --depth 1 -- toolchains/perl
