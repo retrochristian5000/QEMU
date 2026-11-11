@@ -31,7 +31,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "4"
+SCHEMA = "5"
 
 
 def run(argv: list[str], *, cwd: pathlib.Path | None = None,
@@ -124,7 +124,7 @@ def stage_source(revision: str, destination: pathlib.Path, *, git: str) -> None:
 
 def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
                         compiler: str, cflags: str = "",
-                        ldflags: str = "") -> list[str]:
+                        ldflags: str = "", ranlib: str = "") -> list[str]:
     """Use Perl's supported noninteractive mode and explicit devel consent.
 
     Perl Configure -des alone refuses odd-numbered development series:
@@ -151,6 +151,8 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
         options.append(f"-Dccflags={cflags}")
     if ldflags:
         options.append(f"-Dldflags={ldflags}")
+    if ranlib:
+        options.append(f"-Dranlib={ranlib}")
     if minor % 2:
         options.append("-Dusedevel")
     return options
@@ -207,6 +209,16 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         raise RuntimeError(f"native Perl bootstrap needs Make: {requested_make}")
     make = str(pathlib.Path(make).resolve())
 
+    # Keep archive indexing native to the selected compiler and SDK.
+    ranlib = subprocess.run(
+        ["/bin/sh", str(ROOT / "seeds" / "ranlib.sh"), "--print-seed"],
+        text=True, capture_output=True, check=False,
+    )
+    if ranlib.returncode or not ranlib.stdout.strip():
+        raise RuntimeError("native Perl ranlib seed unavailable: "
+                           + (ranlib.stderr.strip() or "no native archive indexer"))
+    ranlib_path = ranlib.stdout.strip()
+
     cflags = select_bootstrap_cflags("perl", cc)
     ldflags = select_bootstrap_ldflags("perl", cc, cflags=cflags)
     prefix = build_dir / "deps" / "perl"
@@ -215,7 +227,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     marker = (
         f"SCHEMA={SCHEMA}\nSOURCE_REVISION={revision}\n"
         f"SEED_PERL={seed}\nCC_FOR_BUILD={cc}\n"
-        f"MAKE={make}\nSDKROOT={sdk}\n"
+        f"MAKE={make}\nRANLIB={ranlib_path}\nSDKROOT={sdk}\n"
         f"CFLAGS={cflags}\nLDFLAGS={ldflags}\n"
     )
     work = build_dir / "bootstrap" / "perl"
@@ -248,6 +260,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     env["WHP_PERL_SEED"] = seed
     env["WHP_PERL_BOOTSTRAP_SEED"] = seed
     env["MAKE"] = make
+    env["RANLIB"] = ranlib_path
     if sdk:
         env["SDKROOT"] = sdk
     # Perl Configure consumes explicit ccflags/ldflags, not inherited
@@ -263,7 +276,8 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     if prefix.exists():
         prefix.rename(backup)
     try:
-        run(configure_arguments(source, prefix, cc, cflags, ldflags),
+        run(configure_arguments(source, prefix, cc, cflags, ldflags,
+                                ranlib_path),
             cwd=source, env=env, unattended=True, timeout=900)
         run([make, "perl"], cwd=source, env=env)
         built = source / "perl"
