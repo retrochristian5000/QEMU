@@ -98,6 +98,18 @@ class PerlConfigureTests(unittest.TestCase):
             with perl.bootstrap_lock(base):
                 self.assertTrue((base / "bootstrap" / ".perl-bootstrap.lock").exists())
 
+    def test_native_ranlib_is_configured_explicitly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            (source / "patchlevel.h").write_text(
+                "#define PERL_VERSION 44\\n", encoding="utf-8"
+            )
+            args = perl.configure_arguments(
+                source, source / "prefix", "/usr/bin/cc",
+                "-O2", "", "/usr/bin/ranlib",
+            )
+            self.assertIn("-Dranlib=/usr/bin/ranlib", args)
+
     def test_explicit_compiler_flags_reach_configure(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp)
