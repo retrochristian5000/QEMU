@@ -27,7 +27,43 @@ awk -v dir="$work" '
 
 for name in auth impl arm64; do
     "$opt" -module-summary "$work/$name.ll" -o "$work/$name.o"
+    # Examine the actual serialized bitcode, not only the source fixture.
+    # A matching final Mach-O subtype alone cannot prove PAC IR survived.
+    "$opt" -S "$work/$name.o" -o "$work/$name.roundtrip.ll"
+    case "$name" in
+        auth|impl)
+            grep -Fq 'target triple = "arm64e-apple-macosx13.0.0"' \
+                "$work/$name.roundtrip.ll" || {
+                echo "ARM64e bitcode lost its target triple: $name" >&2
+                exit 1
+            }
+            grep -Fq '!"ptrauth.abi-version"' "$work/$name.roundtrip.ll" || {
+                echo "ARM64e bitcode lost its pointer-authentication ABI flag: $name" >&2
+                exit 1
+            }
+            grep -Fq 'i32 0, i1 false' "$work/$name.roundtrip.ll" || {
+                echo "ARM64e bitcode lost its userland ABI version: $name" >&2
+                exit 1
+            }
+            ;;
+        arm64)
+            grep -Fq 'target triple = "arm64-apple-macosx13.0.0"' \
+                "$work/$name.roundtrip.ll" || {
+                echo 'ordinary ARM64 bitcode target triple changed' >&2
+                exit 1
+            }
+            if grep -Fq '!"ptrauth.abi-version"' "$work/$name.roundtrip.ll"; then
+                echo 'ordinary ARM64 bitcode gained ARM64e PAC ABI metadata' >&2
+                exit 1
+            fi
+            ;;
+    esac
 done
+# Verify the actual ARM64e bitcode also retains the operations that require
+# authenticated function pointers; module flags alone do not prove this.
+grep -Fq 'section "llvm.ptrauth"' "$work/auth.roundtrip.ll"
+grep -Fq '"ptrauth"(i32 0, i64 0)' "$work/auth.roundtrip.ll"
+grep -Fq '"ptrauth-calls"' "$work/auth.roundtrip.ll"
 
 "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
     -dylib -fixup_chains -object_path_lto "$work/generated" \
