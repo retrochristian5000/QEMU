@@ -99,7 +99,9 @@ check_updated() {
     physical_top=$(CDPATH= cd -- "$top" && pwd -P) || return 1
     # Treat case-only aliases on case-insensitive filesystems as the same
     # worktree, but never accept an unrelated directory.
-    test "$actual" = "$physical_top" || test "$actual" -ef "$physical_top" || return 1
+    # Reuse the shared identity test so unsupported -ef is not confused with
+    # an ordinary mismatch. This retains its exact-path fast path.
+    whp_same_directory "$actual" "$physical_top" || return 1
 
     test "$current" = "$pin" && return 0
     whp_legacy_git -C "$module" merge-base --is-ancestor "$pin" "$current"
