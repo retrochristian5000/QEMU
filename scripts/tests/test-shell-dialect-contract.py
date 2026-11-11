@@ -53,6 +53,19 @@ def main() -> int:
     posix = inventory_paths(inventory, "WHP_POSIX_BUILD_SCRIPTS")
     bash_files = inventory_paths(inventory, "WHP_BASH_BUILD_SCRIPTS")
 
+    # Early bootstrap Git parsing must never field-split attacker-controlled
+    # ls-tree output; ranlib must resolve symlinked seed launchers just as ar.
+    git_helper = (ROOT / "scripts/whp-build/shell-functions.sh").read_text(
+        encoding="utf-8"
+    )
+    if "set -- $whp_entry" in git_helper:
+        raise RuntimeError("unsafe gitlink word splitting in POSIX bootstrap")
+    if "whp_header=${whp_entry%%" not in git_helper:
+        raise RuntimeError("gitlink header parsing is missing")
+    ranlib_seed = (ROOT / "seeds/ranlib.sh").read_text(encoding="utf-8")
+    if 'while [ -L "$entry" ]; do' not in ranlib_seed:
+        raise RuntimeError("ranlib seed does not resolve symlink launchers")
+
     # Every seed is a POSIX launcher even if a newly added seed has not yet
     # been added to the hand-maintained build entrypoint inventory.
     seeds = sorted((ROOT / "seeds").glob("*.sh"))
