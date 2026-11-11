@@ -126,7 +126,7 @@ def main():
     ap.add_argument("--audit-archive", type=Path)
     args = ap.parse_args()
     if args.audit_archive:
-        entries = audit(args.audit_archive.read_bytes(), complete_index=False)
+        entries = audit(args.audit_archive.read_bytes())
         print(f"ARM64e Darwin archive: {len(entries)-1} Mach-O members indexed")
         return
     assert args.clang and args.ar and args.ranlib
@@ -149,7 +149,9 @@ def main():
         raw = {p.name: p.read_bytes() for p in objs}
         originals = (root / "one.a", root / "two.a")
         for lib in originals:
-            run([args.ar, "--format=darwin", "rcs", str(lib),
+            # Keep llvm-ar from building the index itself: llvm-ranlib must
+            # construct the symbol table tested by audit() and the linker.
+            run([args.ar, "--format=darwin", "rcS", str(lib),
                  *map(str, objs)])
             run([args.ranlib, str(lib)])
             audit(lib.read_bytes(), raw)
@@ -178,7 +180,7 @@ def main():
         run([args.clang, "-target", "arm64-apple-macosx13.0", "-c",
              str(plain), "-o", str(obj)])
         mixed = root / "mixed.a"
-        run([args.ar, "--format=darwin", "rcs", str(mixed),
+        run([args.ar, "--format=darwin", "rcS", str(mixed),
              str(objs[0]), str(obj)])
         run([args.ranlib, str(mixed)])
         try:
