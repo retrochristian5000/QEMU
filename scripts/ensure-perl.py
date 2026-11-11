@@ -199,7 +199,8 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     git = os.environ.get("WHP_GIT_SEED") or shutil.which("git")
     if not git:
         raise RuntimeError("native Perl bootstrap requires the selected Git seed")
-    revision = reconcile_submodule(ROOT, REL, git=git)
+    # Validate native prerequisites before source reconciliation: a missing
+    # archiver or SDK must not trigger unnecessary submodule fetches.
     cc = select_native_cc(ROOT)
     sdk = select_native_sdk(ROOT)
     requested_make = (
@@ -230,6 +231,10 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         raise RuntimeError("native Perl ranlib seed unavailable: "
                            + (ranlib.stderr.strip() or "no native archive indexer"))
     ranlib_path = ranlib.stdout.strip()
+
+    # All host roots are now known. Reconcile the source only after the
+    # native toolchain pair has passed its archive-and-link probes.
+    revision = reconcile_submodule(ROOT, REL, git=git)
 
     cflags = select_bootstrap_cflags("perl", cc)
     ldflags = select_bootstrap_ldflags("perl", cc, cflags=cflags)
