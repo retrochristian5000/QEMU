@@ -116,7 +116,11 @@ esac
 
 # A normal build validates the AWK seed once. Literal awk calls and $AWK
 # then execute the identical binary without repeating probes.
-if [ "${WHP_AWK_LOCKED:-0}" = 1 ] && [ -n "${WHP_AWK_SEED:-}" ]; then
+if [ "${WHP_AWK_LOCKED:-0}" = 1 ]; then
+    [ -n "${WHP_AWK_SEED:-}" ] || {
+        printf '%s\n' 'error: locked AWK has no selected seed' >&2
+        exit 1
+    }
     case "$WHP_AWK_SEED" in
         */awk.sh|*/scripts/whp-build/seed-bin/awk)
             printf '%s\n' 'error: locked AWK points to the awk bridge' >&2
