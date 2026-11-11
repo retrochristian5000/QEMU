@@ -37,12 +37,9 @@ resolve()
 native_probe()
 (
     ranlib=$1
-    if [ "$(uname -s)" = Darwin ]; then
-        . "$root/scripts/whp-build/macos-developer-tools.sh"
-        ar=$(whp_apple_find_tool ar system) || exit 1
-    else
-        ar=$(command -v ar) || exit 1
-    fi
+    # Use the same validated native archiver selected for Perl; never
+    # silently pair ranlib with an unrelated target-format archive tool.
+    ar=$(/bin/sh "$root/seeds/ar.sh" --print-seed) || exit 1
     cc=$(/bin/sh "$root/seeds/cc.sh" --print-cc) || exit 1
     dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ranlib.XXXXXX") || exit 1
     trap 'rm -rf -- "$dir"' 0
