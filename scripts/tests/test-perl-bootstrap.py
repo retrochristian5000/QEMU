@@ -37,6 +37,17 @@ def check():
     assert '/bin/sh "$compiler_seed" -c "$tmp/probe.c"' in archive_seed
     assert '"$compiler" -c "$tmp/probe.c"' not in archive_seed
 
+    # A valid indexer must consume an archive built without ar's own 's'
+    # flag, then link and execute using the same SDK-aware C seed.
+    ranlib_seed = (ROOT / "seeds/ranlib.sh").read_text(encoding="utf-8")
+    assert 'cc_seed="$root/seeds/cc.sh"' in ranlib_seed
+    assert '/bin/sh "$cc_seed" -c "$dir/probe.c"' in ranlib_seed
+    assert '/bin/sh "$cc_seed" "$dir/main.c" "$dir/libprobe.a"' in ranlib_seed
+    assert '"$ar" rc "$dir/libprobe.a"' in ranlib_seed
+    assert '"$ar" rcs "$dir/libprobe.a"' not in ranlib_seed
+    assert '"$ranlib" "$dir/libprobe.a"' in ranlib_seed
+    assert '"$dir/probe" >/dev/null 2>&1 || exit 1' in ranlib_seed
+
     assert "reconcile_submodule(ROOT, REL, git=git)" in source
     # Missing native archive dependencies must fail before source checkout.
     assert source.index('str(ROOT / "seeds" / "ar.sh")') < source.index(
