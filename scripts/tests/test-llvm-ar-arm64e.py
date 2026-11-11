@@ -153,6 +153,14 @@ def main():
             # construct the symbol table tested by audit() and the linker.
             run([args.ar, "--format=darwin", "rcS", str(lib),
                  *map(str, objs)])
+            # Check the test fixture itself: a missing index must fail before
+            # ranlib repairs it, or the indexer would not actually be tested.
+            try:
+                audit(lib.read_bytes(), raw)
+            except AssertionError as error:
+                assert "expected exactly one Darwin BSD ranlib index" in str(error), str(error)
+            else:
+                raise AssertionError("llvm-ar unexpectedly indexed rcS archive")
             run([args.ranlib, str(lib)])
             audit(lib.read_bytes(), raw)
         assert originals[0].read_bytes() == originals[1].read_bytes(), (
