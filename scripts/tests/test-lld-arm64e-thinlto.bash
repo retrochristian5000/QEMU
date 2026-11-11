@@ -90,12 +90,42 @@ grep -Fq 'ARM64_RELOC_AUTHENTICATED_POINTER' "$work/relocs.txt" || {
     exit 1
 }
 
+# Inspect the optimized caller itself. A relocation and an ARM64e header
+# can both be correct while a remaining indirect C++-style call is unsigned.
+# Keep checks symbol-scoped so unrelated functions cannot mask a regression.
+audit_thinlto_indirect_call()
+{
+    local binary="$1"
+    local label="$2"
+    local disasm="$work/$label-indirect.txt"
+    "$objdump" -d --disassemble-symbols=_whp_indirect "$binary" >"$disasm"
+    if ! grep -Fq '_whp_indirect' "$disasm"; then
+        echo "$label: ThinLTO lost the authenticated-call test function" >&2
+        exit 1
+    fi
+    if grep -Eiq '[[:space:]](blr|br)[[:space:]]+x[0-9]+' "$disasm"; then
+        cat "$disasm" >&2
+        echo "$label: ThinLTO emitted an unsigned indirect branch" >&2
+        exit 1
+    fi
+    # This fixture loads a mutable authenticated callback, so its indirect
+    # call cannot be devirtualized into a known direct target.
+    if ! grep -Eiq '[[:space:]](blraa|blrab|braa|brab)[[:space:]]' "$disasm"; then
+        cat "$disasm" >&2
+        echo "$label: ThinLTO lost authenticated indirect-call codegen" >&2
+        exit 1
+    fi
+}
+
+audit_thinlto_indirect_call "$work/libauth.dylib" cold
+
 # Re-link with a populated ThinLTO cache, so cached objects get the same PAC ABI.
 "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
     -dylib -fixup_chains -cache_path_lto "$work/cache" \
     "$work/auth.o" "$work/impl.o" -o "$work/libauth-cached.dylib"
 "$objdump" --macho --chained-fixups "$work/libauth-cached.dylib" > "$work/cached.txt"
 grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' "$work/cached.txt"
+audit_thinlto_indirect_call "$work/libauth-cached.dylib" cached
 
 # A regular ARM64 dylib can be a runtime import but ARM64 bitcode cannot be
 # compiled as ARM64e. Test the inverse boundary too.
