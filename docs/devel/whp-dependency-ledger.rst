@@ -378,6 +378,89 @@ Meson configuration.  A native WHP LLVM build is optional and must not become
 a prerequisite for bootstrapping the compiler that is needed to build LLVM
 itself.
 
+Native LLVM transitive dependency inventory
+---------------------------------------------
+
+The LLVM submodule at ``toolchains/llvm-project`` is an independent source
+repository. The actual QEMU consumer is
+``scripts/bootstrap-native-clang.bash``, not every project or optional
+dependency supported by upstream LLVM. This inventory records *capabilities*,
+their existing QEMU provider, and which build lane activates them; it does not
+declare all listed tools mandatory QEMU roots.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 19 27 25 29
+
+   * - LLVM dependency / capability
+     - Active boundary
+     - Existing QEMU provider
+     - Status / next action
+   * - Host C and C++17-or-newer compiler, linker, native headers
+     - LLVM's initial CMake configure and compiler build
+     - ``seeds/cc.sh``, ``seeds/cxx.sh``, host SDK/toolchain selection
+     - Required seed; never bootstrap LLVM with its own unfinished compiler.
+   * - CMake
+     - LLVM configure on a cache miss or source/configuration change
+     - External CMake already used for other QEMU toolchain lanes
+     - Required capability for LLVM rebuild; no managed CMake source is
+       registered in QEMU. Track as an external provider gap, not a new
+       unconditional build step.
+   * - Ninja
+     - LLVM compilation and distribution install
+     - ``toolchains/ninja-builder`` or admitted host Ninja
+     - Required build executor; reuse the selected installation.
+   * - Python
+     - QEMU bootstrap scripts and selected LLVM generators/utilities
+     - ``toolchains/python-runtime`` or validated host Python
+     - Shared bootstrap capability; do not create a second Python environment
+       solely for LLVM.
+   * - Git and basic host utilities
+     - Pin/revision verification, staging and shell orchestration
+     - Selected seed/managed Git; shell, sed, mkdir, mv, rm, ln, mktemp
+     - Active script preflight requires these utilities. No duplicate fork
+       merely to satisfy LLVM.
+   * - Xcode/CLT and macOS SDK
+     - Native macOS compiler/linker tests and compiler-rt
+     - ``macos-developer-tools.sh``, ``xcrun``, ``sw_vers``
+     - Host-provided platform capability, not a Git submodule; verify the
+       macOS SDK and native ABI without admitting an iOS SDK.
+   * - compiler-rt
+     - Native macOS runtime artifacts
+     - LLVM's own ``compiler-rt`` runtime sources
+     - Enabled on macOS; no independent QEMU third-party library bootstrap.
+   * - zlib and zstd
+     - Optional LLVM compression support
+     - QEMU zlib fork; QEMU's separate zstd dependency discovery
+     - Both explicitly OFF in this native LLVM configuration; neither is
+       a required LLVM bootstrap edge. Do not build them early for LLVM.
+   * - libxml2
+     - ``NATIVE_LLVM_WINDOWS_MANIFEST=1`` selects ``llvm-mt``
+     - No LLVM-specific managed source provider recorded
+     - ``LLVM_ENABLE_LIBXML2=FORCE_ON`` in this optional lane. An
+       external development library is required here; record a provider
+       decision before adding or rebuilding any source.
+   * - LLDB optional integrations
+     - ``NATIVE_LLVM_ENABLE_LLDB`` (auto enables on macOS)
+     - LLDB is part of the pinned LLVM source tree
+     - LLDB Python, SWIG, Lua, libedit, curses, LZMA, libxml2,
+       Tree-sitter and protocol-server integrations are explicitly OFF.
+       They must not be promoted into LLVM roots merely because LLDB is built.
+   * - Compiler cache
+     - Native LLVM C/C++ object compilation when opted in
+     - Admitted ``ccache`` or pinned ``toolchains/sccacher``
+     - Optional accelerator; cache correctness and PCH restrictions take
+       precedence over saving compile time.
+
+LLVM's source-level build configuration may support additional optional
+packages, but the QEMU-selected ``LLVM_ENABLE_PROJECTS``,
+``LLVM_ENABLE_RUNTIMES``, CMake flags and host platform determine which
+ones are active. Before declaring a missing dependency, confirm an actual
+configure/build consumer and whether a validated installed toolchain can
+already be reused. The LLVM project's own source files and QEMU's recorded
+gitlink remain separate authorities; never fetch an unrelated branch tip
+or force a rebuild solely to populate this documentation.
+
 External host-tool edges by active consumer
 ------------------------------------------
 
