@@ -782,6 +782,17 @@ identical, distinct, and symlink-alias paths when supported.
 Perl native dependency inventory (macOS and other Unix hosts)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Perl prerequisite ordering must distinguish **managed builds** from
+**bootstrap roots**. The pre-Perl phase compiles bootstrap zlib for the Git
+bootstrap role, while it *selects and validates* seed GNU Make, Git, C,
+shell, Python, and on macOS xcrun/SDK. The pinned GNU Make fork cannot be
+promoted here: its current maintainer-source build requires Automake and
+Autoconf, which run after Perl. Forcing that promotion earlier would create
+a new cycle. GDBM/DBM and other optional Perl extensions likewise should
+not be built unconditionally. ``ensure-perl.py`` now verifies that the
+selected GNU Make actually advertises GNU Make before reconciling Perl's
+source, rather than trusting executable permission alone.
+
 The ordering is deliberately two-level: ``build.sh`` selects the
 independent AWK/cp/grep/sed/Git/Make/compiler and (on macOS) xcrun/SDK
 roots before it sources ``host-tools.sh``. That stage prepares bootstrap
