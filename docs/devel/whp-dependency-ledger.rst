@@ -764,6 +764,21 @@ bootstrap order, interpreter semantics, and the preserved seed.
 macOS/Linux when CI runs; source and workflow checks alone do not confirm
 that those native builds pass.
 
+Worktree identity and POSIX shell ``-ef`` compatibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The same-file ``test``/``[`` primary ``file1 -ef file2`` is standardized
+by POSIX.1-2024, but earlier POSIX.1-2017 shell implementations do not
+have to implement it. ``seeds/[.sh --check`` diagnoses the external
+utility only; it does **not** qualify the current shell's builtin.
+The shared Git worktree guard uses ``whp_same_directory`` to accept
+identical path spellings without an extension, distinguish a genuinely
+different filesystem object (status 1), and reject unsupported/error
+conditions (status 2) without weakening the APFS/HFS+ inode safeguard.
+Directory aliases are admitted only when the executing shell's ``-ef``
+test proves they are the same object. The regression test exercises
+identical, distinct, and symlink-alias paths when supported.
+
 Perl native dependency inventory (macOS and other Unix hosts)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
