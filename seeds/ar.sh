@@ -47,11 +47,14 @@ resolve()
 archive_probe()
 (
     archiver=$1
-    compiler=$(/bin/sh "$root/seeds/cc.sh" --print-cc) || exit 1
+    # Invoke the adapter rather than its printed compiler path. On macOS
+    # cc.sh supplies the validated -isysroot/SDKROOT during real compilation;
+    # a bare compiler invocation would probe a different environment.
+    compiler_seed="$root/seeds/cc.sh"
     tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ar-seed.XXXXXX") || exit 1
     trap 'rm -rf -- "$tmp"' 0
     printf '%s\n' 'int whp_ar_probe(void) { return 7; }' > "$tmp/probe.c"
-    "$compiler" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || exit 1
     # 'rc' deliberately does not require ranlib, which depends on this seed.
     "$archiver" rc "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || exit 1
     [ -s "$tmp/libprobe.a" ] || exit 1
