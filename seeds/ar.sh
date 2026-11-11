@@ -57,9 +57,11 @@ archive_probe()
     [ -s "$tmp/libprobe.a" ] || exit 1
     listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
     [ "$listing" = probe.o ] || exit 1
-    (cd "$tmp" && "$archiver" x libprobe.a probe.o) >/dev/null 2>&1 || exit 1
-    [ -s "$tmp/probe.o" ] || exit 1
-    # Check the archive's object payload, not merely successful exit codes.
+    mkdir "$tmp/extracted" || exit 1
+    (cd "$tmp/extracted" && "$archiver" x "$tmp/libprobe.a" probe.o) >/dev/null 2>&1 || exit 1
+    [ -s "$tmp/extracted/probe.o" ] || exit 1
+    cmp -s "$tmp/probe.o" "$tmp/extracted/probe.o" || exit 1
+    # Verify the streamed member against the original compiler output.
     "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/from-archive.o" || exit 1
     cmp -s "$tmp/probe.o" "$tmp/from-archive.o" || exit 1
 )
