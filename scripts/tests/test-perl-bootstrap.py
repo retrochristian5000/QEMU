@@ -51,7 +51,11 @@ def check():
     assert 'env["CC_FOR_BUILD"] = cc' in source
     assert 'env["SDKROOT"] = sdk' in source
     assert "-Uuseshrplib" in source
-    assert 'marker_path.write_text(marker' in source
+    assert 'temporary_marker.replace(marker_path)' in source
+    assert 'make = select_seed_make()' in source
+    assert source.index('make = select_seed_make()') < source.index(
+        "reconcile_submodule(ROOT, REL, git=git)"
+    )
 
     host = (ROOT / "scripts/whp-build/host-tools.sh").read_text(
         encoding="utf-8"
