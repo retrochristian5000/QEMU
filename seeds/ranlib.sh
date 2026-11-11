@@ -12,6 +12,22 @@ fi
 
 entry=$0
 case "$entry" in */*) ;; *) entry=$(command -v "$entry") || exit 1 ;; esac
+# Like cc.sh/ar.sh, follow symlinked launchers to this checkout before
+# searching for sibling seeds. Reject loops rather than using the caller's
+# unrelated directory as the dependency root.
+depth=0
+while [ -L "$entry" ]; do
+    depth=$((depth + 1))
+    [ "$depth" -le 16 ] || {
+        printf '%s\n' 'error: ranlib seed symlink loop' >&2
+        exit 1
+    }
+    link=$(readlink "$entry") || exit 1
+    case "$link" in
+        /*) entry=$link ;;
+        *) entry=${entry%/*}/$link ;;
+    esac
+done
 root=$(CDPATH= cd -P -- "${entry%/*}/.." && pwd -P) || exit 1
 
 resolve()
