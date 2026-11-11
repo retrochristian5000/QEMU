@@ -98,6 +98,25 @@ class PerlConfigureTests(unittest.TestCase):
             with perl.bootstrap_lock(base):
                 self.assertTrue((base / "bootstrap" / ".perl-bootstrap.lock").exists())
 
+    def test_bad_make_seed_fails_before_perl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "make"
+            fake.write_text(
+                "#!/bin/sh\\nprintf 'Unrelated Make 1.0\\\\n'\\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            with mock.patch.dict("os.environ", {"MAKE_CMD": str(fake)}):
+                with self.assertRaisesRegex(RuntimeError, "GNU Make seed"):
+                    perl.select_seed_make()
+
+    def test_missing_explicit_make_is_not_replaced(self):
+        with mock.patch.dict(
+            "os.environ", {"MAKE_CMD": "/missing/whp-make"},
+        ):
+            with self.assertRaisesRegex(RuntimeError, "GNU Make"):
+                perl.select_seed_make()
+
     def test_native_ar_and_ranlib_are_configured_explicitly(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp)
