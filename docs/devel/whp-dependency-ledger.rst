@@ -764,6 +764,65 @@ bootstrap order, interpreter semantics, and the preserved seed.
 macOS/Linux when CI runs; source and workflow checks alone do not confirm
 that those native builds pass.
 
+Perl native dependency inventory (macOS and other Unix hosts)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This inventory separates Perl's own requirements from QEMU's bootstrap
+policy. It is not a request to install every tool or library listed below.
+
+* **QEMU wrapper and source roots (mandatory in this workflow):**
+  Python 3 executes ``scripts/ensure-perl.py``; a working Git seed
+  reconciles ``toolchains/perl`` and supplies ``git archive``; an existing
+  independent Perl seed is resolved by ``seeds/perl.sh``. The wrapper also
+  needs a writable build directory and a native GNU Make selection. Its
+  source staging uses Python's standard-library ``tarfile`` and ``fcntl``
+  locking on supported Unix hosts, not an external tar executable.
+
+* **Perl configure/build roots (mandatory):** a POSIX shell (QEMU invokes
+  ``/bin/sh``), an appropriate native C compiler/linker, working C system
+  headers and libraries, and Make. Perl's ``Configure`` performs Unix
+  utility probes and shell commands, so basic tools such as ``sed``,
+  ``grep``, ``awk`` and file utilities must be functional. QEMU already
+  selects separate host seeds for those early tool families. The exact
+  auxiliary command set should be verified from the pinned ``Configure``
+  and its generated ``config.sh`` rather than guessed from modern
+  Autoconf dependency lists. Perl's ``miniperl`` is built from source;
+  neither managed Autoconf nor managed Automake is needed to create it.
+
+* **macOS toolchain boundary:** selected Xcode/Command Line Tools,
+  ``DEVELOPER_DIR``, ``SDKROOT``, the native compiler, architecture
+  flags, and system headers must agree. Record the resolved SDK and compiler
+  alongside ``cc``, ``ccflags`` and ``ldflags`` in the generated
+  Perl configuration. An arbitrary ``CFLAGS`` or ``LDFLAGS`` inherited
+  from QEMU's target compiler must not override Perl's native settings.
+  Test on macOS arm64 separately from QEMU's arm64e target/compiler tuning:
+  do not assume that a host-native Perl must be compiled with arm64e.
+
+* **Optional libraries and extensions:** system and third-party choices
+  (for example GDBM/DBM backends, dynamic loading, compression modules,
+  locale facilities and thread support) depend on Perl's detection results
+  and the requested modules. They must not be promoted to unconditional
+  bootstrap dependencies without a failing required feature test. The
+  Perl macOS documentation specifically warns that non-system library
+  locations can cause incompatible linkage or ``dyld`` failures.
+  A source build may use system-provided libraries instead of a Homebrew
+  fork; any selected external library must match the native architecture.
+
+* **Test-only or downstream tools:** ``make test`` exercises much more
+  than the minimal ``make perl`` and ``make install`` path. QEMU's
+  managed Automake, Autoconf, LLVM and other consumers follow Perl in the
+  graph and should not be treated as its prerequisites. External ``[``
+  and ``test`` are diagnostic alternatives to shell builtins; the closing
+  ``]`` is an argument, not another executable or dependency.
+
+For a failed macOS build, preserve the first failing ``Configure`` probe,
+the staged ``config.sh`` and ``config.log`` if produced, the exact compiler,
+SDK and resolved library locations, and the first ``make`` failure. The
+incremental bootstrap marker alone records the *requested* inputs, not every
+library or command Perl actually discovered. Verify reuse separately from
+full native compilation; a successful no-op cache hit cannot establish
+that a fresh build succeeds.
+
 Managed Gawk fork and AWK bootstrap boundary
 -------------------------------------------
 
