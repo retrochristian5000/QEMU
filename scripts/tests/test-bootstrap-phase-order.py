@@ -84,6 +84,26 @@ if 'git.sh" --print-seed' in host_tools:
     raise SystemExit("error: Git seed selected twice in host tools")
 if not seed_git_hook < source_update_hook < late_git_hook:
     raise SystemExit("error: Git seed must be selected before source updater")
+# Perl's first usable interpreter must precede managed Autotools, but
+# selected native roots must already exist before the Perl builder runs.
+perl_hook = host_tools.index("scripts/ensure-perl.py")
+if not host_tools.index("whp_prepare_bootstrap_zlib") < perl_hook:
+    raise SystemExit("error: bootstrap zlib must precede managed Perl")
+require(
+    host_tools, 'WHP_PERL_BOOTSTRAP_SEED=$WHP_PERL_ROOT',
+    "independent root Perl interpreter for the managed Perl build",
+)
+for label, seed in (
+    ("Git", 'WHP_GIT_SEED=$("$SOURCE_DIR/seeds/git.sh" --print-seed)'),
+    ("GNU Make", 'export WHP_MAKE_SEED MAKE_CMD MAKE'),
+    ("native C", 'export CC_FOR_BUILD'),
+):
+    if build.index(seed) >= build.index(
+        '. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"'
+    ):
+        raise SystemExit(f"error: {label} seed selected after managed Perl")
+if host_tools.index("scripts/ensure-automake.py") <= perl_hook:
+    raise SystemExit("error: managed Automake must remain after Perl")
 zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 automake_hook = host_tools.index("scripts/ensure-automake.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
