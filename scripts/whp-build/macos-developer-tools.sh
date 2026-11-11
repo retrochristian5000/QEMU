@@ -91,11 +91,12 @@ whp_apple_find_tool()
     else
         whp_apple_developer_root >/dev/null || exit 1
     fi
-    command -v xcrun >/dev/null 2>&1 || {
+    whp_xcrun_tool=${WHP_XCRUN_SEED:-xcrun}
+    command -v "$whp_xcrun_tool" >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
     }
-    tool=$(xcrun --sdk "$sdk" --find "$name" 2>/dev/null) || {
+    tool=$("$whp_xcrun_tool" --sdk "$sdk" --find "$name" 2>/dev/null) || {
         printf 'error: selected Apple developer directory has no %s tool\n' "$name" >&2
         exit 1
     }
@@ -151,11 +152,12 @@ whp_apple_find_sdk()
 (
     # whp_apple_check_sdkroot below verifies the selected developer root and
     # SDK containment. Avoid resolving that same root twice for one lookup.
-    command -v xcrun >/dev/null 2>&1 || {
+    whp_xcrun_tool=${WHP_XCRUN_SEED:-xcrun}
+    command -v "$whp_xcrun_tool" >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
     }
-    sdk=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null) || {
+    sdk=$("$whp_xcrun_tool" --sdk macosx --show-sdk-path 2>/dev/null) || {
         printf '%s\n' 'error: selected Apple developer directory has no macOS SDK' >&2
         exit 1
     }
