@@ -64,6 +64,8 @@ on:
       - 'scripts/whp-build/portable-build-entry.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/whp-build/build-targets.bash'
+      - 'scripts/whp-build/post-build.bash'
+      - 'scripts/tests/test-post-build-artifacts.py'
       - 'scripts/whp-build/host-cpu-tuning.py'
       - 'scripts/whp-build/host-cpu-tuning.bash'
       - 'scripts/whp-build/select-tests.py'
@@ -155,6 +157,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Test post-build artifact verification
+        run: python3 scripts/tests/test-post-build-artifacts.py
 
       - name: Test GNU Make bootstrap policy
         shell: bash

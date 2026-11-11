@@ -58,6 +58,7 @@ whp_verify_build_outputs()
     local machine_list=""
     local qemu_version=""
     local qemu_checksum=""
+    local openbios_candidate
     local openbios_output=""
     local openbios_checksum=""
     local source_revision="unavailable"
@@ -80,7 +81,7 @@ whp_verify_build_outputs()
             return 1
         fi
 
-        machine_list="$($qemu_ppc -machine help)"
+        machine_list="$("$qemu_ppc" -machine help)"
         if ! grep -Eq '^[[:space:]]*powermac3_1[[:space:]]' <<< "$machine_list"; then
             printf '%s\n' \
                 'error: the newly built qemu-system-ppc does not register powermac3_1' \
@@ -94,7 +95,7 @@ whp_verify_build_outputs()
             return 1
         fi
 
-        qemu_version="$($qemu_ppc --version | sed -n '1p')"
+        qemu_version="$("$qemu_ppc" --version | sed -n '1p')"
         qemu_checksum="$(whp_file_checksum "$qemu_ppc")"
     fi
 
@@ -127,7 +128,11 @@ whp_verify_build_outputs()
         printf 'OPENBIOS_PPC=%s\n' "$openbios_output"
         printf 'OPENBIOS_PPC_CKSUM=%s\n' "$openbios_checksum"
     } > "$candidate"
-    mv -f "$candidate" "$manifest"
+    if ! mv -f "$candidate" "$manifest"; then
+        rm -f "$candidate"
+        printf 'error: failed to publish build artifact manifest: %s\n' "$manifest" >&2
+        return 1
+    fi
 
     if [[ -n "$qemu_ppc" ]]; then
         printf '%s\n' \
