@@ -80,7 +80,11 @@ case "${1:-}" in
         exit 0 ;;
 esac
 
-if [ "${WHP_CP_LOCKED:-0}" = 1 ] && [ -n "${WHP_CP_SEED:-}" ]; then
+if [ "${WHP_CP_LOCKED:-0}" = 1 ]; then
+    [ -n "${WHP_CP_SEED:-}" ] || {
+        printf '%s\n' 'error: locked cp has no selected seed' >&2
+        exit 1
+    }
     case "$WHP_CP_SEED" in
         */cp.sh|*/scripts/whp-build/seed-bin/cp)
             printf '%s\n' 'error: locked cp points back to its seed adapter' >&2
