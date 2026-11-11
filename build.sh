@@ -352,6 +352,11 @@ unset WHP_MAKE_REQUESTED
 
 # Use the same SDK for seed checks and the native tools they bootstrap.
 if [ "$WHP_HOST_OS" = macos ]; then
+    # Validate the Apple tool dispatcher before compiler or SDK discovery.
+    # This is a macOS root dependency, never a non-Darwin prerequisite.
+    WHP_XCRUN_SEED=$(/bin/sh "$SOURCE_DIR/seeds/xcrun.sh" --print-seed) || exit 1
+    export WHP_XCRUN_SEED
+    printf 'QEMU seed xcrun: %s\n' "$WHP_XCRUN_SEED" >&2
     . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
     DEVELOPER_DIR=$(whp_apple_developer_root) || exit 1
     export DEVELOPER_DIR
