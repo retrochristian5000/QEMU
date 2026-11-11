@@ -607,7 +607,7 @@ whp_prepare_git_dependent_cache()
         "$PYTHON" "$SOURCE_DIR/scripts/whp-build/update-submodules.py" \
             --source "$SOURCE_DIR" || exit 1
     fi
-\n    # Cargo and its native C dependencies must not run ahead of the managed
+    # Cargo and its native C dependencies must not run ahead of the managed
     # Git/zlib bootstrap or QEMU submodule reconciliation. Keep the cache ready
     # before the native LLVM configure/build starts.
     if [ "$BOOTSTRAP_SCCACHE" = 1 ] &&
