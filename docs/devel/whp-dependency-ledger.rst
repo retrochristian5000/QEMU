@@ -767,6 +767,18 @@ that those native builds pass.
 Perl native dependency inventory (macOS and other Unix hosts)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+The ordering is deliberately two-level: ``build.sh`` selects the
+independent AWK/cp/grep/sed/Git/Make/compiler and (on macOS) xcrun/SDK
+roots before it sources ``host-tools.sh``. That stage prepares bootstrap
+zlib, then attempts managed Perl using its original Perl seed. Inside
+``ensure-perl.py``, native compiler/SDK/Make and the independently
+validated ``ar -> ranlib`` pair are checked **before** reconciling the
+pinned Perl source. A missing archiver cannot cause an unnecessary source
+fetch, and Perl never depends on the later managed Automake/Autoconf,
+Gawk, Make, Ninja, Bash or LLVM promotions. This ordering does not add
+extra archive probes to the hot-path shell launcher.
+
+
 This inventory separates Perl's own requirements from QEMU's bootstrap
 policy. It is not a request to install every tool or library listed below.
 
