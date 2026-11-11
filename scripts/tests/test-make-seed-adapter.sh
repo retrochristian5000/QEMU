@@ -11,7 +11,7 @@ test -n "$selected"
 test "$(/bin/sh "$seed" --check)" = "WHP native GNU Make seed: $selected"
 test "$(/bin/sh "$seed" -s -f - whp-check <<'MAKEFILE'
 whp-check:
-	@printf 'native-make-ok\\n'
+	@printf 'native-make-ok\n'
 MAKEFILE
 )" = native-make-ok
 
