@@ -1883,7 +1883,7 @@ cmake_config_identity="$(
     # Include the exact source producer, not only compiler options.
     printf 'LLVM_GIT_COMMIT=%q\n' "$llvm_revision"
     printf 'LLVM_SOURCE_DIR=%q\n' "$LLVM_SOURCE_DIR"
-    printf 'CMAKE=%q\n' ""$cmake_cmd""
+    printf 'CMAKE=%q\n' "$cmake_cmd"
     "$cmake_cmd" --version | sed -n '1p'
     printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"
     printf 'CXX_VERSION=%q\n' "$bootstrap_cxx_version"
