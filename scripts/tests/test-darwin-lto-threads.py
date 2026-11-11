@@ -51,6 +51,7 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
             env = dict(os.environ)
             env.update(PATH=f'{fake_bin}{os.pathsep}{env.get("PATH", "")}',
                        CC=compiler, AR=archiver, RANLIB=ranlib,
+                       NM='',
                        SDKROOT=str(root / 'sdk'), LIPO=str(lipo),
                        MACOS_LTO_PROBE_DIR=str(probe),
                        MACOS_LTO_MANIFEST=str(root / 'manifest'),
@@ -88,7 +89,11 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn('*" arm64e "*)', text)
         self.assertIn('0xfeedfacf, 0x0100000c, 0x80000002', text)
         self.assertIn('LTO output lost the ARM64e Mach-O ABI subtype', text)
-        self.assertIn('"${AR_CMD[@]}" rcs "$archive_candidate" "$object_a"', text)
+        self.assertIn('"${AR_CMD[@]}" rc "$archive_candidate" "$object_a"', text)
+        self.assertNotIn('"${AR_CMD[@]}" rcs "$archive_candidate"', text)
+        self.assertIn('set_archive_command NM ""', text)
+        self.assertIn('"${NM_CMD[@]}" --defined-only --extern-only', text)
+        self.assertIn('LTO archive symbols disagree with llvm-nm object exports', text)
         self.assertIn('"${RANLIB_CMD[@]}" "$archive_candidate"', text)
         self.assertIn('"$object_main" "$archive" -o "$output"', text)
         self.assertIn('set_archive_command AR /usr/bin/ar', text)
