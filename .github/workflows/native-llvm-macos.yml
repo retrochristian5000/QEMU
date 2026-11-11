@@ -800,6 +800,7 @@ jobs:
           export CC="$NATIVE_LLVM_DIR/bin/clang"
           export AR="$NATIVE_LLVM_DIR/bin/llvm-ar"
           export RANLIB="$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+          export NM="$NATIVE_LLVM_DIR/bin/llvm-nm"
           export LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
           export JOBS=2
           source scripts/macos-arch-policy.bash
