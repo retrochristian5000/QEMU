@@ -93,6 +93,50 @@ class ManagedSccacheTests(unittest.TestCase):
                     env=env, capture_output=True, text=True, timeout=10)
                 self.assertNotEqual(rejected.returncode, 0)
 
+    def test_rustc_seed_resolves_cargo_from_symlinked_checkout(self):
+        seed = ROOT / 'seeds' / 'rustc.sh'
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            alias = base / 'alias-bin' / 'rustc-seed'
+            alias.parent.mkdir()
+            alias.symlink_to(seed)
+
+            native = base / 'native-rust'
+            native.mkdir()
+            cargo = native / 'cargo'
+            rustc = native / 'rustc'
+            cargo.write_text(
+                '#!/bin/sh\n'
+                'case "$1" in\n'
+                '  --version) echo "cargo 1.91.0 (fixture)" ;;\n'
+                '  --whp-cargo-adapter-probe) exit 2 ;;\n'
+                '  *) exit 0 ;;\n'
+                'esac\n', encoding='utf-8')
+            rustc.write_text(
+                '#!/bin/sh\n'
+                'case "$1" in\n'
+                '  --version) echo "rustc 1.91.0 (fixture)" ;;\n'
+                '  --whp-rustc-adapter-probe) exit 2 ;;\n'
+                '  *) exit 0 ;;\n'
+                'esac\n', encoding='utf-8')
+            cargo.chmod(0o755)
+            rustc.chmod(0o755)
+
+            env = {**os.environ, 'WHP_CARGO_SEED': str(cargo)}
+            env.pop('WHP_RUSTC_SEED', None)
+            # The adapter file is intentionally nonexecutable in Git.
+            # Invoke it through sh while preserving the symlink path in $0.
+            chosen = subprocess.run(
+                ['/bin/sh', str(alias), '--print-seed'], env=env,
+                capture_output=True, text=True, timeout=10)
+            self.assertEqual(chosen.returncode, 0, chosen.stderr)
+            self.assertEqual(chosen.stdout.strip(), str(rustc))
+            forwarded = subprocess.run(
+                ['/bin/sh', str(alias), '--version'], env=env,
+                capture_output=True, text=True, timeout=10)
+            self.assertEqual(forwarded.returncode, 0, forwarded.stderr)
+            self.assertIn('rustc 1.91.0', forwarded.stdout)
+
     def test_cargo_build_is_memory_conservative(self):
         env = bootstrap.cargo_environment({
             'RUSTC_WRAPPER': '/old/sccache',

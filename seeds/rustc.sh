@@ -39,6 +39,37 @@ resolve_rustc()
     printf '%s\n' "$candidate"
 )
 
+# A symlinked seed launcher still belongs to this checkout. Resolve its
+# physical location before asking the companion Cargo adapter for its seed.
+# Do not discover a different cargo.sh beside a PATH alias.
+cargo_adapter_path()
+(
+    entry=$0
+    case "$entry" in
+        */*) ;;
+        *) entry=$(command -v "$entry" 2>/dev/null) || exit 1 ;;
+    esac
+    depth=0
+    while [ -L "$entry" ]; do
+        depth=$((depth + 1))
+        [ "$depth" -le 16 ] || {
+            printf '%s\n' 'error: rustc seed symlink loop' >&2
+            exit 1
+        }
+        link=$(readlink "$entry") || exit 1
+        case "$link" in
+            /*) entry=$link ;;
+            *) entry=${entry%/*}/$link ;;
+        esac
+    done
+    directory=$(CDPATH= cd -P -- "${entry%/*}" && pwd -P) || exit 1
+    [ -f "$directory/cargo.sh" ] || {
+        printf 'error: companion Cargo seed is missing: %s\n' "$directory/cargo.sh" >&2
+        exit 1
+    }
+    printf '%s\n' "$directory/cargo.sh"
+)
+
 select_rustc()
 {
     if [ -n "${WHP_RUSTC_SEED:-}" ]; then
@@ -48,10 +79,11 @@ select_rustc()
         }
         return 0
     fi
+    cargo_adapter=$(cargo_adapter_path) || return 1
     # If Cargo is explicitly pinned, prefer the neighboring rustc. A rustup
     # Cargo shim normally has a matching rustc shim in the same directory.
     if [ -n "${WHP_CARGO_SEED:-}" ]; then
-        cargo=$(/bin/sh "${0%/*}/cargo.sh" --print-seed) || return 1
+        cargo=$(/bin/sh "$cargo_adapter" --print-seed) || return 1
         candidate=${cargo%/*}/rustc
         if selected=$(resolve_rustc "$candidate"); then
             printf '%s\n' "$selected"
@@ -61,7 +93,7 @@ select_rustc()
         return 1
     fi
     # Prefer the same Rust installation as the Cargo found by cargo.sh.
-    if cargo=$(/bin/sh "${0%/*}/cargo.sh" --print-seed 2>/dev/null); then
+    if cargo=$(/bin/sh "$cargo_adapter" --print-seed 2>/dev/null); then
         if selected=$(resolve_rustc "${cargo%/*}/rustc"); then
             printf '%s\n' "$selected"
             return 0

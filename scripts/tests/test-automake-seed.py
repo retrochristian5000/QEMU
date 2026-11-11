@@ -68,6 +68,24 @@ def main():
         explicit = dict(env, WHP_ACLOCAL_SEED=str(wrong))
         assert run(explicit, "--check").returncode != 0
 
+        # aclocal alone pins its sibling Automake rather than the first
+        # unrelated Automake on PATH (which may be an older release).
+        paired = root / "paired-other"
+        paired_automake = paired / "automake"
+        paired_aclocal = paired / "aclocal"
+        fake(paired_automake, "1.17.0")
+        fake(paired_aclocal, "1.17.0")
+        only_aclocal = dict(env, WHP_ACLOCAL_SEED=str(paired_aclocal))
+        result = run(only_aclocal, "--print-seed")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(paired_automake)
+        result = run(only_aclocal, "--print-aclocal")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(paired_aclocal)
+        result = run(dict(env, ACLOCAL=str(paired_aclocal)), "--print-seed")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(paired_automake)
+
         bad_banner = selected / "fake-aclocal"
         fake(bad_banner, "1.16.5", family="GNU Autoconf")
         assert run(dict(env, WHP_ACLOCAL_SEED=str(bad_banner)), "--check").returncode != 0

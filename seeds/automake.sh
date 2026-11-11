@@ -60,6 +60,18 @@ seed_pair()
             printf 'error: invalid explicit GNU Automake seed: %s\n' "$explicit_automake" >&2
             exit 1
         }
+    elif [ -n "$explicit_aclocal" ]; then
+        # A pinned aclocal also identifies its Automake installation. The
+        # inverse of the normal sibling lookup prevents PATH from mixing
+        # GNU Automake releases when aclocal alone is selected.
+        aclocal=$(seed_resolve "$explicit_aclocal") || {
+            printf 'error: invalid explicit aclocal seed: %s\n' "$explicit_aclocal" >&2
+            exit 1
+        }
+        automake=$(seed_resolve "${aclocal%/*}/automake") || {
+            printf 'error: selected aclocal has no adjacent Automake: %s\n' "$aclocal" >&2
+            exit 1
+        }
     else
         automake=$(seed_resolve automake) || {
             printf '%s\n' 'error: no usable GNU Automake seed on PATH' >&2
