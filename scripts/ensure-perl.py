@@ -28,7 +28,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "2"
+SCHEMA = "3"
 
 
 def run(argv: list[str], *, cwd: pathlib.Path | None = None,
@@ -120,7 +120,8 @@ def stage_source(revision: str, destination: pathlib.Path, *, git: str) -> None:
 
 
 def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
-                        compiler: str) -> list[str]:
+                        compiler: str, cflags: str = "",
+                        ldflags: str = "") -> list[str]:
     """Use Perl's supported noninteractive mode and explicit devel consent.
 
     Perl Configure -des alone refuses odd-numbered development series:
@@ -140,6 +141,13 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
         f"-Dprefix={prefix}", f"-Dcc={compiler}",
         "-Uuseshrplib",
     ]
+    # Perl Configure uses ccflags/ldflags (not Autoconf CFLAGS/LDFLAGS).
+    # Supply one authoritative value for each instead of relying on
+    # environment-variable interpretation that differs across hints files.
+    if cflags:
+        options.append(f"-Dccflags={cflags}")
+    if ldflags:
+        options.append(f"-Dldflags={ldflags}")
     if minor % 2:
         options.append("-Dusedevel")
     return options
@@ -196,16 +204,16 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     env["MAKE"] = make
     if sdk:
         env["SDKROOT"] = sdk
-    if cflags:
-        env["CFLAGS"] = cflags
-    if ldflags:
-        env["LDFLAGS"] = ldflags
+    # Do not provide a second, potentially conflicting source of flags.
+    # Configure receives the validated values explicitly via -D arguments.
+    env.pop("CFLAGS", None)
+    env.pop("LDFLAGS", None)
     # Perl's source tree has a generated, non-Autotools Configure. Configure
     # produces Makefile.SH derivatives in the staged source directory, not in
     # the checkout. Use the validated native compiler and a private prefix.
     # Even unexpected prompts cannot consume the user's terminal or stall
     # an automatic incremental build. A blocked Configure fails promptly.
-    run(configure_arguments(source, prefix, cc),
+    run(configure_arguments(source, prefix, cc, cflags, ldflags),
         cwd=source, env=env, unattended=True, timeout=900)
     run([make, "perl"], cwd=source, env=env)
     built = source / "perl"
