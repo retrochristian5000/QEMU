@@ -22,6 +22,16 @@ whp_resolve_gnu_make()
         *) return 1 ;;
     esac
 
+    # A version banner is not proof that a Make implementation can run
+    # recipes. This small stdin makefile avoids source checkout or downloads.
+    whp_make_result=$(
+        printf 'whp-seed-check:\n\t@printf "whp-gnu-make-ok\\n"\n' |
+            LC_ALL=C MAKEFLAGS= MFLAGS= GNUMAKEFLAGS= \
+                "$whp_make_resolved" --no-print-directory -s -f - \
+                whp-seed-check 2>/dev/null
+    ) || return 1
+    [ "$whp_make_result" = whp-gnu-make-ok ] || return 1
+
     printf '%s\n' "$whp_make_resolved"
 )
 
