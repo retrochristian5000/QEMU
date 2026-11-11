@@ -41,12 +41,26 @@ whp_git_submodule_prepare()
         return 1
     fi
     whp_entry=$("$whp_git" -C "$whp_parent" ls-tree HEAD -- "$whp_path") || return 1
-    set -- $whp_entry
-    if [ "${1:-}" != 160000 ] || [ "${2:-}" != commit ]; then
+    # ls-tree emits: MODE SP TYPE SP OID TAB PATH. Parse only the fixed
+    # header, never word-split the pathname or allow glob expansion.
+    whp_header=${whp_entry%%	*}
+    if [ "$whp_header" = "$whp_entry" ]; then
+        printf 'error: malformed gitlink entry: %s\n' "$whp_path" >&2
+        return 1
+    fi
+    whp_mode=${whp_header%% *}
+    whp_header=${whp_header#* }
+    whp_type=${whp_header%% *}
+    whp_pin=${whp_header#* }
+    if [ "$whp_mode" != 160000 ] || [ "$whp_type" != commit ]; then
         printf 'error: missing gitlink: %s\n' "$whp_path" >&2
         return 1
     fi
-    whp_pin=$3
+    case "$whp_pin" in
+        *[!0123456789abcdefABCDEF]*|'')
+            printf 'error: invalid gitlink commit ID: %s\n' "$whp_path" >&2
+            return 1 ;;
+    esac
     if [ ! -e "$whp_target/.git" ]; then
         if [ "$whp_access" = offline ]; then
             printf 'error: submodule %s is missing in offline mode\n' "$whp_path" >&2
