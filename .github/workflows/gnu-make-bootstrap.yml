@@ -11,8 +11,12 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
+      - 'seeds/make.sh'
+      - 'scripts/whp-build/gnu-make.bash'
+      - 'build.sh'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-seed-adapter.sh'
       - 'scripts/tests/test-make-configure-sdk.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -28,8 +32,12 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-make.py'
+      - 'seeds/make.sh'
+      - 'scripts/whp-build/gnu-make.bash'
+      - 'build.sh'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-seed-adapter.sh'
       - 'scripts/tests/test-make-configure-sdk.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -140,6 +148,7 @@ jobs:
             scripts/tests/test-make-gnulib-cache.py
           python3 scripts/tests/test-bootstrap-env.py
           python3 scripts/tests/test-autoconf-bootstrap.py
+          /bin/sh scripts/tests/test-make-seed-adapter.sh
           python3 scripts/tests/test-make-dependency-policy.py
           python3 scripts/tests/test-make-configure-sdk.py
           python3 scripts/tests/test-make-gnulib-cache.py
