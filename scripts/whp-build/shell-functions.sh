@@ -16,6 +16,30 @@ whp_command_dir()
     printf '%s\n' "$whp_dir"
 )
 
+# Compare directory identities without confusing unsupported -ef with
+# different objects. Status: 0 same, 1 different, 2 unsupported/error.
+# POSIX.1-2024 standardizes -ef, but older installed shells may lack it.
+whp_same_directory()
+(
+    whp_left=$1
+    whp_right=$2
+    [ "$whp_left" = "$whp_right" ] && exit 0
+    # Prove the executing shell's own [ builtin understands -ef. Probing
+    # the external /usr/bin/[ would not qualify this shell.
+    if [ "$whp_left" -ef "$whp_left" ] 2>/dev/null; then
+        :
+    else
+        exit 2
+    fi
+    if [ "$whp_left" -ef "$whp_right" ] 2>/dev/null; then
+        exit 0
+    else
+        whp_status=$?
+        [ "$whp_status" -eq 1 ] && exit 1
+        exit 2
+    fi
+)
+
 # Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
 # A gitlink is a reproducibility baseline, not permission to rewind an
 # initialized checkout containing newer descendant commits.
@@ -79,12 +103,19 @@ whp_git_submodule_prepare()
                 "$whp_path" "$whp_top" >&2
             return 1
         }
-        # macOS may preserve different letter casing for the same inode.
-        # -ef verifies filesystem identity, not just the path spelling.
-        if [ "$whp_top_physical" != "$whp_actual_top" ] &&
-           ! [ "$whp_top_physical" -ef "$whp_actual_top" ]; then
-            printf 'error: %s has an unexpected Git worktree (Git: %s; expected: %s)\n' \
-                "$whp_path" "$whp_top_physical" "$whp_actual_top" >&2
+        # Preserve APFS/HFS+ case aliases without treating an unsupported
+        # shell -ef expression as an ordinary negative comparison.
+        if whp_same_directory "$whp_top_physical" "$whp_actual_top"; then
+            :
+        else
+            whp_status=$?
+            if [ "$whp_status" -eq 2 ]; then
+                printf 'error: shell [ -ef ] is unavailable; cannot verify worktree identity: %s\n' \
+                    "$whp_path" >&2
+            else
+                printf 'error: %s has an unexpected Git worktree (Git: %s; expected: %s)\n' \
+                    "$whp_path" "$whp_top_physical" "$whp_actual_top" >&2
+            fi
             return 1
         fi
         whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1
