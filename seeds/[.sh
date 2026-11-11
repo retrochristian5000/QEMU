@@ -92,11 +92,12 @@ case "${1:-}" in
     --check)
         selected=$(bracket_select) || exit 1
         printf 'WHP external bracket seed: %s\n' "$selected"
-        # Report optional non-POSIX extensions separately, never require them.
+        # POSIX.1-2024 includes -ef, but older installed utilities may lack it.
+        # Report support without making this compatibility probe mandatory.
         if "$selected" "$selected" -ef "$selected" ] 2>/dev/null; then
-            printf '%s\n' 'WHP external bracket -ef extension: supported'
+            printf '%s\n' 'WHP external bracket -ef: supported'
         else
-            printf '%s\n' 'WHP external bracket -ef extension: unavailable'
+            printf '%s\n' 'WHP external bracket -ef: unavailable'
         fi
         ;;
     *)
