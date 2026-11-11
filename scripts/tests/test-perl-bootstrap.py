@@ -30,6 +30,13 @@ def check():
     assert gitlink.stdout.startswith("160000 commit "), gitlink.stdout
 
     source = SCRIPT.read_text(encoding="utf-8")
+    # The archive probe must use cc.sh's real invocation path. On Darwin
+    # this carries the same selected SDKROOT/-isysroot as actual compilation.
+    archive_seed = (ROOT / "seeds/ar.sh").read_text(encoding="utf-8")
+    assert 'compiler_seed="$root/seeds/cc.sh"' in archive_seed
+    assert '/bin/sh "$compiler_seed" -c "$tmp/probe.c"' in archive_seed
+    assert '"$compiler" -c "$tmp/probe.c"' not in archive_seed
+
     assert "reconcile_submodule(ROOT, REL, git=git)" in source
     # Missing native archive dependencies must fail before source checkout.
     assert source.index('str(ROOT / "seeds" / "ar.sh")') < source.index(
