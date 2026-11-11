@@ -71,6 +71,46 @@ class PerlConfigureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "exceeded 1s"):
                 perl.run(["/bin/sh", "Configure"], unattended=True, timeout=1)
 
+    def test_rebuild_rollback_restores_previous_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            prefix = base / "deps" / "perl"
+            backup = base / "bootstrap" / "perl-previous-install"
+            prefix.mkdir(parents=True)
+            backup.parent.mkdir(parents=True)
+            (prefix / "broken").write_text("partial", encoding="utf-8")
+            (backup / "bin").mkdir(parents=True)
+            (backup / "bin" / "perl").write_text("previous", encoding="utf-8")
+            perl.restore_previous_install(prefix, backup)
+            self.assertFalse(backup.exists())
+            self.assertFalse((prefix / "broken").exists())
+            self.assertEqual(
+                (prefix / "bin" / "perl").read_text(encoding="utf-8"),
+                "previous",
+            )
+
+    def test_lock_is_released_after_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            with self.assertRaisesRegex(RuntimeError, "probe"):
+                with perl.bootstrap_lock(base):
+                    raise RuntimeError("probe")
+            with perl.bootstrap_lock(base):
+                self.assertTrue((base / "bootstrap" / ".perl-bootstrap.lock").exists())
+
+    def test_explicit_compiler_flags_reach_configure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            (source / "patchlevel.h").write_text(
+                "#define PERL_VERSION 44\\n", encoding="utf-8"
+            )
+            args = perl.configure_arguments(
+                source, source / "prefix", "/usr/bin/cc",
+                "-O2 -arch arm64", "-Wl,-dead_strip",
+            )
+            self.assertIn("-Dccflags=-O2 -arch arm64", args)
+            self.assertIn("-Dldflags=-Wl,-dead_strip", args)
+
     def test_failed_configure_propagates_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp)
