@@ -1,0 +1,73 @@
+name: ASan sigaltstack coroutine guards
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'util/coroutine-sigaltstack.c'
+      - 'scripts/tests/test-asan-sigaltstack-fiber-wiring.bash'
+      - '.github/workflows/asan-sigaltstack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asan-sigaltstack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wiring:
+    name: Verify ASan sigaltstack fiber wiring
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+      - name: Check test syntax
+        run: bash -n scripts/tests/test-asan-sigaltstack-fiber-wiring.bash
+      - name: Check ASan fiber wiring
+        run: bash scripts/tests/test-asan-sigaltstack-fiber-wiring.bash
+
+  macos-runtime:
+    name: Run coroutine lifecycle under ASan on macOS
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-asan-sigaltstack
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      BUILD_QEMU_SYSTEM_I386: '0'
+      BUILD_QEMU_SYSTEM_PPC: '1'
+      RUN_TESTS: '0'
+      QEMU_ASAN: '1'
+      QEMU_UBSAN: '0'
+      QEMU_TSAN: '0'
+      QEMU_HOST_LTO: '0'
+      MACOS_ENABLE_GTK: '0'
+      MACOS_ENABLE_PA: '0'
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@v7
+      - name: Install build dependencies
+        run: brew install glib libslirp ninja pixman pkgconf
+      - name: Configure ASan PowerPC build
+        shell: bash
+        run: ./build.sh qemu-system-ppc
+      - name: Build coroutine unit test
+        shell: bash
+        run: ninja -C "$BUILD_DIR" tests/unit/test-coroutine
+      - name: Run coroutine lifecycle and reject issue 189 warning
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$PWD/asan-coroutine.log"
+          ASAN_OPTIONS="detect_leaks=0:halt_on_error=1" \
+            "$BUILD_DIR/tests/unit/test-coroutine" -p /basic/lifecycle 2>&1 | tee "$log"
+          if grep -Fq 'ASan is ignoring requested __asan_handle_no_return' "$log"; then
+            echo 'error: ASan lost track of the active coroutine stack' >&2
+            exit 1
+          fi

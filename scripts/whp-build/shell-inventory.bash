@@ -1,0 +1,94 @@
+# Canonical inventory of WHP-owned shell build entry points and modules.
+# Keep this list as data: runtime preflight and CI should consume it instead of
+# maintaining independent copies that can drift when a script is added.
+#
+# WHP extension policy is internal-only: .sh launchers are POSIX-compatible,
+# .bash implementations require GNU Bash, and .ps1 launchers require PowerShell.
+# POSIX .sh files use the POSIX.1-2017-compatible subset: command
+# substitution, arithmetic expansion, printf, case, ordinary functions and
+# explicit failure checks are allowed. Do not introduce Bash-only arrays,
+# [[ ]], source, here-strings, process substitution, local, or pipefail.
+# Bash .bash files may use those features under the fork's GNU Bash >= 3.2
+# baseline, but must be invoked/sourced only after Bash selection.
+# Keep .sh launchers thin at the Bash handoff: the entire .sh file must parse
+# under /bin/sh, not merely the branch that happens to run.
+# The inventory covers WHP-owned build entrypoints/modules; the separate
+# QEMU upstream .sh scripts are not automatically rewritten or reclassified.
+# This inventory never constrains file names supplied by QEMU users for
+# firmware, disks, logs, or other runtime data.
+
+WHP_POSIX_BUILD_SCRIPTS=(
+    "$SOURCE_DIR/build.sh"
+    "$SOURCE_DIR/builder.sh"
+    "$SOURCE_DIR/scripts/macos-builder.sh"
+    "$SOURCE_DIR/scripts/verify-macos-gtk.sh"
+    "$SOURCE_DIR/scripts/verify-macos-toolchain.sh"
+    "$SOURCE_DIR/scripts/verify-macos-lto.sh"
+    "$SOURCE_DIR/scripts/bootstrap-native-clang.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-host.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-git.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-core.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-base.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-source-cache.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-ar.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-mc.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-nm.sh"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-strip.sh"
+    "$SOURCE_DIR/scripts/meson-build-openbios.sh"
+    "$SOURCE_DIR/scripts/build-openbios.sh"
+    "$SOURCE_DIR/scripts/meson-build-seabios.sh"
+    "$SOURCE_DIR/scripts/build-seabios-hybrid-iso.sh"
+    "$SOURCE_DIR/scripts/whp-build/update-source.sh"
+    "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+    "$SOURCE_DIR/scripts/bootstrap-i386-clang.sh"
+    "$SOURCE_DIR/scripts/bootstrap-win9x-clang.sh"
+    "$SOURCE_DIR/scripts/bootstrap-i386-efi-grub.sh"
+)
+
+WHP_BASH_BUILD_SCRIPTS=(
+    "$SOURCE_DIR/builder.bash"
+    "$SOURCE_DIR/scripts/macos-builder.bash"
+    "$SOURCE_DIR/scripts/macos-build-hygiene.bash"
+    "$SOURCE_DIR/scripts/macos-compiler-policy.bash"
+    "$SOURCE_DIR/scripts/macos-gtk-environment.bash"
+    "$SOURCE_DIR/scripts/verify-macos-gtk.bash"
+    "$SOURCE_DIR/scripts/verify-macos-toolchain.bash"
+    "$SOURCE_DIR/scripts/verify-macos-lto.bash"
+    "$SOURCE_DIR/scripts/bootstrap-native-clang.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-host.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-toolchain-git.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-core.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-clang-base.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-source-cache.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-ar.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-mc.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-nm.bash"
+    "$SOURCE_DIR/scripts/bootstrap-powerpc-llvm-strip.bash"
+    "$SOURCE_DIR/scripts/meson-build-openbios.bash"
+    "$SOURCE_DIR/scripts/build-openbios.bash"
+    "$SOURCE_DIR/scripts/meson-build-seabios.bash"
+    "$SOURCE_DIR/scripts/build-seabios-hybrid-iso.bash"
+    "$SOURCE_DIR/scripts/bootstrap-i386-clang.bash"
+    "$SOURCE_DIR/scripts/bootstrap-win9x-clang.bash"
+    "$SOURCE_DIR/scripts/bootstrap-i386-efi-grub.bash"
+    "$SOURCE_DIR/scripts/whp-build/common.bash"
+    "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+    "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
+    "$SOURCE_DIR/scripts/whp-build/prepare-sources.bash"
+    "$SOURCE_DIR/scripts/whp-build/prepare-mold.bash"
+    "$SOURCE_DIR/scripts/whp-build/host-cpu-tuning.bash"
+    "$SOURCE_DIR/scripts/whp-build/configure.bash"
+    "$SOURCE_DIR/scripts/whp-build/build-targets.bash"
+    "$SOURCE_DIR/scripts/whp-build/configure-openbios.bash"
+    "$SOURCE_DIR/scripts/whp-build/preflight.bash"
+    "$SOURCE_DIR/scripts/whp-build/post-build.bash"
+    "$SOURCE_DIR/scripts/whp-build/shell-inventory.bash"
+)
+
+WHP_POWERSHELL_BUILD_SCRIPTS=(
+    "$SOURCE_DIR/build.ps1"
+)

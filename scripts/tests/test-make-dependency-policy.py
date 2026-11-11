@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+from __future__ import annotations
+
+import configparser
+import importlib.util
+import pathlib
+import sys
+import tempfile
+from unittest import mock
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def require(text: str, needle: str, label: str) -> None:
+    if needle not in text:
+        raise SystemExit(f"error: missing {label}: {needle}")
+
+
+
+def verify_make_install_recovery() -> None:
+    """Offline checks for Make's staged publication, rollback and cache lock."""
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "whp_make_install_regression", ROOT / "scripts/ensure-make.py"
+    )
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    with tempfile.TemporaryDirectory(prefix="whp-make-install-") as tmp:
+        root = pathlib.Path(tmp)
+        prefix = root / "deps" / "make"
+        (prefix / "bin").mkdir(parents=True)
+        old_bin = prefix / "bin" / "make"
+        old_bin.write_text(
+            "#!/bin/sh\nprintf 'GNU Make old\\n'\n", encoding="utf-8"
+        )
+        old_bin.chmod(0o755)
+        old_marker = prefix / ".whp-make-bootstrap"
+        old_marker.write_text("old-cache\n", encoding="utf-8")
+        assert helper.gnu_make_usable(old_bin)
+
+        built = root / "new-make"
+        built.write_text(
+            "#!/bin/sh\nprintf 'GNU Make new\\n'\n", encoding="utf-8"
+        )
+        built.chmod(0o755)
+        assert helper.gnu_make_usable(built)
+
+        def unchanged():
+            assert old_marker.read_text(encoding="utf-8") == "old-cache\n"
+            assert old_bin.read_text(encoding="utf-8").find("GNU Make old") >= 0
+            assert not prefix.with_name(".whp-make-previous").exists()
+            assert not list(prefix.parent.glob(".whp-make-stage-*"))
+
+        # Work/source regeneration failure must not delete a working install.
+        with mock.patch.object(
+            helper, "_bootstrap_locked",
+            side_effect=RuntimeError("simulated source-generation failure"),
+        ):
+            try:
+                helper.bootstrap(root)
+            except RuntimeError as exc:
+                assert "simulated source-generation failure" in str(exc)
+            else:
+                raise AssertionError("bootstrap suppressed source-generation error")
+        unchanged()
+
+        # Failed stage validation never reaches the existing installation.
+        with mock.patch.object(helper, "gnu_make_usable", return_value=False):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except RuntimeError as exc:
+                assert "failed validation" in str(exc)
+            else:
+                raise AssertionError("published an invalid staged Make")
+        unchanged()
+
+        # Final marker failure must not destroy the existing installation.
+        original_write = pathlib.Path.write_text
+
+        def fail_marker(path, content, **kwargs):
+            if path.name == ".whp-make-bootstrap":
+                raise OSError("simulated marker failure")
+            return original_write(path, content, **kwargs)
+
+        with mock.patch.object(
+            helper.pathlib.Path, "write_text", autospec=True,
+            side_effect=fail_marker,
+        ):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except OSError as exc:
+                assert "simulated marker failure" in str(exc)
+            else:
+                raise AssertionError("published Make without a valid marker")
+        unchanged()
+
+        # If the final directory rename fails after moving the old prefix,
+        # restore the old version and never lose the old provenance marker.
+        original_rename = pathlib.Path.rename
+
+        def fail_publication(path, target):
+            if path.name.startswith(".whp-make-stage-") and target == prefix:
+                raise OSError("simulated publish failure")
+            return original_rename(path, target)
+
+        with mock.patch.object(
+            helper.pathlib.Path, "rename", autospec=True,
+            side_effect=fail_publication,
+        ):
+            try:
+                helper.publish_make_install(prefix, built, "new-cache\n")
+            except OSError as exc:
+                assert "simulated publish failure" in str(exc)
+            else:
+                raise AssertionError("published Make after failed rename")
+        unchanged()
+
+        # An interrupted swap with a missing final prefix can recover without
+        # deleting either source or locally built artifacts.
+        previous = prefix.with_name(".whp-make-previous")
+        prefix.rename(previous)
+        helper.recover_make_install(prefix)
+        unchanged()
+
+        # Both a current and previous install are ambiguous: fail closed.
+        previous.mkdir()
+        try:
+            helper.recover_make_install(prefix)
+        except RuntimeError as exc:
+            assert "ambiguous previous installation" in str(exc)
+        else:
+            raise AssertionError("accepted ambiguous Make backup")
+        previous.rmdir()
+
+        # Serializing installations must not strand stale lock directories.
+        with helper.make_bootstrap_lock(root):
+            try:
+                with helper.make_bootstrap_lock(root):
+                    raise AssertionError("second Make bootstrap took the lock")
+            except RuntimeError as exc:
+                assert "another WHP GNU Make bootstrap" in str(exc)
+        with helper.make_bootstrap_lock(root):
+            pass
+
+        # A fully staged installation publishes executable aliases + marker.
+        helper.publish_make_install(prefix, built, "new-cache\n")
+        assert (prefix / ".whp-make-bootstrap").read_text() == "new-cache\n"
+        assert helper.gnu_make_usable(prefix / "bin" / "make")
+        assert helper.gnu_make_usable(prefix / "bin" / "gmake")
+        assert "GNU Make new" in (prefix / "bin" / "make").read_text()
+        assert not previous.exists()
+        assert not list(prefix.parent.glob(".whp-make-stage-*"))
+
+
+def main() -> int:
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / ".gitmodules", encoding="utf-8")
+    section = 'submodule "toolchains/make"'
+    if section not in parser:
+        raise SystemExit("error: GNU Make fork is not registered as toolchains/make")
+    if parser[section].get("url") != "https://github.com/retrochristian5000/make.git":
+        raise SystemExit("error: toolchains/make does not point at the WHP GNU Make fork")
+
+    ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
+    require(ledger, "toolchains/make", "GNU Make ledger row")
+    require(ledger, "GNU Make bootstrap boundary", "GNU Make circularity section")
+    require(ledger, "Make -> Make", "GNU Make self-bootstrap warning")
+    require(ledger, "build.sh", "GNU Make no-Make bootstrap path")
+    require(ledger, "build.cfg", "GNU Make configured-input boundary")
+    require(ledger, "**configure-time**", "GNU Make seed configure boundary")
+    require(ledger, "BUILD_DIR/cache/make-generated", "GNU Make generated-source cache")
+    require(ledger, "BOOTSTRAP_MAKE", "GNU Make managed promotion policy")
+    require(ledger, "libisofs bootstrap boundary", "libisofs dependency section")
+    require(ledger, "zlib", "libisofs zlib root edge")
+    require(ledger, "pkg-config/pkgconf", "libisofs pkg-config probe edge")
+
+    config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
+    require(config, "BOOTSTRAP_MAKE", "GNU Make menu configuration")
+
+    shell_menu = (ROOT / "scripts/whp-config/menu-options.def").read_text(encoding="utf-8")
+    require(shell_menu, "BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make", "GNU Make shell menu option")
+
+    make_bootstrap = (ROOT / "scripts/ensure-make.py").read_text(encoding="utf-8")
+    require(make_bootstrap, 'MAKE_BOOTSTRAP_SCHEMA = "6"', "GNU Make bootstrap schema")
+    require(make_bootstrap, "GNULIB_COMMIT", "pinned gnulib revision")
+    require(make_bootstrap, "def validate_autoconf_contract():",
+            "Make fork Autoconf contract check")
+    require(make_bootstrap, '"AC_TRY_COMPILE(" in macros or "AC_FD_MSG" in macros',
+            "obsolete Autoconf macro rejection")
+    require(make_bootstrap, "validate_autoconf_contract()",
+            "Autoconf contract validation runs during Make bootstrap")
+    require(make_bootstrap, '"--disable-dependency-tracking"', "Make configure profile")
+    require(make_bootstrap, 'companion("autoheader", "AUTOHEADER")', "coherent Autoconf suite")
+    require(make_bootstrap, 'bootstrap_required_version("automake")', "Make-declared Automake minimum")
+    require(make_bootstrap, 'bootstrap_required_version("autoconf")', "Make-declared Autoconf minimum")
+    require(make_bootstrap, 'seed_sed = seed_bin / "sed"', "literal sed bootstrap routing")
+    require(make_bootstrap, 'versions = {autoconf_version(path) for path in suite}', "Autoconf suite version guard")
+    require(make_bootstrap, 'for env_name in ("WHP_BUILD_BASH", "CONFIG_SHELL")', "configuration shell selection")
+    require(make_bootstrap, '"CONFIG_SHELL": config_shell', "configuration shell export")
+    require(make_bootstrap, "def select_macos_sdkroot():", "macOS Make SDK resolver")
+    require(make_bootstrap, 'whp_apple_check_sdkroot "$2"', "selected native Apple SDK")
+    require(make_bootstrap, 'os.environ["SDKROOT"] = sdkroot', "compiler seed SDK")
+    require(make_bootstrap, 'env["SDKROOT"] = sdkroot', "Make configure SDK")
+    require(make_bootstrap, 'f"SDKROOT={sdkroot}', "SDK in Make cache identity")
+    require(make_bootstrap, "validate_configure_compiler(cc, env, work)",
+            "configure compiler link-and-run preflight")
+    require(make_bootstrap, '"build_alias", "host_alias", "target_alias"', "configure environment isolation")
+    require(make_bootstrap, 'key.startswith(("ac_cv_", "gl_cv_", "make_cv_"))', "Autoconf cache isolation")
+    require(make_bootstrap, 'configured_build = objects / "build.sh"', "configured build.sh handoff")
+    require(make_bootstrap, 'objects / "config.status"', "configure output validation")
+    require(make_bootstrap, 'build_root / "cache" / "gnulib" / GNULIB_COMMIT', "persistent gnulib cache")
+    require(make_bootstrap, 'build_root / "cache" / "make-generated"', "generated-source cache")
+    require(make_bootstrap, '"MAKE_GENERATED_SCHEMA=2', "generated-source schema")
+    require(make_bootstrap, "def pkg_config_aclocal_dir", "pkg-config macro directory resolver")
+    require(make_bootstrap, 'macro_dir / "pkg.m4"', "pkg.m4 availability guard")
+    require(make_bootstrap, '"ACLOCAL_PATH": aclocal_path', "pkg.m4 aclocal handoff")
+    require(make_bootstrap, "def generated_source_usable", "generated-source validation")
+    require(make_bootstrap, 'path / "m4" / "gettext.m4"',
+            "GNU Make gettext generated-cache completeness")
+    require(make_bootstrap, "def ensure_generated_source", "generated-source cache producer")
+    require(
+        make_bootstrap,
+        'for key in ("MAKE", "MAKE_CMD", "CC", "PKG_CONFIG")',
+        "generation/configure input separation",
+    )
+    require(
+        make_bootstrap,
+        "WHP GNU Make generated source cache: reused",
+        "generated-source reuse diagnostic",
+    )
+    require(make_bootstrap, '"GNULIB_SRCDIR": str(gnulib_source)', "local gnulib handoff")
+    require(make_bootstrap, '"--gen", "--no-git"', "offline gnulib regeneration")
+    require(make_bootstrap, "build.sh", "GNU Make no-Make compiler stage")
+    require(make_bootstrap, "WHP_MAKE_SEED", "GNU Make seed boundary")
+    require(
+        make_bootstrap,
+        "def validate_modern_c_prototypes():",
+        "GNU Make modern-C prototype guard",
+    )
+    require(
+        make_bootstrap,
+        '"extern char *getenv (const char *);"',
+        "GNU Make getenv prototype contract",
+    )
+    require(
+        make_bootstrap,
+        '"extern int getopt (int argc, char *const *argv, "',
+        "GNU Make getopt prototype contract",
+    )
+    # Validate actual bootstrap call order without requiring adjacency.
+    bootstrap_body = make_bootstrap.split("def bootstrap(build_root):", 1)[1]
+    stages = (
+        "revision = ensure_source()",
+        "validate_autoconf_contract()",
+        "validate_modern_c_prototypes()",
+        'required_automake = bootstrap_required_version("automake")',
+    )
+    try:
+        offsets = tuple(bootstrap_body.index(stage) for stage in stages)
+    except ValueError as exc:
+        raise SystemExit(
+            f"error: missing GNU Make validation bootstrap call: {exc}"
+        ) from exc
+    if tuple(sorted(offsets)) != offsets:
+        raise SystemExit(
+            "error: GNU Make must validate Autoconf and C prototypes "
+            "before selecting bootstrap tools"
+        )
+
+    make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
+    if "[[" in make_resolver or "local " in make_resolver:
+        raise SystemExit("error: early GNU Make resolver is no longer POSIX-sh compatible")
+
+    python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")
+    require(python_bootstrap, "resolve_bootstrap_make()", "Python Make resolver")
+    require(python_bootstrap, 'requested_make=${MAKE_CMD:-${MAKE:-}}', "Python MAKE_CMD/MAKE handoff")
+    require(python_bootstrap, '"$bootstrap_make" DESTDIR="$install_root" install', "Python selected Make install")
+
+    grub_bootstrap = (ROOT / "scripts/bootstrap-i386-efi-grub.bash").read_text(encoding="utf-8")
+    require(grub_bootstrap, 'source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"', "GRUB shared Make resolver")
+    require(grub_bootstrap, 'MAKE_CMD_REQUESTED="${MAKE_CMD:-${MAKE:-}}"', "GRUB MAKE_CMD/MAKE handoff")
+    require(grub_bootstrap, 'PATH="$LLVM_TOOL_PATH" "$MAKE_CMD" -C "$build_root"', "GRUB selected Make build")
+
+    build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    require(
+        build,
+        '. "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"',
+        "early shared GNU Make resolver",
+    )
+    require(
+        build,
+        'WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}',
+        "early MAKE_CMD/MAKE convergence",
+    )
+    require(build, 'export WHP_MAKE_SEED MAKE_CMD MAKE', "early GNU Make seed export")
+
+    host_tools = (ROOT / "scripts/whp-build/host-tools.sh").read_text(encoding="utf-8")
+    require(host_tools, "BOOTSTRAP_MAKE=", "GNU Make host-tools policy")
+    require(host_tools, "scripts/ensure-make.py", "GNU Make managed bootstrap call")
+    require(host_tools, "WHP_MAKE_SEED", "GNU Make host-tools seed handoff")
+    require(host_tools, "WHP_MAKE_PREFIX/bin/make", "GNU Make promotion executable")
+
+    prepare_build = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
+    require(
+        prepare_build,
+        'local requested_make="${MAKE_CMD:-${MAKE:-}}"',
+        "late MAKE_CMD/MAKE convergence",
+    )
+
+    libisofs = (ROOT / "scripts/ensure-libisofs.py").read_text(encoding="utf-8")
+    require(libisofs, "def select_gnu_make()", "libisofs GNU Make selector")
+    require(
+        libisofs,
+        'os.environ.get("MAKE_CMD") or os.environ.get("MAKE", "")',
+        "libisofs MAKE_CMD/MAKE handoff",
+    )
+    require(
+        libisofs,
+        'if version.startswith("GNU Make "):',
+        "libisofs GNU Make identity check",
+    )
+
+    libtool = (ROOT / "scripts/ensure-libtool.py").read_text(encoding="utf-8")
+    require(libtool, "select_gnu_make()", "Libtool GNU Make resolver")
+    require(libtool, 'os.environ.get("MAKE_CMD"', "Libtool MAKE_CMD handoff")
+    require(libtool, '"GNU Make" in output', "Libtool GNU Make identity check")
+
+    verify_make_install_recovery()
+    print("GNU Make dependency policy: verified")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

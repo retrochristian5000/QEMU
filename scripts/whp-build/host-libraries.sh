@@ -1,0 +1,222 @@
+# WHP QEMU-linked host library preparation.
+# Defines whp_prepare_qemu_host_libraries(); build.sh controls when it runs.
+
+whp_prepare_zlib_phase()
+{
+    WHP_ZLIB_ROLE=${1:-}
+    case "$WHP_ZLIB_ROLE" in
+        bootstrap|artifact) ;;
+        *) printf 'error: internal zlib role must be bootstrap or artifact: %s\n' "${WHP_ZLIB_ROLE:-<empty>}" >&2; exit 1 ;;
+    esac
+
+    BOOTSTRAP_ZLIB=${BOOTSTRAP_ZLIB:-auto}
+    BOOTSTRAP_ZLIB=$(whp_normalize_auto_switch BOOTSTRAP_ZLIB "$BOOTSTRAP_ZLIB") || exit 1
+    export BOOTSTRAP_ZLIB
+
+    if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+        unset WHP_GIT_ZLIB_PREFIX
+    fi
+
+    if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+       [ "$BOOTSTRAP_ZLIB" != 0 ]; then
+        ZLIB_BOOTSTRAP_MODE=auto
+        [ "$BOOTSTRAP_ZLIB" != 1 ] || ZLIB_BOOTSTRAP_MODE=force
+
+        if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+            WHP_ZLIB_PHASE_PREFIX=$(
+                "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
+                    --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE" \
+                    --role bootstrap --cc "$CC_FOR_BUILD"
+            ) || exit 1
+        elif [ "${BOOTSTRAP_NATIVE_LLVM:-0}" != 1 ] &&
+             [ -n "${WHP_GIT_ZLIB_PREFIX:-}" ]; then
+            WHP_ZLIB_PHASE_PREFIX=$WHP_GIT_ZLIB_PREFIX
+        else
+            WHP_ZLIB_PHASE_PREFIX=$(
+                "$PYTHON" "$SOURCE_DIR/scripts/ensure-zlib.py" \
+                    --build-dir "$BUILD_DIR" --mode "$ZLIB_BOOTSTRAP_MODE" \
+                    --role artifact
+            ) || exit 1
+        fi
+        unset ZLIB_BOOTSTRAP_MODE
+
+        if [ "$WHP_ZLIB_ROLE" = bootstrap ]; then
+            if [ -n "$WHP_ZLIB_PHASE_PREFIX" ]; then
+                WHP_GIT_ZLIB_PREFIX=$WHP_ZLIB_PHASE_PREFIX
+                export WHP_GIT_ZLIB_PREFIX
+            fi
+            unset WHP_ZLIB_PHASE_PREFIX WHP_ZLIB_ROLE
+            return 0
+        fi
+
+        WHP_ZLIB_PREFIX=$WHP_ZLIB_PHASE_PREFIX
+        unset WHP_ZLIB_PHASE_PREFIX
+        if [ -n "$WHP_ZLIB_PREFIX" ]; then
+            WHP_ZLIB_PC_PATH=
+            for WHP_ZLIB_PC_DIR in "$WHP_ZLIB_PREFIX/lib/pkgconfig" "$WHP_ZLIB_PREFIX/lib64/pkgconfig" "$WHP_ZLIB_PREFIX/libdata/pkgconfig"; do
+                [ ! -d "$WHP_ZLIB_PC_DIR" ] || WHP_ZLIB_PC_PATH="${WHP_ZLIB_PC_PATH:+$WHP_ZLIB_PC_PATH:}$WHP_ZLIB_PC_DIR"
+            done
+            if [ -n "$WHP_ZLIB_PC_PATH" ]; then
+                PKG_CONFIG_PATH="$WHP_ZLIB_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH
+            fi
+            CMAKE_PREFIX_PATH="$WHP_ZLIB_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            ZLIB_ROOT="$WHP_ZLIB_PREFIX"
+            export WHP_ZLIB_PREFIX CMAKE_PREFIX_PATH ZLIB_ROOT
+            unset WHP_ZLIB_PC_PATH WHP_ZLIB_PC_DIR
+        fi
+    fi
+    unset WHP_ZLIB_ROLE
+}
+
+whp_prepare_bootstrap_zlib()
+{
+    whp_prepare_zlib_phase bootstrap
+}
+
+whp_prepare_qemu_host_libraries()
+{
+    # Artifact zlib is compiler-selected. Reuse bootstrap zlib only when native
+    # LLVM did not promote CC; otherwise keep the two prefixes isolated.
+    whp_prepare_zlib_phase artifact
+
+    BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
+    case "$BOOTSTRAP_SDL" in
+        y) BOOTSTRAP_SDL=1 ;;
+        n) BOOTSTRAP_SDL=0 ;;
+        auto|0|1) ;;
+        *)
+            printf 'error: BOOTSTRAP_SDL must be auto, 0, or 1\n' >&2
+            exit 1
+            ;;
+    esac
+    export BOOTSTRAP_SDL
+
+    # SDL3 is a normal QEMU host dependency, so keep QEMU's Meson dependency
+    # detection authoritative. The WHP bootstrap only provides a pinned private
+    # prefix and makes it visible through pkg-config/CMake. auto keeps a usable
+    # host SDL3, otherwise it falls back to the pinned SDL fork when the bootstrap
+    # prerequisites are available. 1 forces the fork; 0 disables only the bundled
+    # fallback and leaves normal host dependency discovery untouched.
+    if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+       [ "$BOOTSTRAP_SDL" != 0 ]; then
+        SDL_BOOTSTRAP_MODE=auto
+        if [ "$BOOTSTRAP_SDL" = 1 ]; then
+            SDL_BOOTSTRAP_MODE=force
+        fi
+        WHP_SDL_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-sdl.py" \
+                --build-dir "$BUILD_DIR" --mode "$SDL_BOOTSTRAP_MODE"
+        ) || exit 1
+        unset SDL_BOOTSTRAP_MODE
+
+        if [ -n "$WHP_SDL_PREFIX" ]; then
+            WHP_SDL_PC_PATH=
+            for WHP_SDL_PC_DIR in \
+                "$WHP_SDL_PREFIX/lib/pkgconfig" \
+                "$WHP_SDL_PREFIX/lib64/pkgconfig" \
+                "$WHP_SDL_PREFIX/libdata/pkgconfig"; do
+                if [ -d "$WHP_SDL_PC_DIR" ]; then
+                    WHP_SDL_PC_PATH="${WHP_SDL_PC_PATH:+$WHP_SDL_PC_PATH:}$WHP_SDL_PC_DIR"
+                fi
+            done
+            if [ -n "$WHP_SDL_PC_PATH" ]; then
+                PKG_CONFIG_PATH="$WHP_SDL_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH
+            fi
+            CMAKE_PREFIX_PATH="$WHP_SDL_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            SDL3_ROOT="$WHP_SDL_PREFIX"
+            export WHP_SDL_PREFIX CMAKE_PREFIX_PATH SDL3_ROOT
+
+            # The pinned SDL3 library is now shared. Keep configure probes,
+            # build-tree QEMU, and QEMU tests able to locate it without
+            # installing into the host's system directories. The QEMU linker
+            # also receives a build-tree-relative runpath in builder.bash.
+            if [ -d "$WHP_SDL_PREFIX/lib" ]; then
+                case "$WHP_HOST_OS" in
+                    macos)
+                        DYLD_FALLBACK_LIBRARY_PATH="$WHP_SDL_PREFIX/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+                        export DYLD_FALLBACK_LIBRARY_PATH
+                        ;;
+                    linux|freebsd|netbsd|openbsd|dragonfly|solaris)
+                        LD_LIBRARY_PATH="$WHP_SDL_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                        export LD_LIBRARY_PATH
+                        ;;
+                esac
+            fi
+            if [ "$WHP_HOST_OS" = windows ] &&
+               [ -d "$WHP_SDL_PREFIX/bin" ]; then
+                PATH="$WHP_SDL_PREFIX/bin:$PATH"
+                export PATH
+            fi
+            unset WHP_SDL_PC_PATH WHP_SDL_PC_DIR
+        fi
+    fi
+
+    BOOTSTRAP_JACK=${BOOTSTRAP_JACK:-auto}
+    case "$BOOTSTRAP_JACK" in
+        y) BOOTSTRAP_JACK=1 ;;
+        n) BOOTSTRAP_JACK=0 ;;
+        auto|0|1) ;;
+        *)
+            printf 'error: BOOTSTRAP_JACK must be auto, 0, or 1\n' >&2
+            exit 1
+            ;;
+    esac
+    export BOOTSTRAP_JACK
+
+    # JACK remains a normal QEMU Meson dependency. The WHP bootstrap only stages
+    # the pinned client library and development files into a private prefix, then
+    # exposes that prefix through pkg-config. auto keeps a usable host JACK,
+    # 1 forces the fork, and 0 disables only the bundled fallback.
+    if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+       [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
+       [ "$BOOTSTRAP_JACK" != 0 ]; then
+        JACK_BOOTSTRAP_MODE=auto
+        if [ "$BOOTSTRAP_JACK" = 1 ]; then
+            JACK_BOOTSTRAP_MODE=force
+        fi
+        WHP_JACK_PREFIX=$(
+            "$PYTHON" "$SOURCE_DIR/scripts/ensure-jack.py" \
+                --build-dir "$BUILD_DIR" --mode "$JACK_BOOTSTRAP_MODE"
+        ) || exit 1
+        unset JACK_BOOTSTRAP_MODE
+
+        if [ -n "$WHP_JACK_PREFIX" ]; then
+            WHP_JACK_PC_PATH=
+            for WHP_JACK_PC_DIR in \
+                "$WHP_JACK_PREFIX/lib/pkgconfig" \
+                "$WHP_JACK_PREFIX/lib64/pkgconfig" \
+                "$WHP_JACK_PREFIX/libdata/pkgconfig"; do
+                if [ -d "$WHP_JACK_PC_DIR" ]; then
+                    WHP_JACK_PC_PATH="${WHP_JACK_PC_PATH:+$WHP_JACK_PC_PATH:}$WHP_JACK_PC_DIR"
+                fi
+            done
+            if [ -n "$WHP_JACK_PC_PATH" ]; then
+                PKG_CONFIG_PATH="$WHP_JACK_PC_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH
+            fi
+
+            # The private JACK bootstrap is intentionally dynamic on POSIX hosts.
+            # Keep build-tree QEMU and its tests able to resolve that exact library
+            # without installing the dependency globally.
+            if [ -d "$WHP_JACK_PREFIX/lib" ]; then
+                case "$WHP_HOST_OS" in
+                    macos)
+                        DYLD_FALLBACK_LIBRARY_PATH="$WHP_JACK_PREFIX/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+                        export DYLD_FALLBACK_LIBRARY_PATH
+                        ;;
+                    linux|freebsd|netbsd|openbsd|dragonfly|solaris)
+                        LD_LIBRARY_PATH="$WHP_JACK_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                        export LD_LIBRARY_PATH
+                        ;;
+                esac
+            fi
+            export WHP_JACK_PREFIX
+            unset WHP_JACK_PC_PATH WHP_JACK_PC_DIR
+        fi
+    fi
+
+}

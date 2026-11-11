@@ -1,0 +1,95 @@
+name: PowerMac3,1 hardware contracts
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'hw/display/ati.c'
+      - 'hw/display/ati_int.h'
+      - 'hw/mips/fuloong2e.c'
+      - 'hw/display/ati_2d.c'
+      - 'hw/display/ati_regs.h'
+      - 'hw/display/vga-pci.c'
+      - 'hw/display/Kconfig'
+      - 'scripts/tests/test-display-device-provenance.py'
+      - 'hw/net/sungem.c'
+      - 'hw/misc/Kconfig'
+      - 'hw/misc/meson.build'
+      - 'hw/misc/tsb12lv23.c'
+      - 'hw/pci/pci.c'
+      - 'hw/pci-bridge/dec.c'
+      - 'hw/ppc/Kconfig'
+      - 'hw/ppc/mac_newworld.c'
+      - 'hw/ppc/powermac3_1.c'
+      - 'target/ppc/cpu_init.c'
+      - 'target/ppc/cpu-models.c'
+      - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
+      - 'scripts/tests/test-ati-device-profiles.py'
+      - 'scripts/tests/test-powermac3_1-rage128-2d.py'
+      - 'scripts/tests/test-powermac3_1-gmac-phy.py'
+      - 'scripts/tests/test-powermac3_1-defaults.py'
+      - 'scripts/tests/test-powermac3_1-firewire.py'
+      - 'scripts/tests/test-powermac3_1-multi-display.py'
+      - 'scripts/tests/test-dec21154-power-management.py'
+      - '.github/workflows/powerpc-vga-rom-bar.yml'
+  pull_request:
+    paths:
+      - 'hw/display/ati.c'
+      - 'hw/display/ati_int.h'
+      - 'hw/mips/fuloong2e.c'
+      - 'hw/display/ati_2d.c'
+      - 'hw/display/ati_regs.h'
+      - 'hw/display/vga-pci.c'
+      - 'hw/display/Kconfig'
+      - 'scripts/tests/test-display-device-provenance.py'
+      - 'hw/net/sungem.c'
+      - 'hw/misc/Kconfig'
+      - 'hw/misc/meson.build'
+      - 'hw/misc/tsb12lv23.c'
+      - 'hw/pci/pci.c'
+      - 'hw/pci-bridge/dec.c'
+      - 'hw/ppc/Kconfig'
+      - 'hw/ppc/mac_newworld.c'
+      - 'hw/ppc/powermac3_1.c'
+      - 'target/ppc/cpu_init.c'
+      - 'target/ppc/cpu-models.c'
+      - 'scripts/tests/test-powerpc-vga-rom-bar.py'
+      - 'scripts/tests/test-powermac3_1-rage128-ddc.py'
+      - 'scripts/tests/test-ati-device-profiles.py'
+      - 'scripts/tests/test-powermac3_1-rage128-2d.py'
+      - 'scripts/tests/test-powermac3_1-gmac-phy.py'
+      - 'scripts/tests/test-powermac3_1-defaults.py'
+      - 'scripts/tests/test-powermac3_1-firewire.py'
+      - 'scripts/tests/test-powermac3_1-multi-display.py'
+      - 'scripts/tests/test-dec21154-power-management.py'
+      - '.github/workflows/powerpc-vga-rom-bar.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hardware-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Guard physical VGA and opt-in VMware virtual graphics
+        run: python3 scripts/tests/test-display-device-provenance.py
+      - name: Verify standard VGA keeps its PCI option ROM
+        run: python3 scripts/tests/test-powerpc-vga-rom-bar.py
+      - name: Verify Sawtooth retail defaults
+        run: python3 scripts/tests/test-powermac3_1-defaults.py
+      - name: Verify Sawtooth Rage128 DDC contract
+        run: python3 scripts/tests/test-powermac3_1-rage128-ddc.py
+      - name: Guard separate ATI GPU identities
+        run: python3 scripts/tests/test-ati-device-profiles.py
+      - name: Guard Rage128 packed 24-bpp fills and VRAM boundaries
+        run: python3 scripts/tests/test-powermac3_1-rage128-2d.py
+      - name: Verify Sawtooth BCM5201 PHY reads
+        run: python3 scripts/tests/test-powermac3_1-gmac-phy.py
+      - name: Verify Sawtooth TSB12LV23 FireWire controller
+        run: python3 scripts/tests/test-powermac3_1-firewire.py
+      - name: Verify Sawtooth generic AGP + PCI multi-display wiring
+        run: python3 scripts/tests/test-powermac3_1-multi-display.py
+      - name: Verify Sawtooth DEC 21154 power-management contract
+        run: python3 scripts/tests/test-dec21154-power-management.py

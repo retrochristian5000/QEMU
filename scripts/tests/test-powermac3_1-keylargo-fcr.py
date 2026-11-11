@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Source contract for PowerMac3,1 KeyLargo feature-control registers."""
+
+from pathlib import Path
+
+
+MACIO = Path("hw/misc/macio/macio.c")
+source = MACIO.read_text(encoding="utf-8")
+
+required = {
+    # FCR0: Sawtooth USB cell, PHY/pad, and shared USB reference controls.
+    "KL_FCR0_SCC_A_INTF_ENABLE": "(1U << 1)",
+    "KL_FCR0_USB0_PAD_SUSPEND0": "(1U << 18)",
+    "KL_FCR0_USB0_PAD_SUSPEND1": "(1U << 19)",
+    "KL_FCR0_USB0_CELL_ENABLE": "(1U << 20)",
+    "KL_FCR0_USB1_PAD_SUSPEND0": "(1U << 22)",
+    "KL_FCR0_USB1_PAD_SUSPEND1": "(1U << 23)",
+    "KL_FCR0_USB1_CELL_ENABLE": "(1U << 24)",
+    "KL_FCR0_USB_REF_SUSPEND": "(1U << 28)",
+
+    # FCR2: board I/O and sleep-side data control used by KeyLargo shutdown.
+    "KL_FCR2_IOBUS_ENABLE": "(1U << 1)",
+    "KL_FCR2_SLEEP_STATE_BIT": "(1U << 8)",
+    "KL_FCR2_MPIC_ENABLE": "(1U << 17)",
+    "KL_FCR2_ALT_DATA_OUT": "(1U << 25)",
+
+    # FCR3: KeyLargo PLL shutdown and clock-domain controls used by sleep/wake.
+    "KL_FCR3_SHUTDOWN_PLL_TOTAL": "(1U << 0)",
+    "KL_FCR3_SHUTDOWN_PLLKW6": "(1U << 1)",
+    "KL_FCR3_SHUTDOWN_PLLKW4": "(1U << 2)",
+    "KL_FCR3_SHUTDOWN_PLLKW35": "(1U << 3)",
+    "KL_FCR3_SHUTDOWN_PLLKW12": "(1U << 4)",
+    "KL_FCR3_PLL_RESET": "(1U << 5)",
+    "KL_FCR3_SHUTDOWN_PLL2X": "(1U << 7)",
+    "KL_FCR3_CLK66_ENABLE": "(1U << 8)",
+    "KL_FCR3_CLK49_ENABLE": "(1U << 9)",
+    "KL_FCR3_CLK45_ENABLE": "(1U << 10)",
+    "KL_FCR3_CLK31_ENABLE": "(1U << 11)",
+    "KL_FCR3_TIMER_CLK18_ENABLE": "(1U << 12)",
+    "KL_FCR3_I2S1_CLK18_ENABLE": "(1U << 13)",
+    "KL_FCR3_I2S0_CLK18_ENABLE": "(1U << 14)",
+    "KL_FCR3_VIA_CLK16_ENABLE": "(1U << 15)",
+    "KL_FCR3_STOPPING33_ENABLED": "(1U << 19)",
+}
+
+missing = []
+for name, value in required.items():
+    line = f"#define {name}"
+    matching = [candidate.strip() for candidate in source.splitlines()
+                if candidate.startswith(line)]
+    if not matching or value not in matching[0]:
+        missing.append(f"{name} = {value}")
+
+wake_macros = [
+    "#define KL_FCR4_PORT_WAKEUP_ENABLE(p)",
+    "#define KL_FCR4_PORT_RESUME_WAKE_EN(p)",
+    "#define KL_FCR4_PORT_CONNECT_WAKE_EN(p)",
+    "#define KL_FCR4_PORT_DISCONNECT_WAKE_EN(p)",
+    "#define KL_FCR4_PORT_RESUME_STAT(p)",
+    "#define KL_FCR4_PORT_CONNECT_STAT(p)",
+    "#define KL_FCR4_PORT_DISCONNECT_STAT(p)",
+]
+for macro in wake_macros:
+    if macro not in source:
+        missing.append(macro)
+
+if "KL_FCR0_CHOOSE_SCCA" in source:
+    missing.append("remove misleading KL_FCR0_CHOOSE_SCCA alias")
+
+
+# Sawtooth's Screamer path is not merely register readback: FCR1 must drive
+# the codec's cell-enable input, and the firmware-facing default must keep the
+# legacy audio cell/clock route alive until the guest powers it down.
+power_start = source.find("#define KL_FCR1_SCREAMER_POWER_MASK")
+default_start = source.find("#define KL_FCR1_SCREAMER_DEFAULT_MASK", power_start)
+fcr2_start = source.find("#define KL_FCR2_IOBUS_ENABLE", default_start)
+if power_start < 0 or default_start < 0 or fcr2_start < 0:
+    missing.append("Screamer FCR1 mask boundaries")
+else:
+    power_mask = source[power_start:default_start]
+    default_mask = source[default_start:fcr2_start]
+    for bit in ("KL_FCR1_AUDIO_CLK_ENABLE",
+                "KL_FCR1_AUDIO_CLK_OUT_ENABLE",
+                "KL_FCR1_AUDIO_CELL_ENABLE"):
+        if bit not in power_mask:
+            missing.append(f"Screamer power mask bit: {bit}")
+    if "KL_FCR1_CHOOSE_AUDIO" in power_mask:
+        missing.append("Screamer power mask must not treat AUDIO_CHOOSE as power")
+    if "KL_FCR1_CHOOSE_AUDIO" not in default_mask:
+        missing.append("Sawtooth default must preserve legacy AUDIO_CHOOSE route")
+
+for needle in (
+    "KL_FCR1_SCREAMER_POWER_MASK",
+    "KL_FCR1_SCREAMER_DEFAULT_MASK",
+    "keylargo_screamer_enabled",
+    "keylargo_update_screamer",
+    'qdev_get_gpio_in_named(DEVICE(&ns->screamer),',
+    '"cell-enable", 0)',
+    "if (reg == 1) {",
+    "keylargo_update_screamer(ns);",
+    "ns->fcr[1] |= KL_FCR1_SCREAMER_DEFAULT_MASK;",
+):
+    if needle not in source:
+        missing.append(f"Screamer FCR1 wiring: {needle}")
+
+if missing:
+    raise SystemExit(
+        "PowerMac3,1 KeyLargo FCR contract is incomplete:\n  - "
+        + "\n  - ".join(missing)
+    )
+
+print("PowerMac3,1 KeyLargo FCR contract: ok")

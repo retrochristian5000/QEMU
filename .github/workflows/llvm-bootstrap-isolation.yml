@@ -1,0 +1,68 @@
+name: WHP LLVM bootstrap isolation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - 'scripts/bootstrap-native-clang.sh'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/bootstrap-i386-clang.sh'
+      - 'scripts/bootstrap-i386-clang.bash'
+      - 'scripts/bootstrap-powerpc-clang.sh'
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/whp-build/configure-seabios.bash'
+      - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
+      - 'scripts/tests/test-native-llvm-lean-profile.py'
+      - 'scripts/tests/test-llvm-incremental-bootstrap.bash'
+      - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'scripts/tests/test-llvm-tablegen-dedup.py'
+      - 'toolchains/llvm-project'
+      - '.github/workflows/llvm-bootstrap-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-isolation:
+    name: Check LLVM bootstrap isolation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Fetch pinned LLVM TableGen policy source
+        shell: bash
+        run: |
+          set -euo pipefail
+          llvm_revision="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          test -n "$llvm_revision"
+          tablegen_cmake="$RUNNER_TEMP/TableGen.cmake"
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/retrochristian5000/LLVM/$llvm_revision/llvm/cmake/modules/TableGen.cmake" \
+            -o "$tablegen_cmake"
+          printf 'WHP_LLVM_TABLEGEN_CMAKE=%s\n' "$tablegen_cmake" >> "$GITHUB_ENV"
+
+      - name: Verify LLVM TableGen duplicate-edge policy
+        run: python3 scripts/tests/test-llvm-tablegen-dedup.py
+
+      - name: Verify native LLVM wiring and CMake cache boundaries
+        run: python3 scripts/tests/test-native-llvm-wiring.py
+
+      - name: Verify native LLVM arm64e bootstrap policy
+        run: python3 scripts/tests/test-native-llvm-arm64e-bootstrap.py
+
+      - name: Verify native LLVM lean profile
+        run: python3 scripts/tests/test-native-llvm-lean-profile.py
+
+      - name: Verify native LLVM incremental bootstrap contract
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
+
+      - name: Verify i386 LLVM incremental bootstrap contract
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-i386-clang.bash 'i386-none-elf LLVM'
+
+      - name: Verify LLVM bootstrap environment boundary
+        run: bash scripts/tests/test-llvm-bootstrap-isolation.bash

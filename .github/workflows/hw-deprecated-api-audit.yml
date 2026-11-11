@@ -1,0 +1,38 @@
+name: Hardware deprecated API audit
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'hw/**'
+      - 'include/hw/**'
+      - 'include/glib-compat.h'
+      - 'configs/**'
+      - 'configure'
+      - 'meson.build'
+      - 'meson_options.txt'
+      - 'scripts/checkpatch.pl'
+      - 'scripts/tests/test-hw-deprecated-api-audit.bash'
+      - '.github/workflows/hw-deprecated-api-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hw-deprecated-api-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-audit:
+    name: Reject deprecated hardware APIs and suppressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Audit hardware sources
+        run: bash scripts/tests/test-hw-deprecated-api-audit.bash

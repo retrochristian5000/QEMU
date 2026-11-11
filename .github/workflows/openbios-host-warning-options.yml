@@ -1,0 +1,32 @@
+name: OpenBIOS host warning options
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-host-warning-options.bash'
+      - '.github/workflows/openbios-host-warning-options.yml'
+  pull_request:
+    paths:
+      - 'roms/openbios'
+      - 'scripts/tests/test-openbios-host-warning-options.bash'
+      - '.github/workflows/openbios-host-warning-options.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openbios-host-warning-options:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QEMU
+        uses: actions/checkout@v7
+
+      - name: Initialize pinned OpenBIOS
+        run: git submodule update --init --depth 1 roms/openbios
+
+      - name: Verify OpenBIOS host warning option probing
+        run: bash scripts/tests/test-openbios-host-warning-options.bash

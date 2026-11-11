@@ -1,0 +1,625 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Reconcile DTC with the immutable Meson wrap without rewinding descendants.
+
+This runs before Meson setup, with Git as the source updater. It preserves
+compatible newer local commits and never resets Git or the build directory.
+"""
+
+import argparse
+import configparser
+import hashlib
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+class DTCError(Exception):
+    pass
+
+
+# QEMU's internal libfdt integration requires the DTC 1.8.1-era Meson
+# contract. Newer revisions are acceptable only if the interface still passes.
+MIN_DTC_VERSION = (1, 8, 1)
+
+
+def git_command():
+    # WHP host-tools.sh may promote a managed Git and export its exact command.
+    # Match the submodule updater's GIT selection instead of rediscovering PATH.
+    command = os.environ.get("GIT") or "git"
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise DTCError(f"invalid GIT command: {exc}") from exc
+    if not argv:
+        raise DTCError("GIT must name a Git executable")
+    return argv
+
+
+def git(checkout, *args):
+    result = subprocess.run(
+        [*git_command(), "-C", str(checkout), *args],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if result.returncode:
+        raise DTCError(
+            f"git {' '.join(args)} failed: {result.stderr.strip()}"
+        )
+    # Git porcelain output begins with two significant status columns.
+    # Strip only line terminators, never leading spaces from the first row.
+    return result.stdout.rstrip("\r\n")
+
+
+def git_ancestor(checkout, older, newer):
+    """Distinguish a true non-ancestor from Git errors."""
+    result = subprocess.run(
+        [*git_command(), "-C", str(checkout), "merge-base",
+         "--is-ancestor", older, newer],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    raise DTCError(
+        "cannot establish DTC ancestry: " +
+        (result.stderr.strip() or f"exit {result.returncode}")
+    )
+
+
+def meson_wrap_hash(wrap_file, wrap_text=None):
+    """Match Meson's SHA-256 of UTF-8 text (with universal newlines)."""
+    if wrap_text is None:
+        wrap_text = wrap_file.read_text(encoding="utf-8")
+    return hashlib.sha256(wrap_text.encode("utf-8")).hexdigest()
+
+
+def load_dtc_wrap(source):
+    """Read the immutable pin and Meson checksum from one wrap text snapshot."""
+    wrap_file = source / "subprojects" / "dtc.wrap"
+    wrap_text = wrap_file.read_text(encoding="utf-8")
+    config = configparser.ConfigParser(interpolation=None)
+    try:
+        config.read_string(wrap_text, source=str(wrap_file))
+    except configparser.Error as exc:
+        raise DTCError(f"invalid DTC wrap {wrap_file}: {exc}") from exc
+    if not config.has_section("wrap-git"):
+        raise DTCError(f"missing [wrap-git] specification: {wrap_file}")
+    revision = config.get("wrap-git", "revision", fallback="").strip()
+    url = config.get("wrap-git", "url", fallback="").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", revision) or not url:
+        raise DTCError("DTC wrap must specify an immutable 40-digit revision and URL")
+    return wrap_file, revision.lower(), url, meson_wrap_hash(wrap_file, wrap_text)
+
+
+def refresh_wrap_cache(cache_file, wrap_hash, wrap_file):
+    # The expected hash must still describe the CURRENT wrap file, not a
+    # stale snapshot from before a simultaneous source/pin update.  Refuse
+    # to install a mismatched marker.  Keep Meson's atomic update behavior.
+    if meson_wrap_hash(wrap_file) != wrap_hash:
+        raise DTCError("DTC wrap changed during reconciliation; marker not updated")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=cache_file.parent,
+            prefix=".meson-wrap-", delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(wrap_hash + "\n")
+        os.replace(temporary, cache_file)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def validate_meson_dtc(checkout, revision=None):
+    """Verify QEMU's DTC Meson contract, optionally in a future Git revision.
+
+    Use "git show" to inspect a proposed revision before checking it out, so
+    incompatible DTC upgrades leave HEAD and the old marker untouched.
+    """
+    def source_text(name):
+        if revision is not None:
+            try:
+                return git(checkout, "show", f"{revision}:{name}")
+            except DTCError:
+                return None
+        path = checkout / name
+        return path.read_text(encoding="utf-8") if path.is_file() else None
+
+    project = source_text("meson.build")
+    libfdt = source_text("libfdt/meson.build")
+    if project is None or libfdt is None:
+        raise DTCError("pinned DTC checkout lacks its Meson libfdt project")
+    if not re.search(r"\bsubdir\s*\(\s*['\"]libfdt['\"]", project):
+        raise DTCError("pinned DTC Meson project no longer enters libfdt")
+    if not re.search(r"\blibfdt_dep\b", libfdt):
+        raise DTCError("pinned DTC no longer exports QEMU's libfdt_dep")
+
+    # Meson 1.1+ supports meson.options; legacy DTC uses meson_options.txt.
+    options = source_text("meson.options")
+    if options is None:
+        options = source_text("meson_options.txt")
+    if options is None:
+        raise DTCError("pinned DTC checkout lacks meson.options/meson_options.txt")
+    for name in ("tools", "yaml", "python", "tests"):
+        if not re.search(r"(?m)^\s*option\s*\(\s*['\"]" + name + r"['\"]\s*,", options):
+            raise DTCError(f"pinned DTC checkout does not declare the Meson {name!r} option")
+
+    # Read the *version Meson actually declares*, not an incidental version
+    # file that might be present in an unrelated or outdated checkout.
+    if re.search(r"""\bversion\s*:\s*files\s*\(\s*['"]VERSION\.txt['"]\s*\)""", project):
+        version_text = source_text("VERSION.txt")
+        if version_text is None:
+            raise DTCError("DTC Meson project references a missing VERSION.txt")
+        version = version_text.strip()
+    else:
+        match = re.search(r"""\bversion\s*:\s*['"]([^'"]+)['"]""", project)
+        if match is None:
+            raise DTCError("DTC Meson project has no verifiable version (minimum 1.8.1)")
+        version = match.group(1).strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise DTCError(f"unrecognized DTC Meson version {version!r}; expected MAJOR.MINOR.PATCH")
+    detected = tuple(int(part) for part in version.split("."))
+    if detected < MIN_DTC_VERSION:
+        required = ".".join(str(part) for part in MIN_DTC_VERSION)
+        raise DTCError(f"DTC {version} is older than QEMU's required DTC {required}")
+
+
+def fetch_missing_dtc(source, checkout, url, revision, wrap_hash):
+    """Fetch Git to a staging directory; publish only a verified checkout."""
+    with tempfile.TemporaryDirectory(prefix=".dtc-fetch-", dir=checkout.parent) as staging:
+        pending = Path(staging) / "dtc"
+        result = subprocess.run(
+            [*git_command(), "init", "-q", str(pending)],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if result.returncode:
+            raise DTCError("git init for DTC failed: " + result.stderr.strip())
+        git(pending, "remote", "add", "origin", url)
+        git(pending, "fetch", "--depth=1", "--no-tags", "origin", revision)
+        git(pending, "checkout", "--detach", revision, "--")
+        if git(pending, "rev-parse", "HEAD") != revision:
+            raise DTCError("fresh DTC download did not resolve the pinned revision")
+        validate_meson_dtc(pending)
+        refresh_wrap_cache(pending / ".meson-subproject-wrap-hash.txt",
+                           wrap_hash, source / "subprojects" / "dtc.wrap")
+        if checkout.exists() or checkout.is_symlink():
+            raise DTCError("DTC checkout appeared during fetch; refusing to overwrite it")
+        pending.rename(checkout)
+    return True
+
+
+def ensure_dtc(source, no_download=False, fetch_missing=False):
+    wrap_file, revision, url, wrap_hash = load_dtc_wrap(source)
+    checkout = source / "subprojects" / "dtc"
+    # Normal first use remains a Meson wrap download.  Opt-in Git prefetch
+    # repairs hosts where the wrap checkout cannot be materialized safely.
+    if not checkout.exists():
+        if checkout.is_symlink():
+            raise DTCError("DTC checkout is a dangling symlink")
+        if not fetch_missing:
+            return False
+        if no_download:
+            raise DTCError("DTC download requested but downloads are disabled")
+        if not (source / ".git").exists():
+            return False  # Do not mutate release archives.
+        return fetch_missing_dtc(source, checkout, url, revision, wrap_hash)
+    if not (source / ".git").exists():
+        # Release archives may include a pre-extracted (non-Git) DTC source.
+        # Such vendored source is not ours to mutate during configure.
+        return False
+    if checkout.is_symlink() or not checkout.is_dir() or not (checkout / ".git").exists():
+        raise DTCError(f"existing DTC source is not a standalone Git checkout: {checkout}")
+    if Path(git(checkout, "rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+        raise DTCError("DTC checkout belongs to another Git working tree")
+
+    current = git(checkout, "rev-parse", "HEAD")
+    cache_file = checkout / ".meson-subproject-wrap-hash.txt"
+    cached_hash = cache_file.read_text(encoding="utf-8").strip() if cache_file.exists() else None
+    # A matching wrap checksum and HEAD are not evidence that DTC's tracked
+    # source files are unchanged.  Check Git's actual nonignored worktree
+    # state even on the no-op path; ignored build outputs remain untouched.
+    if current == revision:
+        # Report an incompatible DTC project precisely before checking its
+        # separate worktree-integrity condition. Both checks remain enforced.
+        validate_meson_dtc(checkout)
+    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
+    dirty = "\n".join(line for line in status.splitlines()
+                      if line[3:] != ".meson-subproject-wrap-hash.txt")
+    if dirty:
+        raise DTCError("DTC has local changes; preserving them rather than updating: " + dirty)
+    if current == revision and cached_hash == wrap_hash:
+        return False
+
+    # A stale wrap marker is not a reason to detach a development branch.
+    # If the source is already pinned and clean, repair just Meson's marker:
+    # no Git fetch, branch switch, or modification of the build directory.
+    if current == revision:
+        validate_meson_dtc(checkout)
+        refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
+        return True
+
+    # A different checkout need not be stale: developers may have committed
+    # compatible changes after the immutable wrap pin. Prove ancestry first,
+    # including shallow-history recovery, before any checkout is considered.
+    pin_is_local = False
+    try:
+        git(checkout, "cat-file", "-e", revision + "^{commit}")
+        pin_is_local = True
+    except DTCError:
+        pass
+    if not pin_is_local:
+        if no_download:
+            raise DTCError(
+                "DTC wrap pin is not available locally and downloads are disabled"
+            )
+        # Use the immutable wrap URL, never a developer's customized origin.
+        # Avoid a depth=1 fetch, which could hide ancestry needed to preserve
+        # a newer local checkout.
+        git(checkout, "fetch", "--no-tags", url, revision)
+        git(checkout, "cat-file", "-e", revision + "^{commit}")
+
+    newer = git_ancestor(checkout, revision, current)
+    older = False if newer else git_ancestor(checkout, current, revision)
+    if not newer and not older:
+        if (not no_download and
+                git(checkout, "rev-parse", "--is-shallow-repository") == "true"):
+            # History-only repair; --unshallow never moves HEAD or files.
+            git(checkout, "fetch", "--unshallow", "--no-tags", url, revision)
+            newer = git_ancestor(checkout, revision, current)
+            older = False if newer else git_ancestor(checkout, current, revision)
+        if not newer and not older:
+            raise DTCError(
+                "DTC checkout diverges from wrap pin or has incomplete history; "
+                "preserving the local checkout"
+            )
+
+    if newer:
+        # Existing Meson sources are not reset merely because dtc.wrap records
+        # an older baseline. This is safe only for a clean, compatible descendent.
+        validate_meson_dtc(checkout)
+        if cached_hash == wrap_hash:
+            return False
+        refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
+        print(
+            f"DTC: preserving compatible newer checkout {current[:12]} "
+            f"(wrap pin {revision[:12]})", file=sys.stderr,
+        )
+        return True
+
+    # A verified ancestor may advance only when detached and clean.
+    branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD")
+    if branch != "HEAD":
+        raise DTCError(
+            f"DTC is on branch {branch!r}; refusing to switch a development branch"
+        )
+    # An untracked file may be overwritten when a pinned revision introduces
+    # that path; retain the strict collision guard on the checkout-changing path.
+    validate_meson_dtc(checkout, revision=revision)
+    git(checkout, "checkout", "--detach", revision, "--")
+    if git(checkout, "rev-parse", "HEAD") != revision:
+        raise DTCError("Git did not select QEMU's pinned DTC revision")
+    validate_meson_dtc(checkout)
+    refresh_wrap_cache(cache_file, wrap_hash, wrap_file)
+    if (not cache_file.is_file() or
+            cache_file.read_text(encoding="utf-8").strip() != wrap_hash):
+        raise DTCError("DTC wrap revision cache did not refresh")
+    return True
+
+def verify_dtc(source):
+    """Verify the pinned or compatible descendant DTC source without changing it."""
+    wrap_file, revision, _url, expected_hash = load_dtc_wrap(source)
+    checkout = source / "subprojects" / "dtc"
+    if (checkout.is_symlink() or not checkout.is_dir()
+            or not (checkout / ".git").exists()):
+        raise DTCError("internal DTC must be a standalone Git checkout after Meson setup")
+    if Path(git(checkout, "rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+        raise DTCError("DTC checkout belongs to another Git working tree")
+    head = git(checkout, "rev-parse", "HEAD")
+    if head != revision:
+        try:
+            git(checkout, "cat-file", "-e", revision + "^{commit}")
+        except DTCError as exc:
+            raise DTCError(
+                "internal DTC wrap pin is unavailable locally for ancestry verification"
+            ) from exc
+        if not git_ancestor(checkout, revision, head):
+            raise DTCError(
+                f"internal DTC HEAD {head} does not descend from wrap pin {revision}"
+            )
+    validate_meson_dtc(checkout)
+    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
+    dirty = [line for line in status.splitlines()
+             if line[3:] != ".meson-subproject-wrap-hash.txt"]
+    if dirty:
+        raise DTCError("internal DTC has local source changes: " + "\n".join(dirty))
+    try:
+        git(checkout, "check-ignore", "-q", ".meson-subproject-wrap-hash.txt")
+    except DTCError as exc:
+        raise DTCError("DTC must ignore Meson's generated wrap marker") from exc
+    marker = checkout / ".meson-subproject-wrap-hash.txt"
+    if marker.is_symlink() or not marker.is_file():
+        raise DTCError("Meson DTC wrap marker is missing or is a symlink")
+    actual_hash = marker.read_text(encoding="utf-8").strip()
+    if actual_hash != expected_hash:
+        raise DTCError(
+            f"Meson DTC wrap marker mismatch: stored {actual_hash!r}, "
+            f"expected {expected_hash} from {wrap_file}"
+        )
+    if meson_wrap_hash(wrap_file) != expected_hash:
+        raise DTCError("DTC wrap changed during post-Meson verification")
+    return True
+
+
+def diagnose_git_selection(out):
+    """Report which Git executable DTC will actually use, without changes."""
+    try:
+        argv = git_command()
+    except DTCError as exc:
+        print("  Git command: invalid (" + str(exc) + ")", file=out)
+        return
+    print("  Git command: " + shlex.join(argv), file=out)
+    resolved = shutil.which(argv[0]) or argv[0]
+    selected = Path(resolved).resolve()
+    seed = os.environ.get("WHP_GIT_SEED", "")
+    managed = os.environ.get("WHP_GIT_PREFIX", "")
+    if managed and selected == (Path(managed) / "bin/git").resolve():
+        provider = "WHP managed"
+    elif seed and selected == Path(seed).resolve():
+        provider = "verified host seed"
+    elif os.environ.get("GIT"):
+        provider = "environment override"
+    else:
+        provider = "PATH fallback"
+    print("  Git provider: " + provider, file=out)
+    print("  Git selected executable: " + str(selected), file=out)
+    print("  Git seed executable: " + (seed or "(unset)"), file=out)
+
+    try:
+        version = subprocess.run(
+            [*argv, "--version"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        detail = version.stdout.strip() if version.returncode == 0 else (
+            version.stderr.strip() or f"exit {version.returncode}"
+        )
+        print("  Git selected version: " + detail, file=out)
+        exec_path = subprocess.run(
+            [*argv, "--exec-path"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        if exec_path.returncode == 0 and exec_path.stdout.strip():
+            helper = Path(exec_path.stdout.strip()) / "git-remote-https"
+            print("  Git HTTPS helper: " + str(helper) +
+                  (" (executable)" if os.access(helper, os.X_OK) else " (missing or unusable)"),
+                  file=out)
+        else:
+            print("  Git HTTPS helper: unknown (Git --exec-path failed)", file=out)
+    except OSError as exc:
+        print("  Git selected version/HTTPS helper: unavailable (" + str(exc) + ")",
+              file=out)
+
+
+def diagnose_seed_commit(checkout, revision, out):
+    """Compare the exact pinned commit with the seed Git independently."""
+    seed = os.environ.get("WHP_GIT_SEED", "")
+    if not seed:
+        print("  Seed Git pinned commit: not tested (seed unavailable)", file=out)
+        return
+    try:
+        result = subprocess.run(
+            [seed, "-C", str(checkout), "cat-file", "-e", revision + "^{commit}"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if result.returncode == 0:
+            print("  Seed Git pinned commit: available locally", file=out)
+        else:
+            print("  Seed Git pinned commit: unavailable (" +
+                  (result.stderr.strip() or f"exit {result.returncode}") + ")",
+                  file=out)
+    except OSError as exc:
+        print("  Seed Git pinned commit: probe failed (" + str(exc) + ")", file=out)
+
+
+def diagnose_dtc(source, stream=None):
+    """Report pre-Meson Git state without fetching or modifying the checkout."""
+    out = stream if stream is not None else sys.stderr
+    wrap = source / "subprojects" / "dtc.wrap"
+    checkout = source / "subprojects" / "dtc"
+    print("DTC diagnosis: phase=pre-Meson (after Sphinx/PIE, before meson setup)", file=out)
+    print("  SHA256 input: UTF-8 dtc.wrap text (universal newlines), not DTC source or environment", file=out)
+    for name in ("WHP_SOURCE_UPDATE", "WHP_SOURCE_UPDATE_DONE", "CI",
+                 "WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
+                 "WHP_PORTABLE_PROBE_ONLY", "QEMU_FDT_MODE",
+                 "WHP_DTC_FETCH_MISSING", "PYTHON", "WHP_MESON_PROVIDER",
+                 "MESON_PACKAGE_CACHE_DIR", "PYTHONHASHSEED"):
+        value = os.environ.get(name)
+        print("  Environment " + name + ": " +
+              (repr(value) if value is not None else "(unset)"), file=out)
+    ci = os.environ.get("CI", "")
+    update = os.environ.get("WHP_SOURCE_UPDATE", "auto")
+    if update == "0":
+        reason = "disabled (WHP_SOURCE_UPDATE=0)"
+    elif os.environ.get("WHP_SOURCE_UPDATE_DONE") == "1":
+        reason = "build.sh marked source refresh as already done"
+    elif update == "auto" and any(
+        os.environ.get(name) == "1"
+        for name in ("WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
+                     "WHP_PORTABLE_PROBE_ONLY")
+    ):
+        reason = "build.sh probe-only mode skips automatic source refresh"
+    elif update == "auto" and ci not in ("", "0", "false", "FALSE", "False", "no", "NO"):
+        reason = "skipped in CI mode"
+    else:
+        reason = "eligible; checkout guards and Python availability still apply"
+    print("  Automatic source reconciliation: " + reason, file=out)
+
+    # The post-host DTC phase is distinct from the parent QEMU updater:
+    # CI and WHP_SOURCE_UPDATE_DONE alone do not disable this code path.
+    provider = os.environ.get("QEMU_FDT_MODE", "auto")
+    fetch_missing = os.environ.get("WHP_DTC_FETCH_MISSING", "0") == "1"
+    if provider in ("system", "disabled"):
+        dtc_reason = f"skipped (QEMU_FDT_MODE={provider})"
+    elif os.environ.get("WHP_SOURCE_UPDATE", "auto") == "0" and not fetch_missing:
+        dtc_reason = "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"
+    elif any(os.environ.get(name) == "1" for name in
+             ("WHP_SHELL_PROBE_ONLY", "WHP_PORTABLE_PROBE_ONLY")):
+        dtc_reason = "skipped (shell/portable probe-only mode)"
+    elif checkout.is_dir() or fetch_missing:
+        dtc_reason = "eligible (subject to DTC Git and file safety checks)"
+    else:
+        dtc_reason = "deferred (DTC checkout missing; Meson may fetch lazily)"
+    print("  DTC post-host reconciliation: " + dtc_reason, file=out)
+    print("  CI and WHP_SOURCE_UPDATE_DONE do not disable this separate DTC phase",
+          file=out)
+    print("  This diagnosis is read-only; it never refreshes the stored marker", file=out)
+    diagnose_git_selection(out)
+    revision = None
+    try:
+        config = configparser.ConfigParser(interpolation=None)
+        config.read(wrap, encoding="utf-8")
+        revision = config.get("wrap-git", "revision", fallback="unknown")
+        print("  Wrap revision: " + revision, file=out)
+        print("  Minimum DTC version: " +
+              ".".join(map(str, MIN_DTC_VERSION)), file=out)
+    except (OSError, configparser.Error) as exc:
+        print("  Wrap revision: unreadable (" + str(exc) + ")", file=out)
+    marker = checkout / ".meson-subproject-wrap-hash.txt"
+    try:
+        expected = meson_wrap_hash(wrap)
+        raw = hashlib.sha256(wrap.read_bytes()).hexdigest()
+        actual = marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+        print("  Meson wrap marker: " +
+              ("current" if actual == expected else "stale" if actual else "missing"),
+              file=out)
+        print("  Expected wrap SHA256 (Meson text): " + expected, file=out)
+        print("  Stored wrap SHA256: " + (actual if actual else "(missing)"), file=out)
+        if raw != expected:
+            print("  Wrap line endings: text-normalized hash differs from raw-byte hash",
+                  file=out)
+            print("  Raw-byte wrap SHA256: " + raw, file=out)
+    except (OSError, UnicodeError) as exc:
+        print("  Meson wrap marker: unreadable (" + str(exc) + ")", file=out)
+
+    if checkout.is_symlink():
+        print("  Checkout: symlink (requires manual inspection)", file=out)
+        return
+    if not checkout.exists():
+        print("  Checkout: missing (Meson wrap fetches on first use)", file=out)
+        return
+    if not (checkout / ".git").exists():
+        print("  Checkout: existing non-Git directory", file=out)
+        return
+    print("  Checkout: existing Git repository", file=out)
+    try:
+        head = git(checkout, "rev-parse", "HEAD")
+        print("  HEAD: " + head, file=out)
+        if revision:
+            print("  Git revision vs wrap: " +
+                  ("pinned" if head == revision else "different"), file=out)
+    except (DTCError, OSError) as exc:
+        print("  HEAD: unavailable (" + str(exc) + ")", file=out)
+    for label, argv in (
+        ("Branch", ("rev-parse", "--abbrev-ref", "HEAD")),
+        ("HEAD tree SHA", ("rev-parse", "HEAD^{tree}")),
+    ):
+        try:
+            print("  " + label + ": " + git(checkout, *argv), file=out)
+        except (DTCError, OSError) as exc:
+            print("  " + label + ": unavailable (" + str(exc) + ")", file=out)
+    if revision and re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        # A shallow checkout can contain HEAD without containing the *new*
+        # wrapped revision. Distinguish a missing commit from a missing tree:
+        # without the commit, rev-parse cannot peel its tree locally.
+        try:
+            git(checkout, "cat-file", "-e", revision + "^{commit}")
+        except (DTCError, OSError) as exc:
+            print("  Pinned commit object: not verified by selected Git "
+                  "(missing, inaccessible, or Git failed)", file=out)
+            print("  Selected Git pin probe error: " + str(exc), file=out)
+            diagnose_seed_commit(checkout, revision, out)
+            print("  Pinned tree SHA: unresolved (commit probe failed)", file=out)
+            print("  Recovery: pre-Meson reconciliation fetches the immutable wrap pin"
+                  " when downloads are enabled and DTC is clean and detached",
+                  file=out)
+        else:
+            print("  Pinned commit object: available locally", file=out)
+            try:
+                print("  Pinned tree SHA: " +
+                      git(checkout, "rev-parse", "--verify", revision + "^{tree}"),
+                      file=out)
+            except (DTCError, OSError) as exc:
+                print("  Pinned tree SHA: unavailable locally (" + str(exc) + ")",
+                      file=out)
+    try:
+        changes = git(checkout, "status", "--porcelain", "--untracked-files=all")
+        changed = [line for line in changes.splitlines()
+                   if line[3:] != ".meson-subproject-wrap-hash.txt"]
+        print("  Local changes: " + str(len(changed)) +
+              " (nonignored, excluding Meson's wrap marker)", file=out)
+        for line in changed[:8]:
+            print("  Changed source: " + line, file=out)
+    except (DTCError, OSError) as exc:
+        print("  Local changes: unavailable (" + str(exc) + ")", file=out)
+    try:
+        version_file = checkout / "VERSION.txt"
+        if version_file.is_file():
+            print("  DTC VERSION.txt: " + version_file.read_text(encoding="utf-8").strip(),
+                  file=out)
+        else:
+            project_file = checkout / "meson.build"
+            if project_file.is_file():
+                match = re.search(r"\bversion\s*:\s*['\"]([^'\"]+)['\"]",
+                                  project_file.read_text(encoding="utf-8"))
+                print("  DTC Meson version: " + (match.group(1) if match else "unknown"),
+                      file=out)
+        validate_meson_dtc(checkout)
+        print("  DTC Meson interface: compatible with QEMU", file=out)
+    except (DTCError, OSError, UnicodeError) as exc:
+        print("  DTC Meson interface: incompatible or unreadable (" + str(exc) + ")",
+              file=out)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--no-download", action="store_true")
+    parser.add_argument("--fetch-missing", action="store_true",
+                        help="fetch pinned DTC from Git before Meson setup")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--diagnose", action="store_true",
+                      help="inspect the DTC Git/Meson boundary without changing sources")
+    mode.add_argument("--verify", action="store_true",
+                      help="require a verified post-Meson DTC checkout and wrap marker")
+    args = parser.parse_args()
+    source = args.source.resolve()
+    if args.diagnose:
+        diagnose_dtc(source)
+        return 0
+    if args.verify:
+        try:
+            verify_dtc(source)
+        except (DTCError, OSError, UnicodeError) as exc:
+            print(f"DTC post-Meson verification: {exc}", file=sys.stderr)
+            return 1
+        print("DTC post-Meson verification: pinned or compatible descendant "
+              "checkout and wrap marker match")
+        return 0
+    try:
+        ensure_dtc(source, args.no_download, args.fetch_missing)
+    except (DTCError, OSError) as exc:
+        print(f"DTC subproject: {exc}", file=sys.stderr)
+        diagnose_dtc(source)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

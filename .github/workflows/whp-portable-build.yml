@@ -1,0 +1,201 @@
+name: WHP portable build
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'build.sh'
+      - 'build.ps1'
+      - 'builder.sh'
+      - 'configure'
+      - 'meson.build'
+      - 'scripts/whp-config/**'
+      - 'scripts/whp-build/**'
+      - 'scripts/tests/test-whp-config.py'
+      - 'scripts/tests/test-file-extension-standard.py'
+      - 'scripts/tests/test-shell-dialect-contract.py'
+      - 'seeds/**'
+      - 'scripts/bootstrap-*.sh'
+      - 'scripts/bootstrap-*.bash'
+      - 'scripts/tests/test-powershell-build-entry.py'
+      - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-shell-functions.sh'
+      - 'scripts/tests/test-build-entry-permissions.sh'
+      - 'scripts/tests/test-whp-incremental.py'
+      - '.github/workflows/whp-portable-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-wrapper-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-whp-linux
+      BUILD_QEMU_IMG: '0'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      RUN_TESTS: '0'
+      INSTALL: '0'
+      MACOS_ENABLE_GTK: auto
+      MACOS_ENABLE_PA: auto
+      QEMU_HOST_LTO: auto
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify PowerShell launcher contract
+        run: |
+          python3 scripts/tests/test-file-extension-standard.py
+          python3 scripts/tests/test-powershell-build-entry.py
+
+      - name: Verify WHP POSIX sh and GNU Bash dialect contracts
+        run: python3 scripts/tests/test-shell-dialect-contract.py
+
+      - name: Verify shared shell function contract
+        run: /bin/sh scripts/tests/test-whp-shell-functions.sh
+
+      - name: Verify protected build entry permissions
+        run: /bin/sh scripts/tests/test-build-entry-permissions.sh
+
+      - name: Install minimal QEMU build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            ninja-build \
+            pkgconf \
+            python3-venv \
+            zlib1g-dev
+
+      - name: Verify Bash-free public path planning
+        run: |
+          WHP_FORCE_PORTABLE_CORE=1 \
+          WHP_PORTABLE_PROBE_ONLY=1 \
+            ./build.sh qemu-system-i386 > portable-plan.txt
+          grep -Fxq 'CONFIGURE_ARG=--target-list=i386-softmmu' portable-plan.txt
+          if grep -Eq -- '--enable-(gtk|pa)' portable-plan.txt; then
+            echo 'error: portable auto mode forced an optional desktop dependency' >&2
+            exit 1
+          fi
+
+      - name: Build i386 through public WHP wrapper
+        run: ./build.sh qemu-system-i386
+
+      - name: Smoke-test wrapper output
+        run: |
+          test -x "$BUILD_DIR/qemu-system-i386"
+          test ! -x "$BUILD_DIR/qemu-img"
+          "$BUILD_DIR/qemu-system-i386" --version
+          "$BUILD_DIR/qemu-system-i386" -machine help >/dev/null
+          test -f "$BUILD_DIR/.whp-build-artifacts"
+          test ! -e configs/devices/ppc-softmmu/whp-user.mak
+
+      - name: Add PPC without restarting build tree
+        run: |
+          set -euo pipefail
+          sentinel="$BUILD_DIR/.whp-incremental-sentinel"
+          printf 'keep-existing-tree\n' > "$sentinel"
+
+          # BUILD_QEMU_SYSTEM_PPC remains 0 in the job environment on purpose.
+          # The explicit target request must expand this run without replacing
+          # the i386 configuration or deleting the existing build tree.
+          ./build.sh qemu-system-ppc
+
+          test -f "$sentinel"
+          test -x "$BUILD_DIR/qemu-system-i386"
+          test -x "$BUILD_DIR/qemu-system-ppc"
+          "$BUILD_DIR/qemu-system-ppc" --version
+          "$BUILD_DIR/qemu-system-ppc" -machine help | grep -Eq 'powermac3_1|mac99'
+
+          target_line="$(grep '^QEMU_TARGET_LIST=' "$BUILD_DIR/.whp-config")"
+          target_value="${target_line#QEMU_TARGET_LIST=}"
+          case ",$target_value," in
+            *,i386-softmmu,*ppc-softmmu,*|*,ppc-softmmu,*i386-softmmu,*) ;;
+            *)
+              echo "error: incremental target set was not preserved: $target_line" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Add qemu-img without restarting build tree
+        run: |
+          set -euo pipefail
+          sentinel="$BUILD_DIR/.whp-incremental-sentinel"
+          test -f "$sentinel"
+          test ! -x "$BUILD_DIR/qemu-img"
+
+          # BUILD_QEMU_IMG remains 0 in the job environment.  The explicit
+          # target must enable tools for this run without discarding either
+          # already-built system emulator or the incremental build directory.
+          ./build.sh qemu-img
+
+          test -f "$sentinel"
+          test -x "$BUILD_DIR/qemu-system-i386"
+          test -x "$BUILD_DIR/qemu-system-ppc"
+          test -x "$BUILD_DIR/qemu-img"
+          "$BUILD_DIR/qemu-img" --version
+          grep '^CONFIGURE_ARG=.*--enable-tools' "$BUILD_DIR/.whp-config" >/dev/null
+          grep -Fxq 'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu' "$BUILD_DIR/.whp-config"
+
+      - name: Build qemu-img through Bash-free core
+        env:
+          BUILD_DIR: ${{ github.workspace }}/build-whp-portable-core
+          BUILD_QEMU_SYSTEM_I386: '0'
+          BUILD_QEMU_SYSTEM_PPC: '0'
+          WHP_FORCE_PORTABLE_CORE: '1'
+        run: ./build.sh qemu-img
+
+      - name: Smoke-test Bash-free output
+        run: |
+          portable_dir="${{ github.workspace }}/build-whp-portable-core"
+          test -x "$portable_dir/qemu-img"
+          "$portable_dir/qemu-img" --version
+          grep -Fxq 'PORTABLE_CORE=1' "$portable_dir/.whp-build-artifacts"
+          test ! -e configs/devices/ppc-softmmu/whp-user.mak
+
+  windows-portable-plan:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      WHP_PORTABLE_PROBE_ONLY: '1'
+      BUILD_QEMU_IMG: '1'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: auto
+      BOOTSTRAP_POWERPC_TOOLCHAIN: auto
+      MACOS_ENABLE_GTK: auto
+      MACOS_ENABLE_PA: auto
+      QEMU_HOST_LTO: auto
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify PowerShell public launcher reaches build.sh
+        shell: pwsh
+        env:
+          WHP_SHELL_PROBE_ONLY: '1'
+          WHP_SOURCE_UPDATE: '0'
+        run: |
+          .\build.ps1 -SeaBIOSUefi | Tee-Object powershell-build-probe.txt
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP Windows Bash:'
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP SeaBIOS UEFI lane: enabled'
+          Select-String -Path powershell-build-probe.txt -SimpleMatch 'WHP build shell:'
+
+      - name: Verify portable driver has no Unix-only planning dependency
+        shell: pwsh
+        run: |
+          python scripts/whp-build/portable-build.py qemu-system-i386 | Tee-Object portable-plan.txt
+          Select-String -Path portable-plan.txt -SimpleMatch 'CONFIGURE_ARG=--target-list=i386-softmmu'
+          if (Select-String -Path portable-plan.txt -Pattern '--enable-(gtk|pa)') {
+            throw 'portable auto mode forced an optional desktop dependency'
+          }

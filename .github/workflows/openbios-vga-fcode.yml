@@ -1,0 +1,29 @@
+name: OpenBIOS VGA FCode validator
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/validate-openbios-fcode.py'
+      - 'scripts/tests/test-openbios-vga-fcode.py'
+      - '.github/workflows/openbios-vga-fcode.yml'
+  pull_request:
+    paths:
+      - 'scripts/validate-openbios-fcode.py'
+      - 'scripts/tests/test-openbios-vga-fcode.py'
+      - '.github/workflows/openbios-vga-fcode.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-openbios-vga-fcode:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QEMU
+        uses: actions/checkout@v7
+
+      - name: Test FCode structural validator
+        run: python3 scripts/tests/test-openbios-vga-fcode.py

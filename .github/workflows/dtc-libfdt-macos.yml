@@ -1,0 +1,170 @@
+name: Internal DTC libfdt macOS link smoke
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'configure'
+      - 'meson.build'
+      - 'system/meson.build'
+      - 'system/device_tree.c'
+      - 'subprojects/dtc.wrap'
+      - 'subprojects/berkeley-softfloat-3.wrap'
+      - 'subprojects/berkeley-testfloat-3.wrap'
+      - 'subprojects/packagefiles/berkeley-softfloat-3/meson.build'
+      - 'subprojects/packagefiles/berkeley-softfloat-3/meson_options.txt'
+      - 'subprojects/packagefiles/berkeley-testfloat-3/meson.build'
+      - 'subprojects/packagefiles/berkeley-testfloat-3/meson_options.txt'
+      - 'toolchains/meson'
+      - 'scripts/ensure-dtc-subproject.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/tests/test-git-dependency-policy.py'
+      - 'scripts/whp-build/update-source.sh'
+      - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/update-submodules.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/tests/test-ensure-dtc-subproject.py'
+      - 'scripts/git-submodule.sh'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - 'scripts/tests/test-git-submodule.py'
+      - 'scripts/tests/test-fdt-ninja-link.py'
+      - 'block/block-backend.c'
+      - 'hw/block/fdc.c'
+      - 'tests/qtest/fdc-test.c'
+      - 'include/system/block-backend-global-state.h'
+      - 'ui/cocoa.m'
+      - 'ui/gtk.c'
+      - 'include/ui/gtk.h'
+      - 'docs/devel/leds.rst'
+      - 'scripts/tests/test-sam460ex-fdt-nop.py'
+      - '.github/workflows/dtc-libfdt-macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libfdt:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify tracked configure entry point is executable
+        run: |
+          test -x configure
+          test "$(git ls-files --stage configure | awk '{print $1}')" = 100755
+
+      - name: Install native build dependencies
+        run: |
+          brew install pkg-config meson ninja glib pixman flex bison
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      - name: Check safe DTC wrap reconciliation without rebuilding
+        run: python3 scripts/tests/test-ensure-dtc-subproject.py
+
+      - name: Verify source updater refreshes legacy DTC wrap markers
+        run: python3 scripts/tests/test-build-source-update.py
+
+      - name: Check pinned Git-submodule updates
+        run: python3 scripts/tests/test-git-submodule.py
+
+      - name: Configure pinned internal DTC provider
+        run: |
+          mkdir build-fdt
+          cd build-fdt
+          ../configure --target-list=ppc-softmmu -Dfdt=internal \
+            --disable-docs --disable-tools
+
+      - name: Verify DTC ignores Meson wrap metadata
+        run: |
+          git -C subprojects/dtc check-ignore -q .meson-subproject-wrap-hash.txt
+          test -f subprojects/dtc/.meson-subproject-wrap-hash.txt
+          test -z "$(git -C subprojects/dtc status --porcelain --untracked-files=all)"
+          python3 scripts/ensure-dtc-subproject.py --source . --diagnose
+          python3 scripts/ensure-dtc-subproject.py --source . --verify
+
+      - name: Configure internal DTC using pinned WHP Meson fork
+        run: |
+          mkdir build-fdt-fork
+          cd build-fdt-fork
+          WHP_MESON_PROVIDER=fork ../configure --target-list=ppc-softmmu \
+            -Dfdt=internal --disable-docs --disable-tools
+          grep -F 'toolchains/meson/meson.py' config-host.mak
+          grep -F 'WHP_MESON_PROVIDER=' config.status
+          python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
+          python3 ../scripts/ensure-dtc-subproject.py --source .. --verify
+
+      - name: Verify pinned Meson uses one snapshot for wrap SHA-256
+        run: |
+          cd toolchains/meson
+          ../../build-fdt-fork/pyvenv/bin/python3 -m unittest unittests.wraptests
+
+      - name: Verify fork's incremental Meson reconfiguration
+        run: |
+          cd build-fdt-fork
+          WHP_MESON_PROVIDER=fork ../configure --target-list=ppc-softmmu \
+            -Dfdt=internal --disable-docs --disable-tools
+          test -s meson-private/coredata.dat
+          python3 ../scripts/tests/test-fdt-ninja-link.py . --internal
+          python3 ../scripts/ensure-dtc-subproject.py --source .. --verify
+
+      - name: Verify Ninja emulator link dependencies
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal
+
+      - name: Regress Mach-O ARM64 and ARM64e archive/consumer ABI mismatches
+        run: python3 scripts/tests/test-fdt-macho-abi.py
+
+      - name: Build only the libfdt archive
+        run: ninja -C build-fdt subprojects/dtc/libfdt/libfdt.a
+
+      - name: Verify exported fdt_nop_node and Mach-O link
+        run: |
+          python3 scripts/tests/test-fdt-ninja-link.py build-fdt --internal --built
+          python3 scripts/tests/test-sam460ex-fdt-nop.py \
+            --runtime --build-dir build-fdt
+
+      - name: Link the actual PowerPC emulator with pinned libfdt
+        run: ninja -C build-fdt qemu-system-ppc-unsigned
+
+      - name: Audit linked QEMU and DTC Mach-O object ABI
+        run: |
+          python3 scripts/tests/test-fdt-ninja-link.py build-fdt \
+            --internal --linked --macho-abi --expected-arch arm64
+
+      - name: Smoke-test linked PowerPC executable and machine registration
+        run: |
+          build-fdt/qemu-system-ppc-unsigned -version
+          build-fdt/qemu-system-ppc-unsigned -machine help > build-fdt/ppc-machines.txt
+          grep -w mac99 build-fdt/ppc-machines.txt
+          grep -w sam460ex build-fdt/ppc-machines.txt
+
+      - name: Configure and build standalone DTC tools on macOS
+        run: |
+          meson setup build-dtc-native subprojects/dtc \
+            -Dtools=true -Dtests=true -Dpython=disabled \
+            -Dyaml=disabled -Dvalgrind=disabled
+          meson compile -C build-dtc-native
+
+      - name: Test native DTC and libfdt runtime paths
+        shell: bash
+        run: |
+          set +e
+          meson test -C build-dtc-native --print-errorlogs libfdt utilfdt dtc
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            echo 'Native DTC failure lines (complete Meson test log):'
+            grep -nE 'FAIL|error:|ld:|clang:|assembler:|fatal:' \
+              build-dtc-native/meson-logs/testlog.txt | head -n 110 || true
+            if [[ -f build-dtc-native/tests/oasm_test_tree1.dts.test.s ]]; then
+              echo 'Reproducing one Mach-O assembly link with stderr enabled:'
+              cc -dynamiclib -o build-dtc-native/tests/oasm-debug.so \
+                subprojects/dtc/tests/data.S \
+                build-dtc-native/tests/oasm_test_tree1.dts.test.s || true
+            fi
+          fi
+          exit "$status"
+

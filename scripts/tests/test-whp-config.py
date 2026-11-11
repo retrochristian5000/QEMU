@@ -1,0 +1,594 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+import importlib.util
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
+MENU_TOOL = ROOT / 'scripts' / 'whp-config' / 'menuconfig.py'
+PORTABLE_BUILD_TOOL = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
+CONFIG_DIR = ROOT / 'scripts' / 'whp-config'
+sys.path.insert(0, str(CONFIG_DIR))
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location('whp_config', CONFIG_TOOL)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_menu_module():
+    spec = importlib.util.spec_from_file_location('whp_menuconfig', MENU_TOOL)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_portable_build_module():
+    spec = importlib.util.spec_from_file_location('whp_portable_build', PORTABLE_BUILD_TOOL)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class WhpConfigTests(unittest.TestCase):
+    def test_config_tool_has_single_program_body(self):
+        source = CONFIG_TOOL.read_text(encoding='utf-8')
+        self.assertEqual(source.count('class ConfigState:'), 1)
+        self.assertEqual(source.count('_DEVICE_CONFIG_LINE_RE = re.compile('), 1)
+        self.assertEqual(source.count("if __name__ == '__main__':"), 1)
+        self.assertTrue(source.rstrip().endswith('raise SystemExit(main())'))
+    def test_defaults_are_portable_policy(self):
+        mod = load_module()
+        values = mod.default_values()
+        self.assertEqual(values['QEMU_HOST_LTO'], 'auto')
+        self.assertEqual(values['QEMU_HOST_LTO_MODE'], 'auto')
+        self.assertEqual(values['QEMU_HOST_MODULES'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_PYTHON'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_MAKE'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_SDL'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_ZLIB'], 'auto')
+        self.assertEqual(values['PREFIX'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_COCOA'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_COREAUDIO'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_GTK'], 'auto')
+        self.assertEqual(values['MACOS_ENABLE_PA'], 'auto')
+        self.assertEqual(values['BUILD_OPENBIOS'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_POWERPC_TOOLCHAIN'], 'auto')
+        self.assertEqual(values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
+        self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
+        self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
+        self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
+
+    def test_x86_family_link_is_opt_in_and_portable_plan_uses_x86_64(self):
+        mod = load_module()
+        self.assertEqual(mod.OPTION_BY_KEY['QEMU_X86_FAMILY_LINK'].default, 'n')
+        values = mod.default_values()
+        values['QEMU_X86_FAMILY_LINK'] = 'y'
+        self.assertIn("QEMU_X86_FAMILY_LINK='1'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        if sys.platform == 'win32':
+            return
+        with tempfile.TemporaryDirectory() as td:
+            env = os.environ.copy()
+            env.update({
+                'BUILD_DIR': str(pathlib.Path(td) / 'fresh'),
+                'WHP_PORTABLE_PROBE_ONLY': '1',
+                'BUILD_QEMU_SYSTEM_PPC': '0',
+                'BUILD_QEMU_SYSTEM_I386': '1',
+                'QEMU_X86_FAMILY_LINK': '1',
+                'QEMU_HOST_PGO': 'off',
+            })
+            result = subprocess.run(
+                [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertIn('--target-list=x86_64-softmmu', result.stdout)
+            self.assertNotIn('i386-softmmu', result.stdout)
+
+    def test_x86_family_repeat_build_does_not_reject_own_symlink(self):
+        mod = load_portable_build_module()
+        if os.name == 'nt':
+            self.skipTest('POSIX symlinks required')
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            backend = root / 'qemu-system-x86_64'
+            backend.write_bytes(b'not executed by build-plan probe')
+            (root / 'qemu-system-i386').symlink_to(backend.name)
+            settings = {
+                'QEMU_X86_FAMILY_LINK': 'y',
+                'QEMU_HOST_PGO': 'off',
+                'BUILD_QEMU_SYSTEM_PPC': 'n',
+                'BUILD_QEMU_SYSTEM_I386': 'y',
+            }
+            with mock.patch.object(mod, 'resolved_values') as get_values, \
+                 mock.patch.object(mod, 'resolve_build_dir', return_value=root), \
+                 mock.patch.object(mod, 'host_is_macos', return_value=False):
+                original = mod.load_config_module().default_values()
+                original.update(settings)
+                get_values.return_value = original
+                plan = mod.build_plan(['qemu-system-i386'])
+            self.assertTrue(
+                any(arg == '--target-list=x86_64-softmmu' for arg in plan[2])
+            )
+
+    def test_dtc_and_meson_menu_settings_are_wired(self):
+        mod = load_module()
+        self.assertEqual(
+            mod.OPTION_BY_KEY['QEMU_FDT_MODE'].choices,
+            ('auto', 'system', 'internal', 'enabled', 'disabled'),
+        )
+        self.assertEqual(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'].choices,
+                         ('venv', 'fork'))
+        self.assertEqual(mod.OPTION_BY_KEY['WHP_DTC_FETCH_MISSING'].default, 'n')
+        values = mod.default_values()
+        self.assertEqual(values['QEMU_FDT_MODE'], 'auto')
+        self.assertEqual(values['WHP_MESON_PROVIDER'], 'fork')
+        self.assertEqual(values['WHP_DTC_FETCH_MISSING'], 'n')
+        for mode in ('internal', 'system', 'enabled', 'disabled'):
+            values['QEMU_FDT_MODE'] = mode
+            with tempfile.TemporaryDirectory() as td:
+                config_path = pathlib.Path(td) / '.whpconfig'
+                mod.save_config(config_path, mod.ConfigState(values))
+                self.assertEqual(mod.load_config(config_path).values['QEMU_FDT_MODE'],
+                                 mode)
+        values['QEMU_FDT_MODE'] = 'internal'
+        values['WHP_MESON_PROVIDER'] = 'fork'
+        values['WHP_DTC_FETCH_MISSING'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("QEMU_FDT_MODE='internal'", assignments)
+        self.assertIn("WHP_MESON_PROVIDER='fork'", assignments)
+        self.assertIn("WHP_DTC_FETCH_MISSING='1'", assignments)
+        self.assertNotIn("QEMU_FDT_MODE=", mod.shell_assignments(
+            mod.ConfigState(mod.default_values()), {}))
+        with self.assertRaises(ValueError):
+            mod.validate_value(mod.OPTION_BY_KEY['QEMU_FDT_MODE'], 'dtc')
+        with self.assertRaises(ValueError):
+            mod.validate_value(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'], 'system')
+
+    def test_fork_meson_default_does_not_install_unrelated_venv_meson(self):
+        configure = (ROOT / 'configure').read_text(encoding='utf-8')
+        selector = 'case "${WHP_MESON_PROVIDER:-fork}" in'
+        self.assertIn(selector, configure)
+        self.assertNotIn('pythondeps.toml meson || exit 1',
+                         configure.split(selector)[0])
+        self.assertIn('  venv)\n', configure)
+        self.assertIn('  fork)\n', configure)
+        self.assertIn('meson="$python $source_path/toolchains/meson/meson.py"', configure)
+        stage = (ROOT / 'scripts/whp-build/configure.bash').read_text(encoding='utf-8')
+        self.assertIn('WHP_MESON_GITLINK=%s', stage)
+        self.assertIn('whp_configure_meson_identity', stage)
+
+    def test_portable_dtc_fdt_probe_matches_menu(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_QEMU_SYSTEM_I386': '1',
+            'QEMU_FDT_MODE': 'internal',
+            'WHP_MESON_PROVIDER': 'fork',
+            'WHP_DTC_FETCH_MISSING': '1',
+        })
+        result = subprocess.run(
+            [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn('CONFIGURE_ARG=-Dfdt=internal', result.stdout)
+        env['QEMU_FDT_MODE'] = 'auto'
+        result = subprocess.run(
+            [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertNotIn('CONFIGURE_ARG=-Dfdt=', result.stdout)
+
+    def test_lto_mode_menu_shell_and_save_roundtrip(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['QEMU_HOST_LTO_MODE']
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.choices, ('auto', 'thin', 'full'))
+        values = mod.default_values()
+        values['QEMU_HOST_LTO_MODE'] = 'thin'
+        self.assertIn("QEMU_HOST_LTO_MODE='thin'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(mod.render_config(mod.ConfigState(values)),
+                            encoding='utf-8')
+            self.assertEqual(mod.load_config(path).values['QEMU_HOST_LTO_MODE'],
+                             'thin')
+        with self.assertRaises(ValueError):
+            mod.validate_value(option, 'invalid')
+
+    def test_run_tests_is_user_controlled_build_behavior(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['RUN_TESTS']
+        scope = mod.OPTION_BY_KEY['QEMU_TEST_SCOPE']
+        self.assertEqual(option.section, 'Build behavior')
+        self.assertEqual(option.label, 'Run tests after build')
+        self.assertEqual(option.kind, 'bool')
+        self.assertEqual(option.default, 'y')
+        self.assertEqual(scope.kind, 'choice')
+        self.assertEqual(scope.default, 'changed')
+        self.assertEqual(scope.choices, ('changed', 'full'))
+
+        values = mod.default_values()
+        self.assertEqual(values['RUN_TESTS'], 'y')
+        self.assertEqual(values['QEMU_TEST_SCOPE'], 'changed')
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='1'", assignments)
+        self.assertIn("QEMU_TEST_SCOPE='changed'", assignments)
+
+        values['RUN_TESTS'] = 'n'
+        values['QEMU_TEST_SCOPE'] = 'full'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("RUN_TESTS='0'", assignments)
+        self.assertIn("QEMU_TEST_SCOPE='full'", assignments)
+
+    def test_portable_test_runner_uses_qemu_make_check(self):
+        mod = load_portable_build_module()
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            build_dir = td_path / 'build'
+            log = td_path / 'make.log'
+            fake_make = td_path / 'gmake'
+            fake_make.write_text(
+                '#!/bin/sh\n'
+                'if [ "${1:-}" = "--version" ]; then\n'
+                '  echo "GNU Make 4.4"\n'
+                '  exit 0\n'
+                'fi\n'
+                'printf "%s\\n" "$*" >> "$WHP_TEST_RUNNER_LOG"\n',
+                encoding='utf-8',
+            )
+            fake_make.chmod(0o755)
+            with mock.patch.dict(
+                os.environ,
+                {'MAKE_CMD': str(fake_make), 'WHP_TEST_RUNNER_LOG': str(log)},
+                clear=False,
+            ):
+                mod.run_qemu_tests(build_dir, '3')
+            self.assertEqual(
+                log.read_text(encoding='utf-8').strip(),
+                f'-C {build_dir} -j3 check',
+            )
+
+    def test_boolean_defaults_are_valid_and_install_is_opt_in(self):
+        mod = load_module()
+        values = mod.default_values()
+        for option in mod.OPTIONS:
+            if option.kind == 'bool':
+                self.assertIn(option.default, ('y', 'n'), option.key)
+                self.assertEqual(values[option.key], option.default, option.key)
+        self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
+
+    def test_output_defaults_select_img_i386_and_ppc(self):
+        mod = load_module()
+        values = mod.default_values()
+        self.assertEqual(values['BUILD_QEMU_IMG'], 'y')
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_I386'], 'y')
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_PPC'], 'y')
+
+        assignments = mod.shell_assignments(
+            mod.ConfigState(values),
+            {},
+        )
+        self.assertIn("BUILD_QEMU_IMG='1'", assignments)
+        self.assertIn("BUILD_QEMU_SYSTEM_I386='1'", assignments)
+        self.assertIn("BUILD_QEMU_SYSTEM_PPC='1'", assignments)
+        self.assertNotIn('QEMU_TARGET_LIST=', assignments)
+
+    def test_auto_optional_defaults_are_not_forced_into_shell(self):
+        mod = load_module()
+        assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
+        for key in (
+            'QEMU_HOST_LTO',
+            'QEMU_HOST_LTO_MODE',
+            'QEMU_HOST_MODULES',
+            'BOOTSTRAP_SDL',
+            'MACOS_ENABLE_COCOA',
+            'MACOS_ENABLE_COREAUDIO',
+            'MACOS_ENABLE_GTK',
+            'MACOS_ENABLE_PA',
+            'BUILD_OPENBIOS',
+            'BOOTSTRAP_POWERPC_TOOLCHAIN',
+            'PREFIX',
+        ):
+            self.assertNotIn(f'{key}=', assignments)
+        self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
+        self.assertIn("INSTALL_AFTER_BUILD='0'", assignments)
+
+    def test_make_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_MAKE']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP GNU Make')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_MAKE'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_MAKE='1'", assignments)
+
+    def test_sdl_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_SDL']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP SDL3')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_SDL'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_SDL='1'", assignments)
+
+    def test_zlib_bootstrap_is_tristate_host_policy(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_ZLIB']
+        self.assertEqual(option.section, 'Host features')
+        self.assertEqual(option.label, 'Bootstrap/use WHP zlib')
+        self.assertEqual(option.kind, 'choice')
+        self.assertEqual(option.default, 'auto')
+        self.assertEqual(option.choices, ('auto', 'y', 'n'))
+
+        values = mod.default_values()
+        values['BOOTSTRAP_ZLIB'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_ZLIB='1'", assignments)
+
+    def test_win9x_cross_tools_are_separate_and_opt_in(self):
+        mod = load_module()
+        option = mod.OPTION_BY_KEY['BOOTSTRAP_WIN9X_TOOLCHAIN']
+        self.assertEqual(option.section, 'Windows 9x cross-tools')
+        self.assertEqual(option.label, 'Bootstrap i386-pc-win9x LLVM toolchain')
+        self.assertEqual(option.kind, 'bool')
+        self.assertEqual(option.default, 'n')
+        self.assertNotEqual(option.section, 'Firmware')
+        self.assertIn('Windows 9x cross-tools', [section for section, _ in mod.sections()])
+
+        values = mod.default_values()
+        values['BOOTSTRAP_WIN9X_TOOLCHAIN'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='1'", assignments)
+
+    def test_device_selection_is_exported_without_boolean_reencoding(self):
+        mod = load_module()
+        values = mod.default_values()
+        values['CONFIG_MAC_OLDWORLD'] = 'n'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("CONFIG_MAC_NEWWORLD='y'", assignments)
+        self.assertIn("CONFIG_MAC_OLDWORLD='n'", assignments)
+
+    def test_menu_uses_output_toggles_instead_of_a_raw_target_list(self):
+        mod = load_module()
+        self.assertNotIn('QEMU_TARGET_LIST', mod.OPTION_BY_KEY)
+        self.assertNotIn('Build targets', [section for section, _ in mod.sections()])
+
+    def test_host_feature_labels_are_platform_neutral(self):
+        mod = load_module()
+        labels = {option.key: option.label for option in mod.OPTIONS}
+        self.assertEqual(labels['MACOS_ENABLE_COCOA'], 'Cocoa')
+        self.assertEqual(labels['MACOS_ENABLE_COREAUDIO'], 'CoreAudio')
+        self.assertEqual(labels['MACOS_ENABLE_GTK'], 'GTK')
+        self.assertEqual(labels['MACOS_ENABLE_PA'], 'PulseAudio')
+
+    def test_version_one_config_migrates_without_losing_explicit_values(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'BUILD_OPENBIOS=y\n'
+                'MACOS_ENABLE_GTK=n\n'
+                'INSTALL=y\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_OPENBIOS'], 'y')
+            self.assertEqual(loaded.values['MACOS_ENABLE_GTK'], 'n')
+            self.assertEqual(loaded.values['INSTALL_AFTER_BUILD'], 'y')
+            self.assertEqual(loaded.values['MACOS_ENABLE_PA'], 'auto')
+            self.assertEqual(loaded.values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
+
+    def test_legacy_target_list_migrates_to_output_toggles(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'QEMU_TARGET_LIST=i386-softmmu\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_I386'], 'y')
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_PPC'], 'n')
+            self.assertNotIn('QEMU_TARGET_LIST', loaded.unknown)
+            self.assertNotIn('QEMU_TARGET_LIST=', mod.render_config(loaded))
+
+    def test_explicit_output_toggles_override_legacy_target_list(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=1\n'
+                'QEMU_TARGET_LIST=ppc-softmmu\n'
+                'BUILD_QEMU_SYSTEM_I386=y\n'
+                'BUILD_QEMU_SYSTEM_PPC=n\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_I386'], 'y')
+            self.assertEqual(loaded.values['BUILD_QEMU_SYSTEM_PPC'], 'n')
+
+    def test_load_preserves_unknown_entries_but_does_not_apply_them(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text('WHP_CONFIG_VERSION=2\nBUILD_OPENBIOS=n\nFUTURE_SETTING=keep-me\n', encoding='utf-8')
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['BUILD_OPENBIOS'], 'n')
+            self.assertEqual(loaded.unknown['FUTURE_SETTING'], 'keep-me')
+
+    def test_shell_output_maps_portable_values_and_respects_environment_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=2\n'
+                'PREFIX=/opt/whp-qemu\n'
+                'MACOS_ENABLE_COCOA=n\n'
+                'MACOS_ENABLE_COREAUDIO=n\n'
+                'BUILD_OPENBIOS=n\n'
+                'BOOTSTRAP_WIN9X_TOOLCHAIN=y\n'
+                'QEMU_HOST_LTO=y\n'
+                'WHP_INCREMENTAL_BUILD=n\n',
+                encoding='utf-8',
+            )
+            env = os.environ.copy()
+            env['BUILD_OPENBIOS'] = '1'
+            result = subprocess.run(
+                ['python3', str(CONFIG_TOOL), '--shell', str(path)],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertNotIn('BUILD_OPENBIOS=', result.stdout)
+            self.assertIn("PREFIX='/opt/whp-qemu'", result.stdout)
+            self.assertIn("MACOS_ENABLE_COCOA='0'", result.stdout)
+            self.assertIn("MACOS_ENABLE_COREAUDIO='0'", result.stdout)
+            self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='1'", result.stdout)
+            self.assertIn("QEMU_HOST_LTO='1'", result.stdout)
+            self.assertIn("WHP_INCREMENTAL_BUILD='0'", result.stdout)
+
+    def test_prefix_allows_spaces_and_remains_shell_quoted(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=2\nPREFIX=C:/Program Files/WHP QEMU\n',
+                encoding='utf-8',
+            )
+            loaded = mod.load_config(path)
+            self.assertEqual(loaded.values['PREFIX'], 'C:/Program Files/WHP QEMU')
+            assignments = mod.shell_assignments(loaded, {})
+            self.assertIn("PREFIX='C:/Program Files/WHP QEMU'", assignments)
+
+    def test_auto_value_is_not_exported(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=2\nQEMU_HOST_LTO=auto\nPREFIX=auto\nBUILD_OPENBIOS=auto\n',
+                encoding='utf-8',
+            )
+            result = subprocess.run(
+                ['python3', str(CONFIG_TOOL), '--shell', str(path)],
+                text=True, capture_output=True, check=True, env={},
+            )
+            self.assertNotIn('QEMU_HOST_LTO=', result.stdout)
+            self.assertNotIn('PREFIX=', result.stdout)
+            self.assertNotIn('BUILD_OPENBIOS=', result.stdout)
+
+    def test_device_config_keeps_repository_defaults_before_user_overrides(self):
+        mod = load_module()
+        values = mod.default_values()
+        base = '# repository defaults\nCONFIG_TEST_DEVICES=n\n'
+        text = mod.render_ppc_device_config(values, base)
+        self.assertTrue(text.startswith(base))
+        self.assertLess(text.index('CONFIG_TEST_DEVICES=n'), text.index('CONFIG_MAC_NEWWORLD=y'))
+
+    def test_device_config_replaces_conflicting_repository_machine_assignments(self):
+        mod = load_module()
+        values = mod.default_values()
+        base = 'CONFIG_MAC_NEWWORLD=n\nCONFIG_MAC_OLDWORLD=n\nCONFIG_TEST_DEVICES=n\n'
+        text = mod.render_ppc_device_config(values, base)
+        self.assertEqual(text.count('CONFIG_MAC_NEWWORLD='), 1)
+        self.assertEqual(text.count('CONFIG_MAC_OLDWORLD='), 1)
+        self.assertIn('CONFIG_MAC_NEWWORLD=y', text)
+        self.assertIn('CONFIG_MAC_OLDWORLD=y', text)
+        self.assertIn('CONFIG_TEST_DEVICES=n', text)
+
+    def test_device_config_contains_ppc_machine_overrides(self):
+        mod = load_module()
+        values = mod.default_values()
+        values['CONFIG_MAC_NEWWORLD'] = 'n'
+        text = mod.render_ppc_device_config(values, '')
+        self.assertIn('CONFIG_MAC_NEWWORLD=n', text)
+        self.assertIn('CONFIG_MAC_OLDWORLD=y', text)
+
+    def test_menu_bool_and_choice_cycles(self):
+        mod = load_menu_module()
+        self.assertEqual(mod.cycle_value('bool', 'y', ()), 'n')
+        self.assertEqual(mod.cycle_value('bool', 'n', ()), 'y')
+        choices = ('auto', 'y', 'n')
+        self.assertEqual(mod.cycle_value('choice', 'auto', choices), 'y')
+        self.assertEqual(mod.cycle_value('choice', 'n', choices), 'auto')
+
+    def test_menu_display_values(self):
+        mod = load_menu_module()
+        self.assertEqual(mod.display_value('bool', 'y'), '[*]')
+        self.assertEqual(mod.display_value('bool', 'n'), '[ ]')
+        self.assertEqual(mod.display_value('choice', 'auto'), '<auto>')
+
+    def test_save_is_atomic_and_preserves_unknown_entries(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            loaded = mod.ConfigState(mod.default_values(), {'REMOVED_SETTING': 'old'})
+            loaded.values['BUILD_OPENBIOS'] = 'n'
+            mod.save_config(path, loaded)
+            text = path.read_text(encoding='utf-8')
+            self.assertIn('WHP_CONFIG_VERSION=3\n', text)
+            self.assertIn('BUILD_OPENBIOS=n\n', text)
+            self.assertIn('BOOTSTRAP_WIN9X_TOOLCHAIN=n\n', text)
+            self.assertIn('REMOVED_SETTING=old\n', text)
+            self.assertFalse((path.parent / '.whpconfig.tmp').exists())
+
+    def test_portable_core_probe_omits_auto_optional_dependencies(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '0',
+            'BUILD_QEMU_SYSTEM_I386': '1',
+            'BUILD_OPENBIOS': 'auto',
+            'MACOS_ENABLE_GTK': 'auto',
+            'MACOS_ENABLE_PA': 'auto',
+        })
+        result = subprocess.run(
+            ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn('CONFIGURE_ARG=--target-list=i386-softmmu', result.stdout)
+        self.assertNotIn('--enable-gtk', result.stdout)
+        self.assertNotIn('--enable-pa', result.stdout)
+        self.assertNotIn('OPTIONAL_DECLINE=OpenBIOS', result.stdout)
+
+    def test_portable_core_records_auto_openbios_decline_for_ppc(self):
+        env = os.environ.copy()
+        env.update({
+            'WHP_PORTABLE_PROBE_ONLY': '1',
+            'BUILD_QEMU_SYSTEM_PPC': '1',
+            'BUILD_QEMU_SYSTEM_I386': '0',
+            'BUILD_OPENBIOS': 'auto',
+        })
+        result = subprocess.run(
+            ['python3', str(PORTABLE_BUILD_TOOL), 'qemu-system-ppc'],
+            text=True, capture_output=True, check=True, env=env,
+        )
+        self.assertIn(
+            'OPTIONAL_DECLINE=OpenBIOS:auto:firmware-adapter-unavailable',
+            result.stdout,
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

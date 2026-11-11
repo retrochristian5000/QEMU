@@ -1,0 +1,996 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import os
+import pathlib
+import platform
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from typing import Dict, List, Tuple
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
+SELECTOR_TOOL = ROOT / 'scripts' / 'whp-build' / 'select-tests.py'
+PROJECT_ID = 'retrochristian5000/QEMU'
+USER_CONFIG = ROOT / '.whpconfig'
+JOB_BUDGET_TOOL = ROOT / 'scripts' / 'job-budget.py'
+
+
+def load_config_module():
+    spec = importlib.util.spec_from_file_location('whp_config', CONFIG_TOOL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'cannot load WHP configuration tool: {CONFIG_TOOL}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resolved_jobs(power_profile: str | None = None) -> int:
+    spec = importlib.util.spec_from_file_location('whp_job_budget', JOB_BUDGET_TOOL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'cannot load WHP job budget tool: {JOB_BUDGET_TOOL}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    environ = dict(os.environ)
+    if power_profile and 'MACOS_BUILD_POWER' not in environ:
+        environ['MACOS_BUILD_POWER'] = power_profile
+    try:
+        return module.resolve_jobs(environ)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def normalize_bool(name: str, value: str) -> str:
+    lowered = value.lower()
+    if lowered in ('1', 'y', 'yes', 'true', 'on'):
+        return 'y'
+    if lowered in ('0', 'n', 'no', 'false', 'off'):
+        return 'n'
+    raise ValueError(f'{name} must be y/n or 1/0')
+
+
+def normalize_choice(name: str, value: str, choices: Tuple[str, ...]) -> str:
+    lowered = value.lower()
+    if lowered == 'auto' and 'auto' in choices:
+        return 'auto'
+    if lowered in ('1', 'y', 'yes', 'true', 'on') and 'y' in choices:
+        return 'y'
+    if lowered in ('0', 'n', 'no', 'false', 'off') and 'n' in choices:
+        return 'n'
+    if value in choices:
+        return value
+    raise ValueError(f"{name} must be one of: {', '.join(choices)}")
+
+
+def resolved_values() -> Dict[str, str]:
+    mod = load_config_module()
+    state = mod.load_config(USER_CONFIG)
+    values = dict(state.values)
+    for option in mod.OPTIONS:
+        raw = os.environ.get(option.key)
+        if raw is None:
+            continue
+        if option.kind == 'bool':
+            values[option.key] = normalize_bool(option.key, raw)
+        elif option.kind == 'choice':
+            values[option.key] = normalize_choice(option.key, raw, option.choices)
+        else:
+            mod.validate_value(option, raw)
+            values[option.key] = raw
+    return values
+
+
+def _safe_tag(value: str) -> str:
+    cleaned = ''.join(
+        character.lower() if character.isalnum() or character in '._-' else '-'
+        for character in value
+    )
+    while '--' in cleaned:
+        cleaned = cleaned.replace('--', '-')
+    return cleaned.strip('-') or 'unknown'
+
+
+def host_kernel() -> str:
+    # The public build entry owns host detection; direct Python calls retain
+    # platform.system() as a fallback rather than selecting a different ABI.
+    return os.environ.get('WHP_HOST_KERNEL') or platform.system()
+
+
+def host_machine() -> str:
+    return os.environ.get('WHP_HOST_ARCH') or platform.machine()
+
+
+def canonical_host_arch(value: str | None = None) -> str:
+    machine = (value or host_machine() or 'unknown').lower()
+    if machine in ('amd64', 'x86_64'):
+        return 'x86_64'
+    if machine in ('aarch64', 'arm64'):
+        return 'arm64'
+    return _safe_tag(machine)
+
+
+def canonical_host_os(value: str | None = None) -> str:
+    system = (value or host_kernel() or 'unknown').lower()
+    if system in ('darwin', 'macos', 'apple-darwin'):
+        return 'apple-darwin'
+    if system == 'windows' or system.startswith(('mingw', 'msys', 'cygwin')):
+        return 'windows'
+    return _safe_tag(system)
+
+
+def host_is_macos() -> bool:
+    return canonical_host_os() == 'apple-darwin'
+
+
+def host_build_tag() -> str:
+    return f'{canonical_host_arch()}-{canonical_host_os()}'
+
+
+def _source_build_root_writable() -> bool:
+    build_root = ROOT / 'build'
+    if build_root.exists():
+        return build_root.is_dir() and os.access(build_root, os.W_OK)
+    return os.access(ROOT, os.W_OK)
+
+
+def _portable_cache_root() -> pathlib.Path:
+    xdg_cache = os.environ.get('XDG_CACHE_HOME')
+    if xdg_cache:
+        return pathlib.Path(xdg_cache).expanduser()
+    home = os.environ.get('HOME')
+    if home:
+        return pathlib.Path(home).expanduser() / '.cache'
+    return pathlib.Path(tempfile.gettempdir())
+
+
+def default_build_dir() -> pathlib.Path:
+    leaf = f'whp-{host_build_tag()}'
+    if _source_build_root_writable():
+        return ROOT / 'build' / leaf
+
+    source_key = hashlib.sha256(str(ROOT).encode('utf-8')).hexdigest()[:12]
+    return _portable_cache_root() / 'whp-qemu' / 'builds' / source_key / leaf
+
+
+def resolve_build_dir() -> pathlib.Path:
+    requested = os.environ.get('BUILD_DIR')
+    if not requested:
+        return default_build_dir()
+    build_dir = pathlib.Path(requested).expanduser()
+    if not build_dir.is_absolute():
+        build_dir = ROOT / build_dir
+    return build_dir
+
+
+def default_prefix(build_dir: pathlib.Path) -> pathlib.Path:
+    home = os.environ.get('HOME')
+    if home:
+        home_path = pathlib.Path(home).expanduser()
+        if home_path.is_dir() and os.access(home_path, os.W_OK):
+            return home_path / '.local' / 'whp-qemu'
+    return build_dir / 'install'
+
+
+def optional_switch(args: List[str], value: str, feature: str) -> None:
+    if value == 'y':
+        args.append(f'--enable-{feature}')
+    elif value == 'n':
+        args.append(f'--disable-{feature}')
+
+
+def qemu_c_standard_configure_args(values: Dict[str, str]) -> List[str]:
+    return [f"-Dc_std={values['QEMU_C_STANDARD']}"]
+
+
+def qemu_cxx_standard_configure_args(values: Dict[str, str]) -> List[str]:
+    return [f"-Dcpp_std={values['QEMU_CXX_STANDARD']}"]
+
+
+def is_gnu_make(command: List[str]) -> bool:
+    if not command:
+        return False
+    try:
+        probe = subprocess.run(
+            [*command, '--version'],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return False
+    first_line = probe.stdout.splitlines()[0] if probe.stdout else ''
+    return probe.returncode == 0 and first_line.startswith('GNU Make ')
+
+
+def select_gnu_make() -> List[str]:
+    requested_make = os.environ.get('MAKE_CMD') or os.environ.get('MAKE')
+    if requested_make:
+        command = shlex.split(requested_make)
+        if is_gnu_make(command):
+            return command
+        raise RuntimeError(
+            f'MAKE_CMD/MAKE does not identify GNU Make: {requested_make}'
+        )
+    for name in ('gmake', 'make'):
+        path = shutil.which(name)
+        if path and is_gnu_make([path]):
+            return [path]
+    raise RuntimeError(
+        'RUN_TESTS=y requires GNU Make for the QEMU test suites'
+    )
+
+
+def _record_qemu_test_state(build_dir: pathlib.Path, targets: List[str]) -> None:
+    record = subprocess.run(
+        [
+            sys.executable,
+            str(SELECTOR_TOOL),
+            'record',
+            '--source',
+            str(ROOT),
+            '--build',
+            str(build_dir),
+            '--targets',
+            ','.join(targets),
+        ],
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if record.returncode != 0:
+        detail = record.stderr.strip()
+        suffix = f': {detail}' if detail else ''
+        print(
+            'warning: QEMU tests passed but selective test state could not be recorded'
+            + suffix,
+            file=sys.stderr,
+        )
+
+
+def run_qemu_tests(build_dir: pathlib.Path, jobs: str) -> None:
+    values = resolved_values()
+    scope = values.get('QEMU_TEST_SCOPE', 'changed')
+    configured_targets = previous_configured_targets(build_dir)
+
+    if scope == 'full':
+        test_targets = ['check']
+    elif scope == 'changed':
+        plan = subprocess.run(
+            [
+                sys.executable,
+                str(SELECTOR_TOOL),
+                'plan',
+                '--source',
+                str(ROOT),
+                '--build',
+                str(build_dir),
+                '--targets',
+                ','.join(configured_targets),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if plan.returncode != 0:
+            detail = plan.stderr.strip()
+            raise RuntimeError(
+                'selective QEMU test planning failed'
+                + (f': {detail}' if detail else '')
+            )
+        test_targets = [line for line in plan.stdout.splitlines() if line]
+    else:
+        raise RuntimeError(f'QEMU_TEST_SCOPE must be changed or full: {scope}')
+
+    if test_targets:
+        make = select_gnu_make()
+        print(f"WHP QEMU tests: {' '.join(test_targets)}")
+        subprocess.run(
+            [*make, '-C', str(build_dir), f'-j{jobs}', *test_targets],
+            check=True,
+        )
+    else:
+        print('WHP QEMU tests: no affected suites; skipping unchanged tests.')
+
+    _record_qemu_test_state(build_dir, configured_targets)
+
+
+def select_runner() -> List[str]:
+    requested_ninja = os.environ.get('NINJA_CMD') or os.environ.get('NINJA')
+    if requested_ninja:
+        return shlex.split(requested_ninja)
+    for name in ('ninja', 'ninja-build'):
+        path = shutil.which(name)
+        if path:
+            return [path]
+
+    requested_make = os.environ.get('MAKE_CMD') or os.environ.get('MAKE')
+    if requested_make:
+        command = shlex.split(requested_make)
+        if is_gnu_make(command):
+            return command
+        raise RuntimeError(
+            f'MAKE_CMD/MAKE does not identify GNU Make: {requested_make}'
+        )
+    for name in ('gmake', 'make'):
+        path = shutil.which(name)
+        if path and is_gnu_make([path]):
+            return [path]
+    raise RuntimeError('neither Ninja nor GNU Make is available to run the QEMU build')
+
+
+def append_unique(values: List[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
+
+
+def dynamic_modules_enabled(values: Dict[str, str]) -> bool:
+    state = values['QEMU_HOST_MODULES']
+    return state == 'y' or (state == 'auto' and host_is_macos())
+
+
+def append_module_build_target(
+    build_dir: pathlib.Path, requested_targets: List[str], values: Dict[str, str]
+) -> None:
+    if not dynamic_modules_enabled(values) or 'all' in requested_targets:
+        return
+
+    build_ninja = build_dir / 'build.ninja'
+    if not build_ninja.is_file():
+        return
+    for line in build_ninja.read_text(encoding='utf-8', errors='replace').splitlines():
+        if line.startswith('build modules:') or line.startswith('build modules '):
+            append_unique(requested_targets, 'modules')
+            return
+
+
+def requested_system_targets(argv: List[str]) -> List[str]:
+    targets: List[str] = []
+    for requested in argv:
+        if not requested.startswith('qemu-system-'):
+            continue
+        arch = requested[len('qemu-system-'):]
+        if arch:
+            append_unique(targets, f'{arch}-softmmu')
+    return targets
+
+
+def previous_configured_targets(build_dir: pathlib.Path) -> List[str]:
+    config_file = build_dir / '.whp-config'
+    if not config_file.is_file():
+        return []
+
+    try:
+        lines = config_file.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+
+    for line in lines:
+        if line.startswith('QEMU_TARGET_LIST='):
+            return [
+                target for target in line.split('=', 1)[1].split(',')
+                if target
+            ]
+
+    # Build trees created before the dedicated target field can still be
+    # expanded without a reset. Recover the target list from the old recorded
+    # configure command when possible.
+    for line in lines:
+        if not line.startswith('CONFIGURE_ARG='):
+            continue
+        for arg in line.split('=', 1)[1].split():
+            if arg.startswith('--target-list='):
+                return [
+                    target for target in arg.split('=', 1)[1].split(',')
+                    if target
+                ]
+    return []
+
+
+def _metadata(path: pathlib.Path) -> Dict[str, str]:
+    values: Dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        if '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        values[key] = value
+    return values
+
+
+def _recover_bootstrap_only_tree(build_dir: pathlib.Path) -> bool:
+    """Recover a WHP bootstrap interrupted before the owner marker was written.
+
+    This is only for the canonical host-scoped directory under this checkout.
+    An arbitrary nonempty build directory or an existing foreign Meson graph
+    must never acquire ownership just because it contains a familiar filename.
+    """
+    root = (ROOT / 'build').resolve()
+    if build_dir.is_symlink() or build_dir.resolve().parent != root:
+        return False
+    if build_dir.name not in (
+        f'whp-{host_build_tag()}', f'whp-ppc-{host_build_tag()}'
+    ):
+        return False
+
+    staged = {'bootstrap', 'deps', 'pgo-raw'}
+    files = {'default.profdata'}
+    permitted_tools = {'libtool', 'libisofs'}
+    entries = list(build_dir.iterdir())
+    if not entries:
+        return False
+    for entry in entries:
+        if entry.is_symlink():
+            return False
+        if entry.name in staged:
+            if not entry.is_dir():
+                return False
+            if entry.name in ('bootstrap', 'deps'):
+                for child in entry.iterdir():
+                    if child.is_symlink() or not child.is_dir() or (
+                        child.name not in permitted_tools
+                    ):
+                        return False
+        elif entry.name in files:
+            if not entry.is_file():
+                return False
+        else:
+            return False
+    return True
+
+
+def _recorded_host_tag(data: Dict[str, str], kind: str) -> str:
+    tag = data.get('HOST_TAG')
+    if tag is not None:
+        # Older launchers sometimes recorded a spelling alias in HOST_TAG.
+        # Canonicalize the architecture and OS independently, but never
+        # fill in a missing OS from the *current* host.
+        for prefix in ('aarch64-', 'arm64-', 'amd64-', 'x86_64-'):
+            if tag.startswith(prefix):
+                return (f'{canonical_host_arch(prefix[:-1])}-'
+                        f'{canonical_host_os(tag[len(prefix):])}'
+                        if tag[len(prefix):] else tag)
+        return tag
+
+    arch = data.get('HOST_ARCH')
+    if not arch:
+        return ''
+    system = data.get('HOST_OS')
+    if not system:
+        if kind != '.whp-macos-build-identity':
+            # A former build's HOST_ARCH is not enough to infer its OS.
+            # In particular, Linux must not claim a macOS ARM64 tree.
+            return ''
+        system = 'Darwin'
+    return f'{canonical_host_arch(arch)}-{canonical_host_os(system)}'
+
+
+def _recognized_whp_record(data: Dict[str, str], kind: str) -> bool:
+    if not data.get('SOURCE_DIR'):
+        return False
+    schema = data.get('SCHEMA')
+    if kind == '.whp-build-owner':
+        return schema in ('2', '3')
+    if kind == '.whp-config':
+        return schema in ('1', '2', '3') and any(
+            key in data for key in ('CONFIGURE_ARG', 'QEMU_TARGET_LIST', 'PORTABLE_CORE')
+        )
+    return schema in ('3', '4') and bool(data.get('HOST_ARCH'))
+
+
+def validate_build_tree_owner(build_dir: pathlib.Path) -> None:
+    if not build_dir.exists():
+        return
+    try:
+        has_files = next(build_dir.iterdir(), None) is not None
+    except OSError as exc:
+        raise RuntimeError(f'cannot inspect build directory {build_dir}: {exc}') from exc
+    if not has_files:
+        return
+
+    expected_tag = host_build_tag()
+    records = {
+        name: _metadata(build_dir / name)
+        for name in ('.whp-build-owner', '.whp-config', '.whp-macos-build-identity')
+    }
+    for name, data in records.items():
+        if not data:
+            continue
+        project = data.get('PROJECT_ID')
+        if project and project != PROJECT_ID:
+            raise RuntimeError(
+                f'BUILD_DIR belongs to project {project}, not {PROJECT_ID}: {build_dir}'
+            )
+        tag = _recorded_host_tag(data, name)
+        # A recorded "arm64-" is an incomplete ABI, not a Linux/Darwin
+        # alias. Do not guess which OS owns a partially marked build graph.
+        if 'HOST_TAG' in data and (
+            not data['HOST_TAG'] or
+            data['HOST_TAG'].startswith('-') or
+            data['HOST_TAG'].endswith('-') or
+            any(character.isspace() for character in data['HOST_TAG'])
+        ):
+            raise RuntimeError(
+                f'BUILD_DIR has an incomplete host ABI marker '
+                f'HOST_TAG={data["HOST_TAG"]!r} in {name}: {build_dir}; '
+                f'cannot determine the previous build OS. '
+                f'Use BUILD_DIR={default_build_dir()} for {expected_tag} '
+                f'without reusing this tree; existing files were preserved'
+            )
+        if tag and tag != expected_tag:
+            raise RuntimeError(
+                f'BUILD_DIR belongs to host ABI {tag}, not {expected_tag}: '
+                f'{build_dir}; use BUILD_DIR={default_build_dir()} for '
+                f'{expected_tag} without mixing host artifacts; '
+                f'existing files were preserved'
+            )
+
+    owner = records['.whp-build-owner']
+    # An explicit owner is authoritative: never fall back to a different
+    # metadata file when it has an unrecognized project or missing identity.
+    candidates = [('.whp-build-owner', owner)] if owner else [
+        (name, records[name])
+        for name in ('.whp-config', '.whp-macos-build-identity')
+    ]
+    for name, data in candidates:
+        if not data:
+            continue
+        tag = _recorded_host_tag(data, name)
+        # A source checkout alone does not prove the host ABI. Do not
+        # relabel an untagged tree (including a legacy same-checkout tree)
+        # as the current OS merely because its SOURCE_DIR still matches.
+        if not tag:
+            continue
+        if data.get('SOURCE_DIR') == str(ROOT) and (
+            not owner or name == '.whp-build-owner'
+        ):
+            return
+        if (data.get('PROJECT_ID') == PROJECT_ID or
+                _recognized_whp_record(data, name)):
+            return
+
+    if not owner and _recover_bootstrap_only_tree(build_dir):
+        return
+
+    raise RuntimeError(
+        f'refusing to use non-empty unowned BUILD_DIR: {build_dir}; '
+        'existing files were preserved'
+    )
+
+
+def write_build_tree_owner(build_dir: pathlib.Path) -> None:
+    owner_file = build_dir / '.whp-build-owner'
+    candidate = owner_file.with_name(owner_file.name + '.new')
+    with candidate.open('w', encoding='utf-8') as handle:
+        handle.write('SCHEMA=3\n')
+        handle.write(f'PROJECT_ID={PROJECT_ID}\n')
+        handle.write(f'SOURCE_DIR={ROOT}\n')
+        handle.write(f'HOST_TAG={host_build_tag()}\n')
+    os.replace(candidate, owner_file)
+
+
+def write_portable_config(
+    build_dir: pathlib.Path,
+    prefix: pathlib.Path,
+    configure_args: List[str],
+) -> None:
+    target_list = ''
+    for arg in configure_args:
+        if arg.startswith('--target-list='):
+            target_list = arg.split('=', 1)[1]
+            break
+
+    config_file = build_dir / '.whp-config'
+    candidate = config_file.with_name(config_file.name + '.new')
+    with candidate.open('w', encoding='utf-8') as handle:
+        handle.write('SCHEMA=2\n')
+        handle.write('PORTABLE_CORE=1\n')
+        handle.write(f'SOURCE_DIR={ROOT}\n')
+        handle.write(f'HOST_OS={canonical_host_os()}\n')
+        handle.write(f'HOST_ARCH={canonical_host_arch()}\n')
+        handle.write(f'PREFIX={prefix}\n')
+        handle.write(f'QEMU_TARGET_LIST={target_list}\n')
+        handle.write(f'CONFIGURE_ARG={" ".join(configure_args)}\n')
+    os.replace(candidate, config_file)
+
+
+def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], List[str], List[str]]:
+    values = resolved_values()
+    build_dir = resolve_build_dir()
+    prefix_value = values['PREFIX']
+    prefix = default_prefix(build_dir) if prefix_value == 'auto' else pathlib.Path(prefix_value).expanduser()
+
+    alias_enabled = values['QEMU_X86_FAMILY_LINK'] == 'y'
+    if alias_enabled:
+        if canonical_host_os() == 'windows':
+            raise RuntimeError('QEMU_X86_FAMILY_LINK requires a POSIX symlink host')
+        if values['QEMU_HOST_PGO'] != 'off':
+            raise RuntimeError('QEMU_X86_FAMILY_LINK currently requires QEMU_HOST_PGO=off')
+        legacy = build_dir / 'qemu-system-i386'
+        if legacy.is_symlink():
+            if os.readlink(legacy) != 'qemu-system-x86_64':
+                raise RuntimeError(
+                    'foreign i386 symlink would be overwritten; select a '
+                    'distinct BUILD_DIR for QEMU_X86_FAMILY_LINK'
+                )
+        elif os.path.lexists(legacy):
+            raise RuntimeError(
+                'existing i386 executable would be overwritten; select a '
+                'distinct BUILD_DIR for QEMU_X86_FAMILY_LINK'
+            )
+        if 'i386-softmmu' in previous_configured_targets(build_dir):
+            raise RuntimeError(
+                'existing build tree includes i386-softmmu; select a distinct '
+                'BUILD_DIR for QEMU_X86_FAMILY_LINK (old tree preserved)'
+            )
+        for key, value in values.items():
+            if key.startswith('I386_AUDIO_') and value != 'auto':
+                raise RuntimeError(
+                    f'{key} requires standalone i386 configuration; '
+                    'disable QEMU_X86_FAMILY_LINK'
+                )
+    selected_targets: List[str] = []
+    if values['BUILD_QEMU_SYSTEM_PPC'] == 'y':
+        append_unique(selected_targets, 'ppc-softmmu')
+    if values['BUILD_QEMU_SYSTEM_I386'] == 'y':
+        append_unique(selected_targets, 'x86_64-softmmu' if alias_enabled else 'i386-softmmu')
+    for target in requested_system_targets(argv):
+        append_unique(selected_targets,
+                      'x86_64-softmmu' if alias_enabled and target == 'i386-softmmu'
+                      else target)
+
+    targets: List[str] = []
+    if values['WHP_INCREMENTAL_BUILD'] == 'y':
+        for target in previous_configured_targets(build_dir):
+            append_unique(targets, target)
+    for target in selected_targets:
+        append_unique(targets, target)
+
+    configure_args: List[str] = [f'--prefix={prefix}']
+    configure_args.extend(qemu_c_standard_configure_args(values))
+    configure_args.extend(qemu_cxx_standard_configure_args(values))
+    if targets:
+        configure_args.append(f"--target-list={','.join(targets)}")
+    else:
+        configure_args.append('--disable-system')
+
+    tools_enabled = values['BUILD_QEMU_IMG'] == 'y' or 'qemu-img' in argv
+    configure_args.append('--enable-tools' if tools_enabled else '--disable-tools')
+    # Keep optimization inside QEMU host compilation and in the configure
+    # identity; firmware and cross-toolchain policy never sees this flag.
+    configure_args.append(
+        f"--extra-cflags=-O{values['QEMU_HOST_OPTIMIZATION']}"
+    )
+    configure_args.append(f"-Db_pgo={values['QEMU_HOST_PGO']}")
+    if values['QEMU_FDT_MODE'] != 'auto':
+        configure_args.append(f"-Dfdt={values['QEMU_FDT_MODE']}")
+    # build.sh stages private SDL3 under BUILD_DIR/deps/sdl3, where QEMU and
+    # its one-level-deep modules must locate the shared library at runtime.
+    # Keep firmware/toolchain builds unaffected by these QEMU-only link args.
+    if os.environ.get('WHP_SDL_PREFIX'):
+        if host_is_macos():
+            configure_args.extend((
+                '--extra-ldflags=-Wl,-rpath,@loader_path/deps/sdl3/lib',
+                '--extra-ldflags=-Wl,-rpath,@loader_path/../deps/sdl3/lib',
+            ))
+        elif canonical_host_os() in (
+            'linux', 'freebsd', 'netbsd', 'openbsd', 'dragonfly', 'sunos'
+        ):
+            configure_args.extend((
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/deps/sdl3/lib',
+                '--extra-ldflags=-Wl,-rpath,$ORIGIN/../deps/sdl3/lib',
+            ))
+    lto = values['QEMU_HOST_LTO']
+    lto_mode = values['QEMU_HOST_LTO_MODE']
+    if lto_mode != 'auto':
+        if lto == 'n':
+            raise RuntimeError(
+                f'QEMU_HOST_LTO_MODE={lto_mode} conflicts with disabled QEMU_HOST_LTO'
+            )
+        lto = 'y'
+    optional_switch(configure_args, lto, 'lto')
+    if lto_mode == 'thin':
+        configure_args.append('-Db_lto_mode=thin')
+    elif lto_mode == 'full':
+        configure_args.extend(['-Db_lto_mode=default', '-Db_thinlto_cache=false'])
+    if host_is_macos():
+        # WHP macOS builds deliberately use TCG instead of host hypervisors.
+        configure_args.extend(['--disable-kvm', '--disable-hvf'])
+    if host_is_macos() and values['QEMU_HOST_MODULES'] == 'auto':
+        configure_args.append('--enable-modules')
+    else:
+        optional_switch(configure_args, values['QEMU_HOST_MODULES'], 'modules')
+    optional_switch(configure_args, values['MACOS_ENABLE_GTK'], 'gtk')
+    optional_switch(configure_args, values['MACOS_ENABLE_PA'], 'pa')
+
+    if host_is_macos():
+        configure_args.append(f"-Db_lto_threads={resolved_jobs(values['MACOS_BUILD_POWER'])}")
+        optional_switch(configure_args, values['MACOS_ENABLE_COCOA'], 'cocoa')
+        optional_switch(configure_args, values['MACOS_ENABLE_COREAUDIO'], 'coreaudio')
+
+    custom_macs = values['CONFIG_MAC_NEWWORLD'] != 'y' or values['CONFIG_MAC_OLDWORLD'] != 'y'
+    if custom_macs:
+        raise RuntimeError(
+            'custom PowerPC Mac device filtering requires the Bash feature adapter; '
+            'core QEMU remains buildable with the tracked PPC defaults'
+        )
+
+    declines: List[str] = []
+    if values['BUILD_OPENBIOS'] == 'y':
+        raise RuntimeError(
+            'OpenBIOS was explicitly requested, but the portable core does not run '
+            'the Bash firmware adapter'
+        )
+    if values['BOOTSTRAP_POWERPC_TOOLCHAIN'] == 'y':
+        raise RuntimeError(
+            'PowerPC toolchain bootstrap was explicitly requested, but the portable '
+            'core does not run the Bash firmware adapter'
+        )
+    if values['BUILD_OPENBIOS'] == 'auto' and 'ppc-softmmu' in targets:
+        declines.append('OpenBIOS:auto:firmware-adapter-unavailable')
+
+    requested_targets = argv[:] if argv else ['all']
+    return build_dir, prefix, configure_args, requested_targets, declines
+
+
+def print_plan(build_dir: pathlib.Path, prefix: pathlib.Path, configure_args: List[str], targets: List[str], declines: List[str]) -> None:
+    print(f'BUILD_DIR={build_dir}')
+    print(f'PREFIX={prefix}')
+    for arg in configure_args:
+        print(f'CONFIGURE_ARG={arg}')
+    for target in targets:
+        print(f'BUILD_TARGET={target}')
+    for decline in declines:
+        print(f'OPTIONAL_DECLINE={decline}')
+
+
+def locate_built_binary(build_dir: pathlib.Path, name: str) -> pathlib.Path:
+    for candidate in (build_dir / name, build_dir / f'{name}.exe'):
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f'expected build artifact was not produced: {name}')
+
+
+def verify_requested_outputs(build_dir: pathlib.Path, requested_targets: List[str]) -> Dict[str, pathlib.Path]:
+    artifacts: Dict[str, pathlib.Path] = {}
+    if 'all' in requested_targets:
+        return artifacts
+
+    for target in requested_targets:
+        if target != 'qemu-img' and not target.startswith('qemu-system-'):
+            continue
+        binary = locate_built_binary(build_dir, target)
+        version = subprocess.run(
+            [str(binary), '--version'],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if version.returncode != 0:
+            raise RuntimeError(f'built artifact failed its version probe: {binary}')
+        artifacts[target] = binary
+
+        if target == 'qemu-system-ppc':
+            machines = subprocess.run(
+                [str(binary), '-machine', 'help'],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if machines.returncode != 0:
+                raise RuntimeError(f'PowerPC emulator failed machine-list probe: {binary}')
+            for machine in ('powermac3_1', 'mac99'):
+                if machine not in machines.stdout:
+                    raise RuntimeError(
+                        f'PowerPC emulator lost required machine profile {machine}: {binary}'
+                    )
+    return artifacts
+
+
+def portable_pgo_stage(build_dir: pathlib.Path) -> str:
+    probe = subprocess.run([
+        sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'),
+        '--build-dir', str(build_dir), '--mode', 'status',
+    ], check=True, text=True, capture_output=True)
+    stage = probe.stdout.strip()
+    if stage not in ('generate', 'use'):
+        raise RuntimeError(f'unrecognized QEMU PGO stage: {stage!r}')
+    return stage
+
+
+def portable_pgo_generate(
+    build_dir: pathlib.Path, prefix: pathlib.Path, configure_args: List[str],
+    requested_targets: List[str], runner: List[str], jobs: str,
+    values: Dict[str, str],
+) -> None:
+    """Build an instrumented QEMU before use without recursively bootstrapping."""
+    if '-Db_pgo=use' not in configure_args:
+        raise RuntimeError('QEMU PGO use stage was not configured')
+    generate_args = [
+        '-Db_pgo=generate' if arg == '-Db_pgo=use' else arg
+        for arg in configure_args
+    ]
+    print('QEMU PGO: no saved training profiles; building generate stage first.',
+          flush=True)
+    subprocess.run([str(ROOT / 'configure'), *generate_args],
+                   cwd=build_dir, check=True)
+    write_portable_config(build_dir, prefix, generate_args)
+    append_module_build_target(build_dir, requested_targets, values)
+    runner_name = pathlib.Path(runner[0]).name
+    command = (
+        [*runner, '-C', str(build_dir), '-j', jobs, *requested_targets]
+        if runner_name.startswith('ninja')
+        else [*runner, '-C', str(build_dir), f'-j{jobs}', *requested_targets]
+    )
+    subprocess.run(command, check=True)
+
+    raw_dir = build_dir / 'pgo-raw'
+    raw_dir.mkdir(exist_ok=True)
+    training_script = os.environ.get('QEMU_PGO_TRAIN_SCRIPT', '').strip()
+    if not training_script:
+        raise RuntimeError(
+            'instrumented QEMU generate build is ready in ' + str(build_dir)
+            + '. Run representative guest workloads with '
+            f'LLVM_PROFILE_FILE={raw_dir}/%m-%p.profraw; then retry '
+            'QEMU_HOST_PGO=use. For automatic training, set '
+            'QEMU_PGO_TRAIN_SCRIPT to an executable workload script.'
+        )
+    path = pathlib.Path(training_script).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise RuntimeError(
+            f'QEMU_PGO_TRAIN_SCRIPT is not an executable file: {path}'
+        )
+    env = os.environ.copy()
+    env['LLVM_PROFILE_FILE'] = str(raw_dir / '%m-%p.profraw')
+    env['WHP_PGO_BUILD_DIR'] = str(build_dir)
+    subprocess.run([str(path), *requested_targets], env=env, check=True)
+    if portable_pgo_stage(build_dir) != 'use':
+        raise RuntimeError(
+            'PGO training script completed but produced no nonempty raw '
+            'profiles; run the instrumented QEMU and exit cleanly.'
+        )
+
+
+def main(argv: List[str]) -> int:
+    if sys.version_info < (3, 9):
+        print('error: Python 3.9 or newer is required by QEMU', file=sys.stderr)
+        return 2
+
+    if argv == ['--print-build-dir']:
+        print(resolve_build_dir())
+        return 0
+
+    if argv == ['--claim-build-dir']:
+        # Claim before any seed toolchain or optional library stages write to
+        # BUILD_DIR; this avoids a later false "non-empty unowned" rejection.
+        try:
+            build_dir = resolve_build_dir()
+            build_dir.mkdir(parents=True, exist_ok=True)
+            validate_build_tree_owner(build_dir)
+            old = _metadata(build_dir / '.whp-build-owner').get('SOURCE_DIR')
+            if old and old != str(ROOT):
+                print(f'WHP QEMU: transferred checkout {old} -> {ROOT}; preserving owned build state')
+            write_build_tree_owner(build_dir)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f'error: {exc}', file=sys.stderr)
+            return 2
+        return 0
+
+    try:
+        build_dir, prefix, configure_args, requested_targets, declines = build_plan(argv)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        return 2
+
+    if os.environ.get('WHP_PORTABLE_PROBE_ONLY') == '1':
+        print_plan(build_dir, prefix, configure_args, requested_targets, declines)
+        return 0
+
+    for decline in declines:
+        print(f'WHP optional feature skipped: {decline}', file=sys.stderr)
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    artifacts: Dict[str, pathlib.Path] = {}
+    try:
+        validate_build_tree_owner(build_dir)
+        write_build_tree_owner(build_dir)
+        values = resolved_values()
+        # The portable runner bypasses build.sh's shell assignments. Publish
+        # these validated menu settings for QEMU's existing configure logic,
+        # including the optional pre-Meson DTC prefetch path.
+        os.environ['WHP_MESON_PROVIDER'] = values['WHP_MESON_PROVIDER']
+        os.environ['WHP_DTC_FETCH_MISSING'] = (
+            '1' if values['WHP_DTC_FETCH_MISSING'] == 'y' else '0'
+        )
+        runner = select_runner()
+        jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
+        if values['QEMU_HOST_PGO'] == 'use':
+            if portable_pgo_stage(build_dir) == 'generate':
+                portable_pgo_generate(
+                    build_dir, prefix, configure_args, requested_targets,
+                    runner, jobs, values,
+                )
+            subprocess.run([
+                sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'pgo-profile.py'),
+                '--build-dir', str(build_dir),
+                '--compiler', os.environ.get('CC', 'clang'),
+            ], check=True)
+        subprocess.run([str(ROOT / 'configure'), *configure_args], cwd=build_dir, check=True)
+        write_portable_config(build_dir, prefix, configure_args)
+        build_targets = [
+            'qemu-system-x86_64' if values['QEMU_X86_FAMILY_LINK'] == 'y'
+            and target == 'qemu-system-i386' else target
+            for target in requested_targets
+        ]
+        append_module_build_target(build_dir, build_targets, values)
+
+        runner_name = pathlib.Path(runner[0]).name
+        if runner_name.startswith('ninja'):
+            build_command = [*runner, '-C', str(build_dir), '-j', jobs, *build_targets]
+        else:
+            build_command = [*runner, '-C', str(build_dir), f'-j{jobs}', *build_targets]
+        subprocess.run(build_command, check=True)
+
+        x86_alias = (
+            values['QEMU_X86_FAMILY_LINK'] == 'y'
+            and any(a.startswith('--target-list=') and 'x86_64-softmmu' in a
+                    for a in configure_args)
+        )
+        if x86_alias and ('all' in build_targets or 'qemu-system-x86_64' in build_targets):
+            subprocess.run([
+                sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'x86-family-alias.py'),
+                '--directory', str(build_dir),
+            ], check=True)
+
+        if values['RUN_TESTS'] == 'y':
+            run_qemu_tests(build_dir, jobs)
+        if values['INSTALL_AFTER_BUILD'] == 'y':
+            subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
+            if x86_alias:
+                subprocess.run([
+                    sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'x86-family-alias.py'),
+                    '--directory', str(prefix / 'bin'),
+                ], check=True)
+
+        artifacts = verify_requested_outputs(build_dir, requested_targets)
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
+        print(f'error: core QEMU build failed: {exc}', file=sys.stderr)
+        return 1
+
+    manifest = build_dir / '.whp-build-artifacts'
+    with manifest.open('w', encoding='utf-8') as handle:
+        handle.write('SCHEMA=2\n')
+        handle.write('PORTABLE_CORE=1\n')
+        handle.write(f'SOURCE_DIR={ROOT}\n')
+        handle.write(f'BUILD_DIR={build_dir}\n')
+        handle.write(f'PREFIX={prefix}\n')
+        handle.write(f'REQUESTED_TARGETS={" ".join(requested_targets)}\n')
+        for target, path in artifacts.items():
+            handle.write(f'ARTIFACT={target}:{path}\n')
+        if 'qemu-system-ppc' in artifacts:
+            handle.write('POWERMAC3_1_REGISTERED=yes\n')
+            handle.write('MAC99_REGISTERED=yes\n')
+        for decline in declines:
+            handle.write(f'OPTIONAL_DECLINE={decline}\n')
+    print(f'build artifact manifest: {manifest}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))

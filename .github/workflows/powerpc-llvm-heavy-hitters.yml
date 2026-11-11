@@ -1,0 +1,33 @@
+name: PowerPC LLVM heavy hitters
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/bootstrap-powerpc-clang-core.sh'
+      - 'scripts/tests/test-powerpc-llvm-heavy-hitters.bash'
+      - '.github/workflows/powerpc-llvm-heavy-hitters.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llvm-heavy-hitters:
+    name: Check LLVM heavy-hitter build policy
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate bootstrap shells
+        run: |
+          bash -n scripts/bootstrap-powerpc-clang-base.sh
+          bash -n scripts/bootstrap-powerpc-clang-core.sh
+          bash -n scripts/tests/test-powerpc-llvm-heavy-hitters.bash
+
+      - name: Exercise heavy-hitter policy
+        run: bash scripts/tests/test-powerpc-llvm-heavy-hitters.bash

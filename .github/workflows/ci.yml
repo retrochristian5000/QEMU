@@ -1,0 +1,390 @@
+name: WHP QEMU fast CI
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-qemu-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-policy:
+    name: Check build policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Guard executable QEMU configure entry point
+        run: |
+          test -x configure
+          test "$(git ls-files --stage configure | awk '{print $1}')" = 100755
+
+      - name: Validate MC6809 ISA reference and CPU skeleton
+        run: |
+          python3 scripts/tests/test-m6809-isa.py
+          python3 scripts/tests/test-m6809-skeleton.py
+
+      - name: Verify native macOS triple does not select iOS or Darwin deployment
+        run: python3 scripts/tests/test-native-llvm-macos-default-triple.py
+
+      - name: Guard native Darwin compiler-rt ABI isolation
+        run: python3 scripts/tests/test-native-llvm-darwin-abi-isolation.py
+
+      - name: Test selected macOS SDK version handling
+        run: bash scripts/tests/test-macos-sdk-selection.bash
+
+      - name: Test Homebrew and MacPorts dependency refresh
+        run: bash scripts/tests/test-homebrew-dependency-refresh.bash
+
+      - name: Test native LLVM incremental bootstrap contract
+        run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'
+
+      - name: Test tagless QEMU version generation
+        run: bash scripts/tests/test-qemu-version.bash
+
+      - name: Test GNU sed version staging
+        run: python3 scripts/tests/test-sed-version-staging.py
+
+      - name: Test QEMU Error ownership guard
+        run: bash scripts/tests/test-error-autoptr.bash
+
+      - name: Test qemu-nbd include hygiene
+        run: python3 scripts/tests/test-qemu-nbd-includes.py
+
+      - name: Audit GLib atomic integer read contracts
+        run: python3 scripts/tests/test-glib-atomic-int-get.py
+
+      - name: Guard PPC TCG virtual-time helper calls
+        run: python3 scripts/tests/test-ppc-tcg-timebase-io.py
+
+      - name: Guard real VGA versus VMware virtual display defaults
+        run: python3 scripts/tests/test-display-device-provenance.py
+
+      - name: Guard separate ATI Rage 128 Pro and RV100 devices
+        run: python3 scripts/tests/test-ati-device-profiles.py
+
+      - name: Guard Rage128 Pro 2D framebuffer operations
+        run: python3 scripts/tests/test-powermac3_1-rage128-2d.py
+
+      - name: Guard Classic Macintosh SMI/NDIF format
+        run: python3 scripts/tests/test-smi-image.py
+
+      - name: Guard Sawtooth KeyLargo DB-DMA register and descriptor rules
+        run: python3 scripts/tests/test-powermac3_1-dbdma.py
+
+      - name: Guard MacIO ATA disk vs ATAPI DMA completion
+        run: python3 scripts/tests/test-powermac3_1-ata-dma.py
+
+      - name: Guard optional Sawtooth modem reset routing
+        run: python3 scripts/tests/test-powermac3_1-modem.py
+
+      - name: Audit Sam460ex FDT node removal and link probe
+        run: python3 scripts/tests/test-sam460ex-fdt-nop.py
+
+      - name: Guard deprecated GLib exit API usage
+        run: python3 scripts/tests/test-glib-exit-api.py
+
+      - name: Guard GLib 2.66 compatibility and memory-copy calls
+        run: python3 scripts/tests/test-glib-safe-memory.py
+
+      - name: Test dirtyrate sparse-vCPU indexing
+        run: python3 scripts/tests/test-dirtyrate-sparse-vcpu.py
+
+      - name: Test automatic source refresh policy
+        run: python3 scripts/tests/test-build-source-update.py
+
+      - name: Test host battery APM wire-format encoder
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -o "$test_bin" scripts/tests/test-host-battery-codec.c
+          "$test_bin"
+
+      - name: Test SeaBIOS -g handoff contract
+        run: python3 scripts/tests/test-seabios-g-option.py
+
+      - name: Test SDL3 audio split contract
+        run: python3 scripts/tests/test-sdl3-audio-split.py
+
+  build-active-target:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - m6809
+          - s2650
+          - trimedia
+          - ppc
+          - i386
+          - x86
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: 'true'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ccache \
+            libfdt-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            python3-venv \
+            zlib1g-dev
+          # Compile the GTK drive-activity indicator on one CI target.
+          if [[ "${{ matrix.target }}" == x86 ]]; then
+            sudo apt-get install -y --no-install-recommends libgtk-3-dev
+          fi
+
+      - name: Restore compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
+
+      - name: Configure ${{ matrix.target }}
+        env:
+          CC: ccache gcc
+          CXX: ccache g++
+        shell: bash
+        run: |
+          mkdir build-ci
+          cd build-ci
+          set -o pipefail
+          fdt_args=()
+          if [[ "${{ matrix.target }}" == x86 ]]; then
+            # Compile the optional GTK frontend, not just the block API.
+            fdt_args=(-Dgtk=enabled)
+          fi
+          if [[ "${{ matrix.target }}" == ppc ]]; then
+            # Test the pinned WHP DTC fallback, not the runner's libfdt-dev.
+            fdt_args=(-Dfdt=internal)
+          fi
+          ../configure \
+            --target-list=${{ matrix.target }}-softmmu \
+            "${fdt_args[@]}" \
+            --disable-docs \
+            2>&1 | tee configure.log
+
+      - name: Test Classic Macintosh SMI image conversion
+        if: matrix.target == 'ppc'
+        run: |
+          ninja -C build-ci qemu-img
+          python3 scripts/tests/test-smi-image.py --qemu-img build-ci/qemu-img
+
+      - name: Audit internal DTC Ninja link graph
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal
+
+      - name: Regression-test FDT Mach-O ABI archive audit
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-macho-abi.py
+
+      - name: Build ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -o pipefail
+          ninja -C build-ci qemu-system-${{ matrix.target }} 2>&1 | tee build-ci/build.log
+
+      - name: Verify linked libfdt archive exports fdt_nop_node
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-fdt-ninja-link.py build-ci --internal --built
+
+      - name: Smoke-test ${{ matrix.target }}
+        run: |
+          set -eux
+          binary="build-ci/qemu-system-${{ matrix.target }}"
+          test -x "${binary}"
+          "${binary}" -version
+          "${binary}" -machine help >/dev/null
+          if [[ "${{ matrix.target }}" == m6809 ]]; then
+            "${binary}" -cpu help | grep -E '(6809|6809e)'
+          fi
+
+      - name: Test floppy read/write accounting for activity indicators
+        if: matrix.target == 'i386'
+        run: |
+          ninja -C build-ci tests/qtest/fdc-test
+          QTEST_QEMU_BINARY="$GITHUB_WORKSPACE/build-ci/qemu-system-i386" \
+            build-ci/tests/qtest/fdc-test
+
+      - name: Test modem hardware reset and AT configuration
+        if: matrix.target == 'ppc'
+        run: |
+          set -eux
+          ninja -C build-ci tests/unit/test-modem-voice
+          build-ci/tests/unit/test-modem-voice --tap -k
+
+      - name: Test concurrent GLib atomic counter draining
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-glib-atomic-int-get.py --runtime
+
+      - name: Exercise pinned DTC libfdt node removal on PowerPC build host
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-sam460ex-fdt-nop.py --runtime --build-dir build-ci
+
+      - name: Exercise GLib g_memdup2 copy semantics
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-glib-safe-memory.py --runtime
+
+      - name: Build and smoke-test qemu-nbd
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci qemu-nbd
+          build-ci/qemu-nbd --version
+          build-ci/qemu-nbd --help >/dev/null
+
+      - name: Test buffer_is_zero quick coverage
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci tests/unit/test-bufferiszero
+          build-ci/tests/unit/test-bufferiszero --tap -k
+
+      - name: Reproduce 40p boot serial test
+        if: matrix.target == 'ppc'
+        env:
+          QTEST_QEMU_BINARY: ${{ github.workspace }}/build-ci/qemu-system-ppc
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/boot-serial-test
+          build-ci/tests/qtest/boot-serial-test --tap -k \
+            -p /ppc/boot-serial/40p
+
+      - name: Test KeyLargo timer and Screamer runtime
+        if: matrix.target == 'ppc'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/macio-timer-test
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
+            qtest-ppc/macio-timer-test
+
+      - name: Verify live Sawtooth FireWire PCI device
+        if: matrix.target == 'ppc'
+        run: python3 scripts/tests/test-powermac3_1-firewire-runtime.py build-ci/qemu-system-ppc
+
+      - name: Test rich floppy shortcut options
+        if: matrix.target == 'i386'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="build-ci/qemu-system-i386"
+          image="build-ci/fda-rich.img"
+          qmp_out="build-ci/fda-rich-qmp.out"
+
+          truncate -s 1440K "$image"
+          printf '%s\n' \
+            '{"execute":"qmp_capabilities"}' \
+            '{"execute":"query-block"}' \
+            '{"execute":"quit"}' |
+            "$binary" \
+              -machine pc \
+              -display none \
+              -monitor none \
+              -serial none \
+              -net none \
+              -S \
+              -qmp stdio \
+              -fda "file=$image,id=bootfloppy,readonly=on,speed=500k" \
+              >"$qmp_out"
+
+          grep -Eq '"device"[[:space:]]*:[[:space:]]*"bootfloppy"' "$qmp_out"
+          grep -Eq '"ro"[[:space:]]*:[[:space:]]*true' "$qmp_out"
+
+      - name: Reproduce ATI SeaBIOS display
+        if: matrix.target == 'i386'
+        run: python3 scripts/tests/test-i386-ati-seabios.py build-ci/qemu-system-i386
+
+      - name: Test -hdc and -cdrom coexistence
+        if: matrix.target == 'i386'
+        run: bash scripts/tests/test-cdrom-hdc.bash build-ci/qemu-system-i386
+
+      - name: Validate IDE HDD/SSD TRIM scatter-gather handling
+        if: matrix.target == 'i386'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/ide-test
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
+            qtest-i386/ide-test
+
+      - name: Test original 16-bit x86 target
+        if: matrix.target == 'x86'
+        run: |
+          set -eux
+          ninja -C build-ci tests/qtest/x86-16bit-test
+          build-ci/pyvenv/bin/python3 toolchains/meson/meson.py test -C build-ci --print-errorlogs \
+            qtest-x86/x86-16bit-test
+
+      - name: Show build failure context
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -f build-ci/build.log ]]; then
+            echo '=== compiler errors ==='
+            grep -n -E 'FAILED:|error:|undefined reference|ninja: build stopped' \
+              build-ci/build.log | tail -n 200 || true
+            echo '=== build log tail ==='
+            tail -n 200 build-ci/build.log || true
+          fi
+          if [[ -f build-ci/configure.log ]]; then
+            echo '=== configure log tail ==='
+            tail -n 200 build-ci/configure.log || true
+          fi
+          if [[ -f build-ci/meson-logs/meson-log.txt ]]; then
+            echo '=== meson log tail ==='
+            tail -n 200 build-ci/meson-logs/meson-log.txt || true
+          fi
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: build-log-${{ matrix.target }}
+          path: |
+            build-ci/configure.log
+            build-ci/build.log
+            build-ci/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .ccache
+          key: whp-qemu-ccache-v1-${{ runner.os }}-${{ matrix.target }}-${{ github.sha }}

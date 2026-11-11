@@ -1,0 +1,380 @@
+name: WHP configuration tests
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.gitmodules'
+      - 'toolchains/aften'
+      - 'toolchains/jack'
+      - 'toolchains/zlib'
+      - 'toolchains/make'
+      - 'toolchains/sccacher'
+      - 'toolchains/wine'
+      - 'toolchains/xen'
+      - 'toolchains/sdl'
+      - 'docs/devel/whp-dependency-ledger.rst'
+      - 'docs/devel/whp-darwin-user.rst'
+      - 'darwin-user/include/target_macho.h'
+      - 'darwin-user/include/macho_probe.h'
+      - 'darwin-user/macho_probe.c'
+      - 'darwin-user/ppc/target_abi.h'
+      - 'docs/devel/index-internals.rst'
+      - 'docs/devel/index-build.rst'
+      - 'docs/user/main.rst'
+      - 'toolchains/python-runtime'
+      - 'build.sh'
+      - 'configure'
+      - 'block/vmdk.c'
+      - 'builder.sh'
+      - 'scripts/job-budget.py'
+      - 'configs/meson/darwin.txt'
+      - 'scripts/macos-builder.bash'
+      - 'scripts/tests/test-macos-sdk-selection.bash'
+      - 'scripts/verify-macos-lto.bash'
+      - 'configs/devices/**'
+      - 'hw/pcmcia/**'
+      - 'include/hw/pcmcia/**'
+      - 'hw/pci-host/uninorth.c'
+      - 'include/hw/pci-host/uninorth.h'
+      - 'hw/ppc/mac_newworld.c'
+      - 'tests/qtest/macio-timer-test.c'
+      - 'scripts/tests/test-uninorth-cpu-number.py'
+      - 'tests/qtest/i82092aa-test.c'
+      - 'tests/qtest/meson.build'
+      - 'ui/cocoa.m'
+      - 'scripts/ensure-ninja.py'
+      - 'scripts/ensure-sccache.py'
+      - 'scripts/ensure-sdl.py'
+      - 'scripts/ensure-zlib.py'
+      - 'scripts/ensure-libisofs.py'
+      - 'scripts/qapi/common.py'
+      - 'scripts/modinfo-collect.py'
+      - 'scripts/modinfo-generate.py'
+      - 'scripts/tests/test-modinfo-memory.py'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/bootstrap-python.sh'
+      - 'scripts/bootstrap-i386-efi-grub.bash'
+      - 'scripts/whp-config/**'
+      - 'scripts/whp-build/common.bash'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/whp-build/configure.bash'
+      - 'scripts/whp-build/portable-build.py'
+      - 'scripts/whp-build/portable-build-entry.py'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/build-targets.bash'
+      - 'scripts/whp-build/host-cpu-tuning.py'
+      - 'scripts/whp-build/host-cpu-tuning.bash'
+      - 'scripts/whp-build/select-tests.py'
+      - 'scripts/tests/test-qapi-c23-keywords.py'
+      - 'scripts/tests/test-vof-property-format.py'
+      - 'hw/ppc/vof.c'
+      - 'scripts/tests/test-cxx-standard-config.py'
+      - 'scripts/whp-build/sccache-policy.sh'
+      - 'docs/devel/sccache-build-memory.rst'
+      - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'seeds/pkg-config.sh'
+      - 'scripts/tests/test-pkg-config-seed.py'
+      - 'scripts/tests/test-sccache-bootstrap.py'
+      - 'scripts/tests/test-autotools-version-pairs.py'
+      - 'scripts/tests/test-darwin-lto-threads.py'
+      - 'scripts/tests/test-macos-power-budget.py'
+      - 'scripts/tests/test-darwin-user-recovery.py'
+      - 'scripts/tests/test-darwin-macho-abi.py'
+      - 'scripts/tests/test-darwin-ppc-abi.py'
+      - 'scripts/tests/test-darwin-ppc-macho-format.py'
+      - 'scripts/tests/test-darwin-ppc-exec.bash'
+      - 'darwin-user/include/macho_exec.h'
+      - 'darwin-user/macho_exec.c'
+      - 'tests/unit/test-darwin-ppc-exec.c'
+      - 'scripts/tests/test-darwin-ppc-stdin.bash'
+      - 'darwin-user/ppc/stdio.c'
+      - 'darwin-user/ppc/stdio.h'
+      - 'tests/unit/test-darwin-ppc-stdin.c'
+      - 'scripts/tests/test-macos-api-policy.py'
+      - 'scripts/tests/test-menuconfig-scroll.py'
+      - 'scripts/tests/test-python-menu-fallback.py'
+      - 'scripts/tests/test-menuconfig-shell-contract.py'
+      - 'scripts/tests/test-python-menu-fallback.bash'
+      - 'scripts/tests/test-native-llvm-build-entry.py'
+      - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-asan-global-link.py'
+      - 'scripts/tests/test-native-llvm-shared.py'
+      - 'scripts/verify-native-asan-darwin.py'
+      - 'scripts/tests/test-archive-tool-policy.bash'
+      - 'scripts/tests/test-vmdk-overflow.py'
+      - 'scripts/tests/test-host-cpu-tuning.py'
+      - 'scripts/tests/test-host-cpu-tuning.bash'
+      - 'scripts/tests/test-host-optimization.py'
+      - 'scripts/tests/test-test-policy.py'
+      - 'scripts/tests/test-test-selection.py'
+      - 'scripts/tests/test-x87-trig-upgrade.py'
+      - 'scripts/tests/test-mold-config.py'
+      - 'scripts/tests/test-seabios-config.py'
+      - 'scripts/tests/test-sdl-bootstrap.py'
+      - 'scripts/tests/test-zlib-bootstrap.py'
+      - 'scripts/tests/test-libisofs-bootstrap.py'
+      - 'scripts/ensure-libtool.py'
+      - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-libtool-bootstrap.py'
+      - 'toolchains/libtool'
+      - 'scripts/tests/test-make-dependency-policy.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
+      - 'scripts/tests/test-wine-dependency-policy.py'
+      - 'scripts/tests/test-xen-dependency-policy.py'
+      - 'scripts/tests/test-whp-dependency-ledger.py'
+      - 'scripts/ensure-bash.py'
+      - 'scripts/tests/test-bash-bootstrap.py'
+      - 'scripts/tests/test-whp-config.py'
+      - 'scripts/tests/test-whp-config-integration.bash'
+      - 'scripts/tests/test-whp-hardware-menu.py'
+      - 'scripts/tests/test-pcmcia-config.py'
+      - 'scripts/tests/test-whp-i386-audio-menu.py'
+      - 'scripts/tests/test-qtest-meson.py'
+      - 'scripts/tests/test-whp-incremental.py'
+      - 'scripts/tests/test-whp-sparc-menu.py'
+      - 'target/i386/helper.h'
+      - 'target/i386/tcg/helper-tcg.h'
+      - 'target/i386/tcg/fpu_trig_helper.c'
+      - 'target/i386/tcg/meson.build'
+      - '.github/workflows/whp-config.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: whp-config-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Test GNU Make bootstrap policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ensure-make.py
+          /bin/sh -n build.sh
+          bash -n scripts/whp-build/host-tools.sh
+          python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-gnulib-cache.py
+
+      - name: Test bounded VOF trace formatting with native C11 compiler
+        run: python3 scripts/tests/test-vof-property-format.py
+
+      - name: Test incremental planning
+        run: python3 scripts/tests/test-whp-incremental.py
+
+      - name: Test configuration model
+        run: |
+          # Fail early on Python syntax errors before running config or Meson tests.
+          python3 -m py_compile scripts/tests/test-whp-hardware-menu.py
+          python3 scripts/tests/test-qapi-c23-keywords.py
+          python3 scripts/tests/test-modinfo-memory.py
+          python3 scripts/tests/test-cxx-standard-config.py
+          python3 scripts/tests/test-bash-bootstrap.py
+          python3 scripts/tests/test-whp-config.py
+          python3 scripts/tests/test-whp-hardware-menu.py
+          python3 scripts/tests/test-pcmcia-config.py
+          python3 scripts/tests/test-uninorth-cpu-number.py
+          printf '#include "hw/pcmcia/i365.h"\n_Static_assert(I365_IO(1) == 0x0c, "I/O map");\n_Static_assert(I365_MEM(4) == 0x30, "memory map");\n_Static_assert(I365_ENA_IO(1) == 0x80, "I/O enable");\n_Static_assert(I365_ENA_MEM(4) == 0x10, "memory enable");\n_Static_assert(I365_IOCTL_16BIT(1) == 0x10, "I/O width");\n' | cc -std=c11 -Wall -Wextra -Werror -fsyntax-only -x c -Iinclude -
+          python3 scripts/tests/test-whp-i386-audio-menu.py
+          python3 scripts/tests/test-qtest-meson.py
+          python3 scripts/tests/test-compiler-cache-policy.py
+          python3 scripts/tests/test-pkg-config-seed.py
+          python3 scripts/tests/test-sccache-bootstrap.py
+          python3 scripts/tests/test-autotools-version-pairs.py
+          python3 scripts/tests/test-darwin-lto-threads.py
+          python3 scripts/tests/test-macos-power-budget.py
+          python3 scripts/tests/test-darwin-user-recovery.py
+          python3 scripts/tests/test-darwin-macho-abi.py
+          python3 scripts/tests/test-darwin-ppc-abi.py
+          python3 scripts/tests/test-darwin-ppc-macho-format.py
+          bash scripts/tests/test-darwin-ppc-exec.bash
+          bash scripts/tests/test-darwin-ppc-stdin.bash
+          python3 scripts/tests/test-macos-api-policy.py
+          python3 scripts/tests/test-menuconfig-scroll.py
+          python3 scripts/tests/test-python-menu-fallback.py
+          python3 scripts/tests/test-menuconfig-shell-contract.py
+          bash scripts/tests/test-python-menu-fallback.bash
+          python3 scripts/tests/test-whp-sparc-menu.py
+          python3 scripts/tests/test-mold-config.py
+          python3 scripts/tests/test-seabios-config.py
+          python3 scripts/tests/test-sdl-bootstrap.py
+          python3 scripts/tests/test-zlib-bootstrap.py
+          python3 scripts/tests/test-libisofs-bootstrap.py
+          python3 scripts/tests/test-libtool-bootstrap.py
+          python3 scripts/tests/test-make-dependency-policy.py
+          python3 scripts/tests/test-make-gnulib-cache.py
+          python3 scripts/tests/test-wine-dependency-policy.py
+          python3 scripts/tests/test-xen-dependency-policy.py
+          python3 scripts/tests/test-whp-dependency-ledger.py
+          python3 scripts/tests/test-native-llvm-build-entry.py
+          python3 scripts/tests/test-native-llvm-wiring.py
+          python3 scripts/tests/test-native-asan-global-link.py
+          python3 scripts/tests/test-native-llvm-shared.py
+          bash scripts/tests/test-macos-sdk-selection.bash
+          bash scripts/tests/test-archive-tool-policy.bash
+          python3 scripts/tests/test-vmdk-overflow.py
+          python3 scripts/tests/test-test-policy.py
+          python3 scripts/tests/test-test-selection.py
+          bash scripts/tests/test-whp-config-integration.bash
+
+      - name: Test host CPU tuning policy
+        run: |
+          python3 scripts/tests/test-host-cpu-tuning.py
+          bash scripts/tests/test-host-cpu-tuning.bash
+
+      - name: Test host optimization policy
+        run: python3 scripts/tests/test-host-optimization.py
+
+      - name: Test x87 trig upgrade contract
+        run: python3 scripts/tests/test-x87-trig-upgrade.py
+
+      - name: Check configuration syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/job-budget.py \
+            scripts/ensure-ninja.py \
+            scripts/ensure-sccache.py \
+            scripts/ensure-sdl.py \
+            scripts/ensure-zlib.py \
+            scripts/ensure-libisofs.py \
+            scripts/ensure-make.py \
+            scripts/qapi/common.py \
+            scripts/whp-config/config.py \
+            scripts/whp-config/menuconfig.py \
+            scripts/whp-build/portable-build.py \
+            scripts/whp-build/portable-build-entry.py \
+            scripts/whp-build/host-cpu-tuning.py \
+            scripts/whp-build/select-tests.py \
+            scripts/tests/test-qapi-c23-keywords.py \
+            scripts/tests/test-cxx-standard-config.py \
+            scripts/tests/test-compiler-cache-policy.py \
+            scripts/tests/test-autotools-version-pairs.py \
+            scripts/tests/test-darwin-lto-threads.py \
+            scripts/tests/test-macos-power-budget.py \
+            scripts/tests/test-darwin-user-recovery.py \
+            scripts/tests/test-darwin-macho-abi.py \
+            scripts/tests/test-darwin-ppc-abi.py \
+            scripts/tests/test-darwin-ppc-macho-format.py \
+            scripts/tests/test-macos-api-policy.py \
+            scripts/tests/test-menuconfig-scroll.py \
+            scripts/tests/test-python-menu-fallback.py \
+            scripts/tests/test-menuconfig-shell-contract.py \
+            scripts/tests/test-native-llvm-build-entry.py \
+            scripts/tests/test-native-llvm-wiring.py \
+            scripts/tests/test-native-asan-global-link.py \
+            scripts/tests/test-native-llvm-shared.py \
+            scripts/verify-native-asan-darwin.py \
+            scripts/tests/test-vmdk-overflow.py \
+            scripts/tests/test-host-cpu-tuning.py \
+            scripts/tests/test-host-optimization.py \
+            scripts/tests/test-test-policy.py \
+            scripts/tests/test-test-selection.py \
+            scripts/tests/test-x87-trig-upgrade.py \
+            scripts/tests/test-mold-config.py \
+            scripts/tests/test-seabios-config.py \
+            scripts/tests/test-sdl-bootstrap.py \
+            scripts/tests/test-libisofs-bootstrap.py \
+            scripts/tests/test-libtool-bootstrap.py \
+            scripts/tests/test-make-dependency-policy.py \
+            scripts/tests/test-make-gnulib-cache.py \
+            scripts/tests/test-wine-dependency-policy.py \
+            scripts/tests/test-xen-dependency-policy.py \
+            scripts/tests/test-whp-dependency-ledger.py \
+            scripts/tests/test-whp-config.py \
+            scripts/tests/test-whp-hardware-menu.py \
+            scripts/tests/test-pcmcia-config.py \
+            scripts/tests/test-whp-i386-audio-menu.py \
+            scripts/tests/test-whp-incremental.py \
+            scripts/tests/test-whp-sparc-menu.py
+          /bin/sh -n build.sh
+          /bin/sh -n scripts/whp-config/menuconfig.sh
+          /bin/sh -n builder.sh
+          bash -n builder.sh
+          bash -n scripts/bootstrap-native-clang.bash
+          bash -n scripts/bootstrap-i386-efi-grub.bash
+          bash -n scripts/whp-build/common.bash
+          bash -n scripts/whp-build/configure.bash
+          bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/macos-builder.bash
+          bash -n scripts/bootstrap-native-clang.bash
+          bash -n scripts/tests/test-macos-sdk-selection.bash
+          bash -n scripts/verify-macos-lto.bash
+          bash -n scripts/whp-build/build-targets.bash
+          bash -n scripts/whp-build/host-cpu-tuning.bash
+          bash -n scripts/tests/test-host-cpu-tuning.bash
+          bash -n scripts/tests/test-python-menu-fallback.bash
+          bash -n scripts/tests/test-archive-tool-policy.bash
+          bash -n scripts/tests/test-whp-config-integration.bash
+
+
+  test-libtool-bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CC: clang
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Libtool bootstrap seeds
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake build-essential clang help2man llvm m4 make perl texinfo xz-utils
+
+      - name: Bootstrap pinned WHP Libtool
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-libtool"
+          prefix="$(python3 scripts/ensure-libtool.py \
+            --build-dir "$build_root" --mode force)"
+          test "$prefix" = "$build_root/deps/libtool"
+          test -x "$prefix/bin/libtool"
+          test -x "$prefix/bin/libtoolize"
+          "$prefix/bin/libtool" --version | grep -Fq 'GNU libtool'
+          "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
+          grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=10' \
+            "$prefix/.whp-libtool-bootstrap"
+          expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
+          grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
+            "$prefix/.whp-libtool-bootstrap"
+          grep -Fq '/llvm-ar|' "$prefix/.whp-libtool-bootstrap"
+          grep -Fq '/llvm-ranlib|' "$prefix/.whp-libtool-bootstrap"
+          grep -Fxq 'ARFLAGS=cr' "$prefix/.whp-libtool-bootstrap"
+          macro="$prefix/share/aclocal/libtool.m4"
+          test -f "$macro"
+          grep -Fq '[llvm-ar ar]' "$macro"
+          grep -Fq 'whether $AR accepts $AR_FLAGS to create an archive' "$macro"
+          grep -Fq 'ARFLAGS:-' "$macro"
+          grep -Fq '[llvm-ranlib ranlib]' "$macro"
+          grep -Fq '[llvm-strip strip]' "$macro"
+          grep -Fq '[llvm-objdump objdump]' "$macro"
+          grep -Fq '[llvm-lipo lipo]' "$macro"
+          grep -Fq '[llvm-dsymutil dsymutil]' "$macro"
+          grep -Fq '[llvm-dlltool dlltool]' "$macro"
+
+      - name: Verify Libtool bootstrap cache reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/whp-libtool"
+          first="$build_root/deps/libtool/.whp-libtool-bootstrap"
+          before="$(cksum "$first")"
+          prefix="$(python3 scripts/ensure-libtool.py \
+            --build-dir "$build_root" --mode force)"
+          test "$prefix" = "$build_root/deps/libtool"
+          after="$(cksum "$first")"
+          test "$before" = "$after"

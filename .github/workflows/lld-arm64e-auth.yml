@@ -1,0 +1,302 @@
+name: WHP LLD ARM64e authenticated relocation
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'toolchains/llvm-project'
+      - 'scripts/whp-build/arm64e-lld-probe.bash'
+      - 'scripts/tests/test-macos-ld64-fixup-flags.bash'
+      - 'scripts/tests/test-darwin-dyld-arm64e.bash'
+      - 'scripts/tests/test-lld-arm64e-symbol-resolution.bash'
+      - 'scripts/tests/test-lld-fat-arm64e.bash'
+      - 'scripts/tests/test-lld-arm64e-dylib-identity.bash'
+      - 'scripts/tests/test-lld-arm64e-thinlto.bash'
+      - 'scripts/tests/test-compiler-rt-arm64e-policy.py'
+      - 'scripts/verify-native-asan-darwin.py'
+      - 'scripts/whp-lldb-autodebug.py'
+      - 'scripts/tests/test-whp-lldb-autodebug.py'
+      - 'scripts/tests/test-native-lldb-default.py'
+      - 'scripts/tests/test-lldb-cxx23-incomplete-type.py'
+      - 'scripts/bootstrap-native-clang.bash'
+      - 'scripts/macos-arch-policy.bash'
+      - 'scripts/verify-macos-toolchain.bash'
+      - 'build.sh'
+      - '.github/workflows/lld-arm64e-auth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-lld-arm64e-auth-lean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm64e-auth:
+    name: Link ARM64e authenticated pointer
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out QEMU source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Resolve the pinned LLVM gitlink
+        id: llvm_pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          test -n "$pin" || { echo 'error: missing LLVM gitlink' >&2; exit 1; }
+          echo "sha=$pin" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned LLVM source sparsely
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: retrochristian5000/LLVM
+          ref: ${{ steps.llvm_pin.outputs.sha }}
+          path: llvm-project
+          fetch-depth: 1
+          sparse-checkout: |
+            cmake
+            compiler-rt/cmake/Modules
+            libc
+            lld
+            lldb/include/lldb/Core
+            lldb/source/Core
+            llvm
+            third-party
+
+      - name: Verify LLVM checkout matches QEMU gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(git ls-tree HEAD toolchains/llvm-project | awk '{print $3}')"
+          actual="$(git -C llvm-project rev-parse HEAD)"
+          test -n "$expected"
+          test "$actual" = "$expected" || {
+            printf 'error: ARM64e LLD workflow LLVM pin %s != QEMU gitlink %s\n' \
+              "$actual" "$expected" >&2
+            exit 1
+          }
+
+      - name: Install build dependencies
+        run: brew install cmake ninja
+
+      - name: Verify fork LLDB auto-debug contract (no debugserver needed)
+        shell: bash
+        run: |
+          bash -n scripts/bootstrap-native-clang.bash
+          python3 -m py_compile scripts/whp-lldb-autodebug.py scripts/verify-native-asan-darwin.py
+          python3 scripts/tests/test-whp-lldb-autodebug.py
+          python3 scripts/tests/test-native-lldb-default.py
+          python3 scripts/tests/test-lldb-cxx23-incomplete-type.py
+
+      - name: Verify compiler-rt ARM64e ASan ABI policy
+        shell: bash
+        run: python3 scripts/tests/test-compiler-rt-arm64e-policy.py
+
+      - name: Build lean Mach-O LLD
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -G Ninja \
+            -S llvm-project/llvm \
+            -B build-lld \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_PROJECTS=lld \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_INCLUDE_TESTS=OFF
+          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt llvm-lto2 -- -j4
+
+      - name: Reject unsafe ARM64e non-PIE links before emitting an image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          objdump="$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+          cat >"$RUNNER_TEMP/arm64e-pac-guard.s" <<'ASM'
+          .text
+          .globl _main
+          _main:
+            ret
+          .data
+          .p2align 3
+          .quad _main@AUTH(ia,42,addr)
+          ASM
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 -c \
+            "$RUNNER_TEMP/arm64e-pac-guard.s" -o "$RUNNER_TEMP/arm64e-pac-guard.o"
+          rm -f "$RUNNER_TEMP/unsafe-arm64e"
+          if "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+              -execute -no_pie -e _main "$RUNNER_TEMP/arm64e-pac-guard.o" \
+              -o "$RUNNER_TEMP/unsafe-arm64e" >"$RUNNER_TEMP/nonpie.out" \
+              2>"$RUNNER_TEMP/nonpie.err"; then
+            echo 'error: arm64e non-PIE link accepted without authenticated fixups' >&2
+            exit 1
+          fi
+          grep -Fq -- '-no_pie is incompatible with arm64e' "$RUNNER_TEMP/nonpie.err"
+          test ! -e "$RUNNER_TEMP/unsafe-arm64e"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -execute -pie -e _main "$RUNNER_TEMP/arm64e-pac-guard.o" \
+            -o "$RUNNER_TEMP/arm64e-pac-guard"
+          "$objdump" --macho --chained-fixups "$RUNNER_TEMP/arm64e-pac-guard" |
+            grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24'
+
+      - name: Audit ThinLTO ARM64e native output and PAC
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-thinlto.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/opt" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-readobj" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lto2"
+
+      - name: Check ARM64e dylib install names and version propagation
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-dylib-identity.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+
+      - name: Validate universal Mach-O ARM64e slice selection
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-fat-arm64e.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lipo"
+
+      - name: Reject malformed ARM64e relocation pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d "$RUNNER_TEMP/whp-reloc-pairs.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          source_test="llvm-project/lld/test/MachO/arm64e-reloc-pair-validation.s"
+          # LLVM lit directives precede the self-contained assembly fixture.
+          awk '/^\.text$/{emit=1} emit {print}' "$source_test" > "$work/input.s"
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c "$work/input.s" -o "$work/good.o"
+          python3 llvm-project/lld/test/MachO/Inputs/arm64e-reloc-pairs.py \
+            "$work/good.o" "$work"
+
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib "$work/good.o" -o "$work/good.dylib"
+          cases=(missing-addend auth-after-addend \
+                 missing-subtractor auth-after-subtractor)
+          messages=('ARM64_RELOC_ADDEND missing its paired relocation'
+                    'invalid ARM64_RELOC_ADDEND relocation pair'
+                    'SUBTRACTOR missing its paired relocation'
+                    'invalid SUBTRACTOR relocation pair')
+          for i in "${!cases[@]}"; do
+            if "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+                -dylib "$work/${cases[$i]}.o" \
+                -o "$work/rejected-$i.dylib" > "$work/error.log" 2>&1; then
+              echo "error: malformed ARM64e relocation was accepted: ${cases[$i]}" >&2
+              exit 1
+            fi
+            grep -Fq "${messages[$i]}" "$work/error.log" || {
+              cat "$work/error.log" >&2
+              exit 1
+            }
+          done
+          echo 'ARM64e relocation pair validation: passed'
+
+      - name: Validate ARM64e imported-symbol resolution
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-symbol-resolution.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+
+      - name: Compare Apple ld64 and LLD dyld fixup options
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/tests/test-macos-ld64-fixup-flags.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+
+      - name: Link authenticated ARM64e pointer with WHP LLD
+        shell: bash
+        run: |
+          set -euo pipefail
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+
+          cat >foo.s <<'EOF'
+          .text
+          .globl _foo
+          _foo:
+            ret
+          EOF
+          cat >test.s <<'EOF'
+          .data
+          .p2align 3
+          .quad _foo@AUTH(ia,42,addr)
+          EOF
+
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 -c foo.s -o foo.o
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 -c test.s -o test.o
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -install_name @rpath/libfoo.dylib foo.o -o libfoo.dylib
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib libfoo.dylib test.o -o libtest.dylib
+          test -s libtest.dylib
+          "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
+            --macho --chained-fixups libtest.dylib >fixups.txt
+          grep -Fq 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' fixups.txt
+          grep -Fq '_foo' fixups.txt
+
+      - name: Verify all ARM64e PAC keys in chained rebases and binds
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reuse the pinned LLVM regression fixture; no extra LLVM build or
+          # divergent copy of the authentication encoding is needed.
+          python3 - <<'PY'
+          from pathlib import Path
+          fixture = Path("llvm-project/lld/test/MachO/arm64e-auth-metadata.s").read_text()
+          for piece in fixture.split("#--- ")[1:]:
+              name, contents = piece.split("\n", 1)
+              assert name in ("producer.s", "consumer.s"), name
+              Path(name).write_text(contents)
+          PY
+
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c producer.s -o producer.o
+          xcrun clang -arch arm64e -mmacosx-version-min=13.0 \
+            -c consumer.s -o consumer.o
+
+          ld="$GITHUB_WORKSPACE/build-lld/bin/ld64.lld"
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -install_name @rpath/libauth-producer.dylib \
+            producer.o -o libauth-producer.dylib
+          "$ld" -arch arm64e -platform_version macos 13.0 13.0 \
+            -dylib -fixup_chains consumer.o libauth-producer.dylib \
+            -o auth-consumer.dylib
+          python3 llvm-project/lld/test/MachO/Inputs/arm64e-auth-metadata.py \
+            auth-consumer.dylib
+
+      - name: Verify QEMU's shared ARM64e LLD capability probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/whp-build/arm64e-lld-probe.bash \
+            "$(xcrun --find clang)" \
+            "$(xcrun --sdk macosx --show-sdk-path)" \
+            13.0 \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump"
+
+      - name: Exercise Apple dyld with LLD ARM64e bound dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Metadata acceptance is not dyld runtime acceptance. This stage
+          # must keep LLD selected rather than silently falling back to ld64.
+          WHP_DYLD_LLD_DIR="$GITHUB_WORKSPACE/build-lld/bin" \
+            bash scripts/tests/test-darwin-dyld-arm64e.bash arm64e lld

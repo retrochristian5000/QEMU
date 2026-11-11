@@ -1,0 +1,154 @@
+name: macOS LTO reproducer
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/macos-lto-repro.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-macos-lto-repro
+  cancel-in-progress: false
+
+jobs:
+  system-clang-lto:
+    name: QEMU LTO with Apple Clang
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    env:
+      BUILD_DIR: ${{ github.workspace }}/build-macos-lto-repro
+      BOOTSTRAP_NATIVE_LLVM: '0'
+      BUILD_QEMU_IMG: '0'
+      BUILD_QEMU_SYSTEM_I386: '1'
+      BUILD_QEMU_SYSTEM_PPC: '0'
+      BUILD_OPENBIOS: '0'
+      BOOTSTRAP_POWERPC_TOOLCHAIN: '0'
+      BUILD_SEABIOS: '0'
+      BUILD_SEABIOS_GRUB: '0'
+      BOOTSTRAP_I386_TOOLCHAIN: '0'
+      # Keep the sentinel intentionally aggressive even though normal WHP
+      # builds now default to -O2. This lane must continue to expose bugs that
+      # require the -O3 + ThinLTO combination.
+      QEMU_HOST_OPTIMIZATION: '3'
+      QEMU_HOST_LTO: '1'
+      COMPILER_CACHE: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 300M
+      CCACHE_COMPRESS: 'true'
+      RUN_TESTS: '0'
+      MACOS_ENABLE_COCOA: '0'
+      MACOS_ENABLE_COREAUDIO: '0'
+      MACOS_ENABLE_GTK: '0'
+      MACOS_ENABLE_PA: '0'
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify Apple Silicon host
+        shell: bash
+        run: test "$(uname -m)" = arm64
+
+      - name: Install QEMU build dependencies
+        run: brew install ccache glib libslirp make ninja pixman pkgconf
+
+      - name: Restore compiler cache
+        id: ccache-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: .whp-compiler-cache
+          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: |
+            whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
+
+      - name: Build real QEMU with host LTO
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build.sh qemu-system-i386 2>&1 | tee macos-lto-repro.log
+          test -x "$BUILD_DIR/qemu-system-i386"
+          "$BUILD_DIR/qemu-system-i386" --version
+          grep -Fxq 'WHP_MACOS_LTO_SCHEMA=3' "$BUILD_DIR/.whp-macos-lto"
+          grep -Fxq 'LTO_MODE=thin' "$BUILD_DIR/.whp-macos-lto"
+          python3 - "$BUILD_DIR/meson-info/intro-buildoptions.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding='utf-8') as stream:
+              options = {option['name']: option['value']
+                         for option in json.load(stream)}
+          for name, expected in [('b_lto', True),
+                                 ('b_lto_mode', 'thin'),
+                                 ('b_thinlto_cache', True)]:
+              actual = options.get(name)
+              if actual != expected:
+                  raise SystemExit(f'QEMU Meson {name}: {actual!r} != {expected!r}')
+          PY
+          grep -Fxq 'QEMU_HOST_LTO=1' "$BUILD_DIR/.whp-config"
+          grep -Fq -- '--extra-cflags=-O3' "$BUILD_DIR/.whp-config"
+
+      - name: Reproduce i386 VGA display test
+        shell: bash
+        env:
+          QTEST_QEMU_BINARY: ${{ github.workspace }}/build-macos-lto-repro/qemu-system-i386
+        run: |
+          set -euo pipefail
+          ninja -C "$BUILD_DIR" tests/qtest/display-vga-test
+          "$BUILD_DIR/tests/qtest/display-vga-test" --tap -k
+
+      - name: Show failure context
+        if: failure()
+        shell: bash
+        run: |
+          grep -n -E 'FAILED:|ERROR:|assert|error:|warning:|Undefined symbols|ld:|ninja: build stopped' \
+            macos-lto-repro.log | tail -n 300 || true
+          tail -n 400 macos-lto-repro.log 2>/dev/null || true
+          cat "$BUILD_DIR/.whp-config" 2>/dev/null || true
+          cat "$BUILD_DIR/.whp-macos-build-identity" 2>/dev/null || true
+          tail -n 250 "$BUILD_DIR/config.log" 2>/dev/null || true
+          tail -n 250 "$BUILD_DIR/meson-logs/meson-log.txt" 2>/dev/null || true
+          for log in /tmp/qemu-display-vga.log /tmp/*display-vga*.log; do
+            if [[ -f "$log" ]]; then
+              echo "=== $log ==="
+              tail -n 300 "$log" || true
+              cp "$log" "${{ github.workspace }}/$(basename "$log")" || true
+            fi
+          done
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .whp-compiler-cache
+          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-lto-repro-failure
+          path: |
+            macos-lto-repro.log
+            qemu-display-vga.log
+            *display-vga*.log
+            build-macos-lto-repro/.whp-config
+            build-macos-lto-repro/.whp-macos-build-identity
+            build-macos-lto-repro/config.log
+            build-macos-lto-repro/meson-logs/meson-log.txt
+          if-no-files-found: warn
+          retention-days: 7

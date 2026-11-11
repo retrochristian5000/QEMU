@@ -1,0 +1,583 @@
+# WHP host, toolchain, and build-policy preparation stage.
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+source "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+
+flag_string_has_lto()
+{
+    local value="$1"
+    local token
+    local tokens=()
+
+    read -r -a tokens <<< "$value"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            -flto|-flto=*|-fno-lto|-Wl,*lto*|-Wl,*LTO*|\
+            -object_path_lto*|-lto_library*|-cache_path_lto*|\
+            -Xlinker=*lto*|-Xlinker=*LTO*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+reject_global_lto_flags()
+{
+    local variable value
+
+    for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
+        value="${!variable:-}"
+        if [[ -n "$value" ]] && flag_string_has_lto "$value"; then
+            printf '%s\n' \
+                "error: $variable contains an LTO option: $value" \
+                'LTO must be selected with QEMU_HOST_LTO so it remains inside' \
+                "QEMU's Meson host build and cannot leak into firmware or" \
+                'build-machine toolchains.' >&2
+            exit 1
+        fi
+    done
+}
+
+whp_prepare_host_identity()
+{
+    # Reuse the public build entry's single host reading. Direct invocation
+    # alone falls back to uname; don't redetect halfway through bootstrap.
+    HOST_OS="${WHP_HOST_KERNEL:-$(uname -s)}"
+    PROCESS_ARCH="${WHP_HOST_ARCH:-$(uname -m)}"
+    HOST_ARCH="$PROCESS_ARCH"
+    PHYSICAL_ARCH="$PROCESS_ARCH"
+    ROSETTA_TRANSLATED=0
+    APPLE_SILICON_HOST=0
+    APPLE_SILICON_NATIVE=0
+
+    if [[ "$HOST_OS" == Darwin ]]; then
+        if [[ "$(sysctl -in hw.optional.arm64 2>/dev/null || printf '0')" == 1 ]]; then
+            PHYSICAL_ARCH=arm64
+            APPLE_SILICON_HOST=1
+        fi
+        if [[ "$(sysctl -in sysctl.proc_translated 2>/dev/null || printf '0')" == 1 ]]; then
+            ROSETTA_TRANSLATED=1
+        fi
+
+        HOST_ARCH="$(whp_canonical_macos_arch "$PROCESS_ARCH")" || {
+            printf 'error: unsupported macOS process architecture: %s\n' \
+                "$PROCESS_ARCH" >&2
+            exit 1
+        }
+        PHYSICAL_ARCH="$(whp_canonical_macos_arch "$PHYSICAL_ARCH")" || {
+            printf 'error: unsupported macOS physical architecture: %s\n' \
+                "$PHYSICAL_ARCH" >&2
+            exit 1
+        }
+        if [[ "$PHYSICAL_ARCH" == arm64 && "$HOST_ARCH" == arm64 ]]; then
+            APPLE_SILICON_NATIVE=1
+        fi
+    fi
+
+    MACOS_ALLOW_ROSETTA="${MACOS_ALLOW_ROSETTA:-0}"
+    MACOS_ALLOW_MIXED_HOMEBREW="${MACOS_ALLOW_MIXED_HOMEBREW:-0}"
+    MACOS_ARCH_FLAGS="${MACOS_ARCH_FLAGS:-1}"
+    MACOS_VERIFY_TOOLCHAIN="${MACOS_VERIFY_TOOLCHAIN:-1}"
+    MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
+    MACOS_ALLOW_COMPILER_CONFIG="${MACOS_ALLOW_COMPILER_CONFIG:-0}"
+
+    whp_require_boolean_values \
+        MACOS_ALLOW_ROSETTA MACOS_ALLOW_MIXED_HOMEBREW MACOS_ARCH_FLAGS \
+        MACOS_VERIFY_TOOLCHAIN MACOS_ALLOW_NONCLANG MACOS_ALLOW_COMPILER_CONFIG || exit 1
+
+    if [[ "$HOST_OS" == Darwin && "$ROSETTA_TRANSLATED" == 1 &&
+          "$MACOS_ALLOW_ROSETTA" != 1 ]]; then
+        printf '%s\n' \
+            'error: the build is running under Rosetta translation.' \
+            'rerun natively with: arch -arm64 ./build.sh' \
+            'or explicitly allow an x86_64 build with:' \
+            '  MACOS_ALLOW_ROSETTA=1 ./build.sh' >&2
+        exit 1
+    fi
+}
+
+whp_validate_qemu_language_standards()
+{
+    case "$QEMU_C_STANDARD" in
+        gnu11|gnu17|gnu23) ;;
+        *)
+            printf 'error: QEMU_C_STANDARD must be gnu11, gnu17, or gnu23: %s\n' \
+                "$QEMU_C_STANDARD" >&2
+            return 1
+            ;;
+    esac
+    case "$QEMU_CXX_STANDARD" in
+        gnu++17|gnu++20|gnu++23|c++26) ;;
+        *)
+            printf 'error: QEMU_CXX_STANDARD must be gnu++17, gnu++20, gnu++23, or c++26: %s\n' \
+                "$QEMU_CXX_STANDARD" >&2
+            return 1
+            ;;
+    esac
+}
+
+whp_prepare_build_defaults()
+{
+    if [[ "$HOST_OS" == Darwin ]]; then
+        DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc-${HOST_ARCH}-apple-darwin"
+    else
+        DEFAULT_BUILD_DIR="$SOURCE_DIR/build/whp-ppc"
+    fi
+
+    BUILD_DIR="${BUILD_DIR:-$DEFAULT_BUILD_DIR}"
+    if [[ -n "${HOME:-}" && -d "$HOME" && -w "$HOME" ]]; then
+        DEFAULT_PREFIX="$HOME/.local/whp-qemu"
+    else
+        DEFAULT_PREFIX="$BUILD_DIR/install"
+    fi
+    PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
+    BUILD_QEMU_IMG="${BUILD_QEMU_IMG:-1}"
+    BUILD_QEMU_SYSTEM_I386="${BUILD_QEMU_SYSTEM_I386:-1}"
+    BUILD_QEMU_SYSTEM_PPC="${BUILD_QEMU_SYSTEM_PPC:-1}"
+    QEMU_X86_FAMILY_LINK="${QEMU_X86_FAMILY_LINK:-0}"
+    case "$QEMU_X86_FAMILY_LINK" in
+        0) ;;
+        1)
+            case "$HOST_OS" in
+                Windows|MINGW*|MSYS*|CYGWIN*)
+                    printf 'error: QEMU_X86_FAMILY_LINK requires a POSIX symlink host\n' >&2
+                    return 1 ;;
+            esac
+            # i386 device menu filters are not yet mapped to x86_64 Kconfig.
+            # Never silently discard explicit user hardware selections.
+            local audio_key
+            for audio_key in I386_AUDIO_GAMEBLASTER I386_AUDIO_SB16 I386_AUDIO_ADLIB \
+                             I386_AUDIO_GUS I386_AUDIO_CS4231A I386_AUDIO_PCSPK \
+                             I386_AUDIO_ES1370 I386_AUDIO_AC97 I386_AUDIO_CS4630 \
+                             I386_AUDIO_HDA; do
+                if [[ "${!audio_key:-auto}" != auto ]]; then
+                    printf 'error: %s requires a separate i386 target; disable QEMU_X86_FAMILY_LINK\n' "$audio_key" >&2
+                    return 1
+                fi
+            done
+            ;;
+        *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\n' >&2; return 1 ;;
+    esac
+    QEMU_TARGET_LIST=
+    if [[ "$BUILD_QEMU_SYSTEM_PPC" == 1 ]]; then
+        QEMU_TARGET_LIST=ppc-softmmu
+    fi
+    if [[ "$BUILD_QEMU_SYSTEM_I386" == 1 ]]; then
+        if [[ "$QEMU_X86_FAMILY_LINK" == 1 ]]; then
+            QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}x86_64-softmmu"
+        else
+            QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}i386-softmmu"
+        fi
+    fi
+    BUILD_TARGETS="${BUILD_TARGETS:-all}"
+    RUN_TESTS="${RUN_TESTS:-1}"
+    INSTALL_AFTER_BUILD="${INSTALL_AFTER_BUILD:-0}"
+    MACOS_ENABLE_COCOA="${MACOS_ENABLE_COCOA:-auto}"
+    MACOS_ENABLE_COREAUDIO="${MACOS_ENABLE_COREAUDIO:-auto}"
+    MACOS_ENABLE_GTK="${MACOS_ENABLE_GTK:-auto}"
+    MACOS_ENABLE_PA="${MACOS_ENABLE_PA:-auto}"
+    QEMU_HOST_LTO="${QEMU_HOST_LTO:-auto}"
+    QEMU_HOST_LTO_MODE="${QEMU_HOST_LTO_MODE:-auto}"
+    case "$QEMU_HOST_LTO_MODE" in
+        auto|thin|full) ;;
+        *)
+            printf 'error: QEMU_HOST_LTO_MODE must be auto, thin, or full: %s\n' "$QEMU_HOST_LTO_MODE" >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$QEMU_HOST_LTO_MODE" != auto ]]; then
+        if [[ "$QEMU_HOST_LTO" == 0 ]]; then
+            printf 'error: QEMU_HOST_LTO_MODE=%s conflicts with disabled QEMU_HOST_LTO\n' "$QEMU_HOST_LTO_MODE" >&2
+            exit 1
+        fi
+        [[ "$QEMU_HOST_LTO" != auto ]] || QEMU_HOST_LTO=1
+    fi
+    export QEMU_HOST_LTO QEMU_HOST_LTO_MODE
+    # PGO belongs to QEMU's Meson host build, never firmware or LLVM bootstrap.
+    QEMU_HOST_PGO="${QEMU_HOST_PGO:-off}"
+    case "$QEMU_HOST_PGO" in
+        off|generate|use) ;;
+        *)
+            printf 'error: QEMU_HOST_PGO must be off, generate, or use: %s\n' "$QEMU_HOST_PGO" >&2
+            exit 1
+            ;;
+    esac
+    export QEMU_HOST_PGO
+    QEMU_HOST_MODULES="${QEMU_HOST_MODULES:-auto}"
+    QEMU_FDT_MODE="${QEMU_FDT_MODE:-auto}"
+    case "$QEMU_FDT_MODE" in
+        auto|system|internal|enabled|disabled) ;;
+        *)
+            printf 'error: QEMU_FDT_MODE must be auto, system, internal, enabled, or disabled: %s\n' "$QEMU_FDT_MODE" >&2
+            exit 1
+            ;;
+    esac
+    WHP_MESON_PROVIDER="${WHP_MESON_PROVIDER:-fork}"
+    case "$WHP_MESON_PROVIDER" in
+        venv|fork) ;;
+        *)
+            printf 'error: WHP_MESON_PROVIDER must be venv or fork: %s\n' "$WHP_MESON_PROVIDER" >&2
+            exit 1
+            ;;
+    esac
+    WHP_DTC_FETCH_MISSING="${WHP_DTC_FETCH_MISSING:-0}"
+    export WHP_MESON_PROVIDER WHP_DTC_FETCH_MISSING
+    printf 'WHP Meson provider selection: %s\n' "$WHP_MESON_PROVIDER" >&2
+    QEMU_C_STANDARD="${QEMU_C_STANDARD:-gnu11}"
+    QEMU_CXX_STANDARD="${QEMU_CXX_STANDARD:-gnu++23}"
+    BUILD_OPENBIOS="${BUILD_OPENBIOS:-auto}"
+    OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
+    OPENBIOS_FORCE_RECONFIGURE="${OPENBIOS_FORCE_RECONFIGURE:-0}"
+    BOOTSTRAP_POWERPC_TOOLCHAIN="${BOOTSTRAP_POWERPC_TOOLCHAIN:-auto}"
+    POWERPC_TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
+    POWERPC_TOOLCHAIN_COMPILER="${POWERPC_TOOLCHAIN_COMPILER:-clang}"
+    POWERPC_TOOLCHAIN_SOURCE_MODE="${POWERPC_TOOLCHAIN_SOURCE_MODE:-release}"
+    POWERPC_TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/powerpc-elf}"
+    POWERPC_TOOLCHAIN_ROOT="$(dirname "$POWERPC_TOOLCHAIN_DIR")"
+    POWERPC_TOOLCHAIN_WORK_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-work/powerpc-elf"
+    POWERPC_TOOLCHAIN_DOWNLOAD_DIR="$POWERPC_TOOLCHAIN_ROOT/toolchain-downloads"
+    CONFIG_MAC_NEWWORLD="${CONFIG_MAC_NEWWORLD:-y}"
+    CONFIG_MAC_OLDWORLD="${CONFIG_MAC_OLDWORLD:-y}"
+
+    whp_require_boolean_values \
+        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \
+        RUN_TESTS INSTALL_AFTER_BUILD OPENBIOS_FORCE_RECONFIGURE \
+        POWERPC_TOOLCHAIN_FORCE_REBUILD WHP_DTC_FETCH_MISSING || exit 1
+    whp_require_tristate_values \
+        MACOS_ENABLE_COCOA MACOS_ENABLE_COREAUDIO MACOS_ENABLE_GTK \
+        MACOS_ENABLE_PA QEMU_HOST_LTO QEMU_HOST_MODULES BUILD_OPENBIOS \
+        BOOTSTRAP_POWERPC_TOOLCHAIN || exit 1
+    whp_validate_qemu_language_standards || exit 1
+    case "$CONFIG_MAC_NEWWORLD:$CONFIG_MAC_OLDWORLD" in
+        y:y|y:n|n:y|n:n) ;;
+        *)
+            printf 'error: CONFIG_MAC_NEWWORLD and CONFIG_MAC_OLDWORLD must be y or n\n' >&2
+            exit 1
+            ;;
+    esac
+
+    for build_path in "$SOURCE_DIR" "$BUILD_DIR"; do
+        case "$build_path" in
+            *[' ':]*)
+                printf 'error: QEMU source and build paths cannot contain spaces or colons\n' >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    CFLAGS="${CFLAGS:-}"
+    reject_global_lto_flags
+}
+
+whp_qemu_target_list_add()
+{
+    local target="$1"
+
+    [[ -n "$target" ]] || return 0
+    case ",${QEMU_TARGET_LIST:-}," in
+        *",$target,"*) return 0 ;;
+    esac
+    QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}$target"
+}
+
+whp_apply_requested_build_targets()
+{
+    local target
+    local arch
+    local requested_targets=()
+
+    if (( $# > 0 )); then
+        requested_targets=("$@")
+    else
+        read -r -a requested_targets <<< "${BUILD_TARGETS:-all}"
+    fi
+
+    for target in "${requested_targets[@]}"; do
+        case "$target" in
+            qemu-img)
+                BUILD_QEMU_IMG=1
+                ;;
+            qemu-system-*)
+                arch="${target#qemu-system-}"
+                if [[ "$arch" == i386 && "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+                    arch=x86_64
+                fi
+                [[ -n "$arch" ]] && whp_qemu_target_list_add "${arch}-softmmu"
+                ;;
+        esac
+    done
+}
+
+whp_prepare_host_tools()
+{
+    if [[ "$HOST_OS" == Darwin ]]; then
+        # The macOS wrapper owns SDK and compiler-family selection when it is
+        # active. Keep those strict checks inside the macOS adapter instead of
+        # imposing Homebrew or SDK policy on unrelated hosts.
+        : "${DEVELOPER_DIR:?macOS wrapper did not set DEVELOPER_DIR}"
+        : "${SDKROOT:?macOS wrapper did not set SDKROOT}"
+        : "${MACOS_SDK_VERSION:?macOS wrapper did not set MACOS_SDK_VERSION}"
+        : "${CC:?macOS wrapper did not set CC}"
+        : "${CXX:?macOS wrapper did not set CXX}"
+        : "${OBJC:?macOS wrapper did not set OBJC}"
+        : "${CC_FOR_BUILD:?macOS wrapper did not set CC_FOR_BUILD}"
+        : "${CXX_FOR_BUILD:?macOS wrapper did not set CXX_FOR_BUILD}"
+        : "${OBJC_FOR_BUILD:?macOS wrapper did not set OBJC_FOR_BUILD}"
+
+        if [[ -z "${STRIP_FOR_BUILD:-}" ]]; then
+            source "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+            STRIP_FOR_BUILD="$(whp_apple_find_tool strip system)" || return 1
+            export STRIP_FOR_BUILD
+        fi
+
+        if [[ "$MACOS_ARCH_FLAGS" == 1 ]]; then
+            whp_append_flag CFLAGS "-arch $HOST_ARCH"
+            whp_append_flag CXXFLAGS "-arch $HOST_ARCH"
+            whp_append_flag OBJCFLAGS "-arch $HOST_ARCH"
+            whp_append_flag LDFLAGS "-arch $HOST_ARCH"
+        fi
+
+        # Meson's host discovery uses one selected package-manager prefix.
+        # Firmware and compiler bootstraps keep their own tools/ABI settings.
+        WHP_MACOS_DEPENDENCY_PROVIDER="${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}"
+        case "$WHP_MACOS_DEPENDENCY_PROVIDER" in
+            auto|homebrew|macports|system) ;;
+            *)
+                printf 'error: invalid WHP_MACOS_DEPENDENCY_PROVIDER: %s\n' \
+                    "$WHP_MACOS_DEPENDENCY_PROVIDER" >&2
+                return 1
+                ;;
+        esac
+        if [[ "$WHP_MACOS_DEPENDENCY_PROVIDER" == auto ]]; then
+            if command -v brew >/dev/null 2>&1; then
+                WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
+            elif [[ -x "${MACPORTS_PREFIX:-/opt/local}/bin/port" ]]; then
+                WHP_MACOS_DEPENDENCY_PROVIDER=macports
+            else
+                WHP_MACOS_DEPENDENCY_PROVIDER=system
+            fi
+        fi
+
+        case "$WHP_MACOS_DEPENDENCY_PROVIDER" in
+            homebrew)
+                if ! command -v brew >/dev/null 2>&1; then
+                    printf 'error: Homebrew selected but brew is unavailable\n' >&2
+                    return 1
+                fi
+                HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-$(brew --prefix)}"
+                case "$HOST_ARCH" in
+                    arm64) expected_homebrew_prefix=/opt/homebrew ;;
+                    x86_64) expected_homebrew_prefix=/usr/local ;;
+                esac
+                if [[ "$HOMEBREW_PREFIX" != "$expected_homebrew_prefix" &&
+                      "$MACOS_ALLOW_MIXED_HOMEBREW" != 1 ]]; then
+                    printf '%s\n' \
+                        "error: Homebrew prefix $HOMEBREW_PREFIX does not match $HOST_ARCH." \
+                        "expected: $expected_homebrew_prefix" \
+                        'set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional custom layout.' >&2
+                    return 1
+                fi
+                export PATH="$HOMEBREW_PREFIX/bin:$PATH"
+                homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
+                export PKG_CONFIG_PATH="$homebrew_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
+                export CMAKE_PREFIX_PATH="$HOMEBREW_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                ;;
+            macports)
+                MACPORTS_PREFIX="${MACPORTS_PREFIX:-/opt/local}"
+                if [[ ! -x "$MACPORTS_PREFIX/bin/port" ]]; then
+                    printf 'error: MacPorts selected but %s/bin/port is unavailable\n' \
+                        "$MACPORTS_PREFIX" >&2
+                    return 1
+                fi
+                if [[ -x "$MACPORTS_PREFIX/bin/pkg-config" ]]; then
+                    macports_pc_tool="$MACPORTS_PREFIX/bin/pkg-config"
+                elif [[ -x "$MACPORTS_PREFIX/bin/pkgconf" ]]; then
+                    macports_pc_tool="$MACPORTS_PREFIX/bin/pkgconf"
+                else
+                    printf 'error: MacPorts needs pkg-config or pkgconf under %s/bin\n' \
+                        "$MACPORTS_PREFIX" >&2
+                    return 1
+                fi
+                export MACPORTS_PREFIX
+                export PATH="$MACPORTS_PREFIX/bin:$PATH"
+                # Prevent fallback to another manager's built-in pkg-config
+                # directories while allowing deliberate custom overlays.
+                export PKG_CONFIG="$macports_pc_tool"
+                export PKG_CONFIG_FOR_BUILD="$macports_pc_tool"
+                macports_pc="$MACPORTS_PREFIX/lib/pkgconfig:$MACPORTS_PREFIX/share/pkgconfig"
+                export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$macports_pc}"
+                export PKG_CONFIG_PATH="$macports_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
+                export CMAKE_PREFIX_PATH="$MACPORTS_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                ;;
+            system) ;;
+        esac
+        export WHP_MACOS_DEPENDENCY_PROVIDER
+    else
+        export CC_FOR_BUILD="${CC_FOR_BUILD:-${CC:-cc}}"
+        export CXX_FOR_BUILD="${CXX_FOR_BUILD:-${CXX:-c++}}"
+        export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-${OBJC:-$CC_FOR_BUILD}}"
+        export STRIP_FOR_BUILD="${STRIP_FOR_BUILD:-strip}"
+    fi
+
+    # Resolve build-machine metadata once after Homebrew/MacPorts selection.
+    # Do not replace PKG_CONFIG, whose provider wrapper and target role are
+    # resolved separately. Missing optional pkg-config retains the old
+    # fallback; an invalid explicit override fails closed.
+    if [[ -n "${WHP_PKG_CONFIG_SEED:-}" || -n "${PKG_CONFIG_FOR_BUILD:-}" ||
+          -n "${PKG_CONFIG:-}" ]] ||
+       command -v pkg-config >/dev/null 2>&1 ||
+       command -v pkgconf >/dev/null 2>&1; then
+        PKG_CONFIG_FOR_BUILD="$(/bin/sh "$SOURCE_DIR/seeds/pkg-config.sh" --print-seed)" || return 1
+    else
+        PKG_CONFIG_FOR_BUILD=pkg-config
+    fi
+    export PKG_CONFIG_FOR_BUILD
+
+    # Compiler cache wrapping belongs to builder.sh after COMPILER_CACHE is
+    # resolved. Host-tool discovery must not enable caching implicitly.
+}
+
+whp_prepare_build_tools()
+{
+    # MAKE_CMD and MAKE are two spellings of the same host-tool selection.
+    # Honor either one so early bootstraps and the later QEMU/firmware graph
+    # cannot silently switch to a different GNU Make executable.
+    local requested_make="${MAKE_CMD:-${MAKE:-}}"
+
+    if command -v nproc >/dev/null 2>&1; then
+        DEFAULT_JOBS="$(nproc)"
+    elif command -v sysctl >/dev/null 2>&1; then
+        DEFAULT_JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '1')"
+    elif command -v getconf >/dev/null 2>&1; then
+        DEFAULT_JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1')"
+    else
+        DEFAULT_JOBS=1
+    fi
+    case "$DEFAULT_JOBS" in
+        ''|*[!0-9]*|0) DEFAULT_JOBS=1 ;;
+    esac
+    JOBS="${JOBS:-$DEFAULT_JOBS}"
+
+    if [[ -n "$requested_make" ]]; then
+        MAKE_CMD="$(whp_resolve_gnu_make "$requested_make" || true)"
+        if [[ -z "$MAKE_CMD" ]]; then
+            printf '%s\n' \
+                "error: MAKE_CMD does not identify GNU Make: $requested_make" \
+                'Set MAKE_CMD to a GNU Make executable (often gmake on BSD hosts).' >&2
+            return 1
+        fi
+    else
+        MAKE_CMD="$(whp_find_gnu_make || true)"
+    fi
+
+    if [[ -z "${NINJA_CMD:-}" ]]; then
+        if command -v ninja >/dev/null 2>&1; then
+            NINJA_CMD="$(command -v ninja)"
+        elif command -v ninja-build >/dev/null 2>&1; then
+            NINJA_CMD="$(command -v ninja-build)"
+        else
+            NINJA_CMD=""
+        fi
+    fi
+
+    if [[ -n "$MAKE_CMD" ]]; then
+        export MAKE="$MAKE_CMD"
+    fi
+}
+
+whp_add_optional_configure_switch()
+{
+    local state="$1"
+    local feature="$2"
+
+    case "$state" in
+        1) configure_args+=("--enable-$feature") ;;
+        0) configure_args+=("--disable-$feature") ;;
+        auto) ;;
+    esac
+}
+
+whp_prepare_configure_args()
+{
+    configure_args=(
+        --cc="${CC:-cc}"
+        --host-cc="$CC_FOR_BUILD"
+        --cxx="${CXX:-c++}"
+        --prefix="$PREFIX"
+        -Dc_std="$QEMU_C_STANDARD"
+        -Dcpp_std="$QEMU_CXX_STANDARD"
+    )
+
+    if [[ -n "$QEMU_TARGET_LIST" ]]; then
+        configure_args+=(--target-list="$QEMU_TARGET_LIST")
+    else
+        configure_args+=(--disable-system)
+    fi
+
+    if [[ "$BUILD_QEMU_IMG" == 1 ]]; then
+        configure_args+=(--enable-tools)
+    else
+        configure_args+=(--disable-tools)
+    fi
+
+    configure_args+=("-Db_pgo=$QEMU_HOST_PGO")
+    if [[ "$QEMU_FDT_MODE" != auto ]]; then
+        configure_args+=("-Dfdt=$QEMU_FDT_MODE")
+    fi
+    whp_add_optional_configure_switch "$QEMU_HOST_LTO" lto
+    case "$QEMU_HOST_LTO_MODE" in
+        thin) configure_args+=(-Db_lto_mode=thin) ;;
+        full) configure_args+=(-Db_lto_mode=default -Db_thinlto_cache=false) ;;
+    esac
+    if [[ "$HOST_OS" == Darwin ]]; then
+        # WHP macOS builds are intentionally TCG-only. KVM is Linux-only, and
+        # auto-detected HVF would otherwise add host-hypervisor code and signing
+        # entitlements to native-architecture emulators.
+        configure_args+=(--disable-kvm --disable-hvf)
+    fi
+    if [[ "$HOST_OS" == Darwin && "$QEMU_HOST_MODULES" == auto ]]; then
+        # QEMU already isolates optional host backends/devices as DSOs.
+        # Prefer dyld-backed modules on macOS instead of folding them into
+        # every emulator executable when static linking was not requested.
+        configure_args+=(--enable-modules)
+    else
+        whp_add_optional_configure_switch "$QEMU_HOST_MODULES" modules
+    fi
+    whp_add_optional_configure_switch "$MACOS_ENABLE_GTK" gtk
+    whp_add_optional_configure_switch "$MACOS_ENABLE_PA" pa
+
+    if [[ "$HOST_OS" == Darwin ]]; then
+        # Keep ThinLTO inside the same macOS power budget as normal
+        # compilation so the backend cannot silently expand to every CPU.
+        configure_args+=("-Db_lto_threads=$JOBS")
+        configure_args+=(--objcc="$OBJC")
+        whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
+        whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio
+
+        macos_audio_drivers=
+        if [[ "$MACOS_ENABLE_COREAUDIO" == 1 ]]; then
+            macos_audio_drivers=coreaudio
+        fi
+        if [[ "$MACOS_ENABLE_PA" == 1 ]]; then
+            if [[ -n "$macos_audio_drivers" ]]; then
+                macos_audio_drivers+=,pa
+            else
+                macos_audio_drivers=pa
+            fi
+        fi
+        if [[ -n "$macos_audio_drivers" ]]; then
+            configure_args+=(--audio-drv-list="$macos_audio_drivers")
+        fi
+    fi
+}
+
+whp_prepare_build()
+{
+    whp_prepare_host_identity
+    whp_prepare_build_defaults
+    whp_apply_requested_build_targets "$@"
+    whp_prepare_host_tools
+    whp_prepare_build_tools
+    whp_prepare_configure_args
+}

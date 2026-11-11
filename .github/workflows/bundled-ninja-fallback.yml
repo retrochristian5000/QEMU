@@ -1,0 +1,181 @@
+name: Bundled Ninja fallback
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.gitmodules'
+      - 'toolchains/ninja-builder'
+      - 'build.sh'
+      - 'builder.sh'
+      - 'scripts/ensure-ninja.py'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/tests/test-bundled-ninja-fallback.py'
+      - 'scripts/whp-build/sccache-policy.sh'
+      - 'docs/devel/sccache-build-memory.rst'
+      - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'scripts/tests/test-ninja-macos-host-compiler.py'
+      - 'scripts/tests/test-ninja-memory-budget.py'
+      - 'scripts/tests/test-ninja-bootstrap-call-contract.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - '.github/workflows/bundled-ninja-fallback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundled-ninja:
+    name: Check pinned Ninja fallback (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+          - macos-26
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out QEMU
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate fallback policy
+        run: |
+          python3 -m py_compile \
+            scripts/ensure-ninja.py \
+            scripts/tests/test-bundled-ninja-fallback.py \
+            scripts/tests/test-compiler-cache-policy.py \
+            scripts/tests/test-ninja-macos-host-compiler.py \
+            scripts/tests/test-ninja-memory-budget.py \
+            scripts/tests/test-ninja-bootstrap-call-contract.py
+          sh -n build.sh
+          sh -n builder.sh
+          python3 scripts/tests/test-bundled-ninja-fallback.py
+          python3 scripts/tests/test-compiler-cache-policy.py
+          python3 scripts/tests/test-ninja-macos-host-compiler.py
+          python3 scripts/tests/test-ninja-memory-budget.py
+          python3 scripts/tests/test-ninja-bootstrap-call-contract.py
+
+      - name: Bootstrap pinned Ninja through compiler cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          qemu_build="$RUNNER_TEMP/qemu-build"
+          fake_target_cxx=''
+          fake_cache_bin="$RUNNER_TEMP/compiler-cache-bin"
+          mkdir -p "$fake_cache_bin"
+          cat >"$fake_cache_bin/ccache" <<'EOF'
+          #!/bin/sh
+          exec "$@"
+          EOF
+          chmod +x "$fake_cache_bin/ccache"
+          export PATH="$fake_cache_bin:$PATH"
+          export COMPILER_CACHE=ccache
+
+          # Reproduce the macOS failure mode: QEMU's target CXX can be a
+          # self-built aarch64-apple-darwin Clang without an SDK sysroot. It
+          # must never compile a build-machine tool such as Ninja. The fake
+          # compiler advertises itself as Clang but fails exactly like the
+          # observed libc++ header error if it is accidentally selected.
+          if [[ "$(uname -s)" == Darwin ]]; then
+            fake_target_cxx="$RUNNER_TEMP/target-clang++"
+            cat >"$fake_target_cxx" <<'EOF'
+          #!/bin/sh
+          if [ "${1:-}" = "--version" ]; then
+              echo 'WHP target clang version 0.0.0'
+              exit 0
+          fi
+          echo "fatal error: 'errno.h' file not found" >&2
+          exit 1
+          EOF
+            chmod +x "$fake_target_cxx"
+            export CXX="$fake_target_cxx"
+            unset CXX_FOR_BUILD
+          fi
+
+          first="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
+          test -x "$first"
+          "$first" --version
+
+          # The fork caps only automatically chosen jobs; an explicit -j
+          # remains authoritative.  Probe parser behavior on the built binary.
+          NINJA_AUTO_JOBS=1 "$first" -h >"$RUNNER_TEMP/ninja-auto-help" 2>&1 || true
+          grep -Fq '[default=1 on this system]' "$RUNNER_TEMP/ninja-auto-help"
+          NINJA_AUTO_JOBS=1 "$first" -j 3 -h >"$RUNNER_TEMP/ninja-explicit-help" 2>&1 || true
+          grep -Fq '[default=3 on this system]' "$RUNNER_TEMP/ninja-explicit-help"
+          if NINJA_AUTO_JOBS=invalid "$first" -h >"$RUNNER_TEMP/ninja-bad-budget" 2>&1; then
+            echo 'error: Ninja accepted invalid auto-job budget' >&2
+            exit 1
+          fi
+          grep -Fq 'invalid NINJA_AUTO_JOBS' "$RUNNER_TEMP/ninja-bad-budget"
+          marker="$(dirname "$first")/.whp-ninja-tool"
+          test -f "$marker"
+          test -d "$RUNNER_TEMP/.whp-compiler-cache"
+          find "$RUNNER_TEMP/.whp-compiler-cache" -maxdepth 1 -type d -name 'ccache-*' | grep -q .
+          before="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
+          second="$(python3 scripts/ensure-ninja.py --build-dir "$qemu_build")"
+          after="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_mtime_ns}:{s.st_size}")' "$marker")"
+          test "$first" = "$second"
+          test "$before" = "$after"
+          grep -Fq 'NINJA_GIT_COMMIT=' "$marker"
+          grep -Fxq 'NINJA_BOOTSTRAP_SCHEMA=5' "$marker"
+
+          # Compiler caching is an input to the build process, not part of the
+          # published Ninja helper's cache identity or QEMU installation ABI.
+          if grep -Fq "$fake_cache_bin/ccache" "$marker"; then
+            echo 'error: compiler-cache path leaked into Ninja artifact identity' >&2
+            exit 1
+          fi
+
+          if [[ "$(uname -s)" == Darwin ]]; then
+            host_cxx="$(xcrun --sdk macosx --find clang++)"
+            grep -Fxq "CXX=$host_cxx" "$marker"
+            if grep -Fq "$fake_target_cxx" "$marker"; then
+              echo 'error: target CXX leaked into macOS Ninja host bootstrap' >&2
+              exit 1
+            fi
+
+            case "$(uname -m)" in
+              arm64)
+                macos_major="$(sw_vers -productVersion | cut -d. -f1)"
+                if (( macos_major >= 26 )); then
+                  expected_arch=arm64e
+                else
+                  expected_arch=arm64
+                fi
+                grep -Fxq "NINJA_MACOS_ARCH=$expected_arch" "$marker"
+                lipo -archs "$first" | tr ' ' '\n' | grep -Fxq "$expected_arch"
+                file "$first" | grep -Fq "$expected_arch"
+                if [[ "$expected_arch" == arm64e ]]; then
+                  # Exercise real ARM64e process creation in addition to --version:
+                  # an absolute-path command takes Ninja's direct spawn path,
+                  # while a pipeline must retain /bin/sh semantics.
+                  smoke_dir="$RUNNER_TEMP/ninja-arm64e-smoke"
+                  mkdir -p "$smoke_dir"
+                  printf '%s\n' \
+                    'rule direct' \
+                    '  command = /usr/bin/touch $out' \
+                    'rule shell' \
+                    '  command = echo arm64e | /usr/bin/tee $out' \
+                    'build first: direct' \
+                    'build second: direct' \
+                    'build result: shell first second' \
+                    'default result' > "$smoke_dir/build.ninja"
+                  NINJA_CRITICAL_PATH_TIMES=1 "$first" -C "$smoke_dir" -j 3
+                  test -f "$smoke_dir/first"
+                  test -f "$smoke_dir/second"
+                  grep -Fxq arm64e "$smoke_dir/result"
+                  no_op_output="$("$first" -C "$smoke_dir" -j 3)"
+                  [[ "$no_op_output" == *'no work to do.'* ]]
+                fi
+                ;;
+              x86_64)
+                grep -Fxq 'NINJA_MACOS_ARCH=x86_64' "$marker"
+                lipo -archs "$first" | tr ' ' '\n' | grep -Fxq x86_64
+                ;;
+            esac
+          else
+            grep -Fxq 'NINJA_MACOS_ARCH=' "$marker"
+          fi

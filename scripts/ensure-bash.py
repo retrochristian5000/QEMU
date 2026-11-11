@@ -1,0 +1,634 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import pathlib
+import platform
+import shlex
+import shutil
+import struct
+import subprocess
+import sys
+import tarfile
+import tempfile
+from typing import List
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
+SUBMODULE_REL = pathlib.Path("toolchains/bash")
+SUBMODULE_DIR = ROOT / SUBMODULE_REL
+BASH_BOOTSTRAP_SCHEMA = "4"
+BASH_CONFIGURE_ARGS = (
+    "--without-bash-malloc",
+    "--disable-nls",
+    "--disable-readline",
+    "--disable-history",
+    "--disable-bang-history",
+    "--disable-progcomp",
+    "--disable-alias",
+    "--disable-directory-stack",
+    "--disable-coprocesses",
+    "--disable-net-redirections",
+    "--disable-restricted",
+    "--disable-debugger",
+    "--disable-function-import",
+)
+
+# The managed shell is an implementation shell, not an interactive terminal.
+# Keep a direct runtime probe for Bash syntax/features used by the WHP modules
+# so future configure pruning cannot silently produce a shell that starts but
+# cannot execute the build graph.
+BASH_REQUIRED_FEATURE_PROBE = (
+    'whp_probe_array=(one two); '
+    '[[ "${#whp_probe_array[@]}" -eq 2 ]] || exit 1; '
+    '(( whp_probe_value = 1 + 1 )); '
+    '[[ "$whp_probe_value" -eq 2 ]] || exit 1; '
+    'IFS= read -r whp_probe_line < <(printf "%s\\n" process-substitution); '
+    '[[ "$whp_probe_line" == process-substitution ]] || exit 1'
+)
+
+
+def run_text(
+    command: List[str],
+    *,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    completed = subprocess.run(
+        command, cwd=cwd, env=env, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"command failed: {' '.join(command)}"
+            + (f": {detail}" if detail else "")
+        )
+    return completed.stdout.strip()
+
+
+def run_logged(
+    command: List[str],
+    *,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
+    completed = subprocess.run(
+        command, cwd=cwd, env=env,
+        stdout=sys.stderr, stderr=sys.stderr, check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"command failed with exit status {completed.returncode}: "
+            + " ".join(command)
+        )
+
+
+def git_checkout_available() -> bool:
+    return shutil.which("git") is not None and (ROOT / ".git").exists()
+
+
+def archive_source_signature() -> str:
+    candidates = (
+        SUBMODULE_DIR / "configure",
+        SUBMODULE_DIR / "Makefile.in",
+        SUBMODULE_DIR / "version.c",
+    )
+    if not candidates[0].is_file():
+        raise RuntimeError(
+            f"bundled Bash source is unavailable: {SUBMODULE_DIR}; "
+            "initialize toolchains/bash or use a Git checkout"
+        )
+    digest = hashlib.sha256()
+    for path in candidates:
+        if not path.is_file():
+            continue
+        digest.update(str(path.relative_to(SUBMODULE_DIR)).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return f"archive-{digest.hexdigest()}"
+
+
+def copy_bash_source(revision: str, destination: pathlib.Path) -> None:
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
+        # A captured git archive holds the entire source tar in Python's
+        # heap (and BytesIO can retain another large buffer). Stream directly
+        # to tarfile instead; macOS Bash bootstrapping must not need RAM
+        # proportional to the size of the complete source tree.
+        # Spool stderr to disk to avoid deadlocking on a full stderr pipe.
+        with tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(
+                [
+                    "git", "-C", str(SUBMODULE_DIR),
+                    "archive", "--format=tar", revision,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=errors,
+            )
+            try:
+                destination.mkdir(parents=True, exist_ok=True)
+                if process.stdout is None:
+                    raise RuntimeError("git archive stdout is unavailable")
+                with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                    archive.extractall(destination)
+                # Consume any tar padding while keeping memory bounded.
+                while process.stdout.read(65536):
+                    pass
+                if process.wait() != 0:
+                    errors.seek(0)
+                    detail = errors.read(16384).decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise RuntimeError(
+                        f"could not archive pinned Bash revision {revision}"
+                        + (f": {detail}" if detail else "")
+                    )
+            except Exception as exc:
+                # A malformed archive or failed git must not leave a partial
+                # Bash source tree that a later configure could accidentally use.
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+                shutil.rmtree(destination, ignore_errors=True)
+                if isinstance(exc, tarfile.TarError):
+                    errors.seek(0)
+                    detail = errors.read(16384).decode(
+                        "utf-8", errors="replace"
+                    ).strip()
+                    raise RuntimeError(
+                        f"could not archive pinned Bash revision {revision}: "
+                        + (detail or str(exc))
+                    ) from exc
+                raise
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
+        return
+
+    shutil.copytree(
+        SUBMODULE_DIR,
+        destination,
+        ignore=shutil.ignore_patterns(".git"),
+    )
+
+
+def ensure_bash_source() -> str:
+    if not git_checkout_available():
+        return archive_source_signature()
+
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
+
+    dirty = run_text([
+        "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
+        "--untracked-files=no",
+    ])
+    if dirty:
+        print(
+            "WHP Bash bootstrap: tracked submodule changes are preserved "
+            "and excluded from the pinned build:\n" + dirty,
+            file=sys.stderr,
+        )
+    return revision
+
+
+def command_path(name: str, env_name: str | None = None) -> str:
+    requested = os.environ.get(env_name, "") if env_name else ""
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError(f"{env_name} must name exactly one executable")
+        candidate = argv[0]
+        path = (
+            candidate
+            if pathlib.Path(candidate).is_absolute()
+            else shutil.which(candidate)
+        )
+        if path and pathlib.Path(path).exists():
+            return str(path)
+        raise RuntimeError(f"{env_name} is not executable: {candidate}")
+
+    names = ("gmake", "make") if name == "make" else (name,)
+    for candidate in names:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    raise RuntimeError(f"{name} is required to bootstrap bundled Bash")
+
+
+def select_c_compiler() -> str:
+    requested = os.environ.get("CC_FOR_BUILD", "")
+    if requested:
+        argv = shlex.split(requested)
+        if len(argv) != 1:
+            raise RuntimeError("CC_FOR_BUILD must name exactly one executable")
+        candidate = argv[0]
+        path = candidate if pathlib.Path(candidate).is_absolute() else shutil.which(candidate)
+        if path and pathlib.Path(path).exists():
+            return str(path)
+        raise RuntimeError(f"CC_FOR_BUILD is not executable: {candidate}")
+
+    adapter = ROOT / "seeds" / "cc.sh"
+    if adapter.is_file() and os.access(adapter, os.X_OK):
+        completed = subprocess.run(
+            [str(adapter), "--print-cc"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode == 0 and candidate:
+            return candidate
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU cc.sh could not resolve the Bash bootstrap compiler"
+            + (f": {detail}" if detail else "")
+        )
+
+    raise RuntimeError("a native build C compiler is required to bootstrap Bash")
+
+
+def compiler_version(cc: str) -> str:
+    output = run_text([cc, "--version"])
+    return output.splitlines()[0] if output else ""
+
+
+def macos_compile_flags(
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+) -> list[str]:
+    return [
+        "-arch", arch,
+        "-isysroot", sdkroot,
+        f"-mmacosx-version-min={deployment}",
+    ]
+
+
+def macos_host_triplet(arch: str, darwin_release: str) -> str:
+    cpu = {
+        "arm64": "aarch64",
+        "arm64e": "arm64e",
+        "x86_64": "x86_64",
+    }.get(arch)
+    if cpu is None:
+        raise RuntimeError(f"unsupported macOS Bash architecture: {arch}")
+    if not darwin_release:
+        raise RuntimeError("Darwin release is required for the Bash host triplet")
+    return f"{cpu}-apple-darwin{darwin_release}"
+
+
+def mach_o_is_arm64e(path: pathlib.Path) -> bool:
+    """Verify the Mach-O CPU subtype, not just a claimed Bash MACHTYPE.
+
+    A successful compiler invocation or --host=arm64e configure argument
+    does not prove that the linked executable contains an arm64e slice.
+    The managed -arch build is thin, so reject fat/unknown headers here.
+    """
+    try:
+        with path.open("rb") as binary:
+            header = binary.read(12)
+    except OSError:
+        return False
+    if len(header) != 12:
+        return False
+    magic, cpu_type, cpu_subtype = struct.unpack("<III", header)
+    return (
+        magic == 0xFEEDFACF  # MH_MAGIC_64, little-endian
+        and cpu_type == 0x0100000C  # CPU_TYPE_ARM64
+        and (cpu_subtype & 0x00FFFFFF) == 2  # CPU_SUBTYPE_ARM64E
+    )
+
+
+def macos_arch_usable(
+    cc: str,
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+) -> bool:
+    flags = macos_compile_flags(sdkroot, arch, deployment)
+    with tempfile.TemporaryDirectory(prefix="whp-bash-arch-probe-") as tmp:
+        root = pathlib.Path(tmp)
+        source = root / "probe.c"
+        binary = root / "probe"
+        source.write_text(
+            "int main(void) { return 0; }\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [cc, *flags, str(source), "-o", str(binary)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return False
+        if arch == "arm64e" and not mach_o_is_arm64e(binary):
+            return False
+        completed = subprocess.run(
+            [str(binary)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return completed.returncode == 0
+
+
+# Bash reads BASH_ENV for non-interactive invocations, even with --noprofile
+# and --norc. A user's hook or imported SHELLOPTS must not turn a healthy
+# cached build shell into a false cache miss or invalidate its MACHTYPE.
+# Only sanitize Bash's startup controls, not the selected ABI/SDK inputs.
+BASH_PROBE_ENV_VARS = (
+    "BASH_ENV", "ENV", "POSIXLY_CORRECT", "SHELLOPTS", "BASHOPTS",
+)
+
+
+def bash_probe_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in BASH_PROBE_ENV_VARS:
+        env.pop(key, None)
+    return env
+
+
+def bash_machtype(path: pathlib.Path) -> str:
+    return run_text([
+        str(path), "--noprofile", "--norc", "-c",
+        'printf "%s\\n" "$MACHTYPE"',
+    ], env=bash_probe_env())
+
+
+def bash_matches_host(path: pathlib.Path, expected: str) -> bool:
+    if not expected:
+        return True
+    try:
+        return bash_machtype(path) == expected
+    except (OSError, RuntimeError):
+        return False
+
+
+def macos_settings() -> tuple[str, str, str]:
+    if platform.system() != "Darwin":
+        return "", "", ""
+
+    if not shutil.which("xcrun"):
+        raise RuntimeError("xcrun is required to locate the macOS SDK for Bash")
+    sdkroot = os.environ.get("SDKROOT") or run_text(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"]
+    )
+    if not pathlib.Path(sdkroot).is_dir():
+        raise RuntimeError(f"macOS SDK does not exist: {sdkroot}")
+
+    arch = os.environ.get("WHP_MACOS_ARCH", "auto")
+    if arch == "auto":
+        machine = platform.machine().lower()
+        if machine in ("arm64", "aarch64"):
+            arch = "arm64"
+        elif machine in ("x86_64", "amd64"):
+            arch = "x86_64"
+        else:
+            raise RuntimeError(f"unsupported macOS architecture: {machine}")
+    if arch not in ("arm64", "arm64e", "x86_64"):
+        raise RuntimeError(f"unsupported WHP_MACOS_ARCH for Bash: {arch}")
+
+    deployment = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "")
+    if not deployment:
+        version = platform.mac_ver()[0]
+        parts = version.split(".")
+        deployment = ".".join(parts[:2]) if version else "11.0"
+
+    return sdkroot, arch, deployment
+
+
+def bash_usable(path: pathlib.Path) -> bool:
+    if not path.is_file():
+        return False
+    completed = subprocess.run(
+        [
+            str(path), "--noprofile", "--norc", "-c",
+            'test -n "$BASH_VERSION" && '
+            '(( BASH_VERSINFO[0] > 3 || '
+            '(BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] >= 2) )) && '
+            + BASH_REQUIRED_FEATURE_PROBE,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=bash_probe_env(),
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def bootstrap_job_limit() -> int:
+    """Limit implicit bootstrap parallelism; honor validated explicit JOBS."""
+    explicit = os.environ.get("JOBS", "")
+    if not explicit:
+        return min(2, os.cpu_count() or 1)
+    if not explicit.isascii() or not explicit.isdecimal() or len(explicit) > 10:
+        raise RuntimeError("Bash bootstrap JOBS must be a positive integer")
+    jobs = int(explicit)
+    if jobs < 1 or jobs > 2147483647:
+        raise RuntimeError("Bash bootstrap JOBS must be between 1 and 2147483647")
+    return jobs
+
+
+def publish_bash(
+    built_binary: pathlib.Path,
+    prefix: pathlib.Path,
+    marker: str,
+) -> None:
+    """Publish only the validated build shell, retaining the previous on failure."""
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    staging = pathlib.Path(tempfile.mkdtemp(
+        prefix=f"{prefix.name}.new.", dir=prefix.parent,
+    ))
+    backup = prefix.with_name(f"{prefix.name}.old.{os.getpid()}")
+    try:
+        installed = staging / "bin" / "bash"
+        installed.parent.mkdir(parents=True)
+        shutil.copy2(built_binary, installed)
+        (staging / ".whp-bash-bootstrap").write_text(marker, encoding="utf-8")
+
+        if backup.exists():
+            raise RuntimeError(f"old Bash backup already exists: {backup}")
+        if prefix.exists():
+            prefix.rename(backup)
+        try:
+            staging.rename(prefix)
+        except OSError:
+            if backup.exists() and not prefix.exists():
+                backup.rename(prefix)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def marker_text(
+    revision: str,
+    cc: str,
+    sdkroot: str,
+    arch: str,
+    deployment: str,
+    host_triplet: str,
+) -> str:
+    abi_variant = "arm64e" if arch == "arm64e" else "base"
+    return (
+        f"BASH_BOOTSTRAP_SCHEMA={BASH_BOOTSTRAP_SCHEMA}\n"
+        f"BASH_GIT_COMMIT={revision}\n"
+        f"HOST_SYSTEM={platform.system()}\n"
+        f"HOST_MACHINE={platform.machine()}\n"
+        f"CC={cc}\n"
+        f"CC_VERSION={compiler_version(cc)}\n"
+        f"SDKROOT={sdkroot}\n"
+        f"WHP_MACOS_ARCH={arch}\n"
+        f"BASH_HOST_TRIPLET={host_triplet}\n"
+        f"BASH_ABI_VARIANT={abi_variant}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={deployment}\n"
+        f"CONFIGURE_ARGS={shlex.join(BASH_CONFIGURE_ARGS)}\n"
+        "BASH_MALLOC=system\n"
+        "NLS=disabled\n"
+    )
+
+
+def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
+    revision = ensure_bash_source()
+    cc = select_c_compiler()
+    make = command_path("make", "MAKE")
+    sdkroot, arch, deployment = macos_settings()
+    host_triplet = (
+        macos_host_triplet(arch, platform.release()) if sdkroot else ""
+    )
+
+    prefix = build_root / "deps" / "bash"
+    work_dir = build_root / "bootstrap" / "bash"
+    source_copy = work_dir / "source"
+    object_dir = work_dir / "build"
+    marker = marker_text(
+        revision, cc, sdkroot, arch, deployment, host_triplet,
+    )
+    marker_file = prefix / ".whp-bash-bootstrap"
+    bash_path = prefix / "bin" / "bash"
+
+    if (
+        marker_file.is_file()
+        and marker_file.read_text(encoding="utf-8", errors="replace") == marker
+        and bash_usable(bash_path)
+        and bash_matches_host(bash_path, host_triplet)
+        and (arch != "arm64e" or mach_o_is_arm64e(bash_path))
+    ):
+        return bash_path
+
+    if arch == "arm64e" and not macos_arch_usable(
+        cc, sdkroot, arch, deployment,
+    ):
+        raise RuntimeError(
+            "requested arm64e Bash, but the selected compiler/SDK/"
+            "deployment target cannot compile, link, and execute it"
+        )
+
+    # Keep the previously validated Bash available until its replacement
+    # passes the full runtime/ABI probes and is ready for atomic publication.
+    shutil.rmtree(work_dir, ignore_errors=True)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    copy_bash_source(revision, source_copy)
+    object_dir.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    # INSTALL is an Autoconf/Make command variable, not WHP build policy.
+    env.pop("INSTALL", None)
+    for key in (
+        "BASH_ENV", "ENV", "POSIXLY_CORRECT", "SHELLOPTS", "BASHOPTS",
+        "CFLAGS", "CPPFLAGS", "LDFLAGS",
+    ):
+        env.pop(key, None)
+    env["CC"] = cc
+
+    if sdkroot:
+        flags = shlex.join(
+            macos_compile_flags(sdkroot, arch, deployment)
+        )
+        env["CFLAGS"] = flags
+        env["LDFLAGS"] = flags
+        env["SDKROOT"] = sdkroot
+        env["MACOSX_DEPLOYMENT_TARGET"] = deployment
+
+    configure = source_copy / "configure"
+    configure_command = [
+        "/bin/sh", str(configure), f"--prefix={prefix}",
+    ]
+    if host_triplet:
+        config_sub = source_copy / "support" / "config.sub"
+        canonical_host = run_text(
+            ["/bin/sh", str(config_sub), host_triplet],
+            cwd=source_copy,
+            env=env,
+        )
+        if canonical_host != host_triplet:
+            raise RuntimeError(
+                "bundled Bash config.sub changed the requested host triplet: "
+                f"{host_triplet} -> {canonical_host}"
+            )
+        # The selected Mach-O ABI is executable on this build machine. Passing
+        # it as both build and host keeps Autoconf's native runtime probes
+        # enabled while preserving arm64e in Bash's MACHTYPE.
+        configure_command.extend([
+            f"--build={host_triplet}",
+            f"--host={host_triplet}",
+        ])
+    configure_command.extend(BASH_CONFIGURE_ARGS)
+
+    print(f"WHP Bash bootstrap: {revision} -> {prefix}", file=sys.stderr)
+    run_logged(configure_command, cwd=object_dir, env=env)
+    jobs = bootstrap_job_limit()
+    print(f"WHP Bash bootstrap build jobs: {jobs}", file=sys.stderr)
+    run_logged([make, "-j", str(jobs)], cwd=object_dir, env=env)
+
+    # QEMU needs only the executable shell. Bash's 'make install' also
+    # recurses through manual pages, translations, docs and loadables.
+    # Verify the actual built program before replacing the cached installation.
+    built_bash = object_dir / "bash"
+    if not bash_usable(built_bash):
+        raise RuntimeError(f"bootstrapped Bash is not usable: {built_bash}")
+    if arch == "arm64e" and not mach_o_is_arm64e(built_bash):
+        raise RuntimeError(
+            "bootstrapped Bash is not a thin arm64e Mach-O executable"
+        )
+    if host_triplet:
+        actual_machtype = bash_machtype(built_bash)
+        if actual_machtype != host_triplet:
+            raise RuntimeError(
+                "bootstrapped Bash reported the wrong MACHTYPE: "
+                f"{actual_machtype} != {host_triplet}"
+            )
+    publish_bash(built_bash, prefix, marker)
+    return bash_path
+
+
+def main(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--build-dir", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        path = bootstrap(pathlib.Path(args.build_dir).expanduser().resolve())
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        print(f"error: WHP Bash bootstrap failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -1,0 +1,12 @@
+diff --git a/src/proxy.c b/src/proxy.c
+--- a/src/proxy.c
++++ b/src/proxy.c
+@@ -366,8 +366,6 @@ static void proxy_complete(Slirp *slirp)
+             slirp_register_poll_socket(so);
+             so->so_state &= ~SS_ISFCONNECTING;
+         } else {
+-            curl_easy_cleanup(easy);
+-            so->proxy_handle = NULL;
+             so->s = SLIRP_INVALID_SOCKET;
+             so->so_state &= SS_PERSISTENT_MASK;
+             so->so_state |= SS_NOFDREF;

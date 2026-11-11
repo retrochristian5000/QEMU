@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+from pathlib import Path
+import os
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[2]
+BOOTSTRAP = ROOT / 'scripts' / 'bootstrap-native-clang.bash'
+
+text = BOOTSTRAP.read_text(encoding='utf-8')
+
+# Native LLVM is a host tool, so its Darwin architecture policy is independent
+# from QEMU TCG's WHP_MACOS_ARCH=auto safety gate. Apple Silicon auto must
+# always use the normal macOS arm64 ABI, even when arm64e is available.
+# Explicit arm64e remains gated by C/C++ ABI + pointer-authentication probes.
+assert 'NATIVE_LLVM_MACOS_ARCH' in text
+assert 'compiler_supports_macos_arch()' in text
+assert 'sdk_real_path="$(cd "$sdkroot" && pwd -P)" || exit 1' in text
+assert 'MacOSX*.sdk) ;;' in text
+assert 'native LLVM host build requires a MacOSX.sdk' in text
+# Even a successfully executed arm64e main() can conceal missing compiler
+# pointer-authentication semantics. Both C and C++ probes must check the ABI
+# and exercise an authenticated indirect function-pointer call.
+arch_probe = text.split('compiler_supports_macos_arch()', 1)[1].split(
+    'if [[ "$host_os" == macos ]]; then', 1
+)[0]
+assert 'arm64e)' in arch_probe
+assert 'arm64)' in arch_probe
+assert 'x86_64)' in arch_probe
+assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in arch_probe
+assert '#if !__has_feature(ptrauth_calls)' in arch_probe
+assert 'int (*volatile callback)(void)' in arch_probe
+assert 'return callback();' in arch_probe
+assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in text
+arch_selection = text.split('case "$requested_macos_arch" in', 2)[2]
+auto_block = arch_selection.split('auto)', 1)[1].split(';;', 1)[0]
+assert 'darwin_cmake_arch=arm64' in auto_block
+assert 'darwin_cmake_arch=arm64e' not in auto_block
+assert 'compiler_supports_macos_arch' not in auto_block
+# The shell combines the C and C++ probes with || across two lines.
+# Match the compound condition while tolerating harmless whitespace changes.
+import re
+assert re.search(
+    r'if\s+!\s+compiler_supports_macos_arch\s+"\$bootstrap_cc"\s+c\s+"\$darwin_cmake_arch"\s*\|\|\s*'
+    r'!\s+compiler_supports_macos_arch\s+"\$bootstrap_cxx"\s+c\+\+\s+"\$darwin_cmake_arch"\s*;\s*then',
+    text,
+) is not None
+assert 'darwin_cmake_arch=arm64e' in text
+assert 'darwin_cmake_arch=arm64' in text
+assert 'WHP native LLVM macOS arch:' in text
+# Unlike the QEMU wrapper, a direct LLVM bootstrap used to have no explicit
+# Apple Silicon macOS 11 deployment floor before CMake and compiler-rt.
+assert '"$host_tag" == aarch64' in text
+assert '10#${deployment_target%%.*} < 11' in text
+assert 'native LLVM arm64/arm64e deployment target must be macOS 11.0 or newer' in text
+
+assert '"$output" >"$log" 2>&1' in text
+assert '#include <TargetConditionals.h>' in arch_probe
+assert 'sizeof(void *) == 8 && sizeof(long) == 8' in arch_probe
+assert 'compiler did not select native arm64 Mach-O ABI' in arch_probe
+assert 'compiler did not select native x86_64 Mach-O ABI' in arch_probe
+assert 'ABI compile/link failed' in arch_probe
+assert 'ABI executable failed' in arch_probe
+
+# The selected Mach-O ABI must be part of the cached toolchain identity so an
+# older arm64 toolchain cannot be reused after an arm64e-capable host switches.
+assert 'MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch' in text
+
+# CMake's parent graph and compiler-rt ExternalProjects must consume the same
+# selected architecture; otherwise clang could be arm64e while its runtimes are
+# silently built for a different ABI.
+assert text.count('-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch') >= 2
+
+# LLVM's CMake-side check must consume CMake's configured Apple target and
+# effective compiler predefines, not infer an arm64e ABI from host hardware.
+llvm_cmake = ROOT / 'toolchains' / 'llvm-project' / 'llvm' / 'CMakeLists.txt'
+llvm_config = ROOT / 'toolchains' / 'llvm-project' / 'llvm' / 'cmake' / 'config-ix.cmake'
+if llvm_cmake.is_file() and llvm_config.is_file():
+    cmake_text = llvm_cmake.read_text(encoding='utf-8')
+    config_text = llvm_config.read_text(encoding='utf-8')
+    assert 'CMAKE_SYSTEM_NAME STREQUAL "Darwin"' in cmake_text
+    assert 'NOT CMAKE_CROSSCOMPILING' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "arm64e"' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"' in cmake_text
+    assert 'CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"' in cmake_text
+    assert '#if !defined(__arm64e__) || !defined(__PTRAUTH__)' in cmake_text
+    assert 'check_cxx_source_compiles' in cmake_text
+    assert 'check_cxx_source_compiles("${_llvm_macos_cxx_sdk_check}"' in cmake_text
+    assert 'set(_llvm_macos_cxx_sdk_check "${_llvm_macos_sdk_check}")' in cmake_text
+    assert '#include <cstddef>' in cmake_text
+    assert '#include <memory>' in cmake_text
+    # A backslash-continued #if can lose its continuation in CMake's
+    # try_compile source string and reject an otherwise valid macOS SDK.
+    sdk_probe_source = cmake_text.split('set(_llvm_macos_sdk_check [[', 1)[1].split(']])', 1)[0]
+    assert '\\' + '\n' not in sdk_probe_source
+    assert 'LLVM_HOST_TRIPLE' in config_text
+    assert 'CMAKE_HOST_APPLE AND CMAKE_SYSTEM_NAME STREQUAL "Darwin"' in config_text
+    assert 'Native macOS LLVM host triple must describe macOS/Darwin' in config_text
+
+# Apple compiler-rt's SME assembly path uses the armv8a+sme driver spelling.
+# Do not normalize it to armv8-a+sme: that form is accepted in other AArch64
+# parser contexts but is rejected by the Apple compiler-rt build path.
+compiler_rt_builtins = (
+    ROOT / 'toolchains' / 'llvm-project' / 'compiler-rt' / 'lib' / 'builtins'
+    / 'CMakeLists.txt'
+)
+if compiler_rt_builtins.is_file():
+    compiler_rt_text = compiler_rt_builtins.read_text(encoding='utf-8')
+    assert '-march=armv8a+sme' in compiler_rt_text
+    assert '-march=armv8-a+sme' not in compiler_rt_text
+
+# The installed compiler must be smoke-tested with the ABI selected for the
+# toolchain itself.  A plain clang invocation defaults back to arm64 on macOS
+# and would therefore fail to prove that an arm64e bootstrap can compile C.
+assert 'smoke_arch_args=(' in text
+assert '-arch "$darwin_cmake_arch"' in text
+assert '"${smoke_arch_args[@]}"' in text
+assert '#ifndef __arm64e__' in text
+assert 'whp_arm64e_fp' in text
+assert '#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)' in text
+assert 'whp_arm64e_cxx_smoke' in text
+
+# LLD ARM64e support is admitted by an authenticated-relocation link probe,
+# not by architecture spelling, a trivial link, or an old blanket prohibition.
+assert 'whp_bootstrap_arm64e_lld_auth_probe()' in text
+assert 'WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"' in text
+probe = (ROOT / 'scripts' / 'whp-build' / 'arm64e-lld-probe.bash').read_text(encoding='utf-8')
+assert 'arm64e-lld-probe.bash' in text
+assert '.quad _whp_auth_target@AUTH(ia,42,addr)' in probe
+assert 'DYLD_CHAINED_PTR_ARM64E_USERLAND24' in probe
+# The otool-style driver shares llvm-objdump's decoder and should provide a
+# second public Mach-O inspection interface without replacing PAC bit tests.
+assert 'llvm-otool' in probe
+assert ' -chained_fixups ' in probe
+assert ' -dyld_info ' in probe
+assert 'bootstrap_lld_arch_ok=0' in text
+assert '"$WHP_ARM64E_USE_LLD" == 1' in text
+assert '"$bootstrap_lld_arch_ok" == 1' in text
+assert text.index('whp_bootstrap_arm64e_lld_auth_probe()') < text.index('-fuse-ld=lld')
+
+print('native LLVM arm64e bootstrap policy: verified')
+
+# Execute the actual Apple architecture selection with synthetic ABI
+# validators. A requested arm64e build used to probe both compilers twice.
+# The same verified C/C++ pair can be reused only inside that invocation.
+arch_begin = text.index(
+    'if [[ "$host_os" == macos ]]; then\n'
+    '    # Only a successful explicit arm64e C *and* C++ admission'
+)
+arch_end = text.index('\ncompiler_supports_cxx_standard()', arch_begin)
+arch_selection = text[arch_begin:arch_end]
+with tempfile.TemporaryDirectory(prefix='whp-llvm-arm64e-once-') as td:
+    probe_log = Path(td) / 'arch-probes'
+
+    def run_arch(requested: str, reject=''):
+        probe_log.unlink(missing_ok=True)
+        env = {
+            **os.environ, 'NATIVE_LLVM_MACOS_ARCH': requested,
+            'WHP_LLVM_ARCH_LOG': str(probe_log),
+            'WHP_LLVM_ARCH_REJECT': reject,
+        }
+        shell = (
+            'set -euo pipefail\n'
+            'host_os=macos\nhost_tag=aarch64\n'
+            'bootstrap_cc=/mock/native-c\nbootstrap_cxx=/mock/native-cxx\n'
+            'sdkroot=/mock/MacOSX.sdk\ndeployment_target=15.0\n'
+            'compiler_cache_cmd=""\n'
+            'compiler_supports_macos_arch() {\n'
+            '  printf "%s|%s\\n" "$2" "$3" >> "$WHP_LLVM_ARCH_LOG"\n'
+            '  [[ "$2" != "$WHP_LLVM_ARCH_REJECT" ]]\n'
+            '}\n' + arch_selection +
+            '\nprintf "selected=%s\\n" "$darwin_cmake_arch"\n'
+        )
+        result = subprocess.run(
+            ['bash', '-c', shell], env=env, text=True,
+            capture_output=True, check=False,
+        )
+        calls = probe_log.read_text().splitlines() if probe_log.exists() else []
+        return result, calls
+
+    passing, calls = run_arch('arm64e')
+    assert passing.returncode == 0, passing.stderr
+    assert passing.stdout == 'selected=arm64e\n', passing.stdout
+    assert calls == ['c|arm64e', 'c++|arm64e'], calls
+    passing, calls = run_arch('auto')
+    assert passing.returncode == 0, passing.stderr
+    assert calls == ['c|arm64', 'c++|arm64'], calls
+    failing, calls = run_arch('arm64e', reject='c++')
+    assert failing.returncode != 0
+    assert calls == ['c|arm64e', 'c++|arm64e'], calls
+    assert 'unsupported' in failing.stderr, failing.stderr
+
+print('native LLVM one-shot arm64e C/C++ probe: verified')
+
+
+# Exercise the actual bootstrap ABI function with a controlled compiler
+# driver. Static string checks cannot establish that the selected ISA is
+# included in the compilation source or that failures remain diagnosable.
+arch_function = (
+    'compiler_supports_macos_arch()\n{' +
+    text.split('compiler_supports_macos_arch()\n{', 1)[1].split(
+        '\nif [[ "$host_os" == macos ]]; then', 1
+    )[0]
+)
+with tempfile.TemporaryDirectory(prefix='whp-llvm-abi-stage-') as td:
+    root = Path(td)
+    fake_cc = root / 'mock-cc'
+    source_file = root / 'source.c'
+    fake_cc.write_text(
+        '#!/bin/sh\n'
+        'out=""\n'
+        'while [ "$#" -gt 0 ]; do\n'
+        '  case "$1" in\n'
+        '    -o) out=$2; shift 2 ;;\n'
+        '    *) shift ;;\n'
+        '  esac\n'
+        'done\n'
+        'cat > "$WHP_ABI_SOURCE_LOG"\n'
+        'if [ "$WHP_ABI_MOCK_MODE" = compile ]; then\n'
+        '  echo "WHP_MOCK_ABI_COMPILE_LINK_FAILURE" >&2\n'
+        '  exit 61\n'
+        'fi\n'
+        'cat > "$out" <<\'SOURCE\'\n'
+        '#!/bin/sh\n'
+        'if [ "$WHP_ABI_MOCK_MODE" = execute ]; then\n'
+        '  echo "WHP_MOCK_ABI_EXEC_FAILURE" >&2\n'
+        '  exit 62\n'
+        'fi\n'
+        'exit 0\n'
+        'SOURCE\n'
+        'chmod +x "$out"\n',
+        encoding='utf-8',
+    )
+    fake_cc.chmod(0o755)
+
+    def run_probe(arch: str, language='c', mode='ok'):
+        source_file.unlink(missing_ok=True)
+        env = dict(
+            os.environ, TMPDIR=str(root),
+            WHP_ABI_SOURCE_LOG=str(source_file),
+            WHP_ABI_MOCK_MODE=mode,
+        )
+        shell = (
+            'set -euo pipefail\n'
+            'sdkroot=/mock/MacOSX.sdk\n'
+            'deployment_target=26.0\n' + arch_function +
+            '\ncompiler_supports_macos_arch "$1" "$2" "$3"\n'
+        )
+        result = subprocess.run(
+            ['bash', '-c', shell, 'whp-abi-probe', str(fake_cc),
+             language, arch],
+            env=env, text=True, capture_output=True, check=False,
+        )
+        # No successful or rejected native probe may leak temporary files.
+        assert not list(root.glob('whp-native-llvm-arch.*'))
+        return result, (
+            source_file.read_text(encoding='utf-8')
+            if source_file.exists() else ''
+        )
+
+    for arch, arch_guard in (
+        ('arm64', '#if !defined(__aarch64__) || defined(__arm64e__)'),
+        ('arm64e', '#if !defined(__arm64e__) || !defined(__PTRAUTH__)'),
+        ('x86_64', '#if !defined(__x86_64__) || defined(__arm64e__)'),
+    ):
+        for language in ('c', 'c++'):
+            outcome, c_source = run_probe(arch, language)
+            assert outcome.returncode == 0, (arch, language, outcome.stderr)
+            assert arch_guard in c_source, (arch, language, c_source)
+            assert '#include <TargetConditionals.h>' in c_source
+            assert 'sizeof(void *) == 8 && sizeof(long) == 8' in c_source
+            assert ('int (*volatile callback)(void)' in c_source) == (
+                arch == 'arm64e'
+            )
+
+    failed, _ = run_probe('arm64', 'c', 'compile')
+    assert failed.returncode != 0
+    assert 'ABI compile/link failed (exit 61)' in failed.stderr
+    assert 'WHP_MOCK_ABI_COMPILE_LINK_FAILURE' in failed.stderr
+    assert 'SDK: /mock/MacOSX.sdk' in failed.stderr
+    assert 'deployment: 26.0' in failed.stderr
+
+    failed, _ = run_probe('arm64e', 'c++', 'execute')
+    assert failed.returncode != 0
+    assert 'ABI executable failed (exit 62)' in failed.stderr
+    assert 'WHP_MOCK_ABI_EXEC_FAILURE' in failed.stderr
+
+    failed, _ = run_probe('other')
+    assert failed.returncode != 0
+    assert 'unsupported native LLVM macOS ABI probe architecture' in failed.stderr
+
+print('native LLVM C/C++ ABI-stage failure diagnostics: verified')

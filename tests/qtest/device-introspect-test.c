@@ -1,0 +1,450 @@
+/*
+ * Device introspection test cases
+ *
+ * Copyright (c) 2015 Red Hat Inc.
+ *
+ * Authors:
+ *  Markus Armbruster <armbru@redhat.com>,
+ *
+ * This work is licensed under the terms of the GNU GPL, version 2 or later.
+ * See the COPYING file in the top-level directory.
+ */
+
+/*
+ * Covers QMP device-list-properties and HMP device_add help.  The generic
+ * sweep primarily checks that QEMU survives; targeted cases also validate
+ * user-facing property output where regressions have been found.
+ */
+
+#include "qemu/osdep.h"
+#include "qobject/qstring.h"
+#include "qobject/qdict.h"
+#include "qobject/qlist.h"
+#include "libqtest.h"
+
+const char common_args[] = "-nodefaults -machine none";
+
+static QList *qom_list_types(QTestState * qts, const char *implements,
+                             bool abstract)
+{
+    QDict *resp;
+    QList *ret;
+    QDict *args = qdict_new();
+
+    qdict_put_bool(args, "abstract", abstract);
+    if (implements) {
+        qdict_put_str(args, "implements", implements);
+    }
+    resp = qtest_qmp(qts, "{'execute': 'qom-list-types', 'arguments': %p }",
+                     args);
+    g_assert(qdict_haskey(resp, "return"));
+    ret = qdict_get_qlist(resp, "return");
+    qobject_ref(ret);
+    qobject_unref(resp);
+    return ret;
+}
+
+/* Build a name -> ObjectTypeInfo index from a ObjectTypeInfo list */
+static QDict *qom_type_index(QList *types)
+{
+    QDict *index = qdict_new();
+    QListEntry *e;
+
+    QLIST_FOREACH_ENTRY(types, e) {
+        QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+        const char *name = qdict_get_str(d, "name");
+        qobject_ref(d);
+        qdict_put(index, name, d);
+    }
+    return index;
+}
+
+/* Check if @parent is present in the parent chain of @type */
+static bool qom_has_parent(QDict *index, const char *type, const char *parent)
+{
+    while (type) {
+        QDict *d = qdict_get_qdict(index, type);
+        const char *p = d && qdict_haskey(d, "parent") ?
+                        qdict_get_str(d, "parent") :
+                        NULL;
+
+        if (!strcmp(type, parent)) {
+            return true;
+        }
+
+        type = p;
+    }
+
+    return false;
+}
+
+/* Find an entry on a list returned by qom-list-types */
+static QDict *type_list_find(QList *types, const char *name)
+{
+    QListEntry *e;
+
+    QLIST_FOREACH_ENTRY(types, e) {
+        QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+        const char *ename = qdict_get_str(d, "name");
+        if (!strcmp(ename, name)) {
+            return d;
+        }
+    }
+
+    return NULL;
+}
+
+static QList *device_type_list(QTestState *qts, bool abstract)
+{
+    return qom_list_types(qts, "device", abstract);
+}
+
+static bool property_list_has_name(QList *props, const char *name)
+{
+    QListEntry *e;
+
+    QLIST_FOREACH_ENTRY(props, e) {
+        QDict *prop = qobject_to(QDict, qlist_entry_obj(e));
+
+        if (!strcmp(qdict_get_str(prop, "name"), name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void test_one_device(QTestState *qts, const char *type)
+{
+    QDict *resp;
+    char *help, *escaped;
+    GRegex *comma;
+
+    g_test_message("Testing device '%s'", type);
+
+    resp = qtest_qmp(qts, "{'execute': 'device-list-properties',"
+                          " 'arguments': {'typename': %s}}",
+               type);
+    qobject_unref(resp);
+
+    comma = g_regex_new(",", 0, 0, NULL);
+    escaped = g_regex_replace_literal(comma, type, -1, 0, ",,", 0, NULL);
+    g_regex_unref(comma);
+
+    help = qtest_hmp(qts, "device_add \"%s,help\"", escaped);
+    g_free(help);
+    g_free(escaped);
+}
+
+static void test_device_intro_settable_only(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    static const char *const ati_types[] = {
+        "ati-vga", "ati-rage128p", "ati-rv100",
+    };
+    QDict *resp;
+    QList *props;
+    char *help;
+    size_t i;
+
+    if (!type_list_find(types, "ati-vga")) {
+        g_test_skip("ATI VGA is not available for this target");
+        qobject_unref(types);
+        qtest_quit(qts);
+        return;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(ati_types); i++) {
+        const char *name = ati_types[i];
+
+        g_assert_nonnull(type_list_find(types, name));
+        resp = qtest_qmp(qts, "{'execute': 'device-list-properties',"
+                              " 'arguments': {'typename': %s}}", name);
+        g_assert_true(qdict_haskey(resp, "return"));
+        props = qdict_get_qlist(resp, "return");
+
+        g_assert_true(property_list_has_name(props, "vgamem_mb"));
+        g_assert_false(property_list_has_name(props, "model"));
+        g_assert_false(property_list_has_name(props, "x-device-id"));
+        g_assert_false(property_list_has_name(props, "busnr"));
+        g_assert_false(property_list_has_name(props, "edid"));
+        g_assert_false(property_list_has_name(props, "sriov-pf"));
+
+        help = qtest_hmp(qts, "device_add \"%s,help\"", name);
+        g_assert_null(strstr(help, "model="));
+        g_assert_null(strstr(help, "x-device-id="));
+        g_assert_null(strstr(help, "busnr="));
+        g_assert_null(strstr(help, "edid="));
+        g_assert_null(strstr(help, "sriov-pf="));
+        g_free(help);
+        qobject_unref(resp);
+    }
+
+    qobject_unref(types);
+    qtest_quit(qts);
+}
+
+static void test_device_intro_list(void)
+{
+    QList *types;
+    char *help;
+    QTestState *qts;
+
+    qts = qtest_init(common_args);
+
+    types = device_type_list(qts, true);
+    qobject_unref(types);
+
+    help = qtest_hmp(qts, "device_add help");
+    g_free(help);
+
+    qtest_quit(qts);
+}
+
+static void assert_device_help_desc(const char *help,
+                                    const char *name,
+                                    const char *desc)
+{
+    g_autofree char *name_needle = g_strdup_printf("name \"%s\"", name);
+    g_autofree char *desc_needle = g_strdup_printf("desc \"%s\"", desc);
+    const char *line = strstr(help, name_needle);
+    const char *line_end;
+
+    g_assert_nonnull(line);
+    line_end = strchr(line, '\n');
+    if (!line_end) {
+        line_end = line + strlen(line);
+    }
+    g_assert_nonnull(g_strstr_len(line, line_end - line, desc_needle));
+}
+
+static void test_device_intro_display_descriptions(void)
+{
+    static const struct {
+        const char *name;
+        const char *desc;
+    } devices[] = {
+        { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
+        { "isa-vga", "QEMU Standard VGA ISA controller" },
+        { "sierra-falcon64",
+          "Sierra Semiconductor Falcon/64 SC15064 PCI VGA controller" },
+        { "VGA", "QEMU Standard VGA PCI controller" },
+        { "virtio-vga", "VirtIO VGA graphics adapter" },
+        { "vmware-svga", "VMware SVGA II PCI VGA controller" },
+    };
+    QTestState *qts = qtest_init(common_args);
+    g_autofree char *help = qtest_hmp(qts, "device_add help");
+    QList *types = device_type_list(qts, false);
+
+    for (size_t i = 0; i < ARRAY_SIZE(devices); i++) {
+        if (type_list_find(types, devices[i].name)) {
+            assert_device_help_desc(help, devices[i].name, devices[i].desc);
+        }
+    }
+
+    qobject_unref(types);
+    qtest_quit(qts);
+}
+
+/*
+ * Ensure all entries returned by qom-list-types implements=<parent>
+ * have <parent> as a parent.
+ */
+static void test_qom_list_parents(QTestState *qts, const char *parent)
+{
+    QList *types;
+    QListEntry *e;
+    QDict *index;
+
+    types = qom_list_types(qts, parent, true);
+    index = qom_type_index(types);
+
+    QLIST_FOREACH_ENTRY(types, e) {
+        QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+        const char *name = qdict_get_str(d, "name");
+
+        g_assert(qom_has_parent(index, name, parent));
+    }
+
+    qobject_unref(types);
+    qobject_unref(index);
+}
+
+static void test_qom_list_fields(void)
+{
+    QList *all_types;
+    QList *non_abstract;
+    QListEntry *e;
+    QTestState *qts;
+
+    qts = qtest_init(common_args);
+
+    all_types = qom_list_types(qts, NULL, true);
+    non_abstract = qom_list_types(qts, NULL, false);
+
+    QLIST_FOREACH_ENTRY(all_types, e) {
+        QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+        const char *name = qdict_get_str(d, "name");
+        bool abstract = qdict_haskey(d, "abstract") ?
+                        qdict_get_bool(d, "abstract") :
+                        false;
+        bool expected_abstract = !type_list_find(non_abstract, name);
+
+        g_assert(abstract == expected_abstract);
+    }
+
+    test_qom_list_parents(qts, "object");
+    test_qom_list_parents(qts, "device");
+    test_qom_list_parents(qts, "sys-bus-device");
+
+    qobject_unref(all_types);
+    qobject_unref(non_abstract);
+    qtest_quit(qts);
+}
+
+static void test_device_intro_none(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    g_autofree char *qom_tree_start = qtest_hmp(qts, "info qom-tree");
+    g_autofree char *qom_tree_end = NULL;
+    g_autofree char *qtree_start = qtest_hmp(qts, "info qtree");
+    g_autofree char *qtree_end = NULL;
+
+    test_one_device(qts, "nonexistent");
+
+    /* Make sure that really nothing changed in the trees */
+    qom_tree_end = qtest_hmp(qts, "info qom-tree");
+    g_assert_cmpstr(qom_tree_start, ==, qom_tree_end);
+    qtree_end = qtest_hmp(qts, "info qtree");
+    g_assert_cmpstr(qtree_start, ==, qtree_end);
+
+    qtest_quit(qts);
+}
+
+static void test_device_intro_abstract(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    g_autofree char *qom_tree_start = qtest_hmp(qts, "info qom-tree");
+    g_autofree char *qom_tree_end = NULL;
+    g_autofree char *qtree_start = qtest_hmp(qts, "info qtree");
+    g_autofree char *qtree_end = NULL;
+
+    test_one_device(qts, "device");
+
+    /* Make sure that really nothing changed in the trees */
+    qom_tree_end = qtest_hmp(qts, "info qom-tree");
+    g_assert_cmpstr(qom_tree_start, ==, qom_tree_end);
+    qtree_end = qtest_hmp(qts, "info qtree");
+    g_assert_cmpstr(qtree_start, ==, qtree_end);
+
+    qtest_quit(qts);
+}
+
+static void test_device_intro_concrete(const void *args)
+{
+    QList *types;
+    QListEntry *entry;
+    const char *type;
+    QTestState *qts = qtest_init(args);
+    g_autofree char *qom_tree_start = qtest_hmp(qts, "info qom-tree");
+    g_autofree char *qom_tree_end = NULL;
+    g_autofree char *qtree_start = qtest_hmp(qts, "info qtree");
+    g_autofree char *qtree_end = NULL;
+
+    types = device_type_list(qts, false);
+
+    QLIST_FOREACH_ENTRY(types, entry) {
+        type = qdict_get_try_str(qobject_to(QDict, qlist_entry_obj(entry)),
+                                 "name");
+        g_assert(type);
+        test_one_device(qts, type);
+    }
+
+    /*
+     * Some devices leave dangling pointers in QOM behind.
+     * "info qom-tree" or "info qtree" have a good chance at crashing then.
+     * Also make sure that the tree did not change.
+     */
+    qom_tree_end = qtest_hmp(qts, "info qom-tree");
+    g_assert_cmpstr(qom_tree_start, ==, qom_tree_end);
+
+    qtree_end = qtest_hmp(qts, "info qtree");
+    g_assert_cmpstr(qtree_start, ==, qtree_end);
+
+    qobject_unref(types);
+    qtest_quit(qts);
+}
+
+static void test_abstract_interfaces(void)
+{
+    QList *all_types;
+    QListEntry *e;
+    QDict *index;
+    QTestState *qts;
+
+    qts = qtest_init(common_args);
+
+    all_types = qom_list_types(qts, "interface", true);
+    index = qom_type_index(all_types);
+
+    QLIST_FOREACH_ENTRY(all_types, e) {
+        QDict *d = qobject_to(QDict, qlist_entry_obj(e));
+        const char *name = qdict_get_str(d, "name");
+
+        /*
+         * qom-list-types implements=interface returns all types
+         * that implement _any_ interface (not just interface
+         * types), so skip the ones that don't have "interface"
+         * on the parent type chain.
+         */
+        if (!qom_has_parent(index, name, "interface")) {
+            /* Not an interface type */
+            continue;
+        }
+
+        g_assert(qdict_haskey(d, "abstract") && qdict_get_bool(d, "abstract"));
+    }
+
+    qobject_unref(all_types);
+    qobject_unref(index);
+    qtest_quit(qts);
+}
+
+static void add_machine_test_case(const char *mname)
+{
+    char *path, *args;
+
+    path = g_strdup_printf("device/introspect/concrete/defaults/%s", mname);
+    args = g_strdup_printf("-M %s", mname);
+    qtest_add_data_func_full(path, args, test_device_intro_concrete, g_free);
+    g_free(path);
+
+    path = g_strdup_printf("device/introspect/concrete/nodefaults/%s", mname);
+    args = g_strdup_printf("-nodefaults -M %s", mname);
+    qtest_add_data_func_full(path, args, test_device_intro_concrete, g_free);
+    g_free(path);
+}
+
+int main(int argc, char **argv)
+{
+    g_test_init(&argc, &argv, NULL);
+
+    qtest_add_func("device/introspect/list", test_device_intro_list);
+    qtest_add_func("device/introspect/display-descriptions",
+                   test_device_intro_display_descriptions);
+    qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
+    qtest_add_func("device/introspect/settable-only",
+                   test_device_intro_settable_only);
+    qtest_add_func("device/introspect/none", test_device_intro_none);
+    qtest_add_func("device/introspect/abstract", test_device_intro_abstract);
+    qtest_add_func("device/introspect/abstract-interfaces", test_abstract_interfaces);
+    if (g_test_quick()) {
+        qtest_add_data_func("device/introspect/concrete/defaults/none",
+                            common_args, test_device_intro_concrete);
+    } else {
+        qtest_cb_for_every_machine(add_machine_test_case, true);
+    }
+
+    return g_test_run();
+}

@@ -1,0 +1,2052 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# build.sh captures stdout to obtain exactly one value: the installed prefix.
+# Send CMake/Ninja/git chatter to stderr so the compiler path cannot be
+# contaminated by bootstrap progress output.
+exec 3>&1
+exec 1>&2
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"
+LLVM_SUBMODULE_PATH="${NATIVE_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}"
+LLVM_SOURCE_DIR="$SOURCE_DIR/$LLVM_SUBMODULE_PATH"
+TOOLCHAIN_FORCE_REBUILD="${NATIVE_LLVM_FORCE_REBUILD:-0}"
+JOBS="${JOBS:-}"
+LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"
+LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"
+LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"
+# The WHP Ninja fork can use timings from .ninja_log to schedule the expensive
+# chain first on later incremental LLVM builds. A first build still uses normal
+# graph depth; system Ninja ignores this optional environment setting.
+# Keep it out of the installed LLVM toolchain's ABI/cache identity.
+LLVM_NINJA_CRITICAL_PATH_TIMES="${NATIVE_LLVM_CRITICAL_PATH_TIMES:-1}"
+case "$LLVM_NINJA_CRITICAL_PATH_TIMES" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_CRITICAL_PATH_TIMES must be 0 or 1: %s\n' \
+            "$LLVM_NINJA_CRITICAL_PATH_TIMES" >&2
+        exit 1
+        ;;
+esac
+LLVM_CXX_STANDARD="${NATIVE_LLVM_CXX_STANDARD:-23}"
+LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"
+# Optional Windows PE manifest merging for downstream CMake/Windows clients.
+# The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
+LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
+# Default fork LLDB on macOS, where our ARM64e ASan/PAC diagnostics need it.
+# Keep Linux builds lean and allow an explicit 0 opt-out. Resolve "auto"
+# after host detection; do not confuse the debugger with ASan auto-replay.
+NATIVE_LLVM_ENABLE_LLDB="${NATIVE_LLVM_ENABLE_LLDB:-auto}"
+NATIVE_LLVM_ASAN_AUTO_DEBUG="${NATIVE_LLVM_ASAN_AUTO_DEBUG:-0}"
+case "$NATIVE_LLVM_ENABLE_LLDB" in
+    auto|0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_ENABLE_LLDB must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$NATIVE_LLVM_ASAN_AUTO_DEBUG" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_ASAN_AUTO_DEBUG must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+# An experimental host-only libLLVM/libclang-cpp shared linking profile.
+# Static component archives remain default for stable incremental builds.
+NATIVE_LLVM_SHARED_TOOLCHAIN="${NATIVE_LLVM_SHARED_TOOLCHAIN:-0}"
+case "$NATIVE_LLVM_SHARED_TOOLCHAIN" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_SHARED_TOOLCHAIN must be 0 or 1: %s\n' \
+            "$NATIVE_LLVM_SHARED_TOOLCHAIN" >&2
+        exit 1
+        ;;
+esac
+# ASan is tested when QEMU actually requests it, without making otherwise
+# usable non-sanitized native LLVM compilers rebuild unnecessarily.
+NATIVE_LLVM_VALIDATE_ASAN="${NATIVE_LLVM_VALIDATE_ASAN:-auto}"
+case "$NATIVE_LLVM_VALIDATE_ASAN" in
+    auto)
+        case "${QEMU_ASAN:-0}" in
+            1|y) NATIVE_LLVM_VALIDATE_ASAN=1 ;;
+            *) NATIVE_LLVM_VALIDATE_ASAN=0 ;;
+        esac
+        ;;
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_VALIDATE_ASAN must be auto, 0, or 1\n' >&2
+        exit 1
+        ;;
+esac
+if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]]; then
+    # An explicit debugging request must not silently skip the ASan validation
+    # just because QEMU_ASAN was unset.
+    NATIVE_LLVM_VALIDATE_ASAN=1
+fi
+# Build one host-native LLVM executable set for QEMU plus the freestanding
+# firmware lanes. Target selection belongs at Clang invocation time via
+# --target=..., not in separate host executable builds.
+LLVM_TARGETS_TO_BUILD='AArch64;X86;PowerPC'
+LLD_ENABLE_BACKENDS='ELF;COFF;MinGW;MachO'
+ninja_cmd="${NINJA_CMD:-${NINJA:-ninja}}"
+stage_root=""
+
+# This script builds the compiler used by QEMU; it is not itself a QEMU host
+# object build. Do not let outer optimization, sanitizer, coverage, or frame-
+# pointer policy become part of LLVM's bootstrap ABI. Platform ABI inputs such
+# as SDKROOT and MACOSX_DEPLOYMENT_TARGET are handled explicitly below.
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS ASMFLAGS
+# Block foreign target libraries and runtime injection into the host LLVM ABI.
+unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
+unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+# WHP_NATIVE_LLVM_CMAKE_ENV_BEGIN
+# Do not let a host-tool LLVM build consume an outer cross-target CMake
+# toolchain, generator, project injection or pkg-config cross sysroot.
+# Host dependency search prefixes remain available.
+unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM
+unset CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
+unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE
+unset CMAKE_PROJECT_INCLUDE_BEFORE PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR
+# The seed adapters test compilers with these paths removed.  Keep the LLVM
+# configure/build phase on the same native header and loader search policy;
+# otherwise a cross-compiler SDK or a target libc can leak in after admission.
+unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
+unset OBJCPLUS_INCLUDE_PATH LD_LIBRARY_PATH LIBS OBJCXXFLAGS ASFLAGS
+# WHP_NATIVE_LLVM_CMAKE_ENV_END
+
+case "$TOOLCHAIN_FORCE_REBUILD" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_FORCE_REBUILD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+case "$LLVM_LINK_JOBS" in
+    0|*[!0-9]*)
+        printf 'error: NATIVE_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+            "$LLVM_LINK_JOBS" >&2
+        exit 1
+        ;;
+    *) ;;
+esac
+case "$LLVM_CXX_STANDARD" in
+    17|20|23|26) ;;
+    *)
+        printf 'error: NATIVE_LLVM_CXX_STANDARD must be 17, 20, 23, or 26: %s\n' \
+            "$LLVM_CXX_STANDARD" >&2
+        exit 1
+        ;;
+esac
+case "$LLVM_PCH" in
+    auto|0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_PCH must be auto, 0, or 1: %s\n' "$LLVM_PCH" >&2
+        exit 1
+        ;;
+esac
+case "$LLVM_WINDOWS_MANIFEST" in
+    0|1) ;;
+    *)
+        printf 'error: NATIVE_LLVM_WINDOWS_MANIFEST must be 0 or 1: %s\n' \
+            "$LLVM_WINDOWS_MANIFEST" >&2
+        exit 1
+        ;;
+esac
+
+# build.sh owns host detection. Keep a direct-invocation fallback for this
+# helper, but never reinterpret a normalized host identity supplied by the
+# public build entry.
+host_os="${WHP_HOST_OS:-}"
+host_kernel="${WHP_HOST_KERNEL:-$(uname -s)}"
+host_arch="${WHP_HOST_ARCH:-$(uname -m)}"
+if [[ -z "$host_os" ]]; then
+    case "$host_kernel" in
+        Darwin) host_os=macos ;;
+        Linux) host_os=linux ;;
+        CYGWIN*|MINGW*|MSYS*) host_os=windows ;;
+        FreeBSD) host_os=freebsd ;;
+        NetBSD) host_os=netbsd ;;
+        OpenBSD) host_os=openbsd ;;
+        DragonFly) host_os=dragonfly ;;
+        SunOS) host_os=solaris ;;
+        Haiku) host_os=haiku ;;
+        *) host_os=other ;;
+    esac
+fi
+
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == auto ]]; then
+    case "$host_os" in
+        macos) NATIVE_LLVM_ENABLE_LLDB=1 ;;
+        *) NATIVE_LLVM_ENABLE_LLDB=0 ;;
+    esac
+fi
+if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 &&
+      "$NATIVE_LLVM_ENABLE_LLDB" != 1 ]]; then
+    printf 'error: auto-debug requires NATIVE_LLVM_ENABLE_LLDB=1\n' >&2
+    exit 1
+fi
+printf 'WHP native LLVM LLDB: %s (ASan replay: %s)\n' \
+    "$([[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]] && printf enabled || printf disabled)" \
+    "$([[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]] && printf enabled || printf disabled)" >&2
+
+case "$host_arch" in
+    arm64|aarch64)
+        host_tag=aarch64
+        darwin_cmake_arch=arm64
+        llvm_target=AArch64
+        smoke_macro=__aarch64__
+        ;;
+    x86_64|amd64)
+        host_tag=x86_64
+        darwin_cmake_arch=x86_64
+        llvm_target=X86
+        smoke_macro=__x86_64__
+        ;;
+    *)
+        printf 'error: unsupported native LLVM host architecture: %s\n' "$host_arch" >&2
+        exit 1
+        ;;
+esac
+case "$host_os" in
+    macos) host_platform=apple-darwin ;;
+    linux) host_platform=linux ;;
+    *)
+        printf '%s\n' \
+            'error: WHP native LLVM bootstrap does not support this host OS.' \
+            "detected OS: $host_os" \
+            "kernel:      $host_kernel" \
+            "architecture: $host_arch" >&2
+        exit 1
+        ;;
+esac
+
+# Cap expensive LLVM compile and TableGen work independently of -j and links.
+# Scheduling controls do not affect the installed compiler ABI or cache key.
+if [[ "$host_os" == macos ]]; then
+    [[ -n "${NATIVE_LLVM_COMPILE_JOBS+x}" ]] || LLVM_COMPILE_JOBS=2
+    [[ -n "${NATIVE_LLVM_TABLEGEN_JOBS+x}" ]] || LLVM_TABLEGEN_JOBS=1
+fi
+for pool_name in COMPILE TABLEGEN; do
+    pool_var="LLVM_${pool_name}_JOBS"
+    pool_jobs="${!pool_var}"
+    if [[ -n "$pool_jobs" && ! "$pool_jobs" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        printf 'error: NATIVE_LLVM_%s_JOBS must be 0 or a positive integer: %s\n' \
+            "$pool_name" "$pool_jobs" >&2
+        exit 1
+    fi
+    if [[ "$pool_jobs" == 0 ]]; then
+        printf -v "$pool_var" "%s" ""
+    fi
+done
+unset pool_name pool_var pool_jobs
+printf 'WHP native LLVM pools: compile=%s, link=%s, tablegen=%s\n' \
+    "${LLVM_COMPILE_JOBS:-unlimited}" "$LLVM_LINK_JOBS" \
+    "${LLVM_TABLEGEN_JOBS:-unlimited}" >&2
+host_id="$host_tag-$host_platform"
+TOOLCHAIN_DIR="${NATIVE_LLVM_DIR:-$SOURCE_DIR/build/toolchains/native-llvm/$host_id}"
+TOOLCHAIN_WORK_DIR="${NATIVE_LLVM_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/native-llvm-$host_id}"
+LLVM_BUILD_DIR="${NATIVE_LLVM_BUILD_DIR:-$TOOLCHAIN_WORK_DIR/llvm-build}"
+
+cleanup()
+{
+    local status=$?
+    [[ -z "$stage_root" ]] || rm -rf "$stage_root"
+    exit "$status"
+}
+trap cleanup EXIT
+
+cmake_parallel_args=(--parallel)
+if [[ -n "$JOBS" ]]; then
+    case "$JOBS" in
+        0|*[!0-9]*)
+            printf 'error: JOBS must be a positive integer when set: %s\n' "$JOBS" >&2
+            exit 1
+            ;;
+    esac
+    cmake_parallel_args=(--parallel "$JOBS")
+fi
+
+for tool in git cmake sed mkdir mv rm ln mktemp; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        printf 'error: native LLVM bootstrap dependency not found: %s\n' "$tool" >&2
+        exit 1
+    }
+done
+if [[ "$ninja_cmd" == */* ]]; then
+    [[ -x "$ninja_cmd" ]] || {
+        printf 'error: native LLVM Ninja is not executable: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+else
+    resolved_ninja="$(command -v "$ninja_cmd" 2>/dev/null || true)"
+    [[ -n "$resolved_ninja" ]] || {
+        printf 'error: native LLVM bootstrap dependency not found: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+    ninja_cmd="$resolved_ninja"
+    unset resolved_ninja
+fi
+printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
+
+# The normal QEMU build enables compiler caching later in builder.sh. Native
+# LLVM is bootstrapped before that handoff, so opt it into the same cache policy
+# explicitly. This avoids reparsing LLVM/Clang's large C++ headers on cache hits
+# without changing Clang parser semantics or making cache state part of the
+# installed toolchain ABI.
+COMPILER_CACHE="${COMPILER_CACHE:-auto}"
+case "$COMPILER_CACHE" in
+    auto|ccache|sccache|none) ;;
+    *)
+        printf 'error: COMPILER_CACHE must be auto, ccache, sccache, or none: %s\n' \
+            "$COMPILER_CACHE" >&2
+        exit 1
+        ;;
+esac
+
+compiler_cache_cmd="${WHP_COMPILER_CACHE_CMD:-}"
+# Cache selection is explicit policy, not evidence from a previous stage.
+if [[ -n "$compiler_cache_cmd" ]]; then
+    if [[ "$COMPILER_CACHE" == none ]]; then
+        printf 'error: COMPILER_CACHE=none conflicts with WHP_COMPILER_CACHE_CMD\n' >&2
+        exit 1
+    fi
+    if [[ "$COMPILER_CACHE" != auto &&
+          "${compiler_cache_cmd##*/}" != "$COMPILER_CACHE" ]]; then
+        printf 'error: COMPILER_CACHE=%s conflicts with WHP_COMPILER_CACHE_CMD=%s\n' \
+            "$COMPILER_CACHE" "$compiler_cache_cmd" >&2
+        exit 1
+    fi
+fi
+if [[ -z "$compiler_cache_cmd" ]]; then
+    case "$COMPILER_CACHE" in
+        auto)
+            compiler_cache_cmd="$(command -v ccache 2>/dev/null || true)"
+            if [[ -z "$compiler_cache_cmd" ]]; then
+                compiler_cache_cmd="$(command -v sccache 2>/dev/null || true)"
+            fi
+            ;;
+        ccache|sccache)
+            compiler_cache_cmd="$(command -v "$COMPILER_CACHE" 2>/dev/null || true)"
+            if [[ -z "$compiler_cache_cmd" ]]; then
+                printf 'error: requested compiler cache is not installed: %s\n' \
+                    "$COMPILER_CACHE" >&2
+                exit 1
+            fi
+            ;;
+        none)
+            compiler_cache_cmd=""
+            ;;
+    esac
+fi
+
+cmake_compiler_launcher_args=(
+    -DCMAKE_C_COMPILER_LAUNCHER=
+    -DCMAKE_CXX_COMPILER_LAUNCHER=
+)
+if [[ -n "$compiler_cache_cmd" ]]; then
+    case "$compiler_cache_cmd" in
+        *' '*)
+            printf 'error: WHP_COMPILER_CACHE_CMD must name one executable: %s\n' \
+                "$compiler_cache_cmd" >&2
+            exit 1
+            ;;
+        */*)
+            [[ -x "$compiler_cache_cmd" ]] || {
+                printf 'error: compiler cache is not executable: %s\n' \
+                    "$compiler_cache_cmd" >&2
+                exit 1
+            }
+            ;;
+        *)
+            resolved_cache="$(command -v "$compiler_cache_cmd" 2>/dev/null || true)"
+            [[ -n "$resolved_cache" ]] || {
+                printf 'error: compiler cache is not executable: %s\n' \
+                    "$compiler_cache_cmd" >&2
+                exit 1
+            }
+            compiler_cache_cmd="$resolved_cache"
+            unset resolved_cache
+            ;;
+    esac
+
+    cache_build_dir="${BUILD_DIR:-$SOURCE_DIR/build}"
+    WHP_COMPILER_CACHE_ROOT="${WHP_COMPILER_CACHE_ROOT:-$(dirname -- "$cache_build_dir")/.whp-compiler-cache}"
+    cache_tag="$host_kernel-$host_arch"
+    cache_base="${compiler_cache_cmd##*/}"
+    case "$cache_base" in
+        ccache)
+            CCACHE_DIR="${CCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/ccache-$cache_tag}"
+            export CCACHE_DIR
+            ;;
+        sccache)
+            SCCACHE_DIR="${SCCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/sccache-$cache_tag}"
+            export SCCACHE_DIR
+            source "$SCRIPT_DIR/whp-build/sccache-policy.sh"
+            whp_sccache_memory_policy
+            ;;
+        *)
+            printf 'error: unsupported compiler cache command: %s\n' \
+                "$compiler_cache_cmd" >&2
+            exit 1
+            ;;
+    esac
+    WHP_COMPILER_CACHE_CMD="$compiler_cache_cmd"
+    export WHP_COMPILER_CACHE_CMD WHP_COMPILER_CACHE_ROOT
+    cmake_compiler_launcher_args=(
+        "-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd"
+        "-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd"
+    )
+    printf 'WHP native LLVM compiler cache: %s (%s)\n' \
+        "$cache_base" "$WHP_COMPILER_CACHE_ROOT" >&2
+elif [[ "$COMPILER_CACHE" == none ]]; then
+    CCACHE_DISABLE=1
+    export CCACHE_DISABLE
+    printf 'WHP native LLVM compiler cache: disabled\n' >&2
+fi
+
+cmake_host_args=()
+cmake_darwin_runtime_args=()
+darwin_runtime_native_arch_only=OFF
+sdkroot=""
+deployment_target=""
+# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN
+# Do not probe an unrelated default compiler when an explicit LLVM seed is
+# selected. Explicit overrides must still pass the normal native adapter
+# compile/link/run check; an inherited build role was already admitted by
+# build.sh and can be reused without re-running cc.sh/cxx.sh.
+if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CC:-}" ]]; then
+    bootstrap_cc="$(WHP_CC_SEED="$NATIVE_LLVM_BOOTSTRAP_CC" \
+        "$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
+elif [[ -n "${CC_FOR_BUILD:-}" ]]; then
+    bootstrap_cc="$CC_FOR_BUILD"
+else
+    bootstrap_cc="$("$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
+fi
+if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CXX:-}" ]]; then
+    bootstrap_cxx="$(WHP_CXX_SEED="$NATIVE_LLVM_BOOTSTRAP_CXX" \
+        "$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
+elif [[ -n "${CXX_FOR_BUILD:-}" ]]; then
+    # Standalone LLVM invocation may inherit CXX_FOR_BUILD without build.sh
+    # having admitted it. Reuse the same native C++17 link/run and SDK probe.
+    bootstrap_cxx="$(WHP_CXX_SEED="$CXX_FOR_BUILD" \
+        "$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
+else
+    bootstrap_cxx="$("$SOURCE_DIR/seeds/cxx.sh" --print-cxx)" || exit 1
+fi
+# WHP_NATIVE_LLVM_SEED_SELECTION_END
+
+if [[ "$host_os" == macos ]]; then
+    for tool in xcrun sw_vers; do
+        command -v "$tool" >/dev/null 2>&1 || {
+            printf 'error: native LLVM macOS dependency not found: %s\n' "$tool" >&2
+            exit 1
+        }
+    done
+    # Standalone LLVM bootstrap can bypass macos-builder: check SDK origin.
+    source "$SCRIPT_DIR/whp-build/macos-developer-tools.sh"
+    if [[ -n "${SDKROOT:-}" ]]; then
+        sdkroot="$SDKROOT"
+        whp_apple_check_sdkroot "$sdkroot" || exit 1
+    else
+        sdkroot="$(whp_apple_find_sdk)" || exit 1
+    fi
+    deployment_target="${MACOSX_DEPLOYMENT_TARGET:-$(sw_vers -productVersion | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')}"
+    [[ -d "$sdkroot" ]] || {
+        printf 'error: native LLVM macOS SDK does not exist: %s\n' "$sdkroot" >&2
+        exit 1
+    }
+    # The standalone native LLVM entry can bypass macos-builder. Resolve SDK
+    # symlinks before allowing the CMake host build to inherit SDKROOT.
+    # iPhoneOS, iPadOS (iPhoneOS), and simulator SDKs belong to cross-target
+    # toolchains, not the LLVM executables running on this macOS host.
+    sdk_real_path="$(cd "$sdkroot" && pwd -P)" || exit 1
+    case "${sdk_real_path##*/}" in
+        MacOSX*.sdk) ;;
+        *)
+            printf 'error: native LLVM host build requires a MacOSX.sdk: %s\n' \
+                "$sdkroot" >&2
+            exit 1
+            ;;
+    esac
+    # Use this same canonical SDK path for the parent CMake configuration and
+    # the separately configured compiler-rt/builtins runtime projects.
+    sdkroot="$sdk_real_path"
+    unset sdk_real_path
+    # The standalone LLVM bootstrap does not always run through QEMU's
+    # macos-builder policy. Do not pass a pre-Apple-Silicon deployment
+    # target into CMake/compiler-rt even if an installed compiler accepts it.
+    if [[ "$host_tag" == aarch64 ]]; then
+        if [[ ! "$deployment_target" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] ||
+           (( 10#${deployment_target%%.*} < 11 )); then
+            printf 'error: native LLVM arm64/arm64e deployment target must be macOS 11.0 or newer: %s\n' \
+                "$deployment_target" >&2
+            exit 1
+        fi
+    fi
+fi
+unset seed_cc seed_cxx
+
+for compiler in "$bootstrap_cc" "$bootstrap_cxx"; do
+    [[ -x "$compiler" ]] || command -v "$compiler" >/dev/null 2>&1 || {
+        printf 'error: native LLVM bootstrap compiler is not executable: %s\n' "$compiler" >&2
+        exit 1
+    }
+done
+
+compiler_supports_macos_arch()
+{
+    local compiler="$1"
+    local language="$2"
+    local arch="$3"
+    local output log status probe_source
+
+    output="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-arch.XXXXXX")" || return 1
+    log="${output}.log"
+    # An ignored -arch can produce a runnable Rosetta binary. Require the
+    # effective C/C++ target ABI, macOS SDK and LP64 data model, not only a link.
+    probe_source="$(cat <<'SOURCE'
+#include <TargetConditionals.h>
+#if !defined(TARGET_OS_OSX) || !TARGET_OS_OSX
+#error native LLVM compiler selected a non-macOS SDK
+#endif
+#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
+#error native LLVM compiler selected simulator headers
+#endif
+typedef char whp_native_lp64[(sizeof(void *) == 8 && sizeof(long) == 8) ? 1 : -1];
+SOURCE
+)"
+    case "$arch" in
+        arm64)
+            probe_source+=$'\n#if !defined(__aarch64__) || defined(__arm64e__)\n#error compiler did not select native arm64 Mach-O ABI\n#endif'
+            ;;
+        arm64e)
+            # The arm64e path must still exercise authenticated indirect calls
+            # in both languages, not merely test a compiler argument spelling.
+            probe_source+=$'\n#if !defined(__arm64e__) || !defined(__PTRAUTH__)\n#error arm64e pointer-authentication ABI is not enabled\n#endif'
+            probe_source+=$'\n#if !__has_feature(ptrauth_calls)\n#error arm64e indirect-call authentication is unavailable\n#endif'
+            probe_source+=$'\nstatic int whp_arm64e_callback(void) { return 0; }\nint main(void) {\n    int (*volatile callback)(void) = whp_arm64e_callback;\n    return callback();\n}'
+            ;;
+        x86_64)
+            probe_source+=$'\n#if !defined(__x86_64__) || defined(__arm64e__)\n#error compiler did not select native x86_64 Mach-O ABI\n#endif'
+            ;;
+        *)
+            printf 'error: unsupported native LLVM macOS ABI probe architecture: %s\n' "$arch" >&2
+            rm -f "$output"
+            return 1
+            ;;
+    esac
+    if [[ "$arch" != arm64e ]]; then
+        probe_source+=$'\nint main(void) { return 0; }'
+    fi
+
+    # Surface the responsible stage and actual compiler/linker diagnostics.
+    # Missing SDK/libSystem, wrong ISA and failing executable differ.
+    if printf '%s\n' "$probe_source" |
+        "$compiler" -arch "$arch" \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -x "$language" - -o "$output" >"$log" 2>&1; then
+        :
+    else
+        status=$?
+        printf 'error: native macOS %s %s ABI compile/link failed (exit %s)\n' \
+            "$language" "$arch" "$status" >&2
+        printf '  compiler: %s\n  SDK: %s\n  deployment: %s\n' \
+            "$compiler" "$sdkroot" "$deployment_target" >&2
+        cat "$log" >&2
+        rm -f "$output" "$log"
+        return 1
+    fi
+    if "$output" >"$log" 2>&1; then
+        rm -f "$output" "$log"
+        return 0
+    else
+        status=$?
+        printf 'error: native macOS %s %s ABI executable failed (exit %s)\n' \
+            "$language" "$arch" "$status" >&2
+        printf '  compiler: %s\n  SDK: %s\n  deployment: %s\n' \
+            "$compiler" "$sdkroot" "$deployment_target" >&2
+        cat "$log" >&2
+        rm -f "$output" "$log"
+        return 1
+    fi
+}
+
+if [[ "$host_os" == macos ]]; then
+    # Only a successful explicit arm64e C *and* C++ admission may set this
+    # local shortcut. Reuse it only inside this invocation, never on disk.
+    macos_arm64e_prechecked=0
+    requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"
+    case "$requested_macos_arch" in
+        auto|arm64|arm64e|x86_64) ;;
+        *)
+            printf 'error: NATIVE_LLVM_MACOS_ARCH must be auto, arm64, arm64e, or x86_64: %s\n' \
+                "$requested_macos_arch" >&2
+            exit 1
+            ;;
+    esac
+
+    case "$host_tag" in
+        aarch64)
+            case "$requested_macos_arch" in
+                auto)
+                    # The normal macOS Apple Silicon host ABI is arm64.
+                    # Being able to compile and run an arm64e probe does not
+                    # authorize changing the LLVM/LLDB host ABI. Keep pointer
+                    # authentication ABI selection an explicit user choice.
+                    darwin_cmake_arch=arm64
+                    ;;
+                arm64)
+                    darwin_cmake_arch=arm64
+                    ;;
+                arm64e)
+                    if ! compiler_supports_macos_arch "$bootstrap_cc" c arm64e ||
+                       ! compiler_supports_macos_arch "$bootstrap_cxx" c++ arm64e; then
+                        printf '%s\n' \
+                            'error: requested native LLVM arm64e bootstrap is unsupported.' \
+                            "C compiler:   $bootstrap_cc" \
+                            "C++ compiler: $bootstrap_cxx" \
+                            "SDK:          $sdkroot" \
+                            "target:       $deployment_target" >&2
+                        exit 1
+                    fi
+                    darwin_cmake_arch=arm64e
+                    macos_arm64e_prechecked=1
+                    ;;
+                *)
+                    printf 'error: requested native LLVM macOS architecture is not native to Apple Silicon: %s\n' \
+                        "$requested_macos_arch" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        x86_64)
+            case "$requested_macos_arch" in
+                auto|x86_64) darwin_cmake_arch=x86_64 ;;
+                *)
+                    printf 'error: requested native LLVM macOS architecture is not native to x86_64: %s\n' \
+                        "$requested_macos_arch" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+    esac
+
+    # The effective host compiler ABI is the selected macOS target, not just
+    # the processor reported by uname. Probe both languages for the exact ABI.
+    # Explicit arm64e already compiled, linked and executed both authenticated
+    # function-pointer probes above. Do not repeat them a second time.
+    if [[ "$macos_arm64e_prechecked" != 1 ]]; then
+        if ! compiler_supports_macos_arch "$bootstrap_cc" c "$darwin_cmake_arch" ||
+           ! compiler_supports_macos_arch "$bootstrap_cxx" c++ "$darwin_cmake_arch"; then
+            printf 'error: native LLVM macOS host ABI is unavailable: %s\n' \
+                "$darwin_cmake_arch" >&2
+            exit 1
+        fi
+    else
+        printf 'WHP native LLVM: reusing verified C/C++ arm64e host ABI\n' >&2
+    fi
+    printf 'WHP native LLVM macOS arch: %s\n' "$darwin_cmake_arch" >&2
+    cmake_host_args=(
+        -DLLVM_MACOS_HOST_SDK_RESOLVE=ON
+        -DLLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE=ON
+        "-DCMAKE_OSX_SYSROOT=$sdkroot"
+        "-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"
+        "-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target"
+    )
+    # Runtime and builtins ExternalProjects must agree with the selected
+    # native Mach-O ABI.  Only runtime-specific feature knobs stay separate.
+    # This prevents compiler-rt's legacy i386 probes from entering an ARM64
+    # or ARM64e native bootstrap; Clang's X86 cross backend remains available.
+    darwin_runtime_native_arch_only=ON
+    # Separate builtins and runtimes CMake projects both load compiler-rt's
+    # Darwin configuration. Neither should discover the iPhoneOS SDK while
+    # building the native macOS host toolchain.
+    darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCOMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=ON;-DCOMPILER_RT_ENABLE_IOS=OFF"
+    darwin_runtimes_cmake_args="$darwin_external_cmake_args"
+    for compiler_rt_option in \
+        -DCOMPILER_RT_ENABLE_MACCATALYST=OFF \
+        -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
+        -DCOMPILER_RT_ENABLE_TVOS=OFF \
+        -DCOMPILER_RT_ENABLE_XROS=OFF \
+        -DCOMPILER_RT_BUILD_XRAY=OFF \
+        -DCOMPILER_RT_BUILD_CTX_PROFILE=OFF \
+        -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+        -DCOMPILER_RT_BUILD_ORC=OFF \
+        -DCOMPILER_RT_BUILD_GWP_ASAN=OFF \
+        -DCOMPILER_RT_INCLUDE_TESTS=OFF \
+        -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+        -DCOMPILER_RT_BUILD_LIBFUZZER=ON \
+        -DCOMPILER_RT_BUILD_PROFILE=ON; do
+        darwin_runtimes_cmake_args="${darwin_runtimes_cmake_args};${compiler_rt_option}"
+    done
+    cmake_darwin_runtime_args=(
+        "-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"
+        "-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"
+    )
+fi
+
+compiler_supports_cxx_standard()
+{
+    local standard="$1"
+    local candidate
+    local minimum_cplusplus
+    local standards=()
+    local probe_source
+
+    # A C++11 constexpr declaration alone cannot distinguish C++17/20/23.
+    # Read real C++ standard-library headers and verify the requested mode
+    # before admitting a driver to LLVM's native host build.
+    case "$standard" in
+        17)
+            minimum_cplusplus=201703
+            standards=(c++17)
+            ;;
+        20)
+            minimum_cplusplus=202002
+            standards=(c++20)
+            ;;
+        23)
+            minimum_cplusplus=202302
+            standards=(c++23)
+            ;;
+        26)
+            minimum_cplusplus=202400
+            standards=(c++26 c++2c)
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    probe_source="$(cat <<SOURCE
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <vector>
+#if !defined(__cplusplus) || __cplusplus < ${minimum_cplusplus}L
+#error selected compiler did not enable the requested C++ language mode
+#endif
+static_assert(std::is_same_v<std::vector<int>::value_type, int>);
+static_assert(sizeof(std::string) > 0);
+constexpr std::size_t whp_cxx_standard_probe = sizeof(std::vector<int>);
+SOURCE
+)" || return 1
+
+    for candidate in "${standards[@]}"; do
+        if [[ "$host_os" == macos ]]; then
+            if printf '%s\n' "$probe_source" |
+                "$bootstrap_cxx" -arch "$darwin_cmake_arch" \
+                    "-std=$candidate" -isysroot "$sdkroot" \
+                    "-mmacosx-version-min=$deployment_target" \
+                    -x c++ -c - -o /dev/null >/dev/null 2>&1; then
+                return 0
+            fi
+        elif printf '%s\n' "$probe_source" |
+            "$bootstrap_cxx" "-std=$candidate" -x c++ -c - -o /dev/null \
+                >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+if ! compiler_supports_cxx_standard "$LLVM_CXX_STANDARD"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C++ compiler does not support the selected standard.' \
+        "compiler: $bootstrap_cxx" \
+        "standard: C++$LLVM_CXX_STANDARD" >&2
+    exit 1
+fi
+printf 'WHP native LLVM C++ standard: C++%s\n' "$LLVM_CXX_STANDARD" >&2
+
+# The pinned Mach-O LLD now implements arm64e authenticated relocations.
+# Reuse it only after proving the actual installed binary can emit an
+# authenticated chained fixup. A trivial main() link is insufficient.
+# Reset the CMake linker cache before choosing a linker for this rebuild.
+WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"
+case "$WHP_ARM64E_USE_LLD" in
+    0|1) ;;
+    *)
+        printf 'error: WHP_ARM64E_USE_LLD must be 0 or 1\n' >&2
+        exit 1
+        ;;
+esac
+
+whp_bootstrap_arm64e_lld_auth_probe()
+{
+    "$BASH" "$SOURCE_DIR/scripts/whp-build/arm64e-lld-probe.bash" \
+        "$bootstrap_cc" "$sdkroot" "$deployment_target" \
+        "$TOOLCHAIN_DIR/bin/ld64.lld" "$TOOLCHAIN_DIR/bin/llvm-objdump"
+}
+
+bootstrap_lld_arch_ok=1
+if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
+    bootstrap_lld_arch_ok=0
+    if [[ "$WHP_ARM64E_USE_LLD" == 1 ]] &&
+       whp_bootstrap_arm64e_lld_auth_probe; then
+        bootstrap_lld_arch_ok=1
+    elif [[ "$WHP_ARM64E_USE_LLD" == 1 ]]; then
+        printf 'warning: previous arm64e ld64.lld failed authenticated relocation probe; using Apple ld for LLVM bootstrap\n' >&2
+    fi
+fi
+# A successful driver exit is not enough; require a clean native output.
+bootstrap_lld_link_probe()
+{
+    local probe_dir probe_output probe_log
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-lld-probe.XXXXXX")" || return 1
+    probe_output="$probe_dir/probe"
+    probe_log="$probe_dir/link.log"
+    if ! printf 'int main(void) { return 0; }\n' |
+        PATH="$TOOLCHAIN_DIR/bin:$PATH" \
+            "$bootstrap_cxx" -arch "$darwin_cmake_arch" -fuse-ld=lld \
+            -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -x c++ - -o "$probe_output" >"$probe_log" 2>&1 ||
+        [[ ! -s "$probe_output" || ! -x "$probe_output" ]] ||
+        grep -Eiq '(^|[[:space:]])warning:' "$probe_log" ||
+        ! "$probe_output" >/dev/null 2>&1; then
+        rm -rf -- "$probe_dir"
+        return 1
+    fi
+    rm -rf -- "$probe_dir"
+    return 0
+}
+
+bootstrap_linker_args=()
+bootstrap_linker_args+=(
+    -DLLVM_USE_LINKER=
+    -DCMAKE_EXE_LINKER_FLAGS=
+    -DCMAKE_SHARED_LINKER_FLAGS=
+    -DCMAKE_MODULE_LINKER_FLAGS=
+)
+bootstrap_linker_name=system
+if [[ "$host_os" == macos && "$bootstrap_lld_arch_ok" == 1 &&
+      -x "$TOOLCHAIN_DIR/bin/ld64.lld" ]]; then
+    # First prove the installed linker can emit a real native executable.
+    # Optional worker settings do not determine the base linker selection.
+    if bootstrap_lld_link_probe; then
+        PATH="$TOOLCHAIN_DIR/bin:$PATH"
+        export PATH
+        bootstrap_linker_name="$TOOLCHAIN_DIR/bin/ld64.lld"
+
+        # Never forward optional input-prefetch knobs into global CMake
+        # linker flags. Configure and compiler-rt exercise other link modes.
+        bootstrap_linker_args=(
+            -DLLVM_USE_LINKER=lld
+            -DCMAKE_EXE_LINKER_FLAGS=
+            -DCMAKE_SHARED_LINKER_FLAGS=
+            -DCMAKE_MODULE_LINKER_FLAGS=
+        )
+    fi
+fi
+# An incremental Release cache retains link flags after ambient LDFLAGS are
+# erased. Clear each linker class for both Apple ld and Mach-O LLD.
+bootstrap_linker_args+=(
+    -DCMAKE_STATIC_LINKER_FLAGS=
+    -DCMAKE_EXE_LINKER_FLAGS_RELEASE=
+    -DCMAKE_SHARED_LINKER_FLAGS_RELEASE=
+    -DCMAKE_MODULE_LINKER_FLAGS_RELEASE=
+    -DCMAKE_STATIC_LINKER_FLAGS_RELEASE=
+)
+printf 'WHP native LLVM bootstrap linker: %s\n' "$bootstrap_linker_name" >&2
+
+# LLVM is a host build tool. Keep Release/NDEBUG and use -O2 instead of
+# CMake's usual -O3 to reduce bootstrap optimization cost. Avoid implicit CPU
+# model tuning: the installed-toolchain cache key records only the host arch.
+# QEMU's host-object tuning policy remains independent of this bootstrap.
+llvm_bootstrap_cflags='-O2 -DNDEBUG'
+llvm_bootstrap_cxxflags='-O2 -DNDEBUG'
+# LLVM Support is built by the seed pair before clang-tblgen can generate
+# resource headers. Its hash implementations have portable paths when a
+# seed lacks usable NEON headers. Keep the selected macOS ABI in either case.
+macos_seed_has_neon()
+{
+    local compiler="$1" language="$2"
+    local resource_dir=''
+
+    # This is the *seed* compiler, not the LLVM Clang currently being built.
+    # Its resource headers must already exist. Never inspect the ungenerated
+    # LLVM source tree or the destination install prefix at this stage.
+    resource_dir="$("$compiler" -print-resource-dir 2>/dev/null)" || return 1
+    [[ -n "$resource_dir" && -s "$resource_dir/include/arm_neon.h" ]] || return 1
+
+    # Check an actual intrinsic, not merely a successful include. Disable
+    # ambient header overrides just as compiler-seed-common.sh does for the
+    # native compiler admission probe.
+    (
+        unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
+        unset COMPILER_PATH GCC_EXEC_PREFIX
+        printf '%s\\n' \
+            '#include <arm_neon.h>' \
+            '#ifndef __ARM_NEON' \
+            '#error missing AArch64 NEON support' \
+            '#endif' \
+            'uint8x16_t whp_seed_neon_xor(uint8x16_t a, uint8x16_t b) {' \
+            '    return veorq_u8(a, b);' \
+            '}' |
+            "$compiler" -arch "$darwin_cmake_arch" -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -Werror -x "$language" -fsyntax-only - >/dev/null 2>&1
+    )
+}
+
+if [[ "$host_os" == macos && "$host_tag" == aarch64 ]]; then
+    if ! macos_seed_has_neon "$bootstrap_cc" c; then
+        llvm_bootstrap_cflags+=' -DBLAKE3_USE_NEON=0'
+        printf 'WHP native LLVM: %s cannot include <arm_neon.h>; using portable BLAKE3\n' \
+            "$bootstrap_cc" >&2
+    fi
+    if ! macos_seed_has_neon "$bootstrap_cxx" c++; then
+        llvm_bootstrap_cxxflags+=' -DLLVM_XXH_USE_NEON=0'
+        printf 'WHP native LLVM: %s cannot include <arm_neon.h>; using portable xxHash\n' \
+            "$bootstrap_cxx" >&2
+    fi
+fi
+printf 'WHP native LLVM C flags: %s\n' "$llvm_bootstrap_cflags" >&2
+printf 'WHP native LLVM C++ flags: %s\n' "$llvm_bootstrap_cxxflags" >&2
+
+query_target_triple()
+{
+    local compiler="$1"
+    local target=''
+
+    target="$("$compiler" -print-target-triple 2>/dev/null || true)"
+    if [[ -z "$target" ]]; then
+        target="$("$compiler" -dumpmachine 2>/dev/null || true)"
+    fi
+    printf '%s\n' "$target" | sed -n '1p'
+}
+
+canonical_native_arch()
+{
+    case "$1" in
+        arm64|aarch64) printf 'aarch64\n' ;;
+        x86_64|amd64) printf 'x86_64\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+canonical_native_target_triple()
+{
+    local target="$1"
+    local target_arch canonical_arch
+
+    [[ "$target" == *-* ]] || return 1
+    target_arch="${target%%-*}"
+    canonical_arch="$(canonical_native_arch "$target_arch")" || return 1
+    printf '%s-%s\n' "$canonical_arch" "${target#*-}"
+}
+
+# GNU/Linux triples may vary in vendor spelling and x86 CPU generation without
+# changing their calling ABI. Keep the libc/ABI environment, though: GNU x32
+# and AArch64 ILP32 are not interchangeable with their LP64 counterparts.
+# This only compares ABIs; native host support and CPU requirements are checked
+# separately, so recognizing i386/i686 here does not enable 32-bit hosts.
+linux_target_abi_key()
+{
+    local target="$1" arch vendor os environment extra
+
+    IFS=- read -r arch vendor os environment extra <<< "$target"
+    case "$arch" in
+        i386|i486|i586|i686) arch=i386 ;;
+        x86_64|amd64) arch=x86_64 ;;
+        arm64|aarch64) arch=aarch64 ;;
+        *) return 1 ;;
+    esac
+    [[ -n "$vendor" && -z "$extra" ]] || return 1
+    if [[ "$vendor" == linux ]]; then
+        [[ -z "$environment" ]] || return 1
+        environment="${os:-unknown}"
+    else
+        [[ "$os" == linux ]] || return 1
+        environment="${environment:-unknown}"
+    fi
+    [[ "$environment" =~ ^[a-z0-9_]+$ ]] || return 1
+    printf '%s-linux-%s\n' "$arch" "$environment"
+}
+
+native_target_matches_host()
+{
+    local target="$1"
+    local arch target_arch target_vendor target_os target_abi
+
+    [[ -n "$target" ]] || return 1
+    IFS='-' read -r arch target_vendor target_os _ <<< "$target"
+    target_arch="$(canonical_native_arch "$arch" 2>/dev/null || true)"
+    [[ "$target_arch" == "$host_tag" ]] || return 1
+
+    case "$host_os" in
+        macos)
+            [[ "$target_vendor" == apple ]] || return 1
+            # Reject non-macOS Apple environments and extra target fields.
+            [[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1
+            # The seed compiler may report an unversioned Darwin/macOS
+            # host triple. It is not a deployment target: the selected
+            # MacOSX SDK and -mmacosx-version-min control compilation.
+            # Reject iOS, Catalyst, simulators and extra target fields.
+            [[ "$target_os" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
+            ;;
+        linux)
+            target_abi="$(linux_target_abi_key "$target")" || return 1
+            # The native LLVM lane builds LP64 host tools. An x32/ILP32
+            # compiler can report the host CPU while emitting 32-bit pointers.
+            case "${target_abi#"$host_tag"-linux-}" in
+                *x32|*ilp32*) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Compare the ABI represented by native C/C++ triples, not their spelling.
+# Clang can report the same macOS release as a Darwin kernel version or as a
+# macOS product version; Linux compiler vendors can differ without changing
+# the ABI. Keep the original triple for LLVM_HOST_TRIPLE below.
+native_target_abi_key()
+{
+    case "$host_os" in
+        macos) macos_target_abi_key "$1" ;;
+        linux) linux_target_abi_key "$1" ;;
+        *) return 1 ;;
+    esac
+}
+
+bootstrap_cc_target="$(query_target_triple "$bootstrap_cc")"
+bootstrap_cxx_target="$(query_target_triple "$bootstrap_cxx")"
+if ! native_target_matches_host "$bootstrap_cc_target"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C compiler does not target the host ABI.' \
+        "compiler: $bootstrap_cc" \
+        "target:   ${bootstrap_cc_target:-<unknown>}" \
+        "host:     $host_id ($host_os/$host_kernel)" >&2
+    exit 1
+fi
+if ! native_target_matches_host "$bootstrap_cxx_target"; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C++ compiler does not target the host ABI.' \
+        "compiler: $bootstrap_cxx" \
+        "target:   ${bootstrap_cxx_target:-<unknown>}" \
+        "host:     $host_id ($host_os/$host_kernel)" >&2
+    exit 1
+fi
+bootstrap_cc_target_canonical="$(canonical_native_target_triple "$bootstrap_cc_target")" || {
+    printf 'error: failed to canonicalize native LLVM bootstrap C target: %s\n' \
+        "$bootstrap_cc_target" >&2
+    exit 1
+}
+bootstrap_cxx_target_canonical="$(canonical_native_target_triple "$bootstrap_cxx_target")" || {
+    printf 'error: failed to canonicalize native LLVM bootstrap C++ target: %s\n' \
+        "$bootstrap_cxx_target" >&2
+    exit 1
+}
+# Keep C and C++ on one host target ABI rather than silently mixing SDK
+# and deployment assumptions from different bootstrap compilers. The macOS
+# architecture/SDK/deployment link probes above also exercise both languages.
+bootstrap_cc_abi="$(native_target_abi_key "$bootstrap_cc_target_canonical")" || {
+    printf 'error: invalid native LLVM bootstrap C target ABI: %s\n' \
+        "$bootstrap_cc_target_canonical" >&2
+    exit 1
+}
+bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")" || {
+    printf 'error: invalid native LLVM bootstrap C++ target ABI: %s\n' \
+        "$bootstrap_cxx_target_canonical" >&2
+    exit 1
+}
+# An unversioned Darwin/macOS seed triple has no deployment version to
+# compare. Accept that valid host identity when the architecture matches;
+# the C and C++ MacOSX SDK, explicit deployment, LP64 and executable probes
+# above verify their effective native ABI. Compare versions strictly when
+# both compilers report one.
+bootstrap_seed_abis_match=0
+if [[ "$bootstrap_cc_abi" == "$bootstrap_cxx_abi" ]]; then
+    bootstrap_seed_abis_match=1
+elif [[ "$host_os" == macos ]] &&
+     { [[ "$bootstrap_cc_abi" == "$host_tag-apple-macosx" ]] ||
+       [[ "$bootstrap_cxx_abi" == "$host_tag-apple-macosx" ]]; }; then
+    bootstrap_seed_abis_match=1
+fi
+if [[ "$bootstrap_seed_abis_match" != 1 ]]; then
+    printf '%s\n' \
+        'error: native LLVM bootstrap C and C++ compiler target triples differ.' \
+        "C:   $bootstrap_cc_target_canonical" \
+        "C++: $bootstrap_cxx_target_canonical" \
+        "C ABI:   $bootstrap_cc_abi" \
+        "C++ ABI: $bootstrap_cxx_abi" >&2
+    exit 1
+fi
+# A compiler wrapper can still add -mx32/-mabi=ilp32 while reporting an LP64
+# target triple. Check the actual C and C++ data models before configuring
+# LLVM; the native toolchain cache does not distinguish 32-bit pointer ABIs.
+native_bootstrap_lp64_probe()
+{
+    printf 'typedef char whp_native_lp64[(sizeof(void *) == 8 && sizeof(long) == 8) ? 1 : -1];\n' |
+        "$1" -x "$2" -fsyntax-only - >/dev/null 2>&1
+}
+if [[ "$host_os" == linux ]]; then
+    if ! native_bootstrap_lp64_probe "$bootstrap_cc" c; then
+        printf 'error: native LLVM bootstrap C compiler does not use the LP64 host ABI: %s\n' \
+            "$bootstrap_cc_target" >&2
+        exit 1
+    fi
+    if ! native_bootstrap_lp64_probe "$bootstrap_cxx" c++; then
+        printf 'error: native LLVM bootstrap C++ compiler does not use the LP64 host ABI: %s\n' \
+            "$bootstrap_cxx_target" >&2
+        exit 1
+    fi
+fi
+# The bootstrap compiler may report the Darwin *kernel* host triple.
+# Retain that for LLVM's host-tool identity. Clang's default compilation
+# target must instead identify macOS and its deployment version explicitly;
+# Darwin versions (25/26) are not macOS product/deployment versions.
+llvm_host_triple="$bootstrap_cc_target_canonical"
+if [[ "$host_os" == macos ]]; then
+    llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"
+else
+    llvm_default_target_triple="$llvm_host_triple"
+fi
+
+# The WHP LLVM fork is already a QEMU submodule and is the single source for
+# firmware, legacy-target, and native compiler profiles. Keep the native lane
+# on that gitlink rather than cloning or pinning a second LLVM lineage.
+whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"
+[[ -f "$LLVM_SOURCE_DIR/llvm/CMakeLists.txt" &&
+   -f "$LLVM_SOURCE_DIR/clang/CMakeLists.txt" ]] || {
+    printf 'error: WHP LLVM submodule is incomplete: %s\n' "$LLVM_SOURCE_DIR" >&2
+    exit 1
+}
+llvm_revision="$(git -C "$LLVM_SOURCE_DIR" rev-parse HEAD)"
+bootstrap_cc_version="$("$bootstrap_cc" --version 2>&1 | sed -n '1p')"
+bootstrap_cxx_version="$("$bootstrap_cxx" --version 2>&1 | sed -n '1p')"
+# WHP_NATIVE_LLVM_PCH_POLICY_BEGIN
+# This fork has a real LLVMSupport PCH and target reuse. Select PCH only
+# after discovering the build compiler and cache launcher. Apple's Clang
+# has its own versioning; upstream LLVM Clang needs >=18 for safe defaults.
+pch_compiler_usable=0
+if [[ "$bootstrap_cxx_version" == Apple\ clang\ version\ * ]]; then
+    pch_compiler_usable=1
+elif [[ "$bootstrap_cxx_version" =~ (^|[[:space:]])clang[[:space:]]version[[:space:]]([0-9]+) ]] &&
+     (( 10#${BASH_REMATCH[2]} >= 18 )); then
+    pch_compiler_usable=1
+fi
+
+if [[ "$LLVM_PCH" == auto ]]; then
+    # Keep non-macOS defaults stable. The launcher gate below uses the
+    # managed fork for PCH consumers; a system sccache stays conservative.
+    if [[ "$host_os" == macos && "$pch_compiler_usable" == 1 ]]; then
+        LLVM_PCH=1
+    else
+        LLVM_PCH=0
+    fi
+fi
+if [[ "$LLVM_PCH" == 1 && "${compiler_cache_cmd##*/}" == sccache ]]; then
+    if [[ "${WHP_MANAGED_SCCACHE:-0}" == 1 ]]; then
+        # The pinned fork hashes -include-pch binary contents for C++ object
+        # keys. -emit-pch and -x c++-header producers are not cached; sccache
+        # forwards those compilations directly to Clang. Do not grant this
+        # capability to an unrelated system sccache.
+        printf '%s\n' \
+            'WHP native LLVM PCH: managed sccache caches C++ consumers; PCH producers compile directly' >&2
+    else
+        cmake_compiler_launcher_args[1]=-DCMAKE_CXX_COMPILER_LAUNCHER=
+        printf '%s\n' \
+            'WHP native LLVM PCH: system sccache bypassed for C++; C caching remains enabled' >&2
+    fi
+fi
+if [[ "$LLVM_PCH" == 1 ]]; then
+    cmake_disable_precompile_headers=OFF
+    llvm_pch_state=enabled
+else
+    cmake_disable_precompile_headers=ON
+    llvm_pch_state=disabled
+fi
+printf 'WHP native LLVM precompiled headers: %s\n' "$llvm_pch_state" >&2
+# WHP_NATIVE_LLVM_PCH_POLICY_END
+
+llvm_enable_projects='clang;lld'
+llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
+llvm_enable_libxml2=OFF
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    if [[ "$host_os" != macos ]]; then
+        printf 'error: fork-built LLDB currently supports macOS only\n' >&2
+        exit 1
+    fi
+    llvm_enable_projects="${llvm_enable_projects};lldb"
+    # The lldb executable loads a shared liblldb; install both components.
+    llvm_distribution_components="${llvm_distribution_components};lldb;liblldb"
+fi
+if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
+    # LLVM's manifest merger is nonfunctional without native libxml2.
+    # FORCE_ON rejects missing/incompatible XML libraries at configure.
+    llvm_enable_libxml2=FORCE_ON
+    llvm_distribution_components="${llvm_distribution_components};llvm-mt"
+fi
+llvm_enable_runtimes=''
+llvm_include_runtimes=OFF
+if [[ "$host_os" == macos ]]; then
+    # Keep the Darwin linker and archive readers on the same LLVM revision as
+    # the compiler that emits LTO bitcode. ld64.lld consumes LLVM IR directly,
+    # while libLTO remains available for explicit system-ld64 compatibility.
+    # compiler-rt also belongs to the same installed compiler runtime family.
+    llvm_enable_runtimes=compiler-rt
+    llvm_include_runtimes=ON
+    # llvm-otool is llvm-objdump's Mach-O/otool-compatible entry point.
+    # Package that tool on Darwin without building another disassembler.
+    llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"
+fi
+# Link host tools against the aggregate libLLVM/libclang-cpp libraries,
+# never build individual LLVM components as separate shared libraries.
+llvm_build_shared=OFF
+llvm_link_shared=OFF
+clang_link_shared=OFF
+if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
+    case "$host_os" in
+        macos|linux|freebsd|netbsd|openbsd|dragonfly|solaris) ;;
+        *)
+            printf 'error: NATIVE_LLVM_SHARED_TOOLCHAIN=1 is unsupported on %s\n' \
+                "$host_os" >&2
+            exit 1
+            ;;
+    esac
+    llvm_build_shared=ON
+    llvm_link_shared=ON
+    clang_link_shared=ON
+    llvm_distribution_components="${llvm_distribution_components};LLVM;clang-cpp"
+fi
+marker="$TOOLCHAIN_DIR/.whp-native-llvm"
+expected_marker="$(cat <<EOF
+BOOTSTRAP_SCHEMA=14
+LLVM_GIT_COMMIT=$llvm_revision
+HOST=$host_id
+HOST_OS=$host_os
+HOST_KERNEL=$host_kernel
+HOST_ARCH=$host_arch
+MACOS_BOOTSTRAP_ARCH=$darwin_cmake_arch
+LLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD
+LLVM_TARGET_ARCH=host
+LLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS
+LLVM_HOST_TRIPLE=$llvm_host_triple
+LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
+LLVM_ENABLE_PROJECTS=$llvm_enable_projects
+LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
+LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
+LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components
+CMAKE_C_FLAGS=
+CMAKE_CXX_FLAGS=
+CMAKE_ASM_FLAGS=
+CMAKE_ASM_FLAGS_RELEASE=
+CMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags
+CMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags
+CMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD
+CMAKE_CXX_STANDARD_REQUIRED=ON
+CMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers
+LLVM_ENABLE_TELEMETRY=OFF
+COMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=$darwin_runtime_native_arch_only
+COMPILER_RT_ENABLE_IOS=OFF
+COMPILER_RT_ENABLE_MACCATALYST=OFF
+COMPILER_RT_ENABLE_WATCHOS=OFF
+COMPILER_RT_ENABLE_TVOS=OFF
+COMPILER_RT_ENABLE_XROS=OFF
+COMPILER_RT_BUILD_XRAY=OFF
+COMPILER_RT_BUILD_CTX_PROFILE=OFF
+COMPILER_RT_BUILD_MEMPROF=OFF
+COMPILER_RT_BUILD_ORC=OFF
+COMPILER_RT_BUILD_GWP_ASAN=OFF
+COMPILER_RT_INCLUDE_TESTS=OFF
+COMPILER_RT_BUILD_SANITIZERS=ON
+COMPILER_RT_BUILD_LIBFUZZER=ON
+COMPILER_RT_BUILD_PROFILE=ON
+BOOTSTRAP_CC=$bootstrap_cc
+BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
+BOOTSTRAP_CC_TARGET_TRIPLE=$bootstrap_cc_target
+BOOTSTRAP_CC_TARGET_TRIPLE_CANONICAL=$bootstrap_cc_target_canonical
+BOOTSTRAP_CXX=$bootstrap_cxx
+BOOTSTRAP_CXX_VERSION=$bootstrap_cxx_version
+BOOTSTRAP_CXX_TARGET_TRIPLE=$bootstrap_cxx_target
+BOOTSTRAP_CXX_TARGET_TRIPLE_CANONICAL=$bootstrap_cxx_target_canonical
+SDKROOT=$sdkroot
+MACOSX_DEPLOYMENT_TARGET=$deployment_target
+EOF
+)"
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    expected_marker="$expected_marker"$'\nNATIVE_LLVM_ENABLE_LLDB=1\nLLDB_ENABLE_PYTHON=OFF\nLLDB_USE_SYSTEM_DEBUGSERVER=ON'
+fi
+if [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]]; then
+    # Keep the schema-13 baseline separate from the opt-in shared profile.
+    expected_marker="$expected_marker"$'\nLLVM_SHARED_TOOLCHAIN=1\nLLVM_BUILD_LLVM_DYLIB=ON\nLLVM_LINK_LLVM_DYLIB=ON\nCLANG_LINK_CLANG_DYLIB=ON'
+fi
+
+windows_cross_target_usable()
+{
+    local prefix="$1"
+    local smoke_dir
+    local headers
+
+    smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-native-llvm-windows.XXXXXX")" ||
+        return 1
+
+    cat >"$smoke_dir/win32.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef __i386__
+#error clang did not select the i686 Windows target
+#endif
+_Static_assert(sizeof(void *) == 4, "i686 Windows pointer width mismatch");
+int whp_windows_i686_object(void) { return 32; }
+SOURCE
+
+    cat >"$smoke_dir/win64.c" <<'SOURCE'
+#ifndef _WIN32
+#error clang did not select the Windows target family
+#endif
+#ifndef _WIN64
+#error clang did not select the 64-bit Windows ABI
+#endif
+#ifndef __x86_64__
+#error clang did not select the x86_64 Windows target
+#endif
+_Static_assert(sizeof(void *) == 8, "x86_64 Windows pointer width mismatch");
+__attribute__((noreturn)) void whp_windows_entry(void)
+{
+    for (;;) {
+    }
+}
+SOURCE
+
+    if ! "$prefix/bin/clang" --target=i686-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win32.c" -o "$smoke_dir/win32.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/clang" --target=x86_64-w64-windows-gnu             -ffreestanding -fno-builtin -fno-stack-protector             -c "$smoke_dir/win64.c" -o "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    headers="$("$prefix/bin/llvm-readobj" --file-headers         "$smoke_dir/win64.obj" 2>/dev/null)" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+    grep -Eq 'COFF-x86-64|IMAGE_FILE_MACHINE_AMD64' <<< "$headers" || {
+        rm -rf "$smoke_dir"
+        return 1
+    }
+
+    if ! "$prefix/bin/lld-link" /machine:x64 /entry:whp_windows_entry             /subsystem:console /nodefaultlib             /out:"$smoke_dir/coff.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1 ||
+       ! "$prefix/bin/ld.lld" -m i386pep --entry=whp_windows_entry             --subsystem=console --no-insert-timestamp             -o "$smoke_dir/mingw.exe" "$smoke_dir/win64.obj" >/dev/null 2>&1; then
+        rm -rf "$smoke_dir"
+        return 1
+    fi
+
+    rm -rf "$smoke_dir"
+    return 0
+}
+
+windows_manifest_tool_usable()
+{
+    local prefix="$1"
+    local probe_dir
+    [[ -x "$prefix/bin/llvm-mt" ]] || return 1
+    probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-llvm-mt.XXXXXX")" || return 1
+    cat >"$probe_dir/input.manifest" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="WHP.LLVM" version="1.0.0.0"/>
+</assembly>
+XML
+    if ! "$prefix/bin/llvm-mt" -manifest "$probe_dir/input.manifest" \
+        "-out:$probe_dir/output.manifest" >/dev/null 2>&1 ||
+        ! grep -Fq 'WHP.LLVM' "$probe_dir/output.manifest"; then
+        rm -rf "$probe_dir"
+        return 1
+    fi
+    rm -rf "$probe_dir"
+}
+
+shared_host_libraries_usable()
+{
+    local prefix="$1"
+    local candidate
+    local llvm_found=0
+    local clang_found=0
+    [[ "$NATIVE_LLVM_SHARED_TOOLCHAIN" == 1 ]] || return 0
+
+    if [[ "$host_os" == macos ]]; then
+        for candidate in "$prefix"/lib/libLLVM*.dylib; do
+            [[ ! -f "$candidate" ]] || llvm_found=1
+        done
+        for candidate in "$prefix"/lib/libclang-cpp*.dylib; do
+            [[ ! -f "$candidate" ]] || clang_found=1
+        done
+    else
+        for candidate in "$prefix"/lib/libLLVM*.so*; do
+            [[ ! -f "$candidate" ]] || llvm_found=1
+        done
+        for candidate in "$prefix"/lib/libclang-cpp*.so*; do
+            [[ ! -f "$candidate" ]] || clang_found=1
+        done
+    fi
+    if [[ "$llvm_found" != 1 || "$clang_found" != 1 ]]; then
+        printf 'error: shared native LLVM lacks libLLVM or libclang-cpp\n' >&2
+        return 1
+    fi
+    if [[ "$host_os" == macos ]]; then
+        # The .dylib must be linked by the consumer, not merely installed.
+        # LLVM's own llvm_setup_rpath uses @loader_path/../lib for this.
+        if ! command -v otool >/dev/null 2>&1 ||
+           ! otool -L "$prefix/bin/clang" 2>/dev/null |
+               grep -Eq 'libclang-cpp[^[:space:]]*\.dylib'; then
+            printf 'error: installed Clang is not linked to libclang-cpp.dylib\n' >&2
+            return 1
+        fi
+    fi
+}
+
+native_llvm_validation_error()
+{
+    printf 'error: staged WHP native LLVM [%s]: %s\n' "$1" "$2" >&2
+}
+
+native_neon_headers_usable()
+{
+    local prefix="$1"
+    local resource_dir='' header='' driver='' language=''
+
+    # Check the installed resource tree rather than a source or SDK copy.
+    [[ "$host_os" == macos && "$host_tag" == aarch64 ]] || return 0
+    resource_dir="$("$prefix/bin/clang" -print-resource-dir 2>/dev/null)" || {
+        native_llvm_validation_error resource 'cannot locate Clang resource directory'
+        return 1
+    }
+    # A stale driver config or relocated staging path may still point to a
+    # real Clang installation. Require resource headers belonging to this
+    # exact prefix, not merely any directory that contains arm_neon.h.
+    local prefix_real='' resource_real='' cxx_resource=''
+    prefix_real="$(cd -P -- "$prefix" && pwd -P)" || return 1
+    [[ -n "$resource_dir" && -d "$resource_dir" ]] || {
+        native_llvm_validation_error resource "Clang resource directory is absent: ${resource_dir:-<empty>}"
+        return 1
+    }
+    resource_real="$(cd -P -- "$resource_dir" && pwd -P)" || return 1
+    case "$resource_real" in
+        "$prefix_real"/*) ;;
+        *)
+            native_llvm_validation_error resource "Clang resource directory is outside toolchain: $resource_real (expected under $prefix_real)"
+            return 1 ;;
+    esac
+    cxx_resource="$("$prefix/bin/clang++" -print-resource-dir 2>/dev/null)" || {
+        native_llvm_validation_error resource 'cannot locate Clang++ resource directory'
+        return 1
+    }
+    [[ -d "$cxx_resource" &&
+       "$(cd -P -- "$cxx_resource" && pwd -P)" == "$resource_real" ]] || {
+        native_llvm_validation_error resource "Clang and Clang++ disagree on resource directory: $resource_real vs ${cxx_resource:-<empty>}"
+        return 1
+    }
+    for header in arm_neon.h arm_bf16.h arm_vector_types.h; do
+        [[ -s "$resource_dir/include/$header" ]] || {
+            native_llvm_validation_error resource "missing generated NEON header: $resource_dir/include/$header"
+            return 1
+        }
+    done
+
+    # The same generated header must work in C and C++ with the selected
+    # macOS ABI, including arm64e. Never execute the probe on the host.
+    for driver in clang clang++; do
+        language=c
+        [[ "$driver" != clang++ ]] || language=c++
+        if ! printf '%s\n' \
+            '#include <arm_neon.h>' \
+            '#ifndef __ARM_NEON' \
+            '#error "NEON is disabled for AArch64"' \
+            '#endif' \
+            'uint8x16_t whp_neon_xor(uint8x16_t a, uint8x16_t b) {' \
+            '    return veorq_u8(a, b);' \
+            '}' |
+            "$prefix/bin/$driver" -arch "$darwin_cmake_arch" \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -ffreestanding -Werror -x "$language" -fsyntax-only - \
+                >/dev/null; then
+            native_llvm_validation_error resource "$driver cannot compile installed NEON intrinsics for $darwin_cmake_arch"
+            return 1
+        fi
+    done
+
+    # Select A18 Pro features explicitly. This must not enable BF16 in
+    # generic ARM binaries merely because the compiler runs on an A18 Pro.
+    if ! printf '%s\n' \
+        '#include <arm_neon.h>' \
+        '#ifndef __ARM_FEATURE_BF16' \
+        '#error "Apple A18 Pro feature model lacks BF16"' \
+        '#endif' \
+        'float32x4_t whp_a18_bf16(float32x4_t sum, bfloat16x8_t a, bfloat16x8_t b) {' \
+        '    return vbfdotq_f32(sum, a, b);' \
+        '}' |
+        "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
+            -mcpu=apple-a18-pro -isysroot "$sdkroot" \
+            "-mmacosx-version-min=$deployment_target" \
+            -ffreestanding -Werror -x c -fsyntax-only - >/dev/null; then
+        native_llvm_validation_error resource "installed NEON/BF16 header or A18 Pro feature model failed for $darwin_cmake_arch"
+        return 1
+    fi
+}
+
+usable()
+{
+    local prefix="$1"
+    local target=''
+    local target_abi=''
+    local expected_target_abi=''
+    local ubsan_exe=''
+    local ubsan_log=''
+    local ubsan_resource_dir=''
+    local ubsan_runtime=''
+    local ubsan_runtime_archs=''
+    local objc_exe=''
+    local objc_log=''
+    # Native macOS usability uses Apple ld for mandatory host/runtime smoke.
+    # The fork's ld64.lld is distributed and has a separate capability probe;
+    # rejecting Clang because LLD cannot link the current SDK is too strict.
+    local clang_link_driver=("$prefix/bin/clang")
+
+    local supported_targets=''
+    local required_tool
+
+    for required_tool in clang clang++ ld.lld lld-link llvm-ar llvm-ranlib \
+                         llvm-lib llvm-dlltool llvm-rc llvm-windres \
+                         llvm-nm llvm-objcopy llvm-objdump llvm-strip \
+                         llvm-readobj llvm-readelf llvm-config llvm-tblgen; do
+        [[ -x "$prefix/bin/$required_tool" ]] || {
+            native_llvm_validation_error tool "missing required tool: $required_tool"
+            return 1
+        }
+    done
+    if [[ "$LLVM_WINDOWS_MANIFEST" == 1 ]]; then
+        windows_manifest_tool_usable "$prefix" || {
+            native_llvm_validation_error tool 'Windows manifest merger llvm-mt failed validation'
+            return 1
+        }
+    fi
+    if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+        [[ -x "$prefix/bin/lldb" ]] || {
+            native_llvm_validation_error tool 'missing required tool: lldb'
+            return 1
+        }
+        "$prefix/bin/lldb" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool 'lldb --version failed'
+            return 1
+        }
+    fi
+    shared_host_libraries_usable "$prefix" || {
+        native_llvm_validation_error runtime 'shared host library validation failed'
+        return 1
+    }
+    supported_targets="$("$prefix/bin/clang" --print-targets 2>/dev/null)" || {
+        native_llvm_validation_error tool 'clang --print-targets failed'
+        return 1
+    }
+    for target in aarch64 x86 ppc32; do
+        grep -Eq "(^|[[:space:]])${target}([[:space:]]|$)" <<< "$supported_targets" || {
+            native_llvm_validation_error ABI "missing required LLVM target backend: $target"
+            return 1
+        }
+    done
+    windows_cross_target_usable "$prefix" || {
+        native_llvm_validation_error ABI 'Windows COFF/MinGW cross-target compilation or linking failed'
+        return 1
+    }
+    if [[ "$host_os" == macos ]]; then
+        for required_tool in llvm-otool llvm-lipo ld64.lld; do
+            [[ -x "$prefix/bin/$required_tool" ]] || {
+                native_llvm_validation_error tool "missing required tool: $required_tool"
+                return 1
+            }
+        done
+        "$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool 'llvm-otool --version failed'
+            return 1
+        }
+        [[ -f "$prefix/lib/libLTO.dylib" ]] || {
+            native_llvm_validation_error runtime 'missing libLTO.dylib for Darwin linking'
+            return 1
+        }
+        # LLVM's driver accepts -fsanitize=undefined even if compiler-rt
+        # did not install a runtime for the chosen Mach-O ABI. Inspect the
+        # *installed Clang's* resource tree rather than using an unrelated
+        # Apple Clang runtime or treating a plain arm64 slice as arm64e.
+        ubsan_resource_dir="$("$prefix/bin/clang" -print-resource-dir 2>/dev/null)" || {
+            native_llvm_validation_error runtime 'Clang cannot resolve its installed compiler-rt resource directory'
+            return 1
+        }
+        ubsan_runtime="$ubsan_resource_dir/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
+        if [[ ! -f "$ubsan_runtime" ]]; then
+            native_llvm_validation_error runtime "missing installed compiler-rt UBSan dylib: $ubsan_runtime (LLVM runtimes distribution)"
+            return 1
+        fi
+        ubsan_runtime_archs="$("$prefix/bin/llvm-lipo" -archs "$ubsan_runtime" 2>/dev/null)" || {
+            native_llvm_validation_error ABI "cannot inspect compiler-rt UBSan Mach-O architectures: $ubsan_runtime"
+            return 1
+        }
+        if ! printf '%s\n' "$ubsan_runtime_archs" | tr '[:space:]' '\n' |
+            grep -Fxq "$darwin_cmake_arch"; then
+            native_llvm_validation_error ABI "compiler-rt UBSan runtime lacks $darwin_cmake_arch slice (available: $ubsan_runtime_archs): $ubsan_runtime"
+            return 1
+        fi
+        ubsan_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan.XXXXXX")" ||
+            { native_llvm_validation_error runtime 'cannot create UBSan smoke executable'; return 1; }
+        ubsan_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-ubsan-log.XXXXXX")" || {
+            rm -f "$ubsan_exe"
+            native_llvm_validation_error runtime 'cannot create UBSan smoke log'
+            return 1
+        }
+        # A real signed-overflow expression makes Clang emit UBSan handler
+        # references. Merely linking main(){return 0;} is not proof that the
+        # selected compiler and compiler-rt agree on sanitizer instrumentation.
+        if ! printf '#include <limits.h>\nvolatile int whp_ubsan_value = INT_MAX;\nint main(void) { return whp_ubsan_value + 1; }\n' |
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
+                -fsanitize=undefined \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -x c - -o "$ubsan_exe" >/dev/null 2>"$ubsan_log"; then
+            native_llvm_validation_error runtime "native LLVM UBSan link failed with Apple ld for $darwin_cmake_arch; runtime=$ubsan_runtime; check compiler-rt and SDK"
+            cat "$ubsan_log" >&2
+            rm -f "$ubsan_exe" "$ubsan_log"
+            return 1
+        fi
+        rm -f "$ubsan_exe" "$ubsan_log"
+
+        # A Darwin compiler is not usable by QEMU merely because C links. The
+        # Cocoa UI is Objective-C, and Clang's runtime link adds -lobjc. Prove
+        # that the installed Clang can resolve both libobjc and a system
+        # framework from the selected macOS SDK. arm64e deliberately uses
+        # Apple ld until WHP Mach-O LLD supports authenticated relocations.
+        objc_exe="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc.XXXXXX")" ||
+            { native_llvm_validation_error runtime 'cannot create Objective-C smoke executable'; return 1; }
+        objc_log="$(mktemp "${TMPDIR:-/tmp}/whp-native-llvm-objc-log.XXXXXX")" || {
+            rm -f "$objc_exe"
+            native_llvm_validation_error runtime 'cannot create Objective-C smoke log'
+            return 1
+        }
+        if ! printf 'int main(void) { return 0; }\n' |
+            "${clang_link_driver[@]}" -arch "$darwin_cmake_arch" \
+                -isysroot "$sdkroot" \
+                "-mmacosx-version-min=$deployment_target" \
+                -fobjc-link-runtime -x objective-c - -framework Cocoa \
+                -o "$objc_exe" >/dev/null 2>"$objc_log"; then
+            native_llvm_validation_error runtime "cannot link Objective-C against SDK $sdkroot"
+            cat "$objc_log" >&2
+            rm -f "$objc_exe" "$objc_log"
+            return 1
+        fi
+        rm -f "$objc_exe" "$objc_log"
+    fi
+    for required_tool in clang clang++; do
+        "$prefix/bin/$required_tool" --version >/dev/null 2>&1 || {
+            native_llvm_validation_error tool "$required_tool --version failed"
+            return 1
+        }
+    done
+    expected_target_abi="$(native_target_abi_key "$llvm_default_target_triple")" || {
+        native_llvm_validation_error ABI "invalid expected target $llvm_default_target_triple"
+        return 1
+    }
+    target="$(query_target_triple "$prefix/bin/clang")"
+    native_target_matches_host "$target" || {
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
+        return 1
+    }
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    target_abi="$(native_target_abi_key "$target" 2>/dev/null || true)"
+    [[ -n "$target_abi" && "$target_abi" == "$expected_target_abi" ]] || {
+        native_llvm_validation_error ABI "Clang target ${target:-<unknown>} (ABI ${target_abi:-<invalid>}) differs from expected $llvm_default_target_triple (ABI $expected_target_abi)"
+        return 1
+    }
+    target="$(query_target_triple "$prefix/bin/clang++")"
+    native_target_matches_host "$target" || {
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
+        return 1
+    }
+    target="$(canonical_native_target_triple "$target" 2>/dev/null || true)"
+    target_abi="$(native_target_abi_key "$target" 2>/dev/null || true)"
+    [[ -n "$target_abi" && "$target_abi" == "$expected_target_abi" ]] || {
+        native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} (ABI ${target_abi:-<invalid>}) differs from expected $llvm_default_target_triple (ABI $expected_target_abi)"
+        return 1
+    }
+    native_neon_headers_usable "$prefix" || return 1
+    printf 'int whp_native_llvm_usable(void) { return 0; }\n' |
+        "$prefix/bin/clang" -x c -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'native Clang C object compilation failed'
+            return 1
+        }
+    printf '#include <stddef.h>\n#include <stdarg.h>\nsize_t whp_native_llvm_resource_size(void) { return sizeof(size_t) + sizeof(va_list); }\n' |
+        "$prefix/bin/clang" -ffreestanding -x c -c - -o /dev/null \
+            >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'freestanding C resource-header compilation failed'
+            return 1
+        }
+    printf 'int whp_native_llvm_frame_pointer(void) { return 0; }\n' |
+        "$prefix/bin/clang" -fno-omit-frame-pointer -momit-leaf-frame-pointer \
+            -x c -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'frame-pointer C compilation failed'
+            return 1
+        }
+    printf 'int whp_native_llvm_cxx_usable() { return 0; }\n' |
+        "$prefix/bin/clang++" -x c++ -c - -o /dev/null >/dev/null 2>&1 || {
+            native_llvm_validation_error ABI 'native Clang++ C++ object compilation failed'
+            return 1
+        }
+}
+
+verify_asan_when_requested()
+{
+    local prefix="$1"
+    local asan_args=()
+
+    # A failing optional ASan linker is not evidence that the whole native
+    # LLVM cache needs recompilation. Check independently after usable() has
+    # accepted the toolchain, and before publishing a newly staged toolchain.
+    [[ "$host_os" == macos && "$NATIVE_LLVM_VALIDATE_ASAN" == 1 ]] || return 0
+    asan_args=(
+        --clang "$prefix/bin/clang"
+        --clangxx "$prefix/bin/clang++"
+        --readobj "$prefix/bin/llvm-readobj"
+        --arch "$darwin_cmake_arch"
+        --sdkroot "$sdkroot"
+        --deployment-target "$deployment_target"
+    )
+    # A QEMU ASan build uses Apple ld until Mach-O LLD has passed the
+    # instrumented-global link contract. Keep an explicit standalone
+    # NATIVE_LLVM_VALIDATE_ASAN=1 test of LLD available with ASan off.
+    if [[ "$darwin_cmake_arch" != arm64e &&
+          "${QEMU_ASAN:-0}" != 1 && "${QEMU_ASAN:-0}" != y ]]; then
+        asan_args+=(--use-lld)
+    fi
+    # The arm64e Clang/ASan runtime may fail after a successful Mach-O link.
+    # Validate real PAC-aware C++ execution and error reporting before reusing
+    # or publishing this native toolchain in an explicit ASan validation run.
+    if [[ "$darwin_cmake_arch" == arm64e ]]; then
+        asan_args+=(--execute)
+    fi
+    if [[ "$NATIVE_LLVM_ASAN_AUTO_DEBUG" == 1 ]]; then
+        asan_args+=(--debug-on-crash --lldb "$prefix/bin/lldb")
+    fi
+    "${PYTHON:-python3}" "$SOURCE_DIR/scripts/verify-native-asan-darwin.py" \
+        "${asan_args[@]}"
+}
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
+      "$(cat "$marker")" == "$expected_marker" ]] && usable "$TOOLCHAIN_DIR"; then
+    verify_asan_when_requested "$TOOLCHAIN_DIR" || exit 1
+    printf 'WHP native LLVM is current: %s\n' "$TOOLCHAIN_DIR" >&2
+    printf '%s\n' "$TOOLCHAIN_DIR" >&3
+    exit 0
+fi
+
+# Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
+# revisions. Re-running CMake updates changed rules in place, while Ninja keeps
+# object dependency state and rebuilds only affected outputs. A stale or
+# partially installed toolchain is not evidence that the generated build graph
+# is corrupt, because installation is staged separately below.
+mkdir -p "$(dirname "$TOOLCHAIN_DIR")" "$TOOLCHAIN_WORK_DIR"
+cmake_lldb_args=()
+if [[ "$NATIVE_LLVM_ENABLE_LLDB" == 1 ]]; then
+    # Keep disabled LLDB CMake knobs out of the ordinary Clang/LLD cache.
+    cmake_lldb_args=(
+    -DLLDB_ENABLE_PYTHON=OFF
+    -DLLDB_ENABLE_SWIG=OFF
+    -DLLDB_ENABLE_LUA=OFF
+    -DLLDB_ENABLE_LIBEDIT=OFF
+    -DLLDB_ENABLE_CURSES=OFF
+    -DLLDB_ENABLE_LZMA=OFF
+    -DLLDB_ENABLE_LIBXML2=OFF
+    -DLLDB_ENABLE_TREESITTER=OFF
+    -DLLDB_ENABLE_PROTOCOL_SERVERS=OFF
+    -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
+    -DLLDB_ENABLE_LIBCXX_TESTS=OFF
+    -DLLDB_INCLUDE_TESTS=OFF
+    )
+fi
+
+cmake_args=(
+    -S "$LLVM_SOURCE_DIR/llvm"
+    -B "$LLVM_BUILD_DIR"
+    -G Ninja
+    "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
+    -DCMAKE_BUILD_TYPE=Release
+    # Drop old cross-target cache entries without removing the incremental
+    # Ninja graph or its compiled objects and depfiles.
+    -UCMAKE_TOOLCHAIN_FILE
+    -UCMAKE_SYSROOT
+    -UCMAKE_FIND_ROOT_PATH
+    -UCMAKE_PROJECT_TOP_LEVEL_INCLUDES
+    -UCMAKE_PROJECT_INCLUDE
+    -UCMAKE_PROJECT_INCLUDE_BEFORE
+    # Cached C/C++ targets and external toolchains must not outlive the host ABI.
+    -UCMAKE_C_COMPILER_TARGET
+    -UCMAKE_CXX_COMPILER_TARGET
+    -UCMAKE_ASM_COMPILER_TARGET
+    -UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN
+    -UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN
+    # Explicitly clear persistent CMakeCache global flags from older builds.
+    # Assembly flags can retain host-only ISA options (e.g. -msse4.2)
+    # across an x86 -> AArch64 build-tree change, independently of C/C++.
+    # Only the controlled Release C/C++ options may carry macros.
+    -DCMAKE_C_FLAGS=
+    -DCMAKE_CXX_FLAGS=
+    -DCMAKE_ASM_FLAGS=
+    -DCMAKE_ASM_FLAGS_RELEASE=
+    "-DCMAKE_C_FLAGS_RELEASE=$llvm_bootstrap_cflags"
+    "-DCMAKE_CXX_FLAGS_RELEASE=$llvm_bootstrap_cxxflags"
+    "-DCMAKE_CXX_STANDARD=$LLVM_CXX_STANDARD"
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    "-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$cmake_disable_precompile_headers"
+    -DCMAKE_C_COMPILER="$bootstrap_cc"
+    -DCMAKE_CXX_COMPILER="$bootstrap_cxx"
+    # Never let LLVM's legacy RULE_LAUNCH_COMPILE cache option override
+    # the independent C/C++ launchers selected above for PCH safety.
+    -DLLVM_CCACHE_BUILD=OFF
+    "${cmake_compiler_launcher_args[@]}"
+    "${bootstrap_linker_args[@]}"
+    -DCMAKE_INSTALL_PREFIX="$TOOLCHAIN_DIR"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+    -DCMAKE_INSTALL_MESSAGE=NEVER
+    "-DLLVM_ENABLE_PROJECTS=$llvm_enable_projects"
+    "-DLLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes"
+    "-DLLVM_TARGETS_TO_BUILD=$LLVM_TARGETS_TO_BUILD"
+    # Prevent a stale CMakeCache from selecting a different native backend.
+    # LLVM derives host from the separately validated LLVM_HOST_TRIPLE.
+    -DLLVM_TARGET_ARCH=host
+    "-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"
+    "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
+    "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
+    "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
+    -DBUILD_SHARED_LIBS=OFF
+    -DLLVM_ENABLE_PIC=ON
+    "-DLLVM_BUILD_LLVM_DYLIB=$llvm_build_shared"
+    "-DLLVM_LINK_LLVM_DYLIB=$llvm_link_shared"
+    "-DCLANG_LINK_CLANG_DYLIB=$clang_link_shared"
+    -DLLVM_DYLIB_COMPONENTS=all
+    -DLLVM_APPEND_VC_REV=OFF
+    "-DLLVM_PARALLEL_COMPILE_JOBS=$LLVM_COMPILE_JOBS"
+    "-DLLVM_PARALLEL_LINK_JOBS=$LLVM_LINK_JOBS"
+    "-DLLVM_PARALLEL_TABLEGEN_JOBS=$LLVM_TABLEGEN_JOBS"
+    -DLLVM_ENABLE_LTO=OFF
+    -DLLVM_ENABLE_FATLTO=OFF
+    -DLLVM_BUILD_INSTRUMENTED=OFF
+    -DLLVM_ENABLE_ASSERTIONS=OFF
+    -DLLVM_ENABLE_MODULES=OFF
+    -DLLVM_ENABLE_PLUGINS=OFF
+    -DLLVM_ENABLE_BACKTRACES=OFF
+    -DLLVM_ENABLE_CRASH_OVERRIDES=OFF
+    -DLLVM_ENABLE_UNWIND_TABLES=OFF
+    -DLLVM_ENABLE_LIBEDIT=OFF
+    -DLLVM_ENABLE_LIBPFM=OFF
+    -DLLVM_ENABLE_Z3_SOLVER=OFF
+    -DLLVM_ENABLE_WARNINGS=OFF
+    -DLLVM_ENABLE_PEDANTIC=OFF
+    -DLLVM_INCLUDE_TESTS=OFF
+    -DLLVM_INCLUDE_EXAMPLES=OFF
+    -DLLVM_INCLUDE_BENCHMARKS=OFF
+    -DLLVM_INCLUDE_DOCS=OFF
+    -DLLVM_INCLUDE_UTILS=OFF
+    "-DLLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes"
+    -DLLVM_ENABLE_BINDINGS=OFF
+    -DLLVM_ENABLE_TELEMETRY=OFF
+    -DCLANG_INCLUDE_TESTS=OFF
+    -DCLANG_ENABLE_STATIC_ANALYZER=OFF
+    -DLLD_INCLUDE_TESTS=OFF
+    "${cmake_lldb_args[@]}"
+    -DLLVM_ENABLE_ZLIB=OFF
+    -DLLVM_ENABLE_ZSTD=OFF
+    "-DLLVM_ENABLE_LIBXML2=$llvm_enable_libxml2"
+    "${cmake_darwin_runtime_args[@]}"
+    "${cmake_host_args[@]}"
+)
+# Reuse the generated Ninja graph when the invocation is unchanged.
+# Ninja's RERUN_CMAKE rule still regenerates that graph if tracked CMake
+# inputs have changed, including CMakeLists.txt updates in the LLVM submodule.
+# This avoids paying for a full LLVM CMake configure again on an interrupted
+# build or an install-validation retry. Never use the installed-toolchain ABI
+# marker for this decision: configuration and installation are distinct states.
+cmake_config_marker="$LLVM_BUILD_DIR/.whp-native-llvm-cmake-config"
+cmake_config_identity="$(
+    printf 'WHP_CMAKE_CONFIG_SCHEMA=2\n'
+    # A gitlink revision switch may leave timestamps older than build.ninja.
+    # Include the exact source producer, not only compiler options.
+    printf 'LLVM_GIT_COMMIT=%q\n' "$llvm_revision"
+    printf 'LLVM_SOURCE_DIR=%q\n' "$LLVM_SOURCE_DIR"
+    printf 'CMAKE=%q\n' "$(command -v cmake)"
+    cmake --version | sed -n '1p'
+    printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"
+    printf 'CXX_VERSION=%q\n' "$bootstrap_cxx_version"
+    for env_name in PATH AR RANLIB PKG_CONFIG \
+                    CMAKE_PREFIX_PATH CMAKE_LIBRARY_PATH CMAKE_INCLUDE_PATH \
+                    CMAKE_TOOLCHAIN_FILE CMAKE_FIND_ROOT_PATH \
+                    PKG_CONFIG_PATH PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR \
+                    SDKROOT MACOSX_DEPLOYMENT_TARGET; do
+        printf '%s=%q\n' "$env_name" "${!env_name-}"
+    done
+    printf 'ARG=%q\n' "${cmake_args[@]}"
+)"
+# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_BEGIN
+native_llvm_cmake_cache_clean()
+{
+    local cache="$LLVM_BUILD_DIR/CMakeCache.txt"
+    local kind recorded
+    [[ -f "$cache" ]] || return 1
+    # An unchanged marker does not guarantee that another producer did not
+    # inject foreign target options into the persistent CMake cache.
+    if grep -Eq '^(CMAKE_TOOLCHAIN_FILE|CMAKE_SYSROOT|CMAKE_FIND_ROOT_PATH|CMAKE_PROJECT_TOP_LEVEL_INCLUDES|CMAKE_PROJECT_INCLUDE|CMAKE_PROJECT_INCLUDE_BEFORE|CMAKE_C_COMPILER_TARGET|CMAKE_CXX_COMPILER_TARGET|CMAKE_ASM_COMPILER_TARGET|CMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN|CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN):[^=]*=.+$' "$cache"; then
+        printf 'WHP native LLVM: stale CMake cross-target variables; reconfiguring in place\n' >&2
+        return 1
+    fi
+    # Per-configuration Release flags are independent of base LDFLAGS and
+    # can reintroduce architecture, LTO, runtimes and sysroots silently.
+    if grep -Eq '^CMAKE_(EXE|SHARED|MODULE|STATIC)_LINKER_FLAGS_RELEASE:[^=]*=.+$' "$cache"; then
+        printf 'WHP native LLVM: stale Release linker flags; reconfiguring in place\n' >&2
+        return 1
+    fi
+    # A cached base link setting must still match the selected native linker.
+    for kind in EXE SHARED MODULE STATIC; do
+        recorded="$(grep -E "^CMAKE_${kind}_LINKER_FLAGS:[^=]*=" "$cache" || true)"
+        if [[ -n "$recorded" ]]; then
+            [[ "${recorded#*=}" == "" ]] || return 1
+        fi
+    done
+    grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache"
+}
+# WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_END
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
+      -f "$LLVM_BUILD_DIR/CMakeCache.txt" &&
+      -f "$LLVM_BUILD_DIR/build.ninja" &&
+      -f "$cmake_config_marker" &&
+      "$(cat "$cmake_config_marker")" == "$cmake_config_identity" ]] &&
+   native_llvm_cmake_cache_clean; then
+    printf 'WHP native LLVM: reusing existing CMake/Ninja configuration\n' >&2
+else
+    # A failed configure must not leave behind a valid reuse marker.
+    rm -f "$cmake_config_marker"
+    cmake "${cmake_args[@]}"
+    printf '%s\n' "$cmake_config_identity" > "$cmake_config_marker"
+fi
+
+if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
+    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+fi
+
+# Keep traversing independent Ninja edges after a compile failure so the
+# persistent build tree contains every object that can be built. Ninja still
+# returns failure after exhausting the reachable graph, so errors remain fatal
+# and installation is never attempted from an incomplete distribution.
+NINJA_CRITICAL_PATH_TIMES="$LLVM_NINJA_CRITICAL_PATH_TIMES" \
+    cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+
+stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
+rm -rf "$stage_root"
+mkdir -p "$stage_root"
+DESTDIR="$stage_root" \
+    cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+        "${cmake_parallel_args[@]}"
+staged_toolchain="$stage_root$TOOLCHAIN_DIR"
+[[ -x "$staged_toolchain/bin/clang" ]] || {
+    printf 'error: WHP native LLVM did not install clang\n' >&2
+    exit 1
+}
+if [[ ! -x "$staged_toolchain/bin/clang++" ]]; then
+    ln -s clang "$staged_toolchain/bin/clang++"
+fi
+
+smoke_dir="$TOOLCHAIN_WORK_DIR/smoke"
+rm -rf "$smoke_dir"
+mkdir -p "$smoke_dir"
+cat >"$smoke_dir/smoke.c" <<EOF
+#ifndef $smoke_macro
+#error native LLVM selected the wrong host backend
+#endif
+int whp_native_llvm_smoke(void) { return 0; }
+EOF
+cat >"$smoke_dir/smoke.cc" <<'EOF'
+static_assert(sizeof(void *) >= 4, "unexpected native pointer width");
+int whp_native_llvm_cxx_smoke() { return 0; }
+EOF
+
+smoke_arch_args=()
+if [[ "$host_os" == macos ]]; then
+    smoke_arch_args=(
+        -arch "$darwin_cmake_arch"
+        -isysroot "$sdkroot"
+        "-mmacosx-version-min=$deployment_target"
+    )
+fi
+if [[ "$host_os" == macos && "$darwin_cmake_arch" == arm64e ]]; then
+    cat >>"$smoke_dir/smoke.c" <<'EOF'
+#ifndef __arm64e__
+#error native LLVM lost the arm64e ABI during the installed-toolchain smoke test
+#endif
+#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)
+#error native LLVM lost arm64e indirect-call pointer authentication
+#endif
+static int whp_arm64e_target(int value) { return value + 1; }
+static int (*whp_arm64e_fp)(int) = whp_arm64e_target;
+int whp_native_llvm_arm64e_smoke(int value) { return whp_arm64e_fp(value); }
+EOF
+    cat >>"$smoke_dir/smoke.cc" <<'EOF'
+#ifndef __arm64e__
+#error native LLVM C++ lost the arm64e ABI
+#endif
+#if !defined(__PTRAUTH__) || !__has_feature(ptrauth_calls)
+#error native LLVM C++ lost arm64e indirect-call pointer authentication
+#endif
+static int whp_arm64e_cxx_callback(void) { return 0; }
+int whp_arm64e_cxx_smoke(void) {
+    int (*volatile callback)(void) = whp_arm64e_cxx_callback;
+    return callback();
+}
+EOF
+fi
+"$staged_toolchain/bin/clang" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.c" -o "$smoke_dir/smoke.o"
+"$staged_toolchain/bin/clang++" "${smoke_arch_args[@]}" \
+    -c "$smoke_dir/smoke.cc" -o "$smoke_dir/smoke-cxx.o"
+
+printf '%s\n' "$expected_marker" > "$staged_toolchain/.whp-native-llvm"
+# Each failed probe now prints its own category and specific reason.
+# Keep the old installed toolchain and incremental Ninja graph on failure.
+usable "$staged_toolchain" || exit 1
+verify_asan_when_requested "$staged_toolchain" || exit 1
+
+old_toolchain="${TOOLCHAIN_DIR}.old.$$"
+rm -rf "$old_toolchain"
+if [[ -e "$TOOLCHAIN_DIR" ]]; then
+    mv "$TOOLCHAIN_DIR" "$old_toolchain"
+fi
+if ! mv "$staged_toolchain" "$TOOLCHAIN_DIR"; then
+    [[ ! -e "$old_toolchain" ]] || mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    exit 1
+fi
+# Recheck *after relocation*. Clang discovers builtin headers relative to
+# its executable, so a passing staging probe does not prove the published
+# toolchain has the same usable resource directory.
+if ! usable "$TOOLCHAIN_DIR"; then
+    printf '%s\n' 'error: relocated native LLVM failed final compiler/header validation; restoring previous toolchain' >&2
+    rm -rf "$TOOLCHAIN_DIR"
+    if [[ -e "$old_toolchain" ]]; then
+        mv "$old_toolchain" "$TOOLCHAIN_DIR"
+    fi
+    exit 1
+fi
+rm -rf "$old_toolchain" "$stage_root"
+stage_root=""
+
+printf 'WHP native LLVM target backends: %s\n' "$LLVM_TARGETS_TO_BUILD" >&2
+printf 'WHP native LLVM LLD backends: %s\n' "$LLD_ENABLE_BACKENDS" >&2
+printf 'WHP native LLVM Windows manifest merger: %s\n' \
+    "$([[ "$LLVM_WINDOWS_MANIFEST" == 1 ]] && printf enabled || printf disabled)" >&2
+printf 'WHP native LLVM ready: %s\n' "$TOOLCHAIN_DIR" >&2
+printf '%s\n' "$TOOLCHAIN_DIR" >&3

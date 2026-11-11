@@ -1,0 +1,43 @@
+# Dependency update configuration for the WHP QEMU fork.
+#
+# Dependabot does not currently provide a Meson package ecosystem.
+# QEMU's subprojects/*.wrap files and pythondeps.toml therefore need
+# separate synchronization/audit checks rather than duplicate manifests.
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:10"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 20
+
+  - package-ecosystem: "cargo"
+    directory: "/rust"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:20"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10

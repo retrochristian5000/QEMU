@@ -1,0 +1,494 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Build the pinned WHP GNU Automake as a host-side generator.
+
+Automake's Git bootstrap is deliberately self-hosting: it creates temporary
+aclocal/automake scripts from its own sources, so an installed Automake is not
+needed. It consumes QEMU's sed adapter, which resolves and verifies a real
+seed sed, plus Perl, Autoconf, and GNU Make.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import os
+import pathlib
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+from typing import List
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from bootstrap_env import reconcile_submodule
+from bootstrap_env import (clean_host_environment, select_native_cc,
+                           select_native_sdk, select_bootstrap_cflags,
+                           select_bootstrap_ldflags)
+SUBMODULE_REL = pathlib.Path("toolchains/automake")
+SUBMODULE_DIR = ROOT / SUBMODULE_REL
+SED_ADAPTER = ROOT / "seeds" / "sed.sh"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "3"
+
+
+def run_text(
+    command: List[str],
+    *,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"command failed: {shlex.join(command)}"
+            + (f": {detail}" if detail else "")
+        )
+    return completed.stdout.strip()
+
+
+def run_logged(
+    command: List[str],
+    *,
+    cwd: pathlib.Path | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"command failed with exit status {completed.returncode}: "
+            + shlex.join(command)
+        )
+
+
+def executable(candidate: str) -> str | None:
+    if not candidate:
+        return None
+    path = (
+        candidate
+        if pathlib.Path(candidate).is_absolute()
+        else shutil.which(candidate)
+    )
+    if path and pathlib.Path(path).is_file() and os.access(path, os.X_OK):
+        return os.path.abspath(path)
+    return None
+
+
+def explicit_tool(env_name: str) -> str | None:
+    value = os.environ.get(env_name, "")
+    if not value:
+        return None
+    argv = shlex.split(value)
+    if len(argv) != 1:
+        raise RuntimeError(f"{env_name} must name exactly one executable")
+    path = executable(argv[0])
+    if not path:
+        raise RuntimeError(f"{env_name} is not executable: {argv[0]}")
+    return path
+
+
+def tool(name: str, env_name: str | None = None, aliases: tuple[str, ...] = ()) -> str:
+    requested = explicit_tool(env_name) if env_name else None
+    if requested:
+        return requested
+    for candidate in (name, *aliases):
+        path = executable(candidate)
+        if path:
+            return path
+    raise RuntimeError(f"{name} is required to bootstrap GNU Automake")
+
+
+def select_seed_perl() -> str:
+    # A native Perl is required by source generation. Validate it once
+    # through the same seed adapter instead of trusting a path-only probe.
+    adapter = ROOT / "seeds" / "perl.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    selected = completed.stdout.strip()
+    if completed.returncode != 0 or not selected:
+        raise RuntimeError(
+            "Autotools bootstrap requires a usable native Perl seed: "
+            + (completed.stderr.strip() or "Perl >= 5.6 is unavailable")
+        )
+    return selected
+
+
+def select_gnu_make() -> str:
+    requested = explicit_tool("MAKE_CMD") or explicit_tool("MAKE")
+    candidates: list[str] = []
+    if requested:
+        candidates.append(requested)
+    else:
+        for name in ("gmake", "make"):
+            path = executable(name)
+            if path and path not in candidates:
+                candidates.append(path)
+
+    for path in candidates:
+        completed = subprocess.run(
+            [path, "--version"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if completed.returncode == 0 and "GNU Make" in completed.stdout:
+            return path
+    raise RuntimeError("GNU Make is required to bootstrap GNU Automake")
+
+
+def select_seed_sed() -> str:
+    if not SED_ADAPTER.is_file() or not os.access(SED_ADAPTER, os.X_OK):
+        raise RuntimeError(f"QEMU sed seed adapter is unavailable: {SED_ADAPTER}")
+
+    env = os.environ.copy()
+    requested = (
+        os.environ.get("WHP_AUTOMAKE_SED_SEED")
+        or os.environ.get("WHP_SED_SEED", "")
+    )
+    if requested:
+        env["WHP_SED_SEED"] = requested
+    completed = subprocess.run(
+        [str(SED_ADAPTER), "--print-seed"],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    seed = completed.stdout.strip()
+    if completed.returncode != 0 or not seed:
+        detail = completed.stderr.strip()
+        raise RuntimeError(
+            "QEMU sed.sh could not resolve the Automake bootstrap seed"
+            + (f": {detail}" if detail else "")
+        )
+    return seed
+
+
+def first_line(command: List[str]) -> str:
+    output = run_text(command)
+    return output.splitlines()[0] if output else ""
+
+
+def tolerant_identity(command: List[str]) -> str:
+    completed = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    output = completed.stdout.strip()
+    first = output.splitlines()[0] if output else "<no version output>"
+    return f"exit={completed.returncode}: {first}"
+
+
+def git_checkout_available() -> bool:
+    return shutil.which("git") is not None and (ROOT / ".git").exists()
+
+
+
+def archive_source_signature() -> str:
+    candidates = (
+        SUBMODULE_DIR / "bootstrap",
+        SUBMODULE_DIR / "configure.ac",
+        SUBMODULE_DIR / "Makefile.am",
+        SUBMODULE_DIR / "bin" / "automake.in",
+        SUBMODULE_DIR / "bin" / "aclocal.in",
+    )
+    for path in candidates:
+        if not path.is_file():
+            raise RuntimeError(
+                f"bundled Automake source is unavailable: {SUBMODULE_DIR}"
+            )
+    digest = hashlib.sha256()
+    for path in candidates:
+        digest.update(str(path.relative_to(SUBMODULE_DIR)).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return "archive-" + digest.hexdigest()
+
+
+def ensure_source() -> str:
+    if not git_checkout_available():
+        return archive_source_signature()
+
+    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
+
+    dirty = run_text([
+        "git", "-C", str(SUBMODULE_DIR), "status", "--porcelain",
+        "--untracked-files=no",
+    ])
+    if dirty:
+        raise RuntimeError(
+            "Automake submodule has tracked changes; commit them in the "
+            "Automake fork and update the QEMU gitlink"
+        )
+    return revision
+
+
+def copy_source(revision: str, destination: pathlib.Path) -> None:
+    shutil.rmtree(destination, ignore_errors=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
+        completed = subprocess.run(
+            [
+                "git", "-C", str(SUBMODULE_DIR),
+                "archive", "--format=tar", revision,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"could not archive Automake revision {revision}"
+                + (f": {detail}" if detail else "")
+            )
+        destination.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(
+            fileobj=io.BytesIO(completed.stdout), mode="r:"
+        ) as archive:
+            archive.extractall(destination)
+    else:
+        shutil.copytree(
+            SUBMODULE_DIR,
+            destination,
+            ignore=shutil.ignore_patterns(".git"),
+        )
+
+    # Automake's bootstrap intentionally checks only that a .git directory is
+    # present; its own comment explicitly permits this for non-checkout trees.
+    (destination / ".git").mkdir(exist_ok=True)
+
+
+def automake_pair_usable(prefix: pathlib.Path) -> bool:
+    automake = prefix / "bin" / "automake"
+    aclocal = prefix / "bin" / "aclocal"
+    for path, marker in (
+        (automake, "GNU automake"),
+        (aclocal, "GNU automake"),
+    ):
+        if not path.is_file() or not os.access(path, os.X_OK):
+            return False
+        completed = subprocess.run(
+            [str(path), "--version"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if completed.returncode != 0 or marker not in completed.stdout:
+            return False
+    return True
+
+
+def marker_text(
+    revision: str,
+    seed: str,
+    perl: str,
+    autoconf: str,
+    autom4te: str,
+    make: str,
+    cc: str,
+    config_shell: str,
+) -> str:
+    return (
+        f"AUTOMAKE_BOOTSTRAP_SCHEMA={AUTOMAKE_BOOTSTRAP_SCHEMA}\n"
+        f"AUTOMAKE_GIT_COMMIT={revision}\n"
+        f"SEED_SED={seed}: {tolerant_identity([seed, '--version'])}\n"
+        f"PERL={perl}: {first_line([perl, '--version'])}\n"
+        f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
+        f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
+        f"MAKE={make}: {first_line([make, '--version'])}\n"
+        f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
+        f"CONFIG_SHELL={config_shell}\n"
+        f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
+        f"MACOSX_DEPLOYMENT_TARGET={os.environ.get('MACOSX_DEPLOYMENT_TARGET', '')}\n"
+    )
+
+
+
+def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
+    """Use one verified external Autoconf/autom4te seed to break the cycle.
+
+    Automake's Git bootstrap invokes Autoconf; the managed Autoconf build
+    itself needs Automake. Neither may select Autoconf output being built
+    later in this same tree.
+    """
+    adapter = ROOT / "seeds" / "autom4te.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU autom4te seed adapter is unavailable: {adapter}")
+    selected = []
+    for flag in ("--print-autoconf", "--print-seed"):
+        completed = subprocess.run(
+            ["/bin/sh", str(adapter), flag], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        candidate = completed.stdout.strip()
+        if completed.returncode or not candidate:
+            raise RuntimeError(
+                "Automake bootstrap requires an independent seed "
+                "Autoconf/autom4te pair to break the source-bootstrap cycle: "
+                + (completed.stderr.strip() or flag)
+            )
+        selected.append(candidate)
+    managed_root = (build_root / "deps" / "autoconf").resolve()
+    for variable, candidate in zip(("AUTOCONF", "AUTOM4TE"), selected):
+        resolved = pathlib.Path(candidate).resolve()
+        if resolved == managed_root or managed_root in resolved.parents:
+            raise RuntimeError(
+                f"{variable} points into managed Autoconf output ({candidate}); "
+                "Automake bootstrap needs an independent seed Autoconf/autom4te "
+                "pair to break the source-bootstrap cycle"
+            )
+    return selected[0], selected[1]
+
+
+def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
+    revision = ensure_source()
+    seed = select_seed_sed()
+    perl = select_seed_perl()
+    autoconf, autom4te = select_seed_autoconf_pair(build_root)
+    make = select_gnu_make()
+    sdkroot = select_native_sdk(ROOT)
+    if sdkroot:
+        # cc.sh validates the same SDK; configure must receive it as well.
+        os.environ["SDKROOT"] = sdkroot
+    cc = select_native_cc(ROOT)
+    bootstrap_cflags = select_bootstrap_cflags("automake", cc)
+    bootstrap_ldflags = select_bootstrap_ldflags(
+        "automake", cc, cflags=bootstrap_cflags
+    )
+    config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
+
+    prefix = build_root / "deps" / "automake"
+    work = build_root / "bootstrap" / "automake"
+    source = work / "source"
+    objects = work / "build"
+    marker_path = prefix / ".whp-automake-bootstrap"
+
+    marker = marker_text(
+        revision, seed, perl, autoconf, autom4te, make, cc, config_shell
+    )
+    if bootstrap_cflags:
+        marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
+    if bootstrap_ldflags:
+        marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
+    if (
+        marker_path.is_file()
+        and marker_path.read_text(encoding="utf-8", errors="replace") == marker
+        and automake_pair_usable(prefix)
+    ):
+        return prefix
+
+    shutil.rmtree(prefix, ignore_errors=True)
+    shutil.rmtree(work, ignore_errors=True)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
+    copy_source(revision, source)
+    objects.mkdir(parents=True, exist_ok=True)
+
+    seed_bin = work / "seed-bin"
+    seed_bin.mkdir(parents=True, exist_ok=True)
+    seed_link = seed_bin / "sed"
+    try:
+        seed_link.symlink_to(SED_ADAPTER)
+    except OSError:
+        shutil.copy2(SED_ADAPTER, seed_link)
+        seed_link.chmod(seed_link.stat().st_mode | 0o111)
+
+    env = clean_host_environment(os.environ)
+    env["CC"] = cc
+    if bootstrap_cflags:
+        env["CFLAGS"] = bootstrap_cflags
+    if bootstrap_ldflags:
+        env["LDFLAGS"] = bootstrap_ldflags
+    env["CC_FOR_BUILD"] = cc
+    env["MAKE"] = make
+    env["MAKE_CMD"] = make
+    env["CONFIG_SHELL"] = config_shell
+    env["SHELL"] = config_shell
+    env["PERL"] = perl
+    env["AUTOCONF"] = autoconf
+    env["AUTOM4TE"] = autom4te
+    env["WHP_SED_SEED"] = seed
+    env["SED"] = str(SED_ADAPTER)
+    env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
+
+    print(
+        f"WHP Automake bootstrap: {revision} -> {prefix} "
+        f"(seed sed {seed})",
+        file=sys.stderr,
+    )
+    run_logged(
+        [config_shell, str(source / "bootstrap")],
+        cwd=source,
+        env=env,
+    )
+    configure = source / "configure"
+    if not configure.is_file():
+        raise RuntimeError("Automake bootstrap did not generate configure")
+
+    run_logged(
+        [config_shell, str(configure), f"--prefix={prefix}"],
+        cwd=objects,
+        env=env,
+    )
+    run_logged(
+        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
+        cwd=objects,
+        env=env,
+    )
+    run_logged([make, "install"], cwd=objects, env=env)
+
+    if not automake_pair_usable(prefix):
+        raise RuntimeError(
+            f"bootstrapped Automake/aclocal pair is not usable: {prefix}"
+        )
+    marker_path.write_text(marker, encoding="utf-8")
+    return prefix
+
+
+def main(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--build-dir", required=True)
+    args = parser.parse_args(argv)
+    try:
+        prefix = bootstrap(pathlib.Path(args.build_dir).expanduser().resolve())
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        print(f"error: WHP Automake bootstrap failed: {exc}", file=sys.stderr)
+        return 1
+    print(prefix)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

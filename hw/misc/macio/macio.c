@@ -1,0 +1,709 @@
+/*
+ * PowerMac MacIO device emulation
+ *
+ * Copyright (c) 2005-2007 Fabrice Bellard
+ * Copyright (c) 2007 Jocelyn Mayer
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+#include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu/module.h"
+#include "hw/misc/macio/cuda.h"
+#include "hw/pci/pci.h"
+#include "hw/ppc/mac_dbdma.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev.h"
+#include "migration/vmstate.h"
+#include "hw/char/escc.h"
+#include "hw/misc/macio/macio.h"
+#include "hw/intc/heathrow_pic.h"
+#include "trace.h"
+
+#define ESCC_CLOCK 3686400
+
+#define KEYLARGO_FCR_BASE   0x38
+#define KEYLARGO_FCR_SIZE   0x14
+#define KEYLARGO_TIMER_FREQ 18432000
+
+#define KL_FCR0_SCC_A_INTF_ENABLE   (1U << 1)
+#define KL_FCR0_RESET_SCC           (1U << 3)
+#define KL_FCR0_SCCA_ENABLE         (1U << 4)
+#define KL_FCR0_SCCB_ENABLE         (1U << 5)
+#define KL_FCR0_SCC_CELL_ENABLE     (1U << 6)
+#define KL_FCR0_USB0_PAD_SUSPEND0   (1U << 18)
+#define KL_FCR0_USB0_PAD_SUSPEND1   (1U << 19)
+#define KL_FCR0_USB0_CELL_ENABLE    (1U << 20)
+#define KL_FCR0_USB1_PAD_SUSPEND0   (1U << 22)
+#define KL_FCR0_USB1_PAD_SUSPEND1   (1U << 23)
+#define KL_FCR0_USB1_CELL_ENABLE    (1U << 24)
+#define KL_FCR0_USB_REF_SUSPEND     (1U << 28)
+
+#define KL_FCR1_AUDIO_SEL22M_CLK    (1U << 1)
+#define KL_FCR1_AUDIO_CLK_ENABLE     (1U << 3)
+#define KL_FCR1_AUDIO_CLK_OUT_ENABLE (1U << 5)
+#define KL_FCR1_AUDIO_CELL_ENABLE    (1U << 6)
+#define KL_FCR1_CHOOSE_AUDIO         (1U << 7)
+#define KL_FCR1_CHOOSE_I2S0          (1U << 9)
+#define KL_FCR1_I2S0_CELL_ENABLE     (1U << 10)
+#define KL_FCR1_I2S0_CLK_ENABLE      (1U << 12)
+#define KL_FCR1_I2S0_ENABLE          (1U << 13)
+#define KL_FCR1_I2S1_CELL_ENABLE     (1U << 17)
+#define KL_FCR1_I2S1_CLK_ENABLE      (1U << 19)
+#define KL_FCR1_I2S1_ENABLE          (1U << 20)
+#define KL_FCR1_EIDE0_ENABLE         (1U << 23)
+#define KL_FCR1_EIDE0_RESET_N        (1U << 24)
+#define KL_FCR1_EIDE1_ENABLE         (1U << 26)
+#define KL_FCR1_EIDE1_RESET_N        (1U << 27)
+#define KL_FCR1_UIDE_ENABLE          (1U << 29)
+#define KL_FCR1_UIDE_RESET_N         (1U << 30)
+
+#define KL_FCR1_SCREAMER_POWER_MASK \
+    (KL_FCR1_AUDIO_CLK_ENABLE | KL_FCR1_AUDIO_CLK_OUT_ENABLE | \
+     KL_FCR1_AUDIO_CELL_ENABLE)
+#define KL_FCR1_SCREAMER_DEFAULT_MASK \
+    (KL_FCR1_AUDIO_SEL22M_CLK | KL_FCR1_CHOOSE_AUDIO | \
+     KL_FCR1_SCREAMER_POWER_MASK)
+
+#define KL_FCR2_IOBUS_ENABLE        (1U << 1)
+#define KL_FCR2_SLEEP_STATE_BIT     (1U << 8)
+#define KL_FCR2_MPIC_ENABLE         (1U << 17)
+#define KL_FCR2_ALT_DATA_OUT        (1U << 25)
+
+#define KL_FCR3_SHUTDOWN_PLL_TOTAL  (1U << 0)
+#define KL_FCR3_SHUTDOWN_PLLKW6     (1U << 1)
+#define KL_FCR3_SHUTDOWN_PLLKW4     (1U << 2)
+#define KL_FCR3_SHUTDOWN_PLLKW35    (1U << 3)
+#define KL_FCR3_SHUTDOWN_PLLKW12    (1U << 4)
+#define KL_FCR3_PLL_RESET            (1U << 5)
+#define KL_FCR3_SHUTDOWN_PLL2X       (1U << 7)
+#define KL_FCR3_CLK66_ENABLE         (1U << 8)
+#define KL_FCR3_CLK49_ENABLE         (1U << 9)
+#define KL_FCR3_CLK45_ENABLE         (1U << 10)
+#define KL_FCR3_CLK31_ENABLE         (1U << 11)
+#define KL_FCR3_TIMER_CLK18_ENABLE   (1U << 12)
+#define KL_FCR3_I2S1_CLK18_ENABLE    (1U << 13)
+#define KL_FCR3_I2S0_CLK18_ENABLE    (1U << 14)
+#define KL_FCR3_VIA_CLK16_ENABLE     (1U << 15)
+#define KL_FCR3_STOPPING33_ENABLED   (1U << 19)
+
+/*
+ * FCR4 packs wake control and status into one 8-bit lane per USB port.
+ * These definitions deliberately do not assign a lane to Sawtooth's rear,
+ * AGP, or modem routes until that physical routing is independently proven.
+ */
+#define KL_FCR4_PORT_DISCONNECT_WAKE_EN(p) (0x01U << ((p) * 8))
+#define KL_FCR4_PORT_CONNECT_WAKE_EN(p)    (0x02U << ((p) * 8))
+#define KL_FCR4_PORT_RESUME_WAKE_EN(p)     (0x04U << ((p) * 8))
+#define KL_FCR4_PORT_WAKEUP_ENABLE(p)      (0x08U << ((p) * 8))
+#define KL_FCR4_PORT_DISCONNECT_STAT(p)    (0x10U << ((p) * 8))
+#define KL_FCR4_PORT_CONNECT_STAT(p)       (0x20U << ((p) * 8))
+#define KL_FCR4_PORT_RESUME_STAT(p)        (0x40U << ((p) * 8))
+
+/* Note: this code is strongly inspired by the corresponding code in PearPC */
+
+/*
+ * The mac-io has two interfaces to the ESCC. One is called "escc-legacy",
+ * while the other one is the normal, current ESCC interface.
+ *
+ * The magic below creates memory aliases to spawn the escc-legacy device
+ * purely by rerouting the respective registers to our escc region. This
+ * works because the only difference between the two memory regions is the
+ * register layout, not their semantics.
+ *
+ * Reference: ftp://ftp.software.ibm.com/rs6000/technology/spec/chrp/inwork/CHRP_IORef_1.0.pdf
+ */
+static void macio_escc_legacy_setup(MacIOState *s)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(&s->escc);
+    MemoryRegion *escc_legacy = g_new(MemoryRegion, 1);
+    int i;
+    static const int maps[] = {
+        0x00, 0x00, /* Command B */
+        0x02, 0x20, /* Command A */
+        0x04, 0x10, /* Data B */
+        0x06, 0x30, /* Data A */
+        0x08, 0x40, /* Enhancement B */
+        0x0A, 0x50, /* Enhancement A */
+        0x80, 0x80, /* Recovery count */
+        0x90, 0x90, /* Start A */
+        0xa0, 0xa0, /* Start B */
+        0xb0, 0xb0, /* Detect AB */
+    };
+
+    memory_region_init(escc_legacy, OBJECT(s), "escc-legacy", 256);
+    for (i = 0; i < ARRAY_SIZE(maps); i += 2) {
+        MemoryRegion *port = g_new(MemoryRegion, 1);
+        memory_region_init_alias(port, OBJECT(s), "escc-legacy-port",
+                                 sysbus_mmio_get_region(sbd, 0),
+                                 maps[i + 1], 0x2);
+        memory_region_add_subregion(escc_legacy, maps[i], port);
+    }
+
+    memory_region_add_subregion(&s->bar, 0x12000, escc_legacy);
+}
+
+static void macio_bar_setup(MacIOState *s)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(&s->escc);
+    MemoryRegion *bar = sysbus_mmio_get_region(sbd, 0);
+
+    memory_region_add_subregion(&s->bar, 0x13000, bar);
+    macio_escc_legacy_setup(s);
+}
+
+static bool macio_common_realize(PCIDevice *d, Error **errp)
+{
+    MacIOState *s = MACIO(d);
+    SysBusDevice *sbd;
+
+    if (!qdev_realize(DEVICE(&s->dbdma), BUS(&s->macio_bus), errp)) {
+        return false;
+    }
+    sbd = SYS_BUS_DEVICE(&s->dbdma);
+    memory_region_add_subregion(&s->bar, 0x08000,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    qdev_prop_set_uint32(DEVICE(&s->escc), "disabled", 0);
+    qdev_prop_set_uint32(DEVICE(&s->escc), "frequency", ESCC_CLOCK);
+    qdev_prop_set_uint32(DEVICE(&s->escc), "it_shift", 4);
+    qdev_prop_set_uint32(DEVICE(&s->escc), "chnBtype", escc_serial);
+    qdev_prop_set_uint32(DEVICE(&s->escc), "chnAtype", escc_serial);
+    if (!qdev_realize(DEVICE(&s->escc), BUS(&s->macio_bus), errp)) {
+        return false;
+    }
+
+    macio_bar_setup(s);
+    pci_register_bar(d, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar);
+
+    return true;
+}
+
+static bool macio_realize_ide(MacIOState *s, MACIOIDEState *ide,
+                              qemu_irq irq0, qemu_irq irq1, int dmaid,
+                              Error **errp)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(ide);
+
+    qdev_prop_set_uint32(DEVICE(ide), "channel", dmaid);
+    object_property_set_link(OBJECT(ide), "dbdma", OBJECT(&s->dbdma),
+                             &error_abort);
+    macio_ide_register_dma(ide);
+    if (!qdev_realize(DEVICE(ide), BUS(&s->macio_bus), errp)) {
+        return false;
+    }
+    sysbus_connect_irq(sbd, 0, irq0);
+    sysbus_connect_irq(sbd, 1, irq1);
+
+    return true;
+}
+
+static void macio_oldworld_realize(PCIDevice *d, Error **errp)
+{
+    MacIOState *s = MACIO(d);
+    OldWorldMacIOState *os = OLDWORLD_MACIO(d);
+    DeviceState *pic_dev = DEVICE(&os->pic);
+    SysBusDevice *sbd;
+
+    if (!macio_common_realize(d, errp)) {
+        return;
+    }
+
+    /* Heathrow PIC */
+    if (!qdev_realize(DEVICE(&os->pic), BUS(&s->macio_bus), errp)) {
+        return;
+    }
+    sbd = SYS_BUS_DEVICE(&os->pic);
+    memory_region_add_subregion(&s->bar, 0x0,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    qdev_prop_set_uint64(DEVICE(&s->cuda), "timebase-frequency",
+                         s->frequency);
+    if (!qdev_realize(DEVICE(&s->cuda), BUS(&s->macio_bus), errp)) {
+        return;
+    }
+    sbd = SYS_BUS_DEVICE(&s->cuda);
+    memory_region_add_subregion(&s->bar, 0x16000,
+                                sysbus_mmio_get_region(sbd, 0));
+    sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, OLDWORLD_CUDA_IRQ));
+
+    sbd = SYS_BUS_DEVICE(&s->escc);
+    sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, OLDWORLD_ESCCB_IRQ));
+    sysbus_connect_irq(sbd, 1, qdev_get_gpio_in(pic_dev, OLDWORLD_ESCCA_IRQ));
+
+    if (!qdev_realize(DEVICE(&os->nvram), BUS(&s->macio_bus), errp)) {
+        return;
+    }
+    sbd = SYS_BUS_DEVICE(&os->nvram);
+    memory_region_add_subregion(&s->bar, 0x60000,
+                                sysbus_mmio_get_region(sbd, 0));
+    pmac_format_nvram_partition(&os->nvram, os->nvram.size);
+
+    /* IDE buses */
+    if (!macio_realize_ide(s, &os->ide[0],
+                           qdev_get_gpio_in(pic_dev, OLDWORLD_IDE0_IRQ),
+                           qdev_get_gpio_in(pic_dev, OLDWORLD_IDE0_DMA_IRQ),
+                           0x16, errp)) {
+        return;
+    }
+
+    if (!macio_realize_ide(s, &os->ide[1],
+                           qdev_get_gpio_in(pic_dev, OLDWORLD_IDE1_IRQ),
+                           qdev_get_gpio_in(pic_dev, OLDWORLD_IDE1_DMA_IRQ),
+                           0x1a, errp)) {
+        return;
+    }
+}
+
+static void macio_init_ide(MacIOState *s, MACIOIDEState *ide, int index)
+{
+    gchar *name = g_strdup_printf("ide[%i]", index);
+    uint32_t addr = 0x1f000 + ((index + 1) * 0x1000);
+
+    object_initialize_child(OBJECT(s), name, ide, TYPE_MACIO_IDE);
+    qdev_prop_set_uint32(DEVICE(ide), "addr", addr);
+    memory_region_add_subregion(&s->bar, addr, &ide->mem);
+    g_free(name);
+}
+
+static void macio_oldworld_init(Object *obj)
+{
+    MacIOState *s = MACIO(obj);
+    OldWorldMacIOState *os = OLDWORLD_MACIO(obj);
+    DeviceState *dev;
+    int i;
+
+    object_initialize_child(obj, "pic", &os->pic, TYPE_HEATHROW);
+
+    object_initialize_child(obj, "cuda", &s->cuda, TYPE_CUDA);
+
+    object_initialize_child(obj, "nvram", &os->nvram, TYPE_MACIO_NVRAM);
+    dev = DEVICE(&os->nvram);
+    qdev_prop_set_uint32(dev, "size", MACIO_NVRAM_SIZE);
+    qdev_prop_set_uint32(dev, "it_shift", 4);
+
+    for (i = 0; i < 2; i++) {
+        macio_init_ide(s, &os->ide[i], i);
+    }
+}
+
+static void timer_write(void *opaque, hwaddr addr, uint64_t value,
+                       unsigned size)
+{
+    trace_macio_timer_write(addr, size, value);
+}
+
+static uint64_t timer_read(void *opaque, hwaddr addr, unsigned size)
+{
+    uint32_t value = 0;
+    uint64_t systime = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    uint64_t kltime;
+
+    kltime = muldiv64(systime, KEYLARGO_TIMER_FREQ,
+                     NANOSECONDS_PER_SECOND);
+
+    switch (addr) {
+    case 0x38:
+        value = kltime;
+        break;
+    case 0x3c:
+        value = kltime >> 32;
+        break;
+    }
+
+    trace_macio_timer_read(addr, size, value);
+    return value;
+}
+
+static const MemoryRegionOps timer_ops = {
+    .read = timer_read,
+    .write = timer_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static bool keylargo_screamer_enabled(const NewWorldMacIOState *ns)
+{
+    if (!ns->has_keylargo_fcr) {
+        return true;
+    }
+
+    return (ns->fcr[1] & KL_FCR1_SCREAMER_POWER_MASK) ==
+           KL_FCR1_SCREAMER_POWER_MASK;
+}
+
+static void keylargo_update_screamer(NewWorldMacIOState *ns)
+{
+    qemu_irq cell_enable;
+
+    if (!ns->has_screamer) {
+        return;
+    }
+
+    cell_enable = qdev_get_gpio_in_named(DEVICE(&ns->screamer),
+                                         "cell-enable", 0);
+    qemu_set_irq(cell_enable, keylargo_screamer_enabled(ns));
+}
+
+static void keylargo_fcr_set_defaults(NewWorldMacIOState *ns)
+{
+    /*
+     * Open Firmware normally leaves the cells needed by the booted machine
+     * running.  Match the functions currently exposed by this KeyLargo model
+     * so Tiger and Linux see a coherent register state before they
+     * begin their own power-management sequencing.
+     */
+    ns->fcr[0] = KL_FCR0_SCC_A_INTF_ENABLE |
+                 KL_FCR0_SCCA_ENABLE |
+                 KL_FCR0_SCCB_ENABLE |
+                 KL_FCR0_SCC_CELL_ENABLE |
+                 KL_FCR0_USB0_CELL_ENABLE |
+                 KL_FCR0_USB1_CELL_ENABLE;
+    /*
+     * QEMU currently exposes two KeyLargo IDE channels.  Leave the third
+     * UltraIDE cell disabled until that controller is modeled.
+     */
+    ns->fcr[1] = KL_FCR1_EIDE0_ENABLE |
+                 KL_FCR1_EIDE0_RESET_N |
+                 KL_FCR1_EIDE1_ENABLE |
+                 KL_FCR1_EIDE1_RESET_N;
+    if (ns->has_screamer) {
+        ns->fcr[1] |= KL_FCR1_SCREAMER_DEFAULT_MASK;
+    }
+    ns->fcr[2] = KL_FCR2_IOBUS_ENABLE | KL_FCR2_MPIC_ENABLE;
+    ns->fcr[3] = KL_FCR3_TIMER_CLK18_ENABLE | KL_FCR3_VIA_CLK16_ENABLE;
+    ns->fcr[4] = 0;
+}
+
+static uint64_t keylargo_fcr_read(void *opaque, hwaddr addr, unsigned size)
+{
+    NewWorldMacIOState *ns = opaque;
+    unsigned reg = addr >> 2;
+
+    if (reg >= ARRAY_SIZE(ns->fcr)) {
+        return 0;
+    }
+
+    return ns->fcr[reg];
+}
+
+static void keylargo_fcr_write(void *opaque, hwaddr addr, uint64_t value,
+                               unsigned size)
+{
+    NewWorldMacIOState *ns = opaque;
+    MacIOState *s = MACIO(ns);
+    unsigned reg = addr >> 2;
+    uint32_t old;
+
+    if (reg >= ARRAY_SIZE(ns->fcr)) {
+        return;
+    }
+
+    old = ns->fcr[reg];
+    ns->fcr[reg] = value;
+
+    /*
+     * The recovered FCR map now covers Sawtooth's USB pad/reference suspend,
+     * sleep/data-out, PLL/clock, and per-port USB wake controls in addition to
+     * the previously named cells.  Preserve all of those bits for guest
+     * readback.  SCC reset and Screamer audio-cell gating have direct side
+     * effects here; USB/IDE gating, wake latching, and other board power-domain
+     * effects remain separate until those devices gain the needed interfaces.
+     */
+    if (reg == 0 && (value & KL_FCR0_RESET_SCC) &&
+        !(old & KL_FCR0_RESET_SCC)) {
+        device_cold_reset(DEVICE(&s->escc));
+    }
+
+    if (reg == 1) {
+        keylargo_update_screamer(ns);
+    }
+}
+
+static const MemoryRegionOps keylargo_fcr_ops = {
+    .read = keylargo_fcr_read,
+    .write = keylargo_fcr_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+    .impl = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+};
+
+static void macio_newworld_realize(PCIDevice *d, Error **errp)
+{
+    MacIOState *s = MACIO(d);
+    NewWorldMacIOState *ns = NEWWORLD_MACIO(d);
+    DeviceState *pic_dev = DEVICE(&ns->pic);
+    SysBusDevice *sbd;
+    MemoryRegion *timer_memory = NULL;
+
+    if (!macio_common_realize(d, errp)) {
+        return;
+    }
+
+    if (ns->has_keylargo_fcr) {
+        keylargo_fcr_set_defaults(ns);
+        memory_region_init_io(&ns->fcr_mem, OBJECT(ns), &keylargo_fcr_ops, ns,
+                              "keylargo-fcr", KEYLARGO_FCR_SIZE);
+        memory_region_add_subregion(&s->bar, KEYLARGO_FCR_BASE, &ns->fcr_mem);
+    }
+
+    /* OpenPIC */
+    qdev_prop_set_uint32(pic_dev, "model", OPENPIC_MODEL_KEYLARGO);
+    sbd = SYS_BUS_DEVICE(&ns->pic);
+    sysbus_realize_and_unref(sbd, &error_fatal);
+    memory_region_add_subregion(&s->bar, 0x40000,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    sbd = SYS_BUS_DEVICE(&s->escc);
+    sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, NEWWORLD_ESCCB_IRQ));
+    sysbus_connect_irq(sbd, 1, qdev_get_gpio_in(pic_dev, NEWWORLD_ESCCA_IRQ));
+
+    if (ns->has_screamer) {
+        sbd = SYS_BUS_DEVICE(&ns->screamer);
+        if (!sysbus_realize(sbd, errp)) {
+            return;
+        }
+
+        memory_region_add_subregion(&s->bar, 0x14000,
+                                    sysbus_mmio_get_region(sbd, 0));
+        sysbus_connect_irq(sbd, 0,
+                           qdev_get_gpio_in(pic_dev, NEWWORLD_SCREAMER_IRQ));
+        sysbus_connect_irq(sbd, 1,
+                           qdev_get_gpio_in(pic_dev,
+                                            NEWWORLD_SCREAMER_TX_IRQ));
+        sysbus_connect_irq(sbd, 2,
+                           qdev_get_gpio_in(pic_dev,
+                                            NEWWORLD_SCREAMER_RX_IRQ));
+        macio_screamer_register_dma(&ns->screamer, &s->dbdma, 0x10, 0x12);
+        keylargo_update_screamer(ns);
+    } else {
+        object_unparent(OBJECT(&ns->screamer));
+    }
+
+    /* IDE buses */
+    if (!macio_realize_ide(s, &ns->ide[0],
+                           qdev_get_gpio_in(pic_dev, NEWWORLD_IDE0_IRQ),
+                           qdev_get_gpio_in(pic_dev, NEWWORLD_IDE0_DMA_IRQ),
+                           0x16, errp)) {
+        return;
+    }
+
+    if (!macio_realize_ide(s, &ns->ide[1],
+                           qdev_get_gpio_in(pic_dev, NEWWORLD_IDE1_IRQ),
+                           qdev_get_gpio_in(pic_dev, NEWWORLD_IDE1_DMA_IRQ),
+                           0x1a, errp)) {
+        return;
+    }
+
+    /* Timer */
+    timer_memory = g_new(MemoryRegion, 1);
+    memory_region_init_io(timer_memory, OBJECT(s), &timer_ops, NULL, "timer",
+                          0x1000);
+    memory_region_add_subregion(&s->bar, 0x15000, timer_memory);
+
+    if (ns->has_pmu) {
+        /* GPIOs */
+        if (!qdev_realize(DEVICE(&ns->gpio), BUS(&s->macio_bus), errp)) {
+            return;
+        }
+        sbd = SYS_BUS_DEVICE(&ns->gpio);
+        sysbus_connect_irq(sbd, 1, qdev_get_gpio_in(pic_dev,
+                           NEWWORLD_EXTING_GPIO1));
+        sysbus_connect_irq(sbd, 9, qdev_get_gpio_in(pic_dev,
+                           NEWWORLD_EXTING_GPIO9));
+        memory_region_add_subregion(&s->bar, 0x50,
+                                    sysbus_mmio_get_region(sbd, 0));
+
+        /* PMU */
+        object_initialize_child(OBJECT(s), "pmu", &s->pmu, TYPE_VIA_PMU);
+        object_property_set_link(OBJECT(&s->pmu), "gpio", OBJECT(sbd),
+                                 &error_abort);
+        qdev_prop_set_bit(DEVICE(&s->pmu), "has-adb", ns->has_adb);
+        if (!qdev_realize(DEVICE(&s->pmu), BUS(&s->macio_bus), errp)) {
+            return;
+        }
+        sbd = SYS_BUS_DEVICE(&s->pmu);
+        sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, NEWWORLD_PMU_IRQ));
+        memory_region_add_subregion(&s->bar, 0x16000,
+                                    sysbus_mmio_get_region(sbd, 0));
+    } else {
+        object_unparent(OBJECT(&ns->gpio));
+
+        /* CUDA */
+        object_initialize_child(OBJECT(s), "cuda", &s->cuda, TYPE_CUDA);
+        qdev_prop_set_uint64(DEVICE(&s->cuda), "timebase-frequency",
+                             s->frequency);
+
+        if (!qdev_realize(DEVICE(&s->cuda), BUS(&s->macio_bus), errp)) {
+            return;
+        }
+        sbd = SYS_BUS_DEVICE(&s->cuda);
+        sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(pic_dev, NEWWORLD_CUDA_IRQ));
+        memory_region_add_subregion(&s->bar, 0x16000,
+                                    sysbus_mmio_get_region(sbd, 0));
+    }
+}
+
+static void macio_newworld_init(Object *obj)
+{
+    MacIOState *s = MACIO(obj);
+    NewWorldMacIOState *ns = NEWWORLD_MACIO(obj);
+    int i;
+
+    object_initialize_child(obj, "pic", &ns->pic, TYPE_OPENPIC);
+
+    object_initialize_child(obj, "gpio", &ns->gpio, TYPE_MACIO_GPIO);
+    object_initialize_child(obj, "screamer", &ns->screamer,
+                            TYPE_SCREAMER);
+
+    for (i = 0; i < 2; i++) {
+        macio_init_ide(s, &ns->ide[i], i);
+    }
+}
+
+static void macio_instance_init(Object *obj)
+{
+    MacIOState *s = MACIO(obj);
+
+    memory_region_init(&s->bar, obj, "macio", 0x80000);
+
+    qbus_init(&s->macio_bus, sizeof(s->macio_bus), TYPE_MACIO_BUS,
+              DEVICE(obj), "macio.0");
+
+    object_initialize_child(obj, "dbdma", &s->dbdma, TYPE_MAC_DBDMA);
+
+    object_initialize_child(obj, "escc", &s->escc, TYPE_ESCC);
+}
+
+static const VMStateDescription vmstate_macio_oldworld = {
+    .name = "macio-oldworld",
+    .version_id = 0,
+    .minimum_version_id = 0,
+    .fields = (const VMStateField[]) {
+        VMSTATE_PCI_DEVICE(parent_obj.parent, OldWorldMacIOState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static void macio_oldworld_class_init(ObjectClass *oc, const void *data)
+{
+    PCIDeviceClass *pdc = PCI_DEVICE_CLASS(oc);
+    DeviceClass *dc = DEVICE_CLASS(oc);
+
+    pdc->realize = macio_oldworld_realize;
+    pdc->device_id = PCI_DEVICE_ID_APPLE_343S1201;
+    dc->vmsd = &vmstate_macio_oldworld;
+}
+
+static const VMStateDescription vmstate_macio_newworld = {
+    .name = "macio-newworld",
+    .version_id = 1,
+    .minimum_version_id = 0,
+    .fields = (const VMStateField[]) {
+        VMSTATE_PCI_DEVICE(parent_obj.parent, NewWorldMacIOState),
+        VMSTATE_UINT32_ARRAY_V(fcr, NewWorldMacIOState, 5, 1),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const Property macio_newworld_properties[] = {
+    DEFINE_PROP_BOOL("has-pmu", NewWorldMacIOState, has_pmu, false),
+    DEFINE_PROP_BOOL("has-adb", NewWorldMacIOState, has_adb, false),
+    DEFINE_PROP_BOOL("keylargo-fcr", NewWorldMacIOState, has_keylargo_fcr,
+                     true),
+    DEFINE_PROP_BOOL("has-screamer", NewWorldMacIOState, has_screamer, false),
+};
+
+static void macio_newworld_class_init(ObjectClass *oc, const void *data)
+{
+    PCIDeviceClass *pdc = PCI_DEVICE_CLASS(oc);
+    DeviceClass *dc = DEVICE_CLASS(oc);
+
+    pdc->realize = macio_newworld_realize;
+    pdc->device_id = PCI_DEVICE_ID_APPLE_UNI_N_KEYL;
+    dc->vmsd = &vmstate_macio_newworld;
+    device_class_set_props(dc, macio_newworld_properties);
+}
+
+static const Property macio_properties[] = {
+    DEFINE_PROP_UINT64("frequency", MacIOState, frequency, 0),
+};
+
+static void macio_class_init(ObjectClass *klass, const void *data)
+{
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    k->vendor_id = PCI_VENDOR_ID_APPLE;
+    k->class_id = PCI_CLASS_OTHERS << 8;
+    device_class_set_props(dc, macio_properties);
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
+}
+
+static const TypeInfo macio_bus_info = {
+    .name = TYPE_MACIO_BUS,
+    .parent = TYPE_SYSTEM_BUS,
+    .instance_size = sizeof(MacIOBusState),
+};
+
+static const TypeInfo macio_oldworld_type_info = {
+    .name          = TYPE_OLDWORLD_MACIO,
+    .parent        = TYPE_MACIO,
+    .instance_size = sizeof(OldWorldMacIOState),
+    .instance_init = macio_oldworld_init,
+    .class_init    = macio_oldworld_class_init,
+};
+
+static const TypeInfo macio_newworld_type_info = {
+    .name          = TYPE_NEWWORLD_MACIO,
+    .parent        = TYPE_MACIO,
+    .instance_size = sizeof(NewWorldMacIOState),
+    .instance_init = macio_newworld_init,
+    .class_init    = macio_newworld_class_init,
+};
+
+static const TypeInfo macio_type_info = {
+    .name          = TYPE_MACIO,
+    .parent        = TYPE_PCI_DEVICE,
+    .instance_size = sizeof(MacIOState),
+    .instance_init = macio_instance_init,
+    .abstract      = true,
+    .class_init    = macio_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+        { },
+    },
+};
+
+static void macio_register_types(void)
+{
+    type_register_static(&macio_bus_info);
+    type_register_static(&macio_type_info);
+    type_register_static(&macio_oldworld_type_info);
+    type_register_static(&macio_newworld_type_info);
+}
+
+type_init(macio_register_types)

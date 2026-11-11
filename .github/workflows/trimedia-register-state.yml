@@ -1,0 +1,30 @@
+name: WHP TriMedia register state
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'target/trimedia/**'
+      - 'scripts/tests/test-trimedia-register-state.py'
+      - '.github/workflows/trimedia-register-state.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whp-trimedia-register-state-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  register-state:
+    name: Check TriMedia register state
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Verify architectural register wiring
+        run: python3 scripts/tests/test-trimedia-register-state.py

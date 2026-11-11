@@ -1,0 +1,18 @@
+/* 2Wire 2701HG-B logical colour emission channels, NOT physical GPIO pins.
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+#ifndef HW_DISPLAY_TWOWIRE_LED_PANEL_H
+#define HW_DISPLAY_TWOWIRE_LED_PANEL_H
+#define TYPE_TWOWIRE_PANEL "2wire-2701hgb-led-panel"
+enum {
+    TWOWIRE_POWER_GREEN,
+    TWOWIRE_POWER_ORANGE,
+    TWOWIRE_POWER_RED,
+    TWOWIRE_ETHERNET_GREEN,
+    TWOWIRE_WIRELESS_GREEN,
+    TWOWIRE_DSL_GREEN,
+    TWOWIRE_INTERNET_GREEN,
+    TWOWIRE_INTERNET_RED,
+    TWOWIRE_LAMP_COUNT,
+};
+#endif

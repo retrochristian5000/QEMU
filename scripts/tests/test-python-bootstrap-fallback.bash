@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+mkdir -p "$TMP/scripts/whp-build" "$TMP/fakebin" "$TMP/build" "$TMP/seeds"
+cp "$ROOT/build.sh" "$TMP/build.sh"
+# The pre-Python entry locks a verified literal grep seed.
+mkdir -p "$TMP/scripts/whp-build/seed-bin"
+cp "$ROOT/seeds/grep.sh" "$TMP/seeds/grep.sh"
+cp "$ROOT/scripts/whp-build/seed-bin/grep" "$TMP/scripts/whp-build/seed-bin/grep"
+cp "$ROOT/seeds/awk.sh" "$TMP/seeds/awk.sh"
+cp "$ROOT/scripts/whp-build/seed-bin/awk" "$TMP/scripts/whp-build/seed-bin/awk"
+# build.sh loads these shared POSIX helpers before entering the fallback probe.
+cp "$ROOT/scripts/whp-build/shell-functions.sh" \
+   "$TMP/scripts/whp-build/shell-functions.sh"
+
+# Keep this fixture intentionally small, but provide the seed adapters and
+# sourced bootstrap modules that build.sh must traverse before it can prove the
+# bundled-Python fallback boundary.
+cat > "$TMP/seeds/sed.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-seed ]; then
+    printf '/bin/sed\n'
+    exit 0
+fi
+exec /bin/sed "$@"
+EOF
+chmod +x "$TMP/seeds/sed.sh"
+
+cat > "$TMP/seeds/cc.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-cc ]; then
+    printf '/usr/bin/cc\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/seeds/cc.sh"
+
+# Linker discovery is exercised, but this boundary fixture never links.
+cat > "$TMP/seeds/ld.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-ld ]; then
+    printf '/usr/bin/ld\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/seeds/ld.sh"
+
+cat > "$TMP/seeds/cpp.sh" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --print-seed ]; then
+    printf '/usr/bin/cc\n'
+    exit 0
+fi
+exit 2
+EOF
+chmod +x "$TMP/seeds/cpp.sh"
+
+cat > "$TMP/scripts/whp-build/gnu-make.bash" <<'EOF'
+whp_resolve_gnu_make()
+{
+    return 1
+}
+
+whp_find_gnu_make()
+{
+    return 1
+}
+EOF
+
+cat > "$TMP/scripts/whp-build/host-tools.sh" <<'EOF'
+# No managed host tools are needed for this fallback-boundary fixture.
+EOF
+
+cat > "$TMP/scripts/whp-build/host-libraries.sh" <<'EOF'
+whp_prepare_qemu_host_libraries()
+{
+    :
+}
+EOF
+
+cat > "$TMP/fake-python" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+    -c)
+        exit 0
+        ;;
+    *portable-build-entry.py)
+        if [ "${2:-}" = --print-build-dir ]; then
+            printf '%s\n' "$WHP_TEST_BUILD_DIR"
+            exit 0
+        fi
+        ;;
+    *config.py)
+        # The shell probe only needs an empty configuration environment.
+        exit 0
+        ;;
+esac
+exit 2
+EOF
+chmod +x "$TMP/fake-python"
+
+cat > "$TMP/scripts/bootstrap-python.sh" <<'EOF'
+#!/bin/sh
+set -eu
+: > "$WHP_TEST_BOOTSTRAP_MARKER"
+printf '%s\n' "$WHP_TEST_FAKE_PYTHON"
+EOF
+chmod +x "$TMP/scripts/bootstrap-python.sh"
+
+cat > "$TMP/fakebin/uname" <<'EOF'
+#!/bin/sh
+case "${1:-}" in
+    -s) printf 'Linux\n' ;;
+    -m) printf 'x86_64\n' ;;
+    *) printf 'Linux\n' ;;
+esac
+EOF
+chmod +x "$TMP/fakebin/uname"
+ln -s "$(command -v dirname)" "$TMP/fakebin/dirname"
+
+marker="$TMP/python-bootstrap.called"
+output="$({
+    /usr/bin/env -i \
+        PATH="$TMP/fakebin" \
+        HOME="$TMP" \
+        WHP_BUILD_BASH=/bin/bash \
+        WHP_SHELL_PROBE_ONLY=1 \
+        WHP_TEST_BUILD_DIR="$TMP/build" \
+        WHP_TEST_BOOTSTRAP_MARKER="$marker" \
+        WHP_TEST_FAKE_PYTHON="$TMP/fake-python" \
+        /bin/sh "$TMP/build.sh"
+} 2>&1)" || {
+    printf '%s\n' "$output" >&2
+    printf 'error: public build entry did not fall back to bundled Python\n' >&2
+    exit 1
+}
+
+[[ -f "$marker" ]] || {
+    printf 'error: bundled Python bootstrap helper was not called\n' >&2
+    exit 1
+}
+grep -Fq 'WHP build shell:' <<< "$output"
+
+printf 'bundled Python fallback test: passed\n'

@@ -1,0 +1,31 @@
+name: PowerMac3,1 Open Firmware contract
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'hw/ppc/powermac3_1.c'
+      - 'hw/ppc/mac_newworld.c'
+      - 'roms/openbios'
+      - 'scripts/tests/test-powermac3_1-open-firmware.py'
+      - '.github/workflows/powermac3_1-open-firmware.yml'
+  pull_request:
+    paths:
+      - 'hw/ppc/powermac3_1.c'
+      - 'hw/ppc/mac_newworld.c'
+      - 'roms/openbios'
+      - 'scripts/tests/test-powermac3_1-open-firmware.py'
+      - '.github/workflows/powermac3_1-open-firmware.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Verify PowerMac3,1 OpenBIOS identity ABI
+        run: python3 scripts/tests/test-powermac3_1-open-firmware.py

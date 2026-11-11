@@ -1,0 +1,185 @@
+name: WHP Autoconf bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.gitmodules'
+      - 'toolchains/autoconf'
+      - 'toolchains/automake'
+      - 'seeds/sed.sh'
+      - 'seeds/m4.sh'
+      - 'seeds/automake.sh'
+      - 'seeds/autom4te.sh'
+      - 'seeds/perl.sh'
+      - 'scripts/tests/test-perl-seed.py'
+      - 'scripts/tests/test-autom4te-seed.py'
+      - 'scripts/tests/test-automake-seed.py'
+      - 'scripts/tests/test-m4-seed.py'
+      - 'scripts/ensure-autoconf.py'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-automake-seed-cycle.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
+      - '.github/workflows/autoconf-bootstrap.yml'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'toolchains/autoconf'
+      - 'toolchains/automake'
+      - 'seeds/sed.sh'
+      - 'seeds/m4.sh'
+      - 'seeds/automake.sh'
+      - 'seeds/autom4te.sh'
+      - 'seeds/perl.sh'
+      - 'scripts/tests/test-perl-seed.py'
+      - 'scripts/tests/test-autom4te-seed.py'
+      - 'scripts/tests/test-automake-seed.py'
+      - 'scripts/tests/test-m4-seed.py'
+      - 'scripts/ensure-autoconf.py'
+      - 'scripts/ensure-automake.py'
+      - 'scripts/tests/test-automake-seed-cycle.py'
+      - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/bootstrap_env.py'
+      - 'scripts/tests/test-bootstrap-env.py'
+      - '.github/workflows/autoconf-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: false
+
+      - name: Install seed prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            brew install autoconf m4 texinfo
+            echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
+            echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
+          else
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y autoconf m4 texinfo
+          fi
+
+      - name: Test GNU M4 seed
+        run: python3 scripts/tests/test-m4-seed.py
+
+      - name: Verify static Autoconf wiring
+        run: python3 scripts/tests/test-autoconf-bootstrap.py
+
+      - name: Verify independent Autoconf bootstrap seed
+        run: python3 scripts/tests/test-automake-seed-cycle.py
+
+      - name: Verify coherent Automake seed and aclocal forwarding
+        run: python3 scripts/tests/test-automake-seed.py
+
+      - name: Verify direct autom4te seed and Autoconf release matching
+        run: python3 scripts/tests/test-autom4te-seed.py
+
+      - name: Verify native Perl seed semantics
+        run: python3 scripts/tests/test-perl-seed.py
+
+      - name: Reject corrupt bootstrap variables
+        run: python3 scripts/tests/test-bootstrap-env.py
+
+      - name: Bootstrap managed Automake then Autoconf
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export PATH="$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
+          fi
+          seed="$(./seeds/sed.sh --print-seed)"
+          automake_prefix="$(WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
+          export AUTOMAKE="$automake_prefix/bin/automake"
+          export ACLOCAL="$automake_prefix/bin/aclocal"
+          export PATH="$automake_prefix/bin:$PATH"
+          "$AUTOMAKE" --version | grep -q 'GNU automake'
+
+          expected_m4=
+          poison_bin=
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            expected_m4="$(brew --prefix m4)/bin/m4"
+            test -x "$expected_m4"
+            poison_bin="$RUNNER_TEMP/poison-m4"
+            mkdir -p "$poison_bin"
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'if [ "${1:-}" = --gnu ]; then shift; fi' \
+              'if [ "${1:-}" = --version ]; then' \
+              "  printf '%s\\n' 'GNU M4 99.99 poison'" \
+              '  exit 0' \
+              'fi' \
+              "printf '%s\\n' 'error: poison gm4 was executed' >&2" \
+              'exit 99' > "$poison_bin/gm4"
+            chmod +x "$poison_bin/gm4"
+            export PATH="$poison_bin:$PATH"
+          fi
+
+          autoconf_prefix="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          test -x "$autoconf_prefix/bin/autoconf"
+          test -x "$autoconf_prefix/bin/autom4te"
+          test -x "$autoconf_prefix/bin/autoheader"
+          test -x "$autoconf_prefix/bin/autoreconf"
+          "$autoconf_prefix/bin/autoconf" --version | grep -q 'GNU Autoconf'
+          "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
+
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            grep -Fxq "M4_PATH=$expected_m4" "$autoconf_prefix/.whp-autoconf-bootstrap"
+            grep -Fq 'M4_VERSION=m4 (GNU M4)' "$autoconf_prefix/.whp-autoconf-bootstrap"
+            grep -Fq "$expected_m4" "$autoconf_prefix/bin/autom4te"
+            if grep -Fq "$poison_bin/gm4" "$autoconf_prefix/bin/autom4te"; then
+              printf '%s\n' 'error: Autoconf embedded PATH gm4 instead of Homebrew GNU M4' >&2
+              exit 1
+            fi
+          fi
+
+          runtime_smoke="$RUNNER_TEMP/autoconf-runtime-smoke"
+          mkdir -p "$runtime_smoke"
+          printf '%s\n' 'AC_INIT([whp-runtime],[1])' 'AC_OUTPUT' > "$runtime_smoke/configure.ac"
+          (
+            cd "$runtime_smoke"
+            env -u M4 "$autoconf_prefix/bin/autoconf"
+            test -f configure
+          )
+
+          fake_m4="$RUNNER_TEMP/non-gnu-m4"
+          cat > "$fake_m4" <<'EOF'
+          #!/bin/sh
+          if [ "${1:-}" = --gnu ] && [ "${2:-}" = --version ]; then
+            printf '%s\n' 'm4 (Apple Inc.) 1.4.18'
+            exit 0
+          fi
+          exit 2
+          EOF
+          chmod +x "$fake_m4"
+          if (
+            cd toolchains/autoconf
+            M4="$fake_m4" ./bootstrap >"$RUNNER_TEMP/non-gnu-m4.out" 2>&1
+          ); then
+            printf '%s\n' 'error: Autoconf source bootstrap accepted non-GNU M4' >&2
+            exit 1
+          fi
+          grep -Fq 'did not identify itself as GNU M4' "$RUNNER_TEMP/non-gnu-m4.out"
+
+          again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
+            python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
+          test "$again" = "$autoconf_prefix"
