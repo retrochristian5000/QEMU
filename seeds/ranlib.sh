@@ -63,7 +63,9 @@ native_probe()
     trap 'rm -rf -- "$dir"' 0
     printf '%s\n' 'int whp_ranlib_probe(void) { return 1; }' > "$dir/probe.c"
     /bin/sh "$cc_seed" -c "$dir/probe.c" -o "$dir/probe.o" >/dev/null 2>&1 || exit 1
-    "$ar" rcs "$dir/libprobe.a" "$dir/probe.o" >/dev/null 2>&1 || exit 1
+    # Do not ask ar to create the symbol index: that is the operation
+    # ranlib must supply. Using rcs here could mask a no-op indexer.
+    "$ar" rc "$dir/libprobe.a" "$dir/probe.o" >/dev/null 2>&1 || exit 1
     "$ranlib" "$dir/libprobe.a" >/dev/null 2>&1 || exit 1
     [ -s "$dir/libprobe.a" ] || exit 1
     # A successful native link verifies the indexed archive is consumable.
