@@ -24,6 +24,19 @@ if WHP_CP_SEED=/no/such/cp "$seed" --print-seed >"$tmp/out" 2>"$tmp/error"; then
 fi
 grep -Fq 'WHP_CP_SEED is not a usable host cp' "$tmp/error"
 
+# A lost locked seed must not cause the adapter to discover a different cp.
+for runner in "$seed" "$bridge"; do
+    if WHP_CP_LOCKED=1 WHP_CP_SEED= "$runner" "$tmp/in" "$tmp/unexpected" >"$tmp/out" 2>"$tmp/error"; then
+        echo 'error: locked cp without a selected seed was accepted' >&2
+        exit 1
+    fi
+done
+if WHP_CP_LOCKED=1 WHP_CP_SEED= "$seed" "$tmp/in" "$tmp/unexpected" >"$tmp/out" 2>"$tmp/error"; then
+    echo 'error: cp seed silently fell back to a host tool' >&2
+    exit 1
+fi
+grep -Fq 'locked cp has no selected seed' "$tmp/error"
+
 # Neither bridge nor seed may be used as its own underlying implementation.
 for bad in "$seed" "$bridge"; do
     if WHP_CP_SEED="$bad" "$seed" --print-seed >"$tmp/out" 2>"$tmp/error"; then
