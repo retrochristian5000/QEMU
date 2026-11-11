@@ -55,6 +55,27 @@ def exports(data):
     return result
 
 
+def nm_exports(nm, path):
+    # Just-symbols output avoids platform-specific addresses and file labels.
+    # Compare multiplicities, not presentation order or archive member order.
+    names = run([nm, "--defined-only", "--extern-only",
+                 "--format=just-symbols", str(path)])
+    return Counter(names.splitlines())
+
+
+def check_nm(nm, archive, expected_objects):
+    # The Mach-O parser checks the index's per-member offsets; llvm-nm is
+    # an independent verification of the public exported-symbol inventory.
+    expected = Counter()
+    for object_path in expected_objects:
+        object_symbols = Counter(exports(object_path.read_bytes()))
+        assert nm_exports(nm, object_path) == object_symbols, (
+            f"llvm-nm disagrees with Mach-O exports: {object_path.name}")
+        expected.update(object_symbols)
+    assert nm_exports(nm, archive) == expected, (
+        f"llvm-nm archive symbols differ from object exports: {archive.name}")
+
+
 def members(data):
     assert data.startswith(b"!<arch>\n"), "not a regular BSD/Darwin archive"
     pos = 8
@@ -120,6 +141,7 @@ def main():
     ap.add_argument("--clang")
     ap.add_argument("--ar")
     ap.add_argument("--ranlib")
+    ap.add_argument("--nm")
     ap.add_argument("--objdump")
     ap.add_argument("--sdkroot")
     ap.add_argument("--deployment-target", default="13.0")
@@ -163,6 +185,8 @@ def main():
                 raise AssertionError("llvm-ar unexpectedly indexed rcS archive")
             run([args.ranlib, str(lib)])
             audit(lib.read_bytes(), raw)
+            if args.nm:
+                check_nm(args.nm, lib, objs)
         assert originals[0].read_bytes() == originals[1].read_bytes(), (
             "Darwin archive creation was nondeterministic")
 
@@ -177,6 +201,8 @@ def main():
         updated = dict(raw)
         updated[objs[0].name] = objs[0].read_bytes()
         audit(originals[1].read_bytes(), updated)
+        if args.nm:
+            check_nm(args.nm, originals[1], objs)
         assert b"_whp_ar_first_new" in originals[1].read_bytes()
         assert b"_whp_ar_first\0" not in originals[1].read_bytes(), (
             "stale symbol survived archive member replacement")
@@ -227,7 +253,7 @@ def main():
             assert struct.unpack_from("<3I", binary.read_bytes()) == (
                 0xfeedfacf, CPU_ARM64, SUBTYPE_ARM64E_ABI0
             ), "final binary lost ARM64e ABI subtype"
-    print("ARM64e llvm-ar: member bytes, Mach-O ABI, ranlib mapping, "
+    print("ARM64e llvm-ar: member bytes, Mach-O ABI, ranlib mapping, " 
           "incremental replacement, mixed-ABI rejection and corruption "
           "guards passed" + ("; Apple linked" if args.sdkroot
                             else "; SDK-free cross objects only"))
