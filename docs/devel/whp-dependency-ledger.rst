@@ -799,6 +799,17 @@ policy. It is not a request to install every tool or library listed below.
   records both paths in its incremental marker. No unbuilt LLVM, managed
   Autotools, or guest-target archive utility is needed for either seed.
 
+* **macOS-only tool-dispatch seed:** ``seeds/xcrun.sh`` verifies that
+  the selected Apple ``xcrun`` resolves both the macOS SDK and a native
+  Clang executable. ``build.sh`` selects it once before the Apple SDK
+  and host compiler; the shared developer-tool resolver honors
+  ``WHP_XCRUN_SEED`` instead of independently choosing a different
+  dispatcher. On non-Darwin systems ``--check`` reports not applicable,
+  and the normal build never requires ``xcrun``. An explicit unusable
+  seed fails closed instead of switching to an unrelated tool on PATH.
+  This seed depends on the Apple developer installation, not on QEMU's
+  managed LLVM, Make, Perl, or Autotools.
+
 * **macOS toolchain boundary:** selected Xcode/Command Line Tools,
   ``DEVELOPER_DIR``, ``SDKROOT``, the native compiler, architecture
   flags, and system headers must agree. Record the resolved SDK and compiler
