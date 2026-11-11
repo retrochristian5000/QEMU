@@ -47,6 +47,16 @@ def run(argv):
     return p.stdout
 
 
+def disassemble_symbol(objdump, path, symbol):
+    # Whole-object PAC searches can pass because of unrelated functions.
+    # Only examine the C++ virtual-dispatch entry point under test.
+    output = run([objdump, "-d", "--disassemble-symbols=" + symbol,
+                  str(path)]).lower()
+    assert re.search(r"\\b" + re.escape(symbol.lower()) + r"\\s*>:", output), (
+        f"{path.name}: llvm-objdump did not select {symbol}")
+    return output
+
+
 def parse_object(path, subtype):
     data = path.read_bytes()
     assert len(data) >= 32
@@ -140,7 +150,8 @@ def main():
         count = sum(r[0] == 11 for (seg, name), (_, rels) in cppsec.items()
                     for r in rels.values() if name == b"__const")
         assert count >= 3, f"C++ vtable lost authenticated pointers: {count}"
-        v_dis = run([args.objdump, "-d", str(root / "virtual-arm64e.o")]).lower()
+        v_dis = disassemble_symbol(args.objdump, root / "virtual-arm64e.o",
+                                   "_whp_virtual")
         assert "blraa" in v_dis
 
         # An ARM64e subtype alone cannot guarantee PAC-call ABI conformance.
@@ -153,14 +164,16 @@ def main():
             insecure = root / ("virtual-unsigned-" + opt[1:] + ".o")
             emit(args.clangxx, "arm64e-apple-macosx13.0",
                  root / "virtual.cc", secure, "-std=c++17", opt)
-            secure_dis = run([args.objdump, "-d", str(secure)]).lower()
+            secure_dis = disassemble_symbol(args.objdump, secure,
+                                            "_whp_virtual")
             assert any(x in secure_dis for x in ("blraa", "blrab", "braa", "brab")), (
                 f"{opt}: Clang++ lost authenticated C++ virtual calls"
             )
             emit(args.clangxx, "arm64e-apple-macosx13.0",
                  root / "virtual.cc", insecure, "-std=c++17", opt,
                  "-fno-ptrauth-calls")
-            unsafe_dis = run([args.objdump, "-d", str(insecure)]).lower()
+            unsafe_dis = disassemble_symbol(args.objdump, insecure,
+                                            "_whp_virtual")
             assert not any(x in unsafe_dis for x in (
                 "blraa", "blrab", "braa", "brab"
             )), f"{opt}: PAC opt-out did not disable signed virtual calls"
