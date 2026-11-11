@@ -82,6 +82,12 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn('"$lto_flag" -c "$source_main"', text)
         self.assertIn("printf 'LTO_MODE=%s\\n' \"$lto_mode\"", text)
         self.assertIn('WHP_MACOS_LTO_SCHEMA=3', text)
+        # An ARM64 family report from lipo cannot prove the ARM64e
+        # authenticated-pointer ABI survived the final LTO link.
+        self.assertIn('"${WHP_MACOS_ARCH:-auto}" == arm64e', text)
+        self.assertIn('*" arm64e "*)', text)
+        self.assertIn('0xfeedfacf, 0x0100000c, 0x80000002', text)
+        self.assertIn('LTO output lost the ARM64e Mach-O ABI subtype', text)
         self.assertIn('"${AR_CMD[@]}" rcs "$archive_candidate" "$object_a"', text)
         self.assertIn('"${RANLIB_CMD[@]}" "$archive_candidate"', text)
         self.assertIn('"$object_main" "$archive" -o "$output"', text)
