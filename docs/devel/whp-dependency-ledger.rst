@@ -789,6 +789,13 @@ policy. It is not a request to install every tool or library listed below.
   Autoconf dependency lists. Perl's ``miniperl`` is built from source;
   neither managed Autoconf nor managed Automake is needed to create it.
 
+* **Native archive indexing:** ``seeds/ranlib.sh`` resolves a native
+  ``ranlib`` (using the selected Xcode/CLT tool on macOS) and tests it
+  against an archive produced with host ``cc`` and ``ar``. Managed Perl
+  passes the validated executable to ``Configure`` as ``-Dranlib``
+  and records its identity in the incremental marker. No LLVM, managed
+  Autotools, or QEMU-target archive utility is required to seed it.
+
 * **macOS toolchain boundary:** selected Xcode/Command Line Tools,
   ``DEVELOPER_DIR``, ``SDKROOT``, the native compiler, architecture
   flags, and system headers must agree. Record the resolved SDK and compiler
