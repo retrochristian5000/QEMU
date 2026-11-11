@@ -87,6 +87,15 @@ if WHP_AWK_SEED= AWK="$tmp/fake-awk" "$bridge" --print-seed \
 fi
 test ! -s "$tmp/out"
 
+# Locked adapters must not discover an alternate AWK after losing their seed.
+for runner in "$bridge" "$shim"; do
+    if WHP_AWK_LOCKED=1 WHP_AWK_SEED= "$runner" 'BEGIN { print 1 }' >"$tmp/out" 2>"$tmp/err"; then
+        echo 'error: locked AWK without a selected seed was accepted' >&2
+        exit 1
+    fi
+done
+grep -Fq 'locked AWK has no selected seed' "$tmp/err"
+
 # The locked launcher must reject a missing seed and a loop to itself.
 if WHP_AWK_LOCKED=1 WHP_AWK_SEED="$shim" "$shim" 'BEGIN {print 1}' \
     >"$tmp/out" 2>"$tmp/err"; then
