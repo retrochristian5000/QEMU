@@ -402,10 +402,9 @@ declare all listed tools mandatory QEMU roots.
      - Required seed; never bootstrap LLVM with its own unfinished compiler.
    * - CMake
      - LLVM configure on a cache miss or source/configuration change
-     - External CMake already used for other QEMU toolchain lanes
+     - Validated ``seeds/cmake.sh`` selects an existing host CMake
      - Required capability for LLVM rebuild; no managed CMake source is
-       registered in QEMU. Track as an external provider gap, not a new
-       unconditional build step.
+       registered in QEMU. Selection is a seed, not a CMake source build.
    * - Ninja
      - LLVM compilation and distribution install
      - ``toolchains/ninja-builder`` or admitted host Ninja
@@ -470,9 +469,9 @@ llvm/cmake/config-ix.cmake, llvm/CMakeLists.txt, clang/CMakeLists.txt,
 lld/CMakeLists.txt, lldb/CMakeLists.txt, compiler-rt/CMakeLists.txt,
 and QEMU's scripts/bootstrap-native-clang.bash.
 
-* CMake: actively required for LLVM configuration; QEMU currently admits
-  a host executable but has no seeds/cmake.sh. A capability-checked
-  cmake.sh is a candidate, not evidence that managed CMake must be built.
+* CMake: actively required for LLVM configuration; ``seeds/cmake.sh``
+  now admits an existing CMake >= 3.20 with explicit override precedence.
+  It does not build CMake or depend on LLVM, breaking the bootstrap cycle.
 * Ninja: required executor; QEMU already selects NINJA_CMD and its
   managed ninja-builder fork. Reuse this authority before adding a seed.
 * Python3: actively discovered by LLVM and Clang through CMake; compiler-rt

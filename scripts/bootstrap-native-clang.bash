@@ -270,7 +270,10 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake sed mkdir mv rm ln mktemp; do
+# Obtain one validated independent CMake executable before building LLVM.
+cmake_cmd=$(/bin/sh "$SOURCE_DIR/seeds/cmake.sh" --print-cmake) || exit 1
+printf 'WHP native LLVM CMake: %s\n' "$cmake_cmd" >&2
+for tool in git sed mkdir mv rm ln mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: native LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -1880,8 +1883,8 @@ cmake_config_identity="$(
     # Include the exact source producer, not only compiler options.
     printf 'LLVM_GIT_COMMIT=%q\n' "$llvm_revision"
     printf 'LLVM_SOURCE_DIR=%q\n' "$LLVM_SOURCE_DIR"
-    printf 'CMAKE=%q\n' "$(command -v cmake)"
-    cmake --version | sed -n '1p'
+    printf 'CMAKE=%q\n' ""$cmake_cmd""
+    "$cmake_cmd" --version | sed -n '1p'
     printf 'CC_VERSION=%q\n' "$bootstrap_cc_version"
     printf 'CXX_VERSION=%q\n' "$bootstrap_cxx_version"
     for env_name in PATH AR RANLIB PKG_CONFIG \
@@ -1932,12 +1935,12 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
 else
     # A failed configure must not leave behind a valid reuse marker.
     rm -f "$cmake_config_marker"
-    cmake "${cmake_args[@]}"
+    "$cmake_cmd" "${cmake_args[@]}"
     printf '%s\n' "$cmake_config_identity" > "$cmake_config_marker"
 fi
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+    "$cmake_cmd" --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
 fi
 
 # Keep traversing independent Ninja edges after a compile failure so the
@@ -1945,13 +1948,13 @@ fi
 # returns failure after exhausting the reachable graph, so errors remain fatal
 # and installation is never attempted from an incomplete distribution.
 NINJA_CRITICAL_PATH_TIMES="$LLVM_NINJA_CRITICAL_PATH_TIMES" \
-    cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+    "$cmake_cmd" --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 
 stage_root="$TOOLCHAIN_WORK_DIR/install-root.$$"
 rm -rf "$stage_root"
 mkdir -p "$stage_root"
 DESTDIR="$stage_root" \
-    cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+    "$cmake_cmd" --build "$LLVM_BUILD_DIR" --target install-distribution \
         "${cmake_parallel_args[@]}"
 staged_toolchain="$stage_root$TOOLCHAIN_DIR"
 [[ -x "$staged_toolchain/bin/clang" ]] || {
