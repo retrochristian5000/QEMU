@@ -56,17 +56,22 @@ native_probe()
     # Use the same validated native archiver selected for Perl; never
     # silently pair ranlib with an unrelated target-format archive tool.
     ar=$(/bin/sh "$root/seeds/ar.sh" --print-seed) || exit 1
-    cc=$(/bin/sh "$root/seeds/cc.sh" --print-cc) || exit 1
+    # Use the compiler adapter for both compilation and linking. On macOS
+    # it carries the validated SDKROOT/-isysroot used by real native builds.
+    cc_seed="$root/seeds/cc.sh"
     dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ranlib.XXXXXX") || exit 1
     trap 'rm -rf -- "$dir"' 0
     printf '%s\n' 'int whp_ranlib_probe(void) { return 1; }' > "$dir/probe.c"
-    "$cc" -c "$dir/probe.c" -o "$dir/probe.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$cc_seed" -c "$dir/probe.c" -o "$dir/probe.o" >/dev/null 2>&1 || exit 1
     "$ar" rcs "$dir/libprobe.a" "$dir/probe.o" >/dev/null 2>&1 || exit 1
     "$ranlib" "$dir/libprobe.a" >/dev/null 2>&1 || exit 1
     [ -s "$dir/libprobe.a" ] || exit 1
     # A successful native link verifies the indexed archive is consumable.
     printf '%s\n' 'int whp_ranlib_probe(void); int main(void) { return whp_ranlib_probe() != 1; }' > "$dir/main.c"
-    "$cc" "$dir/main.c" "$dir/libprobe.a" -o "$dir/probe" >/dev/null 2>&1 || exit 1
+    /bin/sh "$cc_seed" "$dir/main.c" "$dir/libprobe.a" -o "$dir/probe" >/dev/null 2>&1 || exit 1
+    # Linking alone cannot prove the archive can produce a usable host
+    # executable. Verify that the indexed member was actually resolved.
+    "$dir/probe" >/dev/null 2>&1 || exit 1
 )
 
 select_seed()
