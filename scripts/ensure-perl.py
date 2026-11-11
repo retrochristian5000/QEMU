@@ -10,6 +10,8 @@ rebuilding managed Perl; neither the source checkout nor host Perl is altered.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import io
 import os
 import pathlib
@@ -19,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -28,7 +31,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "3"
+SCHEMA = "4"
 
 
 def run(argv: list[str], *, cwd: pathlib.Path | None = None,
@@ -154,6 +157,39 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
 
 
 
+@contextmanager
+def bootstrap_lock(build_dir: pathlib.Path):
+    """Serialize builds sharing a prefix, including validation and recovery."""
+    root = build_dir / "bootstrap"
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / ".perl-bootstrap.lock").open("a+b") as handle:
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "another managed Perl bootstrap holds the build lock"
+                    )
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def restore_previous_install(prefix: pathlib.Path,
+                             backup: pathlib.Path) -> None:
+    """Preserve the last working interpreter after an interrupted rebuild."""
+    if not backup.exists():
+        return
+    if prefix.exists():
+        shutil.rmtree(prefix)
+    backup.rename(prefix)
+
+
 def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     seed = root_perl()
     git = os.environ.get("WHP_GIT_SEED") or shutil.which("git")
@@ -182,14 +218,24 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         f"MAKE={make}\nSDKROOT={sdk}\n"
         f"CFLAGS={cflags}\nLDFLAGS={ldflags}\n"
     )
+    work = build_dir / "bootstrap" / "perl"
+    backup = build_dir / "bootstrap" / "perl-previous-install"
+
+    # A terminated process may have left the old installation parked here.
+    # Restore it before examining the fingerprint or clearing the work tree.
+    if backup.exists():
+        if marker_path.is_file() and marker_path.read_text() == marker:
+            if valid_perl(executable):
+                shutil.rmtree(backup)
+                return executable
+        restore_previous_install(prefix, backup)
+
     if marker_path.is_file() and marker_path.read_text() == marker:
         if valid_perl(executable):
             return executable
 
-    work = build_dir / "bootstrap" / "perl"
     source = work / "source"
     shutil.rmtree(work, ignore_errors=True)
-    shutil.rmtree(prefix, ignore_errors=True)
     stage_source(revision, source, git=git)
     for name in ("Configure", "Makefile.SH", "perl.c", "miniperlmain.c"):
         if not (source / name).is_file():
@@ -204,27 +250,42 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     env["MAKE"] = make
     if sdk:
         env["SDKROOT"] = sdk
-    # Do not provide a second, potentially conflicting source of flags.
-    # Configure receives the validated values explicitly via -D arguments.
+    # Perl Configure consumes explicit ccflags/ldflags, not inherited
+    # Autoconf-style environment variables.
     env.pop("CFLAGS", None)
     env.pop("LDFLAGS", None)
-    # Perl's source tree has a generated, non-Autotools Configure. Configure
-    # produces Makefile.SH derivatives in the staged source directory, not in
-    # the checkout. Use the validated native compiler and a private prefix.
-    # Even unexpected prompts cannot consume the user's terminal or stall
-    # an automatic incremental build. A blocked Configure fails promptly.
-    run(configure_arguments(source, prefix, cc, cflags, ldflags),
-        cwd=source, env=env, unattended=True, timeout=900)
-    run([make, "perl"], cwd=source, env=env)
-    built = source / "perl"
-    if not built.is_file() or not os.access(built, os.X_OK):
-        raise RuntimeError("Perl source build produced no executable")
-    # Install the interpreter with its matching core modules. Copying a lone
-    # 'perl' binary would break 'use strict', 'use Config' and later builders.
-    run([make, "install"], cwd=source, env=env)
-    if not valid_perl(executable):
-        raise RuntimeError("managed Perl failed installed interpreter/module/OS checks")
-    marker_path.write_text(marker, encoding="utf-8")
+
+    # Perl records absolute install paths in its Config. Build against the
+    # final prefix rather than moving a temporary installation afterward.
+    # Keep the old prefix for rollback until configure, build, install and
+    # installed-module validation all succeed.
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    if prefix.exists():
+        prefix.rename(backup)
+    try:
+        run(configure_arguments(source, prefix, cc, cflags, ldflags),
+            cwd=source, env=env, unattended=True, timeout=900)
+        run([make, "perl"], cwd=source, env=env)
+        built = source / "perl"
+        if not built.is_file() or not os.access(built, os.X_OK):
+            raise RuntimeError("Perl source build produced no executable")
+        run([make, "install"], cwd=source, env=env)
+        if not valid_perl(executable):
+            raise RuntimeError(
+                "managed Perl failed installed interpreter/module/OS checks"
+            )
+        # Never mark an incomplete installation as reusable.
+        temporary_marker = marker_path.with_name(marker_path.name + ".tmp")
+        temporary_marker.write_text(marker, encoding="utf-8")
+        temporary_marker.replace(marker_path)
+    except BaseException:
+        if backup.exists():
+            restore_previous_install(prefix, backup)
+        else:
+            shutil.rmtree(prefix, ignore_errors=True)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
     return executable
 
 
@@ -233,7 +294,9 @@ def main() -> int:
     parser.add_argument("--build-dir", required=True)
     args = parser.parse_args()
     try:
-        result = bootstrap(pathlib.Path(args.build_dir).expanduser().resolve())
+        build_dir = pathlib.Path(args.build_dir).expanduser().resolve()
+        with bootstrap_lock(build_dir):
+            result = bootstrap(build_dir)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"error: WHP managed Perl bootstrap failed: {exc}",
               file=sys.stderr)
