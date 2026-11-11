@@ -208,14 +208,39 @@ archive_stage_dir=
     "${THINLTO_JOBS_ARG[@]}" "$object_main" "$archive" -o "$output" \
     ${LD_FLAGS[@]+"${LD_FLAGS[@]}"}
 arches="$(output_arches "$output")"
-case " $arches " in
-    *" $host_arch "*) ;;
-    *)
-        printf 'error: LTO produced Mach-O architecture %s, expected %s\n' \
-            "${arches:-<unknown>}" "$host_arch" >&2
+# lipo's broad AArch64 family is not sufficient to prove ARM64e ABI
+# preservation. Require the requested subtype and inspect the Mach-O header.
+if [[ "${WHP_MACOS_ARCH:-auto}" == arm64e ]]; then
+    if [[ "$host_arch" != arm64 ]]; then
+        printf 'error: ARM64e LTO requires an Apple Silicon host\n' >&2
         exit 1
-        ;;
-esac
+    fi
+    case " $arches " in
+        *" arm64e "*) ;;
+        *)
+            printf 'error: ARM64e LTO produced architecture %s\n' "${arches:-<unknown>}" >&2
+            exit 1 ;;
+    esac
+    python3 - "$output" <<'PY'
+import pathlib
+import struct
+import sys
+
+header = pathlib.Path(sys.argv[1]).read_bytes()[:12]
+if len(header) != 12 or struct.unpack("<III", header) != (
+        0xfeedfacf, 0x0100000c, 0x80000002):
+    raise SystemExit("error: LTO output lost the ARM64e Mach-O ABI subtype")
+PY
+else
+    case " $arches " in
+        *" $host_arch "*) ;;
+        *)
+            printf 'error: LTO produced Mach-O architecture %s, expected %s\n' \
+                "${arches:-<unknown>}" "$host_arch" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 if ! "$output"; then
     printf 'error: linked macOS LTO probe did not execute successfully\n' >&2
