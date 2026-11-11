@@ -8,6 +8,7 @@ on:
       - 'toolchains/perl'
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
+      - 'seeds/ar.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -22,6 +23,7 @@ on:
       - 'toolchains/perl'
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
+      - 'seeds/ar.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -51,6 +53,13 @@ jobs:
           python3 scripts/tests/test-perl-seed.py
           python3 scripts/tests/test-perl-bootstrap.py
           python3 scripts/tests/test-perl-configure-unattended.py
+          sh -n seeds/ar.sh
+          sh seeds/ar.sh --check
+          # Explicit bad archivers must fail closed rather than fall back.
+          if WHP_AR_SEED=/bin/false sh seeds/ar.sh --check; then
+            echo 'invalid explicit ar seed unexpectedly accepted' >&2
+            exit 1
+          fi
           sh -n seeds/ranlib.sh
           sh seeds/ranlib.sh --check
 
