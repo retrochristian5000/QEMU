@@ -1,0 +1,108 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Select a native ranlib capable of indexing the current host's ar archives.
+# This is a root tool: never bootstrap ranlib from an unbuilt compiler fork.
+set -eu
+
+marker=whp-qemu-ranlib-seed-adapter
+if [ "${1:-}" = --whp-ranlib-adapter-probe ]; then
+    printf '%s\n' "$marker"
+    exit 0
+fi
+
+entry=$0
+case "$entry" in */*) ;; *) entry=$(command -v "$entry") || exit 1 ;; esac
+root=$(CDPATH= cd -P -- "${entry%/*}/.." && pwd -P) || exit 1
+
+resolve()
+(
+    value=$1
+    [ -n "$value" ] || exit 1
+    case "$value" in
+        */*) candidate=$value ;;
+        *[[:space:]]*) exit 1 ;;
+        *) candidate=$(command -v "$value" 2>/dev/null) || exit 1 ;;
+    esac
+    [ -f "$candidate" ] && [ -x "$candidate" ] || exit 1
+    case "$candidate" in
+        /*) ;;
+        */*) candidate=$(CDPATH= cd -P -- "${candidate%/*}" && pwd -P)/${candidate##*/} || exit 1 ;;
+        *) exit 1 ;;
+    esac
+    identity=$("$candidate" --whp-ranlib-adapter-probe 2>/dev/null || true)
+    [ "$identity" != "$marker" ] || exit 1
+    printf '%s\n' "$candidate"
+)
+
+native_probe()
+(
+    ranlib=$1
+    if [ "$(uname -s)" = Darwin ]; then
+        . "$root/scripts/whp-build/macos-developer-tools.sh"
+        ar=$(whp_apple_find_tool ar system) || exit 1
+    else
+        ar=$(command -v ar) || exit 1
+    fi
+    cc=$(/bin/sh "$root/seeds/cc.sh" --print-cc) || exit 1
+    dir=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ranlib.XXXXXX") || exit 1
+    trap 'rm -rf -- "$dir"' 0
+    printf '%s\n' 'int whp_ranlib_probe(void) { return 1; }' > "$dir/probe.c"
+    "$cc" -c "$dir/probe.c" -o "$dir/probe.o" >/dev/null 2>&1 || exit 1
+    "$ar" rcs "$dir/libprobe.a" "$dir/probe.o" >/dev/null 2>&1 || exit 1
+    "$ranlib" "$dir/libprobe.a" >/dev/null 2>&1 || exit 1
+    [ -s "$dir/libprobe.a" ] || exit 1
+    # A successful native link verifies the indexed archive is consumable.
+    printf '%s\n' 'int whp_ranlib_probe(void); int main(void) { return whp_ranlib_probe() != 1; }' > "$dir/main.c"
+    "$cc" "$dir/main.c" "$dir/libprobe.a" -o "$dir/probe" >/dev/null 2>&1 || exit 1
+)
+
+select_seed()
+{
+    for setting in WHP_RANLIB_SEED RANLIB_FOR_BUILD; do
+        case "$setting" in
+            WHP_RANLIB_SEED) value=${WHP_RANLIB_SEED:-} ;;
+            RANLIB_FOR_BUILD) value=${RANLIB_FOR_BUILD:-} ;;
+        esac
+        [ -n "$value" ] || continue
+        candidate=$(resolve "$value") || {
+            printf 'error: invalid %s: %s\n' "$setting" "$value" >&2
+            return 1
+        }
+        if [ "${probe:-yes}" = yes ]; then
+            native_probe "$candidate" || return 1
+        fi
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    if [ "$(uname -s)" = Darwin ]; then
+        . "$root/scripts/whp-build/macos-developer-tools.sh"
+        value=$(whp_apple_find_tool ranlib system) || return 1
+        candidate=$(resolve "$value") || return 1
+        if [ "${probe:-yes}" = yes ]; then native_probe "$candidate" || return 1; fi
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    for value in ranlib /usr/bin/ranlib; do
+        candidate=$(resolve "$value") || continue
+        if [ "${probe:-yes}" = yes ]; then native_probe "$candidate" || continue; fi
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    printf '%s\n' 'error: no native ranlib passed the archive probe' >&2
+    return 1
+}
+
+case "${1:-}" in
+    --print-seed|--print-ranlib) probe=yes; select_seed ;;
+    --check)
+        probe=yes
+        selected=$(select_seed) || exit 1
+        printf 'WHP native ranlib seed: %s\n' "$selected"
+        ;;
+    *)
+        # Regular invocations must not compile a new probe for each archive.
+        probe=no
+        selected=$(select_seed) || exit 1
+        exec "$selected" "$@"
+        ;;
+esac
