@@ -132,17 +132,22 @@ set_archive_command()
         printf 'error: unusable %s command: %s\n' "$variable" "$name" >&2
         exit 1
     fi
-    if [[ "$variable" == AR ]]; then
-        AR_CMD=("${command[@]}")
-    else
-        RANLIB_CMD=("${command[@]}")
-    fi
+    case "$variable" in
+        AR) AR_CMD=("${command[@]}") ;;
+        RANLIB) RANLIB_CMD=("${command[@]}") ;;
+        NM) NM_CMD=("${command[@]}") ;;
+    esac
 }
 reject_embedded_lto
 set_command "$CC"
 # Match QEMU's archive-tool family as well as its compiler/linker.
 set_archive_command AR /usr/bin/ar
 set_archive_command RANLIB /usr/bin/ranlib
+# NM is optional for external standalone probes; managed LLVM builds provide
+# it to independently inspect LTO bitcode exports after archive indexing.
+if [[ -n "${NM:-}" ]]; then
+    set_archive_command NM ""
+fi
 split_flags "${CPPFLAGS:-}"
 CPP_FLAGS=(${FLAG_ARRAY[@]+"${FLAG_ARRAY[@]}"})
 split_flags "${CFLAGS:-}"
@@ -199,8 +204,21 @@ SOURCE
 # malformed archive rather than replacing it. Publish only after indexing.
 archive_stage_dir="$(mktemp -d "$MACOS_LTO_PROBE_DIR/.lto-archive.XXXXXX")"
 archive_candidate="$archive_stage_dir/liblto-probe.a"
-"${AR_CMD[@]}" rcs "$archive_candidate" "$object_a"
+"${AR_CMD[@]}" rc "$archive_candidate" "$object_a"
 "${RANLIB_CMD[@]}" "$archive_candidate"
+if [[ -n "${NM:-}" ]]; then
+    # The linker succeeding alone can conceal an incomplete LTO archive
+    # index. Require the exported bitcode symbol in both object and archive.
+    object_symbols="$("${NM_CMD[@]}" --defined-only --extern-only \
+        --format=just-symbols "$object_a")" || exit 1
+    archive_symbols="$("${NM_CMD[@]}" --defined-only --extern-only \
+        --format=just-symbols "$archive_candidate")" || exit 1
+    if [[ "$object_symbols" != "$archive_symbols" ||
+          "$archive_symbols" != *whp_lto_increment* ]]; then
+        printf 'error: LTO archive symbols disagree with llvm-nm object exports\n' >&2
+        exit 1
+    fi
+fi
 mv -f "$archive_candidate" "$archive"
 rmdir "$archive_stage_dir"
 archive_stage_dir=
