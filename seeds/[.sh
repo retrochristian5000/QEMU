@@ -10,10 +10,24 @@ if [ "${1:-}" = --whp-bracket-adapter-probe ]; then
     exit 0
 fi
 
+# A false predicate exits 1; a missing or malformed final ] must instead
+# be a syntax error (status greater than 1). Do not mistake false for invalid.
+bracket_requires_closer()
+(
+    candidate=$1
+    shift
+    if "$candidate" "$@" 2>/dev/null; then
+        exit 1
+    else
+        status=$?
+        [ "$status" -gt 1 ]
+    fi
+)
+
 bracket_probe()
 (
     candidate=$1
-    # The external utility requires a separate closing ] argument.
+    # Require the standalone utility's separate closing argument.
     "$candidate" -n value ] || exit 1
     if "$candidate" -n '' ]; then exit 1; fi
     "$candidate" value = value ] || exit 1
@@ -21,6 +35,15 @@ bracket_probe()
     "$candidate" -f "$candidate" ] || exit 1
     "$candidate" -x "$candidate" ] || exit 1
     "$candidate" ! -n '' ] || exit 1
+
+    # Negative syntax cases: no closer, incorrect closer, or an empty
+    # argument in its place. These intentionally use a true predicate.
+    bracket_requires_closer "$candidate" -n value || exit 1
+    bracket_requires_closer "$candidate" -n value not-a-bracket || exit 1
+    bracket_requires_closer "$candidate" -n value '' || exit 1
+
+    # A literal ] inside an operand is not a closing argument.
+    "$candidate" ']' = ']' ']' || exit 1
 )
 
 bracket_resolve()
