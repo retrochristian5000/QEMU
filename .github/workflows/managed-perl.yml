@@ -9,6 +9,9 @@ on:
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
       - 'seeds/ar.sh'
+      - 'seeds/xcrun.sh'
+      - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'build.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -24,6 +27,9 @@ on:
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
       - 'seeds/ar.sh'
+      - 'seeds/xcrun.sh'
+      - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'build.sh'
       - 'scripts/ensure-perl.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -53,6 +59,16 @@ jobs:
           python3 scripts/tests/test-perl-seed.py
           python3 scripts/tests/test-perl-bootstrap.py
           python3 scripts/tests/test-perl-configure-unattended.py
+          sh -n seeds/xcrun.sh
+          if [ "$(uname -s)" = Darwin ]; then
+            sh seeds/xcrun.sh --check
+            if WHP_XCRUN_SEED=/bin/false sh seeds/xcrun.sh --check; then
+              echo 'invalid explicit xcrun seed unexpectedly accepted' >&2
+              exit 1
+            fi
+          else
+            sh seeds/xcrun.sh --check
+          fi
           sh -n seeds/ar.sh
           sh seeds/ar.sh --check
           # Explicit bad archivers must fail closed rather than fall back.
