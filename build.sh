@@ -331,16 +331,13 @@ printf 'QEMU seed sed: %s\n' "$WHP_SED_SEED" >&2
 # the later QEMU stage cannot silently rediscover different Make executables.
 . "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
 WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}
-if [ -n "$WHP_MAKE_REQUESTED" ]; then
-    MAKE_CMD=$(whp_resolve_gnu_make "$WHP_MAKE_REQUESTED" || true)
-    if [ -z "$MAKE_CMD" ]; then
-        printf '%s\n' \
-            "error: MAKE_CMD/MAKE does not identify GNU Make: $WHP_MAKE_REQUESTED" \
-            'Set MAKE_CMD or MAKE to a GNU Make executable (often gmake on BSD hosts).' >&2
-        exit 1
-    fi
+if [ -n "${WHP_MAKE_SEED:-}" ] || [ -n "$WHP_MAKE_REQUESTED" ]; then
+    # Explicit choices must fail closed. The seed adapter shares this
+    # resolver and keeps Make promotion after the bootstrap source stages.
+    MAKE_CMD=$(/bin/sh "$SOURCE_DIR/seeds/make.sh" --print-seed) || exit 1
 else
-    MAKE_CMD=$(whp_find_gnu_make || true)
+    # Preserve the existing no-Make bootstrap lane where it is supported.
+    MAKE_CMD=$(/bin/sh "$SOURCE_DIR/seeds/make.sh" --print-seed 2>/dev/null || true)
 fi
 if [ -n "$MAKE_CMD" ]; then
     WHP_MAKE_SEED=$MAKE_CMD
