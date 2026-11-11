@@ -194,6 +194,33 @@ def restore_previous_install(prefix: pathlib.Path,
     backup.rename(prefix)
 
 
+def select_seed_make() -> str:
+    """Resolve the pre-Perl GNU Make root, never an unbuilt managed Make."""
+    requested = (
+        os.environ.get("MAKE_CMD") or os.environ.get("MAKE") or "make"
+    )
+    candidate = (shutil.which(requested) if "/" not in requested
+                 else requested)
+    if not candidate or not os.access(candidate, os.X_OK):
+        raise RuntimeError(f"native Perl bootstrap needs GNU Make: {requested}")
+    candidate = str(pathlib.Path(candidate).resolve())
+    try:
+        result = subprocess.run(
+            [candidate, "--version"], capture_output=True, text=True,
+            check=False, timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            f"native Perl GNU Make seed cannot execute: {candidate}"
+        ) from exc
+    first_line = result.stdout.splitlines()[0] if result.stdout else ""
+    if result.returncode or not first_line.startswith("GNU Make "):
+        raise RuntimeError(
+            f"native Perl requires a working GNU Make seed: {candidate}"
+        )
+    return candidate
+
+
 def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     seed = root_perl()
     git = os.environ.get("WHP_GIT_SEED") or shutil.which("git")
@@ -203,14 +230,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     # archiver or SDK must not trigger unnecessary submodule fetches.
     cc = select_native_cc(ROOT)
     sdk = select_native_sdk(ROOT)
-    requested_make = (
-        os.environ.get("MAKE_CMD") or os.environ.get("MAKE") or "make"
-    )
-    make = (shutil.which(requested_make) if "/" not in requested_make
-            else requested_make)
-    if not make or not os.access(make, os.X_OK):
-        raise RuntimeError(f"native Perl bootstrap needs Make: {requested_make}")
-    make = str(pathlib.Path(make).resolve())
+    make = select_seed_make()
 
     # Select the archive tool before ranlib, which validates this same pair.
     ar_result = subprocess.run(
