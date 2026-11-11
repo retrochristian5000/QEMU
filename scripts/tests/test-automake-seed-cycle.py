@@ -19,13 +19,13 @@ spec.loader.exec_module(module)
 def fake_tool(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "#!/bin/sh\\n"
-        'case "$1" in\\n'
-        '  --version) printf "%s\\\\n" "' + path.name
-        + ' (GNU Autoconf) 2.72";;\\n'
-        '  --whp-autom4te-adapter-probe) exit 2;;\\n'
-        '  *) exit 0;;\\n'
-        'esac\\n',
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  --version) printf "%s\\n" "' + path.name
+        + ' (GNU Autoconf) 2.72";;\n'
+        '  --whp-autom4te-adapter-probe) exit 2;;\n'
+        '  *) exit 0;;\n'
+        'esac\n',
         encoding="utf-8",
     )
     path.chmod(0o755)
