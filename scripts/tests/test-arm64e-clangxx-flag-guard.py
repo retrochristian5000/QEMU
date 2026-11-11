@@ -25,6 +25,17 @@ assert builder.index("whp_macos_audit_arm64e_codegen_flags || exit 1") < (
     builder.index("whp_macos_audit_linker_driver_flags || exit 1")
 )
 assert "-fno-ptrauth-calls" in source
+# The object-level regression must inspect the actual virtual-dispatch
+# function, not accept a PAC instruction emitted by an unrelated function.
+object_test = (ROOT / "scripts/tests/test-arm64e-object-emission.py").read_text(
+    encoding="utf-8"
+)
+assert 'def disassemble_symbol(objdump, path, symbol):' in object_test
+assert '"--disassemble-symbols=" + symbol' in object_test
+assert object_test.count('"_whp_virtual")') == 3
+assert 'secure_dis = disassemble_symbol(' in object_test
+assert 'unsafe_dis = disassemble_symbol(' in object_test
+
 assert "whp_macos_audit_arm64e_codegen_flags()" in source
 
 variables = ("CC", "CXX", "OBJC", "CFLAGS", "CXXFLAGS",
