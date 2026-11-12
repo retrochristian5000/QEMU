@@ -77,6 +77,36 @@ grep -Fq 'one nonempty ARFLAGS value' "$tmp/flags.err"
 # The platform-native archive family should satisfy the capability contract.
 whp_archive_toolchain_smoke "$cc" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool"
 
+# Native compatibility must include a successful link and execution, not
+# merely a compiler that can emit an object plus an ar/nm that can read it.
+WHP_ARCHIVE_VERBOSE=1 whp_archive_toolchain_smoke \
+    "$cc" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool" \
+    >"$tmp/verbose.out" 2>"$tmp/verbose.err"
+test ! -s "$tmp/verbose.out"
+grep -Fq "WHP archive toolchain: native link/run verified; CC=$cc; AR=$ar_tool; RANLIB=$ranlib_tool; NM=$nm_tool" \
+    "$tmp/verbose.err"
+
+real_cc="$(command -v "$cc")"
+cat >"$tmp/compile-only-cc" <<'EOF'
+#!/bin/sh
+for arg do
+    if [ "$arg" = -c ]; then
+        exec "$WHP_AR_TEST_REAL_CC" "$@"
+    fi
+done
+printf '%s\n' 'intentional host link failure' >&2
+exit 27
+EOF
+chmod +x "$tmp/compile-only-cc"
+if WHP_AR_TEST_REAL_CC="$real_cc" whp_archive_toolchain_smoke \
+    "$tmp/compile-only-cc" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool" \
+    >"$tmp/link-failure.out" 2>&1; then
+    printf '%s\n' 'error: compile-only host compiler passed native archive link probe' >&2
+    exit 1
+fi
+grep -Fq 'QEMU archive toolchain failed: link native host executable' "$tmp/link-failure.out"
+grep -Fq 'intentional host link failure' "$tmp/link-failure.out"
+
 # A wrapper is intentionally accepted: AR identity is a capability contract,
 # not an exact pathname/vendor contract.
 real_ar="$(command -v "$ar_tool")"
