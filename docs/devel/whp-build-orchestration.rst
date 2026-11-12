@@ -25,6 +25,38 @@ That ledger distinguishes a source that is merely available from one that is a
 production build dependency, and records which pinned sources are WHP-owned
 forks that may be edited directly.
 
+Source refresh diagnostics
+--------------------------
+
+The early ``scripts/whp-build/update-source.sh`` stage runs before managed
+Python, Bash, sed, or the native compiler, so its diagnostics use POSIX shell
+and ``printf`` without introducing another tool dependency. Routine output
+reports the *outcome*, not merely that Git was invoked:
+
+* **Current** means the checked local HEAD equals its tracked upstream.
+* **Fast-forwarded** means the branch HEAD actually advanced.
+* **Local ahead** means a successful no-op fast-forward preserved a newer
+  local HEAD without claiming it equals upstream.
+* **Retained / refresh unverified** means an automatic refresh was not proven
+  successful (for example, tracked edits, a detached checkout, unavailable
+  upstream, or a failed fetch). The earlier warning explains why.
+* **Error** means a required refresh (``WHP_SOURCE_UPDATE=1``) failed.
+
+Normal messages remain short; to inspect the Git seed, branch, tracking ref,
+advertised and local commit IDs, and before/after HEAD, opt in to diagnostic
+messages on standard error::
+
+  WHP_SOURCE_UPDATE_VERBOSE=1 ./build.sh
+
+``WHP_SOURCE_UPDATE_VERBOSE`` accepts only ``0`` (default) or ``1``.
+It controls **source-refresh details only**, not compiler command echoing,
+Meson/Ninja verbosity, or QEMU runtime tracing. Invalid values fail early
+without attempting a refresh. This switch does not authorize source resets,
+force-pushes, submodule downloads, or network access during existing probe
+and CI skip modes. A source refresh skipped under CI is not described as
+verified current. The focused source-update fixture tests all four outcomes
+and the diagnostic/validation boundary.
+
 Explicit Git submodule remote refresh
 -------------------------------------
 
