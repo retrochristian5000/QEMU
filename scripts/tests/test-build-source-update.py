@@ -410,6 +410,7 @@ def test_parent_fast_forward_and_explicit_error():
         env = os.environ.copy()
         env.pop('CI', None)
         env['WHP_SOURCE_UPDATE'] = 'auto'
+        env['WHP_SOURCE_UPDATE_VERBOSE'] = '1'
         # Use a distinct selected Git wrapper. The parent updater must use it
         # for every Git command, not rediscover an unrelated PATH git.
         selected_git = base / 'selected-git'
@@ -426,6 +427,10 @@ def test_parent_fast_forward_and_explicit_error():
         first = subprocess.run(updater, cwd=source, env=env, text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert first.returncode == 0, first.stderr
+        assert 'WHP source update: fast-forwarded ' in first.stderr
+        assert 'WHP source update detail: mode=auto' in first.stderr
+        assert 'HEAD before=' in first.stderr and 'result=updated' in first.stderr
+        assert 'refresh unverified' not in first.stderr
         traced = trace.read_text(encoding='utf-8')
         for command in ('rev-parse --is-inside-work-tree', 'ls-remote',
                         'fetch --no-tags', 'merge --ff-only'):
@@ -438,11 +443,42 @@ def test_parent_fast_forward_and_explicit_error():
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert unchanged.returncode == 0, unchanged.stderr
         assert 'upstream ref unchanged; object fetch skipped' in unchanged.stderr
+        assert 'WHP source update: QEMU current;' in unchanged.stderr
+        assert 'result=current' in unchanged.stderr
+        assert 'fast-forwarded ' not in unchanged.stderr
+
+        # A local descendant is not the same as an exact upstream revision.
+        ahead_source = base / 'ahead-source'
+        git('clone', '-q', str(upstream), str(ahead_source))
+        ahead_script = ahead_source / 'scripts/whp-build/update-source.sh'
+        ahead_script.parent.mkdir(parents=True)
+        shutil.copy2(UPDATE, ahead_script)
+        git('config', 'user.name', 'WHP Test', cwd=ahead_source)
+        git('config', 'user.email', 'whp@example.invalid', cwd=ahead_source)
+        git('commit', '--allow-empty', '-qm', 'local ahead', cwd=ahead_source)
+        ahead_head = git('rev-parse', 'HEAD', cwd=ahead_source)
+        ahead_result = subprocess.run(['/bin/sh', str(ahead_script)],
+                                      cwd=ahead_source, env=env, text=True,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+        assert ahead_result.returncode == 0, ahead_result.stderr
+        assert 'is ahead of ' in ahead_result.stderr
+        assert 'result=local-ahead' in ahead_result.stderr
+        assert git('rev-parse', 'HEAD', cwd=ahead_source) == ahead_head
 
         (upstream / 'README').write_text('parent v3\n')
         git('add', 'README', cwd=upstream)
         git('commit', '-qm', 'parent v3', cwd=upstream)
         (source / 'README').write_text('preserve local edit\n')
+        env['WHP_SOURCE_UPDATE'] = 'auto'
+        retained = subprocess.run(updater, cwd=source, env=env, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert retained.returncode == 0, retained.stderr
+        assert 'warning: tracked QEMU source changes' in retained.stderr
+        assert 'retained checkout (refresh unverified)' in retained.stderr
+        assert 'QEMU current' not in retained.stderr
+        assert git('rev-parse', 'HEAD', cwd=source) == pinned
+
         env['WHP_SOURCE_UPDATE'] = '1'
         refused = subprocess.run(updater, cwd=source, env=env, text=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -455,7 +491,20 @@ def test_parent_fast_forward_and_explicit_error():
         disabled = subprocess.run(updater, cwd=source, env=env, text=True,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert disabled.returncode == 0
+        assert 'source refresh disabled' in disabled.stderr
         assert git('rev-parse', 'HEAD', cwd=source) == pinned
+
+        env['WHP_SOURCE_UPDATE_VERBOSE'] = 'invalid'
+        invalid = subprocess.run(updater, cwd=source, env=env, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert invalid.returncode != 0
+        assert 'WHP_SOURCE_UPDATE_VERBOSE must be 0 or 1' in invalid.stderr
+        assert git('rev-parse', 'HEAD', cwd=source) == pinned
+        env['WHP_SOURCE_UPDATE_VERBOSE'] = '0'
+        quiet_details = subprocess.run(updater, cwd=source, env=env, text=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert quiet_details.returncode == 0
+        assert 'WHP source update detail:' not in quiet_details.stderr
 
 
 def test_initialized_submodules_follow_parent_gitlinks():
