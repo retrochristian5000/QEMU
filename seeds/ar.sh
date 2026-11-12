@@ -67,6 +67,35 @@ archive_probe()
     # Verify the streamed member against the original compiler output.
     "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/from-archive.o" || exit 1
     cmp -s "$tmp/probe.o" "$tmp/from-archive.o" || exit 1
+    # A simple create/extract check is not enough for incremental QEMU builds:
+    # the archiver must replace an existing member and refresh its index.
+    # Keep the initial 'rc' probe unindexed for the separate ranlib seed.
+    printf '%s\n' 'int whp_ar_probe(void) { return 11; }' > "$tmp/probe.c"
+    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || exit 1
+    "$archiver" rcs "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || {
+        printf 'error: native ar cannot replace and index archive: %s\n' "$archiver" >&2
+        exit 1
+    }
+    listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
+    [ "$listing" = probe.o ] || {
+        printf 'error: native ar left duplicate or missing members: %s\n' "$archiver" >&2
+        exit 1
+    }
+    "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/replaced.o" || exit 1
+    cmp -s "$tmp/probe.o" "$tmp/replaced.o" || {
+        printf 'error: native ar retained a stale archive member: %s\n' "$archiver" >&2
+        exit 1
+    }
+    # Link without ranlib: the 's' operation above must have made the
+    # replacement's native symbol discoverable to the actual host linker.
+    printf '%s\n' \
+        'int whp_ar_probe(void); int main(void) { return whp_ar_probe() != 11; }' \
+        > "$tmp/main.c"
+    /bin/sh "$compiler_seed" "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" >/dev/null 2>&1 || {
+        printf 'error: native ar indexed archive cannot link: %s\n' "$archiver" >&2
+        exit 1
+    }
+    "$tmp/probe" >/dev/null 2>&1 || exit 1
 )
 
 select_seed()

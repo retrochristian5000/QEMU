@@ -76,6 +76,23 @@ jobs:
             echo 'invalid explicit ar seed unexpectedly accepted' >&2
             exit 1
           fi
+          # Reject archivers that can create an archive but silently skip
+          # incremental replacement. Successful exit status is insufficient.
+          real_ar="$(sh seeds/ar.sh --print-seed)"
+          fake_ar_dir="$(mktemp -d "$RUNNER_TEMP/whp-ar-seed-test.XXXXXX")"
+          cat > "$fake_ar_dir/no-update-ar" <<'EOF'
+          #!/bin/sh
+          if [ "$1" = rcs ]; then
+              exit 0
+          fi
+          exec "$WHP_AR_TEST_REAL_AR" "$@"
+          EOF
+          chmod +x "$fake_ar_dir/no-update-ar"
+          if WHP_AR_TEST_REAL_AR="$real_ar" WHP_AR_SEED="$fake_ar_dir/no-update-ar" sh seeds/ar.sh --check; then
+            echo 'archiver with no-op member replacement unexpectedly accepted' >&2
+            exit 1
+          fi
+          rm -rf -- "$fake_ar_dir"
           sh -n seeds/ranlib.sh
           sh seeds/ranlib.sh --check
 
