@@ -836,6 +836,21 @@ policy. It is not a request to install every tool or library listed below.
   existing POSIX seed selectors should retain the shell's faster ``command -v``
   for functions, builtins, and early executable resolution.
 
+* **Optional installed LLVM archive seed:** ``seeds/llvm-ar.sh`` discovers
+  a working preinstalled native ``llvm-ar``, prioritizing the LLVM archiver
+  adjacent to the selected host C compiler. It also supports an explicit
+  ``WHP_LLVM_AR_SEED`` selection and typical version-suffixed binary names.
+  Admission compiles two native objects through ``seeds/cc.sh``, checks
+  member contents and incremental replacement, and links an executable
+  from the indexed archive. If no installed LLVM archiver works, this
+  optional seed reports unavailability; it does not trigger a managed
+  LLVM build or replace ``seeds/ar.sh`` or ``seeds/ranlib.sh``.
+  A caller may explicitly select the result, for example with
+  ``WHP_AR_SEED=$(/bin/sh seeds/llvm-ar.sh --print-seed)``, but must retain a
+  separately validated matching ranlib/NM family where its build requires
+  those tools. The existing macOS coherent LLVM archive-trio selection
+  remains authoritative.
+
 * **Native archiver and archive indexing:** ``seeds/ar.sh`` verifies a
   selected host ``ar`` by compiling a native object, creating an archive,
   listing its member, extracting it, and comparing the original bytes.
