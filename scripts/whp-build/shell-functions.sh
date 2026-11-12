@@ -16,6 +16,26 @@ whp_command_dir()
     printf '%s\n' "$whp_dir"
 )
 
+# The POSIX.1-2017 shell baseline does not require [ -ef ]. When a
+# macOS shell lacks it, BSD stat can still prove a worktree's device/inode.
+# Native stat follows symlinks only with -L; comparing lstat identities
+# would incorrectly reject a /var alias or symlinked directory.
+whp_darwin_directory_identity()
+(
+    whp_dir=$1
+    [ -d "$whp_dir" ] || exit 1
+    [ "$(uname -s 2>/dev/null || :)" = Darwin ] || exit 1
+    [ -x /usr/bin/stat ] || exit 1
+    whp_identity=$(/usr/bin/stat -L -f '%d:%i' "$whp_dir" 2>/dev/null) || exit 1
+    # Reject diagnostic text or a partial identity; both fields are decimal.
+    case "$whp_identity" in
+        *[!0123456789:]*|:*|*:|*:*:*|'') exit 1 ;;
+        *:*) ;;
+        *) exit 1 ;;
+    esac
+    printf '%s\n' "$whp_identity"
+)
+
 # Compare directory identities without confusing unsupported -ef with
 # different objects. Status: 0 same, 1 different, 2 unsupported/error.
 # POSIX.1-2024 standardizes -ef, but older installed shells may lack it.
@@ -24,20 +44,24 @@ whp_same_directory()
     whp_left=$1
     whp_right=$2
     [ "$whp_left" = "$whp_right" ] && exit 0
+    [ -d "$whp_left" ] && [ -d "$whp_right" ] || exit 2
     # Prove the executing shell's own [ builtin understands -ef. Probing
     # the external /usr/bin/[ would not qualify this shell.
     if [ "$whp_left" -ef "$whp_left" ] 2>/dev/null; then
-        :
-    else
-        exit 2
+        if [ "$whp_left" -ef "$whp_right" ] 2>/dev/null; then
+            exit 0
+        else
+            whp_status=$?
+            [ "$whp_status" -eq 1 ] && exit 1
+            exit 2
+        fi
     fi
-    if [ "$whp_left" -ef "$whp_right" ] 2>/dev/null; then
-        exit 0
-    else
-        whp_status=$?
-        [ "$whp_status" -eq 1 ] && exit 1
-        exit 2
-    fi
+    # No generic textual-path fallback: only Darwin's native inode
+    # evidence is admitted. All other unsupported shells fail closed.
+    whp_left_id=$(whp_darwin_directory_identity "$whp_left") || exit 2
+    whp_right_id=$(whp_darwin_directory_identity "$whp_right") || exit 2
+    [ "$whp_left_id" = "$whp_right_id" ] && exit 0
+    exit 1
 )
 
 # Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
