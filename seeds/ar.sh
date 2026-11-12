@@ -4,6 +4,30 @@
 # Do not replace the host archiver with a target or unbuilt LLVM archiver.
 set -eu
 
+# Optional diagnostics do not alter --print-seed stdout or force a probe on
+# every forwarded archive command. A direct call is not an admission check.
+archive_verbose=${WHP_ARCHIVE_VERBOSE:-0}
+case "$archive_verbose" in
+    0|1) ;;
+    *) printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$archive_verbose" >&2; exit 2 ;;
+esac
+
+whp_ar_report()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    printf 'WHP ar selection: provider=%s; executable=%s; native-probe=%s\n' \
+        "$2" "$1" "${probe:-yes}" >&2
+}
+
+whp_ar_invoke()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    operation=${1:-<none>}
+    archive=${2:-<none>}
+    printf 'WHP ar invocation: executable=%s; operation=%s; archive=%s; argument-count=%s; admission=not-repeated\n' \
+        "$selected" "$operation" "$archive" "$#" >&2
+}
+
 marker=whp-qemu-ar-seed-adapter
 if [ "${1:-}" = --whp-ar-adapter-probe ]; then
     printf '%s\n' "$marker"
@@ -116,6 +140,7 @@ select_seed()
                 return 1
             }
         fi
+        whp_ar_report "$candidate" "$setting"
         printf '%s\n' "$candidate"
         return 0
     done
@@ -125,12 +150,14 @@ select_seed()
         value=$(whp_apple_find_tool ar system) || return 1
         candidate=$(resolve "$value") || return 1
         if [ "${probe:-yes}" = yes ]; then archive_probe "$candidate" || return 1; fi
+        whp_ar_report "$candidate" Apple-xcrun
         printf '%s\n' "$candidate"
         return 0
     fi
     for value in ar /usr/bin/ar; do
         candidate=$(resolve "$value") || continue
         if [ "${probe:-yes}" = yes ]; then archive_probe "$candidate" || continue; fi
+        whp_ar_report "$candidate" "host:$value"
         printf '%s\n' "$candidate"
         return 0
     done
@@ -144,10 +171,16 @@ case "${1:-}" in
         probe=yes
         selected=$(select_seed) || exit 1
         printf 'WHP native ar seed: %s\n' "$selected"
+        if [ "$archive_verbose" = 1 ]; then
+            compiler=$(/bin/sh "$root/seeds/cc.sh" --print-seed) || exit 1
+            printf 'WHP ar validation: compiler=%s; host=%s/%s; compile, archive, replace, index, link and execute passed\n' \
+                "$compiler" "$(uname -s)" "$(uname -m)"
+        fi
         ;;
     *)
         probe=no
         selected=$(select_seed) || exit 1
+        whp_ar_invoke "$@"
         exec "$selected" "$@"
         ;;
 esac
