@@ -1,4 +1,4 @@
-name: AWK and grep seed bridges
+name: AWK, grep and which seed bridges
 
 on:
   push:
@@ -8,9 +8,11 @@ on:
       - 'scripts/whp-build/seed-bin/awk'
       - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'seeds/grep.sh'
+      - 'seeds/which.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
+      - 'scripts/tests/test-which-seed.sh'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/grep-seed-adapter.yml'
   pull_request:
@@ -19,9 +21,11 @@ on:
       - 'scripts/whp-build/seed-bin/awk'
       - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'seeds/grep.sh'
+      - 'seeds/which.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
+      - 'scripts/tests/test-which-seed.sh'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/grep-seed-adapter.yml'
 
@@ -43,5 +47,10 @@ jobs:
         run: bash scripts/tests/test-grep-seed-adapter.bash
       - name: Verify AWK and grep before sed, Python, and Autotools
         run: python3 scripts/tests/test-sed-bootstrap-order.py
+      - name: Verify standalone POSIX which lookup seed
+        run: |
+          sh -n seeds/which.sh
+          sh -n scripts/tests/test-which-seed.sh
+          sh scripts/tests/test-which-seed.sh
       - name: Validate portable shell entrypoints
         run: sh -n seeds/awk.sh scripts/whp-build/seed-bin/awk seeds/grep.sh scripts/whp-build/seed-bin/grep build.sh

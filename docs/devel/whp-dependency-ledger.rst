@@ -827,6 +827,15 @@ policy. It is not a request to install every tool or library listed below.
   Autoconf dependency lists. Perl's ``miniperl`` is built from source;
   neither managed Autoconf nor managed Automake is needed to create it.
 
+* **Portable executable lookup:** ``seeds/which.sh`` provides an
+  opt-in POSIX-shell ``which`` implementation for bootstrap diagnostics
+  and seed-tool discovery. It needs no external ``which``, Python, or
+  managed tool, and handles ordered ``PATH`` components, executable-only
+  matching, ``-a``, ``-s``, and direct pathname checks. ``--print-seed``
+  reports the physical seed script. It is not globally prepended to ``PATH``:
+  existing POSIX seed selectors should retain the shell's faster ``command -v``
+  for functions, builtins, and early executable resolution.
+
 * **Native archiver and archive indexing:** ``seeds/ar.sh`` verifies a
   selected host ``ar`` by compiling a native object, creating an archive,
   listing its member, extracting it, and comparing the original bytes.
