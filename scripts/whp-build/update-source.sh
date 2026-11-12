@@ -37,7 +37,7 @@ esac
     whp_update_detail 'source refresh disabled (WHP_SOURCE_UPDATE=0)'
     exit 0
 }
-whp_update_detail "mode=$mode; requested detail=$detail"
+whp_update_detail "mode=$mode; checkout=$SOURCE_DIR"
 
 # 'retained' remains authoritative until HEAD is checked against upstream
 # after a successful fast-forward (including a no-op merge).
@@ -101,7 +101,7 @@ elif [ -z "$branch" ]; then
 elif [ -z "$upstream_ref" ] || [ -z "$remote" ] || [ -z "$merge_ref" ]; then
     warn_or_fail "QEMU branch '$branch' has no complete configured upstream"
 else
-    printf 'WHP source update: %s <- %s\n' "$branch" "$upstream_ref" >&2
+    printf 'WHP source update: checking %s against %s\n' "$branch" "$upstream_ref" >&2
 
     # Query only the configured upstream ref. A no-op build transfers only the
     # remote ref advertisement instead of running a full fetch negotiation.
