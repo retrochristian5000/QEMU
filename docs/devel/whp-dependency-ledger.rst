@@ -857,6 +857,40 @@ policy. It is not a request to install every tool or library listed below.
   those tools. The existing macOS coherent LLVM archive-trio selection
   remains authoritative.
 
+  The two native archive seeds share an opt-in provenance/forwarding trace::
+
+    WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/ar.sh --check
+    WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/llvm-ar.sh --check
+
+  When an installed LLVM tool is not available, the second command reports
+  that optional seed as unavailable rather than bootstrapping LLVM. The
+  diagnostics distinguish the **provider** (explicit override, compiler
+  sibling, Apple xcrun, or host utility), the resolved **executable**, and
+  whether the expensive native archive-and-execute probe ran. A successful
+  verbose ``--check`` identifies the selected ``cc.sh`` compiler, host
+  kernel/architecture, and the verified compile, archive, replace, index,
+  link and execute sequence.
+
+  For a forwarded archive command, ``WHP_ARCHIVE_VERBOSE=1`` adds the
+  selected executable, operation, archive argument, and argument count to
+  standard error while retaining exactly the normal command exit status
+  and standard output. The message explicitly says ``native-probe=no``
+  and ``admission=not-repeated``: forwarding deliberately does **not**
+  recompile probe objects for every archive action. Run ``--check`` or
+  ``--print-seed`` at the selection boundary to establish admissibility.
+  ``--print-seed`` always emits only the selected executable on stdout
+  so shell command substitutions remain usable. The switch accepts only
+  ``0`` (default) or ``1``, and an invalid value fails closed.
+
+  These checks prove the archive can hold objects produced by the selected
+  **native host compiler** and successfully link/run a host executable;
+  they are not a claim of target ELF/COFF portability, ARM64e-specific
+  code generation, ThinLTO/plugin interoperability, or compatibility with
+  an unrelated C compiler. The QEMU macOS wrapper can subsequently select a
+  coherent ``AR/RANLIB/NM`` trio beside its compiler; report and validate
+  that final trio separately rather than assuming the early ar seed dictates
+  the later QEMU host archiver.
+
 * **Native archiver and archive indexing:** ``seeds/ar.sh`` verifies a
   selected host ``ar`` by compiling a native object, creating an archive,
   listing its member, extracting it, and comparing the original bytes.
