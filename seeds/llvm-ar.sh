@@ -28,6 +28,12 @@ whp_llvm_ar_invoke()
         "$selected" "$operation" "$archive" "$#" >&2
 }
 
+whp_llvm_ar_probe_failure()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    printf 'WHP llvm-ar native probe failed: executable=%s; stage=%s\n' "$1" "$2" >&2
+}
+
 marker=whp-qemu-llvm-ar-seed-adapter
 if [ "${1:-}" = --whp-llvm-ar-adapter-probe ]; then
     printf '%s\n' "$marker"
@@ -87,17 +93,23 @@ native_probe()
     trap 'exit 1' 1 2 3 15
     printf '%s\n' 'int whp_llvm_ar_first(void) { return 3; }' > "$tmp/first.c"
     printf '%s\n' 'int whp_llvm_ar_second(void) { return 5; }' > "$tmp/second.c"
-    /bin/sh "$cc_seed" -c "$tmp/first.c" -o "$tmp/first.o" >/dev/null 2>&1 || exit 1
-    /bin/sh "$cc_seed" -c "$tmp/second.c" -o "$tmp/second.o" >/dev/null 2>&1 || exit 1
-    "$archiver" rcs "$tmp/libprobe.a" "$tmp/first.o" "$tmp/second.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$cc_seed" -c "$tmp/first.c" -o "$tmp/first.o" >/dev/null 2>&1 || {
+        whp_llvm_ar_probe_failure "$archiver" compile-first-member
+        exit 1
+    }
+    /bin/sh "$cc_seed" -c "$tmp/second.c" -o "$tmp/second.o" >/dev/null 2>&1 || { whp_llvm_ar_probe_failure "$archiver" compile-second-member; exit 1; }
+    "$archiver" rcs "$tmp/libprobe.a" "$tmp/first.o" "$tmp/second.o" >/dev/null 2>&1 || { whp_llvm_ar_probe_failure "$archiver" create-indexed-archive; exit 1; }
     listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
     [ "$listing" = "$(printf 'first.o\nsecond.o')" ] || exit 1
     "$archiver" p "$tmp/libprobe.a" first.o > "$tmp/extracted.o" || exit 1
     cmp -s "$tmp/first.o" "$tmp/extracted.o" || exit 1
     # A stale or no-op replacement must not pass incremental admission.
     printf '%s\n' 'int whp_llvm_ar_first(void) { return 7; }' > "$tmp/first.c"
-    /bin/sh "$cc_seed" -c "$tmp/first.c" -o "$tmp/first.o" >/dev/null 2>&1 || exit 1
-    "$archiver" rcs "$tmp/libprobe.a" "$tmp/first.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$cc_seed" -c "$tmp/first.c" -o "$tmp/first.o" >/dev/null 2>&1 || {
+        whp_llvm_ar_probe_failure "$archiver" compile-replacement-member
+        exit 1
+    }
+    "$archiver" rcs "$tmp/libprobe.a" "$tmp/first.o" >/dev/null 2>&1 || { whp_llvm_ar_probe_failure "$archiver" replace-indexed-member; exit 1; }
     listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
     [ "$listing" = "$(printf 'first.o\nsecond.o')" ] || exit 1
     "$archiver" p "$tmp/libprobe.a" first.o > "$tmp/replaced.o" || exit 1
@@ -107,8 +119,8 @@ native_probe()
         'int whp_llvm_ar_first(void); int whp_llvm_ar_second(void);' \
         'int main(void) { return whp_llvm_ar_first() + whp_llvm_ar_second() != 12; }' \
         > "$tmp/main.c"
-    /bin/sh "$cc_seed" "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" >/dev/null 2>&1 || exit 1
-    "$tmp/probe" >/dev/null 2>&1 || exit 1
+    /bin/sh "$cc_seed" "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" >/dev/null 2>&1 || { whp_llvm_ar_probe_failure "$archiver" link-native-executable; exit 1; }
+    "$tmp/probe" >/dev/null 2>&1 || { whp_llvm_ar_probe_failure "$archiver" run-linked-executable; exit 1; }
 )
 
 select_seed()
