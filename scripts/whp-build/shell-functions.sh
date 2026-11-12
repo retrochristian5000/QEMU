@@ -338,6 +338,10 @@ whp_archive_toolchain_smoke()
     cat > "$whp_probe_dir/member.c" <<'EOF'
 int whp_archive_probe(void) { return 0; }
 EOF
+    cat > "$whp_probe_dir/main.c" <<'EOF'
+int whp_archive_probe(void);
+int main(void) { return whp_archive_probe(); }
+EOF
 
     if ! "$whp_cc" -c "$whp_probe_dir/member.c" \
         -o "$whp_probe_dir/member.o" >"$whp_log" 2>&1; then
@@ -359,7 +363,24 @@ EOF
          ! grep -Eq '(^|[[:space:]])_?whp_archive_probe[[:space:]]+T([[:space:]]|$)' \
             "$whp_log"; then
         whp_stage='verify archive symbols'
+    elif ! "$whp_cc" "$whp_probe_dir/main.c" \
+        "$whp_probe_dir/libwhp-ar-smoke.a" -o "$whp_probe_dir/probe" \
+            >"$whp_log" 2>&1; then
+        whp_stage='link native host executable'
+    elif ! "$whp_probe_dir/probe" >"$whp_log" 2>&1; then
+        whp_stage='run native host executable'
     else
+        case "${WHP_ARCHIVE_VERBOSE:-0}" in
+            0) ;;
+            1)
+                printf 'WHP archive toolchain: native link/run verified; CC=%s; AR=%s; RANLIB=%s; NM=%s\n' \
+                    "$whp_cc" "$whp_ar" "$whp_ranlib" "${whp_nm:-<not requested>}" >&2
+                ;;
+            *)
+                printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$WHP_ARCHIVE_VERBOSE" >&2
+                return 2
+                ;;
+        esac
         return 0
     fi
 
