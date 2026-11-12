@@ -4,18 +4,22 @@ on:
   push:
     branches: [master]
     paths:
+      - 'seeds/ar.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'scripts/tests/test-ar-seed.sh'
       - 'scripts/tests/test-llvm-ar-seed.sh'
       - '.github/workflows/llvm-ar-seed.yml'
   pull_request:
     paths:
+      - 'seeds/ar.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
+      - 'scripts/tests/test-ar-seed.sh'
       - 'scripts/tests/test-llvm-ar-seed.sh'
       - '.github/workflows/llvm-ar-seed.yml'
 
@@ -31,6 +35,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify native host ar seed and trace
+        run: |
+          /bin/sh -n seeds/ar.sh
+          /bin/sh -n scripts/tests/test-ar-seed.sh
+          /bin/sh scripts/tests/test-ar-seed.sh
       - name: Verify native installed LLVM archiver seed
         run: |
           /bin/sh -n seeds/llvm-ar.sh
