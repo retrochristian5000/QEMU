@@ -330,6 +330,15 @@ whp_archive_toolchain_smoke()
         fi
     done
 
+    # Reject invalid logging policy before compiling or touching probe files.
+    case "${WHP_ARCHIVE_VERBOSE:-0}" in
+        0|1) ;;
+        *)
+            printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$WHP_ARCHIVE_VERBOSE" >&2
+            return 2
+            ;;
+    esac
+
     mkdir -p "$whp_work_root" || return 1
     whp_probe_dir=$(mktemp -d "$whp_work_root/.whp-ar-smoke.XXXXXX") || return 1
     trap 'rm -rf "$whp_probe_dir"' 0 HUP INT TERM
@@ -370,17 +379,10 @@ EOF
     elif ! "$whp_probe_dir/probe" >"$whp_log" 2>&1; then
         whp_stage='run native host executable'
     else
-        case "${WHP_ARCHIVE_VERBOSE:-0}" in
-            0) ;;
-            1)
-                printf 'WHP archive toolchain: native link/run verified; CC=%s; AR=%s; RANLIB=%s; NM=%s\n' \
-                    "$whp_cc" "$whp_ar" "$whp_ranlib" "${whp_nm:-<not requested>}" >&2
-                ;;
-            *)
-                printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$WHP_ARCHIVE_VERBOSE" >&2
-                return 2
-                ;;
-        esac
+        if [ "${WHP_ARCHIVE_VERBOSE:-0}" = 1 ]; then
+            printf 'WHP archive toolchain: native link/run verified; CC=%s; AR=%s; RANLIB=%s; NM=%s\n' \
+                "$whp_cc" "$whp_ar" "$whp_ranlib" "${whp_nm:-<not requested>}" >&2
+        fi
         return 0
     fi
 
