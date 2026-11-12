@@ -13,6 +13,8 @@ on:
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
       - 'scripts/tests/test-which-seed.sh'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-whp-shell-functions.sh'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/grep-seed-adapter.yml'
   pull_request:
@@ -26,6 +28,8 @@ on:
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
       - 'scripts/tests/test-which-seed.sh'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-whp-shell-functions.sh'
       - 'scripts/tests/test-sed-bootstrap-order.py'
       - '.github/workflows/grep-seed-adapter.yml'
 
@@ -41,6 +45,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify native macOS POSIX directory identity guard
+        run: |
+          sh -n scripts/whp-build/shell-functions.sh
+          sh -n scripts/tests/test-whp-shell-functions.sh
+          sh scripts/tests/test-whp-shell-functions.sh
       - name: Verify standalone POSIX which lookup seed
         run: |
           sh -n seeds/which.sh
