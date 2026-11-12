@@ -8,6 +8,22 @@ esac
 SOURCE_DIR=$(CDPATH= cd -- "$whp_entry_dir/../.." && pwd)
 unset whp_entry_dir
 mode=${WHP_SOURCE_UPDATE:-auto}
+detail=${WHP_SOURCE_UPDATE_VERBOSE:-0}
+
+# The updater is callable before managed tools and independently of build.sh.
+# Keep its diagnostic control strict, dependency-free, and stderr-only.
+case "$detail" in
+    0|1) ;;
+    *)
+        printf 'error: WHP_SOURCE_UPDATE_VERBOSE must be 0 or 1: %s\n' "$detail" >&2
+        exit 1
+        ;;
+esac
+whp_update_detail()
+{
+    [ "$detail" = 1 ] || return 0
+    printf 'WHP source update detail: %s\n' "$1" >&2
+}
 
 case "$mode" in
     auto|0|1) ;;
@@ -17,7 +33,15 @@ case "$mode" in
         ;;
 esac
 
-[ "$mode" != 0 ] || exit 0
+[ "$mode" != 0 ] || {
+    whp_update_detail 'source refresh disabled (WHP_SOURCE_UPDATE=0)'
+    exit 0
+}
+whp_update_detail "mode=$mode; requested detail=$detail"
+
+# 'retained' remains authoritative until HEAD is checked against upstream
+# after a successful fast-forward (including a no-op merge).
+update_outcome=retained
 
 warn_or_fail()
 {
@@ -54,6 +78,7 @@ if ! "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/nu
     warn_or_fail 'source tree is not a Git worktree'
     exit 0
 fi
+whp_update_detail "validated Git seed: $WHP_UPDATE_GIT"
 
 branch=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 upstream_ref=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)
@@ -63,6 +88,7 @@ if [ -n "$branch" ]; then
     remote=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" config --get "branch.$branch.remote" 2>/dev/null || true)
     merge_ref=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" config --get "branch.$branch.merge" 2>/dev/null || true)
 fi
+whp_update_detail "branch=${branch:-<detached>}; upstream=${upstream_ref:-<unconfigured>}; remote=${remote:-<none>}; ref=${merge_ref:-<none>}"
 
 root_dirty=0
 "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" diff --quiet --ignore-submodules=all -- || root_dirty=1
@@ -93,6 +119,7 @@ else
         warn_or_fail "could not resolve upstream ref '$merge_ref' from '$remote'"
     else
         upstream_oid=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse "$upstream_ref^{commit}" 2>/dev/null || true)
+        whp_update_detail "advertised upstream commit=$remote_oid; local tracking commit=${upstream_oid:-<missing>}"
 
         if [ "$remote_oid" != "$upstream_oid" ]; then
             if [ "$remote" != "." ]; then
@@ -112,7 +139,24 @@ else
         fi
 
         if [ -n "$upstream_oid" ]; then
-            if ! "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" merge --ff-only "$upstream_ref"; then
+            before_head=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+            if [ -z "$before_head" ]; then
+                warn_or_fail 'cannot determine local HEAD before fast-forward'
+            elif "$WHP_UPDATE_GIT" -C "$SOURCE_DIR" merge --ff-only "$upstream_ref" >/dev/null; then
+                after_head=$("$WHP_UPDATE_GIT" -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+                if [ -z "$after_head" ]; then
+                    warn_or_fail 'cannot verify local HEAD after fast-forward'
+                elif [ "$before_head" != "$after_head" ]; then
+                    update_outcome=updated
+                elif [ "$after_head" = "$upstream_oid" ]; then
+                    update_outcome=current
+                else
+                    # merge --ff-only accepted the existing local branch;
+                    # it may be ahead of upstream, not exactly equal to it.
+                    update_outcome=local-ahead
+                fi
+                whp_update_detail "HEAD before=$before_head; HEAD after=${after_head:-<unknown>}; result=$update_outcome"
+            else
                 warn_or_fail "fast-forward update from '$upstream_ref' failed"
             fi
         fi
@@ -136,4 +180,18 @@ fi
 # Keep this early updater limited to the parent QEMU revision and gitlink
 # metadata: it may fast-forward/re-exec before those tools even exist.
 
-printf '%s\n' 'WHP source update: QEMU current; pinned submodules remain lazy' >&2
+case "$update_outcome" in
+    updated)
+        printf 'WHP source update: fast-forwarded %s; pinned submodules remain lazy\n' "$branch" >&2
+        ;;
+    current)
+        printf '%s\n' 'WHP source update: QEMU current; pinned submodules remain lazy' >&2
+        ;;
+    local-ahead)
+        printf 'WHP source update: local %s is ahead of %s; checkout preserved; pinned submodules remain lazy\n' \
+            "$branch" "$upstream_ref" >&2
+        ;;
+    retained)
+        printf '%s\n' 'WHP source update: retained checkout (refresh unverified); pinned submodules remain lazy' >&2
+        ;;
+esac
