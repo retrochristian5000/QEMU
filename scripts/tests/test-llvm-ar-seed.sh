@@ -9,6 +9,14 @@ tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-llvm-ar-test.XXXXXX") || exit 1
 trap 'rm -rf -- "$tmp"' 0
 trap 'exit 1' 1 2 3 15
 
+if WHP_ARCHIVE_VERBOSE=invalid /bin/sh "$seed" --print-seed \
+    >"$tmp/out" 2>"$tmp/err"; then
+    printf '%s\n' 'error: invalid archive verbosity accepted' >&2
+    exit 1
+fi
+[ ! -s "$tmp/out" ]
+grep -Fq 'WHP_ARCHIVE_VERBOSE must be 0 or 1' "$tmp/err"
+
 # A selected archiver is never inferred from an invalid explicit override.
 for bad in /bin/false "$seed"; do
     if WHP_LLVM_AR_SEED="$bad" /bin/sh "$seed" --print-seed > "$tmp/out" 2> "$tmp/err"; then
@@ -47,13 +55,32 @@ if ! selected=$(/bin/sh "$seed" --print-seed 2> "$tmp/err"); then
 fi
 [ -x "$selected" ]
 [ "$(WHP_LLVM_AR_SEED="$selected" /bin/sh "$seed" --print-seed)" = "$selected" ]
-WHP_LLVM_AR_SEED="$selected" /bin/sh "$seed" --check >/dev/null
+WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
+    /bin/sh "$seed" --check >"$tmp/checked.out" 2>"$tmp/checked.err"
+grep -Fq "WHP installed llvm-ar seed: $selected" "$tmp/checked.out"
+grep -Fq 'compile, archive, replace, index, link and execute passed' "$tmp/checked.out"
+grep -Fq "WHP llvm-ar selection: provider=WHP_LLVM_AR_SEED; executable=$selected; native-probe=yes" \
+    "$tmp/checked.err"
+[ "$(WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 /bin/sh "$seed" \
+    --print-seed 2>"$tmp/printed.err")" = "$selected" ]
+grep -Fq 'native-probe=yes' "$tmp/printed.err"
 
 # The normal adapter must forward real archive arguments, not just probe them.
 printf '%s\n' 'int whp_llvm_ar_direct(void) { return 17; }' > "$tmp/direct.c"
 /bin/sh "$root/seeds/cc.sh" -c "$tmp/direct.c" -o "$tmp/direct.o"
-WHP_LLVM_AR_SEED="$selected" /bin/sh "$seed" rcs "$tmp/libdirect.a" "$tmp/direct.o"
+WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
+    /bin/sh "$seed" rcs "$tmp/libdirect.a" "$tmp/direct.o" \
+    >"$tmp/direct.out" 2>"$tmp/direct.err"
+[ ! -s "$tmp/direct.out" ]
+grep -Fq "WHP llvm-ar selection: provider=WHP_LLVM_AR_SEED; executable=$selected; native-probe=no" \
+    "$tmp/direct.err"
+grep -Fq "WHP llvm-ar invocation: executable=$selected; operation=rcs; archive=$tmp/libdirect.a; argument-count=3; admission=not-repeated" \
+    "$tmp/direct.err"
 [ "$(WHP_LLVM_AR_SEED="$selected" /bin/sh "$seed" t "$tmp/libdirect.a")" = direct.o ]
+WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=0 /bin/sh "$seed" t \
+    "$tmp/libdirect.a" >"$tmp/quiet.out" 2>"$tmp/quiet.err"
+[ "$(cat "$tmp/quiet.out")" = direct.o ]
+[ ! -s "$tmp/quiet.err" ]
 
 # Broken incremental replacement must be rejected after archive creation.
 cat > "$tmp/no-replace" <<'EOF'
