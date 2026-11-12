@@ -901,6 +901,17 @@ policy. It is not a request to install every tool or library listed below.
   records both paths in its incremental marker. No unbuilt LLVM, managed
   Autotools, or guest-target archive utility is needed for either seed.
 
+  The later QEMU ``whp_archive_toolchain_smoke`` verifies the *effective*
+  host ``CC/AR/RANLIB/NM`` family, including the macOS wrapper's coherent
+  LLVM trio or Apple fallback. It now links and **runs** a C program against
+  the indexed archive in addition to inspecting native symbols. This catches
+  a compiler capable of creating objects whose linker cannot consume the
+  selected archive format. With ``WHP_ARCHIVE_VERBOSE=1``, successful
+  validation prints the exact four executable selections to standard error;
+  broken linking reports the specific ``link native host executable`` or
+  ``run native host executable`` stage. The regression suite includes a
+  compile-only compiler that must fail this probe.
+
 * **macOS-only tool-dispatch seed:** ``seeds/xcrun.sh`` verifies that
   the selected Apple ``xcrun`` resolves both the macOS SDK and a native
   Clang executable. ``build.sh`` selects it once before the Apple SDK
