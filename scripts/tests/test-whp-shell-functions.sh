@@ -91,7 +91,7 @@ fi
 # /bin/sh implements -ef; BSD stat needs -L to follow directory symlinks.
 if [ "$(uname -s 2>/dev/null || :)" = Darwin ]; then
     whp_stat_probe=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-darwin-stat.XXXXXX") || exit 1
-    trap 'rm -rf "$whp_stat_probe"' 0
+    trap 'rm -rf "${whp_probe_dir:-}" "$whp_stat_probe"' 0
     mkdir "$whp_stat_probe/original" "$whp_stat_probe/other"
     ln -s original "$whp_stat_probe/alias path"
     whp_id_original=$(whp_darwin_directory_identity "$whp_stat_probe/original") || exit 1
