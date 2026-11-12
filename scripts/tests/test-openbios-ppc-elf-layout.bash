@@ -37,17 +37,27 @@ if (( $# > 0 )); then
     grep -Eq 'Machine:[[:space:]]+PowerPC' <<< "$header"
     grep -Eq 'Entry point address:[[:space:]]+0xfff00100' <<< "$header"
 
-    mapfile -t load_lines < <(awk '$1 == "LOAD" { print }' <<< "$phdrs")
-    if (( ${#load_lines[@]} != 4 )); then
+    # Bash 3.2 (macOS system Bash) has no mapfile/readarray. Keep the
+    # indexed results in the parent shell using process substitution.
+    load_lines=()
+    load_count=0
+    while IFS= read -r line; do
+        load_lines[load_count]=$line
+        load_count=$((load_count + 1))
+    done < <(awk '$1 == "LOAD" { print }' <<< "$phdrs")
+    if (( load_count != 4 )); then
         printf 'error: expected 4 W^X-safe OpenBIOS PT_LOADs, found %d\n' \
-            "${#load_lines[@]}" >&2
+            "$load_count" >&2
         printf '%s\n' "$phdrs" >&2
         exit 1
     fi
 
-    mapfile -t load_vaddrs < <(
-        awk '$1 == "LOAD" { print tolower($3) }' <<< "$phdrs"
-    )
+    load_vaddrs=()
+    vaddr_count=0
+    while IFS= read -r vaddr; do
+        load_vaddrs[vaddr_count]=$vaddr
+        vaddr_count=$((vaddr_count + 1))
+    done < <(awk '$1 == "LOAD" { print tolower($3) }' <<< "$phdrs")
     [[ "${load_vaddrs[0]}" == "0xfff00000" ]]
     [[ "${load_vaddrs[3]}" == "0xfffffffc" ]]
 
