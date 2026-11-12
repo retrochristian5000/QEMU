@@ -28,6 +28,12 @@ whp_ar_invoke()
         "$selected" "$operation" "$archive" "$#" >&2
 }
 
+whp_ar_probe_failure()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    printf 'WHP ar native probe failed: executable=%s; stage=%s\n' "$1" "$2" >&2
+}
+
 marker=whp-qemu-ar-seed-adapter
 if [ "${1:-}" = --whp-ar-adapter-probe ]; then
     printf '%s\n' "$marker"
@@ -78,9 +84,15 @@ archive_probe()
     tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ar-seed.XXXXXX") || exit 1
     trap 'rm -rf -- "$tmp"' 0
     printf '%s\n' 'int whp_ar_probe(void) { return 7; }' > "$tmp/probe.c"
-    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" compile-first-member
+        exit 1
+    }
     # 'rc' deliberately does not require ranlib, which depends on this seed.
-    "$archiver" rc "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || exit 1
+    "$archiver" rc "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" create-archive
+        exit 1
+    }
     [ -s "$tmp/libprobe.a" ] || exit 1
     listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
     [ "$listing" = probe.o ] || exit 1
@@ -95,7 +107,10 @@ archive_probe()
     # the archiver must replace an existing member and refresh its index.
     # Keep the initial 'rc' probe unindexed for the separate ranlib seed.
     printf '%s\n' 'int whp_ar_probe(void) { return 11; }' > "$tmp/probe.c"
-    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || exit 1
+    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" compile-replacement-member
+        exit 1
+    }
     "$archiver" rcs "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || {
         printf 'error: native ar cannot replace and index archive: %s\n' "$archiver" >&2
         exit 1
@@ -116,10 +131,14 @@ archive_probe()
         'int whp_ar_probe(void); int main(void) { return whp_ar_probe() != 11; }' \
         > "$tmp/main.c"
     /bin/sh "$compiler_seed" "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" link-native-executable
         printf 'error: native ar indexed archive cannot link: %s\n' "$archiver" >&2
         exit 1
     }
-    "$tmp/probe" >/dev/null 2>&1 || exit 1
+    "$tmp/probe" >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" run-linked-executable
+        exit 1
+    }
 )
 
 select_seed()
