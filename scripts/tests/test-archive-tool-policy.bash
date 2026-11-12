@@ -107,6 +107,14 @@ fi
 grep -Fq 'QEMU archive toolchain failed: link native host executable' "$tmp/link-failure.out"
 grep -Fq 'intentional host link failure' "$tmp/link-failure.out"
 
+if WHP_ARCHIVE_VERBOSE=invalid whp_archive_toolchain_smoke \
+    "$cc" "$ar_tool" "$ranlib_tool" "$tmp" "$nm_tool" \
+    >"$tmp/invalid-verbose.out" 2>&1; then
+    printf '%s\n' 'error: invalid archive verbosity reached native smoke' >&2
+    exit 1
+fi
+grep -Fq 'WHP_ARCHIVE_VERBOSE must be 0 or 1' "$tmp/invalid-verbose.out"
+
 # A wrapper is intentionally accepted: AR identity is a capability contract,
 # not an exact pathname/vendor contract.
 real_ar="$(command -v "$ar_tool")"
