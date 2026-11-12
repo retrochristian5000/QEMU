@@ -776,8 +776,14 @@ identical path spellings without an extension, distinguish a genuinely
 different filesystem object (status 1), and reject unsupported/error
 conditions (status 2) without weakening the APFS/HFS+ inode safeguard.
 Directory aliases are admitted only when the executing shell's ``-ef``
-test proves they are the same object. The regression test exercises
-identical, distinct, and symlink-alias paths when supported.
+test proves they are the same object, or on Darwin when native BSD
+``/usr/bin/stat -L -f '%d:%i'`` supplies matching device/inode identities.
+The ``-L`` matters because BSD stat otherwise examines a symlink itself.
+This fallback runs only when the executing shell lacks ``-ef``; malformed
+or unavailable identity data fails closed rather than guessing from path
+spellings. GNU ``stat -c`` is not assumed on macOS. The regression test
+covers distinct and symlink-alias paths and checks Darwin's BSD stat
+independently even when its shell supports ``-ef``.
 
 Perl native dependency inventory (macOS and other Unix hosts)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
