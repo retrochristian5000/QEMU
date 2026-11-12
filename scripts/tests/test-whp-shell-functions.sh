@@ -59,7 +59,7 @@ if whp_require_binary_switch TEST_SWITCH auto >/dev/null 2>&1; then
 fi
 
 # Identity checks must accept the same path even on older shells, and
-# accept genuine aliases only when the running shell supports -ef.
+# accept genuine aliases only when -ef or a native identity shim proves equality.
 if ! whp_same_directory "$SOURCE_DIR" "$SOURCE_DIR"; then
     printf '%s\n' 'error: identical directories were rejected' >&2
     exit 1
@@ -83,6 +83,27 @@ if [ "$whp_status" -eq 1 ]; then
     ln -s original "$whp_probe_dir/alias"
     if ! whp_same_directory "$whp_probe_dir/original" "$whp_probe_dir/alias"; then
         printf '%s\n' 'error: shell -ef rejected a directory symlink alias' >&2
+        exit 1
+    fi
+fi
+
+# macOS native BSD stat is independently tested even when the running
+# /bin/sh implements -ef; BSD stat needs -L to follow directory symlinks.
+if [ "$(uname -s 2>/dev/null || :)" = Darwin ]; then
+    whp_stat_probe=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-darwin-stat.XXXXXX") || exit 1
+    trap 'rm -rf "$whp_stat_probe"' 0
+    mkdir "$whp_stat_probe/original" "$whp_stat_probe/other"
+    ln -s original "$whp_stat_probe/alias path"
+    whp_id_original=$(whp_darwin_directory_identity "$whp_stat_probe/original") || exit 1
+    whp_id_alias=$(whp_darwin_directory_identity "$whp_stat_probe/alias path") || exit 1
+    whp_id_other=$(whp_darwin_directory_identity "$whp_stat_probe/other") || exit 1
+    if [ "$whp_id_original" != "$whp_id_alias" ] ||
+       [ "$whp_id_original" = "$whp_id_other" ]; then
+        printf '%s\n' 'error: Darwin stat failed directory identity or symlink following' >&2
+        exit 1
+    fi
+    if whp_darwin_directory_identity "$whp_stat_probe/missing" >/dev/null 2>&1; then
+        printf '%s\n' 'error: missing directory acquired a stat identity' >&2
         exit 1
     fi
 fi
