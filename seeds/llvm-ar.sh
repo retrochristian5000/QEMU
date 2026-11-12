@@ -4,6 +4,30 @@
 # Not a replacement for the native ar/ranlib pair or the target LLVM toolchain.
 set -eu
 
+# The same opt-in trace contract as seeds/ar.sh, without requiring a fresh
+# compiler/link test on each forwarded invocation.
+archive_verbose=${WHP_ARCHIVE_VERBOSE:-0}
+case "$archive_verbose" in
+    0|1) ;;
+    *) printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$archive_verbose" >&2; exit 2 ;;
+esac
+
+whp_llvm_ar_report()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    printf 'WHP llvm-ar selection: provider=%s; executable=%s; native-probe=%s\n' \
+        "$2" "$1" "${probe:-yes}" >&2
+}
+
+whp_llvm_ar_invoke()
+{
+    [ "$archive_verbose" = 1 ] || return 0
+    operation=${1:-<none>}
+    archive=${2:-<none>}
+    printf 'WHP llvm-ar invocation: executable=%s; operation=%s; archive=%s; argument-count=%s; admission=not-repeated\n' \
+        "$selected" "$operation" "$archive" "$#" >&2
+}
+
 marker=whp-qemu-llvm-ar-seed-adapter
 if [ "${1:-}" = --whp-llvm-ar-adapter-probe ]; then
     printf '%s\n' "$marker"
@@ -100,6 +124,7 @@ select_seed()
                 return 1
             }
         fi
+        whp_llvm_ar_report "$candidate" WHP_LLVM_AR_SEED
         printf '%s\n' "$candidate"
         return 0
     fi
@@ -111,6 +136,11 @@ select_seed()
         llvm-ar-22 llvm-ar-21 llvm-ar-20 llvm-ar-19 llvm-ar-18 llvm-ar-17 llvm-ar-16; do
         candidate=$(resolve "$value") || continue
         if [ "${probe:-yes}" = yes ]; then native_probe "$candidate" || continue; fi
+        case "$value" in
+            "${compiler%/*}/llvm-ar") origin=compiler-sibling ;;
+            *) origin="installed:$value" ;;
+        esac
+        whp_llvm_ar_report "$candidate" "$origin"
         printf '%s\n' "$candidate"
         return 0
     done
@@ -124,10 +154,16 @@ case "${1:-}" in
         probe=yes
         selected=$(select_seed) || exit 1
         printf 'WHP installed llvm-ar seed: %s\n' "$selected"
+        if [ "$archive_verbose" = 1 ]; then
+            compiler=$(/bin/sh "$root/seeds/cc.sh" --print-seed) || exit 1
+            printf 'WHP llvm-ar validation: compiler=%s; host=%s/%s; compile, archive, replace, index, link and execute passed\n' \
+                "$compiler" "$(uname -s)" "$(uname -m)"
+        fi
         ;;
     *)
         probe=no
         selected=$(select_seed) || exit 1
+        whp_llvm_ar_invoke "$@"
         exec "$selected" "$@"
         ;;
 esac
