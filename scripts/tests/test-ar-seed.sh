@@ -23,6 +23,18 @@ grep -Fq 'compile, archive, replace, index, link and execute passed' "$tmp/check
 grep -Fq "WHP ar selection: provider=WHP_AR_SEED; executable=$selected; native-probe=yes" \
     "$tmp/check.err"
 
+# An inherited native AR_FOR_BUILD must not silently hide a different
+# explicit WHP selection. Keep the winning selection and disclose the clash.
+conflicting=$(WHP_AR_SEED="$selected" AR_FOR_BUILD=/bin/false \
+    /bin/sh "$seed" --print-seed 2>"$tmp/conflict.err")
+[ "$conflicting" = "$selected" ]
+grep -Fq 'WHP_AR_SEED overrides conflicting AR_FOR_BUILD' "$tmp/conflict.err"
+# Identical explicit aliases do not require a conflict warning.
+WHP_AR_SEED="$selected" AR_FOR_BUILD="$selected" /bin/sh "$seed" --print-seed \
+    >"$tmp/same.out" 2>"$tmp/same.err"
+[ "$(cat "$tmp/same.out")" = "$selected" ]
+! grep -Fq 'overrides conflicting' "$tmp/same.err"
+
 # Diagnostics cannot corrupt the path emitted for callers using $(--print-seed).
 printed=$(WHP_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
     /bin/sh "$seed" --print-seed 2>"$tmp/select.err")
