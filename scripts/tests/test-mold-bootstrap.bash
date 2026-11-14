@@ -126,6 +126,8 @@ whp_prepare_mold
 grep -Fq -- ' -x c++ ' "$log"
 
 # Automatic mold must not displace the macOS linker required by ASan.
+# This is a Darwin policy test even when the CI runner itself is Linux.
+HOST_OS=Darwin
 QEMU_ASAN=1
 LDFLAGS=
 BOOTSTRAP_MOLD=auto
@@ -133,6 +135,7 @@ whp_prepare_mold
 [[ "$BOOTSTRAP_MOLD" == 0 ]]
 [[ -z "$LDFLAGS" ]]
 QEMU_ASAN=n
+HOST_OS=Linux
 
 # Linker changes are permitted on the same host, rather than requiring a new
 # operating system or rebuild tree.
