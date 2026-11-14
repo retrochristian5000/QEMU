@@ -30,8 +30,27 @@ whp_ar_invoke()
 
 whp_ar_probe_failure()
 {
-    [ "$archive_verbose" = 1 ] || return 0
-    printf 'WHP ar native probe failed: executable=%s; stage=%s\n' "$1" "$2" >&2
+    printf 'error: WHP ar native probe failed: stage=%s; executable=%s\n' "$2" "$1" >&2
+}
+
+# Probe commands must not leak stdout into --print-seed. Retain the final
+# command stderr on failure instead of suppressing compiler/SDK diagnostics.
+whp_ar_probe_step()
+{
+    whp_stage=$1
+    shift
+    if "$@" >/dev/null 2>"$tmp/probe-step.err"; then
+        return 0
+    else
+        whp_status=$?
+    fi
+    whp_ar_probe_failure "$archiver" "$whp_stage"
+    printf '  exit-status=%s; command=%s\n' "$whp_status" "$1" >&2
+    if [ -s "$tmp/probe-step.err" ]; then
+        printf '%s\n' '  tool stderr (last 20 lines):' >&2
+        tail -n 20 "$tmp/probe-step.err" >&2
+    fi
+    return 1
 }
 
 marker=whp-qemu-ar-seed-adapter
@@ -84,45 +103,56 @@ archive_probe()
     tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ar-seed.XXXXXX") || exit 1
     trap 'rm -rf -- "$tmp"' 0
     printf '%s\n' 'int whp_ar_probe(void) { return 7; }' > "$tmp/probe.c"
-    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || {
-        whp_ar_probe_failure "$archiver" compile-first-member
-        exit 1
-    }
+    whp_ar_probe_step compile-first-member /bin/sh "$compiler_seed" \
+        -c "$tmp/probe.c" -o "$tmp/probe.o" || exit 1
     # 'rc' deliberately does not require ranlib, which depends on this seed.
-    "$archiver" rc "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || {
-        whp_ar_probe_failure "$archiver" create-archive
-        exit 1
+    whp_ar_probe_step create-archive "$archiver" rc "$tmp/libprobe.a" "$tmp/probe.o" || exit 1
+    [ -s "$tmp/libprobe.a" ] || {
+        whp_ar_probe_failure "$archiver" empty-archive; exit 1;
     }
-    [ -s "$tmp/libprobe.a" ] || exit 1
-    listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
-    [ "$listing" = probe.o ] || exit 1
+    listing=$("$archiver" t "$tmp/libprobe.a") || {
+        whp_ar_probe_failure "$archiver" list-archive; exit 1;
+    }
+    [ "$listing" = probe.o ] || {
+        whp_ar_probe_failure "$archiver" member-list-mismatch; exit 1;
+    }
     mkdir "$tmp/extracted" || exit 1
-    (cd "$tmp/extracted" && "$archiver" x "$tmp/libprobe.a" probe.o) >/dev/null 2>&1 || exit 1
-    [ -s "$tmp/extracted/probe.o" ] || exit 1
-    cmp -s "$tmp/probe.o" "$tmp/extracted/probe.o" || exit 1
+    (cd "$tmp/extracted" && "$archiver" x "$tmp/libprobe.a" probe.o) >/dev/null 2>&1 || {
+        whp_ar_probe_failure "$archiver" extract-member; exit 1;
+    }
+    [ -s "$tmp/extracted/probe.o" ] || {
+        whp_ar_probe_failure "$archiver" extracted-member-empty; exit 1;
+    }
+    cmp -s "$tmp/probe.o" "$tmp/extracted/probe.o" || {
+        whp_ar_probe_failure "$archiver" extracted-member-mismatch; exit 1;
+    }
     # Verify the streamed member against the original compiler output.
-    "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/from-archive.o" || exit 1
-    cmp -s "$tmp/probe.o" "$tmp/from-archive.o" || exit 1
+    "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/from-archive.o" || {
+        whp_ar_probe_failure "$archiver" stream-member; exit 1;
+    }
+    cmp -s "$tmp/probe.o" "$tmp/from-archive.o" || {
+        whp_ar_probe_failure "$archiver" streamed-member-mismatch; exit 1;
+    }
     # A simple create/extract check is not enough for incremental QEMU builds:
     # the archiver must replace an existing member and refresh its index.
     # Keep the initial 'rc' probe unindexed for the separate ranlib seed.
     printf '%s\n' 'int whp_ar_probe(void) { return 11; }' > "$tmp/probe.c"
-    /bin/sh "$compiler_seed" -c "$tmp/probe.c" -o "$tmp/probe.o" >/dev/null 2>&1 || {
-        whp_ar_probe_failure "$archiver" compile-replacement-member
-        exit 1
+    whp_ar_probe_step compile-replacement-member /bin/sh "$compiler_seed" \
+        -c "$tmp/probe.c" -o "$tmp/probe.o" || exit 1
+    whp_ar_probe_step replace-and-index "$archiver" rcs \
+        "$tmp/libprobe.a" "$tmp/probe.o" || exit 1
+    listing=$("$archiver" t "$tmp/libprobe.a") || {
+        whp_ar_probe_failure "$archiver" list-replaced-archive; exit 1;
     }
-    "$archiver" rcs "$tmp/libprobe.a" "$tmp/probe.o" >/dev/null 2>&1 || {
-        printf 'error: native ar cannot replace and index archive: %s\n' "$archiver" >&2
-        exit 1
-    }
-    listing=$("$archiver" t "$tmp/libprobe.a") || exit 1
     [ "$listing" = probe.o ] || {
-        printf 'error: native ar left duplicate or missing members: %s\n' "$archiver" >&2
+        whp_ar_probe_failure "$archiver" replaced-member-list-mismatch
         exit 1
     }
-    "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/replaced.o" || exit 1
+    "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/replaced.o" || {
+        whp_ar_probe_failure "$archiver" read-replaced-member; exit 1;
+    }
     cmp -s "$tmp/probe.o" "$tmp/replaced.o" || {
-        printf 'error: native ar retained a stale archive member: %s\n' "$archiver" >&2
+        whp_ar_probe_failure "$archiver" stale-replaced-member
         exit 1
     }
     # Link without ranlib: the 's' operation above must have made the
@@ -130,15 +160,9 @@ archive_probe()
     printf '%s\n' \
         'int whp_ar_probe(void); int main(void) { return whp_ar_probe() != 11; }' \
         > "$tmp/main.c"
-    /bin/sh "$compiler_seed" "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" >/dev/null 2>&1 || {
-        whp_ar_probe_failure "$archiver" link-native-executable
-        printf 'error: native ar indexed archive cannot link: %s\n' "$archiver" >&2
-        exit 1
-    }
-    "$tmp/probe" >/dev/null 2>&1 || {
-        whp_ar_probe_failure "$archiver" run-linked-executable
-        exit 1
-    }
+    whp_ar_probe_step link-native-executable /bin/sh "$compiler_seed" \
+        "$tmp/main.c" "$tmp/libprobe.a" -o "$tmp/probe" || exit 1
+    whp_ar_probe_step run-linked-executable "$tmp/probe" || exit 1
 )
 
 select_seed()
