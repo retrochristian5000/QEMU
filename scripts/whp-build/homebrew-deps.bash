@@ -48,9 +48,11 @@ whp_prepare_homebrew_pkg_config()
         WHP_REAL_PKG_CONFIG="$real_pkg_config"
         export WHP_REAL_PKG_CONFIG
     fi
+    # Normalize only QEMU/Meson dependency paths.  The independently chosen
+    # build-machine pkg-config belongs to firmware and bootstrap consumers;
+    # replacing it here can silently change their dependency provider.
     PKG_CONFIG="$wrapper"
-    PKG_CONFIG_FOR_BUILD="$wrapper"
-    export PKG_CONFIG PKG_CONFIG_FOR_BUILD
+    export PKG_CONFIG
 }
 
 # MacPorts installs use stable paths, but Meson's dependency and version
