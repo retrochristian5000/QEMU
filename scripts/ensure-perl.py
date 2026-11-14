@@ -154,11 +154,28 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
     if ranlib:
         options.append(f"-Dranlib={ranlib}")
     if ar:
+        # Configure probes with ar, but Makefile.SH invokes full_ar.
+        # Bind both to the same admitted native archiver explicitly.
         options.append(f"-Dar={ar}")
+        options.append(f"-Dfull_ar={ar}")
     if minor % 2:
         options.append("-Dusedevel")
     return options
 
+
+def require_configured_ar(source: pathlib.Path, expected: str) -> None:
+    """Reject a Configure result that makes Perl archive with another tool."""
+    try:
+        makefile = (source / "Makefile").read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError("Perl Configure did not generate a Makefile") from exc
+    # Perl Makefile.SH emits exactly one AR = $full_ar assignment.
+    configured = re.findall(r"^AR[ \t]*=[ \t]*(.*)$", makefile, re.MULTILINE)
+    if len(configured) != 1 or configured[0].strip() != expected:
+        actual = configured[0].strip() if len(configured) == 1 else "<missing or ambiguous>"
+        raise RuntimeError(
+            f"Perl Makefile ar mismatch: expected {expected!r}, got {actual!r}"
+        )
 
 
 @contextmanager
@@ -251,6 +268,9 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         raise RuntimeError("native Perl ranlib seed unavailable: "
                            + (ranlib.stderr.strip() or "no native archive indexer"))
     ranlib_path = ranlib.stdout.strip()
+    if os.environ.get("WHP_ARCHIVE_VERBOSE") == "1":
+        print(f"WHP Perl archive tools: ar={ar_path}; ranlib={ranlib_path}; cc={cc}",
+              file=sys.stderr)
 
     # All host roots are now known. Reconcile the source only after the
     # native toolchain pair has passed its archive-and-link probes.
@@ -317,6 +337,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         run(configure_arguments(source, prefix, cc, cflags, ldflags,
                                 ranlib_path, ar_path),
             cwd=source, env=env, unattended=True, timeout=900)
+        require_configured_ar(source, ar_path)
         run([make, "perl"], cwd=source, env=env)
         built = source / "perl"
         if not built.is_file() or not os.access(built, os.X_OK):
