@@ -130,13 +130,13 @@ class CompilerCachePolicyTests(unittest.TestCase):
     def test_sccache_rejects_conflicting_inherited_compiler_launchers(self):
         runner = BUILD_WRAPPER.read_text(encoding='utf-8')
         prefix, separator, _ = runner.partition(
-            '\\n. "$script_dir/scripts/whp-build/shell-functions.sh"'
+            '\n. "$script_dir/scripts/whp-build/shell-functions.sh"'
         )
         self.assertTrue(separator)
 
         with tempfile.TemporaryDirectory() as directory:
             cache = pathlib.Path(directory) / 'sccache'
-            cache.write_text('#!/bin/sh\\nexit 0\\n', encoding='utf-8')
+            cache.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
             cache.chmod(0o755)
 
             for cc, cxx, managed, succeeds in (
@@ -160,10 +160,10 @@ class CompilerCachePolicyTests(unittest.TestCase):
                         'BUILD_DIR': str(pathlib.Path(directory) / 'build'),
                     }
                     script = prefix + (
-                        '\\nprintf "CC=%s\\\\nCXX=%s\\\\n" "$CC" "$CXX"\\n'
+                        '\nprintf "CC=%s\\nCXX=%s\\n" "$CC" "$CXX"\n'
                     )
                     completed = subprocess.run(
-                        ['/bin/sh', '-c', script], cwd=ROOT, env=env,
+                        ['/bin/sh', '-c', script, str(BUILD_WRAPPER)], cwd=ROOT, env=env,
                         text=True, capture_output=True, check=False,
                     )
                     self.assertEqual(completed.returncode == 0, succeeds,
@@ -372,7 +372,7 @@ class CompilerCachePolicyTests(unittest.TestCase):
                         'BUILD_DIR': str(pathlib.Path(directory) / 'build'),
                     }
                     result = subprocess.run(
-                        ['/bin/sh', '-c', script], cwd=ROOT, env=env,
+                        ['/bin/sh', '-c', script, str(BUILD_WRAPPER)], cwd=ROOT, env=env,
                         text=True, capture_output=True, check=False,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
