@@ -7,7 +7,7 @@ is_self()
     candidate=$1
     marker=$("$candidate" --whp-cc-adapter-probe 2>/dev/null || true)
     case "$marker" in
-        whp-qemu-cc-seed-adapter|whp-qemu-cxx-seed-adapter) return 0 ;;
+        whp-qemu-cc-seed-adapter|whp-qemu-cxx-seed-adapter|whp-qemu-clang-seed-adapter) return 0 ;;
     esac
     return 1
 }

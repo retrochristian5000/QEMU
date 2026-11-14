@@ -35,6 +35,14 @@ select_cc()
         return 1
     done
 
+    # A caller may select an independent, validated Clang rather than an
+    # executable named cc. Existing explicit C compiler choices win.
+    if [ -n "${WHP_CLANG_SEED:-}" ]; then
+        compiler=$("$seed_root/seeds/clang.sh" --print-clang) || return 1
+        printf '%s\n' "$compiler"
+        return 0
+    fi
+
     if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
         # Invalid Xcode/CLT selection must not silently fall back to PATH.
         . "$seed_root/scripts/whp-build/macos-developer-tools.sh"

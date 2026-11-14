@@ -8,6 +8,8 @@ on:
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/tests/test-clang-seed.py'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -41,6 +43,8 @@ on:
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/tests/test-clang-seed.py'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -86,6 +90,11 @@ jobs:
         run: |
           /bin/sh -n seeds/bash.sh
           python3 scripts/tests/test-bash-seed.py
+
+      - name: Verify native Clang identity and cc handoff
+        run: |
+          /bin/sh -n seeds/clang.sh
+          python3 scripts/tests/test-clang-seed.py
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py

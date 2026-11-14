@@ -79,6 +79,28 @@ effective compiler pipeline. It checks target triples, Clang resource paths,
 compiler configuration files, representative C/C++/Objective-C links,
 build-machine execution, and resulting Mach-O architecture slices.
 
+Independent native Clang seed
+-----------------------------
+
+The optional ``seeds/clang.sh`` chooses an actual native Clang C frontend,
+not any executable that happens to be called ``cc`` or ``clang``. It uses
+the shared C compile/link/run probe plus a Clang frontend macro check.
+On macOS, automatic selection remains inside the active Xcode/CLT developer
+root and the exact validated SDK. Homebrew LLVM is an explicit choice, not
+an accidental replacement for Apple Clang.
+
+To request a separate native Clang for the existing ``cc.sh`` handoff::
+
+  WHP_CLANG_SEED=/path/to/clang ./seeds/cc.sh --check
+
+``WHP_CLANG_SEED`` is optional and has lower precedence than the existing
+``WHP_CC_SEED`` and ``CC_FOR_BUILD`` selections. Invalid explicit Clang
+choices fail rather than falling back to another compiler. The selected
+Clang C driver must have a usable paired C++17 driver if a later C++ stage
+needs one; ``cxx.sh`` must not quietly fall back to unrelated Apple
+Clang++ or GCC C++. The seed never changes QEMU's guest/target compiler,
+``CPP``, or ``CONFIG_SHELL``.
+
 Historical macOS shell boundaries
 ---------------------------------
 
