@@ -7,6 +7,8 @@ on:
       - 'seeds/ar.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-ar-seed.sh'
@@ -17,6 +19,8 @@ on:
       - 'seeds/ar.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-ar-seed.sh'
@@ -35,6 +39,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Audit installed Clang and llvm-ar archive compatibility
+        run: |
+          /bin/sh -n scripts/tests/test-clang-llvm-ar-interoperability.sh
+          /bin/sh scripts/tests/test-clang-llvm-ar-interoperability.sh
       - name: Verify native host ar seed and trace
         run: |
           /bin/sh -n seeds/ar.sh

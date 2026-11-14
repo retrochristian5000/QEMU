@@ -114,7 +114,9 @@ archive_probe()
         whp_ar_probe_failure "$archiver" list-archive; exit 1;
     }
     [ "$listing" = probe.o ] || {
-        whp_ar_probe_failure "$archiver" member-list-mismatch; exit 1;
+        whp_ar_probe_failure "$archiver" member-list-mismatch
+        printf '  expected=probe.o; actual-members=%s\n' "$listing" >&2
+        exit 1
     }
     mkdir "$tmp/extracted" || exit 1
     (cd "$tmp/extracted" && "$archiver" x "$tmp/libprobe.a" probe.o) >/dev/null 2>&1 || {
@@ -146,6 +148,7 @@ archive_probe()
     }
     [ "$listing" = probe.o ] || {
         whp_ar_probe_failure "$archiver" replaced-member-list-mismatch
+        printf '  expected=probe.o; actual-members=%s\n' "$listing" >&2
         exit 1
     }
     "$archiver" p "$tmp/libprobe.a" probe.o > "$tmp/replaced.o" || {
