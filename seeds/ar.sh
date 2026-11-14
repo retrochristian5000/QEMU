@@ -167,6 +167,13 @@ archive_probe()
 
 select_seed()
 {
+    # Both are native build-machine selectors. Preserve the established WHP
+    # override, but disclose disagreement rather than silently hiding it.
+    if [ -n "${WHP_AR_SEED:-}" ] && [ -n "${AR_FOR_BUILD:-}" ] &&
+       [ "$WHP_AR_SEED" != "$AR_FOR_BUILD" ]; then
+        printf 'warning: WHP_AR_SEED overrides conflicting AR_FOR_BUILD: %s != %s\n' \
+            "$WHP_AR_SEED" "$AR_FOR_BUILD" >&2
+    fi
     for setting in WHP_AR_SEED AR_FOR_BUILD; do
         case "$setting" in
             WHP_AR_SEED) value=${WHP_AR_SEED:-} ;;
