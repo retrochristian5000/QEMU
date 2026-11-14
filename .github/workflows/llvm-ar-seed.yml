@@ -47,7 +47,11 @@ jobs:
         run: |
           /bin/sh -n seeds/ar.sh
           /bin/sh -n scripts/tests/test-ar-seed.sh
-          /bin/sh scripts/tests/test-ar-seed.sh
+          if ! /bin/sh scripts/tests/test-ar-seed.sh; then
+            printf '%s\n' 'error: native ar regression failed; rerunning with failure-only trace' >&2
+            /bin/sh -x scripts/tests/test-ar-seed.sh
+            exit 1
+          fi
       - name: Verify native installed LLVM archiver seed
         run: |
           /bin/sh -n seeds/llvm-ar.sh
