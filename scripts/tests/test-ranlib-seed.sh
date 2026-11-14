@@ -56,7 +56,7 @@ if WHP_RANLIB_SEED="$tmp/noop-ranlib" /bin/sh "$seed" --print-seed \
     exit 1
 fi
 [ ! -s "$tmp/noop.out" ]
-grep -Fq 'stage=link-native-executable' "$tmp/noop.err"
+grep -Fq 'stage=index-unchanged' "$tmp/noop.err"
 
 # Verify the same index contract when llvm-ar is deliberately supplied as
 # the native ar provider. This must not let llvm-ar's default auto-indexing
@@ -73,7 +73,7 @@ if llvm_ar=$(/bin/sh "$root/seeds/llvm-ar.sh" --print-seed 2>"$tmp/llvm-ar.err")
         exit 1
     fi
     [ ! -s "$tmp/llvm-noop.out" ]
-    grep -Fq 'stage=link-native-executable' "$tmp/llvm-noop.err"
+    grep -Fq 'stage=index-unchanged' "$tmp/llvm-noop.err"
 fi
 
 if WHP_ARCHIVE_VERBOSE=invalid /bin/sh "$seed" --print-seed \

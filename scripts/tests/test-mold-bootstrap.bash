@@ -155,6 +155,9 @@ whp_prepare_mold
 [[ "$BOOTSTRAP_MOLD" == 0 ]]
 QEMU_HOST_LINKER=auto
 
+# The earlier toolchain and linker probes also log compilations. Count only
+# the standalone LTO probe below, not every preceding test in this fixture.
+: > "$log"
 whp_mold_link_probe "$fakebin/mold"
 [[ "$(grep -Fc ' -flto -c ' "$log")" -eq 2 ]]
 grep -Fq 'ar rcs ' "$log"

@@ -106,7 +106,17 @@ native_probe()
     # link probe using a symbol table already written by the archiver.
     whp_ranlib_probe_step create-unindexed-archive "$ar" rcS \
         "$dir/libprobe.a" "$dir/probe.o" || exit 1
+    # On Darwin, the linker can consume some archives without an index, so
+    # link success is insufficient to prove that ranlib did anything. The
+    # deliberately unindexed archive must actually change after indexing.
+    before_index=$(cksum "$dir/libprobe.a") || exit 1
     whp_ranlib_probe_step index-archive "$ranlib" "$dir/libprobe.a" || exit 1
+    after_index=$(cksum "$dir/libprobe.a") || exit 1
+    if [ "$before_index" = "$after_index" ]; then
+        printf 'error: WHP ranlib native probe failed: stage=index-unchanged; executable=%s; ar=%s\n' \
+            "$ranlib" "$ar" >&2
+        exit 1
+    fi
     [ -s "$dir/libprobe.a" ] || {
         printf 'error: WHP ranlib probe produced an empty archive: ar=%s; ranlib=%s\n' \
             "$ar" "$ranlib" >&2
