@@ -68,7 +68,11 @@ select_cc()
 
 case "${1:-}" in
     --print-cc|--print-seed) select_cc; exit $? ;;
-    --check) compiler=$(select_cc); printf "WHP C compiler seed: %s\n" "$compiler"; exit 0 ;;
+    --check)
+        compiler=$(select_cc) || exit 1
+        identity=$(whp_native_compiler_identity "$compiler" c)
+        printf 'WHP C compiler seed: %s (frontend: %s)\n' "$compiler" "$identity"
+        exit 0 ;;
     --print-cxx|--check-cxx|--cxx) echo "error: use cxx.sh for C++" >&2; exit 2 ;;
 esac
 compiler=$(select_cc)

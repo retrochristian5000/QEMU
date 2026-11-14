@@ -91,7 +91,21 @@ select_cxx()
 
 case "${1:-}" in
     --print-cxx|--print-seed) select_cxx; exit $? ;;
-    --check|--check-cxx) compiler=$(select_cxx); printf "WHP C++ compiler seed: %s\n" "$compiler"; exit 0 ;;
+    --check|--check-cxx)
+        compiler=$(select_cxx) || exit 1
+        cxx_identity=$(whp_native_compiler_identity "$compiler" c++)
+        printf 'WHP C++ compiler seed: %s (frontend: %s)\n' "$compiler" "$cxx_identity"
+        # A mixed compiler family is a diagnostic, not an automatic veto.
+        # Clang and GCC often share an ABI on Linux, whereas other targets
+        # need an explicit runtime, standard-library and linker assessment.
+        cc=$("$seed_root/seeds/cc.sh" --print-cc) || exit 1
+        cc_identity=$(whp_native_compiler_identity "$cc" c)
+        if [ "$cc_identity" != unknown ] && [ "$cxx_identity" != unknown ] &&
+           [ "$cc_identity" != "$cxx_identity" ]; then
+            printf 'warning: C and C++ compiler frontend signatures differ (%s: %s; %s: %s); verify ABI, runtime and linker compatibility\n' \
+                "$cc" "$cc_identity" "$compiler" "$cxx_identity" >&2
+        fi
+        exit 0 ;;
     --print-cc|--cc) echo "error: use cc.sh for C" >&2; exit 2 ;;
 esac
 compiler=$(select_cxx)

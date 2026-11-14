@@ -39,18 +39,7 @@ seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}/.." && pwd -P) || exit 1
 clang_identity()
 (
     candidate=$1
-    whp_native_probe_environment
-    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
-        sdk=$(whp_native_sdkroot) || exit 1
-        set -- -isysroot "$sdk"
-    else
-        set --
-    fi
-    macros=$("$candidate" "$@" -dM -E -x c - </dev/null 2>/dev/null) || exit 1
-    case "$macros" in
-        *'#define __clang__ 1'*) exit 0 ;;
-    esac
-    exit 1
+    [ "$(whp_native_compiler_identity "$candidate" c)" = clang ]
 )
 
 clang_admit()

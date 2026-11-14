@@ -119,6 +119,77 @@ class ClangSeedTests(unittest.TestCase):
         self.assertEqual(built.returncode, 0, built.stderr)
         self.assertGreater(object_path.stat().st_size, 0)
 
+    def test_clang_gcc_compatibility_macro_is_not_gcc_identity(self):
+        if not self.native:
+            self.skipTest("Clang not installed on test host")
+        macros = subprocess.run(
+            [self.native, "-dM", "-E", "-x", "c", "-"],
+            input="", capture_output=True, text=True, check=False, timeout=15,
+        )
+        self.assertEqual(macros.returncode, 0, macros.stderr)
+        self.assertIn("#define __clang__ 1", macros.stdout)
+        self.assertIn("#define __GNUC__ ", macros.stdout)
+        result = self.invoke(CC, "--check", env=dict(
+            self.env, WHP_CC_SEED=self.native))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("(frontend: clang)", result.stdout)
+
+    def test_nonllvm_gcc_is_a_valid_cc_but_not_a_clang_seed(self):
+        if not self.native:
+            self.skipTest("Clang not installed on test host")
+        gcc = shutil.which("gcc")
+        gxx = shutil.which("g++")
+        if not gcc or not gxx:
+            self.skipTest("GCC and G++ not installed on test host")
+        # Apple's gcc command can resolve to Apple Clang. Only test a true
+        # GNU-compatible non-Clang frontend when its macros confirm that.
+        probe = self.invoke(CC, "--check", env=dict(
+            self.env, WHP_CC_SEED=gcc))
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        if "(frontend: gnu-compatible)" not in probe.stdout:
+            self.skipTest("gcc name does not identify a non-Clang frontend")
+
+        rejected = self.invoke(SEED, "--print-clang", env=dict(
+            self.env, WHP_CLANG_SEED=gcc))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, "")
+        self.assertIn("not a usable Clang frontend", rejected.stderr)
+
+        matched = self.invoke(CXX, "--check", env=dict(
+            self.env, WHP_CC_SEED=gcc, WHP_CXX_SEED=gxx))
+        self.assertEqual(matched.returncode, 0, matched.stderr)
+        self.assertIn("(frontend: gnu-compatible)", matched.stdout)
+        self.assertNotIn("frontend signatures differ", matched.stderr)
+
+        clangxx = shutil.which("clang++")
+        if not clangxx:
+            return
+        # A deliberate GCC-C/Clang-C++ pairing is an ABI review warning,
+        # not an unsupported blanket prohibition on mixed toolchains.
+        mixed = self.invoke(CXX, "--check", env=dict(
+            self.env, WHP_CC_SEED=gcc, WHP_CXX_SEED=clangxx))
+        self.assertEqual(mixed.returncode, 0, mixed.stderr)
+        self.assertIn("(frontend: clang)", mixed.stdout)
+        self.assertIn("warning: C and C++ compiler frontend signatures differ",
+                      mixed.stderr)
+
+    def test_unknown_native_frontend_remains_usable(self):
+        if not self.native:
+            self.skipTest("Clang not installed on test host")
+        wrapper = self.directory / "unknown-native-cc"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            'case " $* " in *" -dM "*) exit 73 ;; esac\n'
+            'exec "$WHP_TEST_REAL_CLANG" "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        result = self.invoke(CC, "--check", env=dict(
+            self.env, WHP_CC_SEED=str(wrapper),
+            WHP_TEST_REAL_CLANG=self.native))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("(frontend: unknown)", result.stdout)
+
     def test_cc_handoff_and_priority(self):
         if not self.native:
             self.skipTest("Clang not installed on test host")

@@ -93,6 +93,16 @@ To request a separate native Clang for the existing ``cc.sh`` handoff::
 
   WHP_CLANG_SEED=/path/to/clang ./seeds/cc.sh --check
 
+Clang also defines GNU compatibility macros such as ``__GNUC__``, so a
+compiler-family probe must check the Clang signature first and must not treat
+``__GNUC__`` alone as proof of GNU GCC. The optional ``--check`` diagnostics
+of ``cc.sh`` and ``cxx.sh`` report the detected frontend signature as
+``clang``, ``gnu-compatible`` or ``unknown``. A known C/C++ signature
+mismatch produces a warning during the C++ check, not an automatic rejection:
+Clang and GCC can deliberately share a Linux ABI, while target-specific C++
+standard library, linker, ABI and LTO compatibility still require validation.
+Unknown signatures are not rejected just for lacking GNU preprocessor flags.
+
 ``WHP_CLANG_SEED`` is optional and has lower precedence than the existing
 ``WHP_CC_SEED`` and ``CC_FOR_BUILD`` selections. Invalid explicit Clang
 choices fail rather than falling back to another compiler. The selected

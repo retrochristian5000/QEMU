@@ -33,6 +33,35 @@ whp_native_probe_environment()
     unset COMPILER_PATH GCC_EXEC_PREFIX
 }
 
+# Report compiler frontend *signatures* without requiring a GNU/Clang
+# preprocessor for every supported compiler. Clang defines __GNUC__ for GCC
+# compatibility, and other non-GNU compilers can do the same. These results
+# are diagnostic, not a compiler whitelist or a substitute for ABI probes.
+whp_native_compiler_identity()
+(
+    candidate=$1
+    language=${2:-c}
+    whp_native_probe_environment
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        sdk=$(whp_native_sdkroot) || {
+            printf '%s\n' unknown
+            exit 0
+        }
+        set -- -isysroot "$sdk"
+    else
+        set --
+    fi
+    macros=$("$candidate" "$@" -dM -E -x "$language" - </dev/null 2>/dev/null) || {
+        printf '%s\n' unknown
+        exit 0
+    }
+    case "$macros" in
+        *'#define __clang__ 1'*) printf '%s\n' clang ;;
+        *'#define __GNUC__ '*) printf '%s\n' gnu-compatible ;;
+        *) printf '%s\n' unknown ;;
+    esac
+)
+
 # Report genuine compiler failures only for explicit choices or selected
 # Apple defaults; keep exploratory PATH discovery quiet.
 resolve_executable()
