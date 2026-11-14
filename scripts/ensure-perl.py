@@ -48,6 +48,8 @@ def run(argv: list[str], *, cwd: pathlib.Path | None = None,
     if capture and log_path is not None:
         raise ValueError("Perl subprocess cannot capture stdout and log it simultaneously")
     directory = str(cwd) if cwd is not None else os.getcwd()
+    if log_path is not None:
+        print(f"WHP Perl {phase}: running; log={log_path}", file=sys.stderr)
     perl_trace(f"{phase} start: cwd={directory}; command={argv!r}"
                + (f"; log={log_path}" if log_path else ""))
     try:
