@@ -117,22 +117,21 @@ assert 'missing required LLVM target backend: $target' in bootstrap
 assert 'WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"' in build
 assert 'bootstrap-native-clang.sh' in inventory
 
-# BOOTSTRAP_NATIVE_LLVM selects the compiler for QEMU host objects, not the
-# compiler for firmware helpers or cross-toolchain host programs. Preserve an
-# explicit *_FOR_BUILD override, but repair the old non-Darwin inheritance path
-# before firmware preparation when CC/CXX were replaced by native LLVM.
-assert 'cc_for_build_was_set=0' in builder
-assert 'cxx_for_build_was_set=0' in builder
-assert 'objc_for_build_was_set=0' in builder
-assert 'CC_FOR_BUILD=cc' in builder
-assert 'CXX_FOR_BUILD=c++' in builder
-assert 'OBJC_FOR_BUILD="$CC_FOR_BUILD"' in builder
-assert 'native_llvm_build_compiler_reset=1' in builder
-prepare_index = builder.index('whp_prepare_build "$@"')
-reset_index = builder.index('CC_FOR_BUILD=cc')
-firmware_index = builder.index('whp_prepare_seabios_grub_sources')
-assert prepare_index < reset_index < firmware_index
-assert builder.index('whp_prepare_configure_args', reset_index) < firmware_index
+# Native LLVM promotes only QEMU artifact CC/CXX. The public POSIX wrapper
+# and the host-tool preparation stage give *_FOR_BUILD independent native
+# defaults, preserving explicit overrides without a late fix-up in builder.
+wrapper_stage = (ROOT / 'builder.sh').read_text(encoding='utf-8')
+prepare_stage = (ROOT / 'scripts/whp-build/prepare-build.bash').read_text(
+    encoding='utf-8')
+assert 'CC_FOR_BUILD=${CC_FOR_BUILD:-cc}' in wrapper_stage
+assert 'CXX_FOR_BUILD=${CXX_FOR_BUILD:-c++}' in wrapper_stage
+assert 'export CC_FOR_BUILD="${CC_FOR_BUILD:-cc}"' in prepare_stage
+assert 'export CXX_FOR_BUILD="${CXX_FOR_BUILD:-c++}"' in prepare_stage
+assert 'export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-$CC_FOR_BUILD}"' in prepare_stage
+assert 'native_llvm_build_compiler_reset' not in builder
+assert 'cc_for_build_was_set' not in builder
+assert builder.index('whp_prepare_build "$@"') < \
+    builder.index('whp_prepare_seabios_grub_sources')
 
 # The public build entry selects one Ninja for the whole host build. Native LLVM
 # must consume that same executable instead of independently searching PATH,

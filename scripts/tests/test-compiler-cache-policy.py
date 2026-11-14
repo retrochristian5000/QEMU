@@ -300,8 +300,9 @@ class CompilerCachePolicyTests(unittest.TestCase):
         self.assertIn("requested = os.environ.get('SCCACHE_DIR')", ninja)
         self.assertIn("'WHP_COMPILER_CACHE_ROOT'", ninja)
 
-    def test_host_tool_discovery_does_not_implicitly_wrap_compilers(self):
-        # A cache executable on PATH does not authorize early CC/CXX mutation.
+    def test_host_tool_discovery_keeps_artifact_and_build_compilers_separate(self):
+        # A cross/remote QEMU compiler and an unrelated cache on PATH must
+        # never become the compiler that produces local bootstrap programs.
         prepare = ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash'
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = pathlib.Path(directory)
@@ -310,15 +311,18 @@ class CompilerCachePolicyTests(unittest.TestCase):
             fake_cache.chmod(0o755)
             script = (
                 'set -e; source "$1"; whp_prepare_host_tools; '
-                'printf "%s|%s|%s|%s" "$CC" "$CXX" '
-                '"$CC_FOR_BUILD" "$CXX_FOR_BUILD"'
+                'printf "%s|%s|%s|%s|%s" "$CC" "$CXX" '
+                '"$CC_FOR_BUILD" "$CXX_FOR_BUILD" "$OBJC_FOR_BUILD"'
             )
             for choice in ('none', 'auto', 'sccache'):
                 with self.subTest(policy=choice):
                     env = {
                         **os.environ, 'SOURCE_DIR': str(ROOT),
-                        'HOST_OS': 'Linux', 'CC': 'user-cc',
-                        'CXX': 'user-cxx', 'COMPILER_CACHE': choice,
+                        'HOST_OS': 'Linux', 'CC': 'qemu-cross-cc',
+                        'CXX': 'qemu-cross-cxx', 'OBJC': 'qemu-cross-objc',
+                        'COMPILER_CACHE': choice,
+                        'CC_FOR_BUILD': '', 'CXX_FOR_BUILD': '',
+                        'OBJC_FOR_BUILD': '',
                         'PATH': str(bin_dir) + os.pathsep + os.environ.get('PATH', ''),
                     }
                     run = subprocess.run(
@@ -327,8 +331,58 @@ class CompilerCachePolicyTests(unittest.TestCase):
                     )
                     self.assertEqual(run.returncode, 0, run.stderr)
                     self.assertEqual(
-                        run.stdout, 'user-cc|user-cxx|user-cc|user-cxx'
+                        run.stdout, 'qemu-cross-cc|qemu-cross-cxx|cc|c++|cc'
                     )
+                    env.update(CC_FOR_BUILD='build-cc',
+                               CXX_FOR_BUILD='build-cxx',
+                               OBJC_FOR_BUILD='build-objc')
+                    explicit = subprocess.run(
+                        ['bash', '-c', script, 'bash', str(prepare)],
+                        env=env, text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(explicit.returncode, 0, explicit.stderr)
+                    self.assertEqual(
+                        explicit.stdout,
+                        'qemu-cross-cc|qemu-cross-cxx|build-cc|build-cxx|build-objc',
+                    )
+
+    def test_cache_launcher_does_not_relabel_artifact_compilers(self):
+        runner = BUILD_WRAPPER.read_text(encoding='utf-8')
+        prefix, separator, _ = runner.partition(
+            '\n. "$script_dir/scripts/whp-build/shell-functions.sh"'
+        )
+        self.assertTrue(separator)
+        with tempfile.TemporaryDirectory() as directory:
+            cache = pathlib.Path(directory) / 'sccache'
+            cache.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+            cache.chmod(0o755)
+            script = prefix + (
+                '\nprintf "%s|%s|%s|%s" "$CC" "$CXX" '
+                '"$CC_FOR_BUILD" "$CXX_FOR_BUILD"\n'
+            )
+            for explicit in (False, True):
+                with self.subTest(explicit=explicit):
+                    env = {
+                        **os.environ, 'WHP_BUILD_ENTRY_NORMALIZED': '1',
+                        'COMPILER_CACHE': 'sccache',
+                        'WHP_COMPILER_CACHE_CMD': str(cache),
+                        'CC': 'qemu-cross-cc', 'CXX': 'qemu-cross-cxx',
+                        'CC_FOR_BUILD': 'build-cc' if explicit else '',
+                        'CXX_FOR_BUILD': 'build-cxx' if explicit else '',
+                        'BUILD_DIR': str(pathlib.Path(directory) / 'build'),
+                    }
+                    result = subprocess.run(
+                        ['/bin/sh', '-c', script], cwd=ROOT, env=env,
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    expected = '|'.join((
+                        str(cache) + ' qemu-cross-cc',
+                        str(cache) + ' qemu-cross-cxx',
+                        'build-cc' if explicit else 'cc',
+                        'build-cxx' if explicit else 'c++',
+                    ))
+                    self.assertEqual(result.stdout, expected)
 
     def test_qemu_host_cache_is_build_time_only(self):
         text = BUILD_WRAPPER.read_text(encoding='utf-8')

@@ -127,10 +127,11 @@ if [ -n "$cache_cmd" ]; then
             ;;
     esac
 
-    # Preserve raw build-machine compilers before wrapping QEMU's host compiler
-    # commands. Firmware/toolchain bootstraps may opt into caching separately.
-    CC_FOR_BUILD=${CC_FOR_BUILD:-${CC:-cc}}
-    CXX_FOR_BUILD=${CXX_FOR_BUILD:-${CXX:-c++}}
+    # Cache applies to QEMU artifact compilers CC/CXX only. Bootstrap
+    # compiler choices must not be inferred from these possibly cross-target
+    # or already wrapped commands; build-machine defaults are independent.
+    CC_FOR_BUILD=${CC_FOR_BUILD:-cc}
+    CXX_FOR_BUILD=${CXX_FOR_BUILD:-c++}
     export CC_FOR_BUILD CXX_FOR_BUILD
 
     cc_cache_wrapper=$(compiler_cache_wrapper_name "${CC:-}")

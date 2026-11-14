@@ -414,9 +414,13 @@ whp_prepare_host_tools()
         esac
         export WHP_MACOS_DEPENDENCY_PROVIDER
     else
-        export CC_FOR_BUILD="${CC_FOR_BUILD:-${CC:-cc}}"
-        export CXX_FOR_BUILD="${CXX_FOR_BUILD:-${CXX:-c++}}"
-        export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-${OBJC:-$CC_FOR_BUILD}}"
+        # Build-machine programs execute on this machine, even when the
+        # configured QEMU CC/CXX/OBJC build for a different host architecture
+        # or carry a compiler-cache wrapper. Never derive *_FOR_BUILD from
+        # those artifact compiler variables.
+        export CC_FOR_BUILD="${CC_FOR_BUILD:-cc}"
+        export CXX_FOR_BUILD="${CXX_FOR_BUILD:-c++}"
+        export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-$CC_FOR_BUILD}"
         export STRIP_FOR_BUILD="${STRIP_FOR_BUILD:-strip}"
     fi
 

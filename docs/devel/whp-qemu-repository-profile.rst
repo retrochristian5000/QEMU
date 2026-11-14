@@ -83,11 +83,84 @@ macOS platform paths. Fixture checks are not a native macOS build.
 Host compiler and copy seed contracts
 -------------------------------------
 
-QEMU separates native build-machine compilers ``CC_FOR_BUILD`` and
-``CXX_FOR_BUILD`` from target C/C++ tools and flags. Its ``seeds/cc.sh``,
-``seeds/cxx.sh``, ``seeds/cpp.sh`` and ``seeds/ld.sh`` choose and validate
-build-machine tools. Seed wrappers must reject invalid explicit selections,
-avoid recursion and preserve the actual compiler, SDK and linker boundary.
+QEMU separates native **build-machine** compilers from compilers and tools
+producing QEMU's **host artifacts**. A guest architecture (for example
+``ppc-softmmu``) is a third role, not the meaning of ``CC``. Firmware and
+cross-toolchain target compilers have their own contracts. The native
+``seeds/cc.sh``, ``seeds/cxx.sh``, ``seeds/cpp.sh`` and ``seeds/ld.sh``
+validate their respective tools; an executable name or successful version
+probe alone is not an ABI guarantee.
+
+Build-variable role and precedence
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``WHP_CC_SEED`` / ``WHP_CXX_SEED``
+    Explicit seed-adapter compiler requests for native C and C++ tools.
+    They take precedence over ``CC_FOR_BUILD`` / ``CXX_FOR_BUILD``
+    during seed selection. Invalid nonempty choices fail closed.
+
+``CC_FOR_BUILD`` / ``CXX_FOR_BUILD`` / ``OBJC_FOR_BUILD``
+    Compiler executables for tools that **run on the build machine**.
+    The public ``build.sh`` resolves native C/C++ seeds early. Standalone
+    non-macOS preparation defaults to ``cc`` / ``c++`` and uses
+    ``CC_FOR_BUILD`` for Objective-C when no explicit value was given.
+    These defaults do not copy the configured QEMU artifact compilers.
+    An explicit ``*_FOR_BUILD`` selection remains authoritative.
+
+``WHP_CPP_SEED`` / ``CPP_FOR_BUILD``
+    The former selects a native preprocessing driver; the latter is the
+    callable ``seeds/cpp.sh`` bridge that guarantees preprocessing
+    rather than compilation. ``build.sh`` rejects independent conflicting
+    explicit selections. Neither name replaces QEMU's ``CPP``.
+
+``WHP_AR_SEED`` / ``WHP_RANLIB_SEED`` / ``WHP_LD_SEED``
+    Explicit native bootstrap-tool requests, ahead of their
+    ``AR_FOR_BUILD`` / ``RANLIB_FOR_BUILD`` / ``LD_FOR_BUILD``
+    counterparts. The latter carry resolved **build-machine** archiver,
+    archive indexer and relocatable linker choices, respectively.
+    ``LD_FOR_BUILD`` is not a request to change the final QEMU linker.
+
+``CC`` / ``CXX`` / ``OBJC`` / ``CPP``
+    Configured compilers and preprocessor for QEMU **host artifacts**.
+    They may use managed native LLVM or an explicit host-cross toolchain.
+    These variables are not bootstrap compiler fallbacks. A build-stage
+    compiler cache may wrap ``CC`` and ``CXX`` without wrapping
+    ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD``.
+
+``AR`` / ``RANLIB`` / ``NM`` / ``LD``
+    Archive, indexing, symbol reading and linker selection for QEMU
+    artifacts. Libtool can supply a validated alternative archive family;
+    the selected native-object pipeline is tested together. Final
+    executable links normally go through compiler drivers; on macOS an
+    ``LD`` executable alone does not override the driver's linker.
+    ``QEMU_HOST_LINKER`` and validated linker flags own that request.
+
+``WHP_LLVM_AR_SEED`` / ``NATIVE_LLVM_DIR``
+    The former optionally selects an **installed** native LLVM archiver;
+    the latter identifies the managed LLVM toolchain prefix. Neither is
+    an alias for ``AR_FOR_BUILD``, ``AR`` or GNU linker-plugin support.
+
+``MAKE_CMD`` / ``MAKE`` / ``WHP_MAKE_SEED``
+    The public entry intentionally publishes the same validated GNU Make
+    choice under these existing consumer interfaces. Do not generalize
+    this specific handoff to compiler and linker variables.
+
+``DEVELOPER_DIR`` / ``SDKROOT``
+    On macOS, the selected Xcode/CLT root and its matching SDK. SDK
+    validation is independent of compiler naming, host CPU, and ABI.
+
+``CFLAGS`` / ``CXXFLAGS`` / ``CPPFLAGS`` / ``LDFLAGS``
+    Flag interfaces, not tool selectors. Their effects depend on the
+    consuming stage; QEMU-only LTO and host-CPU tuning must not leak
+    into native bootstrap, guest firmware or cross-toolchain probes.
+    Libtool's ``ARFLAGS`` / ``AR_FLAGS`` spellings are archive **flags**,
+    not a second archiver selection.
+
+One variable must not silently replace a different role. A user can
+intentionally choose the same executable for both roles by setting the
+respective variables explicitly; capability probes still decide whether
+that pairing is usable. Keep ``WHP_*_SEED`` selectors and ordinary
+``*_FOR_BUILD`` outputs distinct, rather than adding another alias layer.
 
 ``seeds/git.sh``, ``seeds/awk.sh``, ``seeds/grep.sh``, ``seeds/sed.sh``,
 and ``seeds/cp.sh`` provide other selected host tools. The public

@@ -22,6 +22,12 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'builder.sh'
+      - 'builder.bash'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'docs/devel/whp-qemu-repository-profile.rst'
       - 'scripts/tests/test-linker-family.sh'
       - 'scripts/macos-builder.bash'
       - 'scripts/whp-build/prepare-build.bash'
@@ -60,6 +66,12 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'builder.sh'
+      - 'builder.bash'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/tests/test-compiler-cache-policy.py'
+      - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'docs/devel/whp-qemu-repository-profile.rst'
       - 'scripts/tests/test-linker-family.sh'
       - 'scripts/macos-builder.bash'
       - 'scripts/whp-build/prepare-build.bash'
@@ -118,6 +130,12 @@ jobs:
           /bin/sh -n scripts/tests/test-linker-family.sh
           /bin/sh scripts/tests/test-linker-family.sh
 
+      - name: Verify native bootstrap versus QEMU compiler variable roles
+        run: |
+          /bin/sh -n builder.sh
+          bash -n builder.bash
+          bash -n scripts/whp-build/prepare-build.bash
+          python3 scripts/tests/test-compiler-cache-policy.py
       - name: Verify Homebrew discovery before early seed locks
         run: python3 scripts/tests/test-early-homebrew-selection.py
 
