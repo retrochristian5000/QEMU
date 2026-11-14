@@ -50,13 +50,33 @@ set_compiler_command()
 compiler_family()
 {
     local command_string="$1"
-    local version
+    local macros verbose
 
     set_compiler_command "$command_string" || return 1
-    version="$("${COMPILER_COMMAND[@]}" --version 2>&1 | sed -n '1p')"
-    case "$version" in
-        *clang*|*Clang*) printf 'clang\n' ;;
-        *GCC*|*gcc*|*'Free Software Foundation'*) printf 'gcc\n' ;;
+    # Compiler names, --version banners and __GNUC__ alone do not identify
+    # a compiler. For example, Apple's /usr/bin/gcc can invoke Clang.
+    # This preprocessor-only probe requires no headers or SDK rewrites.
+    if ! macros="$("${COMPILER_COMMAND[@]}" -dM -E -x c - </dev/null 2>/dev/null)"; then
+        printf 'unknown\n'
+        return 0
+    fi
+    case "$macros" in
+        *'#define __clang__ 1'*) printf 'clang\n'; return 0 ;;
+    esac
+    # Other compilers also implement GNU extensions. Identify *GNU GCC*
+    # only when its frontend signature and verbose compiler identity
+    # agree; otherwise retain unknown instead of assuming GCC.
+    case "$macros" in
+        *'#define __GNUC__ '*)
+            verbose="$(LC_ALL=C "${COMPILER_COMMAND[@]}" -v 2>&1)" || {
+                printf 'unknown\n'
+                return 0
+            }
+            case "$verbose" in
+                *'gcc version '*) printf 'gcc\n' ;;
+                *) printf 'unknown\n' ;;
+            esac
+            ;;
         *) printf 'unknown\n' ;;
     esac
 }

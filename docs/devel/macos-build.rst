@@ -103,6 +103,17 @@ Clang and GCC can deliberately share a Linux ABI, while target-specific C++
 standard library, linker, ABI and LTO compatibility still require validation.
 Unknown signatures are not rejected just for lacking GNU preprocessor flags.
 
+The separate macOS **QEMU host compiler policy** is intentionally stricter.
+Its C, C++, Objective-C and build-tool compiler checks inspect predefined
+frontend macros, not just executable names or ``--version`` banners.
+``__clang__`` identifies Clang even when its executable is called
+``gcc``. The experimental ``MACOS_ALLOW_NONCLANG=1`` GNU GCC path
+requires both ``__GNUC__`` without a Clang signature and an independent
+GCC ``-v`` identification. Other GNU-compatible frontends remain
+``unknown`` instead of being admitted as GNU GCC. This is a
+conservative toolchain policy, not proof that two compilers share LTO,
+C++ runtime, ABI, SDK or linker support.
+
 ``WHP_CLANG_SEED`` is optional and has lower precedence than the existing
 ``WHP_CC_SEED`` and ``CC_FOR_BUILD`` selections. Invalid explicit Clang
 choices fail rather than falling back to another compiler. The selected

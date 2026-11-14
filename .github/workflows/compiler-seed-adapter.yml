@@ -10,6 +10,8 @@ on:
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
       - 'scripts/tests/test-clang-seed.py'
+      - 'scripts/tests/test-compiler-family.py'
+      - 'scripts/macos-compiler-policy.bash'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -45,6 +47,8 @@ on:
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
       - 'scripts/tests/test-clang-seed.py'
+      - 'scripts/tests/test-compiler-family.py'
+      - 'scripts/macos-compiler-policy.bash'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -95,6 +99,9 @@ jobs:
         run: |
           /bin/sh -n seeds/clang.sh
           python3 scripts/tests/test-clang-seed.py
+
+      - name: Distinguish Clang, GNU GCC and compatible frontends
+        run: python3 scripts/tests/test-compiler-family.py
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py
