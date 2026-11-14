@@ -17,17 +17,45 @@ clang=$(/bin/sh "$root/seeds/clang.sh" --print-clang) || exit 1
 WHP_CLANG_SEED=$clang
 WHP_CC_SEED=$clang
 export WHP_CLANG_SEED WHP_CC_SEED
-llvm_ar=$(/bin/sh "$root/seeds/llvm-ar.sh" --print-seed) || {
-    printf 'error: no installed llvm-ar passed native admission with Clang %s\n' "$clang" >&2
-    exit 1
-}
-
-printf 'WHP Clang/llvm-ar: compiler=%s; archiver=%s; host=%s/%s\n' \
-    "$clang" "$llvm_ar" "$(uname -s)" "$(uname -m)"
 
 tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-clang-llvm-ar.XXXXXX") || exit 1
 trap 'rm -rf -- "$tmp"' 0
 trap 'exit 1' 1 2 3 15
+
+if llvm_ar=$(WHP_ARCHIVE_VERBOSE=1 /bin/sh "$root/seeds/llvm-ar.sh" --print-seed \
+    2> "$tmp/archiver.err"); then
+    :
+else
+    # This tool is optional. Only skip when no candidate exists: an explicit
+    # override or an installed but broken llvm-ar is a real audit failure.
+    candidate_found=0
+    if [ -n "${WHP_LLVM_AR_SEED:-}" ] ||
+       [ "${WHP_CLANG_LLVM_AR_REQUIRE_LTO:-0}" = 1 ]; then
+        candidate_found=1
+    fi
+    for name in llvm-ar llvm-ar-22 llvm-ar-21 llvm-ar-20 llvm-ar-19 \
+        llvm-ar-18 llvm-ar-17 llvm-ar-16; do
+        if command -v "$name" >/dev/null 2>&1; then
+            candidate_found=1
+        fi
+    done
+    for candidate in "${clang%/*}/llvm-ar" \
+        /opt/homebrew/opt/llvm/bin/llvm-ar \
+        /usr/local/opt/llvm/bin/llvm-ar; do
+        if [ -x "$candidate" ]; then
+            candidate_found=1
+        fi
+    done
+    if [ "$candidate_found" = 0 ]; then
+        printf 'WHP Clang/llvm-ar: skipped; no optional installed llvm-ar for %s\n' "$clang"
+        exit 0
+    fi
+    cat "$tmp/archiver.err" >&2
+    printf 'error: installed llvm-ar failed native admission with Clang %s\n' "$clang" >&2
+    exit 1
+fi
+printf 'WHP Clang/llvm-ar: compiler=%s; archiver=%s; host=%s/%s\n' \
+    "$clang" "$llvm_ar" "$(uname -s)" "$(uname -m)"
 
 printf '%s\n' \
     'int whp_clang_archive_value(void) { return 37; }' > "$tmp/member.c"
