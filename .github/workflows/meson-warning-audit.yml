@@ -86,7 +86,7 @@ jobs:
             --disable-docs \
             --disable-rust \
             2>&1 | tee configure.log
-          pyvenv/bin/meson --version
+          pyvenv/bin/python3 ../toolchains/meson/meson.py --version
 
       - name: Reject Meson warnings
         shell: bash
@@ -96,7 +96,7 @@ jobs:
             build-meson-warning-audit/configure.log \
             build-meson-warning-audit/meson-logs/meson-log.txt
 
-          build-meson-warning-audit/pyvenv/bin/meson setup \
+          build-meson-warning-audit/pyvenv/bin/python3 toolchains/meson/meson.py setup \
             --reconfigure \
             --fatal-meson-warnings \
             build-meson-warning-audit
