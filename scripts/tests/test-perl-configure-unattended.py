@@ -129,6 +129,24 @@ class PerlConfigureTests(unittest.TestCase):
             )
             self.assertIn("-Dranlib=/usr/bin/ranlib", args)
             self.assertIn("-Dar=/usr/bin/ar", args)
+            self.assertIn("-Dfull_ar=/usr/bin/ar", args)
+
+    def test_makefile_archive_tool_must_match_admitted_seed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            makefile = source / "Makefile"
+            makefile.write_text("AR = /usr/bin/ar\nranlib = /usr/bin/ranlib\n",
+                                encoding="utf-8")
+            perl.require_configured_ar(source, "/usr/bin/ar")
+            with self.assertRaisesRegex(RuntimeError, "Makefile ar mismatch"):
+                perl.require_configured_ar(source, "/unexpected/ar")
+            makefile.write_text("AR = /usr/bin/ar\nAR = /usr/bin/ar\n",
+                                encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "missing or ambiguous"):
+                perl.require_configured_ar(source, "/usr/bin/ar")
+            makefile.unlink()
+            with self.assertRaisesRegex(RuntimeError, "did not generate a Makefile"):
+                perl.require_configured_ar(source, "/usr/bin/ar")
 
     def test_native_ranlib_is_configured_explicitly(self):
         with tempfile.TemporaryDirectory() as tmp:
