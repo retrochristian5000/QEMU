@@ -62,5 +62,28 @@ if WHP_AR_SEED=/bin/false /bin/sh "$seed" --check \
     exit 1
 fi
 [ ! -s "$tmp/bad.out" ]
+grep -Fq 'stage=create-archive; executable=/bin/false' "$tmp/bad.err"
+
+# A real tool error must be reported even without verbose mode; the failing
+# child stderr must not disappear into /dev/null.
+cat >"$tmp/broken-ar" <<'EOF'
+#!/bin/sh
+if [ "$1" = rc ]; then
+    printf '%s\n' 'deliberate archive creation failure' >&2
+    exit 42
+fi
+exec "$WHP_AR_TEST_REAL_AR" "$@"
+EOF
+chmod +x "$tmp/broken-ar"
+if WHP_AR_TEST_REAL_AR="$selected" WHP_AR_SEED="$tmp/broken-ar" \
+    WHP_ARCHIVE_VERBOSE=0 /bin/sh "$seed" --print-seed \
+    >"$tmp/broken.out" 2>"$tmp/broken.err"; then
+    printf '%s\n' 'error: broken archiver passed native probe' >&2
+    exit 1
+fi
+[ ! -s "$tmp/broken.out" ]
+grep -Fq 'stage=create-archive' "$tmp/broken.err"
+grep -Fq 'exit-status=42' "$tmp/broken.err"
+grep -Fq 'deliberate archive creation failure' "$tmp/broken.err"
 
 printf '%s\n' 'WHP native ar selection and forwarding diagnostics: verified'
