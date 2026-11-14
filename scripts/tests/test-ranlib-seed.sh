@@ -18,6 +18,16 @@ grep -Fq 'native archive create, index, link and execute passed' "$tmp/check.out
 grep -Fq "WHP ranlib selection: provider=WHP_RANLIB_SEED; executable=$selected; native-probe=yes" \
     "$tmp/check.err"
 
+# Retain explicit native precedence while surfacing contradictory aliases.
+conflicting=$(WHP_RANLIB_SEED="$selected" RANLIB_FOR_BUILD=/bin/false \
+    /bin/sh "$seed" --print-seed 2>"$tmp/conflict.err")
+[ "$conflicting" = "$selected" ]
+grep -Fq 'WHP_RANLIB_SEED overrides conflicting RANLIB_FOR_BUILD' "$tmp/conflict.err"
+WHP_RANLIB_SEED="$selected" RANLIB_FOR_BUILD="$selected" \
+    /bin/sh "$seed" --print-seed >"$tmp/same.out" 2>"$tmp/same.err"
+[ "$(cat "$tmp/same.out")" = "$selected" ]
+! grep -Fq 'overrides conflicting' "$tmp/same.err"
+
 # When the seed path is captured, verbosity must never contaminate stdout.
 printed=$(WHP_RANLIB_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
     /bin/sh "$seed" --print-seed 2>"$tmp/select.err")
