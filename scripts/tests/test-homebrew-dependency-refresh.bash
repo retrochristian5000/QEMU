@@ -47,6 +47,20 @@ grep -Fq '/opt/homebrew/opt/libslirp/include' <<< "$normalized"
 grep -Fq '/opt/homebrew/opt/libslirp/lib' <<< "$normalized"
 grep -Fq '/opt/homebrew/opt/openssl@3/lib/pkgconfig' <<< "$normalized"
 
+# QEMU's Homebrew path normalization must not replace the separately
+# selected build-machine pkg-config used by firmware/bootstrap tools.
+(
+    SOURCE_DIR="$ROOT"
+    HOST_OS=Darwin
+    WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
+    PKG_CONFIG="$fake_pkg_config"
+    PKG_CONFIG_FOR_BUILD="$fake_pkg_config"
+    whp_prepare_homebrew_pkg_config
+    [[ "$PKG_CONFIG" == "$ROOT/scripts/whp-build/pkg-config-homebrew.bash" ]]
+    [[ "$PKG_CONFIG_FOR_BUILD" == "$fake_pkg_config" ]]
+    [[ "$WHP_REAL_PKG_CONFIG" == "$fake_pkg_config" ]]
+)
+
 fake_source="$TMP_ROOT/source"
 fake_build="$TMP_ROOT/build"
 mkdir -p "$fake_source" "$fake_build"
