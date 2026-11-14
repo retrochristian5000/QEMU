@@ -7,20 +7,26 @@ whp_apple_developer_root()
 (
     if [ -n "${DEVELOPER_DIR:-}" ]; then
         developer=$DEVELOPER_DIR
+        origin=DEVELOPER_DIR
     else
+        origin=xcode-select
         command -v xcode-select >/dev/null 2>&1 || {
             printf '%s\n' 'error: xcode-select is unavailable' >&2
             exit 1
         }
         developer=$(xcode-select -p 2>/dev/null) || {
-            printf '%s\n' 'error: no active Apple developer directory' >&2
+            printf '%s\n' 'error: no active Apple developer directory (xcode-select -p failed)' >&2
+            printf '%s\n' '  Select an installed Xcode or Command Line Tools directory before building.' >&2
             exit 1
         }
     fi
     # DEVELOPER_DIR can name the Xcode.app bundle instead of Contents/Developer.
     case "$developer" in *.app) developer=$developer/Contents/Developer ;; esac
     [ -d "$developer" ] || {
-        printf 'error: selected Apple developer directory does not exist: %s\n' "$developer" >&2
+        printf 'error: selected Apple developer directory does not exist: %s (source: %s)\n' \
+            "$developer" "$origin" >&2
+        printf '%s\n' '  The selected Xcode/CLT installation may have been moved or removed.' >&2
+        printf '%s\n' '  Select an installed developer root (xcode-select --switch), or set DEVELOPER_DIR for this build.' >&2
         exit 1
     }
     CDPATH= cd -P -- "$developer" && pwd -P
@@ -85,19 +91,20 @@ whp_apple_find_tool()
             ;;
         *) printf 'error: invalid Apple tool class: %s\n' "$tool_class" >&2; exit 1 ;;
     esac
+    # Validate the selected installation before invoking xcrun: an obsolete
+    # xcode-select entry must not silently choose a different Xcode/CLT.
+    developer=$(whp_apple_developer_root) || exit 1
     sdk=macosx
     if [ -n "${SDKROOT:-}" ]; then
-        sdk=$(whp_apple_select_sdk) || exit 1
-    else
-        whp_apple_developer_root >/dev/null || exit 1
+        sdk=$(DEVELOPER_DIR="$developer" whp_apple_select_sdk) || exit 1
     fi
     whp_xcrun_tool=${WHP_XCRUN_SEED:-xcrun}
     command -v "$whp_xcrun_tool" >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
     }
-    tool=$("$whp_xcrun_tool" --sdk "$sdk" --find "$name" 2>/dev/null) || {
-        printf 'error: selected Apple developer directory has no %s tool\n' "$name" >&2
+    tool=$(DEVELOPER_DIR="$developer" "$whp_xcrun_tool" --sdk "$sdk" --find "$name" 2>/dev/null) || {
+        printf 'error: selected Apple developer directory has no %s tool: %s\n' "$name" "$developer" >&2
         exit 1
     }
     [ -x "$tool" ] || {
@@ -150,18 +157,19 @@ whp_apple_check_sdkroot()
 
 whp_apple_find_sdk()
 (
-    # whp_apple_check_sdkroot below verifies the selected developer root and
-    # SDK containment. Avoid resolving that same root twice for one lookup.
+    # Confirm the selected root before asking xcrun for an SDK. Pin that
+    # root only for discovery and verification; do not change global state.
+    developer=$(whp_apple_developer_root) || exit 1
     whp_xcrun_tool=${WHP_XCRUN_SEED:-xcrun}
     command -v "$whp_xcrun_tool" >/dev/null 2>&1 || {
         printf '%s\n' 'error: xcrun is unavailable' >&2
         exit 1
     }
-    sdk=$("$whp_xcrun_tool" --sdk macosx --show-sdk-path 2>/dev/null) || {
-        printf '%s\n' 'error: selected Apple developer directory has no macOS SDK' >&2
+    sdk=$(DEVELOPER_DIR="$developer" "$whp_xcrun_tool" --sdk macosx --show-sdk-path 2>/dev/null) || {
+        printf 'error: selected Apple developer directory has no macOS SDK: %s\n' "$developer" >&2
         exit 1
     }
-    whp_apple_check_sdkroot "$sdk" || exit 1
+    DEVELOPER_DIR="$developer" whp_apple_check_sdkroot "$sdk" || exit 1
     # Return the same physical SDK path that was actually validated.
     CDPATH= cd -P -- "$sdk" && pwd -P
 )

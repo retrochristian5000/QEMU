@@ -21,9 +21,11 @@ def main() -> int:
     cxx_adapter = (ROOT / "seeds" / "cxx.sh").read_text(encoding="utf-8")
     shared = (ROOT / "scripts/whp-build/compiler-seed-common.sh").read_text(encoding="utf-8")
     require(shared, "compiler_runs_native", "native execution probe")
-    require(shared, 'whp_apple_find_sdk', "native Apple SDK seed lookup")
+    require(shared, 'whp_apple_select_sdk', "native Apple SDK seed lookup")
     require(shared, 'whp_native_sdkroot()', "shared Apple SDK identity")
-    require(shared, 'whp_apple_check_sdkroot "$SDKROOT"', "explicit SDK root guard")
+    # whp_native_sdkroot delegates to whp_apple_select_sdk, which validates
+    # both an explicit SDKROOT and an automatically discovered SDK.
+    require(shared, 'whp_apple_select_sdk', "explicit SDK root guard")
     require(shared, 'set -- -isysroot "$seed_sdk"', "native Apple SDK link probe")
     require(shared, 'mktemp -d', "unique native probe directory")
     require(shared, '#include <unistd.h>', "native POSIX SDK header probe")
@@ -57,7 +59,7 @@ def main() -> int:
     )
     require(apple, "DEVELOPER_DIR", "developer directory override")
     require(apple, "xcode-select -p", "active developer fallback")
-    require(apple, "whp_apple_check_sdkroot", "SDK/developer root guard")
+    require(apple, 'whp_apple_check_sdkroot "$sdk"', "SDK/developer root guard")
     macos = (ROOT / "scripts/macos-builder.bash").read_text(encoding="utf-8")
     require(macos, "whp_apple_select_sdk", "macOS SDK coherence")
     policy = (ROOT / "scripts/macos-compiler-policy.bash").read_text(

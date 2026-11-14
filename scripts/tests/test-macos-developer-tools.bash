@@ -30,13 +30,14 @@ test "$1" = -p || exit 1
 if [ -n "${WHP_TEST_XCODE_LOG:-}" ]; then
     printf 'developer-root\n' >> "$WHP_TEST_XCODE_LOG"
 fi
-printf '%s\n' "$WHP_TEST_CLT"
+if [ "${WHP_TEST_XCODE_SELECT_FAIL:-0}" = 1 ]; then exit 1; fi
+printf '%s\n' "${WHP_TEST_XCODE_SELECT:-$WHP_TEST_CLT}"
 EOF
 cat > "$tmp/bin/xcrun" <<'EOF'
 #!/bin/sh
 test "$1" = --sdk && test "$2" = macosx || exit 1
 shift 2
-developer=${DEVELOPER_DIR:-$WHP_TEST_CLT}
+developer=${DEVELOPER_DIR:-${WHP_TEST_XCODE_SELECT:-$WHP_TEST_CLT}}
 case "$developer" in *.app) developer=$developer/Contents/Developer ;; esac
 if [ "${WHP_TEST_FOREIGN:-0}" = 1 ]; then developer=$WHP_TEST_CLT; fi
 if [ "${WHP_TEST_XCRUN_FAIL:-0}" = 1 ]; then exit 1; fi
@@ -203,9 +204,68 @@ EOF
         exit 1
     fi
 fi
+# Mimic uninstalling CLT while keeping Xcode. The selected CLT path is
+# stale; the build must not silently use Xcode's compiler or SDK.
+unset DEVELOPER_DIR SDKROOT
+export WHP_TEST_XCODE_SELECT="$clt"
+mv "$clt" "$tmp/removed-clt"
+if whp_apple_find_sdk >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: removed CLT unexpectedly found Xcode SDK' >&2
+    exit 1
+fi
+test ! -s "$tmp/missing.out"
+grep -Fq "selected Apple developer directory does not exist: $clt" "$tmp/missing.err"
+grep -Fq 'source: xcode-select' "$tmp/missing.err"
+if whp_apple_find_tool clang >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: removed CLT unexpectedly found Xcode compiler' >&2
+    exit 1
+fi
+test ! -s "$tmp/missing.out"
+# Switching only the simulated active selection can use the surviving Xcode.
+test "$(WHP_TEST_XCODE_SELECT="$xcode" whp_apple_find_sdk)" = \
+    "$xcode/SDKs/MacOSX.sdk"
+test "$(WHP_TEST_XCODE_SELECT="$xcode" whp_apple_find_tool clang)" = \
+    "$xcode/usr/bin/clang"
+# Even if xcode-select points at Xcode, an explicitly removed developer
+# directory or SDK must fail closed.
+if DEVELOPER_DIR="$clt" WHP_TEST_XCODE_SELECT="$xcode" \
+    whp_apple_find_sdk >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: stale DEVELOPER_DIR was ignored' >&2
+    exit 1
+fi
+grep -Fq 'source: DEVELOPER_DIR' "$tmp/missing.err"
+if SDKROOT="$clt/SDKs/MacOSX.sdk" WHP_TEST_XCODE_SELECT="$xcode" \
+    whp_apple_find_tool clang >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: stale SDKROOT was ignored' >&2
+    exit 1
+fi
+grep -Fq 'selected macOS SDK does not exist' "$tmp/missing.err"
+mv "$tmp/removed-clt" "$clt"
+
+# Reverse the removal: CLT remains, but the Xcode app was moved.
+export WHP_TEST_XCODE_SELECT="$xcode"
+mv "$xcode_app" "$tmp/removed-xcode.app"
+if whp_apple_find_sdk >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: removed Xcode unexpectedly found CLT SDK' >&2
+    exit 1
+fi
+grep -Fq "selected Apple developer directory does not exist: $xcode" "$tmp/missing.err"
+test "$(WHP_TEST_XCODE_SELECT="$clt" whp_apple_find_sdk)" = \
+    "$clt/SDKs/MacOSX.sdk"
+test "$(WHP_TEST_XCODE_SELECT="$clt" whp_apple_find_tool clang)" = \
+    "$clt/usr/bin/clang"
+mv "$tmp/removed-xcode.app" "$xcode_app"
+
+# No active selection is distinct from a merely missing directory.
+if WHP_TEST_XCODE_SELECT_FAIL=1 whp_apple_find_sdk \
+    >"$tmp/missing.out" 2>"$tmp/missing.err"; then
+    printf '%s\n' 'error: missing xcode-select choice ignored' >&2
+    exit 1
+fi
+grep -Fq 'xcode-select -p failed' "$tmp/missing.err"
 export DEVELOPER_DIR="$tmp/nonexistent.app"
 if whp_apple_find_tool clang >/dev/null 2>&1; then
     echo 'error: invalid explicit developer directory ignored' >&2
     exit 1
 fi
-printf '%s\n' 'WHP macOS developer directory precedence and isolation: verified'
+printf '%s\n' 'WHP macOS developer directory removal and isolation: verified'

@@ -39,6 +39,26 @@ the SDK release version is used as the fallback default and its major/minor
 release line supplies a conservative maximum. arm64 builds still require a
 deployment target of macOS 11.0 or newer.
 
+Xcode and standalone Command Line Tools are **alternative installations**:
+full Xcode contains command-line compilers and SDKs without requiring a separate
+``/Library/Developer/CommandLineTools`` package. If both are installed, the
+active ``xcode-select -p`` choice is authoritative unless ``DEVELOPER_DIR``
+explicitly selects another installation. The build validates that root
+**before** looking up ``xcrun`` tools or SDKs and confines each lookup to the
+same root. An existing ``SDKROOT`` must also belong to that installation.
+
+If CLT or Xcode was removed after being selected, the build reports the
+missing developer root rather than silently using the other installation.
+Check ``xcode-select -p`` and point it to the **installed** alternative,
+for example with ``sudo xcode-select --switch /Applications/Xcode.app``
+or ``sudo xcode-select --switch /Library/Developer/CommandLineTools``
+only if that path actually exists. For one command, an explicit
+``DEVELOPER_DIR=/path/to/Xcode.app`` avoids modifying the system selection.
+After removing an SDK, clear stale ``SDKROOT`` if it references the removed
+installation; the build never replaces an explicit SDK without permission.
+If ``xcrun`` still returns an obsolete path after correcting the selection,
+``xcrun --kill-cache`` can refresh its tool lookup cache.
+
 The wrapper owns ``-isysroot`` and ``-mmacosx-version-min`` for C, C++,
 Objective-C, and link flags. Do not duplicate those options manually in
 ``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``, ``CPPFLAGS``, or ``LDFLAGS``.
