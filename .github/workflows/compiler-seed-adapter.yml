@@ -106,6 +106,10 @@ jobs:
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py
 
+      - name: Verify Xcode and Command Line Tools search precedence
+        shell: bash
+        run: bash scripts/tests/test-macos-developer-tools.bash
+
       - name: Verify Homebrew discovery before early seed locks
         run: python3 scripts/tests/test-early-homebrew-selection.py
 
@@ -126,10 +130,6 @@ jobs:
       - name: Verify optional Homebrew C preprocessor selection
         shell: bash
         run: bash scripts/tests/test-cpp-homebrew-seed.bash
-
-      - name: Verify Xcode and Command Line Tools search precedence
-        shell: bash
-        run: bash scripts/tests/test-macos-developer-tools.bash
 
       - name: Exercise native compiler adapter
         shell: bash
