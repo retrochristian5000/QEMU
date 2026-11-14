@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from collections import deque
 import fcntl
 import io
 import os
@@ -34,27 +35,63 @@ REL = pathlib.Path("toolchains/perl")
 SCHEMA = "6"
 
 
+def perl_trace(message: str) -> None:
+    """Opt-in phase logging; machine-readable stdout stays untouched."""
+    if os.environ.get("WHP_PERL_VERBOSE", "0") == "1":
+        print(f"WHP Perl: {message}", file=sys.stderr)
+
+
 def run(argv: list[str], *, cwd: pathlib.Path | None = None,
         env: dict[str, str] | None = None, capture: bool = False,
-        unattended: bool = False, timeout: int | None = None):
+        unattended: bool = False, timeout: int | None = None,
+        phase: str = "command", log_path: pathlib.Path | None = None):
+    if capture and log_path is not None:
+        raise ValueError("Perl subprocess cannot capture stdout and log it simultaneously")
+    directory = str(cwd) if cwd is not None else os.getcwd()
+    perl_trace(f"{phase} start: cwd={directory}; command={argv!r}"
+               + (f"; log={log_path}" if log_path else ""))
     try:
-        result = subprocess.run(
-            argv, cwd=cwd, env=env, text=True, check=False,
-            stdin=subprocess.DEVNULL if unattended else None,
-            stdout=subprocess.PIPE if capture else sys.stderr,
-            stderr=subprocess.PIPE if capture else sys.stderr,
-            timeout=timeout,
-        )
+        if log_path is None:
+            result = subprocess.run(
+                argv, cwd=cwd, env=env, text=True, check=False,
+                stdin=subprocess.DEVNULL if unattended else None,
+                stdout=subprocess.PIPE if capture else sys.stderr,
+                stderr=subprocess.PIPE if capture else sys.stderr,
+                timeout=timeout,
+            )
+        else:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            # Keep the complete output for failed bootstraps without filling
+            # CI or local terminals with thousands of successful build lines.
+            with log_path.open("w", encoding="utf-8") as output:
+                result = subprocess.run(
+                    argv, cwd=cwd, env=env, text=True, check=False,
+                    stdin=subprocess.DEVNULL if unattended else None,
+                    stdout=output, stderr=subprocess.STDOUT,
+                    timeout=timeout,
+                )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(
-            f"unattended Perl Configure exceeded {timeout}s: {argv!r}"
+            f"unattended Perl {phase} exceeded {timeout}s: cwd={directory}; "
+            f"command={argv!r}" + (f"; log={log_path}" if log_path else "")
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"native Perl {phase} could not start: cwd={directory}; "
+            f"command={argv!r}; error={exc}"
         ) from exc
     if result.returncode:
         message = result.stderr.strip() if capture else ""
+        if log_path is not None:
+            with log_path.open("r", encoding="utf-8", errors="replace") as output:
+                message = "".join(deque(output, maxlen=20)).strip()
         raise RuntimeError(
-            f"native Perl command failed ({result.returncode}): {argv!r}"
-            + (f": {message}" if message else "")
+            f"native Perl {phase} failed (exit {result.returncode}): "
+            f"cwd={directory}; command={argv!r}"
+            + (f"; log={log_path}" if log_path else "")
+            + (f"\nLast output lines:\n{message}" if message else "")
         )
+    perl_trace(f"{phase} complete: exit=0")
     return result.stdout if capture else ""
 
 
@@ -268,6 +305,8 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
         raise RuntimeError("native Perl ranlib seed unavailable: "
                            + (ranlib.stderr.strip() or "no native archive indexer"))
     ranlib_path = ranlib.stdout.strip()
+    perl_trace(f"native tools: cc={cc}; make={make}; ar={ar_path}; "
+               f"ranlib={ranlib_path}; sdk={sdk or '<host-default>'}")
     if os.environ.get("WHP_ARCHIVE_VERBOSE") == "1":
         print(f"WHP Perl archive tools: ar={ar_path}; ranlib={ranlib_path}; cc={cc}",
               file=sys.stderr)
@@ -336,13 +375,16 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     try:
         run(configure_arguments(source, prefix, cc, cflags, ldflags,
                                 ranlib_path, ar_path),
-            cwd=source, env=env, unattended=True, timeout=900)
+            cwd=source, env=env, unattended=True, timeout=900,
+            phase="Configure", log_path=work / "configure.log")
         require_configured_ar(source, ar_path)
-        run([make, "perl"], cwd=source, env=env)
+        run([make, "perl"], cwd=source, env=env,
+            phase="compile", log_path=work / "compile.log")
         built = source / "perl"
         if not built.is_file() or not os.access(built, os.X_OK):
             raise RuntimeError("Perl source build produced no executable")
-        run([make, "install"], cwd=source, env=env)
+        run([make, "install"], cwd=source, env=env,
+            phase="install", log_path=work / "install.log")
         if not valid_perl(executable):
             raise RuntimeError(
                 "managed Perl failed installed interpreter/module/OS checks"
@@ -367,6 +409,8 @@ def main() -> int:
     parser.add_argument("--build-dir", required=True)
     args = parser.parse_args()
     try:
+        if os.environ.get("WHP_PERL_VERBOSE", "0") not in ("0", "1"):
+            raise ValueError("WHP_PERL_VERBOSE must be 0 or 1")
         build_dir = pathlib.Path(args.build_dir).expanduser().resolve()
         with bootstrap_lock(build_dir):
             result = bootstrap(build_dir)
