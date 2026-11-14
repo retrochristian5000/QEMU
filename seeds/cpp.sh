@@ -110,10 +110,23 @@ select_seed()
             return 1
         fi
         driver=$(resolve_executable "$WHP_CPP_SEED" report) || return 1
-        # An explicitly chosen different compiler must still be host-native.
-        if [ "$driver" != "${CC_FOR_BUILD:-}" ]; then
-            driver=$(try_compiler c "$driver" report) || return 1
-        fi
+        # Dedicated clang-cpp is a preprocessor, not a C compiler. Validate
+        # its expansion below without demanding an unrelated link operation.
+        # Other explicit drivers must still compile and execute native code.
+        case "${driver##*/}" in
+            clang-cpp|clang-cpp-[0-9]*)
+                if [ "$driver" != "${WHP_CLANG_CPP_SEED:-$driver}" ]; then
+                    printf 'error: conflicting clang-cpp selections: %s and %s\n' \
+                        "$driver" "$WHP_CLANG_CPP_SEED" >&2
+                    return 1
+                fi
+                ;;
+            *)
+                if [ "$driver" != "${CC_FOR_BUILD:-}" ]; then
+                    driver=$(try_compiler c "$driver" report) || return 1
+                fi
+                ;;
+        esac
     else
         case "${WHP_CPP_PREFER_HOMEBREW:-0}" in
             0)
