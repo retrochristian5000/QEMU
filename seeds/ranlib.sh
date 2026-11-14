@@ -122,6 +122,13 @@ native_probe()
 
 select_seed()
 {
+    # Preserve the native seed override but expose competing selections.
+    # The target archiver and QEMU's AR/RANLIB are deliberately independent.
+    if [ -n "${WHP_RANLIB_SEED:-}" ] && [ -n "${RANLIB_FOR_BUILD:-}" ] &&
+       [ "$WHP_RANLIB_SEED" != "$RANLIB_FOR_BUILD" ]; then
+        printf 'warning: WHP_RANLIB_SEED overrides conflicting RANLIB_FOR_BUILD: %s != %s\n' \
+            "$WHP_RANLIB_SEED" "$RANLIB_FOR_BUILD" >&2
+    fi
     for setting in WHP_RANLIB_SEED RANLIB_FOR_BUILD; do
         case "$setting" in
             WHP_RANLIB_SEED) value=${WHP_RANLIB_SEED:-} ;;
