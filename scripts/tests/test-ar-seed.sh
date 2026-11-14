@@ -83,14 +83,21 @@ fi
 [ ! -s "$tmp/invalid.out" ]
 grep -Fq 'WHP_ARCHIVE_VERBOSE must be 0 or 1' "$tmp/invalid.err"
 
-# A named non-archiver must not qualify as native merely because it is executable.
-if WHP_AR_SEED=/bin/false /bin/sh "$seed" --check \
+# A named non-archiver must not qualify as native merely because it is
+# executable. Do not assume BSD/macOS installs false under /bin.
+printf '#!/bin/sh\nexit 1\n' > "$tmp/not-an-archiver"
+chmod +x "$tmp/not-an-archiver"
+if WHP_AR_SEED="$tmp/not-an-archiver" /bin/sh "$seed" --check \
     >"$tmp/bad.out" 2>"$tmp/bad.err"; then
     printf '%s\n' 'error: non-native ar override accepted' >&2
     exit 1
 fi
 [ ! -s "$tmp/bad.out" ]
-grep -Fq 'stage=create-archive; executable=/bin/false' "$tmp/bad.err"
+if ! grep -Fq "stage=create-archive; executable=$tmp/not-an-archiver" "$tmp/bad.err"; then
+    printf '%s\n' 'error: non-native ar rejection lacked archive stage diagnostics' >&2
+    cat "$tmp/bad.err" >&2
+    exit 1
+fi
 
 # A real tool error must be reported even without verbose mode; the failing
 # child stderr must not disappear into /dev/null.
