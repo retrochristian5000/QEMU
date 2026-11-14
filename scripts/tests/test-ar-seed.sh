@@ -9,6 +9,22 @@ tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-ar-observability.XXXXXX") || exi
 trap 'rm -rf -- "$tmp"' 0
 trap 'exit 1' 1 2 3 15
 
+# macOS ar exposes its BSD symbol-table member in ar t output. Preserve
+# strict member checks while recognizing precisely that Darwin metadata.
+check_native_listing()
+{
+    members=$1
+    case "$members" in
+        member.o) return 0 ;;
+    esac
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ] &&
+       [ "$members" = "$(printf '__.SYMDEF SORTED\nmember.o')" ]; then
+        return 0
+    fi
+    printf 'error: unexpected ar table members: %s\n' "$members" >&2
+    return 1
+}
+
 # An ordinary selection must return only the executable path on stdout.
 selected=$(/bin/sh "$seed" --print-seed) || exit 1
 [ -x "$selected" ]
@@ -47,7 +63,7 @@ WHP_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
     /bin/sh "$seed" rcs "$tmp/libforwarded.a" "$tmp/member.o" \
     >"$tmp/forward.out" 2>"$tmp/forward.err"
 [ ! -s "$tmp/forward.out" ]
-[ "$(/bin/sh "$seed" t "$tmp/libforwarded.a")" = member.o ]
+check_native_listing "$(/bin/sh "$seed" t "$tmp/libforwarded.a")"
 grep -Fq "WHP ar selection: provider=WHP_AR_SEED; executable=$selected; native-probe=no" \
     "$tmp/forward.err"
 grep -Fq "WHP ar invocation: executable=$selected; operation=rcs; archive=$tmp/libforwarded.a; argument-count=3; admission=not-repeated" \
@@ -56,7 +72,7 @@ grep -Fq "WHP ar invocation: executable=$selected; operation=rcs; archive=$tmp/l
 # Without verbosity no forwarding trace belongs on stderr.
 WHP_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=0 /bin/sh "$seed" t \
     "$tmp/libforwarded.a" >"$tmp/quiet.out" 2>"$tmp/quiet.err"
-[ "$(cat "$tmp/quiet.out")" = member.o ]
+check_native_listing "$(cat "$tmp/quiet.out")"
 [ ! -s "$tmp/quiet.err" ]
 
 if WHP_ARCHIVE_VERBOSE=invalid /bin/sh "$seed" --print-seed \
