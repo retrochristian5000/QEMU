@@ -62,6 +62,62 @@ resolve_executable()
     printf '%s\n' "$candidate"
 }
 
+# A successful -r probe validates the *native object format*, not which
+# linker family or LTO plugin contract was selected. An LLVM binary may run
+# different ELF/Mach-O linkers according to argv[0]; do not resolve its leaf
+# symlink when determining the driver flavor.
+whp_ld_family()
+(
+    whp_driver=$1
+    whp_name=${whp_driver##*/}
+    whp_banner=$("$whp_driver" --version 2>&1 || true)
+    case "$whp_banner" in
+        *'GNU gold'*) printf '%s\n' gnu-gold; exit 0 ;;
+        *'GNU ld'*) printf '%s\n' gnu-bfd; exit 0 ;;
+        *'LLD '*|*'LLD ('*)
+            case "$whp_name" in
+                ld64.lld|ld.ld64|ld64) printf '%s\n' llvm-macho ;;
+                *) printf '%s\n' llvm-elf ;;
+            esac
+            exit 0 ;;
+    esac
+    # Apple's ld64 / ld-prime reports PROJECT:ld[-...] from -v, not the
+    # GNU --version form. Avoid labelling it GNU just because its name is ld.
+    whp_banner=$("$whp_driver" -v 2>&1 || true)
+    case "$whp_banner" in
+        *'PROGRAM:ld'*'PROJECT:ld'*|*'PROGRAM:ld-classic'*'PROJECT:ld64'*)
+            printf '%s\n' apple-macho ;;
+        *) printf '%s\n' unknown ;;
+    esac
+)
+
+# Older ELF LLD accepts GNU's -plugin option but reports that it ignores
+# the plugin. Do not claim to load a requested LTO plugin in that case.
+# Future LLD revisions may support a GNU plugin: inspect the *selected*
+# executable's help rather than blanket-rejecting LLVM versions.
+whp_ld_check_plugin_contract()
+(
+    whp_linker=$1
+    shift
+    whp_plugin_requested=no
+    for whp_option do
+        case "$whp_option" in
+            -plugin|--plugin|-plugin=*|--plugin=*) whp_plugin_requested=yes ;;
+        esac
+    done
+    [ "$whp_plugin_requested" = yes ] || exit 0
+    whp_kind=$(whp_ld_family "$whp_linker")
+    [ "$whp_kind" = llvm-elf ] || exit 0
+    whp_help=$("$whp_linker" --help 2>&1 || true)
+    case "$whp_help" in
+        *'plugin'*'Ignored for compatibility with GNU linkers'*)
+            printf 'error: LLVM ELF linker ignores GNU -plugin option: %s\n' \
+                "$whp_linker" >&2
+            printf '%s\n' '  Use a validated GNU plugin-aware linker, LLVM-native LTO, or a linker that confirms plugin support.' >&2
+            exit 2 ;;
+    esac
+)
+
 # A relocatable native link exercises object-format compatibility without
 # forcing crt objects, system libraries, an SDK deployment target, or QEMU
 # artifact flags into this pre-LLVM dependency. This is deliberately not a
@@ -101,6 +157,11 @@ try_candidate()
 
 select_seed()
 {
+    if [ -n "${WHP_LD_SEED:-}" ] && [ -n "${LD_FOR_BUILD:-}" ] &&
+       [ "$WHP_LD_SEED" != "$LD_FOR_BUILD" ]; then
+        printf 'warning: WHP_LD_SEED overrides conflicting LD_FOR_BUILD: %s != %s\n' \
+            "$WHP_LD_SEED" "$LD_FOR_BUILD" >&2
+    fi
     # Empty explicit values mean 'unspecified'. Nonempty invalid overrides
     # fail closed rather than silently choosing another ABI/linker.
     for setting in WHP_LD_SEED LD_FOR_BUILD; do
@@ -153,12 +214,14 @@ case "${1:-}" in
     --check)
         probe_required=yes
         seed=$(select_seed)
-        printf 'WHP native linker seed: %s\n' "$seed"
+        printf 'WHP native linker seed: %s (family: %s)\n' \
+            "$seed" "$(whp_ld_family "$seed")"
         ;;
     *)
         # Do not compile a fresh probe for each link invocation.
         probe_required=no
-        seed=$(select_seed)
+        seed=$(select_seed) || exit 1
+        whp_ld_check_plugin_contract "$seed" "$@" || exit $?
         exec "$seed" "$@"
         ;;
 esac

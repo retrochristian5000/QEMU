@@ -22,6 +22,7 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'scripts/tests/test-linker-family.sh'
       - 'scripts/macos-builder.bash'
       - 'scripts/whp-build/prepare-build.bash'
       - 'build.sh'
@@ -59,6 +60,7 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'scripts/tests/test-linker-family.sh'
       - 'scripts/macos-builder.bash'
       - 'scripts/whp-build/prepare-build.bash'
       - 'build.sh'
@@ -109,6 +111,12 @@ jobs:
       - name: Verify Xcode and Command Line Tools search precedence
         shell: bash
         run: bash scripts/tests/test-macos-developer-tools.bash
+
+      - name: Verify GNU, LLVM and Apple linker driver families
+        run: |
+          /bin/sh -n seeds/ld.sh
+          /bin/sh -n scripts/tests/test-linker-family.sh
+          /bin/sh scripts/tests/test-linker-family.sh
 
       - name: Verify Homebrew discovery before early seed locks
         run: python3 scripts/tests/test-early-homebrew-selection.py

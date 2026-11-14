@@ -1496,6 +1496,35 @@ profile format is distinct from GCC's ``.gcda``/profile-use workflow;
 the steps above are for LLVM/Clang. PGO is experimental until native macOS
 link/runtime and representative TCG speedup tests succeed.
 
+Native linker seed family and plugin diagnostics
+-----------------------------------------------
+
+The bootstrap ``seeds/ld.sh`` chooses a **build-machine linker**, not the
+QEMU target/final executable linker. It verifies a real native relocatable
+object via ``-r``; on macOS it keeps the selected Apple ``ld`` from the
+same Xcode/CLT installation rather than automatically switching to LLD.
+An explicit ``WHP_LD_SEED`` takes precedence over ``LD_FOR_BUILD``;
+conflicting nonempty selections produce a warning on stderr.
+
+Use ``/bin/sh seeds/ld.sh --check`` to see the selected executable and
+its reported implementation: ``gnu-bfd``, ``gnu-gold``, ``llvm-elf``,
+``llvm-macho``, ``apple-macho`` or ``unknown``. The linker executable
+name alone does not imply GNU compatibility. For LLD the executable's
+``ld.lld`` versus ``ld64.lld`` invocation name selects ELF versus
+Mach-O behavior; preserving that final name is important when LLD is
+installed as a symlink. The unchanged ``--print-ld`` prints only the
+executable path for build scripts. The family classification is diagnostic:
+only actual native-object linking admits the seed.
+
+Older ELF ``ld.lld`` versions explicitly advertise that GNU ``-plugin``
+is ignored. The adapter now rejects a plugin request **only when the
+selected LLVM ELF linker's own help reports that behavior**. It does not
+reject GNU BFD/gold or newer LLD implementations that advertise plugin
+support. No static archive, native link probe, or version banner alone
+establishes GCC GIMPLE versus LLVM bitcode LTO compatibility. The build's
+Clang driver, SDK, archive tools and target-specific final-link checks
+remain independent.
+
 LLD-specific LDFLAGS
 --------------------
 
