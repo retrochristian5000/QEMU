@@ -9,6 +9,8 @@ on:
       - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
+      - 'seeds/clang-cpp.sh'
+      - 'scripts/tests/test-clang-cpp-seed.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
       - 'scripts/tests/test-cpp-seed-contract.py'
       - 'scripts/whp-build/macos-developer-tools.sh'
@@ -40,6 +42,8 @@ on:
       - 'scripts/whp-build/host-tools.sh'
       - 'seeds/cc.sh'
       - 'seeds/cpp.sh'
+      - 'seeds/clang-cpp.sh'
+      - 'scripts/tests/test-clang-cpp-seed.sh'
       - 'scripts/tests/test-cpp-homebrew-seed.bash'
       - 'scripts/tests/test-cpp-seed-contract.py'
       - 'scripts/whp-build/macos-developer-tools.sh'
@@ -95,6 +99,13 @@ jobs:
 
       - name: Verify native C preprocessing-only driver handoff
         run: python3 scripts/tests/test-cpp-seed-contract.py
+
+      - name: Verify optional standalone clang-cpp preprocessor
+        shell: bash
+        run: |
+          /bin/sh -n seeds/clang-cpp.sh
+          /bin/sh -n scripts/tests/test-clang-cpp-seed.sh
+          /bin/sh scripts/tests/test-clang-cpp-seed.sh
 
       - name: Verify optional Homebrew C preprocessor selection
         shell: bash
