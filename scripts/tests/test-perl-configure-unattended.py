@@ -3,6 +3,7 @@
 """Perl Configure's development-release and unattended execution contract."""
 
 import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import tempfile
@@ -147,6 +148,40 @@ class PerlConfigureTests(unittest.TestCase):
             makefile.unlink()
             with self.assertRaisesRegex(RuntimeError, "did not generate a Makefile"):
                 perl.require_configured_ar(source, "/usr/bin/ar")
+
+    def test_phase_logs_keep_full_output_and_surface_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            log = source / "compile.log"
+            with mock.patch.dict("os.environ", {"WHP_PERL_VERBOSE": "1"}):
+                with mock.patch("sys.stderr", new_callable=io.StringIO) as trace:
+                    perl.run(
+                        ["/bin/sh", "-c", "printf 'compiled\\n'"],
+                        cwd=source, phase="compile", log_path=log,
+                    )
+                self.assertIn("compile start", trace.getvalue())
+                self.assertIn("compile complete", trace.getvalue())
+            self.assertEqual(log.read_text(), "compiled\n")
+
+            with self.assertRaisesRegex(RuntimeError, "compile failed") as failure:
+                perl.run(
+                    ["/bin/sh", "-c",
+                     "printf 'archive missing\\n' >&2; exit 23"],
+                    cwd=source, phase="compile", log_path=log,
+                )
+            self.assertIn("exit 23", str(failure.exception))
+            self.assertIn("archive missing", str(failure.exception))
+            self.assertIn(str(log), str(failure.exception))
+
+    def test_missing_stage_executable_has_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "install could not start") as failure:
+                perl.run(
+                    [str(Path(tmp) / "missing-executable")],
+                    cwd=Path(tmp), phase="install",
+                    log_path=Path(tmp) / "install.log",
+                )
+            self.assertIn(str(tmp), str(failure.exception))
 
     def test_native_ranlib_is_configured_explicitly(self):
         with tempfile.TemporaryDirectory() as tmp:
