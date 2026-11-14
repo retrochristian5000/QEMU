@@ -92,12 +92,12 @@ created accounts, **not** an assertion of support for older macOS hosts.
 
    * - System release
      - Login shell
-     - `/bin/sh` interpreter
+     - ``/bin/sh`` interpreter
    * - Mac OS X 10.0-10.1
-     - `tcsh`
+     - ``tcsh``
      - Zsh 3.x; Bash cannot be assumed.
    * - Mac OS X 10.2 (Jaguar)
-     - `tcsh`
+     - ``tcsh``
      - Bash 2.05 family.
    * - Mac OS X 10.3-10.4 (Panther/Tiger)
      - Bash
@@ -107,28 +107,28 @@ created accounts, **not** an assertion of support for older macOS hosts.
      - Bash 3.2 family.
    * - macOS 10.15 (Catalina) and later
      - Zsh
-     - A separate `sh` dispatcher can select Bash, Dash or Zsh;
+     - A separate ``sh`` dispatcher can select Bash, Dash or Zsh;
        inspect the host rather than assume an implementation.
 
 Upgraded accounts can retain an earlier login shell. Catalina's new-account
-default does not turn `#!/bin/sh` or `#!/bin/bash` scripts into Zsh
-scripts. On systems with the `sh` dispatcher, inspect
-`/private/var/select/sh` and test the actual `/bin/sh`. Never
+default does not turn ``#!/bin/sh`` or ``#!/bin/bash`` scripts into Zsh
+scripts. On systems with the ``sh`` dispatcher, inspect
+``/private/var/select/sh`` and test the actual ``/bin/sh``. Never
 change that system selector as an incidental QEMU build step.
 
-The WHP `build.sh` and `seeds/*.sh` launchers currently use the
+The WHP ``build.sh`` and ``seeds/*.sh`` launchers currently use the
 repository's POSIX.1-2017-compatible subset; the Bash handoff requires a
-capability-tested GNU Bash **3.2 or newer**. `seeds/zsh.sh` is optional,
+capability-tested GNU Bash **3.2 or newer**. ``seeds/zsh.sh`` is optional,
 not a replacement for POSIX sh or Bash. Stock Mac OS X 10.0-10.4 cannot be
-assumed to satisfy the current Bash seed. A passing modern `sh -n`
+assumed to satisfy the current Bash seed. A passing modern ``sh -n``
 test or Zsh seed test is not evidence of runtime compatibility on those
 historical systems. Do not relax the requirement or add speculative
 legacy shims.
 
 For a future historical port, record the actual OS patch level, PowerPC or
-Intel architecture, `/bin/sh` behavior, Bash and Zsh versions, developer
+Intel architecture, ``/bin/sh`` behavior, Bash and Zsh versions, developer
 tools, SDK and compiler. Exercise the first-stage POSIX script with that
-host's real shell (parsing, quoting, arguments, `test`, external
+host's real shell (parsing, quoting, arguments, ``test``, external
 utilities, diagnostics and failure statuses), then separately test the
 Bash handoff. Validate Python, Meson, LLVM, SDL and deployment-target
 constraints independently before claiming support. This inventory changes
@@ -138,18 +138,18 @@ Historical references:
 
 * `GNU Autoconf portability documentation
   <https://www.gnu.org/software/autoconf/manual/autoconf-2.70/autoconf.html>`_
-  (the original Mac OS X `sh` was Zsh, replaced by Bash in 10.2);
+  (the original Mac OS X ``sh`` was Zsh, replaced by Bash in 10.2);
 * `GNU Bash maintainer notes
   <https://tiswww.case.edu/php/chet/bash/bashtop.html>`_
   (Bash 3.2 shipped from 10.5);
 * `O'Reilly Mac OS X shell history
   <https://www.oreilly.com/library/view/mac-os-x/059600818X/ch15s02.html>`_
-  (new Panther accounts switched from `tcsh` to Bash);
+  (new Panther accounts switched from ``tcsh`` to Bash);
 * `Apple Terminal User Guide
   <https://support.apple.com/en-ie/guide/terminal/trml113/2.15/mac/27>`_
   and `Darwin sh(1) manual
   <https://keith.github.io/xcode-man-pages/sh.1.html>`_
-  (modern login defaults and the selectable `sh` interpreter).
+  (modern login defaults and the selectable ``sh`` interpreter).
 
 Shared executable POSIX startup
 -------------------------------
