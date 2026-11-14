@@ -101,9 +101,10 @@ native_probe()
     printf '%s\n' 'int whp_ranlib_probe(void) { return 1; }' > "$dir/probe.c"
     whp_ranlib_probe_step compile-member /bin/sh "$cc_seed" \
         -c "$dir/probe.c" -o "$dir/probe.o" || exit 1
-    # Do not ask ar to create the symbol index: that is the operation
-    # ranlib must supply. Using rcs here could mask a no-op indexer.
-    whp_ranlib_probe_step create-unindexed-archive "$ar" rc \
+    # GNU, Apple and LLVM archivers may index even a plain 'rc' archive.
+    # Explicit S is required here: otherwise a no-op ranlib can pass its
+    # link probe using a symbol table already written by the archiver.
+    whp_ranlib_probe_step create-unindexed-archive "$ar" rcS \
         "$dir/libprobe.a" "$dir/probe.o" || exit 1
     whp_ranlib_probe_step index-archive "$ranlib" "$dir/libprobe.a" || exit 1
     [ -s "$dir/libprobe.a" ] || {

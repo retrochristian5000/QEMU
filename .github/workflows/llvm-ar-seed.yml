@@ -8,6 +8,10 @@ on:
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
+      - 'seeds/ranlib.sh'
+      - 'scripts/tests/test-ranlib-seed.sh'
+      - 'scripts/whp-build/prepare-mold.bash'
+      - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
@@ -20,6 +24,10 @@ on:
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
+      - 'seeds/ranlib.sh'
+      - 'scripts/tests/test-ranlib-seed.sh'
+      - 'scripts/whp-build/prepare-mold.bash'
+      - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
@@ -52,6 +60,14 @@ jobs:
             /bin/sh -x scripts/tests/test-ar-seed.sh
             exit 1
           fi
+      - name: Validate native ranlib really builds archive index
+        run: |
+          /bin/sh -n seeds/ranlib.sh
+          /bin/sh -n scripts/tests/test-ranlib-seed.sh
+          /bin/sh scripts/tests/test-ranlib-seed.sh
+      - name: Validate mold LTO archive tool preference
+        shell: bash
+        run: bash scripts/tests/test-mold-bootstrap.bash
       - name: Verify native installed LLVM archiver seed
         run: |
           /bin/sh -n seeds/llvm-ar.sh

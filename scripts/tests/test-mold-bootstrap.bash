@@ -94,6 +94,18 @@ EOF_AR
 printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/mold"
 chmod +x "$fakebin/cc" "$fakebin/ar" "$fakebin/mold"
 
+# A GNU/GCC LTO probe must not start using llvm-ar merely because it is
+# installed. The native ar choice must be stable unless AR is explicit.
+cp "$fakebin/ar" "$fakebin/llvm-ar"
+saved_ar="${AR:-}"
+AR=
+whp_mold_archiver_command
+[[ "${WHP_MOLD_AR_CMD[0]}" == ar ]]
+AR="$fakebin/llvm-ar"
+whp_mold_archiver_command
+[[ "${WHP_MOLD_AR_CMD[0]}" == "$fakebin/llvm-ar" ]]
+AR="$saved_ar"
+
 export WHP_MOLD_TEST_LOG="$log"
 CC="$fakebin/cc"
 CXX="$fakebin/cc"

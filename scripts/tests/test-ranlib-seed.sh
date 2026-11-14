@@ -34,15 +34,47 @@ printed=$(WHP_RANLIB_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
 [ "$printed" = "$selected" ]
 grep -Fq 'native-probe=yes' "$tmp/select.err"
 
-# An executable that cannot index an archive must fail with a named stage,
-# not merely a blank response or an unrelated Perl error.
-if WHP_RANLIB_SEED=/bin/false WHP_ARCHIVE_VERBOSE=0 /bin/sh "$seed" --print-seed \
+# A failing ranlib must show the indexing stage, independent of where an
+# operating system installs the external false utility.
+printf '#!/bin/sh\nexit 1\n' > "$tmp/failing-ranlib"
+chmod +x "$tmp/failing-ranlib"
+if WHP_RANLIB_SEED="$tmp/failing-ranlib" WHP_ARCHIVE_VERBOSE=0 /bin/sh "$seed" --print-seed \
     >"$tmp/bad.out" 2>"$tmp/bad.err"; then
     printf '%s\n' 'error: unusable ranlib accepted' >&2
     exit 1
 fi
 [ ! -s "$tmp/bad.out" ]
-grep -Fq 'stage=index-archive; executable=/bin/false' "$tmp/bad.err"
+grep -Fq "stage=index-archive; executable=$tmp/failing-ranlib" "$tmp/bad.err"
+
+# The indexer returning success without writing a table must not pass.
+# The rcS input archive has no index even if the selected ar is llvm-ar.
+printf '#!/bin/sh\nexit 0\n' > "$tmp/noop-ranlib"
+chmod +x "$tmp/noop-ranlib"
+if WHP_RANLIB_SEED="$tmp/noop-ranlib" /bin/sh "$seed" --print-seed \
+    >"$tmp/noop.out" 2>"$tmp/noop.err"; then
+    printf '%s\n' 'error: no-op ranlib accepted unindexed archive' >&2
+    exit 1
+fi
+[ ! -s "$tmp/noop.out" ]
+grep -Fq 'stage=link-native-executable' "$tmp/noop.err"
+
+# Verify the same index contract when llvm-ar is deliberately supplied as
+# the native ar provider. This must not let llvm-ar's default auto-indexing
+# conceal an ineffective ranlib. Optional on machines lacking LLVM tools.
+if llvm_ar=$(/bin/sh "$root/seeds/llvm-ar.sh" --print-seed 2>"$tmp/llvm-ar.err"); then
+    WHP_AR_SEED="$llvm_ar" WHP_RANLIB_SEED="$selected" \
+        /bin/sh "$seed" --check >"$tmp/llvm-pair.out" 2>"$tmp/llvm-pair.err" || {
+        cat "$tmp/llvm-pair.err" >&2
+        exit 1
+    }
+    if WHP_AR_SEED="$llvm_ar" WHP_RANLIB_SEED="$tmp/noop-ranlib" \
+        /bin/sh "$seed" --print-seed >"$tmp/llvm-noop.out" 2>"$tmp/llvm-noop.err"; then
+        printf '%s\n' 'error: no-op ranlib accepted llvm-ar archive' >&2
+        exit 1
+    fi
+    [ ! -s "$tmp/llvm-noop.out" ]
+    grep -Fq 'stage=link-native-executable' "$tmp/llvm-noop.err"
+fi
 
 if WHP_ARCHIVE_VERBOSE=invalid /bin/sh "$seed" --print-seed \
     >"$tmp/invalid.out" 2>"$tmp/invalid.err"; then

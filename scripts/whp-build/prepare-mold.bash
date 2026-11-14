@@ -204,12 +204,11 @@ whp_mold_archiver_command()
 {
     local command_string="${AR:-}"
 
+    # Do not silently switch GNU/GCC LTO archives to LLVM just because
+    # llvm-ar happens to be on PATH. Explicit AR remains authoritative;
+    # validate its real bitcode/archive/link contract below.
     if [[ -z "$command_string" ]]; then
-        if command -v llvm-ar >/dev/null 2>&1; then
-            command_string=llvm-ar
-        else
-            command_string=ar
-        fi
+        command_string=ar
     fi
     case "$command_string" in
         *';'*|*'|'*|*'&'*|*'<'*|*'>') return 1 ;;
@@ -217,8 +216,16 @@ whp_mold_archiver_command()
     WHP_MOLD_AR_CMD=()
     read -r -a WHP_MOLD_AR_CMD <<< "$command_string"
     [[ "${#WHP_MOLD_AR_CMD[@]}" -gt 0 ]] || return 1
-    command -v "${WHP_MOLD_AR_CMD[0]}" >/dev/null 2>&1
+    if ! command -v "${WHP_MOLD_AR_CMD[0]}" >/dev/null 2>&1; then
+        return 1
+    fi
+    if [[ "${WHP_ARCHIVE_VERBOSE:-0}" == 1 ]]; then
+        printf 'WHP mold LTO archiver: provider=%s; command=%s; compiler=%s\n' \
+            "$([[ -n "${AR:-}" ]] && printf explicit-AR || printf native-ar)" \
+            "$command_string" "${CC:-cc}" >&2
+    fi
 }
+
 
 whp_mold_link_probe()
 {

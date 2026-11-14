@@ -160,6 +160,20 @@ select_seed()
     return 1
 }
 
+# LLVM accepts --plugin for GNU ar compatibility but ignores it; silently
+# passing the option would misleadingly claim a GNU LTO plugin was loaded.
+# LLVM bitcode indexing is native to llvm-ar, not provided by that plugin.
+whp_llvm_ar_reject_ignored_plugin()
+{
+    for whp_arg do
+        case "$whp_arg" in
+            --plugin|--plugin=*)
+                printf 'error: GNU ar --plugin is ignored by llvm-ar; remove the flag and validate the Clang/LLVM archive pipeline\n' >&2
+                return 2 ;;
+        esac
+    done
+}
+
 case "${1:-}" in
     --print-seed|--print-ar) probe=yes; select_seed ;;
     --check)
@@ -173,6 +187,7 @@ case "${1:-}" in
         fi
         ;;
     *)
+        whp_llvm_ar_reject_ignored_plugin "$@" || exit 2
         probe=no
         selected=$(select_seed) || exit 1
         whp_llvm_ar_invoke "$@"

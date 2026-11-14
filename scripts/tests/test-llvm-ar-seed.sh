@@ -26,6 +26,19 @@ for bad in /bin/false "$seed"; do
     [ ! -s "$tmp/out" ]
 done
 
+# GNU ar uses --plugin to load LTO parsers, but LLVM ignores this option.
+# A forwarded call must fail visibly instead of silently claiming plugin use.
+for option in --plugin --plugin=/tmp/whp-missing-gnu-lto-plugin.so; do
+    if WHP_LLVM_AR_SEED="$tmp/absent-llvm-ar" /bin/sh "$seed" \
+        "$option" rcs "$tmp/invalid.a" "$tmp/invalid.o" \
+        >"$tmp/out" 2>"$tmp/err"; then
+        printf 'error: llvm-ar silently accepted GNU-only option: %s\n' "$option" >&2
+        exit 1
+    fi
+    [ ! -s "$tmp/out" ]
+    grep -Fq 'GNU ar --plugin is ignored by llvm-ar' "$tmp/err"
+done
+
 # A version banner alone must not admit an archiver that cannot create objects.
 cat > "$tmp/banner-only" <<'EOF'
 #!/bin/sh
