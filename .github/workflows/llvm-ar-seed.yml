@@ -67,7 +67,12 @@ jobs:
           /bin/sh scripts/tests/test-ranlib-seed.sh
       - name: Validate mold LTO archive tool preference
         shell: bash
-        run: bash scripts/tests/test-mold-bootstrap.bash
+        run: |
+          if ! bash scripts/tests/test-mold-bootstrap.bash; then
+            printf '%s\n' 'error: mold archive policy failed; rerunning with failure-only trace' >&2
+            bash -x scripts/tests/test-mold-bootstrap.bash
+            exit 1
+          fi
       - name: Verify native installed LLVM archiver seed
         run: |
           /bin/sh -n seeds/llvm-ar.sh

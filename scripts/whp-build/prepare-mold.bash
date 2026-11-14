@@ -52,7 +52,7 @@ whp_linker_driver_probe()
         output="$temp_dir/$compiler_var"
         if ! PATH="${path_prefix:+$path_prefix:}$PATH" "${command[@]}" \
             -x "$language" "$source" -fuse-ld="$selected" \
-            "${flags[@]}" -o "$output"; then
+            ${flags[@]+"${flags[@]}"} -o "$output"; then
             status=1
             break
         fi
@@ -295,7 +295,7 @@ EOF_LIB
             status=1
         elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
             "$lto_flag" -fuse-ld=mold "$main_object" "$archive" -o "$output" \
-            "${ld_flags[@]}"; then
+            ${ld_flags[@]+"${ld_flags[@]}"}; then
             status=1
         elif ! "$output"; then
             status=1
@@ -303,7 +303,7 @@ EOF_LIB
     else
         printf 'int main(void) { return 0; }\n' > "$source"
         if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            "$source" -o "$output" -fuse-ld=mold "${ld_flags[@]}"; then
+            "$source" -o "$output" -fuse-ld=mold ${ld_flags[@]+"${ld_flags[@]}"}; then
             status=1
         elif ! "$output"; then
             status=1
