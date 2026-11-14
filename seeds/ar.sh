@@ -93,6 +93,20 @@ resolve()
     printf '%s\n' "$candidate"
 )
 
+# BSD/Darwin ar may show the archive's symbol-table member in its table
+# listing. Treat only the observed Apple index as metadata, not an object.
+# All other members remain unexpected, including on macOS.
+whp_ar_members_valid()
+{
+    whp_listing=$1
+    [ "$whp_listing" = probe.o ] && return 0
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ] &&
+       [ "$whp_listing" = "$(printf '__.SYMDEF SORTED\nprobe.o')" ]; then
+        return 0
+    fi
+    return 1
+}
+
 archive_probe()
 (
     archiver=$1
@@ -113,7 +127,7 @@ archive_probe()
     listing=$("$archiver" t "$tmp/libprobe.a") || {
         whp_ar_probe_failure "$archiver" list-archive; exit 1;
     }
-    [ "$listing" = probe.o ] || {
+    whp_ar_members_valid "$listing" || {
         whp_ar_probe_failure "$archiver" member-list-mismatch
         printf '  expected=probe.o; actual-members=%s\n' "$listing" >&2
         exit 1
@@ -146,7 +160,7 @@ archive_probe()
     listing=$("$archiver" t "$tmp/libprobe.a") || {
         whp_ar_probe_failure "$archiver" list-replaced-archive; exit 1;
     }
-    [ "$listing" = probe.o ] || {
+    whp_ar_members_valid "$listing" || {
         whp_ar_probe_failure "$archiver" replaced-member-list-mismatch
         printf '  expected=probe.o; actual-members=%s\n' "$listing" >&2
         exit 1
