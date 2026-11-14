@@ -9,6 +9,8 @@ on:
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
       - 'seeds/ar.sh'
+      - 'scripts/tests/test-ar-seed.sh'
+      - 'scripts/tests/test-ranlib-seed.sh'
       - 'seeds/xcrun.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'build.sh'
@@ -27,6 +29,8 @@ on:
       - 'seeds/perl.sh'
       - 'seeds/ranlib.sh'
       - 'seeds/ar.sh'
+      - 'scripts/tests/test-ar-seed.sh'
+      - 'scripts/tests/test-ranlib-seed.sh'
       - 'seeds/xcrun.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'build.sh'
@@ -71,6 +75,7 @@ jobs:
           fi
           sh -n seeds/ar.sh
           sh seeds/ar.sh --check
+          sh scripts/tests/test-ar-seed.sh
           # Explicit bad archivers must fail closed rather than fall back.
           if WHP_AR_SEED=/bin/false sh seeds/ar.sh --check; then
             echo 'invalid explicit ar seed unexpectedly accepted' >&2
@@ -95,6 +100,7 @@ jobs:
           rm -rf -- "$fake_ar_dir"
           sh -n seeds/ranlib.sh
           sh seeds/ranlib.sh --check
+          sh scripts/tests/test-ranlib-seed.sh
 
       - name: Initialize pinned Perl fork
         run: git submodule update --init --depth 1 -- toolchains/perl
