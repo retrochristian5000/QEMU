@@ -10,11 +10,30 @@ case "$archive_verbose" in
     *) printf 'error: WHP_ARCHIVE_VERBOSE must be 0 or 1: %s\n' "$archive_verbose" >&2; exit 2 ;;
 esac
 
+# Report the executable's actual implementation, not the invoked name.
+# In particular llvm-ranlib can be an argv[0]-sensitive llvm-ar symlink,
+# while GNU gcc-ranlib is a wrapper around plugin-capable GNU binutils.
+# Version signatures are diagnostic only; the real archive probe admits tools.
+whp_archive_family()
+(
+    whp_tool=$1
+    whp_version=$("$whp_tool" --version 2>&1) || {
+        printf '%s\n' unknown
+        exit 0
+    }
+    case "$whp_version" in
+        *'LLVM version '*|*'LLVM (http'*) printf '%s\n' llvm ;;
+        *'GNU ranlib'*|*'GNU ar'*|*'GNU Binutils'*) printf '%s\n' gnu ;;
+        *) printf '%s\n' unknown ;;
+    esac
+)
+
 whp_ranlib_report()
 {
     [ "$archive_verbose" = 1 ] || return 0
-    printf 'WHP ranlib selection: provider=%s; executable=%s; native-probe=%s\n' \
-        "$2" "$1" "${probe:-yes}" >&2
+    whp_family=$(whp_archive_family "$1")
+    printf 'WHP ranlib selection: provider=%s; executable=%s; native-probe=%s; family=%s\n' \
+        "$2" "$1" "${probe:-yes}" "$whp_family" >&2
 }
 
 # Report the actual failed native operation and a bounded stderr excerpt.
@@ -129,6 +148,16 @@ native_probe()
     # Linking alone cannot prove the archive can produce a usable host
     # executable. Verify that the indexed member was actually resolved.
     whp_ranlib_probe_step run-linked-executable "$dir/probe" || exit 1
+    # An ordinary native-object archive may work with a GNU/LLVM mixed pair.
+    # That does not verify GCC LTO plugin indexing or LLVM bitcode support.
+    whp_ar_family=$(whp_archive_family "$ar")
+    whp_ranlib_family=$(whp_archive_family "$ranlib")
+    if [ "$whp_ar_family" != unknown ] &&
+       [ "$whp_ranlib_family" != unknown ] &&
+       [ "$whp_ar_family" != "$whp_ranlib_family" ]; then
+        printf 'warning: native ar/ranlib families differ: ar=%s (%s); ranlib=%s (%s); ordinary objects passed, LTO indexing unverified\n' \
+            "$ar" "$whp_ar_family" "$ranlib" "$whp_ranlib_family" >&2
+    fi
 )
 
 select_seed()
@@ -182,7 +211,8 @@ case "${1:-}" in
     --check)
         probe=yes
         selected=$(select_seed) || exit 1
-        printf 'WHP native ranlib seed: %s\n' "$selected"
+        printf 'WHP native ranlib seed: %s (family: %s)\n' \
+            "$selected" "$(whp_archive_family "$selected")"
         if [ "$archive_verbose" = 1 ]; then
             printf 'WHP ranlib validation: native archive create, index, link and execute passed\n'
         fi
@@ -191,6 +221,19 @@ case "${1:-}" in
         # Regular invocations must not compile a new probe for each archive.
         probe=no
         selected=$(select_seed) || exit 1
+        # GNU ranlib's --plugin is not a portable LLVM ranlib contract.
+        # LLVM's indexer uses its own bitcode reader (llvm-ar s). Never
+        # reinterpret or discard an explicit GNU LTO plugin request.
+        for whp_option do
+            case "$whp_option" in
+                --plugin|--plugin=*)
+                    if [ "$(whp_archive_family "$selected")" = llvm ]; then
+                        printf 'error: GNU ranlib --plugin is unsupported by LLVM ranlib: %s; use a matching GNU LTO toolchain or omit the plugin flag\n' \
+                            "$selected" >&2
+                        exit 2
+                    fi ;;
+            esac
+        done
         exec "$selected" "$@"
         ;;
 esac

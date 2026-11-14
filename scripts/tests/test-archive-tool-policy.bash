@@ -115,6 +115,39 @@ if WHP_ARCHIVE_VERBOSE=invalid whp_archive_toolchain_smoke \
 fi
 grep -Fq 'WHP_ARCHIVE_VERBOSE must be 0 or 1' "$tmp/invalid-verbose.out"
 
+# A successful native link is not proof of GCC/LLVM LTO interoperability.
+# Exercise the diagnostic deterministically using labelled wrappers that
+# forward real archive operations; leave actual GNU/LLVM pairing to ranlib
+# seed tests when installed on a runner.
+native_ar="$(command -v "$ar_tool")"
+native_ranlib="$(command -v "$ranlib_tool")"
+cat >"$tmp/labelled-llvm-ar" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --version ]; then
+    printf 'LLVM version 99.0\n'
+    exit 0
+fi
+exec "$WHP_TEST_NATIVE_AR" "$@"
+EOF
+cat >"$tmp/labelled-gnu-ranlib" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --version ]; then
+    printf 'GNU ranlib (GNU Binutils) 99.0\n'
+    exit 0
+fi
+exec "$WHP_TEST_NATIVE_RANLIB" "$@"
+EOF
+chmod +x "$tmp/labelled-llvm-ar" "$tmp/labelled-gnu-ranlib"
+WHP_TEST_NATIVE_AR="$native_ar" WHP_TEST_NATIVE_RANLIB="$native_ranlib" \
+    WHP_ARCHIVE_VERBOSE=1 \
+    whp_archive_toolchain_smoke "$cc" "$tmp/labelled-llvm-ar" \
+        "$tmp/labelled-gnu-ranlib" "$tmp" "$nm_tool" \
+    >"$tmp/families.out" 2>"$tmp/families.err"
+test ! -s "$tmp/families.out"
+grep -Fq 'warning: QEMU ar/ranlib families differ:' "$tmp/families.err"
+grep -Fq 'native objects passed, LTO indexing unverified' "$tmp/families.err"
+grep -Fq 'WHP archive tool families: AR=llvm; RANLIB=gnu' "$tmp/families.err"
+
 # A wrapper is intentionally accepted: AR identity is a capability contract,
 # not an exact pathname/vendor contract.
 real_ar="$(command -v "$ar_tool")"

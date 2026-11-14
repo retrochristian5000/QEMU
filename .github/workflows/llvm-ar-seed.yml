@@ -10,6 +10,8 @@ on:
       - 'seeds/clang.sh'
       - 'seeds/ranlib.sh'
       - 'scripts/tests/test-ranlib-seed.sh'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-archive-tool-policy.bash'
       - 'scripts/whp-build/prepare-mold.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
@@ -26,6 +28,8 @@ on:
       - 'seeds/clang.sh'
       - 'seeds/ranlib.sh'
       - 'scripts/tests/test-ranlib-seed.sh'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-archive-tool-policy.bash'
       - 'scripts/whp-build/prepare-mold.bash'
       - 'scripts/tests/test-mold-bootstrap.bash'
       - 'scripts/tests/test-clang-llvm-ar-interoperability.sh'
@@ -65,6 +69,9 @@ jobs:
           /bin/sh -n seeds/ranlib.sh
           /bin/sh -n scripts/tests/test-ranlib-seed.sh
           /bin/sh scripts/tests/test-ranlib-seed.sh
+      - name: Validate GNU and LLVM archive provider diagnostics
+        shell: bash
+        run: bash scripts/tests/test-archive-tool-policy.bash
       - name: Validate mold LTO archive tool preference
         shell: bash
         run: |

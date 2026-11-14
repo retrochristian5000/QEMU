@@ -285,6 +285,22 @@ whp_marker_required_value()
     printf '%s\n' "$whp_marker_value"
 )
 
+# Diagnose archive provider differences without pretending a successful
+# native-object link proves compatibility with GCC GIMPLE or LLVM bitcode.
+whp_archive_tool_family()
+(
+    whp_selected_tool=$1
+    whp_version=$("$whp_selected_tool" --version 2>&1) || {
+        printf '%s\n' unknown
+        exit 0
+    }
+    case "$whp_version" in
+        *'LLVM version '*|*'LLVM (http'*) printf '%s\n' llvm ;;
+        *'GNU ranlib'*|*'GNU ar'*|*'GNU Binutils'*) printf '%s\n' gnu ;;
+        *) printf '%s\n' unknown ;;
+    esac
+)
+
 whp_archive_toolchain_smoke()
 (
     whp_cc=${1:-}
@@ -379,9 +395,19 @@ EOF
     elif ! "$whp_probe_dir/probe" >"$whp_log" 2>&1; then
         whp_stage='run native host executable'
     else
+        whp_ar_kind=$(whp_archive_tool_family "$whp_ar")
+        whp_ranlib_kind=$(whp_archive_tool_family "$whp_ranlib")
+        if [ "$whp_ar_kind" != unknown ] &&
+           [ "$whp_ranlib_kind" != unknown ] &&
+           [ "$whp_ar_kind" != "$whp_ranlib_kind" ]; then
+            printf 'warning: QEMU ar/ranlib families differ: AR=%s (%s); RANLIB=%s (%s); native objects passed, LTO indexing unverified\n' \
+                "$whp_ar" "$whp_ar_kind" "$whp_ranlib" "$whp_ranlib_kind" >&2
+        fi
         if [ "${WHP_ARCHIVE_VERBOSE:-0}" = 1 ]; then
             printf 'WHP archive toolchain: native link/run verified; CC=%s; AR=%s; RANLIB=%s; NM=%s\n' \
                 "$whp_cc" "$whp_ar" "$whp_ranlib" "${whp_nm:-<not requested>}" >&2
+            printf 'WHP archive tool families: AR=%s; RANLIB=%s\n' \
+                "$whp_ar_kind" "$whp_ranlib_kind" >&2
         fi
         return 0
     fi

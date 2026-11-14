@@ -746,6 +746,19 @@ measure before adopting a tighter job limit or changing the LLVM cache.
 LLVM ar / ranlib ARM64e archive and ABI integrity
 -----------------------------------------------
 
+The native build-tool ``seeds/ranlib.sh`` remains independent from
+QEMU's host ``RANLIB`` and target archive tools. An indexer named ``ranlib``
+might be GNU binutils, LLVM's ``llvm-ranlib`` (often an ``llvm-ar`` symlink
+with different invocation semantics), or Apple's native tool. ``--check``
+reports the implementation as ``gnu``, ``llvm`` or ``unknown``; verbose
+selection also records it without contaminating ``--print-seed`` stdout.
+Known GNU/LLVM ``ar``–``ranlib`` mismatches are warnings after an actual
+native-object index/link/run check, not automatic failures. **Those checks
+do not certify LTO**: GCC's GIMPLE/plugin archives and LLVM bitcode need
+their respective archive and linker support. Passing GNU ``--plugin`` to
+an LLVM-selected ``ranlib`` is rejected explicitly; GNU-selected indexers
+still receive that option unchanged.
+
 LLVM's ``llvm-ar`` packages object files, while ``llvm-ranlib`` builds
 the archive symbol index consumed by the linker. A normal successful archive
 command does **not** establish that all members use the same Mach-O ABI.
