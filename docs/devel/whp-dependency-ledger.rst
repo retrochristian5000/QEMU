@@ -860,6 +860,7 @@ policy. It is not a request to install every tool or library listed below.
   The two native archive seeds share an opt-in provenance/forwarding trace::
 
     WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/ar.sh --check
+    WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/ranlib.sh --check
     WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/llvm-ar.sh --check
 
   When an installed LLVM tool is not available, the second command reports
@@ -881,6 +882,12 @@ policy. It is not a request to install every tool or library listed below.
   ``--print-seed`` always emits only the selected executable on stdout
   so shell command substitutions remain usable. The switch accepts only
   ``0`` (default) or ``1``, and an invalid value fails closed.
+  Failed native ``ar`` and ``ranlib`` probes always identify the failing
+  step, executable and exit status even with verbosity disabled. Compiler,
+  archiver and linker stderr is preserved as a bounded 20-line excerpt on
+  failure instead of disappearing into ``/dev/null``. Successful probes
+  remain quiet by default; verbose ranlib selection also identifies the
+  provider and whether an admission check was performed.
 
   These checks prove the archive can hold objects produced by the selected
   **native host compiler** and successfully link/run a host executable;
@@ -897,9 +904,22 @@ policy. It is not a request to install every tool or library listed below.
   ``seeds/ranlib.sh`` indexes an archive created with that same validated
   archiver and verifies it can link. On macOS both select tools through the
   existing Xcode/CLT resolver. Explicit invalid overrides fail closed.
-  Managed Perl passes ``-Dar`` and ``-Dranlib`` to ``Configure`` and
-  records both paths in its incremental marker. No unbuilt LLVM, managed
-  Autotools, or guest-target archive utility is needed for either seed.
+  Managed Perl passes ``-Dar``, ``-Dfull_ar`` and ``-Dranlib`` to
+  ``Configure``, verifies that the generated Makefile uses the selected
+  native archiver, and records the tool paths in its incremental marker.
+  No unbuilt LLVM, managed Autotools, or guest-target archive utility is
+  needed for either seed.
+
+  Set ``WHP_PERL_VERBOSE=1`` to print phase labels, working directories,
+  exact subprocess argument vectors, log locations, and completion status
+  to stderr without contaminating the printed interpreter path. Successful
+  Configure, compilation and installation output is retained separately in
+  ``$BUILD_DIR/bootstrap/perl/{configure,compile,install}.log``; failures
+  include the exit status, log path and final 20 output lines in the error.
+  These files remain available after a failed bootstrap and are replaced
+  on the next actual rebuild. ``WHP_PERL_VERBOSE`` accepts only ``0``
+  (default) and ``1``. Use it with ``WHP_ARCHIVE_VERBOSE=1`` to trace
+  the full native archive-tool selection through Perl.
 
   The later QEMU ``whp_archive_toolchain_smoke`` verifies the *effective*
   host ``CC/AR/RANLIB/NM`` family, including the macOS wrapper's coherent
