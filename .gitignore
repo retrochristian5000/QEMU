@@ -1,6 +1,7 @@
 /GNUmakefile
 /build/
 /.cache/
+/.whp-compiler-cache/
 /.vscode/
 /.whpconfig
 /configs/devices/*/whp-user.mak
