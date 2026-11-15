@@ -187,6 +187,27 @@ def validate_value(option: Option, value: str) -> None:
     raise ValueError(f'unsupported option type for {option.key}')
 
 
+
+def validate_combinations(values: Dict[str, str]) -> None:
+    """Reject conflicting menu choices before QEMU reaches build stages.
+
+    Keep this host-neutral: platform-specific and guest configurations are
+    evaluated by their actual toolchain adapters after menu validation.
+    """
+    if values['QEMU_TSAN'] == 'y' and (
+        values['QEMU_ASAN'] == 'y' or values['QEMU_UBSAN'] == 'y'
+    ):
+        raise ValueError(
+            'QEMU_TSAN=y cannot be combined with QEMU_ASAN=y or QEMU_UBSAN=y; '
+            'disable ThreadSanitizer or the other sanitizers'
+        )
+    if values['QEMU_HOST_LTO'] == 'n' and values['QEMU_HOST_LTO_MODE'] != 'auto':
+        raise ValueError(
+            f"QEMU_HOST_LTO_MODE={values['QEMU_HOST_LTO_MODE']} conflicts with "
+            'QEMU_HOST_LTO=n; enable LTO or select LTO mode auto'
+        )
+
+
 def load_config(path: pathlib.Path) -> ConfigState:
     values = default_values()
     unknown: OrderedDict[str, str] = OrderedDict()
@@ -293,6 +314,7 @@ def render_config(state: ConfigState) -> str:
 
 
 def save_config(path: pathlib.Path, state: ConfigState) -> None:
+    validate_combinations(state.values)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + '.tmp')
     temp.write_text(render_config(state), encoding='utf-8')
@@ -300,6 +322,15 @@ def save_config(path: pathlib.Path, state: ConfigState) -> None:
 
 
 def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
+    # Environment overrides are per-run repairs, so validate the effective
+    # settings instead of rejecting a saved profile already overridden.
+    effective = dict(state.values)
+    for key in ('QEMU_TSAN', 'QEMU_ASAN', 'QEMU_UBSAN',
+                'QEMU_HOST_LTO', 'QEMU_HOST_LTO_MODE'):
+        if key in environ:
+            raw = environ[key] or OPTION_BY_KEY[key].default
+            effective[key] = {'1': 'y', '0': 'n'}.get(raw, raw)
+    validate_combinations(effective)
     lines: List[str] = []
     for option in OPTIONS:
         key = option.key

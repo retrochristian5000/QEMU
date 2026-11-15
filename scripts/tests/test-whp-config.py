@@ -539,6 +539,63 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(mod.display_value('bool', 'n'), '[ ]')
         self.assertEqual(mod.display_value('choice', 'auto'), '<auto>')
 
+    def test_conflicting_menu_settings_are_rejected_before_saving_or_exporting(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text('original configuration\n', encoding='utf-8')
+            for invalid, diagnostic in (
+                ({'QEMU_TSAN': 'y', 'QEMU_ASAN': 'y'}, 'QEMU_TSAN=y'),
+                ({'QEMU_TSAN': 'y', 'QEMU_UBSAN': 'y'}, 'QEMU_TSAN=y'),
+                ({'QEMU_HOST_LTO': 'n', 'QEMU_HOST_LTO_MODE': 'thin'},
+                 'QEMU_HOST_LTO_MODE=thin'),
+                ({'QEMU_HOST_LTO': 'n', 'QEMU_HOST_LTO_MODE': 'full'},
+                 'QEMU_HOST_LTO_MODE=full'),
+            ):
+                values = mod.default_values()
+                values.update(invalid)
+                state = mod.ConfigState(values)
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(ValueError, diagnostic):
+                        mod.save_config(path, state)
+                    self.assertEqual(path.read_text(encoding='utf-8'),
+                                     'original configuration\n')
+                    with self.assertRaisesRegex(ValueError, diagnostic):
+                        mod.shell_assignments(state, {})
+
+            # A user can repair an invalid saved profile with an environment
+            # override, without losing the original settings in that file.
+            values = mod.default_values()
+            values.update({'QEMU_TSAN': 'y', 'QEMU_ASAN': 'y'})
+            state = mod.ConfigState(values)
+            assignments = mod.shell_assignments(state, {'QEMU_ASAN': '0'})
+            self.assertIn("QEMU_TSAN='1'", assignments)
+            self.assertNotIn('QEMU_ASAN=', assignments)
+
+            values = mod.default_values()
+            values.update({'QEMU_HOST_LTO': 'n',
+                           'QEMU_HOST_LTO_MODE': 'thin'})
+            state = mod.ConfigState(values)
+            assignments = mod.shell_assignments(
+                state, {'QEMU_HOST_LTO_MODE': 'auto'})
+            self.assertIn("QEMU_HOST_LTO='0'", assignments)
+            self.assertNotIn('QEMU_HOST_LTO_MODE=', assignments)
+
+    def test_shell_export_cli_rejects_invalid_saved_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            path.write_text(
+                'WHP_CONFIG_VERSION=3\nQEMU_TSAN=y\nQEMU_UBSAN=y\n',
+                encoding='utf-8',
+            )
+            result = subprocess.run(
+                [sys.executable, str(CONFIG_TOOL), '--shell', str(path)],
+                text=True, capture_output=True, check=False, env={},
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('QEMU_TSAN=y', result.stderr)
+            self.assertEqual(result.stdout, '')
+
     def test_save_is_atomic_and_preserves_unknown_entries(self):
         mod = load_module()
         with tempfile.TemporaryDirectory() as td:

@@ -131,8 +131,40 @@ reset_known_values()
     mv "$WORK_NEW" "$WORK"
 }
 
+# A non-Python menu must catch the same established build conflicts.
+# Let users edit an invalid old file, but never save it unchanged.
+menu_value_or_default()
+{
+    value=$(get_value "$1")
+    if [ -n "$value" ]; then
+        printf '%s\n' "$value"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+validate_saved_configuration()
+{
+    tsan=$(menu_value_or_default QEMU_TSAN n)
+    asan=$(menu_value_or_default QEMU_ASAN n)
+    ubsan=$(menu_value_or_default QEMU_UBSAN n)
+    lto=$(menu_value_or_default QEMU_HOST_LTO auto)
+    lto_mode=$(menu_value_or_default QEMU_HOST_LTO_MODE auto)
+    if [ "$tsan" = y ] && { [ "$asan" = y ] || [ "$ubsan" = y ]; }; then
+        printf '%s\n' \
+            'Cannot save: QEMU_TSAN=y conflicts with QEMU_ASAN=y or QEMU_UBSAN=y' >&2
+        return 1
+    fi
+    if [ "$lto" = n ] && [ "$lto_mode" != auto ]; then
+        printf 'Cannot save: QEMU_HOST_LTO_MODE=%s conflicts with QEMU_HOST_LTO=n\n' \
+            "$lto_mode" >&2
+        return 1
+    fi
+}
+
 save_config()
 {
+    validate_saved_configuration || return 1
     config_dir=$(dirname -- "$CONFIG")
     mkdir -p "$config_dir"
     cp "$WORK" "$SAVE_TMP"
@@ -171,9 +203,10 @@ while :; do
 
     case "$action" in
         s|S)
-            save_config
-            dirty=0
-            printf 'Saved %s\n' "$CONFIG"
+            if save_config; then
+                dirty=0
+                printf 'Saved %s\n' "$CONFIG"
+            fi
             continue
             ;;
         r|R)

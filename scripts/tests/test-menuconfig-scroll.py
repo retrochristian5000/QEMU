@@ -78,6 +78,28 @@ class MenuconfigScrollTests(unittest.TestCase):
         self.assertEqual(menu._scroll_top(20, 0, -5, 5), 0)
         self.assertEqual(menu._scroll_top(20, 10, 7, 0), 0)
 
+    def test_invalid_menu_save_is_shown_and_user_can_quit(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+
+        state = config.ConfigState(config.default_values(), {})
+        state.values['QEMU_TSAN'] = 'y'
+        state.values['QEMU_ASAN'] = 'y'
+        screen = FakeScreen([ord('s'), ord('q')])
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None):
+                menu._run(screen, path, state)
+            if screen.current:
+                screen.frames.append(screen.current)
+            self.assertFalse(path.exists())
+            self.assertTrue(any(
+                'Cannot save: QEMU_TSAN=y' in text
+                for frame in screen.frames for _, _, text, _ in frame
+            ))
+
     def test_save_message_persists_across_navigation_without_restoring_values(self):
         config = load_config_module()
         menu = load_menu_module()

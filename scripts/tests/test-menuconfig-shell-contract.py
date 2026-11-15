@@ -59,6 +59,27 @@ def check():
         assert dump.returncode == 0, dump.stderr
         assert "BOOTSTRAP_GAWK" in dump.stdout, dump.stdout
 
+        # The shell fallback works with no Python runtime. Invalid settings
+        # must be diagnosed before replacing the user's existing file, while
+        # allowing an interactive reset and a subsequent successful save.
+        for invalid, diagnostic in (
+            ('QEMU_TSAN=y\nQEMU_ASAN=y\n', 'QEMU_TSAN=y'),
+            ('QEMU_HOST_LTO=n\nQEMU_HOST_LTO_MODE=full\n',
+             'QEMU_HOST_LTO_MODE=full'),
+        ):
+            old_text = 'WHP_CONFIG_VERSION=3\n' + invalid
+            config.write_text(old_text, encoding='utf-8')
+            refused = run(shell, config, root, input_text="s\nq\n")
+            assert refused.returncode == 0, refused.stderr
+            assert diagnostic in refused.stderr, refused.stderr
+            assert config.read_text(encoding='utf-8') == old_text
+            repaired = run(shell, config, root, input_text="r\ns\nq\n")
+            assert repaired.returncode == 0, repaired.stderr
+            saved = config.read_text(encoding='utf-8')
+            assert "WHP_CONFIG_VERSION=3\n" in saved
+            assert "QEMU_TSAN=y" not in saved
+            assert "QEMU_HOST_LTO_MODE=full" not in saved
+
     # The full semantic schema is checked by test-python-menu-fallback.py.
     # This fixture deliberately modifies only an *ephemeral* copy.
     print("WHP POSIX menu schema parsing and argument contract: verified")

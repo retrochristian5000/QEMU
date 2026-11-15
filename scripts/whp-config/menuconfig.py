@@ -179,7 +179,11 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             status = 'Repository defaults loaded; press s to save'
             continue
         if key == ord('s'):
-            whp_config.save_config(config_path, state)
+            try:
+                whp_config.save_config(config_path, state)
+            except (OSError, ValueError) as exc:
+                status = f'Cannot save: {exc}'
+                continue
             dirty = False
             status = f'Saved {config_path}'
             continue
