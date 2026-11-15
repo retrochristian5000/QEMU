@@ -45,6 +45,21 @@ export WHP_CP_SEED WHP_CP_LOCKED
 printf 'QEMU seed cp: %s\n' "$WHP_CP_SEED" >&2
 unset WHP_CP_BRIDGE
 
+# Validate a native host install before source refresh and third-party
+# bootstraps. Literal install calls use the existing seed-bin PATH bridge.
+# This does not overwrite Autotools' per-project INSTALL variables or run
+# a make install target during bootstrap.
+WHP_INSTALL_SEED=$("$SOURCE_DIR/seeds/install.sh" --print-seed) || exit 1
+WHP_INSTALL_BRIDGE="$SOURCE_DIR/scripts/whp-build/seed-bin/install"
+if [ ! -x "$WHP_INSTALL_BRIDGE" ]; then
+    printf 'error: QEMU literal install bridge is unavailable: %s\n' "$WHP_INSTALL_BRIDGE" >&2
+    exit 1
+fi
+WHP_INSTALL_LOCKED=1
+export WHP_INSTALL_SEED WHP_INSTALL_LOCKED
+printf 'QEMU seed install: %s\n' "$WHP_INSTALL_SEED" >&2
+unset WHP_INSTALL_BRIDGE
+
 # Public host snapshot: capture once before Python, seed compilers and linkers.
 # Ignore inherited WHP_HOST_*: these values describe the current build machine.
 WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)

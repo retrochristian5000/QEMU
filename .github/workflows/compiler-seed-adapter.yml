@@ -7,6 +7,9 @@ on:
       - 'seeds/bash.sh'
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
+      - 'seeds/install.sh'
+      - 'scripts/whp-build/seed-bin/install'
+      - 'scripts/tests/test-install-seed-adapter.bash'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
       - 'scripts/tests/test-clang-seed.py'
@@ -53,6 +56,9 @@ on:
       - 'seeds/bash.sh'
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
+      - 'seeds/install.sh'
+      - 'scripts/whp-build/seed-bin/install'
+      - 'scripts/tests/test-install-seed-adapter.bash'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
       - 'scripts/tests/test-clang-seed.py'
@@ -112,6 +118,14 @@ jobs:
         run: |
           /bin/sh -n seeds/bash.sh
           python3 scripts/tests/test-bash-seed.py
+
+      - name: Verify native install seed and literal command bridge
+        shell: bash
+        run: |
+          /bin/sh -n seeds/install.sh
+          /bin/sh -n scripts/whp-build/seed-bin/install
+          bash -n scripts/tests/test-install-seed-adapter.bash
+          bash scripts/tests/test-install-seed-adapter.bash
 
       - name: Verify native Clang identity and cc handoff
         run: |

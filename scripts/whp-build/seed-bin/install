@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Literal install commands share the locked build-machine install seed.
+set -eu
+if [ "${1:-}" = --whp-install-adapter-probe ]; then
+    printf '%s\n' whp-qemu-install-seed-adapter
+    exit 0
+fi
+case "$0" in
+    */*) exec "${0%/*}/../../../seeds/install.sh" "$@" ;;
+    *) printf 'error: install bridge must be invoked by path\n' >&2; exit 1 ;;
+esac

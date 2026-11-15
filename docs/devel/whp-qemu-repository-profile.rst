@@ -163,11 +163,31 @@ that pairing is usable. Keep ``WHP_*_SEED`` selectors and ordinary
 ``*_FOR_BUILD`` outputs distinct, rather than adding another alias layer.
 
 ``seeds/git.sh``, ``seeds/awk.sh``, ``seeds/grep.sh``, ``seeds/sed.sh``,
-and ``seeds/cp.sh`` provide other selected host tools. The public
+``seeds/cp.sh`` and ``seeds/install.sh`` provide other selected host tools. The public
 ``build.sh`` selects a copy implementation before source refresh and uses
 ``scripts/whp-build/seed-bin/cp`` for literal ``cp`` calls. Its copy probes
 cover ordinary files, POSIX ``-R`` and ``-p``; they do not establish
 support for every GNU, BSD or Apple-specific copying extension.
+
+Host install seed
+^^^^^^^^^^^^^^^^^
+
+The public entry selects ``seeds/install.sh`` once before source refresh,
+and ``scripts/whp-build/seed-bin/install`` resolves literal ``install``
+commands through the locked ``WHP_INSTALL_SEED`` executable. The seed
+probes the native utility's common GNU/BSD operations: creating directories,
+installing non-executable data, installing executable files, and replacing
+existing files. An invalid explicit override fails closed instead of
+silently selecting another tool. ``--print-seed`` and ``--check``
+are available for direct diagnosis; ``WHP_INSTALL_VERBOSE=1`` enables a
+short per-invocation trace to stderr without changing the command's output.
+
+This is a build-machine command selection, not a request for ``make install``,
+a guarantee of GNU-specific ``install`` extensions, or an override of
+Autotools' ``INSTALL`` / ``INSTALL_PROGRAM`` variables. Managed third-party
+Autotools stages must still perform their independent install-target and
+artifact checks. ``scripts/tests/test-install-seed-adapter.bash``
+exercises the native adapter and literal bridge on Linux and macOS.
 
 QEMU repair evidence — 2026-11-09
 --------------------------------
