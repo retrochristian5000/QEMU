@@ -91,7 +91,7 @@ def main() -> int:
     require(build, 'LD_LIBRARY_PATH=', "POSIX SDL runtime lookup")
     require(
         macos_builder,
-        'whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"',
+        'whp_restore_managed_pkg_config SDL3 sdl3 .whp-sdl-bootstrap "${WHP_SDL_PREFIX:-}"',
         "restore private SDL pkg-config after macOS sanitation",
     )
     # dyld must use LC_RPATH/@loader_path for QEMU's private SDL dylib, not

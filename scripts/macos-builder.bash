@@ -202,19 +202,14 @@ fi
 
 sanitize_macos_build_environment
 
-# build.sh has already staged and verified the private SDL3 shared library.
-# The hygiene step above discards all inherited search paths, including those
-# populated by the WHP SDL bootstrap. Restore only this validated, managed
-# prefix after sanitizing; do not reopen arbitrary user-supplied search paths.
-if [[ -n "${WHP_SDL_PREFIX:-}" &&
-      -f "$WHP_SDL_PREFIX/lib/pkgconfig/sdl3.pc" ]]; then
-    whp_append_colon_path PKG_CONFIG_PATH "$WHP_SDL_PREFIX/lib/pkgconfig"
-    whp_append_colon_path CMAKE_PREFIX_PATH "$WHP_SDL_PREFIX"
-    # Do not restore DYLD_FALLBACK_LIBRARY_PATH for the QEMU host build:
-    # dyld may ignore DYLD_* overrides for protected processes, and the
-    # shipped executable must load SDL from its embedded @loader_path rpaths.
-    # Keeping the fallback here could mask broken LC_RPATH commands in CI.
-fi
+# Hygiene removes inherited dependency search paths, including metadata
+# from private libraries built by build.sh. Restore only bootstrap products
+# under this QEMU build tree, with their own install markers and .pc files.
+# Do not restore user-provided paths, cross-ABI metadata, or DYLD_* overrides.
+whp_restore_managed_pkg_config zlib zlib .whp-zlib-bootstrap "${WHP_ZLIB_PREFIX:-}"
+whp_restore_managed_pkg_config JACK jack .whp-jack-bootstrap "${WHP_JACK_PREFIX:-}"
+whp_restore_managed_pkg_config SDL3 sdl3 .whp-sdl-bootstrap "${WHP_SDL_PREFIX:-}"
+whp_restore_managed_pkg_config libisofs libisofs-1 .whp-libisofs-bootstrap "${WHP_LIBISOFS_PREFIX:-}"
 
 for required in xcrun xcode-select sw_vers awk grep sed mktemp dirname \
     basename mv ls; do

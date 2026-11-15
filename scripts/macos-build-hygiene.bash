@@ -32,6 +32,42 @@ whp_append_colon_path()
     export "$variable"
 }
 
+whp_restore_managed_pkg_config()
+{
+    local library="$1" module="$2" marker="$3" prefix="$4"
+    local pc_dir found=0
+
+    [[ -n "$prefix" ]] || return 0
+    # Only bootstrap products in this QEMU build tree may cross the hygiene
+    # boundary. An inherited prefix or unrelated installed .pc is not trusted.
+    case "$prefix" in
+        "${BUILD_DIR%/}"/deps/*) ;;
+        *)
+            printf 'error: %s metadata prefix is outside the QEMU build dependencies: %s\n' \
+                "$library" "$prefix" >&2
+            return 1 ;;
+    esac
+    if [[ ! -f "$prefix/$marker" ]]; then
+        printf 'error: %s bootstrap marker is missing: %s/%s\n' \
+            "$library" "$prefix" "$marker" >&2
+        return 1
+    fi
+    for pc_dir in "$prefix/lib/pkgconfig" "$prefix/lib64/pkgconfig" \
+                  "$prefix/libdata/pkgconfig"; do
+        if [[ -f "$pc_dir/$module.pc" ]]; then
+            whp_append_colon_path PKG_CONFIG_PATH "$pc_dir"
+            found=1
+        fi
+    done
+    if [[ "$found" != 1 ]]; then
+        printf 'error: %s bootstrap has no %s.pc in its pkg-config directories: %s\n' \
+            "$library" "$module" "$prefix" >&2
+        return 1
+    fi
+    whp_append_colon_path CMAKE_PREFIX_PATH "$prefix"
+    printf 'macOS managed library metadata: %s (%s)\n' "$library" "$prefix" >&2
+}
+
 whp_remove_path_entry()
 {
     local rejected="$1"
