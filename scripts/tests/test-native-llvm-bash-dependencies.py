@@ -21,7 +21,7 @@ spec.loader.exec_module(helper)
 bash = shutil.which("bash")
 assert bash, "Bash is required for the native LLVM shell regression"
 start = host_tools.index("whp_bash_usable()\n{")
-end = host_tools.index('\n}\n\nif [ -z "$WHP_BUILD_BASH" ]', start) + 2
+end = host_tools.index('\n}\n', start) + 2
 function = host_tools[start:end]
 assert "process-substitution" in function
 assert "whp_probe_array=(one two)" in function

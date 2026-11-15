@@ -6,6 +6,7 @@ from __future__ import annotations
 import configparser
 import importlib.util
 import pathlib
+import re
 import sys
 import tempfile
 from unittest import mock
@@ -273,7 +274,10 @@ def main() -> int:
         )
 
     make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
-    if "[[" in make_resolver or "local " in make_resolver:
+    # Recognize Bash's local declaration, not the /usr/local Homebrew prefix.
+if "[[" in make_resolver or re.search(
+    r"(?m)^[ \t]*local(?:[ \t]|$)", make_resolver
+):
         raise SystemExit("error: early GNU Make resolver is no longer POSIX-sh compatible")
 
     python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")

@@ -166,6 +166,12 @@ for arg in "$@"; do
     esac
 done
 case "${1:-}" in
+    -dM)
+        # Emulate the production preprocessor-only compiler-family probe;
+        # subsequent tests must still reject a non-Darwin target triple.
+        [[ "$*" == '-dM -E -x c -' ]] || exit 1
+        printf '%s\n' '#define __clang__ 1'
+        ;;
     --version) printf 'Apple clang version 16.0.0\n' ;;
     -dumpmachine|-print-target-triple)
         printf '%s\n' "${TEST_TARGET_TRIPLE:-arm64-apple-darwin24.0.0}"

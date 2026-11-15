@@ -31,8 +31,15 @@ assert '"$whp_make_brew_prefix/bin/gmake"' in make
 assert '"$whp_make_brew_prefix/opt/make/bin/gmake"' in make
 assert make.index('"$whp_make_brew_prefix/bin/gmake"') < make.index(
     'for whp_make_candidate in gmake make')
-assert build.index('if [ -n "$WHP_MAKE_REQUESTED" ]; then') < build.index(
-    'MAKE_CMD=$(whp_find_gnu_make || true)')
+# The entrypoint preserves requested Make before deferring to its seed.
+# Explicit seed/MAKE_CMD/MAKE overrides must precede automatic discovery.
+make_seed = (ROOT / "seeds/make.sh").read_text(encoding="utf-8")
+assert 'WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}' in build
+assert 'if [ -n "${WHP_MAKE_SEED:-}" ] || [ -n "$WHP_MAKE_REQUESTED" ]; then' in build
+assert build.index('WHP_MAKE_REQUESTED=${MAKE_CMD:-${MAKE:-}}') < build.index(
+    'MAKE_CMD=$(/bin/sh "$SOURCE_DIR/seeds/make.sh" --print-seed)')
+assert make_seed.index('for setting in WHP_MAKE_SEED MAKE_CMD MAKE; do') < make_seed.index(
+    'selected=$(whp_find_gnu_make)')
 
 # The POSIX helper must stay sourceable on hosts without Homebrew.
 result = subprocess.run(
