@@ -20,6 +20,8 @@ on:
       - 'scripts/bootstrap-native-clang.sh'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/whp-build/macos-target-abi.bash'
+      - 'scripts/whp-build/host-version-report.sh'
+      - 'scripts/tests/test-host-version-report.sh'
       - 'toolchains/llvm-project'
       - 'scripts/macos-builder.sh'
       - 'scripts/macos-builder.bash'
@@ -171,6 +173,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Record runner, Xcode and pinned source versions
+        shell: bash
+        run: |
+          /bin/sh scripts/tests/test-host-version-report.sh
+          /bin/sh scripts/whp-build/host-version-report.sh
 
       - name: Verify Apple Silicon host
         shell: bash
@@ -365,6 +373,10 @@ jobs:
           brew install \
             autoconf automake cmake glib help2man libslirp libtool m4 make \
             ninja pixman pkgconf texinfo xz
+
+      - name: Record dependency versions after Homebrew installation
+        shell: bash
+        run: /bin/sh scripts/whp-build/host-version-report.sh
 
       - name: Bootstrap pinned libisofs as arm64
         shell: bash

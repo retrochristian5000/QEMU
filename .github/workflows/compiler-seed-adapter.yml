@@ -7,6 +7,8 @@ on:
       - 'seeds/bash.sh'
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-build/host-version-report.sh'
+      - 'scripts/tests/test-host-version-report.sh'
       - 'seeds/install.sh'
       - 'scripts/whp-build/seed-bin/install'
       - 'scripts/tests/test-install-seed-adapter.bash'
@@ -56,6 +58,8 @@ on:
       - 'seeds/bash.sh'
       - 'scripts/tests/test-bash-seed.py'
       - 'scripts/whp-build/host-tools.sh'
+      - 'scripts/whp-build/host-version-report.sh'
+      - 'scripts/tests/test-host-version-report.sh'
       - 'seeds/install.sh'
       - 'scripts/whp-build/seed-bin/install'
       - 'scripts/tests/test-install-seed-adapter.bash'
@@ -113,6 +117,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Record CI tool versions and SDK selection
+        shell: bash
+        run: |
+          /bin/sh -n scripts/whp-build/host-version-report.sh
+          /bin/sh -n scripts/tests/test-host-version-report.sh
+          /bin/sh scripts/tests/test-host-version-report.sh
+          /bin/sh scripts/whp-build/host-version-report.sh
 
       - name: Verify independent GNU Bash seed
         run: |

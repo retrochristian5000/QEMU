@@ -189,6 +189,28 @@ Autotools stages must still perform their independent install-target and
 artifact checks. ``scripts/tests/test-install-seed-adapter.bash``
 exercises the native adapter and literal bridge on Linux and macOS.
 
+Host version and source pin comparison
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Run ``/bin/sh scripts/whp-build/host-version-report.sh`` from a checkout
+to collect the same read-only, key/value report used by macOS CI. It records
+the actual macOS version, selected Xcode/Command Line Tools directory,
+macOS SDK and Clang version, executable discovery paths, host utility
+versions, and the superproject's pinned toolchain gitlinks. A separately
+checked-out submodule is reported as ``match``, ``drift``, or
+``uninitialized``, rather than assuming the working tree matches the
+gitlink. An explicit ``SDKROOT`` or ``DEVELOPER_DIR`` is reported separately
+from the default discovered by ``xcrun``.
+
+GitHub-hosted image labels, the actual installed tools and the pinned WHP
+source revisions are three distinct version boundaries. CI prints this report
+both before and, where practical, after Homebrew dependency installation.
+A report is diagnostic only: it does not install or upgrade anything, choose
+different tools, or establish that a particular compiler/SDK combination
+will build the complete emulator. Compare the same keys on the local host
+and in CI logs before assuming the runner reproduces a developer-machine
+failure.
+
 QEMU repair evidence — 2026-11-09
 --------------------------------
 
