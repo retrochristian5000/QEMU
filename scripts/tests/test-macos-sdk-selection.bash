@@ -269,6 +269,28 @@ if ! grep -Fq 'Apple Darwin/macOS target triple' "$non_darwin_output"; then
     exit 1
 fi
 
+# The compiler's default triple is not enough: inherited compile flags
+# must not override the selected macOS target after that identity check.
+for conflicting_flag in '-target arm64-apple-ios' '--target=arm64-apple-ios' '-arch=x86_64'; do
+    target_override_output="$TEST_DIR/target-override.log"
+    if CFLAGS="$conflicting_flag" SDKROOT="$ACTIVE_SDK" \
+       MACOSX_DEPLOYMENT_TARGET=15.0 \
+       BUILD_DIR="$TEST_DIR/target-override-build" \
+       WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+       bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+           >"$target_override_output" 2>&1; then
+        printf 'error: accepted overriding macOS compiler target: %s\n' \
+            "$conflicting_flag" >&2
+        exit 1
+    fi
+    if ! grep -Fq 'already selects a managed macOS SDK' "$target_override_output"; then
+        printf 'error: target override lacked a specific diagnostic: %s\n' \
+            "$conflicting_flag" >&2
+        cat "$target_override_output" >&2
+        exit 1
+    fi
+done
+
 # A pre-existing iOS/iPad SDKROOT may be valid for cross-compilation, but
 # cannot become CMAKE_OSX_SYSROOT for the macOS build-machine tools.
 for non_macos_sdk in "$IPHONE_SDK" "$SIMULATOR_SDK"; do

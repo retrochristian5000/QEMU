@@ -12,6 +12,8 @@ on:
       - 'scripts/tests/test-clang-seed.py'
       - 'scripts/tests/test-compiler-family.py'
       - 'scripts/macos-compiler-policy.bash'
+      - 'scripts/whp-build/macos-cflags.bash'
+      - 'scripts/tests/test-macos-cflags-policy.bash'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -56,6 +58,8 @@ on:
       - 'scripts/tests/test-clang-seed.py'
       - 'scripts/tests/test-compiler-family.py'
       - 'scripts/macos-compiler-policy.bash'
+      - 'scripts/whp-build/macos-cflags.bash'
+      - 'scripts/tests/test-macos-cflags-policy.bash'
       - 'seeds/cpp.sh'
       - 'seeds/clang-cpp.sh'
       - 'scripts/tests/test-clang-cpp-seed.sh'
@@ -116,6 +120,13 @@ jobs:
 
       - name: Distinguish Clang, GNU GCC and compatible frontends
         run: python3 scripts/tests/test-compiler-family.py
+
+      - name: Verify macOS compiler CFLAGS before optional bootstraps
+        shell: bash
+        run: |
+          bash -n scripts/whp-build/macos-cflags.bash
+          bash -n scripts/tests/test-macos-cflags-policy.bash
+          bash scripts/tests/test-macos-cflags-policy.bash
 
       - name: Verify static compiler policy
         run: python3 scripts/tests/test-bootstrap-compiler-policy.py

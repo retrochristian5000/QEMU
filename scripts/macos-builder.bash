@@ -104,7 +104,9 @@ reject_managed_flags()
     for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS; do
         value="${!variable:-}"
         case " $value " in
-            *' -isysroot'*|*' --sysroot'*|*' -mmacosx-version-min'*|*' -arch '*)
+            *' -isysroot'*|*' --sysroot'*|*' -mmacosx-version-min'*|\
+            *' -arch '*|*' -arch='*|*' -target '*|*' -target='*|\
+            *' --target '*|*' --target='*)
                 printf '%s\n' \
                     "$variable already selects a managed macOS SDK, deployment target, or architecture:" \
                     "  $value" \
@@ -325,6 +327,7 @@ if [[ "$process_arch" == arm64 ]] &&
 fi
 
 source "$SCRIPT_DIR/macos-compiler-policy.bash"
+source "$SCRIPT_DIR/whp-build/macos-cflags.bash"
 
 # Keep explicit archive-tool choices authoritative.  When the selected Clang
 # has a complete LLVM archive trio beside it, prefer that coherent family.
@@ -408,6 +411,11 @@ unset sdk_probe_arch
 if [[ "$MACOS_EFFECTIVE_COMPILER_FAMILY" == clang ]]; then
     whp_macos_audit_linker_driver_flags || exit 1
 fi
+
+# Probe effective C/C++/Objective-C flags before firmware, LLVM or Meson
+# starts. The helper mirrors QEMU-only flag stripping without modifying the
+# bootstrap environment required by those earlier stages.
+whp_macos_preflight_cflags || exit 1
 
 # UBSan may be enabled for QEMU while native LLVM still owns an arm64-only
 # compiler-rt distribution. Automatic builds remain arm64; an explicit
