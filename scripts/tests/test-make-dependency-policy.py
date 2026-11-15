@@ -275,9 +275,9 @@ def main() -> int:
 
     make_resolver = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
     # Recognize Bash's local declaration, not the /usr/local Homebrew prefix.
-if "[[" in make_resolver or re.search(
-    r"(?m)^[ \t]*local(?:[ \t]|$)", make_resolver
-):
+    if "[[" in make_resolver or re.search(
+        r"(?m)^[ \t]*local(?:[ \t]|$)", make_resolver
+    ):
         raise SystemExit("error: early GNU Make resolver is no longer POSIX-sh compatible")
 
     python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(encoding="utf-8")
