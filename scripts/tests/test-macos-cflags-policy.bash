@@ -59,7 +59,11 @@ for variable in CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS; do
         printf 'error: %s accepted an unsupported compiler option\n' "$variable" >&2
         exit 1
     fi
-    grep -Fq "macOS $variable rejected by" "$work/stderr"
+    if ! grep -Fq "macOS $variable rejected by" "$work/stderr"; then
+        printf 'error: wrong compiler-option rejection for %s\n' "$variable" >&2
+        cat "$work/stderr" >&2
+        exit 1
+    fi
 done
 
 for diagnostic_flag in -Wno-ignored-flag -Wno-unused-linker-flag; do

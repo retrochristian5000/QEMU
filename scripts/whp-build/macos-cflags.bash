@@ -27,7 +27,7 @@ whp_macos_preflight_cflags()
     for variable in CFLAGS CXXFLAGS OBJCFLAGS; do
         user_flags=()
         read -r -a user_flags <<< "${!variable:-}"
-        if [[ "${#user_flags[@]}" -eq 0 && "${#cpp_flags[@]}" -eq 0 ]]; then
+        if [[ -z "${!variable:-}" && -z "${CPPFLAGS:-}" ]]; then
             continue
         fi
         case "$variable" in
@@ -38,7 +38,7 @@ whp_macos_preflight_cflags()
         compiler=${!compiler_variable:-}
         compiler_command=()
         read -r -a compiler_command <<< "$compiler"
-        if [[ "${#compiler_command[@]}" -eq 0 ]]; then
+        if [[ -z "${compiler_command[0]:-}" ]]; then
             printf 'error: macOS %s preflight has no %s compiler\n' \
                 "$variable" "$compiler_variable" >&2
             return 1
@@ -49,7 +49,7 @@ whp_macos_preflight_cflags()
         for flag_source in CPPFLAGS "$variable"; do
             flag_tokens=()
             read -r -a flag_tokens <<< "${!flag_source:-}"
-            for token in "${flag_tokens[@]}"; do
+            for token in ${flag_tokens[@]+"${flag_tokens[@]}"}; do
                 case "$token" in
                     -Wl,*|-Xlinker|-Xlinker=*|-L*|-l*|-framework)
                         printf 'error: macOS %s has linker-only flag %s; use LDFLAGS\n' \
@@ -60,8 +60,8 @@ whp_macos_preflight_cflags()
         done
 
         origin="$variable"
-        if [[ "${#cpp_flags[@]}" -gt 0 ]]; then
-            if [[ "${#user_flags[@]}" -eq 0 ]]; then
+        if [[ -n "${CPPFLAGS:-}" ]]; then
+            if [[ -z "${!variable:-}" ]]; then
                 origin=CPPFLAGS
             else
                 origin="$variable/CPPFLAGS"
@@ -71,7 +71,8 @@ whp_macos_preflight_cflags()
         # No files or headers are installed; the selected SDK, deployment,
         # language frontend, and final (post-filter) flags are exercised.
         if output=$("${compiler_command[@]}" "${target_flags[@]}" \
-            "${cpp_flags[@]}" "${user_flags[@]}" \
+            ${cpp_flags[@]+"${cpp_flags[@]}"} \
+            ${user_flags[@]+"${user_flags[@]}"} \
             -x "$language" -c -o /dev/null - \
             <<< 'int whp_cflags_probe(void) { return 0; }' 2>&1); then
             :
