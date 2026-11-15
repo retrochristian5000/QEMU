@@ -19,8 +19,8 @@ while [ -L "$entry" ]; do
     link=$(readlink "$entry") || exit 1
     case "$link" in /*) entry=$link ;; *) entry=${entry%/*}/$link ;; esac
 done
-root=$(CDPATH= cd -P -- "${entry%/*}/.." && pwd -P) || exit 1
-. "$root/scripts/whp-build/compiler-seed-common.sh"
+seed_root=$(CDPATH= cd -P -- "${entry%/*}/.." && pwd -P) || exit 1
+. "$seed_root/scripts/whp-build/compiler-seed-common.sh"
 
 select_driver()
 {
@@ -28,7 +28,7 @@ select_driver()
         value=$WHP_CLANG_CPP_SEED
     else
         # Prefer the dedicated preprocessor beside the validated native CC.
-        cc=$("$root/seeds/cc.sh" --print-cc) || return 1
+        cc=$("$seed_root/seeds/cc.sh" --print-cc) || return 1
         value=${cc%/*}/clang-cpp
     fi
     candidate=$(resolve_executable "$value" report) || return 1
