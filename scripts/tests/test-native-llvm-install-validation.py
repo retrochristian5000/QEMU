@@ -108,6 +108,14 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     resource = prefix / "lib/clang/whp-test"
     darwin_runtime = resource / "lib/darwin"
     darwin_runtime.mkdir(parents=True)
+    # Model an installed Clang distribution, not just a compiler driver.
+    # Native LLVM usability now checks these generated resource headers.
+    resource_headers = resource / "include"
+    resource_headers.mkdir()
+    for header in ("arm_neon.h", "arm_bf16.h", "arm_vector_types.h"):
+        (resource_headers / header).write_text(
+            "/* fixture generated resource header */\n", encoding="utf-8"
+        )
     ubsan_dylib = darwin_runtime / "libclang_rt.ubsan_osx_dynamic.dylib"
     ubsan_dylib.write_bytes(b"mock Mach-O UBSan runtime")
     clang = bin_dir / "clang"
@@ -170,6 +178,16 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         assert "-print-resource-dir" in calls, (arch, calls)
         assert "-framework Cocoa" in calls, (arch, calls)
         assert f"-arch {arch}" in calls, (arch, calls)
+
+    # Missing Clang resource headers must still reject an incomplete install.
+    neon_header = resource_headers / "arm_neon.h"
+    neon_header.unlink()
+    result, _ = run_probe("arm64")
+    assert result.returncode != 0, result.stderr
+    assert "[resource]" in result.stderr and "arm_neon.h" in result.stderr
+    neon_header.write_text(
+        "/* fixture generated resource header */\n", encoding="utf-8"
+    )
 
     # Version punctuation, CPU aliases, and Darwin/macOS spellings should not
     # invalidate a complete native LLVM installation with the same ABI.
