@@ -24,6 +24,17 @@ WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 "$bridge" -c -m 0644 \
 WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 "$bridge" -m 0755 \
     "$tmp/source" "$tmp/tree/nested path/tool"
 [[ -x "$tmp/tree/nested path/tool" ]]
+python3 - "$tmp/tree/nested path" <<'PY'
+from pathlib import Path
+import stat
+import sys
+directory = Path(sys.argv[1])
+for path, expected in ((directory, 0o755),
+                       (directory / "data", 0o644),
+                       (directory / "tool", 0o755)):
+    actual = stat.S_IMODE(path.stat().st_mode)
+    assert actual == expected, (path, oct(actual), oct(expected))
+PY
 
 # Explicit bad paths, false-success implementations, and self-references are
 # errors, never prompts to silently rediscover a different host install.
@@ -42,6 +53,40 @@ if WHP_INSTALL_SEED="$tmp/fake-install" "$seed" --print-seed \
     printf 'error: false-success install override accepted\n' >&2; exit 1
 fi
 grep -Fq 'failed directory creation' "$tmp/error"
+
+# These broken installers produce correct content but ignore requested modes.
+cat > "$tmp/bad-mode-install" <<'BADMODE'
+#!/bin/sh
+"$WHP_INSTALL_TEST_PROVIDER" "$@" || exit 1
+for last do :; done
+case "$WHP_BAD_MODE_STAGE:$1:${2:-}" in
+    directory:-d:*) chmod 0700 "$last" ;;
+    data:-c:*) chmod 0600 "$last" ;;
+    executable:-m:0755) chmod 0644 "$last" ;;
+    replacement:-m:0644) chmod 0600 "$last" ;;
+esac
+BADMODE
+chmod +x "$tmp/bad-mode-install"
+for stage in directory data executable replacement; do
+    case "$stage" in
+        directory) expected='failed directory creation' ;;
+        data) expected='failed data copy or mode' ;;
+        executable) expected='failed executable copy or mode' ;;
+        replacement) expected='failed replacement' ;;
+    esac
+    if WHP_BAD_MODE_STAGE="$stage" WHP_INSTALL_TEST_PROVIDER="$selected" \
+       WHP_INSTALL_SEED="$tmp/bad-mode-install" "$seed" --print-seed \
+           >"$tmp/out" 2>"$tmp/error"; then
+        printf 'error: bad %s mode accepted by install seed\n' "$stage" >&2
+        exit 1
+    fi
+    if ! grep -Fq "$expected" "$tmp/error"; then
+        printf 'error: wrong diagnostic for invalid %s installation mode\n' "$stage" >&2
+        cat "$tmp/error" >&2
+        exit 1
+    fi
+done
+
 for bad in "$seed" "$bridge"; do
     if WHP_INSTALL_SEED="$bad" "$seed" --print-seed \
         >"$tmp/out" 2>"$tmp/error"; then

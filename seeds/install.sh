@@ -10,6 +10,22 @@ if [ "${1:-}" = --whp-install-adapter-probe ]; then
     exit 0
 fi
 
+# Compare actual POSIX file modes, not just existence or -x/-r.
+# GNU and macOS/BSD ls may append ACL or extended-attribute markers.
+install_mode()
+(
+    file=$1
+    expected=$2
+    listing=$(LC_ALL=C ls -ld "$file") || return 1
+    permissions=${listing%% *}
+    case "$permissions" in
+        "$expected"|"$expected"+|"$expected"@|"$expected".) return 0 ;;
+    esac
+    printf 'error: install seed mode mismatch: %s (expected %s; observed %s)\n' \
+        "$file" "$expected" "$permissions" >&2
+    return 1
+)
+
 install_probe()
 (
     candidate=$1
@@ -21,7 +37,8 @@ install_probe()
     # GNU and BSD/macOS install share these operations. Probe semantics rather
     # than --version banners; a command that merely exits zero is not usable.
     if ! "$candidate" -d -m 0755 "$probe_dir/prefix/bin" 2>"$probe_dir/stderr" ||
-       [ ! -d "$probe_dir/prefix/bin" ]; then
+       [ ! -d "$probe_dir/prefix/bin" ] ||
+       ! install_mode "$probe_dir/prefix/bin" 'drwxr-xr-x'; then
         printf 'error: install seed failed directory creation: %s\n' "$candidate" >&2
         cat "$probe_dir/stderr" >&2
         exit 1
@@ -29,7 +46,7 @@ install_probe()
     if ! "$candidate" -c -m 0644 "$probe_dir/source" \
         "$probe_dir/prefix/bin/data" 2>"$probe_dir/stderr" ||
        [ "$(cat "$probe_dir/prefix/bin/data" 2>/dev/null || true)" != whp-install-probe ] ||
-       [ -x "$probe_dir/prefix/bin/data" ]; then
+       ! install_mode "$probe_dir/prefix/bin/data" '-rw-r--r--'; then
         printf 'error: install seed failed data copy or mode: %s\n' "$candidate" >&2
         cat "$probe_dir/stderr" >&2
         exit 1
@@ -37,7 +54,7 @@ install_probe()
     if ! "$candidate" -m 0755 "$probe_dir/source" \
         "$probe_dir/prefix/bin/tool" 2>"$probe_dir/stderr" ||
        [ "$(cat "$probe_dir/prefix/bin/tool" 2>/dev/null || true)" != whp-install-probe ] ||
-       [ ! -x "$probe_dir/prefix/bin/tool" ]; then
+       ! install_mode "$probe_dir/prefix/bin/tool" '-rwxr-xr-x'; then
         printf 'error: install seed failed executable copy or mode: %s\n' "$candidate" >&2
         cat "$probe_dir/stderr" >&2
         exit 1
@@ -45,7 +62,8 @@ install_probe()
     printf 'updated-install-probe\n' > "$probe_dir/source" || exit 1
     if ! "$candidate" -m 0644 "$probe_dir/source" \
         "$probe_dir/prefix/bin/data" 2>"$probe_dir/stderr" ||
-       [ "$(cat "$probe_dir/prefix/bin/data" 2>/dev/null || true)" != updated-install-probe ]; then
+       [ "$(cat "$probe_dir/prefix/bin/data" 2>/dev/null || true)" != updated-install-probe ] ||
+       ! install_mode "$probe_dir/prefix/bin/data" '-rw-r--r--'; then
         printf 'error: install seed failed replacement: %s\n' "$candidate" >&2
         cat "$probe_dir/stderr" >&2
         exit 1
