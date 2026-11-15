@@ -122,6 +122,7 @@ jobs:
       - name: Verify native install seed and literal command bridge
         shell: bash
         run: |
+          /bin/sh scripts/tests/test-build-entry-permissions.sh
           /bin/sh -n seeds/install.sh
           /bin/sh -n scripts/whp-build/seed-bin/install
           bash -n scripts/tests/test-install-seed-adapter.bash

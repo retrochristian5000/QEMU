@@ -24,6 +24,19 @@ WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 "$bridge" -c -m 0644 \
 WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 "$bridge" -m 0755 \
     "$tmp/source" "$tmp/tree/nested path/tool"
 [[ -x "$tmp/tree/nested path/tool" ]]
+
+# Verify literal install resolves through PATH to the locked seed bridge,
+# not a different Homebrew, MacPorts, or inherited host utility.
+bridge_on_path="$(WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 \
+    PATH="$root/scripts/whp-build/seed-bin:$PATH" \
+    /bin/sh -c 'command -v install')"
+[[ "$bridge_on_path" == "$bridge" ]]
+WHP_INSTALL_SEED="$selected" WHP_INSTALL_LOCKED=1 \
+    PATH="$root/scripts/whp-build/seed-bin:$PATH" \
+    /bin/sh -c 'install -m 0644 "$1" "$2"' whp-install-path \
+        "$tmp/source" "$tmp/by-path"
+[[ "$(cat "$tmp/by-path")" == payload ]]
+
 python3 - "$tmp/tree/nested path" <<'PY'
 from pathlib import Path
 import stat
