@@ -28,6 +28,15 @@ mkdir -p "$FAKE_BIN" "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK" \
 : > "$ACTIVE_SDK/SDKSettings.json"
 : > "$SELECTED_SDK/SDKSettings.json"
 : > "$BETA_SDK/SDKSettings.json"
+# The developer-tools layer validates real SDK header provenance before
+# checking compiler flags. Keep the fake macOS SDKs complete enough to reach
+# the intended target/flag assertions, without substituting host headers.
+for macos_sdk in "$ACTIVE_SDK" "$SELECTED_SDK" "$BETA_SDK"; do
+    mkdir -p "$macos_sdk/usr/include/sys"
+    for header in stdio.h stdlib.h unistd.h sys/types.h TargetConditionals.h; do
+        : > "$macos_sdk/usr/include/$header"
+    done
+done
 
 cat > "$FAKE_BIN/uname" <<'EOF'
 #!/usr/bin/env bash
