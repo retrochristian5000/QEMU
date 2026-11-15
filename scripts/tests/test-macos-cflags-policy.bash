@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Hermetic tests: no Xcode, SDK downloads, or QEMU compilation.
 set -euo pipefail
+trap 'status=$?; printf "error: macOS CFLAGS fixture failed at line %s (exit %s): %s\n" "$LINENO" "$status" "$BASH_COMMAND" >&2' ERR
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$SOURCE_DIR/scripts/whp-build/macos-cflags.bash"
 work="$(mktemp -d "${TMPDIR:-/tmp}/whp-macos-cflags.XXXXXX")"
