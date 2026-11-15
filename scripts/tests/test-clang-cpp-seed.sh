@@ -10,7 +10,9 @@ trap 'exit 1' 1 2 3 15
 
 # A dedicated frontend may preprocess but need not compile or link.
 native=$(/bin/sh "$root/seeds/cc.sh" --print-cc) || exit 1
-mock="$tmp/clang-cpp"
+# Match resolve_executable's physical-path normalization on macOS, where
+# /var/folders often resolves to /private/var/folders.
+mock="$(CDPATH= cd -P -- "$tmp" && pwd -P)/clang-cpp"
 cat > "$mock" <<'MOCK'
 #!/bin/sh
 case "${1:-}" in
@@ -26,12 +28,18 @@ chmod +x "$mock"
 export WHP_TEST_NATIVE_CC="$native"
 
 selected=$(WHP_CLANG_CPP_SEED="$mock" /bin/sh "$root/seeds/clang-cpp.sh" --print-seed) || exit 1
-[ "$selected" = "$mock" ]
+[ "$selected" = "$mock" ] || {
+    printf 'error: clang-cpp seed selected %s; expected %s\n' "$selected" "$mock" >&2
+    exit 1
+}
 WHP_CLANG_CPP_SEED="$mock" /bin/sh "$root/seeds/clang-cpp.sh" --check >/dev/null
 
 # cpp.sh must accept preprocessing-only drivers without a native link test.
 selected=$(WHP_CPP_SEED="$mock" /bin/sh "$root/seeds/cpp.sh" --print-seed) || exit 1
-[ "$selected" = "$mock" ]
+[ "$selected" = "$mock" ] || {
+    printf 'error: clang-cpp seed selected %s; expected %s\n' "$selected" "$mock" >&2
+    exit 1
+}
 output=$(printf '#define WHP_CPP_DEDICATED 827\nWHP_CPP_DEDICATED\n' |
     WHP_CPP_SEED="$mock" WHP_CPP_LOCKED=1 \
     /bin/sh "$root/seeds/cpp.sh" -P -x c -) || exit 1
