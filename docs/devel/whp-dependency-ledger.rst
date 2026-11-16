@@ -417,6 +417,43 @@ Likewise, do not narrow ``CONFIG_BSD`` globally or disable BSD
 ``python3 scripts/tests/test-freebsd-host-boundaries.py -v``;
 this is not proof of a native macOS/FreeBSD compile or runtime test.
 
+Dependency directory discovery without fixed-prefix assumptions
+---------------------------------------------------------------
+
+An executable's installation path does **not** prove where its companion
+development files live. A missing hard-coded directory is not evidence
+that the dependency is unavailable. Conversely, locating one file does
+not prove the complete interface or a compatible architecture.
+
+* GNU Make's source-generation path now discovers real ``pkg.m4``
+  beside the selected ``pkg-config``/``pkgconf`` executable (including
+  its symlink target), in validated inherited ``ACLOCAL_PATH``
+  directories, and in the selected Automake ``aclocal --print-ac-dir``
+  directory. This supports independently installed macro packages,
+  wrappers and nonstandard-but-valid prefixes without walking arbitrary
+  directories or fabricating missing macros. Absent ``pkg.m4`` still
+  fails before GNU Make source generation. Malformed, nonexistent or
+  relative inherited ``ACLOCAL_PATH`` entries remain invalid; the
+  generated-source cache marker still records the effective path.
+* A private managed library may install its ``.pc`` metadata in
+  ``lib/pkgconfig``, ``lib64/pkgconfig``, FreeBSD's
+  ``libdata/pkgconfig``, or the standard ``share/pkgconfig``.
+  The QEMU zlib, SDL3, JACK and libisofs handoff scans now recognize
+  all four within their **selected managed prefixes**; macOS restoration
+  still requires the matching ``.pc`` file and bootstrap marker and
+  rejects inherited prefixes outside the current build tree.
+* Neither relaxation permits headers or linkable libraries from a
+  different target ABI, a second Apple SDK, an unrelated Homebrew Cellar
+  keg, or a stale foreign submodule checkout. Native compile/link and
+  SDK checks remain separate required evidence.
+
+Use ``python3 scripts/tests/test-make-gnulib-cache.py`` and
+``python3 scripts/tests/test-macos-managed-library-metadata.py -v``.
+The Linux/macOS fixture workflow
+``.github/workflows/dependency-directory-layouts.yml`` runs those
+checks without rebuilding Make, SDL3 or any other fork. It verifies
+directory discovery and rejection rules, not a complete native build.
+
 Known bootstrap and library edges
 ---------------------------------
 
