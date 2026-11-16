@@ -1210,6 +1210,36 @@ matching core modules rather than promoting a binary alone. The final
 ``Config`` and report the native host OS. Compiler/SDK/bootstrap-seed,
 source revision and Make identities enter the incremental cache marker.
 
+**Installed Perl CORE header contract:** A working ``bin/perl`` and
+``Config.pm`` are not sufficient for later native Perl C/XS consumers.
+Before writing the successful bootstrap marker, ``scripts/ensure-perl.py``
+queries the installed interpreter's ``Config{archlibexp}`` and confirms its
+``CORE`` directory resolves **inside** ``$BUILD_DIR/deps/perl``.
+The managed prefix must contain ``EXTERN.h``, ``perl.h``, ``XSUB.h``,
+``config.h`` and ``embed.h``. A test C translation unit includes the
+public C/XS headers and is compiled to an object with the selected native
+compiler, Perl's installed ``Config{ccflags}``/``Config{cppflags}`` and
+the selected macOS SDK. A missing or incompatible native system/header
+dependency is therefore reported at Perl promotion, not later while building
+Autoconf/Automake. Installed Perl configuration is queried without inherited
+``PERL5LIB`` or ``PERLLIB``, so the external seed cannot supply false
+header provenance. The failing compile is logged under
+``$BUILD_DIR/bootstrap/perl/header-compile.log``.
+
+The same short header compilation runs when reusing a cached managed Perl
+installation. A passing cached installation is **not** rebuilt; a broken
+installed header fails clearly rather than being silently accepted. The
+existing fingerprint schema remains unchanged, so adding this validation does
+not force unrelated Perl/LLVM/toolchain rebuilds. The installed header probe
+checks compilation, **not** Perl embedding or ``libperl`` linking:
+``-Uuseshrplib`` is the intentional managed Perl build policy.
+``seeds/perl.sh`` remains an interpreter-only bootstrap root: it does
+not require the system Perl development headers needed by optional XS builds.
+Run ``python3 scripts/tests/test-perl-core-headers.py -v`` for isolated
+success, missing-header, wrong-prefix, and incompatible-header fixtures;
+``managed-perl.yml`` runs them on Linux and macOS with the existing
+native Perl build job.
+
 Before managed Automake and Autoconf, ``BOOTSTRAP_PERL=auto`` attempts
 this fork on macOS and keeps the original Perl seed on failure. ``BOOTSTRAP_PERL=1``
 requires the managed interpreter; ``BOOTSTRAP_PERL=0`` disables
