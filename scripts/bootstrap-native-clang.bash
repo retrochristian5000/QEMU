@@ -1748,6 +1748,23 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
+# Native LLVM cannot bootstrap its own llvm-ar/llvm-ranlib. Select proven
+# build-machine tools only when the installed LLVM cache cannot be reused.
+# Apple, GNU Binutils and preinstalled LLVM providers are all eligible.
+bootstrap_native_ar=$(/bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed) || {
+    printf '%s\n' 'error: native LLVM requires a working host ar (WHP_AR_SEED / AR_FOR_BUILD)' >&2
+    exit 1
+}
+bootstrap_native_ranlib=$(
+    WHP_AR_SEED="$bootstrap_native_ar" \
+        /bin/sh "$SOURCE_DIR/seeds/ranlib.sh" --print-seed
+) || {
+    printf '%s\n' 'error: native LLVM requires a working host ranlib (WHP_RANLIB_SEED / RANLIB_FOR_BUILD)' >&2
+    exit 1
+}
+printf 'WHP native LLVM archive tools: ar=%s; ranlib=%s\n' \
+    "$bootstrap_native_ar" "$bootstrap_native_ranlib" >&2
+
 # Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
 # revisions. Re-running CMake updates changed rules in place, while Ninja keeps
 # object dependency state and rebuilds only affected outputs. A stale or
@@ -1778,6 +1795,10 @@ cmake_args=(
     -B "$LLVM_BUILD_DIR"
     -G Ninja
     "-DCMAKE_MAKE_PROGRAM=$ninja_cmd"
+    # Do not allow PATH or stale CMake cache entries to switch between
+    # host GNU, Apple, LLVM and target-specific archive implementations.
+    "-DCMAKE_AR=$bootstrap_native_ar"
+    "-DCMAKE_RANLIB=$bootstrap_native_ranlib"
     -DCMAKE_BUILD_TYPE=Release
     # Drop old cross-target cache entries without removing the incremental
     # Ninja graph or its compiled objects and depfiles.

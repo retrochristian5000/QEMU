@@ -96,6 +96,41 @@ def main() -> int:
                     f"error: WHP dependency ledger lost {label}: {needle}"
                 )
 
+    # LLVM archivers are rebuild-only native capabilities. GNU Binutils
+    # is a possible provider, not a mandatory source build or LTO plugin.
+    llvm_bootstrap = (
+        ROOT / "scripts" / "bootstrap-native-clang.bash"
+    ).read_text(encoding="utf-8")
+    cache_hit = llvm_bootstrap.index(
+        'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker"'
+    )
+    ar = llvm_bootstrap.index(
+        'bootstrap_native_ar=$(/bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed)'
+    )
+    ranlib = llvm_bootstrap.index('WHP_AR_SEED="$bootstrap_native_ar"')
+    cmake = llvm_bootstrap.index("cmake_args=(", ranlib)
+    if not cache_hit < ar < ranlib < cmake:
+        raise SystemExit("error: LLVM archive admission must follow cache reuse")
+    for token in (
+        '"-DCMAKE_AR=$bootstrap_native_ar"',
+        '"-DCMAKE_RANLIB=$bootstrap_native_ranlib"',
+        "-DLLVM_ENABLE_LTO=OFF",
+    ):
+        if token not in llvm_bootstrap:
+            raise SystemExit("error: LLVM archive tool contract lost: " + token)
+    if ("printf 'ARG=%q" not in llvm_bootstrap
+            or '"${cmake_args[@]}"' not in llvm_bootstrap):
+        raise SystemExit("error: LLVM archive changes bypass CMake cache identity")
+    for token in (
+        "GNU Binutils and native LLVM bootstrap boundary",
+        "Native archiver and archive indexer",
+        "AR_FOR_TARGET",
+        "CMAKE_RANLIB",
+        "LD_FOR_BUILD",
+    ):
+        if token not in ledger:
+            raise SystemExit("error: GNU Binutils ledger contract lost: " + token)
+
     # The PowerPC cross-toolchain can be reused without network/download,
     # archive, checksum or GNU Make prerequisites. These checks belong after
     # the installed-toolchain marker and capability check, not at entry.

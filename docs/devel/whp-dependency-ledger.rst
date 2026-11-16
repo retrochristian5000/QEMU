@@ -400,6 +400,13 @@ declare all listed tools mandatory QEMU roots.
      - LLVM's initial CMake configure and compiler build
      - ``seeds/cc.sh``, ``seeds/cxx.sh``, host SDK/toolchain selection
      - Required seed; never bootstrap LLVM with its own unfinished compiler.
+   * - Native archiver and archive indexer
+     - Only if installed LLVM is unusable and a source rebuild is needed
+     - ``seeds/ar.sh``, then ``seeds/ranlib.sh``, both validated
+       with native objects; pin to ``CMAKE_AR`` and ``CMAKE_RANLIB``
+     - Apple, GNU Binutils or preinstalled LLVM tools may qualify; the
+       unfinished ``llvm-ar`` and ``llvm-ranlib`` may not be
+       prerequisites of their own first build.
    * - CMake
      - LLVM configure on a cache miss or source/configuration change
      - Validated ``seeds/cmake.sh`` selects an existing host CMake
@@ -459,6 +466,52 @@ configure/build consumer and whether a validated installed toolchain can
 already be reused. The LLVM project's own source files and QEMU's recorded
 gitlink remain separate authorities; never fetch an unrelated branch tip
 or force a rebuild solely to populate this documentation.
+
+GNU Binutils and native LLVM bootstrap boundary
+-----------------------------------------------
+
+GNU Binutils supplies overlapping program names (``ar``, ``ranlib``,
+``as``, ``ld``, ``nm``, ``objcopy``, ``objdump``,
+``readelf``, ``strip``), but a name alone does not prove a GNU
+provider or compatible object format.  The *current native LLVM build*
+needs an archive-creation/indexing capability **before** LLVM can
+compile its own ``llvm-ar``/``llvm-ranlib``.  Its existing QEMU
+``seeds/ar.sh`` and ``seeds/ranlib.sh`` already test actual native
+objects, archive contents, symbol indexes and linked executables.
+After an installed LLVM cache miss, the bootstrap now selects both
+tools, keeps the archiver consistent during ranlib admission and passes
+their paths as ``CMAKE_AR`` and ``CMAKE_RANLIB``.  The existing CMake
+argument signature detects changes.  No extra probes or source builds
+are added to the successful installed-toolchain cache-hit path.
+
+On **Darwin**, Apple/Xcode CLT native ``ar``, ``ranlib`` and the
+Clang-selected Mach-O linker satisfy the normal first-stage capability;
+do not substitute ELF ``ld.bfd`` for Apple ``ld``.  The CMake Darwin
+``libtool`` executable is not GNU Libtool.  Existing installed
+``ld64.lld`` is adopted only if its native executable/authenticated
+relocation probes pass.  On **Linux**, working native GNU Binutils and
+LLVM replacements may both be valid, but any GNU LTO ``--plugin``
+contract remains distinct from LLVM-native LTO and is not established
+by an ordinary archive test.  The selected LLVM bootstrap currently
+sets ``LLVM_ENABLE_LTO=OFF``.
+
+Additional ``nm``, ``objcopy``, ``objdump``, ``readelf``,
+``as``, ``ld`` and ``strip`` dependencies must be traced to
+their actual invoked options and ABI before gaining bootstrap status.
+The LLVM distribution produces LLVM equivalents of many of these:
+an output is not its own input.  Preserve native build-tool variables
+(``CMAKE_AR``, ``CMAKE_RANLIB``, ``LD_FOR_BUILD``) separately
+from PowerPC target tools (``AR_FOR_TARGET``, ``LD_FOR_TARGET``).
+
+The **conditional PowerPC GCC** lane in
+``scripts/bootstrap-powerpc-toolchain.bash`` really does compile GNU
+Binutils first.  It verifies the target ``as/ar/ld/nm/objcopy/
+objdump/readelf/strip/ranlib`` installation before starting cross-GCC.
+Its existing installed-cross-toolchain reuse check is earlier than the
+GNU Binutils download and build, and should remain so.  GNU Binutils
+is therefore a *conditional cross-toolchain source dependency*, not a
+universal native LLVM prerequisite or a reason to introduce a new
+fork before demonstrating a missing provider.
 
 LLVM deeper seed-candidate scan
 ------------------------------
