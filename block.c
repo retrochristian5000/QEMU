@@ -54,14 +54,6 @@
 #include "qemu/rcu.h"
 #include "block/coroutines.h"
 
-#ifdef CONFIG_BSD
-#include <sys/ioctl.h>
-#include <sys/queue.h>
-#if defined(HAVE_SYS_DISK_H)
-#include <sys/disk.h>
-#endif
-#endif
-
 #ifdef _WIN32
 #include <windows.h>
 #endif
