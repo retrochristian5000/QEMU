@@ -1548,6 +1548,42 @@ seed selection emits only the path on stdout. Each native probe uses a
 private ``mktemp`` directory so interrupted/incremental builds do not
 collide with an earlier probe process.
 
+GNU C++ seed versus generic C++ bootstrap
+-------------------------------------------
+
+``seeds/g++.sh`` is an **optional GNU-specific native C++ compiler
+selector**, distinct from the generic ``seeds/cxx.sh`` and the
+independent Clang selector.  It does not change ``CXX_FOR_BUILD``,
+``WHP_CXX_SEED``, ``CC_FOR_BUILD``, guest ``CXX`` or the compiler
+selected for LLVM.  A consumer requiring GNU C++ must opt in explicitly.
+
+The GNU-only selector accepts ``WHP_GXX_SEED`` then ``GXX``, or
+discovers an installed ``g++`` / versioned GNU C++ driver.  It uses
+the shared native C++17 compile/link/execute and SDK probe, then
+requires ``__GNUC__`` and ``__GNUG__``, rejects
+``__clang__`` and known other compatibility frontends, confirms
+the driver's ``gcc version`` report, and links/runs a real C++17
+``std::string`` / ``std::vector`` program.  A command named
+``g++`` on macOS may actually be **Apple Clang**, and Clang defines
+``__GNUC__``: neither is sufficient proof of GNU GCC. Explicit bad
+selections fail closed rather than changing compiler families.
+
+``--print-gxx``, ``--print-seed`` and ``--check`` report a
+validated native GNU driver; successful stdout remains machine-readable.
+For hot paths, ``WHP_GXX_LOCKED=1`` and the admitted absolute
+``WHP_GXX_SEED`` forward arguments without repeated native builds,
+while rejecting recursive seed adapters.  Darwin execution uses the
+same selected macOS SDK as native compiler admission.  None of these
+options builds a GCC fork or makes GNU G++ mandatory before LLVM.
+
+If a particular build requires GCC C and GNU C++ to share an ABI,
+the caller must also check its explicit ``CC_FOR_BUILD`` and
+``CXX_FOR_BUILD`` selections: finding GNU G++ is not evidence of
+a matching C compiler, libstdc++, LTO plugin or target-ABI pairing.
+The optional GNU selector is covered by
+``scripts/tests/test-gxx-seed.py`` and remains separate from the
+generic ``cxx.sh`` selection and existing QEMU linker policy.
+
 macOS developer selection
 -------------------------
 

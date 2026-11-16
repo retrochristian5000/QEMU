@@ -189,6 +189,14 @@ Autotools stages must still perform their independent install-target and
 artifact checks. ``scripts/tests/test-install-seed-adapter.bash``
 exercises the native adapter and literal bridge on Linux and macOS.
 
+GNU-specific C++ probe: ``seeds/g++.sh`` is an optional native GNU
+G++ selector, with ``WHP_GXX_SEED`` / ``GXX`` provider identity
+independent of ``WHP_CXX_SEED`` and ``CXX_FOR_BUILD``.
+Apple's executable named ``g++`` may be Clang, and Clang's
+``__GNUC__`` macro is only GCC compatibility. The GNU seed checks
+the GCC frontend, C++17 native execution and C++ standard-library
+linking; it never automatically replaces Clang or builds GCC.
+
 Host version and source pin comparison
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
