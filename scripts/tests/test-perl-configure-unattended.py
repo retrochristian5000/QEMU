@@ -131,6 +131,7 @@ class PerlConfigureTests(unittest.TestCase):
             self.assertIn("-Dranlib=/usr/bin/ranlib", args)
             self.assertIn("-Dar=/usr/bin/ar", args)
             self.assertIn("-Dfull_ar=/usr/bin/ar", args)
+            self.assertIn("-Dld=/usr/bin/cc", args)
 
     def test_makefile_archive_tool_must_match_admitted_seed(self):
         with tempfile.TemporaryDirectory() as tmp:
