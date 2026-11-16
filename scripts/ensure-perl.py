@@ -18,10 +18,12 @@ import os
 import pathlib
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -139,6 +141,74 @@ def valid_perl(path: pathlib.Path) -> bool:
                 "FreeBSD": "freebsd", "NetBSD": "netbsd",
                 "OpenBSD": "openbsd"}.get(platform.system())
     return bool(configured) and (expected is None or configured == expected)
+
+
+
+def validate_installed_core_headers(executable: pathlib.Path,
+                                    prefix: pathlib.Path, compiler: str,
+                                    sdk: str, work: pathlib.Path) -> None:
+    """Compile Perl's installed C/XS headers with its native build toolchain.
+
+    A valid interpreter/Config.pm is not evidence that its CORE development
+    headers were installed or belong to the same prefix. Do this only after
+    the managed Perl installation exists, and on cached reuse: no seed Perl
+    headers are required to bootstrap Perl itself.
+    """
+    env = clean_host_environment(os.environ)
+    # A locally set PERL5LIB/PERLLIB may make the new Perl load the old
+    # interpreter's Config.pm; never allow it to certify the wrong headers.
+    for name in ("PERL5LIB", "PERLLIB", "PERL5OPT", "PERL5DB",
+                 "PERL_LOCAL_LIB_ROOT", "PERL_MM_OPT", "PERL_MB_OPT"):
+        env.pop(name, None)
+    if sdk:
+        env["SDKROOT"] = sdk
+    config = run(
+        [str(executable), "-MConfig", "-e",
+         'print join "\0", map { defined $Config{$_} ? $Config{$_} : "" } '
+         'qw(archlibexp ccflags cppflags);'],
+        env=env, capture=True, phase="installed CORE Config",
+    )
+    fields = config.split("\0")
+    if len(fields) != 3 or not fields[0]:
+        raise RuntimeError("installed Perl Config lacks archlibexp/ccflags/cppflags")
+    archlib, ccflags, cppflags = fields
+    core = (pathlib.Path(archlib) / "CORE").resolve()
+    # Resolve symlinks, but reject a Config pointing at the seed or a stale
+    # Homebrew/system Perl development package outside this managed prefix.
+    if not core.is_relative_to(prefix.resolve()):
+        raise RuntimeError(
+            f"installed Perl CORE headers are outside managed prefix: {core}"
+        )
+    for header in ("EXTERN.h", "perl.h", "XSUB.h", "config.h", "embed.h"):
+        if not (core / header).is_file():
+            raise RuntimeError(f"installed Perl CORE header missing: {core / header}")
+    try:
+        flags = shlex.split(ccflags) + shlex.split(cppflags)
+    except ValueError as exc:
+        raise RuntimeError(f"installed Perl Config C flags are malformed: {exc}") from exc
+
+    work.mkdir(parents=True, exist_ok=True)
+    # Install only an object: -Uuseshrplib is deliberate and the embed/link
+    # contract differs between executables and loadable XS modules.
+    with tempfile.TemporaryDirectory(prefix="core-headers-", dir=work) as temp:
+        source = pathlib.Path(temp) / "probe.c"
+        output = pathlib.Path(temp) / "probe.o"
+        source.write_text(
+            "#include <EXTERN.h>\n"
+            "#include <perl.h>\n"
+            "#include <XSUB.h>\n"
+            "#ifndef PERL_REVISION\n"
+            "#error Perl headers do not define PERL_REVISION\n"
+            "#endif\n"
+            "int whp_perl_core_header_probe(void) { return PERL_REVISION > 0; }\n",
+            encoding="utf-8",
+        )
+        sysroot = (["-isysroot", sdk]
+                   if sdk and platform.system() == "Darwin" else [])
+        run([compiler, *sysroot, "-I", str(core), *flags,
+             "-c", str(source), "-o", str(output)],
+            env=env, phase="installed CORE header compile",
+            log_path=work / "header-compile.log")
 
 
 def stage_source(revision: str, destination: pathlib.Path, *, git: str) -> None:
@@ -336,12 +406,19 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     if backup.exists():
         if marker_path.is_file() and marker_path.read_text() == marker:
             if valid_perl(executable):
+                try:
+                    validate_installed_core_headers(executable, prefix, cc,
+                                                    sdk, work)
+                except RuntimeError:
+                    restore_previous_install(prefix, backup)
+                    raise
                 shutil.rmtree(backup)
                 return executable
         restore_previous_install(prefix, backup)
 
     if marker_path.is_file() and marker_path.read_text() == marker:
         if valid_perl(executable):
+            validate_installed_core_headers(executable, prefix, cc, sdk, work)
             return executable
 
     source = work / "source"
@@ -391,6 +468,7 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
             raise RuntimeError(
                 "managed Perl failed installed interpreter/module/OS checks"
             )
+        validate_installed_core_headers(executable, prefix, cc, sdk, work)
         # Never mark an incomplete installation as reusable.
         temporary_marker = marker_path.with_name(marker_path.name + ".tmp")
         temporary_marker.write_text(marker, encoding="utf-8")
