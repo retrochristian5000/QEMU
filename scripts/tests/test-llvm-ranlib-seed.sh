@@ -102,16 +102,17 @@ grep -Fq 'LLVM ranlib/ar version mismatch' "$tmp/err"
 
 # Version banners are not sufficient: indexing must change a rcS archive.
 real_major=$("$llvm_ar" --version | sed -n 's/.*LLVM version \([0-9][0-9]*\).*/\1/p' | sed -n '1p')
-cat >"$tmp/noop-ranlib" <<EOT
+cat >"$tmp/noop-ranlib" <<'EOT'
 #!/bin/sh
 if [ "${1:-}" = --version ]; then
-    printf '%s\n' 'LLVM version $real_major.0.0'
+    printf '%s\n' 'LLVM version WHP_REAL_MAJOR.0.0'
     exit 0
 fi
 exit 0
 EOT
-chmod +x "$tmp/noop-ranlib"
-if WHP_LLVM_RANLIB_SEED="$tmp/noop-ranlib" /bin/sh "$seed" --print-seed >"$tmp/out" 2>"$tmp/err"; then
+sed "s/WHP_REAL_MAJOR/$real_major/" "$tmp/noop-ranlib" >"$tmp/noop-versioned"
+chmod +x "$tmp/noop-versioned"
+if WHP_LLVM_RANLIB_SEED="$tmp/noop-versioned" /bin/sh "$seed" --print-seed >"$tmp/out" 2>"$tmp/err"; then
     printf '%s\n' 'error: no-op llvm-ranlib passed' >&2
     exit 1
 fi
