@@ -1255,7 +1255,7 @@ create an Autoconf/Automake/Perl cycle.
 
 ``scripts/tests/test-perl-bootstrap.py`` checks source pinning,
 bootstrap order, interpreter semantics, and the preserved seed.
-The QEMU Perl gitlink was advanced to fork commit ``462201979e87f7ee5c7012616c6511ec5039151d``,
+The QEMU Perl gitlink was initially advanced to fork commit ``462201979e87f7ee5c7012616c6511ec5039151d``,
 which includes the two older ``configure.gnu`` updates and the
 C-portability repair in ``Configure``: the ``getenv("PATH")``
 NULL guard and bounded, NUL-terminated locale-name copy. It also
@@ -1308,9 +1308,11 @@ wrong-prefix, foreign-tool and dropped-flag configurations.
 The Perl cache fingerprint schema was raised for the new
 compiler-driven-linker contract. This intentionally rebuilds *Perl only*
 when needed; it does not reset LLVM, the native compiler, the seed Perl,
-or unrelated source work. The pinned Perl gitlink must advance to include
-the fork changes before the regression can be exercised in
-``.github/workflows/managed-perl.yml``. These source/static checks do
+or unrelated source work. The pinned Perl gitlink has now advanced to fork commit
+``28262752ac157036a5f614fde11621a857eea7e2``, which includes
+these Darwin hints and the regression. The existing
+``.github/workflows/managed-perl.yml`` checks it with the pinned source
+on Linux and macOS when those jobs run. These source/static checks do
 not establish a successful native macOS or FreeBSD full build.
 
 Worktree identity and POSIX shell ``-ef`` compatibility
