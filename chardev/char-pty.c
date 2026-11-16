@@ -221,7 +221,12 @@ static void char_pty_finalize(Object *obj)
     pty_chr_timer_cancel(s);
 }
 
-#if defined HAVE_PTY_H
+#if defined CONFIG_DARWIN
+/* Darwin declares openpty in the selected macOS SDK's util.h, even if an
+ * unrelated pty.h appears on the include path (for example from Homebrew). */
+# include <termios.h>
+# include <util.h>
+#elif defined HAVE_PTY_H
 # include <pty.h>
 #elif defined CONFIG_BSD
 # include <termios.h>
