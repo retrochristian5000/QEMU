@@ -20,6 +20,37 @@ flag_string_has_lto()
     return 1
 }
 
+# A global -std is not a transferable optimization flag; the actual C
+# language dialect belongs to QEMU Meson or a dependency's own configure.
+flag_string_has_language_standard()
+{
+    local value="$1"
+    local token
+    local tokens=()
+    read -r -a tokens <<< "$value"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            -std|-std=*|-ansi|/std:*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+reject_global_language_standard_flags()
+{
+    local variable value
+    for variable in CFLAGS CPPFLAGS OBJCFLAGS CXXFLAGS; do
+        value="${!variable:-}"
+        if [[ -n "$value" ]] && flag_string_has_language_standard "$value"; then
+            printf '%s\n' \
+                "error: $variable contains a global language-standard flag: $value" \
+                'Use QEMU_C_STANDARD/QEMU_CXX_STANDARD for QEMU or configure' \
+                'a different C language standard locally for each dependency.' >&2
+            exit 1
+        fi
+    done
+}
+
 reject_global_lto_flags()
 {
     local variable value
@@ -265,6 +296,7 @@ whp_prepare_build_defaults()
     done
 
     CFLAGS="${CFLAGS:-}"
+    reject_global_language_standard_flags
     reject_global_lto_flags
 }
 

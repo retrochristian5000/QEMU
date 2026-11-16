@@ -918,6 +918,13 @@ def main(argv: List[str]) -> int:
         os.environ['WHP_DTC_FETCH_MISSING'] = (
             '1' if values['WHP_DTC_FETCH_MISSING'] == 'y' else '0'
         )
+        # The portable runner bypasses Bash preparation: check the chosen
+        # QEMU C dialect and reject ambient -std before configuring.
+        subprocess.run([
+            sys.executable, str(ROOT / 'scripts' / 'check-c-standard.py'),
+            '--compiler', os.environ.get('CC', 'cc'),
+            '--standard', values['QEMU_C_STANDARD'],
+        ], check=True)
         runner = select_runner()
         jobs = str(resolved_jobs(values['MACOS_BUILD_POWER']))
         if values['QEMU_HOST_PGO'] == 'use':

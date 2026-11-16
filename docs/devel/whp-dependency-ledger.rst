@@ -1548,6 +1548,40 @@ seed selection emits only the path on stdout. Each native probe uses a
 private ``mktemp`` directory so interrupted/incremental builds do not
 collide with an earlier probe process.
 
+Component-owned C99/C11/C17/C23 language standards
+----------------------------------------------------
+
+QEMU's Meson C code defaults to ``c_std=gnu11``. The menu allows
+``QEMU_C_STANDARD=gnu17`` or ``gnu23`` for QEMU only; a separate
+dependency's C99 requirement does not change that baseline. The
+private libisofs helper owns ``LIBISOFS_C_STANDARD = "gnu11"``,
+while LLVM clears inherited ``CFLAGS`` and lets CMake control its
+language dialect. Firmware and cross-tools retain their source-owned
+compiler and feature requirements, not a universal C language mode.
+
+The selected **QEMU artifact CC**, rather than ``CC_FOR_BUILD``,
+is checked immediately before a configure-cache miss in the normal
+Bash build. The portable Python runner uses the same
+``scripts/check-c-standard.py`` capability test before configure.
+The checker compiles a nonempty object in the selected
+``-std=`` mode and checks ``__STDC_VERSION__``, C99 and C11
+constructs and C23 ``typeof``/``nullptr`` features. Individual
+``c99``/``gnu99``, ``c11``/``gnu11``, ``c17``/``gnu17``
+and ``c23``/``gnu23`` checks are available for dependency audits,
+but none of these modes becomes a universal root requirement.
+
+GNU C23 remains version-dependent: GCC 14 may accept ``-std=gnu23``
+but report draft ``__STDC_VERSION__=202000L``, while Clang 17
+reports ``202311L``. The probe checks a real C23 feature subset
+instead of insisting on the final macro; success is **not** a
+certification of complete ISO C23 conformance or of native ABI.
+
+Global ``-std`` and ``-ansi`` in ``CFLAGS``, ``CPPFLAGS``,
+``OBJCFLAGS`` or ``CXXFLAGS`` are rejected during Bash preparation;
+the portable runner rejects them via the Python checker. This
+prevents contradictory QEMU/Meson and dependency-local standards.
+Tests: ``scripts/tests/test-c-standard-probe.py``. SDK and linker
+validation still belongs to the owning downstream build stage.
 GNU C++ seed versus generic C++ bootstrap
 -------------------------------------------
 

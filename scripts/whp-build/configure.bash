@@ -735,6 +735,13 @@ fi
 if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
    [[ ! -f "$config_file" ]] ||
    ! cmp -s "$config_candidate" "$config_file"; then
+    # The selected QEMU artifact CC may differ from the earlier host seed.
+    # On an unchanged build the configured-cache hit avoids this probe.
+    if ! "${PYTHON:-python3}" "$SOURCE_DIR/scripts/check-c-standard.py" \
+        --compiler "${CC:-cc}" --standard "$QEMU_C_STANDARD"; then
+        rm -f "$config_candidate"
+        return 1
+    fi
     (
         cd "$BUILD_DIR"
         "$SOURCE_DIR/configure" "${configure_args[@]}"
