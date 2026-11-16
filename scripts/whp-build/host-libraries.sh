@@ -117,7 +117,8 @@ whp_prepare_qemu_host_libraries()
             for WHP_SDL_PC_DIR in \
                 "$WHP_SDL_PREFIX/lib/pkgconfig" \
                 "$WHP_SDL_PREFIX/lib64/pkgconfig" \
-                "$WHP_SDL_PREFIX/libdata/pkgconfig"; do
+                "$WHP_SDL_PREFIX/libdata/pkgconfig" \
+                "$WHP_SDL_PREFIX/share/pkgconfig"; do
                 if [ -d "$WHP_SDL_PC_DIR" ]; then
                     WHP_SDL_PC_PATH="${WHP_SDL_PC_PATH:+$WHP_SDL_PC_PATH:}$WHP_SDL_PC_DIR"
                 fi
@@ -189,7 +190,8 @@ whp_prepare_qemu_host_libraries()
             for WHP_JACK_PC_DIR in \
                 "$WHP_JACK_PREFIX/lib/pkgconfig" \
                 "$WHP_JACK_PREFIX/lib64/pkgconfig" \
-                "$WHP_JACK_PREFIX/libdata/pkgconfig"; do
+                "$WHP_JACK_PREFIX/libdata/pkgconfig" \
+                "$WHP_JACK_PREFIX/share/pkgconfig"; do
                 if [ -d "$WHP_JACK_PC_DIR" ]; then
                     WHP_JACK_PC_PATH="${WHP_JACK_PC_PATH:+$WHP_JACK_PC_PATH:}$WHP_JACK_PC_DIR"
                 fi
