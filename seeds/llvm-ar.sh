@@ -176,6 +176,10 @@ whp_llvm_ar_reject_ignored_plugin()
 
 case "${1:-}" in
     --print-seed|--print-ar) probe=yes; select_seed ;;
+    --print-candidate)
+        # Fast version-identified lookup for an already-admitted LLVM tool
+        # family; callers must use --print-seed for native archive admission.
+        probe=no; select_seed ;;
     --check)
         probe=yes
         selected=$(select_seed) || exit 1
