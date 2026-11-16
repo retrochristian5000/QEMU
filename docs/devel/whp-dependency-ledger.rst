@@ -305,6 +305,46 @@ by the WHP account.
        of Automake and a validated host sed seed, then the installed GNU sed is
        promoted ahead of managed Git, Bash, and later Autotools consumers.
 
+Header provenance and dependency-interface checks
+-----------------------------------------------
+
+The native compiler seeds already compile and link basic build-machine C/C++
+headers. On macOS, the selected SDK is also checked by
+``scripts/whp-build/macos-developer-tools.sh``. Do not copy system headers
+into QEMU or let native build-tool probes consume guest/cross headers.
+
+A working binary alone does not prove its development interface. A dependency
+probe must establish three separate facts with the intended QEMU artifact
+compiler, SDK and effective package metadata:
+
+* The selected pkg-config module exists and meets its required version.
+* Its public header compiles with that module's include flags.
+* The resulting object links with that module's library flags; an optional
+  zero-argument function reference checks a particular exported symbol.
+
+``scripts/whp-build/header-audit.py`` provides an explicitly requested
+post-bootstrap diagnostic; it is not a seed binary, package installer, or
+unconditional new build gate. Use the intended ``CC``, ``PKG_CONFIG``,
+``SDKROOT`` and compilation/link flags in the environment. For example::
+
+  python3 scripts/whp-build/header-audit.py --package glib-2.0 --min-version 2.66.0 --header glib.h --function g_get_monotonic_time
+
+  python3 scripts/whp-build/header-audit.py --package pixman-1 --header pixman.h --function pixman_version_string
+
+The tool distinguishes metadata, header-compilation, and linking failures.
+Pass ``--static`` only when the actual consumer uses static linking. Missing
+optional dependencies remain optional. For system libraries without pkg-config
+metadata, including macOS zlib, use Meson's system dependency detection or
+the relevant managed-library build rather than inventing metadata.
+
+Generated configuration/QAPI headers are owned by their code generators and
+Meson/Ninja dependency edges. LLVM, Perl, firmware, and other managed
+subprojects must check headers with their own selected compiler and SDK, not
+an unrelated QEMU-host package probe. A successful probe does not establish
+a complete emulator build. Run the focused local fixture with::
+
+  python3 scripts/tests/test-header-audit.py -v
+
 Known bootstrap and library edges
 ---------------------------------
 
