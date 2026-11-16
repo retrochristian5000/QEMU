@@ -180,8 +180,13 @@ def validate_installed_core_headers(executable: pathlib.Path,
             f"installed Perl CORE headers are outside managed prefix: {core}"
         )
     for header in ("EXTERN.h", "perl.h", "XSUB.h", "config.h", "embed.h"):
-        if not (core / header).is_file():
-            raise RuntimeError(f"installed Perl CORE header missing: {core / header}")
+        entry = core / header
+        if not entry.is_file():
+            raise RuntimeError(f"installed Perl CORE header missing: {entry}")
+        if not entry.resolve().is_relative_to(prefix.resolve()):
+            raise RuntimeError(
+                f"installed Perl CORE header escapes managed prefix: {entry}"
+            )
     try:
         flags = shlex.split(ccflags) + shlex.split(cppflags)
     except ValueError as exc:
