@@ -379,6 +379,44 @@ Linux and macOS Meson configure/compile matrix. Verify the native macOS
 build separately, including Homebrew include paths, to detect unexpected
 Linux UAPI headers shadowing the selected SDK.
 
+FreeBSD and Darwin header boundaries
+-----------------------------------
+
+Darwin has BSD ancestry, but it is not a FreeBSD kernel or userspace ABI.
+Preserve the broad ``CONFIG_BSD`` grouping for code that truly shares BSD
+interfaces, and use ``CONFIG_FREEBSD`` / ``host_os == 'freebsd'`` for
+FreeBSD-specific implementations. For example, ``sys/event.h`` and
+``kqueue()`` are valid in the Darwin exit-with-parent implementation,
+while FreeBSD's ``sys/procctl.h`` is selected only on FreeBSD.
+
+The current ``bsd-user`` Meson implementation only provides a
+``bsd-user/freebsd/meson.build`` host directory, which requires
+FreeBSD-specific ``libprocstat``, ``libkvm``, and syscall headers.
+An explicit BSD-user target on Darwin/other BSD hosts now fails with a
+FreeBSD-host requirement; the default-target mode skips it. The early
+``have_bsd_user`` check must agree so an excluded target does not
+prematurely activate ``subdir(host_os)``.
+
+The shared ``block.c`` translation unit did not use any declarations
+from its ``CONFIG_BSD`` header block (``sys/disk.h``,
+``sys/queue.h``, ``sys/ioctl.h``), so the dead include block and
+sole ``HAVE_SYS_DISK_H`` Meson probe were removed. Do not replace
+these with fabricated compatibility headers. Real platform block-device
+ioctls remain in ``block/file-posix.c``, under its OS-specific guards.
+
+For the macOS PTY backend, ``chardev/char-pty.c`` now selects the
+selected SDK's ``util.h`` before testing generic ``HAVE_PTY_H``.
+That prevents a third-party ``pty.h`` from shadowing Darwin's normal
+``openpty()`` declaration. FreeBSD/DragonFly ``libutil.h``, other
+BSD ``util.h``, and non-BSD ``pty.h`` paths are preserved.
+
+``sys/ioccom.h`` is not treated as FreeBSD-exclusive: it is a
+capability-tested BSD-family ioctl declaration also used on Darwin.
+Likewise, do not narrow ``CONFIG_BSD`` globally or disable BSD
+``kqueue`` support. The source regression is
+``python3 scripts/tests/test-freebsd-host-boundaries.py -v``;
+this is not proof of a native macOS/FreeBSD compile or runtime test.
+
 Known bootstrap and library edges
 ---------------------------------
 
