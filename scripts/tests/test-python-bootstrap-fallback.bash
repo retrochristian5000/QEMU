@@ -124,10 +124,17 @@ EOF
 chmod +x "$TMP/fakebin/uname"
 ln -s "$(command -v dirname)" "$TMP/fakebin/dirname"
 
+# Retain OS utilities for the required copy/install probes while shadowing
+# installed Python so the real bundled fallback path must still execute.
+for tool in python3 python; do
+    printf '#!/bin/sh\nexit 127\n' > "$TMP/fakebin/$tool"
+    chmod +x "$TMP/fakebin/$tool"
+done
+
 marker="$TMP/python-bootstrap.called"
 output="$({
     /usr/bin/env -i \
-        PATH="$TMP/fakebin" \
+        PATH="$TMP/fakebin:/usr/bin:/bin" \
         HOME="$TMP" \
         WHP_BUILD_BASH=/bin/bash \
         WHP_SHELL_PROBE_ONLY=1 \

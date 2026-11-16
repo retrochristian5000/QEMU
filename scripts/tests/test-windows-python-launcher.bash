@@ -6,15 +6,8 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-COPY="$TMP/copy"
-mkdir -p "$COPY/scripts/whp-config" "$COPY/scripts/whp-build"
-cp "$ROOT/build.sh" "$COPY/build.sh"
-cp "$ROOT/scripts/whp-config/config.py" "$COPY/scripts/whp-config/config.py"
-cp "$ROOT/scripts/whp-config/menuconfig.py" "$COPY/scripts/whp-config/menuconfig.py"
-cp "$ROOT/scripts/whp-build/portable-build.py" "$COPY/scripts/whp-build/portable-build.py"
-cp "$ROOT/scripts/whp-build/portable-build-entry.py" \
-   "$COPY/scripts/whp-build/portable-build-entry.py"
-
+# The real root entry is safe for menuconfig --dump when source update
+# is disabled. Avoid copying an incomplete bootstrap tree for this probe.
 REAL_PYTHON="$(command -v python3)"
 FAKEBIN="$TMP/fakebin"
 mkdir -p "$FAKEBIN"
@@ -45,7 +38,7 @@ exec "$REAL_PYTHON" "\$@"
 EOF
 chmod +x "$FAKEBIN/uname" "$FAKEBIN/py"
 
-menu_output="$(PATH="$FAKEBIN:$PATH" /bin/sh "$COPY/build.sh" menuconfig --dump)"
+menu_output="$(WHP_SOURCE_UPDATE=0 PATH="$FAKEBIN:$PATH" /bin/sh "$ROOT/build.sh" menuconfig --dump)"
 grep -Fq 'WHP QEMU Configuration' <<< "$menu_output" || \
     grep -Fq 'Build outputs' <<< "$menu_output"
 

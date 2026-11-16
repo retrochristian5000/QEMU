@@ -245,7 +245,7 @@ by the WHP account.
    * - ``toolchains/python-runtime``
      - ``Python``
      - yes
-     - Python >= 3.9 fallback; POSIX bootstrap requires a host C compiler and GNU Make.
+     - Python >= 3.9 fallback; POSIX bootstrap requires a host C compiler and GNU Make. The independent ``seeds/python.sh`` selects installed Python before source or managed Python exists; it never bootstraps itself.
    * - ``toolchains/make``
      - ``make``
      - yes
@@ -1027,6 +1027,37 @@ pkg-config implementation is installed.
 Bootstrap phase ordering
 ------------------------
 
+Independent Python seed and bundled CPython bootstrap boundary
+-------------------------------------------------------------
+
+``seeds/python.sh`` is a **pre-managed-Python interpreter selector**.
+It accepts an explicit ``PYTHON`` or ``WHP_PYTHON_SEED`` and fails
+closed when the requested executable is missing or unusable. Native
+host discovery preserves the original macOS architecture-aware Homebrew
+paths, then ordinary ``python3``/``python`` PATH discovery, and the
+Windows ``py`` launcher as a last-resort locator. Only a resolved
+interpreter is returned; ``py`` itself is never passed to Meson.
+The check executes isolated Python 3.9+ code and imports the standard
+library ``venv`` module; a name, version banner, or recursive adapter
+cannot qualify. The seed has no Git or compiler dependencies and does
+not fetch/build Python, create venvs, or change global PATH.
+
+The public ``build.sh`` now selects installed Python through that single
+seed instead of maintaining a second provider search. It preserves
+``WHP_PYTHON_BOOTSTRAP_SEED`` as the root when an installed Python is
+admitted. ``BOOTSTRAP_PYTHON=auto`` reuses an installed interpreter,
+``BOOTSTRAP_PYTHON=1`` promotes the pinned CPython source build when
+``PYTHON`` was not explicitly supplied, and ``BOOTSTRAP_PYTHON=0``
+rejects a missing interpreter. Without installed Python, the shell
+``menuconfig`` remains usable before any source bootstrap, while a
+normal build still reaches the existing ``scripts/bootstrap-python.sh``.
+That builder owns the pinned Git revision, independent host C/GNU Make
+roots, interpreter install health, cache identity, and rollback.
+
+Tests: ``scripts/tests/test-python-seed-adapter.bash``, plus the
+existing no-Python menu/fallback and Windows launcher tests. The
+``python-bootstrap-fallback.yml`` workflow runs the seed regression
+before the bundled-Python checks. No second Python build stage exists.
 Managed Perl fork and independent interpreter seed
 -------------------------------------------------
 

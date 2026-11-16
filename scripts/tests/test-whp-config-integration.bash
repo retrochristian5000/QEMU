@@ -12,7 +12,7 @@ mkdir -p "$COPY/scripts/whp-config" "$COPY/scripts/whp-build" \
     "$COPY/configs/devices/ppc-softmmu" "$COPY/seeds"
 cp "$ROOT/build.sh" "$COPY/build.sh"
 # Seed adapters are required before the portable Python bootstrap and probes.
-for adapter in awk.sh git.sh grep.sh sed.sh cc.sh cxx.sh cpp.sh ld.sh; do
+for adapter in awk.sh git.sh grep.sh sed.sh cc.sh cxx.sh cpp.sh ld.sh python.sh; do
     cp "$ROOT/seeds/$adapter" "$COPY/seeds/$adapter"
 done
 mkdir -p "$COPY/scripts/whp-build/seed-bin"

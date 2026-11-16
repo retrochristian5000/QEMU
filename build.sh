@@ -233,70 +233,21 @@ PYTHON_EXPLICIT=0
 HOST_PYTHON=
 if [ -n "${PYTHON:-}" ]; then
     PYTHON_EXPLICIT=1
-    if ! whp_python_usable "$PYTHON"; then
-        printf 'error: PYTHON is not Python 3.9 or newer: %s\n' "$PYTHON" >&2
-        exit 1
-    fi
-    HOST_PYTHON=$PYTHON
+    HOST_PYTHON=$(/bin/sh "$SOURCE_DIR/seeds/python.sh" --print-seed) || exit 1
+elif [ -n "${WHP_PYTHON_SEED:-}" ]; then
+    HOST_PYTHON=$(/bin/sh "$SOURCE_DIR/seeds/python.sh" --print-seed) || exit 1
 else
-    # Python is selected before the later macOS Homebrew provider setup.
-    # Prefer an already installed native Homebrew Python without importing
-    # unrelated Homebrew executables into the bootstrap PATH.
-    if [ "$WHP_HOST_OS" = macos ]; then
-        case "$WHP_HOST_ARCH" in
-            arm64|aarch64) whp_early_brew=/opt/homebrew ;;
-            x86_64) whp_early_brew=/usr/local ;;
-            *) whp_early_brew= ;;
-        esac
-        if [ -n "$whp_early_brew" ]; then
-            for python_candidate in \
-                "$whp_early_brew/bin/python3" \
-                "$whp_early_brew/opt/python@3.14/bin/python3.14" \
-                "$whp_early_brew/opt/python@3.13/bin/python3.13" \
-                "$whp_early_brew/opt/python@3.12/bin/python3.12"; do
-                if whp_python_usable "$python_candidate"; then
-                    HOST_PYTHON=$python_candidate
-                    break
-                fi
-            done
-        fi
-        unset whp_early_brew
-    fi
-    if [ -z "$HOST_PYTHON" ]; then
-        for python_name in python3 python; do
-            python_candidate=$(command -v "$python_name" 2>/dev/null || true)
-            if whp_python_usable "$python_candidate"; then
-                HOST_PYTHON=$python_candidate
-                break
-            fi
-        done
-    fi
-
-    # Windows installations may expose only the Python launcher even when a
-    # runtime is installed, and Store aliases named python/python3 may exist
-    # without being usable from the current MSYS shell. Resolve the launcher to
-    # the real interpreter so downstream configure/Meson calls receive an
-    # executable path rather than launcher-specific semantics.
-    if [ -z "$HOST_PYTHON" ]; then
-        case "$WHP_HOST_OS" in
-            windows)
-                python_launcher=$(command -v py 2>/dev/null || true)
-                if [ -n "$python_launcher" ]; then
-                    python_candidate=$(
-                        "$python_launcher" -c 'import sys; print(sys.executable)' \
-                            2>/dev/null || true
-                    )
-                    if whp_python_usable "$python_candidate"; then
-                        HOST_PYTHON=$python_candidate
-                    fi
-                fi
-                unset python_launcher
-                ;;
-        esac
-    fi
-    unset python_name python_candidate
+    # An absent host interpreter is normal: the pinned CPython fallback
+    # remains available after the POSIX menuconfig and seed tool selection.
+    HOST_PYTHON=$(/bin/sh "$SOURCE_DIR/seeds/python.sh" --print-seed 2>/dev/null || true)
 fi
-
+if [ -n "$HOST_PYTHON" ]; then
+    # Keep this independent root when BOOTSTRAP_PYTHON=1 later promotes
+    # the managed runtime. Never make the root depend on that runtime.
+    WHP_PYTHON_BOOTSTRAP_SEED=$HOST_PYTHON
+    export WHP_PYTHON_BOOTSTRAP_SEED
+    printf 'QEMU seed python: %s\n' "$HOST_PYTHON" >&2
+fi
 # menuconfig must remain reachable before Python itself exists. Prefer the
 # richer curses UI when a usable host interpreter is already present, but do
 # not bootstrap Python merely to enter configuration: the POSIX-shell fallback

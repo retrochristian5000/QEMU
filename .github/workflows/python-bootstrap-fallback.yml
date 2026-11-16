@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - 'build.sh'
+      - 'seeds/python.sh'
+      - 'scripts/tests/test-python-seed-adapter.bash'
       - '.gitmodules'
       - 'toolchains/python-runtime'
       - 'scripts/bootstrap-python.sh'
@@ -24,6 +26,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify independent pre-Python seed
+        shell: bash
+        run: bash scripts/tests/test-python-seed-adapter.bash
 
       - name: Exercise Python fallback boundary
         shell: bash

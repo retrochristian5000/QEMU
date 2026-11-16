@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'build.sh'
+      - 'seeds/python.sh'
       - 'scripts/whp-config/**'
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/portable-build-entry.py'
