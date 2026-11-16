@@ -1,0 +1,47 @@
+name: WHP dependency directory discovery
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
+      - 'scripts/macos-build-hygiene.bash'
+      - 'scripts/whp-build/host-libraries.sh'
+      - 'scripts/tests/test-macos-managed-library-metadata.py'
+      - 'build.sh'
+      - '.github/workflows/sdl-bootstrap.yml'
+      - '.github/workflows/dependency-directory-layouts.yml'
+  pull_request:
+    paths:
+      - 'scripts/ensure-make.py'
+      - 'scripts/tests/test-make-gnulib-cache.py'
+      - 'scripts/macos-build-hygiene.bash'
+      - 'scripts/whp-build/host-libraries.sh'
+      - 'scripts/tests/test-macos-managed-library-metadata.py'
+      - 'build.sh'
+      - '.github/workflows/sdl-bootstrap.yml'
+      - '.github/workflows/dependency-directory-layouts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  directory-layouts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate dependency search boundaries without rebuilding forks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ensure-make.py scripts/tests/test-make-gnulib-cache.py
+          bash -n scripts/macos-build-hygiene.bash
+          sh -n scripts/whp-build/host-libraries.sh
+          bash -n build.sh
+          python3 scripts/tests/test-make-gnulib-cache.py
+          python3 scripts/tests/test-macos-managed-library-metadata.py -v
