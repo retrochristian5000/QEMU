@@ -157,6 +157,65 @@ def main() -> int:
         if field not in sccache:
             raise SystemExit("error: sccache lost cache identity: " + field)
 
+    # Keep GLib build inputs, early GTK probes and Meson-native consumers
+    # distinct; the GLib source fork is not an unconditional bootstrap stage.
+    glib_section = 'submodule "toolchains/glib"'
+    if glib_section not in parser:
+        raise SystemExit("error: pinned GLib source is not registered")
+    if (parser[glib_section].get("path") != "toolchains/glib"
+            or parser[glib_section].get("url")
+            != "https://github.com/retrochristian5000/Glib.git"):
+        raise SystemExit("error: unexpected GLib source provider")
+
+    meson_source = (ROOT / "meson.build").read_text(encoding="utf-8")
+    hexagon_source = (ROOT / "target/hexagon/meson.build").read_text(
+        encoding="utf-8"
+    )
+    gtk_env_source = (ROOT / "scripts/macos-gtk-environment.bash").read_text(
+        encoding="utf-8"
+    )
+    gtk_verify_source = (ROOT / "scripts/verify-macos-gtk.bash").read_text(
+        encoding="utf-8"
+    )
+    for label, contents, needles in (
+        ("QEMU Meson", meson_source,
+         ("glib_req_ver = '>=2.66.0'",
+          "glib_pc = dependency('glib-2.0'",
+          "gmodule-export-2.0", "gmodule-no-export-2.0")),
+        ("Hexagon build machine", hexagon_source,
+         ("hexagon_idef_parser",
+          "find_program('flex')",
+          "find_program('bison', version: '>=3.0')",
+          "dependency('glib-2.0', native: true, static: false)")),
+        ("early macOS GTK environment", gtk_env_source,
+         ('"$pkg_config_executable" --exists gtk+-3.0',
+          "PKG_CONFIG_PATH_FOR_BUILD")),
+        ("early macOS GTK validation", gtk_verify_source,
+         ("gtk+-3.0", "gtk-header-probe.c", "gtk_link_flags")),
+    ):
+        for needle in needles:
+            if needle not in contents:
+                raise SystemExit(
+                    f"error: {label} GLib dependency edge changed: {needle}"
+                )
+
+    builder_source = (ROOT / "builder.bash").read_text(encoding="utf-8")
+    gtk_position = builder_source.index(
+        'if [[ "$HOST_OS" == Darwin && "$MACOS_ENABLE_GTK" == 1 ]]; then'
+    )
+    qemu_position = builder_source.index("whp_configure_build", gtk_position)
+    if gtk_position >= qemu_position:
+        raise SystemExit("error: macOS GTK preflight moved after QEMU configure")
+
+    for needle in (
+        "Pinned GLib bootstrap prerequisites and early consumers",
+        "GLib 2.89.3", "Meson >= 1.4.0", "libffi >= 3.0.0",
+        "PCRE2 >= 10.32", "GVDB", "MACOS_ENABLE_GTK=1",
+        "native: true, static: false", "pyvenv",
+    ):
+        if needle not in ledger:
+            raise SystemExit("error: GLib bootstrap ledger lost: " + needle)
+
     # Audit the QEMU-native graph at its owning source files, not via
     # additional global seed or bootstrap prerequisites.
     native_files = {

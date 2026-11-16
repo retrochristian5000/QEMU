@@ -670,6 +670,78 @@ execution remains in ``builder.bash``: this ledger describes edges, not
 a second executable schedule.  There is no evidence in this audit that
 QEMU's present bootstrap stages need a global reorder.
 
+Pinned GLib bootstrap prerequisites and early consumers
+------------------------------------------------------
+
+The recorded ``toolchains/glib`` gitlink points at the editable WHP
+``retrochristian5000/Glib`` fork.  Its pinned source currently identifies
+itself as GLib 2.89.3 (development series), with Meson >= 1.4.0 and a
+C11-capable host compiler.  Source availability is *not* evidence that the
+normal build calls an ``ensure-glib.py`` helper: it does not.  QEMU's
+``meson.build`` independently requires ``glib-2.0 >= 2.66.0``.
+Prefer an already working provider instead of automatically replacing it
+with an experimental fork.
+
+For a specifically requested GLib *source* build, trace these roles:
+
+* **Build tools:** native C/SDK, Python 3, Meson >= 1.4.0, Ninja and
+  pkg-config; also a usable thread and iconv provider.  GLib's
+  ``meson.build`` disables strict aliasing for correctness.
+* **Library inputs:** libffi >= 3.0.0, PCRE2 >= 10.32 and zlib.
+  GVDB is a required GLib Meson subproject.  Its ``subprojects/``
+  contains upstream wrap fallbacks for libffi, PCRE2, zlib and GVDB;
+  missing wrap sources are possible network/download edges, not permission
+  to fetch them silently during offline bootstrap.
+* **Optional/conditional:** gettext/libintl or its fallback, xattr,
+  SELinux, libmount, DTrace/SystemTap, tests, documentation, translations
+  and gobject-introspection.  The latter depends on GLib itself; an
+  initial library bootstrap must break that cycle with
+  ``-Dintrospection=disabled``.  ``-Dtests=false`` and
+  ``-Ddocumentation=false`` avoid unrelated build costs.
+* **Source-of-truth distinction:** pinned ``meson.build``,
+  ``meson.options`` and wrap files outrank legacy ``INSTALL.md``
+  wording about a ``configure`` script.
+
+Known QEMU fork consumers of GLib are separated by phase:
+
+#. **Before QEMU configure, conditional:** ``MACOS_ENABLE_GTK=1``
+   makes ``builder.bash`` source ``macos-gtk-environment.bash``
+   and run ``verify-macos-gtk.sh``.  The GTK 3 pkg-config and
+   compile/link checks transitively require compatible GLib/GObject/GIO
+   in the Homebrew GTK provider.  This does not require compiling the
+   pinned GLib fork and must not silently replace Homebrew's libraries.
+#. **Inside QEMU Meson, required:** GLib >= 2.66 is queried through
+   ``glib-2.0.pc``; ``gmodule-export-2.0`` and
+   ``gmodule-no-export-2.0`` are selected for relevant
+   modules/plugins options.  The selected target/host ABI is checked.
+#. **Inside QEMU Meson, native generator:** a selected Hexagon target
+   with ``hexagon_idef_parser`` enables native Flex/Bison >= 3.0
+   and ``dependency('glib-2.0', native: true, static: false)``.
+   Cross builds therefore need build-machine GLib distinct from the
+   eventual QEMU executable's GLib.
+#. **Downstream artifacts:** Meson-selected libvhost-user, plugins,
+   and Rust bindings can also use GLib; they are not predecessors of
+   the first QEMU Meson configuration.
+
+The audited native LLVM, managed Git, GNU Make, Python, Ninja, SDL3,
+JACK client, Perl/Autotools and firmware bootstrap paths show no
+**unconditional** earlier GLib requirement.  Recheck actual active
+consumers if those forks or profiles change.  Do not infer absence
+from generic repository search alone.
+
+If a managed GLib fallback becomes necessary, it must be ordered
+**after** independent Git/compiler/SDK, Meson/Ninja/Python and its real
+library providers, but **before** QEMU's own Meson dependency probe.
+QEMU's build-tree ``pyvenv`` is created by QEMU configure and cannot
+be an assumed prerequisite for an earlier GLib build.  Keep the GLib
+installation in an ABI-specific private prefix and verify its
+``glib-2.0.pc``, generated ``glibconfig.h``, library architecture,
+runtime loader paths and optional gmodule/GIO contract.  Cache identity
+must include the effective GLib gitlink descendant, compiler/SDK and
+selected source wraps.  Never mix bootstrap zlib with target/host
+artifact zlib or redirect GTK's Homebrew pkg-config to a development
+GLib merely because the submodule is initialized.
+
 Pinned Meson source boundary
 ---------------------------
 
