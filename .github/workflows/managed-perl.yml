@@ -117,6 +117,29 @@ jobs:
           test -x "$result"
           "$result" -e 'use strict; use warnings; use Config; print "$Config{osname}\n";'
 
+      - name: Run updated pinned Perl C portability regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed="$RUNNER_TEMP/whp-perl/deps/perl/bin/perl"
+          test -x "$installed"
+          # The test must come from the exact source commit QEMU records.
+          pinned="$(git rev-parse HEAD:toolchains/perl)"
+          checked_out="$(git -C toolchains/perl rev-parse HEAD)"
+          test "$pinned" = "$checked_out"
+          (
+            cd toolchains/perl
+            test -f t/porting/configure_c_portability.t
+            output="$("$installed" t/porting/configure_c_portability.t)"
+            printf '%s\n' "$output"
+            grep -Fxq '1..5' <<< "$output"
+            test "$(grep -Ec '^ok [1-5] ' <<< "$output")" -eq 5
+            if grep -Eq '^not ok ' <<< "$output"; then
+              printf '%s\n' 'error: pinned Perl C portability regression failed' >&2
+              exit 1
+            fi
+          )
+
       - name: Reuse validated native Perl build
         shell: bash
         run: |

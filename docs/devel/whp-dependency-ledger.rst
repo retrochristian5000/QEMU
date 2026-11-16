@@ -1081,9 +1081,22 @@ create an Autoconf/Automake/Perl cycle.
 
 ``scripts/tests/test-perl-bootstrap.py`` checks source pinning,
 bootstrap order, interpreter semantics, and the preserved seed.
+The QEMU Perl gitlink was advanced to fork commit ``462201979e87f7ee5c7012616c6511ec5039151d``,
+which includes the two older ``configure.gnu`` updates and the
+C-portability repair in ``Configure``: the ``getenv("PATH")``
+NULL guard and bounded, NUL-terminated locale-name copy. It also
+provides ``t/porting/configure_c_portability.t``. On a gitlink
+change, ``SOURCE_REVISION`` changes the Perl bootstrap cache marker:
+the managed Perl must rebuild from the new pinned source, without
+a global toolchain reset. An already-initialized local Perl checkout
+is reconciled by the established ancestry/dirty-tree protections.
+
 ``.github/workflows/managed-perl.yml`` exercises native builds on
-macOS/Linux when CI runs; source and workflow checks alone do not confirm
-that those native builds pass.
+macOS/Linux when CI runs and now runs the pinned fork's five
+C-portability regression checks with the newly built interpreter.
+It confirms the checked-out gitlink matches the QEMU tree and refuses
+false-positive TAP output. A pushed gitlink is source integration, not
+proof of runtime portability until both native CI runners pass.
 
 Worktree identity and POSIX shell ``-ef`` compatibility
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
