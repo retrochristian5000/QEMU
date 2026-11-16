@@ -55,7 +55,7 @@ jobs:
           test -f "$prefix/include/SDL3/SDL.h"
 
           pc=
-          for candidate in               "$prefix/lib/pkgconfig/sdl3.pc"               "$prefix/lib64/pkgconfig/sdl3.pc"               "$prefix/libdata/pkgconfig/sdl3.pc"; do
+          for candidate in               "$prefix/lib/pkgconfig/sdl3.pc"               "$prefix/lib64/pkgconfig/sdl3.pc"               "$prefix/libdata/pkgconfig/sdl3.pc" "$prefix/share/pkgconfig/sdl3.pc"; do
             if [[ -f "$candidate" ]]; then
               pc="$candidate"
               break
