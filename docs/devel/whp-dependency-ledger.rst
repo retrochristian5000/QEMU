@@ -1216,12 +1216,13 @@ Before writing the successful bootstrap marker, ``scripts/ensure-perl.py``
 queries the installed interpreter's ``Config{archlibexp}`` and confirms its
 ``CORE`` directory resolves **inside** ``$BUILD_DIR/deps/perl``.
 The managed prefix must contain ``EXTERN.h``, ``perl.h``, ``XSUB.h``,
-``config.h`` and ``embed.h``. A test C translation unit includes the
+``config.h`` and ``embed.h``. Header symlinks must also resolve within the
+managed prefix. A test C translation unit includes the
 public C/XS headers and is compiled to an object with the selected native
 compiler, Perl's installed ``Config{ccflags}``/``Config{cppflags}`` and
 the selected macOS SDK. A missing or incompatible native system/header
-dependency is therefore reported at Perl promotion, not later while building
-Autoconf/Automake. Installed Perl configuration is queried without inherited
+dependency is therefore reported at Perl promotion, not later when an
+optional native Perl C/XS consumer is compiled. Installed Perl configuration is queried without inherited
 ``PERL5LIB`` or ``PERLLIB``, so the external seed cannot supply false
 header provenance. The failing compile is logged under
 ``$BUILD_DIR/bootstrap/perl/header-compile.log``.
