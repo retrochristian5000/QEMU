@@ -1298,6 +1298,41 @@ library or command Perl actually discovered. Verify reuse separately from
 full native compilation; a successful no-op cache hit cannot establish
 that a fresh build succeeds.
 
+GNU Awk seed versus generic AWK seed
+----------------------------------------
+
+QEMU selects a **generic POSIX-compatible AWK** through
+``seeds/awk.sh`` before source refresh, menuconfig and Python
+bootstrap. Its auto-provider order prefers native ``/usr/bin/awk``
+or ``/bin/awk`` before GNU ``gawk``; a working GNU Awk is still
+a valid generic AWK provider when explicitly requested or as fallback.
+The generic seed's field/array/regex tests do **not** establish GNU Awk
+identity. Keeping ``gawk`` behind native AWK prevents accidental
+provider promotion at the pre-Python boundary.
+
+``seeds/gawk.sh`` separately selects a **GNU-only host tool** through
+``WHP_GAWK_SEED`` or ``GAWK``, then discovers an installed ``gawk``
+or a proven GNU ``awk``. It checks both the GNU Awk version identity
+and working GNU-only ``asorti()`` and ``gensub()`` operations;
+a banner-only shim, BSD AWK, mawk, nawk or the generic AWK bridge cannot
+qualify. ``--print-seed`` and ``--check`` are independent of the
+managed Gawk source build. ``WHP_GAWK_LOCKED=1`` forwards calls to
+the previously admitted ``WHP_GAWK_SEED`` without repeated probes,
+but rejects missing/recursive adapter paths. GNU Awk remains an
+**optional capability** until an actual GNU-only caller requires it.
+
+The existing post-Autoconf ``BOOTSTRAP_GAWK`` source path still
+builds the pinned ``toolchains/gawk`` revision using the preserved
+``WHP_AWK_BOOTSTRAP_SEED``, avoiding an AWK self-bootstrap cycle.
+On successful promotion, it continues the established ``AWK`` /
+``WHP_AWK_SEED`` compatibility behavior while also publishing
+``GAWK``, ``WHP_GAWK_SEED`` and ``WHP_GAWK_LOCKED`` for
+GNU-only consumers. The generic early selection never requires
+installed Gawk or a Gawk fork build, and no unrelated global
+``PATH`` alias is created. Behavioral isolation is guarded by
+``scripts/tests/test-gawk-seed-adapter.bash`` and the existing
+``scripts/tests/test-gawk-bootstrap.py``.
+
 Managed Gawk fork and AWK bootstrap boundary
 -------------------------------------------
 

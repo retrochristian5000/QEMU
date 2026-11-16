@@ -41,7 +41,18 @@ def check():
     assert host.index("BOOTSTRAP_GAWK=") < host.index("BOOTSTRAP_MAKE=")
     assert 'WHP_AWK_SEED=$WHP_GAWK_CMD' in host
     assert 'WHP_AWK_LOCKED=1' in host
+    assert 'WHP_GAWK_SEED=$WHP_GAWK_CMD' in host
+    assert 'GAWK=$WHP_GAWK_CMD' in host
+    assert 'WHP_GAWK_LOCKED=1' in host
+    assert 'export WHP_GAWK_SEED GAWK WHP_GAWK_LOCKED' in host
     assert "BOOTSTRAP_GAWK=1 requires" in host
+    # General-purpose AWK no longer prefers GNU before native AWK.
+    awk_seed = (ROOT / "seeds/awk.sh").read_text(encoding="utf-8")
+    assert "for candidate in /usr/bin/awk /bin/awk nawk mawk awk gawk; do" in awk_seed
+    gawk_seed = (ROOT / "seeds/gawk.sh").read_text(encoding="utf-8")
+    for token in ("WHP_GAWK_SEED", "GAWK", "WHP_GAWK_LOCKED",
+                  "GNU Awk ", "asorti(", "gensub("):
+        assert token in gawk_seed, token
     config = (ROOT / "scripts/whp-config/config.py").read_text()
     assert "Option('BOOTSTRAP_GAWK', 'Host features'" in config
     assert "'BOOTSTRAP_GAWK'," in config

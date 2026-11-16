@@ -94,7 +94,9 @@ select_seed()
         return 1
     done
 
-    for candidate in gawk /usr/bin/awk /bin/awk nawk mawk awk; do
+    # Native POSIX AWK is enough for initial bootstrap. GNU identity is
+    # selected separately through gawk.sh when GNU extensions are needed.
+    for candidate in /usr/bin/awk /bin/awk nawk mawk awk gawk; do
         if seed=$(resolve_candidate "$candidate"); then
             printf '%s\n' "$seed"
             return 0

@@ -360,7 +360,13 @@ if [ "$BOOTSTRAP_GAWK" != 0 ] &&
             WHP_AWK_SEED=$WHP_GAWK_CMD
             AWK=$WHP_GAWK_CMD
             WHP_AWK_LOCKED=1
+            # GNU-only callers use a distinct identity, not an assumption
+            # that the general-purpose AWK seed always means GNU Awk.
+            WHP_GAWK_SEED=$WHP_GAWK_CMD
+            GAWK=$WHP_GAWK_CMD
+            WHP_GAWK_LOCKED=1
             export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK
+            export WHP_GAWK_SEED GAWK WHP_GAWK_LOCKED
             printf 'QEMU managed Gawk: %s (root seed %s)\n' \
                 "$AWK" "$WHP_AWK_BOOTSTRAP_SEED" >&2
         elif [ "$BOOTSTRAP_GAWK" = 1 ]; then
