@@ -164,7 +164,7 @@ def validate_installed_core_headers(executable: pathlib.Path,
         env["SDKROOT"] = sdk
     config = run(
         [str(executable), "-MConfig", "-e",
-         'print join "\0", map { defined $Config{$_} ? $Config{$_} : "" } '
+         'print join "\\0", map { defined $Config{$_} ? $Config{$_} : "" } '
          'qw(archlibexp ccflags cppflags);'],
         env=env, capture=True, phase="installed CORE Config",
     )
