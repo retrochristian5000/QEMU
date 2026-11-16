@@ -220,5 +220,98 @@ class PerlConfigureTests(unittest.TestCase):
                          unattended=True, capture=True, timeout=5)
 
 
+
+class PerlEffectiveConfigureTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(prefix="whp-perl-result-")
+        self.addCleanup(self.dir.cleanup)
+        self.source = Path(self.dir.name)
+        self.prefix = self.source / "managed Perl prefix"
+        self.cc = "/usr/bin/cc"
+        self.ar = "/usr/bin/ar"
+        self.ranlib = "/usr/bin/ranlib"
+        self.cflags = "-O2 -D_WHP_PERL=1"
+        self.ldflags = "-Wl,-dead_strip"
+
+    def configure_result(self, **overrides):
+        values = {
+            "prefix": str(self.prefix),
+            "cc": self.cc,
+            "ld": self.cc,
+            "ar": self.ar,
+            "full_ar": self.ar,
+            "ranlib": self.ranlib,
+            "ccflags": "-fno-common " + self.cflags,
+            "ldflags": self.ldflags + " -pthread",
+            "osname": "darwin",
+        }
+        values.update(overrides)
+        # Config.sh is shell-assignment data.  Deliberately avoid sourcing it.
+        (self.source / "config.sh").write_text(
+            "".join(k + "='" + str(v) + "'\n" for k, v in values.items()),
+            encoding="utf-8",
+        )
+
+    def verify(self):
+        with mock.patch.object(perl.platform, "system", return_value="Darwin"):
+            perl.require_configured_toolchain(
+                self.source, self.prefix, self.cc, self.ar, self.ranlib,
+                self.cflags, self.ldflags,
+            )
+
+    def test_effective_native_toolchain_accepts_hint_additions(self):
+        self.configure_result()
+        self.verify()
+
+    def test_native_ar_index_fallback_is_explicitly_allowed(self):
+        self.configure_result(ranlib=self.ar + " s")
+        self.verify()
+
+    def test_replaced_compiler_linker_and_prefix_fail(self):
+        for key, bad in (
+            ("cc", "/usr/bin/gcc"),
+            ("ld", "/usr/bin/ld"),
+            ("prefix", "/usr/local"),
+            ("ar", "/usr/bin/llvm-ar"),
+            ("full_ar", "/usr/bin/llvm-ar"),
+            ("ranlib", "/bin/true"),
+            ("osname", "freebsd"),
+        ):
+            with self.subTest(key=key):
+                self.configure_result(**{key: bad})
+                with self.assertRaisesRegex(RuntimeError, "Perl Configure|unexpected archive"):
+                    self.verify()
+
+    def test_dropped_selected_compiler_or_linker_flag_fails(self):
+        for key, value in (
+            ("ccflags", "-fno-common -O2"),
+            ("ldflags", "-pthread"),
+        ):
+            with self.subTest(key=key):
+                self.configure_result(**{key: value})
+                with self.assertRaisesRegex(RuntimeError, "dropped selected"):
+                    self.verify()
+
+    def test_malformed_and_duplicate_config_values_fail_closed(self):
+        self.configure_result()
+        with (self.source / "config.sh").open("a", encoding="utf-8") as output:
+            output.write("cc='/unexpected'\n")
+        with self.assertRaisesRegex(RuntimeError, "duplicate"):
+            self.verify()
+        self.configure_result(cc="'unterminated")
+        with self.assertRaisesRegex(RuntimeError, "malformed"):
+            self.verify()
+        (self.source / "config.sh").unlink()
+        with self.assertRaisesRegex(RuntimeError, "did not generate config.sh"):
+            self.verify()
+
+    def test_config_is_parsed_without_executing_shell(self):
+        marker = self.source / "must-not-exist"
+        self.configure_result(cc="$(touch " + str(marker) + ")")
+        with self.assertRaisesRegex(RuntimeError, "replaced cc"):
+            self.verify()
+        self.assertFalse(marker.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
