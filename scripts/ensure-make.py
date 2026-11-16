@@ -256,15 +256,44 @@ def resolve_shell(requested, env_name):
     return path
 
 
-def pkg_config_aclocal_dir(pkg_config):
+def pkg_config_aclocal_dir(pkg_config, *, aclocal="", inherited=""):
+    """Find the real pkg.m4 without assuming it lives beside pkg-config.
+
+    pkg-config/pkgconf executables, their Autotools macros, and Automake may
+    be installed by different providers. Limit discovery to the selected
+    executable's prefixes, explicit ACLOCAL_PATH, and the selected aclocal's
+    reported system macro directory. Never search arbitrary include paths
+    or synthesize pkg.m4.
+    """
     candidates = []
+
+    def add(directory):
+        if directory not in candidates:
+            candidates.append(directory)
+
     for executable_path in (
         pathlib.Path(pkg_config),
         pathlib.Path(pkg_config).resolve(),
     ):
-        macro_dir = executable_path.parent.parent / "share" / "aclocal"
-        if macro_dir not in candidates:
-            candidates.append(macro_dir)
+        add(executable_path.parent.parent / "share" / "aclocal")
+
+    if inherited:
+        for entry in inherited.split(os.pathsep):
+            # validated_aclocal_path() subsequently enforces the complete
+            # inherited path contract, including missing/relative entries.
+            if entry:
+                add(pathlib.Path(entry))
+
+    if aclocal:
+        # --print-ac-dir describes Automake's own macro search directory.
+        # It is not necessarily adjacent to the pkg-config executable.
+        try:
+            reported = run_text([aclocal, "--print-ac-dir"])
+        except RuntimeError:
+            reported = ""
+        if (reported and "\n" not in reported and "\r" not in reported
+                and pathlib.Path(reported).is_absolute()):
+            add(pathlib.Path(reported))
 
     for macro_dir in candidates:
         if (macro_dir / "pkg.m4").is_file():
@@ -846,8 +875,10 @@ def _bootstrap_locked(build_root):
     git = tool("git")
     autopoint = tool("autopoint", "AUTOPOINT")
     pkg_config = tool("pkg-config", "PKG_CONFIG", ("pkgconf",))
-    pkg_aclocal_dir = pkg_config_aclocal_dir(pkg_config)
     inherited_aclocal_path = os.environ.get("ACLOCAL_PATH", "")
+    pkg_aclocal_dir = pkg_config_aclocal_dir(
+        pkg_config, aclocal=aclocal, inherited=inherited_aclocal_path
+    )
     aclocal_path = validated_aclocal_path(
         pkg_aclocal_dir, inherited_aclocal_path
     )
