@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -136,6 +137,75 @@ def main() -> int:
                 raise SystemExit(
                     f"error: GNU Make accepted corrupt ACLOCAL_PATH: {invalid!r}"
                 )
+
+    # pkg.m4 is not always beside pkg-config: an executable may be a
+    # wrapper or symlink, while Automake has its own authoritative macro
+    # directory. Keep inherited path validation strict.
+    with tempfile.TemporaryDirectory(prefix="whp-make-pkg-macro-") as td:
+        root = pathlib.Path(td)
+        pkg_prefix = root / "pkgconf-prefix"
+        selected_pkg = pkg_prefix / "bin" / "pkg-config"
+        selected_pkg.parent.mkdir(parents=True)
+        selected_pkg.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        selected_pkg.chmod(0o755)
+        adjacent = pkg_prefix / "share" / "aclocal"
+        adjacent.mkdir(parents=True)
+        (adjacent / "pkg.m4").write_text("dnl pkgconf macro\\n", encoding="utf-8")
+        found = module.pkg_config_aclocal_dir(str(selected_pkg))
+        if found != str(adjacent):
+            raise SystemExit("error: adjacent pkg-config macros were missed")
+
+        wrapper = root / "wrappers" / "pkg-config"
+        wrapper.parent.mkdir()
+        wrapper.symlink_to(selected_pkg)
+        found = module.pkg_config_aclocal_dir(str(wrapper))
+        if found != str(adjacent):
+            raise SystemExit("error: symlinked pkg-config macros were missed")
+
+        (adjacent / "pkg.m4").unlink()
+        custom = root / "separately installed macros"
+        custom.mkdir()
+        (custom / "pkg.m4").write_text("dnl independent pkg.m4\\n", encoding="utf-8")
+        found = module.pkg_config_aclocal_dir(
+            str(wrapper), inherited=str(custom)
+        )
+        if found != str(custom):
+            raise SystemExit("error: valid ACLOCAL_PATH macro was missed")
+        module.validated_aclocal_path(found, str(custom))
+        if module.pkg_config_aclocal_dir(
+            str(wrapper), inherited=str(root / "missing") + os.pathsep + str(custom)
+        ) != str(custom):
+            raise SystemExit("error: pkg.m4 was not discoverable from a valid entry")
+        try:
+            module.validated_aclocal_path(str(custom), str(root / "missing"))
+        except RuntimeError:
+            pass
+        else:
+            raise SystemExit("error: inherited missing ACLOCAL_PATH became accepted")
+
+        default = root / "automake system macros"
+        default.mkdir()
+        (default / "pkg.m4").write_text("dnl Automake macro\\n", encoding="utf-8")
+        aclocal = root / "aclocal"
+        aclocal.write_text(
+            "#!/bin/sh\\nprintf '%s\\n' " + shlex.quote(str(default)) + "\\n",
+            encoding="utf-8",
+        )
+        aclocal.chmod(0o755)
+        found = module.pkg_config_aclocal_dir(
+            str(wrapper), aclocal=str(aclocal)
+        )
+        if found != str(default):
+            raise SystemExit("error: selected aclocal macro directory was missed")
+
+        (default / "pkg.m4").unlink()
+        try:
+            module.pkg_config_aclocal_dir(str(wrapper), aclocal=str(aclocal))
+        except RuntimeError as exc:
+            if "pkg.m4 is unavailable" not in str(exc):
+                raise
+        else:
+            raise SystemExit("error: missing pkg.m4 was silently accepted")
 
     print("GNU Make gnulib cache reuse: verified")
     return 0
