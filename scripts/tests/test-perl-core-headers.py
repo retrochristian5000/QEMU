@@ -102,6 +102,14 @@ class ManagedPerlCoreHeadersTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Config C flags are malformed"):
             self.verify()
 
+    def test_symlinked_header_outside_prefix_is_rejected(self):
+        (self.core / "embed.h").unlink()
+        external = self.root / "external-perl-header.h"
+        external.write_text("#define WHP_PERL_EMBEDDED 1\\n", encoding="utf-8")
+        (self.core / "embed.h").symlink_to(external)
+        with self.assertRaisesRegex(RuntimeError, "header escapes managed prefix"):
+            self.verify()
+
 
 class PerlPromotionPolicyTests(unittest.TestCase):
     def test_validation_precedes_marker_and_runs_on_cache_hit(self):
