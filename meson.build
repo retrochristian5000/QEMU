@@ -2643,7 +2643,10 @@ config_host_data.set('CONFIG_FSFREEZE', qga_fsfreeze)
 config_host_data.set('CONFIG_FSTRIM', qga_fstrim)
 
 # has_header
-config_host_data.set('CONFIG_LINUX_MAGIC_H', cc.has_header('linux/magic.h'))
+# Header visibility alone does not establish a Linux kernel ABI. A non-Linux
+# sysroot may expose Linux UAPI headers through third-party include paths.
+config_host_data.set('CONFIG_LINUX_MAGIC_H',
+                     host_os == 'linux' and cc.has_header('linux/magic.h'))
 valgrind = false
 if get_option('valgrind').allowed()
     if cc.has_header('valgrind/valgrind.h')
@@ -2655,9 +2658,11 @@ if get_option('valgrind').allowed()
     endif
 endif
 config_host_data.set('CONFIG_VALGRIND_H', valgrind)
-config_host_data.set('HAVE_BTRFS_H', cc.has_header('linux/btrfs.h'))
+config_host_data.set('HAVE_BTRFS_H',
+                     host_os == 'linux' and cc.has_header('linux/btrfs.h'))
 config_host_data.set('HAVE_DRM_H', cc.has_header('libdrm/drm.h'))
-config_host_data.set('HAVE_OPENAT2_H', cc.has_header('linux/openat2.h'))
+config_host_data.set('HAVE_OPENAT2_H',
+                     host_os == 'linux' and cc.has_header('linux/openat2.h'))
 config_host_data.set('HAVE_PTY_H', cc.has_header('pty.h'))
 config_host_data.set('HAVE_SYS_DISK_H', cc.has_header('sys/disk.h'))
 config_host_data.set('HAVE_SYS_IOCCOM_H', cc.has_header('sys/ioccom.h'))
@@ -2732,14 +2737,18 @@ config_host_data.set('CONFIG_INOTIFY1', have_inotify_init1)
 
 # has_header_symbol
 config_host_data.set('CONFIG_BLKZONED',
+                     host_os == 'linux' and
                      cc.has_header_symbol('linux/blkzoned.h', 'BLKOPENZONE'))
 config_host_data.set('CONFIG_EPOLL', host_os == 'linux')
 config_host_data.set('CONFIG_FALLOCATE_PUNCH_HOLE',
+                     host_os == 'linux' and
                      cc.has_header_symbol('linux/falloc.h', 'FALLOC_FL_PUNCH_HOLE') and
                      cc.has_header_symbol('linux/falloc.h', 'FALLOC_FL_KEEP_SIZE'))
 config_host_data.set('CONFIG_FALLOCATE_ZERO_RANGE',
+                     host_os == 'linux' and
                      cc.has_header_symbol('linux/falloc.h', 'FALLOC_FL_ZERO_RANGE'))
 config_host_data.set('CONFIG_FIEMAP',
+                     host_os == 'linux' and
                      cc.has_header('linux/fiemap.h') and
                      cc.has_header_symbol('linux/fs.h', 'FS_IOC_FIEMAP'))
 config_host_data.set('CONFIG_GETCPU',
@@ -2748,8 +2757,10 @@ config_host_data.set('CONFIG_GETRANDOM',
                      cc.has_function('getrandom') and
                      cc.has_header_symbol('sys/random.h', 'GRND_NONBLOCK'))
 config_host_data.set('CONFIG_PRCTL_PR_SET_TIMERSLACK',
+                     host_os == 'linux' and
                      cc.has_header_symbol('sys/prctl.h', 'PR_SET_TIMERSLACK'))
 config_host_data.set('CONFIG_RTNETLINK',
+                     host_os == 'linux' and
                      cc.has_header_symbol('linux/rtnetlink.h', 'IFLA_PROTO_DOWN'))
 config_host_data.set('CONFIG_SYSMACROS',
                      cc.has_header_symbol('sys/sysmacros.h', 'makedev'))
@@ -2965,7 +2976,8 @@ config_host_data.set('HAVE_MLOCK_ONFAULT', cc.links(osdep_prefix + '''
   }'''))
 
 have_l2tpv3 = false
-if get_option('l2tpv3').allowed() and have_system
+if get_option('l2tpv3').require(host_os == 'linux',
+                                  error_message: 'L2TPv3 requires Linux host headers').allowed() and have_system
   have_l2tpv3 = cc.has_type('struct mmsghdr',
     prefix: osdep_prefix + '''
       #include <sys/socket.h>
@@ -2994,7 +3006,7 @@ config_host_data.set('CONFIG_NETMAP', have_netmap)
 # versions where they both try to define 'struct fsxattr':
 # xfs headers will not try to redefine structs from linux headers
 # if this macro is set.
-config_host_data.set('HAVE_FSXATTR', cc.links('''
+config_host_data.set('HAVE_FSXATTR', host_os == 'linux' and cc.links('''
   #include <linux/fs.h>
   struct fsxattr foo;
   int main(void) {
