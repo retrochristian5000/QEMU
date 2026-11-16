@@ -54,7 +54,7 @@ whp_prepare_zlib_phase()
         unset WHP_ZLIB_PHASE_PREFIX
         if [ -n "$WHP_ZLIB_PREFIX" ]; then
             WHP_ZLIB_PC_PATH=
-            for WHP_ZLIB_PC_DIR in "$WHP_ZLIB_PREFIX/lib/pkgconfig" "$WHP_ZLIB_PREFIX/lib64/pkgconfig" "$WHP_ZLIB_PREFIX/libdata/pkgconfig"; do
+            for WHP_ZLIB_PC_DIR in "$WHP_ZLIB_PREFIX/lib/pkgconfig" "$WHP_ZLIB_PREFIX/lib64/pkgconfig" "$WHP_ZLIB_PREFIX/libdata/pkgconfig" "$WHP_ZLIB_PREFIX/share/pkgconfig"; do
                 [ ! -d "$WHP_ZLIB_PC_DIR" ] || WHP_ZLIB_PC_PATH="${WHP_ZLIB_PC_PATH:+$WHP_ZLIB_PC_PATH:}$WHP_ZLIB_PC_DIR"
             done
             if [ -n "$WHP_ZLIB_PC_PATH" ]; then
