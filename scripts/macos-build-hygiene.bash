@@ -53,7 +53,7 @@ whp_restore_managed_pkg_config()
         return 1
     fi
     for pc_dir in "$prefix/lib/pkgconfig" "$prefix/lib64/pkgconfig" \
-                  "$prefix/libdata/pkgconfig"; do
+                  "$prefix/libdata/pkgconfig" "$prefix/share/pkgconfig"; do
         if [[ -f "$pc_dir/$module.pc" ]]; then
             whp_append_colon_path PKG_CONFIG_PATH "$pc_dir"
             found=1
