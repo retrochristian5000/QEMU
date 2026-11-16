@@ -157,6 +157,74 @@ def main() -> int:
         if field not in sccache:
             raise SystemExit("error: sccache lost cache identity: " + field)
 
+    # Audit the QEMU-native graph at its owning source files, not via
+    # additional global seed or bootstrap prerequisites.
+    native_files = {
+        "QEMU Meson": (
+            ROOT / "meson.build",
+            (
+                "glib_req_ver = '>=2.66.0'",
+                "dependency('glib-2.0'",
+                "dependency('zlib', required: true)",
+                "dependency('pixman-1'",
+                "add_languages('objc', required: true",
+                "find_program('gdbus-codegen'",
+                "find_program('rustdoc'",
+                "find_program('bindgen'",
+                "bindgen.version().version_compare('<0.60.0')",
+            ),
+        ),
+        "QEMU Python groups": (
+            ROOT / "pythondeps.toml",
+            ("[meson]", "[meson-rust]", "[tooling]", "[docs]", "[functests]"),
+        ),
+        "QEMU Rust minimum": (
+            ROOT / "rust" / "Cargo.toml",
+            ('rust-version = "1.83.0"',),
+        ),
+        "QEMU minimal CI package inventory": (
+            ROOT / "tests" / "lcitool" / "projects" / "qemu-minimal.yml",
+            (" - glib2", " - libffi", " - pixman", " - libfdt"),
+        ),
+    }
+    for label, (source_file, probes) in native_files.items():
+        source_text = source_file.read_text(encoding="utf-8")
+        for probe in probes:
+            if probe not in source_text:
+                raise SystemExit(
+                    f"error: {label} dependency contract changed: {probe}"
+                )
+
+    for probe in (
+        "QEMU-native configure/Meson dependency cross-check",
+        "GLib >= 2.66.0",
+        "pixman >= 0.21.8",
+        "Rust >= 1.83.0",
+        "``bindgen`` >= 0.60.0",
+        "``rustdoc``",
+        "gdbus-codegen",
+        "OBJC_FOR_BUILD",
+        "WHP_MACOS_DEPENDENCY_PROVIDER",
+    ):
+        if probe not in ledger:
+            raise SystemExit("error: QEMU-native graph ledger lost: " + probe)
+
+    # Preserve the actual phase boundary in the single production owner.
+    stage_script = (ROOT / "builder.bash").read_text(encoding="utf-8")
+    stage_calls = (
+        'whp_prepare_build "$@"',
+        "whp_prepare_seabios_grub_sources",
+        "whp_prepare_homebrew_pkg_config",
+        "whp_configure_build",
+        'whp_build_targets "$@"',
+    )
+    last_stage = -1
+    for stage in stage_calls:
+        position = stage_script.find(stage, last_stage + 1)
+        if position < 0:
+            raise SystemExit("error: QEMU build phase missing/reordered: " + stage)
+        last_stage = position
+
     if len(paths) != len(set(paths)):
         raise SystemExit("error: duplicate submodule paths in .gitmodules")
 

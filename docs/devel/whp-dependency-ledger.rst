@@ -558,6 +558,118 @@ Check whether the tool is used before or after a validated cache hit, which
 feature activates it, and whether failure is fatal, a fallback or a deliberate
 skip. Do not promote download or source-generation tools into the common root.
 
+QEMU-native configure/Meson dependency cross-check
+---------------------------------------------------
+
+This is a QEMU ``11.0.92`` source audit, not another WHP bootstrap stage.
+Its evidence is ``meson.build``, ``pythondeps.toml``,
+``rust/Cargo.toml``, ``meson_options.txt``, and
+``tests/lcitool/projects/qemu-minimal.yml``, checked against upstream
+*The QEMU build system architecture* and *Setup build environment*.
+The latter's package list describes a CI environment, **not** a list of
+independently mandatory tools for every macOS profile.  Library discovery
+belongs to QEMU's Meson graph; WHP seeds only provide missing host tools
+at their owning consumer boundary.
+
+.. list-table:: Source-backed gates and earliest valid consumers
+   :header-rows: 1
+   :widths: 20 34 22 24
+
+   * - Feature / gate
+     - Source-backed requirement
+     - First consumer
+     - Ordering / failure rule
+   * - Core libraries
+     - GLib >= 2.66.0 through ``glib-2.0`` pkg-config metadata and
+       ``zlib`` are required in ``meson.build``.  The GLib
+       ``sizeof(size_t)`` sanity check also checks the selected
+       target-library ABI.
+     - QEMU Meson dependency resolution
+     - Fatal when missing or ABI-incompatible.  Select the appropriate
+       host/target provider before QEMU configure; do not force unrelated
+       compiler or firmware rebuilds.
+   * - macOS language frontend
+     - ``add_languages('objc', required: true)`` is active on Darwin,
+       even without selecting a Cocoa display.  The existing ``OBJC``
+       and SDK selection must work, not merely name an executable.
+     - Selected macOS compiler/SDK before QEMU Meson
+     - OS-conditional root capability, **not** a new independent managed
+       compiler or a cross-target ``OBJC_FOR_BUILD`` substitute.
+   * - Graphics and GLib extensions
+     - ``pixman >= 0.21.8`` is probed for system emulators/tools
+       and required by selected display features; ``gmodule-export-2.0``
+       or ``gmodule-no-export-2.0`` is required only for the relevant
+       modules/plugins configuration.
+     - QEMU Meson feature checks
+     - Auto-probes may disable a feature; explicit feature enablement
+       must fail clearly.  No universal pixman or gmodule seed.
+   * - GIO code generator
+     - ``gio-2.0`` may activate ``gdbus-codegen`` and
+       ``gio-unix-2.0`` discovery.  The code generator is a distinct
+       executable, not the ``pkg-config`` metadata package.
+     - Meson when GIO support is selected/found
+     - Keep feature-conditional; do not require the generator for every
+       QEMU build.
+   * - Python environment groups
+     - ``pythondeps.toml`` separates ``[meson]`` (including
+       ``pycotap``), ``[meson-rust]``, ``[tooling]``,
+       ``[docs]``, and ``[functests]``.  The selected interpreter
+       and its build-tree ``pyvenv`` own the installed modules.
+     - QEMU configure creates venv before Meson
+     - Never infer Python modules from unrelated ``pip`` or ``PATH``
+       installations.  The WHP Meson fork requires Python >= 3.10,
+       while the QEMU baseline accepts Python >= 3.9.
+   * - Rust-enabled system targets
+     - ``rust/Cargo.toml`` requires Rust >= 1.83.0.  Meson checks
+       native and target ``rustc``, ``rustdoc``, and
+       ``bindgen`` >= 0.60.0; ``rustfmt`` is optional.
+       Cargo workspace/lock metadata describes crate sources, but Cargo
+       is not thereby a universal QEMU configure executable.
+     - QEMU Meson only for selected Rust support
+     - ``rust=auto`` can disable unsupported Rust; explicit enablement
+       must report missing tools.  This is independent of optional
+       sccache's higher Rust minimum (>= 1.91).
+   * - Documentation and tests
+     - The ``[docs]`` environment contains Sphinx and its theme;
+       ``[functests]`` adds ``pygdbmi``.  Neither is a
+       prerequisite for building the ordinary emulator.
+     - QEMU venv when the respective feature/suite is used
+     - Delay these packages until the active documentation or testing
+       profile needs them; do not globally install to repair a QEMU core
+       library failure.
+   * - Firmware and compression
+     - ``iasl`` is an ACPI/firmware tool.  The ``bzip2`` executable
+       unpacks selected EDK2 blobs; separately, optional ``libbz2``
+       supports block compression.  They are three distinct edges.
+     - Selected firmware/feature graph after target selection
+     - Do not make missing firmware utilities into universal
+       pre-LLVM prerequisites or confuse ``bzip2`` with ``libbz2``.
+   * - Package-manifest transitive inputs
+     - ``tests/lcitool/projects/qemu-minimal.yml`` also includes
+       ``libffi``, flex, bison, sed, tar and other build-environment
+       packages.  Their presence in the CI recipe alone does not prove a
+       direct unconditional QEMU Meson dependency.
+     - Their actual compiler, library or firmware consumer
+     - Treat transitive and source-generation inputs as conditional until
+       the active source/configuration proves otherwise.
+
+The intended boundary order is::
+
+  host shell / Git / SDK / C, C++, Objective-C capabilities
+    -> seed and managed host tools (only when required by the active lane)
+    -> chosen QEMU compiler, Python and library discovery provider
+    -> QEMU configure -> selected Python -> build-tree venv -> Meson
+    -> Meson core checks and selected optional feature checks
+    -> GNU Make / Ninja artifacts -> target-specific firmware and tests
+
+Keep ``WHP_MACOS_DEPENDENCY_PROVIDER`` and its QEMU-only
+``pkg-config`` wrapper **after** independent firmware/toolchain bootstrap
+preparation but **before** ``whp_configure_build``.  The host/target
+``pkg-config`` variables must not be conflated.  The actual ordered
+execution remains in ``builder.bash``: this ledger describes edges, not
+a second executable schedule.  There is no evidence in this audit that
+QEMU's present bootstrap stages need a global reorder.
+
 Pinned Meson source boundary
 ---------------------------
 
