@@ -1272,6 +1272,47 @@ It confirms the checked-out gitlink matches the QEMU tree and refuses
 false-positive TAP output. A pushed gitlink is source integration, not
 proof of runtime portability until both native CI runners pass.
 
+Perl Configure platform-hint and effective-result audit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Perl fork uses **metaconfig** (``Configure``), not the GNU
+``configure.gnu`` compatibility wrapper or Autoconf. The managed build
+continues to call ``/bin/sh ./Configure -des``. It now provides
+``-Dld=<selected native C compiler>`` as well as the existing explicit
+``-Dcc``, ``-Dar``, ``-Dfull_ar``, and ``-Dranlib``, rather than
+allowing a default ``ld`` driver to select another toolchain family.
+
+The updated ``hints/darwin.sh`` in the Perl fork confines historical
+``/usr/include/stdint.h`` checking to Darwin 1.x, the obsolete
+``-no-cpp-precomp`` probe to Darwin 1--8, and the broken
+``poll()`` workaround to Darwin 8 (macOS 10.4). Modern Darwin must
+allow Perl ``Configure`` to detect ``poll()`` normally against the
+actual SDK. The hints now supply ``ranlib`` only when unset, leaving
+explicit native indexers intact. The fork regression is
+``t/porting/darwin_hints_portability.t``; the existing
+``configure_c_portability.t`` remains distinct and unchanged.
+
+After ``Configure`` completes, ``scripts/ensure-perl.py`` parses only
+the required generated ``config.sh`` shell assignment values **as
+text**: it does not source/evaluate that file. It confirms the actual
+installation prefix, compiler, compiler-driven linker, archiver and
+``full_ar`` agree with the selected native roots; Linux/FreeBSD/Darwin
+host OS names remain distinct. Perl's archive probe may legitimately
+implement ``ranlib`` as ``<selected ar> s`` or ``<selected ar> ts``,
+but a foreign indexer is rejected. The selected bootstrap C/link flag
+tokens must survive the OS hints and metaconfig probes; additive native
+hints are allowed. ``scripts/tests/test-perl-configure-unattended.py``
+has positive and negative cases, including malformed, duplicated,
+wrong-prefix, foreign-tool and dropped-flag configurations.
+
+The Perl cache fingerprint schema was raised for the new
+compiler-driven-linker contract. This intentionally rebuilds *Perl only*
+when needed; it does not reset LLVM, the native compiler, the seed Perl,
+or unrelated source work. The pinned Perl gitlink must advance to include
+the fork changes before the regression can be exercised in
+``.github/workflows/managed-perl.yml``. These source/static checks do
+not establish a successful native macOS or FreeBSD full build.
+
 Worktree identity and POSIX shell ``-ef`` compatibility
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
