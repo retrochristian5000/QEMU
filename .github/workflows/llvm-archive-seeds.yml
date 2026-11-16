@@ -1,0 +1,48 @@
+name: WHP optional LLVM archive seeds
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'seeds/llvm-ar.sh'
+      - 'seeds/llvm-ranlib.sh'
+      - 'seeds/cc.sh'
+      - 'scripts/tests/test-llvm-ar-seed.sh'
+      - 'scripts/tests/test-llvm-ranlib-seed.sh'
+      - '.github/workflows/llvm-archive-seeds.yml'
+  pull_request:
+    paths:
+      - 'seeds/llvm-ar.sh'
+      - 'seeds/llvm-ranlib.sh'
+      - 'seeds/cc.sh'
+      - 'scripts/tests/test-llvm-ar-seed.sh'
+      - 'scripts/tests/test-llvm-ranlib-seed.sh'
+      - '.github/workflows/llvm-archive-seeds.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  installed-llvm-archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate optional installed LLVM archive tool pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n seeds/llvm-ar.sh
+          sh -n seeds/llvm-ranlib.sh
+          sh -n scripts/tests/test-llvm-ar-seed.sh
+          sh -n scripts/tests/test-llvm-ranlib-seed.sh
+          # Discovery-only path must not compile/archive on each forwarded
+          # index operation. Admission stays with --print-seed and --check.
+          if ar_candidate="$(sh seeds/llvm-ar.sh --print-candidate 2>/dev/null)"; then
+            test -x "$ar_candidate"
+          fi
+          sh scripts/tests/test-llvm-ar-seed.sh
+          sh scripts/tests/test-llvm-ranlib-seed.sh
