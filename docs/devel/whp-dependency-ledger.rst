@@ -345,6 +345,40 @@ a complete emulator build. Run the focused local fixture with::
 
   python3 scripts/tests/test-header-audit.py -v
 
+Linux-only headers and host-feature detection
+---------------------------------------------
+
+A Linux UAPI header being visible is not the same as the host implementing
+the Linux kernel feature. In particular, a third-party ``-I`` or sysroot
+may expose ``linux/falloc.h``, ``linux/blkzoned.h``,
+``linux/rtnetlink.h``, or ``sys/prctl.h`` while building on macOS.
+The ``meson.build`` checks for Linux filesystem, storage, Netlink and
+process-control feature macros now require ``host_os == 'linux'`` before
+probing their headers. Similarly, L2TPv3 requires a Linux host because
+``net/l2tpv3.c`` includes ``linux/ip.h`` and uses Linux-specific
+socket interfaces. An explicit L2TPv3 request on another host must fail
+rather than silently selecting a backend requiring Linux UAPI.
+
+Keep existing platform separation intact:
+
+* KVM, VFIO, vhost-kernel, AF_XDP, async-teardown, Linux U2F hidraw,
+  Linux net/tap, userfaultfd and Linux block-interface code must not
+  migrate into macOS/FreeBSD source lists solely because a header exists.
+* ``standard-headers/linux/`` represents shared guest/protocol definitions
+  in many places (for example VirtIO), not always Linux host APIs.
+* FreeBSD's libinotify-kqueue can legitimately supply inotify interfaces.
+  Keep capability detection for ``CONFIG_INOTIFY1``, rather than applying
+  a blanket Linux-only rule to every Linux-origin API.
+* The top-level ``linux-headers`` system include directories stay restricted
+  to Linux host builds. Host macOS must use the selected Apple SDK and any
+  separately validated third-party development interfaces.
+
+``scripts/tests/test-linux-header-probes.py`` records these static
+source/feature-gate contracts; passing it does not replace a genuine
+Linux and macOS Meson configure/compile matrix. Verify the native macOS
+build separately, including Homebrew include paths, to detect unexpected
+Linux UAPI headers shadowing the selected SDK.
+
 Known bootstrap and library edges
 ---------------------------------
 
