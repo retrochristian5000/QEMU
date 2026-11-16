@@ -1408,6 +1408,40 @@ policy. It is not a request to install every tool or library listed below.
   those tools. The existing macOS coherent LLVM archive-trio selection
   remains authoritative.
 
+* **Optional installed LLVM archive indexer seed:** ``seeds/llvm-ranlib.sh``
+  is intentionally distinct from the general native ``seeds/ranlib.sh``
+  (which also accepts Apple and GNU implementations). It requires an
+  installed ``llvm-ar`` selected through ``seeds/llvm-ar.sh``, identifies
+  an LLVM ``llvm-ranlib`` implementation by its real ``--version``,
+  and requires the same LLVM **major** version for both tools. This is an
+  explicit *installed-tool capability*, never a dependency on the unfinished
+  managed LLVM build. An explicit ``WHP_LLVM_RANLIB_SEED`` is authoritative:
+  an invalid, non-LLVM, wrong-version or non-indexing override fails rather
+  than falling back to a different ranlib.
+
+  Admission compiles a native object through ``seeds/cc.sh``, creates a
+  deliberately *unindexed* LLVM archive with ``llvm-ar rcS``, requires
+  ``llvm-ranlib`` to change its checksum, and links/runs the member using
+  the same host compiler and selected SDK. The ``llvm-ar`` executable name
+  cannot be used in place of the ``llvm-ranlib`` name: some LLVM tools are
+  multicall binaries whose behavior depends on ``argv[0]``. GNU
+  ``ranlib --plugin`` flags are rejected, not silently ignored.
+  This verifies native objects and indexing, **not** LLVM bitcode,
+  cross-target archives, or GNU LTO plugin interoperability.
+
+  ``llvm-ar.sh --print-candidate`` exposes only a quick version-identified
+  installed candidate for forwarded LLVM ranlib operations; it does *not*
+  certify native archiving. ``--print-seed`` and ``--check`` still
+  perform the full pair admission. Regular archive invocations forward
+  without repeated compiler/link probes. Both optional LLVM seeds leave
+  ``WHP_AR_SEED``, ``WHP_RANLIB_SEED``, the Perl bootstrap and generic
+  ``AR_FOR_TARGET``/``RANLIB_FOR_BUILD`` assignments untouched.
+  Diagnostics use the existing ``WHP_ARCHIVE_VERBOSE=1`` convention.
+  The isolated regression is
+  ``sh scripts/tests/test-llvm-ranlib-seed.sh``; the lightweight
+  Linux/macOS workflow is ``.github/workflows/llvm-archive-seeds.yml``.
+  This workflow does not rebuild managed Perl or LLVM.
+
   The two native archive seeds share an opt-in provenance/forwarding trace::
 
     WHP_ARCHIVE_VERBOSE=1 /bin/sh seeds/ar.sh --check
