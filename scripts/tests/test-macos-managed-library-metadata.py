@@ -34,12 +34,12 @@ class ManagedMetadataTest(unittest.TestCase):
         (pcdir / (module + ".pc")).touch()
         return prefix, pcdir
 
-    def test_restores_all_four_libraries_including_lib64_and_libdata(self):
+    def test_restores_lib_lib64_libdata_and_share_layouts(self):
         cases = [
             ("zlib-artifact", "zlib", ".whp-zlib-bootstrap", "libdata"),
             ("jack", "jack", ".whp-jack-bootstrap", "lib64"),
             ("sdl3", "sdl3", ".whp-sdl-bootstrap", "lib"),
-            ("libisofs", "libisofs-1", ".whp-libisofs-bootstrap", "lib"),
+            ("libisofs", "libisofs-1", ".whp-libisofs-bootstrap", "share"),
         ]
         cmds = ["unset PKG_CONFIG_PATH CMAKE_PREFIX_PATH"]
         pcdirs = []
@@ -54,6 +54,27 @@ class ManagedMetadataTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip().split(":"), list(reversed(pcdirs)))
         self.assertIn("managed library metadata: JACK", result.stderr)
+
+    def test_managed_library_forwarders_include_share_pkgconfig(self):
+        root = HYGIENE.parents[1]
+        host = (root / "scripts/whp-build/host-libraries.sh").read_text(
+            encoding="utf-8"
+        )
+        for name in ("ZLIB", "SDL", "JACK"):
+            with self.subTest(library=name):
+                self.assertIn(
+                    f'"$WHP_{name}_PREFIX/share/pkgconfig"', host
+                )
+        self.assertIn(
+            '"$WHP_LIBISOFS_PREFIX/share/pkgconfig"',
+            (root / "build.sh").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            '"$prefix/share/pkgconfig/sdl3.pc"',
+            (root / ".github/workflows/sdl-bootstrap.yml").read_text(
+                encoding="utf-8"
+            ),
+        )
 
     def test_rejects_external_and_incomplete_prefix(self):
         foreign = Path(self.temp.name) / "other"
