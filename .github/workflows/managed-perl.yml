@@ -20,6 +20,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - '.github/workflows/managed-perl.yml'
   pull_request:
@@ -40,6 +41,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - '.github/workflows/managed-perl.yml'
 
@@ -62,6 +64,7 @@ jobs:
         run: |
           python3 scripts/tests/test-perl-seed.py
           python3 scripts/tests/test-perl-bootstrap.py
+          python3 scripts/tests/test-perl-core-headers.py -v
           python3 scripts/tests/test-perl-configure-unattended.py
           sh -n seeds/xcrun.sh
           if [ "$(uname -s)" = Darwin ]; then
