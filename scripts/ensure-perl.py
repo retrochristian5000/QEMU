@@ -34,7 +34,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "6"
+SCHEMA = "7"
 
 
 def perl_trace(message: str) -> None:
@@ -256,7 +256,7 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
     options = [
         "/bin/sh", "./Configure", "-des",
         f"-Dprefix={prefix}", f"-Dcc={compiler}",
-        "-Uuseshrplib",
+        f"-Dld={compiler}", "-Uuseshrplib",
     ]
     # Perl Configure uses ccflags/ldflags (not Autoconf CFLAGS/LDFLAGS).
     # Supply one authoritative value for each instead of relying on
@@ -275,6 +275,78 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
     if minor % 2:
         options.append("-Dusedevel")
     return options
+
+
+
+def require_configured_toolchain(source: pathlib.Path,
+                                 prefix: pathlib.Path, compiler: str,
+                                 ar: str, ranlib: str, cflags: str = "",
+                                 ldflags: str = "") -> None:
+    """Check effective metaconfig results, not just requested -D options.
+
+    Perl's OS hints and archive/link probes can change configuration after
+    it initially accepts command-line options. Parse only the needed shell
+    assignments; never source config.sh or eval configuration text.
+    """
+    try:
+        lines = (source / "config.sh").read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise RuntimeError("Perl Configure did not generate config.sh") from exc
+    required = ("prefix", "cc", "ld", "ar", "full_ar", "ranlib",
+                "ccflags", "ldflags", "osname")
+    values: dict[str, str] = {}
+    for line in lines:
+        match = re.fullmatch(r"([a-z][a-z0-9_]*)=(.*)", line)
+        if not match or match.group(1) not in required:
+            continue
+        key, raw = match.groups()
+        if key in values:
+            raise RuntimeError(f"Perl config.sh has duplicate {key!r}")
+        try:
+            parsed = shlex.split(raw, posix=True)
+        except ValueError as exc:
+            raise RuntimeError(f"Perl config.sh has malformed {key!r}") from exc
+        if len(parsed) != 1:
+            raise RuntimeError(f"Perl config.sh has ambiguous {key!r}")
+        values[key] = parsed[0]
+    absent = sorted(set(required) - values.keys())
+    if absent:
+        raise RuntimeError(f"Perl config.sh lacks {', '.join(absent)}")
+    wanted = {"prefix": str(prefix), "cc": compiler, "ld": compiler,
+              "ar": ar, "full_ar": ar}
+    for key, expected in wanted.items():
+        if values[key] != expected:
+            raise RuntimeError(
+                f"Perl Configure replaced {key}: expected {expected!r}, "
+                f"got {values[key]!r}"
+            )
+    # metaconfig may legitimately replace ranlib with an indexing operation
+    # performed by the same admitted ar; foreign tools are never accepted.
+    admitted_indexers = {ranlib, f"{ar} s", f"{ar} ts"}
+    if values["ranlib"] not in admitted_indexers:
+        raise RuntimeError(
+            f"Perl Configure selected an unexpected archive indexer: "
+            f"{values['ranlib']!r} (expected {ranlib!r} or selected ar)"
+        )
+    expected_os = {"Darwin": "darwin", "Linux": "linux",
+                   "FreeBSD": "freebsd", "NetBSD": "netbsd",
+                   "OpenBSD": "openbsd"}.get(platform.system())
+    if expected_os is not None and values["osname"] != expected_os:
+        raise RuntimeError(
+            f"Perl Configure detected wrong host OS: {values['osname']!r}; "
+            f"expected {expected_os!r}"
+        )
+    for key, requested in (("ccflags", cflags), ("ldflags", ldflags)):
+        try:
+            expected_tokens = shlex.split(requested)
+            actual_tokens = shlex.split(values[key])
+        except ValueError as exc:
+            raise RuntimeError(f"Perl Configure returned invalid {key}") from exc
+        missing = [flag for flag in expected_tokens if flag not in actual_tokens]
+        if missing:
+            raise RuntimeError(
+                f"Perl Configure dropped selected {key}: {missing!r}"
+            )
 
 
 def require_configured_ar(source: pathlib.Path, expected: str) -> None:
@@ -461,6 +533,8 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
                                 ranlib_path, ar_path),
             cwd=source, env=env, unattended=True, timeout=900,
             phase="Configure", log_path=work / "configure.log")
+        require_configured_toolchain(source, prefix, cc, ar_path,
+                                     ranlib_path, cflags, ldflags)
         require_configured_ar(source, ar_path)
         run([make, "perl"], cwd=source, env=env,
             phase="compile", log_path=work / "compile.log")
