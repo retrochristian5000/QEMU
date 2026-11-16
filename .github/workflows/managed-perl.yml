@@ -141,6 +141,15 @@ jobs:
               printf '%s\n' 'error: pinned Perl C portability regression failed' >&2
               exit 1
             fi
+            test -f t/porting/darwin_hints_portability.t
+            hints_output="$("$installed" t/porting/darwin_hints_portability.t)"
+            printf '%s\n' "$hints_output"
+            grep -Fxq '1..6' <<< "$hints_output"
+            test "$(grep -Ec '^ok [1-6] ' <<< "$hints_output")" -eq 6
+            if grep -Eq '^not ok ' <<< "$hints_output"; then
+              printf '%s\n' 'error: pinned Perl Darwin hints regression failed' >&2
+              exit 1
+            fi
           )
 
       - name: Reuse validated native Perl build
