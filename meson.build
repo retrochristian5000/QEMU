@@ -67,7 +67,10 @@ have_bsd_user = false
 have_system = false
 foreach target : target_dirs
   have_linux_user = have_linux_user or target.endswith('linux-user')
-  have_bsd_user = have_bsd_user or target.endswith('bsd-user')
+  # The bundled BSD-user OS glue currently exists only for FreeBSD.
+  # Do not schedule it on Darwin merely because Darwin is BSD-derived.
+  have_bsd_user = have_bsd_user or (target.endswith('bsd-user') and
+                                   host_os == 'freebsd')
   have_system = have_system or target.endswith('-softmmu')
 endforeach
 have_user = have_linux_user or have_bsd_user
@@ -2664,7 +2667,6 @@ config_host_data.set('HAVE_DRM_H', cc.has_header('libdrm/drm.h'))
 config_host_data.set('HAVE_OPENAT2_H',
                      host_os == 'linux' and cc.has_header('linux/openat2.h'))
 config_host_data.set('HAVE_PTY_H', cc.has_header('pty.h'))
-config_host_data.set('HAVE_SYS_DISK_H', cc.has_header('sys/disk.h'))
 config_host_data.set('HAVE_SYS_IOCCOM_H', cc.has_header('sys/ioccom.h'))
 config_host_data.set('HAVE_SYS_KCOV_H', cc.has_header('sys/kcov.h'))
 if host_os == 'windows'
@@ -3359,11 +3361,11 @@ foreach target : target_dirs
     endif
     config_target += { 'CONFIG_LINUX_USER': 'y' }
   elif target.endswith('bsd-user')
-    if host_os not in bsd_oses
+    if host_os != 'freebsd'
       if default_targets
         continue
       endif
-      error('Target @0@ is only available on a BSD host'.format(target))
+      error('Target @0@ currently requires a FreeBSD host'.format(target))
     endif
     config_target += { 'CONFIG_BSD_USER': 'y' }
   elif target.endswith('softmmu')
