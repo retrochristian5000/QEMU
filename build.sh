@@ -963,7 +963,8 @@ if [ "$WHP_HOST_OS" = macos ] &&
         for WHP_LIBISOFS_PC_DIR in \
             "$WHP_LIBISOFS_PREFIX/lib/pkgconfig" \
             "$WHP_LIBISOFS_PREFIX/lib64/pkgconfig" \
-            "$WHP_LIBISOFS_PREFIX/libdata/pkgconfig"; do
+            "$WHP_LIBISOFS_PREFIX/libdata/pkgconfig" \
+            "$WHP_LIBISOFS_PREFIX/share/pkgconfig"; do
             if [ -d "$WHP_LIBISOFS_PC_DIR" ]; then
                 WHP_LIBISOFS_PC_PATH="${WHP_LIBISOFS_PC_PATH:+$WHP_LIBISOFS_PC_PATH:}$WHP_LIBISOFS_PC_DIR"
             fi
