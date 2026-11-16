@@ -146,11 +146,11 @@ def main() -> int:
         pkg_prefix = root / "pkgconf-prefix"
         selected_pkg = pkg_prefix / "bin" / "pkg-config"
         selected_pkg.parent.mkdir(parents=True)
-        selected_pkg.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        selected_pkg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         selected_pkg.chmod(0o755)
         adjacent = pkg_prefix / "share" / "aclocal"
         adjacent.mkdir(parents=True)
-        (adjacent / "pkg.m4").write_text("dnl pkgconf macro\\n", encoding="utf-8")
+        (adjacent / "pkg.m4").write_text("dnl pkgconf macro\n", encoding="utf-8")
         found = module.pkg_config_aclocal_dir(str(selected_pkg))
         if found != str(adjacent):
             raise SystemExit("error: adjacent pkg-config macros were missed")
@@ -165,7 +165,7 @@ def main() -> int:
         (adjacent / "pkg.m4").unlink()
         custom = root / "separately installed macros"
         custom.mkdir()
-        (custom / "pkg.m4").write_text("dnl independent pkg.m4\\n", encoding="utf-8")
+        (custom / "pkg.m4").write_text("dnl independent pkg.m4\n", encoding="utf-8")
         found = module.pkg_config_aclocal_dir(
             str(wrapper), inherited=str(custom)
         )
@@ -185,10 +185,10 @@ def main() -> int:
 
         default = root / "automake system macros"
         default.mkdir()
-        (default / "pkg.m4").write_text("dnl Automake macro\\n", encoding="utf-8")
+        (default / "pkg.m4").write_text("dnl Automake macro\n", encoding="utf-8")
         aclocal = root / "aclocal"
         aclocal.write_text(
-            "#!/bin/sh\\nprintf '%s\\n' " + shlex.quote(str(default)) + "\\n",
+            "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(str(default)) + "\n",
             encoding="utf-8",
         )
         aclocal.chmod(0o755)
