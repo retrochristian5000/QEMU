@@ -104,7 +104,8 @@ install_select()
             "$WHP_INSTALL_SEED" >&2
         return 1
     fi
-    for candidate in /usr/bin/install /bin/install install; do
+    # Prefer working native install; GNU Coreutils may expose ginstall.
+    for candidate in /usr/bin/install /bin/install install ginstall; do
         if seed=$(install_resolve "$candidate"); then
             printf '%s\n' "$seed"
             return 0

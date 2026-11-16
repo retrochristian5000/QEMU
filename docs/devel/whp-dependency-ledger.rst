@@ -504,6 +504,86 @@ minimum working capability, known host provider, source/cache identity
 and earliest valid dependency order. Do not create a managed fork or
 repeat a build merely because a CMake probe names a dependency.
 
+GNU Coreutils utility provider boundary
+--------------------------------------
+
+Coreutils is a collection of executable providers, **not** a single
+unconditional QEMU dependency.  GNU Coreutils supplies programs such as
+``cp``, ``install``, ``mkdir``, ``mv``, ``rm``, ``ln``,
+``chmod``, ``mktemp``, ``sort``, ``head``, ``tail``, ``wc``,
+``stat``, ``readlink``, ``realpath``, ``date``, ``cksum``,
+``nproc``, ``timeout``, and ``env``.  Native BSD/macOS
+implementations may provide the same command names with different
+options or behavior.  Homebrew and MacPorts can supply the GNU programs
+with ``g`` names and ``gnubin`` aliases.  A GNU package being
+installed does not mean that its executable is the one on ``PATH``.
+
+.. list-table:: Active Coreutils capabilities by first QEMU consumer
+   :header-rows: 1
+   :widths: 23 26 33 18
+
+   * - Consumer / phase
+     - Commands or capabilities
+     - Selection / failure handling
+     - Classification
+   * - ``build.sh`` before seed Git/source refresh
+     - ``cp`` ordinary, ``-R`` and ``-p``; ``install``
+       directory, data and executable modes; ``mktemp -d``,
+       ``mkdir``, ``cat``, ``ls -ld``, ``rm``
+     - Existing ``seeds/cp.sh`` and ``seeds/install.sh`` run
+       behavioral probes and lock a single implementation.  Native
+       absolute paths and ordinary names take priority; ``gcp`` and
+       ``ginstall`` are last-resort candidates.  Explicit
+       ``WHP_CP_SEED`` / ``WHP_INSTALL_SEED`` may choose GNU
+       implementations but must still pass the existing probe.
+     - ``root`` capabilities, not GNU-only roots
+   * - Source generation/managed bootstrap
+     - ``mkdir``, ``ln``, ``mv``, ``rm``, ``mktemp``,
+       ``touch``, ``basename``, ``dirname``, ``sort``,
+       ``cksum``, ``chmod``
+     - Record the *first real call*, selected executable, supported
+       options, and whether the call occurs before a cache hit.
+       Reuse a passing system utility; source rebuilds introduce
+       additional edges only when selected.
+     - Consumer-scoped host capabilities
+   * - LLVM/firmware and configure preparation
+     - ``mktemp``, ``mkdir``, ``rm``, ``ln``,
+       ``mv``, ``cksum``; optional ``nproc``
+     - The LLVM bootstrap explicitly requires ordinary utilities.
+       ``nproc`` is *optional* in ``prepare-build.bash`` and
+       ``configure-openbios.bash``, which also probe macOS
+       ``sysctl`` (and where applicable ``getconf``).
+       No GNU ``nproc`` build gate is justified.
+     - Active lane or optional probe
+   * - Other utilities / option-sensitive features
+     - ``readlink -f``, ``realpath``, ``stat -c``,
+       ``sort -V``, ``date -d``, ``install -D``,
+       ``timeout``
+     - Do not assume GNU-specific options work on macOS.  Require
+       them only when a source call is found in an active lane;
+       prefer portable syntax or an already selected Python
+       implementation when appropriate.  The managed Autoconf
+       helper explicitly avoids requiring external ``realpath``.
+       Python ``subprocess`` timeouts do not require a GNU
+       ``timeout`` executable.
+     - Candidate edges; **not** universal roots
+
+Keep source families separate: ``grep``, ``sed``, ``gawk``,
+``find``/``xargs``, ``tar``, GNU Make and GNU Bash do **not**
+come from the Coreutils package.  ``test``, ``[``, ``echo``
+and ``printf`` may be shell builtins: their use does not prove
+a need for an external Coreutils executable.  The project's pinned
+GNU Gnulib source used by GNU Make is not an installed Coreutils suite.
+
+Do not prepend Homebrew/MacPorts ``gnubin`` globally: replacing every
+utility implicitly could change file permissions, copying, parsing, and
+firmware/SDK semantics mid-bootstrap.  The root ``cp``/``install``
+adapters are already pinned by the earliest ``build.sh`` stage.
+Add further provider selection only after identifying a concrete
+broken command/capability and its earliest consumer, with a targeted
+portable regression test.  No Coreutils source fork or build is
+currently needed on the normal path.
+
 External host-tool edges by active consumer
 ------------------------------------------
 
@@ -843,13 +923,17 @@ checks, safe quoting, caller statuses and the sh-to-Bash handoff.
 Root seed adapter namespace
 ---------------------------
 
-Only host seed adapters live under the repository-root ``seeds/`` directory:
-``awk.sh``, ``grep.sh``, ``sed.sh``, ``git.sh``, ``cc.sh``,
-``cxx.sh``, ``cpp.sh``, ``ld.sh``, ``pkg-config.sh``, and ``m4.sh``. Their invocation is explicitly
-``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public build
-entry. This naming boundary leaves ``seeds/install.sh`` unambiguously
-available for a future *host install-program* seed, without suggesting it
-installs QEMU. No install bridge is currently provided.
+Only host-tool seed adapters live under the repository-root
+``seeds/`` directory, including ``awk.sh``, ``grep.sh``,
+``sed.sh``, ``git.sh``, ``cc.sh``, ``cxx.sh``, ``cpp.sh``,
+``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh`` and
+``install.sh``. Their explicit invocation is
+``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public
+build entry.  The implemented ``cp`` and ``install`` literal-command
+bridges under ``scripts/whp-build/seed-bin/`` select one tested host
+implementation each, before source refresh.  The ``install`` seed
+selects the executable used by bootstrap install commands; it does not
+install QEMU itself or replace Automake's ``INSTALL`` variables.
 
 The C preprocessor bridge selects the validated native C compiler driver
 and invokes it with ``-E`` (and the selected macOS ``-isysroot``).

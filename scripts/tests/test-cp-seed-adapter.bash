@@ -17,6 +17,26 @@ printf 'payload\n' > "$tmp/in"
 WHP_CP_SEED="$selected" WHP_CP_LOCKED=1 "$bridge" "$tmp/in" "$tmp/out"
 [[ "$(cat "$tmp/out")" == payload ]]
 
+# GNU Coreutils' g-prefixed command is an alternative only when explicitly
+# selected or after the native candidate list fails. Keep native precedence.
+mkdir -p "$tmp/gnu-bin"
+cat > "$tmp/gnu-bin/gcp" <<'GNUCP'
+#!/bin/sh
+exec "$WHP_CP_TEST_PROVIDER" "$@"
+GNUCP
+chmod +x "$tmp/gnu-bin/gcp"
+gnu_cp="$(PATH="$tmp/gnu-bin:$PATH" WHP_CP_TEST_PROVIDER="$selected" \
+    WHP_CP_SEED=gcp "$seed" --print-seed)"
+[[ "$gnu_cp" == "$tmp/gnu-bin/gcp" ]]
+PATH="$tmp/gnu-bin:$PATH" WHP_CP_TEST_PROVIDER="$selected" \
+    WHP_CP_SEED="$gnu_cp" WHP_CP_LOCKED=1 \
+    "$bridge" "$tmp/in" "$tmp/gnu-out"
+[[ "$(cat "$tmp/gnu-out")" == payload ]]
+native_with_gnu="$(PATH="$tmp/gnu-bin:$PATH" \
+    env -u WHP_CP_SEED -u WHP_CP_LOCKED "$seed" --print-seed)"
+[[ "$native_with_gnu" == "$selected" ]]
+
+
 # An invalid explicit override fails closed; never silently selects /bin/cp.
 if WHP_CP_SEED=/no/such/cp "$seed" --print-seed >"$tmp/out" 2>"$tmp/error"; then
     echo 'error: invalid cp override unexpectedly accepted' >&2

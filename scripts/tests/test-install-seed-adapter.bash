@@ -12,6 +12,25 @@ selected="$(env -u WHP_INSTALL_SEED -u WHP_INSTALL_LOCKED "$seed" --print-seed)"
 [[ "$(WHP_INSTALL_SEED="$selected" "$seed" --print-seed)" == "$selected" ]]
 WHP_INSTALL_SEED="$selected" "$seed" --check | grep -Fq 'replacement verified'
 
+# Homebrew/MacPorts GNU Coreutils expose ginstall while native install
+# remains preferred. Explicit ginstall selection must pass real mode checks.
+mkdir -p "$tmp/gnu-bin"
+cat > "$tmp/gnu-bin/ginstall" <<'GNUINSTALL'
+#!/bin/sh
+exec "$WHP_INSTALL_TEST_PROVIDER" "$@"
+GNUINSTALL
+chmod +x "$tmp/gnu-bin/ginstall"
+gnu_install="$(PATH="$tmp/gnu-bin:$PATH" WHP_INSTALL_TEST_PROVIDER="$selected" \
+    WHP_INSTALL_SEED=ginstall "$seed" --print-seed)"
+[[ "$gnu_install" == "$tmp/gnu-bin/ginstall" ]]
+PATH="$tmp/gnu-bin:$PATH" WHP_INSTALL_TEST_PROVIDER="$selected" \
+    WHP_INSTALL_SEED="$gnu_install" "$seed" --check | \
+    grep -Fq 'replacement verified'
+native_with_gnu="$(PATH="$tmp/gnu-bin:$PATH" \
+    env -u WHP_INSTALL_SEED -u WHP_INSTALL_LOCKED "$seed" --print-seed)"
+[[ "$native_with_gnu" == "$selected" ]]
+
+
 # The literal bridge uses exactly the same native implementation for data and
 # executable installs, including spaces in destination paths.
 mkdir "$tmp/tree"

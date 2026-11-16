@@ -62,7 +62,8 @@ cp_select()
         printf 'error: WHP_CP_SEED is not a usable host cp: %s\n' "$WHP_CP_SEED" >&2
         return 1
     fi
-    for candidate in /bin/cp /usr/bin/cp cp; do
+    # Native implementations remain first; GNU Coreutils may use gcp on BSD/macOS.
+    for candidate in /bin/cp /usr/bin/cp cp gcp; do
         if seed=$(cp_resolve "$candidate"); then
             printf '%s\n' "$seed"
             return 0
