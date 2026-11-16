@@ -67,6 +67,11 @@ if ! selected=$(/bin/sh "$seed" --print-seed 2> "$tmp/err"); then
     exit 0
 fi
 [ -x "$selected" ]
+# The cheap paired-tool lookup keeps the same installed identity without
+# rebuilding an archive on every forwarded ranlib operation.
+[ "$(/bin/sh "$seed" --print-candidate)" = "$selected" ]
+[ "$(WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 /bin/sh "$seed" --print-candidate 2>"$tmp/candidate.err")" = "$selected" ]
+grep -Fq "native-probe=no" "$tmp/candidate.err"
 [ "$(WHP_LLVM_AR_SEED="$selected" /bin/sh "$seed" --print-seed)" = "$selected" ]
 WHP_LLVM_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 \
     /bin/sh "$seed" --check >"$tmp/checked.out" 2>"$tmp/checked.err"
