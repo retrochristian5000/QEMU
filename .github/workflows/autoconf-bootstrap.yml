@@ -207,6 +207,29 @@ jobs:
             test -f config.log
           )
 
+          # The installed autoheader must handle shell-sensitive paths and
+          # use its selected autom4te rather than assuming safe single quotes.
+          quote_dir="$RUNNER_TEMP/autoheader's path with spaces"
+          quote_bin="$RUNNER_TEMP/autom4te's tools"
+          mkdir -p "$quote_dir" "$quote_bin"
+          ln -s "$autoconf_prefix/bin/autom4te" "$quote_bin/autom4te"
+          printf '%s\n' \
+            'AC_INIT([whp-autoheader-quote],[1])' \
+            'AC_CONFIG_HEADERS([config.h])' \
+            'AC_DEFINE([WHP_AUTOHEADER_QUOTE],[1],[Quoted invocation works.])' \
+            'AC_OUTPUT' > "$quote_dir/configure.ac"
+          (
+            cd "$quote_dir"
+            AUTOM4TE="$quote_bin/autom4te" \
+              "$autoconf_prefix/bin/autoheader" --force
+            grep -Fq '#undef WHP_AUTOHEADER_QUOTE' config.h.in
+            # Verbose debug output is read directly in Perl, not by sed.
+            TMPDIR="$quote_dir" AUTOM4TE="$quote_bin/autom4te" \
+              "$autoconf_prefix/bin/autoheader" --force --verbose --debug \
+              > autoheader.debug.log 2>&1
+            grep -Fq 'traces.pl' autoheader.debug.log
+          )
+
           fake_m4="$RUNNER_TEMP/non-gnu-m4"
           cat > "$fake_m4" <<'EOF'
           #!/bin/sh
