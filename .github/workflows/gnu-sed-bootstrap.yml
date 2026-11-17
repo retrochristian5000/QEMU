@@ -8,6 +8,7 @@ on:
       - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'seeds/sed.sh'
+      - 'seeds/GNUsed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'toolchains/autoconf'
@@ -26,6 +27,7 @@ on:
       - 'seeds/grep.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'seeds/sed.sh'
+      - 'seeds/GNUsed.sh'
       - 'toolchains/sed'
       - 'toolchains/automake'
       - 'toolchains/autoconf'
@@ -96,6 +98,11 @@ jobs:
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test -x "$sed_path"
           "$sed_path" --version | grep -q 'GNU sed'
+          # A built GNU sed is eligible for the GNU-only seed role, without
+          # replacing the pre-GNU WHP_SED_SEED used during source bootstrap.
+          gnu_selected="$(WHP_GNU_SED_SEED="$sed_path" \
+            /bin/sh ./seeds/GNUsed.sh --print-seed)"
+          test "$gnu_selected" = "$sed_path"
           test "$(printf 'alpha\n' | "$sed_path" -n 's/^alpha$/beta/p')" = beta
           test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' |             "$sed_path" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar
 
@@ -150,6 +157,11 @@ jobs:
             python3 scripts/ensure-sed.py --build-dir "$RUNNER_TEMP/whp-sed")"
           test -x "$sed_path"
           "$sed_path" --version | grep -q 'GNU sed'
+          # A built GNU sed is eligible for the GNU-only seed role, without
+          # replacing the pre-GNU WHP_SED_SEED used during source bootstrap.
+          gnu_selected="$(WHP_GNU_SED_SEED="$sed_path" \
+            /bin/sh ./seeds/GNUsed.sh --print-seed)"
+          test "$gnu_selected" = "$sed_path"
           test "$(printf 'alpha\n' | "$sed_path" -n 's/^alpha$/beta/p')" = beta
           test "$(printf 'AR=/tmp/llvm-ar|LLVM\n' | \
             "$sed_path" -n 's#^AR=\([^|]*\)|.*$#\1#p')" = /tmp/llvm-ar

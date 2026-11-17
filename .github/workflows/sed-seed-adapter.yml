@@ -5,6 +5,9 @@ on:
     branches: [master]
     paths:
       - 'seeds/sed.sh'
+      - 'seeds/GNUsed.sh'
+      - 'seeds/brew.sh'
+      - 'scripts/tests/test-GNUsed-seed.py'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/ensure-automake.py'
@@ -15,6 +18,9 @@ on:
   pull_request:
     paths:
       - 'seeds/sed.sh'
+      - 'seeds/GNUsed.sh'
+      - 'seeds/brew.sh'
+      - 'scripts/tests/test-GNUsed-seed.py'
       - 'build.sh'
       - 'scripts/bootstrap-python.sh'
       - 'scripts/ensure-automake.py'
@@ -35,6 +41,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify GNU-only sed is separate from native sed
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh -n seeds/sed.sh seeds/GNUsed.sh
+          python3 scripts/tests/test-GNUsed-seed.py
 
       - name: Verify sed bootstrap ordering
         run: python3 scripts/tests/test-sed-bootstrap-order.py

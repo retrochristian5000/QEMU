@@ -2448,8 +2448,17 @@ flattened into one executable slot.
 
 **Seed sed** is a root capability. ``seeds/sed.sh`` validates the small semantic
 subset needed by the bootstrap and rejects recursion back into itself. The
-public ``build.sh`` resolves this seed once as ``WHP_SED_SEED`` before the
-Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
+generic selector prefers the native host sed; it does not require GNU sed or
+automatically promote a Homebrew GNU sed over a working system implementation.
+The optional ``seeds/GNUsed.sh`` instead selects GNU sed explicitly through
+``WHP_GNU_SED_SEED`` (or ``GNUSED``/``GSED``), checking GNU identity and
+the actual ``--null-data`` behavior. On macOS it uses the selected installed
+Homebrew ``gnu-sed`` formula's ``gsed`` or a separate selected provider.
+Both adapters reject each other to prevent recursive host-tool selection.
+The GNU-only selector never overrides ``WHP_SED_SEED`` or the public
+downstream ``SED`` variable; selection is read-only and does not alter PATH.
+The public ``build.sh`` resolves the native seed once as ``WHP_SED_SEED``
+before the Python fallback or Automake bootstrap. Python, Automake, and GNU sed's own
 self-bootstrap therefore consume one provenance identity rather than
 independently rediscovering host sed implementations. The promoted
 ``SED`` is a distinct downstream tool; host-tools must not unset
