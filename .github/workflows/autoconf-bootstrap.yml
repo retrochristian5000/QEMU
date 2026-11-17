@@ -230,6 +230,38 @@ jobs:
             grep -Fq 'traces.pl' autoheader.debug.log
           )
 
+          # Exercise the fork's m4/m4.m4 under a shell-sensitive PATH.
+          # Discovery and explicit M4 selection must both retain the
+          # executable path instead of splitting it on spaces.
+          m4_space_bin="$RUNNER_TEMP/m4's tools with spaces"
+          m4_macro_smoke="$RUNNER_TEMP/whp-m4-macro-smoke"
+          mkdir -p "$m4_space_bin" "$m4_macro_smoke"
+          ln -s "$(command -v m4)" "$m4_space_bin/m4"
+          ln -s "$GITHUB_WORKSPACE/toolchains/autoconf/m4/m4.m4" \
+            "$m4_macro_smoke/gnu-m4.m4"
+          printf '%s\n' \
+            'AC_INIT([whp-m4-macro-smoke],[1])' \
+            'm4_include([gnu-m4.m4])' \
+            'AC_PROG_GNU_M4' \
+            'AC_MSG_NOTICE([selected-m4: $M4])' \
+            'AC_MSG_NOTICE([m4-gnu-mode: $M4_GNU])' \
+            'AC_OUTPUT' > "$m4_macro_smoke/configure.ac"
+          (
+            cd "$m4_macro_smoke"
+            env -u M4 "$autoconf_prefix/bin/autoconf"
+            PATH="$m4_space_bin:$PATH" /bin/sh ./configure > m4-discovery.log 2>&1 || {
+              cat m4-discovery.log >&2
+              exit 1
+            }
+            grep -Fq "selected-m4: $m4_space_bin/m4" m4-discovery.log
+            M4="$m4_space_bin/m4" /bin/sh ./configure > m4-explicit.log 2>&1 || {
+              cat m4-explicit.log >&2
+              exit 1
+            }
+            grep -Fq "selected-m4: $m4_space_bin/m4" m4-explicit.log
+            grep -Fq 'm4-gnu-mode: --gnu' m4-explicit.log
+          )
+
           fake_m4="$RUNNER_TEMP/non-gnu-m4"
           cat > "$fake_m4" <<'EOF'
           #!/bin/sh
