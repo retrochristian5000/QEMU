@@ -55,6 +55,26 @@ m4_resolve()
     result=$(printf '%s\n' "patsubst(\`ab12cd', \`[0-9]+', \`X')" |
         "$candidate" --gnu --fatal-warnings 2>/dev/null) || exit 1
     [ "$result" = abXcd ] || exit 1
+
+    # Autoconf's m4/m4.m4 uses both trace output and frozen-state files.
+    # A working patsubst and a GNU version banner do not prove either.
+    trace=$(printf '%s\n' \
+        'changequote(<,>)define(<T>,<>)dnl' \
+        'define(<F>,<T(<traced>)>)dnl' \
+        'm4wrap(<F>)dnl' |
+        "$candidate" --gnu --trace=T --debug=aflq 2>&1) || {
+        printf 'error: GNU M4 Autoconf trace probe failed: %s\n' "$candidate" >&2
+        exit 1
+    }
+    [ "$trace" = 'm4trace:stdin:3: -1- T(<traced>)' ] || {
+        printf 'error: GNU M4 Autoconf trace output is incompatible: %s; got %s\n' \
+            "$candidate" "$trace" >&2
+        exit 1
+    }
+    "$candidate" --gnu -F /dev/null </dev/null >/dev/null 2>&1 || {
+        printf 'error: GNU M4 Autoconf frozen-state probe failed: %s\n' "$candidate" >&2
+        exit 1
+    }
     printf '%s\n' "$candidate"
 )
 
@@ -71,7 +91,7 @@ m4_select()
             printf '%s\n' "$selected"
             return 0
         fi
-        printf 'error: %s does not select usable GNU M4 >= 1.4.16: %s\n' "$variable" "$requested" >&2
+        printf 'error: %s does not select GNU M4 >= 1.4.16 with working macros, traces, and freeze-state: %s\n' "$variable" "$requested" >&2
         return 1
     done
 
@@ -97,7 +117,7 @@ m4_select()
             return 0
         fi
     done
-    printf '%s\n' 'error: GNU M4 >= 1.4.16 with working macro expansion is required for this seed' >&2
+    printf '%s\n' 'error: GNU M4 >= 1.4.16 with working macros, traces, and frozen-state support is required' >&2
     return 1
 }
 
