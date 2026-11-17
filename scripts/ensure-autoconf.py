@@ -35,7 +35,14 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "seeds" / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "5"
+AUTOCONF_BOOTSTRAP_SCHEMA = "6"
+
+# Installed scripts to inspect individually before using or caching a prefix.
+# A successful install target does not prove every executable was installed.
+REQUIRED_BINARIES = (
+    "autoconf", "autom4te", "autoheader", "autoreconf",
+    "autoscan", "autoupdate", "ifnames",
+)
 
 BUILD_TARGETS = (
     "bin/autoconf",
@@ -329,20 +336,37 @@ def git_checkout_available() -> bool:
 
 
 def archive_source_signature() -> str:
-    candidates = (
-        SUBMODULE_DIR / "bootstrap",
-        SUBMODULE_DIR / "configure.ac",
-        SUBMODULE_DIR / "Makefile.am",
-        SUBMODULE_DIR / "bin" / "autoconf.in",
-        SUBMODULE_DIR / "bin" / "autom4te.in",
+    # Without a Git ref, hash the source inputs rather than only bootstrap
+    # entrypoints. A changed M4 macro or Perl library must invalidate reuse.
+    required = (
+        "bootstrap", "configure.ac", "Makefile.am",
+        "bin/autoconf.in", "bin/autom4te.in",
     )
-    for path in candidates:
-        if not path.is_file():
+    for name in required:
+        if not (SUBMODULE_DIR / name).is_file():
             raise RuntimeError(
-                f"bundled Autoconf source is unavailable: {SUBMODULE_DIR}"
+                f"bundled Autoconf source is unavailable: {SUBMODULE_DIR / name}"
             )
+
+    candidates = {SUBMODULE_DIR / name for name in required}
+    candidates.update(
+        path for path in SUBMODULE_DIR.iterdir()
+        if path.is_file() and path.suffix in (".am", ".ac", ".mk")
+    )
+    for directory in ("bin", "lib", "m4", "build-aux"):
+        folder = SUBMODULE_DIR / directory
+        if not folder.is_dir():
+            continue
+        candidates.update(
+            path for path in folder.rglob("*")
+            if path.is_file() and path.suffix in (
+                ".m4", ".pm", ".pl", ".in", ".am", ".mk"
+            )
+        )
+    # Generated .m4f, cache files and transient configure scripts are
+    # intentionally excluded: touching them must not force a source rebuild.
     digest = hashlib.sha256()
-    for path in candidates:
+    for path in sorted(candidates):
         digest.update(str(path.relative_to(SUBMODULE_DIR)).encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -416,9 +440,10 @@ def copy_source(revision: str, destination: pathlib.Path) -> None:
 
 
 def suite_usable(prefix: pathlib.Path) -> bool:
-    for name in ("autoconf", "autom4te", "autoheader", "autoreconf"):
+    for name in REQUIRED_BINARIES:
         path = prefix / "bin" / name
         if not path.is_file() or not os.access(path, os.X_OK):
+            print(f"WHP Autoconf runtime: missing executable {path}", file=sys.stderr)
             return False
         completed = subprocess.run(
             [str(path), "--version"],
@@ -428,6 +453,13 @@ def suite_usable(prefix: pathlib.Path) -> bool:
             check=False,
         )
         if completed.returncode != 0 or "GNU Autoconf" not in completed.stdout:
+            banner = completed.stdout.splitlines()
+            detail = banner[0] if banner else "<no version output>"
+            print(
+                f"WHP Autoconf runtime: {path} --version failed "
+                f"(exit {completed.returncode}; {detail})",
+                file=sys.stderr,
+            )
             return False
 
     # --version does not load Autom4te's Perl modules or the installed M4
@@ -505,6 +537,15 @@ def restore_previous_install(prefix: pathlib.Path, backup: pathlib.Path) -> None
     backup.rename(prefix)
 
 
+def parallel_jobs(value: str | None) -> int:
+    """Validate explicit job counts before moving any installed prefix."""
+    if value is None or value == "":
+        return max(1, os.cpu_count() or 1)
+    if not value.isdecimal() or int(value) < 1:
+        raise RuntimeError(f"JOBS must be a positive integer, got {value!r}")
+    return int(value)
+
+
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_source()
     automake, aclocal = select_automake_pair()
@@ -522,6 +563,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         "autoconf", cc, cflags=bootstrap_cflags
     )
     config_shell = explicit_tool("CONFIG_SHELL") or "/bin/sh"
+    jobs = parallel_jobs(os.environ.get("JOBS"))
     # The pinned source bootstrap actually invokes mktemp. It does not
     # invoke the standalone realpath command: Python's pathlib resolves
     # our paths already. Do not reject a native host merely for lacking
@@ -640,7 +682,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             env=env,
         )
         run_logged(
-            [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1)))), *BUILD_TARGETS],
+            [make, "-j", str(jobs), *BUILD_TARGETS],
             cwd=objects,
             env=env,
         )

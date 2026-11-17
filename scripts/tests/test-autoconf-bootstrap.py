@@ -66,11 +66,17 @@ def main() -> int:
     require(helper, 'tool("mktemp")', "Autoconf source bootstrap temporary directory")
     require(helper, 'pathlib.Path(args.build_dir).expanduser().resolve()',
             "native Python path normalization")
-    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "5"', "native environment schema")
+    require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "6"', "native environment schema")
     require(helper, '[path, "--gnu", "--version"]', "GNU M4 capability probe")
     require(helper, '[path, "--gnu", "--fatal-warnings"]', "GNU M4 runtime probe")
     require(helper, "GNU M4 1.4.16 or newer", "GNU M4 bootstrap floor")
     require(helper, 'f"M4_PATH={m4}\\n"', "M4 path marker")
+    require(helper, 'jobs = parallel_jobs(os.environ.get("JOBS"))',
+            "pre-install job validation")
+    require(helper, 'for name in REQUIRED_BINARIES:',
+            "complete installed suite validation")
+    require(helper, 'folder.rglob("*")',
+            "source archive macro and library fingerprint")
     require(helper, 'f"M4_VERSION={gnu_m4_version(m4)}\\n"', "M4 version marker")
     require(
         helper,

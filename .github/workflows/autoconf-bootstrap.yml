@@ -28,6 +28,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/tests/test-ensure-autoconf-validation.py'
       - 'scripts/tests/test-autoconf-rollback.py'
       - 'scripts/tests/test-automake-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -61,6 +62,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/tests/test-ensure-autoconf-validation.py'
       - 'scripts/tests/test-autoconf-rollback.py'
       - 'scripts/tests/test-automake-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
@@ -113,6 +115,9 @@ jobs:
           /bin/sh -n toolchains/autoconf/bootstrap
           /bin/sh -n toolchains/autoconf/tests/bootstrap-host-paths.sh
           /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
+
+      - name: Verify preflight, cache and runtime validation guards
+        run: python3 scripts/tests/test-ensure-autoconf-validation.py
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
