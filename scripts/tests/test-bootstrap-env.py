@@ -152,16 +152,21 @@ with mock.patch.dict(module.os.environ, {
         mock.patch.object(automake, "tolerant_identity", return_value="seed"),
     ):
         args = ("revision", "seed", "perl", "autoconf", "autom4te",
-                "make", "makeinfo")
+                "make", "makeinfo", "/native/m4")
         first = automake.marker_text(*args, "/native/cc", "/bin/sh")
         assert "MAKEINFO=makeinfo:" in first
+        assert "M4_PATH=/native/m4" in first
         assert "CC_FOR_BUILD=/native/cc" in first
         assert "SDKROOT=/first/MacOSX.sdk" in first
         assert automake.marker_text(*args, "/other/cc", "/bin/sh") != first
         # The installed documentation generator is a mandatory producer
         # of the Git-source build's info_TEXINFOS output, not just metadata.
         assert automake.marker_text(
-            *args[:-1], "/other/makeinfo", "/native/cc", "/bin/sh"
+            *args[:-2], "/other/makeinfo", "/native/m4", "/native/cc", "/bin/sh"
+        ) != first
+        # The GNU M4 producer is equally part of the cache identity.
+        assert automake.marker_text(
+            *args[:-1], "/other/m4", "/native/cc", "/bin/sh"
         ) != first
         assert automake.marker_text(*args, "/native/cc", "/other/sh") != first
         module.os.environ["SDKROOT"] = "/second/MacOSX.sdk"

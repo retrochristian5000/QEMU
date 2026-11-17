@@ -32,7 +32,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "seeds" / "sed.sh"
-AUTOMAKE_BOOTSTRAP_SCHEMA = "5"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "6"
 
 
 def run_text(
@@ -189,6 +189,28 @@ def select_makeinfo() -> str:
             + (completed.stderr.strip() or "no usable native makeinfo seed")
         )
     return selected
+
+def select_gnu_m4() -> str:
+    """Lock a GNU M4 root before the independent Autoconf seed runs.
+
+    Delegate identity, minimum version, macro, trace and frozen-state
+    admission to the GNU-specific seed. Do not treat generic m4 as GNU.
+    """
+    adapter = ROOT / "seeds" / "gnum4.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU GNU M4 seed is missing: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    selected = completed.stdout.strip()
+    if completed.returncode != 0 or not selected:
+        raise RuntimeError(
+            "Automake needs validated GNU M4 before its Autoconf seed: "
+            + (completed.stderr.strip() or "no usable GNU M4 seed")
+        )
+    return selected
+
 
 def select_seed_sed() -> str:
     if not SED_ADAPTER.is_file() or not os.access(SED_ADAPTER, os.X_OK):
@@ -348,6 +370,7 @@ def marker_text(
     autom4te: str,
     make: str,
     makeinfo: str,
+    m4: str,
     cc: str,
     config_shell: str,
 ) -> str:
@@ -360,6 +383,8 @@ def marker_text(
         f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
         f"MAKEINFO={makeinfo}: {first_line([makeinfo, '--version'])}\n"
+        f"M4_PATH={m4}\n"
+        f"M4_VERSION={first_line([m4, '--version'])}\n"
         f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
         f"CONFIG_SHELL={config_shell}\n"
         f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
@@ -404,10 +429,20 @@ def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
     return selected[0], selected[1]
 
 
+def restore_previous_install(prefix: pathlib.Path, backup: pathlib.Path) -> None:
+    """Recover a previous Automake installation after a failed rebuild."""
+    if not backup.exists():
+        return
+    if prefix.exists():
+        shutil.rmtree(prefix)
+    backup.rename(prefix)
+
+
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     # Validate external maintainer tools before fetching/copying any sources.
     seed = select_seed_sed()
     perl = select_seed_perl()
+    m4 = select_gnu_m4()
     autoconf, autom4te = select_seed_autoconf_pair(build_root)
     make = select_gnu_make()
     makeinfo = select_makeinfo()
@@ -428,15 +463,28 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     source = work / "source"
     objects = work / "build"
     marker_path = prefix / ".whp-automake-bootstrap"
+    backup = build_root / "bootstrap" / "automake-previous-install"
 
     marker = marker_text(
-        revision, seed, perl, autoconf, autom4te, make, makeinfo, cc,
+        revision, seed, perl, autoconf, autom4te, make, makeinfo, m4, cc,
         config_shell
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
     if bootstrap_ldflags:
         marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
+    # Resolve any interrupted installation swap before considering the cache.
+    # Preserve a completed replacement only when its marker and tools pass.
+    if backup.exists():
+        if (
+            marker_path.is_file()
+            and marker_path.read_text(encoding="utf-8", errors="replace") == marker
+            and automake_pair_usable(prefix)
+        ):
+            shutil.rmtree(backup)
+            return prefix
+        restore_previous_install(prefix, backup)
+
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -444,7 +492,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     ):
         return prefix
 
-    shutil.rmtree(prefix, ignore_errors=True)
+    # Prepare input sources without disturbing a previous installed pair.
     shutil.rmtree(work, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
@@ -459,6 +507,15 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     except OSError:
         shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
+
+    # Autotools may call literal "m4" even with M4 set. Make both spellings
+    # resolve to the same validated GNU provider inside this bootstrap.
+    m4_link = seed_bin / "m4"
+    try:
+        m4_link.symlink_to(m4)
+    except OSError:
+        shutil.copy2(m4, m4_link)
+        m4_link.chmod(m4_link.stat().st_mode | 0o111)
 
     env = clean_host_environment(os.environ)
     env["CC"] = cc
@@ -475,41 +532,57 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["PERL"] = perl
     env["AUTOCONF"] = autoconf
     env["AUTOM4TE"] = autom4te
+    env["M4"] = m4
     env["WHP_SED_SEED"] = seed
     env["SED"] = str(SED_ADAPTER)
     env["PATH"] = str(seed_bin) + os.pathsep + env.get("PATH", "")
 
     print(
         f"WHP Automake bootstrap: {revision} -> {prefix} "
-        f"(seed sed {seed})",
+        f"(GNU M4 {m4}, seed sed {seed})",
         file=sys.stderr,
     )
-    run_logged(
-        [config_shell, str(source / "bootstrap")],
-        cwd=source,
-        env=env,
-    )
-    configure = source / "configure"
-    if not configure.is_file():
-        raise RuntimeError("Automake bootstrap did not generate configure")
-
-    run_logged(
-        [config_shell, str(configure), f"--prefix={prefix}"],
-        cwd=objects,
-        env=env,
-    )
-    run_logged(
-        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
-        cwd=objects,
-        env=env,
-    )
-    run_logged([make, "install"], cwd=objects, env=env)
-
-    if not automake_pair_usable(prefix):
-        raise RuntimeError(
-            f"bootstrapped Automake/aclocal pair is not usable: {prefix}"
+    # Installed Automake/Perl scripts embed the final prefix; a relocated
+    # staging installation would leave broken references after renaming.
+    if prefix.exists():
+        prefix.rename(backup)
+    try:
+        run_logged(
+            [config_shell, str(source / "bootstrap")],
+            cwd=source,
+            env=env,
         )
-    marker_path.write_text(marker, encoding="utf-8")
+        configure = source / "configure"
+        if not configure.is_file():
+            raise RuntimeError("Automake bootstrap did not generate configure")
+
+        run_logged(
+            [config_shell, str(configure), f"--prefix={prefix}"],
+            cwd=objects,
+            env=env,
+        )
+        run_logged(
+            [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1))))],
+            cwd=objects,
+            env=env,
+        )
+        run_logged([make, "install"], cwd=objects, env=env)
+
+        if not automake_pair_usable(prefix):
+            raise RuntimeError(
+                f"bootstrapped Automake/aclocal pair is not usable: {prefix}"
+            )
+        marker_path.write_text(marker, encoding="utf-8")
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        if backup.exists():
+            restore_previous_install(prefix, backup)
+            print("WHP Automake: restored previous installation", file=sys.stderr)
+        else:
+            shutil.rmtree(prefix, ignore_errors=True)
+        raise
+
+    if backup.exists():
+        shutil.rmtree(backup)
     return prefix
 
 

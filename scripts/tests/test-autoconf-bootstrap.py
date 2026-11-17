@@ -142,6 +142,10 @@ def main() -> int:
     require(ledger, "seed Autoconf/autom4te", "Autoconf cycle guard")
     require(host_tools, "M4_PATH=", "Autoconf marker M4 promotion")
     require(host_tools, "export M4", "downstream GNU M4 export")
+    require(host_tools, 'M4=$(/bin/sh "$SOURCE_DIR/seeds/gnum4.sh" --print-seed)',
+            "installed Autoconf GNU M4 admission")
+    require(host_tools, '[ "$AUTOCONF" != "$WHP_AUTOCONF_PREFIX/bin/autoconf" ]',
+            "managed Autoconf M4 preservation")
     require(host_tools, '"$M4" --gnu --version', "promoted GNU M4 validation")
     require(host_tools, '"$M4" --gnu --fatal-warnings', "promoted M4 runtime probe")
     check_m4_runtime_guard()

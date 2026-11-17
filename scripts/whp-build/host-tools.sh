@@ -364,10 +364,22 @@ if [ "$WHP_AUTOCONF_EXPLICIT" != 1 ]; then
                 'WHP Autoconf unavailable; later maintainer-source bootstraps may fail.' >&2
         fi
     fi
-    unset WHP_HOST_AUTOCONF WHP_HOST_AUTOM4TE WHP_NEED_AUTOCONF WHP_AUTOCONF_PREFIX
+    unset WHP_HOST_AUTOCONF WHP_HOST_AUTOM4TE WHP_NEED_AUTOCONF
 fi
 
 if [ -n "${AUTOCONF:-}" ]; then
+    # A system Autoconf/autom4te pair must not hand off BSD or other M4.
+    # A successful managed bootstrap already validated its recorded M4.
+    if [ -z "${WHP_AUTOCONF_PREFIX:-}" ] ||
+       [ "$AUTOCONF" != "$WHP_AUTOCONF_PREFIX/bin/autoconf" ]; then
+        M4=$(/bin/sh "$SOURCE_DIR/seeds/gnum4.sh" --print-seed) || {
+            printf '%s\n' \
+                'error: selected Autoconf requires a validated GNU M4 provider.' >&2
+            exit 1
+        }
+        export M4
+        printf 'QEMU GNU M4: %s\n' "$M4" >&2
+    fi
     WHP_AUTOCONF_BIN_DIR=$(whp_command_dir "$AUTOCONF")
     if [ -z "${AUTOHEADER:-}" ] && [ -x "$WHP_AUTOCONF_BIN_DIR/autoheader" ]; then
         AUTOHEADER="$WHP_AUTOCONF_BIN_DIR/autoheader"
@@ -380,7 +392,7 @@ if [ -n "${AUTOCONF:-}" ]; then
     printf 'QEMU Autoconf: %s\n' "$AUTOCONF" >&2
     unset WHP_AUTOCONF_BIN_DIR
 fi
-unset WHP_AUTOCONF_EXPLICIT
+unset WHP_AUTOCONF_EXPLICIT WHP_AUTOCONF_PREFIX
 
 
 BOOTSTRAP_MAKE=$(whp_normalize_auto_switch BOOTSTRAP_MAKE "${BOOTSTRAP_MAKE:-auto}") || exit 1
