@@ -101,8 +101,62 @@ brew_select()
     return 1
 }
 
+
+# Read-only executable lookup for an installed formula, including keg-only
+# formulae which are deliberately not linked into Homebrew's shared bin.
+brew_formula_binary()
+{
+    if [ "$#" -ne 2 ]; then
+        printf '%s\n' 'usage: brew.sh --formula-bin FORMULA EXECUTABLE' >&2
+        return 2
+    fi
+    formula=$1
+    binary=$2
+    case "$formula" in
+        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9@+_.-]*|*..*)
+            printf 'error: invalid Homebrew formula name: %s\n' "$formula" >&2
+            return 2 ;;
+    esac
+    case "$binary" in
+        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9@+_.-]*|*..*)
+            printf 'error: invalid Homebrew executable name: %s\n' "$binary" >&2
+            return 2 ;;
+    esac
+    selected_brew=$(brew_select) || return 1
+    selected_prefix=$("$selected_brew" --prefix) || return 1
+    formula_prefix=$("$selected_brew" --prefix --installed "$formula" 2>/dev/null) || {
+        printf 'error: Homebrew formula is not installed: %s\n' "$formula" >&2
+        return 1
+    }
+    case "$formula_prefix" in
+        "$selected_prefix"/opt/*|"$selected_prefix"/Cellar/*) ;;
+        *)
+            printf 'error: Homebrew formula %s resolved outside selected prefix: %s\n' \
+                "$formula" "$formula_prefix" >&2
+            return 1 ;;
+    esac
+    case "$formula_prefix" in
+        *'
+'*)
+            printf 'error: Homebrew formula %s returned multiple paths\n' "$formula" >&2
+            return 1 ;;
+    esac
+    for candidate in "$formula_prefix/bin/$binary" "$formula_prefix/sbin/$binary"; do
+        if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    printf 'error: %s is not an installed executable in Homebrew formula %s\n' \
+        "$binary" "$formula" >&2
+    return 1
+}
+
 case "${1:-}" in
     --print-seed) brew_select ;;
+    --formula-bin)
+        shift
+        brew_formula_binary "$@" ;;
     --check)
         selected=$(brew_select) || exit 1
         prefix=$("$selected" --prefix) || exit 1

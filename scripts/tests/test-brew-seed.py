@@ -37,7 +37,17 @@ class BrewSeedTest(unittest.TestCase):
             'case "${1:-}" in\n'
             '  --whp-brew-adapter-probe) exit 2 ;;\n'
             f'  --version) printf "%s\\n" "{version}" ;;\n'
-            '  --prefix) printf "%s\\n" "$WHP_TEST_BREW_PREFIX" ;;\n'
+            '  --prefix)\n'
+            '    if [ "$#" -eq 1 ]; then printf "%s\\n" "$WHP_TEST_BREW_PREFIX"; exit 0; fi\n'
+            '    if [ "$#" -eq 3 ] && [ "$2" = --installed ]; then\n'
+            '      if [ -n "${WHP_TEST_FORMULA_PATH:-}" ]; then\n'
+            '        printf "%s\\n" "$WHP_TEST_FORMULA_PATH"; exit 0\n'
+            '      fi\n'
+            '      root="$WHP_TEST_BREW_PREFIX/opt/$3"\n'
+            '      [ -d "$root" ] || exit 1\n'
+            '      printf "%s\\n" "$root"; exit 0\n'
+            '    fi\n'
+            '    exit 2 ;;\n'
             '  list) printf "pkg 1.0\\n" ;;\n'
             '  install) printf "%s\\n" "$*" >> "$WHP_TEST_BREW_LOG" ;;\n'
             '  *) exit 7 ;;\n'
@@ -107,6 +117,53 @@ class BrewSeedTest(unittest.TestCase):
         adapter_link.symlink_to(SEED)
         result = self.run_seed("--print-seed", WHP_BREW_SEED=str(adapter_link))
         self.assertNotEqual(result.returncode, 0)
+
+
+    def install_formula_tool(self, formula, name, directory="bin"):
+        path = self.prefix / "opt" / formula / directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def test_keg_only_formula_binary_without_mutation(self):
+        expected = self.install_formula_tool("m4", "m4")
+        result = self.run_seed("--formula-bin", "m4", "m4")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, str(expected) + "\n")
+        self.assertFalse((self.bin / "m4").exists())
+        self.assertFalse(self.log.exists())
+        expected = self.install_formula_tool("bison", "bison", "sbin")
+        result = self.run_seed("--formula-bin", "bison", "bison")
+        self.assertEqual(result.stdout, str(expected) + "\n")
+
+    def test_missing_formula_and_missing_executable(self):
+        result = self.run_seed("--formula-bin", "m4", "m4")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not installed", result.stderr)
+        self.install_formula_tool("m4", "m4")
+        result = self.run_seed("--formula-bin", "m4", "missing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not an installed executable", result.stderr)
+
+    def test_invalid_formula_arguments_and_prefix_escape(self):
+        for args in (("m4",), ("../m4", "m4"),
+                     ("m4", "../m4"), ("m4", "m4", "unexpected")):
+            with self.subTest(args=args):
+                self.assertNotEqual(self.run_seed("--formula-bin", *args).returncode, 0)
+        result = self.run_seed("--formula-bin", "m4", "m4",
+                               WHP_TEST_FORMULA_PATH=str(self.root / "outside"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside selected prefix", result.stderr)
+
+    def test_formula_lookup_preserves_brew_lock(self):
+        self.install_formula_tool("m4", "m4")
+        other = self.make_brew(self.root / "other-brew")
+        result = self.run_seed("--formula-bin", "m4", "m4",
+                               WHP_BREW_SEED=str(self.brew),
+                               WHP_HOMEBREW_BREW=str(other))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("conflicts", result.stderr)
 
     def test_provider_integration(self):
         prepare = (ROOT / "scripts/whp-build/prepare-build.bash").read_text()
