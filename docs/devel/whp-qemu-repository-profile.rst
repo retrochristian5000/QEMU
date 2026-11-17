@@ -181,6 +181,17 @@ installations remain supported when both tool paths are explicitly selected
 and their identities and versions validate. The host-tools stage emits
 newline-delimited versions for deterministic pair comparison.
 
+The new ``seeds/autoconf.sh`` is a POSIX entrypoint for **installed**
+GNU Autoconf. It delegates provider resolution, version matching, and
+explicit split-installation checks to ``seeds/autom4te.sh``, rather than
+maintaining a second provider search. ``--print-seed`` returns the Autoconf
+executable, ``--print-autom4te`` returns its validated companion,
+``--check`` inspects both, and normal arguments execute Autoconf.
+Both adapters reject recursive adapter selections, including symlink aliases.
+The seed does not bootstrap Autoconf from its own unfinished output; the
+managed Automake bootstrap consumes this independent seed pair.
+``scripts/tests/test-autoconf-seed.py`` covers the focused behavior.
+
 Native Homebrew package-manager seed
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

@@ -343,11 +343,11 @@ def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
     itself needs Automake. Neither may select Autoconf output being built
     later in this same tree.
     """
-    adapter = ROOT / "seeds" / "autom4te.sh"
+    adapter = ROOT / "seeds" / "autoconf.sh"
     if not adapter.is_file():
-        raise RuntimeError(f"QEMU autom4te seed adapter is unavailable: {adapter}")
+        raise RuntimeError(f"QEMU Autoconf seed adapter is unavailable: {adapter}")
     selected = []
-    for flag in ("--print-autoconf", "--print-seed"):
+    for flag in ("--print-seed", "--print-autom4te"):
         completed = subprocess.run(
             ["/bin/sh", str(adapter), flag], text=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,

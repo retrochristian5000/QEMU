@@ -2078,6 +2078,16 @@ selected tool is preferred. The host bootstrap and managed Automake
 source stage use the seed for a coherent versioned handoff, without
 creating a new dependency or attempting to generate the missing tool.
 
+The ``seeds/autoconf.sh`` entrypoint shares that existing pair policy
+and exposes Autoconf as the primary executable; it never independently
+discovers or builds a second provider. ``--print-seed`` and
+``--print-autom4te`` expose the validated pair, ``--check`` diagnoses both,
+and ordinary invocations execute Autoconf. The paired ``autom4te.sh`` resolver
+rejects an explicit ``autoconf.sh`` adapter or symlink before version
+probing so a tool override cannot recurse through its own adapter.
+Both host-tool preparation and the initial managed Automake bootstrap use
+the direct Autoconf seed while preserving the existing source-cycle guard.
+
 The adapter does not break the Autotools source-level cycle by itself:
 the initial ``autoconf`` and ``autom4te`` must be installed and
 independent of the pending managed Autoconf output. The cycle guard

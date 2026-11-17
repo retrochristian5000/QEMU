@@ -26,7 +26,11 @@ resolve_seed()
         *) exit 1 ;;
     esac
     identity=$("$path" --whp-autom4te-adapter-probe 2>/dev/null || true)
-    [ "$identity" != "$marker" ] || exit 1
+    # Reject both adapters, including symlinks to autoconf.sh, before
+    # invoking --version or attempting a recursive pair selection.
+    case "$identity" in
+        "$marker"|whp-qemu-autoconf-seed-adapter) exit 1 ;;
+    esac
     printf '%s\n' "$path"
 )
 
