@@ -56,6 +56,20 @@ def check():
         assert run(env, "--help").stdout.strip() == "called:autom4te:--help"
         assert run(env, "--autoconf", "--help").stdout.strip() == "called:autoconf:--help"
 
+        # Same-version PATH entries must not silently form a cross-prefix pair.
+        autoconf.unlink()
+        fake(unrelated, "2.72")
+        result = run(env, "--print-autoconf")
+        assert result.returncode != 0
+        assert "adjacent" in result.stderr
+        explicit_split = dict(env, WHP_AUTOM4TE_SEED=str(autom4te),
+                              WHP_AUTOCONF_SEED=str(unrelated))
+        result = run(explicit_split, "--print-autoconf")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(unrelated)
+        fake(autoconf, "2.72")
+        fake(unrelated, "2.71")
+
         # A direct Autoconf override must select its sibling autom4te.
         explicit = dict(env, WHP_AUTOCONF_SEED=str(autoconf))
         assert run(explicit, "--print-seed").stdout.strip() == str(autom4te)

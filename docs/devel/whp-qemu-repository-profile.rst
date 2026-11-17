@@ -169,6 +169,18 @@ that pairing is usable. Keep ``WHP_*_SEED`` selectors and ordinary
 cover ordinary files, POSIX ``-R`` and ``-p``; they do not establish
 support for every GNU, BSD or Apple-specific copying extension.
 
+GNU Autotools seed pairing
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``seeds/automake.sh`` and ``seeds/autom4te.sh`` validate the
+``automake``/``aclocal`` and ``autom4te``/``autoconf`` release pairs.
+Implicit discovery requires the adjacent sibling from the selected
+installation; a same-version executable elsewhere on ``PATH`` is not
+sufficient evidence of a matching installation. Deliberately split
+installations remain supported when both tool paths are explicitly selected
+and their identities and versions validate. The host-tools stage emits
+newline-delimited versions for deterministic pair comparison.
+
 Host install seed
 ^^^^^^^^^^^^^^^^^
 

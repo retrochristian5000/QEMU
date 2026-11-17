@@ -89,10 +89,9 @@ seed_pair()
     elif [ -x "${automake%/*}/aclocal" ]; then
         aclocal=$(seed_resolve "${automake%/*}/aclocal") || exit 1
     else
-        aclocal=$(seed_resolve aclocal) || {
-            printf '%s\n' 'error: no usable aclocal seed on PATH' >&2
-            exit 1
-        }
+        # A split installation is allowed only with an explicit partner.
+        printf '%s\n' 'error: selected Automake has no adjacent aclocal; specify WHP_ACLOCAL_SEED for a split installation' >&2
+        exit 1
     fi
 
     av=$(seed_version "$automake") || {

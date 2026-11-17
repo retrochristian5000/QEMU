@@ -65,6 +65,20 @@ def main():
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "called:automake:--help"
 
+        # Same-version PATH entries must not silently form a cross-prefix pair.
+        local.unlink()
+        fake(wrong, "1.16.5")
+        result = run(env, "--print-aclocal")
+        assert result.returncode != 0
+        assert "adjacent" in result.stderr
+        explicit_split = dict(env, WHP_AUTOMAKE_SEED=str(am),
+                              WHP_ACLOCAL_SEED=str(wrong))
+        result = run(explicit_split, "--print-aclocal")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(wrong)
+        fake(local, "1.16.5")
+        fake(wrong, "1.17.0")
+
         explicit = dict(env, WHP_ACLOCAL_SEED=str(wrong))
         assert run(explicit, "--check").returncode != 0
 

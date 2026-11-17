@@ -93,7 +93,7 @@ whp_gnu_tool_version()
             case "$whp_version" in *[!0-9.]*|*..*|*.) exit 1 ;; esac ;;
         *) exit 1 ;;
     esac
-    printf '%s\\n' "$whp_version"
+    printf '%s\n' "$whp_version"
 )
 
 whp_gnu_tool_pair_usable()

@@ -45,6 +45,14 @@ def check():
 
         tool(first, "GNU automake", "1.16.5")
         tool(second, "GNU automake", "1.16.5")
+        # The version parser must emit a real newline, not a literal \\n.
+        script = functions + '\nwhp_gnu_tool_version "$1" \'GNU automake\'\n'
+        output = subprocess.run(
+            ["/bin/sh", "-c", script, "sh", str(first)],
+            text=True, capture_output=True, check=False,
+        )
+        assert output.returncode == 0, output.stderr
+        assert output.stdout == "1.16.5\n", repr(output.stdout)
         assert probe("whp_automake_pair_usable", first, second)
         tool(second, "GNU automake", "1.17.0")
         assert not probe("whp_automake_pair_usable", first, second)

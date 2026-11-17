@@ -85,10 +85,9 @@ select_pair()
     elif [ -x "${autom4te%/*}/autoconf" ]; then
         autoconf=$(resolve_seed "${autom4te%/*}/autoconf") || exit 1
     else
-        autoconf=$(resolve_seed autoconf) || {
-            printf '%s\n' 'error: no usable Autoconf seed on PATH' >&2
-            exit 1
-        }
+        # A split installation is allowed only with an explicit partner.
+        printf '%s\n' 'error: selected autom4te has no adjacent Autoconf; specify WHP_AUTOCONF_SEED for a split installation' >&2
+        exit 1
     fi
     av=$(gnu_autoconf_version "$autom4te") || {
         printf 'error: autom4te is not GNU Autoconf: %s\n' "$autom4te" >&2
