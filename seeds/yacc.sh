@@ -59,11 +59,25 @@ select_yacc()
         return 1
     done
 
-    # Check PATH first. On macOS, Homebrew may also install keg-only Bison.
-    for value in bison \
-        "${HOMEBREW_PREFIX:-/opt/homebrew}/opt/bison/bin/bison" \
-        /opt/homebrew/bin/bison /usr/local/opt/bison/bin/bison \
-        /usr/local/bin/bison /usr/bin/bison; do
+    # Homebrew Bison can be keg-only; Apple's /usr/bin/bison is often
+    # older than the parser generator required by this build.
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        case "${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}" in
+            macports|system) ;;
+            *)
+                seed_dir=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P) || return 1
+                if value=$(/bin/sh "$seed_dir/brew.sh" --formula-bin bison bison 2>/dev/null); then
+                    if selected=$(resolve_yacc "$value"); then
+                        printf '%s\n' "$selected"
+                        return 0
+                    fi
+                fi
+                ;;
+        esac
+    fi
+
+    # An independent native GNU Bison remains a valid fallback.
+    for value in bison /usr/bin/bison; do
         if selected=$(resolve_yacc "$value"); then
             printf '%s\n' "$selected"
             return 0

@@ -85,6 +85,48 @@ with tempfile.TemporaryDirectory(prefix="whp-yacc-seed-") as temporary:
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(good)
 
+    # A keg-only Homebrew Bison can be selected without linking it into PATH.
+    prefix = root / "brew-prefix"
+    installed = prefix / "opt/bison/bin/bison"
+    installed.parent.mkdir(parents=True)
+    fake_bison(installed)
+    brew = prefix / "bin/brew"
+    brew.parent.mkdir(parents=True)
+    brew.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  --whp-brew-adapter-probe) exit 2 ;;\n'
+        '  --version) printf "Homebrew 5.2.0\\n" ;;\n'
+        '  --prefix)\n'
+        '    if [ "$#" -eq 1 ]; then printf "%s\\n" "$HOMEBREW_PREFIX"; exit 0; fi\n'
+        '    if [ "$2" = --installed ] && [ "$3" = bison ]; then\n'
+        '      printf "%s\\n" "$HOMEBREW_PREFIX/opt/bison"; exit 0\n'
+        '    fi\n'
+        '    exit 2 ;;\n'
+        '  *) exit 2 ;;\n'
+        'esac\n',
+        encoding="utf-8",
+    )
+    brew.chmod(0o755)
+    uname = root / "uname"
+    uname.write_text("#!/bin/sh\nprintf 'Darwin\n'", encoding="utf-8")
+    uname.chmod(0o755)
+    brew_env = os.environ.copy()
+    for key in ("WHP_YACC_SEED", "YACC", "WHP_HOMEBREW_BREW"):
+        brew_env.pop(key, None)
+    brew_env.update({
+        "PATH": f"{root}:{prefix / 'bin'}:/usr/bin:/bin",
+        "HOMEBREW_PREFIX": str(prefix),
+        "WHP_BREW_SEED": str(brew),
+        "WHP_MACOS_DEPENDENCY_PROVIDER": "homebrew",
+    })
+    selected = invoke(["--print-seed"], brew_env)
+    assert selected.returncode == 0, selected.stderr
+    assert selected.stdout.strip() == str(installed)
+    selected = invoke(["--print-seed"],
+                      {**brew_env, "WHP_MACOS_DEPENDENCY_PROVIDER": "macports"})
+    assert selected.returncode != 0 or selected.stdout.strip() != str(installed)
+
 powerpc_source = POWERPC.read_text(encoding="utf-8")
 assert 'seeds/yacc.sh" --print-seed' in powerpc_source
 assert 'export YACC BISON' in powerpc_source

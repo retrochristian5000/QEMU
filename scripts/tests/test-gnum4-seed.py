@@ -141,6 +141,52 @@ class GNUM4SeedTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), str(candidate))
 
+    def test_keg_only_homebrew_m4_without_cross_prefix_search(self):
+        # macOS is simulated to avoid requiring actual Homebrew on CI.
+        uname = self.directory / "uname"
+        uname.write_text("#!/bin/sh\nprintf 'Darwin\n'", encoding="utf-8")
+        prefix = self.directory / "brew-prefix"
+        installed = prefix / "opt/m4/bin/m4"
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        installed.write_text(self.m4.read_text(encoding="utf-8"),
+                             encoding="utf-8")
+        installed.chmod(0o755)
+        brew = prefix / "bin/brew"
+        brew.parent.mkdir(parents=True)
+        brew.write_text(
+            "#!/bin/sh\n"
+            'case "$1" in\n'
+            '  --whp-brew-adapter-probe) exit 2 ;;\n'
+            '  --version) printf "Homebrew 5.2.0\\n" ;;\n'
+            '  --prefix)\n'
+            '    if [ "$#" -eq 1 ]; then printf "%s\\n" "$HOMEBREW_PREFIX"; exit 0; fi\n'
+            '    if [ "$2" = --installed ] && [ "$3" = m4 ]; then\n'
+            '      printf "%s\\n" "$HOMEBREW_PREFIX/opt/m4"; exit 0\n'
+            '    fi\n'
+            '    exit 2 ;;\n'
+            '  *) exit 2 ;;\n'
+            'esac\n',
+            encoding="utf-8",
+        )
+        brew.chmod(0o755)
+        common = {
+            "PATH": f"{self.directory}:/usr/bin:/bin",
+            "HOMEBREW_PREFIX": str(prefix),
+            "WHP_BREW_SEED": str(brew),
+            "WHP_HOMEBREW_BREW": "",
+        }
+        selected = self.run_seed(
+            "--print-seed", WHP_MACOS_DEPENDENCY_PROVIDER="homebrew", **common,
+        )
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertEqual(selected.stdout.strip(), str(installed))
+        # MacPorts must not auto-select an unrelated Homebrew keg.
+        selected = self.run_seed(
+            "--print-seed", WHP_MACOS_DEPENDENCY_PROVIDER="macports", **common,
+        )
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertEqual(selected.stdout.strip(), str(self.m4))
+
     def test_user_facing_check(self):
         result = self.run_seed("--check")
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -99,21 +99,22 @@ m4_select()
         return 1
     done
 
-    # macOS Homebrew M4 is often keg-only. Avoid Apple's compatibility
-    # implementation outranking a managed GNU M4 installation.
-    case "$(uname -s)" in
-        Darwin)
-            for candidate in \
-                "${HOMEBREW_PREFIX:-/opt/homebrew}/opt/m4/bin/m4" \
-                /opt/homebrew/opt/m4/bin/m4 \
-                /usr/local/opt/m4/bin/m4; do
-                if selected=$(m4_resolve "$candidate"); then
-                    printf '%s\n' "$selected"
-                    return 0
+    # macOS Homebrew M4 can be keg-only. Ask the selected Brew installation
+    # for the installed formula's executable; never guess another prefix.
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+        case "${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}" in
+            macports|system) ;;
+            *)
+                seed_dir=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P) || return 1
+                if candidate=$(/bin/sh "$seed_dir/brew.sh" --formula-bin m4 m4 2>/dev/null); then
+                    if selected=$(m4_resolve "$candidate"); then
+                        printf '%s\n' "$selected"
+                        return 0
+                    fi
                 fi
-            done
-            ;;
-    esac
+                ;;
+        esac
+    fi
 
     for candidate in m4 gm4 gnum4; do
         if selected=$(m4_resolve "$candidate"); then
