@@ -20,6 +20,8 @@ on:
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-ar-seed.sh'
+      - 'scripts/bootstrap-powerpc-toolchain.bash'
+      - 'scripts/tests/test-powerpc-host-archive-selection.py'
       - 'scripts/whp-build/native-archive-pair.sh'
       - 'scripts/tests/test-native-archive-pair.sh'
       - 'scripts/bootstrap-native-clang.bash'
@@ -43,6 +45,8 @@ on:
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-ar-seed.sh'
+      - 'scripts/bootstrap-powerpc-toolchain.bash'
+      - 'scripts/tests/test-powerpc-host-archive-selection.py'
       - 'scripts/tests/test-llvm-ar-seed.sh'
       - '.github/workflows/llvm-ar-seed.yml'
 
@@ -58,6 +62,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify PowerPC GNU configure reuses native archive selections
+        run: |
+          bash -n scripts/bootstrap-powerpc-toolchain.bash
+          python3 scripts/tests/test-powerpc-host-archive-selection.py
       - name: Audit installed Clang and llvm-ar archive compatibility
         run: |
           /bin/sh -n scripts/tests/test-clang-llvm-ar-interoperability.sh

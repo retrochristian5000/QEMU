@@ -314,5 +314,59 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
         self.assertFalse(marker.exists())
 
 
+class PerlArchiveSelectionTests(unittest.TestCase):
+    def test_ranlib_validates_the_exact_admitted_ar(self):
+        chosen_ar = "/explicit/native/bin/ar"
+        chosen_ranlib = "/explicit/native/bin/ranlib"
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            if Path(argv[-2]).name == "ar.sh" and argv[-1] == "--print-seed":
+                self.assertNotIn("env", kwargs)
+                return subprocess.CompletedProcess(argv, 0, chosen_ar + "\n", "")
+            if Path(argv[-2]).name == "ranlib.sh" and argv[-1] == "--print-seed":
+                self.assertEqual(kwargs["env"]["WHP_AR_SEED"], chosen_ar)
+                self.assertEqual(kwargs["env"]["AR_FOR_BUILD"], chosen_ar)
+                return subprocess.CompletedProcess(argv, 0, chosen_ranlib + "\n", "")
+            self.fail(f"unexpected command during archive selection: {argv!r}")
+
+        with mock.patch.dict(perl.os.environ, {
+            "AR_FOR_BUILD": chosen_ar,
+            "AR": "/unrelated/target/bin/ar",
+            "WHP_AR_SEED": "",
+        }):
+            with mock.patch.object(perl.subprocess, "run", side_effect=fake_run):
+                self.assertEqual(
+                    perl.select_native_archive_pair(),
+                    (chosen_ar, chosen_ranlib),
+                )
+        self.assertEqual(len(calls), 2)
+
+    def test_failed_ar_prevents_ranlib_rediscovery(self):
+        attempts = []
+
+        def fail_ar(argv, **kwargs):
+            attempts.append(argv)
+            return subprocess.CompletedProcess(argv, 7, "", "invalid native ar")
+
+        with mock.patch.object(perl.subprocess, "run", side_effect=fail_ar):
+            with self.assertRaisesRegex(RuntimeError, "native Perl ar seed unavailable"):
+                perl.select_native_archive_pair()
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual((Path(attempts[0][-2]).name, attempts[0][-1]), ("ar.sh", "--print-seed"))
+
+    def test_failed_paired_ranlib_never_substitutes_another_ar(self):
+        def fake_run(argv, **kwargs):
+            if Path(argv[-2]).name == "ar.sh" and argv[-1] == "--print-seed":
+                return subprocess.CompletedProcess(argv, 0, "/native/selected/ar\n", "")
+            self.assertEqual(kwargs["env"]["WHP_AR_SEED"], "/native/selected/ar")
+            return subprocess.CompletedProcess(argv, 5, "", "indexing failed")
+
+        with mock.patch.object(perl.subprocess, "run", side_effect=fake_run):
+            with self.assertRaisesRegex(RuntimeError, "native Perl ranlib seed unavailable"):
+                perl.select_native_archive_pair()
+
+
 if __name__ == "__main__":
     unittest.main()

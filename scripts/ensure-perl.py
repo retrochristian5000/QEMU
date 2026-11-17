@@ -424,6 +424,34 @@ def select_seed_make() -> str:
     return candidate
 
 
+def select_native_archive_pair() -> tuple[str, str]:
+    """Validate one build-machine ar and its matching ranlib for Perl.
+
+    QEMU's artifact AR is deliberately not a root-tool override. The seed
+    accepts WHP_AR_SEED/AR_FOR_BUILD; the indexer then receives the chosen
+    executable as a locked WHP_AR_SEED rather than searching for another ar.
+    """
+    ar_result = subprocess.run(
+        ["/bin/sh", str(ROOT / "seeds" / "ar.sh"), "--print-seed"],
+        text=True, capture_output=True, check=False,
+    )
+    if ar_result.returncode or not ar_result.stdout.strip():
+        raise RuntimeError("native Perl ar seed unavailable: "
+                           + (ar_result.stderr.strip() or "no native archiver"))
+    ar_path = ar_result.stdout.strip()
+
+    ranlib_env = os.environ.copy()
+    ranlib_env["WHP_AR_SEED"] = ar_path
+    ranlib_result = subprocess.run(
+        ["/bin/sh", str(ROOT / "seeds" / "ranlib.sh"), "--print-seed"],
+        env=ranlib_env, text=True, capture_output=True, check=False,
+    )
+    if ranlib_result.returncode or not ranlib_result.stdout.strip():
+        raise RuntimeError("native Perl ranlib seed unavailable: "
+                           + (ranlib_result.stderr.strip() or "no native archive indexer"))
+    return ar_path, ranlib_result.stdout.strip()
+
+
 def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     seed = root_perl()
     git = os.environ.get("WHP_GIT_SEED") or shutil.which("git")
@@ -435,25 +463,10 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
     sdk = select_native_sdk(ROOT)
     make = select_seed_make()
 
-    # Select the archive tool before ranlib, which validates this same pair.
-    ar_result = subprocess.run(
-        ["/bin/sh", str(ROOT / "seeds" / "ar.sh"), "--print-seed"],
-        text=True, capture_output=True, check=False,
-    )
-    if ar_result.returncode or not ar_result.stdout.strip():
-        raise RuntimeError("native Perl ar seed unavailable: "
-                           + (ar_result.stderr.strip() or "no native archiver"))
-    ar_path = ar_result.stdout.strip()
-
-    # Keep archive indexing native to the selected compiler and SDK.
-    ranlib = subprocess.run(
-        ["/bin/sh", str(ROOT / "seeds" / "ranlib.sh"), "--print-seed"],
-        text=True, capture_output=True, check=False,
-    )
-    if ranlib.returncode or not ranlib.stdout.strip():
-        raise RuntimeError("native Perl ranlib seed unavailable: "
-                           + (ranlib.stderr.strip() or "no native archive indexer"))
-    ranlib_path = ranlib.stdout.strip()
+    # Select native ar once, then pin that exact executable for ranlib.
+    # The second probe must verify the selected pair, not rediscover a
+    # different ar through PATH during Perl's Configure preparation.
+    ar_path, ranlib_path = select_native_archive_pair()
     perl_trace(f"native tools: cc={cc}; make={make}; ar={ar_path}; "
                f"ranlib={ranlib_path}; sdk={sdk or '<host-default>'}")
     if os.environ.get("WHP_ARCHIVE_VERBOSE") == "1":

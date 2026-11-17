@@ -136,6 +136,18 @@ resolve_host_tool()
     local program="$2"
     local value="${!variable:-}"
 
+    # For GNU Binutils/GCC source configure, a native archive seed is an
+    # already-selected build-machine tool, not a hint to rediscover ar on PATH.
+    # TOOLCHAIN_HOST_* remains the explicit override. Never inherit QEMU's
+    # artifact AR/RANLIB or the PowerPC target's AR_FOR_TARGET.
+    if [[ -z "$value" ]]; then
+        case "$variable" in
+            TOOLCHAIN_HOST_AR)
+                value="${WHP_AR_SEED:-${AR_FOR_BUILD:-}}" ;;
+            TOOLCHAIN_HOST_RANLIB)
+                value="${WHP_RANLIB_SEED:-${RANLIB_FOR_BUILD:-}}" ;;
+        esac
+    fi
     if [[ -z "$value" ]]; then
         if [[ "$(uname -s)" == Darwin ]]; then
             value="$(xcrun --sdk macosx --find "$program" 2>/dev/null || true)"
@@ -148,6 +160,26 @@ resolve_host_tool()
         return 1
     fi
     set_command "$value"
+
+    # Archive tools are single executables. Freeze an absolute invoked path
+    # before nested configure changes directory or prepends another toolchain.
+    # Preserve the symlink basename: llvm-ranlib can depend on argv[0].
+    if [[ "$program" == ar || "$program" == ranlib ]]; then
+        if (( ${#COMMAND_ARRAY[@]} != 1 )); then
+            printf 'error: host %s must name one executable: %s\n' "$program" "$value" >&2
+            return 1
+        fi
+        local resolved
+        resolved="$(command -v "${COMMAND_ARRAY[0]}")" || return 1
+        case "$resolved" in
+            /*) ;;
+            */*) resolved="$(CDPATH= cd -P -- "${resolved%/*}" && pwd -P)/${resolved##*/}" || return 1 ;;
+            *) printf 'error: host %s is not an executable path: %s\n' "$program" "$resolved" >&2
+               return 1 ;;
+        esac
+        [[ -f "$resolved" && -x "$resolved" ]] || return 1
+        value="$resolved"
+    fi
     printf -v "$variable" '%s' "$value"
     export "$variable"
 }

@@ -119,6 +119,13 @@ Build-variable role and precedence
     counterparts. The latter carry resolved **build-machine** archiver,
     archive indexer and relocatable linker choices, respectively.
     ``LD_FOR_BUILD`` is not a request to change the final QEMU linker.
+    Dependency configure stages must reuse a previously validated
+    build-machine ``AR_FOR_BUILD``/``RANLIB_FOR_BUILD`` pair before trying
+    host discovery. Perl locks its admitted ar for ranlib indexing; the
+    PowerPC GNU Binutils/GCC source bootstrap uses explicit
+    ``TOOLCHAIN_HOST_*`` overrides first, then seed/build-machine inputs.
+    This rule does not promote QEMU artifact ``AR`` or target
+    ``AR_FOR_TARGET`` into host bootstrap roles.
 
 ``CC`` / ``CXX`` / ``OBJC`` / ``CPP``
     Configured compilers and preprocessor for QEMU **host artifacts**.

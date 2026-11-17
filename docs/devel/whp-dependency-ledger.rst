@@ -1590,6 +1590,25 @@ policy. It is not a request to install every tool or library listed below.
   No unbuilt LLVM, managed Autotools, or guest-target archive utility is
   needed for either seed.
 
+  **Configuration ownership:** after Perl selects its admitted native ``ar``,
+  ``ensure-perl.py`` passes that exact path as ``WHP_AR_SEED`` to the
+  ``ranlib.sh`` pair probe. It does not ask the indexer to discover an
+  unrelated archive tool. Perl ``Configure`` receives explicit ``-Dar``,
+  ``-Dfull_ar`` and ``-Dranlib`` values; the generated ``config.sh``
+  and Makefile remain validated against those paths. This preserves
+  archive-index capability testing without a second provider decision.
+
+  When rebuilding the optional PowerPC GNU Binutils/GCC source toolchain,
+  ``TOOLCHAIN_HOST_AR`` and ``TOOLCHAIN_HOST_RANLIB`` take precedence;
+  otherwise ``WHP_AR_SEED`` / ``WHP_RANLIB_SEED`` are reused, then
+  ``AR_FOR_BUILD`` / ``RANLIB_FOR_BUILD``, then host discovery as a
+  last resort. Archive and indexer paths are frozen before either source
+  ``configure`` changes the working directory or PATH. The same choices
+  are passed as ``AR``/``RANLIB`` and ``AR_FOR_BUILD``/
+  ``RANLIB_FOR_BUILD`` to that *host* configure lane; target-specific
+  ``AR_FOR_TARGET`` and ``RANLIB_FOR_TARGET`` remain explicitly isolated.
+  A valid executable selection does not waive later archive/ABI checks.
+
   Set ``WHP_PERL_VERBOSE=1`` to print phase labels, working directories,
   exact subprocess argument vectors, log locations, and completion status
   to stderr without contaminating the printed interpreter path. Successful
