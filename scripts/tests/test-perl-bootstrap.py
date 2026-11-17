@@ -30,23 +30,29 @@ def check():
     assert gitlink.stdout.startswith("160000 commit "), gitlink.stdout
 
     source = SCRIPT.read_text(encoding="utf-8")
-    # The archive probe must use cc.sh's real invocation path. On Darwin
-    # this carries the same selected SDKROOT/-isysroot as actual compilation.
+    # The native archiver's named probe stages must use the SDK-aware cc.sh
+    # execution bridge, including incremental replacement and link/run.
     archive_seed = (ROOT / "seeds/ar.sh").read_text(encoding="utf-8")
     assert 'compiler_seed="$root/seeds/cc.sh"' in archive_seed
-    assert '/bin/sh "$compiler_seed" -c "$tmp/probe.c"' in archive_seed
+    for stage in ("compile-first-member", "compile-replacement-member",
+                  "link-native-executable"):
+        assert f'whp_ar_probe_step {stage} /bin/sh "$compiler_seed"' in archive_seed
+    assert 'whp_ar_probe_step create-archive "$archiver" rc' in archive_seed
+    assert 'whp_ar_probe_step replace-and-index "$archiver" rcs' in archive_seed
+    assert 'whp_ar_probe_step run-linked-executable "$tmp/probe"' in archive_seed
     assert '"$compiler" -c "$tmp/probe.c"' not in archive_seed
 
-    # A valid indexer must consume an archive built without ar's own 's'
-    # flag, then link and execute using the same SDK-aware C seed.
+    # The ranlib admission test must create an unindexed archive with the
+    # already selected ar, then index, link, and run using native cc.sh.
     ranlib_seed = (ROOT / "seeds/ranlib.sh").read_text(encoding="utf-8")
     assert 'cc_seed="$root/seeds/cc.sh"' in ranlib_seed
-    assert '/bin/sh "$cc_seed" -c "$dir/probe.c"' in ranlib_seed
-    assert '/bin/sh "$cc_seed" "$dir/main.c" "$dir/libprobe.a"' in ranlib_seed
-    assert '"$ar" rc "$dir/libprobe.a"' in ranlib_seed
-    assert '"$ar" rcs "$dir/libprobe.a"' not in ranlib_seed
-    assert '"$ranlib" "$dir/libprobe.a"' in ranlib_seed
-    assert '"$dir/probe" >/dev/null 2>&1 || exit 1' in ranlib_seed
+    assert 'whp_ranlib_probe_step compile-member /bin/sh "$cc_seed"' in ranlib_seed
+    assert 'whp_ranlib_probe_step create-unindexed-archive "$ar" rcS' in ranlib_seed
+    assert 'whp_ranlib_probe_step index-archive "$ranlib"' in ranlib_seed
+    assert 'whp_ranlib_probe_step link-native-executable /bin/sh "$cc_seed"' in ranlib_seed
+    assert 'whp_ranlib_probe_step run-linked-executable "$dir/probe"' in ranlib_seed
+    assert 'ranlib_env["WHP_AR_SEED"] = ar_path' in source
+    assert 'env=ranlib_env' in source
 
     assert "reconcile_submodule(ROOT, REL, git=git)" in source
     # Missing native archive dependencies must fail before source checkout.
