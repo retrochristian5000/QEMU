@@ -88,7 +88,9 @@ install_resolve()
         *) exit 1 ;;
     esac
     identity=$("$candidate" --whp-install-adapter-probe 2>/dev/null || true)
-    [ "$identity" != "$marker" ] || exit 1
+    case "$identity" in
+        "$marker"|whp-qemu-gnu-install-seed-adapter) exit 1 ;;
+    esac
     install_probe "$candidate" || exit 1
     printf '%s\n' "$candidate"
 )
