@@ -172,3 +172,9 @@
 	url = https://github.com/retrochristian5000/perl.git
 	branch = main
 	shallow = true
+
+[submodule "toolchains/gnu-m4"]
+	path = toolchains/gnu-m4
+	url = https://github.com/retrochristian5000/GNU-M4.git
+	branch = main
+	shallow = true
