@@ -47,7 +47,16 @@ WHP_GNU_AR_SEED="$selected" WHP_ARCHIVE_VERBOSE=1 /bin/sh "$seed" \
 [ ! -s "$tmp/forward.out" ]
 grep -Fq "WHP GNU ar selection: provider=WHP_GNU_AR_SEED; executable=$selected; native-probe=no" "$tmp/forward.err"
 grep -Fq 'admission=not-repeated' "$tmp/forward.err"
-[ "$(WHP_GNU_AR_SEED="$selected" /bin/sh "$seed" t "$tmp/libmember.a")" = member.o ]
+# This fixture forwards to the host archiver. Darwin's native ar may include
+# its precisely named symbol-table metadata member in the table listing.
+listing=$(WHP_GNU_AR_SEED="$selected" /bin/sh "$seed" t "$tmp/libmember.a")
+if [ "$listing" != member.o ]; then
+    if [ "$(uname -s 2>/dev/null || true)" != Darwin ] ||
+       [ "$listing" != "$(printf '__.SYMDEF SORTED\nmember.o')" ]; then
+        printf 'error: unexpected GNU ar fixture members: %s\n' "$listing" >&2
+        exit 1
+    fi
+fi
 WHP_GNU_AR_SEED="$selected" /bin/sh "$seed" p "$tmp/libmember.a" member.o >"$tmp/recovered.o"
 cmp -s "$tmp/member.o" "$tmp/recovered.o"
 
