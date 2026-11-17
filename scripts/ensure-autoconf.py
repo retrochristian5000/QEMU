@@ -163,8 +163,13 @@ def tool(name: str, env_name: str | None = None, aliases: tuple[str, ...] = ()) 
 
 
 def first_line(command: list[str]) -> str:
-    output = run_text(command)
-    return output.splitlines()[0] if output else ""
+    # Perl and some compiler version banners start with an empty line.
+    # Recording that blank line makes the cache marker insensitive to
+    # version changes at an unchanged executable path.
+    for line in run_text(command).splitlines():
+        if line.strip():
+            return line.strip()
+    raise RuntimeError(f"version command returned no text: {shlex.join(command)}")
 
 
 def select_seed_perl() -> str:

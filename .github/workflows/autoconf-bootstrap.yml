@@ -323,10 +323,10 @@ jobs:
             cd toolchains/autoconf
             M4="$fake_m4" ./bootstrap >"$RUNNER_TEMP/non-gnu-m4.out" 2>&1
           ); then
-            printf '%s\n' 'error: Autoconf source bootstrap accepted non-GNU M4' >&2
+            printf '%s\n' 'error: Autoconf source bootstrap accepted an incapable M4' >&2
             exit 1
           fi
-          grep -Fq 'did not identify itself as GNU M4' "$RUNNER_TEMP/non-gnu-m4.out"
+          grep -Fq 'lacks required Autoconf features' "$RUNNER_TEMP/non-gnu-m4.out"
 
           again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
             python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"

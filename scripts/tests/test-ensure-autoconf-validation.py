@@ -23,6 +23,13 @@ SPEC.loader.exec_module(HELPER)
 
 
 class AutoconfPreflightTests(unittest.TestCase):
+    def test_version_marker_ignores_leading_blank_lines(self):
+        with mock.patch.object(HELPER, "run_text", return_value="\n\nThis is perl 5.40\n"):
+            self.assertEqual(HELPER.first_line(["perl", "--version"]), "This is perl 5.40")
+        with mock.patch.object(HELPER, "run_text", return_value="  \n\t\n"):
+            with self.assertRaisesRegex(RuntimeError, "no text"):
+                HELPER.first_line(["perl", "--version"])
+
     def test_parallel_jobs_preflight(self):
         with mock.patch.object(HELPER.os, "cpu_count", return_value=4):
             self.assertEqual(HELPER.parallel_jobs(None), 4)
