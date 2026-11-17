@@ -9,19 +9,23 @@ ROOT = Path(__file__).resolve().parents[2]
 build = (ROOT / "build.sh").read_text(encoding="utf-8")
 make = (ROOT / "scripts/whp-build/gnu-make.bash").read_text(encoding="utf-8")
 
-# The public shell entry must select a native Homebrew interpreter *before*
-# generic PATH and before the late macOS host-tool provider is consulted.
-assert 'if [ "$WHP_HOST_OS" = macos ]; then' in build
-assert 'arm64|aarch64) whp_early_brew=/opt/homebrew' in build
-assert 'x86_64) whp_early_brew=/usr/local' in build
-assert '"$whp_early_brew/bin/python3"' in build
-assert 'if [ -z "$HOST_PYTHON" ]; then' in build
-assert build.index('"$whp_early_brew/bin/python3"') < build.index(
-    'for python_name in python3 python')
+# The early Python seed, not build.sh, owns installed interpreter selection.
+# Its Homebrew preference must precede generic PATH without depending on
+# Homebrew itself. The public entry uses the seed before the later host tools.
+python_seed = (ROOT / "seeds/python.sh").read_text(encoding="utf-8")
+assert 'HOST_PYTHON=$(/bin/sh "$SOURCE_DIR/seeds/python.sh" --print-seed' in build
+assert 'for variable in PYTHON WHP_PYTHON_SEED; do' in python_seed
+assert 'if [ "$host_os" = macos ]; then' in python_seed
+assert 'arm64|aarch64) brew_prefix=/opt/homebrew' in python_seed
+assert 'x86_64) brew_prefix=/usr/local' in python_seed
+assert '"$brew_prefix/bin/python3"' in python_seed
+assert 'for requested in python3 python; do' in python_seed
+assert python_seed.index('"$brew_prefix/bin/python3"') < python_seed.index(
+    'for requested in python3 python; do')
 assert build.index('if [ -n "${PYTHON:-}" ]; then') < build.index(
-    '"$whp_early_brew/bin/python3"')
-assert build.index('"$whp_early_brew/bin/python3"') < build.index(
-    'whp_prepare_host_tools') if 'whp_prepare_host_tools' in build else True
+    'HOST_PYTHON=$(/bin/sh "$SOURCE_DIR/seeds/python.sh" --print-seed')
+assert build.index('WHP_PYTHON_BOOTSTRAP_SEED=$HOST_PYTHON') < build.index(
+    '. "$SOURCE_DIR/scripts/whp-build/host-tools.sh"')
 
 # GNU Make needs a validated seed before its managed bootstrap. Probe the
 # architecture's Homebrew gmake, not the opposite (possibly Rosetta) prefix.
