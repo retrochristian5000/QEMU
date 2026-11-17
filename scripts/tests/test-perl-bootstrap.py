@@ -70,6 +70,8 @@ def check():
     assert 'run([make, "perl"]' in source
     assert 'run([make, "install"]' in source
     assert 'valid_perl(executable)' in source
+    assert 'valid_perl(executable, validation_failures)' in source
+    assert "managed Perl failed installed interpreter/module/OS checks" not in source
     assert 'f"SEED_PERL={seed}' in source
     assert 'env["PERL"] = seed' in source
     assert 'env["CC_FOR_BUILD"] = cc' in source
@@ -107,7 +109,57 @@ def check():
             encoding="utf-8",
         )
         bad.chmod(0o755)
-        assert not perl.valid_perl(bad)
+        reasons = []
+        assert not perl.valid_perl(bad, reasons)
+        assert "unexpected validation output" in reasons[0]
+        assert "This is perl 99.99" in reasons[0]
+
+        missing = Path(temp) / "missing-perl"
+        reasons = []
+        assert not perl.valid_perl(missing, reasons)
+        assert "executable is missing" in reasons[0]
+
+        bad.chmod(0o644)
+        reasons = []
+        assert not perl.valid_perl(bad, reasons)
+        assert "not executable" in reasons[0]
+        bad.chmod(0o755)
+
+        cases = (
+            (42, "", "WHP_PERL_MODULE:Config:Can't locate Config.pm",
+             "core module 'Config' failed to load"),
+            (41, "", "WHP_PERL_VERSION:Perl 5.006 required",
+             "interpreter version check failed"),
+            (139, "", "segmentation fault", "exited with status 139"),
+            (0, "whp-perl-native:", "", "empty osname"),
+            (0, "unrecognized output", "", "unexpected validation output"),
+        )
+        for code, stdout, stderr, expected in cases:
+            result = subprocess.CompletedProcess(
+                [str(bad)], code, stdout, stderr,
+            )
+            with mock.patch.object(perl.subprocess, "run",
+                                   return_value=result):
+                reasons = []
+                assert not perl.valid_perl(bad, reasons)
+                assert expected in reasons[0], reasons
+
+        with mock.patch.object(perl.subprocess, "run",
+                               return_value=subprocess.CompletedProcess(
+                                   [str(bad)], 0, "whp-perl-native:linux\n", ""
+                               )), mock.patch.object(
+                                   perl.platform, "system",
+                                   return_value="Darwin"):
+            reasons = []
+            assert not perl.valid_perl(bad, reasons)
+            assert "reported='linux', expected='darwin'" in reasons[0]
+
+        with mock.patch.object(perl.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired(
+                                   [str(bad)], 15)):
+            reasons = []
+            assert not perl.valid_perl(bad, reasons)
+            assert "timed out after 15 seconds" in reasons[0]
 
     original = shutil.which("perl")
     if original:
