@@ -164,11 +164,22 @@ jobs:
 
           runtime_smoke="$RUNNER_TEMP/autoconf-runtime-smoke"
           mkdir -p "$runtime_smoke"
-          printf '%s\n' 'AC_INIT([whp-runtime],[1])' 'AC_OUTPUT' > "$runtime_smoke/configure.ac"
+          # Exercise the updated Autoconf C-language macros, not only
+          # AC_INIT.  An explicit C standard must survive configuration.
+          printf '%s\n' \
+            'AC_INIT([whp-runtime],[1])' \
+            'AC_PROG_CC' \
+            'AC_CHECK_FUNCS([gettimeofday])' \
+            'AC_OUTPUT' > "$runtime_smoke/configure.ac"
           (
             cd "$runtime_smoke"
             env -u M4 "$autoconf_prefix/bin/autoconf"
             test -f configure
+            CFLAGS=-std=c11 /bin/sh ./configure > configure-smoke.log 2>&1 || {
+              cat configure-smoke.log >&2
+              exit 1
+            }
+            test -f config.log
           )
 
           fake_m4="$RUNNER_TEMP/non-gnu-m4"
