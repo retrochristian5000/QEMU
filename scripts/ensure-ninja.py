@@ -445,7 +445,9 @@ def bootstrap_environment(
             link_flags += ' -Wl,-O2 -Wl,-dead_strip'
         bootstrap_env['LDFLAGS'] = link_flags
     if os.environ.get('AR_FOR_BUILD'):
-        bootstrap_env['AR'] = resolve_build_archiver(os.environ['AR_FOR_BUILD'])
+        native_ar = resolve_build_archiver(os.environ['AR_FOR_BUILD'])
+        bootstrap_env['AR_FOR_BUILD'] = native_ar
+        bootstrap_env['AR'] = native_ar
     return bootstrap_env
 
 

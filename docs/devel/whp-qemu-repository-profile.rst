@@ -43,10 +43,10 @@ An external **executable** selected for a host bootstrap should be frozen
 to an absolute *invoked* pathname before nested configure, ``cd``, or
 ``PATH`` changes. Preserve the basename of an executable symlink:
 ``llvm-ranlib`` and similar LLVM multicall tools may derive their action
-from ``argv[0]``. In particular, Ninja forwards a validated,
-absolute ``AR_FOR_BUILD`` as its bootstrap ``AR``, without substituting
-QEMU artifact ``AR`` or interpreting an executable request as command
-arguments. Invalid explicit executables fail closed.
+from ``argv[0]``. In particular, Ninja freezes its validated,
+absolute ``AR_FOR_BUILD`` and passes that same path as bootstrap ``AR``,
+without substituting QEMU artifact ``AR`` or interpreting an executable
+request as command arguments. Invalid explicit executables fail closed.
 
 By contrast, ``#include "qemu/..."`` and other in-repository header
 names remain relative to *declared include roots* supplied by Meson,

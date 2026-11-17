@@ -52,6 +52,14 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
             selected = developer / 'MacOSX15.0.sdk'
             active.mkdir()
             selected.mkdir()
+            # SDK admission now checks the actual native system header roots.
+            # The fixture must model that contract, not just SDK directory names.
+            for sdk in (active, selected):
+                for header in ('stdio.h', 'stdlib.h', 'unistd.h',
+                               'sys/types.h', 'TargetConditionals.h'):
+                    path = sdk / 'usr/include' / header
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('/* SDK header fixture */\n', encoding='utf-8')
             alias = developer / 'selected-sdk'
             alias.symlink_to(selected, target_is_directory=True)
             xcrun = developer / 'xcrun'
@@ -68,9 +76,9 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
                 'SDKROOT': str(alias),
                 'TEST_ACTIVE_SDK': str(active),
             }), mock.patch.object(mod.platform, 'system', return_value='Darwin'):
-                self.assertEqual(mod.select_host_sdkroot(), str(alias))
+                self.assertEqual(mod.select_host_sdkroot(), str(selected.resolve()))
                 with mock.patch.dict(os.environ, {'SDKROOT': ''}):
-                    self.assertEqual(mod.select_host_sdkroot(), str(active))
+                    self.assertEqual(mod.select_host_sdkroot(), str(active.resolve()))
 
     def test_arm64_macos_auto_prefers_arm64e_when_link_probe_succeeds(self):
         mod = load_bootstrap_module()
@@ -279,8 +287,8 @@ class NinjaHostArchiverPathTests(unittest.TestCase):
                     selected = mod.bootstrap_environment("/usr/bin/c++", "")
                     self.assertEqual(selected["AR"], str(invoked))
                     self.assertNotEqual(selected["AR"], str(actual))
-                    self.assertFalse("AR_FOR_BUILD" in selected or
-                                     selected.get("AR") == "/unrelated/target-ar")
+                    self.assertEqual(selected["AR_FOR_BUILD"], str(invoked))
+                    self.assertNotEqual(selected["AR"], "/unrelated/target-ar")
                 os.chdir(before)
                 self.assertTrue(pathlib.Path(selected["AR"]).is_file())
             finally:
