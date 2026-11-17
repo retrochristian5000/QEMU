@@ -33,7 +33,7 @@ def main() -> int:
     require(build, awk_seed, "early POSIX AWK seed selection")
     require(build, "WHP_AWK_LOCKED=1", "validated AWK fast path")
     require(build, 'PATH="$WHP_AWK_BIN_DIR:$PATH"', "literal AWK PATH binding")
-    require(build, "export WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH",
+    require(build, "export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH",
             "same AWK for literal and variable calls")
     awk_shim = ROOT / "scripts/whp-build/seed-bin/awk"
     if not awk_shim.is_file():
