@@ -70,6 +70,26 @@ grep -Fq 'provider: gnu' "$tmp/gnu.err"
     2>"$tmp/gnu-auto.err")" = "$gnu" ]
 grep -Fq 'provider: gnu' "$tmp/gnu-auto.err"
 
+# A GCC-compatible bootstrap must prefer the specialist automatically even
+# when no specialized override was supplied. The fixture is first on PATH,
+# but admission still validates its actual archive and index operations.
+cat > "$tmp/gcc-version" <<'SH'
+#!/bin/sh
+[ "${1:-}" = --version ] || exit 1
+printf '%s\n' 'gcc (GCC) 14.2.0'
+SH
+chmod +x "$tmp/gcc-version"
+automatic_gnu=$(PATH="$tmp/gnu:$PATH" /bin/sh "$selector" "$tmp/gcc-version" \
+    2>"$tmp/gcc-auto.err") || exit 1
+grep -Fq 'provider: gnu' "$tmp/gcc-auto.err"
+case "$automatic_gnu" in
+    *"$tmp/gnu/ar"*) ;;
+    *)
+        # A valid installed GNU Binutils pair may precede PATH on macOS.
+        [ -x "${automatic_gnu%%'
+'*}" ] || exit 1 ;;
+esac
+
 # Different Binutils releases are rejected even if both tools can index
 # an ordinary native object; a forced provider must never fall back.
 if WHP_TEST_RANLIB_VERSION=2.45 \
