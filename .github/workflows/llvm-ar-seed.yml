@@ -20,6 +20,9 @@ on:
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'scripts/whp-build/macos-developer-tools.sh'
       - 'scripts/tests/test-ar-seed.sh'
+      - 'scripts/whp-build/native-archive-pair.sh'
+      - 'scripts/tests/test-native-archive-pair.sh'
+      - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/tests/test-llvm-ar-seed.sh'
       - '.github/workflows/llvm-ar-seed.yml'
   pull_request:
@@ -82,6 +85,11 @@ jobs:
             /bin/sh -x scripts/tests/test-GNUar-seed.sh
             exit 1
           fi
+      - name: Verify family-aware native LLVM archive seed selection
+        run: |
+          /bin/sh -n scripts/whp-build/native-archive-pair.sh
+          /bin/sh -n scripts/tests/test-native-archive-pair.sh
+          /bin/sh scripts/tests/test-native-archive-pair.sh
       - name: Validate GNU and LLVM archive provider diagnostics
         shell: bash
         run: bash scripts/tests/test-archive-tool-policy.bash

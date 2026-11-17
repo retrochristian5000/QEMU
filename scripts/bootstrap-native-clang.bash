@@ -1748,20 +1748,24 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     exit 0
 fi
 
-# Native LLVM cannot bootstrap its own llvm-ar/llvm-ranlib. Select proven
-# build-machine tools only when the installed LLVM cache cannot be reused.
-# Apple, GNU Binutils and preinstalled LLVM providers are all eligible.
-bootstrap_native_ar=$(/bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed) || {
-    printf '%s\n' 'error: native LLVM requires a working host ar (WHP_AR_SEED / AR_FOR_BUILD)' >&2
-    exit 1
-}
-bootstrap_native_ranlib=$(
-    WHP_AR_SEED="$bootstrap_native_ar" \
-        /bin/sh "$SOURCE_DIR/seeds/ranlib.sh" --print-seed
+# Native LLVM cannot bootstrap its own archive tools. After a cache miss,
+# prefer a coherent *installed* GNU/LLVM pair for the native compiler family
+# and retain the validated generic pair when specialization is unavailable.
+# Explicit provider selections fail closed instead of silently switching.
+bootstrap_archive_pair=$(
+    /bin/sh "$SOURCE_DIR/scripts/whp-build/native-archive-pair.sh" "$bootstrap_cc"
 ) || {
-    printf '%s\n' 'error: native LLVM requires a working host ranlib (WHP_RANLIB_SEED / RANLIB_FOR_BUILD)' >&2
+    printf '%s\n' 'error: native LLVM requires a coherent native ar/ranlib seed pair' >&2
     exit 1
 }
+bootstrap_native_ar=${bootstrap_archive_pair%%$'\n'*}
+bootstrap_native_ranlib=${bootstrap_archive_pair#*$'\n'}
+unset bootstrap_archive_pair
+if [[ -z "$bootstrap_native_ar" || -z "$bootstrap_native_ranlib" ||
+      "$bootstrap_native_ar" == "$bootstrap_native_ranlib" ]]; then
+    printf '%s\n' 'error: native LLVM archive selector returned an invalid pair' >&2
+    exit 1
+fi
 printf 'WHP native LLVM archive tools: ar=%s; ranlib=%s\n' \
     "$bootstrap_native_ar" "$bootstrap_native_ranlib" >&2
 

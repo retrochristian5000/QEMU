@@ -1465,6 +1465,29 @@ policy. It is not a request to install every tool or library listed below.
   ``sh scripts/tests/test-GNUar-seed.sh`` covers rejection, provenance,
   forwarding, symlinks and the native probe on Linux/macOS runners.
 
+* **Native LLVM bootstrap archive provider policy:** the POSIX helper
+  ``scripts/whp-build/native-archive-pair.sh`` is invoked **after** the
+  installed-toolchain cache check, not for every QEMU configuration or guest.
+  With ``WHP_NATIVE_LLVM_ARCHIVE_PROVIDER=auto``, Clang-preferring builds
+  attempt a validated installed LLVM ``llvm-ar``/``llvm-ranlib`` pair,
+  and GCC-preferring builds attempt GNU Binutils ``ar``/``ranlib`` from
+  a coherent installation. If the complete preferred pair does not work,
+  auto retains the existing native ``seeds/ar.sh`` and ``ranlib.sh``
+  fallback. Compiler identity is only a preference; **both** tools must
+  pass native object, archive indexing, link and execution checks.
+
+  ``WHP_NATIVE_LLVM_ARCHIVE_PROVIDER=native|gnu|llvm`` forces the
+  indicated provider; a forced unavailable or broken provider fails without
+  switching. An explicit ``WHP_AR_SEED``, ``AR_FOR_BUILD``,
+  ``WHP_RANLIB_SEED``, or ``RANLIB_FOR_BUILD`` retains the native
+  validation path in auto mode. Explicit ``WHP_GNU_AR_SEED`` or
+  ``WHP_LLVM_AR_SEED`` selects the specialized family in auto mode,
+  and conflicts among explicit families fail rather than being silently
+  overridden. No new managed source bootstrap or package installation is
+  introduced, and QEMU artifact ``AR``, guest toolchains and Perl remain
+  distinct. GNU/LLVM LTO plugin interoperability is not inferred from a
+  passing native object probe.
+
 * **Optional installed LLVM archive seed:** ``seeds/llvm-ar.sh`` discovers
   a working preinstalled native ``llvm-ar``, prioritizing the LLVM archiver
   adjacent to the selected host C compiler. It also supports an explicit

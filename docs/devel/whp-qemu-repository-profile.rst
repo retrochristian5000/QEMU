@@ -135,6 +135,16 @@ Build-variable role and precedence
     ``LD`` executable alone does not override the driver's linker.
     ``QEMU_HOST_LINKER`` and validated linker flags own that request.
 
+``WHP_NATIVE_LLVM_ARCHIVE_PROVIDER``
+    Controls only the **cache-miss native LLVM build-machine** archive pair:
+    ``auto`` (default), ``native``, ``gnu``, or ``llvm``.
+    Auto prefers an installed LLVM pair for a Clang compiler and GNU Binutils
+    pair for GCC, but only when the entire native archive/indexer pipeline
+    passes. It falls back to the existing native pair otherwise.
+    Explicit seed paths and forced providers fail closed on conflicts or
+    missing companion tools. This does not change QEMU's final artifact
+    archive family or force managed LLVM to bootstrap itself.
+
 ``WHP_GNU_AR_SEED`` / ``seeds/GNUar.sh``
     An optional, case-sensitive selector for an **installed GNU Binutils
     archiver**. GNU identity is checked before reusing the native object,

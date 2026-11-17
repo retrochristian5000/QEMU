@@ -104,13 +104,26 @@ def main() -> int:
     cache_hit = llvm_bootstrap.index(
         'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker"'
     )
-    ar = llvm_bootstrap.index(
-        'bootstrap_native_ar=$(/bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed)'
+    pair = llvm_bootstrap.index(
+        'scripts/whp-build/native-archive-pair.sh" "$bootstrap_cc"'
     )
-    ranlib = llvm_bootstrap.index('WHP_AR_SEED="$bootstrap_native_ar"')
+    ar = llvm_bootstrap.index("bootstrap_native_ar=", pair)
+    ranlib = llvm_bootstrap.index("bootstrap_native_ranlib=", ar)
     cmake = llvm_bootstrap.index("cmake_args=(", ranlib)
-    if not cache_hit < ar < ranlib < cmake:
-        raise SystemExit("error: LLVM archive admission must follow cache reuse")
+    if not cache_hit < pair < ar < ranlib < cmake:
+        raise SystemExit("error: LLVM archive pair admission must follow cache reuse")
+    selector = (ROOT / "scripts/whp-build/native-archive-pair.sh").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        'WHP_NATIVE_LLVM_ARCHIVE_PROVIDER',
+        'WHP_GNU_AR_SEED', 'WHP_LLVM_AR_SEED',
+        'seeds/GNUar.sh', 'seeds/llvm-ar.sh', 'seeds/llvm-ranlib.sh',
+        'seeds/ar.sh', 'seeds/ranlib.sh',
+        'select_native_pair', 'select_llvm_pair', 'select_gnu_pair',
+    ):
+        if token not in selector:
+            raise SystemExit("error: family-aware LLVM archive selector lost: " + token)
     for token in (
         '"-DCMAKE_AR=$bootstrap_native_ar"',
         '"-DCMAKE_RANLIB=$bootstrap_native_ranlib"',
