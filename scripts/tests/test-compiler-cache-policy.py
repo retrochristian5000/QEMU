@@ -119,8 +119,11 @@ class CompilerCachePolicyTests(unittest.TestCase):
                         env['WHP_COMPILER_CACHE_CMD'] = override
                     else:
                         env.pop('WHP_COMPILER_CACHE_CMD', None)
+                    # The extracted builder entry needs the real script
+                    # pathname as $0, just as a direct builder.sh invocation
+                    # would supply before the compiler-cache policy runs.
                     completed = subprocess.run(
-                        [shell, '-c', body], cwd=ROOT, env=env,
+                        [shell, '-c', body, str(BUILD_WRAPPER)], cwd=ROOT, env=env,
                         text=True, capture_output=True, check=False,
                     )
                     self.assertEqual(completed.returncode == 0, succeeds, completed.stderr)
