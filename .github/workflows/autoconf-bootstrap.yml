@@ -25,6 +25,7 @@ on:
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-autoconf-rollback.py'
+      - 'scripts/tests/test-automake-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
@@ -53,6 +54,7 @@ on:
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
       - 'scripts/tests/test-autoconf-rollback.py'
+      - 'scripts/tests/test-automake-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
@@ -99,6 +101,9 @@ jobs:
       - name: Verify Autoconf install rollback and recovery
         run: python3 scripts/tests/test-autoconf-rollback.py
 
+      - name: Verify Automake M4 wiring and install recovery
+        run: python3 scripts/tests/test-automake-rollback.py
+
       - name: Verify independent Autoconf bootstrap seed
         run: python3 scripts/tests/test-automake-seed-cycle.py
 
@@ -134,6 +139,11 @@ jobs:
           export ACLOCAL="$automake_prefix/bin/aclocal"
           export PATH="$automake_prefix/bin:$PATH"
           "$AUTOMAKE" --version | grep -q 'GNU automake'
+          automake_m4="$(/bin/sh ./seeds/gnum4.sh --print-seed)"
+          grep -Fxq "M4_PATH=$automake_m4" \
+            "$automake_prefix/.whp-automake-bootstrap"
+          grep -Fxq "AUTOMAKE_BOOTSTRAP_SCHEMA=6" \
+            "$automake_prefix/.whp-automake-bootstrap"
 
           expected_m4=
           poison_bin=
