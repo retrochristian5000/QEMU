@@ -84,10 +84,15 @@ def main() -> int:
     require(seed, "WHP_GNUM4_SEED", "GNU M4 override isolation")
     require(helper, '["/bin/sh", str(adapter), "--print-seed"]',
             "GNU M4 seed selection call")
-    require(seed, "/opt/homebrew/opt/m4/bin/m4",
-            "Apple Silicon Homebrew M4 preference")
-    require(seed, "/usr/local/opt/m4/bin/m4",
-            "Intel Homebrew M4 preference")
+    brew_seed = (ROOT / "seeds/brew.sh").read_text(encoding="utf-8")
+    require(seed, '--formula-bin m4 m4',
+            "selected Homebrew keg-only M4 discovery")
+    require(seed, 'macports|system) ;;',
+            "non-Homebrew provider isolation")
+    require(brew_seed, '"$selected_brew" --prefix --installed "$formula"',
+            "installed-formula guard")
+    require(brew_seed, '"$selected_prefix"/opt/*|"$selected_prefix"/Cellar/*',
+            "selected Homebrew prefix boundary")
     require(seed, "for candidate in m4 gm4 gnum4; do", "canonical GNU M4 fallback order")
     require(seed, "patsubst(", "GNU macro execution seed probe")
     require(helper, 'm4_link = seed_bin / "m4"', "literal M4 bootstrap shim")
