@@ -297,7 +297,17 @@ by the WHP account.
      - ``automake``
      - yes
      - Managed Automake/aclocal fallback. Its Git bootstrap consumes the
-       validated seed sed plus Perl, Autoconf/autom4te, and seed GNU Make.
+       validated seed sed plus Perl, Autoconf/autom4te, seed GNU Make,
+       and GNU Texinfo ``makeinfo`` for ``doc/local.mk``'s
+       ``info_TEXINFOS``. Other tools such as TeX, yacc, and lex
+       serve optional test paths and are not promoted to mandatory
+       bootstrap dependencies. Automake bundles its own Help2man script.
+       ``ensure-automake.py`` validates both the version identity and
+       a real small Texinfo conversion before source reconciliation,
+       freezes its pathname in ``MAKEINFO``, and records its identity
+       in the managed build marker. An explicit
+       ``WHP_AUTOMAKE_MAKEINFO_SEED`` or ``MAKEINFO`` is authoritative;
+       invalid selections never fall back to a different PATH tool.
    * - ``toolchains/autoconf``
      - ``autoconf``
      - yes

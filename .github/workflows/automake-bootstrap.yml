@@ -12,6 +12,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/tests/test-bootstrap-env.py'
+      - 'scripts/tests/test-automake-makeinfo-preflight.py'
       - '.github/workflows/automake-bootstrap.yml'
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
       - 'scripts/tests/test-bootstrap-env.py'
+      - 'scripts/tests/test-automake-makeinfo-preflight.py'
       - '.github/workflows/automake-bootstrap.yml'
 
 permissions:
@@ -37,6 +39,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Validate Git-source Texinfo preflight without host packages
+        run: python3 scripts/tests/test-automake-makeinfo-preflight.py -v
 
       - name: Install bootstrap prerequisites (Linux)
         if: runner.os == 'Linux'

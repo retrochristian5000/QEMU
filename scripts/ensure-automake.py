@@ -15,6 +15,8 @@ import hashlib
 import io
 import os
 import pathlib
+import re
+import tempfile
 import shlex
 import shutil
 import subprocess
@@ -32,7 +34,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "seeds" / "sed.sh"
-AUTOMAKE_BOOTSTRAP_SCHEMA = "3"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "4"
 
 
 def run_text(
@@ -158,6 +160,80 @@ def select_gnu_make() -> str:
         if completed.returncode == 0 and "GNU Make" in completed.stdout:
             return path
     raise RuntimeError("GNU Make is required to bootstrap GNU Automake")
+
+
+
+def select_makeinfo() -> str:
+    """Require a working GNU Texinfo generator for a Git-source Automake.
+
+    Automake's generated Makefile builds info_TEXINFOS; unlike the release
+    tarball, this maintainer checkout cannot assume prebuilt .info files.
+    A valid version banner is necessary but not proof that the executable
+    can convert a small Texinfo input with its installed Perl modules.
+    """
+    name = "WHP_AUTOMAKE_MAKEINFO_SEED"
+    requested = os.environ.get(name) or os.environ.get("MAKEINFO")
+    if requested:
+        # Preserve absolute paths containing whitespace; never pass an
+        # untrusted shell command such as "makeinfo --some-argument".
+        if os.path.sep not in requested and any(c.isspace() for c in requested):
+            raise RuntimeError(
+                f"{name}/MAKEINFO must name one executable, not a command"
+            )
+        selected = executable(requested)
+        if not selected:
+            raise RuntimeError(
+                f"explicit GNU Texinfo makeinfo is not executable: {requested}"
+            )
+    else:
+        selected = executable("makeinfo")
+        if not selected:
+            raise RuntimeError(
+                "GNU Texinfo makeinfo is required for a Git-source "
+                "Automake bootstrap (install texinfo before building)"
+            )
+    completed = subprocess.run(
+        [selected, "--version"], capture_output=True, text=True,
+        check=False, timeout=15,
+    )
+    banner = completed.stdout.splitlines()
+    if (
+        completed.returncode != 0
+        or not banner
+        or not re.fullmatch(
+            r"(?:makeinfo|texi2any) \(GNU [Tt]exinfo\) "
+            r"[0-9]+(?:\.[0-9]+)+(?: .*)?",
+            banner[0],
+        )
+    ):
+        raise RuntimeError(
+            f"Automake needs GNU Texinfo makeinfo, not {selected}: "
+            + (banner[0] if banner else completed.stderr.strip())
+        )
+
+    with tempfile.TemporaryDirectory(prefix="whp-automake-texinfo-") as tmp:
+        root = pathlib.Path(tmp)
+        source = root / "probe.texi"
+        output = root / "probe.info"
+        source.write_text(
+            "\\input texinfo\n"
+            "@setfilename probe.info\n"
+            "@node Top\n"
+            "@top Automake maintainer bootstrap\n"
+            "@bye\n",
+            encoding="utf-8",
+        )
+        run = subprocess.run(
+            [selected, "--no-split", "-o", str(output), str(source)],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        if run.returncode or not output.is_file() or not output.stat().st_size:
+            raise RuntimeError(
+                f"GNU Texinfo makeinfo cannot convert maintainer input: "
+                f"{selected}: "
+                + (run.stderr.strip() or f"exit {run.returncode}")
+            )
+    return selected
 
 
 def select_seed_sed() -> str:
@@ -317,6 +393,7 @@ def marker_text(
     autoconf: str,
     autom4te: str,
     make: str,
+    makeinfo: str,
     cc: str,
     config_shell: str,
 ) -> str:
@@ -328,6 +405,7 @@ def marker_text(
         f"AUTOCONF={autoconf}: {first_line([autoconf, '--version'])}\n"
         f"AUTOM4TE={autom4te}: {first_line([autom4te, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
+        f"MAKEINFO={makeinfo}: {first_line([makeinfo, '--version'])}\n"
         f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
         f"CONFIG_SHELL={config_shell}\n"
         f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
@@ -373,11 +451,13 @@ def select_seed_autoconf_pair(build_root: pathlib.Path) -> tuple[str, str]:
 
 
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
-    revision = ensure_source()
+    # Validate external maintainer tools before fetching/copying any sources.
     seed = select_seed_sed()
     perl = select_seed_perl()
     autoconf, autom4te = select_seed_autoconf_pair(build_root)
     make = select_gnu_make()
+    makeinfo = select_makeinfo()
+    revision = ensure_source()
     sdkroot = select_native_sdk(ROOT)
     if sdkroot:
         # cc.sh validates the same SDK; configure must receive it as well.
@@ -396,7 +476,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     marker_path = prefix / ".whp-automake-bootstrap"
 
     marker = marker_text(
-        revision, seed, perl, autoconf, autom4te, make, cc, config_shell
+        revision, seed, perl, autoconf, autom4te, make, makeinfo, cc,
+        config_shell
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
@@ -434,6 +515,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["CC_FOR_BUILD"] = cc
     env["MAKE"] = make
     env["MAKE_CMD"] = make
+    env["MAKEINFO"] = makeinfo
     env["CONFIG_SHELL"] = config_shell
     env["SHELL"] = config_shell
     env["PERL"] = perl
