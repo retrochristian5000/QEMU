@@ -64,6 +64,32 @@ whp_same_directory()
     exit 1
 )
 
+# Git's --is-ancestor distinguishes a negative relationship (exit 1) from
+# a failed query (exit >1). A shell 'if ! git ...' would collapse both into
+# the same branch and could initiate a needless fetch or hide corruption.
+# Print yes/no so callers never mistake a fatal probe for an ordinary "no".
+whp_git_ancestry_relation()
+(
+    whp_git=$1
+    whp_target=$2
+    whp_older=$3
+    whp_newer=$4
+    if "$whp_git" -C "$whp_target" merge-base --is-ancestor \
+        "$whp_older" "$whp_newer"; then
+        printf '%s\n' yes
+    else
+        whp_result=$?
+        case "$whp_result" in
+            1) printf '%s\n' no ;;
+            *)
+                printf 'error: Git ancestry probe failed for %s (exit %s)\n' \
+                    "$whp_target" "$whp_result" >&2
+                return 1
+                ;;
+        esac
+    fi
+)
+
 # Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
 # A gitlink is a reproducibility baseline, not permission to rewind an
 # initialized checkout containing newer descendant commits.
@@ -144,38 +170,58 @@ whp_git_submodule_prepare()
         fi
         whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1
         if [ "$whp_current" != "$whp_pin" ]; then
-            if ! "$whp_git" -C "$whp_target" cat-file -e "$whp_pin^{commit}" 2>/dev/null; then
+            # Missing pinned history (exit 1) may be fetched in online mode;
+            # an actual Git failure must not be turned into a fetch request.
+            if "$whp_git" -C "$whp_target" cat-file -e "$whp_pin^{commit}" 2>/dev/null; then
+                :
+            else
+                whp_status=$?
+                if [ "$whp_status" -ne 1 ]; then
+                    printf 'error: cannot inspect pinned submodule commit %s (Git exit %s)\n' \
+                        "$whp_path" "$whp_status" >&2
+                    return 1
+                fi
                 if [ "$whp_access" = offline ]; then
                     printf 'error: pin history missing for offline submodule %s\n' "$whp_path" >&2
                     return 1
                 fi
                 "$whp_git" -C "$whp_target" fetch --no-tags --no-recurse-submodules origin "$whp_pin" || return 1
             fi
-            if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_pin" "$whp_current"; then
+            whp_pin_is_ancestor=$(whp_git_ancestry_relation \
+                "$whp_git" "$whp_target" "$whp_pin" "$whp_current") || return 1
+            if [ "$whp_pin_is_ancestor" = yes ]; then
                 printf 'WHP submodule: preserving newer %s at %s (pin %s)\n' \
                     "$whp_path" "$whp_current" "$whp_pin" >&2
                 return 0
             fi
-            # Depth-one Git clones can hide the ancestry of a newer tip.
-            # Recover only missing history, never switch a branch or HEAD.
-            # Keep the fetch bounded for very large LLVM/Python repositories.
+            whp_current_is_ancestor=$(whp_git_ancestry_relation \
+                "$whp_git" "$whp_target" "$whp_current" "$whp_pin") || return 1
+            # Depth-one clones may hide ancestry. Deepen only when the
+            # checked reverse relationship is negative, never on Git errors.
             if [ "$whp_access" != offline ] &&
-               [ "$("$whp_git" -C "$whp_target" rev-parse --is-shallow-repository)" = true ] &&
-               ! "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
-                for whp_deepen in 64 256 1024; do
-                    "$whp_git" -C "$whp_target" fetch "--deepen=$whp_deepen" \
-                        --no-tags --no-recurse-submodules origin "$whp_current" || return 1
-                    if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_pin" "$whp_current"; then
-                        printf 'WHP submodule: preserved newer shallow checkout %s at %s (pin %s)\n' \
-                            "$whp_path" "$whp_current" "$whp_pin" >&2
-                        return 0
-                    fi
-                    if "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
-                        break
-                    fi
-                done
+               [ "$whp_current_is_ancestor" = no ]; then
+                whp_shallow=$("$whp_git" -C "$whp_target" \
+                    rev-parse --is-shallow-repository) || return 1
+                if [ "$whp_shallow" = true ]; then
+                    for whp_deepen in 64 256 1024; do
+                        "$whp_git" -C "$whp_target" fetch "--deepen=$whp_deepen" \
+                            --no-tags --no-recurse-submodules origin "$whp_current" || return 1
+                        whp_pin_is_ancestor=$(whp_git_ancestry_relation \
+                            "$whp_git" "$whp_target" "$whp_pin" "$whp_current") || return 1
+                        if [ "$whp_pin_is_ancestor" = yes ]; then
+                            printf 'WHP submodule: preserved newer shallow checkout %s at %s (pin %s)\n' \
+                                "$whp_path" "$whp_current" "$whp_pin" >&2
+                            return 0
+                        fi
+                        whp_current_is_ancestor=$(whp_git_ancestry_relation \
+                            "$whp_git" "$whp_target" "$whp_current" "$whp_pin") || return 1
+                        if [ "$whp_current_is_ancestor" = yes ]; then
+                            break
+                        fi
+                    done
+                fi
             fi
-            if ! "$whp_git" -C "$whp_target" merge-base --is-ancestor "$whp_current" "$whp_pin"; then
+            if [ "$whp_current_is_ancestor" != yes ]; then
                 printf 'error: %s is divergent or history is incomplete; refusing checkout (deepen Git history if shallow)\n' "$whp_path" >&2
                 return 1
             fi

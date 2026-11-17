@@ -10,6 +10,8 @@ on:
       - 'build.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-submodule-ancestor-status.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/ensure-dtc-subproject.py'
       - 'scripts/ensure-git.py'
@@ -28,6 +30,8 @@ on:
       - 'build.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-submodule-ancestor-status.py'
       - 'scripts/ensure-git.py'
       - 'scripts/whp-config/config.py'
       - 'scripts/tests/test-git-dependency-policy.py'
@@ -48,6 +52,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify POSIX Git submodule status branches (offline)
+        run: |
+          /bin/sh -n scripts/whp-build/shell-functions.sh
+          python3 scripts/tests/test-submodule-ancestor-status.py -v
 
       - name: Install Git build prerequisites (Linux)
         if: runner.os == 'Linux'

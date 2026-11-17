@@ -8,6 +8,8 @@ on:
       - 'seeds/git.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-submodule-ancestor-status.py'
       - 'scripts/whp-build/host-libraries.sh'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/ensure-zlib.py'
@@ -35,6 +37,8 @@ on:
       - 'seeds/git.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
+      - 'scripts/whp-build/shell-functions.sh'
+      - 'scripts/tests/test-submodule-ancestor-status.py'
       - 'scripts/whp-build/host-libraries.sh'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/ensure-zlib.py'
@@ -71,3 +75,6 @@ jobs:
         run: |
           sh -n build.sh seeds/git.sh scripts/whp-build/update-source.sh
           sh -n scripts/whp-build/host-tools.sh
+          sh -n scripts/whp-build/shell-functions.sh
+      - name: Verify Git ancestry conditionals fail closed
+        run: python3 scripts/tests/test-submodule-ancestor-status.py -v
