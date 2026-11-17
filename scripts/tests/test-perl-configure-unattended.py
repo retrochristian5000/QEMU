@@ -34,11 +34,13 @@ class PerlConfigureTests(unittest.TestCase):
         self.assertIn("-des", args)
         self.assertIn("-Dusedevel", args)
         self.assertIn("-Uuseshrplib", args)
+        self.assertIn("-Uversiononly", args)
 
     def test_even_stable_series_does_not_enable_development(self):
         args = self.configure(44)
         self.assertIn("-des", args)
         self.assertNotIn("-Dusedevel", args)
+        self.assertIn("-Uversiononly", args)
 
     def test_unknown_source_version_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,6 +239,8 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
     def configure_result(self, **overrides):
         values = {
             "prefix": str(self.prefix),
+            "installbin": str(self.prefix / "bin"),
+            "versiononly": "undef",
             "cc": self.cc,
             "ld": self.cc,
             "ar": self.ar,
@@ -273,6 +277,7 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
             ("cc", "/usr/bin/gcc"),
             ("ld", "/usr/bin/ld"),
             ("prefix", "/usr/local"),
+            ("installbin", "/unexpected/another/bin"),
             ("ar", "/usr/bin/llvm-ar"),
             ("full_ar", "/usr/bin/llvm-ar"),
             ("ranlib", "/bin/true"),
@@ -282,6 +287,11 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
                 self.configure_result(**{key: bad})
                 with self.assertRaisesRegex(RuntimeError, "Perl Configure|unexpected archive"):
                     self.verify()
+
+    def test_version_only_installation_cannot_pass_managed_validation(self):
+        self.configure_result(versiononly="define")
+        with self.assertRaisesRegex(RuntimeError, "version-only installation"):
+            self.verify()
 
     def test_dropped_selected_compiler_or_linker_flag_fails(self):
         for key, value in (
