@@ -13,6 +13,8 @@ on:
       - 'scripts/tests/test-brew-seed.py'
       - 'scripts/whp-build/homebrew-deps.bash'
       - 'seeds/install.sh'
+      - 'seeds/GNUinstall.sh'
+      - 'scripts/tests/test-GNUinstall-seed.py'
       - 'scripts/whp-build/seed-bin/install'
       - 'scripts/tests/test-install-seed-adapter.bash'
       - 'seeds/cc.sh'
@@ -69,6 +71,8 @@ on:
       - 'scripts/tests/test-brew-seed.py'
       - 'scripts/whp-build/homebrew-deps.bash'
       - 'seeds/install.sh'
+      - 'seeds/GNUinstall.sh'
+      - 'scripts/tests/test-GNUinstall-seed.py'
       - 'scripts/whp-build/seed-bin/install'
       - 'scripts/tests/test-install-seed-adapter.bash'
       - 'seeds/cc.sh'
@@ -163,6 +167,11 @@ jobs:
           /bin/sh -n scripts/whp-build/seed-bin/install
           bash -n scripts/tests/test-install-seed-adapter.bash
           bash scripts/tests/test-install-seed-adapter.bash
+
+      - name: Verify GNU coreutils install seed independently
+        run: |
+          /bin/sh -n seeds/GNUinstall.sh
+          python3 scripts/tests/test-GNUinstall-seed.py
 
       - name: Verify native Clang identity and cc handoff
         run: |

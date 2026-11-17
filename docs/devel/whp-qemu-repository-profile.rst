@@ -287,6 +287,17 @@ Autotools stages must still perform their independent install-target and
 artifact checks. ``scripts/tests/test-install-seed-adapter.bash``
 exercises the native adapter and literal bridge on Linux and macOS.
 
+Optional GNU-only installation uses ``seeds/GNUinstall.sh`` and the independent
+``WHP_GNU_INSTALL_SEED`` override; it never silently promotes GNU install to
+the generic ``WHP_INSTALL_SEED`` or Autotools ``INSTALL`` roles. The GNU-only
+seed checks coreutils identity, reuses the generic directory/copy/mode probe,
+and additionally tests ``-D`` and ``--compare``. On macOS, the selected
+Homebrew installation can expose ``coreutils`` ``ginstall`` through
+``brew.sh --formula-bin coreutils ginstall`` without global PATH changes.
+``--print-candidate`` is identity-only; ``--print-seed`` and ``--check``
+perform full capability testing. It remains optional on non-GNU hosts.
+``scripts/tests/test-GNUinstall-seed.py`` covers the provider boundary.
+
 GNU-specific C++ probe: ``seeds/g++.sh`` is an optional native GNU
 G++ selector, with ``WHP_GXX_SEED`` / ``GXX`` provider identity
 independent of ``WHP_CXX_SEED`` and ``CXX_FOR_BUILD``.
