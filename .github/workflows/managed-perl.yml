@@ -142,8 +142,8 @@ jobs:
             test -f t/porting/configure_shell_control_flow.t
             control_output="$("$installed" t/porting/configure_shell_control_flow.t)"
             printf '%s\n' "$control_output"
-            grep -Fxq '1..10' <<< "$control_output"
-            test "$(grep -Ec '^ok ([1-9]|10) ' <<< "$control_output")" -eq 10
+            grep -Fxq '1..11' <<< "$control_output"
+            test "$(grep -Ec '^ok ([1-9]|1[01]) ' <<< "$control_output")" -eq 11
             if grep -Eq '^not ok ' <<< "$control_output"; then
               printf '%s\n' 'error: pinned Perl shell control-flow regression failed' >&2
               exit 1

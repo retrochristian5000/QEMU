@@ -129,6 +129,59 @@ class PerlShellControlFlowTests(unittest.TestCase):
             "entered UU\n",
         )
 
+    def test_portable_for_loop_preserves_explicit_ar(self):
+        source = (PERL / "Configure").read_text(encoding="utf-8")
+        start = source.index(": in case they want portability")
+        end = source.index(": create config.sh file", start)
+        block = source[start:end]
+        (self.work / "UU").mkdir()
+        (self.work / "UU" / "optdef.sh").write_text(
+            "ar='/selected/bin/ar'\n", encoding="utf-8",
+        )
+        setup = (
+            "define=define\n"
+            "d_portable=define\n"
+            "loclist=''\n"
+            "trylist='ar nm'\n"
+            "ar='/selected/bin/ar'\n"
+            "nm='/discovered/bin/nm'\n"
+            "grep=grep\n"
+        )
+        result = subprocess.run(
+            ["/bin/sh", "-c",
+             setup + block + '\nprintf "ar=%s\\nnm=%s\\n" "$ar" "$nm"\n'],
+            cwd=self.work, env=self.env, capture_output=True,
+            text=True, check=False, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            result.stdout.endswith("ar=/selected/bin/ar\nnm=nm\n"),
+            result.stdout,
+        )
+
+    def test_portable_for_loop_still_shortens_unselected_paths(self):
+        source = (PERL / "Configure").read_text(encoding="utf-8")
+        start = source.index(": in case they want portability")
+        end = source.index(": create config.sh file", start)
+        (self.work / "UU").mkdir()
+        (self.work / "UU" / "optdef.sh").write_text("", encoding="utf-8")
+        setup = (
+            "define=define\n"
+            "d_portable=define\n"
+            "loclist=''\n"
+            "trylist='ar'\n"
+            "ar='/discovered/bin/ar'\n"
+            "grep=grep\n"
+        )
+        result = subprocess.run(
+            ["/bin/sh", "-c",
+             setup + source[start:end] + '\nprintf "ar=%s\\n" "$ar"\n'],
+            cwd=self.work, env=self.env, capture_output=True,
+            text=True, check=False, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.endswith("ar=ar\n"), result.stdout)
+
     def test_both_shell_entrypoints_pass_posix_syntax_check(self):
         for name in ("Configure", "configure.gnu"):
             with self.subTest(name=name):

@@ -1334,7 +1334,11 @@ The Perl fork uses **metaconfig** (``Configure``), not the GNU
 continues to call ``/bin/sh ./Configure -des``. The Perl fork's POSIX
 shell control-flow repairs are separate: generated ``Configure`` now aborts
 if ``UU`` cannot be created, entered or cleaned, rather than continuing in
-the source checkout. The optional ``configure.gnu`` frontend processes its
+the source checkout. Its portable-mode ``for`` loop also preserves tool
+paths explicitly chosen with ``-D``/``-U``, including the admitted native
+``ar``. Only automatically discovered tool paths are shortened to basenames.
+This fixes a real Linux CI failure where ``config.sh`` contained ``ar='ar'``
+despite QEMU having selected ``/usr/bin/ar``. The optional ``configure.gnu`` frontend processes its
 original option count in a bounded ``while`` loop, rejects missing operands
 and passes each quoted assignment directly (no ``eval``). QEMU's normal
 managed bootstrap **does not switch** to that GNU-style frontend.
