@@ -64,11 +64,11 @@ def main() -> int:
     if not build.index(awk_seed) < build.index(grep_seed) < build.index(seed) < build.index(python_bootstrap):
         raise SystemExit("error: AWK, grep, sed, Python bootstrap order has drifted")
 
-    automake_pos = host_tools.index("BOOTSTRAP_AUTOMAKE=")
-    autoconf_pos = host_tools.index("BOOTSTRAP_AUTOCONF=")
-    sed_pos = host_tools.index("BOOTSTRAP_SED=")
-    git_pos = host_tools.index("BOOTSTRAP_GIT=")
-    bash_pos = host_tools.index("BOOTSTRAP_BASH=")
+    automake_pos = host_tools.index("BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch")
+    autoconf_pos = host_tools.index("BOOTSTRAP_AUTOCONF=$(whp_normalize_auto_switch")
+    sed_pos = host_tools.index("BOOTSTRAP_SED=$(whp_normalize_auto_switch")
+    git_pos = host_tools.index("BOOTSTRAP_GIT=$(whp_normalize_auto_switch")
+    bash_pos = host_tools.index("BOOTSTRAP_BASH=$(whp_normalize_auto_switch")
     if not automake_pos < autoconf_pos < sed_pos < git_pos < bash_pos:
         raise SystemExit(
             "error: expected host-tool order is "

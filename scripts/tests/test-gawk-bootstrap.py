@@ -39,9 +39,9 @@ def check():
     host = (ROOT / "scripts/whp-build/host-tools.sh").read_text()
     # The pinned Gawk source carries generated inputs; it must not use a
     # managed Autoconf that is still waiting to be built.
-    assert host.index("BOOTSTRAP_AUTOMAKE=") < host.index("BOOTSTRAP_GAWK=")
-    assert host.index("BOOTSTRAP_GAWK=") < host.index("BOOTSTRAP_AUTOCONF=")
-    assert host.index("BOOTSTRAP_AUTOCONF=") < host.index("BOOTSTRAP_MAKE=")
+    assert host.index("BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch") < host.index("BOOTSTRAP_GAWK=$(whp_normalize_auto_switch")
+    assert host.index("BOOTSTRAP_GAWK=$(whp_normalize_auto_switch") < host.index("BOOTSTRAP_AUTOCONF=$(whp_normalize_auto_switch")
+    assert host.index("BOOTSTRAP_AUTOCONF=$(whp_normalize_auto_switch") < host.index("BOOTSTRAP_MAKE=$(whp_normalize_auto_switch")
     assert 'for required in ("configure", "Makefile.in", "awkgram.c",' in src
     assert 'command(["/bin/sh", str(source / "configure"),' in src
     assert "autoreconf" not in src and "autom4te" not in src

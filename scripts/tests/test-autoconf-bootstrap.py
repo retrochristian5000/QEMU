@@ -125,9 +125,9 @@ def main() -> int:
     require(config, "'BOOTSTRAP_AUTOCONF',", "Autoconf shell export")
 
     order = [
-        host_tools.index("BOOTSTRAP_AUTOMAKE="),
-        host_tools.index("BOOTSTRAP_AUTOCONF="),
-        host_tools.index("BOOTSTRAP_SED="),
+        host_tools.index("BOOTSTRAP_AUTOMAKE=$(whp_normalize_auto_switch"),
+        host_tools.index("BOOTSTRAP_AUTOCONF=$(whp_normalize_auto_switch"),
+        host_tools.index("BOOTSTRAP_SED=$(whp_normalize_auto_switch"),
     ]
     if order != sorted(order) or len(set(order)) != len(order):
         raise SystemExit(
