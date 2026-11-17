@@ -105,6 +105,15 @@ jobs:
           python3 scripts/tests/test-gnum4-seed.py
           python3 scripts/tests/test-yacc-seed.py
 
+      - name: Verify Autoconf source bootstrap substitutions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule update --init toolchains/autoconf
+          /bin/sh -n toolchains/autoconf/bootstrap
+          /bin/sh -n toolchains/autoconf/tests/bootstrap-host-paths.sh
+          /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
+
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
 
