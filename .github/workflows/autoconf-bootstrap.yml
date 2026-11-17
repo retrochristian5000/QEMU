@@ -170,11 +170,36 @@ jobs:
             'AC_INIT([whp-runtime],[1])' \
             'AC_PROG_CC' \
             'AC_CHECK_FUNCS([gettimeofday])' \
+            'AC_FUNC_ALLOCA' \
             'AC_OUTPUT' > "$runtime_smoke/configure.ac"
           (
             cd "$runtime_smoke"
             env -u M4 "$autoconf_prefix/bin/autoconf"
             test -f configure
+            CFLAGS=-std=c11 /bin/sh ./configure > configure-smoke.log 2>&1 || {
+              cat configure-smoke.log >&2
+              exit 1
+            }
+            test -f config.log
+            # AC_FUNC_ALLOCA no longer implies the obsolete size_t probe.
+            if grep -Fq 'checking for size_t' configure; then
+              printf '%s\n' 'error: alloca unexpectedly generated legacy size_t check' >&2
+              exit 1
+            fi
+          )
+
+          # The legacy macro remains available for projects requesting it,
+          # but ordinary consumers should use AC_CHECK_TYPES explicitly.
+          legacy_smoke="$RUNNER_TEMP/autoconf-legacy-size-t-smoke"
+          mkdir -p "$legacy_smoke"
+          printf '%s\n' \
+            'AC_INIT([whp-legacy-size-t],[1])' \
+            'AC_PROG_CC' \
+            'AC_TYPE_SIZE_T' \
+            'AC_OUTPUT' > "$legacy_smoke/configure.ac"
+          (
+            cd "$legacy_smoke"
+            env -u M4 "$autoconf_prefix/bin/autoconf"
             CFLAGS=-std=c11 /bin/sh ./configure > configure-smoke.log 2>&1 || {
               cat configure-smoke.log >&2
               exit 1
