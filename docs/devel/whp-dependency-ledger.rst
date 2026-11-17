@@ -1331,7 +1331,16 @@ Perl Configure platform-hint and effective-result audit
 
 The Perl fork uses **metaconfig** (``Configure``), not the GNU
 ``configure.gnu`` compatibility wrapper or Autoconf. The managed build
-continues to call ``/bin/sh ./Configure -des``. It now provides
+continues to call ``/bin/sh ./Configure -des``. The Perl fork's POSIX
+shell control-flow repairs are separate: generated ``Configure`` now aborts
+if ``UU`` cannot be created, entered or cleaned, rather than continuing in
+the source checkout. The optional ``configure.gnu`` frontend processes its
+original option count in a bounded ``while`` loop, rejects missing operands
+and passes each quoted assignment directly (no ``eval``). QEMU's normal
+managed bootstrap **does not switch** to that GNU-style frontend.
+``t/porting/configure_shell_control_flow.t`` and the offline
+``scripts/tests/test-perl-configure-control-flow.py`` cover these guards
+without an interactive Configure run. It now provides
 ``-Dld=<selected native C compiler>`` as well as the existing explicit
 ``-Dcc``, ``-Dar``, ``-Dfull_ar``, and ``-Dranlib``, rather than
 allowing a default ``ld`` driver to select another toolchain family.
