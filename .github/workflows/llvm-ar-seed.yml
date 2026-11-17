@@ -77,7 +77,11 @@ jobs:
         run: |
           /bin/sh -n seeds/GNUar.sh
           /bin/sh -n scripts/tests/test-GNUar-seed.sh
-          /bin/sh scripts/tests/test-GNUar-seed.sh
+          if ! /bin/sh scripts/tests/test-GNUar-seed.sh; then
+            printf '%s\n' 'error: GNU ar seed failed; rerunning with failure-only trace' >&2
+            /bin/sh -x scripts/tests/test-GNUar-seed.sh
+            exit 1
+          fi
       - name: Validate GNU and LLVM archive provider diagnostics
         shell: bash
         run: bash scripts/tests/test-archive-tool-policy.bash
