@@ -22,7 +22,8 @@ class M4SeedTest(unittest.TestCase):
         uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n", encoding="utf-8")
         uname.chmod(0o755)
 
-    def fake(self, name, version="1.4.21", expansion="abXcd"):
+    def fake(self, name, version="1.4.21", expansion="abXcd",
+             trace="m4trace:stdin:3: -1- T(<traced>)", freeze=True):
         path = self.directory / name
         path.write_text(
             "#!/bin/sh\n"
@@ -33,6 +34,13 @@ class M4SeedTest(unittest.TestCase):
             "if [ \"$1\" = --gnu ] && [ \"$2\" = --fatal-warnings ]; then\n"
             f"    printf '%s\\n' '{expansion}'\n"
             "    exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = --gnu ] && [ \"$2\" = --trace=T ]; then\n"
+            f"    printf '%s\\n' '{trace}'\n"
+            "    exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = --gnu ] && [ \"$2\" = -F ]; then\n"
+            f"    exit {0 if freeze else 1}\n"
             "fi\n"
             "if [ \"$1\" = --libs ]; then printf '%s\\n' \"$0\"; exit 0; fi\n"
             "exit 1\n",
@@ -83,6 +91,18 @@ class M4SeedTest(unittest.TestCase):
         fake = self.fake("bad-m4", version="99.99", expansion="not-expanded")
         result = self.run_seed("--print-seed", WHP_M4_SEED=str(fake))
         self.assertNotEqual(result.returncode, 0)
+
+    def test_autoconf_trace_output_must_work(self):
+        fake = self.fake("bad-trace-m4", trace="unexpected trace")
+        result = self.run_seed("--print-seed", WHP_M4_SEED=str(fake))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Autoconf trace output is incompatible", result.stderr)
+
+    def test_autoconf_frozen_state_must_work(self):
+        fake = self.fake("bad-freeze-m4", freeze=False)
+        result = self.run_seed("--print-seed", WHP_M4_SEED=str(fake))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Autoconf frozen-state probe failed", result.stderr)
 
     def test_recursive_override_rejected(self):
         result = self.run_seed("--print-seed", WHP_M4_SEED=str(SEED))
