@@ -423,7 +423,7 @@ def gnu_m4_version(path: str) -> str:
 
 def select_gnu_m4() -> str:
     # Share the Autoconf/Libtool GNU M4 admission and candidate priority.
-    adapter = ROOT / "seeds" / "m4.sh"
+    adapter = ROOT / "seeds" / "gnum4.sh"
     if not adapter.is_file():
         raise RuntimeError(f"QEMU GNU M4 seed is unavailable: {adapter}")
     completed = subprocess.run(

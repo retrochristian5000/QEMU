@@ -441,7 +441,7 @@ def select_gnu_m4() -> str:
     # One validated GNU M4 selection for all maintainer-source consumers.
     # The seed checks the Autoconf 1.4.16 floor and GNU macro execution,
     # including explicitly requested M4/WHP_M4_SEED implementations.
-    adapter = ROOT / "seeds" / "m4.sh"
+    adapter = ROOT / "seeds" / "gnum4.sh"
     if not adapter.is_file():
         raise RuntimeError(f"QEMU GNU M4 seed is unavailable: {adapter}")
     completed = subprocess.run(
