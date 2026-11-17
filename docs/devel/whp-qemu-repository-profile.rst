@@ -28,6 +28,33 @@ QEMU authorities
 * ``scripts/whp-config/config.py``: QEMU configuration schema and handoff.
 * ``seeds/`` and ``scripts/whp-build/seed-bin/``: QEMU host-tool selection.
 
+Path ownership: bootstrap tools versus repository inputs
+----------------------------------------------------------
+
+The POSIX ``build.sh`` entry and its ``builder.sh``/
+``builder.bash`` handoffs derive the **physical absolute checkout root**
+from the invoked script, following external launcher symlinks. Invocation
+from another current directory or through ``PATH`` must not move
+``SOURCE_DIR`` or cause a seed lookup beneath the launcher's directory.
+The entrypoint rejects a missing checkout rather than searching an
+unrelated directory for ``seeds/``.
+
+An external **executable** selected for a host bootstrap should be frozen
+to an absolute *invoked* pathname before nested configure, ``cd``, or
+``PATH`` changes. Preserve the basename of an executable symlink:
+``llvm-ranlib`` and similar LLVM multicall tools may derive their action
+from ``argv[0]``. In particular, Ninja forwards a validated,
+absolute ``AR_FOR_BUILD`` as its bootstrap ``AR``, without substituting
+QEMU artifact ``AR`` or interpreting an executable request as command
+arguments. Invalid explicit executables fail closed.
+
+By contrast, ``#include "qemu/..."`` and other in-repository header
+names remain relative to *declared include roots* supplied by Meson,
+CMake, or the compiler. The build should not bake a developer's absolute
+checkout path into its source headers or promote target-specific SDK
+headers into a native build-machine role. ``test-build-entry-paths.py``
+and ``test-ninja-macos-host-compiler.py`` guard these path boundaries.
+
 C language compatibility and targeted modernization
 -------------------------------------------------
 

@@ -257,5 +257,72 @@ class NinjaMacOSHostCompilerTests(unittest.TestCase):
                 arch_probe.assert_not_called()
 
 
+class NinjaHostArchiverPathTests(unittest.TestCase):
+    def test_relative_build_ar_is_frozen_before_ninja_changes_directory(self):
+        mod = load_bootstrap_module()
+        with tempfile.TemporaryDirectory(prefix="whp-ninja-ar-path-") as temp:
+            root = pathlib.Path(temp)
+            bin_dir = root / "tools with spaces"
+            bin_dir.mkdir()
+            actual = bin_dir / "real-ar"
+            actual.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            actual.chmod(0o755)
+            invoked = bin_dir / "llvm-ar"
+            invoked.symlink_to(actual)
+            before = pathlib.Path.cwd()
+            try:
+                os.chdir(root)
+                with mock.patch.dict(os.environ, {
+                    "AR_FOR_BUILD": "tools with spaces/llvm-ar",
+                    "AR": "/unrelated/target-ar",
+                }, clear=True):
+                    selected = mod.bootstrap_environment("/usr/bin/c++", "")
+                    self.assertEqual(selected["AR"], str(invoked))
+                    self.assertNotEqual(selected["AR"], str(actual))
+                    self.assertFalse("AR_FOR_BUILD" in selected or
+                                     selected.get("AR") == "/unrelated/target-ar")
+                os.chdir(before)
+                self.assertTrue(pathlib.Path(selected["AR"]).is_file())
+            finally:
+                os.chdir(before)
+
+    def test_bare_archiver_comes_from_path_not_current_directory(self):
+        mod = load_bootstrap_module()
+        with tempfile.TemporaryDirectory(prefix="whp-ninja-ar-lookup-") as temp:
+            root = pathlib.Path(temp)
+            bindir = root / "bin"
+            bindir.mkdir()
+            tool = bindir / "ar"
+            tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            tool.chmod(0o755)
+            with mock.patch.dict(os.environ, {
+                "PATH": str(bindir) + os.pathsep + os.environ.get("PATH", ""),
+                "AR_FOR_BUILD": "ar",
+            }):
+                self.assertEqual(
+                    mod.bootstrap_environment("/usr/bin/c++", "")["AR"], str(tool)
+                )
+
+    def test_invalid_build_archiver_does_not_fall_back(self):
+        mod = load_bootstrap_module()
+        with tempfile.TemporaryDirectory(prefix="whp-ninja-ar-bad-") as temp:
+            for invalid in (str(pathlib.Path(temp) / "missing-ar"),
+                            "ar --plugin=/somewhere/plugin.so"):
+                with self.subTest(invalid=invalid):
+                    with mock.patch.dict(os.environ, {
+                        "AR_FOR_BUILD": invalid,
+                        "AR": "/unrelated/target-ar",
+                    }, clear=True):
+                        with self.assertRaisesRegex(RuntimeError, "AR_FOR_BUILD"):
+                            mod.bootstrap_environment("/usr/bin/c++", "")
+
+    def test_unset_build_ar_never_inherits_qemu_artifact_ar(self):
+        mod = load_bootstrap_module()
+        with mock.patch.dict(os.environ, {
+            "AR": "/target/toolchain/ar",
+        }, clear=True):
+            self.assertNotIn("AR", mod.bootstrap_environment("/usr/bin/c++", ""))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -360,6 +360,29 @@ def copy_ninja_source(destination: pathlib.Path) -> None:
     )
 
 
+def resolve_build_archiver(value: str) -> str:
+    """Freeze an externally selected host ar before changing build directory.
+
+    Keep the invoked symlink basename (not Path.resolve()), since archive
+    providers can be multicall tools. Never interpret AR_FOR_BUILD as a shell
+    command or inherit QEMU artifact AR for a native Ninja bootstrap.
+    """
+    requested = value
+    if not requested:
+        raise RuntimeError("AR_FOR_BUILD must name a host archiver")
+    # A path may contain spaces, but a bare executable name must not smuggle
+    # arguments or silently resolve a same-named local file outside PATH.
+    if os.path.sep in requested:
+        candidate = requested
+    elif any(c.isspace() for c in requested):
+        raise RuntimeError(f"AR_FOR_BUILD must name one executable: {value}")
+    else:
+        candidate = shutil.which(requested)
+    if not candidate or not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
+        raise RuntimeError(f"AR_FOR_BUILD is not executable: {value}")
+    return os.path.abspath(candidate)
+
+
 def bootstrap_environment(
     cxx: str,
     sdkroot: str,
@@ -422,7 +445,7 @@ def bootstrap_environment(
             link_flags += ' -Wl,-O2 -Wl,-dead_strip'
         bootstrap_env['LDFLAGS'] = link_flags
     if os.environ.get('AR_FOR_BUILD'):
-        bootstrap_env['AR'] = os.environ['AR_FOR_BUILD']
+        bootstrap_env['AR'] = resolve_build_archiver(os.environ['AR_FOR_BUILD'])
     return bootstrap_env
 
 

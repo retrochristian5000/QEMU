@@ -1,12 +1,43 @@
 #!/bin/sh
 set -eu
 
-case "$0" in
-    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+# Direct calls also need the physical checkout root when launched through
+# an external alias. Keep the filename itself for the later Bash handoff.
+whp_entry=$0
+case "$whp_entry" in
+    */*) ;;
+    *)
+        if [ -f "$whp_entry" ]; then
+            # Explicit interpreter calls can supply a bare local script filename.
+            whp_entry=./$whp_entry
+        else
+            whp_entry=$(command -v "$whp_entry") || exit 1
+        fi
+        ;;
+esac
+whp_depth=0
+while [ -L "$whp_entry" ]; do
+    whp_depth=$((whp_depth + 1))
+    [ "$whp_depth" -le 16 ] || {
+        printf 'error: QEMU builder entry symlink loop: %s\n' "$0" >&2
+        exit 1
+    }
+    whp_link=$(readlink "$whp_entry") || exit 1
+    case "$whp_link" in
+        /*) whp_entry=$whp_link ;;
+        *) whp_entry=${whp_entry%/*}/$whp_link ;;
+    esac
+done
+case "$whp_entry" in
+    */*) whp_entry_dir=${whp_entry%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
     *) whp_entry_dir=. ;;
 esac
-script_dir=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
-unset whp_entry_dir
+script_dir=$(CDPATH= cd -P -- "$whp_entry_dir" && pwd -P) || exit 1
+[ -f "$script_dir/build.sh" ] || {
+    printf 'error: builder entry does not resolve to a QEMU checkout: %s\n' "$script_dir" >&2
+    exit 1
+}
+unset whp_entry whp_entry_dir whp_depth whp_link
 
 # Direct calls must enter through the public policy boundary first.
 if [ "${WHP_BUILD_ENTRY_NORMALIZED:-0}" != 1 ]; then

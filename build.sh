@@ -2,12 +2,51 @@
 
 set -eu
 
-case "$0" in
-    */*) whp_entry_dir=${0%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
+# The public launcher may be invoked from PATH or through a symlink
+# outside this checkout. Resolve the SCRIPT, not just its containing directory,
+# before deriving the absolute repository root used for seed/script lookups.
+# Do not require GNU realpath or Python before bootstrap seeds exist.
+whp_entry=$0
+case "$whp_entry" in
+    */*) ;;
+    *)
+        if [ -f "$whp_entry" ]; then
+            # Explicit interpreter calls can supply a bare local script filename.
+            whp_entry=./$whp_entry
+        else
+            whp_entry=$(command -v "$whp_entry") || {
+                printf 'error: cannot locate QEMU build entry: %s\n' "$0" >&2
+                exit 1
+            }
+        fi
+        ;;
+esac
+whp_entry_depth=0
+while [ -L "$whp_entry" ]; do
+    whp_entry_depth=$((whp_entry_depth + 1))
+    [ "$whp_entry_depth" -le 16 ] || {
+        printf 'error: QEMU build entry symlink loop: %s\n' "$0" >&2
+        exit 1
+    }
+    whp_link=$(readlink "$whp_entry") || {
+        printf 'error: cannot read QEMU build entry symlink: %s\n' "$whp_entry" >&2
+        exit 1
+    }
+    case "$whp_link" in
+        /*) whp_entry=$whp_link ;;
+        *) whp_entry=${whp_entry%/*}/$whp_link ;;
+    esac
+done
+case "$whp_entry" in
+    */*) whp_entry_dir=${whp_entry%/*}; [ -n "$whp_entry_dir" ] || whp_entry_dir=/ ;;
     *) whp_entry_dir=. ;;
 esac
-SOURCE_DIR=$(CDPATH= cd -- "$whp_entry_dir" && pwd)
-unset whp_entry_dir
+SOURCE_DIR=$(CDPATH= cd -P -- "$whp_entry_dir" && pwd -P) || exit 1
+[ -f "$SOURCE_DIR/scripts/whp-build/shell-functions.sh" ] || {
+    printf 'error: QEMU build entry does not resolve to a checkout: %s\n' "$SOURCE_DIR" >&2
+    exit 1
+}
+unset whp_entry whp_entry_dir whp_entry_depth whp_link
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 

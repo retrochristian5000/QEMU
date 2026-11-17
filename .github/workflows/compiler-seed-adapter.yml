@@ -34,6 +34,8 @@ on:
       - 'seeds/ld.sh'
       - 'builder.sh'
       - 'builder.bash'
+      - 'scripts/tests/test-build-entry-paths.py'
+      - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
@@ -88,6 +90,8 @@ on:
       - 'seeds/ld.sh'
       - 'builder.sh'
       - 'builder.bash'
+      - 'scripts/tests/test-build-entry-paths.py'
+      - 'scripts/tests/test-ninja-macos-host-compiler.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/tests/test-compiler-cache-policy.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
@@ -131,6 +135,14 @@ jobs:
           /bin/sh -n scripts/tests/test-host-version-report.sh
           /bin/sh scripts/tests/test-host-version-report.sh
           /bin/sh scripts/whp-build/host-version-report.sh
+
+      - name: Verify absolute launcher roots and host-tool path admission
+        run: |
+          /bin/sh -n build.sh
+          /bin/sh -n builder.sh
+          bash -n builder.bash
+          python3 scripts/tests/test-build-entry-paths.py -v
+          python3 scripts/tests/test-ninja-macos-host-compiler.py -v
 
       - name: Verify Homebrew seed selection without installing packages
         run: |

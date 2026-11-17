@@ -2,7 +2,39 @@
 
 set -euo pipefail
 
-SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Preserve the public build.sh policy boundary even if this Bash runner
+# is called through a symlink in another directory.
+whp_entry=${BASH_SOURCE[0]}
+case "$whp_entry" in
+    */*) ;;
+    *)
+        if [ -f "$whp_entry" ]; then
+            # Explicit interpreter calls can supply a bare local script filename.
+            whp_entry=./$whp_entry
+        else
+            whp_entry=$(command -v "$whp_entry") || exit 1
+        fi
+        ;;
+esac
+whp_depth=0
+while [[ -L "$whp_entry" ]]; do
+    whp_depth=$((whp_depth + 1))
+    if (( whp_depth > 16 )); then
+        printf 'error: QEMU Bash runner symlink loop: %s\n' "${BASH_SOURCE[0]}" >&2
+        exit 1
+    fi
+    whp_link=$(readlink "$whp_entry") || exit 1
+    case "$whp_link" in
+        /*) whp_entry=$whp_link ;;
+        *) whp_entry=${whp_entry%/*}/$whp_link ;;
+    esac
+done
+SOURCE_DIR="$(CDPATH= cd -P -- "$(dirname -- "$whp_entry")" && pwd -P)"
+[ -f "$SOURCE_DIR/build.sh" ] || {
+    printf 'error: Bash runner does not resolve to a QEMU checkout: %s\n' "$SOURCE_DIR" >&2
+    exit 1
+}
+unset whp_entry whp_depth whp_link
 BUILD_SYSTEM_DIR="$SOURCE_DIR/scripts/whp-build"
 
 # builder.sh is the normalized stage runner, not a second public entry point.
