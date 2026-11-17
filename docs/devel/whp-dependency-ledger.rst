@@ -1214,15 +1214,21 @@ checks actual driver arguments in both ordinary and SDK-root handoffs.
 Old root-level adapter entrypoints are intentionally absent; callers, tests,
 and CI use the namespaced paths.
 
-The native ``m4.sh`` seed selects GNU M4 for maintainer-source
-Autotools generation. It accepts explicit ``WHP_M4_SEED`` or ``M4``
-without silent fallback, prefers a Homebrew GNU M4 keg on macOS before
-checking ``m4`` and ``gm4`` on PATH, and rejects obsolete GNU M4
-versions below 1.4.16 or implementations failing the GNU
-``patsubst`` execution check. Autoconf, Libtool and libisofs resolve the same host
-M4 identity before recording their own bootstrap cache markers. The seed
-is not a universal runtime QEMU dependency: it belongs to maintainer-source
-regeneration, rather than builds using existing generated inputs.
+The native ``m4.sh`` seed selects **generic M4**: it accepts explicitly
+requested ``WHP_M4_SEED`` or ``M4`` without fallback and otherwise tests
+``m4``, ``gm4`` and ``gnum4`` on PATH. It verifies traditional portable
+``changequote``, ``define`` and ``dnl`` builtins; a working BSD M4 is a
+valid generic provider but cannot satisfy a GNU-only Autotools requirement.
+
+The distinct ``gnum4.sh`` seed is the required GNU M4 provider for Autoconf,
+Libtool and libisofs. It accepts ``WHP_GNUM4_SEED``/``GNUM4`` before legacy
+``WHP_M4_SEED``/``M4``, failing closed for every invalid explicit choice.
+On macOS it checks Homebrew GNU M4 kegs before PATH implementations.
+Admission requires GNU M4 >= 1.4.16, working ``patsubst`` expansion,
+Autoconf-compatible traces and a frozen-state check. Both seeds reject
+recursive adapters and preserve executable paths containing spaces or
+apostrophes. Generic M4 identity is never promoted as GNU M4. These host
+tools serve source generation, not unconditional QEMU runtime requirements.
 
 The native ``pkg-config.sh`` seed selects a usable ``pkg-config`` or
 ``pkgconf`` executable for build-machine dependency detection. Explicit

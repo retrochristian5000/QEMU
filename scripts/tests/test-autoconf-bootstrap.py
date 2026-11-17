@@ -77,15 +77,18 @@ def main() -> int:
         '("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF", "M4")',
         "installed-runtime M4 isolation",
     )
-    seed = (ROOT / "seeds/m4.sh").read_text(encoding="utf-8")
-    require(helper, 'ROOT / "seeds" / "m4.sh"', "shared GNU M4 seed")
+    seed = (ROOT / "seeds/gnum4.sh").read_text(encoding="utf-8")
+    generic = (ROOT / "seeds/m4.sh").read_text(encoding="utf-8")
+    require(helper, 'ROOT / "seeds" / "gnum4.sh"', "dedicated GNU M4 seed")
+    require(generic, "WHP generic M4 seed:", "generic M4 identity")
+    require(seed, "WHP_GNUM4_SEED", "GNU M4 override isolation")
     require(helper, '["/bin/sh", str(adapter), "--print-seed"]',
             "GNU M4 seed selection call")
     require(seed, "/opt/homebrew/opt/m4/bin/m4",
             "Apple Silicon Homebrew M4 preference")
     require(seed, "/usr/local/opt/m4/bin/m4",
             "Intel Homebrew M4 preference")
-    require(seed, "for candidate in m4 gm4; do", "canonical M4 fallback order")
+    require(seed, "for candidate in m4 gm4 gnum4; do", "canonical GNU M4 fallback order")
     require(seed, "patsubst(", "GNU macro execution seed probe")
     require(helper, 'm4_link = seed_bin / "m4"', "literal M4 bootstrap shim")
     require(helper, '"AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF"', "self-host isolation")

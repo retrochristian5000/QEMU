@@ -9,6 +9,7 @@ on:
       - 'toolchains/automake'
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
+      - 'seeds/gnum4.sh'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
       - 'seeds/autoconf.sh'
@@ -18,6 +19,7 @@ on:
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
+      - 'scripts/tests/test-gnum4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
@@ -34,6 +36,7 @@ on:
       - 'toolchains/automake'
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
+      - 'seeds/gnum4.sh'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
       - 'seeds/autoconf.sh'
@@ -43,6 +46,7 @@ on:
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
+      - 'scripts/tests/test-gnum4-seed.py'
       - 'scripts/ensure-autoconf.py'
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
@@ -81,8 +85,11 @@ jobs:
             sudo apt-get install --no-install-recommends -y autoconf m4 texinfo
           fi
 
-      - name: Test GNU M4 seed
-        run: python3 scripts/tests/test-m4-seed.py
+      - name: Test separate generic and GNU M4 seeds
+        run: |
+          /bin/sh -n seeds/m4.sh seeds/gnum4.sh
+          python3 scripts/tests/test-m4-seed.py
+          python3 scripts/tests/test-gnum4-seed.py
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
