@@ -116,6 +116,9 @@ jobs:
           /bin/sh -n toolchains/autoconf/tests/bootstrap-host-paths.sh
           /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
 
+      - name: Validate fork Makefile recipes and failure recovery
+        run: python3 toolchains/autoconf/tests/makefile-rules-smoke.py
+
       - name: Verify preflight, cache and runtime validation guards
         run: python3 scripts/tests/test-ensure-autoconf-validation.py
 
