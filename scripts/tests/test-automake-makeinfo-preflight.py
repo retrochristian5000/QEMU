@@ -92,13 +92,13 @@ class AutomakeMakeinfoTests(unittest.TestCase):
             "WHP_AUTOMAKE_MAKEINFO_SEED": str(self.root / "missing"),
             "MAKEINFO": str(self.good),
         }):
-            with self.assertRaisesRegex(RuntimeError, "not executable"):
+            with self.assertRaisesRegex(RuntimeError, "invalid explicit GNU makeinfo seed"):
                 module.select_makeinfo()
         with mock.patch.dict(os.environ, {
             "WHP_AUTOMAKE_MAKEINFO_SEED": "makeinfo --force",
             "MAKEINFO": str(self.good),
         }):
-            with self.assertRaisesRegex(RuntimeError, "one executable"):
+            with self.assertRaisesRegex(RuntimeError, "invalid explicit GNU makeinfo seed"):
                 module.select_makeinfo()
 
     def test_missing_texinfo_reports_required_git_source_dependency(self):
