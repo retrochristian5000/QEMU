@@ -118,30 +118,88 @@ def root_perl() -> str:
     return path
 
 
-def valid_perl(path: pathlib.Path) -> bool:
-    if not path.is_file() or not os.access(path, os.X_OK):
+def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
+    """Check the installed interpreter, core modules, and host OS.
+
+    Reuse checks need only a boolean. Installation checks can pass a list to
+    receive the exact failed condition without repeating the Perl subprocess.
+    """
+    def reject(reason: str) -> bool:
+        if failures is not None:
+            failures.append(reason)
         return False
+
+    if not path.is_file():
+        return reject(f"Perl executable is missing: {path}")
+    if not os.access(path, os.X_OK):
+        return reject(f"Perl executable is not executable: {path}")
+
+    # Tag Perl-side failures so that a missing core module is distinguishable
+    # from an interpreter that could not start or run a program at all.
     program = (
-        "use 5.006; use strict; use warnings; use Config; "
-        "my $os = $Config{osname}; "
-        'print "whp-perl-native:$os\\n";'
+        'eval { require 5.006; 1 } or do { '
+        'print STDERR "WHP_PERL_VERSION:$@"; exit 41 }; '
+        'eval { require strict; 1 } or do { '
+        'print STDERR "WHP_PERL_MODULE:strict:$@"; exit 42 }; '
+        'eval { require warnings; 1 } or do { '
+        'print STDERR "WHP_PERL_MODULE:warnings:$@"; exit 42 }; '
+        'eval { require Config; 1 } or do { '
+        'print STDERR "WHP_PERL_MODULE:Config:$@"; exit 42 }; '
+        'my $os = $Config::Config{osname}; '
+        'print "whp-perl-native:$os\n";'
     )
     try:
         result = subprocess.run(
-            [str(path), "-e", program], text=True,
+            [str(path), "-e", program], text=True, errors="replace",
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             check=False, timeout=15,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    if result.returncode or not result.stdout.startswith("whp-perl-native:"):
-        return False
+    except subprocess.TimeoutExpired:
+        return reject(f"Perl interpreter timed out after 15 seconds: {path}")
+    except OSError as exc:
+        return reject(f"Perl interpreter could not start: {path}: {exc}")
+
+    if result.returncode:
+        detail = result.stderr.strip()
+        if "WHP_PERL_MODULE:" in detail:
+            label = detail.split("WHP_PERL_MODULE:", 1)[1]
+            module, _, diagnostic = label.partition(":")
+            return reject(
+                f"Perl core module {module!r} failed to load (exit "
+                f"{result.returncode}): {diagnostic.strip() or 'no details'}; "
+                f"interpreter={path}"
+            )
+        if "WHP_PERL_VERSION:" in detail:
+            diagnostic = detail.split("WHP_PERL_VERSION:", 1)[1].strip()
+            return reject(
+                f"Perl interpreter version check failed (exit "
+                f"{result.returncode}): {diagnostic or 'no details'}; "
+                f"interpreter={path}"
+            )
+        return reject(
+            f"Perl interpreter exited with status {result.returncode}: "
+            f"{detail or 'no stderr output'}; interpreter={path}"
+        )
+
+    if not result.stdout.startswith("whp-perl-native:"):
+        return reject(
+            f"Perl interpreter returned unexpected validation output: "
+            f"{result.stdout.strip()!r}; stderr={result.stderr.strip()!r}; "
+            f"interpreter={path}"
+        )
     configured = result.stdout.strip().split(":", 1)[1]
+    if not configured:
+        return reject(f"Perl Config.pm returned an empty osname: interpreter={path}")
+
     expected = {"Darwin": "darwin", "Linux": "linux",
                 "FreeBSD": "freebsd", "NetBSD": "netbsd",
                 "OpenBSD": "openbsd"}.get(platform.system())
-    return bool(configured) and (expected is None or configured == expected)
-
+    if expected is not None and configured != expected:
+        return reject(
+            f"Perl Config.pm OS mismatch: reported={configured!r}, "
+            f"expected={expected!r}; interpreter={path}"
+        )
+    return True
 
 
 def validate_installed_core_headers(executable: pathlib.Path,
@@ -556,9 +614,11 @@ def bootstrap(build_dir: pathlib.Path) -> pathlib.Path:
             raise RuntimeError("Perl source build produced no executable")
         run([make, "install"], cwd=source, env=env,
             phase="install", log_path=work / "install.log")
-        if not valid_perl(executable):
+        validation_failures: list[str] = []
+        if not valid_perl(executable, validation_failures):
             raise RuntimeError(
-                "managed Perl failed installed interpreter/module/OS checks"
+                "managed Perl installation validation failed: "
+                + "; ".join(validation_failures)
             )
         validate_installed_core_headers(executable, prefix, cc, sdk, work)
         # Never mark an incomplete installation as reusable.
