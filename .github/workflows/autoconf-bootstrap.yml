@@ -24,6 +24,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/tests/test-autoconf-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
@@ -51,6 +52,7 @@ on:
       - 'scripts/ensure-automake.py'
       - 'scripts/tests/test-automake-seed-cycle.py'
       - 'scripts/tests/test-autoconf-bootstrap.py'
+      - 'scripts/tests/test-autoconf-rollback.py'
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/whp-config/config.py'
       - 'scripts/bootstrap_env.py'
@@ -93,6 +95,9 @@ jobs:
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
+
+      - name: Verify Autoconf install rollback and recovery
+        run: python3 scripts/tests/test-autoconf-rollback.py
 
       - name: Verify independent Autoconf bootstrap seed
         run: python3 scripts/tests/test-automake-seed-cycle.py

@@ -496,6 +496,15 @@ def marker_text(
     )
 
 
+def restore_previous_install(prefix: pathlib.Path, backup: pathlib.Path) -> None:
+    """Recover the previous installation after an interrupted rebuild."""
+    if not backup.exists():
+        return
+    if prefix.exists():
+        shutil.rmtree(prefix)
+    backup.rename(prefix)
+
+
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     revision = ensure_source()
     automake, aclocal = select_automake_pair()
@@ -524,6 +533,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     source = work / "source"
     objects = work / "build"
     marker_path = prefix / ".whp-autoconf-bootstrap"
+    backup = build_root / "bootstrap" / "autoconf-previous-install"
 
     marker = marker_text(
         revision, automake, aclocal, m4, perl, make, seed, cc, config_shell
@@ -532,6 +542,18 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
     if bootstrap_ldflags:
         marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
+    # Recover from a prior interrupted rebuild. A completed replacement
+    # is kept only if its marker and installed runtime both validate.
+    if backup.exists():
+        if (
+            marker_path.is_file()
+            and marker_path.read_text(encoding="utf-8", errors="replace") == marker
+            and suite_usable(prefix)
+        ):
+            shutil.rmtree(backup)
+            return prefix
+        restore_previous_install(prefix, backup)
+
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
@@ -539,7 +561,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     ):
         return prefix
 
-    shutil.rmtree(prefix, ignore_errors=True)
+    # Prepare sources without destroying the previous installed suite.
     shutil.rmtree(work, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
@@ -602,32 +624,47 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         file=sys.stderr,
     )
 
-    run_logged([config_shell, str(source / "bootstrap")], cwd=source, env=env)
-    configure = source / "configure"
-    if not configure.is_file():
-        raise RuntimeError("Autoconf bootstrap did not generate configure")
+    # Installed Autoconf scripts embed this final prefix. A staging-prefix
+    # install followed by a rename would invalidate those embedded paths.
+    if prefix.exists():
+        prefix.rename(backup)
+    try:
+        run_logged([config_shell, str(source / "bootstrap")], cwd=source, env=env)
+        configure = source / "configure"
+        if not configure.is_file():
+            raise RuntimeError("Autoconf bootstrap did not generate configure")
 
-    run_logged(
-        [config_shell, str(configure), f"--prefix={prefix}"],
-        cwd=objects,
-        env=env,
-    )
-    run_logged(
-        [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1)))), *BUILD_TARGETS],
-        cwd=objects,
-        env=env,
-    )
-    run_logged(
-        [make, *INSTALL_TARGETS, "pkgdata_DATA="],
-        cwd=objects,
-        env=env,
-    )
-
-    if not suite_usable(prefix):
-        raise RuntimeError(
-            f"bootstrapped Autoconf tool suite is not usable: {prefix}"
+        run_logged(
+            [config_shell, str(configure), f"--prefix={prefix}"],
+            cwd=objects,
+            env=env,
         )
-    marker_path.write_text(marker, encoding="utf-8")
+        run_logged(
+            [make, "-j", str(max(1, int(os.environ.get("JOBS", os.cpu_count() or 1)))), *BUILD_TARGETS],
+            cwd=objects,
+            env=env,
+        )
+        run_logged(
+            [make, *INSTALL_TARGETS, "pkgdata_DATA="],
+            cwd=objects,
+            env=env,
+        )
+
+        if not suite_usable(prefix):
+            raise RuntimeError(
+                f"bootstrapped Autoconf tool suite is not usable: {prefix}"
+            )
+        marker_path.write_text(marker, encoding="utf-8")
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        if backup.exists():
+            restore_previous_install(prefix, backup)
+            print("WHP Autoconf: restored previous installation", file=sys.stderr)
+        else:
+            shutil.rmtree(prefix, ignore_errors=True)
+        raise
+
+    if backup.exists():
+        shutil.rmtree(backup)
     return prefix
 
 
