@@ -132,6 +132,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Verify GNU coreutils install seed independently
+        run: |
+          /bin/sh -n seeds/GNUinstall.sh
+          python3 scripts/tests/test-GNUinstall-seed.py
+
       - name: Record CI tool versions and SDK selection
         shell: bash
         run: |
@@ -167,11 +172,6 @@ jobs:
           /bin/sh -n scripts/whp-build/seed-bin/install
           bash -n scripts/tests/test-install-seed-adapter.bash
           bash scripts/tests/test-install-seed-adapter.bash
-
-      - name: Verify GNU coreutils install seed independently
-        run: |
-          /bin/sh -n seeds/GNUinstall.sh
-          python3 scripts/tests/test-GNUinstall-seed.py
 
       - name: Verify native Clang identity and cc handoff
         run: |
