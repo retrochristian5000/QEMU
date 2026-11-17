@@ -6,6 +6,8 @@ on:
     paths:
       - '.gitmodules'
       - 'seeds/sed.sh'
+      - 'seeds/makeinfo.sh'
+      - 'scripts/tests/test-makeinfo-seed.py'
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-automake.py'
@@ -18,6 +20,8 @@ on:
     paths:
       - '.gitmodules'
       - 'seeds/sed.sh'
+      - 'seeds/makeinfo.sh'
+      - 'scripts/tests/test-makeinfo-seed.py'
       - 'toolchains/automake'
       - 'build.sh'
       - 'scripts/ensure-automake.py'
@@ -40,8 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - name: Validate Git-source Texinfo preflight without host packages
-        run: python3 scripts/tests/test-automake-makeinfo-preflight.py -v
+      - name: Validate GNU Texinfo seed and Automake preflight without host packages
+        run: |
+          sh -n seeds/makeinfo.sh
+          python3 scripts/tests/test-makeinfo-seed.py -v
+          python3 scripts/tests/test-automake-makeinfo-preflight.py -v
 
       - name: Install bootstrap prerequisites (Linux)
         if: runner.os == 'Linux'
@@ -64,6 +71,8 @@ jobs:
           set -euo pipefail
           seed="$(./seeds/sed.sh --print-seed)"
           test "$(printf 'alpha\n' | ./seeds/sed.sh -n 's/^alpha$/beta/p')" = beta
+          texinfo="$(/bin/sh ./seeds/makeinfo.sh --print-seed)"
+          test -x "$texinfo"
           prefix="$(WHP_AUTOMAKE_SED_SEED="$seed" \
             python3 scripts/ensure-automake.py --build-dir "$RUNNER_TEMP/whp-automake")"
           test -x "$prefix/bin/automake"

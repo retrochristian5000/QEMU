@@ -23,7 +23,14 @@ class AutomakeMakeinfoTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix="whp-automake-texinfo-")
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.other = self.root / "other makeinfo"
+        # Tests must not depend on machine-specific selected makeinfo seeds.
+        clean_seeds = mock.patch.dict(os.environ, {
+            "WHP_MAKEINFO_SEED": "",
+            "WHP_AUTOMAKE_MAKEINFO_SEED": "",
+            "MAKEINFO": "",
+        })
+        clean_seeds.start()
+        self.addCleanup(clean_seeds.stop)
         self.good = self.create_tool(
             self.root / "tools with spaces" / "makeinfo",
             "texi2any (GNU texinfo) 7.2",
@@ -95,12 +102,36 @@ class AutomakeMakeinfoTests(unittest.TestCase):
                 module.select_makeinfo()
 
     def test_missing_texinfo_reports_required_git_source_dependency(self):
+        # Only the PATH lookup is unavailable; /bin/sh remains callable as
+        # the seed interpreter, so absence is deterministic on every runner.
         with mock.patch.dict(os.environ, {
-            "WHP_AUTOMAKE_MAKEINFO_SEED": "", "MAKEINFO": "",
+            "PATH": str(self.root / "empty bin"),
+            "WHP_AUTOMAKE_MAKEINFO_SEED": "",
+            "WHP_MAKEINFO_SEED": "",
+            "MAKEINFO": "",
         }):
-            with mock.patch.object(module, "executable", return_value=None):
-                with self.assertRaisesRegex(RuntimeError, "required for a Git-source"):
-                    module.select_makeinfo()
+            with self.assertRaisesRegex(RuntimeError, "required for a Git-source"):
+                module.select_makeinfo()
+
+    def test_generic_makeinfo_seed_precedes_makeinfo_environment(self):
+        another = self.create_tool(
+            self.root / "preferred" / "makeinfo",
+            "makeinfo (GNU texinfo) 7.2",
+        )
+        with mock.patch.dict(os.environ, {
+            "WHP_MAKEINFO_SEED": str(another),
+            "WHP_AUTOMAKE_MAKEINFO_SEED": "",
+            "MAKEINFO": "/missing/unrelated-makeinfo",
+        }):
+            self.assertEqual(module.select_makeinfo(), str(another))
+
+    def test_automake_specialization_takes_priority_over_generic_seed(self):
+        with mock.patch.dict(os.environ, {
+            "WHP_AUTOMAKE_MAKEINFO_SEED": str(self.good),
+            "WHP_MAKEINFO_SEED": "/missing/unrelated-makeinfo",
+            "MAKEINFO": "/missing/another",
+        }):
+            self.assertEqual(module.select_makeinfo(), str(self.good))
 
     def test_failed_preflight_never_starts_source_reconciliation(self):
         with (
@@ -126,6 +157,8 @@ class AutomakeMakeinfoTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('env["MAKEINFO"] = makeinfo', source)
+        self.assertIn('ROOT / "seeds" / "makeinfo.sh"', source)
+        self.assertNotIn('TemporaryDirectory(prefix="whp-automake-texinfo-"', source)
         self.assertIn('f"MAKEINFO={makeinfo}:', source)
         self.assertLess(
             source.index("makeinfo = select_makeinfo()"),

@@ -18,6 +18,41 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+Build-time seeds versus installed toolchain components
+--------------------------------------------------
+
+Use ``seeds/makeinfo.sh`` to resolve an existing **GNU Texinfo** executable
+for host-side source generation. The POSIX seed accepts
+``WHP_MAKEINFO_SEED`` before ``MAKEINFO``, then searches installed
+``makeinfo`` (or ``texi2any``). It checks GNU identity and verifies an
+actual Texinfo-to-Info conversion before printing ``--print-seed`` or
+forwarding commands. An invalid explicit choice fails without falling back.
+``WHP_AUTOMAKE_MAKEINFO_SEED`` is an Automake-only override forwarded to
+the generic seed by ``ensure-automake.py``. No managed Texinfo source
+bootstrap is introduced; the seed only admits an existing build-machine tool.
+
+Separate three installation roles instead of expanding the final QEMU
+prefix implicitly:
+
+* **Build-only generators** such as makeinfo, Autoconf, Automake, sed and Perl
+  belong to the host toolchain or ``BUILD_DIR/deps`` as applicable. Their
+  existence does not require copying binaries or manuals to QEMU's runtime
+  install prefix. GNU Make and PowerPC Binutils/GCC intentionally use
+  ``MAKEINFO=true`` on selected no-documentation bootstrap paths; do not
+  override those paths with an unconditional documentation dependency.
+* **Runtime QEMU artifacts** and explicitly enabled QEMU install features
+  belong in QEMU's configured install prefix. Documentation generation is
+  not itself evidence that a program must be shipped there.
+* **Optional developer/debugger tools** have a distinct installation and
+  validation contract. The existing native LLVM bootstrap uses
+  ``NATIVE_LLVM_ENABLE_LLDB`` (auto enabled on macOS) and installs both
+  ``lldb`` and ``liblldb`` in the *LLVM toolchain prefix*, where QEMU's
+  ``scripts/whp-lldb-autodebug.py`` can use an explicitly selected
+  debugger. This does not copy the debugger into the final QEMU prefix.
+  Any later bundled debugger distribution needs an explicit opt-in,
+  runnable debugger and shared-library validation, and a size/licensing
+  review rather than an automatic dependency copy.
+
 GNU Make source Autoconf compatibility
 ------------------------------------
 
@@ -302,12 +337,11 @@ by the WHP account.
        ``info_TEXINFOS``. Other tools such as TeX, yacc, and lex
        serve optional test paths and are not promoted to mandatory
        bootstrap dependencies. Automake bundles its own Help2man script.
-       ``ensure-automake.py`` validates both the version identity and
-       a real small Texinfo conversion before source reconciliation,
-       freezes its pathname in ``MAKEINFO``, and records its identity
-       in the managed build marker. An explicit
-       ``WHP_AUTOMAKE_MAKEINFO_SEED`` or ``MAKEINFO`` is authoritative;
-       invalid selections never fall back to a different PATH tool.
+       ``ensure-automake.py`` calls ``seeds/makeinfo.sh`` for GNU
+       identity and real Texinfo-conversion validation before source
+       reconciliation, then freezes its pathname in ``MAKEINFO`` and records
+       its identity in the managed marker. The seed owns provider checks,
+       avoiding duplicate Python implementation-specific probing.
    * - ``toolchains/autoconf``
      - ``autoconf``
      - yes

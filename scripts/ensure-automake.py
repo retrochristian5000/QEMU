@@ -4,8 +4,8 @@
 
 Automake's Git bootstrap is deliberately self-hosting: it creates temporary
 aclocal/automake scripts from its own sources, so an installed Automake is not
-needed. It consumes QEMU's sed adapter, which resolves and verifies a real
-seed sed, plus Perl, Autoconf, and GNU Make.
+needed. It consumes the selected sed and makeinfo seed adapters plus Perl,
+Autoconf/autom4te, and GNU Make. Texinfo is a build-stage dependency only.
 """
 
 from __future__ import annotations
@@ -15,8 +15,6 @@ import hashlib
 import io
 import os
 import pathlib
-import re
-import tempfile
 import shlex
 import shutil
 import subprocess
@@ -34,7 +32,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/automake")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "seeds" / "sed.sh"
-AUTOMAKE_BOOTSTRAP_SCHEMA = "4"
+AUTOMAKE_BOOTSTRAP_SCHEMA = "5"
 
 
 def run_text(
@@ -164,77 +162,33 @@ def select_gnu_make() -> str:
 
 
 def select_makeinfo() -> str:
-    """Require a working GNU Texinfo generator for a Git-source Automake.
+    """Select an already installed GNU Texinfo converter through its seed.
 
-    Automake's generated Makefile builds info_TEXINFOS; unlike the release
-    tarball, this maintainer checkout cannot assume prebuilt .info files.
-    A valid version banner is necessary but not proof that the executable
-    can convert a small Texinfo input with its installed Perl modules.
+    The POSIX seed owns executable admission, version identity and a real
+    document conversion. Do not replicate its provider-selection logic here.
+    Automake-specific overrides apply only to this consumer; generic
+    WHP_MAKEINFO_SEED/MAKEINFO remain the seed's ordinary precedence.
     """
-    name = "WHP_AUTOMAKE_MAKEINFO_SEED"
-    requested = os.environ.get(name) or os.environ.get("MAKEINFO")
-    if requested:
-        # Preserve absolute paths containing whitespace; never pass an
-        # untrusted shell command such as "makeinfo --some-argument".
-        if os.path.sep not in requested and any(c.isspace() for c in requested):
-            raise RuntimeError(
-                f"{name}/MAKEINFO must name one executable, not a command"
-            )
-        selected = executable(requested)
-        if not selected:
-            raise RuntimeError(
-                f"explicit GNU Texinfo makeinfo is not executable: {requested}"
-            )
-    else:
-        selected = executable("makeinfo")
-        if not selected:
-            raise RuntimeError(
-                "GNU Texinfo makeinfo is required for a Git-source "
-                "Automake bootstrap (install texinfo before building)"
-            )
+    adapter = ROOT / "seeds" / "makeinfo.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU GNU Texinfo makeinfo seed is missing: {adapter}")
+    env = os.environ.copy()
+    specialized = env.get("WHP_AUTOMAKE_MAKEINFO_SEED")
+    if specialized:
+        env["WHP_MAKEINFO_SEED"] = specialized
     completed = subprocess.run(
-        [selected, "--version"], capture_output=True, text=True,
-        check=False, timeout=15,
+        ["/bin/sh", str(adapter), "--print-seed"],
+        env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False,
     )
-    banner = completed.stdout.splitlines()
-    if (
-        completed.returncode != 0
-        or not banner
-        or not re.fullmatch(
-            r"(?:makeinfo|texi2any) \(GNU [Tt]exinfo\) "
-            r"[0-9]+(?:\.[0-9]+)+(?: .*)?",
-            banner[0],
-        )
-    ):
+    selected = completed.stdout.strip()
+    if completed.returncode != 0 or not selected:
         raise RuntimeError(
-            f"Automake needs GNU Texinfo makeinfo, not {selected}: "
-            + (banner[0] if banner else completed.stderr.strip())
+            "GNU Texinfo makeinfo is required for a Git-source "
+            "Automake bootstrap: "
+            + (completed.stderr.strip() or "no usable native makeinfo seed")
         )
-
-    with tempfile.TemporaryDirectory(prefix="whp-automake-texinfo-") as tmp:
-        root = pathlib.Path(tmp)
-        source = root / "probe.texi"
-        output = root / "probe.info"
-        source.write_text(
-            "\\input texinfo\n"
-            "@setfilename probe.info\n"
-            "@node Top\n"
-            "@top Automake maintainer bootstrap\n"
-            "@bye\n",
-            encoding="utf-8",
-        )
-        run = subprocess.run(
-            [selected, "--no-split", "-o", str(output), str(source)],
-            capture_output=True, text=True, check=False, timeout=30,
-        )
-        if run.returncode or not output.is_file() or not output.stat().st_size:
-            raise RuntimeError(
-                f"GNU Texinfo makeinfo cannot convert maintainer input: "
-                f"{selected}: "
-                + (run.stderr.strip() or f"exit {run.returncode}")
-            )
     return selected
-
 
 def select_seed_sed() -> str:
     if not SED_ADAPTER.is_file() or not os.access(SED_ADAPTER, os.X_OK):
