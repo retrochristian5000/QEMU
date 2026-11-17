@@ -37,8 +37,14 @@ def check():
     assert '"SOURCE_REVISION="' in src
 
     host = (ROOT / "scripts/whp-build/host-tools.sh").read_text()
-    assert host.index("BOOTSTRAP_AUTOCONF=") < host.index("BOOTSTRAP_GAWK=")
-    assert host.index("BOOTSTRAP_GAWK=") < host.index("BOOTSTRAP_MAKE=")
+    # The pinned Gawk source carries generated inputs; it must not use a
+    # managed Autoconf that is still waiting to be built.
+    assert host.index("BOOTSTRAP_AUTOMAKE=") < host.index("BOOTSTRAP_GAWK=")
+    assert host.index("BOOTSTRAP_GAWK=") < host.index("BOOTSTRAP_AUTOCONF=")
+    assert host.index("BOOTSTRAP_AUTOCONF=") < host.index("BOOTSTRAP_MAKE=")
+    assert 'for required in ("configure", "Makefile.in", "awkgram.c",' in src
+    assert 'command(["/bin/sh", str(source / "configure"),' in src
+    assert "autoreconf" not in src and "autom4te" not in src
     assert 'WHP_AWK_SEED=$WHP_GAWK_CMD' in host
     assert 'WHP_AWK_LOCKED=1' in host
     assert 'WHP_GAWK_SEED=$WHP_GAWK_CMD' in host

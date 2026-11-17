@@ -106,6 +106,7 @@ if host_tools.index("scripts/ensure-automake.py") <= perl_hook:
     raise SystemExit("error: managed Automake must remain after Perl")
 zlib_hook = host_tools.index("whp_prepare_bootstrap_zlib")
 automake_hook = host_tools.index("scripts/ensure-automake.py")
+gawk_hook = host_tools.index("scripts/ensure-gawk.py")
 autoconf_hook = host_tools.index("scripts/ensure-autoconf.py")
 make_hook = host_tools.index("scripts/ensure-make.py")
 sed_hook = host_tools.index("scripts/ensure-sed.py")
@@ -116,6 +117,7 @@ bash_hook = host_tools.index("scripts/ensure-bash.py")
 if not (
     zlib_hook
     < automake_hook
+    < gawk_hook
     < autoconf_hook
     < make_hook
     < sed_hook
@@ -124,8 +126,8 @@ if not (
     < bash_hook
 ):
     raise SystemExit(
-        "error: expected bootstrap-zlib -> Automake -> Autoconf -> "
-        "Make -> sed -> managed Git -> Ninja -> Bash pre-LLVM order"
+        "error: expected bootstrap-zlib -> Automake -> Gawk -> "
+        "Autoconf -> Make -> sed -> managed Git -> Ninja -> Bash pre-LLVM order"
     )
 # The Git-dependent cache stage executes *inside* host-tools, between the
 # final Git selection and the Ninja/Bash stages. It is declared in build.sh

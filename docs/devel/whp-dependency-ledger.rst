@@ -1774,7 +1774,7 @@ the previously admitted ``WHP_GAWK_SEED`` without repeated probes,
 but rejects missing/recursive adapter paths. GNU Awk remains an
 **optional capability** until an actual GNU-only caller requires it.
 
-The existing post-Autoconf ``BOOTSTRAP_GAWK`` source path still
+The post-Automake, pre-Autoconf ``BOOTSTRAP_GAWK`` source path now
 builds the pinned ``toolchains/gawk`` revision using the preserved
 ``WHP_AWK_BOOTSTRAP_SEED``, avoiding an AWK self-bootstrap cycle.
 On successful promotion, it continues the established ``AWK`` /
@@ -1796,7 +1796,7 @@ Autotools, GNU Make and later toolchain builds can run. That seed must not
 be removed or replaced with an unbuilt Gawk executable. QEMU retains its
 identity in ``WHP_AWK_BOOTSTRAP_SEED`` and uses it when compiling Gawk.
 
-After Automake/Autoconf are available, ``scripts/ensure-gawk.py`` can
+After the initial Automake phase, but before managed Autoconf, ``scripts/ensure-gawk.py`` can
 initialize the **pinned** fork, stage it into
 ``$BUILD_DIR/bootstrap/gawk/source``, configure a native-only host build,
 compile ``support/libsupport.a`` and the ``gawk`` executable using the
@@ -1804,12 +1804,15 @@ selected native C compiler and GNU Make, and install only the validated
 binary under ``$BUILD_DIR/deps/gawk/bin/gawk``. The fork contains generated
 Autoconf/Automake inputs and Bison-generated C files; the helper preserves
 these for tool-only builds rather than requiring documentation/extension
-installation. Its marker includes actual source revision, root seed,
+installation. Gawk therefore has no build-time edge to managed
+Autoconf or Automake, and uses the preserved seed GNU Make and AWK. Keeping
+its stage after Automake is a minimal reordering, not a new prerequisite
+for Automake or Autoconf; automatic failure still retains the native seed. Its marker includes actual source revision, root seed,
 compiler, GNU Make, macOS SDK and selected bootstrap flags. Cache reuse
 requires both matching identity and a passing executable semantics probe.
 
-``BOOTSTRAP_GAWK=auto`` tries the fork on macOS after the Autotools
-stage, falling back to the unchanged host AWK seed if it cannot build.
+``BOOTSTRAP_GAWK=auto`` tries the fork on macOS before managed Autoconf,
+falling back to the unchanged host AWK seed if it cannot build.
 ``BOOTSTRAP_GAWK=1`` explicitly requires the pinned fork, and
 ``BOOTSTRAP_GAWK=0`` retains the system seed. On other hosts, automatic
 mode retains the host seed unless explicitly forced. Successful promotion
@@ -1830,8 +1833,8 @@ The host bootstrap is split into phases rather than one flat dependency list.
 
 **Seed/tool phase:** ``seeds/cc.sh``, ``seeds/cpp.sh``, and ``seeds/cxx.sh``, seed GNU Make, seed AWK,
 seed sed, seed Git, and Python form the bootstrap roots. The low-dependency order is
-``seed Git -> bootstrap-zlib -> managed Perl -> Automake -> Autoconf ->
-managed Gawk -> managed Make -> managed sed -> managed Git -> Ninja ->
+``seed Git -> bootstrap-zlib -> managed Perl -> Automake -> managed Gawk ->
+Autoconf -> managed Make -> managed sed -> managed Git -> Ninja ->
 Bash``. The root Perl seed is selected before managed Perl and remains
 available for rebuilding it. Independent small sources
 are prepared before larger trees when their own prerequisites are satisfied;
@@ -2190,6 +2193,11 @@ Automake/aclocal. The valid order is therefore::
                               |
                               +--> managed GNU sed
                               +--> later Autotools consumers
+
+The optional managed Gawk phase now runs between managed Automake and
+managed Autoconf. It consumes packaged generated sources and the independent
+AWK/GNU Make/C seeds, not either managed Autotools output. This is a phase
+ordering choice, not a required dependency of Autoconf.
 
 The QEMU ``seeds/automake.sh`` adapter resolves a validated native
 GNU Automake/aclocal pair before downstream maintainer-source generation.
