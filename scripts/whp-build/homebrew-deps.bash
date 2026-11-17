@@ -4,7 +4,11 @@
 
 whp_homebrew_brew_command()
 {
-    if [[ -n "${WHP_HOMEBREW_BREW:-}" && -x "$WHP_HOMEBREW_BREW" ]]; then
+    if [[ -n "${WHP_HOMEBREW_BREW:-}" ]]; then
+        if [[ ! -x "$WHP_HOMEBREW_BREW" ]]; then
+            printf 'error: locked Homebrew is not executable: %s\n' "$WHP_HOMEBREW_BREW" >&2
+            return 1
+        fi
         printf '%s\n' "$WHP_HOMEBREW_BREW"
         return 0
     fi
@@ -91,7 +95,7 @@ whp_refresh_macos_dependency_identity()
     [[ "${HOST_OS:-$(uname -s)}" == Darwin ]] || return 0
     case "$provider" in
         homebrew)
-            manager="$(whp_homebrew_brew_command)"
+            manager="$(whp_homebrew_brew_command)" || return 1
             [[ -n "$manager" && -x "$manager" ]] || return 0
             inventory="$(whp_homebrew_dependency_inventory "$manager")" || return 0
             manifest="$BUILD_DIR/.whp-homebrew-deps"

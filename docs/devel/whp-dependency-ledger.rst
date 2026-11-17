@@ -1128,7 +1128,7 @@ Root seed adapter namespace
 Only host-tool seed adapters live under the repository-root
 ``seeds/`` directory, including ``awk.sh``, ``grep.sh``,
 ``sed.sh``, ``git.sh``, ``cc.sh``, ``cxx.sh``, ``cpp.sh``,
-``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh`` and
+``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh``, ``brew.sh`` and
 ``install.sh``. Their explicit invocation is
 ``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public
 build entry.  The implemented ``cp`` and ``install`` literal-command
@@ -1136,6 +1136,17 @@ bridges under ``scripts/whp-build/seed-bin/`` select one tested host
 implementation each, before source refresh.  The ``install`` seed
 selects the executable used by bootstrap install commands; it does not
 install QEMU itself or replace Automake's ``INSTALL`` variables.
+
+The optional ``seeds/brew.sh`` selects an *installed* Homebrew command
+before the macOS dependency-provider stage. Explicit ``WHP_BREW_SEED``
+and downstream ``WHP_HOMEBREW_BREW`` choices must agree, and
+``HOMEBREW_PREFIX`` constrains the validated prefix. No implicit
+network download, formula install, or Homebrew bootstrap is performed.
+Deliberate ``brew.sh install <formula>`` calls are permitted; installed
+artifacts are then checked by the existing host probes. This package
+manager is not ``install.sh``, ``pkg-config.sh`` or a MacPorts
+alias. The existing formula inventory and one-shot configure-refresh
+mechanism retain ownership of dependency changes.
 
 The C preprocessor bridge selects the validated native C compiler driver
 and invokes it with ``-E`` (and the selected macOS ``-isysroot``).

@@ -181,6 +181,27 @@ installations remain supported when both tool paths are explicitly selected
 and their identities and versions validate. The host-tools stage emits
 newline-delimited versions for deterministic pair comparison.
 
+Native Homebrew package-manager seed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The POSIX ``seeds/brew.sh`` adapter validates an installed Homebrew executable
+and its active prefix before the macOS QEMU dependency-provider stage. Explicit
+``WHP_BREW_SEED`` and the existing ``WHP_HOMEBREW_BREW`` lock must agree;
+a mismatched ``HOMEBREW_PREFIX`` fails rather than selecting another
+installation. The selected executable is published as
+``WHP_HOMEBREW_BREW`` for existing formula inventory and firmware consumers.
+The selected architecture and the current ``MACOS_ALLOW_MIXED_HOMEBREW``
+policy remain authoritative; MacPorts and the system provider are distinct.
+
+``/bin/sh seeds/brew.sh --check`` and ``--print-seed`` are read-only.
+A deliberate ``/bin/sh seeds/brew.sh install <formula>`` forwards to the
+selected package manager and may use the network, but QEMU does not install
+Homebrew, run a remote installer, or change formulae automatically merely
+because a dependency is missing. The build still validates the resulting
+headers, libraries and package metadata before using them.
+``scripts/tests/test-brew-seed.py`` exercises offline admission, prefix
+conflicts, explicit command forwarding and recursion.
+
 Host install seed
 ^^^^^^^^^^^^^^^^^
 

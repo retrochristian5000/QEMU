@@ -341,6 +341,7 @@ whp_apply_requested_build_targets()
 
 whp_prepare_host_tools()
 {
+    local selected_brew=""
     if [[ "$HOST_OS" == Darwin ]]; then
         # The macOS wrapper owns SDK and compiler-family selection when it is
         # active. Keep those strict checks inside the macOS adapter instead of
@@ -380,7 +381,12 @@ whp_prepare_host_tools()
                 ;;
         esac
         if [[ "$WHP_MACOS_DEPENDENCY_PROVIDER" == auto ]]; then
-            if command -v brew >/dev/null 2>&1; then
+            if [[ -n "${WHP_BREW_SEED:-}" || -n "${WHP_HOMEBREW_BREW:-}" ||
+                  -n "${HOMEBREW_PREFIX:-}" ]]; then
+                # An explicit Homebrew selection must not fall back to MacPorts.
+                selected_brew="$(/bin/sh "$SOURCE_DIR/seeds/brew.sh" --print-seed)" || return 1
+                WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
+            elif selected_brew="$(/bin/sh "$SOURCE_DIR/seeds/brew.sh" --print-seed 2>/dev/null)"; then
                 WHP_MACOS_DEPENDENCY_PROVIDER=homebrew
             elif [[ -x "${MACPORTS_PREFIX:-/opt/local}/bin/port" ]]; then
                 WHP_MACOS_DEPENDENCY_PROVIDER=macports
@@ -391,11 +397,12 @@ whp_prepare_host_tools()
 
         case "$WHP_MACOS_DEPENDENCY_PROVIDER" in
             homebrew)
-                if ! command -v brew >/dev/null 2>&1; then
-                    printf 'error: Homebrew selected but brew is unavailable\n' >&2
-                    return 1
+                if [[ -z "$selected_brew" ]]; then
+                    selected_brew="$(/bin/sh "$SOURCE_DIR/seeds/brew.sh" --print-seed)" || return 1
                 fi
-                HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-$(brew --prefix)}"
+                WHP_HOMEBREW_BREW="$selected_brew"
+                HOMEBREW_PREFIX="$("$selected_brew" --prefix)" || return 1
+                export WHP_HOMEBREW_BREW HOMEBREW_PREFIX
                 case "$HOST_ARCH" in
                     arm64) expected_homebrew_prefix=/opt/homebrew ;;
                     x86_64) expected_homebrew_prefix=/usr/local ;;
