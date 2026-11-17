@@ -153,6 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'rc=$?; printf "WHP Autoconf CI: status=%s line=%s command=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" >&2' ERR
           if [[ "$RUNNER_OS" == macOS ]]; then
             export PATH="$(brew --prefix m4)/bin:$(brew --prefix texinfo)/bin:$PATH"
           fi
