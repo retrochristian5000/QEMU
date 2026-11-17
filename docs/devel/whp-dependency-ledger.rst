@@ -1393,6 +1393,18 @@ without an interactive Configure run. It now provides
 ``-Dcc``, ``-Dar``, ``-Dfull_ar``, and ``-Dranlib``, rather than
 allowing a default ``ld`` driver to select another toolchain family.
 
+Perl's regular ``Configure`` -> ``Makefile.SH`` -> ``make_ext.pl`` route
+retains its legacy Makefiles rather than forcing every platform onto GNU Make.
+The extension builder now treats a selected executable pathname with spaces
+as one command, while preserving legacy ``MAKE="nmake -nologo"``-style
+arguments. After miniperl is removed during cleanup, generated
+``realclean.sh``/``veryclean.sh`` fallback scripts reuse that same selected
+Make implementation even for ``Makefile.old``, quote all shell arguments and
+fail closed when they cannot enter the intended extension directory. This
+protects nonstandard native tool prefixes without bundling an extra Make
+program or changing older platform Makefile dialects. QEMU validates these
+boundaries before compilation with ``test-perl-makefile-compat.py``.
+
 The updated ``hints/darwin.sh`` in the Perl fork confines historical
 ``/usr/include/stdint.h`` checking to Darwin 1.x, the obsolete
 ``-no-cpp-precomp`` probe to Darwin 1--8, and the broken

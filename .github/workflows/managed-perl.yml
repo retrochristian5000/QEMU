@@ -23,6 +23,7 @@ on:
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - 'scripts/tests/test-perl-configure-control-flow.py'
+      - 'scripts/tests/test-perl-makefile-compat.py'
       - '.github/workflows/managed-perl.yml'
   pull_request:
     paths:
@@ -45,6 +46,7 @@ on:
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - 'scripts/tests/test-perl-configure-control-flow.py'
+      - 'scripts/tests/test-perl-makefile-compat.py'
       - '.github/workflows/managed-perl.yml'
 
 permissions:
@@ -113,6 +115,7 @@ jobs:
       - name: Verify pinned Perl shell control flow before compilation
         run: |
           python3 scripts/tests/test-perl-configure-control-flow.py -v
+          python3 scripts/tests/test-perl-makefile-compat.py -v
           test -f toolchains/perl/t/porting/configure_shell_control_flow.t
 
       - name: Build and validate native managed Perl
