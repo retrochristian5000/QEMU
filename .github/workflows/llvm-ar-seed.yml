@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - 'seeds/ar.sh'
+      - 'seeds/GNUar.sh'
+      - 'scripts/tests/test-GNUar-seed.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
@@ -23,6 +25,8 @@ on:
   pull_request:
     paths:
       - 'seeds/ar.sh'
+      - 'seeds/GNUar.sh'
+      - 'scripts/tests/test-GNUar-seed.sh'
       - 'seeds/llvm-ar.sh'
       - 'seeds/cc.sh'
       - 'seeds/clang.sh'
@@ -69,6 +73,11 @@ jobs:
           /bin/sh -n seeds/ranlib.sh
           /bin/sh -n scripts/tests/test-ranlib-seed.sh
           /bin/sh scripts/tests/test-ranlib-seed.sh
+      - name: Verify GNU Binutils ar seed without changing the generic archiver
+        run: |
+          /bin/sh -n seeds/GNUar.sh
+          /bin/sh -n scripts/tests/test-GNUar-seed.sh
+          /bin/sh scripts/tests/test-GNUar-seed.sh
       - name: Validate GNU and LLVM archive provider diagnostics
         shell: bash
         run: bash scripts/tests/test-archive-tool-policy.bash

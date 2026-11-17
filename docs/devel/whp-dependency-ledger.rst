@@ -1441,6 +1441,30 @@ policy. It is not a request to install every tool or library listed below.
   existing POSIX seed selectors should retain the shell's faster ``command -v``
   for functions, builtins, and early executable resolution.
 
+* **Optional installed GNU Binutils ar seed:** the case-sensitive
+  ``seeds/GNUar.sh`` identifies the GNU implementation independently of
+  generic ``seeds/ar.sh`` and LLVM's ``seeds/llvm-ar.sh``. It accepts
+  only an installed archiver identifying itself as ``GNU ar (GNU Binutils...)``;
+  a filename ``ar`` or ``gar`` alone does not prove its identity.
+  ``WHP_GNU_AR_SEED`` explicitly selects a provider and fails closed if
+  invalid; it does not inherit ``WHP_AR_SEED``, ``AR_FOR_BUILD``, target
+  archivers, or the managed LLVM toolchain. On macOS the discovery checks
+  native Homebrew Binutils ``gar`` and MacPorts locations before PATH,
+  and cannot silently use Apple's or LLVM's incompatible provider.
+
+  ``--print-seed`` and ``--check`` reuse the **existing native archive
+  compatibility test** in ``seeds/ar.sh``: compile, archive, incremental
+  replace, index, link, and run. ``--print-candidate`` is an inexpensive
+  GNU-identity lookup, not an admission proof. Ordinary archive operations
+  forward to the selected executable without compiling again. This optional
+  seed never installs Binutils and never promotes itself to the generic
+  ``AR_FOR_BUILD``. A caller can deliberately choose the result using
+  ``WHP_AR_SEED=$(/bin/sh seeds/GNUar.sh --print-seed)``, but must still
+  validate the chosen ``ranlib``, ``nm``, and (for LTO) GCC plugin family.
+  Native-object admission alone does not prove GNU LTO plugin compatibility.
+  ``sh scripts/tests/test-GNUar-seed.sh`` covers rejection, provenance,
+  forwarding, symlinks and the native probe on Linux/macOS runners.
+
 * **Optional installed LLVM archive seed:** ``seeds/llvm-ar.sh`` discovers
   a working preinstalled native ``llvm-ar``, prioritizing the LLVM archiver
   adjacent to the selected host C compiler. It also supports an explicit

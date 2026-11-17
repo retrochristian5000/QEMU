@@ -135,6 +135,16 @@ Build-variable role and precedence
     ``LD`` executable alone does not override the driver's linker.
     ``QEMU_HOST_LINKER`` and validated linker flags own that request.
 
+``WHP_GNU_AR_SEED`` / ``seeds/GNUar.sh``
+    An optional, case-sensitive selector for an **installed GNU Binutils
+    archiver**. GNU identity is checked before reusing the native object,
+    archive, index, link and execute probe in the general ``ar.sh`` seed.
+    ``--print-candidate`` is identity-only; ``--print-seed`` and
+    ``--check`` validate native capability. It does not overwrite
+    ``WHP_AR_SEED``, ``AR_FOR_BUILD``, QEMU's ``AR``, or any ranlib
+    selection. GNU ``--plugin`` support is not proof that a matching GCC
+    LTO plugin has been installed and tested.
+
 ``WHP_LLVM_AR_SEED`` / ``NATIVE_LLVM_DIR``
     The former optionally selects an **installed** native LLVM archiver;
     the latter identifies the managed LLVM toolchain prefix. Neither is
