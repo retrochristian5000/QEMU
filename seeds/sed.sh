@@ -22,7 +22,10 @@ is_self()
 {
     candidate=$1
     marker=$("$candidate" --whp-sed-adapter-probe 2>/dev/null || true)
-    [ "$marker" = "$WHP_SED_ADAPTER_MARKER" ]
+    case "$marker" in
+        "$WHP_SED_ADAPTER_MARKER"|whp-qemu-gnu-sed-seed-adapter) return 0 ;;
+    esac
+    return 1
 }
 
 semantic_probe()
@@ -93,7 +96,8 @@ select_seed()
         fi
     fi
 
-    for value in gsed /usr/bin/sed /bin/sed sed; do
+    # Generic bootstrap prefers native sed; GNU-only consumers use GNUsed.sh.
+    for value in /usr/bin/sed /bin/sed sed gsed; do
         if seed=$(resolve_candidate "$value"); then
             printf '%s\n' "$seed"
             return 0
