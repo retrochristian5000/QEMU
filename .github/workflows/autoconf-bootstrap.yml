@@ -10,6 +10,10 @@ on:
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
       - 'seeds/gnum4.sh'
+      - 'seeds/brew.sh'
+      - 'seeds/yacc.sh'
+      - 'scripts/tests/test-brew-seed.py'
+      - 'scripts/tests/test-yacc-seed.py'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
       - 'seeds/autoconf.sh'
@@ -39,6 +43,10 @@ on:
       - 'seeds/sed.sh'
       - 'seeds/m4.sh'
       - 'seeds/gnum4.sh'
+      - 'seeds/brew.sh'
+      - 'seeds/yacc.sh'
+      - 'scripts/tests/test-brew-seed.py'
+      - 'scripts/tests/test-yacc-seed.py'
       - 'seeds/automake.sh'
       - 'seeds/autom4te.sh'
       - 'seeds/autoconf.sh'
@@ -89,11 +97,13 @@ jobs:
             sudo apt-get install --no-install-recommends -y autoconf m4 texinfo
           fi
 
-      - name: Test separate generic and GNU M4 seeds
+      - name: Test Homebrew, GNU M4 and Bison seed boundaries
         run: |
-          /bin/sh -n seeds/m4.sh seeds/gnum4.sh
+          /bin/sh -n seeds/brew.sh seeds/m4.sh seeds/gnum4.sh seeds/yacc.sh
+          python3 scripts/tests/test-brew-seed.py
           python3 scripts/tests/test-m4-seed.py
           python3 scripts/tests/test-gnum4-seed.py
+          python3 scripts/tests/test-yacc-seed.py
 
       - name: Verify static Autoconf wiring
         run: python3 scripts/tests/test-autoconf-bootstrap.py
