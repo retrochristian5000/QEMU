@@ -314,7 +314,7 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
     options = [
         "/bin/sh", "./Configure", "-des",
         f"-Dprefix={prefix}", f"-Dcc={compiler}",
-        f"-Dld={compiler}", "-Uuseshrplib",
+        f"-Dld={compiler}", "-Uuseshrplib", "-Uversiononly",
     ]
     # Perl Configure uses ccflags/ldflags (not Autoconf CFLAGS/LDFLAGS).
     # Supply one authoritative value for each instead of relying on
@@ -330,6 +330,9 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
         # Bind both to the same admitted native archiver explicitly.
         options.append(f"-Dar={ar}")
         options.append(f"-Dfull_ar={ar}")
+    # Development Perl normally enables version-only installation, leaving
+    # no bin/perl. Our private managed prefix requires the unversioned name.
+    # -Uversiononly must remain explicit even when -Dusedevel is selected.
     if minor % 2:
         options.append("-Dusedevel")
     return options
@@ -350,8 +353,8 @@ def require_configured_toolchain(source: pathlib.Path,
         lines = (source / "config.sh").read_text(encoding="utf-8").splitlines()
     except OSError as exc:
         raise RuntimeError("Perl Configure did not generate config.sh") from exc
-    required = ("prefix", "cc", "ld", "ar", "full_ar", "ranlib",
-                "ccflags", "ldflags", "osname")
+    required = ("prefix", "installbin", "versiononly", "cc", "ld", "ar",
+                "full_ar", "ranlib", "ccflags", "ldflags", "osname")
     values: dict[str, str] = {}
     for line in lines:
         match = re.fullmatch(r"([a-z][a-z0-9_]*)=(.*)", line)
@@ -370,7 +373,8 @@ def require_configured_toolchain(source: pathlib.Path,
     absent = sorted(set(required) - values.keys())
     if absent:
         raise RuntimeError(f"Perl config.sh lacks {', '.join(absent)}")
-    wanted = {"prefix": str(prefix), "cc": compiler, "ld": compiler,
+    wanted = {"prefix": str(prefix), "installbin": str(prefix / "bin"),
+              "cc": compiler, "ld": compiler,
               "ar": ar, "full_ar": ar}
     for key, expected in wanted.items():
         if values[key] != expected:
@@ -378,6 +382,12 @@ def require_configured_toolchain(source: pathlib.Path,
                 f"Perl Configure replaced {key}: expected {expected!r}, "
                 f"got {values[key]!r}"
             )
+    if values["versiononly"] != "undef":
+        raise RuntimeError(
+            "Perl Configure enabled version-only installation: "
+            f"versiononly={values['versiononly']!r}; "
+            "managed Perl requires an unversioned bin/perl"
+        )
     # metaconfig may legitimately replace ranlib with an indexing operation
     # performed by the same admitted ar; foreign tools are never accepted.
     admitted_indexers = {ranlib, f"{ar} s", f"{ar} ts"}
