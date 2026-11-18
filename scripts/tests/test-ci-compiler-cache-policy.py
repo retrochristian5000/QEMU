@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 SAVE_CONDITION = (
@@ -57,6 +58,15 @@ def step_field(step: str, name: str) -> str:
 
 def check_workflow(relative_path: str, source: str,
                    cache_prefix: str, cache_path: str) -> None:
+    # A forbidden version tag can fail the job before any cache test runs.
+    for line in source.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("uses: actions/"):
+            continue
+        action = stripped.split("uses: ", 1)[1].split()[0]
+        revision = action.rsplit("@", 1)[-1]
+        require(re.fullmatch(r"[a-f0-9]{40}", revision) is not None,
+                f"{relative_path}: action must be pinned to a full SHA: {action}")
     require("      CCACHE_COMPILERCHECK: content" in source,
             f"{relative_path}: compiler content identity missing")
     require(
@@ -80,7 +90,7 @@ def check_workflow(relative_path: str, source: str,
             f"{relative_path}: invalid restore cache generation")
     require(step_field(save, "key") == expected_key,
             f"{relative_path}: saved cache has a different identity")
-    require("          restore-keys:\n            " + cache_prefix in restore,
+    require("          restore-keys: |\n            " + cache_prefix in restore,
             f"{relative_path}: fallback cache could cross a policy generation")
     require("-ccache-v1-" not in restore + save,
             f"{relative_path}: legacy cache generation is still admitted")
