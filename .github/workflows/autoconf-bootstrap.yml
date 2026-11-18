@@ -363,3 +363,12 @@ jobs:
           again="$(AUTOCONF=false AUTOM4TE=false WHP_SED_SEED="$seed" \
             python3 scripts/ensure-autoconf.py --build-dir "$RUNNER_TEMP/whp-autoconf")"
           test "$again" = "$autoconf_prefix"
+
+      - name: Preserve Autoconf full stage logs on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: whp-autoconf-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/whp-autoconf/bootstrap/autoconf/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7

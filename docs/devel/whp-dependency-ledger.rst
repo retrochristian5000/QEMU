@@ -2405,7 +2405,10 @@ counts, and up to 20 original diagnostic lines with their log line
 numbers. On failure it also reports the last 24 lines, including
 Make and shell failures without an Autoconf-formatted diagnostic.
 No warnings are disabled and the original child exit status is
-retained. The complete logs remain available after the build.
+retained. The complete logs remain available in the local build directory.
+The Autoconf GitHub Actions job uploads full stage logs as a short-lived
+diagnostics artifact **only on failure**, so ordinary CI runs avoid
+additional artifact-storage and upload costs.
 
 For full live diagnostics use
 ``python3 scripts/ensure-autoconf.py --build-dir DIR --verbose``
