@@ -179,7 +179,9 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
                 r"^((?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Za-z_][A-Za-z0-9_]*):(.*)$",
                 label, re.DOTALL,
             )
-            module, diagnostic = (\n                match.groups() if match else ("<unknown>", label)\n            )
+            module, diagnostic = (
+                match.groups() if match else ("<unknown>", label)
+            )
             return reject(
                 f"Perl core module {module!r} failed to load (exit "
                 f"{result.returncode}): {diagnostic.strip() or 'no details'}; "
