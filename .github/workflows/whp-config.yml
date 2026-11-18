@@ -120,6 +120,7 @@ on:
       - 'scripts/ensure-libtool.py'
       - 'scripts/ensure-make.py'
       - 'scripts/tests/test-libtool-bootstrap.py'
+      - 'scripts/tests/test-libtool-fortran-boundary.py'
       - 'toolchains/libtool'
       - 'scripts/tests/test-make-dependency-policy.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
@@ -334,7 +335,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Verify native Libtool Fortran environment isolation
-        run: python3 scripts/tests/test-libtool-bootstrap.py
+        run: python3 scripts/tests/test-libtool-fortran-boundary.py
 
       - name: Install Libtool bootstrap seeds
         run: |
