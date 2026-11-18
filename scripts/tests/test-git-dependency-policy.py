@@ -236,12 +236,12 @@ def verify_curl_config_preflight() -> None:
             script.chmod(0o755)
 
         def candidate_output(argv, **_kwargs):
-            candidate = pathlib.Path(argv[0]).parents[1]
+            candidate = pathlib.Path(argv[0]).parents[1].resolve()
             if argv[-1] == "--prefix":
                 return str(candidate)
             if argv[-1] == "--cflags":
                 return (
-                    "@LIBCURL_PC_CFLAGS@" if candidate == bad
+                    "@LIBCURL_PC_CFLAGS@" if candidate == bad.resolve()
                     else "-I/valid/include"
                 )
             return {
@@ -254,7 +254,7 @@ def verify_curl_config_preflight() -> None:
                 str(bad / "bin" / "curl-config"),
                 str(good / "bin" / "curl-config"),
             ])
-        assert chosen == str(good)
+        assert chosen == str(good.resolve())
 
 
 def main() -> int:
