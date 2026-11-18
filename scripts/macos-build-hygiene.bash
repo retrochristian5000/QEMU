@@ -131,18 +131,26 @@ sanitize_macos_build_environment()
     if [[ "$MACOS_ALLOW_MIXED_HOMEBREW" != "1" ]]; then
         whp_remove_path_entry "$opposite_prefix/bin"
         whp_remove_path_entry "$opposite_prefix/sbin"
-        case "${HOMEBREW_PREFIX:-}" in
-            "$opposite_prefix") unset HOMEBREW_PREFIX ;;
-        esac
+        # Do not erase an explicit HOMEBREW_PREFIX. The provider boundary
+        # must see it and either admit the custom prefix or reject an
+        # opposite-architecture default with an actionable diagnostic.
     fi
 
-    if [[ -x "$expected_brew" ]]; then
-        HOMEBREW_PREFIX="$("$expected_brew" --prefix)"
-        export HOMEBREW_PREFIX
-        whp_remove_path_entry "$HOMEBREW_PREFIX/bin"
-        whp_remove_path_entry "$HOMEBREW_PREFIX/sbin"
-        whp_append_colon_path PATH "$HOMEBREW_PREFIX/sbin"
-        whp_append_colon_path PATH "$HOMEBREW_PREFIX/bin"
+    # A conventional Homebrew is only a discovery convenience. Do not
+    # replace an explicit selected manager/prefix or a MacPorts/system
+    # provider with another installation merely because it exists.
+    if [[ -x "$expected_brew" &&
+          -z "${HOMEBREW_PREFIX:-}${WHP_BREW_SEED:-}${WHP_HOMEBREW_BREW:-}" ]]; then
+        case "${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}" in
+            homebrew|auto)
+                HOMEBREW_PREFIX="$("$expected_brew" --prefix)"
+                export HOMEBREW_PREFIX
+                whp_remove_path_entry "$HOMEBREW_PREFIX/bin"
+                whp_remove_path_entry "$HOMEBREW_PREFIX/sbin"
+                whp_append_colon_path PATH "$HOMEBREW_PREFIX/sbin"
+                whp_append_colon_path PATH "$HOMEBREW_PREFIX/bin"
+                ;;
+        esac
     fi
 
     if [[ ${stripped[0]+set} == set ]]; then

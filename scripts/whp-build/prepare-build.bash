@@ -339,6 +339,38 @@ whp_apply_requested_build_targets()
     done
 }
 
+# Homebrew's default prefix is a convention, not a host ABI check.
+# Only the opposite architecture's conventional prefix is suspect.
+# An alternate custom prefix is permitted; tool/SDK and dependency ABI
+# capability checks remain the responsibility of their existing owners.
+whp_validate_homebrew_prefix_for_arch()
+{
+    local prefix="$1"
+    local arch="$2"
+    local allow_mixed="$3"
+    local opposite_prefix
+
+    case "$arch" in
+        arm64) opposite_prefix=/usr/local ;;
+        x86_64) opposite_prefix=/opt/homebrew ;;
+        *)
+            printf 'error: unsupported Homebrew host architecture: %s\n' "$arch" >&2
+            return 1 ;;
+    esac
+    case "$prefix" in
+        /*) ;;
+        *)
+            printf 'error: Homebrew prefix must be absolute: %s\n' "$prefix" >&2
+            return 1 ;;
+    esac
+    if [[ "$prefix" == "$opposite_prefix" && "$allow_mixed" != 1 ]]; then
+        printf '%s\n' \
+            "error: Homebrew prefix $prefix is the conventional $([[ "$arch" == arm64 ]] && printf 'Intel' || printf 'Apple Silicon') prefix, not the native $arch default." \
+            'Set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional cross-architecture provider.' >&2
+        return 1
+    fi
+}
+
 whp_prepare_host_tools()
 {
     local selected_brew=""
@@ -403,18 +435,8 @@ whp_prepare_host_tools()
                 WHP_HOMEBREW_BREW="$selected_brew"
                 HOMEBREW_PREFIX="$("$selected_brew" --prefix)" || return 1
                 export WHP_HOMEBREW_BREW HOMEBREW_PREFIX
-                case "$HOST_ARCH" in
-                    arm64) expected_homebrew_prefix=/opt/homebrew ;;
-                    x86_64) expected_homebrew_prefix=/usr/local ;;
-                esac
-                if [[ "$HOMEBREW_PREFIX" != "$expected_homebrew_prefix" &&
-                      "$MACOS_ALLOW_MIXED_HOMEBREW" != 1 ]]; then
-                    printf '%s\n' \
-                        "error: Homebrew prefix $HOMEBREW_PREFIX does not match $HOST_ARCH." \
-                        "expected: $expected_homebrew_prefix" \
-                        'set MACOS_ALLOW_MIXED_HOMEBREW=1 only for an intentional custom layout.' >&2
-                    return 1
-                fi
+                whp_validate_homebrew_prefix_for_arch "$HOMEBREW_PREFIX" \
+                    "$HOST_ARCH" "$MACOS_ALLOW_MIXED_HOMEBREW" || return 1
                 export PATH="$HOMEBREW_PREFIX/bin:$PATH"
                 homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
                 export PKG_CONFIG_PATH="$homebrew_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"

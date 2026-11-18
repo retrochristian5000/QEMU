@@ -63,6 +63,8 @@ on:
       - 'scripts/whp-build/portable-build.py'
       - 'scripts/whp-build/portable-build-entry.py'
       - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/macos-build-hygiene.bash'
+      - 'scripts/tests/test-macos-homebrew-prefix-policy.bash'
       - 'scripts/whp-build/build-targets.bash'
       - 'scripts/whp-build/post-build.bash'
       - 'scripts/tests/test-post-build-artifacts.py'
@@ -227,6 +229,7 @@ jobs:
           python3 scripts/tests/test-native-asan-global-link.py
           python3 scripts/tests/test-native-llvm-shared.py
           bash scripts/tests/test-macos-sdk-selection.bash
+          bash scripts/tests/test-macos-homebrew-prefix-policy.bash
           bash scripts/tests/test-archive-tool-policy.bash
           python3 scripts/tests/test-vmdk-overflow.py
           python3 scripts/tests/test-test-policy.py

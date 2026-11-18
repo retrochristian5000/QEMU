@@ -18,6 +18,29 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+macOS external prefix policy
+----------------------------
+
+An installed Homebrew manager's reported ``--prefix`` is not required
+to match the conventional ``/opt/homebrew`` (arm64) or
+``/usr/local`` (x86_64) spelling. A custom absolute prefix, including
+one containing spaces, is allowed without setting
+``MACOS_ALLOW_MIXED_HOMEBREW=1``. Only the *opposite architecture's
+conventional prefix* requires that explicit compatibility override.
+The build still validates the selected manager, native toolchain, SDK,
+architecture and actual library capabilities at their owning boundaries;
+a directory path is not evidence of ABI compatibility.
+
+The macOS hygiene stage now preserves explicit ``HOMEBREW_PREFIX``,
+``WHP_BREW_SEED`` and ``WHP_HOMEBREW_BREW`` selections instead of
+replacing them with an available default Homebrew, and does not
+automatically introduce Homebrew under the MacPorts/system provider.
+An incompatible explicit prefix must reach provider validation and fail,
+not be silently substituted. This relaxes external provider placement,
+**not** the managed QEMU library ownership checks or Apple SDK isolation.
+``scripts/tests/test-macos-homebrew-prefix-policy.bash`` covers this
+boundary without installing packages or rebuilding toolchains.
+
 Read-only Homebrew build-tool inventory
 --------------------------------------
 
