@@ -119,7 +119,7 @@ class PerlPromotionPolicyTests(unittest.TestCase):
             text.rindex("validate_installed_core_headers(executable, prefix, cc, sdk, work)"),
             text.index("temporary_marker.replace(marker_path)"),
         )
-        self.assertIn("SCHEMA = \"8\"SCHEMA = \"7\"", text)
+        self.assertIn("SCHEMA = \"8\"", text)
 
 
 if __name__ == "__main__":
