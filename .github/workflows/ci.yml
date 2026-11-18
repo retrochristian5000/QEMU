@@ -30,6 +30,11 @@ jobs:
       - name: Validate CI compiler-cache publication rules
         run: python3 scripts/tests/test-ci-compiler-cache-policy.py
 
+      - name: Validate BusyBox bracket seed implementation isolation
+        run: |
+          /bin/sh -n 'seeds/BB[.sh'
+          python3 scripts/tests/test-BB-bracket-seed.py -v
+
       - name: Guard executable QEMU configure entry point
         run: |
           test -x configure

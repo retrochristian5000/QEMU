@@ -1187,6 +1187,24 @@ implementation each, before source refresh.  The ``install`` seed
 selects the executable used by bootstrap install commands; it does not
 install QEMU itself or replace Automake's ``INSTALL`` variables.
 
+The optional ``seeds/BB[.sh`` selects a **BusyBox multicall**
+executable with a functioning ``[`` applet. It does not replace the
+generic external ``seeds/[.sh`` adapter, the shell builtin ``[``, or
+the independent ``test`` command. The explicit
+``WHP_BB_BRACKET_SEED`` override fails closed; normal discovery accepts
+only a usable BusyBox provider and never substitutes a generic
+standalone bracket executable. Admission verifies BusyBox identity,
+the ``[`` applet inventory, matching true/false predicates, and
+syntax-error statuses when the final ``]`` is missing or malformed.
+The ``--print-seed`` output identifies the multicall executable,
+which must be invoked as ``busybox [ expression ]``, not as a bare
+shell ``[``. The ``--check`` mode reports optional ``-ef``
+support without requiring it on older BusyBox releases. This seed
+does not download BusyBox, mandate it on macOS, or add a dependency
+to QEMU's native source bootstrap. The fast CI regression checks
+adapter recursion, implementation separation, functional predicates
+and the rejection of version-banner-only impostors.
+
 The optional ``seeds/brew.sh`` selects an *installed* Homebrew command
 before the macOS dependency-provider stage. Explicit ``WHP_BREW_SEED``
 and downstream ``WHP_HOMEBREW_BREW`` choices must agree, and
