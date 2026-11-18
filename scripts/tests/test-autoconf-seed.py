@@ -122,6 +122,62 @@ class AutoconfSeedTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, str(self.ac) + "\n")
 
+    def run_host_pair(self, first: Path, second: Path):
+        # Test the real POSIX helper functions without launching QEMU build.sh.
+        source = HOST_TOOLS.read_text(encoding="utf-8")
+        start = source.index("whp_gnu_tool_version()\n")
+        end = source.index("whp_automake_pair_usable()\n", start)
+        functions = source[start:end]
+        return subprocess.run(
+            ["/bin/sh", "-c",
+             functions + '\nwhp_gnu_tool_pair_usable "$1" "$2" "$3"\n',
+             "test-host-tool-pair", str(first), str(second), "GNU Autoconf"],
+            env=self.env, text=True, capture_output=True, check=False, timeout=8,
+        )
+
+    def test_pinned_git_revision_accepted_by_both_checks(self):
+        release = "2.73.git-6a5081d00dfc"
+        fake(self.ac, release)
+        fake(self.am4, release)
+        result = self.run_seed("--check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_host_pair(self.ac, self.am4)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        fake(self.am4, "2.73.git-000000000000")
+        self.assertNotEqual(self.run_seed("--check").returncode, 0)
+        self.assertNotEqual(self.run_host_pair(self.ac, self.am4).returncode, 0)
+
+    def test_pinned_archive_and_malformed_banners(self):
+        archive = "2.73.archive-abcdef123456"
+        fake(self.ac, archive)
+        fake(self.am4, archive)
+        self.assertEqual(self.run_seed("--check").returncode, 0)
+        self.assertEqual(self.run_host_pair(self.ac, self.am4).returncode, 0)
+        for value in (
+            "2.73.git-", "2.73.git-short", "2.73.git-abcdef12345g",
+            "2.73.archive-abcdef12345g", "2.73.other-abcdef123456",
+            "2.73.git-abcdef123456-extra", "2.73.",
+        ):
+            with self.subTest(version=value):
+                fake(self.ac, value)
+                fake(self.am4, value)
+                self.assertNotEqual(self.run_seed("--check").returncode, 0)
+                self.assertNotEqual(
+                    self.run_host_pair(self.ac, self.am4).returncode, 0
+                )
+
+    def test_explicit_path_with_spaces_is_one_executable(self):
+        directory = self.second / "Autoconf tools with spaces"
+        autoconf = directory / "autoconf"
+        autom4te = directory / "autom4te"
+        fake(autoconf, "2.73.git-6a5081d00dfc")
+        fake(autom4te, "2.73.git-6a5081d00dfc")
+        result = self.run_seed("--check", WHP_AUTOCONF_SEED=str(autoconf))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(autoconf), result.stdout)
+        self.assertEqual(self.run_host_pair(autoconf, autom4te).returncode, 0)
+
     def test_host_selection_uses_dedicated_seed(self):
         source = HOST_TOOLS.read_text(encoding="utf-8")
         self.assertIn('seeds/autoconf.sh" --print-seed', source)

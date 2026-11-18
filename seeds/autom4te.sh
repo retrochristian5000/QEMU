@@ -15,8 +15,11 @@ resolve_seed()
     value=$1
     [ -n "$value" ] || exit 1
     case "$value" in
-        *[[:space:]]*) exit 1 ;;
+        *'
+'*) exit 1 ;;
         */*) path=$value ;;
+        # A bare command name must not include shell argument text.
+        *[[:space:]]*) exit 1 ;;
         *) path=$(command -v "$value" 2>/dev/null) || exit 1 ;;
     esac
     [ -f "$path" ] && [ -x "$path" ] || exit 1
@@ -46,11 +49,31 @@ gnu_autoconf_version()
         *) exit 1 ;;
     esac
     version=${first##* }
+    # Keep the exact pinned source identity for Autoconf/autom4te pairing.
     case "$version" in
+        *.git-*)
+            release=${version%.git-*}
+            revision=${version##*.git-} ;;
+        *.archive-*)
+            release=${version%.archive-*}
+            revision=${version##*.archive-} ;;
+        *)
+            release=$version
+            revision= ;;
+    esac
+    if [ -n "$revision" ]; then
+        [ "${#revision}" -eq 12 ] || exit 1
+        case "$revision" in
+            *[!0123456789abcdefABCDEF]*) exit 1 ;;
+        esac
+    elif [ "$release" != "$version" ]; then
+        exit 1
+    fi
+    case "$release" in
         [0-9]*.[0-9]*) ;;
         *) exit 1 ;;
     esac
-    case "$version" in
+    case "$release" in
         *[!0-9.]*|*..*|*.) exit 1 ;;
     esac
     printf '%s\n' "$version"
