@@ -150,7 +150,7 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
         'for my $module (qw(Carp Class::Struct Cwd Data::Dumper Exporter '
         'Fcntl File::Basename File::Compare File::Copy File::Find '
         'File::Spec File::Temp Getopt::Long IO::File POSIX '
-        'Text::ParseWords Time::HiRes)) { '
+        'Text::ParseWords)) { '
         'eval "require $module; 1" or do { '
         'print STDERR "WHP_PERL_MODULE:$module:$@"; exit 42 }; '
         '} '

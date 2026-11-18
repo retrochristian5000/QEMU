@@ -75,7 +75,8 @@ def check():
     assert 'f"SEED_PERL={seed}' in source
     assert 'env["PERL"] = seed' in source
     assert 'env=clean_host_environment(os.environ)' in source
-    assert 'Text::ParseWords Time::HiRes' in source
+    assert 'Text::ParseWords))' in source
+    assert "'Time::HiRes" not in source
     assert 'env["CC_FOR_BUILD"] = cc' in source
     assert 'env["SDKROOT"] = sdk' in source
     assert "-Uuseshrplib" in source

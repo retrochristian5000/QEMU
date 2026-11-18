@@ -76,8 +76,9 @@ class PerlAutotoolsBoundaryTests(unittest.TestCase):
         def failed_module(argv, **kwargs):
             self.assertEqual(argv[1], "-e")
             for mod in ("File::Temp", "File::Spec", "Getopt::Long",
-                        "Text::ParseWords", "IO::File", "POSIX", "Time::HiRes"):
+                        "Text::ParseWords", "IO::File", "POSIX"):
                 self.assertIn(mod, argv[2])
+            self.assertNotIn("Time::HiRes", argv[2])
             for name in POISON:
                 self.assertNotIn(name, kwargs["env"])
             return subprocess.CompletedProcess(

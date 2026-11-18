@@ -2241,9 +2241,10 @@ its native Configure/miniperl flow, before managed Automake and Autoconf.
 A successful interpreter and Config.pm probe is not sufficient for
 Autom4te: its Perl sources also use standard modules such as
 ``File::Temp``, ``File::Spec``, ``Getopt::Long``,
-``Text::ParseWords``, ``IO::File``, ``POSIX``, and
-``Time::HiRes``. The managed Perl admission test now loads those
-libraries before promotion and reports the missing module directly.
+``Text::ParseWords``, ``IO::File`` and ``POSIX``. The managed Perl admission test now loads
+those libraries before promotion and reports the missing module directly.
+``Time::HiRes`` remains optional: Autoconf falls back to coarser file
+modification timestamps when it is unavailable.
 
 The shared native bootstrap environment and independent Perl seed exclude
 inherited ``PERL5LIB``, ``PERLLIB``, ``PERL5OPT``, ``PERL5DB``,
