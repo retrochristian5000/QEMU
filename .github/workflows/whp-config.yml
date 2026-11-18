@@ -344,7 +344,16 @@ jobs:
         run: |
           set -euo pipefail
           build_root="$RUNNER_TEMP/whp-libtool"
-          prefix="$(python3 scripts/ensure-libtool.py \
+          # An inherited QEMU guest Fortran toolchain must not be used by
+          # native Libtool's optional Fortran 77/Fortran language probes.
+          # This is a real first-build smoke, not a cache-only assertion.
+          prefix="$(FC=/unavailable/guest-gfortran \
+            F77=/unavailable/guest-f77 \
+            F90=/unavailable/guest-f90 \
+            FCFLAGS=-fguest-only FFLAGS=-fguest-only \
+            GNU_FC=/unavailable/guest-gfortran \
+            GNU_F77=/unavailable/guest-f77 \
+            python3 scripts/ensure-libtool.py \
             --build-dir "$build_root" --mode force)"
           test "$prefix" = "$build_root/deps/libtool"
           test -x "$prefix/bin/libtool"
