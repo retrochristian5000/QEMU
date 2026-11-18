@@ -109,6 +109,46 @@ seed_pair()
     printf '%s\n%s\n' "$automake" "$aclocal"
 )
 
+# A matching GNU version banner does not prove that aclocal can find the
+# installed Automake macros. This particularly matters when macOS/Homebrew
+# has relocated one tool or its shared data directory.
+seed_check_macros()
+(
+    selected_aclocal=$1
+    # Probe the executable's own configured macro directory, without
+    # inheriting user Perl module injections or an unrelated ACLOCAL_PATH.
+    unset PERL5LIB PERLLIB PERL5OPT PERL5DB PERL_LOCAL_LIB_ROOT
+    unset PERL_MM_OPT PERL_MB_OPT ACLOCAL_PATH
+    LC_ALL=C
+    export LC_ALL
+    macro_dir=$("$selected_aclocal" --print-ac-dir) || {
+        printf 'error: selected aclocal cannot report its macro directory: %s\n' \
+            "$selected_aclocal" >&2
+        exit 1
+    }
+    case "$macro_dir" in
+        /*) ;;
+        *)
+            printf 'error: aclocal macro directory is not absolute: %s\n' \
+                "$macro_dir" >&2
+            exit 1 ;;
+    esac
+    case "$macro_dir" in
+        *'
+'*)
+            printf '%s\n' 'error: aclocal reported more than one macro directory' >&2
+            exit 1 ;;
+    esac
+    for macro in init.m4 amversion.m4; do
+        if [ ! -r "$macro_dir/$macro" ]; then
+            printf 'error: aclocal macro directory lacks %s: %s (tool %s)\n' \
+                "$macro" "$macro_dir" "$selected_aclocal" >&2
+            exit 1
+        fi
+    done
+    printf 'WHP Automake macros: %s (init.m4, amversion.m4)\n' "$macro_dir"
+)
+
 pair=$(seed_pair) || exit 1
 automake=${pair%%'
 '*}
@@ -117,6 +157,7 @@ aclocal=${pair#*'
 case "${1:-}" in
     --print-seed|--print-automake) printf '%s\n' "$automake" ;;
     --print-aclocal) printf '%s\n' "$aclocal" ;;
+    --check-macros) seed_check_macros "$aclocal" ;;
     --check)
         printf 'WHP GNU Automake seed: %s\nWHP GNU aclocal seed: %s\n' "$automake" "$aclocal" ;;
     --aclocal)

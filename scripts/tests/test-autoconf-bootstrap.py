@@ -58,6 +58,8 @@ def main() -> int:
         "WHP Autoconf fork URL",
     )
     require(helper, 'SUBMODULE_REL = pathlib.Path("toolchains/autoconf")', "pinned source")
+    require(helper, '"--check-macros"', "Automake macro directory before Autoconf")
+    require(host_tools, '"--check-macros"', "macOS-ready Automake host pair admission")
     # Python already resolves the bootstrap work and build directories.
     # The pinned Autoconf bootstrap invokes mktemp, not standalone realpath.
     # A missing realpath executable must not reject otherwise valid hosts.

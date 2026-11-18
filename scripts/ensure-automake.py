@@ -360,6 +360,24 @@ def automake_pair_usable(prefix: pathlib.Path) -> bool:
         )
         if completed.returncode != 0 or marker not in completed.stdout:
             return False
+    # --version does not load the installed macro files. A relocated or
+    # incomplete share/aclocal-* directory must invalidate the managed cache
+    # before downstream Autoconf invokes this aclocal.
+    env = clean_host_environment(os.environ)
+    env["WHP_AUTOMAKE_SEED"] = str(automake)
+    env["WHP_ACLOCAL_SEED"] = str(aclocal)
+    checked = subprocess.run(
+        ["/bin/sh", str(ROOT / "seeds" / "automake.sh"), "--check-macros"],
+        env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False,
+    )
+    if checked.returncode:
+        print(
+            "WHP Automake installed macro check failed: "
+            + (checked.stderr.strip() or str(aclocal)),
+            file=sys.stderr,
+        )
+        return False
     return True
 
 

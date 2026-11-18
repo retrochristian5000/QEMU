@@ -126,6 +126,31 @@ class AutoconfPreflightTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "not executable"):
                     HELPER.select_bootstrap_git()
 
+    def test_automake_pair_macro_preflight_fails_before_source_use(self):
+        seen = []
+
+        def execute(args, **kwargs):
+            seen.append(args[-1])
+            if args[-1] == "--print-seed":
+                return subprocess.CompletedProcess(args, 0, "/opt/test/bin/automake\n", "")
+            if args[-1] == "--print-aclocal":
+                return subprocess.CompletedProcess(args, 0, "/opt/test/bin/aclocal\n", "")
+            self.assertEqual(args[-1], "--check-macros")
+            self.assertEqual(kwargs["env"]["WHP_AUTOMAKE_SEED"],
+                             "/opt/test/bin/automake")
+            self.assertEqual(kwargs["env"]["WHP_ACLOCAL_SEED"],
+                             "/opt/test/bin/aclocal")
+            return subprocess.CompletedProcess(
+                args, 1, "", "aclocal macro directory lacks init.m4"
+            )
+
+        with mock.patch.object(HELPER.subprocess, "run", side_effect=execute):
+            with self.assertRaisesRegex(RuntimeError, "init.m4"):
+                HELPER.select_automake_pair()
+        self.assertEqual(
+            seen, ["--print-seed", "--print-aclocal", "--check-macros"]
+        )
+
     def test_missing_seed_fails_before_source_reconciliation(self):
         with (
             mock.patch.object(HELPER, "select_automake_pair",

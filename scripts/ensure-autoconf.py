@@ -308,6 +308,22 @@ def select_automake_pair() -> tuple[str, str]:
                 + (completed.stderr.strip() or flag)
             )
         selected.append(path)
+    # On macOS, a GNU aclocal executable can survive a Homebrew prefix
+    # change while its versioned share/aclocal-* directory disappears.
+    # Admission must precede Autoconf source reconciliation.
+    env = clean_host_environment(os.environ)
+    env["WHP_AUTOMAKE_SEED"] = selected[0]
+    env["WHP_ACLOCAL_SEED"] = selected[1]
+    check = subprocess.run(
+        ["/bin/sh", str(adapter), "--check-macros"],
+        env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False,
+    )
+    if check.returncode:
+        raise RuntimeError(
+            "selected Automake/aclocal macro directory is unusable: "
+            + (check.stderr.strip() or selected[1])
+        )
     return selected[0], selected[1]
 
 

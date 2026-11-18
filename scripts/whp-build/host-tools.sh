@@ -105,7 +105,11 @@ whp_gnu_tool_pair_usable()
 
 whp_automake_pair_usable()
 {
-    whp_gnu_tool_pair_usable "$1" "$2" 'GNU automake'
+    whp_gnu_tool_pair_usable "$1" "$2" 'GNU automake' || return 1
+    # A version-correct Homebrew/managed aclocal can still point at a missing
+    # share/aclocal-* directory. Reject it before attempting Autoconf.
+    WHP_AUTOMAKE_SEED=$1 WHP_ACLOCAL_SEED=$2 \
+        /bin/sh "$SOURCE_DIR/seeds/automake.sh" --check-macros >/dev/null 2>&1
 }
 
 # The native Automake seed resolves a coherent automake/aclocal pair and

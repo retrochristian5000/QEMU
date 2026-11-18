@@ -2380,6 +2380,47 @@ installed managed Autoconf programs. The regression contracts are
 ``scripts/tests/test-autoconf-rollback.py``, and
 ``scripts/tests/test-bootstrap-phase-order.py``.
 
+Automake macro-directory portability before Autoconf
+-------------------------------------------------
+
+A matched ``automake --version`` and ``aclocal --version`` pair
+is not evidence that its installation data is complete. In particular,
+macOS native, Homebrew, and managed prefixes can retain executable
+links after their ``share/aclocal-*`` macro directories have moved or
+been removed. That breaks the ``aclocal -I m4`` step in the pinned
+Autoconf source bootstrap, producing a failure that appears to belong
+to Autoconf rather than its upstream Automake installation.
+
+The existing ``seeds/automake.sh`` now owns a narrowly scoped
+``--check-macros`` admission: it selects a same-version GNU pair,
+asks the *selected aclocal* for ``--print-ac-dir``, and requires an
+absolute, usable macro directory containing readable ``init.m4``
+and ``amversion.m4``. It does not infer a Homebrew prefix, assume
+GNU-only filesystem utilities, require a separate libtool macro tree,
+or confuse a system ``share/aclocal`` directory with Automake's
+versioned directory. Perl module environment overrides and unrelated
+``ACLOCAL_PATH`` entries are suppressed only for this read-only
+probe. Paths containing spaces remain valid.
+
+The host Automake selection checks this capability in auto mode, so
+a version-correct but data-incomplete host pair can trigger the existing
+managed Automake fallback *before* managed Autoconf. Managed Automake
+cache reuse and post-install promotion also require the macro test.
+The Autoconf helper runs the same test after resolving its authoritative
+Automake/aclocal pair and **before** reconciling Autoconf sources. An
+explicit invalid pair fails with its missing macro diagnostic rather
+than silently switching providers. Documentation and optional
+``ACLOCAL_PATH`` macros remain separate and are not unconditional
+bootstrap dependencies.
+
+Regression tests: ``scripts/tests/test-automake-seed.py``,
+``scripts/tests/test-automake-makeinfo-preflight.py``,
+``scripts/tests/test-ensure-autoconf-validation.py``, and the
+Ubuntu/macOS ``automake-bootstrap.yml`` matrix. The pinned Automake
+source tree has no case-folded path collisions at the inspected gitlink;
+that negative scan is not proof that every future checkout or external
+macro prefix will work on case-insensitive APFS.
+
 Autoconf bootstrap boundary
 ---------------------------
 

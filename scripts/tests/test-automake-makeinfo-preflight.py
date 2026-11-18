@@ -155,6 +155,33 @@ class AutomakeMakeinfoTests(unittest.TestCase):
                 module.bootstrap(self.root / "build")
             reconcile.assert_not_called()
 
+    def test_installed_automake_requires_its_macro_data(self):
+        # Version banners alone cannot admit a stale Homebrew/managed prefix.
+        prefix = self.root / "managed-automake"
+        bindir = prefix / "bin"
+        bindir.mkdir(parents=True)
+        for name in ("automake", "aclocal"):
+            binary = bindir / name
+            binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            binary.chmod(0o755)
+
+        def execute(args, **kwargs):
+            if args[-1] == "--version":
+                return module.subprocess.CompletedProcess(
+                    args, 0, f"{Path(args[0]).name} (GNU automake) 1.19\n", ""
+                )
+            self.assertEqual(args[-1], "--check-macros")
+            self.assertEqual(kwargs["env"]["WHP_AUTOMAKE_SEED"],
+                             str(bindir / "automake"))
+            self.assertEqual(kwargs["env"]["WHP_ACLOCAL_SEED"],
+                             str(bindir / "aclocal"))
+            return module.subprocess.CompletedProcess(
+                args, 1, "", "missing init.m4"
+            )
+
+        with mock.patch.object(module.subprocess, "run", side_effect=execute):
+            self.assertFalse(module.automake_pair_usable(prefix))
+
     def test_marker_and_child_environment_are_bound_to_makeinfo(self):
         source = (ROOT / "scripts/ensure-automake.py").read_text(
             encoding="utf-8"

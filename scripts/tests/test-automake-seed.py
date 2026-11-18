@@ -4,6 +4,7 @@
 
 from pathlib import Path
 import os
+import shlex
 import subprocess
 import tempfile
 
@@ -11,12 +12,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / "seeds/automake.sh"
 
 
-def fake(path: Path, version: str, *, family="GNU automake"):
+def fake(path: Path, version: str, *, family="GNU automake",
+         macro_dir: Path | None = None):
     path.parent.mkdir(parents=True, exist_ok=True)
+    macro_path = str(macro_dir or path.parent / "missing-aclocal-macros")
     path.write_text(
         "#!/bin/sh\n"
         'case "$1" in\n'
         '  --version) printf "%s\\n" "' + path.name + " (" + family + ") " + version + '";;\n'
+        '  --print-ac-dir) printf "%s\\n" ' + shlex.quote(macro_path) + ';;\n'
         '  --whp-automake-adapter-probe) exit 2;;\n'
         '  *) printf "called:%s:%s\\n" "' + path.name + '" "$1";;\n'
         'esac\n',
@@ -42,7 +46,13 @@ def main():
         local = selected / "aclocal"
         wrong = other / "aclocal"
         fake(am, "1.16.5")
-        fake(local, "1.16.5")
+        # Real Homebrew/managed aclocal directories can contain spaces and
+        # do not have to be adjacent to the aclocal executable.
+        macro_dir = root / "prefix with spaces" / "share" / "aclocal-1.16"
+        macro_dir.mkdir(parents=True)
+        for name in ("init.m4", "amversion.m4"):
+            (macro_dir / name).write_text("dnl valid macro data\n")
+        fake(local, "1.16.5", macro_dir=macro_dir)
         fake(wrong, "1.17.0")
         env = {**os.environ, "PATH": str(other) + os.pathsep + str(selected) +
                os.pathsep + "/usr/bin:/bin"}
@@ -56,6 +66,19 @@ def main():
         result = run(env, "--print-aclocal")
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(local), result.stdout
+
+        result = run(env, "--check-macros")
+        assert result.returncode == 0, result.stderr
+        assert str(macro_dir) in result.stdout
+
+        # A version-correct binary without its versioned macro files is
+        # invalid for the Autoconf source bootstrap.
+        (macro_dir / "init.m4").unlink()
+        missing_macro = run(env, "--check-macros")
+        assert missing_macro.returncode != 0
+        assert "init.m4" in missing_macro.stderr
+        assert run(env, "--print-seed").returncode == 0
+        (macro_dir / "init.m4").write_text("dnl restored\n")
 
         result = run(env, "--aclocal", "--help")
         assert result.returncode == 0, result.stderr
@@ -76,7 +99,7 @@ def main():
         result = run(explicit_split, "--print-aclocal")
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(wrong)
-        fake(local, "1.16.5")
+        fake(local, "1.16.5", macro_dir=macro_dir)
         fake(wrong, "1.17.0")
 
         explicit = dict(env, WHP_ACLOCAL_SEED=str(wrong))
