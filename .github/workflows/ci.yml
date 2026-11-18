@@ -35,6 +35,11 @@ jobs:
           /bin/sh -n 'seeds/BB[.sh'
           python3 scripts/tests/test-BB-bracket-seed.py -v
 
+      - name: Verify native ln seed and symlink bootstrap routing
+        run: |
+          /bin/sh -n seeds/ln.sh
+          bash scripts/tests/test-ln-seed-adapter.bash
+
       - name: Guard executable QEMU configure entry point
         run: |
           test -x configure

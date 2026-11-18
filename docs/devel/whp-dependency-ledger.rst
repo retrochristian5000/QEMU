@@ -1178,14 +1178,27 @@ Root seed adapter namespace
 Only host-tool seed adapters live under the repository-root
 ``seeds/`` directory, including ``awk.sh``, ``grep.sh``,
 ``sed.sh``, ``git.sh``, ``cc.sh``, ``cxx.sh``, ``cpp.sh``,
-``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh``, ``brew.sh`` and
-``install.sh``. Their explicit invocation is
+``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh``, ``ln.sh``,
+``brew.sh`` and ``install.sh``. Their explicit invocation is
 ``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public
-build entry.  The implemented ``cp`` and ``install`` literal-command
-bridges under ``scripts/whp-build/seed-bin/`` select one tested host
-implementation each, before source refresh.  The ``install`` seed
-selects the executable used by bootstrap install commands; it does not
-install QEMU itself or replace Automake's ``INSTALL`` variables.
+build entry.  The implemented ``cp``, ``install``, and ``ln``
+literal-command bridges under ``scripts/whp-build/seed-bin/`` select
+one tested host implementation each before source refresh. The
+``install`` seed selects the executable used by bootstrap install
+commands; it does not install QEMU or replace Automake's ``INSTALL``.
+
+The generic ``seeds/ln.sh`` probes relative symlinks, dangling
+symlinks, ``ln -sf`` replacement of a regular file, and true
+hardlink aliasing before locking ``WHP_LN_SEED``. The PowerPC LLVM
+archive and strip bootstraps create literal ``ln -s`` links; the
+shared seed-bin PATH routes them to one validated native executable
+without repeatedly probing on each link. Native macOS/BSD and GNU
+Coreutils implementations are both supported, with ``gln`` as an
+optional fallback. Invalid explicit overrides and recursive adapters
+fail closed. ``ln.sh`` does not change Autoconf/Libtool's ``LN_S``
+variables or assume nonportable ``-T``, ``-n``, or ``-h``
+replacement flags. The ``test-ln-seed-adapter.bash`` regression
+checks link behavior, path routing, shell syntax, and provider rejection.
 
 The optional ``seeds/BB[.sh`` selects a **BusyBox multicall**
 executable with a functioning ``[`` applet. It does not replace the

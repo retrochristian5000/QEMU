@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Literal ln commands use the locked native link provider selected by build.sh.
+set -eu
+if [ "${1:-}" = --whp-ln-adapter-probe ]; then
+    printf '%s\n' whp-qemu-ln-seed-adapter
+    exit 0
+fi
+case "$0" in
+    */*) exec "${0%/*}/../../../seeds/ln.sh" "$@" ;;
+    *) printf 'error: ln bridge must be invoked by path\n' >&2; exit 1 ;;
+esac

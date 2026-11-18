@@ -99,6 +99,20 @@ export WHP_INSTALL_SEED WHP_INSTALL_LOCKED
 printf 'QEMU seed install: %s\n' "$WHP_INSTALL_SEED" >&2
 unset WHP_INSTALL_BRIDGE
 
+# Lock one native ln before toolchain steps create symbolic and hard links.
+# Literal ln commands use the existing seed-bin PATH; do not set LN_S,
+# which Autoconf/Libtool may define as a full command or a copy fallback.
+WHP_LN_SEED=$("$SOURCE_DIR/seeds/ln.sh" --print-seed) || exit 1
+WHP_LN_BRIDGE="$SOURCE_DIR/scripts/whp-build/seed-bin/ln"
+if [ ! -x "$WHP_LN_BRIDGE" ]; then
+    printf 'error: QEMU literal ln bridge is unavailable: %s\n' "$WHP_LN_BRIDGE" >&2
+    exit 1
+fi
+WHP_LN_LOCKED=1
+export WHP_LN_SEED WHP_LN_LOCKED
+printf 'QEMU seed ln: %s\n' "$WHP_LN_SEED" >&2
+unset WHP_LN_BRIDGE
+
 # Public host snapshot: capture once before Python, seed compilers and linkers.
 # Ignore inherited WHP_HOST_*: these values describe the current build machine.
 WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)
