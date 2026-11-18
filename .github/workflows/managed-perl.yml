@@ -20,6 +20,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - 'scripts/tests/test-perl-configure-control-flow.py'
@@ -43,6 +44,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
       - 'scripts/tests/test-perl-configure-control-flow.py'
@@ -67,6 +69,7 @@ jobs:
       - name: Verify native Perl seed and pinned build graph
         run: |
           python3 scripts/tests/test-perl-seed.py
+          python3 scripts/tests/test-perl-autotools-boundary.py -v
           python3 scripts/tests/test-perl-bootstrap.py
           python3 scripts/tests/test-perl-core-headers.py -v
           python3 scripts/tests/test-perl-configure-unattended.py

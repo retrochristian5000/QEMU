@@ -153,6 +153,7 @@ def reconcile_submodule(parent: pathlib.Path, relpath: pathlib.Path,
 # Never erase the caller's environment. Preserve PATH, HOME, SDKROOT,
 # DEVELOPER_DIR, CC_FOR_BUILD and WHP seed identities. Tool-specific
 # executables are restored explicitly by each native bootstrap stage.
+# Ignore local Perl startup/library injections when bootstrapping native tools.
 DROP = frozenset("""
 BASH_ENV ENV POSIXLY_CORRECT MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES
 MAKEOVERRIDES MAKELEVEL MAKE MAKE_CMD CC CXX CPP CXXCPP OBJC OBJCXX FC F77 F90
@@ -170,6 +171,7 @@ LD_LIBRARY_PATH LD_PRELOAD COMPILER_PATH GCC_EXEC_PREFIX
 DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
 DYLD_INSERT_LIBRARIES ASAN_OPTIONS LSAN_OPTIONS UBSAN_OPTIONS
 TSAN_OPTIONS MSAN_OPTIONS
+PERL5LIB PERLLIB PERL5OPT PERL5DB PERL_LOCAL_LIB_ROOT PERL_MM_OPT PERL_MB_OPT
 """.split())
 DROP_PREFIXES = (
     "ac_cv_", "gl_cv_", "am_cv_", "gt_cv_", "lt_cv_", "make_cv_",

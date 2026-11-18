@@ -20,6 +20,7 @@ on:
       - 'scripts/tests/test-autoconf-seed.py'
       - 'seeds/perl.sh'
       - 'scripts/tests/test-perl-seed.py'
+      - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
@@ -54,6 +55,7 @@ on:
       - 'scripts/tests/test-autoconf-seed.py'
       - 'seeds/perl.sh'
       - 'scripts/tests/test-perl-seed.py'
+      - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-autom4te-seed.py'
       - 'scripts/tests/test-automake-seed.py'
       - 'scripts/tests/test-m4-seed.py'
@@ -147,7 +149,9 @@ jobs:
           python3 scripts/tests/test-autoconf-seed.py
 
       - name: Verify native Perl seed semantics
-        run: python3 scripts/tests/test-perl-seed.py
+        run: |
+          python3 scripts/tests/test-perl-seed.py
+          python3 scripts/tests/test-perl-autotools-boundary.py -v
 
       - name: Reject corrupt bootstrap variables
         run: python3 scripts/tests/test-bootstrap-env.py

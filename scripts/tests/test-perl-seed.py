@@ -73,6 +73,15 @@ def check():
         if native:
             actual = dict(env, WHP_PERL_SEED=native)
             assert run(actual, "--print-seed").returncode == 0
+            # Native seed must ignore external startup code and library paths.
+            injected = dict(actual, PERL5OPT="-MNoSuchWHPBootstrapModule",
+                            PERL5LIB=str(root / "unrelated-perl-lib"))
+            checked = run(injected, "--print-seed")
+            assert checked.returncode == 0, checked.stderr
+            assert checked.stdout.strip() == native
+            forwarded = run(injected, "-e", 'print "native-perl-ok\\n";')
+            assert forwarded.returncode == 0, forwarded.stderr
+            assert forwarded.stdout.strip() == "native-perl-ok"
 
     print("WHP Perl seed execution and override contracts: verified")
 

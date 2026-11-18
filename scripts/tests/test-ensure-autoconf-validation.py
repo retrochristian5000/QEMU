@@ -153,12 +153,16 @@ class AutoconfPreflightTests(unittest.TestCase):
                     )
                 observed.append(kwargs["env"].get("M4"))
                 self.assertNotIn("AUTOCONF", kwargs["env"])
+                self.assertNotIn("PERL5OPT", kwargs["env"])
+                self.assertNotIn("PERL5LIB", kwargs["env"])
                 (kwargs["cwd"] / "configure").write_text("#!/bin/sh\n")
                 return subprocess.CompletedProcess(argv, 0, "", "")
             with (
                 mock.patch.object(HELPER.subprocess, "run", side_effect=fake_run),
                 mock.patch.dict(HELPER.os.environ, {"M4": "/poison/m4",
-                                                  "AUTOCONF": "/poison/autoconf"}),
+                                                  "AUTOCONF": "/poison/autoconf",
+                                                  "PERL5OPT": "-MUntrustedModule",
+                                                  "PERL5LIB": "/other/perl/lib"}),
             ):
                 self.assertTrue(HELPER.suite_usable(prefix, m4="/seed/m4"))
             self.assertEqual(observed, ["/seed/m4"])

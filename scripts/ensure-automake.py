@@ -125,6 +125,7 @@ def select_seed_perl() -> str:
         raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
     completed = subprocess.run(
         ["/bin/sh", str(adapter), "--print-seed"],
+        env=clean_host_environment(os.environ),
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     selected = completed.stdout.strip()
@@ -242,7 +243,7 @@ def select_seed_sed() -> str:
 
 
 def first_line(command: List[str]) -> str:
-    output = run_text(command)
+    output = run_text(command, env=clean_host_environment(os.environ))
     return output.splitlines()[0] if output else ""
 
 

@@ -4,6 +4,10 @@
 # Perl is a root dependency, not a tool that this adapter builds.
 set -eu
 
+# Isolate the native Perl seed from local modules and injected startup code.
+# This only modifies the adapter child, not its calling shell.
+unset PERL5LIB PERLLIB PERL5OPT PERL5DB PERL_LOCAL_LIB_ROOT PERL_MM_OPT PERL_MB_OPT
+
 marker=whp-qemu-perl-seed-adapter
 if [ "${1:-}" = --whp-perl-adapter-probe ]; then
     printf '%s\n' "$marker"

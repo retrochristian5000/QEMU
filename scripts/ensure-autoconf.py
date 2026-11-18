@@ -166,7 +166,7 @@ def first_line(command: list[str]) -> str:
     # Perl and some compiler version banners start with an empty line.
     # Recording that blank line makes the cache marker insensitive to
     # version changes at an unchanged executable path.
-    for line in run_text(command).splitlines():
+    for line in run_text(command, env=clean_host_environment(os.environ)).splitlines():
         if line.strip():
             return line.strip()
     raise RuntimeError(f"version command returned no text: {shlex.join(command)}")
@@ -180,6 +180,7 @@ def select_seed_perl() -> str:
         raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
     completed = subprocess.run(
         ["/bin/sh", str(adapter), "--print-seed"],
+        env=clean_host_environment(os.environ),
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     selected = completed.stdout.strip()
@@ -521,7 +522,7 @@ def suite_usable(prefix: pathlib.Path, *, m4: str | None = None) -> bool:
     # libraries.  The bootstrap callers deliberately poison AUTOCONF/AUTOM4TE
     # to prove self-host isolation, so do not let those seed-only sentinels
     # leak into validation of the completed private installation.
-    smoke_env = os.environ.copy()
+    smoke_env = clean_host_environment(os.environ)
     for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF", "M4"):
         smoke_env.pop(key, None)
     if m4 is not None:

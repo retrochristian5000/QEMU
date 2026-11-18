@@ -2233,6 +2233,30 @@ it does not enable Flang as a required LLVM project.  Meson implements
 Fortran-language support, but a build that never requests that language
 does not thereby require a Fortran compiler.
 
+Perl-to-Autotools bootstrap boundary
+------------------------------------
+
+The managed Perl fork is built from an independent root Perl seed through
+its native Configure/miniperl flow, before managed Automake and Autoconf.
+A successful interpreter and Config.pm probe is not sufficient for
+Autom4te: its Perl sources also use standard modules such as
+``File::Temp``, ``File::Spec``, ``Getopt::Long``,
+``Text::ParseWords``, ``IO::File``, ``POSIX``, and
+``Time::HiRes``. The managed Perl admission test now loads those
+libraries before promotion and reports the missing module directly.
+
+The shared native bootstrap environment and independent Perl seed exclude
+inherited ``PERL5LIB``, ``PERLLIB``, ``PERL5OPT``, ``PERL5DB``,
+``PERL_LOCAL_LIB_ROOT``, ``PERL_MM_OPT`` and ``PERL_MB_OPT``
+from child processes. These variables can otherwise cause the managed
+Perl to load modules from another interpreter, execute injected options,
+or misreport its own Config. Explicit ``PERL``, ``WHP_PERL_SEED``
+and independent ``WHP_PERL_BOOTSTRAP_SEED`` identities are retained.
+This cleanup does not modify the user's calling environment. The
+``test-perl-autotools-boundary.py`` regression checks module admission,
+environment isolation, Autotools selection and prevention of Perl's
+bootstrap self-cycle.
+
 Autoconf bootstrap boundary
 ---------------------------
 

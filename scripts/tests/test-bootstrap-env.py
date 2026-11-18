@@ -33,6 +33,11 @@ poison = {
     "HOST_CC": "/target/cc", "HOST_CFLAGS": "-I/target/headers",
     "HOST_CPPFLAGS": "-DWRONG=1", "HOSTCFLAGS": "-I/legacy/headers",
     "CFLAGS_FOR_BUILD": "-I/untrusted/host",
+    "PERL5LIB": "/other/perl/lib", "PERLLIB": "/other/legacy/lib",
+    "PERL5OPT": "-MUntrustedModule", "PERL5DB": "/other/db.pl",
+    "PERL_LOCAL_LIB_ROOT": "/other/local",
+    "PERL_MM_OPT": "INSTALL_BASE=/other/local",
+    "PERL_MB_OPT": "--install_base /other/local",
 }
 env = module.clean_host_environment(poison)
 for key in ("PATH", "SDKROOT", "DEVELOPER_DIR", "CC_FOR_BUILD",

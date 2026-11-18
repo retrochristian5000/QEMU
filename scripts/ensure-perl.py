@@ -100,7 +100,7 @@ def run(argv: list[str], *, cwd: pathlib.Path | None = None,
 
 
 def root_perl() -> str:
-    env = os.environ.copy()
+    env = clean_host_environment(os.environ)
     seed = env.get("WHP_PERL_BOOTSTRAP_SEED", "")
     if seed:
         env["WHP_PERL_SEED"] = seed
@@ -145,6 +145,15 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
         'print STDERR "WHP_PERL_MODULE:warnings:$@"; exit 42 }; '
         'eval { require Config; 1 } or do { '
         'print STDERR "WHP_PERL_MODULE:Config:$@"; exit 42 }; '
+        # Autom4te uses more core modules than strict/warnings/Config.
+        # Check the modules that its scripts actually import at runtime.
+        'for my $module (qw(Carp Class::Struct Cwd Data::Dumper Exporter '
+        'Fcntl File::Basename File::Compare File::Copy File::Find '
+        'File::Spec File::Temp Getopt::Long IO::File POSIX '
+        'Text::ParseWords Time::HiRes)) { '
+        'eval "require $module; 1" or do { '
+        'print STDERR "WHP_PERL_MODULE:$module:$@"; exit 42 }; '
+        '} '
         'my $os = $Config::Config{osname}; '
         'print "whp-perl-native:$os\n";'
     )
@@ -152,6 +161,7 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
         result = subprocess.run(
             [str(path), "-e", program], text=True, errors="replace",
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=clean_host_environment(os.environ),
             check=False, timeout=15,
         )
     except subprocess.TimeoutExpired:
@@ -212,12 +222,8 @@ def validate_installed_core_headers(executable: pathlib.Path,
     the managed Perl installation exists, and on cached reuse: no seed Perl
     headers are required to bootstrap Perl itself.
     """
+    # The common cleaner now excludes Perl runtime injection as well.
     env = clean_host_environment(os.environ)
-    # A locally set PERL5LIB/PERLLIB may make the new Perl load the old
-    # interpreter's Config.pm; never allow it to certify the wrong headers.
-    for name in ("PERL5LIB", "PERLLIB", "PERL5OPT", "PERL5DB",
-                 "PERL_LOCAL_LIB_ROOT", "PERL_MM_OPT", "PERL_MB_OPT"):
-        env.pop(name, None)
     if sdk:
         env["SDKROOT"] = sdk
     config = run(
