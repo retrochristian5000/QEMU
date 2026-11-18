@@ -173,7 +173,13 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
         detail = result.stderr.strip()
         if "WHP_PERL_MODULE:" in detail:
             label = detail.split("WHP_PERL_MODULE:", 1)[1]
-            module, _, diagnostic = label.partition(":")
+            # Perl namespace separators use "::"; split only on the
+            # single colon after the full module name.
+            match = re.match(
+                r"^((?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Za-z_][A-Za-z0-9_]*):(.*)$",
+                label, re.DOTALL,
+            )
+            module, diagnostic = (\n                match.groups() if match else ("<unknown>", label)\n            )
             return reject(
                 f"Perl core module {module!r} failed to load (exit "
                 f"{result.returncode}): {diagnostic.strip() or 'no details'}; "
