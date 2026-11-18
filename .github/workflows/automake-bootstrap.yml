@@ -59,7 +59,10 @@ jobs:
       - name: Install bootstrap prerequisites (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install autoconf texinfo
+          brew install autoconf m4 texinfo
+          # GNU M4 is keg-only on macOS. Keep the source-bootstrap provider
+          # distinct from the system BSD m4 throughout Automake -> Autoconf.
+          echo "$(brew --prefix m4)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
 
       - name: Check pinned Automake test and bracket shell predicates

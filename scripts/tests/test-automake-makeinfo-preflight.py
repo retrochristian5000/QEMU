@@ -137,6 +137,9 @@ class AutomakeMakeinfoTests(unittest.TestCase):
         with (
             mock.patch.object(module, "select_seed_sed", return_value="/sed"),
             mock.patch.object(module, "select_seed_perl", return_value="/perl"),
+            # The test targets makeinfo alone: unrelated GNU M4 admission
+            # must not hide the intentionally missing documentation tool.
+            mock.patch.object(module, "select_gnu_m4", return_value="/m4"),
             mock.patch.object(
                 module, "select_seed_autoconf_pair",
                 return_value=("/autoconf", "/autom4te"),
