@@ -65,11 +65,11 @@ static PciMemoryRegionList *qmp_query_pci_regions(const PCIDevice *dev)
     return head;
 }
 
-static PciBridgeInfo *qmp_query_pci_bridge(PCIDevice *dev, PCIBus *bus,
-                                           int bus_num)
+static PciBridgeInfo *qmp_query_pci_bridge(PCIDevice *dev, PCIBus *bus)
 {
     PciBridgeInfo *info;
     PciMemoryRange *range;
+    PCIBus *child_bus = NULL;
 
     info = g_new0(PciBridgeInfo, 1);
 
@@ -90,14 +90,25 @@ static PciBridgeInfo *qmp_query_pci_bridge(PCIDevice *dev, PCIBus *bus,
     range->base = pci_bridge_get_base(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
     range->limit = pci_bridge_get_limit(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
 
-    if (dev->config[PCI_SECONDARY_BUS] != 0) {
-        PCIBus *child_bus = pci_find_bus_nr(bus,
-                                            dev->config[PCI_SECONDARY_BUS]);
-        if (child_bus) {
-            info->has_devices = true;
-            info->devices = qmp_query_pci_devices(child_bus,
-                                            dev->config[PCI_SECONDARY_BUS]);
-        }
+    /*
+     * A PCI bridge has its physical child bus from realization onward,
+     * even while firmware has not assigned its secondary bus number.
+     * Query the instantiated topology independently of configuration-space
+     * bus numbering.  This does not change guest PCI routing or reset state.
+     *
+     * Some devices advertise a bridge header without using PCIBridge;
+     * retain the traditional numbered-bus lookup for those devices.
+     */
+    if (IS_PCI_BRIDGE(dev)) {
+        child_bus = pci_bridge_get_sec_bus(PCI_BRIDGE(dev));
+    } else if (dev->config[PCI_SECONDARY_BUS] != 0) {
+        child_bus = pci_find_bus_nr(bus, dev->config[PCI_SECONDARY_BUS]);
+    }
+
+    if (child_bus) {
+        info->has_devices = true;
+        info->devices = qmp_query_pci_devices(child_bus,
+                                               dev->config[PCI_SECONDARY_BUS]);
     }
 
     return info;
@@ -138,7 +149,7 @@ static PciDeviceInfo *qmp_query_pci_device(PCIDevice *dev, PCIBus *bus,
 
     type = dev->config[PCI_HEADER_TYPE] & ~PCI_HEADER_TYPE_MULTI_FUNCTION;
     if (type == PCI_HEADER_TYPE_BRIDGE) {
-        info->pci_bridge = qmp_query_pci_bridge(dev, bus, bus_num);
+        info->pci_bridge = qmp_query_pci_bridge(dev, bus);
     } else if (type == PCI_HEADER_TYPE_NORMAL) {
         info->id->has_subsystem = info->id->has_subsystem_vendor = true;
         info->id->subsystem = pci_get_word(dev->config + PCI_SUBSYSTEM_ID);

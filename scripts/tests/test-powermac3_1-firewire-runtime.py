@@ -61,6 +61,8 @@ if pci_reply is None:
     raise SystemExit("query-pci returned no PCI topology")
 
 matches = []
+dec_bridges = []
+
 
 def walk(value):
     if isinstance(value, dict):
@@ -68,6 +70,9 @@ def walk(value):
         if isinstance(ident, dict) and ident.get("vendor") == 0x104c \
                 and ident.get("device") == 0x8019:
             matches.append(value)
+        if isinstance(ident, dict) and ident.get("vendor") == 0x1011 \
+                and ident.get("device") == 0x0026:
+            dec_bridges.append(value)
         for child in value.values():
             walk(child)
     elif isinstance(value, list):
@@ -79,6 +84,20 @@ walk(pci_reply)
 if len(matches) != 1:
     print(json.dumps(pci_reply, indent=2), file=sys.stderr)
     raise SystemExit(f"expected one TSB12LV23, found {len(matches)}")
+
+# Firmware has not run, so the DEC bridge's secondary bus register is
+# still zero.  Management enumeration must nevertheless include its child.
+if len(dec_bridges) != 1:
+    raise SystemExit(f"expected one DEC 21154 bridge, found {len(dec_bridges)}")
+bridge_state = dec_bridges[0].get("pci_bridge", {})
+secondary = bridge_state.get("bus", {}).get("secondary")
+if secondary != 0:
+    raise SystemExit(
+        f"expected unconfigured DEC 21154 secondary bus 0, got {secondary}"
+    )
+children = bridge_state.get("devices", [])
+if not any(child is matches[0] for child in children):
+    raise SystemExit("TSB12LV23 is not nested below the DEC 21154 bridge")
 
 dev = matches[0]
 if dev.get("slot") != 0x0a or dev.get("function") != 0:
