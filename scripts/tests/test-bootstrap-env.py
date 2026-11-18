@@ -178,8 +178,19 @@ with mock.patch.dict(module.os.environ, {
         mock.patch.object(autoconf, "first_line", return_value="version"),
         mock.patch.object(autoconf, "gnu_m4_version", return_value="GNU M4"),
     ):
-        args = ("revision", "automake", "aclocal", "m4", "perl", "make", "seed")
+        args = (
+            "revision", "automake", "aclocal", "m4", "perl", "make",
+            "seed", "/seed/awk", "/seed/grep",
+        )
         first = autoconf.marker_text(*args, "/native/cc", "/bin/sh")
+        assert "AWK=/seed/awk" in first
+        assert "GREP=/seed/grep" in first
+        assert autoconf.marker_text(
+            *args[:-2], "/managed/gawk", "/seed/grep", "/native/cc", "/bin/sh"
+        ) != first
+        assert autoconf.marker_text(
+            *args[:-1], "/other/grep", "/native/cc", "/bin/sh"
+        ) != first
         assert "CC_FOR_BUILD=/native/cc" in first
         assert "SDKROOT=/first/MacOSX.sdk" in first
         assert autoconf.marker_text(*args, "/other/cc", "/bin/sh") != first
