@@ -2241,6 +2241,29 @@ its ``bootstrap`` self-hosts temporary ``autoconf`` and ``autom4te`` programs
 from the source tree. It therefore does not need an installed Autoconf to
 generate its own ``configure``.
 
+The Makefile scan distinguishes commands used by the selected native build
+from tools needed only for other targets. ``Makefile.am`` includes
+``bin/local.mk``, ``lib/local.mk``, ``lib/freeze.mk``,
+``doc/local.mk``, ``man/local.mk``, and ``tests/local.mk``.
+The explicitly selected QEMU build invokes ``chmod`` when generating
+executables and ``sort`` when generating ``lib/autoscan/autoscan.list``;
+``ensure-autoconf.py`` therefore checks both before reconciling source.
+GNU M4, Perl, Automake/aclocal, GNU Make, sed, AWK, grep and mktemp retain
+their existing validated selectors. The Makefile documentation targets
+invoke ``makeinfo`` and ``help2man``, with ``cmp`` for unchanged
+manual-page comparison; those targets are intentionally excluded from the
+minimal managed installation. ``GNUmakefile`` includes ``maint.mk``
+for maintainer/release targets, which must not make gzip, release tools or
+Perl coverage modules mandatory host bootstrap dependencies.
+
+When Git metadata is absent, the source fingerprint now tracks
+``GNUmakefile`` and the ``doc``, ``man`` and ``tests``
+Makefile fragments as well as ``bin`` and ``lib``; changes to included
+rules invalidate stale generated output. The Autoconf fork's Makefile
+smoke regression also verifies that a failed ``help2man`` or ``sed``
+run cannot leave a manual page reported as successfully rebuilt or
+overwrite the last good page.
+
 The cycle boundary is Automake: the WHP Automake Git bootstrap still consumes
 a seed Autoconf/autom4te pair, while the Autoconf Git bootstrap consumes
 Automake/aclocal. The valid order is therefore::

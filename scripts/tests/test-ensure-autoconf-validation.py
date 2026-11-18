@@ -45,8 +45,9 @@ class AutoconfPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="whp-autoconf-source-") as root:
             src = Path(root)
             for name in (
-                "bootstrap", "configure.ac", "Makefile.am",
+                "bootstrap", "configure.ac", "Makefile.am", "GNUmakefile",
                 "bin/autoconf.in", "bin/autom4te.in",
+                "doc/local.mk", "man/local.mk", "tests/local.mk",
                 "m4/m4.m4", "lib/m4sugar/m4sugar.m4",
                 "lib/Autom4te/General.pm",
             ):
@@ -64,6 +65,14 @@ class AutoconfPreflightTests(unittest.TestCase):
                 baseline = HELPER.archive_source_signature()
                 (src / "lib/autom4te.m4f").write_text("generated\n")
                 self.assertEqual(HELPER.archive_source_signature(), baseline)
+                for name in ("GNUmakefile", "doc/local.mk",
+                             "man/local.mk", "tests/local.mk"):
+                    source = src / name
+                    baseline = HELPER.archive_source_signature()
+                    source.write_text("changed Makefile rules\n", encoding="utf-8")
+                    self.assertNotEqual(
+                        HELPER.archive_source_signature(), baseline, name
+                    )
 
     def test_all_installed_commands_are_required(self):
         with tempfile.TemporaryDirectory(prefix="whp-autoconf-install-") as root:

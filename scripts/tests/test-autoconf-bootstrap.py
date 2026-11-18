@@ -64,6 +64,9 @@ def main() -> int:
     if 'tool("realpath")' in helper:
         raise SystemExit("error: unused realpath CLI dependency reintroduced")
     require(helper, 'tool("mktemp")', "Autoconf source bootstrap temporary directory")
+    require(helper, 'for name in ("chmod", "sort"):', "required Makefile utilities")
+    require(helper, 'or path.name == "GNUmakefile"', "GNUmakefile archive fingerprint")
+    require(helper, '"doc", "man", "tests"', "included Makefile fragments")
     require(helper, 'pathlib.Path(args.build_dir).expanduser().resolve()',
             "native Python path normalization")
     require(helper, 'AUTOCONF_BOOTSTRAP_SCHEMA = "6"', "native environment schema")

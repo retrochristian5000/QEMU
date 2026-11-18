@@ -402,9 +402,16 @@ def archive_source_signature() -> str:
     candidates = {SUBMODULE_DIR / name for name in required}
     candidates.update(
         path for path in SUBMODULE_DIR.iterdir()
-        if path.is_file() and path.suffix in (".am", ".ac", ".mk")
+        if path.is_file() and (
+            path.suffix in (".am", ".ac", ".mk")
+            or path.name == "GNUmakefile"
+        )
     )
-    for directory in ("bin", "lib", "m4", "build-aux"):
+    # All five local.mk fragments are included by Makefile.am. A change in
+    # any of them can alter generated build rules, even if a minimal install
+    # does not request that fragment's documentation or test targets.
+    for directory in ("bin", "lib", "m4", "build-aux",
+                      "doc", "man", "tests"):
         folder = SUBMODULE_DIR / directory
         if not folder.is_dir():
             continue
@@ -626,6 +633,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     # our paths already. Do not reject a native host merely for lacking
     # GNU coreutils realpath (not present on some older macOS systems).
     tool("mktemp")
+    # bin/local.mk chmods generated scripts; lib/local.mk sorts autoscan.list.
+    # Unlike help2man and makeinfo, these run for BUILD_TARGETS below.
+    for name in ("chmod", "sort"):
+        tool(name)
     git = select_bootstrap_git()
     revision = ensure_source(git)
 
