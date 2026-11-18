@@ -269,19 +269,14 @@ boot graphics. The previous OpenBIOS ``device_type=display`` correction
 allows both firmware console selection and BootX device discovery, but
 does not prove that the physical display mode is active.
 
-A separate **confirmed register-interface mismatch** remains:
-OpenBIOS ``drivers/pci.c`` loads generic ``vga-driver-fcode`` for ATI
-Rage 128 and QEMU VGA alike. This FCode (``drivers/vga.fs``)
-programs **Bochs VBE** at ``BAR2 + 0x500 + 2 * index`` and
-VGA-compatible palette ports through ``BAR2 + 0x400``. The Sawtooth
-machine instead creates QEMU's ``ati-rage128p`` at AGP slot 0x10.
-Its BAR2 is a native 16 KiB ATI MMIO register space; QEMU
-``hw/display/ati.c`` has native ``CRTC_GEN_CNTL`` (0x50),
-timing registers beginning at 0x200, and palette registers
-near 0xb0. It does **not** implement Bochs VBE registers at
-0x500. Thus a found/opened display node can still produce
-a black display: writing the current generic FCode's VBE
-registers does not initialize ATI scanout.
+The original black-screen investigation confirmed a register-interface
+mismatch: generic OpenBIOS FCode was programming **Bochs VBE** at
+``BAR2 + 0x500 + 2 * index`` on the Sawtooth ``ati-rage128p``.
+Its BAR2 is instead a native 16 KiB ATI MMIO aperture with CRTC control
+at 0x50, timing from 0x200, and palette registers near 0xb0.
+QEMU's ATI model does not emulate Bochs VBE there. The following
+native FCode path addresses this specific mismatch; the earlier
+diagnostic remains useful for detecting regressions.
 
 The pinned OpenBIOS now contains a **separate Rage 128 firmware
 initialization path**. It selects ATI vendor/device 1002:5046,
