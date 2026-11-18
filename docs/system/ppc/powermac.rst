@@ -178,6 +178,49 @@ Apple's system requirements:
 * https://www.apple.com/newsroom/2005/04/12Apple-to-Ship-Mac-OS-X-Tiger-on-April-29/
 * https://support.apple.com/zh-cn/HT2226
 
+Tiger KeyLargo and blank-screen source audit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The May 12, 2005 ``AppleKeyLargo-170.0.0`` sources distinguish KeyLargo
+power/control services from AGP display initialization. ``KeyLargo::start``
+requires the Open Firmware root ``clock-frequency``, the MacIO ``device-id``
+and ``revision-id``, plus PMU and USB clock discovery. Its FCR offsets
+(0x38 through 0x48) match QEMU's KeyLargo register layout. The pinned
+PPC-Firmware/OpenBIOS source already publishes the root clock, PCI device
+and revision IDs, ``/uni-n`` with ``device-rev``, and Sawtooth USB clock IDs.
+This is a source-level match, not proof of a successful Tiger boot.
+
+The more direct blank-screen hypothesis is the firmware-to-graphics-driver
+handoff: OpenBIOS identifies the AGP Rage 128 as ``ATY Rage128`` but uses
+generic VGA/VBE FCode. QEMU's ``ati-rage128p`` is not a complete
+implementation of native Rage 128 graphics registers. A blank display could
+also result from a firmware or boot failure, so isolate it first.
+
+After building both QEMU and its pinned OpenBIOS firmware, compare these
+commands using the **same** Tiger image and firmware::
+
+  qemu-system-ppc -machine powermac3_1 -m 256M -vga std \
+    -bios openbios-ppc -boot d -cdrom tiger-install.iso
+
+  qemu-system-ppc -machine powermac3_1 -m 256M -vga cirrus \
+    -bios openbios-ppc -boot d -cdrom tiger-install.iso
+
+Replace ``openbios-ppc`` with the path to the freshly built ROM and the ISO
+name with the actual guest image. For this machine, ``-vga std`` **selects
+the factory ATI Rage 128**, not QEMU's generic standard VGA controller.
+``-vga cirrus`` is a diagnostic substitute, not Sawtooth's real card.
+If only the ATI run blanks, inspect Rage 128 BAR/FCode, framebuffer mode,
+and native driver initialization; if both blank, inspect firmware/boot
+progress and platform initialization before changing KeyLargo registers.
+Record whether video fails before OpenBIOS, during BootX, or only when the
+Tiger driver takes control. Neither command is a confirmed successful boot.
+
+Source baselines:
+
+* https://github.com/apple-oss-distributions/AppleKeyLargo/tree/AppleKeyLargo-170.0.0
+* https://github.com/retrochristian5000/PPC-Firmware/blob/master/drivers/pci_database.c
+* https://github.com/retrochristian5000/PPC-Firmware/blob/master/drivers/vga.fs
+
 Classic Mac OS self-mounting images
 -----------------------------------
 
