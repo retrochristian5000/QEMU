@@ -60,7 +60,7 @@ class AutoconfRecoveryTest(unittest.TestCase):
     def test_failed_install_restores_previous(self):
         self.old_install(self.prefix)
 
-        def fail(command, *, cwd, env):
+        def fail(command, *, cwd, env, stage, log_dir, verbose):
             if command[1].endswith("/bootstrap"):
                 (cwd / "configure").touch()
             elif "install-binSCRIPTS" in command:
@@ -83,7 +83,7 @@ class AutoconfRecoveryTest(unittest.TestCase):
         self.prefix.mkdir(parents=True)
         (self.prefix / "partial").touch()
 
-        def fail(command, *, cwd, env):
+        def fail(command, *, cwd, env, stage, log_dir, verbose):
             raise RuntimeError("simulated restart failure")
 
         with self.mocked_inputs(fail):
@@ -96,7 +96,7 @@ class AutoconfRecoveryTest(unittest.TestCase):
     def test_success_commits_replacement(self):
         self.old_install(self.prefix)
 
-        def succeed(command, *, cwd, env):
+        def succeed(command, *, cwd, env, stage, log_dir, verbose):
             if command[1].endswith("/bootstrap"):
                 self.assertEqual(env["AWK"], "/dummy/awk")
                 self.assertEqual(env["GREP"], "/dummy/grep")

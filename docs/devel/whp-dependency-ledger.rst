@@ -2394,6 +2394,27 @@ installed managed toolchain. Existing valid ``set`` calls used
 for shell-option probes or intentionally established positional
 parameters are unchanged. DOS CMD ``SET`` syntax is unrelated.
 
+Managed Autoconf stage output and diagnostic visibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The QEMU ``scripts/ensure-autoconf.py`` wrapper keeps complete
+source-bootstrap, configure, build and install output in separate
+``<build-dir>/bootstrap/autoconf/logs/<stage>.log`` files.
+Ordinary terminal output reports each stage's result, warning/error
+counts, and up to 20 original diagnostic lines with their log line
+numbers. On failure it also reports the last 24 lines, including
+Make and shell failures without an Autoconf-formatted diagnostic.
+No warnings are disabled and the original child exit status is
+retained. The complete logs remain available after the build.
+
+For full live diagnostics use
+``python3 scripts/ensure-autoconf.py --build-dir DIR --verbose``
+or set ``WHP_AUTOCONF_VERBOSE=1`` for the QEMU host-tools build.
+The default is ``WHP_AUTOCONF_VERBOSE=0``; invalid values fail.
+Changing verbosity does not invalidate a healthy Autoconf cache.
+``scripts/tests/test-autoconf-output.py`` exercises both modes
+and failure preservation in the Ubuntu/macOS bootstrap workflow.
+
 Autoconf warning precedence and bootstrap diagnostics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

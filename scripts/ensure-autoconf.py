@@ -12,6 +12,7 @@ Autotools consumers; documentation generation is excluded.
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import hashlib
 import io
 import os
@@ -104,24 +105,103 @@ def run_text(
     return completed.stdout.strip()
 
 
+WARNING_LINE = re.compile(r"\bwarning\s*:", re.IGNORECASE)
+ERROR_LINE = re.compile(r"\b(?:fatal\s+)?error\s*:", re.IGNORECASE)
+DIAGNOSTIC_LIMIT = 20
+FAILURE_TAIL_LINES = 24
+
+
 def run_logged(
     command: list[str],
     *,
     cwd: pathlib.Path | None = None,
     env: dict[str, str] | None = None,
+    stage: str | None = None,
+    log_dir: pathlib.Path | None = None,
+    verbose: bool = False,
 ) -> None:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        stdout=sys.stderr,
-        stderr=sys.stderr,
-        check=False,
+    if log_dir is None:
+        # Retain direct invocation for callers outside the managed build.
+        completed = subprocess.run(
+            command, cwd=cwd, env=env,
+            stdout=sys.stderr, stderr=sys.stderr, check=False,
+        )
+        if completed.returncode:
+            raise RuntimeError(
+                f"command failed with exit status {completed.returncode}: "
+                + shlex.join(command)
+            )
+        return
+
+    if not stage or not re.fullmatch(r"[a-z][a-z0-9-]*", stage):
+        raise ValueError(f"invalid Autoconf log stage: {stage!r}")
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{stage}.log"
+    print(f"WHP Autoconf [{stage}]: running; log: {log_path}", file=sys.stderr)
+    with log_path.open("w", encoding="utf-8", errors="replace") as log:
+        if verbose:
+            # Explicit verbose mode streams output without a second build.
+            with subprocess.Popen(
+                command, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace",
+            ) as process:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    log.write(line)
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+                status = process.wait()
+        else:
+            completed = subprocess.run(
+                command, cwd=cwd, env=env, stdout=log,
+                stderr=subprocess.STDOUT, check=False,
+            )
+            status = completed.returncode
+
+    warnings = errors = 0
+    diagnostics: list[tuple[int, str]] = []
+    tail: deque[tuple[int, str]] = deque(maxlen=FAILURE_TAIL_LINES)
+    with log_path.open("r", encoding="utf-8", errors="replace") as log:
+        for number, line in enumerate(log, 1):
+            line = line.rstrip("\r\n")
+            tail.append((number, line))
+            warning = bool(WARNING_LINE.search(line))
+            error = bool(ERROR_LINE.search(line))
+            warnings += warning
+            errors += error
+            if (warning or error) and len(diagnostics) < DIAGNOSTIC_LIMIT:
+                diagnostics.append((number, line))
+
+    outcome = "passed" if status == 0 else f"FAILED (exit {status})"
+    print(
+        f"WHP Autoconf [{stage}]: {outcome}; "
+        f"{warnings} warning(s), {errors} error(s); log: {log_path}",
+        file=sys.stderr,
     )
-    if completed.returncode != 0:
+    if not verbose:
+        # Always surface warning/error lines. Nonstandard shell and Make
+        # failures remain visible in the tail and the complete stage log.
+        for number, line in diagnostics:
+            print(f"  {log_path.name}:{number}: {line}", file=sys.stderr)
+        hidden = warnings + errors - len(diagnostics)
+        if hidden:
+            print(
+                f"  ... {hidden} more diagnostics in {log_path}",
+                file=sys.stderr,
+            )
+        if status:
+            seen = {number for number, _ in diagnostics}
+            print(f"  Last {len(tail)} log lines:", file=sys.stderr)
+            for number, line in tail:
+                if number not in seen:
+                    print(f"  {log_path.name}:{number}: {line}", file=sys.stderr)
+
+    if status:
         raise RuntimeError(
-            f"command failed with exit status {completed.returncode}: "
-            + shlex.join(command)
+            f"Autoconf {stage} failed (exit {status}); full log: "
+            f"{log_path}; command: {shlex.join(command)}"
         )
 
 
@@ -652,7 +732,7 @@ def parallel_jobs(value: str | None) -> int:
     return int(value)
 
 
-def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
+def bootstrap(build_root: pathlib.Path, *, verbose: bool = False) -> pathlib.Path:
     # Validate seeds before source fetch or archive extraction.
     automake, aclocal = select_automake_pair()
     m4 = select_gnu_m4()
@@ -725,6 +805,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     work.mkdir(parents=True, exist_ok=True)
     copy_source(revision, source, git)
     objects.mkdir(parents=True, exist_ok=True)
+    log_dir = work / "logs"
 
     seed_bin = work / "seed-bin"
     seed_bin.mkdir(parents=True, exist_ok=True)
@@ -811,7 +892,11 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     if prefix.exists():
         prefix.rename(backup)
     try:
-        run_logged([config_shell, str(source / "bootstrap")], cwd=source, env=env)
+        run_logged(
+            [config_shell, str(source / "bootstrap")],
+            cwd=source, env=env, stage="source-bootstrap",
+            log_dir=log_dir, verbose=verbose,
+        )
         configure = source / "configure"
         if not configure.is_file():
             raise RuntimeError("Autoconf bootstrap did not generate configure")
@@ -819,17 +904,17 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         run_logged(
             [config_shell, str(configure), f"--prefix={prefix}"],
             cwd=objects,
-            env=env,
+            env=env, stage="configure", log_dir=log_dir, verbose=verbose,
         )
         run_logged(
             [make, "-j", str(jobs), *BUILD_TARGETS],
             cwd=objects,
-            env=env,
+            env=env, stage="build", log_dir=log_dir, verbose=verbose,
         )
         run_logged(
             [make, *INSTALL_TARGETS, "pkgdata_DATA="],
             cwd=objects,
-            env=env,
+            env=env, stage="install", log_dir=log_dir, verbose=verbose,
         )
 
         if not suite_usable(prefix, m4=m4):
@@ -853,9 +938,19 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build-dir", required=True)
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="stream complete output and retain stage logs",
+    )
     args = parser.parse_args(argv)
+    env_verbose = os.environ.get("WHP_AUTOCONF_VERBOSE", "0")
+    if env_verbose not in ("0", "1"):
+        parser.error("WHP_AUTOCONF_VERBOSE must be 0 or 1")
     try:
-        prefix = bootstrap(pathlib.Path(args.build_dir).expanduser().resolve())
+        prefix = bootstrap(
+            pathlib.Path(args.build_dir).expanduser().resolve(),
+            verbose=args.verbose or env_verbose == "1",
+        )
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f"error: WHP Autoconf bootstrap failed: {exc}", file=sys.stderr)
         return 1
