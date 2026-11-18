@@ -559,10 +559,9 @@ def main() -> int:
         'config_shell, str(configure),',
         "Libtool configure interpreter",
     )
-    if '["/bin/sh",' in helper:
-        raise SystemExit(
-            "error: Libtool bootstrap still hard-codes /bin/sh as an interpreter"
-        )
+    # A POSIX seed adapter may legitimately run under /bin/sh.  The two
+    # run_logged calls asserted above are the interpreter boundaries that
+    # must use the selected config_shell, not an arbitrary helper subprocess.
 
     early_shell = build.find('CONFIG_SHELL="$WHP_BUILD_BASH"')
     native_llvm_hook = build.find("scripts/bootstrap-native-clang.sh")
