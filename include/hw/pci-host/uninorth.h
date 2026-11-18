@@ -37,6 +37,13 @@
 #define UNINORTH_REG_POWER_MGMT     0x0030
 #define UNINORTH_REG_ARB_CTRL       0x0040
 #define UNINORTH_REG_CPU_NUMBER     0x0050
+#define UNINORTH_REG_AACK_CTRL      0x0100
+#define UNINORTH_REG_VSP_SOFT_RESET 0x0170
+
+/* Tiger AppleUniN: AACK controls acknowledgment delay with bit zero. */
+#define UNINORTH_AACK_DELAY_ENABLE  0x00000001U
+#define UNINORTH_ARB_QACK_MASK      0x0e1f8000U
+#define UNINORTH_ARB_QACK_10A       (0x30U << 15)
 /*
  * Mac99/Core99 currently exposes only the bootstrap processor.  UniNorth
  * CPU_NUMBER is not the same contract as QEMU's internal CPUState.cpu_index.
@@ -100,6 +107,8 @@ struct UNINState {
     uint32_t power_mgmt;
     uint32_t arb_ctrl;
     uint32_t hw_init_state;
+    uint32_t aack_ctrl;
+    uint32_t vsp_soft_reset;
 };
 
 #define TYPE_UNI_NORTH "uni-north"

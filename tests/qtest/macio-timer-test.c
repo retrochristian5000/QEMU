@@ -257,6 +257,54 @@ static void test_sawtooth_uninorth_registers(void)
                              UNINORTH_REG_BASE + UNINORTH_REG_CLOCK_CNTL),
                     ==, clocks);
 
+    /*
+     * Tiger's AppleUniN driver programs QAckDelay on UniNorth 1.0A.
+     * Preserve unrelated arbitration bits during the read/modify/write.
+     */
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_ARB_CTRL,
+               0x80000000U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_ARB_CTRL,
+               (read_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_ARB_CTRL) &
+                ~UNINORTH_ARB_QACK_MASK) | UNINORTH_ARB_QACK_10A);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_ARB_CTRL),
+                    ==, 0x80000000U | UNINORTH_ARB_QACK_10A);
+
+    /*
+     * Tiger's platform functions toggle AACK bit zero and save/restore
+     * VSP soft-reset state during UniNorth power transitions.
+     */
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_AACK_CTRL),
+                    ==, 0U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_AACK_CTRL,
+               0xffffffffU);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_AACK_CTRL),
+                    ==, UNINORTH_AACK_DELAY_ENABLE);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_AACK_CTRL, 0U);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_AACK_CTRL),
+                    ==, 0U);
+
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_VSP_SOFT_RESET,
+               0x12345678U);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE +
+                             UNINORTH_REG_VSP_SOFT_RESET),
+                    ==, 0x12345678U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_POWER_MGMT, 2U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_HW_INIT_STATE, 1U);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE + UNINORTH_REG_POWER_MGMT),
+                    ==, 2U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_POWER_MGMT, 0U);
+    write_be32(qts, UNINORTH_REG_BASE + UNINORTH_REG_HW_INIT_STATE, 2U);
+    g_assert_cmphex(read_be32(qts,
+                             UNINORTH_REG_BASE +
+                             UNINORTH_REG_VSP_SOFT_RESET),
+                    ==, 0x12345678U);
+
     uninorth_agp_write(qts, UNINORTH_CFG_GART_BASE, 0x12345020U);
     g_assert_cmphex(uninorth_agp_read(qts, UNINORTH_CFG_GART_BASE),
                     ==, 0x12345020U);

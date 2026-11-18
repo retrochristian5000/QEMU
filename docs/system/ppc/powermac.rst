@@ -478,6 +478,40 @@ Hardware status
      - High
      - Partial
 
+Tiger-era UniNorth register comparison
+--------------------------------------
+
+Apple's April 2005 ``AppleMacRISC2PE-170.2.1`` driver sources define
+the Sawtooth UniNorth-1.0A revision as ``0x07``. During initialization,
+``AppleUniN::start`` reads that version and updates the QAck arbitration
+delay in register ``0x0040``. QEMU already models that register, including
+read/modify/write access, and OpenBIOS advertises a corresponding
+``/uni-n`` revision.
+
+The Tiger driver also uses ``0x0100`` (AACK delay enable, bit zero) and
+``0x0170`` (VSP soft-reset state saved/restored across UniNorth power
+transitions). QEMU now preserves those two register values, resets them
+on machine reset, and includes them in versioned migration state. AACK
+only exposes its documented bit. VSP is a register-state compatibility
+model: it does **not** emulate downstream soft-reset effects.
+
+Tiger's later-revision Max/PCI memory-timeout register at ``0x2160``
+is only programmed for UniNorth 1.5--2.0 and certain other Apple
+northbridges. It must not be enabled solely to make a 1.0A Sawtooth
+look more like a later machine. Similarly, Intrepid clock-stop status
+registers are not evidence of an AGP clock fault on PowerMac3,1.
+
+These fixes improve Tiger's UniNorth driver-visible contract but
+do **not** establish the source of a blank screen. The AGP Rage 128
+firmware/driver handoff and actual guest boot progression need separate
+runtime checks. QTest ``/ppc/uninorth/sawtooth-registers`` exercises the
+documented control-register programming without any guest ROM.
+
+Apple sources, pinned to the 2005 release:
+
+* https://github.com/apple-oss-distributions/AppleMacRISC2PE/blob/AppleMacRISC2PE-170.2.1/UniN.cpp
+* https://github.com/apple-oss-distributions/AppleMacRISC2PE/blob/AppleMacRISC2PE-170.2.1/UniN.h
+
 UniNorth CPU identification
 ---------------------------
 

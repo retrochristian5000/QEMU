@@ -578,6 +578,17 @@ static void unin_write(void *opaque, hwaddr addr, uint64_t value,
     case UNINORTH_REG_ARB_CTRL:
         s->arb_ctrl = value;
         break;
+    case UNINORTH_REG_AACK_CTRL:
+        /* Only the delay enable bit is defined by Tiger AppleUniN. */
+        s->aack_ctrl = value & UNINORTH_AACK_DELAY_ENABLE;
+        break;
+    case UNINORTH_REG_VSP_SOFT_RESET:
+        /*
+         * Tiger restores the saved register during UniNorth wake.
+         * Preserve the programmed value, without inventing VSP reset effects.
+         */
+        s->vsp_soft_reset = value;
+        break;
     case UNINORTH_REG_HW_INIT_STATE:
         s->hw_init_state = value;
         break;
@@ -605,6 +616,12 @@ static uint64_t unin_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case UNINORTH_REG_ARB_CTRL:
         value = s->arb_ctrl;
+        break;
+    case UNINORTH_REG_AACK_CTRL:
+        value = s->aack_ctrl;
+        break;
+    case UNINORTH_REG_VSP_SOFT_RESET:
+        value = s->vsp_soft_reset;
         break;
     case UNINORTH_REG_CPU_NUMBER:
         /*
@@ -663,17 +680,21 @@ static void unin_reset(DeviceState *dev)
     s->power_mgmt = UNINORTH_POWER_NORMAL;
     s->arb_ctrl = 0;
     s->hw_init_state = UNINORTH_HW_INIT_RUNNING;
+    s->aack_ctrl = 0;
+    s->vsp_soft_reset = 0;
 }
 
 static const VMStateDescription vmstate_unin = {
     .name = "uninorth",
-    .version_id = 2,
+    .version_id = 3,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT32(power_mgmt, UNINState),
         VMSTATE_UINT32(arb_ctrl, UNINState),
         VMSTATE_UINT32(hw_init_state, UNINState),
         VMSTATE_UINT32_V(clock_cntl, UNINState, 2),
+        VMSTATE_UINT32_V(aack_ctrl, UNINState, 3),
+        VMSTATE_UINT32_V(vsp_soft_reset, UNINState, 3),
         VMSTATE_END_OF_LIST()
     }
 };
