@@ -147,13 +147,20 @@ def valid_perl(path: pathlib.Path, failures: list[str] | None = None) -> bool:
         'print STDERR "WHP_PERL_MODULE:Config:$@"; exit 42 }; '
         # Autom4te uses more core modules than strict/warnings/Config.
         # Check the modules that its scripts actually import at runtime.
-        'for my $module (qw(Carp Class::Struct Cwd Data::Dumper Exporter '
-        'Fcntl File::Basename File::Compare File::Copy File::Find '
-        'File::Spec File::Temp Getopt::Long IO::File POSIX '
-        'Text::ParseWords)) { '
+        'for my $module (qw(Carp Class::Struct Cwd Data::Dumper Errno Exporter '
+        'Fcntl File::Basename File::Compare File::Copy File::Find File::Path '
+        'File::Spec File::Temp File::stat Getopt::Long IO::File POSIX '
+        'Text::ParseWords constant)) { '
         'eval "require $module; 1" or do { '
         'print STDERR "WHP_PERL_MODULE:$module:$@"; exit 42 }; '
         '} '
+        # Automake's compiled Config.pm enables threaded imports only when
+        # the selected interpreter was built with useithreads.
+        'if ($Config::Config{useithreads}) { '
+        'for my $module (qw(threads Thread::Queue)) { '
+        'eval "require $module; 1" or do { '
+        'print STDERR "WHP_PERL_MODULE:$module:$@"; exit 42 }; '
+        '} } '
         'my $os = $Config::Config{osname}; '
         'print "whp-perl-native:$os\n";'
     )

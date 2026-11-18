@@ -124,14 +124,14 @@ def select_seed_perl() -> str:
     if not adapter.is_file():
         raise RuntimeError(f"QEMU Perl seed is unavailable: {adapter}")
     completed = subprocess.run(
-        ["/bin/sh", str(adapter), "--print-seed"],
+        ["/bin/sh", str(adapter), "--print-autotools-seed"],
         env=clean_host_environment(os.environ),
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     selected = completed.stdout.strip()
     if completed.returncode != 0 or not selected:
         raise RuntimeError(
-            "Autotools bootstrap requires a usable native Perl seed: "
+            "Autotools bootstrap requires Perl with its runtime modules: "
             + (completed.stderr.strip() or "Perl >= 5.6 is unavailable")
         )
     return selected

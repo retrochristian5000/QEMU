@@ -40,6 +40,54 @@ perl_resolve()
     printf '%s\n' "$candidate"
 )
 
+# Autoconf/autom4te and Automake/aclocal load more than strict/warnings.
+# Keep this second, consumer-specific check outside the root --print-seed path:
+# Perl's own source bootstrap must remain independent of Autotools modules.
+perl_check_autotools()
+(
+    candidate=$1
+    result=$("$candidate" -e '
+        use 5.006;
+        use strict;
+        use warnings;
+        use Config;
+
+        # Modules imported by the pinned Autoconf and Automake scripts.
+        for my $module (qw(
+            Carp Class::Struct Cwd Data::Dumper Errno Exporter Fcntl
+            File::Basename File::Compare File::Copy File::Find File::Path
+            File::Spec File::Temp File::stat Getopt::Long IO::File POSIX
+            Text::ParseWords constant
+        )) {
+            (my $filename = $module) =~ s{::}{/}g;
+            $filename .= ".pm";
+            eval { require $filename; 1 } or
+                die "WHP Autotools Perl module $module: $@";
+        }
+
+        # Automake loads these when Perl Config enables its threaded mode.
+        # Non-threaded Perl must not be rejected for lacking them.
+        if ($Config::Config{useithreads}) {
+            for my $module (qw(threads Thread::Queue)) {
+                (my $filename = $module) =~ s{::}{/}g;
+                $filename .= ".pm";
+                eval { require $filename; 1 } or
+                    die "WHP threaded Autotools Perl module $module: $@";
+            }
+        }
+        print "whp-perl-autotools-ok\n";
+    ' 2>&1) || {
+        printf 'error: Autotools Perl module preflight failed: %s\n%s\n' \
+            "$candidate" "$result" >&2
+        exit 1
+    }
+    [ "$result" = whp-perl-autotools-ok ] || {
+        printf 'error: unexpected Autotools Perl module result: %s: %s\n' \
+            "$candidate" "$result" >&2
+        exit 1
+    }
+)
+
 perl_select()
 {
     # An explicit choice is authoritative. Do not fall back to PATH when it
@@ -70,6 +118,10 @@ perl_select()
 
 case "${1:-}" in
     --print-seed|--print-perl) perl_select ;;
+    --print-autotools-seed)
+        selected=$(perl_select) || exit 1
+        perl_check_autotools "$selected" || exit 1
+        printf '%s\n' "$selected" ;;
     --check)
         selected=$(perl_select) || exit 1
         printf 'WHP Perl seed: %s\n' "$selected" ;;

@@ -2321,6 +2321,28 @@ The prerequisite roles are:
   Perl uses Metaconfig ``Configure``, **not** the managed Autoconf build.
   Bootstrap zlib precedes Perl in ``host-tools.sh`` but belongs to the
   managed Git lane; do not turn that ordering edge into an Autoconf requirement.
+* **Perl module closure (consumer-conditioned):** The independent
+  ``seeds/perl.sh --print-seed`` root admits a runnable interpreter with
+  ``strict``/``warnings``, which is sufficient to *start Perl's own
+  bootstrap*. It is not sufficient to run the pinned Automake and Autoconf
+  source generators. Their ``select_seed_perl()`` calls now require
+  ``seeds/perl.sh --print-autotools-seed``, which tests actual loading
+  of their shared core modules before source reconciliation. In particular,
+  Automake's ``aclocal.in`` imports ``File::Path`` and ``constant``
+  appears in its definition modules; Autoconf's ``General.pm`` imports
+  ``File::stat``; both forks' ``XFile.pm`` depend on ``Errno``.
+  Those modules cannot be treated as dispensable by the Perl consumer
+  profile merely because they are packaged as independently loadable modules.
+  When Perl ``Config`` advertises ``useithreads``, the check additionally
+  requires ``threads`` and ``Thread::Queue``; unthreaded Perl does **not**
+  require those modules. ``Time::HiRes`` remains optional because the pinned
+  ``FileUtils.pm`` wrappers guard that import. The managed Perl installation
+  validator applies the same requirements before promotion to downstream
+  Autotools. A missing module is reported with its name and selected
+  interpreter path, not as an undifferentiated Autoconf build failure.
+  Neither GNU Texinfo's external ``makeinfo`` program nor a full Perl test
+  suite is implied by this module-only gate.
+
 * **Transitive Automake gate:** ``seeds/autoconf.sh`` and
   ``seeds/autom4te.sh`` must resolve a coherent *external* GNU Autoconf
   pair. Automake self-hosts its own executables; it still invokes that

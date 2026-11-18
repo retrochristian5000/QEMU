@@ -20,13 +20,18 @@ def run(env, *args):
     )
 
 
-def fake(path: Path, *, output: str = "whp-perl-ok", rc: int = 0):
+def fake(path: Path, *, output: str = "whp-perl-ok", rc: int = 0,
+         autotools_output: str = "whp-perl-autotools-ok", autotools_rc: int = 0):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "#!/bin/sh\n"
         'case "$1" in\n'
         '  --whp-perl-adapter-probe) exit 2;;\n'
-        '  -e) printf "%s\\n" "' + output + '"; exit ' + str(rc) + ';;\n'
+        '  -e) case "$2" in\n'
+        '    *whp-perl-autotools-ok*) printf "%s\\n" "' + autotools_output
+        + '"; exit ' + str(autotools_rc) + ';;\n'
+        '    *) printf "%s\\n" "' + output + '"; exit ' + str(rc) + ';;\n'
+        '  esac;;\n'
         '  *) printf "forward:%s\\n" "$1";;\n'
         'esac\n',
         encoding="utf-8",
@@ -50,7 +55,20 @@ def check():
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(good)
         assert run(env, "--check").returncode == 0
+        assert run(env, "--print-autotools-seed").stdout.strip() == str(good)
         assert run(env, "--help").stdout.strip() == "forward:--help"
+
+        # An interpreter may pass the root version check while its
+        # Autotools module installation is incomplete.
+        fake(bad, autotools_output="WHP Autotools Perl module Errno: missing",
+             autotools_rc=42)
+        limited = dict(env, WHP_PERL_SEED=str(bad))
+        assert run(limited, "--print-seed").returncode == 0
+        rejected = run(limited, "--print-autotools-seed")
+        assert rejected.returncode != 0
+        assert "Autotools Perl module preflight failed" in rejected.stderr
+        assert "Errno" in rejected.stderr
+        fake(bad, output="wrong")
 
         # The adapter must honor an explicit executable rather than silently
         # falling through to the otherwise usable Perl on PATH.
@@ -79,6 +97,9 @@ def check():
             checked = run(injected, "--print-seed")
             assert checked.returncode == 0, checked.stderr
             assert checked.stdout.strip() == native
+            qualified = run(injected, "--print-autotools-seed")
+            assert qualified.returncode == 0, qualified.stderr
+            assert qualified.stdout.strip() == native
             forwarded = run(injected, "-e", 'print "native-perl-ok\\n";')
             assert forwarded.returncode == 0, forwarded.stderr
             assert forwarded.stdout.strip() == "native-perl-ok"

@@ -54,7 +54,7 @@ class PerlAutotoolsBoundaryTests(unittest.TestCase):
         for helper in (AUTOMAKE, AUTOCONF):
             with self.subTest(helper=helper.__name__):
                 def observed(args, **kwargs):
-                    self.assertEqual(args[-1], "--print-seed")
+                    self.assertEqual(args[-1], "--print-autotools-seed")
                     self.assertEqual(kwargs["env"]["PERL"], "/selected/perl")
                     for name in POISON:
                         self.assertNotIn(name, kwargs["env"])
@@ -76,7 +76,9 @@ class PerlAutotoolsBoundaryTests(unittest.TestCase):
         def failed_module(argv, **kwargs):
             self.assertEqual(argv[1], "-e")
             for mod in ("File::Temp", "File::Spec", "Getopt::Long",
-                        "Text::ParseWords", "IO::File", "POSIX"):
+                        "Text::ParseWords", "IO::File", "POSIX",
+                        "Errno", "File::stat", "File::Path", "constant",
+                        "threads", "Thread::Queue"):
                 self.assertIn(mod, argv[2])
             self.assertNotIn("Time::HiRes", argv[2])
             for name in POISON:
@@ -90,6 +92,17 @@ class PerlAutotoolsBoundaryTests(unittest.TestCase):
         ):
             self.assertFalse(PERL.valid_perl(Path(native), reasons))
         self.assertIn("core module 'File::Temp' failed to load", reasons[0])
+
+    def test_autotools_seed_checks_thread_modules_conditionally(self):
+        seed = (ROOT / "seeds/perl.sh").read_text(encoding="utf-8")
+        self.assertIn("--print-autotools-seed", seed)
+        self.assertIn("File::Path", seed)
+        self.assertIn("File::stat", seed)
+        self.assertIn("Errno", seed)
+        self.assertIn("constant", seed)
+        self.assertIn("if ($Config::Config{useithreads})", seed)
+        self.assertIn("qw(threads Thread::Queue)", seed)
+        self.assertNotIn("Time::HiRes", seed)
 
     def test_root_bootstrap_keeps_independent_seed(self):
         def observed(argv, **kwargs):
