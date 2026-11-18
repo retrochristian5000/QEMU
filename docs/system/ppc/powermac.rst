@@ -283,10 +283,18 @@ near 0xb0. It does **not** implement Bochs VBE registers at
 a black display: writing the current generic FCode's VBE
 registers does not initialize ATI scanout.
 
-The proper fix is a **separate Rage 128 Open Firmware graphics
-initialization path**, using ATI timing, CRTC, framebuffer and palette
-registers as actually modeled. Do not paper over it with an invented
-Bochs VBE bank on the ATI card. QTest
+The pinned OpenBIOS now contains a **separate Rage 128 firmware
+initialization path**. It selects ATI vendor/device 1002:5046,
+requires BAR0/BAR2, and writes the native ATI timing, CRTC, pitch,
+framebuffer aperture and palette registers, enabling the display
+controller last. The generic VGA path still uses Bochs VBE; the ATI
+card is not given fictitious Bochs registers. Current timing uses
+approximate VGA-style porches and the QEMU model's implemented CRTC
+subset: monitor-specific PLL and DDA behavior remain unverified.
+This is an initial firmware implementation, **not** a confirmed
+visible firmware console or successful Mac OS boot.
+
+QTest
 ``/ppc/display/sawtooth-rage128-firmware-mmio`` checks that
 Bochs-VBE-offset writes leave native CRTC control unchanged and
 confirms native ATI timing-register access. This is a diagnostic
