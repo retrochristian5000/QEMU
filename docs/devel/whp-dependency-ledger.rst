@@ -2219,6 +2219,29 @@ the fork's generated-configure regression before bootstrapping Automake,
 including a deliberately broken bracket case that must fail. This is
 test-runner shell admission, not a new Autoconf build dependency.
 
+Fortran compiler boundary
+-------------------------
+
+QEMU's native host-tool build does not compile Fortran sources.  Automake
+and GNU Libtool support downstream Fortran projects, however, so their
+configure scripts contain ``AC_PROG_FC``, ``AC_PROG_F77`` or
+``LT_LANG(Fortran)`` language probes.  In Automake these select optional
+test-suite compilers and must not be promoted into required seed packages.
+
+Libtool's source ``configure.ac`` enables Fortran 77 and modern Fortran
+language probes.  Before its native bootstrap, ``ensure-libtool.py``
+drops inherited FC/F77/F90-style selectors and Fortran flags, including
+GNU-specific variants.  This prevents a QEMU guest compiler from being
+mistaken for the host compiler.  Host PATH discovery remains available:
+do not install or force ``gfortran`` merely to build native Libtool.
+The Libtool bootstrap regression checks both the removal of target
+Fortran settings and preservation of unrelated native compiler tools.
+
+The native LLVM bootstrap selects Clang and LLD (and optionally LLDB);
+it does not enable Flang as a required LLVM project.  Meson implements
+Fortran-language support, but a build that never requests that language
+does not thereby require a Fortran compiler.
+
 The QEMU ``seeds/automake.sh`` adapter resolves a validated native
 GNU Automake/aclocal pair before downstream maintainer-source generation.
 It prefers an ``aclocal`` beside the selected ``automake``, honors

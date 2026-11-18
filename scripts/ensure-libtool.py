@@ -42,6 +42,17 @@ AUTOTOOLS_UTILITY_ENV = (
     "LN_S",
 )
 
+# Libtool enables Fortran 77 and modern Fortran language probes for users of
+# its generated libtool, but neither compiler is a QEMU host-tool prerequisite.
+# Never let a guest/cross compilation environment select a native probe.
+# Fortran tools can still be detected from the host PATH when installed.
+TARGET_FORTRAN_ENV = (
+    "FC", "F77", "F90", "F95", "F03", "F08",
+    "FCFLAGS", "FFLAGS", "F90FLAGS", "F95FLAGS",
+    "F03FLAGS", "F08FLAGS",
+    "GNU_FC", "GNU_F77", "GNU_FCFLAGS", "GNU_FFLAGS",
+)
+
 
 def run_text(
     command: List[str],
@@ -600,6 +611,17 @@ def isolate_autotools_utility_env(env: dict[str, str]) -> None:
         env.pop(name, None)
 
 
+def isolate_host_fortran_env(env: dict[str, str]) -> None:
+    """Remove guest Fortran selectors before native Libtool configure.
+
+    LT_LANG(Fortran 77) and LT_LANG(Fortran) are optional capabilities.
+    Their probes must discover real host compilers rather than trying a
+    QEMU guest compiler injected through the inherited environment.
+    """
+    for name in TARGET_FORTRAN_ENV:
+        env.pop(name, None)
+
+
 def select_arflags(ar: str) -> str | None:
     # Libtool gives the legacy AR_FLAGS variable priority over ARFLAGS.
     # Preserve an explicit choice, but otherwise use the conservative archive
@@ -913,6 +935,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     env = os.environ.copy()
     isolate_autotools_utility_env(env)
+    isolate_host_fortran_env(env)
     for key in (
         "LIBTOOL", "LIBTOOLIZE", "BASH_ENV", "ENV",
         "CFLAGS", "CPPFLAGS", "LDFLAGS", "ARFLAGS", "AR_FLAGS",

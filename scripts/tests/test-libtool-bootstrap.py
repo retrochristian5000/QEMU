@@ -227,6 +227,30 @@ def test_autotools_utility_isolation() -> None:
             )
 
 
+def test_fortran_environment_isolation() -> None:
+    helper = load_helper_module()
+    env = {name: f"/guest/fortran/{name}" for name in helper.TARGET_FORTRAN_ENV}
+    env.update({
+        "CC": "/native/clang",
+        "CXX": "/native/clang++",
+        "AR": "/native/llvm-ar",
+        "MAKE": "/native/gmake",
+        "PATH": "/native/bin",
+    })
+    helper.isolate_host_fortran_env(env)
+    remaining = [name for name in helper.TARGET_FORTRAN_ENV if name in env]
+    if remaining:
+        raise SystemExit(
+            "error: Libtool retained target Fortran configuration: "
+            + ", ".join(remaining)
+        )
+    for name in ("CC", "CXX", "AR", "MAKE", "PATH"):
+        if name not in env:
+            raise SystemExit(
+                f"error: Libtool Fortran isolation discarded native {name}"
+            )
+
+
 def main() -> int:
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
     config = (ROOT / "scripts/whp-config/config.py").read_text(encoding="utf-8")
@@ -596,6 +620,8 @@ def main() -> int:
     test_gnu_m4_selector()
     test_archive_tool_selection_is_compiler_coherent()
     test_autotools_utility_isolation()
+    test_fortran_environment_isolation()
+    require(helper, "isolate_host_fortran_env(env)", "Libtool Fortran host boundary")
 
     require(ledger, "toolchains/libtool", "Libtool dependency ledger entry")
     require(ledger, "Libtool bootstrap", "Libtool dependency edge")
