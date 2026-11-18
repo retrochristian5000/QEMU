@@ -2205,6 +2205,12 @@ managed Autoconf. It consumes packaged generated sources and the independent
 AWK/GNU Make/C seeds, not either managed Autotools output. This is a phase
 ordering choice, not a required dependency of Autoconf.
 
+The Autoconf helper resolves the chosen AWK and grep seeds after optional
+Gawk promotion. It sets AWK/GREP variables and literal-command PATH shims
+to the same executables. Their selected paths enter the Autoconf cache
+marker, so a provider change cannot silently reuse older generated output.
+Neither managed Gawk nor GNU grep becomes a mandatory source prerequisite.
+
 The QEMU ``seeds/automake.sh`` adapter resolves a validated native
 GNU Automake/aclocal pair before downstream maintainer-source generation.
 It prefers an ``aclocal`` beside the selected ``automake``, honors

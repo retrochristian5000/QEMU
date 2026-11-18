@@ -154,6 +154,36 @@ class AutoconfPreflightTests(unittest.TestCase):
                 self.assertTrue(HELPER.suite_usable(prefix, m4="/seed/m4"))
             self.assertEqual(observed, ["/seed/m4"])
 
+    def test_text_tool_seed_admission(self):
+        with tempfile.TemporaryDirectory(prefix="whp-autoconf-text-") as tmp:
+            native = Path(tmp) / "selected-tool"
+            native.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            native.chmod(0o755)
+            good = subprocess.CompletedProcess(["seed"], 0, str(native) + "\n", "")
+            with mock.patch.object(HELPER.subprocess, "run", return_value=good):
+                self.assertEqual(HELPER.select_bootstrap_text_tool("awk"), str(native))
+                self.assertEqual(HELPER.select_bootstrap_text_tool("grep"), str(native))
+            bad = subprocess.CompletedProcess(["seed"], 0, "/nonexistent/tool\n", "")
+            with mock.patch.object(HELPER.subprocess, "run", return_value=bad):
+                with self.assertRaisesRegex(RuntimeError, "grep seed handshake failed"):
+                    HELPER.select_bootstrap_text_tool("grep")
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                HELPER.select_bootstrap_text_tool("m4")
+
+    def test_text_seed_paths_invalidate_autoconf_marker(self):
+        with (
+            mock.patch.object(HELPER, "first_line", return_value="version"),
+            mock.patch.object(HELPER, "gnu_m4_version", return_value="GNU M4 1.4.19"),
+        ):
+            args = ("rev", "automake", "aclocal", "m4", "perl", "make", "sed")
+            initial = HELPER.marker_text(*args, "/seed/awk", "/seed/grep", "cc", "sh")
+            new_awk = HELPER.marker_text(*args, "/managed/gawk", "/seed/grep", "cc", "sh")
+            new_grep = HELPER.marker_text(*args, "/seed/awk", "/other/grep", "cc", "sh")
+        self.assertIn("AWK=/seed/awk\n", initial)
+        self.assertIn("GREP=/seed/grep\n", initial)
+        self.assertNotEqual(initial, new_awk)
+        self.assertNotEqual(initial, new_grep)
+
     def test_wrong_version_is_diagnosed(self):
         with tempfile.TemporaryDirectory(prefix="whp-autoconf-version-") as root:
             bindir = Path(root) / "bin"

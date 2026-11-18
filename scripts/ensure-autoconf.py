@@ -335,6 +335,33 @@ def select_seed_sed() -> str:
     return seed
 
 
+def select_bootstrap_text_tool(name: str) -> str:
+    """Resolve validated host AWK or grep after optional Gawk promotion."""
+    if name not in ("awk", "grep"):
+        raise ValueError(f"unsupported Autoconf text-tool seed: {name}")
+    adapter = ROOT / "seeds" / f"{name}.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU {name} seed adapter is missing: {adapter}")
+    result = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    path = result.stdout.strip()
+    if (
+        result.returncode != 0
+        or not path
+        or "\n" in path
+        or not pathlib.Path(path).is_absolute()
+        or not pathlib.Path(path).is_file()
+        or not os.access(path, os.X_OK)
+    ):
+        raise RuntimeError(
+            f"QEMU {name} seed handshake failed: "
+            + (result.stderr.strip() or path or "no selected executable")
+        )
+    return path
+
+
 def select_bootstrap_git() -> str | None:
     """Reuse QEMU seed Git for submodule reconciliation and source archives."""
     if not (ROOT / ".git").exists():
@@ -531,6 +558,8 @@ def marker_text(
     perl: str,
     make: str,
     seed: str,
+    awk: str,
+    grep: str,
     cc: str,
     config_shell: str,
 ) -> str:
@@ -544,6 +573,8 @@ def marker_text(
         f"PERL={perl}: {first_line([perl, '--version'])}\n"
         f"MAKE={make}: {first_line([make, '--version'])}\n"
         f"SEED_SED={seed}\n"
+        f"AWK={awk}\n"
+        f"GREP={grep}\n"
         f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
         f"CONFIG_SHELL={config_shell}\n"
         f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
@@ -577,6 +608,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     perl = select_seed_perl()
     make = select_gnu_make()
     seed = select_seed_sed()
+    awk = select_bootstrap_text_tool("awk")
+    grep = select_bootstrap_text_tool("grep")
     sdkroot = select_native_sdk(ROOT)
     if sdkroot:
         # cc.sh validates the same SDK; configure must receive it as well.
@@ -604,7 +637,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     backup = build_root / "bootstrap" / "autoconf-previous-install"
 
     marker = marker_text(
-        revision, automake, aclocal, m4, perl, make, seed, cc, config_shell
+        revision, automake, aclocal, m4, perl, make, seed, awk, grep, cc,
+        config_shell
     )
     if bootstrap_cflags:
         marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
@@ -645,6 +679,15 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         shutil.copy2(SED_ADAPTER, seed_link)
         seed_link.chmod(seed_link.stat().st_mode | 0o111)
 
+    # Match literal awk/grep commands to the selected $AWK/$GREP providers.
+    for name, selected in (("awk", awk), ("grep", grep)):
+        link = seed_bin / name
+        try:
+            link.symlink_to(selected)
+        except OSError:
+            shutil.copy2(selected, link)
+            link.chmod(link.stat().st_mode | 0o111)
+
     # Some Autotools helpers still invoke literal "m4" even when M4 is set.
     # Mirror the validated executable under that canonical name so PATH and the
     # M4 variable always resolve to the same implementation.
@@ -674,6 +717,10 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["ACLOCAL"] = aclocal
     env["M4"] = m4
     env["PERL"] = perl
+    env["AWK"] = awk
+    env["GREP"] = grep
+    env["WHP_AWK_SEED"] = awk
+    env["WHP_GREP_SEED"] = grep
     env["WHP_SED_SEED"] = seed
     # Route both $SED and literal sed through one traceable bootstrap adapter.
     env["SED"] = str(SED_ADAPTER)
@@ -688,7 +735,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
 
     print(
         f"WHP Autoconf bootstrap: {revision} -> {prefix} "
-        f"(Automake {automake}, GNU M4 {m4}, seed sed {seed})",
+        f"(Automake {automake}, GNU M4 {m4}, seed sed {seed}, "
+        f"AWK {awk}, grep {grep})",
         file=sys.stderr,
     )
 

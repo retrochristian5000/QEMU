@@ -43,6 +43,7 @@ class AutoconfRecoveryTest(unittest.TestCase):
             select_seed_perl=lambda: "/dummy/perl",
             select_gnu_make=lambda: "/dummy/make",
             select_seed_sed=lambda: "/dummy/sed",
+            select_bootstrap_text_tool=lambda name: f"/dummy/{name}",
             select_native_sdk=lambda root: None,
             select_native_cc=lambda root: "/dummy/cc",
             select_bootstrap_cflags=lambda *args: "",
@@ -96,6 +97,11 @@ class AutoconfRecoveryTest(unittest.TestCase):
 
         def succeed(command, *, cwd, env):
             if command[1].endswith("/bootstrap"):
+                self.assertEqual(env["AWK"], "/dummy/awk")
+                self.assertEqual(env["GREP"], "/dummy/grep")
+                seed_bin = Path(env["PATH"].split(":")[0])
+                self.assertEqual((seed_bin / "awk").readlink(), Path("/dummy/awk"))
+                self.assertEqual((seed_bin / "grep").readlink(), Path("/dummy/grep"))
                 (cwd / "configure").touch()
             elif "install-binSCRIPTS" in command:
                 self.prefix.mkdir(parents=True)
