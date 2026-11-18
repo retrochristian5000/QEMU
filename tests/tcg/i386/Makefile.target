@@ -28,6 +28,10 @@ run-test-i386-bmi2: QEMU_OPTS += -cpu max
 test-i386-adcox: CFLAGS=-O2
 run-test-i386-adcox: QEMU_OPTS += -cpu max
 
+# FISTTP is an SSE3 instruction; test both the supported and #UD paths.
+run-test-i386-fisttp: QEMU_OPTS += -cpu max
+run-test-i386-fisttp-ud: QEMU_OPTS += -cpu pentium
+
 test-aes: CFLAGS += -O -msse2 -maes
 test-aes: test-aes-main.c.inc
 run-test-aes: QEMU_OPTS += -cpu max
