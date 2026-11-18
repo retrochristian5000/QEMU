@@ -2374,6 +2374,26 @@ bootstrap workflow executes that regression on the exact pinned source
 and installed tool pair. No additional dependency or Homebrew installation
 is introduced.
 
+Autoconf POSIX shell set compatibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The legacy ``AC_LINK_FILES`` autoupdate expansion previously issued
+``set $ac_dests`` and ``set $ac_sources``. If a filename begins
+with a hyphen (e.g. ``-dest``), the generated ``configure``
+script can misinterpret it as a shell option or fail outright.
+The fork now uses ``set x ...; shift`` for each list, retaining
+Autoconf's established old-Bourne compatibility technique.
+
+The regression ``tests/positional-set-guard.sh`` runs actual
+``autoupdate``, ``autoconf``, and the generated
+``configure --no-create``. It checks that ``config.status --help``
+retains both leading-hyphen filenames. It does not instantiate links:
+``ln`` and ``cp`` option parsing are separate boundaries.
+The Ubuntu/macOS Autoconf bootstrap workflow now verifies the
+installed managed toolchain. Existing valid ``set`` calls used
+for shell-option probes or intentionally established positional
+parameters are unchanged. DOS CMD ``SET`` syntax is unrelated.
+
 Pre-Autoconf dependency closure
 ----------------------------------
 

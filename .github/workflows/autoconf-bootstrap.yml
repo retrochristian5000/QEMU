@@ -215,6 +215,12 @@ jobs:
             "$autoconf_prefix/bin/autom4te" "$automake_m4" \
             "$autoconf_prefix/bin/autoconf"
 
+          # Verify generated POSIX shell set positional-parameter handling.
+          # Dash-prefixed filenames must not become set builtin options.
+          /bin/sh toolchains/autoconf/tests/positional-set-guard.sh \
+            "$autoconf_prefix/bin/autoupdate" \
+            "$autoconf_prefix/bin/autoconf"
+
           if [[ "$RUNNER_OS" == macOS ]]; then
             grep -Fxq "M4_PATH=$expected_m4" "$autoconf_prefix/.whp-autoconf-bootstrap"
             grep -Fq 'M4_VERSION=m4 (GNU M4)' "$autoconf_prefix/.whp-autoconf-bootstrap"
