@@ -196,7 +196,7 @@ with mock.patch.dict(module.os.environ, {
             "/native/cc", "/bin/sh"
         ) != first
         assert autoconf.marker_text(
-            *args[:-2], "/seed/awk", "/other/grep", "/seed/ln",
+            *args[:-2], "/other/grep", "/seed/ln",
             "/native/cc", "/bin/sh"
         ) != first
         assert autoconf.marker_text(
