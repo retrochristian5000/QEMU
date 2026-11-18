@@ -252,6 +252,47 @@ def curl_prefix() -> str:
     return ""
 
 
+def curl_config_inputs(curl_dir: str) -> tuple[str, str, str, str]:
+    """Validate the selected curl-config before Git compilation and cache reuse."""
+    if curl_dir:
+        # Never combine a selected prefix's headers with another PATH curl.
+        candidate = pathlib.Path(curl_dir) / "bin" / "curl-config"
+        path = executable(str(candidate))
+    else:
+        path = executable("curl-config")
+    if not path:
+        raise RuntimeError(
+            f"Git HTTPS profile requires curl-config from {curl_dir or 'PATH'}"
+        )
+
+    outputs = []
+    for option in ("--cflags", "--libs", "--vernum"):
+        try:
+            value = run_text(
+                [path, option], env=clean_host_environment(os.environ)
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Git HTTPS profile: {path} {option} failed: {exc}"
+            ) from exc
+        # These are Autoconf/CMake template substitutions, not compiler flags.
+        if re.search(r"@[A-Za-z_][A-Za-z_0-9]*@", value):
+            raise RuntimeError(
+                f"Git HTTPS profile: {path} {option} returned unresolved "
+                f"libcurl configure substitutions: {value}"
+            )
+        if "\n" in value or "\r" in value:
+            raise RuntimeError(
+                f"Git HTTPS profile: {path} {option} returned multiline flags"
+            )
+        outputs.append(value)
+    if not re.fullmatch(r"[0-9a-fA-F]{6,8}", outputs[2]):
+        raise RuntimeError(
+            f"Git HTTPS profile: {path} --vernum is malformed: {outputs[2]}"
+        )
+    return (path, *outputs)
+
+
 def iconv_prefix() -> str:
     if platform.system() != "Darwin":
         return ""
@@ -359,7 +400,7 @@ def marker_text(revision, sha1_revision, seed, cc, make, profile, curl_dir, icon
     )
 
 
-def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags, marker):
+def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, curl_dir, iconv_dir, zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags, marker, curl_config=""):
     prefix = build_root / "deps" / "git"
     work = build_root / "bootstrap" / "git"
     source = work / "source"
@@ -395,8 +436,13 @@ def build_profile(seed, revision, sha1_revision, cc, make, build_root, profile, 
     ]
     if profile == "core":
         variables.append("NO_CURL=YesPlease")
-    elif curl_dir:
-        variables.append(f"CURLDIR={curl_dir}")
+    else:
+        if curl_dir:
+            variables.append(f"CURLDIR={curl_dir}")
+        # Git's Makefile invokes CURL_CONFIG through the shell. Quote paths.
+        if not curl_config:
+            curl_config, _, _, _ = curl_config_inputs(curl_dir)
+        variables.append(f"CURL_CONFIG={shlex.quote(curl_config)}")
 
     if iconv_dir:
         variables.extend((
@@ -499,6 +545,22 @@ def _bootstrap_locked(build_root: pathlib.Path, mode: str) -> pathlib.Path:
     if mode == "core":
         profiles = ["core"]
 
+    # A corrupt curl-config is a dependency failure, not a Clang failure.
+    # Force requires HTTPS. Automatic mode may retain local-only Git.
+    curl_info = None
+    if "full" in profiles:
+        try:
+            curl_info = curl_config_inputs(curl_dir)
+        except RuntimeError as exc:
+            if mode == "force":
+                raise
+            print(
+                f"WHP Git HTTPS profile unavailable: {exc}; "
+                "retaining local-only fallback",
+                file=sys.stderr,
+            )
+            profiles = ["core"]
+
     markers = {}
     for profile in profiles:
         marker = marker_text(
@@ -510,6 +572,14 @@ def _bootstrap_locked(build_root: pathlib.Path, mode: str) -> pathlib.Path:
             marker += f"BOOTSTRAP_CFLAGS={bootstrap_cflags}\n"
         if bootstrap_ldflags:
             marker += f"BOOTSTRAP_LDFLAGS={bootstrap_ldflags}\n"
+        if profile == "full" and curl_info is not None:
+            curl_path, curl_cflags, curl_libs, curl_vernum = curl_info
+            marker += (
+                f"CURL_CONFIG={curl_path}\n"
+                f"CURL_CONFIG_CFLAGS={curl_cflags}\n"
+                f"CURL_CONFIG_LIBS={curl_libs}\n"
+                f"CURL_CONFIG_VERNUM={curl_vernum}\n"
+            )
         markers[profile] = marker
 
     # Reuse a verified existing core profile before attempting a full rebuild.
@@ -530,6 +600,7 @@ def _bootstrap_locked(build_root: pathlib.Path, mode: str) -> pathlib.Path:
                 profile, curl_dir if profile == "full" else "", iconv_dir,
                 zlib_dir, sdkroot, bootstrap_cflags, bootstrap_ldflags,
                 marker,
+                curl_config=curl_info[0] if profile == "full" and curl_info else "",
             )
         except RuntimeError:
             if mode == "force" or profile == profiles[-1]:

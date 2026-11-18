@@ -140,6 +140,73 @@ def verify_git_cache_recovery() -> None:
         with helper.git_bootstrap_lock(build):
             pass
 
+def verify_curl_config_preflight() -> None:
+    """Reject unexpanded curl substitutions and enforce prefix provenance."""
+    spec = importlib.util.spec_from_file_location(
+        "whp_git_curl_test", ROOT / "scripts/ensure-git.py"
+    )
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    with tempfile.TemporaryDirectory(prefix="whp-git-curl-") as tmp:
+        prefix = pathlib.Path(tmp) / "curl prefix with spaces"
+        selected = prefix / "bin" / "curl-config"
+        selected.parent.mkdir(parents=True)
+        selected.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        selected.chmod(0o755)
+
+        values = {
+            "--cflags": "@LIBCURL_PC_CFLAGS@",
+            "--libs": "-lcurl",
+            "--vernum": "080d00",
+        }
+
+        def invoke(argv, **_kwargs):
+            assert argv[0] == str(selected), argv
+            return values[argv[-1]]
+
+        with mock.patch.object(helper, "run_text", side_effect=invoke):
+            try:
+                helper.curl_config_inputs(str(prefix))
+            except RuntimeError as exc:
+                assert "@LIBCURL_PC_CFLAGS@" in str(exc)
+            else:
+                raise AssertionError("unconfigured curl CFLAGS reached Git")
+
+            values["--cflags"] = "-I/opt/curl/include"
+            values["--libs"] = "@LIBCURL_PC_LIBS@"
+            try:
+                helper.curl_config_inputs(str(prefix))
+            except RuntimeError as exc:
+                assert "@LIBCURL_PC_LIBS@" in str(exc)
+            else:
+                raise AssertionError("unconfigured curl link flags reached Git")
+
+            values["--libs"] = "-L/opt/curl/lib -lcurl"
+            assert helper.curl_config_inputs(str(prefix)) == (
+                str(selected), "-I/opt/curl/include",
+                "-L/opt/curl/lib -lcurl", "080d00",
+            )
+
+            values["--vernum"] = "invalid"
+            try:
+                helper.curl_config_inputs(str(prefix))
+            except RuntimeError as exc:
+                assert "--vernum is malformed" in str(exc)
+            else:
+                raise AssertionError("malformed curl version accepted")
+
+        # An explicit CURLDIR must not fall back to an unrelated PATH curl.
+        missing = pathlib.Path(tmp) / "missing prefix"
+        try:
+            helper.curl_config_inputs(str(missing))
+        except RuntimeError as exc:
+            assert "requires curl-config" in str(exc)
+        else:
+            raise AssertionError("missing configured curl was ignored")
+
+
 def main() -> int:
     parser = configparser.ConfigParser()
     parser.read(ROOT / ".gitmodules", encoding="utf-8")
@@ -232,6 +299,7 @@ def main() -> int:
     if prepare.count('"${GIT:-git}" -C "$SOURCE_DIR" submodule sync --') != 3:
         raise SystemExit("error: firmware source sync bypasses promoted Git")
     verify_git_cache_recovery()
+    verify_curl_config_preflight()
     print("WHP Git dependency policy: verified")
     return 0
 
