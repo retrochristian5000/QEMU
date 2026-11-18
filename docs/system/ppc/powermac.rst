@@ -120,6 +120,64 @@ A typical Mac OS 9 test command is::
   qemu-system-ppc -machine powermac3_1 -m 128M \
     -bios pc-bios/openbios-ppc -boot d -cdrom macos9.iso
 
+Mac OS X Tiger (10.4) hardware compatibility
+--------------------------------------------
+
+Tiger is the last Mac OS X release officially supported on the original
+350--500 MHz PowerMac3,1 family. Apple's 2005 Tiger requirements specify
+a G3, G4 or G5 Macintosh with built-in FireWire and at least 256 MiB RAM.
+Apple's Leopard 10.5 requirements raise the supported G4 CPU floor to
+867 MHz. This is a guest compatibility target, not a reason to change
+Sawtooth's historically correct 128 MiB launch default.
+
+For a Tiger installation experiment, supply at least 256 MiB explicitly::
+
+  qemu-system-ppc -machine powermac3_1 -m 256M \
+    -bios pc-bios/openbios-ppc -boot d -cdrom tiger-install.iso
+
+The filename stands for the user's own installation image. This command
+is **not** evidence that the Tiger installer currently boots or that all
+Apple drivers initialize.
+
+Apple's published PowerPC-era open-source components provide useful driver
+contracts. They do not include every proprietary Tiger driver. The latest
+published source revision must not be assumed identical to the Tiger 10.4.11
+binary: pin a release-specific tag before importing register behavior.
+
+* **AppleKeyLargo**: feature-control registers, GPIO routing, USB power
+  and reset. Compare with QEMU's FCR/GPIO model. Missing behavior includes
+  how those bits affect real device clocks and power states.
+  Source: https://github.com/apple-oss-distributions/AppleKeyLargo
+* **AppleMacRISC2PE**: G4/UniNorth platform startup, CPU and power-management
+  integration. Compare Sawtooth PMU/UniNorth wiring; do not introduce later
+  K2/G5 board assumptions into the original PowerMac3,1 profile.
+  Source: https://github.com/apple-oss-distributions/AppleMacRISC2PE
+* **IOFireWireFamily**: bus reset, node/self-ID and configuration-ROM behavior
+  above the PCI/OHCI boundary. The TSB12LV23 models controller registers but
+  lacks a separate PHY, real ports, packet transport and async/iso DMA. Do
+  not advertise attached PHYs or successful FireWire device enumeration yet.
+  Source: https://github.com/apple-oss-distributions/IOFireWireFamily
+* **IOUSBFamily**: OHCI root-hub and port state transitions. Sawtooth has
+  two KeyLargo USB functions, but board-level power, clock and reset effects
+  require validation.
+  Source: https://github.com/apple-oss-distributions/IOUSBFamily
+* **AppleGMACEthernet**: GMAC/MII link and PHY setup. QEMU exposes a
+  BCM5201-compatible PHY; KeyLargo PHY reset, clock gating and PHY interrupt
+  or autopoll behavior are incomplete. Do not substitute later gigabit
+  PowerMac board behavior for this 10/100 PHY.
+  Source: https://github.com/apple-oss-distributions/AppleGMACEthernet
+
+For each Tiger driver failure, record the Open Firmware node, PCI/OF driver
+match and first failing MMIO/interrupt/power operation. Compare with the
+correct Tiger-version source and a hardware reference before implementing a
+narrow fix. The existing FireWire runtime test checks device and bridge
+topology; it does not demonstrate a functional IEEE-1394 PHY.
+
+Apple's system requirements:
+
+* https://www.apple.com/newsroom/2005/04/12Apple-to-Ship-Mac-OS-X-Tiger-on-April-29/
+* https://support.apple.com/zh-cn/HT2226
+
 Classic Mac OS self-mounting images
 -----------------------------------
 
