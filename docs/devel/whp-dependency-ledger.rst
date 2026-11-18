@@ -2241,6 +2241,22 @@ its ``bootstrap`` self-hosts temporary ``autoconf`` and ``autom4te`` programs
 from the source tree. It therefore does not need an installed Autoconf to
 generate its own ``configure``.
 
+Autoconf shell-trap audit: the maintained ``bootstrap`` script uses
+two cleanup scopes: an M4 feature-probe scratch directory and the
+temporary source-tree Autoconf installation. Both use EXIT traps,
+with signal traps for SIGHUP, SIGINT, SIGQUIT and SIGTERM. The source
+bootstrap now registers its temporary-directory cleanup immediately
+after a successful ``mktemp -d``, before ``cd -P`` attempts path
+canonicalization. The EXIT trap references the original, unmodified
+temporary pathname, so an inaccessible or concurrently removed
+directory cannot bypass cleanup. Signal exits use the conventional
+128-plus-signal statuses (129, 130, 131 and 143); ordinary command
+failures retain their original exit codes. ``tests/bootstrap-host-paths.sh``
+exercises failure status propagation, SIGTERM cleanup and a deliberately
+inaccessible temporary directory. Autoconf's generated ``configure``
+``ac_exit_trap`` and ``AS_EXIT`` remain separately tested language
+machinery and are not rewritten by the bootstrap cleanup change.
+
 The Makefile scan distinguishes commands used by the selected native build
 from tools needed only for other targets. ``Makefile.am`` includes
 ``bin/local.mk``, ``lib/local.mk``, ``lib/freeze.mk``,
