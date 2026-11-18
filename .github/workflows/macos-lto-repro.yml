@@ -40,6 +40,8 @@ jobs:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_MAXSIZE: 300M
       CCACHE_COMPRESS: 'true'
+      # Prevent Apple Clang upgrades from reusing old compiler identities.
+      CCACHE_COMPILERCHECK: content
       RUN_TESTS: '0'
       MACOS_ENABLE_COCOA: '0'
       MACOS_ENABLE_COREAUDIO: '0'
@@ -53,6 +55,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Validate CI compiler-cache publication rules
+        run: python3 scripts/tests/test-ci-compiler-cache-policy.py
+
       - name: Verify Apple Silicon host
         shell: bash
         run: test "$(uname -m)" = arm64
@@ -65,9 +70,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .whp-compiler-cache
-          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          key: whp-macos-lto-ccache-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           restore-keys: |
-            whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-
+            whp-macos-lto-ccache-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
@@ -131,11 +136,11 @@ jobs:
         run: ccache --show-stats || true
 
       - name: Save compiler cache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: .whp-compiler-cache
-          key: whp-macos-lto-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          key: whp-macos-lto-ccache-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
 
       - name: Upload failure logs
         if: failure()
