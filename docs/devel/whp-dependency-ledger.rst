@@ -2211,6 +2211,14 @@ to the same executables. Their selected paths enter the Autoconf cache
 marker, so a provider change cannot silently reuse older generated output.
 Neither managed Gawk nor GNU grep becomes a mandatory source prerequisite.
 
+The pinned Automake fork checks whether its chosen test-suite shell
+implements both POSIX ``test`` and ``[ ... ]`` predicates consistently.
+Its ``configure.ac`` uses doubled M4 brackets so generated shell code
+retains ordinary bracket expressions. The QEMU Automake CI lane executes
+the fork's generated-configure regression before bootstrapping Automake,
+including a deliberately broken bracket case that must fail. This is
+test-runner shell admission, not a new Autoconf build dependency.
+
 The QEMU ``seeds/automake.sh`` adapter resolves a validated native
 GNU Automake/aclocal pair before downstream maintainer-source generation.
 It prefers an ``aclocal`` beside the selected ``automake``, honors

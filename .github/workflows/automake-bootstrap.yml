@@ -62,6 +62,11 @@ jobs:
           brew install autoconf texinfo
           echo "$(brew --prefix texinfo)/bin" >> "$GITHUB_PATH"
 
+      - name: Check pinned Automake test and bracket shell predicates
+        run: |
+          git submodule update --init --depth 1 -- toolchains/automake
+          python3 toolchains/automake/contrib/t/shell-predicate-parity.py
+
       - name: Reject corrupt bootstrap variables
         run: python3 scripts/tests/test-bootstrap-env.py
 
