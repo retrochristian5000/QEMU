@@ -121,6 +121,16 @@ jobs:
           /bin/sh -n toolchains/autoconf/bootstrap
           /bin/sh -n toolchains/autoconf/tests/bootstrap-host-paths.sh
           /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
+          if command -v dash >/dev/null 2>&1; then
+            dash -n toolchains/autoconf/bootstrap
+            TEST_BOOTSTRAP_SHELL="$(command -v dash)" \
+              /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
+          fi
+          if command -v bash >/dev/null 2>&1; then
+            bash -n toolchains/autoconf/bootstrap
+            TEST_BOOTSTRAP_SHELL="$(command -v bash)" \
+              /bin/sh toolchains/autoconf/tests/bootstrap-host-paths.sh
+          fi
 
       - name: Validate fork Makefile recipes and failure recovery
         run: python3 toolchains/autoconf/tests/makefile-rules-smoke.py
