@@ -34,7 +34,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "7"
+SCHEMA = "8"SCHEMA = "7"
 
 
 def perl_trace(message: str) -> None:
@@ -336,6 +336,8 @@ def configure_arguments(source: pathlib.Path, prefix: pathlib.Path,
         "/bin/sh", "./Configure", "-des",
         f"-Dprefix={prefix}", f"-Dcc={compiler}",
         f"-Dld={compiler}", "-Uuseshrplib", "-Uversiononly",
+        # Autoconf imports POSIX; don't silently accept hints disabling it.
+        "-Duseposix=true",
     ]
     # Perl Configure uses ccflags/ldflags (not Autoconf CFLAGS/LDFLAGS).
     # Supply one authoritative value for each instead of relying on
@@ -375,7 +377,8 @@ def require_configured_toolchain(source: pathlib.Path,
     except OSError as exc:
         raise RuntimeError("Perl Configure did not generate config.sh") from exc
     required = ("prefix", "installbin", "versiononly", "cc", "ld", "ar",
-                "full_ar", "ranlib", "ccflags", "ldflags", "osname")
+                "full_ar", "ranlib", "ccflags", "ldflags", "osname",
+                "useposix", "useithreads", "extensions")
     values: dict[str, str] = {}
     for line in lines:
         match = re.fullmatch(r"([a-z][a-z0-9_]*)=(.*)", line)
@@ -417,6 +420,26 @@ def require_configured_toolchain(source: pathlib.Path,
             f"Perl Configure selected an unexpected archive indexer: "
             f"{values['ranlib']!r} (expected {ranlib!r} or selected ar)"
         )
+
+    # Perl Configure only warns if foundational extensions are omitted.
+    # Reject that result before make perl, not during the Autoconf build.
+    if values["useposix"] not in ("true", "define", "y"):
+        raise RuntimeError(
+            "Perl Configure disabled required Autotools POSIX extension: "
+            f"useposix={values['useposix']!r}"
+        )
+    required_extensions = {"Cwd", "Errno", "Fcntl", "IO", "POSIX"}
+    if values["useithreads"] in ("true", "define", "y"):
+        required_extensions.update(("Thread/Queue", "threads", "threads/shared"))
+    missing_extensions = sorted(
+        required_extensions - set(values["extensions"].split())
+    )
+    if missing_extensions:
+        raise RuntimeError(
+            "Perl Configure omitted required Autotools extensions: "
+            + ", ".join(missing_extensions)
+        )
+
     expected_os = {"Darwin": "darwin", "Linux": "linux",
                    "FreeBSD": "freebsd", "NetBSD": "netbsd",
                    "OpenBSD": "openbsd"}.get(platform.system())

@@ -35,12 +35,18 @@ class PerlConfigureTests(unittest.TestCase):
         self.assertIn("-Dusedevel", args)
         self.assertIn("-Uuseshrplib", args)
         self.assertIn("-Uversiononly", args)
+        self.assertIn("-Duseposix=true", args)
+        self.assertNotIn("-Dusethreads", args)
+        self.assertFalse(any(x.startswith("-Donlyextensions=") for x in args))
 
     def test_even_stable_series_does_not_enable_development(self):
         args = self.configure(44)
         self.assertIn("-des", args)
         self.assertNotIn("-Dusedevel", args)
         self.assertIn("-Uversiononly", args)
+        self.assertIn("-Duseposix=true", args)
+        self.assertNotIn("-Dusethreads", args)
+        self.assertFalse(any(x.startswith("-Donlyextensions=") for x in args))
 
     def test_unknown_source_version_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +255,9 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
             "ccflags": "-fno-common " + self.cflags,
             "ldflags": self.ldflags + " -pthread",
             "osname": "darwin",
+            "useposix": "true",
+            "useithreads": "undef",
+            "extensions": "Cwd Errno Fcntl IO POSIX",
         }
         values.update(overrides)
         # Config.sh is shell-assignment data.  Deliberately avoid sourcing it.
@@ -263,6 +272,50 @@ class PerlEffectiveConfigureTests(unittest.TestCase):
                 self.source, self.prefix, self.cc, self.ar, self.ranlib,
                 self.cflags, self.ldflags,
             )
+
+    def test_required_autotools_extensions_selected(self):
+        base = ("Cwd", "Errno", "Fcntl", "IO", "POSIX")
+        self.configure_result()
+        self.verify()
+        for missing in base:
+            with self.subTest(missing=missing):
+                self.configure_result(
+                    extensions=" ".join(ext for ext in base if ext != missing)
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError, "Autotools extensions: " + missing
+                ):
+                    self.verify()
+
+    def test_disabled_posix_cannot_reach_autoconf(self):
+        self.configure_result(useposix="false")
+        with self.assertRaisesRegex(RuntimeError, "disabled required Autotools POSIX"):
+            self.verify()
+
+    def test_thread_extensions_conditional_on_useithreads(self):
+        self.configure_result(useithreads="undef")
+        self.verify()
+        self.configure_result(useithreads="define")
+        with self.assertRaisesRegex(
+            RuntimeError, "Thread/Queue, threads, threads/shared"
+        ):
+            self.verify()
+        self.configure_result(
+            useithreads="define",
+            extensions="Cwd Errno Fcntl IO POSIX Thread/Queue threads threads/shared",
+        )
+        self.verify()
+
+    def test_missing_extension_configuration_fails_closed(self):
+        self.configure_result()
+        file = self.source / "config.sh"
+        file.write_text(
+            "\n".join(line for line in file.read_text().splitlines()
+                      if not line.startswith("extensions=")) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "lacks extensions"):
+            self.verify()
 
     def test_effective_native_toolchain_accepts_hint_additions(self):
         self.configure_result()

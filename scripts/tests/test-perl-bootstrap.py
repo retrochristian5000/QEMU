@@ -83,6 +83,9 @@ def check():
     assert 'env["CC_FOR_BUILD"] = cc' in source
     assert 'env["SDKROOT"] = sdk' in source
     assert "-Uuseshrplib" in source
+    assert '"-Duseposix=true"' in source
+    assert '"useposix", "useithreads", "extensions"' in source
+    assert 'required_extensions = {"Cwd", "Errno", "Fcntl", "IO", "POSIX"}' in source
     assert 'temporary_marker.replace(marker_path)' in source
     assert 'make = select_seed_make()' in source
     assert source.index('make = select_seed_make()') < source.index(

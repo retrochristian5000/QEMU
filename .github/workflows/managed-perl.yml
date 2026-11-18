@@ -135,6 +135,16 @@ jobs:
           result="$(python3 scripts/ensure-perl.py --build-dir "$RUNNER_TEMP/whp-perl")"
           test -x "$result"
           "$result" -e 'use strict; use warnings; use Config; print "$Config{osname}\n";'
+          # Exercise the same module selection used by managed Autoconf.
+          selected="$(WHP_PERL_SEED="$result" PERL="$result" /bin/sh seeds/perl.sh --print-autotools-seed)"
+          test "$selected" = "$result"
+          "$result" -MConfig -e '
+            my %have = map { $_ => 1 } split /\\s+/, $Config{extensions};
+            for my $name (qw(Cwd Errno Fcntl IO POSIX)) {
+                die "Autotools extension missing: $name\\n" unless $have{$name};
+            }
+            print "WHP Autotools extension closure: ok\\n";
+          '
 
       - name: Run updated pinned Perl C portability regression
         shell: bash

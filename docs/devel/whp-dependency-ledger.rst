@@ -2260,6 +2260,27 @@ runner is already available.
 Perl-to-Autotools bootstrap boundary
 ------------------------------------
 
+Managed Perl extension selection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Perl's native Configure can warn about a missing ``Fcntl`` or ``IO``
+extension without stopping. The managed build now selects
+``-Duseposix=true`` and checks the effective ``config.sh`` extension
+list before compiling. ``Cwd`` (the ``PathTools`` source alias),
+``Errno``, ``Fcntl``, ``IO`` and ``POSIX`` must be selected.
+When ``useithreads`` is enabled, the ``threads``,
+``threads/shared`` and ``Thread/Queue`` extensions are also required.
+A nonthreaded Perl remains valid; either static or dynamic XS loading
+is permitted. ``DynaLoader`` is handled specially and must not be
+erroneously required in the extension list. Do not restrict the build
+with ``-Donlyextensions`` or force optional DBM and GDBM dependencies.
+After installation, the existing module-load test and native CORE-header
+compilation remain mandatory. This extension selection check uses the
+existing safe ``config.sh`` parser and is covered by
+``test-perl-configure-unattended.py`` and the Ubuntu/macOS
+``managed-perl.yml`` workflow.
+
+
 The managed Perl fork is built from an independent root Perl seed through
 its native Configure/miniperl flow, before managed Automake and Autoconf.
 A successful interpreter and Config.pm probe is not sufficient for
