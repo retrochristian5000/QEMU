@@ -301,6 +301,29 @@ if [ -f "$marker" ] &&
     exit 0
 fi
 
+# A cached interpreter needs no archive probe. On a cache miss, however,
+# validate the native ar/ranlib pair before initializing Python sources:
+# CPython's configure and Makefile must not rediscover target or mixed-family
+# archive tools from PATH. Match the actual selected Python host compiler.
+if [ "$build_mode" = posix ]; then
+    # Standalone bootstrap needs the same SDK used by its compiler and archive
+    # probes. The public build entry has already selected SDKROOT on macOS.
+    if [ "$host_kernel" = Darwin ] && [ -z "${SDKROOT:-}" ]; then
+        . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+        SDKROOT=$(whp_apple_select_sdk) ||
+            fail "cannot select a native macOS SDK for Python bootstrap"
+        export SDKROOT
+    fi
+    bootstrap_ar=$(WHP_CC_SEED="$bootstrap_cc" \
+        /bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed) ||
+        fail "native ar seed unavailable for bundled Python"
+    bootstrap_ranlib=$(WHP_CC_SEED="$bootstrap_cc" WHP_AR_SEED="$bootstrap_ar" \
+        /bin/sh "$SOURCE_DIR/seeds/ranlib.sh" --print-seed) ||
+        fail "native ranlib seed unavailable for bundled Python"
+    printf 'WHP Python native archive pair: ar=%s; ranlib=%s\n' \
+        "$bootstrap_ar" "$bootstrap_ranlib" >&2
+fi
+
 # Cache miss: initialize missing source from the gitlink or preserve an
 # existing verified descendant. Never select a moving remote branch.
 whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" "$bootstrap_git" || fail "Python submodule preparation failed"
@@ -324,16 +347,6 @@ case "$build_mode" in
             make_jobs=
         fi
 
-        # Preserve the SDK already selected by build.sh. Standalone Python
-        # bootstrap only discovers one when the caller supplied none, using
-        # the same developer-root and SDK-header validation as the launcher.
-        if [ "$host_kernel" = Darwin ] && [ -z "${SDKROOT:-}" ]; then
-            . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
-            SDKROOT=$(whp_apple_select_sdk) ||
-                fail "cannot select a native macOS SDK for Python bootstrap"
-            export SDKROOT
-        fi
-
         # Configure CPython for its final prefix and stage installation with
         # DESTDIR. Moving an interpreter configured for a temporary prefix can
         # leave sysconfig/install metadata referring to the discarded path.
@@ -353,6 +366,9 @@ case "$build_mode" in
             # generated pip3/pipX.Y launchers are not on PATH. The runtime is
             # atomically published below before ensure_pip() installs/validates
             # pip against its final prefix.
+            AR=$bootstrap_ar
+            RANLIB=$bootstrap_ranlib
+            export AR RANLIB
             CC="$bootstrap_cc" "$PYTHON_SOURCE_DIR/configure" \
                 --prefix="$TOOLCHAIN_DIR" \
                 --with-ensurepip=no

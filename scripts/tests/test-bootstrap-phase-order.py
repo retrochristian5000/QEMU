@@ -250,4 +250,39 @@ for tool, helper in (
         if probe not in block:
             raise SystemExit(f"error: forced {tool} guard blocks probe-only mode")
 
+# CPython is a bootstrap prerequisite for Python-driven host tools.
+# Validate its native archive pair on cache miss before source preparation.
+python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(
+    encoding="utf-8"
+)
+for needle, label in (
+    ('bootstrap_ar=$(WHP_CC_SEED="$bootstrap_cc"', "Python native ar seed"),
+    ('bootstrap_ranlib=$(WHP_CC_SEED="$bootstrap_cc" WHP_AR_SEED="$bootstrap_ar"',
+     "Python paired ranlib seed"),
+    ('AR=$bootstrap_ar', "Python configure archive export"),
+    ('RANLIB=$bootstrap_ranlib', "Python configure indexer export"),
+    ('export AR RANLIB', "Python native archive pair environment"),
+):
+    require(python_bootstrap, needle, label)
+
+python_cache_hook = python_bootstrap.index(
+    'cached_python=$(python_from_prefix "$TOOLCHAIN_DIR"'
+)
+python_ar_hook = python_bootstrap.index('bootstrap_ar=$(')
+python_ranlib_hook = python_bootstrap.index('bootstrap_ranlib=$(')
+python_source_hook = python_bootstrap.index(
+    'whp_git_submodule_prepare "$SOURCE_DIR" "$PYTHON_SUBMODULE_PATH" "$bootstrap_git" || fail'
+)
+python_configure_hook = python_bootstrap.index(
+    'CC="$bootstrap_cc" "$PYTHON_SOURCE_DIR/configure"'
+)
+if not (
+    python_cache_hook < python_ar_hook < python_ranlib_hook
+    < python_source_hook < python_configure_hook
+):
+    raise SystemExit(
+        "error: Python archive seeds must follow cache reuse but precede "
+        "source initialization and configure"
+    )
+
 print("WHP bootstrap phase ordering: verified")
