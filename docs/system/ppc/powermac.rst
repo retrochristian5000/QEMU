@@ -661,6 +661,60 @@ register defaults, Open Firmware node, power-management behavior or timing.
 Firmware
 --------
 
+Apple firmware releases and the OpenBIOS boundary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Apple supplied boot-ROM firmware for the original PowerMac3,1/Sawtooth.
+A historical Sawtooth version inventory reports Open Firmware ``3.2.4f1``
+(February 2000), while Apple's Power Mac G4 Firmware Update ``4.2.8``
+(October 2001, Boot ROM ``4.2.8f1``) specifically included AGP-graphics
+Power Mac G4 machines. Contemporary release coverage documents fixes
+for Mac OS X startup from local disks, FireWire target disk mode,
+network boot and system stability. The update also resets PRAM.
+
+Apple required Mac OS 9.1 or later on a *local writable disk* to run the
+4.2.8 updater on a physical machine; running the installer in Mac OS X,
+Classic mode or from a CD was not a supported firmware-installation path.
+The original Apple download was historically named
+``G4_FW_Update_4.2.8.smi.bin``. The present availability of that
+historical Apple-hosted URL and whether the installer includes an intact
+1 MiB raw ROM payload have **not** been verified. Do not mistake an
+updater container, patch or flash programmer for a directly bootable ROM.
+
+The actual Apple Boot ROM and the separate disk-loaded Mac OS ROM are
+different boot stages. Apple Open Firmware initializes UniNorth/KeyLargo,
+probes PCI, populates the device tree and provides platform FCode
+drivers. Apple did not publish the complete Sawtooth firmware source
+alongside the Tiger KeyLargo/UniNorth driver sources inspected here.
+Neither Apple's updater nor an unverified ROM extraction is embedded
+in this QEMU tree.
+
+QEMU instead uses the pinned ``PPC-Firmware`` OpenBIOS fork. It maps a
+1 MiB firmware region at ``0xfff00000``, accepts a compatible PowerPC
+ELF or raw image, and by default resets execution to ``0xfff00100``.
+The OpenBIOS build checks the ELF LOAD segments and whether the legacy
+entry address is mapped; an image built for another entry needs an
+explicit ``-machine powermac3_1,firmware-entry=...`` override.
+Changing to a real Apple image without verifying its reset vector,
+load addresses, and board/MMIO assumptions is **not** a display fix.
+
+For a black screen **before OpenBIOS text appears**, first confirm that
+the actual ROM passed to ``-bios`` was freshly built, that the QEMU
+startup log reports no firmware-load errors, that the ELF covers the
+configured reset entry and that OpenBIOS reaches the graphics-console
+initialization. Then trace its AGP PCI scan, Rage 128 BAR assignment,
+FCode and framebuffer. A screen that goes blank **after** OpenBIOS
+or BootX requires a separate Tiger graphics handoff investigation.
+Do not silently replace the historical Rage 128 or claim that the
+Apple firmware updater was booted.
+
+Historical references:
+
+* https://www.macworld.com/article/163402/firmware.html
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/G4Rev3-84.html
+* https://github.com/dingusdev/dingusppc/blob/master/zdocs/developers/openfirmware.md
+* https://support.apple.com/en-us/docs/mac/7956
+
 Since version 0.9.1, QEMU uses OpenBIOS https://www.openbios.org/ for the
 ``g3beige`` and ``mac99`` PowerMac machines.  The ``powermac3_1`` profile uses
 the same OpenBIOS firmware path while presenting the more specific Sawtooth
