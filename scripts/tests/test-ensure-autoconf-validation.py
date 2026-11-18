@@ -183,19 +183,35 @@ class AutoconfPreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported"):
                 HELPER.select_bootstrap_text_tool("m4")
 
+    def test_ln_seed_is_checked_before_source_access(self):
+        with tempfile.TemporaryDirectory(prefix="whp-autoconf-ln-") as tmp:
+            selected = Path(tmp) / "native-ln"
+            selected.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            selected.chmod(0o755)
+            good = subprocess.CompletedProcess(["ln-seed"], 0, str(selected) + "\n", "")
+            with mock.patch.object(HELPER.subprocess, "run", return_value=good):
+                self.assertEqual(HELPER.select_seed_ln(), str(selected))
+            bad = subprocess.CompletedProcess(["ln-seed"], 1, "", "ln probe rejected")
+            with mock.patch.object(HELPER.subprocess, "run", return_value=bad):
+                with self.assertRaisesRegex(RuntimeError, "ln seed handshake failed"):
+                    HELPER.select_seed_ln()
+
     def test_text_seed_paths_invalidate_autoconf_marker(self):
         with (
             mock.patch.object(HELPER, "first_line", return_value="version"),
             mock.patch.object(HELPER, "gnu_m4_version", return_value="GNU M4 1.4.19"),
         ):
             args = ("rev", "automake", "aclocal", "m4", "perl", "make", "sed")
-            initial = HELPER.marker_text(*args, "/seed/awk", "/seed/grep", "cc", "sh")
-            new_awk = HELPER.marker_text(*args, "/managed/gawk", "/seed/grep", "cc", "sh")
-            new_grep = HELPER.marker_text(*args, "/seed/awk", "/other/grep", "cc", "sh")
+            initial = HELPER.marker_text(*args, "/seed/awk", "/seed/grep", "/seed/ln", "cc", "sh")
+            new_awk = HELPER.marker_text(*args, "/managed/gawk", "/seed/grep", "/seed/ln", "cc", "sh")
+            new_grep = HELPER.marker_text(*args, "/seed/awk", "/other/grep", "/seed/ln", "cc", "sh")
+            new_ln = HELPER.marker_text(*args, "/seed/awk", "/seed/grep", "/other/ln", "cc", "sh")
         self.assertIn("AWK=/seed/awk\n", initial)
         self.assertIn("GREP=/seed/grep\n", initial)
+        self.assertIn("LN=/seed/ln\n", initial)
         self.assertNotEqual(initial, new_awk)
         self.assertNotEqual(initial, new_grep)
+        self.assertNotEqual(initial, new_ln)
 
     def test_wrong_version_is_diagnosed(self):
         with tempfile.TemporaryDirectory(prefix="whp-autoconf-version-") as root:

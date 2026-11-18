@@ -2282,6 +2282,82 @@ This cleanup does not modify the user's calling environment. The
 environment isolation, Autotools selection and prevention of Perl's
 bootstrap self-cycle.
 
+Pre-Autoconf dependency closure
+----------------------------------
+
+The managed Autoconf section is **not** the first Autotools dependency gate.
+Classify each edge by *when it is consumed*; phase order alone does not make
+one tool a dependency of another. The current QEMU ``master`` build follows::
+
+  seed Git + Python >= 3.9 + POSIX shell/host utilities
+      + native C compiler / selected SDK + seed GNU Make
+      + seed sed, AWK, grep and ln
+      |
+      +--> bootstrap zlib (early Git dependency, not an Autoconf input)
+      +--> independent Perl seed
+      |       +--> managed Perl [conditional; C, GNU Make, Git,
+      |                              native ar + paired ranlib, SDK]
+      |
+      +--> independent GNU Autoconf/autom4te seed
+      |       +--> managed Automake/aclocal [Perl, GNU M4, seed sed,
+      |              seed GNU Make, GNU Texinfo makeinfo, C/SDK]
+      |                 |
+      |                 +--> optional managed Gawk (phase order only)
+      |                 |
+      |                 +--> managed Autoconf [selected Automake/aclocal,
+      |                        GNU M4, Perl, seed GNU Make, seed sed,
+      |                        AWK, grep, native ln, C/SDK, shell,
+      |                        mktemp, chmod, sort, selected Git]
+      |
+      +--> managed GNU Make / GNU sed / later Autotools consumers
+
+The prerequisite roles are:
+
+* **Root seeds before managed Perl:** ``seeds/python.sh`` selects an
+  independent Python; ``seeds/git.sh`` makes pinned sources accessible;
+  ``seeds/cc.sh``, ``seeds/make.sh`` and macOS SDK admission prepare native
+  code generation. Managed Perl also requires the native ``seeds/ar.sh`` /
+  ``seeds/ranlib.sh`` pair and an independent ``seeds/perl.sh`` interpreter.
+  Perl uses Metaconfig ``Configure``, **not** the managed Autoconf build.
+  Bootstrap zlib precedes Perl in ``host-tools.sh`` but belongs to the
+  managed Git lane; do not turn that ordering edge into an Autoconf requirement.
+* **Transitive Automake gate:** ``seeds/autoconf.sh`` and
+  ``seeds/autom4te.sh`` must resolve a coherent *external* GNU Autoconf
+  pair. Automake self-hosts its own executables; it still invokes that
+  independent pair, native Perl, GNU M4 (``seeds/gnum4.sh``), seed GNU Make,
+  seed sed, and GNU Texinfo ``seeds/makeinfo.sh``. ``makeinfo`` is needed
+  by the selected **Automake** build's Info target; it is *not* a direct
+  requirement of QEMU's documentation-free managed Autoconf install.
+* **Direct managed Autoconf gate:** ``scripts/ensure-autoconf.py`` resolves
+  the selected ``automake``/``aclocal`` pair, GNU M4, Perl, seed GNU
+  Make, sed, AWK, grep, a native C compiler and the selected SDK. Source
+  preparation uses seed Git when checked out. Its pinned source ``bootstrap``
+  also invokes ``mktemp``, ``ln -s``, and POSIX path/file utilities;
+  selected build targets require ``chmod`` and ``sort``.
+  ``seeds/ln.sh`` is validated *before* source reconciliation and bound
+  to literal ``ln`` via an isolated PATH shim and ``LN_S="ln -s"``.
+  The selected ln path participates in the managed Autoconf cache marker,
+  along with AWK/grep, so changes cannot silently reuse old output.
+* **Implementation and conditional boundaries:** The QEMU helper currently
+  selects GNU M4 >= 1.4.16, including macro execution, even though the
+  Autoconf source fork separately probes non-GNU implementations for its
+  required features. The generic ``m4.sh`` is not interchangeable with
+  ``gnum4.sh``. A pinned GNU M4 source submodule is not proof of a
+  bootstrapped M4 executable. Optional Gawk promotion may precede Autoconf,
+  but Gawk itself is **not** required; a validated seed AWK remains sufficient.
+  Managed GNU Make, GNU sed and Libtool are downstream products, not
+  prerequisites for building managed Autoconf. Fortran, flex/bison,
+  gettext/autopoint, TeX, ``help2man``, and manual-page targets must
+  not be made unconditional dependencies without an active consumer.
+
+A missing required seed should fail before copying or reconciling Autoconf
+sources. Do not "repair" the Automake/Autoconf cycle by selecting partially
+installed managed Autoconf programs. The regression contracts are
+``scripts/tests/test-autoconf-bootstrap.py``,
+``scripts/tests/test-ensure-autoconf-validation.py``,
+``scripts/tests/test-autoconf-rollback.py``, and
+``scripts/tests/test-bootstrap-phase-order.py``.
+
 Autoconf bootstrap boundary
 ---------------------------
 

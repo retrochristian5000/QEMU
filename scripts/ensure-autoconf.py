@@ -35,7 +35,7 @@ from bootstrap_env import (clean_host_environment, select_native_cc,
 SUBMODULE_REL = pathlib.Path("toolchains/autoconf")
 SUBMODULE_DIR = ROOT / SUBMODULE_REL
 SED_ADAPTER = ROOT / "seeds" / "sed.sh"
-AUTOCONF_BOOTSTRAP_SCHEMA = "6"
+AUTOCONF_BOOTSTRAP_SCHEMA = "7"
 
 # Installed scripts to inspect individually before using or caching a prefix.
 # A successful install target does not prove every executable was installed.
@@ -336,6 +336,31 @@ def select_seed_sed() -> str:
     return seed
 
 
+def select_seed_ln() -> str:
+    """Admit the same native ln implementation used by the QEMU root build."""
+    adapter = ROOT / "seeds" / "ln.sh"
+    if not adapter.is_file():
+        raise RuntimeError(f"QEMU ln seed adapter is missing: {adapter}")
+    completed = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    path = completed.stdout.strip()
+    if (
+        completed.returncode != 0
+        or not path
+        or "\n" in path
+        or not pathlib.Path(path).is_absolute()
+        or not pathlib.Path(path).is_file()
+        or not os.access(path, os.X_OK)
+    ):
+        raise RuntimeError(
+            "QEMU ln seed handshake failed: "
+            + (completed.stderr.strip() or path or "no usable native ln")
+        )
+    return path
+
+
 def select_bootstrap_text_tool(name: str) -> str:
     """Resolve validated host AWK or grep after optional Gawk promotion."""
     if name not in ("awk", "grep"):
@@ -568,6 +593,7 @@ def marker_text(
     seed: str,
     awk: str,
     grep: str,
+    ln: str,
     cc: str,
     config_shell: str,
 ) -> str:
@@ -583,6 +609,7 @@ def marker_text(
         f"SEED_SED={seed}\n"
         f"AWK={awk}\n"
         f"GREP={grep}\n"
+        f"LN={ln}\n"
         f"CC_FOR_BUILD={cc}: {first_line([cc, '--version'])}\n"
         f"CONFIG_SHELL={config_shell}\n"
         f"SDKROOT={os.environ.get('SDKROOT', '')}\n"
@@ -638,6 +665,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     # Unlike help2man and makeinfo, these run for BUILD_TARGETS below.
     for name in ("chmod", "sort"):
         tool(name)
+    ln = select_seed_ln()
     git = select_bootstrap_git()
     revision = ensure_source(git)
 
@@ -649,7 +677,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     backup = build_root / "bootstrap" / "autoconf-previous-install"
 
     marker = marker_text(
-        revision, automake, aclocal, m4, perl, make, seed, awk, grep, cc,
+        revision, automake, aclocal, m4, perl, make, seed, awk, grep, ln, cc,
         config_shell
     )
     if bootstrap_cflags:
@@ -700,6 +728,15 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             shutil.copy2(selected, link)
             link.chmod(link.stat().st_mode | 0o111)
 
+    # The pinned source uses LN_S="ln -s". Bind that literal command to the
+    # validated native seed, not to an unrelated PATH implementation.
+    ln_link = seed_bin / "ln"
+    try:
+        ln_link.symlink_to(ln)
+    except OSError:
+        shutil.copy2(ln, ln_link)
+        ln_link.chmod(ln_link.stat().st_mode | 0o111)
+
     # Some Autotools helpers still invoke literal "m4" even when M4 is set.
     # Mirror the validated executable under that canonical name so PATH and the
     # M4 variable always resolve to the same implementation.
@@ -728,6 +765,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     env["AUTOMAKE"] = automake
     env["ACLOCAL"] = aclocal
     env["M4"] = m4
+    env["LN_S"] = "ln -s"
     env["PERL"] = perl
     env["AWK"] = awk
     env["GREP"] = grep
