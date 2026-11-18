@@ -230,6 +230,44 @@ Source baselines:
 * https://github.com/apple-oss-distributions/BootX/blob/BootX-74.1/bootx.tproj/sl.subproj/display.c
 * https://github.com/apple-oss-distributions/BootX/blob/BootX-74.1/bootx.tproj/sl.subproj/main.c
 
+Sawtooth boot flash and early firmware execution
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Apple's February 2000 Power Mac G4 developer note describes a **1 MiB
+on-board flash EPROM** on UniNorth's 66 MHz PCI lines. The ROM shares
+the 32 multiplexed PCI address/data signals and four byte enables,
+but has dedicated UniNorth chip-enable, output-enable and write-enable
+signals. This is *not* a normal enumerable PCI card and its identity
+must not be synthesized as a fake PCI vendor/device ID. Apple's
+PowerMac3,1 device tree includes
+``/rom@ff800000/boot-rom@fff00000``; the child package's mapped
+address and length correspond to QEMU's existing ROM window.
+
+OpenBIOS now advertises the ``boot-rom`` child of ``/rom`` for
+``PowerMac3,1`` only. The firmware image itself is still loaded by
+``hw/ppc/mac_newworld.c`` into ``0xfff00000``--``0xffffffff``,
+and the CPU starts at the existing ``0xfff00100`` default reset
+entry. NVRAM is separately mapped at ``0xfff04000`` within that
+window, reflecting the legacy NewWorld writable configuration
+region; QEMU does not emulate actual NOR-flash erase/program cycles,
+flash wear or a firmware-updater transaction. The precise Apple
+flash-chip manufacturer, package and command set are **unverified**,
+so no generic CFI model or guessed flash device IDs are introduced.
+A real firmware updater image is not interchangeable with the
+OpenBIOS executable or the disk-loaded NewWorld Mac OS ROM.
+
+This discovery narrows early boot checks: validate the reset-vector
+bytes and whether OpenBIOS reaches initialization, then examine PCI
+and display FCode only after firmware executes. A missing physical
+flash command set cannot, by itself, explain a black display if the
+PROM contents are loaded and executing correctly. Firmware nodes
+and PROM geometry are source-verified, not runtime boot-verified.
+
+Historical sources:
+
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/PowerMacG4.pdf
+* https://leopard-adc.pepas.com/technotes/tn/tn2001.html
+
 BootX startup and Open Firmware console contract
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -509,14 +547,19 @@ Hardware status
      - High
      - Modeled
    * - Boot ROM / flash
-     - 1 MiB on-board flash EPROM attached to the 66 MHz PCI side, containing
-       hardware-specific startup code and tables
-     - QEMU loads OpenBIOS or another compatible firmware image into a PROM
-       memory window.  It does not model the Sawtooth flash device as a PCI-side
-       programmable component and does not contain Apple's historical ROM
-       contents.
+     - 1 MiB on-board flash EPROM attached directly to UniNorth's 66 MHz PCI
+       lines, with separate chip-enable, output-enable and write-enable pins.
+       Apple Open Firmware names the device
+       ``/rom@ff800000/boot-rom@fff00000``.
+     - QEMU maps a 1 MiB OpenBIOS PROM at ``0xfff00000``, and its NewWorld
+       NVRAM region overlays ``0xfff04000`` for writable configuration data.
+       The pinned OpenBIOS now exposes a Sawtooth-specific ``boot-rom``
+       child beneath ``/rom`` with a matching ``reg`` address/length.
+       ROM storage and OF identity are modeled, but no manufacturer-specific
+       flash program/erase command set or original Apple Boot ROM contents
+       are present.
      - High
-     - Substitute
+     - Partial / firmware substitute
    * - FireWire
      - IEEE 1394a/FireWire 400 controller and PHY with two external ports and
        one internal port.  Real-machine PCI enumeration identifies a Texas
