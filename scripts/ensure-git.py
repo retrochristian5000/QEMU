@@ -232,6 +232,39 @@ def copy_source(seed, revision, sha1_revision, destination) -> None:
     (destination / "version").write_text(source_version() + "\n", encoding="utf-8")
 
 
+def discover_curl_prefix(candidates: List[str]) -> str:
+    """Skip unconfigured PATH tools; select a coherent curl prefix instead."""
+    seen: set[str] = set()
+    for candidate in candidates:
+        selected = executable(candidate)
+        if not selected or selected in seen:
+            continue
+        seen.add(selected)
+        try:
+            prefix = run_text(
+                [selected, "--prefix"],
+                env=clean_host_environment(os.environ),
+            )
+        except RuntimeError:
+            continue
+        if not pathlib.Path(prefix).is_absolute():
+            # curl-config.in returns a literal @prefix@ before generation.
+            continue
+        path = pathlib.Path(prefix).expanduser().resolve()
+        if not (path / "include" / "curl").is_dir():
+            continue
+        # The prefix must provide its *own* configured curl-config, not just
+        # headers with a stale PATH tool from a different installation.
+        if not executable(str(path / "bin" / "curl-config")):
+            continue
+        try:
+            curl_config_inputs(str(path))
+        except RuntimeError:
+            continue
+        return str(path)
+    return ""
+
+
 def curl_prefix() -> str:
     explicit = os.environ.get("WHP_GIT_CURLDIR", "")
     if explicit:
@@ -239,17 +272,16 @@ def curl_prefix() -> str:
         if not (path / "include" / "curl").is_dir():
             raise RuntimeError(f"WHP_GIT_CURLDIR lacks curl headers: {path}")
         return str(path)
-    curl_config = shutil.which("curl-config")
-    if not curl_config:
-        return ""
-    try:
-        prefix = run_text([curl_config, "--prefix"])
-    except RuntimeError:
-        return ""
-    path = pathlib.Path(prefix)
-    if (path / "include" / "curl").is_dir():
-        return str(path)
-    return ""
+
+    candidates = [shutil.which("curl-config") or ""]
+    if platform.system() == "Darwin":
+        # macOS' first PATH tool may be an SDK/system curl while Homebrew's
+        # configured, keg-only curl lives outside PATH.
+        candidates.extend((
+            "/opt/homebrew/opt/curl/bin/curl-config",
+            "/usr/local/opt/curl/bin/curl-config",
+        ))
+    return discover_curl_prefix(candidates)
 
 
 def curl_config_inputs(curl_dir: str) -> tuple[str, str, str, str]:
@@ -265,6 +297,31 @@ def curl_config_inputs(curl_dir: str) -> tuple[str, str, str, str]:
             f"Git HTTPS profile requires curl-config from {curl_dir or 'PATH'}"
         )
 
+    # Check the producer first, not just the flags downstream. An untouched
+    # curl-config.in reports @prefix@ and must never be mistaken for an
+    # installed, configured libcurl.
+    try:
+        configured_prefix = run_text(
+            [path, "--prefix"], env=clean_host_environment(os.environ)
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Git HTTPS profile: {path} --prefix failed: {exc}"
+        ) from exc
+    if not pathlib.Path(configured_prefix).is_absolute():
+        raise RuntimeError(
+            f"Git HTTPS profile: {path} --prefix is not configured: "
+            f"{configured_prefix!r} (check for curl-config.in on PATH)"
+        )
+    if curl_dir and (
+        pathlib.Path(configured_prefix).resolve()
+        != pathlib.Path(curl_dir).resolve()
+    ):
+        raise RuntimeError(
+            f"Git HTTPS profile: {path} reports a different prefix "
+            f"({configured_prefix}, expected {curl_dir})"
+        )
+
     outputs = []
     for option in ("--cflags", "--libs", "--vernum"):
         try:
@@ -275,7 +332,6 @@ def curl_config_inputs(curl_dir: str) -> tuple[str, str, str, str]:
             raise RuntimeError(
                 f"Git HTTPS profile: {path} {option} failed: {exc}"
             ) from exc
-        # These are Autoconf/CMake template substitutions, not compiler flags.
         if re.search(r"@[A-Za-z_][A-Za-z_0-9]*@", value):
             raise RuntimeError(
                 f"Git HTTPS profile: {path} {option} returned unresolved "

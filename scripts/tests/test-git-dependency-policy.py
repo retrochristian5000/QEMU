@@ -157,6 +157,7 @@ def verify_curl_config_preflight() -> None:
         selected.chmod(0o755)
 
         values = {
+            "--prefix": str(prefix),
             "--cflags": "@LIBCURL_PC_CFLAGS@",
             "--libs": "-lcurl",
             "--vernum": "080d00",
@@ -197,6 +198,23 @@ def verify_curl_config_preflight() -> None:
             else:
                 raise AssertionError("malformed curl version accepted")
 
+            values["--vernum"] = "080d00"
+            values["--prefix"] = "@prefix@"
+            try:
+                helper.curl_config_inputs(str(prefix))
+            except RuntimeError as exc:
+                assert "curl-config.in on PATH" in str(exc)
+            else:
+                raise AssertionError("unconfigured curl producer accepted")
+
+            values["--prefix"] = str(pathlib.Path(tmp) / "other")
+            try:
+                helper.curl_config_inputs(str(prefix))
+            except RuntimeError as exc:
+                assert "different prefix" in str(exc)
+            else:
+                raise AssertionError("mismatched curl producer accepted")
+
         # An explicit CURLDIR must not fall back to an unrelated PATH curl.
         missing = pathlib.Path(tmp) / "missing prefix"
         try:
@@ -205,6 +223,38 @@ def verify_curl_config_preflight() -> None:
             assert "requires curl-config" in str(exc)
         else:
             raise AssertionError("missing configured curl was ignored")
+
+        # With no explicit override, a broken first PATH candidate must not
+        # hide a later fully configured curl installation.
+        bad = pathlib.Path(tmp) / "unconfigured"
+        good = pathlib.Path(tmp) / "configured"
+        for candidate in (bad, good):
+            (candidate / "bin").mkdir(parents=True)
+            (candidate / "include" / "curl").mkdir(parents=True)
+            script = candidate / "bin" / "curl-config"
+            script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            script.chmod(0o755)
+
+        def candidate_output(argv, **_kwargs):
+            candidate = pathlib.Path(argv[0]).parents[1]
+            if argv[-1] == "--prefix":
+                return str(candidate)
+            if argv[-1] == "--cflags":
+                return (
+                    "@LIBCURL_PC_CFLAGS@" if candidate == bad
+                    else "-I/valid/include"
+                )
+            return {
+                "--libs": "-lcurl",
+                "--vernum": "080d00",
+            }[argv[-1]]
+
+        with mock.patch.object(helper, "run_text", side_effect=candidate_output):
+            chosen = helper.discover_curl_prefix([
+                str(bad / "bin" / "curl-config"),
+                str(good / "bin" / "curl-config"),
+            ])
+        assert chosen == str(good)
 
 
 def main() -> int:
