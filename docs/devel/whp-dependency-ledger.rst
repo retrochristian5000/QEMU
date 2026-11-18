@@ -2233,6 +2233,30 @@ it does not enable Flang as a required LLVM project.  Meson implements
 Fortran-language support, but a build that never requests that language
 does not thereby require a Fortran compiler.
 
+macOS Perl fork: Darwin-specific dependency boundary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned Perl fork's ``hints/darwin.sh`` now appends deployment-target
+flags using explicit POSIX shell variable assignments rather than ``eval``
+and rejects malformed or shell-metacharacter-filled
+``MACOSX_DEPLOYMENT_TARGET`` values. This preserves selected native
+``ccflags``/``ldflags``/``lddlflags`` (including an explicitly selected
+Apple Silicon ``-arch``) without executing flag contents as shell code.
+Existing minimum-version flags remain untouched. Perl's Darwin ``dup3``
+and ``pipe2`` hints now keep both unavailable through Darwin 26, matching
+the fork's documented Darwin 27 introduction boundary. These are Perl
+Configure/runtime decisions, not GNU M4 or Autoconf version requirements.
+
+The managed Perl CI runs ``test-perl-darwin-hints.py`` under a POSIX
+shell with synthetic Darwin kernel versions and deployment targets
+before the expensive build, and runs the nine upstream fork regression
+checks against the newly installed native Perl afterward. The managed
+interpreter must continue to pass the full Perl-module and CORE-header
+checks before it can be promoted to Automake and Autoconf. macOS CI on
+the ``macos-15`` runner establishes Darwin 24 behavior; the synthetic
+tests cover later Darwin 25/26/27 boundaries without assuming a newer
+runner is already available.
+
 Perl-to-Autotools bootstrap boundary
 ------------------------------------
 

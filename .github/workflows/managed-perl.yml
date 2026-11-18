@@ -20,6 +20,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-darwin-hints.py'
       - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
@@ -44,6 +45,7 @@ on:
       - 'scripts/whp-config/config.py'
       - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-perl-bootstrap.py'
+      - 'scripts/tests/test-perl-darwin-hints.py'
       - 'scripts/tests/test-perl-autotools-boundary.py'
       - 'scripts/tests/test-perl-core-headers.py'
       - 'scripts/tests/test-perl-configure-unattended.py'
@@ -118,6 +120,7 @@ jobs:
       - name: Verify pinned Perl shell control flow before compilation
         run: |
           python3 scripts/tests/test-perl-configure-control-flow.py -v
+          python3 scripts/tests/test-perl-darwin-hints.py -v
           python3 scripts/tests/test-perl-makefile-compat.py -v
           test -f toolchains/perl/t/porting/configure_shell_control_flow.t
 
@@ -166,8 +169,8 @@ jobs:
             test -f t/porting/darwin_hints_portability.t
             hints_output="$("$installed" t/porting/darwin_hints_portability.t)"
             printf '%s\n' "$hints_output"
-            grep -Fxq '1..6' <<< "$hints_output"
-            test "$(grep -Ec '^ok [1-6] ' <<< "$hints_output")" -eq 6
+            grep -Fxq '1..9' <<< "$hints_output"
+            test "$(grep -Ec '^ok [1-9] ' <<< "$hints_output")" -eq 9
             if grep -Eq '^not ok ' <<< "$hints_output"; then
               printf '%s\n' 'error: pinned Perl Darwin hints regression failed' >&2
               exit 1
