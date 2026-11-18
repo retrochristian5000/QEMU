@@ -357,6 +357,11 @@ static void test_sawtooth_rage128_firmware_mmio(void)
 
     write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
                (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
+               PCI_BASE_ADDRESS_0);
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0x90000000U);
+
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
                PCI_BASE_ADDRESS_2);
     write_le32(qts, UNINORTH_AGP_CONFIG_DATA, ati_mmio);
 
@@ -374,9 +379,26 @@ static void test_sawtooth_rage128_firmware_mmio(void)
     write_le16(qts, ati_mmio + 0x508U, 1U);
     g_assert_cmphex(read_le32(qts, ati_mmio + 0x50U), ==, crtc);
 
-    /* Native ATI horizontal timing is reachable through the same BAR2. */
-    write_le32(qts, ati_mmio + 0x200U, 0x004f0000U);
-    g_assert_cmphex(read_le32(qts, ati_mmio + 0x200U), ==, 0x004f0000U);
+    /*
+     * The native Rage 128 FCode now programs these ATI registers. Check
+     * both the framebuffer BAR and the 640x480 CRTC mode path.
+     */
+    write_le32(qts, 0x90000000U, 0x11223344U);
+    g_assert_cmphex(read_le32(qts, 0x90000000U), ==, 0x11223344U);
+
+    write_le32(qts, ati_mmio + 0x200U, 0x004f0063U);
+    write_le32(qts, ati_mmio + 0x208U, 0x01df020cU);
+    write_le32(qts, ati_mmio + 0x22cU, 80U);
+    write_le32(qts, ati_mmio + 0x224U, 0U);
+    write_le32(qts, ati_mmio + 0x0e0U, 0U);
+    write_le32(qts, ati_mmio + 0x058U, 0x00000100U);
+    write_le32(qts, ati_mmio + 0x050U, 0x03000200U);
+    write_le32(qts, ati_mmio + 0x054U, 0U);
+
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x200U), ==, 0x004f0063U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x208U), ==, 0x01df020cU);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x22cU), ==, 80U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x050U), ==, 0x03000200U);
 
     qtest_quit(qts);
 }
