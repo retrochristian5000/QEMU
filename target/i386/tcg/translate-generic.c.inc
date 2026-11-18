@@ -2157,15 +2157,21 @@ static void gen_x87(DisasContext *s, X86DecodedInsn *decode)
     int modrm = s->modrm;
     int mod, rm, op;
 
+    mod = (modrm >> 6) & 3;
+    rm = modrm & 7;
+    op = ((b & 7) << 3) | ((modrm >> 3) & 7);
+    // FISTTP is an SSE3 extension to x87.  Unsupported encodings must
+    // raise #UD even when the FPU is unavailable (#NM).
+    if (mod != 3 && (op == 0x19 || op == 0x29 || op == 0x39)
+        && !(s->cpuid_ext_features & CPUID_EXT_SSE3)) {
+        goto illegal_op;
+    }
     if (s->flags & (HF_EM_MASK | HF_TS_MASK)) {
         /* if CR0.EM or CR0.TS are set, generate an FPU exception */
         /* XXX: what to do if illegal op ? */
         gen_exception(s, EXCP07_PREX);
         return;
     }
-    mod = (modrm >> 6) & 3;
-    rm = modrm & 7;
-    op = ((b & 7) << 3) | ((modrm >> 3) & 7);
     if (mod != 3) {
         /* memory op */
         TCGv ea = gen_lea_modrm_1(s, decode->mem, false);
