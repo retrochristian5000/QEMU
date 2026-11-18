@@ -2393,13 +2393,19 @@ to Autoconf rather than its upstream Automake installation.
 
 The existing ``seeds/automake.sh`` now owns a narrowly scoped
 ``--check-macros`` admission: it selects a same-version GNU pair,
-asks the *selected aclocal* for ``--print-ac-dir``, and requires an
-absolute, usable macro directory containing readable ``init.m4``
-and ``amversion.m4``. It does not infer a Homebrew prefix, assume
-GNU-only filesystem utilities, require a separate libtool macro tree,
-or confuse a system ``share/aclocal`` directory with Automake's
-versioned directory. Perl module environment overrides and unrelated
-``ACLOCAL_PATH`` entries are suppressed only for this read-only
+asks *aclocal* for its unversioned system ``--print-ac-dir`` and
+*automake* for its own ``--print-libdir``. The latter identifies the
+required ``automake-$APIVERSION`` library directory, adjacent to
+``aclocal-$APIVERSION`` with readable ``init.m4`` and
+``amversion.m4``. It also verifies the installed
+``Automake/Config.pm`` and ``am/header-vars.am`` library inputs.
+``aclocal --print-ac-dir`` alone is **not** the versioned macro
+directory and may report an optional unpopulated system-wide
+``share/aclocal``: this must not be mistaken for missing
+``AM_INIT_AUTOMAKE`` support. The check does not assume a Homebrew
+prefix, demand GNU-only filesystem utilities, or require external
+libtool macros. Perl module overrides, ``AUTOMAKE_LIBDIR``, and
+unrelated ``ACLOCAL_PATH`` are suppressed only for the read-only
 probe. Paths containing spaces remain valid.
 
 The host Automake selection checks this capability in auto mode, so

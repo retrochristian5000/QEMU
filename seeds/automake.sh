@@ -112,41 +112,65 @@ seed_pair()
 # A matching GNU version banner does not prove that aclocal can find the
 # installed Automake macros. This particularly matters when macOS/Homebrew
 # has relocated one tool or its shared data directory.
+# Validate the *two distinct* Automake data roots. aclocal --print-ac-dir
+# reports the optional unversioned system-wide directory, not the required
+# aclocal-$APIVERSION macros. Derive the latter from automake --print-libdir.
 seed_check_macros()
 (
-    selected_aclocal=$1
-    # Probe the executable's own configured macro directory, without
-    # inheriting user Perl module injections or an unrelated ACLOCAL_PATH.
+    selected_automake=$1
+    selected_aclocal=$2
     unset PERL5LIB PERLLIB PERL5OPT PERL5DB PERL_LOCAL_LIB_ROOT
-    unset PERL_MM_OPT PERL_MB_OPT ACLOCAL_PATH
+    unset PERL_MM_OPT PERL_MB_OPT ACLOCAL_PATH AUTOMAKE_LIBDIR
     LC_ALL=C
     export LC_ALL
-    macro_dir=$("$selected_aclocal" --print-ac-dir) || {
-        printf 'error: selected aclocal cannot report its macro directory: %s\n' \
+    system_dir=$("$selected_aclocal" --print-ac-dir) || {
+        printf 'error: selected aclocal cannot report its system macro directory: %s\n' \
             "$selected_aclocal" >&2
         exit 1
     }
-    case "$macro_dir" in
+    library_dir=$("$selected_automake" --print-libdir) || {
+        printf 'error: selected Automake cannot report its library directory: %s\n' \
+            "$selected_automake" >&2
+        exit 1
+    }
+    case "$system_dir" in
         /*) ;;
+        *) printf 'error: aclocal system macro directory is not absolute: %s\n' \
+               "$system_dir" >&2; exit 1 ;;
+    esac
+    case "$library_dir" in
+        */automake-[0-9]*)
+            api_version=${library_dir##*/automake-}
+            case "$api_version" in
+                *[!0-9.]*|*..*|*.)
+                    printf 'error: Automake library version is malformed: %s\n' \
+                        "$library_dir" >&2
+                    exit 1 ;;
+            esac ;;
         *)
-            printf 'error: aclocal macro directory is not absolute: %s\n' \
-                "$macro_dir" >&2
+            printf 'error: Automake library directory is unexpected: %s\n' \
+                "$library_dir" >&2
             exit 1 ;;
     esac
-    case "$macro_dir" in
+    case "$system_dir$library_dir" in
         *'
 '*)
-            printf '%s\n' 'error: aclocal reported more than one macro directory' >&2
+            printf '%s\n' 'error: Automake reported multiple macro directories' >&2
             exit 1 ;;
     esac
-    for macro in init.m4 amversion.m4; do
-        if [ ! -r "$macro_dir/$macro" ]; then
-            printf 'error: aclocal macro directory lacks %s: %s (tool %s)\n' \
-                "$macro" "$macro_dir" "$selected_aclocal" >&2
+    versioned_dir=${library_dir%/*}/aclocal-$api_version
+    for file in "$library_dir/Automake/Config.pm" \
+                "$library_dir/am/header-vars.am" \
+                "$versioned_dir/init.m4" \
+                "$versioned_dir/amversion.m4"; do
+        if [ ! -r "$file" ]; then
+            printf 'error: Automake installation lacks required source-generation data: %s (automake %s, aclocal %s)\n' \
+                "$file" "$selected_automake" "$selected_aclocal" >&2
             exit 1
         fi
     done
-    printf 'WHP Automake macros: %s (init.m4, amversion.m4)\n' "$macro_dir"
+    printf 'WHP Automake libraries: %s; aclocal macros: %s\n' \
+        "$library_dir" "$versioned_dir"
 )
 
 pair=$(seed_pair) || exit 1
@@ -157,7 +181,7 @@ aclocal=${pair#*'
 case "${1:-}" in
     --print-seed|--print-automake) printf '%s\n' "$automake" ;;
     --print-aclocal) printf '%s\n' "$aclocal" ;;
-    --check-macros) seed_check_macros "$aclocal" ;;
+    --check-macros) seed_check_macros "$automake" "$aclocal" ;;
     --check)
         printf 'WHP GNU Automake seed: %s\nWHP GNU aclocal seed: %s\n' "$automake" "$aclocal" ;;
     --aclocal)

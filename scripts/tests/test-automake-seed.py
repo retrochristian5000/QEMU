@@ -15,12 +15,15 @@ SEED = ROOT / "seeds/automake.sh"
 def fake(path: Path, version: str, *, family="GNU automake",
          macro_dir: Path | None = None):
     path.parent.mkdir(parents=True, exist_ok=True)
-    macro_path = str(macro_dir or path.parent / "missing-aclocal-macros")
+    macro_path = macro_dir or path.parent / "missing-aclocal-macros"
+    libdir = macro_path.parent / ("automake-" + macro_path.name.rsplit("-", 1)[-1])
+    system_dir = macro_path.parent / "aclocal"
     path.write_text(
         "#!/bin/sh\n"
         'case "$1" in\n'
         '  --version) printf "%s\\n" "' + path.name + " (" + family + ") " + version + '";;\n'
-        '  --print-ac-dir) printf "%s\\n" ' + shlex.quote(macro_path) + ';;\n'
+        '  --print-ac-dir) printf "%s\\n" ' + shlex.quote(str(system_dir)) + ';;\n'
+        '  --print-libdir) printf "%s\\n" ' + shlex.quote(str(libdir)) + ';;\n'
         '  --whp-automake-adapter-probe) exit 2;;\n'
         '  *) printf "called:%s:%s\\n" "' + path.name + '" "$1";;\n'
         'esac\n',
@@ -45,13 +48,18 @@ def main():
         am = selected / "automake"
         local = selected / "aclocal"
         wrong = other / "aclocal"
-        fake(am, "1.16.5")
-        # Real Homebrew/managed aclocal directories can contain spaces and
-        # do not have to be adjacent to the aclocal executable.
+        # Unversioned aclocal contains system macros; versioned core macros
+        # and Automake's Perl libraries are distinct installation roots.
         macro_dir = root / "prefix with spaces" / "share" / "aclocal-1.16"
         macro_dir.mkdir(parents=True)
+        library_dir = macro_dir.parent / "automake-1.16"
+        for name in ("Automake/Config.pm", "am/header-vars.am"):
+            target = library_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("library content\n")
         for name in ("init.m4", "amversion.m4"):
             (macro_dir / name).write_text("dnl valid macro data\n")
+        fake(am, "1.16.5", macro_dir=macro_dir)
         fake(local, "1.16.5", macro_dir=macro_dir)
         fake(wrong, "1.17.0")
         env = {**os.environ, "PATH": str(other) + os.pathsep + str(selected) +
@@ -70,6 +78,7 @@ def main():
         result = run(env, "--check-macros")
         assert result.returncode == 0, result.stderr
         assert str(macro_dir) in result.stdout
+        assert str(library_dir) in result.stdout
 
         # A version-correct binary without its versioned macro files is
         # invalid for the Autoconf source bootstrap.
