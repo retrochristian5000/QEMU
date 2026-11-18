@@ -75,7 +75,10 @@ def check():
     assert 'f"SEED_PERL={seed}' in source
     assert 'env["PERL"] = seed' in source
     assert 'env=clean_host_environment(os.environ)' in source
-    assert 'Text::ParseWords))' in source
+    for required in ("Text::ParseWords", "Errno", "File::Path",
+                     "File::stat", "constant", "threads", "Thread::Queue"):
+        assert required in source, f"missing Autotools Perl module guard: {required}"
+    assert "if ($Config::Config{useithreads})" in source
     assert "'Time::HiRes" not in source
     assert 'env["CC_FOR_BUILD"] = cc' in source
     assert 'env["SDKROOT"] = sdk' in source
