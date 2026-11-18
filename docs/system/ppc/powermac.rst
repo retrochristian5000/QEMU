@@ -184,7 +184,7 @@ Tiger KeyLargo and blank-screen source audit
 The May 12, 2005 ``AppleKeyLargo-170.0.0`` sources distinguish KeyLargo
 power/control services from AGP display initialization. ``KeyLargo::start``
 requires the Open Firmware root ``clock-frequency``, the MacIO ``device-id``
-and ``revision-id``, plus PMU and USB clock discovery. Its FCR offsets
+and ``revision-id``; it also probes PMU and USB clock properties. Its FCR offsets
 (0x38 through 0x48) match QEMU's KeyLargo register layout. The pinned
 PPC-Firmware/OpenBIOS source already publishes the root clock, PCI device
 and revision IDs, ``/uni-n`` with ``device-rev``, and Sawtooth USB clock IDs.
@@ -218,8 +218,8 @@ Tiger driver takes control. Neither command is a confirmed successful boot.
 Source baselines:
 
 * https://github.com/apple-oss-distributions/AppleKeyLargo/tree/AppleKeyLargo-170.0.0
-* https://github.com/retrochristian5000/PPC-Firmware/blob/master/drivers/pci_database.c
-* https://github.com/retrochristian5000/PPC-Firmware/blob/master/drivers/vga.fs
+* https://github.com/retrochristian5000/PPC-Firmware/blob/fc3d1e4503c7f8ee6127fa925c960a414d0b74dd/drivers/pci_database.c
+* https://github.com/retrochristian5000/PPC-Firmware/blob/fc3d1e4503c7f8ee6127fa925c960a414d0b74dd/drivers/vga.fs
 
 Classic Mac OS self-mounting images
 -----------------------------------
