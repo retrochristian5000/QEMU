@@ -165,6 +165,43 @@ class BrewSeedTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("conflicts", result.stderr)
 
+    def test_audit_installed_missing_incomplete_and_native_tools(self):
+        installed = self.install_formula_tool("m4", "m4")
+        (self.prefix / "opt" / "texinfo").mkdir(parents=True)
+        result = self.run_seed("--audit-tools")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("inventory only", result.stdout)
+        self.assertIn(
+            f"gnu-m4: formula=m4 executable=m4 homebrew=installed:{installed}",
+            result.stdout,
+        )
+        self.assertIn(
+            "bison: formula=bison executable=bison homebrew=missing",
+            result.stdout,
+        )
+        self.assertIn(
+            "texinfo: formula=texinfo executable=makeinfo homebrew=incomplete",
+            result.stdout,
+        )
+        self.assertIn("native=unverified:", result.stdout)
+        self.assertFalse(self.log.exists())
+        self.assertEqual(self.run_seed("--audit-tools", "extra").returncode, 2)
+
+    def test_audit_skips_non_homebrew_providers_and_rejects_bad_lock(self):
+        system = self.run_seed(
+            "--audit-tools", WHP_MACOS_DEPENDENCY_PROVIDER="system"
+        )
+        self.assertEqual(system.returncode, 0, system.stderr)
+        self.assertIn("provider=system (not selected)", system.stdout)
+        self.assertIn("homebrew=unavailable", system.stdout)
+        self.assertFalse(self.log.exists())
+
+        bad = self.run_seed("--audit-tools",
+                            WHP_BREW_SEED=str(self.root / "nonexistent"))
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("WHP_BREW_SEED", bad.stderr)
+        self.assertNotIn("homebrew=missing", bad.stdout)
+
     def test_provider_integration(self):
         prepare = (ROOT / "scripts/whp-build/prepare-build.bash").read_text()
         refresh = (ROOT / "scripts/whp-build/homebrew-deps.bash").read_text()

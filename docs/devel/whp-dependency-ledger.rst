@@ -18,6 +18,31 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+Read-only Homebrew build-tool inventory
+--------------------------------------
+
+``/bin/sh seeds/brew.sh --audit-tools`` reports the selected Homebrew
+manager and the availability of relevant build-tool formulae without
+installation, linking, upgrading, downloading, or changing a QEMU build.
+Each row separates an installed executable (``installed:/path``),
+a missing formula (``missing``), an installed formula lacking the
+expected binary (``incomplete``), and a nonselected/unavailable
+Homebrew provider (``unavailable``).
+
+It also reports native ``PATH`` candidates as ``unverified:/path``
+or ``absent``. Native presence is **not** proof of GNU capabilities;
+the existing M4, Bison, Texinfo, sed, and install seed adapters continue
+to check functional requirements for their respective consumers. This
+opt-in inventory covers GNU M4, Bison, GNU Texinfo, GNU sed, GNU install,
+pkg-config, Autoconf, Automake, Gawk, CMake and Ninja. A missing item
+does **not** automatically imply that the corresponding optional
+feature must be built, and no Homebrew installation is attempted.
+Selected MacPorts/system providers are not silently replaced. Invalid
+explicit Homebrew locks fail rather than being mistaken for an absent
+formula. ``scripts/tests/test-brew-seed.py`` exercises missing,
+incomplete, available, and provider-specific results in the Ubuntu and
+macOS Autoconf CI matrix.
+
 Build-time seeds versus installed toolchain components
 --------------------------------------------------
 

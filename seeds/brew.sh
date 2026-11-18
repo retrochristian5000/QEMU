@@ -152,11 +152,95 @@ brew_formula_binary()
     return 1
 }
 
+# Deliberate, read-only inventory; QEMU seed adapters remain the authority for
+# capabilities. A PATH command is not automatically an acceptable GNU tool.
+brew_audit_one()
+(
+    selected_brew=$1
+    selected_prefix=$2
+    label=$3
+    formula=$4
+    binary=$5
+    native=$6
+    brew_status=unavailable
+    if [ -n "$selected_brew" ]; then
+        if formula_prefix=$("$selected_brew" --prefix --installed "$formula" 2>/dev/null); then
+            case "$formula_prefix" in
+                "$selected_prefix"/opt/*|"$selected_prefix"/Cellar/*)
+                    brew_status=incomplete
+                    for candidate in "$formula_prefix/bin/$binary" "$formula_prefix/sbin/$binary"; do
+                        if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+                            brew_status=installed:"$candidate"
+                            break
+                        fi
+                    done ;;
+                *) brew_status=incomplete ;;
+            esac
+        else
+            brew_status=missing
+        fi
+    fi
+    native_status=absent
+    if native_path=$(command -v "$native" 2>/dev/null); then
+        native_status=unverified:"$native_path"
+    fi
+    printf '%s: formula=%s executable=%s homebrew=%s native=%s\n' \
+        "$label" "$formula" "$binary" "$brew_status" "$native_status"
+)
+
+brew_audit_tools()
+{
+    if [ "$#" -ne 0 ]; then
+        printf '%s\n' 'usage: brew.sh --audit-tools' >&2
+        return 2
+    fi
+    selected_brew=
+    selected_prefix=
+    provider=${WHP_MACOS_DEPENDENCY_PROVIDER:-auto}
+    case "$provider" in
+        macports|system)
+            printf 'WHP Homebrew audit: provider=%s (not selected)\n' "$provider" ;;
+        auto|homebrew)
+            if selected_brew=$(brew_select 2>/dev/null); then
+                selected_prefix=$("$selected_brew" --prefix) || return 1
+                printf 'WHP Homebrew audit: manager=%s prefix=%s\n' \
+                    "$selected_brew" "$selected_prefix"
+            else
+                # A broken explicit lock is an error, not optional absence.
+                if [ "$provider" = homebrew ] ||
+                   [ -n "${WHP_BREW_SEED:-}${WHP_HOMEBREW_BREW:-}${HOMEBREW_PREFIX:-}" ]; then
+                    brew_select >/dev/null
+                    return 1
+                fi
+                printf '%s\n' 'WHP Homebrew audit: manager=unavailable (native tools may still work)'
+            fi ;;
+        *)
+            printf 'error: invalid macOS dependency provider: %s\n' "$provider" >&2
+            return 2 ;;
+    esac
+    printf '%s\n' 'WHP Homebrew audit: inventory only; native PATH candidates are not capability-tested'
+    # These roles are feature-conditional. Absence is advisory, not fatal.
+    brew_audit_one "$selected_brew" "$selected_prefix" gnu-m4 m4 m4 m4
+    brew_audit_one "$selected_brew" "$selected_prefix" bison bison bison bison
+    brew_audit_one "$selected_brew" "$selected_prefix" texinfo texinfo makeinfo makeinfo
+    brew_audit_one "$selected_brew" "$selected_prefix" gnu-sed gnu-sed gsed sed
+    brew_audit_one "$selected_brew" "$selected_prefix" gnu-install coreutils ginstall install
+    brew_audit_one "$selected_brew" "$selected_prefix" pkg-config pkgconf pkg-config pkg-config
+    brew_audit_one "$selected_brew" "$selected_prefix" autoconf autoconf autoconf autoconf
+    brew_audit_one "$selected_brew" "$selected_prefix" automake automake automake automake
+    brew_audit_one "$selected_brew" "$selected_prefix" gawk gawk gawk awk
+    brew_audit_one "$selected_brew" "$selected_prefix" cmake cmake cmake cmake
+    brew_audit_one "$selected_brew" "$selected_prefix" ninja ninja ninja ninja
+}
+
 case "${1:-}" in
     --print-seed) brew_select ;;
     --formula-bin)
         shift
         brew_formula_binary "$@" ;;
+    --audit-tools)
+        shift
+        brew_audit_tools "$@" ;;
     --check)
         selected=$(brew_select) || exit 1
         prefix=$("$selected" --prefix) || exit 1
