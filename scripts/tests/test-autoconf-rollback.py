@@ -36,7 +36,8 @@ class AutoconfRecoveryTest(unittest.TestCase):
         # toolchain build. No version banners or fake M4 are admitted by QEMU.
         return patch.multiple(
             helper,
-            ensure_source=lambda: "revision",
+            select_bootstrap_git=lambda: "/dummy/git",
+            ensure_source=lambda git: "revision",
             select_automake_pair=lambda: ("/dummy/automake", "/dummy/aclocal"),
             select_gnu_m4=lambda: "/dummy/m4",
             select_seed_perl=lambda: "/dummy/perl",
@@ -49,8 +50,8 @@ class AutoconfRecoveryTest(unittest.TestCase):
             explicit_tool=lambda name: None,
             tool=lambda name: "/dummy/mktemp",
             marker_text=lambda *args: "new\n",
-            suite_usable=lambda path: (path / "healthy").is_file(),
-            copy_source=lambda rev, path: path.mkdir(parents=True),
+            suite_usable=lambda path, **kwargs: (path / "healthy").is_file(),
+            copy_source=lambda rev, path, git: path.mkdir(parents=True),
             run_logged=runner,
         )
 

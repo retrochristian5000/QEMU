@@ -335,9 +335,28 @@ def select_seed_sed() -> str:
     return seed
 
 
-def git_checkout_available() -> bool:
-    return shutil.which("git") is not None and (ROOT / ".git").exists()
-
+def select_bootstrap_git() -> str | None:
+    """Reuse QEMU seed Git for submodule reconciliation and source archives."""
+    if not (ROOT / ".git").exists():
+        return None
+    selected = os.environ.get("WHP_GIT_SEED", "")
+    if selected:
+        path = executable(selected)
+        if not path:
+            raise RuntimeError(f"WHP_GIT_SEED is not executable: {selected}")
+        if not run_text([path, "--version"]).startswith("git version "):
+            raise RuntimeError(f"WHP_GIT_SEED is not Git: {selected}")
+        return path
+    adapter = ROOT / "seeds" / "git.sh"
+    result = subprocess.run(
+        ["/bin/sh", str(adapter), "--print-seed"], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    path = result.stdout.strip()
+    if result.returncode or not path:
+        raise RuntimeError("Autoconf requires a validated Git seed: "
+                           + (result.stderr.strip() or "unavailable"))
+    return path
 
 
 def archive_source_signature() -> str:
@@ -379,20 +398,17 @@ def archive_source_signature() -> str:
     return "archive-" + digest.hexdigest()
 
 
-def ensure_source() -> str:
-    if not git_checkout_available():
+def ensure_source(git: str | None) -> str:
+    if git is None:
         return archive_source_signature()
-
-    revision = reconcile_submodule(ROOT, SUBMODULE_REL)
-
-    return revision
+    return reconcile_submodule(ROOT, SUBMODULE_REL, git=git)
 
 
 def extract_git_archive(
-    repo: pathlib.Path, revision: str, destination: pathlib.Path
+    repo: pathlib.Path, revision: str, destination: pathlib.Path, git: str
 ) -> None:
     completed = subprocess.run(
-        ["git", "-C", str(repo), "archive", "--format=tar", revision],
+        [git, "-C", str(repo), "archive", "--format=tar", revision],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -429,10 +445,10 @@ def staged_version(revision: str) -> str:
     return f"{base}.{kind}-{identity}"
 
 
-def copy_source(revision: str, destination: pathlib.Path) -> None:
+def copy_source(revision: str, destination: pathlib.Path, git: str | None) -> None:
     shutil.rmtree(destination, ignore_errors=True)
-    if git_checkout_available() and (SUBMODULE_DIR / ".git").exists():
-        extract_git_archive(SUBMODULE_DIR, revision, destination)
+    if git is not None and (SUBMODULE_DIR / ".git").exists():
+        extract_git_archive(SUBMODULE_DIR, revision, destination, git)
     else:
         shutil.copytree(
             SUBMODULE_DIR,
@@ -444,7 +460,7 @@ def copy_source(revision: str, destination: pathlib.Path) -> None:
     )
 
 
-def suite_usable(prefix: pathlib.Path) -> bool:
+def suite_usable(prefix: pathlib.Path, *, m4: str | None = None) -> bool:
     for name in REQUIRED_BINARIES:
         path = prefix / "bin" / name
         if not path.is_file() or not os.access(path, os.X_OK):
@@ -474,6 +490,9 @@ def suite_usable(prefix: pathlib.Path) -> bool:
     smoke_env = os.environ.copy()
     for key in ("AUTOCONF", "AUTOM4TE", "AUTOHEADER", "AUTORECONF", "M4"):
         smoke_env.pop(key, None)
+    if m4 is not None:
+        # A poisoned caller M4 must not make validation fall back to PATH.
+        smoke_env["M4"] = m4
 
     with tempfile.TemporaryDirectory(prefix="whp-autoconf-smoke-") as tmp:
         smoke_dir = pathlib.Path(tmp)
@@ -552,7 +571,7 @@ def parallel_jobs(value: str | None) -> int:
 
 
 def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
-    revision = ensure_source()
+    # Validate seeds before source fetch or archive extraction.
     automake, aclocal = select_automake_pair()
     m4 = select_gnu_m4()
     perl = select_seed_perl()
@@ -574,6 +593,8 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     # our paths already. Do not reject a native host merely for lacking
     # GNU coreutils realpath (not present on some older macOS systems).
     tool("mktemp")
+    git = select_bootstrap_git()
+    revision = ensure_source(git)
 
     prefix = build_root / "deps" / "autoconf"
     work = build_root / "bootstrap" / "autoconf"
@@ -595,7 +616,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
         if (
             marker_path.is_file()
             and marker_path.read_text(encoding="utf-8", errors="replace") == marker
-            and suite_usable(prefix)
+            and suite_usable(prefix, m4=m4)
         ):
             shutil.rmtree(backup)
             return prefix
@@ -604,7 +625,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     if (
         marker_path.is_file()
         and marker_path.read_text(encoding="utf-8", errors="replace") == marker
-        and suite_usable(prefix)
+        and suite_usable(prefix, m4=m4)
     ):
         return prefix
 
@@ -612,7 +633,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
     shutil.rmtree(work, ignore_errors=True)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
-    copy_source(revision, source)
+    copy_source(revision, source, git)
     objects.mkdir(parents=True, exist_ok=True)
 
     seed_bin = work / "seed-bin"
@@ -697,7 +718,7 @@ def bootstrap(build_root: pathlib.Path) -> pathlib.Path:
             env=env,
         )
 
-        if not suite_usable(prefix):
+        if not suite_usable(prefix, m4=m4):
             raise RuntimeError(
                 f"bootstrapped Autoconf tool suite is not usable: {prefix}"
             )

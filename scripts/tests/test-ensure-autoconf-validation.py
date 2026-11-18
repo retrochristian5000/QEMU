@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import redirect_stderr
 import importlib.util
 import io
+import subprocess
 from pathlib import Path
 import subprocess
 import tempfile
@@ -90,6 +91,68 @@ class AutoconfPreflightTests(unittest.TestCase):
                     self.assertFalse(HELPER.suite_usable(prefix))
                 self.assertIn(str(missing), messages.getvalue())
                 (bindir / f"{name}.disabled").rename(missing)
+
+    def test_seed_git_is_used_for_submodule_reconciliation(self):
+        with mock.patch.object(HELPER, "reconcile_submodule", return_value="rev") as called:
+            self.assertEqual(HELPER.ensure_source("/validated/git"), "rev")
+            called.assert_called_once_with(
+                HELPER.ROOT, HELPER.SUBMODULE_REL, git="/validated/git"
+            )
+
+    def test_git_seed_override_is_authoritative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".git").mkdir()
+            with (
+                mock.patch.object(HELPER, "ROOT", Path(tmp)),
+                mock.patch.dict(HELPER.os.environ, {"WHP_GIT_SEED": "/seed/git"}),
+                mock.patch.object(HELPER, "executable", return_value="/seed/git"),
+                mock.patch.object(HELPER, "run_text", return_value="git version 2.48"),
+            ):
+                self.assertEqual(HELPER.select_bootstrap_git(), "/seed/git")
+            with (
+                mock.patch.object(HELPER, "ROOT", Path(tmp)),
+                mock.patch.dict(HELPER.os.environ, {"WHP_GIT_SEED": "/bad/git"}),
+                mock.patch.object(HELPER, "executable", return_value=None),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "not executable"):
+                    HELPER.select_bootstrap_git()
+
+    def test_missing_seed_fails_before_source_reconciliation(self):
+        with (
+            mock.patch.object(HELPER, "select_automake_pair",
+                              side_effect=RuntimeError("missing Automake seed")),
+            mock.patch.object(HELPER, "ensure_source",
+                              side_effect=AssertionError("source was accessed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "missing Automake seed"):
+                HELPER.bootstrap(Path("/not-a-real-build-dir"))
+
+    def test_installed_runtime_uses_selected_m4(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = Path(tmp)
+            bindir = prefix / "bin"
+            bindir.mkdir()
+            for name in HELPER.REQUIRED_BINARIES:
+                path = bindir / name
+                path.write_text("#!/bin/sh\nexit 0\n")
+                path.chmod(0o755)
+            observed = []
+            def fake_run(argv, **kwargs):
+                if argv[-1] == "--version":
+                    return subprocess.CompletedProcess(
+                        argv, 0, "tool (GNU Autoconf) 2.72\n", ""
+                    )
+                observed.append(kwargs["env"].get("M4"))
+                self.assertNotIn("AUTOCONF", kwargs["env"])
+                (kwargs["cwd"] / "configure").write_text("#!/bin/sh\n")
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            with (
+                mock.patch.object(HELPER.subprocess, "run", side_effect=fake_run),
+                mock.patch.dict(HELPER.os.environ, {"M4": "/poison/m4",
+                                                  "AUTOCONF": "/poison/autoconf"}),
+            ):
+                self.assertTrue(HELPER.suite_usable(prefix, m4="/seed/m4"))
+            self.assertEqual(observed, ["/seed/m4"])
 
     def test_wrong_version_is_diagnosed(self):
         with tempfile.TemporaryDirectory(prefix="whp-autoconf-version-") as root:
