@@ -208,6 +208,11 @@ jobs:
           "$autoconf_prefix/bin/autoconf" --version | grep -q 'GNU Autoconf'
           "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
 
+          # Verify that WARNINGS=all,no-obsolete,error remains an explicit
+          # exception after autoreconf passes policy to child tools.
+          perl -I"$autoconf_prefix/share/autoconf" \
+            toolchains/autoconf/tests/warnings-merge.pl
+
           # Verify the pinned source's string path, not just a version banner.
           # M4 lives in a shell-sensitive directory (spaces and apostrophe);
           # config.status must preserve literal backslashes from AC_SUBST.

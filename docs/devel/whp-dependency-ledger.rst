@@ -2394,6 +2394,31 @@ installed managed toolchain. Existing valid ``set`` calls used
 for shell-option probes or intentionally established positional
 parameters are unchanged. DOS CMD ``SET`` syntax is unrelated.
 
+Autoconf warning precedence and bootstrap diagnostics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Autoconf fork's ``Autom4te::ChannelDefs::merge_WARNINGS`` is
+used by ``autoreconf`` to forward warning settings to subsidiary
+Autotools programs. Its previous merge collapsed ``all`` and
+``none`` into unconditional overrides, discarding *later* category
+exceptions such as ``all,no-obsolete,error``. It also sorted
+category settings despite the fact that ``portability`` and
+``extra-portability`` toggle related warning channels. The
+fixed merge respects order: a later ``all`` or ``none`` resets
+earlier category switches, later category overrides remain effective,
+and the last ``error`` or ``no-error`` is preserved.
+
+The direct Autoconf ``bootstrap`` retains its strict
+``-Wall -Werror`` policy. On failure it now identifies the
+failing phase (``aclocal``, ``autoconf``, or ``automake``)
+and its exit status without masking the underlying warnings or
+changing that status. The existing source bootstrap fixture tests
+this diagnostic with a simulated failure; the new source-level Perl
+test ``tests/warnings-merge.pl`` verifies warning precedence on
+the installed Autoconf modules, in the Ubuntu/macOS bootstrap CI.
+These changes do not establish that every prior failure was warning
+related; they make later failures more diagnosable.
+
 Pre-Autoconf dependency closure
 ----------------------------------
 
