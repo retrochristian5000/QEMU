@@ -208,6 +208,13 @@ jobs:
           "$autoconf_prefix/bin/autoconf" --version | grep -q 'GNU Autoconf'
           "$autoconf_prefix/bin/autom4te" --version | grep -q 'GNU Autoconf'
 
+          # Verify the pinned source's string path, not just a version banner.
+          # M4 lives in a shell-sensitive directory (spaces and apostrophe);
+          # config.status must preserve literal backslashes from AC_SUBST.
+          /bin/sh toolchains/autoconf/tests/autom4te-shell-strings.sh \
+            "$autoconf_prefix/bin/autom4te" "$automake_m4" \
+            "$autoconf_prefix/bin/autoconf"
+
           if [[ "$RUNNER_OS" == macOS ]]; then
             grep -Fxq "M4_PATH=$expected_m4" "$autoconf_prefix/.whp-autoconf-bootstrap"
             grep -Fq 'M4_VERSION=m4 (GNU M4)' "$autoconf_prefix/.whp-autoconf-bootstrap"

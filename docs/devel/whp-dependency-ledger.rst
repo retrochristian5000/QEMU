@@ -2351,6 +2351,29 @@ This cleanup does not modify the user's calling environment. The
 environment isolation, Autotools selection and prevention of Perl's
 bootstrap self-cycle.
 
+Autoconf shell-string portability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned Autoconf fork's ``bin/autom4te.in`` accepts an independently
+selected M4 executable path. Its command builder previously treated a
+literal path containing spaces or shell metacharacters as unquoted
+shell tokens; selecting the right M4 was not sufficient to execute it.
+When ``M4`` names an existing executable, the source now uses
+``Autom4te::General::shell_quote`` before appending command flags.
+A deliberate ``M4='m4 --flag'`` command remains supported. The
+``lib/autoconf/status.m4`` config.status substitution-list generator
+now uses ``printf '%s\\n'`` instead of ``echo``, avoiding
+implementation-dependent backslash handling. Autoconf's intentional
+``echo -n`` compatibility tests remain unchanged.
+
+The fork regression ``tests/autom4te-shell-strings.sh`` invokes the
+actual installed ``autom4te`` with an M4 path containing spaces and
+an apostrophe, then generates and runs ``configure``/``config.status``
+with a literal backslash substitution. The Ubuntu/macOS Autoconf
+bootstrap workflow executes that regression on the exact pinned source
+and installed tool pair. No additional dependency or Homebrew installation
+is introduced.
+
 Pre-Autoconf dependency closure
 ----------------------------------
 
