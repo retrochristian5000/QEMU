@@ -154,6 +154,25 @@ permissions:
   contents: read
 
 jobs:
+  macos-external-prefix-policy:
+    name: External Homebrew prefix policy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate custom external paths and opposite-ABI guards
+        shell: bash
+        run: |
+          bash -n scripts/whp-build/prepare-build.bash
+          bash -n scripts/macos-build-hygiene.bash
+          bash -n scripts/tests/test-macos-homebrew-prefix-policy.bash
+          bash scripts/tests/test-macos-homebrew-prefix-policy.bash
+
   test-config:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
