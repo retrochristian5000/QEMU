@@ -190,11 +190,18 @@ PPC-Firmware/OpenBIOS source already publishes the root clock, PCI device
 and revision IDs, ``/uni-n`` with ``device-rev``, and Sawtooth USB clock IDs.
 This is a source-level match, not proof of a successful Tiger boot.
 
-The more direct blank-screen hypothesis is the firmware-to-graphics-driver
-handoff: OpenBIOS identifies the AGP Rage 128 as ``ATY Rage128`` but uses
-generic VGA/VBE FCode. QEMU's ``ati-rage128p`` is not a complete
-implementation of native Rage 128 graphics registers. A blank display could
-also result from a firmware or boot failure, so isolate it first.
+Tiger BootX also exposes an **earlier** source-backed display discovery
+fault: it searches for device type ``display``; the prior OpenBIOS PCI
+database classified the Rage 128 as ``ATY``, while ``install-console``
+also requires type ``display`` to create the ``screen`` alias.
+The pinned firmware now advertises ``display`` for Rage 128 and QEMU
+VGA, preserving vendor/model identity. This corrects firmware discovery,
+but is not yet an observed successful boot or framebuffer initialization.
+
+After OpenBIOS finds and opens a display, the firmware-to-Tiger
+graphics-driver handoff remains a separate hypothesis: OpenBIOS uses
+generic VGA/VBE FCode, while QEMU's ``ati-rage128p`` lacks complete
+native Rage 128 register behavior.
 
 After building both QEMU and its pinned OpenBIOS firmware, compare these
 commands using the **same** Tiger image and firmware::
@@ -218,8 +225,30 @@ Tiger driver takes control. Neither command is a confirmed successful boot.
 Source baselines:
 
 * https://github.com/apple-oss-distributions/AppleKeyLargo/tree/AppleKeyLargo-170.0.0
-* https://github.com/retrochristian5000/PPC-Firmware/blob/fc3d1e4503c7f8ee6127fa925c960a414d0b74dd/drivers/pci_database.c
-* https://github.com/retrochristian5000/PPC-Firmware/blob/fc3d1e4503c7f8ee6127fa925c960a414d0b74dd/drivers/vga.fs
+* https://github.com/retrochristian5000/PPC-Firmware/blob/5293b81833d9761fa300ca3b9a6f24e8b773d047/drivers/pci_database.c
+* https://github.com/retrochristian5000/PPC-Firmware/blob/5293b81833d9761fa300ca3b9a6f24e8b773d047/drivers/vga.fs
+* https://github.com/apple-oss-distributions/BootX/blob/BootX-74.1/bootx.tproj/sl.subproj/display.c
+* https://github.com/apple-oss-distributions/BootX/blob/BootX-74.1/bootx.tproj/sl.subproj/main.c
+
+BootX startup and Open Firmware console contract
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Apple's Tiger ``BootX-74.1`` proceeds through Open Firmware version
+detection, ``/options`` and ``/chosen`` discovery, MMU/memory handles,
+memory claims, and then ``InitDisplays``. It accepts the
+``OpenFirmware 3`` model provided by the pinned OpenBIOS
+``/openprom`` node. ``FindDisplays`` searches the device tree for
+``device_type`` = ``display``, falls back to the ``screen`` alias,
+and opens the screen before reading ``address``, ``width``,
+``height``, ``depth`` and ``linebytes``. Its drawing path requires
+firmware framebuffer methods. The corrected PCI device type makes
+OpenBIOS's earlier ``install-console`` path eligible to create the
+``screen`` alias and lets BootX discover the same display.
+
+Verify the freshly built ROM, PCI probe, ``/aliases/screen``, and
+``/chosen/stdout`` before attributing a blank screen to Tiger.
+The FCode BAR mapping and actual framebuffer scanout remain independent
+runtime checks: this change has not been proved to display pixels.
 
 Classic Mac OS self-mounting images
 -----------------------------------
