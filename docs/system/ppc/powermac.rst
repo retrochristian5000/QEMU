@@ -250,6 +250,62 @@ Verify the freshly built ROM, PCI probe, ``/aliases/screen``, and
 The FCode BAR mapping and actual framebuffer scanout remain independent
 runtime checks: this change has not been proved to display pixels.
 
+Open Firmware display standards and native Rage 128 initialization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+IEEE 1275-1994 defines the ``display`` device package as a console output
+interface. The Open Firmware Working Group's 8-bit Graphics Extension 1.2
+(1995 draft) adds rectangle, palette and dimensions methods. The CHRP
+Linear Frame Buffer Device Binding 1.0 (1996 draft) provides additional
+framebuffer geometry conventions. These are separate documents: a draft
+CHRP ``chrp,lfb`` compatible string should not be forced onto the
+historical ATI Rage 128 without supporting that specific binding.
+
+Apple's Power Macintosh PCI guidance requires framebuffer properties
+``width``, ``height``, ``depth`` and ``linebytes``. BootX also reads
+``address`` and opens the firmware display. Its own display.c defines
+rectangle words through Open Firmware ``interpret`` before drawing the
+boot graphics. The previous OpenBIOS ``device_type=display`` correction
+allows both firmware console selection and BootX device discovery, but
+does not prove that the physical display mode is active.
+
+A separate **confirmed register-interface mismatch** remains:
+OpenBIOS ``drivers/pci.c`` loads generic ``vga-driver-fcode`` for ATI
+Rage 128 and QEMU VGA alike. This FCode (``drivers/vga.fs``)
+programs **Bochs VBE** at ``BAR2 + 0x500 + 2 * index`` and
+VGA-compatible palette ports through ``BAR2 + 0x400``. The Sawtooth
+machine instead creates QEMU's ``ati-rage128p`` at AGP slot 0x10.
+Its BAR2 is a native 16 KiB ATI MMIO register space; QEMU
+``hw/display/ati.c`` has native ``CRTC_GEN_CNTL`` (0x50),
+timing registers beginning at 0x200, and palette registers
+near 0xb0. It does **not** implement Bochs VBE registers at
+0x500. Thus a found/opened display node can still produce
+a black display: writing the current generic FCode's VBE
+registers does not initialize ATI scanout.
+
+The proper fix is a **separate Rage 128 Open Firmware graphics
+initialization path**, using ATI timing, CRTC, framebuffer and palette
+registers as actually modeled. Do not paper over it with an invented
+Bochs VBE bank on the ATI card. QTest
+``/ppc/display/sawtooth-rage128-firmware-mmio`` checks that
+Bochs-VBE-offset writes leave native CRTC control unchanged and
+confirms native ATI timing-register access. This is a diagnostic
+test, **not** evidence that firmware pixels or Tiger graphics boot.
+
+Diagnosis should distinguish firmware entry, PCI/AGP discovery,
+``/aliases/screen``, ``/chosen/stdout``, firmware FCode mode
+programming, visible scanout and the subsequent OS driver
+handoff. Use an actual rebuilt ROM; a Cirrus test is a
+nonhistorical comparison, not a replacement for Sawtooth's ATI card.
+
+Primary sources:
+
+* https://www.openfirmware.info/data/docs/of1275.pdf
+* https://www.devicetree.org/open-firmware/practice/graphics/graphicsd1_2.pdf
+* https://www.devicetree.org/open-firmware/bindings/devices/html/lfb.html
+* https://leopard-adc.pepas.com/documentation/Hardware/DeviceManagers/pci_srvcs/pci_cards_drivers/PCI_BOOK.5c.html
+* https://github.com/apple-oss-distributions/BootX/blob/BootX-74.1/bootx.tproj/sl.subproj/display.c
+
 Classic Mac OS self-mounting images
 -----------------------------------
 

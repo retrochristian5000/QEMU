@@ -326,6 +326,61 @@ static void test_sawtooth_uninorth_registers(void)
     qtest_quit(qts);
 }
 
+
+/*
+ * A real ATI Rage 128 uses native BAR2 CRTC registers. The generic
+ * OpenBIOS FCode's Bochs-VBE writes cannot bring up that display.
+ */
+static void test_sawtooth_rage128_firmware_mmio(void)
+{
+    const uint32_t ati_id =
+        (PCI_DEVICE_ID_ATI_RAGE128_PF << 16) | PCI_VENDOR_ID_ATI;
+    const uint32_t ati_mmio = 0xf1000000U;
+    const unsigned slot = 16;
+    QTestState *qts;
+    uint32_t crtc;
+
+    if (g_str_equal(qtest_get_arch(), "ppc64") ||
+        !qtest_has_machine("powermac3_1") ||
+        !qtest_has_device("ati-rage128p")) {
+        g_test_skip("Sawtooth ATI Rage 128 Pro not available");
+        return;
+    }
+
+    qts = qtest_init("-M powermac3_1 -nodefaults -vga none "
+                     "-device ati-rage128p,bus=pci.0,addr=0x10");
+
+    /* AGP root bus device 0x10: ATI 1002:5046. */
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8));
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==, ati_id);
+
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
+               PCI_BASE_ADDRESS_2);
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, ati_mmio);
+
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8) | PCI_COMMAND);
+    write_le16(qts, UNINORTH_AGP_CONFIG_DATA,
+               PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+
+    crtc = read_le32(qts, ati_mmio + 0x50U);
+
+    /* The FCode's Bochs VBE offsets have no ATI mode-enable effect. */
+    write_le16(qts, ati_mmio + 0x502U, 640U);
+    write_le16(qts, ati_mmio + 0x504U, 480U);
+    write_le16(qts, ati_mmio + 0x506U, 8U);
+    write_le16(qts, ati_mmio + 0x508U, 1U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x50U), ==, crtc);
+
+    /* Native ATI horizontal timing is reachable through the same BAR2. */
+    write_le32(qts, ati_mmio + 0x200U, 0x004f0000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x200U), ==, 0x004f0000U);
+
+    qtest_quit(qts);
+}
+
 static void test_sawtooth_screamer_registers(void)
 {
     QTestState *qts;
@@ -459,6 +514,8 @@ int main(int argc, char **argv)
                    test_mac99_uninorth_boot_cpu);
     qtest_add_func("/ppc/uninorth/sawtooth-registers",
                    test_sawtooth_uninorth_registers);
+    qtest_add_func("/ppc/display/sawtooth-rage128-firmware-mmio",
+                   test_sawtooth_rage128_firmware_mmio);
     qtest_add_func("/ppc/macio/sawtooth-screamer-registers",
                    test_sawtooth_screamer_registers);
     qtest_add_func("/ppc/macio/sawtooth-dbdma-registers",
