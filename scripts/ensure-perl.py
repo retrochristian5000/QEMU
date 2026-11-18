@@ -34,7 +34,7 @@ from bootstrap_env import (
 )
 
 REL = pathlib.Path("toolchains/perl")
-SCHEMA = "8"SCHEMA = "7"
+SCHEMA = "8"
 
 
 def perl_trace(message: str) -> None:
