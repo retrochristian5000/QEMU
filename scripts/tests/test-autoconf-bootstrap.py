@@ -78,8 +78,8 @@ def main() -> int:
     require(helper, 'folder.rglob("*")',
             "source archive macro and library fingerprint")
     require(helper, 'f"M4_VERSION={gnu_m4_version(m4)}\\n"', "M4 version marker")
-    require(helper, 'f"AWK={awk}\n"', "AWK cache handoff")
-    require(helper, 'f"GREP={grep}\n"', "grep cache handoff")
+    require(helper, 'f"AWK={awk}\\n"', "AWK cache handoff")
+    require(helper, 'f"GREP={grep}\\n"', "grep cache handoff")
     require(helper, 'env["AWK"] = awk', "selected AWK command")
     require(helper, 'env["GREP"] = grep', "selected grep command")
     require(
