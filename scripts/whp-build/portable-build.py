@@ -84,6 +84,13 @@ def resolved_values() -> Dict[str, str]:
         else:
             mod.validate_value(option, raw)
             values[option.key] = raw
+    # Direct portable invocations bypass build.sh's managed sccacher stage.
+    # Refuse to silently use another cache while claiming a pinned provider.
+    if values['COMPILER_CACHE'] == 'managed-sccache':
+        raise RuntimeError(
+            'COMPILER_CACHE=managed-sccache requires the build.sh launcher '
+            'to prepare and validate the pinned compiler cache'
+        )
     return values
 
 

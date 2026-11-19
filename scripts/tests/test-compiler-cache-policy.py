@@ -14,6 +14,7 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG_TOOL = ROOT / 'scripts' / 'whp-config' / 'config.py'
 NINJA_BOOTSTRAP = ROOT / 'scripts' / 'ensure-ninja.py'
+PORTABLE_BUILD = ROOT / 'scripts' / 'whp-build' / 'portable-build.py'
 BUILD_WRAPPER = ROOT / 'builder.sh'
 
 
@@ -119,6 +120,25 @@ class CompilerCachePolicyTests(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode == 0, succeeds, proc.stderr)
                 self.assertIn(expected, proc.stdout if succeeds else proc.stderr)
+
+    def test_direct_portable_core_cannot_silently_skip_managed_cache(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_managed_direct_test')
+        portable = load_module(PORTABLE_BUILD, 'whp_portable_managed_direct_test')
+        with tempfile.TemporaryDirectory() as directory:
+            profile = pathlib.Path(directory) / '.whpconfig'
+            profile.write_text(
+                'WHP_CONFIG_VERSION=3\nCOMPILER_CACHE=managed-sccache\n',
+                encoding='utf-8',
+            )
+            with mock.patch.object(portable, 'USER_CONFIG', profile), \
+                 mock.patch.dict(os.environ, {'COMPILER_CACHE': 'managed-sccache'}):
+                with self.assertRaisesRegex(RuntimeError, 'requires the build.sh launcher'):
+                    portable.resolved_values()
+            # One-run overrides remain authoritative: auto does not request
+            # a managed fork in the portable core.
+            with mock.patch.object(portable, 'USER_CONFIG', profile), \
+                 mock.patch.dict(os.environ, {'COMPILER_CACHE': 'auto'}):
+                self.assertEqual(portable.resolved_values()['COMPILER_CACHE'], 'auto')
 
     def test_ninja_auto_cache_prefers_ccache_then_sccache(self):
         ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_auto_test')
