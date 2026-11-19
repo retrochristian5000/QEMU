@@ -94,6 +94,12 @@ render_menu()
             default_value = field[5]
             group = field[7]
             item++
+            # A checked all-target selector replaces the individual rows;
+            # their saved values are never changed.
+            if (values["BUILD_QEMU_SYSTEM_ALL"] == "y" &&
+                key ~ /^BUILD_QEMU_SYSTEM_(I386|PPC|SPARC)$/) {
+                next
+            }
             if (search != "" &&
                 index(tolower(key " " section " " label " " group), search) == 0) {
                 next
@@ -104,7 +110,12 @@ render_menu()
                 previous_group = ""
             }
             if (group != "" && group != previous_group) {
-                printf "  %s\n", group
+                if (group == "System emulators") {
+                    mode = values["BUILD_QEMU_SYSTEM_ALL"] == "y" ? "collapsed" : "expanded"
+                    printf "  %s (%s)\n", group, mode
+                } else {
+                    printf "  %s\n", group
+                }
                 previous_group = group
             } else if (group == "") {
                 previous_group = ""
@@ -270,6 +281,16 @@ while :; do
     IFS='|' read -r key section label kind default_value choices group <<EOF
 $line
 EOF
+
+    case "$key" in
+        BUILD_QEMU_SYSTEM_I386|BUILD_QEMU_SYSTEM_PPC|BUILD_QEMU_SYSTEM_SPARC)
+            if [ "$(menu_value_or_default BUILD_QEMU_SYSTEM_ALL n)" = y ]; then
+                printf '%s\n' \
+                    'Individual emulator targets are collapsed; disable BUILD_QEMU_SYSTEM_ALL first.' >&2
+                continue
+            fi
+            ;;
+    esac
 
     current=$(get_value "$key")
     if [ -z "$current" ]; then
