@@ -136,7 +136,7 @@ if [[ "$LLVM_LINK_JOBS" == auto ]]; then
 fi
 case "$LLVM_LINK_JOBS" in
     0|*[!0-9]*)
-        printf 'error: NATIVE_LLVM_LINK_JOBS must be auto or a positive integer: %s\n' \
+        printf 'error: NATIVE_LLVM_LINK_JOBS must be a positive integer: %s\n' \
             "$LLVM_LINK_JOBS" >&2
         exit 1
         ;;
@@ -270,7 +270,7 @@ for pool_name in COMPILE TABLEGEN; do
         printf -v "$pool_var" '%s' "$pool_jobs"
     fi
     if [[ -n "$pool_jobs" && ! "$pool_jobs" =~ ^(0|[1-9][0-9]*)$ ]]; then
-        printf 'error: NATIVE_LLVM_%s_JOBS must be auto, 0 or a positive integer: %s\n' \
+        printf 'error: NATIVE_LLVM_%s_JOBS must be 0 or a positive integer: %s\n' \
             "$pool_name" "$pool_jobs" >&2
         exit 1
     fi
