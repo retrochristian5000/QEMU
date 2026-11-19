@@ -503,6 +503,17 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
         'printf "configure\\n" >> "$WHP_CMAKE_TEST_LOG"\n'
         'mkdir -p "$LLVM_BUILD_DIR"\n'
         'printf "CMAKE_GENERATOR:INTERNAL=Ninja\\n" > "$LLVM_BUILD_DIR/CMakeCache.txt"\n'
+        'for arg in "$@"; do\n'
+        '    case "$arg" in\n'
+        '        -DLLVM_HOST_TRIPLE=*)\n'
+        '            requested="${arg#-DLLVM_HOST_TRIPLE=}"\n'
+        '            if [ "${WHP_CMAKE_TEST_POISON:-0}" = 1 ]; then\n'
+        '                requested=aarch64-apple-darwin27.2\n'
+        '            fi\n'
+        '            printf "LLVM_HOST_TRIPLE:STRING=%s\\n" "$requested" >> "$LLVM_BUILD_DIR/CMakeCache.txt"\n'
+        '            ;;\n'
+        '    esac\n'
+        'done\n'
         'touch "$LLVM_BUILD_DIR/build.ninja"\n'
         '[ "${WHP_CMAKE_TEST_FAIL:-0}" != 1 ]\n', encoding='utf-8'
     )
@@ -510,7 +521,8 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
     build_root = fixture / 'build'
     calls = fixture / 'calls'
     def check_reconfigure(args='-DTEST=1', *, force=False, fail=False,
-                          prefix='', expected_calls=1, expected_ok=True):
+                          poison=False, prefix='', expected_calls=1,
+                          expected_ok=True):
         env = os.environ.copy()
         env['PATH'] = str(fake_bin) + os.pathsep + env.get('PATH', '')
         env['LLVM_BUILD_DIR'] = str(build_root)
@@ -518,6 +530,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
         env['PKG_CONFIG_PATH'] = prefix
         env['TOOLCHAIN_FORCE_REBUILD'] = '1' if force else '0'
         env['WHP_CMAKE_TEST_FAIL'] = '1' if fail else '0'
+        env['WHP_CMAKE_TEST_POISON'] = '1' if poison else '0'
         probe = (
             'set -euo pipefail\n'
             'cmake_cmd=cmake\n'
@@ -561,6 +574,16 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
     )
     check_reconfigure('-DTEST=3', prefix='/changed/prefix',
                       expected_calls=8)
+    # Even the first post-configure build must reject a successful CMake
+    # process that retained an unexpected Darwin target.
+    macos_args = '-DLLVM_HOST_TRIPLE=aarch64-apple-macosx27.2'
+    check_reconfigure(macos_args, prefix='/changed/prefix',
+                      expected_calls=9)
+    check_reconfigure(macos_args, prefix='/changed/prefix', force=True,
+                      poison=True, expected_calls=10, expected_ok=False)
+    assert not (build_root / '.whp-native-llvm-cmake-config').exists()
+    check_reconfigure(macos_args, prefix='/changed/prefix',
+                      expected_calls=11)
 
 # WHP Ninja reuses recorded compile/link durations to prioritize the critical
 # path on subsequent LLVM builds. It is a scheduling-only switch, not an ABI

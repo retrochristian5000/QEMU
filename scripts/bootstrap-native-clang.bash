@@ -2079,6 +2079,13 @@ else
     # A failed configure must not leave behind a valid reuse marker.
     rm -f "$cmake_config_marker"
     "$cmake_cmd" "${cmake_args[@]}"
+    # A successful CMake process exit alone is not proof that protected
+    # flags were applied; validate the generated cache before publishing a
+    # reusable identity or executing any Ninja compilation.
+    if ! native_llvm_cmake_cache_clean; then
+        printf 'error: native LLVM CMake configuration retained conflicting ABI or toolchain settings\n' >&2
+        exit 1
+    fi
     printf '%s\n' "$cmake_config_identity" > "$cmake_config_marker"
 fi
 

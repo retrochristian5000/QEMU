@@ -76,6 +76,9 @@ cached ABI, macOS SDK/deployment, C and C++ compiler/launcher, archive-tool,
 LLVM target/LTO, and nested runtime-project values with the selected CMake
 arguments. Missing, duplicate, or changed protected entries cause an
 in-place CMake reconfiguration; the Ninja object tree is not discarded.
+The freshly generated CMake cache is checked again before saving the
+reusable marker or executing Ninja, so an ignored or retained conflicting
+ABI setting fails immediately instead of being built once.
 The existing cross-target and linker-flag blacklist remains independently
 enforced.
 
