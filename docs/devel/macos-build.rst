@@ -800,6 +800,30 @@ than relying only on the ``lipo -archs`` label. It is an archive integrity
 check, not permission to combine ARM64e with ARM64, change PAC semantics,
 or select Mach-O LLD before its authenticated-link gate passes.
 
+LLVM nm on ARM64/ARM64e universal Mach-O
+--------------------------------------------
+
+A FAT32 or FAT64 Mach-O file has an architecture table outside its embedded
+Mach-O objects. Both plain ``arm64`` and ``arm64e`` use CPU type
+``0x0100000c``; their **CPU subtypes** distinguish them. The pinned LLVM
+reader now rejects an ARM64 slice whose FAT table subtype disagrees with the
+embedded Mach-O header, after masking the capability/version byte. A malformed
+arm64e-labeled entry must not expose plain arm64 symbols.
+
+For symbols from a universal binary, explicitly select the **QEMU target
+ABI** rather than relying on ``llvm-nm``'s host-architecture default::
+
+  "$NATIVE_LLVM_DIR/bin/llvm-nm" --arch=arm64e --defined-only \
+    --extern-only /path/to/target-universal-macho
+
+Use ``--arch=arm64`` for the ordinary arm64 target, not for ARM64e. An
+explicit missing architecture is an error; it must not silently fall back to
+another slice. The pinned LLVM regression
+``llvm/test/tools/llvm-nm/AArch64/macho-fat-arm64e-subtype.test``
+covers exact per-slice output and deliberately mislabeled FAT32/FAT64 objects
+without requiring the macOS SDK. This checks Mach-O metadata integrity, not
+pointer-authentication runtime execution.
+
 ARM64e Clang++ flags and authenticated virtual dispatch
 ----------------------------------------------------------
 
