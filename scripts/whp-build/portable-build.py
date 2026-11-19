@@ -642,10 +642,15 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
                     'disable QEMU_X86_FAMILY_LINK'
                 )
     selected_targets: List[str] = []
-    if values['BUILD_QEMU_SYSTEM_PPC'] == 'y':
+    all_systems = values['BUILD_QEMU_SYSTEM_ALL'] == 'y'
+    if all_systems or values['BUILD_QEMU_SYSTEM_PPC'] == 'y':
         append_unique(selected_targets, 'ppc-softmmu')
-    if values['BUILD_QEMU_SYSTEM_I386'] == 'y':
+    if all_systems or values['BUILD_QEMU_SYSTEM_I386'] == 'y':
         append_unique(selected_targets, 'x86_64-softmmu' if alias_enabled else 'i386-softmmu')
+    # SPARC is normally injected by the portable feature adapter; all-targets
+    # mode must work even when the portable core is invoked directly.
+    if all_systems:
+        append_unique(selected_targets, 'sparc-softmmu')
     for target in requested_system_targets(argv):
         append_unique(selected_targets,
                       'x86_64-softmmu' if alias_enabled and target == 'i386-softmmu'
