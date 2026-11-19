@@ -213,5 +213,73 @@ class MenuconfigScrollTests(unittest.TestCase):
         ))
 
 
+    def test_all_emulators_collapses_individual_rows_without_changing_values(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        values = config.default_values()
+        individual = {
+            key: values[key] for key in config.SYSTEM_EMULATOR_KEYS
+        }
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_ALL'], 'n')
+        expanded = menu._flatten_items(values=values)
+        expanded_keys = [
+            option.key for kind, _, option in expanded if kind == 'option'
+        ]
+        self.assertTrue(set(individual).issubset(expanded_keys))
+
+        values['BUILD_QEMU_SYSTEM_ALL'] = 'y'
+        collapsed = menu._flatten_items(values=values)
+        collapsed_keys = [
+            option.key for kind, _, option in collapsed if kind == 'option'
+        ]
+        self.assertIn('BUILD_QEMU_SYSTEM_ALL', collapsed_keys)
+        self.assertTrue(set(individual).isdisjoint(collapsed_keys))
+        self.assertEqual(
+            menu._flatten_items('qemu-system-i386', values), [],
+        )
+        self.assertEqual(
+            {key: values[key] for key in individual}, individual,
+        )
+
+        values['BUILD_QEMU_SYSTEM_ALL'] = 'n'
+        restored_keys = [
+            option.key for kind, _, option
+            in menu._flatten_items(values=values) if kind == 'option'
+        ]
+        self.assertTrue(set(individual).issubset(restored_keys))
+        self.assertEqual(
+            {key: values[key] for key in individual}, individual,
+        )
+
+    def test_toggle_all_emulators_reflows_curses_menu(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+
+        values = config.default_values()
+        snapshot = dict(values)
+        state = config.ConfigState(values, {})
+        screen = FakeScreen(
+            [ord('/'), ord(' '), ord(' '), ord('q')],
+            height=20, width=120,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
+                 mock.patch.object(menu, '_edit_string', return_value='System emulators'):
+                menu._run(screen, pathlib.Path(td) / '.whpconfig', state)
+        frames = [*screen.frames, screen.current]
+        self.assertTrue(any(
+            'System emulators (collapsed)' in text
+            for frame in frames for _, _, text, _ in frame
+        ))
+        self.assertTrue(any(
+            'System emulators (expanded)' in text
+            for frame in frames for _, _, text, _ in frame
+        ))
+        self.assertEqual(state.values, snapshot)
+        self.assertEqual(screen.current[-1][2], 'Saved')
+
+
 if __name__ == '__main__':
     unittest.main()
