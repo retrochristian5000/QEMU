@@ -52,7 +52,7 @@ def disassemble_symbol(objdump, path, symbol):
     # Only examine the C++ virtual-dispatch entry point under test.
     output = run([objdump, "-d", "--disassemble-symbols=" + symbol,
                   str(path)]).lower()
-    assert re.search(r"\\b" + re.escape(symbol.lower()) + r"\\s*>:", output), (
+    assert re.search(r"\b" + re.escape(symbol.lower()) + r"\s*>:", output), (
         f"{path.name}: llvm-objdump did not select {symbol}")
     return output
 
@@ -94,6 +94,16 @@ def emit(cc, target, source, output, *extra):
     run([cc, "-target", target, "-O0", "-c", str(source), "-o",
          str(output), *extra])
     return parse_object(output, 0x80000002 if target.startswith("arm64e-") else 0)
+
+
+def emit_darwin_arch(cc, initial_target, selected_arch, source, output):
+    # The native build supplies -arch, while external frontends may also
+    # carry an initial -target. Confirm that the resulting object follows
+    # the *effective* Darwin architecture, not the initial driver triple.
+    run([cc, "-target", initial_target, "-arch", selected_arch,
+         "-mmacosx-version-min=13.0", "-std=c++17", "-O2",
+         "-c", str(source), "-o", str(output)])
+    return parse_object(output, 0x80000002 if selected_arch == "arm64e" else 0)
 
 
 def main():
@@ -154,6 +164,30 @@ def main():
                                    "_whp_virtual")
         assert "blraa" in v_dis
 
+        # Native QEMU builds use -arch rather than just -target. Force an
+        # initially ordinary ARM64 triple to ARM64e and then reverse it to
+        # prove Clang++'s effective driver architecture becomes the Mach-O
+        # CPU subtype. Both cases must retain their C++ call convention.
+        _, arch_e_sections = emit_darwin_arch(
+            args.clangxx, "arm64-apple-macosx13.0", "arm64e",
+            root / "virtual.cc", root / "virtual-arch-arm64e.o")
+        arch_e_count = sum(r[0] == 11
+                           for (seg, name), (_, rels) in arch_e_sections.items()
+                           for r in rels.values() if name == b"__const")
+        assert arch_e_count >= 3, "Darwin -arch arm64e lost authenticated vtable"
+        arch_e_dis = disassemble_symbol(
+            args.objdump, root / "virtual-arch-arm64e.o", "_whp_virtual")
+        assert any(x in arch_e_dis for x in ("blraa", "blrab", "braa", "brab"))
+
+        emit_darwin_arch(args.clangxx, "arm64e-apple-macosx13.0", "arm64",
+                         root / "virtual.cc", root / "virtual-arch-arm64.o")
+        arch_a_dis = disassemble_symbol(
+            args.objdump, root / "virtual-arch-arm64.o", "_whp_virtual")
+        assert not any(x in arch_a_dis for x in (
+            "blraa", "blrab", "braa", "brab")), (
+            "Darwin -arch arm64 unexpectedly retained signed calls"
+        )
+
         # An ARM64e subtype alone cannot guarantee PAC-call ABI conformance.
         # Clang++ deliberately permits -fno-ptrauth-calls; it produces the
         # same Mach-O subtype but unsigned BR/BLR virtual calls, which cannot
@@ -180,7 +214,7 @@ def main():
             assert re.search(r"\b(?:blr|br)\s+x[0-9]+\b", unsafe_dis), (
                 f"{opt}: expected an unsigned branch from PAC opt-out"
             )
-    print("ARM64e object emission: subtype, PAC, signed/unsigned C++ virtual calls, C callbacks, ARM64 control passed")
+    print("ARM64e object emission: -target/-arch subtype, PAC, signed/unsigned C++ virtual calls, C callbacks, ARM64 control passed")
 
 
 if __name__ == "__main__":

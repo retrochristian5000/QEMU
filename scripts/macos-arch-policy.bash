@@ -95,6 +95,16 @@ whp_macos_audit_arm64e_codegen_flags()
                         "$variable" "$token" >&2
                     return 1
                     ;;
+                -fno-ptrauth-vtable-pointer-address-discrimination|\
+                -fno-ptrauth-vtable-pointer-type-discrimination|\
+                -fno-ptrauth-type-info-vtable-pointer-discrimination|\
+                -fno-ptrauth-function-pointer-type-discrimination)
+                    # Signed pointers with different discriminators are not
+                    # interchangeable across C++ translation units.
+                    printf 'error: %s weakens ARM64e C++ pointer authentication: %s\n' \
+                        "$variable" "$token" >&2
+                    return 1
+                    ;;
             esac
         done
     done

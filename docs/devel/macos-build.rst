@@ -906,10 +906,13 @@ virtual-table function pointers even though ``llvm-objdump`` and
 ``llvm-lipo`` classify the object as arm64e.
 
 In explicit WHP ``WHP_MACOS_ARCH=arm64e`` builds,
-``whp_macos_audit_arm64e_codegen_flags`` now rejects
-``-fno-ptrauth-calls`` in ``CC``, ``CXX``, ``OBJC``,
-``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``, ``CPPFLAGS``
-or ``LDFLAGS`` before managed SDK and linker flags are appended.
+``whp_macos_audit_arm64e_codegen_flags`` rejects
+``-fno-ptrauth-calls`` and the related C++ vtable, type-info vtable,
+and function-pointer type-discrimination opt-outs in ``CC``, ``CXX``,
+``OBJC``, ``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``,
+``CPPFLAGS``, and ``LDFLAGS`` before managed flags are appended.
+Even signed pointers become incompatible across translation units if
+their authentication discriminators differ.
 The ordinary ``arm64`` lane is unaffected. Return-address signing
 policy is separate from this C++ authenticated-indirect-call requirement;
 do not infer that ``-fno-ptrauth-returns`` has the same effects.
@@ -922,7 +925,11 @@ including all eight input sources and both CPU families::
 The installed toolchain's object test compiles real ARM64e C++ virtual
 calls both at ``-O0`` and ``-O2``, with and without the opt-out,
 checks the Mach-O subtype, and disassembles the resulting signed or
-unsigned branch. This prevents a false pass from a correct subtype
+unsigned branch. It also checks Clang++'s effective Darwin ``-arch``
+selection against a conflicting initial ``-target`` and verifies the
+selected architecture's Mach-O header and C++ virtual-call instructions.
+The symbol filter is tested independently, so a typo in its regular
+expression cannot silently invalidate the PAC regression. This prevents a false pass from a correct subtype
 alone::
 
   python3 scripts/tests/test-arm64e-object-emission.py \
