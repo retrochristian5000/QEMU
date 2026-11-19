@@ -278,6 +278,52 @@ if ! grep -Fq 'Apple Darwin/macOS target triple' "$non_darwin_output"; then
     exit 1
 fi
 
+# The vendor field changes which Mach-O toolchain Clang chooses.
+# Reject foreign vendors, OS lookalikes and extra environments rather than
+# accepting the first three dash-separated components of a malformed triple.
+for invalid_triple in \
+    arm64-unknown-macosx15.0 \
+    arm64-pc-darwin24.0.0 \
+    arm64-apple-ios18.0 \
+    arm64-apple-macosish15.0 \
+    arm64-apple-darwin24.0.0-ios \
+    arm64-apple-macosx15.0-simulator \
+    arm64-apple-macosx15.0-macabi \
+    arm64-apple-macosx15.0.0.0; do
+    invalid_target_output="$TEST_DIR/rejected-apple-target.log"
+    if TEST_TARGET_TRIPLE="$invalid_triple" \
+       CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
+       CC_FOR_BUILD="$CLANG" CXX_FOR_BUILD="$CLANGXX" \
+       bash --noprofile --norc -c \
+           'source "$1/scripts/macos-compiler-policy.bash"' _ "$SOURCE_DIR" \
+           >"$invalid_target_output" 2>&1; then
+        printf 'error: accepted non-native Apple target: %s\n' "$invalid_triple" >&2
+        exit 1
+    fi
+    if ! grep -Fq 'Apple Darwin/macOS target triple' "$invalid_target_output"; then
+        printf 'error: missing Apple target diagnostic: %s\n' "$invalid_triple" >&2
+        cat "$invalid_target_output" >&2
+        exit 1
+    fi
+done
+
+# Preserve Apple Clang's legitimate Darwin-kernel spelling and the explicit
+# macOS product spelling. The latter must not be rejected by stricter checks.
+for valid_triple in arm64-apple-darwin24.0.0 arm64-apple-macosx15.0; do
+    valid_target_output="$TEST_DIR/accepted-apple-target.log"
+    if ! TEST_TARGET_TRIPLE="$valid_triple" \
+         CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
+         CC_FOR_BUILD="$CLANG" CXX_FOR_BUILD="$CLANGXX" \
+         bash --noprofile --norc -c \
+             'source "$1/scripts/macos-compiler-policy.bash"' _ "$SOURCE_DIR" \
+             >"$valid_target_output" 2>&1; then
+        printf 'error: rejected native Apple target: %s\n' "$valid_triple" >&2
+        cat "$valid_target_output" >&2
+        exit 1
+    fi
+    grep -Fq "$valid_triple" "$valid_target_output"
+done
+
 # The compiler's default triple is not enough: inherited compile flags
 # must not override the selected macOS target after that identity check.
 for conflicting_flag in '-target arm64-apple-ios' '--target=arm64-apple-ios' '-arch=x86_64'; do

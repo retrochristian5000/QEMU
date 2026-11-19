@@ -9,6 +9,11 @@ if [[ "${WHP_MACOS_COMPILER_POLICY_APPLIED:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
+# Share the strict Apple-vendor, macOS/Darwin OS, and environment-field
+# parser with the LLVM bootstrap. The vendor controls Clang's AppleMachO
+# toolchain selection; a loose prefix is not sufficient evidence.
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/macos-target-abi.bash"
+
 MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
 case "$MACOS_ALLOW_NONCLANG" in
     0|1) ;;
@@ -108,7 +113,7 @@ require_apple_darwin_target()
 {
     local label="$1"
     local command_string="$2"
-    local triple arch vendor os host_arch target_arch
+    local triple arch host_arch target_arch
 
     triple="$(compiler_target_triple "$command_string")" || {
         printf 'error: could not determine %s target triple: %s\n' \
@@ -116,24 +121,16 @@ require_apple_darwin_target()
         return 1
     }
 
-    IFS='-' read -r arch vendor os _ <<< "$triple"
-    if [[ "$vendor" != apple ]]; then
+    # Require the exact -apple- vendor and a macOS/Darwin OS spelling with
+    # no extra target environment such as iOS, Mac Catalyst, or simulator.
+    if ! macos_target_abi_key "$triple" >/dev/null; then
         printf '%s\n' \
-            "error: $label must use an Apple Darwin/macOS target triple." \
+            "error: $label must use a well-formed Apple Darwin/macOS target triple." \
             "compiler: $command_string" \
             "target:   $triple" >&2
         return 1
     fi
-    case "$os" in
-        darwin*|macos*|macosx*) ;;
-        *)
-            printf '%s\n' \
-                "error: $label must use an Apple Darwin/macOS target triple." \
-                "compiler: $command_string" \
-                "target:   $triple" >&2
-            return 1
-            ;;
-    esac
+    arch="${triple%%-*}"
 
     host_arch="$(canonical_macos_arch "$(uname -m)")" || {
         printf 'error: unsupported macOS host architecture: %s\n' "$(uname -m)" >&2
