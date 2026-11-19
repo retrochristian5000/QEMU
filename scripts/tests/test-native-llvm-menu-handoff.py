@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-menu-") as td:
         values = subprocess.run(
             ["sh", "-c", output + "\n" +
              'for key in ' + " ".join(MENU_KEYS) + '; do\n' +
-             '  eval "value=\${$key-}"\n' +
+             '  eval "value=${$key-}"\n' +
              '  printf "%s=%s\\n" "$key" "$value"\n' +
              'done\n'],
             env=env, capture_output=True, text=True, check=True,
@@ -123,13 +123,13 @@ def run_jobs(host, overrides):
     script = (
         "set -euo pipefail\n"
         'host_os="$WHP_HOST_OS"\n'
-        'LLVM_LINK_JOBS="\${NATIVE_LLVM_LINK_JOBS:-2}"\n'
-        'LLVM_COMPILE_JOBS="\${NATIVE_LLVM_COMPILE_JOBS-}"\n'
-        'LLVM_TABLEGEN_JOBS="\${NATIVE_LLVM_TABLEGEN_JOBS-}"\n'
+        'LLVM_LINK_JOBS="${NATIVE_LLVM_LINK_JOBS:-2}"\n'
+        'LLVM_COMPILE_JOBS="${NATIVE_LLVM_COMPILE_JOBS-}"\n'
+        'LLVM_TABLEGEN_JOBS="${NATIVE_LLVM_TABLEGEN_JOBS-}"\n'
         + link_policy + pool_policy +
         'printf "%s|%s|%s\\n" "$LLVM_LINK_JOBS" '
-        '"\${LLVM_COMPILE_JOBS:-unlimited}" '
-        '"\${LLVM_TABLEGEN_JOBS:-unlimited}"\n'
+        '"${LLVM_COMPILE_JOBS:-unlimited}" '
+        '"${LLVM_TABLEGEN_JOBS:-unlimited}"\n'
     )
     return subprocess.run(
         ["bash", "-c", script], env=env, capture_output=True, text=True
@@ -194,7 +194,7 @@ for arch, asan, expected in (
 # Native LLVM and QEMU host executable ABI settings are independent.
 assert 'NATIVE_LLVM_DIR=$("$WHP_BUILD_BASH" --noprofile --norc' in BUILD
 assert "WHP ABI selections: LLVM host=%s; QEMU host=%s" in BUILD
-assert 'requested_macos_arch="\${NATIVE_LLVM_MACOS_ARCH:-auto}"' in BOOTSTRAP
+assert 'requested_macos_arch="${NATIVE_LLVM_MACOS_ARCH:-auto}"' in BOOTSTRAP
 assert '"-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"' in BOOTSTRAP
 assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in BOOTSTRAP
 assert '"-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"' in BOOTSTRAP
