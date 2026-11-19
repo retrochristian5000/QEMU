@@ -155,6 +155,9 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
                 if label == 'System emulators':
                     mode = 'collapsed' if state.values['BUILD_QEMU_SYSTEM_ALL'] == 'y' else 'expanded'
                     label = f'{label} ({mode})'
+                elif label == 'Native LLVM bootstrap':
+                    mode = 'expanded' if state.values['BOOTSTRAP_NATIVE_LLVM'] == 'y' else 'collapsed'
+                    label = f'{label} ({mode})'
                 stdscr.addnstr(y, 2, label, width - 3, curses.A_BOLD)
             else:
                 assert row_option is not None
@@ -251,9 +254,9 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             if new != old:
                 state.values[option.key] = new
                 dirty = state.values != saved_values
-                if option.key == 'BUILD_QEMU_SYSTEM_ALL':
+                if option.key in whp_config.VISIBILITY_PARENT_KEYS:
                     # Rebuild from current values without mutating stored
-                    # individual selections; turning all off restores them.
+                    # dependent selections; turning a parent off preserves them.
                     rows = _flatten_items(filter_text, state.values)
                     selectable = _selectable_positions(rows)
                     selected_pos = next(

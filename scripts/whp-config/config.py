@@ -49,6 +49,30 @@ SYSTEM_EMULATOR_KEYS = (
     'BUILD_QEMU_SYSTEM_SPARC',
 )
 
+# These settings are active only in the native LLVM bootstrap. Hiding the
+# group does not discard existing values in user-owned configuration files.
+NATIVE_LLVM_DETAIL_KEYS = (
+    'NATIVE_LLVM_CXX_STANDARD',
+    'NATIVE_LLVM_PCH',
+    'NATIVE_LLVM_MACOS_ARCH',
+    'NATIVE_LLVM_ENABLE_LLDB',
+    'NATIVE_LLVM_VALIDATE_ASAN',
+    'NATIVE_LLVM_ASAN_AUTO_DEBUG',
+    'NATIVE_LLVM_LINK_JOBS',
+    'NATIVE_LLVM_COMPILE_JOBS',
+    'NATIVE_LLVM_TABLEGEN_JOBS',
+)
+
+VISIBILITY_PARENT_KEYS = frozenset({
+    'BUILD_QEMU_SYSTEM_ALL', 'BOOTSTRAP_NATIVE_LLVM',
+})
+
+LLVM_JOB_KEYS = frozenset({
+    'NATIVE_LLVM_LINK_JOBS',
+    'NATIVE_LLVM_COMPILE_JOBS',
+    'NATIVE_LLVM_TABLEGEN_JOBS',
+})
+
 
 OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
@@ -71,9 +95,33 @@ OPTIONS = (
     Option('QEMU_HOST_CPU_TUNING', 'Host features', 'QEMU host CPU tuning flags', 'string', 'native'),
     Option('QEMU_C_STANDARD', 'Host features', 'QEMU C language standard', 'choice', 'gnu11', ('gnu11', 'gnu17', 'gnu23')),
     Option('QEMU_CXX_STANDARD', 'Host features', 'QEMU C++ language standard', 'choice', 'gnu++23', ('gnu++17', 'gnu++20', 'gnu++23', 'c++26')),
-    Option('BOOTSTRAP_NATIVE_LLVM', 'Host features', 'Bootstrap/use WHP native LLVM', 'bool', 'n'),
-    Option('NATIVE_LLVM_CXX_STANDARD', 'Host features', 'Native LLVM C++ language standard', 'choice', '23', ('17', '20', '23', '26')),
-    Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('BOOTSTRAP_NATIVE_LLVM', 'Host features',
+           'Bootstrap/use WHP native LLVM', 'bool', 'n',
+           group='Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_CXX_STANDARD', 'Host features',
+           'Native LLVM C++ language standard', 'choice', '23',
+           ('17', '20', '23', '26'), 'Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers',
+           'choice', 'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_MACOS_ARCH', 'Host features', 'Native LLVM host ABI (macOS only)',
+           'choice', 'auto', ('auto', 'arm64', 'arm64e', 'x86_64'), 'Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_ENABLE_LLDB', 'Host features', 'Build LLVM LLDB debugger',
+           'choice', 'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_VALIDATE_ASAN', 'Host features',
+           'Validate LLVM AddressSanitizer runtime', 'choice', 'auto',
+           ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_ASAN_AUTO_DEBUG', 'Host features',
+           'LLDB replay on native LLVM ASan failures', 'bool', 'n',
+           group='Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_LINK_JOBS', 'Host features',
+           'LLVM parallel linker jobs (auto or positive integer)',
+           'string', 'auto', group='Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_COMPILE_JOBS', 'Host features',
+           'LLVM compile job pool (auto, 0=unlimited, or positive integer)',
+           'string', 'auto', group='Native LLVM bootstrap'),
+    Option('NATIVE_LLVM_TABLEGEN_JOBS', 'Host features',
+           'LLVM TableGen job pool (auto, 0=unlimited, or positive integer)',
+           'string', 'auto', group='Native LLVM bootstrap'),
     Option('BOOTSTRAP_PYTHON', 'Host features', 'Bootstrap/use WHP Python', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_BASH', 'Host features', 'Bootstrap/use WHP Bash', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_AUTOMAKE', 'Host features', 'Bootstrap/use WHP Automake', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -141,6 +189,8 @@ RAW_CONFIG_KEYS = {'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD'}
 SHELL_BOOL_KEYS = PORTABLE_BOOL_KEYS - RAW_CONFIG_KEYS
 SHELL_TRI_STATE_KEYS = {
     'NATIVE_LLVM_PCH',
+    'NATIVE_LLVM_ENABLE_LLDB',
+    'NATIVE_LLVM_VALIDATE_ASAN',
     'QEMU_HOST_LTO',
     'QEMU_HOST_MODULES',
     'BOOTSTRAP_PYTHON',
@@ -190,13 +240,25 @@ def visible_options(values: Dict[str, str]) -> Tuple[Option, ...]:
 
     Their saved values are retained and take effect again when it is disabled.
     """
+    hidden = set()
     if values.get('BUILD_QEMU_SYSTEM_ALL', 'n') == 'y':
-        return tuple(option for option in OPTIONS
-                     if option.key not in SYSTEM_EMULATOR_KEYS)
-    return OPTIONS
+        hidden.update(SYSTEM_EMULATOR_KEYS)
+    if values.get('BOOTSTRAP_NATIVE_LLVM', 'n') != 'y':
+        hidden.update(NATIVE_LLVM_DETAIL_KEYS)
+    return tuple(option for option in OPTIONS if option.key not in hidden)
 
 
 def validate_value(option: Option, value: str) -> None:
+    if option.key in LLVM_JOB_KEYS:
+        # auto inherits bootstrap defaults; TableGen/compile allow 0 to
+        # disable their pool limit. Link jobs must always be positive.
+        if value == 'auto':
+            return
+        if not re.fullmatch(r'(0|[1-9][0-9]*)', value):
+            raise ValueError(f'{option.key} must be auto or a nonnegative integer')
+        if option.key == 'NATIVE_LLVM_LINK_JOBS' and value == '0':
+            raise ValueError('NATIVE_LLVM_LINK_JOBS must be auto or a positive integer')
+        return
     if option.kind == 'bool':
         if value not in ('y', 'n'):
             raise ValueError(f'{option.key} must be y or n')
@@ -233,6 +295,18 @@ def validate_combinations(values: Dict[str, str]) -> None:
             f"QEMU_HOST_LTO_MODE={values['QEMU_HOST_LTO_MODE']} conflicts with "
             'QEMU_HOST_LTO=n; enable LTO or select LTO mode auto'
         )
+    if (values['BOOTSTRAP_NATIVE_LLVM'] == 'y' and
+            values['NATIVE_LLVM_ASAN_AUTO_DEBUG'] == 'y'):
+        if values['NATIVE_LLVM_ENABLE_LLDB'] == 'n':
+            raise ValueError(
+                'NATIVE_LLVM_ASAN_AUTO_DEBUG=y needs NATIVE_LLVM_ENABLE_LLDB=y '
+                'or auto; disable replay or enable LLDB'
+            )
+        if values['NATIVE_LLVM_VALIDATE_ASAN'] == 'n':
+            raise ValueError(
+                'NATIVE_LLVM_ASAN_AUTO_DEBUG=y needs ASan validation; '
+                'set NATIVE_LLVM_VALIDATE_ASAN=auto or y'
+            )
 
 
 def load_config(path: pathlib.Path) -> ConfigState:

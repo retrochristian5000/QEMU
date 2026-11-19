@@ -100,6 +100,10 @@ render_menu()
                 key ~ /^BUILD_QEMU_SYSTEM_(I386|PPC|SPARC)$/) {
                 next
             }
+            if (values["BOOTSTRAP_NATIVE_LLVM"] != "y" &&
+                key ~ /^NATIVE_LLVM_/) {
+                next
+            }
             if (search != "" &&
                 index(tolower(key " " section " " label " " group), search) == 0) {
                 next
@@ -112,6 +116,9 @@ render_menu()
             if (group != "" && group != previous_group) {
                 if (group == "System emulators") {
                     mode = values["BUILD_QEMU_SYSTEM_ALL"] == "y" ? "collapsed" : "expanded"
+                    printf "  %s (%s)\n", group, mode
+                } else if (group == "Native LLVM bootstrap") {
+                    mode = values["BOOTSTRAP_NATIVE_LLVM"] == "y" ? "expanded" : "collapsed"
                     printf "  %s (%s)\n", group, mode
                 } else {
                     printf "  %s\n", group
@@ -185,6 +192,38 @@ validate_saved_configuration()
             "$lto_mode" >&2
         return 1
     fi
+    if [ "$(menu_value_or_default BOOTSTRAP_NATIVE_LLVM n)" = y ] &&
+       [ "$(menu_value_or_default NATIVE_LLVM_ASAN_AUTO_DEBUG n)" = y ]; then
+        lldb=$(menu_value_or_default NATIVE_LLVM_ENABLE_LLDB auto)
+        llvm_asan=$(menu_value_or_default NATIVE_LLVM_VALIDATE_ASAN auto)
+        if [ "$lldb" = n ]; then
+            printf '%s\n' \
+                'Cannot save: native LLVM ASan auto-debug requires LLDB=auto or y' >&2
+            return 1
+        fi
+        if [ "$llvm_asan" = n ]; then
+            printf '%s\n' \
+                'Cannot save: native LLVM ASan auto-debug requires ASan validation=auto or y' >&2
+            return 1
+        fi
+    fi
+    for job_key in NATIVE_LLVM_LINK_JOBS NATIVE_LLVM_COMPILE_JOBS NATIVE_LLVM_TABLEGEN_JOBS; do
+        job_value=$(menu_value_or_default "$job_key" auto)
+        case "$job_value" in
+            auto) ;;
+            0)
+                if [ "$job_key" = NATIVE_LLVM_LINK_JOBS ]; then
+                    printf '%s\n' 'Cannot save: NATIVE_LLVM_LINK_JOBS must be positive or auto' >&2
+                    return 1
+                fi ;;
+            *[!0-9]*|'')
+                printf 'Cannot save: %s must be auto or a nonnegative integer\n' "$job_key" >&2
+                return 1 ;;
+            0*)
+                printf 'Cannot save: %s must not contain leading zeroes\n' "$job_key" >&2
+                return 1 ;;
+        esac
+    done
 }
 
 save_config()
@@ -283,6 +322,13 @@ $line
 EOF
 
     case "$key" in
+        NATIVE_LLVM_*)
+            if [ "$(menu_value_or_default BOOTSTRAP_NATIVE_LLVM n)" != y ]; then
+                printf '%s\n' \
+                    'Native LLVM options are collapsed; enable BOOTSTRAP_NATIVE_LLVM first.' >&2
+                continue
+            fi
+            ;;
         BUILD_QEMU_SYSTEM_I386|BUILD_QEMU_SYSTEM_PPC|BUILD_QEMU_SYSTEM_SPARC)
             if [ "$(menu_value_or_default BUILD_QEMU_SYSTEM_ALL n)" = y ]; then
                 printf '%s\n' \
