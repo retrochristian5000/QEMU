@@ -917,6 +917,7 @@ canonical_native_arch()
 {
     case "$1" in
         arm64|aarch64) printf 'aarch64\n' ;;
+        arm64e) printf 'arm64e\n' ;;
         x86_64|amd64) printf 'x86_64\n' ;;
         *) return 1 ;;
     esac
@@ -969,7 +970,12 @@ native_target_matches_host()
     [[ -n "$target" ]] || return 1
     IFS='-' read -r arch target_vendor target_os _ <<< "$target"
     target_arch="$(canonical_native_arch "$arch" 2>/dev/null || true)"
-    [[ "$target_arch" == "$host_tag" ]] || return 1
+    if [[ "$host_os" == macos && "$target_arch" == arm64e &&
+          "$host_tag" == aarch64 && "$darwin_cmake_arch" == arm64e ]]; then
+        :  # Explicit arm64e C/C++ probes have already validated this ABI.
+    else
+        [[ "$target_arch" == "$host_tag" ]] || return 1
+    fi
 
     case "$host_os" in
         macos)
@@ -1006,7 +1012,12 @@ native_installed_target_matches_host()
 {
     native_target_matches_host "$1" || return 1
     if [[ "$host_os" == macos ]]; then
-        [[ "$1" =~ ^(arm64|aarch64|x86_64|amd64)-apple-(macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+        [[ "$1" =~ ^(arm64|arm64e|aarch64|x86_64|amd64)-apple-(macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+        # When arm64e is explicitly selected, an ordinary arm64 compiler
+        # default is insufficient even if -arch arm64e works in smoke tests.
+        if [[ "$darwin_cmake_arch" == arm64e ]]; then
+            [[ "$1" == arm64e-apple-* ]] || return 1
+        fi
     fi
 }
 
@@ -1108,7 +1119,15 @@ fi
 # Keep the original compiler triple only for the admission checks above.
 llvm_host_triple="$bootstrap_cc_target_canonical"
 if [[ "$host_os" == macos ]]; then
-    llvm_host_triple="$host_tag-apple-macosx$deployment_target"
+    llvm_host_triple="$(macos_upgrade_native_llvm_triple \
+        "$bootstrap_cc_target_canonical" "$darwin_cmake_arch" \
+        "$deployment_target")" || {
+        printf 'error: cannot upgrade Apple native seed triple to macOS deployment: %s (arch=%s, minimum=%s)\n' \
+            "$bootstrap_cc_target_canonical" "$darwin_cmake_arch" "$deployment_target" >&2
+        exit 1
+    }
+    printf 'WHP native LLVM target upgrade: seed=%s; macOS=%s\n' \
+        "$bootstrap_cc_target_canonical" "$llvm_host_triple" >&2
 fi
 llvm_default_target_triple="$llvm_host_triple"
 

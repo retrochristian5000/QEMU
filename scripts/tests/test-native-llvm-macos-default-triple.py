@@ -12,31 +12,54 @@ assert "-DLLVM_MACOS_HOST_SDK_RESOLVE=ON" in s
 assert '"-DCMAKE_OSX_SYSROOT=$sdkroot"' in s
 assert 'MacOSX*.sdk) ;;' in s
 assert 'llvm_host_triple="$bootstrap_cc_target_canonical"' in s
-assert 'llvm_host_triple="$host_tag-apple-macosx$deployment_target"' in s
+assert 'macos_upgrade_native_llvm_triple' in s
 
 block = s.split('llvm_host_triple="$bootstrap_cc_target_canonical"\n', 1)[1].split(
     '\n# The WHP LLVM fork is already', 1)[0]
-assert 'llvm_host_triple="$host_tag-apple-macosx$deployment_target"' in block
+assert 'macos_upgrade_native_llvm_triple' in block
 assert 'llvm_default_target_triple="$llvm_host_triple"' in block
 
+abi_helpers = (root / 'scripts/whp-build/macos-target-abi.bash').read_text()
+
 for host_os, arch, version, seed, wanted in [
-    ("macos", "aarch64", "26.0", "aarch64-apple-darwin25.0.0", "aarch64-apple-macosx26.0"),
-    ("macos", "aarch64", "15.6", "aarch64-apple-darwin24.6", "aarch64-apple-macosx15.6"),
+    ("macos", "arm64", "26.0", "aarch64-apple-darwin25.0.0", "aarch64-apple-macosx26.0"),
+    ("macos", "arm64", "15.6", "aarch64-apple-darwin24.6", "aarch64-apple-macosx15.6"),
+    ("macos", "arm64e", "27.2", "aarch64-apple-darwin27.2.0", "arm64e-apple-macosx27.2"),
+    ("macos", "arm64e", "26.3", "arm64e-apple-darwin25.2.0", "arm64e-apple-macosx26.3"),
     ("macos", "x86_64", "13.7", "x86_64-apple-darwin22", "x86_64-apple-macosx13.7"),
     ("linux", "x86_64", "", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"),
 ]:
     setup = (
         f'host_os={host_os}\nhost_tag={arch}\ndeployment_target={version!r}\n'
+        f'darwin_cmake_arch={arch!r}\n'
         f'bootstrap_cc_target_canonical={seed!r}\n'
     )
-    result = subprocess.run(["bash", "-c", setup + 'set -eu\n' +
+    result = subprocess.run(["bash", "-c", 'set -eu\n' + abi_helpers + setup +
                              'llvm_host_triple="$bootstrap_cc_target_canonical"\n' +
                              block + '\nprintf "%s|%s\\n" "$llvm_host_triple" '
                                      '"$llvm_default_target_triple"'],
                             capture_output=True, text=True, check=True)
-    expected_host = wanted if host_os == "macos" else seed
-    assert result.stdout.strip() == expected_host + "|" + wanted, (
-        host_os, version, result.stdout, result.stderr)
+    assert result.stdout.strip() == wanted + "|" + wanted, (
+        host_os, arch, version, result.stdout, result.stderr)
+    if host_os == "macos":
+        assert "WHP native LLVM target upgrade:" in result.stderr
+
+# Never rewrite untrusted or non-Apple Darwin triples to Apple macOS.
+for bad_seed, selected, version in [
+    ('aarch64-unknown-darwin27.2', 'arm64', '27.2'),
+    ('aarch64-apple-ios27.2', 'arm64', '27.2'),
+    ('aarch64-apple-darwin27.2-simulator', 'arm64', '27.2'),
+    ('x86_64-apple-darwin25.0', 'arm64e', '26.0'),
+    ('arm64e-apple-macosx27.2', 'arm64', '27.2'),
+    ('aarch64-apple-darwin25.0', 'arm64', '10.15'),
+    ('aarch64-apple-darwin25.0', 'arm64', 'invalid'),
+]:
+    result = subprocess.run(
+        ['bash', '-c', 'set -euo pipefail\n' + abi_helpers +
+         '\nmacos_upgrade_native_llvm_triple "$1" "$2" "$3"\n',
+         '--', bad_seed, selected, version], capture_output=True, text=True)
+    assert result.returncode != 0, (bad_seed, selected, result.stdout)
+
 
 # A Darwin kernel triple and a macOS product triple may describe the same
 # bootstrap ABI. Exercise the actual admission guard separately from the
@@ -88,6 +111,7 @@ for host_os, c_target, cxx_target, accepted in [
     setup = (
         'set -euo pipefail\n'
         f'host_os={shlex.quote(host_os)}\n'
+        'darwin_cmake_arch=arm64\n'
         f'host_tag={"aarch64" if host_os == "macos" else "x86_64"}\n'
         f'bootstrap_cc_target_canonical={shlex.quote(c_target)}\n'
         f'bootstrap_cxx_target_canonical={shlex.quote(cxx_target)}\n'
@@ -166,19 +190,23 @@ assert s.count('native_installed_target_matches_host "$target" || {') == 2
 installed_target_probe = ('set -euo pipefail\n' + helpers + '\n'
                           'host_os=macos\n'
                           'host_tag="$2"\n'
+                          'darwin_cmake_arch="$3"\n'
                           'native_installed_target_matches_host "$1"\n')
-for triple, arch, accepted in (
-    ('aarch64-apple-macosx27.3', 'aarch64', True),
-    ('arm64-apple-macosx27.3.0', 'aarch64', True),
-    ('x86_64-apple-macosx15.6', 'x86_64', True),
-    ('aarch64-apple-darwin27.3.0', 'aarch64', False),
-    ('aarch64-apple-darwin', 'aarch64', False),
-    ('aarch64-apple-macosx', 'aarch64', False),
-    ('aarch64-apple-ios27.3', 'aarch64', False),
-    ('aarch64-apple-macosx27.3-simulator', 'aarch64', False),
+for triple, arch, selected, accepted in (
+    ('aarch64-apple-macosx27.3', 'aarch64', 'arm64', True),
+    ('arm64-apple-macosx27.3.0', 'aarch64', 'arm64', True),
+    ('arm64e-apple-macosx27.3', 'aarch64', 'arm64e', True),
+    ('aarch64-apple-macosx27.3', 'aarch64', 'arm64e', False),
+    ('arm64e-apple-macosx27.3', 'aarch64', 'arm64', False),
+    ('x86_64-apple-macosx15.6', 'x86_64', 'x86_64', True),
+    ('aarch64-apple-darwin27.3.0', 'aarch64', 'arm64', False),
+    ('aarch64-apple-darwin', 'aarch64', 'arm64', False),
+    ('aarch64-apple-macosx', 'aarch64', 'arm64', False),
+    ('aarch64-apple-ios27.3', 'aarch64', 'arm64', False),
+    ('aarch64-apple-macosx27.3-simulator', 'aarch64', 'arm64', False),
 ):
     result = subprocess.run(
-        ['bash', '-c', installed_target_probe, '--', triple, arch],
+        ['bash', '-c', installed_target_probe, '--', triple, arch, selected],
         capture_output=True, text=True,
     )
     assert (result.returncode == 0) == accepted, (

@@ -76,3 +76,40 @@ macos_target_abi_key()
     fi
     printf '%s-apple-macosx%d.%d.%d\n' "$arch" "$major" "$minor" "$patch"
 }
+
+# Upgrade a validated Apple native C/C++ seed identity to the configured
+# macOS *product* target. A Darwin seed version describes the kernel, not the
+# deployment minimum; CMake and the MacOSX SDK own that minimum. For explicit
+# arm64e, retain the pointer-authentication ABI in the upgraded triple.
+# This is deliberately NOT a generic Darwin-clone rewrite.
+macos_upgrade_native_llvm_triple()
+{
+    local seed_triple="$1" selected_arch="$2" deployment="$3"
+    local seed_abi output_arch major
+
+    seed_abi="$(macos_target_abi_key "$seed_triple")" || return 1
+    case "$selected_arch" in
+        arm64)
+            [[ "$seed_abi" == aarch64-apple-macosx* ]] || return 1
+            output_arch=aarch64
+            ;;
+        arm64e)
+            case "$seed_abi" in
+                aarch64-apple-macosx*|arm64e-apple-macosx*) ;;
+                *) return 1 ;;
+            esac
+            output_arch=arm64e
+            ;;
+        x86_64)
+            [[ "$seed_abi" == x86_64-apple-macosx* ]] || return 1
+            output_arch=x86_64
+            ;;
+        *) return 1 ;;
+    esac
+    [[ "$deployment" =~ ^([0-9]+)(\.[0-9]+){1,2}$ ]] || return 1
+    major="${BASH_REMATCH[1]}"
+    if [[ "$selected_arch" != x86_64 ]] && (( 10#$major < 11 )); then
+        return 1
+    fi
+    printf '%s-apple-macosx%s\n' "$output_arch" "$deployment"
+}

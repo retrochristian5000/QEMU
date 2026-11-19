@@ -313,7 +313,7 @@ assert 'darwin_cmake_arch=arm64' in bootstrap
 assert "arm64|aarch64) printf 'aarch64\\n'" in bootstrap
 assert 'canonical_native_target_triple()' in bootstrap
 assert 'llvm_host_triple="$bootstrap_cc_target_canonical"' in bootstrap
-assert 'llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"' in bootstrap
+assert 'macos_upgrade_native_llvm_triple' in bootstrap
 assert 'llvm_default_target_triple="$llvm_host_triple"' in bootstrap
 assert '-DLLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE=ON' in bootstrap
 assert '"-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch"' in bootstrap
@@ -359,7 +359,7 @@ assert '[[ "$bootstrap_cc_abi" == "$host_tag-apple-macosx" ]]' in bootstrap
 assert '[[ "$bootstrap_cxx_abi" == "$host_tag-apple-macosx" ]]' in bootstrap
 assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
 assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
-assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"')
+assert bootstrap.index('macos_upgrade_native_llvm_triple') < bootstrap.index('whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"')
 
 for loose_match in ('*-apple-darwin*', '*-apple-macos*', '*-apple-macosx*'):
     assert loose_match not in bootstrap

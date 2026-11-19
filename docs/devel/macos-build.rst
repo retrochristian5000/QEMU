@@ -63,6 +63,19 @@ The wrapper owns ``-isysroot`` and ``-mmacosx-version-min`` for C, C++,
 Objective-C, and link flags. Do not duplicate those options manually in
 ``CFLAGS``, ``CXXFLAGS``, ``OBJCFLAGS``, ``CPPFLAGS``, or ``LDFLAGS``.
 
+The native LLVM bootstrap allows native seed Clang to report a Darwin kernel
+triple, such as ``aarch64-apple-darwin25``, but **upgrades the configured
+LLVM host/default triples** to versioned macOS product targets using the
+validated deployment minimum (for example ``aarch64-apple-macosx26.0``).
+The raw seed identity remains recorded for diagnostics and cache provenance:
+Darwin kernel releases are not used as macOS product versions. An explicit
+``NATIVE_LLVM_MACOS_ARCH=arm64e`` selects
+``arm64e-apple-macosx<deployment>`` as both configured triples, not the
+ordinary AArch64 default. The existing C/C++ PAC, SDK, architecture,
+compiler-rt and installed-toolchain probes must all pass. Other Darwin-family
+vendors and iOS/Catalyst/simulator targets are not silently rewritten into
+Apple macOS targets.
+
 Architecture and Rosetta
 ------------------------
 
