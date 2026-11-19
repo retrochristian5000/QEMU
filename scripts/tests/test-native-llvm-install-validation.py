@@ -214,7 +214,17 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     builtins_archive.unlink()
     result, _ = run_probe("arm64e")
     assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+    assert "no installed libclang_rt*.a archives" in result.stderr, result.stderr
+
+    # Differentiate no static runtimes at all from an incomplete install that
+    # has optional runtimes but lacks the mandatory host builtins archive.
+    optional_archive = darwin_runtime / "libclang_rt.profile_osx.a"
+    optional_archive.write_bytes(plain_archive)
+    result, _ = run_probe("arm64e")
+    assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
     assert "missing compiler-rt builtins archive" in result.stderr, result.stderr
+    optional_archive.unlink()
+
     builtins_archive.write_bytes(fat_table + plain_archive + plain_archive)
     result, _ = run_probe("arm64e")
     assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
