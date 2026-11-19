@@ -346,6 +346,18 @@ target list, so the menu does not expose a conflicting raw target-list field.
 Disabling every system emulator passes ``--disable-system`` for a tools-only
 build.
 
+Under ``System emulators``, ``BUILD_QEMU_SYSTEM_ALL`` offers an opt-in
+shortcut to build all three WHP menu-supported system emulators: i386,
+PowerPC, and SPARC. This does **not** mean every QEMU upstream target.
+The switch defaults to ``n``, preserving existing per-target behavior.
+When enabled, it collapses the three individual emulator toggles in both
+the Python/curses menu and the POSIX-shell fallback and selects all three
+in the Bash and portable build planners. The saved individual values are
+**not** modified; turning the switch off expands the individual toggles
+with their previous choices intact. An active ``QEMU_X86_FAMILY_LINK``
+still substitutes x86_64 for the i386 backend using its existing guardrails.
+Explicitly named build commands still retain their normal request handling.
+
 The ``QEMU hardware`` section is device-first. Each currently exposed audio
 model appears once, with independent ``i386`` and ``ppc`` choices underneath:
 Sound Blaster 16, AdLib, Gravis UltraSound, Crystal CS4231A, PC speaker,
