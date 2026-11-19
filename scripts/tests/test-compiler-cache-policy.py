@@ -33,7 +33,11 @@ class CompilerCachePolicyTests(unittest.TestCase):
         self.assertEqual(option.label, 'Compiler cache')
         self.assertEqual(option.kind, 'choice')
         self.assertEqual(option.default, 'auto')
-        self.assertEqual(option.choices, ('auto', 'ccache', 'sccache', 'none'))
+        self.assertEqual(
+            option.choices,
+            ('auto', 'ccache', 'sccache', 'managed-sccache', 'none'),
+        )
+        self.assertNotIn('BOOTSTRAP_SCCACHE', config.OPTION_BY_KEY)
 
     def test_cache_choice_is_exported_without_boolean_reencoding(self):
         config = load_module(CONFIG_TOOL, 'whp_config_cache_export_test')
@@ -45,6 +49,76 @@ class CompilerCachePolicyTests(unittest.TestCase):
         values['COMPILER_CACHE'] = 'auto'
         assignments = config.shell_assignments(config.ConfigState(values), {})
         self.assertNotIn('COMPILER_CACHE=', assignments)
+
+    def test_legacy_managed_cache_profiles_migrate_without_file_writes(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_cache_migration_test')
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / '.whpconfig'
+            for old, selected, expected in (
+                ('y', 'auto', 'managed-sccache'),
+                ('y', 'sccache', 'managed-sccache'),
+                ('n', 'sccache', 'sccache'),
+            ):
+                with self.subTest(old=old, selected=selected):
+                    original = (
+                        'WHP_CONFIG_VERSION=3\n'
+                        f'BOOTSTRAP_SCCACHE={old}\n'
+                        f'COMPILER_CACHE={selected}\n'
+                    )
+                    path.write_text(original, encoding='utf-8')
+                    state = config.load_config(path)
+                    self.assertEqual(state.values['COMPILER_CACHE'], expected)
+                    self.assertNotIn('BOOTSTRAP_SCCACHE', state.unknown)
+                    self.assertEqual(path.read_text(encoding='utf-8'), original)
+                    assignments = config.shell_assignments(state, {})
+                    self.assertNotIn('BOOTSTRAP_SCCACHE=', assignments)
+                    self.assertIn(f"COMPILER_CACHE='{expected}'", assignments)
+                    config.save_config(path, state)
+                    self.assertNotIn('BOOTSTRAP_SCCACHE=', path.read_text())
+                    self.assertIn(f'COMPILER_CACHE={expected}', path.read_text())
+
+    def test_legacy_managed_cache_conflicts_fail_before_rewrite(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_cache_conflict_test')
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / '.whpconfig'
+            for selected in ('ccache', 'none'):
+                original = (
+                    'WHP_CONFIG_VERSION=3\n'
+                    'BOOTSTRAP_SCCACHE=y\n'
+                    f'COMPILER_CACHE={selected}\n'
+                )
+                path.write_text(original, encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'conflicts'):
+                    config.load_config(path)
+                self.assertEqual(path.read_text(encoding='utf-8'), original)
+
+    def test_managed_cache_choice_resolves_to_legacy_bootstrap_stage(self):
+        build = (ROOT / 'build.sh').read_text(encoding='utf-8')
+        start = build.index('# The retired BOOTSTRAP_SCCACHE menu toggle')
+        end = build.index('\n# PGO use implies', start)
+        script = (
+            'set -eu\n' + build[start:end] +
+            '\nprintf "cache=%s bootstrap=%s\\n" '
+            '"${COMPILER_CACHE:-unset}" "${BOOTSTRAP_SCCACHE:-unset}"\n'
+        )
+        for cache, old, expected, succeeds in (
+            ('managed-sccache', '', 'cache=sccache bootstrap=1', True),
+            ('managed-sccache', '1', 'cache=sccache bootstrap=1', True),
+            ('managed-sccache', '0', 'conflicts', False),
+            ('sccache', '', 'cache=sccache bootstrap=unset', True),
+        ):
+            with self.subTest(cache=cache, old=old):
+                env = {**os.environ, 'COMPILER_CACHE': cache}
+                if old:
+                    env['BOOTSTRAP_SCCACHE'] = old
+                else:
+                    env.pop('BOOTSTRAP_SCCACHE', None)
+                proc = subprocess.run(
+                    ['/bin/sh', '-c', script],
+                    env=env, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(proc.returncode == 0, succeeds, proc.stderr)
+                self.assertIn(expected, proc.stdout if succeeds else proc.stderr)
 
     def test_ninja_auto_cache_prefers_ccache_then_sccache(self):
         ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_auto_test')

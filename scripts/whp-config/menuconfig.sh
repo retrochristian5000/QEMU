@@ -75,8 +75,9 @@ set_value()
 # Migrate only the scratch copy. An unsaved quit leaves .whpconfig untouched.
 migrate_retired_cache()
 {
+    awk '/^BOOTSTRAP_SCCACHE=/{found=1} END {exit !found}' "$WORK" ||
+        return 0
     old=$(get_value BOOTSTRAP_SCCACHE)
-    [ -n "$old" ] || return 0
     current=$(get_value COMPILER_CACHE)
     case "$old" in
         y)

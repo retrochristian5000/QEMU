@@ -189,6 +189,53 @@ def check():
             assert diagnostic in refused.stderr, refused.stderr
             assert config.read_text(encoding="utf-8") == old
 
+        # Old sccacher toggles are normalized in a scratch file, so the
+        # retired menu setting never reappears after saving.
+        cache_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith('COMPILER_CACHE|')
+        )
+        assert not any(
+            line.startswith('BOOTSTRAP_SCCACHE|')
+            for line in original.splitlines()
+        )
+        config.write_text(
+            'WHP_CONFIG_VERSION=3\n'
+            'BOOTSTRAP_SCCACHE=y\n'
+            'COMPILER_CACHE=auto\n',
+            encoding='utf-8',
+        )
+        legacy_content = config.read_text(encoding='utf-8')
+        old_dump = run(shell, config, root, '--dump')
+        assert 'COMPILER_CACHE' in old_dump.stdout
+        assert 'managed-sccache' in old_dump.stdout
+        assert 'BOOTSTRAP_SCCACHE' not in old_dump.stdout
+        assert config.read_text(encoding='utf-8') == legacy_content
+        upgraded = run(shell, config, root, input_text='s\nq\n')
+        assert upgraded.returncode == 0, upgraded.stderr
+        migrated = config.read_text(encoding='utf-8')
+        assert 'COMPILER_CACHE=managed-sccache\n' in migrated
+        assert 'BOOTSTRAP_SCCACHE=' not in migrated
+
+        # Revert to the standard cache option without a second toggle.
+        updated = run(
+            shell, config, root,
+            input_text=f'{cache_number}\ns\nq\n',
+        )
+        assert updated.returncode == 0, updated.stderr
+        assert 'COMPILER_CACHE=none\n' in config.read_text(encoding='utf-8')
+
+        # Conflicting retired data is never overwritten on error.
+        conflicting = (
+            'WHP_CONFIG_VERSION=3\nBOOTSTRAP_SCCACHE=y\n'
+            'COMPILER_CACHE=none\n'
+        )
+        config.write_text(conflicting, encoding='utf-8')
+        bad = run(shell, config, root, '--dump')
+        assert bad.returncode == 2, bad
+        assert 'conflicts' in bad.stderr
+        assert config.read_text(encoding='utf-8') == conflicting
+
         # The shell fallback works with no Python runtime. Invalid settings
         # must be diagnosed before replacing the user's existing file, while
         # allowing an interactive reset and a subsequent successful save.
