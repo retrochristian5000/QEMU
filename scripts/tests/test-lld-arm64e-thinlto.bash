@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Verify ARM64e ThinLTO native output and PAC fixups using the pinned LLVM.
 set -euo pipefail
-if [[ $# != 5 ]]; then
-    echo 'usage: test-lld-arm64e-thinlto.bash <ld64.lld> <opt> <llvm-readobj> <llvm-objdump> <llvm-lto2>' >&2
+if [[ $# != 6 ]]; then
+    echo 'usage: test-lld-arm64e-thinlto.bash <ld64.lld> <opt> <llvm-readobj> <llvm-objdump> <llvm-lto2> <llvm-lto>' >&2
     exit 2
 fi
 ld="$1"
@@ -11,7 +11,8 @@ opt="$2"
 readobj="$3"
 objdump="$4"
 lto2="$5"
-for tool in "$ld" "$opt" "$readobj" "$objdump" "$lto2"; do
+legacy_lto="$6"
+for tool in "$ld" "$opt" "$readobj" "$objdump" "$lto2" "$legacy_lto"; do
     [[ -x "$tool" ]] || { echo "missing LLVM tool: $tool" >&2; exit 1; }
 done
 
@@ -165,29 +166,52 @@ awk -v dir="$work/lto-shared" '
     /^;--- / {file=$2; next}
     file!="" {print > (dir "/" file)}
 ' "$shared_fixture"
-for target in arm64 arm64e; do
+for target in arm64 arm64e arm64e-x1; do
     "$opt" -thinlto-bc "$work/lto-shared/$target.ll" -o "$work/lto-shared/$target.bc"
 done
-for order in forward reverse; do
-    if [[ "$order" == forward ]]; then
-        first=arm64
-        second=arm64e
-    else
-        first=arm64e
-        second=arm64
-    fi
-    if "$lto2" run "$work/lto-shared/$first.bc" "$work/lto-shared/$second.bc" \
-         -o "$work/lto-shared/$order" \
-         -r="$work/lto-shared/arm64.bc,plain_entry,px" \
-         -r="$work/lto-shared/arm64e.bc,auth_entry,px" \
-         >"$work/lto-shared/error.log" 2>&1; then
-        echo "shared LLVM ThinLTO accepted mixed Darwin ARM64 ABIs" >&2
-        exit 1
-    fi
-    grep -Fq 'cannot mix Darwin arm64 and arm64e bitcode in one LTO link' \
-        "$work/lto-shared/error.log" || {
-        cat "$work/lto-shared/error.log" >&2
-        exit 1
-    }
+# Both LTO frontends must reject mixing a plain ARM64 module with either
+# ARM64e variant, independent of input ordering. No backend target is invoked
+# for x1, which remains an object-metadata-only subtype.
+for variant in arm64e arm64e-x1; do
+    case "$variant" in
+        arm64e) symbol=auth_entry ;;
+        arm64e-x1) symbol=x1_entry ;;
+    esac
+    for order in forward reverse; do
+        if [[ "$order" == forward ]]; then
+            first=arm64
+            second="$variant"
+        else
+            first="$variant"
+            second=arm64
+        fi
+        case_name="$variant-$order"
+        if "$lto2" run "$work/lto-shared/$first.bc" \
+                "$work/lto-shared/$second.bc" \
+                -o "$work/lto-shared/$case_name" \
+                -r="$work/lto-shared/arm64.bc,plain_entry,px" \
+                -r="$work/lto-shared/$variant.bc,$symbol,px" \
+                >"$work/lto-shared/$case_name-modern.log" 2>&1; then
+            echo "modern ThinLTO accepted mixed Darwin ARM64 ABIs: $case_name" >&2
+            exit 1
+        fi
+        grep -Fq 'cannot mix Darwin arm64 and arm64e bitcode in one LTO link' \
+            "$work/lto-shared/$case_name-modern.log" || {
+            cat "$work/lto-shared/$case_name-modern.log" >&2
+            exit 1
+        }
+
+        if "$legacy_lto" -thinlto-action=run \
+                "$work/lto-shared/$first.bc" "$work/lto-shared/$second.bc" \
+                >"$work/lto-shared/$case_name-legacy.log" 2>&1; then
+            echo "legacy ThinLTO accepted mixed Darwin ARM64 ABIs: $case_name" >&2
+            exit 1
+        fi
+        grep -Fq 'cannot mix Darwin arm64 and arm64e bitcode in one ThinLTO link' \
+            "$work/lto-shared/$case_name-legacy.log" || {
+            cat "$work/lto-shared/$case_name-legacy.log" >&2
+            exit 1
+        }
+    done
 done
-echo 'ARM64e ThinLTO PAC, native ABI, caching, and cross-ABI guards: passed'
+echo 'ARM64e ThinLTO PAC, native ABI, caching, and modern/legacy cross-ABI guards: passed'

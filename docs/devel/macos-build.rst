@@ -869,6 +869,22 @@ will execute an arbitrary third-party ARM64e executable. Compiler
 driver configuration and response files also require scrutiny when
 they are allowed from external inputs.
 
+ARM64e LTO input ABI isolation
+----------------------------
+
+The pinned LLVM fork enforces the Darwin ARM64/ARM64e pointer-authentication
+ABI boundary in both the modern ``llvm-lto2`` and legacy ``llvm-lto``
+ThinLTO interfaces. It also distinguishes the metadata-only
+``arm64e.x1`` subtype from ordinary ``arm64``: a boolean
+``isArm64e()`` check alone cannot detect that mismatch. Tests reverse the
+order of input modules to ensure neither frontend merges incompatible bitcode.
+
+QEMU's existing ``scripts/tests/test-lld-arm64e-thinlto.bash`` runs both
+frontends with the pinned LLVM tools and continues to verify native ARM64e
+object subtypes, pointer-authenticated relocations, signed indirect calls and
+ThinLTO cache reuse. The ``arm64e.x1`` tests reject incompatible metadata
+before attempting code generation; they do not assert x1 execution support.
+
 ARM64e Mach-O LLD authenticated import linking
 ----------------------------------------------
 
