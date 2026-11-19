@@ -997,7 +997,19 @@ native_target_matches_host()
 # Compare the ABI represented by native C/C++ triples, not their spelling.
 # Clang can report the same macOS release as a Darwin kernel version or as a
 # macOS product version; Linux compiler vendors can differ without changing
-# the ABI. Keep the original triple for LLVM_HOST_TRIPLE below.
+# the ABI. Preserve bootstrap identity only for admission, not as the installed
+# native macOS toolchain's configured host triple.
+# A bootstrap compiler's Darwin spelling is admissible after the SDK/ABI
+# probes, but an installed native LLVM compiler must report the configured
+# macOS product target rather than silently falling back to generic Darwin.
+native_installed_target_matches_host()
+{
+    native_target_matches_host "$1" || return 1
+    if [[ "$host_os" == macos ]]; then
+        [[ "$1" =~ ^(arm64|aarch64|x86_64|amd64)-apple-(macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+    fi
+}
+
 native_target_abi_key()
 {
     case "$host_os" in
@@ -1090,16 +1102,15 @@ if [[ "$host_os" == linux ]]; then
         exit 1
     fi
 fi
-# The bootstrap compiler may report the Darwin *kernel* host triple.
-# Retain that for LLVM's host-tool identity. Clang's default compilation
-# target must instead identify macOS and its deployment version explicitly;
-# Darwin versions (25/26) are not macOS product/deployment versions.
+# The bootstrap compiler may report a Darwin *kernel* triple, but the
+# configured native LLVM host and Clang default must both identify macOS at
+# the validated deployment version. Darwin 25/26 are not macOS 25/26.
+# Keep the original compiler triple only for the admission checks above.
 llvm_host_triple="$bootstrap_cc_target_canonical"
 if [[ "$host_os" == macos ]]; then
-    llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"
-else
-    llvm_default_target_triple="$llvm_host_triple"
+    llvm_host_triple="$host_tag-apple-macosx$deployment_target"
 fi
+llvm_default_target_triple="$llvm_host_triple"
 
 # The WHP LLVM fork is already a QEMU submodule and is the single source for
 # firmware, legacy-target, and native compiler profiles. Keep the native lane
@@ -1652,7 +1663,7 @@ usable()
         return 1
     }
     target="$(query_target_triple "$prefix/bin/clang")"
-    native_target_matches_host "$target" || {
+    native_installed_target_matches_host "$target" || {
         native_llvm_validation_error ABI "Clang target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
         return 1
     }
@@ -1663,7 +1674,7 @@ usable()
         return 1
     }
     target="$(query_target_triple "$prefix/bin/clang++")"
-    native_target_matches_host "$target" || {
+    native_installed_target_matches_host "$target" || {
         native_llvm_validation_error ABI "Clang++ target ${target:-<unknown>} does not match host $host_id (expected $llvm_default_target_triple)"
         return 1
     }

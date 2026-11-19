@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native LLVM: explicit macOS target, separate Darwin host identity."""
+"""Native LLVM: explicit macOS host and default targets, Darwin seed admission."""
 from pathlib import Path
 import subprocess
 import shlex
@@ -12,11 +12,12 @@ assert "-DLLVM_MACOS_HOST_SDK_RESOLVE=ON" in s
 assert '"-DCMAKE_OSX_SYSROOT=$sdkroot"' in s
 assert 'MacOSX*.sdk) ;;' in s
 assert 'llvm_host_triple="$bootstrap_cc_target_canonical"' in s
+assert 'llvm_host_triple="$host_tag-apple-macosx$deployment_target"' in s
 
 block = s.split('llvm_host_triple="$bootstrap_cc_target_canonical"\n', 1)[1].split(
     '\n# The WHP LLVM fork is already', 1)[0]
-assert 'llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"' in block
-assert 'else\n    llvm_default_target_triple="$llvm_host_triple"\nfi' in block
+assert 'llvm_host_triple="$host_tag-apple-macosx$deployment_target"' in block
+assert 'llvm_default_target_triple="$llvm_host_triple"' in block
 
 for host_os, arch, version, seed, wanted in [
     ("macos", "aarch64", "26.0", "aarch64-apple-darwin25.0.0", "aarch64-apple-macosx26.0"),
@@ -33,12 +34,13 @@ for host_os, arch, version, seed, wanted in [
                              block + '\nprintf "%s|%s\\n" "$llvm_host_triple" '
                                      '"$llvm_default_target_triple"'],
                             capture_output=True, text=True, check=True)
-    assert result.stdout.strip() == seed + "|" + wanted, (
+    expected_host = wanted if host_os == "macos" else seed
+    assert result.stdout.strip() == expected_host + "|" + wanted, (
         host_os, version, result.stdout, result.stderr)
 
 # A Darwin kernel triple and a macOS product triple may describe the same
-# native ABI. Exercise the actual bootstrap guard rather than assuming its
-# raw reported target strings must be identical.
+# bootstrap ABI. Exercise the actual admission guard separately from the
+# stricter installed-LLVM product-triple contract.
 def bootstrap_function(name):
     start = s.index(f'\n{name}()\n{{') + 1
     end = s.index('\n}\n', start) + 3
@@ -48,7 +50,8 @@ def bootstrap_function(name):
 helpers = (root / 'scripts/whp-build/macos-target-abi.bash').read_text() + '\n'
 helpers += '\n'.join(bootstrap_function(name) for name in (
     'canonical_native_arch', 'canonical_native_target_triple',
-    'linux_target_abi_key', 'native_target_matches_host', 'native_target_abi_key',
+    'linux_target_abi_key', 'native_target_matches_host',
+    'native_installed_target_matches_host', 'native_target_abi_key',
 ))
 guard = '# Keep C and C++ on one host target ABI' + s.split(
     '# Keep C and C++ on one host target ABI', 1)[1].split(
@@ -128,6 +131,32 @@ for triple, expected in (
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == expected, (triple, result.stdout)
 
+# Installed Clang/Clang++ must not report generic Darwin after LLVM has
+# been configured for a specific macOS product/deployment target. The seed
+# acceptance tested above is intentionally less strict.
+assert s.count('native_installed_target_matches_host "$target" || {') == 2
+installed_target_probe = ('set -euo pipefail\n' + helpers + '\n'
+                          'host_os=macos\n'
+                          'host_tag="$2"\n'
+                          'native_installed_target_matches_host "$1"\n')
+for triple, arch, accepted in (
+    ('aarch64-apple-macosx27.3', 'aarch64', True),
+    ('arm64-apple-macosx27.3.0', 'aarch64', True),
+    ('x86_64-apple-macosx15.6', 'x86_64', True),
+    ('aarch64-apple-darwin27.3.0', 'aarch64', False),
+    ('aarch64-apple-darwin', 'aarch64', False),
+    ('aarch64-apple-macosx', 'aarch64', False),
+    ('aarch64-apple-ios27.3', 'aarch64', False),
+    ('aarch64-apple-macosx27.3-simulator', 'aarch64', False),
+):
+    result = subprocess.run(
+        ['bash', '-c', installed_target_probe, '--', triple, arch],
+        capture_output=True, text=True,
+    )
+    assert (result.returncode == 0) == accepted, (
+        triple, result.returncode, result.stderr,
+    )
+
 # Keep the compiler-rt, native LLVM default, and platform checks distinct.
 assert '"-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"' in s
 assert '"-DLLVM_HOST_TRIPLE=$llvm_host_triple"' in s
@@ -136,4 +165,4 @@ if cmake.is_file():  # Submodule may not be initialized in standalone CI.
     llvm = cmake.read_text()
     assert "LLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE" in llvm
     assert "CMAKE_OSX_DEPLOYMENT_TARGET" in llvm
-print("Native LLVM macOS default-triple separation: verified")
+print("Native LLVM explicit macOS host/default triples: verified")
