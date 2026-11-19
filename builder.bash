@@ -104,7 +104,7 @@ export QEMU_HOST_OPTIMIZATION
 
 BUILD_QEMU_SYSTEM_SPARC="${BUILD_QEMU_SYSTEM_SPARC:-0}"
 whp_require_boolean_values BUILD_QEMU_SYSTEM_SPARC
-if [[ "$BUILD_QEMU_SYSTEM_SPARC" == 1 ]]; then
+if [[ "$BUILD_QEMU_SYSTEM_ALL" == 1 || "$BUILD_QEMU_SYSTEM_SPARC" == 1 ]]; then
     whp_qemu_target_list_add sparc-softmmu
     whp_prepare_configure_args
 fi
