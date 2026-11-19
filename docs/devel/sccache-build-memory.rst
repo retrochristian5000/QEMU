@@ -101,7 +101,12 @@ uncacheable and is forwarded to Clang; it must rebuild when its header or
 compiler inputs change. This is not producer-side PCH artifact caching.
 
 Only a successful managed sccacher setup in ``build.sh`` exports the
-``WHP_MANAGED_SCCACHE=1`` capability marker. An ordinary system sccache,
+``WHP_MANAGED_SCCACHE=1`` capability marker. Native LLVM now independently
+checks that the selected executable is under the current managed build prefix
+and that its local-only marker matches the QEMU gitlink and bootstrap schema
+before trusting that flag. Direct bootstraps inheriting a stale flag fall back
+to bypassing sccache for C++ PCH consumers. This is provenance validation,
+not a signature or guarantee against malicious changes to installed bytes. An ordinary system sccache,
 including ``COMPILER_CACHE=sccache`` without the managed bootstrap, still
 uses the conservative split: LLVM C++ bypasses sccache with PCH enabled,
 while LLVM C and later QEMU compilation retain their normal cache policies.

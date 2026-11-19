@@ -324,6 +324,58 @@ class ManagedSccacheTests(unittest.TestCase):
                     ['/native/bin/git', '-C', str(source), 'status', '--porcelain',
                      '--untracked-files=no'], capture=True)
 
+    def test_managed_pch_cache_requires_pinned_executable_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            build = root / 'build'
+            host = f'{bootstrap.platform.system().lower()}-{bootstrap.platform.machine().lower()}'
+            prefix = build / 'toolchains' / 'sccache' / host
+            executable = prefix / 'bin' / 'sccache'
+            executable.parent.mkdir(parents=True)
+            executable.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+            executable.chmod(0o755)
+            revision = 'a' * 40
+            identity = {
+                'schema': bootstrap.SCHEMA, 'gitlink': revision,
+                'features': 'local-only',
+                'profile': 'lto=false,codegen-units=8,debug=0',
+            }
+            marker = prefix / '.whp-sccacher.json'
+            marker.write_text(json.dumps(identity), encoding='utf-8')
+            git_record = f'160000 commit {revision}\ttoolchains/sccacher'
+            with mock.patch.object(bootstrap, 'ROOT', root), \
+                 mock.patch.dict(os.environ, {'GIT': '/seed/git'}), \
+                 mock.patch.object(bootstrap, 'call',
+                                   return_value=git_record):
+                self.assertTrue(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, pathlib.Path('/usr/bin/sccache'))
+                )
+                identity['gitlink'] = 'b' * 40
+                marker.write_text(json.dumps(identity), encoding='utf-8')
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+                identity['gitlink'] = revision
+                identity['features'] = 'distributed'
+                marker.write_text(json.dumps(identity), encoding='utf-8')
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+                identity['features'] = 'local-only'
+                marker.write_text(json.dumps(identity), encoding='utf-8')
+                executable.chmod(0o644)
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+                executable.chmod(0o755)
+                marker.unlink()
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+
     def test_cached_binary_skips_cargo(self):
         with tempfile.TemporaryDirectory() as directory:
             build = pathlib.Path(directory)

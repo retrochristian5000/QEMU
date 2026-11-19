@@ -385,6 +385,20 @@ if [[ -n "$compiler_cache_cmd" ]]; then
     esac
     WHP_COMPILER_CACHE_CMD="$compiler_cache_cmd"
     export WHP_COMPILER_CACHE_CMD WHP_COMPILER_CACHE_ROOT
+    # Direct bootstrap invocations can inherit a stale success flag even
+    # though build.sh clears it. Only the pinned managed executable with
+    # matching source/profile metadata may enable PCH consumer caching.
+    # On failure, retain ordinary C caching and bypass sccache for C++ PCH.
+    if [[ "${WHP_MANAGED_SCCACHE:-0}" == 1 ]]; then
+        if [[ "$cache_base" != sccache ]] ||
+           ! "${PYTHON:-python3}" "$SOURCE_DIR/scripts/ensure-sccache.py" \
+                --build-dir "$cache_build_dir" \
+                --verify-executable "$compiler_cache_cmd"; then
+            printf '%s\n' \
+                'WHP native LLVM: unverified managed sccacher marker; disabling cached C++ PCH consumers' >&2
+            unset WHP_MANAGED_SCCACHE
+        fi
+    fi
     cmake_compiler_launcher_args=(
         "-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd"
         "-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd"

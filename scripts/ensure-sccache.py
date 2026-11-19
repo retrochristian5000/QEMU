@@ -180,10 +180,50 @@ def ensure(build_dir):
     return executable
 
 
+def verify_managed_executable(build_dir: pathlib.Path,
+                              selected: pathlib.Path) -> bool:
+    """Check the managed-cache provenance before enabling PCH consumer caching.
+
+    This is a local build-policy guard, not a cryptographic attestation of
+    executable bytes. Never infer the capability from a caller-set flag alone.
+    """
+    host = f'{platform.system().lower()}-{platform.machine().lower()}'
+    prefix = build_dir.resolve() / 'toolchains' / 'sccache' / host
+    executable = prefix / 'bin' / 'sccache'
+    marker = prefix / '.whp-sccacher.json'
+    try:
+        if selected.resolve(strict=True) != executable.resolve(strict=True):
+            return False
+        if not executable.is_file() or not os.access(executable, os.X_OK):
+            return False
+        identity = json.loads(marker.read_text(encoding='utf-8'))
+        if (identity.get('schema') != SCHEMA or
+                identity.get('features') != 'local-only' or
+                identity.get('profile') != 'lto=false,codegen-units=8,debug=0'):
+            return False
+        git = os.environ.get('GIT') or os.environ.get('WHP_GIT_SEED') or shutil.which('git')
+        if not git:
+            return False
+        entry = call([git, '-C', str(ROOT), 'ls-tree', 'HEAD',
+                      '--', str(SUBMODULE)], capture=True)
+        match = re.fullmatch(
+            r'160000 commit ([0-9a-f]{40})\ttoolchains/sccacher', entry
+        )
+        return match is not None and identity.get('gitlink') == match.group(1)
+    except (OSError, ValueError, RuntimeError, AttributeError):
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=pathlib.Path, required=True)
+    parser.add_argument('--verify-executable', type=pathlib.Path,
+                        help='check an existing pinned local-only sccacher without rebuilding')
     args = parser.parse_args()
+    if args.verify_executable is not None:
+        return 0 if verify_managed_executable(
+            args.build_dir, args.verify_executable
+        ) else 1
     try:
         path = ensure(args.build_dir.resolve())
     except (OSError, ValueError, RuntimeError) as exc:
