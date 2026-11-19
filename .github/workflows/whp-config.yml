@@ -203,6 +203,14 @@ jobs:
         # An unrelated incremental-planning failure must not hide menu regressions.
         if: ${{ !cancelled() }}
         run: |
+          # Verify the menu contract first: unrelated build regressions must
+          # not prevent configuration UI checks from reporting their result.
+          python3 -m py_compile scripts/whp-config/menuconfig.py
+          /bin/sh -n scripts/whp-config/menuconfig.sh
+          python3 scripts/tests/test-menuconfig-scroll.py
+          python3 scripts/tests/test-python-menu-fallback.py
+          python3 scripts/tests/test-menuconfig-shell-contract.py
+          bash scripts/tests/test-python-menu-fallback.bash
           # Fail early on Python syntax errors before running config or Meson tests.
           python3 -m py_compile scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-qapi-c23-keywords.py
@@ -229,10 +237,6 @@ jobs:
           bash scripts/tests/test-darwin-ppc-exec.bash
           bash scripts/tests/test-darwin-ppc-stdin.bash
           python3 scripts/tests/test-macos-api-policy.py
-          python3 scripts/tests/test-menuconfig-scroll.py
-          python3 scripts/tests/test-python-menu-fallback.py
-          python3 scripts/tests/test-menuconfig-shell-contract.py
-          bash scripts/tests/test-python-menu-fallback.bash
           python3 scripts/tests/test-whp-sparc-menu.py
           python3 scripts/tests/test-mold-config.py
           python3 scripts/tests/test-seabios-config.py
