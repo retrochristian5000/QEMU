@@ -16,11 +16,25 @@
 
 #define VGA_LEGACY_MEM_BASE 0xa0000
 
+static QDict *find_pci_device(QList *buses, const char *qdev_id);
+
 static void pci_multihead(void)
 {
     QTestState *qts;
+    QDict *resp;
+    QList *buses;
 
-    qts = qtest_init("-vga none -device VGA -device secondary-vga");
+    qts = qtest_init("-vga none -device VGA,id=video0"
+                     " -device secondary-vga,id=video1");
+
+    /* A second host window is not enough: the guest must enumerate
+     * two distinct PCI display adapters. */
+    resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
+    g_assert(qdict_haskey(resp, "return"));
+    buses = qdict_get_qlist(resp, "return");
+    g_assert_nonnull(find_pci_device(buses, "video0"));
+    g_assert_nonnull(find_pci_device(buses, "video1"));
+    qobject_unref(resp);
     qtest_quit(qts);
 }
 

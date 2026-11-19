@@ -143,3 +143,32 @@ Enjoy!
 
 --
 Gerd Hoffmann <kraxel@redhat.com>
+
+guest-visible multihead (one seat)
+----------------------------------
+
+Multihead and multiseat are different. Multiple QEMU host windows do not
+create additional guest monitors without compatible virtual video hardware.
+
+For a modern guest with a virtio-gpu display driver, explicitly request two
+scanouts instead of relying on the default single output::
+
+    -vga none -device virtio-vga,max_outputs=2
+
+Each enabled scanout needs display geometry: its host display can supply
+UI information, or the virtio-vga device's per-output xres/yres configuration
+can define it. The guest driver must still discover and enable each connector.
+The VIRTIO_GPU_CMD_GET_DISPLAY_INFO, GET_EDID and SET_SCANOUT commands apply to
+individual scanout IDs; each head must retain its own surface and updates.
+
+For a guest using multiple compatible PCI graphics adapters instead, use::
+
+    -vga none -device VGA,id=video0 -device secondary-vga,id=video1
+
+Whether an older guest OS can extend its desktop across both adapters depends
+on its actual display drivers and OS support. Do not assume that virtio-gpu is
+available in a historical guest merely because QEMU exposes the device.
+
+For the vhost-user-gpu backend, reset and scanout changes must release each
+head's frontend buffers and surfaces on the display main loop. This avoids
+stale secondary images and dangling surfaces after guest driver reloads.

@@ -18,6 +18,7 @@
 #include "chardev/char-fe.h"
 #include "qapi/error.h"
 #include "migration/blocker.h"
+#include "system/cpus.h"
 #include "standard-headers/drm/drm_fourcc.h"
 
 typedef enum VhostUserGpuRequest {
@@ -192,6 +193,19 @@ vhost_user_gpu_unblock(VhostUserGPU *g)
     vhost_user_gpu_send_msg(g, &msg);
 }
 
+/*
+ * The console owns an installed display surface; the GPU owns a surface
+ * waiting for its first update. Clear that distinction before replacement.
+ */
+static void
+vhost_user_gpu_clear_scanout_ds(struct virtio_gpu_scanout *s)
+{
+    if (s->ds && s->ds != qemu_console_surface(s->con)) {
+        qemu_free_displaysurface(s->ds);
+    }
+    s->ds = NULL;
+}
+
 static void
 vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
 {
@@ -261,6 +275,11 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
         g->parent_obj.enable = 1;
         s = &g->parent_obj.scanout[m->scanout_id];
         con = s->con;
+        if (g->dmabuf[m->scanout_id]) {
+            qemu_console_gl_release_dmabuf(con, g->dmabuf[m->scanout_id]);
+            g_clear_pointer(&g->dmabuf[m->scanout_id], qemu_dmabuf_free);
+        }
+        vhost_user_gpu_clear_scanout_ds(s);
 
         if (m->width == 0) {
             qemu_console_set_surface(con, NULL);
@@ -278,7 +297,7 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
         uint32_t offset = 0;
         uint32_t stride = m->fd_stride;
         uint64_t modifier = DRM_FORMAT_MOD_INVALID;
-        QemuDmaBuf *dmabuf;
+        QemuDmaBuf *old, *dmabuf;
 
         if (m->scanout_id >= g->parent_obj.conf.max_outputs) {
             error_report("invalid scanout: %d", m->scanout_id);
@@ -289,18 +308,17 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
         }
 
         g->parent_obj.enable = 1;
-        con = g->parent_obj.scanout[m->scanout_id].con;
-        dmabuf = g->dmabuf[m->scanout_id];
-
-        if (dmabuf) {
-            qemu_dmabuf_close(dmabuf);
-            qemu_console_gl_release_dmabuf(con, dmabuf);
-            g_clear_pointer(&dmabuf, qemu_dmabuf_free);
-        }
+        s = &g->parent_obj.scanout[m->scanout_id];
+        con = s->con;
+        old = g->dmabuf[m->scanout_id];
 
         if (fd == -1) {
+            if (old) {
+                qemu_console_gl_release_dmabuf(con, old);
+                g_clear_pointer(&g->dmabuf[m->scanout_id], qemu_dmabuf_free);
+            }
+            vhost_user_gpu_clear_scanout_ds(s);
             qemu_console_gl_scanout_disable(con);
-            g->dmabuf[m->scanout_id] = NULL;
             break;
         }
 
@@ -309,6 +327,8 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
             modifier = m2->modifier;
         }
 
+        vhost_user_gpu_clear_scanout_ds(s);
+
         dmabuf = qemu_dmabuf_new(m->width, m->height,
                                  &offset, &stride, 0, 0,
                                  m->fd_width, m->fd_height,
@@ -316,8 +336,13 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
                                  &fd, 1, false, m->fd_flags &
                                  VIRTIO_GPU_RESOURCE_FLAG_Y_0_TOP);
 
+        qemu_console_resize(con, m->width, m->height);
         qemu_console_gl_scanout_dmabuf(con, dmabuf);
         g->dmabuf[m->scanout_id] = dmabuf;
+        if (old) {
+            qemu_console_gl_release_dmabuf(con, old);
+            qemu_dmabuf_free(old);
+        }
         break;
     }
     case VHOST_USER_GPU_DMABUF_UPDATE: {
@@ -348,7 +373,8 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
             break;
         }
 
-        if ((uint64_t)m->width * m->height >
+        if (msg->size < sizeof(VhostUserGpuUpdate) ||
+            (uint64_t)m->width * m->height >
             (msg->size - sizeof(VhostUserGpuUpdate)) / sizeof(uint32_t)) {
             error_report("vhost-user-gpu: update payload too small"
                          " for %ux%u", m->width, m->height);
@@ -357,6 +383,11 @@ vhost_user_gpu_handle_display(VhostUserGPU *g, VhostUserGpuMsg *msg)
 
         s = &g->parent_obj.scanout[m->scanout_id];
         con = s->con;
+        if (!s->ds) {
+            error_report("vhost-user-gpu: no 2D scanout surface"
+                         " for scanout %d", m->scanout_id);
+            break;
+        }
         pixman_image_t *image =
             pixman_image_create_bits(PIXMAN_x8r8g8b8,
                                      m->width,
@@ -449,6 +480,9 @@ end:
 static void
 vhost_user_gpu_update_blocked(VhostUserGPU *g, bool blocked)
 {
+    if (g->vhost_gpu_fd == -1) {
+        return;
+    }
     qemu_set_fd_handler(g->vhost_gpu_fd,
                         blocked ? NULL : vhost_user_gpu_chr_read, NULL, g);
 }
@@ -636,12 +670,44 @@ vhost_user_gpu_instance_finalize(Object *obj)
 }
 
 static void
+vhost_user_gpu_reset_bh(void *opaque)
+{
+    VhostUserGPU *g = VHOST_USER_GPU(opaque);
+    int i;
+
+    for (i = 0; i < g->parent_obj.conf.max_outputs; i++) {
+        struct virtio_gpu_scanout *scanout = &g->parent_obj.scanout[i];
+
+        if (g->dmabuf[i]) {
+            qemu_console_gl_release_dmabuf(scanout->con, g->dmabuf[i]);
+            g_clear_pointer(&g->dmabuf[i], qemu_dmabuf_free);
+        }
+        qemu_console_gl_scanout_disable(scanout->con);
+        vhost_user_gpu_clear_scanout_ds(scanout);
+        qemu_console_set_surface(scanout->con, NULL);
+    }
+
+    g->reset_finished = true;
+    qemu_cond_signal(&g->reset_cond);
+}
+
+static void
 vhost_user_gpu_reset(VirtIODevice *vdev)
 {
     VhostUserGPU *g = VHOST_USER_GPU(vdev);
 
-    virtio_gpu_base_reset(VIRTIO_GPU_BASE(vdev));
+    /* Display teardown must run on the main loop, not the vCPU thread. */
+    if (qemu_in_vcpu_thread()) {
+        g->reset_finished = false;
+        qemu_bh_schedule(g->reset_bh);
+        while (!g->reset_finished) {
+            qemu_cond_wait_bql(&g->reset_cond);
+        }
+    } else {
+        aio_bh_call(g->reset_bh);
+    }
 
+    virtio_gpu_base_reset(VIRTIO_GPU_BASE(vdev));
     vhost_user_backend_stop(g->vhost);
 }
 
@@ -686,7 +752,19 @@ vhost_user_gpu_device_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
+    g->reset_bh = virtio_bh_io_new_guarded(qdev, vhost_user_gpu_reset_bh, g);
+    qemu_cond_init(&g->reset_cond);
     g->vhost_gpu_fd = -1;
+}
+
+static void
+vhost_user_gpu_device_unrealize(DeviceState *qdev)
+{
+    VhostUserGPU *g = VHOST_USER_GPU(qdev);
+
+    g_clear_pointer(&g->reset_bh, qemu_bh_delete);
+    qemu_cond_destroy(&g->reset_cond);
+    virtio_gpu_base_device_unrealize(qdev);
 }
 
 static struct vhost_dev *vhost_user_gpu_get_vhost(VirtIODevice *vdev)
@@ -709,6 +787,7 @@ vhost_user_gpu_class_init(ObjectClass *klass, const void *data)
     vgc->gl_flushed = vhost_user_gpu_gl_flushed;
 
     vdc->realize = vhost_user_gpu_device_realize;
+    vdc->unrealize = vhost_user_gpu_device_unrealize;
     vdc->reset = vhost_user_gpu_reset;
     vdc->set_status   = vhost_user_gpu_set_status;
     vdc->guest_notifier_mask = vhost_user_gpu_guest_notifier_mask;
