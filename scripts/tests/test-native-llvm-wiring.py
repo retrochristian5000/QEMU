@@ -815,8 +815,9 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
     assert cache_clean(), 'a sanitized native linker cache was rejected'
 
 # Prove shortcut precedence with the actual native seed-selection fragment.
-# A prevalidated CC_FOR_BUILD is never re-probed; explicit LLVM overrides
-# are admitted by cc.sh/cxx.sh *before* the default compiler is consulted.
+# CC_FOR_BUILD may be reused, but inherited CXX_FOR_BUILD is revalidated
+# by cxx.sh for the native C++17/SDK ABI. Explicit LLVM overrides still
+# take precedence over default compiler discovery.
 native_seed_selection = bootstrap.split(
     '# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN\n', 1
 )[1].split('# WHP_NATIVE_LLVM_SEED_SELECTION_END', 1)[0]
@@ -837,6 +838,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
             'case "$' + override + '" in\n'
             '  FAIL) exit 82 ;;\n'
             '  "") printf "/mock/default-' + lang + '\\n" ;;\n'
+            '  /*) printf "%s\\n" "$' + override + '" ;;\n'
             '  *) printf "/mock/%s\\n" "$' + override + '" ;;\n'
             'esac\n', encoding='utf-8',
         )
@@ -861,7 +863,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
     chosen, calls = selected(cc='/known/cc', cxx='/known/cxx')
     assert chosen.returncode == 0, chosen.stderr
     assert chosen.stdout == '/known/cc|/known/cxx\n'
-    assert not calls, 'LLVM re-ran the already admitted native C/C++ probes'
+    assert calls == ['cxx.sh'], 'LLVM skipped inherited C++ ABI revalidation'
     chosen, calls = selected(cc='/known/cc')
     assert chosen.returncode == 0, chosen.stderr
     assert chosen.stdout == '/known/cc|/mock/default-cxx\n'

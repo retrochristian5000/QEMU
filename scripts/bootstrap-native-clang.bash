@@ -405,8 +405,9 @@ deployment_target=""
 # WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN
 # Do not probe an unrelated default compiler when an explicit LLVM seed is
 # selected. Explicit overrides must still pass the normal native adapter
-# compile/link/run check; an inherited build role was already admitted by
-# build.sh and can be reused without re-running cc.sh/cxx.sh.
+# compile/link/run check. CC_FOR_BUILD may reuse build.sh's admitted C seed;
+# inherited CXX_FOR_BUILD is rechecked via cxx.sh because standalone
+# bootstrap has not necessarily validated its native C++17/SDK ABI.
 if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CC:-}" ]]; then
     bootstrap_cc="$(WHP_CC_SEED="$NATIVE_LLVM_BOOTSTRAP_CC" \
         "$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
