@@ -15,6 +15,7 @@ on:
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-macos-default-triple.py'
+      - 'scripts/tests/test-native-llvm-install-validation.py'
       - 'scripts/whp-build/macos-target-abi.bash'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
       - 'scripts/tests/test-native-llvm-lean-profile.py'
@@ -38,6 +39,9 @@ jobs:
 
       - name: Verify Darwin seed to macOS target triple upgrade
         run: python3 scripts/tests/test-native-llvm-macos-default-triple.py
+
+      - name: Verify installed macOS and ARM64e compiler target contracts
+        run: python3 scripts/tests/test-native-llvm-install-validation.py
 
       - name: Fetch pinned LLVM TableGen policy source
         shell: bash
