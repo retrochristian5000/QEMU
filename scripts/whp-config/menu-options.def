@@ -1,9 +1,10 @@
 # WHP menu fallback schema: key|section|label|kind|default|choices|group
 BUILD_QEMU_IMG|Build outputs|qemu-img|bool|y||
-BUILD_QEMU_SYSTEM_I386|Build outputs|qemu-system-i386|bool|y||
+BUILD_QEMU_SYSTEM_ALL|Build outputs|Build all WHP-supported system emulators (i386, PPC, SPARC)|bool|n||System emulators
+BUILD_QEMU_SYSTEM_I386|Build outputs|qemu-system-i386|bool|y||System emulators
+BUILD_QEMU_SYSTEM_PPC|Build outputs|qemu-system-ppc|bool|y||System emulators
+BUILD_QEMU_SYSTEM_SPARC|Build outputs|qemu-system-sparc|bool|n||System emulators
 QEMU_X86_FAMILY_LINK|Build outputs|Use x86_64 system binary for i386 alias (POSIX)|bool|n||
-BUILD_QEMU_SYSTEM_PPC|Build outputs|qemu-system-ppc|bool|y||
-BUILD_QEMU_SYSTEM_SPARC|Build outputs|qemu-system-sparc|bool|n||
 QEMU_HOST_LTO|Host features|Link-time optimization|choice|auto|auto,y,n|
 QEMU_HOST_LTO_MODE|Host features|LTO mode (ThinLTO or full)|choice|auto|auto,thin,full|
 QEMU_HOST_PGO|Host features|QEMU host profile-guided optimization|choice|off|off,generate,use|
