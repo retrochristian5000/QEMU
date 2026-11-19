@@ -152,7 +152,7 @@ class SparcMenuTargetTests(unittest.TestCase):
 
     def test_bash_all_targets_mode_does_not_mutate_individual_flags(self):
         source = ROOT / 'scripts' / 'whp-build'
-        script = """
+        script = r"""
 set -e
 SOURCE_DIR="$2"
 BUILD_DIR="$3"
