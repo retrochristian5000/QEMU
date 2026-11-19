@@ -485,10 +485,10 @@ assert 'WHP_CMAKE_CONFIG_SCHEMA=2' in configure_guard
 assert 'for env_name in PATH AR RANLIB PKG_CONFIG' in configure_guard
 assert 'CMAKE_FIND_ROOT_PATH' in configure_guard
 assert 'CMakeCache.txt' in configure_guard and 'build.ninja' in configure_guard
-assert 'cmake "${cmake_args[@]}"' in configure_guard
+assert '"$cmake_cmd" "${cmake_args[@]}"' in configure_guard
 assert 'rm -f "$cmake_config_marker"' in configure_guard
 assert 'LLVM_GIT_COMMIT=' in configure_guard
-assert 'cmake --build "$LLVM_BUILD_DIR" --target distribution' in bootstrap
+assert '"$cmake_cmd" --build "$LLVM_BUILD_DIR" --target distribution' in bootstrap
 
 with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
     fixture = Path(scratch)
@@ -518,6 +518,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
         env['WHP_CMAKE_TEST_FAIL'] = '1' if fail else '0'
         probe = (
             'set -euo pipefail\n'
+            'cmake_cmd=cmake\n'
             'cmake_args=(-S test -B "$LLVM_BUILD_DIR" ' + args + ')\n'
             'bootstrap_cc_version="clang test"\n'
             'bootstrap_cxx_version="clang++ test"\n'
@@ -562,7 +563,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
 assert 'LLVM_NINJA_CRITICAL_PATH_TIMES="${NATIVE_LLVM_CRITICAL_PATH_TIMES:-1}"' in bootstrap
 assert 'NATIVE_LLVM_CRITICAL_PATH_TIMES must be 0 or 1' in bootstrap
 assert 'NINJA_CRITICAL_PATH_TIMES="$LLVM_NINJA_CRITICAL_PATH_TIMES" \\' in bootstrap
-assert 'cmake --build "$LLVM_BUILD_DIR" --target distribution ' in bootstrap
+assert '"$cmake_cmd" --build "$LLVM_BUILD_DIR" --target distribution ' in bootstrap
 marker_block = bootstrap.split('expected_marker="$(cat <<EOF', 1)[1].split('\nEOF\n)', 1)[0]
 assert 'CRITICAL_PATH_TIMES' not in marker_block
 
