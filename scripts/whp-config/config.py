@@ -445,7 +445,8 @@ def write_ppc_device_config(base_path: pathlib.Path, path: pathlib.Path, state: 
 
 def sections(values: Optional[Dict[str, str]] = None) -> List[Tuple[str, List[Option]]]:
     result: List[Tuple[str, List[Option]]] = []
-    for option in visible_options(values) if values is not None else OPTIONS:
+    source = OPTIONS if values is None else visible_options(values)
+    for option in source:
         if not result or result[-1][0] != option.section:
             result.append((option.section, []))
         result[-1][1].append(option)
