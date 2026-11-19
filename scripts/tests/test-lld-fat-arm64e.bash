@@ -42,10 +42,12 @@ for fat in 32 64; do
   "$lipo" -create "${opts[@]}" "$work/lib-a.a" "$work/lib-e.a" -o "$work/both-$fat.a"
   "$lipo" -create "${opts[@]}" "$work/lib-a.a" -o "$work/arm64-$fat.a"
   archs="$("$lipo" -archs "$work/both-$fat.a")"
-  [[ "$archs" == 'arm64 arm64e' ]] || {
+  read -r -a arch_list <<< "$archs"
+  if [[ "${#arch_list[@]}" -ne 2 ||
+        "${arch_list[0]}" != arm64 || "${arch_list[1]}" != arm64e ]]; then
     printf 'FAT%s static archive unexpectedly contains %s\n' "$fat" "$archs" >&2
     exit 1
-  }
+  fi
   "$lipo" -thin arm64 "$work/both-$fat.a" -o "$work/thin-$fat-a.a"
   "$lipo" -thin arm64e "$work/both-$fat.a" -o "$work/thin-$fat-e.a"
   cmp "$work/lib-a.a" "$work/thin-$fat-a.a"
