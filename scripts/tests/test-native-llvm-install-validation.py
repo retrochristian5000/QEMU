@@ -28,13 +28,14 @@ def bootstrap_function(name):
     return bootstrap[start:end]
 
 
-# Exercise the same target guards used by the real bootstrap. In particular,
-# an installed compiler may report a Darwin kernel version while CMake used
-# the equivalent macOS product/deployment version for its default target.
+# Use the real installed-compiler checks. A Darwin seed is admitted
+# earlier, but an installed native LLVM Clang must report its versioned
+# macOS product target; arm64e must not silently inherit aarch64.
 target_helpers = (ROOT / "scripts/whp-build/macos-target-abi.bash").read_text() + "\n"
 target_helpers += "\n".join(bootstrap_function(name) for name in (
     "canonical_native_arch", "canonical_native_target_triple",
-    "native_target_matches_host", "native_target_abi_key",
+    "native_target_matches_host", "native_installed_target_matches_host",
+    "native_target_abi_key",
 ))
 
 # Keep the real LLVM function under test. Stub only architecture helpers,
@@ -78,7 +79,10 @@ probe = (
     'darwin_cmake_arch="$WHP_TEST_ARCH"\n'
     "sdkroot=/mock/MacOSX.sdk\n"
     'deployment_target="$WHP_TEST_DEPLOYMENT"\n'
-    'llvm_default_target_triple="aarch64-apple-macosx$deployment_target"\n'
+    'case "$darwin_cmake_arch" in\n'
+    '  arm64e) llvm_default_target_triple="arm64e-apple-macosx$deployment_target" ;;\n'
+    '  *) llvm_default_target_triple="aarch64-apple-macosx$deployment_target" ;;\n'
+    'esac\n'
     "LLVM_WINDOWS_MANIFEST=0\n"
     "NATIVE_LLVM_ENABLE_LLDB=0\n"
     "NATIVE_LLVM_SHARED_TOOLCHAIN=0\n"
@@ -183,8 +187,11 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     trace = base / "clang-invocations.log"
 
     def run_probe(arch, fail_ubsan=False, missing_backend=False,
-                  target="aarch64-apple-macosx15.0", cxx_target=None,
+                  target=None, cxx_target=None,
                   deployment="15.0", runtime_archs="arm64 arm64e"):
+        if target is None:
+            target_arch = 'arm64e' if arch == 'arm64e' else 'aarch64'
+            target = f'{target_arch}-apple-macosx{deployment}'
         trace.write_text("", encoding="utf-8")
         env = os.environ.copy()
         env.update({
@@ -246,26 +253,35 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         "/* fixture generated resource header */\n", encoding="utf-8"
     )
 
-    # Version punctuation, CPU aliases, and Darwin/macOS spellings should not
-    # invalidate a complete native LLVM installation with the same ABI.
+    # Version punctuation and recognized CPU aliases remain compatible,
+    # but the installed compiler must not regress to its Darwin seed triple.
     for c_target, cxx_target in (
         ("aarch64-apple-macosx15.0.0", "aarch64-apple-macosx15"),
-        ("arm64-apple-darwin24.0.0", "aarch64-apple-macosx15.0"),
-        ("aarch64-apple-macos15.0", "arm64-apple-darwin24"),
+        ("arm64-apple-macosx15.0", "aarch64-apple-macosx15.0"),
+        ("aarch64-apple-macos15.0", "arm64-apple-macosx15"),
     ):
         result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
         assert result.returncode == 0, (c_target, cxx_target, result.stderr)
-    result, _ = run_probe(
-        "arm64", target="aarch64-apple-darwin27.2.0",
-        cxx_target="arm64-apple-macosx27.2.0", deployment="27.2",
-    )
-    assert result.returncode == 0, result.stderr
 
-    result, _ = run_probe(
-        "arm64", target="aarch64-apple-darwin27.2.1",
-        cxx_target="arm64-apple-macosx27.2", deployment="27.2",
-    )
+    # ARM64e default targets must carry the PAC ABI even when the host CPU
+    # runs AArch64 code and an explicit -arch arm64e probe would succeed.
+    result, _ = run_probe("arm64e", target="aarch64-apple-macosx15.0")
     assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+    result, _ = run_probe("arm64e", target="arm64e-apple-darwin24.0.0")
+    assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+
+    for c_target, cxx_target in (
+        ("aarch64-apple-darwin24.0.0", "aarch64-apple-macosx15.0"),
+        ("aarch64-apple-macosx15.0", "arm64-apple-darwin24.0.0"),
+        ("aarch64-apple-darwin27.2.0", "arm64-apple-macosx27.2"),
+    ):
+        result, _ = run_probe(
+            "arm64", target=c_target, cxx_target=cxx_target,
+            deployment="27.2" if "27.2" in c_target else "15.0",
+        )
+        assert result.returncode != 0 and "[ABI]" in result.stderr, (
+            c_target, cxx_target, result.stderr
+        )
 
     # Real version drift must still fail, even if one compiler matches.
     for c_target, cxx_target in (
