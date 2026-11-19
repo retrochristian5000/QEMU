@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Keep the actual failed assertion visible even for bare [[ ]] checks
+# that normally exit silently under set -e.
+trap 'status=$?; printf "macOS ABI policy regression at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$status" >&2' ERR
+
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/whp-macos-arch-test.XXXXXX")"
 trap 'rm -rf "$TEST_DIR"' EXIT

@@ -59,6 +59,9 @@ jobs:
       - name: Verify ARM64e Clang++ C++ ABI flags and object-symbol filtering
         run: python3 scripts/tests/test-arm64e-clangxx-flag-guard.py
 
+      - name: Verify default macOS ABI and explicit ARM64e fallback policy
+        run: bash scripts/tests/test-macos-arch-policy.bash
+
       - name: Test selected macOS SDK version handling
         run: bash scripts/tests/test-macos-sdk-selection.bash
 
