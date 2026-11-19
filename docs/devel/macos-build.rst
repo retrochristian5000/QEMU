@@ -680,6 +680,34 @@ References: Apple's ``Apple Silicon CPU Optimization Guide`` and
 ``Preparing your app to work with pointer authentication``, plus Apple
 XNU ``doc/arm/sme.md``.
 
+AArch64 ``-march`` on native macOS
+---------------------------------
+
+Clang's ``-march`` chooses **instruction-set features**, not the Darwin
+Mach-O architecture or calling convention. Select ordinary ``arm64`` or
+``arm64e`` through the target triple / Apple ``-arch`` first;
+``-march=armv8.3-a`` cannot turn an ordinary ARM64 object into an ARM64e
+object. The existing arm64e guard rejects an architecture/CPU that lacks
+the pointer-authentication ISA required by that ABI.
+
+For a host-local AArch64 build, ``-march=native`` and
+``-mcpu=native`` detect the running CPU. The pinned LLVM fork treats
+FP and Advanced SIMD (NEON) as native macOS ARM64 baseline features even
+when their optional-feature ``sysctl`` keys are absent on older macOS
+releases. Truly optional extensions remain dependent on successful
+host detection, rather than guessed on. CPU identification and tuning
+still require actual on-device validation.
+
+For deterministic toolchain builds, prefer an explicit model such as
+``-mcpu=apple-a18-pro`` instead of ``-march=native`` when the build
+may run on a different host. The current Apple A18 Pro CPU model does
+**not** imply ordinary non-streaming SVE. A generic
+``-march=armv9.2-a`` can request architecture-default SVE features
+which the Apple A18 Pro does not provide. Do not silently equate
+Armv9.2-A with the A18 Pro's supported runtime ISA; use a verified
+CPU-specific profile or explicit feature overrides, and test the
+compiled code on the actual target.
+
 LLVM Mach-O inspection with llvm-otool
 ------------------------------------
 
