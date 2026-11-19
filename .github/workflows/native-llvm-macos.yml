@@ -163,7 +163,8 @@ jobs:
       NATIVE_LLVM_DIR: ${{ github.workspace }}/build-native-llvm/toolchain
       NATIVE_LLVM_WORK_DIR: ${{ github.workspace }}/build-native-llvm/work
       NATIVE_LLVM_BUILD_DIR: ${{ github.workspace }}/build-native-llvm/work/llvm-build
-      NATIVE_LLVM_MACOS_ARCH: 'auto'
+      # This dedicated runner must exercise ARM64e; auto defaults to arm64.
+      NATIVE_LLVM_MACOS_ARCH: 'arm64e'
       BOOTSTRAP_NATIVE_LLVM: '1'
       NATIVE_LLVM_CXX_STANDARD: '26'
       WHP_SHELL_PROBE_ONLY: '1'

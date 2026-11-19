@@ -9,6 +9,7 @@ This is a hermetic policy test, not an LLVM or Mach-O runtime build.
 
 from pathlib import Path
 import os
+import struct
 import subprocess
 import tempfile
 
@@ -81,6 +82,7 @@ probe = (
     "LLVM_WINDOWS_MANIFEST=0\n"
     "NATIVE_LLVM_ENABLE_LLDB=0\n"
     "NATIVE_LLVM_SHARED_TOOLCHAIN=0\n"
+    'SOURCE_DIR="$WHP_TEST_SOURCE_DIR"\n'
     "shared_host_libraries_usable() { return 0; }\n"
     "windows_cross_target_usable() { return 0; }\n"
     + target_helpers + '\n'
@@ -116,6 +118,33 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         (resource_headers / header).write_text(
             "/* fixture generated resource header */\n", encoding="utf-8"
         )
+    # The real ABI auditor inspects inner archive objects, not just the FAT
+    # label. Give the isolated usability test both native Mach-O ABI slices.
+    def native_archive(subtype: int) -> bytes:
+        obj = struct.pack("<8I", 0xFEEDFACF, 0x0100000C,
+                          subtype, 1, 0, 0, 0, 0)
+        fields = (
+            f"{'abi.o/':<16}{0:<12}{0:<6}{0:<6}{0:<8}{len(obj):<10}"
+        ).encode("ascii")
+        header = fields + bytes((96, 10))
+        assert len(header) == 60
+        return b"!<arch>\n" + header + obj
+
+    plain_archive = native_archive(0)
+    signed_archive = native_archive(0x80000002)
+    first_offset = 8 + 2 * 20
+    second_offset = first_offset + len(plain_archive)
+    fat_table = (
+        struct.pack(">II", 0xCAFEBABE, 2)
+        + struct.pack(">IIIII", 0x0100000C, 0, first_offset,
+                      len(plain_archive), 2)
+        + struct.pack(">IIIII", 0x0100000C, 0x80000002, second_offset,
+                      len(signed_archive), 2)
+    )
+    builtins_archive = darwin_runtime / "libclang_rt.osx.a"
+    valid_builtins = fat_table + plain_archive + signed_archive
+    builtins_archive.write_bytes(valid_builtins)
+
     ubsan_dylib = darwin_runtime / "libclang_rt.ubsan_osx_dynamic.dylib"
     ubsan_dylib.write_bytes(b"mock Mach-O UBSan runtime")
     clang = bin_dir / "clang"
@@ -155,6 +184,7 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         env = os.environ.copy()
         env.update({
             "WHP_PROBE_LOG": str(trace),
+            "WHP_TEST_SOURCE_DIR": str(ROOT),
             "WHP_TEST_RESOURCE_DIR": str(resource),
             "WHP_TEST_RUNTIME_ARCHS": runtime_archs,
             "WHP_TEST_ARCH": arch,
@@ -178,6 +208,18 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         assert "-print-resource-dir" in calls, (arch, calls)
         assert "-framework Cocoa" in calls, (arch, calls)
         assert f"-arch {arch}" in calls, (arch, calls)
+
+    # Do not stub out the archive auditor. Missing builtins and a FAT
+    # descriptor lying about an ARM64e slice must both fail the real check.
+    builtins_archive.unlink()
+    result, _ = run_probe("arm64e")
+    assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+    assert "missing compiler-rt builtins archive" in result.stderr, result.stderr
+    builtins_archive.write_bytes(fat_table + plain_archive + plain_archive)
+    result, _ = run_probe("arm64e")
+    assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
+    assert "disagrees with FAT table" in result.stderr, result.stderr
+    builtins_archive.write_bytes(valid_builtins)
 
     # Missing Clang resource headers must still reject an incomplete install.
     neon_header = resource_headers / "arm_neon.h"

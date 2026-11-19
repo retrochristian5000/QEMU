@@ -56,6 +56,9 @@ jobs:
       - name: Guard native Darwin compiler-rt ABI isolation
         run: python3 scripts/tests/test-native-llvm-darwin-abi-isolation.py
 
+      - name: Verify installed native LLVM and compiler-rt dependency fixture
+        run: python3 scripts/tests/test-native-llvm-install-validation.py
+
       - name: Verify ARM64e Clang++ C++ ABI flags and object-symbol filtering
         run: python3 scripts/tests/test-arm64e-clangxx-flag-guard.py
 
