@@ -59,6 +59,29 @@ def check():
         assert dump.returncode == 0, dump.stderr
         assert "BOOTSTRAP_GAWK" in dump.stdout, dump.stdout
 
+        # Filtering must retain global option numbers, so a selection made
+        # from a short list changes the same setting as the full menu.
+        tsan_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith("QEMU_TSAN|")
+        )
+        filtered = run(
+            shell, config, root,
+            input_text=f"f\nQEMU_TSAN\n{tsan_number}\ns\nq\n",
+        )
+        assert filtered.returncode == 0, filtered.stderr
+        assert "QEMU_TSAN=y\n" in config.read_text(encoding="utf-8")
+        assert "Changed ThreadSanitizer: n -> y" in filtered.stdout
+        short_menu = filtered.stdout.split("Filter: QEMU_TSAN (a=show all)", 1)[1]
+        assert "QEMU_TSAN" in short_menu, short_menu
+        assert "QEMU_HOST_PGO" not in short_menu, short_menu
+
+        missing = run(
+            shell, config, root, input_text="f\nno-such-menu-entry\nq\n",
+        )
+        assert missing.returncode == 0, missing.stderr
+        assert "No options match: no-such-menu-entry" in missing.stdout
+
         # The shell fallback works with no Python runtime. Invalid settings
         # must be diagnosed before replacing the user's existing file, while
         # allowing an interactive reset and a subsequent successful save.
