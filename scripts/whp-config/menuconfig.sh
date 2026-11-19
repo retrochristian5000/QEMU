@@ -16,7 +16,8 @@ fi
 
 WORK="${TMPDIR:-/tmp}/whp-menuconfig.$$"
 WORK_NEW="$WORK.new"
-SAVE_TMP="${CONFIG}.tmp.$$"
+SAVE_TMP="${CONFIG}.tmp.$"
+menu_filter=
 umask 077
 trap 'rm -f "$WORK" "$WORK_NEW" "$SAVE_TMP"' 0 1 2 3 15
 
@@ -72,7 +73,10 @@ set_value()
 
 render_menu()
 {
-    awk '
+    # Keep option numbers stable across filtered and unfiltered views.
+    # The schema is data; only AWK interprets its fields.
+    awk -v filter="$menu_filter" '
+        BEGIN { search = tolower(filter) }
         FNR == NR {
             if ($0 ~ /^[A-Z][A-Z0-9_]*=/) {
                 pos = index($0, "=")
@@ -89,6 +93,11 @@ render_menu()
             label = field[3]
             default_value = field[5]
             group = field[7]
+            item++
+            if (search != "" &&
+                index(tolower(key " " section " " label " " group), search) == 0) {
+                next
+            }
             if (section != previous_section) {
                 printf "\n[%s]\n", section
                 previous_section = section
@@ -101,8 +110,13 @@ render_menu()
                 previous_group = ""
             }
             value = (key in values) ? values[key] : default_value
-            item++
             printf "  %2d) %-28s %-28s %s\n", item, label, key, value
+            shown++
+        }
+        END {
+            if (search != "" && shown == 0) {
+                printf "No options match: %s\n", filter
+            }
         }
     ' "$WORK" "$SCHEMA"
 }
@@ -195,13 +209,25 @@ dirty=0
 while :; do
     printf '\nWHP QEMU Configuration — POSIX shell fallback\n'
     printf 'File: %s\n' "$CONFIG"
+    if [ -n "$menu_filter" ]; then
+        printf 'Filter: %s (a=show all)\n' "$menu_filter"
+    fi
     render_menu
-    printf '\nEnter option number, s=save, r=defaults, q=quit: '
+    printf '\nEnter option number, f=filter, a=all, s=save, r=defaults, q=quit: '
     if ! IFS= read -r action; then
         exit 0
     fi
 
     case "$action" in
+        f|F)
+            printf 'Filter by option name, label, group or section (empty=all): '
+            IFS= read -r menu_filter || exit 0
+            continue
+            ;;
+        a|A)
+            menu_filter=
+            continue
+            ;;
         s|S)
             if save_config; then
                 dirty=0
