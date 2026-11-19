@@ -533,7 +533,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-reuse-') as scratch:
             ['bash', '-c', probe], env=env, capture_output=True, text=True
         )
         assert (outcome.returncode == 0) == expected_ok, outcome.stderr
-        assert calls.read_text().count('configure\n') == expected_calls
+        assert calls.read_text().count('configure\n') == expected_calls, (\n            f'calls={calls.read_text()!r}, expected={expected_calls}, '\n            f'stderr={outcome.stderr!r}'\n        )
     check_reconfigure(expected_calls=1)
     check_reconfigure(expected_calls=1)
     check_reconfigure('-DTEST=2', expected_calls=2)
