@@ -2004,8 +2004,7 @@ native_llvm_cmake_cache_clean()
     # Read the cache once: avoid spawning a process for every CMake option.
     if ! printf '%s\n' "${cmake_args[@]}" | awk -v cache="$cache" '
         BEGIN {
-            n = split(
-                "CMAKE_BUILD_TYPE CMAKE_C_COMPILER CMAKE_CXX_COMPILER " \
+            n = split("CMAKE_BUILD_TYPE CMAKE_C_COMPILER CMAKE_CXX_COMPILER " \
                 "CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER " \
                 "CMAKE_AR CMAKE_RANLIB CMAKE_MAKE_PROGRAM " \
                 "CMAKE_OSX_SYSROOT CMAKE_OSX_ARCHITECTURES " \
@@ -2028,9 +2027,7 @@ native_llvm_cmake_cache_clean()
                 "LLVM_ENABLE_LTO LLVM_ENABLE_FATLTO LLVM_CCACHE_BUILD " \
                 "LLVM_BUILD_LLVM_DYLIB LLVM_LINK_LLVM_DYLIB " \
                 "CLANG_LINK_CLANG_DYLIB RUNTIMES_CMAKE_ARGS " \
-                "BUILTINS_CMAKE_ARGS",
-                keys, " "
-            )
+                "BUILTINS_CMAKE_ARGS", keys, " ")
             for (i = 1; i <= n; i++) protected[keys[i]] = 1
             while ((getline entry < cache) > 0) {
                 colon = index(entry, ":")
