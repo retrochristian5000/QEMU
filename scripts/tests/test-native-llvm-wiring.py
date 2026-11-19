@@ -5,6 +5,7 @@ from pathlib import Path
 import ctypes
 import os
 import shutil
+import shlex
 import subprocess
 import tempfile
 
