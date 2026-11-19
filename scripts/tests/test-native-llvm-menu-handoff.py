@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-menu-") as td:
         values = subprocess.run(
             ["sh", "-c", output + "\n" +
              'for key in ' + " ".join(MENU_KEYS) + '; do\n' +
-             '  eval "value=${$key-}"\n' +
+             '  eval "value=\\${$key-}"\n' +
              '  printf "%s=%s\\n" "$key" "$value"\n' +
              'done\n'],
             env=env, capture_output=True, text=True, check=True,
