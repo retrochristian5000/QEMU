@@ -1196,9 +1196,12 @@ if [[ "$host_os" == macos ]]; then
     # compiler-rt also belongs to the same installed compiler runtime family.
     llvm_enable_runtimes=compiler-rt
     llvm_include_runtimes=ON
-    # llvm-otool is llvm-objdump's Mach-O/otool-compatible entry point.
-    # Package that tool on Darwin without building another disassembler.
-    llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"
+    # Include the tools used by LLVM's nested Darwin runtime builds in
+    # the installed distribution too. llvm-libtool-darwin and llvm-lipo
+    # are produced before builtins/runtimes through USE_TOOLCHAIN; leaving
+    # the former out makes the staged toolchain incomplete for later Mach-O
+    # archive producers. llvm-otool is llvm-objdump's compatible entry point.
+    llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;llvm-libtool-darwin;LTO;builtins;runtimes"
 fi
 # Link host tools against the aggregate libLLVM/libclang-cpp libraries,
 # never build individual LLVM components as separate shared libraries.
@@ -1560,7 +1563,7 @@ usable()
         return 1
     }
     if [[ "$host_os" == macos ]]; then
-        for required_tool in llvm-otool llvm-lipo ld64.lld; do
+        for required_tool in llvm-otool llvm-lipo llvm-libtool-darwin ld64.lld; do
             [[ -x "$prefix/bin/$required_tool" ]] || {
                 native_llvm_validation_error tool "missing required tool: $required_tool"
                 return 1

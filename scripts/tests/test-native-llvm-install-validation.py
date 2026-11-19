@@ -96,8 +96,13 @@ required = (
     "ld.lld", "lld-link", "llvm-ar", "llvm-ranlib", "llvm-lib",
     "llvm-dlltool", "llvm-rc", "llvm-windres", "llvm-nm", "llvm-objcopy",
     "llvm-objdump", "llvm-strip", "llvm-readobj", "llvm-readelf",
-    "llvm-config", "llvm-tblgen", "llvm-otool", "llvm-lipo", "ld64.lld",
+    "llvm-config", "llvm-tblgen", "llvm-otool", "llvm-lipo",
+    "llvm-libtool-darwin", "ld64.lld",
 )
+
+# The distribution target must install every Darwin archive tool consumed
+# by the nested LLVM builtins/runtimes graphs; building it is not enough.
+assert "llvm-otool;llvm-lipo;llvm-libtool-darwin;LTO;builtins;runtimes" in bootstrap
 
 with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
     base = Path(scratch)
@@ -317,6 +322,15 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         encoding="utf-8",
     )
     lipo.chmod(0o755)
+
+    # A previously built llvm-libtool-darwin that was omitted from the
+    # installed distribution must invalidate an otherwise usable cache.
+    (bin_dir / "llvm-libtool-darwin").unlink()
+    result, _ = run_probe("arm64")
+    assert result.returncode != 0
+    assert "[tool]" in result.stderr, result.stderr
+    assert "missing required tool: llvm-libtool-darwin" in result.stderr, result.stderr
+    (bin_dir / "llvm-libtool-darwin").symlink_to("whp-fixture-tool")
 
     # A missing backend is an ABI-capability failure, not a missing executable.
     result, _ = run_probe("arm64", missing_backend=True)

@@ -658,7 +658,12 @@ Never bootstrap the first LLVM build using its own unfinished Clang or ar.
 On a rebuild, LLVM's native CMake graph generates TableGen sources and
 builds AArch64/X86/PowerPC backends, Clang, LLD and libLTO from the same
 QEMU gitlink. On macOS, compiler-rt builtins and runtimes are distinct
-ExternalProjects. Both inherit CMAKE_OSX_SYSROOT, CMAKE_OSX_ARCHITECTURES
+ExternalProjects. LLVM's CMake runtimes graph already orders builtins
+before runtimes and supplies Clang, llvm-ar/ranlib, llvm-lipo and
+llvm-libtool-darwin as preceding toolchain dependencies. The native
+distribution must also install llvm-libtool-darwin: a successful nested
+build alone does not place it in QEMU's installed compiler prefix.
+Both ExternalProjects inherit CMAKE_OSX_SYSROOT, CMAKE_OSX_ARCHITECTURES
 and CMAKE_OSX_DEPLOYMENT_TARGET; otherwise the builtins archive may
 contain ordinary arm64 objects despite an arm64e output request.
 Installed libclang_rt.osx.a must contain the requested native ABI;
