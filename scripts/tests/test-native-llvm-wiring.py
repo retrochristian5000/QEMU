@@ -628,11 +628,16 @@ for llvm_bootstrap, override in link_job_policies:
 # it to exhaust independent build edges before returning a non-zero status.
 # This is not continue-on-success: the failed distribution still stops before
 # install-distribution.
-for llvm_bootstrap in (bootstrap, i386_bootstrap, powerpc_bootstrap):
+for llvm_bootstrap, executable in (
+    (bootstrap, '"$cmake_cmd"'),
+    (i386_bootstrap, 'cmake'),
+):
     assert (
-        'cmake --build "$LLVM_BUILD_DIR" --target distribution '
+        executable + ' --build "$LLVM_BUILD_DIR" --target distribution '
         '"${cmake_parallel_args[@]}" -- -k 0'
     ) in llvm_bootstrap
+# PowerPC's toolchain bootstrap has no CMake "distribution" target; its own
+# source/build stages are validated by the PowerPC-specific tests.
 
 # Windows manifest merging is an opt-in native-host utility, independent of
 # QEMU's Meson version.rc resource compiler and Apple's arm64e Mach-O ABI.
