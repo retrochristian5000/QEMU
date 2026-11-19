@@ -827,6 +827,23 @@ smoke checks the same workflow with installed LLVM tools when passed
 ``--lipo`` and ``--nm``. This does not authorize mixing ARM64e pointer
 authentication and ordinary ARM64 code inside one archive slice.
 
+LLD FAT32/FAT64 static archive selection
+---------------------------------------
+
+The pinned ``ld64.lld`` selects ARM64e static archive slices by exact
+Mach-O CPU subtype and extracts symbols lazily from the selected archive's
+index. Unlike an ARM64 *dylib*, an ARM64 static archive is never an ARM64e
+fallback; its object relocation and pointer-authentication ABI are different.
+Mixing both types in a regular ``.a`` does not produce a universal archive.
+
+The LLVM regression ``lld/test/MachO/arm64e-static-archive.s`` covers
+FAT32 and FAT64 indexed archives, exact ARM64/ARM64e extraction,
+authenticated chained fixups, and rejection of a FAT64 table falsely
+claiming that an ordinary ARM64 archive is ARM64e. The existing QEMU
+``scripts/tests/test-lld-fat-arm64e.bash`` exercises the same cases
+with pinned ``ld64.lld``, ``llvm-lipo``, ``llvm-ar``, and
+``llvm-ranlib`` on macOS CI. It also retains dylib fallback tests.
+
 LLVM nm on ARM64/ARM64e universal Mach-O
 --------------------------------------------
 

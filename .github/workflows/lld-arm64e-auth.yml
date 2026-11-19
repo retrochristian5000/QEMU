@@ -112,7 +112,7 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=lld \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF
-          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt llvm-lto2 llvm-lto -- -j4
+          cmake --build build-lld --target lld llvm-objdump llvm-lipo llvm-readobj opt llvm-lto2 llvm-lto llvm-ar llvm-ranlib -- -j4
 
       - name: Reject unsafe ARM64e non-PIE links before emitting an image
         shell: bash
@@ -169,7 +169,9 @@ jobs:
         run: |
           bash scripts/tests/test-lld-fat-arm64e.bash \
             "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
-            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lipo"
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-lipo" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-ar" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-ranlib"
 
       - name: Reject malformed ARM64e relocation pairs
         shell: bash

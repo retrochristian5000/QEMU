@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Validate the pinned LLD universal-input selector, not system ld64.
 set -euo pipefail
-if [[ $# -ne 2 || ! -x "$1" || ! -x "$2" ]]; then
-  echo "usage: $0 <ld64.lld> <llvm-lipo>" >&2
+if [[ $# -ne 4 || ! -x "$1" || ! -x "$2" || ! -x "$3" || ! -x "$4" ]]; then
+  echo "usage: $0 <ld64.lld> <llvm-lipo> <llvm-ar> <llvm-ranlib>" >&2
   exit 2
 fi
 ld="$1"
 lipo="$2"
+ar="$3"
+ranlib="$4"
 testfile="llvm-project/lld/test/MachO/fat-arm64e-selection.s"
 [[ -f "$testfile" ]] || { echo "missing LLVM fat-slice fixture" >&2; exit 1; }
 work="$(mktemp -d "${TMPDIR:-/tmp}/whp-fat-arm64e.XXXXXX")"
@@ -23,6 +25,13 @@ xcrun clang -arch arm64e -mmacosx-version-min=13.0 -c "$work/client-e.s" -o "$wo
 "$ld" -arch arm64e -platform_version macos 13.0 13.0 -dylib -fixup_chains \
   -install_name @rpath/libfat.dylib "$work/lib-e.o" -o "$work/lib-e.dylib"
 
+# Each Mach-O ABI has a separately indexed archive. Only llvm-lipo creates
+# the outer FAT container, and LLD must select a complete archive slice.
+"$ar" --format=darwin crS "$work/lib-a.a" "$work/lib-a.o"
+"$ar" --format=darwin crS "$work/lib-e.a" "$work/lib-e.o"
+"$ranlib" "$work/lib-a.a"
+"$ranlib" "$work/lib-e.a"
+
 for fat in 32 64; do
   opts=()
   [[ "$fat" == 64 ]] && opts=(-fat64)
@@ -30,6 +39,44 @@ for fat in 32 64; do
   "$lipo" -create "${opts[@]}" "$work/lib-a.dylib" -o "$work/arm64-$fat.dylib"
   "$lipo" -create "${opts[@]}" "$work/lib-a.o" -o "$work/arm64-$fat.o"
   "$lipo" -create "${opts[@]}" "$work/client-e.o" -o "$work/arm64e-$fat.o"
+  "$lipo" -create "${opts[@]}" "$work/lib-a.a" "$work/lib-e.a" -o "$work/both-$fat.a"
+  "$lipo" -create "${opts[@]}" "$work/lib-a.a" -o "$work/arm64-$fat.a"
+  archs="$("$lipo" -archs "$work/both-$fat.a")"
+  [[ "$archs" == 'arm64 arm64e' ]] || {
+    printf 'FAT%s static archive unexpectedly contains %s\n' "$fat" "$archs" >&2
+    exit 1
+  }
+  "$lipo" -thin arm64 "$work/both-$fat.a" -o "$work/thin-$fat-a.a"
+  "$lipo" -thin arm64e "$work/both-$fat.a" -o "$work/thin-$fat-e.a"
+  cmp "$work/lib-a.a" "$work/thin-$fat-a.a"
+  cmp "$work/lib-e.a" "$work/thin-$fat-e.a"
+
+  # The ARM64e linker must extract the indexed ARM64e member from FAT32
+  # and FAT64 archives, retaining the PAC ABI in the linked image.
+  "$ld" -arch arm64e -platform_version macos 13.0 13.0 -dylib -fixup_chains \
+    "$work/client-e.o" "$work/both-$fat.a" -o "$work/from-fat-$fat.dylib"
+  python3 - "$work/from-fat-$fat.dylib" <<'PY'
+import pathlib
+import struct
+import sys
+
+header = pathlib.Path(sys.argv[1]).read_bytes()[:12]
+assert struct.unpack('<III', header) == (0xfeedfacf, 0x0100000c, 0x80000002), \
+    'LLD lost ARM64e PAC ABI when linking a universal static archive'
+PY
+  "$ld" -arch arm64 -platform_version macos 13.0 13.0 -dylib \
+    -u _only_a "$work/both-$fat.a" -o "$work/from-fat-$fat-arm64.dylib"
+
+  # Missing ARM64e archive slices must not fall back to plain ARM64 object
+  # code, unlike the dynamic-library-only compatibility exception.
+  if "$ld" -arch arm64e -platform_version macos 13.0 13.0 -dylib \
+      -u _only_a "$work/arm64-$fat.a" \
+      -o "$work/invalid-archive-$fat.dylib" > "$work/archive-error.log" 2>&1; then
+    echo "ARM64 archive incorrectly selected as ARM64e output" >&2
+    exit 1
+  fi
+  grep -Fq 'ignoring file because it is universal (arm64) but does not contain the arm64e architecture' \
+    "$work/archive-error.log" || { cat "$work/archive-error.log" >&2; exit 1; }
 
   # The exact arm64e dependency must take precedence over arm64.
   "$ld" -arch arm64e -platform_version macos 13.0 13.0 -dylib -fixup_chains \
@@ -53,6 +100,27 @@ for fat in 32 64; do
     "$work/error.log" || { cat "$work/error.log" >&2; exit 1; }
 done
 
+# Alter only FAT64 metadata: an arm64e-labeled outer archive cannot cause
+# LLD to reinterpret an ordinary ARM64 object as authenticated ARM64e.
+python3 - "$work/arm64-64.a" "$work/spoofed-arm64e.a" <<'PY'
+import pathlib
+import struct
+import sys
+
+data = bytearray(pathlib.Path(sys.argv[1]).read_bytes())
+assert struct.unpack_from('>I', data, 0)[0] == 0xcafebabf
+struct.pack_into('>I', data, 12, 0x80000002)
+pathlib.Path(sys.argv[2]).write_bytes(data)
+PY
+if "$ld" -arch arm64e -platform_version macos 13.0 13.0 -dylib \
+    -u _only_a "$work/spoofed-arm64e.a" \
+    -o "$work/spoofed.dylib" > "$work/archive-error.log" 2>&1; then
+  echo 'LLD accepted forged ARM64e fat archive descriptor' >&2
+  exit 1
+fi
+grep -Fq 'unsupported arm64e pointer-authentication ABI' \
+  "$work/archive-error.log" || { cat "$work/archive-error.log" >&2; exit 1; }
+
 python3 - "$work/both-64.dylib" "$work/truncated.dylib" <<'PY'
 import pathlib
 import sys
@@ -68,4 +136,4 @@ grep -Fq 'truncated or malformed fat file' "$work/error.log" || {
   cat "$work/error.log" >&2
   exit 1
 }
-echo "ARM64e FAT32/FAT64 exact selection, dylib fallback and ABI guards: passed"
+echo "ARM64e FAT32/FAT64 objects, dylibs, indexed archives, ABI and spoofed-slice guards: passed"
