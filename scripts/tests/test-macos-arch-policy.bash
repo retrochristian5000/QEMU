@@ -52,30 +52,46 @@ chmod +x "$FAKE_CLANG"
 # arm64e with a separate LLVM backend.
 source "$SOURCE_DIR/scripts/macos-arch-policy.bash"
 
-# Auto selects arm64e only if both C and C++ compile/link/run PAC calls.
+# Default auto uses the process's native ABI with no speculative probing.
 : > "$TEST_COMPILER_LOG"
-selected="$(TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_ARCH=auto \
+    whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
+[[ "$selected" == arm64 ]]
+[[ ! -s "$TEST_COMPILER_LOG" ]]
+
+# Optional ARM64e promotion requires C and C++ PAC compile/link/run probes.
+: > "$TEST_COMPILER_LOG"
+selected="$(WHP_MACOS_AUTO_ARM64E=1 TEST_ARM64E_SUPPORTED=1 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64e ]]
 grep -Fq -- '-x c -' "$TEST_COMPILER_LOG"
 grep -Fq -- '-x c++ -' "$TEST_COMPILER_LOG"
 
+# A malformed opt-in must fail instead of silently changing ABI policy.
+if WHP_MACOS_AUTO_ARM64E=invalid WHP_MACOS_ARCH=auto \
+        whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 \
+        >"$TEST_DIR/invalid-auto.out" 2>"$TEST_DIR/invalid-auto.err"; then
+    printf 'error: invalid ARM64e auto preference was accepted\n' >&2
+    exit 1
+fi
+grep -Fq 'WHP_MACOS_AUTO_ARM64E must be 0 or 1' "$TEST_DIR/invalid-auto.err"
+
 # An unusable macOS runtime must fall back even if compilation works.
-selected="$(TEST_ARM64E_RUNTIME=1 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 TEST_ARM64E_RUNTIME=1 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
 
 # An incorrect ABI on either compiler must also fall back.
-selected="$(TEST_ARM64E_PTRAUTH=0 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 TEST_ARM64E_PTRAUTH=0 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
-selected="$(TEST_ARM64E_CXX_SUPPORTED=0 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 TEST_ARM64E_CXX_SUPPORTED=0 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
 
 # An LLD linker without the authenticated-fixup opt-in is never auto-selected.
 : > "$TEST_COMPILER_LOG"
-selected="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_ARM64E_USE_LLD=0 \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_ARM64E_USE_LLD=0 \
     WHP_MACOS_ARCH=auto whp_select_macos_arch \
     "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
@@ -83,7 +99,7 @@ selected="$(NATIVE_LLVM_LDFLAG=-fuse-ld=lld WHP_ARM64E_USE_LLD=0 \
 
 # ASan retains the established arm64 lane in automatic mode.
 : > "$TEST_COMPILER_LOG"
-selected="$(QEMU_ASAN=1 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 QEMU_ASAN=1 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
 [[ ! -s "$TEST_COMPILER_LOG" ]]
@@ -91,7 +107,7 @@ selected="$(QEMU_ASAN=1 WHP_MACOS_ARCH=auto \
 # UBSan also requires a matching compiler-rt runtime, unlike an ordinary
 # arm64e C/C++ link. Do not promote auto to arm64e under UBSan.
 : > "$TEST_COMPILER_LOG"
-selected="$(QEMU_UBSAN=1 WHP_MACOS_ARCH=auto \
+selected="$(WHP_MACOS_AUTO_ARM64E=1 QEMU_UBSAN=1 WHP_MACOS_ARCH=auto \
     whp_select_macos_arch "$FAKE_CLANG" /tmp/MacOSX.sdk 15.0 arm64 "$FAKE_CLANG")"
 [[ "$selected" == arm64 ]]
 [[ ! -s "$TEST_COMPILER_LOG" ]]

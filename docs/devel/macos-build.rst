@@ -584,18 +584,24 @@ for an ISA-level modification.
 ARM64e host auto-detection
 ---------------------------
 
-On Apple Silicon, ``WHP_MACOS_ARCH=auto`` (the default) first checks
-whether the selected C and C++ drivers can compile, link **and execute**
-an indirect call with the arm64e pointer-authentication ABI. If either
-probe fails, QEMU uses the ordinary ``arm64`` host ABI. This is a host
-capability test; a compiler merely accepting ``-arch arm64e`` is not
-sufficient. Intel builds remain ``x86_64``. AddressSanitizer stays on
-``arm64`` in automatic mode.
+On Apple Silicon, ``WHP_MACOS_ARCH=auto`` (the default) now retains
+ordinary ``arm64``, matching the normal native LLVM/LLDB bootstrap.
+Intel processes retain ``x86_64``. The mere presence of a FAT archive,
+an ARM64e compiler option, or CPU pointer-authentication support does not
+change an entire build's ABI.
 
-The selected linker also participates in detection: Mach-O LLD may
-auto-select arm64e only with ``WHP_ARM64E_USE_LLD=1`` and a successful
+``WHP_MACOS_AUTO_ARM64E=1`` explicitly enables capability-based promotion
+from arm64 to ARM64e. The selected C and C++ drivers must compile, link
+**and execute** an authenticated indirect call, with the selected linker
+also passing its ARM64e capability checks. When any optional probe fails,
+the whole build falls back to ordinary arm64 *before compilation starts*.
+Without the opt-in no speculative ARM64e probing is required.
+AddressSanitizer and UBSan continue to use arm64 in automatic mode.
+
+The selected linker also participates in opted-in detection: Mach-O LLD
+may select arm64e only with ``WHP_ARM64E_USE_LLD=1`` and a successful
 authenticated-fixup probe. Explicit ``WHP_MACOS_ARCH=arm64`` disables
-auto-promotion. Explicit ``WHP_MACOS_ARCH=arm64e`` retains the
+promotion. Explicit ``WHP_MACOS_ARCH=arm64e`` retains the
 compile/link-only development override, but it does not prove that
 the resulting QEMU executable can launch or that its TCG runtime passes.
 The macOS runtime and TCG smoke tests remain necessary validation.
@@ -851,6 +857,26 @@ of mixed-ABI members in a single archive. The existing QEMU ARM64e archive
 smoke checks the same workflow with installed LLVM tools when passed
 ``--lipo`` and ``--nm``. This does not authorize mixing ARM64e pointer
 authentication and ordinary ARM64 code inside one archive slice.
+
+Universal input ABI selection and fallback
+------------------------------------------
+
+Resolve the QEMU host output ABI first and keep it unchanged during the
+entire compile/archive/link stage. FAT32 and FAT64 files are containers
+of independently built slices: prefer the exact requested architecture
+and validate the inner Mach-O subtype. Do not combine ARM64, ARM64e and
+x86_64 object members inside one thin archive or one linked output.
+
+An ARM64e output may use an ordinary ARM64 *dynamic library* as a
+compatibility fallback if it lacks an ARM64e slice. This exception
+does not apply to objects or static archives, and there is no reverse
+ARM64-to-ARM64e fallback. Unsupported versioned PAC ABIs, x1 variants
+and malformed FAT headers are errors, not reasons to change output ABI.
+
+Rosetta builds are a separate opted-in x86_64 host process and build
+directory (``MACOS_ALLOW_ROSETTA=1``); they do not authorize linking
+x86_64 objects into ARM64 outputs. Build and validate each ABI before
+combining executable outputs with ``llvm-lipo``.
 
 LLD FAT32/FAT64 static archive selection
 ---------------------------------------

@@ -41,6 +41,8 @@ for fat in 32 64; do
   "$lipo" -create "${opts[@]}" "$work/client-e.o" -o "$work/arm64e-$fat.o"
   "$lipo" -create "${opts[@]}" "$work/lib-a.a" "$work/lib-e.a" -o "$work/both-$fat.a"
   "$lipo" -create "${opts[@]}" "$work/lib-a.a" -o "$work/arm64-$fat.a"
+  "$lipo" -create "${opts[@]}" "$work/lib-e.a" -o "$work/arm64e-$fat.a"
+  "$lipo" -create "${opts[@]}" "$work/lib-e.dylib" -o "$work/arm64e-$fat.dylib"
   archs="$("$lipo" -archs "$work/both-$fat.a")"
   read -r -a arch_list <<< "$archs"
   if [[ "${#arch_list[@]}" -ne 2 ||
@@ -68,6 +70,33 @@ assert struct.unpack('<III', header) == (0xfeedfacf, 0x0100000c, 0x80000002), \
 PY
   "$ld" -arch arm64 -platform_version macos 13.0 13.0 -dylib \
     -u _only_a "$work/both-$fat.a" -o "$work/from-fat-$fat-arm64.dylib"
+
+  # Default ARM64 output must take the exact slice, even if a compatible
+  # ARM64e one is present. Never reverse-fallback to an ARM64e-only image.
+  "$ld" -arch arm64 -platform_version macos 13.0 13.0 -dylib \
+    -u _only_a "$work/both-$fat.dylib" -o "$work/default-$fat.dylib"
+  python3 - "$work/default-$fat.dylib" "$work/from-fat-$fat-arm64.dylib" <<'PY'
+import pathlib
+import struct
+import sys
+
+for filename in sys.argv[1:]:
+    header = pathlib.Path(filename).read_bytes()[:12]
+    assert struct.unpack('<III', header) == (
+        0xfeedfacf, 0x0100000c, 0
+    ), f"ordinary ARM64 output changed ABI: {filename}"
+PY
+  for suffix in a dylib; do
+    input_file="$work/arm64e-$fat.$suffix"
+    if "$ld" -arch arm64 -platform_version macos 13.0 13.0 -dylib \
+        -u _only_e "$input_file" -o "$work/reverse-$fat-$suffix.dylib" \
+        >"$work/reverse.log" 2>&1; then
+      echo "ARM64 output improperly accepted ARM64e-only universal $suffix" >&2
+      exit 1
+    fi
+    grep -Fq 'ignoring file because it is universal (arm64e) but does not contain the arm64 architecture' \
+      "$work/reverse.log" || { cat "$work/reverse.log" >&2; exit 1; }
+  done
 
   # Missing ARM64e archive slices must not fall back to plain ARM64 object
   # code, unlike the dynamic-library-only compatibility exception.
@@ -138,4 +167,4 @@ grep -Fq 'truncated or malformed fat file' "$work/error.log" || {
   cat "$work/error.log" >&2
   exit 1
 }
-echo "ARM64e FAT32/FAT64 objects, dylibs, indexed archives, ABI and spoofed-slice guards: passed"
+echo "Darwin FAT32/FAT64 default ABI, exact slices, compatible dylib fallback and ABI guards: passed"

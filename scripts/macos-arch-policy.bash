@@ -4,8 +4,10 @@
 # an ABI variant of the AArch64 backend, not a separate LLVM target backend, so
 # keep this policy independent from WHP_HOST_ARCH/LLVM_TARGETS_TO_BUILD.
 #
-# Auto selects arm64e only after the C/C++ PAC execution and linker probes.
-# Explicit arm64e remains a link-only, probe-gated development lane.
+# Auto uses the native process ABI (arm64 or x86_64) by default.
+# WHP_MACOS_AUTO_ARM64E=1 enables the previous PAC-probed promotion path,
+# with arm64 fallback if the optional ABI cannot execute. Explicit arm64e
+# remains a link-only, probe-gated development lane.
 
 whp_macos_arch_probe_arm64e()
 {
@@ -312,6 +314,18 @@ whp_select_macos_arch()
     esac
 
     if [[ "$requested" == auto ]]; then
+        # Match the normal native LLVM bootstrap: host arm64 is the default
+        # ABI even when arm64e happens to be usable. Opt in to automatic
+        # arm64e promotion; do not silently retarget a whole QEMU build
+        # merely because a FAT input or the CPU supports another slice.
+        case "${WHP_MACOS_AUTO_ARM64E:-0}" in
+            0) printf '%s\n' "$native_arch"; return 0 ;;
+            1) ;;
+            *)
+                printf 'error: WHP_MACOS_AUTO_ARM64E must be 0 or 1\n' >&2
+                return 1
+                ;;
+        esac
         # Keep the default on arm64 unless the current macOS runtime can
         # actually execute PAC-authenticated calls compiled by both drivers.
         # ASan, UBSan and unapproved Mach-O LLD configurations do not
