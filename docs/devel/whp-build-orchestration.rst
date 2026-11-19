@@ -320,6 +320,23 @@ profile. The menu is the single portable interface for host features,
 firmware, machines, build behavior, hardware filters, and build outputs.
 Explicit environment variables remain one-run overrides of the saved values.
 
+In the Python/curses interface, press ``/`` (or ``f``) to filter options by
+setting key, label, section, or hardware group. An empty search restores the
+full menu; an unmatched search keeps the previous selection and filter.
+Use ``[`` and ``]`` to jump between sections, arrows or Page Up/Page Down to
+navigate, ``Space`` or ``Enter`` to edit, ``?`` to inspect the selected
+setting's allowed values, ``r`` for defaults, and ``s`` to save. The footer
+identifies the exact configuration key and repository default; conflicting
+sanitizer or LTO choices are reported as soon as they are edited, and invalid
+combinations are still rejected at save time.
+
+Without Python, the POSIX-shell fallback offers ``f`` to filter by the same
+fields and ``a`` to return to all options. Displayed option numbers stay
+stable under filtering, so a filtered selection edits the intended key.
+Run ``./build.sh menuconfig --dump`` to inspect the complete menu without
+editing the configuration file. Both interfaces retain unknown saved keys
+rather than silently discarding older profile entries.
+
 Each menu item carries its own repository default; optional diagnostics,
 installation, and some build outputs are deliberately opt-in. The build-output
 section includes ``qemu-img`` and the supported ``qemu-system-*`` selectors.
