@@ -23,9 +23,12 @@ if not darwin_utils.is_file():
     darwin_utils = root / (
         "llvm-project/compiler-rt/cmake/Modules/CompilerRTDarwinUtils.cmake"
     )
-cmake = darwin_utils.read_text(encoding="utf-8")
-assert "lipo_flags -arch ${LIB_ARCH}" in cmake
-assert "lipo_flags -arch ${arch} " not in cmake
+# Fast policy CI checks out QEMU without submodules. The native LLVM
+# workflow checks the pinned CMake file after fetching the LLVM gitlink.
+if darwin_utils.is_file():
+    cmake = darwin_utils.read_text(encoding="utf-8")
+    assert "lipo_flags -arch ${LIB_ARCH}" in cmake
+    assert "lipo_flags -arch ${arch} " not in cmake
 assert "BOOTSTRAP_SCHEMA=14" in script
 assert "darwin_cmake_arch=arm64e" in script
 assert "darwin_cmake_arch=arm64" in script
