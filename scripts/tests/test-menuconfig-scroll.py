@@ -128,5 +128,89 @@ class MenuconfigScrollTests(unittest.TestCase):
             self.assertEqual(state.values[first_key], original)
 
 
+    def test_filtered_menu_preserves_only_matching_context(self):
+        menu = load_menu_module()
+        rows = menu._flatten_items('PC speaker')
+        self.assertEqual([row[0] for row in rows],
+                         ['section', 'group', 'option', 'option'])
+        self.assertEqual(rows[0][1], 'QEMU hardware')
+        self.assertEqual(rows[1][1], 'PC speaker')
+        self.assertEqual(
+            [row[2].key for row in rows if row[0] == 'option'],
+            ['I386_AUDIO_PCSPK', 'PPC_AUDIO_PCSPK'],
+        )
+        self.assertEqual(menu._flatten_items('no-such-configuration-option'), [])
+
+    def test_section_positions_stay_consistent_when_filtered(self):
+        menu = load_menu_module()
+        rows = menu._flatten_items()
+        selectable = menu._selectable_positions(rows)
+        sections = menu._section_positions(rows, selectable)
+        self.assertEqual(len(sections), len(menu.whp_config.sections()))
+        self.assertEqual(sections[0], 0)
+        self.assertEqual(sorted(set(sections)), sections)
+
+    def test_find_edit_and_revert_clear_unsaved_flag(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+
+        state = config.ConfigState(config.default_values(), {})
+        initial = dict(state.values)
+        screen = FakeScreen([ord('/'), ord(' '), ord(' '), ord('q')])
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
+                 mock.patch.object(menu, '_edit_string', return_value='QEMU_HOST_LTO_MODE'):
+                menu._run(screen, path, state)
+            self.assertEqual(state.values, initial)
+            self.assertFalse(path.exists())
+            self.assertTrue(any(
+                'Filter: QEMU_HOST_LTO_MODE' in text
+                for frame in screen.frames for _, _, text, _ in frame
+            ))
+            self.assertEqual(screen.current[-1][2], 'Saved')
+
+    def test_find_reports_no_match_without_losing_previous_selection(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+
+        state = config.ConfigState(config.default_values(), {})
+        screen = FakeScreen([ord('/'), ord('q')])
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
+                 mock.patch.object(menu, '_edit_string', return_value='missing-xyz'):
+                menu._run(screen, pathlib.Path(td) / '.whpconfig', state)
+        self.assertTrue(any(
+            'No settings match' in text
+            for frame in screen.frames for _, _, text, _ in frame
+        ))
+
+    def test_conflicting_edits_report_problem_before_save(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+
+        state = config.ConfigState(config.default_values(), {})
+        screen = FakeScreen([
+            ord('/'), ord(' '), ord('/'), ord(' '), ord('q'), ord('q'),
+        ])
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
+                 mock.patch.object(menu, '_edit_string',
+                                   side_effect=['QEMU_TSAN', 'QEMU_ASAN']):
+                menu._run(screen, path, state)
+            self.assertFalse(path.exists())
+        self.assertTrue(any(
+            'Conflict (fix before saving)' in text
+            for frame in screen.frames for _, _, text, _ in frame
+        ))
+
+
 if __name__ == '__main__':
     unittest.main()
