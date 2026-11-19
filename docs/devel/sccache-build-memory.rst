@@ -9,8 +9,17 @@ the memory consumed by an arbitrary compiler or linker process.
 Managed WHP sccacher fork
 -------------------------
 
-Set ``BOOTSTRAP_SCCACHE=y`` in ``.whpconfig`` (or export
-``BOOTSTRAP_SCCACHE=1``) to build the pinned
+The old ``BOOTSTRAP_SCCACHE`` menu checkbox is retired. Its behavior now
+belongs to the ``COMPILER_CACHE`` provider choice, so selecting
+``sccache`` means *use an installed system cache* while selecting
+``managed-sccache`` means *bootstrap the pinned WHP fork*. Old saved
+``BOOTSTRAP_SCCACHE=y`` profiles are migrated on load (including the
+no-Python menu fallback); ``BOOTSTRAP_SCCACHE=1`` remains a supported
+environment override for existing scripts. An explicit contradictory cache
+selection fails instead of being silently replaced.
+
+Select ``COMPILER_CACHE=managed-sccache`` in ``menuconfig`` (or use the
+same environment setting) to build the pinned
 ``retrochristian5000/sccacher`` source under ``toolchains/sccacher``.
 This is explicitly opt-in: ordinary builds retain existing system
 ccache/sccache discovery and do not require Rust. The fork must be pinned by
@@ -68,7 +77,7 @@ the source, macros, compiler, and arguments. PCH **production** remains
 uncacheable and is forwarded to Clang; it must rebuild when its header or
 compiler inputs change. This is not producer-side PCH artifact caching.
 
-Only a successful ``BOOTSTRAP_SCCACHE=1`` setup in ``build.sh`` exports the
+Only a successful managed sccacher setup in ``build.sh`` exports the
 ``WHP_MANAGED_SCCACHE=1`` capability marker. An ordinary system sccache,
 including ``COMPILER_CACHE=sccache`` without the managed bootstrap, still
 uses the conservative split: LLVM C++ bypasses sccache with PCH enabled,
@@ -85,7 +94,7 @@ target host. Do not assume reduced memory or faster clean builds.
 
 For example::
 
-    BOOTSTRAP_NATIVE_LLVM=1 BOOTSTRAP_SCCACHE=1 NATIVE_LLVM_PCH=1 ./build.sh
+    BOOTSTRAP_NATIVE_LLVM=1 COMPILER_CACHE=managed-sccache NATIVE_LLVM_PCH=1 ./build.sh
 
 PCH creation can increase peak memory, so compare native LLVM clean and
 incremental builds before claiming a speedup or RSS reduction. The LLVM

@@ -515,6 +515,26 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+# The retired BOOTSTRAP_SCCACHE menu toggle is represented by a provider in
+# COMPILER_CACHE. Resolve it before any bootstrap or cache consumer starts.
+# Keep the legacy environment override, but do not accept contradictory
+# requests: a managed build cannot simultaneously be opted out.
+if [ "${COMPILER_CACHE:-auto}" = managed-sccache ]; then
+    case "${BOOTSTRAP_SCCACHE:-}" in
+        ''|1) BOOTSTRAP_SCCACHE=1 ;;
+        0)
+            printf '%s\n' \
+                'error: COMPILER_CACHE=managed-sccache conflicts with BOOTSTRAP_SCCACHE=0' >&2
+            exit 2 ;;
+        *)
+            printf 'error: BOOTSTRAP_SCCACHE must be 0 or 1: %s\n' \
+                "$BOOTSTRAP_SCCACHE" >&2
+            exit 2 ;;
+    esac
+    COMPILER_CACHE=sccache
+    export BOOTSTRAP_SCCACHE COMPILER_CACHE
+fi
+
 # PGO use implies an instrumented generate pass if there are no saved
 # profiles. Training requires running the instrumented emulator, not just
 # compiling it. Keep this before any firmware/LLVM bootstrap so the generate

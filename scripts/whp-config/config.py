@@ -137,8 +137,10 @@ OPTIONS = (
     Option('BOOTSTRAP_ZLIB', 'Host features', 'Bootstrap/use WHP zlib', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_LIBTOOL', 'Host features', 'Bootstrap/use WHP Libtool', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('BOOTSTRAP_LIBISOFS', 'Host features', 'Bootstrap/use WHP libisofs', 'choice', 'auto', ('auto', 'y', 'n')),
-    Option('BOOTSTRAP_SCCACHE', 'Host features', 'Bootstrap/use WHP sccacher', 'bool', 'n'),
-    Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice', 'auto', ('auto', 'ccache', 'sccache', 'none')),
+    # The managed sccacher bootstrap is a cache provider, not a second
+    # independent toggle. Legacy BOOTSTRAP_SCCACHE profiles migrate below.
+    Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice',
+           'auto', ('auto', 'ccache', 'sccache', 'managed-sccache', 'none')),
     Option('QEMU_HOST_LINKER', 'Host features', 'QEMU host linker', 'choice', 'auto', ('auto', 'system', 'lld', 'mold')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('WHP_MESON_PROVIDER', 'Host features', 'QEMU Meson provider', 'choice', 'fork', ('venv', 'fork')),
@@ -319,6 +321,7 @@ def load_config(path: pathlib.Path) -> ConfigState:
     seen_options = set()
     legacy_target_list = None
     legacy_install_after_build = None
+    legacy_bootstrap_sccache = None
     for number, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
         line = raw_line.strip()
         if not line or line.startswith('#'):
@@ -349,6 +352,13 @@ def load_config(path: pathlib.Path) -> ConfigState:
                 raise ValueError(f'{path}:{number}: INSTALL must be y or n')
             legacy_install_after_build = value
             continue
+        if key == 'BOOTSTRAP_SCCACHE':
+            if value not in ('y', 'n'):
+                raise ValueError(
+                    f'{path}:{number}: legacy BOOTSTRAP_SCCACHE must be y or n'
+                )
+            legacy_bootstrap_sccache = value
+            continue
         option = OPTION_BY_KEY.get(key)
         if option is None:
             unknown[key] = value
@@ -362,6 +372,15 @@ def load_config(path: pathlib.Path) -> ConfigState:
         and 'INSTALL_AFTER_BUILD' not in seen_options
     ):
         values['INSTALL_AFTER_BUILD'] = legacy_install_after_build
+
+    if legacy_bootstrap_sccache == 'y':
+        cache = values['COMPILER_CACHE']
+        if cache not in ('auto', 'sccache', 'managed-sccache'):
+            raise ValueError(
+                f'{path}: BOOTSTRAP_SCCACHE=y conflicts with '
+                f'COMPILER_CACHE={cache}; select a compatible cache provider'
+            )
+        values['COMPILER_CACHE'] = 'managed-sccache'
 
     if legacy_target_list is not None:
         legacy_targets = set(legacy_target_list.split(','))

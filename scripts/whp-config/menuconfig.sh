@@ -71,6 +71,35 @@ set_value()
     mv "$WORK_NEW" "$WORK"
 }
 
+# The POSIX fallback shares the Python model's one-time retirement mapping.
+# Migrate only the scratch copy. An unsaved quit leaves .whpconfig untouched.
+migrate_retired_cache()
+{
+    old=$(get_value BOOTSTRAP_SCCACHE)
+    [ -n "$old" ] || return 0
+    current=$(get_value COMPILER_CACHE)
+    case "$old" in
+        y)
+            case "$current" in
+                ''|auto|sccache|managed-sccache)
+                    set_value COMPILER_CACHE managed-sccache ;;
+                *)
+                    printf 'error: BOOTSTRAP_SCCACHE=y conflicts with COMPILER_CACHE=%s\n' \
+                        "$current" >&2
+                    return 1 ;;
+            esac ;;
+        n) ;;
+        *)
+            printf 'error: legacy BOOTSTRAP_SCCACHE must be y or n: %s\n' \
+                "$old" >&2
+            return 1 ;;
+    esac
+    awk '/^BOOTSTRAP_SCCACHE=/{next} {print}' "$WORK" > "$WORK_NEW"
+    mv "$WORK_NEW" "$WORK"
+}
+
+migrate_retired_cache || exit 2
+
 render_menu()
 {
     # Keep option numbers stable across filtered and unfiltered views.

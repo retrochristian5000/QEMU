@@ -356,7 +356,13 @@ editing the configuration file. Both interfaces retain unknown saved keys
 rather than silently discarding older profile entries.
 
 Each menu item carries its own repository default; optional diagnostics,
-installation, and some build outputs are deliberately opt-in. The build-output
+installation, and some build outputs are deliberately opt-in. The redundant
+``BOOTSTRAP_SCCACHE`` menu checkbox has been retired: select
+``COMPILER_CACHE=managed-sccache`` to build the pinned fork, or
+``COMPILER_CACHE=sccache`` to use an installed cache. Existing
+``BOOTSTRAP_SCCACHE=y`` profiles migrate on load without rewriting the
+user-owned file until explicitly saved. The legacy environment variable
+continues working.  The build-output
 section includes ``qemu-img`` and the supported ``qemu-system-*`` selectors.
 Disabling ``qemu-img`` passes ``--disable-tools`` to QEMU; enabling it passes
 ``--enable-tools``. The system-emulator selections derive QEMU's internal
