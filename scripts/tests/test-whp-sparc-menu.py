@@ -5,6 +5,7 @@ import importlib.util
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -86,6 +87,100 @@ class SparcMenuTargetTests(unittest.TestCase):
             'whp_require_boolean_values BUILD_QEMU_SYSTEM_SPARC',
             text,
         )
+
+
+    def test_all_selector_preserves_individual_target_configuration(self):
+        mod = load_config_module()
+        values = mod.default_values()
+        self.assertEqual(values['BUILD_QEMU_SYSTEM_ALL'], 'n')
+        saved = {key: values[key] for key in mod.SYSTEM_EMULATOR_KEYS}
+        values['BUILD_QEMU_SYSTEM_ALL'] = 'y'
+        self.assertEqual(
+            {key: values[key] for key in mod.SYSTEM_EMULATOR_KEYS},
+            saved,
+        )
+        self.assertTrue(all(
+            key not in {option.key for option in mod.visible_options(values)}
+            for key in mod.SYSTEM_EMULATOR_KEYS
+        ))
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("BUILD_QEMU_SYSTEM_ALL='1'", assignments)
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            mod.save_config(path, mod.ConfigState(values))
+            restored = mod.load_config(path)
+            self.assertEqual(restored.values['BUILD_QEMU_SYSTEM_ALL'], 'y')
+            self.assertEqual(
+                {key: restored.values[key] for key in saved}, saved,
+            )
+            restored.values['BUILD_QEMU_SYSTEM_ALL'] = 'n'
+            self.assertTrue(all(
+                key in {option.key for option in mod.visible_options(restored.values)}
+                for key in saved
+            ))
+
+    def test_portable_all_targets_mode_and_individual_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            env = os.environ.copy()
+            env.update({
+                'BUILD_DIR': str(pathlib.Path(td) / 'build'),
+                'WHP_PORTABLE_PROBE_ONLY': '1',
+                'WHP_INCREMENTAL_BUILD': '0',
+                'BUILD_QEMU_SYSTEM_ALL': '1',
+                'BUILD_QEMU_SYSTEM_I386': '0',
+                'BUILD_QEMU_SYSTEM_PPC': '0',
+                'BUILD_QEMU_SYSTEM_SPARC': '0',
+                'QEMU_X86_FAMILY_LINK': '0',
+                'BUILD_OPENBIOS': '0',
+                'BOOTSTRAP_POWERPC_TOOLCHAIN': '0',
+            })
+            result = subprocess.run(
+                [sys.executable, str(PORTABLE_ENTRY)],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertIn(
+                'CONFIGURE_ARG=--target-list=ppc-softmmu,i386-softmmu,sparc-softmmu',
+                result.stdout,
+            )
+            env['BUILD_QEMU_SYSTEM_ALL'] = '0'
+            fallback = subprocess.run(
+                [sys.executable, str(PORTABLE_ENTRY)],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertIn('CONFIGURE_ARG=--disable-system', fallback.stdout)
+            self.assertNotIn('CONFIGURE_ARG=--target-list=', fallback.stdout)
+
+    def test_bash_all_targets_mode_does_not_mutate_individual_flags(self):
+        source = ROOT / 'scripts' / 'whp-build'
+        script = """
+set -e
+source "$1/shell-functions.sh"
+source "$1/common.bash"
+source "$1/prepare-build.bash"
+HOST_OS=Linux
+SOURCE_DIR="$2"
+BUILD_DIR="$3"
+BUILD_QEMU_SYSTEM_I386=0
+BUILD_QEMU_SYSTEM_PPC=0
+BUILD_QEMU_SYSTEM_SPARC=0
+BUILD_QEMU_SYSTEM_ALL=1
+QEMU_X86_FAMILY_LINK=0
+whp_prepare_build_defaults
+printf 'all=%s\n' "$QEMU_TARGET_LIST"
+printf 'individual=%s:%s:%s\n' "$BUILD_QEMU_SYSTEM_I386" \
+    "$BUILD_QEMU_SYSTEM_PPC" "$BUILD_QEMU_SYSTEM_SPARC"
+BUILD_QEMU_SYSTEM_ALL=0
+whp_prepare_build_defaults
+printf 'off=%s\n' "$QEMU_TARGET_LIST"
+"""
+        with tempfile.TemporaryDirectory() as td:
+            result = subprocess.run(
+                ['bash', '-c', script, 'bash', str(source), str(ROOT), td],
+                text=True, capture_output=True, check=True,
+            )
+        self.assertIn('all=ppc-softmmu,i386-softmmu', result.stdout)
+        self.assertIn('individual=0:0:0', result.stdout)
+        self.assertIn('off=\n', result.stdout)
 
 
 if __name__ == '__main__':
