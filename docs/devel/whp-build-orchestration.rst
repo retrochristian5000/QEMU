@@ -488,3 +488,36 @@ defaults with a private feature matrix. The wrapper adds only the host policy,
 firmware integration, and explicit target/device choices requested by the WHP
 build profile. Device choices left on ``auto`` remain owned by QEMU's Kconfig
 defaults and dependencies.
+
+
+SeaBIOS guest RAM footprint
+---------------------------
+
+The pinned WHP SeaBIOS fork provides an **opt-in** POST report for
+distinguishing firmware allocation pressure from QEMU's own host-memory
+usage. Once the matching SeaBIOS firmware image is built, compare
+identical machine types and devices with different RAM sizes::
+
+  qemu-system-i386 -machine pc -m 64M -bios /path/to/bios-256k.bin \
+    -fw_cfg name=opt/org.seabios/whp-memory-report,string=1 \
+    -chardev file,id=seabios,path=seabios-memory.log \
+    -device isa-debugcon,iobase=0x402,chardev=seabios
+
+The new ``WHP SeaBIOS memory:`` lines report the conventional-memory
+limit and EBDA size in KiB; **tracked, permanent dynamic allocations**
+in the low, F-segment, and high zones in bytes; and high-zone whole
+pages returned to the guest before boot in bytes. Existing level-1
+SeaBIOS E820 messages provide the complementary final memory map.
+The ``opt/org.seabios/whp-memory-report`` fw_cfg file enables
+reporting by its presence; regular boots do not emit the extra summary.
+The instrumentation does not allocate a new guest buffer.
+
+These totals are **not** the emulator process RSS or every E820
+reservation. The 0xA0000-0xFFFFF PC ROM/adapter address window is not
+ordinary guest RAM, and the firmware's initial high-zone reserve of up
+to 16 MiB is largely returned to E820 in whole pages when unused.
+Temporary POST allocations likewise must not be counted as retained
+guest memory. Compare the final E820 map, machine type, option ROMs,
+EBDA and attached devices before lowering any firmware allocation limit.
+For the native firmware source and logging details, consult
+``roms/seabios/docs/Debugging.md``.
