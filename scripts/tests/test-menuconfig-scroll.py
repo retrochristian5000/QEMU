@@ -158,7 +158,7 @@ class MenuconfigScrollTests(unittest.TestCase):
 
         state = config.ConfigState(config.default_values(), {})
         initial = dict(state.values)
-        screen = FakeScreen([ord('/'), ord(' '), ord(' '), ord('q')])
+        screen = FakeScreen([ord('/'), ord(' '), ord(' '), ord(' '), ord('q')])
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / '.whpconfig'
             with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
@@ -186,7 +186,8 @@ class MenuconfigScrollTests(unittest.TestCase):
                 menu._run(screen, pathlib.Path(td) / '.whpconfig', state)
         self.assertTrue(any(
             'No settings match' in text
-            for frame in screen.frames for _, _, text, _ in frame
+            for frame in [*screen.frames, screen.current]
+            for _, _, text, _ in frame
         ))
 
     def test_conflicting_edits_report_problem_before_save(self):
