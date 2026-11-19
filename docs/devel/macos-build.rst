@@ -971,6 +971,35 @@ will execute an arbitrary third-party ARM64e executable. Compiler
 driver configuration and response files also require scrutiny when
 they are allowed from external inputs.
 
+ARM64e LTO C++ symbol-name preservation
+---------------------------------------
+
+LLVM LTO resolves global symbols by their Mach-O linker-visible name,
+but the same linker symbol can have two IR spellings. For example,
+``@_Z6symboli`` and the verbatim ``@"\01__Z6symboli"`` both map to
+``__Z6symboli``. With a reference processed before its prevailing
+definition, overwriting the recorded IR name could hide the mismatch
+and let ThinLTO internalize a still-needed hidden definition.
+
+The pinned shared LTO engine now compares the old and incoming IR names
+before replacing the prevailing IR spelling. A mismatch keeps the symbol
+externally resolvable without changing ARM64e PAC metadata, object
+subtypes, or the ban on cross-ABI bitcode inputs.
+
+The LLVM lit fixture and QEMU macOS LLD workflow verify this symbol
+through regular LTO, ThinLTO, reversed module order and lazy extraction
+from an indexed bitcode archive. Every linked Mach-O retains ARM64e
+userland ABI version 0. Run the pinned smoke test with::
+
+  bash scripts/tests/test-lld-arm64e-lto-symbols.bash \
+    "$NATIVE_LLVM_DIR/bin/ld64.lld" "$NATIVE_LLVM_DIR/bin/opt" \
+    "$NATIVE_LLVM_DIR/bin/llvm-readobj" "$NATIVE_LLVM_DIR/bin/llvm-objdump" \
+    "$NATIVE_LLVM_DIR/bin/llvm-ar" "$NATIVE_LLVM_DIR/bin/llvm-ranlib"
+
+Weak and COMDAT conflicts, distributed ThinLTO and independent cache
+invalidation still need separate coverage; this is a targeted symbol
+identity fix, not proof that every ARM64e LTO feature is complete.
+
 ARM64e LTO input ABI isolation
 ----------------------------
 

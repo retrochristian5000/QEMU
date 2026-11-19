@@ -13,6 +13,7 @@ on:
       - 'scripts/tests/test-lld-fat-arm64e.bash'
       - 'scripts/tests/test-lld-arm64e-dylib-identity.bash'
       - 'scripts/tests/test-lld-arm64e-thinlto.bash'
+      - 'scripts/tests/test-lld-arm64e-lto-symbols.bash'
       - 'scripts/tests/test-compiler-rt-arm64e-policy.py'
       - 'scripts/verify-native-asan-darwin.py'
       - 'scripts/whp-lldb-autodebug.py'
@@ -157,6 +158,17 @@ jobs:
             "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
             "$GITHUB_WORKSPACE/build-lld/bin/llvm-lto2" \
             "$GITHUB_WORKSPACE/build-lld/bin/llvm-lto"
+
+      - name: Verify ARM64e LTO C++ symbols and lazy archive resolution
+        shell: bash
+        run: |
+          bash scripts/tests/test-lld-arm64e-lto-symbols.bash \
+            "$GITHUB_WORKSPACE/build-lld/bin/ld64.lld" \
+            "$GITHUB_WORKSPACE/build-lld/bin/opt" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-readobj" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-objdump" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-ar" \
+            "$GITHUB_WORKSPACE/build-lld/bin/llvm-ranlib"
 
       - name: Check ARM64e dylib install names and version propagation
         shell: bash
