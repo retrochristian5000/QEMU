@@ -65,6 +65,26 @@ A new executable does not automatically stop an old running sccache server:
 restart only when other builds have finished. Check hit rates and measure
 actual compiler/linker peak memory; the fork does not itself cap Clang RSS.
 
+Native LLVM cache integrity
+---------------------------
+
+Native LLVM keeps three separate cache contracts: compiler-object caching
+through ccache/sccache, an incremental CMake/Ninja graph, and a staged
+installed toolchain. The CMake graph reuse marker alone is not sufficient:
+before reusing its ``CMakeCache.txt``, the bootstrap now compares effective
+cached ABI, macOS SDK/deployment, C and C++ compiler/launcher, archive-tool,
+LLVM target/LTO, and nested runtime-project values with the selected CMake
+arguments. Missing, duplicate, or changed protected entries cause an
+in-place CMake reconfiguration; the Ninja object tree is not discarded.
+The existing cross-target and linker-flag blacklist remains independently
+enforced.
+
+The installed-toolchain marker still requires executable, headers, runtime,
+architecture and C/C++ ABI validation; a successful cache lookup alone cannot
+prove that arbitrary cached object files or third-party compiler caches are
+free from tampering. This check prevents a **known configuration-drift path**,
+not every malicious build-system or filesystem modification.
+
 LLVM precompiled headers with sccache
 -------------------------------------
 

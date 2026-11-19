@@ -1995,7 +1995,79 @@ native_llvm_cmake_cache_clean()
             [[ "${recorded#*=}" == "" ]] || return 1
         fi
     done
-    grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache"
+    grep -Fxq 'CMAKE_GENERATOR:INTERNAL=Ninja' "$cache" || return 1
+
+    # The config marker hashes the *requested* CMake invocation, but an
+    # externally changed CMakeCache can disagree while that marker matches.
+    # Compare the effective cached values of ABI/SDK, compiler, launcher,
+    # runtime, and LLVM code-generation settings before reusing the graph.
+    # Read the cache once: avoid spawning a process for every CMake option.
+    if ! printf '%s\n' "${cmake_args[@]}" | awk -v cache="$cache" '
+        BEGIN {
+            n = split(
+                "CMAKE_BUILD_TYPE CMAKE_C_COMPILER CMAKE_CXX_COMPILER " \
+                "CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER " \
+                "CMAKE_AR CMAKE_RANLIB CMAKE_MAKE_PROGRAM " \
+                "CMAKE_OSX_SYSROOT CMAKE_OSX_ARCHITECTURES " \
+                "CMAKE_OSX_DEPLOYMENT_TARGET CMAKE_INSTALL_PREFIX " \
+                "CMAKE_C_FLAGS CMAKE_CXX_FLAGS CMAKE_ASM_FLAGS " \
+                "CMAKE_C_FLAGS_RELEASE CMAKE_CXX_FLAGS_RELEASE " \
+                "CMAKE_ASM_FLAGS_RELEASE CMAKE_CXX_STANDARD " \
+                "CMAKE_DISABLE_PRECOMPILE_HEADERS " \
+                "CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS " \
+                "CMAKE_MODULE_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS " \
+                "CMAKE_EXE_LINKER_FLAGS_RELEASE " \
+                "CMAKE_SHARED_LINKER_FLAGS_RELEASE " \
+                "CMAKE_MODULE_LINKER_FLAGS_RELEASE " \
+                "CMAKE_STATIC_LINKER_FLAGS_RELEASE " \
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION " \
+                "LLVM_HOST_TRIPLE LLVM_DEFAULT_TARGET_TRIPLE " \
+                "LLVM_TARGETS_TO_BUILD LLVM_TARGET_ARCH " \
+                "LLVM_ENABLE_PROJECTS LLVM_ENABLE_RUNTIMES " \
+                "LLVM_INCLUDE_RUNTIMES LLVM_DISTRIBUTION_COMPONENTS " \
+                "LLVM_ENABLE_LTO LLVM_ENABLE_FATLTO LLVM_CCACHE_BUILD " \
+                "LLVM_BUILD_LLVM_DYLIB LLVM_LINK_LLVM_DYLIB " \
+                "CLANG_LINK_CLANG_DYLIB RUNTIMES_CMAKE_ARGS " \
+                "BUILTINS_CMAKE_ARGS",
+                keys, " "
+            )
+            for (i = 1; i <= n; i++) protected[keys[i]] = 1
+            while ((getline entry < cache) > 0) {
+                colon = index(entry, ":")
+                equal = index(entry, "=")
+                if (colon < 2 || equal < colon) continue
+                name = substr(entry, 1, colon - 1)
+                if (!(name in protected)) continue
+                if (name in found) duplicate[name] = 1
+                found[name] = substr(entry, equal + 1)
+            }
+            close(cache)
+        }
+        /^-D/ {
+            entry = substr($0, 3)
+            equal = index(entry, "=")
+            if (equal < 2) next
+            name = substr(entry, 1, equal - 1)
+            sub(/:.*/, "", name)
+            if (!(name in protected)) next
+            if (name in wanted) duplicate[name] = 1
+            wanted[name] = substr(entry, equal + 1)
+        }
+        END {
+            invalid = 0
+            for (name in wanted) {
+                if (name in duplicate ||
+                    !(name in found) || found[name] != wanted[name]) {
+                    printf "WHP native LLVM: CMake cache mismatch for %s\n", name > "/dev/stderr"
+                    invalid = 1
+                }
+            }
+            exit invalid
+        }
+    '; then
+        printf 'WHP native LLVM: effective CMake cache differs; reconfiguring in place\n' >&2
+        return 1
+    fi
 }
 # WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_END
 

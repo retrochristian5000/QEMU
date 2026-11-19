@@ -766,10 +766,12 @@ assert 'native_llvm_cmake_cache_clean; then' in bootstrap
 with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
     cache = Path(td) / 'CMakeCache.txt'
 
-    def cache_clean() -> bool:
+    def cache_clean(args=()) -> bool:
+        values = ' '.join(shlex.quote(arg) for arg in args)
         result = subprocess.run(
             ['bash', '-c',
              'set -euo pipefail\nLLVM_BUILD_DIR="$1"\n' +
+             f'cmake_args=({values})\n' +
              cache_guard + '\nnative_llvm_cmake_cache_clean',
              'whp-llvm-cmake-guard', td],
             text=True, capture_output=True, check=False,
@@ -814,6 +816,62 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
         encoding='utf-8',
     )
     assert cache_clean(), 'a sanitized native linker cache was rejected'
+
+    # A correct marker does not authenticate CMakeCache.txt. Every protected
+    # value must still agree with the actual intended -D arguments, including
+    # arm64e versus arm64, deployment version, SDK and cache launcher.
+    wanted = {
+        'CMAKE_OSX_ARCHITECTURES': ('STRING', 'arm64e'),
+        'CMAKE_OSX_SYSROOT': ('PATH', '/sdk/MacOSX.sdk'),
+        'CMAKE_OSX_DEPLOYMENT_TARGET': ('STRING', '27.2'),
+        'LLVM_HOST_TRIPLE': ('STRING', 'arm64e-apple-macosx27.2'),
+        'LLVM_DEFAULT_TARGET_TRIPLE': ('STRING', 'arm64e-apple-macosx27.2'),
+        'LLVM_ENABLE_LTO': ('BOOL', 'OFF'),
+        'LLVM_ENABLE_PROJECTS': ('STRING', 'clang;lld'),
+        'CMAKE_C_COMPILER_LAUNCHER': ('STRING', '/cache/sccache'),
+        'CMAKE_CXX_COMPILER_LAUNCHER': ('STRING', '/cache/sccache'),
+        'CMAKE_C_FLAGS_RELEASE': ('STRING', '-O2 -arch arm64e'),
+        'CMAKE_C_COMPILER': ('FILEPATH', '/compiler/clang'),
+        'CMAKE_CXX_COMPILER': ('FILEPATH', '/compiler/clang++'),
+        'CMAKE_AR': ('FILEPATH', '/bin/llvm-ar'),
+        'RUNTIMES_CMAKE_ARGS': ('UNINITIALIZED', '-DCMAKE_OSX_ARCHITECTURES=arm64e;-DCOMPILER_RT_ENABLE_IOS=OFF'),
+    }
+    options = tuple(f'-D{key}={value}' for key, (_, value) in wanted.items())
+    def write_expected(overrides=None, omit=(), duplicate=None):
+        values = dict(wanted)
+        values.update(overrides or {})
+        cache_lines = ['CMAKE_GENERATOR:INTERNAL=Ninja']
+        for key, (kind, value) in values.items():
+            if key not in omit:
+                cache_lines.append(f'{key}:{kind}={value}')
+        if duplicate:
+            cache_lines.append(duplicate)
+        cache.write_text('\n'.join(cache_lines) + '\n', encoding='utf-8')
+
+    write_expected()
+    assert cache_clean(options), 'matching protected CMake cache was rejected'
+    for key, (kind, value), poisoned_value in (
+        ('LLVM_HOST_TRIPLE', wanted['LLVM_HOST_TRIPLE'], 'aarch64-apple-darwin27.2'),
+        ('LLVM_DEFAULT_TARGET_TRIPLE', wanted['LLVM_DEFAULT_TARGET_TRIPLE'], 'aarch64-apple-macosx27.2'),
+        ('CMAKE_OSX_ARCHITECTURES', wanted['CMAKE_OSX_ARCHITECTURES'], 'arm64'),
+        ('CMAKE_OSX_DEPLOYMENT_TARGET', wanted['CMAKE_OSX_DEPLOYMENT_TARGET'], '27.3'),
+        ('CMAKE_OSX_SYSROOT', wanted['CMAKE_OSX_SYSROOT'], '/foreign/iPhoneOS.sdk'),
+        ('LLVM_ENABLE_LTO', wanted['LLVM_ENABLE_LTO'], 'Thin'),
+        ('CMAKE_C_COMPILER_LAUNCHER', wanted['CMAKE_C_COMPILER_LAUNCHER'], '/foreign/wrapper'),
+        ('CMAKE_C_FLAGS_RELEASE', wanted['CMAKE_C_FLAGS_RELEASE'], '-O3 -arch x86_64'),
+        ('CMAKE_C_COMPILER', wanted['CMAKE_C_COMPILER'], '/foreign/clang'),
+        ('CMAKE_AR', wanted['CMAKE_AR'], '/foreign/ar'),
+        ('RUNTIMES_CMAKE_ARGS', wanted['RUNTIMES_CMAKE_ARGS'], '-DCMAKE_OSX_ARCHITECTURES=arm64'),
+    ):
+        write_expected({key: (kind, poisoned_value)})
+        assert not cache_clean(options), f'poisoned {key} reused'
+    for key in ('LLVM_HOST_TRIPLE', 'CMAKE_C_COMPILER_LAUNCHER'):
+        write_expected(omit=(key,))
+        assert not cache_clean(options), f'missing {key} reused'
+    write_expected(duplicate='LLVM_HOST_TRIPLE:STRING=aarch64-apple-macosx27.2')
+    assert not cache_clean(options), 'duplicate CMake target entry reused'
+    write_expected()
+    assert cache_clean(options), 'restored CMake cache did not validate'
 
 # Prove shortcut precedence with the actual native seed-selection fragment.
 # CC_FOR_BUILD may be reused, but inherited CXX_FOR_BUILD is revalidated
