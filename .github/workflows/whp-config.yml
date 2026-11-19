@@ -219,13 +219,14 @@ jobs:
           python3 scripts/tests/test-cxx-standard-config.py
           python3 scripts/tests/test-bash-bootstrap.py
           python3 scripts/tests/test-whp-config.py
+          # Verify retired-setting migrations before unrelated hardware tests.
+          python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-whp-hardware-menu.py
           python3 scripts/tests/test-pcmcia-config.py
           python3 scripts/tests/test-uninorth-cpu-number.py
           printf '#include "hw/pcmcia/i365.h"\n_Static_assert(I365_IO(1) == 0x0c, "I/O map");\n_Static_assert(I365_MEM(4) == 0x30, "memory map");\n_Static_assert(I365_ENA_IO(1) == 0x80, "I/O enable");\n_Static_assert(I365_ENA_MEM(4) == 0x10, "memory enable");\n_Static_assert(I365_IOCTL_16BIT(1) == 0x10, "I/O width");\n' | cc -std=c11 -Wall -Wextra -Werror -fsyntax-only -x c -Iinclude -
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-qtest-meson.py
-          python3 scripts/tests/test-compiler-cache-policy.py
           python3 scripts/tests/test-pkg-config-seed.py
           python3 scripts/tests/test-sccache-bootstrap.py
           python3 scripts/tests/test-autotools-version-pairs.py
