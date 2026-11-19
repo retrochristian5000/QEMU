@@ -14,6 +14,9 @@ on:
       - 'scripts/bootstrap-powerpc-clang-base.sh'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'scripts/tests/test-native-llvm-menu-handoff.py'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-native-llvm-macos-default-triple.py'
       - 'scripts/tests/test-native-llvm-install-validation.py'
       - 'scripts/whp-build/macos-target-abi.bash'
@@ -38,6 +41,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify native LLVM menuconfig export and ABI handoff
+        run: python3 scripts/tests/test-native-llvm-menu-handoff.py
 
       - name: Verify Darwin seed to macOS target triple upgrade
         run: python3 scripts/tests/test-native-llvm-macos-default-triple.py

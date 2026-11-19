@@ -103,7 +103,7 @@ OPTIONS = (
            ('17', '20', '23', '26'), 'Native LLVM bootstrap'),
     Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers',
            'choice', 'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
-    Option('NATIVE_LLVM_MACOS_ARCH', 'Host features', 'Native LLVM host ABI (macOS only)',
+    Option('NATIVE_LLVM_MACOS_ARCH', 'Host features', 'Native LLVM executable ABI (macOS; not QEMU host)',
            'choice', 'auto', ('auto', 'arm64', 'arm64e', 'x86_64'), 'Native LLVM bootstrap'),
     Option('NATIVE_LLVM_ENABLE_LLDB', 'Host features', 'Build LLVM LLDB debugger',
            'choice', 'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap'),

@@ -76,6 +76,23 @@ compiler-rt and installed-toolchain probes must all pass. Other Darwin-family
 vendors and iOS/Catalyst/simulator targets are not silently rewritten into
 Apple macOS targets.
 
+The menuconfig ``NATIVE_LLVM_MACOS_ARCH`` choice changes the **LLVM
+compiler/debugger executable ABI**, not the QEMU host executable ABI.
+The latter is selected independently by ``WHP_MACOS_ARCH`` and defaults
+to the ordinary process architecture; changing LLVM to ``arm64e``
+does not implicitly change QEMU to ``arm64e``. When the requests differ,
+the build reports both before LLVM bootstrap. On non-macOS hosts, an
+explicit macOS-only LLVM ABI or ASan validation request now fails rather
+than being silently ignored; ``auto`` remains host-sensitive.
+
+Native LLVM menu job-pool values ``auto``, including explicit one-run
+environment overrides, resolve to the bootstrap defaults (macOS: two
+compilers, one TableGen, two linker jobs; Linux: unlimited compile and
+TableGen pools, two linker jobs). The parallelism settings are scheduling
+controls, **not** ABI changes; the LLVM C++ standard, PCH policy, and
+versioned macOS target remain part of the toolchain configuration/cache
+contract.
+
 Architecture and Rosetta
 ------------------------
 

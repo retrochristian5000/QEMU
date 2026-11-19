@@ -833,6 +833,14 @@ if [ "${WHP_HOST_OS:-}" = macos ] &&
 fi
 
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
+    # These are independent executable ABIs. A menu request for arm64e LLVM
+    # does not retarget QEMU itself; identify the difference before bootstrap.
+    if [ "$WHP_HOST_OS" = macos ] &&
+       [ "${NATIVE_LLVM_MACOS_ARCH:-auto}" != auto ] &&
+       [ "${NATIVE_LLVM_MACOS_ARCH:-auto}" != "${WHP_MACOS_ARCH:-auto}" ]; then
+        printf 'WHP ABI selections: LLVM host=%s; QEMU host=%s (independent; WHP_MACOS_ARCH governs QEMU)\n' \
+            "$NATIVE_LLVM_MACOS_ARCH" "${WHP_MACOS_ARCH:-auto}" >&2
+    fi
     NATIVE_LLVM_DIR=$("$WHP_BUILD_BASH" --noprofile --norc \
         "$SOURCE_DIR/scripts/bootstrap-native-clang.sh") || exit 1
     CC="$NATIVE_LLVM_DIR/bin/clang"

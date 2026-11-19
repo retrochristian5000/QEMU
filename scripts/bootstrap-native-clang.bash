@@ -69,6 +69,9 @@ esac
 # ASan is tested when QEMU actually requests it, without making otherwise
 # usable non-sanitized native LLVM compilers rebuild unnecessarily.
 NATIVE_LLVM_VALIDATE_ASAN="${NATIVE_LLVM_VALIDATE_ASAN:-auto}"
+# Preserve explicit intent before QEMU_ASAN can resolve an automatic
+# validation request. Only the explicit macOS-only choice must fail on Linux.
+native_llvm_asan_setting="$NATIVE_LLVM_VALIDATE_ASAN"
 case "$NATIVE_LLVM_VALIDATE_ASAN" in
     auto)
         case "${QEMU_ASAN:-0}" in
@@ -125,14 +128,21 @@ case "$TOOLCHAIN_FORCE_REBUILD" in
         exit 1
         ;;
 esac
+# WHP_NATIVE_LLVM_MENU_LINK_JOBS_BEGIN
+# Menu "auto" and a per-invocation environment override of "auto" must
+# resolve to the same bootstrap default, not fail with a numeric parse error.
+if [[ "$LLVM_LINK_JOBS" == auto ]]; then
+    LLVM_LINK_JOBS=2
+fi
 case "$LLVM_LINK_JOBS" in
     0|*[!0-9]*)
-        printf 'error: NATIVE_LLVM_LINK_JOBS must be a positive integer: %s\n' \
+        printf 'error: NATIVE_LLVM_LINK_JOBS must be auto or a positive integer: %s\n' \
             "$LLVM_LINK_JOBS" >&2
         exit 1
         ;;
     *) ;;
 esac
+# WHP_NATIVE_LLVM_MENU_LINK_JOBS_END
 case "$LLVM_CXX_STANDARD" in
     17|20|23|26) ;;
     *)
@@ -224,6 +234,23 @@ case "$host_os" in
         ;;
 esac
 
+# WHP_NATIVE_LLVM_PLATFORM_MENU_GUARD_BEGIN
+# The macOS-only ABI/ASan menu settings must never be accepted as no-ops on
+# another host. An automatic ASan request remains host-sensitive by design.
+if [[ "$host_os" != macos ]]; then
+    if [[ "${NATIVE_LLVM_MACOS_ARCH:-auto}" != auto ]]; then
+        printf 'error: NATIVE_LLVM_MACOS_ARCH=%s requires a macOS native LLVM host (detected %s)\n' \
+            "$NATIVE_LLVM_MACOS_ARCH" "$host_os" >&2
+        exit 1
+    fi
+    if [[ "$native_llvm_asan_setting" == 1 ]]; then
+        printf 'error: NATIVE_LLVM_VALIDATE_ASAN=1 requires a macOS native LLVM host (detected %s)\n' \
+            "$host_os" >&2
+        exit 1
+    fi
+fi
+# WHP_NATIVE_LLVM_PLATFORM_MENU_GUARD_END
+
 # Cap expensive LLVM compile and TableGen work independently of -j and links.
 # Scheduling controls do not affect the installed compiler ABI or cache key.
 if [[ "$host_os" == macos ]]; then
@@ -233,8 +260,17 @@ fi
 for pool_name in COMPILE TABLEGEN; do
     pool_var="LLVM_${pool_name}_JOBS"
     pool_jobs="${!pool_var}"
+    if [[ "$pool_jobs" == auto ]]; then
+        # Explicit auto overrides must match omitted menu values on each OS.
+        case "$host_os:$pool_name" in
+            macos:COMPILE) pool_jobs=2 ;;
+            macos:TABLEGEN) pool_jobs=1 ;;
+            *) pool_jobs="" ;;
+        esac
+        printf -v "$pool_var" '%s' "$pool_jobs"
+    fi
     if [[ -n "$pool_jobs" && ! "$pool_jobs" =~ ^(0|[1-9][0-9]*)$ ]]; then
-        printf 'error: NATIVE_LLVM_%s_JOBS must be 0 or a positive integer: %s\n' \
+        printf 'error: NATIVE_LLVM_%s_JOBS must be auto, 0 or a positive integer: %s\n' \
             "$pool_name" "$pool_jobs" >&2
         exit 1
     fi
