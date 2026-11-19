@@ -88,8 +88,8 @@ assert '"-DCMAKE_OSX_ARCHITECTURES=$i386_host_arch"' in i386_bootstrap
 assert 'git clone' not in bootstrap
 assert "llvm_enable_projects='clang;lld'" in bootstrap
 assert "llvm_distribution_components='clang;clang-resource-headers;lld;llvm-ar;llvm-ranlib;llvm-lib;llvm-dlltool;llvm-rc;llvm-windres;llvm-nm;llvm-objcopy;llvm-objdump;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'" in bootstrap
-assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
-assert 'for required_tool in llvm-otool llvm-lipo ld64.lld; do' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;llvm-libtool-darwin;LTO;builtins;runtimes"' in bootstrap
+assert 'for required_tool in llvm-otool llvm-lipo llvm-libtool-darwin ld64.lld; do' in bootstrap
 assert '"$prefix/bin/llvm-otool" --version >/dev/null 2>&1 || {' in bootstrap
 # Keep llvm-objdump primary; the otool-style interface comes from its symlink.
 assert 'llvm-objdump;llvm-strip' in bootstrap
@@ -205,7 +205,7 @@ assert "grep -Fxq 'BOOTSTRAP_SCHEMA=14' \"$marker\"" in macos_workflow
 # consumer mismatch: WHP Clang emits current LLVM bitcode but the linker cannot
 # load a matching reader. The same Darwin distribution also owns compiler-rt,
 # so keep LTO and both runtime umbrella components in one exact platform policy.
-assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;LTO;builtins;runtimes"' in bootstrap
+assert 'llvm_distribution_components="${llvm_distribution_components};llvm-otool;llvm-lipo;llvm-libtool-darwin;LTO;builtins;runtimes"' in bootstrap
 assert 'LLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components' in bootstrap
 assert '[[ -f "$prefix/lib/libLTO.dylib" ]] || {' in bootstrap
 
