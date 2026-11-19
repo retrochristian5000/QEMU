@@ -40,11 +40,11 @@ case "$1" in
     scripts/bootstrap-native-clang.bash) cmake_command='"$cmake_cmd"' ;;
     *) cmake_command=cmake ;;
 esac
-require_fixed "$cmake_command \"${cmake_args[@]}\"" \
+require_fixed "$cmake_command"' "${cmake_args[@]}"' \
     'bootstrap must reconfigure the existing CMake graph in place'
 require_fixed 'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then' \
     'explicit forced rebuild branch is missing'
-require_fixed "$cmake_command --build \"\$LLVM_BUILD_DIR\" --target clean \"${cmake_parallel_args[@]}\"" \
+require_fixed "$cmake_command"' --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"' \
     'forced rebuild must clean through the generated backend'
 
 printf '%s incremental CMake/Ninja contract: verified\n' "$LABEL"
