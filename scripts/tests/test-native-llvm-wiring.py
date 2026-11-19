@@ -340,7 +340,7 @@ assert '"$prefix/bin/clang++" -x c++ -c - -o /dev/null' in bootstrap
 # ARCH-VENDOR-OS[-ENV] boundary: `apple` must be the vendor field and the OS
 # field must be Darwin/macOS. A loose `*-apple-darwin*` substring would accept
 # malformed triples such as arm64-unknown-apple-darwin.
-assert 'native_target_matches_host "$target"' in bootstrap
+assert 'native_installed_target_matches_host "$target"' in bootstrap
 assert "IFS='-' read -r arch target_vendor target_os _ <<< \"$target\"" in bootstrap
 assert '[[ "$target_vendor" == apple ]] || return 1' in bootstrap
 assert '[[ "$target" == "$arch-$target_vendor-$target_os" ]] || return 1' in bootstrap
