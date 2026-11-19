@@ -321,6 +321,9 @@ grep -Fq 'whp_select_macos_arch "$CC" "$SDKROOT"' "$macos_builder"
 grep -Fq 'whp_macos_verify_ubsan_abi "$CC" "$LIPO" "$WHP_MACOS_ARCH"' "$macos_builder"
 grep -Fq '"$process_arch" "$CXX")"' "$macos_builder"
 grep -Fq 'whp_append_flag "$variable" "-arch $WHP_MACOS_ARCH"' "$macos_builder"
-grep -Fq "*' -arch '*)" "$macos_builder"
+# The wrapper's multi-alternative case pattern guards both split and
+# joined -arch forms. Do not require the obsolete single-alternative suffix.
+grep -Fq "*' -arch '*|*' -arch='*" "$macos_builder"
+grep -Fq "*' -target '*|*' -target='*" "$macos_builder"
 
 printf 'macOS architecture policy tests: passed\n'
