@@ -800,6 +800,33 @@ than relying only on the ``lipo -archs`` label. It is an archive integrity
 check, not permission to combine ARM64e with ARM64, change PAC semantics,
 or select Mach-O LLD before its authenticated-link gate passes.
 
+ARM64/ARM64e universal Darwin archive composition
+----------------------------------------------------
+
+The pinned LLVM fork supports FAT32/FAT64 **universal libraries** through
+``llvm-lipo``. The ``llvm-ar`` and ``llvm-ranlib`` commands operate on
+each ordinary Darwin archive separately; they do not merge or update the
+outer universal container. A universal ``.a`` sent directly to either tool
+now produces an explicit ``llvm-lipo -thin <architecture>`` diagnostic
+without changing its bytes. Storing arbitrary data as an ar member is
+not the same as constructing a linkable multi-architecture archive.
+
+Build separate, indexed archives for each architecture before combining::
+
+  llvm-ar --format=darwin rcs libarm64.a arm64.o
+  llvm-ar --format=darwin rcs libarm64e.a arm64e.o
+  llvm-lipo -create libarm64.a libarm64e.a -output libuniversal.a
+  llvm-lipo libuniversal.a -thin arm64e -output libselected.a
+  llvm-ar t libselected.a
+
+The pinned LLVM regression ``llvm/test/tools/llvm-lipo/arm64e-fat-archive.test``
+checks FAT32 and FAT64 output, independent per-architecture ranlib indexes,
+exact extracted bytes, ``llvm-nm --arch`` symbol selection, and rejection
+of mixed-ABI members in a single archive. The existing QEMU ARM64e archive
+smoke checks the same workflow with installed LLVM tools when passed
+``--lipo`` and ``--nm``. This does not authorize mixing ARM64e pointer
+authentication and ordinary ARM64 code inside one archive slice.
+
 LLVM nm on ARM64/ARM64e universal Mach-O
 --------------------------------------------
 

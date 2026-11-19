@@ -542,7 +542,7 @@ jobs:
             --clangxx "$NATIVE_LLVM_DIR/bin/clang++" \
             --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
 
-      - name: Audit pinned llvm-ar and ranlib ARM64e member extraction
+      - name: Audit pinned llvm-ar, ranlib and universal ARM64e libraries
         shell: bash
         run: |
           set -euo pipefail
@@ -552,6 +552,7 @@ jobs:
             --ar "$NATIVE_LLVM_DIR/bin/llvm-ar" \
             --ranlib "$NATIVE_LLVM_DIR/bin/llvm-ranlib" \
             --nm "$NATIVE_LLVM_DIR/bin/llvm-nm" \
+            --lipo "$NATIVE_LLVM_DIR/bin/llvm-lipo" \
             --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump" \
             --sdkroot "$sdkroot" \
             --deployment-target "$MACOSX_DEPLOYMENT_TARGET"

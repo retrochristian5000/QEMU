@@ -55,11 +55,14 @@ def exports(data):
     return result
 
 
-def nm_exports(nm, path):
-    # Just-symbols output avoids platform-specific addresses and file labels.
-    # Compare multiplicities, not presentation order or archive member order.
-    names = run([nm, "--defined-only", "--extern-only",
-                 "--format=just-symbols", str(path)])
+def nm_exports(nm, path, arch=None):
+    # Explicit architecture selection is essential on a universal binary:
+    # the host-default slice may not be the QEMU target ABI.
+    command = [nm, "--defined-only", "--extern-only",
+               "--format=just-symbols"]
+    if arch is not None:
+        command.append("--arch=" + arch)
+    names = run([*command, str(path)])
     return Counter(names.splitlines())
 
 
@@ -142,6 +145,7 @@ def main():
     ap.add_argument("--ar")
     ap.add_argument("--ranlib")
     ap.add_argument("--nm")
+    ap.add_argument("--lipo")
     ap.add_argument("--objdump")
     ap.add_argument("--sdkroot")
     ap.add_argument("--deployment-target", default="13.0")
@@ -152,6 +156,8 @@ def main():
         print(f"ARM64e Darwin archive: {len(entries)-1} Mach-O members indexed")
         return
     assert args.clang and args.ar and args.ranlib
+    if args.lipo:
+        assert args.nm, "--lipo requires --nm for per-slice export validation"
     if args.sdkroot:
         assert args.objdump, "--objdump is required for final link validation"
     with tempfile.TemporaryDirectory(prefix="whp-arm64e-ar-") as tmp:
@@ -224,6 +230,57 @@ def main():
         else:
             raise AssertionError("mixed ARM64/ARM64e archive passed ABI audit")
 
+        # A universal Darwin .a is a FAT container of two complete and
+        # separately indexed archives, not one ar file with mixed members.
+        # Exercise FAT32/FAT64 and both exact architecture selections.
+        if args.lipo:
+            plain_archive = root / "plain.a"
+            run([args.ar, "--format=darwin", "rcS", str(plain_archive),
+                 str(obj)])
+            run([args.ranlib, str(plain_archive)])
+            plain_symbols = nm_exports(args.nm, plain_archive)
+            auth_symbols = nm_exports(args.nm, originals[0])
+            assert plain_symbols == Counter(["_whp_plain"])
+            for format_name, format_flag in (("fat32", None),
+                                             ("fat64", "-fat64")):
+                universal = root / (format_name + ".a")
+                command = [args.lipo, "-create", str(plain_archive),
+                           str(originals[0])]
+                if format_flag is not None:
+                    command.append(format_flag)
+                run([*command, "-output", str(universal)])
+                assert run([args.lipo, str(universal), "-archs"]).split() == (
+                    ["arm64", "arm64e"]
+                ), f"{format_name}: missing or merged ABI slices"
+                run([args.lipo, str(universal), "-verify_arch",
+                     "arm64", "arm64e"])
+
+                for arch, expected_archive, expected_symbols in (
+                        ("arm64", plain_archive, plain_symbols),
+                        ("arm64e", originals[0], auth_symbols)):
+                    extracted = root / (format_name + "-" + arch + ".a")
+                    run([args.lipo, str(universal), "-thin", arch, "-output",
+                         str(extracted)])
+                    assert extracted.read_bytes() == expected_archive.read_bytes(), (
+                        f"{format_name}: {arch} archive changed after lipo")
+                    assert nm_exports(args.nm, universal, arch) == expected_symbols, (
+                        f"{format_name}: llvm-nm selected wrong {arch} symbols")
+
+                # ar/ranlib may not edit the outer FAT container. They
+                # must direct callers to llvm-lipo instead of silently
+                # treating the container as a regular Darwin archive.
+                original = universal.read_bytes()
+                for command in ([args.ar, "t", str(universal)],
+                                [args.ranlib, str(universal)]):
+                    rejected = subprocess.run(command, capture_output=True,
+                                              text=True, check=False)
+                    assert rejected.returncode != 0
+                    assert "universal Mach-O archive" in rejected.stderr, (
+                        f"missing FAT archive diagnostic: {command!r}: "
+                        f"{rejected.stderr}")
+                    assert universal.read_bytes() == original, (
+                        f"{format_name}: failed ar/ranlib command mutated FAT")
+
         # Corrupt a BSD ranlib offset without damaging any Mach-O object.
         broken = bytearray(originals[0].read_bytes())
         struct.pack_into("<I", broken, members(broken)[0][0] + 60 + 20, 0)
@@ -253,9 +310,10 @@ def main():
             assert struct.unpack_from("<3I", binary.read_bytes()) == (
                 0xfeedfacf, CPU_ARM64, SUBTYPE_ARM64E_ABI0
             ), "final binary lost ARM64e ABI subtype"
-    print("ARM64e llvm-ar: member bytes, Mach-O ABI, ranlib mapping, " 
+    print("ARM64e llvm-ar: member bytes, Mach-O ABI, ranlib mapping, "
           "incremental replacement, mixed-ABI rejection and corruption "
-          "guards passed" + ("; Apple linked" if args.sdkroot
+          "guards passed" + ("; FAT32/FAT64 universal archives" if args.lipo
+                            else "") + ("; Apple linked" if args.sdkroot
                             else "; SDK-free cross objects only"))
 
 
