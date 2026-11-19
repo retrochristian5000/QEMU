@@ -82,6 +82,56 @@ def check():
         assert missing.returncode == 0, missing.stderr
         assert "No options match: no-such-menu-entry" in missing.stdout
 
+        # A checked all-target selector collapses, but never overwrites,
+        # the per-target values. Hidden entries cannot be edited by number.
+        all_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith("BUILD_QEMU_SYSTEM_ALL|")
+        )
+        i386_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith("BUILD_QEMU_SYSTEM_I386|")
+        )
+        config.write_text(
+            "WHP_CONFIG_VERSION=3\n"
+            "BUILD_QEMU_SYSTEM_ALL=n\n"
+            "BUILD_QEMU_SYSTEM_I386=n\n"
+            "BUILD_QEMU_SYSTEM_PPC=n\n"
+            "BUILD_QEMU_SYSTEM_SPARC=n\n",
+            encoding="utf-8",
+        )
+        enabled = run(
+            shell, config, root,
+            input_text=f"{all_number}\ns\nq\n",
+        )
+        assert enabled.returncode == 0, enabled.stderr
+        saved = config.read_text(encoding="utf-8")
+        assert "BUILD_QEMU_SYSTEM_ALL=y\n" in saved
+        for key in ("I386", "PPC", "SPARC"):
+            assert f"BUILD_QEMU_SYSTEM_{key}=n\n" in saved
+
+        collapsed = run(shell, config, root, "--dump")
+        assert collapsed.returncode == 0, collapsed.stderr
+        assert "System emulators (collapsed)" in collapsed.stdout
+        for key in ("I386", "PPC", "SPARC"):
+            assert f"BUILD_QEMU_SYSTEM_{key}" not in collapsed.stdout
+
+        blocked = run(
+            shell, config, root, input_text=f"{i386_number}\nq\n",
+        )
+        assert "Individual emulator targets are collapsed" in blocked.stderr
+        assert config.read_text(encoding="utf-8") == saved
+
+        disabled = run(
+            shell, config, root, input_text=f"{all_number}\ns\nq\n",
+        )
+        assert disabled.returncode == 0, disabled.stderr
+        restored = run(shell, config, root, "--dump")
+        assert "System emulators (expanded)" in restored.stdout
+        for key in ("I386", "PPC", "SPARC"):
+            assert f"BUILD_QEMU_SYSTEM_{key}" in restored.stdout
+            assert f"BUILD_QEMU_SYSTEM_{key}=n\n" in config.read_text(encoding="utf-8")
+
         # The shell fallback works with no Python runtime. Invalid settings
         # must be diagnosed before replacing the user's existing file, while
         # allowing an interactive reset and a subsequent successful save.
