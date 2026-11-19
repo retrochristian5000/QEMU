@@ -200,6 +200,8 @@ jobs:
         run: python3 scripts/tests/test-whp-incremental.py
 
       - name: Test configuration model
+        # An unrelated incremental-planning failure must not hide menu regressions.
+        if: ${{ !cancelled() }}
         run: |
           # Fail early on Python syntax errors before running config or Meson tests.
           python3 -m py_compile scripts/tests/test-whp-hardware-menu.py
