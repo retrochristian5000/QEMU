@@ -41,12 +41,28 @@ AUDIO_HARDWARE = (
 )
 
 
+# The WHP launcher exposes these three system-emulator toggles. This is not
+# a promise to build every target supported by upstream QEMU.
+SYSTEM_EMULATOR_KEYS = (
+    'BUILD_QEMU_SYSTEM_I386',
+    'BUILD_QEMU_SYSTEM_PPC',
+    'BUILD_QEMU_SYSTEM_SPARC',
+)
+
+
 OPTIONS = (
     Option('BUILD_QEMU_IMG', 'Build outputs', 'qemu-img', 'bool', 'y'),
-    Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386', 'bool', 'y'),
-    Option('QEMU_X86_FAMILY_LINK', 'Build outputs', 'Use x86_64 system binary for i386 alias (POSIX)', 'bool', 'n'),
-    Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc', 'bool', 'y'),
-    Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc', 'bool', 'n'),
+    Option('BUILD_QEMU_SYSTEM_ALL', 'Build outputs',
+           'Build all WHP-supported system emulators (i386, PPC, SPARC)',
+           'bool', 'n', group='System emulators'),
+    Option('BUILD_QEMU_SYSTEM_I386', 'Build outputs', 'qemu-system-i386',
+           'bool', 'y', group='System emulators'),
+    Option('BUILD_QEMU_SYSTEM_PPC', 'Build outputs', 'qemu-system-ppc',
+           'bool', 'y', group='System emulators'),
+    Option('BUILD_QEMU_SYSTEM_SPARC', 'Build outputs', 'qemu-system-sparc',
+           'bool', 'n', group='System emulators'),
+    Option('QEMU_X86_FAMILY_LINK', 'Build outputs',
+           'Use x86_64 system binary for i386 alias (POSIX)', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_LTO_MODE', 'Host features', 'LTO mode (ThinLTO or full)', 'choice', 'auto', ('auto', 'thin', 'full')),
     Option('QEMU_HOST_PGO', 'Host features', 'QEMU host profile-guided optimization', 'choice', 'off', ('off', 'generate', 'use')),
@@ -167,6 +183,17 @@ class ConfigState:
 
 def default_values() -> Dict[str, str]:
     return {option.key: option.default for option in OPTIONS}
+
+
+def visible_options(values: Dict[str, str]) -> Tuple[Option, ...]:
+    """Hide individual emulator toggles under the all-targets switch.
+
+    Their saved values are retained and take effect again when it is disabled.
+    """
+    if values.get('BUILD_QEMU_SYSTEM_ALL', 'n') == 'y':
+        return tuple(option for option in OPTIONS
+                     if option.key not in SYSTEM_EMULATOR_KEYS)
+    return OPTIONS
 
 
 def validate_value(option: Option, value: str) -> None:
@@ -416,9 +443,9 @@ def write_ppc_device_config(base_path: pathlib.Path, path: pathlib.Path, state: 
     os.replace(temp, path)
 
 
-def sections() -> List[Tuple[str, List[Option]]]:
+def sections(values: Optional[Dict[str, str]] = None) -> List[Tuple[str, List[Option]]]:
     result: List[Tuple[str, List[Option]]] = []
-    for option in OPTIONS:
+    for option in visible_options(values) if values is not None else OPTIONS:
         if not result or result[-1][0] != option.section:
             result.append((option.section, []))
         result[-1][1].append(option)
