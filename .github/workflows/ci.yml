@@ -139,6 +139,9 @@ jobs:
       - name: Test SeaBIOS -g handoff contract
         run: python3 scripts/tests/test-seabios-g-option.py
 
+      - name: Verify Monorail PC 133 machine contract
+        run: python3 scripts/tests/test-monorail-pc133-machine.py
+
       - name: Test SDL3 audio split contract
         run: python3 scripts/tests/test-sdl3-audio-split.py
 
@@ -254,6 +257,10 @@ jobs:
           if [[ "${{ matrix.target }}" == m6809 ]]; then
             "${binary}" -cpu help | grep -E '(6809|6809e)'
           fi
+
+      - name: Smoke-test Monorail PC 133 machine registration
+        if: matrix.target == 'i386'
+        run: python3 scripts/tests/test-monorail-pc133-machine.py --qemu build-ci/qemu-system-i386
 
       - name: Test floppy read/write accounting for activity indicators
         if: matrix.target == 'i386'

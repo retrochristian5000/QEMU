@@ -435,6 +435,45 @@ static void pc_i440fx_machine_11_1_options(MachineClass *m)
 
 DEFINE_I440FX_MACHINE_AS_LATEST(11, 1);
 
+/*
+ * Monorail PC 133 (1997) compatibility profile.
+ *
+ * The original integrated PC used a custom MiTAC board, AMD/Pentium-class
+ * processor, EDO SIMMs and Chips & Technologies 65548 LCD video. The exact
+ * board and video chip are not implemented by QEMU: i440FX/PIIX and standard
+ * VGA are deliberate substitutes, NOT a claim of electrical equivalence.
+ * Keep this separate from the 1998 Series 8005 tower investigation.
+ */
+// WHP_MONORAIL_PC133_BEGIN
+static void pc_monorail_pc133_init(MachineState *machine)
+{
+    /* Original PC 133 shipped with 16 MiB and supported up to 80 MiB. */
+    if (machine->ram_size < 16 * MiB || machine->ram_size > 80 * MiB) {
+        error_report("monorail-pc133 requires 16-80 MiB of RAM");
+        exit(1);
+    }
+    pc_i440fx_init(machine);
+}
+
+static void pc_monorail_pc133_machine_options(MachineClass *m)
+{
+    pc_i440fx_machine_options(m);
+
+    m->family = "monorail";
+    m->desc = "Monorail PC 133 (1997, approximate i440FX/PIIX hardware)";
+    m->default_cpu_type = X86_CPU_TYPE_NAME("pentium");
+    m->default_ram_size = 16 * MiB;
+    m->max_cpus = 1;
+    m->has_hotpluggable_cpus = false;
+    m->default_display = "std"; /* VGA fallback, not C&T 65548 LCD. */
+    m->default_nic = "ne2k_isa"; /* Optional ISA expansion, not onboard NIC. */
+}
+
+DEFINE_PC_MACHINE(monorail_pc133, "monorail-pc133",
+                  pc_monorail_pc133_init,
+                  pc_monorail_pc133_machine_options);
+// WHP_MONORAIL_PC133_END
+
 static void pc_i440fx_machine_11_0_options(MachineClass *m)
 {
     pc_i440fx_machine_11_1_options(m);

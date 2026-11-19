@@ -6,6 +6,41 @@ Peripherals
 
 .. include:: ../target-i386-desc.rst.inc
 
+Monorail PC 133 compatibility profile (``monorail-pc133``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+WHP includes a **distinct, non-default** Monorail PC 133 machine type
+as an initial late-1990s hardware reference. The contemporary
+`June 1997 Windows Magazine review
+<https://www.kaisernet.org/library/1997/0601/winla133.htm>`_
+describes the integrated Monorail PC 133 with a MiTAC-designed board,
+AMD processor, 16 MiB EDO RAM (expandable to 80 MiB), a 10.4-inch
+640x480 LCD, Chips & Technologies 65548 video, Crystal 16-bit/FM audio,
+a Rockwell modem and a half-length ISA slot.
+
+The profile is an **approximation**, not yet a component-accurate
+reconstruction. It uses QEMU's i440FX/PIIX PC device model and a
+Pentium-class emulated CPU, defaults to one CPU and 16 MiB RAM, and
+accepts 16--80 MiB. Standard VGA is a temporary video substitute.
+The legacy NE2000 ISA model is available as an optional expansion NIC,
+**not** a claim that Monorail installed one by default. Crystal audio,
+the C&T 65548 LCD controller, Rockwell modem, exact MiTAC chipset and
+the original BIOS ROM are **not** emulated by this machine. Firmware
+comes from QEMU's normal SeaBIOS path; optional WHP extended POST tests
+can be requested separately.
+
+To list the machine and start it with no additional NIC::
+
+    qemu-system-i386 -machine help
+    qemu-system-i386 -machine monorail-pc133 -m 16M -cpu pentium \
+      -nic none
+
+The **Monorail Series 8005** mini-tower recalled from our earlier
+hardware research is a *separate 1998 target*. Its precise motherboard,
+BIOS, CPU and onboard hardware configuration still require verification;
+do not silently reuse the PC 133's MiTAC board or integrated LCD for it.
+
+
 Host laptop battery snapshot for legacy SeaBIOS APM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
