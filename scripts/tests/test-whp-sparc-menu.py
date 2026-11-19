@@ -154,12 +154,12 @@ class SparcMenuTargetTests(unittest.TestCase):
         source = ROOT / 'scripts' / 'whp-build'
         script = """
 set -e
+SOURCE_DIR="$2"
+BUILD_DIR="$3"
+HOST_OS=Linux
 source "$1/shell-functions.sh"
 source "$1/common.bash"
 source "$1/prepare-build.bash"
-HOST_OS=Linux
-SOURCE_DIR="$2"
-BUILD_DIR="$3"
 BUILD_QEMU_SYSTEM_I386=0
 BUILD_QEMU_SYSTEM_PPC=0
 BUILD_QEMU_SYSTEM_SPARC=0
@@ -176,8 +176,9 @@ printf 'off=%s\n' "$QEMU_TARGET_LIST"
         with tempfile.TemporaryDirectory() as td:
             result = subprocess.run(
                 ['bash', '-c', script, 'bash', str(source), str(ROOT), td],
-                text=True, capture_output=True, check=True,
+                text=True, capture_output=True, check=False,
             )
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('all=ppc-softmmu,i386-softmmu', result.stdout)
         self.assertIn('individual=0:0:0', result.stdout)
         self.assertIn('off=\n', result.stdout)
