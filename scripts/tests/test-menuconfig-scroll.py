@@ -281,5 +281,60 @@ class MenuconfigScrollTests(unittest.TestCase):
         self.assertEqual(screen.current[-1][2], 'Saved')
 
 
+    def test_llvm_group_expands_and_collapses_without_losing_settings(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        values = config.default_values()
+        values['NATIVE_LLVM_CXX_STANDARD'] = '26'
+        values['NATIVE_LLVM_LINK_JOBS'] = '3'
+        snapshot = {key: values[key] for key in config.NATIVE_LLVM_DETAIL_KEYS}
+        collapsed = menu._flatten_items(values=values)
+        self.assertIn(
+            'BOOTSTRAP_NATIVE_LLVM',
+            [option.key for kind, _, option in collapsed if kind == 'option'],
+        )
+        self.assertFalse(set(snapshot).intersection(
+            option.key for kind, _, option in collapsed if kind == 'option'
+        ))
+        self.assertEqual(menu._flatten_items('Native LLVM precompiled headers', values), [])
+        values['BOOTSTRAP_NATIVE_LLVM'] = 'y'
+        expanded = menu._flatten_items(values=values)
+        self.assertTrue(set(snapshot).issubset(
+            option.key for kind, _, option in expanded if kind == 'option'
+        ))
+        values['BOOTSTRAP_NATIVE_LLVM'] = 'n'
+        self.assertEqual(
+            {key: values[key] for key in snapshot}, snapshot,
+        )
+
+    def test_llvm_parent_reflows_curses_without_changing_preferences(self):
+        config = load_config_module()
+        menu = load_menu_module()
+        if menu.curses is None:
+            self.skipTest('curses unavailable')
+        values = config.default_values()
+        values['NATIVE_LLVM_CXX_STANDARD'] = '26'
+        state = config.ConfigState(values, {})
+        snapshot = dict(values)
+        screen = FakeScreen([ord('/'), ord(' '), ord(' '), ord('q')],
+                            height=20, width=130)
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            with mock.patch.object(menu.curses, 'curs_set', return_value=None), \
+                 mock.patch.object(menu, '_edit_string',
+                                   return_value='Native LLVM bootstrap'):
+                menu._run(screen, path, state)
+        all_frames = [*screen.frames, screen.current]
+        self.assertTrue(any(
+            'Native LLVM bootstrap (expanded)' in text
+            for frame in all_frames for _, _, text, _ in frame
+        ))
+        self.assertTrue(any(
+            'Native LLVM bootstrap (collapsed)' in text
+            for frame in all_frames for _, _, text, _ in frame
+        ))
+        self.assertEqual(state.values, snapshot)
+        self.assertFalse(path.exists())
+
 if __name__ == '__main__':
     unittest.main()

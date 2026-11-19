@@ -18,8 +18,8 @@ NATIVE_LLVM_CXX_STANDARD|Host features|Native LLVM C++ language standard|choice|
 NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|choice|auto|auto,y,n|Native LLVM bootstrap
 NATIVE_LLVM_MACOS_ARCH|Host features|Native LLVM host ABI (macOS only)|choice|auto|auto,arm64,arm64e,x86_64|Native LLVM bootstrap
 NATIVE_LLVM_ENABLE_LLDB|Host features|Build LLVM LLDB debugger|choice|auto|auto,y,n|Native LLVM bootstrap
-NATIVE_LLVM_VALIDATE_ASAN|Host features|Validate LLVM AddressSanitizer runtime|choice|auto|auto,y,n|Native LLVM bootstrap
-NATIVE_LLVM_ASAN_AUTO_DEBUG|Host features|LLDB replay on native LLVM ASan failures|bool|n||Native LLVM bootstrap
+NATIVE_LLVM_VALIDATE_ASAN|Host features|Validate native LLVM ASan (macOS)|choice|auto|auto,y,n|Native LLVM bootstrap
+NATIVE_LLVM_ASAN_AUTO_DEBUG|Host features|LLDB replay on LLVM ASan failures (macOS)|bool|n||Native LLVM bootstrap
 NATIVE_LLVM_LINK_JOBS|Host features|LLVM parallel linker jobs (auto or positive integer)|string|auto||Native LLVM bootstrap
 NATIVE_LLVM_COMPILE_JOBS|Host features|LLVM compile job pool (auto, 0=unlimited, or positive integer)|string|auto||Native LLVM bootstrap
 NATIVE_LLVM_TABLEGEN_JOBS|Host features|LLVM TableGen job pool (auto, 0=unlimited, or positive integer)|string|auto||Native LLVM bootstrap

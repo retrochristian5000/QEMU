@@ -320,6 +320,24 @@ profile. The menu is the single portable interface for host features,
 firmware, machines, build behavior, hardware filters, and build outputs.
 Explicit environment variables remain one-run overrides of the saved values.
 
+The ``Native LLVM bootstrap`` group is conditional. ``BOOTSTRAP_NATIVE_LLVM=n``
+leaves the C++ language edition, PCH, macOS host ABI, LLDB/ASan diagnostics,
+and LLVM-only job pools collapsed. Enabling the parent reveals them without
+discarding previously saved values; disabling it hides them without clearing
+those values. These controls apply to native LLVM preparation, not QEMU's own
+``QEMU_HOST_LTO``, ``QEMU_HOST_OPTIMIZATION``, or guest-target settings.
+
+The default ``auto`` job-pool values leave the existing bootstrap's
+host-specific limits intact; explicit linker jobs must be positive, and
+compile/TableGen pools accept ``0`` to request no explicit pool limit.
+``NATIVE_LLVM_ENABLE_LLDB=auto`` preserves the bootstrap's macOS-on,
+other-hosts-off policy. ASan validation and LLDB auto-debug replay are macOS
+diagnostics; replay needs LLDB and ASan validation enabled. Selecting
+``NATIVE_LLVM_MACOS_ARCH=arm64e`` is an explicit ABI request: the existing
+bootstrap still requires C and C++ compile, link and execution capability
+probes, and refuses unsupported hosts or SDKs. The menu never automatically
+turns on expensive rebuilds, shared LLVM linking, or new target backends.
+
 In the Python/curses interface, press ``/`` (or ``f``) to filter options by
 setting key, label, section, or hardware group. An empty search restores the
 full menu; an unmatched search keeps the previous selection and filter.

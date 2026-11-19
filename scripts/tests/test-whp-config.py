@@ -307,6 +307,122 @@ class WhpConfigTests(unittest.TestCase):
         self.assertIn("BOOTSTRAP_WIN9X_TOOLCHAIN='0'", assignments)
         self.assertIn("INSTALL_AFTER_BUILD='0'", assignments)
 
+
+    def test_native_llvm_preferences_are_scoped_and_preserved(self):
+        mod = load_module()
+        values = mod.default_values()
+        original = {key: values[key] for key in mod.NATIVE_LLVM_DETAIL_KEYS}
+        self.assertEqual(values['BOOTSTRAP_NATIVE_LLVM'], 'n')
+        self.assertFalse(
+            set(original).intersection(option.key for option in mod.visible_options(values))
+        )
+        values['NATIVE_LLVM_CXX_STANDARD'] = '26'
+        values['NATIVE_LLVM_MACOS_ARCH'] = 'arm64e'
+        values['NATIVE_LLVM_LINK_JOBS'] = '3'
+        values['NATIVE_LLVM_PCH'] = 'y'
+        modified = {key: values[key] for key in original}
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            mod.save_config(path, mod.ConfigState(values))
+            loaded = mod.load_config(path)
+            self.assertEqual(
+                {key: loaded.values[key] for key in modified}, modified
+            )
+            loaded.values['BOOTSTRAP_NATIVE_LLVM'] = 'y'
+            self.assertTrue(
+                set(mod.NATIVE_LLVM_DETAIL_KEYS).issubset(
+                    option.key for option in mod.visible_options(loaded.values)
+                )
+            )
+            mod.save_config(path, loaded)
+            self.assertEqual(
+                {key: mod.load_config(path).values[key] for key in modified},
+                modified,
+            )
+        values['BOOTSTRAP_NATIVE_LLVM'] = 'y'
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("NATIVE_LLVM_MACOS_ARCH='arm64e'", assignments)
+        self.assertIn("NATIVE_LLVM_CXX_STANDARD='26'", assignments)
+        self.assertIn("NATIVE_LLVM_PCH='1'", assignments)
+        self.assertIn("NATIVE_LLVM_LINK_JOBS='3'", assignments)
+
+    def test_native_llvm_tri_state_exports_and_auto_inheritance(self):
+        mod = load_module()
+        values = mod.default_values()
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        for key in (
+            'NATIVE_LLVM_MACOS_ARCH',
+            'NATIVE_LLVM_PCH',
+            'NATIVE_LLVM_ENABLE_LLDB',
+            'NATIVE_LLVM_VALIDATE_ASAN',
+            'NATIVE_LLVM_LINK_JOBS',
+            'NATIVE_LLVM_COMPILE_JOBS',
+            'NATIVE_LLVM_TABLEGEN_JOBS',
+        ):
+            self.assertNotIn(f'{key}=', assignments)
+
+        values.update({
+            'BOOTSTRAP_NATIVE_LLVM': 'y',
+            'NATIVE_LLVM_ENABLE_LLDB': 'y',
+            'NATIVE_LLVM_VALIDATE_ASAN': 'n',
+            'NATIVE_LLVM_COMPILE_JOBS': '4',
+            'NATIVE_LLVM_TABLEGEN_JOBS': '0',
+        })
+        assignments = mod.shell_assignments(mod.ConfigState(values), {})
+        self.assertIn("NATIVE_LLVM_ENABLE_LLDB='1'", assignments)
+        self.assertIn("NATIVE_LLVM_VALIDATE_ASAN='0'", assignments)
+        self.assertIn("NATIVE_LLVM_COMPILE_JOBS='4'", assignments)
+        self.assertIn("NATIVE_LLVM_TABLEGEN_JOBS='0'", assignments)
+
+    def test_native_llvm_job_pool_values_are_checked_before_export(self):
+        mod = load_module()
+        cases = {
+            'NATIVE_LLVM_LINK_JOBS': ('0', '-1', '01', 'abc', '1.5'),
+            'NATIVE_LLVM_COMPILE_JOBS': ('-1', '01', '1.5', 'unlimited'),
+            'NATIVE_LLVM_TABLEGEN_JOBS': ('-1', '01', '1.5', 'unlimited'),
+        }
+        values = mod.default_values()
+        for key in mod.LLVM_JOB_KEYS:
+            self.assertEqual(mod.OPTION_BY_KEY[key].default, 'auto')
+            for value in ('auto', '1', '12'):
+                mod.validate_value(mod.OPTION_BY_KEY[key], value)
+            if key != 'NATIVE_LLVM_LINK_JOBS':
+                mod.validate_value(mod.OPTION_BY_KEY[key], '0')
+            for bad in cases[key]:
+                with self.subTest(key=key, value=bad):
+                    with self.assertRaises(ValueError):
+                        mod.validate_value(mod.OPTION_BY_KEY[key], bad)
+                    values[key] = bad
+                    with self.assertRaises(ValueError):
+                        mod.render_config(mod.ConfigState(values))
+                    values[key] = 'auto'
+
+    def test_native_llvm_replay_requirements_are_checked_only_if_enabled(self):
+        mod = load_module()
+        for incompatible, diagnostic in (
+            ({'NATIVE_LLVM_ENABLE_LLDB': 'n'}, 'NATIVE_LLVM_ENABLE_LLDB'),
+            ({'NATIVE_LLVM_VALIDATE_ASAN': 'n'}, 'NATIVE_LLVM_VALIDATE_ASAN'),
+        ):
+            values = mod.default_values()
+            values.update(incompatible)
+            values['NATIVE_LLVM_ASAN_AUTO_DEBUG'] = 'y'
+            mod.validate_combinations(values)
+            values['BOOTSTRAP_NATIVE_LLVM'] = 'y'
+            with tempfile.TemporaryDirectory() as td:
+                path = pathlib.Path(td) / '.whpconfig'
+                path.write_text('old profile\n', encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    mod.save_config(path, mod.ConfigState(values))
+                self.assertEqual(path.read_text(encoding='utf-8'), 'old profile\n')
+            with self.assertRaisesRegex(ValueError, diagnostic):
+                mod.shell_assignments(mod.ConfigState(values), {})
+            # Per-invocation overrides can repair the saved mismatch.
+            key = next(iter(incompatible))
+            assignments = mod.shell_assignments(
+                mod.ConfigState(values), {key: '1'}
+            )
+            self.assertNotIn(f'{key}=', assignments)
+
     def test_make_bootstrap_is_tristate_host_policy(self):
         mod = load_module()
         option = mod.OPTION_BY_KEY['BOOTSTRAP_MAKE']

@@ -108,10 +108,10 @@ OPTIONS = (
     Option('NATIVE_LLVM_ENABLE_LLDB', 'Host features', 'Build LLVM LLDB debugger',
            'choice', 'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
     Option('NATIVE_LLVM_VALIDATE_ASAN', 'Host features',
-           'Validate LLVM AddressSanitizer runtime', 'choice', 'auto',
+           'Validate native LLVM ASan (macOS)', 'choice', 'auto',
            ('auto', 'y', 'n'), 'Native LLVM bootstrap'),
     Option('NATIVE_LLVM_ASAN_AUTO_DEBUG', 'Host features',
-           'LLDB replay on native LLVM ASan failures', 'bool', 'n',
+           'LLDB replay on LLVM ASan failures (macOS)', 'bool', 'n',
            group='Native LLVM bootstrap'),
     Option('NATIVE_LLVM_LINK_JOBS', 'Host features',
            'LLVM parallel linker jobs (auto or positive integer)',
@@ -427,7 +427,9 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
     # settings instead of rejecting a saved profile already overridden.
     effective = dict(state.values)
     for key in ('QEMU_TSAN', 'QEMU_ASAN', 'QEMU_UBSAN',
-                'QEMU_HOST_LTO', 'QEMU_HOST_LTO_MODE'):
+                'QEMU_HOST_LTO', 'QEMU_HOST_LTO_MODE',
+                'BOOTSTRAP_NATIVE_LLVM', 'NATIVE_LLVM_ENABLE_LLDB',
+                'NATIVE_LLVM_VALIDATE_ASAN', 'NATIVE_LLVM_ASAN_AUTO_DEBUG'):
         if key in environ:
             raw = environ[key] or OPTION_BY_KEY[key].default
             effective[key] = {'1': 'y', '0': 'n'}.get(raw, raw)

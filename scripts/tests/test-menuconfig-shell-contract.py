@@ -132,6 +132,63 @@ def check():
             assert f"BUILD_QEMU_SYSTEM_{key}" in restored.stdout
             assert f"BUILD_QEMU_SYSTEM_{key}=n\n" in config.read_text(encoding="utf-8")
 
+        # Native LLVM is opt-in, with stable keys and hidden detail rows.
+        llvm_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith("BOOTSTRAP_NATIVE_LLVM|")
+        )
+        pch_number = next(
+            index for index, line in enumerate(original.splitlines())
+            if line.startswith("NATIVE_LLVM_PCH|")
+        )
+        config.write_text(
+            "WHP_CONFIG_VERSION=3\nBOOTSTRAP_NATIVE_LLVM=n\n"
+            "NATIVE_LLVM_CXX_STANDARD=26\nNATIVE_LLVM_LINK_JOBS=3\n",
+            encoding="utf-8",
+        )
+        default_dump = run(shell, config, root, "--dump")
+        assert "Native LLVM bootstrap (collapsed)" in default_dump.stdout
+        assert "NATIVE_LLVM_PCH" not in default_dump.stdout
+        hidden = run(shell, config, root, input_text=f"{pch_number}\nq\n")
+        assert "Native LLVM options are collapsed" in hidden.stderr
+
+        enabled_llvm = run(
+            shell, config, root, input_text=f"{llvm_number}\ns\nq\n",
+        )
+        assert enabled_llvm.returncode == 0, enabled_llvm.stderr
+        enabled_dump = run(shell, config, root, "--dump")
+        assert "Native LLVM bootstrap (expanded)" in enabled_dump.stdout
+        assert "NATIVE_LLVM_PCH" in enabled_dump.stdout
+        assert "NATIVE_LLVM_LINK_JOBS" in enabled_dump.stdout
+        old_llvm_settings = config.read_text(encoding="utf-8")
+        assert "NATIVE_LLVM_CXX_STANDARD=26\n" in old_llvm_settings
+        assert "NATIVE_LLVM_LINK_JOBS=3\n" in old_llvm_settings
+
+        disabled_llvm = run(
+            shell, config, root, input_text=f"{llvm_number}\ns\nq\n",
+        )
+        assert disabled_llvm.returncode == 0, disabled_llvm.stderr
+        assert "BOOTSTRAP_NATIVE_LLVM=n\n" in config.read_text(encoding="utf-8")
+        assert "NATIVE_LLVM_CXX_STANDARD=26\n" in config.read_text(encoding="utf-8")
+        assert "NATIVE_LLVM_LINK_JOBS=3\n" in config.read_text(encoding="utf-8")
+
+        # Invalid LLVM settings must fail save without replacing the file.
+        for invalid, diagnostic in (
+            ("NATIVE_LLVM_LINK_JOBS=0\n", "NATIVE_LLVM_LINK_JOBS"),
+            ("NATIVE_LLVM_COMPILE_JOBS=01\n", "NATIVE_LLVM_COMPILE_JOBS"),
+            ("NATIVE_LLVM_TABLEGEN_JOBS=bad\n", "NATIVE_LLVM_TABLEGEN_JOBS"),
+            ("BOOTSTRAP_NATIVE_LLVM=y\nNATIVE_LLVM_ASAN_AUTO_DEBUG=y\n"
+             "NATIVE_LLVM_ENABLE_LLDB=n\n", "LLDB=auto or y"),
+            ("BOOTSTRAP_NATIVE_LLVM=y\nNATIVE_LLVM_ASAN_AUTO_DEBUG=y\n"
+             "NATIVE_LLVM_VALIDATE_ASAN=n\n", "ASan validation=auto or y"),
+        ):
+            old = "WHP_CONFIG_VERSION=3\n" + invalid
+            config.write_text(old, encoding="utf-8")
+            refused = run(shell, config, root, input_text="s\nq\n")
+            assert refused.returncode == 0, refused.stderr
+            assert diagnostic in refused.stderr, refused.stderr
+            assert config.read_text(encoding="utf-8") == old
+
         # The shell fallback works with no Python runtime. Invalid settings
         # must be diagnosed before replacing the user's existing file, while
         # allowing an interactive reset and a subsequent successful save.

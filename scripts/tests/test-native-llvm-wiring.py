@@ -34,7 +34,8 @@ for bash_path in (
 
 assert "Option('BOOTSTRAP_NATIVE_LLVM', 'Host features'" in config
 assert "Option('NATIVE_LLVM_CXX_STANDARD', 'Host features'" in config
-assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers', 'choice', 'auto', ('auto', 'y', 'n'))" in config
+assert "Option('NATIVE_LLVM_PCH', 'Host features', 'Native LLVM precompiled headers'," in config
+assert "'auto', ('auto', 'y', 'n'), 'Native LLVM bootstrap')" in config
 assert 'scripts/bootstrap-native-clang.sh' in build
 wrapper = (ROOT / 'scripts/bootstrap-native-clang.sh').read_text(encoding='utf-8')
 assert 'llvm-nm llvm-objcopy' in wrapper
@@ -171,7 +172,7 @@ assert 'WHP native LLVM precompiled headers:' in bootstrap
 # unset so the native LLVM bootstrap can resolve the host compiler and cache
 # itself; saved y/n must continue to mean explicit on/off.
 assert "    'NATIVE_LLVM_PCH',\n" in config
-assert 'NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|choice|auto|auto,y,n|' in (
+assert 'NATIVE_LLVM_PCH|Host features|Native LLVM precompiled headers|choice|auto|auto,y,n|Native LLVM bootstrap' in (
     ROOT / 'scripts/whp-config/menu-options.def'
 ).read_text(encoding='utf-8')
 with tempfile.TemporaryDirectory() as temporary:
