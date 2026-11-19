@@ -65,11 +65,11 @@ def _edit_string(stdscr, prompt: str, current: str, allow_clear: bool = False) -
         curses.curs_set(0)
 
 
-def _flatten_items(filter_text: str = ''):
+def _flatten_items(filter_text: str = '', values=None):
     """Return only matching options, retaining their section/group context."""
     needle = filter_text.strip().casefold()
     rows = []
-    for section, options in whp_config.sections():
+    for section, options in whp_config.sections(values):
         matching = [
             option for option in options
             if not needle or any(
@@ -111,7 +111,7 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
     curses.curs_set(0)
     stdscr.keypad(True)
     filter_text = ''
-    rows = _flatten_items()
+    rows = _flatten_items(values=state.values)
     selectable = _selectable_positions(rows)
     selected_pos = 0
     scroll_top = 0
@@ -152,6 +152,9 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             if row_kind == 'section':
                 stdscr.addnstr(y, 0, label, width - 1, curses.A_BOLD)
             elif row_kind == 'group':
+                if label == 'System emulators':
+                    mode = 'collapsed' if state.values['BUILD_QEMU_SYSTEM_ALL'] == 'y' else 'expanded'
+                    label = f'{label} ({mode})'
                 stdscr.addnstr(y, 2, label, width - 3, curses.A_BOLD)
             else:
                 assert row_option is not None
@@ -213,7 +216,7 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             candidate = _edit_string(
                 stdscr, 'Filter (empty shows all)', filter_text, allow_clear=True,
             )
-            matching = _flatten_items(candidate)
+            matching = _flatten_items(candidate, state.values)
             new_selectable = _selectable_positions(matching)
             if not new_selectable:
                 status = f'No settings match {candidate!r}; previous filter retained'
@@ -248,6 +251,19 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             if new != old:
                 state.values[option.key] = new
                 dirty = state.values != saved_values
+                if option.key == 'BUILD_QEMU_SYSTEM_ALL':
+                    # Rebuild from current values without mutating stored
+                    # individual selections; turning all off restores them.
+                    rows = _flatten_items(filter_text, state.values)
+                    selectable = _selectable_positions(rows)
+                    selected_pos = next(
+                        (
+                            pos for pos, index in enumerate(selectable)
+                            if rows[index][2].key == option.key
+                        ),
+                        0,
+                    )
+                    scroll_top = 0
                 try:
                     whp_config.validate_combinations(state.values)
                 except ValueError as exc:
@@ -258,6 +274,14 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
         if key == ord('r'):
             state.values = whp_config.default_values()
             dirty = state.values != saved_values
+            rows = _flatten_items(filter_text, state.values)
+            selectable = _selectable_positions(rows)
+            if not selectable:
+                filter_text = ''
+                rows = _flatten_items(values=state.values)
+                selectable = _selectable_positions(rows)
+            selected_pos = 0
+            scroll_top = 0
             status = 'Repository defaults loaded; press s to save'
             continue
         if key == ord('s'):
@@ -295,7 +319,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     if args.dump:
-        for section, options in whp_config.sections():
+        for section, options in whp_config.sections(state.values):
             print(section)
             current_group = None
             for option in options:
