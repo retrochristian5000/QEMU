@@ -690,6 +690,7 @@ def native_cmake_identity(revision: str, source_dir: str) -> str:
         'LLVM_SOURCE_DIR="$2"\n'
         'bootstrap_cc_version=seed-cc\n'
         'bootstrap_cxx_version=seed-cxx\n'
+        'cmake_cmd=cmake\n'
         'cmake_args=(-S /test/llvm -B /test/build -G Ninja)\n'
         'cmake_config_identity="$(\n' + identity_body + '\n)"\n'
         'printf "%s\n" "$cmake_config_identity"\n'
