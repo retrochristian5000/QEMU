@@ -1,9 +1,36 @@
 #!/usr/bin/env bash
 
-# Normalize LLVM/Clang macOS target spellings for ABI comparisons only.
-# Preserve the original reported triple when passing LLVM_HOST_TRIPLE or
-# writing compiler identity manifests: Darwin and macOS version numbers are
-# not interchangeable as literal toolchain configuration strings.
+# Identify a Darwin-family target without assuming the vendor must be Apple.
+# Keep the original OS spelling/version: Darwin-compatible clones need not
+# share Apple's SDK, linker, deployment-version mapping, or runtime ABI.
+# This is syntax/identity validation, NOT proof of ABI compatibility.
+darwin_target_identity()
+{
+    local target="$1"
+    local target_arch arch vendor rest os_name
+
+    [[ "$target" == *-*-* ]] || return 1
+    target_arch="${target%%-*}"
+    rest="${target#*-}"
+    vendor="${rest%%-*}"
+    os_name="${rest#*-}"
+    [[ "$vendor" =~ ^[a-zA-Z0-9_]+$ ]] || return 1
+    case "$target_arch" in
+        arm64|aarch64) arch=aarch64 ;;
+        arm64e) arch=arm64e ;;
+        x86_64|amd64) arch=x86_64 ;;
+        *) return 1 ;;
+    esac
+    # Reject iOS, Catalyst, simulator, and additional target components.
+    [[ "$os_name" =~ ^(darwin|macosx|macos)([0-9]+(\.[0-9]+){0,2})?$ ]] || return 1
+    printf '%s-%s-%s\n' "$arch" "$vendor" "$os_name"
+}
+
+# Normalize the explicitly Apple-SDK macOS host ABI for C/C++ comparisons.
+# Preserve the reported triple elsewhere; Darwin kernel and macOS product
+# versions are not interchangeable as literal toolchain settings.
+# This Apple-specific check must not become a generic Darwin compatibility
+# rule; use darwin_target_identity() for vendor-independent admission.
 macos_target_abi_key()
 {
     local target="$1"

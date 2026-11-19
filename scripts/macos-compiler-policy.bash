@@ -9,9 +9,9 @@ if [[ "${WHP_MACOS_COMPILER_POLICY_APPLIED:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
-# Share the strict Apple-vendor, macOS/Darwin OS, and environment-field
-# parser with the LLVM bootstrap. The vendor controls Clang's AppleMachO
-# toolchain selection; a loose prefix is not sufficient evidence.
+# Use the shared Darwin-family syntax checker without assuming all Darwin
+# implementations use Apple's vendor name. The Apple SDK, linker, runtime and
+# effective ABI still require independent native build probes.
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/macos-target-abi.bash"
 
 MACOS_ALLOW_NONCLANG="${MACOS_ALLOW_NONCLANG:-0}"
@@ -109,7 +109,7 @@ canonical_macos_arch()
     esac
 }
 
-require_apple_darwin_target()
+require_darwin_target_identity()
 {
     local label="$1"
     local command_string="$2"
@@ -121,11 +121,12 @@ require_apple_darwin_target()
         return 1
     }
 
-    # Require the exact -apple- vendor and a macOS/Darwin OS spelling with
-    # no extra target environment such as iOS, Mac Catalyst, or simulator.
-    if ! macos_target_abi_key "$triple" >/dev/null; then
+    # The vendor field is meaningful but cannot alone prove (or disprove)
+    # compatibility with a Darwin-family ABI. Reject malformed OS fields and
+    # foreign target environments without silently rewriting the vendor.
+    if ! darwin_target_identity "$triple" >/dev/null; then
         printf '%s\n' \
-            "error: $label must use a well-formed Apple Darwin/macOS target triple." \
+            "error: $label must use a well-formed Darwin/macOS target triple." \
             "compiler: $command_string" \
             "target:   $triple" >&2
         return 1
@@ -218,15 +219,15 @@ if [[ "$build_cc_family" != clang || "$build_cxx_family" != clang ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
-MACOS_CC_TARGET_TRIPLE="$(require_apple_darwin_target CC "$CC")" || \
+MACOS_CC_TARGET_TRIPLE="$(require_darwin_target_identity CC "$CC")" || \
     return 1 2>/dev/null || exit 1
-MACOS_CXX_TARGET_TRIPLE="$(require_apple_darwin_target CXX "$CXX")" || \
+MACOS_CXX_TARGET_TRIPLE="$(require_darwin_target_identity CXX "$CXX")" || \
     return 1 2>/dev/null || exit 1
-MACOS_OBJC_TARGET_TRIPLE="$(require_apple_darwin_target OBJC "$OBJC")" || \
+MACOS_OBJC_TARGET_TRIPLE="$(require_darwin_target_identity OBJC "$OBJC")" || \
     return 1 2>/dev/null || exit 1
-MACOS_BUILD_CC_TARGET_TRIPLE="$(require_apple_darwin_target CC_FOR_BUILD "$CC_FOR_BUILD")" || \
+MACOS_BUILD_CC_TARGET_TRIPLE="$(require_darwin_target_identity CC_FOR_BUILD "$CC_FOR_BUILD")" || \
     return 1 2>/dev/null || exit 1
-MACOS_BUILD_CXX_TARGET_TRIPLE="$(require_apple_darwin_target CXX_FOR_BUILD "$CXX_FOR_BUILD")" || \
+MACOS_BUILD_CXX_TARGET_TRIPLE="$(require_darwin_target_identity CXX_FOR_BUILD "$CXX_FOR_BUILD")" || \
     return 1 2>/dev/null || exit 1
 export MACOS_CC_TARGET_TRIPLE MACOS_CXX_TARGET_TRIPLE MACOS_OBJC_TARGET_TRIPLE
 export MACOS_BUILD_CC_TARGET_TRIPLE MACOS_BUILD_CXX_TARGET_TRIPLE

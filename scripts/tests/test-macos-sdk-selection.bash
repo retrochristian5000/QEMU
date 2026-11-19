@@ -271,25 +271,25 @@ if TEST_TARGET_TRIPLE=arm64-unknown-linux-gnu \
     cat "$non_darwin_output" >&2
     exit 1
 fi
-if ! grep -Fq 'Apple Darwin/macOS target triple' "$non_darwin_output"; then
+if ! grep -Fq 'Darwin/macOS target triple' "$non_darwin_output"; then
     printf '%s\n' \
         'error: macOS compiler policy did not diagnose the non-Darwin target ABI.' >&2
     cat "$non_darwin_output" >&2
     exit 1
 fi
 
-# The vendor field changes which Mach-O toolchain Clang chooses.
-# Reject foreign vendors, OS lookalikes and extra environments rather than
-# accepting the first three dash-separated components of a malformed triple.
+# The vendor field changes Clang's Mach-O toolchain choice, but not the
+# grammatical validity of a Darwin triple. Reject malformed OS/environment
+# fields without imposing Apple's vendor name on Darwin-compatible clones.
 for invalid_triple in \
-    arm64-unknown-macosx15.0 \
-    arm64-pc-darwin24.0.0 \
+    arm64-unknown-linux-gnu \
+    arm64--darwin24.0.0 \
     arm64-apple-ios18.0 \
     arm64-apple-macosish15.0 \
-    arm64-apple-darwin24.0.0-ios \
-    arm64-apple-macosx15.0-simulator \
+    arm64-unknown-darwin24.0.0-ios \
+    arm64-pc-macosx15.0-simulator \
     arm64-apple-macosx15.0-macabi \
-    arm64-apple-macosx15.0.0.0; do
+    arm64-unknown-macosx15.0.0.0; do
     invalid_target_output="$TEST_DIR/rejected-apple-target.log"
     if TEST_TARGET_TRIPLE="$invalid_triple" \
        CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
@@ -297,19 +297,25 @@ for invalid_triple in \
        bash --noprofile --norc -c \
            'source "$1/scripts/macos-compiler-policy.bash"' _ "$SOURCE_DIR" \
            >"$invalid_target_output" 2>&1; then
-        printf 'error: accepted non-native Apple target: %s\n' "$invalid_triple" >&2
+        printf 'error: accepted invalid Darwin target: %s\n' "$invalid_triple" >&2
         exit 1
     fi
-    if ! grep -Fq 'Apple Darwin/macOS target triple' "$invalid_target_output"; then
-        printf 'error: missing Apple target diagnostic: %s\n' "$invalid_triple" >&2
+    if ! grep -Fq 'Darwin/macOS target triple' "$invalid_target_output"; then
+        printf 'error: missing Darwin target diagnostic: %s\n' "$invalid_triple" >&2
         cat "$invalid_target_output" >&2
         exit 1
     fi
 done
 
-# Preserve Apple Clang's legitimate Darwin-kernel spelling and the explicit
-# macOS product spelling. The latter must not be rejected by stricter checks.
-for valid_triple in arm64-apple-darwin24.0.0 arm64-apple-macosx15.0; do
+# Preserve Apple Clang's native spelling and allow other Darwin vendors to
+# reach the real SDK, compiler and linker compatibility probes. Admission of
+# a vendor name is not certification that its objects/runtime are compatible.
+for valid_triple in \
+    arm64-apple-darwin24.0.0 \
+    arm64-apple-macosx15.0 \
+    arm64-unknown-darwin24.0.0 \
+    arm64-pc-darwin24.0.0 \
+    arm64-unknown-macosx15.0; do
     valid_target_output="$TEST_DIR/accepted-apple-target.log"
     if ! TEST_TARGET_TRIPLE="$valid_triple" \
          CC="$CLANG" CXX="$CLANGXX" OBJC="$CLANG" \
@@ -317,7 +323,7 @@ for valid_triple in arm64-apple-darwin24.0.0 arm64-apple-macosx15.0; do
          bash --noprofile --norc -c \
              'source "$1/scripts/macos-compiler-policy.bash"' _ "$SOURCE_DIR" \
              >"$valid_target_output" 2>&1; then
-        printf 'error: rejected native Apple target: %s\n' "$valid_triple" >&2
+        printf 'error: rejected well-formed Darwin target: %s\n' "$valid_triple" >&2
         cat "$valid_target_output" >&2
         exit 1
     fi

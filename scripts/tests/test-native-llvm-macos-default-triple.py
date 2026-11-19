@@ -118,6 +118,34 @@ for target in ('i386-linux-gnu', 'i486-pc-linux-gnu',
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == 'i386-linux-gnu', (target, result.stdout)
 
+# A Darwin-family target does not imply an Apple vendor. The syntax parser
+# retains distinct vendors and their original Darwin version numbers; it does
+# not assert that their runtime/linker ABIs are interchangeable.
+darwin_identity_probe = ('set -euo pipefail\n' + helpers + '\n'
+                         + 'darwin_target_identity "$1"\n')
+for triple, expected in (
+    ('arm64-apple-darwin24.0.0', 'aarch64-apple-darwin24.0.0'),
+    ('arm64-unknown-darwin24.0.0', 'aarch64-unknown-darwin24.0.0'),
+    ('arm64-pc-darwin24.0.0', 'aarch64-pc-darwin24.0.0'),
+    ('arm64e-custom-darwin27.1', 'arm64e-custom-darwin27.1'),
+    ('arm64-unknown-macosx15.0', 'aarch64-unknown-macosx15.0'),
+    ('x86_64-unknown-darwin', 'x86_64-unknown-darwin'),
+):
+    result = subprocess.run(['bash', '-c', darwin_identity_probe, '--', triple],
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == expected, (triple, result.stdout)
+
+for triple in (
+    'arm64-unknown-ios18.0',
+    'arm64--darwin24.0',
+    'arm64-unknown-darwin24.0-simulator',
+    'arm64-unknown-macosx15.0-macabi',
+    'arm64-unknown-darwin24.0.0.0',
+):
+    result = subprocess.run(['bash', '-c', darwin_identity_probe, '--', triple],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, (triple, result.stdout)
+
 # Apple arm64e has a distinct pointer-authentication ABI. It must remain
 # different from ordinary arm64 even when the OS/version spelling agrees.
 macos_key_probe = ('set -euo pipefail\n' + helpers + '\n'
