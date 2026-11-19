@@ -12,6 +12,20 @@ assert 'darwin_runtimes_cmake_args="$darwin_external_cmake_args"' in script
 assert '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"' in script
 assert '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"' in script
 assert "COMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=$darwin_runtime_native_arch_only" in script
+assert "scripts/tests/compiler_rt_archive_abi.py" in script
+assert '--required-arch "$darwin_cmake_arch"' in script
+
+darwin_utils = root / (
+    "toolchains/llvm-project/compiler-rt/cmake/Modules/"
+    "CompilerRTDarwinUtils.cmake"
+)
+if not darwin_utils.is_file():
+    darwin_utils = root / (
+        "llvm-project/compiler-rt/cmake/Modules/CompilerRTDarwinUtils.cmake"
+    )
+cmake = darwin_utils.read_text(encoding="utf-8")
+assert "lipo_flags -arch ${LIB_ARCH}" in cmake
+assert "lipo_flags -arch ${arch} " not in cmake
 assert "BOOTSTRAP_SCHEMA=14" in script
 assert "darwin_cmake_arch=arm64e" in script
 assert "darwin_cmake_arch=arm64" in script

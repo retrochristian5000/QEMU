@@ -800,6 +800,31 @@ than relying only on the ``lipo -archs`` label. It is an archive integrity
 check, not permission to combine ARM64e with ARM64, change PAC semantics,
 or select Mach-O LLD before its authenticated-link gate passes.
 
+Compiler-rt static archive ABI isolation
+----------------------------------------
+
+The Clang resource directory contains Darwin static runtime libraries
+named ``libclang_rt*.a``, including builtins ``libclang_rt.osx.a``.
+These are distinct from dynamic ASan/UBSan runtimes. A universal archive
+must preserve a consistent Mach-O ABI within each architecture slice.
+
+The pinned compiler-rt CMake macro labels builtin and cc_kext lipo inputs
+from their explicit ``LIB_ARCH`` rather than an ambient ``arch`` variable.
+The installed-runtime audit ``scripts/tests/compiler_rt_archive_abi.py``
+checks the static archives during native toolchain validation. It verifies
+FAT32/FAT64 descriptors against the actual BSD/Darwin archive members
+and catches mixed unversioned/versioned ARM64e userland objects.
+Only the required builtins library must contain the selected host ABI;
+optional static runtimes are inspected without requiring optional slices.
+Kernel-extension cc_kext archives have separate ABI requirements.
+
+LLVM issue 141171 documents an ARM64e archive combining subtypes
+``0x00000002`` and ``0x80000002`` that failed ``llvm-lipo``.
+The auditor reports the offending member without rewriting objects.
+SDK-independent regression checks are available with::
+
+  python3 scripts/tests/test-compiler-rt-static-archive-abi.py
+
 ARM64/ARM64e universal Darwin archive composition
 ----------------------------------------------------
 

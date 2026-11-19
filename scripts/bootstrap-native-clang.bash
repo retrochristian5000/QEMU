@@ -1584,6 +1584,14 @@ usable()
             native_llvm_validation_error runtime 'Clang cannot resolve its installed compiler-rt resource directory'
             return 1
         }
+        # Audit actual installed compiler-rt archive members and FAT metadata.
+        # Do not infer the ABI from the outer universal library filename.
+        if ! "${PYTHON:-python3}" "$SOURCE_DIR/scripts/tests/compiler_rt_archive_abi.py" \
+                --directory "$ubsan_resource_dir/lib/darwin" \
+                --required-arch "$darwin_cmake_arch"; then
+            native_llvm_validation_error ABI "installed compiler-rt static archives have incompatible or missing $darwin_cmake_arch members"
+            return 1
+        fi
         ubsan_runtime="$ubsan_resource_dir/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib"
         if [[ ! -f "$ubsan_runtime" ]]; then
             native_llvm_validation_error runtime "missing installed compiler-rt UBSan dylib: $ubsan_runtime (LLVM runtimes distribution)"
