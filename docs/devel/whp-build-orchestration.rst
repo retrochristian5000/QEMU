@@ -521,3 +521,34 @@ guest memory. Compare the final E820 map, machine type, option ROMs,
 EBDA and attached devices before lowering any firmware allocation limit.
 For the native firmware source and logging details, consult
 ``roms/seabios/docs/Debugging.md``.
+
+
+Active SeaBIOS POST self-tests
+------------------------------
+
+SeaBIOS does perform its real POST initialization (PIC, DMA, timers,
+device enumeration, VGA and option ROMs). Discovery of emulated RAM,
+however, is **not** a complete RAM read/write test. To request an
+additional active check on the pinned WHP firmware::
+
+  qemu-system-i386 -machine pc -m 64M -bios /path/to/bios-256k.bin \
+    -fw_cfg name=opt/org.seabios/whp-extended-post,string=1 \
+    -chardev file,id=seabios,path=seabios-post.log \
+    -device isa-debugcon,iobase=0x402,chardev=seabios
+
+When requested, the extended POST runs **after device/option-ROM setup
+and before BIOS INT 19h**. It checks E820 range ordering, overlap and
+overflow, the conventional-memory BDA/EBDA boundary and EBDA reserved
+range, and tests 4 KiB of owned temporary RAM using address-dependent,
+inverted and walking-bit patterns. It frees the buffer before boot. A
+reported failure **halts** the BIOS instead of continuing with a
+misleading PASS banner; the successful result is printed as
+``WHP extended POST: ... PASS``. This test is disabled by default,
+requires no persistent extra RAM, and is specific to QEMU SeaBIOS.
+
+It does **not** claim to test all emulated RAM, exercise every PCI/USB
+peripheral, or diagnose physical memory errors on the host. The
+existing ``whp-memory-report`` option measures footprint, whereas
+``whp-extended-post`` performs actual bounded reads and writes.
+The two switches are independent. See the pinned firmware's
+``docs/Debugging.md`` for firmware-side details.
