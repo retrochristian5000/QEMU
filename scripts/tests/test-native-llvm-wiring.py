@@ -348,7 +348,14 @@ assert 'native_target_abi_key()' in bootstrap
 assert 'source "$SCRIPT_DIR/whp-build/macos-target-abi.bash"' in bootstrap
 assert 'bootstrap_cc_abi="$(native_target_abi_key "$bootstrap_cc_target_canonical")"' in bootstrap
 assert 'bootstrap_cxx_abi="$(native_target_abi_key "$bootstrap_cxx_target_canonical")"' in bootstrap
-assert 'if [[ "$bootstrap_cc_abi" != "$bootstrap_cxx_abi" ]]; then' in bootstrap
+# Current Darwin seed policy tolerates a missing deployment-version suffix
+# only after both C and C++ drivers passed native SDK, LP64 and link probes.
+# Do not require the obsolete strict inequality branch.
+assert 'if [[ "$bootstrap_cc_abi" == "$bootstrap_cxx_abi" ]]; then' in bootstrap
+assert 'bootstrap_seed_abis_match=1' in bootstrap
+assert 'if [[ "$bootstrap_seed_abis_match" != 1 ]]; then' in bootstrap
+assert '[[ "$bootstrap_cc_abi" == "$host_tag-apple-macosx" ]]' in bootstrap
+assert '[[ "$bootstrap_cxx_abi" == "$host_tag-apple-macosx" ]]' in bootstrap
 assert 'native LLVM bootstrap C and C++ compiler target triples differ' in bootstrap
 assert bootstrap.index('native LLVM bootstrap C and C++ compiler target triples differ') < bootstrap.index('llvm_host_triple="$bootstrap_cc_target_canonical"')
 assert bootstrap.index('llvm_default_target_triple="$host_tag-apple-macosx$deployment_target"') < bootstrap.index('whp_git_submodule_prepare "$SOURCE_DIR" "$LLVM_SUBMODULE_PATH"')
