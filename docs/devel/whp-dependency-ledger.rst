@@ -595,9 +595,29 @@ graph.  A compact view is::
       |                                       |
       |                                       +--> libisofs
       |
-      +--> optional native LLVM
+      +--> optional native LLVM (pinned toolchains/llvm-project)
              |
-             +--> QEMU host compiler
+             +--> installed compiler prefix / marker / ABI smoke
+             |      +--> cache hit: reuse Clang, LLD, libLTO and runtimes
+             |      |       (no CMake/Ninja or archive pair needed)
+             |      |
+             |      +--> cache miss / changed compiler or CMake identity
+             |             +--> independent host CC/CXX + SDK + system linker
+             |             +--> CMake seed + selected Ninja + host Python
+             |             +--> native ar/ranlib pair (before llvm-ar exists)
+             |             +--> pinned LLVM CMake graph
+             |                    +--> host TableGen / generated headers
+             |                    +--> LLVM AArch64/X86/PowerPC backends
+             |                    +--> Clang + LLD + libLTO
+             |                    +--> Darwin compiler-rt ExternalProjects
+             |                    |      +--> builtins (indexed archives)
+             |                    |      +--> runtimes (sanitizers, profile)
+             |                    |      +--> matching macOS SDK and ABI
+             |                    +--> optional LLDB / shared libraries
+             |             +--> staged install -> ABI/runtime/link smoke
+             |                    +--> publish or preserve old prefix
+             |
+             +--> QEMU host compiler (resolved prefix)
              |      +--> artifact zlib
              |      +--> SDL3 host library
              |      +--> JACK client library
@@ -624,6 +644,36 @@ the QEMU Python virtual environment.  Ninja is also required before normal
 Meson configuration.  A native WHP LLVM build is optional and must not become
 a prerequisite for bootstrapping the compiler that is needed to build LLVM
 itself.
+
+Native LLVM build stages and ARM64e ABI boundaries
+-------------------------------------------------
+
+The pinned LLVM fork is an optional QEMU compiler producer, not a mandatory
+root dependency for Git, GNU Make, Python, or QEMU's Meson configuration.
+An existing installation must pass its marker, C/C++ target checks,
+resource-header probes, native backends and compiler-rt ABI validation.
+Only a cache miss needs CMake, Ninja and the coherent host ar/ranlib pair.
+Never bootstrap the first LLVM build using its own unfinished Clang or ar.
+
+On a rebuild, LLVM's native CMake graph generates TableGen sources and
+builds AArch64/X86/PowerPC backends, Clang, LLD and libLTO from the same
+QEMU gitlink. On macOS, compiler-rt builtins and runtimes are distinct
+ExternalProjects. Both inherit CMAKE_OSX_SYSROOT, CMAKE_OSX_ARCHITECTURES
+and CMAKE_OSX_DEPLOYMENT_TARGET; otherwise the builtins archive may
+contain ordinary arm64 objects despite an arm64e output request.
+Installed libclang_rt.osx.a must contain the requested native ABI;
+FAT archive labels alone never certify their inner object subtypes.
+
+The dedicated macOS ARM64e CI lane sets NATIVE_LLVM_MACOS_ARCH=arm64e.
+The general-purpose auto setting continues to select ordinary arm64
+on Apple Silicon, avoiding unintended changes to QEMU host ABI.
+LLVM_ENABLE_LTO=OFF describes the LLVM toolchain's *own* build flags,
+not whether its installed Clang and LLD can produce and consume LTO.
+That downstream capability requires matched libLTO, symbol indexing,
+and separate ThinLTO/Mach-O authentication regression checks.
+
+Optional LLDB integrations, zlib/zstd compression, libxml2/llvm-mt and
+compiler caches must not become unconditional prerequisite nodes.
 
 Native LLVM transitive dependency inventory
 ---------------------------------------------

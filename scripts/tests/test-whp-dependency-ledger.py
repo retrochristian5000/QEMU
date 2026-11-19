@@ -96,6 +96,30 @@ def main() -> int:
                     f"error: WHP dependency ledger lost {label}: {needle}"
                 )
 
+    # Keep the LLVM source path, rebuild-only host tools, ABI inheritance,
+    # and final QEMU consumer in one inspectable dependency tree.
+    for node in (
+        "optional native LLVM (pinned toolchains/llvm-project)",
+        "installed compiler prefix / marker / ABI smoke",
+        "cache miss / changed compiler or CMake identity",
+        "native ar/ranlib pair (before llvm-ar exists)",
+        "Clang + LLD + libLTO",
+        "Darwin compiler-rt ExternalProjects",
+        "builtins (indexed archives)",
+        "runtimes (sanitizers, profile)",
+        "staged install -> ABI/runtime/link smoke",
+        "Native LLVM build stages and ARM64e ABI boundaries",
+    ):
+        if node not in ledger:
+            raise SystemExit("error: LLVM dependency graph missing: " + node)
+    native_macos_ci = (ROOT / ".github/workflows/native-llvm-macos.yml").read_text(
+        encoding="utf-8"
+    )
+    if "NATIVE_LLVM_MACOS_ARCH: 'arm64e'" not in native_macos_ci:
+        raise SystemExit("error: dedicated native LLVM CI does not select arm64e")
+    if "WHP native LLVM macOS arch: arm64e" not in native_macos_ci:
+        raise SystemExit("error: dedicated LLVM CI lost ARM64e verification")
+
     # LLVM archivers are rebuild-only native capabilities. GNU Binutils
     # is a possible provider, not a mandatory source build or LTO plugin.
     llvm_bootstrap = (
@@ -104,6 +128,24 @@ def main() -> int:
     cache_hit = llvm_bootstrap.index(
         'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker"'
     )
+    cmake_seed = llvm_bootstrap.index(
+        'cmake_cmd=$(/bin/sh "$SOURCE_DIR/seeds/cmake.sh" --print-cmake)'
+    )
+    ninja_check = llvm_bootstrap.index('if [[ "$ninja_cmd" == */* ]]; then')
+    if not cache_hit < cmake_seed < ninja_check:
+        raise SystemExit(
+            "error: cached LLVM toolchain requires rebuild-only CMake/Ninja"
+        )
+    for option in (
+        '"-DBUILTINS_CMAKE_ARGS=$darwin_external_cmake_args"',
+        '"-DRUNTIMES_CMAKE_ARGS=$darwin_runtimes_cmake_args"',
+        'llvm_enable_runtimes=compiler-rt',
+        '-DLLVM_ENABLE_LTO=OFF',
+        '-DLLVM_ENABLE_ZLIB=OFF',
+        '-DLLVM_ENABLE_ZSTD=OFF',
+    ):
+        if option not in llvm_bootstrap:
+            raise SystemExit("error: LLVM ABI/dependency policy drift: " + option)
     pair = llvm_bootstrap.index(
         'scripts/whp-build/native-archive-pair.sh" "$bootstrap_cc"'
     )

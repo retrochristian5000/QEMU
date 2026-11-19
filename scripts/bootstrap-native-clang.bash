@@ -270,30 +270,16 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-# Obtain one validated independent CMake executable before building LLVM.
-cmake_cmd=$(/bin/sh "$SOURCE_DIR/seeds/cmake.sh" --print-cmake) || exit 1
-printf 'WHP native LLVM CMake: %s\n' "$cmake_cmd" >&2
+# Git and basic host utilities are needed to inspect the pinned source
+# and validate an existing toolchain; CMake is rebuild-only.
 for tool in git sed mkdir mv rm ln mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: native LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
     }
 done
-if [[ "$ninja_cmd" == */* ]]; then
-    [[ -x "$ninja_cmd" ]] || {
-        printf 'error: native LLVM Ninja is not executable: %s\n' "$ninja_cmd" >&2
-        exit 1
-    }
-else
-    resolved_ninja="$(command -v "$ninja_cmd" 2>/dev/null || true)"
-    [[ -n "$resolved_ninja" ]] || {
-        printf 'error: native LLVM bootstrap dependency not found: %s\n' "$ninja_cmd" >&2
-        exit 1
-    }
-    ninja_cmd="$resolved_ninja"
-    unset resolved_ninja
-fi
-printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
+# Ninja executes only LLVM's CMake build graph. Do not require it merely
+# to validate and reuse a previously installed native toolchain.
 
 # The normal QEMU build enables compiler caching later in builder.sh. Native
 # LLVM is bootstrapped before that handoff, so opt it into the same cache policy
@@ -1755,6 +1741,27 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 && -f "$marker" &&
     printf '%s\n' "$TOOLCHAIN_DIR" >&3
     exit 0
 fi
+
+# Rebuild-only tools must not become mandatory dependencies of an installed
+# and validated LLVM toolchain. Preserve the existing CMake/Ninja build graph.
+# Obtain one validated independent CMake executable after the installed-toolchain cache miss.
+cmake_cmd=$(/bin/sh "$SOURCE_DIR/seeds/cmake.sh" --print-cmake) || exit 1
+printf 'WHP native LLVM CMake: %s\n' "$cmake_cmd" >&2
+if [[ "$ninja_cmd" == */* ]]; then
+    [[ -x "$ninja_cmd" ]] || {
+        printf 'error: native LLVM Ninja is not executable: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+else
+    resolved_ninja="$(command -v "$ninja_cmd" 2>/dev/null || true)"
+    [[ -n "$resolved_ninja" ]] || {
+        printf 'error: native LLVM bootstrap dependency not found: %s\n' "$ninja_cmd" >&2
+        exit 1
+    }
+    ninja_cmd="$resolved_ninja"
+    unset resolved_ninja
+fi
+printf 'WHP native LLVM Ninja: %s\n' "$ninja_cmd" >&2
 
 # Native LLVM cannot bootstrap its own archive tools. After a cache miss,
 # prefer a coherent *installed* GNU/LLVM pair for the native compiler family
