@@ -358,6 +358,12 @@ with their previous choices intact. An active ``QEMU_X86_FAMILY_LINK``
 still substitutes x86_64 for the i386 backend using its existing guardrails.
 Explicitly named build commands still retain their normal request handling.
 
+As with other WHP target choices, an existing incremental build can retain
+previously configured targets even after they are disabled in the menu.
+To apply a smaller target set rather than preserving that union, use
+``WHP_INCREMENTAL_BUILD=0`` or a separate ``BUILD_DIR``. Menu collapse
+changes which settings are visible, not the contents of existing build outputs.
+
 The ``QEMU hardware`` section is device-first. Each currently exposed audio
 model appears once, with independent ``i386`` and ``ppc`` choices underneath:
 Sound Blaster 16, AdLib, Gravis UltraSound, Crystal CS4231A, PC speaker,
