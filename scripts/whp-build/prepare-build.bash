@@ -162,8 +162,17 @@ whp_prepare_build_defaults()
     fi
     PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
     BUILD_QEMU_IMG="${BUILD_QEMU_IMG:-1}"
+    BUILD_QEMU_SYSTEM_ALL="${BUILD_QEMU_SYSTEM_ALL:-0}"
     BUILD_QEMU_SYSTEM_I386="${BUILD_QEMU_SYSTEM_I386:-1}"
     BUILD_QEMU_SYSTEM_PPC="${BUILD_QEMU_SYSTEM_PPC:-1}"
+    BUILD_QEMU_SYSTEM_SPARC="${BUILD_QEMU_SYSTEM_SPARC:-0}"
+    case "$BUILD_QEMU_SYSTEM_ALL" in
+        0|1) ;;
+        *)
+            printf 'error: BUILD_QEMU_SYSTEM_ALL must be 0 or 1: %s\n' \
+                "$BUILD_QEMU_SYSTEM_ALL" >&2
+            return 1 ;;
+    esac
     QEMU_X86_FAMILY_LINK="${QEMU_X86_FAMILY_LINK:-0}"
     case "$QEMU_X86_FAMILY_LINK" in
         0) ;;
@@ -189,10 +198,10 @@ whp_prepare_build_defaults()
         *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\n' >&2; return 1 ;;
     esac
     QEMU_TARGET_LIST=
-    if [[ "$BUILD_QEMU_SYSTEM_PPC" == 1 ]]; then
+    if [[ "$BUILD_QEMU_SYSTEM_ALL" == 1 || "$BUILD_QEMU_SYSTEM_PPC" == 1 ]]; then
         QEMU_TARGET_LIST=ppc-softmmu
     fi
-    if [[ "$BUILD_QEMU_SYSTEM_I386" == 1 ]]; then
+    if [[ "$BUILD_QEMU_SYSTEM_ALL" == 1 || "$BUILD_QEMU_SYSTEM_I386" == 1 ]]; then
         if [[ "$QEMU_X86_FAMILY_LINK" == 1 ]]; then
             QEMU_TARGET_LIST="${QEMU_TARGET_LIST:+$QEMU_TARGET_LIST,}x86_64-softmmu"
         else
@@ -270,7 +279,8 @@ whp_prepare_build_defaults()
     CONFIG_MAC_OLDWORLD="${CONFIG_MAC_OLDWORLD:-y}"
 
     whp_require_boolean_values \
-        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_I386 BUILD_QEMU_SYSTEM_PPC \
+        BUILD_QEMU_IMG BUILD_QEMU_SYSTEM_ALL BUILD_QEMU_SYSTEM_I386 \
+        BUILD_QEMU_SYSTEM_PPC BUILD_QEMU_SYSTEM_SPARC \
         RUN_TESTS INSTALL_AFTER_BUILD OPENBIOS_FORCE_RECONFIGURE \
         POWERPC_TOOLCHAIN_FORCE_REBUILD WHP_DTC_FETCH_MISSING || exit 1
     whp_require_tristate_values \
