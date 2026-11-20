@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Measure QEMU host RSS at paused startup, during boot, and at exit.
+"""Measure QEMU host RSS at paused startup, during boot, across resets, and at exit.
 
 Unlike the x86-only BIOS benchmark, this uses QMP and can profile Mac99/PPC
 without needing a custom guest image.  It measures the actual process, not
 configured guest RAM or the virtual size of the JIT mappings.  An unbooted
 firmware workload is NOT a proxy for an OS that has touched all guest RAM.
+Warm-reset samples are taken after identical fixed delays, not after a proven
+POST completion. Growth in RSS alone does not prove a memory leak.
 Linux and macOS report ps RSS in KiB; wait4 ru_maxrss uses KiB on Linux and
 bytes on macOS.  Host RSS is not the same as unique physical footprint.
 """
@@ -130,8 +132,9 @@ def reap(pid: int, timeout: float) -> tuple[int, float]:
 
 
 def measure(command: list[str], boot_seconds: float,
-            timeout: float, jit_stats: bool = False
-            ) -> tuple[float, float, float, tuple[int, int, int, int] | None]:
+            timeout: float, jit_stats: bool = False, reset_cycles: int = 0
+            ) -> tuple[float, float, float, tuple[int, int, int, int] | None,
+                       list[float]]:
     with tempfile.TemporaryFile(mode="w+t") as errors:
         process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=errors)
@@ -146,6 +149,11 @@ def measure(command: list[str], boot_seconds: float,
             qmp.command("cont", timeout)
             time.sleep(boot_seconds)
             running = rss_mib(process.pid)
+            reset_rss = []
+            for _ in range(reset_cycles):
+                qmp.command("system_reset", timeout)
+                time.sleep(boot_seconds)
+                reset_rss.append(rss_mib(process.pid))
             jit = read_jit_stats(qmp, timeout) if jit_stats else None
             qmp.command("quit", timeout)
             status, peak = reap(process.pid, timeout)
@@ -153,7 +161,7 @@ def measure(command: list[str], boot_seconds: float,
             process.returncode = status
             if status != 0:
                 raise RuntimeError(f"QEMU exited with status {status}")
-            return paused, running, peak, jit
+            return paused, running, peak, jit, reset_rss
         except Exception as exc:
             errors.seek(0)
             diagnostic = errors.read(4096).strip()
@@ -179,7 +187,8 @@ def measure(command: list[str], boot_seconds: float,
 
 
 def qemu_command(qemu: str, machine: str, guest_mib: int, smp: int,
-                 tb_mib: int | None, split_wx: str, nodefaults: bool) -> list[str]:
+                 tb_mib: int | None, split_wx: str, nodefaults: bool,
+                 cpu: str | None = None) -> list[str]:
     accel = "tcg"
     if tb_mib is not None:
         accel += f",tb-size={tb_mib}"
@@ -191,6 +200,8 @@ def qemu_command(qemu: str, machine: str, guest_mib: int, smp: int,
                "-qmp", "stdio", "-S", "-no-reboot"]
     if nodefaults:
         command.append("-nodefaults")
+    if cpu is not None:
+        command.extend(("-cpu", cpu))
     return command
 
 
@@ -199,6 +210,8 @@ def self_test() -> None:
         "qemu", "-machine", "mac99", "-accel", "tcg,tb-size=32,split-wx=on",
         "-m", "256M", "-smp", "1", "-display", "none", "-monitor", "none",
         "-serial", "none", "-qmp", "stdio", "-S", "-no-reboot", "-nodefaults"]
+    assert qemu_command("qemu", "isapc", 16, 1, None, "auto", True,
+                        cpu="486")[-2:] == ["-cpu", "486"]
     fake = '''import json, sys
 print(json.dumps({"QMP": {"version": {}}}), flush=True)
 for line in sys.stdin:
@@ -207,9 +220,10 @@ for line in sys.stdin:
     if message["execute"] == "quit":
         break
 '''
-    paused, running, peak, jit = measure([sys.executable, "-u", "-c", fake],
-                                         0.02, 10)
-    assert jit is None
+    paused, running, peak, jit, resets = measure(
+        [sys.executable, "-u", "-c", fake], 0.02, 10, reset_cycles=2)
+    assert jit is None and len(resets) == 2
+    assert all(value > 0 for value in resets)
     assert 0 < paused and 0 < running and peak >= min(paused, running)
     fixture = ("Translation buffer state:\n"
                "gen code size       1024/65536\n"
@@ -250,8 +264,11 @@ def main() -> int:
     parser.add_argument("--split-wx", choices=("auto", "on", "off"),
                         default="auto")
     parser.add_argument("--nodefaults", action="store_true")
+    parser.add_argument("--cpu", help="optional guest CPU model (for example 486)")
     parser.add_argument("--boot-seconds", type=float, default=2.0)
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--reset-cycles", type=int, default=0,
+                        help="sample RSS after this many QMP warm resets per round")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--jit-stats", action="store_true",
                         help="also query TCG code use, capacity and flushes")
@@ -266,6 +283,8 @@ def main() -> int:
         parser.error("guest RAM, CPU count and rounds must be positive")
     if args.tb_size is not None and args.tb_size < 1:
         parser.error("--tb-size must be at least 1 MiB")
+    if args.reset_cycles < 0:
+        parser.error("--reset-cycles must not be negative")
     if args.boot_seconds < 0 or args.timeout <= 0:
         parser.error("boot time must not be negative and timeout must be positive")
     candidate = Path(args.qemu)
@@ -277,25 +296,36 @@ def main() -> int:
         if not qemu:
             parser.error(f"QEMU executable not found: {args.qemu}")
     command = qemu_command(qemu, args.machine, args.guest_mib, args.cpus,
-                           args.tb_size, args.split_wx, args.nodefaults)
+                           args.tb_size, args.split_wx, args.nodefaults,
+                           args.cpu)
     print(f"Host RSS for {args.machine}: guest={args.guest_mib} MiB, "
           f"cpus={args.cpus}, tb={args.tb_size or 'auto'}, "
-          f"split-wx={args.split_wx}")
+          f"split-wx={args.split_wx}, cpu={args.cpu or 'default'}")
     print("round    paused_MiB   running_MiB   peak_MiB   boot_delta_MiB")
     samples = []
     for round_number in range(1, args.rounds + 1):
         values = measure(command, args.boot_seconds, args.timeout,
-                         args.jit_stats)
-        paused, running, peak, jit = values
+                         args.jit_stats, args.reset_cycles)
+        paused, running, peak, jit, reset_rss = values
         print(f"{round_number:5} {paused:13.1f} {running:13.1f} "
               f"{peak:10.1f} {running - paused:16.1f}")
         samples.append(values)
+        if reset_rss:
+            print("      warm-reset RSS (MiB): " +
+                  ", ".join(f"{value:.1f}" for value in reset_rss))
         if jit is not None:
             print("      " + jit_summary(jit))
     paused, running, peak = [statistics.median(column)
                              for column in zip(*(s[:3] for s in samples))]
     print(f"median {paused:13.1f} {running:13.1f} "
           f"{peak:10.1f} {running - paused:16.1f}")
+    if args.reset_cycles:
+        reset_medians = [statistics.median(s[4][i] for s in samples)
+                         for i in range(args.reset_cycles)]
+        print("median warm-reset RSS (MiB): " +
+              ", ".join(f"{value:.1f}" for value in reset_medians))
+        print(f"median final reset minus cold boot: "
+              f"{reset_medians[-1] - running:+.1f} MiB")
     if args.jit_stats:
         snapshots = [s[3] for s in samples]
         medians = tuple(int(statistics.median(column))
