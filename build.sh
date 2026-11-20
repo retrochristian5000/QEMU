@@ -897,7 +897,10 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
                 ;;
         esac
         if [ "$whp_use_apple_linker" = 1 ]; then
-            LD=$(xcrun --find ld) || exit 1
+            # Reuse the SDK/developer-root verified by the initial native
+            # compiler seeds; bypassing the shared resolver can select a
+            # stale linker from another Xcode or Command Line Tools root.
+            LD=$(whp_apple_find_tool ld system) || exit 1
             NATIVE_LLVM_LDFLAG=
             # Reject inherited overrides before the Bash macOS wrapper runs.
             for whp_link_input in \

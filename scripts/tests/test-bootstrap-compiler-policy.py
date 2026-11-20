@@ -88,6 +88,38 @@ def main() -> int:
     require(linker, "Never auto-select ld64.lld", "ARM64e and ASan guard")
     require(build, '"$SOURCE_DIR/seeds/ld.sh" --print-ld', "early linker seed")
     require(build, "LD_FOR_BUILD=", "build-machine linker handoff")
+    # The Apple linker chosen after LLVM promotion must come from the same
+    # validated developer/SDK root as the native compiler seeds, not a fresh
+    # ambient xcrun lookup or the independent build-machine LD_FOR_BUILD.
+    native_linker = 'LD=$(whp_apple_find_tool ld system) || exit 1'
+    require(build, native_linker, "SDK-pinned Apple artifact linker")
+    if "LD=$(xcrun --find ld)" in build:
+        raise SystemExit("error: QEMU artifact linker bypasses the Apple SDK resolver")
+    assert build.index(
+        '. "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"'
+    ) < build.index(native_linker)
+
+    # Execute the exact POSIX selection with a fake tool resolver. The failure
+    # must stop the build rather than retain a previous LD or fall back to PATH.
+    for selection, expected_status in (("success", 0), ("failure", 1)):
+        test_script = (
+            'whp_apple_find_tool() {\n'
+            '    [ "$1" = ld ] && [ "$2" = system ] || return 2\n'
+            f'    [ "{selection}" = success ] || return 1\n'
+            '    printf "%s\\n" /selected/developer/bin/ld\n'
+            '}\n'
+            + native_linker + '\n'
+            + 'printf "%s\\n" "$LD"\n'
+        )
+        result = subprocess.run(
+            ["sh", "-c", test_script], text=True, capture_output=True,
+            env=dict(os.environ, LD="/stale/ambient/ld"),
+        )
+        assert result.returncode == expected_status, (selection, result.stderr)
+        if selection == "success":
+            assert result.stdout.strip() == "/selected/developer/bin/ld"
+        else:
+            assert "/stale/ambient/ld" not in result.stdout
     if 'LD="$SOURCE_DIR/seeds/ld.sh"' in build:
         raise SystemExit("error: bootstrap linker must not replace QEMU artifact LD")
 
