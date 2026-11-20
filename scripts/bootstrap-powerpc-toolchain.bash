@@ -10,8 +10,11 @@ toolchain_root="$(dirname "$TOOLCHAIN_DIR")"
 TOOLCHAIN_WORK_DIR="$toolchain_root/toolchain-work/$TOOLCHAIN_TARGET"
 TOOLCHAIN_DOWNLOAD_DIR="$toolchain_root/toolchain-downloads"
 TOOLCHAIN_FORCE_REBUILD="${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}"
-TOOLCHAIN_HOST_CC="${CC_FOR_BUILD:-${CC:-cc}}"
-TOOLCHAIN_HOST_CXX="${CXX_FOR_BUILD:-${CXX:-c++}}"
+# Host-tool compilers must not silently inherit a target QEMU artifact CC/CXX.
+# Explicit GNU-toolchain overrides win, followed by admitted build-machine
+# drivers, then native host defaults.
+TOOLCHAIN_HOST_CC="${TOOLCHAIN_HOST_CC:-${CC_FOR_BUILD:-cc}}"
+TOOLCHAIN_HOST_CXX="${TOOLCHAIN_HOST_CXX:-${CXX_FOR_BUILD:-c++}}"
 TOOLCHAIN_HOST_AR="${TOOLCHAIN_HOST_AR:-}"
 TOOLCHAIN_HOST_NM="${TOOLCHAIN_HOST_NM:-}"
 TOOLCHAIN_HOST_RANLIB="${TOOLCHAIN_HOST_RANLIB:-}"
@@ -184,6 +187,33 @@ resolve_host_tool()
     export "$variable"
 }
 
+# Compare *only* Apple macOS build/host ABIs. A native compiler can report
+# a Darwin kernel triple while an explicit GNU host choice uses the macOS
+# product spelling. Neither spelling should become a forced target rewrite.
+# Other vendors and real cross-host differences remain separate toolchains.
+toolchain_build_host_triplets_match()
+{
+    local build_triple="$1" host_triple="$2" build_system="$3"
+    local build_abi host_abi
+
+    [[ "$build_triple" == "$host_triple" ]] && return 0
+    [[ "$build_system" == Darwin ]] || return 1
+    build_abi="$(macos_target_abi_key "$build_triple")" || return 1
+    host_abi="$(macos_target_abi_key "$host_triple")" || return 1
+    [[ "$build_abi" == "$host_abi" ]]
+}
+
+toolchain_darwin_build_matches_process()
+{
+    local build_abi
+    build_abi="$(macos_target_abi_key "$1")" || return 1
+    case "$2:$build_abi" in
+        arm64:aarch64-apple-macosx*|aarch64:aarch64-apple-macosx*|\
+        x86_64:x86_64-apple-macosx*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 if [[ -z "$TOOLCHAIN_BUILD_TRIPLET" ]]; then
     TOOLCHAIN_BUILD_TRIPLET="$(compiler_dumpmachine "$TOOLCHAIN_HOST_CC")"
 fi
@@ -195,16 +225,34 @@ TOOLCHAIN_BUILD_TRIPLET="$(normalize_apple_silicon_triplet "$TOOLCHAIN_BUILD_TRI
 TOOLCHAIN_HOST_TRIPLET="${TOOLCHAIN_HOST_TRIPLET:-$TOOLCHAIN_BUILD_TRIPLET}"
 TOOLCHAIN_HOST_TRIPLET="$(normalize_apple_silicon_triplet "$TOOLCHAIN_HOST_TRIPLET")"
 
-# This bootstrap builds tools that run on the current machine.  A build/host
-# mismatch is a Canadian cross and needs a separate compiler and executable
-# validation path; silently treating it as an ordinary cross compiler is unsafe.
-if [[ "$TOOLCHAIN_BUILD_TRIPLET" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
+# This bootstrap builds tools that run on the current machine. A genuine
+# build/host ABI mismatch is a Canadian cross, not a firmware cross target.
+# Only the Apple SDK host role can equate Darwin and macOS spellings. Keep
+# requested triples for cache identity and diagnostics; GNU gets one native ABI.
+if [[ "$(uname -s)" == Darwin ]]; then
+    source "$SOURCE_DIR/scripts/whp-build/macos-target-abi.bash"
+fi
+if ! toolchain_build_host_triplets_match \
+        "$TOOLCHAIN_BUILD_TRIPLET" "$TOOLCHAIN_HOST_TRIPLET" "$(uname -s)"; then
     printf '%s\n' \
         'error: Canadian-cross build/host combinations are not supported here.' \
         "build: $TOOLCHAIN_BUILD_TRIPLET" \
         "host:  $TOOLCHAIN_HOST_TRIPLET" \
         'Build the host compiler separately, then add an explicit Canadian-cross stage.' >&2
     exit 1
+fi
+
+# GNU configure compares --build/--host literally to determine cross mode.
+# The validated build compiler is already native, so equivalent Apple spelling
+# aliases must share *one* GNU configure host identity. Keep the requested
+# triples unchanged in the marker; this does not retarget PowerPC firmware.
+TOOLCHAIN_CONFIGURE_BUILD_TRIPLET="$TOOLCHAIN_BUILD_TRIPLET"
+TOOLCHAIN_CONFIGURE_HOST_TRIPLET="$TOOLCHAIN_HOST_TRIPLET"
+if [[ "$(uname -s)" == Darwin &&
+      "$TOOLCHAIN_BUILD_TRIPLET" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
+    TOOLCHAIN_CONFIGURE_HOST_TRIPLET="$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET"
+    printf 'PowerPC GNU native configure host: %s (requested alias: %s)\n' \
+        "$TOOLCHAIN_CONFIGURE_HOST_TRIPLET" "$TOOLCHAIN_HOST_TRIPLET" >&2
 fi
 
 if [[ "$(uname -s)" == Darwin ]]; then
@@ -215,17 +263,14 @@ if [[ "$(uname -s)" == Darwin ]]; then
         fi
     done
 
-    case "$(uname -m):$TOOLCHAIN_BUILD_TRIPLET" in
-        arm64:aarch64-apple-darwin*|aarch64:aarch64-apple-darwin*|\
-        x86_64:x86_64-apple-darwin*) ;;
-        *)
-            printf '%s\n' \
-                'error: Darwin build triplet does not match the running process.' \
-                "process: $(uname -m)" \
-                "build:   $TOOLCHAIN_BUILD_TRIPLET" >&2
-            exit 1
-            ;;
-    esac
+    if ! toolchain_darwin_build_matches_process \
+            "$TOOLCHAIN_BUILD_TRIPLET" "$(uname -m)"; then
+        printf '%s\n' \
+            'error: Darwin build triplet does not match the running process.' \
+            "process: $(uname -m)" \
+            "build:   $TOOLCHAIN_BUILD_TRIPLET" >&2
+        exit 1
+    fi
 
     # Keep the caller's SDKROOT intact. Standalone operation resolves
     # a native SDK only when none was supplied; both paths are validated.
@@ -315,12 +360,14 @@ toolchain_is_usable()
 
 marker="$TOOLCHAIN_DIR/.whp-powerpc-toolchain"
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=7
+BOOTSTRAP_SCHEMA=8
 BUILD_SYSTEM=$(uname -srm)
 BUILD_PROCESS_ARCH=$(uname -m)
 ROSETTA_TRANSLATED=$(sysctl -in sysctl.proc_translated 2>/dev/null || printf '0')
 BUILD_TRIPLET=$TOOLCHAIN_BUILD_TRIPLET
 HOST_TRIPLET=$TOOLCHAIN_HOST_TRIPLET
+GNU_CONFIGURE_BUILD_TRIPLET=$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET
+GNU_CONFIGURE_HOST_TRIPLET=$TOOLCHAIN_CONFIGURE_HOST_TRIPLET
 TARGET=$TOOLCHAIN_TARGET
 BINUTILS_VERSION=$BINUTILS_VERSION
 BINUTILS_SHA256=$BINUTILS_SHA256
@@ -491,9 +538,13 @@ SOURCE
         ${ld_flags[@]+"${ld_flags[@]}"}
 
     if [[ "$(uname -s)" == Darwin ]]; then
-        case "$TOOLCHAIN_HOST_TRIPLET" in
-            aarch64-apple-darwin*) expected_arch=arm64 ;;
-            x86_64-apple-darwin*) expected_arch=x86_64 ;;
+        # The running process ABI was admitted earlier. An explicit macOS
+        # spelling is as native as its Darwin counterpart; do not leave the
+        # expected Mach-O slice blank when POWERPC_TOOLCHAIN_HOST uses macosx.
+        case "$(uname -m)" in
+            arm64|aarch64) expected_arch=arm64 ;;
+            x86_64) expected_arch=x86_64 ;;
+            *) return 1 ;;
         esac
         for output in "$probe_dir/host-c" "$probe_dir/host-cxx"; do
             arches="$(xcrun lipo -archs "$output" 2>/dev/null || true)"
@@ -557,19 +608,31 @@ validate_source_triplets()
     local host_canonical
     local target_canonical
 
-    build_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_BUILD_TRIPLET")"
-    host_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_HOST_TRIPLET")"
-    target_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_TARGET")"
-    if [[ "$build_canonical" != "$TOOLCHAIN_BUILD_TRIPLET" ||
-          "$host_canonical" != "$TOOLCHAIN_HOST_TRIPLET" ]]; then
-        printf '%s\n' \
-            "error: $project canonicalized the requested machine identities differently." \
-            "requested build:  $TOOLCHAIN_BUILD_TRIPLET" \
-            "canonical build:  $build_canonical" \
-            "requested host:   $TOOLCHAIN_HOST_TRIPLET" \
-            "canonical host:   $host_canonical" \
-            "requested target: $TOOLCHAIN_TARGET" \
-            "canonical target: $target_canonical" >&2
+    build_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET")" || return 1
+    host_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_CONFIGURE_HOST_TRIPLET")" || return 1
+    target_canonical="$("$source_dir/config.sub" "$TOOLCHAIN_TARGET")" || return 1
+    if [[ "$build_canonical" != "$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET" ||
+          "$host_canonical" != "$TOOLCHAIN_CONFIGURE_HOST_TRIPLET" ]]; then
+        # GNU config.sub may canonicalize arm64/aarch64 or the Darwin kernel
+        # spelling. Admit only proven Apple host ABI aliases; preserve strict
+        # matching for every other platform and vendor.
+        if [[ "$(uname -s)" != Darwin ]] ||
+           ! toolchain_build_host_triplets_match \
+               "$build_canonical" "$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET" Darwin ||
+           ! toolchain_build_host_triplets_match \
+               "$host_canonical" "$TOOLCHAIN_CONFIGURE_HOST_TRIPLET" Darwin; then
+            printf '%s\n' \
+                "error: $project canonicalized GNU build/host identities incompatibly." \
+                "GNU build:       $TOOLCHAIN_CONFIGURE_BUILD_TRIPLET -> $build_canonical" \
+                "GNU host:        $TOOLCHAIN_CONFIGURE_HOST_TRIPLET -> $host_canonical" \
+                "requested build: $TOOLCHAIN_BUILD_TRIPLET" \
+                "requested host:  $TOOLCHAIN_HOST_TRIPLET" >&2
+            return 1
+        fi
+    fi
+    if [[ "$build_canonical" != "$host_canonical" ]]; then
+        printf 'error: %s GNU configure would enter cross mode (build=%s; host=%s)\n' \
+            "$project" "$build_canonical" "$host_canonical" >&2
         return 1
     fi
 
@@ -746,8 +809,8 @@ mkdir -p "$binutils_build"
     cd "$binutils_build"
     env "${common_host_env[@]}" \
         "$binutils_src/configure" \
-        --build="$TOOLCHAIN_BUILD_TRIPLET" \
-        --host="$TOOLCHAIN_HOST_TRIPLET" \
+        --build="$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET" \
+        --host="$TOOLCHAIN_CONFIGURE_HOST_TRIPLET" \
         --target="$TOOLCHAIN_TARGET" \
         --prefix="$TOOLCHAIN_DIR" \
         --with-sysroot \
@@ -817,8 +880,8 @@ mkdir -p "$gcc_build"
     export PATH="$staged_toolchain/bin:$PATH"
     env "${common_host_env[@]}" "${target_tool_env[@]}" \
         "$gcc_src/configure" \
-        --build="$TOOLCHAIN_BUILD_TRIPLET" \
-        --host="$TOOLCHAIN_HOST_TRIPLET" \
+        --build="$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET" \
+        --host="$TOOLCHAIN_CONFIGURE_HOST_TRIPLET" \
         --target="$TOOLCHAIN_TARGET" \
         --prefix="$TOOLCHAIN_DIR" \
         --with-build-time-tools="$staged_toolchain/$TOOLCHAIN_TARGET/bin" \

@@ -21,6 +21,25 @@ def source_function(name: str) -> str:
     return SOURCE[start:end]
 
 
+# Exercise the exact GNU PowerPC build/host admission functions with the
+# shared Apple-specific ABI parser. No macOS runner or source download is
+# necessary to distinguish aliases from a real Canadian-cross request.
+DARWIN_ABI_HELPERS = (ROOT / "scripts/whp-build/macos-target-abi.bash").read_text(
+    encoding="utf-8"
+)
+TRIPLET_HELPERS = (
+    "set -euo pipefail\n"
+    + DARWIN_ABI_HELPERS + "\n"
+    + source_function("toolchain_build_host_triplets_match") + "\n"
+    + source_function("toolchain_darwin_build_matches_process") + "\n"
+    + 'case "$1" in\n'
+    + '  roles) toolchain_build_host_triplets_match "$2" "$3" "$4" ;;\n'
+    + '  process) toolchain_darwin_build_matches_process "$2" "$3" ;;\n'
+    + '  *) exit 2 ;;\n'
+    + 'esac\n'
+)
+
+
 BASH_HELPERS = (
     "set -euo pipefail\n"
     + source_function("set_command") + "\n"
@@ -120,6 +139,204 @@ class HostArchiveSelection(unittest.TestCase):
         self.assertIn('"RANLIB_FOR_BUILD=$TOOLCHAIN_HOST_RANLIB"', SOURCE)
         self.assertIn("-u AR_FOR_TARGET", SOURCE)
         self.assertIn("-u RANLIB_FOR_TARGET", SOURCE)
+
+
+class HostTripletAdmission(unittest.TestCase):
+    def probe(self, *args):
+        return subprocess.run(
+            ["/bin/bash", "-c", TRIPLET_HELPERS, "--", *args],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+
+    def test_equivalent_apple_darwin_and_macosx_native_hosts(self):
+        # The original build/host strings remain different: only the
+        # comparison key is normalized, so configure and cache retain intent.
+        for build, host in (
+            ("aarch64-apple-darwin24.6", "aarch64-apple-macosx15.6"),
+            ("arm64-apple-darwin25.2.0", "aarch64-apple-macosx26.2"),
+            ("arm64-apple-macosx27.2", "aarch64-apple-darwin27.2.0"),
+            ("x86_64-apple-darwin22", "x86_64-apple-macosx13.0"),
+            ("arm64e-apple-darwin27.2.0", "arm64e-apple-macosx27.2"),
+        ):
+            with self.subTest(build=build, host=host):
+                result = self.probe("roles", build, host, "Darwin")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_genuine_canadian_cross_and_nonapple_darwin_rejected(self):
+        for build, host, platform in (
+            ("aarch64-apple-darwin24.6", "aarch64-apple-macosx15.7", "Darwin"),
+            ("aarch64-apple-darwin24.6", "arm64e-apple-macosx15.6", "Darwin"),
+            ("aarch64-apple-darwin24.6", "x86_64-apple-macosx15.6", "Darwin"),
+            ("aarch64-unknown-darwin24.6", "aarch64-apple-macosx15.6", "Darwin"),
+            ("aarch64-apple-darwin24.6", "aarch64-unknown-darwin24.6", "Darwin"),
+            ("aarch64-apple-ios17.0", "aarch64-apple-macosx15.6", "Darwin"),
+            ("aarch64-apple-darwin24.6-simulator", "aarch64-apple-macosx15.6", "Darwin"),
+            ("aarch64-apple-darwin24.6", "aarch64-apple-macosx15.6", "Linux"),
+            ("aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "Linux"),
+        ):
+            with self.subTest(build=build, host=host, platform=platform):
+                result = self.probe("roles", build, host, platform)
+                self.assertNotEqual(result.returncode, 0)
+
+        # Exact GNU/Linux build/host matches remain admitted as before.
+        same = self.probe(
+            "roles", "x86_64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu", "Linux",
+        )
+        self.assertEqual(same.returncode, 0, same.stderr)
+
+    def test_darwin_process_matches_product_or_kernel_target(self):
+        for triple, process, accepted in (
+            ("aarch64-apple-darwin24.6", "arm64", True),
+            ("aarch64-apple-macosx15.6", "arm64", True),
+            ("arm64-apple-macosx15.6", "aarch64", True),
+            ("x86_64-apple-darwin22", "x86_64", True),
+            ("x86_64-apple-macosx13.0", "x86_64", True),
+            ("aarch64-unknown-darwin24.6", "arm64", False),
+            ("aarch64-apple-ios17.0", "arm64", False),
+            ("arm64e-apple-macosx27.2", "arm64", False),
+            ("x86_64-apple-macosx15.6", "arm64", False),
+            ("aarch64-apple-macosx15.6", "x86_64", False),
+            ("aarch64-apple-macosx15.6-simulator", "arm64", False),
+        ):
+            with self.subTest(triple=triple, process=process):
+                result = self.probe("process", triple, process)
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_gnu_config_sub_keeps_equivalent_macos_hosts_native(self):
+        # The real validator must accept an Apple arm64 -> aarch64
+        # canonicalization, but never treat a foreign Darwin vendor as native.
+        with tempfile.TemporaryDirectory(prefix="whp-gnu-triplet-") as temp:
+            root = Path(temp)
+            (root / "config.sub").write_text(
+                '#!/bin/sh\n'
+                'case "$1" in\n'
+                '  arm64-apple-macosx15.6)\n'
+                '    printf "aarch64-apple-macosx15.6\\n" ;;\n'
+                '  arm64-unknown-darwin24.6)\n'
+                '    printf "aarch64-unknown-darwin24.6\\n" ;;\n'
+                '  powerpc-elf) printf "powerpc-unknown-elf\\n" ;;\n'
+                '  *) printf "%s\\n" "$1" ;;\n'
+                'esac\n',
+                encoding="utf-8",
+            )
+            (root / "config.sub").chmod(0o700)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            (fake_bin / "uname").write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = -s ]; then printf "Darwin\\n"; exit 0; fi\n'
+                'exec /usr/bin/uname "$@"\n',
+                encoding="utf-8",
+            )
+            (fake_bin / "uname").chmod(0o700)
+            script = (
+                "set -euo pipefail\n"
+                + DARWIN_ABI_HELPERS + "\n"
+                + source_function("toolchain_build_host_triplets_match") + "\n"
+                + source_function("validate_source_triplets") + "\n"
+                + 'TOOLCHAIN_TARGET=powerpc-elf\n'
+                + 'TOOLCHAIN_BUILD_TRIPLET="$1"\n'
+                + 'TOOLCHAIN_HOST_TRIPLET="$1"\n'
+                + 'TOOLCHAIN_CONFIGURE_BUILD_TRIPLET="$1"\n'
+                + 'TOOLCHAIN_CONFIGURE_HOST_TRIPLET="$1"\n'
+                + 'validate_source_triplets "$2" regression\n'
+            )
+            for value, accepted in (
+                ("arm64-apple-macosx15.6", True),
+                ("arm64-unknown-darwin24.6", False),
+            ):
+                with self.subTest(triple=value):
+                    env = dict(os.environ)
+                    env["PATH"] = str(fake_bin) + os.pathsep + env.get(
+                        "PATH", "/usr/bin:/bin",
+                    )
+                    result = subprocess.run(
+                        ["/bin/bash", "-c", script, "--", value, str(root)],
+                        env=env, capture_output=True, text=True,
+                        timeout=10, check=False,
+                    )
+                    self.assertEqual(
+                        result.returncode == 0, accepted,
+                        (result.stdout, result.stderr),
+                    )
+
+    def test_host_compilers_do_not_inherit_cross_artifact_compilers(self):
+        assignments = [
+            line for line in SOURCE.splitlines()
+            if line.startswith(("TOOLCHAIN_HOST_CC=", "TOOLCHAIN_HOST_CXX="))
+        ]
+        self.assertEqual(len(assignments), 2)
+        selection = (
+            "set -euo pipefail\n" + "\n".join(assignments)
+            + '\nprintf "%s|%s\\n" "$TOOLCHAIN_HOST_CC" "$TOOLCHAIN_HOST_CXX"\n'
+        )
+        cases = (
+            ({}, "cc|c++"),
+            (
+                {"CC_FOR_BUILD": "/build/native-cc",
+                 "CXX_FOR_BUILD": "/build/native-cxx"},
+                "/build/native-cc|/build/native-cxx",
+            ),
+            (
+                {"CC_FOR_BUILD": "/build/native-cc",
+                 "CXX_FOR_BUILD": "/build/native-cxx",
+                 "TOOLCHAIN_HOST_CC": "/explicit/toolchain-cc",
+                 "TOOLCHAIN_HOST_CXX": "/explicit/toolchain-cxx"},
+                "/explicit/toolchain-cc|/explicit/toolchain-cxx",
+            ),
+        )
+        for overrides, expected in cases:
+            with self.subTest(overrides=overrides):
+                env = os.environ.copy()
+                for key in (
+                    "CC", "CXX", "CC_FOR_BUILD", "CXX_FOR_BUILD",
+                    "TOOLCHAIN_HOST_CC", "TOOLCHAIN_HOST_CXX",
+                ):
+                    env.pop(key, None)
+                env.update({
+                    "CC": "powerpc-elf-gcc",
+                    "CXX": "powerpc-elf-g++",
+                    **overrides,
+                })
+                result = subprocess.run(
+                    ["/bin/bash", "-c", selection],
+                    env=env, capture_output=True, text=True,
+                    timeout=10, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
+
+    def test_guard_preserves_configure_triplets_and_target(self):
+        self.assertIn(
+            'source "$SOURCE_DIR/scripts/whp-build/macos-target-abi.bash"',
+            SOURCE,
+        )
+        self.assertIn(
+            '"$TOOLCHAIN_BUILD_TRIPLET" "$TOOLCHAIN_HOST_TRIPLET" "$(uname -s)"',
+            SOURCE,
+        )
+        self.assertIn(
+            '"$TOOLCHAIN_BUILD_TRIPLET" "$(uname -m)"', SOURCE,
+        )
+        self.assertIn("BUILD_TRIPLET=$TOOLCHAIN_BUILD_TRIPLET", SOURCE)
+        self.assertIn("HOST_TRIPLET=$TOOLCHAIN_HOST_TRIPLET", SOURCE)
+        self.assertIn("GNU_CONFIGURE_BUILD_TRIPLET=$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET", SOURCE)
+        self.assertIn("GNU_CONFIGURE_HOST_TRIPLET=$TOOLCHAIN_CONFIGURE_HOST_TRIPLET", SOURCE)
+        self.assertIn("TOOLCHAIN_CONFIGURE_HOST_TRIPLET=", SOURCE)
+        self.assertIn(
+            'TOOLCHAIN_CONFIGURE_HOST_TRIPLET="$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET"',
+            SOURCE,
+        )
+        self.assertEqual(
+            SOURCE.count('--build="$TOOLCHAIN_CONFIGURE_BUILD_TRIPLET"'), 2,
+        )
+        self.assertEqual(
+            SOURCE.count('--host="$TOOLCHAIN_CONFIGURE_HOST_TRIPLET"'), 2,
+        )
+        self.assertIn("BOOTSTRAP_SCHEMA=8", SOURCE)
+        self.assertIn("TOOLCHAIN_TARGET=", SOURCE)
+        self.assertIn("powerpc-elf", SOURCE)
 
 
 if __name__ == "__main__":
