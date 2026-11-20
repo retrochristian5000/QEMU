@@ -901,9 +901,9 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
     assert cache_clean(options), 'restored CMake cache did not validate'
 
 # Prove shortcut precedence with the actual native seed-selection fragment.
-# CC_FOR_BUILD may be reused, but inherited CXX_FOR_BUILD is revalidated
-# by cxx.sh for the native C++17/SDK ABI. Explicit LLVM overrides still
-# take precedence over default compiler discovery.
+# Inherited CC_FOR_BUILD and CXX_FOR_BUILD are both revalidated through the
+# native C and C++ adapter probes before LLVM's ABI/triple admission. Explicit
+# LLVM overrides still take precedence over default compiler discovery.
 native_seed_selection = bootstrap.split(
     '# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN\n', 1
 )[1].split('# WHP_NATIVE_LLVM_SEED_SELECTION_END', 1)[0]
@@ -949,11 +949,11 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
     chosen, calls = selected(cc='/known/cc', cxx='/known/cxx')
     assert chosen.returncode == 0, chosen.stderr
     assert chosen.stdout == '/known/cc|/known/cxx\n'
-    assert calls == ['cxx.sh'], 'LLVM skipped inherited C++ ABI revalidation'
+    assert calls == ['cc.sh', 'cxx.sh'], 'LLVM skipped inherited C/C++ ABI revalidation'
     chosen, calls = selected(cc='/known/cc')
     assert chosen.returncode == 0, chosen.stderr
     assert chosen.stdout == '/known/cc|/mock/default-cxx\n'
-    assert calls == ['cxx.sh'], calls
+    assert calls == ['cc.sh', 'cxx.sh'], calls
     chosen, calls = selected()
     assert chosen.returncode == 0, chosen.stderr
     assert chosen.stdout == '/mock/default-c|/mock/default-cxx\n'
@@ -971,6 +971,6 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-seed-choice-') as td:
     chosen, calls = selected(cc='/known/cc', cxx='/known/cxx',
                              override_cxx='FAIL')
     assert chosen.returncode != 0
-    assert calls == ['cxx.sh'], 'bad C++ override fell through to default'
+    assert calls == ['cc.sh', 'cxx.sh'], 'bad C++ override fell through to default'
 
 print('native LLVM compiler-role shortcut regressions: passed')
