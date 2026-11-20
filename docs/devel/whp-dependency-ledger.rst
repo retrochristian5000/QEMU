@@ -677,6 +677,7 @@ diagnosing a failure. On Linux and dedicated cross/firmware compiler
 bootstraps, runtime generation is not currently selected; promote it
 only if the target's actual link or instrumentation contract requires
 a compatible runtime, with architecture-specific validation.
+
 Both ExternalProjects inherit CMAKE_OSX_SYSROOT, CMAKE_OSX_ARCHITECTURES
 and CMAKE_OSX_DEPLOYMENT_TARGET; otherwise the builtins archive may
 contain ordinary arm64 objects despite an arm64e output request.
