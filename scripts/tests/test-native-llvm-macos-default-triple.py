@@ -3,6 +3,8 @@
 from pathlib import Path
 import subprocess
 import shlex
+import shutil
+import tempfile
 
 root = Path(__file__).resolve().parents[2]
 s = (root / "scripts/bootstrap-native-clang.bash").read_text()
@@ -221,4 +223,62 @@ if cmake.is_file():  # Submodule may not be initialized in standalone CI.
     llvm = cmake.read_text()
     assert "LLVM_MACOS_EXPLICIT_DEFAULT_TRIPLE" in llvm
     assert "CMAKE_OSX_DEPLOYMENT_TARGET" in llvm
+# Verify a stale compiler --target is not concealed in generated CMake
+# compiler information after CMakeCache.txt has been cleared.
+for lang in ("C", "CXX", "ASM"):
+    assert f"-UCMAKE_{lang}_COMPILER_ARG1" in s
+assert "native_llvm_reset_compiler_arg1_metadata || {" in s
+assert "if native_llvm_cmake_compiler_arg1_poisoned; then" in s
+arg1_helpers = "\n".join(bootstrap_function(name) for name in (
+    "native_llvm_cmake_compiler_arg1_poisoned",
+    "native_llvm_reset_compiler_arg1_metadata",
+))
+with tempfile.TemporaryDirectory(prefix="whp-native-llvm-arg1-") as td:
+    build = Path(td)
+    cache = build / "CMakeCache.txt"
+    metadata_dir = build / "CMakeFiles" / "fixture"
+    metadata_dir.mkdir(parents=True)
+    compiler_file = metadata_dir / "CMakeCCompiler.cmake"
+    compiler_file.write_text(
+        'set(CMAKE_C_COMPILER_ARG1 "--target=arm64e-apple-darwin27.2")\n')
+    cache.write_text("CMAKE_C_COMPILER_ARG1:STRING=\n")
+    probe = (
+        'set -euo pipefail\nLLVM_BUILD_DIR="$1"\n' + arg1_helpers
+        + '\nnative_llvm_cmake_compiler_arg1_poisoned\n'
+        + 'native_llvm_reset_compiler_arg1_metadata\n'
+        + 'if native_llvm_cmake_compiler_arg1_poisoned; then exit 1; fi\n'
+    )
+    result = subprocess.run(
+        ["bash", "-c", probe, "--", str(build)],
+        capture_output=True, text=True, check=True)
+    assert "clearing stale CMake compiler ARG1" in result.stderr
+    assert not compiler_file.exists() and cache.exists()
+
+    if shutil.which("cmake") and shutil.which("ninja"):
+        # Real CMake reproducer: -U alone does not clear the generated file.
+        src = build / "src"
+        src.mkdir()
+        (src / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.21)\n"
+            "project(arg1_probe LANGUAGES C CXX)\n")
+        output = build / "out"
+        cmake_cmd = ["cmake", "-G", "Ninja", "-S", str(src), "-B", str(output)]
+        subprocess.run(cmake_cmd + ["-DCMAKE_C_COMPILER_ARG1=-DSTALE_C_TRIPLE"],
+                       stdout=subprocess.DEVNULL, check=True)
+        infos = list((output / "CMakeFiles").glob("*/CMakeCCompiler.cmake"))
+        assert len(infos) == 1
+        assert "STALE_C_TRIPLE" in infos[0].read_text()
+        subprocess.run(cmake_cmd + ["-UCMAKE_C_COMPILER_ARG1"],
+                       stdout=subprocess.DEVNULL, check=True)
+        assert "STALE_C_TRIPLE" in infos[0].read_text()
+        subprocess.run(
+            ["bash", "-c",
+             'set -euo pipefail\nLLVM_BUILD_DIR="$1"\n' + arg1_helpers
+             + '\nnative_llvm_reset_compiler_arg1_metadata\n',
+             "--", str(output)],
+            capture_output=True, check=True)
+        subprocess.run(cmake_cmd + ["-UCMAKE_C_COMPILER_ARG1"],
+                       stdout=subprocess.DEVNULL, check=True)
+        assert "STALE_C_TRIPLE" not in infos[0].read_text()
+
 print("Native LLVM explicit macOS host/default triples: verified")

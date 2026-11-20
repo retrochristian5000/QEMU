@@ -1915,6 +1915,10 @@ cmake_args=(
     -UCMAKE_C_COMPILER_TARGET
     -UCMAKE_CXX_COMPILER_TARGET
     -UCMAKE_ASM_COMPILER_TARGET
+    # A prior CMake compiler argument can still select an old --target.
+    -UCMAKE_C_COMPILER_ARG1
+    -UCMAKE_CXX_COMPILER_ARG1
+    -UCMAKE_ASM_COMPILER_ARG1
     -UCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN
     -UCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN
     # Explicitly clear persistent CMakeCache global flags from older builds.
@@ -2021,11 +2025,51 @@ cmake_config_identity="$(
     printf 'ARG=%q\n' "${cmake_args[@]}"
 )"
 # WHP_NATIVE_LLVM_CMAKE_CACHE_GUARD_BEGIN
+# CMake caches compiler ARG1 both in CMakeCache.txt and in generated
+# CMakeFiles/*/CMake{C,CXX,ASM}Compiler.cmake. Unsetting the cache entry alone
+# does not clear the generated compiler information on reconfiguration.
+native_llvm_cmake_compiler_arg1_poisoned()
+{
+    local cache="$LLVM_BUILD_DIR/CMakeCache.txt"
+    local compiler_info
+
+    if [[ -f "$cache" ]] &&
+       grep -Eq '^CMAKE_(C|CXX|ASM)_COMPILER_ARG1:[^=]*=.+$' "$cache"; then
+        return 0
+    fi
+    for compiler_info in "$LLVM_BUILD_DIR"/CMakeFiles/*/CMake{C,CXX,ASM}Compiler.cmake; do
+        [[ -f "$compiler_info" ]] || continue
+        if grep -Eq '^set\(CMAKE_(C|CXX|ASM)_COMPILER_ARG1 "[^"]+"\)' "$compiler_info"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+native_llvm_reset_compiler_arg1_metadata()
+{
+    local compiler_info
+
+    native_llvm_cmake_compiler_arg1_poisoned || return 0
+    printf 'WHP native LLVM: clearing stale CMake compiler ARG1 metadata before reconfigure\n' >&2
+    # Only generated compiler identification is replaced. Keep the existing
+    # CMake cache, Ninja graph, depfiles, objects and installed LLVM intact.
+    for compiler_info in "$LLVM_BUILD_DIR"/CMakeFiles/*/CMake{C,CXX,ASM}Compiler.cmake; do
+        [[ -f "$compiler_info" ]] || continue
+        rm -f -- "$compiler_info" || return 1
+    done
+}
+
 native_llvm_cmake_cache_clean()
 {
     local cache="$LLVM_BUILD_DIR/CMakeCache.txt"
     local kind recorded
     [[ -f "$cache" ]] || return 1
+    if native_llvm_cmake_compiler_arg1_poisoned; then
+        printf 'WHP native LLVM: cached compiler ARG1 may override the target triple; reconfiguring
+' >&2
+        return 1
+    fi
     # An unchanged marker does not guarantee that another producer did not
     # inject foreign target options into the persistent CMake cache.
     if grep -Eq '^(CMAKE_TOOLCHAIN_FILE|CMAKE_SYSROOT|CMAKE_FIND_ROOT_PATH|CMAKE_PROJECT_TOP_LEVEL_INCLUDES|CMAKE_PROJECT_INCLUDE|CMAKE_PROJECT_INCLUDE_BEFORE|CMAKE_C_COMPILER_TARGET|CMAKE_CXX_COMPILER_TARGET|CMAKE_ASM_COMPILER_TARGET|CMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN|CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN):[^=]*=.+$' "$cache"; then
@@ -2128,6 +2172,11 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 &&
 else
     # A failed configure must not leave behind a valid reuse marker.
     rm -f "$cmake_config_marker"
+    native_llvm_reset_compiler_arg1_metadata || {
+        printf 'error: cannot remove stale CMake compiler metadata
+' >&2
+        exit 1
+    }
     "$cmake_cmd" "${cmake_args[@]}"
     # A successful CMake process exit alone is not proof that protected
     # flags were applied; validate the generated cache before publishing a
