@@ -33,6 +33,16 @@ to the SDK's default deployment target instead of making the host version an
 invalid minimum. A beta or newer SDK on an older host therefore keeps the host
 runtime as the minimum so build-time executables remain runnable.
 
+An inherited ``SDKROOT`` that points to an older SDK than the active SDK
+of the same Xcode/CLT installation is rejected at the build entry point,
+before native compiler seeds or LLVM configure. Unset ``SDKROOT`` to use the
+active SDK. For deliberate older-SDK compatibility testing, set
+``WHP_MACOS_ALLOW_OLDER_SDK=1``; the SDK still must belong to the selected
+developer installation and pass header validation. A newer explicit SDK is
+not rejected merely because the active SDK is older. If the active SDK is
+unavailable, a valid explicit SDK remains usable. No other Xcode installation
+is searched or selected automatically.
+
 An explicit ``MACOSX_DEPLOYMENT_TARGET`` is never silently clamped. It must fit
 the selected SDK's deployment range. If SDK deployment metadata cannot be read,
 the SDK release version is used as the fallback default and its major/minor

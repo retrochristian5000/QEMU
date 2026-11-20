@@ -235,6 +235,7 @@ if [[ "${SDKROOT:-}" != "$selected_sdkroot" ]]; then
     SDKROOT="$selected_sdkroot"
     export SDKROOT
 fi
+whp_apple_require_current_sdk "$SDKROOT" || exit 1
 unset selected_developer_dir selected_sdkroot
 apple_developer_kind="$(whp_apple_developer_kind "$DEVELOPER_DIR")"
 export MACOS_SDK_VERSION="$(xcrun --sdk "$SDKROOT" --show-sdk-version)"

@@ -187,3 +187,76 @@ whp_apple_select_sdk()
         whp_apple_find_sdk
     fi
 )
+
+# Enforce active SDK precedence at build entry points, not on every
+# compiler-seed lookup. Deliberately older SDKs require an explicit opt-in.
+whp_apple_sdk_version_is_older()
+{
+    awk -v selected="$1" -v active="$2" '
+        BEGIN {
+            n = split(selected, s, /[.]/)
+            m = split(active, a, /[.]/)
+            if (n < 1 || n > 3 || m < 1 || m > 3) exit 2
+            for (i = 1; i <= n; i++) if (s[i] !~ /^[0-9]+$/) exit 2
+            for (i = 1; i <= m; i++) if (a[i] !~ /^[0-9]+$/) exit 2
+            for (i = 1; i <= 3; i++) {
+                left = i <= n ? s[i] + 0 : 0
+                right = i <= m ? a[i] + 0 : 0
+                if (left < right) exit 0
+                if (left > right) exit 1
+            }
+            exit 1
+        }
+    '
+}
+
+whp_apple_require_current_sdk()
+(
+    selected_sdk=$1
+    case "${WHP_MACOS_ALLOW_OLDER_SDK:-0}" in
+        0) ;;
+        1) exit 0 ;;
+        *)
+            printf 'error: WHP_MACOS_ALLOW_OLDER_SDK must be 0 or 1\n' >&2
+            exit 1
+            ;;
+    esac
+
+    # Compare only against the active SDK in the selected Xcode/CLT root.
+    # Never select a different developer installation implicitly.
+    active_sdk=$(SDKROOT= whp_apple_find_sdk 2>/dev/null || true)
+    [ -n "$active_sdk" ] || exit 0
+    [ "$selected_sdk" = "$active_sdk" ] && exit 0
+
+    developer=$(whp_apple_developer_root) || exit 1
+    whp_xcrun_tool=${WHP_XCRUN_SEED:-xcrun}
+    selected_version=$(DEVELOPER_DIR="$developer" "$whp_xcrun_tool" \
+        --sdk "$selected_sdk" --show-sdk-version 2>/dev/null) || {
+        printf 'error: cannot read the selected macOS SDK version: %s\n' \
+            "$selected_sdk" >&2
+        exit 1
+    }
+    active_version=$(DEVELOPER_DIR="$developer" "$whp_xcrun_tool" \
+        --sdk "$active_sdk" --show-sdk-version 2>/dev/null) || {
+        printf 'error: cannot read the active macOS SDK version: %s\n' \
+            "$active_sdk" >&2
+        exit 1
+    }
+
+    if whp_apple_sdk_version_is_older "$selected_version" "$active_version"; then
+        printf '%s\n' \
+            "error: selected macOS SDK $selected_version is older than active SDK $active_version." \
+            "  selected: $selected_sdk" \
+            "  active:   $active_sdk" \
+            'Unset stale SDKROOT to use the active SDK, or set' \
+            'WHP_MACOS_ALLOW_OLDER_SDK=1 for an intentional compatibility build.' >&2
+        exit 1
+    else
+        status=$?
+        if [ "$status" -ne 1 ]; then
+            printf 'error: invalid macOS SDK version comparison: %s versus %s\n' \
+                "$selected_version" "$active_version" >&2
+            exit 1
+        fi
+    fi
+)

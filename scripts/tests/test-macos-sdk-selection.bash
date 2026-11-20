@@ -258,6 +258,9 @@ export TEST_LD="$FAKE_LD"
 export TEST_LIPO="$FAKE_LIPO"
 # Test the normalized macOS wrapper, not build.sh's real Linux bootstrap.
 export WHP_BUILD_ENTRY_NORMALIZED=1
+# Existing compatibility fixtures deliberately exercise macOS 13.3. Tests of
+# the default active-SDK policy override this per invocation.
+export WHP_MACOS_ALLOW_OLDER_SDK=1
 
 non_darwin_output="$TEST_DIR/non-darwin-output"
 if TEST_TARGET_TRIPLE=arm64-unknown-linux-gnu \
@@ -412,6 +415,37 @@ if ! grep -Fq \
     exit 1
 fi
 
+# An inherited SDKROOT must not downgrade normal builds when the active
+# developer installation exposes a newer macOS SDK.
+downgrade_output="$TEST_DIR/sdk-downgrade-blocked.log"
+if WHP_MACOS_ALLOW_OLDER_SDK=0 SDKROOT="$SELECTED_SDK" \
+   MACOSX_DEPLOYMENT_TARGET= \
+   BUILD_DIR="$TEST_DIR/sdk-downgrade-blocked-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/sdk-downgrade-blocked-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$downgrade_output" 2>&1; then
+    printf '%s\n' 'error: inherited old SDKROOT silently downgraded the build.' >&2
+    exit 1
+fi
+grep -Fq 'selected macOS SDK 13.3 is older than active SDK 15.0' "$downgrade_output"
+grep -Fq 'WHP_MACOS_ALLOW_OLDER_SDK=1' "$downgrade_output"
+
+# The active SDK succeeds without an override.
+active_sdk_output="$TEST_DIR/active-sdk.log"
+if ! WHP_MACOS_ALLOW_OLDER_SDK=0 SDKROOT="$ACTIVE_SDK" \
+   MACOSX_DEPLOYMENT_TARGET= \
+   BUILD_DIR="$TEST_DIR/active-sdk-build" \
+   OPENBIOS_TOOLS_DIR="$TEST_DIR/active-sdk-tools" \
+   WHP_BUILD_BASH="$FAKE_BIN/build-bash" \
+   bash "$SOURCE_DIR/scripts/macos-builder.bash" \
+       >"$active_sdk_output" 2>&1; then
+    printf '%s\n' 'error: active SDK was rejected without an override.' >&2
+    cat "$active_sdk_output" >&2
+    exit 1
+fi
+grep -Fq 'macOS SDK version:       15.0' "$active_sdk_output"
+
 # When the running OS is newer than an explicitly selected older SDK, the
 # automatic deployment target should clamp to the SDK default. The explicitly
 # selected SDK works even if xcrun cannot locate the default SDK.
@@ -434,7 +468,7 @@ grep -Fq 'builder reached' "$older_sdk_output"
 # A beta/newer SDK on an older host should keep the host runtime as the
 # automatic deployment target so build-time executables remain runnable.
 beta_sdk_output="$TEST_DIR/beta-sdk-output"
-if ! SDKROOT="$BETA_SDK" \
+if ! WHP_MACOS_ALLOW_OLDER_SDK=0 SDKROOT="$BETA_SDK" \
    MACOSX_DEPLOYMENT_TARGET= \
    BUILD_DIR="$TEST_DIR/beta-sdk-build" \
    OPENBIOS_TOOLS_DIR="$TEST_DIR/beta-sdk-tools" \

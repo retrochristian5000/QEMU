@@ -378,6 +378,7 @@ if [ "$WHP_HOST_OS" = macos ]; then
     export DEVELOPER_DIR
     SDKROOT=$(whp_apple_select_sdk) || exit 1
     export SDKROOT
+    whp_apple_require_current_sdk "$SDKROOT" || exit 1
 fi
 
 # Select a native build-machine C compiler before any compiled fallback can
