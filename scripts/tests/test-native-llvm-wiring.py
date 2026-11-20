@@ -658,14 +658,15 @@ for llvm_bootstrap, override in link_job_policies:
 # install-distribution.
 for llvm_bootstrap, executable in (
     (bootstrap, '"$cmake_cmd"'),
-    (i386_bootstrap, 'cmake'),
+    (i386_bootstrap, '"$whp_llvm_cmake_cmd"'),
+    (powerpc_bootstrap, '"$whp_llvm_cmake_cmd"'),
 ):
     assert (
         executable + ' --build "$LLVM_BUILD_DIR" --target distribution '
         '"${cmake_parallel_args[@]}" -- -k 0'
     ) in llvm_bootstrap
-# PowerPC's toolchain bootstrap has no CMake "distribution" target; its own
-# source/build stages are validated by the PowerPC-specific tests.
+# The separate GNU Binutils/GCC PowerPC source-toolchain bootstrap does not
+# have an LLVM CMake distribution target and retains its own validation.
 
 # Windows manifest merging is an opt-in native-host utility, independent of
 # QEMU's Meson version.rc resource compiler and Apple's arm64e Mach-O ABI.
