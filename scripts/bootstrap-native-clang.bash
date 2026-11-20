@@ -462,7 +462,11 @@ if [[ -n "${NATIVE_LLVM_BOOTSTRAP_CC:-}" ]]; then
     bootstrap_cc="$(WHP_CC_SEED="$NATIVE_LLVM_BOOTSTRAP_CC" \
         "$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
 elif [[ -n "${CC_FOR_BUILD:-}" ]]; then
-    bootstrap_cc="$CC_FOR_BUILD"
+    # Standalone bootstrap may inherit CC_FOR_BUILD without build.sh having
+    # admitted it. Reuse the same native compile/link/run and SDK probe as
+    # the C++ handoff; a stale target wrapper must not bypass the seed policy.
+    bootstrap_cc="$(WHP_CC_SEED="$CC_FOR_BUILD" \
+        "$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
 else
     bootstrap_cc="$("$SOURCE_DIR/seeds/cc.sh" --print-cc)" || exit 1
 fi
@@ -2066,8 +2070,7 @@ native_llvm_cmake_cache_clean()
     local kind recorded
     [[ -f "$cache" ]] || return 1
     if native_llvm_cmake_compiler_arg1_poisoned; then
-        printf 'WHP native LLVM: cached compiler ARG1 may override the target triple; reconfiguring
-' >&2
+        printf 'WHP native LLVM: cached compiler ARG1 may override the target triple; reconfiguring\n' >&2
         return 1
     fi
     # An unchanged marker does not guarantee that another producer did not

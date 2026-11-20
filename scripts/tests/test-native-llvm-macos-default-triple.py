@@ -5,6 +5,7 @@ import subprocess
 import shlex
 import shutil
 import tempfile
+import os
 
 root = Path(__file__).resolve().parents[2]
 s = (root / "scripts/bootstrap-native-clang.bash").read_text()
@@ -62,6 +63,69 @@ for bad_seed, selected, version in [
          '--', bad_seed, selected, version], capture_output=True, text=True)
     assert result.returncode != 0, (bad_seed, selected, result.stdout)
 
+
+
+# The native bootstrap C seed must not bypass the same validated adapter used
+# for C++. This can occur when a standalone invocation inherits CC_FOR_BUILD
+# without passing through build.sh, before any LLVM target-triple conversion.
+seed_selection = s.split(
+    "# WHP_NATIVE_LLVM_SEED_SELECTION_BEGIN\n", 1
+)[1].split("# WHP_NATIVE_LLVM_SEED_SELECTION_END", 1)[0]
+assert 'bootstrap_cc="$(WHP_CC_SEED="$CC_FOR_BUILD"' in seed_selection
+
+with tempfile.TemporaryDirectory(prefix="whp-llvm-seed-handoff-") as td:
+    seed_dir = Path(td) / "seeds"
+    seed_dir.mkdir()
+    cc_seed = seed_dir / "cc.sh"
+    cc_seed.write_text(
+        '#!/bin/sh\n'
+        'if [ "$WHP_CC_SEED" = stale-darwin ]; then\n'
+        '    printf "rejected stale C seed\\n" >&2\n'
+        '    exit 17\n'
+        'fi\n'
+        'printf "%s\\n" "$WHP_CC_SEED"\n',
+        encoding="utf-8",
+    )
+    cxx_seed = seed_dir / "cxx.sh"
+    cxx_seed.write_text(
+        '#!/bin/sh\n'
+        'printf "%s\\n" "$WHP_CXX_SEED"\n',
+        encoding="utf-8",
+    )
+    cc_seed.chmod(0o700)
+    cxx_seed.chmod(0o700)
+    selection_shell = (
+        'set -euo pipefail\nSOURCE_DIR="$1"\n'
+        + seed_selection
+        + '\nprintf "%s|%s\\n" "$bootstrap_cc" "$bootstrap_cxx"\n'
+    )
+
+    def check_seed_handoff(cc, explicit=None):
+        env = os.environ.copy()
+        for key in (
+            "CC_FOR_BUILD", "CXX_FOR_BUILD", "WHP_CC_SEED", "WHP_CXX_SEED",
+            "NATIVE_LLVM_BOOTSTRAP_CC", "NATIVE_LLVM_BOOTSTRAP_CXX",
+        ):
+            env.pop(key, None)
+        env.update({"CC_FOR_BUILD": cc, "CXX_FOR_BUILD": "accepted-cxx"})
+        if explicit is not None:
+            env["NATIVE_LLVM_BOOTSTRAP_CC"] = explicit
+        return subprocess.run(
+            ["bash", "-c", selection_shell, "--", td],
+            env=env, capture_output=True, text=True,
+        )
+
+    rejected = check_seed_handoff("stale-darwin")
+    assert rejected.returncode != 0
+    assert "rejected stale C seed" in rejected.stderr
+
+    admitted = check_seed_handoff("accepted-darwin")
+    assert admitted.returncode == 0, admitted.stderr
+    assert admitted.stdout.strip() == "accepted-darwin|accepted-cxx"
+
+    overridden = check_seed_handoff("stale-darwin", explicit="selected-cc")
+    assert overridden.returncode == 0, overridden.stderr
+    assert overridden.stdout.strip() == "selected-cc|accepted-cxx"
 
 # A Darwin kernel triple and a macOS product triple may describe the same
 # bootstrap ABI. Exercise the actual admission guard separately from the
