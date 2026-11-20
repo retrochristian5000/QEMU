@@ -229,6 +229,10 @@ if [[ "$(uname -s)" == Darwin ]]; then
             exit 1
             ;;
     esac
+    # Pass the validated physical SDK pathname into compiler and CMake
+    # subprocesses. A symlink spelling must not create a second SDK identity.
+    SDKROOT="$sdk_real_path"
+    export SDKROOT
     unset sdk_real_path
     case "$SDKROOT" in
         *' '*)
