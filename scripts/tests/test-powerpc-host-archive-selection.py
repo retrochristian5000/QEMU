@@ -5,6 +5,7 @@
 from pathlib import Path
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -117,8 +118,23 @@ class HostArchiveSelection(unittest.TestCase):
         )
 
     def test_generic_discovery_only_if_no_host_role_is_defined(self):
-        self.assert_selected(str(self.bin / "ar"), str(self.bin / "ranlib"),
-                             AR=self.ar_explicit, RANLIB=self.ranlib_explicit)
+        # Darwin intentionally discovers the active Xcode/CLT archive tools
+        # through xcrun. Other hosts use generic PATH discovery instead.
+        if sys.platform == "darwin":
+            result = self.run_selection(
+                AR=self.ar_explicit, RANLIB=self.ranlib_explicit,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            selected = result.stdout.splitlines()
+            self.assertEqual(len(selected), 2)
+            for program, path in zip(("ar", "ranlib"), selected):
+                self.assertEqual(Path(path).name, program)
+                self.assertTrue(Path(path).is_file())
+                self.assertTrue(os.access(path, os.X_OK))
+                self.assertNotEqual(path, str(self.bin / program))
+        else:
+            self.assert_selected(str(self.bin / "ar"), str(self.bin / "ranlib"),
+                                 AR=self.ar_explicit, RANLIB=self.ranlib_explicit)
 
     def test_relative_tool_names_are_locked_to_absolute_paths(self):
         self.assert_selected(str(self.bin / "ar"), str(self.bin / "ranlib"),
