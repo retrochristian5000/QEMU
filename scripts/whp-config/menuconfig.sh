@@ -14,12 +14,19 @@ fi
     exit 2
 }
 
-WORK="${TMPDIR:-/tmp}/whp-menuconfig.$$"
-WORK_NEW="$WORK.new"
-SAVE_TMP="${CONFIG}.tmp.$"
-menu_filter=
+# Restrictive umask alone cannot protect predictable paths in a shared TMPDIR.
+# Use a private scratch directory and unique destination-local save files.
 umask 077
-trap 'rm -f "$WORK" "$WORK_NEW" "$SAVE_TMP"' 0 1 2 3 15
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/whp-menuconfig.XXXXXXXX") || {
+    printf '%s\n' 'error: cannot create a private menuconfig scratch directory' >&2
+    exit 2
+}
+WORK="$WORK_DIR/config"
+WORK_NEW="$WORK_DIR/config.new"
+SAVE_TMP=
+menu_filter=
+trap 'if [ -n "$SAVE_TMP" ]; then rm -f -- "$SAVE_TMP"; fi; rm -rf -- "$WORK_DIR"' 0
+trap 'exit 1' 1 2 3 15
 
 if [ -f "$CONFIG" ]; then
     cp "$CONFIG" "$WORK"
@@ -260,9 +267,12 @@ save_config()
 {
     validate_saved_configuration || return 1
     config_dir=$(dirname -- "$CONFIG")
-    mkdir -p "$config_dir"
-    cp "$WORK" "$SAVE_TMP"
-    mv "$SAVE_TMP" "$CONFIG"
+    mkdir -p "$config_dir" || return 1
+    # The save must live alongside CONFIG for an atomic rename.
+    SAVE_TMP=$(mktemp "$config_dir/.whp-menuconfig-save.XXXXXXXX") || return 1
+    cp "$WORK" "$SAVE_TMP" || return 1
+    mv -- "$SAVE_TMP" "$CONFIG" || return 1
+    SAVE_TMP=
 }
 
 # The Python menu refuses unexpected extra arguments; keep the POSIX

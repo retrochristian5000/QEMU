@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """POSIX menuconfig argument and schema-field parsing regressions."""
 
-from pathlib import Path
+import os
+import stat
 import subprocess
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "scripts/whp-config/config.py"
@@ -12,10 +14,11 @@ SHELL_MENU = ROOT / "scripts/whp-config/menuconfig.sh"
 SCHEMA = ROOT / "scripts/whp-config/menu-options.def"
 
 
-def run(shell: Path, config: Path, cwd: Path, *args: str, input_text: str = ""):
+def run(shell: Path, config: Path, cwd: Path, *args: str,
+        input_text: str = "", env=None):
     return subprocess.run(
         ["/bin/sh", str(shell), str(config), *args],
-        cwd=cwd, input=input_text, text=True,
+        cwd=cwd, input=input_text, text=True, env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, timeout=15,
     )
@@ -48,6 +51,21 @@ def check():
         assert "BUILD_QEMU_IMG=n\n" in saved, saved
         assert "WHP_CONFIG_VERSION=3\n" in saved, saved
         assert "Changed qemu-img *: y -> n" in result.stdout, result.stdout
+
+        # The old fallback could overwrite and delete an unrelated file
+        # using the predictable '.tmp.$' suffix. Preserve that file.
+        legacy_save = config.with_name(config.name + ".tmp.$")
+        legacy_save.write_text("unrelated data\n", encoding="utf-8")
+        scratch = root / "shared scratch space"
+        scratch.mkdir()
+        secured = run(
+            shell, config, root, input_text="s\nq\n",
+            env={**os.environ, "TMPDIR": str(scratch)},
+        )
+        assert secured.returncode == 0, secured.stderr
+        assert legacy_save.read_text(encoding="utf-8") == "unrelated data\n"
+        assert stat.S_IMODE(config.stat().st_mode) == 0o600
+        assert list(scratch.iterdir()) == [], list(scratch.iterdir())
 
         # A second positional argument must not be silently discarded.
         invalid = run(shell, config, root, "--dump", "--unrecognized")
