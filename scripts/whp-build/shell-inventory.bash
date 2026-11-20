@@ -79,6 +79,7 @@ WHP_BASH_BUILD_SCRIPTS=(
     "$SOURCE_DIR/scripts/bootstrap-i386-efi-grub.bash"
     "$SOURCE_DIR/scripts/whp-build/common.bash"
     "$SOURCE_DIR/scripts/whp-build/gnu-make.bash"
+    "$SOURCE_DIR/scripts/whp-build/llvm-cmake-tools.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-build.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-sources.bash"
     "$SOURCE_DIR/scripts/whp-build/prepare-mold.bash"

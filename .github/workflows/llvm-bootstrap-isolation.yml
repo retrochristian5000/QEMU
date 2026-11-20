@@ -12,6 +12,8 @@ on:
       - 'scripts/bootstrap-i386-clang.bash'
       - 'scripts/bootstrap-powerpc-clang.sh'
       - 'scripts/bootstrap-powerpc-clang-base.sh'
+      - 'scripts/whp-build/llvm-cmake-tools.bash'
+      - 'scripts/tests/test-llvm-cmake-host-tools.py'
       - 'scripts/whp-build/configure-seabios.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
       - 'scripts/tests/test-native-llvm-menu-handoff.py'
@@ -77,6 +79,9 @@ jobs:
 
       - name: Verify native LLVM lean profile
         run: python3 scripts/tests/test-native-llvm-lean-profile.py
+
+      - name: Verify standalone LLVM CMake/Ninja host-tool selection
+        run: python3 scripts/tests/test-llvm-cmake-host-tools.py
 
       - name: Verify native LLVM incremental bootstrap contract
         run: bash scripts/tests/test-llvm-incremental-bootstrap.bash scripts/bootstrap-native-clang.bash 'native LLVM'

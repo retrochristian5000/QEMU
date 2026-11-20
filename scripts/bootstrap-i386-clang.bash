@@ -25,6 +25,12 @@ unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
 # Keep foreign library paths and runtime injection out of this host LLVM ABI.
 unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
 unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+# A target/guest CMake toolchain file must not be evaluated while compiling
+# host LLVM executables. CMake/Ninja inputs are supplied explicitly below.
+unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM
+unset CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
+unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE
+unset CMAKE_PROJECT_INCLUDE_BEFORE PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR
 
 cleanup()
 {
@@ -65,7 +71,7 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git cmake ninja grep mkdir mv rm ln cp python3 awk mktemp; do
+for tool in git grep mkdir mv rm ln cp python3 awk mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -239,6 +245,10 @@ mkdir -p "$staged_toolchain"
 if [[ -n "$SHARED_LLVM_DIR" ]]; then
     ln -s "$SHARED_LLVM_DIR" "$staged_toolchain/llvm"
 else
+    source "$SOURCE_DIR/scripts/whp-build/llvm-cmake-tools.bash"
+    whp_llvm_select_cmake_ninja || exit 1
+    whp_llvm_verify_ninja_cache "$LLVM_BUILD_DIR" || exit 1
+
     # Keep the CMake/Ninja graph alive across interrupted builds and LLVM source
     # revisions. Re-running CMake updates changed rules in place, while Ninja keeps
     # object dependency state and rebuilds only affected outputs. The installed
@@ -257,6 +267,7 @@ else
         -S "$LLVM_SOURCE_DIR/llvm"
         -B "$LLVM_BUILD_DIR"
         -G Ninja
+        "-DCMAKE_MAKE_PROGRAM=$whp_llvm_ninja_cmd"
         -DCMAKE_BUILD_TYPE=Release
         # i386 is an LLVM output target, not a host linker ABI.
         -UCMAKE_TOOLCHAIN_FILE
@@ -340,20 +351,20 @@ else
         )
         unset i386_host_sdk i386_host_arch
     fi
-    cmake "${cmake_args[@]}"
+    "$whp_llvm_cmake_cmd" "${cmake_args[@]}"
     
     if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
-        cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+        "$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
     fi
     
     # Keep traversing independent Ninja edges after a compile failure so the
     # persistent build tree contains every object that can be built. Ninja still
     # returns failure after exhausting the reachable graph, so errors remain fatal
     # and installation is never attempted from an incomplete distribution.
-    cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+    "$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 
     DESTDIR="$stage_root" \
-        cmake --build "$LLVM_BUILD_DIR" --target install-distribution \
+        "$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target install-distribution \
             "${cmake_parallel_args[@]}"
 fi
 

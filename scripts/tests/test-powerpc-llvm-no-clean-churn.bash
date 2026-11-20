@@ -41,6 +41,7 @@ grep -Fq 'BASE_MARKER_SIGNATURE=$base_marker_signature' "$CORE"
 # Preserve the deliberate escape hatch: explicit force-rebuild is the only
 # normal path that should clean the persistent LLVM Ninja tree.
 grep -Fq 'if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then' "$BASE"
-grep -Fq 'cmake --build "$LLVM_BUILD_DIR" --target clean' "$BASE"
+grep -Fq '"$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target clean' "$BASE"
+grep -Fq '"-DCMAKE_MAKE_PROGRAM=$whp_llvm_ninja_cmd"' "$BASE"
 
 printf 'PowerPC LLVM clean-rebuild policy: verified\n'

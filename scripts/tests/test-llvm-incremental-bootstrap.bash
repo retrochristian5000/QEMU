@@ -33,12 +33,20 @@ if grep -Fq -- 'rm -rf "$LLVM_BUILD_DIR"' "$BOOTSTRAP"; then
     fail "$LABEL bootstrap deletes LLVM_BUILD_DIR and destroys incremental state"
 fi
 
-# The native LLVM compiler uses an admitted CMake seed rather than an
-# ambient executable named "cmake". Other LLVM bootstrap lanes retain their
-# existing CMake command. Match the real provider in both configure and clean.
+# All LLVM lanes now use an admitted CMake executable. A shared installed
+# LLVM toolchain is still reusable without selecting CMake or Ninja.
 case "$1" in
-    scripts/bootstrap-native-clang.bash) cmake_command='"$cmake_cmd"' ;;
-    *) cmake_command=cmake ;;
+    scripts/bootstrap-native-clang.bash)
+        cmake_command='"$cmake_cmd"'
+        ;;
+    scripts/bootstrap-i386-clang.bash)
+        cmake_command='"$whp_llvm_cmake_cmd"'
+        require_fixed '"-DCMAKE_MAKE_PROGRAM=$whp_llvm_ninja_cmd"' \
+            'i386 LLVM must bind the selected native Ninja to CMake'
+        ;;
+    *)
+        fail "$LABEL: unsupported bootstrap path for incremental CMake check"
+        ;;
 esac
 require_fixed "$cmake_command"' "${cmake_args[@]}"' \
     'bootstrap must reconfigure the existing CMake graph in place'

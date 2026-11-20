@@ -10,6 +10,12 @@ unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS
 # Keep foreign library paths and runtime injection out of this host LLVM ABI.
 unset LIBRARY_PATH COMPILER_PATH GCC_EXEC_PREFIX LD_PRELOAD
 unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+# Host LLVM must not load a target-specific CMake toolchain or pkg-config
+# sysroot from an outer firmware build.
+unset CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM
+unset CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
+unset CMAKE_PROJECT_TOP_LEVEL_INCLUDES CMAKE_PROJECT_INCLUDE
+unset CMAKE_PROJECT_INCLUDE_BEFORE PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
@@ -111,7 +117,7 @@ for build_path in "$SOURCE_DIR" "$TOOLCHAIN_DIR" "$TOOLCHAIN_WORK_DIR" \
     esac
 done
 
-for required in git cmake ninja grep awk ln mkdir mv rm; do
+for required in git grep awk ln mkdir mv rm; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'error: PowerPC Clang bootstrap dependency not found: %s\n' \
             "$required" >&2
@@ -430,10 +436,14 @@ mkdir -p "$stage_root"
 # state. A forced rebuild uses the backend's clean target instead of deleting
 # CMakeCache.txt and rebuilding the project graph from scratch.
 bootstrap_stage="configuring PowerPC-only Clang"
+source "$SOURCE_DIR/scripts/whp-build/llvm-cmake-tools.bash"
+whp_llvm_select_cmake_ninja || exit 1
+whp_llvm_verify_ninja_cache "$LLVM_BUILD_DIR" || exit 1
 llvm_distribution_components='clang;clang-resource-headers;llvm-ar;llvm-ranlib;llvm-nm;llvm-objcopy;llvm-strip;llvm-readobj;llvm-readelf;llvm-config;llvm-tblgen;llvm-headers;llvm-libraries;cmake-exports'
 # The PowerPC backend is a cross target, but this compiler runs natively.
 # Clear old host linker cache options without discarding the Ninja graph.
-cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
+"$whp_llvm_cmake_cmd" -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
+    "-DCMAKE_MAKE_PROGRAM=$whp_llvm_ninja_cmd" \
     -DCMAKE_BUILD_TYPE=Release \
     -UCMAKE_TOOLCHAIN_FILE \
     -UCMAKE_SYSROOT \
@@ -500,7 +510,7 @@ cmake -S "$LLVM_SOURCE_DIR/llvm" -B "$LLVM_BUILD_DIR" -G Ninja \
 
 if [[ "$TOOLCHAIN_FORCE_REBUILD" == 1 ]]; then
     bootstrap_stage="cleaning requested LLVM outputs"
-    cmake --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
+    "$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target clean "${cmake_parallel_args[@]}"
 fi
 
 bootstrap_stage="building PowerPC LLVM distribution"
@@ -508,10 +518,10 @@ bootstrap_stage="building PowerPC LLVM distribution"
 # persistent build tree contains every object that can be built. Ninja still
 # returns failure after exhausting the reachable graph, so errors remain fatal
 # and installation is never attempted from an incomplete distribution.
-cmake --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
+"$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target distribution "${cmake_parallel_args[@]}" -- -k 0
 bootstrap_stage="installing PowerPC LLVM distribution"
 DESTDIR="$stage_root" \
-    cmake --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"
+    "$whp_llvm_cmake_cmd" --build "$LLVM_BUILD_DIR" --target install-distribution "${cmake_parallel_args[@]}"
 
 clang="$staged_toolchain/llvm/bin/clang"
 llvm_readelf="$staged_toolchain/llvm/bin/llvm-readelf"
