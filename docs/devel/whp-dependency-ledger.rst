@@ -663,6 +663,20 @@ before runtimes and supplies Clang, llvm-ar/ranlib, llvm-lipo and
 llvm-libtool-darwin as preceding toolchain dependencies. The native
 distribution must also install llvm-libtool-darwin: a successful nested
 build alone does not place it in QEMU's installed compiler prefix.
+
+LLVM's initial configure output can report ``compiler-rt project is
+disabled`` even when compiler-rt is active. That status describes the
+``LLVM_ENABLE_PROJECTS`` list, not the separate runtime graph. On macOS,
+WHP selects ``LLVM_ENABLE_RUNTIMES=compiler-rt`` and
+``LLVM_INCLUDE_RUNTIMES=ON``; this builds compiler-rt using the newly built
+Clang and orders its builtins before sanitizer and profiling runtimes. Do
+not add compiler-rt to both lists or bypass a missing runtime merely to
+silence the project-status message. Check the CMake cache, the builtins
+and runtimes targets, and the installed Clang resource directory before
+diagnosing a failure. On Linux and dedicated cross/firmware compiler
+bootstraps, runtime generation is not currently selected; promote it
+only if the target's actual link or instrumentation contract requires
+a compatible runtime, with architecture-specific validation.
 Both ExternalProjects inherit CMAKE_OSX_SYSROOT, CMAKE_OSX_ARCHITECTURES
 and CMAKE_OSX_DEPLOYMENT_TARGET; otherwise the builtins archive may
 contain ordinary arm64 objects despite an arm64e output request.
