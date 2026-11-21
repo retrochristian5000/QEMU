@@ -43,6 +43,60 @@ def syntax_check(interpreter: str, path: pathlib.Path) -> None:
         )
 
 
+def mask_single_quoted_posix_literals(source: str) -> str:
+    """Blank literal string data while retaining original line positions.
+
+    A POSIX seed may pass a *quoted* program to Bash or Zsh with -c. Its
+    language-specific tokens are data to the outer /bin/sh, not Bash syntax
+    accidentally executed by the POSIX launcher. Preserve double-quoted
+    shell expansions for separate checks instead of stripping every quote.
+    """
+    output = []
+    single = False
+    double = False
+    escaped = False
+    comment = False
+
+    for index, char in enumerate(source):
+        if char == "\n":
+            output.append("\n")
+            comment = False
+            escaped = False
+            continue
+        if comment:
+            output.append(" ")
+            continue
+        if single:
+            if char == "'":
+                single = False
+            output.append(" ")
+            continue
+        if escaped:
+            output.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            output.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            double = not double
+            output.append(char)
+            continue
+        if char == "'" and not double:
+            single = True
+            output.append(" ")
+            continue
+        if char == "#" and not double and (
+            index == 0 or source[index - 1].isspace()
+        ):
+            comment = True
+            output.append(" ")
+            continue
+        output.append(char)
+    return "".join(output)
+
+
 def main() -> int:
     sh = shutil.which("sh")
     bash = shutil.which("bash")
@@ -82,9 +136,21 @@ def main() -> int:
         re.compile(r"\\$\\{[^}]+\\[@\\]\\}"),
         re.compile(r"(^|\\s)set\\s+[-+]o\\s+pipefail"),
     )
+    # The Bash/Zsh feature smoke programs in seeds/bash.sh and seeds/zsh.sh
+    # are *single-quoted arguments* passed to a child shell, not POSIX syntax.
+    # Keep rejecting these tokens if they appear outside a literal.
+    fixture = "value=$(bash -c '[[ -n child ]]')\n[[ -n outer ]]\n"
+    fixture_lines = mask_single_quoted_posix_literals(fixture).splitlines()
+    if len(fixture_lines) != 2 or any(
+        pattern.search(fixture_lines[0]) for pattern in bash_extensions
+    ) or not bash_extensions[0].search(fixture_lines[1]):
+        raise RuntimeError("POSIX literal masking must preserve real Bash misuse")
+
     for seed in seeds:
         for number, line in enumerate(
-            seed.read_text(encoding="utf-8").splitlines(), 1
+            mask_single_quoted_posix_literals(
+                seed.read_text(encoding="utf-8")
+            ).splitlines(), 1
         ):
             if line.lstrip().startswith("#"):
                 continue
