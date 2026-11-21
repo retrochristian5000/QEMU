@@ -980,12 +980,22 @@ def main(argv: List[str]) -> int:
         if values['RUN_TESTS'] == 'y':
             run_qemu_tests(build_dir, jobs)
         if values['INSTALL_AFTER_BUILD'] == 'y':
+            runtime_bash_installer = (ROOT / 'scripts' / 'whp-build' /
+                                      'install-runtime-bash.py')
+            runtime_bash_args = [
+                sys.executable, str(runtime_bash_installer),
+                '--build-dir', str(build_dir), '--prefix', str(prefix),
+            ]
+            if values['INSTALL_RUNTIME_BASH'] == 'y':
+                subprocess.run([*runtime_bash_args, '--check'], check=True)
             subprocess.run([*runner, '-C', str(build_dir), 'install'], check=True)
             if x86_alias:
                 subprocess.run([
                     sys.executable, str(ROOT / 'scripts' / 'whp-build' / 'x86-family-alias.py'),
                     '--directory', str(prefix / 'bin'),
                 ], check=True)
+            if values['INSTALL_RUNTIME_BASH'] == 'y':
+                subprocess.run([*runtime_bash_args, '--install'], check=True)
 
         artifacts = verify_requested_outputs(build_dir, requested_targets)
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
