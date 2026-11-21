@@ -52,7 +52,9 @@ int main(void)
 
     def test_occluded_metal_window_skips_drawable_wait(self):
         text = SOURCE.read_text(encoding='utf-8')
-        draw_start = text.index('- (bool)drawView:(NSView *)view dirtyRect:')
+        # Match the implementation, not the method declaration in @interface.
+        draw_start = text.index(
+            '- (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect\n{')
         draw_end = text.index('\n@end', draw_start)
         draw = text[draw_start:draw_end]
 
