@@ -49,11 +49,22 @@ PowerPC audio models. This does not replace QEMU's Kconfig resolver. It
 creates a validated per-target ``whp-user.mak`` input, whose ``auto``
 choices must preserve corresponding assignments in the base device preset.
 Only an explicit ``y`` or ``n`` replaces that model's base setting.
-Generated PPC bus and timer requirements are separate from audio choices
-and must still satisfy Kconfig dependencies. Both the Python menu renderer
-and the Bash configure path accept ordinary whitespace around an assignment
-without leaving duplicate ``CONFIG_`` entries. The original tracked
-``default.mak`` files remain unchanged.
+Explicitly enabled ISA audio devices require ``ISA_BUS``, PCI audio devices
+require ``PCI``, and the ISA PC speaker additionally requires ``I8254``
+(the PIT). The i386 and PPC preset writers supply these Kconfig prerequisites
+when their audio choice is ``y``, even if the base preset previously
+disabled a required component. An explicit ``n`` never enables a bus or
+timer. ``PCI_DEVICES`` is a default-device group, not a hard prerequisite
+of an explicitly selected PCI audio device, and remains untouched.
+
+Kconfig enables compiled device models; it does **not** create a physical or
+emulated bus on every selected machine. For example, enabling an ISA sound
+card in a PPC build does not mean that every PPC Mac model has an ISA slot.
+The selected machine must still expose the appropriate bus and other runtime
+resources (for the PC speaker, an available PIT link). Both the Python menu
+renderer and the Bash configure path accept ordinary whitespace around an
+assignment without leaving duplicate ``CONFIG_`` entries. The original
+tracked ``default.mak`` files remain unchanged.
 
 The Kconfig language
 --------------------
