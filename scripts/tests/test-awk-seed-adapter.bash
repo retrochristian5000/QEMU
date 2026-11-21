@@ -103,8 +103,22 @@ for runner in "$bridge" "$shim"; do
         echo 'error: locked AWK without a selected seed was accepted' >&2
         exit 1
     fi
+    # Check each adapter independently: the final loop iteration must not
+    # accidentally mask a failure or a diagnostic mismatch in the first.
+    grep -Fq 'locked AWK has no selected seed' "$tmp/err"
 done
-grep -Fq 'locked AWK has no selected seed' "$tmp/err"
+
+# Distinguish a missing lock from a present but nonexecutable selected tool.
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$tmp/not-executable"
+chmod 600 "$tmp/not-executable"
+for runner in "$bridge" "$shim"; do
+    if WHP_AWK_LOCKED=1 WHP_AWK_SEED="$tmp/not-executable" "$runner" \
+        'BEGIN { print 1 }' >"$tmp/out" 2>"$tmp/err"; then
+        echo 'error: locked AWK accepted a nonexecutable provider' >&2
+        exit 1
+    fi
+    grep -Fq 'locked AWK is not executable' "$tmp/err"
+done
 
 # The locked launcher must reject a missing seed and a loop to itself.
 if WHP_AWK_LOCKED=1 WHP_AWK_SEED="$shim" "$shim" 'BEGIN {print 1}' \

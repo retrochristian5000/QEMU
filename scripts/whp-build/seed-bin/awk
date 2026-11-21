@@ -9,8 +9,8 @@ if [ "${1:-}" = --whp-awk-adapter-probe ]; then
 fi
 
 if [ "${WHP_AWK_LOCKED:-0}" = 1 ]; then
-    [ -n "${WHP_AWK_SEED:-}" ] && [ -x "$WHP_AWK_SEED" ] || {
-        printf '%s\n' 'error: locked WHP awk has no usable seed' >&2
+    [ -n "${WHP_AWK_SEED:-}" ] || {
+        printf '%s\n' 'error: locked AWK has no selected seed' >&2
         exit 1
     }
     case "$WHP_AWK_SEED" in
@@ -18,6 +18,10 @@ if [ "${WHP_AWK_LOCKED:-0}" = 1 ]; then
             printf '%s\n' 'error: locked AWK points to the awk bridge' >&2
             exit 1 ;;
     esac
+    [ -x "$WHP_AWK_SEED" ] || {
+        printf 'error: locked AWK is not executable: %s\n' "$WHP_AWK_SEED" >&2
+        exit 1
+    }
     exec "$WHP_AWK_SEED" "$@"
 fi
 
