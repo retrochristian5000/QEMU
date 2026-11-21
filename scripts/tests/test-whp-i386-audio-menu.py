@@ -244,6 +244,10 @@ whp_configure_build
 
             self.assertTrue(preset.is_file())
             self.assertIn('CONFIG_SB16=n', preset.read_text(encoding='utf-8'))
+            self.assertIn(
+                'WHP_I386_AUDIO_CONFIG_SIGNATURE=schema=2;',
+                (build_dir / '.whp-config').read_text(encoding='utf-8'),
+            )
             self.assertEqual(
                 (build_dir / 'configure-count.txt').read_text(encoding='utf-8').strip(),
                 '1',
