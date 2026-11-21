@@ -172,8 +172,8 @@ class CMakeBootstrapTests(unittest.TestCase):
 
     def test_actual_cmake_in_space_prefix_configures_project(self):
         installed = shutil.which("cmake")
-        if installed is None:
-            self.skipTest("host CMake is unavailable")
+        if installed is None or not module.usable(Path(installed)):
+            self.skipTest("usable host CMake >= 3.20 is required")
         with tempfile.TemporaryDirectory(prefix="whp-cmake-downstream-") as td:
             work = Path(td)
             tool_dir = work / "native tools" / "bin"
@@ -190,8 +190,6 @@ class CMakeBootstrapTests(unittest.TestCase):
                 ["/bin/sh", str(SEED), "--print-cmake"],
                 env=env, capture_output=True, text=True, check=False,
             )
-            if selected.returncode and "host CMake >= 3.20" in selected.stderr:
-                self.skipTest("host CMake is older than the supported minimum")
             self.assertEqual(selected.returncode, 0, selected.stderr)
             self.assertEqual(selected.stdout.strip(), str(candidate))
 
