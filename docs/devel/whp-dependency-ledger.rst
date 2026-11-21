@@ -3104,8 +3104,12 @@ Libtool, sccache, Automake and mold are not common build-machine roots:
   Opt-in compiler caching is separate from C/C++,
   Meson and Ninja correctness. The pinned local-only build needs the selected
   Git, Cargo and Rust >= 1.91 when requested. Its cache marker includes the
-  Rust/Cargo identities and source revision; removing these checks without an
-  equivalent identity would risk reusing a mismatched binary. A disabled
+  Rust/Cargo identities, source revision, and the selected native C/C++
+  compiler versions and macOS SDK/deployment identity; removing these checks
+  without an equivalent identity would risk reusing a mismatched binary.
+  Cargo work directories are partitioned by the native producer and Rust
+  toolchain, not by source revision, so an ABI change cannot reuse stale C
+  archives while unchanged compilers retain incremental builds. A disabled
   sccache lane must not force Cargo or Rust into the core build.
 * **mold:** Automatic selection does not build mold just because the source
   submodule exists. An already installed, marker-matching mold linker can be
