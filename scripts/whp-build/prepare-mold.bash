@@ -30,28 +30,32 @@ whp_linker_driver_probe()
 {
     local selected="$1" path_prefix="${2:-}" temp_dir output source language
     local compiler_var status=0
-    local -a command=() flags=()
+    local -a command=() flags=() compile_flags=() preprocessor_flags=()
 
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/whp-host-linker.XXXXXX")" || return 1
     read -r -a flags <<< "${LDFLAGS:-}"
+    read -r -a preprocessor_flags <<< "${CPPFLAGS:-}"
     for compiler_var in CC CXX; do
         command=()
         if [[ "$compiler_var" == CC ]]; then
             whp_mold_compiler_command "${CC:-cc}" || { status=1; break; }
             command=("${WHP_MOLD_CC_CMD[@]}")
             language=c
+            read -r -a compile_flags <<< "${CFLAGS:-}"
             printf 'int main(void) { return 0; }\n' > "$temp_dir/probe.c"
             source="$temp_dir/probe.c"
         else
             whp_mold_compiler_command "${CXX:-c++}" || { status=1; break; }
             command=("${WHP_MOLD_CC_CMD[@]}")
             language=c++
+            read -r -a compile_flags <<< "${CXXFLAGS:-}"
             printf 'int main() { return 0; }\n' > "$temp_dir/probe.cpp"
             source="$temp_dir/probe.cpp"
         fi
         output="$temp_dir/$compiler_var"
         if ! PATH="${path_prefix:+$path_prefix:}$PATH" "${command[@]}" \
-            -x "$language" "$source" -fuse-ld="$selected" \
+            -x "$language" "${preprocessor_flags[@]}" "${compile_flags[@]}" \
+            "$source" -fuse-ld="$selected" \
             ${flags[@]+"${flags[@]}"} -o "$output"; then
             status=1
             break
@@ -235,7 +239,7 @@ whp_mold_link_probe()
     local output
     local linker_dir
     local status=0
-    local ld_flags=()
+    local ld_flags=() c_flags=() cpp_flags=()
 
     whp_mold_compiler_command "${CC:-cc}" || {
         printf 'error: cannot execute QEMU host compiler for mold probe: %s\n' \
@@ -252,6 +256,9 @@ whp_mold_link_probe()
         read -r -a ld_flags <<< "$LDFLAGS"
     fi
 
+    read -r -a c_flags <<< "${CFLAGS:-}"
+    read -r -a cpp_flags <<< "${CPPFLAGS:-}"
+
     if [[ "${QEMU_HOST_LTO:-auto}" == 1 ]]; then
         local main_source="$probe_dir/main.c"
         local lib_source="$probe_dir/lib.c"
@@ -259,7 +266,21 @@ whp_mold_link_probe()
         local lib_object="$probe_dir/lib.o"
         local archive="$probe_dir/libprobe.a"
         local lto_flag=-flto
-        [[ "${QEMU_HOST_LTO_MODE:-auto}" != thin ]] || lto_flag=-flto=thin
+        # Darwin's Meson native file defaults to ThinLTO. The probe must
+        # validate the selected link mode, not a different LTO pipeline.
+        case "${QEMU_HOST_LTO_MODE:-auto}" in
+            thin) lto_flag=-flto=thin ;;
+            auto)
+                [[ "${HOST_OS:-}" != Darwin ]] || lto_flag=-flto=thin
+                ;;
+            full) ;;
+            *)
+                printf 'error: invalid QEMU_HOST_LTO_MODE for mold probe: %s\n' \
+                    "$QEMU_HOST_LTO_MODE" >&2
+                rm -rf "$probe_dir"
+                return 1
+                ;;
+        esac
 
         if ! whp_mold_archiver_command; then
             printf 'error: cannot execute archiver for mold LTO probe: %s\n' \
@@ -286,15 +307,16 @@ EOF_LIB
         # objects and put one in an archive so we validate LLVM/GCC plugin
         # activation, archive indexing/extraction, and mold's final LTO link.
         if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            "$lto_flag" -c "$main_source" -o "$main_object"; then
+            "${cpp_flags[@]}" "${c_flags[@]}" "$lto_flag" -c "$main_source" -o "$main_object"; then
             status=1
         elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            "$lto_flag" -c "$lib_source" -o "$lib_object"; then
+            "${cpp_flags[@]}" "${c_flags[@]}" "$lto_flag" -c "$lib_source" -o "$lib_object"; then
             status=1
         elif ! "${WHP_MOLD_AR_CMD[@]}" rcs "$archive" "$lib_object"; then
             status=1
         elif ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            "$lto_flag" -fuse-ld=mold "$main_object" "$archive" -o "$output" \
+            "${c_flags[@]}" "$lto_flag" -fuse-ld=mold \
+            "$main_object" "$archive" -o "$output" \
             ${ld_flags[@]+"${ld_flags[@]}"}; then
             status=1
         elif ! "$output"; then
@@ -303,7 +325,8 @@ EOF_LIB
     else
         printf 'int main(void) { return 0; }\n' > "$source"
         if ! PATH="$linker_dir:$PATH" "${WHP_MOLD_CC_CMD[@]}" \
-            "$source" -o "$output" -fuse-ld=mold ${ld_flags[@]+"${ld_flags[@]}"}; then
+            "${cpp_flags[@]}" "${c_flags[@]}" "$source" -o "$output" \
+            -fuse-ld=mold "${ld_flags[@]}"; then
             status=1
         elif ! "$output"; then
             status=1

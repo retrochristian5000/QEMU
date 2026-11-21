@@ -16,6 +16,9 @@ HOST_OS=Darwin
 BOOTSTRAP_MOLD=0
 QEMU_HOST_LINKER=mold
 MOLD_TOOLS_DIR="$tmpdir/mold-tools"
+CFLAGS=
+CXXFLAGS=
+CPPFLAGS=
 LDFLAGS=
 mkdir -p "$BUILD_DIR"
 
@@ -172,6 +175,38 @@ QEMU_HOST_LTO_MODE=thin
 whp_mold_link_probe "$fakebin/mold"
 [[ "$(grep -Fc ' -flto=thin -c ' "$log")" -eq 2 ]]
 grep -Fq ' -flto=thin -fuse-ld=mold ' "$log"
+
+# Automatic LTO must match the actual host Meson mode: ThinLTO on Darwin,
+# full LTO elsewhere. The LTO archive and linker probes also need the same
+# C/SDK architecture flags as the QEMU host objects.
+: > "$log"
+HOST_OS=Darwin
+QEMU_HOST_LTO_MODE=auto
+CPPFLAGS=-DHOST_CPP_PROBE=1
+CFLAGS='-arch arm64e -DHOST_C_ABI=1'
+CXXFLAGS='-arch arm64e -DHOST_CXX_ABI=1'
+LDFLAGS='-arch arm64e'
+whp_mold_link_probe "$fakebin/mold"
+[[ "$(grep -Fc ' -flto=thin -c ' "$log")" -eq 2 ]]
+grep -Fq 'cc -DHOST_CPP_PROBE=1 -arch arm64e -DHOST_C_ABI=1 -flto=thin -c ' "$log"
+grep -Fq ' -arch arm64e -DHOST_C_ABI=1 -flto=thin -fuse-ld=mold ' "$log"
+
+# Validate C and C++ host compiler lanes independently; CXXFLAGS must not
+# be replaced by CFLAGS when selecting an LTO-capable linker.
+: > "$log"
+whp_linker_driver_probe mold "$fakebin"
+grep -Fq ' -x c -DHOST_CPP_PROBE=1 -arch arm64e -DHOST_C_ABI=1 ' "$log"
+grep -Fq ' -x c++ -DHOST_CPP_PROBE=1 -arch arm64e -DHOST_CXX_ABI=1 ' "$log"
+
+: > "$log"
+HOST_OS=Linux
+whp_mold_link_probe "$fakebin/mold"
+[[ "$(grep -Fc ' -flto -c ' "$log")" -eq 2 ]]
+: > "$log"
+HOST_OS=Darwin
+QEMU_HOST_LTO_MODE=full
+whp_mold_link_probe "$fakebin/mold"
+[[ "$(grep -Fc ' -flto -c ' "$log")" -eq 2 ]]
 
 grep -Fq '[submodule "toolchains/fast-linker"]' "$SOURCE_DIR/.gitmodules"
 grep -Fq 'url = https://github.com/retrochristian5000/fast-linker.git' \
