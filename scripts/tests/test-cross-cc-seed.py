@@ -103,7 +103,7 @@ class CrossCcTests(unittest.TestCase):
         target = self.run_seed("--print-target")
         self.assertEqual(target.stdout, TARGET + "\n")
         driver = self.run_seed("--print-driver")
-        self.assertEqual(Path(driver.stdout.strip()), self.driver)
+        self.assertEqual(Path(driver.stdout.strip()).resolve(), self.driver.resolve())
         selected = self.run_seed("--print-seed")
         self.assertEqual(Path(selected.stdout.strip()).resolve(), SEED.resolve())
         obj = self.directory / "cross.o"
@@ -149,7 +149,7 @@ class CrossCcTests(unittest.TestCase):
         env = dict(self.env, WHP_CROSS_SYSROOT=str(sysroot), WHP_MOCK_LOG=str(log))
         checked = self.run_seed("--check", env=env)
         self.assertEqual(checked.returncode, 0, checked.stderr)
-        self.assertIn("[--sysroot=" + str(sysroot) + "]", log.read_text())
+        self.assertIn("[--sysroot=" + str(sysroot.resolve()) + "]", log.read_text())
 
     def test_gcc_mode_is_embedded_not_overridden(self):
         env = dict(self.env, WHP_CROSS_CC_KIND="gcc", WHP_MOCK_KIND="gcc")
