@@ -363,7 +363,7 @@ whp_configure_filter_device_assignments()
             assignment = $0
             sub(/^[[:space:]]*/, "", assignment)
             sub(/[[:space:]]*=[[:space:]]*/, "=", assignment)
-            if (assignment !~ re) {
+            if (re == "" || assignment !~ re) {
                 print
             }
         }
@@ -447,7 +447,21 @@ whp_configure_write_i386_audio_config()
     local base="$1"
     local output="$2"
     local suffix name value
-    local drop_re='^    printf '\n# WHP generated i386 audio overrides; retained for Meson regeneration.\n' >> "$output"
+    local drop_re=''
+
+    # Only explicit user selections replace Kconfig base assignments.
+    # An unrelated audio device left at auto must retain its base policy.
+    for suffix in GAMEBLASTER SB16 ADLIB GUS CS4231A PCSPK ES1370 AC97 CS4630 HDA; do
+        name="I386_AUDIO_$suffix"
+        value="$(whp_configure_hardware_value "$name" "${!name:-auto}")" || return 1
+        if [[ "$value" != auto ]]; then
+            [[ -z "$drop_re" ]] || drop_re="$drop_re|"
+            drop_re="${drop_re}^CONFIG_${suffix}="
+        fi
+    done
+    whp_configure_filter_device_assignments "$base" "$output" "$drop_re" || return 1
+
+    printf '\n# WHP generated i386 audio overrides; retained for Meson regeneration.\n' >> "$output"
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_GAMEBLASTER "${I386_AUDIO_GAMEBLASTER:-auto}" CONFIG_GAMEBLASTER || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}" CONFIG_SB16 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}" CONFIG_ADLIB || return 1
