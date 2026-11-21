@@ -330,6 +330,47 @@ whp_configure_validate_device_config "$1"
         for _, symbol in AUDIO_DEVICES.values():
             self.assertTrue(resolved[symbol.removeprefix('CONFIG_')], symbol)
 
+    def test_gameblaster_is_resolved_for_x86_64_with_isa_bus(self):
+        """Target bitness does not change the CT1300 ISA dependency."""
+        minikconf = load_module(MINIKCONF, 'whp_gameblaster_x86_64_kconfig')
+        base = (
+            ROOT / 'configs/devices/i386-softmmu/default.mak'
+        ).read_text(encoding='utf-8')
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            base_path = root / 'default.mak'
+            preset = root / 'whp-user.mak'
+            base_path.write_text(base, encoding='utf-8')
+            script = (
+                'set -euo pipefail\n'
+                f'source {CONFIGURE_BASH!s}\n'
+                'I386_AUDIO_GAMEBLASTER=y\n'
+                'whp_configure_write_i386_audio_config "$1" "$2"\n'
+            )
+            built = subprocess.run(
+                ['bash', '-c', script, '_', str(base_path), str(preset)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(built.returncode, 0, built.stderr)
+
+            data = minikconf.KconfigData()
+            with (ROOT / 'Kconfig').open('rt', encoding='utf-8') as source:
+                minikconf.KconfigParser.parse(source, data)
+            with preset.open('rt', encoding='utf-8') as source:
+                minikconf.KconfigParser.parse(source, data)
+            data.do_cmdline_assignment('CONFIG_I386', True)
+            data.do_cmdline_assignment('CONFIG_X86_64', True)
+            data.do_cmdline_assignment('CONFIG_TARGET_BIG_ENDIAN', False)
+            resolved = data.compute_config()
+
+        self.assertTrue(resolved['ISA_BUS'])
+        self.assertTrue(resolved['GAMEBLASTER'])
+        hardware = (ROOT / 'hw/audio/gameblaster.c').read_text(
+            encoding='utf-8'
+        )
+        self.assertIn('.parent = TYPE_ISA_DEVICE', hardware)
+        self.assertNotIn('target/i386/', hardware)
+
     def test_i386_explicit_audio_bus_and_pit_requirements_resolve(self):
         """A valid menu preset must satisfy the real QEMU Kconfig graph."""
         minikconf = load_module(MINIKCONF, 'whp_qemu_minikconf_i386_audio')
