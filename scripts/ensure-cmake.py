@@ -14,6 +14,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -114,6 +115,77 @@ def host_environment(cc: str, cxx: str, make: str,
     return env
 
 
+def verify_native_compiler_pair(
+    cc: str, cxx: str, environment: dict[str, str], sdk: str
+) -> None:
+    """Prove the selected build-machine C/C++ objects can link and execute.
+
+    CMake is a native build tool even when QEMU or LLVM later targets a guest.
+    Report driver triples as diagnostics only: Darwin kernel versions and
+    macOS deployment versions do not have interchangeable numeric meanings.
+    """
+    def target_hint(driver: str) -> str:
+        try:
+            result = subprocess.run(
+                [driver, "-dumpmachine"], env=environment,
+                capture_output=True, text=True, check=False, timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "unavailable"
+        return result.stdout.strip().splitlines()[0] if (
+            result.returncode == 0 and result.stdout.strip()
+        ) else "unavailable"
+
+    # Test the exact selected SDK, not an inherited target sysroot. Neither
+    # compiler nor linker is allowed to receive guest --target/-arch flags.
+    sdk_args = ["-isysroot", sdk] if sdk else []
+    with tempfile.TemporaryDirectory(prefix="whp-cmake-host-abi-") as name:
+        directory = Path(name)
+        c_source = directory / "native.c"
+        cxx_source = directory / "native.cc"
+        c_object = directory / "native-c.o"
+        cxx_object = directory / "native-cxx.o"
+        executable = directory / "native-check"
+        c_source.write_text(
+            "int whp_cmake_native_c(int value) { return value + 2; }\\n",
+            encoding="utf-8",
+        )
+        cxx_source.write_text(
+            'extern "C" int whp_cmake_native_c(int);\\n'
+            "int main() { return whp_cmake_native_c(40) == 42 ? 0 : 1; }\\n",
+            encoding="utf-8",
+        )
+        commands = (
+            ("C compilation", [cc, *sdk_args, "-c", str(c_source),
+                               "-o", str(c_object)]),
+            ("C++ compilation", [cxx, *sdk_args, "-std=c++17", "-c",
+                                 str(cxx_source), "-o", str(cxx_object)]),
+            ("mixed C/C++ link", [cxx, *sdk_args, str(c_object),
+                                   str(cxx_object), "-o", str(executable)]),
+            ("native execution", [str(executable)]),
+        )
+        for stage, command in commands:
+            try:
+                result = subprocess.run(
+                    command, env=environment, cwd=directory,
+                    capture_output=True, text=True, check=False, timeout=30,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                detail = str(exc)
+            else:
+                if result.returncode == 0:
+                    continue
+                detail = (result.stderr.strip() or result.stdout.strip()
+                          or f"exit {result.returncode}")
+            raise RuntimeError(
+                f"CMake build/host compiler pair failed {stage}: {detail} "
+                f"(C={cc}, triple={target_hint(cc)}; "
+                f"C++={cxx}, triple={target_hint(cxx)}). "
+                "The C and C++ drivers must produce compatible native "
+                "objects; target triples alone do not establish that."
+            )
+
+
 def build(build_dir: Path) -> Path:
     git = os.environ.get("WHP_GIT_SEED") or "git"
     revision = reconcile_submodule(ROOT, SUBMODULE, git=git)
@@ -150,6 +222,9 @@ def build(build_dir: Path) -> Path:
         if marker.is_file() and marker.read_text(encoding="utf-8") == key + "\n":
             if usable(binary):
                 return binary
+        # Validate the C/C++ ABI at the source-build boundary, after a
+        # reusable native CMake installation has already been considered.
+        verify_native_compiler_pair(cc, cxx, environment, sdk)
         work = lane / "work"
         work.mkdir(parents=True, exist_ok=True)
         commands = [
