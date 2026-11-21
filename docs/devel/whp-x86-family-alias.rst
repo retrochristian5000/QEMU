@@ -57,9 +57,17 @@ portable runners build the x86_64 backend, create the legacy i386 symlink,
 and repeat that operation after opt-in installation.
 
 This option defaults to **off**. It refuses to reuse a build directory
-already configured with ``i386-softmmu``, and it does not silently
-discard explicit i386 audio Kconfig choices. Select a distinct build
-directory without modifying or deleting your previous WHP output.
+already configured with ``i386-softmmu``. In the Bash build path,
+explicit x86-family audio choices are now carried to a generated
+``configs/devices/x86_64-softmmu/whp-user.mak`` preset via
+``--with-devices-x86_64=whp-user``; the x86_64 default includes the
+i386 device defaults and can use the same ISA/PCI hardware models.
+In particular, ``I386_AUDIO_GAMEBLASTER`` controls one shared
+``gameblaster`` ISA implementation, not an i386-only CPU variant.
+An unchanged ``auto`` choice leaves the tracked defaults alone.
+The portable Python fallback still rejects explicit hardware filters
+because it does not generate device presets. Select a distinct build
+directory for the alias without modifying or deleting previous output.
 
 Firmware mapping for original 16-bit, i386, and x86_64 guests
 -------------------------------------------------------------
