@@ -113,6 +113,47 @@ class FirmwareLLVMBuildTools(unittest.TestCase):
         self.assertEqual(cache.read_text(encoding="utf-8").strip(),
                          f"CMAKE_MAKE_PROGRAM:FILEPATH={self.ninja}")
 
+    def test_cached_ninja_symlink_alias_is_same_build_tool(self):
+        build = self.directory / "llvm-build"
+        build.mkdir()
+        alias = self.directory / "cached-ninja"
+        alias.symlink_to(self.ninja)
+        cache = build / "CMakeCache.txt"
+        cache.write_text(
+            f"CMAKE_MAKE_PROGRAM:FILEPATH={alias}\n", encoding="utf-8",
+        )
+        graph = build / "build.ninja"
+        graph.write_text("preserve graph\n", encoding="utf-8")
+        result = self.select(cache_dir=build)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(alias), cache.read_text(encoding="utf-8"))
+        self.assertEqual(graph.read_text(encoding="utf-8"), "preserve graph\n")
+
+    def test_cached_ninja_copy_with_same_version_is_distinct(self):
+        build = self.directory / "llvm-build"
+        build.mkdir()
+        copy = self.directory / "different-ninja"
+        copy.write_bytes(self.ninja.read_bytes())
+        copy.chmod(0o700)
+        (build / "CMakeCache.txt").write_text(
+            f"CMAKE_MAKE_PROGRAM:FILEPATH={copy}\n", encoding="utf-8",
+        )
+        result = self.select(cache_dir=build)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("different build tool", result.stderr)
+
+    def test_broken_cached_ninja_symlink_fails_closed(self):
+        build = self.directory / "llvm-build"
+        build.mkdir()
+        broken = self.directory / "missing-cached-ninja"
+        broken.symlink_to(self.directory / "missing-tool")
+        (build / "CMakeCache.txt").write_text(
+            f"CMAKE_MAKE_PROGRAM:FILEPATH={broken}\n", encoding="utf-8",
+        )
+        result = self.select(cache_dir=build)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("different build tool", result.stderr)
+
     def test_conflicting_ninja_cache_fails_without_deleting_graph(self):
         build = self.directory / "llvm-build"
         build.mkdir()
