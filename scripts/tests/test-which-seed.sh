@@ -11,7 +11,8 @@ selected=$(/bin/sh "$seed" --print-seed)
 [ "$(/bin/sh "$seed" --check)" = "WHP native which seed: $selected" ]
 
 tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/whp-which-seed.XXXXXX") || exit 1
-trap 'rm -rf -- "$tmp"' 0
+phase=setup
+trap 'status=$?; if [ "$status" -ne 0 ]; then printf "error: POSIX which fixture failed in %s (status %s)\n" "$phase" "$status" >&2; fi; rm -rf -- "$tmp"' 0
 trap 'exit 1' 1 2 3 15
 mkdir -p "$tmp/first" "$tmp/second" "$tmp/with spaces" "$tmp/empty"
 printf '#!/bin/sh\nexit 0\n' > "$tmp/first/whp-present"
@@ -21,6 +22,7 @@ chmod +x "$tmp/first/whp-present" "$tmp/second/whp-present" "$tmp/with spaces/wh
 printf '%s\n' '#!/bin/sh' > "$tmp/first/not-executable"
 mkdir "$tmp/first/directory-only"
 
+phase=absolute-path-and-mode
 # One match, ordered -a matches, spaced PATH entries, and executable-only.
 [ "$(PATH="$tmp/first:$tmp/second" /bin/sh "$seed" whp-present)" = "$tmp/first/whp-present" ]
 [ "$(PATH="$tmp/first:$tmp/second" /bin/sh "$seed" -a whp-present)" = "$(printf '%s\n%s' "$tmp/first/whp-present" "$tmp/second/whp-present")" ]
@@ -35,6 +37,7 @@ if PATH="$tmp/first" /bin/sh "$seed" directory-only >"$tmp/out"; then
     exit 1
 fi
 
+phase=missing-command-status
 # A missing name must fail even when another name succeeded; -s is silent.
 if PATH="$tmp/first" /bin/sh "$seed" whp-present whp-absent >"$tmp/out"; then
     printf '%s\n' 'error: missing command accepted by which seed' >&2
@@ -49,15 +52,25 @@ if PATH="$tmp/first" /bin/sh "$seed" -s whp-absent >"$tmp/out"; then
 fi
 [ ! -s "$tmp/out" ]
 
+phase=relative-path-and-macos-alias
 # Explicit pathname, names beginning with a dash, empty and relative PATH.
 cp "$tmp/first/whp-present" "$tmp/first/-hyphen"
 chmod +x "$tmp/first/-hyphen"
 [ "$(PATH="$tmp/first" /bin/sh "$seed" -- -hyphen)" = "$tmp/first/-hyphen" ]
 [ "$(/bin/sh "$seed" "$tmp/first/whp-present")" = "$tmp/first/whp-present" ]
+# The seed uses cd -P / pwd -P to resolve relative PATH entries. On macOS
+# /var/folders/... can denote the same directory as /private/var/folders/....
+# Both sides of this comparison must use the same physical pathname.
+physical_first=$(CDPATH= cd -P -- "$tmp/first" && pwd -P)
 (
     cd "$tmp/first"
-    [ "$(PATH= /bin/sh "$seed" whp-present)" = "$tmp/first/whp-present" ]
-    [ "$(PATH=.:$tmp/second /bin/sh "$seed" whp-present)" = "$tmp/first/whp-present" ]
+    [ "$(PATH= /bin/sh "$seed" whp-present)" = "$physical_first/whp-present" ]
+    [ "$(PATH=.:$tmp/second /bin/sh "$seed" whp-present)" = "$physical_first/whp-present" ]
+)
+ln -s "$tmp/first" "$tmp/first-alias"
+(
+    cd "$tmp/first-alias"
+    [ "$(PATH= /bin/sh "$seed" whp-present)" = "$physical_first/whp-present" ]
 )
 if /bin/sh "$seed" -Z whp-present >/dev/null 2>"$tmp/err"; then
     printf '%s\n' 'error: invalid which option accepted' >&2
@@ -65,6 +78,7 @@ if /bin/sh "$seed" -Z whp-present >/dev/null 2>"$tmp/err"; then
 fi
 [ -s "$tmp/err" ]
 
+phase=symlink-launcher
 # Resolve a symlink launcher and reject a cyclic chain without recursion.
 ln -s "$seed" "$tmp/which-link"
 [ "$(/bin/sh "$tmp/which-link" --print-seed)" = "$selected" ]
