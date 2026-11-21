@@ -31,9 +31,15 @@ The fork needs Rust 1.91 or newer and Cargo. The managed build uses
 keeping local compilation caching without building the optional distributed
 and cloud backends. Its Cargo release profile overrides full LTO
 (``false``), uses 8 codegen units, and disables debug info, avoiding
-single-codegen-unit LTO memory pressure. The persistent Cargo target tree
-is reused on rebuilds; a matching pinned source/compiler/profile identity
-reuses the already installed executable.
+single-codegen-unit LTO memory pressure. The installed-binary marker uses
+schema 6 and includes the pinned source, Rust/Cargo identity, validated native
+C/C++ compiler paths and versions, and selected SDK/deployment/developer tools.
+A changed native producer cannot silently reuse an installed sccache binary.
+The persistent Cargo work tree is additionally partitioned by the native
+C/C++ and Rust producer identities: a changed compiler/SDK does not inherit
+stale compiled C archives, while an unchanged producer keeps incremental work
+across source revisions. Old cache directories are preserved rather than
+deleted automatically.
 
 ``WHP_SCCACHE_BUILD_JOBS`` defaults to 2 and independently limits Cargo
 concurrency. The Rust bootstrap clears inherited compiler wrappers to avoid
@@ -43,8 +49,10 @@ environment. The same isolation applies to inherited Cargo cross-target
 variables (for example ``CARGO_BUILD_TARGET`` and
 ``CARGO_TARGET_<TRIPLE>_LINKER`` or ``_RUSTFLAGS``) and alternate Cargo
 Rust compiler selections. The native ``CARGO_TARGET_DIR`` is set explicitly
-to the private sccacher work tree; the selected Rust compiler and host
-C/C++ drivers remain authoritative. This prevents target-qualified Cargo
+to the producer-specific private sccacher work tree; the selected Rust compiler
+and host C/C++ drivers remain authoritative. Inherited ``CARGO_PROFILE_*``
+and ``RUSTC_BOOTSTRAP`` overrides are removed before the documented release
+profile settings are applied. This prevents target-qualified Cargo
 configuration passed through the QEMU build environment from redirecting
 sccacher's own native ``cargo build``. The same environment isolation
 drops iPhoneOS, simulator, tvOS, watchOS, visionOS and DriverKit deployment
@@ -103,13 +111,17 @@ compiler inputs change. This is not producer-side PCH artifact caching.
 Only a successful managed sccacher setup in ``build.sh`` exports the
 ``WHP_MANAGED_SCCACHE=1`` capability marker. Native LLVM now independently
 checks that the selected executable is under the current managed build prefix
-and that its local-only marker matches the QEMU gitlink and bootstrap schema
-before trusting that flag. Direct bootstraps inheriting a stale flag fall back
+and that its local-only marker matches the QEMU gitlink, bootstrap schema
+and current native C/C++ compiler/SDK producer identity before trusting that
+flag. Direct bootstraps inheriting a stale flag fall back
 to bypassing sccache for C++ PCH consumers. This is provenance validation,
 not a signature or guarantee against malicious changes to installed bytes. An ordinary system sccache,
 including ``COMPILER_CACHE=sccache`` without the managed bootstrap, still
-uses the conservative split: LLVM C++ bypasses sccache with PCH enabled,
-while LLVM C and later QEMU compilation retain their normal cache policies.
+uses the conservative split: LLVM C++ bypasses sccache with PCH enabled.
+Ordinary ``ccache`` also bypasses LLVM C++ PCH consumers: its optional
+``sloppiness`` values can disregard PCH macro or time-dependent inputs.
+LLVM C and later QEMU compilation retain normal cache policies; the managed
+sccacher remains the only validated PCH-consumer cache path.
 The native LLVM CMake cache identity includes both launcher options; changing
 from system to managed sccache reconfigures the existing build tree.
 
