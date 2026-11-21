@@ -508,8 +508,12 @@ def render_ppc_device_config(values: Dict[str, str], base: str) -> str:
 
     kept_lines = []
     for line in base.splitlines():
-        stripped = line.strip()
-        if any(stripped.startswith(key + '=') for key in overridden):
+        # Keep the Python menu path consistent with the Bash configure path:
+        # Kconfig assignments can have whitespace around '='.  Match the
+        # parsed symbol, not a literal 'CONFIG_NAME=' prefix, so an explicit
+        # override cannot leave a conflicting indented base assignment.
+        match = _DEVICE_CONFIG_LINE_RE.fullmatch(line)
+        if match is not None and match.group(1) in overridden:
             continue
         kept_lines.append(line)
     prefix = '\n'.join(kept_lines)
