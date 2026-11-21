@@ -656,7 +656,10 @@ case ",${QEMU_TARGET_LIST:-}," in
             fi
         else
             i386_custom_audio=1
-            WHP_I386_AUDIO_CONFIG_SIGNATURE="schema=$WHP_I386_AUDIO_CONFIG_SCHEMA;target=$x86_audio_target;$i386_audio_signature"
+            WHP_I386_AUDIO_CONFIG_SIGNATURE="schema=$WHP_I386_AUDIO_CONFIG_SCHEMA;$i386_audio_signature"
+            if [[ "$x86_audio_target" == x86_64 ]]; then
+                WHP_I386_AUDIO_CONFIG_SIGNATURE="schema=$WHP_I386_AUDIO_CONFIG_SCHEMA;target=x86_64;$i386_audio_signature"
+            fi
             configure_args+=("--with-devices-${x86_audio_target}=whp-user")
         fi
         ;;
