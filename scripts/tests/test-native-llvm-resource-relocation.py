@@ -13,6 +13,20 @@ start = bootstrap.index("\nnative_neon_headers_usable()\n{") + 1
 end = bootstrap.index("\n}\n", start) + 3
 helper = bootstrap[start:end]
 
+# Installed Clang admission must be processor-neutral. Mandatory NEON
+# compilation proves the shared resource headers, while an A18 Pro BF16
+# feature smoke belongs to the dedicated macOS CI lane only.
+assert 'arm_neon.h' in helper
+assert 'veorq_u8(a, b)' in helper
+assert '-mcpu=apple-a18-pro' not in helper
+assert 'vbfdotq_f32' not in helper
+workflow = (ROOT / ".github/workflows/native-llvm-macos.yml").read_text(
+    encoding="utf-8"
+)
+assert "Check optional A18 Pro BF16 Clang feature compilation" in workflow
+assert "-mcpu=apple-a18-pro" in workflow
+assert "vbfdotq_f32(sum, a, b)" in workflow
+
 driver = """#!/bin/sh
 if [ "${1:-}" = -print-resource-dir ]; then
     case "$0" in
