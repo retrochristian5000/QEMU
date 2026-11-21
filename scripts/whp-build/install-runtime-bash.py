@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 import platform
 import shutil
-import stat
 import sys
 import tempfile
 
