@@ -137,6 +137,49 @@ per-build ``deps`` directory and the separately managed Ninja cache where
 possible; do not move either cache implicitly or ship build-only tools in
 QEMU's runtime installation prefix.
 
+Optional Bash in the final QEMU installation prefix
+--------------------------------------------------
+
+Build-machine seeds are not QEMU runtime files, but an installed Bash can be
+useful for **host-side** scripts that prepare emulator arguments, generate
+configuration files, or launch QEMU. This is an explicit exception to the
+build-only dependency rule, not an implicit copy of all bootstrap tools.
+
+Set ``INSTALL_AFTER_BUILD=1`` and ``INSTALL_RUNTIME_BASH=1`` (also available
+in the Build behavior menu) to install the validated, managed Bash from
+``BUILD_DIR/deps/bash`` after QEMU's own install completes::
+
+  BOOTSTRAP_BASH=1 INSTALL_AFTER_BUILD=1 INSTALL_RUNTIME_BASH=1 ./build.sh
+
+The optional result is ``PREFIX/bin/whp-qemu-bash``, deliberately **not**
+``PREFIX/bin/bash``. The name avoids overwriting an unrelated Bash and
+leaves existing ``#!/bin/bash`` and ``#!/usr/bin/env bash`` interpreters
+unchanged. Invoke an emulator-configuration script explicitly::
+
+  "$HOME/.local/whp-qemu/bin/whp-qemu-bash" --noprofile --norc \
+      ./my-emulator-setup.bash
+
+An installed host Bash does **not** run scripts inside a guest and is not
+automatically a QEMU command-line configuration parser. Scripts may construct
+QEMU arguments, produce a QEMU ``-readconfig`` file in QEMU's format, or
+call installed emulator binaries. The current managed Bash is intentionally
+lean: its build profile disables some interactive features (including aliases
+and Readline). It is suitable only for scripts whose required features have
+been validated; full interactive Bash packaging is a separate decision.
+
+The installer validates the managed cache marker, host identity, required
+Bash syntax, and macOS arm64e subtype when applicable. An unrelated or
+externally changed destination is never overwritten. Windows standalone
+``bash.exe`` bundling is unsupported because its POSIX runtime DLLs must also
+be packaged. A portable build can install this option only if a compatible
+managed Bash was previously bootstrapped in the same build tree.
+
+Distributors must also satisfy the bundled Bash fork's applicable license
+and corresponding-source obligations; copying a binary is not a complete
+redistribution package. Dynamic runtime dependencies must be checked on the
+actual distribution host before claiming a relocatable or self-contained
+installation. Ordinary QEMU installation remains unchanged by default.
+
 GNU Make source Autoconf compatibility
 ------------------------------------
 
