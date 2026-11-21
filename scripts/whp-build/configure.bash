@@ -559,6 +559,7 @@ local i386_custom_audio=0
 local i386_generated_config=""
 local i386_generated_temp=""
 local i386_audio_signature=""
+local x86_audio_target=i386
 local configure_status=0
 local config_file="$BUILD_DIR/.whp-config"
 local config_candidate="$BUILD_DIR/.whp-config.new"
@@ -633,17 +634,21 @@ case ",${QEMU_TARGET_LIST:-}," in
         ;;
 esac
 
-# Audio devices are optional Kconfig models on i386. Keep upstream defaults
-# when every menu entry is auto; only an explicit y/n choice creates a target
-# preset. Meson records that preset as a source input, so the generated file
-# must remain in configs/devices/i386-softmmu while the custom preset is active.
+# Both i386 and x86_64 PC machines can expose the same ISA/PCI audio models.
+# The x86 family alias changes the binary target, not the hardware model.
+# x86_64's tracked default.mak includes i386's defaults, so a generated
+# x86_64 preset can reuse the i386 base *contents* without an include path
+# that minikconf would resolve relative to the new preset.
+if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
+    x86_audio_target=x86_64
+fi
 WHP_I386_AUDIO_CONFIG_SIGNATURE=not-requested
 case ",${QEMU_TARGET_LIST:-}," in
-    *,i386-softmmu,*)
+    *,"${x86_audio_target}"-softmmu,*)
         i386_audio_signature="$(whp_configure_i386_audio_signature)" || return 1
         if whp_configure_audio_all_auto "$i386_audio_signature"; then
             WHP_I386_AUDIO_CONFIG_SIGNATURE=tracked-defaults
-            stale_i386_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
+            stale_i386_config="$SOURCE_DIR/configs/devices/${x86_audio_target}-softmmu/whp-user.mak"
             if [[ -f "$stale_i386_config" ]] &&
                ! grep -Eq '# WHP (temporary i386 audio overrides; removed after configure\.|generated i386 audio overrides; retained for Meson regeneration\.)' \
                    "$stale_i386_config"; then
@@ -651,8 +656,8 @@ case ",${QEMU_TARGET_LIST:-}," in
             fi
         else
             i386_custom_audio=1
-            WHP_I386_AUDIO_CONFIG_SIGNATURE="schema=$WHP_I386_AUDIO_CONFIG_SCHEMA;$i386_audio_signature"
-            configure_args+=(--with-devices-i386=whp-user)
+            WHP_I386_AUDIO_CONFIG_SIGNATURE="schema=$WHP_I386_AUDIO_CONFIG_SCHEMA;target=$x86_audio_target;$i386_audio_signature"
+            configure_args+=("--with-devices-${x86_audio_target}=whp-user")
         fi
         ;;
 esac
@@ -690,8 +695,8 @@ if [[ "$ppc_custom_devices" == 1 ]]; then
 fi
 
 if [[ "$i386_custom_audio" == 1 ]]; then
-    i386_generated_config="$SOURCE_DIR/configs/devices/i386-softmmu/whp-user.mak"
-    i386_generated_temp="$BUILD_DIR/.whp-i386-device-config.tmp.$$"
+    i386_generated_config="$SOURCE_DIR/configs/devices/${x86_audio_target}-softmmu/whp-user.mak"
+    i386_generated_temp="$BUILD_DIR/.whp-${x86_audio_target}-device-config.tmp.$"
     if ! whp_configure_write_i386_audio_config \
         "$SOURCE_DIR/configs/devices/i386-softmmu/default.mak" \
         "$i386_generated_temp"; then
@@ -705,7 +710,7 @@ if [[ "$i386_custom_audio" == 1 ]]; then
     else
         if [[ ! -w "$(dirname "$i386_generated_config")" ]]; then
             printf '%s\n' \
-                'error: custom i386 audio filtering requires configs/devices/i386-softmmu/whp-user.mak,' \
+                "error: custom x86-family audio filtering requires configs/devices/${x86_audio_target}-softmmu/whp-user.mak," \
                 'but the source configs directory is read-only. The tracked i386 defaults remain buildable.' >&2
             rm -f "$i386_generated_temp"
             return 1
