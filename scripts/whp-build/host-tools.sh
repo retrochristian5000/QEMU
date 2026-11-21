@@ -2,6 +2,8 @@
 # Sourced by build.sh after Python, host identity, BUILD_DIR, and .whpconfig are ready.
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+. "$SOURCE_DIR/scripts/whp-build/native-tool-prefix.sh"
+whp_native_tool_prefix_init || exit 1
 
 # build.sh selects and logs the host Git seed once, before its early
 # source updater (or here, when an opt-out/probe skipped that stage).
@@ -671,6 +673,16 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
         NINJA_CMD=$("$PYTHON" "$SOURCE_DIR/scripts/ensure-ninja.py" \
             --build-dir "$BUILD_DIR") || NINJA_CMD=
     fi
+    # A build-machine prefix is a candidate source, not an implicit PATH.
+    # Validate its Ninja before falling back to unrelated host PATH tools.
+    if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
+        WHP_PREFIX_NINJA=$(whp_native_tool_prefix_find ninja 2>/dev/null || true)
+        if [ -n "$WHP_PREFIX_NINJA" ] &&
+           whp_ninja_command_usable "$WHP_PREFIX_NINJA"; then
+            printf 'WHP native prefix Ninja: %s\n' "$NINJA_CMD" >&2
+        fi
+        unset WHP_PREFIX_NINJA
+    fi
     if [ -z "${NINJA_CMD:-}" ] && [ "$BOOTSTRAP_NINJA" != 1 ]; then
         NINJA_CMD=$(command -v ninja 2>/dev/null || command -v ninja-build 2>/dev/null || true)
     fi
@@ -700,13 +712,19 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
         exit 1
     fi
     unset WHP_PREFER_BUNDLED_NINJA WHP_BUNDLED_NINJA_TRIED
-    case "$NINJA_CMD" in
-        */*)
-            NINJA_DIR=$(whp_command_dir "$NINJA_CMD")
-            PATH="$NINJA_DIR:$PATH"
-            unset NINJA_DIR
-            ;;
-    esac
+    # Do not expose unrelated executables in an explicitly selected native
+    # prefix by adding its entire bin directory to PATH. Meson receives the
+    # absolute, verified NINJA_CMD instead.
+    if [ "$NINJA_CMD" != "$WHP_NATIVE_TOOL_PREFIX/bin/ninja" ] &&
+       [ "$NINJA_CMD" != "$WHP_NATIVE_TOOL_PREFIX/ninja/bin/ninja" ]; then
+        case "$NINJA_CMD" in
+            */*)
+                NINJA_DIR=$(whp_command_dir "$NINJA_CMD")
+                PATH="$NINJA_DIR:$PATH"
+                unset NINJA_DIR
+                ;;
+        esac
+    fi
     # The bundled Ninja supports a bounded *automatic* job count, which
     # protects ad-hoc Meson/Ninja calls lacking -j.  Explicit -j remains
     # authoritative, and host/system Ninja is not assigned a new policy.
@@ -767,6 +785,23 @@ if [ -z "$WHP_BUILD_BASH" ]; then
     else
         WHP_BUILD_BASH=$(command -v bash 2>/dev/null || true)
     fi
+fi
+
+# Allow an explicitly selected native prefix to supply the implementation
+# shell, while retaining the independent root seed for rebuilding Bash. The
+# ordinary deps cache is used only when the host shell is unusable; on macOS
+# auto still validates/promotes the pinned Bash through ensure-bash.py.
+if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ] && [ "$BOOTSTRAP_BASH" != 1 ]; then
+    WHP_PREFIX_BASH=$(whp_native_tool_prefix_find bash 2>/dev/null || true)
+    if [ -n "$WHP_PREFIX_BASH" ] &&
+       whp_bash_usable "$WHP_PREFIX_BASH"; then
+        if [ "$WHP_NATIVE_TOOL_PREFIX_EXPLICIT" = 1 ] ||
+           ! whp_bash_usable "$WHP_BUILD_BASH"; then
+            WHP_BUILD_BASH=$WHP_PREFIX_BASH
+            printf 'WHP native prefix Bash: %s\n' "$WHP_BUILD_BASH" >&2
+        fi
+    fi
+    unset WHP_PREFIX_BASH
 fi
 
 if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ] &&
