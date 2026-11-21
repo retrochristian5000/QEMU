@@ -44,6 +44,17 @@ configuration and dependencies can be treated as a black box when building
 QEMU; the default configuration that QEMU ships with should be okay in
 almost all cases.
 
+The WHP build front-end adds a **limited** menuconfig for selected i386 and
+PowerPC audio models. This does not replace QEMU's Kconfig resolver. It
+creates a validated per-target ``whp-user.mak`` input, whose ``auto``
+choices must preserve corresponding assignments in the base device preset.
+Only an explicit ``y`` or ``n`` replaces that model's base setting.
+Generated PPC bus and timer requirements are separate from audio choices
+and must still satisfy Kconfig dependencies. Both the Python menu renderer
+and the Bash configure path accept ordinary whitespace around an assignment
+without leaving duplicate ``CONFIG_`` entries. The original tracked
+``default.mak`` files remain unchanged.
+
 The Kconfig language
 --------------------
 
