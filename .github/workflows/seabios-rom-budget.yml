@@ -1,0 +1,77 @@
+name: WHP SeaBIOS 128 KiB ROM budget
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'roms/seabios'
+      - 'roms/config.seabios-128k'
+      - 'roms/config.seabios-microvm'
+      - 'roms/Makefile'
+      - '.github/workflows/seabios-rom-budget.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seabios-rom-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rom-budget:
+    name: Build pinned isapc and microvm ROMs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out QEMU ROM configurations
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            roms
+          submodules: false
+
+      - name: Fetch pinned SeaBIOS source
+        run: |
+          git submodule update --init --depth 1 roms/seabios
+          expected="$(git rev-parse HEAD:roms/seabios)"
+          actual="$(git -C roms/seabios rev-parse HEAD)"
+          test "$actual" = "$expected"
+
+      - name: Install firmware build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential binutils nasm python3
+
+      - name: Audit both 128 KiB ROM variants without disabling features
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+        run: |
+          set -eu
+          root="$RUNNER_TEMP/whp-seabios-rom-budget"
+          failed=0
+          for variant in seabios-128k seabios-microvm; do
+            printf '%s\n' "=== Building $variant with its existing QEMU config ==="
+            if make -C roms "build-seabios-config-$variant" \
+                    SEABIOS_CROSS_PREFIX= "SEABIOS_BUILD_ROOT=$root"; then
+              image="$root/$variant/bios.bin"
+              if test ! -f "$image"; then
+                printf 'error: %s did not produce a BIOS image\n' "$variant" >&2
+                failed=1
+              else
+                bytes="$(wc -c < "$image")"
+                printf '%s: %s bytes (131072-byte budget)\n' "$variant" "$bytes"
+                if test "$bytes" -ne 131072; then
+                  printf 'error: %s does not have its configured 128 KiB size\n' \
+                    "$variant" >&2
+                  failed=1
+                fi
+              fi
+            else
+              failed=1
+            fi
+          done
+          exit "$failed"
