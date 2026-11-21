@@ -112,8 +112,12 @@ render_menu()
 {
     # Keep option numbers stable across filtered and unfiltered views.
     # The schema is data; only AWK interprets its fields.
-    awk -v filter="$menu_filter" '
-        BEGIN { search = tolower(filter) }
+    # -v expands backslash escapes, so read user-entered filter data intact.
+    WHP_MENU_FILTER="$menu_filter" awk '
+        BEGIN {
+            filter = ENVIRON["WHP_MENU_FILTER"]
+            search = tolower(filter)
+        }
         FNR == NR {
             if ($0 ~ /^[A-Z][A-Z0-9_]*=/) {
                 pos = index($0, "=")
@@ -392,8 +396,13 @@ EOF
             esac
             ;;
         choice)
-            new_value=$(awk -v choices="$choices" -v current="$current" -v default_value="$default_value" '
+            # Enum values and user configuration are data, not AWK literals.
+            new_value=$(WHP_MENU_CHOICES="$choices" WHP_MENU_CURRENT="$current" \
+                WHP_MENU_DEFAULT="$default_value" awk '
                 BEGIN {
+                    choices = ENVIRON["WHP_MENU_CHOICES"]
+                    current = ENVIRON["WHP_MENU_CURRENT"]
+                    default_value = ENVIRON["WHP_MENU_DEFAULT"]
                     count = split(choices, item, ",")
                     for (i = 1; i <= count; i++) {
                         if (item[i] == current) {

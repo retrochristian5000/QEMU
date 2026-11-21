@@ -100,6 +100,32 @@ def check():
         assert missing.returncode == 0, missing.stderr
         assert "No options match: no-such-menu-entry" in missing.stdout
 
+        # AWK -v interprets escape sequences in user-provided strings.
+        # Both filters and enum choices must preserve literal backslashes.
+        literal_filter = r"\t"
+        escaped = run(shell, config, root,
+                      input_text=f"f\n{literal_filter}\nq\n")
+        assert escaped.returncode == 0, escaped.stderr
+        assert f"No options match: {literal_filter}" in escaped.stdout
+        assert "No options match: \t" not in escaped.stdout
+
+        schema_lines = schema.read_text(encoding="utf-8").splitlines()
+        lto_number = next(
+            index for index, line in enumerate(schema_lines)
+            if line.startswith("QEMU_HOST_LTO|")
+        )
+        lto_fields = schema_lines[lto_number].split("|")
+        lto_fields[5] = r"auto,thin\test,full"
+        schema_lines[lto_number] = "|".join(lto_fields)
+        schema.write_text("\n".join(schema_lines) + "\n", encoding="utf-8")
+        config.write_text("WHP_CONFIG_VERSION=3\nQEMU_HOST_LTO=auto\n",
+                          encoding="utf-8")
+        literal_choice = run(shell, config, root,
+                             input_text=f"{lto_number}\nq\ny\n")
+        assert literal_choice.returncode == 0, literal_choice.stderr
+        assert r"Changed Link-time optimization: auto -> thin\test" in literal_choice.stdout
+        schema.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
         # A checked all-target selector collapses, but never overwrites,
         # the per-target values. Hidden entries cannot be edited by number.
         all_number = next(

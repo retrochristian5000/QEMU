@@ -88,8 +88,10 @@ if [[ ! -f "$LLVM_SUBMODULE_DIR/llvm/CMakeLists.txt" ||
     exit 1
 fi
 
+# The shared submodule guard above has already checked the gitlink mode.
+# Query its object ID directly, without an AWK field-number assumption.
 expected_llvm_revision="$(
-    git -C "$SOURCE_DIR" ls-tree HEAD -- "$LLVM_SUBMODULE_PATH" | awk '{print $3}'
+    git -C "$SOURCE_DIR" rev-parse --verify "HEAD:$LLVM_SUBMODULE_PATH"
 )"
 llvm_revision="$(git -C "$LLVM_SUBMODULE_DIR" rev-parse HEAD)"
 if [[ -z "$expected_llvm_revision" ]]; then

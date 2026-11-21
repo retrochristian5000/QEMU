@@ -100,6 +100,7 @@ on:
       - 'scripts/tests/test-menuconfig-scroll.py'
       - 'scripts/tests/test-python-menu-fallback.py'
       - 'scripts/tests/test-menuconfig-shell-contract.py'
+      - 'scripts/tests/test-awk-legacy-callers.py'
       - 'scripts/tests/test-python-menu-fallback.bash'
       - 'scripts/tests/test-native-llvm-build-entry.py'
       - 'scripts/tests/test-native-llvm-wiring.py'
@@ -210,6 +211,7 @@ jobs:
           python3 scripts/tests/test-menuconfig-scroll.py
           python3 scripts/tests/test-python-menu-fallback.py
           python3 scripts/tests/test-menuconfig-shell-contract.py
+          python3 scripts/tests/test-awk-legacy-callers.py
           bash scripts/tests/test-python-menu-fallback.bash
           python3 scripts/tests/test-whp-sparc-menu.py
           # Fail early on Python syntax errors before running config or Meson tests.

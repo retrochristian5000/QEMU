@@ -236,7 +236,9 @@ else
         printf 'error: GRUB submodule is not initialized: %s\n' "$GRUB_SUBMODULE_DIR" >&2
         exit 1
     }
-    expected_revision="$(git -C "$SOURCE_DIR" ls-tree HEAD -- "$GRUB_SUBMODULE_PATH" | awk '{print $3}')"
+    # The shared submodule guard above has already checked gitlink mode.
+    # Query the recorded object directly, not an AWK field position.
+    expected_revision="$(git -C "$SOURCE_DIR" rev-parse --verify "HEAD:$GRUB_SUBMODULE_PATH")"
     GRUB_REVISION="$(git -C "$GRUB_SUBMODULE_DIR" rev-parse HEAD)"
     [[ "$expected_revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
         printf 'error: QEMU GRUB gitlink is not a full commit: %s\n' "$expected_revision" >&2
