@@ -61,14 +61,41 @@ resolve_seed()
     printf '%s\n' "$selected"
 )
 
+# After build.sh promotes the managed GNU Make, WHP_MAKE_SEED intentionally
+# continues naming the *original* Make used for self-bootstrap. Downstream
+# consumers such as CMake need MAKE_CMD/MAKE, not the older bootstrap seed.
+resolve_active_make()
+(
+    for setting in MAKE_CMD MAKE; do
+        case "$setting" in
+            MAKE_CMD) requested=${MAKE_CMD:-} ;;
+            MAKE) requested=${MAKE:-} ;;
+        esac
+        [ -n "$requested" ] || continue
+        selected=$(whp_resolve_gnu_make "$requested") || {
+            printf 'error: invalid active GNU Make %s: %s\n' "$setting" "$requested" >&2
+            exit 1
+        }
+        identity=$("$selected" --whp-make-adapter-probe 2>/dev/null || true)
+        [ "$identity" != "$marker" ] || {
+            printf 'error: active GNU Make recurses into itself: %s\n' "$selected" >&2
+            exit 1
+        }
+        printf '%s\n' "$selected"
+        exit 0
+    done
+    resolve_seed
+)
+
 case "${1:-}" in
-    --print-seed|--print-make) resolve_seed ;;
+    --print-seed) resolve_seed ;;
+    --print-make) resolve_active_make ;;
     --check)
         selected=$(resolve_seed) || exit 1
         printf 'WHP native GNU Make seed: %s\n' "$selected"
         ;;
     *)
-        selected=$(resolve_seed) || exit 1
+        selected=$(resolve_active_make) || exit 1
         exec "$selected" "$@"
         ;;
 esac
