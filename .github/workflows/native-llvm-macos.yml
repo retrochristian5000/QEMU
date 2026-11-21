@@ -603,6 +603,26 @@ jobs:
         shell: bash
         run: python3 scripts/tests/test-apple-a18-pro-profile.py
 
+      # This is a target-model regression, not a condition for reusing a
+      # working native Clang toolchain on any Apple Silicon processor.
+      - name: Check optional A18 Pro BF16 Clang feature compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
+          printf '%s\n' \
+            '#include <arm_neon.h>' \
+            '#ifndef __ARM_FEATURE_BF16' \
+            '#error "Apple A18 Pro feature model lacks BF16"' \
+            '#endif' \
+            'float32x4_t whp_a18_bf16(float32x4_t sum, bfloat16x8_t a, bfloat16x8_t b) {' \
+            '    return vbfdotq_f32(sum, a, b);' \
+            '}' |
+            "$NATIVE_LLVM_DIR/bin/clang" -arch arm64e \
+              -mcpu=apple-a18-pro -isysroot "$sdkroot" \
+              "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+              -ffreestanding -Werror -x c -fsyntax-only -
+
       - name: Verify native LLVM incremental CMake graph reuse
         shell: bash
         run: |
