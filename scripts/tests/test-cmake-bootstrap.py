@@ -45,6 +45,10 @@ class CMakeBootstrapTests(unittest.TestCase):
             "TARGET_TRIPLE": "powerpc-apple-darwin9",
             "CC_FOR_TARGET": "/cross/cc",
             "CMAKE_OSX_ARCHITECTURES": "ppc",
+            "ARCHFLAGS": "-arch x86_64",
+            "ASFLAGS": "-arch x86_64",
+            "ASMFLAGS": "-march=powerpc",
+            "CROSS_COMPILE": "powerpc-elf-",
             "IPHONEOS_DEPLOYMENT_TARGET": "14.0",
         }):
             env = module.host_environment(
@@ -54,6 +58,7 @@ class CMakeBootstrapTests(unittest.TestCase):
         for key in ("CMAKE_TOOLCHAIN_FILE", "CMAKE_C_COMPILER_TARGET",
                     "build_alias", "CCC_OVERRIDE_OPTIONS", "TARGET_TRIPLE",
                     "CC_FOR_TARGET", "CMAKE_OSX_ARCHITECTURES",
+                    "ARCHFLAGS", "ASFLAGS", "ASMFLAGS", "CROSS_COMPILE",
                     "IPHONEOS_DEPLOYMENT_TARGET"):
             self.assertNotIn(key, env)
         self.assertEqual(env["CC"], "/usr/bin/cc")
