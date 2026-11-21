@@ -12,6 +12,10 @@ fi
 
 # -f skips user startup files; /etc/zshenv may still be executed by Zsh.
 # Avoid caller-supplied startup directories and sh ENV hooks in either phase.
+# Pipeline failure checking is opt-in. Enabling PIPE_FAIL everywhere would
+# change the result of legitimate truncation/preview pipelines (e.g. head).
+# Pass --pipefail before native Zsh flags when every stage must succeed.
+# The option is injected by this seed, not passed as caller-supplied -o.
 # The seed is for repeatable, noninteractive build work. Zsh handles
 # invocation options after -f, so a caller could otherwise re-enable RCS or
 # switch emulation and silently reintroduce startup files/changed semantics.
@@ -117,7 +121,19 @@ case "${1:-}" in
         selected=$(zsh_select) || exit 1
         printf 'WHP Zsh seed: %s\n' "$selected" ;;
     *)
+        pipeline_guard=0
+        if [ "${1:-}" = --pipefail ]; then
+            pipeline_guard=1
+            shift
+            if [ "$#" -eq 0 ]; then
+                printf '%s\n' 'error: Zsh seed --pipefail requires a command, script, or -s' >&2
+                exit 2
+            fi
+        fi
         zsh_validate_invocation "$@" || exit $?
         selected=$(zsh_select) || exit 1
+        if [ "$pipeline_guard" = 1 ]; then
+            exec env -u ZDOTDIR -u ENV "$selected" -f -o pipe_fail "$@"
+        fi
         exec env -u ZDOTDIR -u ENV "$selected" -f "$@" ;;
 esac

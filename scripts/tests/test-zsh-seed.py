@@ -142,6 +142,61 @@ class ZshSeedTests(unittest.TestCase):
         self.assertEqual(executed.returncode, 0, executed.stderr)
         self.assertEqual(executed.stdout, "script:two words")
 
+    def test_pipefail_option_requires_explicit_command(self):
+        # Validate the seed-specific option before attempting Zsh discovery.
+        env = dict(self.env, WHP_ZSH_SEED="/bin/false")
+        no_command = self.run_seed("--pipefail", override=env)
+        self.assertEqual(no_command.returncode, 2)
+        self.assertIn("--pipefail requires", no_command.stderr)
+        forbidden = self.run_seed("--pipefail", "+f", "-c", "exit 0",
+                                  override=env)
+        self.assertEqual(forbidden.returncode, 2)
+        self.assertIn("unsupported Zsh build-seed invocation option",
+                      forbidden.stderr)
+
+    def test_pipeline_failures_opt_in_without_changing_default(self):
+        if not self.native:
+            self.skipTest("native Zsh is not installed")
+        env = dict(self.env, WHP_ZSH_SEED=self.native)
+        # With default Zsh semantics, only the last stage determines status.
+        ordinary = self.run_seed("-c",
+                                 '[[ ! -o pipe_fail ]] || exit 80; false | true',
+                                 override=env)
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+
+        # For bootstrap operations needing all stages, enable strict checks
+        # explicitly; the same command must now report the producer failure.
+        strict = self.run_seed("--pipefail", "-c",
+                               '[[ -o pipe_fail ]] || exit 81; false | true',
+                               override=env)
+        self.assertEqual(strict.returncode, 1, strict.stderr)
+        for command, expected in (
+            ("true | true", 0),
+            ("false | true | true", 1),
+            ("true | false | true", 1),
+            ("true | true | false", 1),
+        ):
+            with self.subTest(command=command):
+                result = self.run_seed("--pipefail", "-c", command,
+                                       override=env)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
+        # pipestatus reports each stage regardless of PIPE_FAIL and must be
+        # captured immediately after the pipeline it describes.
+        statuses = self.run_seed(
+            "-c",
+            'false | true; print -rn -- "${pipestatus[1]}:${pipestatus[2]}"',
+            override=env,
+        )
+        self.assertEqual(statuses.returncode, 0, statuses.stderr)
+        self.assertEqual(statuses.stdout, "1:0")
+
+        # A successful producer should preserve output byte-for-byte.
+        result = self.run_seed("--pipefail", "-c",
+                               'print -rn -- "pipe data" | cat', override=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "pipe data")
+
     def test_seed_is_a_posix_launcher(self):
         self.assertEqual(SEED.read_text(encoding="utf-8").splitlines()[0],
                          "#!/bin/sh")
