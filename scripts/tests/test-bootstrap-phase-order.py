@@ -83,9 +83,11 @@ if build.count('case "$WHP_ARM64E_USE_LLD" in') != 1:
 # Run only the actual POSIX preflight fragment, not the heavyweight build.
 # This also verifies that disabling LLVM does not impose an LLVM-only linker
 # restriction on an otherwise valid QEMU run.
-guard = build.split("# Validate native LLVM selection before", 1)[1].split(
-    "# The retired BOOTSTRAP_SCCACHE menu toggle", 1
-)[0]
+guard = (
+    "BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch"
+    + build.split("BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch", 1)[1]
+      .split("# The retired BOOTSTRAP_SCCACHE menu toggle", 1)[0]
+)
 preflight_script = (
     'set -e\n. "$1"\n'
     + guard
