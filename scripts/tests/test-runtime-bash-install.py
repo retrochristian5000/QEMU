@@ -68,7 +68,7 @@ class RuntimeBashInstallTests(unittest.TestCase):
         for _ in range(2):
             result = self.run_installer("--install")
             self.assertEqual(result.returncode, 0, result.stderr)
-        installed = self.prefix / "bin" / "whp-qemu-bash"
+        installed = self.prefix / "bin" / "bash"
         self.assertTrue(os.access(installed, os.X_OK))
         run = subprocess.run(
             [str(installed), "--noprofile", "--norc", "-c",
@@ -78,7 +78,7 @@ class RuntimeBashInstallTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0)
 
     def test_unmanaged_destination_is_preserved(self):
-        dest = self.prefix / "bin" / "whp-qemu-bash"
+        dest = self.prefix / "bin" / "bash"
         dest.parent.mkdir(parents=True)
         dest.write_bytes(b"other owner's bash")
         check = self.run_installer()
@@ -87,7 +87,7 @@ class RuntimeBashInstallTests(unittest.TestCase):
 
     def test_tampered_managed_destination_is_preserved(self):
         self.assertEqual(self.run_installer("--install").returncode, 0)
-        dest = self.prefix / "bin" / "whp-qemu-bash"
+        dest = self.prefix / "bin" / "bash"
         dest.write_bytes(b"external change")
         check = self.run_installer()
         self.assertNotEqual(check.returncode, 0)
@@ -110,7 +110,7 @@ class RuntimeBashInstallTests(unittest.TestCase):
         self.prefix.mkdir()
         (self.prefix / "bin").symlink_to(other, target_is_directory=True)
         self.assertNotEqual(self.run_installer().returncode, 0)
-        self.assertFalse((other / "whp-qemu-bash").exists())
+        self.assertFalse((other / "bash").exists())
         self.assertNotEqual(self.run_installer(prefix="relative").returncode, 0)
 
     def test_install_wiring_present_in_both_runners(self):
