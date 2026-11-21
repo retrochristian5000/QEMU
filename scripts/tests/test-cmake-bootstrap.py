@@ -212,6 +212,94 @@ class CMakeBootstrapTests(unittest.TestCase):
                 (output / "configured.txt").read_text(encoding="utf-8"), "ok",
             )
 
+    def test_native_cmake_pair_links_and_runs_with_clean_host_environment(self):
+        cc = shutil.which("cc")
+        cxx = shutil.which("c++")
+        if not cc or not cxx:
+            self.skipTest("native C and C++ compilers are unavailable")
+        cc = str(Path(cc).resolve())
+        cxx = str(Path(cxx).resolve())
+        sdk = (module.select_native_sdk(ROOT)
+               if module.platform.system() == "Darwin" else "")
+        with mock.patch.dict(os.environ, {
+            "CC": "/target/cc", "CXX": "/target/c++",
+            "TARGET_TRIPLE": "powerpc-unknown-unknown-elf",
+            "CMAKE_CXX_COMPILER_TARGET": "powerpc-unknown-unknown-elf",
+            "CCC_OVERRIDE_OPTIONS": "^--target=powerpc-unknown-unknown-elf",
+            "CFLAGS": "-target powerpc-unknown-unknown-elf",
+            "CXXFLAGS": "-target powerpc-unknown-unknown-elf",
+        }):
+            env = module.host_environment(
+                cc, cxx, str(Path(shutil.which("make") or "/usr/bin/make")),
+                sdk, "",
+            )
+        self.assertNotIn("TARGET_TRIPLE", env)
+        self.assertNotIn("CMAKE_CXX_COMPILER_TARGET", env)
+        self.assertNotIn("CCC_OVERRIDE_OPTIONS", env)
+        self.assertEqual(env["CFLAGS"], "")
+        self.assertEqual(env["CXXFLAGS"], "")
+        module.verify_native_compiler_pair(cc, cxx, env, sdk)
+
+    def test_native_cmake_pair_rejects_mixed_link_and_reports_triples(self):
+        def outcome(command, code=0, stdout="", stderr=""):
+            return subprocess.CompletedProcess(
+                args=command, returncode=code, stdout=stdout, stderr=stderr,
+            )
+
+        # Both frontend compilations succeed; only the mixed-ABI link fails.
+        # Record the reported triples as context, not a string-equality gate.
+        results = [
+            outcome("compile C"), outcome("compile C++"),
+            outcome("link", code=1, stderr="incompatible Mach-O object ABI"),
+            outcome("C triple", stdout="aarch64-apple-darwin26.0.0\n"),
+            outcome("C++ triple", stdout="aarch64-apple-macosx15.0.0\n"),
+        ]
+        with mock.patch.object(module.subprocess, "run",
+                               side_effect=results) as execute:
+            with self.assertRaisesRegex(
+                RuntimeError, "failed mixed C/C\\+\\+ link",
+            ) as failure:
+                module.verify_native_compiler_pair(
+                    "/native/cc", "/native/cxx", {"PATH": "/bin"}, "",
+                )
+        self.assertIn("incompatible Mach-O object ABI", str(failure.exception))
+        self.assertIn("aarch64-apple-darwin26.0.0", str(failure.exception))
+        self.assertIn("aarch64-apple-macosx15.0.0", str(failure.exception))
+        self.assertEqual(execute.call_count, 5)
+
+    def test_native_cmake_pair_rejects_failed_execution(self):
+        results = [
+            subprocess.CompletedProcess(args=None, returncode=0,
+                                        stdout="", stderr=""),
+            subprocess.CompletedProcess(args=None, returncode=0,
+                                        stdout="", stderr=""),
+            subprocess.CompletedProcess(args=None, returncode=0,
+                                        stdout="", stderr=""),
+            subprocess.CompletedProcess(args=None, returncode=1,
+                                        stdout="", stderr="wrong host ABI"),
+            subprocess.CompletedProcess(args=None, returncode=0,
+                                        stdout="unknown\n", stderr=""),
+            subprocess.CompletedProcess(args=None, returncode=0,
+                                        stdout="unknown\n", stderr=""),
+        ]
+        with mock.patch.object(module.subprocess, "run", side_effect=results):
+            with self.assertRaisesRegex(RuntimeError, "failed native execution"):
+                module.verify_native_compiler_pair(
+                    "/native/cc", "/native/cxx", {"PATH": "/bin"}, "",
+                )
+
+    def test_native_pair_preflight_follows_installed_cmake_cache_check(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        cache_check = source.index("if marker.is_file()")
+        pair_probe = source.index(
+            "verify_native_compiler_pair(cc, cxx, environment, sdk)"
+        )
+        source_bootstrap = source.index(
+            '["/bin/sh", str(source / "bootstrap"),'
+        )
+        self.assertLess(cache_check, pair_probe)
+        self.assertLess(pair_probe, source_bootstrap)
+
     def test_identity_changes_with_sdk_or_source(self):
         with mock.patch.object(module, "version", return_value="fixture"):
             first = module.identity("a" * 40, "/cc", "/cxx", "/make", "", "")
