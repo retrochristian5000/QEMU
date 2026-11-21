@@ -43,6 +43,11 @@ on:
       - 'scripts/tests/test-uninorth-cpu-number.py'
       - 'tests/qtest/i82092aa-test.c'
       - 'tests/qtest/meson.build'
+      - 'hw/audio/gameblaster.c'
+      - 'hw/audio/gameblaster-saa1099.h'
+      - 'tests/unit/gameblaster-saa1099-test.c'
+      - 'scripts/tests/test-gameblaster-saa1099.py'
+      - 'docs/system/devices/gameblaster.rst'
       - 'ui/cocoa.m'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sccache.py'
@@ -232,6 +237,7 @@ jobs:
           printf '#include "hw/pcmcia/i365.h"\n_Static_assert(I365_IO(1) == 0x0c, "I/O map");\n_Static_assert(I365_MEM(4) == 0x30, "memory map");\n_Static_assert(I365_ENA_IO(1) == 0x80, "I/O enable");\n_Static_assert(I365_ENA_MEM(4) == 0x10, "memory enable");\n_Static_assert(I365_IOCTL_16BIT(1) == 0x10, "I/O width");\n' | cc -std=c11 -Wall -Wextra -Werror -fsyntax-only -x c -Iinclude -
           python3 scripts/tests/test-whp-i386-audio-menu.py
           python3 scripts/tests/test-qtest-meson.py
+          python3 scripts/tests/test-gameblaster-saa1099.py
           python3 scripts/tests/test-pkg-config-seed.py
           python3 scripts/tests/test-sccache-bootstrap.py
           python3 scripts/tests/test-autotools-version-pairs.py

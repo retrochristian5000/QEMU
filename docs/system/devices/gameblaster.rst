@@ -46,7 +46,12 @@ physical ISA address ranges would overlap.
 The first-stage audio implementation covers independent chip register
 selection, frequency/octave settings, 12 tone voices, left/right volume,
 noise and an approximated eight-shape envelope engine, software PCM rendering,
-hardware reset and save/restore of chip state.
+hardware reset and save/restore of chip state. The digital PCM mixer keeps the
+SAA1099's noise-controlled half-amplitude tone state distinct from silence.
+In three-bit envelope mode, stereo amplitude masking occurs *after* any
+right-channel envelope inversion, so neither output regains the discarded bit.
+The digital mixing and envelope-resolution calculations have native-C
+regression checks; physical analog output is not yet verified.
 
 **Known limitations:** full SAA1099 analogue output characteristics,
 envelope edge timing, the CT1302's shifting identification sequence (used

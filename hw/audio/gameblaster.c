@@ -14,6 +14,7 @@
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qom/object.h"
+#include "gameblaster-saa1099.h"
 
 #define TYPE_GAMEBLASTER "gameblaster"
 OBJECT_DECLARE_SIMPLE_TYPE(GameBlasterState, GAMEBLASTER)
@@ -170,7 +171,7 @@ static void cms_chip_sample(CMSChip *c, int32_t *left, int32_t *right)
     for (unsigned i = 0; i < 6; i++) {
         bool tone = c->regs[0x14] & (1U << i);
         bool noise = c->regs[0x15] & (1U << i);
-        int level;
+        int signed_level;
         uint8_t amp = c->regs[i];
         uint8_t env = c->regs[0x18 + i / 3];
         unsigned gain_l = amp & 15;
@@ -179,29 +180,27 @@ static void cms_chip_sample(CMSChip *c, int32_t *left, int32_t *right)
         if (!tone && !noise) {
             continue;
         }
-        if (tone && noise) {
-            level = c->tone_level[i] ? (noise_bit[i / 3] ? 2 : 1) : 0;
-        } else {
-            level = tone ? c->tone_level[i] * 2 : noise_bit[i / 3] * 2;
-        }
+        signed_level = cms_voice_signed_level(tone, noise,
+                                               c->tone_level[i] != 0,
+                                               noise_bit[i / 3] != 0);
 
         if (env & 0x80) {
             unsigned e = cms_envelope_level((env >> 1) & 7,
-                                             c->envelope_step[i / 3]);
+                                            c->envelope_step[i / 3]);
 
-            if (env & 0x10) {
-                e &= ~1U;
-            }
-            gain_l = (gain_l * e) / 15;
-            gain_r = (gain_r * ((env & 1) ? 15 - e : e)) / 15;
+            gain_l = (gain_l *
+                      cms_envelope_stereo_level(env, e, false)) / 15;
+            gain_r = (gain_r *
+                      cms_envelope_stereo_level(env, e, true)) / 15;
         }
 
         /*
-         * Center the unipolar chip waveform about zero for PCM output.
-         * Limit each of 12 possible voices to keep the final mix in range.
+         * AC-center each PSG output. The signed level uses half-amplitude
+         * units, preserving the hardware's noise-controlled tone attenuation.
+         * Limit each of 12 voices to keep the stereo mix in range.
          */
-        *left += (level - 1) * (int)gain_l * 120;
-        *right += (level - 1) * (int)gain_r * 120;
+        *left += signed_level * (int)gain_l * 60;
+        *right += signed_level * (int)gain_r * 60;
     }
 }
 
