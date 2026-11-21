@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -160,6 +161,23 @@ def native_producer_identity(environ):
     }
 
 
+def native_work_key(identity):
+    """Keep Cargo's compiled C artifacts within one native producer lane.
+
+    Source revisions still share the same lane so Cargo can rebuild changed
+    crates incrementally. Compiler, SDK, Rust or profile changes select a
+    separate work tree without deleting earlier build outputs.
+    """
+    inputs = {
+        name: identity[name] for name in (
+            'schema', 'native_producer', 'rustc_path', 'rustc', 'profile'
+        )
+    }
+    return hashlib.sha256(
+        json.dumps(inputs, sort_keys=True).encode('utf-8')
+    ).hexdigest()[:16]
+
+
 def host_tools():
     # Cargo is a pre-QEMU root capability, selected through the WHP seed.
     # Use /bin/sh explicitly so the seed also works from source archives
@@ -195,8 +213,11 @@ def ensure(build_dir):
                 return executable
         except (ValueError, RuntimeError, OSError):
             pass
-    # BLAKE3's Cargo rebuild triggers omit HOST_CC and header search paths.
-    target = build_dir / 'toolchain-work' / 'sccacher' / f'{host}-v{SCHEMA}'
+    # A stale Cargo target directory can preserve native C archives even if
+    # the sccache executable marker rejects them. Partition compiled objects
+    # by producer identity without discarding previous incremental work.
+    target = (build_dir / 'toolchain-work' / 'sccacher' /
+              f'{host}-v{SCHEMA}-{native_work_key(identity)}')
     target.mkdir(parents=True, exist_ok=True)
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
     call([cargo, 'build', '--locked', '--release', '--no-default-features',
