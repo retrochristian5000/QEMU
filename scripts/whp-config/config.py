@@ -167,6 +167,7 @@ OPTIONS = (
     Option('RUN_TESTS', 'Build behavior', 'Run tests after build', 'bool', 'y'),
     Option('QEMU_TEST_SCOPE', 'Build behavior', 'QEMU test scope', 'choice', 'changed', ('changed', 'full')),
     Option('INSTALL_AFTER_BUILD', 'Build behavior', 'Install after build', 'bool', 'n'),
+    Option('INSTALL_RUNTIME_BASH', 'Build behavior', 'Install managed Bash for host-side scripts', 'bool', 'n'),
     Option('MACOS_BUILD_POWER', 'Build behavior', 'macOS compile power profile', 'choice', 'balanced', ('eco', 'balanced', 'performance')),
     Option('CONFIG_MAC_NEWWORLD', 'QEMU machines', 'New World Macintosh', 'bool', 'y'),
     Option('CONFIG_MAC_OLDWORLD', 'QEMU machines', 'Old World Macintosh', 'bool', 'y'),
