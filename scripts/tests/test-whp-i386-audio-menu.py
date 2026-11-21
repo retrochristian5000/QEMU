@@ -167,6 +167,87 @@ whp_configure_i386_audio_signature
         self.assertIn('# CONFIG_GAMEBLASTER=y', rendered)
         self.assertNotIn('CONFIG_SB16=y', rendered)
 
+    def test_explicit_i386_audio_enables_only_required_buses_and_timer(self):
+        requirements = {
+            'GAMEBLASTER': ('CONFIG_ISA_BUS',),
+            'SB16': ('CONFIG_ISA_BUS',),
+            'ADLIB': ('CONFIG_ISA_BUS',),
+            'GUS': ('CONFIG_ISA_BUS',),
+            'CS4231A': ('CONFIG_ISA_BUS',),
+            'PCSPK': ('CONFIG_ISA_BUS', 'CONFIG_I8254'),
+            'ES1370': ('CONFIG_PCI',),
+            'AC97': ('CONFIG_PCI',),
+            'CS4630': ('CONFIG_PCI',),
+            'HDA': ('CONFIG_PCI',),
+        }
+        self.assertEqual(set(requirements), {
+            key.removeprefix('I386_AUDIO_') for key in AUDIO_OPTIONS
+        })
+        base_text = (
+            '# explicit upstream hardware limitations\n'
+            ' CONFIG_ISA_BUS = n\n'
+            '\tCONFIG_I8254 = n\n'
+            ' CONFIG_PCI = n\n'
+            'CONFIG_PCI_DEVICES=n\n'
+            'CONFIG_UNRELATED=n\n'
+        )
+        with tempfile.TemporaryDirectory() as td:
+            base = pathlib.Path(td) / 'default.mak'
+            output = pathlib.Path(td) / 'whp-user.mak'
+            base.write_text(base_text, encoding='utf-8')
+            for suffix, needed in requirements.items():
+                with self.subTest(device=suffix):
+                    script = (
+                        'set -euo pipefail\n'
+                        f'source {CONFIGURE_BASH!s}\n'
+                        f'I386_AUDIO_{suffix}=y\n'
+                        'whp_configure_write_i386_audio_config "$1" "$2"\n'
+                    )
+                    result = subprocess.run(
+                        ['bash', '-c', script, '_', str(base), str(output)],
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    rendered = output.read_text(encoding='utf-8')
+                    self.assertIn(f'CONFIG_{suffix}=y', rendered)
+                    self.assertEqual(rendered.count(f'CONFIG_{suffix}='), 1)
+                    for requirement in ('CONFIG_ISA_BUS', 'CONFIG_I8254',
+                                        'CONFIG_PCI'):
+                        if requirement in needed:
+                            self.assertIn(f'{requirement}=y', rendered)
+                            self.assertEqual(rendered.count(requirement), 1)
+                        else:
+                            self.assertIn(requirement + ' = n', rendered)
+                    self.assertIn('CONFIG_PCI_DEVICES=n', rendered)
+                    self.assertIn('CONFIG_UNRELATED=n', rendered)
+
+    def test_disabling_i386_audio_does_not_force_missing_hardware(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = pathlib.Path(td) / 'default.mak'
+            output = pathlib.Path(td) / 'whp-user.mak'
+            base.write_text(
+                'CONFIG_ISA_BUS=n\nCONFIG_I8254=n\nCONFIG_PCI=n\n',
+                encoding='utf-8',
+            )
+            script = (
+                'set -euo pipefail\n'
+                f'source {CONFIGURE_BASH!s}\n'
+                'I386_AUDIO_PCSPK=n\n'
+                'I386_AUDIO_HDA=n\n'
+                'whp_configure_write_i386_audio_config "$1" "$2"\n'
+            )
+            result = subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(output)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rendered = output.read_text(encoding='utf-8')
+            for symbol in ('CONFIG_ISA_BUS', 'CONFIG_I8254', 'CONFIG_PCI'):
+                self.assertIn(symbol + '=n', rendered)
+                self.assertNotIn(symbol + '=y', rendered)
+            self.assertIn('CONFIG_PCSPK=n', rendered)
+            self.assertIn('CONFIG_HDA=n', rendered)
+
     def test_configure_keeps_i386_preset_for_meson_regeneration(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
@@ -245,7 +326,7 @@ whp_configure_build
             self.assertTrue(preset.is_file())
             self.assertIn('CONFIG_SB16=n', preset.read_text(encoding='utf-8'))
             self.assertIn(
-                'WHP_I386_AUDIO_CONFIG_SIGNATURE=schema=2;',
+                'WHP_I386_AUDIO_CONFIG_SIGNATURE=schema=3;',
                 (build_dir / '.whp-config').read_text(encoding='utf-8'),
             )
             self.assertEqual(
