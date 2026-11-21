@@ -1090,14 +1090,16 @@ native_target_matches_host()
 # macOS product version; Linux compiler vendors can differ without changing
 # the ABI. Preserve bootstrap identity only for admission, not as the installed
 # native macOS toolchain's configured host triple.
-# A bootstrap compiler's Darwin spelling is admissible after the SDK/ABI
-# probes, but an installed native LLVM compiler must report the configured
-# macOS product target rather than silently falling back to generic Darwin.
+# Installed Clang may report the same *versioned* macOS product ABI with
+# a Darwin kernel triple. The caller compares its normalized ABI with the
+# configured deployment and verifies the SDK, links and actual Mach-O outputs.
+# Do not require a product spelling before those effective checks. An
+# unversioned installed triple cannot establish the deployment minimum.
 native_installed_target_matches_host()
 {
     native_target_matches_host "$1" || return 1
     if [[ "$host_os" == macos ]]; then
-        [[ "$1" =~ ^(arm64|arm64e|aarch64|x86_64|amd64)-apple-(macosx|macos)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+        [[ "$1" =~ ^(arm64|arm64e|aarch64|x86_64|amd64)-apple-(macosx|macos|darwin)[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
         # When arm64e is explicitly selected, an ordinary arm64 compiler
         # default is insufficient even if -arch arm64e works in smoke tests.
         if [[ "$darwin_cmake_arch" == arm64e ]]; then
