@@ -170,7 +170,8 @@ def native_work_key(identity):
     """
     inputs = {
         name: identity[name] for name in (
-            'schema', 'native_producer', 'rustc_path', 'rustc', 'profile'
+            'schema', 'native_producer', 'rustc_path', 'rustc',
+            'cargo_path', 'cargo', 'profile'
         )
     }
     return hashlib.sha256(
@@ -203,7 +204,8 @@ def ensure(build_dir):
     marker = prefix / '.whp-sccacher.json'
     identity = {'schema': SCHEMA, 'gitlink': revision,
                 'rustc_path': rustc, 'rustc': rust_version,
-                'cargo': cargo_version, 'features': 'local-only',
+                'cargo_path': cargo, 'cargo': cargo_version,
+                'features': 'local-only',
                 'profile': 'lto=false,codegen-units=8,debug=0',
                 'native_producer': native_producer_identity(os.environ)}
     if executable.is_file() and os.access(executable, os.X_OK) and marker.is_file():
