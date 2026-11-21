@@ -12,10 +12,15 @@ cmake_resolve()
 (
     value=$1
     [ -n "$value" ] || exit 1
-    case "$value" in *[[:space:]]*) exit 1 ;; esac
+    # Paths are single executable arguments, even when their directories
+    # contain spaces.  Reject multiword bare commands instead of rejecting
+    # valid absolute paths in the managed native build prefix.
     case "$value" in
         */*) candidate=$value ;;
-        *) candidate=$(command -v "$value" 2>/dev/null) || exit 1 ;;
+        *)
+            case "$value" in *[[:space:]]*) exit 1 ;; esac
+            candidate=$(command -v "$value" 2>/dev/null) || exit 1
+            ;;
     esac
     [ -f "$candidate" ] && [ -x "$candidate" ] || exit 1
     case "$candidate" in
