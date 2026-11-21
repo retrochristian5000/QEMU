@@ -31,6 +31,7 @@ jobs:
         with:
           sparse-checkout: |
             roms
+            scripts/whp-build
           submodules: false
 
       - name: Fetch pinned SeaBIOS source
@@ -44,7 +45,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential binutils nasm python3
+            build-essential binutils clang-18 nasm python3
 
       - name: Audit both 128 KiB ROM variants without disabling features
         env:
@@ -71,6 +72,63 @@ jobs:
                 fi
               fi
             else
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Compare Clang code generation against the GCC ROM baseline
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+        run: |
+          set -eu
+          # Hold GNU binutils and the exact 128 KiB configurations constant.
+          # Only the compiler switches to the existing SeaBIOS Clang wrapper.
+          # Native LLVM/LLD is a separate linker comparison.
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-clang-rom-budget"
+          gcc_root="$RUNNER_TEMP/whp-seabios-rom-budget"
+          mkdir -p "$prefix/llvm/bin" "$prefix/bin"
+          clang="$(command -v clang-18)"
+          test -x "$clang"
+          ln -s "$clang" "$prefix/llvm/bin/clang"
+          cp scripts/whp-build/seabios-clang-gcc.bash \
+            "$prefix/bin/i386-none-elf-gcc"
+          chmod 700 "$prefix/bin/i386-none-elf-gcc"
+          for tool in cpp as ld objcopy objdump strip; do
+            ln -s "$(command -v "$tool")" \
+              "$prefix/bin/i386-none-elf-$tool"
+          done
+          printf 'Clang: %s\n' "$("$clang" --version | head -n 1)"
+          printf 'GCC: %s\n' "$(gcc --version | head -n 1)"
+          printf 'Linker: %s\n' "$(ld --version | head -n 1)"
+          failed=0
+          for variant in seabios-128k seabios-microvm; do
+            log="$RUNNER_TEMP/$variant-clang-rom.log"
+            printf '\n=== Comparing %s with Clang and GNU binutils ===\n' \
+              "$variant"
+            if make -C roms "build-seabios-config-$variant" \
+                "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+                "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+              gcc_image="$gcc_root/$variant/bios.bin.raw"
+              clang_image="$root/$variant/bios.bin.raw"
+              if test ! -s "$gcc_image" || test ! -s "$clang_image"; then
+                printf 'error: missing unpadded ROM for %s\n' "$variant" >&2
+                failed=1
+              else
+                gcc_bytes="$(wc -c < "$gcc_image")"
+                clang_bytes="$(wc -c < "$clang_image")"
+                delta="$((clang_bytes - gcc_bytes))"
+                printf '%s: GCC=%s Clang=%s delta=%+d bytes\n' \
+                  "$variant" "$gcc_bytes" "$clang_bytes" "$delta"
+                printf '%s: Clang free capacity=%s bytes\n' \
+                  "$variant" "$((131072 - clang_bytes))"
+              fi
+              grep -E '^(Fixed space:|16bit size:|32bit |Lowmem size:|f-segment var size:|ROM size audit:|Total size:)' \
+                "$log" || true
+            else
+              printf 'error: Clang firmware build failed for %s\n' "$variant" >&2
+              tail -n 90 "$log" >&2
               failed=1
             fi
           done
