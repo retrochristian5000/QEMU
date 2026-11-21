@@ -25,8 +25,14 @@ MINIMUM = (3, 20)
 
 
 def admitted_tool(seed: str, option: str) -> str:
+    adapter = ROOT / "seeds" / seed
+    if not adapter.is_file():
+        raise RuntimeError(f"native {seed} adapter is missing: {adapter}")
+    # Several POSIX seed adapters are tracked without executable mode
+    # (100644), including make.sh. Run their readable source via /bin/sh;
+    # the selected compiler/Make binary still must be executable.
     result = subprocess.run(
-        [str(ROOT / "seeds" / seed), option], capture_output=True,
+        ["/bin/sh", str(adapter), option], capture_output=True,
         text=True, check=False,
     )
     path = result.stdout.strip()

@@ -62,6 +62,32 @@ class CMakeBootstrapTests(unittest.TestCase):
         if sys.platform != "darwin":
             self.assertNotIn("SDKROOT", env)
 
+    def test_nonexecutable_native_seed_uses_posix_shell(self):
+        # A Git 100644 seed is readable but cannot be executed directly.
+        # CMake's bootstrap must not require a checkout chmod.
+        with tempfile.TemporaryDirectory(prefix="whp-cmake-seed-mode-") as td:
+            base = Path(td)
+            (base / "seeds").mkdir()
+            selected = base / "native-make"
+            selected.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            selected.chmod(0o700)
+            adapter = base / "seeds" / "make.sh"
+            adapter.write_text(
+                "#!/bin/sh\n"
+                'test "$1" = --print-make || exit 2\n'
+                f"printf '%s\\n' '{selected}'\n",
+                encoding="utf-8",
+            )
+            adapter.chmod(0o600)
+            self.assertFalse(os.access(adapter, os.X_OK))
+            with mock.patch.object(module, "ROOT", base):
+                self.assertEqual(
+                    module.admitted_tool("make.sh", "--print-make"),
+                    str(selected),
+                )
+                with self.assertRaisesRegex(RuntimeError, "missing"):
+                    module.admitted_tool("missing.sh", "--print-make")
+
     def test_explicit_cmake_and_source_mode_are_exclusive(self):
         with tempfile.TemporaryDirectory(prefix="whp-cmake-seed-") as td:
             good = Path(td) / "cmake"
