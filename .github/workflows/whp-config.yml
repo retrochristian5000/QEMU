@@ -397,7 +397,7 @@ jobs:
           "$prefix/bin/libtoolize" --version | grep -Fq 'GNU libtool'
           grep -Fq 'LIBTOOL_BOOTSTRAP_SCHEMA=10' \
             "$prefix/.whp-libtool-bootstrap"
-          expected="$(git ls-tree HEAD toolchains/libtool | awk '{print $3}')"
+          expected="$(git rev-parse --verify HEAD:toolchains/libtool)"
           grep -Fq "LIBTOOL_GIT_COMMIT=$expected" \
             "$prefix/.whp-libtool-bootstrap"
           grep -Fq '/llvm-ar|' "$prefix/.whp-libtool-bootstrap"

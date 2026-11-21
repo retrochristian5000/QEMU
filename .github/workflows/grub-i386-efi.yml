@@ -104,7 +104,7 @@ jobs:
           modules="$prefix/lib/i386-none-elf/grub/i386-efi"
           marker="$prefix/.whp-grub-i386-efi"
           image="$BUILD_DIR/grub-i386-efi-smoke.efi"
-          expected_grub="$(git ls-tree HEAD -- toolchains/grub | awk '{print $3}')"
+          expected_grub="$(git rev-parse --verify HEAD:toolchains/grub)"
 
           test -x "$mkimage"
           test -x "$llvm_bin/clang"

@@ -45,6 +45,13 @@ semantic_probe()
         '
     ) || exit 1
     [ "$result" = 2 ] || exit 1
+
+    # menuconfig passes literal user input through ENVIRON rather than -v;
+    # -v would decode \t or \n and silently change filter/choice strings.
+    result=$(WHP_AWK_LITERAL='one\two\nthree' "$candidate" '
+        BEGIN { print ENVIRON["WHP_AWK_LITERAL"] }
+    ') || exit 1
+    [ "$result" = 'one\two\nthree' ] || exit 1
 )
 
 resolve_candidate()

@@ -28,6 +28,14 @@ test "$(printf 'one\ntwo\n' |
         FNR==2 && $0 ~ /^two$/ { print FNR }
     ')" = 2
 
+# ENVIRON must preserve literal escape sequences that -v would reinterpret.
+for runner in "$bridge" "$shim"; do
+    test "$(WHP_AWK_LITERAL='one\two\nthree' WHP_AWK_LOCKED=1 \
+        WHP_AWK_SEED="$seed" "$runner" '
+            BEGIN { print ENVIRON["WHP_AWK_LITERAL"] }
+        ')" = 'one\two\nthree'
+done
+
 # Literal awk and $AWK must route to the identical verified native binary.
 test "$(WHP_AWK_LOCKED=1 WHP_AWK_SEED="$seed" AWK="$seed" \
     PATH="${shim%/*}:$PATH" sh -c 'command -v awk')" = "$shim"
