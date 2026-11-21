@@ -70,7 +70,10 @@ for host, compiler, launcher, mode, disabled, expected_rc, managed in (
     ('macos', 'Apple clang version 17.0.0', '', '0', 'ON', 0, 0),
     ('macos', 'Apple clang version 17.0.0', '', '1', 'OFF', 0, 0),
     ('macos', 'Apple clang version 17.0.0', '/usr/bin/sccache', '1', 'OFF', 0, 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/ccache', '1', 'OFF', 0, 0),
+    ('macos', 'Apple clang version 17.0.0', '/usr/bin/ccache', '0', 'ON', 0, 0),
     ('macos', 'clang version 19.1.0', '/usr/bin/sccache', '1', 'OFF', 0, 0),
+    ('linux', 'clang version 20.0.0', '/usr/bin/ccache', '1', 'OFF', 0, 0),
     ('linux', 'clang version 20.0.0', '/usr/bin/sccache', 'auto', 'ON', 0, 0),
     ('linux', 'clang version 20.0.0', '/usr/bin/sccache', '1', 'OFF', 0, 0),
     ('macos', 'gcc (GCC) 15.1.0', '/usr/bin/sccache', 'auto', 'ON', 0, 0),
@@ -104,10 +107,12 @@ for host, compiler, launcher, mode, disabled, expected_rc, managed in (
         host, compiler, launcher, mode, result.stderr)
     assert expected_rc == 0, (host, compiler, launcher, mode)
     c_launcher = f'-DCMAKE_C_COMPILER_LAUNCHER={launcher}'
-    # A system sccache stays bypassed with PCH; only the managed fork has
-    # verified PCH input hashing and can cache the consuming C++ objects.
+    # A system sccache or ccache cannot claim the managed fork's validated
+    # binary PCH hashing. Preserve C caching while bypassing C++ consumers.
+    managed_pch = managed and launcher.endswith('/sccache')
     cpp_launcher = ('-DCMAKE_CXX_COMPILER_LAUNCHER='
-                    if launcher.endswith('/sccache') and disabled == 'OFF' and not managed
+                    if launcher.endswith(('/sccache', '/ccache'))
+                    and disabled == 'OFF' and not managed_pch
                     else f'-DCMAKE_CXX_COMPILER_LAUNCHER={launcher}')
     assert result.stdout == f'{disabled}|{c_launcher}|{cpp_launcher}', (
         host, compiler, launcher, mode, result.stdout)
