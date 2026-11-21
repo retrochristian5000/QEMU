@@ -165,6 +165,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     NSUInteger nativeTextureHeight;
     Ivar pixmanImageIvar;
     pixman_image_t *textureImage;
+    BOOL hasPresentedFrame;
     int textureWidth;
     int textureHeight;
 }
@@ -367,6 +368,17 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     QEMUMetalSize size;
     NSSize backing;
     CGSize desiredDrawableSize;
+    NSWindow *window = [view window];
+
+    /*
+     * nextDrawable can stall AppKit for up to a second if Core Animation
+     * cannot release a drawable. Avoid that wait and the Pixman upload when
+     * the QEMU window is fully occluded; its next visible update will redraw.
+     */
+    if (window &&
+        !([window occlusionState] & NSWindowOcclusionStateVisible)) {
+        return true;
+    }
 
     if (nativeTexture) {
         width = (int)nativeTextureWidth;
@@ -488,6 +500,14 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
     drawable = [(id<QEMUMetalLayerRuntime>)metalLayer nextDrawable];
     if (!drawable) {
+        /*
+         * Drawable exhaustion is transient, not a reason to replace the
+         * last Metal frame with an expensive Core Graphics fallback.
+         * Retain that frame when one has already been presented.
+         */
+        if (hasPresentedFrame && ![metalLayer isHidden]) {
+            return true;
+        }
         [metalLayer setHidden:YES];
         return false;
     }
@@ -526,8 +546,11 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     [encoder endEncoding];
     [commandBuffer presentDrawable:drawable];
     [commandBuffer commit];
+    hasPresentedFrame = YES;
 
-    [metalLayer setHidden:NO];
+    if ([metalLayer isHidden]) {
+        [metalLayer setHidden:NO];
+    }
     return true;
 }
 
@@ -594,14 +617,21 @@ static id cocoa_metal_init(id self, SEL selector, NSRect frame,
 
 static void cocoa_metal_draw(id self, SEL selector, NSRect rect)
 {
-    QEMUCocoaMetalState *state =
-        objc_getAssociatedObject(self, &metal_state_key);
+    /*
+     * CAMetalDrawable is autoreleased. Release each frame's drawable before
+     * the next AppKit redraw instead of retaining it until the run-loop pool
+     * drains; the CAMetalLayer drawable pool is deliberately small.
+     */
+    @autoreleasepool {
+        QEMUCocoaMetalState *state =
+            objc_getAssociatedObject(self, &metal_state_key);
 
-    if (state && [state drawView:self dirtyRect:rect]) {
-        return;
+        if (state && [state drawView:self dirtyRect:rect]) {
+            return;
+        }
+
+        cocoa_draw_imp(self, selector, rect);
     }
-
-    cocoa_draw_imp(self, selector, rect);
 }
 
 @interface QEMUCocoaMetalInstaller : NSObject

@@ -50,6 +50,70 @@ int main(void)
             )
             subprocess.run([str(binary)], check=True)
 
+    def test_occluded_metal_window_skips_drawable_wait(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        draw_start = text.index('- (bool)drawView:(NSView *)view dirtyRect:')
+        draw_end = text.index('\n@end', draw_start)
+        draw = text[draw_start:draw_end]
+
+        # AppKit drawing must not wait on the CAMetalLayer drawable pool
+        # for a window whose content cannot be seen.
+        occlusion = draw.index('[window occlusionState]')
+        upload = draw.index('[self uploadImage:image stride:stride dirty:full]')
+        acquire = draw.index('nextDrawable];')
+        self.assertLess(occlusion, upload)
+        self.assertLess(occlusion, acquire)
+        self.assertIn('NSWindowOcclusionStateVisible', draw[:upload])
+        self.assertIn('return true;', draw[occlusion:upload])
+
+    def test_cocoa_redraws_when_occluded_window_becomes_visible(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        self.assertIn('NSWindowDidChangeOcclusionStateNotification', text)
+        self.assertIn('@selector(windowOcclusionStateChanged:)', text)
+        start = text.index('- (void) windowOcclusionStateChanged:')
+        end = text.index('\n- (void) viewDidChangeBackingProperties', start)
+        body = text[start:end]
+        self.assertIn('NSWindowOcclusionStateVisible', body)
+        self.assertIn('[self setNeedsDisplay:YES];', body)
+        self.assertIn('removeObserver:self', text)
+
+    def test_metal_draw_releases_autoreleased_drawable_per_frame(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('static void cocoa_metal_draw(')
+        end = text.index('\n@interface QEMUCocoaMetalInstaller', start)
+        body = text[start:end]
+        self.assertIn('@autoreleasepool {', body)
+        self.assertIn('[state drawView:self dirtyRect:rect]', body)
+        self.assertIn('cocoa_draw_imp(self, selector, rect);', body)
+        self.assertLess(body.index('@autoreleasepool {'),
+                        body.index('[state drawView:self dirtyRect:rect]'))
+        self.assertLess(body.index('cocoa_draw_imp(self, selector, rect);'),
+                        body.rindex('}'))
+
+    def test_transient_metal_drawable_exhaustion_keeps_last_frame(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        self.assertIn('BOOL hasPresentedFrame;', text)
+        start = text.index('    drawable = [(id<QEMUMetalLayerRuntime>)')
+        end = text.index('    drawableTexture = [drawable texture];', start)
+        body = text[start:end]
+        self.assertIn('hasPresentedFrame && ![metalLayer isHidden]', body)
+        self.assertLess(body.index('return true;'),
+                        body.index('[metalLayer setHidden:YES]'))
+        self.assertIn('hasPresentedFrame = YES;', text)
+        self.assertLess(text.index('[commandBuffer commit];'),
+                        text.index('hasPresentedFrame = YES;'))
+
+    def test_cocoa_surface_switch_discards_old_dirty_rectangles(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void) switchSurface:(pixman_image_t *)image\n{')
+        end = text.index('\n- (void) setFullGrab:', start)
+        body = text[start:end]
+        self.assertIn('@synchronized(self) {\n        pendingDisplayCount = 0;\n    }',
+                      body)
+        self.assertLess(body.index('pendingDisplayCount = 0;'),
+                        body.index('[self setNeedsDisplay:YES];'))
+        self.assertNotIn('displayFlushScheduled = NO;', body)
+
     def test_metal_renderer_uses_dirty_rectangles(self):
         text = SOURCE.read_text(encoding='utf-8')
         self.assertIn('#include "ui/cocoa-metal-dirty.h"', text)
@@ -163,7 +227,8 @@ int main(void)
         end = text.index('\n- (void) selectConsoleLocked:', start)
         body = text[start:end]
         self.assertIn('[super viewDidMoveToWindow];', body)
-        self.assertIn('if ([self window])', body)
+        self.assertIn('window = [self window];', body)
+        self.assertIn('if (window)', body)
         self.assertIn('[self setNeedsDisplay:YES];', body)
         self.assertIn('- (void) viewDidChangeBackingProperties', body)
         self.assertIn('[super viewDidChangeBackingProperties];', body)

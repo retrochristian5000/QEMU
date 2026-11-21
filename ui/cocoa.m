@@ -455,6 +455,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         CFRelease(eventsTap);
     }
 
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self
+                  name:NSWindowDidChangeOcclusionStateNotification
+                object:nil];
+
     CGColorSpaceRelease(colorspace);
     [cursorLayer release];
     [brightnessLayer release];
@@ -487,9 +492,31 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void) viewDidMoveToWindow
 {
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    NSWindow *window;
+
     [super viewDidMoveToWindow];
-    if ([self window]) {
+
+    [center removeObserver:self
+                      name:NSWindowDidChangeOcclusionStateNotification
+                    object:nil];
+    window = [self window];
+    if (window) {
+        [center addObserver:self
+                   selector:@selector(windowOcclusionStateChanged:)
+                       name:NSWindowDidChangeOcclusionStateNotification
+                     object:window];
         [self resizeWindow];
+        [self setNeedsDisplay:YES];
+    }
+}
+
+/* Catch up after skipping drawable acquisition for an occluded window. */
+- (void) windowOcclusionStateChanged:(NSNotification *)notification
+{
+    (void)notification;
+
+    if ([[self window] occlusionState] & NSWindowOcclusionStateVisible) {
         [self setNeedsDisplay:YES];
     }
 }
@@ -920,6 +947,15 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         screen.height = h;
         [self resizeWindow];
         [self updateBounds];
+    }
+
+    /*
+     * A full redraw supersedes dirty rectangles from the old surface.
+     * The already-dispatched flush block remains valid and will become a
+     * no-op if no new updates are queued.
+     */
+    @synchronized(self) {
+        pendingDisplayCount = 0;
     }
 
     // update screenBuffer
