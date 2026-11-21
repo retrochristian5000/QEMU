@@ -71,7 +71,13 @@ whp_llvm_verify_ninja_cache()
             ;;
     esac
     cached_ninja="${cache_line#*=}"
-    if [[ "$cached_ninja" != "$whp_llvm_ninja_cmd" ]]; then
+    # CMake can record an alias for the same Ninja executable.  On macOS
+    # and Linux, Bash -ef compares file identity without relying on GNU
+    # readlink -f or rewriting CMake's already generated Ninja graph.
+    # Only tolerate an alias of the *same file*, never a different Ninja
+    # release just because its version string happens to match.
+    if [[ "$cached_ninja" != "$whp_llvm_ninja_cmd" &&
+          ! "$cached_ninja" -ef "$whp_llvm_ninja_cmd" ]]; then
         printf '%s\n' \
             'error: existing LLVM Ninja graph was generated with a different build tool.' \
             "cached:   $cached_ninja" \
