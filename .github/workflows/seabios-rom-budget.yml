@@ -77,9 +77,10 @@ jobs:
           done
           exit "$failed"
 
-      - name: Compare Clang code generation against the GCC ROM baseline
+      - name: Compare Clang -Os code generation against GCC
         env:
           WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_SIZE_OPT: Os
         run: |
           set -eu
           # Hold GNU binutils and the exact 128 KiB configurations constant.
@@ -159,17 +160,16 @@ jobs:
           done
           exit "$failed"
 
-      - name: Test Clang -Oz for segmented firmware only
+      - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'
-          SEABIOS_CLANG_SIZE_OPT: OzSegmented
         run: |
           set -eu
           prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
           root="$RUNNER_TEMP/whp-seabios-clang-oz-rom-budget"
           gcc_root="$RUNNER_TEMP/whp-seabios-rom-budget"
           test -x "$prefix/bin/i386-none-elf-gcc"
-          for variant in seabios-128k seabios-microvm; do
+          variant=seabios-128k
             log="$RUNNER_TEMP/$variant-clang-oz-rom.log"
             printf '\n=== Comparing %s with segmented -Oz, flat -Os ===\n' "$variant"
             if make -C roms "build-seabios-config-$variant" \
@@ -193,4 +193,3 @@ jobs:
               tail -n 90 "$log" >&2
               exit 1
             fi
-          done

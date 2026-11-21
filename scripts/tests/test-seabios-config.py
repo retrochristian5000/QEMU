@@ -85,6 +85,24 @@ class SeaBiosConfigTests(unittest.TestCase):
             encoding='utf-8')
         self.assertIn('CONFIG_ROM_SIZE=256', firmware)
 
+    def test_128k_clang_size_profile_is_target_scoped(self):
+        makefile = (ROOT / 'roms' / 'Makefile').read_text(encoding='utf-8')
+        self.assertIn(
+            'build-seabios-config-seabios-128k: export '
+            'SEABIOS_CLANG_SIZE_OPT ?= OzSegmented',
+            makefile,
+        )
+        self.assertNotIn(
+            'build-seabios-config-seabios-256k: export '
+            'SEABIOS_CLANG_SIZE_OPT',
+            makefile,
+        )
+        self.assertNotIn(
+            'build-seabios-config-seabios-microvm: export '
+            'SEABIOS_CLANG_SIZE_OPT',
+            makefile,
+        )
+
     def test_pc_bios_uses_ata_dma_but_isapc_stays_conservative(self):
         normal = (ROOT / 'roms' / 'config.seabios-256k').read_text(encoding='utf-8')
         isapc = (ROOT / 'roms' / 'config.seabios-128k').read_text(encoding='utf-8')

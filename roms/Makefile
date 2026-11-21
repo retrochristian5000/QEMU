@@ -104,6 +104,12 @@ seavgabios-isavga: build-seabios-config-vga-isavga
 seavgabios-%: build-seabios-config-vga-%
 	cp $(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin ../pc-bios/vgabios-$*.bin
 
+# Clang -Os exceeds the 128 KiB isapc budget. Use -Oz only for 16-bit
+# and 32-bit segmented code; flat code remains -Os to avoid compiler-rt
+# shifts. GCC is unaffected, and the 256 KiB and microvm targets retain
+# their existing optimization levels. Explicit caller settings take priority.
+build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
+
 # A new checkout can remove files still named in a previous build's .d files.
 # Keep each variant incremental within one source revision.
 build-seabios-config-%: config.%
