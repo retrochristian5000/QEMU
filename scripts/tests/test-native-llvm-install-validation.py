@@ -253,41 +253,41 @@ with tempfile.TemporaryDirectory(prefix="whp-native-llvm-usable-") as scratch:
         "/* fixture generated resource header */\n", encoding="utf-8"
     )
 
-    # Version punctuation and recognized CPU aliases remain compatible,
-    # but the installed compiler must not regress to its Darwin seed triple.
-    for c_target, cxx_target in (
-        ("aarch64-apple-macosx15.0.0", "aarch64-apple-macosx15"),
-        ("arm64-apple-macosx15.0", "aarch64-apple-macosx15.0"),
-        ("aarch64-apple-macos15.0", "arm64-apple-macosx15"),
+    # An installed Clang may describe the same *versioned* macOS ABI
+    # through a Darwin kernel target. The actual SDK, compiler-rt, Mach-O,
+    # ObjC and C/C++ probes remain mandatory; spelling alone is not a fault.
+    for c_target, cxx_target, deployment in (
+        ("aarch64-apple-macosx15.0.0", "aarch64-apple-macosx15", "15.0"),
+        ("arm64-apple-macosx15.0", "aarch64-apple-macosx15.0", "15.0"),
+        ("aarch64-apple-macos15.0", "arm64-apple-macosx15", "15.0"),
+        ("aarch64-apple-darwin24.0.0", "aarch64-apple-macosx15.0", "15.0"),
+        ("aarch64-apple-macosx15.0", "arm64-apple-darwin24.0.0", "15.0"),
+        ("aarch64-apple-darwin27.2.0", "arm64-apple-macosx27.2", "27.2"),
     ):
-        result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
+        result, calls = run_probe(
+            "arm64", target=c_target, cxx_target=cxx_target,
+            deployment=deployment,
+        )
         assert result.returncode == 0, (c_target, cxx_target, result.stderr)
+        assert "-framework Cocoa" in calls and "-fsanitize=undefined" in calls
 
     # ARM64e default targets must carry the PAC ABI even when the host CPU
     # runs AArch64 code and an explicit -arch arm64e probe would succeed.
     result, _ = run_probe("arm64e", target="aarch64-apple-macosx15.0")
     assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
     result, _ = run_probe("arm64e", target="arm64e-apple-darwin24.0.0")
+    assert result.returncode == 0, result.stderr
+    result, _ = run_probe("arm64e", target="arm64e-apple-darwin24.1.0")
     assert result.returncode != 0 and "[ABI]" in result.stderr, result.stderr
-
-    for c_target, cxx_target in (
-        ("aarch64-apple-darwin24.0.0", "aarch64-apple-macosx15.0"),
-        ("aarch64-apple-macosx15.0", "arm64-apple-darwin24.0.0"),
-        ("aarch64-apple-darwin27.2.0", "arm64-apple-macosx27.2"),
-    ):
-        result, _ = run_probe(
-            "arm64", target=c_target, cxx_target=cxx_target,
-            deployment="27.2" if "27.2" in c_target else "15.0",
-        )
-        assert result.returncode != 0 and "[ABI]" in result.stderr, (
-            c_target, cxx_target, result.stderr
-        )
 
     # Real version drift must still fail, even if one compiler matches.
     for c_target, cxx_target in (
         ("aarch64-apple-darwin24.1.0", "aarch64-apple-macosx15.0"),
         ("aarch64-apple-macosx15.0", "aarch64-apple-macosx15.0.1"),
         ("aarch64-apple-macosx15.0", "aarch64-apple-ios15.0"),
+        ("aarch64-apple-darwin", "aarch64-apple-macosx15.0"),
+        ("aarch64-unknown-darwin24.0.0", "aarch64-apple-macosx15.0"),
+        ("aarch64-apple-darwin24.0.0-extra", "aarch64-apple-macosx15.0"),
     ):
         result, _ = run_probe("arm64", target=c_target, cxx_target=cxx_target)
         assert result.returncode != 0, (c_target, cxx_target)
