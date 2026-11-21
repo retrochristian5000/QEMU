@@ -564,6 +564,29 @@ whp_configure_build
                 (build_dir / 'configure-args.txt').read_text(encoding='utf-8'),
             )
 
+    def test_portable_alias_rejects_unimplemented_filter_not_isa_model(self):
+        # The portable Python fallback cannot write target presets. Its
+        # diagnostic must not imply Game Blaster requires the i386 CPU.
+        if os.name == 'nt':
+            self.skipTest('x86 family symlink requires a POSIX host')
+        portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_gameblaster')
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            values = portable.load_config_module().default_values()
+            values.update({
+                'QEMU_X86_FAMILY_LINK': 'y',
+                'QEMU_HOST_PGO': 'off',
+                'I386_AUDIO_GAMEBLASTER': 'y',
+            })
+            with mock.patch.object(portable, 'resolved_values',
+                                   return_value=values), \
+                 mock.patch.object(portable, 'resolve_build_dir',
+                                   return_value=root):
+                with self.assertRaisesRegex(
+                    RuntimeError, 'requires Bash hardware filtering',
+                ):
+                    portable.build_plan(['qemu-system-i386'])
+
     def test_portable_entry_rejects_unhandled_audio_override(self):
         portable = load_module(PORTABLE_BUILD_TOOL, 'whp_portable_i386_audio')
         entry = load_module(PORTABLE_ENTRY_TOOL, 'whp_portable_entry_i386_audio')
