@@ -414,8 +414,13 @@ above in the matching architecture preset, such as
 ``configs/devices/i386-softmmu/whp-user.mak`` or
 ``configs/devices/ppc-softmmu/whp-user.mak``. QEMU then receives the supported
 ``--with-devices-i386=whp-user`` or ``--with-devices-ppc=whp-user`` configure
-hook for the affected target. An i386 choice never changes the PowerPC preset,
-and a PowerPC choice never changes the i386 preset.
+hook for the affected target. When ``QEMU_X86_FAMILY_LINK=1``, x86-family
+audio selections instead use
+``configs/devices/x86_64-softmmu/whp-user.mak`` and
+``--with-devices-x86_64=whp-user``. This preset inherits the same
+i386 device defaults used by x86_64's tracked include, avoiding a duplicate
+i386-only Game Blaster implementation. An x86-family choice never changes
+the PowerPC preset, and a PowerPC choice never changes the x86 preset.
 
 Meson records each selected architecture-scoped preset as a source input, so
 an ignored generated ``whp-user.mak`` remains present while that custom device
