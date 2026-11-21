@@ -249,9 +249,10 @@ for triple, expected in (
                             capture_output=True, text=True, check=True)
     assert result.stdout.strip() == expected, (triple, result.stdout)
 
-# Installed Clang/Clang++ must not report generic Darwin after LLVM has
-# been configured for a specific macOS product/deployment target. The seed
-# acceptance tested above is intentionally less strict.
+# Installed Clang/Clang++ may report a versioned Darwin kernel triple
+# representing the configured macOS product ABI. The ABI comparison in usable()
+# and the SDK/link/runtime probes are still mandatory; a bare Darwin or
+# different architecture is not interchangeable.
 assert s.count('native_installed_target_matches_host "$target" || {') == 2
 installed_target_probe = ('set -euo pipefail\n' + helpers + '\n'
                           'host_os=macos\n'
@@ -265,7 +266,11 @@ for triple, arch, selected, accepted in (
     ('aarch64-apple-macosx27.3', 'aarch64', 'arm64e', False),
     ('arm64e-apple-macosx27.3', 'aarch64', 'arm64', False),
     ('x86_64-apple-macosx15.6', 'x86_64', 'x86_64', True),
-    ('aarch64-apple-darwin27.3.0', 'aarch64', 'arm64', False),
+    ('aarch64-apple-darwin27.3.0', 'aarch64', 'arm64', True),
+    ('arm64-apple-darwin24.0.0', 'aarch64', 'arm64', True),
+    ('arm64e-apple-darwin27.3.0', 'aarch64', 'arm64e', True),
+    ('aarch64-apple-darwin27.3.0', 'aarch64', 'arm64e', False),
+    ('arm64e-apple-darwin27.3.0', 'aarch64', 'arm64', False),
     ('aarch64-apple-darwin', 'aarch64', 'arm64', False),
     ('aarch64-apple-macosx', 'aarch64', 'arm64', False),
     ('aarch64-apple-ios27.3', 'aarch64', 'arm64', False),
