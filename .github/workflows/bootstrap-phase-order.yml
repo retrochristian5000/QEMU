@@ -6,6 +6,7 @@ on:
     paths:
       - 'build.sh'
       - 'seeds/git.sh'
+      - 'seeds/cmake.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
       - 'scripts/whp-build/shell-functions.sh'
@@ -14,12 +15,14 @@ on:
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-git.py'
+      - 'scripts/ensure-cmake.py'
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-jack.py'
       - 'scripts/ensure-libtool.py'
       - 'scripts/ensure-libisofs.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/tests/test-bootstrap-phase-order.py'
+      - 'scripts/tests/test-cmake-bootstrap.py'
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/tests/test-zlib-bootstrap.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -35,6 +38,7 @@ on:
     paths:
       - 'build.sh'
       - 'seeds/git.sh'
+      - 'seeds/cmake.sh'
       - 'scripts/whp-build/update-source.sh'
       - 'scripts/tests/test-build-source-update.py'
       - 'scripts/whp-build/shell-functions.sh'
@@ -43,12 +47,14 @@ on:
       - 'scripts/whp-build/host-tools.sh'
       - 'scripts/ensure-zlib.py'
       - 'scripts/ensure-git.py'
+      - 'scripts/ensure-cmake.py'
       - 'scripts/ensure-sdl.py'
       - 'scripts/ensure-jack.py'
       - 'scripts/ensure-libtool.py'
       - 'scripts/ensure-libisofs.py'
       - 'scripts/bootstrap-native-clang.bash'
       - 'scripts/tests/test-bootstrap-phase-order.py'
+      - 'scripts/tests/test-cmake-bootstrap.py'
       - 'scripts/tests/test-git-dependency-policy.py'
       - 'scripts/tests/test-zlib-bootstrap.py'
       - 'docs/devel/whp-dependency-ledger.rst'
@@ -71,6 +77,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Verify bootstrap phase order
         run: python3 scripts/tests/test-bootstrap-phase-order.py
+      - name: Validate CMake seed and real downstream configure
+        run: |
+          sh -n seeds/cmake.sh
+          python3 scripts/tests/test-cmake-bootstrap.py
       - name: Check public and host-tool shell syntax
         run: |
           sh -n build.sh seeds/git.sh scripts/whp-build/update-source.sh
