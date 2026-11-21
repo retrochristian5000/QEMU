@@ -33,6 +33,7 @@ BOOTSTRAP_MAKE|Host features|Bootstrap/use WHP GNU Make|choice|auto|auto,y,n|
 BOOTSTRAP_SED|Host features|Bootstrap/use WHP GNU sed|choice|auto|auto,y,n|
 BOOTSTRAP_GIT|Host features|Bootstrap/use WHP Git|choice|auto|auto,y,n|
 BOOTSTRAP_NINJA|Host features|Bootstrap/use WHP Ninja|choice|auto|auto,y,n|
+BOOTSTRAP_CMAKE|Host features|Bootstrap/use WHP CMake|choice|auto|auto,y,n|
 BOOTSTRAP_SDL|Host features|Bootstrap/use WHP SDL3|choice|auto|auto,y,n|
 BOOTSTRAP_JACK|Host features|Bootstrap/use WHP JACK|choice|auto|auto,y,n|
 BOOTSTRAP_ZLIB|Host features|Bootstrap/use WHP zlib|choice|auto|auto,y,n|

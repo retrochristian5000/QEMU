@@ -655,6 +655,14 @@ resource-header probes, native backends and compiler-rt ABI validation.
 Only a cache miss needs CMake, Ninja and the coherent host ar/ranlib pair.
 Never bootstrap the first LLVM build using its own unfinished Clang or ar.
 
+``toolchains/cmake`` is a pinned fork with an independent source bootstrap.
+``BOOTSTRAP_CMAKE=auto`` uses installed CMake >= 3.20 first, ``1`` selects
+its fork even when a system CMake exists, and ``0`` disables the fallback.
+Selection stays lazy so an installed LLVM cache hit does not need CMake at
+all. The fork's managed CMake cache is keyed to source revision, native C/C++
+and GNU Make identity, macOS SDK, deployment target and build-machine ABI;
+cross-target flags and CMake toolchain variables are not inherited.
+
 On a rebuild, LLVM's native CMake graph generates TableGen sources and
 builds AArch64/X86/PowerPC backends, Clang, LLD and libLTO from the same
 QEMU gitlink. On macOS, compiler-rt builtins and runtimes are distinct
@@ -727,8 +735,9 @@ declare all listed tools mandatory QEMU roots.
    * - CMake
      - LLVM configure on a cache miss or source/configuration change
      - Validated ``seeds/cmake.sh`` selects an existing host CMake
-     - Required capability for LLVM rebuild; no managed CMake source is
-       registered in QEMU. Selection is a seed, not a CMake source build.
+     - Required capability for LLVM rebuild; ``seeds/cmake.sh`` selects
+       an installed host CMake or lazily bootstraps ``toolchains/cmake``
+       using native C/C++ and GNU Make, independently of LLVM.
    * - Ninja
      - LLVM compilation and distribution install
      - ``toolchains/ninja-builder`` or admitted host Ninja
@@ -841,7 +850,8 @@ and QEMU's scripts/bootstrap-native-clang.bash.
 
 * CMake: actively required for LLVM configuration; ``seeds/cmake.sh``
   now admits an existing CMake >= 3.20 with explicit override precedence.
-  It does not build CMake or depend on LLVM, breaking the bootstrap cycle.
+  Missing CMake may now be built from ``toolchains/cmake`` using native
+  C/C++ and GNU Make, rather than the not-yet-built LLVM toolchain.
 * Ninja: required executor; QEMU already selects NINJA_CMD and its
   managed ninja-builder fork. Reuse this authority before adding a seed.
 * Python3: actively discovered by LLVM and Clang through CMake; compiler-rt

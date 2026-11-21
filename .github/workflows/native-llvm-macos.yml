@@ -48,6 +48,13 @@ on:
       - 'scripts/tests/test-aarch64-darwin-sysctl.py'
       - 'scripts/tests/test-macos-sdk-selection.bash'
       - 'scripts/tests/test-native-llvm-wiring.py'
+      - 'seeds/cmake.sh'
+      - 'scripts/ensure-cmake.py'
+      - 'scripts/tests/test-cmake-bootstrap.py'
+      - 'toolchains/cmake'
+      - '.gitmodules'
+      - 'scripts/whp-config/config.py'
+      - 'scripts/whp-config/menu-options.def'
       - 'scripts/tests/test-native-llvm-install-validation.py'
       - 'scripts/tests/test-native-llvm-lean-profile.py'
       - 'scripts/tests/test-native-llvm-isa-boundary.py'
@@ -345,6 +352,10 @@ jobs:
       - name: Verify native LLVM wiring
         shell: bash
         run: python3 scripts/tests/test-native-llvm-wiring.py
+
+      - name: Validate pinned CMake source-bootstrap policy
+        shell: bash
+        run: python3 scripts/tests/test-cmake-bootstrap.py
 
       - name: Verify native uname seed and host selection
         shell: bash

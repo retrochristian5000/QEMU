@@ -42,8 +42,56 @@ cmake_resolve()
     printf '%s\n' "$candidate"
 )
 
+cmake_fork_bootstrap()
+{
+    entry=$0
+    case "$entry" in
+        */*) ;;
+        *) entry=$(command -v "$entry" 2>/dev/null) || return 1 ;;
+    esac
+    depth=0
+    while [ -L "$entry" ]; do
+        depth=$((depth + 1))
+        [ "$depth" -le 16 ] || {
+            printf '%s\n' 'error: CMake seed symlink loop' >&2
+            return 1
+        }
+        link=$(readlink "$entry") || return 1
+        case "$link" in
+            /*) entry=$link ;;
+            *) entry=${entry%/*}/$link ;;
+        esac
+    done
+    root=$(CDPATH= cd -P -- "${entry%/*}/.." && pwd -P) || return 1
+    python=${PYTHON:-python3}
+    command -v "$python" >/dev/null 2>&1 || {
+        printf '%s\n' 'error: pinned CMake bootstrap requires host Python' >&2
+        return 1
+    }
+    built=$("$python" "$root/scripts/ensure-cmake.py" \
+        --build-dir "${BUILD_DIR:-$root/build}") || return 1
+    cmake_resolve "$built"
+}
+
 cmake_select()
 {
+    case "${BOOTSTRAP_CMAKE:-auto}" in
+        auto) policy=auto ;;
+        1|y) policy=1 ;;
+        0|n) policy=0 ;;
+        *)
+            printf 'error: invalid BOOTSTRAP_CMAKE: %s\n' "$BOOTSTRAP_CMAKE" >&2
+            return 1 ;;
+    esac
+    if [ "$policy" = 1 ]; then
+        if [ -n "${WHP_CMAKE_SEED:-}" ] || [ -n "${CMAKE_CMD:-}" ] || \
+           [ -n "${CMAKE:-}" ]; then
+            printf '%s\n' 'error: BOOTSTRAP_CMAKE=1 conflicts with an explicit CMake executable' >&2
+            return 1
+        fi
+        cmake_fork_bootstrap
+        return $?
+    fi
     # Explicit overrides fail closed, never falling back to another program.
     for variable in WHP_CMAKE_SEED CMAKE_CMD CMAKE; do
         case "$variable" in
@@ -67,7 +115,11 @@ cmake_select()
             return 0
         fi
     done
-    printf '%s\n' 'error: no usable host CMake >= 3.20 (LLVM seed)' >&2
+    if [ "$policy" = auto ]; then
+        cmake_fork_bootstrap
+        return $?
+    fi
+    printf '%s\n' 'error: no usable host CMake >= 3.20 (BOOTSTRAP_CMAKE=0)' >&2
     return 1
 }
 

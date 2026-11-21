@@ -178,3 +178,9 @@
 	url = https://github.com/retrochristian5000/GNU-M4.git
 	branch = main
 	shallow = true
+
+[submodule "toolchains/cmake"]
+	path = toolchains/cmake
+	url = https://github.com/retrochristian5000/CMake.git
+	branch = master
+	shallow = true
