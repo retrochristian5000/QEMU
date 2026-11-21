@@ -132,6 +132,41 @@ whp_configure_i386_audio_signature
             'es1370=auto;ac97=auto;cs4630=auto;hda=y',
         )
 
+    def test_i386_auto_keeps_base_device_policy_and_replaces_spaced_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            base = root / 'default.mak'
+            output = root / 'whp-user.mak'
+            base.write_text(
+                '# base Kconfig device choices\n'
+                '  CONFIG_SB16 = n # explicitly disabled by base\n'
+                '\tCONFIG_HDA = n\n'
+                'CONFIG_ADLIB=y\n'
+                '# CONFIG_GAMEBLASTER=y\n',
+                encoding='utf-8',
+            )
+            script = (
+                'set -euo pipefail\n'
+                f'source {CONFIGURE_BASH!s}\n'
+                'I386_AUDIO_HDA=y\n'
+                'whp_configure_write_i386_audio_config "$1" "$2"\n'
+            )
+            completed = subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(output)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            rendered = output.read_text(encoding='utf-8')
+
+        # An explicit HDA selection must remove the indented prior entry.
+        self.assertEqual(rendered.count('CONFIG_HDA'), 1)
+        self.assertIn('CONFIG_HDA=y', rendered)
+        # Auto selections must not delete explicit upstream/base Kconfig values.
+        self.assertIn('  CONFIG_SB16 = n # explicitly disabled by base', rendered)
+        self.assertIn('CONFIG_ADLIB=y', rendered)
+        self.assertIn('# CONFIG_GAMEBLASTER=y', rendered)
+        self.assertNotIn('CONFIG_SB16=y', rendered)
+
     def test_configure_keeps_i386_preset_for_meson_regeneration(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
