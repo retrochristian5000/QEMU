@@ -151,12 +151,12 @@ in the Build behavior menu) to install the validated, managed Bash from
 
   BOOTSTRAP_BASH=1 INSTALL_AFTER_BUILD=1 INSTALL_RUNTIME_BASH=1 ./build.sh
 
-The optional result is ``PREFIX/bin/whp-qemu-bash``, deliberately **not**
-``PREFIX/bin/bash``. The name avoids overwriting an unrelated Bash and
-leaves existing ``#!/bin/bash`` and ``#!/usr/bin/env bash`` interpreters
-unchanged. Invoke an emulator-configuration script explicitly::
+The optional result is ``PREFIX/bin/bash``. The installer refuses to
+replace an unrelated or externally modified ``bash`` executable. No
+system-wide Bash installation is changed. Invoke an emulator-configuration
+script explicitly::
 
-  "$HOME/.local/whp-qemu/bin/whp-qemu-bash" --noprofile --norc \
+  "$HOME/.local/whp-qemu/bin/bash" --noprofile --norc \
       ./my-emulator-setup.bash
 
 An installed host Bash does **not** run scripts inside a guest and is not
