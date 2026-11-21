@@ -142,12 +142,21 @@ class ManagedSccacheTests(unittest.TestCase):
             'RUSTC_WRAPPER': '/old/sccache',
             'CARGO_BUILD_RUSTC_WRAPPER': '/other/cache',
             'CARGO_ENCODED_RUSTFLAGS': '-Copt-level=3',
+            'CARGO_PROFILE_RELEASE_OPT_LEVEL': 'z',
+            'CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS': 'true',
+            'CARGO_PROFILE_RELEASE_LTO': 'fat',
+            'CARGO_PROFILE_DEV_RUSTFLAGS': '-Ctarget-cpu=guest',
+            'RUSTC_BOOTSTRAP': '1',
             'SCCACHE_DIR': '/cache',
             'CC_FOR_BUILD': '/native/clang',
         }, pathlib.Path('/tmp/sccache-target'))
         self.assertNotIn('RUSTC_WRAPPER', env)
         self.assertNotIn('CARGO_BUILD_RUSTC_WRAPPER', env)
         self.assertNotIn('CARGO_ENCODED_RUSTFLAGS', env)
+        self.assertNotIn('CARGO_PROFILE_RELEASE_OPT_LEVEL', env)
+        self.assertNotIn('CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS', env)
+        self.assertNotIn('CARGO_PROFILE_DEV_RUSTFLAGS', env)
+        self.assertNotIn('RUSTC_BOOTSTRAP', env)
         self.assertEqual(env['CARGO_PROFILE_RELEASE_LTO'], 'false')
         self.assertEqual(env['CARGO_PROFILE_RELEASE_CODEGEN_UNITS'], '8')
         self.assertEqual(env['CARGO_TARGET_DIR'], '/tmp/sccache-target')
@@ -324,6 +333,52 @@ class ManagedSccacheTests(unittest.TestCase):
                     ['/native/bin/git', '-C', str(source), 'status', '--porcelain',
                      '--untracked-files=no'], capture=True)
 
+    def test_native_producer_identity_tracks_sdk_and_compiler_versions(self):
+        version = {'/native/clang': 'Apple clang version 19.0',
+                   '/native/clang++': 'Apple clang version 19.0'}
+
+        def compiler_version(argv, *, capture=False):
+            self.assertTrue(capture)
+            self.assertEqual(argv[1], '--version')
+            return version[argv[0]]
+
+        env = {
+            'CC_FOR_BUILD': '/native/clang',
+            'CXX_FOR_BUILD': '/native/clang++',
+            'SDKROOT': '/sdk/MacOSX.sdk',
+            'MACOSX_DEPLOYMENT_TARGET': '26.0',
+            'DEVELOPER_DIR': '/selected/Developer',
+        }
+        with mock.patch.object(bootstrap, 'call', side_effect=compiler_version):
+            original = bootstrap.native_producer_identity(env)
+            self.assertEqual(original['cc'], '/native/clang')
+            self.assertEqual(original['cxx'], '/native/clang++')
+            self.assertEqual(original['sdkroot'], '/sdk/MacOSX.sdk')
+            self.assertEqual(original['deployment'], '26.0')
+            for key, changed in (
+                ('CC_FOR_BUILD', '/new/clang'),
+                ('CXX_FOR_BUILD', '/new/clang++'),
+                ('SDKROOT', '/new/MacOSX.sdk'),
+                ('MACOSX_DEPLOYMENT_TARGET', '27.0'),
+                ('DEVELOPER_DIR', '/new/Developer'),
+            ):
+                with self.subTest(key=key):
+                    mutated = env.copy()
+                    mutated[key] = changed
+                    if key.endswith('_FOR_BUILD'):
+                        version[changed] = 'Apple clang version 19.0'
+                    self.assertNotEqual(
+                        bootstrap.native_producer_identity(mutated), original,
+                    )
+            version['/native/clang'] = 'Apple clang version 20.0'
+            self.assertNotEqual(bootstrap.native_producer_identity(env),
+                                original)
+        for missing in ('CC_FOR_BUILD', 'CXX_FOR_BUILD'):
+            incomplete = env.copy()
+            incomplete.pop(missing)
+            with self.assertRaisesRegex(RuntimeError, missing):
+                bootstrap.native_producer_identity(incomplete)
+
     def test_managed_pch_cache_requires_pinned_executable_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -339,6 +394,8 @@ class ManagedSccacheTests(unittest.TestCase):
                 'schema': bootstrap.SCHEMA, 'gitlink': revision,
                 'features': 'local-only',
                 'profile': 'lto=false,codegen-units=8,debug=0',
+                'native_producer': {'cc': '/native/clang', 'cxx': '/native/clang++',
+                                    'sdkroot': '/sdk/MacOSX.sdk'},
             }
             marker = prefix / '.whp-sccacher.json'
             marker.write_text(json.dumps(identity), encoding='utf-8')
@@ -346,13 +403,24 @@ class ManagedSccacheTests(unittest.TestCase):
             with mock.patch.object(bootstrap, 'ROOT', root), \
                  mock.patch.dict(os.environ, {'GIT': '/seed/git'}), \
                  mock.patch.object(bootstrap, 'call',
-                                   return_value=git_record):
+                                   return_value=git_record), \
+                 mock.patch.object(bootstrap, 'native_producer_identity',
+                                   return_value=identity['native_producer']):
                 self.assertTrue(
                     bootstrap.verify_managed_executable(build, executable)
                 )
                 self.assertFalse(
                     bootstrap.verify_managed_executable(build, pathlib.Path('/usr/bin/sccache'))
                 )
+                identity['native_producer'] = {'cc': '/changed/clang'}
+                marker.write_text(json.dumps(identity), encoding='utf-8')
+                self.assertFalse(
+                    bootstrap.verify_managed_executable(build, executable)
+                )
+                identity['native_producer'] = {
+                    'cc': '/native/clang', 'cxx': '/native/clang++',
+                    'sdkroot': '/sdk/MacOSX.sdk',
+                }
                 identity['gitlink'] = 'b' * 40
                 marker.write_text(json.dumps(identity), encoding='utf-8')
                 self.assertFalse(
@@ -390,11 +458,14 @@ class ManagedSccacheTests(unittest.TestCase):
                 'rustc_path': '/native/rustc', 'rustc': 'rustc 1.91.0',
                 'cargo': 'cargo 1.91.0',
                 'features': 'local-only', 'profile': 'lto=false,codegen-units=8,debug=0',
+                'native_producer': {'cc': '/native/clang', 'cxx': '/native/clang++'},
             }
             (prefix / '.whp-sccacher.json').write_text(json.dumps(identity))
             with mock.patch.object(bootstrap, 'pinned_source', return_value=(build, 'a' * 40)), \
                  mock.patch.object(bootstrap, 'host_tools', return_value=('cargo', '/native/rustc', 'rustc 1.91.0', 'cargo 1.91.0')), \
-                 mock.patch.object(bootstrap, 'call', return_value='sccache-0.18.0') as run:
+                 mock.patch.object(bootstrap, 'call', return_value='sccache-0.18.0') as run, \
+                 mock.patch.object(bootstrap, 'native_producer_identity',
+                                   return_value=identity['native_producer']):
                 self.assertEqual(bootstrap.ensure(build), binary)
                 run.assert_called_once_with([str(binary), '--version'], capture=True)
 
