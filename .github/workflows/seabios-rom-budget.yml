@@ -95,10 +95,17 @@ jobs:
           cp scripts/whp-build/seabios-clang-gcc.bash \
             "$prefix/bin/i386-none-elf-gcc"
           chmod 700 "$prefix/bin/i386-none-elf-gcc"
-          for tool in cpp as ld objcopy objdump strip; do
+          for tool in cpp as objcopy objdump strip; do
             ln -s "$(command -v "$tool")" \
               "$prefix/bin/i386-none-elf-$tool"
           done
+          # GNU ld's host default is x86_64, but our Clang objects are ELF32.
+          # Match the i386-none-elf linker default without switching to LLD.
+          cat > "$prefix/bin/i386-none-elf-ld" <<'LINKER'
+          #!/bin/sh
+          exec ld -m elf_i386 "$@"
+          LINKER
+          chmod 700 "$prefix/bin/i386-none-elf-ld"
           printf 'Clang: %s\n' "$("$clang" --version | head -n 1)"
           printf 'GCC: %s\n' "$(gcc --version | head -n 1)"
           printf 'Linker: %s\n' "$(ld --version | head -n 1)"
