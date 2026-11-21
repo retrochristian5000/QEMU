@@ -237,13 +237,16 @@ def main() -> int:
     if cmake_guard <= cache_hit:
         raise SystemExit("error: mold CMake check precedes installed cache reuse")
 
-    # Keep the sccache marker anchored to the source and selected Rust/Cargo
-    # pair; these checks determine whether a cached binary is still valid.
+    # Managed sccache must not reuse its binary or native Cargo objects
+    # after a compiler, Rust toolchain, or SDK producer change.
     sccache = (ROOT / "scripts/ensure-sccache.py").read_text(
         encoding="utf-8"
     )
     for field in ("'gitlink': revision", "'rustc_path': rustc",
-                  "'cargo': cargo_version"):
+                  "'cargo': cargo_version",
+                  "'native_producer': native_producer_identity(os.environ)",
+                  "native_work_key(identity)",
+                  "identity.get('native_producer') !="):
         if field not in sccache:
             raise SystemExit("error: sccache lost cache identity: " + field)
 
