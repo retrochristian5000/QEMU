@@ -167,26 +167,43 @@ case "$LLVM_WINDOWS_MANIFEST" in
         ;;
 esac
 
-# build.sh owns host detection. Keep a direct-invocation fallback for this
-# helper, but never reinterpret a normalized host identity supplied by the
-# public build entry.
+# build.sh owns host detection. Treat its exported snapshot as a
+# consistency check, not a way to override the running machine when this
+# bootstrap is called directly. Query the kernel and architecture once:
+# a stale WHP_HOST_OS=linux must not disable the native macOS SDK/runtime
+# path or carry a Darwin kernel triple into an ELF LLVM configuration.
+# WHP_NATIVE_LLVM_HOST_IDENTITY_BEGIN
 host_os="${WHP_HOST_OS:-}"
-host_kernel="${WHP_HOST_KERNEL:-$(uname -s)}"
-host_arch="${WHP_HOST_ARCH:-$(uname -m)}"
-if [[ -z "$host_os" ]]; then
-    case "$host_kernel" in
-        Darwin) host_os=macos ;;
-        Linux) host_os=linux ;;
-        CYGWIN*|MINGW*|MSYS*) host_os=windows ;;
-        FreeBSD) host_os=freebsd ;;
-        NetBSD) host_os=netbsd ;;
-        OpenBSD) host_os=openbsd ;;
-        DragonFly) host_os=dragonfly ;;
-        SunOS) host_os=solaris ;;
-        Haiku) host_os=haiku ;;
-        *) host_os=other ;;
-    esac
+host_kernel="$(uname -s)" || exit 1
+host_arch="$(uname -m)" || exit 1
+case "$host_kernel" in
+    Darwin) detected_host_os=macos ;;
+    Linux) detected_host_os=linux ;;
+    CYGWIN*|MINGW*|MSYS*) detected_host_os=windows ;;
+    FreeBSD) detected_host_os=freebsd ;;
+    NetBSD) detected_host_os=netbsd ;;
+    OpenBSD) detected_host_os=openbsd ;;
+    DragonFly) detected_host_os=dragonfly ;;
+    SunOS) detected_host_os=solaris ;;
+    Haiku) detected_host_os=haiku ;;
+    *) detected_host_os=other ;;
+esac
+if [[ ( -n "${WHP_HOST_KERNEL:-}" && "$WHP_HOST_KERNEL" != "$host_kernel" ) ||
+      ( -n "${WHP_HOST_ARCH:-}" && "$WHP_HOST_ARCH" != "$host_arch" ) ]]; then
+    printf 'error: stale native LLVM host snapshot: kernel=%s/%s architecture=%s/%s\n' \
+        "${WHP_HOST_KERNEL:-<unset>}" "$host_kernel" \
+        "${WHP_HOST_ARCH:-<unset>}" "$host_arch" >&2
+    exit 1
 fi
+if [[ -z "$host_os" ]]; then
+    host_os="$detected_host_os"
+elif [[ "$host_os" != "$detected_host_os" ]]; then
+    printf 'error: stale native LLVM host OS: snapshot=%s actual=%s (%s)\n' \
+        "$host_os" "$detected_host_os" "$host_kernel" >&2
+    exit 1
+fi
+unset detected_host_os
+# WHP_NATIVE_LLVM_HOST_IDENTITY_END
 
 if [[ "$NATIVE_LLVM_ENABLE_LLDB" == auto ]]; then
     case "$host_os" in

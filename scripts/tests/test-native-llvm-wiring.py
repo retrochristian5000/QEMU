@@ -306,6 +306,51 @@ assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
 
+# Standalone invocations must verify a passed WHP_HOST_* snapshot against the
+# real build host before allowing a spoofed Linux/Darwin branch to configure
+# LLVM. The fixture changes only uname's answers, never the actual host.
+identity_block = bootstrap.split(
+    '# WHP_NATIVE_LLVM_HOST_IDENTITY_BEGIN\n', 1
+)[1].split('# WHP_NATIVE_LLVM_HOST_IDENTITY_END\n', 1)[0]
+with tempfile.TemporaryDirectory(prefix='whp-llvm-host-identity-') as scratch:
+    fake_uname = Path(scratch) / 'uname'
+    fake_uname.write_text(
+        '#!/bin/sh\n'
+        'case "$1" in\n'
+        '  -s) printf "Darwin\\n" ;;\n'
+        '  -m) printf "arm64\\n" ;;\n'
+        '  *) exit 2 ;;\n'
+        'esac\n', encoding='utf-8',
+    )
+    fake_uname.chmod(0o700)
+    for snapshot, accepted in (
+        ({}, True),
+        ({'WHP_HOST_OS': 'macos', 'WHP_HOST_KERNEL': 'Darwin',
+          'WHP_HOST_ARCH': 'arm64'}, True),
+        ({'WHP_HOST_OS': 'linux'}, False),
+        ({'WHP_HOST_KERNEL': 'Linux'}, False),
+        ({'WHP_HOST_ARCH': 'x86_64'}, False),
+        ({'WHP_HOST_ARCH': 'arm64e'}, False),
+        ({'WHP_HOST_OS': 'macos', 'WHP_HOST_KERNEL': 'Linux'}, False),
+    ):
+        env = os.environ.copy()
+        for key in ('WHP_HOST_OS', 'WHP_HOST_KERNEL', 'WHP_HOST_ARCH'):
+            env.pop(key, None)
+        env['PATH'] = scratch + os.pathsep + env.get('PATH', '')
+        env.update(snapshot)
+        outcome = subprocess.run(
+            ['bash', '-c', 'set -euo pipefail\n' + identity_block +
+             'printf "%s|%s|%s\\n" "$host_os" "$host_kernel" "$host_arch"\n'],
+            env=env, capture_output=True, text=True,
+        )
+        if accepted:
+            assert outcome.returncode == 0, (snapshot, outcome.stderr)
+            assert outcome.stdout.strip() == 'macos|Darwin|arm64', snapshot
+        else:
+            assert outcome.returncode != 0, snapshot
+            assert 'error: stale native LLVM host' in outcome.stderr, (
+                snapshot, outcome.stderr)
+
 # Apple Silicon uses aarch64 as the backend architecture; arm64e is a
 # Mach-O ABI choice. The host triple may contain the Darwin kernel version,
 # while Clang's default target must be versioned macOS, not iOS/iPadOS.
