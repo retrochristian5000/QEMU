@@ -645,8 +645,8 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         for key, value in values.items():
             if key.startswith('I386_AUDIO_') and value != 'auto':
                 raise RuntimeError(
-                    f'{key} requires standalone i386 configuration; '
-                    'disable QEMU_X86_FAMILY_LINK'
+                    f'{key} requires Bash hardware filtering for the x86-family '
+                    'alias; the portable Python core cannot generate device presets'
                 )
     selected_targets: List[str] = []
     all_systems = values['BUILD_QEMU_SYSTEM_ALL'] == 'y'
