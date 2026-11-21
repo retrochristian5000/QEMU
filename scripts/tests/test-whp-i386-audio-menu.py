@@ -215,7 +215,7 @@ whp_configure_i386_audio_signature
                                         'CONFIG_PCI'):
                         if requirement in needed:
                             self.assertIn(f'{requirement}=y', rendered)
-                            self.assertEqual(rendered.count(requirement), 1)
+                            self.assertEqual(rendered.count(requirement + '='), 1)
                         else:
                             self.assertIn(requirement + ' = n', rendered)
                     self.assertIn('CONFIG_PCI_DEVICES=n', rendered)
