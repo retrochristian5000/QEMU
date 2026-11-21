@@ -20,7 +20,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 5
+SCHEMA = 6
 
 
 def call(argv, *, cwd=None, env=None, capture=False):
@@ -70,6 +70,12 @@ def cargo_environment(environ, target, *, rustc=None):
     for key in tuple(env):
         # Native tool identities are distinct from target-qualified overrides.
         if key in ('CC_FOR_BUILD', 'CXX_FOR_BUILD', 'CPP_FOR_BUILD'):
+            continue
+        # Cargo profile and bootstrap overrides can silently change native
+        # Rust/C dependencies without changing the locked source revision.
+        # Restore only the intentionally selected profile values below.
+        if key.startswith('CARGO_PROFILE_') or key == 'RUSTC_BOOTSTRAP':
+            env.pop(key, None)
             continue
         if (key.startswith(('CC_', 'CXX_', 'CPP_', 'CFLAGS_', 'CXXFLAGS_',
                             'CPPFLAGS_', 'HOST_CC_', 'HOST_CXX_', 'HOST_CPP_',
@@ -123,6 +129,37 @@ def cargo_environment(environ, target, *, rustc=None):
     return env
 
 
+def native_producer_identity(environ):
+    """Identify native C/C++ compilers and the SDK used by Cargo's C deps.
+
+    The installed sccache binary is not an LLVM/QEMU target artifact, but
+    bundled BLAKE3/zstd can use cc-rs. A Rust-only identity cannot safely
+    reuse a binary after the native compiler or SDK changes.
+    """
+    cc = environ.get('CC_FOR_BUILD', '')
+    cxx = environ.get('CXX_FOR_BUILD', '')
+    if not cc or not cxx:
+        raise RuntimeError(
+            'sccacher identity requires validated CC_FOR_BUILD and CXX_FOR_BUILD'
+        )
+
+    def tool_version(path):
+        lines = call([path, '--version'], capture=True).splitlines()
+        if not lines or not lines[0]:
+            raise RuntimeError(f'native compiler cannot report version: {path}')
+        return lines[0]
+
+    return {
+        'cc': cc,
+        'cc_version': tool_version(cc),
+        'cxx': cxx,
+        'cxx_version': tool_version(cxx),
+        'sdkroot': environ.get('SDKROOT', ''),
+        'deployment': environ.get('MACOSX_DEPLOYMENT_TARGET', ''),
+        'developer_dir': environ.get('DEVELOPER_DIR', ''),
+    }
+
+
 def host_tools():
     # Cargo is a pre-QEMU root capability, selected through the WHP seed.
     # Use /bin/sh explicitly so the seed also works from source archives
@@ -149,7 +186,8 @@ def ensure(build_dir):
     identity = {'schema': SCHEMA, 'gitlink': revision,
                 'rustc_path': rustc, 'rustc': rust_version,
                 'cargo': cargo_version, 'features': 'local-only',
-                'profile': 'lto=false,codegen-units=8,debug=0'}
+                'profile': 'lto=false,codegen-units=8,debug=0',
+                'native_producer': native_producer_identity(os.environ)}
     if executable.is_file() and os.access(executable, os.X_OK) and marker.is_file():
         try:
             if json.loads(marker.read_text(encoding='utf-8')) == identity:
@@ -199,7 +237,9 @@ def verify_managed_executable(build_dir: pathlib.Path,
         identity = json.loads(marker.read_text(encoding='utf-8'))
         if (identity.get('schema') != SCHEMA or
                 identity.get('features') != 'local-only' or
-                identity.get('profile') != 'lto=false,codegen-units=8,debug=0'):
+                identity.get('profile') != 'lto=false,codegen-units=8,debug=0' or
+                identity.get('native_producer') !=
+                native_producer_identity(os.environ)):
             return False
         git = os.environ.get('GIT') or os.environ.get('WHP_GIT_SEED') or shutil.which('git')
         if not git:
