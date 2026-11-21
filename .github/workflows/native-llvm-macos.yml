@@ -41,6 +41,9 @@ on:
       - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-darwin-lto-threads.py'
       - 'scripts/tests/test-llvm-bootstrap-isolation.bash'
+      - 'seeds/uname.sh'
+      - 'scripts/whp-build/seed-bin/uname'
+      - 'scripts/tests/test-uname-seed.py'
       - 'scripts/tests/test-macos-arch-policy.bash'
       - 'scripts/tests/test-aarch64-darwin-sysctl.py'
       - 'scripts/tests/test-macos-sdk-selection.bash'
@@ -342,6 +345,10 @@ jobs:
       - name: Verify native LLVM wiring
         shell: bash
         run: python3 scripts/tests/test-native-llvm-wiring.py
+
+      - name: Verify native uname seed and host selection
+        shell: bash
+        run: python3 scripts/tests/test-uname-seed.py
 
       - name: Verify native LLVM arm64e bootstrap policy
         shell: bash

@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Locked, native uname selection for literal host identity probes.
+set -eu
+if [ "${1:-}" = --whp-uname-adapter-probe ]; then
+    printf "%s\n" whp-qemu-uname-seed-adapter
+    exit 0
+fi
+if [ "${WHP_UNAME_LOCKED:-0}" = 1 ]; then
+    [ -n "${WHP_UNAME_SEED:-}" ] && [ -x "$WHP_UNAME_SEED" ] || {
+        printf '%s\n' 'error: locked WHP uname has no usable seed' >&2
+        exit 1
+    }
+    exec "$WHP_UNAME_SEED" "$@"
+fi
+case "$0" in
+    */*) exec "${0%/*}/../../../seeds/uname.sh" "$@" ;;
+    *) printf '%s\n' 'error: uname bootstrap launcher must be invoked by path' >&2; exit 1 ;;
+esac

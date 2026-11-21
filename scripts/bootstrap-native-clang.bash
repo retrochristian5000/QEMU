@@ -174,8 +174,11 @@ esac
 # path or carry a Darwin kernel triple into an ELF LLVM configuration.
 # WHP_NATIVE_LLVM_HOST_IDENTITY_BEGIN
 host_os="${WHP_HOST_OS:-}"
-host_kernel="$(uname -s)" || exit 1
-host_arch="$(uname -m)" || exit 1
+# Revalidate the selected native uname when invoked without build.sh.
+# Direct calls must not trust a cross-prefixed uname earlier in PATH.
+WHP_UNAME_SEED=$("$SOURCE_DIR/seeds/uname.sh" --print-seed) || exit 1
+host_kernel="$("$WHP_UNAME_SEED" -s)" || exit 1
+host_arch="$("$WHP_UNAME_SEED" -m)" || exit 1
 case "$host_kernel" in
     Darwin) detected_host_os=macos ;;
     Linux) detected_host_os=linux ;;

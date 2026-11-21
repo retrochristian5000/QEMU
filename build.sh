@@ -113,6 +113,20 @@ export WHP_LN_SEED WHP_LN_LOCKED
 printf 'QEMU seed ln: %s\n' "$WHP_LN_SEED" >&2
 unset WHP_LN_BRIDGE
 
+# Pin native uname independently of PATH before capturing the public host
+# snapshot. Literal uname calls below and in later seed/LLVM stages resolve
+# through the same locked seed-bin bridge, not a cross-target tool wrapper.
+WHP_UNAME_SEED=$("$SOURCE_DIR/seeds/uname.sh" --print-seed) || exit 1
+WHP_UNAME_BRIDGE="$SOURCE_DIR/scripts/whp-build/seed-bin/uname"
+if [ ! -x "$WHP_UNAME_BRIDGE" ]; then
+    printf 'error: QEMU literal uname bridge is unavailable: %s\n' "$WHP_UNAME_BRIDGE" >&2
+    exit 1
+fi
+WHP_UNAME_LOCKED=1
+export WHP_UNAME_SEED WHP_UNAME_LOCKED
+printf 'QEMU seed uname: %s\n' "$WHP_UNAME_SEED" >&2
+unset WHP_UNAME_BRIDGE
+
 # Public host snapshot: capture once before Python, seed compilers and linkers.
 # Ignore inherited WHP_HOST_*: these values describe the current build machine.
 WHP_HOST_KERNEL=$(uname -s 2>/dev/null || printf unknown)

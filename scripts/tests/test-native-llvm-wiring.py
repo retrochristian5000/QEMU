@@ -306,37 +306,45 @@ assert 'HOST_OS=$host_os' in bootstrap
 assert 'HOST_KERNEL=$host_kernel' in bootstrap
 assert 'HOST_ARCH=$host_arch' in bootstrap
 
-# Standalone invocations must verify a passed WHP_HOST_* snapshot against the
-# real build host before allowing a spoofed Linux/Darwin branch to configure
-# LLVM. The fixture changes only uname's answers, never the actual host.
+# Standalone LLVM validates the public build host snapshot against a trusted
+# uname, not against whichever executable a cross-tool PATH happens to expose.
 identity_block = bootstrap.split(
     '# WHP_NATIVE_LLVM_HOST_IDENTITY_BEGIN\n', 1
 )[1].split('# WHP_NATIVE_LLVM_HOST_IDENTITY_END\n', 1)[0]
+reference = next(
+    (p for p in ('/usr/bin/uname', '/bin/uname')
+     if os.path.isfile(p) and os.access(p, os.X_OK)), None,
+)
+assert reference, 'native LLVM requires a system uname'
+kernel = subprocess.check_output([reference, '-s'], text=True).strip()
+machine = subprocess.check_output([reference, '-m'], text=True).strip()
+native_os = {
+    'Darwin': 'macos', 'Linux': 'linux', 'FreeBSD': 'freebsd',
+    'NetBSD': 'netbsd', 'OpenBSD': 'openbsd', 'DragonFly': 'dragonfly',
+    'SunOS': 'solaris', 'Haiku': 'haiku',
+}.get(kernel, 'other')
 with tempfile.TemporaryDirectory(prefix='whp-llvm-host-identity-') as scratch:
     fake_uname = Path(scratch) / 'uname'
     fake_uname.write_text(
-        '#!/bin/sh\n'
-        'case "$1" in\n'
-        '  -s) printf "Darwin\\n" ;;\n'
-        '  -m) printf "arm64\\n" ;;\n'
-        '  *) exit 2 ;;\n'
-        'esac\n', encoding='utf-8',
+        '#!/bin/sh\nprintf "PoisonedKernel\\n"\n', encoding='utf-8',
     )
     fake_uname.chmod(0o700)
     for snapshot, accepted in (
         ({}, True),
-        ({'WHP_HOST_OS': 'macos', 'WHP_HOST_KERNEL': 'Darwin',
-          'WHP_HOST_ARCH': 'arm64'}, True),
-        ({'WHP_HOST_OS': 'linux'}, False),
-        ({'WHP_HOST_KERNEL': 'Linux'}, False),
-        ({'WHP_HOST_ARCH': 'x86_64'}, False),
-        ({'WHP_HOST_ARCH': 'arm64e'}, False),
-        ({'WHP_HOST_OS': 'macos', 'WHP_HOST_KERNEL': 'Linux'}, False),
+        ({'WHP_HOST_OS': native_os, 'WHP_HOST_KERNEL': kernel,
+          'WHP_HOST_ARCH': machine}, True),
+        ({'WHP_HOST_OS': 'poisoned'}, False),
+        ({'WHP_HOST_KERNEL': 'PoisonedKernel'}, False),
+        ({'WHP_HOST_ARCH': 'PoisonedMachine'}, False),
+        ({'WHP_HOST_OS': native_os, 'WHP_HOST_KERNEL': 'PoisonedKernel'}, False),
+        ({'WHP_UNAME_SEED': str(fake_uname)}, False),
     ):
         env = os.environ.copy()
-        for key in ('WHP_HOST_OS', 'WHP_HOST_KERNEL', 'WHP_HOST_ARCH'):
+        for key in ('WHP_HOST_OS', 'WHP_HOST_KERNEL', 'WHP_HOST_ARCH',
+                    'WHP_UNAME_SEED'):
             env.pop(key, None)
         env['PATH'] = scratch + os.pathsep + env.get('PATH', '')
+        env['SOURCE_DIR'] = str(ROOT)
         env.update(snapshot)
         outcome = subprocess.run(
             ['bash', '-c', 'set -euo pipefail\n' + identity_block +
@@ -345,10 +353,11 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-host-identity-') as scratch:
         )
         if accepted:
             assert outcome.returncode == 0, (snapshot, outcome.stderr)
-            assert outcome.stdout.strip() == 'macos|Darwin|arm64', snapshot
+            assert outcome.stdout.strip() == f'{native_os}|{kernel}|{machine}'
         else:
             assert outcome.returncode != 0, snapshot
-            assert 'error: stale native LLVM host' in outcome.stderr, (
+            assert ('error: stale native LLVM host' in outcome.stderr or
+                    'error: selected uname disagrees' in outcome.stderr), (
                 snapshot, outcome.stderr)
 
 # Apple Silicon uses aarch64 as the backend architecture; arm64e is a
