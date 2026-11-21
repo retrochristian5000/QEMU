@@ -136,6 +136,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Verify cross C compiler seed stays separate from native CC
+        run: |
+          /bin/sh -n seeds/cross-cc.sh
+          python3 scripts/tests/test-cross-cc-seed.py
+
+
       - name: Verify GNU coreutils install seed independently
         run: |
           /bin/sh -n seeds/GNUinstall.sh
@@ -176,11 +182,6 @@ jobs:
           /bin/sh -n scripts/whp-build/seed-bin/install
           bash -n scripts/tests/test-install-seed-adapter.bash
           bash scripts/tests/test-install-seed-adapter.bash
-
-      - name: Verify cross C compiler seed stays separate from native CC
-        run: |
-          /bin/sh -n seeds/cross-cc.sh
-          python3 scripts/tests/test-cross-cc-seed.py
 
       - name: Verify native Clang identity and cc handoff
         run: |
