@@ -67,6 +67,7 @@ class WhpConfigTests(unittest.TestCase):
         self.assertEqual(values['BOOTSTRAP_POWERPC_TOOLCHAIN'], 'auto')
         self.assertEqual(values['BOOTSTRAP_WIN9X_TOOLCHAIN'], 'n')
         self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
+        self.assertEqual(values['INSTALL_RUNTIME_BASH'], 'n')
         self.assertEqual(values['CONFIG_MAC_NEWWORLD'], 'y')
         self.assertEqual(values['CONFIG_MAC_OLDWORLD'], 'y')
 
@@ -270,6 +271,7 @@ class WhpConfigTests(unittest.TestCase):
                 self.assertIn(option.default, ('y', 'n'), option.key)
                 self.assertEqual(values[option.key], option.default, option.key)
         self.assertEqual(values['INSTALL_AFTER_BUILD'], 'n')
+        self.assertEqual(values['INSTALL_RUNTIME_BASH'], 'n')
 
     def test_output_defaults_select_img_i386_and_ppc(self):
         mod = load_module()
