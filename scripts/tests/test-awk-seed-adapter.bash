@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Offline native AWK bridge regression: never change the source checkout.
 set -euo pipefail
+# A failed plain "test" has no output; retain its source location in CI logs.
+trap 'result=$?; printf "error: AWK bridge regression failed at line %s (status %s)\n" "$LINENO" "$result" >&2' ERR
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 bridge="$ROOT/seeds/awk.sh"
