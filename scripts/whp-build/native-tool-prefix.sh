@@ -27,7 +27,8 @@ whp_native_tool_prefix_init()
             "$WHP_NATIVE_TOOL_PREFIX" >&2
         return 2
     fi
-    export WHP_NATIVE_TOOL_PREFIX WHP_NATIVE_TOOL_PREFIX_EXPLICIT
+    # Keep the default local: recursive builds must not mistake it for an
+    # explicit user override. A supplied exported prefix stays exported.
 }
 
 # Only named host executables are eligible. Each consumer must still run its
