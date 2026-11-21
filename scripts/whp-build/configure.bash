@@ -371,7 +371,7 @@ whp_configure_filter_device_assignments()
 }
 
 WHP_PPC_DEVICE_CONFIG_SCHEMA=4
-WHP_I386_AUDIO_CONFIG_SCHEMA=2
+WHP_I386_AUDIO_CONFIG_SCHEMA=3
 
 whp_configure_write_ppc_device_config()
 {
@@ -448,6 +448,7 @@ whp_configure_write_i386_audio_config()
     local base="$1"
     local output="$2"
     local suffix name value
+    local need_isa_bus=0 need_i8254=0 need_pci=0
     local drop_re=''
 
     # Only explicit y/n choices replace Kconfig base assignments.
@@ -459,10 +460,39 @@ whp_configure_write_i386_audio_config()
             [[ -z "$drop_re" ]] || drop_re="$drop_re|"
             drop_re="${drop_re}^CONFIG_${suffix}="
         fi
+
+        # Kconfig requires the actual bus for ISA and PCI devices. PCSPK
+        # additionally requires an ISA PIT; merely setting PCSPK=y while
+        # I8254=n produces an invalid configuration.
+        case "$suffix:$value" in
+            GAMEBLASTER:y|SB16:y|ADLIB:y|GUS:y|CS4231A:y)
+                need_isa_bus=1 ;;
+            PCSPK:y)
+                need_isa_bus=1
+                need_i8254=1 ;;
+            ES1370:y|AC97:y|CS4630:y|HDA:y)
+                need_pci=1 ;;
+        esac
     done
+
+    # Remove only prerequisites overridden by an explicit positive choice.
+    # PCI_DEVICES is a default group, not an HDA/ES1370 dependency; leave
+    # the caller's PCI_DEVICES setting untouched.
+    if [[ "$need_isa_bus" == 1 ]]; then
+        drop_re="${drop_re:+$drop_re|}^CONFIG_ISA_BUS="
+    fi
+    if [[ "$need_i8254" == 1 ]]; then
+        drop_re="${drop_re:+$drop_re|}^CONFIG_I8254="
+    fi
+    if [[ "$need_pci" == 1 ]]; then
+        drop_re="${drop_re:+$drop_re|}^CONFIG_PCI="
+    fi
     whp_configure_filter_device_assignments "$base" "$output" "$drop_re" || return 1
 
     printf '\n# WHP generated i386 audio overrides; retained for Meson regeneration.\n' >> "$output"
+    [[ "$need_isa_bus" == 1 ]] && printf 'CONFIG_ISA_BUS=y\n' >> "$output"
+    [[ "$need_i8254" == 1 ]] && printf 'CONFIG_I8254=y\n' >> "$output"
+    [[ "$need_pci" == 1 ]] && printf 'CONFIG_PCI=y\n' >> "$output"
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_GAMEBLASTER "${I386_AUDIO_GAMEBLASTER:-auto}" CONFIG_GAMEBLASTER || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_SB16 "${I386_AUDIO_SB16:-auto}" CONFIG_SB16 || return 1
     whp_configure_append_i386_audio_override "$output" I386_AUDIO_ADLIB "${I386_AUDIO_ADLIB:-auto}" CONFIG_ADLIB || return 1
