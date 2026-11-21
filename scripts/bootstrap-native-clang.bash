@@ -1249,18 +1249,22 @@ if [[ "$LLVM_PCH" == auto ]]; then
         LLVM_PCH=0
     fi
 fi
-if [[ "$LLVM_PCH" == 1 && "${compiler_cache_cmd##*/}" == sccache ]]; then
-    if [[ "${WHP_MANAGED_SCCACHE:-0}" == 1 ]]; then
+if [[ "$LLVM_PCH" == 1 &&
+      ( "${compiler_cache_cmd##*/}" == sccache ||
+        "${compiler_cache_cmd##*/}" == ccache ) ]]; then
+    if [[ "${compiler_cache_cmd##*/}" == sccache &&
+          "${WHP_MANAGED_SCCACHE:-0}" == 1 ]]; then
         # The pinned fork hashes -include-pch binary contents for C++ object
         # keys. -emit-pch and -x c++-header producers are not cached; sccache
         # forwards those compilations directly to Clang. Do not grant this
-        # capability to an unrelated system sccache.
+        # capability to system sccache or to ccache, whose PCH sloppiness
+        # settings can ignore macro and time-dependent inputs.
         printf '%s\n' \
             'WHP native LLVM PCH: managed sccache caches C++ consumers; PCH producers compile directly' >&2
     else
         cmake_compiler_launcher_args[1]=-DCMAKE_CXX_COMPILER_LAUNCHER=
-        printf '%s\n' \
-            'WHP native LLVM PCH: system sccache bypassed for C++; C caching remains enabled' >&2
+        printf 'WHP native LLVM PCH: %s bypassed for C++; C caching remains enabled\n' \
+            "${compiler_cache_cmd##*/}" >&2
     fi
 fi
 if [[ "$LLVM_PCH" == 1 ]]; then
