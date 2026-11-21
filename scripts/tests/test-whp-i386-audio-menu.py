@@ -338,6 +338,145 @@ whp_configure_build
                 (build_dir / 'configure-args.txt').read_text(encoding='utf-8'),
             )
 
+    def test_x86_64_family_alias_preserves_gameblaster_isa_configuration(self):
+        # I386_AUDIO_* are legacy menu option names for x86-family QEMU
+        # binary configurations; x86_64 PC machines use the same ISA model.
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source_dir = root / 'source'
+            build_dir = root / 'build'
+            i386_dir = source_dir / 'configs/devices/i386-softmmu'
+            x86_64_dir = source_dir / 'configs/devices/x86_64-softmmu'
+            i386_dir.mkdir(parents=True)
+            x86_64_dir.mkdir(parents=True)
+            build_dir.mkdir()
+            original = (
+                '# x86-family base audio policy\n'
+                ' CONFIG_ISA_BUS = n\n'
+                ' CONFIG_GAMEBLASTER = n\n'
+                'CONFIG_SB16=y\n'
+                'CONFIG_TEST_DEVICES=n\n'
+            )
+            (i386_dir / 'default.mak').write_text(
+                original, encoding='utf-8'
+            )
+            (x86_64_dir / 'default.mak').write_text(
+                'include ../i386-softmmu/default.mak\n', encoding='utf-8'
+            )
+            configure = source_dir / 'configure'
+            configure.write_text(
+                '#!/bin/sh\n'
+                'count=0\n'
+                'test ! -f configure-count.txt || read count < configure-count.txt\n'
+                'count=$((count + 1))\n'
+                'printf "%s\\n" "$count" > configure-count.txt\n'
+                'printf "%s\\n" "$@" > configure-args.txt\n'
+                'touch build.ninja\n',
+                encoding='utf-8',
+            )
+            configure.chmod(0o755)
+            # The integration test substitutes only the compiler preflight;
+            # it exercises the real Bash preset, cache and configure wiring.
+            check = source_dir / 'scripts/check-c-standard.py'
+            check.parent.mkdir(parents=True)
+            check.write_text('raise SystemExit(0)\n', encoding='utf-8')
+            script = f'''set -euo pipefail
+SOURCE_DIR="$1"
+BUILD_DIR="$2"
+HOST_OS=Linux
+PROCESS_ARCH=x86_64
+PHYSICAL_ARCH=x86_64
+HOST_ARCH=x86_64
+ROSETTA_TRANSLATED=0
+MACOS_ALLOW_ROSETTA=0
+MACOS_VERIFY_TOOLCHAIN=0
+MACOS_ALLOW_NONCLANG=0
+MACOS_ALLOW_COMPILER_CONFIG=0
+MACOS_COMPILER_MANIFEST=disabled
+MACOS_COMPILER_MANIFEST_SIGNATURE=disabled
+MACOS_LTO_MANIFEST=disabled
+MACOS_LTO_MANIFEST_SIGNATURE=disabled
+CC_FOR_BUILD=cc
+CXX_FOR_BUILD=c++
+OBJC_FOR_BUILD=cc
+STRIP_FOR_BUILD=strip
+PKG_CONFIG_FOR_BUILD=pkg-config
+CFLAGS=
+MAKE_CMD=make
+NINJA_CMD=ninja
+QEMU_HOST_LTO=auto
+BUILD_OPENBIOS=0
+OPENBIOS_CROSS_COMPILE=
+BOOTSTRAP_POWERPC_TOOLCHAIN=0
+POWERPC_TOOLCHAIN_DIR="$2/powerpc"
+QEMU_X86_FAMILY_LINK=1
+QEMU_TARGET_LIST=x86_64-softmmu
+CONFIG_MAC_NEWWORLD=y
+CONFIG_MAC_OLDWORLD=y
+I386_AUDIO_GAMEBLASTER=y
+I386_AUDIO_SB16=n
+configure_args=(--target-list=x86_64-softmmu)
+source {CONFIGURE_BASH!s}
+whp_configure_build
+'''
+            preset = x86_64_dir / 'whp-user.mak'
+            for run in range(2):
+                result = subprocess.run(
+                    ['bash', '-c', script, '_', str(source_dir), str(build_dir)],
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if run == 0:
+                    self.assertTrue(preset.is_file())
+                    preset.unlink()
+
+            generated = preset.read_text(encoding='utf-8')
+            self.assertEqual((i386_dir / 'default.mak').read_text(
+                encoding='utf-8'), original)
+            self.assertFalse((i386_dir / 'whp-user.mak').exists())
+            self.assertEqual(generated.count('CONFIG_GAMEBLASTER='), 1)
+            self.assertEqual(generated.count('CONFIG_ISA_BUS='), 1)
+            self.assertIn('CONFIG_GAMEBLASTER=y', generated)
+            self.assertIn('CONFIG_ISA_BUS=y', generated)
+            self.assertIn('CONFIG_SB16=n', generated)
+            self.assertIn('CONFIG_TEST_DEVICES=n', generated)
+            signature = (build_dir / '.whp-config').read_text(
+                encoding='utf-8'
+            )
+            self.assertIn(
+                'WHP_I386_AUDIO_CONFIG_SIGNATURE=schema=3;target=x86_64;',
+                signature,
+            )
+            args = (build_dir / 'configure-args.txt').read_text(
+                encoding='utf-8'
+            )
+            self.assertIn('--with-devices-x86_64=whp-user', args)
+            self.assertNotIn('--with-devices-i386=whp-user', args)
+            self.assertEqual(
+                (build_dir / 'configure-count.txt').read_text(
+                    encoding='utf-8'
+                ).strip(), '1',
+            )
+
+    def test_x86_alias_audio_configuration_is_not_an_i386_cpu_dependency(self):
+        # Game Blaster is one ISADevice shared by 32-bit and 64-bit PC
+        # system binaries, not a separate i386 CPU implementation.
+        model = (ROOT / 'hw/audio/gameblaster.c').read_text(encoding='utf-8')
+        kconfig = (ROOT / 'hw/audio/Kconfig').read_text(encoding='utf-8')
+        prepare = (ROOT / 'scripts/whp-build/prepare-build.bash').read_text(
+            encoding='utf-8'
+        )
+        self.assertIn('.parent = TYPE_ISA_DEVICE', model)
+        self.assertIn('config GAMEBLASTER\n    bool\n    default y\n'
+                      '    depends on ISA_BUS', kconfig)
+        self.assertNotIn('depends on I386', kconfig.split(
+            'config GAMEBLASTER\n', 1
+        )[1].split('\nconfig ', 1)[0])
+        self.assertNotIn(
+            'requires a separate i386 target; disable QEMU_X86_FAMILY_LINK',
+            prepare,
+        )
+
     def test_configure_keeps_ppc_preset_for_meson_regeneration(self):
         with tempfile.TemporaryDirectory() as td:
             td_path = pathlib.Path(td)
