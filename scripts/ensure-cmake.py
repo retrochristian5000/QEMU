@@ -147,12 +147,12 @@ def verify_native_compiler_pair(
         cxx_object = directory / "native-cxx.o"
         executable = directory / "native-check"
         c_source.write_text(
-            "int whp_cmake_native_c(int value) { return value + 2; }\\n",
+            "int whp_cmake_native_c(int value) { return value + 2; }\n",
             encoding="utf-8",
         )
         cxx_source.write_text(
-            'extern "C" int whp_cmake_native_c(int);\\n'
-            "int main() { return whp_cmake_native_c(40) == 42 ? 0 : 1; }\\n",
+            'extern "C" int whp_cmake_native_c(int);\n'
+            "int main() { return whp_cmake_native_c(40) == 42 ? 0 : 1; }\n",
             encoding="utf-8",
         )
         commands = (
