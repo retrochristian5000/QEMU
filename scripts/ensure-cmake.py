@@ -99,6 +99,9 @@ def host_environment(cc: str, cxx: str, make: str,
         "CMAKE_PROJECT_INCLUDE", "CMAKE_PROJECT_INCLUDE_BEFORE",
         "CMAKE_C_COMPILER_TARGET", "CMAKE_CXX_COMPILER_TARGET",
         "CMAKE_OSX_ARCHITECTURES",
+        # These common packaging/assembler overrides may select a guest ABI
+        # without changing CC/CXX or their reported default target triples.
+        "ARCHFLAGS", "ASFLAGS", "ASMFLAGS", "CROSS_COMPILE",
     ):
         env.pop(name, None)
     env.update({"CC": cc, "CXX": cxx, "MAKE": make,
@@ -136,8 +139,8 @@ def verify_native_compiler_pair(
             result.returncode == 0 and result.stdout.strip()
         ) else "unavailable"
 
-    # Test the exact selected SDK, not an inherited target sysroot. Neither
-    # compiler nor linker is allowed to receive guest --target/-arch flags.
+    # Test the selected native SDK, not an inherited target sysroot. Do not
+    # inject guest --target/-arch flags into the compiler or linker commands.
     sdk_args = ["-isysroot", sdk] if sdk else []
     with tempfile.TemporaryDirectory(prefix="whp-cmake-host-abi-") as name:
         directory = Path(name)
