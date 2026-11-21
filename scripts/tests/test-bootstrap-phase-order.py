@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 build = (ROOT / "build.sh").read_text(encoding="utf-8")
@@ -55,6 +57,67 @@ if not library_module < tool_module:
     raise SystemExit(
         "error: host-library helper definitions must load before host-tool execution"
     )
+
+# Invalid LLVM feature selections must fail before spending time on managed
+# dependencies. Loading the saved configuration is the last prerequisite for
+# validating environment overrides; CMake, Ninja and Git do not belong here.
+config_load = build.index('eval "$WHP_CONFIG_ENV"')
+llvm_preflight = build.index(
+    'BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch BOOTSTRAP_NATIVE_LLVM '
+)
+lld_preflight = build.index('case "$WHP_ARM64E_USE_LLD" in')
+pgo_stage = build.index('if [ "${QEMU_HOST_PGO:-off}" = use ]')
+git_cache_phase = build.index("whp_prepare_git_dependent_cache()")
+if not (
+    config_load < llvm_preflight < lld_preflight < pgo_stage
+    < git_cache_phase < tool_module
+):
+    raise SystemExit(
+        "error: LLVM and LLD option validation must precede managed host tools"
+    )
+if build.count('BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch') != 1:
+    raise SystemExit("error: native LLVM switch has multiple validation owners")
+if build.count('case "$WHP_ARM64E_USE_LLD" in') != 1:
+    raise SystemExit("error: ARM64e linker selection has multiple validation owners")
+
+# Run only the actual POSIX preflight fragment, not the heavyweight build.
+# This also verifies that disabling LLVM does not impose an LLVM-only linker
+# restriction on an otherwise valid QEMU run.
+guard = build.split("# Validate native LLVM selection before", 1)[1].split(
+    "# The retired BOOTSTRAP_SCCACHE menu toggle", 1
+)[0]
+preflight_script = (
+    'set -e\n. "$1"\n'
+    + guard
+    + '\nprintf "%s|%s\\n" "$BOOTSTRAP_NATIVE_LLVM" '
+      '"${WHP_ARM64E_USE_LLD:-unset}"\n'
+)
+shell_helpers = ROOT / "scripts/whp-build/shell-functions.sh"
+
+
+def run_llvm_preflight(llvm: str, lld: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["BOOTSTRAP_NATIVE_LLVM"] = llvm
+    env["WHP_ARM64E_USE_LLD"] = lld
+    return subprocess.run(
+        ["/bin/sh", "-c", preflight_script, "llvm-preflight", str(shell_helpers)],
+        env=env, text=True, capture_output=True, check=False,
+    )
+
+
+for llvm, lld, accepted in (
+    ("0", "broken", True),
+    ("1", "0", True),
+    ("1", "1", True),
+    ("garbled", "0", False),
+    ("1", "garbled", False),
+):
+    outcome = run_llvm_preflight(llvm, lld)
+    if (outcome.returncode == 0) != accepted:
+        raise SystemExit(
+            f"error: unexpected LLVM preflight result for {llvm}/{lld}: "
+            f"{outcome.stderr}"
+        )
 
 # Schedule independent, small host dependencies before larger Autotools and
 # Bash trees, but never move a consumer before the tools needed to build it.
