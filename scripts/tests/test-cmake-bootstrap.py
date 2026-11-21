@@ -198,9 +198,9 @@ class CMakeBootstrapTests(unittest.TestCase):
             source = work / "downstream project"
             source.mkdir()
             (source / "CMakeLists.txt").write_text(
-                "cmake_minimum_required(VERSION 3.20)\\n"
-                "project(WHP_CMake_Downstream LANGUAGES NONE)\\n"
-                "file(WRITE \\"${CMAKE_CURRENT_BINARY_DIR}/configured.txt\\" \\"ok\\")\\n",
+                "cmake_minimum_required(VERSION 3.20)\n"
+                "project(WHP_CMake_Downstream LANGUAGES NONE)\n"
+                'file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/configured.txt" "ok")\n',
                 encoding="utf-8",
             )
             output = work / "generated graph"
