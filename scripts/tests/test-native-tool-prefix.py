@@ -55,6 +55,17 @@ class NativePrefixTests(unittest.TestCase):
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("must be absolute", bad.stderr)
 
+    def test_default_not_exported_to_recursive_build(self):
+        script = (
+            '. "$1"; whp_native_tool_prefix_init || exit 1; '
+            "/bin/sh -c 'test -z \"${WHP_NATIVE_TOOL_PREFIX:-}\"'"
+        )
+        shell = subprocess.run(
+            ["/bin/sh", "-c", script, "sh", str(HELPER)],
+            env=self.env, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(shell.returncode, 0, shell.stderr)
+
     def test_nonexecutables_are_not_promoted(self):
         prefix = Path(self.temp.name) / "plain"
         file = prefix / "bin" / "bash"
