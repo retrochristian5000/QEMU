@@ -330,6 +330,55 @@ whp_configure_validate_device_config "$1"
         for _, symbol in AUDIO_DEVICES.values():
             self.assertTrue(resolved[symbol.removeprefix('CONFIG_')], symbol)
 
+    def test_i386_explicit_audio_bus_and_pit_requirements_resolve(self):
+        """A valid menu preset must satisfy the real QEMU Kconfig graph."""
+        minikconf = load_module(MINIKCONF, 'whp_qemu_minikconf_i386_audio')
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            base = root / 'default.mak'
+            preset = root / 'whp-user.mak'
+            base.write_text(
+                ' CONFIG_ISA_BUS = n\n'
+                ' CONFIG_I8254 = n\n'
+                ' CONFIG_PCI = n\n'
+                'CONFIG_PCI_DEVICES=n\n',
+                encoding='utf-8',
+            )
+            script = (
+                'set -euo pipefail\n'
+                f'source {CONFIGURE_BASH!s}\n'
+                'I386_AUDIO_SB16=y\n'
+                'I386_AUDIO_PCSPK=y\n'
+                'I386_AUDIO_HDA=y\n'
+                'whp_configure_write_i386_audio_config "$1" "$2"\n'
+            )
+            result = subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(preset)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            generated = preset.read_text(encoding='utf-8')
+            for symbol in ('ISA_BUS', 'I8254', 'PCI', 'SB16', 'PCSPK', 'HDA'):
+                self.assertEqual(
+                    generated.count(f'CONFIG_{symbol}='), 1, symbol,
+                )
+                self.assertIn(f'CONFIG_{symbol}=y', generated)
+            # PCI_DEVICES groups optional defaults; PCI devices themselves
+            # only have a hard dependency on the PCI bus.
+            self.assertIn('CONFIG_PCI_DEVICES=n', generated)
+
+            data = minikconf.KconfigData()
+            with (ROOT / 'Kconfig').open('rt', encoding='utf-8') as stream:
+                minikconf.KconfigParser.parse(stream, data)
+            with preset.open('rt', encoding='utf-8') as stream:
+                minikconf.KconfigParser.parse(stream, data)
+            data.do_cmdline_assignment('CONFIG_I386', True)
+            data.do_cmdline_assignment('CONFIG_TARGET_BIG_ENDIAN', False)
+            enabled = data.compute_config()
+
+        for symbol in ('ISA_BUS', 'I8254', 'PCI', 'SB16', 'PCSPK', 'HDA'):
+            self.assertTrue(enabled[symbol], symbol)
+
     def test_ppc_audio_requirements_match_qemu_kconfig(self):
         audio_kconfig = AUDIO_KCONFIG.read_text(encoding='utf-8')
         timer_kconfig = TIMER_KCONFIG.read_text(encoding='utf-8')
