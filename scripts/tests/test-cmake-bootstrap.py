@@ -179,7 +179,7 @@ class CMakeBootstrapTests(unittest.TestCase):
             tool_dir = work / "native tools" / "bin"
             tool_dir.mkdir(parents=True)
             candidate = tool_dir / "cmake"
-            candidate.symlink_to(installed)
+            candidate.symlink_to(Path(installed).resolve())
             env = os.environ.copy()
             for name in ("BOOTSTRAP_CMAKE", "WHP_CMAKE_SEED", "CMAKE_CMD",
                          "CMAKE"):
