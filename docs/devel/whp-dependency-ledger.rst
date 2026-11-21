@@ -742,6 +742,24 @@ all. The fork's managed CMake cache is keyed to source revision, native C/C++
 and GNU Make identity, macOS SDK, deployment target and build-machine ABI;
 cross-target flags and CMake toolchain variables are not inherited.
 
+The CMake host seed now accepts an existing **executable path containing
+spaces** as a single path, including a custom native prefix or a build
+cache directory with whitespace. Only a bare command *name* containing
+whitespace is rejected as an invalid command string; executable, version,
+and explicit-provider validation are unchanged. The regression tests cover
+valid and missing paths, reject multiword command names, and configure a
+minimal downstream CMake project through a real CMake executable in such a
+prefix. They do not claim a full source build of the CMake fork succeeds
+with a whitespace-bearing build tree.
+
+CMake's forked source retains recognized ``--no-qt-gui`` and
+``--no-debugger`` bootstrap switches and the ``CMAKE_USE_OPENSSL`` and
+``BUILD_TESTING`` cache variables used by this bootstrap. Newer CMake
+releases can offer opt-in strict warning categories, but an opt-in
+warning is not proof of a downstream failure. Preserve actual CMake
+configure and compiler diagnostics; do not apply blanket warning
+suppression to mask version, SDK, target, or unused-option errors.
+
 On a rebuild, LLVM's native CMake graph generates TableGen sources and
 builds AArch64/X86/PowerPC backends, Clang, LLD and libLTO from the same
 QEMU gitlink. On macOS, compiler-rt builtins and runtimes are distinct
