@@ -159,10 +159,10 @@ jobs:
           done
           exit "$failed"
 
-      - name: Test explicit Clang -Oz profile against both 128 KiB budgets
+      - name: Test Clang -Oz for segmented firmware only
         env:
           WHP_ROM_SIZE_REPORT: '1'
-          SEABIOS_CLANG_SIZE_OPT: Oz
+          SEABIOS_CLANG_SIZE_OPT: OzSegmented
         run: |
           set -eu
           prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
@@ -171,7 +171,7 @@ jobs:
           test -x "$prefix/bin/i386-none-elf-gcc"
           for variant in seabios-128k seabios-microvm; do
             log="$RUNNER_TEMP/$variant-clang-oz-rom.log"
-            printf '\n=== Comparing %s with Clang -Oz ===\n' "$variant"
+            printf '\n=== Comparing %s with segmented -Oz, flat -Os ===\n' "$variant"
             if make -C roms "build-seabios-config-$variant" \
                 "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
                 "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
@@ -181,15 +181,15 @@ jobs:
               test "$(wc -c < "$padded")" -eq 131072
               gcc_bytes="$(wc -c < "$gcc_root/$variant/bios.bin.raw")"
               clang_bytes="$(wc -c < "$image")"
-              printf '%s: GCC=%d Clang-Oz=%d delta=%+d bytes\n' \
+              printf '%s: GCC=%d Clang-OzSegmented=%d delta=%+d bytes\n' \
                 "$variant" "$gcc_bytes" "$clang_bytes" \
                 "$((clang_bytes - gcc_bytes))"
-              printf '%s: Clang -Oz free capacity=%d bytes\n' \
+              printf '%s: Clang -OzSegmented free capacity=%d bytes\n' \
                 "$variant" "$((131072 - clang_bytes))"
               grep -E '^(16bit size:|32bit |ROM size audit:|Total size:)' \
                 "$log" || true
             else
-              printf 'error: Clang -Oz ROM build failed: %s\n' "$variant" >&2
+              printf 'error: Clang -OzSegmented ROM build failed: %s\n' "$variant" >&2
               tail -n 90 "$log" >&2
               exit 1
             fi

@@ -109,8 +109,35 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                 str(compiler), '-Os', '-c', str(source), '-o', str(output),
             ], text=True, capture_output=True, check=False, env=env)
             self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn('SEABIOS_CLANG_SIZE_OPT must be Os or Oz',
+            self.assertIn('SEABIOS_CLANG_SIZE_OPT must be Os, Oz, or OzSegmented',
                           rejected.stderr)
+
+    def test_segmented_size_profile_leaves_flat_code_at_os(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = self.make_prefix(pathlib.Path(tmp))
+            clang = prefix / 'llvm' / 'bin' / 'clang'
+            clang.unlink()
+            clang.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n',
+                             encoding='utf-8')
+            clang.chmod(0o755)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_SIZE_OPT'] = 'OzSegmented'
+
+            for mode_args, expected in (
+                (['-DMODE16=1', '-DMODESEGMENT=1'], '-Oz'),
+                (['-DMODE16=0', '-DMODESEGMENT=1'], '-Oz'),
+                (['-DMODE16=0', '-DMODESEGMENT=0'], '-Os'),
+            ):
+                result = subprocess.run([
+                    str(compiler), '-Os', *mode_args,
+                    '-E', '-xc', '/dev/null',
+                ], text=True, capture_output=True, check=False, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                flags = result.stdout.splitlines()
+                self.assertIn(expected, flags)
+                self.assertNotIn('-Os' if expected == '-Oz' else '-Oz',
+                                 flags)
 
     def test_no_merge_constants_removes_elf_merge_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:

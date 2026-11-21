@@ -9,8 +9,19 @@ clang="$prefix/llvm/bin/clang"
 size_level="${SEABIOS_CLANG_SIZE_OPT:-Os}"
 case "$size_level" in
     Os|Oz) ;;
+    OzSegmented)
+        # -Os appears before -DMODESEGMENT=1 in SeaBIOS's CFLAGS.
+        # Inspect the full invocation before translating optimization flags.
+        size_level=Os
+        for arg in "$@"; do
+            if [[ "$arg" == -DMODESEGMENT=1 ]]; then
+                size_level=Oz
+                break
+            fi
+        done
+        ;;
     *)
-        printf 'error: SEABIOS_CLANG_SIZE_OPT must be Os or Oz\n' >&2
+        printf 'error: SEABIOS_CLANG_SIZE_OPT must be Os, Oz, or OzSegmented\n' >&2
         exit 2
         ;;
 esac
