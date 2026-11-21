@@ -243,7 +243,7 @@ def main() -> int:
         encoding="utf-8"
     )
     for field in ("'gitlink': revision", "'rustc_path': rustc",
-                  "'cargo': cargo_version",
+                  "'cargo_path': cargo", "'cargo': cargo_version",
                   "'native_producer': native_producer_identity(os.environ)",
                   "native_work_key(identity)",
                   "identity.get('native_producer') !="):
