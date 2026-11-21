@@ -742,6 +742,19 @@ all. The fork's managed CMake cache is keyed to source revision, native C/C++
 and GNU Make identity, macOS SDK, deployment target and build-machine ABI;
 cross-target flags and CMake toolchain variables are not inherited.
 
+On a managed CMake source-build cache miss, the bootstrap now compiles one
+C object and one C++17 object with the selected **build-machine**
+compilers, links them together using the selected C++ driver and executes
+the resulting host program. This checks the actual C/C++ ABI boundary
+before building the fork, including a selected macOS SDK when applicable.
+A valid installed CMake cache remains reusable without repeating the
+probe. If the link or execution fails, the diagnostic includes each
+driver's reported target triple when available, but does not treat
+differently spelled Darwin-kernel and macOS-product triples as an
+automatic ABI mismatch. This is separate from LLVM's host/default target
+triple policy and cannot retarget guest executables.
+
+
 The CMake host seed now accepts an existing **executable path containing
 spaces** as a single path, including a custom native prefix or a build
 cache directory with whitespace. Only a bare command *name* containing
