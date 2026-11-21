@@ -155,7 +155,7 @@ cp "$tmp/env-tainted" "$tmp/relative-path/nativecc"
 # The probe and the actual adapter exec must agree about Clang target flags.
 cat > "$tmp/no-ccc-native-cc" <<'SH'
 #!/bin/sh
-if [ "${CCC_OVERRIDE_OPTIONS+x}" ]; then
+if [ "${CCC_OVERRIDE_OPTIONS+x}" ] || [ "${TARGET+x}" ] || [ "${TARGET_TRIPLE+x}" ]; then
     printf '%s\n' 'WHP_CCC_TARGET_POISON: inherited target override' >&2
     exit 79
 fi
@@ -163,6 +163,7 @@ exec "$WHP_REAL_NATIVE_CC" "$@"
 SH
 chmod +x "$tmp/no-ccc-native-cc"
 CCC_OVERRIDE_OPTIONS='^--target=powerpc-unknown-linux-gnu' \
+    TARGET=powerpc TARGET_TRIPLE=powerpc-apple-darwin9 \
     WHP_CC_SEED="$tmp/no-ccc-native-cc" \
     "$ROOT/seeds/cc.sh" -E -x c /dev/null -o /dev/null \
     >"$tmp/stdout" 2>"$tmp/stderr" || {
@@ -172,7 +173,7 @@ CCC_OVERRIDE_OPTIONS='^--target=powerpc-unknown-linux-gnu' \
     }
 cat > "$tmp/no-ccc-native-cxx" <<'SH'
 #!/bin/sh
-if [ "${CCC_OVERRIDE_OPTIONS+x}" ]; then
+if [ "${CCC_OVERRIDE_OPTIONS+x}" ] || [ "${TARGET+x}" ] || [ "${TARGET_TRIPLE+x}" ]; then
     printf '%s\n' 'WHP_CCC_TARGET_POISON: inherited target override' >&2
     exit 79
 fi
@@ -181,6 +182,7 @@ SH
 chmod +x "$tmp/no-ccc-native-cxx"
 export WHP_REAL_NATIVE_CXX="$(command -v c++)"
 CCC_OVERRIDE_OPTIONS='^--target=powerpc-unknown-linux-gnu' \
+    TARGET=powerpc TARGET_TRIPLE=powerpc-apple-darwin9 \
     WHP_CXX_SEED="$tmp/no-ccc-native-cxx" \
     "$ROOT/seeds/cxx.sh" -E -x c++ /dev/null -o /dev/null \
     >"$tmp/stdout" 2>"$tmp/stderr" || {

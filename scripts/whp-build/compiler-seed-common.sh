@@ -22,6 +22,21 @@ whp_native_sdkroot()
     whp_apple_select_sdk
 )
 
+# Native compiler wrappers can use TARGET or *_FOR_TARGET to change behavior
+# even when Clang's CCC_OVERRIDE_OPTIONS is clear. Sanitize both admission
+# probes and actual compiler invocations through this shared function.
+whp_native_target_environment()
+{
+    unset CCC_OVERRIDE_OPTIONS
+    unset TARGET TARGET_ARCH TARGET_OS TARGET_ABI TARGET_VENDOR TARGET_TRIPLE TARGET_SYSROOT
+    unset TARGET_CC TARGET_CXX TARGET_CPP TARGET_LD TARGET_AR TARGET_RANLIB TARGET_STRIP
+    unset TARGET_CFLAGS TARGET_CXXFLAGS TARGET_CPPFLAGS TARGET_LDFLAGS
+    unset CC_FOR_TARGET CXX_FOR_TARGET CPP_FOR_TARGET LD_FOR_TARGET AR_FOR_TARGET
+    unset RANLIB_FOR_TARGET STRIP_FOR_TARGET PKG_CONFIG_FOR_TARGET
+    unset CMAKE_C_COMPILER_TARGET CMAKE_CXX_COMPILER_TARGET CMAKE_ASM_COMPILER_TARGET
+    unset CARGO_BUILD_TARGET
+}
+
 # Validate build-machine toolchain behavior without target flags or loader
 # overrides. This helper is used only in compiler-selection subshells.
 whp_native_probe_environment()
@@ -30,11 +45,8 @@ whp_native_probe_environment()
     unset LIBRARY_PATH LD_LIBRARY_PATH LD_PRELOAD
     unset DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
     unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OBJCFLAGS OBJCXXFLAGS LIBS
-    unset COMPILER_PATH GCC_EXEC_PREFIX CCC_OVERRIDE_OPTIONS
-    # Cross-target variables cannot establish a native compiler's ABI.
-    unset TARGET TARGET_ARCH TARGET_OS TARGET_ABI TARGET_TRIPLE TARGET_SYSROOT
-    unset TARGET_CC TARGET_CXX TARGET_CFLAGS TARGET_CXXFLAGS
-    unset CC_FOR_TARGET CXX_FOR_TARGET AR_FOR_TARGET LD_FOR_TARGET
+    unset COMPILER_PATH GCC_EXEC_PREFIX
+    whp_native_target_environment
 }
 
 # Report compiler frontend *signatures* without requiring a GNU/Clang
