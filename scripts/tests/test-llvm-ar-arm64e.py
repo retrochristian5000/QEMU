@@ -58,8 +58,10 @@ def exports(data):
 def nm_exports(nm, path, arch=None):
     # Explicit architecture selection is essential on a universal binary:
     # the host-default slice may not be the QEMU target ABI.
+    # Without --export-symbols, archive-member headings contaminate the
+    # just-symbols output, including on universal Mach-O archive slices.
     command = [nm, "--defined-only", "--extern-only",
-               "--format=just-symbols"]
+               "--export-symbols", "--format=just-symbols"]
     if arch is not None:
         command.append("--arch=" + arch)
     names = run([*command, str(path)])

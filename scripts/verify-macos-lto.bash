@@ -209,12 +209,17 @@ archive_candidate="$archive_stage_dir/liblto-probe.a"
 if [[ -n "${NM:-}" ]]; then
     # The linker succeeding alone can conceal an incomplete LTO archive
     # index. Require the exported bitcode symbol in both object and archive.
+    # --export-symbols omits archive member labels that --format=just-symbols
+    # otherwise prints, so the same defined exports can be compared exactly.
     object_symbols="$("${NM_CMD[@]}" --defined-only --extern-only \
-        --format=just-symbols "$object_a")" || exit 1
+        --export-symbols --format=just-symbols "$object_a")" || exit 1
     archive_symbols="$("${NM_CMD[@]}" --defined-only --extern-only \
-        --format=just-symbols "$archive_candidate")" || exit 1
-    if [[ "$object_symbols" != "$archive_symbols" ||
-          "$archive_symbols" != *whp_lto_increment* ]]; then
+        --export-symbols --format=just-symbols "$archive_candidate")" || exit 1
+    # Exact symbol names reject false successes from a malfunctioning nm
+    # which reports the same similarly named symbol for both inputs.
+    if [[ "$object_symbols" != whp_lto_increment &&
+          "$object_symbols" != _whp_lto_increment ]] ||
+       [[ "$archive_symbols" != "$object_symbols" ]]; then
         printf 'error: LTO archive symbols disagree with llvm-nm object exports\n' >&2
         exit 1
     fi
@@ -282,6 +287,7 @@ output_signature="$(cksum "$output" | awk '{print $1 ":" $2}')"
     printf 'CC=%s\n' "$CC"
     printf 'AR=%s\n' "${AR:-/usr/bin/ar}"
     printf 'RANLIB=%s\n' "${RANLIB:-/usr/bin/ranlib}"
+    printf 'NM=%s\n' "${NM:-disabled}"
     printf 'CC_VERSION=%s\n' "$compiler_version"
     printf 'LIPO=%s\n' "${LIPO:-xcrun lipo}"
     printf 'CFLAGS=%s\n' "${CFLAGS:-}"

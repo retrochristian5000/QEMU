@@ -64,6 +64,44 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
             self.assertIn('ARCHIVE=' + str(archive),
                           (root / 'manifest').read_text(encoding='utf-8'))
 
+            # Simulate real llvm-nm archive headers unless --export-symbols is
+            # supplied. A valid archive must not fail due to formatting.
+            fake_nm = fake_bin / 'llvm-nm'
+            symbol = ('_whp_lto_increment' if sys.platform == 'darwin'
+                      else 'whp_lto_increment')
+            fake_nm.write_text(
+                '#!/bin/sh\n'
+                'case " $* " in\n'
+                '  *" --export-symbols "*) ;;\n'
+                '  *) printf "%s\\n" "lto-a.o:" ;;\n'
+                'esac\n'
+                f'printf "%s\\n" "{symbol}"\n',
+                encoding='utf-8')
+            fake_nm.chmod(0o755)
+            env['NM'] = str(fake_nm)
+            verified = subprocess.run(['bash', str(LTO_PROBE)], cwd=root,
+                                      env=env, capture_output=True, text=True,
+                                      check=False)
+            self.assertEqual(verified.returncode, 0,
+                             verified.stdout + verified.stderr)
+            self.assertIn('NM=' + str(fake_nm),
+                          (root / 'manifest').read_text(encoding='utf-8'))
+
+            # The previous substring check accepted the same invented export
+            # from both calls. Reject it even if nm exits successfully.
+            fake_nm.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "whp_lto_increment_corrupt"\n',
+                encoding='utf-8')
+            rejected_manifest = root / 'rejected-manifest'
+            env['MACOS_LTO_MANIFEST'] = str(rejected_manifest)
+            rejected = subprocess.run(['bash', str(LTO_PROBE)], cwd=root,
+                                      env=env, capture_output=True, text=True,
+                                      check=False)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('LTO archive symbols disagree', rejected.stderr)
+            self.assertFalse(rejected_manifest.exists())
+
     def test_darwin_does_not_force_single_threaded_lto(self):
         text = DARWIN_MESON.read_text(encoding='utf-8')
         self.assertIn('[built-in options]', text)
@@ -94,6 +132,9 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn('set_archive_command NM ""', text)
         self.assertIn('"${NM_CMD[@]}" --defined-only --extern-only', text)
         self.assertIn('LTO archive symbols disagree with llvm-nm object exports', text)
+        self.assertIn('--export-symbols --format=just-symbols "$object_a"', text)
+        self.assertIn('--export-symbols --format=just-symbols "$archive_candidate"', text)
+        self.assertIn('NM=%s', text)
         self.assertIn('"${RANLIB_CMD[@]}" "$archive_candidate"', text)
         self.assertIn('"$object_main" "$archive" -o "$output"', text)
         self.assertIn('set_archive_command AR /usr/bin/ar', text)

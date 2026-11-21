@@ -50,7 +50,7 @@ shim_dir="$TOOLCHAIN_DIR/libexec/powerpc-clang-gnu"
 nm_marker="$TOOLCHAIN_DIR/.whp-powerpc-nm"
 nm_signature="$(cksum "${BASH_SOURCE[0]}" | awk '{print $1 ":" $2}')"
 expected_nm_marker="$(cat <<MARKER
-NM_SCHEMA=2
+NM_SCHEMA=3
 NM=llvm-nm
 GNU_COMPATIBILITY=--gnu-compatible
 GNU_NM=disabled
@@ -136,6 +136,34 @@ if ! grep -Eq '^[[:xdigit:]]+[[:space:]]+T[[:space:]]+whp_llvm_nm_smoke$' \
     exit 1
 fi
 
+# Native ELF output alone does not establish LLVM bitcode support. Compile
+# actual PowerPC ThinLTO IR, index it using the selected LLVM archive tool,
+# and require the same exact exported name in both object and archive. The
+# --export-symbols flag suppresses archive-member headings.
+cat > "$smoke_dir/nm-lto.c" <<'SOURCE'
+int whp_llvm_nm_lto_anchor(void)
+{
+    return 17;
+}
+SOURCE
+"$clang" --target=powerpc-none-elf -flto=thin -c \
+    "$smoke_dir/nm-lto.c" -o "$smoke_dir/nm-lto.o"
+"$public_ar" rcs "$smoke_dir/libnm-lto.a" "$smoke_dir/nm-lto.o"
+lto_object_exports="$("$llvm_nm" --export-symbols --format=just-symbols \
+    "$smoke_dir/nm-lto.o")"
+lto_archive_exports="$("$llvm_nm" --export-symbols --format=just-symbols \
+    "$smoke_dir/libnm-lto.a")"
+if [[ "$lto_object_exports" != whp_llvm_nm_lto_anchor ||
+      "$lto_archive_exports" != "$lto_object_exports" ]]; then
+    printf 'error: llvm-nm ThinLTO object/archive exports are inconsistent\n' >&2
+    exit 1
+fi
+lto_armap="$("$llvm_nm" --gnu-compatible -s "$smoke_dir/libnm-lto.a")"
+if ! grep -Fq 'whp_llvm_nm_lto_anchor in nm-lto.o' <<< "$lto_armap"; then
+    printf 'error: llvm-nm cannot read the ThinLTO archive index\n' >&2
+    exit 1
+fi
+
 # Remove GNU nm residue from the published toolchain. nm needs a compatibility
 # option, so publish two real POSIX launchers rather than symlinking a launcher.
 # A symlinked shell script observes the alias path in $0/BASH_SOURCE and can
@@ -194,6 +222,18 @@ if [[ "$raw_exact" != "$public_exact" || "$raw_exact" != "$target_exact" ]]; the
 fi
 if ! grep -Fq 'whp_llvm_nm_smoke' <<< "$raw_exact"; then
     printf 'error: llvm-nm -A -g -n smoke output lost the PowerPC symbol\n' >&2
+    exit 1
+fi
+
+# A wrapper can pass native ELF checks and still route bitcode to a
+# different or incompatible nm. Exercise both public PowerPC entry points.
+public_lto_exports="$("$public_nm" --export-symbols --format=just-symbols \
+    "$smoke_dir/libnm-lto.a")"
+target_lto_exports="$("$target_nm" --export-symbols --format=just-symbols \
+    "$smoke_dir/libnm-lto.a")"
+if [[ "$public_lto_exports" != "$lto_archive_exports" ||
+      "$target_lto_exports" != "$lto_archive_exports" ]]; then
+    printf 'error: PowerPC llvm-nm wrappers changed ThinLTO archive exports\n' >&2
     exit 1
 fi
 
