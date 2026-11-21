@@ -172,6 +172,10 @@ fi
 # Installation is deliberately separate from compilation and is opt-in. This
 # avoids making an otherwise successful unprivileged build fail on a prefix.
 if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
+    if [[ "${INSTALL_RUNTIME_BASH:-0}" == 1 ]]; then
+        "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/install-runtime-bash.py" \
+            --build-dir "$BUILD_DIR" --prefix "$PREFIX" --check || return 1
+    fi
     if [[ -n "${NINJA_CMD:-}" ]]; then
         "$NINJA_CMD" -C "$BUILD_DIR" install || return 1
     elif [[ -n "${MAKE_CMD:-}" ]]; then
@@ -183,6 +187,10 @@ if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
                 "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/x86-family-alias.py" \
                     --directory "$PREFIX/bin" || return 1 ;;
         esac
+    fi
+    if [[ "${INSTALL_RUNTIME_BASH:-0}" == 1 ]]; then
+        "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/install-runtime-bash.py" \
+            --build-dir "$BUILD_DIR" --prefix "$PREFIX" --install || return 1
     fi
 fi
 }
