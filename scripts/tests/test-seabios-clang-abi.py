@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import shutil
@@ -81,6 +82,35 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             '-fno-pic', '-fno-pie', *extra,
             '-c', str(source), '-o', str(output),
         ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    def test_explicit_oz_profile_is_forwarded_without_changing_abi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            source = root / 'size-profile.c'
+            output = root / 'size-profile.o'
+            source.write_text(
+                'int size_profile(int x) { return x * 17 + 3; }\n',
+                encoding='utf-8',
+            )
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_SIZE_OPT'] = 'Oz'
+            result = subprocess.run([
+                str(compiler), '-Os', '-ffreestanding', '-fno-merge-constants',
+                '-c', str(source), '-o', str(output),
+            ], text=True, capture_output=True, check=False, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('.text', elf32_sections(output))
+            self.assertEqual(output.read_bytes()[:4], bytes.fromhex('7f454c46'))
+
+            env['SEABIOS_CLANG_SIZE_OPT'] = 'O3'
+            rejected = subprocess.run([
+                str(compiler), '-Os', '-c', str(source), '-o', str(output),
+            ], text=True, capture_output=True, check=False, env=env)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('SEABIOS_CLANG_SIZE_OPT must be Os or Oz',
+                          rejected.stderr)
 
     def test_no_merge_constants_removes_elf_merge_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:

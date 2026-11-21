@@ -4,6 +4,17 @@ set -euo pipefail
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 clang="$prefix/llvm/bin/clang"
 
+# The 128 KiB diagnostic may opt into Clang's smaller -Oz output without
+# changing default -Os builds or any SeaBIOS ABI and section handling.
+size_level="${SEABIOS_CLANG_SIZE_OPT:-Os}"
+case "$size_level" in
+    Os|Oz) ;;
+    *)
+        printf 'error: SEABIOS_CLANG_SIZE_OPT must be Os or Oz\n' >&2
+        exit 2
+        ;;
+esac
+
 [[ -x "$clang" ]] || {
     printf 'error: SeaBIOS Clang compiler is missing: %s\n' "$clang" >&2
     exit 1
@@ -92,6 +103,9 @@ for arg in "$@"; do
         -mpreferred-stack-boundary=2)
             # GCC encodes the boundary as log2(bytes); SeaBIOS asks for 2^2.
             args+=(-mstack-alignment=4)
+            ;;
+        -Os)
+            args+=("-$size_level")
             ;;
         -fno-stack-protector-all|-fstack-check=no)
             # Clang either lacks these spellings or diagnoses them as ignored.
