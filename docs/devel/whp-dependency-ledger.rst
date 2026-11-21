@@ -2169,6 +2169,42 @@ seed selection emits only the path on stdout. Each native probe uses a
 private ``mktemp`` directory so interrupted/incremental builds do not
 collide with an earlier probe process.
 
+Explicit C cross-compiler seed
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``seeds/cross-cc.sh`` is an optional *target* compiler entry point, not a
+replacement for the native ``seeds/cc.sh``. A cross selection must explicitly
+specify ``WHP_CROSS_CC_SEED`` (one compiler executable),
+``WHP_CROSS_CC_KIND=clang|gcc``, and an exact ``WHP_CROSS_TARGET``
+triple. It never reads ``CC_FOR_BUILD``, ``CC``, or ``WHP_CC_SEED`` to
+choose a cross compiler. Inherited native SDK, compiler-path and target
+injection variables are removed before driver checks and execution.
+
+For Clang, the seed forwards ``--target=<triple>``; for a GCC-style cross
+compiler, the driver must already report the requested triple through
+``-dumpmachine``. A compiler reporting a different triple is rejected
+without guessing a Darwin/macOS spelling or rewriting the requested ABI.
+Optional ``WHP_CROSS_SYSROOT`` must be an existing absolute directory and
+is forwarded as ``--sysroot=<path>``. Conflicting direct ``-target``,
+``-arch``, sysroot, ``-m32`` and ``-m64`` overrides are rejected.
+
+``--check`` performs a *compile-only* C-object smoke test. It never executes
+the target object or requires a target linker or C runtime. The printed
+``--print-seed`` result is the **target-aware adapter path**, not the raw
+compiler driver. This is intentional: using ``--print-driver`` as ``CC``
+would lose Clang's target argument. The native build path still uses
+``CC_FOR_BUILD`` and never promotes this cross seed implicitly. Target
+headers, linkers, libraries and final image ABI validation remain the
+responsibility of the separately configured target build.
+
+Example (given an installed Clang with that target backend)::
+
+    export WHP_CROSS_CC_SEED=clang
+    export WHP_CROSS_CC_KIND=clang
+    export WHP_CROSS_TARGET=powerpc-unknown-unknown-elf
+    ./seeds/cross-cc.sh --check
+    ./seeds/cross-cc.sh -c guest.c -o guest.o
+
 Component-owned C99/C11/C17/C23 language standards
 ----------------------------------------------------
 
