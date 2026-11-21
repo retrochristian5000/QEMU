@@ -88,6 +88,60 @@ class ZshSeedTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "clean")
 
+    def test_invocation_options_fail_closed_without_tool_discovery(self):
+        # These must fail at the seed boundary even when native Zsh is absent.
+        # A later option can reverse -f or alter shell emulation.
+        env = dict(self.env, WHP_ZSH_SEED="/bin/false")
+        for args in (
+            ("+f", "-c", "exit 0"),
+            ("-o", "rcs", "-c", "exit 0"),
+            ("--rcs", "-c", "exit 0"),
+            ("+o", "norcs", "-c", "exit 0"),
+            ("--emulate", "sh", "-c", "exit 0"),
+            ("-i", "-c", "exit 0"),
+            ("-l", "-c", "exit 0"),
+            ("-r", "-c", "exit 0"),
+            ("-fc", "exit 0"),
+            ("+x", "-c", "exit 0"),
+        ):
+            with self.subTest(args=args):
+                result = self.run_seed(*args, override=env)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("unsupported Zsh build-seed invocation option",
+                              result.stderr)
+                self.assertEqual(result.stdout, "")
+
+        empty = self.run_seed("-c", override=env)
+        self.assertEqual(empty.returncode, 2)
+        self.assertIn("-c requires a command string", empty.stderr)
+
+    def test_safe_invocation_options_and_positional_arguments(self):
+        if not self.native:
+            self.skipTest("native Zsh is not installed")
+        env = dict(self.env, WHP_ZSH_SEED=self.native)
+        # Native Zsh arrays and option state should survive the -f launch.
+        command = (
+            '[[ ! -o rcs ]] || exit 41; '
+            '[[ ! -o shwordsplit ]] || exit 42; '
+            'items=(one two); print -rn -- "${items[1]}:$1"'
+        )
+        output = self.run_seed("-c", command, "seed", "+f", override=env)
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertEqual(output.stdout, "one:+f")
+
+        # Syntax checks are nonexecuting and must remain available.
+        parsed = self.run_seed("-n", "-c", "print -rn -- should-not-run",
+                               override=env)
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        self.assertEqual(parsed.stdout, "")
+
+        script = self.directory / "native-script.zsh"
+        script.write_text('print -rn -- "script:$1"\n', encoding="utf-8")
+        script.chmod(0o600)
+        executed = self.run_seed("--", str(script), "two words", override=env)
+        self.assertEqual(executed.returncode, 0, executed.stderr)
+        self.assertEqual(executed.stdout, "script:two words")
+
     def test_seed_is_a_posix_launcher(self):
         self.assertEqual(SEED.read_text(encoding="utf-8").splitlines()[0],
                          "#!/bin/sh")
