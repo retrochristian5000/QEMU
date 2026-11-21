@@ -379,6 +379,53 @@ class ManagedSccacheTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, missing):
                 bootstrap.native_producer_identity(incomplete)
 
+    def test_cargo_work_key_changes_for_native_producer_not_gitlink(self):
+        marker = {
+            'schema': bootstrap.SCHEMA,
+            'gitlink': 'a' * 40,
+            'rustc_path': '/native/rustc',
+            'rustc': 'rustc 1.91.0',
+            'cargo': 'cargo 1.91.0',
+            'profile': 'lto=false,codegen-units=8,debug=0',
+            'native_producer': {
+                'cc': '/native/clang',
+                'cc_version': 'Apple clang version 19.0',
+                'cxx': '/native/clang++',
+                'cxx_version': 'Apple clang version 19.0',
+                'sdkroot': '/sdk/MacOSX.sdk',
+                'deployment': '26.0',
+            },
+        }
+        original = bootstrap.native_work_key(marker)
+        self.assertEqual(len(original), 16)
+        self.assertEqual(original, bootstrap.native_work_key(marker))
+        newer_source = {**marker, 'gitlink': 'b' * 40}
+        self.assertEqual(bootstrap.native_work_key(newer_source), original)
+        for key, changed in (
+            ('cc', '/other/clang'),
+            ('cc_version', 'Apple clang version 20.0'),
+            ('cxx', '/other/clang++'),
+            ('sdkroot', '/other/MacOSX.sdk'),
+            ('deployment', '27.0'),
+        ):
+            with self.subTest(key=key):
+                another = {
+                    **marker,
+                    'native_producer': {**marker['native_producer'],
+                                        key: changed},
+                }
+                self.assertNotEqual(bootstrap.native_work_key(another), original)
+        for key, changed in (
+            ('rustc_path', '/other/rustc'),
+            ('rustc', 'rustc 1.92.0'),
+            ('profile', 'lto=true,codegen-units=1,debug=2'),
+        ):
+            modified = {**marker, key: changed}
+            self.assertNotEqual(bootstrap.native_work_key(modified), original)
+
+        code = BOOTSTRAP.read_text(encoding='utf-8')
+        self.assertIn('f\'{host}-v{SCHEMA}-{native_work_key(identity)}\'', code)
+
     def test_managed_pch_cache_requires_pinned_executable_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
