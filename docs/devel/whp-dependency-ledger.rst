@@ -101,6 +101,42 @@ prefix implicitly:
   runnable debugger and shared-library validation, and a size/licensing
   review rather than an automatic dependency copy.
 
+Native build-tool prefix discovery
+----------------------------------
+
+The optional ``WHP_NATIVE_TOOL_PREFIX`` selects an **absolute** directory
+containing build-machine executables; when unset, the scanner checks
+``BUILD_DIR/deps``. Both ``PREFIX/bin/tool`` and
+``PREFIX/tool/bin/tool`` layouts are supported. An explicit relative prefix
+is an error. This is separate from QEMU's runtime installation prefix and
+from target sysroots.
+
+The POSIX ``scripts/whp-build/native-tool-prefix.sh`` can be sourced by
+the host bootstrap or run as a read-only inventory::
+
+  BUILD_DIR=/absolute/path/to/build /bin/sh \
+      scripts/whp-build/native-tool-prefix.sh --audit
+
+The inventory recognizes Bash, Ninja, ``which``, CMake and pkg-config.
+Its ``candidate (unverified)`` label deliberately does not certify version,
+native ABI, source revision, or usability. Host-tool consumers retain their
+own admission checks. Current build integration uses prefix candidates for
+Bash and Ninja only; ``which`` remains a portable independent seed and the
+CMake/pkg-config consumers are unchanged.
+
+An explicit ``WHP_BUILD_BASH`` or ``NINJA_CMD`` retains authority, and
+``BOOTSTRAP_BASH=1`` or ``BOOTSTRAP_NINJA=1`` still requires the managed
+fork. On macOS the default auto policy continues to try managed Bash and
+Ninja before prefix fallback; the managed Bash bootstrap retains its
+revision/SDK/ABI-keyed cache validation. The original Bash seed is still
+selected independently and is never replaced by a self-bootstrap shell.
+
+Prefix scanning does not install packages, copy system binaries, change
+ownership, or prepend an unverified prefix to ``PATH``. Reuse the
+per-build ``deps`` directory and the separately managed Ninja cache where
+possible; do not move either cache implicitly or ship build-only tools in
+QEMU's runtime installation prefix.
+
 GNU Make source Autoconf compatibility
 ------------------------------------
 
