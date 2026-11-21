@@ -121,6 +121,54 @@ class CMakeBootstrapTests(unittest.TestCase):
             self.assertNotEqual(conflict.returncode, 0)
             self.assertIn("conflicts with an explicit", conflict.stderr)
 
+    def test_explicit_cmake_under_prefix_with_spaces(self):
+        # The native prefix may be inside a checkout or build path with spaces.
+        # Its absolute executable is one argument, not a shell command line.
+        with tempfile.TemporaryDirectory(prefix="whp-cmake-prefix-") as td:
+            bin_dir = Path(td) / "native tools" / "bin"
+            bin_dir.mkdir(parents=True)
+            cmake = bin_dir / "cmake"
+            cmake.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" = --version ]; then\n'
+                "    printf '%s\\n' 'cmake version 4.5.20261118'\n"
+                "    exit 0\n"
+                "fi\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            cmake.chmod(0o700)
+            env = os.environ.copy()
+            for name in ("BOOTSTRAP_CMAKE", "WHP_CMAKE_SEED", "CMAKE_CMD",
+                         "CMAKE"):
+                env.pop(name, None)
+            env.update({"BOOTSTRAP_CMAKE": "auto",
+                        "WHP_CMAKE_SEED": str(cmake)})
+            result = subprocess.run(
+                ["/bin/sh", str(SEED), "--print-cmake"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(cmake))
+
+            # A multiword command without an executable pathname must remain
+            # invalid. Shell tokenization would otherwise mis-select a tool.
+            env["WHP_CMAKE_SEED"] = "cmake --version"
+            rejected = subprocess.run(
+                ["/bin/sh", str(SEED), "--print-cmake"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("WHP_CMAKE_SEED", rejected.stderr)
+
+            # Invalid absolute paths must still fail closed.
+            env["WHP_CMAKE_SEED"] = str(bin_dir / "missing cmake")
+            missing = subprocess.run(
+                ["/bin/sh", str(SEED), "--print-cmake"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+
     def test_identity_changes_with_sdk_or_source(self):
         with mock.patch.object(module, "version", return_value="fixture"):
             first = module.identity("a" * 40, "/cc", "/cxx", "/make", "", "")
