@@ -530,6 +530,25 @@ WHP_CONFIG_ENV=$("$PYTHON" "$WHP_CONFIG_TOOL" --shell "$WHP_USER_CONFIG") || exi
 eval "$WHP_CONFIG_ENV"
 unset WHP_CONFIG_ENV
 
+# Validate native LLVM selection before PGO recursion, managed Git, Cargo,
+# CMake, Ninja, or other optional host dependency work. Saved settings have
+# been merged with explicit environment overrides at this point.
+BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch BOOTSTRAP_NATIVE_LLVM "${BOOTSTRAP_NATIVE_LLVM:-0}") || exit 1
+export BOOTSTRAP_NATIVE_LLVM
+if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
+    # Validate the LLD opt-in before starting an expensive LLVM bootstrap,
+    # while preserving the independent QEMU and LLVM host ABI selections.
+    WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"
+    case "$WHP_ARM64E_USE_LLD" in
+        0|1) ;;
+        *)
+            printf 'error: WHP_ARM64E_USE_LLD must be 0 or 1\n' >&2
+            exit 1
+            ;;
+    esac
+    export WHP_ARM64E_USE_LLD
+fi
+
 # The retired BOOTSTRAP_SCCACHE menu toggle is represented by a provider in
 # COMPILER_CACHE. Resolve it before any bootstrap or cache consumer starts.
 # Keep the legacy environment override, but do not accept contradictory
@@ -726,13 +745,10 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
     fi
 fi
 
-# Parse the LLVM switch before deciding whether QEMU-linked libraries should
-# use the seed compiler or the managed LLVM compiler. Portable-core builds do
-# not run the native LLVM bootstrap, so when LLVM is disabled the historical
-# early preparation path remains available.
-BOOTSTRAP_NATIVE_LLVM=$(whp_require_binary_switch BOOTSTRAP_NATIVE_LLVM "${BOOTSTRAP_NATIVE_LLVM:-0}") || exit 1
-export BOOTSTRAP_NATIVE_LLVM
-
+# QEMU-linked host libraries use the seed compiler when native LLVM is
+# disabled and the promoted LLVM compiler otherwise. The LLVM switch was
+# already validated immediately after loading .whpconfig, before any managed
+# host dependency could start.
 if [ "$BOOTSTRAP_NATIVE_LLVM" = 0 ]; then
     whp_prepare_qemu_host_libraries
 fi
@@ -879,14 +895,6 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     # Keep Clang, compiler-rt, and Mach-O linker selection coherent. ARM64e
     # LLD is an opt-in development lane: ASan still requires the Apple linker.
     # Never silently promote arm64e just because an LLD executable exists.
-    WHP_ARM64E_USE_LLD="${WHP_ARM64E_USE_LLD:-0}"
-    case "$WHP_ARM64E_USE_LLD" in
-        0|1) ;;
-        *)
-            printf 'error: WHP_ARM64E_USE_LLD must be 0 or 1\n' >&2
-            exit 1
-            ;;
-    esac
     if [ "$WHP_HOST_OS" = macos ]; then
         LIPO="$NATIVE_LLVM_DIR/bin/llvm-lipo"
         whp_use_apple_linker=0
