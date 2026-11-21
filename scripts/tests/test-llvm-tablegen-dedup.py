@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import os
-from pathlib import Path
 import subprocess
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 tablegen_path = Path(os.environ.get(
@@ -46,7 +46,7 @@ assert tablegen.index(parse) < start < tablegen.index('add_custom_command(OUTPUT
 assert tablegen.count('list(REMOVE_DUPLICATES tablegen_depends)') == 1
 assert 'list(REMOVE_DUPLICATES ARG_DEPENDS)' not in tablegen
 command = tablegen.split('  add_custom_command(OUTPUT ', 1)[1].split(
-    '  # \`make clean\`', 1
+    '  set_property(DIRECTORY APPEND PROPERTY', 1
 )[0]
 assert 'DEPENDS ${tablegen_depends}' in command
 assert 'DEPENDS ${ARG_DEPENDS}' not in command
