@@ -1481,6 +1481,22 @@ pkg-config implementation is installed.
 Bootstrap phase ordering
 ------------------------
 
+The public launcher resolves ``BUILD_DIR`` and merges the saved configuration
+with per-run overrides before validating ``BOOTSTRAP_NATIVE_LLVM`` and the
+LLVM-dependent ``WHP_ARM64E_USE_LLD`` selection. Invalid values now fail
+before PGO recursion, optional Git/Cargo cache preparation, Ninja/Bash
+bootstrap, DTC reconciliation, or a native LLVM build. The linker option
+remains irrelevant when native LLVM is disabled. This is an *early policy
+check*, not a second compiler ABI probe.
+
+The dependency execution order remains bootstrap zlib and host-tool roots,
+managed host tools and optional compiler cache, Ninja/Bash, native LLVM
+compiler promotion, QEMU-linked libraries, then Libtool/libisofs. Actual
+compiler/SDK/ARM64e runtime checks still occur in their owning bootstrap
+stages; moving those checks before their tools exist would be unsafe. The
+focused phase-order test exercises the isolated POSIX preflight and asserts
+that this sequence is preserved without deleting incremental build state.
+
 Independent Python seed and bundled CPython bootstrap boundary
 -------------------------------------------------------------
 
