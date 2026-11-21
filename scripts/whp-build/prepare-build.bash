@@ -182,18 +182,10 @@ whp_prepare_build_defaults()
                     printf 'error: QEMU_X86_FAMILY_LINK requires a POSIX symlink host\n' >&2
                     return 1 ;;
             esac
-            # i386 device menu filters are not yet mapped to x86_64 Kconfig.
-            # Never silently discard explicit user hardware selections.
-            local audio_key
-            for audio_key in I386_AUDIO_GAMEBLASTER I386_AUDIO_SB16 I386_AUDIO_ADLIB \
-                             I386_AUDIO_GUS I386_AUDIO_CS4231A I386_AUDIO_PCSPK \
-                             I386_AUDIO_ES1370 I386_AUDIO_AC97 I386_AUDIO_CS4630 \
-                             I386_AUDIO_HDA; do
-                if [[ "${!audio_key:-auto}" != auto ]]; then
-                    printf 'error: %s requires a separate i386 target; disable QEMU_X86_FAMILY_LINK\n' "$audio_key" >&2
-                    return 1
-                fi
-            done
+            # An x86_64 PC can expose the same ISA/PCI device models as
+            # i386. The configure stage applies explicit x86-family audio
+            # selections to x86_64-softmmu when this alias is selected.
+            # Never drop a requested device merely to reduce binary count.
             ;;
         *) printf 'error: QEMU_X86_FAMILY_LINK must be 0 or 1\n' >&2; return 1 ;;
     esac
