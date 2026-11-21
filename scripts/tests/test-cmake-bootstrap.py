@@ -40,13 +40,20 @@ class CMakeBootstrapTests(unittest.TestCase):
             "CXXFLAGS": "-target powerpc-apple-darwin9",
             "LDFLAGS": "-Wl,-platform_version,macos,99,99",
             "build_alias": "powerpc-apple-darwin9",
+            "CCC_OVERRIDE_OPTIONS": "^--target=powerpc-apple-darwin9",
+            "TARGET_TRIPLE": "powerpc-apple-darwin9",
+            "CC_FOR_TARGET": "/cross/cc",
+            "CMAKE_OSX_ARCHITECTURES": "ppc",
+            "IPHONEOS_DEPLOYMENT_TARGET": "14.0",
         }):
             env = module.host_environment(
                 "/usr/bin/cc", "/usr/bin/c++", "/usr/bin/make",
                 "/macOS/SDK/MacOSX.sdk", "26.0",
             )
         for key in ("CMAKE_TOOLCHAIN_FILE", "CMAKE_C_COMPILER_TARGET",
-                    "build_alias"):
+                    "build_alias", "CCC_OVERRIDE_OPTIONS", "TARGET_TRIPLE",
+                    "CC_FOR_TARGET", "CMAKE_OSX_ARCHITECTURES",
+                    "IPHONEOS_DEPLOYMENT_TARGET"):
             self.assertNotIn(key, env)
         self.assertEqual(env["CC"], "/usr/bin/cc")
         self.assertEqual(env["CXX"], "/usr/bin/c++")

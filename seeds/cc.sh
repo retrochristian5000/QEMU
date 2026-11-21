@@ -76,6 +76,8 @@ case "${1:-}" in
     --print-cxx|--check-cxx|--cxx) echo "error: use cxx.sh for C++" >&2; exit 2 ;;
 esac
 compiler=$(select_cc)
+# The compiler's real invocation must match the target-clean admission probe.
+unset CCC_OVERRIDE_OPTIONS
 if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
     # The admission probe used -isysroot; carry the exact validated SDK
     # into the real invocation too. Never let Clang silently fall back

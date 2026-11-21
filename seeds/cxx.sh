@@ -109,6 +109,8 @@ case "${1:-}" in
     --print-cc|--cc) echo "error: use cc.sh for C" >&2; exit 2 ;;
 esac
 compiler=$(select_cxx)
+# Prevent Clang from adding a foreign --target after native ABI admission.
+unset CCC_OVERRIDE_OPTIONS
 if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
     # The admission probe used -isysroot; carry the exact validated SDK
     # into the real invocation too. Never let Clang silently fall back

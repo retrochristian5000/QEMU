@@ -22,6 +22,7 @@ poison = {
     "PATH": "/usr/bin:/bin", "SDKROOT": "/selected/MacOSX.sdk",
     "DEVELOPER_DIR": "/selected/Developer", "CC_FOR_BUILD": "/selected/clang",
     "WHP_GREP_SEED": "/usr/bin/grep", "WHP_SED_SEED": "/usr/bin/sed",
+    "WHP_HOST_OS": "macos", "WHP_HOST_ARCH": "arm64",
     "CC": "/target/cc", "CFLAGS": "-fdeliberately-invalid",
     "LDFLAGS": "-Wl,--bad", "MAKEFLAGS": "--bad",
     "MAKEOVERRIDES": "CC=/target/cc", "CONFIG_SITE": "/target/site",
@@ -38,14 +39,25 @@ poison = {
     "PERL_LOCAL_LIB_ROOT": "/other/local",
     "PERL_MM_OPT": "INSTALL_BASE=/other/local",
     "PERL_MB_OPT": "--install_base /other/local",
+    "CCC_OVERRIDE_OPTIONS": "^--target=powerpc-unknown-linux-gnu",
+    "TARGET": "powerpc", "TARGET_TRIPLE": "powerpc-apple-darwin9",
+    "TARGET_ARCH": "powerpc", "TARGET_CC": "/cross/cc",
+    "CC_FOR_TARGET": "/cross/cc", "AR_FOR_TARGET": "/cross/ar",
+    "CMAKE_TOOLCHAIN_FILE": "/foreign/target.cmake",
+    "CMAKE_CXX_COMPILER_TARGET": "powerpc-apple-darwin9",
+    "CMAKE_OSX_ARCHITECTURES": "ppc",
+    "CARGO_BUILD_TARGET": "powerpc-apple-darwin9",
+    "CARGO_TARGET_POWERPC_APPLE_DARWIN9_LINKER": "/cross/ld",
+    "IPHONEOS_DEPLOYMENT_TARGET": "14.0",
+    "PLATFORM_NAME": "iphoneos", "SDK_NAME": "iPhoneOS.sdk",
 }
 env = module.clean_host_environment(poison)
 for key in ("PATH", "SDKROOT", "DEVELOPER_DIR", "CC_FOR_BUILD",
-            "WHP_GREP_SEED", "WHP_SED_SEED"):
+            "WHP_GREP_SEED", "WHP_SED_SEED", "WHP_HOST_OS", "WHP_HOST_ARCH"):
     assert env[key] == poison[key], key
 for key in poison:
     if key not in ("PATH", "SDKROOT", "DEVELOPER_DIR", "CC_FOR_BUILD",
-                   "WHP_GREP_SEED", "WHP_SED_SEED"):
+                   "WHP_GREP_SEED", "WHP_SED_SEED", "WHP_HOST_OS", "WHP_HOST_ARCH"):
         assert key not in env, key
 assert poison["CC"] == "/target/cc"
 

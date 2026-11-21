@@ -102,6 +102,8 @@ case "${1:-}" in
 esac
 
 compiler=$(clang_select) || exit 1
+# Keep the runtime driver target identical to its validated native probe.
+unset CCC_OVERRIDE_OPTIONS
 if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
     # Use the exact SDK as the native C compile/link/run admission probe.
     seed_sdk=$(whp_native_sdkroot) || exit 1
