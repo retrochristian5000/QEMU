@@ -15,12 +15,21 @@ Example::
 
 Select a real host audio backend to hear the PSG output.
 
-The WHP hardware menu exposes ``I386_AUDIO_GAMEBLASTER`` and
-``PPC_AUDIO_GAMEBLASTER`` as independent ``auto``/``y``/``n`` choices.
-``auto`` retains QEMU's default Kconfig decision; an explicit ``y``
-requires an ISA bus. PowerPC here names the emulated CPU target, not a
-claim that this ISA card was native to Macintosh hardware. The device
-remains distinct from ``sb16`` and must not overlap its I/O window.
+The Game Blaster model is **ISA-based, not i386-specific**: the same
+``gameblaster`` device is built for any QEMU target resolving
+``CONFIG_GAMEBLASTER=y`` with ``ISA_BUS`` enabled. Its original 8-bit
+ISA card and dual SAA1099 chips do not depend on the guest CPU's bitness.
+A selected emulated machine must nevertheless provide a compatible ISA bus.
+
+The WHP hardware menu retains ``I386_AUDIO_GAMEBLASTER`` as the existing
+x86-family selection key for saved configuration compatibility. In a Bash
+build it configures ``i386-softmmu``, or ``x86_64-softmmu`` when
+``QEMU_X86_FAMILY_LINK=1``. It does not select a second i386-specific
+card implementation. ``PPC_AUDIO_GAMEBLASTER`` is a separate build-target
+selection for the *same* device, not a claim that every PowerPC Macintosh
+has an ISA slot. ``auto`` preserves QEMU's default Kconfig decision;
+an explicit ``y`` requires an ISA bus. The model remains distinct from
+``sb16`` and must not overlap its I/O window.
 
 Guest ISA port map, relative to ``iobase`` (default 0x220):
 
