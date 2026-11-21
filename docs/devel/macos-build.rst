@@ -78,8 +78,17 @@ triple, such as ``aarch64-apple-darwin25``, but **upgrades the configured
 LLVM host/default triples** to versioned macOS product targets using the
 validated deployment minimum (for example ``aarch64-apple-macosx26.0``).
 The raw seed identity remains recorded for diagnostics and cache provenance:
-Darwin kernel releases are not used as macOS product versions. An explicit
-``NATIVE_LLVM_MACOS_ARCH=arm64e`` selects
+Darwin kernel releases are not used as macOS product versions. An *installed*
+Clang or Clang++ that reports a **versioned Darwin kernel triple** may still
+pass native LLVM admission if its normalized Apple macOS ABI matches the
+configured deployment target and the installed compiler passes the existing
+SDK, compiler-rt, Mach-O, C/C++ and Objective-C checks. Matching spelling
+alone is insufficient. Unversioned installed targets, differing OS versions,
+non-Apple vendors, simulator/iOS targets and different pointer-authentication
+ABIs remain rejected. The LLVM CMake host/default configuration continues
+to use explicit macOS product triples rather than kernel versions.
+
+An explicit ``NATIVE_LLVM_MACOS_ARCH=arm64e`` selects
 ``arm64e-apple-macosx<deployment>`` as both configured triples, not the
 ordinary AArch64 default. The existing C/C++ PAC, SDK, architecture,
 compiler-rt and installed-toolchain probes must all pass. Other Darwin-family
