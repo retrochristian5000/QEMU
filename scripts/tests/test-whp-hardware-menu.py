@@ -177,6 +177,64 @@ whp_configure_write_ppc_device_config "$1" "$2"
             self.assertEqual(text.count(symbol + '='), 1)
             self.assertIn(f'{symbol}=n', text)
 
+    def test_ppc_spaced_kconfig_assignments_match_python_and_bash_policy(self):
+        config = load_module(CONFIG_TOOL, 'whp_config_ppc_spaced_kconfig')
+        values = config.default_values()
+        values.update({
+            'CONFIG_MAC_NEWWORLD': 'y',
+            'CONFIG_MAC_OLDWORLD': 'y',
+            'PPC_AUDIO_SB16': 'y',
+            'PPC_AUDIO_HDA': 'y',
+        })
+        original = (
+            '# existing PPC choices\n'
+            '  CONFIG_MAC_NEWWORLD = n\n'
+            '\tCONFIG_MAC_OLDWORLD = n\n'
+            ' CONFIG_ISA_BUS = n\n'
+            ' CONFIG_PCI = n\n'
+            '  CONFIG_SB16 = n\n'
+            ' CONFIG_HDA = n\n'
+            ' CONFIG_ADLIB = n # leave unchanged on auto\n'
+            '# CONFIG_PCSPK=n\n'
+        )
+        python_text = config.render_ppc_device_config(values, original)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            base = root / 'default.mak'
+            output = root / 'whp-user.mak'
+            base.write_text(original, encoding='utf-8')
+            script = (
+                'set -euo pipefail\n'
+                f'source {CONFIGURE_BASH!s}\n'
+                'CONFIG_MAC_NEWWORLD=y\n'
+                'CONFIG_MAC_OLDWORLD=y\n'
+                'PPC_AUDIO_SB16=y\n'
+                'PPC_AUDIO_HDA=y\n'
+                'whp_configure_write_ppc_device_config "$1" "$2"\n'
+            )
+            result = subprocess.run(
+                ['bash', '-c', script, '_', str(base), str(output)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            bash_text = output.read_text(encoding='utf-8')
+
+        for source in (python_text, bash_text):
+            with self.subTest(renderer='python' if source is python_text else 'bash'):
+                config.validate_device_config_syntax(source)
+                for symbol in (
+                    'CONFIG_MAC_NEWWORLD', 'CONFIG_MAC_OLDWORLD',
+                    'CONFIG_ISA_BUS', 'CONFIG_PCI', 'CONFIG_SB16',
+                    'CONFIG_HDA',
+                ):
+                    self.assertEqual(source.count(symbol), 1, (symbol, source))
+                    self.assertIn(symbol + '=y', source)
+                self.assertIn(
+                    ' CONFIG_ADLIB = n # leave unchanged on auto', source,
+                )
+                self.assertIn('# CONFIG_PCSPK=n', source)
+
     def test_all_tracked_device_presets_parse_with_qemu_minikconf(self):
         minikconf = load_module(MINIKCONF, 'whp_qemu_minikconf_all_presets')
         presets = sorted((ROOT / 'configs/devices').glob('*/*.mak'))
