@@ -385,6 +385,7 @@ class ManagedSccacheTests(unittest.TestCase):
             'gitlink': 'a' * 40,
             'rustc_path': '/native/rustc',
             'rustc': 'rustc 1.91.0',
+            'cargo_path': '/native/cargo',
             'cargo': 'cargo 1.91.0',
             'profile': 'lto=false,codegen-units=8,debug=0',
             'native_producer': {
@@ -418,6 +419,8 @@ class ManagedSccacheTests(unittest.TestCase):
         for key, changed in (
             ('rustc_path', '/other/rustc'),
             ('rustc', 'rustc 1.92.0'),
+            ('cargo_path', '/other/cargo'),
+            ('cargo', 'cargo 1.92.0'),
             ('profile', 'lto=true,codegen-units=1,debug=2'),
         ):
             modified = {**marker, key: changed}
@@ -503,7 +506,7 @@ class ManagedSccacheTests(unittest.TestCase):
             identity = {
                 'schema': bootstrap.SCHEMA, 'gitlink': 'a' * 40,
                 'rustc_path': '/native/rustc', 'rustc': 'rustc 1.91.0',
-                'cargo': 'cargo 1.91.0',
+                'cargo_path': 'cargo', 'cargo': 'cargo 1.91.0',
                 'features': 'local-only', 'profile': 'lto=false,codegen-units=8,debug=0',
                 'native_producer': {'cc': '/native/clang', 'cxx': '/native/clang++'},
             }
