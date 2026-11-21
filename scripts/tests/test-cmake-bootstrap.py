@@ -5,6 +5,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -168,6 +169,50 @@ class CMakeBootstrapTests(unittest.TestCase):
                 env=env, capture_output=True, text=True, check=False,
             )
             self.assertNotEqual(missing.returncode, 0)
+
+    def test_actual_cmake_in_space_prefix_configures_project(self):
+        installed = shutil.which("cmake")
+        if installed is None:
+            self.skipTest("host CMake is unavailable")
+        with tempfile.TemporaryDirectory(prefix="whp-cmake-downstream-") as td:
+            work = Path(td)
+            tool_dir = work / "native tools" / "bin"
+            tool_dir.mkdir(parents=True)
+            candidate = tool_dir / "cmake"
+            candidate.symlink_to(installed)
+            env = os.environ.copy()
+            for name in ("BOOTSTRAP_CMAKE", "WHP_CMAKE_SEED", "CMAKE_CMD",
+                         "CMAKE"):
+                env.pop(name, None)
+            env.update({"BOOTSTRAP_CMAKE": "0",
+                        "WHP_CMAKE_SEED": str(candidate)})
+            selected = subprocess.run(
+                ["/bin/sh", str(SEED), "--print-cmake"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            if selected.returncode and "host CMake >= 3.20" in selected.stderr:
+                self.skipTest("host CMake is older than the supported minimum")
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            self.assertEqual(selected.stdout.strip(), str(candidate))
+
+            source = work / "downstream project"
+            source.mkdir()
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.20)\\n"
+                "project(WHP_CMake_Downstream LANGUAGES NONE)\\n"
+                "file(WRITE \\"${CMAKE_CURRENT_BINARY_DIR}/configured.txt\\" \\"ok\\")\\n",
+                encoding="utf-8",
+            )
+            output = work / "generated graph"
+            result = subprocess.run(
+                [str(candidate), "-S", str(source), "-B", str(output),
+                 "-G", "Unix Makefiles"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                (output / "configured.txt").read_text(encoding="utf-8"), "ok",
+            )
 
     def test_identity_changes_with_sdk_or_source(self):
         with mock.patch.object(module, "version", return_value="fixture"):
