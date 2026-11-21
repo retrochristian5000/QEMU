@@ -19,7 +19,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 BASH_HELPER = ROOT / "scripts" / "ensure-bash.py"
-RUNTIME_NAME = "whp-qemu-bash"
+RUNTIME_NAME = "bash"
 RECORD_NAME = ".whp-qemu-bash.sha256"
 
 
