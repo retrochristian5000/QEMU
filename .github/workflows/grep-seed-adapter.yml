@@ -9,6 +9,8 @@ on:
       - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'seeds/grep.sh'
       - 'seeds/which.sh'
+      - 'seeds/GNUwhich.sh'
+      - 'scripts/tests/test-gnu-which-seed.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
@@ -24,6 +26,8 @@ on:
       - 'scripts/tests/test-awk-seed-adapter.bash'
       - 'seeds/grep.sh'
       - 'seeds/which.sh'
+      - 'seeds/GNUwhich.sh'
+      - 'scripts/tests/test-gnu-which-seed.sh'
       - 'scripts/whp-build/seed-bin/grep'
       - 'build.sh'
       - 'scripts/tests/test-grep-seed-adapter.bash'
@@ -55,6 +59,11 @@ jobs:
           sh -n seeds/which.sh
           sh -n scripts/tests/test-which-seed.sh
           sh scripts/tests/test-which-seed.sh
+      - name: Verify optional GNU which seed isolation
+        run: |
+          sh -n seeds/GNUwhich.sh
+          sh -n scripts/tests/test-gnu-which-seed.sh
+          sh scripts/tests/test-gnu-which-seed.sh
       - name: Verify early AWK seed, recursion and AWK semantics
         run: bash scripts/tests/test-awk-seed-adapter.bash
       - name: Verify early grep seed, recursion and grep semantics
@@ -62,4 +71,4 @@ jobs:
       - name: Verify AWK and grep before sed, Python, and Autotools
         run: python3 scripts/tests/test-sed-bootstrap-order.py
       - name: Validate portable shell entrypoints
-        run: sh -n seeds/awk.sh scripts/whp-build/seed-bin/awk seeds/grep.sh scripts/whp-build/seed-bin/grep build.sh
+        run: sh -n seeds/awk.sh scripts/whp-build/seed-bin/awk seeds/grep.sh scripts/whp-build/seed-bin/grep seeds/GNUwhich.sh build.sh
