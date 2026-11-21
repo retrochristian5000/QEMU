@@ -1583,23 +1583,10 @@ native_neon_headers_usable()
         fi
     done
 
-    # Select A18 Pro features explicitly. This must not enable BF16 in
-    # generic ARM binaries merely because the compiler runs on an A18 Pro.
-    if ! printf '%s\n' \
-        '#include <arm_neon.h>' \
-        '#ifndef __ARM_FEATURE_BF16' \
-        '#error "Apple A18 Pro feature model lacks BF16"' \
-        '#endif' \
-        'float32x4_t whp_a18_bf16(float32x4_t sum, bfloat16x8_t a, bfloat16x8_t b) {' \
-        '    return vbfdotq_f32(sum, a, b);' \
-        '}' |
-        "$prefix/bin/clang" -arch "$darwin_cmake_arch" \
-            -mcpu=apple-a18-pro -isysroot "$sdkroot" \
-            "-mmacosx-version-min=$deployment_target" \
-            -ffreestanding -Werror -x c -fsyntax-only - >/dev/null; then
-        native_llvm_validation_error resource "installed NEON/BF16 header or A18 Pro feature model failed for $darwin_cmake_arch"
-        return 1
-    fi
+    # Do not require an A18 Pro-specific CPU model or BF16 intrinsic for
+    # generic native Clang admission. This check must also accept older
+    # Apple Silicon machines and reusable LLVM installs for other hosts.
+    # The A18 Pro BF16 model has a separate macOS CI capability probe.
 }
 
 usable()
