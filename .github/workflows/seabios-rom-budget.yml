@@ -32,7 +32,7 @@ jobs:
           sparse-checkout: |
             roms
             scripts/whp-build
-            scripts/tests/test-seabios-clang-abi.py
+            scripts/tests
           submodules: false
 
       - name: Fetch pinned SeaBIOS source
