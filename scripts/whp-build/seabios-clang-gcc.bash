@@ -247,6 +247,20 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
     }
     ' "$raw_asm" > "$fixed_asm"
 
+
+    # Emit diagnostic assembly only for the three full-firmware translation
+    # units. The first copy is unmodified LLVM output; the second reflects
+    # SeaBIOS's required no-merge ELF section compatibility transformation.
+    # This is opt-in and does not change the object passed to the linker.
+    if [[ "${WHP_SEABIOS_SAVE_ASM:-0}" == 1 && "$action" == -c ]]; then
+        case "${output##*/}" in
+            ccode16.o|code32seg.o|ccode32flat.o)
+                cp -- "$raw_asm" "$output.llvm.s"
+                cp -- "$fixed_asm" "$output.seabios.s"
+                ;;
+        esac
+    fi
+
     if [[ "$action" == -S ]]; then
         cp "$fixed_asm" "$output"
         exit 0
