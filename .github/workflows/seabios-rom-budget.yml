@@ -9,6 +9,9 @@ on:
       - 'roms/config.seabios-128k'
       - 'roms/config.seabios-microvm'
       - 'roms/Makefile'
+      - 'scripts/whp-build/seabios-clang-gcc.bash'
+      - 'scripts/tests/test-seabios-clang-abi.py'
+      - 'toolchains/llvm-project'
       - '.github/workflows/seabios-rom-budget.yml'
   workflow_dispatch:
 
