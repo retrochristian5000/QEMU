@@ -1,0 +1,80 @@
+name: WHP driver and QEMU test bridge
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .gitmodules
+      - tests/whp-drivers
+      - scripts/tests/whp_drivers_qmp.py
+      - scripts/tests/test_whp_drivers_qmp.py
+      - docs/devel/whp-driver-integration.rst
+      - .github/workflows/whp-driver-bridge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  driver-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out QEMU without nested toolchains
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Fetch pinned WHP-Drivers source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 -- tests/whp-drivers
+          expected="$(git rev-parse HEAD:tests/whp-drivers)"
+          actual="$(git -C tests/whp-drivers rev-parse HEAD)"
+          test "$expected" = "$actual"
+          test -f tests/whp-drivers/tools/dos/whpprobe.c
+          printf 'WHP-Drivers pinned revision: %s\n' "$actual"
+
+      - name: Validate offline bridge contract
+        run: |
+          python3 -m unittest discover -s scripts/tests -p test_whp_drivers_qmp.py
+          python3 -m py_compile scripts/tests/whp_drivers_qmp.py
+
+      - name: Run host-only driver research regressions
+        run: |
+          sh tests/whp-drivers/build test-probe-scope
+          sh tests/whp-drivers/build test-usb-pci-hci
+          sh tests/whp-drivers/build test-hda-probe
+          sh tests/whp-drivers/build test-brother-mfc290c
+
+  qemu-controller-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    needs: driver-contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out QEMU fork
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Install minimal QEMU build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfdt-dev libglib2.0-dev libpixman-1-dev \
+            ninja-build pkgconf python3-venv zlib1g-dev
+
+      - name: Build i386 emulator from this QEMU fork
+        run: |
+          ./configure --target-list=i386-softmmu \
+            --disable-docs --disable-gtk --disable-pa --disable-werror
+          ninja -C build qemu-system-i386
+
+      - name: Read-only QMP PCI controller smoke test
+        run: |
+          python3 scripts/tests/whp_drivers_qmp.py \
+            --qemu build/qemu-system-i386

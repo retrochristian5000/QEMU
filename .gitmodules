@@ -184,3 +184,8 @@
 	url = https://github.com/retrochristian5000/CMake.git
 	branch = master
 	shallow = true
+
+[submodule "tests/whp-drivers"]
+	path = tests/whp-drivers
+	url = https://github.com/retrochristian5000/WHP-Drivers.git
+	shallow = true
