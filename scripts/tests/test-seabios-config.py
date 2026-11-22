@@ -117,17 +117,17 @@ class SeaBiosConfigTests(unittest.TestCase):
             firmware.mkdir(parents=True)
             shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
             (roms / 'config.seabios-128k').write_text(
-                'CONFIG_ROM_SIZE=128\\n', encoding='utf-8')
+                'CONFIG_ROM_SIZE=128\n', encoding='utf-8')
 
             (firmware / 'Makefile').write_text(
-                'all: $(OUT)bios.bin\\n'
-                'oldnoconfig:\\n\\t@:\\n'
-                '$(OUT)bios.bin: payload\\n'
-                '\\t@mkdir -p $(dir $@)\\n'
-                '\\t@printf "%s\\\\n%s\\\\n" '
-                '"$(SEABIOS_CLANG_SIZE_OPT)" "$(CROSS_PREFIX)" > $@\\n',
+                'all: $(OUT)bios.bin\n'
+                'oldnoconfig:\n\t@:\n'
+                '$(OUT)bios.bin: payload\n'
+                '\t@mkdir -p $(dir $@)\n'
+                '\t@printf "%s\\n%s\\n" '
+                '"$(SEABIOS_CLANG_SIZE_OPT)" "$(CROSS_PREFIX)" > $@\n',
                 encoding='utf-8')
-            (firmware / 'payload').write_text('source\\n', encoding='utf-8')
+            (firmware / 'payload').write_text('source\n', encoding='utf-8')
             for cmd in (
                 ('init', '-q'),
                 ('config', 'user.name', 'WHP Test'),
@@ -150,16 +150,16 @@ class SeaBiosConfigTests(unittest.TestCase):
                                  result.stdout + result.stderr)
 
             build('OzSegmented')
-            self.assertEqual(output.read_text(), 'OzSegmented\\n\\n')
-            output.write_text('preserve incremental build\\n')
+            self.assertEqual(output.read_text(), 'OzSegmented\n\n')
+            output.write_text('preserve incremental build\n')
             build('OzSegmented')
-            self.assertEqual(output.read_text(), 'preserve incremental build\\n')
+            self.assertEqual(output.read_text(), 'preserve incremental build\n')
             build('Oz16Only')
-            self.assertEqual(output.read_text(), 'Oz16Only\\n\\n')
+            self.assertEqual(output.read_text(), 'Oz16Only\n\n')
             build('Os')
-            self.assertEqual(output.read_text(), 'Os\\n\\n')
+            self.assertEqual(output.read_text(), 'Os\n\n')
             build('Os', 'alternate-')
-            self.assertEqual(output.read_text(), 'Os\\nalternate-\\n')
+            self.assertEqual(output.read_text(), 'Os\nalternate-\n')
 
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):
         with tempfile.TemporaryDirectory(prefix='whp-seabios-revision-') as tmp:

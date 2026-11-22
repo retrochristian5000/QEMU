@@ -112,6 +112,8 @@ build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
 
 # A new checkout can remove files still named in a previous build's .d files.
 # Keep each variant incremental within one source revision.
+# The build stamp includes compiler selection and the Clang size profile so
+# switching optimization levels never silently reuses older firmware objects.
 build-seabios-config-%: config.%
 	@set -e; \
 		build_root="$(SEABIOS_BUILD_ROOT)"; \
@@ -123,14 +125,12 @@ build-seabios-config-%: config.%
 			revision=$$(unset GIT_COMMON_DIR; \
 				"$(GIT)" --git-dir="$$source_dir/.git" rev-parse --verify HEAD); \
 		fi; \
-		# Cache identity must include the effective compiler and size profile. \
-		# A changed Clang profile can change ROM size without changing source. \
-		stamp="$out/.whp-seabios-source"; \
+		stamp="$$out/.whp-seabios-source"; \
 		if printf '%s\n' \
-			"$source_dir $revision" \
+			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(CC)" \
-			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" | cmp -s - "$stamp"; then \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" | cmp -s - "$$stamp"; then \
 			exit 0; \
 		fi; \
 		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
@@ -142,10 +142,10 @@ build-seabios-config-%: config.%
 		mkdir -p "$$out"; \
 		tmp="$$stamp.new.$$$$"; \
 		printf '%s\n' \
-			"$source_dir $revision" \
+			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(CC)" \
-			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" > "$tmp"; \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" > "$$tmp"; \
 		mv "$$tmp" "$$stamp"
 	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
