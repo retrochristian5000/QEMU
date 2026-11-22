@@ -214,6 +214,52 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 self.assertIn('.text', elf32_sections(obj))
 
+    def test_optional_assembly_audit_does_not_change_firmware_object(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'firmware-audit.c'
+            source.write_text(
+                'const char *firmware_audit(void) { return "ROM alignment"; }\n',
+                encoding='utf-8',
+            )
+            output = root / 'ccode16.o'
+            command = [
+                str(compiler), '-m32', '-march=i386', '-Os',
+                '-ffreestanding', '-fno-pic', '-fno-pie',
+                '-ffunction-sections', '-fno-merge-constants',
+                '-c', str(source), '-o', str(output),
+            ]
+            env = dict(os.environ)
+            env.pop('WHP_SEABIOS_SAVE_ASM', None)
+            baseline = subprocess.run(
+                command, text=True, capture_output=True, check=False, env=env)
+            self.assertEqual(baseline.returncode, 0, baseline.stderr)
+            original = output.read_bytes()
+            raw = root / 'ccode16.o.llvm.s'
+            normalized = root / 'ccode16.o.seabios.s'
+            self.assertFalse(raw.exists())
+            self.assertFalse(normalized.exists())
+
+            env['WHP_SEABIOS_SAVE_ASM'] = '1'
+            audited = subprocess.run(
+                command, text=True, capture_output=True, check=False, env=env)
+            self.assertEqual(audited.returncode, 0, audited.stderr)
+            self.assertEqual(output.read_bytes(), original)
+            self.assertTrue(raw.is_file())
+            self.assertTrue(normalized.is_file())
+            self.assertIn('.rodata', raw.read_text(encoding='utf-8'))
+            self.assertIn('.nomerge', normalized.read_text(encoding='utf-8'))
+
+            unrelated = root / 'unrelated.o'
+            quiet = subprocess.run(
+                [*command[:-1], str(unrelated)],
+                text=True, capture_output=True, check=False, env=env)
+            self.assertEqual(quiet.returncode, 0, quiet.stderr)
+            self.assertFalse((root / 'unrelated.o.llvm.s').exists())
+            self.assertFalse((root / 'unrelated.o.seabios.s').exists())
+
     def test_no_merge_constants_removes_elf_merge_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
