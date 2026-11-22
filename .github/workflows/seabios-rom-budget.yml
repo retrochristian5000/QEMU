@@ -32,6 +32,7 @@ jobs:
           sparse-checkout: |
             roms
             scripts/whp-build
+            scripts/tests/test-seabios-clang-abi.py
           submodules: false
 
       - name: Fetch pinned SeaBIOS source
@@ -160,6 +161,9 @@ jobs:
           done
           exit "$failed"
 
+      - name: Verify SeaBIOS Clang ABI and size-profile routing
+        run: python3 scripts/tests/test-seabios-clang-abi.py
+
       - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'
@@ -193,3 +197,39 @@ jobs:
               tail -n 90 "$log" >&2
               exit 1
             fi
+
+      - name: Measure Clang -Oz only for 16-bit ROM code
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_SIZE_OPT: Oz16Only
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-clang-oz16-rom-budget"
+          gcc_root="$RUNNER_TEMP/whp-seabios-rom-budget"
+          test -x "$prefix/bin/i386-none-elf-gcc"
+          variant=seabios-128k
+          log="$RUNNER_TEMP/$variant-clang-oz16-rom.log"
+          printf '\\n=== Clang -Oz 16-bit only, -Os elsewhere: %s ===\\n' "$variant"
+          if make -C roms "build-seabios-config-$variant" \\
+              "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \\
+              "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+            image="$root/$variant/bios.bin.raw"
+            padded="$root/$variant/bios.bin"
+            test -s "$image"
+            test "$(wc -c < "$padded")" -eq 131072
+            gcc_bytes="$(wc -c < "$gcc_root/$variant/bios.bin.raw")"
+            clang_bytes="$(wc -c < "$image")"
+            printf '%s: GCC=%d Clang-Oz16Only=%d delta=%+d bytes\\n' \\
+              "$variant" "$gcc_bytes" "$clang_bytes" \\
+              "$((clang_bytes - gcc_bytes))"
+            printf '%s: Clang -Oz16Only free capacity=%d bytes\\n' \\
+              "$variant" "$((131072 - clang_bytes))"
+            grep -E '^(16bit size:|32bit |ROM size audit:|Total size:)' \\
+              "$log" || true
+          else
+            printf 'error: Clang -Oz16Only ROM build failed: %s\\n' "$variant" >&2
+            tail -n 90 "$log" >&2
+            exit 1
+          fi
+

@@ -20,8 +20,24 @@ case "$size_level" in
             fi
         done
         ;;
+    Oz16Only)
+        # Probe whether LLVM's 16-bit emission alone supplies the ROM savings.
+        # Keep 32-bit segmented and flat code at -Os for a controlled A/B test.
+        size_level=Os
+        mode16=0
+        segment=0
+        for arg in "$@"; do
+            case "$arg" in
+                -DMODE16=1) mode16=1 ;;
+                -DMODESEGMENT=1) segment=1 ;;
+            esac
+        done
+        if ((mode16 && segment)); then
+            size_level=Oz
+        fi
+        ;;
     *)
-        printf 'error: SEABIOS_CLANG_SIZE_OPT must be Os, Oz, or OzSegmented\n' >&2
+        printf 'error: SEABIOS_CLANG_SIZE_OPT must be Os, Oz, OzSegmented, or Oz16Only\n' >&2
         exit 2
         ;;
 esac
