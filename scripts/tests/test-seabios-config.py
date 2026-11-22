@@ -109,6 +109,58 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertIn('CONFIG_ATA_DMA=y', normal)
         self.assertIn('CONFIG_ATA_DMA=n', isapc)
 
+    def test_clang_profile_change_invalidates_cached_firmware(self):
+        with tempfile.TemporaryDirectory(prefix='whp-seabios-profile-') as tmp:
+            root = pathlib.Path(tmp)
+            roms = root / 'roms'
+            firmware = roms / 'seabios'
+            firmware.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            (roms / 'config.seabios-128k').write_text(
+                'CONFIG_ROM_SIZE=128\\n', encoding='utf-8')
+
+            (firmware / 'Makefile').write_text(
+                'all: $(OUT)bios.bin\\n'
+                'oldnoconfig:\\n\\t@:\\n'
+                '$(OUT)bios.bin: payload\\n'
+                '\\t@mkdir -p $(dir $@)\\n'
+                '\\t@printf "%s\\\\n%s\\\\n" '
+                '"$(SEABIOS_CLANG_SIZE_OPT)" "$(CROSS_PREFIX)" > $@\\n',
+                encoding='utf-8')
+            (firmware / 'payload').write_text('source\\n', encoding='utf-8')
+            for cmd in (
+                ('init', '-q'),
+                ('config', 'user.name', 'WHP Test'),
+                ('config', 'user.email', 'whp@example.invalid'),
+                ('add', '.'),
+                ('commit', '-qm', 'fake firmware'),
+            ):
+                subprocess.run(['git', *cmd], cwd=firmware, check=True)
+
+            output = root / 'build/firmware/seabios/seabios-128k/bios.bin'
+
+            def build(profile, cross_prefix=''):
+                result = subprocess.run(
+                    ['make', 'build-seabios-config-seabios-128k',
+                     'SEABIOS_CLANG_SIZE_OPT=' + profile,
+                     'SEABIOS_CROSS_PREFIX=' + cross_prefix],
+                    cwd=roms, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0,
+                                 result.stdout + result.stderr)
+
+            build('OzSegmented')
+            self.assertEqual(output.read_text(), 'OzSegmented\\n\\n')
+            output.write_text('preserve incremental build\\n')
+            build('OzSegmented')
+            self.assertEqual(output.read_text(), 'preserve incremental build\\n')
+            build('Oz16Only')
+            self.assertEqual(output.read_text(), 'Oz16Only\\n\\n')
+            build('Os')
+            self.assertEqual(output.read_text(), 'Os\\n\\n')
+            build('Os', 'alternate-')
+            self.assertEqual(output.read_text(), 'Os\\nalternate-\\n')
+
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):
         with tempfile.TemporaryDirectory(prefix='whp-seabios-revision-') as tmp:
             root = pathlib.Path(tmp)

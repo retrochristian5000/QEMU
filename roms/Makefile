@@ -123,8 +123,14 @@ build-seabios-config-%: config.%
 			revision=$$(unset GIT_COMMON_DIR; \
 				"$(GIT)" --git-dir="$$source_dir/.git" rev-parse --verify HEAD); \
 		fi; \
-		stamp="$$out/.whp-seabios-source"; \
-		if printf '%s\n' "$$source_dir $$revision" | cmp -s - "$$stamp"; then \
+		# Cache identity must include the effective compiler and size profile. \
+		# A changed Clang profile can change ROM size without changing source. \
+		stamp="$out/.whp-seabios-source"; \
+		if printf '%s\n' \
+			"$source_dir $revision" \
+			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
+			"build_cc=$(CC)" \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" | cmp -s - "$stamp"; then \
 			exit 0; \
 		fi; \
 		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
@@ -135,7 +141,11 @@ build-seabios-config-%: config.%
 		fi; \
 		mkdir -p "$$out"; \
 		tmp="$$stamp.new.$$$$"; \
-		printf '%s\n' "$$source_dir $$revision" > "$$tmp"; \
+		printf '%s\n' \
+			"$source_dir $revision" \
+			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
+			"build_cc=$(CC)" \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" > "$tmp"; \
 		mv "$$tmp" "$$stamp"
 	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
