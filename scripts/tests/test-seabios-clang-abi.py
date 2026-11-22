@@ -144,7 +144,7 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             prefix = self.make_prefix(pathlib.Path(tmp))
             clang = prefix / 'llvm' / 'bin' / 'clang'
             clang.unlink()
-            clang.write_text('#!/bin/sh\\nprintf "%s\\n" "$@"\\n',
+            clang.write_text('#!/bin/sh\nprintf "%s\n" "$@"\n',
                              encoding='utf-8')
             clang.chmod(0o755)
             compiler = prefix / 'bin' / 'i386-none-elf-gcc'
