@@ -72,3 +72,54 @@ execution test.  Use a copy-on-write guest disk, an explicit serial-output
 contract, and bounded timeouts.  Do not claim a successful DOS run based on
 QMP inventory or PCI class matches, and do not silently attach USB host
 devices, write firmware, print, scan, or dial a fax number.
+
+
+MFC-290C RISC opcode triage (documentation-only)
+------------------------------------------------
+
+Brother SM-FAX098 (June 2008) identifies a 128 MHz RISC CPU and a main
+ASIC on the MFC-290C class, but gives no CPU ISA, execution mode, endian
+setting, ROM image, reset address or ASIC top marking.  ``B53K961`` is
+a Brother main-PCB *assembly-family symbol*, not a CPU part number.
+Do not equate the MFC-290C's USB 04f9:01fd endpoints with its CPU opcodes.
+
+Different historical Brother machines supply *conflicting precedents*:
+the older MFC-8220's main ASIC incorporates Fujitsu SPARClite, while
+the HL-2700CN identifies a Toshiba MIPS64 CPU.  Neither determines the
+MFC-290C's ISA; the documented 128 MHz clock does not distinguish them.
+
+Source inventory in this QEMU fork (checked 2026-11-22):
+
+* ``configs/targets/sparc-softmmu.mak`` and ``target/sparc/``:
+  generic SPARC system emulation.  ``disas/sparc.c`` contains explicit
+  SPARClite opcode-table entries including ``divscc``, ``scan``,
+  and extended FPop operations (e.g. ``efadds``).  However,
+  ``target/sparc/translate.c`` and ``target/sparc/insns.decode``
+  do **not** name those SPARClite-specific operations.  An opcode
+  dictionary entry must not be called a working TCG implementation.
+* ``configs/targets/mips-softmmu.mak`` and
+  ``mipsel-softmmu.mak``: separate big/little-endian MIPS system
+  emulators; ``target/mips/`` is not a Brother ASIC device model.
+* ``configs/targets/arm-softmmu.mak`` and ``target/arm/``:
+  candidate older 32-bit Arm family, not evidence for Arm silicon.
+* ``configs/targets/sh4-softmmu.mak`` and ``target/sh4/``:
+  chronologically possible comparison, no model-specific evidence.
+
+RISC-V and AArch64 are too recent for the original 2008 board, despite
+being supported by contemporary QEMU.  The distinction is chronological,
+not a claim that all CPU extensions or implementations of eligible ISAs
+were available in 2008.
+
+**Next test gate:** before feeding bytes to any decoder, authenticate an
+actual firmware image and its model/board provenance, checksum, container
+format, executable segment, endianness and load mapping.  A firmware
+*updater executable* is not necessarily the machine's instruction stream.
+If static analysis establishes an ISA, compare disassembly across
+independent code regions and build a minimal CPU-plus-memory harness
+before attempting peripheral emulation.  Even successful CPU instruction
+tests would not implement an MFC-290C USB device, printhead, scanner, fax
+modem, storage subsystem or flash interface.  Keep read-only inspection
+separate from physical firmware writes or maintenance-mode commands.
+
+The pinned source ledger is
+``tests/whp-drivers/documentation/brother-mfc290c-firmware.md``.
