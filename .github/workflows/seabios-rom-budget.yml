@@ -225,6 +225,23 @@ jobs:
             done
           done
 
+      - name: Analyze emitted SeaBIOS string literals by code mode
+        if: always()
+        run: |
+          set -eu
+          python3 scripts/tests/test-seabios-string-literals.py
+          out="$RUNNER_TEMP/whp-seabios-clang-oz-rom-budget/seabios-128k"
+          if test -s "$out/ccode16.o.llvm.s" &&
+             test -s "$out/code32seg.o.llvm.s" &&
+             test -s "$out/ccode32flat.o.llvm.s"; then
+            python3 scripts/whp-build/audit-seabios-string-literals.py \
+              "$out/ccode16.o.llvm.s" \
+              "$out/code32seg.o.llvm.s" \
+              "$out/ccode32flat.o.llvm.s"
+          else
+            printf '%s\n' 'ROM literal audit: compiler output unavailable'
+          fi
+
       - name: Measure Clang -Oz only for 16-bit ROM code
         env:
           WHP_ROM_SIZE_REPORT: '1'
