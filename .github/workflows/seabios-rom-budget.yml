@@ -175,6 +175,7 @@ jobs:
       - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'
+          WHP_SEABIOS_SAVE_ASM: '1'
         run: |
           set -eu
           prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
@@ -205,6 +206,24 @@ jobs:
               tail -n 90 "$log" >&2
               exit 1
             fi
+
+      - name: Summarize Clang assembly alignment for isapc
+        if: always()
+        run: |
+          set -eu
+          out="$RUNNER_TEMP/whp-seabios-clang-oz-rom-budget/seabios-128k"
+          for unit in ccode16 code32seg ccode32flat; do
+            for stage in llvm seabios; do
+              asm="$out/$unit.o.$stage.s"
+              if test ! -s "$asm"; then
+                continue
+              fi
+              lines="$(wc -l < "$asm")"
+              directives="$(grep -Ec '^[[:space:]]*\.p2align[[:space:]]' "$asm" || true)"
+              printf 'Assembly audit: %s %s lines=%s alignment directives=%s\n' \
+                "$unit" "$stage" "$lines" "$directives"
+            done
+          done
 
       - name: Measure Clang -Oz only for 16-bit ROM code
         env:
