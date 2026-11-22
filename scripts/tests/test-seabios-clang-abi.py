@@ -167,6 +167,53 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                 self.assertNotIn('-Os' if expected == '-Oz' else '-Oz',
                                  flags)
 
+    def test_freestanding_elf_triple_keeps_frame_pointer_omission(self):
+        # A bare-metal i386 target defaults to frame pointers under Clang.
+        # SeaBIOS explicitly omits them: losing the flag bloats every call.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'firmware-frame.c'
+            source.write_text(
+                'int firmware_increment(int value) { return value + 1; }\n',
+                encoding='utf-8')
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_SIZE_OPT'] = 'Oz16Only'
+
+            for mode_args, mode16 in (
+                (['-DMODE16=0', '-DMODESEGMENT=0'], False),
+                (['-DMODE16=0', '-DMODESEGMENT=1'], False),
+                (['-DMODE16=1', '-DMODESEGMENT=1', '-m16'], True),
+            ):
+                suffix = '16' if mode16 else (
+                    '32seg' if '-DMODESEGMENT=1' in mode_args else '32flat')
+                asm = root / f'firmware-{suffix}.s'
+                obj = root / f'firmware-{suffix}.o'
+                options = [
+                    '-Os', '-m32', '-march=i386', '-mregparm=3',
+                    '-mpreferred-stack-boundary=2',
+                    '-ffreestanding', '-fno-pic', '-fno-pie',
+                    '-fomit-frame-pointer', '-freg-struct-return',
+                    '-fno-merge-constants', *mode_args,
+                ]
+                cmd = [str(compiler), *options]
+                result = subprocess.run(
+                    [*cmd, '-S', '-c', str(source), '-o', str(asm)],
+                    text=True, capture_output=True, check=False, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                assembly = asm.read_text(encoding='utf-8')
+                body = function_assembly(assembly, 'firmware_increment')
+                self.assertNotRegex(body, r'\bpushl\s+%ebp\b')
+                self.assertNotRegex(body, r'\bmovl\s+%esp,\s*%ebp\b')
+                self.assertEqual('.code16' in assembly, mode16)
+
+                compiled = subprocess.run(
+                    [*cmd, '-c', str(source), '-o', str(obj)],
+                    text=True, capture_output=True, check=False, env=env)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                self.assertIn('.text', elf32_sections(obj))
+
     def test_no_merge_constants_removes_elf_merge_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
