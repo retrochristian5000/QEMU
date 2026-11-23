@@ -12,6 +12,18 @@ ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
 ASM = LIB / "tsan/rtl/tsan_rtl_aarch64.S"
 INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
+SIGNAL_CONTEXT_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
+    "signal-async-context.c"
+)
+SIGNAL_LAYOUT_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
+    "signal-context-layout.c"
+)
+SHADOW_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/"
+    "signal_sigctx_clear_shadow.cpp"
+)
 LONGJMP_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "longjmp-shadow-stack.c"
@@ -27,6 +39,9 @@ def check_sources() -> None:
     regression = DARWIN_TEST.read_text(encoding="utf-8")
     interceptors = INTERCEPTORS.read_text(encoding="utf-8")
     longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
+    signal_regression = SIGNAL_CONTEXT_TEST.read_text(encoding="utf-8")
+    signal_layout = SIGNAL_LAYOUT_TEST.read_text(encoding="utf-8")
+    shadow_regression = SHADOW_TEST.read_text(encoding="utf-8")
     for name in ("setjmp", "_setjmp", "sigsetjmp"):
         assert f"  b       ASM_SYMBOL({name})" in source, (
             f"Darwin TSan {name} must branch via a Mach-O linker stub"
@@ -55,6 +70,21 @@ def check_sources() -> None:
     assert "_longjmp(*env, 37)" in longjmp_regression
     assert "10000000" in longjmp_regression
     assert "%clang_tsan -O1" in longjmp_regression
+
+    # Darwin's deferred signal context is smaller than Linux's, and may be
+    # null. These guards prevent unsafe copies from returning in the fork.
+    assert "u64 opaque[56 / sizeof(u64)]" in interceptors
+    assert "kSignalInfoCopySize = SANITIZER_WORDSIZE == 64 ? 104 : 64" in interceptors
+    assert "internal_memcpy(&signal->siginfo, info, kSignalInfoCopySize)" in interceptors
+    assert "signal->has_ctx = (ctx != nullptr)" in interceptors
+    assert "signal->has_ctx ? &signal->ctx : nullptr" in interceptors
+    assert "DontNeedShadowFor((uptr)sctx," in interceptors
+    assert "RoundUpTo(sizeof(*sctx), GetPageSizeCached())" in interceptors
+    assert "SA_SIGINFO | SA_ONSTACK" in signal_regression
+    assert "pthread_kill(main_thread, SIGUSR1)" in signal_regression
+    assert "sizeof(siginfo_t) == 104" in signal_layout
+    assert "uc_mcontext) == 56" in signal_layout
+    assert "CHECK-NOT: WARNING: ThreadSanitizer: data race" in shadow_regression
 
 
 def assemble(clang: Path, target: str, destination: Path) -> None:
