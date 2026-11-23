@@ -14,6 +14,10 @@ ASM = LIB / "tsan/rtl/tsan_interceptors_aarch64.S"
 INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
 DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
+DARWIN_PLATFORM = LIB / "tsan/rtl/tsan_platform_darwin.cpp"
+MAC_PLATFORM = LIB / "tsan/rtl/tsan_platform_mac.cpp"
+POSIX_PLATFORM = LIB / "tsan/rtl/tsan_platform_posix.cpp"
+PLATFORM_HEADER = LIB / "tsan/rtl/tsan_platform.h"
 TSAN_CMAKE = LIB / "tsan/rtl/CMakeLists.txt"
 TSAN_GN = ROOT / (
     "toolchains/llvm-project/llvm/utils/gn/secondary/"
@@ -55,6 +59,10 @@ def check_sources() -> None:
     interceptors = INTERCEPTORS.read_text(encoding="utf-8")
     darwin_interceptors = DARWIN_INTERCEPTORS.read_text(encoding="utf-8")
     darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
+    darwin_platform = DARWIN_PLATFORM.read_text(encoding="utf-8")
+    mac_platform = MAC_PLATFORM.read_text(encoding="utf-8")
+    posix_platform = POSIX_PLATFORM.read_text(encoding="utf-8")
+    platform_header = PLATFORM_HEADER.read_text(encoding="utf-8")
     tsan_cmake = TSAN_CMAKE.read_text(encoding="utf-8")
     tsan_gn = TSAN_GN.read_text(encoding="utf-8")
     longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
@@ -152,6 +160,33 @@ def check_sources() -> None:
     apple_sources = tsan_cmake.split(
         "if(APPLE)\n  list(APPEND TSAN_SOURCES", 1
     )[1].split("elseif(UNIX)", 1)[0]
+    # Darwin owns Mach VM accounting and jump-buffer decoding. The POSIX
+    # implementation and macOS pthread lifecycle code must not duplicate them.
+    assert "tsan_platform_darwin.cpp" in apple_sources
+    assert '"tsan_platform_darwin.cpp"' in tsan_gn
+    assert "void WriteMemoryProfile(" in darwin_platform
+    assert "vm_region_64(" in darwin_platform
+    assert "StackDepotGetStats()" in darwin_platform
+    assert "void WriteMemoryProfile(" not in mac_platform
+    assert "vm_region_64(" not in mac_platform
+    assert "vm_region_64(" not in posix_platform
+    assert "uptr ExtractLongJmpSp(" in darwin_platform
+    assert "ptrauth_auth_data(" in darwin_platform
+    assert 'ptrauth_string_discriminator("sp")' in darwin_platform
+    assert "uptr ExtractLongJmpSp(" not in mac_platform
+    assert "longjmp_xor_key" not in mac_platform
+    assert '#include "sanitizer_common/sanitizer_mac.h"' in darwin_platform
+    assert "#if SANITIZER_APPLE" in darwin_platform
+    assert "void InitializeDarwinLongJmp();" in platform_header
+    assert darwin_platform.count("void InitializeDarwinLongJmp()") == 1
+    assert mac_platform.count("InitializeDarwinLongJmp();") == 1
+    assert mac_platform.index(
+        "InstallPthreadIntrospectionHook(callbacks);"
+    ) < mac_platform.index("InitializeDarwinLongJmp();")
+    assert "ThreadState *cur_thread()" in mac_platform
+    assert "void InitializePlatform()" in mac_platform
+    assert "void InitializeShadowMemory()" in posix_platform
+
     assert "tsan_interceptors_darwin.cpp" in apple_sources
     assert "tsan_interceptors_darwin.h" in tsan_cmake
     assert "DarwinSignalContext ctx;" in interceptors
