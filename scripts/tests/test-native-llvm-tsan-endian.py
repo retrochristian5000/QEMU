@@ -9,6 +9,7 @@ LLVM = ROOT / "toolchains/llvm-project"
 TSAN = LLVM / "compiler-rt/lib/tsan"
 RTL = TSAN / "rtl"
 ENDIAN = RTL / "tsan_endian.cpp"
+ENDIAN_LITTLE = RTL / "tsan_endian_little.cpp"
 HEADER = RTL / "tsan_endian.h"
 MD5 = RTL / "tsan_md5.cpp"
 SHADOW = RTL / "tsan_shadow.h"
@@ -22,6 +23,7 @@ UNIT_TEST = TSAN / "tests/unit/tsan_endian_test.cpp"
 
 def check_sources() -> None:
     endian = ENDIAN.read_text(encoding="utf-8")
+    little = ENDIAN_LITTLE.read_text(encoding="utf-8")
     header = HEADER.read_text(encoding="utf-8")
     md5 = MD5.read_text(encoding="utf-8")
     shadow = SHADOW.read_text(encoding="utf-8")
@@ -32,11 +34,17 @@ def check_sources() -> None:
     unit_cmake = UNIT_CMAKE.read_text(encoding="utf-8")
     test = UNIT_TEST.read_text(encoding="utf-8")
 
-    # One canonical decoder must handle both host endiannesses and unaligned
-    # input without doing work on the shadow-memory access hot path.
+    # Exactly one decoder is defined: native memcpy on little-endian
+    # targets, otherwise the big-endian or portable fallback implementation.
     assert "void ReadLittleEndian32Words(u32 *dst, const void *src, uptr count);" in header
     assert endian.count("void ReadLittleEndian32Words(") == 1
-    assert "__ORDER_LITTLE_ENDIAN__" in endian
+    assert little.count("void ReadLittleEndian32Words(") == 1
+    assert "#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__) ||" in endian
+    assert "__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__" in endian
+    assert "#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) &&" in little
+    assert "__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__" in little
+    assert "internal_memcpy(dst, src, count * sizeof(*dst));" in little
+    assert "__builtin_bswap32" not in little
     assert "__ORDER_BIG_ENDIAN__" in endian
     assert "internal_memcpy(dst, src, count * sizeof(*dst));" in endian
     assert "__builtin_bswap32(dst[i]);" in endian
@@ -54,11 +62,15 @@ def check_sources() -> None:
     # The full compiler-rt build and the Go unity builds must include both
     # MD5 and its decoder, without duplicating or leaving stale sources.
     assert cmake.count("  tsan_endian.cpp\n") == 1
+    assert cmake.count("  tsan_endian_little.cpp\n") == 1
     assert cmake.count("  tsan_endian.h\n") == 1
     assert gn.count('"tsan_endian.cpp"') == 1
+    assert gn.count('"tsan_endian_little.cpp"') == 1
     assert gn.count('"tsan_endian.h"') == 1
     assert posix_go.count("../rtl/tsan_endian.cpp") == 1
+    assert posix_go.count("../rtl/tsan_endian_little.cpp") == 1
     assert windows_go.count(r"..\rtl\tsan_endian.cpp") == 1
+    assert windows_go.count(r"..\rtl\tsan_endian_little.cpp") == 1
     assert posix_go.index("../rtl/tsan_endian.cpp") < posix_go.index("../rtl/tsan_md5.cpp")
     assert windows_go.index(r"..\rtl\tsan_endian.cpp") < windows_go.index(
         r"..\rtl\tsan_md5.cpp"
@@ -68,6 +80,8 @@ def check_sources() -> None:
     # including the full-block and padded-block update paths.
     assert "  tsan_endian_test.cpp\n" in unit_cmake
     assert "TEST(Endian, LittleEndian32WordsUnaligned)" in test
+    assert "TEST(Endian, LittleEndian32WordsFullBlock)" in test
+    assert "ReadLittleEndian32Words(words, input + 1, 16);" in test
     assert "TEST(Endian, MD5ReferenceVectors)" in test
     for expected in (
         "0x12345678u", "0x90abcdefu",
