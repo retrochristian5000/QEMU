@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
-ASM = LIB / "tsan/rtl/tsan_rtl_aarch64.S"
+ASM = LIB / "tsan/rtl/tsan_interceptors_aarch64.S"
 INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
 DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
@@ -65,6 +65,22 @@ def check_sources() -> None:
     assert "@GOTPAGE" not in source, "arm64e TSan must not tail-jump via GOT"
     assert len(re.findall(r"^  br      x16$", source, re.MULTILINE)) == 4
     assert not re.search(r"^\s+br\s+x[12]$", source, re.MULTILINE)
+    # Assembly entry points have exactly one AArch64 owner, for Mach-O and
+    # ELF. Keep the old ISA-neutral runtime filename out of the source list.
+    assert tsan_cmake.count("tsan_interceptors_aarch64.S") == 2
+    assert "tsan_rtl_aarch64.S" not in tsan_cmake
+    for symbol in ("setjmp", "_setjmp", "sigsetjmp", "__sigsetjmp"):
+        assert f"ASM_SYMBOL_INTERCEPTOR({symbol}):" in source
+    assert source.count("  BTI_C") == 4
+    assert source.count("  stp     x29, x30, [sp, -32]!") == 4
+    assert source.count("  ldp     x29, x30, [sp], 32") == 4
+    for symbol in ("real_setjmp", "real__setjmp", "real_sigsetjmp"):
+        assert re.search(
+            rf"(?m)^#if !defined\(__APPLE__\)\n"
+            rf"\.comm _ZN14__interception\d+{symbol}E,8,8\n#endif$",
+            source,
+        ), f"Mach-O must not allocate an ELF {symbol} pointer"
+
     for name in ("check_setjmp", "check__setjmp", "check_sigsetjmp"):
         assert name in regression, f"missing Darwin TSan runtime case {name}"
     assert "%clang_tsan -O1" in regression
