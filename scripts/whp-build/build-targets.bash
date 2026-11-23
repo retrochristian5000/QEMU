@@ -88,8 +88,9 @@ fi
 
 "${build_runner[@]}" "${build_target_list[@]}" || return 1
 
-# Run only after the backend was actually requested and built. Do not
-# overwrite a pre-existing standalone i386 executable.
+# Publish the explicitly requested i386 alias only after its backend built
+# successfully. The alias utility validates and atomically replaces a stale
+# standalone i386 artifact, instead of rejecting a legitimate rebuild.
 local x86_alias_requested=0
 if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
     case ",${QEMU_TARGET_LIST:-}," in

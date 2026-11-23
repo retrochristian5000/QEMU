@@ -154,6 +154,55 @@ class WhpIncrementalTests(unittest.TestCase):
             'i386-softmmu,ppc-softmmu',
         )
 
+    def test_portable_alias_migrates_legacy_i386_target_without_cleanup(self):
+        mod = load_portable_build()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            (build_dir / '.whp-config').write_text(
+                'SCHEMA=2\\nQEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\\n',
+                encoding='utf-8',
+            )
+            old = build_dir / 'qemu-system-i386'
+            old.write_bytes(b'old i386 executable')
+            with temporary_environment({
+                'BUILD_DIR': td,
+                'BUILD_QEMU_IMG': '0',
+                'BUILD_QEMU_SYSTEM_I386': '1',
+                'BUILD_QEMU_SYSTEM_PPC': '0',
+                'BUILD_OPENBIOS': 'n',
+                'BOOTSTRAP_POWERPC_TOOLCHAIN': 'n',
+                'QEMU_X86_FAMILY_LINK': 'y',
+                'QEMU_HOST_PGO': 'off',
+                'WHP_INCREMENTAL_BUILD': '1',
+            }):
+                _, _, configure_args, _, _ = mod.build_plan(['qemu-system-i386'])
+            self.assertEqual(configured_target_value(configure_args),
+                             'x86_64-softmmu,ppc-softmmu')
+            self.assertEqual(old.read_bytes(), b'old i386 executable')
+
+    def test_bash_alias_migrates_previous_i386_target_without_cleanup(self):
+        source = ROOT / 'scripts' / 'whp-build' / 'configure.bash'
+        with tempfile.TemporaryDirectory() as td:
+            record = pathlib.Path(td) / '.whp-config'
+            record.write_text(
+                'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\\n',
+                encoding='utf-8',
+            )
+            script = (
+                'source "$1"; QEMU_X86_FAMILY_LINK=1; '
+                'WHP_INCREMENTAL_BUILD=1; QEMU_TARGET_LIST=x86_64-softmmu; '
+                'whp_configure_merge_previous_targets "$2"; '
+                'printf "%s\\n" "$QEMU_TARGET_LIST"'
+            )
+            run = subprocess.run(
+                ['bash', '-c', script, 'bash', str(source), str(record)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(run.stdout.strip(),
+                             'x86_64-softmmu,ppc-softmmu')
+
+
     def test_portable_relative_build_dir_is_source_relative(self):
         mod = load_portable_build()
         with temporary_environment({

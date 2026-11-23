@@ -20,12 +20,12 @@ machine-specific defaults such as an 8086 board take precedence.
 Procedure
 ---------
 
-Build ``x86_64-softmmu`` and **do not** build ``i386-softmmu`` in the same
-output directory. For example, with an independently configured QEMU build
-directory, use ``--target-list=x86_64-softmmu`` and build
-``qemu-system-x86_64``. The WHP launcher can request this executable by
-name, but an existing incremental build may preserve previous i386 targets.
-Do not remove old WHP builds merely to enable this optimization.
+With ``QEMU_X86_FAMILY_LINK=y``, the WHP runner builds the
+``x86_64-softmmu`` backend. A previously configured, WHP-owned incremental
+build may contain ``i386-softmmu``: its target-graph entry is converted to
+``x86_64-softmmu`` during reconfiguration, without cleaning the other
+compiled targets. The old ``qemu-system-i386`` remains untouched until the
+new backend has built and passed its CPU-model probe.
 
 After building, run from the source tree::
 
@@ -34,9 +34,13 @@ After building, run from the source tree::
 
 When installing, run the same command with ``--directory PREFIX/bin``
 *after* installing ``qemu-system-x86_64``. The tool checks that the backend
-advertises the ``qemu32`` CPU model, creates a relative symbolic link, and
-never replaces an existing emulator or a foreign symlink. No user file is
-deleted or silently overwritten. Windows is unsupported in this mode.
+advertises the ``qemu32`` CPU model, then publishes the relative
+``qemu-system-i386`` symbolic link atomically. In this explicitly enabled
+mode, an existing regular i386 executable or unrelated symlink at that
+destination is replaced; the unrelated symlink's target is not modified.
+Directories and special files are never replaced, and a failed probe leaves
+the previous executable untouched. The ``--check-only`` option reports
+``replace-ready`` without changing files. Windows is unsupported.
 
 Validate ``qemu-system-i386 --version``, ``-cpu help``, and ``-machine
 help``; then smoke-test representative 8086/286/386/486 and later PC
@@ -56,8 +60,10 @@ Set ``QEMU_X86_FAMILY_LINK=y`` in WHP menuconfig to substitute
 portable runners build the x86_64 backend, create the legacy i386 symlink,
 and repeat that operation after opt-in installation.
 
-This option defaults to **off**. It refuses to reuse a build directory
-already configured with ``i386-softmmu``. In the Bash build path,
+This option defaults to **off**. When explicitly enabled, existing
+``i386-softmmu`` target entries are replaced with ``x86_64-softmmu`` in
+the WHP-owned incremental build graph; no unrelated build artifacts are
+removed. In the Bash build path,
 explicit x86-family audio choices are now carried to a generated
 ``configs/devices/x86_64-softmmu/whp-user.mak`` preset via
 ``--with-devices-x86_64=whp-user``; the x86_64 default includes the
@@ -66,8 +72,9 @@ In particular, ``I386_AUDIO_GAMEBLASTER`` controls one shared
 ``gameblaster`` ISA implementation, not an i386-only CPU variant.
 An unchanged ``auto`` choice leaves the tracked defaults alone.
 The portable Python fallback still rejects explicit hardware filters
-because it does not generate device presets. Select a distinct build
-directory for the alias without modifying or deleting previous output.
+because it does not generate device presets. Build-directory ownership and
+host-ABI checks remain in force; this change only relaxes replacement of the
+requested emulator filename.
 
 Firmware mapping for original 16-bit, i386, and x86_64 guests
 -------------------------------------------------------------
