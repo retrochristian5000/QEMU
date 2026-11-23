@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
 ASM = LIB / "tsan/rtl/tsan_rtl_aarch64.S"
 INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
+DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
+DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
+TSAN_CMAKE = LIB / "tsan/rtl/CMakeLists.txt"
 SIGNAL_CONTEXT_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "signal-async-context.c"
@@ -38,6 +41,9 @@ def check_sources() -> None:
     source = ASM.read_text(encoding="utf-8")
     regression = DARWIN_TEST.read_text(encoding="utf-8")
     interceptors = INTERCEPTORS.read_text(encoding="utf-8")
+    darwin_interceptors = DARWIN_INTERCEPTORS.read_text(encoding="utf-8")
+    darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
+    tsan_cmake = TSAN_CMAKE.read_text(encoding="utf-8")
     longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
     signal_regression = SIGNAL_CONTEXT_TEST.read_text(encoding="utf-8")
     signal_layout = SIGNAL_LAYOUT_TEST.read_text(encoding="utf-8")
@@ -73,17 +79,31 @@ def check_sources() -> None:
 
     # Darwin's deferred signal context is smaller than Linux's, and may be
     # null. These guards prevent unsafe copies from returning in the fork.
-    assert "u64 opaque[56 / sizeof(u64)]" in interceptors
-    assert "kSignalInfoCopySize = SANITIZER_WORDSIZE == 64 ? 104 : 64" in interceptors
-    assert "internal_memcpy(&signal->siginfo, info, kSignalInfoCopySize)" in interceptors
+    # Keep a single POSIX signal dispatcher, but compile the Darwin-specific
+    # ABI copy helpers only for Apple platforms.
+    apple_sources = tsan_cmake.split(
+        "if(APPLE)\n  list(APPEND TSAN_SOURCES", 1
+    )[1].split("elseif(UNIX)", 1)[0]
+    assert "tsan_interceptors_darwin.cpp" in apple_sources
+    assert "tsan_interceptors_darwin.h" in tsan_cmake
+    assert "DarwinSignalContext ctx;" in interceptors
+    assert "CopyDarwinSignalInfo(&signal->siginfo, info);" in interceptors
+    assert "CopyDarwinSignalContext(&signal->ctx, ctx);" in interceptors
+    assert "u64 opaque[56 / sizeof(u64)]" not in interceptors
+    assert "kSignalInfoCopySize" not in interceptors
+    assert "opaque[56 / sizeof(__sanitizer::u64)]" in darwin_header
+    assert "sizeof(ucontext_t) == sizeof(DarwinSignalContext)" in darwin_interceptors
+    assert "sizeof(siginfo_t) <= 128" in darwin_interceptors
+    assert "internal_memcpy(destination, source, sizeof(siginfo_t))" in darwin_interceptors
+    assert "internal_memcpy(destination, source, sizeof(ucontext_t))" in darwin_interceptors
     assert "signal->has_ctx = (ctx != nullptr)" in interceptors
     assert "signal->has_ctx ? &signal->ctx : nullptr" in interceptors
     assert "DontNeedShadowFor((uptr)sctx," in interceptors
     assert "RoundUpTo(sizeof(*sctx), GetPageSizeCached())" in interceptors
     assert "SA_SIGINFO | SA_ONSTACK" in signal_regression
     assert "pthread_kill(main_thread, SIGUSR1)" in signal_regression
-    assert "sizeof(siginfo_t) == 104" in signal_layout
-    assert "uc_mcontext) == 56" in signal_layout
+    assert "sizeof(siginfo_t) <= 128" in signal_layout
+    assert "sizeof(ucontext_t) == 56" in signal_layout
     assert "CHECK-NOT: WARNING: ThreadSanitizer: data race" in shadow_regression
 
 
