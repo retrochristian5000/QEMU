@@ -11,6 +11,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
 ASM = LIB / "tsan/rtl/tsan_interceptors_aarch64.S"
+REGS = LIB / "tsan/rtl/tsan_aarch64_regs.h"
+REGS_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/"
+    "aarch64-dwarf-registers.c"
+)
 CPU_ASM = LIB / "tsan/rtl/tsan_cpu_aarch64.S"
 CPU_CPP = LIB / "tsan/rtl/tsan_cpu.cpp"
 CPU_TEST = ROOT / (
@@ -62,6 +67,8 @@ DARWIN_TEST = ROOT / (
 
 def check_sources() -> None:
     source = ASM.read_text(encoding="utf-8")
+    regs = REGS.read_text(encoding="utf-8")
+    regs_test = REGS_TEST.read_text(encoding="utf-8")
     cpu_asm = CPU_ASM.read_text(encoding="utf-8")
     cpu_cpp = CPU_CPP.read_text(encoding="utf-8")
     cpu_test = CPU_TEST.read_text(encoding="utf-8")
@@ -89,6 +96,43 @@ def check_sources() -> None:
     assert "@GOTPAGE" not in source, "arm64e TSan must not tail-jump via GOT"
     assert len(re.findall(r"^  br      x16$", source, re.MULTILINE)) == 4
     assert not re.search(r"^\s+br\s+x[12]$", source, re.MULTILINE)
+    # AADWARF64 register IDs are shared by AArch64 ELF and Mach-O CFI.
+    # No instruction aliases (x0, v0) should be introduced by this header.
+    assert '#include "tsan_aarch64_regs.h"' in source
+    assert "tsan_aarch64_regs.h" in tsan_cmake
+    assert '"tsan_aarch64_regs.h"' in tsan_gn
+    assert "#ifndef TSAN_AARCH64_REGS_H" in regs
+    for n in range(31):
+        assert re.search(
+            rf"^#define TSAN_AARCH64_DWARF_X{n} {n}$",
+            regs, re.MULTILINE,
+        ), f"incorrect X{n} DWARF register number"
+    for n in range(32):
+        assert re.search(
+            rf"^#define TSAN_AARCH64_DWARF_V{n} {n + 64}$",
+            regs, re.MULTILINE,
+        ), f"incorrect V{n} DWARF register number"
+    for name, value in (("SP", 31), ("PC", 32)):
+        assert f"#define TSAN_AARCH64_DWARF_{name} {value}" in regs
+    for name, alias in (("FP", "X29"), ("LR", "X30")):
+        assert (
+            f"#define TSAN_AARCH64_DWARF_{name} "
+            f"TSAN_AARCH64_DWARF_{alias}"
+        ) in regs
+    for raw in ("#define x0 ", "#define v0 ", "#define r0 "):
+        assert raw not in regs
+    assert source.count(
+        "CFI_OFFSET (TSAN_AARCH64_DWARF_FP, -32)"
+    ) == 4
+    assert source.count(
+        "CFI_OFFSET (TSAN_AARCH64_DWARF_LR, -24)"
+    ) == 4
+    assert source.count(
+        "CFI_DEF_CFA (TSAN_AARCH64_DWARF_SP, 0)"
+    ) == 4
+    assert "REQUIRES: aarch64-target-arch" in regs_test
+    assert "TSan AArch64 DWARF register numbering: OK" in regs_test
+
     # Assembly entry points have exactly one AArch64 owner, for Mach-O and
     # ELF. Keep the old ISA-neutral runtime filename out of the source list.
     # AArch64 CPU VMA-width calculation is ISA-owned, not an interceptor.
