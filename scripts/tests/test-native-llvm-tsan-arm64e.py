@@ -87,6 +87,20 @@ def check_sources() -> None:
     assert "10000000" in longjmp_regression
     assert "%clang_tsan -O1" in longjmp_regression
 
+    # LongJmp() uses REAL(pthread_sigmask) before the interceptor definition.
+    # DECLARE_REAL is required for both Darwin's libc symbol and other POSIX
+    # platforms' __interception::real_pthread_sigmask function pointer.
+    real_sigmask = re.search(
+        r"DECLARE_REAL\\(int, pthread_sigmask, int how,\\s*"
+        r"const __sanitizer_sigset_t \\*set,\\s*"
+        r"__sanitizer_sigset_t \\*oldset\\)",
+        interceptors,
+    )
+    assert real_sigmask is not None, "missing pthread_sigmask forward declaration"
+    assert real_sigmask.start() < interceptors.index("static void LongJmp(")
+    assert interceptors.count("TSAN_INTERCEPTOR(int, pthread_sigmask,") == 1
+    assert "TSAN_INTERCEPT(pthread_sigmask);" in interceptors
+
     # siglongjmp must restore TSan's temporary all-blocked mask even when
     # Darwin libc intentionally skips signal-mask restoration (savemask=0).
     assert re.search(
