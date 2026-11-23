@@ -11,6 +11,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
 ASM = LIB / "tsan/rtl/tsan_interceptors_aarch64.S"
+CPU_ASM = LIB / "tsan/rtl/tsan_cpu_aarch64.S"
+CPU_CPP = LIB / "tsan/rtl/tsan_cpu.cpp"
+CPU_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/"
+    "aarch64-cpu-vma-bits.c"
+)
 INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
 DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
@@ -55,6 +61,9 @@ DARWIN_TEST = ROOT / (
 
 def check_sources() -> None:
     source = ASM.read_text(encoding="utf-8")
+    cpu_asm = CPU_ASM.read_text(encoding="utf-8")
+    cpu_cpp = CPU_CPP.read_text(encoding="utf-8")
+    cpu_test = CPU_TEST.read_text(encoding="utf-8")
     regression = DARWIN_TEST.read_text(encoding="utf-8")
     interceptors = INTERCEPTORS.read_text(encoding="utf-8")
     darwin_interceptors = DARWIN_INTERCEPTORS.read_text(encoding="utf-8")
@@ -80,6 +89,27 @@ def check_sources() -> None:
     assert not re.search(r"^\s+br\s+x[12]$", source, re.MULTILINE)
     # Assembly entry points have exactly one AArch64 owner, for Mach-O and
     # ELF. Keep the old ISA-neutral runtime filename out of the source list.
+    # AArch64 CPU VMA-width calculation is ISA-owned, not an interceptor.
+    assert tsan_cmake.count("tsan_cpu_aarch64.S") == 2
+    assert tsan_gn.count("tsan_cpu_aarch64.S") == 1
+    assert 'extern "C" uptr __tsan_cpu_aarch64_vma_bits(' in cpu_cpp
+    assert "CHECK_NE(current_frame, 0U);" in cpu_cpp
+    assert cpu_cpp.count(
+        "vmaSize = __tsan_cpu_aarch64_vma_bits(current_frame);"
+    ) == 1
+    assert "vmaSize = MostSignificantSetBitIndex(current_frame) + 1;" in cpu_cpp
+    assert "vmaSize != 39 && vmaSize != 42" in cpu_cpp
+    assert "vmaSize = vmaSize + 1;" in cpu_cpp
+    assert "ASM_SYMBOL(__tsan_cpu_aarch64_vma_bits):" in cpu_asm
+    assert cpu_asm.count("  BTI_C") == 1
+    assert cpu_asm.count("clz     x1, x0") == 1
+    assert "mov     x0, #64" in cpu_asm
+    assert "sub     x0, x0, x1" in cpu_asm
+    assert ".private_extern ASM_SYMBOL(__tsan_cpu_aarch64_vma_bits)" in cpu_asm
+    assert "ASM_HIDDEN(ASM_SYMBOL(__tsan_cpu_aarch64_vma_bits))" in cpu_asm
+    assert "REQUIRES: aarch64-target-arch" in cpu_test
+    assert "TSan AArch64 CPU VMA bits: OK" in cpu_test
+
     assert tsan_cmake.count("tsan_interceptors_aarch64.S") == 2
     assert "tsan_rtl_aarch64.S" not in tsan_cmake
     assert tsan_gn.count("tsan_interceptors_aarch64.S") == 1
@@ -210,10 +240,12 @@ def check_sources() -> None:
     assert "CHECK-NOT: WARNING: ThreadSanitizer: data race" in shadow_regression
 
 
-def assemble(clang: Path, target: str, destination: Path) -> None:
+def assemble(
+    clang: Path, target: str, destination: Path, source: Path = ASM
+) -> None:
     subprocess.run(
         [str(clang), f"--target={target}", "-x", "assembler-with-cpp",
-         "-I", str(LIB), "-c", str(ASM), "-o", str(destination)],
+         "-I", str(LIB), "-c", str(source), "-o", str(destination)],
         check=True,
     )
 
@@ -232,6 +264,24 @@ def main() -> None:
         assemble(args.clang, "arm64e-apple-macos13.0", macho)
         assemble(args.clang, "aarch64-unknown-linux-gnu", elf)
 
+        cpu_macho = output / "tsan-cpu-arm64e.o"
+        cpu_elf = output / "tsan-cpu-elf.o"
+        assemble(args.clang, "arm64e-apple-macos13.0", cpu_macho, CPU_ASM)
+        assemble(args.clang, "aarch64-unknown-linux-gnu", cpu_elf, CPU_ASM)
+        for object_path, options in (
+            (cpu_macho, ("--macho", "--disassemble")),
+            (cpu_elf, ("--disassemble",)),
+        ):
+            disassembly = subprocess.run(
+                [str(args.objdump), *options, str(object_path)],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            assert "__tsan_cpu_aarch64_vma_bits" in disassembly
+            assert re.search(r"\bclz\s+x1,\s*x0\b", disassembly)
+            assert re.search(r"\bmov\s+x0,\s*#(?:0x40|64)\b", disassembly)
+            assert re.search(r"\bsub\s+x0,\s*x0,\s*x1\b", disassembly)
+            assert re.search(r"\bret\b", disassembly)
+
         result = subprocess.run(
             [str(args.objdump), "--macho", "--reloc", str(macho)],
             check=True, capture_output=True, text=True,
@@ -242,7 +292,7 @@ def main() -> None:
                 for line in result.splitlines()
             ), f"missing Mach-O branch relocation for {symbol}"
 
-    print("TSan arm64e stub relocations and AArch64 BTI tails: verified")
+    print("TSan arm64e stubs, AArch64 CPU VMA helper, and BTI: verified")
 
 
 if __name__ == "__main__":
