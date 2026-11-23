@@ -236,6 +236,45 @@ int main(void)
         self.assertIn('[super viewDidChangeBackingProperties];', body)
 
 
+    def test_guest_mode_resize_preserves_window_position(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void) resizeWindow\n{')
+        end = text.index('\n- (void) updateBounds', start)
+        resize = text[start:end]
+
+        # Guest video-mode changes must not recenter a window that the user
+        # moved to another screen (including negative monitor coordinates).
+        self.assertNotIn('[[self window] center];', resize)
+        self.assertIn('setContentAspectRatio:', resize)
+        self.assertIn('setContentSize:NSMakeSize(width, height)', resize)
+        self.assertIn('fixAspectRatio:[self screenSafeAreaSize]', resize)
+        self.assertIn('fixAspectRatio:[self frame].size', resize)
+
+        # Initial placement remains a one-off controller responsibility.
+        controller = text.index('@implementation QemuCocoaAppController')
+        init = text.index('- (id) init\n{', controller)
+        initial_window = text[init:text.index('/* Native titlebar indicators', init)]
+        self.assertIn('[window center];', initial_window)
+
+    def test_backing_scale_move_refreshes_guest_dimensions(self):
+        text = COCOA_SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void) viewDidChangeBackingProperties\n{')
+        end = text.index('\n- (void) selectConsoleLocked:', start)
+        callback = text[start:end]
+
+        self.assertLess(callback.index('[super viewDidChangeBackingProperties];'),
+                        callback.index('[self updateUIInfo];'))
+        self.assertIn('NSWindowStyleMaskResizable | NSWindowStyleMaskFullScreen',
+                      callback)
+        self.assertLess(callback.index('[self resizeWindow];'),
+                        callback.index('[self updateUIInfo];'))
+        self.assertLess(callback.index('[self updateUIInfo];'),
+                        callback.index('[self setNeedsDisplay:YES];'))
+        self.assertIn('if (!allow_events || !console->dcl.con || !console->con)', text)
+        self.assertIn('[[self window] backingScaleFactor]', text)
+        self.assertIn('[view convertSizeToBacking:NSMakeSize(1.0, 1.0)]',
+                      SOURCE.read_text(encoding='utf-8'))
+
     def test_cocoa_metal_brightness_button_and_overlay(self):
         cocoa = COCOA_SOURCE.read_text(encoding="utf-8")
         metal = SOURCE.read_text(encoding="utf-8")

@@ -523,8 +523,23 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void) viewDidChangeBackingProperties
 {
+    NSWindow *window;
+
     [super viewDidChangeBackingProperties];
-    /* A display move can change Retina scale without a guest update. */
+    window = [self window];
+
+    /*
+     * A change in Retina backing scale also changes the number of physical
+     * pixels available to the guest. Keep fixed-size windows at native pixel
+     * dimensions without moving them. AppKit owns fullscreen placement and
+     * user-resizable windows keep their current point dimensions.
+     */
+    if (window && !([window styleMask] &
+                    (NSWindowStyleMaskResizable | NSWindowStyleMaskFullScreen))) {
+        [self resizeWindow];
+    }
+
+    [self updateUIInfo];
     [self setNeedsDisplay:YES];
 }
 
@@ -791,11 +806,15 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         CGFloat width = screen.width / [[self window] backingScaleFactor];
         CGFloat height = screen.height / [[self window] backingScaleFactor];
 
+        /*
+         * Guest mode changes may resize the content, but must not move
+         * a window the user has positioned on another desktop or monitor.
+         * Initial placement is handled by the controller at creation.
+         */
         [[self window] setContentSize:NSMakeSize(width, height)];
-        [[self window] center];
     } else if ([[self window] styleMask] & NSWindowStyleMaskFullScreen) {
+        /* AppKit controls fullscreen window placement. */
         [[self window] setContentSize:[self fixAspectRatio:[self screenSafeAreaSize]]];
-        [[self window] center];
     } else {
         [[self window] setContentSize:[self fixAspectRatio:[self frame].size]];
     }
