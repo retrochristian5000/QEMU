@@ -29,6 +29,18 @@ class RomLiteralAuditTests(unittest.TestCase):
             [b"SeaBIOS", b"hello\x00", b"line\nend"],
         )
 
+    def test_ascii_directive_does_not_add_terminator(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = pathlib.Path(temp) / "code.s"
+            source.write_text(
+                '.ascii "raw"\\n.asciz "z"\\n.string "ab"\\n',
+                encoding="utf-8",
+            )
+            reports, duplicates = audit.summarize(
+                [("16bit", source)])
+            self.assertEqual(reports, [("16bit", 3, 9)])
+            self.assertEqual(duplicates, [])
+
     def test_counts_cross_mode_matches_without_claiming_saved_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
             files = []
