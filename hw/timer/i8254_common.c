@@ -40,14 +40,22 @@ void pit_set_gate(PITCommonState *pit, int channel, int val)
     c->set_channel_gate(pit, s, val);
 }
 
-/* get pit output bit */
-int pit_get_out(PITChannelState *s, int64_t current_time)
+/*
+ * IRQ updates need both output state and the next transition at the same
+ * virtual timestamp. Calculate elapsed PIT clocks once for that pair, while
+ * retaining the individual entry points for speaker, read-back, and KVM.
+ */
+static uint64_t pit_elapsed_ticks(PITChannelState *s, int64_t current_time)
 {
-    uint64_t d;
+    return muldiv64(current_time - s->count_load_time, PIT_FREQ,
+                    NANOSECONDS_PER_SECOND);
+}
+
+/* get pit output bit */
+static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
+{
     int out;
 
-    d = muldiv64(current_time - s->count_load_time, PIT_FREQ,
-                 NANOSECONDS_PER_SECOND);
     switch (s->mode) {
     default:
     case 0:
@@ -72,14 +80,19 @@ int pit_get_out(PITChannelState *s, int64_t current_time)
     return out;
 }
 
-/* return -1 if no transition will occur.  */
-int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time)
+
+int pit_get_out(PITChannelState *s, int64_t current_time)
 {
-    uint64_t d, next_time, base;
+    return pit_get_out_elapsed(s, pit_elapsed_ticks(s, current_time));
+}
+
+/* return -1 if no transition will occur.  */
+static int64_t pit_next_transition_elapsed(PITChannelState *s,
+                                           int64_t current_time, uint64_t d)
+{
+    uint64_t next_time, base;
     int period2;
 
-    d = muldiv64(current_time - s->count_load_time, PIT_FREQ,
-                 NANOSECONDS_PER_SECOND);
     switch (s->mode) {
     default:
     case 0:
@@ -127,6 +140,22 @@ int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time)
         next_time = current_time + 1;
     }
     return next_time;
+}
+
+
+int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time)
+{
+    return pit_next_transition_elapsed(s, current_time,
+                                       pit_elapsed_ticks(s, current_time));
+}
+
+void pit_get_irq_timing(PITChannelState *s, int64_t current_time,
+                        int *out, int64_t *next_transition)
+{
+    uint64_t elapsed = pit_elapsed_ticks(s, current_time);
+
+    *out = pit_get_out_elapsed(s, elapsed);
+    *next_transition = pit_next_transition_elapsed(s, current_time, elapsed);
 }
 
 void pit_get_channel_info_common(PITCommonState *s, PITChannelState *sc,

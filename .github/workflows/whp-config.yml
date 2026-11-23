@@ -51,6 +51,10 @@ on:
       - 'ui/cocoa.m'
       - 'ui/console.c'
       - 'accel/tcg/tcg-accel-ops-rr.c'
+      - 'hw/timer/i8254.c'
+      - 'hw/timer/i8254_common.c'
+      - 'include/hw/timer/i8254_internal.h'
+      - 'scripts/tests/test-i8254-irq-timing.py'
       - 'scripts/tests/test-tcg-rr-idle.py'
       - 'scripts/tests/test-ui-startup-delay.py'
       - 'scripts/ensure-ninja.py'
@@ -218,6 +222,9 @@ jobs:
 
       - name: Test single-threaded TCG idle CPU preemption
         run: python3 scripts/tests/test-tcg-rr-idle.py
+
+      - name: Test PIT IRQ timing and single elapsed-tick calculation
+        run: python3 scripts/tests/test-i8254-irq-timing.py
 
       - name: Test verified x86 emulator alias replacement
         run: |

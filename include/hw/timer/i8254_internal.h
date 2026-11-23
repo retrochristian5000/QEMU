@@ -68,6 +68,8 @@ struct PITCommonClass {
 };
 
 int pit_get_out(PITChannelState *s, int64_t current_time);
+void pit_get_irq_timing(PITChannelState *s, int64_t current_time,
+                        int *out, int64_t *next_transition);
 int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time);
 void pit_get_channel_info_common(PITCommonState *s, PITChannelState *sc,
                                  PITChannelInfo *info);
