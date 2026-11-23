@@ -272,6 +272,29 @@ def median_runtime(
     return statistics.median(samples), samples
 
 
+
+def compare_splitwx_runtime(
+    qemu: str,
+    bios: pathlib.Path,
+    tcg_thread: str,
+    tb_size: int | None,
+    rounds: int,
+    timeout: float,
+) -> dict[str, tuple[float, list[float]]]:
+    """Interleave off/on runs to reduce drift from host load or CPU frequency."""
+    samples: dict[str, list[float]] = {"off": [], "on": []}
+    for round_index in range(rounds):
+        order = ("off", "on") if round_index % 2 == 0 else ("on", "off")
+        for mode in order:
+            samples[mode].append(
+                run_once(qemu, bios, tcg_thread, mode, tb_size, timeout)
+            )
+    return {
+        mode: (statistics.median(samples[mode]), samples[mode])
+        for mode in ("off", "on")
+    }
+
+
 def resolve_qemu(value: str) -> str:
     candidate = pathlib.Path(value)
     if candidate.exists():
@@ -294,6 +317,11 @@ def main() -> int:
         choices=("auto", "on", "off"),
         default="auto",
         help="select TCG split W^X mapping mode",
+    )
+    parser.add_argument(
+        "--compare-split-wx",
+        action="store_true",
+        help="run paired, alternating split-wx=off/on comparisons",
     )
     parser.add_argument(
         "--tb-size",
@@ -321,6 +349,9 @@ def main() -> int:
     if args.tb_size is not None and args.tb_size < 1:
         parser.error("--tb-size must be at least 1 MiB")
 
+    if args.compare_split_wx and args.split_wx != "auto":
+        parser.error("--compare-split-wx cannot be combined with --split-wx=on/off")
+
     workloads = args.workload or list(WORKLOADS)
     if args.emit_bios:
         if len(workloads) != 1:
@@ -331,7 +362,8 @@ def main() -> int:
     qemu = resolve_qemu(args.qemu)
     print(f"QEMU:       {qemu}")
     print(f"TCG thread: {args.tcg_thread}")
-    print(f"Split W^X:  {args.split_wx}")
+    split_mode = "paired off/on" if args.compare_split_wx else args.split_wx
+    print(f"Split W^X:  {split_mode}")
     tb_size_label = f"{args.tb_size} MiB" if args.tb_size is not None else "auto"
     print(f"TB size:    {tb_size_label}")
     print(f"Loops:      {args.loops}")
@@ -340,29 +372,69 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="qemu-i386-tcg-bench-") as td:
         tempdir = pathlib.Path(td)
         medians: dict[str, float] = {}
+        comparison: dict[str, dict[str, float]] = {}
         for workload in workloads:
             bios = tempdir / f"{workload}.bin"
             bios.write_bytes(make_bios(workload, args.loops))
-            median, samples = median_runtime(
-                qemu,
-                bios,
-                args.tcg_thread,
-                args.split_wx,
-                args.tb_size,
-                args.rounds,
-                args.timeout,
-            )
-            medians[workload] = median
-            sample_text = ", ".join(f"{sample * 1000:.1f}" for sample in samples)
-            print(f"{workload:8s} median={median * 1000:9.1f} ms  samples=[{sample_text}] ms")
+            if args.compare_split_wx:
+                paired = compare_splitwx_runtime(
+                    qemu, bios, args.tcg_thread, args.tb_size,
+                    args.rounds, args.timeout,
+                )
+                comparison[workload] = {}
+                for mode in ("off", "on"):
+                    median, samples = paired[mode]
+                    comparison[workload][mode] = median
+                    sample_text = ", ".join(
+                        f"{sample * 1000:.1f}" for sample in samples
+                    )
+                    print(
+                        f"{workload:8s} {mode:3s} median={median * 1000:9.1f} ms"
+                        f"  samples=[{sample_text}] ms"
+                    )
+                off = comparison[workload]["off"]
+                on = comparison[workload]["on"]
+                change = (on / off - 1) * 100 if off else float("nan")
+                print(
+                    f"{workload:8s} on - off={(on - off) * 1000:+9.1f} ms"
+                    f" ({change:+.1f}%)"
+                )
+            else:
+                median, samples = median_runtime(
+                    qemu, bios, args.tcg_thread, args.split_wx,
+                    args.tb_size, args.rounds, args.timeout,
+                )
+                medians[workload] = median
+                sample_text = ", ".join(
+                    f"{sample * 1000:.1f}" for sample in samples
+                )
+                print(
+                    f"{workload:8s} median={median * 1000:9.1f} ms"
+                    f"  samples=[{sample_text}] ms"
+                )
 
-        startup = medians.get("startup")
-        if startup is not None:
+        if args.compare_split_wx and "startup" in comparison:
+            print("\nApproximate workload time after subtracting startup median:")
+            for workload in workloads:
+                if workload == "startup":
+                    continue
+                net = {
+                    mode: max(
+                        0.0,
+                        comparison[workload][mode] - comparison["startup"][mode],
+                    )
+                    for mode in ("off", "on")
+                }
+                print(
+                    f"{workload:8s} off={net['off'] * 1000:9.1f} ms"
+                    f" on={net['on'] * 1000:9.1f} ms"
+                )
+        elif "startup" in medians:
             print("\nNet time after subtracting startup median:")
             for workload in workloads:
                 if workload == "startup":
                     continue
-                net = max(0.0, medians[workload] - startup)
+                net = max(0.0, medians[workload] - medians["startup"])
                 print(f"{workload:8s} {net * 1000:9.1f} ms")
 
     return 0

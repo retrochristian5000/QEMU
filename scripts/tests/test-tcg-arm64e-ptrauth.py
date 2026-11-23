@@ -74,10 +74,13 @@ jit_mode_cache_ready = all(token in osdep for token in (
 )
 splitwx_benchmark_ready = all(token in benchmark for token in (
     '--split-wx',
-    'split-wx={split_wx}',
+    '--compare-split-wx',
+    'def compare_splitwx_runtime(',
+    'order = ("off", "on") if round_index % 2 == 0 else ("on", "off")',
 )) and all(token in workflow for token in (
-    'for split_wx in off on; do',
-    '--split-wx "$split_wx"',
+    '--compare-split-wx',
+    '--rounds 4',
+    'scripts/tests/test-split-wx-benchmark.py',
 ))
 tbsize_benchmark_ready = all(token in benchmark for token in (
     '--tb-size',

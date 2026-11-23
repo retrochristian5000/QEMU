@@ -80,6 +80,8 @@ on:
       - 'scripts/tests/test-host-cpu-tuning.bash'
       - 'scripts/tests/test-apple-a18-pro-profile.py'
       - 'scripts/tests/test-tcg-arm64e-ptrauth.py'
+      - 'scripts/tests/test-split-wx-benchmark.py'
+      - 'scripts/bench-i386-tcg.py'
       - 'scripts/tests/test-tcg-memory-budget.py'
       - 'scripts/tests/test-system-posix-startup.py'
       - 'util/cutils.c'
@@ -240,6 +242,9 @@ jobs:
       - name: Audit arm64e TCG pointer authentication gate
         shell: bash
         run: python3 scripts/tests/test-tcg-arm64e-ptrauth.py
+
+      - name: Check paired TCG split W^X benchmark comparison
+        run: python3 scripts/tests/test-split-wx-benchmark.py
 
       - name: Audit native LLVM PCH and sccache launcher selection
         shell: bash
@@ -998,17 +1003,16 @@ jobs:
           file "$coreaudio_module" | grep -Fq arm64e
           "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
 
-          for split_wx in off on; do
-            echo "ARM64e TCG benchmark: split-wx=$split_wx"
-            python3 scripts/bench-i386-tcg.py \
-              --qemu "$BUILD_DIR/qemu-system-i386" \
-              --workload startup \
-              --workload fcomi \
-              --loops 200000 \
-              --rounds 1 \
-              --tcg-thread single \
-              --split-wx "$split_wx"
-          done
+          # Alternate split-W^X modes in paired runs to estimate startup
+          # overhead versus a CPU-intensive workload without changing TCG.
+          python3 scripts/bench-i386-tcg.py \
+            --qemu "$BUILD_DIR/qemu-system-i386" \
+            --workload startup \
+            --workload fcomi \
+            --loops 200000 \
+            --rounds 4 \
+            --tcg-thread single \
+            --compare-split-wx
 
           # Keep split W^X fixed while measuring the startup cost of the
           # translation-block cache mapping itself.  The default-size result
