@@ -91,9 +91,9 @@ def check_sources() -> None:
     # DECLARE_REAL is required for both Darwin's libc symbol and other POSIX
     # platforms' __interception::real_pthread_sigmask function pointer.
     real_sigmask = re.search(
-        r"DECLARE_REAL\\(int, pthread_sigmask, int how,\\s*"
-        r"const __sanitizer_sigset_t \\*set,\\s*"
-        r"__sanitizer_sigset_t \\*oldset\\)",
+        r"DECLARE_REAL\(int, pthread_sigmask, int how,\s*"
+        r"const __sanitizer_sigset_t \*set,\s*"
+        r"__sanitizer_sigset_t \*oldset\)",
         interceptors,
     )
     assert real_sigmask is not None, "missing pthread_sigmask forward declaration"
