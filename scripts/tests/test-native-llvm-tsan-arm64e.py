@@ -22,6 +22,7 @@ DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
 DARWIN_PLATFORM = LIB / "tsan/rtl/tsan_platform_darwin.cpp"
 MAC_PLATFORM = LIB / "tsan/rtl/tsan_platform_mac.cpp"
+DARWIN_THREAD = LIB / "tsan/rtl/tsan_thread_darwin.cpp"
 POSIX_PLATFORM = LIB / "tsan/rtl/tsan_platform_posix.cpp"
 PLATFORM_HEADER = LIB / "tsan/rtl/tsan_platform.h"
 TSAN_CMAKE = LIB / "tsan/rtl/CMakeLists.txt"
@@ -70,6 +71,7 @@ def check_sources() -> None:
     darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
     darwin_platform = DARWIN_PLATFORM.read_text(encoding="utf-8")
     mac_platform = MAC_PLATFORM.read_text(encoding="utf-8")
+    darwin_thread = DARWIN_THREAD.read_text(encoding="utf-8")
     posix_platform = POSIX_PLATFORM.read_text(encoding="utf-8")
     platform_header = PLATFORM_HEADER.read_text(encoding="utf-8")
     tsan_cmake = TSAN_CMAKE.read_text(encoding="utf-8")
@@ -210,10 +212,15 @@ def check_sources() -> None:
     assert "void InitializeDarwinLongJmp();" in platform_header
     assert darwin_platform.count("void InitializeDarwinLongJmp()") == 1
     assert mac_platform.count("InitializeDarwinLongJmp();") == 1
+    assert "tsan_thread_darwin.cpp" in apple_sources
+    assert '"tsan_thread_darwin.cpp"' in tsan_gn
+    assert "InitializeDarwinThreadSupport();" in mac_platform
     assert mac_platform.index(
-        "InstallPthreadIntrospectionHook(callbacks);"
+        "InitializeDarwinThreadSupport();"
     ) < mac_platform.index("InitializeDarwinLongJmp();")
-    assert "ThreadState *cur_thread()" in mac_platform
+    assert "InstallPthreadIntrospectionHook(callbacks);" in darwin_thread
+    assert "ThreadState *cur_thread()" in darwin_thread
+    assert "void cur_thread_finalize()" in darwin_thread
     assert "void InitializePlatform()" in mac_platform
     assert "void InitializeShadowMemory()" in posix_platform
 
