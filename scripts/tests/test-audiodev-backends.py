@@ -41,8 +41,20 @@ assert "MACOS_ENABLE_COREAUDIO" in native
 assert "MACOS_ENABLE_PA" in native
 assert "--audio-drv-list=" not in native
 assert "--audio-drv-list=" not in portable
-assert "audio_drivers_priority = host_os == 'darwin' ?" in meson
-assert "['coreaudio', 'pa', 'sdl']" in meson
+priority = meson.split("  # Prefer native CoreAudio on macOS", 1)[1].split(
+    "  audio_drivers_default = []", 1
+)[0]
+assert "?" not in priority, "nested Meson ternary is not permitted"
+assert "if host_os == 'darwin'" in priority
+assert "audio_drivers_priority = ['coreaudio', 'pa', 'sdl']" in priority
+assert (
+    "else\n"
+    "    audio_drivers_priority = "
+    "['pa', 'coreaudio', 'dsound', 'sndio', 'oss']"
+) in priority
+assert "if host_os != 'linux'" in priority
+assert "audio_drivers_priority += ['sdl']" in priority
+assert priority.count("endif") == 2
 assert "'default'" in options
 
 # A requested backend still appears in -audiodev help only if its QOM
