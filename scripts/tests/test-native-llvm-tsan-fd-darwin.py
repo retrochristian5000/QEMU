@@ -33,7 +33,7 @@ def check_sources() -> None:
     # Readiness events are not necessarily notifications from another thread.
     # Never invent a happens-before relationship for arbitrary kqueue filters.
     assert re.search(
-        r"\\b(?:FdAcquire|FdRelease|FdPollAdd|Acquire|Release)\\s*\\(",
+        r"\b(?:FdAcquire|FdRelease|FdPollAdd|Acquire|Release)\s*\(",
         source,
     ) is None
 
