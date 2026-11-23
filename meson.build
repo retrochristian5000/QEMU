@@ -2340,8 +2340,11 @@ if have_system
     config_host_data.set('CONFIG_AUDIO_' + k.to_upper(), v)
   endforeach
 
-  # Default to native drivers first, OSS second, SDL third
-  audio_drivers_priority = \
+  # Prefer native CoreAudio on macOS, then PulseAudio and SDL3.
+  # JACK remains opt-in: startup must not depend on a running JACK server.
+  # Preserve the other hosts' historical priority when changing macOS policy.
+  audio_drivers_priority = host_os == 'darwin' ? \
+    ['coreaudio', 'pa', 'sdl'] : \
     [ 'pa', 'coreaudio', 'dsound', 'sndio', 'oss' ] + \
     (host_os == 'linux' ? [] : [ 'sdl' ])
   audio_drivers_default = []

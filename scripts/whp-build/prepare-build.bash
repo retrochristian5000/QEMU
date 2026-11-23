@@ -623,20 +623,9 @@ whp_prepare_configure_args()
         whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
         whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio
 
-        macos_audio_drivers=
-        if [[ "$MACOS_ENABLE_COREAUDIO" == 1 ]]; then
-            macos_audio_drivers=coreaudio
-        fi
-        if [[ "$MACOS_ENABLE_PA" == 1 ]]; then
-            if [[ -n "$macos_audio_drivers" ]]; then
-                macos_audio_drivers+=,pa
-            else
-                macos_audio_drivers=pa
-            fi
-        fi
-        if [[ -n "$macos_audio_drivers" ]]; then
-            configure_args+=(--audio-drv-list="$macos_audio_drivers")
-        fi
+        # The backend feature flags above control discovery, not fallback
+        # priority. Keep Meson's available-driver list (including SDL3)
+        # instead of restricting it when CoreAudio or PulseAudio is enabled.
     fi
 }
 

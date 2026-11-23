@@ -44,6 +44,10 @@ on:
       - 'tests/qtest/i82092aa-test.c'
       - 'tests/qtest/meson.build'
       - 'hw/audio/gameblaster.c'
+      - 'meson.build'
+      - 'audio/meson.build'
+      - 'audio/audio.c'
+      - 'scripts/tests/test-audiodev-backends.py'
       - 'hw/audio/gameblaster-saa1099.h'
       - 'tests/unit/gameblaster-saa1099-test.c'
       - 'scripts/tests/test-gameblaster-saa1099.py'
@@ -216,6 +220,9 @@ jobs:
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
+
+      - name: Audit QEMU audio backends and macOS fallback priority
+        run: python3 scripts/tests/test-audiodev-backends.py
 
       - name: Test initial display notification without resize delay
         run: python3 scripts/tests/test-ui-startup-delay.py

@@ -93,6 +93,7 @@ on:
       - 'scripts/tests/test-cocoa-metal-dirty.py'
       - 'scripts/tests/test-arm64e-display-hotpath.py'
       - 'scripts/tests/test-macos-dynamic-modules.py'
+      - 'scripts/tests/test-audiodev-backends.py'
       - 'scripts/tests/test-darwin-dyld-arm64e.bash'
       - 'scripts/tests/test-sdl-bootstrap.py'
       - 'scripts/tests/arm64e-display-abi-probe.m'
@@ -297,6 +298,10 @@ jobs:
       - name: Audit macOS dynamic QEMU modules
         shell: bash
         run: python3 scripts/tests/test-macos-dynamic-modules.py
+
+      - name: Audit audio backend availability and macOS priority
+        shell: bash
+        run: python3 scripts/tests/test-audiodev-backends.py
 
       - name: Audit embedded SDL3 dyld runpath policy
         shell: bash
@@ -949,6 +954,11 @@ jobs:
           file "$coreaudio_module" | grep -Fq arm64
           otool -L "$coreaudio_module" | grep -Fq CoreAudio.framework
           "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
+          for backend in sdl jack; do
+            if grep -Eq "^#define CONFIG_AUDIO_${backend^^} (1|true)$" "$BUILD_DIR/config-host.h"; then
+              "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq "$backend"
+            fi
+          done
 
       - name: Build and run ARM64e i386 TCG smoke
         shell: bash
@@ -1002,6 +1012,11 @@ jobs:
           "$NATIVE_LLVM_DIR/bin/llvm-lipo" -archs "$coreaudio_module" | tr ' ' '\n' | grep -Fxq arm64e
           file "$coreaudio_module" | grep -Fq arm64e
           "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq coreaudio
+          for backend in sdl jack; do
+            if grep -Eq "^#define CONFIG_AUDIO_${backend^^} (1|true)$" "$BUILD_DIR/config-host.h"; then
+              "$BUILD_DIR/qemu-system-i386" -audiodev help 2>&1 | grep -Fxq "$backend"
+            fi
+          done
 
           # Alternate split-W^X modes in paired runs to estimate startup
           # overhead versus a CPU-intensive workload without changing TCG.
