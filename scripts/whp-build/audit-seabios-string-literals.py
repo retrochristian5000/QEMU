@@ -9,20 +9,25 @@ import sys
 from collections import defaultdict
 
 LITERAL = re.compile(
-    r'^\s*\.(?:asciz|string|ascii)\s+("(?:\\.|[^"\\])*")\s*(?:[#;].*)?$'
+    r'^\s*\.(asciz|string|ascii)\s+("(?:\\.|[^"\\])*")\s*(?:[#;].*)?$'
 )
 
 
-def emitted_literals(assembly):
-    """Yield bytes from unambiguous single-string assembler directives."""
+def emitted_directives(assembly):
+    """Yield directive kind and bytes, skipping ambiguous assembler syntax."""
     for line in assembly.splitlines():
         match = LITERAL.fullmatch(line)
         if match is None:
             continue
         try:
-            value = ast.literal_eval("b" + match.group(1))
+            value = ast.literal_eval("b" + match.group(2))
         except (SyntaxError, ValueError):
             continue
+        yield match.group(1), value
+
+
+def emitted_literals(assembly):
+    for _, value in emitted_directives(assembly):
         yield value
 
 
@@ -32,9 +37,10 @@ def summarize(paths):
     appearances = defaultdict(set)
     for mode, path in paths:
         data = pathlib.Path(path).read_text(encoding="utf-8")
-        strings = list(emitted_literals(data))
-        reports.append((mode, len(strings), sum(len(s) + 1 for s in strings)))
-        for value in strings:
+        strings = list(emitted_directives(data))
+        reports.append((mode, len(strings), sum(
+            len(value) + (kind != "ascii") for kind, value in strings)))
+        for _, value in strings:
             appearances[value].add(mode)
 
     repeated = [(data, modes) for data, modes in appearances.items()
