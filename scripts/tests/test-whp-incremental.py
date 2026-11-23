@@ -159,7 +159,7 @@ class WhpIncrementalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             build_dir = pathlib.Path(td)
             (build_dir / '.whp-config').write_text(
-                'SCHEMA=2\\nQEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\\n',
+                'SCHEMA=2\nQEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\n',
                 encoding='utf-8',
             )
             old = build_dir / 'qemu-system-i386'
@@ -185,7 +185,7 @@ class WhpIncrementalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             record = pathlib.Path(td) / '.whp-config'
             record.write_text(
-                'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\\n',
+                'QEMU_TARGET_LIST=i386-softmmu,ppc-softmmu\n',
                 encoding='utf-8',
             )
             script = (
