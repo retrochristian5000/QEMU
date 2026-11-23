@@ -31,6 +31,14 @@ LONGJMP_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "longjmp-shadow-stack.c"
 )
+SIGLONGJMP_MASK_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/"
+    "siglongjmp-deferred-mask.c"
+)
+DARWIN_ALTSTACK_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
+    "siglongjmp-altstack.c"
+)
 DARWIN_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "setjmp-tail-call.c"
@@ -45,6 +53,8 @@ def check_sources() -> None:
     darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
     tsan_cmake = TSAN_CMAKE.read_text(encoding="utf-8")
     longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
+    siglongjmp_regression = SIGLONGJMP_MASK_TEST.read_text(encoding="utf-8")
+    darwin_altstack_regression = DARWIN_ALTSTACK_TEST.read_text(encoding="utf-8")
     signal_regression = SIGNAL_CONTEXT_TEST.read_text(encoding="utf-8")
     signal_layout = SIGNAL_LAYOUT_TEST.read_text(encoding="utf-8")
     shadow_regression = SHADOW_TEST.read_text(encoding="utf-8")
@@ -76,6 +86,23 @@ def check_sources() -> None:
     assert "_longjmp(*env, 37)" in longjmp_regression
     assert "10000000" in longjmp_regression
     assert "%clang_tsan -O1" in longjmp_regression
+
+    # siglongjmp must restore TSan's temporary all-blocked mask even when
+    # Darwin libc intentionally skips signal-mask restoration (savemask=0).
+    assert re.search(
+        r"while \(sctx->oldset\.Size\(\) > buf->oldset_stack_size\)\s*\{"
+        r".*?REAL\(pthread_sigmask\)\(SIG_SETMASK, &oldset, nullptr\);"
+        r".*?sctx->oldset\.PopBack\(\);",
+        interceptors,
+        re.DOTALL,
+    ), "longjmp loses the deferred-signal mask restoration"
+    assert "sigsetjmp(checkpoint, savemask)" in siglongjmp_regression
+    assert "run_case(0)" in siglongjmp_regression
+    assert "run_case(1)" in siglongjmp_regression
+    assert "sigismember(&mask, SIGTERM)" in siglongjmp_regression
+    assert "siglongjmp(checkpoint, 23)" in darwin_altstack_regression
+    assert "SA_ONSTACK" in darwin_altstack_regression
+    assert "current.ss_flags & SS_ONSTACK" in darwin_altstack_regression
 
     # Darwin's deferred signal context is smaller than Linux's, and may be
     # null. These guards prevent unsafe copies from returning in the fork.
