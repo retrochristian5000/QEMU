@@ -26,6 +26,7 @@ INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
 DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
 DARWIN_PLATFORM = LIB / "tsan/rtl/tsan_platform_darwin.cpp"
+DARWIN_CPU = LIB / "tsan/rtl/tsan_cpu_darwin.cpp"
 MAC_PLATFORM = LIB / "tsan/rtl/tsan_platform_mac.cpp"
 DARWIN_THREAD = LIB / "tsan/rtl/tsan_thread_darwin.cpp"
 POSIX_PLATFORM = LIB / "tsan/rtl/tsan_platform_posix.cpp"
@@ -77,6 +78,7 @@ def check_sources() -> None:
     darwin_interceptors = DARWIN_INTERCEPTORS.read_text(encoding="utf-8")
     darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
     darwin_platform = DARWIN_PLATFORM.read_text(encoding="utf-8")
+    darwin_cpu = DARWIN_CPU.read_text(encoding="utf-8")
     mac_platform = MAC_PLATFORM.read_text(encoding="utf-8")
     darwin_thread = DARWIN_THREAD.read_text(encoding="utf-8")
     posix_platform = POSIX_PLATFORM.read_text(encoding="utf-8")
@@ -236,26 +238,56 @@ def check_sources() -> None:
     apple_sources = tsan_cmake.split(
         "if(APPLE)\n  list(APPEND TSAN_SOURCES", 1
     )[1].split("elseif(UNIX)", 1)[0]
-    # Darwin owns Mach VM accounting and jump-buffer decoding. The POSIX
-    # implementation and macOS pthread lifecycle code must not duplicate them.
+    # Darwin Mach VM accounting and CPU-specific libc jump-buffer decoding
+    # have independent owners. Linux's dynamic VMA selection is not reused.
     assert "tsan_platform_darwin.cpp" in apple_sources
     assert '"tsan_platform_darwin.cpp"' in tsan_gn
+    assert "tsan_cpu_darwin.cpp" in apple_sources
+    assert '"tsan_cpu_darwin.cpp"' in tsan_gn
+    assert apple_sources.count("tsan_cpu_darwin.cpp") == 1
+    assert tsan_gn.count('"tsan_cpu_darwin.cpp"') == 1
     assert "void WriteMemoryProfile(" in darwin_platform
     assert "vm_region_64(" in darwin_platform
     assert "StackDepotGetStats()" in darwin_platform
     assert "void WriteMemoryProfile(" not in mac_platform
     assert "vm_region_64(" not in mac_platform
     assert "vm_region_64(" not in posix_platform
-    assert "uptr ExtractLongJmpSp(" in darwin_platform
-    assert "ptrauth_auth_data(" in darwin_platform
-    assert 'ptrauth_string_discriminator("sp")' in darwin_platform
+    assert "void WriteMemoryProfile(" not in darwin_cpu
+    assert "InitializeCpuVmaSize(" not in darwin_cpu
+
+    # The ABI slot selection must retain both AArch64 generations and x86_64.
+    assert "#if SANITIZER_APPLE" in darwin_cpu
+    assert "static uptr DarwinLongJmpStackSlot()" in darwin_cpu
+    assert "#if defined(__aarch64__)" in darwin_cpu
+    assert (
+        "GetMacosAlignedVersion() >= MacosVersion(10, 14) ? 12 : 13"
+        in darwin_cpu
+    )
+    assert re.search(
+        r"static uptr DarwinLongJmpStackSlot\(\)\s*\{"
+        r".*?#else\s*// Darwin x86_64.*?return 2;\s*#endif",
+        darwin_cpu, re.DOTALL,
+    ), "missing Darwin x86_64 stack slot"
+    assert "const unsigned kTLSLongjmpXorKeySlot = 0x7;" in darwin_cpu
+    assert "pthread_getspecific(kTLSLongjmpXorKeySlot)" in darwin_cpu
+    assert "uptr ExtractLongJmpSp(uptr *env)" in darwin_cpu
+    assert "env[DarwinLongJmpStackSlot()]" in darwin_cpu
+    assert "sp = mangled_sp ^ longjmp_xor_key" in darwin_cpu
+    assert "ptrauth_auth_data(" in darwin_cpu
+    assert 'ptrauth_string_discriminator("sp")' in darwin_cpu
+    assert '#include "sanitizer_common/sanitizer_mac.h"' in darwin_cpu
+    assert '#include "sanitizer_common/sanitizer_ptrauth.h"' in darwin_cpu
+    assert "uptr ExtractLongJmpSp(" not in darwin_platform
+    assert "InitializeDarwinLongJmp()" not in darwin_platform
+    assert "longjmp_xor_key" not in darwin_platform
     assert "uptr ExtractLongJmpSp(" not in mac_platform
     assert "longjmp_xor_key" not in mac_platform
-    assert '#include "sanitizer_common/sanitizer_mac.h"' in darwin_platform
     assert "#if SANITIZER_APPLE" in darwin_platform
     assert "void InitializeDarwinLongJmp();" in platform_header
-    assert darwin_platform.count("void InitializeDarwinLongJmp()") == 1
+    assert darwin_cpu.count("void InitializeDarwinLongJmp()") == 1
     assert mac_platform.count("InitializeDarwinLongJmp();") == 1
+    assert "siglongjmp(checkpoint, 23)" in darwin_altstack_regression
+    assert "10000000" in longjmp_regression
     assert "tsan_thread_darwin.cpp" in apple_sources
     assert '"tsan_thread_darwin.cpp"' in tsan_gn
     assert "InitializeDarwinThreadSupport();" in mac_platform
