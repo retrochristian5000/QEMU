@@ -43,6 +43,10 @@ def check_sources() -> None:
 
     assert "#if SANITIZER_APPLE" in darwin
     assert "#if !SANITIZER_GO" in darwin
+    # Apple exposes PTHREAD_DESTRUCTOR_ITERATIONS through <limits.h>.
+    # A file split must carry the declaration header with its static_assert.
+    assert "#include <limits.h>" in darwin
+    assert "static_assert(PTHREAD_DESTRUCTOR_ITERATIONS == 4" in darwin
     assert "static pthread_key_t thread_state_key;" in darwin
     for symbol in (
         "ThreadState *cur_thread()", "void set_cur_thread(",
