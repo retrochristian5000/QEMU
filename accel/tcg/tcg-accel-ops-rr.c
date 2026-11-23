@@ -51,13 +51,13 @@ void rr_kick_vcpu_thread(CPUState *unused)
 /*
  * TCG vCPU kick timer
  *
- * The kick timer is responsible for moving single threaded vCPU
- * emulation on to the next vCPU. If more than one vCPU is running a
- * timer event we force a cpu->exit so the next vCPU can get
- * scheduled.
+ * Single-threaded TCG needs periodic preemption only when at least two
+ * vCPUs can execute. A halted secondary vCPU must not force its running
+ * sibling to exit translation blocks on every kick timer tick.
  *
- * The timer is removed if all vCPUs are idle and restarted again once
- * idleness is complete.
+ * Interrupts and queued CPU work still wake the round-robin thread through
+ * qemu_cpu_kick(), so the kick timer can be rearmed when another CPU becomes
+ * runnable. This also preserves the all-idle condition-variable sleep.
  */
 
 static QEMUTimer *rr_kick_vcpu_timer;
@@ -88,21 +88,41 @@ static void rr_kick_thread(void *opaque)
     rr_kick_next_cpu();
 }
 
-static void rr_start_kick_timer(void)
+static bool rr_needs_kick_timer(void)
 {
-    if (!rr_kick_vcpu_timer && CPU_NEXT(first_cpu)) {
-        rr_kick_vcpu_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
-                                           rr_kick_thread, NULL);
+    CPUState *cpu;
+    bool found_runnable = false;
+
+    CPU_FOREACH(cpu) {
+        if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {
+            if (found_runnable) {
+                return true;
+            }
+            found_runnable = true;
+        }
     }
-    if (rr_kick_vcpu_timer && !timer_pending(rr_kick_vcpu_timer)) {
-        timer_mod(rr_kick_vcpu_timer, rr_next_kick_time());
-    }
+    return false;
 }
 
 static void rr_stop_kick_timer(void)
 {
     if (rr_kick_vcpu_timer && timer_pending(rr_kick_vcpu_timer)) {
         timer_del(rr_kick_vcpu_timer);
+    }
+}
+
+static void rr_start_kick_timer(void)
+{
+    if (!rr_needs_kick_timer()) {
+        rr_stop_kick_timer();
+        return;
+    }
+    if (!rr_kick_vcpu_timer) {
+        rr_kick_vcpu_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                                          rr_kick_thread, NULL);
+    }
+    if (!timer_pending(rr_kick_vcpu_timer)) {
+        timer_mod(rr_kick_vcpu_timer, rr_next_kick_time());
     }
 }
 

@@ -50,6 +50,8 @@ on:
       - 'docs/system/devices/gameblaster.rst'
       - 'ui/cocoa.m'
       - 'ui/console.c'
+      - 'accel/tcg/tcg-accel-ops-rr.c'
+      - 'scripts/tests/test-tcg-rr-idle.py'
       - 'scripts/tests/test-ui-startup-delay.py'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sccache.py'
@@ -213,6 +215,9 @@ jobs:
 
       - name: Test initial display notification without resize delay
         run: python3 scripts/tests/test-ui-startup-delay.py
+
+      - name: Test single-threaded TCG idle CPU preemption
+        run: python3 scripts/tests/test-tcg-rr-idle.py
 
       - name: Test verified x86 emulator alias replacement
         run: |
