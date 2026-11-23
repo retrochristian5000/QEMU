@@ -11,6 +11,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "toolchains/llvm-project/compiler-rt/lib"
 ASM = LIB / "tsan/rtl/tsan_rtl_aarch64.S"
+INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
+LONGJMP_TEST = ROOT / (
+    "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
+    "longjmp-shadow-stack.c"
+)
 DARWIN_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "setjmp-tail-call.c"
@@ -20,6 +25,8 @@ DARWIN_TEST = ROOT / (
 def check_sources() -> None:
     source = ASM.read_text(encoding="utf-8")
     regression = DARWIN_TEST.read_text(encoding="utf-8")
+    interceptors = INTERCEPTORS.read_text(encoding="utf-8")
+    longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
     for name in ("setjmp", "_setjmp", "sigsetjmp"):
         assert f"  b       ASM_SYMBOL({name})" in source, (
             f"Darwin TSan {name} must branch via a Mach-O linker stub"
@@ -30,6 +37,24 @@ def check_sources() -> None:
     for name in ("check_setjmp", "check__setjmp", "check_sigsetjmp"):
         assert name in regression, f"missing Darwin TSan runtime case {name}"
     assert "%clang_tsan -O1" in regression
+
+    # Darwin's _longjmp must unwind the shadow stack just like longjmp.
+    assert re.search(
+        r"#if SANITIZER_APPLE \|\| SANITIZER_NETBSD\s+"
+        r"TSAN_INTERCEPTOR\(void, _longjmp,", interceptors
+    ), "missing Darwin _longjmp interceptor"
+    interceptor = interceptors.split(
+        "TSAN_INTERCEPTOR(void, _longjmp,", 1
+    )[1].split("#endif", 1)[0]
+    assert "LongJmp(cur_thread(), env);" in interceptor
+    assert re.search(
+        r"#if SANITIZER_APPLE \|\| SANITIZER_NETBSD\s+"
+        r"TSAN_INTERCEPT\(_longjmp\);", interceptors
+    ), "missing Darwin _longjmp registration"
+    assert "_setjmp(env)" in longjmp_regression
+    assert "_longjmp(*env, 37)" in longjmp_regression
+    assert "10000000" in longjmp_regression
+    assert "%clang_tsan -O1" in longjmp_regression
 
 
 def assemble(clang: Path, target: str, destination: Path) -> None:
