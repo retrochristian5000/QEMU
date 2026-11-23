@@ -15,6 +15,10 @@ INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_posix.cpp"
 DARWIN_INTERCEPTORS = LIB / "tsan/rtl/tsan_interceptors_darwin.cpp"
 DARWIN_HEADER = LIB / "tsan/rtl/tsan_interceptors_darwin.h"
 TSAN_CMAKE = LIB / "tsan/rtl/CMakeLists.txt"
+TSAN_GN = ROOT / (
+    "toolchains/llvm-project/llvm/utils/gn/secondary/"
+    "compiler-rt/lib/tsan/rtl/BUILD.gn"
+)
 SIGNAL_CONTEXT_TEST = ROOT / (
     "toolchains/llvm-project/compiler-rt/test/tsan/Darwin/"
     "signal-async-context.c"
@@ -52,6 +56,7 @@ def check_sources() -> None:
     darwin_interceptors = DARWIN_INTERCEPTORS.read_text(encoding="utf-8")
     darwin_header = DARWIN_HEADER.read_text(encoding="utf-8")
     tsan_cmake = TSAN_CMAKE.read_text(encoding="utf-8")
+    tsan_gn = TSAN_GN.read_text(encoding="utf-8")
     longjmp_regression = LONGJMP_TEST.read_text(encoding="utf-8")
     siglongjmp_regression = SIGLONGJMP_MASK_TEST.read_text(encoding="utf-8")
     darwin_altstack_regression = DARWIN_ALTSTACK_TEST.read_text(encoding="utf-8")
@@ -69,6 +74,12 @@ def check_sources() -> None:
     # ELF. Keep the old ISA-neutral runtime filename out of the source list.
     assert tsan_cmake.count("tsan_interceptors_aarch64.S") == 2
     assert "tsan_rtl_aarch64.S" not in tsan_cmake
+    assert tsan_gn.count("tsan_interceptors_aarch64.S") == 1
+    assert "tsan_rtl_aarch64.S" not in tsan_gn
+    assert "tsan_interceptors_darwin.cpp" in tsan_gn
+    assert "tsan_interceptors_freebsd.cpp" in tsan_gn
+    assert "tsan_interceptors_linux.cpp" in tsan_gn
+    assert "tsan_interceptors_glibc.cpp" in tsan_gn
     for symbol in ("setjmp", "_setjmp", "sigsetjmp", "__sigsetjmp"):
         assert f"ASM_SYMBOL_INTERCEPTOR({symbol}):" in source
     assert source.count("  BTI_C") == 4
