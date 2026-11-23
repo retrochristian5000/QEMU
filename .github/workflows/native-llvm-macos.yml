@@ -63,6 +63,7 @@ on:
       - 'seeds/rustc.sh'
       - 'seeds/cargo.sh'
       - 'scripts/tests/test-native-llvm-arm64e-bootstrap.py'
+      - 'scripts/tests/test-native-llvm-tsan-arm64e.py'
       - 'scripts/tests/test-arm64e-object-emission.py'
       - 'scripts/tests/test-arm64e-clangxx-flag-guard.py'
       - 'scripts/tests/test-llvm-ar-arm64e.py'
@@ -780,6 +781,14 @@ jobs:
           test -x native-llvm-arm64e
           ./native-llvm-ubsan
           ./native-llvm-arm64e
+
+      - name: Validate ARM64e ThreadSanitizer branch ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tests/test-native-llvm-tsan-arm64e.py \
+            --clang "$NATIVE_LLVM_DIR/bin/clang" \
+            --objdump "$NATIVE_LLVM_DIR/bin/llvm-objdump"
 
       - name: Inspect Mach-O with bootstrapped llvm-otool
         shell: bash
