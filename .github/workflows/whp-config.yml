@@ -66,6 +66,7 @@ on:
       - 'scripts/whp-build/shell-functions.sh'
       - 'scripts/whp-build/configure.bash'
       - 'scripts/whp-build/portable-build.py'
+      - 'scripts/whp-build/x86-family-alias.py'
       - 'scripts/whp-build/portable-build-entry.py'
       - 'scripts/whp-build/prepare-build.bash'
       - 'scripts/macos-build-hygiene.bash'
@@ -146,6 +147,7 @@ on:
       - 'scripts/tests/test-whp-i386-audio-menu.py'
       - 'scripts/tests/test-qtest-meson.py'
       - 'scripts/tests/test-whp-incremental.py'
+      - 'scripts/tests/test-x86-family-alias.py'
       - 'scripts/tests/test-whp-sparc-menu.py'
       - 'target/i386/helper.h'
       - 'target/i386/tcg/helper-tcg.h'
@@ -206,6 +208,13 @@ jobs:
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
+
+      - name: Test verified x86 emulator alias replacement
+        run: |
+          python3 -m py_compile scripts/whp-build/x86-family-alias.py
+          bash -n scripts/whp-build/configure.bash
+          bash -n scripts/whp-build/build-targets.bash
+          python3 scripts/tests/test-x86-family-alias.py
 
       - name: Test configuration model
         # An unrelated incremental-planning failure must not hide menu regressions.

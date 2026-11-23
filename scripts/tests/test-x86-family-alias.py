@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Non-destructive regression tests for the x86 system-family link utility."""
+"""Regression tests for validated, atomic x86 system-family alias replacement."""
 
 from __future__ import annotations
 
