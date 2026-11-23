@@ -775,13 +775,16 @@ int qemu_console_set_ui_info(QemuConsole *con, QemuUIInfo *info, bool delay)
     }
 
     /*
-     * Typically we get a flood of these as the user resizes the window.
-     * Wait until the dust has settled (one second without updates), then
-     * go notify the guest.
+     * Report the first usable display size immediately: it is not part of
+     * a resize storm, and waiting one second needlessly delays the guest's
+     * initial display configuration. Continue debouncing subsequent window
+     * resizes to avoid flooding the guest with intermediate sizes.
      */
+    bool debounce = delay && con->ui_info.width && con->ui_info.height;
+
     con->ui_info = *info;
     timer_mod(con->ui_timer,
-              qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + (delay ? 1000 : 0));
+              qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + (debounce ? 1000 : 0));
     return 0;
 }
 

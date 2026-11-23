@@ -49,6 +49,8 @@ on:
       - 'scripts/tests/test-gameblaster-saa1099.py'
       - 'docs/system/devices/gameblaster.rst'
       - 'ui/cocoa.m'
+      - 'ui/console.c'
+      - 'scripts/tests/test-ui-startup-delay.py'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sccache.py'
       - 'scripts/ensure-sdl.py'
@@ -208,6 +210,9 @@ jobs:
 
       - name: Test incremental planning
         run: python3 scripts/tests/test-whp-incremental.py
+
+      - name: Test initial display notification without resize delay
+        run: python3 scripts/tests/test-ui-startup-delay.py
 
       - name: Test verified x86 emulator alias replacement
         run: |
