@@ -200,10 +200,16 @@ whp_configure_merge_previous_targets()
     QEMU_TARGET_LIST=
     IFS=, read -r -a previous_targets <<< "$previous"
     for target in "${previous_targets[@]}"; do
+        if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 && "$target" == i386-softmmu ]]; then
+            target=x86_64-softmmu
+        fi
         whp_configure_add_target "$target"
     done
     IFS=, read -r -a current_targets <<< "$current"
     for target in "${current_targets[@]}"; do
+        if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 && "$target" == i386-softmmu ]]; then
+            target=x86_64-softmmu
+        fi
         whp_configure_add_target "$target"
     done
 }
@@ -581,31 +587,13 @@ if [[ "${QEMU_HOST_PGO:-off}" == use ]]; then
 fi
 host_tag="$(whp_configure_host_tag)"
 
-# A pre-existing i386 target cannot be relinked into a shared x86_64 alias
-# without overwriting a user artifact. Require a separate build directory:
-# old WHP files and the incremental target graph are left untouched.
-if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
-    if [[ -L "$BUILD_DIR/qemu-system-i386" ]]; then
-        if [[ "$(readlink "$BUILD_DIR/qemu-system-i386")" != qemu-system-x86_64 ]]; then
-            printf '%s\n' 'error: foreign i386 symlink exists; refusing to overwrite it' >&2
-            return 1
-        fi
-    elif [[ -e "$BUILD_DIR/qemu-system-i386" ]]; then
-        printf '%s\n' 'error: i386 executable already exists in the build directory;' \
-            'select a distinct BUILD_DIR for the x86 family link' >&2
-        return 1
-    fi
-    case ",$(whp_configure_previous_target_list "$config_file")," in
-        *,i386-softmmu,*)
-            printf '%s\n' 'error: existing build tree already includes i386-softmmu;' \
-                'choose a distinct BUILD_DIR for QEMU_X86_FAMILY_LINK (old tree preserved)' >&2
-            return 1 ;;
-    esac
-fi
-# Incremental target selection is monotonic.  Reconfiguring QEMU in place to
-# add a target is safe; removing an already-configured target would make old
-# outputs disappear from the same build tree and turns a small follow-up build
-# into an avoidable restart.  WHP_INCREMENTAL_BUILD=0 intentionally opts out.
+# A requested family alias is published only after its x86_64 backend is
+# built and validated. Existing i386 artifacts are legitimate replacement
+# destinations, not reasons to restart an owned incremental build.
+# Incremental target selection preserves previous targets, except that an
+# explicit x86-family alias replaces the standalone i386 target with x86_64.
+# Meson can regenerate that target graph without discarding unrelated objects.
+# WHP_INCREMENTAL_BUILD=0 still opts out of preserving prior targets.
 whp_configure_merge_previous_targets "$config_file"
 whp_configure_sync_target_args
 

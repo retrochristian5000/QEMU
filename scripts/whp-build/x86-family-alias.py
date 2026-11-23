@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Make an explicit, non-destructive POSIX i386 alias for an x86_64 emulator.
+"""Publish a verified POSIX i386 alias for an x86_64 emulator.
 
 This is *system* emulation only. It does not change the compiled QEMU target
 architecture or make target-specific QMP, migration, or GDB behavior identical.
@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 BACKEND = "qemu-system-x86_64"
 ALIAS = "qemu-system-i386"
@@ -45,23 +46,41 @@ def ensure_alias(directory: Path, check_only: bool = False) -> str:
     dest = directory / ALIAS
     verify_backend(source)
 
-    if dest.is_symlink():
-        if os.readlink(dest) != BACKEND:
-            raise ValueError(f"refusing to replace a foreign symbolic link: {dest}")
+    if dest.is_symlink() and os.readlink(dest) == BACKEND:
         if dest.resolve() != source.resolve():
             raise ValueError(f"existing alias does not resolve to {BACKEND}: {dest}")
         return "already-present"
-    if os.path.lexists(dest):
-        raise ValueError(
-            f"refusing to replace an existing i386 executable: {dest}; "
-            "preserve or relocate the existing artifact explicitly"
-        )
+
+    replacing = os.path.lexists(dest)
+    if replacing:
+        # The explicit alias option owns only this directory entry. Never
+        # remove a directory or a special file, and never follow a foreign
+        # symlink while publishing the replacement.
+        if not dest.is_symlink() and not dest.is_file():
+            raise ValueError(f"not a replaceable emulator file: {dest}")
+        if source.is_symlink() and source.resolve() == dest.resolve():
+            raise ValueError(
+                f"{BACKEND} depends on {ALIAS}; replacement would create "
+                "a symbolic-link cycle"
+            )
     if check_only:
-        return "ready"
-    dest.symlink_to(BACKEND)
-    if not dest.is_file() or dest.resolve() != source.resolve():
+        return "replace-ready" if replacing else "ready"
+
+    # Build the new directory entry away from its destination. os.replace()
+    # replaces a regular file or symlink atomically after the backend probe,
+    # without opening or writing through a foreign symlink.
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=".whp-x86-family-", dir=directory
+        ) as staging:
+            pending = Path(staging) / ALIAS
+            pending.symlink_to(BACKEND)
+            os.replace(pending, dest)
+    except OSError as exc:
+        raise ValueError(f"could not publish i386 emulator alias: {exc}") from exc
+    if not dest.is_symlink() or os.readlink(dest) != BACKEND:
         raise ValueError(f"new alias failed verification: {dest}")
-    return "created"
+    return "replaced" if replacing else "created"
 
 
 def main(argv: list[str] | None = None) -> int:

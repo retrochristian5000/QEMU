@@ -625,23 +625,6 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
             raise RuntimeError('QEMU_X86_FAMILY_LINK requires a POSIX symlink host')
         if values['QEMU_HOST_PGO'] != 'off':
             raise RuntimeError('QEMU_X86_FAMILY_LINK currently requires QEMU_HOST_PGO=off')
-        legacy = build_dir / 'qemu-system-i386'
-        if legacy.is_symlink():
-            if os.readlink(legacy) != 'qemu-system-x86_64':
-                raise RuntimeError(
-                    'foreign i386 symlink would be overwritten; select a '
-                    'distinct BUILD_DIR for QEMU_X86_FAMILY_LINK'
-                )
-        elif os.path.lexists(legacy):
-            raise RuntimeError(
-                'existing i386 executable would be overwritten; select a '
-                'distinct BUILD_DIR for QEMU_X86_FAMILY_LINK'
-            )
-        if 'i386-softmmu' in previous_configured_targets(build_dir):
-            raise RuntimeError(
-                'existing build tree includes i386-softmmu; select a distinct '
-                'BUILD_DIR for QEMU_X86_FAMILY_LINK (old tree preserved)'
-            )
         for key, value in values.items():
             if key.startswith('I386_AUDIO_') and value != 'auto':
                 raise RuntimeError(
@@ -666,7 +649,11 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
     targets: List[str] = []
     if values['WHP_INCREMENTAL_BUILD'] == 'y':
         for target in previous_configured_targets(build_dir):
-            append_unique(targets, target)
+            append_unique(
+                targets,
+                'x86_64-softmmu' if alias_enabled and target == 'i386-softmmu'
+                else target,
+            )
     for target in selected_targets:
         append_unique(targets, target)
 
