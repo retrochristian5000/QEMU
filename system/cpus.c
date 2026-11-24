@@ -658,9 +658,15 @@ void pause_all_vcpus(void)
 
     while (!all_vcpus_paused()) {
         qemu_cond_wait(&qemu_pause_cond, &bql);
-        /* FIXME: is this needed? */
+        /*
+         * Retry only vCPUs that have not acknowledged the pause.
+         * The BQL protects stopped, and waking already stopped vCPUs
+         * cannot help complete the remaining pause requests.
+         */
         CPU_FOREACH(cpu) {
-            qemu_cpu_kick(cpu);
+            if (!cpu->stopped) {
+                qemu_cpu_kick(cpu);
+            }
         }
     }
 
