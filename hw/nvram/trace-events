@@ -21,5 +21,5 @@ fw_cfg_add_i32(uint16_t key_value, const char *key_name, uint32_t value) "key 0x
 fw_cfg_add_i64(uint16_t key_value, const char *key_name, uint64_t value) "key 0x%04" PRIx16 " '%s', value 0x%" PRIx64
 
 # mac_nvram.c
-macio_nvram_read(uint32_t addr, uint8_t val) "read addr=0x%04"PRIx32" val=0x%02x"
-macio_nvram_write(uint32_t addr, uint8_t val) "write addr=0x%04"PRIx32" val=0x%02x"
+macio_nvram_read(uint32_t addr, uint8_t val, uint64_t offset, const char *backing, const char *status) "read addr=0x%04" PRIx32 " val=0x%02x, mmio offset=0x%" PRIx64 ", storage: %s, ret: %s"
+macio_nvram_write(uint32_t addr, uint8_t val, uint64_t offset, const char *backing, const char *status, int err) "write addr=0x%04" PRIx32 " val=0x%02x, mmio offset=0x%" PRIx64 ", storage: %s, ret: %s, errno: %d"

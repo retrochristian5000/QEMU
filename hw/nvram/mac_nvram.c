@@ -48,30 +48,39 @@ static void macio_nvram_writeb(void *opaque, hwaddr addr,
                                uint64_t value, unsigned size)
 {
     MacIONVRAMState *s = opaque;
+    hwaddr offset = addr;
+    int ret = 0;
+    const char *status = "OK";
 
     addr = (addr >> s->it_shift) & (s->size - 1);
-    trace_macio_nvram_write(addr, value);
     s->data[addr] = value;
     if (s->blk) {
-        int ret = blk_pwrite(s->blk, addr, 1, &s->data[addr], 0);
+        ret = blk_pwrite(s->blk, addr, 1, &s->data[addr], 0);
 
         if (ret < 0) {
+            status = "ERROR: backing write failed; in-memory byte updated";
             error_report("%s: NVRAM backing write failed at offset 0x%"
                          HWADDR_PRIx ": %s", blk_name(s->blk), addr,
                          strerror(-ret));
         }
     }
+
+    trace_macio_nvram_write(addr, s->data[addr], offset,
+                           s->blk ? "file-backed" : "memory-only",
+                           status, ret < 0 ? -ret : 0);
 }
 
 static uint64_t macio_nvram_readb(void *opaque, hwaddr addr,
                                   unsigned size)
 {
     MacIONVRAMState *s = opaque;
-    uint32_t value;
+    hwaddr offset = addr;
+    uint8_t value;
 
     addr = (addr >> s->it_shift) & (s->size - 1);
     value = s->data[addr];
-    trace_macio_nvram_read(addr, value);
+    trace_macio_nvram_read(addr, value, offset,
+                          s->blk ? "file-backed" : "memory-only", "OK");
 
     return value;
 }
