@@ -846,8 +846,11 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         frameSize = isFullscreen ? [self screenSafeAreaSize] : [self frame].size;
 
         if (cocoa_screen_refresh_rate(windowScreen, display, &rate)) {
-            qemu_console_listener_set_refresh(&console->dcl,
-                                              MAX(1, (int)(1000.0 / rate)));
+            uint64_t interval = MAX(1, (int)(1000.0 / rate));
+
+            if (console->dcl.update_interval != interval) {
+                qemu_console_listener_set_refresh(&console->dcl, interval);
+            }
             info.refresh_rate = (int64_t)(1000.0 * rate);
         }
 
@@ -869,7 +872,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 
 - (void) updateUIInfo
 {
-    if (!allow_events || !console->dcl.con || !console->con) {
+    if (!allow_events) {
         /*
          * Don't tell QEMU about UI information until this view has its own
          * registered display listener (secondary windows may be positioned
@@ -882,7 +885,10 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     }
 
     with_bql(^{
-        [self updateUIInfoLocked];
+        /* Cleanup may unregister the listener before we acquire the BQL. */
+        if (console->dcl.ds && console->dcl.con && console->con) {
+            [self updateUIInfoLocked];
+        }
     });
 }
 
@@ -1543,6 +1549,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
     uint64_t driveReadOps[DRIVE_ACTIVITY_COUNT];
     uint64_t driveWriteOps[DRIVE_ACTIVITY_COUNT];
     gint64 driveActivityUntil[DRIVE_ACTIVITY_COUNT];
+    BOOL driveActivityActive[DRIVE_ACTIVITY_COUNT];
 }
 - (void)updateDriveActivity:(NSTimer *)timer;
 - (void)stopDriveActivity;
@@ -1676,12 +1683,22 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [self stopDriveActivity];
         return;
     }
-    now = g_get_monotonic_time();
     with_bql(^{
-        blk_get_drive_activity_snapshot(output);
+        if (qatomic_read(&cocoa_drive_activity_enabled)) {
+            blk_get_drive_activity_snapshot(output);
+        } else {
+            memset(output, 0, sizeof(*output));
+        }
     });
+    if (!qatomic_read(&cocoa_drive_activity_enabled)) {
+        [self stopDriveActivity];
+        return;
+    }
+
+    now = g_get_monotonic_time();
     for (int i = 0; i < DRIVE_ACTIVITY_COUNT; i++) {
         BOOL active;
+        BOOL hidden = !snapshot.drives[i];
 
         if (snapshot.read_ops[i] > driveReadOps[i] ||
             snapshot.write_ops[i] > driveWriteOps[i]) {
@@ -1690,10 +1707,15 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         driveReadOps[i] = snapshot.read_ops[i];
         driveWriteOps[i] = snapshot.write_ops[i];
         active = snapshot.drives[i] && now < driveActivityUntil[i];
-        [driveActivityLabels[i] setHidden:!snapshot.drives[i]];
-        [driveActivityLabels[i] setTextColor:
-            active ? [NSColor systemOrangeColor] :
-                     [NSColor secondaryLabelColor]];
+        if ([driveActivityLabels[i] isHidden] != hidden) {
+            [driveActivityLabels[i] setHidden:hidden];
+        }
+        if (driveActivityActive[i] != active) {
+            driveActivityActive[i] = active;
+            [driveActivityLabels[i] setTextColor:
+                active ? [NSColor systemOrangeColor] :
+                         [NSColor secondaryLabelColor]];
+        }
     }
 }
 
@@ -2636,16 +2658,25 @@ static void cocoa_refresh(DisplayChangeListener *dcl)
     /* Shared clipboard polling belongs to one listener, not every monitor.
      * This avoids multiplied AppKit work on multi-head guests. */
     CocoaConsole *cocoa = container_of(dcl, CocoaConsole, dcl);
-    if (cocoa->is_primary &&
-        cbchangecount != [[NSPasteboard generalPasteboard] changeCount]) {
-        qemu_clipboard_info_unref(cbinfo);
-        cbinfo = qemu_clipboard_info_new(&cbpeer, QEMU_CLIPBOARD_SELECTION_CLIPBOARD);
-        if ([[NSPasteboard generalPasteboard] availableTypeFromArray:@[NSPasteboardTypeString]]) {
-            cbinfo->types[QEMU_CLIPBOARD_TYPE_TEXT].available = true;
+    if (cocoa->is_primary) {
+        NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+        NSInteger changeCount = [pasteboard changeCount];
+
+        if (cbchangecount != changeCount) {
+            qemu_clipboard_info_unref(cbinfo);
+            cbinfo = qemu_clipboard_info_new(&cbpeer,
+                                             QEMU_CLIPBOARD_SELECTION_CLIPBOARD);
+            if ([pasteboard availableTypeFromArray:@[NSPasteboardTypeString]]) {
+                cbinfo->types[QEMU_CLIPBOARD_TYPE_TEXT].available = true;
+            }
+            qemu_clipboard_update(cbinfo);
+            /*
+             * Record the generation we observed, not a later one. A host
+             * clipboard change during this query must be seen next refresh.
+             */
+            cbchangecount = changeCount;
+            qemu_event_set(&cbevent);
         }
-        qemu_clipboard_update(cbinfo);
-        cbchangecount = [[NSPasteboard generalPasteboard] changeCount];
-        qemu_event_set(&cbevent);
     }
 
     [pool release];
