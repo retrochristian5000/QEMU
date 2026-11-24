@@ -177,11 +177,8 @@ if [[ "$INSTALL_AFTER_BUILD" == "1" ]]; then
         "${PYTHON:-python3}" "$test_source_dir/scripts/whp-build/install-runtime-bash.py" \
             --build-dir "$BUILD_DIR" --prefix "$PREFIX" --check || return 1
     fi
-    if [[ -n "${NINJA_CMD:-}" ]]; then
-        "$NINJA_CMD" -C "$BUILD_DIR" install || return 1
-    elif [[ -n "${MAKE_CMD:-}" ]]; then
-        "$MAKE_CMD" -C "$BUILD_DIR" install || return 1
-    fi
+    # Preserve the configured job budget for any install prerequisites.
+    "${build_runner[@]}" install || return 1
     if [[ "${QEMU_X86_FAMILY_LINK:-0}" == 1 ]]; then
         case ",${QEMU_TARGET_LIST:-}," in
             *,x86_64-softmmu,*)
