@@ -266,6 +266,28 @@ static inline uint32_t fw_cfg_max_entry(const FWCfgState *s)
     return FW_CFG_FILE_FIRST + fw_cfg_file_slots(s);
 }
 
+/* File selectors are assigned dynamically, unlike well-known keys. */
+static const char *fw_cfg_selected_key_name(FWCfgState *s, uint16_t key)
+{
+    uint16_t index = key & FW_CFG_ENTRY_MASK;
+
+    if (key != FW_CFG_INVALID && !(key & FW_CFG_ARCH_LOCAL) &&
+        index >= FW_CFG_FILE_FIRST) {
+        unsigned slot = index - FW_CFG_FILE_FIRST;
+
+        if (slot < fw_cfg_file_slots(s)) {
+            if (s->files && slot < be32_to_cpu(s->files->count) &&
+                be16_to_cpu(s->files->f[slot].select) == index) {
+                return s->files->f[slot].name;
+            }
+            return "unassigned file slot";
+        }
+        return "invalid file selector";
+    }
+
+    return trace_key_name(key);
+}
+
 static int fw_cfg_select(FWCfgState *s, uint16_t key)
 {
     int arch, ret;
@@ -295,7 +317,8 @@ static int fw_cfg_select(FWCfgState *s, uint16_t key)
         status = "OK";
     }
 
-    trace_fw_cfg_select(s, key, trace_key_name(key), status, e ? e->len : 0);
+    trace_fw_cfg_select(s, key, fw_cfg_selected_key_name(s, key), status,
+                        e ? e->len : 0);
     return ret;
 }
 

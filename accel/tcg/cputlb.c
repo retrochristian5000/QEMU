@@ -1735,13 +1735,13 @@ static void mmu_watch_or_dirty(CPUState *cpu, MMULookupPageData *data,
 /*
  * On PowerPC, the first instruction unwind word is the exact guest NIP.
  * Inspect it without restoring CPU state or modifying the icount budget.
- * Report ROM failures even on machines which ignore transaction failures.
+ * Report failures even on machines which ignore transaction failures.
  */
-static void log_ppc_rom_write_failure(CPUState *cpu, CPUTLBEntryFull *full,
-                                      MemoryRegion *mr, hwaddr mr_offset,
-                                      vaddr addr, unsigned size, int mmu_idx,
-                                      const char *path, MemTxResult result,
-                                      uintptr_t retaddr)
+static void log_ppc_memory_failure(CPUState *cpu, CPUTLBEntryFull *full,
+                                   MemoryRegion *mr, hwaddr mr_offset,
+                                   vaddr addr, unsigned size, int mmu_idx,
+                                   const char *operation, const char *path,
+                                   MemTxResult result, uintptr_t retaddr)
 {
     uint64_t data[INSN_START_WORDS];
     hwaddr physaddr = full->phys_addr | (addr & ~TARGET_PAGE_MASK);
@@ -1753,11 +1753,11 @@ static void log_ppc_rom_write_failure(CPUState *cpu, CPUTLBEntryFull *full,
         snprintf(nip, sizeof(nip), "unavailable");
     }
 
-    qemu_log("PowerPC ROM write: path=%s cpu=%d nip=%s "
+    qemu_log("PowerPC %s: path=%s cpu=%d nip=%s "
              "ea=0x%" PRIx64 " pa=0x%" HWADDR_PRIX
              " region='%s' offset=0x%" HWADDR_PRIX
              " size=%u mmu_idx=%d memtx=0x%x\n",
-             path, cpu->cpu_index, nip, (uint64_t)addr, physaddr,
+             operation, path, cpu->cpu_index, nip, (uint64_t)addr, physaddr,
              memory_region_name(mr), mr_offset, size, mmu_idx,
              (unsigned)result);
 }
@@ -1850,9 +1850,9 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
                 hwaddr offset = pa - section->offset_within_address_space +
                                 section->offset_within_region;
 
-                log_ppc_rom_write_failure(cpu, p->full, section->mr, offset,
-                                          p->addr, p->size, l->mmu_idx,
-                                          "tlb-discard", MEMTX_OK, ra);
+                log_ppc_memory_failure(cpu, p->full, section->mr, offset,
+                                       p->addr, p->size, l->mmu_idx,
+                                       "ROM write", "tlb-discard", MEMTX_OK, ra);
             }
         }
     }
@@ -2020,6 +2020,13 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         r = memory_region_dispatch_read(mr, mr_offset, &val,
                                         this_mop, full->attrs);
         if (unlikely(r != MEMTX_OK)) {
+            if (qemu_loglevel_mask(LOG_INVALID_MEM) && target_base_ppc()) {
+                log_ppc_memory_failure(cpu, full, mr, mr_offset,
+                                       addr, this_size, mmu_idx,
+                                       type == MMU_INST_FETCH ?
+                                       "instruction fetch" : "read",
+                                       "mmio-rejected", r, ra);
+            }
             io_failed(cpu, full, addr, this_size, type, mmu_idx, r, ra);
         }
         if (this_size == 8) {
@@ -2535,9 +2542,9 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
         if (unlikely(r != MEMTX_OK)) {
             if (qemu_loglevel_mask(LOG_INVALID_MEM) &&
                 memory_region_is_rom(mr) && target_base_ppc()) {
-                log_ppc_rom_write_failure(cpu, full, mr, mr_offset,
-                                          addr, this_size, mmu_idx,
-                                          "mmio-rejected", r, ra);
+                log_ppc_memory_failure(cpu, full, mr, mr_offset,
+                                       addr, this_size, mmu_idx,
+                                       "ROM write", "mmio-rejected", r, ra);
             }
             io_failed(cpu, full, addr, this_size, MMU_DATA_STORE,
                       mmu_idx, r, ra);
