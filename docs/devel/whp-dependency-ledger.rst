@@ -4314,6 +4314,57 @@ test. The Darwin/arm64e runtime and regression fixture still
 require real SDK/provider compilation and execution. Keep the
 existing opt-in feature gate. No new source provider is needed.
 
+libc++ synchronization visibility in native TSan
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned LLVM monorepo includes libcxx and libcxxabi. They are
+existing source providers, not missing QEMU submodules. The
+libcxx thread support uses pthread synchronization; shared
+reference counts use relaxed increments and acquire-release
+decrements. libcxxabi's cxa_guard_impl.h also contains TSan
+annotations conditional on thread-sanitizer instrumentation.
+
+LLVM revision e363b8f05e944e5c84bda352c72cc86318136362 extends
+compiler-rt/lib/tsan/cxx/tsan_cxx_darwin.cpp with an explicit
+per-flag acquire after the real out-of-line libc++ __call_once
+returns normally. The existing callback wrapper releases the
+flag after successful user initialization. An exceptional return
+unwinds without the new acquire or the successful callback
+release; the real libc++ owns retry and waiting semantics.
+This models the successful call_once publication contract,
+without inventing a lock or a new runtime ABI. The inline
+libc++ fast path already performs an acquire load. Existing
+pthread mutex synchronization may already cover slow-path
+waiters; no previously observed false report is claimed fixed.
+
+The new Darwin/libcxx-call-once-retry.cpp test exercises exception
+retry, publication to a subsequent caller, and a deliberate
+unrelated race after initialization. The exact test blob compiled
+as C++11 with -Wall -Wextra -Werror and ran its safe case 20 times
+on Linux with the host C++ library, without sanitizer instrumentation.
+The actual Darwin TSan positive and negative tests remain pending.
+
+Remaining source-based opportunities include the out-of-line
+weak_ptr lock and release_weak reference-count operations,
+atomic wait/notify, futures, and libcxxabi guard and exception
+paths. Inspect actual ownership and atomic ordering before
+adding any interceptor; never replace a private vtable layout
+or infer pointee synchronization from reference counts alone.
+
+libcxx/CMakeLists.txt already recognizes LLVM_USE_SANITIZER=Thread.
+compiler-rt/lib/tsan/CMakeLists.txt also defines per-architecture
+libcxx_tsan builds through add_custom_libcxx when source paths
+and the test compiler qualify. The helper constructs static
+hermetic libcxx/libcxxabi artifacts; the TSan lit configuration
+explicitly excludes the instrumented libc++ path on Apple.
+A future private Darwin instrumented-library profile must resolve
+SDK, deployment target, install names, ABI, matching TSan runtime,
+and potential duplicate interception before using it with
+applications. Do not merely remove the Apple exclusion, replace
+the system libc++, or instrument TSan's own implementation with
+itself. The existing QEMU host bootstrap and libffi opt-in remain
+unchanged.
+
 Future optional capability providers
 ------------------------------------
 
