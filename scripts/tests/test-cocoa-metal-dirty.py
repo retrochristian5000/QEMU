@@ -50,6 +50,57 @@ int main(void)
             )
             subprocess.run([str(binary)], check=True)
 
+    def test_tsan_upload_reads_only_pixel_bytes(self):
+        cc = shutil.which('cc') or shutil.which('clang') or shutil.which('gcc')
+        self.assertIsNotNone(cc)
+        program = r'''
+#include <assert.h>
+#define QEMU_SANITIZE_THREAD 1
+#include "ui/cocoa-metal-tsan.h"
+
+static uint8_t pixels[48];
+static size_t calls, offsets[3], lengths[3];
+
+void __tsan_read_range(void *addr, unsigned long size)
+{
+    assert(calls < 3);
+    offsets[calls] = (uint8_t *)addr - pixels;
+    lengths[calls++] = size;
+}
+
+int main(void)
+{
+    qemu_cocoa_metal_tsan_read_rows(pixels + 4, 8, 16, 3);
+    assert(calls == 3);
+    for (size_t i = 0; i < 3; i++) {
+        assert(offsets[i] == 4 + i * 16 && lengths[i] == 8);
+    }
+    calls = 0;
+    qemu_cocoa_metal_tsan_read_rows(pixels, 16, 16, 3);
+    assert(calls == 1 && offsets[0] == 0 && lengths[0] == 48);
+    calls = 0;
+    qemu_cocoa_metal_tsan_read_rows(pixels, 0, 16, 3);
+    qemu_cocoa_metal_tsan_read_rows(pixels, 8, 16, 0);
+    assert(calls == 0);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='cocoa-metal-tsan-') as td:
+            td = pathlib.Path(td)
+            source = td / 'test.c'
+            binary = td / 'test'
+            source.write_text(program, encoding='utf-8')
+            subprocess.run(
+                [cc, '-std=c11', '-Wall', '-Wextra', '-Werror',
+                 '-I', str(ROOT), str(source), '-o', str(binary)],
+                check=True,
+            )
+            subprocess.run([str(binary)], check=True)
+        text = SOURCE.read_text(encoding='utf-8')
+        upload = text.index('qemu_cocoa_metal_tsan_read_rows(bytes,')
+        copy = text.index('[metalTexture replaceRegion:region')
+        self.assertLess(upload, copy)
+
     def test_occluded_metal_window_skips_drawable_wait(self):
         text = SOURCE.read_text(encoding='utf-8')
         # Match the implementation, not the method declaration in @interface.

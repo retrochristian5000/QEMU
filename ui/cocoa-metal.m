@@ -16,6 +16,7 @@
 #include "ui/console.h"
 #include "ui/cocoa-metal.h"
 #include "ui/cocoa-metal-dirty.h"
+#include "ui/cocoa-metal-tsan.h"
 
 #define QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM 80
 #define QEMU_METAL_STORAGE_MODE_SHARED 0
@@ -343,6 +344,13 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                            (size_t)dirty.y * stride +
                            (size_t)dirty.x * 4;
 
+    /*
+     * Metal performs this copy on the calling CPU thread, but its framework
+     * is not built with TSan. Describe only the actual pixel reads.
+     */
+    qemu_cocoa_metal_tsan_read_rows(bytes, (size_t)dirty.width * 4,
+                                  (size_t)stride, (size_t)dirty.height);
+
     [metalTexture replaceRegion:region
                        mipmapLevel:0
                          withBytes:bytes
@@ -402,7 +410,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         width = pixman_image_get_width(image);
         height = pixman_image_get_height(image);
         stride = pixman_image_get_stride(image);
-        if (width <= 0 || height <= 0 || stride < width * 4) {
+        if (width <= 0 || height <= 0 || width > INT_MAX / 4 ||
+            stride < width * 4) {
             textureImage = NULL;
             [metalLayer setHidden:YES];
             return false;
