@@ -21,6 +21,7 @@
 
 #define QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM 80
 #define QEMU_METAL_STORAGE_MODE_SHARED 0
+#define QEMU_METAL_COMMAND_BUFFER_STATUS_COMPLETED 4
 
 typedef struct QEMUMetalOrigin {
     NSUInteger x;
@@ -63,6 +64,7 @@ typedef struct CocoaConsole CocoaConsole;
 - (NSUInteger)width;
 - (NSUInteger)height;
 - (NSUInteger)pixelFormat;
+- (NSUInteger)sampleCount;
 - (void)replaceRegion:(QEMUMetalRegion)region
           mipmapLevel:(NSUInteger)level
             withBytes:(const void *)bytes
@@ -89,10 +91,19 @@ typedef struct CocoaConsole CocoaConsole;
 - (id)blitCommandEncoder;
 - (void)presentDrawable:(id)drawable;
 - (void)addCompletedHandler:(void (^)(id<QEMUMetalCommandBufferRuntime>))handler;
+- (NSUInteger)status;
 - (void)commit;
 @end
 
 @protocol QEMUMetalBlitEncoderRuntime <NSObject>
+- (void)copyFromTexture:(id)sourceTexture
+            sourceSlice:(NSUInteger)sourceSlice
+            sourceLevel:(NSUInteger)sourceLevel
+              toTexture:(id)destinationTexture
+       destinationSlice:(NSUInteger)destinationSlice
+       destinationLevel:(NSUInteger)destinationLevel
+             sliceCount:(NSUInteger)sliceCount
+             levelCount:(NSUInteger)levelCount;
 - (void)copyFromTexture:(id)sourceTexture
             sourceSlice:(NSUInteger)sourceSlice
             sourceLevel:(NSUInteger)sourceLevel
@@ -170,6 +181,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     Ivar pixmanImageIvar;
     pixman_image_t *textureImage;
     BOOL hasPresentedFrame;
+    BOOL presentationPending;
     /* Main-queue state; one upload texture must not be rewritten in flight. */
     BOOL frameInFlight;
     BOOL redrawDeferred;
@@ -285,7 +297,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     if (!texture || [texture device] != metalDevice) {
         return false;
     }
-    if ([texture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM) {
+    if ([texture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM ||
+        [texture sampleCount] != 1) {
         return false;
     }
     return [texture width] == width && [texture height] == height;
@@ -322,6 +335,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     nativeTextureWidth = 0;
     nativeTextureHeight = 0;
     textureImage = NULL;
+    presentationPending = YES;
     drawableRetryUsed = NO;
 }
 
@@ -408,6 +422,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     int height;
     int stride = 0;
     bool fullUpload = false;
+    bool uploaded = false;
     QEMUMetalOrigin origin = { 0, 0, 0 };
     QEMUMetalSize size;
     NSSize backing;
@@ -422,6 +437,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     if (window &&
         !([window occlusionState] & NSWindowOcclusionStateVisible)) {
         textureImage = NULL;
+        presentationPending = YES;
         drawableRetryUsed = NO;
         return true;
     }
@@ -434,6 +450,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     if (frameInFlight) {
         redrawDeferred = YES;
         textureImage = NULL;
+        presentationPending = YES;
         return true;
     }
 
@@ -513,6 +530,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         if (fullUpload) {
             QEMUCocoaMetalDirtyRect full = { 0, 0, width, height };
             [self uploadImage:image stride:stride dirty:full];
+            uploaded = true;
         } else {
             const NSRect *rectList;
             NSInteger rectCount;
@@ -525,6 +543,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                     if (cocoa_metal_dirty_rect_from_nsrect(rectList[i], width,
                                                            height, &dirty)) {
                         [self uploadImage:image stride:stride dirty:dirty];
+                        uploaded = true;
                     }
                 }
             } else {
@@ -533,10 +552,19 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                 if (cocoa_metal_dirty_rect_from_nsrect(dirtyRect, width, height,
                                                        &dirty)) {
                     [self uploadImage:image stride:stride dirty:dirty];
+                    uploaded = true;
                 }
             }
         }
         sourceTexture = metalTexture;
+    }
+
+    /*
+     * Native producers can modify their texture without a Pixman upload.
+     * Never use the upload-based no-damage shortcut for those textures.
+     */
+    if (nativeTexture || uploaded) {
+        presentationPending = YES;
     }
 
     size = (QEMUMetalSize){ (NSUInteger)width, (NSUInteger)height, 1 };
@@ -554,12 +582,19 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                            desiredDrawableSize)) {
         [(id<QEMUMetalLayerRuntime>)metalLayer
             setDrawableSize:desiredDrawableSize];
+        presentationPending = YES;
+    }
+
+    if (!presentationPending && hasPresentedFrame &&
+        ![metalLayer isHidden]) {
+        return true;
     }
 
     /* Prepare the command buffer before obtaining the scarce drawable. */
     commandBuffer = [metalQueue commandBuffer];
     if (!commandBuffer ||
-        ![commandBuffer respondsToSelector:@selector(addCompletedHandler:)]) {
+        ![commandBuffer respondsToSelector:@selector(addCompletedHandler:)] ||
+        ![commandBuffer respondsToSelector:@selector(status)]) {
         [metalLayer setHidden:YES];
         return false;
     }
@@ -584,7 +619,8 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     if (!drawableTexture ||
         [drawableTexture width] != (NSUInteger)width ||
         [drawableTexture height] != (NSUInteger)height ||
-        [drawableTexture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM) {
+        [drawableTexture pixelFormat] != QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM ||
+        [drawableTexture sampleCount] != 1) {
         [metalLayer setHidden:YES];
         return false;
     }
@@ -595,27 +631,58 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         return false;
     }
 
-    [encoder copyFromTexture:sourceTexture
-                    sourceSlice:0
-                    sourceLevel:0
-                   sourceOrigin:origin
-                     sourceSize:size
-                      toTexture:drawableTexture
-               destinationSlice:0
-               destinationLevel:0
-              destinationOrigin:origin];
+    /*
+     * A newly acquired drawable has no guaranteed previous-frame content.
+     * Copy the entire base level, not just this frame's dirty rectangles.
+     * Prefer the whole-slice API when available, with the region API as
+     * the compatibility path. Both copy exactly one slice and mip level.
+     */
+    if ([encoder respondsToSelector:
+            @selector(copyFromTexture:sourceSlice:sourceLevel:toTexture:
+                      destinationSlice:destinationLevel:sliceCount:levelCount:)]) {
+        [encoder copyFromTexture:sourceTexture
+                        sourceSlice:0
+                        sourceLevel:0
+                          toTexture:drawableTexture
+                   destinationSlice:0
+                   destinationLevel:0
+                         sliceCount:1
+                         levelCount:1];
+    } else {
+        [encoder copyFromTexture:sourceTexture
+                        sourceSlice:0
+                        sourceLevel:0
+                       sourceOrigin:origin
+                         sourceSize:size
+                          toTexture:drawableTexture
+                   destinationSlice:0
+                   destinationLevel:0
+                  destinationOrigin:origin];
+    }
     [encoder endEncoding];
     [commandBuffer presentDrawable:drawable];
     frameInFlight = YES;
-    drawableRetryUsed = NO;
+    presentationPending = NO;
     [commandBuffer addCompletedHandler:^(id<QEMUMetalCommandBufferRuntime> completed) {
         /*
          * Metal calls this on a worker thread. Do not touch AppKit or
          * presentation state until back on the main queue. The copied
          * blocks keep the view and state alive through completion.
          */
+        /* MTLCommandBufferStatusCompleted is 4 in the Metal ABI. */
+        BOOL succeeded = [completed status] ==
+                         QEMU_METAL_COMMAND_BUFFER_STATUS_COMPLETED;
         dispatch_async(dispatch_get_main_queue(), ^{
             frameInFlight = NO;
+            if (succeeded) {
+                hasPresentedFrame = YES;
+                drawableRetryUsed = NO;
+            } else {
+                hasPresentedFrame = NO;
+                presentationPending = YES;
+                textureImage = NULL;
+                [self retryDrawableForView:view];
+            }
             if (redrawDeferred) {
                 redrawDeferred = NO;
                 [view setNeedsDisplay:YES];
@@ -623,7 +690,6 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         });
     }];
     [commandBuffer commit];
-    hasPresentedFrame = YES;
 
     if ([metalLayer isHidden]) {
         [metalLayer setHidden:NO];
