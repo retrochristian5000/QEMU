@@ -481,6 +481,16 @@ by the WHP account.
      - Managed GNU sed host tool. Its maintainer-source bootstrap is downstream
        of Automake and a validated host sed seed, then the installed GNU sed is
        promoted ahead of managed Git, Bash, and later Autotools consumers.
+   * - ``toolchains/gnu-m4``
+     - ``GNU-M4``
+     - yes
+     - Managed GNU M4 source; Autoconf consumes a validated GNU M4
+       provider. Retain the independent seed until promotion.
+   * - ``tests/whp-drivers``
+     - ``WHP-Drivers``
+     - yes
+     - Conditional driver integration and validation source; not a
+       mandatory host-tool or runtime dependency.
 
 Header provenance and dependency-interface checks
 -----------------------------------------------
@@ -3904,6 +3914,118 @@ AArch64 currently uses the portable scalar C implementation; x86 and
 PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
+
+Firmware source-build dependency expansion
+------------------------------------------
+
+Evidence: QEMU's ``roms/Makefile``, ``roms/edk2-build.py``,
+``roms/edk2-build.config`` and upstream source files at these QEMU
+gitlinks (audit snapshot, not additional immutable gates):
+
+* EDK2 ``a9a0a7dee0cf1552ae79a59d8c83a1dfd8d416f0``:
+  `nested submodules <https://github.com/tianocore/edk2/blob/a9a0a7dee0cf1552ae79a59d8c83a1dfd8d416f0/.gitmodules>`__
+  and `tool definitions <https://github.com/tianocore/edk2/blob/a9a0a7dee0cf1552ae79a59d8c83a1dfd8d416f0/BaseTools/Conf/tools_def.template>`__.
+* iPXE ``b87b90415f45b9e98a9c9db088d827c442ed6ddb``:
+  `src/Makefile <https://github.com/ipxe/ipxe/blob/b87b90415f45b9e98a9c9db088d827c442ed6ddb/src/Makefile>`__.
+* U-Boot ``5b93c3ec7f9d66dc40d062a47a4a880f7d346b7a``:
+  `build documentation <https://github.com/u-boot/u-boot/blob/5b93c3ec7f9d66dc40d062a47a4a880f7d346b7a/doc/build/gcc.rst>`__.
+
+Conditional tool and artifact edges
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* EDK2 x86 assembly: the pinned tool definitions specify NASM >= 2.15.05
+  for applicable NASM sources. Candidate ``nasm.sh``; validate native
+  execution and the required guest object format. NASM is a potential
+  maintained source fork.
+* EDK2 ACPI compilation resolves iasl through IASL_PREFIX; QEMU Meson
+  also discovers iasl separately. Candidate ``iasl.sh``; ACPICA is a
+  potential source provider. Keep the requirement feature-conditional.
+* QEMU's ``efi-rom-%`` recipe needs both iPXE ROM variants and EDK2's
+  generated native BaseTools EfiRom. Legacy-only PXE does not require
+  EfiRom. EfiRom is a generated host tool, not an independent seed.
+  The EDK2 Python helper calls make and Bash, hard-codes
+  ``PYTHON_COMMAND=/usr/bin/python3``, and probes GNU/Linux cross-GCC
+  names. Audit these selection paths for Darwin before changing them.
+* QEMU's ``efi`` recipe compresses generated firmware with bzip2.
+  Candidate ``bzip2.sh`` for active compression/extraction consumers;
+  libbz2 remains a separate library dependency.
+* iPXE's Makefile declares Perl, Python, OpenSSL and prefixed
+  objcopy/objdump. Declarations alone do not prove every ROM recipe
+  invokes these programs. Reuse existing Perl/Python seeds; investigate
+  ``openssl.sh``, ``objcopy.sh`` and ``objdump.sh`` at actual
+  consumers. Preserve target ELF/PE/ROM formats.
+* U-Boot's pinned build documentation lists bc, Flex, Bison, DTC,
+  OpenSSL development files, SWIG and Python packages among its
+  profile-dependent requirements. Candidates: ``bc.sh``,
+  ``flex.sh``, ``swig.sh``. Reuse the existing ``yacc.sh``
+  where its Bison capability matches the consumer. Hexagon's Meson
+  parser already independently calls Flex and Bison >= 3.0.
+  U-Boot supports bundled or system DTC and requires pylibfdt
+  when CONFIG_PYLIBFDT is selected; this is independent of QEMU's
+  Meson-owned libfdt wrap. The broad package list is not proof of
+  activation in the e500 configuration.
+* SeaBIOS configuration/cache recipes call ``cmp -s``.
+  Candidate ``cmp.sh``; Diffutils is a possible provider, not
+  Coreutils. Audit equal (0), different (1) and error status handling
+  separately before changing the existing recipes.
+* The qboot ROM recipe invokes Meson and Ninja. Reuse their existing
+  selection authority rather than adding a parallel Ninja selector.
+  The recipe currently requests Meson --wipe for an existing
+  configuration; review its incremental-build behavior separately.
+
+EDK2 nested sources
+~~~~~~~~~~~~~~~~~~~
+
+The pinned EDK2 registry declares 13 paths covering 12 upstream
+projects. These are existing nested source edges, not missing
+top-level QEMU submodules. Activation depends on the platform
+DSC/FDF configuration or BaseTools consumer.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 65 35
+
+   * - EDK2-relative path
+     - Project / role
+   * - ``CryptoPkg/Library/OpensslLib/openssl``
+     - OpenSSL; firmware cryptography
+   * - ``CryptoPkg/Library/MbedTlsLib/mbedtls``
+     - Mbed TLS; firmware cryptography
+   * - ``SecurityPkg/DeviceSecurity/SpdmLib/libspdm``
+     - libspdm; device security
+   * - ``TcgTpmPkg/Library/TpmLib/TPM``
+     - TPM reference implementation
+   * - ``MdeModulePkg/Library/BrotliCustomDecompressLib/brotli``
+     - Brotli; firmware decompression
+   * - ``BaseTools/Source/C/BrotliCompress/brotli``
+     - Brotli; native build-tool compression
+   * - ``MdeModulePkg/Universal/RegularExpressionDxe/oniguruma``
+     - Oniguruma; regular expressions
+   * - ``RedfishPkg/Library/JsonLib/jansson``
+     - Jansson; JSON
+   * - ``MdePkg/Library/BaseFdtLib/libfdt``
+     - pylibfdt source; firmware device trees
+   * - ``MdePkg/Library/MipiSysTLib/mipisyst``
+     - MIPI Sys-T; diagnostics
+   * - ``UnitTestFrameworkPkg/Library/CmockaLib/cmocka``
+     - Cmocka; tests
+   * - ``UnitTestFrameworkPkg/Library/GoogleTestLib/googletest``
+     - GoogleTest; tests
+   * - ``UnitTestFrameworkPkg/Library/SubhookLib/subhook``
+     - Subhook; tests
+
+Retain the separate Brotli gitlinks and native versus firmware artifact
+identities. Firmware OpenSSL and the iPXE OpenSSL executable are
+independent of QEMU's host crypto provider. EDK2's libfdt does not
+replace QEMU's host libfdt. EDK2 tests are not core build roots.
+
+NASM, ACPICA and Flex merit the first seed investigations. Admit a
+managed source fork only after a demonstrated consumer capability or
+portability problem; OpenSSL, Brotli and pylibfdt require an ownership
+and ABI review before redirecting existing nested sources. No
+candidate here is an implemented seed or newly required package.
+Do not alter build order, source pins or default feature selection
+on the strength of this inventory alone.
 
 Circularity guards
 ------------------
