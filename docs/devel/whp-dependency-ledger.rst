@@ -4675,6 +4675,53 @@ guard pages, and partial-region sampling; it has not been
 executed here. Native macOS build and ARM64e validation remain
 outstanding.
 
+Native C Darwin task VM information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 95f7a7b3f5303aea4f3744d1ee662bec5da64b71 extends the existing
+native C Darwin VM component with __tsan_darwin_task_vm_info.
+It obtains virtual and resident bytes, page size, region count
+and, when available, task address bounds using the native SDK
+task_vm_info_data_t declaration. The requested reply is revision
+2 when supported by the SDK. The count is in natural_t units,
+not bytes. Returned counts, field extents, signed page size,
+region count and ordered bounds are checked before use.
+Unavailable results are zeroed; basic-only results explicitly
+exclude address bounds. No guessed SDK structure offsets are
+used in the C helper.
+
+Native macOS TSan early layout validation now uses these
+bounds, capped by SANITIZER_MMAP_RANGE_SIZE, and retains the
+desktop table ceiling fallback when bounds cannot be obtained.
+The shared sanitizer_common legacy query remains unchanged for
+its other callers, including older SDK and non-native profiles.
+The C helper accepts basic-only replies from SDKs without
+TASK_VM_INFO_REV2_COUNT; those builds cannot obtain native bounds
+through this helper. At verbosity 2 TSan reports native task
+virtual/resident bytes, region count and page size, with an
+explicit indication of bounds availability. Page-size mismatch
+is diagnostic only; the cached native page-size provider remains
+authoritative. No change to fixed shadow mappings, allocation,
+ASLR, pointer authentication or synchronization is made.
+
+Reference: Apple XNU f6217f891ac0bb64f3d375211650a4c1ff8ca1ea,
+osfmk/mach/task_info.h and osfmk/kern/task.c. XNU explicitly
+documents compatibility issues when callers confuse byte size
+with natural_t element counts.
+
+The exact new C source and header blobs were verified using
+Git hashes and compiled with Clang C11, -Wall -Wextra -Werror,
+and undefined-behavior and unsigned-integer-overflow sanitizers.
+A C++17 mock caller passed 11 checks per simulated modern and
+older SDK layout, 22 checks total, covering full-width fields,
+short and excessive counts, query failure, invalid page sizes,
+negative region count, missing or reversed bounds, and null
+output. These are mock checks, not native Mach kernel execution.
+Darwin/task-vm-info-c.c adds a native regression comparing
+stable address bounds and page size with direct SDK queries.
+Native macOS compilation and arm64e execution remain pending.
+No new source provider or build option was introduced.
+
 Future optional capability providers
 ------------------------------------
 
