@@ -3933,6 +3933,136 @@ PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
 
+Recursive toolchain dependency closure
+--------------------------------------
+
+The top-level registry is only the first layer. Recursively follow
+the active consumer's selected profile through installed tools,
+nested gitlinks, bundled libraries, package-manager artifacts and
+generated build products. Stage ordering is not proof of a dependency.
+The following source evidence is at the QEMU-pinned revisions;
+the links are audit provenance, not new pin gates.
+
+CMake beneath LLVM
+~~~~~~~~~~~~~~~~~~
+
+The native LLVM bootstrap requires CMake >= 3.20 and C++17 at
+the audited LLVM pin. The CMake fallback in
+``scripts/ensure-cmake.py`` runs its own bootstrap using native
+C/C++, GNU Make and the SDK, with Qt GUI/debugger disabled,
+CMAKE_USE_OPENSSL=OFF and BUILD_TESTING=OFF. It does not require
+an unfinished LLVM or an existing CMake executable.
+
+The pinned CMake `CMakeLists.txt <https://github.com/retrochristian5000/CMake/blob/299ef8d788df47698c9445fd32b6a3ae0ae8fa4e/CMakeLists.txt>`__
+exposes libarchive, libuv, Expat, JsonCpp, librhash, KWIML, curl,
+bzip2, zlib, zstd, liblzma, nghttp2 and form provider options.
+cppdap is gated by the debugger feature. Most utility providers
+default to bundled source; Apple platforms default to system curl.
+System curl or libarchive also changes dependent compression-library
+provider options; system cppdap affects JsonCpp selection.
+OpenSSL-off does not prove an external curl has no TLS dependencies.
+Inspect the effective system/bundled summary and CMake cache.
+An admitted installed CMake avoids this source-build branch.
+
+LLVM project and runtime edges
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned LLVM `llvm/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/llvm/CMakeLists.txt>`__
+adds Clang when LLDB is selected; Flang selects MLIR, Clang and
+normally flang-rt. Flang is not a current QEMU build requirement.
+Its `compiler-rt/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/CMakeLists.txt>`__
+defines separate builtins, sanitizer, profiling and other runtime
+options. The present CMake floor is 3.20, with a warning that LLVM 24
+will require 3.31. Do not raise the seed minimum solely on that warning.
+The QEMU native LLVM wrapper disables libpfm, bindings, zlib and zstd;
+libxml2 is forced on only for the Windows manifest-tool profile.
+The pinned `llvm/cmake/config-ix.cmake <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/llvm/cmake/config-ix.cmake>`__
+also exposes optional curl, cpp-httplib, ICU/iconv and libffi checks.
+The effective CMake cache and projects/runtimes determine activation.
+Keep architecture-specific compiler-rt artifacts separate from host
+generators and guest firmware tools.
+
+Python extension providers
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned Python `configure.ac <https://github.com/retrochristian5000/Python/blob/40d301451ca7c05e6f5e1df2613697e7a4a2549f/configure.ac>`__
+probes libffi (including an Apple SDK path), libmpdec, SQLite,
+Tcl/Tk, GDBM, zlib and bzip2, among other libraries. Map these to
+ctypes, decimal, sqlite3, tkinter, dbm.gnu and compressed-data
+modules instead of making every extension a QEMU requirement.
+QEMU's ``scripts/bootstrap-python.sh`` uses --with-ensurepip=no
+for staging and validates the installed interpreter and pip.
+Its core probe imports ensurepip, tomllib and venv. Audit ZIP/zlib
+and TLS requirements for package installation independently of
+offline use of existing wheels. Windows PCbuild has a separate
+dependency acquisition path. An admitted Python avoids the fallback.
+
+Git transport providers
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned Git `Makefile <https://github.com/retrochristian5000/git-tools/blob/5f2abd67002d5fc09b93a30d7aa5d0e7d939347f/Makefile>`__ has independent
+curl, Expat, OpenSSL, gettext, iconv and PCRE2 switches.
+``scripts/ensure-git.py`` disables gettext, Perl, Python, Tcl/Tk,
+gitweb, Expat and direct OpenSSL; curl is disabled only in the core
+profile. The full transport profile supplies CURL_CONFIG and
+conditionally CURLDIR. Curl's TLS/HTTP and compression dependencies
+are distinct from Git's direct crypto options. A core-only Git cannot
+take over HTTPS source acquisition. Bootstrap zlib remains distinct
+from QEMU artifact zlib.
+
+Cargo and native library closure
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/2fa6980d9624c7203fdf8a8985767e029b0f0d64/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/2fa6980d9624c7203fdf8a8985767e029b0f0d64/Cargo.lock>`__ expose a non-Git graph.
+QEMU's ``scripts/ensure-sccache.py`` invokes Cargo with --locked,
+--release and --no-default-features for the local binary. The native
+compilation edges remain:
+
+* zstd 0.13.1 -> zstd-safe 7.1.0 -> zstd-sys
+  2.0.10+zstd.1.5.6 -> cc and pkg-config crates.
+* BLAKE3 1.8.2 -> cc 1.4.1 -> native compiler discovery,
+  jobserver, libc and shlex.
+
+A lockfile entry alone does not prove feature or target activation.
+Verify the selected graph with cargo tree --locked --no-default-features.
+The helper already keys native Cargo work by compiler and SDK identity.
+Cargo --locked is not offline mode; missing crate sources may require
+acquisition. The pkg-config crate is not the executable seed.
+Do not duplicate bundled native library sources as QEMU gitlinks.
+
+Fast-linker source providers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned mold-derived `CMakeLists.txt <https://github.com/retrochristian5000/fast-linker/blob/922eb94f8824c1bf7f715fabe69728def3f70cba/CMakeLists.txt>`__
+exposes system or bundled zlib, BLAKE3, zstd, oneTBB and mimalloc.
+The mimalloc default depends on 64-bit pointer size, platform and
+sanitizer options; the external provider requires mimalloc >= 3.
+QEMU's mold bootstrap sets compiler, build type and install prefix,
+but does not explicitly fix these library-provider choices. Inspect
+the effective cache before asserting linkage or source acquisition.
+The existing WHP Darwin policy excludes mold.
+
+Recursive inventory rules
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Track consumer, source revision, first active phase, feature
+  predicate, provider, ABI role and evidence path. Distinguish
+  source declarations, selected configuration and verified build.
+* Follow nested Git sources, CMake utilities, Meson wraps, Cargo
+  lockfiles, Python extensions and generated tools. Reuse a provider
+  only when the capability and ABI agree.
+* Unchecked edges remain unknown, not absent. This is an initial
+  recursive source audit, not complete closure of every submodule
+  or hardware profile.
+* Future fork candidates include libuv, libarchive, Expat, curl,
+  libffi, zstd, BLAKE3, oneTBB and mimalloc. Add only when a real
+  active consumer has an unmet capability or maintainable defect;
+  bundled sources and package providers retain their owners.
+* Detect cycles by capability and phase. CMake's first stage must
+  not require the LLVM that consumes it. Independent compiler,
+  Make and source acquisition tools terminate this path.
+
 Hardware-conditioned dependency graph
 -------------------------------------
 
