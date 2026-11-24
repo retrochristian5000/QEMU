@@ -658,6 +658,28 @@ static void cirrus_invalidate_region(CirrusVGAState * s, int off_begin,
     int off_cur;
     int off_cur_end;
 
+    /*
+     * Packed rows cover one contiguous VRAM interval in either direction.
+     * Batch dirty logging without including padding or changing wraparound
+     * handling for other blits.
+     */
+    if (lines > 1 && bytesperline > 0 &&
+        (off_pitch == bytesperline || off_pitch == -bytesperline)) {
+        int64_t first = off_begin;
+        uint64_t length = (uint64_t)bytesperline * lines;
+        uint64_t start;
+        uint64_t limit = (uint64_t)s->cirrus_addr_mask + 1;
+
+        if (off_pitch < 0) {
+            first -= (int64_t)(lines - 1) * bytesperline + bytesperline - 1;
+        }
+        start = (uint64_t)first & s->cirrus_addr_mask;
+        if (length <= limit - start) {
+            memory_region_set_dirty(&s->vga.vram, start, length);
+            return;
+        }
+    }
+
     if (off_pitch < 0) {
         off_begin -= bytesperline - 1;
     }
@@ -755,9 +777,14 @@ static int cirrus_do_copy(CirrusVGAState *s, int dst, int src, int w, int h)
     int depth = 0;
     int notify = 0;
 
-    /* make sure to only copy if it's a plain copy ROP */
-    if (*s->cirrus_rop == cirrus_bitblt_rop_fwd_src ||
-        *s->cirrus_rop == cirrus_bitblt_rop_bkwd_src) {
+    /*
+     * Only a shared VRAM surface already contains the result of a BitBLT.
+     * Shadow surfaces must be converted by the VGA refresh before notifying
+     * the display backend; an early notification would upload stale pixels.
+     */
+    if (!surface_is_allocated(qemu_console_surface(s->vga.con)) &&
+        (*s->cirrus_rop == cirrus_bitblt_rop_fwd_src ||
+         *s->cirrus_rop == cirrus_bitblt_rop_bkwd_src)) {
 
         int width, height;
 
@@ -805,8 +832,7 @@ static int cirrus_do_copy(CirrusVGAState *s, int dst, int src, int w, int h)
                             s->cirrus_blt_height);
     }
 
-    /* we don't have to notify the display that this portion has
-       changed since qemu_console_copy implies this */
+    /* Dirty tracking drives the normal VGA scanout, including shadow copies. */
 
     cirrus_invalidate_region(s, s->cirrus_blt_dstaddr,
                                 s->cirrus_blt_dstpitch, s->cirrus_blt_width,
