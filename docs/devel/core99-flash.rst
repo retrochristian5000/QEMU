@@ -28,3 +28,28 @@ References:
   (protocol reference only)
 
 Neither reference part is asserted to be the Sawtooth's actual chip.
+
+Bank inspection
+---------------
+
+The read-only bank helper validates the Apple signature, CHRP header
+checksum, and Adler checksum over offsets 0x14 through 0x1fff.
+Multi-byte fields are decoded as big-endian regardless of host ISA.
+It recognizes the historical Linux checksum variant separately because
+the 32-bit high accumulator can wrap for dense payloads.
+
+Selection compares valid banks by unsigned generation, chooses bank 0
+on ties, and returns -1 when neither validates. Generation wraparound
+policy and the exact Apple checksum algorithm require verification
+against the historical Apple driver or authentic images. This helper
+does not validate every CHRP partition, rewrite a bank, or attach a
+device. The live legacy NVRAM ABI and image format remain unchanged.
+
+Sources:
+
+* Apple XNU IONVRAM.cpp (apple_nvram_header):
+  https://github.com/apple/darwin-xnu/blob/main/iokit/Kernel/IONVRAM.cpp
+* Linux PowerMac nvram.c:
+  https://github.com/torvalds/linux/blob/master/arch/powerpc/platforms/powermac/nvram.c
+* AppleCore99NVRAM 1.1 archive located but contents not retrieved:
+  https://sourceforge.net/projects/darwinsource/files/AppleCore99NVRAM/1.1/
