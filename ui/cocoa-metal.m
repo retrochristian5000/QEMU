@@ -11,6 +11,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <dlfcn.h>
+#include <dispatch/dispatch.h>
 #include <math.h>
 
 #include "ui/console.h"
@@ -49,6 +50,7 @@ typedef struct CocoaConsole CocoaConsole;
 - (CGSize)drawableSize;
 - (void)setColorspace:(CGColorSpaceRef)colorspace;
 - (id)nextDrawable;
+- (void)setAllowsNextDrawableTimeout:(BOOL)allow;
 @end
 
 @protocol QEMUMetalDeviceRuntime <NSObject>
@@ -86,6 +88,7 @@ typedef struct CocoaConsole CocoaConsole;
 @protocol QEMUMetalCommandBufferRuntime <NSObject>
 - (id)blitCommandEncoder;
 - (void)presentDrawable:(id)drawable;
+- (void)addCompletedHandler:(void (^)(id<QEMUMetalCommandBufferRuntime>))handler;
 - (void)commit;
 @end
 
@@ -167,6 +170,11 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     Ivar pixmanImageIvar;
     pixman_image_t *textureImage;
     BOOL hasPresentedFrame;
+    /* Main-queue state; one upload texture must not be rewritten in flight. */
+    BOOL frameInFlight;
+    BOOL redrawDeferred;
+    BOOL drawableRetryUsed;
+    BOOL drawableRetryScheduled;
     int textureWidth;
     int textureHeight;
 }
@@ -232,6 +240,9 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     [layer setDevice:metalDevice];
     [layer setPixelFormat:QEMU_METAL_PIXEL_FORMAT_BGRA8_UNORM];
     [layer setFramebufferOnly:NO];
+    if ([layer respondsToSelector:@selector(setAllowsNextDrawableTimeout:)]) {
+        [layer setAllowsNextDrawableTimeout:YES];
+    }
 
     /* Match the sRGB Pixman/Core Graphics output on wide-gamut displays. */
     colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -311,6 +322,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     nativeTextureWidth = 0;
     nativeTextureHeight = 0;
     textureImage = NULL;
+    drawableRetryUsed = NO;
 }
 
 - (pixman_image_t *)pixmanImageForView:(NSView *)view
@@ -357,6 +369,30 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                        bytesPerRow:(NSUInteger)stride];
 }
 
+/*
+ * A failed acquisition can consume the last AppKit dirty notification even
+ * when the guest has stopped drawing. Retry once, without a busy loop.
+ */
+- (void)retryDrawableForView:(NSView *)view
+{
+    if (drawableRetryUsed || drawableRetryScheduled) {
+        return;
+    }
+
+    drawableRetryUsed = YES;
+    drawableRetryScheduled = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 16 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        drawableRetryScheduled = NO;
+        NSWindow *window = [view window];
+
+        if (window &&
+            ([window occlusionState] & NSWindowOcclusionStateVisible)) {
+            [view setNeedsDisplay:YES];
+        }
+    });
+}
+
 - (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect
 {
     Class<QEMUMetalTextureDescriptorRuntime> descriptorClass;
@@ -385,6 +421,19 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
      */
     if (window &&
         !([window occlusionState] & NSWindowOcclusionStateVisible)) {
+        textureImage = NULL;
+        drawableRetryUsed = NO;
+        return true;
+    }
+
+    /*
+     * Do not acquire another drawable or write the shared upload texture
+     * while the previous GPU blit is outstanding. A completion callback
+     * will request a full redraw, including updates consumed in this pass.
+     */
+    if (frameInFlight) {
+        redrawDeferred = YES;
+        textureImage = NULL;
         return true;
     }
 
@@ -507,8 +556,17 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
             setDrawableSize:desiredDrawableSize];
     }
 
+    /* Prepare the command buffer before obtaining the scarce drawable. */
+    commandBuffer = [metalQueue commandBuffer];
+    if (!commandBuffer ||
+        ![commandBuffer respondsToSelector:@selector(addCompletedHandler:)]) {
+        [metalLayer setHidden:YES];
+        return false;
+    }
+
     drawable = [(id<QEMUMetalLayerRuntime>)metalLayer nextDrawable];
     if (!drawable) {
+        [self retryDrawableForView:view];
         /*
          * Drawable exhaustion is transient, not a reason to replace the
          * last Metal frame with an expensive Core Graphics fallback.
@@ -531,12 +589,6 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
         return false;
     }
 
-    commandBuffer = [metalQueue commandBuffer];
-    if (!commandBuffer) {
-        [metalLayer setHidden:YES];
-        return false;
-    }
-
     encoder = [commandBuffer blitCommandEncoder];
     if (!encoder) {
         [metalLayer setHidden:YES];
@@ -554,6 +606,22 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
               destinationOrigin:origin];
     [encoder endEncoding];
     [commandBuffer presentDrawable:drawable];
+    frameInFlight = YES;
+    drawableRetryUsed = NO;
+    [commandBuffer addCompletedHandler:^(id<QEMUMetalCommandBufferRuntime> completed) {
+        /*
+         * Metal calls this on a worker thread. Do not touch AppKit or
+         * presentation state until back on the main queue. The copied
+         * blocks keep the view and state alive through completion.
+         */
+        dispatch_async(dispatch_get_main_queue(), ^{
+            frameInFlight = NO;
+            if (redrawDeferred) {
+                redrawDeferred = NO;
+                [view setNeedsDisplay:YES];
+            }
+        });
+    }];
     [commandBuffer commit];
     hasPresentedFrame = YES;
 
