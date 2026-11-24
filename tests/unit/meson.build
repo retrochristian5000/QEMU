@@ -132,6 +132,7 @@ if have_system
   tests += {
     'ptimer-test': ['ptimer-test-stubs.c', meson.project_source_root() / 'hw/core/ptimer.c'],
     'test-iov': [],
+    'test-core99-flash': [meson.project_source_root() / 'hw/nvram/core99_flash.c'],
     'test-ncr5380': [meson.project_source_root() / 'hw/scsi/ncr5380.c'],
     'test-opts-visitor': [testqapi],
     'test-xs-node': [qom],
