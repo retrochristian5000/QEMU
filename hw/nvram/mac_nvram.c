@@ -53,9 +53,12 @@ static void macio_nvram_writeb(void *opaque, hwaddr addr,
     trace_macio_nvram_write(addr, value);
     s->data[addr] = value;
     if (s->blk) {
-        if (blk_pwrite(s->blk, addr, 1, &s->data[addr], 0) < 0) {
-            error_report("%s: write of NVRAM data to backing store failed",
-                         blk_name(s->blk));
+        int ret = blk_pwrite(s->blk, addr, 1, &s->data[addr], 0);
+
+        if (ret < 0) {
+            error_report("%s: NVRAM backing write failed at offset 0x%"
+                         HWADDR_PRIx ": %s", blk_name(s->blk), addr,
+                         strerror(-ret));
         }
     }
 }
@@ -114,6 +117,8 @@ static void macio_nvram_realizefn(DeviceState *dev, Error **errp)
 
     if (s->blk) {
         int64_t len = blk_getlength(s->blk);
+        int ret;
+
         if (len < 0) {
             error_setg_errno(errp, -len,
                              "could not get length of nvram backing image");
@@ -129,8 +134,9 @@ static void macio_nvram_realizefn(DeviceState *dev, Error **errp)
                          BLK_PERM_ALL, errp) < 0) {
             return;
         }
-        if (blk_pread(s->blk, 0, s->size, s->data, 0) < 0) {
-            error_setg(errp, "can't read-nvram contents");
+        ret = blk_pread(s->blk, 0, s->size, s->data, 0);
+        if (ret < 0) {
+            error_setg_errno(errp, -ret, "could not read NVRAM backing image");
             return;
         }
     }
@@ -312,10 +318,17 @@ void pmac_format_nvram_partition(MacIONVRAMState *nvr, int len)
     pmac_format_nvram_partition_macos(nvr, half, len - half);
 
     if (nvr->blk) {
-        if (blk_pwrite(nvr->blk, 0, len, nvr->data, 0) < 0 ||
-            blk_flush(nvr->blk) < 0) {
-            error_report("%s: initialization of NVRAM backing store failed",
-                         blk_name(nvr->blk));
+        int ret = blk_pwrite(nvr->blk, 0, len, nvr->data, 0);
+
+        if (ret < 0) {
+            error_report("%s: NVRAM backing initialization write failed: %s",
+                         blk_name(nvr->blk), strerror(-ret));
+        } else {
+            ret = blk_flush(nvr->blk);
+            if (ret < 0) {
+                error_report("%s: NVRAM backing initialization flush failed: %s",
+                             blk_name(nvr->blk), strerror(-ret));
+            }
         }
     }
 }

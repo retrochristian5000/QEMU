@@ -12,6 +12,7 @@ nvram_write(uint32_t addr, uint32_t old, uint32_t val) "write addr %d: 0x%02x ->
 # fw_cfg.c
 fw_cfg_select(void *s, uint16_t key_value, const char *key_name, const char *status, uint32_t len) "%p key 0x%04" PRIx16 " '%s', ret: %s, length: %" PRIu32
 fw_cfg_read(void *s, uint64_t ret, uint16_t key, uint32_t offset, unsigned size, uint32_t len, const char *status) "%p = 0x%" PRIx64 ", key 0x%04" PRIx16 ", offset %" PRIu32 ", size %u, length %" PRIu32 ", ret: %s"
+fw_cfg_dma(void *s, uint64_t descriptor, uint32_t control, const char *status) "%p descriptor 0x%" PRIx64 ", control 0x%" PRIx32 ", ret: %s"
 fw_cfg_add_bytes(uint16_t key_value, const char *key_name, size_t len) "key 0x%04" PRIx16 " '%s', %zu bytes"
 fw_cfg_add_file(void *s, int index, char *name, size_t len) "%p #%d: %s (%zd bytes)"
 fw_cfg_add_string(uint16_t key_value, const char *key_name, const char *value) "key 0x%04" PRIx16 " '%s', value '%s'"

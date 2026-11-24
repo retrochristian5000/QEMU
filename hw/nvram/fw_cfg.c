@@ -369,6 +369,8 @@ static void fw_cfg_dma_transfer(FWCfgState *s)
                         &dma, sizeof(dma), MEMTXATTRS_UNSPECIFIED)) {
         stl_be_dma(s->dma_as, dma_addr + offsetof(FWCfgDmaAccess, control),
                    FW_CFG_DMA_CTL_ERROR, MEMTXATTRS_UNSPECIFIED);
+        trace_fw_cfg_dma(s, dma_addr, FW_CFG_DMA_CTL_ERROR,
+                         "ERROR: DMA descriptor read failed");
         return;
     }
 
@@ -456,7 +458,9 @@ static void fw_cfg_dma_transfer(FWCfgState *s)
     stl_be_dma(s->dma_as, dma_addr + offsetof(FWCfgDmaAccess, control),
                 dma.control, MEMTXATTRS_UNSPECIFIED);
 
-    trace_fw_cfg_read(s, 0);
+    trace_fw_cfg_dma(s, dma_addr, dma.control,
+                     dma.control & FW_CFG_DMA_CTL_ERROR ?
+                     "ERROR: DMA transfer failed" : "OK");
 }
 
 static uint64_t fw_cfg_dma_mem_read(void *opaque, hwaddr addr,
