@@ -3227,6 +3227,29 @@ static bool flatview_access_allowed(MemoryRegion *mr, MemTxAttrs attrs,
     return false;
 }
 
+/*
+ * A physical/address-space accessor need not originate from a guest store.
+ * current_cpu identifies the executing thread context, not the bus master.
+ */
+static void log_rom_address_space_write(MemoryRegion *mr, hwaddr offset,
+                                        unsigned size, uint64_t value,
+                                        MemTxAttrs attrs, MemTxResult result,
+                                        const char *path)
+{
+    CPUState *cpu = current_cpu;
+
+    if (!qemu_loglevel_mask(LOG_INVALID_MEM) || !memory_region_is_rom(mr)) {
+        return;
+    }
+
+    qemu_log("ROM write rejected: path=%s region='%s' offset=0x%" HWADDR_PRIX
+             " size=%u value=0x%" PRIx64 " cpu_context=%d "
+             "attrs_unspecified=%u requester_id=0x%x memtx=0x%x\n",
+             path, memory_region_name(mr), offset, size, value,
+             cpu ? cpu->cpu_index : -1, (unsigned)attrs.unspecified,
+             (unsigned)attrs.requester_id, (unsigned)result);
+}
+
 static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                                                 const uint8_t *buf,
                                                 hwaddr len, hwaddr mr_addr,
@@ -3260,6 +3283,10 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         val = ldn_he_p(buf, *l);
         result = memory_region_dispatch_write(mr, mr_addr, val,
                                               size_memop(*l), attrs);
+        if (unlikely(result != MEMTX_OK)) {
+            log_rom_address_space_write(mr, mr_addr, *l, val, attrs,
+                                        result, "address-space-buffer");
+        }
         if (release_lock) {
             bql_unlock();
         }

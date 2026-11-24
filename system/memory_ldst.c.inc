@@ -83,6 +83,10 @@ void glue(address_space_stm_internal, SUFFIX)(ARG1_DECL, MemOp mop,
     if (l < size || !memory_access_is_direct(mr, true, attrs)) {
         release_lock |= prepare_mmio_access(mr);
         r = memory_region_dispatch_write(mr, addr1, val, mop, attrs);
+        if (unlikely(r != MEMTX_OK)) {
+            log_rom_address_space_write(mr, addr1, size, val, attrs,
+                                        r, "address-space-scalar");
+        }
     } else {
         /* RAM case */
         stm_p(qemu_map_ram_ptr(mr->ram_block, addr1), mop, val);

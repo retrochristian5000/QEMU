@@ -1732,6 +1732,36 @@ static void mmu_watch_or_dirty(CPUState *cpu, MMULookupPageData *data,
     data->flags = flags;
 }
 
+/*
+ * On PowerPC, the first instruction unwind word is the exact guest NIP.
+ * Inspect it without restoring CPU state or modifying the icount budget.
+ * Report ROM failures even on machines which ignore transaction failures.
+ */
+static void log_ppc_rom_write_failure(CPUState *cpu, CPUTLBEntryFull *full,
+                                      MemoryRegion *mr, hwaddr mr_offset,
+                                      vaddr addr, unsigned size, int mmu_idx,
+                                      const char *path, MemTxResult result,
+                                      uintptr_t retaddr)
+{
+    uint64_t data[INSN_START_WORDS];
+    hwaddr physaddr = full->phys_addr | (addr & ~TARGET_PAGE_MASK);
+    char nip[32];
+
+    if (cpu_unwind_state_data(cpu, retaddr, data)) {
+        snprintf(nip, sizeof(nip), "0x%" PRIx64, data[0]);
+    } else {
+        snprintf(nip, sizeof(nip), "unavailable");
+    }
+
+    qemu_log("PowerPC ROM write: path=%s cpu=%d nip=%s "
+             "ea=0x%" PRIx64 " pa=0x%" HWADDR_PRIX
+             " region='%s' offset=0x%" HWADDR_PRIX
+             " size=%u mmu_idx=%d memtx=0x%x\n",
+             path, cpu->cpu_index, nip, (uint64_t)addr, physaddr,
+             memory_region_name(mr), mr_offset, size, mmu_idx,
+             (unsigned)result);
+}
+
 /**
  * mmu_lookup: translate page(s)
  * @cpu: generic cpu state
@@ -1805,6 +1835,26 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
          * would be arbitrary.  Refuse it until there's a use.
          */
         tcg_debug_assert((flags & TLB_BSWAP) == 0);
+    }
+
+    if (unlikely(flags & TLB_DISCARD_WRITE) && type == MMU_DATA_STORE &&
+        qemu_loglevel_mask(LOG_INVALID_MEM) && target_base_ppc()) {
+        for (int i = 0; i < (crosspage ? 2 : 1); i++) {
+            MMULookupPageData *p = &l->page[i];
+            MemoryRegionSection *section = p->full->section;
+
+            if ((p->flags & TLB_DISCARD_WRITE) &&
+                memory_region_is_rom(section->mr)) {
+                hwaddr pa = p->full->phys_addr |
+                            (p->addr & ~TARGET_PAGE_MASK);
+                hwaddr offset = pa - section->offset_within_address_space +
+                                section->offset_within_region;
+
+                log_ppc_rom_write_failure(cpu, p->full, section->mr, offset,
+                                          p->addr, p->size, l->mmu_idx,
+                                          "tlb-discard", MEMTX_OK, ra);
+            }
+        }
     }
 
     return crosspage;
@@ -2450,35 +2500,6 @@ static Int128 do_ld16_mmu(CPUState *cpu, vaddr addr,
  * Store Helpers
  */
 
-/*
- * On PowerPC, the first instruction unwind word is the exact guest NIP.
- * Inspect it without restoring CPU state or modifying the icount budget.
- * Report ROM failures even on machines which ignore transaction failures.
- */
-static void log_ppc_rom_write_failure(CPUState *cpu, CPUTLBEntryFull *full,
-                                      MemoryRegion *mr, hwaddr mr_offset,
-                                      vaddr addr, unsigned size, int mmu_idx,
-                                      MemTxResult result, uintptr_t retaddr)
-{
-    uint64_t data[INSN_START_WORDS];
-    hwaddr physaddr = full->phys_addr | (addr & ~TARGET_PAGE_MASK);
-    char nip[32];
-
-    if (cpu_unwind_state_data(cpu, retaddr, data)) {
-        snprintf(nip, sizeof(nip), "0x%" PRIx64, data[0]);
-    } else {
-        snprintf(nip, sizeof(nip), "unavailable");
-    }
-
-    qemu_log("PowerPC ROM write rejected: cpu=%d nip=%s "
-             "ea=0x%" PRIx64 " pa=0x%" HWADDR_PRIX
-             " region='%s' offset=0x%" HWADDR_PRIX
-             " size=%u mmu_idx=%d memtx=0x%x\n",
-             cpu->cpu_index, nip, (uint64_t)addr, physaddr,
-             memory_region_name(mr), mr_offset, size, mmu_idx,
-             (unsigned)result);
-}
-
 /**
  * do_st_mmio_leN:
  * @cpu: generic cpu state
@@ -2515,7 +2536,8 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
             if (qemu_loglevel_mask(LOG_INVALID_MEM) &&
                 memory_region_is_rom(mr) && target_base_ppc()) {
                 log_ppc_rom_write_failure(cpu, full, mr, mr_offset,
-                                          addr, this_size, mmu_idx, r, ra);
+                                          addr, this_size, mmu_idx,
+                                          "mmio-rejected", r, ra);
             }
             io_failed(cpu, full, addr, this_size, MMU_DATA_STORE,
                       mmu_idx, r, ra);
