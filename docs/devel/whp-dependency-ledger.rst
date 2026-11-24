@@ -3933,6 +3933,124 @@ PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
 
+Future optional capability providers
+------------------------------------
+
+Keep a prospective capability inventory distinct from required seed
+admission. An existing configure option plus a source consumer makes
+a candidate worth investigating; neither proves an installed library,
+a supported host ABI or a performance improvement. The following
+audit is against the QEMU source at 0fdc1fdc085e9bffec9a4f76ff515621907f700d.
+Use the existing auto/enabled/disabled contract, not unconditional
+dependency installation or changes to the default guest device set.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 40 38
+
+   * - Candidate
+     - Existing consumer or activation gate
+     - Future use and constraints
+   * - Capstone >= 3.0.5
+     - capstone option, disas/meson.build, disas/capstone.c
+     - Instruction diagnostics; check ISA coverage and API version.
+       It is not an execution engine or a replacement for TCG.
+   * - elfutils (libdw)
+     - libdw option, meson.build; automatic discovery excludes
+       preferred-static builds and requires system or user emulation
+     - DWARF debugging; verify object format and host compatibility.
+       Do not assume ELF debug support replaces Mach-O tooling.
+   * - libblkio
+     - blkio option, block/meson.build, block/blkio.c
+     - Additional block I/O drivers. Existing libblkio.wrap owns
+       fallback source revision f84cc963a444e4cb34813b2dcfc5bf8526947dc0.
+       Audit its Rust/C/OS closure before proposing another source.
+   * - LZFSE and bzip2
+     - lzfse/bzip2 options, block/dmg-lzfse.c, block/dmg-bz2.c
+     - DMG decompression, conditional on the DMG format and provider.
+       Verify known images; do not assume all DMG encodings work.
+   * - libnfs >= 1.9.3, libiscsi >= 1.9.0, libssh >= 0.8.7
+     - libnfs/libiscsi/libssh options, block/meson.build
+     - Network-backed virtual disks; separate authentication, transport
+       and data-integrity tests. Modules are possible when enabled.
+   * - Ceph librbd/librados
+     - rbd option, block/rbd.c
+     - Distributed block storage; substantial dependency closure,
+       worthwhile only for a selected storage profile.
+   * - libfuse >= 3.1
+     - fuse option, block/export/fuse.c; fuse_lseek requires >= 3.8
+     - Block exports; platform and mount permissions must be verified.
+       Do not assume macFUSE is a compatible fuse3 provider.
+   * - Rutabaga GFX FFI and VirGL
+     - rutabaga_gfx/virglrenderer options, hw/display/meson.build;
+       VirtIO GPU, VirGL also needs OpenGL
+     - Alternative GPU backends; verify guest/host API and actual
+       platform support. Do not replace native Cocoa/Metal by default.
+   * - PipeWire >= 0.3.60
+     - pipewire option, audio/meson.build, audio/pwaudio.c
+     - Optional host audio backend; requires compatible service/runtime.
+       Keep existing SDL, JACK and CoreAudio provider decisions.
+   * - libslirp and passt
+     - net/meson.build, net/slirp.c, net/passt.c
+     - User-mode networking; passt requires Linux and GIO.
+       CFI requires libslirp >= 4.7. Existing slirp.wrap pins
+       dd76415fce457e319d665eb8210d05c5731360ba and applies two
+       local proxy patches; do not create a parallel provider.
+   * - libbpf >= 1.1.0 and libxdp >= 1.4.0
+     - bpf/af_xdp options; net/af-xdp.c requires both dependencies
+     - Linux AF_XDP networking; Meson checks BPF_F_MMAPABLE and
+       skeleton API. Kernel, driver and privilege checks remain runtime.
+   * - LTTng-UST >= 2.1
+     - trace_backends includes ust, trace/meson.build
+     - Optional tracing library and generated trace headers.
+       Do not replace the default log backend for all builds.
+   * - DTrace
+     - trace_backends includes dtrace, trace/meson.build
+     - Host trace generator; candidate dtrace.sh seed only after
+       validating the actual selected platform's -h/-s/-o and, where
+       required, -G contract. Not a mandatory dependency.
+
+Hardware-assisted migration compression
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The QEMU ``migration/meson.build`` conditionally compiles
+multifd-zstd.c, multifd-qpl.c, multifd-uadk.c and multifd-qatzip.c.
+Meson requires libzstd >= 1.4.0 for the selected zstd provider,
+QPL >= 1.5.0, UADK libwd and libwd_comp both >= 2.6, and
+QATzip >= 1.1.2 when their respective optional profiles are enabled.
+These are independent migration compression choices, not replacements
+for guest RAM allocation or universal compression dependencies.
+Check supported architectures, operating systems, accelerator devices,
+driver interfaces, software fallback behavior and migration wire
+compatibility before recommending any provider. Hardware acceleration
+is not demonstrated by a successful library link.
+
+Future profiles and admission
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Diagnostics: Capstone, libdw and platform-appropriate tracing;
+  validate representative instruction and debug fixtures.
+* Storage: LZFSE/bzip2, libblkio, optional network protocols and
+  FUSE; validate read/write integrity and error handling.
+* Graphics and audio: Rutabaga, VirGL, PipeWire; preserve host
+  native backends and test real guest/device behavior.
+* Networking: existing slirp wrap, optional Linux passt and AF_XDP;
+  retain CFI, privileges, transport and security boundaries.
+* Migration acceleration: independent hardware/driver-qualified
+  QPL, UADK or QATzip experiment; compare against software baseline.
+* Allocator experiments remain in the memory-conditioned section;
+  mimalloc requires new QEMU integration and must not silently
+  override the system allocator or sanitizer interception.
+
+Record prospective, source-supported, provider-admitted and
+runtime-validated as separate evidence stages. They are not new
+mandatory dependency states. Source providers already owned by
+Meson wraps, bundled code, an existing fork or an OS SDK must not
+be duplicated merely to populate a future inventory. Investigate
+nested library requirements, licensing, stable ABI and measured
+benefit before adding new gitlinks or adapters. Preserve explicitly
+disabled features and the existing Darwin TCG-only launcher policy.
+
 Memory-conditioned dependency closure
 -------------------------------------
 
