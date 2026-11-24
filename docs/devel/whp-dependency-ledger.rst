@@ -4125,6 +4125,41 @@ libffi into every sanitizer. The local audit environment is Linux
 x86-64 and lacked a pkg-config libffi development provider; no
 execution or Darwin arm64e verification was completed.
 
+Optional libffi test integration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The LLVM test fixture at 2bd442996b6b5aae915a4a874a03ff803edbaf19 adds
+``compiler-rt/test/tsan/libffi_callbacks.c`` and the opt-in
+lit parameter tsan_libffi=1 (Linux and native macOS test suites).
+The cflags and ldflags parameters select the real library provider.
+Default lit runs do not require libffi. QEMU pins that revision and
+provides ``scripts/tests/test-tsan-libffi.py`` for testing with an
+already installed native compiler, without rebuilding the LLVM
+test suite. For example::
+
+  python3 scripts/tests/test-tsan-libffi.py --compiler /path/to/clang \
+    --pkg-config /path/to/pkg-config
+
+For an SDK provider, omit pkg-config and pass the exact target
+architecture, SDK, deployment and include flags as repeated
+--cflag=VALUE arguments, and any required link flags as
+--ldflag=VALUE. The default link option is -lffi.
+Use --abi-only to test native calls and synchronized controls
+without claiming TSan validation. Explicit missing providers fail
+rather than silently switching to another ABI.
+
+The fixture compares direct and FFI-mediated calls with mixed
+integer/floating-point arguments, promoted variadics and aggregate
+returns. Direct and libffi closure callbacks have synchronized and
+deliberately racing controls. The runner requires clean controls
+and a real data-race report with the expected exit status for
+both positive cases. Closures are released only after joining the
+callers. No production TSan link interface, interceptor, allocator
+or source-provider selection is changed. The test harness is
+opt-in; no package installation or source fork is implied.
+Native Darwin arm64e execution is still required before promoting
+libffi from candidate to admitted dependency.
+
 Future optional capability providers
 ------------------------------------
 
