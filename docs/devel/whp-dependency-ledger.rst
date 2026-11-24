@@ -4160,6 +4160,42 @@ opt-in; no package installation or source fork is implied.
 Native Darwin arm64e execution is still required before promoting
 libffi from candidate to admitted dependency.
 
+Optional native macOS libffi runtime interception
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The next LLVM pin 3f9d1dfa43f7d81673895a8a7f3e3e9e3bc72695 adds
+``compiler-rt/lib/tsan/ffi/tsan_ffi_darwin.cpp``, a native macOS
+ffi_call interceptor enabled by COMPILER_RT_TSAN_LIBFFI=ON.
+QEMU passes NATIVE_LLVM_TSAN_LIBFFI=1 through the nested runtime
+CMake arguments (not builtins), records the resolved setting in
+the toolchain marker, and rejects it on non-macOS hosts.
+The default remains OFF. LLVM checks native macOS-only runtime
+selection and a C++ header/link probe against -lffi. The Apple
+TSan dylib and its unit-test link receive the selected library.
+
+The interceptor records logical argument reads for 64-bit signed
+and unsigned integers, doubles and pointers using the real ffi_cif
+and ffi_type definitions. It checks payload sizes and application
+address ranges, passes every call to the original provider with
+unchanged arguments, and exits its scoped interceptor before
+executing foreign code. No fake happens-before edge, pointer
+authentication conversion, closure ownership change, or return
+buffer instrumentation is introduced. It does not model all
+libffi assembly memory accesses, metadata races, pointees, narrow
+or aggregate arguments, or closure internals.
+
+To build an experimental runtime, set NATIVE_LLVM_TSAN_LIBFFI=1
+when invoking the existing native LLVM source bootstrap on macOS.
+Use the installed compiler and actual SDK flags with
+scripts/tests/test-tsan-libffi.py --runtime-ffi to run the new
+argument-buffer race and synchronized control in addition to the
+existing ABI/callback tests. The LLVM lit alternative requires
+tsan_libffi=1 and tsan_libffi_runtime=1. A known uninstrumented SDK
+provider is the intended comparison baseline. No native macOS
+compile or execution has yet been verified; keep this opt-in
+until ABI and report tests succeed. No separate libffi fork
+or global library replacement is required for this first phase.
+
 Future optional capability providers
 ------------------------------------
 

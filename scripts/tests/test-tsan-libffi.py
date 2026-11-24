@@ -11,6 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "toolchains/llvm-project/compiler-rt/test/tsan/libffi_callbacks.c"
+RUNTIME_FIXTURE = FIXTURE.with_name("libffi_argument_race.c")
 TSAN_OPTIONS = (
     "exitcode=66:abort_on_error=0:atexit_sleep_ms=0:"
     "ignore_noninstrumented_modules=0:ignore_interceptors_accesses=0"
@@ -52,10 +53,18 @@ def main():
     parser.add_argument("--cflag", action="append", default=[], help="repeat for SDK/ABI/include flags")
     parser.add_argument("--ldflag", action="append", default=[], help="repeat for libffi link flags")
     parser.add_argument("--abi-only", action="store_true", help="run only unsanitized ABI and safe controls")
+    parser.add_argument(
+        "--runtime-ffi", action="store_true",
+        help="require the optional native macOS ffi_call interceptor",
+    )
     parser.add_argument("--timeout", type=int, default=60, help="per-command timeout in seconds")
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error("--timeout must be positive")
+    if args.runtime_ffi and (args.abi_only or sys.platform != "darwin"):
+        parser.error("--runtime-ffi requires a native macOS TSan run")
+    if args.runtime_ffi and not RUNTIME_FIXTURE.is_file():
+        parser.error(f"pinned LLVM runtime fixture missing: {RUNTIME_FIXTURE}")
     if not FIXTURE.is_file():
         parser.error(f"pinned LLVM fixture missing: {FIXTURE}; initialize toolchains/llvm-project")
     try:
@@ -90,6 +99,22 @@ def main():
                 if not ok:
                     raise RuntimeError(f"TSan {mode} failed: exit {result.returncode}")
                 print(f"TSan {mode}: PASS")
+            if args.runtime_ffi:
+                checked([*base, "-fsanitize=thread", str(RUNTIME_FIXTURE),
+                         *ldflags, "-o", sanitized], args.timeout)
+                for mode in ("safe", "race"):
+                    result = run([sanitized, mode], args.timeout, env)
+                    if mode == "race":
+                        ok = (result.returncode == 66 and
+                              "WARNING: ThreadSanitizer: data race" in result.stdout)
+                    else:
+                        ok = (result.returncode == 0 and
+                              "WARNING: ThreadSanitizer:" not in result.stdout)
+                    if not ok:
+                        raise RuntimeError(
+                            f"TSan ffi_call argument {mode} failed: exit {result.returncode}"
+                        )
+                    print(f"TSan ffi_call argument {mode}: PASS")
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print(f"error: libffi TSan validation: {exc}", file=sys.stderr)
