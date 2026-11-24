@@ -4365,6 +4365,52 @@ the system libc++, or instrument TSan's own implementation with
 itself. The existing QEMU host bootstrap and libffi opt-in remain
 unchanged.
 
+Private instrumented libc++ memory-access profile
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing LLVM pin e363b8f05e944e5c84bda352c72cc86318136362
+provides libcxx and libcxxabi source instrumentation through
+LLVM_USE_SANITIZER=Thread. libcxx/src/memory.cpp implements
+weak_ptr promotion as an atomic load and compare-and-exchange
+loop; weak release has an acquire-load fast path. The source
+atomic helpers in libcxx/src/include/atomic_support.h preserve
+the actual requested order. Instrument these operations at
+source rather than adding another private control-block layout
+or treating ownership as synchronization of the pointee.
+
+The optional scripts/build-tsan-libcxx.py builds native macOS
+static, hermetic libc++ and libc++abi into a private work
+directory using the installed compiler and selected SDK,
+architecture and deployment target. It follows the existing
+custom libcxx static ABI-library recipe and uses the system
+unwinder. It does not rebuild compiler-rt, modify the ordinary
+QEMU bootstrap, replace system libraries, or change libffi.
+The caller supplies absolute clang, clang++, CMake and Ninja
+paths. Jobs default to two and are explicitly adjustable.
+The LLVM checkout must match QEMU's gitlink, and the profile
+identity records compiler versions, SDK and ABI selection.
+A changed identity must not silently reuse the build cache.
+
+Before the library build the script compiles and runs a TSan
+probe and checks its architecture. After installation it checks
+the archive's architecture and undefined TSan read and atomic
+symbols, then links and runs a private application using weak_ptr,
+string and thread. The app uses the matching headers with
+-nostdinc++ and -nostdlib++ and explicitly names the private
+libc++.a. Direct dependencies are inspected for a second dynamic
+C++ library. This is an application-library profile, not a new
+TSan runtime dependency. Direct dependency checks do not prove
+absence of every transitive system C++ provider. Keep C++ objects
+and exceptions inside the private provider boundary; no mixed
+C++ plugin or system-framework ABI admission is implied.
+
+Python syntax and CLI help were checked locally, and a non-macOS
+invocation rejected the profile. Native configuration, archive
+creation, application linkage, and ARM64e execution are still
+unverified. Do not enable this profile in default builds until
+those checks and paired genuine-race/clean controls pass. No
+general atomic compare-exchange tracking changes were made.
+
 Future optional capability providers
 ------------------------------------
 
