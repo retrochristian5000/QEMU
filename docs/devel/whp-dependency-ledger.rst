@@ -4196,6 +4196,49 @@ compile or execution has yet been verified; keep this opt-in
 until ABI and report tests succeed. No separate libffi fork
 or global library replacement is required for this first phase.
 
+Expanded scalar FFI memory accounting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 5679e8a58ceddf15d3b881f71fd565a2e938c3b5 extends the optional
+native macOS ffi_call interceptor with a separate tsan_ffi.h
+type-sizing helper. The previous initial-phase restriction to
+64-bit scalar argument reads is superseded by signed and unsigned
+8/16/32/64-bit integer, float, double and pointer-value reads
+and pointer-slot reads in the argument array. Type sizes must
+match the public libffi descriptors. No pointed-to object
+accesses are inferred.
+
+For the native default ABI, scalar result writes are recorded
+only after the real ffi_call returns normally. Narrow integral
+results occupy sizeof(ffi_arg), unlike their input widths;
+float results retain their four-byte width. Null, void and
+unrecognized result types are not modeled. The scope is closed
+before invoking arbitrary foreign code, and result type size is
+captured beforehand rather than rereading the CIF after the call.
+No synchronization, PAC manipulation, or executable-memory
+permission change is added.
+
+Source reference: Apple's libffi at
+72e95a49029b75b2a0de094477f8410a32013c87,
+src/aarch64/ffi.c, src/aarch64/sysv.S, src/x86/ffi64.c and
+src/x86/unix64.S. These show the narrow argument reads and
+word-sized integer return stores. The installed SDK/runtime
+still requires native verification; this snapshot is a reference,
+not an admitted replacement provider.
+
+The new libffi_scalar_race.c fixture exercises narrow and float
+arguments, argument pointer slots, 64-bit integer results,
+word-sized narrow integer results and float results, each with
+a mutex-protected negative control and a deliberately racing
+positive case. The existing --runtime-ffi runner invokes these
+in addition to the earlier tests. The exact helper blob was
+compiled and its size matrix, mismatched descriptors and null/
+aggregate exclusions tested using mock headers on Linux x86-64.
+That is not a real libffi or macOS runtime build. Aggregates,
+vectors, extended precision, non-default return ABIs, and closure
+lifetime interception remain separate work. Keep the option off
+by default until native ARM64e verification.
+
 Future optional capability providers
 ------------------------------------
 
