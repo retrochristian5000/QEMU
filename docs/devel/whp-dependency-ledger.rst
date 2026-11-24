@@ -4411,6 +4411,48 @@ unverified. Do not enable this profile in default builds until
 those checks and paired genuine-race/clean controls pass. No
 general atomic compare-exchange tracking changes were made.
 
+Native Objective-C++ TSan memory interception
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision ba41b295dbc28b18e71bca05f5ec5e6507284f9b adds the opt-in
+COMPILER_RT_TSAN_OBJCXX native macOS-only feature. CMake enables
+OBJCXX within the TSan directory, defaults the Objective-C++
+compiler to the selected C++ compiler, retains the selected
+compiler target when provided, requires Clang or AppleClang,
+and checks native @encode(BOOL), SDK headers and the
+objc_copyStruct interface with libobjc. The source is compiled
+as Objective-C++17 without ARC or sanitizer self-instrumentation.
+A separate compiler package is not required; Clang's Objective-C++
+frontend is a distinct language capability. Pure Objective-C
+(.m) is not separately enabled by this feature.
+
+The new objc/tsan_objc_darwin.mm accounts for non-atomic
+objc_copyStruct source reads and destination writes before
+forwarding the original call. Apple's objc4 reference
+fb265098298302243cd7eeaa1f63f0ba7786dd9a,
+runtime/objc-accessors.mm, confirms the memmove operation and
+the separate source and destination locks used by atomic copies.
+Atomic copies bypass the new accounting rather than model
+accesses outside those locks. Null, nonpositive and unsupported
+ranges do not enter shadow translation; the provider still
+receives the original arguments. No Foundation framework,
+message-send ABI, object ownership change, or synthetic
+happens-before edge is introduced. Existing Objective-C
+synchronization interceptors remain unchanged.
+
+The native macOS bootstrap passes NATIVE_LLVM_TSAN_OBJCXX=1
+only to the nested runtime project, not to builtins, and records
+the resolved option in its toolchain marker. The default is OFF,
+and non-macOS hosts reject an enabled request. Unit-test linkage
+includes libobjc when the option is selected. The actual build
+option selects the lit feature tsan-objcxx-runtime; the new
+Darwin/objc-copy-struct.mm fixture covers synchronized copying,
+adjacent bytes, source races and destination races. Small
+Objective-C++ syntax probes with a mock BOOL header passed
+Clang 17 on Linux, not a real macOS SDK build. Native runtime
+compilation, linkage and ARM64e race-control execution remain
+unverified. No new submodule or package installation is needed.
+
 Future optional capability providers
 ------------------------------------
 

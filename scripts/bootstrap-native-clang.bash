@@ -37,6 +37,14 @@ LLVM_PCH="${NATIVE_LLVM_PCH:-auto}"
 # The ordinary QEMU build uses llvm-rc/llvm-windres, not llvm-mt.
 LLVM_WINDOWS_MANIFEST="${NATIVE_LLVM_WINDOWS_MANIFEST:-0}"
 # Opt-in real TSan interception using the native macOS SDK libffi.
+case "${NATIVE_LLVM_TSAN_OBJCXX:-0}" in
+    0) llvm_tsan_objcxx=OFF ;;
+    1) llvm_tsan_objcxx=ON ;;
+    *)
+        printf '%s\n' 'error: NATIVE_LLVM_TSAN_OBJCXX must be 0 or 1' >&2
+        exit 1
+        ;;
+esac
 case "${NATIVE_LLVM_TSAN_LIBFFI:-0}" in
     0) llvm_tsan_libffi=OFF ;;
     1) llvm_tsan_libffi=ON ;;
@@ -278,6 +286,10 @@ esac
 # The macOS-only ABI/ASan menu settings must never be accepted as no-ops on
 # another host. An automatic ASan request remains host-sensitive by design.
 if [[ "$host_os" != macos ]]; then
+    if [[ "$llvm_tsan_objcxx" == ON ]]; then
+        printf '%s\n' 'error: NATIVE_LLVM_TSAN_OBJCXX=1 requires native macOS' >&2
+        exit 1
+    fi
     if [[ "$llvm_tsan_libffi" == ON ]]; then
         printf '%s\n' 'error: NATIVE_LLVM_TSAN_LIBFFI=1 requires native macOS' >&2
         exit 1
@@ -755,7 +767,7 @@ if [[ "$host_os" == macos ]]; then
     # Darwin configuration. Neither should discover the iPhoneOS SDK while
     # building the native macOS host toolchain.
     darwin_external_cmake_args="-DCMAKE_OSX_SYSROOT=$sdkroot;-DCMAKE_OSX_ARCHITECTURES=$darwin_cmake_arch;-DCMAKE_OSX_DEPLOYMENT_TARGET=$deployment_target;-DCMAKE_C_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCMAKE_CXX_COMPILER_LAUNCHER=$compiler_cache_cmd;-DCOMPILER_RT_DARWIN_NATIVE_ARCH_ONLY=ON;-DCOMPILER_RT_ENABLE_IOS=OFF"
-    darwin_runtimes_cmake_args="$darwin_external_cmake_args;-DCOMPILER_RT_TSAN_LIBFFI=$llvm_tsan_libffi"
+    darwin_runtimes_cmake_args="$darwin_external_cmake_args;-DCOMPILER_RT_TSAN_LIBFFI=$llvm_tsan_libffi;-DCOMPILER_RT_TSAN_OBJCXX=$llvm_tsan_objcxx"
     for compiler_rt_option in \
         -DCOMPILER_RT_ENABLE_MACCATALYST=OFF \
         -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
@@ -1387,6 +1399,7 @@ COMPILER_RT_BUILD_GWP_ASAN=OFF
 COMPILER_RT_INCLUDE_TESTS=OFF
 COMPILER_RT_BUILD_SANITIZERS=ON
 COMPILER_RT_TSAN_LIBFFI=$llvm_tsan_libffi
+COMPILER_RT_TSAN_OBJCXX=$llvm_tsan_objcxx
 COMPILER_RT_BUILD_LIBFUZZER=ON
 COMPILER_RT_BUILD_PROFILE=ON
 BOOTSTRAP_CC=$bootstrap_cc
