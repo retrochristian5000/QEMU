@@ -324,6 +324,10 @@ bool ppc_hash32_xlate(PowerPCCPU *cpu, vaddr eaddr, MMUAccessType access_type,
     if (mmuidx_real(mmu_idx)) {
         /* Translation is off */
         *raddrp = eaddr;
+        qemu_log_mask(CPU_LOG_MMU,
+                      "hash32 real ea=0x%" VADDR_PRIx " pa=0x%" HWADDR_PRIX
+                      " access=%d mmu_idx=%d\n",
+                      eaddr, *raddrp, access_type, mmu_idx);
         *protp = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
         return true;
     }
@@ -351,6 +355,10 @@ bool ppc_hash32_xlate(PowerPCCPU *cpu, vaddr eaddr, MMUAccessType access_type,
                 return false;
             }
             *raddrp = raddr;
+            qemu_log_mask(CPU_LOG_MMU,
+                          "hash32 BAT ea=0x%" VADDR_PRIx " pa_page=0x%"
+                          HWADDR_PRIX " access=%d mmu_idx=%d\n",
+                          eaddr, *raddrp, access_type, mmu_idx);
             return true;
         }
     }
@@ -445,5 +453,11 @@ bool ppc_hash32_xlate(PowerPCCPU *cpu, vaddr eaddr, MMUAccessType access_type,
     *raddrp = pte.pte1 & HPTE32_R_RPN;
     *raddrp &= TARGET_PAGE_MASK;
     *raddrp |= eaddr & ~TARGET_PAGE_MASK;
+    qemu_log_mask(CPU_LOG_MMU,
+                  "hash32 PTE ea=0x%" VADDR_PRIx " pa=0x%" HWADDR_PRIX
+                  " sr=0x" TARGET_FMT_lx " pte0=0x" TARGET_FMT_lx
+                  " pte1=0x" TARGET_FMT_lx " access=%d mmu_idx=%d\n",
+                  eaddr, *raddrp, sr, (target_ulong)pte.pte0,
+                  (target_ulong)pte.pte1, access_type, mmu_idx);
     return true;
 }

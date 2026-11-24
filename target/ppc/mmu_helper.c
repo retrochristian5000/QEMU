@@ -152,7 +152,12 @@ static inline void do_invalidate_BAT(CPUPPCState *env, target_ulong BATu,
     CPUState *cs = env_cpu(env);
     target_ulong base, end, page;
 
-    base = BATu & ~0x0001FFFF;
+    /* Invalid BATs cannot have contributed a cached translation. */
+    if (!(BATu & 3)) {
+        return;
+    }
+
+    base = BATu & ~0x0001FFFFUL & ~mask;
     end = base + mask + 0x00020000;
     if (((end - base) >> TARGET_PAGE_BITS) > 1024) {
         /* Flushing 1024 4K pages is slower than a complete flush */
@@ -187,7 +192,8 @@ void helper_store_ibatu(CPUPPCState *env, uint32_t nr, target_ulong value)
     if (env->IBAT[0][nr] != value) {
         mask = (value << 15) & 0x0FFE0000UL;
 #if !defined(FLUSH_ALL_TLBS)
-        do_invalidate_BAT(env, env->IBAT[0][nr], mask);
+        do_invalidate_BAT(env, env->IBAT[0][nr],
+                          (env->IBAT[0][nr] << 15) & 0x0FFE0000UL);
 #endif
         /*
          * When storing valid upper BAT, mask BEPI and BRPN and
@@ -224,7 +230,8 @@ void helper_store_dbatu(CPUPPCState *env, uint32_t nr, target_ulong value)
          */
         mask = (value << 15) & 0x0FFE0000UL;
 #if !defined(FLUSH_ALL_TLBS)
-        do_invalidate_BAT(env, env->DBAT[0][nr], mask);
+        do_invalidate_BAT(env, env->DBAT[0][nr],
+                          (env->DBAT[0][nr] << 15) & 0x0FFE0000UL);
 #endif
         mask = (value << 15) & 0x0FFE0000UL;
         env->DBAT[0][nr] = (value & 0x00001FFFUL) |
