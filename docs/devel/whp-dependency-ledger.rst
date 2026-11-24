@@ -3933,6 +3933,153 @@ PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
 
+Memory-conditioned dependency closure
+-------------------------------------
+
+Memory dependencies span host heap allocation, guest RAM mappings,
+host memory topology, atomics, diagnostic runtimes and the memory
+cost of building tools. The memory capacity of the physical build
+machine is a scheduling input, not a reason to change the guest
+RAM ABI or force an allocator library into the build.
+
+Heap allocator providers
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The current ``meson_options.txt`` malloc option accepts system,
+tcmalloc and jemalloc. System is the default. ``meson.build``
+requires the selected non-system library via cc.find_library and
+includes that dependency in qemuutil. The malloc_trim option is
+available only with the system allocator and a successful function
+probe; an explicit trim request must fail if unavailable.
+
+* jemalloc and Google gperftools (the tcmalloc library provider)
+  are existing optional QEMU consumers, not mandatory roots.
+  Do not assume the separate Google TCMalloc project exports an
+  interchangeable library contract.
+* mimalloc is not a supported QEMU malloc option at this revision.
+  The fast-linker pin has its own bundled mimalloc provider; the
+  default is off on Apple, Android, OpenBSD, 32-bit targets and
+  ASan/TSan builds. Its system provider requires mimalloc >= 3.
+* LLVM's pinned
+  `llvm/lib/Support/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/llvm/lib/Support/CMakeLists.txt>`__
+  has an opt-in LLVM_INTEGRATED_CRT_ALLOC path for Windows static
+  MSVC CRT builds, covering rpmalloc, snmalloc and mimalloc.
+  This is not an existing Darwin allocator integration or a
+  prerequisite for QEMU's native LLVM.
+
+Treat allocator ownership as a process-wide ABI contract.
+Before adopting another provider, verify compile/link, alignment,
+allocation/reallocation/free across library and module boundaries,
+multithreaded behavior, and sanitizer interception. Do not mix
+incompatible heaps or assume a malloc override can replace guest
+RAM mapping. Keep the system allocator as the comparison baseline.
+
+Guest RAM backing and host virtual memory
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``backends/meson.build`` selects RAM on system builds, file and
+POSIX shared-memory backends on supported non-Windows/non-Emscripten
+hosts, and the memfd backend on Linux. Shared memory uses the
+platform rt dependency where needed. ``util/mmap-alloc.c``
+reserves and activates mappings, maintains guard pages and queries
+host/backing-file page sizes; ``util/memalign.c`` is the aligned
+allocation implementation. ``util/memfd.c`` has capability checks
+and a fallback allocation path, not a promise that all hosts
+support memfd sealing or huge pages.
+
+Meson probes madvise, posix_madvise where applicable, memfd_create,
+mlockall and MCL_ONFAULT. These are OS/SDK/kernel capabilities,
+not separate mandatory library forks. Preserve runtime validation
+for unsupported flags, permissions, huge-page pool availability
+and file-backed mapping constraints. Darwin page size, Mach VM
+and JIT protection contracts must remain distinct from Linux
+hugetlb, memfd and guest page geometry. TCG code-buffer mappings
+and split W^X are separate from ordinary heap allocation.
+Do not shrink buffers, remove guards or weaken protection to
+claim an improvement in memory use.
+
+NUMA and persistent memory providers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The active consumers are ``meson.build``, ``backends/hostmem.c``,
+``backends/hostmem-file.c`` and ``system/physmem.c``.
+
+* libnuma (numactl source) is optional. Meson checks numa.h and
+  links numa_available; host memory node binding and policies
+  are guarded by CONFIG_NUMA.
+* libpmem (PMDK source) is optional and found through pkg-config.
+  CONFIG_LIBPMEM enables the pmem_persist consumer in physmem.c.
+* libdaxctl >= 57 (ndctl source) is optional and found through
+  pkg-config. The Linux CONFIG_LIBDAXCTL path queries DAX region
+  alignment; this is not interchangeable with ordinary mmap
+  alignment or a generic allocator.
+* Linux huge-page backing, memory locking, and NUMA policies
+  also require actual kernel/hardware capabilities at execution.
+  A successful development-library check is not proof of those
+  capabilities. Do not force Linux-specific providers onto macOS.
+
+These source projects are candidate future forks only for an
+identified active profile with an unmet provider or portability
+defect. Follow each pinned project's own dependencies before
+adding it. An absent optional package is not a confirmed defect.
+
+Atomics and memory diagnostic runtimes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+QEMU's ``include/qemu/atomic128.h`` explicitly rejects libatomic
+as a general implementation of guest 128-bit atomic operations:
+mixed-size guest accesses do not all go through libatomic's
+object-level synchronization contract. Meson disables GCC's
+automatic libatomic link when supported for emulator builds;
+tool-only builds can use a supported -latomic link option.
+Do not add a universal libatomic provider as a shortcut.
+Keep architecture-specific atomic operations, alignment, memory
+ordering and runtime CPU feature tests intact.
+
+The pinned LLVM
+`compiler-rt/lib/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/CMakeLists.txt>`__
+conditionally builds sanitizer_common for supported sanitizer
+and profiling lanes. MemProf and Scudo are internal runtime
+components, not independent required QEMU gitlinks. The existing
+native LLVM wrapper selects sanitizers and profile support, but
+explicitly disables MemProf and GWP-ASan. A future profiling
+profile must verify runtime architecture, SDK, linker and allocator
+compatibility before enabling extra runtimes. ASan and TSan
+admission remains independent of the proposed allocator choice;
+availability of a sanitizer source directory does not establish
+that its runtime works on Darwin arm64e.
+
+Build-memory budgeting and next audit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``scripts/whp-build/prepare-build.bash`` derives its default JOBS
+from nproc, sysctl hw.ncpu or getconf _NPROCESSORS_ONLN, with
+validation and fallback. This default counts CPUs, not usable RAM.
+The existing native LLVM bootstrap already has independent
+parallel compile/link/TableGen pools, with macOS defaults 2/2/1.
+Retain them until measured peak memory supports a change.
+``util/oslib-posix.c`` already provides qemu_get_host_physmem
+using Darwin hw.memsize or sysconf(_SC_PHYS_PAGES) with overflow
+protection. This is runtime code, not a build-machine scheduling
+probe.
+
+A future shared build resource policy should distinguish physical
+RAM from available memory/pressure and applicable process or
+container limits. Candidate native diagnostics are sysctl, getconf
+and, on Linux, procfs/cgroup information; a missing optional
+diagnostic must not require installing a hardware inventory package.
+Keep explicit job overrides, bound parallel work by measured
+compile/link/generator peaks, and avoid changing ABI/cache keys
+merely because available memory fluctuates. Do not adopt unmeasured
+RAM-per-job constants or claim a speedup without comparison.
+
+Measure elapsed time, peak RSS, aggregate concurrent memory,
+paging/swap or pressure, allocation latency, and representative
+guest workloads. Keep allocator A/B comparisons separate from
+sanitizer and memory-backend tests. The audit establishes declared
+and conditional consumers, not installed-library availability,
+memory savings or a completed native ARM64e build.
+
 Recursive toolchain dependency closure
 --------------------------------------
 
