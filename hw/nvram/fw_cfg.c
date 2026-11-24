@@ -269,7 +269,8 @@ static inline uint32_t fw_cfg_max_entry(const FWCfgState *s)
 static int fw_cfg_select(FWCfgState *s, uint16_t key)
 {
     int arch, ret;
-    FWCfgEntry *e;
+    FWCfgEntry *e = NULL;
+    const char *status;
 
     s->cur_offset = 0;
     if ((key & FW_CFG_ENTRY_MASK) >= fw_cfg_max_entry(s)) {
@@ -286,7 +287,15 @@ static int fw_cfg_select(FWCfgState *s, uint16_t key)
         }
     }
 
-    trace_fw_cfg_select(s, key, trace_key_name(key), ret);
+    if (!ret) {
+        status = "ERROR: key index out of range";
+    } else if (!e->data || !e->len) {
+        status = "OK (entry has no data)";
+    } else {
+        status = "OK";
+    }
+
+    trace_fw_cfg_select(s, key, trace_key_name(key), status, e ? e->len : 0);
     return ret;
 }
 
@@ -297,9 +306,20 @@ static uint64_t fw_cfg_data_read(void *opaque, hwaddr addr, unsigned size)
     FWCfgEntry *e = (s->cur_entry == FW_CFG_INVALID) ? NULL :
                     &s->entries[arch][s->cur_entry & FW_CFG_ENTRY_MASK];
     uint64_t value = 0;
+    uint32_t offset = s->cur_offset;
+    unsigned requested = size;
+    const char *status;
 
     assert(size > 0 && size <= sizeof(value));
-    if (s->cur_entry != FW_CFG_INVALID && e->data && s->cur_offset < e->len) {
+    if (!e) {
+        status = "ERROR: no valid key selected";
+    } else if (!e->data || !e->len) {
+        status = "EMPTY: entry has no data; returned zero";
+    } else if (s->cur_offset >= e->len) {
+        status = "END: entry exhausted; returned zero";
+    } else {
+        status = requested > e->len - s->cur_offset ?
+                 "PARTIAL: remaining data padded with zeros" : "OK";
         /* The least significant 'size' bytes of the return value are
          * expected to contain a string preserving portion of the item
          * data, padded with zeros on the right in case we run out early.
@@ -316,7 +336,8 @@ static uint64_t fw_cfg_data_read(void *opaque, hwaddr addr, unsigned size)
         value <<= 8 * size;
     }
 
-    trace_fw_cfg_read(s, value);
+    trace_fw_cfg_read(s, value, s->cur_entry, offset, requested,
+                      e ? e->len : 0, status);
     return value;
 }
 

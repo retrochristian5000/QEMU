@@ -40,6 +40,32 @@ static void test_fw_cfg_signature(void)
     qtest_quit(s);
 }
 
+/* Selection failures and reads beyond an item must still return zeros. */
+static void test_fw_cfg_read_boundaries(void)
+{
+    QTestState *s = qtest_init("");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t buf[8];
+    static const uint8_t expected[8] = { 'Q', 'E', 'M', 'U', 0, 0, 0, 0 };
+    static const uint8_t zeros[8] = { 0 };
+
+    qfw_cfg_get(fw_cfg, FW_CFG_SIGNATURE, buf, sizeof(buf));
+    g_assert_cmpmem(buf, sizeof(buf), expected, sizeof(expected));
+
+    qfw_cfg_read_data(fw_cfg, buf, sizeof(buf));
+    g_assert_cmpmem(buf, sizeof(buf), zeros, sizeof(zeros));
+
+    qfw_cfg_get(fw_cfg, UINT16_MAX, buf, sizeof(buf));
+    g_assert_cmpmem(buf, sizeof(buf), zeros, sizeof(zeros));
+
+    /* A valid selection resets the read cursor after an invalid key. */
+    qfw_cfg_get(fw_cfg, FW_CFG_SIGNATURE, buf, sizeof(buf));
+    g_assert_cmpmem(buf, sizeof(buf), expected, sizeof(expected));
+
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 static void test_fw_cfg_id(void)
 {
     QFWCFG *fw_cfg;
@@ -252,6 +278,7 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    qtest_add_func("fw_cfg/read_boundaries", test_fw_cfg_read_boundaries);
     qtest_add_func("fw_cfg/id", test_fw_cfg_id);
     qtest_add_func("fw_cfg/uuid", test_fw_cfg_uuid);
     qtest_add_func("fw_cfg/ram_size", test_fw_cfg_ram_size);
