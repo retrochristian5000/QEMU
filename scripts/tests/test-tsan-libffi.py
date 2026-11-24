@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "toolchains/llvm-project/compiler-rt/test/tsan/libffi_callbacks.c"
 RUNTIME_FIXTURE = FIXTURE.with_name("libffi_argument_race.c")
 SCALAR_FIXTURE = FIXTURE.with_name("libffi_scalar_race.c")
+PRECISION_FIXTURE = FIXTURE.with_name("libffi_memory_precision.c")
 TSAN_OPTIONS = (
     "exitcode=66:abort_on_error=0:atexit_sleep_ms=0:"
     "ignore_noninstrumented_modules=0:ignore_interceptors_accesses=0"
@@ -65,7 +66,7 @@ def main():
     if args.runtime_ffi and (args.abi_only or sys.platform != "darwin"):
         parser.error("--runtime-ffi requires a native macOS TSan run")
     if args.runtime_ffi:
-        for fixture in (RUNTIME_FIXTURE, SCALAR_FIXTURE):
+        for fixture in (RUNTIME_FIXTURE, SCALAR_FIXTURE, PRECISION_FIXTURE):
             if not fixture.is_file():
                 parser.error(f"pinned LLVM runtime fixture missing: {fixture}")
     if not FIXTURE.is_file():
@@ -135,6 +136,15 @@ def main():
                                 f"TSan ffi_call {kind} {mode} failed: exit {result.returncode}"
                             )
                         print(f"TSan ffi_call {kind} {mode}: PASS")
+                checked([*base, "-fsanitize=thread", str(PRECISION_FIXTURE),
+                         *ldflags, "-o", sanitized], args.timeout)
+                result = run([sanitized], args.timeout, env)
+                if (result.returncode != 0 or
+                        "WARNING: ThreadSanitizer:" in result.stdout):
+                    raise RuntimeError(
+                        f"TSan ffi_call memory precision failed: exit {result.returncode}"
+                    )
+                print("TSan ffi_call memory precision: PASS")
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print(f"error: libffi TSan validation: {exc}", file=sys.stderr)

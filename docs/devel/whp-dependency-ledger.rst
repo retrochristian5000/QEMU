@@ -4239,6 +4239,41 @@ vectors, extended precision, non-default return ABIs, and closure
 lifetime interception remain separate work. Keep the option off
 by default until native ARM64e verification.
 
+FFI memory-range precision and metadata validation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision a5fd34af0e2443a439370dc0a65652bb9d3851c1 reuses the existing
+TSan IsValidAppMemoryRange and GetShadowCellRange helpers in
+tsan_ffi_darwin.cpp instead of accepting only the two endpoints
+of an argument or result range. Reject unrepresentable raw
+addresses, empty/overflowing ranges and shadow gaps. Split
+accounting into exact byte spans within each shadow cell, rather
+than treating rounded cells as application reads or writes.
+This also avoids relying on contiguous shadow addresses across
+application mapping boundaries or on the first cell's read-only
+classification for the entire range.
+
+Check the CIF, argument-table extent and type-descriptor range
+before inspecting their contents. Snapshot the argument count
+and type-table pointer; check multiplication before calculating
+table sizes. These are TSan address-layout checks, not proof of
+mapped, readable or live memory. The caller must still provide
+valid, stable libffi metadata. The original provider receives
+unchanged arguments even if optional accounting is skipped.
+Do not introduce pointer stripping, arbitrary argument limits,
+pointee reads, result writes for void calls, or fake synchronization.
+
+The new libffi_memory_precision.c fixture exercises distinct
+neighboring bytes, a non-dereferenced pointer argument, a float
+result beside another float, and an ignored void return buffer.
+These are negative controls for false reports; the previous
+scalar and callback positive race controls remain in the suite.
+The QEMU --runtime-ffi runner includes the new fixture.
+Source and pin synchronization verified; real macOS compilation
+and arm64e runtime validation are still outstanding. Keep the
+existing optional feature gate and the provider's ownership of
+the ABI, executable memory and closure lifetime.
+
 Future optional capability providers
 ------------------------------------
 
