@@ -2450,6 +2450,35 @@ static Int128 do_ld16_mmu(CPUState *cpu, vaddr addr,
  * Store Helpers
  */
 
+/*
+ * On PowerPC, the first instruction unwind word is the exact guest NIP.
+ * Inspect it without restoring CPU state or modifying the icount budget.
+ * Report ROM failures even on machines which ignore transaction failures.
+ */
+static void log_ppc_rom_write_failure(CPUState *cpu, CPUTLBEntryFull *full,
+                                      MemoryRegion *mr, hwaddr mr_offset,
+                                      vaddr addr, unsigned size, int mmu_idx,
+                                      MemTxResult result, uintptr_t retaddr)
+{
+    uint64_t data[INSN_START_WORDS];
+    hwaddr physaddr = full->phys_addr | (addr & ~TARGET_PAGE_MASK);
+    char nip[32];
+
+    if (cpu_unwind_state_data(cpu, retaddr, data)) {
+        snprintf(nip, sizeof(nip), "0x%" PRIx64, data[0]);
+    } else {
+        snprintf(nip, sizeof(nip), "unavailable");
+    }
+
+    qemu_log("PowerPC ROM write rejected: cpu=%d nip=%s "
+             "ea=0x%" PRIx64 " pa=0x%" HWADDR_PRIX
+             " region='%s' offset=0x%" HWADDR_PRIX
+             " size=%u mmu_idx=%d memtx=0x%x\n",
+             cpu->cpu_index, nip, (uint64_t)addr, physaddr,
+             memory_region_name(mr), mr_offset, size, mmu_idx,
+             (unsigned)result);
+}
+
 /**
  * do_st_mmio_leN:
  * @cpu: generic cpu state
@@ -2483,6 +2512,11 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
         r = memory_region_dispatch_write(mr, mr_offset, val_le,
                                          this_mop, full->attrs);
         if (unlikely(r != MEMTX_OK)) {
+            if (qemu_loglevel_mask(LOG_INVALID_MEM) &&
+                memory_region_is_rom(mr) && target_base_ppc()) {
+                log_ppc_rom_write_failure(cpu, full, mr, mr_offset,
+                                          addr, this_size, mmu_idx, r, ra);
+            }
             io_failed(cpu, full, addr, this_size, MMU_DATA_STORE,
                       mmu_idx, r, ra);
         }
