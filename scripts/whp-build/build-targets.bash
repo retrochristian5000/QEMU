@@ -5,6 +5,8 @@ whp_build_targets()
 {
 local build_target_list=()
 local build_runner=()
+# Scope routine progress throttling to this build stage; explicit 0 restores every edge.
+local -x NINJA_STATUS_INTERVAL_MS="${NINJA_STATUS_INTERVAL_MS:-500}"
 local target
 local index
 local run_qemu_tests=0
