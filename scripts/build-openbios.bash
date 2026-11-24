@@ -10,8 +10,8 @@ OPENBIOS_BUILD_DIR="${OPENBIOS_BUILD_DIR:-$SOURCE_DIR/build/openbios}"
 OPENBIOS_OUTPUT="${OPENBIOS_OUTPUT:-$SOURCE_DIR/pc-bios/openbios-ppc}"
 OPENBIOS_TOOLS_DIR="${OPENBIOS_TOOLS_DIR:-$SOURCE_DIR/build/firmware-tools}"
 OPENBIOS_CROSS_COMPILE="${OPENBIOS_CROSS_COMPILE:-}"
-OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-${CC:-cc}}}"
-OPENBIOS_HOSTCXX="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-${CXX:-c++}}}"
+OPENBIOS_HOSTCC="${OPENBIOS_HOSTCC:-${CC_FOR_BUILD:-cc}}"
+OPENBIOS_HOSTCXX="${OPENBIOS_HOSTCXX:-${CXX_FOR_BUILD:-c++}}"
 OPENBIOS_HOSTSTRIP="${OPENBIOS_HOSTSTRIP:-${STRIP_FOR_BUILD:-strip}}"
 OPENBIOS_READELF="${OPENBIOS_READELF:-}"
 OPENBIOS_TOKE="${OPENBIOS_TOKE:-}"
@@ -155,8 +155,16 @@ if [[ -z "$OPENBIOS_TOKE" ]]; then
         git -C "$FCODE_UTILS_DIR" checkout --detach --force FETCH_HEAD
         git -C "$FCODE_UTILS_DIR" clean -fdx
 
-        "$MAKE_CMD" -C "$FCODE_UTILS_DIR/toke" \
-            CC="$OPENBIOS_HOSTCC" STRIP="$OPENBIOS_HOSTSTRIP"
+        # The tokenizer runs on the build host, never on the firmware CPU.
+        # GNU Make command-line variables can be inherited from a parent build.
+        env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES \
+            -u MAKELEVEL -u CC -u CXX -u STRIP \
+            -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u LDLIBS \
+            -u HOSTCFLAGS -u HOSTCPPFLAGS -u HOSTLDFLAGS -u HOSTLDLIBS \
+            -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH \
+            -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH \
+            "$MAKE_CMD" -C "$FCODE_UTILS_DIR/toke" \
+            HOSTCC="$OPENBIOS_HOSTCC" HOSTSTRIP="$OPENBIOS_HOSTSTRIP"
         OPENBIOS_TOKE="$cached_toke"
     fi
 elif [[ "$OPENBIOS_TOKE" != */* ]]; then
