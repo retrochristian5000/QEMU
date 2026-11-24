@@ -908,7 +908,12 @@ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
             CPUJumpCache *jc = cpu->tb_jmp_cache;
 
             if (qatomic_read(&jc->array[h].tb) == tb) {
-                qatomic_set(&jc->array[h].tb, NULL);
+                /*
+                 * Another vCPU may have replaced this entry since the
+                 * lookup. Do not discard an unrelated, valid translation.
+                 * Avoid an atomic RMW on the common nonmatching path.
+                 */
+                qatomic_cmpxchg(&jc->array[h].tb, tb, NULL);
             }
         }
     }
@@ -954,8 +959,7 @@ static void do_tb_phys_invalidate(TranslationBlock *tb, bool rm_from_page_list)
         /* suppress any remaining jumps to this TB */
         tb_jmp_unlink(tb);
 
-        qatomic_set(&tb_ctx.tb_phys_invalidate_count,
-                    tb_ctx.tb_phys_invalidate_count + 1);
+        qatomic_inc(&tb_ctx.tb_phys_invalidate_count);
     }
 
     qemu_thread_jit_execute();
