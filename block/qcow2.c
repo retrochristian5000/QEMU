@@ -219,8 +219,19 @@ qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
 #ifdef DEBUG_EXT
     printf("qcow2_read_extensions: start=%ld end=%ld\n", start_offset, end_offset);
 #endif
+    if (start_offset > end_offset) {
+        error_setg(errp, "Header extension area overlaps backing file name");
+        return -EINVAL;
+    }
+
     offset = start_offset;
     while (offset < end_offset) {
+        uint64_t padded_len;
+
+        if (end_offset - offset < sizeof(ext)) {
+            error_setg(errp, "Truncated header extension header");
+            return -EINVAL;
+        }
 
 #ifdef DEBUG_EXT
         /* Sanity check */
@@ -242,8 +253,14 @@ qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
 #ifdef DEBUG_EXT
         printf("ext.magic = 0x%x\n", ext.magic);
 #endif
-        if (offset > end_offset || ext.len > end_offset - offset) {
+        if (ext.len > end_offset - offset) {
             error_setg(errp, "Header extension too large");
+            return -EINVAL;
+        }
+
+        padded_len = ((uint64_t)ext.len + 7) & ~UINT64_C(7);
+        if (padded_len > end_offset - offset) {
+            error_setg(errp, "Header extension padding exceeds extension area");
             return -EINVAL;
         }
 
@@ -454,7 +471,7 @@ qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
             break;
         }
 
-        offset += ((ext.len + 7) & ~7);
+        offset += padded_len;
     }
 
     return 0;

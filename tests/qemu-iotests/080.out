@@ -8,8 +8,16 @@ qemu-io: can't open device TEST_DIR/t.qcow2: qcow2 header exceeds cluster size
 == Huge unknown header extension ==
 Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864
 qemu-io: can't open device TEST_DIR/t.qcow2: Invalid backing file offset
+qemu-io: can't open device TEST_DIR/t.qcow2: Truncated header extension header
 qemu-io: can't open device TEST_DIR/t.qcow2: Header extension too large
-qemu-io: can't open device TEST_DIR/t.qcow2: Header extension too large
+
+== Header extension area overlaps backing file name ==
+Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864
+qemu-io: can't open device TEST_DIR/t.qcow2: Header extension area overlaps backing file name
+
+== Header extension padding exceeds extension area ==
+Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864
+qemu-io: can't open device TEST_DIR/t.qcow2: Header extension padding exceeds extension area
 
 == Huge refcount table size ==
 Formatting 'TEST_DIR/t.IMGFMT', fmt=IMGFMT size=67108864

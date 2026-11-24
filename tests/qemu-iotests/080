@@ -87,6 +87,20 @@ poke_file "$TEST_IMG" "$offset_backing_file_offset" "\x00\x00\x00\x00\x00\x00\x0
 { $QEMU_IO -c "read 0 512" $TEST_IMG; } 2>&1 | _filter_qemu_io | _filter_testdir
 
 echo
+echo "== Header extension area overlaps backing file name =="
+_make_test_img 64M
+poke_file "$TEST_IMG" "$offset_backing_file_offset" "\x00\x00\x00\x00\x00\x00\x00\x6f"
+{ $QEMU_IO -c "read 0 512" $TEST_IMG; } 2>&1 | _filter_qemu_io | _filter_testdir
+
+echo
+echo "== Header extension padding exceeds extension area =="
+_make_test_img 64M
+poke_file "$TEST_IMG" "$offset_ext_magic" "\x12\x34\x56\x78"
+poke_file "$TEST_IMG" "$offset_ext_size" "\x00\x00\x00\x01"
+poke_file "$TEST_IMG" "$offset_backing_file_offset" "\x00\x00\x00\x00\x00\x00\x00\x79"
+{ $QEMU_IO -c "read 0 512" $TEST_IMG; } 2>&1 | _filter_qemu_io | _filter_testdir
+
+echo
 echo "== Huge refcount table size =="
 _make_test_img 64M
 poke_file "$TEST_IMG" "$offset_refcount_table_clusters" "\xff\xff\xff\xff"
