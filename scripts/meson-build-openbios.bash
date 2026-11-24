@@ -245,6 +245,16 @@ openbios_cache_signature="$({
         "$(whp_openbios_file_signature "$SCRIPT_DIR/build-openbios.bash")"
     printf 'CACHE_HELPER=%s\n' \
         "$(whp_openbios_file_signature "$SOURCE_DIR/scripts/whp-build/openbios-build-cache.bash")"
+    if [[ "$compiler_mode" == clang ]]; then
+        printf 'LLVM_PIN=%s\n' "$(git -C "$SOURCE_DIR" ls-tree HEAD -- \
+            "${POWERPC_LLVM_SUBMODULE_PATH:-toolchains/llvm-project}")"
+        for script in bootstrap-powerpc-clang-base.bash bootstrap-powerpc-clang-core.bash \
+                      bootstrap-powerpc-clang-shared.bash whp-build/powerpc-link-probe.bash \
+                      whp-build/powerpc-clang-driver.bash; do
+            printf 'POWERPC_SCRIPT=%s:%s\n' "$script" \
+                "$(whp_openbios_file_signature "$SCRIPT_DIR/$script")"
+        done
+    fi
 } | cksum | awk '{print $1 ":" $2}')"
 openbios_cache_force="$effective_force_reconfigure"
 if [[ "${POWERPC_TOOLCHAIN_FORCE_REBUILD:-0}" == 1 ]]; then

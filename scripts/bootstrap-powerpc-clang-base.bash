@@ -180,6 +180,7 @@ host_cxxflags=""
 host_cppflags=""
 host_ldflags=""
 cmake_darwin_args=()
+host_link_probe_flags=()
 
 if [[ "$(uname -s)" == Darwin ]]; then
     for required in xcrun sw_vers; do
@@ -278,6 +279,8 @@ WHP_LLVM_MACOS_CXX_SDK
         exit 1
     fi
 
+    host_link_probe_flags=(-arch "$darwin_arch" -isysroot "$SDKROOT"
+                           "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET")
     host_cflags="-arch $darwin_arch -isysroot $SDKROOT -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
     host_cxxflags="$host_cflags"
     host_cppflags="$host_cflags"
@@ -309,21 +312,40 @@ mkdir -p "$TOOLCHAIN_WORK_DIR"
 # guessed from the host OS (Mach-O and ELF backends differ by implementation).
 if [[ "$host_gcc_compatible" == 1 ]]; then
     linker_probe="$TOOLCHAIN_WORK_DIR/.whp-linker-probe.$"
-    for candidate in mold lld; do
+    host_linker_candidates=(mold lld toolchain-default)
+    if [[ "$(uname -s)" == Darwin ]]; then
+        # mold is an ELF linker, not a Mach-O host linker.
+        host_linker_candidates=(lld toolchain-default)
+    fi
+    host_linker_verified=0
+    for candidate in "${host_linker_candidates[@]}"; do
+        candidate_flags=()
+        if [[ "$candidate" != toolchain-default ]]; then
+            candidate_flags=(-fuse-ld="$candidate")
+        fi
         if printf 'int main(void) { return 0; }\n' |
-               "$TOOLCHAIN_HOST_CC" -x c - -fuse-ld="$candidate" \
+               "$TOOLCHAIN_HOST_CC" ${host_link_probe_flags[@]+"${host_link_probe_flags[@]}"} \
+                   ${candidate_flags[@]+"${candidate_flags[@]}"} -x c - \
                    -o "$linker_probe" >/dev/null 2>&1 &&
            "$linker_probe" >/dev/null 2>&1 &&
            printf 'int main() { return 0; }\n' |
-               "$TOOLCHAIN_HOST_CXX" -x c++ - -fuse-ld="$candidate" \
+               "$TOOLCHAIN_HOST_CXX" ${host_link_probe_flags[@]+"${host_link_probe_flags[@]}"} \
+                   ${candidate_flags[@]+"${candidate_flags[@]}"} -x c++ - \
                    -o "$linker_probe" >/dev/null 2>&1 &&
            "$linker_probe" >/dev/null 2>&1; then
             host_linker="$candidate"
-            cmake_host_linker_args=("-DLLVM_USE_LINKER=$candidate")
+            if [[ "$candidate" != toolchain-default ]]; then
+                cmake_host_linker_args=("-DLLVM_USE_LINKER=$candidate")
+            fi
+            host_linker_verified=1
             break
         fi
     done
     rm -f "$linker_probe"
+    if ((host_linker_verified == 0)); then
+        printf 'error: no host linker can link and run C/C++ with the configured host target and SDK\n' >&2
+        exit 1
+    fi
 fi
 
 bootstrap_stage="preparing LLVM source"

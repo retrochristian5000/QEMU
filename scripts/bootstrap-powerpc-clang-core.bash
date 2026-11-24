@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/powerpc-link-probe.bash"
 source "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 BASE_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-clang-base.sh"
 AR_BOOTSTRAP="$SCRIPT_DIR/bootstrap-powerpc-llvm-ar.sh"
@@ -188,6 +189,13 @@ LDSCRIPT
         return 1
     fi
 
+    if ! whp_powerpc_verify_driver_link \
+            "$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-gcc" "$TOOLCHAIN_DIR" \
+            "$cache_smoke_dir/cache.o" "$cache_smoke_dir/cache.ld" \
+            "$cache_smoke_dir/driver.elf" 0x1000; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
     rm -rf "$cache_smoke_dir"
     return 0
 }
@@ -503,6 +511,10 @@ if [[ "$reported_ld" != "$shim_dir/ld" ]]; then
     printf 'error: Clang is not routed through LLD: %s\n' "$reported_ld" >&2
     exit 1
 fi
+whp_powerpc_verify_driver_link "$clang_driver" "$TOOLCHAIN_DIR" \
+    "$smoke_dir/layout.o" "$smoke_dir/layout.ld" \
+    "$smoke_dir/driver.elf" 0xfff00100
+
 if ! "$public_ld" --version | grep -q 'LLD'; then
     printf 'error: public PowerPC linker does not resolve to LLD\n' >&2
     exit 1

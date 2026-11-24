@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+source "$SOURCE_DIR/scripts/whp-build/powerpc-link-probe.bash"
 TOOLCHAIN_TARGET="${POWERPC_TOOLCHAIN_TARGET:-powerpc-elf}"
 TOOLCHAIN_DIR="${POWERPC_TOOLCHAIN_DIR:-$SOURCE_DIR/build/toolchains/$TOOLCHAIN_TARGET}"
 TOOLCHAIN_WORK_DIR="${POWERPC_TOOLCHAIN_WORK_DIR:-$SOURCE_DIR/build/toolchain-work/$TOOLCHAIN_TARGET-clang}"
@@ -245,6 +246,8 @@ linker="$("$toolchain/bin/$TOOLCHAIN_TARGET-gcc" -print-prog-name=ld)"
     printf 'error: shared Clang does not select its private LLD interface\n' >&2
     exit 1
 }
+whp_powerpc_verify_driver_link "$toolchain/bin/$TOOLCHAIN_TARGET-gcc" "$toolchain" \
+    "$smoke/smoke.o" "$smoke/layout.ld" "$smoke/driver.elf" 0xfff00000
 rm -rf "$smoke"
 smoke=""
 
