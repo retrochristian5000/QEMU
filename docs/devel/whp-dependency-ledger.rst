@@ -4813,6 +4813,51 @@ This is arithmetic validation with mocked TSan mapping policy,
 not native Mach execution. Full macOS/ARM64e runtime and lit
 execution remain outstanding.
 
+NeXTSTEP Mach VM copy interface continuity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+NeXTSTEP 3.3's UNIX Programmer's Manual lists vm_copy,
+vm_allocate, vm_deallocate, vm_read, vm_write, vm_protect,
+vm_region and vm_statistics among the Mach functions:
+https://www.typewritten.org/Manual/NeXT/NEXTSTEP/3.3/
+Apple XNU f6217f891ac0bb64f3d375211650a4c1ff8ca1ea
+osfmk/vm/vm_user.c shows that vm_copy delegates to mach_vm_copy,
+which obtains a VM copy object and overwrites the destination
+range. This is a logical transfer within the specified task,
+not necessarily a CPU memcpy. Historical interface continuity
+does not imply identical structure widths or kernel internals.
+
+LLVM revision d8bdd0182dddd3c9636a1fbd9f85818babd14dbf adds macOS-only
+interceptors for vm_copy and mach_vm_copy in the existing
+tsan_interceptors_mach_vm.cpp. The SDK's respective vm_address_t,
+vm_size_t, mach_vm_address_t and mach_vm_size_t signatures
+remain distinct. After a successful nonempty current-task
+copy the shared helper accounts for logical source reads and
+destination writes, validates the raw and shadow-cell ranges,
+and splits exact byte lengths at shadow-cell boundaries.
+This avoids extrapolating page-rounded accesses or assuming
+contiguous shadow across adjacent application windows.
+Foreign task addresses, failed calls and empty copies do not
+enter the local accounting. No application bytes are read by
+the helper, and no artificial synchronization edge or VM
+permission change is introduced. This models successful logical
+transfers, not partial writes on failure, concurrent remapping,
+or aliases through shared memory objects. The per-cell calls
+may add overhead for large copies; benchmark before optimizing.
+The original Mach allocation/deallocation logic is unchanged.
+
+Darwin/mach-vm-copy-race.c adds legacy and modern source-race,
+destination-race, adjacent-page and failure controls (eight
+runs). A standalone C++17 mock of the new range helper and
+result gate compiled with Clang, -Wall -Wextra -Werror,
+UBSan and unsigned integer overflow checks passed 512 range
+pairs (all eight start offsets and lengths 1 through 64) and
+four guard scenarios. The repository blobs were read back and
+verified; the mocked test does not establish native macOS
+interposition or ARM64e execution. Native SDK compilation and
+all eight lit runs remain outstanding. No historical source
+code or new build dependency is imported.
+
 Future optional capability providers
 ------------------------------------
 
