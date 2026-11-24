@@ -3933,6 +3933,151 @@ PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
 
+Hardware-conditioned dependency graph
+-------------------------------------
+
+Hardware and ABI choices can change the build graph without changing
+the source revision. Keep four identities separate:
+
+* Physical build machine: CPU architecture, reported capabilities,
+  memory/CPU scheduling resources and translation state.
+* Build-machine process and native tool ABI: the executables that run
+  during configuration, generation and bootstrap.
+* QEMU artifact host ABI: the operating system, architecture, compiler,
+  SDK/sysroot and instruction baseline of the resulting emulator.
+* Guest target and machine: the emulated CPU, devices, firmware and
+  guest object format. These are selected by the build profile, not
+  inferred from the physical build machine's peripherals.
+
+Evidence: ``scripts/whp-build/prepare-build.bash`` records process,
+physical and host architectures and checks Rosetta translation;
+``scripts/whp-build/macos-target-abi.bash`` distinguishes arm64e
+from the generic AArch64 family. Meson's ``build_machine`` and
+``host_machine`` must retain their distinct cross-build meanings.
+A physical Apple Silicon machine does not itself select arm64e for
+every executable, firmware, or host library.
+
+Build-time branches and runtime capabilities
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 38 37
+
+   * - Hardware-related edge
+     - Build-time owner and dependency
+     - Runtime boundary
+   * - CPU architecture
+     - ``meson.build`` selects host-specific TCG, headers and
+       accelerator target sets. The emulator requires a 64-bit host
+       pointer size; tools may support 32-bit hosts.
+     - Guest ISA is independent of the native TCG backend.
+       A different host CPU family changes generated host objects.
+   * - x86 CPU features
+     - ``host-cpu-tuning.py`` may select -march=native and
+       -mtune=native for x86-64; compiler acceptance is checked.
+     - ``util/cpuinfo-i386.c`` checks CPUID and OS-enabled XCR0
+       state for AVX-family features. Keep runtime dispatch for
+       capabilities not guaranteed by the artifact baseline.
+   * - AArch64 CPU features
+     - Native tuning prefers a concrete -mtune CPU or
+       -mtune=native for arm64/aarch64, preserving the default
+       ISA baseline. Explicit ABI and compiler flags remain separate.
+     - ``util/cpuinfo-aarch64.c`` queries HWCAP/HWCAP2 or Darwin
+       sysctl for LSE, LSE2, AES, PMULL, BTI and CSSC.
+       Unknown or restricted Darwin feature keys are not fatal.
+   * - Virtualization
+     - Meson gates KVM on Linux and matching target sets; HVF on
+       Hypervisor.framework; WHPX on Windows and winhvplatform.h;
+       NVMM on NetBSD and its library. Other accelerator options
+       have their own platform and target guards.
+     - KVM opens /dev/kvm and checks the API and extensions in
+       ``accel/kvm/kvm-all.c``. HVF creates vCPUs at runtime.
+       Compiled support does not prove hardware, kernel permissions
+       or hypervisor availability on the execution machine.
+   * - Display and graphics
+     - Darwin Cocoa uses Cocoa/CoreVideo/QuartzCore; PVG uses
+       ParavirtualizedGraphics/Metal. Optional VirGL/OpenGL/GBM
+       edges are discovered by Meson; vhost-user GPU needs
+       the relevant combined dependencies.
+     - Physical GPU support and driver/runtime capabilities must
+       be validated by the selected backend. A GPU model alone
+       does not prove framework or library usability.
+   * - USB and audio
+     - Meson optionally discovers libusb-1.0 >= 1.0.13,
+       usbredir and host audio providers such as CoreAudio,
+       SDL, PulseAudio and JACK.
+     - ``hw/usb/host-libusb.c`` enumerates and opens devices at
+       runtime. A disconnected printer, sound device or USB device
+       must not force a source rebuild or remove compiled support.
+   * - Memory, I/O and networking
+     - Optional libnuma, liburing, libpmem/libdaxctl and
+       RDMA (rdmacm/ibverbs) are feature-gated Meson checks.
+       Native job limits and ThinLTO concurrency are resource policy.
+     - Kernel support, actual NUMA topology, available memory,
+       storage and network hardware are execution constraints.
+       Do not require these libraries simply because a device exists.
+
+The WHP Darwin launcher currently explicitly disables KVM and HVF
+in ``whp_prepare_configure_args``. The current macOS lane is
+TCG-only even when the physical CPU and SDK could support HVF.
+Do not silently reverse that policy or add signing/entitlements
+during a hardware inventory. A direct QEMU configure can have
+different feature choices from the WHP launcher.
+
+Hardware-aware cache identity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing configure candidate in
+``scripts/whp-build/configure.bash`` records HOST_OS, PROCESS_ARCH,
+PHYSICAL_ARCH, HOST_ARCH, Rosetta state, compiler selections and
+flags, SDK/deployment settings, library-provider paths, target
+list and configure arguments. A changed candidate triggers
+configuration of the existing build directory.
+
+An audit gap remains for native code generation: an x86
+-march=native or -mtune=native string can remain unchanged when
+moving a build between different CPUs of the same architecture.
+A CPU name or effective compiler target-feature signature should
+be investigated for native-tuned artifact cache identity, including
+any downstream compiler cache that cannot already establish it.
+This is a candidate improvement, not evidence of a reproduced
+stale-object failure. Do not use a serial number, MAC address,
+GPU serial or broad machine identifier as an invalidation key.
+
+Keep separate invalidation boundaries:
+
+* Architecture, ABI, SDK, effective ISA baseline and toolchain
+  changes may invalidate affected compiled artifacts.
+* Optional library/header/feature changes may require Meson
+  reconfiguration and dependent targets to rebuild.
+* CPU count, available memory, battery state and thermal constraints
+  normally affect scheduling, not the artifact ABI or source pins.
+* Peripheral attachment, device permissions and runtime feature
+  availability normally require only runtime rediscovery.
+
+Future dependency and seed candidates
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Potential editable source providers include libusb for USB host
+passthrough, usbredir for USB redirection, virglrenderer for the
+VirGL backend, and Linux-scoped liburing, numactl or rdma-core.
+First establish an active QEMU consumer and a real portability,
+capability or ABI defect before adding any fork or gitlink.
+Existing SDL, JACK, GLib and LLVM sources should be reused where
+applicable. Apple SDK frameworks and operating-system kernel
+interfaces are not interchangeable with standalone source forks.
+
+Potential diagnostic seed candidates are sysctl (Darwin/BSD),
+lscpu (Linux util-linux), and getconf (native resource/ABI query).
+These are host-specific capabilities, not mandatory external
+programs on all platforms. Reuse existing uname and platform
+helpers; add a seed only if a consumer needs stable executable
+selection or a specific behavioral contract. Prefer compiler and
+OS-provided capability probes over mandatory hardware inventory
+packages. A diagnostic scan must not install packages, change
+source pins, rewrite guest defaults or force a clean build.
+
 Firmware source-build dependency expansion
 ------------------------------------------
 
