@@ -564,15 +564,21 @@ static void raw_parse_flags(int bdrv_flags, int *open_flags, bool has_writers)
     }
 }
 
-static int raw_apply_nocache(int fd, int bdrv_flags, Error **errp)
+static int raw_apply_nocache(int fd, int bdrv_flags,
+                             const struct stat *st, Error **errp)
 {
 #ifdef CONFIG_DARWIN
-    struct stat st;
+    struct stat local_st;
     int nocache = !!(bdrv_flags & BDRV_O_NOCACHE);
 
-    if (fstat(fd, &st) < 0) {
-        error_setg_errno(errp, errno, "Could not stat file for cache mode");
-        return -errno;
+    if (!st) {
+        if (fstat(fd, &local_st) < 0) {
+            int err = errno;
+
+            error_setg_errno(errp, err, "Could not stat file for cache mode");
+            return -err;
+        }
+        st = &local_st;
     }
 
     /*
@@ -580,9 +586,11 @@ static int raw_apply_nocache(int fd, int bdrv_flags, Error **errp)
      * unified buffer cache. Device nodes are already outside the regular-file
      * page-cache path, so only apply it to image files.
      */
-    if (S_ISREG(st.st_mode) && fcntl(fd, F_NOCACHE, nocache) < 0) {
-        error_setg_errno(errp, errno, "Could not configure F_NOCACHE");
-        return -errno;
+    if (S_ISREG(st->st_mode) && fcntl(fd, F_NOCACHE, nocache) < 0) {
+        int err = errno;
+
+        error_setg_errno(errp, err, "Could not configure F_NOCACHE");
+        return -err;
     }
 #endif
     return 0;
@@ -1015,11 +1023,6 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
     }
     s->fd = fd;
 
-    ret = raw_apply_nocache(s->fd, bdrv_flags, errp);
-    if (ret < 0) {
-        goto fail;
-    }
-
     /* Check s->open_flags rather than bdrv_flags due to auto-read-only */
     if (s->open_flags & O_RDWR) {
         ret = check_hdev_writable(s->fd);
@@ -1076,6 +1079,11 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
     if (fstat(s->fd, &st) < 0) {
         ret = -errno;
         error_setg_errno(errp, errno, "Could not stat file");
+        goto fail;
+    }
+
+    ret = raw_apply_nocache(s->fd, bdrv_flags, &st, errp);
+    if (ret < 0) {
         goto fail;
     }
 
@@ -1418,14 +1426,17 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
             if (fd == -1) {
                 return -1;
             }
-        }
-    }
 
-    if (fd != -1) {
-        ret = raw_apply_nocache(fd, flags, errp);
-        if (ret < 0) {
-            qemu_close(fd);
-            return -1;
+            /*
+             * A newly opened descriptor needs its cache mode configured.
+             * A duplicated descriptor shares the original file status and
+             * is used only when the requested cache mode is unchanged.
+             */
+            ret = raw_apply_nocache(fd, flags, NULL, errp);
+            if (ret < 0) {
+                qemu_close(fd);
+                return -1;
+            }
         }
     }
 
