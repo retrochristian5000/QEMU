@@ -4489,6 +4489,52 @@ launches must have distinct slides. Native SDK compilation,
 startup behavior and race/clean execution remain unverified.
 The existing NATIVE_LLVM_TSAN_OBJCXX=1 gate is unchanged.
 
+Separate native Objective-C and Objective-C++ language profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 74c7e73055895fe34c96fb45a6faf16122a72908 adds
+COMPILER_RT_TSAN_OBJC independently of COMPILER_RT_TSAN_OBJCXX.
+The Objective-C frontend defaults to CMAKE_C_COMPILER, retains
+the selected C compiler target if provided, and checks the
+Objective-C language, SDK runtime headers and loader interface.
+Its Objective-C11 source is a separate RTTsanObjC object target
+with native SDK and architecture flags but without the shared
+Darwin -stdlib=libc++ flag or TSan C++-specific flags. ARC and
+sanitizer self-instrumentation are disabled. The object is linked
+into the macOS runtime and its unit-test archive. This does not
+remove the C++ dependency from the overall TSan runtime.
+
+The new objc/tsan_objc_runtime.m returns a private C ABI record
+with the loaded runtime image base, diagnostic code PC, borrowed
+image name, @encode(BOOL) and sizeof(BOOL). No object messages
+or class initialization occur during startup. Only a diagnostic
+copy of the code pointer is normalized on arm64e. The prior
+tsan_objc_aslr.mm is now tsan_objc_aslr.cpp because its remaining
+role is C++ shadow-layout diagnostics, not Objective-C++
+language work. With only OBJCXX enabled it retains the prior
+loader lookup fallback. With OBJC enabled it consumes the
+pure Objective-C query; with both enabled it reports once.
+The objc_copyStruct interceptor remains in tsan_objc_darwin.mm,
+where the TSan C++ runtime types and the Objective-C SDK ABI
+are both needed. No change to ASLR policy or ownership semantics.
+
+The QEMU bootstrap accepts NATIVE_LLVM_TSAN_OBJC=1 as a separate
+native macOS runtime-only option and includes it in the cache
+marker. Both language profiles remain OFF by default. The
+new objc-native-abi.m lit test is selected by the actual OBJC
+build option and compares the runtime and application BOOL
+encoding and size under normal ASLR. Existing Objective-C++
+race controls remain selected independently.
+
+The exact new Objective-C source and C ABI header blobs were
+compiled with Clang 17 on Linux using mock runtime declarations
+for signed-char and bool BOOL, linked to a C++17 caller with
+warnings treated as errors, and tested with real Linux dladdr.
+Both type-encoding cases and null-output rejection passed.
+These mock checks are not a macOS SDK or ARM64e runtime test.
+Native configuration, full linkage and execution of each
+language-option combination remain unverified.
+
 Future optional capability providers
 ------------------------------------
 
