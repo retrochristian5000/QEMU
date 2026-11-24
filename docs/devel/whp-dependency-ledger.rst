@@ -4453,6 +4453,42 @@ Clang 17 on Linux, not a real macOS SDK build. Native runtime
 compilation, linkage and ARM64e race-control execution remain
 unverified. No new submodule or package installation is needed.
 
+Objective-C image placement under Darwin ASLR
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision f53b841558ebc967fc73d691e18de899517f413c extends the existing optional
+native macOS Objective-C++ TSan profile with
+objc/tsan_objc_aslr.mm and its private header. At verbosity 2,
+before CheckAndProtect, TSan resolves the loaded image containing
+the non-intercepted class_getImageName symbol using dladdr.
+The lookup uses the existing code-PC normalization helper on
+a diagnostic copy only. The reported loaded base and PC are
+checked against the supported application address layout.
+The checked PC-minus-base value is an image-relative offset,
+not the Mach-O ASLR slide. Failed lookup is reported as
+unavailable rather than interpreted as an ASLR failure.
+
+No Objective-C messages, class initialization, object dereference,
+dyld image enumeration, or additional runtime dependency is
+introduced at startup. The kernel and dyld retain ownership of
+ASLR and relocations. Neither tagged object pointers nor signed
+function pointers are rewritten. CheckAndProtect and fixed Mach
+VM reservation guards remain authoritative; the diagnostic
+cannot admit an incompatible mapping. No ASLR disabling or
+shadow-layout relocation is attempted.
+
+The new Darwin/objc-aslr-ivar.mm fixture uses a real Objective-C
+root class, class_getImageName, class_createInstance,
+class_getInstanceVariable and ivar_getOffset to verify that the
+runtime-resolved instance field address matches compiler-generated
+ivar access. The existing objc_copyStruct interceptor then
+exercises an adjacent-byte negative control and a conflicting
+ivar access. The test also expects a supported image-placement
+diagnostic at verbosity 2. It does not assert that two process
+launches must have distinct slides. Native SDK compilation,
+startup behavior and race/clean execution remain unverified.
+The existing NATIVE_LLVM_TSAN_OBJCXX=1 gate is unchanged.
+
 Future optional capability providers
 ------------------------------------
 
