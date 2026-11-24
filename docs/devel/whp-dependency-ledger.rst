@@ -3933,6 +3933,122 @@ PowerPC/AltiVec have the existing architecture-specific SIMD code.  NEON is
 therefore an optimization opportunity, not a dependency that should be
 claimed as already implemented.
 
+ThreadSanitizer optional capability providers
+---------------------------------------------
+
+Audit provenance: LLVM gitlink 24bc7b7733d297531ca04fb557cd233d99cc9b61, QEMU wrapper
+at 9d622b1291540832771d0929dd973e9edc974695. These are prospective
+diagnostic and runtime improvements, not required dependencies.
+Keep race detection, stack capture/unwinding and symbolization
+separate: decoding a PC cannot recover a frame that was never
+captured, and a more complete report does not repair a race or an
+incorrect happens-before model.
+
+Matched external symbolizer and debug artifacts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The QEMU native LLVM distribution component list in
+``scripts/bootstrap-native-clang.bash`` does not explicitly include
+llvm-symbolizer or dsymutil. It includes LLDB/liblldb on the
+selected macOS LLDB lane. This is an installation-inventory gap,
+not proof that the tools are absent from the build tree or host.
+First investigate opt-in installation of matched-revision
+llvm-symbolizer and dsymutil, or admission of existing native
+tools. No new LLVM source gitlink is necessary.
+
+The pinned `compiler-rt/lib/sanitizer_common/sanitizer_symbolizer_posix_libcdep.cpp <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/sanitizer_common/sanitizer_symbolizer_posix_libcdep.cpp>`__
+accepts an explicit external_symbolizer_path; on Apple, automatic
+external discovery prefers atos, then llvm-symbolizer, then
+addr2line if allowed. dladdr is an additional Apple fallback.
+Use the selected runtime's actual flags and executable protocol;
+a shell adapter named llvm-symbolizer.sh is not automatically
+equivalent to the provider. Candidate seeds may resolve an
+absolute executable path, not intercept every symbolization
+request. Use dsymutil to generate matched Mach-O debug bundles
+where required; verify UUIDs, architecture slices, module offsets,
+inline frames and source lines. Preserve raw PC evidence when
+symbolization fails. No PATH or loader override is required.
+
+Unwinder and instrumented C++ runtime
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned `compiler-rt/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/CMakeLists.txt>`__ declares
+COMPILER_RT_USE_LLVM_UNWINDER (default OFF),
+COMPILER_RT_ENABLE_STATIC_UNWINDER and
+SANITIZER_USE_STATIC_LLVM_UNWINDER. LLVM libunwind is already
+in-tree. However, `compiler-rt/lib/tsan/rtl/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/tsan/rtl/CMakeLists.txt>`__
+uses COMPILER_RT_UNWINDER_LINK_LIBS in its non-Apple dynamic
+link list, whereas the Apple shared runtime uses
+SANITIZER_COMMON_LINK_LIBS and objc. The generic unwind switch
+alone therefore does not establish Darwin TSan unwinder linkage.
+The Linux slow unwinder source has a non-Apple platform guard.
+Trace the actual Darwin stack capture and report paths before
+wiring an alternate library. TSan's shadow-stack capture is not
+automatically replaced by an exception unwinder.
+
+The pinned `compiler-rt/lib/tsan/CMakeLists.txt <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/tsan/CMakeLists.txt>`__
+also exposes libcxx_tsan, a custom TSan-instrumented libc++ build
+requiring COMPILER_RT_LIBCXX_PATH, COMPILER_RT_LIBCXXABI_PATH,
+Clang as the test compiler, and a non-Android target. QEMU's
+macOS LLVM runtime selection presently lists compiler-rt, not a
+custom instrumented libc++/libc++abi pair. Investigate as an
+isolated test profile; do not replace system libc++ globally.
+Instrumented C++ library code may expose accesses missed in
+uninstrumented libraries; runtime recursion, initialization,
+ABI compatibility and allocator ownership still require testing.
+
+Additional symbolization providers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pinned `compiler-rt/lib/sanitizer_common/sanitizer_symbolizer_libbacktrace.cpp <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/sanitizer_common/sanitizer_symbolizer_libbacktrace.cpp>`__
+contains a conditional libbacktrace implementation. It requires
+SANITIZER_LIBBACKTRACE, POSIX, BACKTRACE_SUPPORTED, and
+!BACKTRACE_USES_MALLOC. Optional C++ demangling has an additional
+SANITIZER_CP_DEMANGLE gate. It is a candidate external source
+provider only after a native Mach-O/arm64e and allocation-safety
+audit. Do not treat a generic libbacktrace installation as
+admitted or add it as a required dependency.
+
+COMPILER_RT_ENABLE_INTERNAL_SYMBOLIZER activates the optional
+in-process symbolizer build. The pinned
+`compiler-rt/lib/sanitizer_common/symbolizer/scripts/build_symbolizer.sh <https://github.com/retrochristian5000/LLVM/blob/24bc7b7733d297531ca04fb557cd233d99cc9b61/compiler-rt/lib/sanitizer_common/symbolizer/scripts/build_symbolizer.sh>`__
+requires Clang/Clang++, llvm-tblgen, llvm-link, opt, llvm-ar,
+CMake, Ninja, Make, zlib and private static libc++/libc++abi
+plus LLVM debug/object libraries. Its fallback clones zlib
+without a fixed revision and uses unbounded make -j, platform
+path assumptions and LLD/LTO flags. Use QEMU's existing pinned
+zlib only after validating the correct ABI; repair source
+acquisition, job limits, quoting, incremental build and symbol
+visibility before adopting the script. The Apple TSan shared
+target does not list RTSanitizerCommonSymbolizerInternal in its
+OBJECT_LIBS, unlike the non-Apple TSan runtime path. This is
+an experimental port, not an enable-only Darwin feature.
+Keep the external symbolizer baseline.
+
+Synchronization and validation boundaries
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Compiler-rt always enables libdispatch interception on Apple.
+The optional non-Apple COMPILER_RT_INTERCEPT_LIBDISPATCH path
+uses -fblocks and test linkage with BlocksRuntime and dispatch;
+a custom install path is supported. Existing Darwin interceptors
+use system dispatch queue offsets and synchronization semantics.
+Do not introduce a second libdispatch provider on macOS.
+Potential Swift libdispatch and BlocksRuntime source work belongs
+to a specifically selected non-Apple lane.
+
+For Darwin/arm64e acceptance, first compare known-race and
+race-free pthread and dispatch fixtures, then C++ synchronization,
+exception/unwind and stack-lifetime fixtures. Check correct
+source locations, complete captured stacks where expected,
+authenticated return address handling, dylib linkage and
+absence of new false reports or runtime crashes. Measure
+diagnostic overhead and memory footprint separately from
+correctness. Do not increase shadow/history buffers or
+weaken interceptors merely to suppress reports. Record an
+explicit optional profile and source/SDK/ABI identity before
+changing defaults or promoting any external provider.
+
 Future optional capability providers
 ------------------------------------
 
