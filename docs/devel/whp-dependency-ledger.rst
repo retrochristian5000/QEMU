@@ -4722,6 +4722,51 @@ stable address bounds and page size with direct SDK queries.
 Native macOS compilation and arm64e execution remain pending.
 No new source provider or build option was introduced.
 
+FreeBSD and Darwin VM policy separation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 7fab704a57a2da4ab02852796a9a5e00ba34e820 audits the shared POSIX
+mapping validation against FreeBSD and Darwin's different VM
+providers. The FreeBSD KERN_PROC_VMMAP / kinfo_vmentry reader
+in sanitizer_procmaps_bsd.cpp is already excluded from Apple
+builds, as are the FreeBSD-specific paths in tsan_platform_linux.cpp.
+No direct FreeBSD ABI leak was found in these inspected paths.
+Darwin's MemoryMappingLayout enumerates Mach-O image segments
+in image/load-command order, not ascending VM address order;
+it is not a complete kernel map of anonymous VM allocations.
+
+The shared CheckAndProtect loop now uses ClassifyPosixMapping.
+The non-Apple vDSO early-stop policy is not applied to Darwin.
+An accessible unexpected Darwin mapping is rejected, including
+one above the vDSO sentinel. The redundant start-only heap-guard
+exception is removed: a mapping must satisfy the complete heap
+or application interval tests or be inaccessible. This prevents
+an accessible mapping starting in the allocator's extra range
+from concealing an unsupported tail. Existing non-Apple vDSO
+behavior and full-range heap-ignore policy remain intact.
+Darwin's non-overwriting Mach reservations, ASLR and PAC are
+unchanged. This does not replace the image iterator with a
+complete Mach region walk.
+
+Native macOS DiagnoseDarwinArrayRange reuses the existing
+C11 __tsan_posix_page_extent helper. Only arithmetic is shared;
+Mach deallocation still accepts an unaligned start, unlike POSIX
+munmap. No FreeBSD structures or VM flags enter the Darwin path.
+The other Darwin SDK profiles retain their C++ rounding fallback.
+The DarwinMappingScanPolicy unit test covers full heap containment,
+a crossing guard range, high sentinel handling and valid
+application memory. Existing Mach rounding tests remain intact.
+A standalone copy of the classifier compiled with Clang C++17,
+warnings as errors and UBSan, with mocked mapping windows; all
+12 assertions passed across Apple and non-Apple settings. This
+is a policy check, not an actual runtime or SDK build. Native
+macOS, ARM64e and FreeBSD runtime tests remain outstanding.
+
+References: FreeBSD libutil/kinfo_getvmmap.c and sys/sys/user.h;
+LLVM sanitizer_procmaps_mac.cpp, which explicitly documents
+unsorted segment addresses. Preserve provider-specific VM
+semantics while sharing checked integer arithmetic.
+
 Future optional capability providers
 ------------------------------------
 
