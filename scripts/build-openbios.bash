@@ -421,12 +421,20 @@ start_loaded=0
 elf_entry_loaded=0
 legacy_entry_loaded=0
 hard_reset_loaded=0
-while IFS='|' read -r vaddr memsz segment_flags; do
-    [[ -n "$vaddr" && -n "$memsz" ]] || continue
+while IFS='|' read -r vaddr paddr filesz memsz segment_flags; do
+    [[ -n "$vaddr" && -n "$paddr" && -n "$filesz" && -n "$memsz" ]] || continue
     ((load_count += 1))
     vaddr_value=$((vaddr))
+    paddr_value=$((paddr))
+    filesz_value=$((filesz))
     memsz_value=$((memsz))
     end_value=$((vaddr_value + memsz_value))
+    file_end=$((vaddr_value + filesz_value))
+    if ((paddr_value != vaddr_value || filesz_value > memsz_value)); then
+        printf 'error: OpenBIOS LOAD segment has inconsistent physical address or file size: %s / %s\n' \
+            "$vaddr" "$paddr" >&2
+        exit 1
+    fi
     if [[ "$segment_flags" == *W* && "$segment_flags" == *E* ]]; then
         printf 'error: OpenBIOS LOAD segment is both writable and executable: %s\n' \
             "$segment_flags" >&2
@@ -437,28 +445,40 @@ while IFS='|' read -r vaddr memsz segment_flags; do
             "$vaddr" "$memsz" >&2
         exit 1
     fi
-    if ((vaddr_value <= start_value && end_value > start_value)); then
-        start_loaded=1
+    # A reset instruction must be executable and backed by four file bytes,
+    # not merely located in a zero-filled portion of a LOAD segment.
+    if [[ "$segment_flags" == *E* ]]; then
+        if ((vaddr_value <= start_value && file_end >= start_value + 4)); then
+            start_loaded=1
+        fi
+        if ((elf_entry_value >= 0xfff00000 && elf_entry_value < 0x100000000 &&
+             vaddr_value <= elf_entry_value && file_end >= elf_entry_value + 4)); then
+            elf_entry_loaded=1
+        fi
+        if ((vaddr_value <= 0xfff00100 && file_end >= 0xfff00104)); then
+            legacy_entry_loaded=1
+        fi
+        if ((vaddr_value <= 0xfffffffc && file_end >= 0x100000000)); then
+            hard_reset_loaded=1
+        fi
     fi
-    if ((elf_entry_value >= 0xfff00000 && elf_entry_value < 0x100000000 &&
-         vaddr_value <= elf_entry_value && end_value > elf_entry_value)); then
-        elf_entry_loaded=1
-    fi
-    if ((vaddr_value <= 0xfff00100 && end_value > 0xfff00100)); then
-        legacy_entry_loaded=1
-    fi
-    if ((vaddr_value <= 0xfffffffc && end_value > 0xfffffffc)); then
-        hard_reset_loaded=1
-    fi
-done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3 "|" $6 "|" flags }' <<< "$program_headers")
+done < <(awk '$1 == "LOAD" { flags=""; for (i=7; i<NF; i++) flags=flags $i; print $3 "|" $4 "|" $5 "|" $6 "|" flags }' <<< "$program_headers")
 
 if ((load_count == 0)); then
     printf 'error: OpenBIOS ELF has no loadable segments\n' >&2
     exit 1
 fi
 if ((start_loaded == 0)); then
-    printf 'error: OpenBIOS _start %s is not covered by a LOAD segment\n' \
+    printf 'error: OpenBIOS _start %s is not backed by an executable LOAD segment\n' \
         "$start_address" >&2
+    exit 1
+fi
+
+# Mac99 always starts at the reset vector unless the user explicitly
+# overrides it. Do not publish a default ROM that cannot execute there.
+if ((legacy_entry_loaded == 0)); then
+    printf '%s\n' \
+        'error: OpenBIOS does not contain a file-backed executable instruction at the Mac99 reset vector 0xfff00100.' >&2
     exit 1
 fi
 
@@ -475,29 +495,14 @@ if [[ "$OPENBIOS_FIRMWARE_VALIDATION" == strict ]]; then
         exit 1
     fi
 else
-    if ((elf_entry_loaded == 1)); then
-        selected_entry="$elf_entry_address"
-        selected_entry_source="ELF header"
-    else
-        selected_entry="$start_address"
-        selected_entry_source="_start symbol"
-    fi
-
-    if ((elf_entry_loaded == 0)) && [[ "$start_address" != "0xfff00100" ]]; then
+    if ((elf_entry_loaded == 0)); then
         printf '%s\n' \
-            "warning: ELF entry $elf_entry_address is unusable; _start is $start_address." \
-            'Use the QEMU compatibility override:' \
-            "  -machine mac99,firmware-entry=$start_address" >&2
-    fi
-    if ((legacy_entry_loaded == 0)); then
-        printf '%s\n' \
-            'warning: firmware does not map QEMU legacy entry 0xfff00100;' \
-            "         selected $selected_entry_source entry $selected_entry instead." >&2
+            "warning: ELF entry $elf_entry_address is not executable; Mac99 uses reset vector 0xfff00100." >&2
     fi
     if ((hard_reset_loaded == 0)); then
         printf '%s\n' \
             'warning: firmware does not map the architectural hard-reset vector' \
-            '         at 0xfffffffc; QEMU will use the selected firmware entry.' >&2
+            '         at 0xfffffffc; Mac99 still uses its default reset vector 0xfff00100.' >&2
     fi
 fi
 
