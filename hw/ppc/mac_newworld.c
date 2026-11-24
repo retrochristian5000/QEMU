@@ -597,7 +597,8 @@ static void ppc_core99_init(MachineState *machine)
     qdev_prop_set_uint32(dev, "size", MACIO_NVRAM_SIZE);
     qdev_prop_set_uint32(dev, "it_shift", 1);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, nvram_addr);
+    /* NewWorld NVRAM takes precedence over the enclosing boot ROM. */
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, nvram_addr, 1);
     nvr = MACIO_NVRAM(dev);
     pmac_format_nvram_partition(nvr, MACIO_NVRAM_SIZE);
     /* No PCI init: the BIOS will do it */
@@ -667,6 +668,7 @@ static void ppc_core99_init(MachineState *machine)
     fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_CLOCKFREQ, CLOCKFREQ);
     fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_BUSFREQ, BUSFREQ);
     fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_NVRAM_ADDR, nvram_addr);
+    fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_NVRAM_FLAT, 0);
 
     /* MacOS NDRV VGA driver */
     filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, NDRV_VGA_FILENAME);

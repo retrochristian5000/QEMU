@@ -164,6 +164,20 @@ static void test_pmac_powermac3_1_memory_map(void)
     qts = qtest_init("-nodefaults -M powermac3_1 -m 2G -boot d");
     g_assert_cmphex(read_boot_order_pmac(qts), ==, 'd');
 
+    /* The NVRAM device must win over the enclosing read-only PROM. */
+    {
+        g_autoptr(QFWCFG) fw_cfg = mm_fw_cfg_init(qts, 0xf0000510);
+        uint8_t saved = qtest_readb(qts, 0xfff07ffe);
+        uint8_t value = saved ^ 0xff;
+
+        g_assert_cmphex(qfw_cfg_get_u32(fw_cfg, 0x8008), ==, 0xfff04000);
+        g_assert_cmphex(qfw_cfg_get_u32(fw_cfg, 0x800a), ==, 0);
+        qtest_writeb(qts, 0xfff07ffe, value);
+        g_assert_cmphex(qtest_readb(qts, 0xfff07ffe), ==, value);
+        g_assert_cmphex(qtest_readb(qts, 0xfff07fff), ==, value);
+        qtest_writeb(qts, 0xfff07ffe, saved);
+    }
+
     mtree = qtest_hmp(qts, "info mtree");
     line = strstr(mtree, agp_io);
     g_assert_nonnull(line);
