@@ -636,7 +636,15 @@ whp_prepare_configure_args()
         configure_args+=("-Db_lto_threads=$JOBS")
         configure_args+=(--objcc="$OBJC")
         whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
-        whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio
+        case "$MACOS_ENABLE_COREAUDIO" in
+            0|1) whp_add_optional_configure_switch "$MACOS_ENABLE_COREAUDIO" coreaudio ;;
+            auto) configure_args+=(-Dcoreaudio=auto) ;;
+            *)
+                printf 'error: MACOS_ENABLE_COREAUDIO must be auto, 0, or 1: %s\n' \
+                    "$MACOS_ENABLE_COREAUDIO" >&2
+                exit 1
+                ;;
+        esac
 
         # The backend feature flags above control discovery, not fallback
         # priority. Keep Meson's available-driver list (including SDL3)

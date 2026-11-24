@@ -11,10 +11,16 @@ audio_ss.add(files(
 # deprecated since v10.2, to be removed
 system_ss.add(files('audio-hmp-cmds.c', 'wavcapture.c'))
 
+# CoreAudio is the native Darwin backend. Keep its QOM registration in the
+# system emulator even when optional backends are loadable modules. The
+# Apple framework itself remains a dynamic system dependency.
+if coreaudio.found()
+  audio_ss.add(coreaudio, files('coreaudio.m'))
+endif
+
 audio_modules = {}
 foreach m : [
   ['alsa', alsa, files('alsaaudio.c')],
-  ['coreaudio', coreaudio, files('coreaudio.m')],
   ['dsound', dsound, files('dsoundaudio.c', 'audio_win_int.c')],
   ['oss', oss, files('ossaudio.c')],
   ['pa', pulse, files('paaudio.c')],
