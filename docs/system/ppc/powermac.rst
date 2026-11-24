@@ -198,10 +198,33 @@ The pinned firmware now advertises ``display`` for Rage 128 and QEMU
 VGA, preserving vendor/model identity. This corrects firmware discovery,
 but is not yet an observed successful boot or framebuffer initialization.
 
-After OpenBIOS finds and opens a display, the firmware-to-Tiger
-graphics-driver handoff remains a separate hypothesis: OpenBIOS uses
-generic VGA/VBE FCode, while QEMU's ``ati-rage128p`` lacks complete
-native Rage 128 register behavior.
+Apple's February 2000 developer note (pp. 35--36) identifies the
+Rage 128 Pro with 16 MB of dedicated SDRAM and DDC monitor detection.
+TN2001, example 4, records the screen alias on a PowerMac3,1 as
+``/pci@f0000000/ATY,Rage128Ps@10``. The firmware uses this package
+name only for the ATI 1002:5046 device at AGP slot 16 on Sawtooth;
+the device type remains ``display``. The February 2000 documentation
+describes a later configuration within the original Sawtooth family,
+not necessarily the graphics card of every September 1999 machine.
+
+Apple's Tiger BootX 74.1 prefers the screen alias, tries to open a
+display, and then consumes its address, width, height, depth and
+linebytes properties. OpenBIOS's standard is-install word used to
+return true unconditionally even if the VGA-specific installation
+exited early. The local checked installation word now propagates
+the VGA driver's success flag without changing the standard FCode
+word's stack contract.
+
+The pinned firmware has native Rage 128 CRTC setup and rejects failed
+BAR0/BAR2 mappings, while retaining generic VGA/VBE for other devices.
+The ATI hardware model still lacks complete display behavior, and a
+successful firmware open is not evidence that the Tiger native driver
+has completed its mode set.
+
+Apple reference documents:
+
+* https://leopard-adc.pepas.com/documentation/Hardware/Developer_Notes/Macintosh_CPUs-G4/PowerMac_G4_16Feb00/PowerMacG4.pdf
+* https://leopard-adc.pepas.com/technotes/tn/tn2001.html
 
 After building both QEMU and its pinned OpenBIOS firmware, compare these
 commands using the **same** Tiger image and firmware::
