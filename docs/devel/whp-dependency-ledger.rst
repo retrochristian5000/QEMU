@@ -4572,6 +4572,60 @@ not execution of the patched TSan runtime. Native Darwin and
 ARM64e regression runs remain outstanding. Preserve existing
 language and optional provider profiles.
 
+Native C POSIX page-range accounting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision f9c536cf18fc392e15453f9c030c8bc57296d2ec adds
+mman/tsan_mman_range_posix.c and its private C-compatible
+header. Native macOS-only compiler-rt builds compile the
+helper with C11 as RTTsanPosixC, with the selected architecture,
+SDK and deployment flags but no C++ standard-library flags.
+The object is included in both the runtime and the Darwin
+unit-test archive. No Objective-C option, new compiler package,
+submodule or Go runtime dependency is required.
+
+The helper takes uintptr_t addresses, size_t lengths and the
+existing cached native page size. It computes the whole-page
+interval covering the supplied nonempty byte range, checking
+power-of-two page size, integer overflow and null output
+arguments before writing either result. No raw user memory is
+read, mapped or modified. No pointer authentication or tag
+normalization occurs. The C++ interface still validates the
+computed interval against the supported application windows.
+Native fixed mmap requests must have a page-aligned start and
+a supported full page extent; unsupported requests fail with
+EINVAL before the real call. Successful mmap results are checked
+over the complete page extent, not merely the requested length.
+Non-fixed hint policy and the existing requested-byte
+shadow/FD accounting remain unchanged. Native munmap shadow
+preparation uses the same page computation and requires a
+page-aligned start. Real libc calls and pre-unmap ordering
+remain in the existing interceptors. Non-native Darwin and
+other POSIX build paths retain the existing implementation.
+The helper does not model large-page provider-specific lengths
+or resolve the existing limitations of pre-unmap bookkeeping.
+
+Apple's mmap(2) and munmap(2) documentation distinguishes
+requested byte lengths from mapped pages and describes the
+alignment requirements. References:
+https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/mmap.2.html
+and
+https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/munmap.2.html
+The discrepancy was a range-accounting choice, not evidence
+that C++ inherently returns incorrect POSIX values.
+
+The exact new C source, header and Darwin/posix-page-extent.c
+fixture blobs were checked by Git hash and compiled with
+Clang on Linux using -Wall -Wextra -Werror. The fixture passed
+as C11 and as a C++17 caller linked to the C11 object, including
+synthetic 4 KiB and 16 KiB page geometry, addresses above 32 bits,
+addition/rounding overflow, invalid page sizes, unchanged
+outputs on rejection and real native Linux mmap/munmap with
+one requested byte. UBSan and unsigned-integer-overflow
+instrumented execution passed. These checks do not establish
+a full native macOS TSan build or ARM64e execution; both remain
+outstanding.
+
 Future optional capability providers
 ------------------------------------
 
