@@ -417,6 +417,14 @@ else
 fi
 
 load_count=0
+rom_capacity=$((0x100000))
+rom_base=$((0xfff00000))
+rom_file_bytes=0
+rom_memory_bytes=0
+rom_payload_end=$rom_base
+rom_segment_count=0
+rom_segment_starts=()
+rom_segment_ends=()
 start_loaded=0
 elf_entry_loaded=0
 legacy_entry_loaded=0
@@ -445,6 +453,28 @@ while IFS='|' read -r vaddr paddr filesz memsz segment_flags; do
             "$vaddr" "$memsz" >&2
         exit 1
     fi
+    if ((memsz_value > 0)); then
+        for ((i = 0; i < rom_segment_count; i++)); do
+            if ((vaddr_value < rom_segment_ends[i] &&
+                 end_value > rom_segment_starts[i])); then
+                printf 'error: overlapping OpenBIOS LOAD ranges at %s\n' "$vaddr" >&2
+                exit 1
+            fi
+        done
+        rom_segment_starts+=("$vaddr_value")
+        rom_segment_ends+=("$end_value")
+        ((rom_segment_count += 1))
+    fi
+    ((rom_file_bytes += filesz_value)) || true
+    ((rom_memory_bytes += memsz_value)) || true
+    # The detached final reset instruction is not part of the growing payload.
+    if ((vaddr_value != 0xfffffffc || memsz_value != 4)); then
+        if ((end_value > rom_payload_end)); then
+            rom_payload_end=$end_value
+        fi
+    fi
+    printf 'OpenBIOS LOAD %s: file=%u memory=%u bytes (%s)\n' \
+        "$vaddr" "$filesz_value" "$memsz_value" "$segment_flags"
     # A reset instruction must be executable and backed by four file bytes,
     # not merely located in a zero-filled portion of a LOAD segment.
     if [[ "$segment_flags" == *E* ]]; then
@@ -468,6 +498,17 @@ if ((load_count == 0)); then
     printf 'error: OpenBIOS ELF has no loadable segments\n' >&2
     exit 1
 fi
+if ((rom_memory_bytes > rom_capacity)); then
+    printf 'error: OpenBIOS requires %u mapped bytes; PROM capacity is %u\n' \
+        "$rom_memory_bytes" "$rom_capacity" >&2
+    exit 1
+fi
+printf 'OpenBIOS ROM budget: file-backed=%u, mapped=%u, capacity=%u, unmapped=%u bytes\n' \
+    "$rom_file_bytes" "$rom_memory_bytes" "$rom_capacity" \
+    "$((rom_capacity - rom_memory_bytes))"
+printf 'OpenBIOS payload end=0x%x, tail before reset=%u bytes (includes any alignment reserve)\n' \
+    "$rom_payload_end" "$((rom_payload_end <= 0xfffffffc ? 0xfffffffc - rom_payload_end : 0))"
+
 if ((start_loaded == 0)); then
     printf 'error: OpenBIOS _start %s is not backed by an executable LOAD segment\n' \
         "$start_address" >&2

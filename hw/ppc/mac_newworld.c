@@ -230,23 +230,31 @@ static void ppc_core99_init(MachineState *machine)
                              bios_name, bios_low, bios_high);
                 exit(1);
             }
-        } else {
-            /* Non-ELF firmware remains supported as a raw PROM image. */
+        } else if (elf_size == ELF_LOAD_NOT_ELF) {
+            /* Only non-ELF firmware may be interpreted as a raw PROM image. */
             bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE,
                                             &bios_err);
             if (bios_size < 0) {
                 error_reportf_err(bios_err,
                                   "could not load raw PowerPC bios '%s': ",
                                   bios_name);
-                error_report("ELF loader rejected it: %s",
-                             load_elf_strerror(elf_size));
                 exit(1);
             }
+        } else {
+            error_report("PowerPC BIOS '%s' is not a loadable ELF image: %s",
+                         bios_name, load_elf_strerror(elf_size));
+            exit(1);
         }
         g_free(filename);
     }
-    if (bios_size < 0 || bios_size > PROM_SIZE) {
-        error_report("could not load PowerPC bios '%s'", bios_name);
+    if (bios_size < 0) {
+        error_report("could not load PowerPC BIOS '%s'", bios_name);
+        exit(1);
+    }
+    if (bios_size > PROM_SIZE) {
+        error_report("PowerPC BIOS '%s' requires %zd bytes, but the "
+                     "Mac99 PROM holds %" PRId64 " bytes",
+                     bios_name, bios_size, PROM_SIZE);
         exit(1);
     }
 
