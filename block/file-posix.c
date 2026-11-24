@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/atomic.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
@@ -2182,13 +2183,16 @@ static int handle_aiocb_rw(void *opaque)
          * Try preadv/pwritev first and fall back to linearizing the
          * buffer if it's not supported.
          */
-        if (preadv_present) {
+        if (qatomic_read(&preadv_present)) {
             nbytes = handle_aiocb_rw_vector(aiocb);
             if (nbytes == aiocb->aio_nbytes ||
                 (nbytes < 0 && nbytes != -ENOSYS)) {
                 goto out;
             }
-            preadv_present = false;
+            /* Short I/O does not indicate a lack of vectored I/O support. */
+            if (nbytes == -ENOSYS) {
+                qatomic_set(&preadv_present, false);
+            }
         }
 
         /*
@@ -2220,22 +2224,13 @@ static int handle_aiocb_rw(void *opaque)
     }
 
     nbytes = handle_aiocb_rw_linear(aiocb, buf);
-    if (!(aiocb->aio_type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND))) {
-        char *p = buf;
-        size_t count = aiocb->aio_nbytes, copy;
-        int i;
+    if (nbytes > 0 &&
+        !(aiocb->aio_type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND))) {
+        size_t copied;
 
-        for (i = 0; i < aiocb->io.niov && count; ++i) {
-            copy = count;
-            if (copy > aiocb->io.iov[i].iov_len) {
-                copy = aiocb->io.iov[i].iov_len;
-            }
-            memcpy(aiocb->io.iov[i].iov_base, p, copy);
-            assert(count >= copy);
-            p     += copy;
-            count -= copy;
-        }
-        assert(count == 0);
+        /* Copy only initialized data; the EOF tail is zeroed below. */
+        copied = iov_from_buf(aiocb->io.iov, aiocb->io.niov, 0, buf, nbytes);
+        assert(copied == (size_t)nbytes);
     }
     qemu_vfree(buf);
 
