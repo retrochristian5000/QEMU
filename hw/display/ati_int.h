@@ -116,6 +116,7 @@ struct ATIVGAState {
     I2CDDCState i2cddc;
     uint64_t linear_aper_sz;
     MemoryRegion linear_aper;
+    MemoryRegion linear_aper_alias;
     MemoryRegion io;
     MemoryRegion mm;
     ATIVGARegs regs;

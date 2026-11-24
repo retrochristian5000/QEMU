@@ -354,7 +354,11 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
     case CONFIG_APER_0_BASE:
     case CONFIG_APER_1_BASE:
         val = pci_default_read_config(&s->dev,
-                                      PCI_BASE_ADDRESS_0, size) & 0xfffffff0;
+                                      PCI_BASE_ADDRESS_0, 4) & 0xfffffff0;
+        if (addr == CONFIG_APER_1_BASE &&
+            s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
+            val += s->linear_aper_sz / 2;
+        }
         break;
     case CONFIG_APER_SIZE:
         val = memory_region_size(&s->linear_aper) / 2;
@@ -1105,9 +1109,10 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
     memory_region_init_alias(&s->io, OBJECT(s), "ati.io", &s->mm, 0, 0x100);
 
     /*
-     * The framebuffer is at the beginning of the linear aperture. For
-     * Rage128 the upper half of the aperture is reserved for an AGP
-     * window (which we do not emulate.)
+     * Rage 128 exposes two linear apertures, each starting with the same
+     * VRAM. See the Rage 128 Pro Register Reference Guide, section 2.2.1.
+     * The AGP system-memory portions and independent aperture byte swaps
+     * are not implemented here; do not allocate a second VRAM buffer.
      */
     if (!s->linear_aper_sz) {
         if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
@@ -1124,9 +1129,26 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
         error_setg(errp, "x-linear-aper-size is too small (minimum 16 MiB)");
         return;
     }
+    if (s->linear_aper_sz & (s->linear_aper_sz - 1)) {
+        error_setg(errp, "x-linear-aper-size must be a power of two");
+        return;
+    }
+    if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF &&
+        vga->vram_size > s->linear_aper_sz / 2) {
+        error_setg(errp, "Rage 128 VRAM must fit in each linear aperture");
+        return;
+    }
     memory_region_init(&s->linear_aper, OBJECT(dev), "ati-linear-aperture0",
                        s->linear_aper_sz);
     memory_region_add_subregion(&s->linear_aper, 0, &vga->vram);
+    if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
+        memory_region_init_alias(&s->linear_aper_alias, OBJECT(dev),
+                                 "ati-linear-aperture1", &vga->vram,
+                                 0, vga->vram_size);
+        memory_region_add_subregion(&s->linear_aper,
+                                    s->linear_aper_sz / 2,
+                                    &s->linear_aper_alias);
+    }
 
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_MEM_PREFETCH, &s->linear_aper);
     pci_register_bar(dev, 1, PCI_BASE_ADDRESS_SPACE_IO, &s->io);

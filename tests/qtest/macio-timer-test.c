@@ -358,7 +358,13 @@ static void test_sawtooth_rage128_firmware_mmio(void)
     write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
                (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
                PCI_BASE_ADDRESS_0);
+    /* Size the real prefetchable BAR before assigning its address. */
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0xffffffffU);
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==,
+                    0xfc000008U);
     write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0x90000000U);
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==,
+                    0x90000008U);
 
     write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
                (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
@@ -385,6 +391,22 @@ static void test_sawtooth_rage128_firmware_mmio(void)
      */
     write_le32(qts, 0x90000000U, 0x11223344U);
     g_assert_cmphex(read_le32(qts, 0x90000000U), ==, 0x11223344U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x100U), ==, 0x90000000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x104U), ==, 0x92000000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x108U), ==, 0x02000000U);
+    g_assert_cmphex(read_le32(qts, 0x92000000U), ==, 0x11223344U);
+    write_le32(qts, 0x92fffffcU, 0xaabbccddU);
+    g_assert_cmphex(read_le32(qts, 0x90fffffcU), ==, 0xaabbccddU);
+
+    /* BAR relocation must move both views of the same VRAM. */
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
+               PCI_BASE_ADDRESS_0);
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0x94000000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x100U), ==, 0x94000000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x104U), ==, 0x96000000U);
+    g_assert_cmphex(read_le32(qts, 0x94000000U), ==, 0x11223344U);
+    g_assert_cmphex(read_le32(qts, 0x96fffffcU), ==, 0xaabbccddU);
 
     write_le32(qts, ati_mmio + 0x200U, 0x004f0063U);
     write_le32(qts, ati_mmio + 0x208U, 0x01df020cU);
