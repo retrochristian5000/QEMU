@@ -4049,6 +4049,82 @@ weaken interceptors merely to suppress reports. Record an
 explicit optional profile and source/SDK/ABI identity before
 changing defaults or promoting any external provider.
 
+libffi as an optional TSan ABI test provider
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+libffi is a prospective shared dependency for testing foreign calls
+and callbacks, not a replacement for TSan shadow memory, stack capture,
+synchronization, or architecture-specific interceptors. The current
+LLVM gitlink 24bc7b7733d297531ca04fb557cd233d99cc9b61 has no explicit
+libffi dependency in the inspected TSan runtime CMake file, POSIX
+interceptors, common interceptor declarations or TSan test configuration.
+LLVM_ENABLE_FFI controls the LLVM interpreter's FFI::ffi linkage; it
+does not enable TSan integration.
+
+Existing consumers can inform provider admission:
+
+* GLib at a0a8b9e68e082d6633f7de86ad5ada8e760a358f requires libffi
+  >= 3.0.0 and has its existing Meson provider path.
+* Python at 40d301451ca7c05e6f5e1df2613697e7a4a2549f probes libffi
+  including an Apple SDK path. Modules/_ctypes/callbacks.c prepares
+  closures and checks ffi_prep_closure_loc availability on Apple;
+  its Apple arm64 path rejects the obsolete closure fallback.
+* LLVM's llvm/cmake/config-ix.cmake conditionally finds FFI and
+  llvm/lib/ExecutionEngine/Interpreter/CMakeLists.txt links FFI::ffi
+  when selected. That interpreter option remains independent of TSan.
+
+Upstream source and release evidence:
+
+* `libffi configure.ac <https://github.com/libffi/libffi/blob/master/configure.ac>`__
+  probes compiler pointer-authentication support and selects an
+  executable trampoline table for Apple ARM targets. Neither is
+  proof of a working native macOS arm64e binary.
+* `libffi release history <https://github.com/libffi/libffi/releases>`__
+  documents pointer-authentication work in 3.4.7/3.4.8, a TSan-reported
+  dlmalloc initialization race fixed in 3.6.0, and AArch64 by-value
+  aggregate and Darwin int128 argument fixes in 3.7.1. Version 3.8.0
+  adds vector-type support on AArch64 and x86-64. A 3.8.0 source
+  evaluation is reasonable, not a pinned or admitted provider.
+* `Apple's libffi source <https://github.com/apple-oss-distributions/libffi>`__
+  is a separate Darwin reference. Compare its ABI/trampoline path
+  with upstream and the actual SDK; do not substitute an arbitrary
+  Apple source snapshot for the installed OS library.
+* Upstream Git-source bootstrap requires a C99 compiler, Autoconf,
+  Automake, Libtool and Texinfo; release archives carry configure.
+  Reuse admitted tools and avoid adding a new bootstrap cycle.
+
+First integration should be an opt-in test profile using the actual
+libffi headers and matching library, not a hard dependency of
+clang_rt.tsan. Validate compile, link and execution for the exact
+SDK, deployment target and host ABI. Probe ffi_prep_cif, ffi_call,
+ffi_prep_cif_var and, when supported, ffi_closure_alloc,
+ffi_prep_closure_loc and ffi_closure_free. Keep writable closure
+storage and callable code addresses distinct. Do not strip pointer
+authentication or relax W^X; release closure memory only after all
+callers have finished. Preserve ABI-specific return storage size,
+alignment, lifetime and argument promotion rules.
+
+Use direct-call controls and FFI-mediated equivalents: integer,
+floating-point and aggregate arguments/returns, promoted variadics,
+register-to-stack boundary cases and callback lifetime. Include
+pthread-synchronized race-free callbacks and deliberately racing
+instrumented callbacks, and compare actual TSan reports against
+the controls. Test an ordinary provider separately from an
+instrumented libffi build; uninstrumented C/assembly accesses may
+remain invisible to TSan. Never model ffi_call as a synchronization
+operation merely because it crosses a language boundary. A future
+interceptor must model only verified accesses or synchronization,
+with runtime recursion and initialization checked explicitly.
+
+If an admitted SDK or installed provider suffices, avoid a new
+gitlink. If a reproducible upstream defect or shared ABI requirement
+justifies a fork, consider toolchains/libffi as one optional source
+owner, with distinct build/host ABI and sanitized test artifacts.
+Do not globally replace system libffi, change GLib's wrap, or link
+libffi into every sanitizer. The local audit environment is Linux
+x86-64 and lacked a pkg-config libffi development provider; no
+execution or Darwin arm64e verification was completed.
+
 Future optional capability providers
 ------------------------------------
 
