@@ -62,13 +62,16 @@ static void test_firmware_reset(const void *opaque)
             .p_vaddr = cpu_to_be32(0xfff00000),
             .p_paddr = cpu_to_be32(0xfff00000),
             .p_filesz = cpu_to_be32(0x1000),
-            .p_memsz = cpu_to_be32(0x1000),
+            /* ELF zero-fill tail must be initialized through the ROM path. */
+            .p_memsz = cpu_to_be32(0x2400),
             .p_flags = cpu_to_be32(PF_R | PF_X),
             .p_align = cpu_to_be32(4),
         },
         .data = { 0x12, 0x34, 0x56, 0x78 },
     };
     g_autofree char *path = NULL;
+    g_autofree char *log_path = NULL;
+    g_autofree char *log = NULL;
     const char *contents;
     size_t size;
     QTestState *qts;
@@ -82,15 +85,28 @@ static void test_firmware_reset(const void *opaque)
     size = test->elf ? sizeof(firmware) : sizeof(firmware.data);
     g_assert_true(g_file_set_contents(path, contents, size, NULL));
 
+    fd = g_file_open_tmp("qtest-mac99-rom-log-XXXXXX", &log_path, NULL);
+    g_assert_cmpint(fd, >=, 0);
+    close(fd);
+
     /* qtest leaves the CPU stopped, so no firmware instructions execute. */
-    qts = qtest_initf("-nodefaults -M mac99%s -bios '%s'",
-                      test->machine_options, path);
+    qts = qtest_initf("-nodefaults -M mac99%s -bios '%s' "
+                      "-d invalid_mem -D '%s'",
+                      test->machine_options, path, log_path);
     unlink(path);
     g_assert_cmphex(qtest_readl(qts, 0xfff00000), ==, 0x12345678);
+    if (test->elf) {
+        g_assert_cmphex(qtest_readl(qts, 0xfff01000), ==, 0);
+        g_assert_cmphex(qtest_readl(qts, 0xfff023fc), ==, 0);
+    }
     check_reset_entry(qts, test->reset_entry);
     qtest_system_reset(qts);
     check_reset_entry(qts, test->reset_entry);
     qtest_quit(qts);
+    g_assert_true(g_file_get_contents(log_path, &log, NULL, NULL));
+    unlink(log_path);
+    /* A zeroed backing allocation alone cannot detect rejected writes. */
+    g_assert_null(strstr(log, "region 'ppc_core99.bios'"));
 }
 
 int main(int argc, char **argv)

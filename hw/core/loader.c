@@ -1239,6 +1239,32 @@ ssize_t rom_add_option(const char *file, int32_t bootindex)
     return rom_add_file(file, "genroms", 0, bootindex, true, NULL, NULL);
 }
 
+/*
+ * ELF PT_LOAD may have a zero-filled tail (p_memsz > p_filesz).
+ * For a ROM-backed image this is part of host-side image initialization,
+ * not a guest write.  Use the same ROM-aware interface as the file data.
+ */
+static void rom_zero_fill(Rom *rom)
+{
+    static const uint8_t zeros[4096];
+    hwaddr addr = rom->addr + rom->datasize;
+    size_t len = rom->romsize - rom->datasize;
+
+    if (!rom->isrom) {
+        address_space_set(rom->as, addr, 0, len, MEMTXATTRS_UNSPECIFIED);
+        return;
+    }
+
+    while (len) {
+        size_t chunk = MIN(len, sizeof(zeros));
+
+        address_space_write_rom(rom->as, addr, MEMTXATTRS_UNSPECIFIED,
+                                zeros, chunk);
+        addr += chunk;
+        len -= chunk;
+    }
+}
+
 static void rom_reset(void *unused)
 {
     Rom *rom;
@@ -1273,9 +1299,7 @@ static void rom_reset(void *unused)
         } else {
             address_space_write_rom(rom->as, rom->addr, MEMTXATTRS_UNSPECIFIED,
                                     rom->data, rom->datasize);
-            address_space_set(rom->as, rom->addr + rom->datasize, 0,
-                              rom->romsize - rom->datasize,
-                              MEMTXATTRS_UNSPECIFIED);
+            rom_zero_fill(rom);
         }
         if (rom->isrom) {
             /* rom needs to be written only once */
