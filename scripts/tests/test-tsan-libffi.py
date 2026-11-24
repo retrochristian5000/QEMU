@@ -14,6 +14,7 @@ FIXTURE = ROOT / "toolchains/llvm-project/compiler-rt/test/tsan/libffi_callbacks
 RUNTIME_FIXTURE = FIXTURE.with_name("libffi_argument_race.c")
 SCALAR_FIXTURE = FIXTURE.with_name("libffi_scalar_race.c")
 PRECISION_FIXTURE = FIXTURE.with_name("libffi_memory_precision.c")
+HFA_FIXTURE = FIXTURE.with_name("libffi_aarch64_hfa.c")
 TSAN_OPTIONS = (
     "exitcode=66:abort_on_error=0:atexit_sleep_ms=0:"
     "ignore_noninstrumented_modules=0:ignore_interceptors_accesses=0"
@@ -145,6 +146,37 @@ def main():
                         f"TSan ffi_call memory precision failed: exit {result.returncode}"
                     )
                 print("TSan ffi_call memory precision: PASS")
+                # Use the compiler's actual selected ISA, not the Python
+                # process architecture (which may differ under Rosetta).
+                macros = checked([args.compiler, *cflags, "-dM", "-E",
+                                  "-x", "c", os.devnull], args.timeout)
+                is_aarch64 = any(
+                    line.split()[:2] == ["#define", "__aarch64__"]
+                    for line in macros.splitlines()
+                )
+                if is_aarch64:
+                    if not HFA_FIXTURE.is_file():
+                        raise RuntimeError(f"pinned LLVM fixture missing: {HFA_FIXTURE}")
+                    checked([*base, "-fsanitize=thread", str(HFA_FIXTURE),
+                             *ldflags, "-o", sanitized], args.timeout)
+                    for kind in ("arg-reg", "arg-stack", "result-float",
+                                 "result-double"):
+                        for mode in ("safe", "race", "adjacent"):
+                            result = run([sanitized, mode, kind], args.timeout, env)
+                            if mode == "race":
+                                ok = (result.returncode == 66 and
+                                      "WARNING: ThreadSanitizer: data race" in result.stdout)
+                            else:
+                                ok = (result.returncode == 0 and
+                                      "WARNING: ThreadSanitizer:" not in result.stdout)
+                            if not ok:
+                                raise RuntimeError(
+                                    f"TSan AArch64 HFA {kind} {mode} failed: "
+                                    f"exit {result.returncode}"
+                                )
+                            print(f"TSan AArch64 HFA {kind} {mode}: PASS")
+                else:
+                    print("TSan AArch64 HFA: not applicable to selected compiler ISA")
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print(f"error: libffi TSan validation: {exc}", file=sys.stderr)

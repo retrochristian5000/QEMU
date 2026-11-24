@@ -4274,6 +4274,46 @@ and arm64e runtime validation are still outstanding. Keep the
 existing optional feature gate and the provider's ownership of
 the ABI, executable memory and closure lifetime.
 
+AArch64 libffi homogeneous aggregate memory accounting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 13079ee1b42ad1fe947f2832df9770767ced9eb4 adds
+``compiler-rt/lib/tsan/ffi/tsan_ffi_aarch64.cpp`` to the existing
+optional native macOS FFI runtime. It recognizes prepared flat,
+padding-free homogeneous floating-point aggregates (HFAs) of one
+to four identical float or double members, with exact size and
+alignment checks and bounded descriptor-slot validation. It
+does not recurse through nested types or accept mixed members,
+vectors, extended precision or arbitrary structures. Both argument
+reads and normally completed return writes use the existing
+validated byte-range accounting for FFI_DEFAULT_ABI only.
+Non-AArch64 hosts retain scalar behavior.
+
+Apple libffi reference revision
+72e95a49029b75b2a0de094477f8410a32013c87
+(src/aarch64/ffi.c and src/aarch64/sysv.S) shows HFA loads
+using LDR/LDP and return stores using STR/STP/ST3/ST4,
+as well as the stack-copy fallback when FP/SIMD registers
+are exhausted. Keep payload memory distinct from SIMD register
+slot width. Do not decode private CIF flags, implement an
+instruction decoder, emulate register transfers or manipulate PAC.
+Libffi remains responsible for all ABI placement and copying.
+
+The new libffi_aarch64_hfa.c regression fixture covers
+three-float register and stack arguments (eight preceding
+double arguments exhaust the FP registers), three-float and
+three-double returns, synchronized controls, deliberately racing
+accesses and adjacent-field negative controls. The QEMU runner
+uses the selected compiler's predefined ISA macro instead of
+the Python process architecture. The exact new helper blob was
+compiled with warnings as errors against mock descriptors and a
+mock range predicate on Linux x86-64; the one-to-four-member size
+matrix and rejection of mixed, padded, nested, excessive and
+invalid descriptors passed. This is not a native ABI execution
+test. The Darwin/arm64e runtime and regression fixture still
+require real SDK/provider compilation and execution. Keep the
+existing opt-in feature gate. No new source provider is needed.
+
 Future optional capability providers
 ------------------------------------
 
