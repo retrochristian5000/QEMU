@@ -4626,6 +4626,55 @@ instrumented execution passed. These checks do not establish
 a full native macOS TSan build or ARM64e execution; both remain
 outstanding.
 
+Native C Darwin Mach VM region sampling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 1313b9bea8dd7e189457692aac548a108632ba9e adds
+mman/tsan_mman_vm_darwin.c and its private C-compatible header.
+The existing native macOS-only C object target RTTsanPosixC
+also compiles this component with the selected SDK and
+architecture. RegionMemUsage in tsan_platform_darwin.cpp
+calls the C helper in that configuration; the existing
+implementation remains the fallback for other Darwin builds
+and Go. No Objective-C frontend, new package, or additional
+submodule is required.
+
+The C helper uses the SDK mach_vm_address_t, mach_vm_size_t,
+vm_region_extended_info_data_t and mach_msg_type_number_t.
+It requests VM_REGION_EXTENDED_INFO through mach_vm_region,
+rather than the legacy vm_region_64 wrapper, with compile-time
+64-bit address and size checks. Apple's XNU source at
+f6217f891ac0bb64f3d375211650a4c1ff8ca1ea,
+osfmk/mach/mach_vm.defs, osfmk/mach/vm_region.h and
+osfmk/vm/vm_user.c, shows the native interface and the legacy
+wrapper's additional VM_MAX_ADDRESS restriction.
+
+The helper samples only the current task and counts complete
+entries. It validates returned information count, nonzero size,
+exclusive-end arithmetic, forward progress and page-to-byte
+conversion. It releases returned Mach object-name rights and
+marks overlapping or partially covered entries as unattributed
+rather than counting them twice. Invalid arguments yield zeroed
+totals; partial walks preserve already sampled totals. Native
+page size is supplied by the existing cached page-size provider.
+A successful walk is not an atomic snapshot, a physical RAM
+footprint, or a proof that an arbitrary address is readable.
+No VM allocations, shadow protection, ASLR policy or pointer
+authentication semantics are changed by this diagnostic helper.
+
+The exact C source and header blobs were verified with Git
+hashes, compiled as C11 with warnings treated as errors and
+linked to a C++17 mock caller on Linux. Thirteen mock scenarios
+passed with UBSan and unsigned integer overflow checks, covering
+complete and partial regions, gaps, repeated overlaps, short
+information counts, stalled walks, address and count overflow,
+invalid arguments and port cleanup. These are mocked Mach
+interfaces, not native Darwin kernel results. A new
+Darwin/vm-usage-c.c lit test exercises real Mach allocation,
+guard pages, and partial-region sampling; it has not been
+executed here. Native macOS build and ARM64e validation remain
+outstanding.
+
 Future optional capability providers
 ------------------------------------
 
