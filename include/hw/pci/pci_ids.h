@@ -168,6 +168,10 @@
 #define PCI_DEVICE_ID_LSI_SAS1078        0x0060
 #define PCI_DEVICE_ID_LSI_SAS0079        0x0079
 
+#define PCI_VENDOR_ID_ATI                0x1002
+#define PCI_DEVICE_ID_ATI_RAGE128_PF     0x5046 /* Rage 128 Pro GL */
+#define PCI_DEVICE_ID_ATI_RADEON_QY      0x5159 /* Radeon RV100 (VE) */
+
 #define PCI_VENDOR_ID_DEC                0x1011
 #define PCI_DEVICE_ID_DEC_21143          0x0019
 

@@ -25,12 +25,6 @@
 #define DPRINTF(fmt, ...) do {} while (0)
 #endif
 
-#define PCI_VENDOR_ID_ATI 0x1002
-/* Rage128 Pro GL */
-#define PCI_DEVICE_ID_ATI_RAGE128_PF 0x5046
-/* Radeon RV100 (VE) */
-#define PCI_DEVICE_ID_ATI_RADEON_QY 0x5159
-
 #define ATI_RAGE128_LINEAR_APER_SIZE (64 * MiB)
 #define ATI_R100_LINEAR_APER_SIZE (128 * MiB)
 #define ATI_HOST_DATA_ACC_BITS 128
