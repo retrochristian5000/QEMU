@@ -107,7 +107,6 @@ glue(glue(glue(cirrus_colorexpand_transp_, ROP_NAME), _),DEPTH)
     unsigned bits, bits_xor;
     unsigned int col;
     unsigned bitmask;
-    unsigned index;
 
     /*
      * Raster ops where the source is a monochrome bitmap with
@@ -146,22 +145,40 @@ glue(glue(glue(cirrus_colorexpand_transp_, ROP_NAME), _),DEPTH)
         col = s->cirrus_blt_fgcol;
     }
 
-    for(y = 0; y < bltheight; y++) {
+    for (y = 0; y < bltheight; y++) {
+        int available = 8 - srcskipleftbits;
+
         bitmask = 0x80 >> srcskipleftbits;
         srcaddr += srcskipleftbytes;
         bits = cirrus_src(s, srcaddr++) ^ bits_xor;
         addr = dstaddr + dstskipleft;
-        for (x = dstskipleft; x < bltwidth; x += (DEPTH / 8)) {
-            if ((bitmask & 0xff) == 0) {
+        for (x = dstskipleft; x < bltwidth; ) {
+            int remaining = (bltwidth - x + (DEPTH / 8) - 1) /
+                            (DEPTH / 8);
+            int count = MIN(remaining, available);
+
+            /*
+             * Process one source byte at a time. A fully transparent
+             * group needs no destination accesses. Keep source reads
+             * interleaved with writes for overlapping VRAM.
+             */
+            if (!(bits & ((bitmask << 1) - 1))) {
+                addr += count * (DEPTH / 8);
+            } else {
+                for (int i = 0; i < count; i++) {
+                    if (bits & bitmask) {
+                        PUTPIXEL(s, addr, col);
+                    }
+                    addr += (DEPTH / 8);
+                    bitmask >>= 1;
+                }
+            }
+            x += count * (DEPTH / 8);
+            if (x < bltwidth) {
+                available = 8;
                 bitmask = 0x80;
                 bits = cirrus_src(s, srcaddr++) ^ bits_xor;
             }
-            index = (bits & bitmask);
-            if (index) {
-                PUTPIXEL(s, addr, col);
-            }
-            addr += (DEPTH / 8);
-            bitmask >>= 1;
         }
         dstaddr += dstpitch;
     }
@@ -252,6 +269,12 @@ glue(glue(glue(cirrus_colorexpand_pattern_transp_, ROP_NAME), _),DEPTH)
 
     for(y = 0; y < bltheight; y++) {
         bits = cirrus_src(s, srcaddr + pattern_y) ^ bits_xor;
+        if (bits == 0) {
+            /* A repeating transparent row has no destination writes. */
+            pattern_y = (pattern_y + 1) & 7;
+            dstaddr += dstpitch;
+            continue;
+        }
         bitpos = 7 - srcskipleft;
         addr = dstaddr + dstskipleft;
         for (x = dstskipleft; x < bltwidth; x += (DEPTH / 8)) {
