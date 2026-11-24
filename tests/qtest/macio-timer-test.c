@@ -369,12 +369,29 @@ static void test_sawtooth_rage128_firmware_mmio(void)
     write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
                (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
                PCI_BASE_ADDRESS_2);
+    /* BAR2 must be a non-prefetchable 16 KiB memory aperture. */
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0xffffffffU);
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==,
+                    0xffffc000U);
     write_le32(qts, UNINORTH_AGP_CONFIG_DATA, ati_mmio);
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==,
+                    ati_mmio);
 
     write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
                (1U << 31) | (PCI_DEVFN(slot, 0) << 8) | PCI_COMMAND);
     write_le16(qts, UNINORTH_AGP_CONFIG_DATA,
                PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+
+    /* Both register views expose the same PCI identity and geometry. */
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0xf00U), ==, ati_id);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x2f00U), ==, ati_id);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x10cU), ==,
+                    ati_mmio + 0x2000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x110U), ==, 0x2000U);
+
+    /* The mirrored PCI configuration window remains read-only. */
+    write_le32(qts, ati_mmio + 0x2f18U, 0x98000000U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0xf18U), ==, ati_mmio);
 
     crtc = read_le32(qts, ati_mmio + 0x50U);
 
@@ -421,6 +438,26 @@ static void test_sawtooth_rage128_firmware_mmio(void)
     g_assert_cmphex(read_le32(qts, ati_mmio + 0x208U), ==, 0x01df020cU);
     g_assert_cmphex(read_le32(qts, ati_mmio + 0x22cU), ==, 80U);
     g_assert_cmphex(read_le32(qts, ati_mmio + 0x050U), ==, 0x03000200U);
+
+    /* Register writes through aperture one must reach aperture zero. */
+    write_le32(qts, ati_mmio + 0x2200U, 0x004f0067U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x200U), ==, 0x004f0067U);
+    g_assert_cmphex(read_le32(qts, ati_mmio + 0x2050U), ==, 0x03000200U);
+
+    /*
+     * OpenBIOS can allocate BAR2 in the coarse AGP window too. Relocate
+     * beyond the two BAR0 allocations and verify that register state and
+     * self-reported addresses follow the new BAR.
+     */
+    write_le32(qts, UNINORTH_AGP_CONFIG_ADDR,
+               (1U << 31) | (PCI_DEVFN(slot, 0) << 8) |
+               PCI_BASE_ADDRESS_2);
+    write_le32(qts, UNINORTH_AGP_CONFIG_DATA, 0x98000000U);
+    g_assert_cmphex(read_le32(qts, UNINORTH_AGP_CONFIG_DATA), ==,
+                    0x98000000U);
+    g_assert_cmphex(read_le32(qts, 0x98000f00U), ==, ati_id);
+    g_assert_cmphex(read_le32(qts, 0x9800010cU), ==, 0x98002000U);
+    g_assert_cmphex(read_le32(qts, 0x98002200U), ==, 0x004f0067U);
 
     qtest_quit(qts);
 }

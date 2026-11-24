@@ -119,6 +119,8 @@ struct ATIVGAState {
     MemoryRegion linear_aper_alias;
     MemoryRegion io;
     MemoryRegion mm;
+    MemoryRegion mmregs;
+    MemoryRegion mmregs_alias;
     ATIVGARegs regs;
     ATIHostDataState host_data;
 };

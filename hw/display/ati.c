@@ -363,12 +363,17 @@ static uint64_t ati_mm_read(void *opaque, hwaddr addr, unsigned int size)
     case CONFIG_APER_SIZE:
         val = memory_region_size(&s->linear_aper) / 2;
         break;
-    case CONFIG_REG_1_BASE:
+    case CONFIG_REG_1_BASE ... CONFIG_REG_1_BASE + 3:
         val = pci_default_read_config(&s->dev,
-                                      PCI_BASE_ADDRESS_2, size) & 0xfffffff0;
+                                      PCI_BASE_ADDRESS_2, 4) & 0xfffffff0;
+        if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
+            val += memory_region_size(&s->mm) / 2;
+        }
+        val = ati_reg_read_offs(val, addr - CONFIG_REG_1_BASE, size);
         break;
-    case CONFIG_REG_APER_SIZE:
-        val = memory_region_size(&s->mm) / 2;
+    case CONFIG_REG_APER_SIZE ... CONFIG_REG_APER_SIZE + 3:
+        val = ati_reg_read_offs(memory_region_size(&s->mm) / 2,
+                                addr - CONFIG_REG_APER_SIZE, size);
         break;
     case HOST_PATH_CNTL:
         val = BIT(23); /* Radeon HDP_APER_CNTL */
@@ -1102,10 +1107,25 @@ static void ati_vga_realize(PCIDevice *dev, Error **errp)
         s->regs.gpio_dvi_ddc = ati_i2c(&s->bbi2c, s->regs.gpio_dvi_ddc, 0);
     }
 
-    /* mmio register space */
-    memory_region_init_io(&s->mm, OBJECT(s), &ati_mm_ops, s,
-                          "ati.mmregs", 0x4000);
-    /* io space is alias to beginning of mmregs */
+    /*
+     * Rage 128 Pro BAR2 holds two identical 8 KiB register apertures.
+     * Keep one register bank and mirror it, as described in section 2.2.1
+     * of the Rage 128 Pro Register Reference Manual. Preserve the existing
+     * Radeon mapping and the 16 KiB PCI BAR size.
+     */
+    if (s->dev_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
+        memory_region_init(&s->mm, OBJECT(s), "ati.mmregs", 0x4000);
+        memory_region_init_io(&s->mmregs, OBJECT(s), &ati_mm_ops, s,
+                              "ati.mmregs0", 0x2000);
+        memory_region_init_alias(&s->mmregs_alias, OBJECT(s), "ati.mmregs1",
+                                 &s->mmregs, 0, 0x2000);
+        memory_region_add_subregion(&s->mm, 0, &s->mmregs);
+        memory_region_add_subregion(&s->mm, 0x2000, &s->mmregs_alias);
+    } else {
+        memory_region_init_io(&s->mm, OBJECT(s), &ati_mm_ops, s,
+                              "ati.mmregs", 0x4000);
+    }
+    /* I/O BAR aliases the first 256 bytes of register aperture zero. */
     memory_region_init_alias(&s->io, OBJECT(s), "ati.io", &s->mm, 0, 0x100);
 
     /*
