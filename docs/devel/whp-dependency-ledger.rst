@@ -4767,6 +4767,52 @@ LLVM sanitizer_procmaps_mac.cpp, which explicitly documents
 unsorted segment addresses. Preserve provider-specific VM
 semantics while sharing checked integer arithmetic.
 
+XNU Mach allocation and deallocation geometry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 4eae421c2d7a232c743b282fdcfa2084f35dc53a distinguishes ordinary
+Mach VM allocation from deallocation. Apple XNU revision
+f6217f891ac0bb64f3d375211650a4c1ff8ca1ea,
+osfmk/vm/vm_kern.c, mach_vm_allocate_kernel_sanitize,
+uses VM_SANITIZE_FLAGS_REALIGN_START for fixed allocations;
+osfmk/vm/vm_sanitize.c computes the end after aligning the
+start in that case. Deallocation in osfmk/vm/vm_user.c
+does not request this realignment before adding the size.
+Anywhere allocations round the size and return an aligned
+address. The two intervals can therefore cover different
+numbers of pages for an identical unaligned address and size.
+
+DiagnoseDarwinAllocationRange rounds the start down before
+passing it to the existing checked range helper (native C11
+arithmetic on the native macOS profile). The fixed allocation
+preflight and successful ordinary allocation bookkeeping now
+use that interval. Shadow initialization covers the entire
+ordinary allocated page extent rather than only the requested
+byte count, including the tail of a fixed replacement.
+Zero-size behavior, foreign-task passthrough, full application
+range validation and pre-deallocation shadow cleanup ordering
+are retained. Explicit superpage requests keep their prior
+behavior pending a separate geometry audit. No kernel code,
+ASLR changes or new VM permissions are introduced. This
+does not address every metadata lifetime issue of replacement
+mappings or the physical cost of large imitated writes.
+
+The DarwinMachVmAllocationRounding unit test distinguishes
+allocation and deallocation at the heap boundary, tests
+overflow and empty requests. Darwin/mach-vm-allocation-geometry.c
+tests an unaligned fixed overwrite of one page, neighboring
+page preservation, zero fill and unaligned deallocation.
+A local C11 object compiled from the existing page extent
+source (verified Git blob 692a71ca83f0894840f9372957ce7962c7825ed8)
+was linked to a C++17 mock range caller containing the new
+allocation helper. All 102400 geometry pairs passed across
+every byte offset of 4 KiB and 16 KiB pages, with five sizes
+per offset, plus zero and overflow cases, under UBSan and
+unsigned integer overflow checks with warnings as errors.
+This is arithmetic validation with mocked TSan mapping policy,
+not native Mach execution. Full macOS/ARM64e runtime and lit
+execution remain outstanding.
+
 Future optional capability providers
 ------------------------------------
 
