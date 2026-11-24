@@ -340,7 +340,16 @@ else
     config_candidate=""
 fi
 
-PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
+# Direct invocations need the same target isolation as the Meson wrapper.
+# Preserve the selected native host compiler, but drop inherited make
+# command-line assignments and host compilation flags.
+env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES \
+    -u MAKELEVEL -u CC -u CXX -u AR -u LD -u NM -u STRIP -u RANLIB \
+    -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
+    -u HOSTCFLAGS -u HOSTCPPFLAGS -u HOSTLDFLAGS \
+    -u CPATH -u C_INCLUDE_PATH -u CPLUS_INCLUDE_PATH \
+    -u COMPILER_PATH -u GCC_EXEC_PREFIX -u LIBRARY_PATH \
+    MAKEFLAGS=-rR PATH="$(dirname "$OPENBIOS_TOKE"):$PATH" \
     "$MAKE_CMD" -C "$OPENBIOS_BUILD_DIR" -j"${JOBS:-1}" \
     build-verbose HOSTCC="$OPENBIOS_HOSTCC"
 
