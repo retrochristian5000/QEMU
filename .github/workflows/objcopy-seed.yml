@@ -1,0 +1,31 @@
+name: WHP objcopy seed
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'seeds/objcopy.sh'
+      - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/whp-build/compiler-seed-common.sh'
+      - 'scripts/tests/test-objcopy-seed.sh'
+      - '.github/workflows/objcopy-seed.yml'
+  pull_request:
+    paths:
+      - 'seeds/objcopy.sh'
+      - 'seeds/cc.sh'
+      - 'seeds/clang.sh'
+      - 'scripts/whp-build/compiler-seed-common.sh'
+      - 'scripts/tests/test-objcopy-seed.sh'
+      - '.github/workflows/objcopy-seed.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  objcopy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate native and firmware objcopy
+        run: /bin/sh scripts/tests/test-objcopy-seed.sh

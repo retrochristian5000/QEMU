@@ -1435,6 +1435,24 @@ one tested host implementation each before source refresh. The
 ``install`` seed selects the executable used by bootstrap install
 commands; it does not install QEMU or replace Automake's ``INSTALL``.
 
+The optional ``seeds/objcopy.sh`` selects an installed GNU or LLVM
+objcopy; no LLVM/Binutils build or global PATH change is performed.
+``WHP_OBJCOPY_SEED`` is authoritative; native selection also accepts
+``OBJCOPY_FOR_BUILD``. ``--print-seed`` (or ``--print-objcopy``) and
+``--check`` compile a native object through ``seeds/cc.sh``, strip debug
+information, and link/run the resulting object. Native admission does not
+certify guest ELF/PE support. Set both absolute
+``WHP_OBJCOPY_PROBE_OBJECT`` and ``WHP_OBJCOPY_PROBE_BINARY`` fixture
+paths to test firmware conversion with ``-O binary`` and exact byte
+comparison instead; the guest object is never executed. An explicit
+invalid provider fails without fallback. Forwarding requires the selected
+path in ``WHP_OBJCOPY_SEED`` and avoids repeated functional probes;
+prefer calling the admitted executable directly for large builds.
+Existing firmware cross-toolchain selectors remain authoritative, and the
+seed does not rewrite ``OBJCOPY``, target prefixes or build order.
+``scripts/tests/test-objcopy-seed.sh`` covers native and i386 ELF
+admission, invalid overrides, recursion, mismatch and argument forwarding.
+
 The generic ``seeds/ln.sh`` probes relative symlinks, dangling
 symlinks, ``ln -sf`` replacement of a regular file, and true
 hardlink aliasing before locking ``WHP_LN_SEED``. The PowerPC LLVM
@@ -3952,8 +3970,10 @@ Conditional tool and artifact edges
 * iPXE's Makefile declares Perl, Python, OpenSSL and prefixed
   objcopy/objdump. Declarations alone do not prove every ROM recipe
   invokes these programs. Reuse existing Perl/Python seeds; investigate
-  ``openssl.sh``, ``objcopy.sh`` and ``objdump.sh`` at actual
-  consumers. Preserve target ELF/PE/ROM formats.
+  ``openssl.sh`` and ``objdump.sh`` at actual consumers. The installed
+  ``seeds/objcopy.sh`` provides native or fixture-based admission;
+  firmware wiring remains consumer-specific. Preserve target ELF/PE/ROM
+  formats.
 * U-Boot's pinned build documentation lists bc, Flex, Bison, DTC,
   OpenSSL development files, SWIG and Python packages among its
   profile-dependent requirements. Candidates: ``bc.sh``,
@@ -4023,7 +4043,7 @@ NASM, ACPICA and Flex merit the first seed investigations. Admit a
 managed source fork only after a demonstrated consumer capability or
 portability problem; OpenSSL, Brotli and pylibfdt require an ownership
 and ABI review before redirecting existing nested sources. No
-candidate here is an implemented seed or newly required package.
+remaining candidate here is a newly required package.
 Do not alter build order, source pins or default feature selection
 on the strength of this inventory alone.
 
