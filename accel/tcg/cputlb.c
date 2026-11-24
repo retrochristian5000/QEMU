@@ -371,7 +371,6 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
 {
     MMUIdxMap asked = data.host_int;
     MMUIdxMap all_dirty, work, to_clean;
-    int64_t now = get_clock_realtime();
 
     assert_cpu_is_self(cpu);
 
@@ -384,9 +383,13 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
     all_dirty &= ~to_clean;
     cpu->neg.tlb.c.dirty = all_dirty;
 
-    for (work = to_clean; work != 0; work &= work - 1) {
-        int mmu_idx = ctz32(work);
-        tlb_flush_one_mmuidx_locked(cpu, mmu_idx, now);
+    if (to_clean) {
+        int64_t now = get_clock_realtime();
+
+        for (work = to_clean; work != 0; work &= work - 1) {
+            int mmu_idx = ctz32(work);
+            tlb_flush_one_mmuidx_locked(cpu, mmu_idx, now);
+        }
     }
 
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
@@ -746,13 +749,27 @@ static void tlb_flush_range_by_mmuidx_async_0(CPUState *cpu,
     }
 
     /*
-     * Discard jump cache entries for any tb which might potentially
-     * overlap the flushed pages, which includes the previous.
+     * Discard jump cache entries for any TB which might overlap the
+     * flushed pages, including the preceding page. Different pages can
+     * hash to the same bucket. Clear each bucket at most once; the cache
+     * owner is not executing translated code while processing this work.
      */
+    QEMU_BUILD_BUG_ON(TB_JMP_CACHE_SIZE / TB_JMP_PAGE_SIZE != 64);
+    uint64_t cleared = 0;
+    vaddr n = d.len / TARGET_PAGE_SIZE + !!(d.len % TARGET_PAGE_SIZE) + 1;
+
     d.addr -= TARGET_PAGE_SIZE;
-    for (vaddr i = 0, n = d.len / TARGET_PAGE_SIZE + 1; i < n; i++) {
-        tb_jmp_cache_clear_page(cpu, d.addr);
-        d.addr += TARGET_PAGE_SIZE;
+    for (vaddr i = 0; i < n; i++, d.addr += TARGET_PAGE_SIZE) {
+        unsigned bucket = tb_jmp_cache_hash_page(d.addr) / TB_JMP_PAGE_SIZE;
+        uint64_t bit = UINT64_C(1) << bucket;
+
+        if (!(cleared & bit)) {
+            tb_jmp_cache_clear_page(cpu, d.addr);
+            cleared |= bit;
+            if (cleared == UINT64_MAX) {
+                break;
+            }
+        }
     }
 }
 
