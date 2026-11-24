@@ -4535,6 +4535,43 @@ These mock checks are not a macOS SDK or ARM64e runtime test.
 Native configuration, full linkage and execution of each
 language-option combination remain unverified.
 
+C and C++ byte-level memory interface parity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LLVM revision 7e7c3589c7559bd74a3f50d047dee060685030f9 corrects the explicit-PC
+__tsan_read16_pc and __tsan_write16_pc callbacks. The former
+implementation recorded two eight-byte accesses using a
+single-cell shadow mask for each even when the supplied
+address was not cell-aligned. The mask truncates at the
+cell boundary, omitting bytes of the actual access. At offset
+one the two masks cover only 14 of 16 bytes; at offset seven
+they cover only two. This is an alignment assumption in the
+runtime implementation, not a general accuracy difference
+between C and C++.
+
+The revised shared Access16WithPC helper retains the aligned
+path and uses UnalignedMemoryAccess for both eight-byte parts
+when necessary. It preserves the exported C ABI, caller-PC
+normalization, access direction, and the existing shadow
+format. No raw application reads, synchronization edges,
+additional compiler dependencies or address normalization are
+introduced. Other explicit-PC widths and general range
+instrumentation remain separate audit targets.
+
+The new memory_pc_width.c lit fixture is compiled as both C11
+and C++11 against the same TSan runtime. It models bytes [1,17)
+and tests a competing access to byte 16 versus adjacent bytes
+0 and 17, for both access directions. All eight combinations
+are required to produce the appropriate clean or race outcome.
+The exact fixture blob compiled to instrumented LLVM IR with
+Clang 17 on Linux in both language modes using -Wall -Wextra
+-Werror. An independent byte-mask calculation confirmed all
+eight possible starting offsets cover exactly 16 bytes with
+the corrected split. These are compiler and arithmetic checks,
+not execution of the patched TSan runtime. Native Darwin and
+ARM64e regression runs remain outstanding. Preserve existing
+language and optional provider profiles.
+
 Future optional capability providers
 ------------------------------------
 
