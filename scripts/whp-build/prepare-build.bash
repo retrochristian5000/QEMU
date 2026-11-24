@@ -589,6 +589,21 @@ whp_prepare_configure_args()
         configure_args+=(--disable-tools)
     fi
 
+    case "${WHP_QOM_SHARED:-0}" in
+        0) configure_args+=(-Dqom_shared=false) ;;
+        1)
+            if [[ "$HOST_OS" != Darwin ]]; then
+                printf '%s\n' 'error: WHP_QOM_SHARED=1 requires a Darwin host' >&2
+                return 1
+            fi
+            configure_args+=(-Dqom_shared=true)
+            ;;
+        *)
+            printf '%s\n' 'error: WHP_QOM_SHARED must be 0 or 1' >&2
+            return 1
+            ;;
+    esac
+
     configure_args+=("-Db_pgo=$QEMU_HOST_PGO")
     if [[ "$QEMU_FDT_MODE" != auto ]]; then
         configure_args+=("-Dfdt=$QEMU_FDT_MODE")

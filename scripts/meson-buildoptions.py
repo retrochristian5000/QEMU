@@ -29,6 +29,7 @@ import sys
 # defaults.  Try not to add any.
 SKIP_OPTIONS = {
     "default_devices",
+    "qom_shared",
     "fuzzing_engine",
     "tool_list",
 }

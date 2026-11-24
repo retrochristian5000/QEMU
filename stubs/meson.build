@@ -54,7 +54,9 @@ if have_user
   # Symbols that are used by hw/core.
   stub_ss.add(files('cpu-synchronize-state.c'))
   stub_ss.add(files('cpu-destroy-address-spaces.c'))
-  stub_ss.add(files('qom-compat-properties.c'))
+  if not (qom_shared and have_system)
+    stub_ss.add(files('qom-compat-properties.c'))
+  endif
 
   # Stubs for QAPI events.  Those can always be included in the build, but
   # they are not built at all for --disable-system builds.

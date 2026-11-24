@@ -28,6 +28,15 @@ ss = import('sourceset')
 fs = import('fs')
 
 host_os = host_machine.system()
+qom_shared = get_option('qom_shared')
+if qom_shared
+  if host_os != 'darwin'
+    error('Experimental shared QOM is currently supported only on Darwin')
+  endif
+  if get_option('prefer_static') or get_option('cfi')
+    error('Experimental shared QOM requires a non-static build without CFI')
+  endif
+endif
 config_host = keyval.load(meson.current_build_dir() / 'config-host.mak')
 
 # Temporary directory used for files created while
@@ -3850,17 +3859,13 @@ endif
 qom_ss = qom_ss.apply({})
 libqom = static_library('qom', qom_ss.sources() + genh,
                         dependencies: [qom_ss.dependencies()],
+                        pic: qom_shared or get_option('b_staticpic'),
                         build_by_default: false)
-qom = declare_dependency(objects: libqom.extract_all_objects(recursive: false),
-                         dependencies: qom_ss.dependencies())
 
 event_loop_base = files('event-loop-base.c')
 event_loop_base = static_library('event-loop-base',
                                  sources: event_loop_base + genh,
                                  build_by_default: false)
-event_loop_base = declare_dependency(objects: event_loop_base.extract_all_objects(recursive: false),
-                                     dependencies: [qom])
-
 stub_ss = stub_ss.apply({})
 
 util_ss.add_all(trace_ss)
@@ -3869,6 +3874,46 @@ libqemuutil = static_library('qemuutil',
                              build_by_default: false,
                              sources: util_ss.sources() + stub_ss.sources() + genh,
                              dependencies: [util_ss.dependencies(), libm, threads, glib, socket, malloc, rt, pixman, opengl])
+if qom_shared
+  # QOM uses utility and module-registration state owned by the executable.
+  # Do not link libqemuutil into the dylib: that would create a second copy
+  # of process-wide state. Allow only the required host symbols, and force
+  # the executable to retain/export those same symbols, including with LTO.
+  qom_host_symbols = custom_target('qom-host-symbols',
+    input: [libqemuutil, libqom],
+    output: ['qom-host-allow.rsp', 'qom-host-require.rsp', 'qom-host-relink.c'],
+    command: [python, files('scripts/qom-host-symbols.py'), find_program('nm'),
+              '@INPUT0@', '@INPUT1@', '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@'])
+  libqom_shared = shared_library('qemu-qom',
+    objects: libqom.extract_all_objects(recursive: false),
+    dependencies: [glib, qom_ss.dependencies()],
+    link_args: ['@' + qom_host_symbols[0].full_path()],
+    link_depends: qom_host_symbols[0],
+    override_options: ['b_lundef=true'],
+    install: true,
+    install_dir: qemu_moddir)
+
+  # Meson supplies build-tree rpaths for link_with libraries. Keep an
+  # additional relative installed path on all consumers of the QOM library.
+  qom_install_relpath = run_command(python, '-c',
+    'import os, sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))',
+    get_option('prefix') / get_option('bindir'),
+    get_option('prefix') / qemu_moddir,
+    check: true).stdout().strip()
+  qom = declare_dependency(
+    link_with: [libqom_shared, libqemuutil],
+    sources: qom_host_symbols[2],
+    link_args: ['@' + qom_host_symbols[1].full_path(),
+                '-Wl,-export_dynamic',
+                '-Wl,-rpath,@loader_path/' + qom_install_relpath],
+    dependencies: qom_ss.dependencies())
+else
+  qom = declare_dependency(objects: libqom.extract_all_objects(recursive: false),
+                           dependencies: qom_ss.dependencies())
+endif
+
+event_loop_base = declare_dependency(objects: event_loop_base.extract_all_objects(recursive: false),
+                                     dependencies: [qom])
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res,
                               dependencies: [event_loop_base])
@@ -4888,6 +4933,7 @@ summary_info += {'QEMU_LDFLAGS':      ' '.join(qemu_ldflags)}
 summary_info += {'link-time optimization (LTO)': get_option('b_lto')}
 summary_info += {'PIE':               get_option('b_pie')}
 summary_info += {'static build':      get_option('prefer_static')}
+summary_info += {'shared QOM (experimental)': qom_shared}
 summary_info += {'malloc trim support': has_malloc_trim}
 summary_info += {'membarrier':        have_membarrier}
 summary_info += {'debug graph lock':  get_option('debug_graph_lock')}
