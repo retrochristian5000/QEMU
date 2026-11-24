@@ -104,7 +104,7 @@ grep -Eq '(^|[[:space:]])ppc32([[:space:]]|$)' <<< "$targets" || {
 }
 
 expected_marker="$(cat <<MARKER
-BOOTSTRAP_SCHEMA=1
+BOOTSTRAP_SCHEMA=2
 COMPILER=clang
 ASSEMBLER=clang-integrated
 GNU_BINUTILS=disabled
@@ -112,6 +112,7 @@ SFRAME=disabled
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_EXECUTABLE_SOURCE=shared:$SHARED_LLVM_DIR
+DRIVER_SIGNATURE=$(cksum < "$SCRIPT_DIR/whp-build/powerpc-clang-driver.bash")
 MARKER
 )"
 expected_lld_marker="$(cat <<MARKER
@@ -209,7 +210,7 @@ cat > "$smoke/smoke.c" <<'SOURCE'
 #endif
 _Static_assert(sizeof(void *) == 4, "expected PPC32 ABI");
 size_t whp_shared_ppc_size(void) { return sizeof(size_t) + sizeof(va_list); }
-int _entry(void) { return 0; }
+__attribute__((section(".text.entry"))) int _entry(void) { return 0; }
 SOURCE
 cat > "$smoke/layout.ld" <<'LDSCRIPT'
 OUTPUT_FORMAT(elf32-powerpc)
@@ -217,7 +218,8 @@ OUTPUT_ARCH(powerpc:common)
 ENTRY(_entry)
 SECTIONS {
     . = 0xfff00000;
-    .text : { *(.text) *(.text.*) }
+    .text : { KEEP(*(.text.entry)) *(.text) *(.text.*) }
+    ASSERT(_entry == 0xfff00000, "PowerPC smoke entry misplaced")
     .rodata : { *(.rodata) *(.rodata.*) }
     .data : { *(.data) *(.data.*) }
     .bss : { *(.bss) *(COMMON) }
@@ -233,11 +235,13 @@ LDSCRIPT
 header="$(LC_ALL=C "$toolchain/llvm/bin/llvm-readelf" -hW "$smoke/smoke.elf")"
 for pattern in 'Class:[[:space:]]+ELF32' \
                "Data:[[:space:]]+2's complement, big endian" \
-               'Machine:[[:space:]]+PowerPC' \
-               'Entry point address:[[:space:]]+0xfff00000'; do
+               'Type:[[:space:]]+EXEC' \
+               'Machine:[[:space:]]+PowerPC[[:space:]]*$' \
+               'Entry point address:[[:space:]]+0x[fF][fF][fF]00000[[:space:]]*$'; do
     grep -Eq "$pattern" <<< "$header" || {
         printf 'error: shared PowerPC LLVM failed ELF layout smoke: %s\n' \
             "$pattern" >&2
+        printf '%s\n' "$header" >&2
         exit 1
     }
 done

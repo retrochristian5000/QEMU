@@ -22,7 +22,7 @@ whp_powerpc_verify_driver_link()
        ! grep -Eq "Data:[[:space:]]+2's complement, big endian" <<< "$header" ||
        ! grep -Eq 'Type:[[:space:]]+EXEC' <<< "$header" ||
        ! grep -Eq 'Machine:[[:space:]]+PowerPC[[:space:]]*$' <<< "$header" ||
-       ! grep -Eq "Entry point address:[[:space:]]+$entry[[:space:]]*$" <<< "$header"; then
+       ! grep -Eiq "Entry point address:[[:space:]]+$entry[[:space:]]*$" <<< "$header"; then
         printf 'error: PowerPC compiler-driven link produced an unexpected ELF ABI or entry point\n%s\n' "$header" >&2
         return 1
     fi

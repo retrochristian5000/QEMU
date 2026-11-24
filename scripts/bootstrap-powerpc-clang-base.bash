@@ -446,6 +446,19 @@ if [[ "$TOOLCHAIN_FORCE_REBUILD" == 0 ]] &&
    [[ -f "$marker" ]] &&
    [[ "$(cat "$marker")" == "$expected_marker" ]] &&
    clang_toolchain_is_usable "$TOOLCHAIN_DIR"; then
+    # Refresh the compatibility script without recompiling the LLVM graph.
+    driver_source="$SCRIPT_DIR/whp-build/powerpc-clang-driver.bash"
+    driver_dest="$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TARGET}-gcc"
+    if ! cmp -s "$driver_source" "$driver_dest"; then
+        driver_tmp="$(mktemp "$driver_dest.XXXXXX")"
+        if ! cp "$driver_source" "$driver_tmp" ||
+           ! chmod 755 "$driver_tmp" ||
+           ! mv -f "$driver_tmp" "$driver_dest"; then
+            rm -f "$driver_tmp"
+            printf '%s\n' 'error: could not refresh PowerPC Clang compatibility driver' >&2
+            exit 1
+        fi
+    fi
     printf 'PowerPC Clang toolchain is current: %s/bin/%s-\n' \
         "$TOOLCHAIN_DIR" "$TOOLCHAIN_TARGET"
     stage_root=""
