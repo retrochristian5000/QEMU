@@ -25,4 +25,9 @@ extern bool tcg_allowed;
  */
 bool qemu_tcg_mttcg_enabled(void);
 
+#ifdef CONFIG_DARWIN
+/* Host-only scheduling preference for newly created MTTCG threads. */
+bool qemu_tcg_darwin_vcpu_qos_enabled(void);
+#endif
+
 #endif
