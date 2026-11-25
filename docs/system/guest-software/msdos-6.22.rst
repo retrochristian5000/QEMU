@@ -104,3 +104,40 @@ coprocessor programming interface and ultimately to the 4167 device model.  The
 same method can be applied to other guest drivers and applications to discover
 missing devices, firmware services, timing assumptions, and compatibility
 quirks.
+
+Legacy programmable interrupt controllers
+-----------------------------------------
+
+Controller families must be distinguished from acceleration backends.
+The 8259-compatible PIC, local APIC, and I/O APIC are different guest-visible
+hardware interfaces. The userspace 8259 and KVM in-kernel 8259 are alternative
+implementations of the legacy interface, not different physical chip models.
+
+Current machine wiring
+~~~~~~~~~~~~~~~~~~~~~~
+
+* The ISA-only 486 profiles, i440FX/PIIX, i440BX/PIIX4 and Q35/ICH9 use
+  the shared legacy PC 8259 creation path when their PIC is enabled.
+* The userspace model creates two cascaded eight-input controllers with
+  master IRQ2 connected to the slave output. The master and slave expose
+  the legacy command/data port pairs at 0x20/0x21 and 0xa0/0xa1.
+* The shared model combines chip-wide ICW1 LTIM selection with the
+  chipset edge/level control register (ELCR) extension at 0x4d0/0x4d1.
+  This does not establish that every historical board provides both.
+* The separate x86-8086 and x86-8088 machine profiles currently discard ISA
+  IRQ inputs; they do not yet provide a functioning legacy PIC. A single
+  eight-input, XT-style controller without the AT cascade is a distinct
+  candidate for those profiles, not a replacement for the existing AT
+  and later PC interrupt routing.
+
+Validation boundaries
+~~~~~~~~~~~~~~~~~~~~~
+
+Preserve existing machine defaults and migration state until a specific
+board's interrupt-controller wiring and trigger capabilities are established.
+Do not infer that ISA alone excludes ELCR or that PCI alone requires an APIC.
+For DOS performance testing, distinguish IRQ delivery, interrupt acknowledgement,
+end-of-interrupt commands, masked requests, and repeated host CPU wakeups.
+In particular, retain IRQ14 and IRQ15 cascade tests for IDE/ATAPI drivers
+on AT-compatible systems. The early 16-bit machine PIC gap is not evidence
+that it causes a slowdown on the existing 486 or PCI PC profiles.
