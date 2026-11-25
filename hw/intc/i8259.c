@@ -36,10 +36,12 @@
 
 /*#define DEBUG_IRQ_LATENCY*/
 
-#define TYPE_I8259 "isa-i8259"
+#define TYPE_I8259A "i8259a"
+/* Retain the historical type for existing PC machine configurations. */
+#define TYPE_I8259_COMPAT "isa-i8259"
 typedef struct PICClass PICClass;
 DECLARE_CLASS_CHECKERS(PICClass, PIC,
-                       TYPE_I8259)
+                       TYPE_I8259A)
 
 /**
  * PICClass:
@@ -430,7 +432,7 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
 
     irq_set = g_new0(qemu_irq, ISA_NUM_IRQS);
 
-    isadev = i8259_init_chip(TYPE_I8259, bus, true);
+    isadev = i8259_init_chip(TYPE_I8259_COMPAT, bus, true);
     dev = DEVICE(isadev);
 
     qdev_connect_gpio_out(dev, 0, parent_irq_in);
@@ -440,7 +442,7 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
 
     isa_pic = PIC_COMMON(dev);
 
-    isadev = i8259_init_chip(TYPE_I8259, bus, false);
+    isadev = i8259_init_chip(TYPE_I8259_COMPAT, bus, false);
     dev = DEVICE(isadev);
 
     qdev_connect_gpio_out(dev, 0, irq_set[2]);
@@ -453,26 +455,35 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
     return irq_set;
 }
 
-static void i8259_class_init(ObjectClass *klass, const void *data)
+static void i8259a_class_init(ObjectClass *klass, const void *data)
 {
     PICClass *k = PIC_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    dc->desc = "Intel 8259A-compatible programmable interrupt controller";
+    dc->user_creatable = false;
     device_class_set_parent_realize(dc, pic_realize, &k->parent_realize);
     device_class_set_legacy_reset(dc, pic_reset);
 }
 
-static const TypeInfo i8259_info = {
-    .name       = TYPE_I8259,
+static const TypeInfo i8259a_info = {
+    .name       = TYPE_I8259A,
     .instance_size = sizeof(PICCommonState),
     .parent     = TYPE_PIC_COMMON,
-    .class_init = i8259_class_init,
+    .class_init = i8259a_class_init,
     .class_size = sizeof(PICClass),
+};
+
+/* Preserve existing board-selected type identity and inherited VMState. */
+static const TypeInfo i8259_compat_info = {
+    .name = TYPE_I8259_COMPAT,
+    .parent = TYPE_I8259A,
 };
 
 static void pic_register_types(void)
 {
-    type_register_static(&i8259_info);
+    type_register_static(&i8259a_info);
+    type_register_static(&i8259_compat_info);
 }
 
 type_init(pic_register_types)
