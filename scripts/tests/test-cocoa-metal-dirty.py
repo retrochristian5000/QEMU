@@ -153,8 +153,39 @@ int main(void)
         self.assertLess(body.index('return true;'),
                         body.index('[metalLayer setHidden:YES]'))
         self.assertIn('hasPresentedFrame = YES;', text)
-        self.assertLess(text.index('[commandBuffer commit];'),
-                        text.index('hasPresentedFrame = YES;'))
+        handler = text.index('[commandBuffer addCompletedHandler:')
+        completed = text.index('hasPresentedFrame = YES;', handler)
+        commit = text.index('[commandBuffer commit];', handler)
+        # Register the completion handler before committing the command.
+        # Its body runs later, not in source order on the caller thread.
+        self.assertLess(handler, completed)
+        self.assertLess(completed, commit)
+
+    def test_inflight_metal_damage_preserves_upload_texture(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('    if (frameInFlight) {')
+        end = text.index('    if (nativeTexture) {', start)
+        deferred = text[start:end]
+        self.assertIn('NSUnionRect(deferredDirtyRect, dirtyRect)', deferred)
+        self.assertIn('redrawDeferred = YES;', deferred)
+        self.assertIn('presentationPending = YES;', deferred)
+        self.assertNotIn('textureImage = NULL;', deferred)
+        self.assertNotIn('uploadImage:', deferred)
+        self.assertIn('return true;', deferred)
+
+        start = text.index('            if (redrawDeferred) {')
+        end = text.index('    [commandBuffer commit];', start)
+        completion = text[start:end]
+        self.assertIn('NSRect damage = deferredDirtyRect;', completion)
+        self.assertIn('redrawDeferred = NO;', completion)
+        self.assertIn('deferredDirtyRect = NSZeroRect;', completion)
+        self.assertIn('!succeeded || (!nativeTexture && !textureImage)',
+                      completion)
+        self.assertIn('NSIsEmptyRect(damage)', completion)
+        self.assertIn('[view setNeedsDisplay:YES];', completion)
+        self.assertIn('[view setNeedsDisplayInRect:damage];', completion)
+        self.assertLess(completion.index('redrawDeferred = NO;'),
+                        completion.index('[view setNeedsDisplayInRect:damage];'))
 
     def test_cocoa_surface_switch_discards_old_dirty_rectangles(self):
         text = COCOA_SOURCE.read_text(encoding='utf-8')

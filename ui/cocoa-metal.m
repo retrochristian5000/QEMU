@@ -185,6 +185,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     /* Main-queue state; one upload texture must not be rewritten in flight. */
     BOOL frameInFlight;
     BOOL redrawDeferred;
+    NSRect deferredDirtyRect;
     BOOL drawableRetryUsed;
     BOOL drawableRetryScheduled;
     int textureWidth;
@@ -444,12 +445,14 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
 
     /*
      * Do not acquire another drawable or write the shared upload texture
-     * while the previous GPU blit is outstanding. A completion callback
-     * will request a full redraw, including updates consumed in this pass.
+     * while the previous GPU blit is outstanding. Preserve the upload
+     * texture and accumulate AppKit's bounding damage rectangle instead.
+     * Surface changes and failed GPU commands invalidate it separately.
      */
     if (frameInFlight) {
+        deferredDirtyRect = redrawDeferred
+            ? NSUnionRect(deferredDirtyRect, dirtyRect) : dirtyRect;
         redrawDeferred = YES;
-        textureImage = NULL;
         presentationPending = YES;
         return true;
     }
@@ -684,8 +687,22 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                 [self retryDrawableForView:view];
             }
             if (redrawDeferred) {
+                NSRect damage = deferredDirtyRect;
+
                 redrawDeferred = NO;
-                [view setNeedsDisplay:YES];
+                deferredDirtyRect = NSZeroRect;
+                /*
+                 * A surface switch, occlusion or failed command can
+                 * invalidate the upload texture independently. Keep the
+                 * full-redraw path for those cases, but otherwise upload
+                 * only the damage accumulated while the GPU was busy.
+                 */
+                if (!succeeded || (!nativeTexture && !textureImage) ||
+                    NSIsEmptyRect(damage)) {
+                    [view setNeedsDisplay:YES];
+                } else {
+                    [view setNeedsDisplayInRect:damage];
+                }
             }
         });
     }];
