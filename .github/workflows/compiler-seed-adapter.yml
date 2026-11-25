@@ -36,6 +36,9 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'seeds/Appleld.sh'
+      - 'scripts/tests/test-Appleld-seed.py'
+      - 'docs/devel/macos-build.rst'
       - 'builder.sh'
       - 'builder.bash'
       - 'scripts/tests/test-build-entry-paths.py'
@@ -96,6 +99,9 @@ on:
       - 'seeds/cxx.sh'
       - 'scripts/whp-build/compiler-seed-common.sh'
       - 'seeds/ld.sh'
+      - 'seeds/Appleld.sh'
+      - 'scripts/tests/test-Appleld-seed.py'
+      - 'docs/devel/macos-build.rst'
       - 'builder.sh'
       - 'builder.bash'
       - 'scripts/tests/test-build-entry-paths.py'
@@ -210,6 +216,11 @@ jobs:
           /bin/sh -n seeds/ld.sh
           /bin/sh -n scripts/tests/test-linker-family.sh
           /bin/sh scripts/tests/test-linker-family.sh
+
+      - name: Verify independent Apple Mach-O linker seed
+        run: |
+          /bin/sh -n seeds/Appleld.sh
+          python3 scripts/tests/test-Appleld-seed.py
 
       - name: Verify native bootstrap versus QEMU compiler variable roles
         run: |

@@ -148,6 +148,33 @@ effective compiler pipeline. It checks target triples, Clang resource paths,
 compiler configuration files, representative C/C++/Objective-C links,
 build-machine execution, and resulting Mach-O architecture slices.
 
+Independent native Apple linker seed
+------------------------------------
+
+The optional ``seeds/Appleld.sh`` selects the native Apple Mach-O linker
+from the active Xcode or Command Line Tools developer root. Its
+``-v`` identity must describe Apple ld or ld64; GNU ld, LLD, recursive
+seed adapters and unrecognized linkers are rejected. Discovery reuses the
+native relocatable-object probe in ``seeds/ld.sh``, rather than duplicating
+compiler or linker validation. An explicit ``WHP_APPLE_LD_SEED`` selects
+an installed Apple linker for this optional adapter only. Invalid
+overrides and failed developer-tool selection do not fall back to PATH.
+
+For example::
+
+  ./seeds/Appleld.sh --check
+  WHP_APPLE_LD_SEED=/usr/bin/ld ./seeds/Appleld.sh --print-ld
+
+To hand a validated Apple linker to the generic build-machine selector::
+
+  WHP_LD_SEED="$(./seeds/Appleld.sh --print-ld)" ./seeds/ld.sh --check
+
+Ordinary invocations preserve arguments and do not repeat the native
+compile/link probe. The adapter does not change ``LD``, the final Clang
+linker policy, guest firmware linkers, the SDK, or the Mach-O ABI.
+It neither installs nor builds a linker. The native probe validates
+relocatable objects, not final executable linking or LTO compatibility.
+
 Independent native Clang seed
 -----------------------------
 
