@@ -207,6 +207,12 @@ void qemu_event_destroy(QemuEvent *ev);
 void qemu_thread_create(QemuThread *thread, const char *name,
                         void *(*start_routine)(void *),
                         void *arg, int mode);
+#ifdef __APPLE__
+/* Request at least min_stack_size bytes, preserving pthread's guard. */
+void qemu_thread_create_with_stack(QemuThread *thread, const char *name,
+                                  void *(*start_routine)(void *),
+                                  void *arg, int mode, size_t min_stack_size);
+#endif
 int qemu_thread_set_affinity(QemuThread *thread, unsigned long *host_cpus,
                              unsigned long nbits);
 int qemu_thread_get_affinity(QemuThread *thread, unsigned long **host_cpus,
