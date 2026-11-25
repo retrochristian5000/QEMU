@@ -77,7 +77,10 @@ def resolved_values() -> Dict[str, str]:
         raw = os.environ.get(option.key)
         if raw is None:
             continue
-        if option.kind == 'bool':
+        if option.key == 'QEMU_HOST_PGO' and raw in ('generate', 'use'):
+            # Preserve explicit diagnostic/legacy stage overrides.
+            values[option.key] = raw
+        elif option.kind == 'bool':
             values[option.key] = normalize_bool(option.key, raw)
         elif option.kind == 'choice':
             values[option.key] = normalize_choice(option.key, raw, option.choices)
@@ -86,6 +89,9 @@ def resolved_values() -> Dict[str, str]:
                 raw = 'manual'
             mod.validate_value(option, raw)
             values[option.key] = raw
+    # Convert user policy to the internal Meson stage only in the adapter.
+    if values['QEMU_HOST_PGO'] == 'on':
+        values['QEMU_HOST_PGO'] = 'use'
     # Direct portable invocations bypass build.sh's managed sccacher stage.
     # Refuse to silently use another cache while claiming a pinned provider.
     if values['COMPILER_CACHE'] == 'managed-sccache':
@@ -857,7 +863,7 @@ def portable_pgo_generate(
             'instrumented QEMU generate build is ready in ' + str(build_dir)
             + '. Run representative guest workloads with '
             f'LLVM_PROFILE_FILE={raw_dir}/%m-%p.profraw; then retry '
-            'QEMU_HOST_PGO=use. For automatic training, set '
+            'with PGO on. For automatic training, set '
             'QEMU_PGO_TRAIN_SCRIPT to an executable workload script.'
         )
     env = os.environ.copy()

@@ -89,7 +89,7 @@ OPTIONS = (
            'Use x86_64 system binary for i386 alias (POSIX)', 'bool', 'n'),
     Option('QEMU_HOST_LTO', 'Host features', 'Link-time optimization', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('QEMU_HOST_LTO_MODE', 'Host features', 'LTO mode (ThinLTO or full)', 'choice', 'auto', ('auto', 'thin', 'full')),
-    Option('QEMU_HOST_PGO', 'Host features', 'QEMU host profile-guided optimization', 'choice', 'off', ('off', 'generate', 'use')),
+    Option('QEMU_HOST_PGO', 'Host features', 'QEMU host profile-guided optimization', 'choice', 'off', ('off', 'on')),
     Option('QEMU_PGO_TRAIN_SCRIPT', 'Host features',
            'PGO training script (manual or executable path)', 'string', 'manual'),
     Option('QEMU_HOST_MODULES', 'Host features', 'Dynamic QEMU modules', 'choice', 'auto', ('auto', 'y', 'n')),
@@ -368,6 +368,10 @@ def load_config(path: pathlib.Path) -> ConfigState:
         if option is None:
             unknown[key] = value
             continue
+        # Older configurations stored a compilation stage as the user policy.
+        # Migrate in memory; never rewrite a user-owned file during loading.
+        if key == 'QEMU_HOST_PGO' and value in ('generate', 'use'):
+            value = 'on'
         validate_value(option, value)
         values[key] = value
         seen_options.add(key)

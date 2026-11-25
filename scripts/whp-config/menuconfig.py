@@ -239,7 +239,7 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
         if key == ord('?'):
             choices = ', '.join(option.choices) if option.choices else option.kind
             if option.key == 'QEMU_HOST_PGO':
-                status = 'off: normal; generate: instrument; use: train if needed, then optimize'
+                status = 'off: normal build; on: instrument, train if needed, then optimize'
             elif option.key == 'QEMU_PGO_TRAIN_SCRIPT':
                 status = 'manual: run workloads yourself; otherwise executable path'
             else:

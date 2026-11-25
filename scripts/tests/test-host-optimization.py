@@ -198,30 +198,44 @@ class HostOptimizationTests(unittest.TestCase):
         mod = load_config_module()
         option = mod.OPTION_BY_KEY['QEMU_HOST_PGO']
         self.assertEqual(option.default, 'off')
-        self.assertEqual(option.choices, ('off', 'generate', 'use'))
+        self.assertEqual(option.choices, ('off', 'on'))
         fallback = (ROOT / 'scripts' / 'whp-config' / 'menu-options.def').read_text(
             encoding='utf-8')
         self.assertIn(
             'QEMU_HOST_PGO|Host features|QEMU host profile-guided optimization|'
-            'choice|off|off,generate,use|', fallback)
+            'choice|off|off,on|', fallback)
         assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
         self.assertIn("QEMU_HOST_PGO='off'", assignments)
         self.assertEqual(mod.OPTION_BY_KEY['QEMU_PGO_TRAIN_SCRIPT'].default,
                          'manual')
         self.assertIn('QEMU_PGO_TRAIN_SCRIPT|Host features|', fallback)
         values = mod.default_values()
-        values['QEMU_HOST_PGO'] = 'use'
+        values['QEMU_HOST_PGO'] = 'on'
         values['QEMU_PGO_TRAIN_SCRIPT'] = 'workloads/train.sh'
         state = mod.ConfigState(values)
         assignments = mod.shell_assignments(state, {})
-        self.assertIn("QEMU_HOST_PGO='use'", assignments)
+        self.assertIn("QEMU_HOST_PGO='on'", assignments)
         self.assertIn("QEMU_PGO_TRAIN_SCRIPT='workloads/train.sh'", assignments)
         child = mod.shell_assignments(state, {'QEMU_HOST_PGO': 'generate'})
         self.assertNotIn('QEMU_HOST_PGO=', child)
-        self.assertEqual(state.values['QEMU_HOST_PGO'], 'use')
+        self.assertEqual(state.values['QEMU_HOST_PGO'], 'on')
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / '.whpconfig'
+            for legacy in ('generate', 'use'):
+                original = f'WHP_CONFIG_VERSION=3\nQEMU_HOST_PGO={legacy}\n'
+                path.write_text(original, encoding='utf-8')
+                self.assertEqual(mod.load_config(path).values['QEMU_HOST_PGO'], 'on')
+                self.assertEqual(path.read_text(encoding='utf-8'), original)
+                fallback_menu = ROOT / 'scripts/whp-config/menuconfig.sh'
+                result = subprocess.run(
+                    ['/bin/sh', str(fallback_menu), str(path), '--dump'],
+                    text=True, capture_output=True, check=True,
+                )
+                self.assertRegex(result.stdout, r'QEMU_HOST_PGO\s+on\b')
+                self.assertEqual(path.read_text(encoding='utf-8'), original)
 
     def test_portable_pgo_modes_and_invalid_override(self):
-        for mode in ('off', 'generate', 'use', 'invalid'):
+        for mode in ('off', 'on', 'generate', 'use', 'invalid'):
             with self.subTest(mode=mode):
                 env = os.environ.copy()
                 env.update({
@@ -239,7 +253,7 @@ class HostOptimizationTests(unittest.TestCase):
                     self.assertIn('QEMU_HOST_PGO must be one of:', proc.stderr)
                 else:
                     self.assertEqual(proc.returncode, 0, proc.stderr)
-                    self.assertIn('CONFIGURE_ARG=-Db_pgo=' + mode, proc.stdout)
+                    self.assertIn('CONFIGURE_ARG=-Db_pgo=' + ('use' if mode == 'on' else mode), proc.stdout)
 
     def test_bash_pgo_is_meson_only_with_strict_validation(self):
         prepare = (ROOT / 'scripts' / 'whp-build' / 'prepare-build.bash').read_text(

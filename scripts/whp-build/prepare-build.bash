@@ -228,9 +228,10 @@ whp_prepare_build_defaults()
     # PGO belongs to QEMU's Meson host build, never firmware or LLVM bootstrap.
     QEMU_HOST_PGO="${QEMU_HOST_PGO:-off}"
     case "$QEMU_HOST_PGO" in
+        on) QEMU_HOST_PGO=use ;;
         off|generate|use) ;;
         *)
-            printf 'error: QEMU_HOST_PGO must be off, generate, or use: %s\n' "$QEMU_HOST_PGO" >&2
+            printf 'error: QEMU_HOST_PGO must be off or on (legacy generate/use also accepted): %s\n' "$QEMU_HOST_PGO" >&2
             exit 1
             ;;
     esac

@@ -108,6 +108,11 @@ migrate_retired_cache()
 
 migrate_retired_cache || exit 2
 
+# Match the Python menu's in-memory migration of legacy PGO stages.
+case "$(get_value QEMU_HOST_PGO)" in
+    generate|use) set_value QEMU_HOST_PGO on ;;
+esac
+
 render_menu()
 {
     # Keep option numbers stable across filtered and unfiltered views.
@@ -223,6 +228,12 @@ validate_saved_configuration()
     ubsan=$(menu_value_or_default QEMU_UBSAN n)
     lto=$(menu_value_or_default QEMU_HOST_LTO auto)
     lto_mode=$(menu_value_or_default QEMU_HOST_LTO_MODE auto)
+    case "$(menu_value_or_default QEMU_HOST_PGO off)" in
+        off|on) ;;
+        *)
+            printf '%s\n' 'Cannot save: QEMU_HOST_PGO must be off or on' >&2
+            return 1 ;;
+    esac
     if [ "$tsan" = y ] && { [ "$asan" = y ] || [ "$ubsan" = y ]; }; then
         printf '%s\n' \
             'Cannot save: QEMU_TSAN=y conflicts with QEMU_ASAN=y or QEMU_UBSAN=y' >&2

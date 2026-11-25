@@ -1688,14 +1688,14 @@ native link check before this lane can be promoted.
 Profile-guided optimization (PGO)
 ---------------------------------
 
-``QEMU_HOST_PGO=off|generate|use`` is an opt-in host-only setting exposed
+``QEMU_HOST_PGO=off|on`` is an opt-in host-only setting exposed
 through menuconfig and both WHP build adapters. Its default is ``off``;
 the adapters pass Meson's ``-Db_pgo=<mode>`` to the QEMU build. It does
 not instrument OpenBIOS, SeaBIOS, LLVM's native bootstrap, or other
 out-of-tree toolchain preparation. Use a stable compiler, architecture,
 optimization level and LTO configuration across both PGO passes.
 
-For LLVM/Clang, ``QEMU_HOST_PGO=use`` now implies ``generate``
+For LLVM/Clang, ``QEMU_HOST_PGO=on`` automatically selects ``generate``
 when there is neither a nonempty ``default.profdata`` nor any nonempty
 ``pgo-raw/*.profraw``. The public ``build.sh`` automatically starts a
 ``QEMU_HOST_PGO=generate`` build of the same requested targets, without
@@ -1711,7 +1711,10 @@ features) or override it in the environment with an **executable script**
 that boots/exercises the generated QEMU binary. The default ``manual`` keeps
 the manual training workflow. Relative script paths resolve from the source
 checkout; invalid paths are rejected before the instrumented build. The
-saved PGO mode stays ``use`` while the generate pass temporarily overrides it. The script receives the requested
+saved PGO policy stays ``on`` while the generate pass temporarily overrides it.
+Legacy saved ``generate`` and ``use`` settings migrate to ``on`` in memory;
+explicit environment stage overrides remain available for diagnostics.
+The script receives the requested
 targets as arguments and the following environment variables:
 
 - ``WHP_PGO_BUILD_DIR``: the validated build directory holding the
@@ -1722,11 +1725,11 @@ targets as arguments and the following environment variables:
 If a training script is configured, ``use`` generates, trains, verifies
 that nonempty profiles exist, merges them with the selected compiler's
 ``llvm-profdata``, and runs the final ``b_pgo=use`` build. If no script
-is configured, the first ``use`` invocation builds the instrumented
+is configured, the first PGO-enabled invocation builds the instrumented
 emulator but **stops with clear instructions** rather than pretending a
 version check or an untrained boot is representative. Run that emulator on
 the normal guest workloads with ``LLVM_PROFILE_FILE`` set, exit cleanly
-to flush the raw data, then repeat ``QEMU_HOST_PGO=use``. The next
+to flush the raw data, then repeat the build with ``QEMU_HOST_PGO=on``. The next
 invocation will skip generation and use the collected profiles.
 
 On either path, existing indexed profiles are reused. Newer nonempty raw
