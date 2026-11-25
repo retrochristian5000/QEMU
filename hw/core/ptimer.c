@@ -18,6 +18,8 @@
 #define DELTA_ADJUST     1
 #define DELTA_NO_ADJUST -1
 
+#define PTIMER_MIN_INTERVAL_NS 10000
+
 struct ptimer_state
 {
     uint8_t enabled; /* 0 = disabled, 1 = periodic, 2 = oneshot.  */
@@ -45,6 +47,22 @@ struct ptimer_state
 static void ptimer_trigger(ptimer_state *s)
 {
     s->callback(s->callback_opaque);
+}
+
+/*
+ * Host-side periodic interrupt rate guard, not a hardware clock limit.
+ * Keep the effective period calculation shared between scheduling and
+ * counter readback.  Preserve the legacy integer rounding and bypass
+ * the guard for deterministic execution and qtest.
+ */
+static void ptimer_limit_period(uint64_t delta, uint64_t *period,
+                                uint32_t *period_frac)
+{
+    if (delta * *period < PTIMER_MIN_INTERVAL_NS &&
+        !icount_enabled() && !qtest_enabled()) {
+        *period = PTIMER_MIN_INTERVAL_NS / delta;
+        *period_frac = 0;
+    }
 }
 
 static void ptimer_reload(ptimer_state *s, int delta_adjust)
@@ -128,19 +146,8 @@ static void ptimer_reload(ptimer_state *s, int delta_adjust)
         return;
     }
 
-    /*
-     * Artificially limit timeout rate to something
-     * achievable under QEMU.  Otherwise, QEMU spends all
-     * its time generating timer interrupts, and there
-     * is no forward progress.
-     * About ten microseconds is the fastest that really works
-     * on the current generation of host machines.
-     */
-
-    if (s->enabled == 1 && (delta * period < 10000) &&
-        !icount_enabled() && !qtest_enabled()) {
-        period = 10000 / delta;
-        period_frac = 0;
+    if (s->enabled == 1) {
+        ptimer_limit_period(delta, &period, &period_frac);
     }
 
     s->last_event = s->next_event;
@@ -221,10 +228,8 @@ uint64_t ptimer_get_count(ptimer_state *s)
             uint32_t period_frac = s->period_frac;
             uint64_t period = s->period;
 
-            if (!oneshot && (s->delta * period < 10000) &&
-                !icount_enabled() && !qtest_enabled()) {
-                period = 10000 / s->delta;
-                period_frac = 0;
+            if (!oneshot) {
+                ptimer_limit_period(s->delta, &period, &period_frac);
             }
 
             /* We need to divide time by period, where time is stored in
