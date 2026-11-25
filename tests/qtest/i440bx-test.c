@@ -53,6 +53,8 @@ static void test_i440bx_config(void)
     g_assert_cmphex(bx_readb(s, 0x72), ==, 0x1a);
     bx_writeb(s, 0x72, 0x48);
     g_assert_cmphex(bx_readb(s, 0x72), ==, 0x1a);
+    bx_writeb(s, 0x72, 0);
+    g_assert_cmphex(bx_readb(s, 0x72), ==, 0x1a);
 
     qtest_system_reset(s);
     g_assert_cmphex(bx_readb(s, 0x72), ==, 2);

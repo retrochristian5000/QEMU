@@ -63,10 +63,21 @@ static void i440bx_reset_config(PCIDevice *dev)
     dev->config[BX_PMCR] = BX_AGP_DIS;
 }
 
+static void i440bx_update_memory_mappings(PCII440FXState *s)
+{
+    uint8_t smram = PCI_DEVICE(s)->config[BX_SMRAM];
+
+    /* Compatible SMRAM decoding is disabled unless G_SMRAME is set. */
+    if (!(smram & SMRAM_G_SMRAME)) {
+        smram &= ~SMRAM_D_OPEN;
+    }
+    i440fx_update_memory_mappings(s, smram);
+}
+
 static void i440bx_reset(DeviceState *dev)
 {
     i440bx_reset_config(PCI_DEVICE(dev));
-    i440fx_update_memory_mappings(I440FX_PCI_DEVICE(dev));
+    i440bx_update_memory_mappings(I440FX_PCI_DEVICE(dev));
 }
 
 static void i440bx_realize(PCIDevice *dev, Error **errp)
@@ -114,22 +125,25 @@ static void i440bx_write_config(PCIDevice *dev, uint32_t addr,
 
     pci_default_write_config(dev, addr, val, len);
 
-    /* D_LCK is sticky until reset and forces D_OPEN clear. */
-    if (smram_write && ((old_smram | dev->config[BX_SMRAM]) & SMRAM_D_LCK)) {
-        dev->config[BX_SMRAM] |= SMRAM_D_LCK;
-        dev->config[BX_SMRAM] &= ~SMRAM_D_OPEN;
+    /* D_LCK is sticky, locks G_SMRAME and forces D_OPEN clear. */
+    if (smram_write) {
+        if (old_smram & SMRAM_D_LCK) {
+            dev->config[BX_SMRAM] = old_smram;
+        } else if (dev->config[BX_SMRAM] & SMRAM_D_LCK) {
+            dev->config[BX_SMRAM] &= ~SMRAM_D_OPEN;
+        }
     }
 
     if ((pam_write && memcmp(old_pam, dev->config + BX_PAM,
                             sizeof(old_pam))) ||
         (smram_write && old_smram != dev->config[BX_SMRAM])) {
-        i440fx_update_memory_mappings(I440FX_PCI_DEVICE(dev));
+        i440bx_update_memory_mappings(I440FX_PCI_DEVICE(dev));
     }
 }
 
 static int i440bx_post_load(void *opaque, int version_id)
 {
-    i440fx_update_memory_mappings(opaque);
+    i440bx_update_memory_mappings(opaque);
     return 0;
 }
 

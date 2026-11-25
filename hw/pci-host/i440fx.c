@@ -81,7 +81,7 @@ static void i440fx_realize(PCIDevice *dev, Error **errp)
     }
 }
 
-void i440fx_update_memory_mappings(PCII440FXState *d)
+void i440fx_update_memory_mappings(PCII440FXState *d, uint8_t smram)
 {
     int i;
     PCIDevice *pd = PCI_DEVICE(d);
@@ -92,9 +92,9 @@ void i440fx_update_memory_mappings(PCII440FXState *d)
                    pd->config[I440FX_PAM + DIV_ROUND_UP(i, 2)]);
     }
     memory_region_set_enabled(&d->smram_region,
-                              !(pd->config[I440FX_SMRAM] & SMRAM_D_OPEN));
+                              !(smram & SMRAM_D_OPEN));
     memory_region_set_enabled(&d->smram,
-                              pd->config[I440FX_SMRAM] & SMRAM_G_SMRAME);
+                              smram & SMRAM_G_SMRAME);
     memory_region_transaction_commit();
 }
 
@@ -108,7 +108,7 @@ static void i440fx_write_config(PCIDevice *dev,
     pci_default_write_config(dev, address, val, len);
     if (ranges_overlap(address, len, I440FX_PAM, I440FX_PAM_SIZE) ||
         range_covers_byte(address, len, I440FX_SMRAM)) {
-        i440fx_update_memory_mappings(d);
+        i440fx_update_memory_mappings(d, dev->config[I440FX_SMRAM]);
     }
 }
 
@@ -116,7 +116,7 @@ static int i440fx_post_load(void *opaque, int version_id)
 {
     PCII440FXState *d = opaque;
 
-    i440fx_update_memory_mappings(d);
+    i440fx_update_memory_mappings(d, PCI_DEVICE(d)->config[I440FX_SMRAM]);
     return 0;
 }
 
@@ -323,7 +323,7 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
         d->config[I440FX_COREBOOT_RAM_SIZE] = MIN(ram_size, 255);
     }
 
-    i440fx_update_memory_mappings(f);
+    i440fx_update_memory_mappings(f, d->config[I440FX_SMRAM]);
 }
 
 static void i440fx_class_init(ObjectClass *klass, const void *data)

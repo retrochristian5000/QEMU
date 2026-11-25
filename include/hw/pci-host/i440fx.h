@@ -34,7 +34,7 @@ struct PCII440FXState {
     bool skip_legacy_coreboot_ram_size;
 };
 
-void i440fx_update_memory_mappings(PCII440FXState *d);
+void i440fx_update_memory_mappings(PCII440FXState *d, uint8_t smram);
 
 #define TYPE_IGD_PASSTHROUGH_I440FX_PCI_DEVICE "igd-passthrough-i440FX"
 
