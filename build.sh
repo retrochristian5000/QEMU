@@ -569,6 +569,17 @@ if [ "${COMPILER_CACHE:-auto}" = managed-sccache ]; then
     export BOOTSTRAP_SCCACHE COMPILER_CACHE
 fi
 
+# Validate the effective menu choice before starting any PGO or dependency build.
+QEMU_HOST_PGO=${QEMU_HOST_PGO:-off}
+case "$QEMU_HOST_PGO" in
+    off|generate|use) ;;
+    *)
+        printf 'error: QEMU_HOST_PGO must be off, generate, or use: %s\n' "$QEMU_HOST_PGO" >&2
+        exit 2
+        ;;
+esac
+export QEMU_HOST_PGO
+
 # PGO use implies an instrumented generate pass if there are no saved
 # profiles. Training requires running the instrumented emulator, not just
 # compiling it. Keep this before any firmware/LLVM bootstrap so the generate
@@ -584,27 +595,32 @@ if [ "${QEMU_HOST_PGO:-off}" = use ] &&
     WHP_PGO_STAGE=$("$PYTHON" "$SOURCE_DIR/scripts/whp-build/pgo-profile.py" \
         --mode status --build-dir "$BUILD_DIR") || exit 1
     if [ "$WHP_PGO_STAGE" = generate ]; then
+        # Validate a saved or one-run training script before the expensive
+        # instrumented build. The menu's manual mode remains supported.
+        WHP_PGO_TRAIN_PATH=
+        case "${QEMU_PGO_TRAIN_SCRIPT:-manual}" in
+            manual) ;;
+            /*) WHP_PGO_TRAIN_PATH="$QEMU_PGO_TRAIN_SCRIPT" ;;
+            *) WHP_PGO_TRAIN_PATH="$SOURCE_DIR/$QEMU_PGO_TRAIN_SCRIPT" ;;
+        esac
+        if [ -n "$WHP_PGO_TRAIN_PATH" ] &&
+           { [ ! -f "$WHP_PGO_TRAIN_PATH" ] || [ ! -x "$WHP_PGO_TRAIN_PATH" ]; }; then
+            printf 'error: QEMU_PGO_TRAIN_SCRIPT is not an executable file: %s\n' \
+                "$WHP_PGO_TRAIN_PATH" >&2
+            exit 2
+        fi
         printf 'QEMU PGO: no training profiles; building generate stage first.\n' >&2
         QEMU_HOST_PGO=generate WHP_PGO_GENERATION_CHILD=1 \
             WHP_SOURCE_UPDATE_DONE=1 RUN_TESTS=0 INSTALL_AFTER_BUILD=0 \
             "$SOURCE_DIR/build.sh" "$@" || exit 1
         mkdir -p "$BUILD_DIR/pgo-raw" || exit 1
-        if [ -z "${QEMU_PGO_TRAIN_SCRIPT:-}" ]; then
+        if [ -z "$WHP_PGO_TRAIN_PATH" ]; then
             printf '%s\n' \
                 'QEMU PGO: instrumented generate build is ready.' \
                 'Run representative guest workloads with:' \
                 "  LLVM_PROFILE_FILE=$BUILD_DIR/pgo-raw/%m-%p.profraw" \
                 'Then rerun QEMU_HOST_PGO=use ./build.sh with the same targets.' \
                 'For an automatic training+use pass, set QEMU_PGO_TRAIN_SCRIPT to an executable training script.' >&2
-            exit 2
-        fi
-        case "$QEMU_PGO_TRAIN_SCRIPT" in
-            /*) WHP_PGO_TRAIN_PATH="$QEMU_PGO_TRAIN_SCRIPT" ;;
-            *) WHP_PGO_TRAIN_PATH="$SOURCE_DIR/$QEMU_PGO_TRAIN_SCRIPT" ;;
-        esac
-        if [ ! -f "$WHP_PGO_TRAIN_PATH" ] || [ ! -x "$WHP_PGO_TRAIN_PATH" ]; then
-            printf 'error: QEMU_PGO_TRAIN_SCRIPT is not an executable file: %s\n' \
-                "$WHP_PGO_TRAIN_PATH" >&2
             exit 2
         fi
         printf 'QEMU PGO: training instrumented QEMU via %s\n' \

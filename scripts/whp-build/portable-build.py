@@ -82,6 +82,8 @@ def resolved_values() -> Dict[str, str]:
         elif option.kind == 'choice':
             values[option.key] = normalize_choice(option.key, raw, option.choices)
         else:
+            if option.key == 'QEMU_PGO_TRAIN_SCRIPT' and not raw:
+                raw = 'manual'
             mod.validate_value(option, raw)
             values[option.key] = raw
     # Direct portable invocations bypass build.sh's managed sccacher stage.
@@ -823,6 +825,17 @@ def portable_pgo_generate(
         '-Db_pgo=generate' if arg == '-Db_pgo=use' else arg
         for arg in configure_args
     ]
+    training_script = os.environ.get(
+        'QEMU_PGO_TRAIN_SCRIPT', values.get('QEMU_PGO_TRAIN_SCRIPT', 'manual'))
+    path = None
+    if training_script and training_script != 'manual':
+        path = pathlib.Path(training_script)
+        if not path.is_absolute():
+            path = ROOT / path
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise RuntimeError(
+                f'QEMU_PGO_TRAIN_SCRIPT is not an executable file: {path}'
+            )
     print('QEMU PGO: no saved training profiles; building generate stage first.',
           flush=True)
     subprocess.run([str(ROOT / 'configure'), *generate_args],
@@ -839,21 +852,13 @@ def portable_pgo_generate(
 
     raw_dir = build_dir / 'pgo-raw'
     raw_dir.mkdir(exist_ok=True)
-    training_script = os.environ.get('QEMU_PGO_TRAIN_SCRIPT', '').strip()
-    if not training_script:
+    if path is None:
         raise RuntimeError(
             'instrumented QEMU generate build is ready in ' + str(build_dir)
             + '. Run representative guest workloads with '
             f'LLVM_PROFILE_FILE={raw_dir}/%m-%p.profraw; then retry '
             'QEMU_HOST_PGO=use. For automatic training, set '
             'QEMU_PGO_TRAIN_SCRIPT to an executable workload script.'
-        )
-    path = pathlib.Path(training_script).expanduser()
-    if not path.is_absolute():
-        path = ROOT / path
-    if not path.is_file() or not os.access(path, os.X_OK):
-        raise RuntimeError(
-            f'QEMU_PGO_TRAIN_SCRIPT is not an executable file: {path}'
         )
     env = os.environ.copy()
     env['LLVM_PROFILE_FILE'] = str(raw_dir / '%m-%p.profraw')

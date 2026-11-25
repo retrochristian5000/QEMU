@@ -206,6 +206,19 @@ class HostOptimizationTests(unittest.TestCase):
             'choice|off|off,generate,use|', fallback)
         assignments = mod.shell_assignments(mod.ConfigState(mod.default_values()), {})
         self.assertIn("QEMU_HOST_PGO='off'", assignments)
+        self.assertEqual(mod.OPTION_BY_KEY['QEMU_PGO_TRAIN_SCRIPT'].default,
+                         'manual')
+        self.assertIn('QEMU_PGO_TRAIN_SCRIPT|Host features|', fallback)
+        values = mod.default_values()
+        values['QEMU_HOST_PGO'] = 'use'
+        values['QEMU_PGO_TRAIN_SCRIPT'] = 'workloads/train.sh'
+        state = mod.ConfigState(values)
+        assignments = mod.shell_assignments(state, {})
+        self.assertIn("QEMU_HOST_PGO='use'", assignments)
+        self.assertIn("QEMU_PGO_TRAIN_SCRIPT='workloads/train.sh'", assignments)
+        child = mod.shell_assignments(state, {'QEMU_HOST_PGO': 'generate'})
+        self.assertNotIn('QEMU_HOST_PGO=', child)
+        self.assertEqual(state.values['QEMU_HOST_PGO'], 'use')
 
     def test_portable_pgo_modes_and_invalid_override(self):
         for mode in ('off', 'generate', 'use', 'invalid'):
@@ -371,6 +384,21 @@ class HostOptimizationTests(unittest.TestCase):
             self.assertEqual(calls[2][1]['env']['WHP_PGO_BUILD_DIR'],
                              str(build_dir))
             self.assertIn('--mode', calls[3][0])
+
+    def test_portable_saved_training_script_validated_before_generation(self):
+        mod = load_portable_module()
+        with tempfile.TemporaryDirectory() as td:
+            build_dir = pathlib.Path(td)
+            saved = str(build_dir / 'missing-train.sh')
+            with mock.patch.dict(os.environ, {}, clear=True), \
+                 mock.patch.object(mod.subprocess, 'run') as runner:
+                with self.assertRaisesRegex(RuntimeError, 'not an executable file'):
+                    mod.portable_pgo_generate(
+                        build_dir, build_dir / 'install',
+                        ['-Db_pgo=use'], ['all'], ['ninja'], '2',
+                        {'QEMU_PGO_TRAIN_SCRIPT': saved},
+                    )
+                runner.assert_not_called()
 
     def test_portable_use_generates_then_requests_training_when_missing(self):
         mod = load_portable_module()

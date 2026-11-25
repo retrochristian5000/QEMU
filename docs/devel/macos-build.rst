@@ -1706,9 +1706,12 @@ existing build tree and any prior profile files.
 
 **Generation is not training.** The instrumented QEMU must execute
 representative guest workloads before ``use`` is meaningful. To make all
-three stages automatic, set ``QEMU_PGO_TRAIN_SCRIPT`` to an **executable
-script** that boots/exercises the generated QEMU binary. Relative script
-paths resolve from the source checkout. The script receives the requested
+three stages automatic, set ``QEMU_PGO_TRAIN_SCRIPT`` in menuconfig (Host
+features) or override it in the environment with an **executable script**
+that boots/exercises the generated QEMU binary. The default ``manual`` keeps
+the manual training workflow. Relative script paths resolve from the source
+checkout; invalid paths are rejected before the instrumented build. The
+saved PGO mode stays ``use`` while the generate pass temporarily overrides it. The script receives the requested
 targets as arguments and the following environment variables:
 
 - ``WHP_PGO_BUILD_DIR``: the validated build directory holding the

@@ -238,7 +238,12 @@ def _run(stdscr, config_path: pathlib.Path, state) -> None:
             continue
         if key == ord('?'):
             choices = ', '.join(option.choices) if option.choices else option.kind
-            status = f'{option.key}: {choices}; default={option.default}'
+            if option.key == 'QEMU_HOST_PGO':
+                status = 'off: normal; generate: instrument; use: train if needed, then optimize'
+            elif option.key == 'QEMU_PGO_TRAIN_SCRIPT':
+                status = 'manual: run workloads yourself; otherwise executable path'
+            else:
+                status = f'{option.key}: {choices}; default={option.default}'
             continue
         if key in (ord(' '), curses.KEY_ENTER, 10, 13):
             old = state.values[option.key]
