@@ -746,6 +746,43 @@ static void test_specify(void)
     free_pci_device(dev);
 }
 
+/* PIIX bus-master registers accept byte, word and dword I/O accesses. */
+static void test_piix_bmdma_access_width(void)
+{
+    QTestState *qts = ide_test_start("-nodefaults");
+    QPCIBar bmdma_bar, ide_bar;
+    QPCIDevice *dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+
+    for (unsigned channel = 0; channel < 2; channel++) {
+        unsigned base = channel * 8;
+
+        /* Avoid starting DMA: change only direction and capability bits. */
+        qpci_io_writew(dev, bmdma_bar, base + bmreg_cmd, BM_CMD_WRITE);
+        g_assert_cmphex(qpci_io_readb(dev, bmdma_bar, base + bmreg_cmd),
+                        ==, BM_CMD_WRITE);
+        g_assert_cmphex(qpci_io_readw(dev, bmdma_bar, base + bmreg_cmd)
+                        & 0xff, ==, BM_CMD_WRITE);
+
+        qpci_io_writew(dev, bmdma_bar, base + bmreg_status, 0x20);
+        g_assert_cmphex(qpci_io_readb(dev, bmdma_bar, base + bmreg_status),
+                        ==, 0x20);
+        g_assert_cmphex(qpci_io_readw(dev, bmdma_bar, base + bmreg_status)
+                        & 0xff, ==, 0x20);
+
+        /* Ignore reserved bytes but verify both meaningful registers. */
+        qpci_io_writel(dev, bmdma_bar, base, 0x00400000);
+        g_assert_cmphex(qpci_io_readb(dev, bmdma_bar, base + bmreg_cmd),
+                        ==, 0);
+        g_assert_cmphex(qpci_io_readb(dev, bmdma_bar, base + bmreg_status),
+                        ==, 0x40);
+        g_assert_cmphex(qpci_io_readl(dev, bmdma_bar, base) & 0x00ff00ff,
+                        ==, 0x00400000);
+    }
+
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_identify(void)
 {
     QTestState *qts;
@@ -1384,6 +1421,8 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/read_native", test_specify);
 
     qtest_add_func("/ide/identify", test_identify);
+    qtest_add_func("/ide/piix/bmdma-access-width",
+                   test_piix_bmdma_access_width);
     qtest_add_func("/ide/ata-atapi-command-boundary",
                    test_ata_atapi_command_boundary);
 
