@@ -214,6 +214,76 @@ the NEC CDR-260 used it with pre-standard ATAPI firmware and exhibited
 different reset status and identification behavior. Do not transfer those
 quirks to the OTI-91X without evidence.
 
+Driver revisions and distribution provenance
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Keep the binary revision, filename, package timestamp and distribution
+separate. The following are evidence records, not a verified sequence
+of binary releases.
+
+* OTI-011: D011V200.SYS, internal revision D011V200, copyright
+  1993-1995, package file date 1995-04-28. A third-party archive lists
+  MSCDEX.EXE and SETUP.BAT alongside it. A separate OTI011.zip listing
+  names revision V110T07 and copyright 1995-1996; the relationship
+  between these revisions is unverified.
+* OTI-91X: D91XV340.SYS, listed for an Oak 401d entry and a Lite-On
+  LTN-244 entry; a Funai 16x driver archive search result also names
+  D91XV340. These are OEM provenance leads, not proof of the actual
+  controller chip inside those drives. Binary date and banner unverified.
+* OTI-91X: D91XV352, confirmed by a recorded MS-DOS 6.22 startup
+  (copyright 1987-1997). The log reports programmed I/O, one drive
+  and MSCDEX 2.23 on the first boot. Later boots in that report show
+  duplicate units in DOSBox-X; this is not a demonstrated QEMU defect.
+* Windows 98 First Edition: OAKCDROM.SYS, 41,302 bytes, file timestamp
+  1998-05-11, confirmed by Microsoft KB Q185645.
+* Windows 98 Second Edition: OAKCDROM.SYS, 41,302 bytes, file timestamp
+  1999-04-23, listed by AllBootDisks.
+* Windows Me: OAKCDROM.SYS, 41,302 bytes, file timestamp 2000-06-08,
+  confirmed by Microsoft KB Q262502.
+* Windows 95: Microsoft's Q142943 original startup disk inventory
+  omits OAKCDROM.SYS. OEM and later modified boot disks must be treated
+  separately rather than attributed to the original distribution.
+
+Equal file sizes do not establish identical bytes. None of the above
+distribution copies has been hashed or compared in this audit. Dates
+are recorded file timestamps or copyright ranges, not necessarily
+driver release dates.
+
+Recovery and comparison procedure:
+
+#. Extract the SYS file from lawfully held OEM or Windows startup media
+   into a separate read-only analysis collection, not the VM directory.
+#. Record the originating package, filename, file size, timestamp, SHA-256,
+   internal revision string and copyright text. Keep one binary per
+   verified hash and separate distribution provenance for identical copies.
+#. Compare older and later driver revisions with identical QEMU machine,
+   optical image, channel, unit and MSCDEX version. Change only one
+   factor at a time, and record driver initialization separately from MSCDEX.
+#. Capture reset and detection results, PIO mode, number of units,
+   packet requests, interrupt completion and warm reboot enumeration
+   with the generic and experimental OTI-910 profiles.
+#. Keep proprietary binaries outside the source repository. Record
+   provenance and reproducible test observations in documentation.
+
+Additional references:
+
+* `OTI-011 D011V200 package listing
+  <https://www.driverguide.com/driver/detail.php?driverid=23233>`__.
+* `OTI-011 V110T07 archive listing
+  <https://www.cdrom-drivers.com/drivers/4/4199.htm>`__.
+* `Oak D91XV340 archive listing
+  <https://www.cdrom-drivers.com/drivers/13/13257.htm>`__.
+* `Lite-On driver archive index
+  <https://www.cdrom-drivers.com/companies/600.htm>`__.
+* `Microsoft KB Q185645 (Windows 98 startup disk)
+  <https://www.betaarchive.com/wiki/index.php?title=Microsoft_KB_Archive/185645>`__.
+* `Windows 98 and 98 SE startup disk inventories
+  <https://www.allbootdisks.com/disk_contents/98.html>`__.
+* `Microsoft KB Q262502 (Windows Me startup disk)
+  <https://www.betaarchive.com/wiki/index.php?title=Microsoft_KB_Archive/262502>`__.
+* `Microsoft KB Q142943 (Windows 95 startup disk)
+  <https://www.betaarchive.com/wiki/index.php?title=Microsoft_KB_Archive/142943>`__.
+
 QEMU audit and validation targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
