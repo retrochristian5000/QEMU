@@ -167,10 +167,12 @@ static void spawn_thread(ThreadPoolAio *pool)
      * we don't spend time creating many threads in a loop holding a mutex or
      * starving the current vcpu.
      *
-     * If there are no idle threads, ask the main thread to create one, so we
-     * inherit the correct affinity instead of the vcpu affinity.
+     * Ask the AioContext thread to create the first worker, so we inherit
+     * the correct affinity instead of the vCPU affinity.  With pool->lock
+     * held, an existing backlog is already covered by a scheduled bottom
+     * half or a pending worker.  Only notify on the first queued spawn.
      */
-    if (!pool->pending_threads) {
+    if (pool->new_threads == 1 && !pool->pending_threads) {
         qemu_bh_schedule(pool->new_thread_bh);
     }
 }
