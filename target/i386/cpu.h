@@ -2992,6 +2992,8 @@ bool cpu_svm_has_intercept(CPUX86State *env, uint32_t type);
 
 /* apic.c */
 void cpu_report_tpr_access(CPUX86State *env, TPRAccess access);
+/* System TCG only: recover the translated MMIO instruction address. */
+void x86_tcg_report_tpr_access(CPUX86State *env, TPRAccess access);
 void apic_handle_tpr_access_report(APICCommonState *s, target_ulong ip,
                                    TPRAccess access);
 

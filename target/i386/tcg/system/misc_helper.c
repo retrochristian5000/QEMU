@@ -26,6 +26,9 @@
 #include "system/address-spaces.h"
 #include "system/memory.h"
 #include "exec/cputlb.h"
+#include "exec/translation-block.h"
+#include "exec/target_page.h"
+#include "tcg/insn-start-words.h"
 #include "tcg/helper-tcg.h"
 #include "hw/i386/apic.h"
 
@@ -63,6 +66,35 @@ target_ulong helper_inl(CPUX86State *env, uint32_t port)
 {
     return address_space_ldl_le(&address_space_io, port,
                                 cpu_get_mem_attrs(env), NULL);
+}
+
+/*
+ * TCG reports the guest instruction responsible for a translated MMIO
+ * access. Hardware accelerators instead synchronize their own vCPU state.
+ */
+static inline target_ulong get_memio_eip(CPUX86State *env)
+{
+    uint64_t data[INSN_START_WORDS];
+    CPUState *cs = env_cpu(env);
+
+    if (!cpu_unwind_state_data(cs, cs->mem_io_pc, data)) {
+        return env->eip;
+    }
+
+    /* Per x86_restore_state_to_opc. */
+    if (tcg_cflags_has(cs, CF_PCREL)) {
+        return (env->eip & TARGET_PAGE_MASK) | data[0];
+    } else {
+        return data[0] - env->segs[R_CS].base;
+    }
+}
+
+void x86_tcg_report_tpr_access(CPUX86State *env, TPRAccess access)
+{
+    X86CPU *cpu = env_archcpu(env);
+    target_ulong eip = get_memio_eip(env);
+
+    apic_handle_tpr_access_report(cpu->apic_state, eip, access);
 }
 
 target_ulong helper_read_cr8(CPUX86State *env)
