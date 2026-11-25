@@ -30,6 +30,8 @@
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/rcu.h"
+#include "qemu/thread.h"
+#include "qemu/units.h"
 
 static void test_parse_range(void)
 {
@@ -230,6 +232,103 @@ static void rmdir_full(gchar const *root)
     g_assert(g_rmdir(root) == 0);
 }
 
+static void *log_rotation_worker(void *opaque)
+{
+    const char *dir = opaque;
+    g_autofree char *first = NULL;
+    g_autofree char *collision = NULL;
+    g_autofree char *next = NULL;
+    g_autofree char *contents = NULL;
+    GDir *entries;
+    const char *name;
+    FILE *file = qemu_log_trylock();
+    char marker[32];
+
+    g_assert_nonnull(file);
+    entries = g_dir_open(dir, 0, NULL);
+    g_assert_nonnull(entries);
+    name = g_dir_read_name(entries);
+    g_assert_nonnull(name);
+    g_assert_true(g_str_has_suffix(name, ".000000"));
+    first = g_build_filename(dir, name, NULL);
+    g_assert_null(g_dir_read_name(entries));
+    g_dir_close(entries);
+
+    collision = g_strdup(first);
+    collision[strlen(collision) - 1] = '1';
+    next = g_strdup(first);
+    next[strlen(next) - 1] = '2';
+    g_assert_true(g_file_set_contents(collision, "keep me", -1, NULL));
+
+    /* Sparse seek crosses the threshold without formatting 64 MiB of logs. */
+    g_assert_cmpint(fseek(file, 64 * MiB, SEEK_SET), ==, 0);
+    fprintf(file, "old segment\n");
+    qemu_log_unlock(file);
+
+    for (unsigned int i = 0; i < 1024; i++) {
+        qemu_log("record %u\n", i);
+    }
+
+    file = fopen(first, "r");
+    g_assert_nonnull(file);
+    g_assert_cmpint(fseek(file, 64 * MiB, SEEK_SET), ==, 0);
+    g_assert_nonnull(fgets(marker, sizeof(marker), file));
+    g_assert_cmpstr(marker, ==, "old segment\n");
+    fclose(file);
+    g_assert_true(g_file_get_contents(collision, &contents, NULL, NULL));
+    g_assert_cmpstr(contents, ==, "keep me");
+
+    /* The worker's thread-exit notifier closes the new segment. */
+    g_assert_true(g_file_test(next, G_FILE_TEST_IS_REGULAR));
+    return NULL;
+}
+
+static void test_logfile_rotation(gconstpointer data)
+{
+    const char *dir = data;
+
+    if (g_test_subprocess()) {
+        g_autofree char *path = g_build_filename(dir, "qemu-%d.log", NULL);
+        QemuThread thread;
+        Error *err = NULL;
+        GDir *entries;
+        const char *name;
+        unsigned int segments = 0;
+
+        g_assert_false(qemu_str_to_log_mask("all") & LOG_ROTATE);
+        g_assert_false(qemu_set_log_filename_flags(path,
+                        CPU_LOG_EXEC | LOG_ROTATE, &err));
+        g_assert_nonnull(err);
+        error_free(err);
+        qemu_set_log_filename_flags(path, CPU_LOG_EXEC | LOG_PER_THREAD |
+                                    LOG_BUFFERED | LOG_ROTATE, &error_abort);
+        qemu_thread_create(&thread, "log-rotation", log_rotation_worker,
+                           (void *)dir, QEMU_THREAD_JOINABLE);
+        qemu_thread_join(&thread);
+
+        entries = g_dir_open(dir, 0, NULL);
+        g_assert_nonnull(entries);
+        while ((name = g_dir_read_name(entries)) != NULL) {
+            segments++;
+            if (g_str_has_suffix(name, ".000002")) {
+                g_autofree char *last = g_build_filename(dir, name, NULL);
+                g_autofree char *contents = NULL;
+
+                g_assert_true(g_file_get_contents(last, &contents, NULL,
+                                                  NULL));
+                g_assert_cmpstr(contents, ==, "record 1023\n");
+            }
+        }
+        g_dir_close(entries);
+        g_assert_cmpuint(segments, ==, 3);
+        rmdir_full(dir);
+        /* tid is immutable; isolate it from the other logging tests. */
+        exit(0);
+    }
+    g_test_trap_subprocess(NULL, 0, 0);
+    g_test_trap_assert_passed();
+}
+
 int main(int argc, char **argv)
 {
     g_autofree gchar *tmp_path = g_dir_make_tmp("qemu-test-logging.XXXXXX", NULL);
@@ -248,6 +347,8 @@ int main(int argc, char **argv)
                          tmp_path, test_logfile_buffered);
     g_test_add_data_func("/logging/logfile_immediate",
                          tmp_path, test_logfile_immediate);
+    g_test_add_data_func("/logging/logfile_rotation",
+                         tmp_path, test_logfile_rotation);
 
     rc = g_test_run();
     qemu_set_log_filename_flags(NULL, 0, &error_abort);
