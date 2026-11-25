@@ -134,6 +134,8 @@ void page_table_config_init(void);
 #endif
 
 #ifndef CONFIG_USER_ONLY
+/* Process pending system interrupts; caller owns the TB exit handshake. */
+bool tcg_process_interrupt(CPUState *cpu, TranslationBlock **last_tb);
 G_NORETURN void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr);
 #endif /* CONFIG_USER_ONLY */
 

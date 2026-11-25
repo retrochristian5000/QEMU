@@ -800,73 +800,9 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
 #else
-    if (unlikely(cpu_test_interrupt(cpu, ~0))) {
-        bql_lock();
-        if (cpu_test_interrupt(cpu, CPU_INTERRUPT_DEBUG)) {
-            cpu_reset_interrupt(cpu, CPU_INTERRUPT_DEBUG);
-            cpu->exception_index = EXCP_DEBUG;
-            bql_unlock();
-            return true;
-        }
-        if (replay_mode == REPLAY_MODE_PLAY && !replay_has_interrupt()) {
-            /* Do nothing */
-        } else if (cpu_test_interrupt(cpu, CPU_INTERRUPT_HALT)) {
-            replay_interrupt();
-            cpu_reset_interrupt(cpu, CPU_INTERRUPT_HALT);
-            cpu->halted = 1;
-            cpu->exception_index = EXCP_HLT;
-            bql_unlock();
-            return true;
-        } else {
-            const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
-            int interrupt_request = cpu->interrupt_request;
-
-            if (cpu_test_interrupt(cpu, CPU_INTERRUPT_RESET)) {
-                replay_interrupt();
-                tcg_ops->cpu_exec_reset(cpu);
-                bql_unlock();
-                return true;
-            }
-
-            if (unlikely(cpu->singlestep_flags & SSTEP_NOIRQ)) {
-                /* Mask out external interrupts for this step. */
-                interrupt_request &= ~CPU_INTERRUPT_SSTEP_MASK;
-            }
-
-            /*
-             * The target hook has 3 exit conditions:
-             * False when the interrupt isn't processed,
-             * True when it is, and we should restart on a new TB,
-             * and via longjmp via cpu_loop_exit.
-             */
-            if (tcg_ops->cpu_exec_interrupt(cpu, interrupt_request)) {
-                if (!tcg_ops->need_replay_interrupt ||
-                    tcg_ops->need_replay_interrupt(interrupt_request)) {
-                    replay_interrupt();
-                }
-                /*
-                 * After processing the interrupt, ensure an EXCP_DEBUG is
-                 * raised when single-stepping so that GDB doesn't miss the
-                 * next instruction.
-                 */
-                if (unlikely(cpu_single_stepping(cpu))) {
-                    cpu->exception_index = EXCP_DEBUG;
-                    bql_unlock();
-                    return true;
-                }
-                cpu->exception_index = -1;
-                *last_tb = NULL;
-            }
-        }
-        if (cpu_test_interrupt(cpu, CPU_INTERRUPT_EXITTB)) {
-            cpu_reset_interrupt(cpu, CPU_INTERRUPT_EXITTB);
-            /* ensure that no TB jump will be modified as
-               the program flow was changed */
-            *last_tb = NULL;
-        }
-
-        /* If we exit via cpu_loop_exit/longjmp it is reset in cpu_exec */
-        bql_unlock();
+    if (unlikely(cpu_test_interrupt(cpu, ~0)) &&
+        tcg_process_interrupt(cpu, last_tb)) {
+        return true;
     }
 #endif /* !CONFIG_USER_ONLY */
 

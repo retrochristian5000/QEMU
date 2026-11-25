@@ -24,6 +24,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/atomic.h"
 #include "system/replay.h"
 #include "exec/icount.h"
 #include "qemu/main-loop.h"
@@ -149,7 +150,7 @@ void icount_process_data(CPUState *cpu)
 
 void icount_handle_interrupt(CPUState *cpu, int mask)
 {
-    int old_mask = cpu->interrupt_request;
+    int old_mask = qatomic_load_acquire(&cpu->interrupt_request);
 
     tcg_handle_interrupt(cpu, mask);
     if (qemu_cpu_is_self(cpu) &&
