@@ -175,6 +175,45 @@ static void test_logfile_lock(gconstpointer data)
     qemu_log_unlock(logfile);
 }
 
+static void test_logfile_buffered(gconstpointer data)
+{
+    const char *dir = data;
+    g_autofree char *path = g_build_filename(dir, "qemu_buffered.log", NULL);
+    g_autofree char *contents = NULL;
+    GString *expected = g_string_new(NULL);
+    const unsigned int flags = CPU_LOG_EXEC | LOG_BUFFERED;
+
+    g_assert_cmpint(qemu_str_to_log_mask("exec,buffered"), ==, flags);
+    g_assert_false(qemu_str_to_log_mask("all") & LOG_BUFFERED);
+
+    qemu_set_log_filename_flags(path, flags, &error_abort);
+    for (unsigned int i = 0; i < 8192; i++) {
+        qemu_log("record %u\n", i);
+        g_string_append_printf(expected, "record %u\n", i);
+    }
+
+    /* Reconfiguration flushes the shared file, including its final tail. */
+    qemu_set_log_filename_flags(NULL, 0, &error_abort);
+    drain_call_rcu();
+    g_assert_true(g_file_get_contents(path, &contents, NULL, NULL));
+    g_assert_cmpstr(contents, ==, expected->str);
+    g_string_free(expected, TRUE);
+}
+
+static void test_logfile_immediate(gconstpointer data)
+{
+    const char *dir = data;
+    g_autofree char *path = g_build_filename(dir, "qemu_immediate.log", NULL);
+    g_autofree char *contents = NULL;
+
+    qemu_set_log_filename_flags(path, CPU_LOG_EXEC, &error_abort);
+    qemu_log("immediate record\n");
+    g_assert_true(g_file_get_contents(path, &contents, NULL, NULL));
+    g_assert_cmpstr(contents, ==, "immediate record\n");
+    qemu_set_log_filename_flags(NULL, 0, &error_abort);
+    drain_call_rcu();
+}
+
 /* Remove a directory and all its entries (non-recursive). */
 static void rmdir_full(gchar const *root)
 {
@@ -205,6 +244,10 @@ int main(int argc, char **argv)
                          tmp_path, test_logfile_write);
     g_test_add_data_func("/logging/logfile_lock_path",
                          tmp_path, test_logfile_lock);
+    g_test_add_data_func("/logging/logfile_buffered",
+                         tmp_path, test_logfile_buffered);
+    g_test_add_data_func("/logging/logfile_immediate",
+                         tmp_path, test_logfile_immediate);
 
     rc = g_test_run();
     qemu_set_log_filename_flags(NULL, 0, &error_abort);
