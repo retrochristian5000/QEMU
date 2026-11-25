@@ -14,6 +14,7 @@ IDE_DEV_H = ROOT / "include/hw/ide/ide-dev.h"
 IDE_DEV_C = ROOT / "hw/ide/ide-dev.c"
 IDE_INTERNAL = ROOT / "hw/ide/ide-internal.h"
 IDE_CORE = ROOT / "hw/ide/core.c"
+ATA = ROOT / "hw/ide/ata.c"
 ATAPI = ROOT / "hw/ide/atapi.c"
 AHCI = ROOT / "hw/ide/ahci.c"
 
@@ -315,50 +316,50 @@ def apply_stage1_production() -> None:
     )
 
     replace_once(
-        IDE_CORE,
+        ATAPI,
         "    /* Removable CDROM, 50us response, 12 byte packets */\n"
-        "    put_le16(p + 0, (2 << 14) | (5 << 8) | (1 << 7) | (2 << 5) | (0 << 0));\n",
+        "    ide_put_le16(p + 0, (2 << 14) | (5 << 8) | (1 << 7) | (2 << 5) | (0 << 0));\n",
         "    /* Removable packet device, 50us response, 12 byte packets. */\n"
-        "    put_le16(p + 0, (2 << 14) |\n"
+        "    ide_put_le16(p + 0, (2 << 14) |\n"
         "             ((s->drive_kind == IDE_ATAPI_DISK ? 0 : 5) << 8) |\n"
         "             (1 << 7) | (2 << 5) | (0 << 0));\n",
     )
     replace_once(
-        IDE_CORE,
+        ATAPI,
         "#ifdef USE_DMA_CDROM\n"
-        "    put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */\n"
-        "    put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */\n"
-        "    put_le16(p + 62, 7);  /* single word dma0-2 supported */\n"
-        "    put_le16(p + 63, 7);  /* mdma0-2 supported */\n"
+        "    ide_put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */\n"
+        "    ide_put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */\n"
+        "    ide_put_le16(p + 62, 7);  /* single word dma0-2 supported */\n"
+        "    ide_put_le16(p + 63, 7);  /* mdma0-2 supported */\n"
         "#else\n"
-        "    put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
-        "    put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
-        "    put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */\n"
+        "    ide_put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
+        "    ide_put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
+        "    ide_put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */\n"
         "#endif\n",
         "#ifdef USE_DMA_CDROM\n"
         "    if (s->drive_kind == IDE_CD) {\n"
-        "        put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */\n"
-        "        put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */\n"
-        "        put_le16(p + 62, 7);  /* single word dma0-2 supported */\n"
-        "        put_le16(p + 63, 7);  /* mdma0-2 supported */\n"
+        "        ide_put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */\n"
+        "        ide_put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */\n"
+        "        ide_put_le16(p + 62, 7);  /* single word dma0-2 supported */\n"
+        "        ide_put_le16(p + 63, 7);  /* mdma0-2 supported */\n"
         "    } else {\n"
-        "        put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
-        "        put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
+        "        ide_put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
+        "        ide_put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
         "    }\n"
         "#else\n"
-        "    put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
-        "    put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
-        "    put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */\n"
+        "    ide_put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */\n"
+        "    ide_put_le16(p + 53, 3); /* words 64-70, 54-58 valid */\n"
+        "    ide_put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */\n"
         "#endif\n",
     )
     replace_once(
-        IDE_CORE,
+        ATAPI,
         "#ifdef USE_DMA_CDROM\n"
-        "    put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */\n"
+        "    ide_put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */\n"
         "#endif\n",
         "#ifdef USE_DMA_CDROM\n"
         "    if (s->drive_kind == IDE_CD) {\n"
-        "        put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */\n"
+        "        ide_put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */\n"
         "    }\n"
         "#endif\n",
     )
@@ -369,7 +370,7 @@ def apply_stage1_production() -> None:
     replace_once(IDE_CORE, "    if (s->blk && s->drive_kind != IDE_CD) {\n        s->heads = (s->select & (ATA_DEV_HS)) + 1;\n", "    if (s->blk && !ide_drive_kind_is_atapi(s->drive_kind)) {\n        s->heads = (s->select & (ATA_DEV_HS)) + 1;\n")
     replace_once(IDE_CORE, "    if (s->drive_kind == IDE_CD) {\n        s->status = 0; /* ATAPI spec (v6) section 9.10 defines packet\n", "    if (ide_drive_kind_is_atapi(s->drive_kind)) {\n        s->status = 0; /* ATAPI spec (v6) section 9.10 defines packet\n")
     replace_once(
-        IDE_CORE,
+        ATAPI,
         "    s->status = READY_STAT | SEEK_STAT;\n"
         "    s->atapi_dma = s->feature & 1;\n",
         "    if (s->drive_kind == IDE_ATAPI_DISK && (s->feature & 1)) {\n"
@@ -395,10 +396,10 @@ def apply_stage1_production() -> None:
         "#define ALL_OK (HD_OK | CD_OK | CFA_OK | ATAPI_DISK_OK)\n",
     )
     replace_once(IDE_CORE, "    [WIN_DEVICE_RESET]            = { cmd_device_reset, CD_OK },\n", "    [WIN_DEVICE_RESET]            = { cmd_device_reset, ATAPI_OK },\n")
-    replace_once(IDE_CORE, "    [WIN_PACKETCMD]               = { cmd_packet, CD_OK },\n    [WIN_PIDENTIFY]               = { cmd_identify_packet, CD_OK },\n", "    [WIN_PACKETCMD]               = { cmd_packet, ATAPI_OK },\n    [WIN_PIDENTIFY]               = { cmd_identify_packet, ATAPI_OK },\n")
+    replace_once(IDE_CORE, "    [WIN_PACKETCMD]               = { ide_atapi_cmd_packet, CD_OK },\n    [WIN_PIDENTIFY]               = { ide_atapi_cmd_identify_packet, CD_OK },\n", "    [WIN_PACKETCMD]               = { ide_atapi_cmd_packet, ATAPI_OK },\n    [WIN_PIDENTIFY]               = { ide_atapi_cmd_identify_packet, ATAPI_OK },\n")
     replace_once(IDE_CORE, "        if (val != WIN_DEVICE_RESET || s->drive_kind != IDE_CD) {\n", "        if (val != WIN_DEVICE_RESET ||\n            !ide_drive_kind_is_atapi(s->drive_kind)) {\n")
     replace_once(
-        IDE_CORE,
+        ATA,
         "        /* IDE_CD uses a different set of callbacks entirely. */\n"
         "        assert(s->drive_kind != IDE_CD);\n",
         "        /* Packet devices use removable-media callbacks instead. */\n"

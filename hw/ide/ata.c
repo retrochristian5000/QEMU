@@ -1,5 +1,5 @@
 /*
- * QEMU IDE disk and CD/DVD-ROM Emulator
+ * QEMU ATA disk identification and SMART emulation
  *
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2006 Openedhand Ltd.

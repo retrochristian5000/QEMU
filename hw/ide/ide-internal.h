@@ -443,13 +443,10 @@ void ide_cancel_dma_sync(IDEState *s);
 /* Shared ATA/ATAPI IDENTIFY word encoding. */
 static inline void ide_padstr(char *str, const char *src, int len)
 {
-    int i, v;
-    for(i = 0; i < len; i++) {
-        if (*src)
-            v = *src++;
-        else
-            v = ' ';
-        str[i^1] = v;
+    int i;
+
+    for (i = 0; i < len; i++) {
+        str[i ^ 1] = *src ? *src++ : ' ';
     }
 }
 
@@ -458,16 +455,19 @@ static inline void ide_put_le16(uint16_t *p, unsigned int v)
     *p = cpu_to_le16(v);
 }
 
+/* Defined in system/block-backend-common.h. */
+struct BlockDevOps;
+
 /* hw/ide/ata.c */
 void ide_identify(IDEState *s);
 void ide_cfata_identify(IDEState *s);
 bool ide_ata_cmd_smart(IDEState *s, uint8_t cmd);
-extern const BlockDevOps ide_hd_block_ops;
+extern const struct BlockDevOps ide_hd_block_ops;
 
 /* hw/ide/atapi.c */
 bool ide_atapi_cmd_identify_packet(IDEState *s, uint8_t cmd);
 bool ide_atapi_cmd_packet(IDEState *s, uint8_t cmd);
-extern const BlockDevOps ide_cd_block_ops;
+extern const struct BlockDevOps ide_cd_block_ops;
 void ide_atapi_cmd(IDEState *s);
 void ide_atapi_cmd_reply_end(IDEState *s);
 
