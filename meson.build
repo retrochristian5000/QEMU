@@ -447,7 +447,9 @@ endif
 # (e.g. on 32-bit hosts), libatomic is sometimes required and
 # thus acceptable.
 if (have_system or have_user)
+  # Keep feature probes and final executable links under the same policy.
   qemu_isa_flags += cc.get_supported_arguments('-fno-link-libatomic')
+  qemu_ldflags += cc.get_supported_link_arguments('-fno-link-libatomic')
 else
   qemu_ldflags += cc.get_supported_link_arguments('-latomic')
 endif
