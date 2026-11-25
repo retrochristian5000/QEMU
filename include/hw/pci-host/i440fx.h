@@ -30,7 +30,11 @@ struct PCII440FXState {
     PAMMemoryRegion pam_regions[PAM_REGIONS_COUNT];
     MemoryRegion smram_region;
     MemoryRegion smram, low_smram;
+    /* Other chipsets may use offset 0x57 for a real register. */
+    bool skip_legacy_coreboot_ram_size;
 };
+
+void i440fx_update_memory_mappings(PCII440FXState *d);
 
 #define TYPE_IGD_PASSTHROUGH_I440FX_PCI_DEVICE "igd-passthrough-i440FX"
 

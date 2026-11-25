@@ -81,7 +81,7 @@ static void i440fx_realize(PCIDevice *dev, Error **errp)
     }
 }
 
-static void i440fx_update_memory_mappings(PCII440FXState *d)
+void i440fx_update_memory_mappings(PCII440FXState *d)
 {
     int i;
     PCIDevice *pd = PCI_DEVICE(d);
@@ -316,12 +316,12 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
                  PAM_EXPAN_BASE + i * PAM_EXPAN_SIZE, PAM_EXPAN_SIZE);
     }
 
-    ram_addr_t ram_size = s->below_4g_mem_size + s->above_4g_mem_size;
-    ram_size = ram_size / 8 / 1024 / 1024;
-    if (ram_size > 255) {
-        ram_size = 255;
+    if (!f->skip_legacy_coreboot_ram_size) {
+        ram_addr_t ram_size = s->below_4g_mem_size + s->above_4g_mem_size;
+
+        ram_size = ram_size / (8 * MiB);
+        d->config[I440FX_COREBOOT_RAM_SIZE] = MIN(ram_size, 255);
     }
-    d->config[I440FX_COREBOOT_RAM_SIZE] = ram_size;
 
     i440fx_update_memory_mappings(f);
 }

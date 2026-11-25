@@ -77,3 +77,36 @@ For deterministic test scenarios, leave ``host-battery`` off and provide
 a deliberately constructed firmware record using ``-fw_cfg``. Do not specify
 the record manually at the same time as ``host-battery=on`` because both
 paths would attempt to publish the same fw_cfg filename.
+
+
+Experimental Intel 440BX PC
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The fork includes an opt-in ``pc-i440bx`` machine with the 82443BX
+host bridge in its AGP-disabled strap configuration (8086:7192) and
+the existing PIIX4 southbridge. The legacy PC configuration mechanism
+and PAM/compatible SMRAM memory mappings are shared with i440FX.
+
+This is an initial functional subset, not an electrically complete
+440BX motherboard. RAM is fixed at machine creation (8 MiB through
+1 GiB in 8 MiB increments); the DRB registers report synthetic
+configured row boundaries and do not change physical RAM decoding.
+DRAM timing, extended SMRAM, AGP/GART, chipset error signaling,
+power management straps beyond AGP disable, and physical SPD topology
+are not implemented. The existing PAM helper also has limitations
+for write-only shadow RAM. Do not use this experimental machine
+for production migration or assume compatibility with physical BIOS ROMs.
+
+Build the matching X86-Firmware/SeaBIOS source with the 440BX host
+ID support (commit 5379a7d5f98524104e35216e84c1d57619f88c43)
+and specify that BIOS explicitly, for example::
+
+    qemu-system-i386 -machine pc-i440bx -m 128M \
+        -bios /path/to/seabios/out/bios.bin
+
+The default firmware name is ``bios-440bx.bin``, intentionally distinct
+from the stock i440FX/Q35 BIOS; no such prebuilt binary is included
+by this change. Existing PC machine defaults remain unchanged.
+
+Hardware reference: Intel 82443BX Host Bridge/Controller datasheet,
+order 290633-001, April 1998, chapter 3.

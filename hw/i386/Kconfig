@@ -88,6 +88,7 @@ config I440FX
     select PC_PCI
     select PC_ACPI
     select PCI_I440FX
+    imply PCI_I440BX
     select PIIX
     select DIMM
     select SP_MEM

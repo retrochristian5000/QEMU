@@ -31,6 +31,9 @@
 #include "hw/i386/pc.h"
 #include "hw/i386/apic.h"
 #include "hw/pci-host/i440fx.h"
+#ifdef CONFIG_PCI_I440BX
+#include "hw/pci-host/i440bx.h"
+#endif
 #include "hw/southbridge/piix.h"
 #include "hw/display/ramfb.h"
 #include "hw/pci/pci.h"
@@ -434,6 +437,53 @@ static void pc_i440fx_machine_11_1_options(MachineClass *m)
 }
 
 DEFINE_I440FX_MACHINE_AS_LATEST(11, 1);
+
+#ifdef CONFIG_PCI_I440BX
+static void pc_i440bx_init(MachineState *machine)
+{
+    PCMachineState *pcms = PC_MACHINE(machine);
+
+    if (xen_enabled()) {
+        error_report("pc-i440bx does not support Xen");
+        exit(EXIT_FAILURE);
+    }
+    if (machine->ram_size < 8 * MiB || machine->ram_size > GiB ||
+        machine->ram_size % (8 * MiB)) {
+        error_report("pc-i440bx requires 8 MiB to 1 GiB of RAM "
+                     "in 8 MiB increments");
+        exit(EXIT_FAILURE);
+    }
+    if (pcms->max_ram_below_4g &&
+        pcms->max_ram_below_4g < machine->ram_size) {
+        error_report("pc-i440bx requires all RAM below 4 GiB");
+        exit(EXIT_FAILURE);
+    }
+    if (strcmp(pcms->south_bridge, TYPE_PIIX4_PCI_DEVICE)) {
+        error_report("pc-i440bx requires the PIIX4 southbridge");
+        exit(EXIT_FAILURE);
+    }
+    pc_init1(machine, TYPE_I440BX_PCI_DEVICE);
+}
+
+static void pc_i440bx_machine_options(MachineClass *m)
+{
+    PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+
+    pc_i440fx_machine_options(m);
+    pcmc->default_south_bridge = TYPE_PIIX4_PCI_DEVICE;
+    pcmc->has_reserved_memory = false;
+    m->desc = "Experimental Intel 440BX + PIIX4 PC (AGP disabled)";
+    m->default_cpu_type = X86_CPU_TYPE_NAME("pentium2");
+    m->default_ram_size = 128 * MiB;
+    m->max_cpus = 2;
+    m->has_hotpluggable_cpus = false;
+    /* The stock BIOS does not recognize the BX host ID. */
+    m->default_machine_opts = "firmware=bios-440bx.bin";
+}
+
+DEFINE_PC_MACHINE(i440bx, "pc-i440bx", pc_i440bx_init,
+                  pc_i440bx_machine_options);
+#endif
 
 /*
  * Monorail PC 133 (1997) compatibility profile.
