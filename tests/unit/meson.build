@@ -204,6 +204,20 @@ if have_ga and host_os == 'linux'
   test_deps += {'test-qga': qga}
 endif
 
+# Exercise the actual libatomic ABI on private host objects only.  Do not
+# add this dependency to qemuutil or the emulator's guest-memory atomics.
+if host_arch == 'aarch64' and host_os == 'linux' and config_host_data.get('CONFIG_INT128_TYPE')
+  aarch64_libatomic = cc.find_library('atomic', required: false)
+  aarch64_libatomic_test = files('test-aarch64-libatomic.c')
+  if aarch64_libatomic.found() and cc.links(aarch64_libatomic_test,
+      dependencies: aarch64_libatomic, name: 'AArch64 libatomic 128-bit ABI')
+    aarch64_libatomic_exe = executable('test-aarch64-libatomic',
+                                      aarch64_libatomic_test,
+                                      dependencies: aarch64_libatomic)
+    test('test-aarch64-libatomic', aarch64_libatomic_exe, suite: ['unit'])
+  endif
+endif
+
 test_env = environment()
 test_env.set('G_TEST_SRCDIR', meson.current_source_dir())
 test_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
