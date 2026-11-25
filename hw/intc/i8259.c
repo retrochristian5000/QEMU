@@ -37,7 +37,7 @@
 /*#define DEBUG_IRQ_LATENCY*/
 
 #define TYPE_I8259A "i8259a"
-/* Retain the historical type for existing PC machine configurations. */
+/* Generic ISA-compatible profile, not the original Intel 8259 silicon. */
 #define TYPE_I8259_COMPAT "isa-i8259"
 typedef struct PICClass PICClass;
 DECLARE_CLASS_CHECKERS(PICClass, PIC,
@@ -474,10 +474,18 @@ static const TypeInfo i8259a_info = {
     .class_size = sizeof(PICClass),
 };
 
+static void i8259_compat_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc = "Generic ISA 8259-compatible programmable interrupt controller";
+}
+
 /* Preserve existing board-selected type identity and inherited VMState. */
 static const TypeInfo i8259_compat_info = {
     .name = TYPE_I8259_COMPAT,
     .parent = TYPE_I8259A,
+    .class_init = i8259_compat_class_init,
 };
 
 static void pic_register_types(void)
