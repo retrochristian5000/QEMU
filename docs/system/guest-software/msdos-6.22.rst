@@ -191,3 +191,63 @@ end-of-interrupt commands, masked requests, and repeated host CPU wakeups.
 In particular, retain IRQ14 and IRQ15 cascade tests for IDE/ATAPI drivers
 on AT-compatible systems. The early 16-bit machine PIC gap is not evidence
 that it causes a slowdown on the existing 486 or PCI PC profiles.
+
+OAKCDROM.SYS and Oak ATAPI controllers
+-------------------------------------
+
+Software and hardware evidence
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The widely distributed Oak Technology real-mode driver identifies itself as
+the OTI-91X ATAPI CD-ROM driver, revision D91XV352, copyright 1987-1997.
+A recorded DOS 6.22 boot reports programmed I/O and passes the detected
+unit to MSCDEX. Microsoft KB Q293185 describes OAKCDROM.SYS as a generic
+ATAPI driver distributed with Windows 98.
+
+The OTI-91X banner is evidence of a controller-family association, not
+proof that the driver requires an Oak chip or that all versions behave
+identically. Dataquest's October 14, 1996 controller comparison identifies
+the Oak OTI-910 (9.5x) and OTI-911 (20x) as ATAPI CD-ROM controller chips
+with integrated decoders. These are controller ratings, not guaranteed
+speeds for complete drives. The earlier OTI-011 is a separate generation:
+the NEC CDR-260 used it with pre-standard ATAPI firmware and exhibited
+different reset status and identification behavior. Do not transfer those
+quirks to the OTI-91X without evidence.
+
+QEMU audit and validation targets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The current ``ide-cd`` model uses the generic ``QEMU DVD-ROM`` identity.
+In ``hw/ide/atapi.c``, IDENTIFY PACKET DEVICE advertises ATA/ATAPI-4
+support and 12-byte packets, while standard INQUIRY returns response
+format byte 0x21 and a fixed DVD-ROM product string. These are audit
+targets, not established Oak incompatibilities.
+
+Capture the exact driver revision and compare the following on a licensed
+DOS image, without modifying the user's VM files:
+
+* ATA device detection, reset status and ATAPI signature;
+* IDENTIFY PACKET DEVICE and INQUIRY response fields;
+* programmed-I/O packet request and data phases, byte counts and IRQ
+  completion, on both primary and secondary IDE channels;
+* TEST UNIT READY, REQUEST SENSE, READ CAPACITY and READ TOC with media
+  present and absent, and the number of units passed to MSCDEX;
+* elapsed time separately for driver initialization and MSCDEX startup.
+
+A prospective OTI-910 or OTI-911 profile requires drive firmware or
+controller documentation and reproducible guest-visible differences.
+Do not merely change the model string, impose physical speed limits on
+the generic device, or introduce undocumented vendor quirks.
+The driver binary used by the user has not been inspected or run.
+
+References:
+
+* `Microsoft KB Q293185 (archived)
+  <https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/293185>`__.
+* `Dataquest, Semiconductor Directions in PCs and PC Multimedia Worldwide,
+  October 14, 1996, Table 1, p. 6
+  <https://archive.computerhistory.org/resources/access/text/2013/04/102723333-05-01-acc.pdf>`__.
+* `OS/2 Museum, The Secret History of ATAPI
+  <https://www.os2museum.com/wp/the-secret-history-of-atapi/>`__.
+* `DOSBox-X issue 1980, recorded OTI-91X driver startup (2020)
+  <https://github.com/joncampbell123/dosbox-x/issues/1980>`__.
