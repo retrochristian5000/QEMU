@@ -1144,9 +1144,10 @@ if test "$pie" != "no"; then
   if compile_prog "-Werror -fPIE -DPIE" "$pie_ldflags"; then
     pie="yes"
   elif test "$pie" = "yes"; then
-    error_exit "-static-pie not available due to missing toolchain support"
+    error_exit "PIE not available for host OS $host_os with $pie_ldflags" \
+               "See config.log for the compiler and linker diagnostics."
   else
-    echo "Disabling PIE due to missing toolchain support"
+    printf '%s\n' "Disabling PIE for host OS $host_os: $pie_ldflags probe failed (see config.log)."
     pie="no"
   fi
 fi
@@ -2001,8 +2002,17 @@ if test "$skip_meson" = no; then
 
   test "$download" = "disabled" && meson_option_add "--wrap-mode=nodownload"
   test "$default_feature" = no && meson_option_add -Dauto_features=disabled
-  test "$static" = yes && meson_option_add -Dprefer_static=true
-  test "$pie" = no && meson_option_add -Db_pie=false
+  # Synchronize both modes on reconfiguration; Meson retains old options.
+  if test "$static" = yes; then
+    meson_option_add -Dprefer_static=true
+  else
+    meson_option_add -Dprefer_static=false
+  fi
+  if test "$pie" = yes; then
+    meson_option_add -Db_pie=true
+  else
+    meson_option_add -Db_pie=false
+  fi
 
   # QEMU options
   test "$rust" != "disabled" && meson_option_add "-Drust=$rust"
