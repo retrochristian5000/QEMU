@@ -36,6 +36,10 @@
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
+#ifdef CONFIG_DARWIN
+#include <pthread/qos.h>
+#include "qemu/error-report.h"
+#endif
 
 typedef struct MttcgForceRcuNotifier {
     Notifier notifier;
@@ -70,6 +74,17 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
     assert(tcg_enabled());
     g_assert(!icount_enabled());
+
+#ifdef CONFIG_DARWIN
+    if (qemu_tcg_darwin_vcpu_qos_enabled()) {
+        int ret = pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+
+        if (ret != 0) {
+            warn_report("Could not set Darwin QoS for TCG vCPU %d: %s",
+                        cpu->cpu_index, strerror(ret));
+        }
+    }
+#endif
 
     rcu_register_thread();
     force_rcu.notifier.notify = mttcg_force_rcu;
