@@ -152,13 +152,16 @@ The current PC constructor always assigns ELCR ports to the pair.
 The common device class intentionally prevents direct user creation,
 because machine code must establish the interrupt routing.
 
-Future profile names, not currently usable command-line devices:
+Model names and profile boundaries:
 
-* ``isa-i8259a``: standalone 8259A semantics, with board-selected
-  single or cascaded topology and without intrinsic ELCR registers.
-* ``isa-i8259``: retain the existing QOM name for compatibility;
-  do not silently reinterpret it as the original Intel 8259.
-* A distinct original-8259 model requires a verified MCS-80/85
+* ``i8259a``: registered internal QOM implementation of the x86-oriented
+  8259A-compatible controller. Standalone board wiring without ELCR and
+  single-controller topology remain future work.
+* ``isa-i8259``: existing board-selected compatibility subtype of
+  ``i8259a``. Existing machine defaults and migration state are retained;
+  this name does not identify original Intel 8259 silicon.
+* ``i8259``: reserved as the proposed name for a distinct original Intel
+  8259 model, which requires a verified MCS-80/85
   acknowledge interface, edge-only triggering and its own initialization
   semantics. Do not expose a nominal device until those behaviors exist.
 
