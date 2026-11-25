@@ -435,9 +435,10 @@ static void *qemu_thread_start(void *args)
     return r;
 }
 
-void qemu_thread_create(QemuThread *thread, const char *name,
-                       void *(*start_routine)(void*),
-                       void *arg, int mode)
+static void qemu_thread_create_internal(QemuThread *thread, const char *name,
+                                        void *(*start_routine)(void *),
+                                        void *arg, int mode,
+                                        size_t min_stack_size)
 {
     sigset_t set, oldset;
     int err;
@@ -447,6 +448,22 @@ void qemu_thread_create(QemuThread *thread, const char *name,
     err = pthread_attr_init(&attr);
     if (err) {
         error_exit(err, __func__);
+    }
+
+    if (min_stack_size) {
+        size_t default_size;
+
+        err = pthread_attr_getstacksize(&attr, &default_size);
+        if (err) {
+            error_exit(err, "pthread_attr_getstacksize");
+        }
+        if (default_size < min_stack_size) {
+            err = pthread_attr_setstacksize(&attr, min_stack_size);
+            if (err) {
+                error_exit(err, "pthread_attr_setstacksize");
+            }
+        }
+        /* Keep the pthread-managed stack and its existing guard size. */
     }
 
     if (mode == QEMU_THREAD_DETACHED) {
@@ -480,6 +497,22 @@ void qemu_thread_create(QemuThread *thread, const char *name,
 
     pthread_attr_destroy(&attr);
 }
+
+void qemu_thread_create(QemuThread *thread, const char *name,
+                        void *(*start_routine)(void *), void *arg, int mode)
+{
+    qemu_thread_create_internal(thread, name, start_routine, arg, mode, 0);
+}
+
+#ifdef __APPLE__
+void qemu_thread_create_with_stack(QemuThread *thread, const char *name,
+                                  void *(*start_routine)(void *),
+                                  void *arg, int mode, size_t min_stack_size)
+{
+    qemu_thread_create_internal(thread, name, start_routine, arg, mode,
+                                min_stack_size);
+}
+#endif
 
 int qemu_thread_set_affinity(QemuThread *thread, unsigned long *host_cpus,
                              unsigned long nbits)
