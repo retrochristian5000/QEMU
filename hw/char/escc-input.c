@@ -94,7 +94,7 @@ const QemuInputHandler escc_sunkbd_handler = {
 static uint8_t sunkbd_layout_dip_switch(const char *kbd_layout)
 {
     /* Return the value of the dip-switches in a SUN Type 5 keyboard */
-    static uint8_t ret = 0xff;
+    uint8_t ret = 0xff;
 
     if ((ret == 0xff) && kbd_layout) {
         int i;
