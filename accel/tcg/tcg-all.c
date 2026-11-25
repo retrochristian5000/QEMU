@@ -54,6 +54,9 @@ struct TCGState {
     bool one_insn_per_tb;
     int splitwx_enabled;
     unsigned long tb_size;
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+    bool darwin_vcpu_qos;
+#endif
 };
 typedef struct TCGState TCGState;
 
@@ -68,6 +71,29 @@ bool qemu_tcg_mttcg_enabled(void)
     TCGState *s = TCG_STATE(current_accel());
     return s->mttcg_enabled == ON_OFF_AUTO_ON;
 }
+
+#ifdef CONFIG_DARWIN
+bool qemu_tcg_darwin_vcpu_qos_enabled(void)
+{
+    TCGState *s = TCG_STATE(current_accel());
+
+    return qatomic_read(&s->darwin_vcpu_qos);
+}
+
+static bool tcg_get_darwin_vcpu_qos(Object *obj, Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+
+    return qatomic_read(&s->darwin_vcpu_qos);
+}
+
+static void tcg_set_darwin_vcpu_qos(Object *obj, bool value, Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+
+    qatomic_set(&s->darwin_vcpu_qos, value);
+}
+#endif
 #endif /* !CONFIG_USER_ONLY */
 
 static void tcg_accel_instance_init(Object *obj)
@@ -144,6 +170,13 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
     default:
         g_assert_not_reached();
     }
+
+#ifdef CONFIG_DARWIN
+    if (s->darwin_vcpu_qos && s->mttcg_enabled != ON_OFF_AUTO_ON) {
+        error_report("darwin-vcpu-qos requires multi-threaded TCG");
+        return -EINVAL;
+    }
+#endif
 
     qemu_add_vm_change_state_handler(tcg_vm_change_state, NULL);
 #endif
@@ -305,6 +338,13 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
         tcg_get_splitwx, tcg_set_splitwx);
     object_class_property_set_description(oc, "split-wx",
         "Map jit pages into separate RW and RX regions");
+
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+    object_class_property_add_bool(oc, "darwin-vcpu-qos",
+        tcg_get_darwin_vcpu_qos, tcg_set_darwin_vcpu_qos);
+    object_class_property_set_description(oc, "darwin-vcpu-qos",
+        "Request user-initiated QoS for newly created MTTCG threads");
+#endif
 
     object_class_property_add_bool(oc, "one-insn-per-tb",
                                    tcg_get_one_insn_per_tb,
