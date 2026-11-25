@@ -47,6 +47,22 @@ def elf32_sections(path: pathlib.Path) -> dict[str, int]:
     return result
 
 
+def elf32_section_bytes(path: pathlib.Path, name: str) -> bytes:
+    data = path.read_bytes()
+    if data[:6] != b'\x7fELF\x01\x01' or struct.unpack_from('<H', data, 18)[0] != 3:
+        raise AssertionError(f'expected little-endian ELF32/i386: {path}')
+    shoff = struct.unpack_from('<I', data, 32)[0]
+    shentsize, shnum, shstrndx = struct.unpack_from('<HHH', data, 46)
+    headers = [struct.unpack_from('<IIIIIIIIII', data, shoff + i * shentsize)
+               for i in range(shnum)]
+    names_hdr = headers[shstrndx]
+    names = data[names_hdr[4]:names_hdr[4] + names_hdr[5]]
+    for hdr in headers:
+        if names[hdr[0]:].split(b'\0', 1)[0].decode('utf-8') == name:
+            return data[hdr[4]:hdr[4] + hdr[5]]
+    raise AssertionError(f'missing ELF section {name}: {path}')
+
+
 def function_assembly(text: str, symbol: str) -> str:
     match = re.search(
         rf'^{re.escape(symbol)}:.*?^\.Lfunc_end[0-9]+:',
@@ -82,6 +98,48 @@ class SeaBiosClangAbiTests(unittest.TestCase):
             '-fno-pic', '-fno-pie', *extra,
             '-c', str(source), '-o', str(output),
         ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    def test_reassembly_preserves_effective_x86_mode(self):
+        # Simulate assembly output that relies on the compiler's initial mode.
+        # Explicit mode changes inside the stream must remain authoritative.
+        fixture = ('.text\nmovw $0x1234, %ax\nretw\n'
+                   '.code32\nmovw $0x1234, %ax\nretw\n'
+                   '.code16\nmovw $0x1234, %ax\nretw\n')
+        word16 = bytes.fromhex('b83412c3')
+        word32 = bytes.fromhex('66b8341266c3')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            clang = prefix / 'llvm' / 'bin' / 'clang'
+            clang.unlink()
+            clang.write_text(
+                '#!/usr/bin/env python3\n'
+                'import os, pathlib, sys\n'
+                'args = sys.argv[1:]\n'
+                'if "-S" in args:\n'
+                f'    pathlib.Path(args[args.index("-o") + 1]).write_text({fixture!r})\n'
+                'else:\n'
+                f'    os.execv({self.clang!r}, [{self.clang!r}, *args])\n',
+                encoding='utf-8',
+            )
+            clang.chmod(0o755)
+            source = root / 'width.c'
+            source.write_text('void width(void) {}\n', encoding='utf-8')
+            output = root / 'width.o'
+            for modes, expected in (
+                (['-m32', '-m16'], word16),
+                (['-m16', '-m32'], word32),
+                ([], word32),
+            ):
+                with self.subTest(modes=modes):
+                    result = subprocess.run([
+                        str(compiler), '-fno-merge-constants', *modes,
+                        '-c', str(source), '-o', str(output),
+                    ], text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(elf32_section_bytes(output, '.text'),
+                                     expected + word32 + word16)
 
     def test_explicit_oz_profile_is_forwarded_without_changing_abi(self):
         with tempfile.TemporaryDirectory() as tmp:

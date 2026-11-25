@@ -57,6 +57,8 @@ output=""
 expect_output=0
 expect_language=0
 language=""
+# Preserve the effective x86 code mode through the second assembler pass.
+assembly_mode=-m32
 args=()
 
 for arg in "$@"; do
@@ -75,6 +77,10 @@ for arg in "$@"; do
     fi
 
     case "$arg" in
+        -m16|-m32)
+            assembly_mode="$arg"
+            args+=("$arg")
+            ;;
         -E)
             action=-E
             link_step=0
@@ -266,7 +272,7 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         exit 0
     fi
 
-    "$clang" --target=i386-none-elf -m32 -c -x assembler \
+    "$clang" --target=i386-none-elf "$assembly_mode" -c -x assembler \
         "$fixed_asm" -o "$output"
     exit $?
 fi
