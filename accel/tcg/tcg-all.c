@@ -56,6 +56,7 @@ struct TCGState {
     unsigned long tb_size;
 #if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
     bool darwin_vcpu_qos;
+    uint32_t darwin_vcpu_stack_mib;
 #endif
 };
 typedef struct TCGState TCGState;
@@ -78,6 +79,40 @@ bool qemu_tcg_darwin_vcpu_qos_enabled(void)
     TCGState *s = TCG_STATE(current_accel());
 
     return qatomic_read(&s->darwin_vcpu_qos);
+}
+
+size_t qemu_tcg_darwin_vcpu_stack_size(void)
+{
+    TCGState *s = TCG_STATE(current_accel());
+
+    return (size_t)qatomic_read(&s->darwin_vcpu_stack_mib) * MiB;
+}
+
+static void tcg_get_darwin_vcpu_stack_size(Object *obj, Visitor *v,
+                                           const char *name, void *opaque,
+                                           Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint32_t value = qatomic_read(&s->darwin_vcpu_stack_mib);
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void tcg_set_darwin_vcpu_stack_size(Object *obj, Visitor *v,
+                                           const char *name, void *opaque,
+                                           Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+    if (value > 16) {
+        error_setg(errp, "darwin-vcpu-stack-size must be 0 to 16 MiB");
+        return;
+    }
+    qatomic_set(&s->darwin_vcpu_stack_mib, value);
 }
 
 static bool tcg_get_darwin_vcpu_qos(Object *obj, Error **errp)
@@ -344,6 +379,12 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
         tcg_get_darwin_vcpu_qos, tcg_set_darwin_vcpu_qos);
     object_class_property_set_description(oc, "darwin-vcpu-qos",
         "Request user-initiated QoS for newly created MTTCG threads");
+    object_class_property_add(oc, "darwin-vcpu-stack-size", "int",
+        tcg_get_darwin_vcpu_stack_size, tcg_set_darwin_vcpu_stack_size,
+        NULL, NULL);
+    object_class_property_set_description(oc, "darwin-vcpu-stack-size",
+        "Minimum stack size in MiB for new TCG CPU threads "
+        "(0 = pthread default, maximum 16)");
 #endif
 
     object_class_property_add_bool(oc, "one-insn-per-tb",
