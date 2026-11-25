@@ -927,6 +927,8 @@ static void cmd_mode_sense(IDEState *s, uint8_t *buf)
             ide_atapi_cmd_reply(s, 16, max_len);
             break;
         case MODE_PAGE_AUDIO_CTL:
+            /* Do not return stale command bytes or previous reply data. */
+            memset(buf, 0, 24);
             stw_be_p(&buf[0], 24 - 2);
             buf[2] = 0x70;
             buf[3] = 0;
@@ -1161,6 +1163,33 @@ static void cmd_mechanism_status(IDEState *s, uint8_t* buf)
     ide_atapi_cmd_reply(s, 8, max_len);
 }
 
+/* READ SUB-CHANNEL audio status header (SFF-8020, SUBQ clear). */
+static void cmd_read_subchannel(IDEState *s, uint8_t *buf)
+{
+    int max_len = lduw_be_p(buf + 7);
+
+    /* The raw image backend has no current sub-Q position or audio state. */
+    if (buf[2] & 0x40) {
+        ide_atapi_cmd_error(s, ILLEGAL_REQUEST,
+                            ASC_INV_FIELD_IN_CMD_PACKET);
+        return;
+    }
+    if (!max_len) {
+        ide_atapi_cmd_ok(s);
+        return;
+    }
+    if (!validate_bcl(s)) {
+        return;
+    }
+    if (!s->atapi_dma && atapi_byte_count_limit(s) == 1 && max_len > 1) {
+        ide_abort_command(s);
+        return;
+    }
+    memset(buf, 0, 4);
+    buf[1] = 0x00; /* Audio status not supported. */
+    ide_atapi_cmd_reply(s, 4, max_len);
+}
+
 static void cmd_read_toc_pma_atip(IDEState *s, uint8_t* buf)
 {
     int format, msf, start_track, len;
@@ -1331,6 +1360,7 @@ static const struct AtapiCmd {
     [ 0x25 ] = { cmd_read_cdvd_capacity,            CHECK_READY },
     [ 0x28 ] = { cmd_read, /* (10) */               CHECK_READY },
     [ 0x2b ] = { cmd_seek,                          CHECK_READY | NONDATA },
+    [ 0x42 ] = { cmd_read_subchannel,               CHECK_READY | CONDDATA },
     [ 0x43 ] = { cmd_read_toc_pma_atip,             CHECK_READY },
     [ 0x46 ] = { cmd_get_configuration,             ALLOW_UA },
     [ 0x4a ] = { cmd_get_event_status_notification, ALLOW_UA },
