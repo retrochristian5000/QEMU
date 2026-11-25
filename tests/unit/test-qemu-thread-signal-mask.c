@@ -7,6 +7,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/thread.h"
+#include "qemu/units.h"
 
 typedef struct ThreadSignalMask {
     sigset_t mask;
@@ -84,6 +85,47 @@ static void test_darwin_host_thread_id(void)
     g_assert_cmpint(child.id, !=, main_id);
 }
 
+typedef struct ThreadStackBounds {
+    size_t size;
+    uintptr_t top;
+    uintptr_t local;
+} ThreadStackBounds;
+
+static void *capture_thread_stack_bounds(void *opaque)
+{
+    ThreadStackBounds *bounds = opaque;
+    pthread_t self = pthread_self();
+    volatile char stack_marker;
+
+    bounds->size = pthread_get_stacksize_np(self);
+    bounds->top = (uintptr_t)pthread_get_stackaddr_np(self);
+    bounds->local = (uintptr_t)&stack_marker;
+    return NULL;
+}
+
+static void test_darwin_thread_stack(void)
+{
+    ThreadStackBounds standard = { 0 };
+    ThreadStackBounds sized = { 0 };
+    QemuThread thread;
+
+    qemu_thread_create(&thread, "stack-default",
+                       capture_thread_stack_bounds, &standard,
+                       QEMU_THREAD_JOINABLE);
+    qemu_thread_join(&thread);
+
+    qemu_thread_create_with_stack(&thread, "stack-sized",
+                                  capture_thread_stack_bounds, &sized,
+                                  QEMU_THREAD_JOINABLE, 2 * MiB);
+    qemu_thread_join(&thread);
+
+    g_assert_cmpuint(sized.size, >=, 2 * MiB);
+    g_assert_cmpuint(sized.size, >=, standard.size);
+    g_assert_cmpuint(sized.top, >=, sized.size);
+    g_assert_cmpuint(sized.local, >=, sized.top - sized.size);
+    g_assert_cmpuint(sized.local, <, sized.top);
+}
+
 static int64_t monotonic_ns(void)
 {
     struct timespec ts;
@@ -153,6 +195,8 @@ int main(int argc, char **argv)
                     test_darwin_thread_signal_mask);
     g_test_add_func("/qemu-thread/darwin/host-thread-id",
                     test_darwin_host_thread_id);
+    g_test_add_func("/qemu-thread/darwin/stack-bounds",
+                    test_darwin_thread_stack);
     g_test_add_func("/qemu-thread/darwin/cond-timedwait",
                     test_darwin_cond_timedwait);
     g_test_add_func("/qemu-thread/darwin/sem-timedwait",
