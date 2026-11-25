@@ -33,6 +33,7 @@
 #include "hw/pci/pci.h"
 #include "vga_int.h"
 #include "vga_regs.h"
+#include "vga-scanout.h"
 #include "ui/pixel_ops.h"
 #include "ui/console.h"
 #include "qemu/timer.h"
@@ -1171,7 +1172,7 @@ static void vga_get_text_resolution(VGACommonState *s, int *pwidth, int *pheight
     }
     width = (s->cr[VGA_CRTC_H_DISP] + 1);
     if (s->cr[VGA_CRTC_V_TOTAL] == 100) {
-        /* ugly hack for CGA 160x100x16 - explain me the logic */
+        /* Legacy CGA 160x100x16 text-mode compatibility heuristic. */
         height = 100;
     } else {
         height = s->cr[VGA_CRTC_V_DISP_END] |
@@ -1540,7 +1541,7 @@ void vga_dirty_log_stop(VGACommonState *s)
 static void vga_draw_graphic(VGACommonState *s, int full_update)
 {
     DisplaySurface *surface = qemu_console_surface(s->con);
-    int y1, y, update, linesize, y_start, double_scan, mask, depth;
+    int y1, y, update, linesize, y_start, double_scan, depth;
     int width, height, shift_control, bwidth, bits;
     ram_addr_t page0, page1, region_start, region_end;
     DirtyBitmapSnapshot *snap = NULL;
@@ -1565,14 +1566,8 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
     /* bits 5-6: 0 = 16-color mode, 1 = 4-color mode, 2 = 256-color mode.  */
     shift_control = (s->gr[VGA_GFX_MODE] >> 5) & 3;
     double_scan = (s->cr[VGA_CRTC_MAX_SCAN] >> 7);
-    if (s->cr[VGA_CRTC_MODE] & 1) {
-        multi_scan = (((s->cr[VGA_CRTC_MAX_SCAN] & 0x1f) + 1) << double_scan)
-            - 1;
-    } else {
-        /* in CGA modes, multi_scan is ignored */
-        /* XXX: is it correct ? */
-        multi_scan = double_scan;
-    }
+    multi_scan = vga_scanline_repeat(s->cr[VGA_CRTC_MODE],
+                                     s->cr[VGA_CRTC_MAX_SCAN]);
     multi_run = multi_scan;
     if (shift_control != s->shift_control ||
         double_scan != s->double_scan) {
@@ -1736,16 +1731,7 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
     }
 
     for(y = 0; y < height; y++) {
-        addr = addr1;
-        if (!(s->cr[VGA_CRTC_MODE] & 1)) {
-            int shift;
-            /* CGA compatibility handling */
-            shift = 14 + ((s->cr[VGA_CRTC_MODE] >> 6) & 1);
-            addr = (addr & ~(1 << shift)) | ((y1 & 1) << shift);
-        }
-        if (!(s->cr[VGA_CRTC_MODE] & 2)) {
-            addr = (addr & ~0x8000) | ((y1 & 2) << 14);
-        }
+        addr = vga_scanline_address(addr1, s->cr[VGA_CRTC_MODE], y1);
         page0 = addr & s->vbe_size_mask;
         page1 = (addr + bwidth - 1) & s->vbe_size_mask;
         if (full_update) {
@@ -1783,8 +1769,7 @@ static void vga_draw_graphic(VGACommonState *s, int full_update)
             }
         }
         if (!multi_run) {
-            mask = (s->cr[VGA_CRTC_MODE] & 3) ^ 3;
-            if ((y1 & mask) == mask)
+            if (vga_scanline_advance(s->cr[VGA_CRTC_MODE], y1))
                 addr1 += s->params.line_offset;
             y1++;
             multi_run = multi_scan;
@@ -1989,25 +1974,7 @@ static void vga_update_text(void *opaque, uint32_t *chardata)
         /* TODO: update palette */
         full_update |= update_basic_params(s);
 
-        /* total width & height */
-        cheight = (s->cr[VGA_CRTC_MAX_SCAN] & 0x1f) + 1;
-        cw = 8;
-        if (!(sr(s, VGA_SEQ_CLOCK_MODE) & VGA_SR01_CHAR_CLK_8DOTS)) {
-            cw = 9;
-        }
-        if (sr(s, VGA_SEQ_CLOCK_MODE) & 0x08) {
-            cw = 16; /* NOTE: no 18 pixel wide */
-        }
-        width = (s->cr[VGA_CRTC_H_DISP] + 1);
-        if (s->cr[VGA_CRTC_V_TOTAL] == 100) {
-            /* ugly hack for CGA 160x100x16 - explain me the logic */
-            height = 100;
-        } else {
-            height = s->cr[VGA_CRTC_V_DISP_END] |
-                ((s->cr[VGA_CRTC_OVERFLOW] & 0x02) << 7) |
-                ((s->cr[VGA_CRTC_OVERFLOW] & 0x40) << 3);
-            height = (height + 1) / cheight;
-        }
+        vga_get_text_resolution(s, &width, &height, &cw, &cheight);
 
         size = (height * width);
         if (size > CH_ATTR_SIZE) {
