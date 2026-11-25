@@ -1648,6 +1648,7 @@ int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
 
     s->blk = dev->conf.blk;
     s->drive_kind = kind;
+    s->atapi_cd_only = IDE_DEVICE_GET_CLASS(dev)->atapi_cd_only;
 
     blk_get_geometry(s->blk, &nb_sectors);
     s->win2k_install_hack = dev->win2k_install_hack;
@@ -1687,7 +1688,8 @@ int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
     } else {
         switch (kind) {
         case IDE_CD:
-            strcpy(s->drive_model_str, "QEMU DVD-ROM");
+            strcpy(s->drive_model_str, s->atapi_cd_only ?
+                   "QEMU OTI-910 CD-ROM" : "QEMU DVD-ROM");
             break;
         case IDE_CFATA:
             strcpy(s->drive_model_str, "QEMU MICRODRIVE");

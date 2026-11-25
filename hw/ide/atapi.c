@@ -855,7 +855,8 @@ static void cmd_inquiry(IDEState *s, uint8_t *buf)
         buf[6] = 0;    /* reserved */
         buf[7] = 0;    /* reserved */
         padstr8(buf + 8, 8, "QEMU");
-        padstr8(buf + 16, 16, "QEMU DVD-ROM");
+        padstr8(buf + 16, 16, s->atapi_cd_only ?
+                "OTI-910 CD-ROM" : "QEMU DVD-ROM");
         padstr8(buf + 32, 4, s->version);
         idx = 36;
     }
@@ -893,14 +894,22 @@ static void cmd_get_configuration(IDEState *s, uint8_t *buf)
     }
 
     /* A cooked image does not identify a recordable or erasable medium. */
-    if (media_is_dvd(s)) {
+    if (media_is_dvd(s) && !s->atapi_cd_only) {
         current = MMC_PROFILE_DVD_ROM;
     } else if (media_is_cd(s)) {
         current = MMC_PROFILE_CD_ROM;
     }
 
     mmc_rom_profile_list(buf, current);
-    ide_atapi_cmd_reply(s, MMC_ROM_PROFILE_LIST_SIZE, max_len);
+    if (s->atapi_cd_only) {
+        /* Keep only the CD-ROM profile descriptor. */
+        memmove(buf + 12, buf + 16, 4);
+        buf[3] = MMC_ROM_PROFILE_LIST_SIZE - 8;
+        buf[11] = 4;
+        ide_atapi_cmd_reply(s, MMC_ROM_PROFILE_LIST_SIZE - 4, max_len);
+    } else {
+        ide_atapi_cmd_reply(s, MMC_ROM_PROFILE_LIST_SIZE, max_len);
+    }
 }
 
 static void cmd_mode_sense(IDEState *s, uint8_t *buf)
@@ -966,7 +975,8 @@ static void cmd_mode_sense(IDEState *s, uint8_t *buf)
 
             buf[8] = MODE_PAGE_CAPABILITIES;
             buf[9] = 30 - 10;
-            buf[10] = 0x3b; /* read CDR/CDRW/DVDROM/DVDR/DVDRAM */
+            /* Do not claim DVD or unverified recordable-media support. */
+            buf[10] = s->atapi_cd_only ? 0 : 0x3b;
             buf[11] = 0x00; /* No recording capabilities */
 
             /* Claim PLAY_AUDIO capability (0x01) since some Linux
@@ -1419,6 +1429,18 @@ void ide_atapi_cmd(IDEState *s)
             s->cdrom_changed = 0;
         }
 
+        return;
+    }
+
+    /* CD-only profiles cannot execute DVD-specific commands. */
+    if (s->atapi_cd_only && buf[0] == 0xad) {
+        ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_ILLEGAL_OPCODE);
+        return;
+    }
+
+    /* Cooked images lack a physical media type; use the existing size test. */
+    if (s->atapi_cd_only && (cmd->flags & CHECK_READY) && media_is_dvd(s)) {
+        ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_INCOMPATIBLE_FORMAT);
         return;
     }
 

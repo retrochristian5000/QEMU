@@ -1414,6 +1414,57 @@ static void cdrom_pio_impl(int nblocks)
     free_pci_device(dev);
 }
 
+static void test_oti910_profile(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    uint8_t packet[12] = { 0x46, 0, 0, 0, 0, 0, 0, 0, 32 };
+    uint8_t reply[16];
+    FILE *fh = fopen(tmp_path[0], "wb");
+
+    g_assert_nonnull(fh);
+    g_assert_cmpint(ftruncate(fileno(fh), 16 * ATAPI_BLOCK_SIZE), ==, 0);
+    fclose(fh);
+    g_assert_true(qtest_has_device("oti-910"));
+    qts = ide_test_start(
+        "-drive if=none,file=%s,media=cdrom,format=raw,id=sr0 "
+        "-device oti-910,drive=sr0,bus=ide.0,unit=0", tmp_path[0]);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    qpci_io_writeb(dev, ide_bar, reg_device, 0);
+    qpci_io_writeb(dev, ide_bar, reg_feature, 0);
+    qpci_io_writeb(dev, ide_bar, reg_lba_middle, 32);
+    qpci_io_writeb(dev, ide_bar, reg_lba_high, 0);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET);
+    assert_bit_set(ide_wait_clear(qts, BSY), DRQ);
+    for (int i = 0; i < sizeof(packet); i += 2) {
+        qpci_io_writew(dev, ide_bar, reg_data,
+                       packet[i] | ((uint16_t)packet[i + 1] << 8));
+    }
+
+    ide_wait_intr(qts, IDE_PRIMARY_IRQ);
+    assert_bit_set(ide_wait_clear(qts, BSY), DRQ);
+    g_assert_cmpuint(qpci_io_readb(dev, ide_bar, reg_lba_middle), ==, 16);
+    for (int i = 0; i < sizeof(reply); i += 2) {
+        uint16_t word = qpci_io_readw(dev, ide_bar, reg_data);
+
+        reply[i] = word;
+        reply[i + 1] = word >> 8;
+    }
+    ide_wait_intr(qts, IDE_PRIMARY_IRQ);
+    assert_bit_clear(ide_wait_clear(qts, BSY), DRQ | ERR);
+    g_assert_cmphex(reply[3], ==, 12); /* Response length minus four. */
+    g_assert_cmphex(reply[7], ==, 8);  /* Current CD-ROM profile. */
+    g_assert_cmphex(reply[11], ==, 4); /* One profile descriptor. */
+    g_assert_cmphex(reply[13], ==, 8); /* CD-ROM, no DVD descriptor. */
+    g_assert_cmphex(reply[14], ==, 1);
+
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_cdrom_subchannel_header(void)
 {
     QTestState *qts;
@@ -1689,6 +1740,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/flush/empty_drive", test_flush_empty_drive);
     qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
 
+    qtest_add_func("/ide/oti-910/profile", test_oti910_profile);
     qtest_add_func("/ide/cdrom/subchannel-header", test_cdrom_subchannel_header);
     qtest_add_func("/ide/cdrom/invalid-bcl", test_cdrom_invalid_bcl);
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);

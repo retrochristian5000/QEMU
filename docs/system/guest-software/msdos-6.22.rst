@@ -234,11 +234,25 @@ DOS image, without modifying the user's VM files:
   present and absent, and the number of units passed to MSCDEX;
 * elapsed time separately for driver initialization and MSCDEX startup.
 
-A prospective OTI-910 or OTI-911 profile requires drive firmware or
-controller documentation and reproducible guest-visible differences.
-Do not merely change the model string, impose physical speed limits on
-the generic device, or introduce undocumented vendor quirks.
+The experimental ``oti-910`` device now derives from ``ide-cd`` and
+shares its ATAPI transport. It advertises CD-ROM only in GET CONFIGURATION,
+does not claim DVD or unverified recordable-media capabilities, and rejects
+READ DVD STRUCTURE. Cooked image capacity is used as an imperfect CD/DVD
+distinction, as in the existing generic model. Its default identification
+strings are QEMU-defined, not recovered OEM firmware strings. Existing
+``ide-cd`` defaults are unchanged.
+
+Example for an otherwise unoccupied secondary IDE channel::
+
+    -drive if=none,id=oakcd,media=cdrom,format=raw,file=disc.iso
+    -device oti-910,drive=oakcd,bus=ide.1,unit=0
+
+The profile is not a complete OTI-910 silicon or firmware emulation.
+Exact command support, DMA/PIO modes, reset timing and optical-drive
+mechanics remain unverified. No physical speed cap has been introduced.
 The driver binary used by the user has not been inspected or run.
+The qtest ``/ide/oti-910/profile`` exercises the CD-only profile response
+through PIO; build and guest-runtime verification are pending.
 
 References:
 

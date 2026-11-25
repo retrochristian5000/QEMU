@@ -92,6 +92,7 @@ struct IDEState {
     BlockBackend *blk;
     char version[9];
     /* ATAPI specific */
+    bool atapi_cd_only; /* Immutable device profile, not migrated. */
     struct unreported_events events;
     uint8_t sense_key;
     uint8_t asc;
@@ -145,6 +146,7 @@ struct IDEState {
 struct IDEDeviceClass {
     DeviceClass parent_class;
     void (*realize)(IDEDevice *dev, Error **errp);
+    bool atapi_cd_only;
 };
 
 struct IDEDevice {

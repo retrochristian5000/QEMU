@@ -238,6 +238,26 @@ static const TypeInfo ide_cd_info = {
     .class_init    = ide_cd_class_init,
 };
 
+/*
+ * Initial host-visible OTI-910 profile. The controller's original firmware
+ * is not available; reuse standard ATAPI and restrict the optical profile
+ * to CD-ROM rather than guessing vendor-specific registers or timings.
+ */
+static void oti910_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    IDEDeviceClass *k = IDE_DEVICE_CLASS(klass);
+
+    dc->desc = "Oak OTI-910 ATAPI CD-ROM (experimental compatibility profile)";
+    k->atapi_cd_only = true;
+}
+
+static const TypeInfo oti910_info = {
+    .name = "oti-910",
+    .parent = "ide-cd",
+    .class_init = oti910_class_init,
+};
+
 static void ide_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
@@ -261,6 +281,7 @@ static void ide_register_types(void)
 {
     type_register_static(&ide_hd_info);
     type_register_static(&ide_cd_info);
+    type_register_static(&oti910_info);
     type_register_static(&ide_device_type_info);
 }
 
