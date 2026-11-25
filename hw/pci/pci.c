@@ -1774,6 +1774,7 @@ static void pci_update_mappings(PCIDevice *d)
     PCIIORegion *r;
     int i;
     pcibus_t new_addr;
+    bool updating = false;
 
     for(i = 0; i < PCI_NUM_REGIONS; i++) {
         r = &d->io_regions[i];
@@ -1790,6 +1791,12 @@ static void pci_update_mappings(PCIDevice *d)
         /* This bar isn't changed */
         if (new_addr == r->addr)
             continue;
+
+        /* Publish all changed BAR mappings in one memory transaction. */
+        if (!updating) {
+            memory_region_transaction_begin();
+            updating = true;
+        }
 
         /* now do the real mapping */
         if (r->addr != PCI_BAR_UNMAPPED) {
@@ -1811,6 +1818,9 @@ static void pci_update_mappings(PCIDevice *d)
     }
 
     pci_update_vga(d);
+    if (updating) {
+        memory_region_transaction_commit();
+    }
 }
 
 int pci_irq_disabled(PCIDevice *d)
@@ -1828,7 +1838,11 @@ static void pci_update_irq_disabled(PCIDevice *d, int was_irq_disabled)
         return;
     for (i = 0; i < PCI_NUM_PINS; ++i) {
         int state = pci_irq_state(d, i);
-        pci_change_irq_level(d, i, disabled ? -state : state);
+
+        /* Inactive pins cannot change the shared interrupt level. */
+        if (state) {
+            pci_change_irq_level(d, i, disabled ? -state : state);
+        }
     }
 }
 
