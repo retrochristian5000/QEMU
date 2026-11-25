@@ -1038,6 +1038,16 @@ do_write:
 #include "vga-access.h"
 #include "vga-helpers.h"
 
+/* DAC width belongs to the VGA DAC, not the attribute palette. */
+static uint32_t vga_dac_pixel(VGACommonState *s, unsigned index)
+{
+    const uint8_t *rgb = s->palette + index * 3;
+
+    return rgb_to_pixel32(vga_dac_component(rgb[0], s->dac_8bit),
+                          vga_dac_component(rgb[1], s->dac_8bit),
+                          vga_dac_component(rgb[2], s->dac_8bit));
+}
+
 /* return true if the palette was modified */
 static int update_palette16(VGACommonState *s)
 {
@@ -1047,16 +1057,9 @@ static int update_palette16(VGACommonState *s)
     full_update = 0;
     palette = s->last_palette;
     for(i = 0; i < 16; i++) {
-        v = s->ar[i];
-        if (s->ar[VGA_ATC_MODE] & 0x80) {
-            v = ((s->ar[VGA_ATC_COLOR_PAGE] & 0xf) << 4) | (v & 0xf);
-        } else {
-            v = ((s->ar[VGA_ATC_COLOR_PAGE] & 0xc) << 4) | (v & 0x3f);
-        }
-        v = (v & s->dac_pixel_mask) * 3;
-        col = rgb_to_pixel32(c6_to_8(s->palette[v]),
-                             c6_to_8(s->palette[v + 1]),
-                             c6_to_8(s->palette[v + 2]));
+        v = vga_palette_index16(s->ar[i], s->ar[VGA_ATC_MODE],
+                                s->ar[VGA_ATC_COLOR_PAGE], s->dac_pixel_mask);
+        col = vga_dac_pixel(s, v);
         if (col != palette[i]) {
             full_update = 1;
             palette[i] = col;
@@ -1074,16 +1077,8 @@ static int update_palette256(VGACommonState *s)
     full_update = 0;
     palette = s->last_palette;
     for(i = 0; i < 256; i++) {
-        v = (i & s->dac_pixel_mask) * 3;
-        if (s->dac_8bit) {
-            col = rgb_to_pixel32(s->palette[v],
-                                 s->palette[v + 1],
-                                 s->palette[v + 2]);
-        } else {
-            col = rgb_to_pixel32(c6_to_8(s->palette[v]),
-                                 c6_to_8(s->palette[v + 1]),
-                                 c6_to_8(s->palette[v + 2]));
-        }
+        v = vga_palette_index256(i, s->dac_pixel_mask);
+        col = vga_dac_pixel(s, v);
         if (col != palette[i]) {
             full_update = 1;
             palette[i] = col;

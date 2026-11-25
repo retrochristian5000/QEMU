@@ -26,6 +26,7 @@
 #define HW_VGA_INT_H
 
 #include "ui/console.h"
+#include "vga-palette.h"
 #include "system/ioport.h"
 #include "system/memory.h"
 
@@ -155,14 +156,6 @@ typedef struct VGACommonState {
     union vga_retrace retrace_info;
     uint8_t is_vbe_vmstate;
 } VGACommonState;
-
-static inline int c6_to_8(int v)
-{
-    int b;
-    v &= 0x3f;
-    b = v & 1;
-    return (v << 2) | (b << 1) | b;
-}
 
 bool vga_common_init(VGACommonState *s, Object *obj, Error **errp);
 void vga_init(VGACommonState *s, Object *obj, MemoryRegion *address_space,
