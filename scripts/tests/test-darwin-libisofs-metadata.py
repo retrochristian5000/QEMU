@@ -34,6 +34,9 @@ for token in (
     assert token in src, f"missing libisofs metadata optimization: {token}"
 
 assert "bdrv_flags & BDRV_O_NOCACHE" in src
+assert "raw_eltorito_read_ahead(fd) || !raw_libisofs_init()" in src
+assert "eltorito_catalog_lba(block, st.st_size" in src
+assert "eltorito_initial_extent(block, st.st_size" in src
 assert "iso_read_opts_set_no_rockridge(read_opts, 1)" in src
 assert "iso_read_opts_set_no_joliet(read_opts, 1)" in src
 assert "iso_read_opts_set_no_iso1999(read_opts, 1)" in src

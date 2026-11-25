@@ -92,6 +92,7 @@ Emulated Devices
    devices/cdrom-xa.rst
    devices/cxl.rst
    devices/display-edid.rst
+   devices/eltorito-readahead.rst
    devices/emmc.rst
    devices/hayes-modem.rst
    devices/igb.rst

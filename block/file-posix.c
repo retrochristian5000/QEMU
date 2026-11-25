@@ -46,6 +46,7 @@
 
 #if defined(CONFIG_DARWIN) && defined(CONFIG_LIBISOFS)
 #include <libisofs.h>
+#include "block/eltorito.h"
 #endif
 
 #ifndef __sun__
@@ -597,7 +598,7 @@ static int raw_apply_nocache(int fd, int bdrv_flags,
 }
 
 #if defined(CONFIG_DARWIN) && defined(CONFIG_LIBISOFS) && defined(F_RDADVISE)
-#define ISO_BLOCK_SIZE 2048
+#define ISO_BLOCK_SIZE ELTORITO_BLOCK_SIZE
 #define ISO_PVD_LBA 16
 #define ISO_READAHEAD_MAX (64 * MiB)
 
@@ -742,6 +743,38 @@ static IsoDataSource *raw_isofs_data_source_new_from_fd(int fd)
     return src;
 }
 
+/*
+ * A single BIOS no-emulation entry needs no directory-tree import.
+ * This is advisory only: the guest firmware still validates and boots
+ * the disc itself. Fall back for every other catalog layout.
+ */
+static bool raw_eltorito_read_ahead(int fd)
+{
+    uint8_t block[ISO_BLOCK_SIZE];
+    uint32_t catalog_lba;
+    ElToritoInitialExtent extent;
+    struct stat st;
+
+    if (fstat(fd, &st) < 0 || st.st_size < 0 ||
+        pread(fd, block, sizeof(block), 17 * ISO_BLOCK_SIZE) !=
+            sizeof(block) ||
+        !eltorito_catalog_lba(block, st.st_size, &catalog_lba) ||
+        pread(fd, block, sizeof(block),
+              (off_t)catalog_lba * ISO_BLOCK_SIZE) != sizeof(block) ||
+        !eltorito_initial_extent(block, st.st_size, &extent)) {
+        return false;
+    }
+
+    raw_darwin_rdadvise(fd, ISO_PVD_LBA * ISO_BLOCK_SIZE,
+                        MIN((uint64_t)64 * KiB,
+                            (uint64_t)st.st_size -
+                            ISO_PVD_LBA * ISO_BLOCK_SIZE));
+    raw_darwin_rdadvise(fd, (uint64_t)catalog_lba * ISO_BLOCK_SIZE,
+                        ISO_BLOCK_SIZE);
+    raw_darwin_rdadvise(fd, extent.offset, extent.bytes);
+    return true;
+}
+
 static void raw_isofs_metadata_read_ahead(int fd, int bdrv_flags)
 {
     IsoDataSource *src = NULL;
@@ -763,8 +796,10 @@ static void raw_isofs_metadata_read_ahead(int fd, int bdrv_flags)
      * F_NOCACHE on Darwin, so pre-populating the unified buffer cache there
      * would work against the requested cache policy.
      */
-    if ((bdrv_flags & BDRV_O_NOCACHE) || !raw_is_iso9660(fd) ||
-        !raw_libisofs_init()) {
+    if ((bdrv_flags & BDRV_O_NOCACHE) || !raw_is_iso9660(fd)) {
+        return;
+    }
+    if (raw_eltorito_read_ahead(fd) || !raw_libisofs_init()) {
         return;
     }
 
