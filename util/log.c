@@ -46,6 +46,15 @@ static __thread Notifier qemu_log_thread_cleanup_notifier;
 
 unsigned qemu_loglevel;
 static bool log_per_thread;
+static bool log_rotate;
+
+/* Rotation is private to the owning thread and never changes a live lock. */
+#define LOG_ROTATE_BYTES (64 * MiB)
+#define LOG_ROTATE_CHECK_INTERVAL 1024
+static __thread char *thread_log_base;
+static __thread uint64_t thread_log_segment;
+static __thread unsigned int thread_log_records;
+static __thread bool thread_rotation_failed;
 static GArray *debug_regions;
 
 /* Returns true if qemu_log() will really write somewhere. */
@@ -83,6 +92,7 @@ static void qemu_log_thread_cleanup(Notifier *n, void *unused)
         fclose(thread_file);
         thread_file = NULL;
     }
+    g_clear_pointer(&thread_log_base, g_free);
 }
 
 /* Lock/unlock output. */
@@ -90,11 +100,9 @@ static void qemu_log_thread_cleanup(Notifier *n, void *unused)
 /* Count successful acquisitions, including internal callers. */
 static __thread unsigned int log_depth;
 
-static FILE *log_open_file(const char *filename)
+static void log_configure_buffer(FILE *file, const char *filename)
 {
-    FILE *file = fopen(filename, "w");
-
-    if (file && qemu_loglevel_mask(LOG_BUFFERED)) {
+    if (qemu_loglevel_mask(LOG_BUFFERED)) {
         /*
          * Request a larger libc buffer before the first I/O. Some libc
          * implementations choose their own size for a NULL buffer.
@@ -105,19 +113,116 @@ static FILE *log_open_file(const char *filename)
                         "using default stdio buffering", filename);
         }
     }
+}
+
+static FILE *log_open_file(const char *filename)
+{
+    FILE *file = fopen(filename, "w");
+
+    if (file) {
+        log_configure_buffer(file, filename);
+    }
     return file;
+}
+
+/* Exclusive creation preserves earlier runs and avoids following symlinks. */
+static FILE *log_open_segment(const char *base)
+{
+    for (unsigned int attempt = 0; attempt < 1024; attempt++) {
+        g_autofree char *name = g_strdup_printf("%s.%d.%06" PRIu64,
+                                               base, (int)getpid(),
+                                               thread_log_segment++);
+        int fd = qemu_open_old(name, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        FILE *file;
+
+        if (fd < 0) {
+            if (errno == EEXIST) {
+                continue;
+            }
+            return NULL;
+        }
+        file = fdopen(fd, "w");
+        if (!file) {
+            int saved_errno = errno;
+            close(fd);
+            errno = saved_errno;
+            return NULL;
+        }
+        log_configure_buffer(file, name);
+        return file;
+    }
+    errno = EEXIST;
+    return NULL;
+}
+
+/* Called only by the owner, before acquiring a new outermost log lock. */
+static void log_rotate_thread(void)
+{
+    FILE *next;
+    long pos;
+
+    if (!thread_log_base || thread_rotation_failed || log_depth ||
+        ++thread_log_records < LOG_ROTATE_CHECK_INTERVAL) {
+        return;
+    }
+    thread_log_records = 0;
+
+    /* ftell includes the pending stdio buffer; no per-record stat or flush. */
+    pos = ftell(thread_file);
+    if (pos >= 0 && (uint64_t)pos < LOG_ROTATE_BYTES) {
+        return;
+    }
+    if (pos < 0 || fflush(thread_file) == EOF) {
+        goto fail;
+    }
+    next = log_open_segment(thread_log_base);
+    if (!next) {
+        goto fail;
+    }
+    if (fclose(thread_file) == EOF) {
+        warn_report("Could not close previous log segment for '%s': %s",
+                    thread_log_base, strerror(errno));
+    }
+    thread_file = next;
+    return;
+
+fail:
+    thread_rotation_failed = true;
+    warn_report("Log rotation stopped for '%s': %s; "
+                "continuing with the current file",
+                thread_log_base, strerror(errno));
 }
 
 static FILE *qemu_log_trylock_with_err(Error **errp)
 {
     FILE *logfile;
 
+    if (log_rotate && thread_file && thread_file != stderr) {
+        log_rotate_thread();
+    }
     logfile = thread_file;
     if (!logfile) {
         if (log_per_thread) {
             int tid = log_thread_id();
             g_autofree char *filename = g_strdup_printf(global_filename, tid);
-            logfile = log_open_file(filename);
+            if (log_rotate) {
+                if (thread_rotation_failed) {
+                    error_setg(errp, "Log segment creation previously failed");
+                    return NULL;
+                }
+                logfile = log_open_segment(filename);
+                if (logfile) {
+                    thread_log_base = g_strdup(filename);
+                } else {
+                    thread_rotation_failed = true;
+                    if (!errp) {
+                        warn_report("Could not create log segment for '%s': %s",
+                                    filename, strerror(errno));
+                    }
+                }
+            } else {
+                logfile = log_open_file(filename);
+            }
             if (!logfile) {
                 error_setg_errno(errp, errno,
                                  "Error opening logfile %s for thread %d",
@@ -270,6 +375,17 @@ static bool qemu_set_log_internal(const char *filename, bool changed_name,
 
     per_thread = log_flags & LOG_PER_THREAD;
 
+    /* Like tid, rotation must be selected before thread files are opened. */
+    if (log_rotate) {
+        log_flags |= LOG_ROTATE;
+    }
+    if ((log_flags & LOG_ROTATE) &&
+        (!per_thread || is_daemonized() || (log_per_thread && !log_rotate))) {
+        error_setg(errp, "Log rotation requires 'tid' at startup "
+                   "and is not supported in daemon mode");
+        return false;
+    }
+
     if (changed_name) {
         char *newname = NULL;
 
@@ -312,8 +428,11 @@ static bool qemu_set_log_internal(const char *filename, bool changed_name,
     if (per_thread) {
         log_per_thread = true;
     }
-    /* The flag itself is not relevant for need_to_open_file. */
-    log_flags &= ~LOG_PER_THREAD;
+    if (log_flags & LOG_ROTATE) {
+        log_rotate = true;
+    }
+    /* Output policy flags are not log categories. */
+    log_flags &= ~(LOG_PER_THREAD | LOG_ROTATE);
 #ifdef CONFIG_TRACE_LOG
     log_flags |= LOG_TRACE;
 #endif
@@ -551,6 +670,8 @@ const QEMULogItem qemu_log_items[] = {
       "log invalid memory accesses" },
     { LOG_BUFFERED, "buffered",
       "buffer file logs (last records may be lost on abrupt termination)" },
+    { LOG_ROTATE, "rotate",
+      "rotate tid logs at approximately 64 MiB; retain all segments" },
     { 0, NULL, NULL },
 };
 
@@ -566,7 +687,7 @@ int qemu_str_to_log_mask(const char *str)
         if (g_str_equal(*tmp, "all")) {
             for (item = qemu_log_items; item->mask != 0; item++) {
                 /* Buffered output is an explicit durability tradeoff. */
-                if (item->mask != LOG_BUFFERED) {
+                if (item->mask != LOG_BUFFERED && item->mask != LOG_ROTATE) {
                     mask |= item->mask;
                 }
             }
