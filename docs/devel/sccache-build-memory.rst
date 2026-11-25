@@ -229,6 +229,18 @@ These settings affect the build machine, not the guest CPU ABI or installed
 QEMU artifacts. For a diagnostic baseline, compare builds with
 ``COMPILER_CACHE=none`` and record peak resident memory as well as wall time.
 
+Module compilation metadata
+---------------------------
+
+On Ninja versions supporting ``compdb-targets``, the modinfo collector
+queries only the requested object targets from the current build graph.
+It streams the resulting compilation database and retains only matching
+objects, avoiding repeated scans of the potentially much larger
+``compile_commands.json``. Older Ninja versions and non-Ninja builds
+retain the bounded-memory streaming fallback. Generated header entries
+must not displace the C source entry for the same object. The full
+compilation database remains available for external development tools.
+
 Diagnostics and cleanup
 -----------------------
 

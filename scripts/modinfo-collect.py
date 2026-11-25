@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import json
+import os
+from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 
 
 def process_command(src, command):
@@ -93,9 +97,13 @@ def find_compile_commands(outputs, database='compile_commands.json'):
                 raise ValueError(f'{database}: expected JSON object')
             output = entry['output']
             if output in outputs:
-                # Match the previous dictionary comprehension: last wins
-                # if the same output occurs more than once.
-                found[output] = entry
+                # Some Ninja versions list generated headers as separate
+                # entries for the same compile edge. Do not let one hide
+                # the C source. For equal kinds retain last-wins ordering.
+                previous = found.get(output)
+                if (previous is None or entry['file'].endswith('.c') or
+                        not previous['file'].endswith('.c')):
+                    found[output] = entry
             first = False
 
         if buffer[position:].strip():
@@ -107,6 +115,29 @@ def find_compile_commands(outputs, database='compile_commands.json'):
             if chunk.strip():
                 raise ValueError(f'{database}: trailing JSON data')
     return found
+
+
+def find_module_compile_commands(outputs):
+    """Query Ninja's current graph without reading the full compilation DB."""
+    ninja = shutil.which(os.environ.get('NINJA') or 'ninja')
+    if not ninja and not os.environ.get('NINJA'):
+        ninja = shutil.which('ninja-build')
+    if ninja and Path('build.ninja').is_file():
+        with tempfile.TemporaryDirectory(prefix='qemu-modinfo-') as work:
+            database = Path(work) / 'commands.json'
+            with database.open('w', encoding='utf-8') as stream:
+                result = subprocess.run(
+                    [ninja, '-t', 'compdb-targets', '-x', *sorted(outputs)],
+                    stdout=stream, stderr=subprocess.PIPE, text=True,
+                )
+            if result.returncode == 0:
+                selected = find_compile_commands(outputs, database)
+                if outputs <= selected.keys():
+                    return selected
+            # Older Ninja releases lack compdb-targets. Keep the existing
+            # bounded-memory reader as the compatibility path. Never reuse
+            # a database from a different build graph.
+    return find_compile_commands(outputs)
 
 
 def emit_preprocessed_modinfo(cmdline):
@@ -128,7 +159,7 @@ def main(args):
         arch = target[:-8]  # cut '-softmmu'
         print('MODINFO_START arch "%s" MODINFO_END' % arch)
 
-    compile_commands = find_compile_commands(set(args))
+    compile_commands = find_module_compile_commands(set(args))
 
     for obj in args:
         entry = compile_commands.get(obj)

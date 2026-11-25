@@ -12,6 +12,7 @@ import shlex
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,6 +50,53 @@ class ModinfoMemoryTests(unittest.TestCase):
             self.assertEqual(selected['want.o']['file'], 'new.c')
             self.assertEqual(
                 self.collect.find_compile_commands({'absent.o'}, path), {})
+
+    def test_generated_header_does_not_replace_c_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'commands.json'
+            entries = [
+                {'output': 'want.o', 'file': 'old.c', 'command': 'cc -c old.c'},
+                {'output': 'want.o', 'file': 'new.c', 'command': 'cc -c new.c'},
+                {'output': 'want.o', 'file': 'generated.h',
+                 'command': 'cc -c new.c'},
+            ]
+            path.write_text(json.dumps(entries), encoding='utf-8')
+            selected = self.collect.find_compile_commands({'want.o'}, path)
+            self.assertEqual(selected['want.o']['file'], 'new.c')
+
+    def test_targeted_graph_lookup_and_compatibility_fallback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            (folder / 'build.ninja').touch()
+            full = folder / 'compile_commands.json'
+            entry = {'output': 'want.o', 'file': 'device.c',
+                     'command': 'cc -c device.c'}
+            full.write_text(json.dumps([entry]), encoding='utf-8')
+            saved = Path.cwd()
+            try:
+                os.chdir(folder)
+                with mock.patch.object(self.collect.shutil, 'which',
+                                       return_value='/mock/ninja'):
+                    with mock.patch.object(self.collect.subprocess, 'run') as run:
+                        def targeted(args, **kwargs):
+                            self.assertEqual(args, ['/mock/ninja', '-t',
+                                                     'compdb-targets', '-x',
+                                                     'want.o'])
+                            json.dump([entry], kwargs['stdout'])
+                            return mock.Mock(returncode=0)
+                        run.side_effect = targeted
+                        full.unlink()
+                        self.assertEqual(
+                            self.collect.find_module_compile_commands({'want.o'}),
+                            {'want.o': entry})
+                        full.write_text(json.dumps([entry]), encoding='utf-8')
+                        run.side_effect = None
+                        run.return_value = mock.Mock(returncode=1)
+                        self.assertEqual(
+                            self.collect.find_module_compile_commands({'want.o'}),
+                            {'want.o': entry})
+            finally:
+                os.chdir(saved)
 
     def test_stream_db_rejects_incomplete_json(self):
         with tempfile.TemporaryDirectory() as temp:
