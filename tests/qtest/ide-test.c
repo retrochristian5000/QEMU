@@ -1330,6 +1330,57 @@ static void test_cdrom_subchannel_header(void)
     free_pci_device(dev);
 }
 
+static void test_cdrom_invalid_bcl(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    const uint8_t inquiry[12] = { 0x12, 0, 0, 0, 36 };
+    FILE *fh = fopen(tmp_path[0], "wb");
+
+    g_assert_nonnull(fh);
+    g_assert_cmpint(ftruncate(fileno(fh), 16 * ATAPI_BLOCK_SIZE), ==, 0);
+    fclose(fh);
+    qts = ide_test_start(
+        "-drive if=none,file=%s,media=cdrom,format=raw,id=sr0,index=0 "
+        "-device ide-cd,drive=sr0,bus=ide.0", tmp_path[0]);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    /* Exercise both sector data and buffered packet replies. */
+    for (int cmd = 0; cmd < 2; cmd++) {
+        for (int limit = 0; limit <= 1; limit++) {
+            uint8_t status;
+
+            qpci_io_writeb(dev, ide_bar, reg_device, 0);
+            qpci_io_writeb(dev, ide_bar, reg_feature, 0);
+            qpci_io_writeb(dev, ide_bar, reg_lba_middle, limit);
+            qpci_io_writeb(dev, ide_bar, reg_lba_high, 0);
+            qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET);
+            status = ide_wait_clear(qts, BSY);
+            assert_bit_set(status, DRQ);
+            if (cmd == 0) {
+                send_scsi_cdb_read10(dev, ide_bar, 0, 1);
+            } else {
+                for (int j = 0; j < sizeof(inquiry); j += 2) {
+                    qpci_io_writew(dev, ide_bar, reg_data,
+                                   inquiry[j] | ((uint16_t)inquiry[j + 1] << 8));
+                }
+            }
+            ide_wait_intr(qts, IDE_PRIMARY_IRQ);
+            status = ide_wait_clear(qts, BSY);
+            assert_bit_set(status, ERR);
+            assert_bit_clear(status, BSY | DRQ);
+            assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+            g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_nsectors) & 7,
+                            ==, 3);
+        }
+    }
+
+    test_bmdma_teardown(qts);
+    free_pci_device(dev);
+}
+
 static void test_cdrom_pio(void)
 {
     cdrom_pio_impl(1);
@@ -1497,6 +1548,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
 
     qtest_add_func("/ide/cdrom/subchannel-header", test_cdrom_subchannel_header);
+    qtest_add_func("/ide/cdrom/invalid-bcl", test_cdrom_invalid_bcl);
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);
     qtest_add_func("/ide/cdrom/pio_large", test_cdrom_pio_large);
     qtest_add_func("/ide/cdrom/dma", test_cdrom_dma);

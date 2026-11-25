@@ -370,25 +370,40 @@ static uint16_t atapi_byte_count_limit(IDEState *s)
     return bcl;
 }
 
+/* Complete a packet-level ATA abort, including the completion interrupt. */
+static void atapi_abort_bcl(IDEState *s)
+{
+    s->nsector = (s->nsector & ~7) | ATAPI_INT_REASON_IO | ATAPI_INT_REASON_CD;
+    ide_abort_command(s);
+    ide_bus_set_irq(s->bus);
+}
+
+/* A non-final PIO phase must contain a positive, even number of bytes. */
+static int atapi_pio_phase_size(IDEState *s)
+{
+    int limit = atapi_byte_count_limit(s);
+
+    trace_ide_atapi_cmd_reply_end_bcl(s, limit);
+    if (s->packet_transfer_size > limit) {
+        return limit & ~1;
+    }
+    return s->packet_transfer_size;
+}
+
 /* The whole ATAPI transfer logic is handled in this function */
 void ide_atapi_cmd_reply_end(IDEState *s)
 {
-    int byte_count_limit, size, ret;
+    int size, ret;
 
     trace_ide_atapi_cmd_reply_end(s, s->packet_transfer_size,
                                   s->elementary_transfer_size,
                                   s->io_buffer_index);
 
     if (s->lba != -1 && s->packet_transfer_size > 0) {
-        byte_count_limit = atapi_byte_count_limit(s);
-        trace_ide_atapi_cmd_reply_end_bcl(s, byte_count_limit);
-        size = s->packet_transfer_size;
-        if (size > byte_count_limit) {
-            /* byte count limit must be even if this case */
-            if (byte_count_limit & 1) {
-                byte_count_limit--;
-            }
-            size = byte_count_limit;
+        size = atapi_pio_phase_size(s);
+        if (!size) {
+            atapi_abort_bcl(s);
+            return;
         }
         s->elementary_transfer_size = size;
         ret = cd_read_sector(s);
@@ -399,23 +414,18 @@ void ide_atapi_cmd_reply_end(IDEState *s)
     }
 
     while (s->packet_transfer_size > 0) {
+        size = atapi_pio_phase_size(s);
+        if (!size) {
+            atapi_abort_bcl(s);
+            return;
+        }
         /* a new transfer is needed */
         s->nsector = (s->nsector & ~7) | ATAPI_INT_REASON_IO;
-        ide_bus_set_irq(s->bus);
-        byte_count_limit = atapi_byte_count_limit(s);
-        trace_ide_atapi_cmd_reply_end_bcl(s, byte_count_limit);
-        size = s->packet_transfer_size;
-        if (size > byte_count_limit) {
-            /* byte count limit must be even if this case */
-            if (byte_count_limit & 1) {
-                byte_count_limit--;
-            }
-            size = byte_count_limit;
-        }
         s->lcyl = size & 0xff;
         s->hcyl = size >> 8;
         s->elementary_transfer_size = size;
         trace_ide_atapi_cmd_reply_end_new(s, s->status);
+        ide_bus_set_irq(s->bus);
 
         s->packet_transfer_size -= size;
         s->elementary_transfer_size -= size;
@@ -659,9 +669,7 @@ static bool validate_bcl(IDEState *s)
         return true;
     }
 
-    /* TODO: Move abort back into core.c and introduce proper error flow between
-     *       ATAPI layer and IDE core layer */
-    ide_abort_command(s);
+    atapi_abort_bcl(s);
     return false;
 }
 
@@ -1179,10 +1187,6 @@ static void cmd_read_subchannel(IDEState *s, uint8_t *buf)
         return;
     }
     if (!validate_bcl(s)) {
-        return;
-    }
-    if (!s->atapi_dma && atapi_byte_count_limit(s) == 1 && max_len > 1) {
-        ide_abort_command(s);
         return;
     }
     memset(buf, 0, 4);
