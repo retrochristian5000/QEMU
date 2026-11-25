@@ -84,6 +84,17 @@ static void bmdma_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps piix_bmdma_ops = {
     .read = bmdma_read,
     .write = bmdma_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    /* PIIX supports byte, word and dword accesses to the IDE BAR.
+     * Dispatch wider accesses to the individual byte registers. */
+    .valid = {
+        .min_access_size = 1,
+        .max_access_size = 4,
+    },
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
 };
 
 static void bmdma_setup_bar(PCIIDEState *d)
