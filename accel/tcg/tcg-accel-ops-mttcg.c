@@ -148,6 +148,5 @@ void mttcg_start_vcpu_thread(CPUState *cpu)
     snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "CPU %d/TCG",
              cpu->cpu_index);
 
-    qemu_thread_create(cpu->thread, thread_name, mttcg_cpu_thread_fn,
-                       cpu, QEMU_THREAD_JOINABLE);
+    tcg_create_vcpu_thread(cpu, thread_name, mttcg_cpu_thread_fn);
 }
