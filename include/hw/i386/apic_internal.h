@@ -23,6 +23,7 @@
 
 #include "target/i386/cpu.h"
 #include "hw/i386/apic.h"
+#include "hw/i386/apic-bitmap.h"
 #include "system/memory.h"
 #include "qemu/timer.h"
 #include "target/i386/cpu-qom.h"
@@ -209,22 +210,6 @@ void vapic_report_tpr_access(DeviceState *dev, CPUState *cpu, target_ulong ip,
 
 int apic_get_ppr(APICCommonState *s);
 uint32_t apic_get_current_count(APICCommonState *s);
-
-static inline void apic_set_bit(uint32_t *tab, int index)
-{
-    int i, mask;
-    i = index >> 5;
-    mask = 1 << (index & 0x1f);
-    tab[i] |= mask;
-}
-
-static inline int apic_get_bit(uint32_t *tab, int index)
-{
-    int i, mask;
-    i = index >> 5;
-    mask = 1 << (index & 0x1f);
-    return !!(tab[i] & mask);
-}
 
 APICCommonClass *apic_get_class(Error **errp);
 

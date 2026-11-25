@@ -77,14 +77,6 @@ static int apic_ffs_bit(uint32_t value)
     return ctz32(value);
 }
 
-static inline void apic_reset_bit(uint32_t *tab, int index)
-{
-    int i, mask;
-    i = index >> 5;
-    mask = 1 << (index & 0x1f);
-    tab[i] &= ~mask;
-}
-
 /* return -1 if no bit is set */
 static int get_highest_priority_int(uint32_t *tab)
 {
@@ -441,8 +433,16 @@ static int apic_irq_pending(APICCommonState *s)
     if (irrv < 0) {
         return 0;
     }
+    /*
+     * PPR cannot have a lower priority class than TPR. Avoid searching
+     * ISR when TPR alone blocks the pending fixed interrupt. ExtINT
+     * forwarding remains independent of this priority check.
+     */
+    if (apic_priority_blocked(irrv, s->tpr)) {
+        return -1;
+    }
     ppr = apic_get_ppr(s);
-    if (ppr && (irrv & 0xf0) <= (ppr & 0xf0)) {
+    if (apic_priority_blocked(irrv, ppr)) {
         return -1;
     }
 
