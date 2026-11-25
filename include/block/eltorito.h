@@ -37,6 +37,50 @@ static inline bool eltorito_catalog_lba(const uint8_t *record,
     return true;
 }
 
+/* Bound advisory discovery; never walk directory records or path tables. */
+#define ELTORITO_DESCRIPTOR_LIMIT 32
+
+typedef enum ElToritoScanResult {
+    ELTORITO_SCAN_FALLBACK,
+    ELTORITO_SCAN_NO_BOOT,
+    ELTORITO_SCAN_FOUND,
+} ElToritoScanResult;
+
+typedef bool (*ElToritoReadBlock)(void *opaque, uint32_t lba, uint8_t *buf);
+
+static inline ElToritoScanResult
+eltorito_scan_descriptors(ElToritoReadBlock read_block, void *opaque,
+                         uint64_t image_size, uint8_t *block,
+                         uint32_t *catalog_lba)
+{
+    for (uint32_t lba = 16; lba < 16 + ELTORITO_DESCRIPTOR_LIMIT; lba++) {
+        if ((uint64_t)(lba + 1) * ELTORITO_BLOCK_SIZE > image_size ||
+            !read_block(opaque, lba, block) ||
+            memcmp(block + 1, "CD001", 5) || block[6] != 1) {
+            return ELTORITO_SCAN_FALLBACK;
+        }
+
+        /* Require the ordinary primary descriptor at the start. */
+        if (lba == 16 && block[0] != 1) {
+            return ELTORITO_SCAN_FALLBACK;
+        }
+
+        switch (block[0]) {
+        case 0:
+            return eltorito_catalog_lba(block, image_size, catalog_lba) ?
+                ELTORITO_SCAN_FOUND : ELTORITO_SCAN_FALLBACK;
+        case 1: /* Primary hierarchy, including legacy naming conventions */
+        case 2: /* Supplementary hierarchy, e.g. Joliet */
+            break;
+        case 255:
+            return ELTORITO_SCAN_NO_BOOT;
+        default:
+            return ELTORITO_SCAN_FALLBACK;
+        }
+    }
+    return ELTORITO_SCAN_FALLBACK;
+}
+
 /*
  * Conservative advisory fast path, not a complete El Torito parser.
  * Require a single x86 no-emulation entry and an otherwise empty catalog.

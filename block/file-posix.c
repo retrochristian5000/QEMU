@@ -743,10 +743,19 @@ static IsoDataSource *raw_isofs_data_source_new_from_fd(int fd)
     return src;
 }
 
+static bool raw_eltorito_read_block(void *opaque, uint32_t lba,
+                                    uint8_t *buf)
+{
+    int fd = *(int *)opaque;
+
+    return pread(fd, buf, ISO_BLOCK_SIZE, (off_t)lba * ISO_BLOCK_SIZE) ==
+           ISO_BLOCK_SIZE;
+}
+
 /*
- * A single BIOS no-emulation entry needs no directory-tree import.
+ * Boot discovery depends on volume descriptors, not filenames.
  * This is advisory only: the guest firmware still validates and boots
- * the disc itself. Fall back for every other catalog layout.
+ * the disc itself. Fall back for unrecognized or complex layouts.
  */
 static bool raw_eltorito_read_ahead(int fd)
 {
@@ -754,14 +763,18 @@ static bool raw_eltorito_read_ahead(int fd)
     uint32_t catalog_lba;
     ElToritoInitialExtent extent;
     struct stat st;
+    ElToritoScanResult result;
 
-    if (fstat(fd, &st) < 0 || st.st_size < 0 ||
-        pread(fd, block, sizeof(block), 17 * ISO_BLOCK_SIZE) !=
-            sizeof(block) ||
-        !eltorito_catalog_lba(block, st.st_size, &catalog_lba) ||
-        pread(fd, block, sizeof(block),
-              (off_t)catalog_lba * ISO_BLOCK_SIZE) != sizeof(block) ||
-        !eltorito_initial_extent(block, st.st_size, &extent)) {
+    if (fstat(fd, &st) < 0 || st.st_size < 0) {
+        return false;
+    }
+
+    result = eltorito_scan_descriptors(raw_eltorito_read_block, &fd,
+                                       st.st_size, block, &catalog_lba);
+    if (result == ELTORITO_SCAN_FALLBACK ||
+        (result == ELTORITO_SCAN_FOUND &&
+         (!raw_eltorito_read_block(&fd, catalog_lba, block) ||
+          !eltorito_initial_extent(block, st.st_size, &extent)))) {
         return false;
     }
 
@@ -769,9 +782,11 @@ static bool raw_eltorito_read_ahead(int fd)
                         MIN((uint64_t)64 * KiB,
                             (uint64_t)st.st_size -
                             ISO_PVD_LBA * ISO_BLOCK_SIZE));
-    raw_darwin_rdadvise(fd, (uint64_t)catalog_lba * ISO_BLOCK_SIZE,
-                        ISO_BLOCK_SIZE);
-    raw_darwin_rdadvise(fd, extent.offset, extent.bytes);
+    if (result == ELTORITO_SCAN_FOUND) {
+        raw_darwin_rdadvise(fd, (uint64_t)catalog_lba * ISO_BLOCK_SIZE,
+                            ISO_BLOCK_SIZE);
+        raw_darwin_rdadvise(fd, extent.offset, extent.bytes);
+    }
     return true;
 }
 
