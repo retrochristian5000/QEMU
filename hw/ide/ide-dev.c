@@ -250,12 +250,37 @@ static void oti910_class_init(ObjectClass *klass, const void *data)
 
     dc->desc = "Oak OTI-910 ATAPI CD-ROM (experimental compatibility profile)";
     k->atapi_cd_only = true;
+    k->atapi_default_model = "QEMU OTI-910 CD-ROM";
+    k->atapi_inquiry_product = "OTI-910 CD-ROM";
 }
 
 static const TypeInfo oti910_info = {
     .name = "oti-910",
     .parent = "ide-cd",
     .class_init = oti910_class_init,
+};
+
+/*
+ * Early OTI-011-based NEC CDR-260 compatibility profile.
+ * Only the observed unswapped model field and CD-only capabilities are
+ * selected here; other pre-standard firmware behavior remains unmodeled.
+ */
+static void oti011_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    IDEDeviceClass *k = IDE_DEVICE_CLASS(klass);
+
+    dc->desc = "Oak OTI-011 CD-ROM (experimental NEC CDR-260 profile)";
+    k->atapi_cd_only = true;
+    k->atapi_unswapped_model = true;
+    k->atapi_default_model = "NEC CD-ROM DRIVE:260";
+    k->atapi_inquiry_product = "OTI-011 CD-ROM";
+}
+
+static const TypeInfo oti011_info = {
+    .name = "oti-011",
+    .parent = "ide-cd",
+    .class_init = oti011_class_init,
 };
 
 static void ide_device_class_init(ObjectClass *klass, const void *data)
@@ -282,6 +307,7 @@ static void ide_register_types(void)
     type_register_static(&ide_hd_info);
     type_register_static(&ide_cd_info);
     type_register_static(&oti910_info);
+    type_register_static(&oti011_info);
     type_register_static(&ide_device_type_info);
 }
 

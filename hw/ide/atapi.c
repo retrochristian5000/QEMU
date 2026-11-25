@@ -81,6 +81,12 @@ static void ide_atapi_identify(IDEState *s)
     ide_put_le16(p + 22, 4); /* ecc bytes */
     ide_padstr((char *)(p + 23), s->version, 8); /* firmware version */
     ide_padstr((char *)(p + 27), s->drive_model_str, 40); /* model */
+    if (s->atapi_unswapped_model) {
+        /* Early NEC CDR-260 firmware returns the model in wire order. */
+        for (int i = 27; i < 47; i++) {
+            p[i] = bswap16(p[i]);
+        }
+    }
     ide_put_le16(p + 48, 1); /* dword I/O (XXX: should not be set on CDROM) */
 #ifdef USE_DMA_CDROM
     ide_put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */
@@ -855,8 +861,8 @@ static void cmd_inquiry(IDEState *s, uint8_t *buf)
         buf[6] = 0;    /* reserved */
         buf[7] = 0;    /* reserved */
         padstr8(buf + 8, 8, "QEMU");
-        padstr8(buf + 16, 16, s->atapi_cd_only ?
-                "OTI-910 CD-ROM" : "QEMU DVD-ROM");
+        padstr8(buf + 16, 16, s->atapi_inquiry_product ?:
+                "QEMU DVD-ROM");
         padstr8(buf + 32, 4, s->version);
         idx = 36;
     }

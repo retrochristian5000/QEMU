@@ -1645,10 +1645,13 @@ void ide_bus_reset(IDEBus *bus)
 int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
 {
     uint64_t nb_sectors;
+    IDEDeviceClass *dc = IDE_DEVICE_GET_CLASS(dev);
 
     s->blk = dev->conf.blk;
     s->drive_kind = kind;
-    s->atapi_cd_only = IDE_DEVICE_GET_CLASS(dev)->atapi_cd_only;
+    s->atapi_cd_only = dc->atapi_cd_only;
+    s->atapi_unswapped_model = dc->atapi_unswapped_model;
+    s->atapi_inquiry_product = dc->atapi_inquiry_product;
 
     blk_get_geometry(s->blk, &nb_sectors);
     s->win2k_install_hack = dev->win2k_install_hack;
@@ -1688,8 +1691,8 @@ int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
     } else {
         switch (kind) {
         case IDE_CD:
-            strcpy(s->drive_model_str, s->atapi_cd_only ?
-                   "QEMU OTI-910 CD-ROM" : "QEMU DVD-ROM");
+            pstrcpy(s->drive_model_str, sizeof(s->drive_model_str),
+                    dc->atapi_default_model ?: "QEMU DVD-ROM");
             break;
         case IDE_CFATA:
             strcpy(s->drive_model_str, "QEMU MICRODRIVE");

@@ -93,6 +93,8 @@ struct IDEState {
     char version[9];
     /* ATAPI specific */
     bool atapi_cd_only; /* Immutable device profile, not migrated. */
+    bool atapi_unswapped_model;
+    const char *atapi_inquiry_product;
     struct unreported_events events;
     uint8_t sense_key;
     uint8_t asc;
@@ -147,6 +149,9 @@ struct IDEDeviceClass {
     DeviceClass parent_class;
     void (*realize)(IDEDevice *dev, Error **errp);
     bool atapi_cd_only;
+    bool atapi_unswapped_model;
+    const char *atapi_default_model;
+    const char *atapi_inquiry_product;
 };
 
 struct IDEDevice {

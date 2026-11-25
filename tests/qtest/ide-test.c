@@ -1414,6 +1414,46 @@ static void cdrom_pio_impl(int nblocks)
     free_pci_device(dev);
 }
 
+static void test_oak_identify_model(const void *opaque)
+{
+    const char *profile = opaque;
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    uint8_t model[40];
+    bool early = g_str_equal(profile, "oti-011");
+    const char *expected = early ? "NEC CD-ROM DRIVE:260" :
+                           g_str_equal(profile, "oti-910") ?
+                           "QEMU OTI-910 CD-ROM" : "QEMU DVD-ROM";
+
+    g_assert_true(qtest_has_device(profile));
+    qts = ide_test_start("-device %s,bus=ide.0,unit=0", profile);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    qpci_io_writeb(dev, ide_bar, reg_device, 0);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET_IDENTIFY);
+    ide_wait_intr(qts, IDE_PRIMARY_IRQ);
+    assert_bit_set(ide_wait_clear(qts, BSY), DRQ);
+    for (int i = 0; i < 256; i++) {
+        uint16_t word = qpci_io_readw(dev, ide_bar, reg_data);
+
+        if (i >= 27 && i < 47) {
+            model[2 * (i - 27)] = word;
+            model[2 * (i - 27) + 1] = word >> 8;
+        }
+    }
+    assert_bit_clear(ide_wait_clear(qts, BSY), DRQ | ERR);
+    for (int i = 0; i < sizeof(model); i++) {
+        unsigned index = early ? i : i ^ 1;
+
+        g_assert_cmphex(model[i], ==,
+                        index < strlen(expected) ? expected[index] : ' ');
+    }
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_oti910_profile(void)
 {
     QTestState *qts;
@@ -1741,6 +1781,12 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
 
     qtest_add_func("/ide/oti-910/profile", test_oti910_profile);
+    qtest_add_data_func("/ide/oti-011/identify", "oti-011",
+                        test_oak_identify_model);
+    qtest_add_data_func("/ide/oti-910/identify", "oti-910",
+                        test_oak_identify_model);
+    qtest_add_data_func("/ide/cdrom/identify-model", "ide-cd",
+                        test_oak_identify_model);
     qtest_add_func("/ide/cdrom/subchannel-header", test_cdrom_subchannel_header);
     qtest_add_func("/ide/cdrom/invalid-bcl", test_cdrom_invalid_bcl);
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);

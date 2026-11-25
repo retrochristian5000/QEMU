@@ -324,6 +324,46 @@ The driver binary used by the user has not been inspected or run.
 The qtest ``/ide/oti-910/profile`` exercises the CD-only profile response
 through PIO; build and guest-runtime verification are pending.
 
+OTI-011 early ATAPI profile
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A February 1994 NEC CDR-260 physically examined by the OS/2 Museum
+contains an OTI-011 and reports firmware 1.01. Its IDENTIFY PACKET
+DEVICE model field is not word-byte-swapped like later drives.
+NEC_IDE.SYS dated 1994-08-11 (24,824 bytes) worked on that drive,
+whereas the 1994-02-18 copy (21,669 bytes) did not reach ready state.
+The same investigation describes OS/2's pre-standard ATAPI command
+and completion-status workarounds. These are firmware observations,
+not universal OTI-011 silicon behavior.
+
+The experimental ``oti-011`` profile uses the CDR-260 as its initial
+firmware reference. It shares CD-only capabilities with ``oti-910``
+and returns an unswapped IDENTIFY model field. Its model and INQUIRY
+strings are provisional, not a captured full identify block. Other
+IDENTIFY fields, reset behavior, mode pages, transfer modes and
+completion reason remain generic until verified. Generic ``ide-cd``
+and ``oti-910`` retain their previous identification encoding.
+
+Example, with an unoccupied secondary IDE channel::
+
+    -drive if=none,id=oakcd,media=cdrom,format=raw,file=disc.iso
+    -device oti-011,drive=oakcd,bus=ide.1,unit=0
+
+Regression coverage checks raw IDENTIFY model bytes for all three
+profiles. The early firmware-specific IRQ and packet behavior needs
+additional physical-drive traces or historical driver documentation.
+
+Additional references:
+
+* `OS/2 Museum, The Secret History of ATAPI, NEC CDR-260 section
+  <https://www.os2museum.com/wp/the-secret-history-of-atapi/>`__.
+* `USITC publication 3251, Certain CD-ROM Controllers and Products
+  Containing the Same-II (1999)
+  <https://www.usitc.gov/publications/337/pub3251.pdf>`__.
+* `Oak optical controller patent US 7,124,217 B2 (archived technical
+  disclosure, not a recovered drive ROM)
+  <https://www.bitsavers.org/components/oakTechnology/OTI-011/7124217.pdf>`__.
+
 References:
 
 * `Microsoft KB Q293185 (archived)
