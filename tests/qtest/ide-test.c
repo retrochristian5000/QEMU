@@ -1189,6 +1189,69 @@ static void ide_wait_intr(QTestState *qts, int irq)
     g_assert_not_reached();
 }
 
+static void test_piix_channel_irq_reset(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    static const unsigned base[] = { 0x1f0, 0x170 };
+    static const unsigned control[] = { 0x3f6, 0x376 };
+    FILE *fh = fopen(tmp_path[0], "wb");
+
+    g_assert_nonnull(fh);
+    g_assert_cmpint(ftruncate(fileno(fh), 16 * ATAPI_BLOCK_SIZE), ==, 0);
+    fclose(fh);
+    qts = ide_test_start(
+        "-drive if=none,file=%s,format=raw,id=hd0 "
+        "-device ide-hd,drive=hd0,bus=ide.0 "
+        "-device ide-cd,bus=ide.1", tmp_path[0]);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    /* Both channels have an unacknowledged IDENTIFY data-ready IRQ. */
+    for (unsigned i = 0; i < ARRAY_SIZE(base); i++) {
+        qtest_outb(qts, base[i] + reg_device, 0);
+        qtest_outb(qts, base[i] + reg_command,
+                   i == 0 ? CMD_IDENTIFY : CMD_PACKET_IDENTIFY);
+        ide_wait_intr(qts, IDE_PRIMARY_IRQ + i);
+        assert_bit_set(qtest_inb(qts, control[i]), DRQ);
+        g_assert_true(qtest_get_irq(qts, IDE_PRIMARY_IRQ + i));
+    }
+
+    /* Resetting one channel must not acknowledge the other channel. */
+    for (unsigned i = 0; i < ARRAY_SIZE(base); i++) {
+        int irq = IDE_PRIMARY_IRQ + i;
+        int64_t deadline;
+
+        qtest_outb(qts, control[i], IDE_CTRL_RESET);
+        g_assert_false(qtest_get_irq(qts, irq));
+        if (i == 0) {
+            g_assert_true(qtest_get_irq(qts, IDE_PRIMARY_IRQ + 1));
+        }
+        qtest_clock_step(qts, 5000);
+        qtest_outb(qts, control[i], 0);
+        qtest_clock_step(qts, 2000000);
+        deadline = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
+        while (qtest_inb(qts, control[i]) & BSY) {
+            g_assert_cmpint(g_get_monotonic_time(), <, deadline);
+        }
+        g_assert_false(qtest_get_irq(qts, irq));
+    }
+
+    /* A new command can assert each interrupt, and status clears it. */
+    for (unsigned i = 0; i < ARRAY_SIZE(base); i++) {
+        qtest_outb(qts, base[i] + reg_device, 0);
+        qtest_outb(qts, base[i] + reg_command,
+                   i == 0 ? CMD_IDENTIFY : CMD_PACKET_IDENTIFY);
+        ide_wait_intr(qts, IDE_PRIMARY_IRQ + i);
+        assert_bit_set(qtest_inb(qts, base[i] + reg_status), DRQ);
+        g_assert_false(qtest_get_irq(qts, IDE_PRIMARY_IRQ + i));
+    }
+
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void cdrom_pio_impl(int nblocks)
 {
     QTestState *qts;
@@ -1529,6 +1592,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/identify", test_identify);
     qtest_add_func("/ide/piix/bmdma-access-width",
                    test_piix_bmdma_access_width);
+    qtest_add_func("/ide/piix/channel-irq-reset", test_piix_channel_irq_reset);
     qtest_add_func("/ide/ata-atapi-command-boundary",
                    test_ata_atapi_command_boundary);
 

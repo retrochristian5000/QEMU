@@ -1296,8 +1296,8 @@ abort_cmd:
 }
 
 
-/* EXECUTE DEVICE DIAGNOSTIC */
-static bool cmd_exec_dev_diagnostic(IDEState *s, uint8_t cmd)
+/* Shared signature and diagnostic status, without command notification. */
+static void ide_set_diagnostic_status(IDEState *s)
 {
     /*
      * Clear the device register per the ATA (v6) specification,
@@ -1317,9 +1317,16 @@ static bool cmd_exec_dev_diagnostic(IDEState *s, uint8_t cmd)
          * They are part of the regular output (this is why ERR_STAT isn't set)
          * Device 0 passed, Device 1 passed or not present. */
         s->error = 0x01;
+    }
+}
+
+/* EXECUTE DEVICE DIAGNOSTIC */
+static bool cmd_exec_dev_diagnostic(IDEState *s, uint8_t cmd)
+{
+    ide_set_diagnostic_status(s);
+    if (s->drive_kind != IDE_CD) {
         ide_bus_set_irq(s->bus);
     }
-
     return false;
 }
 
@@ -1558,8 +1565,8 @@ static void ide_perform_srst(IDEState *s)
     s->status |= BUSY_STAT;
     ide_reset_transfers(s);
 
-    /* perform diagnostic */
-    cmd_exec_dev_diagnostic(s, WIN_DIAGNOSE);
+    /* SRST sets the diagnostic signature without a command-completion IRQ. */
+    ide_set_diagnostic_status(s);
 }
 
 static void ide_bus_perform_srst(void *opaque)
@@ -1568,10 +1575,13 @@ static void ide_bus_perform_srst(void *opaque)
     IDEState *s;
     int i;
 
+    /* Cancellation can run completion callbacks; keep INTRQ inactive. */
+    bus->cmd |= IDE_CTRL_RESET;
     for (i = 0; i < 2; i++) {
         s = &bus->ifs[i];
         ide_perform_srst(s);
     }
+    qemu_irq_lower(bus->irq);
 
     bus->cmd &= ~IDE_CTRL_RESET;
 }
@@ -1587,6 +1597,7 @@ void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val)
     /* Device0 and Device1 each have their own control register,
      * but QEMU models it as just one register in the controller. */
     if (!(bus->cmd & IDE_CTRL_RESET) && (val & IDE_CTRL_RESET)) {
+        qemu_irq_lower(bus->irq);
         for (i = 0; i < 2; i++) {
             s = &bus->ifs[i];
             s->status |= BUSY_STAT;
@@ -1621,8 +1632,9 @@ void ide_bus_reset(IDEBus *bus)
     bus->cmd = 0;
     ide_reset(&bus->ifs[0]);
     ide_reset(&bus->ifs[1]);
-    /* Reset also clears the high-order-byte selector. */
+    /* Reset also clears the high-order-byte selector and interrupt output. */
     bus->cmd &= ~IDE_CTRL_HOB;
+    qemu_irq_lower(bus->irq);
 
     /* reset dma provider too */
     if (bus->dma->ops->reset) {
@@ -1837,7 +1849,7 @@ void ide_bus_init_output_irq(IDEBus *bus, qemu_irq irq_out)
 
 void ide_bus_set_irq(IDEBus *bus)
 {
-    if (!(bus->cmd & IDE_CTRL_DISABLE_IRQ)) {
+    if (!(bus->cmd & (IDE_CTRL_DISABLE_IRQ | IDE_CTRL_RESET))) {
         qemu_irq_raise(bus->irq);
     }
 }
