@@ -22,6 +22,12 @@
  * THE SOFTWARE.
  */
 
+/* CL-GD5446 TRM, section 4.61: only C0h-DFh extend into dot nine. */
+static inline bool vga_glyph_duplicate_ninth(uint8_t ch, uint8_t mode)
+{
+    return (mode & VGA_ATC_MODE_LINE_GRAPHICS) && ch >= 0xc0 && ch <= 0xdf;
+}
+
 static inline void vga_draw_glyph_line(uint8_t *d, uint32_t font_data,
                                        uint32_t xorcol, uint32_t bgcol)
 {

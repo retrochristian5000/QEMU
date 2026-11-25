@@ -441,6 +441,10 @@ void vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                 s->ar[index] = val & 0x3f;
                 break;
             case VGA_ATC_MODE:
+                if ((s->ar[index] ^ val) &
+                    (VGA_ATC_MODE_LINE_GRAPHICS | VGA_ATC_MODE_BLINK)) {
+                    s->full_update_gfx = 1;
+                }
                 s->ar[index] = val & ~0x10;
                 break;
             case VGA_ATC_OVERSCAN:
@@ -1204,6 +1208,20 @@ static void vga_draw_text(VGACommonState *s, int full_update)
     uint32_t *ch_attr_ptr;
     int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
 
+    full_update |= update_basic_params(s);
+
+    line_offset = s->params.line_offset;
+
+    vga_get_text_resolution(s, &width, &height, &cw, &cheight);
+    if ((height * width) <= 1) {
+        /* better than nothing: exit if transient size is too small */
+        return;
+    }
+    if ((height * width) > CH_ATTR_SIZE) {
+        /* better than nothing: exit if transient size is too big */
+        return;
+    }
+
     /* compute font data address (in plane 2) */
     v = sr(s, VGA_SEQ_CHARACTER_MAP);
     offset = (((v >> 4) & 1) | ((v << 1) & 6)) * 8192 * 4 + 2;
@@ -1224,19 +1242,6 @@ static void vga_draw_text(VGACommonState *s, int full_update)
            indicates the font may have been modified */
         s->plane_updated = 0;
         full_update = 1;
-    }
-    full_update |= update_basic_params(s);
-
-    line_offset = s->params.line_offset;
-
-    vga_get_text_resolution(s, &width, &height, &cw, &cheight);
-    if ((height * width) <= 1) {
-        /* better than nothing: exit if transient size is too small */
-        return;
-    }
-    if ((height * width) > CH_ATTR_SIZE) {
-        /* better than nothing: exit if transient size is too big */
-        return;
     }
 
     if (width != s->last_width || height != s->last_height ||
@@ -1341,11 +1346,8 @@ static void vga_draw_text(VGACommonState *s, int full_update)
                     vga_draw_glyph8(d1, linesize,
                                     font_ptr, cheight, fgcol, bgcol);
                 } else {
-                    dup9 = 0;
-                    if (ch >= 0xb0 && ch <= 0xdf &&
-                        (s->ar[VGA_ATC_MODE] & 0x04)) {
-                        dup9 = 1;
-                    }
+                    dup9 = vga_glyph_duplicate_ninth(ch,
+                                                     s->ar[VGA_ATC_MODE]);
                     vga_draw_glyph9(d1, linesize,
                                     font_ptr, cheight, fgcol, bgcol, dup9);
                 }

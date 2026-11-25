@@ -122,6 +122,8 @@
 #define VGA_ATC_PALETTEE        0x0E
 #define VGA_ATC_PALETTEF        0x0F
 #define VGA_ATC_MODE            0x10
+#define VGA_ATC_MODE_LINE_GRAPHICS 0x04
+#define VGA_ATC_MODE_BLINK      0x08
 #define VGA_ATC_OVERSCAN        0x11
 #define VGA_ATC_PLANE_ENABLE    0x12
 #define VGA_ATC_PEL             0x13

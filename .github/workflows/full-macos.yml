@@ -8,6 +8,7 @@ on:
       - '.github/workflows/full-macos.yml'
       - 'scripts/tests/test-darwin-host-physmem.py'
       - 'scripts/tests/test-cocoa-metal-dirty.py'
+      - 'scripts/tests/test-vga-glyph.py'
       - 'scripts/tests/test-macos-api-policy.py'
       - 'ui/cocoa-metal.m'
       - 'ui/cocoa.m'
@@ -94,6 +95,8 @@ jobs:
 
       - name: Test Cocoa multi-monitor routing and placement
         run: python3 scripts/tests/test-cocoa-metal-dirty.py
+      - name: Verify VGA glyph rendering and font invalidation
+        run: python3 scripts/tests/test-vga-glyph.py
 
       - name: Audit Cocoa API and Objective-C ownership contracts
         run: python3 scripts/tests/test-macos-api-policy.py

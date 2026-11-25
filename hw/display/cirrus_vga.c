@@ -2669,7 +2669,11 @@ static void cirrus_vga_ioport_write(void *opaque, hwaddr addr, uint64_t val,
             case 0x00 ... 0x0f:
                 s->ar[index] = val & 0x3f;
                 break;
-            case 0x10:
+            case VGA_ATC_MODE:
+                if ((s->ar[index] ^ val) &
+                    (VGA_ATC_MODE_LINE_GRAPHICS | VGA_ATC_MODE_BLINK)) {
+                    s->full_update_gfx = 1;
+                }
                 s->ar[index] = val & ~0x10;
                 break;
             case 0x11:
