@@ -23,6 +23,7 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
+#include "qemu/units.h"
 #include "trace/control.h"
 #include "qemu/thread.h"
 #include "qemu/lockable.h"
@@ -216,8 +217,11 @@ static FILE *qemu_log_trylock_with_err(Error **errp)
                 } else {
                     thread_rotation_failed = true;
                     if (!errp) {
+                        int saved_errno = errno;
+
                         warn_report("Could not create log segment for '%s': %s",
-                                    filename, strerror(errno));
+                                    filename, strerror(saved_errno));
+                        errno = saved_errno;
                     }
                 }
             } else {
