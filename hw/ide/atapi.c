@@ -27,6 +27,7 @@
 #include "qemu/cutils.h"
 #include "hw/scsi/scsi.h"
 #include "hw/block/dvdrom.h"
+#include "hw/block/cdrom-sector.h"
 #include "system/block-backend.h"
 #include "migration/vmstate.h"
 #include "scsi/constants.h"
@@ -224,14 +225,6 @@ static void padstr8(uint8_t *buf, int buf_size, const char *src)
     }
 }
 
-static void lba_to_msf(uint8_t *buf, int lba)
-{
-    lba += 150;
-    buf[0] = (lba / 75) / 60;
-    buf[1] = (lba / 75) % 60;
-    buf[2] = lba % 75;
-}
-
 static inline int media_present(IDEState *s)
 {
     return !s->tray_open && s->nb_sectors > 0;
@@ -246,23 +239,6 @@ static inline int media_is_dvd(IDEState *s)
 static inline int media_is_cd(IDEState *s)
 {
     return (media_present(s) && s->nb_sectors <= CD_MAX_SECTORS);
-}
-
-static void cd_data_to_raw(uint8_t *buf, int lba)
-{
-    /* sync bytes */
-    buf[0] = 0x00;
-    memset(buf + 1, 0xff, 10);
-    buf[11] = 0x00;
-    buf += 12;
-    /* MSF */
-    lba_to_msf(buf, lba);
-    buf[3] = 0x01; /* mode 1 data */
-    buf += 4;
-    /* data */
-    buf += 2048;
-    /* XXX: ECC not computed */
-    memset(buf, 0, 288);
 }
 
 static void cd_read_sector_cb(void *opaque, int ret)
@@ -289,7 +265,7 @@ static void cd_read_sector_cb(void *opaque, int ret)
         for (i = nsec - 1; i >= 0; i--) {
             memmove(s->io_buffer + i * 2352 + 16, s->io_buffer + i * 2048,
                     ATAPI_SECTOR_SIZE);
-            cd_data_to_raw(s->io_buffer + i * 2352, s->lba + i);
+            cdrom_synthesize_mode1_sector(s->io_buffer + i * 2352, s->lba + i);
         }
     }
 
@@ -536,7 +512,7 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
         if (s->lba != -1) {
             if (s->cd_sector_size == 2352) {
                 n = 1;
-                cd_data_to_raw(s->io_buffer, s->lba);
+                cdrom_synthesize_mode1_sector(s->io_buffer, s->lba);
             } else {
                 n = s->io_buffer_size >> 11;
             }
@@ -1104,7 +1080,7 @@ static void cmd_read_cd(IDEState *s, uint8_t* buf)
     }
 
     lba = ldl_be_p(buf + 2);
-    if (lba >= total_sectors || lba + nb_sectors - 1 >= total_sectors) {
+    if (lba >= total_sectors || nb_sectors > total_sectors - lba) {
         ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_LOGICAL_BLOCK_OOR);
         return;
     }
@@ -1113,6 +1089,21 @@ static void cmd_read_cd(IDEState *s, uint8_t* buf)
     if (transfer_request == 0x00) {
         /* nothing */
         ide_atapi_cmd_ok(s);
+        return;
+    }
+
+    /*
+     * The backing image exposes cooked Mode 1 blocks, not CD-DA or
+     * XA sectors. Do not return synthetic Mode 1 for a different type.
+     */
+    switch (cdrom_mode1_expected_type(buf[1])) {
+    case CDROM_SECTOR_MATCH:
+        break;
+    case CDROM_SECTOR_MISMATCH:
+        ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_ILLEGAL_MODE_FOR_TRACK);
+        return;
+    case CDROM_SECTOR_RESERVED:
+        ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_INV_FIELD_IN_CMD_PACKET);
         return;
     }
 

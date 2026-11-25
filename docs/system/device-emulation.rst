@@ -89,6 +89,7 @@ Emulated Devices
    devices/can.rst
    devices/canokey.rst
    devices/ccid.rst
+   devices/cdrom-xa.rst
    devices/cxl.rst
    devices/display-edid.rst
    devices/emmc.rst

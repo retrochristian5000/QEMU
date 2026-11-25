@@ -297,6 +297,7 @@
 #define ASC_SAVING_PARAMETERS_NOT_SUPPORTED  0x39
 #define ASC_DATA_PHASE_ERROR                 0x4b
 #define ASC_MEDIA_REMOVAL_PREVENTED          0x53
+#define ASC_ILLEGAL_MODE_FOR_TRACK           0x64
 
 #define CFA_NO_ERROR            0x00
 #define CFA_MISC_ERROR          0x09

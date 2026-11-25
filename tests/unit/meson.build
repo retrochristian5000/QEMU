@@ -149,6 +149,7 @@ if have_system
     'test-vga-palette': [],
     'test-edid-input': [meson.project_source_root() / 'hw/display/edid-generate.c'],
     'test-dvdrom': [meson.project_source_root() / 'hw/block/dvdrom.c'],
+    'test-cdrom-sector': [],
     'test-ced': [meson.project_source_root() / 'hw/block/ced.c'],
     'test-ced-sft100': [
       meson.project_source_root() / 'hw/block/ced.c',
