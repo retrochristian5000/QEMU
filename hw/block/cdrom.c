@@ -1,5 +1,5 @@
 /*
- * QEMU ATAPI CD-ROM Emulator
+ * QEMU shared CD-ROM table-of-contents helpers
  *
  * Copyright (c) 2006 Fabrice Bellard
  *
@@ -21,9 +21,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-
-/* ??? Most of the ATAPI emulation is still in ide.c.  It should be moved
-   here.  */
 
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"

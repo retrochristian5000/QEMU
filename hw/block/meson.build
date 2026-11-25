@@ -1,6 +1,7 @@
 system_ss.add(files(
   'block.c',
   'cdrom.c',
+  'dvdrom.c',
   'hd-geometry.c'
 ))
 system_ss.add(files('ced.c', 'ced-sft100-control.c', 'ced-sft100-audio.c', 'ced-sft100.c'))
