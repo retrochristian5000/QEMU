@@ -207,8 +207,15 @@ integers override each limit; setting either pool variable to ``0`` disables
 its limit. Other hosts keep uncapped compile and TableGen pools by default.
 These scheduling controls do not change the compiler ABI or invalidate the
 installed toolchain. ``MACOS_BUILD_POWER=eco|balanced|performance`` selects
-the outer macOS job budget unless ``JOBS`` is explicit. Pool limits are not a
-whole-build RSS cap: compile, link, and TableGen jobs may run concurrently.
+the outer macOS job budget unless ``JOBS`` is explicit. Automatic job
+counts are also capped using half of kernel-reported usable physical RAM
+(or installed RAM when the usable-memory query is unavailable), with a
+scheduling estimate of 1.5 GiB per job. At least one job is permitted;
+if neither memory query succeeds, at most two automatic jobs are used.
+Explicit ``JOBS`` overrides both automatic limits. This leaves headroom for
+macOS, GPU resources, and other applications without changing guest RAM
+or disk buffers. The estimate is not a whole-build RSS cap: compile,
+link, and TableGen jobs may run concurrently.
 
 ``SCCACHE_CACHE_SIZE`` limits disk cache space, not resident memory.
 
