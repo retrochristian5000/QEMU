@@ -1189,6 +1189,76 @@ static void ide_wait_intr(QTestState *qts, int irq)
     g_assert_not_reached();
 }
 
+static void test_pic_ide_special_mask(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    FILE *fh = fopen(tmp_path[0], "wb");
+
+    g_assert_nonnull(fh);
+    g_assert_cmpint(ftruncate(fileno(fh), 16 * ATAPI_BLOCK_SIZE), ==, 0);
+    fclose(fh);
+
+    qts = ide_test_start(
+        "-drive if=none,file=%s,format=raw,id=hd0 "
+        "-device ide-hd,drive=hd0,bus=ide.0 "
+        "-device ide-cd,bus=ide.1", tmp_path[0]);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    /* Initialize both PICs in edge-triggered, cascaded 8086 mode. */
+    qtest_outb(qts, 0x20, 0x11);
+    qtest_outb(qts, 0xa0, 0x11);
+    qtest_outb(qts, 0x21, 0x08);
+    qtest_outb(qts, 0xa1, 0x70);
+    qtest_outb(qts, 0x21, 0x04);
+    qtest_outb(qts, 0xa1, 0x02);
+    qtest_outb(qts, 0x21, 0x01);
+    qtest_outb(qts, 0xa1, 0x01);
+    qtest_outb(qts, 0x21, 0xfb); /* Enable the cascade only. */
+    qtest_outb(qts, 0xa1, 0x3f); /* Enable IRQ14 and IRQ15. */
+
+    /* Acknowledge IRQ14 via PIC polling, leaving it in service. */
+    qtest_outb(qts, 0x1f0 + reg_device, 0);
+    qtest_outb(qts, 0x1f0 + reg_command, CMD_IDENTIFY);
+    ide_wait_intr(qts, IDE_PRIMARY_IRQ);
+    qtest_outb(qts, 0x20, 0x0c);
+    g_assert_cmphex(qtest_inb(qts, 0x20), ==, 0x82);
+    qtest_outb(qts, 0xa0, 0x0c);
+    g_assert_cmphex(qtest_inb(qts, 0xa0), ==, 0x86);
+    qtest_inb(qts, 0x1f0 + reg_status);
+
+    /* Mask the in-service IRQ14 and queue the lower-priority IRQ15. */
+    qtest_outb(qts, 0xa1, 0x7f);
+    qtest_outb(qts, 0x170 + reg_device, 0);
+    qtest_outb(qts, 0x170 + reg_command, CMD_PACKET_IDENTIFY);
+    ide_wait_intr(qts, IDE_PRIMARY_IRQ + 1);
+
+    qtest_outb(qts, 0xa0, 0x0a); /* Read slave IRR. */
+    assert_bit_set(qtest_inb(qts, 0xa0), 0x80);
+    qtest_outb(qts, 0x20, 0x0a); /* Read master IRR. */
+    assert_bit_clear(qtest_inb(qts, 0x20), 0x04);
+
+    /* OCW3 alone must release the pending request onto the cascade. */
+    qtest_outb(qts, 0xa0, 0x68);
+    assert_bit_set(qtest_inb(qts, 0x20), 0x04);
+
+    /* End the master cascade service and acknowledge IRQ15. */
+    qtest_outb(qts, 0x20, 0x62);
+    qtest_outb(qts, 0x20, 0x0c);
+    g_assert_cmphex(qtest_inb(qts, 0x20), ==, 0x82);
+    qtest_outb(qts, 0xa0, 0x0c);
+    g_assert_cmphex(qtest_inb(qts, 0xa0), ==, 0x87);
+    qtest_inb(qts, 0x170 + reg_status);
+
+    qtest_outb(qts, 0xa0, 0x67);
+    qtest_outb(qts, 0xa0, 0x66);
+    qtest_outb(qts, 0x20, 0x62);
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_piix_channel_irq_reset(void)
 {
     QTestState *qts;
@@ -1593,6 +1663,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/piix/bmdma-access-width",
                    test_piix_bmdma_access_width);
     qtest_add_func("/ide/piix/channel-irq-reset", test_piix_channel_irq_reset);
+    qtest_add_func("/ide/pic/special-mask", test_pic_ide_special_mask);
     qtest_add_func("/ide/ata-atapi-command-boundary",
                    test_ata_atapi_command_boundary);
 
