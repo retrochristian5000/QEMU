@@ -25,11 +25,4 @@ extern bool tcg_allowed;
  */
 bool qemu_tcg_mttcg_enabled(void);
 
-#ifdef CONFIG_DARWIN
-/* Host-only scheduling preference for newly created MTTCG threads. */
-bool qemu_tcg_darwin_vcpu_qos_enabled(void);
-/* Minimum host stack in bytes, or zero for the pthread default. */
-size_t qemu_tcg_darwin_vcpu_stack_size(void);
-#endif
-
 #endif
