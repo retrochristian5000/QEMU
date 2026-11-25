@@ -380,6 +380,15 @@ out:
     }
 }
 
+/* The idle bottom half has consumed its pending notification. */
+static void i8257_dma_bh(void *opaque)
+{
+    I8257State *d = opaque;
+
+    d->dma_bh_scheduled = false;
+    i8257_dma_run(d);
+}
+
 static void i8257_dma_register_channel(IsaDma *obj, int nchan,
                                        IsaDmaTransferHandler transfer_handler,
                                        void *opaque)
@@ -597,7 +606,7 @@ static void i8257_realize(DeviceState *dev, Error **errp)
         d->regs[i].transfer_handler = i8257_phony_handler;
     }
 
-    d->dma_bh = qemu_bh_new(i8257_dma_run, d);
+    d->dma_bh = qemu_bh_new(i8257_dma_bh, d);
 }
 
 static const Property i8257_properties[] = {
