@@ -224,6 +224,34 @@ static void test_vga_pel_mask(void)
     qtest_quit(qts);
 }
 
+static void test_cirrus_gray_palette(void)
+{
+    QTestState *qts = qtest_init("-vga none -device cirrus-vga");
+
+    /* The mask must not alter the DAC RGB values or hidden DAC register. */
+    qtest_inb(qts, VGA_PEL_IW);
+    qtest_outb(qts, VGA_PEL_MSK, 0x0f);
+    for (int i = 0; i < 4; i++) {
+        g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x0f);
+    }
+    qtest_outb(qts, VGA_PEL_MSK, 0x00); /* hidden DAC write */
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x0f);
+    qtest_inb(qts, VGA_PEL_IW);
+
+    qtest_outb(qts, VGA_PEL_IW, 0x37);
+    for (int i = 0; i < 3; i++) {
+        qtest_outb(qts, VGA_PEL_D, 0x2a);
+    }
+    qtest_outb(qts, VGA_PEL_IR, 0x37);
+    for (int i = 0; i < 3; i++) {
+        g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x2a);
+    }
+
+    qtest_outb(qts, VGA_PEL_MSK, 0xff);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xff);
+    qtest_quit(qts);
+}
+
 static void test_vga_eram_memory_decode(void)
 {
     static const bool chain4_modes[] = { false, true };
@@ -330,6 +358,12 @@ int main(int argc, char **argv)
         qtest_add_func("/display/vga/pel-mask", test_vga_pel_mask);
         qtest_add_func("/display/vga/eram-memory-decode",
                        test_vga_eram_memory_decode);
+    }
+
+    if (qtest_has_device("cirrus-vga") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/pci/cirrus-gray-palette",
+                       test_cirrus_gray_palette);
     }
 
     if (qtest_has_device("isa-cirrus-vga") &&

@@ -96,6 +96,7 @@ typedef struct VGACommonState {
     uint8_t dac_write_index;
     uint8_t dac_cache[3]; /* used when writing */
     int dac_8bit;
+    uint8_t dac_pixel_mask;
     uint8_t palette[768];
     int32_t bank_offset;
     int (*get_bpp)(struct VGACommonState *s);

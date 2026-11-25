@@ -1052,7 +1052,7 @@ static int update_palette16(VGACommonState *s)
         } else {
             v = ((s->ar[VGA_ATC_COLOR_PAGE] & 0xc) << 4) | (v & 0x3f);
         }
-        v = v * 3;
+        v = (v & s->dac_pixel_mask) * 3;
         col = rgb_to_pixel32(c6_to_8(s->palette[v]),
                              c6_to_8(s->palette[v + 1]),
                              c6_to_8(s->palette[v + 2]));
@@ -1072,8 +1072,8 @@ static int update_palette256(VGACommonState *s)
 
     full_update = 0;
     palette = s->last_palette;
-    v = 0;
     for(i = 0; i < 256; i++) {
+        v = (i & s->dac_pixel_mask) * 3;
         if (s->dac_8bit) {
             col = rgb_to_pixel32(s->palette[v],
                                  s->palette[v + 1],
@@ -1087,7 +1087,6 @@ static int update_palette256(VGACommonState *s)
             full_update = 1;
             palette[i] = col;
         }
-        v += 3;
     }
     return full_update;
 }
@@ -1910,6 +1909,7 @@ void vga_common_reset(VGACommonState *s)
     s->dac_write_index = 0;
     memset(s->dac_cache, '\0', sizeof(s->dac_cache));
     s->dac_8bit = 0;
+    s->dac_pixel_mask = 0xff;
     memset(s->palette, '\0', sizeof(s->palette));
     s->bank_offset = 0;
     s->vbe_index = 0;
@@ -2288,6 +2288,7 @@ bool vga_common_init(VGACommonState *s, Object *obj, Error **errp)
     s->vbe_size_mask = s->vbe_size - 1;
 
     s->is_vbe_vmstate = 1;
+    s->dac_pixel_mask = 0xff;
 
     if (s->global_vmstate && qemu_ram_block_by_name("vga.vram")) {
         error_setg(errp, "Only one global VGA device can be used at a time");

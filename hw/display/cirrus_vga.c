@@ -1469,7 +1469,7 @@ static int cirrus_read_hidden_dac(CirrusVGAState * s)
         s->cirrus_hidden_dac_lockindex = 0;
         return s->cirrus_hidden_dac_data;
     }
-    return 0xff;
+    return s->vga.dac_pixel_mask;
 }
 
 static void cirrus_write_hidden_dac(CirrusVGAState * s, int reg_value)
@@ -1479,6 +1479,10 @@ static void cirrus_write_hidden_dac(CirrusVGAState * s, int reg_value)
 #if defined(DEBUG_CIRRUS)
         printf("cirrus: outport hidden DAC, value %02x\n", reg_value);
 #endif
+    } else {
+        /* CL-GD5446 TRM section 4.9: mask the DAC lookup address,
+         * never the stored RGB components or the direct-color pixels. */
+        s->vga.dac_pixel_mask = reg_value;
     }
     s->cirrus_hidden_dac_lockindex = 0;
 }
@@ -2783,6 +2787,33 @@ static const MemoryRegionOps cirrus_mmio_io_ops = {
 
 /* load/save state */
 
+/* Older migration streams have no pixel mask and used all eight bits. */
+static int cirrus_pre_load(void *opaque)
+{
+    CirrusVGAState *s = opaque;
+
+    s->vga.dac_pixel_mask = 0xff;
+    return 0;
+}
+
+static bool cirrus_pixel_mask_needed(void *opaque)
+{
+    CirrusVGAState *s = opaque;
+
+    return s->vga.dac_pixel_mask != 0xff;
+}
+
+static const VMStateDescription vmstate_cirrus_pixel_mask = {
+    .name = "cirrus_vga/pixel_mask",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = cirrus_pixel_mask_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT8(vga.dac_pixel_mask, CirrusVGAState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static int cirrus_post_load(void *opaque, int version_id)
 {
     CirrusVGAState *s = opaque;
@@ -2803,6 +2834,7 @@ const VMStateDescription vmstate_cirrus_vga = {
     .name = "cirrus_vga",
     .version_id = 2,
     .minimum_version_id = 1,
+    .pre_load = cirrus_pre_load,
     .post_load = cirrus_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT32(vga.latch, CirrusVGAState),
@@ -2835,6 +2867,10 @@ const VMStateDescription vmstate_cirrus_vga = {
         /* XXX: we do not save the bitblt state - we assume we do not save
            the state when the blitter is active */
         VMSTATE_END_OF_LIST()
+    },
+    .subsections = (const VMStateDescription * const []) {
+        &vmstate_cirrus_pixel_mask,
+        NULL
     }
 };
 
