@@ -377,6 +377,16 @@ static inline IDEState *ide_bus_active_if(IDEBus *bus)
     return bus->ifs + bus->unit;
 }
 
+/* Stable transfer callback indices, shared with the task-file PIO path. */
+enum IDETransferEndIndex {
+    IDE_TRANSFER_END_SECTOR_READ = 0,
+    IDE_TRANSFER_END_SECTOR_WRITE = 1,
+    IDE_TRANSFER_END_STOP = 2,
+    IDE_TRANSFER_END_ATAPI_REPLY = 3,
+    IDE_TRANSFER_END_ATAPI_CMD = 4,
+    IDE_TRANSFER_END_DUMMY_STOP = 5,
+};
+
 /* hw/ide/core.c */
 extern const VMStateDescription vmstate_ide_bus;
 
@@ -395,6 +405,7 @@ extern const VMStateDescription vmstate_ide_drive;
     VMSTATE_STRUCT(_field, _state, 1, vmstate_ide_drive, IDEState)
 
 void ide_bus_reset(IDEBus *bus);
+void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val);
 int64_t ide_get_sector(IDEState *s);
 void ide_set_sector(IDEState *s, int64_t sector_num);
 
@@ -408,10 +419,10 @@ void ide_atapi_cmd_error(IDEState *s, int sense_key, int asc);
 void ide_atapi_dma_restart(IDEState *s);
 void ide_atapi_io_error(IDEState *s, int ret);
 
+/* hw/ide/taskfile.c: legacy ATA task-file register access */
 void ide_ioport_write(void *opaque, uint32_t addr, uint32_t val);
 uint32_t ide_ioport_read(void *opaque, uint32_t addr1);
 uint32_t ide_status_read(void *opaque, uint32_t addr);
-void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val);
 void ide_data_writew(void *opaque, uint32_t addr, uint32_t val);
 uint32_t ide_data_readw(void *opaque, uint32_t addr);
 void ide_data_writel(void *opaque, uint32_t addr, uint32_t val);
