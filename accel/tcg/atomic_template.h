@@ -185,10 +185,10 @@ GEN_ATOMIC_HELPER(xor_fetch)
 
 /*
  * These helpers are, as a whole, full barriers.  Within the helper,
- * the leading barrier is explicit and the trailing barrier is within
- * cmpxchg primitive.
+ * the leading barrier is explicit and the atomic RMW uses sequentially
+ * consistent ordering, whether implemented directly or with cmpxchg.
  *
- * Trace this load + RMW loop as a single RMW op. This way, regardless
+ * Trace each operation as a single RMW op. This way, regardless
  * of CF_PARALLEL's value, we'll trace just a read and a write.
  */
 /*
