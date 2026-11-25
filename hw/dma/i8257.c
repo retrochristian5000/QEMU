@@ -76,7 +76,8 @@ static void i8257_write_page(void *opaque, uint32_t nport, uint32_t data)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel %#x %#x\n", nport, data);
+        qemu_log_mask(LOG_GUEST_ERROR, "dma: invalid channel %#x %#x\n",
+                      nport, data);
         return;
     }
     d->regs[ichan].page = data;
@@ -89,7 +90,8 @@ static void i8257_write_pageh(void *opaque, uint32_t nport, uint32_t data)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel %#x %#x\n", nport, data);
+        qemu_log_mask(LOG_GUEST_ERROR, "dma: invalid channel %#x %#x\n",
+                      nport, data);
         return;
     }
     d->regs[ichan].pageh = data;
@@ -102,7 +104,8 @@ static uint32_t i8257_read_page(void *opaque, uint32_t nport)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel read %#x\n", nport);
+        qemu_log_mask(LOG_GUEST_ERROR, "dma: invalid channel read %#x\n",
+                      nport);
         return 0;
     }
     return d->regs[ichan].page;
@@ -115,7 +118,8 @@ static uint32_t i8257_read_pageh(void *opaque, uint32_t nport)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel read %#x\n", nport);
+        qemu_log_mask(LOG_GUEST_ERROR, "dma: invalid channel read %#x\n",
+                      nport);
         return 0;
     }
     return d->regs[ichan].pageh;
@@ -258,7 +262,7 @@ static void i8257_write_cont(void *opaque, hwaddr nport, uint64_t data,
         break;
 
     default:
-        dolog ("unknown iport %#x\n", iport);
+        qemu_log_mask(LOG_GUEST_ERROR, "dma: unknown iport %#x\n", iport);
         break;
     }
 
