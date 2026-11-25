@@ -3,6 +3,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -228,6 +229,125 @@ int main(void)
                         body.index('[self setNeedsDisplay:YES];'))
         self.assertNotIn('displayFlushScheduled = NO;', body)
 
+
+    def test_native_scanout_reclaims_upload_after_gpu_completion(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void)discardUploadTextureIfNative\n{')
+        end = text.index('\n- (void)setNativeTexture:', start)
+        method = text[start:end]
+        self.assertIn('if (!nativeTexture || frameInFlight)', method)
+        self.assertLess(method.index('if (!nativeTexture || frameInFlight)'),
+                        method.index('[metalTexture release];'))
+        start = end
+        end = text.index('\n- (void)clearNativeTexture\n{', start)
+        switch = text[start:end]
+        self.assertLess(switch.index('nativeTexture = texture;'),
+                        switch.index('[self discardUploadTextureIfNative];'))
+        completion = text.index('frameInFlight = NO;', end)
+        release = text.index('[self discardUploadTextureIfNative];', completion)
+        generation = text.index('if (submittedGeneration != surfaceGeneration)',
+                                completion)
+        self.assertLess(completion, release)
+        self.assertLess(release, generation)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'requires Objective-C runtime')
+    def test_native_upload_texture_lifetime(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void)discardUploadTextureIfNative\n{')
+        end = text.index('\n- (void)setNativeTexture:', start)
+        method = text[start:end]
+        program = r'''
+#import <Foundation/Foundation.h>
+#include <assert.h>
+
+static unsigned destroyed;
+
+@interface UploadTexture : NSObject
+@end
+@implementation UploadTexture
+- (void)dealloc
+{
+    destroyed++;
+    [super dealloc];
+}
+@end
+
+@interface TextureState : NSObject {
+@public
+    id nativeTexture;
+    id metalTexture;
+    BOOL frameInFlight;
+    void *textureImage;
+    int textureWidth;
+    int textureHeight;
+}
+- (void)discardUploadTextureIfNative;
+@end
+@implementation TextureState
+''' + method + r'''
+@end
+
+static void allocate_upload(TextureState *state)
+{
+    state->metalTexture = [[UploadTexture alloc] init];
+    state->textureImage = state;
+    state->textureWidth = 640;
+    state->textureHeight = 480;
+}
+
+int main(void)
+{
+    @autoreleasepool {
+        TextureState *state = [[TextureState alloc] init];
+        id native = [[NSObject alloc] init];
+        allocate_upload(state);
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 0 && state->metalTexture);
+
+        state->nativeTexture = native;
+        state->frameInFlight = YES;
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 0 && state->metalTexture);
+
+        state->frameInFlight = NO;
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 1 && !state->metalTexture);
+        assert(!state->textureImage && !state->textureWidth &&
+               !state->textureHeight);
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 1);
+
+        /* Native scanout ended before completion: preserve the cache. */
+        allocate_upload(state);
+        state->frameInFlight = YES;
+        [state discardUploadTextureIfNative];
+        state->nativeTexture = nil;
+        state->frameInFlight = NO;
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 1 && state->metalTexture);
+
+        /* Idle native transition releases the now-unused texture. */
+        state->nativeTexture = native;
+        [state discardUploadTextureIfNative];
+        assert(destroyed == 2 && !state->metalTexture);
+        [native release];
+        [state release];
+    }
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='cocoa-metal-lifetime-') as td:
+            td = pathlib.Path(td)
+            source = td / 'test.m'
+            binary = td / 'test'
+            source.write_text(program, encoding='utf-8')
+            subprocess.run(
+                ['clang', '-fno-objc-arc', '-Wall', '-Wextra', '-Werror',
+                 str(source), '-framework', 'Foundation', '-o', str(binary)],
+                check=True,
+            )
+            subprocess.run([str(binary)], check=True)
+
     def test_metal_renderer_uses_dirty_rectangles(self):
         text = SOURCE.read_text(encoding='utf-8')
         self.assertIn('#include "ui/cocoa-metal-dirty.h"', text)
@@ -382,7 +502,16 @@ int main(void)
                         callback.index('[self updateUIInfo];'))
         self.assertLess(callback.index('[self updateUIInfo];'),
                         callback.index('[self setNeedsDisplay:YES];'))
-        self.assertIn('if (!allow_events || !console->dcl.con || !console->con)', text)
+        start = text.index('- (void) updateUIInfo\n{')
+        end = text.index('\n/*', start)
+        update = text[start:end]
+        gate = update.index('if (!allow_events)')
+        lock = update.index('with_bql(^{')
+        valid = update.index('if (console->dcl.ds && console->dcl.con && console->con)')
+        refresh = update.index('[self updateUIInfoLocked];')
+        self.assertLess(gate, lock)
+        self.assertLess(lock, valid)
+        self.assertLess(valid, refresh)
         self.assertIn('[[self window] backingScaleFactor]', text)
         self.assertIn('[view convertSizeToBacking:NSMakeSize(1.0, 1.0)]',
                       SOURCE.read_text(encoding='utf-8'))

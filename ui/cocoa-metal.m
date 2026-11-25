@@ -307,6 +307,24 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     return [texture width] == width && [texture height] == height;
 }
 
+/*
+ * Native scanout does not need a separate Pixman upload texture.  Reclaim
+ * it once the last submitted frame has finished, rather than keeping an
+ * unused allocation in the device's (possibly unified) memory pool.
+ */
+- (void)discardUploadTextureIfNative
+{
+    if (!nativeTexture || frameInFlight) {
+        return;
+    }
+
+    [metalTexture release];
+    metalTexture = nil;
+    textureImage = NULL;
+    textureWidth = 0;
+    textureHeight = 0;
+}
+
 - (void)setNativeTexture:(id<QEMUMetalTextureRuntime>)texture
                    width:(uint32_t)width
                   height:(uint32_t)height
@@ -327,8 +345,10 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     /*
      * The upload texture is now stale while AppleGFX is drawing directly into
      * nativeTexture.  Force one complete Pixman upload if we later fall back.
+     * Keep an in-flight upload texture until the GPU releases it.
      */
     textureImage = NULL;
+    [self discardUploadTextureIfNative];
 }
 
 - (void)clearNativeTexture
@@ -724,6 +744,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                          QEMU_METAL_COMMAND_BUFFER_STATUS_COMPLETED;
         dispatch_async(dispatch_get_main_queue(), ^{
             frameInFlight = NO;
+            [self discardUploadTextureIfNative];
             /*
              * A completed old-mode frame cannot establish presentation
              * validity for the new surface. Its GPU ownership has ended,
