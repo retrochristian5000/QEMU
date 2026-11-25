@@ -57,14 +57,24 @@ void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram_memory,
                                             &mem->alias[i], 1);
     }
     memory_region_transaction_commit();
-    mem->current = 0;
+    /* No alias is enabled until the first register update. */
+    mem->current = ARRAY_SIZE(mem->alias);
 }
 
 void pam_update(PAMMemoryRegion *pam, int idx, uint8_t val)
 {
+    unsigned next;
+
     assert(0 <= idx && idx < PAM_REGIONS_COUNT);
 
-    memory_region_set_enabled(&pam->alias[pam->current], false);
-    pam->current = (val >> ((!(idx & 1)) * 4)) & PAM_ATTR_MASK;
+    next = (val >> ((!(idx & 1)) * 4)) & PAM_ATTR_MASK;
+    if (pam->current == next) {
+        return;
+    }
+
+    if (pam->current < ARRAY_SIZE(pam->alias)) {
+        memory_region_set_enabled(&pam->alias[pam->current], false);
+    }
+    pam->current = next;
     memory_region_set_enabled(&pam->alias[pam->current], true);
 }
