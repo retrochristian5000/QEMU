@@ -74,10 +74,13 @@ static void sys_cache_info(int *isize, int *dsize)
 # include <sys/sysctl.h>
 static void sys_cache_info(int *isize, int *dsize)
 {
-    /* There's only a single sysctl for both I/D cache line sizes.  */
-    long size;
+    /* Darwin reports byte counts as 64-bit values. */
+    int64_t size = 0;
     size_t len = sizeof(size);
-    if (!sysctlbyname("hw.cachelinesize", &size, &len, NULL, 0)) {
+
+    if (sysctlbyname("hw.cachelinesize", &size, &len, NULL, 0) == 0 &&
+        len == sizeof(size) && size >= (int64_t)sizeof(void *) &&
+        size <= INT_MAX && (size & (size - 1)) == 0) {
         *isize = *dsize = size;
     }
 }

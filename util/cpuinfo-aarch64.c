@@ -35,14 +35,26 @@
 unsigned cpuinfo;
 
 #ifdef CONFIG_DARWIN
-static bool sysctl_for_bool(const char *name)
+static bool sysctl_for_feature(const char *name, const char *legacy_name)
 {
     int val = 0;
     size_t len = sizeof(val);
 
-    if (sysctlbyname(name, &val, &len, NULL, 0) == 0 &&
-        len == sizeof(val)) {
-        return val != 0;
+    if (sysctlbyname(name, &val, &len, NULL, 0) == 0) {
+        return len == sizeof(val) && val == 1;
+    }
+
+    /*
+     * Older Darwin releases expose LSE under the original feature key.
+     * Only an absent key permits an alias lookup; an explicit negative
+     * result, invalid payload, or permission failure is authoritative.
+     */
+    if (legacy_name && errno == ENOENT) {
+        val = 0;
+        len = sizeof(val);
+        if (sysctlbyname(legacy_name, &val, &len, NULL, 0) == 0) {
+            return len == sizeof(val) && val == 1;
+        }
     }
 
     /*
@@ -52,6 +64,11 @@ static bool sysctl_for_bool(const char *name)
      * In particular, an unknown FEAT_CSSC key must not abort startup.
      */
     return false;
+}
+
+static bool sysctl_for_bool(const char *name)
+{
+    return sysctl_for_feature(name, NULL);
 }
 #endif
 
@@ -78,7 +95,8 @@ unsigned __attribute__((constructor)) cpuinfo_init(void)
     info |= (hwcap2 & HWCAP2_CSSC ? CPUINFO_CSSC : 0);
 #endif
 #ifdef CONFIG_DARWIN
-    info |= sysctl_for_bool("hw.optional.arm.FEAT_LSE") * CPUINFO_LSE;
+    info |= sysctl_for_feature("hw.optional.arm.FEAT_LSE",
+                               "hw.optional.armv8_1_atomics") * CPUINFO_LSE;
     info |= sysctl_for_bool("hw.optional.arm.FEAT_LSE2") * CPUINFO_LSE2;
     info |= sysctl_for_bool("hw.optional.arm.FEAT_AES") * CPUINFO_AES;
     info |= sysctl_for_bool("hw.optional.arm.FEAT_PMULL") * CPUINFO_PMULL;
