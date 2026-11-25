@@ -27,6 +27,7 @@
 #include "qemu/cutils.h"
 #include "hw/scsi/scsi.h"
 #include "hw/block/dvdrom.h"
+#include "hw/block/mmc-rom.h"
 #include "hw/block/cdrom-sector.h"
 #include "system/block-backend.h"
 #include "migration/vmstate.h"
@@ -613,22 +614,6 @@ void ide_atapi_dma_restart(IDEState *s)
     ide_atapi_cmd(s);
 }
 
-static inline uint8_t ide_atapi_set_profile(uint8_t *buf, uint8_t *index,
-                                            uint16_t profile)
-{
-    uint8_t *buf_profile = buf + 12; /* start of profiles */
-
-    buf_profile += ((*index) * 4); /* start of indexed profile */
-    stw_be_p(buf_profile, profile);
-    buf_profile[2] = ((buf_profile[0] == buf[6]) && (buf_profile[1] == buf[7]));
-
-    /* each profile adds 4 bytes to the response */
-    (*index)++;
-    buf[11] += 4; /* Additional Length */
-
-    return 4;
-}
-
 static unsigned int event_status_media(IDEState *s,
                                        uint8_t *buf)
 {
@@ -874,8 +859,7 @@ static void cmd_inquiry(IDEState *s, uint8_t *buf)
 
 static void cmd_get_configuration(IDEState *s, uint8_t *buf)
 {
-    uint32_t len;
-    uint8_t index = 0;
+    uint16_t current = MMC_PROFILE_NONE;
     int max_len;
 
     /* only feature 0 is supported */
@@ -900,24 +884,15 @@ static void cmd_get_configuration(IDEState *s, uint8_t *buf)
         max_len = BDRV_SECTOR_SIZE;
     }
 
-    memset(buf, 0, max_len);
-    /*
-     * the number of sectors from the media tells us which profile
-     * to use as current.  0 means there is no media
-     */
+    /* A cooked image does not identify a recordable or erasable medium. */
     if (media_is_dvd(s)) {
-        stw_be_p(buf + 6, MMC_PROFILE_DVD_ROM);
+        current = MMC_PROFILE_DVD_ROM;
     } else if (media_is_cd(s)) {
-        stw_be_p(buf + 6, MMC_PROFILE_CD_ROM);
+        current = MMC_PROFILE_CD_ROM;
     }
 
-    buf[10] = 0x02 | 0x01; /* persistent and current */
-    len = 12; /* headers: 8 + 4 */
-    len += ide_atapi_set_profile(buf, &index, MMC_PROFILE_DVD_ROM);
-    len += ide_atapi_set_profile(buf, &index, MMC_PROFILE_CD_ROM);
-    stl_be_p(buf, len - 4); /* data length */
-
-    ide_atapi_cmd_reply(s, len, max_len);
+    mmc_rom_profile_list(buf, current);
+    ide_atapi_cmd_reply(s, MMC_ROM_PROFILE_LIST_SIZE, max_len);
 }
 
 static void cmd_mode_sense(IDEState *s, uint8_t *buf)
@@ -982,7 +957,7 @@ static void cmd_mode_sense(IDEState *s, uint8_t *buf)
             buf[8] = MODE_PAGE_CAPABILITIES;
             buf[9] = 30 - 10;
             buf[10] = 0x3b; /* read CDR/CDRW/DVDROM/DVDR/DVDRAM */
-            buf[11] = 0x00;
+            buf[11] = 0x00; /* No recording capabilities */
 
             /* Claim PLAY_AUDIO capability (0x01) since some Linux
                code checks for this to automount media. */
@@ -1247,22 +1222,9 @@ static void cmd_read_disc_information(IDEState *s, uint8_t* buf)
         return;
     }
 
-    memset(buf, 0, 34);
-    buf[1] = 32;
-    buf[2] = 0xe; /* last session complete, disc finalized */
-    buf[3] = 1;   /* first track on disc */
-    buf[4] = 1;   /* # of sessions */
-    buf[5] = 1;   /* first track of last session */
-    buf[6] = 1;   /* last track of last session */
-    buf[7] = 0x20; /* unrestricted use */
-    buf[8] = 0x00; /* CD-ROM or DVD-ROM */
-    /* 9-10-11: most significant byte corresponding bytes 4-5-6 */
-    /* 12-23: not meaningful for CD-ROM or DVD-ROM */
-    /* 24-31: disc bar code */
-    /* 32: disc application code */
-    /* 33: number of OPC tables */
+    mmc_rom_disc_information(buf);
 
-    ide_atapi_cmd_reply(s, 34, max_len);
+    ide_atapi_cmd_reply(s, MMC_ROM_DISC_INFO_SIZE, max_len);
 }
 
 static void cmd_read_dvd_structure(IDEState *s, uint8_t* buf)

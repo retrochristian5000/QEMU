@@ -38,6 +38,7 @@
 #include "system/blockdev.h"
 #include "hw/block/block.h"
 #include "hw/block/dvdrom.h"
+#include "hw/block/mmc-rom.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "system/dma.h"
@@ -905,22 +906,9 @@ static int scsi_read_disc_information(SCSIDiskState *s, SCSIDiskReq *r,
         return -1;
     }
 
-    memset(outbuf, 0, 34);
-    outbuf[1] = 32;
-    outbuf[2] = 0xe; /* last session complete, disc finalized */
-    outbuf[3] = 1;   /* first track on disc */
-    outbuf[4] = 1;   /* # of sessions */
-    outbuf[5] = 1;   /* first track of last session */
-    outbuf[6] = 1;   /* last track of last session */
-    outbuf[7] = 0x20; /* unrestricted use */
-    outbuf[8] = 0x00; /* CD-ROM or DVD-ROM */
-    /* 9-10-11: most significant byte corresponding bytes 4-5-6 */
-    /* 12-23: not meaningful for CD-ROM or DVD-ROM */
-    /* 24-31: disc bar code */
-    /* 32: disc application code */
-    /* 33: number of OPC tables */
+    mmc_rom_disc_information(outbuf);
 
-    return 34;
+    return MMC_ROM_DISC_INFO_SIZE;
 }
 
 static int scsi_read_dvd_structure(SCSIDiskState *s, SCSIDiskReq *r,
@@ -1031,15 +1019,8 @@ static int scsi_get_configuration(SCSIDiskState *s, uint8_t *outbuf)
     }
 
     memset(outbuf, 0, 40);
-    stl_be_p(&outbuf[0], 36); /* Bytes after the data length field */
-    stw_be_p(&outbuf[6], current);
-    /* outbuf[8] - outbuf[19]: Feature 0 - Profile list */
-    outbuf[10] = 0x03; /* persistent, current */
-    outbuf[11] = 8; /* two profiles */
-    stw_be_p(&outbuf[12], MMC_PROFILE_DVD_ROM);
-    outbuf[14] = (current == MMC_PROFILE_DVD_ROM);
-    stw_be_p(&outbuf[16], MMC_PROFILE_CD_ROM);
-    outbuf[18] = (current == MMC_PROFILE_CD_ROM);
+    mmc_rom_profile_list(outbuf, current);
+    stl_be_p(&outbuf[0], 36); /* Include the additional SCSI features. */
     /* outbuf[20] - outbuf[31]: Feature 1 - Core feature */
     stw_be_p(&outbuf[20], 1);
     outbuf[22] = 0x08 | 0x03; /* version 2, persistent, current */
@@ -1201,7 +1182,7 @@ static int mode_sense_page(SCSIDiskState *s, int page, uint8_t **p_outbuf,
             break;
         }
 
-        p[0] = 0x3b; /* CD-R & CD-RW read */
+        p[0] = 0x3b; /* Legacy read capability mask, not recording. */
         p[1] = 0; /* Writing not supported */
         p[2] = 0x7f; /* Audio, composite, digital out,
                         mode 2 form 1&2, multi session */
@@ -1220,10 +1201,11 @@ static int mode_sense_page(SCSIDiskState *s, int page, uint8_t **p_outbuf,
         p[11] = 2048 & 0xff;
         p[12] = (16 * 176) >> 8; /* 16x read speed current */
         p[13] = (16 * 176) & 0xff;
-        p[16] = (16 * 176) >> 8; /* 16x write speed */
-        p[17] = (16 * 176) & 0xff;
-        p[18] = (16 * 176) >> 8; /* 16x write speed current */
-        p[19] = (16 * 176) & 0xff;
+        /* Read-only device: neither maximum nor current write speed. */
+        p[16] = 0;
+        p[17] = 0;
+        p[18] = 0;
+        p[19] = 0;
         break;
 
      case MODE_PAGE_APPLE_VENDOR:

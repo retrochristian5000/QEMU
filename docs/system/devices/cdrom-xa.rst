@@ -29,3 +29,21 @@ verification; this change does not implement SCSI READ CD.
 
 References: MMC READ CD Expected Sector Type and T10 ASC/ASCQ assignments
 (64h/00h); Philips/Sony White Book Video CD specification.
+
+Read-only versus recordable media
+---------------------------------
+
+The emulated optical drives expose only the CD-ROM (0008h) and DVD-ROM
+(0010h) MMC profiles. Reading cooked data from a finalized CD-R or CD-RW
+does not implement the CD-R (0009h) or CD-RW (000Ah) recording profiles.
+ATAPI and SCSI share the finalized, non-erasable disc-information
+response and the read-only profile list. Neither reports recording
+capabilities or a nonzero write speed on the capabilities mode page.
+Existing read capability bits are retained for guest compatibility.
+
+A recorder requires separate medium metadata, write parameters,
+blanking, track reservation, session closure, and write-command
+handling. A writable host image alone is not a CD-RW implementation.
+The existing capacity-based CD/DVD selection remains unchanged.
+
+Reference: MMC-4, profile definitions 5.4.8 through 5.4.10.
