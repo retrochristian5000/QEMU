@@ -350,9 +350,7 @@ void rr_start_vcpu_thread(CPUState *cpu)
 
         /* share a single thread for all cpus with TCG */
         snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "ALL CPUs/TCG");
-        qemu_thread_create(cpu->thread, thread_name,
-                           rr_cpu_thread_fn,
-                           cpu, QEMU_THREAD_JOINABLE);
+        tcg_create_vcpu_thread(cpu, thread_name, rr_cpu_thread_fn);
     } else {
         /* we share the thread, dump spare data */
         g_free(cpu->thread);
