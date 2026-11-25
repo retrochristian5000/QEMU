@@ -297,6 +297,11 @@ static void sii3112_pci_class_init(ObjectClass *klass, const void *data)
 
     pd->vendor_id = 0x1095;
     pd->device_id = 0x3112;
+    /*
+     * Preserve the historical PCI identity for guest driver matching.
+     * The device emulates SATA task-file and bus-master DMA registers,
+     * not AHCI registers or an on-controller RAID array engine.
+     */
     pd->class_id = PCI_CLASS_STORAGE_RAID;
     pd->revision = 1;
     pd->realize = sii3112_pci_realize;

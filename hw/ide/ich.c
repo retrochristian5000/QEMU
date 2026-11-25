@@ -184,6 +184,7 @@ static void ich_ahci_class_init(ObjectClass *klass, const void *data)
     k->realize = pci_ich9_ahci_realize;
     k->exit = pci_ich9_uninit;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
+    /* ICH9 desktop AHCI (2922), not the RAID personality (2822). */
     k->device_id = PCI_DEVICE_ID_INTEL_82801IR;
     k->revision = 0x02;
     k->class_id = PCI_CLASS_STORAGE_SATA;

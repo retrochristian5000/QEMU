@@ -284,21 +284,17 @@ static void ahci_test_pci_spec(AHCIQState *ahci)
         ASSERT_BIT_CLEAR(datal, 0xFF);
     }
 
-    /* BCC *must* equal 0x01. */
-    g_assert_cmphex(PCI_BCC(datal), ==, 0x01);
-    if (PCI_SCC(datal) == 0x01) {
-        /* IDE */
-        ASSERT_BIT_SET(0x80000000, datal);
-        ASSERT_BIT_CLEAR(0x60000000, datal);
-    } else if (PCI_SCC(datal) == 0x04) {
-        /* RAID */
-        g_assert_cmphex(PCI_PI(datal), ==, 0);
-    } else if (PCI_SCC(datal) == 0x06) {
-        /* AHCI */
-        g_assert_cmphex(PCI_PI(datal), ==, 0x01);
-    } else {
-        g_assert_not_reached();
-    }
+    /*
+     * This test boots Q35 and selects ICH9 function 31:2.  It is not
+     * a generic test for all AHCI-compatible IDE or RAID controllers.
+     * Require the implemented six-port desktop AHCI identity.
+     */
+    g_assert_cmphex(qpci_config_readw(ahci->dev, PCI_VENDOR_ID), ==,
+                    PCI_VENDOR_ID_INTEL);
+    g_assert_cmphex(qpci_config_readw(ahci->dev, PCI_DEVICE_ID), ==,
+                    PCI_DEVICE_ID_INTEL_82801IR);
+    g_assert_cmphex(datal >> 16, ==, PCI_CLASS_STORAGE_SATA);
+    g_assert_cmphex(PCI_PI(datal), ==, 0x01);
 
     datab = qpci_config_readb(ahci->dev, PCI_CACHE_LINE_SIZE);
     g_assert_cmphex(datab, ==, 0);

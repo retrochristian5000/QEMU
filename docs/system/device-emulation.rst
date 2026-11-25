@@ -84,6 +84,7 @@ Emulated Devices
 
    devices/virtio/index.rst
 
+   devices/ahci-raid.rst
    devices/bt8xx-tv-capture.rst
    devices/can.rst
    devices/canokey.rst
