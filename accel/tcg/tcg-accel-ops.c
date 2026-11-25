@@ -70,6 +70,19 @@ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     tcg_cflags_set(cpu, cflags);
 }
 
+void tcg_create_vcpu_thread(CPUState *cpu, const char *name,
+                            void *(*start_routine)(void *))
+{
+#ifdef CONFIG_DARWIN
+    qemu_thread_create_with_stack(cpu->thread, name, start_routine, cpu,
+                                  QEMU_THREAD_JOINABLE,
+                                  qemu_tcg_darwin_vcpu_stack_size());
+#else
+    qemu_thread_create(cpu->thread, name, start_routine, cpu,
+                       QEMU_THREAD_JOINABLE);
+#endif
+}
+
 void tcg_cpu_destroy(CPUState *cpu)
 {
     cpu_thread_signal_destroyed(cpu);
