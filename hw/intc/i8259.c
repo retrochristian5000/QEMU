@@ -118,6 +118,17 @@ static void pic_update_irq(PICCommonState *s)
     }
 }
 
+/*
+ * The standalone 8259A selects edge/level triggering chip-wide in ICW1
+ * (LTIM). PC chipset ELCR extensions select triggering per input instead.
+ * Preserve the existing combined model until each machine selects its
+ * actual hardware profile.
+ */
+static inline bool i8259_irq_is_level_triggered(PICCommonState *s, int mask)
+{
+    return s->ltim || (s->elcr & mask);
+}
+
 /* set irq level. If an edge is detected, then the IRR is set to 1 */
 static void pic_set_irq(void *opaque, int irq, int level)
 {
@@ -134,7 +145,7 @@ static void pic_set_irq(void *opaque, int irq, int level)
     }
 #endif
 
-    if (s->ltim || (s->elcr & mask)) {
+    if (i8259_irq_is_level_triggered(s, mask)) {
         /* level triggered */
         if (level) {
             s->irr |= mask;
@@ -168,7 +179,7 @@ static void pic_intack(PICCommonState *s, int irq)
         s->isr |= (1 << irq);
     }
     /* We don't clear a level sensitive interrupt here */
-    if (!s->ltim && !(s->elcr & (1 << irq))) {
+    if (!i8259_irq_is_level_triggered(s, 1 << irq)) {
         s->irr &= ~(1 << irq);
     }
     pic_update_irq(s);
