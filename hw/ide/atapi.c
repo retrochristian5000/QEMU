@@ -31,6 +31,154 @@
 #include "ide-internal.h"
 #include "trace.h"
 
+/* Packet-device identification and removable-media notifications. */
+static void ide_atapi_identify(IDEState *s)
+{
+    uint16_t *p;
+
+    p = (uint16_t *)s->identify_data;
+    if (s->identify_set) {
+        goto fill_buffer;
+    }
+    memset(p, 0, sizeof(s->identify_data));
+
+    /* Removable CDROM, 50us response, 12 byte packets */
+    ide_put_le16(p + 0, (2 << 14) | (5 << 8) | (1 << 7) | (2 << 5) | (0 << 0));
+    ide_padstr((char *)(p + 10), s->drive_serial_str, 20); /* serial number */
+    ide_put_le16(p + 20, 3); /* buffer type */
+    ide_put_le16(p + 21, 512); /* cache size in sectors */
+    ide_put_le16(p + 22, 4); /* ecc bytes */
+    ide_padstr((char *)(p + 23), s->version, 8); /* firmware version */
+    ide_padstr((char *)(p + 27), s->drive_model_str, 40); /* model */
+    ide_put_le16(p + 48, 1); /* dword I/O (XXX: should not be set on CDROM) */
+#ifdef USE_DMA_CDROM
+    ide_put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */
+    ide_put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */
+    ide_put_le16(p + 62, 7);  /* single word dma0-2 supported */
+    ide_put_le16(p + 63, 7);  /* mdma0-2 supported */
+#else
+    ide_put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */
+    ide_put_le16(p + 53, 3); /* words 64-70, 54-58 valid */
+    ide_put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */
+#endif
+    ide_put_le16(p + 64, 3); /* pio3-4 supported */
+    ide_put_le16(p + 65, 0xb4); /* minimum DMA multiword tx cycle time */
+    ide_put_le16(p + 66, 0xb4); /* recommended DMA multiword tx cycle time */
+    ide_put_le16(p + 67, 0x12c); /* minimum PIO cycle time without flow control */
+    ide_put_le16(p + 68, 0xb4); /* minimum PIO cycle time with IORDY flow control */
+
+    ide_put_le16(p + 71, 30); /* in ns */
+    ide_put_le16(p + 72, 30); /* in ns */
+
+    if (s->ncq_queues) {
+        ide_put_le16(p + 75, s->ncq_queues - 1);
+        /* NCQ supported */
+        ide_put_le16(p + 76, (1 << 8));
+    }
+
+    ide_put_le16(p + 80, 0x1e); /* support up to ATA/ATAPI-4 */
+    if (s->wwn) {
+        ide_put_le16(p + 84, (1 << 8)); /* supports WWN for words 108-111 */
+        ide_put_le16(p + 87, (1 << 8)); /* WWN enabled */
+    }
+
+#ifdef USE_DMA_CDROM
+    ide_put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */
+#endif
+
+    if (s->wwn) {
+        /* LE 16-bit words 111-108 contain 64-bit World Wide Name */
+        ide_put_le16(p + 108, s->wwn >> 48);
+        ide_put_le16(p + 109, s->wwn >> 32);
+        ide_put_le16(p + 110, s->wwn >> 16);
+        ide_put_le16(p + 111, s->wwn);
+    }
+
+    s->identify_set = 1;
+
+fill_buffer:
+    memcpy(s->io_buffer, p, sizeof(s->identify_data));
+}
+
+bool ide_atapi_cmd_identify_packet(IDEState *s, uint8_t cmd)
+{
+    ide_atapi_identify(s);
+    s->status = READY_STAT | SEEK_STAT;
+    ide_transfer_start(s, s->io_buffer, 512, ide_transfer_stop);
+    ide_bus_set_irq(s->bus);
+    return false;
+}
+
+bool ide_atapi_cmd_packet(IDEState *s, uint8_t cmd)
+{
+    /* overlapping commands not supported */
+    if (s->feature & 0x02) {
+        ide_abort_command(s);
+        return true;
+    }
+
+    s->status = READY_STAT | SEEK_STAT;
+    s->atapi_dma = s->feature & 1;
+    if (s->atapi_dma) {
+        s->dma_cmd = IDE_DMA_ATAPI;
+    }
+    s->nsector = 1;
+    ide_transfer_start(s, s->io_buffer, ATAPI_PACKET_SIZE,
+                       ide_atapi_cmd);
+    return false;
+}
+
+/* called when the inserted state of the media has changed */
+static void ide_cd_change_cb(void *opaque, bool load, Error **errp)
+{
+    IDEState *s = opaque;
+    uint64_t nb_sectors;
+
+    s->tray_open = !load;
+    blk_get_geometry(s->blk, &nb_sectors);
+    s->nb_sectors = nb_sectors;
+
+    /*
+     * First indicate to the guest that a CD has been removed.  That's
+     * done on the next command the guest sends us.
+     *
+     * Then we set UNIT_ATTENTION, by which the guest will
+     * detect a new CD in the drive.  See ide_atapi_cmd() for details.
+     */
+    s->cdrom_changed = 1;
+    s->events.new_media = true;
+    s->events.eject_request = false;
+    ide_bus_set_irq(s->bus);
+}
+
+static void ide_cd_eject_request_cb(void *opaque, bool force)
+{
+    IDEState *s = opaque;
+
+    s->events.eject_request = true;
+    if (force) {
+        s->tray_locked = false;
+    }
+    ide_bus_set_irq(s->bus);
+}
+
+static bool ide_cd_is_tray_open(void *opaque)
+{
+    return ((IDEState *)opaque)->tray_open;
+}
+
+static bool ide_cd_is_medium_locked(void *opaque)
+{
+    return ((IDEState *)opaque)->tray_locked;
+}
+
+const BlockDevOps ide_cd_block_ops = {
+    .change_media_cb = ide_cd_change_cb,
+    .eject_request_cb = ide_cd_eject_request_cb,
+    .is_tray_open = ide_cd_is_tray_open,
+    .is_medium_locked = ide_cd_is_medium_locked,
+};
+
 #define ATAPI_SECTOR_BITS (2 + BDRV_SECTOR_BITS)
 #define ATAPI_SECTOR_SIZE (1 << ATAPI_SECTOR_BITS)
 

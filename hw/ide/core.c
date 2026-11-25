@@ -44,26 +44,6 @@
 #include "ide-internal.h"
 #include "trace.h"
 
-/* These values were based on a Seagate ST3500418AS but have been modified
-   to make more sense in QEMU */
-static const int smart_attributes[][12] = {
-    /* id,  flags, hflags, val, wrst, raw (6 bytes), threshold */
-    /* raw read error rate*/
-    { 0x01, 0x03, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06},
-    /* spin up */
-    { 0x03, 0x03, 0x00, 0x64, 0x64, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    /* start stop count */
-    { 0x04, 0x02, 0x00, 0x64, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14},
-    /* remapped sectors */
-    { 0x05, 0x03, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24},
-    /* power on hours */
-    { 0x09, 0x03, 0x00, 0x64, 0x64, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    /* power cycle count */
-    { 0x0c, 0x03, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    /* airflow-temperature-celsius */
-    { 190,  0x03, 0x00, 0x45, 0x45, 0x1f, 0x00, 0x1f, 0x1f, 0x00, 0x00, 0x32},
-};
-
 const char *IDE_DMA_CMD_lookup[IDE_DMA__COUNT] = {
     [IDE_DMA_READ] = "DMA READ",
     [IDE_DMA_WRITE] = "DMA WRITE",
@@ -102,297 +82,6 @@ const MemoryRegionPortio ide_portio2_list[] = {
     { 0, 1, 1, .read = ide_status_read, .write = ide_ctrl_write },
     PORTIO_END_OF_LIST(),
 };
-
-static void padstr(char *str, const char *src, int len)
-{
-    int i, v;
-    for(i = 0; i < len; i++) {
-        if (*src)
-            v = *src++;
-        else
-            v = ' ';
-        str[i^1] = v;
-    }
-}
-
-static void put_le16(uint16_t *p, unsigned int v)
-{
-    *p = cpu_to_le16(v);
-}
-
-static void ide_identify_size(IDEState *s)
-{
-    uint16_t *p = (uint16_t *)s->identify_data;
-    int64_t nb_sectors_lba28 = s->nb_sectors;
-    if (nb_sectors_lba28 >= 1 << 28) {
-        nb_sectors_lba28 = (1 << 28) - 1;
-    }
-    put_le16(p + 60, nb_sectors_lba28);
-    put_le16(p + 61, nb_sectors_lba28 >> 16);
-    put_le16(p + 100, s->nb_sectors);
-    put_le16(p + 101, s->nb_sectors >> 16);
-    put_le16(p + 102, s->nb_sectors >> 32);
-    put_le16(p + 103, s->nb_sectors >> 48);
-}
-
-static void ide_identify(IDEState *s)
-{
-    uint16_t *p;
-    unsigned int oldsize;
-    IDEDevice *dev = s->unit ? s->bus->slave : s->bus->master;
-
-    p = (uint16_t *)s->identify_data;
-    if (s->identify_set) {
-        goto fill_buffer;
-    }
-    memset(p, 0, sizeof(s->identify_data));
-
-    put_le16(p + 0, 0x0040);
-    put_le16(p + 1, s->cylinders);
-    put_le16(p + 3, s->heads);
-    put_le16(p + 4, 512 * s->sectors); /* XXX: retired, remove ? */
-    put_le16(p + 5, 512); /* XXX: retired, remove ? */
-    put_le16(p + 6, s->sectors);
-    padstr((char *)(p + 10), s->drive_serial_str, 20); /* serial number */
-    put_le16(p + 20, 3); /* XXX: retired, remove ? */
-    put_le16(p + 21, 512); /* cache size in sectors */
-    put_le16(p + 22, 4); /* ecc bytes */
-    padstr((char *)(p + 23), s->version, 8); /* firmware version */
-    padstr((char *)(p + 27), s->drive_model_str, 40); /* model */
-#if MAX_MULT_SECTORS > 1
-    put_le16(p + 47, 0x8000 | MAX_MULT_SECTORS);
-#endif
-    put_le16(p + 48, 1); /* dword I/O */
-    put_le16(p + 49, (1 << 11) | (1 << 9) | (1 << 8)); /* DMA and LBA supported */
-    put_le16(p + 51, 0x200); /* PIO transfer cycle */
-    put_le16(p + 52, 0x200); /* DMA transfer cycle */
-    put_le16(p + 53, 1 | (1 << 1) | (1 << 2)); /* words 54-58,64-70,88 are valid */
-    put_le16(p + 54, s->cylinders);
-    put_le16(p + 55, s->heads);
-    put_le16(p + 56, s->sectors);
-    oldsize = s->cylinders * s->heads * s->sectors;
-    put_le16(p + 57, oldsize);
-    put_le16(p + 58, oldsize >> 16);
-    if (s->mult_sectors)
-        put_le16(p + 59, 0x100 | s->mult_sectors);
-    /* *(p + 60) := nb_sectors       -- see ide_identify_size */
-    /* *(p + 61) := nb_sectors >> 16 -- see ide_identify_size */
-    put_le16(p + 62, 0x07); /* single word dma0-2 supported */
-    put_le16(p + 63, 0x07); /* mdma0-2 supported */
-    put_le16(p + 64, 0x03); /* pio3-4 supported */
-    put_le16(p + 65, 120);
-    put_le16(p + 66, 120);
-    put_le16(p + 67, 120);
-    put_le16(p + 68, 120);
-    if (dev && dev->conf.discard_granularity) {
-        put_le16(p + 69, (1 << 14)); /* determinate TRIM behavior */
-    }
-
-    if (s->ncq_queues) {
-        put_le16(p + 75, s->ncq_queues - 1);
-        /* NCQ supported */
-        put_le16(p + 76, (1 << 8));
-    }
-
-    put_le16(p + 80, 0xf0); /* ata3 -> ata6 supported */
-    put_le16(p + 81, 0x16); /* conforms to ata5 */
-    /* 14=NOP supported, 5=WCACHE supported, 0=SMART supported */
-    put_le16(p + 82, (1 << 14) | (1 << 5) | 1);
-    /* 13=flush_cache_ext,12=flush_cache,10=lba48 */
-    put_le16(p + 83, (1 << 14) | (1 << 13) | (1 <<12) | (1 << 10));
-    /* 14=set to 1, 8=has WWN, 1=SMART self test, 0=SMART error logging */
-    if (s->wwn) {
-        put_le16(p + 84, (1 << 14) | (1 << 8) | 0);
-    } else {
-        put_le16(p + 84, (1 << 14) | 0);
-    }
-    /* 14 = NOP supported, 5=WCACHE enabled, 0=SMART feature set enabled */
-    if (blk_enable_write_cache(s->blk)) {
-        put_le16(p + 85, (1 << 14) | (1 << 5) | 1);
-    } else {
-        put_le16(p + 85, (1 << 14) | 1);
-    }
-    /* 13=flush_cache_ext,12=flush_cache,10=lba48 */
-    put_le16(p + 86, (1 << 13) | (1 <<12) | (1 << 10));
-    /* 14=set to 1, 8=has WWN, 1=SMART self test, 0=SMART error logging */
-    if (s->wwn) {
-        put_le16(p + 87, (1 << 14) | (1 << 8) | 0);
-    } else {
-        put_le16(p + 87, (1 << 14) | 0);
-    }
-    put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */
-    put_le16(p + 93, 1 | (1 << 14) | 0x2000);
-    /* *(p + 100) := nb_sectors       -- see ide_identify_size */
-    /* *(p + 101) := nb_sectors >> 16 -- see ide_identify_size */
-    /* *(p + 102) := nb_sectors >> 32 -- see ide_identify_size */
-    /* *(p + 103) := nb_sectors >> 48 -- see ide_identify_size */
-
-    if (dev && dev->conf.physical_block_size)
-        put_le16(p + 106, 0x6000 | get_physical_block_exp(&dev->conf));
-    if (s->wwn) {
-        /* LE 16-bit words 111-108 contain 64-bit World Wide Name */
-        put_le16(p + 108, s->wwn >> 48);
-        put_le16(p + 109, s->wwn >> 32);
-        put_le16(p + 110, s->wwn >> 16);
-        put_le16(p + 111, s->wwn);
-    }
-    if (dev && dev->conf.discard_granularity) {
-        put_le16(p + 169, 1); /* TRIM support */
-    }
-    if (dev) {
-        put_le16(p + 217, dev->rotation_rate); /* Nominal media rotation rate */
-    }
-
-    ide_identify_size(s);
-    s->identify_set = 1;
-
-fill_buffer:
-    memcpy(s->io_buffer, p, sizeof(s->identify_data));
-}
-
-static void ide_atapi_identify(IDEState *s)
-{
-    uint16_t *p;
-
-    p = (uint16_t *)s->identify_data;
-    if (s->identify_set) {
-        goto fill_buffer;
-    }
-    memset(p, 0, sizeof(s->identify_data));
-
-    /* Removable CDROM, 50us response, 12 byte packets */
-    put_le16(p + 0, (2 << 14) | (5 << 8) | (1 << 7) | (2 << 5) | (0 << 0));
-    padstr((char *)(p + 10), s->drive_serial_str, 20); /* serial number */
-    put_le16(p + 20, 3); /* buffer type */
-    put_le16(p + 21, 512); /* cache size in sectors */
-    put_le16(p + 22, 4); /* ecc bytes */
-    padstr((char *)(p + 23), s->version, 8); /* firmware version */
-    padstr((char *)(p + 27), s->drive_model_str, 40); /* model */
-    put_le16(p + 48, 1); /* dword I/O (XXX: should not be set on CDROM) */
-#ifdef USE_DMA_CDROM
-    put_le16(p + 49, 1 << 9 | 1 << 8); /* DMA and LBA supported */
-    put_le16(p + 53, 7); /* words 64-70, 54-58, 88 valid */
-    put_le16(p + 62, 7);  /* single word dma0-2 supported */
-    put_le16(p + 63, 7);  /* mdma0-2 supported */
-#else
-    put_le16(p + 49, 1 << 9); /* LBA supported, no DMA */
-    put_le16(p + 53, 3); /* words 64-70, 54-58 valid */
-    put_le16(p + 63, 0x103); /* DMA modes XXX: may be incorrect */
-#endif
-    put_le16(p + 64, 3); /* pio3-4 supported */
-    put_le16(p + 65, 0xb4); /* minimum DMA multiword tx cycle time */
-    put_le16(p + 66, 0xb4); /* recommended DMA multiword tx cycle time */
-    put_le16(p + 67, 0x12c); /* minimum PIO cycle time without flow control */
-    put_le16(p + 68, 0xb4); /* minimum PIO cycle time with IORDY flow control */
-
-    put_le16(p + 71, 30); /* in ns */
-    put_le16(p + 72, 30); /* in ns */
-
-    if (s->ncq_queues) {
-        put_le16(p + 75, s->ncq_queues - 1);
-        /* NCQ supported */
-        put_le16(p + 76, (1 << 8));
-    }
-
-    put_le16(p + 80, 0x1e); /* support up to ATA/ATAPI-4 */
-    if (s->wwn) {
-        put_le16(p + 84, (1 << 8)); /* supports WWN for words 108-111 */
-        put_le16(p + 87, (1 << 8)); /* WWN enabled */
-    }
-
-#ifdef USE_DMA_CDROM
-    put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */
-#endif
-
-    if (s->wwn) {
-        /* LE 16-bit words 111-108 contain 64-bit World Wide Name */
-        put_le16(p + 108, s->wwn >> 48);
-        put_le16(p + 109, s->wwn >> 32);
-        put_le16(p + 110, s->wwn >> 16);
-        put_le16(p + 111, s->wwn);
-    }
-
-    s->identify_set = 1;
-
-fill_buffer:
-    memcpy(s->io_buffer, p, sizeof(s->identify_data));
-}
-
-static void ide_cfata_identify_size(IDEState *s)
-{
-    uint16_t *p = (uint16_t *)s->identify_data;
-    put_le16(p + 7, s->nb_sectors >> 16);  /* Sectors per card */
-    put_le16(p + 8, s->nb_sectors);        /* Sectors per card */
-    put_le16(p + 60, s->nb_sectors);       /* Total LBA sectors */
-    put_le16(p + 61, s->nb_sectors >> 16); /* Total LBA sectors */
-}
-
-static void ide_cfata_identify(IDEState *s)
-{
-    uint16_t *p;
-    uint32_t cur_sec;
-
-    p = (uint16_t *)s->identify_data;
-    if (s->identify_set) {
-        goto fill_buffer;
-    }
-    memset(p, 0, sizeof(s->identify_data));
-
-    cur_sec = s->cylinders * s->heads * s->sectors;
-
-    put_le16(p + 0, 0x848a);                    /* CF Storage Card signature */
-    put_le16(p + 1, s->cylinders);              /* Default cylinders */
-    put_le16(p + 3, s->heads);                  /* Default heads */
-    put_le16(p + 6, s->sectors);                /* Default sectors per track */
-    /* *(p + 7) := nb_sectors >> 16 -- see ide_cfata_identify_size */
-    /* *(p + 8) := nb_sectors       -- see ide_cfata_identify_size */
-    padstr((char *)(p + 10), s->drive_serial_str, 20); /* serial number */
-    put_le16(p + 22, 0x0004);                   /* ECC bytes */
-    padstr((char *) (p + 23), s->version, 8);   /* Firmware Revision */
-    padstr((char *) (p + 27), s->drive_model_str, 40);/* Model number */
-#if MAX_MULT_SECTORS > 1
-    put_le16(p + 47, 0x8000 | MAX_MULT_SECTORS);
-#else
-    put_le16(p + 47, 0x0000);
-#endif
-    put_le16(p + 49, 0x0f00);                   /* Capabilities */
-    put_le16(p + 51, 0x0002);                   /* PIO cycle timing mode */
-    put_le16(p + 52, 0x0001);                   /* DMA cycle timing mode */
-    put_le16(p + 53, 0x0003);                   /* Translation params valid */
-    put_le16(p + 54, s->cylinders);             /* Current cylinders */
-    put_le16(p + 55, s->heads);                 /* Current heads */
-    put_le16(p + 56, s->sectors);               /* Current sectors */
-    put_le16(p + 57, cur_sec);                  /* Current capacity */
-    put_le16(p + 58, cur_sec >> 16);            /* Current capacity */
-    if (s->mult_sectors)                        /* Multiple sector setting */
-        put_le16(p + 59, 0x100 | s->mult_sectors);
-    /* *(p + 60) := nb_sectors       -- see ide_cfata_identify_size */
-    /* *(p + 61) := nb_sectors >> 16 -- see ide_cfata_identify_size */
-    put_le16(p + 63, 0x0203);                   /* Multiword DMA capability */
-    put_le16(p + 64, 0x0001);                   /* Flow Control PIO support */
-    put_le16(p + 65, 0x0096);                   /* Min. Multiword DMA cycle */
-    put_le16(p + 66, 0x0096);                   /* Rec. Multiword DMA cycle */
-    put_le16(p + 68, 0x00b4);                   /* Min. PIO cycle time */
-    put_le16(p + 82, 0x400c);                   /* Command Set supported */
-    put_le16(p + 83, 0x7068);                   /* Command Set supported */
-    put_le16(p + 84, 0x4000);                   /* Features supported */
-    put_le16(p + 85, 0x000c);                   /* Command Set enabled */
-    put_le16(p + 86, 0x7044);                   /* Command Set enabled */
-    put_le16(p + 87, 0x4000);                   /* Features enabled */
-    put_le16(p + 91, 0x4060);                   /* Current APM level */
-    put_le16(p + 129, 0x0002);                  /* Current features option */
-    put_le16(p + 130, 0x0005);                  /* Reassigned sectors */
-    put_le16(p + 131, 0x0001);                  /* Initial power mode */
-    put_le16(p + 132, 0x0000);                  /* User signature */
-    put_le16(p + 160, 0x8100);                  /* Power requirement */
-    put_le16(p + 161, 0x8001);                  /* CF command set */
-
-    ide_cfata_identify_size(s);
-    s->identify_set = 1;
-
-fill_buffer:
-    memcpy(s->io_buffer, p, sizeof(s->identify_data));
-}
 
 static void ide_set_signature(IDEState *s)
 {
@@ -1183,13 +872,13 @@ static void ide_cfata_metadata_inquiry(IDEState *s)
     memset(p, 0, 0x200);
     spd = ((s->mdata_size - 1) >> 9) + 1;
 
-    put_le16(p + 0, 0x0001);                    /* Data format revision */
-    put_le16(p + 1, 0x0000);                    /* Media property: silicon */
-    put_le16(p + 2, s->media_changed);          /* Media status */
-    put_le16(p + 3, s->mdata_size & 0xffff);    /* Capacity in bytes (low) */
-    put_le16(p + 4, s->mdata_size >> 16);       /* Capacity in bytes (high) */
-    put_le16(p + 5, spd & 0xffff);              /* Sectors per device (low) */
-    put_le16(p + 6, spd >> 16);                 /* Sectors per device (high) */
+    ide_put_le16(p + 0, 0x0001);                    /* Data format revision */
+    ide_put_le16(p + 1, 0x0000);                    /* Media property: silicon */
+    ide_put_le16(p + 2, s->media_changed);          /* Media status */
+    ide_put_le16(p + 3, s->mdata_size & 0xffff);    /* Capacity in bytes (low) */
+    ide_put_le16(p + 4, s->mdata_size >> 16);       /* Capacity in bytes (high) */
+    ide_put_le16(p + 5, spd & 0xffff);              /* Sectors per device (low) */
+    ide_put_le16(p + 6, spd >> 16);                 /* Sectors per device (high) */
 }
 
 static void ide_cfata_metadata_read(IDEState *s)
@@ -1205,7 +894,7 @@ static void ide_cfata_metadata_read(IDEState *s)
     p = (uint16_t *) s->io_buffer;
     memset(p, 0, 0x200);
 
-    put_le16(p + 0, s->media_changed);          /* Media status */
+    ide_put_le16(p + 0, s->media_changed);          /* Media status */
     memcpy(p + 1, s->mdata_storage + (((s->hcyl << 16) | s->lcyl) << 9),
                     MIN(MIN(s->mdata_size - (((s->hcyl << 16) | s->lcyl) << 9),
                                     s->nsector << 9), 0x200 - 2));
@@ -1225,40 +914,6 @@ static void ide_cfata_metadata_write(IDEState *s)
                     s->io_buffer + 2,
                     MIN(MIN(s->mdata_size - (((s->hcyl << 16) | s->lcyl) << 9),
                                     s->nsector << 9), 0x200 - 2));
-}
-
-/* called when the inserted state of the media has changed */
-static void ide_cd_change_cb(void *opaque, bool load, Error **errp)
-{
-    IDEState *s = opaque;
-    uint64_t nb_sectors;
-
-    s->tray_open = !load;
-    blk_get_geometry(s->blk, &nb_sectors);
-    s->nb_sectors = nb_sectors;
-
-    /*
-     * First indicate to the guest that a CD has been removed.  That's
-     * done on the next command the guest sends us.
-     *
-     * Then we set UNIT_ATTENTION, by which the guest will
-     * detect a new CD in the drive.  See ide_atapi_cmd() for details.
-     */
-    s->cdrom_changed = 1;
-    s->events.new_media = true;
-    s->events.eject_request = false;
-    ide_bus_set_irq(s->bus);
-}
-
-static void ide_cd_eject_request_cb(void *opaque, bool force)
-{
-    IDEState *s = opaque;
-
-    s->events.eject_request = true;
-    if (force) {
-        s->tray_locked = false;
-    }
-    ide_bus_set_irq(s->bus);
 }
 
 static void ide_cmd_lba48_transform(IDEState *s, int lba48)
@@ -1724,12 +1379,12 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
     case 0x02: /* write cache enable */
         blk_set_enable_write_cache(s->blk, true);
         identify_data = (uint16_t *)s->identify_data;
-        put_le16(identify_data + 85, (1 << 14) | (1 << 5) | 1);
+        ide_put_le16(identify_data + 85, (1 << 14) | (1 << 5) | 1);
         return true;
     case 0x82: /* write cache disable */
         blk_set_enable_write_cache(s->blk, false);
         identify_data = (uint16_t *)s->identify_data;
-        put_le16(identify_data + 85, (1 << 14) | 1);
+        ide_put_le16(identify_data + 85, (1 << 14) | 1);
         ide_flush_cache(s);
         return false;
     case 0xcc: /* reverting to power-on defaults enable */
@@ -1757,24 +1412,24 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
             switch (s->nsector >> 3) {
             case 0x00: /* pio default */
             case 0x01: /* pio mode */
-                put_le16(identify_data + 62, 0x07);
-                put_le16(identify_data + 63, 0x07);
-                put_le16(identify_data + 88, 0x3f);
+                ide_put_le16(identify_data + 62, 0x07);
+                ide_put_le16(identify_data + 63, 0x07);
+                ide_put_le16(identify_data + 88, 0x3f);
                 break;
             case 0x02: /* single word dma mode */
-                put_le16(identify_data + 62, 0x07 | (1 << (val + 8)));
-                put_le16(identify_data + 63, 0x07);
-                put_le16(identify_data + 88, 0x3f);
+                ide_put_le16(identify_data + 62, 0x07 | (1 << (val + 8)));
+                ide_put_le16(identify_data + 63, 0x07);
+                ide_put_le16(identify_data + 88, 0x3f);
                 break;
             case 0x04: /* mdma mode */
-                put_le16(identify_data + 62, 0x07);
-                put_le16(identify_data + 63, 0x07 | (1 << (val + 8)));
-                put_le16(identify_data + 88, 0x3f);
+                ide_put_le16(identify_data + 62, 0x07);
+                ide_put_le16(identify_data + 63, 0x07 | (1 << (val + 8)));
+                ide_put_le16(identify_data + 88, 0x3f);
                 break;
             case 0x08: /* udma mode */
-                put_le16(identify_data + 62, 0x07);
-                put_le16(identify_data + 63, 0x07);
-                put_le16(identify_data + 88, 0x3f | (1 << (val + 8)));
+                ide_put_le16(identify_data + 62, 0x07);
+                ide_put_le16(identify_data + 63, 0x07);
+                ide_put_le16(identify_data + 88, 0x3f | (1 << (val + 8)));
                 break;
             default:
                 goto abort_cmd;
@@ -1788,17 +1443,6 @@ abort_cmd:
     return true;
 }
 
-
-/*** ATAPI commands ***/
-
-static bool cmd_identify_packet(IDEState *s, uint8_t cmd)
-{
-    ide_atapi_identify(s);
-    s->status = READY_STAT | SEEK_STAT;
-    ide_transfer_start(s, s->io_buffer, 512, ide_transfer_stop);
-    ide_bus_set_irq(s->bus);
-    return false;
-}
 
 /* EXECUTE DEVICE DIAGNOSTIC */
 static bool cmd_exec_dev_diagnostic(IDEState *s, uint8_t cmd)
@@ -1826,26 +1470,6 @@ static bool cmd_exec_dev_diagnostic(IDEState *s, uint8_t cmd)
 
     return false;
 }
-
-static bool cmd_packet(IDEState *s, uint8_t cmd)
-{
-    /* overlapping commands not supported */
-    if (s->feature & 0x02) {
-        ide_abort_command(s);
-        return true;
-    }
-
-    s->status = READY_STAT | SEEK_STAT;
-    s->atapi_dma = s->feature & 1;
-    if (s->atapi_dma) {
-        s->dma_cmd = IDE_DMA_ATAPI;
-    }
-    s->nsector = 1;
-    ide_transfer_start(s, s->io_buffer, ATAPI_PACKET_SIZE,
-                       ide_atapi_cmd);
-    return false;
-}
-
 
 /*** CF-ATA commands ***/
 
@@ -1936,178 +1560,6 @@ static bool cmd_ibm_sense_condition(IDEState *s, uint8_t cmd)
 }
 
 
-/*** SMART commands ***/
-
-static bool cmd_smart(IDEState *s, uint8_t cmd)
-{
-    int n;
-
-    if (s->hcyl != 0xc2 || s->lcyl != 0x4f) {
-        goto abort_cmd;
-    }
-
-    if (!s->smart_enabled && s->feature != SMART_ENABLE) {
-        goto abort_cmd;
-    }
-
-    switch (s->feature) {
-    case SMART_DISABLE:
-        s->smart_enabled = 0;
-        return true;
-
-    case SMART_ENABLE:
-        s->smart_enabled = 1;
-        return true;
-
-    case SMART_ATTR_AUTOSAVE:
-        switch (s->sector) {
-        case 0x00:
-            s->smart_autosave = 0;
-            break;
-        case 0xf1:
-            s->smart_autosave = 1;
-            break;
-        default:
-            goto abort_cmd;
-        }
-        return true;
-
-    case SMART_STATUS:
-        if (!s->smart_errors) {
-            s->hcyl = 0xc2;
-            s->lcyl = 0x4f;
-        } else {
-            s->hcyl = 0x2c;
-            s->lcyl = 0xf4;
-        }
-        return true;
-
-    case SMART_READ_THRESH:
-        memset(s->io_buffer, 0, 0x200);
-        s->io_buffer[0] = 0x01; /* smart struct version */
-
-        for (n = 0; n < ARRAY_SIZE(smart_attributes); n++) {
-            s->io_buffer[2 + 0 + (n * 12)] = smart_attributes[n][0];
-            s->io_buffer[2 + 1 + (n * 12)] = smart_attributes[n][11];
-        }
-
-        /* checksum */
-        for (n = 0; n < 511; n++) {
-            s->io_buffer[511] += s->io_buffer[n];
-        }
-        s->io_buffer[511] = 0x100 - s->io_buffer[511];
-
-        s->status = READY_STAT | SEEK_STAT;
-        ide_transfer_start(s, s->io_buffer, 0x200, ide_transfer_stop);
-        ide_bus_set_irq(s->bus);
-        return false;
-
-    case SMART_READ_DATA:
-        memset(s->io_buffer, 0, 0x200);
-        s->io_buffer[0] = 0x01; /* smart struct version */
-
-        for (n = 0; n < ARRAY_SIZE(smart_attributes); n++) {
-            int i;
-            for (i = 0; i < 11; i++) {
-                s->io_buffer[2 + i + (n * 12)] = smart_attributes[n][i];
-            }
-        }
-
-        s->io_buffer[362] = 0x02 | (s->smart_autosave ? 0x80 : 0x00);
-        if (s->smart_selftest_count == 0) {
-            s->io_buffer[363] = 0;
-        } else {
-            s->io_buffer[363] =
-                s->smart_selftest_data[3 +
-                           (s->smart_selftest_count - 1) *
-                           24];
-        }
-        s->io_buffer[364] = 0x20;
-        s->io_buffer[365] = 0x01;
-        /* offline data collection capacity: execute + self-test*/
-        s->io_buffer[367] = (1 << 4 | 1 << 3 | 1);
-        s->io_buffer[368] = 0x03; /* smart capability (1) */
-        s->io_buffer[369] = 0x00; /* smart capability (2) */
-        s->io_buffer[370] = 0x01; /* error logging supported */
-        s->io_buffer[372] = 0x02; /* minutes for poll short test */
-        s->io_buffer[373] = 0x36; /* minutes for poll ext test */
-        s->io_buffer[374] = 0x01; /* minutes for poll conveyance */
-
-        for (n = 0; n < 511; n++) {
-            s->io_buffer[511] += s->io_buffer[n];
-        }
-        s->io_buffer[511] = 0x100 - s->io_buffer[511];
-
-        s->status = READY_STAT | SEEK_STAT;
-        ide_transfer_start(s, s->io_buffer, 0x200, ide_transfer_stop);
-        ide_bus_set_irq(s->bus);
-        return false;
-
-    case SMART_READ_LOG:
-        switch (s->sector) {
-        case 0x01: /* summary smart error log */
-            memset(s->io_buffer, 0, 0x200);
-            s->io_buffer[0] = 0x01;
-            s->io_buffer[1] = 0x00; /* no error entries */
-            s->io_buffer[452] = s->smart_errors & 0xff;
-            s->io_buffer[453] = (s->smart_errors & 0xff00) >> 8;
-
-            for (n = 0; n < 511; n++) {
-                s->io_buffer[511] += s->io_buffer[n];
-            }
-            s->io_buffer[511] = 0x100 - s->io_buffer[511];
-            break;
-        case 0x06: /* smart self test log */
-            memset(s->io_buffer, 0, 0x200);
-            s->io_buffer[0] = 0x01;
-            if (s->smart_selftest_count == 0) {
-                s->io_buffer[508] = 0;
-            } else {
-                s->io_buffer[508] = s->smart_selftest_count;
-                for (n = 2; n < 506; n++)  {
-                    s->io_buffer[n] = s->smart_selftest_data[n];
-                }
-            }
-
-            for (n = 0; n < 511; n++) {
-                s->io_buffer[511] += s->io_buffer[n];
-            }
-            s->io_buffer[511] = 0x100 - s->io_buffer[511];
-            break;
-        default:
-            goto abort_cmd;
-        }
-        s->status = READY_STAT | SEEK_STAT;
-        ide_transfer_start(s, s->io_buffer, 0x200, ide_transfer_stop);
-        ide_bus_set_irq(s->bus);
-        return false;
-
-    case SMART_EXECUTE_OFFLINE:
-        switch (s->sector) {
-        case 0: /* off-line routine */
-        case 1: /* short self test */
-        case 2: /* extended self test */
-            s->smart_selftest_count++;
-            if (s->smart_selftest_count > 21) {
-                s->smart_selftest_count = 1;
-            }
-            n = 2 + (s->smart_selftest_count - 1) * 24;
-            s->smart_selftest_data[n] = s->sector;
-            s->smart_selftest_data[n + 1] = 0x00; /* OK and finished */
-            s->smart_selftest_data[n + 2] = 0x34; /* hour count lsb */
-            s->smart_selftest_data[n + 3] = 0x12; /* hour count msb */
-            break;
-        default:
-            goto abort_cmd;
-        }
-        return true;
-    }
-
-abort_cmd:
-    ide_abort_command(s);
-    return true;
-}
-
 #define HD_OK (1u << IDE_HD)
 #define CD_OK (1u << IDE_CD)
 #define CFA_OK (1u << IDE_CFATA)
@@ -2154,9 +1606,9 @@ static const struct {
     [WIN_SETIDLE2]                = { cmd_nop, HD_CFA_OK },
     [WIN_CHECKPOWERMODE2]         = { cmd_check_power_mode, HD_CFA_OK | SET_DSC },
     [WIN_SLEEPNOW2]               = { cmd_nop, HD_CFA_OK },
-    [WIN_PACKETCMD]               = { cmd_packet, CD_OK },
-    [WIN_PIDENTIFY]               = { cmd_identify_packet, CD_OK },
-    [WIN_SMART]                   = { cmd_smart, HD_CFA_OK | SET_DSC },
+    [WIN_PACKETCMD]               = { ide_atapi_cmd_packet, CD_OK },
+    [WIN_PIDENTIFY]               = { ide_atapi_cmd_identify_packet, CD_OK },
+    [WIN_SMART]                   = { ide_ata_cmd_smart, HD_CFA_OK | SET_DSC },
     [CFA_ACCESS_METADATA_STORAGE] = { cmd_cfa_access_metadata_storage, CFA_OK },
     [CFA_ERASE_SECTORS]           = { cmd_cfa_erase_sectors, CFA_OK | SET_DSC },
     [WIN_MULTREAD]                = { cmd_read_multiple, HD_CFA_OK },
@@ -2598,49 +2050,6 @@ void ide_bus_reset(IDEBus *bus)
     }
 }
 
-static bool ide_cd_is_tray_open(void *opaque)
-{
-    return ((IDEState *)opaque)->tray_open;
-}
-
-static bool ide_cd_is_medium_locked(void *opaque)
-{
-    return ((IDEState *)opaque)->tray_locked;
-}
-
-static void ide_resize_cb(void *opaque)
-{
-    IDEState *s = opaque;
-    uint64_t nb_sectors;
-
-    if (!s->identify_set) {
-        return;
-    }
-
-    blk_get_geometry(s->blk, &nb_sectors);
-    s->nb_sectors = nb_sectors;
-
-    /* Update the identify data buffer. */
-    if (s->drive_kind == IDE_CFATA) {
-        ide_cfata_identify_size(s);
-    } else {
-        /* IDE_CD uses a different set of callbacks entirely. */
-        assert(s->drive_kind != IDE_CD);
-        ide_identify_size(s);
-    }
-}
-
-static const BlockDevOps ide_cd_block_ops = {
-    .change_media_cb = ide_cd_change_cb,
-    .eject_request_cb = ide_cd_eject_request_cb,
-    .is_tray_open = ide_cd_is_tray_open,
-    .is_medium_locked = ide_cd_is_medium_locked,
-};
-
-static const BlockDevOps ide_hd_block_ops = {
-    .resize_cb = ide_resize_cb,
-};
-
 int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
 {
     uint64_t nb_sectors;
@@ -2907,7 +2316,7 @@ static int ide_drive_pio_post_load(void *opaque, int version_id)
     s->end_transfer_func = transfer_end_table[s->end_transfer_fn_idx];
     s->data_ptr = s->io_buffer + s->cur_io_buffer_offset;
     s->data_end = s->data_ptr + s->cur_io_buffer_len;
-    s->atapi_dma = s->feature & 1; /* as per cmd_packet */
+    s->atapi_dma = s->feature & 1; /* as per ide_atapi_cmd_packet */
 
     return 0;
 }
