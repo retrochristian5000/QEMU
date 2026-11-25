@@ -239,6 +239,12 @@ static void test_i440fx_pam(gconstpointer opaque)
         /* Write out a non-zero mask to the full area */
         write_area(pam_area[i].start, pam_area[i].end, 0x42);
 
+        /* Rewriting an unchanged PAM value must preserve the active alias. */
+        for (int repeat = 0; repeat < 4; repeat++) {
+            pam_set(dev, i, PAM_RE | PAM_WE);
+        }
+        g_assert(verify_area(pam_area[i].start, pam_area[i].end, 0x42));
+
 #ifndef BROKEN
         /* QEMU only supports a limited form of PAM */
 
