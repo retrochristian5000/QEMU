@@ -110,6 +110,11 @@ static void glue (audio_pcm_sw_free_resources_, TYPE) (SW *sw)
         st_rate_stop (sw->rate);
     }
     sw->rate = NULL;
+#if defined(DAC) && defined(CONFIG_LIBSAMPLERATE)
+    g_clear_pointer(&sw->samplerate, audio_samplerate_free);
+    sw->samplerate_started = false;
+    sw->samplerate_draining = false;
+#endif
 }
 
 static int glue (audio_pcm_sw_alloc_resources_, TYPE) (SW *sw)
@@ -148,6 +153,22 @@ static int glue (audio_pcm_sw_alloc_resources_, TYPE) (SW *sw)
 
 #ifdef DAC
     sw->rate = st_rate_start(sw->info.freq, hw->info.freq);
+#ifdef CONFIG_LIBSAMPLERATE
+    /*
+     * Keep the legacy path for equal rates, record/replay and unsupported
+     * ratios. Converter state is private to the playback voice.
+     */
+    if (sw->info.freq != hw->info.freq && replay_mode == REPLAY_MODE_NONE) {
+        const char *reason = NULL;
+
+        sw->samplerate = audio_samplerate_new(sw->info.freq, hw->info.freq,
+                                              &reason);
+        if (!sw->samplerate) {
+            warn_report("audio: libsamplerate unavailable for voice '%s': %s; "
+                        "using linear resampling", SW_NAME(sw), reason);
+        }
+    }
+#endif
 #else
     sw->rate = st_rate_start(hw->info.freq, sw->info.freq);
 #endif

@@ -32,6 +32,9 @@
 #include "qemu/audio.h"
 #include "qemu/audio-capture.h"
 #include "mixeng.h"
+#ifdef CONFIG_LIBSAMPLERATE
+#include "resample-samplerate.h"
+#endif
 
 struct audio_callback {
     void *opaque;
@@ -99,6 +102,11 @@ struct SWVoiceOut {
     t_sample *conv;
     STSampleBuffer resample_buf;
     void *rate;
+#ifdef CONFIG_LIBSAMPLERATE
+    AudioSamplerate *samplerate;
+    bool samplerate_started;
+    bool samplerate_draining;
+#endif
     size_t total_hw_samples_mixed;
     bool active;
     bool empty;

@@ -18,6 +18,36 @@ A dependency belongs here when it is one of the following:
 * a dependency required by one of the pinned submodules; or
 * a conditional edge whose activation can change build order.
 
+Experimental libsamplerate playback
+-----------------------------------
+
+``samplerate`` is a conditional host library, not a managed source fork
+or a firmware dependency. The Meson ``libsamplerate`` feature is disabled
+by default; ``--enable-libsamplerate`` requires version 0.2.2 or newer
+and a successful streaming API link check with the selected host compiler.
+An explicitly requested library must not silently disappear at configure
+time. The library is linked only into the system audio source set and its
+optional unit test.
+
+The experimental path converts ordinary mixed playback voices with
+unequal guest and host sample rates using ``SRC_SINC_FASTEST``. Equal-rate
+playback, capture, capture-monitor resampling, mixing-engine=off and
+record/replay retain the existing mixer. Each voice owns its converter;
+guest DMA accounting uses actual consumed frames, and the host ring
+advances only by actual generated frames. On voice deactivation, the
+converter drains before another active stream uses it. An abrupt voice
+close or format reinitialization can discard pending filter history, just
+as it can discard the old mixer's pending samples. Runtime converter
+errors report a warning and fall back to linear interpolation, with a
+possible discontinuity; the same input is never counted twice.
+
+This first opt-in implementation affects all ordinary mixed playback
+voices in the experimental build. It does not add a guest device setting
+or change the SB16 DSP, DMA, IRQ, firmware, or disk configuration. Full
+SB16 playback, guest IRQ timing, small-buffer behavior, stop/resume,
+ARM64e linkage, and CoreAudio latency must be verified before promoting
+it to the default. Use a separate build directory for the comparison.
+
 macOS external prefix policy
 ----------------------------
 

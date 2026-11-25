@@ -493,6 +493,102 @@ static void audio_pcm_sw_resample_out(SWVoiceOut *sw,
     }
 }
 
+static size_t audio_pcm_sw_input_frames(SWVoiceOut *sw, size_t frames_out)
+{
+#ifdef CONFIG_LIBSAMPLERATE
+    if (sw->samplerate) {
+        return audio_samplerate_input_frames(sw->samplerate, frames_out);
+    }
+#endif
+    return st_rate_frames_in(sw->rate, frames_out);
+}
+
+#ifdef CONFIG_LIBSAMPLERATE
+static void audio_pcm_sw_samplerate_failed(SWVoiceOut *sw, int error)
+{
+    warn_report("audio: libsamplerate failed for voice '%s': %s; "
+                "discarding converter history and using linear resampling",
+                SW_NAME(sw), audio_samplerate_error(error));
+    g_clear_pointer(&sw->samplerate, audio_samplerate_free);
+    sw->samplerate_started = false;
+    sw->samplerate_draining = false;
+}
+
+/*
+ * Mix only the frames the converter actually produced, and report only
+ * the input it actually consumed. The legacy interpolation predictor and
+ * one-frame carry buffer are deliberately not used by this path.
+ */
+static size_t audio_pcm_sw_samplerate_mix(SWVoiceOut *sw, size_t input,
+                                         size_t room, bool drain)
+{
+    HWVoiceOut *hw = sw->hw;
+    size_t consumed = 0, produced = 0;
+    size_t pos = (hw->mix_buf.pos + sw->total_hw_samples_mixed) %
+                 hw->mix_buf.size;
+
+    while (produced < room && sw->samplerate) {
+        size_t in = input - consumed;
+        size_t out = MIN(room - produced, hw->mix_buf.size - pos);
+        int err = audio_samplerate_mix(sw->samplerate,
+                                       sw->resample_buf.buffer + consumed, &in,
+                                       hw->mix_buf.buffer + pos, &out, drain);
+
+        consumed += in;
+        produced += out;
+        pos = (pos + out) % hw->mix_buf.size;
+        if (err) {
+            audio_pcm_sw_samplerate_failed(sw, err);
+            break;
+        }
+        if (!out) {
+            break;
+        }
+    }
+
+    sw->total_hw_samples_mixed += produced;
+    sw->empty = sw->total_hw_samples_mixed == 0;
+    if (sw->samplerate) {
+        sw->samplerate_started |= consumed != 0;
+        if (drain && produced < room) {
+            int err = audio_samplerate_reset(sw->samplerate);
+
+            if (err) {
+                audio_pcm_sw_samplerate_failed(sw, err);
+            } else {
+                sw->samplerate_started = false;
+                sw->samplerate_draining = false;
+            }
+        }
+    }
+    return consumed;
+}
+
+static size_t audio_pcm_sw_samplerate_write(SWVoiceOut *sw, void *buf,
+                                           size_t len, size_t room)
+{
+    size_t input;
+
+    if (!room || sw->samplerate_draining) {
+        return 0;
+    }
+
+    input = MIN(audio_pcm_sw_input_frames(sw, room),
+                MIN(len / sw->info.bytes_per_frame, sw->resample_buf.size));
+    if (input) {
+        sw->conv(sw->resample_buf.buffer, buf, input);
+        if (!AUDIO_MIXENG_BACKEND_GET_CLASS(sw->hw->s)->volume_out) {
+            mixeng_volume(sw->resample_buf.buffer, input, &sw->vol);
+        }
+    }
+
+    input = audio_pcm_sw_samplerate_mix(sw, input, room, false);
+    trace_audio_sw_write(SW_NAME(sw), len / sw->info.bytes_per_frame,
+                         input, sw->total_hw_samples_mixed);
+    return input * sw->info.bytes_per_frame;
+}
+#endif
+
 static size_t audio_pcm_sw_write(SWVoiceOut *sw, void *buf, size_t buf_len)
 {
     HWVoiceOut *hw = sw->hw;
@@ -514,6 +610,11 @@ static size_t audio_pcm_sw_write(SWVoiceOut *sw, void *buf, size_t buf_len)
     hw_free = audio_pcm_hw_get_free(hw);
     hw_free = hw_free > live ? hw_free - live : 0;
     frames_out_max = MIN(dead, hw_free);
+#ifdef CONFIG_LIBSAMPLERATE
+    if (sw->samplerate) {
+        return audio_pcm_sw_samplerate_write(sw, buf, buf_len, frames_out_max);
+    }
+#endif
     sw_max = st_rate_frames_in(sw->rate, frames_out_max);
     fe_max = MIN(buf_len / sw->info.bytes_per_frame + sw->resample_buf.pos,
                  sw->resample_buf.size);
@@ -731,6 +832,11 @@ static void audio_mixeng_backend_set_active_out(AudioBackend *be, SWVoiceOut *sw
                 audio_capture_maybe_changed (sc->cap, 1);
             }
         }
+#ifdef CONFIG_LIBSAMPLERATE
+        if (!on && sw->samplerate && sw->samplerate_started) {
+            sw->samplerate_draining = true;
+        }
+#endif
         sw->active = on;
     }
 
@@ -821,7 +927,7 @@ static size_t audio_get_free(SWVoiceOut *sw)
     dead = sw->hw->mix_buf.size - live;
 
     trace_audio_get_free(SW_NAME(sw), live, dead,
-                         st_rate_frames_in(sw->rate, dead));
+                         audio_pcm_sw_input_frames(sw, dead));
 
     return dead;
 }
@@ -918,6 +1024,7 @@ static void audio_run_out(AudioMixengBackend *s)
         size_t played, live, prev_rpos;
         size_t hw_free = audio_pcm_hw_get_free(hw);
         int nb_live;
+        bool pending_drain = false;
 
         if (!audio_get_pdo_out(s->dev)->mixing_engine) {
             /* there is exactly 1 sw for each hw with no mixeng */
@@ -944,12 +1051,28 @@ static void audio_run_out(AudioMixengBackend *s)
         }
 
         for (sw = hw->sw_head.lh_first; sw; sw = sw->entries.le_next) {
+#ifdef CONFIG_LIBSAMPLERATE
+            if (sw->samplerate && sw->samplerate_started) {
+                size_t live_sw = sw->total_hw_samples_mixed;
+                size_t room = MIN(hw_free, hw->mix_buf.size);
+
+                room = room > live_sw ? room - live_sw : 0;
+                if (room) {
+                    audio_pcm_sw_samplerate_mix(sw, 0, room,
+                                                 sw->samplerate_draining);
+                }
+                if (sw->samplerate_draining) {
+                    pending_drain = true;
+                    continue;
+                }
+            }
+#endif
             if (sw->active) {
                 size_t sw_free = audio_get_free(sw);
                 size_t free;
 
                 if (hw_free > sw->total_hw_samples_mixed) {
-                    free = st_rate_frames_in(sw->rate,
+                    free = audio_pcm_sw_input_frames(sw,
                         MIN(sw_free, hw_free - sw->total_hw_samples_mixed));
                 } else {
                     free = 0;
@@ -973,7 +1096,7 @@ static void audio_run_out(AudioMixengBackend *s)
             continue;
         }
 
-        if (hw->pending_disable && !nb_live) {
+        if (hw->pending_disable && !nb_live && !pending_drain) {
             SWVoiceCap *sc;
 
             trace_audio_out_disable();

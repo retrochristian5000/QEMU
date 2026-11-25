@@ -18,6 +18,10 @@ if coreaudio.found()
   audio_ss.add(coreaudio, files('coreaudio.m'))
 endif
 
+if samplerate.found()
+  audio_ss.add(samplerate, files('resample-samplerate.c'))
+endif
+
 audio_modules = {}
 foreach m : [
   ['alsa', alsa, files('alsaaudio.c')],

@@ -1821,6 +1821,35 @@ if not get_option('dsound').auto() or (host_os == 'windows' and have_system)
   endif
 endif
 
+samplerate = not_found
+if have_system and not get_option('libsamplerate').disabled()
+  samplerate = dependency('samplerate', version: '>=0.2.2',
+                          required: get_option('libsamplerate'),
+                          method: 'pkg-config')
+  if samplerate.found() and not cc.links('''
+    #include <samplerate.h>
+    int main(void) {
+      int err;
+      SRC_STATE *s = src_new(SRC_SINC_FASTEST, 2, &err);
+      SRC_DATA d = {0};
+      if (s) {
+        src_process(s, &d);
+        src_reset(s);
+        src_delete(s);
+      }
+      return !src_is_valid_ratio(1.0);
+    }
+  ''', dependencies: samplerate, name: 'libsamplerate streaming ABI')
+    if get_option('libsamplerate').enabled()
+      error('libsamplerate headers and library failed the streaming ABI link check')
+    endif
+    samplerate = not_found
+  endif
+elif get_option('libsamplerate').enabled()
+  error('libsamplerate playback requires a system emulator build')
+endif
+config_host_data.set('CONFIG_LIBSAMPLERATE', samplerate.found())
+
 coreaudio = not_found
 if not get_option('coreaudio').auto() or (host_os == 'darwin' and have_system)
   coreaudio = dependency('appleframeworks', modules: 'CoreAudio',
@@ -5101,6 +5130,7 @@ if host_os == 'linux'
 endif
 summary_info += {'PipeWire support':  pipewire}
 summary_info += {'JACK support':      jack}
+summary_info += {'libsamplerate playback': samplerate}
 summary(summary_info, bool_yn: true, section: 'Audio backends')
 
 # Network backends

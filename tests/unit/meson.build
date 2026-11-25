@@ -226,6 +226,13 @@ if host_arch == 'aarch64' and host_os == 'linux' and config_host_data.get('CONFI
   endif
 endif
 
+if samplerate.found()
+  tests += {'test-audio-samplerate': [
+    meson.project_source_root() / 'audio/resample-samplerate.c',
+    samplerate,
+  ]}
+endif
+
 test_env = environment()
 test_env.set('G_TEST_SRCDIR', meson.current_source_dir())
 test_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
