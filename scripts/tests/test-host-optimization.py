@@ -247,16 +247,36 @@ class HostOptimizationTests(unittest.TestCase):
             self.assertIn('QEMU_HOST_PGO=use requires actual training data',
                           proc.stderr)
 
-    def test_pgo_use_reuses_existing_indexed_profile(self):
+    def test_pgo_use_validates_existing_indexed_profile(self):
         with tempfile.TemporaryDirectory() as temp:
-            indexed = pathlib.Path(temp) / 'default.profdata'
-            indexed.write_bytes(b'nonempty test fixture')
-            proc = subprocess.run(
-                [sys.executable, str(PGO_HELPER), '--build-dir', temp],
-                text=True, capture_output=True, check=False,
+            build_dir = pathlib.Path(temp)
+            indexed = build_dir / 'default.profdata'
+            tool = build_dir / 'fake-profdata.py'
+            tool.write_text(
+                'import pathlib, sys\n'
+                'assert sys.argv[1] == "show"\n'
+                'sys.exit(0 if pathlib.Path(sys.argv[2]).read_bytes() '
+                '== b"indexed fixture" else 1)\n',
+                encoding='utf-8',
             )
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn('using existing indexed profile', proc.stdout)
+            env = os.environ.copy()
+            env['LLVM_PROFDATA'] = (
+                shlex.quote(sys.executable) + ' ' + shlex.quote(str(tool)))
+            for data, expected in ((b'indexed fixture', 0),
+                                   (b'corrupt fixture', 2)):
+                with self.subTest(data=data):
+                    indexed.write_bytes(data)
+                    proc = subprocess.run(
+                        [sys.executable, str(PGO_HELPER), '--build-dir', temp],
+                        text=True, capture_output=True, check=False, env=env,
+                    )
+                    self.assertEqual(proc.returncode, expected, proc.stderr)
+                    self.assertEqual(indexed.read_bytes(), data)
+                    if expected == 0:
+                        self.assertIn('using existing indexed profile', proc.stdout)
+                    else:
+                        self.assertIn('PGO profile preparation failed', proc.stderr)
+                        self.assertNotIn('using existing indexed profile', proc.stdout)
 
     def test_pgo_use_auto_merges_when_raw_profile_is_present(self):
         with tempfile.TemporaryDirectory() as temp:
