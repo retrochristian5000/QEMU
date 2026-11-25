@@ -254,7 +254,12 @@ static void pic_ioport_write(void *opaque, hwaddr addr64,
                 s->read_reg_select = val & 1;
             }
             if (val & 0x40) {
-                s->special_mask = (val >> 5) & 1;
+                uint8_t special_mask = (val >> 5) & 1;
+
+                if (s->special_mask != special_mask) {
+                    s->special_mask = special_mask;
+                    pic_update_irq(s);
+                }
             }
         } else {
             cmd = val >> 5;
