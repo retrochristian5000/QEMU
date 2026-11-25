@@ -61,7 +61,6 @@ bool pci_available = true;
 static char *pcibus_get_dev_path(DeviceState *dev);
 static char *pcibus_get_fw_dev_path(DeviceState *dev);
 static void pcibus_reset_hold(Object *obj, ResetType type);
-static bool pcie_has_upstream_port(PCIDevice *dev);
 
 static void prop_pci_busnr_get(Object *obj, Visitor *v, const char *name,
                                void *opaque, Error **errp)
@@ -199,7 +198,7 @@ static void pcibus_machine_done(Notifier *notifier, void *data)
     }
 }
 
-static void pci_bus_realize(BusState *qbus, Error **errp)
+void pci_bus_realize(BusState *qbus, Error **errp)
 {
     PCIBus *bus = PCI_BUS(qbus);
 
@@ -207,32 +206,6 @@ static void pci_bus_realize(BusState *qbus, Error **errp)
     qemu_add_machine_init_done_notifier(&bus->machine_done);
 
     vmstate_register_any(NULL, &vmstate_pcibus, bus);
-}
-
-static void pcie_bus_realize(BusState *qbus, Error **errp)
-{
-    PCIBus *bus = PCI_BUS(qbus);
-    Error *local_err = NULL;
-
-    pci_bus_realize(qbus, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        return;
-    }
-
-    /*
-     * A PCI-E bus can support extended config space if it's the root
-     * bus, or if the bus/bridge above it does as well
-     */
-    if (pci_bus_is_root(bus)) {
-        bus->flags |= PCI_BUS_EXTENDED_CONFIG_SPACE;
-    } else {
-        PCIBus *parent_bus = pci_get_bus(bus->parent_dev);
-
-        if (pci_bus_allows_extended_config_space(parent_bus)) {
-            bus->flags |= PCI_BUS_EXTENDED_CONFIG_SPACE;
-        }
-    }
 }
 
 static void pci_bus_unrealize(BusState *qbus)
@@ -348,25 +321,6 @@ static const TypeInfo pcie_interface_info = {
 static const TypeInfo conventional_pci_interface_info = {
     .name          = INTERFACE_CONVENTIONAL_PCI_DEVICE,
     .parent        = TYPE_INTERFACE,
-};
-
-static void pcie_bus_class_init(ObjectClass *klass, const void *data)
-{
-    BusClass *k = BUS_CLASS(klass);
-
-    k->realize = pcie_bus_realize;
-}
-
-static const TypeInfo pcie_bus_info = {
-    .name = TYPE_PCIE_BUS,
-    .parent = TYPE_PCI_BUS,
-    .class_init = pcie_bus_class_init,
-};
-
-static const TypeInfo cxl_bus_info = {
-    .name       = TYPE_CXL_BUS,
-    .parent     = TYPE_PCIE_BUS,
-    .class_init = pcie_bus_class_init,
 };
 
 static void pci_update_mappings(PCIDevice *d);
@@ -2060,23 +2014,8 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
-    /*
-     * A PCIe Downstream Port that do not have ARI Forwarding enabled must
-     * associate only Device 0 with the device attached to the bus
-     * representing the Link from the Port (PCIe base spec rev 4.0 ver 0.3,
-     * sec 7.3.1).
-     * With ARI, PCI_SLOT() can return non-zero value as the traditional
-     * 5-bit Device Number and 3-bit Function Number fields in its associated
-     * Routing IDs, Requester IDs and Completer IDs are interpreted as a
-     * single 8-bit Function Number. Hence, ignore ARI capable devices.
-     */
-    if (pci_is_express(pci_dev) &&
-        !pcie_find_capability(pci_dev, PCI_EXT_CAP_ID_ARI) &&
-        pcie_has_upstream_port(pci_dev) &&
-        PCI_SLOT(pci_dev->devfn)) {
-        warn_report("PCI: slot %d is not valid for %s,"
-                    " parent device only allows plugging into slot 0.",
-                    PCI_SLOT(pci_dev->devfn), pci_dev->name);
+    if (pci_is_express(pci_dev)) {
+        pcie_bus_check_slot(pci_dev);
     }
 
     if (pci_dev->failover_pair_id) {
@@ -3114,35 +3053,6 @@ void pci_bus_get_w64_range(PCIBus *bus, Range *range)
     pci_for_each_device_under_bus(bus, pci_dev_get_w64, range);
 }
 
-static bool pcie_has_upstream_port(PCIDevice *dev)
-{
-    PCIDevice *parent_dev = pci_bridge_get_device(pci_get_bus(dev));
-
-    /* Device associated with an upstream port.
-     * As there are several types of these, it's easier to check the
-     * parent device: upstream ports are always connected to
-     * root or downstream ports.
-     */
-    return parent_dev &&
-        pci_is_express(parent_dev) &&
-        parent_dev->exp.exp_cap &&
-        (pcie_cap_get_type(parent_dev) == PCI_EXP_TYPE_ROOT_PORT ||
-         pcie_cap_get_type(parent_dev) == PCI_EXP_TYPE_DOWNSTREAM);
-}
-
-PCIDevice *pci_get_function_0(PCIDevice *pci_dev)
-{
-    PCIBus *bus = pci_get_bus(pci_dev);
-
-    if(pcie_has_upstream_port(pci_dev)) {
-        /* With an upstream PCIe port, we only support 1 device at slot 0 */
-        return bus->devices[0];
-    } else {
-        /* Other bus types might support multiple devices at slots 0-31 */
-        return bus->devices[PCI_DEVFN(PCI_SLOT(pci_dev->devfn), 0)];
-    }
-}
-
 MSIMessage pci_get_msi_message(PCIDevice *dev, int vector)
 {
     MSIMessage msg;
@@ -3201,8 +3111,7 @@ static const TypeInfo pci_device_type_info = {
 static void pci_register_types(void)
 {
     type_register_static(&pci_bus_info);
-    type_register_static(&pcie_bus_info);
-    type_register_static(&cxl_bus_info);
+    pcie_bus_register_types();
     type_register_static(&conventional_pci_interface_info);
     type_register_static(&cxl_interface_info);
     type_register_static(&pcie_interface_info);
