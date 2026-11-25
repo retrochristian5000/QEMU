@@ -1189,6 +1189,12 @@ static void ide_wait_intr(QTestState *qts, int irq)
     g_assert_not_reached();
 }
 
+static void test_pic_model_names(void)
+{
+    g_assert_true(qtest_has_device("i8259a"));
+    g_assert_true(qtest_has_device("isa-i8259"));
+}
+
 static void test_pic_ide_special_mask(void)
 {
     QTestState *qts;
@@ -1663,6 +1669,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/piix/bmdma-access-width",
                    test_piix_bmdma_access_width);
     qtest_add_func("/ide/piix/channel-irq-reset", test_piix_channel_irq_reset);
+    qtest_add_func("/ide/pic/model-names", test_pic_model_names);
     qtest_add_func("/ide/pic/special-mask", test_pic_ide_special_mask);
     qtest_add_func("/ide/ata-atapi-command-boundary",
                    test_ata_atapi_command_boundary);
