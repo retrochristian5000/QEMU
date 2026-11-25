@@ -1124,7 +1124,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
                                               TARGET_PAGE_SIZE);
 
     index = tlb_index(cpu, mmu_idx, addr_page);
-    te = tlb_entry(cpu, mmu_idx, addr_page);
+    te = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
 
     /*
      * Hold the TLB lock for the rest of the function. We could acquire/release
@@ -1382,11 +1382,12 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
                                  uintptr_t retaddr, bool check_mem_cbs)
 {
     uintptr_t index = tlb_index(cpu, mmu_idx, addr);
-    CPUTLBEntry *entry = tlb_entry(cpu, mmu_idx, addr);
+    CPUTLBEntry *entry = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
     uint64_t tlb_addr = tlb_read_idx(entry, access_type);
     vaddr page_addr = addr & TARGET_PAGE_MASK;
     int flags = TLB_FLAGS_MASK & ~TLB_FORCE_SLOW;
-    bool force_mmio = check_mem_cbs && cpu_plugin_mem_cbs_enabled(cpu);
+    bool force_mmio = access_type != MMU_INST_FETCH && check_mem_cbs &&
+                      cpu_plugin_mem_cbs_enabled(cpu);
     CPUTLBEntryFull *full;
 
     if (!tlb_hit_page(tlb_addr, page_addr)) {
@@ -1401,7 +1402,7 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
             /* TLB resize via tlb_fill_align may have moved the entry.  */
             index = tlb_index(cpu, mmu_idx, addr);
-            entry = tlb_entry(cpu, mmu_idx, addr);
+            entry = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
 
             /*
              * With PAGE_WRITE_INV, we set TLB_INVALID_MASK immediately,
@@ -1419,7 +1420,7 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
     /* Fold all "mmio-like" bits into TLB_MMIO.  This is not RAM.  */
     if (unlikely(flags & ~(TLB_WATCHPOINT | TLB_NOTDIRTY | TLB_CHECK_ALIGNED))
-        || (access_type != MMU_INST_FETCH && force_mmio)) {
+        || force_mmio) {
         *phost = NULL;
         return TLB_MMIO;
     }
@@ -1596,8 +1597,8 @@ tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
 bool tlb_plugin_lookup(CPUState *cpu, vaddr addr, int mmu_idx,
                        bool is_store, struct qemu_plugin_hwaddr *data)
 {
-    CPUTLBEntry *tlbe = tlb_entry(cpu, mmu_idx, addr);
     uintptr_t index = tlb_index(cpu, mmu_idx, addr);
+    CPUTLBEntry *tlbe = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
     MMUAccessType access_type = is_store ? MMU_DATA_STORE : MMU_DATA_LOAD;
     uint64_t tlb_addr = tlb_read_idx(tlbe, access_type);
     CPUTLBEntryFull *full;
@@ -1660,7 +1661,7 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
 {
     vaddr addr = data->addr;
     uintptr_t index = tlb_index(cpu, mmu_idx, addr);
-    CPUTLBEntry *entry = tlb_entry(cpu, mmu_idx, addr);
+    CPUTLBEntry *entry = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
     uint64_t tlb_addr = tlb_read_idx(entry, access_type);
     bool maybe_resized = false;
     CPUTLBEntryFull *full;
@@ -1674,7 +1675,7 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
                            memop, data->size, false, ra);
             maybe_resized = true;
             index = tlb_index(cpu, mmu_idx, addr);
-            entry = tlb_entry(cpu, mmu_idx, addr);
+            entry = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
         }
         tlb_addr = tlb_read_idx(entry, access_type) & ~TLB_INVALID_MASK;
     }
@@ -1882,7 +1883,7 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
     retaddr -= GETPC_ADJ;
 
     index = tlb_index(cpu, mmu_idx, addr);
-    tlbe = tlb_entry(cpu, mmu_idx, addr);
+    tlbe = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
 
     /* Check TLB entry and enforce page permissions.  */
     tlb_addr = tlb_addr_write(tlbe);
@@ -1893,7 +1894,7 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
                            mop, size, false, retaddr);
             did_tlb_fill = true;
             index = tlb_index(cpu, mmu_idx, addr);
-            tlbe = tlb_entry(cpu, mmu_idx, addr);
+            tlbe = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
         }
         tlb_addr = tlb_addr_write(tlbe) & ~TLB_INVALID_MASK;
     }
