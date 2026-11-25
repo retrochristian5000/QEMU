@@ -956,17 +956,7 @@ static void ide_reset(IDEState *s)
 
     s->lba48 = 0;
 
-    /* ATAPI specific */
-    s->sense_key = 0;
-    s->asc = 0;
-    s->cdrom_changed = 0;
-    s->packet_transfer_size = 0;
-    s->elementary_transfer_size = 0;
-    s->io_buffer_index = 0;
-    s->cd_sector_size = 0;
-    s->atapi_dma = 0;
-    s->tray_locked = 0;
-    s->tray_open = 0;
+    ide_atapi_reset_state(s);
     /* ATA DMA state */
     s->io_buffer_size = 0;
     s->req_nb_sectors = 0;
@@ -982,23 +972,6 @@ static void ide_reset(IDEState *s)
 static bool cmd_nop(IDEState *s, uint8_t cmd)
 {
     return true;
-}
-
-static bool cmd_device_reset(IDEState *s, uint8_t cmd)
-{
-    /* Halt PIO (in the DRQ phase), then DMA */
-    ide_transfer_halt(s);
-    ide_cancel_dma_sync(s);
-
-    /* Reset any PIO commands, reset signature, etc */
-    ide_reset(s);
-
-    /* RESET: ATA8-ACS3 7.10.4 "Normal Outputs";
-     * ATA8-ACS3 Table 184 "Device Signatures for Normal Output" */
-    s->status = 0x00;
-
-    /* Do not overwrite status register */
-    return false;
 }
 
 static bool cmd_data_set_management(IDEState *s, uint8_t cmd)
@@ -1457,7 +1430,7 @@ static const struct {
     /* NOP not implemented, mandatory for CD */
     [CFA_REQ_EXT_ERROR_CODE]      = { cmd_cfa_req_ext_error_code, CFA_OK },
     [WIN_DSM]                     = { cmd_data_set_management, HD_CFA_OK },
-    [WIN_DEVICE_RESET]            = { cmd_device_reset, CD_OK },
+    [WIN_DEVICE_RESET]            = { ide_atapi_cmd_device_reset, CD_OK },
     [WIN_RECAL]                   = { cmd_nop, HD_CFA_OK | SET_DSC},
     [WIN_READ]                    = { cmd_read_pio, ALL_OK },
     [WIN_READ_ONCE]               = { cmd_read_pio, HD_CFA_OK },
@@ -1564,10 +1537,12 @@ void ide_bus_exec_cmd(IDEBus *bus, uint32_t val)
     }
 }
 
-static void ide_perform_srst(IDEState *s)
+/*
+ * Shared reset ordering: cancel transfers before resetting registers.
+ * Callers own the protocol-specific status and diagnostic response.
+ */
+void ide_reset_transfers(IDEState *s)
 {
-    s->status |= BUSY_STAT;
-
     /* Halt PIO (Via register state); PIO BH remains scheduled. */
     ide_transfer_halt(s);
 
@@ -1576,6 +1551,12 @@ static void ide_perform_srst(IDEState *s)
 
     /* Cancel PIO callback, reset registers/signature, etc */
     ide_reset(s);
+}
+
+static void ide_perform_srst(IDEState *s)
+{
+    s->status |= BUSY_STAT;
+    ide_reset_transfers(s);
 
     /* perform diagnostic */
     cmd_exec_dev_diagnostic(s, WIN_DIAGNOSE);
@@ -1948,51 +1929,12 @@ static bool ide_drive_pio_state_needed(void *opaque)
         || (s->bus->error_status & IDE_RETRY_PIO);
 }
 
-static bool ide_tray_state_needed(void *opaque)
-{
-    IDEState *s = opaque;
-
-    return s->tray_open || s->tray_locked;
-}
-
-static bool ide_atapi_gesn_needed(void *opaque)
-{
-    IDEState *s = opaque;
-
-    return s->events.new_media || s->events.eject_request;
-}
-
 static bool ide_error_needed(void *opaque)
 {
     IDEBus *bus = opaque;
 
     return (bus->error_status != 0);
 }
-
-/* Fields for GET_EVENT_STATUS_NOTIFICATION ATAPI command */
-static const VMStateDescription vmstate_ide_atapi_gesn_state = {
-    .name ="ide_drive/atapi/gesn_state",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .needed = ide_atapi_gesn_needed,
-    .fields = (const VMStateField[]) {
-        VMSTATE_BOOL(events.new_media, IDEState),
-        VMSTATE_BOOL(events.eject_request, IDEState),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-static const VMStateDescription vmstate_ide_tray_state = {
-    .name = "ide_drive/tray_state",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .needed = ide_tray_state_needed,
-    .fields = (const VMStateField[]) {
-        VMSTATE_BOOL(tray_open, IDEState),
-        VMSTATE_BOOL(tray_locked, IDEState),
-        VMSTATE_END_OF_LIST()
-    }
-};
 
 static const VMStateDescription vmstate_ide_drive_pio_state = {
     .name = "ide_drive/pio_state",

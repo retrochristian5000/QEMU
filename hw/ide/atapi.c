@@ -28,9 +28,37 @@
 #include "hw/scsi/scsi.h"
 #include "hw/block/dvdrom.h"
 #include "system/block-backend.h"
+#include "migration/vmstate.h"
 #include "scsi/constants.h"
 #include "ide-internal.h"
 #include "trace.h"
+
+/* Packet-device state is reset even in unused IDE slots for compatibility. */
+void ide_atapi_reset_state(IDEState *s)
+{
+    s->sense_key = 0;
+    s->asc = 0;
+    s->cdrom_changed = 0;
+    s->packet_transfer_size = 0;
+    s->elementary_transfer_size = 0;
+    s->io_buffer_index = 0;
+    s->cd_sector_size = 0;
+    s->atapi_dma = 0;
+    s->tray_locked = 0;
+    s->tray_open = 0;
+}
+
+bool ide_atapi_cmd_device_reset(IDEState *s, uint8_t cmd)
+{
+    ide_reset_transfers(s);
+
+    /* RESET: ATA8-ACS3 7.10.4 "Normal Outputs";
+     * ATA8-ACS3 Table 184 "Device Signatures for Normal Output" */
+    s->status = 0x00;
+
+    /* Do not overwrite status register */
+    return false;
+}
 
 /* Packet-device identification and removable-media notifications. */
 static void ide_atapi_identify(IDEState *s)
@@ -1433,3 +1461,43 @@ void ide_atapi_cmd(IDEState *s)
 
     ide_atapi_cmd_error(s, ILLEGAL_REQUEST, ASC_ILLEGAL_OPCODE);
 }
+
+/* Existing removable-media migration subsections; wire format unchanged. */
+static bool ide_tray_state_needed(void *opaque)
+{
+    IDEState *s = opaque;
+
+    return s->tray_open || s->tray_locked;
+}
+
+static bool ide_atapi_gesn_needed(void *opaque)
+{
+    IDEState *s = opaque;
+
+    return s->events.new_media || s->events.eject_request;
+}
+
+/* Fields for GET_EVENT_STATUS_NOTIFICATION ATAPI command */
+const VMStateDescription vmstate_ide_atapi_gesn_state = {
+    .name ="ide_drive/atapi/gesn_state",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = ide_atapi_gesn_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_BOOL(events.new_media, IDEState),
+        VMSTATE_BOOL(events.eject_request, IDEState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+const VMStateDescription vmstate_ide_tray_state = {
+    .name = "ide_drive/tray_state",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = ide_tray_state_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_BOOL(tray_open, IDEState),
+        VMSTATE_BOOL(tray_locked, IDEState),
+        VMSTATE_END_OF_LIST()
+    }
+};

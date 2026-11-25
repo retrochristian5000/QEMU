@@ -91,6 +91,7 @@ enum {
 
 enum {
     CMD_DSM         = 0x06,
+    CMD_DEVICE_RESET = 0x08,
     CMD_DIAGNOSE    = 0x90,
     CMD_INIT_DP     = 0x91,  /* INITIALIZE DEVICE PARAMETERS */
     CMD_READ_DMA    = 0xc8,
@@ -98,6 +99,7 @@ enum {
     CMD_FLUSH_CACHE = 0xe7,
     CMD_IDENTIFY    = 0xec,
     CMD_PACKET      = 0xa0,
+    CMD_PACKET_IDENTIFY = 0xa1,
     CMD_READ_NATIVE = 0xf8,  /* READ NATIVE MAX ADDRESS */
 
     CMDF_ABORT      = 0x100,
@@ -797,6 +799,69 @@ static void test_identify(void)
     free_pci_device(dev);
 }
 
+static void test_ata_atapi_command_boundary(void)
+{
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    uint8_t status;
+
+    qts = ide_test_start(
+        "-blockdev driver=file,node-name=hda,filename=%s "
+        "-device ide-hd,drive=hda,bus=ide.0,unit=0 "
+        "-device ide-cd,bus=ide.0,unit=1", tmp_path[0]);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+
+    /* ATA disks reject packet-only opcodes. */
+    qpci_io_writeb(dev, ide_bar, reg_device, 0);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET_IDENTIFY);
+    status = qpci_io_readb(dev, ide_bar, reg_status);
+    assert_bit_set(status, ERR);
+    assert_bit_clear(status, BSY | DRQ);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_DEVICE_RESET);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+
+    /* A packet device rejects ATA IDENTIFY and reports its signature. */
+    qpci_io_writeb(dev, ide_bar, reg_device, DEV);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_IDENTIFY);
+    status = qpci_io_readb(dev, ide_bar, reg_status);
+    assert_bit_set(status, ERR);
+    assert_bit_clear(status, BSY | DRQ);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_lba_middle), ==, 0x14);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_lba_high), ==, 0xeb);
+
+    /* DEVICE RESET must interrupt an ATAPI command in its DRQ phase. */
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET_IDENTIFY);
+    status = qpci_io_readb(dev, ide_bar, reg_status);
+    assert_bit_set(status, DRQ);
+    assert_bit_clear(status, BSY | ERR);
+
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_DEVICE_RESET);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_status), ==, 0);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_nsectors), ==, 1);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_lba_low), ==, 1);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_lba_middle), ==, 0x14);
+    g_assert_cmphex(qpci_io_readb(dev, ide_bar, reg_lba_high), ==, 0xeb);
+
+    /* The ATA disk on the same channel remains usable. */
+    qpci_io_writeb(dev, ide_bar, reg_device, 0);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_IDENTIFY);
+    status = qpci_io_readb(dev, ide_bar, reg_status);
+    assert_bit_set(status, DRQ);
+    assert_bit_clear(status, BSY | ERR);
+    for (int i = 0; i < 256; i++) {
+        qpci_io_readw(dev, ide_bar, reg_data);
+    }
+    assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), BSY | DRQ | ERR);
+
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_diagnostic(void)
 {
     QTestState *qts;
@@ -1319,6 +1384,8 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/read_native", test_specify);
 
     qtest_add_func("/ide/identify", test_identify);
+    qtest_add_func("/ide/ata-atapi-command-boundary",
+                   test_ata_atapi_command_boundary);
 
     qtest_add_func("/ide/diagnostic", test_diagnostic);
 

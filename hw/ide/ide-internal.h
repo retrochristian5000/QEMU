@@ -405,6 +405,7 @@ extern const VMStateDescription vmstate_ide_drive;
     VMSTATE_STRUCT(_field, _state, 1, vmstate_ide_drive, IDEState)
 
 void ide_bus_reset(IDEBus *bus);
+void ide_reset_transfers(IDEState *s);
 void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val);
 int64_t ide_get_sector(IDEState *s);
 void ide_set_sector(IDEState *s, int64_t sector_num);
@@ -476,6 +477,10 @@ bool ide_ata_cmd_smart(IDEState *s, uint8_t cmd);
 extern const struct BlockDevOps ide_hd_block_ops;
 
 /* hw/ide/atapi.c */
+void ide_atapi_reset_state(IDEState *s);
+bool ide_atapi_cmd_device_reset(IDEState *s, uint8_t cmd);
+extern const VMStateDescription vmstate_ide_tray_state;
+extern const VMStateDescription vmstate_ide_atapi_gesn_state;
 bool ide_atapi_cmd_identify_packet(IDEState *s, uint8_t cmd);
 bool ide_atapi_cmd_packet(IDEState *s, uint8_t cmd);
 extern const struct BlockDevOps ide_cd_block_ops;

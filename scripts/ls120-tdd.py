@@ -395,7 +395,7 @@ def apply_stage1_production() -> None:
         "#define ATAPI_OK (CD_OK | ATAPI_DISK_OK)\n"
         "#define ALL_OK (HD_OK | CD_OK | CFA_OK | ATAPI_DISK_OK)\n",
     )
-    replace_once(IDE_CORE, "    [WIN_DEVICE_RESET]            = { cmd_device_reset, CD_OK },\n", "    [WIN_DEVICE_RESET]            = { cmd_device_reset, ATAPI_OK },\n")
+    replace_once(IDE_CORE, "    [WIN_DEVICE_RESET]            = { ide_atapi_cmd_device_reset, CD_OK },\n", "    [WIN_DEVICE_RESET]            = { ide_atapi_cmd_device_reset, ATAPI_OK },\n")
     replace_once(IDE_CORE, "    [WIN_PACKETCMD]               = { ide_atapi_cmd_packet, CD_OK },\n    [WIN_PIDENTIFY]               = { ide_atapi_cmd_identify_packet, CD_OK },\n", "    [WIN_PACKETCMD]               = { ide_atapi_cmd_packet, ATAPI_OK },\n    [WIN_PIDENTIFY]               = { ide_atapi_cmd_identify_packet, ATAPI_OK },\n")
     replace_once(IDE_CORE, "        if (val != WIN_DEVICE_RESET || s->drive_kind != IDE_CD) {\n", "        if (val != WIN_DEVICE_RESET ||\n            !ide_drive_kind_is_atapi(s->drive_kind)) {\n")
     replace_once(
