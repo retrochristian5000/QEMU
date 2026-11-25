@@ -22,13 +22,21 @@ static inline Int128 atomic16_cmpxchg(Int128 *ptr, Int128 cmp, Int128 new)
     uint64_t oldl, oldh;
     uint32_t tmp;
 
+    /*
+     * Without LSE2, a pair-exclusive load can tear.  Complete the
+     * exclusive store even on mismatch, preserving the loaded value.
+     * See GCC PR111404 and libatomic PR110061.
+     */
     asm("0: ldaxp %[oldl], %[oldh], %[mem]\n\t"
         "cmp %[oldl], %[cmpl]\n\t"
         "ccmp %[oldh], %[cmph], #0, eq\n\t"
         "b.ne 1f\n\t"
         "stlxp %w[tmp], %[newl], %[newh], %[mem]\n\t"
+        "cbnz %w[tmp], 0b\n\t"
+        "b 2f\n"
+        "1: stlxp %w[tmp], %[oldl], %[oldh], %[mem]\n\t"
         "cbnz %w[tmp], 0b\n"
-        "1:"
+        "2:"
         : [mem] "+m"(*ptr), [tmp] "=&r"(tmp),
           [oldl] "=&r"(oldl), [oldh] "=&r"(oldh)
         : [cmpl] "r"(cmpl), [cmph] "r"(cmph),
