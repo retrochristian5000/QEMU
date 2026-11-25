@@ -185,7 +185,9 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     /* Main-queue state; one upload texture must not be rewritten in flight. */
     BOOL frameInFlight;
     BOOL redrawDeferred;
-    NSRect deferredDirtyRect;
+    NSRect deferredDirtyRects[8];
+    NSUInteger deferredDirtyCount;
+    uint64_t surfaceGeneration;
     BOOL drawableRetryUsed;
     BOOL drawableRetryScheduled;
     int textureWidth;
@@ -336,6 +338,10 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     nativeTextureWidth = 0;
     nativeTextureHeight = 0;
     textureImage = NULL;
+    surfaceGeneration++;
+    hasPresentedFrame = NO;
+    deferredDirtyCount = 0;
+    redrawDeferred = NO;
     presentationPending = YES;
     drawableRetryUsed = NO;
 }
@@ -408,6 +414,37 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     });
 }
 
+/* Keep distant damage separate while the GPU owns the upload texture. */
+- (void)deferDirtyRect:(NSRect)rect
+{
+    if (NSIsEmptyRect(rect)) {
+        return;
+    }
+
+    for (NSUInteger i = 0; i < deferredDirtyCount;) {
+        NSRect old = deferredDirtyRects[i];
+
+        if (NSIntersectsRect(old, rect)) {
+            rect = NSUnionRect(old, rect);
+            deferredDirtyRects[i] =
+                deferredDirtyRects[--deferredDirtyCount];
+            i = 0;
+        } else {
+            i++;
+        }
+    }
+
+    if (deferredDirtyCount < ARRAY_SIZE(deferredDirtyRects)) {
+        deferredDirtyRects[deferredDirtyCount++] = rect;
+    } else {
+        /*
+         * Keep memory and scheduling bounded even for pathological damage.
+         * Overflow must cover all pixels; never discard a dirty region.
+         */
+        deferredDirtyRects[0] = NSUnionRect(deferredDirtyRects[0], rect);
+    }
+}
+
 - (bool)drawView:(NSView *)view dirtyRect:(NSRect)dirtyRect
 {
     Class<QEMUMetalTextureDescriptorRuntime> descriptorClass;
@@ -446,12 +483,21 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     /*
      * Do not acquire another drawable or write the shared upload texture
      * while the previous GPU blit is outstanding. Preserve the upload
-     * texture and accumulate AppKit's bounding damage rectangle instead.
+     * texture and accumulate AppKit's actual damage rectangles instead.
      * Surface changes and failed GPU commands invalidate it separately.
      */
     if (frameInFlight) {
-        deferredDirtyRect = redrawDeferred
-            ? NSUnionRect(deferredDirtyRect, dirtyRect) : dirtyRect;
+        const NSRect *rectList;
+        NSInteger rectCount;
+
+        [view getRectsBeingDrawn:&rectList count:&rectCount];
+        if (rectCount > 0) {
+            for (NSInteger i = 0; i < rectCount; i++) {
+                [self deferDirtyRect:rectList[i]];
+            }
+        } else {
+            [self deferDirtyRect:dirtyRect];
+        }
         redrawDeferred = YES;
         presentationPending = YES;
         return true;
@@ -666,6 +712,7 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
     [commandBuffer presentDrawable:drawable];
     frameInFlight = YES;
     presentationPending = NO;
+    uint64_t submittedGeneration = surfaceGeneration;
     [commandBuffer addCompletedHandler:^(id<QEMUMetalCommandBufferRuntime> completed) {
         /*
          * Metal calls this on a worker thread. Do not touch AppKit or
@@ -677,6 +724,17 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                          QEMU_METAL_COMMAND_BUFFER_STATUS_COMPLETED;
         dispatch_async(dispatch_get_main_queue(), ^{
             frameInFlight = NO;
+            /*
+             * A completed old-mode frame cannot establish presentation
+             * validity for the new surface. Its GPU ownership has ended,
+             * but only a new full redraw can present the current mode.
+             */
+            if (submittedGeneration != surfaceGeneration) {
+                deferredDirtyCount = 0;
+                redrawDeferred = NO;
+                [view setNeedsDisplay:YES];
+                return;
+            }
             if (succeeded) {
                 hasPresentedFrame = YES;
                 drawableRetryUsed = NO;
@@ -687,10 +745,10 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                 [self retryDrawableForView:view];
             }
             if (redrawDeferred) {
-                NSRect damage = deferredDirtyRect;
+                NSUInteger count = deferredDirtyCount;
 
                 redrawDeferred = NO;
-                deferredDirtyRect = NSZeroRect;
+                deferredDirtyCount = 0;
                 /*
                  * A surface switch, occlusion or failed command can
                  * invalidate the upload texture independently. Keep the
@@ -698,10 +756,12 @@ static bool cocoa_metal_dirty_rect_from_nsrect(
                  * only the damage accumulated while the GPU was busy.
                  */
                 if (!succeeded || (!nativeTexture && !textureImage) ||
-                    NSIsEmptyRect(damage)) {
+                    !count) {
                     [view setNeedsDisplay:YES];
                 } else {
-                    [view setNeedsDisplayInRect:damage];
+                    for (NSUInteger i = 0; i < count; i++) {
+                        [view setNeedsDisplayInRect:deferredDirtyRects[i]];
+                    }
                 }
             }
         });

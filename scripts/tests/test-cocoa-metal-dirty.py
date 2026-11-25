@@ -166,7 +166,9 @@ int main(void)
         start = text.index('    if (frameInFlight) {')
         end = text.index('    if (nativeTexture) {', start)
         deferred = text[start:end]
-        self.assertIn('NSUnionRect(deferredDirtyRect, dirtyRect)', deferred)
+        self.assertIn('getRectsBeingDrawn:&rectList count:&rectCount', deferred)
+        self.assertIn('[self deferDirtyRect:rectList[i]];', deferred)
+        self.assertIn('[self deferDirtyRect:dirtyRect];', deferred)
         self.assertIn('redrawDeferred = YES;', deferred)
         self.assertIn('presentationPending = YES;', deferred)
         self.assertNotIn('textureImage = NULL;', deferred)
@@ -176,16 +178,44 @@ int main(void)
         start = text.index('            if (redrawDeferred) {')
         end = text.index('    [commandBuffer commit];', start)
         completion = text[start:end]
-        self.assertIn('NSRect damage = deferredDirtyRect;', completion)
+        self.assertIn('NSUInteger count = deferredDirtyCount;', completion)
         self.assertIn('redrawDeferred = NO;', completion)
-        self.assertIn('deferredDirtyRect = NSZeroRect;', completion)
+        self.assertIn('deferredDirtyCount = 0;', completion)
         self.assertIn('!succeeded || (!nativeTexture && !textureImage)',
                       completion)
-        self.assertIn('NSIsEmptyRect(damage)', completion)
+        self.assertIn('!count)', completion)
         self.assertIn('[view setNeedsDisplay:YES];', completion)
-        self.assertIn('[view setNeedsDisplayInRect:damage];', completion)
+        self.assertIn('[view setNeedsDisplayInRect:deferredDirtyRects[i]];', completion)
         self.assertLess(completion.index('redrawDeferred = NO;'),
-                        completion.index('[view setNeedsDisplayInRect:damage];'))
+                        completion.index('[view setNeedsDisplayInRect:deferredDirtyRects[i]];'))
+
+    def test_deferred_damage_is_bounded_and_keeps_disjoint_rectangles(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        self.assertIn('NSRect deferredDirtyRects[8];', text)
+        start = text.index('- (void)deferDirtyRect:(NSRect)rect\n{')
+        end = text.index('- (bool)drawView:', start)
+        body = text[start:end]
+        self.assertIn('NSIntersectsRect(old, rect)', body)
+        self.assertIn('deferredDirtyRects[--deferredDirtyCount]', body)
+        self.assertIn('deferredDirtyCount < ARRAY_SIZE(deferredDirtyRects)', body)
+        self.assertIn('deferredDirtyRects[deferredDirtyCount++] = rect;', body)
+        self.assertIn('NSUnionRect(deferredDirtyRects[0], rect)', body)
+
+    def test_old_frame_completion_cannot_validate_new_surface(self):
+        text = SOURCE.read_text(encoding='utf-8')
+        start = text.index('- (void)clearNativeTexture\n{')
+        end = text.index('- (pixman_image_t *)pixmanImageForView:', start)
+        reset = text[start:end]
+        self.assertIn('surfaceGeneration++;', reset)
+        self.assertIn('hasPresentedFrame = NO;', reset)
+        self.assertIn('deferredDirtyCount = 0;', reset)
+        self.assertNotIn('frameInFlight = NO;', reset)
+        submit = text.index('uint64_t submittedGeneration = surfaceGeneration;')
+        complete = text.index('if (submittedGeneration != surfaceGeneration)', submit)
+        success = text.index('hasPresentedFrame = YES;', complete)
+        self.assertIn('frameInFlight = NO;', text[submit:complete])
+        self.assertIn('[view setNeedsDisplay:YES];', text[complete:success])
+        self.assertIn('return;', text[complete:success])
 
     def test_cocoa_surface_switch_discards_old_dirty_rectangles(self):
         text = COCOA_SOURCE.read_text(encoding='utf-8')
