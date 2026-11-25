@@ -77,6 +77,9 @@ def prepare_use(build_dir: pathlib.Path, compiler: str) -> str:
     existing, raw = profile_inputs(build_dir)
 
     if existing and (not raw or max(p.stat().st_mtime_ns for p in raw) <= profile.stat().st_mtime_ns):
+        tool = profile_tool(compiler)
+        subprocess.run([*tool, 'show', str(profile)], check=True,
+                       stdout=subprocess.DEVNULL)
         return f'QEMU PGO: using existing indexed profile: {profile}'
     if not raw:
         raise RuntimeError(
