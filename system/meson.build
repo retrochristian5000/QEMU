@@ -7,6 +7,7 @@ system_ss.add(files(
   'balloon.c',
   'bootdevice.c',
   'cpus.c',
+  'cpu-sigbus.c',
   'cpu-timers.c',
   'dirtylimit.c',
   'dma-helpers.c',

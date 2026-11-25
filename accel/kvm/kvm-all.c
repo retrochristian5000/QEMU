@@ -3987,6 +3987,14 @@ void kvm_init_cpu_signals(CPUState *cpu)
 int kvm_on_sigbus_vcpu(CPUState *cpu, int code, void *addr)
 {
 #ifdef KVM_HAVE_MCE_INJECTION
+    /*
+     * A binary can include KVM and run with a different accelerator.
+     * Never queue a KVM machine check or access KVM state in that case.
+     */
+    if (!kvm_enabled()) {
+        return 1;
+    }
+
     if (have_sigbus_pending) {
         return 1;
     }
@@ -4004,6 +4012,14 @@ int kvm_on_sigbus_vcpu(CPUState *cpu, int code, void *addr)
 int kvm_on_sigbus(int code, void *addr)
 {
 #ifdef KVM_HAVE_MCE_INJECTION
+    /*
+     * A binary can include KVM and run with a different accelerator.
+     * Never queue a KVM machine check or access KVM state in that case.
+     */
+    if (!kvm_enabled()) {
+        return 1;
+    }
+
     /* Action required MCE kills the process if SIGBUS is blocked.  Because
      * that's what happens in the I/O thread, where we handle MCE via signalfd,
      * we can only get action optional here.
