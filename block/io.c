@@ -2082,9 +2082,26 @@ bdrv_co_write_req_finish(BdrvChild *child, int64_t offset, int64_t bytes,
                 uint64_t new = offset + bytes;
                 uint64_t old = qatomic_read(&bs->wr_highest_offset);
 
-                while (old < new) {
-                    old = qatomic_cmpxchg(&bs->wr_highest_offset, old, new);
+#if defined(__aarch64__) && defined(__ARM_FEATURE_ATOMICS) && \
+    defined(__clang__) && !defined(QEMU_SANITIZE_THREAD) && \
+    __has_builtin(__atomic_fetch_max)
+                /* Avoid an RMW for writes below the recorded high-water mark. */
+                if (old < new) {
+                    (void)__atomic_fetch_max(&bs->wr_highest_offset, new,
+                                             __ATOMIC_SEQ_CST);
                 }
+#else
+                while (old < new) {
+                    uint64_t prev = qatomic_cmpxchg(&bs->wr_highest_offset,
+                                                    old, new);
+
+                    /* Compare-and-exchange returns the previous value. */
+                    if (prev == old) {
+                        break;
+                    }
+                    old = prev;
+                }
+#endif
             }
             /* fall through, to set dirty bits */
         case BDRV_TRACKED_DISCARD:
