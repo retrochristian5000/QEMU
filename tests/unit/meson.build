@@ -145,6 +145,7 @@ if have_system
     'test-bufferiszero': [],
     'test-smp-parse': [qom, meson.project_source_root() / 'hw/core/machine-smp.c'],
     'test-analog-video': [meson.project_source_root() / 'hw/display/analog-video.c'],
+    'test-edid-input': [meson.project_source_root() / 'hw/display/edid-generate.c'],
     'test-ced': [meson.project_source_root() / 'hw/block/ced.c'],
     'test-ced-sft100': [
       meson.project_source_root() / 'hw/block/ced.c',

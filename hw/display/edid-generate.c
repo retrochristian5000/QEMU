@@ -378,8 +378,8 @@ static void qemu_displayid_generate(uint8_t *did, const Timings *timings,
     edid_checksum(did + 1, did[2] + 4);
 }
 
-void qemu_edid_generate(uint8_t *edid, size_t size,
-                        qemu_edid_info *info)
+void qemu_edid_generate_for_input(uint8_t *edid, size_t size,
+                                  qemu_edid_info *info, QemuEdidInput input)
 {
     Timings timings;
     uint8_t *desc = edid + 54;
@@ -466,8 +466,20 @@ void qemu_edid_generate(uint8_t *edid, size_t size,
 
     /* =============== basic display parameters =============== */
 
-    /* video input: digital, 8bpc, displayport */
-    edid[20] = 0xa5;
+    /* EDID 1.4 input parameters describe the sink, not the GPU or bus. */
+    switch (input) {
+    case QEMU_EDID_INPUT_DISPLAYPORT:
+        edid[20] = 0xa5; /* Digital, 8 bpc, DisplayPort */
+        break;
+    case QEMU_EDID_INPUT_VGA:
+        edid[20] = 0x08; /* Analog 0.7/0.3 V, separate sync */
+        break;
+    case QEMU_EDID_INPUT_HDMI_A:
+        edid[20] = 0xa2; /* Digital, 8 bpc, HDMI Type A */
+        break;
+    default:
+        g_assert_not_reached();
+    }
 
     /* screen size: undefined */
     edid[21] = width_mm / 10;
@@ -477,7 +489,8 @@ void qemu_edid_generate(uint8_t *edid, size_t size,
     edid[23] = 220 - 100;
 
     /* supported features bitmap: std sRGB, preferred timing */
-    edid[24] = 0x06;
+    edid[24] = input == QEMU_EDID_INPUT_VGA ? 0x0e : 0x06;
+    /* Analog RGB color type; digital profiles advertise RGB only. */
 
 
     /* =============== chromaticity coordinates =============== */
@@ -547,6 +560,12 @@ void qemu_edid_generate(uint8_t *edid, size_t size,
     if (did) {
         edid_checksum(did, 127);
     }
+}
+
+void qemu_edid_generate(uint8_t *edid, size_t size, qemu_edid_info *info)
+{
+    qemu_edid_generate_for_input(edid, size, info,
+                                 QEMU_EDID_INPUT_DISPLAYPORT);
 }
 
 size_t qemu_edid_size(uint8_t *edid)

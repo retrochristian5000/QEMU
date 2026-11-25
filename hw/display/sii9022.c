@@ -16,6 +16,7 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "hw/i2c/i2c.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/display/i2c-ddc.h"
 #include "trace.h"
@@ -45,6 +46,7 @@ struct sii9022_state {
     bool ddc_req;
     bool ddc_skip_finish;
     bool ddc;
+    bool hdmi_edid;
 };
 
 static const VMStateDescription vmstate_sii9022 = {
@@ -161,11 +163,20 @@ static void sii9022_reset(DeviceState *dev)
 
 static void sii9022_realize(DeviceState *dev, Error **errp)
 {
-    I2CBus *bus;
+    sii9022_state *s = SII9022(dev);
+    I2CBus *bus = I2C_BUS(qdev_get_parent_bus(dev));
+    I2CSlave *ddc = i2c_slave_new(TYPE_I2CDDC, 0x50);
 
-    bus = I2C_BUS(qdev_get_parent_bus(dev));
-    i2c_slave_create_simple(bus, TYPE_I2CDDC, 0x50);
+    if (s->hdmi_edid) {
+        i2c_ddc_set_input(I2CDDC(ddc), QEMU_EDID_INPUT_HDMI_A);
+    }
+    i2c_slave_realize_and_unref(ddc, bus, errp);
 }
+
+/* Sink identification only: no HDMI audio, TMDS or CTA VSDB emulation. */
+static const Property sii9022_properties[] = {
+    DEFINE_PROP_BOOL("hdmi-edid", sii9022_state, hdmi_edid, false),
+};
 
 static void sii9022_class_init(ObjectClass *klass, const void *data)
 {
@@ -178,6 +189,7 @@ static void sii9022_class_init(ObjectClass *klass, const void *data)
     device_class_set_legacy_reset(dc, sii9022_reset);
     dc->realize = sii9022_realize;
     dc->vmsd = &vmstate_sii9022;
+    device_class_set_props(dc, sii9022_properties);
 }
 
 static const TypeInfo sii9022_info = {

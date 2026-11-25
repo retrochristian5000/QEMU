@@ -16,8 +16,16 @@ typedef struct qemu_edid_info {
     uint32_t    refresh_rate;
 } qemu_edid_info;
 
+typedef enum QemuEdidInput {
+    QEMU_EDID_INPUT_DISPLAYPORT = 0, /* Existing virtual monitor default */
+    QEMU_EDID_INPUT_VGA,
+    QEMU_EDID_INPUT_HDMI_A,
+} QemuEdidInput;
+
 void qemu_edid_generate(uint8_t *edid, size_t size,
                         qemu_edid_info *info);
+void qemu_edid_generate_for_input(uint8_t *edid, size_t size,
+                                  qemu_edid_info *info, QemuEdidInput input);
 size_t qemu_edid_size(uint8_t *edid);
 void qemu_edid_region_io(MemoryRegion *region, Object *owner,
                          uint8_t *edid, size_t size);

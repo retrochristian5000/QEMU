@@ -49,6 +49,7 @@ struct PCIVGAState {
     VGACommonState vga;
     uint32_t flags;
     qemu_edid_info edid_info;
+    bool analog_edid;
     MemoryRegion mmio;
     MemoryRegion mrs[4];
     uint8_t edid[384];
@@ -207,8 +208,6 @@ void pci_std_vga_mmio_region_init(VGACommonState *s,
                                   MemoryRegion *subs,
                                   bool qext, bool edid)
 {
-    PCIVGAState *d = container_of(s, PCIVGAState, vga);
-
     memory_region_init_io(&subs[0], owner, &pci_vga_ioport_ops, s,
                           "vga ioports remapped", PCI_VGA_IOPORT_SIZE);
     memory_region_add_subregion(parent, PCI_VGA_IOPORT_OFFSET,
@@ -227,7 +226,12 @@ void pci_std_vga_mmio_region_init(VGACommonState *s,
     }
 
     if (edid) {
-        qemu_edid_generate(d->edid, sizeof(d->edid), &d->edid_info);
+        PCIVGAState *d = container_of(s, PCIVGAState, vga);
+        QemuEdidInput input = d->analog_edid ? QEMU_EDID_INPUT_VGA :
+                              QEMU_EDID_INPUT_DISPLAYPORT;
+
+        qemu_edid_generate_for_input(d->edid, sizeof(d->edid),
+                                     &d->edid_info, input);
         qemu_edid_region_io(&subs[3], owner, d->edid, sizeof(d->edid));
         memory_region_add_subregion(parent, 0, &subs[3]);
     }
@@ -337,6 +341,7 @@ static const Property vga_pci_properties[] = {
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_QEXT, true),
     DEFINE_PROP_BIT("edid",
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_EDID, true),
+    DEFINE_PROP_BOOL("analog-edid", PCIVGAState, analog_edid, false),
     DEFINE_EDID_PROPERTIES(PCIVGAState, edid_info),
 };
 
@@ -346,6 +351,7 @@ static const Property secondary_pci_properties[] = {
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_QEXT, true),
     DEFINE_PROP_BIT("edid",
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_EDID, true),
+    DEFINE_PROP_BOOL("analog-edid", PCIVGAState, analog_edid, false),
     DEFINE_EDID_PROPERTIES(PCIVGAState, edid_info),
 };
 

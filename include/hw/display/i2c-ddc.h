@@ -38,4 +38,7 @@ struct I2CDDCState {
 #define TYPE_I2CDDC "i2c-ddc"
 OBJECT_DECLARE_SIMPLE_TYPE(I2CDDCState, I2CDDC)
 
+/* Select an explicit sink identity before realizing the DDC slave. */
+void i2c_ddc_set_input(I2CDDCState *s, QemuEdidInput input);
+
 #endif /* I2C_DDC_H */

@@ -85,6 +85,14 @@ static void i2c_ddc_init(Object *obj)
     qemu_edid_generate(s->edid_blob, sizeof(s->edid_blob), &s->edid_info);
 }
 
+void i2c_ddc_set_input(I2CDDCState *s, QemuEdidInput input)
+{
+    assert(!qdev_is_realized(DEVICE(s)));
+    memset(s->edid_blob, 0, sizeof(s->edid_blob));
+    qemu_edid_generate_for_input(s->edid_blob, sizeof(s->edid_blob),
+                                 &s->edid_info, input);
+}
+
 static const VMStateDescription vmstate_i2c_ddc = {
     .name = TYPE_I2CDDC,
     .version_id = 1,
