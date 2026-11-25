@@ -130,6 +130,51 @@ Current machine wiring
   candidate for those profiles, not a replacement for the existing AT
   and later PC interrupt routing.
 
+Intel 8259 versus 8259A
+~~~~~~~~~~~~~~~~~~~~~~
+
+The original Intel 8259 is an MCS-80/85 controller. Its successor, the
+8259A, retains the earlier edge-triggered, non-buffered interface and
+adds level-triggered and buffered operation as well as the 8086/8088
+interrupt-vector protocol. The original part is therefore not the correct
+controller for an IBM PC-compatible x86 interrupt-acknowledge path.
+
+In the MCS-80/85 protocol the controller supplies a CALL instruction
+and its two address bytes over three acknowledge cycles. In 8086 mode
+the 8259A supplies an interrupt type number on the second acknowledge.
+The current QEMU ``pic_read_irq()`` interface returns a vector number
+directly; it does not model the MCS-80/85 instruction delivery protocol.
+
+The internal QOM type ``isa-i8259`` is consequently an x86-oriented
+8259A-compatible controller with optional-in-principle chipset ELCR
+register mapping, not a faithful implementation of the original 8259.
+The current PC constructor always assigns ELCR ports to the pair.
+The common device class intentionally prevents direct user creation,
+because machine code must establish the interrupt routing.
+
+Future profile names, not currently usable command-line devices:
+
+* ``isa-i8259a``: standalone 8259A semantics, with board-selected
+  single or cascaded topology and without intrinsic ELCR registers.
+* ``isa-i8259``: retain the existing QOM name for compatibility;
+  do not silently reinterpret it as the original Intel 8259.
+* A distinct original-8259 model requires a verified MCS-80/85
+  acknowledge interface, edge-only triggering and its own initialization
+  semantics. Do not expose a nominal device until those behaviors exist.
+
+Keep chipset ELCR selection separate from the 8259A silicon revision.
+The original 8086/8088 machine profiles need a single 8259A-compatible
+controller if modeled as XT-style PCs, not an original 8259 merely
+because the CPU is an early model.
+
+Primary references:
+
+* Intel, `1978 Component Data Catalog, 8259/8259-5, pp. 12-111ff.
+  <https://bitsavers.trailing-edge.com/components/intel/_dataBooks/1978_Intel_Component_Data_Catalog.pdf>`__.
+* Intel, `8259A Programmable Interrupt Controller, December 1988,
+  order 231468-003, pp. 1 and 4.
+  <https://pdos.csail.mit.edu/6.828/2010/readings/hardware/8259A.pdf>`__.
+
 Validation boundaries
 ~~~~~~~~~~~~~~~~~~~~~
 
