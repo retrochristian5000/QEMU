@@ -87,6 +87,27 @@ static void qemu_log_thread_cleanup(Notifier *n, void *unused)
 
 /* Lock/unlock output. */
 
+/* Count successful acquisitions, including internal callers. */
+static __thread unsigned int log_depth;
+
+static FILE *log_open_file(const char *filename)
+{
+    FILE *file = fopen(filename, "w");
+
+    if (file && qemu_loglevel_mask(LOG_BUFFERED)) {
+        /*
+         * Request a larger libc buffer before the first I/O. Some libc
+         * implementations choose their own size for a NULL buffer.
+         * If the request fails, retain the default stdio buffering.
+         */
+        if (setvbuf(file, NULL, _IOFBF, 64 * 1024) != 0) {
+            warn_report("Could not configure log buffering for '%s'; "
+                        "using default stdio buffering", filename);
+        }
+    }
+    return file;
+}
+
 static FILE *qemu_log_trylock_with_err(Error **errp)
 {
     FILE *logfile;
@@ -94,13 +115,13 @@ static FILE *qemu_log_trylock_with_err(Error **errp)
     logfile = thread_file;
     if (!logfile) {
         if (log_per_thread) {
-            g_autofree char *filename
-                = g_strdup_printf(global_filename, log_thread_id());
-            logfile = fopen(filename, "w");
+            int tid = log_thread_id();
+            g_autofree char *filename = g_strdup_printf(global_filename, tid);
+            logfile = log_open_file(filename);
             if (!logfile) {
                 error_setg_errno(errp, errno,
                                  "Error opening logfile %s for thread %d",
-                                 filename, log_thread_id());
+                                 filename, tid);
                 return NULL;
             }
             thread_file = logfile;
@@ -125,24 +146,13 @@ static FILE *qemu_log_trylock_with_err(Error **errp)
     }
 
     qemu_flockfile(logfile);
+    log_depth++;
     return logfile;
 }
 
-/*
- * Zero if there's been no opening qemu_log_trylock call,
- * indicating the need for message context to be emitted
- *
- * Non-zero if we're in the middle of printing a message,
- * possibly over multiple lines and must skip further
- * message context
- */
-static __thread unsigned int log_depth;
-
 FILE *qemu_log_trylock(void)
 {
-    FILE *f = qemu_log_trylock_with_err(NULL);
-    log_depth++;
-    return f;
+    return qemu_log_trylock_with_err(NULL);
 }
 
 FILE *qemu_log_trylock_with_context(void)
@@ -159,14 +169,22 @@ FILE *qemu_log_trylock_with_context(void)
 
 void qemu_log_unlock(FILE *logfile)
 {
+    if (!logfile) {
+        return;
+    }
+
     assert(log_depth);
     log_depth--;
-    if (logfile) {
+    /*
+     * Keep the historical immediate flush unless the user explicitly
+     * requests buffered file logging. Stderr remains immediately flushed.
+     */
+    if (logfile == stderr || !qemu_loglevel_mask(LOG_BUFFERED)) {
         fflush(logfile);
-        qemu_funlockfile(logfile);
-        if (!log_per_thread) {
-            rcu_read_unlock();
-        }
+    }
+    qemu_funlockfile(logfile);
+    if (!log_per_thread) {
+        rcu_read_unlock();
     }
 }
 
@@ -343,7 +361,7 @@ static bool qemu_set_log_internal(const char *filename, bool changed_name,
                 }
                 qemu_log_unlock(logfile);
             } else {
-                logfile = fopen(filename, "w");
+                logfile = log_open_file(filename);
                 if (!logfile) {
                     error_setg_errno(errp, errno, "Error opening logfile %s",
                                      filename);
@@ -531,6 +549,8 @@ const QEMULogItem qemu_log_items[] = {
       "include VPU registers in the 'cpu' logging" },
     { LOG_INVALID_MEM, "invalid_mem",
       "log invalid memory accesses" },
+    { LOG_BUFFERED, "buffered",
+      "buffer file logs (last records may be lost on abrupt termination)" },
     { 0, NULL, NULL },
 };
 
@@ -545,7 +565,10 @@ int qemu_str_to_log_mask(const char *str)
     for (tmp = parts; tmp && *tmp; tmp++) {
         if (g_str_equal(*tmp, "all")) {
             for (item = qemu_log_items; item->mask != 0; item++) {
-                mask |= item->mask;
+                /* Buffered output is an explicit durability tradeoff. */
+                if (item->mask != LOG_BUFFERED) {
+                    mask |= item->mask;
+                }
             }
 #ifdef CONFIG_TRACE_LOG
         } else if (g_str_has_prefix(*tmp, "trace:") && (*tmp)[6] != '\0') {
