@@ -191,39 +191,60 @@ GEN_ATOMIC_HELPER(xor_fetch)
  * Trace this load + RMW loop as a single RMW op. This way, regardless
  * of CF_PARALLEL's value, we'll trace just a read and a write.
  */
-#define GEN_ATOMIC_HELPER_FN(X, FN, XDATA_TYPE, RET)                \
-ABI_TYPE ATOMIC_NAME(X)(CPUArchState *env, vaddr addr,              \
+/*
+ * Use native LSE min/max on Clang targets that guarantee FEAT_LSE.
+ * The builtins select signedness from the pointed-to type.  Keep the
+ * compare-exchange fallback for baseline targets and sanitizer builds.
+ */
+#if defined(__aarch64__) && defined(__ARM_FEATURE_ATOMICS) && \
+    defined(__clang__) && !defined(QEMU_SANITIZE_THREAD) && \
+    __has_builtin(__atomic_fetch_min) && __has_builtin(__atomic_fetch_max)
+#define ATOMIC_MINMAX(FN, BUILTIN, ptr, val) \
+    BUILTIN(ptr, val, __ATOMIC_SEQ_CST)
+#else
+#define ATOMIC_MINMAX(FN, BUILTIN, ptr, val)                        \
+    ({                                                             \
+        typeof(*(ptr)) cmp = qatomic_read__nocheck(ptr);             \
+        typeof(*(ptr)) prev, next;                                 \
+        do {                                                       \
+            prev = cmp;                                            \
+            next = FN(prev, val);                                  \
+            cmp = qatomic_cmpxchg__nocheck(ptr, prev, next);          \
+        } while (cmp != prev);                                      \
+        prev;                                                      \
+    })
+#endif
+
+#define GEN_ATOMIC_HELPER_FN(X, FN, BUILTIN, XDATA_TYPE, RET)       \
+ABI_TYPE ATOMIC_NAME(X)(CPUArchState *env, vaddr addr,               \
                         ABI_TYPE xval, MemOpIdx oi, uintptr_t retaddr) \
-{                                                                   \
-    XDATA_TYPE *haddr, cmp, old, new, val = xval;                   \
-    haddr = atomic_mmu_lookup(env_cpu(env), addr, oi, DATA_SIZE, retaddr);   \
-    smp_mb();                                                       \
-    cmp = qatomic_read__nocheck(haddr);                             \
-    do {                                                            \
-        old = cmp; new = FN(old, val);                              \
-        cmp = qatomic_cmpxchg__nocheck(haddr, old, new);            \
-    } while (cmp != old);                                           \
-    ATOMIC_MMU_CLEANUP;                                             \
-    atomic_trace_rmw_post(env, addr,                                \
-                          VALUE_LOW(old),                           \
-                          VALUE_HIGH(old),                          \
-                          VALUE_LOW(xval),                          \
-                          VALUE_HIGH(xval),                         \
-                          oi);                                      \
-    return RET;                                                     \
+{                                                                  \
+    XDATA_TYPE *haddr, old, val = xval;                             \
+    haddr = atomic_mmu_lookup(env_cpu(env), addr, oi, DATA_SIZE, retaddr); \
+    smp_mb();                                                      \
+    old = ATOMIC_MINMAX(FN, BUILTIN, haddr, val);                    \
+    ATOMIC_MMU_CLEANUP;                                            \
+    atomic_trace_rmw_post(env, addr,                               \
+                          VALUE_LOW(old),                          \
+                          VALUE_HIGH(old),                         \
+                          VALUE_LOW(xval),                         \
+                          VALUE_HIGH(xval),                        \
+                          oi);                                     \
+    return RET;                                                    \
 }
 
-GEN_ATOMIC_HELPER_FN(fetch_smin, MIN, SDATA_TYPE, old)
-GEN_ATOMIC_HELPER_FN(fetch_umin, MIN,  DATA_TYPE, old)
-GEN_ATOMIC_HELPER_FN(fetch_smax, MAX, SDATA_TYPE, old)
-GEN_ATOMIC_HELPER_FN(fetch_umax, MAX,  DATA_TYPE, old)
+GEN_ATOMIC_HELPER_FN(fetch_smin, MIN, __atomic_fetch_min, SDATA_TYPE, old)
+GEN_ATOMIC_HELPER_FN(fetch_umin, MIN, __atomic_fetch_min, DATA_TYPE, old)
+GEN_ATOMIC_HELPER_FN(fetch_smax, MAX, __atomic_fetch_max, SDATA_TYPE, old)
+GEN_ATOMIC_HELPER_FN(fetch_umax, MAX, __atomic_fetch_max, DATA_TYPE, old)
 
-GEN_ATOMIC_HELPER_FN(smin_fetch, MIN, SDATA_TYPE, new)
-GEN_ATOMIC_HELPER_FN(umin_fetch, MIN,  DATA_TYPE, new)
-GEN_ATOMIC_HELPER_FN(smax_fetch, MAX, SDATA_TYPE, new)
-GEN_ATOMIC_HELPER_FN(umax_fetch, MAX,  DATA_TYPE, new)
+GEN_ATOMIC_HELPER_FN(smin_fetch, MIN, __atomic_fetch_min, SDATA_TYPE, MIN(old, val))
+GEN_ATOMIC_HELPER_FN(umin_fetch, MIN, __atomic_fetch_min, DATA_TYPE, MIN(old, val))
+GEN_ATOMIC_HELPER_FN(smax_fetch, MAX, __atomic_fetch_max, SDATA_TYPE, MAX(old, val))
+GEN_ATOMIC_HELPER_FN(umax_fetch, MAX, __atomic_fetch_max, DATA_TYPE, MAX(old, val))
 
 #undef GEN_ATOMIC_HELPER_FN
+#undef ATOMIC_MINMAX
 #endif /* DATA SIZE == 16 */
 
 #undef END
