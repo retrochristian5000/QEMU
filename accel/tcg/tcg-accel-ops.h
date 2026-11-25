@@ -14,6 +14,8 @@
 
 #include "system/cpus.h"
 
+void tcg_create_vcpu_thread(CPUState *cpu, const char *name,
+                            void *(*start_routine)(void *));
 void tcg_cpu_destroy(CPUState *cpu);
 int tcg_cpu_exec(CPUState *cpu);
 void tcg_handle_interrupt(CPUState *cpu, int mask);
