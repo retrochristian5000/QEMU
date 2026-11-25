@@ -35,6 +35,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "qemu/timer.h"
+#include "qemu/units.h"
 #include "exec/cputlb.h"
 #include "exec/hwaddr.h"
 #include "exec/tb-flush.h"
@@ -74,9 +75,13 @@ void tcg_create_vcpu_thread(CPUState *cpu, const char *name,
                             void *(*start_routine)(void *))
 {
 #ifdef CONFIG_DARWIN
+    /*
+     * Darwin's secondary-thread default can be small for TCG helper calls,
+     * translation and diagnostic formatting. Keep this host-side policy
+     * independent of the guest CPU model and preserve pthread's guards.
+     */
     qemu_thread_create_with_stack(cpu->thread, name, start_routine, cpu,
-                                  QEMU_THREAD_JOINABLE,
-                                  qemu_tcg_darwin_vcpu_stack_size());
+                                  QEMU_THREAD_JOINABLE, 2 * MiB);
 #else
     qemu_thread_create(cpu->thread, name, start_routine, cpu,
                        QEMU_THREAD_JOINABLE);
