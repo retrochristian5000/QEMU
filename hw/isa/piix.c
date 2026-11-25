@@ -24,10 +24,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/range.h"
 #include "qapi/error.h"
 #include "hw/dma/i8257.h"
-#include "hw/southbridge/piix.h"
+#include "piix-internal.h"
 #include "hw/timer/i8254.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
@@ -38,108 +37,10 @@
 #include "migration/vmstate.h"
 #include "hw/acpi/acpi_aml_interface.h"
 
-static bool piix_get_irq_pic_level(PIIXState *s, int pic_irq)
-{
-    return !!(s->pic_levels &
-              (((1ULL << PIIX_NUM_PIRQS) - 1) <<
-               (pic_irq * PIIX_NUM_PIRQS)));
-}
-
-static void piix_set_irq_pic(PIIXState *s, int pic_irq)
-{
-    qemu_set_irq(s->isa_irqs_in[pic_irq],
-                 piix_get_irq_pic_level(s, pic_irq));
-}
-
-static void piix_set_pci_irq_level_internal(PIIXState *s, int pirq, int level)
-{
-    int pic_irq;
-    uint64_t mask;
-
-    pic_irq = s->dev.config[PIIX_PIRQCA + pirq];
-    if (pic_irq >= ISA_NUM_IRQS) {
-        return;
-    }
-
-    mask = 1ULL << ((pic_irq * PIIX_NUM_PIRQS) + pirq);
-    s->pic_levels &= ~mask;
-    s->pic_levels |= mask * !!level;
-}
-
-static void piix_set_pci_irq_level(PIIXState *s, int pirq, int level)
-{
-    bool old_level;
-    bool new_level;
-    int pic_irq;
-
-    pic_irq = s->dev.config[PIIX_PIRQCA + pirq];
-    if (pic_irq >= ISA_NUM_IRQS) {
-        return;
-    }
-
-    old_level = piix_get_irq_pic_level(s, pic_irq);
-    piix_set_pci_irq_level_internal(s, pirq, level);
-    new_level = piix_get_irq_pic_level(s, pic_irq);
-
-    if (old_level != new_level) {
-        qemu_set_irq(s->isa_irqs_in[pic_irq], new_level);
-    }
-}
-
-static void piix_set_pci_irq(void *opaque, int pirq, int level)
-{
-    PIIXState *s = opaque;
-    piix_set_pci_irq_level(s, pirq, level);
-}
-
 static void piix_request_i8259_irq(void *opaque, int irq, int level)
 {
     PIIXState *s = opaque;
     qemu_set_irq(s->cpu_intr, level);
-}
-
-static PCIINTxRoute piix_route_intx_pin_to_irq(void *opaque, int pin)
-{
-    PCIDevice *pci_dev = opaque;
-    int irq = pci_dev->config[PIIX_PIRQCA + pin];
-    PCIINTxRoute route;
-
-    if (irq < ISA_NUM_IRQS) {
-        route.mode = PCI_INTX_ENABLED;
-        route.irq = irq;
-    } else {
-        route.mode = PCI_INTX_DISABLED;
-        route.irq = -1;
-    }
-    return route;
-}
-
-/* irq routing is changed. so rebuild bitmap */
-static void piix_update_pci_irq_levels(PIIXState *s)
-{
-    PCIBus *bus = pci_get_bus(&s->dev);
-    int pirq;
-
-    s->pic_levels = 0;
-    for (pirq = 0; pirq < PIIX_NUM_PIRQS; pirq++) {
-        piix_set_pci_irq_level(s, pirq, pci_bus_get_irq_level(bus, pirq));
-    }
-}
-
-static void piix_write_config(PCIDevice *dev, uint32_t address, uint32_t val,
-                              int len)
-{
-    pci_default_write_config(dev, address, val, len);
-    if (ranges_overlap(address, len, PIIX_PIRQCA, 4)) {
-        PIIXState *s = PIIX_PCI_DEVICE(dev);
-        int pic_irq;
-
-        pci_bus_fire_intx_routing_notifier(pci_get_bus(&s->dev));
-        piix_update_pci_irq_levels(s);
-        for (pic_irq = 0; pic_irq < ISA_NUM_IRQS; pic_irq++) {
-            piix_set_irq_pic(s, pic_irq);
-        }
-    }
 }
 
 static void piix_reset(DeviceState *dev)
@@ -186,7 +87,6 @@ static void piix_reset(DeviceState *dev)
 static int piix_post_load(void *opaque, int version_id)
 {
     PIIXState *s = opaque;
-    int pirq;
 
     /*
      * Because the i8259 has not been deserialized yet, qemu_irq_raise
@@ -197,11 +97,7 @@ static int piix_post_load(void *opaque, int version_id)
      * Here, we update irq levels without raising the interrupt.
      * Interrupt state will be deserialized separately through the i8259.
      */
-    s->pic_levels = 0;
-    for (pirq = 0; pirq < PIIX_NUM_PIRQS; pirq++) {
-        piix_set_pci_irq_level_internal(s, pirq,
-            pci_bus_get_irq_level(pci_get_bus(&s->dev), pirq));
-    }
+    piix_rebuild_irq_levels(s);
     return 0;
 }
 
