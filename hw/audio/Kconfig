@@ -3,6 +3,11 @@ config GAMEBLASTER
     default y
     depends on ISA_BUS
 
+config AZTECH_SG_NOVA16
+    bool
+    default y
+    depends on ISA_BUS
+
 config SB16
     bool
     default y
