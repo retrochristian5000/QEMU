@@ -155,6 +155,15 @@ class DarwinLtoThreadPolicyTests(unittest.TestCase):
         self.assertIn("configure_args.append('-Db_lto_mode=thin')", portable)
         self.assertIn("'-Db_lto_mode=default', '-Db_thinlto_cache=false'", portable)
 
+    def test_darwin_lto_limits_concurrent_link_operations(self):
+        bash = PREPARE_BUILD.read_text(encoding='utf-8')
+        portable = PORTABLE_BUILD.read_text(encoding='utf-8')
+        self.assertIn('if [[ "$QEMU_HOST_LTO" != 0 ]]; then\n'
+                      '            configure_args+=(-Dbackend_max_links=1)', bash)
+        self.assertIn("if lto != 'n':", portable)
+        self.assertIn("configure_args.append('-Dbackend_max_links=1')",
+                      portable)
+
     def test_darwin_uses_cached_thinlto_for_incremental_links(self):
         text = DARWIN_MESON.read_text(encoding='utf-8')
         self.assertIn("b_lto_mode = 'thin'", text)
