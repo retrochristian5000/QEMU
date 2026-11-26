@@ -332,6 +332,65 @@ static void test_cirrus_pci_identity(void)
     qtest_quit(qts);
 }
 
+static void cirrus_pci_command(QTestState *qts, uint32_t address,
+                               uint16_t command)
+{
+    qtest_outl(qts, 0xcf8, address | 0x04);
+    qtest_outw(qts, 0xcfc, command);
+}
+
+static void test_cirrus_pci_legacy_decode(void)
+{
+    QTestState *qts = qtest_init("-M pc -vga none "
+                                "-device cirrus-vga,id=cirrus,pci-legacy-decode=on");
+    QDict *resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
+    QDict *device;
+    uint32_t address;
+    uint16_t command;
+
+    g_assert(qdict_haskey(resp, "return"));
+    device = find_pci_device(qdict_get_qlist(resp, "return"), "cirrus");
+    g_assert_nonnull(device);
+    g_assert_cmpint(qdict_get_int(device, "bus"), ==, 0);
+    address = 0x80000000U | (qdict_get_int(device, "slot") << 11) |
+              (qdict_get_int(device, "function") << 8);
+    qobject_unref(resp);
+
+    qtest_outl(qts, 0xcf8, address);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0x00b81013);
+    qtest_outl(qts, 0xcf8, address | 0x04);
+    command = qtest_inw(qts, 0xcfc) & ~3;
+
+    /* PCI configuration space is visible even with legacy decoding off. */
+    cirrus_pci_command(qts, address, command);
+    g_assert_cmphex(qtest_inb(qts, VGA_SEQ_I), ==, 0xff);
+
+    cirrus_pci_command(qts, address, command | 3);
+    vga_prepare_memory_access(qts, true);
+    vga_seq_write(qts, 0x06, 0x12);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27) & 0xfc, ==, 0xb8);
+    qtest_writeb(qts, VGA_LEGACY_MEM_BASE, 0x5a);
+    g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE), ==, 0x5a);
+
+    /* Disable memory only: port reads still work, VRAM is not changed. */
+    cirrus_pci_command(qts, address, command | 1);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27) & 0xfc, ==, 0xb8);
+    qtest_writeb(qts, VGA_LEGACY_MEM_BASE, 0xa5);
+
+    /* Disable ports only: memory still works, register writes are ignored. */
+    cirrus_pci_command(qts, address, command | 2);
+    g_assert_cmphex(qtest_inb(qts, VGA_SEQ_I), ==, 0xff);
+    qtest_outb(qts, VGA_SEQ_I, 0x17);
+    g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE), ==, 0x5a);
+    qtest_writeb(qts, VGA_LEGACY_MEM_BASE, 0x69);
+
+    cirrus_pci_command(qts, address, command | 3);
+    g_assert_cmphex(qtest_inb(qts, VGA_SEQ_I), ==, 0x06);
+    g_assert_cmphex(qtest_readb(qts, VGA_LEGACY_MEM_BASE), ==, 0x69);
+    g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x20);
+    qtest_quit(qts);
+}
+
 static void test_sierra_falcon64(gconstpointer data)
 {
     unsigned int vram_mb = GPOINTER_TO_UINT(data);
@@ -399,6 +458,10 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/pci/cirrus-identity",
                        test_cirrus_pci_identity);
+        if (qtest_has_machine("pc")) {
+            qtest_add_func("/display/pci/cirrus-legacy-decode",
+                           test_cirrus_pci_legacy_decode);
+        }
         qtest_add_func("/display/pci/cirrus-gray-palette",
                        test_cirrus_gray_palette);
     }
