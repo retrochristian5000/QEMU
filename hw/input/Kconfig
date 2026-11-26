@@ -13,6 +13,11 @@ config PL050
 config PS2
     bool
 
+config ISA_GAMEPORT
+    bool
+    default y
+    depends on ISA_BUS
+
 config STELLARIS_GAMEPAD
     bool
 

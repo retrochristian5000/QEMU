@@ -38,3 +38,40 @@ References
 
 * https://www.nostalgicrevolution.eu/wp-content/uploads/2020/06/Creative-Labs-Sound-Blaster-16-PnP-Knowing-your-Sound-Blaster.pdf
 * https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/056e065a6b6e01ab54bb9770c0d5a15350e571e2/sound/isa/sb/sb16.c
+
+Analog gameport
+---------------
+
+The SB16 and many AWE32 boards provide a separate analog joystick
+interface at I/O port 0x201, independent of the DSP, mixer and MIDI.
+The following explicit ISA device profiles share the IBM-compatible
+resistance-to-time interface:
+
+* ``isa-gameport``: generic analog port.
+* ``ibm-game-control``: IBM PC Game Control Adapter interface.
+* ``creative-gameport``: Creative legacy analog gameport interface.
+
+Attach only one of these devices. To test a simulated centered joystick A
+with an existing SB16 configuration, append::
+
+    -device creative-gameport,connected=3,a-x=50000,a-y=50000
+
+The four-bit ``connected`` mask selects attached analog axes (A-X, A-Y,
+B-X, B-Y, in that order); the four-bit ``buttons`` mask selects pressed
+buttons. Axis values are fixed resistances in ohms (0-100000). No axes
+or buttons are connected by default. A disconnected analog input reads
+high; connected axes time out according to the IBM reference formula on
+the virtual clock. Buttons are active-low. No IRQ or DMA is required.
+Only byte accesses to 0x201 are implemented. The profile and input
+properties must match across migration.
+
+These are separate, opt-in analog devices; ``sb16`` does not automatically
+create a gameport. No host controller input, ISA PnP identifiers, MIDI,
+SideWinder digital protocol, or board-specific jumper state is emulated.
+This interface does not change the Windows generic driver name. The
+Creative profile represents the documented compatible interface, not a
+complete model of a particular Creative board.
+
+Reference: IBM Personal Computer Technical Reference (August 1981),
+Game Control Adapter, pp. 2-117 to 2-122; Creative Sound Blaster 16
+User's Guide, Connecting a Joystick (p. 2-3) and Appendix B.
