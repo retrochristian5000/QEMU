@@ -62,6 +62,7 @@ qtests_i386 = \
   (config_all_devices.has_key('CONFIG_I8254') and                                        \
    config_all_devices.has_key('CONFIG_I440FX') ? ['i8254-test'] : []) +                  \
   (config_all_devices.has_key('CONFIG_I440FX') ? ['fw_cfg-test'] : []) +                    \
+  (config_all_devices.has_key('CONFIG_I440FX') ? ['serial-mouse-test'] : []) +              \
   (config_all_devices.has_key('CONFIG_Q35') ? ['e820-test'] : []) +                          \
   (config_all_devices.has_key('CONFIG_FW_CFG_DMA') ? ['vmcoreinfo-test'] : []) +            \
   (config_all_devices.has_key('CONFIG_Q35') ? ['dump-test'] : []) +                         \
