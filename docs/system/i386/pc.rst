@@ -213,3 +213,26 @@ and IRQ11 may be used by PCI interrupt steering.
 The I/O overlap check detects devices mapped before the NIC is realized.
 It is not a general resource allocator and does not prevent a later
 device or reprogrammed PCI BAR from using the same range.
+
+Explicit ISA timer profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The software PIT exposes a generic ``isa-pit`` profile and fixed-model
+``i8253`` and ``i8254`` profiles. They share the existing counter engine.
+The chip-specific profiles select the existing model-specific behavior;
+BCD counting, gate timing and deferred reloads are not fully modeled.
+The legacy Windows system timer identity remains unchanged.
+
+For isolated testing, disable the motherboard PIT and HPET first::
+
+    -machine pc,pit=off,hpet=off -device i8254
+
+Explicit attachment defaults to I/O ports 0x40-0x43 and IRQ0. Only one
+system PIT is permitted on the ISA bus. These explicit configurations
+are not equivalent to motherboard initialization: the PC speaker and
+HPET wiring are not automatically recreated. For normal PC guests, keep
+the motherboard PIT and select a model using::
+
+    -global isa-pit.model=i8254
+
+Existing machine defaults and the KVM in-kernel PIT remain unchanged.

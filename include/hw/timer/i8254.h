@@ -43,7 +43,12 @@ typedef struct PITChannelInfo {
 OBJECT_DECLARE_TYPE(PITCommonState, PITCommonClass, PIT_COMMON)
 
 #define TYPE_I8254 "isa-pit"
+#define TYPE_INTEL_8253 "i8253"
+#define TYPE_INTEL_8254 "i8254"
 #define TYPE_KVM_I8254 "kvm-pit"
+
+/* Retain motherboard-specific PIT/HPET interrupt wiring. */
+void i8254_pit_set_board_wiring(ISADevice *dev);
 
 static inline ISADevice *i8254_pit_init(ISABus *bus, int base, int isa_irq,
                                         qemu_irq alt_irq)
@@ -52,6 +57,7 @@ static inline ISADevice *i8254_pit_init(ISABus *bus, int base, int isa_irq,
     ISADevice *d;
 
     d = isa_new(TYPE_I8254);
+    i8254_pit_set_board_wiring(d);
     dev = DEVICE(d);
     qdev_prop_set_uint32(dev, "iobase", base);
     isa_realize_and_unref(d, bus, &error_fatal);

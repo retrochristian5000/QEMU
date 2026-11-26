@@ -284,6 +284,44 @@ static void test_i8254_initial_count(void)
     qtest_quit(s);
 }
 
+static void test_explicit_pit(gconstpointer opaque)
+{
+    const char *model = opaque;
+    bool is_8253 = !strcmp(model, "i8253");
+    QTestState *s = qtest_initf("-machine pc,pit=off,hpet=off -nodefaults "
+                               "-device %s", model);
+    uint64_t elapsed = 0;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    load_mode3(s, 5);
+    g_assert_cmphex(read_latched_count(s), ==, is_8253 ? 5 : 4);
+    g_assert_true(qtest_get_irq(s, 0));
+
+    advance_to_tick(s, 3, &elapsed);
+    g_assert_false(qtest_get_irq(s, 0));
+    advance_to_tick(s, 5, &elapsed);
+    g_assert_true(qtest_get_irq(s, 0));
+
+    if (!is_8253) {
+        g_assert_true(pit_out(s));
+    }
+    qtest_quit(s);
+}
+
+static void test_explicit_pit_duplicate(void)
+{
+    if (g_test_subprocess()) {
+        QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+                                   "-device i8254");
+
+        qtest_quit(s);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*ISA bus already has a system PIT*");
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -295,6 +333,10 @@ int main(int argc, char **argv)
     qtest_add_func("/i8254/model/i8253", test_i8253_model);
     qtest_add_func("/i8254/model/i8254", test_i8254_model);
     qtest_add_func("/i8254/model/initial-count", test_i8254_initial_count);
+    qtest_add_data_func("/i8254/device/generic", "isa-pit", test_explicit_pit);
+    qtest_add_data_func("/i8254/device/i8253", "i8253", test_explicit_pit);
+    qtest_add_data_func("/i8254/device/i8254", "i8254", test_explicit_pit);
+    qtest_add_func("/i8254/device/duplicate", test_explicit_pit_duplicate);
 
     return g_test_run();
 }

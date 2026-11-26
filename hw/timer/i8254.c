@@ -27,6 +27,7 @@
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "hw/timer/i8254.h"
+#include "hw/timer/hpet.h"
 #include "hw/timer/i8254_internal.h"
 #include "qom/object.h"
 #include "trace.h"
@@ -46,12 +47,14 @@ struct PITState {
     PITCommonState parent_obj;
     char *model;
     bool is_8253;
+    bool board_wired;
 };
 
 struct PITClass {
     PITCommonClass parent_class;
 
     DeviceRealize parent_realize;
+    const char *fixed_model;
 };
 
 static void pit_irq_timer_update(PITChannelState *s, int64_t current_time);
@@ -389,12 +392,69 @@ static void pit_post_load(PITCommonState *s)
     }
 }
 
+void i8254_pit_set_board_wiring(ISADevice *dev)
+{
+    PIT(dev)->board_wired = true;
+}
+
+static int pit_check_peer(DeviceState *peer, void *opaque)
+{
+    DeviceState *dev = opaque;
+
+    if (peer != dev && qdev_is_realized(peer) &&
+        qdev_get_parent_bus(peer) == qdev_get_parent_bus(dev) &&
+        object_dynamic_cast(OBJECT(peer), TYPE_PIT_COMMON)) {
+        return -1;
+    }
+    return 0;
+}
+
 static void pit_realizefn(DeviceState *dev, Error **errp)
 {
     PITState *ps = PIT(dev);
     PITCommonState *pit = &ps->parent_obj;
     PITClass *pc = PIT_GET_CLASS(dev);
     PITChannelState *s;
+    ISADevice *isadev = ISA_DEVICE(dev);
+    ISABus *bus = isa_bus_from_device(isadev);
+
+    if (pc->fixed_model) {
+        if (ps->model && strcmp(ps->model, pc->fixed_model)) {
+            error_setg(errp, "%s requires model=%s",
+                       object_get_typename(OBJECT(dev)), pc->fixed_model);
+            return;
+        }
+        if (!ps->model) {
+            ps->model = g_strdup(pc->fixed_model);
+        }
+    }
+
+    if (!ps->board_wired) {
+        if (qbus_walk_children(BUS(bus), pit_check_peer,
+                               NULL, NULL, NULL, dev)) {
+            error_setg(errp, "%s: ISA bus already has a system PIT; "
+                       "disable the motherboard PIT before adding another",
+                       object_get_typename(OBJECT(dev)));
+            return;
+        }
+        if (hpet_find()) {
+            error_setg(errp, "%s: explicit ISA PIT requires HPET disabled; "
+                       "the motherboard normally wires their interrupts",
+                       object_get_typename(OBJECT(dev)));
+            return;
+        }
+        if (pit->iobase == UINT32_MAX) {
+            pit->iobase = 0x40;
+        }
+        if (!bus->irqs_in || !bus->irqs_in[0]) {
+            error_setg(errp, "%s: ISA IRQ0 is not connected",
+                       object_get_typename(OBJECT(dev)));
+            return;
+        }
+        if (!isa_ioport_range_available(isadev, pit->iobase, 4, errp)) {
+            return;
+        }
+    }
 
     if (ps->model && strcmp(ps->model, "i8253") == 0) {
         ps->is_8253 = true;
@@ -415,6 +475,9 @@ static void pit_realizefn(DeviceState *dev, Error **errp)
     qdev_init_gpio_in(dev, pit_irq_control, 1);
 
     pc->parent_realize(dev, errp);
+    if (!ps->board_wired) {
+        isa_connect_gpio_out(isadev, 0, 0);
+    }
 }
 
 static const Property pit_properties[] = {
@@ -428,7 +491,10 @@ static void pit_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_parent_realize(dc, pit_realizefn, &pc->parent_realize);
-    dc->desc = "Intel 8253/8254-compatible ISA programmable interval timer";
+    dc->desc = "Generic ISA programmable interval timer (8253/8254 compatible)";
+    dc->user_creatable = true;
+    dc->hotpluggable = false;
+    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     k->set_channel_gate = pit_set_channel_gate;
     k->get_channel_info = pit_get_channel_info_common;
     k->post_load = pit_post_load;
@@ -444,9 +510,36 @@ static const TypeInfo pit_info = {
     .class_size    = sizeof(PITClass),
 };
 
+static void pit_model_class_init(ObjectClass *klass, const void *data)
+{
+    PITClass *pc = PIT_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    pc->fixed_model = data;
+    dc->desc = !strcmp(pc->fixed_model, "i8253") ?
+        "Intel 8253 programmable interval timer" :
+        "Intel 8254 programmable interval timer";
+}
+
+static const TypeInfo pit_8253_info = {
+    .name = TYPE_INTEL_8253,
+    .parent = TYPE_I8254,
+    .class_init = pit_model_class_init,
+    .class_data = "i8253",
+};
+
+static const TypeInfo pit_8254_info = {
+    .name = TYPE_INTEL_8254,
+    .parent = TYPE_I8254,
+    .class_init = pit_model_class_init,
+    .class_data = "i8254",
+};
+
 static void pit_register_types(void)
 {
     type_register_static(&pit_info);
+    type_register_static(&pit_8253_info);
+    type_register_static(&pit_8254_info);
 }
 
 type_init(pit_register_types)
