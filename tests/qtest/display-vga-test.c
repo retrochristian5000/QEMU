@@ -484,6 +484,65 @@ static void test_cirrus_pci_dword_expand(void)
     qtest_quit(qts);
 }
 
+static void cirrus_crtc_write(QTestState *qts, uint8_t index, uint8_t value)
+{
+    qtest_outb(qts, VGA_CRT_IC, index);
+    qtest_outb(qts, VGA_CRT_DC, value);
+}
+
+static void test_cirrus_pci_timing(void)
+{
+    QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
+                                "-device cirrus-vga,precise-timing=on");
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, VGA_SEQ_CLOCK_MODE, 1);
+    /* 100 characters per line, 100 lines per frame; no overflow bits. */
+    cirrus_crtc_write(qts, VGA_CRTC_V_SYNC_END, 4);
+    cirrus_crtc_write(qts, VGA_CRTC_H_TOTAL, 95);
+    cirrus_crtc_write(qts, VGA_CRTC_V_TOTAL, 98);
+    cirrus_crtc_write(qts, VGA_CRTC_OVERFLOW, 0);
+    cirrus_crtc_write(qts, VGA_CRTC_MAX_SCAN, 0);
+    cirrus_crtc_write(qts, VGA_CRTC_H_BLANK_START, 80);
+    cirrus_crtc_write(qts, VGA_CRTC_H_BLANK_END, 3);
+    cirrus_crtc_write(qts, VGA_CRTC_H_SYNC_END, 0x80);
+    cirrus_crtc_write(qts, VGA_CRTC_V_BLANK_START, 80);
+    cirrus_crtc_write(qts, VGA_CRTC_V_BLANK_END, 90);
+    cirrus_crtc_write(qts, VGA_CRTC_V_SYNC_START, 80);
+
+    /* VCLK0 = 14.31818 MHz * 60 / 30 = 28.63636 MHz. */
+    vga_seq_write(qts, 0x0b, 60);
+    vga_seq_write(qts, 0x1b, 60);
+    qtest_clock_set(qts, 2300000);
+    /* Character 8232: vertical sync and blanking are active. */
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+
+    /* Doubling the numerator changes the derived phase without a delay. */
+    vga_seq_write(qts, 0x0b, 120);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 0);
+
+    /* The SR1 clock divider returns to the original clock rate. */
+    vga_seq_write(qts, VGA_SEQ_CLOCK_MODE, 9);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+
+    /* Moving VSYNC start immediately changes bit 3, not blanking bit 0. */
+    cirrus_crtc_write(qts, VGA_CRTC_V_SYNC_START, 83);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 1);
+
+    /* Select the unprogrammed VCLK2: documented default 41.165 MHz. */
+    vga_seq_write(qts, VGA_SEQ_CLOCK_MODE, 1);
+    vga_seq_write(qts, 0x0d, 0);
+    vga_seq_write(qts, 0x1d, 0);
+    cirrus_crtc_write(qts, VGA_CRTC_V_SYNC_START, 18);
+    qtest_outb(qts, VGA_MIS_W,
+               VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS | 8);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 8, ==, 8);
+
+    qtest_quit(qts);
+}
+
 static void test_sierra_falcon64(gconstpointer data)
 {
     unsigned int vram_mb = GPOINTER_TO_UINT(data);
@@ -560,6 +619,8 @@ int main(int argc, char **argv)
         if (qtest_has_machine("pc")) {
             qtest_add_func("/display/pci/cirrus-dword-expand",
                            test_cirrus_pci_dword_expand);
+            qtest_add_func("/display/pci/cirrus-precise-timing",
+                           test_cirrus_pci_timing);
         }
     }
 
