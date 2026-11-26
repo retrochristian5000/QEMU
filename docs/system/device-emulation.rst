@@ -79,31 +79,41 @@ in a PCI slot to the exclusive use of the guest.
 Generic compatibility models
 ============================
 
-A generic compatibility model implements a guest-facing hardware
-interface; it does not necessarily reproduce a particular physical
-board, its component revisions or all of its capabilities. In this fork
-the following explicit aliases are available for the existing models
-through ``-device``:
+A generic compatibility model implements a guest-facing interface without
+claiming to reproduce a specific physical board. Use a distinct type
+with a ``-generic`` or ``-compat`` suffix. Reserve chip and board names
+for independently identified profiles; short hardware aliases should
+identify physical devices rather than entire families.
 
-* ``cirrus-vga-generic`` is an alias for ``cirrus-vga``, a PCI VGA
-  model exposing the CL-GD5446 identity.
-* ``isa-cirrus-vga-generic`` is an alias for ``isa-cirrus-vga``, an ISA
-  VGA model exposing the CL-GD5428 identity.
-* ``sb16-generic`` is an alias for ``sb16``, a legacy ISA Sound Blaster 16
-  compatible model, not a specific Creative CT-series board or an ISA
-  Plug and Play card.
+The generic device types in this fork are:
 
-The original QOM names, device properties, guest identities and migration
-state names are unchanged. Use the explicit aliases with ``-device``;
-existing machine defaults, ``-vga cirrus``, and the legacy audio model
-name ``sb16`` retain their previous meanings. QOM type enumeration and
-type-specific global properties continue to use the original QOM names.
+* ``cirrus-vga-generic``: PCI VGA with the CL-GD5446 identity.
+* ``isa-cirrus-vga-generic``: ISA VGA with the CL-GD5428 identity.
+* ``sb16-generic``: legacy ISA Sound Blaster 16-compatible DSP and mixer,
+  not a specific Creative CT-series board or ISA PnP card.
+
+The old ``-device cirrus-vga``, ``-device isa-cirrus-vga`` and
+``-device sb16`` names are no longer registered; update command lines
+and type-specific global properties to the new names. The short
+``sb16`` name is reserved for a future accurately modeled Creative
+board. For ``-audio``, use ``model=sb16-generic``. The legacy
+``-vga cirrus`` option still selects the generic model. Guest register
+identities, resource defaults, firmware path names and migration section
+names are retained; cross-version migration has not been validated.
 
 The separate ``cirrus-gd5446-pci`` and ``isa-cirrus-gd5428`` profiles
-currently share the corresponding generic implementations; selecting
-them does not imply additional board-specific accuracy. The GD5430,
-GD5422 and GD5426 profiles retain their existing behavior. The
-``sb16-pnp`` and ``awe32`` reserved profiles are not aliases for SB16.
+currently share the generic implementations; selecting them does not
+imply additional board-specific accuracy. The GD5430, GD5422 and GD5426
+profiles retain their existing behavior. The ``sb16-pnp`` and
+``awe32`` reserved profiles are not aliases for SB16.
+
+Use the canonical names ``AC97``, ``ich9-ahci``, ``e1000`` and
+``mc146818rtc`` instead of the removed aliases ``ac97``, ``ahci``,
+``e1000-82540em`` and ``motorola-mc146818`` with ``-device``.
+The legacy audio model selector ``-audio ...,model=ac97`` is unchanged.
+VirtIO transport selectors retain architecture-dependent behavior;
+they are not physical hardware profiles.
+
 
 Emulated Devices
 ~~~~~~~~~~~~~~~~

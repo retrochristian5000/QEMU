@@ -126,8 +126,8 @@ static const boot_order_test test_cases_fw_cfg[] = {
 };
 
 static const pmac_display_pair powermac3_1_display_pairs[] = {
-    { "ati-vga", "cirrus-vga" },
-    { "cirrus-vga", "VGA" },
+    { "ati-vga", "cirrus-vga-generic" },
+    { "cirrus-vga-generic", "VGA" },
 };
 
 static void test_pmac_oldworld_boot_order(void)

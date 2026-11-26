@@ -112,7 +112,7 @@ static void test_isa_cirrus_profile_for(const char *model, uint8_t chip_id)
 
 static void test_isa_cirrus_profile(void)
 {
-    test_isa_cirrus_profile_for("isa-cirrus-vga", 0x98);
+    test_isa_cirrus_profile_for("isa-cirrus-vga-generic", 0x98);
 }
 
 static void test_isa_cirrus_gd5428_profile(void)
@@ -235,7 +235,7 @@ static void test_vga_pel_mask(void)
 
 static void test_cirrus_gray_palette(void)
 {
-    QTestState *qts = qtest_init("-vga none -device cirrus-vga");
+    QTestState *qts = qtest_init("-vga none -device cirrus-vga-generic");
 
     /* The mask must not alter the DAC RGB values or hidden DAC register. */
     qtest_inb(qts, VGA_PEL_IW);
@@ -348,7 +348,7 @@ static void test_cirrus_named_pci_profile(gconstpointer opaque)
 
 static void test_cirrus_pci_identity(void)
 {
-    QTestState *qts = qtest_init("-vga none -device cirrus-vga,id=cirrus");
+    QTestState *qts = qtest_init("-vga none -device cirrus-vga-generic,id=cirrus");
     QDict *resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
     QDict *device;
     QDict *id;
@@ -391,7 +391,7 @@ static void cirrus_pci_command(QTestState *qts, uint32_t address,
 static void test_cirrus_pci_legacy_decode(void)
 {
     QTestState *qts = qtest_init("-M pc -vga none "
-                                "-device cirrus-vga,id=cirrus,pci-legacy-decode=on");
+                                "-device cirrus-vga-generic,id=cirrus,pci-legacy-decode=on");
     QDict *resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
     QDict *device;
     uint32_t address;
@@ -447,7 +447,7 @@ static void test_cirrus_pci_dword_expand(void)
     const uint32_t mmio = 0xe2000000U;
     const uint32_t dst = lfb + 0x100;
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
-                                "-device cirrus-vga,addr=05.0");
+                                "-device cirrus-vga-generic,addr=05.0");
 
     /* Program PCI BARs directly; no BIOS or guest driver is required. */
     qtest_outl(qts, 0xcf8, config);
@@ -534,7 +534,7 @@ static void test_cirrus_pci_blt_dimensions(void)
     const uint32_t config = 0x80000000U | (5U << 11);
     const uint32_t mmio = 0xe2000000U;
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
-                                "-device cirrus-vga,addr=05.0");
+                                "-device cirrus-vga-generic,addr=05.0");
 
     cirrus_pci_command(qts, config, 0);
     qtest_outl(qts, 0xcf8, config | 0x14);
@@ -565,7 +565,7 @@ static void test_cirrus_pci_solidfill_completion(void)
     const uint32_t config = 0x80000000U | (5U << 11);
     const uint32_t lfb = 0xe0000000U;
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
-                                "-device cirrus-vga,addr=05.0");
+                                "-device cirrus-vga-generic,addr=05.0");
 
     cirrus_pci_command(qts, config, 0);
     qtest_outl(qts, 0xcf8, config | 0x10);
@@ -607,7 +607,7 @@ static void cirrus_crtc_write(QTestState *qts, uint8_t index, uint8_t value)
 static void test_cirrus_pci_timing(void)
 {
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
-                                "-device cirrus-vga,precise-timing=on");
+                                "-device cirrus-vga-generic,precise-timing=on");
 
     qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
     vga_seq_write(qts, 0x06, 0x12);
@@ -692,7 +692,7 @@ static void test_sierra_falcon64(gconstpointer data)
 int main(int argc, char **argv)
 {
     static const char *devices[] = {
-        "cirrus-vga",
+        "cirrus-vga-generic",
         "VGA",
         "secondary-vga",
         "virtio-gpu-pci",
@@ -720,7 +720,7 @@ int main(int argc, char **argv)
                        test_vga_eram_memory_decode);
     }
 
-    if (qtest_has_device("cirrus-vga") &&
+    if (qtest_has_device("cirrus-vga-generic") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/pci/cirrus-identity",
                        test_cirrus_pci_identity);
@@ -742,7 +742,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (qtest_has_device("isa-cirrus-vga") &&
+    if (qtest_has_device("isa-cirrus-vga-generic") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-profile",
                        test_isa_cirrus_profile);

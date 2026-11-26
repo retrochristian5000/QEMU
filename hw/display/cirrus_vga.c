@@ -186,7 +186,7 @@ struct PCICirrusVGAState {
     bool precise_timing;
 };
 
-#define TYPE_PCI_CIRRUS_VGA "cirrus-vga"
+#define TYPE_PCI_CIRRUS_VGA "cirrus-vga-generic"
 #define TYPE_PCI_CIRRUS_GD5430 "cirrus-gd5430-pci"
 #define TYPE_PCI_CIRRUS_GD5446 "cirrus-gd5446-pci"
 OBJECT_DECLARE_SIMPLE_TYPE(PCICirrusVGAState, PCI_CIRRUS_VGA)

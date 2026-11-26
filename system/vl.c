@@ -222,8 +222,8 @@ static const struct {
     { .driver = "scsi-hd",              .flag = &default_cdrom     },
     { .driver = "VGA",                  .flag = &default_vga       },
     { .driver = "isa-vga",              .flag = &default_vga       },
-    { .driver = "cirrus-vga",           .flag = &default_vga       },
-    { .driver = "isa-cirrus-vga",       .flag = &default_vga       },
+    { .driver = "cirrus-vga-generic",   .flag = &default_vga       },
+    { .driver = "isa-cirrus-vga-generic", .flag = &default_vga       },
     { .driver = "vmware-svga",          .flag = &default_vga       },
     { .driver = "qxl-vga",              .flag = &default_vga       },
     { .driver = "virtio-vga",           .flag = &default_vga       },
@@ -975,7 +975,7 @@ static const VGAInterfaceInfo vga_interfaces[VGA_TYPE_MAX] = {
     [VGA_CIRRUS] = {
         .opt_name = "cirrus",
         .name = "Cirrus VGA",
-        .class_names = { "cirrus-vga", "isa-cirrus-vga" },
+        .class_names = { "cirrus-vga-generic", "isa-cirrus-vga-generic" },
     },
     [VGA_VMWARE] = {
         .opt_name = "vmware",

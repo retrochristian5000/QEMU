@@ -73,17 +73,12 @@ typedef struct QDevAlias
 #define QEMU_ARCH_VIRTIO_CCW (QEMU_ARCH_S390X)
 #define QEMU_ARCH_VIRTIO_MMIO (QEMU_ARCH_M68K | QEMU_ARCH_HEXAGON)
 
-/* Please keep this table sorted by typename. */
+/* Keep physical-device shorthands and transport selectors, not profile aliases.
+ * Please keep this table sorted by typename.
+ */
 static const QDevAlias qdev_alias_table[] = {
-    { "AC97", "ac97" },
-    { "cirrus-vga", "cirrus-vga-generic" },
-    { "e1000", "e1000-82540em" },
     { "ES1370", "es1370" },
-    { "ich9-ahci", "ahci" },
-    { "isa-cirrus-vga", "isa-cirrus-vga-generic" },
     { "lsi53c895a", "lsi" },
-    { "mc146818rtc", "motorola-mc146818" },
-    { "sb16", "sb16-generic" },
     { "virtio-9p-device", "virtio-9p", QEMU_ARCH_VIRTIO_MMIO },
     { "virtio-9p-ccw", "virtio-9p", QEMU_ARCH_VIRTIO_CCW },
     { "virtio-9p-pci", "virtio-9p", QEMU_ARCH_VIRTIO_PCI },

@@ -299,8 +299,9 @@ a particular Pentium MMX motherboard supported four sockets::
 Cirrus Logic chipset profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The existing ``cirrus-vga`` and ``isa-cirrus-vga`` names remain
-compatible with the CL-GD5446 PCI and CL-GD5428 ISA profiles respectively.
+The ``cirrus-vga-generic`` and ``isa-cirrus-vga-generic`` device types
+remain compatible with the CL-GD5446 PCI and CL-GD5428 ISA profiles,
+respectively.
 Their explicit chipset names are ``cirrus-gd5446-pci`` and
 ``isa-cirrus-gd5428``. The GD5422, GD5426 and GD5430 VLB profiles
 remain available with their existing names.
@@ -351,7 +352,7 @@ Cirrus GD5446 display timing
 For an opt-in comparison of the GD5446 display clock and retrace
 behavior, replace the existing primary VGA selection with::
 
-    -vga none -device cirrus-vga,precise-timing=on
+    -vga none -device cirrus-vga-generic,precise-timing=on
 
 Do not add this as a second VGA adapter. The PCI Cirrus profile derives
 the character clock from the selected VCLK synthesizer registers and
@@ -491,7 +492,7 @@ Creative Sound Blaster AWE32
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The Windows 9x SB16/AWE32 driver name describes a shared PCM interface,
-not proof of an EMU8000. The existing ``sb16`` profile remains the
+not proof of an EMU8000. The existing ``sb16-generic`` profile remains the
 legacy ISA DSP/mixer implementation. The ``awe32`` profile is reserved
 and deliberately rejects realization until the synthesizer and sound
 memory are implemented. It does not register an audio backend or claim

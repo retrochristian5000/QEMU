@@ -62,7 +62,7 @@ static void test_sb16_gameport_default(void)
 {
     QTestState *s = qtest_init("-M pc -nodefaults "
                                "-audiodev none,id=snd "
-                               "-device sb16,id=sb,audiodev=snd");
+                               "-device sb16-generic,id=sb,audiodev=snd");
 
     g_assert_true(qtest_qom_get_bool(s, "/machine/peripheral/sb", "gameport"));
     g_assert_true(qtest_qom_get_bool(s,
@@ -77,7 +77,7 @@ static void test_sb16_gameport_connected(void)
     QTestState *s = qtest_init("-M pc -nodefaults "
                                "-audiodev none,id=snd "
                                "-global creative-gameport.connected=3 "
-                               "-device sb16,audiodev=snd");
+                               "-device sb16-generic,audiodev=snd");
 
     g_assert_cmphex(qtest_inb(s, GAMEPORT), ==, 0xfc);
     qtest_outb(s, GAMEPORT, 0);
@@ -91,7 +91,7 @@ static void test_sb16_gameport_disabled(void)
 {
     QTestState *s = qtest_init("-M pc -nodefaults "
                                "-audiodev none,id=snd "
-                               "-device sb16,id=sb,audiodev=snd,gameport=off "
+                               "-device sb16-generic,id=sb,audiodev=snd,gameport=off "
                                "-device ibm-game-control,connected=3");
 
     g_assert_false(qtest_qom_get_bool(s, "/machine/peripheral/sb", "gameport"));
@@ -126,18 +126,18 @@ int main(int argc, char **argv)
                         test_gameport_timing);
     qtest_add_func("/gameport/disconnected", test_gameport_disconnected);
     qtest_add_func("/gameport/overlap", test_gameport_overlap);
-    if (qtest_has_device("sb16")) {
+    if (qtest_has_device("sb16-generic")) {
         qtest_add_func("/gameport/sb16/default", test_sb16_gameport_default);
         qtest_add_func("/gameport/sb16/connected", test_sb16_gameport_connected);
         qtest_add_func("/gameport/sb16/disabled", test_sb16_gameport_disabled);
         qtest_add_data_func("/gameport/sb16/overlap-first",
-                            "-device sb16,audiodev=snd -device isa-gameport",
+                            "-device sb16-generic,audiodev=snd -device isa-gameport",
                             test_sb16_gameport_overlap);
         qtest_add_data_func("/gameport/sb16/overlap-last",
-                            "-device isa-gameport -device sb16,audiodev=snd",
+                            "-device isa-gameport -device sb16-generic,audiodev=snd",
                             test_sb16_gameport_overlap);
         qtest_add_data_func("/gameport/sb16/overlap-dsp",
-                            "-device sb16,audiodev=snd,iobase=0x1fd",
+                            "-device sb16-generic,audiodev=snd,iobase=0x1fd",
                             test_sb16_gameport_overlap);
     }
     return g_test_run();

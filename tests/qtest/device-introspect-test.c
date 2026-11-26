@@ -230,13 +230,13 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd302",
           "AT&T 302 keyboard (Intel UPI-41; experimental I/O optional)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
-        { "cirrus-vga", "Generic Cirrus PCI VGA (CL-GD5446 compatible)" },
+        { "cirrus-vga-generic", "Generic Cirrus PCI VGA (CL-GD5446 compatible)" },
         { "cirrus-gd5446-pci",
           "Cirrus Logic CL-GD5446 PCI VGA (shared compatible implementation)" },
-        { "isa-cirrus-vga", "Generic Cirrus ISA VGA (CL-GD5428 compatible)" },
+        { "isa-cirrus-vga-generic", "Generic Cirrus ISA VGA (CL-GD5428 compatible)" },
         { "isa-cirrus-gd5428",
           "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)" },
-        { "sb16", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
+        { "sb16-generic", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
         { "intel-8041",
           "Intel 8041 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "intel-8741",
@@ -262,16 +262,19 @@ static void test_device_intro_display_descriptions(void)
     qtest_quit(qts);
 }
 
-static void test_generic_device_aliases(void)
+static void test_generic_device_types(void)
 {
     static const struct {
         const char *type;
-        const char *alias;
+        const char *old_type;
         const char *args;
     } models[] = {
-        { "cirrus-vga", "cirrus-vga-generic", "-vga none" },
-        { "isa-cirrus-vga", "isa-cirrus-vga-generic", "-vga none" },
-        { "sb16", "sb16-generic", "-audiodev none,id=snd" },
+        { "cirrus-vga-generic", "cirrus-vga", "-vga none" },
+        { "isa-cirrus-vga-generic", "isa-cirrus-vga", "-vga none" },
+        { "sb16-generic", "sb16", "-audiodev none,id=snd" },
+    };
+    static const char *const retired_aliases[] = {
+        "ac97", "ahci", "e1000-82540em", "motorola-mc146818",
     };
     QTestState *qts = qtest_init(common_args);
     QList *types = device_type_list(qts, false);
@@ -279,29 +282,29 @@ static void test_generic_device_aliases(void)
 
     for (size_t i = 0; i < ARRAY_SIZE(models); i++) {
         g_autofree char *needle = NULL;
-        g_autofree char *alias = NULL;
-        g_autofree char *original_help = NULL;
-        g_autofree char *alias_help = NULL;
+        g_autofree char *old_help = NULL;
         const char *line;
         const char *end;
 
+        g_assert_null(type_list_find(types, models[i].old_type));
         if (!type_list_find(types, models[i].type)) {
             continue;
         }
         needle = g_strdup_printf("name \"%s\"", models[i].type);
-        alias = g_strdup_printf("alias \"%s\"", models[i].alias);
         line = strstr(help, needle);
         g_assert_nonnull(line);
         end = strchr(line, '\n');
         g_assert_nonnull(end);
-        g_assert_nonnull(g_strstr_len(line, end - line, alias));
-        g_assert_null(type_list_find(types, models[i].alias));
+        g_assert_null(g_strstr_len(line, end - line, "alias \""));
+        old_help = qtest_hmp(qts, "device_add \"%s,help\"",
+                             models[i].old_type);
+        g_assert_null(strstr(old_help, " options:"));
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(retired_aliases); i++) {
+        g_autofree char *needle =
+            g_strdup_printf("alias \"%s\"", retired_aliases[i]);
 
-        original_help = qtest_hmp(qts, "device_add \"%s,help\"",
-                                  models[i].type);
-        alias_help = qtest_hmp(qts, "device_add \"%s,help\"",
-                               models[i].alias);
-        g_assert_cmpstr(alias_help, ==, original_help);
+        g_assert_null(strstr(help, needle));
     }
     qobject_unref(types);
     qtest_quit(qts);
@@ -310,26 +313,22 @@ static void test_generic_device_aliases(void)
         return;
     }
     for (size_t i = 0; i < ARRAY_SIZE(models); i++) {
-        const char *names[] = { models[i].type, models[i].alias };
+        const char *audio = !strcmp(models[i].type, "sb16-generic")
+                            ? ",audiodev=snd" : "";
+        g_autofree char *tree = NULL;
+        g_autofree char *expected = NULL;
 
         if (!qtest_has_device(models[i].type)) {
             continue;
         }
-        for (size_t j = 0; j < ARRAY_SIZE(names); j++) {
-            const char *audio = !strcmp(models[i].type, "sb16")
-                                ? ",audiodev=snd" : "";
-            g_autofree char *tree = NULL;
-            g_autofree char *expected = NULL;
-
-            qts = qtest_initf("-M pc -nodefaults %s -device %s,id=model%s",
-                              models[i].args, names[j], audio);
-            g_assert_true(qtest_qom_get_bool(qts,
-                          "/machine/peripheral/model", "realized"));
-            tree = qtest_hmp(qts, "info qtree");
-            expected = g_strdup_printf("dev: %s,", models[i].type);
-            g_assert_nonnull(strstr(tree, expected));
-            qtest_quit(qts);
-        }
+        qts = qtest_initf("-M pc -nodefaults %s -device %s,id=model%s",
+                          models[i].args, models[i].type, audio);
+        g_assert_true(qtest_qom_get_bool(qts,
+                      "/machine/peripheral/model", "realized"));
+        tree = qtest_hmp(qts, "info qtree");
+        expected = g_strdup_printf("dev: %s,", models[i].type);
+        g_assert_nonnull(strstr(tree, expected));
+        qtest_quit(qts);
     }
 }
 
@@ -687,8 +686,8 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/display-descriptions",
                    test_device_intro_display_descriptions);
-    qtest_add_func("device/introspect/generic-aliases",
-                   test_generic_device_aliases);
+    qtest_add_func("device/introspect/generic-types",
+                   test_generic_device_types);
     qtest_add_func("device/introspect/att-kbd301-controller",
                    test_att_kbd301_controller);
     qtest_add_func("device/introspect/att-kbd302-controller",

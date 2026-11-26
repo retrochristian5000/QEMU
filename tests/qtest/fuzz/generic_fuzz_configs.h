@@ -97,7 +97,7 @@ const generic_fuzz_config predefined_configs[] = {
         .objects = "igb",
     },{
         .name = "cirrus-vga",
-        .args = "-machine q35 -nodefaults -device cirrus-vga",
+        .args = "-machine q35 -nodefaults -device cirrus-vga-generic",
         .objects = "cirrus*",
     },{
         .name = "bochs-display",
@@ -225,7 +225,7 @@ const generic_fuzz_config predefined_configs[] = {
     },{
         .name = "ac97",
         .args = "-machine q35 -nodefaults "
-        "-device ac97,audiodev=snd0 -audiodev none,id=snd0 -nodefaults",
+        "-device AC97,audiodev=snd0 -audiodev none,id=snd0 -nodefaults",
         .objects = "ac97*",
     },{
         .name = "cs4231a",
@@ -240,7 +240,7 @@ const generic_fuzz_config predefined_configs[] = {
     },{
         .name = "sb16",
         .args = "-machine q35 -nodefaults "
-        "-device sb16,audiodev=snd0 -audiodev none,id=snd0 -nodefaults",
+        "-device sb16-generic,audiodev=snd0 -audiodev none,id=snd0 -nodefaults",
         .objects = "sb16* i8257*",
     },{
         .name = "parallel",

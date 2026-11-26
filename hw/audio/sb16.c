@@ -49,7 +49,7 @@
 
 static const char e3[] = "COPYRIGHT (C) CREATIVE TECHNOLOGY LTD, 1992.";
 
-#define TYPE_SB16 "sb16"
+#define TYPE_SB16 "sb16-generic"
 OBJECT_DECLARE_SIMPLE_TYPE(SB16State, SB16)
 
 struct SB16State {
@@ -1534,6 +1534,7 @@ static void sb16_class_initfn(ObjectClass *klass, const void *data)
     dc->unrealize = sb16_unrealize;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->desc = "Generic Sound Blaster 16 compatible (ISA, non-PnP)";
+    dc->fw_name = "sb16";
     dc->vmsd = &vmstate_sb16;
     device_class_set_props(dc, sb16_properties);
 }
@@ -1549,7 +1550,8 @@ static const TypeInfo sb16_info = {
 static void sb16_register_types (void)
 {
     type_register_static (&sb16_info);
-    audio_register_model("sb16", "Generic Sound Blaster 16 compatible (ISA, non-PnP)",
+    audio_register_model("sb16-generic",
+                         "Generic Sound Blaster 16 compatible (ISA, non-PnP)",
                          TYPE_SB16);
 }
 

@@ -29,7 +29,7 @@ card implementation. ``PPC_AUDIO_GAMEBLASTER`` is a separate build-target
 selection for the *same* device, not a claim that every PowerPC Macintosh
 has an ISA slot. ``auto`` preserves QEMU's default Kconfig decision;
 an explicit ``y`` requires an ISA bus. The model remains distinct from
-``sb16`` and must not overlap its I/O window.
+``sb16-generic`` and must not overlap its I/O window.
 
 Guest ISA port map, relative to ``iobase`` (default 0x220):
 

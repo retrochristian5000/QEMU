@@ -688,7 +688,7 @@ static void test_explicit_rtc(void)
 {
     QTestState *s = qtest_init("-machine microvm,rtc=off -nodefaults "
                                "-rtc clock=vm "
-                               "-device motorola-mc146818,base_year=2000");
+                               "-device mc146818rtc,base_year=2000");
 
     qtest_irq_intercept_in(s, "ioapic");
 

@@ -33,7 +33,7 @@
 #include "qom/object.h"
 #include "ui/console.h"
 
-#define TYPE_ISA_CIRRUS_VGA "isa-cirrus-vga"
+#define TYPE_ISA_CIRRUS_VGA "isa-cirrus-vga-generic"
 #define TYPE_ISA_CIRRUS_GD5426 "isa-cirrus-gd5426"
 #define TYPE_ISA_CIRRUS_GD5422 "isa-cirrus-gd5422"
 OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusVGAState, ISA_CIRRUS_VGA)
@@ -126,6 +126,7 @@ static void isa_cirrus_vga_class_init(ObjectClass *klass, const void *data)
     dc->vmsd  = &vmstate_cirrus_vga;
     dc->realize = isa_cirrus_vga_realizefn;
     dc->desc = "Generic Cirrus ISA VGA (CL-GD5428 compatible)";
+    dc->fw_name = "isa-cirrus-vga";
     device_class_set_props(dc, isa_cirrus_vga_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }
@@ -145,6 +146,7 @@ static void isa_cirrus_gd5426_class_init(ObjectClass *klass,
 
     dc->realize = isa_cirrus_gd5426_realizefn;
     dc->desc = "Cirrus Logic CL-GD5426 ISA VGA";
+    dc->fw_name = "isa-cirrus-gd5426";
 }
 
 static const TypeInfo isa_cirrus_gd5426_info = {
@@ -173,8 +175,11 @@ static const TypeInfo isa_cirrus_gd5422_info = {
 
 static void isa_cirrus_gd5428_class_init(ObjectClass *klass, const void *data)
 {
-    DEVICE_CLASS(klass)->desc =
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc =
         "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)";
+    dc->fw_name = "isa-cirrus-gd5428";
 }
 
 static const TypeInfo isa_cirrus_gd5428_info = {

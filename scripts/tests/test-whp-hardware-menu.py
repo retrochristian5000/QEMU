@@ -24,7 +24,7 @@ sys.path.insert(0, str(CONFIG_DIR))
 
 AUDIO_DEVICES = {
     'GAMEBLASTER': ('Creative Music System / Game Blaster (ISA bus)', 'CONFIG_GAMEBLASTER'),
-    'SB16': ('Sound Blaster 16 (ISA bus)', 'CONFIG_SB16'),
+    'SB16': ('Sound Blaster 16 compatible (ISA bus)', 'CONFIG_SB16'),
     'ADLIB': ('AdLib (ISA bus)', 'CONFIG_ADLIB'),
     'GUS': ('Gravis UltraSound (ISA bus)', 'CONFIG_GUS'),
     'CS4231A': ('Crystal CS4231A (ISA bus)', 'CONFIG_CS4231A'),

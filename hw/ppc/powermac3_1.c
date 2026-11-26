@@ -56,7 +56,7 @@ static PCIDevice *powermac3_1_vga_init(PCIBus *bus, VGAInterfaceType vga_type)
 
     switch (vga_type) {
     case VGA_CIRRUS:
-        return pci_create_simple(bus, PCI_DEVFN(16, 0), "cirrus-vga");
+        return pci_create_simple(bus, PCI_DEVFN(16, 0), "cirrus-vga-generic");
     case VGA_QXL:
         return pci_create_simple(bus, PCI_DEVFN(16, 0), "qxl-vga");
     case VGA_STD:
@@ -143,8 +143,8 @@ static void powermac3_1_machine_init(MachineState *machine)
      * destination for an unqualified -device.  Treat pci.0 as a machine-level
      * command-line ABI so users can combine real display models, for example:
      *
-     *   -vga none -device ati-vga,bus=pci.0 -device cirrus-vga
-     *   -vga none -device cirrus-vga,bus=pci.0 -device VGA
+     *   -vga none -device ati-vga,bus=pci.0 -device cirrus-vga-generic
+     *   -vga none -device cirrus-vga-generic,bus=pci.0 -device VGA
      *
      * Do not silently let inherited bus-order changes retarget those devices.
      */

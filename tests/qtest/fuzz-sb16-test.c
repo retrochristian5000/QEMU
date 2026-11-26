@@ -16,7 +16,7 @@
 static void test_fuzz_sb16_0x1c(void)
 {
     QTestState *s = qtest_init("-M q35 "
-                               "-device sb16,audiodev=snd0 "
+                               "-device sb16-generic,audiodev=snd0 "
                                "-audiodev none,id=snd0");
     qtest_outw(s, 0x22c, 0x41);
     qtest_outb(s, 0x22c, 0x00);
@@ -28,7 +28,7 @@ static void test_fuzz_sb16_0x1c(void)
 static void test_fuzz_sb16_0x91(void)
 {
     QTestState *s = qtest_init("-M pc "
-                               "-device sb16,audiodev=none "
+                               "-device sb16-generic,audiodev=none "
                                "-audiodev id=none,driver=none");
     qtest_outw(s, 0x22c, 0xf141);
     qtest_outb(s, 0x22c, 0x00);
@@ -44,7 +44,7 @@ static void test_fuzz_sb16_0x91(void)
 static void test_fuzz_sb16_0xd4(void)
 {
     QTestState *s = qtest_init("-M pc "
-                               "-device sb16,audiodev=none "
+                               "-device sb16-generic,audiodev=none "
                                "-audiodev id=none,driver=none");
     qtest_outb(s, 0x22c, 0x41);
     qtest_outb(s, 0x22c, 0x00);
@@ -71,7 +71,7 @@ static uint8_t csp_read(QTestState *s, uint8_t reg)
 static void test_sb16_csp_registers(void)
 {
     QTestState *s = qtest_init("-M pc -nodefaults "
-                               "-device sb16,audiodev=none "
+                               "-device sb16-generic,audiodev=none "
                                "-audiodev id=none,driver=none");
 
     qtest_outb(s, 0x226, 1);

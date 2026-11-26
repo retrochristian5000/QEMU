@@ -1,8 +1,9 @@
 Sound Blaster 16 ISA profiles
 ============================
 
-The existing ``sb16`` model implements a legacy Sound Blaster 16-compatible
-DSP and mixer on ISA, plus an integrated analog gameport by default.
+The existing ``sb16-generic`` model implements a legacy Sound Blaster
+16-compatible DSP and mixer on ISA, plus an integrated analog gameport
+by default.
 The DSP version, audio I/O, IRQ, DMA properties and DSP migration fields
 remain unchanged. It does not expose ISA Plug and Play card identification.
 
@@ -51,8 +52,8 @@ resistance-to-time interface:
 * ``ibm-game-control``: IBM PC Game Control Adapter interface.
 * ``creative-gameport``: Creative legacy analog gameport interface.
 
-The ``sb16`` device automatically creates a Creative gameport child on the
-same ISA bus unless ``gameport=off`` is specified. There is no additional
+The ``sb16-generic`` device automatically creates a Creative gameport
+child on the same ISA bus unless ``gameport=off`` is specified. There is no additional
 IRQ or DMA assignment. To test a simulated centered joystick A with an
 existing SB16 configuration, append::
 
@@ -60,7 +61,7 @@ existing SB16 configuration, append::
 
 For independent adapters, disable the SB16 gameport first. For example::
 
-    -device sb16,audiodev=snd,gameport=off -device ibm-game-control,connected=3
+    -device sb16-generic,audiodev=snd,gameport=off -device ibm-game-control,connected=3
 
 Use the existing audio backend ID in place of ``snd``. Do not attach a
 second gameport at 0x201; conflicting mappings are rejected.

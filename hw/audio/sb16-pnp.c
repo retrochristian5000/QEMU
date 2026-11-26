@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Keep the later ISA PnP family separate from the legacy sb16 device.
+ * Keep the later ISA PnP family separate from the legacy sb16-generic device.
  * Do not expose a legacy DSP under a PnP identity until the ISA PnP
  * bus can enumerate and activate its logical devices.
  */

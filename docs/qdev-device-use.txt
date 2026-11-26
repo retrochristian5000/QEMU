@@ -284,7 +284,7 @@ The new way is -device.  The mapping from -vga argument to -device
 depends on the machine type.  For machine "pc", it's:
 
     std         -device VGA
-    cirrus      -device cirrus-vga
+    cirrus      -device cirrus-vga-generic
     vmware      -device vmware-svga
     qxl         -device qxl-vga
     none        -nodefaults
@@ -323,7 +323,7 @@ Map from -soundhw sound card name to -device:
     es1370      -device ES1370
     gus         -device gus,iobase=IOADDR,irq=IRQ,dma=DMA,freq=F
     hda         -device intel-hda,msi=MSI -device hda-duplex
-    sb16        -device sb16,iobase=IOADDR,irq=IRQ,dma=DMA,dma16=DMA16,version=V
+    sb16        -device sb16-generic,iobase=IOADDR,irq=IRQ,dma=DMA,dma16=DMA16,version=V
     adlib       -device adlib,iobase=IOADDR,freq=F
 
     pcspk       Not available with -device,
@@ -394,8 +394,8 @@ some DEVNAMEs:
     floppy              floppy, isa-fdc
     parallel            isa-parallel
     serial              isa-serial
-    VGA                 VGA, cirrus-vga, isa-vga, isa-cirrus-vga,
-                        vmware-svga, qxl-vga, virtio-vga, ati-vga,
+    VGA                 VGA, cirrus-vga-generic, isa-vga,
+                        isa-cirrus-vga-generic, vmware-svga, qxl-vga, virtio-vga, ati-vga,
                         vhost-user-vga
 
 The default NIC is connected to a default part created along with it.
