@@ -411,14 +411,18 @@ static inline uint8_t dsp_get_data (SB16State *s)
     }
 }
 
+/* Include the actual QOM type and configured I/O base in DSP diagnostics. */
+#define sb16_log_unimp(s, fmt, ...) \
+    qemu_log_mask(LOG_UNIMP, "%s (iobase=0x%x): DSP " fmt, \
+                  object_get_typename(OBJECT(s)), (s)->port, ##__VA_ARGS__)
+
 static void command (SB16State *s, uint8_t cmd)
 {
     ldebug("command 0x%x", cmd);
 
     if (cmd > 0xaf && cmd < 0xd0) {
         if (cmd & 8) {
-            qemu_log_mask(LOG_UNIMP, "ADC not yet supported (command 0x%x)\n",
-                          cmd);
+            sb16_log_unimp(s, "command 0x%02x: ADC not implemented\n", cmd);
         }
 
         switch (cmd >> 4) {
@@ -480,7 +484,7 @@ static void command (SB16State *s, uint8_t cmd)
             goto warn;
 
         case 0x35:
-            qemu_log_mask(LOG_UNIMP, "0x35 - MIDI command not implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: MIDI not implemented\n", cmd);
             break;
 
         case 0x40:
@@ -514,38 +518,36 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0x74:
             s->needed_bytes = 2; /* DMA DAC, 4-bit ADPCM */
-            qemu_log_mask(LOG_UNIMP, "0x75 - DMA DAC, 4-bit ADPCM not"
-                          " implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: DMA DAC, 4-bit ADPCM "
+                          "not implemented\n", cmd);
             break;
 
         case 0x75:              /* DMA DAC, 4-bit ADPCM Reference */
             s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 4-bit ADPCM Reference not"
-                          " implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: DMA DAC, 4-bit ADPCM "
+                          "with reference not implemented\n", cmd);
             break;
 
         case 0x76:              /* DMA DAC, 2.6-bit ADPCM */
             s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 2.6-bit ADPCM not"
-                          " implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: DMA DAC, 2.6-bit ADPCM "
+                          "not implemented\n", cmd);
             break;
 
         case 0x77:              /* DMA DAC, 2.6-bit ADPCM Reference */
             s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 2.6-bit ADPCM Reference"
-                          " not implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: DMA DAC, 2.6-bit ADPCM "
+                          "with reference not implemented\n", cmd);
             break;
 
         case 0x7d:
-            qemu_log_mask(LOG_UNIMP, "0x7d - Autio-Initialize DMA DAC, 4-bit"
-                          " ADPCM Reference\n");
-            qemu_log_mask(LOG_UNIMP, "not implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: auto-initialize DMA DAC, "
+                          "4-bit ADPCM with reference not implemented\n", cmd);
             break;
 
         case 0x7f:
-            qemu_log_mask(LOG_UNIMP, "0x7d - Autio-Initialize DMA DAC, 2.6-bit"
-                          " ADPCM Reference\n");
-            qemu_log_mask(LOG_UNIMP, "not implemented\n");
+            sb16_log_unimp(s, "command 0x%02x: auto-initialize DMA DAC, "
+                          "2.6-bit ADPCM with reference not implemented\n", cmd);
             break;
 
         case 0x80:
@@ -617,7 +619,7 @@ static void command (SB16State *s, uint8_t cmd)
             break;
 
         case 0xe7:
-            qemu_log_mask(LOG_UNIMP, "Attempt to probe for ESS (0xe7)?\n");
+            sb16_log_unimp(s, "command 0x%02x: possible ESS probe\n", cmd);
             break;
 
         case 0xe8:              /* read test reg */
@@ -644,7 +646,7 @@ static void command (SB16State *s, uint8_t cmd)
             goto warn;
 
         default:
-            qemu_log_mask(LOG_UNIMP, "Unrecognized command 0x%x\n", cmd);
+            sb16_log_unimp(s, "unrecognized command 0x%02x\n", cmd);
             break;
         }
     }
@@ -663,8 +665,8 @@ static void command (SB16State *s, uint8_t cmd)
     return;
 
  warn:
-    qemu_log_mask(LOG_UNIMP, "warning: command 0x%x,%d is not truly understood"
-                  " yet\n", cmd, s->needed_bytes);
+    sb16_log_unimp(s, "command 0x%02x: emulation incomplete "
+                  "(expected parameter bytes=%d)\n", cmd, s->needed_bytes);
     goto exit;
 
 }
@@ -855,7 +857,7 @@ static void complete (SB16State *s)
             break;
 
         default:
-            qemu_log_mask(LOG_UNIMP, "complete: unrecognized command 0x%x\n",
+            sb16_log_unimp(s, "unrecognized command 0x%02x at completion\n",
                           s->cmd);
             return;
         }
