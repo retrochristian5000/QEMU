@@ -249,11 +249,46 @@ static int pit_dispatch_post_load(void *opaque, int version_id)
     return 0;
 }
 
+static bool pit_pending_count_needed(void *opaque)
+{
+    PITCommonState *s = opaque;
+
+    return s->pending_initial_count != 0;
+}
+
+static int pit_pending_count_pre_load(void *opaque)
+{
+    PITCommonState *s = opaque;
+
+    s->pending_initial_count = 0;
+    return 0;
+}
+
+static int pit_pending_count_post_load(void *opaque, int version_id)
+{
+    PITCommonState *s = opaque;
+
+    return (s->pending_initial_count & ~7U) ? -EINVAL : 0;
+}
+
+static const VMStateDescription vmstate_pit_pending_count = {
+    .name = "i8254/pending-initial-count",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = pit_pending_count_needed,
+    .post_load = pit_pending_count_post_load,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT8(pending_initial_count, PITCommonState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const VMStateDescription vmstate_pit_common = {
     .name = "i8254",
     .version_id = 3,
     .minimum_version_id = 2,
     .pre_save = pit_dispatch_pre_save,
+    .pre_load = pit_pending_count_pre_load,
     .post_load = pit_dispatch_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT32_V(channels[0].irq_disabled, PITCommonState, 3),
@@ -262,6 +297,10 @@ static const VMStateDescription vmstate_pit_common = {
         VMSTATE_INT64(channels[0].next_transition_time,
                       PITCommonState), /* formerly irq_timer */
         VMSTATE_END_OF_LIST()
+    },
+    .subsections = (const VMStateDescription * const []) {
+        &vmstate_pit_pending_count,
+        NULL
     }
 };
 
