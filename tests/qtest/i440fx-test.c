@@ -433,6 +433,36 @@ static void test_piix4_pm_io_decode(void)
     qtest_quit(qts);
 }
 
+static void test_piix_pirq_registers(gconstpointer opaque)
+{
+    bool piix4 = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(piix4 ?
+        "-M pc,x-south-bridge=piix4-isa -nodefaults" :
+        "-M pc,x-south-bridge=PIIX3 -nodefaults");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(1, 0));
+
+    g_assert_nonnull(dev);
+    g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==,
+                    piix4 ? 0x71108086 : 0x70008086);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_CLASS_DEVICE), ==, 0x0601);
+    g_assert_cmphex(qpci_config_readl(dev, 0x60), ==, 0x80808080);
+
+    /* Each byte has four selection bits, a disable bit, and three RO bits. */
+    qpci_config_writel(dev, 0x60, 0xffffffffU);
+    g_assert_cmphex(qpci_config_readl(dev, 0x60), ==, 0x8f8f8f8fU);
+    qpci_config_writel(dev, 0x60, 0x7f7b7a79U);
+    g_assert_cmphex(qpci_config_readl(dev, 0x60), ==, 0x0f0b0a09U);
+    qpci_config_writeb(dev, 0x61, 0xfa);
+    g_assert_cmphex(qpci_config_readl(dev, 0x60), ==, 0x0f0b8a09U);
+
+    qtest_system_reset(qts);
+    g_assert_cmphex(qpci_config_readl(dev, 0x60), ==, 0x80808080);
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -443,6 +473,12 @@ int main(int argc, char **argv)
 
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
+    qtest_add_data_func("i440fx/piix3/pirq-registers",
+                        GINT_TO_POINTER(0), test_piix_pirq_registers);
+    if (qtest_has_device("piix4-isa")) {
+        qtest_add_data_func("i440fx/piix4/pirq-registers",
+                            GINT_TO_POINTER(1), test_piix_pirq_registers);
+    }
     if (qtest_has_device("PIIX4_PM")) {
         qtest_add_func("i440fx/piix4-pm-io-decode", test_piix4_pm_io_decode);
     }
