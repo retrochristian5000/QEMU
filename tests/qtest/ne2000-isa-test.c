@@ -98,14 +98,29 @@ static const ResourceConflict conflicts[] = {
     }, {
         "-device ne2k_isa,iobase=0x300,irq=9 "
         "-device ne2k_isa,iobase=0x300,irq=10",
-        "*NE2000 ISA I/O range 0x300-0x31f overlaps*",
+        "*ne2k_isa: ISA I/O range 0x300-0x31f overlaps*",
     }, {
         "-device ne2k_isa,iobase=0x60,irq=10",
-        "*NE2000 ISA I/O range 0x60-0x7f overlaps*",
+        "*ne2k_isa: ISA I/O range 0x60-0x7f overlaps*",
     }, {
         /* The start is unassigned, but COM1 occupies the last 8 ports. */
         "-serial null -device ne2k_isa,iobase=0x3e0,irq=10",
-        "*NE2000 ISA I/O range 0x3e0-0x3ff overlaps*at port 0x3f8*",
+        "*ne2k_isa: ISA I/O range 0x3e0-0x3ff overlaps*at port 0x3f8*",
+    }, {
+        /* Reverse the creation order: the UART must reject the collision. */
+        "-device ne2k_isa,iobase=0x3e0,irq=10 "
+        "-chardev null,id=uart -device isa-serial,index=0,chardev=uart",
+        "*isa-serial: ISA I/O range 0x3f8-0x3ff overlaps*at port 0x3f8*",
+    }, {
+        "-chardev null,id=uart -device isa-serial,iobase=0x10000,chardev=uart",
+        "*isa-serial: invalid ISA I/O range*",
+    }, {
+        "-chardev null,id=uart -device isa-serial,irq=16,chardev=uart",
+        "*isa-serial: COM1 IRQ 16 is not connected on this bus*",
+    }, {
+        "-chardev null,id=a -device isa-serial,index=0,chardev=a "
+        "-chardev null,id=b -device isa-serial,index=0,chardev=b",
+        "*isa-serial: COM1 is already assigned*",
     },
 };
 

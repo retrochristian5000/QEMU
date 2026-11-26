@@ -397,6 +397,22 @@ static void test_i440fx_cmos_fpu(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_i440fx_isa_serial_indices(void)
+{
+    QTestState *qts = qtest_init(
+        "-M pc -nodefaults -serial none "
+        "-chardev null,id=com2 -device isa-serial,index=1,chardev=com2 "
+        "-chardev null,id=comauto -device isa-serial,chardev=comauto");
+
+    /* A sparse explicit index must not be reused by an automatic one. */
+    qtest_outb(qts, 0x2ff, 0x55);
+    qtest_outb(qts, 0x3ff, 0xaa);
+    g_assert_cmphex(qtest_inb(qts, 0x2ff), ==, 0x55);
+    g_assert_cmphex(qtest_inb(qts, 0x3ff), ==, 0xaa);
+
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_mouse(gconstpointer opaque)
 {
     bool enabled = GPOINTER_TO_INT(opaque);
@@ -541,6 +557,9 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
+    if (qtest_has_device("isa-serial")) {
+        qtest_add_func("i440fx/isa/serial-indices", test_i440fx_isa_serial_indices);
+    }
     qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),
                         test_i440fx_cmos_mouse);
     qtest_add_data_func("i440fx/cmos/mouse-off", GINT_TO_POINTER(0),

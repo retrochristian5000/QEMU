@@ -102,6 +102,21 @@ MemoryRegion *isa_address_space_io(ISADevice *dev);
 ISABus *isa_bus_from_device(ISADevice *dev);
 
 /**
+ * isa_ioport_range_available: Validate a currently unoccupied ISA I/O range.
+ * @dev: ISA device with an assigned parent bus; must not be NULL.
+ * @start: base I/O port, before narrowing to 16 bits.
+ * @size: number of consecutive ports.
+ * @errp: error destination.
+ *
+ * Call before mapping an exclusive I/O region. Does not reserve ports or
+ * validate later relocations. Devices with intentional shared decode must
+ * continue to use the appropriate board-specific registration logic.
+ * Returns true if the range is valid and currently unoccupied.
+ */
+bool isa_ioport_range_available(ISADevice *dev, uint32_t start,
+                                uint32_t size, Error **errp);
+
+/**
  * isa_register_ioport: Install an I/O port region on the ISA bus.
  *
  * Register an I/O port region via memory_region_add_subregion

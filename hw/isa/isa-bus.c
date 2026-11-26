@@ -144,6 +144,41 @@ static inline void isa_init_ioport(ISADevice *dev, uint16_t ioport)
     }
 }
 
+bool isa_ioport_range_available(ISADevice *dev, uint32_t start,
+                                uint32_t size, Error **errp)
+{
+    MemoryRegion *io = isa_address_space_io(dev);
+    const char *name = object_get_typename(OBJECT(dev));
+
+    if (!size || start > UINT16_MAX || size > 0x10000U - start) {
+        error_setg(errp, "%s: invalid ISA I/O range (base=0x%x, size=0x%x)",
+                   name, start, size);
+        return false;
+    }
+
+    /*
+     * The I/O root can itself terminate unassigned accesses. Check each
+     * port so that a root-backed prefix cannot hide an occupied subrange.
+     * This is a check of current decoding, not a permanent reservation.
+     */
+    for (uint32_t offset = 0; offset < size; offset++) {
+        MemoryRegionSection section = memory_region_find(io, start + offset, 1);
+
+        if (!section.mr) {
+            continue;
+        }
+        if (section.mr != io) {
+            error_setg(errp, "%s: ISA I/O range 0x%x-0x%x overlaps '%s' "
+                       "at port 0x%x", name, start, start + size - 1,
+                       memory_region_name(section.mr), start + offset);
+            memory_region_unref(section.mr);
+            return false;
+        }
+        memory_region_unref(section.mr);
+    }
+    return true;
+}
+
 void isa_register_ioport(ISADevice *dev, MemoryRegion *io, uint16_t start)
 {
     memory_region_add_subregion(isa_address_space_io(dev), start, io);

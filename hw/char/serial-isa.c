@@ -53,19 +53,46 @@ static const int isa_serial_irq[MAX_ISA_SERIAL_PORTS] = {
     4, 3, 4, 3
 };
 
+static int serial_isa_collect_indices(DeviceState *dev, void *opaque)
+{
+    uint32_t *used = opaque;
+
+    if (qdev_is_realized(dev) &&
+        object_dynamic_cast(OBJECT(dev), TYPE_ISA_SERIAL)) {
+        ISASerialState *isa = ISA_SERIAL(dev);
+
+        if (isa->index < MAX_ISA_SERIAL_PORTS) {
+            *used |= 1U << isa->index;
+        }
+    }
+    return 0;
+}
+
 static void serial_isa_realizefn(DeviceState *dev, Error **errp)
 {
-    static int index;
+    uint32_t used = 0;
     ISADevice *isadev = ISA_DEVICE(dev);
     ISASerialState *isa = ISA_SERIAL(dev);
     SerialState *s = &isa->state;
+    ISABus *bus = isa_bus_from_device(isadev);
 
-    if (isa->index == -1) {
-        isa->index = index;
+    qbus_walk_children(BUS(bus), serial_isa_collect_indices,
+                       NULL, NULL, NULL, &used);
+    if (isa->index == UINT32_MAX) {
+        for (isa->index = 0; isa->index < MAX_ISA_SERIAL_PORTS; isa->index++) {
+            if (!(used & (1U << isa->index))) {
+                break;
+            }
+        }
     }
     if (isa->index >= MAX_ISA_SERIAL_PORTS) {
         error_setg(errp, "Max. supported number of ISA serial ports is %d.",
                    MAX_ISA_SERIAL_PORTS);
+        return;
+    }
+    if (used & (1U << isa->index)) {
+        error_setg(errp, "isa-serial: COM%u is already assigned",
+                   isa->index + 1);
         return;
     }
     if (isa->iobase == -1) {
@@ -74,10 +101,20 @@ static void serial_isa_realizefn(DeviceState *dev, Error **errp)
     if (isa->isairq == -1) {
         isa->isairq = isa_serial_irq[isa->index];
     }
-    index++;
+    if (isa->isairq >= ISA_NUM_IRQS || !bus->irqs_in ||
+        !bus->irqs_in[isa->isairq]) {
+        error_setg(errp, "isa-serial: COM%u IRQ %u is not connected on this bus",
+                   isa->index + 1, isa->isairq);
+        return;
+    }
+    if (!isa_ioport_range_available(isadev, isa->iobase, 8, errp)) {
+        return;
+    }
 
-    s->irq = isa_get_irq(isadev, isa->isairq);
-    qdev_realize(DEVICE(s), NULL, errp);
+    s->irq = isa_bus_get_irq(bus, isa->isairq);
+    if (!qdev_realize(DEVICE(s), NULL, errp)) {
+        return;
+    }
     qdev_set_legacy_instance_id(dev, isa->iobase, 3);
 
     memory_region_init_io(&s->io, OBJECT(isa), &serial_io_ops, s, "serial", 8);
