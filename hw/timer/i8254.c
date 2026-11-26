@@ -186,10 +186,12 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
                     }
                     if (!(val & 0x10) && !s->status_latched) {
                         /* status latch */
-                        /* XXX: add BCD and null count */
+                        /* BCD counting and deferred reloads remain TODO. */
                         s->status =
                             (pit_get_out(s,
                                          qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) << 7) |
+                            ((pit->pending_initial_count & (1U << channel))
+                             ? 0x40 : 0) |
                             (s->rw_mode << 4) |
                             (s->mode << 1) |
                             s->bcd;
@@ -205,6 +207,10 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
             } else {
                 /* Reprogramming releases any outstanding count latch. */
                 s->count_latched = 0;
+                /* Preserve the default model's historical status semantics. */
+                if (ps->model && !ps->is_8253) {
+                    pit->pending_initial_count |= 1U << channel;
+                }
                 s->rw_mode = access;
                 s->read_state = access;
                 s->write_state = access;
@@ -220,9 +226,11 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
         default:
         case RW_STATE_LSB:
             pit_load_count(s, val);
+            pit->pending_initial_count &= ~(1U << addr);
             break;
         case RW_STATE_MSB:
             pit_load_count(s, val << 8);
+            pit->pending_initial_count &= ~(1U << addr);
             break;
         case RW_STATE_WORD0:
             s->write_latch = val;
@@ -230,6 +238,8 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
             break;
         case RW_STATE_WORD1:
             pit_load_count(s, s->write_latch | (val << 8));
+            /* The existing timing engine loads complete counts immediately. */
+            pit->pending_initial_count &= ~(1U << addr);
             s->write_state = RW_STATE_WORD0;
             break;
         }
@@ -418,7 +428,7 @@ static void pit_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_parent_realize(dc, pit_realizefn, &pc->parent_realize);
-    dc->desc = "Intel 8254-compatible programmable interval timer";
+    dc->desc = "Intel 8253/8254-compatible ISA programmable interval timer";
     k->set_channel_gate = pit_set_channel_gate;
     k->get_channel_info = pit_get_channel_info_common;
     k->post_load = pit_post_load;
