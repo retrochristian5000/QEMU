@@ -626,8 +626,10 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     /* Never patch a chain across the one-instruction mode boundary, or
      * into an exact-count, breakpoint or interrupt-specific translation. */
     if ((source_flags | dest_flags) & CF_ONE_INSN_CHAIN) {
-        if (source_flags != dest_flags || tb->icount != 1 ||
-            tb_next->icount != 1) {
+        if (source_flags != dest_flags ||
+            (source_flags & (CF_NO_GOTO_TB | CF_NO_GOTO_PTR | CF_SINGLE_STEP |
+                             CF_USE_ICOUNT | CF_NOIRQ | CF_BP_PAGE)) ||
+            tb->icount != 1 || tb_next->icount != 1) {
             return;
         }
     }
