@@ -275,6 +275,11 @@ static GByteArray *pci_bus_fw_cfg_gen_data(Object *obj, Error **errp)
     return byte_array;
 }
 
+static bool pci_bus_get_agp_port(Object *obj, Error **errp)
+{
+    return pci_bus_is_agp(PCI_BUS(obj));
+}
+
 static void pci_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
@@ -294,6 +299,10 @@ static void pci_bus_class_init(ObjectClass *klass, const void *data)
     pbc->numa_node = pcibus_numa_node;
 
     fwgc->get_data = pci_bus_fw_cfg_gen_data;
+    object_class_property_add_bool(klass, "agp-port",
+                                   pci_bus_get_agp_port, NULL);
+    object_class_property_set_description(klass, "agp-port",
+        "AGP-facing topology (does not imply AGP protocol support)");
 }
 
 static const TypeInfo pci_bus_info = {

@@ -26,6 +26,8 @@ enum PCIBusFlags {
     PCI_BUS_EXTENDED_CONFIG_SPACE                           = 0x0002,
     /* This is a CXL Type BUS */
     PCI_BUS_CXL                                             = 0x0004,
+    /* Physical AGP-facing segment; not a claim of AGP protocol support. */
+    PCI_BUS_AGP                                             = 0x0008,
 };
 
 #define PCI_NO_PASID UINT32_MAX

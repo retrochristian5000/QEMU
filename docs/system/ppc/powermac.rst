@@ -462,8 +462,10 @@ Hardware status
      - Partial
    * - AGP
      - 32-bit AGP-2X graphics slot on the UniNorth AGP path
-     - A separate UniNorth AGP PCI bus, fixed AGP-facing address apertures and
-       the automatic display device at slot ``0x10``.  AGP protocol behavior
+     - A separate UniNorth AGP-facing segment, marked by the read-only
+       QOM bus property ``agp-port``, fixed address apertures and the automatic
+       display device at slot ``0x10``. The existing ``pci.0`` bus name and
+       PCI-compatible device placement are preserved. AGP protocol behavior
        and the UniNorth GART are not yet implemented.
      - High
      - Partial

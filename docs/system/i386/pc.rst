@@ -82,6 +82,20 @@ paths would attempt to publish the same fw_cfg filename.
 Experimental Intel 440BX PC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+PCI and AGP are distinct physical interfaces. The common PCI bus layer
+provides a read-only QOM property ``agp-port`` for host-selected AGP-facing
+segments. This preserves existing PCI configuration-space access, bus
+names and device attachment behavior; it does not advertise AGP
+capabilities or implement graphics address remapping. The 440FX and
+current AGP-disabled 440BX root buses report false.
+
+A future AGP-enabled 440BX must expose the 8086:7190 host function and
+the 8086:7191 bridge at PCI bus 0 device 1, with a separate graphics
+segment, aperture and GART. The existing PIIX placement and associated
+interrupt/firmware tables must be considered before adding that bridge.
+Do not advertise an AGP device merely by attaching it to the conventional
+PCI root. See Intel 82443BX datasheet, sections 3.2, 3.4 and 4.1.
+
 The fork includes an opt-in ``pc-i440bx`` machine with the 82443BX
 host bridge in its AGP-disabled strap configuration (8086:7192) and
 the existing PIIX4 southbridge. The legacy PC configuration mechanism

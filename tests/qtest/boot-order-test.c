@@ -194,6 +194,7 @@ static void test_pmac_powermac3_1_display_pair(gconstpointer data)
 {
     const pmac_display_pair *pair = data;
     QTestState *qts;
+    QDict *reply;
 
     if (!qtest_has_machine("powermac3_1")) {
         g_test_skip("Machine is not available");
@@ -215,6 +216,23 @@ static void test_pmac_powermac3_1_display_pair(gconstpointer data)
                       "-device %s,bus=pci.0,addr=0x10,id=agp-display "
                       "-device %s,id=pci-display",
                       pair->agp, pair->pci);
+
+    /* Preserve legacy PCI bus names while distinguishing AGP topology. */
+    reply = qtest_qmp_assert_success_ref(qts,
+        "{'execute':'qom-get','arguments':"
+        "{'path':'pci.0','property':'agp-port'}}");
+    g_assert_true(qdict_get_bool(reply, "return"));
+    qobject_unref(reply);
+
+    for (unsigned i = 1; i <= 2; i++) {
+        g_autofree char *path = g_strdup_printf("pci.%u", i);
+
+        reply = qtest_qmp_assert_success_ref(qts,
+            "{'execute':'qom-get','arguments':"
+            "{'path':%s,'property':'agp-port'}}", path);
+        g_assert_false(qdict_get_bool(reply, "return"));
+        qobject_unref(reply);
+    }
     qtest_quit(qts);
 }
 

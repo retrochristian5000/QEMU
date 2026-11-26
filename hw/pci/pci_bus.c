@@ -124,6 +124,22 @@ bool pci_bus_is_express(const PCIBus *bus)
     return object_dynamic_cast(OBJECT(bus), TYPE_PCIE_BUS);
 }
 
+bool pci_bus_is_agp(const PCIBus *bus)
+{
+    return !!(bus->flags & PCI_BUS_AGP);
+}
+
+void pci_bus_mark_agp(PCIBus *bus)
+{
+    /* AGP uses conventional PCI configuration transactions, not PCIe. */
+    assert(!pci_bus_is_express(bus));
+    assert(!(bus->flags & PCI_BUS_CXL));
+    for (unsigned i = 0; i < ARRAY_SIZE(bus->devices); i++) {
+        assert(!bus->devices[i]);
+    }
+    bus->flags |= PCI_BUS_AGP;
+}
+
 void pci_root_bus_init(PCIBus *bus, size_t bus_size, DeviceState *parent,
                        const char *name,
                        MemoryRegion *mem, MemoryRegion *io,

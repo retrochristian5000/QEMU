@@ -32,6 +32,13 @@ static void test_i440bx_config(void)
     g_assert_cmpstr(qdict_get_str(reply, "return"), ==, "i440BX-pcihost");
     qobject_unref(reply);
 
+    /* A 440BX with AGP disabled must not mark its PCI root as AGP. */
+    reply = qtest_qmp_assert_success_ref(s,
+        "{'execute':'qom-get','arguments':"
+        "{'path':'pci.0','property':'agp-port'}}");
+    g_assert_false(qdict_get_bool(reply, "return"));
+    qobject_unref(reply);
+
     qtest_outl(s, 0xcf8, 0x80000000);
     g_assert_cmphex(qtest_inl(s, 0xcfc), ==, 0x71928086);
     qtest_outl(s, 0xcf8, 0x80000004);

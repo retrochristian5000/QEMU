@@ -131,6 +131,9 @@ static void powermac3_1_machine_init(MachineState *machine)
     agp_host = PCI_HOST_BRIDGE(object_resolve_type_unambiguous(
         TYPE_UNI_NORTH_AGP_HOST_BRIDGE, &error_abort));
     agp_bus = agp_host->bus;
+    if (!pci_bus_is_agp(agp_bus)) {
+        error_setg(&error_fatal, "PowerMac3,1 requires an AGP-facing bus");
+    }
     agp_qbus = BUS(agp_bus);
 
     /*

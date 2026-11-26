@@ -188,6 +188,7 @@ static void pci_u3_agp_realize(DeviceState *dev, Error **errp)
                                    &s->pci_io,
                                    PCI_DEVFN(11, 0), 4, TYPE_PCI_BUS);
 
+    pci_bus_mark_agp(h->bus);
     pci_create_simple(h->bus, PCI_DEVFN(11, 0), "u3-agp");
 }
 
@@ -232,6 +233,7 @@ static void pci_unin_agp_realize(DeviceState *dev, Error **errp)
                                    &s->pci_io,
                                    PCI_DEVFN(11, 0), 4, TYPE_PCI_BUS);
 
+    pci_bus_mark_agp(h->bus);
     pci_create_simple(h->bus, PCI_DEVFN(11, 0), "uni-north-agp");
 
     /*

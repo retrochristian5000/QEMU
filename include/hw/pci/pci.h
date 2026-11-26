@@ -294,6 +294,9 @@ typedef void (*pci_bus_fn)(PCIBus *b, void *opaque);
 typedef void *(*pci_bus_ret_fn)(PCIBus *b, void *opaque);
 
 bool pci_bus_is_express(const PCIBus *bus);
+/* Fixed topology classification, set by the host before adding devices. */
+bool pci_bus_is_agp(const PCIBus *bus);
+void pci_bus_mark_agp(PCIBus *bus);
 
 void pci_root_bus_init(PCIBus *bus, size_t bus_size, DeviceState *parent,
                        const char *name,
