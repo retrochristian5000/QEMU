@@ -30,10 +30,29 @@
 #include "hw/intc/i8259.h"
 #include "hw/core/irq.h"
 #include "system/kvm.h"
+#include "system/tcg.h"
+#include "qemu/host-utils.h"
 
 /* TSC handling */
 uint64_t cpu_get_tsc(CPUX86State *env)
 {
+    if (tcg_enabled() && env->tsc_khz > 0) {
+        uint64_t ns = cpus_get_virtual_clock();
+        uint64_t khz = env->tsc_khz;
+
+        /*
+         * An explicitly configured frequency counts virtual time, not
+         * host cycles. Split the multiplier so muldiv64's 32-bit operands
+         * suffice even for large configured frequencies. Unsigned addition
+         * and multiplication preserve the architectural 64-bit wraparound.
+         * All vCPUs use the same clock; the instruction helper applies
+         * the per-vCPU TSC offset separately.
+         */
+        return ns * (khz / 1000000) +
+               muldiv64(ns, khz % 1000000, 1000000);
+    }
+
+    /* Preserve the historical default and other accelerator behavior. */
     return cpus_get_elapsed_ticks();
 }
 

@@ -146,3 +146,28 @@ Compare repeated cold boots, virtual PIT progress and the first x86 divide
 exception during startup if the error persists. Fixed icount is a diagnostic
 and optional compatibility configuration, not a change to TCG defaults or a
 verified fix for every NDIS initialization failure.
+
+Pentium MMX topology and TSC
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing ``pentium`` CPU model identifies family 5, model 4
+(Pentium with MMX technology). Use one core and one thread per socket
+to avoid synthesizing a multicore or SMT Pentium package. For a Windows
+9x cold-boot timing comparison, replace the CPU and SMP options with::
+
+    -cpu pentium,tsc-frequency=200000000
+    -smp cpus=1,sockets=1,cores=1,threads=1,maxcpus=1
+
+With system TCG, a positive configured TSC frequency now scales the VM's
+virtual nanosecond clock. This changes the counter rate, not the number
+of executed instructions per second, and does not guarantee that a
+guest busy-loop calibration will succeed. Without an explicit frequency
+the historical TCG tick source is unchanged. Do not mix saved states from
+before and after this change when a nonzero frequency was configured;
+use a cold boot. Hardware accelerator behavior is unchanged.
+
+For a topology-only four-vCPU comparison, use four sockets with one core
+and thread each. This is a synthetic SMP diagnostic, not a claim that
+a particular Pentium MMX motherboard supported four sockets::
+
+    -smp cpus=4,sockets=4,cores=1,threads=1,maxcpus=4
