@@ -139,12 +139,13 @@ class SeaBiosConfigTests(unittest.TestCase):
 
             output = root / 'build/firmware/seabios/seabios-128k/bios.bin'
 
-            def build(profile, cross_prefix='', elf_split='0'):
+            def build(profile, cross_prefix='', elf_split='0', inline_profile='Default'):
                 result = subprocess.run(
                     ['make', 'build-seabios-config-seabios-128k',
                      'SEABIOS_CLANG_SIZE_OPT=' + profile,
                      'SEABIOS_CROSS_PREFIX=' + cross_prefix,
-                     'SEABIOS_CLANG_ELF_SPLIT=' + elf_split],
+                     'SEABIOS_CLANG_ELF_SPLIT=' + elf_split,
+                     'SEABIOS_CLANG_INLINE_PROFILE=' + inline_profile],
                     cwd=roms, capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 0,
@@ -172,6 +173,9 @@ class SeaBiosConfigTests(unittest.TestCase):
             output.write_text('preserve ELF split incremental build\n')
             build('Os', 'alternate-', '1')
             self.assertEqual(output.read_text(), 'preserve ELF split incremental build\n')
+            build('Os', 'alternate-', '1', 'CompactFlat')
+            self.assertEqual(output.read_text(), 'Os\nalternate-\n')
+            self.assertIn('clang_inline_profile=CompactFlat', stamp.read_text().splitlines())
             self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
 
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):

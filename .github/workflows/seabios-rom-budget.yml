@@ -172,6 +172,35 @@ jobs:
           python3 scripts/tests/test-seabios-config.py \
             SeaBiosConfigTests.test_clang_profile_change_invalidates_cached_firmware
 
+      - name: Measure compact flat-code inlining independently of the strict ROM gate
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_INLINE_PROFILE: CompactFlat
+          SEABIOS_CLANG_SIZE_OPT: OzSegmented
+          SEABIOS_CLANG_ELF_SPLIT: '0'
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-clang-compact-inline"
+          variant=seabios-128k
+          log="$RUNNER_TEMP/$variant-compact-inline.log"
+          image="$root/$variant/bios.bin.raw"
+          if make -C roms "build-seabios-config-$variant" \
+              "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+              "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+            test "$(wc -c < "$root/$variant/bios.bin")" -eq 131072
+          elif ! test -s "$image" || ! grep -Fq "ROM doesn't fit (" "$log" ||
+               test "$(wc -c < "$image")" -le 131072; then
+            tail -n 90 "$log" >&2
+            exit 1
+          fi
+          test -s "$image"
+          bytes="$(wc -c < "$image")"
+          printf 'CompactFlat: %s raw bytes; ROM headroom=%d bytes\n' \
+            "$bytes" "$((131072 - bytes))"
+          grep -E '^(16bit size:|32bit |ROM size audit:|ROM alignment audit:|Total size:|Error!)' \
+            "$log" || true
+
       - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'

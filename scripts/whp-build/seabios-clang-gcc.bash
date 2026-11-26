@@ -57,6 +57,17 @@ case "$elf_split" in
         ;;
 esac
 
+# Keep the experiment scoped to 32-bit flat size-optimized C code.
+# The normal inliner still honors always_inline and noinline.
+inline_profile="${SEABIOS_CLANG_INLINE_PROFILE:-Default}"
+case "$inline_profile" in
+    Default|CompactFlat) ;;
+    *)
+        printf 'error: SEABIOS_CLANG_INLINE_PROFILE must be Default or CompactFlat\n' >&2
+        exit 2
+        ;;
+esac
+
 link_step=1
 action=""
 merge_constants=1
@@ -243,6 +254,22 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         compile_args+=(-MF "$depfile")
     fi
 
+    if [[ "$inline_profile" == CompactFlat ]]; then
+        flat_mode=0
+        size_optimized=0
+        for arg in "${compile_args[@]}"; do
+            case "$arg" in
+                -DMODESEGMENT=0) flat_mode=1 ;;
+                -DMODESEGMENT=1) flat_mode=0 ;;
+                -Os|-Oz) size_optimized=1 ;;
+                -O*) size_optimized=0 ;;
+            esac
+        done
+        if ((flat_mode && size_optimized)); then
+            driver_args+=(-mllvm -inline-threshold=5
+                         -mllvm -inlinehint-threshold=5)
+        fi
+    fi
     if [[ "$elf_split" == 1 ]]; then
         driver_args+=(-mllvm -x86-elf-separate-constants)
     fi

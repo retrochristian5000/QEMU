@@ -272,6 +272,56 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 self.assertIn('.text', elf32_sections(obj))
 
+    def test_compact_flat_inliner_preserves_mandatory_inline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            clang = prefix / 'llvm' / 'bin' / 'clang'
+            clang.unlink()
+            log = root / 'arguments'
+            clang.write_text(
+                '#!/usr/bin/env python3\n'
+                'import json, os, sys\n'
+                f'with open({str(log)!r}, "a") as f:\n'
+                '    f.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                f'os.execv({self.clang!r}, [{self.clang!r}, *sys.argv[1:]])\n',
+                encoding='utf-8')
+            clang.chmod(0o755)
+            source = root / 'inline.c'
+            source.write_text(
+                'static __attribute__((always_inline)) inline int required(int x) '
+                '{ return x + 1; }\n'
+                '__attribute__((noinline)) int retained(int x) { return x + 2; }\n'
+                'int run(int x) { return retained(required(x)); }\n',
+                encoding='utf-8')
+            import json
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_ELF_SPLIT'] = '0'
+            for profile, mode, optimize, expected in (
+                ('Default', '0', '-Os', False),
+                ('CompactFlat', '0', '-Os', True),
+                ('CompactFlat', '1', '-Os', False),
+                ('CompactFlat', '0', '-O0', False),
+            ):
+                with self.subTest(profile=profile, mode=mode, optimize=optimize):
+                    env['SEABIOS_CLANG_INLINE_PROFILE'] = profile
+                    log.write_text('')
+                    output = root / 'inline.s'
+                    result = subprocess.run([
+                        str(compiler), '-m32', '-march=i386', optimize,
+                        '-DMODESEGMENT=' + mode, '-ffreestanding',
+                        '-fno-pic', '-fno-pie', '-fno-merge-constants',
+                        '-S', '-c', str(source), '-o', str(output),
+                    ], env=env, text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    args = json.loads(log.read_text().splitlines()[0])
+                    for flag in ('-inline-threshold=5', '-inlinehint-threshold=5'):
+                        self.assertEqual(flag in args, expected)
+                    body = function_assembly(output.read_text(), 'run')
+                    self.assertNotRegex(body, r'\bcall[l]?\s+required')
+                    self.assertRegex(body, r'\b(?:call[l]?|jmp[l]?)\s+retained')
+
     def test_optional_assembly_audit_does_not_change_firmware_object(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
