@@ -3806,6 +3806,24 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .xlevel = 0,
         .model_id = "",
         .cache_info = &legacy_intel_cpuid2_cache_info,
+        .versions = (X86CPUVersionDefinition[]) {
+            {
+                .version = 1,
+                .alias = "pentium_mmx",
+                .note = "Pentium MMX (P55C), historical QEMU Pentium",
+            },
+            {
+                .version = 2,
+                .note = "Pentium (P54C), without MMX",
+                .props = (PropValue[]) {
+                    { "model", "2" },
+                    { "stepping", "5" },
+                    { "mmx", "off" },
+                    { /* end of list */ }
+                },
+            },
+            { /* end of list */ }
+        },
     },
     {
         .name = "pentium2",
@@ -8614,7 +8632,12 @@ static void x86_register_cpudef_types(const X86CPUDefinition *def)
     /* Unversioned model: */
     m = g_new0(X86CPUModel, 1);
     m->cpudef = def;
-    m->version = CPU_VERSION_AUTO;
+    /*
+     * The historical Pentium definition is actually a P55C. Keep its
+     * versioned identity and pentium_mmx alias, but make the unversioned
+     * Pentium name select the non-MMX P54C requested by legacy guests.
+     */
+    m->version = !strcmp(def->name, "pentium") ? 2 : CPU_VERSION_AUTO;
     m->is_alias = true;
     x86_register_cpu_model_type(def->name, m);
 
