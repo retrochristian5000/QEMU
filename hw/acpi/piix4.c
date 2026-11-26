@@ -610,6 +610,8 @@ static const Property piix4_pm_properties[] = {
                      acpi_memory_hotplug.is_enabled, true),
     DEFINE_PROP_BOOL("strict-io-decode", PIIX4PMState, strict_io_decode,
                      false),
+    DEFINE_PROP_BOOL("strict-acpi1-fadt", PIIX4PMState, strict_acpi1_fadt,
+                     false),
     DEFINE_PROP_BOOL("smm-compat", PIIX4PMState, smm_compat, false),
     DEFINE_PROP_BOOL("smm-enabled", PIIX4PMState, smm_enabled, false),
     DEFINE_PROP_BOOL("x-not-migrate-acpi-index", PIIX4PMState,
