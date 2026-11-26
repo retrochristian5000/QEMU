@@ -941,7 +941,9 @@ static int cirrus_bitblt_cputovideo(CirrusVGAState * s)
         if (s->cirrus_blt_mode & CIRRUS_BLTMODE_COLOREXPAND) {
             w = s->cirrus_blt_width / s->cirrus_blt_pixelwidth;
             if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_DWORDGRANULARITY)
-                s->cirrus_blt_srcpitch = ((w + 31) >> 5);
+                /* GR33[0]: source rows are padded to a whole DWORD.
+                 * The transfer buffer and pitch are measured in bytes. */
+                s->cirrus_blt_srcpitch = ((w + 31) >> 5) * 4;
             else
                 s->cirrus_blt_srcpitch = ((w + 7) >> 3);
         } else {
