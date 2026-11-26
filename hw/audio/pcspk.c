@@ -223,6 +223,7 @@ static void pcspk_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = pcspk_realizefn;
+    dc->desc = "PC speaker (PIT-driven motherboard audio)";
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->vmsd = &vmstate_spk;
     device_class_set_props(dc, pcspk_properties);
