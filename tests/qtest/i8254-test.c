@@ -246,6 +246,44 @@ static void test_i8254_model(void)
     qtest_quit(s);
 }
 
+static uint8_t read_status(QTestState *s, unsigned channel)
+{
+    qtest_outb(s, PIT_CONTROL, 0xe0 | (2 << channel));
+    return qtest_inb(s, PIT_COUNTER0 + channel);
+}
+
+static void test_i8254_initial_count(void)
+{
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+                              "-global isa-pit.model=i8254");
+
+    /* Program every counter, but only complete channel 1's count. */
+    for (unsigned i = 0; i < 3; i++) {
+        qtest_outb(s, PIT_CONTROL, PIT_MODE3 | (i << 6));
+        g_assert_cmphex(read_status(s, i) & 0x7f, ==, 0x76);
+    }
+    qtest_outb(s, PIT_COUNTER0 + 1, 0x34);
+    g_assert_cmphex(read_status(s, 1) & 0x40, ==, 0x40);
+    qtest_outb(s, PIT_COUNTER0 + 1, 0x12);
+    g_assert_cmphex(read_status(s, 1) & 0x40, ==, 0);
+    g_assert_cmphex(read_status(s, 0) & 0x40, ==, 0x40);
+    g_assert_cmphex(read_status(s, 2) & 0x40, ==, 0x40);
+
+    /* An unread status latch must preserve its earlier null-count bit. */
+    qtest_outb(s, PIT_CONTROL, PIT_STATUS0);
+    qtest_outb(s, PIT_COUNTER0, 0x78);
+    qtest_outb(s, PIT_COUNTER0, 0x56);
+    qtest_outb(s, PIT_CONTROL, PIT_STATUS0);
+    g_assert_cmphex(qtest_inb(s, PIT_COUNTER0) & 0x40, ==, 0x40);
+    g_assert_cmphex(read_status(s, 0) & 0x40, ==, 0);
+    g_assert_cmphex(read_latched_count(s), ==, 0x5678);
+
+    /* Reset clears the pending programming state. */
+    qtest_system_reset(s);
+    g_assert_cmphex(read_status(s, 2) & 0x40, ==, 0);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -256,6 +294,7 @@ int main(int argc, char **argv)
     qtest_add_func("/i8254/reprogram-latch", test_reprogram_latch);
     qtest_add_func("/i8254/model/i8253", test_i8253_model);
     qtest_add_func("/i8254/model/i8254", test_i8254_model);
+    qtest_add_func("/i8254/model/initial-count", test_i8254_initial_count);
 
     return g_test_run();
 }
