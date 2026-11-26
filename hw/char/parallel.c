@@ -616,6 +616,7 @@ static void parallel_isa_class_initfn(ObjectClass *klass, const void *data)
     AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
     dc->realize = parallel_isa_realizefn;
+    dc->desc = "ISA parallel printer port";
     dc->vmsd = &vmstate_parallel_isa;
     adevc->build_dev_aml = parallel_isa_build_aml;
     device_class_set_props(dc, parallel_isa_properties);
