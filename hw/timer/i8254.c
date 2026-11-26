@@ -64,10 +64,20 @@ static int pit_get_count(PITChannelState *s)
     case 5:
         counter = (s->count - d) & 0xffff;
         break;
-    case 3:
-        /* XXX: may be incorrect for odd counts */
-        counter = s->count - ((2 * d) % s->count);
+    case 3: {
+        unsigned int phase = d % s->count;
+        unsigned int high_ticks = (s->count + 1) / 2;
+
+        /*
+         * The 8254 loads an even counting element in both half-cycles.
+         * For odd divisors, the high half includes one tick at zero.
+         */
+        if (phase >= high_ticks) {
+            phase -= high_ticks;
+        }
+        counter = (s->count & ~1) - 2 * phase;
         break;
+    }
     default:
         counter = s->count - (d % s->count);
         break;
