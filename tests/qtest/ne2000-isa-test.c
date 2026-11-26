@@ -83,11 +83,77 @@ static void test_bus_reset(void)
     qtest_quit(s);
 }
 
+typedef struct ResourceConflict {
+    const char *args;
+    const char *diagnostic;
+} ResourceConflict;
+
+static const ResourceConflict conflicts[] = {
+    {
+        "-device ne2k_isa,iobase=0x301,irq=9",
+        "*NE2000 ISA I/O base 0x301 must be aligned to 0x20*",
+    }, {
+        "-device ne2k_isa,iobase=0x300,irq=2",
+        "*NE2000 ISA IRQ 2 is unsupported*",
+    }, {
+        "-device ne2k_isa,iobase=0x300,irq=9 "
+        "-device ne2k_isa,iobase=0x300,irq=10",
+        "*NE2000 ISA I/O range 0x300-0x31f overlaps*",
+    }, {
+        "-device ne2k_isa,iobase=0x60,irq=10",
+        "*NE2000 ISA I/O range 0x60-0x7f overlaps*",
+    },
+};
+
+static void test_resource_conflict(gconstpointer opaque)
+{
+    const ResourceConflict *test = opaque;
+
+    if (g_test_subprocess()) {
+        QTestState *s = qtest_initf("-M pc -nodefaults %s", test->args);
+
+        qtest_quit(s);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr(test->diagnostic);
+}
+
+static void test_separate_io_windows(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults "
+                              "-device ne2k_isa,iobase=0x300,irq=10 "
+                              "-device ne2k_isa,iobase=0x320,irq=11");
+
+    qtest_outb(s, 0x300, CR_STOP_NODMA);
+    qtest_outb(s, 0x320, CR_STOP_NODMA);
+    qtest_outb(s, 0x307, 0x7f);
+    qtest_outb(s, 0x327, 0x7f);
+    qtest_outb(s, 0x30a, 0);
+    qtest_outb(s, 0x30b, 0);
+    qtest_outb(s, 0x300, CR_START | CR_REMOTE_READ);
+    g_assert_cmphex(qtest_inb(s, 0x307), ==, ISR_RDC);
+    g_assert_cmphex(qtest_inb(s, 0x327), ==, ISR_RST);
+    qtest_inb(s, 0x31f);
+    g_assert_cmphex(qtest_inb(s, 0x307), ==, ISR_RST);
+    g_assert_cmphex(qtest_inb(s, 0x320), ==, CR_STOP_NODMA);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ne2000/isa/reset-irq", test_reset_irq);
     qtest_add_func("/ne2000/isa/bus-reset", test_bus_reset);
+    qtest_add_func("/ne2000/isa/separate-io-windows",
+                   test_separate_io_windows);
+    for (unsigned i = 0; i < ARRAY_SIZE(conflicts); i++) {
+        g_autofree char *name = g_strdup_printf(
+            "/ne2000/isa/resource-conflict/%u", i);
+
+        qtest_add_data_func(name, &conflicts[i], test_resource_conflict);
+    }
 
     return g_test_run();
 }
