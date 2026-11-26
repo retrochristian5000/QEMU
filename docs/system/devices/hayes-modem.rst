@@ -31,7 +31,8 @@ Supported models are:
 
 ``att-paradyne-3740``
   Paradyne DataPort Express 3740 command profile. The historical 3740 was
-  an external 28.8 Kbit/s data/fax modem with a serial connection.
+  an external modem with a serial connection, 28.8 Kbit/s data and
+  14.4 Kbit/s fax (Class 1 and Class 2).
   The previous model spelling ``att-paradyne-dataport-3740`` remains accepted.
 
 An unsupported model name stops chardev creation with an error.
@@ -172,6 +173,34 @@ References:
 * 3740 command table: https://arvutimuuseum.ee/th99/t/P-R/53813.htm
 * Rockwell AT Command Reference Manual 1048 (1996), V.FC rate table:
   https://manualzz.com/doc/29221493/rockwell-rc288acx--rc144acx-modem-reference-manual
+
+DataPort 3740 fax discovery
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The 3740 hardware reference establishes a 14400 bit/s maximum fax rate
+independent of its 28800 bit/s data rate, with V.17, V.29 and V.27ter
+fax modulation. The 3740 exposes data (0), fax Class 1 (1) and fax
+Class 2 (2) through ``+FCLASS``. Class 2.0 and voice are not supported.
+Class 1 modulation test queries (``+FTM=?``, ``+FRM=?``, ``+FTH=?``
+and ``+FRH=?``) use the documented Rockwell 14400 bit/s code list.
+Class 2 provides manufacturer/model/revision queries and ``+FDCC``
+read, write and test forms; the latter uses the Rockwell reference's
+example parameter ranges and defaults, with rate code 5 denoting
+14400 bit/s. These are provisional command-layer values, not a
+verified original 3740 firmware transcript or negotiated T.30 session.
+The fax settings do not change the data rate. Factory reset restores
+data class and fax configuration defaults.
+
+The configuration/discovery layer does not transmit fax data. Class 1
+send/receive commands and Class 2 transfer commands return ERROR.
+With no line, dialing reports the existing no-dial-tone/no-carrier
+result; even with a TCP endpoint, fax-mode dialing returns NO CARRIER
+rather than entering a raw data stream. No other modem profile's fax
+capability report is expanded by this change.
+
+References: 3740 hardware table and Rockwell command manual 1048,
+sections 5.2, 6.2 and 6.5 (links above). Windows' original Unimodem
+fingerprint is still unverified.
 
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,

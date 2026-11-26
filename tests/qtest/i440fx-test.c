@@ -598,6 +598,13 @@ static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
         modem_command(qts, command, i == 3 ? "3740" : "OK");
     }
     modem_command(qts, "AT%V\r", "QEMU DataPort Express 3740 profile");
+    modem_command(qts, "AT+FCLASS=?\r", "0,1,2");
+    modem_command(qts, "AT+FCLASS=1\r", "OK");
+    modem_command(qts, "AT+FTM=?\r", "145,146");
+    modem_command(qts, "AT+FCLASS=2\r", "OK");
+    modem_command(qts, "AT+FMDL?\r", "DataPort Express 3740");
+    modem_command(qts, "AT+FDCC?\r", "0,5,0,2,0,0,0,0");
+    modem_command(qts, "AT+FCLASS=0\r", "OK");
 
     /* UART reset must drop DTR even on a separately attached backend. */
     qtest_system_reset(qts);

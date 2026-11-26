@@ -439,6 +439,64 @@ static void test_dataport_3740_modulation(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_3740_fax_discovery(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-dataport-fax", "att-paradyne-3740");
+    int lines = 0;
+
+    modem_frontend_init(&fe, &out, chr);
+    modem_command(&fe, &out, "ATE0\r");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT+FCLASS=?\r"), ==,
+                    "\r\n0,1,2\r\n\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FTM=?\r"),
+                             "24,48,72,73,74,96,97,98,121,122,145,146");
+    assert_response_contains(modem_command(&fe, &out, "AT+FRH=?\r"),
+                             "3,24,48,72,73,74,96,97,98,121,122,145,146");
+    assert_response_contains(modem_command(&fe, &out, "AT+FTM=146\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=2.0\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS?\r"),
+                             "\r\n1\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=2\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FMFR?\r"),
+                             "AT&T Paradyne");
+    assert_response_contains(modem_command(&fe, &out, "AT+FMDL?\r"),
+                             "DataPort Express 3740");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC=?\r"),
+                             "(0-5)");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC?\r"),
+                             "0,5,0,2,0,0,0,0");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC=0,3\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC=1,6\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC?\r"),
+                             "0,3,0,2,0,0,0,0");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "DCE:28800");
+    assert_response_contains(modem_command(&fe, &out, "ATD0\r"),
+                             "NO DIALTONE");
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_false(lines & CHR_TIOCM_CAR);
+    assert_response_contains(modem_command(&fe, &out, "AT+FDT\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS?\r"),
+                             "\r\n0\r\n");
+    modem_command(&fe, &out, "AT+FCLASS=2\r");
+    assert_response_contains(modem_command(&fe, &out, "AT+FDCC?\r"),
+                             "0,5,0,2,0,0,0,0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -448,6 +506,8 @@ static void test_generic_modem_rejects_paradyne_controls(void)
     const char *response;
 
     modem_frontend_init(&fe, &out, chr);
+    response = modem_command(&fe, &out, "AT+FCLASS=2\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\Q3\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\D1\r");
@@ -483,6 +543,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-fax-discovery",
+                    test_dataport_3740_fax_discovery);
     g_test_add_func("/modem/paradyne/3740-modulation",
                     test_dataport_3740_modulation);
     g_test_add_data_func("/modem/paradyne/family-3711",

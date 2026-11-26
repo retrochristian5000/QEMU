@@ -74,6 +74,7 @@ typedef enum DataPortHighSpeedMode {
 typedef struct ModemModel {
     const char *name;
     int connect_speed;
+    int max_fax_rate; /* Separate from the data DCE rate. */
     bool supports_voice;
     bool paradyne_commands;
     bool dataport_3740_line;
@@ -144,6 +145,7 @@ static const ModemModel modem_models[] = {
     {
         .name = MODEM_PARADYNE_3740,
         .connect_speed = 28800,
+        .max_fax_rate = 14400,
         .paradyne_commands = true,
         .dataport_3740_line = true,
         /* The archived DataPort Express V.34 driver requests \N7. */
@@ -206,6 +208,7 @@ struct ModemChardev {
     bool dataport_legacy_rate;
 
     int service_class;
+    uint8_t fax_dcc[8]; /* Class 2 requested capabilities, not negotiated. */
     int voice_line;
     int voice_compression;
     int voice_sample_rate;
@@ -393,6 +396,11 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->dataport_legacy_rate = false;
     modem->connect_speed = modem->model->connect_speed;
     modem->service_class = 0;
+    memset(modem->fax_dcc, 0, sizeof(modem->fax_dcc));
+    if (modem->model->max_fax_rate) {
+        modem->fax_dcc[1] = modem->model->max_fax_rate / 2400 - 1;
+        modem->fax_dcc[3] = 2; /* Unlimited page length. */
+    }
     modem_voice_defaults(modem);
     modem_update_carrier(modem);
 }
@@ -732,6 +740,12 @@ static void modem_dial(ModemChardev *modem)
                                     MODEM_RESULT_NO_DIALTONE);
         return;
     }
+    if (modem->model->max_fax_rate && modem->service_class != 0) {
+        /* The TCP byte stream cannot carry an analogue fax session. */
+        modem_hangup(modem, false);
+        modem_result(modem, MODEM_RESULT_NO_CARRIER);
+        return;
+    }
     if (!modem->tcp_host) {
         modem_connect(modem);
         return;
@@ -764,7 +778,8 @@ static bool modem_handle_service_class(ModemChardev *modem,
     p += strlen(prefix);
 
     if (g_str_has_prefix(p, "=?")) {
-        modem_queue_line(modem, modem->model->supports_voice ? "0,1,8" : "0,1");
+        modem_queue_line(modem, modem->model->max_fax_rate ? "0,1,2" :
+                         modem->model->supports_voice ? "0,1,8" : "0,1");
         p += 2;
     } else if (*p == '?') {
         g_autofree char *line = g_strdup_printf("%d", modem->service_class);
@@ -774,8 +789,13 @@ static bool modem_handle_service_class(ModemChardev *modem,
     } else if (*p == '=') {
         p++;
         value = modem_parse_number(&p, -1);
-        if (value != 0 && value != 1 &&
-            !(value == 8 && modem->model->supports_voice)) {
+        if ((value != 0 && value != 1 &&
+             !(value == 2 && modem->model->max_fax_rate) &&
+             !(value == 8 && modem->model->supports_voice)) ||
+            *p == '.' ||
+            (modem->model->max_fax_rate &&
+             (modem->connected || modem->dialing) &&
+             value != modem->service_class)) {
             return false;
         }
         modem->service_class = value;
@@ -899,12 +919,108 @@ static bool modem_handle_voice_compression(ModemChardev *modem,
     return true;
 }
 
+/*
+ * DataPort 3740 fax discovery/configuration. Rockwell reference 1048
+ * supplies command formats; this is not a T.30 or analogue data pump.
+ */
+static bool modem_handle_dataport_fax(ModemChardev *modem,
+                                      const char **command)
+{
+    const char *p = *command;
+    const char *reply = NULL;
+    g_autofree char *formatted = NULL;
+
+    if (!modem->model->max_fax_rate) {
+        return false;
+    }
+    if (modem->service_class == 1) {
+        if (g_str_has_prefix(p, "+FTM=?") ||
+            g_str_has_prefix(p, "+FRM=?")) {
+            reply = "24,48,72,73,74,96,97,98,121,122,145,146";
+            p += 6;
+        } else if (g_str_has_prefix(p, "+FTH=?") ||
+                   g_str_has_prefix(p, "+FRH=?")) {
+            reply = "3,24,48,72,73,74,96,97,98,121,122,145,146";
+            p += 6;
+        }
+    } else if (modem->service_class == 2) {
+        if (g_str_has_prefix(p, "+FMFR?")) {
+            reply = "AT&T Paradyne";
+            p += 6;
+        } else if (g_str_has_prefix(p, "+FMDL?")) {
+            reply = "DataPort Express 3740";
+            p += 6;
+        } else if (g_str_has_prefix(p, "+FREV?")) {
+            reply = modem->model->fallback_identification;
+            p += 6;
+        } else if (g_str_has_prefix(p, "+FDCC=?")) {
+            formatted = g_strdup_printf("(0,1),(0-%d),(0-3),(0-2),"
+                                        "(0-2),(0-2),(0),(0-7)",
+                                        modem->model->max_fax_rate / 2400 - 1);
+            reply = formatted;
+            p += 7;
+        } else if (g_str_has_prefix(p, "+FDCC?")) {
+            const uint8_t *c = modem->fax_dcc;
+
+            formatted = g_strdup_printf("%u,%u,%u,%u,%u,%u,%u,%u",
+                                        c[0], c[1], c[2], c[3],
+                                        c[4], c[5], c[6], c[7]);
+            reply = formatted;
+            p += 6;
+        } else if (g_str_has_prefix(p, "+FDCC=")) {
+            uint8_t next[8];
+            const int maximum[] = {
+                1, modem->model->max_fax_rate / 2400 - 1,
+                3, 2, 2, 2, 0, 7,
+            };
+
+            p += 6;
+            memcpy(next, modem->fax_dcc, sizeof(next));
+            for (size_t i = 0; i < ARRAY_SIZE(next); i++) {
+                if (g_ascii_isdigit(*p)) {
+                    int value = modem_parse_number(&p, -1);
+
+                    if (value < 0 || value > maximum[i]) {
+                        return false;
+                    }
+                    next[i] = value;
+                } else if (*p != ',' && *p != ';' && *p != '\0') {
+                    return false;
+                }
+                if (*p != ',') {
+                    break;
+                }
+                if (i == ARRAY_SIZE(next) - 1) {
+                    return false;
+                }
+                p++;
+            }
+            if (*p && *p != ';') {
+                return false;
+            }
+            memcpy(modem->fax_dcc, next, sizeof(next));
+            *command = p;
+            return true;
+        }
+    }
+    if (!reply || (*p && *p != ';')) {
+        return false;
+    }
+    modem_queue_line(modem, reply);
+    *command = p;
+    return true;
+}
+
 static bool modem_handle_extended(ModemChardev *modem, const char **command)
 {
     const char *p = *command;
 
     if (modem_handle_service_class(modem, command, "+FCLASS") ||
         modem_handle_service_class(modem, command, "#CLS")) {
+        return true;
+    }
+
+    if (modem_handle_dataport_fax(modem, command)) {
         return true;
     }
 
