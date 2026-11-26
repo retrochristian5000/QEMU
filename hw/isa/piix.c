@@ -281,6 +281,9 @@ static void pci_piix_realize(PCIDevice *dev, const char *uhci_type,
         qdev_connect_gpio_out(DEVICE(&d->pm), 0, d->isa_irqs_in[9]);
     }
 
+    /* PIRQRC[6:4] are reserved on PIIX3 and PIIX4. */
+    memset(dev->wmask + PIIX_PIRQCA, 0x8f, PIIX_NUM_PIRQS);
+
     pci_bus_irqs(pci_bus, piix_set_pci_irq, d, PIIX_NUM_PIRQS);
     pci_bus_set_route_irq_fn(pci_bus, piix_route_intx_pin_to_irq);
 }
@@ -380,6 +383,7 @@ static void piix3_class_init(ObjectClass *klass, const void *data)
     k->realize = piix3_realize;
     /* 82371SB PIIX3 PCI-to-ISA bridge (Step A1) */
     k->device_id = PCI_DEVICE_ID_INTEL_82371SB_0;
+    dc->desc = "Intel 82371SB PIIX3 PCI-to-ISA bridge";
     dc->vmsd = &vmstate_piix3;
 }
 
@@ -409,6 +413,7 @@ static void piix4_class_init(ObjectClass *klass, const void *data)
 
     k->realize = piix4_realize;
     k->device_id = PCI_DEVICE_ID_INTEL_82371AB_0;
+    dc->desc = "Intel 82371AB PIIX4 PCI-to-ISA bridge";
     dc->vmsd = &vmstate_piix4;
 }
 
