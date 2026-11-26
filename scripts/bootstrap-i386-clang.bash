@@ -71,7 +71,7 @@ if [[ -n "$JOBS" ]]; then
     cmake_parallel_args=(--parallel "$JOBS")
 fi
 
-for tool in git grep mkdir mv rm ln cp python3 awk mktemp; do
+for tool in git grep mkdir mv rm ln cp cmp python3 awk mktemp; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'error: i386 LLVM bootstrap dependency not found: %s\n' "$tool" >&2
         exit 1
@@ -159,6 +159,11 @@ usable()
     local cache_smoke_dir="$TOOLCHAIN_WORK_DIR/i386-cache-smoke"
     local object_format
     local tool
+
+    # The installed wrappers are copied from QEMU, not from LLVM.  A matching
+    # LLVM revision does not establish that their argument handling is current.
+    cmp -s "$CC_COMPAT_HELPER" "$prefix/bin/$TOOLCHAIN_TARGET-gcc" || return 1
+    cmp -s "$OBJDUMP_COMPAT_HELPER" "$prefix/libexec/seabios-llvm-objdump.py" || return 1
 
     for tool in gcc cpp as ld objcopy objdump strip; do
         [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
