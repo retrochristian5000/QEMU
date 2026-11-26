@@ -578,6 +578,84 @@ static void modem_test_expect_peer(QIOChannel *peer, const char *expected)
     g_assert_cmpmem(buf, received, expected, len);
 }
 
+/*
+ * Apple's MacPPP documentation gives this initialization string for
+ * the related 14.4 kbit/s DataPort. Exercise it on both Express profiles.
+ */
+static void test_dataport_macppp_init(gconstpointer opaque)
+{
+    const char *model = opaque;
+    SocketAddress address = {
+        .type = SOCKET_ADDRESS_TYPE_INET,
+        .u.inet = { .host = "127.0.0.1", .port = "0" },
+    };
+    QIOChannelSocket *listener = qio_channel_socket_new();
+    QIOChannel *peer;
+    SocketAddress *bound;
+    Error *err = NULL;
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr;
+    const char *reply;
+    int lines = CHR_TIOCM_DTR | CHR_TIOCM_RTS;
+    int status;
+
+    if (qio_channel_socket_listen_sync(listener, &address, 1, &err) < 0) {
+        g_test_skip(error_get_pretty(err));
+        error_free(err);
+        object_unref(OBJECT(listener));
+        return;
+    }
+    bound = qio_channel_socket_get_local_address(listener, &error_abort);
+    chr = modem_new_with_port("modem-macppp", model, bound->u.inet.port);
+    qapi_free_SocketAddress(bound);
+    modem_frontend_init(&fe, &out, chr);
+
+    /* Start with contrasting settings so initialization must change them. */
+    assert_response_contains(modem_command(&fe, &out, "AT\\N0%C0&C0&D2\\Q0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N7%C1&C1&D0\\Q3\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&C1 &D0 %C1");
+    assert_response_contains(reply, "\\N7 \\Q3");
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &status), ==, 0);
+    g_assert_false(status & CHR_TIOCM_CAR);
+
+    modem_command(&fe, &out, "ATD0\r");
+    modem_test_wait_output(&out, "CONNECT");
+    peer = QIO_CHANNEL(qio_channel_socket_accept(listener, &error_abort));
+    g_assert_true(qio_channel_set_blocking(peer, false, &error_abort));
+    object_unref(OBJECT(listener));
+
+    /* DTR may change independently of RTS on the computer interface. */
+    lines &= ~CHR_TIOCM_DTR;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &status), ==, 0);
+    g_assert_true(status & CHR_TIOCM_CAR);
+    out.len = 0;
+    out.buf[0] = '\0';
+    g_assert_cmpint(qio_channel_write(peer, "mac", 3, &error_abort), ==, 3);
+    modem_test_wait_output(&out, "mac");
+
+    /* Restore DTR before sending commands: CTS may follow DTR. */
+    lines |= CHR_TIOCM_DTR;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    assert_response_contains(modem_command(&fe, &out, "+++"), "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "ATH\r"), "\r\nOK\r\n");
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &status), ==, 0);
+    g_assert_false(status & CHR_TIOCM_CAR);
+    modem_frontend_cleanup(&fe, chr);
+    object_unref(OBJECT(peer));
+}
+
 static void test_dataport_xon_xoff_transport(gconstpointer opaque)
 {
     int mode = GPOINTER_TO_INT(opaque);
@@ -782,6 +860,10 @@ int main(int argc, char **argv)
                          test_dataport_family_controls);
     g_test_add_data_func("/modem/paradyne/family-3740",
                          "att-paradyne-3740", test_dataport_family_controls);
+    g_test_add_data_func("/modem/paradyne/macppp-3711",
+                         "att-paradyne-dataport-3711", test_dataport_macppp_init);
+    g_test_add_data_func("/modem/paradyne/macppp-3740",
+                         "att-paradyne-3740", test_dataport_macppp_init);
     g_test_add_func("/modem/paradyne/3740-unimodem-probe",
                     test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",

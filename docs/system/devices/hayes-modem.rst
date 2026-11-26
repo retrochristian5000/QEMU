@@ -90,6 +90,21 @@ The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
 
+Macintosh initialization is also supported at the command level. Apple's
+MacPPP documentation gives the following string for the related 14.4 kbit/s
+DataPort, which both Express profiles accept::
+
+  AT\N7%C1&C1&D0\Q3
+
+This selects reliability mode 7, enables the compression setting,
+makes DCD follow the connection, ignores DTR changes for connection
+control, and selects hardware flow control. Regression coverage checks
+the configured settings and continued reception over the TCP substitute
+after DTR falls while RTS remains asserted. The CTS policy selected by
+``\D`` remains independent of ``&D``. This is not a recovered 3740 CCL
+script or proof of electrical RS-422, compression or reliability
+negotiation.
+
 Windows modem detection is separate from command initialization. An archived
 ``MDMATT.INF`` lists the DataPort Express V.34 (28.8) as ``UNIMODEM3C89963B``
 and requests ``\N7`` during initialization. This is evidence for accepting
