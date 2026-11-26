@@ -1012,6 +1012,7 @@ static void rtc_class_initfn(ObjectClass *klass, const void *data)
     AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
     dc->realize = rtc_realizefn;
+    dc->desc = "MC146818-compatible ISA real-time clock and CMOS RAM";
     dc->vmsd = &vmstate_rtc;
     rc->phases.enter = rtc_reset_enter;
     rc->phases.hold = rtc_reset_hold;
