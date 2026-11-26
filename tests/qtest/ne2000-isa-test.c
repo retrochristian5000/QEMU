@@ -102,6 +102,10 @@ static const ResourceConflict conflicts[] = {
     }, {
         "-device ne2k_isa,iobase=0x60,irq=10",
         "*NE2000 ISA I/O range 0x60-0x7f overlaps*",
+    }, {
+        /* The start is unassigned, but COM1 occupies the last 8 ports. */
+        "-serial null -device ne2k_isa,iobase=0x3e0,irq=10",
+        "*NE2000 ISA I/O range 0x3e0-0x3ff overlaps*at port 0x3f8*",
     },
 };
 
@@ -118,6 +122,19 @@ static void test_resource_conflict(gconstpointer opaque)
     g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
     g_test_trap_assert_failed();
     g_test_trap_assert_stderr(test->diagnostic);
+}
+
+static void test_unassigned_io_root(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults "
+                              "-device ne2k_isa,iobase=0x300,irq=10");
+
+    /* Free ports resolve to the root I/O fallback, not another device. */
+    g_assert_cmphex(qtest_inb(s, 0x2ff), ==, 0xff);
+    g_assert_cmphex(qtest_inb(s, 0x320), ==, 0xff);
+    g_assert_cmphex(qtest_inb(s, NE2K_CR), ==, CR_STOP_NODMA);
+    g_assert_cmphex(qtest_inb(s, NE2K_ISR), ==, ISR_RST);
+    qtest_quit(s);
 }
 
 static void test_separate_io_windows(void)
@@ -146,6 +163,8 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ne2000/isa/reset-irq", test_reset_irq);
     qtest_add_func("/ne2000/isa/bus-reset", test_bus_reset);
+    qtest_add_func("/ne2000/isa/unassigned-io-root",
+                   test_unassigned_io_root);
     qtest_add_func("/ne2000/isa/separate-io-windows",
                    test_separate_io_windows);
     for (unsigned i = 0; i < ARRAY_SIZE(conflicts); i++) {
