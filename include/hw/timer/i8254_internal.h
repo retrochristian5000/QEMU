@@ -55,6 +55,8 @@ struct PITCommonState {
     MemoryRegion ioports;
     uint32_t iobase;
     PITChannelState channels[3];
+    /* Bit per counter waiting for its initial count after a control word. */
+    uint8_t pending_initial_count;
 };
 
 struct PITCommonClass {
