@@ -755,6 +755,7 @@ static void i8042_mmio_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = i8042_mmio_realize;
+    dc->desc = "Memory-mapped i8042-compatible PS/2 controller";
     device_class_set_legacy_reset(dc, i8042_mmio_reset);
     dc->vmsd = &vmstate_kbd_mmio;
     device_class_set_props(dc, i8042_mmio_properties);
@@ -947,6 +948,7 @@ static void i8042_class_initfn(ObjectClass *klass, const void *data)
     device_class_set_props(dc, i8042_properties);
     device_class_set_legacy_reset(dc, i8042_reset);
     dc->realize = i8042_realizefn;
+    dc->desc = "ISA i8042-compatible PS/2 keyboard and mouse controller";
     dc->vmsd = &vmstate_kbd_isa;
     adevc->build_dev_aml = i8042_build_aml;
     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
