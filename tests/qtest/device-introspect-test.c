@@ -230,11 +230,15 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd302",
           "AT&T 302 keyboard (Intel UPI-41; experimental I/O optional)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
-        { "cirrus-vga-generic", "Generic Cirrus PCI VGA (CL-GD5446 compatible)" },
-        { "cirrus-gd5446-pci",
+        { "cirrus-vga-generic",
+          "Generic Cirrus Logic VGA (default PCI, CL-GD5446 compatible)" },
+        { "cirrus-vga-generic-pci",
+          "Generic Cirrus Logic PCI VGA (CL-GD5446 compatible)" },
+        { "gd5446-pci",
           "Cirrus Logic CL-GD5446 PCI VGA (shared compatible implementation)" },
-        { "isa-cirrus-vga-generic", "Generic Cirrus ISA VGA (CL-GD5428 compatible)" },
-        { "isa-cirrus-gd5428",
+        { "cirrus-vga-generic-isa",
+          "Generic Cirrus Logic ISA VGA (CL-GD5428 compatible)" },
+        { "gd5428",
           "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)" },
         { "sb16-generic", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
         { "sb16", "Creative Sound Blaster 16 CT1740 (experimental PCM and MIDI)" },
@@ -272,8 +276,15 @@ static void test_generic_device_types(void)
         const char *args;
     } models[] = {
         { "cirrus-vga-generic", "cirrus-vga", "-vga none" },
-        { "isa-cirrus-vga-generic", "isa-cirrus-vga", "-vga none" },
+        { "cirrus-vga-generic-isa", "isa-cirrus-vga-generic", "-vga none" },
+        { "cirrus-vga-generic-pci", NULL, "-vga none" },
+        { "gd5428", "isa-cirrus-gd5428", "-vga none" },
         { "sb16-generic", NULL, "-audiodev none,id=snd" },
+    };
+    static const char *const retired_types[] = {
+        "isa-cirrus-vga", "isa-cirrus-gd5422", "isa-cirrus-gd5426",
+        "cirrus-gd5430-pci", "cirrus-gd5430-vlb", "cirrus-gd5446-pci",
+        "gd5428-pci",
     };
     static const char *const retired_aliases[] = {
         "ac97", "ahci", "e1000-82540em", "motorola-mc146818",
@@ -304,9 +315,12 @@ static void test_generic_device_types(void)
             old_help = qtest_hmp(qts, "device_add \"%s,help\"",
                                  models[i].old_type);
             g_assert_null(strstr(old_help, " options:"));
-        } else {
+        } else if (!strcmp(models[i].type, "sb16-generic")) {
             g_assert_nonnull(type_list_find(types, "sb16"));
         }
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(retired_types); i++) {
+        g_assert_null(type_list_find(types, retired_types[i]));
     }
     for (size_t i = 0; i < ARRAY_SIZE(retired_aliases); i++) {
         g_autofree char *needle =

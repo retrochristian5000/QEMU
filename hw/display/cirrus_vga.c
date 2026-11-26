@@ -187,8 +187,9 @@ struct PCICirrusVGAState {
 };
 
 #define TYPE_PCI_CIRRUS_VGA "cirrus-vga-generic"
-#define TYPE_PCI_CIRRUS_GD5430 "cirrus-gd5430-pci"
-#define TYPE_PCI_CIRRUS_GD5446 "cirrus-gd5446-pci"
+#define TYPE_PCI_CIRRUS_VGA_EXPLICIT "cirrus-vga-generic-pci"
+#define TYPE_PCI_CIRRUS_GD5430 "gd5430-pci"
+#define TYPE_PCI_CIRRUS_GD5446 "gd5446-pci"
 OBJECT_DECLARE_SIMPLE_TYPE(PCICirrusVGAState, PCI_CIRRUS_VGA)
 
 static uint8_t rop_to_index[256];
@@ -3273,7 +3274,7 @@ static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
     k->device_id = CIRRUS_ID_CLGD5446;
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Generic Cirrus PCI VGA (CL-GD5446 compatible)";
+    dc->desc = "Generic Cirrus Logic VGA (default PCI, CL-GD5446 compatible)";
     dc->vmsd = &vmstate_pci_cirrus_vga;
     device_class_set_props(dc, pci_vga_cirrus_properties);
     dc->hotpluggable = false;
@@ -3288,6 +3289,20 @@ static const TypeInfo cirrus_vga_info = {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },
+};
+
+static void cirrus_vga_explicit_pci_class_init(ObjectClass *klass,
+                                               const void *data)
+{
+    DEVICE_CLASS(klass)->desc =
+        "Generic Cirrus Logic PCI VGA (CL-GD5446 compatible)";
+}
+
+/* Explicit PCI variant; shares the legacy default PCI implementation. */
+static const TypeInfo cirrus_vga_explicit_pci_info = {
+    .name = TYPE_PCI_CIRRUS_VGA_EXPLICIT,
+    .parent = TYPE_PCI_CIRRUS_VGA,
+    .class_init = cirrus_vga_explicit_pci_class_init,
 };
 
 static void cirrus_gd5430_pci_init(Object *obj)
@@ -3328,6 +3343,7 @@ static const TypeInfo cirrus_gd5446_pci_info = {
 static void cirrus_vga_register_types(void)
 {
     type_register_static(&cirrus_vga_info);
+    type_register_static(&cirrus_vga_explicit_pci_info);
     type_register_static(&cirrus_gd5430_pci_info);
     type_register_static(&cirrus_gd5446_pci_info);
 }

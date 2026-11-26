@@ -395,7 +395,9 @@ some DEVNAMEs:
     parallel            isa-parallel
     serial              isa-serial
     VGA                 VGA, cirrus-vga-generic, isa-vga,
-                        isa-cirrus-vga-generic, vmware-svga, qxl-vga, virtio-vga, ati-vga,
+                        cirrus-vga-generic-isa, cirrus-vga-generic-pci,
+                        gd5422, gd5426, gd5428, gd5430-pci, gd5430-vlb,
+                        gd5446-pci, vmware-svga, qxl-vga, virtio-vga, ati-vga,
                         vhost-user-vga
 
 The default NIC is connected to a default part created along with it.

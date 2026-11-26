@@ -112,22 +112,22 @@ static void test_isa_cirrus_profile_for(const char *model, uint8_t chip_id)
 
 static void test_isa_cirrus_profile(void)
 {
-    test_isa_cirrus_profile_for("isa-cirrus-vga-generic", 0x98);
+    test_isa_cirrus_profile_for("cirrus-vga-generic-isa", 0x98);
 }
 
 static void test_isa_cirrus_gd5428_profile(void)
 {
-    test_isa_cirrus_profile_for("isa-cirrus-gd5428", 0x98);
+    test_isa_cirrus_profile_for("gd5428", 0x98);
 }
 
 static void test_isa_cirrus_gd5426_profile(void)
 {
-    test_isa_cirrus_profile_for("isa-cirrus-gd5426", 0x90);
+    test_isa_cirrus_profile_for("gd5426", 0x90);
 }
 
 static void test_isa_cirrus_gd5422_profile(void)
 {
-    QTestState *qts = qtest_init("-vga none -device isa-cirrus-gd5422");
+    QTestState *qts = qtest_init("-vga none -device gd5422");
 
     qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
     vga_seq_write(qts, 0x06, 0x12);
@@ -147,7 +147,7 @@ static void test_vlb_cirrus_decoder(gconstpointer data)
 {
     uint32_t base = GPOINTER_TO_UINT(data);
     QTestState *qts = qtest_initf(
-        "-m 128 -vga none -device cirrus-gd5430-vlb,lfb-base=0x%x", base);
+        "-m 128 -vga none -device gd5430-vlb,lfb-base=0x%x", base);
 
     qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
     vga_seq_write(qts, 0x06, 0x12);
@@ -309,7 +309,7 @@ static QDict *find_pci_device(QList *buses, const char *qdev_id)
 static void test_cirrus_named_pci_profile(gconstpointer opaque)
 {
     bool gd5430 = GPOINTER_TO_INT(opaque);
-    const char *model = gd5430 ? "cirrus-gd5430-pci" : "cirrus-gd5446-pci";
+    const char *model = gd5430 ? "gd5430-pci" : "gd5446-pci";
     unsigned chip = gd5430 ? 0xa0 : 0xb8;
     QTestState *qts = qtest_initf("-M pc -nodefaults -vga none "
                                   "-device %s,addr=4,romfile=", model);
@@ -346,9 +346,11 @@ static void test_cirrus_named_pci_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
-static void test_cirrus_pci_identity(void)
+static void test_cirrus_pci_identity(gconstpointer opaque)
 {
-    QTestState *qts = qtest_init("-vga none -device cirrus-vga-generic,id=cirrus");
+    const char *model = opaque;
+    /* The explicit profile must also suppress the default VGA device. */
+    QTestState *qts = qtest_initf("-device %s,id=cirrus", model);
     QDict *resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
     QDict *device;
     QDict *id;
@@ -693,6 +695,7 @@ int main(int argc, char **argv)
 {
     static const char *devices[] = {
         "cirrus-vga-generic",
+        "cirrus-vga-generic-pci",
         "VGA",
         "secondary-vga",
         "virtio-gpu-pci",
@@ -722,8 +725,13 @@ int main(int argc, char **argv)
 
     if (qtest_has_device("cirrus-vga-generic") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
-        qtest_add_func("/display/pci/cirrus-identity",
-                       test_cirrus_pci_identity);
+        qtest_add_data_func("/display/pci/cirrus-identity",
+                            "cirrus-vga-generic", test_cirrus_pci_identity);
+        if (qtest_has_device("cirrus-vga-generic-pci")) {
+            qtest_add_data_func("/display/pci/cirrus-explicit-pci-identity",
+                                "cirrus-vga-generic-pci",
+                                test_cirrus_pci_identity);
+        }
         if (qtest_has_machine("pc")) {
             qtest_add_func("/display/pci/cirrus-legacy-decode",
                            test_cirrus_pci_legacy_decode);
@@ -742,7 +750,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (qtest_has_device("isa-cirrus-vga-generic") &&
+    if (qtest_has_device("cirrus-vga-generic-isa") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-profile",
                        test_isa_cirrus_profile);
@@ -750,37 +758,37 @@ int main(int argc, char **argv)
 
     if (qtest_has_machine("pc") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
-        if (qtest_has_device("cirrus-gd5430-pci")) {
+        if (qtest_has_device("gd5430-pci")) {
             qtest_add_data_func("/display/pci/cirrus-gd5430-profile",
                                 GINT_TO_POINTER(1),
                                 test_cirrus_named_pci_profile);
         }
-        if (qtest_has_device("cirrus-gd5446-pci")) {
+        if (qtest_has_device("gd5446-pci")) {
             qtest_add_data_func("/display/pci/cirrus-gd5446-profile",
                                 GINT_TO_POINTER(0),
                                 test_cirrus_named_pci_profile);
         }
     }
 
-    if (qtest_has_device("isa-cirrus-gd5428") &&
+    if (qtest_has_device("gd5428") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-gd5428-profile",
                        test_isa_cirrus_gd5428_profile);
     }
 
-    if (qtest_has_device("isa-cirrus-gd5426") &&
+    if (qtest_has_device("gd5426") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-gd5426-profile",
                        test_isa_cirrus_gd5426_profile);
     }
 
-    if (qtest_has_device("isa-cirrus-gd5422") &&
+    if (qtest_has_device("gd5422") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-gd5422-profile",
                        test_isa_cirrus_gd5422_profile);
     }
 
-    if (qtest_has_device("cirrus-gd5430-vlb") &&
+    if (qtest_has_device("gd5430-vlb") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_data_func("/display/vlb/gd5430/64mb",
                             GUINT_TO_POINTER(0x04000000U),

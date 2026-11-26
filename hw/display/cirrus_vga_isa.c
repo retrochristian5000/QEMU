@@ -33,9 +33,10 @@
 #include "qom/object.h"
 #include "ui/console.h"
 
-#define TYPE_ISA_CIRRUS_VGA "isa-cirrus-vga-generic"
-#define TYPE_ISA_CIRRUS_GD5426 "isa-cirrus-gd5426"
-#define TYPE_ISA_CIRRUS_GD5422 "isa-cirrus-gd5422"
+#define TYPE_ISA_CIRRUS_VGA "cirrus-vga-generic-isa"
+#define TYPE_ISA_CIRRUS_GD5428 "gd5428"
+#define TYPE_ISA_CIRRUS_GD5426 "gd5426"
+#define TYPE_ISA_CIRRUS_GD5422 "gd5422"
 OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusVGAState, ISA_CIRRUS_VGA)
 OBJECT_DECLARE_SIMPLE_TYPE(ISACirrusGD5422State, ISA_CIRRUS_GD5422)
 
@@ -125,7 +126,7 @@ static void isa_cirrus_vga_class_init(ObjectClass *klass, const void *data)
 
     dc->vmsd  = &vmstate_cirrus_vga;
     dc->realize = isa_cirrus_vga_realizefn;
-    dc->desc = "Generic Cirrus ISA VGA (CL-GD5428 compatible)";
+    dc->desc = "Generic Cirrus Logic ISA VGA (CL-GD5428 compatible)";
     dc->fw_name = "isa-cirrus-vga";
     device_class_set_props(dc, isa_cirrus_vga_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
@@ -164,6 +165,7 @@ static void isa_cirrus_gd5422_class_init(ObjectClass *klass, const void *data)
     device_class_set_props(dc, isa_cirrus_gd5422_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
     dc->desc = "Cirrus Logic CL-GD5422 ISA VGA (1 MiB, no BitBLT)";
+    dc->fw_name = "isa-cirrus-gd5422";
 }
 
 static const TypeInfo isa_cirrus_gd5422_info = {
@@ -183,7 +185,7 @@ static void isa_cirrus_gd5428_class_init(ObjectClass *klass, const void *data)
 }
 
 static const TypeInfo isa_cirrus_gd5428_info = {
-    .name = "isa-cirrus-gd5428",
+    .name = TYPE_ISA_CIRRUS_GD5428,
     .parent = TYPE_ISA_CIRRUS_VGA,
     .class_init = isa_cirrus_gd5428_class_init,
 };

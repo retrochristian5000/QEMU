@@ -87,8 +87,11 @@ identify physical devices rather than entire families.
 
 The generic device types in this fork are:
 
-* ``cirrus-vga-generic``: PCI VGA with the CL-GD5446 identity.
-* ``isa-cirrus-vga-generic``: ISA VGA with the CL-GD5428 identity.
+* ``cirrus-vga-generic``: default generic Cirrus Logic VGA (PCI).
+* ``cirrus-vga-generic-pci``: explicit PCI variant, sharing the
+  CL-GD5446-compatible implementation of the default profile.
+* ``cirrus-vga-generic-isa``: explicit ISA variant with the
+  CL-GD5428-compatible identity.
 * ``sb16-generic``: legacy ISA Sound Blaster 16-compatible DSP and mixer,
   not a specific Creative CT-series board or ISA PnP card.
 
@@ -101,10 +104,17 @@ generic model. For ``-audio``, use ``model=sb16-generic``. The legacy
 identities, resource defaults, firmware path names and migration section
 names are retained; cross-version migration has not been validated.
 
-The separate ``cirrus-gd5446-pci`` and ``isa-cirrus-gd5428`` profiles
-currently share the generic implementations; selecting them does not
-imply additional board-specific accuracy. The GD5430, GD5422 and GD5426
-profiles retain their existing behavior. The ``sb16-pnp`` and
+Cirrus Logic chipset types use the short chip name, with a bus suffix
+where appropriate. The ``gd5428`` and ``gd5446-pci`` profiles currently
+share their respective generic implementations; selecting them does not
+imply additional board-specific accuracy. The GD5422, GD5426 and GD5430
+profiles retain their existing behavior. These are registered device
+types, not aliases. The previous names ``isa-cirrus-vga-generic``,
+``isa-cirrus-gd5422``, ``isa-cirrus-gd5426``, ``isa-cirrus-gd5428``,
+``cirrus-gd5430-pci``, ``cirrus-gd5430-vlb`` and
+``cirrus-gd5446-pci`` are retired; update explicit device and global
+property arguments. Cross-version migration after these renames
+has not been validated. The ``sb16-pnp`` and
 ``awe32`` reserved profiles are not aliases for SB16.
 
 Use the canonical names ``AC97``, ``ich9-ahci``, ``e1000`` and

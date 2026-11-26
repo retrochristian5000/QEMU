@@ -18,7 +18,7 @@
 #include "qom/object.h"
 #include "ui/console.h"
 
-#define TYPE_CIRRUS_GD5430_VLB "cirrus-gd5430-vlb"
+#define TYPE_CIRRUS_GD5430_VLB "gd5430-vlb"
 OBJECT_DECLARE_SIMPLE_TYPE(CirrusGD5430VLBState, CIRRUS_GD5430_VLB)
 
 struct CirrusGD5430VLBState {
@@ -85,7 +85,8 @@ static void cirrus_gd5430_vlb_class_init(ObjectClass *klass, const void *data)
     dc->realize = cirrus_gd5430_vlb_realize;
     device_class_set_props(dc, cirrus_gd5430_vlb_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Cirrus CL-GD5430 VLB VGA (address decoder, no VLB timing)";
+    dc->desc = "Cirrus Logic CL-GD5430 VLB VGA (address decoder, no VLB timing)";
+    dc->fw_name = "cirrus-gd5430-vlb";
 }
 
 static const TypeInfo cirrus_gd5430_vlb_info = {

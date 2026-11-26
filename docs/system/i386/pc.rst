@@ -299,14 +299,32 @@ a particular Pentium MMX motherboard supported four sockets::
 Cirrus Logic chipset profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``cirrus-vga-generic`` and ``isa-cirrus-vga-generic`` device types
-remain compatible with the CL-GD5446 PCI and CL-GD5428 ISA profiles,
-respectively.
-Their explicit chipset names are ``cirrus-gd5446-pci`` and
-``isa-cirrus-gd5428``. The GD5422, GD5426 and GD5430 VLB profiles
-remain available with their existing names.
+The ``cirrus-vga-generic`` device keeps the default PCI implementation
+for existing command lines. The explicit ``cirrus-vga-generic-pci`` type
+shares that implementation, and ``cirrus-vga-generic-isa`` selects ISA.
+Their guest-visible identities remain CL-GD5446 and CL-GD5428,
+respectively. The chipset-specific device names are:
 
-The experimental ``cirrus-gd5430-pci`` profile uses PCI ID 1013:00a0,
+* ``gd5422``: CL-GD5422 ISA.
+* ``gd5426``: CL-GD5426 ISA.
+* ``gd5428``: CL-GD5428 ISA, sharing the generic ISA implementation.
+* ``gd5430-pci`` and ``gd5430-vlb``: explicit bus variants.
+* ``gd5446-pci``: CL-GD5446 PCI, sharing the generic PCI implementation.
+
+The unsuffixed GD5428 profile selects ISA. Cirrus Logic's January 1994
+CL-GD542X Technical Reference Manual (feature table and host interface
+section 2.3) documents ISA, MicroChannel and local-bus interfaces for
+the GD5428, not native PCI. No GD5428 PCI variant is registered; a VLB
+variant requires its own bus decoder. See
+https://bitsavers.trailing-edge.com/components/cirrusLogic/graphics/CL-GD542X_Technical_Reference_Manual_Jan1994.pdf
+
+Use the listed names in place of the former ``isa-cirrus-*`` and
+``cirrus-gd*`` profiles. The default VGA selector ``-vga cirrus``
+continues to choose the generic PCI or ISA implementation according
+to the machine. Explicit device selection does not change chipset
+registers, VRAM defaults, bus mappings or migration section names.
+
+The experimental ``gd5430-pci`` profile uses PCI ID 1013:00a0,
 CR27 identification 0xa0, PCI bus straps, 2 MiB VRAM and a 16 MiB
 prefetchable BAR0. It models the primary framebuffer aperture only,
 with relocatable VGA I/O disabled, and does not expose the GD5446
@@ -318,7 +336,7 @@ For a legacy PC guest, replace the existing primary VGA configuration
 with the following, supplying a compatible, lawfully obtained GD5430
 PCI VGA option ROM::
 
-    -vga none -device cirrus-gd5430-pci,romfile=/path/to/gd5430.rom
+    -vga none -device gd5430-pci,romfile=/path/to/gd5430.rom
 
 The experimental PCI profile has no default option ROM; it does not
 reuse the GD5446 PCI ROM automatically. Boot and guest-driver compatibility

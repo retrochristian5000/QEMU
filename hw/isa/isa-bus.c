@@ -244,7 +244,7 @@ ISADevice *isa_vga_init(ISABus *bus)
     vga_interface_created = true;
     switch (vga_interface_type) {
     case VGA_CIRRUS:
-        return isa_create_simple(bus, "isa-cirrus-vga-generic");
+        return isa_create_simple(bus, "cirrus-vga-generic-isa");
     case VGA_QXL:
         error_report("%s: qxl: no PCI bus", __func__);
         return NULL;
