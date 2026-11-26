@@ -90,7 +90,7 @@ default help:
 
 bios: ide-option-rom build-seabios-config-seabios-128k \
 		build-seabios-config-seabios-256k \
-		build-seabios-config-seabios-microvm seabios-external-ide
+		build-seabios-config-seabios-microvm
 	mkdir -p $(SEABIOS_OUTPUT_DIR)
 	cp $(SEABIOS_BUILD_ROOT)/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin

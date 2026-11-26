@@ -49,6 +49,9 @@ connect:
     call unmask_irq
     popfw
     jc connect_done
+    movl %esi, %cs:capacity
+    cmpl %esi, %cs:capacity
+    jne connect_done
     /* Expose only complete CHS cylinders, up to the INT 13h limit. */
     movl %esi, %eax
     xorl %edx, %edx
@@ -91,8 +94,10 @@ int13_handler:
     pushal
     pushw %ds
     pushw %es
+    pushw %fs
     xorw %ax, %ax
     movw %ax, %ds
+    movw %ss:-34(%bp), %fs          /* Original DS: EDD packet segment. */
     movb %ss:-3(%bp), %al            /* Saved AH. */
     cmpb $1, %al
     je last_status
@@ -102,7 +107,13 @@ int13_handler:
     je write_protected
     cmpb $8, %al
     je geometry
-    movb $1, %ah                    /* Unsupported (including EDD/reset). */
+    cmpb $0x42, %al
+    je edd_read
+    cmpb $0x43, %al
+    je edd_write_protected
+    cmpb $0x48, %al
+    je edd_parameters
+    movb $1, %ah                    /* No extension subset advertised yet. */
     jmp finish
 last_status:
     movb BDA_STATUS, %ah
@@ -190,11 +201,15 @@ finish:
     testb %ah, %ah
     jz 1f
     orw $1, %ss:6(%bp)
-1:  popw %es
+1:  popw %fs
+    popw %es
     popw %ds
     popal
     popw %bp
     iretw
+
+/* EDD packet services are kept separate from legacy CHS translation. */
+.include "edd.inc"
 
 /* All transfers use polling, with an explicit bounded loop. */
 mask_irq:
@@ -357,6 +372,7 @@ read_sector:
 
 previous_int13: .long 0
 cylinders: .word 0
+capacity: .long 0
 manufacturer: .asciz "WHP"
 product: .asciz "Experimental read-only ISA IDE"
     .byte 0

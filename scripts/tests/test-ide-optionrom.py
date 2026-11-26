@@ -75,8 +75,9 @@ def check_unexpected_section(work, linker, label):
 def check_llvm(work, clang, lld):
     obj, elf, raw, rom = (work / name for name in
                          ('llvm.o', 'llvm.elf', 'llvm.raw', 'llvm.rom'))
-    run(clang, '--target=i386-none-elf', '-m32', '-c', '-x', 'assembler',
-        SOURCE / 'ide-rom.S', '-o', obj)
+    subprocess.run([clang, '--target=i386-none-elf', '-m32', '-c', '-x',
+                    'assembler', 'ide-rom.S', '-o', str(obj)],
+                   cwd=SOURCE, check=True)
     run(lld, '-m', 'elf_i386', '-T', SOURCE / 'ide-rom.ld', '-o', elf, obj)
     run('objcopy', '-O', 'binary', '-j', '.text', elf, raw)
     check_elf(elf, raw.read_bytes())
@@ -119,9 +120,8 @@ def build_and_check(work):
     meson = (ROOT / 'pc-bios' / 'meson.build').read_text()
     assert "'bios-microvm.bin', 'ide-isa.rom'" in meson
     builder = (ROOT / 'scripts' / 'meson-build-seabios.bash').read_text()
-    assert 'expected=(bios.bin bios-256k.bin bios-microvm.bin ide-isa.rom' in builder
-    assert 'bios-128k-external-ide.bin)' in builder
-    assert "'bios-128k-external-ide.bin'" in meson
+    assert 'expected=(bios.bin bios-256k.bin bios-microvm.bin ide-isa.rom)' in builder
+    assert "'bios-128k-external-ide.bin'" not in meson
     print(f'IDE ROM: {len(data)} bytes, valid headers/checksums, incremental build verified')
     return rom
 
@@ -146,10 +146,10 @@ def guest_test(work, qemu, bios, rom):
     ], timeout=45, capture_output=True, text=True)
     assert result.returncode == 33, (
         f'IDE boot test returned {result.returncode}; '
-        f'expected 33 (geometry/read/data/write/invalid failures: 35/37/39/41/43)\n'
+        f'expected 33 (geometry/read/data/write/invalid/EDD failures: 35/37/39/41/43/45)\n'
         f'{result.stdout}\n{result.stderr}')
     assert disk.read_bytes() == initial
-    print('IDE ROM guest: CHS geometry, two-sector read, write rejection and error status verified')
+    print('IDE ROM guest: CHS and EDD reads, parameters, write rejection and error status verified')
 
 
 def main():

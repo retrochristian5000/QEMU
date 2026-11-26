@@ -15,7 +15,7 @@ $(OUT)/.toolchain: FORCE
 	    printf '%s\n' "$(AS)" "$(LD)" "$(OBJCOPY)" "$(PYTHON)" > "$$tmp"; \
 	    if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
 
-$(OUT)/ide.o: ide-rom.S $(OUT)/.toolchain Makefile
+$(OUT)/ide.o: ide-rom.S edd.inc $(OUT)/.toolchain Makefile
 	$(AS) --32 -o "$@" "$<"
 
 $(OUT)/ide.elf: $(OUT)/ide.o ide-rom.ld

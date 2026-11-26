@@ -109,7 +109,7 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertIn('CONFIG_ATA_DMA=y', normal)
         self.assertIn('CONFIG_ATA_DMA=n', isapc)
 
-    def test_external_ide_core_is_built_but_is_not_the_default_bios(self):
+    def test_external_ide_core_is_explicit_only(self):
         def options(name):
             return dict(line.split('=', 1) for line in
                         (ROOT / 'roms' / name).read_text().splitlines()
@@ -122,7 +122,7 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertEqual(normal.get('CONFIG_ATA'), 'y')
         makefile = (ROOT / 'roms' / 'Makefile').read_text()
         default_rule = makefile.split('\nbios: ', 1)[1].split('\n\n', 1)[0]
-        self.assertIn('seabios-external-ide', default_rule)
+        self.assertNotIn('seabios-external-ide', default_rule)
         self.assertIn('seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin',
                       default_rule)
         self.assertNotIn('seabios-128k-external-ide/bios.bin', default_rule)
