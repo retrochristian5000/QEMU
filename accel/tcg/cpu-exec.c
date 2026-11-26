@@ -620,6 +620,17 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
                                TranslationBlock *tb_next)
 {
     uintptr_t old;
+    uint32_t source_flags = tb_cflags(tb);
+    uint32_t dest_flags = tb_cflags(tb_next);
+
+    /* Never patch a chain across the one-instruction mode boundary, or
+     * into an exact-count, breakpoint or interrupt-specific translation. */
+    if ((source_flags | dest_flags) & CF_ONE_INSN_CHAIN) {
+        if (source_flags != dest_flags || tb->icount != 1 ||
+            tb_next->icount != 1) {
+            return;
+        }
+    }
 
     qemu_thread_jit_write();
     assert(n < ARRAY_SIZE(tb->jmp_list_next));
