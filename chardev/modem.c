@@ -154,18 +154,14 @@ static const ModemModel modem_models[] = {
         .dataport_3740_line = true,
         /* The archived DataPort Express V.34 driver requests \N7. */
         .max_reliable_mode = 7,
+        /*
+         * Rockwell reference product code, corroborated by HylaFAX.
+         * Exact OEM firmware replies are not recovered. NULL means
+         * unavailable, not a known original firmware response.
+         */
         .identification = {
-            "288",
-            "000",
-            "ROM NOT EMULATED",
-            "Paradyne DataPort Express 3740 (QEMU emulation)",
-            "QEMU Paradyne-compatible serial modem",
-            "V1.0",
-            "DATAPORT3740",
-            "Paradyne-compatible data modem",
-            "28800",
-            "QEMU",
-            "SERIAL MODEM",
+            [0] = "28800",
+            [3] = "AT&T DataPort Express 3740 V.34 V.FC (QEMU emulation)",
         },
         .fallback_identification = "QEMU DataPort Express 3740 profile",
     },
@@ -586,19 +582,26 @@ static char *modem_normalize_command(const char *command)
     return g_string_free(normalized, false);
 }
 
-static void modem_report_identification(ModemChardev *modem, int index)
+static bool modem_report_identification(ModemChardev *modem, int index)
 {
     const char *identification = modem->model->fallback_identification;
 
     if (index >= 0 &&
         (size_t)index < ARRAY_SIZE(modem->model->identification)) {
         identification = modem->model->identification[index];
+    } else if (modem->model->dataport_3740_line) {
+        identification = NULL;
     }
     if (modem->model->dataport_3740_line) {
         trace_dataport_3740_ident(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
-                                 index, identification);
+                                 index, identification ?
+                                 identification : "ERROR");
+    }
+    if (!identification) {
+        return false;
     }
     modem_queue_line(modem, identification);
+    return true;
 }
 
 /* Rockwell V.FC supports 14.4 to 28.8 kbit/s in 2.4 kbit/s steps. */
@@ -1270,7 +1273,11 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             modem_hangup(modem, false);
             break;
         case 'I':
-            modem_report_identification(modem, modem_parse_number(&p, 0));
+            value = modem_parse_number(&p, 0);
+            if (!modem_report_identification(modem, value)) {
+                modem_result(modem, MODEM_RESULT_ERROR);
+                return;
+            }
             break;
         case 'O':
             modem_parse_number(&p, 0);

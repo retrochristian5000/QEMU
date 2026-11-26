@@ -285,7 +285,8 @@ static void test_paradyne_3740_profile(void)
 
     modem_frontend_init(&fe, &out, chr);
     response = modem_command(&fe, &out, "ATI3\r");
-    assert_response_contains(response, "DataPort Express 3740 (QEMU emulation)");
+    assert_response_contains(response,
+                             "DataPort Express 3740 V.34 V.FC (QEMU emulation)");
     response = modem_command(&fe, &out, "AT\\N6\\Q3%B28800\r");
     assert_response_contains(response, "\r\nOK\r\n");
     /* Initialization used by the archived DataPort Express V.34 driver. */
@@ -308,14 +309,12 @@ static void test_paradyne_3740_profile(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
-/* Lock down the current synthetic transcript, not the historical CRC. */
+/* Reference-based probe replies, not a verified historical CRC. */
 static void test_paradyne_3740_unimodem_probe(void)
 {
-    static const char *const expected[] = {
-        "288", "000", "ROM NOT EMULATED",
-        "Paradyne DataPort Express 3740 (QEMU emulation)",
-        "QEMU Paradyne-compatible serial modem", "V1.0", "DATAPORT3740",
-        "Paradyne-compatible data modem", "28800", "QEMU", "SERIAL MODEM",
+    static const char *const expected[11] = {
+        [0] = "28800",
+        [3] = "AT&T DataPort Express 3740 V.34 V.FC (QEMU emulation)",
     };
     ModemOutput out = { 0 };
     CharFrontend fe = { 0 };
@@ -327,13 +326,23 @@ static void test_paradyne_3740_unimodem_probe(void)
                              "\r\nOK\r\n");
     for (unsigned i = 0; i < G_N_ELEMENTS(expected); i++) {
         g_autofree char *command = g_strdup_printf("ATI%u\r", i);
-        g_autofree char *reply = g_strdup_printf("\r\n%s\r\n\r\nOK\r\n",
-                                                 expected[i]);
+        g_autofree char *reply = expected[i] ?
+            g_strdup_printf("\r\n%s\r\n\r\nOK\r\n", expected[i]) :
+            g_strdup("\r\nERROR\r\n");
 
         g_assert_cmpstr(modem_command(&fe, &out, command), ==, reply);
     }
     g_assert_cmpstr(modem_command(&fe, &out, "AT%V\r"), ==,
                     "\r\nQEMU DataPort Express 3740 profile\r\n\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATI\r"), ==,
+                    "\r\n28800\r\n\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATI19\r"), ==,
+                    "\r\nERROR\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATV0I8\r"), ==, "\r\n4\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATV1\r"), ==, "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATQ1I8\r"), ==, "");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATQ0I0\r"), ==,
+                    "\r\n28800\r\n\r\nOK\r\n");
     modem_frontend_cleanup(&fe, chr);
 }
 
@@ -346,7 +355,7 @@ static void test_paradyne_3740_legacy_name(void)
 
     modem_frontend_init(&fe, &out, chr);
     assert_response_contains(modem_command(&fe, &out, "ATI3\r"),
-                             "DataPort Express 3740 (QEMU emulation)");
+                             "DataPort Express 3740 V.34 V.FC (QEMU emulation)");
     modem_frontend_cleanup(&fe, chr);
 }
 

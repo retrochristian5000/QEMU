@@ -102,9 +102,33 @@ The legacy Unimodem detection procedure (Microsoft patent US5815682A)
 probes with ``ATE0Q0V1``, then derives a CRC-based device identifier
 from normalized replies to ``ATI0`` through ``ATI10`` and ``AT%V``.
 The archived INF's identifier is a target for comparison, not a string
-to return in an AT reply. The current responses, including the
-model-specific 3740 ``AT%V`` reply, are synthetic. Original firmware
-responses and the exact Windows 98 FE INF match still need verification.
+to return in an AT reply. For the 3740, ATI0 reports the reference
+Rockwell product code 28800, corroborated by HylaFAX's rc288dpi-1
+configuration. ATI3 is a descriptive emulation identity including
+the documented V.34 and V.FC modulation families, not a firmware dump.
+AT%V retains its explicitly synthetic model-specific response.
+
+ATI1, ATI2 and ATI4 through ATI7 return ERROR until the OEM checksum,
+OEM identifier, country, data-pump and DAA information can
+be established. ATI8 and higher also return ERROR rather than invented
+identification text; the Rockwell reference command range is I0-I7.
+These errors describe the limitations of this emulation, not verified
+original 3740 responses. In particular, ATI2 does not assert a valid
+ROM checksum where no ROM is emulated. Result codes honor Q/V settings.
+The related HylaFAX att-dpexpress-2 configuration documents a
+customized ATI1 format for a 3715, so its firmware values are not
+transferred to the 3740. Other modem profiles retain their existing
+responses. Original firmware responses and the Windows 98 FE INF
+match still need verification.
+
+References:
+
+* Rockwell reference manual 1048, revision 3, section 3.2.1:
+  https://manualzz.com/doc/29221493/rockwell-rc288acx--rc144acx-modem-reference-manual
+* HylaFAX rc288dpi-1:
+  https://sources.debian.org/src/hylafax/1%3A4.1.1-3.1/config/rc288dpi-1
+* HylaFAX att-dpexpress-2:
+  https://fossies.org/linux/misc/hylafax-6.0.7.tar.gz/hylafax-6.0.7/config/att-dpexpress-2
 
 To inspect only the 3740 identification, serial parameters and modem
 control-line changes, enable the following opt-in trace events::

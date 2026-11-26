@@ -594,8 +594,10 @@ static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
     /* No extra clock step should be needed to drain identification replies. */
     for (unsigned i = 0; i <= 10; i++) {
         g_autofree char *command = g_strdup_printf("ATI%u\r", i);
+        const char *expected = i == 0 ? "28800" :
+                               i == 3 ? "3740 V.34 V.FC" : "ERROR";
 
-        modem_command(qts, command, i == 3 ? "3740" : "OK");
+        modem_command(qts, command, expected);
     }
     modem_command(qts, "AT%V\r", "QEMU DataPort Express 3740 profile");
     modem_command(qts, "AT+FCLASS=?\r", "0,1,2");
