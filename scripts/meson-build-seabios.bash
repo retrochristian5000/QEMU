@@ -39,7 +39,7 @@ SEABIOS_DIR="$(cd -- "$SEABIOS_DIR" && pwd -P)"
 if [[ "$mode" == grub ]]; then
     expected=(seabios-grub.ELF)
 else
-    expected=(bios.bin bios-256k.bin bios-microvm.bin)
+    expected=(bios.bin bios-256k.bin bios-microvm.bin ide-isa.rom)
 fi
 if (($# != ${#expected[@]})); then
     printf 'error: incorrect number of SeaBIOS %s output paths\n' "$mode" >&2

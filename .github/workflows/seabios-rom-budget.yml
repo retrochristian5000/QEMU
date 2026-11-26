@@ -10,6 +10,10 @@ on:
       - 'roms/config.seabios-128k-external-ide'
       - 'roms/config.seabios-microvm'
       - 'roms/Makefile'
+      - 'roms/ide-optionrom/**'
+      - 'scripts/tests/test-ide-optionrom.py'
+      - 'scripts/meson-build-seabios.bash'
+      - 'pc-bios/meson.build'
       - 'scripts/whp-build/seabios-clang-gcc.bash'
       - 'scripts/tests/test-seabios-clang-abi.py'
       - 'toolchains/llvm-project'
@@ -37,6 +41,8 @@ jobs:
             roms
             scripts/whp-build
             scripts/tests
+            scripts/meson-build-seabios.bash
+            pc-bios/meson.build
           submodules: false
 
       - name: Fetch pinned SeaBIOS source
@@ -60,7 +66,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential binutils clang-18 nasm python3
+            build-essential binutils clang-18 nasm python3 qemu-system-x86
+
+      - name: Verify default IDE option ROM build and checksums
+        run: python3 scripts/tests/test-ide-optionrom.py
 
       - name: Audit both 128 KiB ROM variants without disabling features
         env:
@@ -450,3 +459,10 @@ jobs:
             exit 1
           fi
 
+
+      - name: Boot disposable ATA disk with the experimental external IDE core
+        run: |
+          set -eu
+          python3 scripts/tests/test-ide-optionrom.py \
+            --bios "$RUNNER_TEMP/whp-seabios-external-ide/seabios-128k-external-ide/bios.bin" \
+            --qemu "$(command -v qemu-system-i386)"

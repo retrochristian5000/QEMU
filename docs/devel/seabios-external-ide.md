@@ -21,14 +21,23 @@ directories if desired.
 
     qemu-system-i386 -machine isapc \
         -bios /path/to/bios-128k-external-ide.bin \
-        -option-rom /path/to/compatible-ide.rom
+        -option-rom /path/to/ide-isa.rom
 
-A working compatible IDE expansion ROM is **not** provided by this change.
-The ROM must implement the appropriate INT 13h services, initialize the
-actual ISA IDE controller and cooperate with SeaBIOS drive enumeration and
-boot ordering. Do not assume ATAPI, El Torito, EDD, reset or DOS/Windows boot
-compatibility. Booting from IDE requires independent verification; the
-normal BIOS is still recommended for existing guests.
+The source-built x86 SeaBIOS target now also builds and installs the
+experimental ide-isa.rom (make -C roms ide-option-rom builds it separately).
+It has a checksummed ISA option-ROM header and PnP BCV, probes the primary
+master using ATA IDENTIFY, and connects drive 80h only when no existing
+hard disk BIOS provider is registered. The first implementation exposes
+read-only CHS reads, geometry and last status; it rejects writes and
+unsupported calls. It requires an i386 or later processor, 512-byte logical
+sectors, writable option-ROM shadow during BCV, and a primary master disk.
+CHS capacity is limited to 1024 cylinders, 16 heads and 63 sectors per
+track. There is no ATA slave/secondary-channel support, EDD, reset recovery,
+DMA, ATAPI, or El Torito support yet. Do not use it for existing DOS/Windows
+installations. The normal BIOS remains unchanged and no machine
+automatically attaches this ROM. CI uses a disposable synthetic disk to
+test the initial read-only path. A successful build alone is not evidence
+of guest boot compatibility.
 
 Measure raw core bytes, not the final fixed-size padded image. Separately
 account for the expansion ROM and its conventional option-ROM allocation
