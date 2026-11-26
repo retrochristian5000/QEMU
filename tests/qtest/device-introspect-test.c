@@ -226,10 +226,10 @@ static void test_device_intro_display_descriptions(void)
         const char *desc;
     } devices[] = {
         { "att-kbd302",
-          "AT&T 302 keyboard (reserved; controller not implemented)" },
+          "AT&T 302 keyboard (Intel 8741 included; guest I/O pending)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
         { "intel-8741",
-          "Intel 8741 UPI-41 controller (host interface; firmware pending)" },
+          "Intel 8741 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "isa-vga", "QEMU Standard VGA ISA controller" },
         { "sierra-falcon64",
           "Sierra Semiconductor Falcon/64 SC15064 PCI VGA controller" },
@@ -249,6 +249,42 @@ static void test_device_intro_display_descriptions(void)
 
     qobject_unref(types);
     qtest_quit(qts);
+}
+
+static void test_att_kbd302_controller(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    bool supported = type_list_find(types, "att-kbd302") != NULL;
+    const char *parent = "/machine/peripheral/kbd302";
+    const char *child = "/machine/peripheral/kbd302/controller";
+
+    if (supported) {
+        g_assert_nonnull(type_list_find(types, "intel-8741"));
+    }
+    qobject_unref(types);
+    qtest_quit(qts);
+
+    if (!supported) {
+        g_test_skip("AT&T 302 keyboard is not built for this target");
+        return;
+    }
+
+    qts = qtest_init("-machine none -nodefaults "
+                     "-device att-kbd302,id=kbd302");
+    g_assert_true(qtest_qom_get_bool(qts, parent, "realized"));
+    g_assert_true(qtest_qom_get_bool(qts, child, "realized"));
+    g_assert_true(qtest_qom_get_bool(qts, child, "keyboard-attached"));
+    qtest_quit(qts);
+
+    if (qtest_has_machine("pc")) {
+        qts = qtest_init("-machine pc -nodefaults "
+                         "-device att-kbd302,id=kbd302");
+        g_assert_true(qtest_qom_get_bool(qts, parent, "realized"));
+        g_assert_true(qtest_qom_get_bool(qts, child, "realized"));
+        g_assert_true(qtest_qom_get_bool(qts, child, "keyboard-attached"));
+        qtest_quit(qts);
+    }
 }
 
 /*
@@ -437,6 +473,8 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/display-descriptions",
                    test_device_intro_display_descriptions);
+    qtest_add_func("device/introspect/att-kbd302-controller",
+                   test_att_kbd302_controller);
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
     qtest_add_func("device/introspect/settable-only",
                    test_device_intro_settable_only);

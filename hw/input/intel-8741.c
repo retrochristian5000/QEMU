@@ -4,20 +4,30 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/core/qdev.h"
-#include "hw/input/intel-8741.h"
-#include "hw/input/intel-8741-program.h"
+#include "hw/input/intel-8741-device.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 
-#define TYPE_INTEL_8741 "intel-8741"
-OBJECT_DECLARE_SIMPLE_TYPE(Intel8741State, INTEL_8741)
+void intel_8741_connect_keyboard(Intel8741State *s,
+                                 Intel8741KeyboardRead read_byte,
+                                 void *opaque)
+{
+    assert(!DEVICE(s)->realized && !s->keyboard_read);
+    assert(read_byte);
+    s->keyboard_read = read_byte;
+    s->keyboard_opaque = opaque;
+}
 
-struct Intel8741State {
-    DeviceState parent_obj;
-    Intel8741Core core;
-    Intel8741Program program;
-};
+bool intel_8741_read_keyboard(Intel8741State *s, uint8_t *value)
+{
+    return DEVICE(s)->realized && s->keyboard_read &&
+           s->keyboard_read(s->keyboard_opaque, value);
+}
+
+static bool intel_8741_keyboard_attached(Object *obj, Error **errp)
+{
+    return INTEL_8741(obj)->keyboard_read != NULL;
+}
 
 static void intel_8741_reset(DeviceState *dev)
 {
@@ -29,15 +39,24 @@ static void intel_8741_reset(DeviceState *dev)
 
 static void intel_8741_realize(DeviceState *dev, Error **errp)
 {
-    error_setg(errp, "Intel 8741 host interface is implemented, but "
-               "controller firmware and board wiring are not yet available");
+    Intel8741State *s = INTEL_8741(dev);
+
+    if (!s->keyboard_read) {
+        error_setg(errp, "Intel 8741 requires a connected peripheral; "
+                   "use att-kbd302 to create the experimental keyboard pair");
+        return;
+    }
+
+    intel_8741_reset(dev);
 }
 
 static void intel_8741_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->desc = "Intel 8741 UPI-41 controller (host interface; firmware pending)";
+    dc->desc = "Intel 8741 UPI-41 controller (keyboard link; guest I/O pending)";
+    object_class_property_add_bool(klass, "keyboard-attached",
+                                   intel_8741_keyboard_attached, NULL);
     dc->realize = intel_8741_realize;
     device_class_set_legacy_reset(dc, intel_8741_reset);
     dc->hotpluggable = false;
