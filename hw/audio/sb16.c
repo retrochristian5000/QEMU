@@ -90,8 +90,9 @@ struct SB16State {
     uint8_t csp_regs[256];
     uint8_t csp_index;
     uint8_t csp_reg83[4];
-    int csp_reg83r;
-    int csp_reg83w;
+    /* Historical migration order: write cursor, then read cursor. */
+    int csp_reg83_write;
+    int csp_reg83_read;
 
     uint8_t in2_data[10];
     uint8_t out_data[50];
@@ -454,17 +455,17 @@ static void command (SB16State *s, uint8_t cmd)
             /* __asm__ ("int3"); */
             goto warn;
 
-        case 0x0e:
+        case 0x0e:              /* CSP register write: index, value */
             s->needed_bytes = 2;
-            goto warn;
+            break;
 
         case 0x09:
             dsp_out_data (s, 0xf8);
             goto warn;
 
-        case 0x0f:
+        case 0x0f:              /* CSP register read: index */
             s->needed_bytes = 1;
-            goto warn;
+            break;
 
         case 0x10:
             s->needed_bytes = 1;
@@ -710,8 +711,8 @@ static void complete (SB16State *s)
         switch (s->cmd) {
         case 0x04:
             s->csp_mode = dsp_get_data (s);
-            s->csp_reg83r = 0;
-            s->csp_reg83w = 0;
+            s->csp_reg83_write = 0;
+            s->csp_reg83_read = 0;
             ldebug("CSP command 0x04: mode=0x%x", s->csp_mode);
             break;
 
@@ -724,13 +725,16 @@ static void complete (SB16State *s)
             break;
 
         case 0x0e:
+            /* Register storage only; CSP microcode execution is not emulated. */
             d0 = dsp_get_data (s);
             d1 = dsp_get_data (s);
             ldebug("write CSP register %d <- 0x%x", d1, d0);
             if (d1 == 0x83) {
-                ldebug("0x83[%d] <- 0x%x", s->csp_reg83r, d0);
-                s->csp_reg83[s->csp_reg83r % 4] = d0;
-                s->csp_reg83r += 1;
+                unsigned pos = (unsigned)s->csp_reg83_write & 3;
+
+                ldebug("0x83[%u] <- 0x%x", pos, d0);
+                s->csp_reg83[pos] = d0;
+                s->csp_reg83_write = (pos + 1) & 3;
             }
             else {
                 s->csp_regs[d1] = d0;
@@ -742,11 +746,11 @@ static void complete (SB16State *s)
             ldebug("read CSP register 0x%x -> 0x%x, mode=0x%x",
                     d0, s->csp_regs[d0], s->csp_mode);
             if (d0 == 0x83) {
-                ldebug("0x83[%d] -> 0x%x",
-                        s->csp_reg83w,
-                        s->csp_reg83[s->csp_reg83w % 4]);
-                dsp_out_data (s, s->csp_reg83[s->csp_reg83w % 4]);
-                s->csp_reg83w += 1;
+                unsigned pos = (unsigned)s->csp_reg83_read & 3;
+
+                ldebug("0x83[%u] -> 0x%x", pos, s->csp_reg83[pos]);
+                dsp_out_data(s, s->csp_reg83[pos]);
+                s->csp_reg83_read = (pos + 1) & 3;
             }
             else {
                 dsp_out_data (s, s->csp_regs[d0]);
@@ -1364,8 +1368,8 @@ static const VMStateDescription vmstate_sb16 = {
         VMSTATE_BUFFER (csp_regs, SB16State),
         VMSTATE_UINT8 (csp_index, SB16State),
         VMSTATE_BUFFER (csp_reg83, SB16State),
-        VMSTATE_INT32 (csp_reg83r, SB16State),
-        VMSTATE_INT32 (csp_reg83w, SB16State),
+        VMSTATE_INT32 (csp_reg83_write, SB16State),
+        VMSTATE_INT32 (csp_reg83_read, SB16State),
 
         VMSTATE_BUFFER (in2_data, SB16State),
         VMSTATE_BUFFER (out_data, SB16State),
