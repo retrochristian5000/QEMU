@@ -180,6 +180,9 @@ typedef void (*cirrus_fill_t)(struct CirrusVGAState *s,
 struct PCICirrusVGAState {
     PCIDevice dev;
     CirrusVGAState cirrus_vga;
+    MemoryRegion legacy_io_lo;
+    MemoryRegion legacy_io_hi;
+    bool pci_legacy_decode;
 };
 
 #define TYPE_PCI_CIRRUS_VGA "cirrus-vga"
@@ -2986,7 +2989,9 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
     memory_region_init_io(&s->cirrus_vga_io, owner, &cirrus_vga_io_ops, s,
                           "cirrus-io", 0x30);
     memory_region_set_flush_coalesced(&s->cirrus_vga_io);
-    memory_region_add_subregion(system_io, 0x3b0, &s->cirrus_vga_io);
+    if (system_io) {
+        memory_region_add_subregion(system_io, 0x3b0, &s->cirrus_vga_io);
+    }
 
     memory_region_init(&s->low_mem_container, owner,
                        "cirrus-lowmem-container",
@@ -3004,10 +3009,10 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
         memory_region_add_subregion_overlap(&s->low_mem_container, i * 0x8000,
                                             bank, 1);
     }
-    memory_region_add_subregion_overlap(system_memory,
-                                        0x000a0000,
-                                        &s->low_mem_container,
-                                        1);
+    if (system_memory) {
+        memory_region_add_subregion_overlap(system_memory, 0x000a0000,
+                                            &s->low_mem_container, 1);
+    }
     memory_region_set_coalescing(&s->low_mem);
 
     /* I/O handler for LFB */
@@ -3079,9 +3084,22 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     if (!vga_common_init(&s->vga, OBJECT(dev), errp)) {
         return;
     }
+    /* With PCI-controlled decoding, initialize the common VGA engine
+     * without installing its unconditional legacy mappings. */
     cirrus_init_common(s, OBJECT(dev), device_id, CIRRUS_BUSTYPE_PCI,
-                       pci_address_space(dev),
-                       pci_address_space_io(dev));
+                       d->pci_legacy_decode ? NULL : pci_address_space(dev),
+                       d->pci_legacy_decode ? NULL : pci_address_space_io(dev));
+    if (d->pci_legacy_decode) {
+        memory_region_init_alias(&d->legacy_io_lo, OBJECT(dev),
+                                 "cirrus-pci-legacy-io-lo", &s->cirrus_vga_io,
+                                 0, QEMU_PCI_VGA_IO_LO_SIZE);
+        memory_region_init_alias(&d->legacy_io_hi, OBJECT(dev),
+                                 "cirrus-pci-legacy-io-hi", &s->cirrus_vga_io,
+                                 QEMU_PCI_VGA_IO_HI_BASE - QEMU_PCI_VGA_IO_LO_BASE,
+                                 QEMU_PCI_VGA_IO_HI_SIZE);
+        pci_register_vga(dev, &s->low_mem_container,
+                         &d->legacy_io_lo, &d->legacy_io_hi);
+    }
     s->vga.con = qemu_graphic_console_create(DEVICE(dev), 0, s->vga.hw_ops, &s->vga);
 
     /* setup PCI */
@@ -3107,6 +3125,10 @@ static const Property pci_vga_cirrus_properties[] = {
                        cirrus_vga.vga.vram_size_mb, 4),
     DEFINE_PROP_BOOL("blitter", struct PCICirrusVGAState,
                      cirrus_vga.enable_blitter, true),
+    /* Preserve legacy machine/firmware behavior until boot and migration
+     * coverage establishes that PCI-controlled decoding is safe by default. */
+    DEFINE_PROP_BOOL("pci-legacy-decode", PCICirrusVGAState,
+                     pci_legacy_decode, false),
 };
 
 static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
