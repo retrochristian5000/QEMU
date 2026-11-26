@@ -13,6 +13,11 @@ config SB16
     default y
     depends on ISA_BUS
 
+config SB16_PNP
+    bool
+    default y
+    depends on SB16 && ISA_BUS
+
 config ES1370
     bool
     default y if PCI_DEVICES
