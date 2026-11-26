@@ -922,7 +922,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         if (pm->pcihp_bridge_en || pm->pcihp_root_en) {
             build_acpi_pci_hotplug(dsdt, AML_SYSTEM_IO, pm->pcihp_io_base);
         }
-        build_piix4_pci0_int(dsdt, pcms->isa_ne2000_irq_mask);
+        build_piix4_pci0_int(dsdt, pcms->isa_reserved_irq_mask);
     } else if (q35) {
         sb_scope = aml_scope("_SB");
         dev = aml_device("PCI0");

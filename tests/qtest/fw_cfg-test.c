@@ -368,11 +368,56 @@ static void test_piix_pic_resources(gconstpointer opaque)
     qtest_quit(s);
 }
 
+/* The generalized mask must reflect realized devices, not default slots. */
+static void test_isa_irq_mask(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults "
+                              "-device ne2k_isa,iobase=0x300,irq=10 "
+                              "-chardev null,id=uart "
+                              "-device isa-serial,index=0,irq=11,chardev=uart "
+                              "-parallel null");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint16_t mask = 0;
+
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/isa-reserved-irq-mask",
+                                     &mask, sizeof(mask)), ==, sizeof(mask));
+    g_assert_cmphex(le16_to_cpu(mask), ==,
+                    (1U << 7) | (1U << 10) | (1U << 11));
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/isa-ne2000-irq-mask",
+                                     &mask, sizeof(mask)), ==, sizeof(mask));
+    g_assert_cmphex(le16_to_cpu(mask), ==, 1U << 10);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
+static void test_isa_irq_mask_empty(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint16_t mask = UINT16_MAX;
+
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/isa-reserved-irq-mask",
+                                     &mask, sizeof(mask)), ==, sizeof(mask));
+    g_assert_cmphex(le16_to_cpu(mask), ==, 0);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/isa-ne2000-irq-mask",
+                                     &mask, sizeof(mask)), ==, 0);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    if (qtest_has_machine("pc") && qtest_has_device("PIIX4_PM")) {
+        qtest_add_func("fw_cfg/isa-irq-mask/empty", test_isa_irq_mask_empty);
+        if (qtest_has_device("ne2k_isa") &&
+            qtest_has_device("isa-serial") &&
+            qtest_has_device("isa-parallel")) {
+            qtest_add_func("fw_cfg/isa-irq-mask/devices", test_isa_irq_mask);
+        }
+    }
     if (qtest_has_machine("pc") && qtest_has_device("PIIX4_PM")) {
         qtest_add_data_func("fw_cfg/acpi1-fadt/default", GINT_TO_POINTER(0),
                             test_acpi1_fadt);

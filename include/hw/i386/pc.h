@@ -30,6 +30,7 @@ typedef struct PCMachineState {
     /* State for other subsystems/APIs: */
     Notifier machine_done;
     uint16_t isa_ne2000_irq_mask;
+    uint16_t isa_reserved_irq_mask;
 
     /* Pointers to devices and objects: */
     PCIBus *pcibus;

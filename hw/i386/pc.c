@@ -28,6 +28,7 @@
 #include "hw/i386/pc.h"
 #include "hw/char/serial-isa.h"
 #include "hw/char/parallel.h"
+#include "hw/char/parallel-isa.h"
 #include "hw/hyperv/hv-balloon.h"
 #include "hw/i386/fw_cfg.h"
 #include "hw/i386/vmport.h"
@@ -527,21 +528,52 @@ void pc_acpi_smi_interrupt(void *opaque, int irq, int level)
     }
 }
 
-static int pc_collect_ne2000_irq(DeviceState *dev, void *opaque)
+typedef struct PCISAIRQInfo {
+    PCMachineState *pcms;
+    bool piix;
+} PCISAIRQInfo;
+
+static int pc_collect_isa_irq(DeviceState *dev, void *opaque)
 {
-    uint16_t *mask = opaque;
+    PCISAIRQInfo *info = opaque;
+    Object *obj = OBJECT(dev);
+    BusState *bus;
+    bool ne2000;
+    uint64_t irq;
 
-    if (dev->realized && object_dynamic_cast(OBJECT(dev), TYPE_ISA_NE2000)) {
-        BusState *bus = qdev_get_parent_bus(dev);
+    if (!dev->realized) {
+        return 0;
+    }
+    if (object_dynamic_cast(obj, "pci-piix")) {
+        info->piix = true;
+        return 0;
+    }
+    bus = qdev_get_parent_bus(dev);
+    if (!object_dynamic_cast(obj, TYPE_ISA_DEVICE) ||
+        !bus || !bus->parent ||
+        !object_dynamic_cast(OBJECT(bus->parent), "pci-piix")) {
+        return 0;
+    }
 
-        if (bus && bus->parent &&
-            object_dynamic_cast(OBJECT(bus->parent), "pci-piix")) {
-            uint64_t irq = object_property_get_uint(OBJECT(dev), "irq",
-                                                    &error_abort);
+    /*
+     * Only collect devices whose IRQ property denotes a realized ISA
+     * interrupt connection. This is a boot snapshot, not an inventory
+     * of all ISA resources or a live report of guest reconfiguration.
+     */
+    ne2000 = object_dynamic_cast(obj, TYPE_ISA_NE2000) != NULL;
+    if (!ne2000 &&
+        !object_dynamic_cast(obj, TYPE_ISA_SERIAL) &&
+        !object_dynamic_cast(obj, TYPE_ISA_PARALLEL) &&
+        !object_dynamic_cast(obj, "sb16") &&
+        !object_dynamic_cast(obj, "gus")) {
+        return 0;
+    }
 
-            if (irq < ISA_NUM_IRQS) {
-                *mask |= 1U << irq;
-            }
+    irq = object_property_get_uint(obj, "irq", &error_abort);
+    if (irq < ISA_NUM_IRQS) {
+        info->pcms->isa_reserved_irq_mask |= 1U << irq;
+        if (ne2000) {
+            info->pcms->isa_ne2000_irq_mask |= 1U << irq;
         }
     }
     return 0;
@@ -567,8 +599,17 @@ void pc_machine_done(Notifier *notifier, void *data)
     pci_bus_add_fw_cfg_extra_pci_roots(x86ms->fw_cfg, pcms->pcibus,
                                        &error_abort);
 
-    qbus_walk_children(sysbus_get_default(), pc_collect_ne2000_irq,
-                       NULL, NULL, NULL, &pcms->isa_ne2000_irq_mask);
+    PCISAIRQInfo irq_info = { .pcms = pcms };
+
+    qbus_walk_children(sysbus_get_default(), pc_collect_isa_irq,
+                       NULL, NULL, NULL, &irq_info);
+    if (x86ms->fw_cfg && irq_info.piix) {
+        uint16_t *mask = g_new(uint16_t, 1);
+
+        *mask = cpu_to_le16(pcms->isa_reserved_irq_mask);
+        fw_cfg_add_file(x86ms->fw_cfg, "etc/isa-reserved-irq-mask",
+                        mask, sizeof(*mask));
+    }
     if (x86ms->fw_cfg && pcms->isa_ne2000_irq_mask) {
         uint16_t *mask = g_new(uint16_t, 1);
 

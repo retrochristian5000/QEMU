@@ -308,3 +308,21 @@ is, the warning is suppressed), but you must know exactly what you're
 doing.
 
 All externally provided fw_cfg items are read-only to the guest.
+
+
+PIIX ISA boot interrupt reservations
+------------------------------------
+
+On PIIX PC machines, ``etc/isa-reserved-irq-mask`` contains a two-byte
+little-endian bitmap of ISA interrupt lines reserved at machine
+initialization. Bit N represents IRQ N. A zero bitmap is valid.
+The file currently includes realized ISA NE2000, serial (including
+derived modem profiles), parallel, Sound Blaster 16 and Gravis Ultrasound
+devices on the PIIX ISA bus. It is not a complete motherboard resource
+inventory and does not track guest reconfiguration after boot.
+
+Firmware may exclude these lines from PCI interrupt routing. QEMU's PIIX
+ACPI link-device possible resources use the same reservations. The older
+``etc/isa-ne2000-irq-mask`` file retains its NE2000-only meaning and
+is still emitted when at least one such IRQ is reserved. Firmware should
+fall back to it when the generalized file is absent.
