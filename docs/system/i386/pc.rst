@@ -110,3 +110,28 @@ by this change. Existing PC machine defaults remain unchanged.
 
 Hardware reference: Intel 82443BX Host Bridge/Controller datasheet,
 order 290633-001, April 1998, chapter 3.
+
+Legacy Windows timing diagnostics
+---------------------------------
+
+Windows 95 and Windows 98 can report a protection error while initializing
+NDIS when their timing calibration encounters an effective CPU speed above
+its supported range (Microsoft Knowledge Base Q312108). This is not by
+itself evidence of a defective emulated network adapter.
+
+When investigating this failure under TCG, compare the same guest and device
+configuration using a single vCPU and fixed instruction-count virtual time::
+
+    -accel tcg,thread=single -smp 1 -icount shift=3,align=off,sleep=on
+
+Replace existing accelerator, SMP and icount options rather than appending
+conflicting values. This diagnostic advances virtual time by eight nanoseconds
+per guest instruction; it does not model a physical CPU's clock frequency or
+instruction latencies. Keep the NIC, IRQ, firmware, and disk configuration
+unchanged between runs. Do not use a network adapter change as a substitute
+for verifying guest timer and interrupt behavior.
+
+Compare repeated cold boots, virtual PIT progress and the first x86 divide
+exception during startup if the error persists. Fixed icount is a diagnostic
+and optional compatibility configuration, not a change to TCG defaults or a
+verified fix for every NDIS initialization failure.

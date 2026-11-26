@@ -51,13 +51,14 @@ void rr_kick_vcpu_thread(CPUState *unused)
 /*
  * TCG vCPU kick timer
  *
- * Single-threaded TCG needs periodic preemption only when at least two
- * vCPUs can execute. A halted secondary vCPU must not force its running
- * sibling to exit translation blocks on every kick timer tick.
+ * Keep periodic preemption while any CPU in a multi-vCPU machine runs.
+ * A halted sibling can become runnable during translated execution, and
+ * qemu_cpu_is_self() is true for every CPU sharing the RR host thread.
+ * An interrupt raised on that thread may therefore request an exit only
+ * from the target CPU, not from the currently executing sibling.
  *
- * Interrupts and queued CPU work still wake the round-robin thread through
- * qemu_cpu_kick(), so the kick timer can be rearmed when another CPU becomes
- * runnable. This also preserves the all-idle condition-variable sleep.
+ * Single-vCPU machines need no periodic kick. Stop the timer while all
+ * CPUs are idle and rearm it before returning to translated execution.
  */
 
 static QEMUTimer *rr_kick_vcpu_timer;
@@ -90,18 +91,7 @@ static void rr_kick_thread(void *opaque)
 
 static bool rr_needs_kick_timer(void)
 {
-    CPUState *cpu;
-    bool found_runnable = false;
-
-    CPU_FOREACH(cpu) {
-        if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {
-            if (found_runnable) {
-                return true;
-            }
-            found_runnable = true;
-        }
-    }
-    return false;
+    return first_cpu && CPU_NEXT(first_cpu);
 }
 
 static void rr_stop_kick_timer(void)

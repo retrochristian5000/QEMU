@@ -27,15 +27,13 @@ typedef struct CPUState {
 typedef struct QEMUTimer { bool pending; } QEMUTimer;
 
 static CPUState *first_cpu;
-#define CPU_FOREACH(cpu) for ((cpu) = first_cpu; (cpu); (cpu) = (cpu)->next)
+#define CPU_NEXT(cpu) ((cpu)->next)
 #define QEMU_CLOCK_VIRTUAL 1
 
 static QEMUTimer timer_storage;
 static QEMUTimer *rr_kick_vcpu_timer;
 static int timers_created, timer_arms, timer_cancels;
 
-static bool cpu_can_run(CPUState *cpu) { return cpu->runnable; }
-static bool cpu_thread_is_idle(CPUState *cpu) { return cpu->idle; }
 static int64_t rr_next_kick_time(void) { return 500; }
 static void rr_kick_thread(void *opaque) { (void)opaque; }
 
@@ -74,51 +72,51 @@ int main(void)
     rr_start_kick_timer();
     assert(timers_created == 0 && !rr_kick_vcpu_timer);
 
-    /* Two present, but one is halted. */
+    /*
+     * Two present, but one is halted. Keep the timer armed: an interrupt
+     * from the running vCPU can wake its sibling without kicking the
+     * shared host thread out of the current translated block chain.
+     */
     primary.next = &secondary;
-    rr_start_kick_timer();
-    assert(timers_created == 0);
-
-    /* An interrupt makes both vCPUs runnable: arm preemption. */
-    secondary.idle = false;
     rr_start_kick_timer();
     assert(timers_created == 1 && timer_arms == 1);
     assert(timer_storage.pending);
 
-    /* Do not rearm a timer that is already pending. */
+    /* A wakeup does not need to rearm an already pending timer. */
+    secondary.idle = false;
     rr_start_kick_timer();
     assert(timers_created == 1 && timer_arms == 1);
 
-    /* HLT stops the kick; a later wakeup rearms that same timer. */
+    /* A halted or stopped sibling must not disable periodic preemption. */
     secondary.idle = true;
+    secondary.runnable = false;
     rr_start_kick_timer();
-    assert(!timer_storage.pending && timer_cancels == 1);
-    secondary.idle = false;
-    rr_start_kick_timer();
-    assert(timers_created == 1 && timer_arms == 2);
+    assert(timer_storage.pending && timer_cancels == 0);
 
-    /* A stopped CPU with queued work must not count as runnable. */
-    primary.runnable = false;
+    /* The all-idle wait path explicitly stops the timer. */
+    primary.idle = true;
+    rr_stop_kick_timer();
+    assert(!timer_storage.pending && timer_cancels == 1);
+    rr_stop_kick_timer();
+    assert(timer_cancels == 1);
+
+    /* Any wakeup re-arms the existing timer before execution resumes. */
+    primary.idle = false;
+    rr_start_kick_timer();
+    assert(timer_storage.pending && timer_arms == 2);
+    assert(timers_created == 1);
+
+    /* Removing the secondary CPU restores the single-vCPU fast path. */
+    primary.next = NULL;
     rr_start_kick_timer();
     assert(!timer_storage.pending && timer_cancels == 2);
-    secondary.idle = true;
-    rr_start_kick_timer();
-    assert(timer_cancels == 2);
-
-    /* Resuming two CPUs restores periodic fairness. */
-    primary.runnable = true;
-    primary.idle = false;
-    secondary.idle = false;
-    rr_start_kick_timer();
-    assert(timer_storage.pending && timer_arms == 3);
-    assert(timers_created == 1);
     return 0;
 }
 """
 
 
 class RoundRobinIdleTests(unittest.TestCase):
-    def test_runnable_cpu_timer_arbitration(self):
+    def test_present_cpu_timer_arbitration(self):
         source = SOURCE.read_text(encoding="utf-8")
         start = source.index("static bool rr_needs_kick_timer(void)")
         end = source.index("\nstatic void rr_wait_io_event(void)", start)
@@ -139,6 +137,8 @@ class RoundRobinIdleTests(unittest.TestCase):
     def test_event_driven_hlt_and_irq_wakeup_remains_intact(self):
         source = SOURCE.read_text(encoding="utf-8")
         self.assertIn("qemu_cond_wait_bql(first_cpu->halt_cond)", source)
+        self.assertIn("while (all_cpu_threads_idle()) {\n"
+                      "        rr_stop_kick_timer();", source)
         self.assertIn("rr_kick_vcpu_thread(CPUState *unused)", source)
         self.assertIn("tcg_kick_vcpu_thread(cpu)", source)
 
