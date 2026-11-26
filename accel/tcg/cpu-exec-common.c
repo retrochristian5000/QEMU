@@ -50,7 +50,21 @@ uint32_t curr_cflags(CPUState *cpu)
     if (unlikely(cpu_single_stepping(cpu))) {
         cflags |= CF_NO_GOTO_TB | CF_NO_GOTO_PTR | CF_SINGLE_STEP | 1;
     } else if (qatomic_read(&one_insn_per_tb)) {
-        cflags |= CF_NO_GOTO_TB | 1;
+        cflags = (cflags & ~CF_COUNT_MASK) | 1;
+        /*
+         * Keep one guest instruction per TB, but permit normal direct
+         * chaining in the opt-in fast mode.  Preserve instruction tracing,
+         * replay/icount and any existing no-chain restriction.
+         */
+        if (qatomic_read(&one_insn_per_tb_chain) &&
+            !(cflags & (CF_NO_GOTO_TB | CF_NO_GOTO_PTR | CF_USE_ICOUNT |
+                        CF_NOIRQ | CF_BP_PAGE)) &&
+            !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN | CPU_LOG_TB_CPU |
+                                CPU_LOG_EXEC)) {
+            cflags |= CF_ONE_INSN_CHAIN;
+        } else {
+            cflags |= CF_NO_GOTO_TB;
+        }
     } else if (qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN)) {
         cflags |= CF_NO_GOTO_TB;
     }
