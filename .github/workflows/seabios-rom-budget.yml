@@ -264,7 +264,7 @@ jobs:
               fi
               printf '%s: layout pack=%s raw=%d saved=%d bytes\n' \
                 "$variant" "$pack" "$bytes" "$((before - bytes))"
-              grep -E '^(ROM gap audit:|ROM alignment audit:|Total size:)' "$log"
+              grep -E '^(ROM attribute audit:|  attribute:|  resident:|  aligned:|ROM gap audit:|ROM alignment audit:|Total size:)' "$log"
             done
           done
 
