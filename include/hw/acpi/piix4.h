@@ -54,6 +54,7 @@ struct PIIX4PMState {
     bool smm_enabled;
     bool smm_compat;
     bool strict_io_decode;
+    bool strict_acpi1_fadt;
     Notifier machine_ready;
     Notifier powerdown_notifier;
 
