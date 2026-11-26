@@ -1222,12 +1222,13 @@ static int device_help_func(void *opaque, QemuOpts *opts, Error **errp)
 }
 
 /*
- * Explicit Intel 8741 controllers must exist before either AT&T keyboard
+ * Explicit Intel UPI-41 controllers must exist before either AT&T keyboard
  * chooses its controller. Keep all other devices in their existing order.
  */
 static bool device_init_early(const char *driver)
 {
-    return g_strcmp0(driver, "intel-8741") == 0;
+    return g_strcmp0(driver, "intel-8741") == 0 ||
+           g_strcmp0(driver, "intel-8041") == 0;
 }
 
 static int device_init_func(void *opaque, QemuOpts *opts, Error **errp)

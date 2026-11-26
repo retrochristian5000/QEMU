@@ -230,6 +230,8 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd302",
           "AT&T 302 keyboard (Intel 8741 included; guest I/O pending)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
+        { "intel-8041",
+          "Intel 8041 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "intel-8741",
           "Intel 8741 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "isa-vga", "QEMU Standard VGA ISA controller" },
@@ -336,6 +338,11 @@ static void test_att_keyboard_explicit_controller(void)
         "-device intel-8741,id=other -device intel-8741,id=upi",
         "-device att-kbd302,id=kbd "
         "-device '{\"driver\":\"intel-8741\",\"id\":\"upi\"}'",
+        "-device intel-8041,id=upi -device att-kbd302,id=kbd",
+        "-device att-kbd302,id=kbd -device intel-8041,id=upi",
+        "-device att-kbd301,id=kbd -device intel-8041,id=upi",
+        "-device att-kbd302,id=kbd,controller-id=upi "
+        "-device intel-8741,id=other -device intel-8041,id=upi",
     };
     QTestState *qts = qtest_init(common_args);
     QList *types = device_type_list(qts, false);
@@ -368,7 +375,15 @@ static void test_att_keyboard_explicit_controller(void)
             "{'execute':'qom-get','arguments':"
             "{'path':'/machine/peripheral/kbd/controller','property':'realized'}}");
         qobject_unref(reply);
-        if (i == 3) {
+        reply = qtest_qmp(qts,
+            "{'execute':'qom-get','arguments':"
+            "{'path':'/machine/peripheral/upi',"
+            "'property':'program-memory-type'}}");
+        g_assert_true(qdict_haskey(reply, "return"));
+        g_assert_cmpstr(qdict_get_str(reply, "return"), ==,
+                        i < 5 ? "eprom" : "mask-rom");
+        qobject_unref(reply);
+        if (i == 3 || i == 8) {
             g_assert_false(qtest_qom_get_bool(qts, "/machine/peripheral/other",
                                              "keyboard-attached"));
         }

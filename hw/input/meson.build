@@ -3,7 +3,8 @@ system_ss.add(when: 'CONFIG_ADB', if_true: files('adb.c', 'adb-mouse.c', 'adb-kb
 system_ss.add(when: 'CONFIG_PCKBD', if_true: files(
   'pckbd.c', 'att-kbd301.c', 'att-kbd301-core.c', 'att-kbd301-map.c',
   'att-kbd302.c', 'att-kbd302-core.c', 'att-kbd302-map.c',
-  'intel-8741.c', 'intel-8741-core.c', 'intel-8741-program.c'))
+  'intel-upi41.c', 'intel-8041.c', 'intel-8741.c',
+  'intel-8741-core.c', 'intel-8741-program.c'))
 system_ss.add(when: 'CONFIG_PL050', if_true: files('pl050.c'))
 system_ss.add(when: 'CONFIG_PS2', if_true: files('ps2.c'))
 system_ss.add(when: 'CONFIG_STELLARIS_GAMEPAD', if_true: files('stellaris_gamepad.c'))

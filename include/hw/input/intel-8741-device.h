@@ -9,8 +9,16 @@
 #include "hw/input/intel-8741.h"
 #include "hw/input/intel-8741-program.h"
 
+#define TYPE_INTEL_UPI41 "intel-upi41"
+#define TYPE_INTEL_8041 "intel-8041"
 #define TYPE_INTEL_8741 "intel-8741"
 OBJECT_DECLARE_SIMPLE_TYPE(Intel8741State, INTEL_8741)
+
+/* Shared state; retain the existing 8741 API and concrete type check. */
+#define INTEL_UPI41(obj) OBJECT_CHECK(Intel8741State, (obj), TYPE_INTEL_UPI41)
+
+extern const TypeInfo intel_8041_info;
+extern const TypeInfo intel_8741_info;
 
 /*
  * The owner provides a byte source until it explicitly disconnects.
@@ -31,7 +39,7 @@ void intel_8741_connect_keyboard(Intel8741State *s,
                                  Intel8741KeyboardRead read_byte,
                                  void *opaque);
 /*
- * Resolve a realized explicit controller by ID or by unique availability,
+ * Resolve either original UPI-41 variant by ID or unique availability,
  * otherwise create a private child. Returns an owned reference on success.
  */
 Intel8741State *intel_8741_attach_keyboard(DeviceState *owner,
