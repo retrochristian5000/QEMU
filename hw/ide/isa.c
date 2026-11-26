@@ -112,6 +112,7 @@ static void isa_ide_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = isa_ide_realizefn;
+    dc->desc = "Legacy ISA IDE controller (ATA/ATAPI)";
     dc->fw_name = "ide";
     device_class_set_legacy_reset(dc, isa_ide_reset);
     device_class_set_props(dc, isa_ide_properties);
