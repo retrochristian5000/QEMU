@@ -56,6 +56,7 @@
 #include "hw/usb/usb.h"
 #include "hw/i386/intel_iommu.h"
 #include "hw/net/ne2000-isa.h"
+#include "hw/core/sysbus.h"
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/virtio/virtio-md-pci.h"
 #include "hw/i386/kvm/xen_overlay.h"
@@ -494,7 +495,7 @@ static void handle_a20_line_change(void *opaque, int irq, int level)
 
 static const int ne2000_io[NE2000_NB_MAX] = { 0x300, 0x320, 0x340, 0x360,
                                               0x280, 0x380 };
-static const int ne2000_irq[NE2000_NB_MAX] = { 9, 10, 11, 3, 4, 5 };
+static const int ne2000_irq[NE2000_NB_MAX] = { -1, 3, 4, 5, 11, 9 };
 
 static gboolean pc_init_ne2k_isa(ISABus *bus, NICInfo *nd, Error **errp)
 {
@@ -520,6 +521,26 @@ void pc_acpi_smi_interrupt(void *opaque, int irq, int level)
     }
 }
 
+static int pc_collect_ne2000_irq(DeviceState *dev, void *opaque)
+{
+    uint16_t *mask = opaque;
+
+    if (dev->realized && object_dynamic_cast(OBJECT(dev), TYPE_ISA_NE2000)) {
+        BusState *bus = qdev_get_parent_bus(dev);
+
+        if (bus && bus->parent &&
+            object_dynamic_cast(OBJECT(bus->parent), "pci-piix")) {
+            uint64_t irq = object_property_get_uint(OBJECT(dev), "irq",
+                                                    &error_abort);
+
+            if (irq < ISA_NUM_IRQS) {
+                *mask |= 1U << irq;
+            }
+        }
+    }
+    return 0;
+}
+
 static
 void pc_machine_done(Notifier *notifier, void *data)
 {
@@ -539,6 +560,16 @@ void pc_machine_done(Notifier *notifier, void *data)
 
     pci_bus_add_fw_cfg_extra_pci_roots(x86ms->fw_cfg, pcms->pcibus,
                                        &error_abort);
+
+    qbus_walk_children(sysbus_get_default(), pc_collect_ne2000_irq,
+                       NULL, NULL, NULL, &pcms->isa_ne2000_irq_mask);
+    if (x86ms->fw_cfg && pcms->isa_ne2000_irq_mask) {
+        uint16_t *mask = g_new(uint16_t, 1);
+
+        *mask = cpu_to_le16(pcms->isa_ne2000_irq_mask);
+        fw_cfg_add_file(x86ms->fw_cfg, "etc/isa-ne2000-irq-mask",
+                        mask, sizeof(*mask));
+    }
 
     acpi_setup();
     if (x86ms->fw_cfg) {
