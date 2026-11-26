@@ -152,6 +152,10 @@ class SeaBiosConfigTests(unittest.TestCase):
 
             build('OzSegmented')
             self.assertEqual(output.read_text(), 'OzSegmented\n\n')
+            stamp = output.parent / '.whp-seabios-source'
+            self.assertIn('clang_elf_split=0', stamp.read_text().splitlines())
+            self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
+            self.assertFalse((roms / 'mp').exists())
             output.write_text('preserve incremental build\n')
             build('OzSegmented')
             self.assertEqual(output.read_text(), 'preserve incremental build\n')
@@ -164,6 +168,11 @@ class SeaBiosConfigTests(unittest.TestCase):
             output.write_text('stale before ELF split\n')
             build('Os', 'alternate-', '1')
             self.assertEqual(output.read_text(), 'Os\nalternate-\n')
+            self.assertIn('clang_elf_split=1', stamp.read_text().splitlines())
+            output.write_text('preserve ELF split incremental build\n')
+            build('Os', 'alternate-', '1')
+            self.assertEqual(output.read_text(), 'preserve ELF split incremental build\n')
+            self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
 
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):
         with tempfile.TemporaryDirectory(prefix='whp-seabios-revision-') as tmp:
