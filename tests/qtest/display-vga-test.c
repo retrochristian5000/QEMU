@@ -297,6 +297,41 @@ static QDict *find_pci_device(QList *buses, const char *qdev_id)
     return NULL;
 }
 
+static void test_cirrus_pci_identity(void)
+{
+    QTestState *qts = qtest_init("-vga none -device cirrus-vga,id=cirrus");
+    QDict *resp = qtest_qmp(qts, "{'execute': 'query-pci'}");
+    QDict *device;
+    QDict *id;
+    QDict *class_info;
+
+    g_assert(qdict_haskey(resp, "return"));
+    device = find_pci_device(qdict_get_qlist(resp, "return"), "cirrus");
+    g_assert_nonnull(device);
+    id = qdict_get_qdict(device, "id");
+    class_info = qdict_get_qdict(device, "class_info");
+    g_assert_cmphex(qdict_get_int(id, "vendor"), ==, PCI_VENDOR_ID_CIRRUS);
+    g_assert_cmphex(qdict_get_int(id, "device"), ==, 0x00b8);
+    g_assert_cmphex(qdict_get_int(class_info, "class"), ==,
+                    PCI_CLASS_DISPLAY_VGA);
+    qobject_unref(resp);
+
+    /* The VGA probe must agree with PCI enumeration. */
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27) & 0xfc, ==, 0xb8);
+    g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x20);
+
+    /* Chip identification and the bus strap must not be guest writable. */
+    qtest_outb(qts, VGA_CRT_IC, 0x27);
+    qtest_outb(qts, VGA_CRT_DC, 0x98);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27) & 0xfc, ==, 0xb8);
+    vga_seq_write(qts, 0x17, 0x38);
+    g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x20);
+
+    qtest_quit(qts);
+}
+
 static void test_sierra_falcon64(gconstpointer data)
 {
     unsigned int vram_mb = GPOINTER_TO_UINT(data);
@@ -362,6 +397,8 @@ int main(int argc, char **argv)
 
     if (qtest_has_device("cirrus-vga") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/pci/cirrus-identity",
+                       test_cirrus_pci_identity);
         qtest_add_func("/display/pci/cirrus-gray-palette",
                        test_cirrus_gray_palette);
     }
