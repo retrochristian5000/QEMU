@@ -10,6 +10,9 @@ on:
       - 'roms/config.seabios-128k-external-ide'
       - 'roms/config.seabios-microvm'
       - 'roms/Makefile'
+      - 'roms/seabios-toolchain-id.py'
+      - 'scripts/bootstrap-i386-clang.bash'
+      - 'scripts/tests/test-seabios-config.py'
       - 'roms/ide-optionrom/**'
       - 'scripts/tests/test-ide-optionrom.py'
       - 'scripts/meson-build-seabios.bash'
@@ -51,6 +54,9 @@ jobs:
           expected="$(git rev-parse HEAD:roms/seabios)"
           actual="$(git -C roms/seabios rev-parse HEAD)"
           test "$actual" = "$expected"
+
+      - name: Verify firmware cache invalidation on toolchain replacement
+        run: python3 scripts/tests/test-seabios-config.py SeaBiosConfigTests.test_clang_profile_change_invalidates_cached_firmware
 
       - name: Verify source-based firmware version metadata
         run: python3 roms/seabios/scripts/test-buildversion.py
