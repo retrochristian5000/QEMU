@@ -677,6 +677,7 @@ static void usb_hub_class_initfn(ObjectClass *klass, const void *data)
 
     uc->realize        = usb_hub_realize;
     uc->product_desc   = "QEMU USB Hub";
+    dc->desc = "QEMU USB hub";
     uc->usb_desc       = &desc_hub;
     uc->find_device    = usb_hub_find_device;
     uc->handle_reset   = usb_hub_handle_reset;
