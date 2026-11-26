@@ -84,6 +84,7 @@ static void tcg_accel_instance_init(Object *obj)
 }
 
 bool one_insn_per_tb;
+bool one_insn_per_tb_chain;
 
 #ifndef CONFIG_USER_ONLY
 static void tcg_vm_change_state(void *opaque, bool running, RunState state)
@@ -274,12 +275,40 @@ static bool tcg_get_one_insn_per_tb(Object *obj, Error **errp)
     return s->one_insn_per_tb;
 }
 
+static void tcg_one_insn_policy_changed(void)
+{
+#ifndef CONFIG_USER_ONLY
+    CPUState *cpu;
+
+    /* Leave existing chains so the next dispatch observes the new policy. */
+    CPU_FOREACH(cpu) {
+        cpu_exit(cpu);
+    }
+#endif
+}
+
 static void tcg_set_one_insn_per_tb(Object *obj, bool value, Error **errp)
 {
     TCGState *s = TCG_STATE(obj);
-    s->one_insn_per_tb = value;
-    /* Set the global also: this changes the behaviour */
-    qatomic_set(&one_insn_per_tb, value);
+
+    if (s->one_insn_per_tb != value) {
+        s->one_insn_per_tb = value;
+        qatomic_set(&one_insn_per_tb, value);
+        tcg_one_insn_policy_changed();
+    }
+}
+
+static bool tcg_get_one_insn_per_tb_chain(Object *obj, Error **errp)
+{
+    return qatomic_read(&one_insn_per_tb_chain);
+}
+
+static void tcg_set_one_insn_per_tb_chain(Object *obj, bool value, Error **errp)
+{
+    if (qatomic_read(&one_insn_per_tb_chain) != value) {
+        qatomic_set(&one_insn_per_tb_chain, value);
+        tcg_one_insn_policy_changed();
+    }
 }
 
 static void tcg_accel_class_init(ObjectClass *oc, const void *data)
@@ -312,6 +341,12 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
                                    tcg_set_one_insn_per_tb);
     object_class_property_set_description(oc, "one-insn-per-tb",
         "Only put one guest insn in each translation block");
+
+    object_class_property_add_bool(oc, "one-insn-per-tb-chain",
+                                   tcg_get_one_insn_per_tb_chain,
+                                   tcg_set_one_insn_per_tb_chain);
+    object_class_property_set_description(oc, "one-insn-per-tb-chain",
+        "Allow direct chaining of one-insn TBs outside diagnostic modes");
 }
 
 static const TypeInfo tcg_accel_type = {
