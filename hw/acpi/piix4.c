@@ -478,6 +478,8 @@ static void piix4_pm_realize(PCIDevice *dev, Error **errp)
     pci_conf[0xd2] = 0x09;
     pm_smbus_init(DEVICE(dev), &s->smb, true);
     if (s->strict_io_decode) {
+        /* Function 3 implements only PCI command bit 0. */
+        pci_set_word(dev->wmask + PCI_COMMAND, PCI_COMMAND_IO);
         pci_set_long(dev->wmask + PIIX4_PMBA, PIIX4_PM_BASE_MASK);
         pci_set_long(dev->wmask + PIIX4_SMBBA, PIIX4_SMB_BASE_MASK);
         dev->wmask[PIIX4_PMREGMISC] = 1;
