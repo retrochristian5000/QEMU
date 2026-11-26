@@ -635,6 +635,11 @@ whp_prepare_configure_args()
         # Keep ThinLTO inside the same macOS power budget as normal
         # compilation so the backend cannot silently expand to every CPU.
         configure_args+=("-Db_lto_threads=$JOBS")
+        # Each ThinLTO link can consume the entire backend worker budget.
+        # Do not allow several large host links to multiply that budget.
+        if [[ "$QEMU_HOST_LTO" != 0 ]]; then
+            configure_args+=(-Dbackend_max_links=1)
+        fi
         configure_args+=(--objcc="$OBJC")
         whp_add_optional_configure_switch "$MACOS_ENABLE_COCOA" cocoa
         case "$MACOS_ENABLE_COREAUDIO" in
