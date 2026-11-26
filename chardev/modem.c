@@ -195,6 +195,8 @@ struct ModemChardev {
     int w_mode;
     int reliable_mode;
     int flow_control_mode;
+    int lapm_frame_size;
+    int v34_modulation;
 
     int service_class;
     int voice_line;
@@ -267,7 +269,7 @@ static void modem_update_carrier(ModemChardev *modem)
     modem->tiocm |= CHR_TIOCM_DSR;
     modem->tiocm &= ~CHR_TIOCM_RI;
 
-    /* DataPort Express 3740: \D0 forces CTS, \D1 follows DTR. */
+    /* DataPort Express 3711/3740: \D0 forces CTS, \D1 follows DTR. */
     if (!modem->cts_follows_dtr || (modem->tiocm & CHR_TIOCM_DTR)) {
         modem->tiocm |= CHR_TIOCM_CTS;
     } else {
@@ -371,7 +373,7 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->quiet = false;
     modem->verbose = true;
     modem->carrier_follows_connection = true;
-    modem->cts_follows_dtr = modem->model->dataport_3740_line;
+    modem->cts_follows_dtr = modem->model->paradyne_commands;
     modem->compression = true;
     modem->dtr_mode = 2;
     modem->x_mode = 4;
@@ -379,6 +381,8 @@ static void modem_model_defaults(ModemChardev *modem)
     /* These are requested settings; no analogue negotiation is simulated. */
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
+    modem->lapm_frame_size = 256;
+    modem->v34_modulation = 0;
     modem->connect_speed = modem->model->connect_speed;
     modem->service_class = 0;
     modem_voice_defaults(modem);
@@ -492,6 +496,16 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->reliable_mode, modem->flow_control_mode,
                                modem->connect_speed);
         modem_queue_line(modem, line);
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("\\D%d \\A%d",
+                               modem->cts_follows_dtr,
+                               modem->lapm_frame_size / 64 - 1);
+        modem_queue_line(modem, line);
+        if (modem->model->dataport_3740_line) {
+            g_clear_pointer(&line, g_free);
+            line = g_strdup_printf("%%M%d", modem->v34_modulation);
+            modem_queue_line(modem, line);
+        }
     }
 }
 
@@ -1074,12 +1088,24 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             case 'C':
                 modem->compression = modem_parse_number(&p, 0) != 0;
                 break;
+            case 'M':
+                value = modem_parse_number(&p, -1);
+                if (!modem->model->dataport_3740_line ||
+                    value < 0 || value > 2) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                /* Record V.34/V.FC selection; no DSP negotiation yet. */
+                modem->v34_modulation = value;
+                break;
             case 'V':
                 if (modem->model->dataport_3740_line) {
-                    /* Model-specific placeholder, not a firmware dump. */
                     trace_dataport_3740_ident(
                         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), -1,
                         modem->model->fallback_identification);
+                }
+                if (modem->model->paradyne_commands) {
+                    /* Model-specific placeholder, not a firmware dump. */
                     modem_queue_line(modem,
                                      modem->model->fallback_identification);
                 } else {
@@ -1101,9 +1127,18 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             break;
         case '\\':
             switch (*p++) {
+            case 'A':
+                value = modem_parse_number(&p, -1);
+                if (!modem->model->paradyne_commands ||
+                    value < 0 || value > 3) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->lapm_frame_size = 64 * (value + 1);
+                break;
             case 'D':
                 value = modem_parse_number(&p, 0);
-                if (!modem->model->dataport_3740_line || value > 1) {
+                if (!modem->model->paradyne_commands || value > 1) {
                     modem_result(modem, MODEM_RESULT_ERROR);
                     return;
                 }

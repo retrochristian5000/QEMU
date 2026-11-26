@@ -12,6 +12,7 @@
 #include "qemu/module.h"
 #include "qemu/option.h"
 #include "chardev/char-fe.h"
+#include "chardev/char-serial.h"
 #include "chardev/modem.h"
 #include "system/system.h"
 
@@ -335,6 +336,60 @@ static void test_paradyne_3740_legacy_name(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_family_controls(gconstpointer opaque)
+{
+    const char *model = opaque;
+    bool v34 = !strcmp(model, "att-paradyne-3740");
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-dataport-family", model);
+    int lines = 0;
+
+    modem_frontend_init(&fe, &out, chr);
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_false(lines & CHR_TIOCM_CTS);
+    lines = CHR_TIOCM_DTR;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_true(lines & CHR_TIOCM_CTS);
+    lines = 0;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    assert_response_contains(modem_command(&fe, &out, "AT\\D0\\A1\r"),
+                             "\r\nOK\r\n");
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_true(lines & CHR_TIOCM_CTS);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\D0 \\A1");
+    assert_response_contains(modem_command(&fe, &out, "AT\\A4\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT%M2\r"),
+                             v34 ? "\r\nOK\r\n" : "\r\nERROR\r\n");
+    if (v34) {
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "%M2");
+        assert_response_contains(modem_command(&fe, &out, "AT%M3\r"),
+                                 "\r\nERROR\r\n");
+    }
+    assert_response_contains(modem_command(&fe, &out, "AT%V\r"),
+                             v34 ? "DataPort Express 3740" :
+                                   "DataPort Express 3711");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\D1 \\A3");
+    if (v34) {
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "%M0");
+    }
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_false(lines & CHR_TIOCM_CTS);
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -345,6 +400,12 @@ static void test_generic_modem_rejects_paradyne_controls(void)
 
     modem_frontend_init(&fe, &out, chr);
     response = modem_command(&fe, &out, "AT\\Q3\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT\\D1\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT\\A3\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT%M0\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%B14400\r");
     assert_response_contains(response, "\r\nERROR\r\n");
@@ -371,6 +432,11 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_data_func("/modem/paradyne/family-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_family_controls);
+    g_test_add_data_func("/modem/paradyne/family-3740",
+                         "att-paradyne-3740", test_dataport_family_controls);
     g_test_add_func("/modem/paradyne/3740-unimodem-probe",
                     test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",

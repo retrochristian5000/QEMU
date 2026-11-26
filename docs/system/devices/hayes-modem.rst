@@ -118,6 +118,32 @@ shows when a reply is queued, not when the guest has consumed it.
 
 Reference: https://patents.google.com/patent/US5815682A
 
+DataPort family comparison
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The external 3740 and ISA 3741 are 28.8 kbit/s models; the 3741
+configuration reference explicitly points to the 3740 command summary.
+The ISA 3711 is a 14.4 kbit/s Express model. The PCX 3705/3706 manual
+is useful for identification command semantics (e.g. ATI3 reports
+firmware, model and interface), but does not establish Express firmware
+strings. The archived MDMATT.INF distinguishes the Express internal,
+external and V.34 entries by identifiers ADA0F3F6, 401EA6EE and
+3C89963B respectively, despite their identical initialization strings.
+Those labels alone do not prove a one-to-one mapping to board models.
+
+Both implemented Express models support ``\\D0`` (force CTS high) and
+``\\D1`` (CTS follows DTR, default), and ``\\A0`` through ``\\A3``
+(request 64, 128, 192 or 256 byte LAP-M frames, default 256). Only the
+3740 accepts ``%M0`` (both V.34 and V.FC), ``%M1`` (V.34), and ``%M2``
+(V.FC). These modulation and frame settings are configuration state,
+not implemented data-pump behavior. ``AT&V`` reports them and ``AT&F``
+restores defaults. ``AT%V`` identifies each emulated Express model
+without claiming a genuine firmware revision. The 3741 is evidence for
+shared commands, not an additional emulated device in this change.
+
+* 3741: https://www.stason.org/TULARC/pc/modems-telephone-ISDN/P-R/PARADYNE-CORPORATION-Modem-DATAPORT-EXPRESS-3741.html
+* PCX manual: https://manualmachine.com/att/dataportpcxmodem/19730026-user-manual/
+
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,
