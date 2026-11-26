@@ -9,6 +9,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/ide/ide-bus.h"
 #include "system/legacy-drive.h"
+#include "system/block-backend.h"
 
 typedef struct LegacyDrive {
     QemuOpts *opts;
@@ -112,6 +113,11 @@ static bool attach_slot(DeviceState *controller, LegacyDrive *entry,
         }
         error_report("legacy disk slot %d is unavailable on controller '%s'",
                      slot, controller_id);
+        exit(1);
+    }
+
+    if (blk_get_attached_dev(blk_by_legacy_dinfo(entry->drive))) {
+        error_report("legacy drive backend is already attached to a device");
         exit(1);
     }
 
