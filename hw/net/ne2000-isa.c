@@ -35,6 +35,9 @@
 
 OBJECT_DECLARE_SIMPLE_TYPE(ISANE2000State, ISA_NE2000)
 
+#define NE2000_ISA_IO_SIZE 0x20
+#define NE2000_ISA_RESET_CMD 0x21 /* Stop, abort remote DMA, page 0. */
+
 struct ISANE2000State {
     ISADevice parent_obj;
 
@@ -59,16 +62,43 @@ static const VMStateDescription vmstate_isa_ne2000 = {
     }
 };
 
+static void isa_ne2000_reset_hold(Object *obj, ResetType type)
+{
+    ISANE2000State *isa = ISA_NE2000(obj);
+    NE2000State *s = &isa->ne2000;
+
+    /* A bus reset leaves the controller stopped with interrupts masked. */
+    s->cmd = NE2000_ISA_RESET_CMD;
+    s->imr = 0;
+    ne2000_reset(s);
+}
+
 static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
     ISANE2000State *isa = ISA_NE2000(dev);
     NE2000State *s = &isa->ne2000;
+    ISABus *bus = isa_bus_from_device(isadev);
 
-    ne2000_setup_io(s, DEVICE(isadev), 0x20);
+    if (isa->iobase > UINT16_MAX - (NE2000_ISA_IO_SIZE - 1)) {
+        error_setg(errp, "NE2000 ISA I/O base 0x%x exceeds the ISA port range",
+                   isa->iobase);
+        return;
+    }
+    if (isa->isairq >= ISA_NUM_IRQS) {
+        error_setg(errp, "NE2000 ISA IRQ %u is outside the ISA IRQ range 0-%u",
+                   isa->isairq, ISA_NUM_IRQS - 1);
+        return;
+    }
+    if (!bus->irqs_in || !bus->irqs_in[isa->isairq]) {
+        error_setg(errp, "NE2000 ISA IRQ %u is not connected on this bus",
+                   isa->isairq);
+        return;
+    }
+
+    s->irq = isa_bus_get_irq(bus, isa->isairq);
+    ne2000_setup_io(s, dev, NE2000_ISA_IO_SIZE);
     isa_register_ioport(isadev, &s->io, isa->iobase);
-
-    s->irq = isa_get_irq(isadev, isa->isairq);
 
     qemu_macaddr_default_if_unset(&s->c.macaddr);
     ne2000_reset(s);
@@ -88,7 +118,9 @@ static const Property ne2000_isa_properties[] = {
 static void isa_ne2000_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
+    rc->phases.hold = isa_ne2000_reset_hold;
     dc->desc = "NE2000-compatible ISA Ethernet adapter";
     dc->realize = isa_ne2000_realizefn;
     device_class_set_props(dc, ne2000_isa_properties);
