@@ -303,7 +303,10 @@ The ``cirrus-vga-generic`` device keeps the default PCI implementation
 for existing command lines. The explicit ``cirrus-vga-generic-pci`` type
 shares that implementation, and ``cirrus-vga-generic-isa`` selects ISA.
 Their guest-visible identities remain CL-GD5446 and CL-GD5428,
-respectively. The chipset-specific device names are:
+respectively. The ``-device help`` descriptions identify the manufacturer,
+chipset, bus and known implementation limits. The ``-vga help``
+description identifies the generic selector rather than a specific
+physical board. The chipset-specific device names are:
 
 * ``gd5422``: CL-GD5422 ISA.
 * ``gd5426``: CL-GD5426 ISA.

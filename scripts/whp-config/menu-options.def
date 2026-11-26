@@ -72,8 +72,8 @@ CONFIG_MAC_NEWWORLD|QEMU machines|New World Macintosh|bool|y||
 CONFIG_MAC_OLDWORLD|QEMU machines|Old World Macintosh|bool|y||
 I386_AUDIO_GAMEBLASTER|QEMU hardware|i386|choice|auto|auto,y,n|Creative Music System / Game Blaster (ISA bus)
 PPC_AUDIO_GAMEBLASTER|QEMU hardware|ppc|choice|auto|auto,y,n|Creative Music System / Game Blaster (ISA bus)
-I386_AUDIO_SB16|QEMU hardware|i386|choice|auto|auto,y,n|Sound Blaster 16 compatible (ISA bus)
-PPC_AUDIO_SB16|QEMU hardware|ppc|choice|auto|auto,y,n|Sound Blaster 16 compatible (ISA bus)
+I386_AUDIO_SB16|QEMU hardware|i386|choice|auto|auto,y,n|Creative Sound Blaster 16 and compatible profiles (ISA bus)
+PPC_AUDIO_SB16|QEMU hardware|ppc|choice|auto|auto,y,n|Creative Sound Blaster 16 and compatible profiles (ISA bus)
 I386_AUDIO_ADLIB|QEMU hardware|i386|choice|auto|auto,y,n|AdLib (ISA bus)
 PPC_AUDIO_ADLIB|QEMU hardware|ppc|choice|auto|auto,y,n|AdLib (ISA bus)
 I386_AUDIO_GUS|QEMU hardware|i386|choice|auto|auto,y,n|Gravis UltraSound (ISA bus)

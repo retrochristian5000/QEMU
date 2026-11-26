@@ -2616,10 +2616,11 @@ SRST
     Select type of VGA card to emulate. Valid values for type are
 
     ``cirrus``
-        Cirrus Logic GD5446 Video card. All Windows versions starting
-        from Windows 95 should recognize and use this graphic card. For
-        optimal performances, use 16 bit color depth in the guest and
-        the host OS. (This card was the default before QEMU 2.2)
+        Generic Cirrus Logic VGA. The machine selects the CL-GD5446
+        compatible PCI implementation or the CL-GD5428 compatible ISA
+        implementation. Use ``-device`` for an explicit bus or chipset
+        profile. Guest driver compatibility depends on the selected
+        interface; this option does not identify a physical board.
 
     ``std``
         Standard VGA card with Bochs VBE extensions. If your guest OS

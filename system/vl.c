@@ -981,7 +981,7 @@ static const VGAInterfaceInfo vga_interfaces[VGA_TYPE_MAX] = {
     },
     [VGA_CIRRUS] = {
         .opt_name = "cirrus",
-        .name = "Cirrus VGA",
+        .name = "Generic Cirrus Logic VGA (PCI or ISA)",
         .class_names = { "cirrus-vga-generic", "cirrus-vga-generic-isa" },
     },
     [VGA_VMWARE] = {
