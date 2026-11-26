@@ -191,14 +191,19 @@ static void serial_update_parameters(SerialState *s)
 static void serial_update_msl(SerialState *s)
 {
     uint8_t omsr;
-    int flags;
+    int flags = 0;
+    int ret;
 
     timer_del(s->modem_status_poll);
 
-    if (qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_GET_TIOCM,
-                          &flags) == -ENOTSUP) {
+    ret = qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_GET_TIOCM, &flags);
+    if (ret == -ENOTSUP) {
         s->poll_msl = -1;
         return;
+    }
+    if (ret < 0) {
+        /* Preserve the last valid status on a transient backend error. */
+        goto reschedule;
     }
 
     omsr = s->msr;
@@ -220,7 +225,8 @@ static void serial_update_msl(SerialState *s)
     /* The real 16550A apparently has a 250ns response latency to line status changes.
        We'll be lazy and poll only every 10ms, and only poll it at all if MSI interrupts are turned on */
 
-    if (s->poll_msl) {
+reschedule:
+    if (s->poll_msl > 0) {
         timer_mod(s->modem_status_poll, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
                   NANOSECONDS_PER_SECOND / 100);
     }
@@ -316,9 +322,11 @@ static void serial_write_fcr(SerialState *s, uint8_t val)
 
 static void serial_update_tiocm(SerialState *s)
 {
-    int flags;
+    int flags = 0;
 
-    qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_GET_TIOCM, &flags);
+    if (qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_GET_TIOCM, &flags) < 0) {
+        return;
+    }
 
     flags &= ~(CHR_TIOCM_RTS | CHR_TIOCM_DTR);
 
@@ -898,6 +906,8 @@ static void serial_reset(void *opaque)
     s->last_break_enable = 0;
     qemu_irq_lower(s->irq);
 
+    /* Reset the actual backend outputs as well as the MCR shadow. */
+    serial_update_tiocm(s);
     serial_update_msl(s);
     s->msr &= ~UART_MSR_ANY_DELTA;
 }

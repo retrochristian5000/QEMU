@@ -562,6 +562,44 @@ static void test_i440fx_dataport_3740_line(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
+{
+    bool integrated = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(integrated ?
+        "-M pc -nodefaults -serial none "
+        "-device att-paradyne-3740,index=1,acpi-legacy-irq=on" :
+        "-M pc -nodefaults -serial none "
+        "-chardev modem,id=m,model=att-paradyne-3740 "
+        "-device ns16550a,index=1,chardev=m,acpi-legacy-irq=on");
+
+    /* Exercise the serial enumeration framing and DTR/RTS transitions. */
+    qtest_outb(qts, 0x2fb, 0x82); /* DLAB, 7N1 */
+    qtest_outb(qts, 0x2f8, 96);   /* 1200 baud */
+    qtest_outb(qts, 0x2f9, 0);
+    qtest_outb(qts, 0x2fb, 2);
+    qtest_outb(qts, 0x2fc, 8);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x20);
+    qtest_clock_step(qts, 200000000);
+    qtest_outb(qts, 0x2fc, 9);
+    qtest_clock_step(qts, 200000000);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+
+    /* A legacy AT probe must still work after enumeration framing. */
+    qtest_outb(qts, 0x2fb, 0x83);
+    qtest_outb(qts, 0x2f8, 12);   /* 9600 baud */
+    qtest_outb(qts, 0x2f9, 0);
+    qtest_outb(qts, 0x2fb, 3);
+    modem_command(qts, "AT\r", "OK");
+    modem_command(qts, "ATI3\r", "3740");
+
+    /* UART reset must drop DTR even on a separately attached backend. */
+    qtest_system_reset(qts);
+    g_assert_cmphex(qtest_inb(qts, 0x2fc) & 3, ==, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x20);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_mouse(gconstpointer opaque)
 {
     bool enabled = GPOINTER_TO_INT(opaque);
@@ -743,6 +781,10 @@ int main(int argc, char **argv)
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_line);
         qtest_add_data_func("i440fx/isa/modem/3740-line-external",
                             GINT_TO_POINTER(0), test_i440fx_dataport_3740_line);
+        qtest_add_data_func("i440fx/isa/modem/3740-scan-integrated",
+                            GINT_TO_POINTER(1), test_i440fx_dataport_3740_scan);
+        qtest_add_data_func("i440fx/isa/modem/3740-scan-external",
+                            GINT_TO_POINTER(0), test_i440fx_dataport_3740_scan);
     }
     qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),
                         test_i440fx_cmos_mouse);

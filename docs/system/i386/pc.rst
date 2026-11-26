@@ -110,8 +110,13 @@ For example, replace automatic serial port creation with::
 
 The serial mouse is a character backend, not a second UART.
 Use a separate backend for each port and avoid conflicting IRQ
-assignments. Existing IRQ sharing and ACPI interrupt-resource
-semantics are unchanged. Use matching UART profiles for migration;
+assignments. The optional ``acpi-legacy-irq=on`` property advertises an
+edge-triggered, active-high, exclusive IRQ in ACPI (IRQNoFlags), matching
+traditional PC PIC routing. The default retains the existing shared,
+level-triggered, active-low descriptor for newer Windows guests. Use a
+unique IRQ for each legacy-mode UART; this property only changes ACPI
+reporting, not interrupt wiring or PIC programming. Use matching UART
+profiles and resource properties for migration;
 do not switch profiles when restoring saved state.
 
 ISA modem compatibility profiles
@@ -137,6 +142,16 @@ controller (PNP0501), and modem identification is provided by the
 existing AT-command engine. No original modem ROM, exact internal
 card design, ISA PnP identifier, analog telephone DSP, fax signal
 processing or real telephone connection is claimed.
+
+For a Windows 9x COM2 detection test with the DataPort Express 3740::
+
+    -serial none -device att-paradyne-3740,index=1,acpi-legacy-irq=on
+
+Do not assign another device to IRQ 3 for this test. The legacy IRQ
+option does not supply a modem serial Plug and Play identification packet.
+The AT identification remains synthetic; an authentic modem INF match
+requires separate verification. The UART reset drops DTR and RTS on
+both the owned and externally attached modem paths.
 
 These device profiles represent an unplugged telephone line: dialing
 normally returns NO DIALTONE and answering returns NO CARRIER. The

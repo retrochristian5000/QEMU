@@ -44,6 +44,7 @@ struct ISASerialState {
     uint32_t index;
     uint32_t iobase;
     uint32_t isairq;
+    bool acpi_legacy_irq;
     SerialState state;
     Chardev *owned_modem;
 };
@@ -153,8 +154,14 @@ static void serial_isa_build_aml(AcpiDevAmlIf *adev, Aml *scope)
 
     crs = aml_resource_template();
     aml_append(crs, aml_io(AML_DECODE16, isa->iobase, isa->iobase, 0x00, 0x08));
-    aml_append(crs, aml_irq(isa->isairq, AML_LEVEL, AML_ACTIVE_LOW,
-                            AML_SHARED));
+    if (isa->acpi_legacy_irq) {
+        /* Traditional PC PIC routing: edge, active high, exclusive. */
+        aml_append(crs, aml_irq_no_flags(isa->isairq));
+    } else {
+        /* Preserve the shared resource descriptor for newer guests. */
+        aml_append(crs, aml_irq(isa->isairq, AML_LEVEL, AML_ACTIVE_LOW,
+                                AML_SHARED));
+    }
 
     dev = aml_device("COM%d", isa->index + 1);
     aml_append(dev, aml_name_decl("_HID",
@@ -181,6 +188,7 @@ static const Property serial_isa_properties[] = {
     DEFINE_PROP_UINT32("index",  ISASerialState, index,   -1),
     DEFINE_PROP_UINT32("iobase",  ISASerialState, iobase,  -1),
     DEFINE_PROP_UINT32("irq",    ISASerialState, isairq,  -1),
+    DEFINE_PROP_BOOL("acpi-legacy-irq", ISASerialState, acpi_legacy_irq, false),
 };
 
 static void serial_isa_class_initfn(ObjectClass *klass, const void *data)
