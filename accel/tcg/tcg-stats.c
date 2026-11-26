@@ -44,8 +44,10 @@ static void dump_accel_info(AccelState *accel, GString *buf)
                                                     &error_fatal);
 
     g_string_append_printf(buf, "Accelerator settings:\n");
-    g_string_append_printf(buf, "one-insn-per-tb: %s\n\n",
+    g_string_append_printf(buf, "one-insn-per-tb: %s\n",
                            one_insn_per_tb ? "on" : "off");
+    g_string_append_printf(buf, "one-insn-per-tb-chain: %s\n\n",
+                           qatomic_read(&one_insn_per_tb_chain) ? "on" : "off");
 }
 
 static void print_qht_statistics(struct qht_stats hst, GString *buf)
