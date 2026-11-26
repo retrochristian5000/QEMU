@@ -8,6 +8,8 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/module.h"
+#include "qom/object.h"
 #include "qapi/error.h"
 #include "hw/isa/isa.h"
 #include "hw/core/qdev-properties.h"
