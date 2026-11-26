@@ -73,11 +73,12 @@ typedef struct QDevAlias
 #define QEMU_ARCH_VIRTIO_CCW (QEMU_ARCH_S390X)
 #define QEMU_ARCH_VIRTIO_MMIO (QEMU_ARCH_M68K | QEMU_ARCH_HEXAGON)
 
-/* Keep physical-device shorthands and transport selectors, not profile aliases.
+/* Keep physical-device shorthands, legacy names and transport selectors.
  * Please keep this table sorted by typename.
  */
 static const QDevAlias qdev_alias_table[] = {
     { "ES1370", "es1370" },
+    { "att-paradyne-3740", "att-paradyne-dataport-3740" },
     { "lsi53c895a", "lsi" },
     { "virtio-9p-device", "virtio-9p", QEMU_ARCH_VIRTIO_MMIO },
     { "virtio-9p-ccw", "virtio-9p", QEMU_ARCH_VIRTIO_CCW },

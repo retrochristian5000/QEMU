@@ -123,7 +123,8 @@ ISA device profiles with an owned 16550A-compatible UART:
 * ``hayes-accura-2400``
 * ``rockwell-voice-14400``
 * ``att-paradyne-dataport-3711``
-* ``att-paradyne-dataport-3740``
+* ``att-paradyne-3740`` (external modem with an owned ISA UART;
+  the previous device spelling ``att-paradyne-dataport-3740`` is a compatibility alias)
 
 For example, to install a modem on COM2 and leave COM1 available::
 

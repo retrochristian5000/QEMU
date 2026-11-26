@@ -46,7 +46,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_DEFAULT_MODEL "hayes-accura-2400"
 #define MODEM_VOICE_MODEL "rockwell-voice-14400"
 #define MODEM_PARADYNE_3711 "att-paradyne-dataport-3711"
-#define MODEM_PARADYNE_3740 "att-paradyne-dataport-3740"
+#define MODEM_PARADYNE_3740 "att-paradyne-3740"
 
 #define MODEM_INPUT_LINES (CHR_TIOCM_DTR | CHR_TIOCM_RTS)
 #define MODEM_OUTPUT_LINES \
@@ -138,7 +138,8 @@ static const ModemModel modem_models[] = {
         .connect_speed = 28800,
         .paradyne_commands = true,
         .dataport_3740_line = true,
-        .max_reliable_mode = 6,
+        /* The archived DataPort Express V.34 driver requests \N7. */
+        .max_reliable_mode = 7,
         .identification = {
             "288",
             "000",
@@ -332,6 +333,11 @@ static void modem_result(ModemChardev *modem, ModemResult result)
 static const ModemModel *modem_model_find(const char *name)
 {
     size_t i;
+
+    /* Preserve the original command-line model spelling. */
+    if (strcmp(name, "att-paradyne-dataport-3740") == 0) {
+        name = MODEM_PARADYNE_3740;
+    }
 
     for (i = 0; i < ARRAY_SIZE(modem_models); i++) {
         if (strcmp(name, modem_models[i].name) == 0) {

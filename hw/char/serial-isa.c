@@ -321,11 +321,11 @@ static const TypeInfo isa_modem_types[] = {
         .class_init = isa_modem_class_init,
         .class_data = "Paradyne DataPort Express 3711 ISA compatibility profile",
     }, {
-        .name = "att-paradyne-dataport-3740",
+        .name = "att-paradyne-3740",
         .parent = TYPE_ISA_SERIAL,
         .instance_init = isa_modem_init,
         .class_init = isa_modem_class_init,
-        .class_data = "Paradyne DataPort Express 3740 ISA compatibility profile",
+        .class_data = "AT&T Paradyne DataPort Express 3740 external serial modem (ISA UART)",
     },
 };
 

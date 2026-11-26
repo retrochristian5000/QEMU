@@ -265,7 +265,7 @@ static void test_paradyne_3740_profile(void)
     ModemOutput out = { 0 };
     CharFrontend fe = { 0 };
     Chardev *chr = modem_new("modem-paradyne-3740",
-                             "att-paradyne-dataport-3740");
+                             "att-paradyne-3740");
     const char *response;
 
     modem_frontend_init(&fe, &out, chr);
@@ -273,17 +273,36 @@ static void test_paradyne_3740_profile(void)
     assert_response_contains(response, "DataPort Express 3740 (QEMU emulation)");
     response = modem_command(&fe, &out, "AT\\N6\\Q3%B28800\r");
     assert_response_contains(response, "\r\nOK\r\n");
-    response = modem_command(&fe, &out, "AT\\N7\r");
+    /* Initialization used by the archived DataPort Express V.34 driver. */
+    response = modem_command(&fe, &out, "ATE1V1&F\\N7\\Q3%C1S7=60\r");
+    assert_response_contains(response, "\r\nOK\r\n");
+    response = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(response, "\\N7 \\Q3 DCE:28800");
+    assert_response_contains(response, "S07:060");
+    response = modem_command(&fe, &out, "AT\\N8\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%B16800\\Q4\r");
     assert_response_contains(response, "\r\nOK\r\n");
     response = modem_command(&fe, &out, "AT&V\r");
-    assert_response_contains(response, "\\N6 \\Q4 DCE:16800");
+    assert_response_contains(response, "\\N7 \\Q4 DCE:16800");
     response = modem_command(&fe, &out, "AT%B999999999999999999999\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%B28800\r");
     assert_response_contains(response, "\r\nOK\r\n");
 
+    modem_frontend_cleanup(&fe, chr);
+}
+
+static void test_paradyne_3740_legacy_name(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-paradyne-3740-legacy",
+                             "att-paradyne-dataport-3740");
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATI3\r"),
+                             "DataPort Express 3740 (QEMU emulation)");
     modem_frontend_cleanup(&fe, chr);
 }
 
@@ -323,6 +342,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-legacy-name",
+                    test_paradyne_3740_legacy_name);
     g_test_add_func("/modem/paradyne/generic-isolation",
                     test_generic_modem_rejects_paradyne_controls);
 

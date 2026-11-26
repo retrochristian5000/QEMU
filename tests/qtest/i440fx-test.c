@@ -517,9 +517,9 @@ static void test_i440fx_dataport_3740_line(gconstpointer opaque)
     bool integrated = GPOINTER_TO_INT(opaque);
     QTestState *qts = qtest_init(integrated ?
         "-M pc -nodefaults -serial none "
-        "-device att-paradyne-dataport-3740,index=1" :
+        "-device att-paradyne-3740,index=1" :
         "-M pc -nodefaults -serial none "
-        "-chardev modem,id=m,model=att-paradyne-dataport-3740 "
+        "-chardev modem,id=m,model=att-paradyne-3740 "
         "-device ns16550a,index=1,chardev=m");
 
     qtest_outb(qts, 0x2fb, 3);
@@ -530,6 +530,8 @@ static void test_i440fx_dataport_3740_line(gconstpointer opaque)
     g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
 
     modem_command(qts, "ATE0\r", "OK");
+    modem_command(qts, "AT\\N7\\Q3%C1S7=60\r", "OK");
+    modem_command(qts, "AT\\N8\r", "ERROR");
     modem_command(qts, "AT\\D0\r", "OK");
     qtest_outb(qts, 0x2fc, 8);
     g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
@@ -724,7 +726,7 @@ int main(int argc, char **argv)
     }
     const char *const modems[] = {
         "hayes-accura-2400", "rockwell-voice-14400",
-        "att-paradyne-dataport-3711", "att-paradyne-dataport-3740",
+        "att-paradyne-dataport-3711", "att-paradyne-3740",
     };
     for (unsigned n = 0; n < ARRAY_SIZE(modems); n++) {
         if (qtest_has_device(modems[n]) && qtest_has_device("ns16550a")) {
@@ -733,8 +735,10 @@ int main(int argc, char **argv)
             qtest_add_data_func(path, modems[n], test_i440fx_isa_modem);
         }
     }
-    if (qtest_has_device("att-paradyne-dataport-3740") &&
+    if (qtest_has_device("att-paradyne-3740") &&
         qtest_has_device("ns16550a")) {
+        qtest_add_data_func("i440fx/isa/modem/3740-legacy-name",
+                            "att-paradyne-dataport-3740", test_i440fx_isa_modem);
         qtest_add_data_func("i440fx/isa/modem/3740-line-integrated",
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_line);
         qtest_add_data_func("i440fx/isa/modem/3740-line-external",
