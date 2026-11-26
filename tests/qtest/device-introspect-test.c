@@ -237,6 +237,7 @@ static void test_device_intro_display_descriptions(void)
         { "isa-cirrus-gd5428",
           "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)" },
         { "sb16-generic", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
+        { "sb16", "Creative Sound Blaster 16 CT1740 (experimental PCM profile)" },
         { "intel-8041",
           "Intel 8041 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "intel-8741",
@@ -271,7 +272,7 @@ static void test_generic_device_types(void)
     } models[] = {
         { "cirrus-vga-generic", "cirrus-vga", "-vga none" },
         { "isa-cirrus-vga-generic", "isa-cirrus-vga", "-vga none" },
-        { "sb16-generic", "sb16", "-audiodev none,id=snd" },
+        { "sb16-generic", NULL, "-audiodev none,id=snd" },
     };
     static const char *const retired_aliases[] = {
         "ac97", "ahci", "e1000-82540em", "motorola-mc146818",
@@ -286,7 +287,9 @@ static void test_generic_device_types(void)
         const char *line;
         const char *end;
 
-        g_assert_null(type_list_find(types, models[i].old_type));
+        if (models[i].old_type) {
+            g_assert_null(type_list_find(types, models[i].old_type));
+        }
         if (!type_list_find(types, models[i].type)) {
             continue;
         }
@@ -296,9 +299,13 @@ static void test_generic_device_types(void)
         end = strchr(line, '\n');
         g_assert_nonnull(end);
         g_assert_null(g_strstr_len(line, end - line, "alias \""));
-        old_help = qtest_hmp(qts, "device_add \"%s,help\"",
-                             models[i].old_type);
-        g_assert_null(strstr(old_help, " options:"));
+        if (models[i].old_type) {
+            old_help = qtest_hmp(qts, "device_add \"%s,help\"",
+                                 models[i].old_type);
+            g_assert_null(strstr(old_help, " options:"));
+        } else {
+            g_assert_nonnull(type_list_find(types, "sb16"));
+        }
     }
     for (size_t i = 0; i < ARRAY_SIZE(retired_aliases); i++) {
         g_autofree char *needle =

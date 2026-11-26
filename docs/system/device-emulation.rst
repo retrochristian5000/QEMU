@@ -92,11 +92,11 @@ The generic device types in this fork are:
 * ``sb16-generic``: legacy ISA Sound Blaster 16-compatible DSP and mixer,
   not a specific Creative CT-series board or ISA PnP card.
 
-The old ``-device cirrus-vga``, ``-device isa-cirrus-vga`` and
-``-device sb16`` names are no longer registered; update command lines
-and type-specific global properties to the new names. The short
-``sb16`` name is reserved for a future accurately modeled Creative
-board. For ``-audio``, use ``model=sb16-generic``. The legacy
+The old ``-device cirrus-vga`` and ``-device isa-cirrus-vga`` names
+are no longer registered. Update old generic command lines and
+type-specific global properties to the new names. The short ``sb16``
+name now selects an experimental Creative CT1740 PCM profile, not the
+generic model. For ``-audio``, use ``model=sb16-generic``. The legacy
 ``-vga cirrus`` option still selects the generic model. Guest register
 identities, resource defaults, firmware path names and migration section
 names are retained; cross-version migration has not been validated.

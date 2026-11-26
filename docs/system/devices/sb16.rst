@@ -7,6 +7,49 @@ by default.
 The DSP version, audio I/O, IRQ, DMA properties and DSP migration fields
 remain unchanged. It does not expose ISA Plug and Play card identification.
 
+Creative CT1740 (non-PnP)
+------------------------
+
+The ``sb16`` device is a distinct QOM profile targeting the CT1740 with
+DSP revision 4.05. It shares the existing PCM engine but enforces
+the board's documented jumper selections:
+
+* Digital audio base: 0x220 (default), 0x240, 0x260 or 0x280.
+* IRQ: 5 (default), 7, 9 (PC/AT routing of IRQ2) or 10.
+* 8-bit DMA: 0, 1 (default) or 3.
+* 16-bit DMA: 5 (default), 6 or 7.
+* Gameport: enabled by default; ``gameport=off`` models JYEN open.
+
+Example::
+
+    -audiodev none,id=snd -device sb16,audiodev=snd
+
+The current profile holds IRQ and DMA assignments fixed, and the
+mixer's 80h and 81h readback cannot drift away from the wired resources.
+This is a fixed-resource implementation boundary, not a claim that
+all non-PnP SB16 revisions have read-only setup registers. Acknowledging
+one pending PCM interrupt preserves the other pending source. The
+mapped DSP/mixer I/O ports are checked before realization.
+
+The original CT1740 also contains OPL3 FM synthesis, MPU-401 UART MIDI,
+a Creative/Panasonic CD-ROM interface and an analog mixer. These are
+not fully modeled; the shared DSP is not a cycle-accurate CT1741
+implementation, and optional ASP hardware is not reproduced. Migration
+is disabled for this new profile pending a board-specific state
+contract. The generic type and its migration state remain unchanged.
+Use ``-device sb16-generic`` for the previous compatibility model.
+
+Board references:
+
+* https://www.stason.org/TULARC/pc/sound-cards-multimedia/CREATIVE-LABS-INC-Sound-card-SOUNDBLASTER-16-ASP-C.html
+* https://www.philscomputerlab.com/ct1740.html
+* https://dosdays.co.uk/topics/Manufacturers/creative/ct1740.php
+* https://ardent-tool.com/sound/Sound_Blaster_HW_Programming_Guide_1st.pdf
+  (chapter 2, interrupt and DMA setup).
+
+Later ISA Plug and Play
+-----------------------
+
 The ``sb16-pnp`` name is reserved for the later Creative ISA Plug and Play
 family. The QOM profile is built with ``CONFIG_SB16_PNP`` when SB16 and the
 ISA bus are enabled. It deliberately rejects realization until ISA PnP serial

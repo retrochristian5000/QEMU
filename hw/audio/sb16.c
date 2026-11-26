@@ -28,6 +28,7 @@
 #include "hw/core/irq.h"
 #include "hw/isa/isa.h"
 #include "hw/input/isa-gameport.h"
+#include "sb16-ct1740.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -49,7 +50,7 @@
 
 static const char e3[] = "COPYRIGHT (C) CREATIVE TECHNOLOGY LTD, 1992.";
 
-#define TYPE_SB16 "sb16-generic"
+#define TYPE_SB16 TYPE_SB16_GENERIC
 OBJECT_DECLARE_SIMPLE_TYPE(SB16State, SB16)
 
 struct SB16State {
@@ -63,6 +64,7 @@ struct SB16State {
     uint32_t port;
     uint32_t ver;
     bool gameport_enabled;
+    bool ct1740; /* Immutable board policy, set during realization. */
     ISADevice *gameport;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
@@ -1046,7 +1048,9 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 1) {
             ack = 1;
             s->mixer_regs[0x82] &= ~1;
-            qemu_irq_lower (s->pic);
+            if (!s->ct1740 || !(s->mixer_regs[0x82] & 3)) {
+                qemu_irq_lower(s->pic);
+            }
         }
         break;
 
@@ -1055,7 +1059,9 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 2) {
             ack = 1;
             s->mixer_regs[0x82] &= ~2;
-            qemu_irq_lower (s->pic);
+            if (!s->ct1740 || !(s->mixer_regs[0x82] & 3)) {
+                qemu_irq_lower(s->pic);
+            }
         }
         break;
 
@@ -1117,6 +1123,20 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
 
     (void) nport;
     ldebug("mixer_write [0x%x] <- 0x%x", s->mixer_nreg, val);
+
+    /*
+     * The initial CT1740 model uses fixed jumper-selected wiring. Do not
+     * acknowledge resource changes that cannot be applied to the ISA bus.
+     */
+    if (s->ct1740 && (s->mixer_nreg == 0x80 || s->mixer_nreg == 0x81)) {
+        uint8_t mask = s->mixer_nreg == 0x80 ? 0x0f : 0xeb;
+
+        if ((val & mask) != s->mixer_regs[s->mixer_nreg]) {
+            qemu_log_mask(LOG_UNIMP, "sb16: CT1740 profile does not support changing "
+                          "IRQ/DMA after realization\n");
+        }
+        return;
+    }
 
     switch (s->mixer_nreg) {
     case 0x00:
@@ -1464,6 +1484,23 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     ISABus *bus = isa_bus_from_device(isadev);
     SB16State *s = SB16 (dev);
     IsaDmaClass *k;
+
+    s->ct1740 = object_dynamic_cast(OBJECT(dev), TYPE_CREATIVE_SB16) != NULL;
+    if (s->ct1740) {
+        if (!sb16_ct1740_validate(s->port, s->irq, s->dma, s->hdma,
+                                  s->ver, errp)) {
+            return;
+        }
+
+        /* Check only the DSP/mixer ports actually implemented today. */
+        for (const MemoryRegionPortio *pio = sb16_ioport_list;
+             pio->size; pio++) {
+            if (!isa_ioport_range_available(isadev, s->port + pio->offset,
+                                            pio->len + pio->size - 1, errp)) {
+                return;
+            }
+        }
+    }
 
     if (!audio_be_check(&s->audio_be, errp)) {
         return;
