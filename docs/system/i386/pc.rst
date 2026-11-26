@@ -180,6 +180,39 @@ a particular Pentium MMX motherboard supported four sockets::
 
     -smp cpus=4,sockets=4,cores=1,threads=1,maxcpus=4
 
+Cirrus Logic chipset profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing ``cirrus-vga`` and ``isa-cirrus-vga`` names remain
+compatible with the CL-GD5446 PCI and CL-GD5428 ISA profiles respectively.
+Their explicit chipset names are ``cirrus-gd5446-pci`` and
+``isa-cirrus-gd5428``. The GD5422, GD5426 and GD5430 VLB profiles
+remain available with their existing names.
+
+The experimental ``cirrus-gd5430-pci`` profile uses PCI ID 1013:00a0,
+CR27 identification 0xa0, PCI bus straps, 2 MiB VRAM and a 16 MiB
+prefetchable BAR0. It models the primary framebuffer aperture only,
+with relocatable VGA I/O disabled, and does not expose the GD5446
+dedicated MMIO BAR or high BitBLT aperture. The GD5430 PCI and VLB
+variants both omit GR12-GR15, GR33 solid-fill and GR31 auto-start.
+Other chipset-specific accelerator features and clocks are incomplete.
+
+For a legacy PC guest, replace the existing primary VGA configuration
+with the following, supplying a compatible, lawfully obtained GD5430
+PCI VGA option ROM::
+
+    -vga none -device cirrus-gd5430-pci,romfile=/path/to/gd5430.rom
+
+The experimental PCI profile has no default option ROM; it does not
+reuse the GD5446 PCI ROM automatically. Boot and guest-driver compatibility
+have not yet been established. Keep the same device type and VRAM
+configuration when saving/restoring a VM. Use a cold boot to change
+chipsets. The GD5446 precise timing property is not available on GD5430.
+
+Hardware reference: Cirrus Logic Alpine Family Technical Reference
+Manual, February 1995, sections 4.14, 4.18-4.19, 9.27-9.30,
+9.40 and 9.42, and Appendix D8.
+
 Cirrus GD5446 display timing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

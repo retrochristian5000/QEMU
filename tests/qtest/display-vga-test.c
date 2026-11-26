@@ -115,6 +115,11 @@ static void test_isa_cirrus_profile(void)
     test_isa_cirrus_profile_for("isa-cirrus-vga", 0x98);
 }
 
+static void test_isa_cirrus_gd5428_profile(void)
+{
+    test_isa_cirrus_profile_for("isa-cirrus-gd5428", 0x98);
+}
+
 static void test_isa_cirrus_gd5426_profile(void)
 {
     test_isa_cirrus_profile_for("isa-cirrus-gd5426", 0x90);
@@ -299,6 +304,46 @@ static QDict *find_pci_device(QList *buses, const char *qdev_id)
     }
 
     return NULL;
+}
+
+static void test_cirrus_named_pci_profile(gconstpointer opaque)
+{
+    bool gd5430 = GPOINTER_TO_INT(opaque);
+    const char *model = gd5430 ? "cirrus-gd5430-pci" : "cirrus-gd5446-pci";
+    unsigned chip = gd5430 ? 0xa0 : 0xb8;
+    QTestState *qts = qtest_initf("-M pc -nodefaults -vga none "
+                                  "-device %s,addr=4,romfile=", model);
+
+    qtest_outl(qts, 0xcf8, 0x80002000);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, (chip << 16) | 0x1013);
+
+    /* BAR sizing must distinguish the Alpine and GD5446 layouts. */
+    qtest_outl(qts, 0xcf8, 0x80002010);
+    qtest_outl(qts, 0xcfc, 0xffffffff);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==,
+                    gd5430 ? 0xff000008 : 0xfe000008);
+    qtest_outl(qts, 0xcfc, 0);
+    qtest_outl(qts, 0xcf8, 0x80002014);
+    qtest_outl(qts, 0xcfc, 0xffffffff);
+    if (gd5430) {
+        g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0);
+    }
+    qtest_outl(qts, 0xcfc, 0);
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, chip);
+    g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x20);
+    g_assert_cmphex(vga_seq_read(qts, 0x15), ==, gd5430 ? 3 : 4);
+
+    vga_gfx_write(qts, 0x12, 0x5a);
+    g_assert_cmphex(vga_gfx_read(qts, 0x12), ==, gd5430 ? 0xff : 0x5a);
+    vga_gfx_write(qts, 0x33, 0x04);
+    g_assert_cmphex(vga_gfx_read(qts, 0x33) & 0x04, ==, gd5430 ? 0 : 4);
+    vga_gfx_write(qts, 0x31, 0x80);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x80, ==, gd5430 ? 0 : 0x80);
+
+    qtest_quit(qts);
 }
 
 static void test_cirrus_pci_identity(void)
@@ -628,6 +673,26 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         qtest_add_func("/display/isa/cirrus-profile",
                        test_isa_cirrus_profile);
+    }
+
+    if (qtest_has_machine("pc") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        if (qtest_has_device("cirrus-gd5430-pci")) {
+            qtest_add_data_func("/display/pci/cirrus-gd5430-profile",
+                                GINT_TO_POINTER(1),
+                                test_cirrus_named_pci_profile);
+        }
+        if (qtest_has_device("cirrus-gd5446-pci")) {
+            qtest_add_data_func("/display/pci/cirrus-gd5446-profile",
+                                GINT_TO_POINTER(0),
+                                test_cirrus_named_pci_profile);
+        }
+    }
+
+    if (qtest_has_device("isa-cirrus-gd5428") &&
+        (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
+        qtest_add_func("/display/isa/cirrus-gd5428-profile",
+                       test_isa_cirrus_gd5428_profile);
     }
 
     if (qtest_has_device("isa-cirrus-gd5426") &&

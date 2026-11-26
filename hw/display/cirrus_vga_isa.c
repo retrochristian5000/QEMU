@@ -171,9 +171,15 @@ static const TypeInfo isa_cirrus_gd5422_info = {
     .class_init = isa_cirrus_gd5422_class_init,
 };
 
+static const TypeInfo isa_cirrus_gd5428_info = {
+    .name = "isa-cirrus-gd5428",
+    .parent = TYPE_ISA_CIRRUS_VGA,
+};
+
 static void cirrus_vga_isa_register_types(void)
 {
     type_register_static(&isa_cirrus_vga_info);
+    type_register_static(&isa_cirrus_gd5428_info);
     type_register_static(&isa_cirrus_gd5426_info);
     type_register_static(&isa_cirrus_gd5422_info);
 }

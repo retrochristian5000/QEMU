@@ -187,6 +187,8 @@ struct PCICirrusVGAState {
 };
 
 #define TYPE_PCI_CIRRUS_VGA "cirrus-vga"
+#define TYPE_PCI_CIRRUS_GD5430 "cirrus-gd5430-pci"
+#define TYPE_PCI_CIRRUS_GD5446 "cirrus-gd5446-pci"
 OBJECT_DECLARE_SIMPLE_TYPE(PCICirrusVGAState, PCI_CIRRUS_VGA)
 
 static uint8_t rop_to_index[256];
@@ -1164,6 +1166,10 @@ static void cirrus_write_bitblt(CirrusVGAState * s, unsigned reg_value)
     unsigned old_value;
 
     old_value = s->vga.gr[0x31];
+    /* Alpine TRM, 9.40: the GD5430 has no automatic start control. */
+    if (s->device_id == CIRRUS_ID_CLGD5430) {
+        reg_value &= ~CIRRUS_BLT_AUTOSTART;
+    }
     if (s->device_id == CIRRUS_ID_CLGD5446) {
         /*
          * GD5446 TRM 5.10: BUSY and buffered-register status are
@@ -1592,6 +1598,11 @@ static int cirrus_vga_read_gr(CirrusVGAState * s, unsigned reg_index)
     if (reg_index == 0x33 && !cirrus_has_blt_modeext(s)) {
         return 0xff;
     }
+    /* GD5430 has only two foreground/background color bytes. */
+    if (s->device_id == CIRRUS_ID_CLGD5430 &&
+        reg_index >= 0x12 && reg_index <= 0x15) {
+        return 0xff;
+    }
     switch (reg_index) {
     case 0x00: // Standard VGA, BGCOLOR 0x000000ff
         return s->cirrus_shadow_gr0;
@@ -1622,6 +1633,15 @@ static void
 cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
 {
     trace_vga_cirrus_write_gr(reg_index, reg_value);
+    if (s->device_id == CIRRUS_ID_CLGD5430) {
+        if (reg_index >= 0x12 && reg_index <= 0x15) {
+            return;
+        }
+        /* Solid-fill extension is documented for GD5436, not GD5430. */
+        if (reg_index == 0x33) {
+            reg_value &= ~CIRRUS_BLTMODEEXT_SOLIDFILL;
+        }
+    }
     switch (reg_index) {
     case 0x00:                  // Standard VGA, BGCOLOR 0x000000ff
         s->vga.gr[reg_index] = reg_value & gr_mask[reg_index];
@@ -3147,8 +3167,17 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
      * Follow real hardware, cirrus card emulated has 4 MB video memory.
      * Also accept 8 MB/16 MB for backward compatibility.
      */
-    if (s->vga.vram_size_mb != 4 && s->vga.vram_size_mb != 8 &&
-        s->vga.vram_size_mb != 16) {
+    if (device_id == CIRRUS_ID_CLGD5430) {
+        if (s->vga.vram_size_mb != 2) {
+            error_setg(errp, "GD5430 PCI profile requires 2 MiB of VRAM");
+            return;
+        }
+        if (d->precise_timing) {
+            error_setg(errp, "GD5446 precise timing is not supported on GD5430");
+            return;
+        }
+    } else if (s->vga.vram_size_mb != 4 && s->vga.vram_size_mb != 8 &&
+               s->vga.vram_size_mb != 16) {
         error_setg(errp, "Invalid cirrus_vga ram size '%u'",
                    s->vga.vram_size_mb);
         return;
@@ -3180,12 +3209,20 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     s->vga.con = qemu_graphic_console_create(DEVICE(dev), 0, s->vga.hw_ops, &s->vga);
 
     /* setup PCI */
-    memory_region_init(&s->pci_bar, OBJECT(dev), "cirrus-pci-bar0", 0x2000000);
+    /*
+     * Alpine TRM 4.18: GD5430 reserves 16 MiB of PCI address space.
+     * The existing GD5446 layout has a separate high BitBLT aperture.
+     * Model the primary GD5430 framebuffer window only.
+     */
+    memory_region_init(&s->pci_bar, OBJECT(dev), "cirrus-pci-bar0",
+                       device_id == CIRRUS_ID_CLGD5430 ? 16 * MiB : 32 * MiB);
 
     /* XXX: add byte swapping apertures */
     memory_region_add_subregion(&s->pci_bar, 0, &s->cirrus_linear_io);
-    memory_region_add_subregion(&s->pci_bar, 0x1000000,
-                                &s->cirrus_linear_bitblt_io);
+    if (device_id == CIRRUS_ID_CLGD5446) {
+        memory_region_add_subregion(&s->pci_bar, 16 * MiB,
+                                    &s->cirrus_linear_bitblt_io);
+    }
 
     /* setup memory space */
     /* memory #0 LFB */
@@ -3238,9 +3275,39 @@ static const TypeInfo cirrus_vga_info = {
     },
 };
 
+static void cirrus_gd5430_pci_init(Object *obj)
+{
+    PCI_CIRRUS_VGA(obj)->cirrus_vga.vga.vram_size_mb = 2;
+}
+
+static void cirrus_gd5430_pci_class_init(ObjectClass *klass, const void *data)
+{
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->device_id = CIRRUS_ID_CLGD5430;
+    /* Do not automatically load the GD5446 PCI option ROM. */
+    k->romfile = NULL;
+    DEVICE_CLASS(klass)->desc =
+        "Cirrus Logic CL-GD5430 PCI VGA (experimental, 2 MiB)";
+}
+
+static const TypeInfo cirrus_gd5430_pci_info = {
+    .name = TYPE_PCI_CIRRUS_GD5430,
+    .parent = TYPE_PCI_CIRRUS_VGA,
+    .instance_init = cirrus_gd5430_pci_init,
+    .class_init = cirrus_gd5430_pci_class_init,
+};
+
+static const TypeInfo cirrus_gd5446_pci_info = {
+    .name = TYPE_PCI_CIRRUS_GD5446,
+    .parent = TYPE_PCI_CIRRUS_VGA,
+};
+
 static void cirrus_vga_register_types(void)
 {
     type_register_static(&cirrus_vga_info);
+    type_register_static(&cirrus_gd5430_pci_info);
+    type_register_static(&cirrus_gd5446_pci_info);
 }
 
 type_init(cirrus_vga_register_types)
