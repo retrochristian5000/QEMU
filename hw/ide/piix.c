@@ -25,11 +25,14 @@
  * References:
  *  [1] 82371FB (PIIX) AND 82371SB (PIIX3) PCI ISA IDE XCELERATOR,
  *      290550-002, Intel Corporation, April 1997.
+ *  [2] 82371AB PCI-to-ISA / IDE Xcelerator (PIIX4), Intel,
+ *      April 1997, sections 5.1.10-5.1.13.
  */
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/pci/pci.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/ide/piix.h"
 #include "hw/ide/pci.h"
 #include "ide-internal.h"
@@ -113,6 +116,14 @@ static void bmdma_setup_bar(PCIIDEState *d)
         memory_region_add_subregion(&d->bmdma_bar, i * 8 + 4, &bm->addr_ioport);
     }
 }
+
+enum {
+    PIIX4_IDETIM_PRIMARY = 0x40,
+    PIIX4_IDETIM_SECONDARY = 0x42,
+    PIIX4_SIDETIM = 0x44,
+    PIIX4_UDMACTL = 0x48,
+    PIIX4_UDMATIM = 0x4a,
+};
 
 static void piix_ide_reset(DeviceState *dev)
 {
@@ -212,18 +223,60 @@ static const TypeInfo piix3_ide_info = {
     .class_init    = piix3_ide_class_init,
 };
 
+/*
+ * PIIX4 supports Ultra DMA/33 configuration, unlike PIIX3.
+ * Limit this opt-in policy to register storage and reset semantics; the
+ * shared ATA engine does not model the physical UDMA strobe timings.
+ */
+static void piix4_ide_reset(DeviceState *dev)
+{
+    PCIIDEState *d = PCI_IDE(dev);
+    PCIDevice *pd = PCI_DEVICE(dev);
+
+    piix_ide_reset(dev);
+    if (d->piix4_strict_timing_regs) {
+        memset(pd->config + PIIX4_IDETIM_PRIMARY, 0,
+               PIIX4_UDMATIM + 2 - PIIX4_IDETIM_PRIMARY);
+    }
+}
+
+static void pci_piix4_ide_realize(PCIDevice *dev, Error **errp)
+{
+    PCIIDEState *d = PCI_IDE(dev);
+
+    if (d->piix4_strict_timing_regs) {
+        /* Intel [2]: IDETIM bits 11:10, UDMACTL bits 7:4,
+         * and the high two bits of each UDMATIM nibble are reserved. */
+        memset(dev->wmask + PIIX4_IDETIM_PRIMARY, 0,
+               PIIX4_UDMATIM + 2 - PIIX4_IDETIM_PRIMARY);
+        pci_set_word(dev->wmask + PIIX4_IDETIM_PRIMARY, 0xf3ff);
+        pci_set_word(dev->wmask + PIIX4_IDETIM_SECONDARY, 0xf3ff);
+        dev->wmask[PIIX4_SIDETIM] = 0xff;
+        dev->wmask[PIIX4_UDMACTL] = 0x0f;
+        pci_set_word(dev->wmask + PIIX4_UDMATIM, 0x3333);
+    }
+
+    pci_piix_ide_realize(dev, errp);
+}
+
+static const Property piix4_ide_properties[] = {
+    DEFINE_PROP_BOOL("strict-timing-regs", PCIIDEState,
+                     piix4_strict_timing_regs, false),
+};
+
 /* NOTE: for the PIIX4, the IRQs and IOports are hardcoded */
 static void piix4_ide_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    device_class_set_legacy_reset(dc, piix_ide_reset);
+    device_class_set_legacy_reset(dc, piix4_ide_reset);
     dc->vmsd = &vmstate_ide_pci;
-    k->realize = pci_piix_ide_realize;
+    k->realize = pci_piix4_ide_realize;
     k->exit = pci_piix_ide_exitfn;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_82371AB;
+    device_class_set_props(dc, piix4_ide_properties);
     dc->desc = "Intel 82371AB PIIX4 PCI IDE controller";
     k->class_id = PCI_CLASS_STORAGE_IDE;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
