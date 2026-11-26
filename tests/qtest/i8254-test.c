@@ -308,6 +308,34 @@ static void test_explicit_pit(gconstpointer opaque)
     qtest_quit(s);
 }
 
+static void test_pc_chipset_controllers(gconstpointer opaque)
+{
+    bool specific = GPOINTER_TO_INT(opaque);
+    QTestState *s = qtest_initf("-machine pc,hpet=off,chipset-controllers=%s "
+                               "-nodefaults", specific ? "on" : "off");
+    g_autofree char *tree = qtest_hmp(s, "info qtree");
+    g_auto(GStrv) pics = g_strsplit(tree,
+        specific ? "dev: i8259a," : "dev: isa-i8259,", -1);
+    g_auto(GStrv) pits = g_strsplit(tree,
+        specific ? "dev: i8254," : "dev: isa-pit,", -1);
+    uint64_t elapsed = 0;
+
+    /* Exactly two cascaded PICs and one motherboard PIT, not duplicates. */
+    g_assert_cmpuint(g_strv_length(pics), ==, 3);
+    g_assert_cmpuint(g_strv_length(pits), ==, 2);
+    g_assert_null(strstr(tree, specific ? "dev: isa-i8259," : "dev: i8259a,"));
+    g_assert_null(strstr(tree, specific ? "dev: isa-pit," : "dev: i8254,"));
+
+    qtest_irq_intercept_in(s, "ioapic");
+    load_mode3(s, 5);
+    check_output(s, true);
+    advance_to_tick(s, 3, &elapsed);
+    check_output(s, false);
+    advance_to_tick(s, 5, &elapsed);
+    check_output(s, true);
+    qtest_quit(s);
+}
+
 static void test_explicit_pit_duplicate(void)
 {
     if (g_test_subprocess()) {
@@ -337,6 +365,10 @@ int main(int argc, char **argv)
     qtest_add_data_func("/i8254/device/i8253", "i8253", test_explicit_pit);
     qtest_add_data_func("/i8254/device/i8254", "i8254", test_explicit_pit);
     qtest_add_func("/i8254/device/duplicate", test_explicit_pit_duplicate);
+    qtest_add_data_func("/i8254/board/compat", GINT_TO_POINTER(0),
+                        test_pc_chipset_controllers);
+    qtest_add_data_func("/i8254/board/chipset", GINT_TO_POINTER(1),
+                        test_pc_chipset_controllers);
 
     return g_test_run();
 }

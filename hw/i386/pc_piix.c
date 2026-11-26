@@ -43,6 +43,7 @@
 #include "hw/ide/pci.h"
 #include "hw/core/irq.h"
 #include "system/kvm.h"
+#include "kvm/kvm_i386.h"
 #include "hw/i386/kvm/clock.h"
 #include "hw/core/sysbus.h"
 #include "hw/i2c/smbus_eeprom.h"
@@ -124,6 +125,15 @@ static void pc_init1(MachineState *machine, const char *host_type,
     size_t i;
 
     assert(pcmc->pci_enabled);
+
+    if (pcms->chipset_controllers &&
+        (xen_enabled() ||
+         (x86ms->pic != ON_OFF_AUTO_OFF && kvm_pic_in_kernel()) ||
+         (x86ms->pit != ON_OFF_AUTO_OFF && kvm_pit_in_kernel()))) {
+        error_report("chipset-controllers requires userspace PIC and PIT "
+                     "emulation");
+        exit(1);
+    }
 
     /*
      * Calculate ram split, for memory below and above 4G.  It's a bit
@@ -286,7 +296,8 @@ static void pc_init1(MachineState *machine, const char *host_type,
 
 
     if (x86ms->pic == ON_OFF_AUTO_ON || x86ms->pic == ON_OFF_AUTO_AUTO) {
-        pc_i8259_create(isa_bus, gsi_state->i8259_irq);
+        pc_i8259_create_model(isa_bus, gsi_state->i8259_irq,
+                              pcms->chipset_controllers);
     }
 
     ioapic_init_gsi(gsi_state, phb);
@@ -340,6 +351,16 @@ static const QEnumLookup PCSouthBridgeOption_lookup = {
     },
     .size = PC_SOUTH_BRIDGE_OPTION_MAX
 };
+
+static bool pc_get_chipset_controllers(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->chipset_controllers;
+}
+
+static void pc_set_chipset_controllers(Object *obj, bool value, Error **errp)
+{
+    PC_MACHINE(obj)->chipset_controllers = value;
+}
 
 static int pc_get_south_bridge(Object *obj, Error **errp)
 {
@@ -430,6 +451,11 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                    pc_set_south_bridge);
     object_class_property_set_description(oc, "x-south-bridge",
                                      "Use a different south bridge than PIIX3");
+    object_class_property_add_bool(oc, "chipset-controllers",
+                                   pc_get_chipset_controllers,
+                                   pc_set_chipset_controllers);
+    object_class_property_set_description(oc, "chipset-controllers",
+        "Select explicit 8259A and 8254 userspace motherboard profiles");
     compat_props_add(m->compat_props,
                      pc_piix_compat_defaults, pc_piix_compat_defaults_len);
 }

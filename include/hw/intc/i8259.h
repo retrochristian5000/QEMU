@@ -15,6 +15,7 @@ extern PICCommonState *isa_pic;
  * return an (allocated) array of 16 input IRQs.
  */
 qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in);
+qemu_irq *i8259_init_8259a(ISABus *bus, qemu_irq parent_irq_in);
 qemu_irq *kvm_i8259_init(ISABus *bus);
 int pic_get_output(PICCommonState *s);
 int pic_read_irq(PICCommonState *s);

@@ -293,6 +293,35 @@ The I/O overlap check detects devices mapped before the NIC is realized.
 It is not a general resource allocator and does not prevent a later
 device or reprogrammed PCI BAR from using the same range.
 
+PIIX motherboard controller selection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Intel's 82371FB/82371SB PCI ISA IDE Xcelerator datasheet (May 1996),
+sections 3.7 and 3.8, specifies integrated 82C54 timer and cascaded
+82C59 interrupt controller functions. These are chipset functions, not
+separate discrete expansion cards.
+
+The PIIX-family PC machines support an opt-in controller selection::
+
+    -machine pc,chipset-controllers=on
+
+This selects the existing ``i8254`` software timer profile and two
+``i8259a`` software PIC profiles instead of ``isa-pit`` and
+``isa-i8259``. It retains the motherboard's existing IRQ cascade,
+ELCR, HPET routing, PC speaker link, and I/O addresses. The ``pit=off``
+and ``pic=off`` options still suppress their respective controllers.
+The option is not a claim of complete 82C54/82C59 silicon emulation;
+the PIC profiles currently share the same behavior. It is incompatible
+with Xen and enabled in-kernel PIC/PIT emulation.
+
+The default is off to retain existing machine-version and migration
+configurations. Use a cold boot when changing the selection, and keep
+it consistent across saved-state or migration endpoints. Do not add
+duplicate standalone timers or interrupt controllers. CPU, RAM, RTC,
+DMA, storage, display and NIC selections are unchanged. The option
+does not select a physical motherboard model or change Windows driver
+names by itself.
+
 Explicit ISA timer profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

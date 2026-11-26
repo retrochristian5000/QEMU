@@ -434,7 +434,8 @@ static void pic_realize(DeviceState *dev, Error **errp)
     pc->parent_realize(dev, errp);
 }
 
-qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
+static qemu_irq *i8259_init_pair(ISABus *bus, qemu_irq parent_irq_in,
+                                const char *type)
 {
     qemu_irq *irq_set;
     DeviceState *dev;
@@ -443,7 +444,7 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
 
     irq_set = g_new0(qemu_irq, ISA_NUM_IRQS);
 
-    isadev = i8259_init_chip(TYPE_I8259_COMPAT, bus, true);
+    isadev = i8259_init_chip(type, bus, true);
     dev = DEVICE(isadev);
 
     qdev_connect_gpio_out(dev, 0, parent_irq_in);
@@ -453,7 +454,7 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
 
     isa_pic = PIC_COMMON(dev);
 
-    isadev = i8259_init_chip(TYPE_I8259_COMPAT, bus, false);
+    isadev = i8259_init_chip(type, bus, false);
     dev = DEVICE(isadev);
 
     qdev_connect_gpio_out(dev, 0, irq_set[2]);
@@ -464,6 +465,16 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
     slave_pic = PIC_COMMON(dev);
 
     return irq_set;
+}
+
+qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq_in)
+{
+    return i8259_init_pair(bus, parent_irq_in, TYPE_I8259_COMPAT);
+}
+
+qemu_irq *i8259_init_8259a(ISABus *bus, qemu_irq parent_irq_in)
+{
+    return i8259_init_pair(bus, parent_irq_in, TYPE_I8259A);
 }
 
 static void i8259a_class_init(ObjectClass *klass, const void *data)

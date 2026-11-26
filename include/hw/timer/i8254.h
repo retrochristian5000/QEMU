@@ -50,13 +50,14 @@ OBJECT_DECLARE_TYPE(PITCommonState, PITCommonClass, PIT_COMMON)
 /* Retain motherboard-specific PIT/HPET interrupt wiring. */
 void i8254_pit_set_board_wiring(ISADevice *dev);
 
-static inline ISADevice *i8254_pit_init(ISABus *bus, int base, int isa_irq,
-                                        qemu_irq alt_irq)
+static inline ISADevice *i8254_pit_init_type(ISABus *bus, int base,
+                                             int isa_irq, qemu_irq alt_irq,
+                                             const char *type)
 {
     DeviceState *dev;
     ISADevice *d;
 
-    d = isa_new(TYPE_I8254);
+    d = isa_new(type);
     i8254_pit_set_board_wiring(d);
     dev = DEVICE(d);
     qdev_prop_set_uint32(dev, "iobase", base);
@@ -66,6 +67,12 @@ static inline ISADevice *i8254_pit_init(ISABus *bus, int base, int isa_irq,
                                        : alt_irq);
 
     return d;
+}
+
+static inline ISADevice *i8254_pit_init(ISABus *bus, int base, int isa_irq,
+                                        qemu_irq alt_irq)
+{
+    return i8254_pit_init_type(bus, base, isa_irq, alt_irq, TYPE_I8254);
 }
 
 static inline ISADevice *kvm_pit_init(ISABus *bus, int base)

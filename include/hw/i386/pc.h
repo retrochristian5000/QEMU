@@ -51,6 +51,7 @@ typedef struct PCMachineState {
     bool sata_enabled;
     bool hpet_enabled;
     bool i8042_enabled;
+    bool chipset_controllers;
     bool default_bus_bypass_iommu;
     bool fd_bootchk;
     bool host_battery;
@@ -194,6 +195,8 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 void pc_nic_init(PCMachineClass *pcmc, ISABus *isa_bus, PCIBus *pci_bus);
 
 void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs);
+void pc_i8259_create_model(ISABus *isa_bus, qemu_irq *i8259_irqs,
+                           bool chipset_controllers);
 
 /* port92.c */
 #define PORT92_A20_LINE "a20"

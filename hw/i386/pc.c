@@ -1156,7 +1156,9 @@ void pc_basic_device_init(struct PCMachineState *pcms,
         if (kvm_pit_in_kernel()) {
             pit = kvm_pit_init(isa_bus, 0x40);
         } else {
-            pit = i8254_pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
+            pit = i8254_pit_init_type(isa_bus, 0x40, pit_isa_irq, pit_alt_irq,
+                                     pcms->chipset_controllers ?
+                                     TYPE_INTEL_8254 : TYPE_I8254);
         }
         if (hpet) {
             /* connect PIT to output control line of the HPET */
@@ -1196,7 +1198,8 @@ void pc_nic_init(PCMachineClass *pcmc, ISABus *isa_bus, PCIBus *pci_bus)
     }
 }
 
-void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs)
+void pc_i8259_create_model(ISABus *isa_bus, qemu_irq *i8259_irqs,
+                           bool chipset_controllers)
 {
     qemu_irq *i8259;
 
@@ -1204,6 +1207,8 @@ void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs)
         i8259 = kvm_i8259_init(isa_bus);
     } else if (xen_enabled()) {
         i8259 = xen_interrupt_controller_init();
+    } else if (chipset_controllers) {
+        i8259 = i8259_init_8259a(isa_bus, x86_allocate_cpu_irq());
     } else {
         i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
     }
@@ -1213,6 +1218,11 @@ void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs)
     }
 
     g_free(i8259);
+}
+
+void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs)
+{
+    pc_i8259_create_model(isa_bus, i8259_irqs, false);
 }
 
 static void pc_memory_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
