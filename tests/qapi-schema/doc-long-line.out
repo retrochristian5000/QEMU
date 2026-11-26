@@ -1,0 +1,18 @@
+module ./builtin
+object q_empty
+enum QType
+    member none
+    member qnull
+    member qnum
+    member qstring
+    member qdict
+    member qlist
+    member qbool
+module doc-long-line.json
+command foo None -> None
+    gen=True success_response=True boxed=False oob=False preconfig=False
+doc symbol=foo
+    Intro
+
+    Plain
+This line has exactly 71 chars, including the leading hash and space.

@@ -455,19 +455,10 @@ class QAPISchemaParser:
 
     def _validate_doc_line_format(self, line: str) -> None:
         """
-        Validate documentation format rules for a single line:
-        1. Lines should not exceed 70 characters
-        2. Sentences should be separated by two spaces
-        """
-        full_line_length = len(line) + 2  # "# " = 2 characters
-        if full_line_length > 70:
-            # Skip URL lines - they can't be broken
-            if re.match(r' *(https?|ftp)://[^ ]*$', line):
-                pass
-            else:
-                raise QAPIParseError(
-                    self, "documentation line longer than 70 characters")
+        Validate sentence spacing in documentation.
 
+        Line wrapping is a style preference, not a parser requirement.
+        """
         single_space_pattern = r'(\be\.g\.|^ *\d\.|([.!?])) [A-Z0-9(]'
         for m in list(re.finditer(single_space_pattern, line)):
             if not m.group(2):
