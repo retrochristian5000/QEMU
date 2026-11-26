@@ -213,10 +213,11 @@ write_cached_command_identity()
     target="$(printf '%s\n' "$target" | first_line)"
     resource_dir="$("${QUERY_CMD[@]}" -print-resource-dir 2>/dev/null || true)"
     resource_dir="$(printf '%s\n' "$resource_dir" | first_line)"
-    if "${QUERY_CMD[@]}" --no-default-config -print-target-triple \
-         >/dev/null 2>&1; then
-        no_default_target="$("${QUERY_CMD[@]}" --no-default-config \
-                              -print-target-triple 2>/dev/null | first_line)"
+    if no_default_target="$("${QUERY_CMD[@]}" --no-default-config \
+                             -print-target-triple 2>/dev/null | first_line)"; then
+        :
+    else
+        no_default_target=unsupported
     fi
 
     write_cached_value "${role}_COMMAND" "$command_string"
