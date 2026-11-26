@@ -32,6 +32,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/ide/piix.h"
 #include "hw/intc/i8259.h"
+#include "hw/isa/i8259_internal.h"
 #include "hw/isa/isa.h"
 #include "system/runstate.h"
 #include "migration/vmstate.h"
@@ -296,6 +297,50 @@ static void pci_piix_realize(PCIDevice *dev, const char *uhci_type,
     pci_bus_set_route_irq_fn(pci_bus, piix_route_intx_pin_to_irq);
 }
 
+/*
+ * The AT interrupt controller is one logical PnP device made up of two
+ * PICs. Describe only the standard pair actually present on this bus.
+ */
+static void piix_build_pic_aml(BusState *bus, Aml *scope)
+{
+    BusChild *kid;
+    bool master = false;
+    bool slave = false;
+    Aml *dev;
+    Aml *crs;
+
+    QTAILQ_FOREACH(kid, &bus->children, sibling) {
+        DeviceState *child = DEVICE(kid->child);
+        PICCommonState *pic;
+
+        if (!child->realized ||
+            !object_dynamic_cast(OBJECT(child), TYPE_PIC_COMMON)) {
+            continue;
+        }
+        pic = PIC_COMMON(child);
+        if (pic->master && pic->iobase == 0x20 && pic->elcr_addr == 0x4d0) {
+            master = true;
+        } else if (!pic->master && pic->iobase == 0xa0 &&
+                   pic->elcr_addr == 0x4d1) {
+            slave = true;
+        }
+    }
+    if (!master || !slave) {
+        return;
+    }
+
+    dev = aml_device("PIC");
+    aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0000")));
+    aml_append(dev, aml_name_decl("_STA", aml_int(0x0f)));
+    crs = aml_resource_template();
+    aml_append(crs, aml_io(AML_DECODE16, 0x20, 0x20, 1, 2));
+    aml_append(crs, aml_io(AML_DECODE16, 0xa0, 0xa0, 1, 2));
+    aml_append(crs, aml_io(AML_DECODE16, 0x4d0, 0x4d0, 1, 2));
+    aml_append(crs, aml_irq_no_flags(2));
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
+}
+
 static void build_pci_isa_aml(AcpiDevAmlIf *adev, Aml *scope)
 {
     Aml *field;
@@ -314,6 +359,7 @@ static void build_pci_isa_aml(AcpiDevAmlIf *adev, Aml *scope)
     aml_append(sb_scope, field);
     aml_append(scope, sb_scope);
 
+    piix_build_pic_aml(bus, scope);
     qbus_build_aml(bus, scope);
 }
 
