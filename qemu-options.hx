@@ -1495,8 +1495,12 @@ SRST
     Specify the controller using ``-device``. Hard disk slots retain their
     numeric positions; CD-ROMs prefer slots 2 and 3, then other free slots
     among the first six. The implicit empty CD-ROM is suppressed.
-    This option does not remove a built-in controller or resolve hardware
-    resource conflicts; disable the built-in controller separately if needed.
+    This option does not remove a built-in controller. PIIX3 and PIIX4
+    IDE functions use the same fixed legacy I/O ports; adding a second
+    PIIX IDE function is rejected. On the PC machine, use
+    ``-M pc,x-south-bridge=piix4-isa`` with the ordinary disk shortcuts
+    to select the integrated PIIX4 instead. For a separate controller on
+    Q35, disable the integrated AHCI controller with ``-M q35,sata=off``.
     Explicit ``-drive`` and ``-device`` attachments are unaffected.
 ERST
 
