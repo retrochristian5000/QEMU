@@ -524,20 +524,30 @@ static void build_dbg_aml(Aml *table)
     aml_append(table, scope);
 }
 
-static Aml *build_link_dev(const char *name, uint8_t uid, Aml *reg)
+static Aml *build_link_dev(const char *name, uint8_t uid, Aml *reg,
+                           uint16_t reserved_irqs)
 {
     Aml *dev;
     Aml *crs;
     Aml *method;
     uint32_t irqs[] = {5, 10, 11};
+    unsigned count = 0;
+
+    for (unsigned i = 0; i < ARRAY_SIZE(irqs); i++) {
+        if (!(reserved_irqs & (1U << irqs[i]))) {
+            irqs[count++] = irqs[i];
+        }
+    }
 
     dev = aml_device("%s", name);
     aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0C0F")));
     aml_append(dev, aml_name_decl("_UID", aml_int(uid)));
 
     crs = aml_resource_template();
-    aml_append(crs, aml_interrupt(AML_CONSUMER, AML_LEVEL, AML_ACTIVE_HIGH,
-                                  AML_SHARED, irqs, ARRAY_SIZE(irqs)));
+    if (count) {
+        aml_append(crs, aml_interrupt(AML_CONSUMER, AML_LEVEL, AML_ACTIVE_HIGH,
+                                      AML_SHARED, irqs, count));
+    }
     aml_append(dev, aml_name_decl("_PRS", crs));
 
     method = aml_method("_STA", 0, AML_NOTSERIALIZED);
@@ -634,7 +644,7 @@ static Aml *build_irq_status_method(void)
     return method;
 }
 
-static void build_piix4_pci0_int(Aml *table)
+static void build_piix4_pci0_int(Aml *table, uint16_t reserved_irqs)
 {
     Aml *dev;
     Aml *crs;
@@ -649,10 +659,10 @@ static void build_piix4_pci0_int(Aml *table)
     aml_append(sb_scope, build_irq_status_method());
     aml_append(sb_scope, build_iqcr_method(true));
 
-    aml_append(sb_scope, build_link_dev("LNKA", 0, aml_name("PRQ0")));
-    aml_append(sb_scope, build_link_dev("LNKB", 1, aml_name("PRQ1")));
-    aml_append(sb_scope, build_link_dev("LNKC", 2, aml_name("PRQ2")));
-    aml_append(sb_scope, build_link_dev("LNKD", 3, aml_name("PRQ3")));
+    aml_append(sb_scope, build_link_dev("LNKA", 0, aml_name("PRQ0"), reserved_irqs));
+    aml_append(sb_scope, build_link_dev("LNKB", 1, aml_name("PRQ1"), reserved_irqs));
+    aml_append(sb_scope, build_link_dev("LNKC", 2, aml_name("PRQ2"), reserved_irqs));
+    aml_append(sb_scope, build_link_dev("LNKD", 3, aml_name("PRQ3"), reserved_irqs));
 
     dev = aml_device("LNKS");
     {
@@ -788,14 +798,14 @@ static void build_q35_pci0_int(Aml *table)
     aml_append(sb_scope, build_irq_status_method());
     aml_append(sb_scope, build_iqcr_method(false));
 
-    aml_append(sb_scope, build_link_dev("LNKA", 0, aml_name("PRQA")));
-    aml_append(sb_scope, build_link_dev("LNKB", 1, aml_name("PRQB")));
-    aml_append(sb_scope, build_link_dev("LNKC", 2, aml_name("PRQC")));
-    aml_append(sb_scope, build_link_dev("LNKD", 3, aml_name("PRQD")));
-    aml_append(sb_scope, build_link_dev("LNKE", 4, aml_name("PRQE")));
-    aml_append(sb_scope, build_link_dev("LNKF", 5, aml_name("PRQF")));
-    aml_append(sb_scope, build_link_dev("LNKG", 6, aml_name("PRQG")));
-    aml_append(sb_scope, build_link_dev("LNKH", 7, aml_name("PRQH")));
+    aml_append(sb_scope, build_link_dev("LNKA", 0, aml_name("PRQA"), 0));
+    aml_append(sb_scope, build_link_dev("LNKB", 1, aml_name("PRQB"), 0));
+    aml_append(sb_scope, build_link_dev("LNKC", 2, aml_name("PRQC"), 0));
+    aml_append(sb_scope, build_link_dev("LNKD", 3, aml_name("PRQD"), 0));
+    aml_append(sb_scope, build_link_dev("LNKE", 4, aml_name("PRQE"), 0));
+    aml_append(sb_scope, build_link_dev("LNKF", 5, aml_name("PRQF"), 0));
+    aml_append(sb_scope, build_link_dev("LNKG", 6, aml_name("PRQG"), 0));
+    aml_append(sb_scope, build_link_dev("LNKH", 7, aml_name("PRQH"), 0));
 
     aml_append(sb_scope, build_gsi_link_dev("GSIA", 0x10, 0x10));
     aml_append(sb_scope, build_gsi_link_dev("GSIB", 0x11, 0x11));
@@ -912,7 +922,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         if (pm->pcihp_bridge_en || pm->pcihp_root_en) {
             build_acpi_pci_hotplug(dsdt, AML_SYSTEM_IO, pm->pcihp_io_base);
         }
-        build_piix4_pci0_int(dsdt);
+        build_piix4_pci0_int(dsdt, pcms->isa_ne2000_irq_mask);
     } else if (q35) {
         sb_scope = aml_scope("_SB");
         dev = aml_device("PCI0");
