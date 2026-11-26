@@ -26,6 +26,10 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef CONFIG_DARWIN
+#include <pthread/qos.h>
+#include "qemu/error-report.h"
+#endif
 #include "accel/accel-ops.h"
 #include "accel/accel-cpu-ops.h"
 #include "accel/tcg/cpu-loop.h"
@@ -85,6 +89,38 @@ void tcg_create_vcpu_thread(CPUState *cpu, const char *name,
 #else
     qemu_thread_create(cpu->thread, name, start_routine, cpu,
                        QEMU_THREAD_JOINABLE);
+#endif
+}
+
+/*
+ * Run once per host vCPU thread, before taking BQL or entering the
+ * execution loop. QoS is a scheduling hint, not a CPU affinity mask.
+ */
+void tcg_apply_vcpu_host_policy(void)
+{
+#ifdef CONFIG_DARWIN
+    qos_class_t qos;
+    int ret;
+
+    if (!tcg_host_qos_enabled()) {
+        return;
+    }
+
+    ret = pthread_get_qos_class_np(pthread_self(), &qos, NULL);
+    if (ret) {
+        warn_report("TCG: cannot query macOS vCPU QoS: %s", strerror(ret));
+        return;
+    }
+    /* Do not demote an already interactive or user-initiated thread. */
+    if (qos == QOS_CLASS_USER_INTERACTIVE ||
+        qos == QOS_CLASS_USER_INITIATED) {
+        return;
+    }
+
+    ret = pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+    if (ret) {
+        warn_report("TCG: cannot set macOS vCPU QoS: %s", strerror(ret));
+    }
 #endif
 }
 

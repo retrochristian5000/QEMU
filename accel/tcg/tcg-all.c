@@ -54,6 +54,10 @@ struct TCGState {
     bool one_insn_per_tb;
     int splitwx_enabled;
     unsigned long tb_size;
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+    bool host_qos;
+    bool host_qos_frozen;
+#endif
 };
 typedef struct TCGState TCGState;
 
@@ -69,6 +73,12 @@ bool qemu_tcg_mttcg_enabled(void)
     return s->mttcg_enabled == ON_OFF_AUTO_ON;
 }
 
+#ifdef CONFIG_DARWIN
+bool tcg_host_qos_enabled(void)
+{
+    return TCG_STATE(current_accel())->host_qos;
+}
+#endif
 #endif /* !CONFIG_USER_ONLY */
 
 static void tcg_accel_instance_init(Object *obj)
@@ -150,6 +160,9 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
     qemu_add_vm_change_state_handler(tcg_vm_change_state, NULL);
 #endif
 
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+    s->host_qos_frozen = true;
+#endif
     tcg_allowed = true;
 
     as->gdbstub.sstep_flags = SSTEP_ENABLE;
@@ -311,6 +324,24 @@ static void tcg_set_one_insn_per_tb_chain(Object *obj, bool value, Error **errp)
     }
 }
 
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+static bool tcg_get_host_qos(Object *obj, Error **errp)
+{
+    return TCG_STATE(obj)->host_qos;
+}
+
+static void tcg_set_host_qos(Object *obj, bool value, Error **errp)
+{
+    TCGState *s = TCG_STATE(obj);
+
+    if (s->host_qos_frozen) {
+        error_setg(errp, "TCG host-qos cannot change after initialization");
+        return;
+    }
+    s->host_qos = value;
+}
+#endif
+
 static void tcg_accel_class_init(ObjectClass *oc, const void *data)
 {
     AccelClass *ac = ACCEL_CLASS(oc);
@@ -320,6 +351,13 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
     ac->cpu_common_unrealize = tcg_exec_unrealizefn;
     ac->get_stats = tcg_get_stats;
     ac->allowed = &tcg_allowed;
+
+#if defined(CONFIG_DARWIN) && !defined(CONFIG_USER_ONLY)
+    object_class_property_add_bool(oc, "host-qos",
+                                   tcg_get_host_qos, tcg_set_host_qos);
+    object_class_property_set_description(oc, "host-qos",
+        "Request user-initiated QoS for macOS TCG vCPU threads");
+#endif
 
     object_class_property_add_str(oc, "thread",
                                   tcg_get_thread,

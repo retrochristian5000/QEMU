@@ -193,6 +193,7 @@ static void *rr_cpu_thread_fn(void *arg)
     CPUState *cpu = arg;
 
     assert(tcg_enabled());
+    tcg_apply_vcpu_host_policy();
     rcu_register_thread();
     force_rcu.notify = rr_force_rcu;
     rcu_add_force_rcu_notifier(&force_rcu);

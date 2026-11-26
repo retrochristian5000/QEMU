@@ -241,6 +241,9 @@ DEF("accel", HAS_ARG, QEMU_OPTION_accel,
     "                one-insn-per-tb-chain=on|off (allow chaining of single-instruction TCG blocks)\n"
     "                split-wx=on|off (enable TCG split w^x mapping)\n"
     "                tb-size=n (TCG translation block cache size)\n"
+#ifdef CONFIG_DARWIN
+    "                host-qos=on|off (macOS TCG vCPU scheduling hint)\n"
+#endif
     "                dirty-ring-size=n (KVM dirty ring GFN count, default 0)\n"
     "                eager-split-size=n (KVM Eager Page Split chunk size, default 0, disabled. ARM only)\n"
     "                notify-vmexit=run|internal-error|disable,notify-window=n (enable notify VM exit and set notify window, x86 only)\n"
@@ -289,6 +292,19 @@ SRST
         buffer. Some operating systems require this to be enabled, and in
         such a case this will default on. On other operating systems, this
         will default off, but one may enable this for testing or debugging.
+
+    ``host-qos=on|off``
+        On macOS system emulators, request user-initiated Quality of Service
+        for TCG vCPU threads. The default is off (inherit the host scheduling
+        policy). Applies once at thread startup, in both single-threaded and
+        multi-threaded TCG. It neither pins threads to performance cores nor
+        guarantees faster emulation. Already interactive or user-initiated
+        threads retain their current policy. If macOS rejects the request,
+        QEMU reports a warning and continues. This option must be set before
+        accelerator initialization. It does not change guest CPU frequency,
+        virtual timers, JIT memory protections, or translation cache size.
+        Compare identical workloads with the option on and off; observe host
+        CPU use, UI/audio responsiveness and elapsed guest boot time.
 
     ``tb-size=n``
         Controls the size (in MiB) of the TCG translation block cache.

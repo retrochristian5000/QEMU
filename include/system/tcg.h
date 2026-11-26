@@ -25,4 +25,8 @@ extern bool tcg_allowed;
  */
 bool qemu_tcg_mttcg_enabled(void);
 
+#ifdef CONFIG_DARWIN
+bool tcg_host_qos_enabled(void);
+#endif
+
 #endif
