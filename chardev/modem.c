@@ -176,6 +176,7 @@ struct ModemChardev {
 
     const ModemModel *model;
     Fifo8 outbuf;
+    Fifo8 net_rxbuf; /* 3740: line payload, separate from AT replies. */
     Fifo8 net_txbuf;
     QIOChannel *tcp_ioc;
     guint tcp_read_tag;
@@ -230,25 +231,53 @@ static void modem_hangup(ModemChardev *modem, bool report);
 static void modem_tcp_arm_read(ModemChardev *modem);
 static void modem_tcp_close(ModemChardev *modem);
 
-static void modem_chr_accept_input(Chardev *chr)
+static bool modem_dataport_rx_ready(const ModemChardev *modem)
 {
-    ModemChardev *modem = CHARDEV_MODEM(chr);
-    uint32_t len = qemu_chr_be_can_write(chr);
-    uint32_t avail = fifo8_num_used(&modem->outbuf);
+    return modem->connected && !modem->command_mode &&
+           !modem->dte_rx_paused &&
+           (modem->flow_control_mode != 3 ||
+            (modem->tiocm & CHR_TIOCM_RTS));
+}
 
-    /* A full receive FIFO naturally backpressures the TCP read watch. */
-    while (len > 0 && avail > 0 &&
-           !(modem->dte_rx_paused && !modem->command_mode)) {
+static Fifo8 *modem_line_rx_fifo(ModemChardev *modem)
+{
+    return modem->model->dataport_3740_line ?
+           &modem->net_rxbuf : &modem->outbuf;
+}
+
+static void modem_drain_fifo(ModemChardev *modem, Fifo8 *fifo,
+                             bool line_payload)
+{
+    Chardev *chr = CHARDEV(modem);
+
+    while (!fifo8_is_empty(fifo)) {
+        uint32_t len = qemu_chr_be_can_write(chr);
         const uint8_t *buf;
         uint32_t size;
 
-        buf = fifo8_pop_bufptr(&modem->outbuf, MIN(len, avail), &size);
+        if (!len || (line_payload && !modem_dataport_rx_ready(modem))) {
+            return;
+        }
+        buf = fifo8_pop_bufptr(fifo, MIN(len, fifo8_num_used(fifo)), &size);
         if (modem->model->dataport_3740_line) {
             qatomic_inc(&modem->indicator_rx_events);
         }
         qemu_chr_be_write(chr, buf, size);
-        len = qemu_chr_be_can_write(chr);
-        avail -= size;
+    }
+}
+
+static void modem_chr_accept_input(Chardev *chr)
+{
+    ModemChardev *modem = CHARDEV_MODEM(chr);
+
+    /* Keep AT replies prompt even if the guest has paused line payload. */
+    if (modem->model->dataport_3740_line ||
+        !modem->dte_rx_paused || modem->command_mode) {
+        modem_drain_fifo(modem, &modem->outbuf, false);
+    }
+    if (modem->model->dataport_3740_line &&
+        fifo8_is_empty(&modem->outbuf)) {
+        modem_drain_fifo(modem, &modem->net_rxbuf, true);
     }
 
     modem_tcp_arm_read(modem);
@@ -628,11 +657,18 @@ static void modem_report_profile(ModemChardev *modem)
 static void modem_connect(ModemChardev *modem)
 {
     modem->connected = true;
-    modem->command_mode = false;
     modem->dte_rx_paused = false;
     modem->plus_count = 0;
     modem_update_carrier(modem);
-    modem_result(modem, MODEM_RESULT_CONNECT);
+    if (modem->model->dataport_3740_line) {
+        /* Finish CONNECT before releasing any buffered line payload. */
+        modem_result(modem, MODEM_RESULT_CONNECT);
+        modem->command_mode = false;
+        modem_chr_accept_input(CHARDEV(modem));
+    } else {
+        modem->command_mode = false;
+        modem_result(modem, MODEM_RESULT_CONNECT);
+    }
 }
 
 static void modem_tcp_close(ModemChardev *modem)
@@ -653,6 +689,9 @@ static void modem_tcp_close(ModemChardev *modem)
     modem->dialing = false;
     modem_publish_indicators(modem);
     fifo8_reset(&modem->net_txbuf);
+    if (modem->model && modem->model->dataport_3740_line) {
+        fifo8_reset(&modem->net_rxbuf);
+    }
 }
 
 static gboolean modem_tcp_read_ready(QIOChannel *ioc, GIOCondition condition,
@@ -669,7 +708,7 @@ static gboolean modem_tcp_read_ready(QIOChannel *ioc, GIOCondition condition,
         return G_SOURCE_REMOVE;
     }
 
-    avail = fifo8_num_free(&modem->outbuf);
+    avail = fifo8_num_free(modem_line_rx_fifo(modem));
     if (!avail) {
         modem->tcp_read_tag = 0;
         return G_SOURCE_REMOVE;
@@ -677,8 +716,13 @@ static gboolean modem_tcp_read_ready(QIOChannel *ioc, GIOCondition condition,
 
     ret = qio_channel_read(ioc, buf, MIN(sizeof(buf), avail), &err);
     if (ret > 0) {
-        modem_queue_bytes(modem, buf, ret);
-        if (!fifo8_num_free(&modem->outbuf)) {
+        if (modem->model->dataport_3740_line) {
+            fifo8_push_all(&modem->net_rxbuf, buf, ret);
+            modem_chr_accept_input(CHARDEV(modem));
+        } else {
+            modem_queue_bytes(modem, buf, ret);
+        }
+        if (!fifo8_num_free(modem_line_rx_fifo(modem))) {
             modem->tcp_read_tag = 0;
             return G_SOURCE_REMOVE;
         }
@@ -698,7 +742,7 @@ static gboolean modem_tcp_read_ready(QIOChannel *ioc, GIOCondition condition,
 static void modem_tcp_arm_read(ModemChardev *modem)
 {
     if (!modem->tcp_ioc || !modem->connected || modem->tcp_read_tag ||
-        !fifo8_num_free(&modem->outbuf)) {
+        !fifo8_num_free(modem_line_rx_fifo(modem))) {
         return;
     }
 
@@ -1234,8 +1278,14 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 modem_result(modem, MODEM_RESULT_NO_CARRIER);
                 return;
             }
-            modem->command_mode = false;
-            modem_result(modem, MODEM_RESULT_CONNECT);
+            if (modem->model->dataport_3740_line) {
+                modem_result(modem, MODEM_RESULT_CONNECT);
+                modem->command_mode = false;
+                modem_chr_accept_input(CHARDEV(modem));
+            } else {
+                modem->command_mode = false;
+                modem_result(modem, MODEM_RESULT_CONNECT);
+            }
             return;
         case 'P':
         case 'T':
@@ -1551,6 +1601,10 @@ static int modem_chr_ioctl(Chardev *chr, int cmd, void *arg)
         if (modem->model->dataport_3740_line && old != modem->tiocm) {
             trace_dataport_3740_lines(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
                                      old, modem->tiocm);
+            /* Resume without a timer when the DTE raises RTS. */
+            if (!(old & CHR_TIOCM_RTS) && (input & CHR_TIOCM_RTS)) {
+                modem_chr_accept_input(chr);
+            }
         }
         return 0;
     }
@@ -1606,6 +1660,9 @@ static bool modem_chr_open(Chardev *chr,
     }
 
     fifo8_create(&modem->outbuf, MODEM_OUTBUF_SIZE);
+    if (modem->model->dataport_3740_line) {
+        fifo8_create(&modem->net_rxbuf, MODEM_NETBUF_SIZE);
+    }
     fifo8_create(&modem->net_txbuf, MODEM_NETBUF_SIZE);
     modem->tiocm = CHR_TIOCM_CTS | CHR_TIOCM_DSR;
     modem->command_mode = true;
@@ -1648,6 +1705,9 @@ static void modem_chr_finalize(Object *obj)
 
     modem_tcp_close(modem);
     fifo8_destroy(&modem->net_txbuf);
+    if (modem->model && modem->model->dataport_3740_line) {
+        fifo8_destroy(&modem->net_rxbuf);
+    }
     fifo8_destroy(&modem->outbuf);
     g_free(modem->tcp_host);
     g_free(modem->tcp_port);

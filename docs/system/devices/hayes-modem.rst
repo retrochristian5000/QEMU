@@ -223,6 +223,37 @@ remote modem negotiation or analogue flow control. The reference's
 example uses \X7, but its command table documents only 0 and 1;
 other values return ERROR. Other modem profiles remain unchanged.
 
+DataPort 3740 serial connector and receive pacing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The hardware table identifies CN3 as RS-232/422, CN1 as line out,
+CN2 as line in, CN4 as DC power, and SW1 as the power switch.
+The related DataPort Express installation guide (3715-A2-GB13-00)
+describes a 25-pin modem serial plug for PC cables, a Macintosh
+hardware-handshake cable, and separate PHONE and LINE jacks.
+The exact 3740 RS-422 pin assignment and synchronous clock wiring
+remain unverified. Do not equate the computer serial interface
+with a telephone line, or the UART DTE speed with the DCE rate.
+
+For the 3740, the default ``\\Q3`` mode now honors the DTE RTS
+signal for line-to-guest payload. Deasserting RTS holds received
+payload in a separate 64 KiB FIFO; asserting RTS resumes delivery
+without a timer. The original AT reply FIFO is retained and
+remains independent, including CONNECT and command-mode replies.
+TCP backpressure applies when the payload FIFO fills. Escaping
+to command mode holds pending line data until returning online;
+hangup discards remaining line payload. Other profiles retain
+their previous behavior. ``\\Q1`` software pacing still works,
+and the documented ``\\D0``/ ``\\D1`` CTS behavior is unchanged.
+This is receive-side logical handshaking, not a complete RTS/CTS
+transmit-side implementation or an electrical RS-422 transceiver.
+
+References:
+
+* 3740: https://arvutimuuseum.ee/th99/t/P-R/53813.htm
+* DataPort Express quick installation guide:
+  https://manuzoid.com/manuals/eN66a-Paradyne%20DataPort%20Quick%20start%20guide
+
 External modem indicators
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -248,7 +279,7 @@ Polling occurs only while the inspector is open. No guest display,
 migration state or VM configuration is changed.
 
 **Scope:** Settings for flow control and reliability are retained and
-reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
+reported, but transmit-side CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,
 and historical bus-level hardware are **not** implemented by this patch.
 The existing TCP carrier simulation remains the only data path. ``ATI``

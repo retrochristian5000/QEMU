@@ -572,8 +572,9 @@ static void modem_test_expect_peer(QIOChannel *peer, const char *expected)
 static void test_dataport_xon_xoff_transport(gconstpointer opaque)
 {
     int mode = GPOINTER_TO_INT(opaque);
-    bool software = mode != 2;
+    bool software = mode < 2;
     bool forward = mode != 0;
+    bool rts_test = mode == 3;
     SocketAddress address = {
         .type = SOCKET_ADDRESS_TYPE_INET,
         .u.inet = { .host = "127.0.0.1", .port = "0" },
@@ -585,6 +586,7 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     ModemOutput out = { 0 };
     CharFrontend fe = { 0 };
     Chardev *chr;
+    int lines = CHR_TIOCM_DTR | CHR_TIOCM_RTS;
     int64_t deadline;
 
     if (qio_channel_socket_listen_sync(listener, &address, 1, &err) < 0) {
@@ -598,6 +600,11 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
                               bound->u.inet.port);
     qapi_free_SocketAddress(bound);
     modem_frontend_init(&fe, &out, chr);
+    if (rts_test) {
+        lines &= ~CHR_TIOCM_RTS;
+    }
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
     assert_response_contains(modem_command(&fe, &out, software ?
                              (forward ? "AT\\Q1\\X1\r" : "AT\\Q1\\X0\r") :
                              "AT\\Q3\\X0\r"), "\r\nOK\r\n");
@@ -610,7 +617,7 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     modem_command(&fe, &out, "\x13" "A");
     modem_test_expect_peer(peer, forward ? "\x13" "A" : "A");
     g_assert_cmpint(qio_channel_write(peer, "held", 4, &error_abort), ==, 4);
-    if (software) {
+    if (software || rts_test) {
         /* Give the local read watch a chance to queue the paused bytes. */
         deadline = g_get_monotonic_time() + 50 * G_TIME_SPAN_MILLISECOND;
         while (g_get_monotonic_time() < deadline) {
@@ -622,6 +629,21 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
         modem_test_wait_output(&out, "held");
     }
 
+    if (rts_test) {
+        /* AT replies must be delivered even with RTS low. */
+        assert_response_contains(modem_command(&fe, &out, "+++"),
+                                 "\r\nOK\r\n");
+        g_assert_null(strstr(out.buf, "held"));
+        assert_response_contains(modem_command(&fe, &out, "AT\r"),
+                                 "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "ATO\r"),
+                                 "CONNECT");
+        g_assert_null(strstr(out.buf, "held"));
+        lines |= CHR_TIOCM_RTS;
+        g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                         &lines), ==, 0);
+        modem_test_wait_output(&out, "held");
+    }
     modem_command(&fe, &out, "\x11" "B");
     modem_test_expect_peer(peer, forward ? "\x11" "B" : "B");
     if (software) {
@@ -739,6 +761,8 @@ int main(int argc, char **argv)
     g_test_add_data_func("/modem/paradyne/xon-forward", GINT_TO_POINTER(1),
                          test_dataport_xon_xoff_transport);
     g_test_add_data_func("/modem/paradyne/xon-hardware-mode", GINT_TO_POINTER(2),
+                         test_dataport_xon_xoff_transport);
+    g_test_add_data_func("/modem/paradyne/3740-rts-pacing", GINT_TO_POINTER(3),
                          test_dataport_xon_xoff_transport);
     g_test_add_func("/modem/paradyne/3740-fax-discovery",
                     test_dataport_3740_fax_discovery);
