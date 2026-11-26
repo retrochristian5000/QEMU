@@ -40,8 +40,9 @@
 /* Serial fifo size. */
 #define MSMOUSE_BUF_SZ 64
 
-/* Existing QEMU mouse ID: three-button Logitech-compatible extension. */
-static const uint8_t msmouse_id[] = {'M', '3'};
+/* Standard Microsoft serial protocol and Logitech M3 extension. */
+static const uint8_t msmouse_id[] = {'M'};
+static const uint8_t mouseman_id[] = {'M', '3'};
 /* A one-button EasyBall must not advertise the three-button M3 extension. */
 static const uint8_t easyball_id[] = {'M'};
 
@@ -52,8 +53,17 @@ static const uint8_t easyball_id[] = {'M'};
  * Missing parts are inserted later.
  */
 static const uint8_t msmouse_pnp_data[] = {
-    M('('), 1, '$', M('Q'), M('M'), M('U'),
-    M('0'), M('0'), M('0'), M('1'),
+    M('('), 1, '$', M('P'), M('N'), M('P'),
+    M('0'), M('F'), M('0'), M('1'),
+    M('\\'), M('\\'),
+    M('M'), M('O'), M('U'), M('S'), M('E'),
+    M('\\'), M('\\')
+};
+
+/* PNP0F08 identifies Logitech-compatible serial mice. */
+static const uint8_t mouseman_pnp_data[] = {
+    M('('), 1, '$', M('P'), M('N'), M('P'),
+    M('0'), M('F'), M('0'), M('8'),
     M('\\'), M('\\'),
     M('M'), M('O'), M('U'), M('S'), M('E'),
     M('\\'), M('\\')
@@ -83,7 +93,17 @@ static const MouseProfile msmouse_profile = {
     .mouse_id_len = sizeof(msmouse_id),
     .pnp_data = msmouse_pnp_data,
     .pnp_data_len = sizeof(msmouse_pnp_data),
-    .description = "QEMU Microsoft Mouse",
+    .description = "Microsoft Serial Mouse",
+    .right_button = true,
+    .middle_button = false,
+};
+
+static const MouseProfile mouseman_profile = {
+    .mouse_id = mouseman_id,
+    .mouse_id_len = sizeof(mouseman_id),
+    .pnp_data = mouseman_pnp_data,
+    .pnp_data_len = sizeof(mouseman_pnp_data),
+    .description = "Logitech Serial Mouse",
     .right_button = true,
     .middle_button = true,
 };
@@ -113,6 +133,7 @@ typedef struct MouseChardev MouseChardev;
 
 #define TYPE_CHARDEV_MSMOUSE "chardev-msmouse"
 #define TYPE_CHARDEV_EASYBALL "chardev-easyball"
+#define TYPE_CHARDEV_MOUSEMAN "chardev-logitech-mouseman"
 DECLARE_INSTANCE_CHECKER(MouseChardev, MOUSE_CHARDEV,
                          TYPE_CHARDEV_MSMOUSE)
 
@@ -345,6 +366,13 @@ static void char_msmouse_init(Object *obj)
     mouse->profile = &msmouse_profile;
 }
 
+static void char_mouseman_init(Object *obj)
+{
+    MouseChardev *mouse = MOUSE_CHARDEV(obj);
+
+    mouse->profile = &mouseman_profile;
+}
+
 static void char_easyball_init(Object *obj)
 {
     MouseChardev *mouse = MOUSE_CHARDEV(obj);
@@ -377,10 +405,17 @@ static const TypeInfo char_easyball_type_info = {
     .instance_init = char_easyball_init,
 };
 
+static const TypeInfo char_mouseman_type_info = {
+    .name = TYPE_CHARDEV_MOUSEMAN,
+    .parent = TYPE_CHARDEV_MSMOUSE,
+    .instance_init = char_mouseman_init,
+};
+
 static void register_types(void)
 {
     type_register_static(&char_msmouse_type_info);
     type_register_static(&char_easyball_type_info);
+    type_register_static(&char_mouseman_type_info);
 }
 
 type_init(register_types);
