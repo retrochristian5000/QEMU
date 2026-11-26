@@ -304,15 +304,22 @@ for existing command lines. The explicit ``cirrus-vga-generic-pci`` type
 shares that implementation, and ``cirrus-vga-generic-isa`` selects ISA.
 Their guest-visible identities remain CL-GD5446 and CL-GD5428,
 respectively. The ``-device help`` descriptions identify the manufacturer,
-chipset, bus and known implementation limits. The ``-vga help``
-description identifies the generic selector rather than a specific
-physical board. The chipset-specific device names are:
+chipset and bus. Adjustable properties and implementation limitations
+are documented separately rather than encoded in device labels.
+The ``-vga help`` description identifies the generic selector rather
+than a specific physical board. The chipset-specific device names are:
 
 * ``gd5422``: CL-GD5422 ISA.
 * ``gd5426``: CL-GD5426 ISA.
 * ``gd5428``: CL-GD5428 ISA, sharing the generic ISA implementation.
 * ``gd5430-pci`` and ``gd5430-vlb``: explicit bus variants.
 * ``gd5446-pci``: CL-GD5446 PCI, sharing the generic PCI implementation.
+
+The CL-GD5422 does not have a hardware BitBLT engine, as documented in
+Table 2-1 of the January 1994 CL-GD542X Technical Reference Manual.
+The GD5426 introduces BitBLT and the GD5428 enhances it. On profiles
+that implement the engine, the existing ``blitter=off`` property can
+disable emulated acceleration without introducing another device type.
 
 The unsuffixed GD5428 profile selects ISA. Cirrus Logic's January 1994
 CL-GD542X Technical Reference Manual (feature table and host interface
@@ -348,9 +355,13 @@ PCI VGA option ROM::
 
     -vga none -device gd5430-pci,romfile=/path/to/gd5430.rom
 
-The experimental PCI profile has no default option ROM; it does not
-reuse the GD5446 PCI ROM automatically. Boot and guest-driver compatibility
-have not yet been established. Keep the same device type and VRAM
+The GD5430 PCI profile does not automatically attach the GD5446 PCI
+ROM. The SeaVGABIOS Cirrus configuration defaults to PCI device ID
+00b8 (GD5446), whereas the GD5430 uses 00a0. A matching PCI ROM header
+and validation of GD5430 mode setup are required before selecting a
+default ROM. This is a firmware integration limitation, not an absence
+of VGA BIOS support in the physical chipset. Boot and guest-driver
+compatibility have not yet been established. Keep the same device type and VRAM
 configuration when saving/restoring a VM. Use a cold boot to change
 chipsets. The GD5446 precise timing property is not available on GD5430.
 

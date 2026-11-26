@@ -3278,7 +3278,7 @@ static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
     k->device_id = CIRRUS_ID_CLGD5446;
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Cirrus Logic VGA (generic default PCI, CL-GD5446 compatible)";
+    dc->desc = "Generic Cirrus Logic VGA (PCI default)";
     dc->vmsd = &vmstate_pci_cirrus_vga;
     device_class_set_props(dc, pci_vga_cirrus_properties);
     dc->hotpluggable = false;
@@ -3298,8 +3298,7 @@ static const TypeInfo cirrus_vga_info = {
 static void cirrus_vga_explicit_pci_class_init(ObjectClass *klass,
                                                const void *data)
 {
-    DEVICE_CLASS(klass)->desc =
-        "Cirrus Logic VGA (generic PCI, CL-GD5446 compatible)";
+    DEVICE_CLASS(klass)->desc = "Generic Cirrus Logic PCI VGA";
 }
 
 /* Explicit PCI variant; shares the legacy default PCI implementation. */
@@ -3321,8 +3320,7 @@ static void cirrus_gd5430_pci_class_init(ObjectClass *klass, const void *data)
     k->device_id = CIRRUS_ID_CLGD5430;
     /* Do not automatically load the GD5446 PCI option ROM. */
     k->romfile = NULL;
-    DEVICE_CLASS(klass)->desc =
-        "Cirrus Logic CL-GD5430 PCI VGA (experimental, no default ROM)";
+    DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5430 PCI VGA";
 }
 
 static const TypeInfo cirrus_gd5430_pci_info = {
@@ -3334,8 +3332,7 @@ static const TypeInfo cirrus_gd5430_pci_info = {
 
 static void cirrus_gd5446_pci_class_init(ObjectClass *klass, const void *data)
 {
-    DEVICE_CLASS(klass)->desc =
-        "Cirrus Logic CL-GD5446 PCI VGA (shared generic engine)";
+    DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5446 PCI VGA";
 }
 
 static const TypeInfo cirrus_gd5446_pci_info = {

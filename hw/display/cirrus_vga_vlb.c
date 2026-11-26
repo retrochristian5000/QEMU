@@ -85,8 +85,7 @@ static void cirrus_gd5430_vlb_class_init(ObjectClass *klass, const void *data)
     dc->realize = cirrus_gd5430_vlb_realize;
     device_class_set_props(dc, cirrus_gd5430_vlb_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc =
-        "Cirrus Logic CL-GD5430 VLB VGA (decoder only, no VLB timing)";
+    dc->desc = "Cirrus Logic CL-GD5430 VLB VGA";
     dc->fw_name = "cirrus-gd5430-vlb";
 }
 
