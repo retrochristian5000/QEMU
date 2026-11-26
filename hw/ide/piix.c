@@ -171,10 +171,36 @@ static bool pci_piix_init_bus(PCIIDEState *d, unsigned i, Error **errp)
     return true;
 }
 
+/*
+ * Both PIIX variants decode the same fixed compatibility-mode I/O ports.
+ * A second PCI function cannot provide an independent controller until
+ * channel decode is modeled; otherwise firmware probes the same ports twice.
+ */
+static int piix_find_other_ide(DeviceState *candidate, void *opaque)
+{
+    DeviceState *self = opaque;
+
+    if (candidate != self && candidate->realized &&
+        (object_dynamic_cast(OBJECT(candidate), TYPE_PIIX3_IDE) ||
+         object_dynamic_cast(OBJECT(candidate), TYPE_PIIX4_IDE))) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static void pci_piix_ide_realize(PCIDevice *dev, Error **errp)
 {
     PCIIDEState *d = PCI_IDE(dev);
     uint8_t *pci_conf = dev->config;
+
+    if (qbus_walk_children(sysbus_get_default(), piix_find_other_ide,
+                           NULL, NULL, NULL, DEVICE(dev)) < 0) {
+        error_setg(errp, "Only one PIIX IDE controller can decode the fixed "
+                   "legacy ATA ports; select the machine's PIIX southbridge "
+                   "instead of adding a second PIIX IDE device");
+        return;
+    }
 
     pci_conf[PCI_CLASS_PROG] = 0x80; // legacy ATA mode
 
