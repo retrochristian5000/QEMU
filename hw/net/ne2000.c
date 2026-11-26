@@ -126,6 +126,8 @@ void ne2000_reset(NE2000State *s)
     int i;
 
     s->isr = ENISR_RESET;
+    /* Reset status does not generate an interrupt. */
+    qemu_set_irq(s->irq, 0);
     memcpy(s->mem, &s->c.macaddr, 6);
     s->mem[14] = 0x57;
     s->mem[15] = 0x57;
@@ -406,6 +408,7 @@ static uint32_t ne2000_ioport_read(void *opaque, uint32_t addr)
         case EN2_STOPPG:
             ret = s->stop >> 8;
             break;
+        /* Legacy shared responses: also visible on the ISA model. */
         case EN0_RTL8029ID0:
             ret = 0x50;
             break;

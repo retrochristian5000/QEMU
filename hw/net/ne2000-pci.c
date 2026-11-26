@@ -105,6 +105,7 @@ static void ne2000_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
+    dc->desc = "Realtek RTL8029-compatible PCI Ethernet adapter";
     k->realize = pci_ne2000_realize;
     k->exit = pci_ne2000_exit;
     k->romfile = "efi-ne2k_pci.rom",

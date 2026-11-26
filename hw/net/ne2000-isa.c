@@ -89,6 +89,7 @@ static void isa_ne2000_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    dc->desc = "NE2000-compatible ISA Ethernet adapter";
     dc->realize = isa_ne2000_realizefn;
     device_class_set_props(dc, ne2000_isa_properties);
     dc->vmsd = &vmstate_isa_ne2000;
