@@ -31,6 +31,8 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qemu/module.h"
+#include "qemu/error-report.h"
+#include "system/memory.h"
 #include "qom/object.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(ISANE2000State, ISA_NE2000)
@@ -85,15 +87,57 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
                    isa->iobase);
         return;
     }
-    if (isa->isairq >= ISA_NUM_IRQS) {
-        error_setg(errp, "NE2000 ISA IRQ %u is outside the ISA IRQ range 0-%u",
-                   isa->isairq, ISA_NUM_IRQS - 1);
+    if (isa->iobase & (NE2000_ISA_IO_SIZE - 1)) {
+        error_setg(errp, "NE2000 ISA I/O base 0x%x must be aligned to 0x20",
+                   isa->iobase);
+        return;
+    }
+    /*
+     * Generic NE2000-compatible ISA adapters support more IRQ choices
+     * than the original Eagle board. IRQ2 on an AT is the cascade,
+     * not an independent ISA interrupt input; use IRQ9 instead.
+     */
+    switch (isa->isairq) {
+    case 3: case 4: case 5: case 9: case 10: case 11:
+    case 12: case 14: case 15:
+        break;
+    default:
+        error_setg(errp, "NE2000 ISA IRQ %u is unsupported; use "
+                   "3, 4, 5, 9, 10, 11, 12, 14 or 15 (IRQ2 is IRQ9 on AT)",
+                   isa->isairq);
         return;
     }
     if (!bus->irqs_in || !bus->irqs_in[isa->isairq]) {
         error_setg(errp, "NE2000 ISA IRQ %u is not connected on this bus",
                    isa->isairq);
         return;
+    }
+
+    /*
+     * Refuse to obscure an already mapped ISA device. This is a check
+     * of current I/O decoding, not a complete bus resource allocator.
+     */
+    MemoryRegionSection section = memory_region_find(
+        bus->address_space_io, isa->iobase, NE2000_ISA_IO_SIZE);
+    if (section.mr) {
+        error_setg(errp, "NE2000 ISA I/O range 0x%x-0x%x overlaps '%s'",
+                   isa->iobase, isa->iobase + NE2000_ISA_IO_SIZE - 1,
+                   memory_region_name(section.mr));
+        memory_region_unref(section.mr);
+        return;
+    }
+
+    /*
+     * PIIX3/4 machines can have a PIIX4 PM function connected to IRQ9.
+     * Keep the user's fixed ISA jumper setting, but report the conflict
+     * rather than silently relocating the adapter.
+     */
+    DeviceState *bridge = BUS(bus)->parent;
+    if (isa->isairq == 9 && bridge &&
+        object_dynamic_cast(OBJECT(bridge), "pci-piix") &&
+        object_resolve_path_component(OBJECT(bridge), "pm")) {
+        warn_report("NE2000 ISA IRQ9 shares the PIIX ACPI SCI line; "
+                    "select an unused ISA IRQ and match the guest driver");
     }
 
     s->irq = isa_bus_get_irq(bus, isa->isairq);
