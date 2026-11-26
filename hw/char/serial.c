@@ -407,6 +407,10 @@ static void serial_ioport_write(void *opaque, hwaddr addr, uint64_t val,
         }
         break;
     case 2:
+        /* INS8250A/NS16450 have no writable FIFO control register. */
+        if (s->no_fifo) {
+            break;
+        }
         /* Did the enable/disable flag change? If so, make sure FIFOs get flushed */
         if ((val ^ s->fcr) & UART_FCR_FE) {
             val |= UART_FCR_XFR | UART_FCR_RFR;
@@ -653,6 +657,10 @@ static int serial_post_load(void *opaque, int version_id)
     if (version_id < 3) {
         s->fcr_vmstate = 0;
     }
+    if (s->no_fifo && (s->fcr_vmstate || (s->iir & UART_IIR_FE))) {
+        error_report("serial: FIFO state is incompatible with this UART");
+        return -EINVAL;
+    }
     if (s->thr_ipending == -1) {
         s->thr_ipending = ((s->iir & UART_IIR_ID) == UART_IIR_THRI);
     }
@@ -861,6 +869,7 @@ static void serial_reset(void *opaque)
     s->rbr = 0;
     s->ier = 0;
     s->iir = UART_IIR_NO_INT;
+    serial_write_fcr(s, 0);
     s->lcr = 0;
     s->lsr = UART_LSR_TEMT | UART_LSR_THRE;
     s->msr = UART_MSR_DCD | UART_MSR_DSR | UART_MSR_CTS;

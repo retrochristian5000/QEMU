@@ -133,7 +133,9 @@ static void serial_isa_build_aml(AcpiDevAmlIf *adev, Aml *scope)
                             AML_SHARED));
 
     dev = aml_device("COM%d", isa->index + 1);
-    aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0501")));
+    aml_append(dev, aml_name_decl("_HID",
+                                  aml_eisaid(isa->state.no_fifo ?
+                                             "PNP0500" : "PNP0501")));
     aml_append(dev, aml_name_decl("_UID", aml_int(isa->index + 1)));
     aml_append(dev, aml_name_decl("_STA", aml_int(0xf)));
     aml_append(dev, aml_name_decl("_CRS", crs));
@@ -191,9 +193,57 @@ static const TypeInfo serial_isa_info = {
     },
 };
 
+/*
+ * National Semiconductor AN-493: INS8250A and NS16450 share the
+ * non-FIFO register set, including the scratch register. Their different
+ * electrical bus timings are not modeled by the common UART engine.
+ */
+static void serial_nonfifo_init(Object *obj)
+{
+    ISA_SERIAL(obj)->state.no_fifo = true;
+}
+
+static void ins8250a_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "National Semiconductor INS8250A ISA UART";
+}
+
+static void ns16450_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "National Semiconductor NS16450 ISA UART";
+}
+
+static void ns16550a_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "National Semiconductor 16550A ISA UART";
+}
+
+static const TypeInfo ins8250a_info = {
+    .name = "ins8250a",
+    .parent = TYPE_ISA_SERIAL,
+    .instance_init = serial_nonfifo_init,
+    .class_init = ins8250a_class_init,
+};
+
+static const TypeInfo ns16450_info = {
+    .name = "ns16450",
+    .parent = TYPE_ISA_SERIAL,
+    .instance_init = serial_nonfifo_init,
+    .class_init = ns16450_class_init,
+};
+
+static const TypeInfo ns16550a_info = {
+    .name = "ns16550a",
+    .parent = TYPE_ISA_SERIAL,
+    .class_init = ns16550a_class_init,
+};
+
 static void serial_register_types(void)
 {
     type_register_static(&serial_isa_info);
+    type_register_static(&ins8250a_info);
+    type_register_static(&ns16450_info);
+    type_register_static(&ns16550a_info);
 }
 
 type_init(serial_register_types)

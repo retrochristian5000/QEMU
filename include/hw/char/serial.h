@@ -61,6 +61,8 @@ struct SerialState {
     uint32_t tsr_retry;
     guint watch_tag;
     bool wakeup;
+    /* Fixed hardware capability, selected before realization. */
+    bool no_fifo;
 
     /* Time when the last byte was successfully sent out of the tsr */
     uint64_t last_xmit_ts;

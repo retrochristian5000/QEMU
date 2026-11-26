@@ -414,6 +414,55 @@ static void test_i440fx_isa_serial_indices(void)
     qtest_quit(qts);
 }
 
+static void test_i440fx_uart_profile(gconstpointer opaque)
+{
+    const char *type = opaque;
+    bool has_fifo = !strcmp(type, "ns16550a") ||
+                    !strcmp(type, "isa-serial");
+    QTestState *qts = qtest_initf(
+        "-M pc -nodefaults -serial none "
+        "-chardev null,id=com1 -device %s,index=0,chardev=com1 "
+        "-chardev null,id=com2 -device isa-serial,chardev=com2", type);
+
+    /* Both older parts have the scratch register. The automatic port
+     * must select COM2 even when COM1 uses a derived UART type. */
+    qtest_outb(qts, 0x3ff, 0x55);
+    qtest_outb(qts, 0x2ff, 0xaa);
+    g_assert_cmphex(qtest_inb(qts, 0x3ff), ==, 0x55);
+    g_assert_cmphex(qtest_inb(qts, 0x2ff), ==, 0xaa);
+
+    /* FIFO enable and disable probe, independent of the scratch test. */
+    qtest_outb(qts, 0x3fa, 0xc7);
+    g_assert_cmphex(qtest_inb(qts, 0x3fa) & 0xc0, ==,
+                    has_fifo ? 0xc0 : 0);
+    qtest_outb(qts, 0x3fa, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x3fa) & 0xc0, ==, 0);
+
+    /* DLAB retains independent divisor access. */
+    qtest_outb(qts, 0x3fb, 0x80);
+    qtest_outb(qts, 0x3f8, 12);
+    qtest_outb(qts, 0x3f9, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x3f8), ==, 12);
+    g_assert_cmphex(qtest_inb(qts, 0x3f9), ==, 0);
+    qtest_outb(qts, 0x3fb, 3);
+
+    /* In character mode, FCR writes must not clear received data on
+     * the two UARTs that do not implement FCR. */
+    if (!has_fifo) {
+        qtest_outb(qts, 0x3fc, 0x10);
+        qtest_outb(qts, 0x3f8, 0x5a);
+        g_assert_cmphex(qtest_inb(qts, 0x3fd) & 1, ==, 1);
+        qtest_outb(qts, 0x3fa, 7);
+        g_assert_cmphex(qtest_inb(qts, 0x3fd) & 1, ==, 1);
+        g_assert_cmphex(qtest_inb(qts, 0x3f8), ==, 0x5a);
+    }
+
+    qtest_outb(qts, 0x3fa, 1);
+    qtest_system_reset(qts);
+    g_assert_cmphex(qtest_inb(qts, 0x3fa) & 0xc0, ==, 0);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_mouse(gconstpointer opaque)
 {
     bool enabled = GPOINTER_TO_INT(opaque);
@@ -565,6 +614,16 @@ int main(int argc, char **argv)
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
     if (qtest_has_device("isa-serial")) {
         qtest_add_func("i440fx/isa/serial-indices", test_i440fx_isa_serial_indices);
+        const char *const types[] = {
+            "isa-serial", "ins8250a", "ns16450", "ns16550a",
+        };
+        for (unsigned n = 0; n < ARRAY_SIZE(types); n++) {
+            if (qtest_has_device(types[n])) {
+                g_autofree char *path =
+                    g_strdup_printf("i440fx/isa/uart/%s", types[n]);
+                qtest_add_data_func(path, types[n], test_i440fx_uart_profile);
+            }
+        }
     }
     qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),
                         test_i440fx_cmos_mouse);

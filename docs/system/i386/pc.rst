@@ -79,6 +79,41 @@ the record manually at the same time as ``host-battery=on`` because both
 paths would attempt to publish the same fw_cfg filename.
 
 
+ISA COM port UART profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The default ``isa-serial`` remains a generic 16550A-compatible UART.
+The explicit ``ins8250a``, ``ns16450`` and ``ns16550a`` ISA devices
+select National Semiconductor-compatible register interfaces. The
+INS8250A and NS16450 have a scratch register but do not implement
+FIFO control; writes to offset 2 are ignored and IIR bits 6-7 remain
+clear. Their ACPI hardware ID is PNP0500 (standard COM port).
+The NS16550A and generic device retain 16-byte FIFOs and PNP0501.
+Reset returns the common UART engine to character mode.
+
+National Semiconductor application note AN-493, April 1989, sections
+1, 3 and 5 describes the differences. The INS8250A and NS16450
+currently share register behavior; their electrical bus timing
+differences are not emulated. The original INS8250 without a scratch
+register, defective NS16550 FIFO behavior, and 64-byte FIFO variants
+are not modeled by these profiles.
+
+Each device accepts the existing ``index``, ``iobase``, ``irq``,
+``chardev`` and ``baudbase`` properties. Index 0 through 3 selects
+COM1 through COM4, respectively. The default bases are 0x3f8, 0x2f8,
+0x3e8 and 0x2e8 with IRQs 4, 3, 4 and 3. The existing resource
+validation applies to the derived types.
+
+For example, replace automatic serial port creation with::
+
+    -serial none -chardev msmouse,id=mouse0 -device ns16550a,index=0,chardev=mouse0
+
+The serial mouse is a character backend, not a second UART.
+Use a separate backend for each port and avoid conflicting IRQ
+assignments. Existing IRQ sharing and ACPI interrupt-resource
+semantics are unchanged. Use matching UART profiles for migration;
+do not switch profiles when restoring saved state.
+
 Experimental Intel 440BX PC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
