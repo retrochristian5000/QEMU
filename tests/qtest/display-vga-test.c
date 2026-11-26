@@ -323,6 +323,45 @@ static QDict *find_pci_device(QList *buses, const char *qdev_id)
     return NULL;
 }
 
+static void test_gd5430_default_rom(void)
+{
+    const uint32_t rom_base = 0xe0000000;
+    QTestState *qts = qtest_init("-M pc -nodefaults -vga none "
+                                "-device gd5430-pci,addr=4");
+    uint32_t rom_mask;
+    uint16_t pcir;
+    unsigned int size;
+    uint8_t checksum = 0;
+    g_autofree uint8_t *rom = NULL;
+
+    /* A default option ROM must expose a PCI expansion ROM BAR. */
+    qtest_outl(qts, 0xcf8, 0x80002030);
+    qtest_outl(qts, 0xcfc, 0xfffffffe);
+    rom_mask = qtest_inl(qts, 0xcfc) & 0xfffff800;
+    g_assert_cmphex(rom_mask, !=, 0);
+    g_assert_cmphex(rom_mask, !=, 0xfffff800);
+    qtest_outl(qts, 0xcfc, rom_base | 1);
+    qtest_outl(qts, 0xcf8, 0x80002004);
+    qtest_outw(qts, 0xcfc, 0x0002);
+
+    g_assert_cmphex(qtest_readw(qts, rom_base), ==, 0xaa55);
+    size = qtest_readb(qts, rom_base + 2) * 512U;
+    pcir = qtest_readw(qts, rom_base + 0x18);
+    g_assert_cmpuint(size, >, 0);
+    g_assert_cmpuint(size, <=, (uint32_t)(~rom_mask + 1));
+    g_assert_cmpuint(pcir + 8U, <=, size);
+    rom = g_malloc(size);
+    qtest_memread(qts, rom_base, rom, size);
+    g_assert_cmpmem(rom + pcir, 4, "PCIR", 4);
+    g_assert_cmphex(rom[pcir + 4] | (rom[pcir + 5] << 8), ==, 0x1013);
+    g_assert_cmphex(rom[pcir + 6] | (rom[pcir + 7] << 8), ==, 0x00a0);
+    for (unsigned int i = 0; i < size; i++) {
+        checksum += rom[i];
+    }
+    g_assert_cmphex(checksum, ==, 0);
+    qtest_quit(qts);
+}
+
 static void test_cirrus_named_pci_profile(gconstpointer opaque)
 {
     unsigned int gd5430_mb = GPOINTER_TO_UINT(opaque);
@@ -783,6 +822,8 @@ int main(int argc, char **argv)
     if (qtest_has_machine("pc") &&
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         if (qtest_has_device("gd5430-pci")) {
+            qtest_add_func("/display/pci/cirrus-gd5430-default-rom",
+                           test_gd5430_default_rom);
             qtest_add_data_func("/display/pci/cirrus-gd5430-profile",
                                 GUINT_TO_POINTER(2),
                                 test_cirrus_named_pci_profile);

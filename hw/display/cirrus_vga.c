@@ -3318,8 +3318,7 @@ static void cirrus_gd5430_pci_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
     k->device_id = CIRRUS_ID_CLGD5430;
-    /* Do not automatically load the GD5446 PCI option ROM. */
-    k->romfile = NULL;
+    /* Inherit SeaVGABIOS; the PCI loader patches the default ROM ID. */
     DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5430 PCI VGA";
 }
 

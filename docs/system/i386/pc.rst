@@ -350,20 +350,25 @@ variants both omit GR12-GR15, GR33 solid-fill and GR31 auto-start.
 Other chipset-specific accelerator features and clocks are incomplete.
 
 For a legacy PC guest, replace the existing primary VGA configuration
-with the following, supplying a compatible, lawfully obtained GD5430
-PCI VGA option ROM::
+with::
 
-    -vga none -device gd5430-pci,romfile=/path/to/gd5430.rom
+    -vga none -device gd5430-pci
 
-The GD5430 PCI profile does not automatically attach the GD5446 PCI
-ROM. The SeaVGABIOS Cirrus configuration defaults to PCI device ID
-00b8 (GD5446), whereas the GD5430 uses 00a0. A matching PCI ROM header
-and validation of GD5430 mode setup are required before selecting a
-default ROM. This is a firmware integration limitation, not an absence
-of VGA BIOS support in the physical chipset. Boot and guest-driver
-compatibility have not yet been established. Keep the same device type and VRAM
-configuration when saving/restoring a VM. Use a cold boot to change
-chipsets. The GD5446 precise timing property is not available on GD5430.
+The GD5430 PCI profile uses the bundled SeaVGABIOS Cirrus ROM
+(``vgabios-cirrus.bin``). With the normal PCI ROM BAR enabled, QEMU's
+existing default-ROM loader adjusts the PCI device ID from 00b8 to
+00a0 and updates the checksum in the loaded image. The ROM file
+and SeaBIOS sources remain unchanged. A user-supplied compatible ROM
+can still be selected with ``romfile=PATH``; an empty ``romfile=``
+disables the ROM. Explicit ROM files are not patched by the default
+ROM loader. The legacy ``rombar=0`` firmware path bypasses this
+PCI header patching and has not been validated for GD5430.
+
+The header adaptation alone does not establish boot or guest-driver
+compatibility; GD5430 mode setup still requires runtime validation.
+Keep the same device type and VRAM configuration when saving/restoring
+a VM. Use a cold boot to change chipsets. The GD5446 precise timing
+property is not available on GD5430.
 
 Hardware reference: Cirrus Logic Alpine Family Technical Reference
 Manual, February 1995, sections 4.14, 4.18-4.19, 9.27-9.30,
