@@ -31,6 +31,7 @@ typedef struct NE2000State {
     qemu_irq irq;
     NICState *nic;
     NICConf c;
+    bool eagle_board; /* Immutable board profile, not migrated. */
     uint8_t mem[NE2000_MEM_SIZE];
 } NE2000State;
 

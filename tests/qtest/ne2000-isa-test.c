@@ -90,6 +90,16 @@ typedef struct ResourceConflict {
 
 static const ResourceConflict conflicts[] = {
     {
+        "-device novell-ne2000,iobase=0x280,irq=3",
+        "*novell-ne2000: I/O base must be*",
+    }, {
+        "-device novell-ne2000,iobase=0x300,irq=10",
+        "*novell-ne2000: IRQ must be*",
+    }, {
+        "-device novell-ne2000 -device ne2k_isa,irq=10",
+        "*ne2k_isa: ISA I/O range 0x300-0x31f overlaps*",
+    },
+    {
         "-device ne2k_isa,iobase=0x301,irq=9",
         "*NE2000 ISA I/O base 0x301 must be aligned to 0x20*",
     }, {
@@ -173,10 +183,55 @@ static void test_separate_io_windows(void)
     qtest_quit(s);
 }
 
+static void ne2000_dma_word_setup(QTestState *s, uint16_t addr, bool write)
+{
+    qtest_outb(s, NE2K_CR, CR_STOP_NODMA);
+    qtest_outb(s, NE2K_BASE + 0x0e, 0x49);
+    qtest_outb(s, NE2K_BASE + 0x08, addr & 0xff);
+    qtest_outb(s, NE2K_BASE + 0x09, addr >> 8);
+    qtest_outb(s, NE2K_RBCR0, 2);
+    qtest_outb(s, NE2K_RBCR1, 0);
+    qtest_outb(s, NE2K_CR, CR_START | (write ? 0x10 : CR_REMOTE_READ));
+}
+
+static void test_ne2000_board_profile(gconstpointer opaque)
+{
+    bool original = GPOINTER_TO_INT(opaque);
+    QTestState *s = qtest_initf("-M pc -nodefaults -device %s,irq=5",
+                              original ? "novell-ne2000" : "ne2k_isa");
+
+    /* Only the generic profile retains the shared Realtek extensions. */
+    g_assert_cmphex(qtest_inb(s, NE2K_RBCR0), ==, original ? 0 : 0x50);
+    g_assert_cmphex(qtest_inb(s, NE2K_RBCR1), ==, original ? 0 : 0x43);
+    qtest_outb(s, NE2K_CR, 0xe1);
+    g_assert_cmphex(qtest_inb(s, NE2K_BASE + 5), ==, original ? 0 : 0x40);
+
+    ne2000_dma_word_setup(s, 0x7ffe, true);
+    qtest_outw(s, NE2K_BASE + 0x10, 0x1234);
+    ne2000_dma_word_setup(s, 0x7ffe, false);
+    g_assert_cmphex(qtest_inw(s, NE2K_BASE + 0x10), ==, 0x1234);
+
+    /* 0x8000 is beyond the original board's modeled packet RAM. */
+    ne2000_dma_word_setup(s, 0x8000, true);
+    qtest_outw(s, NE2K_BASE + 0x10, 0x5678);
+    ne2000_dma_word_setup(s, 0x8000, false);
+    g_assert_cmphex(qtest_inw(s, NE2K_BASE + 0x10), ==,
+                    original ? 0xffff : 0x5678);
+
+    qtest_system_reset(s);
+    g_assert_cmphex(qtest_inb(s, NE2K_CR), ==, CR_STOP_NODMA);
+    g_assert_cmphex(qtest_inb(s, NE2K_RBCR0), ==, original ? 0 : 0x50);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/ne2000/isa/reset-irq", test_reset_irq);
+    qtest_add_data_func("/ne2000/isa/generic-profile", GINT_TO_POINTER(0),
+                        test_ne2000_board_profile);
+    qtest_add_data_func("/ne2000/isa/novell-profile", GINT_TO_POINTER(1),
+                        test_ne2000_board_profile);
     qtest_add_func("/ne2000/isa/bus-reset", test_bus_reset);
     qtest_add_func("/ne2000/isa/unassigned-io-root",
                    test_unassigned_io_root);

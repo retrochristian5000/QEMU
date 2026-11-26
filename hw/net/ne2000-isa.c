@@ -88,7 +88,23 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
     /* PIIX SCI occupies IRQ9. The matching firmware reserves NIC IRQ10
      * from PCI steering via etc/isa-ne2000-irq-mask. */
     if (isa->isairq == UINT32_MAX) {
-        isa->isairq = piix ? 10 : 9;
+        isa->isairq = s->eagle_board ? 3 : (piix ? 10 : 9);
+    }
+
+    /* Eagle Technology assembly 810-149-00X, JP9 through JP15. */
+    if (s->eagle_board) {
+        if (isa->iobase != 0x300 && isa->iobase != 0x320 &&
+            isa->iobase != 0x340 && isa->iobase != 0x360) {
+            error_setg(errp, "novell-ne2000: I/O base must be 0x300, 0x320, "
+                       "0x340 or 0x360");
+            return;
+        }
+        if (isa->isairq != 3 && isa->isairq != 4 &&
+            isa->isairq != 5 && isa->isairq != 9) {
+            error_setg(errp, "novell-ne2000: IRQ must be 3, 4, 5 or 9 "
+                       "(IRQ2 jumper maps to IRQ9 on AT)");
+            return;
+        }
     }
 
     if (isa->iobase > UINT16_MAX - (NE2000_ISA_IO_SIZE - 1)) {
@@ -219,9 +235,28 @@ static const TypeInfo ne2000_isa_info = {
     .instance_init = isa_ne2000_instance_init,
 };
 
+static void novell_ne2000_init(Object *obj)
+{
+    ISA_NE2000(obj)->ne2000.eagle_board = true;
+}
+
+static void novell_ne2000_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc =
+        "Novell/Eagle NE2000 (810-149-00X compatibility profile)";
+}
+
+static const TypeInfo novell_ne2000_info = {
+    .name = TYPE_NOVELL_NE2000,
+    .parent = TYPE_ISA_NE2000,
+    .instance_init = novell_ne2000_init,
+    .class_init = novell_ne2000_class_init,
+};
+
 static void ne2000_isa_register_types(void)
 {
     type_register_static(&ne2000_isa_info);
+    type_register_static(&novell_ne2000_info);
 }
 
 type_init(ne2000_isa_register_types)

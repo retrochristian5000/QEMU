@@ -150,6 +150,12 @@ static void ne2000_update_irq(NE2000State *s)
     qemu_set_irq(s->irq, (isr != 0));
 }
 
+/* Original NE2000 exposes 16 KiB of packet RAM, not 32 KiB. */
+static uint32_t ne2000_pmem_end(const NE2000State *s)
+{
+    return s->eagle_board ? NE2000_PMEM_START + 16 * KiB : NE2000_PMEM_END;
+}
+
 static int ne2000_buffer_full(NE2000State *s)
 {
     int avail, index, boundary;
@@ -160,6 +166,12 @@ static int ne2000_buffer_full(NE2000State *s)
 
     index = s->curpag << 8;
     boundary = s->boundary << 8;
+    if (s->eagle_board &&
+        (s->start < NE2000_PMEM_START || s->stop > ne2000_pmem_end(s) ||
+         index < s->start || index >= s->stop ||
+         boundary < s->start || boundary >= s->stop)) {
+        return 1;
+    }
     if (index < boundary)
         avail = boundary - index;
     else
@@ -184,6 +196,10 @@ ssize_t ne2000_receive(NetClientState *nc, const uint8_t *buf, size_t size_)
 
     if (s->cmd & E8390_STOP || ne2000_buffer_full(s))
         return -1;
+
+    if (s->eagle_board && (size < ETH_HLEN || size > MAX_ETH_FRAME_SIZE)) {
+        return size_;
+    }
 
     /* XXX: check this */
     if (s->rxcr & 0x10) {
@@ -213,7 +229,7 @@ ssize_t ne2000_receive(NetClientState *nc, const uint8_t *buf, size_t size_)
     }
 
     index = s->curpag << 8;
-    if (index >= NE2000_PMEM_END) {
+    if (index >= ne2000_pmem_end(s)) {
         index = s->start;
     }
     /* 4 bytes for header */
@@ -280,16 +296,24 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             if (val & E8390_TRANS) {
                 index = (s->tpsr << 8);
                 /* XXX: next 2 lines are a hack to make netware 3.11 work */
-                if (index >= NE2000_PMEM_END)
+                if (!s->eagle_board && index >= NE2000_PMEM_END)
                     index -= NE2000_PMEM_SIZE;
-                /* fail safe: check range on the transmitted length  */
-                if (index + s->tcnt <= NE2000_PMEM_END) {
+                /* Check the selected board's packet memory window. */
+                if ((!s->eagle_board || index >= NE2000_PMEM_START) &&
+                    index + s->tcnt <= ne2000_pmem_end(s)) {
                     qemu_send_packet(qemu_get_queue(s->nic), s->mem + index,
                                      s->tcnt);
+                    s->tsr = ENTSR_PTX;
+                    s->isr |= ENISR_TX;
+                } else if (s->eagle_board) {
+                    s->tsr = ENTSR_ABT;
+                    s->isr |= ENISR_TX_ERR;
+                } else {
+                    /* Preserve the generic compatibility behavior. */
+                    s->tsr = ENTSR_PTX;
+                    s->isr |= ENISR_TX;
                 }
                 /* signal end of transfer */
-                s->tsr = ENTSR_PTX;
-                s->isr |= ENISR_TX;
                 s->cmd &= ~E8390_TRANS;
                 ne2000_update_irq(s);
             }
@@ -299,17 +323,17 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         offset = addr | (page << 4);
         switch(offset) {
         case EN0_STARTPG:
-            if (val << 8 <= NE2000_PMEM_END) {
+            if (val << 8 <= ne2000_pmem_end(s)) {
                 s->start = val << 8;
             }
             break;
         case EN0_STOPPG:
-            if (val << 8 <= NE2000_PMEM_END) {
+            if (val << 8 <= ne2000_pmem_end(s)) {
                 s->stop = val << 8;
             }
             break;
         case EN0_BOUNDARY:
-            if (val << 8 < NE2000_PMEM_END) {
+            if (val << 8 < ne2000_pmem_end(s)) {
                 s->boundary = val;
             }
             break;
@@ -352,7 +376,7 @@ static void ne2000_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             s->phys[offset - EN1_PHYS] = val;
             break;
         case EN1_CURPAG:
-            if (val << 8 < NE2000_PMEM_END) {
+            if (val << 8 < ne2000_pmem_end(s)) {
                 s->curpag = val;
             }
             break;
@@ -408,21 +432,21 @@ static uint32_t ne2000_ioport_read(void *opaque, uint32_t addr)
         case EN2_STOPPG:
             ret = s->stop >> 8;
             break;
-        /* Legacy shared responses: also visible on the ISA model. */
+        /* Preserve legacy clone readback, but not on the original board. */
         case EN0_RTL8029ID0:
-            ret = 0x50;
+            ret = s->eagle_board ? 0 : 0x50;
             break;
         case EN0_RTL8029ID1:
-            ret = 0x43;
+            ret = s->eagle_board ? 0 : 0x43;
             break;
         case EN3_CONFIG0:
             ret = 0;          /* 10baseT media */
             break;
         case EN3_CONFIG2:
-            ret = 0x40;       /* 10baseT active */
+            ret = s->eagle_board ? 0 : 0x40; /* 10baseT active */
             break;
         case EN3_CONFIG3:
-            ret = 0x40;       /* Full duplex */
+            ret = s->eagle_board ? 0 : 0x40; /* Full duplex */
             break;
         default:
             ret = 0x00;
@@ -437,7 +461,7 @@ static inline void ne2000_mem_writeb(NE2000State *s, uint32_t addr,
                                      uint32_t val)
 {
     if (addr < 32 ||
-        (addr >= NE2000_PMEM_START && addr < NE2000_MEM_SIZE)) {
+        (addr >= NE2000_PMEM_START && addr < ne2000_pmem_end(s))) {
         s->mem[addr] = val;
     }
 }
@@ -447,7 +471,7 @@ static inline void ne2000_mem_writew(NE2000State *s, uint32_t addr,
 {
     addr &= ~1; /* XXX: check exact behaviour if not even */
     if (addr < 32 ||
-        (addr >= NE2000_PMEM_START && addr < NE2000_MEM_SIZE)) {
+        (addr >= NE2000_PMEM_START && addr < ne2000_pmem_end(s))) {
         *(uint16_t *)(s->mem + addr) = cpu_to_le16(val);
     }
 }
@@ -458,7 +482,7 @@ static inline void ne2000_mem_writel(NE2000State *s, uint32_t addr,
     addr &= ~1; /* XXX: check exact behaviour if not even */
     if (addr < 32
         || (addr >= NE2000_PMEM_START
-            && addr + sizeof(uint32_t) <= NE2000_MEM_SIZE)) {
+            && addr + sizeof(uint32_t) <= ne2000_pmem_end(s))) {
         stl_le_p(s->mem + addr, val);
     }
 }
@@ -466,7 +490,7 @@ static inline void ne2000_mem_writel(NE2000State *s, uint32_t addr,
 static inline uint32_t ne2000_mem_readb(NE2000State *s, uint32_t addr)
 {
     if (addr < 32 ||
-        (addr >= NE2000_PMEM_START && addr < NE2000_MEM_SIZE)) {
+        (addr >= NE2000_PMEM_START && addr < ne2000_pmem_end(s))) {
         return s->mem[addr];
     } else {
         return 0xff;
@@ -477,7 +501,7 @@ static inline uint32_t ne2000_mem_readw(NE2000State *s, uint32_t addr)
 {
     addr &= ~1; /* XXX: check exact behaviour if not even */
     if (addr < 32 ||
-        (addr >= NE2000_PMEM_START && addr < NE2000_MEM_SIZE)) {
+        (addr >= NE2000_PMEM_START && addr < ne2000_pmem_end(s))) {
         return le16_to_cpu(*(uint16_t *)(s->mem + addr));
     } else {
         return 0xffff;
@@ -489,7 +513,7 @@ static inline uint32_t ne2000_mem_readl(NE2000State *s, uint32_t addr)
     addr &= ~1; /* XXX: check exact behaviour if not even */
     if (addr < 32
         || (addr >= NE2000_PMEM_START
-            && addr + sizeof(uint32_t) <= NE2000_MEM_SIZE)) {
+            && addr + sizeof(uint32_t) <= ne2000_pmem_end(s))) {
         return ldl_le_p(s->mem + addr);
     } else {
         return 0xffffffff;
@@ -641,7 +665,7 @@ static uint64_t ne2000_read(void *opaque, hwaddr addr,
 
     if (addr < 0x10 && size == 1) {
         val = ne2000_ioport_read(s, addr);
-    } else if (addr == 0x10) {
+    } else if (addr == 0x10 && (!s->eagle_board || size <= 2)) {
         if (size <= 2) {
             val = ne2000_asic_ioport_read(s, addr);
         } else {
@@ -665,7 +689,7 @@ static void ne2000_write(void *opaque, hwaddr addr,
     trace_ne2000_write(addr, data);
     if (addr < 0x10 && size == 1) {
         ne2000_ioport_write(s, addr, data);
-    } else if (addr == 0x10) {
+    } else if (addr == 0x10 && (!s->eagle_board || size <= 2)) {
         if (size <= 2) {
             ne2000_asic_ioport_write(s, addr, data);
         } else {

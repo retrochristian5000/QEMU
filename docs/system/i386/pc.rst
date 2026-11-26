@@ -209,13 +209,35 @@ adapter occupies 32 consecutive ports. The base must be aligned to 32
 ports and must not overlap an already mapped I/O region. Supported IRQ
 selections are 3, 4, 5, 9, 10, 11, 12, 14 and 15.
 
-The historical default IRQ9 is retained, but QEMU warns if a PIIX ACPI
-power-management function also uses IRQ9. IRQ2 is the AT interrupt
+The generic default is IRQ10 on a PIIX machine and IRQ9 otherwise.
+QEMU warns if a PIIX ACPI power-management function also uses IRQ9. IRQ2 is the AT interrupt
 cascade and is not a separate selectable NIC interrupt. Select a free
 IRQ and match the I/O base and IRQ in the guest's network adapter
 properties. For example, IRQ3 is usable only if COM2 and any other
 IRQ3 users are absent. IRQ5 may be occupied by a sound card, and IRQ10
 and IRQ11 may be used by PCI interrupt steering.
+
+The optional ``novell-ne2000`` profile models the documented jumper
+choices of Eagle Technology assembly 810-149-00X. Its I/O bases are
+0x300, 0x320, 0x340 and 0x360; its IRQs are 3 (default), 4, 5 and 9.
+It exposes a 16 KiB packet memory window at 0x4000-0x7fff and byte/word
+data-port transfers, without the shared RTL8029 identification responses.
+The generic ISA and PCI profiles retain their existing behavior.
+
+For example, using an otherwise unused IRQ3 and I/O base 0x300::
+
+    -netdev user,id=net0 -device novell-ne2000,netdev=net0,irq=3
+
+Replace the existing NIC attachment; do not add a second NIC using the
+same resources. Select matching resources in the guest. The profile does
+not automatically change the Windows driver name. Media/boot-ROM jumpers,
+electrical bus aliasing, collision timing and complete DP8390 register
+behavior are not modeled. Use matching profiles when restoring state.
+
+References: Eagle Technology NE2000 assembly 810-149-00X jumper table
+(https://stason.org/TULARC/pc/network-cards/E/EAGLE-TECHNOLOGY-Ethernet-NE2000-ASSY-810-149-00X.html)
+and QNX 4.25 Net.ether1000 documentation
+(https://staff.qnx.com/developers/docs/qnx_4.25_docs/qnx4/utils/n/netether1000.html).
 
 The I/O overlap check detects devices mapped before the NIC is realized.
 It is not a general resource allocator and does not prevent a later

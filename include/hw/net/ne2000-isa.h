@@ -16,6 +16,7 @@
 #include "qapi/error.h"
 
 #define TYPE_ISA_NE2000 "ne2k_isa"
+#define TYPE_NOVELL_NE2000 "novell-ne2000"
 
 static inline ISADevice *isa_ne2000_init(ISABus *bus, int base, int irq,
                                          NICInfo *nd)
