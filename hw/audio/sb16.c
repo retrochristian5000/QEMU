@@ -1461,7 +1461,7 @@ static void sb16_class_initfn(ObjectClass *klass, const void *data)
 
     dc->realize = sb16_realizefn;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
-    dc->desc = "Creative Sound Blaster 16";
+    dc->desc = "Sound Blaster 16 compatible (legacy ISA, non-PnP)";
     dc->vmsd = &vmstate_sb16;
     device_class_set_props(dc, sb16_properties);
 }
@@ -1477,7 +1477,8 @@ static const TypeInfo sb16_info = {
 static void sb16_register_types (void)
 {
     type_register_static (&sb16_info);
-    audio_register_model("sb16", "Creative Sound Blaster 16", TYPE_SB16);
+    audio_register_model("sb16", "Sound Blaster 16 compatible (legacy ISA)",
+                         TYPE_SB16);
 }
 
 type_init (sb16_register_types)
