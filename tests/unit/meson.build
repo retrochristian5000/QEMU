@@ -142,6 +142,8 @@ if have_system
       meson.project_source_root() / 'hw/input/att-kbd301-map.c',
     ],
     'test-att-kbd302': [
+      meson.project_source_root() / 'hw/input/att-kbd302-io.c',
+      meson.project_source_root() / 'hw/input/intel-8741-core.c',
       meson.project_source_root() / 'hw/input/att-kbd302-core.c',
       meson.project_source_root() / 'hw/input/att-kbd302-map.c',
     ],

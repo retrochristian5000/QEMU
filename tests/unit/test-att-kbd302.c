@@ -5,6 +5,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/input/att-kbd302.h"
+#include "hw/input/att-kbd302-io.h"
 #include "standard-headers/linux/input-event-codes.h"
 
 static void test_make_break(void)
@@ -101,11 +102,49 @@ static void test_mapping(void)
     g_assert_false(att_kbd302_core_read(&s, &value));
 }
 
+static void test_register_decode(void)
+{
+    Intel8741Core controller;
+    uint8_t value = 0xa5;
+    bool command = false;
+
+    intel_8741_core_reset(&controller);
+    g_assert_false(att_kbd302_io_read(&controller, 0x60, &value));
+    g_assert_cmphex(value, ==, 0xa5);
+    g_assert_true(att_kbd302_io_read(&controller, 0x64, &value));
+    g_assert_cmphex(value, ==, 0);
+
+    g_assert_false(att_kbd302_io_write(&controller, 0x61, 0xff));
+    g_assert_false(att_kbd302_io_read(&controller, 0x66, &value));
+    g_assert_true(att_kbd302_io_write(&controller, 0x64, 0x37));
+    g_assert_false(att_kbd302_io_write(&controller, 0x60, 0x99));
+    g_assert_true(att_kbd302_io_read(&controller, 0x64, &value));
+    g_assert_cmphex(value, ==, INTEL_8741_IBF | INTEL_8741_F1);
+    g_assert_true(intel_8741_mcu_read(&controller, &value, &command));
+    g_assert_cmphex(value, ==, 0x37);
+    g_assert_true(command);
+
+    g_assert_true(att_kbd302_io_write(&controller, 0x60, 0x51));
+    g_assert_true(intel_8741_mcu_read(&controller, &value, &command));
+    g_assert_cmphex(value, ==, 0x51);
+    g_assert_false(command);
+
+    g_assert_true(intel_8741_mcu_write(&controller, 0x1e));
+    g_assert_true(att_kbd302_io_read(&controller, 0x64, &value));
+    g_assert_cmphex(value, ==, INTEL_8741_OBF);
+    g_assert_false(att_kbd302_io_write(&controller, 0x64, 0x77));
+    g_assert_true(att_kbd302_io_read(&controller, 0x60, &value));
+    g_assert_cmphex(value, ==, 0x1e);
+    g_assert_true(att_kbd302_io_read(&controller, 0x64, &value));
+    g_assert_cmphex(value, ==, 0);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/att-kbd302/make-break", test_make_break);
     g_test_add_func("/att-kbd302/queue", test_queue);
     g_test_add_func("/att-kbd302/mapping", test_mapping);
+    g_test_add_func("/att-kbd302/register-decode", test_register_decode);
     return g_test_run();
 }

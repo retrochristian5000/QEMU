@@ -228,7 +228,7 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd301",
           "AT&T 301 keyboard (Intel 8741 included; guest I/O pending)" },
         { "att-kbd302",
-          "AT&T 302 keyboard (Intel 8741 included; guest I/O pending)" },
+          "AT&T 302 keyboard (Intel UPI-41; experimental I/O optional)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
         { "intel-8041",
           "Intel 8041 UPI-41 controller (keyboard link; guest I/O pending)" },
@@ -326,6 +326,38 @@ static void test_att_kbd302_controller(void)
         g_assert_true(qtest_qom_get_bool(qts, child, "keyboard-attached"));
         qtest_quit(qts);
     }
+}
+
+static void test_att_kbd302_io(void)
+{
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    bool supported = type_list_find(types, "att-kbd302") != NULL;
+
+    qobject_unref(types);
+    qtest_quit(qts);
+    if (!supported) {
+        g_test_skip("AT&T 302 keyboard is unavailable");
+        return;
+    }
+
+    qts = qtest_init("-machine none -nodefaults "
+                     "-device att-kbd302,id=kbd,io=on");
+    g_assert_cmphex(qtest_inb(qts, 0x64), ==, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x60), ==, 0xff);
+    qtest_outb(qts, 0x64, 0x37);
+    g_assert_cmphex(qtest_inb(qts, 0x64), ==, 0x0a);
+    qtest_outb(qts, 0x60, 0x55);
+    g_assert_cmphex(qtest_inb(qts, 0x64), ==, 0x0a);
+    g_assert_cmphex(qtest_inb(qts, 0x60), ==, 0xff);
+    qtest_quit(qts);
+
+    qts = qtest_init("-machine none -nodefaults "
+                     "-device intel-8041,id=upi "
+                     "-device att-kbd302,id=kbd,controller-id=upi,io=on");
+    qtest_outb(qts, 0x60, 0x51);
+    g_assert_cmphex(qtest_inb(qts, 0x64), ==, 0x02);
+    qtest_quit(qts);
 }
 
 static void test_att_keyboard_explicit_controller(void)
@@ -581,6 +613,8 @@ int main(int argc, char **argv)
                    test_att_kbd301_controller);
     qtest_add_func("device/introspect/att-kbd302-controller",
                    test_att_kbd302_controller);
+    qtest_add_func("device/introspect/att-kbd302-io",
+                   test_att_kbd302_io);
     qtest_add_func("device/introspect/att-keyboard-explicit-controller",
                    test_att_keyboard_explicit_controller);
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
