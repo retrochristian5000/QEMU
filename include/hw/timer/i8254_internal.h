@@ -39,7 +39,7 @@ typedef struct PITChannelState {
     uint8_t write_state;
     uint8_t write_latch;
     uint8_t rw_mode;
-    uint8_t mode;
+    uint8_t mode; /* Raw control-word mode bits for status read-back. */
     uint8_t bcd; /* not supported */
     uint8_t gate; /* timer start */
     int64_t count_load_time;
@@ -66,6 +66,12 @@ struct PITCommonClass {
     void (*pre_save)(PITCommonState *s);
     void (*post_load)(PITCommonState *s);
 };
+
+/* Mode encodings 6 and 7 select modes 2 and 3, respectively. */
+static inline uint8_t pit_effective_mode(const PITChannelState *s)
+{
+    return s->mode >= 6 ? s->mode - 4 : s->mode;
+}
 
 int pit_get_out(PITChannelState *s, int64_t current_time);
 void pit_get_irq_timing(PITChannelState *s, int64_t current_time,

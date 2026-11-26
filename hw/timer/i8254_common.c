@@ -56,7 +56,7 @@ static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
 {
     int out;
 
-    switch (s->mode) {
+    switch (pit_effective_mode(s)) {
     default:
     case 0:
     case 1:
@@ -90,7 +90,7 @@ static int64_t pit_next_transition_elapsed(PITChannelState *s,
     uint64_t next_time, base;
     int period2;
 
-    switch (s->mode) {
+    switch (pit_effective_mode(s)) {
     default:
     case 0:
     case 1:
@@ -161,7 +161,7 @@ void pit_get_channel_info_common(PITCommonState *s, PITChannelState *sc,
                                  PITChannelInfo *info)
 {
     info->gate = sc->gate;
-    info->mode = sc->mode;
+    info->mode = pit_effective_mode(sc);
     info->initial_count = sc->count;
     info->out = pit_get_out(sc, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }

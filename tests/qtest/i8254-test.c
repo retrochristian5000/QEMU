@@ -161,12 +161,66 @@ static void test_bios_tick_latch(void)
     qtest_quit(s);
 }
 
+static void test_mode_aliases(void)
+{
+    static const uint8_t modes[] = { 2, 3, 6, 7 };
+    static const uint16_t mode2_counts[] = { 5, 4, 3, 2, 1, 5 };
+    static const uint16_t mode3_counts[] = { 4, 2, 0, 4, 2, 4 };
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults");
+    unsigned int i;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    for (i = 0; i < G_N_ELEMENTS(modes); i++) {
+        uint8_t control = 0x30 | (modes[i] << 1);
+        bool square = modes[i] & 1;
+        uint64_t elapsed = 0;
+        unsigned int tick;
+
+        qtest_outb(s, PIT_CONTROL, control);
+        qtest_outb(s, PIT_COUNTER0, 5);
+        qtest_outb(s, PIT_COUNTER0, 0);
+        for (tick = 0; tick < G_N_ELEMENTS(mode2_counts); tick++) {
+            bool out = square ? tick % 5 < 3 : tick % 5 != 4;
+            uint8_t status;
+
+            advance_to_tick(s, tick, &elapsed);
+            qtest_outb(s, PIT_CONTROL, PIT_STATUS0);
+            status = qtest_inb(s, PIT_COUNTER0);
+            g_assert_cmphex(status & 0x3f, ==, control);
+            g_assert_cmpint(!!(status & PIT_OUT), ==, out);
+            g_assert_cmpint(qtest_get_irq(s, 0), ==, out);
+            g_assert_cmphex(read_latched_count(s), ==,
+                            square ? mode3_counts[tick] :
+                                     mode2_counts[tick]);
+        }
+    }
+
+    qtest_quit(s);
+}
+
+static void test_reprogram_latch(void)
+{
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults");
+
+    load_mode3(s, 0x1234);
+    qtest_outb(s, PIT_CONTROL, PIT_LATCH0);
+    g_assert_cmphex(qtest_inb(s, PIT_COUNTER0), ==, 0x34);
+
+    /* A new control word must discard the unread old high byte. */
+    load_mode3(s, 0x5678);
+    g_assert_cmphex(read_latched_count(s), ==, 0x5678);
+
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/i8254/mode2/output", test_mode2);
     qtest_add_func("/i8254/mode3/counts", test_mode3_counts);
     qtest_add_func("/i8254/mode3/bios-tick-latch", test_bios_tick_latch);
+    qtest_add_func("/i8254/mode-aliases", test_mode_aliases);
+    qtest_add_func("/i8254/reprogram-latch", test_reprogram_latch);
 
     return g_test_run();
 }

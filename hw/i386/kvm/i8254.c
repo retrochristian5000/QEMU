@@ -227,7 +227,7 @@ static void kvm_pit_set_gate(PITCommonState *s, PITChannelState *sc, int val)
 {
     kvm_pit_get(s);
 
-    switch (sc->mode) {
+    switch (pit_effective_mode(sc)) {
     default:
     case 0:
     case 4:

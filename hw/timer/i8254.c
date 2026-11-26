@@ -57,7 +57,7 @@ static int pit_get_count(PITChannelState *s)
 
     d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->count_load_time, PIT_FREQ,
                  NANOSECONDS_PER_SECOND);
-    switch(s->mode) {
+    switch (pit_effective_mode(s)) {
     case 0:
     case 1:
     case 4:
@@ -89,7 +89,7 @@ static int pit_get_count(PITChannelState *s)
 static void pit_set_channel_gate(PITCommonState *s, PITChannelState *sc,
                                  int val)
 {
-    switch (sc->mode) {
+    switch (pit_effective_mode(sc)) {
     default:
     case 0:
     case 4:
@@ -173,6 +173,8 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
             if (access == 0) {
                 pit_latch_count(s);
             } else {
+                /* Reprogramming releases any outstanding count latch. */
+                s->count_latched = 0;
                 s->rw_mode = access;
                 s->read_state = access;
                 s->write_state = access;
