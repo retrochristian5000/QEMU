@@ -35,6 +35,8 @@
 #include "chardev/modem.h"
 #include "chardev/char-serial.h"
 #include "qom/object.h"
+#include "qemu/timer.h"
+#include "trace.h"
 
 #define TYPE_CHARDEV_MODEM "chardev-modem"
 OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
@@ -460,6 +462,10 @@ static void modem_report_identification(ModemChardev *modem, int index)
     if (index >= 0 &&
         (size_t)index < ARRAY_SIZE(modem->model->identification)) {
         identification = modem->model->identification[index];
+    }
+    if (modem->model->dataport_3740_line) {
+        trace_dataport_3740_ident(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                                 index, identification);
     }
     modem_queue_line(modem, identification);
 }
@@ -1069,7 +1075,16 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 modem->compression = modem_parse_number(&p, 0) != 0;
                 break;
             case 'V':
-                modem_queue_line(modem, "QEMU Hayes modem V1.0");
+                if (modem->model->dataport_3740_line) {
+                    /* Model-specific placeholder, not a firmware dump. */
+                    trace_dataport_3740_ident(
+                        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), -1,
+                        modem->model->fallback_identification);
+                    modem_queue_line(modem,
+                                     modem->model->fallback_identification);
+                } else {
+                    modem_queue_line(modem, "QEMU Hayes modem V1.0");
+                }
                 break;
             default:
                 modem_result(modem, MODEM_RESULT_ERROR);
@@ -1199,6 +1214,11 @@ static int modem_chr_ioctl(Chardev *chr, int cmd, void *arg)
     switch (cmd) {
     case CHR_IOCTL_SERIAL_SET_PARAMS:
         modem->dte = *(QEMUSerialSetParams *)arg;
+        if (modem->model->dataport_3740_line) {
+            trace_dataport_3740_dte(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                                   modem->dte.speed, modem->dte.data_bits,
+                                   modem->dte.parity, modem->dte.stop_bits);
+        }
         return 0;
     case CHR_IOCTL_SERIAL_SET_BREAK:
         return 0;
@@ -1216,6 +1236,10 @@ static int modem_chr_ioctl(Chardev *chr, int cmd, void *arg)
             } else if (modem->dtr_mode == 2) {
                 modem_hangup(modem, true);
             }
+        }
+        if (modem->model->dataport_3740_line && old != modem->tiocm) {
+            trace_dataport_3740_lines(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                                     old, modem->tiocm);
         }
         return 0;
     }

@@ -293,6 +293,35 @@ static void test_paradyne_3740_profile(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
+/* Lock down the current synthetic transcript, not the historical CRC. */
+static void test_paradyne_3740_unimodem_probe(void)
+{
+    static const char *const expected[] = {
+        "288", "000", "ROM NOT EMULATED",
+        "Paradyne DataPort Express 3740 (QEMU emulation)",
+        "QEMU Paradyne-compatible serial modem", "V1.0", "DATAPORT3740",
+        "Paradyne-compatible data modem", "28800", "QEMU", "SERIAL MODEM",
+    };
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-paradyne-3740-probe",
+                             "att-paradyne-3740");
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATE0Q0V1\r"),
+                             "\r\nOK\r\n");
+    for (unsigned i = 0; i < G_N_ELEMENTS(expected); i++) {
+        g_autofree char *command = g_strdup_printf("ATI%u\r", i);
+        g_autofree char *reply = g_strdup_printf("\r\n%s\r\n\r\nOK\r\n",
+                                                 expected[i]);
+
+        g_assert_cmpstr(modem_command(&fe, &out, command), ==, reply);
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT%V\r"), ==,
+                    "\r\nQEMU DataPort Express 3740 profile\r\n\r\nOK\r\n");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_paradyne_3740_legacy_name(void)
 {
     ModemOutput out = { 0 };
@@ -342,6 +371,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-unimodem-probe",
+                    test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",
                     test_paradyne_3740_legacy_name);
     g_test_add_func("/modem/paradyne/generic-isolation",

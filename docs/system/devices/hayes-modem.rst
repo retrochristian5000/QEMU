@@ -97,6 +97,27 @@ Windows 98 automatic match. The 3740 command reference repeats ``\N6``
 for two reliability modes; the exact firmware semantics remain unverified.
 No original hardware ID or serial PnP packet is invented.
 
+The legacy Unimodem detection procedure (Microsoft patent US5815682A)
+probes with ``ATE0Q0V1``, then derives a CRC-based device identifier
+from normalized replies to ``ATI0`` through ``ATI10`` and ``AT%V``.
+The archived INF's identifier is a target for comparison, not a string
+to return in an AT reply. The current responses, including the
+model-specific 3740 ``AT%V`` reply, are synthetic. Original firmware
+responses and the exact Windows 98 FE INF match still need verification.
+
+To inspect only the 3740 identification, serial parameters and modem
+control-line changes, enable the following opt-in trace events::
+
+    -trace 'dataport_3740_*'
+
+The trace records virtual-clock nanoseconds. Identification query numbers
+0 through 10 mean ATI0 through ATI10; -1 denotes AT%V. Control values
+use the CHR_TIOCM bit definitions in include/chardev/char-serial.h.
+No dial strings or carrier data are traced by these events. The trace
+shows when a reply is queued, not when the guest has consumed it.
+
+Reference: https://patents.google.com/patent/US5815682A
+
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,

@@ -590,8 +590,14 @@ static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
     qtest_outb(qts, 0x2f8, 12);   /* 9600 baud */
     qtest_outb(qts, 0x2f9, 0);
     qtest_outb(qts, 0x2fb, 3);
-    modem_command(qts, "AT\r", "OK");
-    modem_command(qts, "ATI3\r", "3740");
+    modem_command(qts, "ATE0Q0V1\r", "OK");
+    /* No extra clock step should be needed to drain identification replies. */
+    for (unsigned i = 0; i <= 10; i++) {
+        g_autofree char *command = g_strdup_printf("ATI%u\r", i);
+
+        modem_command(qts, command, i == 3 ? "3740" : "OK");
+    }
+    modem_command(qts, "AT%V\r", "QEMU DataPort Express 3740 profile");
 
     /* UART reset must drop DTR even on a separately attached backend. */
     qtest_system_reset(qts);

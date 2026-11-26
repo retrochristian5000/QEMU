@@ -27,3 +27,8 @@ chr_socket_hangup(void *chrdev, const char *label) "chardev socket hangup %p (%s
 chr_socket_ws_handshake_err(void *chrdev, const char *label, const char *err) "chardev socket websock handshake error %p (%s): %s"
 chr_socket_tls_handshake_err(void *chrdev, const char *label, const char *err) "chardev socket TLS handshake error %p (%s): %s"
 chr_socket_tls_init_err(void *chrdev, const char *label, const char *err) "chardev socket TLS init error %p (%s): %s"
+
+# modem.c (opt-in; identification and control signals only)
+dataport_3740_ident(int64_t ns, int query, const char *response) "virtual_ns=%" PRId64 " query=%d response=%s"
+dataport_3740_dte(int64_t ns, int baud, int bits, int parity, int stop) "virtual_ns=%" PRId64 " baud=%d bits=%d parity=%c stop=%d"
+dataport_3740_lines(int64_t ns, int old, int now) "virtual_ns=%" PRId64 " old=0x%x new=0x%x"
