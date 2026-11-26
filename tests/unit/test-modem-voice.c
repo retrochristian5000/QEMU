@@ -417,6 +417,74 @@ static void test_dataport_family_controls(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_stored_profiles(gconstpointer opaque)
+{
+    const char *model = opaque;
+    bool v34 = !strcmp(model, "att-paradyne-3740");
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-stored-profiles", model);
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out,
+                             "AT&FX3\\Q0\\N7%C0S0=1E0V0&W\r"),
+                             "\r\n0\r\n");
+    assert_response_contains(modem_command(&fe, &out,
+                             "ATV1&C0&D0\\D0\\A1\\X1S7=60&W1\r"),
+                             "\r\nOK\r\n");
+    if (v34) {
+        assert_response_contains(modem_command(&fe, &out,
+                                 "AT%M2%BL14400S76=1S78=1&W1\r"),
+                                 "\r\nOK\r\n");
+    }
+    assert_response_contains(modem_command(&fe, &out, "AT&Y1&F\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Y1");
+    assert_response_contains(reply, "&C1 &D2 %C1");
+    assert_response_contains(reply, "S00:000 S07:050");
+
+    /* Z without an argument recalls 0, not the power-up selection. */
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"), "\r\n0\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "E0 Q0 V0 X3");
+    assert_response_contains(reply, "\\N7 \\Q0");
+    assert_response_contains(reply, "S00:001 S07:050");
+    assert_response_contains(reply, "&Y1");
+
+    assert_response_contains(modem_command(&fe, &out, "ATZ1\r"), "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&C0 &D0 %C0");
+    assert_response_contains(reply, "\\D0 \\A1 \\X1");
+    assert_response_contains(reply, "S00:001 S07:060");
+    if (v34) {
+        assert_response_contains(reply, "%M2 %BL14400 S76:001 S78:001");
+    }
+    assert_response_contains(modem_command(&fe, &out, "AT&W2\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&Y2\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "ATZ2\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    qemu_modem_hardware_reset(chr);
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Y1");
+    assert_response_contains(reply, "&C0 &D0 %C0");
+    assert_response_contains(reply, "S00:001 S07:060");
+
+    assert_response_contains(modem_command(&fe, &out, "AT&Y\r"),
+                             "\r\nOK\r\n");
+    qemu_modem_hardware_reset(chr);
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Y0");
+    assert_response_contains(reply, "E0 Q0 V0 X3");
+    assert_response_contains(reply, "S00:001 S07:050");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_3740_modulation(void)
 {
     ModemOutput out = { 0 };
@@ -864,6 +932,11 @@ int main(int argc, char **argv)
                          "att-paradyne-dataport-3711", test_dataport_macppp_init);
     g_test_add_data_func("/modem/paradyne/macppp-3740",
                          "att-paradyne-3740", test_dataport_macppp_init);
+    g_test_add_data_func("/modem/paradyne/stored-profiles-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_stored_profiles);
+    g_test_add_data_func("/modem/paradyne/stored-profiles-3740",
+                         "att-paradyne-3740", test_dataport_stored_profiles);
     g_test_add_func("/modem/paradyne/3740-unimodem-probe",
                     test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",

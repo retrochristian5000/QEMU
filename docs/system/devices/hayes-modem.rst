@@ -72,7 +72,14 @@ profile-scoped Paradyne configuration commands:
 * ``%B<rate>``: select an attested discrete line-speed setting no higher than
   the selected model's maximum; invalid values return ``ERROR``
 * ``AT&V``: inspect the current ``\N``, ``\Q``, and DCE speed settings
-* ``ATZ`` and ``AT&F``: restore the model's initial settings
+* ``AT&W0`` and ``AT&W1``: save the active data configuration to one
+  of two emulated user profiles; bare &W saves profile 0
+* ``AT&Y0`` and ``AT&Y1``: select the profile recalled by hardware reset;
+  bare &Y selects profile 0
+* ``ATZ0`` (or ``ATZ``) and ``ATZ1``: disconnect and recall the specified
+  user profile
+* ``AT&F``: restore active factory settings without changing stored
+  profiles or the power-up selection
 
 For example, to exercise a Windows 9x-style DataPort setup, attach::
 
@@ -89,6 +96,23 @@ Then send the following from the guest serial terminal::
 The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
+
+Both user profiles initially contain factory defaults. Stored settings
+include the emulated writable S-registers, data reliability, compression,
+flow control, DCE rate and modulation, and result and control-line
+policies. Connection state, pending payload, DTE wiring and fax/voice
+session settings are not stored. AT&V reports the power-up selection
+along with the active configuration. Invalid profile numbers return
+ERROR. The profiles are instance-local memory: they survive ATZ,
+AT&F and the owned UART hardware reset, but not QEMU process exit.
+No host NVRAM file is created. The exact 3740 NVRAM field layout
+and power-cycle persistence are not implemented.
+
+Reference: the 3740 hardware table uses &W with S76, S78 and %M;
+Rockwell reference manual 1048 sections 3.2.1 and 3.2.2 documents
+two user profiles and reset selection. The related DataPort PCX
+user guide (October 1995, B-18/B-19) confirms &W and &Y.
+This is reference-based behavior, not a verified original ROM dump.
 
 Macintosh initialization is also supported at the command level. Apple's
 MacPPP documentation gives the following string for the related 14.4 kbit/s

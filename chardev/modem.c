@@ -167,10 +167,33 @@ static const ModemModel modem_models[] = {
     },
 };
 
+/* Only configuration, never connection state or host transport resources. */
+typedef struct ModemStoredProfile {
+    int sreg[MODEM_SREG_COUNT];
+    int connect_speed;
+    bool echo;
+    bool quiet;
+    bool verbose;
+    bool carrier_follows_connection;
+    bool cts_follows_dtr;
+    bool compression;
+    int dtr_mode;
+    int x_mode;
+    int w_mode;
+    int reliable_mode;
+    int flow_control_mode;
+    bool xon_xoff_passthrough;
+    int lapm_frame_size;
+    DataPortHighSpeedMode v34_modulation;
+    bool dataport_legacy_rate;
+} ModemStoredProfile;
+
 struct ModemChardev {
     Chardev parent;
 
     const ModemModel *model;
+    ModemStoredProfile stored_profiles[2];
+    unsigned powerup_profile;
     Fifo8 outbuf;
     Fifo8 net_rxbuf; /* 3740: line payload, separate from AT replies. */
     Fifo8 net_txbuf;
@@ -528,10 +551,60 @@ static void modem_hangup(ModemChardev *modem, bool report)
     }
 }
 
-static void modem_reset(ModemChardev *modem)
+static void modem_store_profile(ModemChardev *modem, unsigned index)
+{
+    ModemStoredProfile *profile = &modem->stored_profiles[index];
+
+    memcpy(profile->sreg, modem->sreg, sizeof(profile->sreg));
+    profile->connect_speed = modem->connect_speed;
+    profile->echo = modem->echo;
+    profile->quiet = modem->quiet;
+    profile->verbose = modem->verbose;
+    profile->carrier_follows_connection = modem->carrier_follows_connection;
+    profile->cts_follows_dtr = modem->cts_follows_dtr;
+    profile->compression = modem->compression;
+    profile->dtr_mode = modem->dtr_mode;
+    profile->x_mode = modem->x_mode;
+    profile->w_mode = modem->w_mode;
+    profile->reliable_mode = modem->reliable_mode;
+    profile->flow_control_mode = modem->flow_control_mode;
+    profile->xon_xoff_passthrough = modem->xon_xoff_passthrough;
+    profile->lapm_frame_size = modem->lapm_frame_size;
+    profile->v34_modulation = modem->v34_modulation;
+    profile->dataport_legacy_rate = modem->dataport_legacy_rate;
+}
+
+static void modem_restore_profile(ModemChardev *modem, unsigned index)
+{
+    const ModemStoredProfile *profile = &modem->stored_profiles[index];
+
+    memcpy(modem->sreg, profile->sreg, sizeof(modem->sreg));
+    modem->connect_speed = profile->connect_speed;
+    modem->echo = profile->echo;
+    modem->quiet = profile->quiet;
+    modem->verbose = profile->verbose;
+    modem->carrier_follows_connection = profile->carrier_follows_connection;
+    modem->cts_follows_dtr = profile->cts_follows_dtr;
+    modem->compression = profile->compression;
+    modem->dtr_mode = profile->dtr_mode;
+    modem->x_mode = profile->x_mode;
+    modem->w_mode = profile->w_mode;
+    modem->reliable_mode = profile->reliable_mode;
+    modem->flow_control_mode = profile->flow_control_mode;
+    modem->xon_xoff_passthrough = profile->xon_xoff_passthrough;
+    modem->lapm_frame_size = profile->lapm_frame_size;
+    modem->v34_modulation = profile->v34_modulation;
+    modem->dataport_legacy_rate = profile->dataport_legacy_rate;
+    modem_update_carrier(modem);
+}
+
+static void modem_reset(ModemChardev *modem, unsigned index)
 {
     modem_hangup(modem, false);
     modem_model_defaults(modem);
+    if (modem->model->paradyne_commands) {
+        modem_restore_profile(modem, index);
+    }
     modem->command_len = 0;
 }
 
@@ -545,7 +618,7 @@ void qemu_modem_hardware_reset(Chardev *chr)
     /* The owned UART resets MCR with DTR and RTS deasserted. */
     modem->tiocm &= ~MODEM_INPUT_LINES;
     modem->last_command[0] = '\0';
-    modem_reset(modem);
+    modem_reset(modem, modem->powerup_profile);
 }
 
 static int modem_parse_number(const char **command, int default_value)
@@ -627,6 +700,9 @@ static void modem_report_profile(ModemChardev *modem)
                            modem->sreg[30], modem->sreg[95]);
     modem_queue_line(modem, line);
     if (modem->model->paradyne_commands) {
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("&Y%u", modem->powerup_profile);
+        modem_queue_line(modem, line);
         g_clear_pointer(&line, g_free);
         line = g_strdup_printf("\\N%d \\Q%d DCE:%d",
                                modem->reliable_mode, modem->flow_control_mode,
@@ -1336,8 +1412,14 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             modem->x_mode = MIN(modem_parse_number(&p, 0), 4);
             break;
         case 'Z':
-            modem_parse_number(&p, 0);
-            modem_reset(modem);
+            value = modem_parse_number(&p, 0);
+            if (modem->model->paradyne_commands &&
+                (value < 0 ||
+                 (unsigned)value >= ARRAY_SIZE(modem->stored_profiles))) {
+                modem_result(modem, MODEM_RESULT_ERROR);
+                return;
+            }
+            modem_reset(modem, modem->model->paradyne_commands ? value : 0);
             break;
         case '&':
             switch (*p++) {
@@ -1361,6 +1443,23 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             case 'V':
                 modem_report_profile(modem);
                 break;
+            case 'W':
+            case 'Y': {
+                char operation = p[-1];
+
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->paradyne_commands || value < 0 ||
+                    (unsigned)value >= ARRAY_SIZE(modem->stored_profiles)) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                if (operation == 'W') {
+                    modem_store_profile(modem, value);
+                } else {
+                    modem->powerup_profile = value;
+                }
+                break;
+            }
             default:
                 modem_result(modem, MODEM_RESULT_ERROR);
                 return;
@@ -1673,7 +1772,13 @@ static bool modem_chr_open(Chardev *chr,
     fifo8_create(&modem->net_txbuf, MODEM_NETBUF_SIZE);
     modem->tiocm = CHR_TIOCM_CTS | CHR_TIOCM_DSR;
     modem->command_mode = true;
-    modem_reset(modem);
+    modem_hangup(modem, false);
+    modem_model_defaults(modem);
+    if (modem->model->paradyne_commands) {
+        for (unsigned i = 0; i < ARRAY_SIZE(modem->stored_profiles); i++) {
+            modem_store_profile(modem, i);
+        }
+    }
     return true;
 }
 
