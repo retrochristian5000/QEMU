@@ -53,6 +53,20 @@ static void test_fuzz_sb16_0xd4(void)
     qtest_quit(s);
 }
 
+static void test_awe32_reserved(void)
+{
+    if (g_test_subprocess()) {
+        QTestState *s = qtest_init("-M pc -nodefaults -device awe32");
+
+        qtest_quit(s);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*awe32: EMU8000 synthesis and sound memory "
+                              "are not implemented*");
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -63,6 +77,9 @@ int main(int argc, char **argv)
     if (qtest_has_machine("pc")) {
         qtest_add_func("fuzz/test_fuzz_sb16/91", test_fuzz_sb16_0x91);
         qtest_add_func("fuzz/test_fuzz_sb16/d4", test_fuzz_sb16_0xd4);
+        if (qtest_has_device("awe32")) {
+            qtest_add_func("/awe32/reserved", test_awe32_reserved);
+        }
     }
 
     return g_test_run();

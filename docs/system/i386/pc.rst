@@ -236,3 +236,31 @@ the motherboard PIT and select a model using::
     -global isa-pit.model=i8254
 
 Existing machine defaults and the KVM in-kernel PIT remain unchanged.
+
+Creative Sound Blaster AWE32
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Windows 9x SB16/AWE32 driver name describes a shared PCM interface,
+not proof of an EMU8000. The existing ``sb16`` profile remains the
+legacy ISA DSP/mixer implementation. The ``awe32`` profile is reserved
+and deliberately rejects realization until the synthesizer and sound
+memory are implemented. It does not register an audio backend or claim
+any I/O, DMA or IRQ resources.
+
+The legacy AWE32 board should compose the SB16-compatible PCM engine
+with a distinct EMU8000 component. For a DSP base of 0x220, the three
+synthesis I/O windows are 0x620-0x623, 0xa20-0xa23 and 0xe20-0xe23.
+The pointer register at 0xe22 selects a register and channel; accesses
+are 16-bit words or pairs of words, not byte-wide DSP commands. Later
+ISA PnP boards can assign the synth base independently of the DSP.
+
+Implement the EMU8000 register decoding, sample ROM/RAM, voice timing,
+envelopes, filters and effects separately from the SB16 DSP. Keep the
+ISA PnP enumeration and activation separate from legacy board wiring.
+Validate each I/O window with the ISA resource API before mapping it.
+Do not fabricate a successful hardware detection or silently substitute
+FM or host MIDI for the wavetable engine. Sample ROM images must be
+provided from an appropriate authorized source; none are bundled here.
+
+Reference: E-mu/Creative, AWE32/EMU8000 Programmer's Guide (1994-1996),
+sections 1-3, https://www.dosdays.co.uk/media/creative/emu8kpgm.pdf.
