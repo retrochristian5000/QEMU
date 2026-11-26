@@ -205,6 +205,17 @@ int pic_read_irq(PICCommonState *s)
             }
             intno = slave_pic->irq_base + irq2;
             pic_intack(s, irq);
+            /*
+             * The master's acknowledgement clears its edge-latched IR2.
+             * If the slave still has an eligible request (e.g. auto-EOI
+             * with another pending IRQ), its INT may have stayed high.
+             * Reassert the cascade only after acknowledging the master
+             * so the next request has a fresh rising edge.
+             */
+            if (pic_get_irq(slave_pic) >= 0) {
+                qemu_irq_lower(slave_pic->int_out[0]);
+                pic_update_irq(slave_pic);
+            }
             irq = irq2 + 8;
         } else {
             intno = s->irq_base + irq;

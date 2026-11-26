@@ -60,6 +60,8 @@ on:
       - 'include/hw/timer/i8254_internal.h'
       - 'scripts/tests/test-i8254-irq-timing.py'
       - 'scripts/tests/test-tcg-rr-idle.py'
+      - 'hw/intc/i8259.c'
+      - 'scripts/tests/test-i8259-cascade.py'
       - 'scripts/tests/test-ui-startup-delay.py'
       - 'scripts/ensure-ninja.py'
       - 'scripts/ensure-sccache.py'
@@ -229,6 +231,9 @@ jobs:
 
       - name: Test single-threaded TCG idle CPU preemption
         run: python3 scripts/tests/test-tcg-rr-idle.py
+
+      - name: Test PIC cascade acknowledgement and pending interrupts
+        run: python3 scripts/tests/test-i8259-cascade.py
 
       - name: Test PIT IRQ timing and single elapsed-tick calculation
         run: python3 scripts/tests/test-i8254-irq-timing.py
