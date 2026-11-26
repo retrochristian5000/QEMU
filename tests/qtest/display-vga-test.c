@@ -92,6 +92,10 @@ static void test_isa_cirrus_profile_for(const char *model, uint8_t chip_id)
     g_assert_cmphex(vga_gfx_read(qts, 0x2a), ==, 0x1f);
     g_assert_cmphex(vga_gfx_read(qts, 0x2e), ==, 0x1f);
 
+    /* Later GR33 mode extensions are not implemented by GD5426/5428. */
+    vga_gfx_write(qts, 0x33, 0x07);
+    g_assert_cmphex(vga_gfx_read(qts, 0x33), ==, 0xff);
+
     /*
      * SR17[2] enables BitBLT MMIO on later Cirrus chips, but the
      * CL-GD5426/5428 predate that capability.  Keep the B8000 aperture
@@ -391,6 +395,62 @@ static void test_cirrus_pci_legacy_decode(void)
     qtest_quit(qts);
 }
 
+static void test_cirrus_pci_dword_expand(void)
+{
+    const uint32_t config = 0x80000000U | (5U << 11);
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t mmio = 0xe2000000U;
+    const uint32_t dst = lfb + 0x100;
+    QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
+                                "-device cirrus-vga,addr=05.0");
+
+    /* Program PCI BARs directly; no BIOS or guest driver is required. */
+    qtest_outl(qts, 0xcf8, config);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0x00b81013);
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    qtest_outl(qts, 0xcf8, config | 0x14);
+    qtest_outl(qts, 0xcfc, mmio);
+    cirrus_pci_command(qts, config, 3);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 0x01);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    /* Two 32-pixel, 8-bpp rows; each consumes four source bytes. */
+    qtest_writeb(qts, mmio + 0x100, 0x11);
+    qtest_writeb(qts, mmio + 0x104, 0x77);
+    qtest_writew(qts, mmio + 0x108, 31);
+    qtest_writew(qts, mmio + 0x10a, 1);
+    qtest_writew(qts, mmio + 0x10c, 32);
+    qtest_writel(qts, mmio + 0x110, 0x100);
+    qtest_writeb(qts, mmio + 0x117, 0xff);
+    qtest_writeb(qts, mmio + 0x118, 0x84);
+    qtest_writeb(qts, mmio + 0x11a, 0x0d);
+    qtest_writeb(qts, mmio + 0x11b, 1);
+    g_assert_cmphex(vga_gfx_read(qts, 0x33), ==, 1);
+    qtest_writeb(qts, mmio + 0x140, 2);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 1);
+
+    /* Source stream through the first PCI linear aperture. */
+    qtest_writeb(qts, lfb + 0x1000, 0xff);
+    qtest_writeb(qts, lfb + 0x1001, 0x00);
+    qtest_writeb(qts, lfb + 0x1002, 0x00);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 1);
+    qtest_writeb(qts, lfb + 0x1003, 0x00);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 1);
+    qtest_writel(qts, lfb + 0x1004, 0xffffff00U);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 0);
+
+    for (unsigned i = 0; i < 32; i++) {
+        g_assert_cmphex(qtest_readb(qts, dst + i), ==,
+                        i < 8 ? 0x77 : 0x11);
+        g_assert_cmphex(qtest_readb(qts, dst + 32 + i), ==,
+                        i < 8 ? 0x11 : 0x77);
+    }
+    qtest_quit(qts);
+}
+
 static void test_sierra_falcon64(gconstpointer data)
 {
     unsigned int vram_mb = GPOINTER_TO_UINT(data);
@@ -464,6 +524,10 @@ int main(int argc, char **argv)
         }
         qtest_add_func("/display/pci/cirrus-gray-palette",
                        test_cirrus_gray_palette);
+        if (qtest_has_machine("pc")) {
+            qtest_add_func("/display/pci/cirrus-dword-expand",
+                           test_cirrus_pci_dword_expand);
+        }
     }
 
     if (qtest_has_device("isa-cirrus-vga") &&
