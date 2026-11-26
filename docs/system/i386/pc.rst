@@ -307,7 +307,8 @@ The PIIX-family PC machines support an opt-in controller selection::
 
 This selects the existing ``i8254`` software timer profile and two
 ``i8259a`` software PIC profiles instead of ``isa-pit`` and
-``isa-i8259``. It retains the motherboard's existing IRQ cascade,
+``isa-i8259``, and two integrated ``piix-82c37`` DMA profiles instead
+of ``i8257``. It retains the motherboard's existing IRQ cascade,
 ELCR, HPET routing, PC speaker link, and I/O addresses. The ``pit=off``
 and ``pic=off`` options still suppress their respective controllers.
 The option is not a claim of complete 82C54/82C59 silicon emulation;
@@ -317,10 +318,35 @@ with Xen and enabled in-kernel PIC/PIT emulation.
 The default is off to retain existing machine-version and migration
 configurations. Use a cold boot when changing the selection, and keep
 it consistent across saved-state or migration endpoints. Do not add
-duplicate standalone timers or interrupt controllers. CPU, RAM, RTC,
-DMA, storage, display and NIC selections are unchanged. The option
+duplicate standalone timers, DMA controllers or interrupt controllers.
+CPU, RAM, RTC, storage, display and NIC selections are unchanged. The option
 does not select a physical motherboard model or change Windows driver
 names by itself.
+
+PIIX DMA controller registers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Intel 82371FB/82371SB documentation (May 1996), sections 2.5.1.1
+and 2.5.1.4-2.5.1.6, and the 82371AB PIIX4 documentation, describe
+two integrated 82C37-compatible DMA groups. DMA1 serves channels 0-3,
+DMA2 channels 4-7, with channel 4 reserved for the cascade.
+With ``chipset-controllers=on`` the PIIX-specific pair exposes the
+all-channel mask at 0x0f and 0xde with only four implemented bits.
+Master clear sets those four bits. The write-only request register
+does not expose the old mask alias (reads return zero in this model).
+The group-disable command inhibits service, including DMA1 when DMA2
+is disabled or channel 4 is masked. Enabling a group or unmasking the
+cascade rechecks pending requests.
+
+The common ISA DMA transfer API, I/O locations and migration fields
+are retained. This is a partial 82C37 register and scheduling model,
+not a discrete 8257 or complete 8237A simulation. Terminal-count
+masking, autoinitialization, separate software/hardware request latches,
+address wrapping, decrement transfers, and electrical arbitration
+are not corrected by this change. Existing machine defaults are
+unchanged; use the same controller selection at both migration
+endpoints. Windows may still identify the standard DMA class with
+a generic driver name.
 
 Explicit ISA timer profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

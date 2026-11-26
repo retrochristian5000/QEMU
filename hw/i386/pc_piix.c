@@ -261,6 +261,8 @@ static void pc_init1(MachineState *machine, const char *host_type,
                              &error_abort);
     object_property_set_bool(OBJECT(pci_dev), "has-pit", false,
                              &error_abort);
+    object_property_set_bool(OBJECT(pci_dev), "chipset-dma",
+                             pcms->chipset_controllers, &error_abort);
     qdev_prop_set_uint32(DEVICE(pci_dev), "smb_io_base", 0xb100);
     object_property_set_bool(OBJECT(pci_dev), "smm-enabled",
                              x86_machine_is_smm_enabled(x86ms),
@@ -455,7 +457,7 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                    pc_get_chipset_controllers,
                                    pc_set_chipset_controllers);
     object_class_property_set_description(oc, "chipset-controllers",
-        "Select explicit 8259A and 8254 userspace motherboard profiles");
+        "Select explicit 8259A, 8254 and 82C37 motherboard profiles");
     compat_props_add(m->compat_props,
                      pc_piix_compat_defaults, pc_piix_compat_defaults_len);
 }

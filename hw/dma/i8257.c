@@ -67,6 +67,15 @@ enum {
 
 static void i8257_dma_run(void *opaque);
 
+/* A change to the high controller can unblock the low controller. */
+static void i8257_dma_run_pair(I8257State *d)
+{
+    i8257_dma_run(d);
+    if (d->cascade_slave) {
+        i8257_dma_run(d->cascade_slave);
+    }
+}
+
 static const int channels[8] = {-1, 2, 3, 1, -1, -1, -1, 0};
 
 static void i8257_write_page(void *opaque, uint32_t nport, uint32_t data)
@@ -199,6 +208,9 @@ static void i8257_write_cont(void *opaque, hwaddr nport, uint64_t data,
             return;
         }
         d->command = data;
+        if (d->piix_82c37) {
+            i8257_dma_run_pair(d);
+        }
         break;
 
     case 0x01:
@@ -218,7 +230,7 @@ static void i8257_write_cont(void *opaque, hwaddr nport, uint64_t data,
             d->mask |= 1 << (data & 3);
         else
             d->mask &= ~(1 << (data & 3));
-        i8257_dma_run(d);
+        i8257_dma_run_pair(d);
         break;
 
     case 0x03:                  /* mode */
@@ -246,19 +258,19 @@ static void i8257_write_cont(void *opaque, hwaddr nport, uint64_t data,
 
     case 0x05:                  /* reset */
         d->flip_flop = 0;
-        d->mask = ~0;
+        d->mask = d->piix_82c37 ? 0x0f : 0xff;
         d->status = 0;
         d->command = 0;
         break;
 
     case 0x06:                  /* clear mask for all channels */
         d->mask = 0;
-        i8257_dma_run(d);
+        i8257_dma_run_pair(d);
         break;
 
     case 0x07:                  /* write mask for all channels */
-        d->mask = data;
-        i8257_dma_run(d);
+        d->mask = d->piix_82c37 ? data & 0x0f : data;
+        i8257_dma_run_pair(d);
         break;
 
     default:
@@ -285,8 +297,11 @@ static uint64_t i8257_read_cont(void *opaque, hwaddr nport, unsigned size)
         val = d->status;
         d->status &= 0xf0;
         break;
-    case 0x01:                  /* mask */
-        val = d->mask;
+    case 0x01:                  /* legacy mask alias / PIIX write request */
+        val = d->piix_82c37 ? 0 : d->mask;
+        break;
+    case 0x07:                  /* PIIX read all mask bits */
+        val = d->piix_82c37 ? d->mask & 0x0f : 0;
         break;
     default:
         val = 0;
@@ -352,12 +367,34 @@ static void i8257_channel_run(I8257State *d, int ichan)
     }
 }
 
+/*
+ * PIIX DMA1 is cascaded through DMA2 channel 0 (system channel 4).
+ * Both command-disable bits and the cascade mask gate service.
+ * Requests remain pending until the group is enabled again.
+ */
+static bool i8257_dma_group_enabled(const I8257State *d)
+{
+    const I8257State *master = d->cascade_master;
+
+    if (!d->piix_82c37) {
+        return true;
+    }
+    if (d->command & CMD_BLOCK_CONTROLLER) {
+        return false;
+    }
+    return !master || (!(master->command & CMD_BLOCK_CONTROLLER) &&
+                       !(master->mask & 1));
+}
+
 static void i8257_dma_run(void *opaque)
 {
     I8257State *d = opaque;
     int ichan;
     int rearm = 0;
 
+    if (!i8257_dma_group_enabled(d)) {
+        return;
+    }
     if (d->running) {
         rearm = 1;
         goto out;
@@ -365,7 +402,7 @@ static void i8257_dma_run(void *opaque)
         d->running = 1;
     }
 
-    for (ichan = 0; ichan < 4; ichan++) {
+    for (ichan = 0; ichan < 4 && i8257_dma_group_enabled(d); ichan++) {
         int mask;
 
         mask = 1 << ichan;
@@ -653,19 +690,41 @@ static const TypeInfo i8257_info = {
     }
 };
 
+static void piix_82c37_init(Object *obj)
+{
+    I8257(obj)->piix_82c37 = true;
+}
+
+static void piix_82c37_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc = "Intel PIIX 82C37-compatible DMA controller";
+    dc->hotpluggable = false;
+}
+
+static const TypeInfo piix_82c37_info = {
+    .name = TYPE_PIIX_82C37,
+    .parent = TYPE_I8257,
+    .instance_init = piix_82c37_init,
+    .class_init = piix_82c37_class_init,
+};
+
 static void i8257_register_types(void)
 {
     type_register_static(&i8257_info);
+    type_register_static(&piix_82c37_info);
 }
 
 type_init(i8257_register_types)
 
-void i8257_dma_init(Object *parent, ISABus *bus, bool high_page_enable)
+static void i8257_dma_init_pair(Object *parent, ISABus *bus,
+                                bool high_page_enable, const char *type)
 {
     ISADevice *isa1, *isa2;
     DeviceState *d;
 
-    isa1 = isa_new(TYPE_I8257);
+    isa1 = isa_new(type);
     object_property_add_child(parent, "dma[*]", OBJECT(isa1));
     d = DEVICE(isa1);
     qdev_prop_set_int32(d, "base", 0x00);
@@ -674,7 +733,7 @@ void i8257_dma_init(Object *parent, ISABus *bus, bool high_page_enable)
     qdev_prop_set_int32(d, "dshift", 0);
     isa_realize_and_unref(isa1, bus, &error_fatal);
 
-    isa2 = isa_new(TYPE_I8257);
+    isa2 = isa_new(type);
     object_property_add_child(parent, "dma[*]", OBJECT(isa2));
     d = DEVICE(isa2);
     qdev_prop_set_int32(d, "base", 0xc0);
@@ -683,5 +742,19 @@ void i8257_dma_init(Object *parent, ISABus *bus, bool high_page_enable)
     qdev_prop_set_int32(d, "dshift", 1);
     isa_realize_and_unref(isa2, bus, &error_fatal);
 
+    if (I8257(isa1)->piix_82c37) {
+        I8257(isa1)->cascade_master = I8257(isa2);
+        I8257(isa2)->cascade_slave = I8257(isa1);
+    }
     isa_bus_dma(bus, ISADMA(isa1), ISADMA(isa2));
+}
+
+void i8257_dma_init(Object *parent, ISABus *bus, bool high_page_enable)
+{
+    i8257_dma_init_pair(parent, bus, high_page_enable, TYPE_I8257);
+}
+
+void piix_82c37_dma_init(Object *parent, ISABus *bus)
+{
+    i8257_dma_init_pair(parent, bus, false, TYPE_PIIX_82C37);
 }

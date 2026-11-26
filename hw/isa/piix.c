@@ -253,7 +253,11 @@ static void pci_piix_realize(PCIDevice *dev, const char *uhci_type,
         i8254_pit_init(isa_bus, 0x40, 0, NULL);
     }
 
-    i8257_dma_init(OBJECT(dev), isa_bus, 0);
+    if (d->chipset_dma) {
+        piix_82c37_dma_init(OBJECT(dev), isa_bus);
+    } else {
+        i8257_dma_init(OBJECT(dev), isa_bus, false);
+    }
 
     /* RTC */
     qdev_prop_set_int32(DEVICE(&d->rtc), "base_year", 2000);
@@ -378,6 +382,7 @@ static const Property pci_piix_props[] = {
     DEFINE_PROP_BOOL("has-acpi", PIIXState, has_acpi, true),
     DEFINE_PROP_BOOL("has-pic", PIIXState, has_pic, true),
     DEFINE_PROP_BOOL("has-pit", PIIXState, has_pit, true),
+    DEFINE_PROP_BOOL("chipset-dma", PIIXState, chipset_dma, false),
     DEFINE_PROP_BOOL("has-usb", PIIXState, has_usb, true),
     DEFINE_PROP_BOOL("smm-enabled", PIIXState, smm_enabled, false),
 };

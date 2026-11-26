@@ -6,6 +6,7 @@
 #include "qom/object.h"
 
 #define TYPE_I8257 "i8257"
+#define TYPE_PIIX_82C37 "piix-82c37"
 OBJECT_DECLARE_SIMPLE_TYPE(I8257State, I8257)
 
 typedef struct I8257Regs {
@@ -41,10 +42,17 @@ struct I8257State {
     QEMUBH *dma_bh;
     bool dma_bh_scheduled;
     int running;
+
+    /* Fixed board topology, not part of the migration stream. */
+    bool piix_82c37;
+    I8257State *cascade_master;
+    I8257State *cascade_slave;
+
     PortioList portio_page;
     PortioList portio_pageh;
 };
 
 void i8257_dma_init(Object *parent, ISABus *bus, bool high_page_enable);
+void piix_82c37_dma_init(Object *parent, ISABus *bus);
 
 #endif
