@@ -4134,6 +4134,7 @@ DEF("chardev", HAS_ARG, QEMU_OPTION_chardev,
     "         [,localport=localport][,ipv4=on|off][,ipv6=on|off][,mux=on|off]\n"
     "         [,logfile=PATH][,logappend=on|off]\n"
     "-chardev msmouse,id=id[,mux=on|off][,logfile=PATH][,logappend=on|off]\n"
+    "-chardev logitech-mouseman,id=id[,mux=on|off][,logfile=PATH][,logappend=on|off]\n"
     "-chardev vc,id=id[[,width=width][,height=height]][[,cols=cols][,rows=rows]]\n"
     "         [,mux=on|off][,logfile=PATH][,logappend=on|off][,encoding=ENCODING]\n"
     "-chardev ringbuf,id=id[,size=size][,logfile=PATH][,logappend=on|off]\n"
@@ -4170,7 +4171,8 @@ SRST
 The general form of a character device option is:
 
 ``-chardev backend,id=id[,mux=on|off][,options]``
-    Backend is one of: ``null``, ``socket``, ``udp``, ``msmouse``, ``hub``,
+    Backend is one of: ``null``, ``socket``, ``udp``, ``msmouse``,
+    ``logitech-mouseman``, ``hub``,
     ``vc``, ``ringbuf``, ``file``, ``pipe``, ``console``, ``serial``,
     ``pty``, ``stdio``, ``braille``, ``parallel``,
     ``spicevmc``, ``spiceport``, ``dbus``. The specific backend will
@@ -4327,8 +4329,12 @@ The available backends are:
     If neither is specified the device may use either protocol.
 
 ``-chardev msmouse,id=id``
-    Forward QEMU's emulated msmouse events to the guest. ``msmouse``
-    does not take any options.
+    Emulate a two-button Microsoft serial mouse (M identification and
+    three-byte packets).
+
+``-chardev logitech-mouseman,id=id``
+    Emulate a Logitech-compatible M3 serial mouse with the optional
+    fourth packet byte for the middle button.
 
 ``-chardev hub,id=id,chardevs.0=id[,chardevs.N=id]``
     Explicitly create chardev backend hub device with the possibility
@@ -4970,8 +4976,11 @@ SRST
         output on a real or fake device.
 
     ``msmouse``
-        Three button serial mouse. Configure the guest to use Microsoft
-        protocol.
+        Two-button serial mouse using the Microsoft protocol.
+
+    ``logitech-mouseman``
+        Three-button serial mouse using the Logitech M3-compatible
+        extension.
 ERST
 
 DEF("parallel", HAS_ARG, QEMU_OPTION_parallel, \
