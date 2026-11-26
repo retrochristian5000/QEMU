@@ -404,6 +404,7 @@ static void secondary_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
     k->realize = pci_secondary_vga_realize;
+    dc->desc = "QEMU secondary PCI display adapter (no legacy VGA decoding)";
     k->exit = pci_secondary_vga_exit;
     k->class_id = PCI_CLASS_DISPLAY_OTHER;
     device_class_set_props(dc, secondary_pci_properties);
