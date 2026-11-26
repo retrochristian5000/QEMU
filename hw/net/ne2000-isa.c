@@ -82,6 +82,15 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
     NE2000State *s = &isa->ne2000;
     ISABus *bus = isa_bus_from_device(isadev);
 
+    DeviceState *bridge = BUS(bus)->parent;
+    bool piix = bridge && object_dynamic_cast(OBJECT(bridge), "pci-piix");
+
+    /* PIIX SCI occupies IRQ9. The matching firmware reserves NIC IRQ10
+     * from PCI steering via etc/isa-ne2000-irq-mask. */
+    if (isa->isairq == UINT32_MAX) {
+        isa->isairq = piix ? 10 : 9;
+    }
+
     if (isa->iobase > UINT16_MAX - (NE2000_ISA_IO_SIZE - 1)) {
         error_setg(errp, "NE2000 ISA I/O base 0x%x exceeds the ISA port range",
                    isa->iobase);
@@ -142,9 +151,7 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
      * Keep the user's fixed ISA jumper setting, but report the conflict
      * rather than silently relocating the adapter.
      */
-    DeviceState *bridge = BUS(bus)->parent;
-    if (isa->isairq == 9 && bridge &&
-        object_dynamic_cast(OBJECT(bridge), "pci-piix") &&
+    if (isa->isairq == 9 && piix &&
         object_resolve_path_component(OBJECT(bridge), "pm")) {
         warn_report("NE2000 ISA IRQ9 shares the PIIX ACPI SCI line; "
                     "select an unused ISA IRQ and match the guest driver");
@@ -165,7 +172,7 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
 
 static const Property ne2000_isa_properties[] = {
     DEFINE_PROP_UINT32("iobase", ISANE2000State, iobase, 0x300),
-    DEFINE_PROP_UINT32("irq",   ISANE2000State, isairq, 9),
+    DEFINE_PROP_UINT32("irq",   ISANE2000State, isairq, UINT32_MAX),
     DEFINE_NIC_PROPERTIES(ISANE2000State, ne2000.c),
 };
 
