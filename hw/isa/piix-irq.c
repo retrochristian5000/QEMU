@@ -29,17 +29,23 @@
 #include "hw/isa/isa.h"
 #include "piix-internal.h"
 
-static bool piix_get_irq_pic_level(PIIXState *s, int pic_irq)
+/* Intel PIIX3 section 2.2.10 and PIIX4 section 4.1.10. */
+static int piix_decode_pirq(uint8_t route)
 {
-    return !!(s->pic_levels &
-              (((1ULL << PIIX_NUM_PIRQS) - 1) <<
-               (pic_irq * PIIX_NUM_PIRQS)));
+    unsigned irq = route & 0x0f;
+
+    /* IRQs 0, 1, 2, 8 and 13 are not PCI steering destinations. */
+    if ((route & 0x80) || !(0xdef8U & (1U << irq))) {
+        return -1;
+    }
+    return irq;
 }
 
-static void piix_set_irq_pic(PIIXState *s, int pic_irq)
+static bool piix_get_irq_pic_level(uint64_t levels, int pic_irq)
 {
-    qemu_set_irq(s->isa_irqs_in[pic_irq],
-                 piix_get_irq_pic_level(s, pic_irq));
+    return !!(levels &
+              (((1ULL << PIIX_NUM_PIRQS) - 1) <<
+               (pic_irq * PIIX_NUM_PIRQS)));
 }
 
 static void piix_set_pci_irq_level_internal(PIIXState *s, int pirq, int level)
@@ -47,8 +53,8 @@ static void piix_set_pci_irq_level_internal(PIIXState *s, int pirq, int level)
     int pic_irq;
     uint64_t mask;
 
-    pic_irq = s->dev.config[PIIX_PIRQCA + pirq];
-    if (pic_irq >= ISA_NUM_IRQS) {
+    pic_irq = piix_decode_pirq(s->dev.config[PIIX_PIRQCA + pirq]);
+    if (pic_irq < 0) {
         return;
     }
 
@@ -63,14 +69,14 @@ static void piix_set_pci_irq_level(PIIXState *s, int pirq, int level)
     bool new_level;
     int pic_irq;
 
-    pic_irq = s->dev.config[PIIX_PIRQCA + pirq];
-    if (pic_irq >= ISA_NUM_IRQS) {
+    pic_irq = piix_decode_pirq(s->dev.config[PIIX_PIRQCA + pirq]);
+    if (pic_irq < 0) {
         return;
     }
 
-    old_level = piix_get_irq_pic_level(s, pic_irq);
+    old_level = piix_get_irq_pic_level(s->pic_levels, pic_irq);
     piix_set_pci_irq_level_internal(s, pirq, level);
-    new_level = piix_get_irq_pic_level(s, pic_irq);
+    new_level = piix_get_irq_pic_level(s->pic_levels, pic_irq);
 
     if (old_level != new_level) {
         qemu_set_irq(s->isa_irqs_in[pic_irq], new_level);
@@ -86,10 +92,10 @@ void piix_set_pci_irq(void *opaque, int pirq, int level)
 PCIINTxRoute piix_route_intx_pin_to_irq(void *opaque, int pin)
 {
     PCIDevice *pci_dev = opaque;
-    int irq = pci_dev->config[PIIX_PIRQCA + pin];
+    int irq = piix_decode_pirq(pci_dev->config[PIIX_PIRQCA + pin]);
     PCIINTxRoute route;
 
-    if (irq < ISA_NUM_IRQS) {
+    if (irq >= 0) {
         route.mode = PCI_INTX_ENABLED;
         route.irq = irq;
     } else {
@@ -118,13 +124,23 @@ void piix_write_config(PCIDevice *dev, uint32_t address, uint32_t val,
     pci_default_write_config(dev, address, val, len);
     if (ranges_overlap(address, len, PIIX_PIRQCA, 4)) {
         PIIXState *s = PIIX_PCI_DEVICE(dev);
+        uint64_t old_levels = s->pic_levels;
         int pic_irq;
 
         pci_bus_fire_intx_routing_notifier(pci_get_bus(&s->dev));
         piix_rebuild_irq_levels(s);
-        /* Publish only after every PIRQ has been accounted for. */
+        /*
+         * Publish only changed PCI-derived levels after all PIRQs have
+         * been accounted for. Do not lower unrelated ISA interrupt lines
+         * merely because software rewrites a PCI routing register.
+         */
         for (pic_irq = 0; pic_irq < ISA_NUM_IRQS; pic_irq++) {
-            piix_set_irq_pic(s, pic_irq);
+            bool old_level = piix_get_irq_pic_level(old_levels, pic_irq);
+            bool new_level = piix_get_irq_pic_level(s->pic_levels, pic_irq);
+
+            if (old_level != new_level) {
+                qemu_set_irq(s->isa_irqs_in[pic_irq], new_level);
+            }
         }
     }
 }
