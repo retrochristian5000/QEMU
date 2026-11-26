@@ -306,7 +306,7 @@ static void sii3112_pci_class_init(ObjectClass *klass, const void *data)
     pd->revision = 1;
     pd->realize = sii3112_pci_realize;
     device_class_set_legacy_reset(dc, sii3112_reset);
-    dc->desc = "SiI3112A SATA controller";
+    dc->desc = "Silicon Image SiI3112A PCI SATA controller";
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
 }
 

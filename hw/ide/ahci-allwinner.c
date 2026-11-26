@@ -108,6 +108,7 @@ static void allwinner_ahci_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_allwinner_ahci;
+    dc->desc = "Allwinner AHCI SATA controller";
 }
 
 static const TypeInfo allwinner_ahci_info = {

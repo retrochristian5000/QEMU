@@ -212,7 +212,7 @@ static void sysbus_fdc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->desc = "virtual floppy controller";
+    dc->desc = "Generic system-bus floppy disk controller";
     device_class_set_props(dc, sysbus_fdc_properties);
 }
 
@@ -237,7 +237,7 @@ static void sun4m_fdc_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     sbdc->use_strict_io = true;
-    dc->desc = "virtual floppy controller";
+    dc->desc = "Sun FDTWO floppy disk controller";
     device_class_set_props(dc, sun4m_fdc_properties);
 }
 

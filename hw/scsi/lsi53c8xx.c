@@ -2407,6 +2407,7 @@ static void lsi_class_init(ObjectClass *klass, const void *data)
     k->exit = lsi_scsi_exit;
     k->vendor_id = PCI_VENDOR_ID_LSI_LOGIC;
     k->device_id = PCI_DEVICE_ID_LSI_53C895A;
+    dc->desc = "LSI Logic 53C895A PCI SCSI controller";
     k->class_id = PCI_CLASS_STORAGE_SCSI;
     k->subsystem_id = 0x1000;
     device_class_set_legacy_reset(dc, lsi_scsi_reset);
@@ -2430,6 +2431,7 @@ static void lsi53c810_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
     k->device_id = PCI_DEVICE_ID_LSI_53C810;
+    DEVICE_CLASS(klass)->desc = "NCR 53C810 PCI SCSI controller";
 }
 
 static const TypeInfo lsi53c810_info = {

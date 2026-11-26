@@ -1436,7 +1436,7 @@ static void mptsas1068_class_init(ObjectClass *oc, const void *data)
     device_class_set_props(dc, mptsas_properties);
     device_class_set_legacy_reset(dc, mptsas_reset);
     dc->vmsd = &vmstate_mptsas;
-    dc->desc = "LSI SAS 1068";
+    dc->desc = "LSI Logic SAS1068 PCI SAS controller";
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
 }
 

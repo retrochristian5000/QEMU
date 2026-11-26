@@ -72,6 +72,7 @@ static void sysbus_ahci_class_init(ObjectClass *klass, const void *data)
 
     dc->realize = sysbus_ahci_realize;
     dc->vmsd = &vmstate_sysbus_ahci;
+    dc->desc = "Generic system-bus AHCI SATA controller";
     device_class_set_props(dc, sysbus_ahci_properties);
     device_class_set_legacy_reset(dc, sysbus_ahci_reset);
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);

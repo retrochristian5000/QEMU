@@ -276,6 +276,46 @@ static void test_device_intro_display_descriptions(void)
     qtest_quit(qts);
 }
 
+static void test_storage_controller_descriptions(void)
+{
+    static const struct {
+        const char *name;
+        const char *desc;
+    } devices[] = {
+        { "isa-ide", "Generic ISA IDE controller" },
+        { "piix3-ide", "Intel 82371SB PIIX3 PCI IDE controller" },
+        { "piix4-ide", "Intel 82371AB PIIX4 PCI IDE controller" },
+        { "ich9-ahci", "Intel ICH9 PCI SATA AHCI controller" },
+        { "cmd646-ide", "CMD Technology PCI-646 PCI IDE controller" },
+        { "sii3112", "Silicon Image SiI3112A PCI SATA controller" },
+        { "sysbus-ahci", "Generic system-bus AHCI SATA controller" },
+        { "allwinner-ahci", "Allwinner AHCI SATA controller" },
+        { "am53c974", "AMD Am53C974 PCI SCSI controller" },
+        { "dc390", "Tekram DC-390 PCI SCSI adapter" },
+        { "lsi53c895a", "LSI Logic 53C895A PCI SCSI controller" },
+        { "lsi53c810", "NCR 53C810 PCI SCSI controller" },
+        { "megasas", "LSI MegaRAID SAS 1078 PCI RAID controller" },
+        { "megasas-gen2", "LSI MegaRAID SAS 2108 PCI RAID controller" },
+        { "mptsas1068", "LSI Logic SAS1068 PCI SAS controller" },
+        { "pvscsi", "VMware PVSCSI paravirtualized PCI SCSI controller" },
+        { "isa-fdc", "Generic ISA floppy disk controller" },
+        { "sysbus-fdc", "Generic system-bus floppy disk controller" },
+        { "sun-fdtwo", "Sun FDTWO floppy disk controller" },
+    };
+    QTestState *qts = qtest_init(common_args);
+    g_autofree char *help = qtest_hmp(qts, "info qdm");
+    QList *types = device_type_list(qts, false);
+
+    for (size_t i = 0; i < ARRAY_SIZE(devices); i++) {
+        if (type_list_find(types, devices[i].name)) {
+            assert_device_help_desc(help, devices[i].name, devices[i].desc);
+        }
+    }
+
+    qobject_unref(types);
+    qtest_quit(qts);
+}
+
 static void test_device_help_cli(void)
 {
     const char *binary = qtest_qemu_binary("QTEST_QEMU_BINARY");
@@ -745,6 +785,8 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/display-descriptions",
                    test_device_intro_display_descriptions);
+    qtest_add_func("device/introspect/storage-descriptions",
+                   test_storage_controller_descriptions);
     qtest_add_func("device/introspect/cli-help", test_device_help_cli);
     qtest_add_func("device/introspect/generic-types",
                    test_generic_device_types);

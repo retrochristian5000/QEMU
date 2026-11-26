@@ -439,7 +439,7 @@ static void esp_pci_class_init(ObjectClass *klass, const void *data)
     k->revision = 0x10;
     k->class_id = PCI_CLASS_STORAGE_SCSI;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
-    dc->desc = "AMD Am53c974 PCscsi-PCI SCSI adapter";
+    dc->desc = "AMD Am53C974 PCI SCSI controller";
     device_class_set_legacy_reset(dc, esp_pci_hard_reset);
     dc->vmsd = &vmstate_esp_pci_scsi;
 }
@@ -566,7 +566,7 @@ static void dc390_class_init(ObjectClass *klass, const void *data)
     k->config_read = dc390_read_config;
     k->config_write = dc390_write_config;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
-    dc->desc = "Tekram DC-390 SCSI adapter";
+    dc->desc = "Tekram DC-390 PCI SCSI adapter";
 }
 
 static const TypeInfo dc390_info = {

@@ -312,7 +312,7 @@ static void isabus_fdc_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
-    dc->desc = "virtual floppy controller";
+    dc->desc = "Generic ISA floppy disk controller";
     dc->realize = isabus_fdc_realize;
     dc->fw_name = "fdc";
     device_class_set_legacy_reset(dc, fdctrl_external_reset_isa);

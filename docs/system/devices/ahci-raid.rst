@@ -28,6 +28,16 @@ Update, ICH9 Device and Revision ID Table, page 12.
 Other storage controllers
 ------------------------
 
+Device help distinguishes generic controller interfaces from identified
+hardware and paravirtualized controllers. For example, ``isa-ide`` and
+``isa-fdc`` describe generic ISA interfaces rather than a particular
+manufacturer's chip. ``cmd646-ide``, ``sii3112``, ``am53c974`` and
+``lsi53c895a`` identify particular controller models; ``pvscsi``
+identifies VMware's paravirtualized interface. The established device
+type names remain unchanged. The labels identify hardware or interfaces,
+not adjustable resources, firmware requirements or implementation
+limitations.
+
 The ``sii3112`` controller retains its historical RAID-class PCI
 identity (1095:3112) for compatibility. It implements Silicon Image
 SATA task-file registers and bus-master DMA, not AHCI or an array engine.

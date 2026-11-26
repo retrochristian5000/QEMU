@@ -2495,7 +2495,7 @@ typedef struct MegasasInfo {
 static struct MegasasInfo megasas_devices[] = {
     {
         .name = TYPE_MEGASAS_GEN1,
-        .desc = "LSI MegaRAID SAS 1078",
+        .desc = "LSI MegaRAID SAS 1078 PCI RAID controller",
         .product_name = "LSI MegaRAID SAS 8708EM2",
         .product_version = MEGASAS_VERSION_GEN1,
         .device_id = PCI_DEVICE_ID_LSI_SAS1078,
@@ -2512,7 +2512,7 @@ static struct MegasasInfo megasas_devices[] = {
         },
     },{
         .name = TYPE_MEGASAS_GEN2,
-        .desc = "LSI MegaRAID SAS 2108",
+        .desc = "LSI MegaRAID SAS 2108 PCI RAID controller",
         .product_name = "LSI MegaRAID SAS 9260-8i",
         .product_version = MEGASAS_VERSION_GEN2,
         .device_id = PCI_DEVICE_ID_LSI_SAS0079,
