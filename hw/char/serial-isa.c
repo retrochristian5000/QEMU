@@ -29,6 +29,7 @@
 #include "system/system.h"
 #include "hw/acpi/acpi_aml_interface.h"
 #include "hw/char/serial.h"
+#include "chardev/modem.h"
 #include "hw/char/serial-isa.h"
 #include "hw/isa/isa.h"
 #include "hw/core/qdev-properties.h"
@@ -44,6 +45,7 @@ struct ISASerialState {
     uint32_t iobase;
     uint32_t isairq;
     SerialState state;
+    Chardev *owned_modem;
 };
 
 static const int isa_serial_io[MAX_ISA_SERIAL_PORTS] = {
@@ -111,8 +113,30 @@ static void serial_isa_realizefn(DeviceState *dev, Error **errp)
         return;
     }
 
+    if (s->integrated_modem) {
+        if (qemu_chr_fe_get_driver(&s->chr)) {
+            error_setg(errp, "%s owns its modem backend; omit chardev",
+                       object_get_typename(OBJECT(dev)));
+            return;
+        }
+        isa->owned_modem = qemu_modem_new_offline(
+            object_get_typename(OBJECT(dev)), errp);
+        if (!isa->owned_modem) {
+            return;
+        }
+        if (!qemu_chr_fe_init(&s->chr, isa->owned_modem, errp)) {
+            object_unparent(OBJECT(isa->owned_modem));
+            isa->owned_modem = NULL;
+            return;
+        }
+    }
+
     s->irq = isa_bus_get_irq(bus, isa->isairq);
     if (!qdev_realize(DEVICE(s), NULL, errp)) {
+        if (isa->owned_modem) {
+            qemu_chr_fe_deinit(&s->chr, true);
+            isa->owned_modem = NULL;
+        }
         return;
     }
     qdev_set_legacy_instance_id(dev, isa->iobase, 3);
@@ -238,12 +262,80 @@ static const TypeInfo ns16550a_info = {
     .class_init = ns16550a_class_init,
 };
 
+/* These devices are integrated ISA compatibility boards, not external
+ * modems plugged into an already existing serial port.
+ */
+static void isa_modem_init(Object *obj)
+{
+    ISA_SERIAL(obj)->state.integrated_modem = true;
+}
+
+static void isa_modem_unrealize(DeviceState *dev)
+{
+    ISASerialState *isa = ISA_SERIAL(dev);
+
+    memory_region_del_subregion(isa_address_space_io(ISA_DEVICE(dev)),
+                                &isa->state.io);
+    object_unparent(OBJECT(&isa->state.io));
+    qdev_unrealize(DEVICE(&isa->state));
+    if (isa->owned_modem) {
+        object_unparent(OBJECT(isa->owned_modem));
+        isa->owned_modem = NULL;
+    }
+}
+
+/* The modem engine does not yet serialize AT state and pending bytes. */
+static const VMStateDescription vmstate_isa_modem = {
+    .name = "isa-modem",
+    .unmigratable = true,
+};
+
+static void isa_modem_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc = data;
+    dc->hotpluggable = false;
+    dc->unrealize = isa_modem_unrealize;
+    dc->vmsd = &vmstate_isa_modem;
+    set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
+}
+
+static const TypeInfo isa_modem_types[] = {
+    {
+        .name = "hayes-accura-2400",
+        .parent = TYPE_ISA_SERIAL,
+        .instance_init = isa_modem_init,
+        .class_init = isa_modem_class_init,
+        .class_data = "Hayes Accura 2400 ISA modem compatibility profile",
+    }, {
+        .name = "rockwell-voice-14400",
+        .parent = TYPE_ISA_SERIAL,
+        .instance_init = isa_modem_init,
+        .class_init = isa_modem_class_init,
+        .class_data = "Rockwell-compatible 14.4K voice modem ISA profile",
+    }, {
+        .name = "att-paradyne-dataport-3711",
+        .parent = TYPE_ISA_SERIAL,
+        .instance_init = isa_modem_init,
+        .class_init = isa_modem_class_init,
+        .class_data = "Paradyne DataPort Express 3711 ISA compatibility profile",
+    }, {
+        .name = "att-paradyne-dataport-3740",
+        .parent = TYPE_ISA_SERIAL,
+        .instance_init = isa_modem_init,
+        .class_init = isa_modem_class_init,
+        .class_data = "Paradyne DataPort Express 3740 ISA compatibility profile",
+    },
+};
+
 static void serial_register_types(void)
 {
     type_register_static(&serial_isa_info);
     type_register_static(&ins8250a_info);
     type_register_static(&ns16450_info);
     type_register_static(&ns16550a_info);
+    type_register_static_array(isa_modem_types, ARRAY_SIZE(isa_modem_types));
 }
 
 type_init(serial_register_types)

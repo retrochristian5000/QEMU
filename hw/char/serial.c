@@ -29,6 +29,7 @@
 #include "hw/core/irq.h"
 #include "migration/vmstate.h"
 #include "chardev/char-serial.h"
+#include "chardev/modem.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "system/reset.h"
@@ -865,6 +866,9 @@ static void serial_reset(void *opaque)
 {
     SerialState *s = opaque;
     g_clear_handle_id(&s->watch_tag, g_source_remove);
+    if (s->integrated_modem) {
+        qemu_modem_hardware_reset(qemu_chr_fe_get_driver(&s->chr));
+    }
 
     s->rbr = 0;
     s->ier = 0;
@@ -936,7 +940,9 @@ static void serial_realize(DeviceState *dev, Error **errp)
     qemu_register_reset(serial_reset, s);
 
     qemu_chr_fe_set_handlers(&s->chr, serial_can_receive1, serial_receive1,
-                             serial_event, serial_be_change, s, NULL, true);
+                             serial_event,
+                             s->integrated_modem ? NULL : serial_be_change,
+                             s, NULL, true);
     fifo8_create(&s->recv_fifo, UART_FIFO_LENGTH);
     fifo8_create(&s->xmit_fifo, UART_FIFO_LENGTH);
 }

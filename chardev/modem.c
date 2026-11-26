@@ -179,6 +179,7 @@ struct ModemChardev {
     bool quiet;
     bool verbose;
     bool connected;
+    bool offline_line; /* ISA hardware profiles have no attached line. */
     bool dialing;
     bool command_mode;
     bool carrier_follows_connection;
@@ -653,6 +654,10 @@ static void modem_dial(ModemChardev *modem)
         .type = SOCKET_ADDRESS_TYPE_INET,
     };
 
+    if (modem->offline_line) {
+        modem_result(modem, MODEM_RESULT_NO_DIALTONE);
+        return;
+    }
     if (!modem->tcp_host) {
         modem_connect(modem);
         return;
@@ -910,7 +915,11 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
 
         switch (*p++) {
         case 'A':
-            modem_connect(modem);
+            if (modem->offline_line) {
+                modem_result(modem, MODEM_RESULT_NO_CARRIER);
+            } else {
+                modem_connect(modem);
+            }
             return;
         case 'B':
         case 'L':
@@ -1228,6 +1237,22 @@ static bool modem_chr_open(Chardev *chr,
     modem->command_mode = true;
     modem_reset(modem);
     return true;
+}
+
+Chardev *qemu_modem_new_offline(const char *model, Error **errp)
+{
+    ChardevModem options = { .model = (char *)model };
+    ChardevBackend backend = {
+        .type = CHARDEV_BACKEND_KIND_MODEM,
+        .u.modem.data = &options,
+    };
+    Chardev *chr = qemu_chardev_new(NULL, TYPE_CHARDEV_MODEM,
+                                    &backend, NULL, errp);
+
+    if (chr) {
+        CHARDEV_MODEM(chr)->offline_line = true;
+    }
+    return chr;
 }
 
 static void modem_chr_parse(QemuOpts *opts, ChardevBackend *backend,

@@ -114,6 +114,37 @@ assignments. Existing IRQ sharing and ACPI interrupt-resource
 semantics are unchanged. Use matching UART profiles for migration;
 do not switch profiles when restoring saved state.
 
+ISA modem compatibility profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing Hayes-compatible modem engine also supports integrated
+ISA device profiles with an owned 16550A-compatible UART:
+
+* ``hayes-accura-2400``
+* ``rockwell-voice-14400``
+* ``att-paradyne-dataport-3711``
+* ``att-paradyne-dataport-3740``
+
+For example, to install a modem on COM2 and leave COM1 available::
+
+    -serial none -device hayes-accura-2400,index=1
+
+The device owns its character backend; do not provide a separate
+``chardev`` or a second UART at the same I/O range. The normal COM
+index, base and IRQ validation applies. The guest sees a serial
+controller (PNP0501), and modem identification is provided by the
+existing AT-command engine. No original modem ROM, exact internal
+card design, ISA PnP identifier, analog telephone DSP, fax signal
+processing or real telephone connection is claimed.
+
+These device profiles represent an unplugged telephone line: dialing
+returns NO DIALTONE and answering returns NO CARRIER. The existing
+``-chardev modem`` interface retains its separate host-configured
+transport and simulated connection behavior. Hardware reset clears
+pending modem bytes and resets the AT settings. Live migration,
+saved-state loading and hotplug are not supported for the new device
+profiles because modem state is not serialized.
+
 Experimental Intel 440BX PC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

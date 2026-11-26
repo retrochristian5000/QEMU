@@ -463,6 +463,55 @@ static void test_i440fx_uart_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+/* Read each response as the guest consumes it, allowing the character
+ * backend to deliver the next byte. No real network or phone line.
+ */
+static void modem_command(QTestState *qts, const char *command,
+                          const char *expected)
+{
+    GString *response = g_string_new(NULL);
+
+    for (const char *p = command; *p; p++) {
+        qtest_outb(qts, 0x2f8, *p);
+        while (qtest_inb(qts, 0x2fd) & 1) {
+            g_assert_cmpuint(response->len, <, 256);
+            g_string_append_c(response, qtest_inb(qts, 0x2f8));
+        }
+    }
+    g_assert_nonnull(strstr(response->str, expected));
+    g_string_free(response, true);
+}
+
+static void test_i440fx_isa_modem(gconstpointer opaque)
+{
+    const char *model = opaque;
+    QTestState *qts = qtest_initf(
+        "-M pc -nodefaults -serial none -device %s,index=1,id=modem "
+        "-chardev null,id=other -device ns16550a,chardev=other", model);
+
+    /* Modem occupies COM2; a separately attached UART gets COM1. */
+    qtest_outb(qts, 0x2ff, 0x55);
+    qtest_outb(qts, 0x3ff, 0xaa);
+    g_assert_cmphex(qtest_inb(qts, 0x2ff), ==, 0x55);
+    g_assert_cmphex(qtest_inb(qts, 0x3ff), ==, 0xaa);
+
+    qtest_outb(qts, 0x2fb, 3);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    modem_command(qts, "AT\r", "\r\nOK\r\n");
+    modem_command(qts, "ATE0\r", "\r\nOK\r\n");
+    modem_command(qts, "ATI3\r",
+                  !strcmp(model, "hayes-accura-2400") ? "Hayes Accura 2400" :
+                  !strcmp(model, "rockwell-voice-14400") ? "Rockwell-compatible" :
+                  !strcmp(model, "att-paradyne-dataport-3711") ? "3711" :
+                  "3740");
+    modem_command(qts, "ATD0\r", "NO DIALTONE");
+    modem_command(qts, "ATA\r", "NO CARRIER");
+    qtest_system_reset(qts);
+    qtest_outb(qts, 0x2fb, 3);
+    modem_command(qts, "AT\r", "AT\r\r\nOK");
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_mouse(gconstpointer opaque)
 {
     bool enabled = GPOINTER_TO_INT(opaque);
@@ -623,6 +672,17 @@ int main(int argc, char **argv)
                     g_strdup_printf("i440fx/isa/uart/%s", types[n]);
                 qtest_add_data_func(path, types[n], test_i440fx_uart_profile);
             }
+        }
+    }
+    const char *const modems[] = {
+        "hayes-accura-2400", "rockwell-voice-14400",
+        "att-paradyne-dataport-3711", "att-paradyne-dataport-3740",
+    };
+    for (unsigned n = 0; n < ARRAY_SIZE(modems); n++) {
+        if (qtest_has_device(modems[n]) && qtest_has_device("ns16550a")) {
+            g_autofree char *path =
+                g_strdup_printf("i440fx/isa/modem/%s", modems[n]);
+            qtest_add_data_func(path, modems[n], test_i440fx_isa_modem);
         }
     }
     qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),

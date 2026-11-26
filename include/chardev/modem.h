@@ -8,6 +8,9 @@
 
 #include "chardev/char.h"
 
+/* Create a registered modem backend with no simulated telephone line. */
+Chardev *qemu_modem_new_offline(const char *model, Error **errp);
+
 /* Physical modem reset GPIO has been asserted; BQL must be held. */
 void qemu_modem_hardware_reset(Chardev *chr);
 
