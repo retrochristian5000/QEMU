@@ -1219,6 +1219,12 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
         return true;
     }
 
+    if (s->ata_revision != IDE_ATA_GENERIC &&
+        (s->feature == 0x05 || s->feature == 0x85 ||
+         s->feature == 0x42 || s->feature == 0xc2)) {
+        goto abort_cmd;
+    }
+
     /* XXX: valid for CDROM ? */
     switch (s->feature) {
     case 0x01: /* 8-bit I/O enable (CompactFlash) */
@@ -1259,6 +1265,43 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
     case 0x03: /* set transfer mode */
         {
             uint8_t val = s->nsector & 0x07;
+
+            if (s->ata_revision != IDE_ATA_GENERIC) {
+                unsigned type = s->nsector >> 3;
+
+                switch (type) {
+                case 0:
+                    if (val > 1) {
+                        goto abort_cmd;
+                    }
+                    break;
+                case 1:
+                    if (val > 4) {
+                        goto abort_cmd;
+                    }
+                    break;
+                case 2:
+                    if (s->ata_revision == IDE_ATA_2 || val > 2) {
+                        goto abort_cmd;
+                    }
+                    break;
+                case 4:
+                    if (val > 2) {
+                        goto abort_cmd;
+                    }
+                    break;
+                case 8:
+                    if (s->ata_revision == IDE_ATA_2 || val > 2) {
+                        goto abort_cmd;
+                    }
+                    break;
+                default:
+                    goto abort_cmd;
+                }
+                if (!s->identify_set) {
+                    ide_identify(s);
+                }
+            }
             identify_data = (uint16_t *)s->identify_data;
 
             switch (s->nsector >> 3) {
@@ -1495,6 +1538,29 @@ static const struct {
 
 static bool ide_cmd_permitted(IDEState *s, uint32_t cmd)
 {
+    if (s->ata_revision != IDE_ATA_GENERIC) {
+        switch (cmd) {
+        case WIN_DSM:
+        case WIN_READ_EXT:
+        case WIN_READDMA_EXT:
+        case WIN_READ_NATIVE_MAX_EXT:
+        case WIN_MULTREAD_EXT:
+        case WIN_WRITE_EXT:
+        case WIN_WRITEDMA_EXT:
+        case WIN_MULTWRITE_EXT:
+        case WIN_VERIFY_EXT:
+        case WIN_FLUSH_CACHE_EXT:
+        case CFA_WEAR_LEVEL:
+            return false;
+        case WIN_SMART:
+        case WIN_READ_NATIVE_MAX:
+        case WIN_FLUSH_CACHE:
+            if (s->ata_revision == IDE_ATA_2) {
+                return false;
+            }
+            break;
+        }
+    }
     return cmd < ARRAY_SIZE(ide_cmd_table)
         && (ide_cmd_table[cmd].flags & (1u << s->drive_kind));
 }
@@ -1647,13 +1713,20 @@ int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
     uint64_t nb_sectors;
     IDEDeviceClass *dc = IDE_DEVICE_GET_CLASS(dev);
 
+    blk_get_geometry(dev->conf.blk, &nb_sectors);
+    if (dev->ata_revision != IDE_ATA_GENERIC &&
+        nb_sectors >= (1ULL << 28)) {
+        error_setg(errp, "Historical ATA profile requires a disk smaller "
+                   "than 2^28 sectors");
+        return -1;
+    }
     s->blk = dev->conf.blk;
     s->drive_kind = kind;
+    s->ata_revision = dev->ata_revision;
     s->atapi_cd_only = dc->atapi_cd_only;
     s->atapi_unswapped_model = dc->atapi_unswapped_model;
     s->atapi_inquiry_product = dc->atapi_inquiry_product;
 
-    blk_get_geometry(s->blk, &nb_sectors);
     s->win2k_install_hack = dev->win2k_install_hack;
     s->cylinders = dev->conf.cyls;
     s->heads = s->drive_heads = dev->conf.heads;

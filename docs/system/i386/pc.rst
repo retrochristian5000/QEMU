@@ -270,7 +270,8 @@ Historical ATA HDD identity profiles
 
 The generic ``ide-hd`` remains unchanged. Three optional IDE disk types
 supply manufacturer model strings in IDENTIFY DEVICE words 27-46 and
-nominal rotation rates in word 217:
+revision-specific capability limits. Spindle speeds below are historical
+reference data, not reported in the later word 217:
 
 * ``seagate-st31640a``: ST31640A, 5376 RPM, original 3175200 sectors.
 * ``seagate-st32140a``: ST32140A, 5376 RPM, original 4127760 sectors.
@@ -284,14 +285,20 @@ For example, with an existing disk image and an available IDE unit::
 Replace the original attachment rather than attaching the image twice.
 The image format must match the actual image. Capacity and geometry
 continue to follow the backend and existing geometry options; the profiles
-never resize an image. Model, serial, firmware revision and rotation rate
-can still be overridden using the existing properties.
+never resize an image. Model, serial and firmware revision can still be overridden using the
+existing properties.
 
-These are identity profiles, not complete ATA-2 or ATA/ATAPI-4 hardware
-emulations. They retain the generic engine's command set and advertised
-capabilities, including newer features, and do not model seek time or
-vendor firmware. The rotation field is a later ATA identification field.
-Keep the device profile and overrides identical when restoring a VM.
+The Medalists use an ATA-2 compatibility subset, with words 69-255
+cleared as reserved or vendor-specific and no UDMA. The Deskstar uses
+ATA/ATAPI-4 major word 0x001e and minor word 0x0017 (IBM figure 81),
+with UDMA modes 0-2. Both reject LBA48 and TRIM commands and invalid
+transfer modes. Initial images must be smaller than 2^28 sectors;
+resized images are limited to the representable LBA28 sector count.
+These are not complete vendor implementations: seek timing, original
+firmware, security, queued DMA, and vendor commands remain absent or
+incomplete. The generic engine's multiple-sector limit is retained.
+Cold boot when upgrading these profiles; do not mix saved states from
+before and after the capability change.
 
 References: Seagate Medalist 1640 and 2140 Product Manual, January 1996,
 sections 1.1 and 3.2 (https://www.seagate.com/support/disc/manuals/ata/36314-21.pdf);

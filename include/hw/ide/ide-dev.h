@@ -37,6 +37,13 @@ OBJECT_DECLARE_TYPE(IDEDevice, IDEDeviceClass, IDE_DEVICE)
 
 typedef enum { IDE_HD, IDE_CD, IDE_CFATA } IDEDriveKind;
 
+/* Zero preserves the generic ATA engine's historical capabilities. */
+typedef enum {
+    IDE_ATA_GENERIC,
+    IDE_ATA_2,
+    IDE_ATA_4,
+} IDEATARevision;
+
 struct unreported_events {
     bool eject_request;
     bool new_media;
@@ -56,6 +63,7 @@ struct IDEState {
     uint8_t unit;
     /* ide config */
     IDEDriveKind drive_kind;
+    IDEATARevision ata_revision; /* Immutable profile, not migrated. */
     int drive_heads, drive_sectors;
     int cylinders, heads, sectors, chs_trans;
     int64_t nb_sectors;
@@ -159,6 +167,7 @@ struct IDEDevice {
     uint32_t unit;
     BlockConf conf;
     int chs_trans;
+    IDEATARevision ata_revision;
     char *version;
     char *serial;
     char *model;

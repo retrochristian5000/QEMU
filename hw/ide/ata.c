@@ -65,6 +65,39 @@ static void ide_identify_size(IDEState *s)
     ide_put_le16(p + 103, s->nb_sectors >> 48);
 }
 
+/*
+ * Seagate Medalist manual (Jan 1996), section 3.2.1; IBM DTTA OEM
+ * specification, figures 80-82. Leave unsupported optional features
+ * unadvertised, even where the original IBM firmware supported them.
+ */
+static void ide_identify_historical(IDEState *s, uint16_t *p)
+{
+    if (s->ata_revision == IDE_ATA_2) {
+        ide_put_le16(p + 48, 0);
+        ide_put_le16(p + 53, 3);
+        /* The manual's transfer-mode table lists no single-word DMA. */
+        ide_put_le16(p + 62, 0);
+        ide_put_le16(p + 67, 180);
+        memset(p + 69, 0, (256 - 69) * sizeof(*p));
+    } else if (s->ata_revision == IDE_ATA_4) {
+        ide_put_le16(p + 67, 240);
+        ide_put_le16(p + 69, 0);
+        memset(p + 75, 0, 5 * sizeof(*p));
+        ide_put_le16(p + 80, 0x001e);
+        ide_put_le16(p + 81, 0x0017);
+        ide_put_le16(p + 82, (1 << 5) | 1);
+        ide_put_le16(p + 83, 0x4000);
+        ide_put_le16(p + 84, 0x4000);
+        ide_put_le16(p + 85, (blk_enable_write_cache(s->blk) ? 0x20 : 0) |
+                             (s->smart_enabled ? 1 : 0));
+        ide_put_le16(p + 86, 0);
+        ide_put_le16(p + 87, 0x4000);
+        /* Keep only supported UDMA modes and their active bits. */
+        ide_put_le16(p + 88, (le16_to_cpu(p[88]) & 0x0700) | 7);
+        memset(p + 89, 0, (256 - 89) * sizeof(*p));
+    }
+}
+
 void ide_identify(IDEState *s)
 {
     uint16_t *p;
@@ -177,6 +210,7 @@ void ide_identify(IDEState *s)
     s->identify_set = 1;
 
 fill_buffer:
+    ide_identify_historical(s, p);
     memcpy(s->io_buffer, p, sizeof(s->identify_data));
 }
 
@@ -266,6 +300,10 @@ static void ide_resize_cb(void *opaque)
     }
 
     blk_get_geometry(s->blk, &nb_sectors);
+    /* A historical LBA28 disk cannot address a larger resized backend. */
+    if (s->ata_revision != IDE_ATA_GENERIC) {
+        nb_sectors = MIN(nb_sectors, (1ULL << 28) - 1);
+    }
     s->nb_sectors = nb_sectors;
 
     /* Update the identify data buffer. */

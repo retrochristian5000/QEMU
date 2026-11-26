@@ -839,16 +839,17 @@ static void test_identify(void)
 typedef struct AtaHdIdentity {
     const char *type;
     const char *model;
-    uint16_t rpm;
+    uint16_t major;
+    uint16_t udma;
     const char *options;
 } AtaHdIdentity;
 
 static const AtaHdIdentity ata_hd_identities[] = {
-    { "ide-hd", "QEMU HARDDISK", 0, "" },
-    { "seagate-st31640a", "ST31640A", 5376, "" },
-    { "seagate-st32140a", "ST32140A", 5376, "" },
-    { "ibm-dtta-351010", "IBM-DTTA-351010", 5400, "" },
-    { "ibm-dtta-351010", "Override HDD", 0,
+    { "ide-hd", "QEMU HARDDISK", 0xf0, 0x3f, "" },
+    { "seagate-st31640a", "ST31640A", 0, 0, "" },
+    { "seagate-st32140a", "ST32140A", 0, 0, "" },
+    { "ibm-dtta-351010", "IBM-DTTA-351010", 0x1e, 7, "" },
+    { "ibm-dtta-351010", "Override HDD", 0x1e, 7,
       ",model=Override HDD,rotation_rate=0" },
 };
 
@@ -877,9 +878,36 @@ static void test_ata_hd_identity(gconstpointer opaque)
     memcpy(expected, profile->model, strlen(profile->model));
     string_cpu_to_be16(&buf[27], sizeof(expected));
     g_assert_cmpmem(&buf[27], sizeof(expected), expected, sizeof(expected));
-    g_assert_cmpuint(buf[217], ==, profile->rpm);
+    g_assert_cmphex(buf[80], ==, profile->major);
+    g_assert_cmphex(buf[88] & 0xff, ==, profile->udma);
+    g_assert_cmpuint(buf[217], ==, 0);
     g_assert_cmpuint((uint32_t)buf[60] | ((uint32_t)buf[61] << 16),
                      ==, TEST_IMAGE_SIZE / 512);
+
+    if (profile->major != 0xf0) {
+        g_assert_cmphex(buf[83] & 0x0400, ==, 0);
+        g_assert_cmphex(buf[100] | buf[101] | buf[102] | buf[103], ==, 0);
+        g_assert_cmphex(buf[169], ==, 0);
+        /* Reject newer commands before any data phase begins. */
+        const uint8_t unsupported[] = { 0x24, 0x34, 0x25, 0x35, 0xea, 0x06 };
+        for (unsigned i = 0; i < ARRAY_SIZE(unsupported); i++) {
+            qpci_io_writeb(dev, ide_bar, reg_command, unsupported[i]);
+            assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+            assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+        }
+        /* SET FEATURES: UDMA mode 5 must be rejected by both profiles. */
+        qpci_io_writeb(dev, ide_bar, reg_feature, 3);
+        qtest_outb(qts, 0x1f2, 0x45);
+        qpci_io_writeb(dev, ide_bar, reg_command, 0xef);
+        assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+        assert_bit_set(qpci_io_readb(dev, ide_bar, reg_error), ABRT);
+        /* UDMA mode 2 works only on the IBM profile. */
+        qpci_io_writeb(dev, ide_bar, reg_feature, 3);
+        qtest_outb(qts, 0x1f2, 0x42);
+        qpci_io_writeb(dev, ide_bar, reg_command, 0xef);
+        g_assert_cmpint(!!(qpci_io_readb(dev, ide_bar, reg_status) & ERR),
+                        ==, profile->major == 0);
+    }
 
     free_pci_device(dev);
     ide_test_quit(qts);
