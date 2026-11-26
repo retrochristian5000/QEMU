@@ -397,6 +397,28 @@ static void test_i440fx_cmos_fpu(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_i440fx_cmos_mouse(gconstpointer opaque)
+{
+    bool enabled = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(enabled ?
+        "-M pc,i8042=on,vmport=off -nodefaults" :
+        "-M pc,i8042=off,vmport=off -nodefaults");
+
+    qtest_outb(qts, 0x70, 0x14);
+    g_assert_cmphex(qtest_inb(qts, 0x71) & 0x04, ==, enabled ? 0x04 : 0);
+    qtest_quit(qts);
+}
+
+static void test_i440fx_hpet_intcap(void)
+{
+    QTestState *qts = qtest_init("-M pc,hpet=on -nodefaults "
+                                "-global hpet.hpet-intcap=0x10000");
+
+    /* Timer 0 configuration, upper dword: interrupt routing capability. */
+    g_assert_cmphex(qtest_readl(qts, 0xfed00104), ==, 0x10000);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_timing_config(void)
 {
     QTestState *qts = qtest_init("-M pc -nodefaults "
@@ -519,6 +541,13 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
+    qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),
+                        test_i440fx_cmos_mouse);
+    qtest_add_data_func("i440fx/cmos/mouse-off", GINT_TO_POINTER(0),
+                        test_i440fx_cmos_mouse);
+    if (qtest_has_device("hpet")) {
+        qtest_add_func("i440fx/hpet/intcap", test_i440fx_hpet_intcap);
+    }
     qtest_add_data_func("i440fx/cmos/fpu-on", GINT_TO_POINTER(1),
                         test_i440fx_cmos_fpu);
     qtest_add_data_func("i440fx/cmos/fpu-off", GINT_TO_POINTER(0),

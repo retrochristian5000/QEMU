@@ -317,7 +317,8 @@ static void pc_cmos_init_floppy(MC146818RtcState *rtc_state, ISADevice *floppy)
         cmos_get_fd_drive_type(fd_type[1]);
     mc146818rtc_set_cmos_data(rtc_state, 0x10, val);
 
-    val = mc146818rtc_get_cmos_data(rtc_state, REG_EQUIPMENT_BYTE);
+    /* Replace the floppy fields without disturbing other equipment bits. */
+    val = mc146818rtc_get_cmos_data(rtc_state, REG_EQUIPMENT_BYTE) & ~0xc1;
     nb = 0;
     if (fd_type[0] != FLOPPY_DRIVE_TYPE_NONE) {
         nb++;
@@ -439,8 +440,6 @@ static void pc_cmos_init_late(PCMachineState *pcms)
     }
     mc146818rtc_set_cmos_data(s, 0x39, val);
 
-    pc_cmos_init_floppy(s, pc_find_fdc0());
-
     /* various important CMOS locations needed by PC/Bochs bios */
 
     /* memory size */
@@ -481,8 +480,12 @@ static void pc_cmos_init_late(PCMachineState *pcms)
     if (X86_CPU(first_cpu)->env.features[FEAT_1_EDX] & CPUID_FP87) {
         val |= 0x02;
     }
-    val |= 0x04; /* PS/2 mouse installed */
+    /* Use the same controller-presence check as ACPI. */
+    if (i8042_present()) {
+        val |= 0x04;
+    }
     mc146818rtc_set_cmos_data(s, REG_EQUIPMENT_BYTE, val);
+    pc_cmos_init_floppy(s, pc_find_fdc0());
 }
 
 static void handle_a20_line_change(void *opaque, int irq, int level)
@@ -1109,7 +1112,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
          * use IRQ16~23, IRQ8 and IRQ2.  If the user has already set
          * the property, use whatever mask they specified.
          */
-        uint8_t compat = object_property_get_uint(OBJECT(hpet),
+        uint32_t compat = object_property_get_uint(OBJECT(hpet),
                 HPET_INTCAP, NULL);
         if (!compat) {
             qdev_prop_set_uint32(hpet, HPET_INTCAP, hpet_irqs);

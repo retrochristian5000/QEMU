@@ -75,6 +75,7 @@ static uint8_t base = 0x70;
 
 enum {
     CMOS_FLOPPY     = 0x10,
+    CMOS_EQUIPMENT  = 0x14,
 };
 
 static void floppy_send(uint8_t byte)
@@ -269,6 +270,8 @@ static void test_cmos(void)
 
     cmos = cmos_read(CMOS_FLOPPY);
     g_assert(cmos == 0x40 || cmos == 0x50);
+    /* One installed drive: presence set and drive-count field zero. */
+    g_assert_cmphex(cmos_read(CMOS_EQUIPMENT) & 0xc1, ==, 0x01);
 }
 
 static void test_no_media_on_start(void)
