@@ -756,6 +756,7 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     qapi_free_SocketAddress(bound);
     modem_frontend_init(&fe, &out, chr);
     if (rts_test) {
+        qemu_modem_command_log_set_enabled(true);
         lines &= ~CHR_TIOCM_RTS;
     }
     g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
@@ -808,8 +809,70 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     modem_command(&fe, &out, "+++");
     assert_response_contains(modem_command(&fe, &out, "ATH\r"),
                              "\r\nOK\r\n");
+    if (rts_test) {
+        GPtrArray *snapshots = qemu_modem_indicator_snapshot();
+        const ModemIndicatorSnapshot *snapshot =
+            g_ptr_array_index(snapshots, 0);
+
+        assert_response_contains(snapshot->command_log, "GUEST> ATD0\n");
+        assert_response_contains(snapshot->command_log, "GUEST> +++\n");
+        g_assert_null(strstr(snapshot->command_log, "held"));
+        g_ptr_array_unref(snapshots);
+        qemu_modem_command_log_set_enabled(false);
+    }
     modem_frontend_cleanup(&fe, chr);
     object_unref(OBJECT(peer));
+}
+
+static void test_dataport_command_log(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-command-log", "att-paradyne-3740");
+    GPtrArray *snapshots;
+    ModemIndicatorSnapshot *snapshot;
+
+    modem_frontend_init(&fe, &out, chr);
+    qemu_modem_command_log_set_enabled(false);
+    modem_command(&fe, &out, "ATI0\r");
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_null(snapshot->command_log);
+    g_ptr_array_unref(snapshots);
+
+    qemu_modem_command_log_set_enabled(true);
+    modem_command(&fe, &out, "ATE0\r");
+    modem_command(&fe, &out, "ATI0\r");
+    modem_command(&fe, &out, "ATI8\r");
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    assert_response_contains(snapshot->command_log,
+                             "GUEST> ATI0\nMODEM> 28800\nMODEM> OK\n");
+    assert_response_contains(snapshot->command_log,
+                             "GUEST> ATI8\nMODEM> ERROR\n");
+    g_ptr_array_unref(snapshots);
+
+    for (unsigned i = 0; i < 1000; i++) {
+        modem_command(&fe, &out, "ATI0\r");
+    }
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_cmpuint(strlen(snapshot->command_log), <=, 16 * 1024);
+    g_assert_true(g_str_has_suffix(snapshot->command_log, "MODEM> OK\n"));
+    g_ptr_array_unref(snapshots);
+
+    qemu_modem_command_log_clear();
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_null(snapshot->command_log);
+    g_ptr_array_unref(snapshots);
+    modem_command(&fe, &out, "ATI0\r");
+    qemu_modem_command_log_set_enabled(false);
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_null(snapshot->command_log);
+    g_ptr_array_unref(snapshots);
+    modem_frontend_cleanup(&fe, chr);
 }
 
 static void test_dataport_indicators(void)
@@ -903,6 +966,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-command-log",
+                    test_dataport_command_log);
     g_test_add_func("/modem/paradyne/3740-indicators",
                     test_dataport_indicators);
     g_test_add_data_func("/modem/paradyne/xon-config-3711",

@@ -24,12 +24,16 @@ static bool inspector_enabled;
 {
     NSPanel *panel;
     NSTextView *display;
+    NSTextView *commandLog;
+    NSButton *captureButton;
     NSTimer *timer;
     GHashTable *history;
 }
 - (void)show;
 - (void)refresh:(NSTimer *)sender;
 - (void)stop;
+- (void)toggleCapture:(id)sender;
+- (void)clearCapture:(id)sender;
 @end
 
 @implementation QemuModemInspector
@@ -41,22 +45,26 @@ static bool inspector_enabled;
         return nil;
     }
 
-    NSRect frame = NSMakeRect(0, 0, 600, 260);
+    NSRect frame = NSMakeRect(0, 0, 680, 480);
     panel = [[NSPanel alloc] initWithContentRect:frame
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                   NSWindowStyleMaskResizable
           backing:NSBackingStoreBuffered defer:NO];
-    [panel setTitle:@"External Modem Indicators"];
+    [panel setTitle:@"External Modem Inspector"];
     [panel setReleasedWhenClosed:NO];
-    [panel setContentMinSize:NSMakeSize(440, 160)];
+    [panel setContentMinSize:NSMakeSize(520, 320)];
     [panel setDelegate:self];
     [panel setHidesOnDeactivate:NO];
 
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:frame];
+    NSView *contentView = [[NSView alloc] initWithFrame:frame];
+    NSRect indicatorFrame = NSMakeRect(0, frame.size.height - 164,
+                                       frame.size.width, 164);
+    NSScrollView *scroll =
+        [[NSScrollView alloc] initWithFrame:indicatorFrame];
     [scroll setHasVerticalScroller:YES];
     [scroll setAutohidesScrollers:YES];
-    [scroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-    display = [[NSTextView alloc] initWithFrame:frame];
+    [scroll setAutoresizingMask:NSViewWidthSizable | NSViewMinYMargin];
+    display = [[NSTextView alloc] initWithFrame:indicatorFrame];
     [display setEditable:NO];
     [display setSelectable:YES];
     [display setVerticallyResizable:YES];
@@ -66,15 +74,109 @@ static bool inspector_enabled;
     [display setMaxSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)];
     [[display textContainer] setWidthTracksTextView:YES];
     [scroll setDocumentView:display];
-    [panel setContentView:scroll];
+    [contentView addSubview:scroll];
     [scroll release];
+
+    captureButton = [[NSButton alloc]
+        initWithFrame:NSMakeRect(12, frame.size.height - 194, 240, 24)];
+    [captureButton setButtonType:NSButtonTypeSwitch];
+    [captureButton setState:NSControlStateValueOff];
+    [captureButton setTitle:@"Capture AT commands and replies"];
+    [captureButton setTarget:self];
+    [captureButton setAction:@selector(toggleCapture:)];
+    [captureButton setAutoresizingMask:NSViewMinYMargin];
+    [contentView addSubview:captureButton];
+
+    NSButton *clear = [[NSButton alloc]
+        initWithFrame:NSMakeRect(frame.size.width - 88,
+                                 frame.size.height - 195, 76, 26)];
+    [clear setTitle:@"Clear"];
+    [clear setBezelStyle:NSBezelStyleRounded];
+    [clear setTarget:self];
+    [clear setAction:@selector(clearCapture:)];
+    [clear setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
+    [contentView addSubview:clear];
+    [clear release];
+
+    NSRect logFrame = NSMakeRect(0, 0, frame.size.width,
+                                 frame.size.height - 200);
+    NSScrollView *logScroll = [[NSScrollView alloc] initWithFrame:logFrame];
+    [logScroll setHasVerticalScroller:YES];
+    [logScroll setAutohidesScrollers:YES];
+    [logScroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    commandLog = [[NSTextView alloc] initWithFrame:logFrame];
+    [commandLog setEditable:NO];
+    [commandLog setSelectable:YES];
+    [commandLog setVerticallyResizable:YES];
+    [commandLog setHorizontallyResizable:NO];
+    [commandLog setAutoresizingMask:NSViewWidthSizable];
+    [commandLog setTextContainerInset:NSMakeSize(12, 8)];
+    [commandLog setMaxSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)];
+    [[commandLog textContainer] setWidthTracksTextView:YES];
+    [commandLog setFont:[NSFont userFixedPitchFontOfSize:12]];
+    [logScroll setDocumentView:commandLog];
+    [contentView addSubview:logScroll];
+    [logScroll release];
+    [panel setContentView:contentView];
+    [contentView release];
     history = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     [panel center];
     return self;
 }
 
+- (void)toggleCapture:(id)sender
+{
+    (void)sender;
+    bool enabled = [captureButton state] == NSControlStateValueOn;
+    bool locked = bql_locked();
+
+    if (!locked) {
+        bql_lock();
+    }
+    if (qatomic_read(&inspector_enabled)) {
+        qemu_modem_command_log_set_enabled(enabled);
+    }
+    if (!locked) {
+        bql_unlock();
+    }
+    [self refresh:nil];
+}
+
+- (void)clearCapture:(id)sender
+{
+    (void)sender;
+    bool locked = bql_locked();
+
+    if (!locked) {
+        bql_lock();
+    }
+    if (qatomic_read(&inspector_enabled)) {
+        qemu_modem_command_log_clear();
+    }
+    if (!locked) {
+        bql_unlock();
+    }
+    [self refresh:nil];
+}
+
 - (void)stop
 {
+    if ([captureButton state] == NSControlStateValueOn &&
+        qatomic_read(&inspector_enabled)) {
+        bool locked = bql_locked();
+
+        if (!locked) {
+            bql_lock();
+        }
+        if (qatomic_read(&inspector_enabled)) {
+            qemu_modem_command_log_set_enabled(false);
+        }
+        if (!locked) {
+            bql_unlock();
+        }
+    }
+    [captureButton setState:NSControlStateValueOff];
+    [commandLog setString:@""];
     [timer invalidate];
     [timer release];
     timer = nil;
@@ -178,6 +280,39 @@ static bool inspector_enabled;
                        @"CD/OH: simulated line state; RD/SD: serial activity"
         attributes:base] autorelease]];
     [[display textStorage] setAttributedString:content];
+    NSMutableString *transcript = [NSMutableString string];
+    if ([captureButton state] == NSControlStateValueOn) {
+        for (guint i = 0; i < snapshots->len; i++) {
+            const ModemIndicatorSnapshot *s = g_ptr_array_index(snapshots, i);
+            if (s->command_log && *s->command_log) {
+                NSString *identifier = [NSString stringWithUTF8String:s->id];
+                [transcript appendFormat:@"[%@]\n%s\n",
+                    identifier ? identifier : @"Unnamed backend",
+                    s->command_log];
+            }
+        }
+        if (![transcript length]) {
+            [transcript appendString:@"Waiting for modem commands…"];
+        }
+    } else {
+        [transcript appendString:
+            @"Capture is off. Enable it to see commands and replies.\n"
+             @"Command text may contain telephone numbers; online data "
+             @"is not captured. Closing this window clears the log."];
+    }
+    if (![[commandLog string] isEqualToString:transcript]) {
+        NSRect visible = [commandLog visibleRect];
+        bool follow = NSMaxY(visible) >= NSHeight([commandLog bounds]) - 8;
+        NSRange selection = [commandLog selectedRange];
+
+        [commandLog setString:transcript];
+        if (follow) {
+            [commandLog scrollRangeToVisible:
+                NSMakeRange([transcript length], 0)];
+        } else if (NSMaxRange(selection) <= [transcript length]) {
+            [commandLog setSelectedRange:selection];
+        }
+    }
     g_hash_table_unref(history);
     history = next;
     g_ptr_array_unref(snapshots);
@@ -206,6 +341,8 @@ static bool inspector_enabled;
     [panel setDelegate:nil];
     [panel release];
     [display release];
+    [captureButton release];
+    [commandLog release];
     g_hash_table_unref(history);
     [super dealloc];
 }

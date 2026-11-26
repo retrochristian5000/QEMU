@@ -180,6 +180,19 @@ use the CHR_TIOCM bit definitions in include/chardev/char-serial.h.
 No dial strings or carrier data are traced by these events. The trace
 shows when a reply is queued, not when the guest has consumed it.
 
+The Cocoa Modem Indicators window also includes an optional, read-only
+AT command transcript. Enable Capture AT commands and replies to record
+completed guest AT commands, the escape sequence and modem-generated
+reply lines, including numerical result codes. This is a command-level
+view, not a byte-exact serial trace: echo, incomplete commands and online
+payload are excluded. Command text can contain dialed telephone numbers.
+The transcript is limited to 16 KiB per supported 3740 backend; older
+complete lines are discarded. Capture starts off, and Clear, disabling
+capture or closing the window discards the collected text. No host log
+file is written. The capture does not modify the guest's AT result-code
+verbosity. Reply lines are captured when generated, not when the guest
+consumes them.
+
 Reference: https://patents.google.com/patent/US5815682A
 
 DataPort family comparison

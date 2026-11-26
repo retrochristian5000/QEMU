@@ -34,6 +34,7 @@ typedef struct ModemIndicatorSnapshot {
     unsigned active;
     unsigned rx_events;
     unsigned tx_events;
+    char *command_log; /* Owned, NULL when capture is disabled or empty. */
 } ModemIndicatorSnapshot;
 
 /*
@@ -42,5 +43,9 @@ typedef struct ModemIndicatorSnapshot {
  * Activity counters wrap naturally; no frontend timing is emulated here.
  */
 GPtrArray *qemu_modem_indicator_snapshot(void);
+
+/* BQL required. In-memory, opt-in command/reply capture; no online payload. */
+void qemu_modem_command_log_set_enabled(bool enabled);
+void qemu_modem_command_log_clear(void);
 
 #endif

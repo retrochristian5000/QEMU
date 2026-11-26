@@ -46,6 +46,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_OUTBUF_SIZE 4096
 #define MODEM_NETBUF_SIZE 65536
 #define MODEM_COMMAND_SIZE 256
+#define MODEM_COMMAND_LOG_LIMIT (16 * 1024)
 #define MODEM_SREG_COUNT 100
 #define MODEM_XON 0x11
 #define MODEM_XOFF 0x13
@@ -194,6 +195,7 @@ struct ModemChardev {
     const ModemModel *model;
     ModemStoredProfile stored_profiles[2];
     unsigned powerup_profile;
+    GString *command_log;
     Fifo8 outbuf;
     Fifo8 net_rxbuf; /* 3740: line payload, separate from AT replies. */
     Fifo8 net_txbuf;
@@ -321,8 +323,42 @@ static void modem_queue_string(ModemChardev *modem, const char *str)
     modem_queue_bytes(modem, (const uint8_t *)str, strlen(str));
 }
 
+/* BQL serializes capture with the inspector and the modem callbacks. */
+static bool modem_command_log_enabled;
+
+static void modem_log_command_line(ModemChardev *modem,
+                                   const char *direction, const char *str)
+{
+    GString *log;
+
+    if (!modem_command_log_enabled || !modem->model ||
+        !modem->model->dataport_3740_line) {
+        return;
+    }
+    if (!modem->command_log) {
+        modem->command_log = g_string_sized_new(1024);
+    }
+    log = modem->command_log;
+    g_string_append_printf(log, "%s ", direction);
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++) {
+        if (g_ascii_isprint(*p)) {
+            g_string_append_c(log, *p);
+        } else {
+            g_string_append_printf(log, "\\x%02X", (unsigned)*p);
+        }
+    }
+    g_string_append_c(log, '\n');
+    if (log->len > MODEM_COMMAND_LOG_LIMIT) {
+        const char *end = strchr(log->str + log->len -
+                                 MODEM_COMMAND_LOG_LIMIT, '\n');
+
+        g_string_erase(log, 0, end - log->str + 1);
+    }
+}
+
 static void modem_queue_line(ModemChardev *modem, const char *str)
 {
+    modem_log_command_line(modem, "MODEM>", str);
     modem_queue_string(modem, "\r\n");
     modem_queue_string(modem, str);
     modem_queue_string(modem, "\r\n");
@@ -362,6 +398,7 @@ static void modem_indicator_snapshot_free(gpointer opaque)
 
     g_free(snapshot->id);
     g_free(snapshot->model);
+    g_free(snapshot->command_log);
     g_free(snapshot);
 }
 
@@ -386,6 +423,9 @@ static int modem_indicator_collect(Object *obj, void *opaque)
     snapshot->active = qatomic_read(&modem->indicator_active);
     snapshot->rx_events = qatomic_read(&modem->indicator_rx_events);
     snapshot->tx_events = qatomic_read(&modem->indicator_tx_events);
+    if (modem_command_log_enabled && modem->command_log) {
+        snapshot->command_log = g_strdup(modem->command_log->str);
+    }
     g_ptr_array_add(snapshots, snapshot);
     return 0;
 }
@@ -398,6 +438,32 @@ GPtrArray *qemu_modem_indicator_snapshot(void)
     object_child_foreach(get_chardevs_root(), modem_indicator_collect,
                          snapshots);
     return snapshots;
+}
+
+static int modem_clear_command_log(Object *obj, void *opaque)
+{
+    if (object_dynamic_cast(obj, TYPE_CHARDEV_MODEM)) {
+        ModemChardev *modem = CHARDEV_MODEM(obj);
+
+        if (modem->command_log) {
+            g_string_free(modem->command_log, true);
+            modem->command_log = NULL;
+        }
+    }
+    return 0;
+}
+
+void qemu_modem_command_log_clear(void)
+{
+    object_child_foreach(get_chardevs_root(), modem_clear_command_log, NULL);
+}
+
+void qemu_modem_command_log_set_enabled(bool enabled)
+{
+    if (modem_command_log_enabled != enabled) {
+        qemu_modem_command_log_clear();
+        modem_command_log_enabled = enabled;
+    }
 }
 
 static void modem_update_carrier(ModemChardev *modem)
@@ -1296,6 +1362,9 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
     g_autofree char *normalized = modem_normalize_command(input);
     const char *p = normalized;
 
+    if (g_str_has_prefix(p, "AT") || !strcmp(p, "A/")) {
+        modem_log_command_line(modem, "GUEST>", input);
+    }
     if (strcmp(p, "A/") == 0) {
         if (!modem->last_command[0]) {
             modem_result(modem, MODEM_RESULT_ERROR);
@@ -1606,6 +1675,7 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                 modem->plus_count++;
                 if (modem->plus_count == 3) {
                     modem->plus_count = 0;
+                    modem_log_command_line(modem, "GUEST>", "+++");
                     modem->command_mode = true;
                     modem->dte_rx_paused = false;
                     modem_result(modem, MODEM_RESULT_OK);
@@ -1823,6 +1893,9 @@ static void modem_chr_finalize(Object *obj)
     fifo8_destroy(&modem->outbuf);
     g_free(modem->tcp_host);
     g_free(modem->tcp_port);
+    if (modem->command_log) {
+        g_string_free(modem->command_log, true);
+    }
 }
 
 static void modem_chr_class_init(ObjectClass *oc, const void *data)
