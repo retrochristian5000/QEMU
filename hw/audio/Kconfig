@@ -8,11 +8,17 @@ config AZTECH_SG_NOVA16
     default y
     depends on ISA_BUS
 
+config MPU401_UART
+    bool
+    default y
+    depends on ISA_BUS
+
 config SB16
     bool
     default y
     depends on ISA_BUS
     select ISA_GAMEPORT
+    select MPU401_UART
 
 config AWE32
     bool

@@ -28,6 +28,7 @@
 #include "hw/core/irq.h"
 #include "hw/isa/isa.h"
 #include "hw/input/isa-gameport.h"
+#include "hw/audio/mpu401-uart.h"
 #include "sb16-ct1740.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
@@ -66,6 +67,9 @@ struct SB16State {
     bool gameport_enabled;
     bool ct1740; /* Immutable board policy, set during realization. */
     ISADevice *gameport;
+    ISADevice *mpu;
+    uint32_t mpu_iobase;
+    char *midi_chardev;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -199,10 +203,25 @@ static void control (SB16State *s, int hold)
     }
 }
 
+static void sb16_mpu_irq(void *opaque, int n, int level)
+{
+    SB16State *s = opaque;
+
+    if (level) {
+        s->mixer_regs[0x82] |= 4;
+    } else {
+        s->mixer_regs[0x82] &= ~4;
+    }
+    qemu_set_irq(s->pic, !!(s->mixer_regs[0x82] & 7));
+}
+
 static void aux_timer (void *opaque)
 {
     SB16State *s = opaque;
     s->can_write = 1;
+    if (s->ct1740) {
+        s->mixer_regs[0x82] |= 1;
+    }
     qemu_irq_raise (s->pic);
 }
 
@@ -811,6 +830,9 @@ static void complete (SB16State *s)
                 bytes = samples << s->fmt_stereo << (s->fmt_bits == 16);
                 ticks = muldiv64(bytes, NANOSECONDS_PER_SECOND, freq);
                 if (ticks < NANOSECONDS_PER_SECOND / 1024) {
+                    if (s->ct1740) {
+                        s->mixer_regs[0x82] |= 1;
+                    }
                     qemu_irq_raise (s->pic);
                 }
                 else {
@@ -905,13 +927,20 @@ static void legacy_reset (SB16State *s)
 
 static void reset (SB16State *s)
 {
-    qemu_irq_lower (s->pic);
-    if (s->dma_auto) {
-        qemu_irq_raise (s->pic);
+    if (s->ct1740) {
+        /* DSP reset is not a reset of the separate MPU UART. */
+        s->mixer_regs[0x82] &= 4;
+        qemu_set_irq(s->pic, !!(s->mixer_regs[0x82] & 4));
+        timer_del(s->aux_ts);
+        s->can_write = 1;
+    } else {
         qemu_irq_lower (s->pic);
+        if (s->dma_auto) {
+            qemu_irq_raise (s->pic);
+            qemu_irq_lower (s->pic);
+        }
+        s->mixer_regs[0x82] = 0;
     }
-
-    s->mixer_regs[0x82] = 0;
     s->dma_auto = 0;
     s->in_index = 0;
     s->out_data_len = 0;
@@ -1048,7 +1077,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 1) {
             ack = 1;
             s->mixer_regs[0x82] &= ~1;
-            if (!s->ct1740 || !(s->mixer_regs[0x82] & 3)) {
+            if (!s->ct1740 || !(s->mixer_regs[0x82] & 7)) {
                 qemu_irq_lower(s->pic);
             }
         }
@@ -1059,7 +1088,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 2) {
             ack = 1;
             s->mixer_regs[0x82] &= ~2;
-            if (!s->ct1740 || !(s->mixer_regs[0x82] & 3)) {
+            if (!s->ct1740 || !(s->mixer_regs[0x82] & 7)) {
                 qemu_irq_lower(s->pic);
             }
         }
@@ -1473,9 +1502,42 @@ static void sb16_remove_gameport(SB16State *s)
     }
 }
 
+static bool sb16_realize_mpu(SB16State *s, ISABus *bus, Error **errp)
+{
+    DeviceState *mpu = DEVICE(isa_new(TYPE_MPU401_UART));
+
+    object_property_add_child(OBJECT(s), "mpu401", OBJECT(mpu));
+    qdev_prop_set_uint32(mpu, "iobase", s->mpu_iobase);
+    qdev_prop_set_uint32(mpu, "irq", MPU401_UART_SHARED_IRQ);
+    qdev_connect_gpio_out_named(mpu, "irq", 0,
+                                qdev_get_gpio_in_named(DEVICE(s), "midi", 0));
+    if ((s->midi_chardev &&
+         !object_property_set_str(OBJECT(mpu), "chardev",
+                                  s->midi_chardev, errp)) ||
+        !qdev_realize(mpu, BUS(bus), errp)) {
+        object_unparent(OBJECT(mpu));
+        object_unref(OBJECT(mpu));
+        return false;
+    }
+    s->mpu = ISA_DEVICE(mpu);
+    object_unref(OBJECT(mpu));
+    return true;
+}
+
+static void sb16_remove_mpu(SB16State *s)
+{
+    if (s->mpu) {
+        object_unparent(OBJECT(s->mpu));
+        s->mpu = NULL;
+    }
+}
+
 static void sb16_unrealize(DeviceState *dev)
 {
-    sb16_remove_gameport(SB16(dev));
+    SB16State *s = SB16(dev);
+
+    sb16_remove_mpu(s);
+    sb16_remove_gameport(s);
 }
 
 static void sb16_realizefn (DeviceState *dev, Error **errp)
@@ -1489,6 +1551,11 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     if (s->ct1740) {
         if (!sb16_ct1740_validate(s->port, s->irq, s->dma, s->hdma,
                                   s->ver, errp)) {
+            return;
+        }
+
+        if (s->mpu_iobase != 0x300 && s->mpu_iobase != 0x330) {
+            error_setg(errp, "sb16: CT1740 MIDI base must be 0x300 or 0x330");
             return;
         }
 
@@ -1526,6 +1593,11 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
+    if (s->ct1740 && !sb16_realize_mpu(s, bus, errp)) {
+        sb16_remove_gameport(s);
+        return;
+    }
+
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
     s->mixer_regs[0x82] = 2 << 5;
@@ -1537,6 +1609,7 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     s->aux_ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, aux_timer, s);
     if (!s->aux_ts) {
         error_setg(errp, "Could not create SB16 auxiliary timer");
+        sb16_remove_mpu(s);
         sb16_remove_gameport(s);
         return;
     }
@@ -1562,6 +1635,21 @@ static const Property sb16_properties[] = {
     DEFINE_PROP_UINT32 ("dma16",   SB16State, hdma, 5),
     DEFINE_PROP_BOOL("gameport", SB16State, gameport_enabled, true),
 };
+
+static const Property sb16_ct1740_midi_properties[] = {
+    DEFINE_PROP_UINT32("mpu-iobase", SB16State, mpu_iobase, 0x330),
+    DEFINE_PROP_STRING("midi-chardev", SB16State, midi_chardev),
+};
+
+void sb16_ct1740_add_midi_properties(DeviceClass *dc)
+{
+    device_class_set_props(dc, sb16_ct1740_midi_properties);
+}
+
+void sb16_ct1740_midi_init(Object *obj)
+{
+    qdev_init_gpio_in_named(DEVICE(obj), sb16_mpu_irq, "midi", 1);
+}
 
 static void sb16_class_initfn(ObjectClass *klass, const void *data)
 {

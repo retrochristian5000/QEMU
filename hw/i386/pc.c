@@ -565,6 +565,7 @@ static int pc_collect_isa_irq(DeviceState *dev, void *opaque)
         !object_dynamic_cast(obj, TYPE_ISA_SERIAL) &&
         !object_dynamic_cast(obj, TYPE_ISA_PARALLEL) &&
         !object_dynamic_cast(obj, "sb16-generic") &&
+        !object_dynamic_cast(obj, "mpu401-uart-compat") &&
         !object_dynamic_cast(obj, "gus")) {
         return 0;
     }

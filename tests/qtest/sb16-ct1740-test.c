@@ -90,6 +90,8 @@ int main(int argc, char **argv)
                             test_ct1740_invalid);
         qtest_add_data_func("/ct1740/invalid-version", "version=0x040d",
                             test_ct1740_invalid);
+        qtest_add_data_func("/ct1740/invalid-midi-base", "mpu-iobase=0x310",
+                            test_ct1740_invalid);
     }
     return g_test_run();
 }

@@ -31,10 +31,9 @@ all non-PnP SB16 revisions have read-only setup registers. Acknowledging
 one pending PCM interrupt preserves the other pending source. The
 mapped DSP/mixer I/O ports are checked before realization.
 
-The original CT1740 also contains OPL3 FM synthesis, MPU-401 UART MIDI,
-a Creative/Panasonic CD-ROM interface and an analog mixer. These are
-not fully modeled; the shared DSP is not a cycle-accurate CT1741
-implementation, and optional ASP hardware is not reproduced. Migration
+The original CT1740 also contains OPL3 FM synthesis, a Creative/Panasonic
+CD-ROM interface and an analog mixer. These are not fully modeled; the
+shared DSP is not a cycle-accurate CT1741 implementation, and optional ASP hardware is not reproduced. Migration
 is disabled for this new profile pending a board-specific state
 contract. The generic type and its migration state remain unchanged.
 Use ``-device sb16-generic`` for the previous compatibility model.
@@ -46,6 +45,49 @@ Board references:
 * https://dosdays.co.uk/topics/Manufacturers/creative/ct1740.php
 * https://ardent-tool.com/sound/Sound_Blaster_HW_Programming_Guide_1st.pdf
   (chapter 2, interrupt and DMA setup).
+
+MPU-401 UART MIDI
+-----------------
+
+The CT1740 now automatically realizes a reusable
+``mpu401-uart-compat`` ISA child, even with ``-nodefaults``. Its MIDI
+port defaults to 0x330; ``mpu-iobase=0x300`` selects the alternate
+MSEL jumper setting. Register 82h bit 2 reports the MIDI interrupt
+on the same IRQ as the two PCM sources. Reading the MIDI data port
+acknowledges only MIDI; DSP acknowledgments and DSP reset do not
+clear pending MIDI data.
+
+The UART implements reset (FFh), UART entry (3Fh), FEh acknowledgments,
+active-low status bits, raw receive bytes and a timed transmit holding
+register. The MIDI serial frame is modeled at 31.25 kbaud. Reset ACK is
+pollable; UART entry and inbound data assert the MIDI interrupt.
+Receive capacity is a bounded 256-byte emulation buffer, not a claim
+about the CT1741's physical FIFO depth. No intelligent MPU-401 mode,
+host synthesizer, MIDI message interpretation, electrical signaling,
+or separate SB-MIDI DSP mode is provided.
+
+A raw character backend is optional. Without one, MIDI output leaves
+the virtual UART without producing sound. To capture outgoing bytes
+to a QEMU ring buffer without attaching host hardware::
+
+    -audiodev none,id=snd -chardev ringbuf,id=midi,size=4096 \
+    -device sb16,audiodev=snd,midi-chardev=midi
+
+The standalone interface can also be used on an ISA machine::
+
+    -chardev ringbuf,id=midi,size=4096 \
+    -device mpu401-uart-compat,iobase=0x330,irq=9,chardev=midi
+
+Other sound boards can use the same child device and wire its named IRQ
+output to their own mixer/interrupt controller with the internal
+shared-IRQ sentinel. Do not add a standalone device on top of the
+CT1740's MIDI ports; conflicting I/O mappings fail realization.
+The standalone device and CT1740 are currently unmigratable.
+The generic SB16 remains unchanged.
+
+Reference: Creative Sound Blaster Series Hardware Programming Guide,
+chapter 2 (interrupt sharing) and chapter 5 (MPU-401 UART mode),
+https://pdos.csail.mit.edu/6.828/2018/readings/hardware/SoundBlaster.pdf
 
 Later ISA Plug and Play
 -----------------------

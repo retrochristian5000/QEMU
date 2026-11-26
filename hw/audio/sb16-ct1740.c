@@ -53,15 +53,17 @@ static void sb16_ct1740_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->desc = "Creative Sound Blaster 16 CT1740 (experimental PCM profile)";
+    dc->desc = "Creative Sound Blaster 16 CT1740 (experimental PCM and MIDI)";
     dc->fw_name = "creative-ct1740";
     dc->hotpluggable = false;
     dc->vmsd = &vmstate_ct1740;
+    sb16_ct1740_add_midi_properties(dc);
 }
 
 static const TypeInfo sb16_ct1740_info = {
     .name = TYPE_CREATIVE_SB16,
     .parent = TYPE_SB16_GENERIC,
+    .instance_init = sb16_ct1740_midi_init,
     .class_init = sb16_ct1740_class_init,
 };
 
