@@ -3120,7 +3120,7 @@ static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
     k->device_id = CIRRUS_ID_CLGD5446;
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Cirrus CLGD 54xx VGA";
+    dc->desc = "Cirrus Logic CL-GD5446 PCI VGA";
     dc->vmsd = &vmstate_pci_cirrus_vga;
     device_class_set_props(dc, pci_vga_cirrus_properties);
     dc->hotpluggable = false;
