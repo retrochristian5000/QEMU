@@ -176,8 +176,10 @@ asserting carrier. A local-only virtual telephone exchange should be
 tested first. Any real network or PSTN route must be explicitly
 configured by the host operator, with destination restrictions;
 guest dial strings must not create arbitrary host connections.
-No SIP dependency, audio transport or telephone service is enabled
-by this implementation.
+The optional standalone Liblinphone SDK helper is described in
+``tools/sip/README.rst``. It does not yet implement a telephone service
+or connect to the modem. No SIP registration, audio transport or
+telephone calls are enabled by the modem implementation.
 
 Experimental Intel 440BX PC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

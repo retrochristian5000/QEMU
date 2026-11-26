@@ -138,6 +138,7 @@ meson_options_help() {
   printf "%s\n" '  libdw           debuginfo support'
   printf "%s\n" '  libiscsi        libiscsi userspace initiator'
   printf "%s\n" '  libkeyutils     Linux keyutils support'
+  printf "%s\n" '  liblinphone     Standalone Liblinphone SDK helper (off by default)'
   printf "%s\n" '  libnfs          libnfs block device driver'
   printf "%s\n" '  libpmem         libpmem support'
   printf "%s\n" '  libsamplerate   Experimental libsamplerate playback (off by default)'
@@ -374,6 +375,8 @@ _meson_option_parse() {
     --disable-libiscsi) printf "%s" -Dlibiscsi=disabled ;;
     --enable-libkeyutils) printf "%s" -Dlibkeyutils=enabled ;;
     --disable-libkeyutils) printf "%s" -Dlibkeyutils=disabled ;;
+    --enable-liblinphone) printf "%s" -Dliblinphone=enabled ;;
+    --disable-liblinphone) printf "%s" -Dliblinphone=disabled ;;
     --enable-libnfs) printf "%s" -Dlibnfs=enabled ;;
     --disable-libnfs) printf "%s" -Dlibnfs=disabled ;;
     --enable-libpmem) printf "%s" -Dlibpmem=enabled ;;
