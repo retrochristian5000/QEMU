@@ -1753,6 +1753,30 @@ static void test_piix4_timing_registers(void)
     qtest_quit(qts);
 }
 
+static void assert_single_legacy_drive_pair(const char *tree)
+{
+    g_autoptr(GRegex) hd = g_regex_new("dev: ide-hd,", 0, 0, NULL);
+    g_autoptr(GRegex) cd = g_regex_new("dev: ide-cd,", 0, 0, NULL);
+    g_auto(GStrv) hd_parts = g_regex_split(hd, tree, 0);
+    g_auto(GStrv) cd_parts = g_regex_split(cd, tree, 0);
+
+    g_assert_cmpuint(g_strv_length(hd_parts), ==, 2);
+    g_assert_cmpuint(g_strv_length(cd_parts), ==, 2);
+}
+
+static void test_piix4_onboard_drive_pair(void)
+{
+    g_autofree char *disk = g_shell_quote(tmp_path[0]);
+    g_autofree char *cd = g_shell_quote(tmp_path[1]);
+    QTestState *qts = qtest_initf("-M pc,x-south-bridge=piix4-isa "
+                                  "-nodefaults -snapshot -hda %s -cdrom %s",
+                                  disk, cd);
+    g_autofree char *tree = qtest_hmp(qts, "info qtree");
+
+    assert_single_legacy_drive_pair(tree);
+    qtest_quit(qts);
+}
+
 static void test_legacy_drive_controller(gconstpointer opaque)
 {
     const char *model = opaque;
@@ -1771,6 +1795,7 @@ static void test_legacy_drive_controller(gconstpointer opaque)
                       "-cdrom %s -hda %s -device %s,id=alt "
                       "-legacy-drive-controller alt", cd, disk, model);
     tree = qtest_hmp(qts, "info qtree");
+    assert_single_legacy_drive_pair(tree);
     g_assert_true(g_regex_match_simple(
         "bus: alt\\.0\\s+type IDE\\s+dev: ide-hd,", tree, 0, 0));
     g_assert_true(g_regex_match_simple(
@@ -1839,6 +1864,8 @@ int main(int argc, char **argv)
         qtest_has_device("piix4-isa")) {
         qtest_add_func("/ide/piix4/timing-registers",
                        test_piix4_timing_registers);
+        qtest_add_func("/ide/piix4/onboard-drive-pair",
+                       test_piix4_onboard_drive_pair);
     }
     qtest_add_func("/ide/pic/model-names", test_pic_model_names);
     qtest_add_func("/ide/pic/special-mask", test_pic_ide_special_mask);
