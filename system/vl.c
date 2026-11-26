@@ -79,6 +79,7 @@
 #include "qemu/bitmap.h"
 #include "qemu/log.h"
 #include "system/blockdev.h"
+#include "system/legacy-drive.h"
 #include "hw/block/block.h"
 #include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
@@ -661,7 +662,12 @@ static int drive_init_func(void *opaque, QemuOpts *opts, Error **errp)
 {
     BlockInterfaceType *block_default_type = opaque;
 
-    return drive_new(opts, *block_default_type, errp) == NULL;
+    DriveInfo *drive = drive_new(opts, *block_default_type, errp);
+
+    if (drive) {
+        legacy_drive_record_backend(opts, drive);
+    }
+    return drive == NULL;
 }
 
 static int drive_enable_snapshot(void *opaque, QemuOpts *opts, Error **errp)
@@ -715,6 +721,10 @@ static void configure_blockdev(BlockdevOptionsQueue *bdo_queue,
         loc_pop(&bdo->loc);
         qapi_free_BlockdevOptions(bdo->bdo);
         g_free(bdo);
+    }
+    legacy_drive_prepare();
+    if (legacy_drive_has_controller()) {
+        default_cdrom = 0;
     }
     if (snapshot) {
         qemu_opts_foreach(qemu_find_opts("drive"), drive_enable_snapshot,
@@ -2861,6 +2871,7 @@ void qmp_x_exit_preconfig(Error **errp)
 
     qemu_init_board();
     qemu_create_cli_devices();
+    legacy_drive_attach();
     if (!qemu_machine_creation_done(errp)) {
         return;
     }
@@ -2979,7 +2990,8 @@ void qemu_init(int argc, char **argv)
             break;
         if (argv[optind][0] != '-') {
             loc_set_cmdline(argv, optind, 1);
-            drive_add(IF_DEFAULT, 0, argv[optind++], HD_OPTS);
+            legacy_drive_record(drive_add(IF_DEFAULT, 0, argv[optind++],
+                                          HD_OPTS), 0, false);
         } else {
             const QEMUOption *popt;
             QemuOpts *opts;
@@ -2998,8 +3010,10 @@ void qemu_init(int argc, char **argv)
             case QEMU_OPTION_hdb:
             case QEMU_OPTION_hdc:
             case QEMU_OPTION_hdd:
-                drive_add(IF_DEFAULT, popt->index - QEMU_OPTION_hda, optarg,
-                          HD_OPTS);
+                legacy_drive_record(
+                    drive_add(IF_DEFAULT, popt->index - QEMU_OPTION_hda,
+                              optarg, HD_OPTS),
+                    popt->index - QEMU_OPTION_hda, false);
                 break;
             case QEMU_OPTION_blockdev:
                 {
@@ -3073,7 +3087,11 @@ void qemu_init(int argc, char **argv)
                 qdict_put_str(machine_opts_dict, "dtb", optarg);
                 break;
             case QEMU_OPTION_cdrom:
-                drive_add(IF_DEFAULT, 2, optarg, CDROM_OPTS);
+                legacy_drive_record(drive_add(IF_DEFAULT, 2, optarg,
+                                              CDROM_OPTS), 2, true);
+                break;
+            case QEMU_OPTION_legacy_drive_controller:
+                legacy_drive_select_controller(optarg);
                 break;
             case QEMU_OPTION_boot:
                 machine_parse_property_opt(qemu_find_opts("boot-opts"), "boot", optarg);
