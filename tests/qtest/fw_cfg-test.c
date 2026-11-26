@@ -16,6 +16,7 @@
 #include "standard-headers/linux/qemu_fw_cfg.h"
 #include "libqos/fw_cfg.h"
 #include "qemu/bswap.h"
+#include "qemu/units.h"
 
 static uint64_t ram_size = 128 << 20;
 static uint16_t nb_cpus = 1;
@@ -273,11 +274,65 @@ static void test_fw_cfg_splash_time(void)
     qtest_quit(s);
 }
 
+/*
+ * fw_cfg contains the unrelocated ACPI tables. SeaBIOS will fix addresses
+ * and checksums later; test the actual serialized revision and flags here.
+ */
+static void test_acpi1_fadt(gconstpointer opaque)
+{
+    bool strict = GPOINTER_TO_INT(opaque);
+    QTestState *s = qtest_init(strict ?
+        "-M pc -smp 1 -global PIIX4_PM.strict-acpi1-fadt=on" :
+        "-M pc -smp 1 -global PIIX4_PM.strict-acpi1-fadt=off");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t rsdp[20];
+    uint8_t first;
+    size_t len;
+    size_t off;
+    uint32_t dsdt_len;
+    g_autofree uint8_t *tables = NULL;
+
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/rsdp",
+                                      rsdp, sizeof(rsdp)), ==, sizeof(rsdp));
+    g_assert_cmpmem(rsdp, 8, "RSD PTR ", 8);
+    g_assert_cmpuint(rsdp[15], ==, 0);
+
+    len = qfw_cfg_get_file(fw_cfg, "etc/acpi/tables", &first, 1);
+    g_assert_cmpuint(len, >=, 64 + 36 + 116);
+    g_assert_cmpuint(len, <=, 16 * MiB);
+    tables = g_malloc(len);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/tables",
+                                      tables, len), ==, len);
+
+    /* The PC builder emits FACS, DSDT, then FADT in this order. */
+    g_assert_cmpmem(tables, 4, "FACS", 4);
+    g_assert_cmpuint(ldl_le_p(tables + 4), ==, 64);
+    g_assert_cmpmem(tables + 64, 4, "DSDT", 4);
+    g_assert_cmpuint(tables[64 + 8], ==, 1);
+    dsdt_len = ldl_le_p(tables + 64 + 4);
+    g_assert_cmpuint(dsdt_len, >=, 36);
+    g_assert_cmpuint(dsdt_len, <=, len - 64 - 116);
+    off = 64 + dsdt_len;
+    g_assert_cmpmem(tables + off, 4, "FACP", 4);
+    g_assert_cmpuint(ldl_le_p(tables + off + 4), ==, 116);
+    g_assert_cmpuint(tables[off + 8], ==, 1);
+    g_assert_cmphex(ldl_le_p(tables + off + 112), ==,
+                    strict ? 0x000000a5 : 0x000080a5);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    if (qtest_has_machine("pc") && qtest_has_device("PIIX4_PM")) {
+        qtest_add_data_func("fw_cfg/acpi1-fadt/default", GINT_TO_POINTER(0),
+                            test_acpi1_fadt);
+        qtest_add_data_func("fw_cfg/acpi1-fadt/strict", GINT_TO_POINTER(1),
+                            test_acpi1_fadt);
+    }
     qtest_add_func("fw_cfg/read_boundaries", test_fw_cfg_read_boundaries);
     qtest_add_func("fw_cfg/id", test_fw_cfg_id);
     qtest_add_func("fw_cfg/uuid", test_fw_cfg_uuid);
