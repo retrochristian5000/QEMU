@@ -89,6 +89,14 @@ static int piix_post_load(void *opaque, int version_id)
     PIIXState *s = opaque;
 
     /*
+     * Older streams could contain writes to reserved PIRQRC bits.
+     * Canonicalize the register image before rebuilding the routing map.
+     */
+    for (int i = 0; i < PIIX_NUM_PIRQS; i++) {
+        s->dev.config[PIIX_PIRQCA + i] &= 0x8f;
+    }
+
+    /*
      * Because the i8259 has not been deserialized yet, qemu_irq_raise
      * might bring the system to a different state than the saved one;
      * for example, the interrupt could be masked but the i8259 would
