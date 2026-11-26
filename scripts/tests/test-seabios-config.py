@@ -135,6 +135,8 @@ class SeaBiosConfigTests(unittest.TestCase):
             firmware = roms / 'seabios'
             firmware.mkdir(parents=True)
             shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            shutil.copyfile(ROOT / 'roms' / 'seabios-toolchain-id.py',
+                            roms / 'seabios-toolchain-id.py')
             (roms / 'config.seabios-128k').write_text(
                 'CONFIG_ROM_SIZE=128\n', encoding='utf-8')
 
@@ -205,6 +207,26 @@ class SeaBiosConfigTests(unittest.TestCase):
             build('Os', 'alternate-', '1', 'RequiredOnlyFlat', 'CompactCode')
             self.assertEqual(output.read_text(), 'Os\nalternate-\n')
             self.assertIn('clang_inline_profile=RequiredOnlyFlat', stamp.read_text().splitlines())
+
+            # A compiler update in place must invalidate the firmware even
+            # when the path and profile have not changed.
+            tools = root / 'tools'
+            tools.mkdir()
+            prefix = str(tools / 'i386-none-elf-')
+            compiler = pathlib.Path(prefix + 'gcc')
+            compiler.write_text('#!/bin/sh\nexit 0\n')
+            compiler.chmod(0o700)
+            build('Os', prefix)
+            first = stamp.read_text()
+            output.write_text('preserve current toolchain\n')
+            build('Os', prefix)
+            self.assertEqual(output.read_text(), 'preserve current toolchain\n')
+            compiler.write_text('#!/bin/sh\nexit 1\n')
+            build('Os', prefix)
+            self.assertEqual(output.read_text(), 'Os\n' + prefix + '\n')
+            self.assertNotEqual(first, stamp.read_text())
+            self.assertIn('toolchain_id=', stamp.read_text())
+
             self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
 
     def test_explicit_source_and_tool_handoff(self):
@@ -215,6 +237,8 @@ class SeaBiosConfigTests(unittest.TestCase):
             firmware = root / 'selected-firmware'
             firmware.mkdir()
             shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            shutil.copyfile(ROOT / 'roms' / 'seabios-toolchain-id.py',
+                            roms / 'seabios-toolchain-id.py')
             (roms / 'config.seabios-128k').write_text('CONFIG_ROM_SIZE=128\n')
             (firmware / 'Makefile').write_text(
                 'all:\n\t@printf "%s\\n" "$(CC)" "$(HOSTCC)" "$(LD)" '
@@ -240,6 +264,8 @@ class SeaBiosConfigTests(unittest.TestCase):
             firmware.mkdir(parents=True)
             (root / 'pc-bios').mkdir()
             shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            shutil.copyfile(ROOT / 'roms' / 'seabios-toolchain-id.py',
+                            roms / 'seabios-toolchain-id.py')
             (roms / 'config.vga-cirrus').write_text('CONFIG_VGA_CIRRUS=y\n')
 
             def git(*args):
