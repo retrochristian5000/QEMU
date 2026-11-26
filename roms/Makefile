@@ -174,12 +174,15 @@ build-seabios-config-%: config.%
 			revision=$$(unset GIT_COMMON_DIR; \
 				"$(GIT)" --git-dir="$$source_dir/.git" rev-parse --verify HEAD); \
 		fi; \
+		toolchain_id=$$(python3 ./seabios-toolchain-id.py "$(SEABIOS_CROSS_PREFIX)" "$(SEABIOS_HOSTCC)"); \
 		stamp="$$out/.whp-seabios-source"; \
 		if printf '%s\n' \
 			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
 			"host_cc=$(SEABIOS_HOSTCC)" \
+			"toolchain_id=$$toolchain_id" \
+			"extra_version=$(FIRMWARE_EXTRAVERSION)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
@@ -187,7 +190,7 @@ build-seabios-config-%: config.%
 			exit 0; \
 		fi; \
 		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
-			printf 'WHP SeaBIOS: rebuilding %s for source %s\n' "$*" "$$revision"; \
+			printf 'WHP SeaBIOS: rebuilding %s for source or toolchain change (%s)\n' "$*" "$$revision"; \
 			stale=$$(mktemp -d "$$out.stale.XXXXXX"); \
 			trap 'rm -rf -- "$$stale"' EXIT; \
 			mv "$$out" "$$stale/"; \
@@ -199,6 +202,8 @@ build-seabios-config-%: config.%
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
 			"host_cc=$(SEABIOS_HOSTCC)" \
+			"toolchain_id=$$toolchain_id" \
+			"extra_version=$(FIRMWARE_EXTRAVERSION)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
