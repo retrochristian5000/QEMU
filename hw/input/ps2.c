@@ -1285,6 +1285,7 @@ static void ps2_kbd_class_init(ObjectClass *klass, const void *data)
     PS2DeviceClass *ps2dc = PS2_DEVICE_CLASS(klass);
 
     dc->realize = ps2_kbd_realize;
+    dc->desc = "PS/2 keyboard protocol device";
     dc->unrealize = ps2_kbd_unrealize;
     resettable_class_set_parent_phases(rc, NULL, ps2_kbd_reset_hold, NULL,
                                        &ps2dc->parent_phases);
@@ -1305,6 +1306,7 @@ static void ps2_mouse_class_init(ObjectClass *klass, const void *data)
     PS2DeviceClass *ps2dc = PS2_DEVICE_CLASS(klass);
 
     dc->realize = ps2_mouse_realize;
+    dc->desc = "PS/2 mouse protocol device";
     dc->unrealize = ps2_mouse_unrealize;
     resettable_class_set_parent_phases(rc, NULL, ps2_mouse_reset_hold, NULL,
                                        &ps2dc->parent_phases);
