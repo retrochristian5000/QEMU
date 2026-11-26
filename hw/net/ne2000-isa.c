@@ -114,17 +114,27 @@ static void isa_ne2000_realizefn(DeviceState *dev, Error **errp)
     }
 
     /*
-     * Refuse to obscure an already mapped ISA device. This is a check
-     * of current I/O decoding, not a complete bus resource allocator.
+     * The system I/O root is itself a terminating fallback region for
+     * unassigned ports. It is not a device conflict. Check every port
+     * so an unassigned prefix cannot hide a later occupied subrange.
+     * This checks current decoding, not future BAR or device mappings.
      */
-    MemoryRegionSection section = memory_region_find(
-        bus->address_space_io, isa->iobase, NE2000_ISA_IO_SIZE);
-    if (section.mr) {
-        error_setg(errp, "NE2000 ISA I/O range 0x%x-0x%x overlaps '%s'",
-                   isa->iobase, isa->iobase + NE2000_ISA_IO_SIZE - 1,
-                   memory_region_name(section.mr));
+    for (unsigned offset = 0; offset < NE2000_ISA_IO_SIZE; offset++) {
+        MemoryRegionSection section = memory_region_find(
+            bus->address_space_io, isa->iobase + offset, 1);
+
+        if (!section.mr) {
+            continue;
+        }
+        if (section.mr != bus->address_space_io) {
+            error_setg(errp, "NE2000 ISA I/O range 0x%x-0x%x overlaps '%s' "
+                       "at port 0x%x",
+                       isa->iobase, isa->iobase + NE2000_ISA_IO_SIZE - 1,
+                       memory_region_name(section.mr), isa->iobase + offset);
+            memory_region_unref(section.mr);
+            return;
+        }
         memory_region_unref(section.mr);
-        return;
     }
 
     /*
