@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
 #include "libqtest.h"
+#include "qobject/qdict.h"
 #include "hw/pci/pci_regs.h"
 
 static uint8_t bx_readb(QTestState *s, unsigned reg)
@@ -24,6 +25,12 @@ static void test_i440bx_config(void)
     QTestState *s = qtest_init("-machine pc-i440bx -m 256M "
                                "-bios bios-256k.bin -nic none");
     unsigned i;
+    QDict *reply = qtest_qmp(s,
+        "{'execute':'qom-get','arguments':"
+        "{'path':'/machine/i440fx','property':'type'}}");
+
+    g_assert_cmpstr(qdict_get_str(reply, "return"), ==, "i440BX-pcihost");
+    qobject_unref(reply);
 
     qtest_outl(s, 0xcf8, 0x80000000);
     g_assert_cmphex(qtest_inl(s, 0xcfc), ==, 0x71928086);

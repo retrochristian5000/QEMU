@@ -301,7 +301,23 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
     PCIBus *b;
     PCIDevice *d;
     PCII440FXState *f;
+    ObjectClass *pci_class;
     unsigned i;
+
+    /* The memory mapping code below requires the shared FX/BX layout. */
+    pci_class = s->pci_type ? object_class_by_name(s->pci_type) : NULL;
+    if (!pci_class || object_class_is_abstract(pci_class) ||
+        !object_class_dynamic_cast(pci_class, TYPE_I440FX_PCI_DEVICE)) {
+        error_setg(errp, "Invalid FX-family PCI host function '%s'",
+                   s->pci_type ?: "(unset)");
+        return;
+    }
+    if (!s->io_memory || !s->pci_address_space ||
+        !s->ram_memory || !s->system_memory) {
+        error_setg(errp, "PCI host requires board RAM, system, PCI and I/O "
+                   "memory links");
+        return;
+    }
 
     memory_region_add_subregion(s->io_memory, 0xcf8, &phb->conf_mem);
     sysbus_init_ioports(sbd, 0xcf8, 4);
@@ -425,6 +441,7 @@ static void i440fx_pcihost_class_init(ObjectClass *klass, const void *data)
     hc->root_bus_path = i440fx_pcihost_root_bus_path;
     dc->realize = i440fx_pcihost_realize;
     dc->fw_name = "pci";
+    dc->desc = "Intel 440FX conventional PCI host controller";
     device_class_set_props(dc, i440fx_props);
     /* Reason: needs to be wired up by pc_init1 */
     dc->user_creatable = false;

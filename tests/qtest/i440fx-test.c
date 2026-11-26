@@ -18,6 +18,7 @@
 #include "libqos/pci.h"
 #include "libqos/pci-pc.h"
 #include "hw/pci/pci_regs.h"
+#include "qobject/qdict.h"
 
 #define BROKEN 1
 
@@ -441,7 +442,12 @@ static void test_i440fx_timing_config(void)
                                 "-global i440FX.strict-timing-config=on");
     QPCIBus *bus = qpci_new_pc(qts, NULL);
     QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(0, 0));
+    QDict *reply = qtest_qmp(qts,
+        "{'execute':'qom-get','arguments':"
+        "{'path':'/machine/i440fx','property':'type'}}");
 
+    g_assert_cmpstr(qdict_get_str(reply, "return"), ==, "i440FX-pcihost");
+    qobject_unref(reply);
     g_assert_nonnull(dev);
     g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==, 0x12378086);
     g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x80);

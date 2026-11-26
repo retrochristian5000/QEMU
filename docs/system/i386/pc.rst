@@ -86,6 +86,13 @@ The fork includes an opt-in ``pc-i440bx`` machine with the 82443BX
 host bridge in its AGP-disabled strap configuration (8086:7192) and
 the existing PIIX4 southbridge. The legacy PC configuration mechanism
 and PAM/compatible SMRAM memory mappings are shared with i440FX.
+The host-facing QOM type is ``i440BX-pcihost`` and its PCI-facing
+function is ``i440BX``. The existing ``i440FX-pcihost`` remains the
+440FX machine's controller. The legacy QOM path ``/machine/i440fx``
+and root bus ``pci.0`` are intentionally retained on both machines;
+ACPI discovers the shared host base type. Neither host is a standalone
+expansion card: select the appropriate machine rather than adding a
+second host via ``-device``.
 
 This is an initial functional subset, not an electrically complete
 440BX motherboard. RAM is fixed at machine creation (8 MiB through

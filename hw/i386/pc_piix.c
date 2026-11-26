@@ -102,7 +102,8 @@ static void piix_intx_routing_notifier_xen(PCIDevice *dev)
 }
 
 /* PC hardware initialisation */
-static void pc_init1(MachineState *machine, const char *pci_type)
+static void pc_init1(MachineState *machine, const char *host_type,
+                     const char *pci_type)
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -196,7 +197,8 @@ static void pc_init1(MachineState *machine, const char *pci_type)
     pci_memory = g_new(MemoryRegion, 1);
     memory_region_init(pci_memory, NULL, "pci", UINT64_MAX);
 
-    phb = OBJECT(qdev_new(TYPE_I440FX_PCI_HOST_BRIDGE));
+    phb = OBJECT(qdev_new(host_type));
+    /* Preserve the existing QOM path for firmware and migration users. */
     object_property_add_child(OBJECT(machine), "i440fx", phb);
     object_property_set_link(phb, PCI_HOST_PROP_RAM_MEM,
                              OBJECT(ram_memory), &error_fatal);
@@ -382,7 +384,8 @@ static void pc_xen_hvm_init(MachineState *machine)
         exit(1);
     }
 
-    pc_init1(machine, xen_igd_gfx_pt_enabled()
+    pc_init1(machine, TYPE_I440FX_PCI_HOST_BRIDGE,
+                      xen_igd_gfx_pt_enabled()
                       ? TYPE_IGD_PASSTHROUGH_I440FX_PCI_DEVICE
                       : TYPE_I440FX_PCI_DEVICE);
 
@@ -393,7 +396,7 @@ static void pc_xen_hvm_init(MachineState *machine)
 
 static void pc_i440fx_init(MachineState *machine)
 {
-    pc_init1(machine, TYPE_I440FX_PCI_DEVICE);
+    pc_init1(machine, TYPE_I440FX_PCI_HOST_BRIDGE, TYPE_I440FX_PCI_DEVICE);
 }
 
 #define DEFINE_I440FX_MACHINE(major, minor) \
@@ -462,7 +465,7 @@ static void pc_i440bx_init(MachineState *machine)
         error_report("pc-i440bx requires the PIIX4 southbridge");
         exit(EXIT_FAILURE);
     }
-    pc_init1(machine, TYPE_I440BX_PCI_DEVICE);
+    pc_init1(machine, TYPE_I440BX_PCI_HOST_BRIDGE, TYPE_I440BX_PCI_DEVICE);
 }
 
 static void pc_i440bx_machine_options(MachineClass *m)

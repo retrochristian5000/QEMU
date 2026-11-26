@@ -179,9 +179,43 @@ static const TypeInfo i440bx_info = {
     .class_init = i440bx_class_init,
 };
 
+/* The host side shares the conventional PCI transport, not the FX identity. */
+static DeviceRealize i440bx_parent_host_realize;
+
+static void i440bx_host_realize(DeviceState *dev, Error **errp)
+{
+    g_autofree char *type = object_property_get_str(
+        OBJECT(dev), I440FX_HOST_PROP_PCI_TYPE, errp);
+
+    if (!type) {
+        return;
+    }
+    if (strcmp(type, TYPE_I440BX_PCI_DEVICE)) {
+        error_setg(errp, "440BX PCI host requires the Intel 82443BX device");
+        return;
+    }
+    i440bx_parent_host_realize(dev, errp);
+}
+
+static void i440bx_host_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->desc = "Intel 440BX PCI host controller (AGP disabled)";
+    device_class_set_parent_realize(dc, i440bx_host_realize,
+                                    &i440bx_parent_host_realize);
+}
+
+static const TypeInfo i440bx_host_info = {
+    .name = TYPE_I440BX_PCI_HOST_BRIDGE,
+    .parent = TYPE_I440FX_PCI_HOST_BRIDGE,
+    .class_init = i440bx_host_class_init,
+};
+
 static void i440bx_register_types(void)
 {
     type_register_static(&i440bx_info);
+    type_register_static(&i440bx_host_info);
 }
 
 type_init(i440bx_register_types)
