@@ -202,6 +202,27 @@ References: 3740 hardware table and Rockwell command manual 1048,
 sections 5.2, 6.2 and 6.5 (links above). Windows' original Unimodem
 fingerprint is still unverified.
 
+DataPort XON/XOFF pass-through
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Both Express models document ``\X0`` (default, local processing only)
+and ``\X1`` (local processing plus forwarding). With ``\Q1``
+selected in online data mode, DTE XOFF (0x13) pauses delivery of
+received payload to the guest, and XON (0x11) resumes it.
+With ``\X1`` the same byte also enters the TCP transmit queue.
+The existing receive buffer is retained and TCP backpressure applies
+when it fills. No characters are intercepted under hardware flow
+control (``\Q3``) or in command mode. Changing the setting does not
+alter the ordinary Hayes X result-code control. ``AT&V`` reports the
+pass-through setting, and factory or hardware reset restores ``\X0``.
+Hangup and leaving online data mode clear the paused state.
+
+This implements guest-to-modem software pacing and optional forwarding
+over the TCP substitute, not full bidirectional XON/XOFF generation,
+remote modem negotiation or analogue flow control. The reference's
+example uses \X7, but its command table documents only 0 and 1;
+other values return ERROR. Other modem profiles remain unchanged.
+
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,

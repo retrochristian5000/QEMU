@@ -11,6 +11,10 @@
 #include "qemu/config-file.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
+#include "qemu/sockets.h"
+#include "qemu/main-loop.h"
+#include "io/channel-socket.h"
+#include "qapi/qapi-types-sockets.h"
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 #include "chardev/modem.h"
@@ -38,7 +42,8 @@ static void modem_read(void *opaque, const uint8_t *buf, int size)
     out->buf[out->len] = '\0';
 }
 
-static Chardev *modem_new(const char *label, const char *model)
+static Chardev *modem_new_with_port(const char *label, const char *model,
+                                   const char *port)
 {
     QemuOpts *opts;
     Chardev *chr;
@@ -50,9 +55,18 @@ static Chardev *modem_new(const char *label, const char *model)
         qemu_opt_set(opts, "model", model, &error_abort);
     }
 
+    if (port) {
+        qemu_opt_set(opts, "host", "127.0.0.1", &error_abort);
+        qemu_opt_set(opts, "port", port, &error_abort);
+    }
     chr = qemu_chr_new_from_opts(opts, NULL, &error_abort);
     qemu_opts_del(opts);
     return chr;
+}
+
+static Chardev *modem_new(const char *label, const char *model)
+{
+    return modem_new_with_port(label, model, NULL);
 }
 
 static const char *modem_command(CharFrontend *fe, ModemOutput *out,
@@ -497,6 +511,130 @@ static void test_dataport_3740_fax_discovery(void)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_xon_xoff_config(gconstpointer opaque)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-xon-config", opaque);
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\X0");
+    assert_response_contains(modem_command(&fe, &out, "AT\\Q1\\X1X4\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\X1");
+    assert_response_contains(modem_command(&fe, &out, "AT\\X7\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\X1");
+    assert_response_contains(modem_command(&fe, &out, "AT\\X0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\X0");
+    modem_command(&fe, &out, "AT\\X1\r");
+    modem_command(&fe, &out, "AT&F\r");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\X0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
+static void modem_test_wait_output(ModemOutput *out, const char *expected)
+{
+    int64_t deadline = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
+
+    while (!strstr(out->buf, expected) &&
+           g_get_monotonic_time() < deadline) {
+        main_loop_wait(true);
+        g_usleep(1000);
+    }
+    assert_response_contains(out->buf, expected);
+}
+
+static void modem_test_expect_peer(QIOChannel *peer, const char *expected)
+{
+    uint8_t buf[8];
+    size_t len = strlen(expected);
+    size_t received = 0;
+    int64_t deadline = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
+
+    g_assert_cmpuint(len, <=, sizeof(buf));
+    while (received < len && g_get_monotonic_time() < deadline) {
+        ssize_t ret = qio_channel_read(peer, buf + received,
+                                       len - received, &error_abort);
+        if (ret == QIO_CHANNEL_ERR_BLOCK) {
+            main_loop_wait(true);
+            g_usleep(1000);
+        } else {
+            g_assert_cmpint(ret, >, 0);
+            received += ret;
+        }
+    }
+    g_assert_cmpuint(received, ==, len);
+    g_assert_cmpmem(buf, received, expected, len);
+}
+
+static void test_dataport_xon_xoff_transport(gconstpointer opaque)
+{
+    int mode = GPOINTER_TO_INT(opaque);
+    bool software = mode != 2;
+    bool forward = mode != 0;
+    SocketAddress address = {
+        .type = SOCKET_ADDRESS_TYPE_INET,
+        .u.inet = { .host = "127.0.0.1", .port = "0" },
+    };
+    QIOChannelSocket *listener = qio_channel_socket_new();
+    QIOChannel *peer;
+    SocketAddress *bound;
+    Error *err = NULL;
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr;
+    int64_t deadline;
+
+    if (qio_channel_socket_listen_sync(listener, &address, 1, &err) < 0) {
+        g_test_skip(error_get_pretty(err));
+        error_free(err);
+        object_unref(OBJECT(listener));
+        return;
+    }
+    bound = qio_channel_socket_get_local_address(listener, &error_abort);
+    chr = modem_new_with_port("modem-xon-transport", "att-paradyne-3740",
+                              bound->u.inet.port);
+    qapi_free_SocketAddress(bound);
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, software ?
+                             (forward ? "AT\\Q1\\X1\r" : "AT\\Q1\\X0\r") :
+                             "AT\\Q3\\X0\r"), "\r\nOK\r\n");
+    modem_command(&fe, &out, "ATD0\r");
+    modem_test_wait_output(&out, "CONNECT");
+    peer = QIO_CHANNEL(qio_channel_socket_accept(listener, &error_abort));
+    g_assert_true(qio_channel_set_blocking(peer, false, &error_abort));
+    object_unref(OBJECT(listener));
+
+    modem_command(&fe, &out, "\x13" "A");
+    modem_test_expect_peer(peer, forward ? "\x13" "A" : "A");
+    g_assert_cmpint(qio_channel_write(peer, "held", 4, &error_abort), ==, 4);
+    if (software) {
+        /* Give the local read watch a chance to queue the paused bytes. */
+        deadline = g_get_monotonic_time() + 50 * G_TIME_SPAN_MILLISECOND;
+        while (g_get_monotonic_time() < deadline) {
+            main_loop_wait(true);
+            g_assert_cmpuint(out.len, ==, 0);
+            g_usleep(1000);
+        }
+    } else {
+        modem_test_wait_output(&out, "held");
+    }
+
+    modem_command(&fe, &out, "\x11" "B");
+    modem_test_expect_peer(peer, forward ? "\x11" "B" : "B");
+    if (software) {
+        modem_test_wait_output(&out, "held");
+    }
+
+    modem_command(&fe, &out, "+++");
+    assert_response_contains(modem_command(&fe, &out, "ATH\r"),
+                             "\r\nOK\r\n");
+    modem_frontend_cleanup(&fe, chr);
+    object_unref(OBJECT(peer));
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -507,6 +645,8 @@ static void test_generic_modem_rejects_paradyne_controls(void)
 
     modem_frontend_init(&fe, &out, chr);
     response = modem_command(&fe, &out, "AT+FCLASS=2\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT\\X1\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\Q3\r");
     assert_response_contains(response, "\r\nERROR\r\n");
@@ -528,6 +668,7 @@ static void test_generic_modem_rejects_paradyne_controls(void)
 int main(int argc, char **argv)
 {
     qemu_init_main_loop(&error_abort);
+    socket_init();
     g_test_init(&argc, &argv, NULL);
     module_call_init(MODULE_INIT_QOM);
     qemu_add_opts(&qemu_chardev_opts);
@@ -543,6 +684,18 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_data_func("/modem/paradyne/xon-config-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_xon_xoff_config);
+    g_test_add_data_func("/modem/paradyne/xon-config-3740",
+                         "att-paradyne-3740",
+                         test_dataport_xon_xoff_config);
+    g_test_add_data_func("/modem/paradyne/xon-local", GINT_TO_POINTER(0),
+                         test_dataport_xon_xoff_transport);
+    g_test_add_data_func("/modem/paradyne/xon-forward", GINT_TO_POINTER(1),
+                         test_dataport_xon_xoff_transport);
+    g_test_add_data_func("/modem/paradyne/xon-hardware-mode", GINT_TO_POINTER(2),
+                         test_dataport_xon_xoff_transport);
     g_test_add_func("/modem/paradyne/3740-fax-discovery",
                     test_dataport_3740_fax_discovery);
     g_test_add_func("/modem/paradyne/3740-modulation",

@@ -45,6 +45,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_NETBUF_SIZE 65536
 #define MODEM_COMMAND_SIZE 256
 #define MODEM_SREG_COUNT 100
+#define MODEM_XON 0x11
+#define MODEM_XOFF 0x13
 #define MODEM_DEFAULT_MODEL "hayes-accura-2400"
 #define MODEM_VOICE_MODEL "rockwell-voice-14400"
 #define MODEM_PARADYNE_3711 "att-paradyne-dataport-3711"
@@ -203,6 +205,8 @@ struct ModemChardev {
     int w_mode;
     int reliable_mode;
     int flow_control_mode;
+    bool xon_xoff_passthrough;
+    bool dte_rx_paused;
     int lapm_frame_size;
     DataPortHighSpeedMode v34_modulation;
     bool dataport_legacy_rate;
@@ -227,7 +231,9 @@ static void modem_chr_accept_input(Chardev *chr)
     uint32_t len = qemu_chr_be_can_write(chr);
     uint32_t avail = fifo8_num_used(&modem->outbuf);
 
-    while (len > 0 && avail > 0) {
+    /* A full receive FIFO naturally backpressures the TCP read watch. */
+    while (len > 0 && avail > 0 &&
+           !(modem->dte_rx_paused && !modem->command_mode)) {
         const uint8_t *buf;
         uint32_t size;
 
@@ -391,6 +397,8 @@ static void modem_model_defaults(ModemChardev *modem)
     /* These are requested settings; no analogue negotiation is simulated. */
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
+    modem->xon_xoff_passthrough = false;
+    modem->dte_rx_paused = false;
     modem->lapm_frame_size = 256;
     modem->v34_modulation = DATAPORT_V34_AND_VFC;
     modem->dataport_legacy_rate = false;
@@ -413,6 +421,7 @@ static void modem_hangup(ModemChardev *modem, bool report)
     modem_tcp_close(modem);
     modem->connected = false;
     modem->command_mode = true;
+    modem->dte_rx_paused = false;
     modem->plus_count = 0;
     modem_update_carrier(modem);
 
@@ -519,9 +528,10 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->connect_speed);
         modem_queue_line(modem, line);
         g_clear_pointer(&line, g_free);
-        line = g_strdup_printf("\\D%d \\A%d",
+        line = g_strdup_printf("\\D%d \\A%d \\X%d",
                                modem->cts_follows_dtr,
-                               modem->lapm_frame_size / 64 - 1);
+                               modem->lapm_frame_size / 64 - 1,
+                               modem->xon_xoff_passthrough);
         modem_queue_line(modem, line);
         if (modem->model->dataport_3740_line) {
             g_clear_pointer(&line, g_free);
@@ -546,6 +556,7 @@ static void modem_connect(ModemChardev *modem)
 {
     modem->connected = true;
     modem->command_mode = false;
+    modem->dte_rx_paused = false;
     modem->plus_count = 0;
     modem_update_carrier(modem);
     modem_result(modem, MODEM_RESULT_CONNECT);
@@ -1324,6 +1335,16 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                     return;
                 }
                 modem->flow_control_mode = value;
+                modem->dte_rx_paused = false;
+                break;
+            case 'X':
+                value = modem_parse_number(&p, -1);
+                if (!modem->model->paradyne_commands ||
+                    value < 0 || value > 1) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->xon_xoff_passthrough = value == 1;
                 break;
             default:
                 modem_result(modem, MODEM_RESULT_ERROR);
@@ -1355,6 +1376,7 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                 if (modem->plus_count == 3) {
                     modem->plus_count = 0;
                     modem->command_mode = true;
+                    modem->dte_rx_paused = false;
                     modem_result(modem, MODEM_RESULT_OK);
                 }
                 continue;
@@ -1367,6 +1389,23 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                     return i;
                 }
                 modem->plus_count = 0;
+            }
+            if (modem->model->paradyne_commands &&
+                modem->service_class == 0 &&
+                modem->flow_control_mode == 1 &&
+                (c == MODEM_XON || c == MODEM_XOFF)) {
+                /* \X1 additionally forwards the local flow-control byte. */
+                if (modem->xon_xoff_passthrough &&
+                    !modem_tcp_queue(modem, &c, 1)) {
+                    return i;
+                }
+                if (modem->connected && !modem->command_mode) {
+                    modem->dte_rx_paused = c == MODEM_XOFF;
+                    if (!modem->dte_rx_paused) {
+                        modem_chr_accept_input(chr);
+                    }
+                }
+                continue;
             }
             if (!modem_tcp_queue(modem, &c, 1)) {
                 return i;
@@ -1425,6 +1464,7 @@ static int modem_chr_ioctl(Chardev *chr, int cmd, void *arg)
         if ((old & CHR_TIOCM_DTR) && !(input & CHR_TIOCM_DTR)) {
             if (modem->dtr_mode == 1 && modem->connected) {
                 modem->command_mode = true;
+                modem->dte_rx_paused = false;
             } else if (modem->dtr_mode == 2) {
                 modem_hangup(modem, true);
             }
