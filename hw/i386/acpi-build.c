@@ -214,6 +214,20 @@ static void acpi_get_pm_info(MachineState *machine, AcpiPmInfo *pm)
     if (piix) {
         /* w2k requires FADT(rev1) or it won't boot, keep PC compatible */
         pm->fadt.rev = 1;
+        if (object_property_get_bool(piix, "strict-acpi1-fadt",
+                                     &error_abort)) {
+            /*
+             * ACPI 1.0 defines FADT flag bits 0 through 9. The shared
+             * builder also sets ACPI 3.0 platform-clock and APIC-cluster
+             * flags. Do not advertise those in a strict revision-1 FADT.
+             */
+            if (machine->smp.max_cpus > 8) {
+                error_report("strict-acpi1-fadt requires at most eight "
+                             "configured CPUs");
+                exit(EXIT_FAILURE);
+            }
+            pm->fadt.flags &= (1U << ACPI_FADT_F_RESET_REG_SUP) - 1;
+        }
         pm->cpu_hp_io_base = PIIX4_CPU_HOTPLUG_IO_BASE;
     }
     if (lpc) {
