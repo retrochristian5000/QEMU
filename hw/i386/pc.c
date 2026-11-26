@@ -477,7 +477,10 @@ static void pc_cmos_init_late(PCMachineState *pcms)
     mc146818rtc_set_cmos_data(s, 0x5d, val >> 16);
 
     val = 0;
-    val |= 0x02; /* FPU is there */
+    /* CMOS equipment bit 1 must agree with the realized CPU's x87 feature. */
+    if (X86_CPU(first_cpu)->env.features[FEAT_1_EDX] & CPUID_FP87) {
+        val |= 0x02;
+    }
     val |= 0x04; /* PS/2 mouse installed */
     mc146818rtc_set_cmos_data(s, REG_EQUIPMENT_BYTE, val);
 }
