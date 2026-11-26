@@ -1,0 +1,40 @@
+Sound Blaster 16 ISA profiles
+============================
+
+The existing ``sb16`` model implements a legacy Sound Blaster 16-compatible
+DSP and mixer on ISA. Its device name, DSP version, I/O, IRQ, DMA properties
+and migration state remain unchanged. It does not expose ISA Plug and Play
+card identification.
+
+The ``sb16-pnp`` name is reserved for the later Creative ISA Plug and Play
+family. The QOM profile is built with ``CONFIG_SB16_PNP`` when SB16 and the
+ISA bus are enabled. It deliberately rejects realization until ISA PnP serial
+isolation, logical device enumeration and resource activation exist. Do not
+use it in an existing guest configuration yet.
+
+Hardware identity
+-----------------
+
+Linux's SB16 ISA driver lists card IDs CTL0024 through CTL002C with audio
+logical device ID CTL0031. These are family references, not a selection of
+a verified board revision. ViBRA and AWE devices remain separate.
+
+The Creative May 1997 manual for CT4171 describes ISA PnP version 1.0a,
+audio I/O at 0x220-0x22f, IRQ 5, MIDI at 0x330-0x331, FM at 0x388-0x38b,
+and a joystick at 0x201 as defaults for that board. Its DMA configuration
+must not be generalized to every PnP SB16.
+
+Implementation boundary
+-----------------------
+
+The PnP configuration state belongs in a shared ISA subsystem. A complete
+model will need to route its assigned I/O, IRQ and DMA resources to the audio
+engine only when the logical device is active. Deactivation must not leave
+stale I/O or DMA registrations. Do not advertise unimplemented logical
+devices or reuse fixed legacy mappings while claiming PnP support.
+
+References
+----------
+
+* https://www.nostalgicrevolution.eu/wp-content/uploads/2020/06/Creative-Labs-Sound-Blaster-16-PnP-Knowing-your-Sound-Blaster.pdf
+* https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/056e065a6b6e01ab54bb9770c0d5a15350e571e2/sound/isa/sb/sb16.c
