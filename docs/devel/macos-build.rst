@@ -447,6 +447,12 @@ does not enable LTO in firmware or native LLVM bootstrap stages.
 When LTO is enabled on Darwin, ``configs/meson/darwin.txt`` defaults to
 ``b_lto_mode=thin`` and ``b_thinlto_cache=true``. Both the Bash and portable
 build entries limit ``b_lto_threads`` to the established macOS job budget.
+When LTO is not explicitly disabled, both entries also set
+``backend_max_links=1`` to prevent simultaneous host link operations from
+multiplying that budget. Ordinary non-LTO builds retain the existing link
+scheduler. This limits concurrent link jobs, not the aggregate number of
+linker and compiler worker threads; measure wall time and memory pressure
+before tuning the compile power profile.
 Meson still owns compilation and linking: do not inject ``-flto=thin``
 globally, and do not infer that the option is enabled merely because ThinLTO
 mode and caching appear in the native file. Check ``b_lto`` in Meson's
