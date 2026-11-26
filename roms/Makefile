@@ -43,6 +43,8 @@ x86_64_cross_prefix := $(call find-cross-prefix,x86_64)
 riscv32_cross_prefix := $(call find-cross-prefix,riscv32)
 riscv64_cross_prefix := $(call find-cross-prefix,riscv64)
 SEABIOS_CROSS_PREFIX ?= $(x86_64_cross_prefix)
+SEABIOS_SOURCE_DIR ?= $(abspath seabios)
+SEABIOS_HOSTCC ?= cc
 SEABIOS_OUTPUT_DIR ?= ../pc-bios
 SEABIOS_BUILD_ROOT ?= $(abspath ../build/firmware/seabios)
 GIT ?= git
@@ -123,12 +125,25 @@ endif
 # Keep each variant incremental within one source revision.
 # The build stamp includes compiler selection and the Clang size profile so
 # switching optimization levels never silently reuses older firmware objects.
+# Share the exact native/cross tool contract across configuration and build.
+# OUT and KCONFIG_CONFIG remain variant-specific.
+seabios_make = $(MAKE) -C "$(SEABIOS_SOURCE_DIR)" \
+    EXTRAVERSION="$(FIRMWARE_EXTRAVERSION)" \
+    CROSS_PREFIX="$(SEABIOS_CROSS_PREFIX)" \
+    CC="$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" HOSTCC="$(SEABIOS_HOSTCC)" \
+    "CPP=$(SEABIOS_CROSS_PREFIX)cpp" \
+    AS="$(SEABIOS_CROSS_PREFIX)as" LD="$(SEABIOS_CROSS_PREFIX)ld" \
+    OBJCOPY="$(SEABIOS_CROSS_PREFIX)objcopy" \
+    OBJDUMP="$(SEABIOS_CROSS_PREFIX)objdump" STRIP="$(SEABIOS_CROSS_PREFIX)strip" \
+    KCONFIG_CONFIG="$(SEABIOS_BUILD_ROOT)/$*/.config" \
+    OUT="$(SEABIOS_BUILD_ROOT)/$*/"
+
 build-seabios-config-%: config.%
 	@set -e; \
 		build_root="$(SEABIOS_BUILD_ROOT)"; \
 		: "$${build_root:?SEABIOS_BUILD_ROOT is required}"; \
 		out="$$build_root/$*"; \
-		source_dir=$$(cd seabios && pwd -P); \
+		source_dir=$$(cd "$(SEABIOS_SOURCE_DIR)" && pwd -P); \
 		revision=source-archive; \
 		if test -e "$$source_dir/.git"; then \
 			revision=$$(unset GIT_COMMON_DIR; \
@@ -138,7 +153,8 @@ build-seabios-config-%: config.%
 		if printf '%s\n' \
 			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
-			"build_cc=$(CC)" \
+			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
+			"host_cc=$(SEABIOS_HOSTCC)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
@@ -156,31 +172,22 @@ build-seabios-config-%: config.%
 		printf '%s\n' \
 			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
-			"build_cc=$(CC)" \
+			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
+			"host_cc=$(SEABIOS_HOSTCC)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
 			"clang_padding_profile=$(SEABIOS_CLANG_PADDING_PROFILE)" > "$$tmp"; \
 		mv "$$tmp" "$$stamp"
-	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
+	+@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
 		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config" && \
-		$(MAKE) -C seabios \
-			EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
-			CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
-			CPP=$(SEABIOS_CROSS_PREFIX)cpp \
-			KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
-			OUT=$(SEABIOS_BUILD_ROOT)/$*/ oldnoconfig && \
+		$(seabios_make) oldnoconfig && \
 		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; \
 	fi
-	$(MAKE) -C seabios \
-		EXTRAVERSION=$(FIRMWARE_EXTRAVERSION) \
-		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
-		CPP=$(SEABIOS_CROSS_PREFIX)cpp \
-		KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
+	+$(seabios_make) \
 		ROM_LAYOUT_VARIANT=$(if $(filter seabios-%,$*),$*,auto) \
-		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) \
-		OUT=$(SEABIOS_BUILD_ROOT)/$*/ all
+		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) all
 
 
 .PHONY: skiboot qboot palcode-clipper

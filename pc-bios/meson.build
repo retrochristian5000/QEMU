@@ -128,12 +128,29 @@ else
   blobs += ['openbios-ppc']
 endif
 
+# Start firmware Bash without inherited Make state or shell startup hooks.
+if whp_seabios_enabled or whp_seabios_grub_enabled
+  whp_seabios_entry_env = [
+    find_program('env'),
+    '-u', 'MAKEFLAGS',
+    '-u', 'MFLAGS',
+    '-u', 'GNUMAKEFLAGS',
+    '-u', 'MAKEFILES',
+    '-u', 'MAKEOVERRIDES',
+    '-u', 'MAKELEVEL',
+    '-u', 'BASH_ENV',
+    '-u', 'ENV',
+    '-u', 'SHELLOPTS',
+    '-u', 'BASHOPTS',
+  ]
+endif
+
 if whp_seabios_enabled
   whp_seabios_bash = find_program('bash')
   whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
   whp_seabios_x86 = custom_target('whp-seabios-x86-output',
     output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin'],
-    command: [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
+    command: whp_seabios_entry_env + [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
               '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@'],
     # One 16/32-bit legacy BIOS image serves i386 and x86_64 guest PCs.
     # Do not enable it for the original 8086/8088 x86-softmmu target.
@@ -153,7 +170,7 @@ if whp_seabios_grub_enabled
   whp_seabios_grub_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
   whp_seabios_grub = custom_target('whp-seabios-grub-output',
     output: 'seabios-grub.ELF',
-    command: [whp_seabios_grub_bash, whp_seabios_grub_script,
+    command: whp_seabios_entry_env + [whp_seabios_grub_bash, whp_seabios_grub_script,
               whp_seabios_grub_config, '--grub', '@OUTPUT@'],
     build_by_default: false,
     build_always_stale: true,

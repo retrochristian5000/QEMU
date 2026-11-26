@@ -7,6 +7,7 @@ set -euo pipefail
 
 SEABIOS_DIR="${SEABIOS_DIR:-$SOURCE_DIR/roms/seabios}"
 SEABIOS_CONFIG_FILE="$BUILD_DIR/.whp-seabios-meson.env"
+SEABIOS_HOSTCC="${SEABIOS_HOSTCC:-${CC_FOR_BUILD:-cc}}"
 SEABIOS_BUILD_ROOT="${SEABIOS_BUILD_ROOT:-$BUILD_DIR/firmware-build/seabios}"
 I386_TOOLCHAIN_DIR="${I386_TOOLCHAIN_DIR:-$BUILD_DIR/firmware-tools/i386-none-elf}"
 BOOTSTRAP_I386_TOOLCHAIN="${BOOTSTRAP_I386_TOOLCHAIN:-auto}"
@@ -75,13 +76,16 @@ for tool in gcc cpp as ld objcopy objdump strip; do
 done
 
 mkdir -p "$BUILD_DIR"
-tmp="$SEABIOS_CONFIG_FILE.new"
-cat >"$tmp" <<EOF
-SEABIOS_DIR=$SEABIOS_DIR
-SEABIOS_BUILD_ROOT=$SEABIOS_BUILD_ROOT
-SEABIOS_CROSS_COMPILE=$SEABIOS_CROSS_COMPILE
-MAKE_CMD=$MAKE_CMD
-EOF
+umask 077
+tmp="$(mktemp "$SEABIOS_CONFIG_FILE.new.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+{
+    printf 'SEABIOS_DIR=%q\n' "$SEABIOS_DIR"
+    printf 'SEABIOS_BUILD_ROOT=%q\n' "$SEABIOS_BUILD_ROOT"
+    printf 'SEABIOS_CROSS_COMPILE=%q\n' "$SEABIOS_CROSS_COMPILE"
+    printf 'SEABIOS_HOSTCC=%q\n' "$SEABIOS_HOSTCC"
+    printf 'MAKE_CMD=%q\n' "$MAKE_CMD"
+} > "$tmp"
 if [[ -f "$SEABIOS_CONFIG_FILE" ]] && cmp -s "$tmp" "$SEABIOS_CONFIG_FILE"; then
     rm -f "$tmp"
 else

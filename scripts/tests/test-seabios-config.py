@@ -184,6 +184,31 @@ class SeaBiosConfigTests(unittest.TestCase):
             self.assertIn('clang_padding_profile=CompactCode', stamp.read_text().splitlines())
             self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
 
+    def test_explicit_source_and_tool_handoff(self):
+        with tempfile.TemporaryDirectory(prefix='whp-seabios-handoff-') as tmp:
+            root = pathlib.Path(tmp)
+            roms = root / 'roms'
+            roms.mkdir()
+            firmware = root / 'selected-firmware'
+            firmware.mkdir()
+            shutil.copyfile(ROOT / 'roms' / 'Makefile', roms / 'Makefile')
+            (roms / 'config.seabios-128k').write_text('CONFIG_ROM_SIZE=128\n')
+            (firmware / 'Makefile').write_text(
+                'all:\n\t@printf "%s\\n" "$(CC)" "$(HOSTCC)" "$(LD)" '
+                '"$(ROM_LAYOUT_VARIANT)" > "$(OUT)handoff"\n'
+                'oldnoconfig:\n\t@:\n')
+            result = subprocess.run([
+                'make', '-C', str(roms), 'build-seabios-config-seabios-128k',
+                'SEABIOS_SOURCE_DIR=' + str(firmware),
+                'SEABIOS_CROSS_PREFIX=i386-none-elf-',
+                'SEABIOS_HOSTCC=host-cc', 'CC=wrong-cc', 'LD=wrong-ld',
+            ], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            handoff = root / 'build/firmware/seabios/seabios-128k/handoff'
+            self.assertEqual(handoff.read_text().splitlines(), [
+                'i386-none-elf-gcc', 'host-cc', 'i386-none-elf-ld', 'seabios-128k',
+            ])
+
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):
         with tempfile.TemporaryDirectory(prefix='whp-seabios-revision-') as tmp:
             root = pathlib.Path(tmp)
