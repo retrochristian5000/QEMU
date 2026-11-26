@@ -1715,6 +1715,44 @@ static void test_cdrom_dma_bad_buffer(void)
     test_cdrom_dma_fault(false);
 }
 
+static void test_piix4_timing_registers(void)
+{
+    QTestState *qts = qtest_init("-M pc,x-south-bridge=piix4-isa "
+                                "-global piix4-ide.strict-timing-regs=on");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(IDE_PCI_DEV,
+                                                     IDE_PCI_FUNC));
+
+    g_assert_nonnull(dev);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_VENDOR_ID), ==,
+                    PCI_VENDOR_ID_INTEL);
+    g_assert_cmphex(qpci_config_readw(dev, PCI_DEVICE_ID), ==,
+                    PCI_DEVICE_ID_INTEL_82371AB);
+
+    for (unsigned reg = 0x40; reg < 0x4c; reg += 4) {
+        g_assert_cmphex(qpci_config_readl(dev, reg), ==, 0);
+        qpci_config_writel(dev, reg, UINT32_MAX);
+    }
+
+    g_assert_cmphex(qpci_config_readl(dev, 0x40), ==, 0xf3fff3ff);
+    g_assert_cmphex(qpci_config_readl(dev, 0x44), ==, 0x000000ff);
+    g_assert_cmphex(qpci_config_readl(dev, 0x48), ==, 0x3333000f);
+
+    /* Per-drive UDMA control and timings are independently writable. */
+    qpci_config_writeb(dev, 0x48, 0x05);
+    qpci_config_writew(dev, 0x4a, 0x1201);
+    g_assert_cmphex(qpci_config_readl(dev, 0x48), ==, 0x12010005);
+
+    qtest_system_reset(qts);
+    for (unsigned reg = 0x40; reg < 0x4c; reg += 4) {
+        g_assert_cmphex(qpci_config_readl(dev, reg), ==, 0);
+    }
+
+    free_pci_device(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     const char *base;
@@ -1760,6 +1798,11 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/piix/bmdma-access-width",
                    test_piix_bmdma_access_width);
     qtest_add_func("/ide/piix/channel-irq-reset", test_piix_channel_irq_reset);
+    if (qtest_has_machine("pc") && qtest_has_device("piix4-ide") &&
+        qtest_has_device("piix4-isa")) {
+        qtest_add_func("/ide/piix4/timing-registers",
+                       test_piix4_timing_registers);
+    }
     qtest_add_func("/ide/pic/model-names", test_pic_model_names);
     qtest_add_func("/ide/pic/special-mask", test_pic_ide_special_mask);
     qtest_add_func("/ide/ata-atapi-command-boundary",
