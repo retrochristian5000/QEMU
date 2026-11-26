@@ -52,8 +52,18 @@ typedef void (*cirrus_bitblt_rop_t)(struct CirrusVGAState *s,
                                     int dstpitch, int srcpitch,
                                     int bltwidth, int bltheight);
 
+/* Derived CRTC timing; reconstructed from registers after reset/load. */
+typedef struct CirrusDisplayTiming {
+    uint32_t character_hz;
+    unsigned htotal, vtotal;
+    unsigned hblank_start, hblank_end;
+    unsigned vblank_start, vblank_end;
+    unsigned vsync_start, vsync_end;
+} CirrusDisplayTiming;
+
 typedef struct CirrusVGAState {
     VGACommonState vga;
+    CirrusDisplayTiming display_timing;
 
     MemoryRegion cirrus_vga_io;
     MemoryRegion cirrus_linear_io;
@@ -105,5 +115,8 @@ typedef struct CirrusVGAState {
 void cirrus_init_common(CirrusVGAState *s, Object *owner,
                         int device_id, int bustype,
                         MemoryRegion *system_memory, MemoryRegion *system_io);
+
+void cirrus_gd5446_update_retrace_info(VGACommonState *vga);
+uint8_t cirrus_gd5446_retrace(VGACommonState *vga);
 
 #endif
