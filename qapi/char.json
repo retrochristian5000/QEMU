@@ -530,7 +530,9 @@
 #
 # @hub: (since 10.0)
 #
-# @msmouse: emulated Microsoft serial mouse (since 1.5)
+# @msmouse: emulated two-button Microsoft serial mouse (since 1.5)
+#
+# @logitech-mouseman: emulated Logitech M3-compatible serial mouse (since 11.1)
 #
 # @easyball: emulated Microsoft EasyBall serial trackball (since 11.1)
 #
@@ -578,6 +580,7 @@
             'mux',
             'hub',
             'msmouse',
+            'logitech-mouseman',
             'easyball',
             'modem',
             'wctablet',
@@ -782,6 +785,7 @@
             'mux': 'ChardevMuxWrapper',
             'hub': 'ChardevHubWrapper',
             'msmouse': 'ChardevCommonWrapper',
+            'logitech-mouseman': 'ChardevCommonWrapper',
             'easyball': 'ChardevCommonWrapper',
             'modem': 'ChardevModemWrapper',
             'wctablet': 'ChardevCommonWrapper',
