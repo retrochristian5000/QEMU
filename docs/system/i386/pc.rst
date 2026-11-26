@@ -192,3 +192,24 @@ PLL lock latency, memory-clock arbitration, or BitBLT execution time.
 It changes guest-visible status timing, not host display refresh
 scheduling. Use identical powered-off configurations for comparisons
 and keep this property consistent when restoring saved states.
+
+Fixed-resource NE2000 ISA adapters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``ne2k_isa`` device models a fixed-resource NE2000-compatible card,
+not an ISA Plug and Play device. The default I/O base is 0x300 and the
+adapter occupies 32 consecutive ports. The base must be aligned to 32
+ports and must not overlap an already mapped I/O region. Supported IRQ
+selections are 3, 4, 5, 9, 10, 11, 12, 14 and 15.
+
+The historical default IRQ9 is retained, but QEMU warns if a PIIX ACPI
+power-management function also uses IRQ9. IRQ2 is the AT interrupt
+cascade and is not a separate selectable NIC interrupt. Select a free
+IRQ and match the I/O base and IRQ in the guest's network adapter
+properties. For example, IRQ3 is usable only if COM2 and any other
+IRQ3 users are absent. IRQ5 may be occupied by a sound card, and IRQ10
+and IRQ11 may be used by PCI interrupt steering.
+
+The I/O overlap check detects devices mapped before the NIC is realized.
+It is not a general resource allocator and does not prevent a later
+device or reprogrammed PCI BAR from using the same range.
