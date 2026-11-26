@@ -221,6 +221,15 @@ static void test_plus_minus(void)
 }
 
 static const CpuidTestArgs cpuid_tests[] = {
+    { "x86/cpuid/pentium/family", "pentium", NULL, NULL, "family", 5 },
+    { "x86/cpuid/pentium/model", "pentium", NULL, NULL, "model", 2 },
+    { "x86/cpuid/pentium/stepping", "pentium", NULL, NULL, "stepping", 5 },
+    { "x86/cpuid/pentium-mmx/model", "pentium_mmx", NULL, NULL, "model", 4 },
+    { "x86/cpuid/pentium-mmx/stepping", "pentium_mmx", NULL, NULL,
+      "stepping", 3 },
+    { "x86/cpuid/pentium-v1/model", "pentium-v1", NULL, NULL, "model", 4 },
+    { "x86/cpuid/pentium-v2/model", "pentium-v2", NULL, NULL, "model", 2 },
+
     /* Original level values for CPU models: */
     {
         "x86/cpuid/phenom/level",
@@ -365,6 +374,23 @@ static const CpuidTestArgs cpuid_tests[] = {
  * using cmdline
  */
 static const FeatureTestArgs feature_tests[] = {
+    { "x86/cpuid/pentium/fpu", "pentium", NULL,
+      1, 0, "EDX", 0, true },
+    { "x86/cpuid/pentium/mmx", "pentium", NULL,
+      1, 0, "EDX", 23, false },
+    { "x86/cpuid/pentium-mmx/fpu", "pentium_mmx", NULL,
+      1, 0, "EDX", 0, true },
+    { "x86/cpuid/pentium-mmx/mmx", "pentium_mmx", NULL,
+      1, 0, "EDX", 23, true },
+    { "x86/cpuid/pentium-v1/mmx", "pentium-v1", NULL,
+      1, 0, "EDX", 23, true },
+    { "x86/cpuid/pentium-v2/mmx", "pentium-v2", NULL,
+      1, 0, "EDX", 23, false },
+    { "x86/cpuid/pentium2/mmx", "pentium2", NULL,
+      1, 0, "EDX", 23, true },
+    { "x86/cpuid/pentium3/mmx", "pentium3", NULL,
+      1, 0, "EDX", 23, true },
+
     /*
      * Legacy USB/xHCI IRQ diagnostics: preserve the CPUID differences
      * between CPU generations.  The xHCI test exercises INTx versus
@@ -397,7 +423,7 @@ static const FeatureTestArgs feature_tests[] = {
     },
     {
         "x86/cpuid/features/minus",
-        "pentium", "-mmx",
+        "pentium_mmx", "-mmx",
         1, 0, "EDX", 23, false,
     },
     {
@@ -407,7 +433,7 @@ static const FeatureTestArgs feature_tests[] = {
     },
     {
         "x86/cpuid/features/off",
-        "pentium", "mmx=off",
+        "pentium_mmx", "mmx=off",
         1, 0, "EDX", 23, false,
     },
 
