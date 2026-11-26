@@ -179,6 +179,7 @@ void pit_reset_common(PITCommonState *pit)
     PITChannelState *s;
     int i;
 
+    pit->pending_initial_count = 0;
     for (i = 0; i < 3; i++) {
         s = &pit->channels[i];
         s->mode = 3;
