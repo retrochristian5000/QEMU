@@ -132,6 +132,10 @@ if have_system
   tests += {
     'ptimer-test': ['ptimer-test-stubs.c', meson.project_source_root() / 'hw/core/ptimer.c'],
     'test-iov': [],
+    'test-intel-8741': [
+      meson.project_source_root() / 'hw/input/intel-8741-core.c',
+      meson.project_source_root() / 'hw/input/att-kbd302-core.c',
+    ],
     'test-att-kbd302': [
       meson.project_source_root() / 'hw/input/att-kbd302-core.c',
       meson.project_source_root() / 'hw/input/att-kbd302-map.c',

@@ -228,6 +228,8 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd302",
           "AT&T 302 keyboard (reserved; controller not implemented)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
+        { "intel-8741",
+          "Intel 8741 UPI-41 controller (host interface; firmware pending)" },
         { "isa-vga", "QEMU Standard VGA ISA controller" },
         { "sierra-falcon64",
           "Sierra Semiconductor Falcon/64 SC15064 PCI VGA controller" },
