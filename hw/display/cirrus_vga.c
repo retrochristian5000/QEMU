@@ -233,6 +233,12 @@ static bool cirrus_has_blt_modeext(const CirrusVGAState *s)
     }
 }
 
+/* GD5446 TRM 5.3: height is an 11-bit scanline count minus one. */
+static uint8_t cirrus_blt_height_hi_mask(const CirrusVGAState *s)
+{
+    return s->device_id == CIRRUS_ID_CLGD5446 ? 0x07 : 0x1f;
+}
+
 static uint8_t cirrus_blt_addr_hi_mask(const CirrusVGAState *s)
 {
     switch (s->device_id) {
@@ -1025,7 +1031,9 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
     s->vga.gr[0x31] |= CIRRUS_BLT_BUSY;
 
     s->cirrus_blt_width = (s->vga.gr[0x20] | (s->vga.gr[0x21] << 8)) + 1;
-    s->cirrus_blt_height = (s->vga.gr[0x22] | (s->vga.gr[0x23] << 8)) + 1;
+    s->cirrus_blt_height = (s->vga.gr[0x22] |
+                           ((s->vga.gr[0x23] &
+                             cirrus_blt_height_hi_mask(s)) << 8)) + 1;
     s->cirrus_blt_dstpitch = (s->vga.gr[0x24] | (s->vga.gr[0x25] << 8));
     s->cirrus_blt_srcpitch = (s->vga.gr[0x26] | (s->vga.gr[0x27] << 8));
     s->cirrus_blt_dstaddr =
@@ -1086,7 +1094,9 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
                                CIRRUS_BLTMODE_COLOREXPAND)) ==
          (CIRRUS_BLTMODE_PATTERNCOPY | CIRRUS_BLTMODE_COLOREXPAND)) {
         cirrus_bitblt_fgcol(s);
-        cirrus_bitblt_solidfill(s, blt_rop);
+        if (!cirrus_bitblt_solidfill(s, blt_rop)) {
+            goto bitblt_ignore;
+        }
     } else {
         if ((s->cirrus_blt_mode & (CIRRUS_BLTMODE_COLOREXPAND |
                                    CIRRUS_BLTMODE_PATTERNCOPY)) ==
@@ -1595,6 +1605,9 @@ static void cirrus_vga_write_palette(CirrusVGAState * s, int reg_value)
 
 static int cirrus_vga_read_gr(CirrusVGAState * s, unsigned reg_index)
 {
+    if (reg_index == 0x23) {
+        return s->vga.gr[reg_index] & cirrus_blt_height_hi_mask(s);
+    }
     if (reg_index == 0x33 && !cirrus_has_blt_modeext(s)) {
         return 0xff;
     }
@@ -1704,8 +1717,10 @@ cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
             s->vga.gr[reg_index] = reg_value;
         }
         break;
+    case 0x23:                  // BLT HEIGHT high
+        s->vga.gr[reg_index] = reg_value & cirrus_blt_height_hi_mask(s);
+        break;
     case 0x21:                  // BLT WIDTH 0x001f00
-    case 0x23:                  // BLT HEIGHT 0x001f00
     case 0x25:                  // BLT DEST PITCH 0x001f00
     case 0x27:                  // BLT SRC PITCH 0x001f00
         s->vga.gr[reg_index] = reg_value & 0x1f;

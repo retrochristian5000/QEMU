@@ -529,6 +529,75 @@ static void test_cirrus_pci_dword_expand(void)
     qtest_quit(qts);
 }
 
+static void test_cirrus_pci_blt_dimensions(void)
+{
+    const uint32_t config = 0x80000000U | (5U << 11);
+    const uint32_t mmio = 0xe2000000U;
+    QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
+                                "-device cirrus-vga,addr=05.0");
+
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | 0x14);
+    qtest_outl(qts, 0xcfc, mmio);
+    cirrus_pci_command(qts, config, 3);
+    vga_seq_write(qts, 0x06, 0x12);
+
+    /* Width and pitch retain 13 bits; height retains only 11. */
+    vga_gfx_write(qts, 0x21, 0xff);
+    vga_gfx_write(qts, 0x23, 0xff);
+    vga_gfx_write(qts, 0x25, 0xff);
+    vga_gfx_write(qts, 0x27, 0xff);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x109), ==, 0x1f);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x10b), ==, 0x07);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x10d), ==, 0x1f);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x10f), ==, 0x1f);
+
+    qtest_writew(qts, mmio + 0x10a, 0xf812);
+    g_assert_cmphex(vga_gfx_read(qts, 0x22), ==, 0x12);
+    g_assert_cmphex(vga_gfx_read(qts, 0x23), ==, 0);
+    qtest_system_reset(qts);
+    g_assert_cmphex(vga_gfx_read(qts, 0x23), ==, 0);
+    qtest_quit(qts);
+}
+
+static void test_cirrus_pci_solidfill_completion(void)
+{
+    const uint32_t config = 0x80000000U | (5U << 11);
+    const uint32_t lfb = 0xe0000000U;
+    QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
+                                "-device cirrus-vga,addr=05.0");
+
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    cirrus_pci_command(qts, config, 3);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 1);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    /* Two four-byte rows, solid foreground color. */
+    vga_gfx_write(qts, 0x01, 0x5a);
+    vga_gfx_write(qts, 0x20, 3);
+    vga_gfx_write(qts, 0x22, 1);
+    vga_gfx_write(qts, 0x28, 0x40);
+    vga_gfx_write(qts, 0x30, 0xc0);
+    vga_gfx_write(qts, 0x32, 0x0d);
+    vga_gfx_write(qts, 0x33, 4);
+
+    /* An operation rejected by the existing geometry checks must end. */
+    vga_gfx_write(qts, 0x31, 2);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 3, ==, 0);
+
+    /* The driver can issue a fresh, supported operation without reset. */
+    vga_gfx_write(qts, 0x24, 4);
+    vga_gfx_write(qts, 0x31, 2);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 3, ==, 0);
+    for (unsigned i = 0; i < 8; i++) {
+        g_assert_cmphex(qtest_readb(qts, lfb + 0x40 + i), ==, 0x5a);
+    }
+    qtest_quit(qts);
+}
+
 static void cirrus_crtc_write(QTestState *qts, uint8_t index, uint8_t value)
 {
     qtest_outb(qts, VGA_CRT_IC, index);
@@ -664,6 +733,10 @@ int main(int argc, char **argv)
         if (qtest_has_machine("pc")) {
             qtest_add_func("/display/pci/cirrus-dword-expand",
                            test_cirrus_pci_dword_expand);
+            qtest_add_func("/display/pci/cirrus-blt-dimensions",
+                           test_cirrus_pci_blt_dimensions);
+            qtest_add_func("/display/pci/cirrus-solidfill-completion",
+                           test_cirrus_pci_solidfill_completion);
             qtest_add_func("/display/pci/cirrus-precise-timing",
                            test_cirrus_pci_timing);
         }

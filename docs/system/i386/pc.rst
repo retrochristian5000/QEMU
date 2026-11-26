@@ -213,6 +213,22 @@ Hardware reference: Cirrus Logic Alpine Family Technical Reference
 Manual, February 1995, sections 4.14, 4.18-4.19, 9.27-9.30,
 9.40 and 9.42, and Appendix D8.
 
+Cirrus GD5446 BitBLT register behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The GD5446 height register (GR22-GR23) holds an 11-bit scanline count
+minus one, unlike the 13-bit width and pitch registers. Both indexed
+I/O and MMIO use the same mask. Execution also applies the mask to
+previously loaded register state. Other Cirrus chip profiles retain
+their existing height masks pending separate hardware verification.
+A solid-fill operation rejected by the existing geometry checks returns
+the engine to idle, as do other rejected BitBLT operations. No new
+command queue, pause scheduling or video-to-system transfer support is
+introduced.
+
+Hardware reference: CL-GD5446 Technical Reference Manual, November 1996,
+sections 5.2-5.5 and 5.10.
+
 Cirrus GD5446 display timing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
