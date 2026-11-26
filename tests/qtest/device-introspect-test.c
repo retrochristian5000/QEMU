@@ -225,6 +225,8 @@ static void test_device_intro_display_descriptions(void)
         const char *name;
         const char *desc;
     } devices[] = {
+        { "att-kbd302",
+          "AT&T 302 keyboard (reserved; controller not implemented)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
         { "isa-vga", "QEMU Standard VGA ISA controller" },
         { "sierra-falcon64",
