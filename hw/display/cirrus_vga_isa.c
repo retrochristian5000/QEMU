@@ -125,6 +125,7 @@ static void isa_cirrus_vga_class_init(ObjectClass *klass, const void *data)
 
     dc->vmsd  = &vmstate_cirrus_vga;
     dc->realize = isa_cirrus_vga_realizefn;
+    dc->desc = "Cirrus Logic CL-GD5428 ISA VGA";
     device_class_set_props(dc, isa_cirrus_vga_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }
