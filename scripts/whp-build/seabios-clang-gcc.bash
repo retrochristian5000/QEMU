@@ -47,6 +47,16 @@ esac
     exit 1
 }
 
+# Experimental fork-only ELF backend option; keep upstream Clang usable.
+elf_split="${SEABIOS_CLANG_ELF_SPLIT:-0}"
+case "$elf_split" in
+    0|1) ;;
+    *)
+        printf 'error: SEABIOS_CLANG_ELF_SPLIT must be 0 or 1\n' >&2
+        exit 2
+        ;;
+esac
+
 link_step=1
 action=""
 merge_constants=1
@@ -233,6 +243,9 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         compile_args+=(-MF "$depfile")
     fi
 
+    if [[ "$elf_split" == 1 ]]; then
+        driver_args+=(-mllvm -x86-elf-separate-constants)
+    fi
     "$clang" "${driver_args[@]}" "${compile_args[@]}" -S -o "$raw_asm"
 
     awk '

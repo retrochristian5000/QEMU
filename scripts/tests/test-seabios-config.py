@@ -139,11 +139,12 @@ class SeaBiosConfigTests(unittest.TestCase):
 
             output = root / 'build/firmware/seabios/seabios-128k/bios.bin'
 
-            def build(profile, cross_prefix=''):
+            def build(profile, cross_prefix='', elf_split='0'):
                 result = subprocess.run(
                     ['make', 'build-seabios-config-seabios-128k',
                      'SEABIOS_CLANG_SIZE_OPT=' + profile,
-                     'SEABIOS_CROSS_PREFIX=' + cross_prefix],
+                     'SEABIOS_CROSS_PREFIX=' + cross_prefix,
+                     'SEABIOS_CLANG_ELF_SPLIT=' + elf_split],
                     cwd=roms, capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 0,
@@ -159,6 +160,9 @@ class SeaBiosConfigTests(unittest.TestCase):
             build('Os')
             self.assertEqual(output.read_text(), 'Os\n\n')
             build('Os', 'alternate-')
+            self.assertEqual(output.read_text(), 'Os\nalternate-\n')
+            output.write_text('stale before ELF split\n')
+            build('Os', 'alternate-', '1')
             self.assertEqual(output.read_text(), 'Os\nalternate-\n')
 
     def test_new_firmware_revision_replaces_stale_make_dependencies(self):

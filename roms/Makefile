@@ -109,6 +109,7 @@ seavgabios-%: build-seabios-config-vga-%
 # shifts. GCC is unaffected, and the 256 KiB and microvm targets retain
 # their existing optimization levels. Explicit caller settings take priority.
 build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
+export SEABIOS_CLANG_ELF_SPLIT ?= 0
 
 # A new checkout can remove files still named in a previous build's .d files.
 # Keep each variant incremental within one source revision.
@@ -130,7 +131,8 @@ build-seabios-config-%: config.%
 			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(CC)" \
-			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" | cmp -s - "$$stamp"; then \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
+			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" | cmp -s - "$stamp"; then \
 			exit 0; \
 		fi; \
 		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
@@ -145,7 +147,8 @@ build-seabios-config-%: config.%
 			"$$source_dir $$revision" \
 			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
 			"build_cc=$(CC)" \
-			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" > "$$tmp"; \
+			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
+			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" > "$tmp"; \
 		mv "$$tmp" "$$stamp"
 	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \
