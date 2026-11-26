@@ -684,6 +684,31 @@ static void periodic_timer(void)
                     NANOSECONDS_PER_SECOND * 0.5);
 }
 
+static void test_explicit_rtc(void)
+{
+    QTestState *s = qtest_init("-machine microvm,rtc=off -nodefaults "
+                               "-rtc clock=vm "
+                               "-device motorola-mc146818,base_year=2000");
+
+    qtest_irq_intercept_in(s, "ioapic");
+
+    qtest_outb(s, 0x70, RTC_REG_D);
+    g_assert_cmphex(qtest_inb(s, 0x71), ==, 0x80);
+
+    qtest_outb(s, 0x70, RTC_REG_A);
+    qtest_outb(s, 0x71, 0x26);
+    qtest_outb(s, 0x70, RTC_REG_B);
+    qtest_outb(s, 0x71, REG_B_24H | REG_B_PIE);
+    qtest_clock_step(s, 2 * SCALE_MS);
+    g_assert(qtest_get_irq(s, RTC_ISA_IRQ));
+
+    qtest_outb(s, 0x70, RTC_REG_C);
+    g_assert(qtest_inb(s, 0x71) & REG_C_PF);
+    g_assert(!qtest_get_irq(s, RTC_ISA_IRQ));
+
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     QTestState *s;
@@ -709,6 +734,9 @@ int main(int argc, char **argv)
     qtest_add_func("/rtc/update/uip-stuck", uip_stuck);
     qtest_add_func("/rtc/misc/fuzz-registers", fuzz_registers);
     qtest_add_func("/rtc/periodic/interrupt", periodic_timer);
+    if (qtest_has_machine("microvm")) {
+        qtest_add_func("/rtc/device/explicit", test_explicit_rtc);
+    }
 
     ret = g_test_run();
 

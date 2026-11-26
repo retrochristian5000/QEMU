@@ -862,10 +862,37 @@ static void rtc_get_date(Object *obj, struct tm *current_tm, Error **errp)
     rtc_get_time(s, current_tm);
 }
 
+/* A PC ISA bus has one system CMOS/RTC and one ACPI RTC identity. */
+static int rtc_check_peer(DeviceState *peer, void *opaque)
+{
+    DeviceState *dev = opaque;
+
+    if (peer != dev && qdev_is_realized(peer) &&
+        qdev_get_parent_bus(peer) == qdev_get_parent_bus(dev) &&
+        object_dynamic_cast(OBJECT(peer), TYPE_MC146818_RTC)) {
+        return -1;
+    }
+    return 0;
+}
+
 static void rtc_realizefn(DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
     MC146818RtcState *s = MC146818_RTC(dev);
+    ISABus *bus = isa_bus_from_device(isadev);
+
+    if (qbus_walk_children(BUS(bus), rtc_check_peer, NULL, NULL, NULL, dev)) {
+        error_setg(errp, "mc146818rtc: ISA bus already has a system RTC; "
+                   "configure the existing device instead");
+        return;
+    }
+
+    /* The ACPI resource descriptor reserves eight consecutive ports. */
+    if (s->io_base > UINT16_MAX - 7) {
+        error_setg(errp, "mc146818rtc: I/O base 0x%x exceeds ISA port space",
+                   s->io_base);
+        return;
+    }
 
     s->cmos_data[RTC_REG_A] = 0x26;
     s->cmos_data[RTC_REG_B] = 0x02;
@@ -921,6 +948,13 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
     memory_region_add_coalescing(&s->coalesced_io, 0, 1);
 
     qdev_init_gpio_out(dev, &s->irq, 1);
+    /*
+     * Wire command-line instances as well as board-created RTCs.
+     * Boards with an intercept IRQ can still override this connection.
+     */
+    if (bus->irqs_in) {
+        isa_connect_gpio_out(isadev, 0, s->isairq);
+    }
 }
 
 MC146818RtcState *mc146818_rtc_init(ISABus *bus, int base_year,
@@ -1012,7 +1046,9 @@ static void rtc_class_initfn(ObjectClass *klass, const void *data)
     AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
     dc->realize = rtc_realizefn;
-    dc->desc = "MC146818-compatible ISA real-time clock and CMOS RAM";
+    dc->desc = "Motorola MC146818-compatible ISA real-time clock and CMOS RAM";
+    /* The system RTC has no hot-unplug teardown for timers or notifiers. */
+    dc->hotpluggable = false;
     dc->vmsd = &vmstate_rtc;
     rc->phases.enter = rtc_reset_enter;
     rc->phases.hold = rtc_reset_hold;
