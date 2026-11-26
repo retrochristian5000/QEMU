@@ -266,6 +266,7 @@ static void pcnet_class_init(ObjectClass *klass, const void *data)
     k->romfile = "efi-pcnet.rom",
     k->vendor_id = PCI_VENDOR_ID_AMD;
     k->device_id = PCI_DEVICE_ID_AMD_LANCE;
+    dc->desc = "AMD PCnet PCI Ethernet adapter";
     k->revision = 0x10;
     k->class_id = PCI_CLASS_NETWORK_ETHERNET;
     device_class_set_legacy_reset(dc, pci_reset);
