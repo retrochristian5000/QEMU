@@ -61,9 +61,9 @@ esac
 # The normal inliner still honors always_inline and noinline.
 inline_profile="${SEABIOS_CLANG_INLINE_PROFILE:-Default}"
 case "$inline_profile" in
-    Default|CompactFlat) ;;
+    Default|CompactFlat|RequiredOnlyFlat) ;;
     *)
-        printf 'error: SEABIOS_CLANG_INLINE_PROFILE must be Default or CompactFlat\n' >&2
+        printf 'error: SEABIOS_CLANG_INLINE_PROFILE must be Default, CompactFlat, or RequiredOnlyFlat\n' >&2
         exit 2
         ;;
 esac
@@ -274,7 +274,7 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         esac
     fi
 
-    if [[ "$inline_profile" == CompactFlat ]]; then
+    if [[ "$inline_profile" != Default ]]; then
         flat_mode=0
         size_optimized=0
         for arg in "${compile_args[@]}"; do
@@ -286,8 +286,17 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
             esac
         done
         if ((flat_mode && size_optimized)); then
-            driver_args+=(-mllvm -inline-threshold=5
-                         -mllvm -inlinehint-threshold=5)
+            case "$inline_profile" in
+                CompactFlat)
+                    driver_args+=(-mllvm -inline-threshold=5
+                                 -mllvm -inlinehint-threshold=5)
+                    ;;
+                RequiredOnlyFlat)
+                    # Suppress discretionary inlining, but leave explicit
+                    # always_inline and noinline semantics to the compiler.
+                    driver_args+=(-fno-inline-functions)
+                    ;;
+            esac
         fi
     fi
     if [[ "$elf_split" == 1 ]]; then

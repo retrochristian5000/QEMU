@@ -45,6 +45,16 @@ jobs:
           actual="$(git -C roms/seabios rev-parse HEAD)"
           test "$actual" = "$expected"
 
+      - name: Inventory forced and ordinary inline declarations
+        run: |
+          set -eu
+          # Use the pinned source tree, not a potentially stale search index.
+          git -C roms/seabios grep -n -E '\b(__always_inline|always_inline|__always_inline__)\b' \
+            -- src vgasrc || test "$?" -eq 1
+          printf 'Ordinary inline matching source lines: '
+          git -C roms/seabios grep -n -E '\b(inline|__inline|__inline__)\b' \
+            -- src vgasrc | wc -l
+
       - name: Install firmware build dependencies
         run: |
           sudo apt-get update -qq
@@ -200,6 +210,39 @@ jobs:
           printf 'CompactFlat: %s raw bytes; ROM headroom=%d bytes\n' \
             "$bytes" "$((131072 - bytes))"
           grep -E '^(16bit size:|32bit |ROM size audit:|ROM alignment audit:|Total size:|Error!)' \
+            "$log" || true
+
+      - name: Compare mandatory-only flat inlining against CompactFlat
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_SIZE_OPT: OzSegmented
+          SEABIOS_CLANG_INLINE_PROFILE: RequiredOnlyFlat
+          SEABIOS_CLANG_PADDING_PROFILE: Default
+          SEABIOS_CLANG_ELF_SPLIT: '0'
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-required-inline"
+          variant=seabios-128k
+          log="$RUNNER_TEMP/$variant-required-inline.log"
+          image="$root/$variant/bios.bin.raw"
+          baseline="$RUNNER_TEMP/whp-seabios-clang-compact-inline/$variant/bios.bin.raw"
+          if make -C roms "build-seabios-config-$variant" \
+              "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+              "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+            test "$(wc -c < "$root/$variant/bios.bin")" -eq 131072
+          elif ! test -s "$image" || ! grep -Fq "ROM doesn't fit (" "$log" ||
+               test "$(wc -c < "$image")" -le 131072; then
+            tail -n 90 "$log" >&2
+            exit 1
+          fi
+          test -s "$image"
+          test -s "$baseline"
+          before="$(wc -c < "$baseline")"
+          bytes="$(wc -c < "$image")"
+          printf 'RequiredOnlyFlat: baseline=%d raw=%d saved=%d headroom=%d bytes\n' \
+            "$before" "$bytes" "$((before - bytes))" "$((131072 - bytes))"
+          grep -E '^(16bit size:|32bit |ROM attribute audit:|ROM alignment audit:|Total size:|Error!)' \
             "$log" || true
 
       - name: Measure optional code padding against CompactFlat

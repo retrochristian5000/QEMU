@@ -182,6 +182,10 @@ class SeaBiosConfigTests(unittest.TestCase):
             build('Os', 'alternate-', '1', 'CompactFlat', 'CompactCode')
             self.assertEqual(output.read_text(), 'Os\nalternate-\n')
             self.assertIn('clang_padding_profile=CompactCode', stamp.read_text().splitlines())
+            output.write_text('stale before required-only profile\n')
+            build('Os', 'alternate-', '1', 'RequiredOnlyFlat', 'CompactCode')
+            self.assertEqual(output.read_text(), 'Os\nalternate-\n')
+            self.assertIn('clang_inline_profile=RequiredOnlyFlat', stamp.read_text().splitlines())
             self.assertEqual(list(output.parent.glob('.whp-seabios-source.new.*')), [])
 
     def test_explicit_source_and_tool_handoff(self):

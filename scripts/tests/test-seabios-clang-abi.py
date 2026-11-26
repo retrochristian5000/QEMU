@@ -322,6 +322,44 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                     self.assertNotRegex(body, r'\bcall[l]?\s+required')
                     self.assertRegex(body, r'\b(?:call[l]?|jmp[l]?)\s+retained')
 
+    def test_required_only_flat_distinguishes_inline_attributes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'inline.c'
+            source.write_text(
+                'static inline __attribute__((always_inline)) int required(int x) '
+                '{ return x + 1; }\n'
+                'static inline int optional(int x) { return x + 2; }\n'
+                '__attribute__((noinline)) int boundary(int x) { return x + 3; }\n'
+                'int run(int x) { return boundary(optional(required(x))); }\n',
+                encoding='utf-8')
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_ELF_SPLIT'] = '0'
+            env['SEABIOS_CLANG_PADDING_PROFILE'] = 'Default'
+            env['SEABIOS_CLANG_SIZE_OPT'] = 'Os'
+            for profile, mode, optional_call in (
+                ('Default', '0', False),
+                ('RequiredOnlyFlat', '0', True),
+                ('RequiredOnlyFlat', '1', False),
+            ):
+                with self.subTest(profile=profile, mode=mode):
+                    env['SEABIOS_CLANG_INLINE_PROFILE'] = profile
+                    output = root / 'inline.s'
+                    result = subprocess.run([
+                        str(compiler), '-m32', '-march=i386', '-Os',
+                        '-DMODE16=0', '-DMODESEGMENT=' + mode,
+                        '-ffreestanding', '-fno-pic', '-fno-pie',
+                        '-fno-merge-constants', '-S', str(source), '-o', str(output),
+                    ], env=env, text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    body = function_assembly(output.read_text(), 'run')
+                    self.assertNotRegex(body, r'\b(?:calll?|jmpl?)\s+required\b')
+                    self.assertRegex(body, r'\b(?:calll?|jmpl?)\s+boundary\b')
+                    self.assertEqual(bool(re.search(
+                        r'\b(?:calll?|jmpl?)\s+optional\b', body)), optional_call)
+
     def test_compact_code_alignment_preserves_explicit_attributes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
