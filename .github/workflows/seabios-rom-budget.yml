@@ -7,6 +7,7 @@ on:
     paths:
       - 'roms/seabios'
       - 'roms/config.seabios-128k'
+      - 'roms/config.seabios-128k-external-ide'
       - 'roms/config.seabios-microvm'
       - 'roms/Makefile'
       - 'scripts/whp-build/seabios-clang-gcc.bash'
@@ -244,6 +245,39 @@ jobs:
             "$before" "$bytes" "$((before - bytes))" "$((131072 - bytes))"
           grep -E '^(16bit size:|32bit |ROM attribute audit:|ROM alignment audit:|Total size:|Error!)' \
             "$log" || true
+
+      - name: Measure separately selected external IDE core
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_SIZE_OPT: OzSegmented
+          SEABIOS_CLANG_INLINE_PROFILE: CompactFlat
+          SEABIOS_CLANG_PADDING_PROFILE: Default
+          SEABIOS_CLANG_ELF_SPLIT: '0'
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-external-ide"
+          variant=seabios-128k-external-ide
+          baseline="$RUNNER_TEMP/whp-seabios-clang-compact-inline/seabios-128k/bios.bin.raw"
+          log="$RUNNER_TEMP/$variant.log"
+          if ! make -C roms "build-seabios-config-$variant" \
+              "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+              "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+            tail -n 90 "$log" >&2
+            exit 1
+          fi
+          config="$root/$variant/.config"
+          grep -Fx '# CONFIG_ATA is not set' "$config"
+          for option in OPTIONROMS DRIVES FLOPPY; do
+            grep -Fx "CONFIG_$option=y" "$config"
+          done
+          test -s "$baseline"
+          test "$(wc -c < "$root/$variant/bios.bin")" -eq 131072
+          before="$(wc -c < "$baseline")"
+          bytes="$(wc -c < "$root/$variant/bios.bin.raw")"
+          printf 'ExternalIDE: baseline=%d core=%d saved=%d headroom=%d bytes\n' \
+            "$before" "$bytes" "$((before - bytes))" "$((131072 - bytes))"
+          grep -E '^(16bit size:|32bit |ROM gap audit:|Total size:)' "$log"
 
       - name: Measure optional code padding against CompactFlat
         env:

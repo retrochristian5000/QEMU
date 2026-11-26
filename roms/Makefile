@@ -67,6 +67,7 @@ default help:
 	@echo "available build targets:"
 	@echo "  bios               -- update bios.bin (seabios)"
 	@echo "  seabios-grub       -- build GRUB Multiboot SeaBIOS payload"
+	@echo "  seabios-external-ide -- build experimental 128 KiB core without ATA"
 	@echo "  vgabios            -- update vgabios binaries (seabios)"
 	@echo "  pxerom             -- update nic roms (bios only)"
 	@echo "  efirom             -- update nic roms (bios+efi)"
@@ -94,6 +95,13 @@ bios: build-seabios-config-seabios-128k \
 	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
 
+# Never publish this experimental image as bios.bin.
+.PHONY: seabios-external-ide
+seabios-external-ide: build-seabios-config-seabios-128k-external-ide
+	mkdir -p "$(SEABIOS_OUTPUT_DIR)"
+	cp "$(SEABIOS_BUILD_ROOT)/seabios-128k-external-ide/bios.bin" \
+	    "$(SEABIOS_OUTPUT_DIR)/bios-128k-external-ide.bin"
+
 seabios-grub: build-seabios-config-seabios-grub
 	mkdir -p $(SEABIOS_OUTPUT_DIR)
 	cp $(SEABIOS_BUILD_ROOT)/seabios-grub/bios.bin.elf $(SEABIOS_OUTPUT_DIR)/seabios-grub.elf
@@ -111,6 +119,7 @@ seavgabios-%: build-seabios-config-vga-%
 # shifts. GCC is unaffected, and the 256 KiB and microvm targets retain
 # their existing optimization levels. Explicit caller settings take priority.
 build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
+build-seabios-config-seabios-128k-external-ide: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
 export SEABIOS_CLANG_ELF_SPLIT ?= 0
 export SEABIOS_CLANG_INLINE_PROFILE ?= Default
 export SEABIOS_CLANG_PADDING_PROFILE ?= Default
@@ -119,6 +128,7 @@ SEABIOS_LAYOUT_PACK ?= 0
 # Limit the default change to this firmware variant.
 ifeq ($(origin SEABIOS_CLANG_INLINE_PROFILE),file)
 build-seabios-config-seabios-128k: export SEABIOS_CLANG_INLINE_PROFILE = CompactFlat
+build-seabios-config-seabios-128k-external-ide: export SEABIOS_CLANG_INLINE_PROFILE = CompactFlat
 endif
 
 # A new checkout can remove files still named in a previous build's .d files.

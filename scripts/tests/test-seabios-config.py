@@ -109,6 +109,23 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertIn('CONFIG_ATA_DMA=y', normal)
         self.assertIn('CONFIG_ATA_DMA=n', isapc)
 
+    def test_external_ide_core_is_not_the_default_bios(self):
+        def options(name):
+            return dict(line.split('=', 1) for line in
+                        (ROOT / 'roms' / name).read_text().splitlines()
+                        if line.startswith('CONFIG_'))
+        normal = options('config.seabios-128k')
+        external = options('config.seabios-128k-external-ide')
+        expected = dict(normal, CONFIG_ATA='n', CONFIG_OPTIONROMS='y',
+                        CONFIG_DRIVES='y', CONFIG_FLOPPY='y')
+        self.assertEqual(external, expected)
+        self.assertNotEqual(normal.get('CONFIG_ATA'), 'n')
+        makefile = (ROOT / 'roms' / 'Makefile').read_text()
+        default_rule = makefile.split('bios: build-seabios-config-', 1)[1]
+        default_rule = default_rule.split('\n\n', 1)[0]
+        self.assertNotIn('external-ide', default_rule)
+        self.assertIn('bios-128k-external-ide.bin', makefile)
+
     def test_clang_profile_change_invalidates_cached_firmware(self):
         with tempfile.TemporaryDirectory(prefix='whp-seabios-profile-') as tmp:
             root = pathlib.Path(tmp)
