@@ -223,6 +223,30 @@ remote modem negotiation or analogue flow control. The reference's
 example uses \X7, but its command table documents only 0 and 1;
 other values return ERROR. Other modem profiles remain unchanged.
 
+External modem indicators
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In Cocoa (Core Graphics or Metal), View > Modem Indicators opens a
+separate optional window for the external 3740 front panel. It shows
+one labeled row per backend, including the automatically created
+backend of the ISA UART convenience device. Closing this window
+does not stop the guest. Internal drive indicators are unchanged.
+
+The nine red labels follow the hardware reference: TST, HS, EC, CD,
+OH, RD, SD, TR and MR. MR indicates a powered emulated modem, TR
+follows DTR, and CD/OH represent simulated carrier/line engagement
+(not a physical telephone line or forced DCD under &C0).
+RD and SD observe delivered serial bytes and accepted guest bytes,
+including AT traffic. Cocoa retains a flash for 180 ms using host
+time; activity counters do not introduce emulated delays.
+TST, HS and EC are shown as unavailable until their operating
+states are implemented. No claim about electrical GPIO wiring or
+negotiated data-pump rates is made.
+
+The observer copies state under BQL and holds no backend pointers.
+Polling occurs only while the inspector is open. No guest display,
+migration state or VM configuration is changed.
+
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,

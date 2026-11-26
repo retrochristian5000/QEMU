@@ -635,6 +635,48 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     object_unref(OBJECT(peer));
 }
 
+static void test_dataport_indicators(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-indicators", "att-paradyne-3740");
+    Chardev *other = modem_new("modem-indicators-other", "hayes-accura-2400");
+    GPtrArray *snapshots;
+    ModemIndicatorSnapshot *snapshot;
+    int lines = CHR_TIOCM_DTR;
+
+    modem_frontend_init(&fe, &out, chr);
+    snapshots = qemu_modem_indicator_snapshot();
+    g_assert_cmpuint(snapshots->len, ==, 1);
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_cmpstr(snapshot->id, ==, "modem-indicators");
+    g_assert_cmpuint(snapshot->active, ==, MODEM_LED_MR);
+    g_assert_cmpuint(snapshot->supported &
+                     (MODEM_LED_TST | MODEM_LED_HS | MODEM_LED_EC), ==, 0);
+    g_ptr_array_unref(snapshots);
+
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    modem_command(&fe, &out, "AT&C0\r");
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_cmpuint(snapshot->active, ==, MODEM_LED_MR | MODEM_LED_TR);
+    g_assert_cmpuint(snapshot->rx_events, >, 0);
+    g_assert_cmpuint(snapshot->tx_events, >, 0);
+    g_ptr_array_unref(snapshots);
+
+    qemu_modem_hardware_reset(chr);
+    snapshots = qemu_modem_indicator_snapshot();
+    snapshot = g_ptr_array_index(snapshots, 0);
+    g_assert_cmpuint(snapshot->active, ==, MODEM_LED_MR);
+    g_ptr_array_unref(snapshots);
+    modem_frontend_cleanup(&fe, chr);
+    object_unparent(OBJECT(other));
+    snapshots = qemu_modem_indicator_snapshot();
+    g_assert_cmpuint(snapshots->len, ==, 0);
+    g_ptr_array_unref(snapshots);
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -684,6 +726,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-indicators",
+                    test_dataport_indicators);
     g_test_add_data_func("/modem/paradyne/xon-config-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_xon_xoff_config);

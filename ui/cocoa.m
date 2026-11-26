@@ -34,6 +34,7 @@
 #include "ui/clipboard.h"
 #include "ui/console.h"
 #include "ui/cocoa-metal.h"
+#include "ui/cocoa-modem-indicators.h"
 #include "ui/display-brightness.h"
 #include "ui/input.h"
 #include "ui/kbd-state.h"
@@ -1553,6 +1554,7 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
 }
 - (void)updateDriveActivity:(NSTimer *)timer;
 - (void)stopDriveActivity;
+- (void)showModemIndicators:(id)sender;
 - (CocoaConsole *)console;
 - (GPtrArray *)extraConsoles;
 - (QemuCocoaView *)viewForWindow:(NSWindow *)window;
@@ -1664,6 +1666,12 @@ static CGEventRef handleTapEvent(CGEventTapProxy proxy, CGEventType type, CGEven
         [pauseLabel sizeToFit];
     }
     return self;
+}
+
+- (void)showModemIndicators:(id)sender
+{
+    (void)sender;
+    cocoa_modem_indicators_show();
 }
 
 - (void)stopDriveActivity
@@ -2337,6 +2345,9 @@ static void create_initial_menus(CocoaConsole *cocoa)
                        keyEquivalent:@"b"];
     [menuItem setKeyEquivalentModifierMask:
         NSEventModifierFlagControl | NSEventModifierFlagOption];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"Modem Indicators…" action:@selector(showModemIndicators:)
+             keyEquivalent:@""];
     menuItem = [[[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""] autorelease];
     [menuItem setSubmenu:menu];
     [[NSApp mainMenu] addItem:menuItem];
@@ -2710,6 +2721,7 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
 
     COCOA_DEBUG("qemu_cocoa: cocoa_display_init\n");
     qatomic_set(&cocoa_drive_activity_enabled, true);
+    cocoa_modem_indicators_set_enabled(true);
 
     // Pull this console process up to being a fully-fledged graphical
     // app with a menubar and Dock icon
@@ -2788,6 +2800,7 @@ static void cocoa_display_cleanup(void)
 {
     /* The AppKit timer stops itself on its next main-runloop invocation. */
     qatomic_set(&cocoa_drive_activity_enabled, false);
+    cocoa_modem_indicators_set_enabled(false);
     QemuCocoaAppController *controller =
         (QemuCocoaAppController *)[NSApp delegate];
     CocoaConsole *cocoa = controller ? [controller console] : NULL;

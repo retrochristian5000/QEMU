@@ -36,6 +36,8 @@
 #include "chardev/char-serial.h"
 #include "qom/object.h"
 #include "qemu/timer.h"
+#include "qemu/atomic.h"
+#include "chardev-internal.h"
 #include "trace.h"
 
 #define TYPE_CHARDEV_MODEM "chardev-modem"
@@ -182,6 +184,9 @@ struct ModemChardev {
     char *tcp_port;
     QEMUSerialSetParams dte;
     int tiocm;
+    unsigned indicator_active;
+    unsigned indicator_rx_events;
+    unsigned indicator_tx_events;
     int connect_speed;
     int sreg[MODEM_SREG_COUNT];
 
@@ -238,6 +243,9 @@ static void modem_chr_accept_input(Chardev *chr)
         uint32_t size;
 
         buf = fifo8_pop_bufptr(&modem->outbuf, MIN(len, avail), &size);
+        if (modem->model->dataport_3740_line) {
+            qatomic_inc(&modem->indicator_rx_events);
+        }
         qemu_chr_be_write(chr, buf, size);
         len = qemu_chr_be_can_write(chr);
         avail -= size;
@@ -280,6 +288,70 @@ static void modem_queue_value(ModemChardev *modem,
     modem_queue_line(modem, line);
 }
 
+/* CD is the simulated carrier, not the forced RS-232 &C0 output. */
+static void modem_publish_indicators(ModemChardev *modem)
+{
+    unsigned active = MODEM_LED_MR;
+
+    if (!modem->model || !modem->model->dataport_3740_line) {
+        return;
+    }
+    if (modem->tiocm & CHR_TIOCM_DTR) {
+        active |= MODEM_LED_TR;
+    }
+    if (modem->connected) {
+        active |= MODEM_LED_CD;
+    }
+    if (modem->connected || modem->dialing) {
+        active |= MODEM_LED_OH;
+    }
+    qatomic_set(&modem->indicator_active, active);
+}
+
+static void modem_indicator_snapshot_free(gpointer opaque)
+{
+    ModemIndicatorSnapshot *snapshot = opaque;
+
+    g_free(snapshot->id);
+    g_free(snapshot->model);
+    g_free(snapshot);
+}
+
+static int modem_indicator_collect(Object *obj, void *opaque)
+{
+    GPtrArray *snapshots = opaque;
+    ModemChardev *modem;
+    ModemIndicatorSnapshot *snapshot;
+
+    if (!object_dynamic_cast(obj, TYPE_CHARDEV_MODEM)) {
+        return 0;
+    }
+    modem = CHARDEV_MODEM(obj);
+    if (!modem->model || !modem->model->dataport_3740_line) {
+        return 0;
+    }
+    snapshot = g_new0(ModemIndicatorSnapshot, 1);
+    snapshot->id = g_strdup(CHARDEV(modem)->label);
+    snapshot->model = g_strdup(modem->model->name);
+    snapshot->supported = MODEM_LED_MR | MODEM_LED_TR | MODEM_LED_CD |
+                          MODEM_LED_OH | MODEM_LED_RD | MODEM_LED_SD;
+    snapshot->active = qatomic_read(&modem->indicator_active);
+    snapshot->rx_events = qatomic_read(&modem->indicator_rx_events);
+    snapshot->tx_events = qatomic_read(&modem->indicator_tx_events);
+    g_ptr_array_add(snapshots, snapshot);
+    return 0;
+}
+
+GPtrArray *qemu_modem_indicator_snapshot(void)
+{
+    GPtrArray *snapshots =
+        g_ptr_array_new_with_free_func(modem_indicator_snapshot_free);
+
+    object_child_foreach(get_chardevs_root(), modem_indicator_collect,
+                         snapshots);
+    return snapshots;
+}
+
 static void modem_update_carrier(ModemChardev *modem)
 {
     modem->tiocm |= CHR_TIOCM_DSR;
@@ -297,6 +369,7 @@ static void modem_update_carrier(ModemChardev *modem)
     } else {
         modem->tiocm &= ~CHR_TIOCM_CAR;
     }
+    modem_publish_indicators(modem);
 }
 
 static void modem_result(ModemChardev *modem, ModemResult result)
@@ -578,6 +651,7 @@ static void modem_tcp_close(ModemChardev *modem)
         modem->tcp_ioc = NULL;
     }
     modem->dialing = false;
+    modem_publish_indicators(modem);
     fifo8_reset(&modem->net_txbuf);
 }
 
@@ -769,6 +843,7 @@ static void modem_dial(ModemChardev *modem)
     sioc = qio_channel_socket_new();
     modem->tcp_ioc = QIO_CHANNEL(sioc);
     modem->dialing = true;
+    modem_publish_indicators(modem);
     qio_channel_set_name(modem->tcp_ioc, "modem-tcp");
     qio_channel_socket_connect_async(sioc, &addr,
                                      modem_tcp_connected,
@@ -1386,7 +1461,7 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                 static const uint8_t pluses[] = "++";
 
                 if (!modem_tcp_queue(modem, pluses, modem->plus_count)) {
-                    return i;
+                    goto done;
                 }
                 modem->plus_count = 0;
             }
@@ -1397,7 +1472,7 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                 /* \X1 additionally forwards the local flow-control byte. */
                 if (modem->xon_xoff_passthrough &&
                     !modem_tcp_queue(modem, &c, 1)) {
-                    return i;
+                    goto done;
                 }
                 if (modem->connected && !modem->command_mode) {
                     modem->dte_rx_paused = c == MODEM_XOFF;
@@ -1408,7 +1483,7 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
                 continue;
             }
             if (!modem_tcp_queue(modem, &c, 1)) {
-                return i;
+                goto done;
             }
             continue;
         }
@@ -1435,7 +1510,11 @@ static int modem_chr_write(Chardev *chr, const uint8_t *buf, int len)
         }
     }
 
-    return len;
+done:
+    if (i > 0 && modem->model->dataport_3740_line) {
+        qatomic_inc(&modem->indicator_tx_events);
+    }
+    return i;
 }
 
 static int modem_chr_ioctl(Chardev *chr, int cmd, void *arg)
