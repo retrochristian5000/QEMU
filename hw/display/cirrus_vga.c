@@ -183,6 +183,7 @@ struct PCICirrusVGAState {
     MemoryRegion legacy_io_lo;
     MemoryRegion legacy_io_hi;
     bool pci_legacy_decode;
+    bool precise_timing;
 };
 
 #define TYPE_PCI_CIRRUS_VGA "cirrus-vga"
@@ -1480,6 +1481,11 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
             /* Bank aliases must reflect the newly written extended mode. */
             cirrus_update_memory_access(s);
         }
+        if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info &&
+            ((s->vga.sr_index >= 0x0b && s->vga.sr_index <= 0x0e) ||
+             (s->vga.sr_index >= 0x1b && s->vga.sr_index <= 0x1e))) {
+            s->vga.update_retrace_info(&s->vga);
+        }
 #ifdef DEBUG_CIRRUS
         printf("cirrus: handled outport sr_index %02x, sr_value %02x\n",
                s->vga.sr_index, val);
@@ -1796,6 +1802,10 @@ static void cirrus_vga_write_cr(CirrusVGAState * s, int reg_value)
             return;
         }
         s->vga.cr[s->vga.cr_index] = reg_value;
+        if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
+            s->vga.update_retrace_info(&s->vga);
+            break;
+        }
         switch(s->vga.cr_index) {
         case 0x00:
         case 0x04:
@@ -2880,6 +2890,9 @@ static int cirrus_post_load(void *opaque, int version_id)
     cirrus_update_bank_ptr(s, 0);
     cirrus_update_bank_ptr(s, 1);
     cirrus_update_memory_access(s);
+    if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
+        s->vga.update_retrace_info(&s->vga);
+    }
     /* force refresh */
     s->vga.graphic_mode = -1;
 
@@ -2984,6 +2997,9 @@ static void cirrus_reset(void *opaque)
 
     s->cirrus_hidden_dac_lockindex = 5;
     s->cirrus_hidden_dac_data = 0;
+    if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
+        s->vga.update_retrace_info(&s->vga);
+    }
 }
 
 static const MemoryRegionOps cirrus_linear_io_ops = {
@@ -3141,6 +3157,10 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     if (!vga_common_init(&s->vga, OBJECT(dev), errp)) {
         return;
     }
+    if (d->precise_timing) {
+        s->vga.retrace = cirrus_gd5446_retrace;
+        s->vga.update_retrace_info = cirrus_gd5446_update_retrace_info;
+    }
     /* With PCI-controlled decoding, initialize the common VGA engine
      * without installing its unconditional legacy mappings. */
     cirrus_init_common(s, OBJECT(dev), device_id, CIRRUS_BUSTYPE_PCI,
@@ -3186,6 +3206,8 @@ static const Property pci_vga_cirrus_properties[] = {
      * coverage establishes that PCI-controlled decoding is safe by default. */
     DEFINE_PROP_BOOL("pci-legacy-decode", PCICirrusVGAState,
                      pci_legacy_decode, false),
+    DEFINE_PROP_BOOL("precise-timing", PCICirrusVGAState,
+                     precise_timing, false),
 };
 
 static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
