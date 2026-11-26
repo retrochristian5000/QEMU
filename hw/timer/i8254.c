@@ -39,8 +39,14 @@
 #define RW_STATE_WORD1 4
 
 typedef struct PITClass PITClass;
-DECLARE_CLASS_CHECKERS(PITClass, PIT,
-                       TYPE_I8254)
+typedef struct PITState PITState;
+DECLARE_OBJ_CHECKERS(PITState, PITClass, PIT, TYPE_I8254)
+
+struct PITState {
+    PITCommonState parent_obj;
+    char *model;
+    bool is_8253;
+};
 
 struct PITClass {
     PITCommonClass parent_class;
@@ -50,7 +56,7 @@ struct PITClass {
 
 static void pit_irq_timer_update(PITChannelState *s, int64_t current_time);
 
-static int pit_get_count(PITChannelState *s)
+static int pit_get_count(PITChannelState *s, bool is_8253)
 {
     uint64_t d;
     int counter;
@@ -67,6 +73,25 @@ static int pit_get_count(PITChannelState *s)
     case 3: {
         unsigned int phase = d % s->count;
         unsigned int high_ticks = (s->count + 1) / 2;
+
+        /*
+         * Unlike the 8254, the 8253 reloads the full odd count at
+         * both edges. The first decrement is one while OUT is high
+         * and three while OUT is low; subsequent decrements are two.
+         */
+        if (is_8253 && (s->count & 1)) {
+            bool high = phase < high_ticks;
+
+            if (!high) {
+                phase -= high_ticks;
+            }
+            if (phase == 0) {
+                counter = s->count;
+            } else {
+                counter = s->count - 2 * phase + (high ? 1 : -1);
+            }
+            break;
+        }
 
         /*
          * The 8254 loads an even counting element in both half-cycles.
@@ -126,10 +151,10 @@ static inline void pit_load_count(PITChannelState *s, int val)
 }
 
 /* if already latched, do not latch again */
-static void pit_latch_count(PITChannelState *s)
+static void pit_latch_count(PITChannelState *s, bool is_8253)
 {
     if (!s->count_latched) {
-        s->latched_count = pit_get_count(s);
+        s->latched_count = pit_get_count(s, is_8253);
         s->count_latched = s->rw_mode;
     }
 }
@@ -137,7 +162,8 @@ static void pit_latch_count(PITChannelState *s)
 static void pit_ioport_write(void *opaque, hwaddr addr,
                              uint64_t val, unsigned size)
 {
-    PITCommonState *pit = opaque;
+    PITState *ps = PIT(opaque);
+    PITCommonState *pit = &ps->parent_obj;
     int channel, access;
     PITChannelState *s;
 
@@ -147,12 +173,16 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
     if (addr == 3) {
         channel = val >> 6;
         if (channel == 3) {
+            /* Counter select 3 is reserved on the original 8253. */
+            if (ps->is_8253) {
+                return;
+            }
             /* read back command */
             for(channel = 0; channel < 3; channel++) {
                 s = &pit->channels[channel];
                 if (val & (2 << channel)) {
                     if (!(val & 0x20)) {
-                        pit_latch_count(s);
+                        pit_latch_count(s, ps->is_8253);
                     }
                     if (!(val & 0x10) && !s->status_latched) {
                         /* status latch */
@@ -171,7 +201,7 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
             s = &pit->channels[channel];
             access = (val >> 4) & 3;
             if (access == 0) {
-                pit_latch_count(s);
+                pit_latch_count(s, ps->is_8253);
             } else {
                 /* Reprogramming releases any outstanding count latch. */
                 s->count_latched = 0;
@@ -209,7 +239,8 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
 static uint64_t pit_ioport_read(void *opaque, hwaddr addr,
                                 unsigned size)
 {
-    PITCommonState *pit = opaque;
+    PITState *ps = PIT(opaque);
+    PITCommonState *pit = &ps->parent_obj;
     int ret, count;
     PITChannelState *s;
 
@@ -244,20 +275,20 @@ static uint64_t pit_ioport_read(void *opaque, hwaddr addr,
         switch(s->read_state) {
         default:
         case RW_STATE_LSB:
-            count = pit_get_count(s);
+            count = pit_get_count(s, ps->is_8253);
             ret = count & 0xff;
             break;
         case RW_STATE_MSB:
-            count = pit_get_count(s);
+            count = pit_get_count(s, ps->is_8253);
             ret = (count >> 8) & 0xff;
             break;
         case RW_STATE_WORD0:
-            count = pit_get_count(s);
+            count = pit_get_count(s, ps->is_8253);
             ret = count & 0xff;
             s->read_state = RW_STATE_WORD1;
             break;
         case RW_STATE_WORD1:
-            count = pit_get_count(s);
+            count = pit_get_count(s, ps->is_8253);
             ret = (count >> 8) & 0xff;
             s->read_state = RW_STATE_WORD0;
             break;
@@ -350,9 +381,18 @@ static void pit_post_load(PITCommonState *s)
 
 static void pit_realizefn(DeviceState *dev, Error **errp)
 {
-    PITCommonState *pit = PIT_COMMON(dev);
+    PITState *ps = PIT(dev);
+    PITCommonState *pit = &ps->parent_obj;
     PITClass *pc = PIT_GET_CLASS(dev);
     PITChannelState *s;
+
+    if (ps->model && strcmp(ps->model, "i8253") == 0) {
+        ps->is_8253 = true;
+    } else if (ps->model && strcmp(ps->model, "i8254") != 0) {
+        error_setg(errp, "Unsupported ISA PIT model '%s'; use i8253 or i8254",
+                   ps->model);
+        return;
+    }
 
     s = &pit->channels[0];
     /* the timer 0 is connected to an IRQ */
@@ -367,6 +407,10 @@ static void pit_realizefn(DeviceState *dev, Error **errp)
     pc->parent_realize(dev, errp);
 }
 
+static const Property pit_properties[] = {
+    DEFINE_PROP_STRING("model", PITState, model),
+};
+
 static void pit_class_initfn(ObjectClass *klass, const void *data)
 {
     PITClass *pc = PIT_CLASS(klass);
@@ -378,12 +422,13 @@ static void pit_class_initfn(ObjectClass *klass, const void *data)
     k->get_channel_info = pit_get_channel_info_common;
     k->post_load = pit_post_load;
     device_class_set_legacy_reset(dc, pit_reset);
+    device_class_set_props(dc, pit_properties);
 }
 
 static const TypeInfo pit_info = {
     .name          = TYPE_I8254,
     .parent        = TYPE_PIT_COMMON,
-    .instance_size = sizeof(PITCommonState),
+    .instance_size = sizeof(PITState),
     .class_init    = pit_class_initfn,
     .class_size    = sizeof(PITClass),
 };

@@ -213,6 +213,39 @@ static void test_reprogram_latch(void)
     qtest_quit(s);
 }
 
+static void test_i8253_model(void)
+{
+    static const uint16_t counts[] = { 5, 4, 2, 5, 2, 5, 4 };
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+                              "-global isa-pit.model=i8253");
+    uint64_t elapsed = 0;
+    unsigned int i;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    load_mode3(s, 5);
+    for (i = 0; i < G_N_ELEMENTS(counts); i++) {
+        advance_to_tick(s, i, &elapsed);
+        /* The 8254 status read-back command must not latch status. */
+        qtest_outb(s, PIT_CONTROL, PIT_STATUS0);
+        g_assert_cmphex(read_latched_count(s), ==, counts[i]);
+        g_assert_cmpint(qtest_get_irq(s, 0), ==, i % 5 < 3);
+    }
+
+    qtest_quit(s);
+}
+
+static void test_i8254_model(void)
+{
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+                              "-global isa-pit.model=i8254");
+
+    load_mode3(s, 5);
+    g_assert_cmphex(read_latched_count(s), ==, 4);
+    g_assert_true(pit_out(s));
+
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -221,6 +254,8 @@ int main(int argc, char **argv)
     qtest_add_func("/i8254/mode3/bios-tick-latch", test_bios_tick_latch);
     qtest_add_func("/i8254/mode-aliases", test_mode_aliases);
     qtest_add_func("/i8254/reprogram-latch", test_reprogram_latch);
+    qtest_add_func("/i8254/model/i8253", test_i8253_model);
+    qtest_add_func("/i8254/model/i8254", test_i8254_model);
 
     return g_test_run();
 }
