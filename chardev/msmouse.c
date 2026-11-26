@@ -33,7 +33,8 @@
 
 #define MSMOUSE_LO6(n)  ((n) & 0x3f)
 #define MSMOUSE_HI2(n)  (((n) & 0xc0) >> 6)
-#define MSMOUSE_PWR(cm) (cm & (CHR_TIOCM_RTS | CHR_TIOCM_DTR))
+#define MSMOUSE_POWER_LINES (CHR_TIOCM_RTS | CHR_TIOCM_DTR)
+#define MSMOUSE_PWR(cm) (((cm) & MSMOUSE_POWER_LINES) == MSMOUSE_POWER_LINES)
 
 /* Serial PnP for 6 bit devices/mice sends all ASCII chars - 0x20 */
 #define M(c) (c - 0x20)
