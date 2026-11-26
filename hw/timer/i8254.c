@@ -418,6 +418,7 @@ static void pit_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_parent_realize(dc, pit_realizefn, &pc->parent_realize);
+    dc->desc = "Intel 8254-compatible programmable interval timer";
     k->set_channel_gate = pit_set_channel_gate;
     k->get_channel_info = pit_get_channel_info_common;
     k->post_load = pit_post_load;
