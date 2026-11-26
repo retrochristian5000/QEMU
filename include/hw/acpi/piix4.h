@@ -53,6 +53,7 @@ struct PIIX4PMState {
     qemu_irq smi_irq;
     bool smm_enabled;
     bool smm_compat;
+    bool strict_io_decode;
     Notifier machine_ready;
     Notifier powerdown_notifier;
 
