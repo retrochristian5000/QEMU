@@ -3,10 +3,10 @@ if (cc.sizeof('void *') < 8) and (have_system or have_user)
 endif
 
 foreach lang : all_languages
-  compiler = meson.get_compiler(lang)
-  if compiler.get_id() == 'gcc' and compiler.version().version_compare('>=10.4')
+  language_compiler = meson.get_compiler(lang, native: false)
+  if language_compiler.get_id() == 'gcc' and language_compiler.version().version_compare('>=10.4')
     # ok
-  elif compiler.get_id() == 'clang' and compiler.compiles('''
+  elif language_compiler.get_id() == 'clang' and language_compiler.compiles('''
       #ifdef __apple_build_version__
       # if __clang_major__ < 15 || (__clang_major__ == 15 && __clang_minor__ < 0)
       #  error You need at least XCode Clang v15.0 to compile QEMU
@@ -17,10 +17,14 @@ foreach lang : all_languages
       # endif
       #endif''')
     # ok
-  elif compiler.get_id() == 'emscripten'
+  elif language_compiler.get_id() == 'emscripten'
     # ok
   else
-    error('You either need GCC v10.4 or Clang v10.0 (or XCode Clang v15.0) to compile QEMU')
+    error('Unsupported @0@ compiler @1@ @2@: QEMU requires GCC 10.4, Clang 10.0, or Apple Clang 15.0 or newer'.format(lang, language_compiler.get_id(), language_compiler.version()))
+  endif
+  # Windows plugins require lld when using Clang. Check each enabled language.
+  if host_os == 'windows' and language_compiler.get_id() == 'clang' and language_compiler.get_linker_id() != 'ld.lld'
+    error('The Windows @0@ Clang compiler requires lld; use the MSYS2 clang64 or clangarm64 environment'.format(lang))
   endif
 endforeach
 
@@ -36,24 +40,13 @@ qemu_common_flags = [
 qemu_cflags = []
 qemu_ldflags = []
 
-if host_os == 'darwin'
-  # Disable attempts to use ObjectiveC features in os/object.h since they
-  # won't work when we're compiling with gcc as a C compiler.
-  if compiler.get_id() == 'gcc'
-    qemu_common_flags += '-DOS_OBJECT_USE_OBJC=0'
-  endif
-elif host_os == 'sunos'
+if host_os == 'sunos'
   # needed for CMSG_ macros in sys/socket.h
   qemu_common_flags += '-D_XOPEN_SOURCE=600'
   # needed for TIOCWIN* defines in termios.h
   qemu_common_flags += '-D__EXTENSIONS__'
 elif host_os == 'haiku'
   qemu_common_flags += ['-DB_USE_POSITIVE_POSIX_ERRORS', '-D_BSD_SOURCE', '-fPIC']
-elif host_os == 'windows'
-  # plugins use delaylib, and clang needs to be used with lld to make it work.
-  if compiler.get_id() == 'clang' and compiler.get_linker_id() != 'ld.lld'
-    error('On windows, you need to use lld with clang - use msys2 clang64/clangarm64 env')
-  endif
 endif
 
 # Choose instruction set (currently x86-only)

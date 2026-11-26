@@ -1,4 +1,4 @@
-cc = meson.get_compiler('c')
+cc = meson.get_compiler('c', native: false)
 all_languages = ['c']
 enable_cpp = host_os == 'windows' or get_option('plugins')
 if enable_cpp and add_languages('cpp', required: false, native: false)
@@ -8,7 +8,27 @@ endif
 if host_os == 'darwin' and \
    add_languages('objc', required: true, native: false)
   all_languages += ['objc']
-  objc = meson.get_compiler('objc')
+  objc = meson.get_compiler('objc', native: false)
+  if not cc.compiles('''
+    #ifdef __OBJC__
+    #error C compiler is using Objective-C mode
+    #endif
+    int main(void) { return 0; }
+  ''', name: 'Darwin C language mode')
+    error('The Darwin C compiler must compile C sources in C mode')
+  endif
+  if not objc.compiles('''
+    #ifndef __OBJC__
+    #error Objective-C language mode is not active
+    #endif
+    @class NSObject;
+    int main(void) { return 0; }
+  ''', name: 'Darwin Objective-C language mode')
+    error('The Darwin Objective-C compiler must compile Objective-C sources in Objective-C mode')
+  endif
+  if cc.sizeof('void *') != objc.sizeof('void *')
+    error('The Darwin C and Objective-C compilers disagree on pointer size')
+  endif
 endif
 
 have_rust = add_languages('rust', native: false,

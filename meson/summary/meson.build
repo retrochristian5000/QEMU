@@ -87,14 +87,16 @@ summary_info = {}
 summary_info += {'host CPU':          cpu}
 summary_info += {'host endianness':   build_machine.endian()}
 summary_info += {'C compiler':        ' '.join(meson.get_compiler('c').cmd_array())}
-summary_info += {'Host C compiler':   ' '.join(meson.get_compiler('c', native: true).cmd_array())}
+summary_info += {'Build machine C compiler': ' '.join(meson.get_compiler('c', native: true).cmd_array())}
+summary_info += {'C compiler version': cc.version()}
 if 'cpp' in all_languages
   summary_info += {'C++ compiler':    ' '.join(meson.get_compiler('cpp').cmd_array())}
 else
   summary_info += {'C++ compiler':      false}
 endif
 if 'objc' in all_languages
-  summary_info += {'Objective-C compiler': ' '.join(meson.get_compiler('objc').cmd_array())}
+  summary_info += {'Objective-C compiler': ' '.join(objc.cmd_array())}
+  summary_info += {'Objective-C compiler version': objc.version()}
 else
   summary_info += {'Objective-C compiler': false}
 endif
@@ -127,7 +129,7 @@ if 'cpp' in all_languages
   summary_info += {'QEMU_CXXFLAGS':     ' '.join(qemu_common_flags + qemu_cxxflags)}
 endif
 if 'objc' in all_languages
-  summary_info += {'QEMU_OBJCFLAGS':    ' '.join(qemu_common_flags)}
+  summary_info += {'QEMU_OBJCFLAGS':    ' '.join(qemu_objcflags)}
 endif
 summary_info += {'QEMU_LDFLAGS':      ' '.join(qemu_ldflags)}
 summary_info += {'link-time optimization (LTO)': get_option('b_lto')}

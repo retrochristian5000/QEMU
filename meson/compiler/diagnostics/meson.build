@@ -128,6 +128,17 @@ if 'cpp' in all_languages
   qemu_cxxflags = ['-D__STDC_LIMIT_MACROS', '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS'] + qemu_cflags
 endif
 
+# Darwin's os/object.h requires compiler-specific policy for C-family sources.
+# Do not propagate a GCC workaround into Objective-C or a Clang C++ compiler.
+if host_os == 'darwin'
+  if cc.get_id() == 'gcc'
+    qemu_cflags += '-DOS_OBJECT_USE_OBJC=0'
+  endif
+  if 'cpp' in all_languages and cxx.get_id() == 'gcc'
+    qemu_cxxflags += '-DOS_OBJECT_USE_OBJC=0'
+  endif
+endif
+
 add_project_arguments(cc.get_supported_arguments(qemu_common_flags + qemu_cflags + warn_flags),
                       native: false, language: 'c')
 add_global_link_arguments(qemu_ldflags, native: false, language: all_languages)
@@ -145,11 +156,16 @@ if 'objc' in all_languages
   # Otherwise an ASan build silently leaves part of the host uninstrumented.
   objc_asan_flags = []
   if get_option('asan')
-    if not objc.has_argument('-fsanitize=address')
-      error('Your Objective-C compiler does not support -fsanitize=address')
+    if not objc.has_argument('-fsanitize=address') or not objc.links('''
+      #ifndef __OBJC__
+      #error Objective-C language mode is not active
+      #endif
+      int main(void) { return 0; }
+    ''', args: '-fsanitize=address', name: 'Objective-C AddressSanitizer runtime')
+      error('The Objective-C compiler cannot compile and link with AddressSanitizer')
     endif
     objc_asan_flags = ['-fsanitize=address', '-fno-omit-frame-pointer']
   endif
-  add_project_arguments(objc.get_supported_arguments(qemu_common_flags + objc_asan_flags + warn_flags),
-                        native: false, language: 'objc')
+  qemu_objcflags = objc.get_supported_arguments(qemu_common_flags + objc_asan_flags + warn_flags)
+  add_project_arguments(qemu_objcflags, native: false, language: 'objc')
 endif

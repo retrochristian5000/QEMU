@@ -748,6 +748,26 @@ endif
 cocoa = dependency('appleframeworks',
                    modules: ['Cocoa', 'CoreVideo', 'QuartzCore'],
                    required: get_option('cocoa'))
+if cocoa.found()
+  cocoa_usable = false
+  if 'objc' in all_languages
+    cocoa_usable = objc.links('''
+      #import <Cocoa/Cocoa.h>
+      #import <CoreVideo/CoreVideo.h>
+      #import <QuartzCore/QuartzCore.h>
+      int main(void) {
+        return [NSApplication sharedApplication] == nil;
+      }
+    ''', dependencies: cocoa, name: 'Cocoa Objective-C compile and link')
+  endif
+  if not cocoa_usable
+    if get_option('cocoa').enabled()
+      error('Cocoa requires an Objective-C compiler that can compile and link the Cocoa frameworks')
+    endif
+    warning('Cocoa Objective-C compile/link check failed; disabling Cocoa display')
+    cocoa = not_found
+  endif
+endif
 
 vmnet = dependency('appleframeworks', modules: 'vmnet', required: get_option('vmnet'))
 if vmnet.found() and not cc.has_header_symbol('vmnet/vmnet.h',
