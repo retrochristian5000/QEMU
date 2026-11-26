@@ -3021,7 +3021,10 @@ static void cirrus_reset(void *opaque)
                          CIRRUS_MEMSIZE_1M : CIRRUS_MEMSIZE_2M;
         s->vga.sr[0x17] = s->bustype;
         if (s->device_id == CIRRUS_ID_CLGD5430) {
-            s->vga.sr[0x15] = 0x03; /* memory size, 3=2MB, 4=4MB */
+            /* Keep the existing BIOS scratch-register size convention. */
+            s->vga.sr[0x0f] = s->real_vram_size == MiB ?
+                             CIRRUS_MEMSIZE_1M : CIRRUS_MEMSIZE_2M;
+            s->vga.sr[0x15] = s->real_vram_size == MiB ? 2 : 3;
         }
     }
     s->vga.cr[0x27] = s->device_id;
@@ -3184,8 +3187,9 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
      * Also accept 8 MB/16 MB for backward compatibility.
      */
     if (device_id == CIRRUS_ID_CLGD5430) {
-        if (s->vga.vram_size_mb != 2) {
-            error_setg(errp, "GD5430 PCI profile requires 2 MiB of VRAM");
+        if (s->vga.vram_size_mb != 1 && s->vga.vram_size_mb != 2) {
+            error_setg(errp, "GD5430 PCI supports vgamem_mb=1 or 2 "
+                       "(512 KiB is not yet implemented)");
             return;
         }
         if (d->precise_timing) {
@@ -3318,7 +3322,7 @@ static void cirrus_gd5430_pci_class_init(ObjectClass *klass, const void *data)
     /* Do not automatically load the GD5446 PCI option ROM. */
     k->romfile = NULL;
     DEVICE_CLASS(klass)->desc =
-        "Cirrus Logic CL-GD5430 PCI VGA (experimental, 2 MiB, no default ROM)";
+        "Cirrus Logic CL-GD5430 PCI VGA (experimental, no default ROM)";
 }
 
 static const TypeInfo cirrus_gd5430_pci_info = {

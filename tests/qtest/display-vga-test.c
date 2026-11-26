@@ -177,6 +177,23 @@ static void test_vlb_cirrus_decoder(gconstpointer data)
     qtest_quit(qts);
 }
 
+static void test_gd5430_vlb_1mb(void)
+{
+    const uint32_t base = 0x04000000U;
+    QTestState *qts = qtest_init("-m 128 -vga none "
+                                  "-device gd5430-vlb,vgamem_mb=1");
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    g_assert_cmphex(vga_seq_read(qts, 0x15), ==, 2);
+    g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==, 0x10);
+    vga_seq_write(qts, 0x07, 0x10);
+    qtest_writeb(qts, base + 0x1234, 0x56);
+    g_assert_cmphex(qtest_readb(qts, base + 0x101234), ==, 0x56);
+    g_assert_cmphex(qtest_readb(qts, base + 0x301234), ==, 0x56);
+    qtest_quit(qts);
+}
+
 static void vga_attr_write(QTestState *qts, uint8_t index, uint8_t value)
 {
     qtest_inb(qts, VGA_IS1_RC);
@@ -308,11 +325,13 @@ static QDict *find_pci_device(QList *buses, const char *qdev_id)
 
 static void test_cirrus_named_pci_profile(gconstpointer opaque)
 {
-    bool gd5430 = GPOINTER_TO_INT(opaque);
+    unsigned int gd5430_mb = GPOINTER_TO_UINT(opaque);
+    bool gd5430 = gd5430_mb != 0;
     const char *model = gd5430 ? "gd5430-pci" : "gd5446-pci";
     unsigned chip = gd5430 ? 0xa0 : 0xb8;
     QTestState *qts = qtest_initf("-M pc -nodefaults -vga none "
-                                  "-device %s,addr=4,romfile=", model);
+                                  "-device %s,addr=4,romfile=,vgamem_mb=%u",
+                                  model, gd5430 ? gd5430_mb : 4);
 
     qtest_outl(qts, 0xcf8, 0x80002000);
     g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, (chip << 16) | 0x1013);
@@ -334,7 +353,12 @@ static void test_cirrus_named_pci_profile(gconstpointer opaque)
     vga_seq_write(qts, 0x06, 0x12);
     g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, chip);
     g_assert_cmphex(vga_seq_read(qts, 0x17) & 0x38, ==, 0x20);
-    g_assert_cmphex(vga_seq_read(qts, 0x15), ==, gd5430 ? 3 : 4);
+    g_assert_cmphex(vga_seq_read(qts, 0x15), ==,
+                    gd5430 ? gd5430_mb + 1 : 4);
+    if (gd5430) {
+        g_assert_cmphex(vga_seq_read(qts, 0x0f) & 0x18, ==,
+                        gd5430_mb == 1 ? 0x10 : 0x18);
+    }
 
     vga_gfx_write(qts, 0x12, 0x5a);
     g_assert_cmphex(vga_gfx_read(qts, 0x12), ==, gd5430 ? 0xff : 0x5a);
@@ -760,7 +784,10 @@ int main(int argc, char **argv)
         (!strcmp(arch, "i386") || !strcmp(arch, "x86_64"))) {
         if (qtest_has_device("gd5430-pci")) {
             qtest_add_data_func("/display/pci/cirrus-gd5430-profile",
-                                GINT_TO_POINTER(1),
+                                GUINT_TO_POINTER(2),
+                                test_cirrus_named_pci_profile);
+            qtest_add_data_func("/display/pci/cirrus-gd5430-1mb",
+                                GUINT_TO_POINTER(1),
                                 test_cirrus_named_pci_profile);
         }
         if (qtest_has_device("gd5446-pci")) {
@@ -796,6 +823,7 @@ int main(int argc, char **argv)
         qtest_add_data_func("/display/vlb/gd5430/2gb",
                             GUINT_TO_POINTER(0x80000000U),
                             test_vlb_cirrus_decoder);
+        qtest_add_func("/display/vlb/gd5430/1mb", test_gd5430_vlb_1mb);
     }
 
     if (qtest_has_device("sierra-falcon64")) {

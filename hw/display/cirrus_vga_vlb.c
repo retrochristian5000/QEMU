@@ -42,9 +42,9 @@ static void cirrus_gd5430_vlb_realize(DeviceState *dev, Error **errp)
                    d->lfb_base);
         return;
     }
-    if (vga->vram_size_mb != 2) {
-        error_setg(errp, "Invalid GD5430 VLB ram size '%u', expected 2",
-                   vga->vram_size_mb);
+    if (vga->vram_size_mb != 1 && vga->vram_size_mb != 2) {
+        error_setg(errp, "GD5430 VLB supports vgamem_mb=1 or 2 "
+                   "(512 KiB is not yet implemented)");
         return;
     }
     if (!vga_common_init(vga, OBJECT(dev), errp)) {
@@ -86,7 +86,7 @@ static void cirrus_gd5430_vlb_class_init(ObjectClass *klass, const void *data)
     device_class_set_props(dc, cirrus_gd5430_vlb_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
     dc->desc =
-        "Cirrus Logic CL-GD5430 VLB VGA (2 MiB, decoder only, no VLB timing)";
+        "Cirrus Logic CL-GD5430 VLB VGA (decoder only, no VLB timing)";
     dc->fw_name = "cirrus-gd5430-vlb";
 }
 

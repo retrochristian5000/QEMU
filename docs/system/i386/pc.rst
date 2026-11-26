@@ -328,8 +328,15 @@ to the machine. Explicit device selection does not change chipset
 registers, VRAM defaults, bus mappings or migration section names.
 
 The experimental ``gd5430-pci`` profile uses PCI ID 1013:00a0,
-CR27 identification 0xa0, PCI bus straps, 2 MiB VRAM and a 16 MiB
-prefetchable BAR0. It models the primary framebuffer aperture only,
+CR27 identification 0xa0, PCI bus straps, a default of 2 MiB VRAM and a
+16 MiB prefetchable BAR0. Both GD5430 bus variants accept
+``vgamem_mb=1`` or ``vgamem_mb=2``. The February 1995 Alpine data book
+also documents 512 KiB configurations, which require sub-MiB allocation
+support not yet provided by the common VGA engine. The hardware ceiling
+is 2 MiB; the larger 4 MiB configurations belong to the GD5434/GD5436.
+The configured memory size determines the reset scratch-register value
+and address mask; the PCI BAR and VLB window sizes are independent of
+installed VRAM. It models the primary framebuffer aperture only,
 with relocatable VGA I/O disabled, and does not expose the GD5446
 dedicated MMIO BAR or high BitBLT aperture. The GD5430 PCI and VLB
 variants both omit GR12-GR15, GR33 solid-fill and GR31 auto-start.

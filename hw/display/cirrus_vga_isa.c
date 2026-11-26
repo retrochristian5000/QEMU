@@ -146,7 +146,7 @@ static void isa_cirrus_gd5426_class_init(ObjectClass *klass,
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = isa_cirrus_gd5426_realizefn;
-    dc->desc = "Cirrus Logic CL-GD5426 ISA VGA (2 MiB, shared engine)";
+    dc->desc = "Cirrus Logic CL-GD5426 ISA VGA (shared engine)";
     dc->fw_name = "isa-cirrus-gd5426";
 }
 
@@ -164,7 +164,7 @@ static void isa_cirrus_gd5422_class_init(ObjectClass *klass, const void *data)
     dc->realize = isa_cirrus_gd5422_realizefn;
     device_class_set_props(dc, isa_cirrus_gd5422_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Cirrus Logic CL-GD5422 ISA VGA (1 MiB, no BitBLT)";
+    dc->desc = "Cirrus Logic CL-GD5422 ISA VGA (no BitBLT)";
     dc->fw_name = "isa-cirrus-gd5422";
 }
 
@@ -180,7 +180,7 @@ static void isa_cirrus_gd5428_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->desc =
-        "Cirrus Logic CL-GD5428 ISA VGA (2 MiB, shared engine)";
+        "Cirrus Logic CL-GD5428 ISA VGA (shared engine)";
     dc->fw_name = "isa-cirrus-gd5428";
 }
 
