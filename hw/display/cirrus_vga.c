@@ -3273,7 +3273,7 @@ static void cirrus_vga_class_init(ObjectClass *klass, const void *data)
     k->device_id = CIRRUS_ID_CLGD5446;
     k->class_id = PCI_CLASS_DISPLAY_VGA;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
-    dc->desc = "Cirrus Logic CL-GD5446 PCI VGA";
+    dc->desc = "Generic Cirrus PCI VGA (CL-GD5446 compatible)";
     dc->vmsd = &vmstate_pci_cirrus_vga;
     device_class_set_props(dc, pci_vga_cirrus_properties);
     dc->hotpluggable = false;
@@ -3313,9 +3313,16 @@ static const TypeInfo cirrus_gd5430_pci_info = {
     .class_init = cirrus_gd5430_pci_class_init,
 };
 
+static void cirrus_gd5446_pci_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc =
+        "Cirrus Logic CL-GD5446 PCI VGA (shared compatible implementation)";
+}
+
 static const TypeInfo cirrus_gd5446_pci_info = {
     .name = TYPE_PCI_CIRRUS_GD5446,
     .parent = TYPE_PCI_CIRRUS_VGA,
+    .class_init = cirrus_gd5446_pci_class_init,
 };
 
 static void cirrus_vga_register_types(void)

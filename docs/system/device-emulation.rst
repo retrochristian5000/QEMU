@@ -76,6 +76,35 @@ USB device on the host system to the guest or dedicating a video card
 in a PCI slot to the exclusive use of the guest.
 
 
+Generic compatibility models
+============================
+
+A generic compatibility model implements a guest-facing hardware
+interface; it does not necessarily reproduce a particular physical
+board, its component revisions or all of its capabilities. In this fork
+the following explicit aliases are available for the existing models
+through ``-device``:
+
+* ``cirrus-vga-generic`` is an alias for ``cirrus-vga``, a PCI VGA
+  model exposing the CL-GD5446 identity.
+* ``isa-cirrus-vga-generic`` is an alias for ``isa-cirrus-vga``, an ISA
+  VGA model exposing the CL-GD5428 identity.
+* ``sb16-generic`` is an alias for ``sb16``, a legacy ISA Sound Blaster 16
+  compatible model, not a specific Creative CT-series board or an ISA
+  Plug and Play card.
+
+The original QOM names, device properties, guest identities and migration
+state names are unchanged. Use the explicit aliases with ``-device``;
+existing machine defaults, ``-vga cirrus``, and the legacy audio model
+name ``sb16`` retain their previous meanings. QOM type enumeration and
+type-specific global properties continue to use the original QOM names.
+
+The separate ``cirrus-gd5446-pci`` and ``isa-cirrus-gd5428`` profiles
+currently share the corresponding generic implementations; selecting
+them does not imply additional board-specific accuracy. The GD5430,
+GD5422 and GD5426 profiles retain their existing behavior. The
+``sb16-pnp`` and ``awe32`` reserved profiles are not aliases for SB16.
+
 Emulated Devices
 ~~~~~~~~~~~~~~~~
 

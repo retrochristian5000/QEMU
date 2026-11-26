@@ -16,7 +16,7 @@
 static void awe32_realize(DeviceState *dev, Error **errp)
 {
     error_setg(errp, "awe32: EMU8000 synthesis and sound memory are not "
-               "implemented; use sb16 for legacy PCM audio");
+               "implemented; use sb16-generic for legacy PCM audio");
 }
 
 static void awe32_class_init(ObjectClass *klass, const void *data)

@@ -125,7 +125,7 @@ static void isa_cirrus_vga_class_init(ObjectClass *klass, const void *data)
 
     dc->vmsd  = &vmstate_cirrus_vga;
     dc->realize = isa_cirrus_vga_realizefn;
-    dc->desc = "Cirrus Logic CL-GD5428 ISA VGA";
+    dc->desc = "Generic Cirrus ISA VGA (CL-GD5428 compatible)";
     device_class_set_props(dc, isa_cirrus_vga_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }
@@ -171,9 +171,16 @@ static const TypeInfo isa_cirrus_gd5422_info = {
     .class_init = isa_cirrus_gd5422_class_init,
 };
 
+static void isa_cirrus_gd5428_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc =
+        "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)";
+}
+
 static const TypeInfo isa_cirrus_gd5428_info = {
     .name = "isa-cirrus-gd5428",
     .parent = TYPE_ISA_CIRRUS_VGA,
+    .class_init = isa_cirrus_gd5428_class_init,
 };
 
 static void cirrus_vga_isa_register_types(void)

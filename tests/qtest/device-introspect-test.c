@@ -230,6 +230,13 @@ static void test_device_intro_display_descriptions(void)
         { "att-kbd302",
           "AT&T 302 keyboard (Intel UPI-41; experimental I/O optional)" },
         { "ati-vga", "ATI Rage 128 Pro / Radeon RV100 PCI VGA controller" },
+        { "cirrus-vga", "Generic Cirrus PCI VGA (CL-GD5446 compatible)" },
+        { "cirrus-gd5446-pci",
+          "Cirrus Logic CL-GD5446 PCI VGA (shared compatible implementation)" },
+        { "isa-cirrus-vga", "Generic Cirrus ISA VGA (CL-GD5428 compatible)" },
+        { "isa-cirrus-gd5428",
+          "Cirrus Logic CL-GD5428 ISA VGA (shared compatible implementation)" },
+        { "sb16", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
         { "intel-8041",
           "Intel 8041 UPI-41 controller (keyboard link; guest I/O pending)" },
         { "intel-8741",
@@ -253,6 +260,77 @@ static void test_device_intro_display_descriptions(void)
 
     qobject_unref(types);
     qtest_quit(qts);
+}
+
+static void test_generic_device_aliases(void)
+{
+    static const struct {
+        const char *type;
+        const char *alias;
+        const char *args;
+    } models[] = {
+        { "cirrus-vga", "cirrus-vga-generic", "-vga none" },
+        { "isa-cirrus-vga", "isa-cirrus-vga-generic", "-vga none" },
+        { "sb16", "sb16-generic", "-audiodev none,id=snd" },
+    };
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    g_autofree char *help = qtest_hmp(qts, "device_add help");
+
+    for (size_t i = 0; i < ARRAY_SIZE(models); i++) {
+        g_autofree char *needle = NULL;
+        g_autofree char *alias = NULL;
+        g_autofree char *original_help = NULL;
+        g_autofree char *alias_help = NULL;
+        const char *line;
+        const char *end;
+
+        if (!type_list_find(types, models[i].type)) {
+            continue;
+        }
+        needle = g_strdup_printf("name \"%s\"", models[i].type);
+        alias = g_strdup_printf("alias \"%s\"", models[i].alias);
+        line = strstr(help, needle);
+        g_assert_nonnull(line);
+        end = strchr(line, '\n');
+        g_assert_nonnull(end);
+        g_assert_nonnull(g_strstr_len(line, end - line, alias));
+        g_assert_null(type_list_find(types, models[i].alias));
+
+        original_help = qtest_hmp(qts, "device_add \"%s,help\"",
+                                  models[i].type);
+        alias_help = qtest_hmp(qts, "device_add \"%s,help\"",
+                               models[i].alias);
+        g_assert_cmpstr(alias_help, ==, original_help);
+    }
+    qobject_unref(types);
+    qtest_quit(qts);
+
+    if (!qtest_has_machine("pc")) {
+        return;
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(models); i++) {
+        const char *names[] = { models[i].type, models[i].alias };
+
+        if (!qtest_has_device(models[i].type)) {
+            continue;
+        }
+        for (size_t j = 0; j < ARRAY_SIZE(names); j++) {
+            const char *audio = !strcmp(models[i].type, "sb16")
+                                ? ",audiodev=snd" : "";
+            g_autofree char *tree = NULL;
+            g_autofree char *expected = NULL;
+
+            qts = qtest_initf("-M pc -nodefaults %s -device %s,id=model%s",
+                              models[i].args, names[j], audio);
+            g_assert_true(qtest_qom_get_bool(qts,
+                          "/machine/peripheral/model", "realized"));
+            tree = qtest_hmp(qts, "info qtree");
+            expected = g_strdup_printf("dev: %s,", models[i].type);
+            g_assert_nonnull(strstr(tree, expected));
+            qtest_quit(qts);
+        }
+    }
 }
 
 static void test_att_kbd301_controller(void)
@@ -609,6 +687,8 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/display-descriptions",
                    test_device_intro_display_descriptions);
+    qtest_add_func("device/introspect/generic-aliases",
+                   test_generic_device_aliases);
     qtest_add_func("device/introspect/att-kbd301-controller",
                    test_att_kbd301_controller);
     qtest_add_func("device/introspect/att-kbd302-controller",
