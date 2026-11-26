@@ -51,6 +51,7 @@ struct PCIIDEState {
     BMDMAState bmdma[2];
     qemu_irq isa_irq[2];
     uint32_t secondary; /* used only for cmd646 */
+    bool piix4_strict_timing_regs; /* PIIX4 configuration policy */
     MemoryRegion bmdma_bar;
     MemoryRegion cmd_bar[2];
     MemoryRegion data_bar[2];
