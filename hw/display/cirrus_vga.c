@@ -213,6 +213,23 @@ static bool cirrus_has_mmio(const CirrusVGAState *s)
     }
 }
 
+/*
+ * CL-GD542X TRM, sections 9.28-9.49: the early ISA chips do not
+ * implement GR33. Keep the later accelerator extensions out of them.
+ * Do not infer the GD5430/5434/5436 register set from the ISA bus type.
+ */
+static bool cirrus_has_blt_modeext(const CirrusVGAState *s)
+{
+    switch (s->device_id) {
+    case CIRRUS_ID_CLGD5422:
+    case CIRRUS_ID_CLGD5426:
+    case CIRRUS_ID_CLGD5428:
+        return false;
+    default:
+        return true;
+    }
+}
+
 static uint8_t cirrus_blt_addr_hi_mask(const CirrusVGAState *s)
 {
     switch (s->device_id) {
@@ -1003,7 +1020,7 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
     s->cirrus_blt_srcaddr =
         (s->vga.gr[0x2c] | (s->vga.gr[0x2d] << 8) | (s->vga.gr[0x2e] << 16));
     s->cirrus_blt_mode = s->vga.gr[0x30];
-    s->cirrus_blt_modeext = s->vga.gr[0x33];
+    s->cirrus_blt_modeext = cirrus_has_blt_modeext(s) ? s->vga.gr[0x33] : 0;
     blt_rop = s->vga.gr[0x32];
 
     s->cirrus_blt_dstaddr &= s->cirrus_addr_mask;
@@ -1539,6 +1556,9 @@ static void cirrus_vga_write_palette(CirrusVGAState * s, int reg_value)
 
 static int cirrus_vga_read_gr(CirrusVGAState * s, unsigned reg_index)
 {
+    if (reg_index == 0x33 && !cirrus_has_blt_modeext(s)) {
+        return 0xff;
+    }
     switch (reg_index) {
     case 0x00: // Standard VGA, BGCOLOR 0x000000ff
         return s->cirrus_shadow_gr0;
@@ -1620,12 +1640,16 @@ cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
     case 0x2f:                  // BLT WRITEMASK
     case 0x30:                  // BLT MODE
     case 0x32:                  // RASTER OP
-    case 0x33:                  // BLT MODEEXT
     case 0x34:                  // BLT TRANSPARENT COLOR 0x00ff
     case 0x35:                  // BLT TRANSPARENT COLOR 0xff00
     case 0x38:                  // BLT TRANSPARENT COLOR MASK 0x00ff
     case 0x39:                  // BLT TRANSPARENT COLOR MASK 0xff00
         s->vga.gr[reg_index] = reg_value;
+        break;
+    case 0x33:                  // BLT MODEEXT
+        if (cirrus_has_blt_modeext(s)) {
+            s->vga.gr[reg_index] = reg_value;
+        }
         break;
     case 0x21:                  // BLT WIDTH 0x001f00
     case 0x23:                  // BLT HEIGHT 0x001f00
