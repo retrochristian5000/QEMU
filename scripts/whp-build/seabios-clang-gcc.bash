@@ -68,6 +68,17 @@ case "$inline_profile" in
         ;;
 esac
 
+# Disable only optional code alignment in the diagnostic profile.
+# Data alignment, explicit function attributes and handwritten assembly stay intact.
+padding_profile="${SEABIOS_CLANG_PADDING_PROFILE:-Default}"
+case "$padding_profile" in
+    Default|CompactCode) ;;
+    *)
+        printf 'error: SEABIOS_CLANG_PADDING_PROFILE must be Default or CompactCode\n' >&2
+        exit 2
+        ;;
+esac
+
 link_step=1
 action=""
 merge_constants=1
@@ -252,6 +263,15 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
     if ((has_dependency && !has_dependency_file)) && [[ "$output" != /dev/null ]]; then
         depfile="${output%.*}.d"
         compile_args+=(-MF "$depfile")
+    fi
+
+    if [[ "$padding_profile" == CompactCode ]]; then
+        case "${output##*/}" in
+            ccode16.o|code32seg.o|ccode32flat.o)
+                # Use supported Clang flags, not post-assembly NOP deletion.
+                compile_args+=(-falign-functions=1 -falign-loops=1)
+                ;;
+        esac
     fi
 
     if [[ "$inline_profile" == CompactFlat ]]; then

@@ -322,6 +322,46 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                     self.assertNotRegex(body, r'\bcall[l]?\s+required')
                     self.assertRegex(body, r'\b(?:call[l]?|jmp[l]?)\s+retained')
 
+    def test_compact_code_alignment_preserves_explicit_attributes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            compiler = prefix / 'bin' / 'i386-none-elf-gcc'
+            source = root / 'alignment.c'
+            source.write_text(
+                'int normal(int x) { return x + 1; }\n'
+                '__attribute__((aligned(16))) int pinned(int x) { return x + 2; }\n',
+                encoding='utf-8')
+            env = dict(os.environ)
+            env['SEABIOS_CLANG_PADDING_PROFILE'] = 'CompactCode'
+            env['SEABIOS_CLANG_ELF_SPLIT'] = '0'
+            env['SEABIOS_CLANG_INLINE_PROFILE'] = 'Default'
+            for name, mode in (('ccode16.o', '-m16'),
+                               ('code32seg.o', '-m32'),
+                               ('ccode32flat.o', '-m32')):
+                with self.subTest(unit=name):
+                    output = root / name
+                    result = subprocess.run([
+                        str(compiler), mode, '-march=i386', '-Os',
+                        '-ffreestanding', '-ffunction-sections',
+                        '-fno-merge-constants', '-c', str(source),
+                        '-o', str(output),
+                    ], env=env, text=True, capture_output=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    data = output.read_bytes()
+                    self.assertEqual(data[:6], b'\\x7fELF\\x01\\x01')
+                    shoff = struct.unpack_from('<I', data, 32)[0]
+                    entsize, count, names_idx = struct.unpack_from('<HHH', data, 46)
+                    headers = [struct.unpack_from('<IIIIIIIIII', data,
+                                                  shoff + i * entsize)
+                               for i in range(count)]
+                    names_hdr = headers[names_idx]
+                    names = data[names_hdr[4]:names_hdr[4] + names_hdr[5]]
+                    alignment = {names[h[0]:].split(b'\\0', 1)[0]: h[8]
+                                 for h in headers}
+                    self.assertEqual(alignment[b'.text.normal'], 1)
+                    self.assertGreaterEqual(alignment[b'.text.pinned'], 16)
+
     def test_optional_assembly_audit_does_not_change_firmware_object(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

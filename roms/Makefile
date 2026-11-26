@@ -111,6 +111,12 @@ seavgabios-%: build-seabios-config-vga-%
 build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
 export SEABIOS_CLANG_ELF_SPLIT ?= 0
 export SEABIOS_CLANG_INLINE_PROFILE ?= Default
+export SEABIOS_CLANG_PADDING_PROFILE ?= Default
+# CompactFlat fits the isapc ROM in the controlled Clang CI measurement.
+# Limit the default change to this firmware variant.
+ifeq ($(origin SEABIOS_CLANG_INLINE_PROFILE),file)
+build-seabios-config-seabios-128k: export SEABIOS_CLANG_INLINE_PROFILE = CompactFlat
+endif
 
 # A new checkout can remove files still named in a previous build's .d files.
 # Keep each variant incremental within one source revision.
@@ -134,7 +140,8 @@ build-seabios-config-%: config.%
 			"build_cc=$(CC)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
-			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" | cmp -s - "$$stamp"; then \
+			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
+			"clang_padding_profile=$(SEABIOS_CLANG_PADDING_PROFILE)" | cmp -s - "$$stamp"; then \
 			exit 0; \
 		fi; \
 		if test -f "$$out/.config.source" || test -f "$$stamp"; then \
@@ -151,7 +158,8 @@ build-seabios-config-%: config.%
 			"build_cc=$(CC)" \
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
-			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" > "$$tmp"; \
+			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
+			"clang_padding_profile=$(SEABIOS_CLANG_PADDING_PROFILE)" > "$$tmp"; \
 		mv "$$tmp" "$$stamp"
 	@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
 	    ! cmp -s "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; then \

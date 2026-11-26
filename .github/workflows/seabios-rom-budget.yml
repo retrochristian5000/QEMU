@@ -85,6 +85,7 @@ jobs:
         env:
           WHP_ROM_SIZE_REPORT: '1'
           SEABIOS_CLANG_SIZE_OPT: Os
+          SEABIOS_CLANG_INLINE_PROFILE: Default
         run: |
           set -eu
           # Hold GNU binutils and the exact 128 KiB configurations constant.
@@ -201,6 +202,39 @@ jobs:
           grep -E '^(16bit size:|32bit |ROM size audit:|ROM alignment audit:|Total size:|Error!)' \
             "$log" || true
 
+      - name: Measure optional code padding against CompactFlat
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_SIZE_OPT: OzSegmented
+          SEABIOS_CLANG_INLINE_PROFILE: CompactFlat
+          SEABIOS_CLANG_PADDING_PROFILE: CompactCode
+          SEABIOS_CLANG_ELF_SPLIT: '0'
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-clang-compact-padding"
+          variant=seabios-128k
+          log="$RUNNER_TEMP/$variant-compact-padding.log"
+          image="$root/$variant/bios.bin.raw"
+          baseline="$RUNNER_TEMP/whp-seabios-clang-compact-inline/$variant/bios.bin.raw"
+          if make -C roms "build-seabios-config-$variant" \
+              "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+              "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
+            test "$(wc -c < "$root/$variant/bios.bin")" -eq 131072
+          elif ! test -s "$image" || ! grep -Fq "ROM doesn't fit (" "$log" ||
+               test "$(wc -c < "$image")" -le 131072; then
+            tail -n 90 "$log" >&2
+            exit 1
+          fi
+          test -s "$image"
+          test -s "$baseline"
+          bytes="$(wc -c < "$image")"
+          before="$(wc -c < "$baseline")"
+          printf 'CompactCode: baseline=%d raw=%d saved=%d headroom=%d bytes\n' \
+            "$before" "$bytes" "$((before - bytes))" "$((131072 - bytes))"
+          grep -E '^(16bit size:|32bit |ROM size audit:|ROM alignment audit:|ROM gap audit:|Total size:|Error!)' \
+            "$log" || true
+
       - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'
@@ -213,7 +247,7 @@ jobs:
           test -x "$prefix/bin/i386-none-elf-gcc"
           variant=seabios-128k
             log="$RUNNER_TEMP/$variant-clang-oz-rom.log"
-            printf '\n=== Comparing %s with segmented -Oz, flat -Os ===\n' "$variant"
+            printf '\n=== Comparing %s with segmented -Oz, CompactFlat -Os ===\n' "$variant"
             if make -C roms "build-seabios-config-$variant" \
                 "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
                 "SEABIOS_BUILD_ROOT=$root" >"$log" 2>&1; then
@@ -223,15 +257,15 @@ jobs:
               test "$(wc -c < "$padded")" -eq 131072
               gcc_bytes="$(wc -c < "$gcc_root/$variant/bios.bin.raw")"
               clang_bytes="$(wc -c < "$image")"
-              printf '%s: GCC=%d Clang-OzSegmented=%d delta=%+d bytes\n' \
+              printf '%s: GCC=%d Clang-OzSegmented-CompactFlat=%d delta=%+d bytes\n' \
                 "$variant" "$gcc_bytes" "$clang_bytes" \
                 "$((clang_bytes - gcc_bytes))"
-              printf '%s: Clang -OzSegmented free capacity=%d bytes\n' \
+              printf '%s: Clang -OzSegmented-CompactFlat free capacity=%d bytes\n' \
                 "$variant" "$((131072 - clang_bytes))"
               grep -E '^(16bit size:|32bit |ROM size audit:|Total size:)' \
                 "$log" || true
             else
-              printf 'error: Clang -OzSegmented ROM build failed: %s\n' "$variant" >&2
+              printf 'error: Clang -OzSegmented-CompactFlat ROM build failed: %s\n' "$variant" >&2
               tail -n 90 "$log" >&2
               exit 1
             fi
