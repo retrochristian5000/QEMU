@@ -1,7 +1,7 @@
 # Experimental external IDE firmware
 
-The normal isapc BIOS stays unchanged. The optional
-seabios-128k-external-ide variant retains the 128 KiB capacity, option-ROM
+The normal isapc BIOS explicitly retains CONFIG_ATA=y and remains the boot
+default. The separately named seabios-128k-external-ide variant retains the 128 KiB capacity, option-ROM
 discovery, core INT 13h services and floppy support, but omits the internal
 ATA driver. QEMU's existing general option-ROM path publishes a supplied
 image through fw_cfg genroms/. SeaBIOS already supports legacy BCV and
@@ -13,8 +13,10 @@ is introduced.
     make -C roms seabios-external-ide \
         SEABIOS_CROSS_PREFIX=/path/to/i386-none-elf-
 
-The explicit target emits bios-128k-external-ide.bin rather than replacing
-bios.bin. Set SEABIOS_OUTPUT_DIR and SEABIOS_BUILD_ROOT to separate
+The default source-built x86 firmware target and the explicit target both
+emit bios-128k-external-ide.bin alongside ide-isa.rom. Neither replaces
+bios.bin. CI checks the generated Kconfig and retained linker-script input
+sections for ATA implementation helpers. Set SEABIOS_OUTPUT_DIR and SEABIOS_BUILD_ROOT to separate
 directories if desired.
 
 ## Experimental use

@@ -149,9 +149,10 @@ if whp_seabios_enabled
   whp_seabios_bash = find_program('bash')
   whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
   whp_seabios_x86 = custom_target('whp-seabios-x86-output',
-    output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin', 'ide-isa.rom'],
+    output: ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin', 'ide-isa.rom',
+             'bios-128k-external-ide.bin'],
     command: whp_seabios_entry_env + [whp_seabios_bash, whp_seabios_script, whp_seabios_config,
-              '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@', '@OUTPUT3@'],
+              '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@', '@OUTPUT3@', '@OUTPUT4@'],
     # One 16/32-bit legacy BIOS image serves i386 and x86_64 guest PCs.
     # Do not enable it for the original 8086/8088 x86-softmmu target.
     build_by_default: 'i386-softmmu' in target_dirs or 'x86_64-softmmu' in target_dirs,

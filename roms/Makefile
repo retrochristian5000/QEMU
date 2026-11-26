@@ -90,7 +90,7 @@ default help:
 
 bios: ide-option-rom build-seabios-config-seabios-128k \
 		build-seabios-config-seabios-256k \
-		build-seabios-config-seabios-microvm
+		build-seabios-config-seabios-microvm seabios-external-ide
 	mkdir -p $(SEABIOS_OUTPUT_DIR)
 	cp $(SEABIOS_BUILD_ROOT)/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
@@ -112,7 +112,7 @@ ide-option-rom:
 
 # Never publish this experimental image as bios.bin.
 .PHONY: seabios-external-ide
-seabios-external-ide: build-seabios-config-seabios-128k-external-ide
+seabios-external-ide: ide-option-rom build-seabios-config-seabios-128k-external-ide
 	mkdir -p "$(SEABIOS_OUTPUT_DIR)"
 	cp "$(SEABIOS_BUILD_ROOT)/seabios-128k-external-ide/bios.bin" \
 	    "$(SEABIOS_OUTPUT_DIR)/bios-128k-external-ide.bin"

@@ -2,6 +2,8 @@
 
 CONFIG_QEMU=y
 CONFIG_ROM_SIZE=128
+# Compatibility image retains ATA until the expansion ROM supports full disk services.
+CONFIG_ATA=y
 CONFIG_ATA_DMA=n
 CONFIG_XEN=n
 CONFIG_ATA_PIO32=n

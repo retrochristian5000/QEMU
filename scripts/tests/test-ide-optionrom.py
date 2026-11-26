@@ -119,7 +119,9 @@ def build_and_check(work):
     meson = (ROOT / 'pc-bios' / 'meson.build').read_text()
     assert "'bios-microvm.bin', 'ide-isa.rom'" in meson
     builder = (ROOT / 'scripts' / 'meson-build-seabios.bash').read_text()
-    assert 'expected=(bios.bin bios-256k.bin bios-microvm.bin ide-isa.rom)' in builder
+    assert 'expected=(bios.bin bios-256k.bin bios-microvm.bin ide-isa.rom' in builder
+    assert 'bios-128k-external-ide.bin)' in builder
+    assert "'bios-128k-external-ide.bin'" in meson
     print(f'IDE ROM: {len(data)} bytes, valid headers/checksums, incremental build verified')
     return rom
 
