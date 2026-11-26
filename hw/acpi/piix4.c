@@ -44,6 +44,15 @@
 #include "qom/object.h"
 #include "hw/acpi/pc-hotplug.h"
 
+/* Intel 82371AB/EB, function 3, sections 7.1.3 and 7.1.10,
+ * 7.1.26-28: PM and SMBus use different I/O decoders. */
+#define PIIX4_PMBA       0x40
+#define PIIX4_PMREGMISC  0x80
+#define PIIX4_SMBBA      0x90
+#define PIIX4_SMBHSTCFG  0xd2
+#define PIIX4_PM_BASE_MASK  0xffc0
+#define PIIX4_SMB_BASE_MASK 0xfff0
+
 #define GPE_BASE 0xafe0
 #define GPE_LEN 4
 
@@ -88,8 +97,7 @@ static void pm_io_space_update(PIIX4PMState *s)
 {
     PCIDevice *d = PCI_DEVICE(s);
 
-    s->io_base = le32_to_cpu(*(uint32_t *)(d->config + 0x40));
-    s->io_base &= 0xffc0;
+    s->io_base = pci_get_long(d->config + PIIX4_PMBA) & PIIX4_PM_BASE_MASK;
 
     memory_region_transaction_begin();
     memory_region_set_enabled(&s->io, d->config[0x80] & 1);
@@ -101,11 +109,18 @@ static void smbus_io_space_update(PIIX4PMState *s)
 {
     PCIDevice *d = PCI_DEVICE(s);
 
-    s->smb_io_base = le32_to_cpu(*(uint32_t *)(d->config + 0x90));
-    s->smb_io_base &= 0xffc0;
+    bool enabled = d->config[PIIX4_SMBHSTCFG] & 1;
+
+    s->smb_io_base = pci_get_long(d->config + PIIX4_SMBBA);
+    s->smb_io_base &= s->strict_io_decode ? PIIX4_SMB_BASE_MASK
+                                          : PIIX4_PM_BASE_MASK;
+    if (s->strict_io_decode) {
+        enabled = enabled && (pci_get_word(d->config + PCI_COMMAND) &
+                              PCI_COMMAND_IO);
+    }
 
     memory_region_transaction_begin();
-    memory_region_set_enabled(&s->smb.io, d->config[0xd2] & 1);
+    memory_region_set_enabled(&s->smb.io, enabled);
     memory_region_set_address(&s->smb.io, s->smb_io_base);
     memory_region_transaction_commit();
 }
@@ -118,8 +133,10 @@ static void pm_write_config(PCIDevice *d,
         ranges_overlap(address, len, 0x40, 4)) {
         pm_io_space_update((PIIX4PMState *)d);
     }
-    if (range_covers_byte(address, len, 0xd2) ||
-        ranges_overlap(address, len, 0x90, 4)) {
+    if (range_covers_byte(address, len, PIIX4_SMBHSTCFG) ||
+        ranges_overlap(address, len, PIIX4_SMBBA, 4) ||
+        (PIIX4_PM(d)->strict_io_decode &&
+         ranges_overlap(address, len, PCI_COMMAND, 2))) {
         smbus_io_space_update((PIIX4PMState *)d);
     }
 }
@@ -276,6 +293,13 @@ static void piix4_pm_reset(DeviceState *dev)
 
     pci_conf[0x40] = 0x01; /* PM io base read only bit */
     pci_conf[0x80] = 0;
+    if (s->strict_io_decode) {
+        pci_set_long(pci_conf + PIIX4_PMBA, 1);
+        pci_set_long(pci_conf + PIIX4_SMBBA, 1);
+        pci_conf[PIIX4_SMBHSTCFG] = 0;
+        s->smb.reset(&s->smb);
+        smbus_io_space_update(s);
+    }
 
     if (!s->smm_enabled) {
         /* Mark SMM as already inited (until KVM supports SMM). */
@@ -453,6 +477,17 @@ static void piix4_pm_realize(PCIDevice *dev, Error **errp)
     pci_conf[0x91] = s->smb_io_base >> 8;
     pci_conf[0xd2] = 0x09;
     pm_smbus_init(DEVICE(dev), &s->smb, true);
+    if (s->strict_io_decode) {
+        pci_set_long(dev->wmask + PIIX4_PMBA, PIIX4_PM_BASE_MASK);
+        pci_set_long(dev->wmask + PIIX4_SMBBA, PIIX4_SMB_BASE_MASK);
+        dev->wmask[PIIX4_PMREGMISC] = 1;
+        dev->wmask[PIIX4_SMBHSTCFG] = 0x0f;
+        pci_set_long(pci_conf + PIIX4_PMBA, 1);
+        pci_set_long(pci_conf + PIIX4_SMBBA, 1);
+        pci_conf[PIIX4_SMBHSTCFG] = 0;
+        s->smb_io_base = 0;
+        memory_region_set_size(&s->smb.io, 16);
+    }
     memory_region_set_enabled(&s->smb.io, pci_conf[0xd2] & 1);
     memory_region_add_subregion(pci_address_space_io(dev),
                                 s->smb_io_base, &s->smb.io);
@@ -571,6 +606,8 @@ static const Property piix4_pm_properties[] = {
                      TYPE_PCI_BUS, PCIBus *),
     DEFINE_PROP_BOOL("memory-hotplug-support", PIIX4PMState,
                      acpi_memory_hotplug.is_enabled, true),
+    DEFINE_PROP_BOOL("strict-io-decode", PIIX4PMState, strict_io_decode,
+                     false),
     DEFINE_PROP_BOOL("smm-compat", PIIX4PMState, smm_compat, false),
     DEFINE_PROP_BOOL("smm-enabled", PIIX4PMState, smm_enabled, false),
     DEFINE_PROP_BOOL("x-not-migrate-acpi-index", PIIX4PMState,
@@ -591,7 +628,7 @@ static void piix4_pm_class_init(ObjectClass *klass, const void *data)
     k->revision = 0x03;
     k->class_id = PCI_CLASS_BRIDGE_OTHER;
     device_class_set_legacy_reset(dc, piix4_pm_reset);
-    dc->desc = "PM";
+    dc->desc = "Intel PIIX4-compatible PCI power management and SMBus";
     dc->vmsd = &vmstate_acpi;
     device_class_set_props(dc, piix4_pm_properties);
     /*
