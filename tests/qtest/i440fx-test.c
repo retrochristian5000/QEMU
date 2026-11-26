@@ -512,6 +512,54 @@ static void test_i440fx_isa_modem(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_i440fx_dataport_3740_line(gconstpointer opaque)
+{
+    bool integrated = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(integrated ?
+        "-M pc -nodefaults -serial none "
+        "-device att-paradyne-dataport-3740,index=1" :
+        "-M pc -nodefaults -serial none "
+        "-chardev modem,id=m,model=att-paradyne-dataport-3740 "
+        "-device ns16550a,index=1,chardev=m");
+
+    qtest_outb(qts, 0x2fb, 3);
+    /* Factory CTS follows DTR; DSR remains high, DCD and RI low. */
+    qtest_outb(qts, 0x2fc, 8);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x20);
+    qtest_outb(qts, 0x2fc, 9);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+
+    modem_command(qts, "ATE0\r", "OK");
+    modem_command(qts, "AT\\D0\r", "OK");
+    qtest_outb(qts, 0x2fc, 8);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+    modem_command(qts, "AT\\D2\r", "ERROR");
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+    modem_command(qts, "AT\\D1\r", "OK");
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x20);
+
+    modem_command(qts, "AT&C0\r", "OK");
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0x80, ==, 0x80);
+    modem_command(qts, "AT&C1\r", "OK");
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0x80, ==, 0);
+    modem_command(qts, "ATX4D0\r", "NO DIALTONE");
+    modem_command(qts, "ATX0D0\r", "NO CARRIER");
+    modem_command(qts, "ATX1D0\r", "NO CARRIER");
+    modem_command(qts, "ATX2D0\r", "NO DIALTONE");
+    modem_command(qts, "ATX3D0\r", "NO CARRIER");
+    modem_command(qts, "ATA\r", "NO CARRIER");
+    modem_command(qts, "ATO\r", "NO CARRIER");
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xc0, ==, 0);
+
+    if (integrated) {
+        qtest_outb(qts, 0x2fc, 9);
+        modem_command(qts, "AT\\D0\r", "OK");
+        qtest_system_reset(qts);
+        g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x20);
+    }
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_mouse(gconstpointer opaque)
 {
     bool enabled = GPOINTER_TO_INT(opaque);
@@ -684,6 +732,13 @@ int main(int argc, char **argv)
                 g_strdup_printf("i440fx/isa/modem/%s", modems[n]);
             qtest_add_data_func(path, modems[n], test_i440fx_isa_modem);
         }
+    }
+    if (qtest_has_device("att-paradyne-dataport-3740") &&
+        qtest_has_device("ns16550a")) {
+        qtest_add_data_func("i440fx/isa/modem/3740-line-integrated",
+                            GINT_TO_POINTER(1), test_i440fx_dataport_3740_line);
+        qtest_add_data_func("i440fx/isa/modem/3740-line-external",
+                            GINT_TO_POINTER(0), test_i440fx_dataport_3740_line);
     }
     qtest_add_data_func("i440fx/cmos/mouse-on", GINT_TO_POINTER(1),
                         test_i440fx_cmos_mouse);

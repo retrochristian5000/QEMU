@@ -138,12 +138,46 @@ card design, ISA PnP identifier, analog telephone DSP, fax signal
 processing or real telephone connection is claimed.
 
 These device profiles represent an unplugged telephone line: dialing
-returns NO DIALTONE and answering returns NO CARRIER. The existing
-``-chardev modem`` interface retains its separate host-configured
-transport and simulated connection behavior. Hardware reset clears
+normally returns NO DIALTONE and answering returns NO CARRIER. The
+3740 distinguishes blind dialing (X0, X1, X3), which returns
+NO CARRIER instead. These are immediate simulated results, not
+measurements of physical dial tones. Other models retain the existing
+``-chardev modem`` simulated connection behavior; the 3740 requires
+an explicit TCP endpoint for that byte-stream substitute. Hardware reset clears
 pending modem bytes and resets the AT settings. Live migration,
 saved-state loading and hotplug are not supported for the new device
 profiles because modem state is not serialized.
+
+DataPort Express 3740 line behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The 3740 compatibility profile supports the documented CTS selection:
+``AT\\D0`` forces CTS high; ``AT\\D1`` (default) follows DTR.
+DCD is independent of CTS and follows connection state with ``AT&C1``.
+An explicit ``AT&C0`` can force DCD high without establishing a
+connection. DTR drop with &D2 also cancels pending outgoing TCP
+connections. The integrated UART reset drops DTR and RTS and clears
+the previous AT command. Without a configured remote transport, the
+3740 never synthesizes a successful dial or answer. TCP transport
+remains a byte-stream substitute; TCP connection is not V.34 training.
+Incoming calls, physical dial tone/busy detection, S6/S7 timing,
+ring cadence, V.34 modulation, error correction and fax DSP remain
+unimplemented. The model uses the conventional Hayes X0-X4 subset,
+as described in the related AT&T DataPort PCX manual (October 1995).
+The 3740 CTS settings are documented in the archived DataPort Express
+3740 configuration reference.
+
+Future telephone media integration should separate call control,
+PCM media and modulation. A SIP/RTP service (for example a separate
+process using liblinphone) can handle signaling and G.711 audio, but
+does not supply the modem DSP. A separately verified modem engine
+must generate and detect waveform and training signals before
+asserting carrier. A local-only virtual telephone exchange should be
+tested first. Any real network or PSTN route must be explicitly
+configured by the host operator, with destination restrictions;
+guest dial strings must not create arbitrary host connections.
+No SIP dependency, audio transport or telephone service is enabled
+by this implementation.
 
 Experimental Intel 440BX PC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -68,6 +68,7 @@ typedef struct ModemModel {
     int connect_speed;
     bool supports_voice;
     bool paradyne_commands;
+    bool dataport_3740_line;
     int max_reliable_mode;
     const char *identification[11];
     const char *fallback_identification;
@@ -136,6 +137,7 @@ static const ModemModel modem_models[] = {
         .name = MODEM_PARADYNE_3740,
         .connect_speed = 28800,
         .paradyne_commands = true,
+        .dataport_3740_line = true,
         .max_reliable_mode = 6,
         .identification = {
             "288",
@@ -183,6 +185,7 @@ struct ModemChardev {
     bool dialing;
     bool command_mode;
     bool carrier_follows_connection;
+    bool cts_follows_dtr;
     bool compression;
     int dtr_mode;
     int x_mode;
@@ -258,8 +261,15 @@ static void modem_queue_value(ModemChardev *modem,
 
 static void modem_update_carrier(ModemChardev *modem)
 {
-    modem->tiocm |= CHR_TIOCM_CTS | CHR_TIOCM_DSR;
+    modem->tiocm |= CHR_TIOCM_DSR;
     modem->tiocm &= ~CHR_TIOCM_RI;
+
+    /* DataPort Express 3740: \D0 forces CTS, \D1 follows DTR. */
+    if (!modem->cts_follows_dtr || (modem->tiocm & CHR_TIOCM_DTR)) {
+        modem->tiocm |= CHR_TIOCM_CTS;
+    } else {
+        modem->tiocm &= ~CHR_TIOCM_CTS;
+    }
 
     if (!modem->carrier_follows_connection || modem->connected) {
         modem->tiocm |= CHR_TIOCM_CAR;
@@ -353,6 +363,7 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->quiet = false;
     modem->verbose = true;
     modem->carrier_follows_connection = true;
+    modem->cts_follows_dtr = modem->model->dataport_3740_line;
     modem->compression = true;
     modem->dtr_mode = 2;
     modem->x_mode = 4;
@@ -368,7 +379,8 @@ static void modem_model_defaults(ModemChardev *modem)
 
 static void modem_hangup(ModemChardev *modem, bool report)
 {
-    bool was_connected = modem->connected;
+    bool was_connected = modem->connected ||
+                         (modem->model->dataport_3740_line && modem->dialing);
 
     modem_tcp_close(modem);
     modem->connected = false;
@@ -395,6 +407,9 @@ void qemu_modem_hardware_reset(Chardev *chr)
     /* Physical reset drops pending data, unlike the ATZ soft reset. */
     fifo8_reset(&modem->outbuf);
     fifo8_reset(&modem->net_txbuf);
+    /* The owned UART resets MCR with DTR and RTS deasserted. */
+    modem->tiocm &= ~MODEM_INPUT_LINES;
+    modem->last_command[0] = '\0';
     modem_reset(modem);
 }
 
@@ -654,8 +669,16 @@ static void modem_dial(ModemChardev *modem)
         .type = SOCKET_ADDRESS_TYPE_INET,
     };
 
-    if (modem->offline_line) {
-        modem_result(modem, MODEM_RESULT_NO_DIALTONE);
+    if (modem->offline_line ||
+        (modem->model->dataport_3740_line && !modem->tcp_host)) {
+        /* Blind dialing cannot detect a missing dial tone. It still
+         * cannot establish a carrier on a disconnected line. */
+        bool blind = modem->model->dataport_3740_line &&
+                     (modem->x_mode == 0 || modem->x_mode == 1 ||
+                      modem->x_mode == 3);
+        modem_hangup(modem, false);
+        modem_result(modem, blind ? MODEM_RESULT_NO_CARRIER :
+                                    MODEM_RESULT_NO_DIALTONE);
         return;
     }
     if (!modem->tcp_host) {
@@ -915,7 +938,8 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
 
         switch (*p++) {
         case 'A':
-            if (modem->offline_line) {
+            if (modem->offline_line || modem->model->dataport_3740_line) {
+                /* No inbound line transport is implemented for this model. */
                 modem_result(modem, MODEM_RESULT_NO_CARRIER);
             } else {
                 modem_connect(modem);
@@ -1056,6 +1080,15 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             break;
         case '\\':
             switch (*p++) {
+            case 'D':
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->dataport_3740_line || value > 1) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->cts_follows_dtr = value == 1;
+                modem_update_carrier(modem);
+                break;
             case 'N':
                 value = modem_parse_number(&p, -1);
                 if (modem->model->paradyne_commands) {
