@@ -382,6 +382,57 @@ static void request_pflash(FirmwareTestFixture *fixture,
     fixture->is_bios = false;
 }
 
+static void test_piix4_pm_io_decode(void)
+{
+    QTestState *qts = qtest_init("-M pc -nodefaults "
+                                "-global PIIX4_PM.strict-io-decode=on");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(1, 3));
+
+    g_assert_nonnull(dev);
+    g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==, 0x71138086);
+    g_assert_cmphex(qpci_config_readl(dev, 0x40), ==, 1);
+    g_assert_cmphex(qpci_config_readl(dev, 0x90), ==, 1);
+
+    /* Reserved bits must not survive PCI configuration writes. */
+    qpci_config_writel(dev, 0x40, 0xffff503e);
+    qpci_config_writel(dev, 0x90, 0xffff601e);
+    g_assert_cmphex(qpci_config_readl(dev, 0x40), ==, 0x5001);
+    g_assert_cmphex(qpci_config_readl(dev, 0x90), ==, 0x6011);
+
+    qpci_config_writew(dev, PCI_COMMAND, 0);
+    qpci_config_writeb(dev, 0x80, 0xff);
+    qpci_config_writeb(dev, 0xd2, 0xf9);
+    g_assert_cmphex(qpci_config_readb(dev, 0x80), ==, 1);
+    g_assert_cmphex(qpci_config_readb(dev, 0xd2), ==, 9);
+
+    /* PM decode is independent of PCI I/O enable; SMBus is not. */
+    qtest_outw(qts, 0x5002, 0x0100);
+    g_assert_cmphex(qtest_inw(qts, 0x5002), ==, 0x0100);
+    g_assert_cmphex(qtest_inb(qts, 0x6013), ==, 0xff);
+    qpci_config_writew(dev, PCI_COMMAND, PCI_COMMAND_IO);
+    qtest_outb(qts, 0x6013, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, 0x6013), ==, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, 0x6003), ==, 0xff);
+
+    /* Relocation removes the old mapping and leaves adjacent ports free. */
+    qpci_config_writel(dev, 0x90, 0x6030);
+    g_assert_cmphex(qtest_inb(qts, 0x6013), ==, 0xff);
+    g_assert_cmphex(qtest_inb(qts, 0x6033), ==, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, 0x6043), ==, 0xff);
+    qpci_config_writeb(dev, 0xd2, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x6033), ==, 0xff);
+
+    qtest_system_reset(qts);
+    g_assert_cmphex(qpci_config_readl(dev, 0x40), ==, 1);
+    g_assert_cmphex(qpci_config_readl(dev, 0x90), ==, 1);
+    g_assert_cmphex(qpci_config_readb(dev, 0x80), ==, 0);
+    g_assert_cmphex(qpci_config_readb(dev, 0xd2), ==, 0);
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -392,6 +443,9 @@ int main(int argc, char **argv)
 
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
+    if (qtest_has_device("PIIX4_PM")) {
+        qtest_add_func("i440fx/piix4-pm-io-decode", test_piix4_pm_io_decode);
+    }
     add_firmware_test("i440fx/firmware/bios", request_bios);
     add_firmware_test("i440fx/firmware/pflash", request_pflash);
 
