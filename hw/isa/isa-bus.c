@@ -134,6 +134,9 @@ void isa_bus_dma(ISABus *bus, IsaDma *dma8, IsaDma *dma16)
 IsaDma *isa_bus_get_dma(ISABus *bus, int nchan)
 {
     assert(bus);
+    if (nchan < 0 || nchan > 7 || nchan == 4) {
+        return NULL;
+    }
     return bus->dma[nchan > 3 ? 1 : 0];
 }
 

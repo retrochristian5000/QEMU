@@ -93,12 +93,18 @@ static void isabus_fdc_realize(DeviceState *dev, Error **errp)
     FDCtrl *fdctrl = &isa->state;
     Error *err = NULL;
 
+    /* The ISA floppy controller uses an 8-bit DMA channel or PIO. */
+    if (isa->dma != UINT32_MAX && isa->dma > 3) {
+        error_setg(errp, "isa-fdc: DMA channel must be 0-3 or disabled");
+        return;
+    }
+
     isa_register_portio_list(isadev, &isa->portio_list,
                              isa->iobase, fdc_portio_list, fdctrl,
                              "fdc");
 
     fdctrl->irq = isa_bus_get_irq(bus, isa->irq);
-    fdctrl->dma_chann = isa->dma;
+    fdctrl->dma_chann = isa->dma == UINT32_MAX ? -1 : (int)isa->dma;
     if (fdctrl->dma_chann != -1) {
         IsaDmaClass *k;
         fdctrl->dma = isa_bus_get_dma(bus, isa->dma);
@@ -252,8 +258,11 @@ static void build_fdc_aml(AcpiDevAmlIf *adev, Aml *scope)
     aml_append(crs,
         aml_io(AML_DECODE16, isa->iobase + 7, isa->iobase + 7, 0x00, 0x01));
     aml_append(crs, aml_irq_no_flags(isa->irq));
-    aml_append(crs,
-        aml_dma(AML_COMPATIBILITY, AML_NOTBUSMASTER, AML_TRANSFER8, isa->dma));
+    if (isa->dma != UINT32_MAX) {
+        aml_append(crs,
+            aml_dma(AML_COMPATIBILITY, AML_NOTBUSMASTER, AML_TRANSFER8,
+                    isa->dma));
+    }
 
     dev = aml_device("FDC0");
     aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0700")));

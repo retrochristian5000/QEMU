@@ -67,6 +67,22 @@ static void test_piix_dma_compat(void)
     qtest_quit(s);
 }
 
+/* Reject non-peripheral and non-byte channels before mapping the FDC. */
+static void test_fdc_invalid_dma(gconstpointer opaque)
+{
+    unsigned int channel = GPOINTER_TO_UINT(opaque);
+
+    if (g_test_subprocess()) {
+        QTestState *s = qtest_initf("-M pc,chipset-controllers=on -nodefaults "
+                                  "-global isa-fdc.dma=%u", channel);
+        qtest_quit(s);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*isa-fdc: DMA channel must be 0-3 or disabled*");
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -78,5 +94,13 @@ int main(int argc, char **argv)
                             test_piix_dma_masks);
     }
     qtest_add_func("/piix/dma/compat", test_piix_dma_compat);
+    if (qtest_has_device("isa-fdc")) {
+        qtest_add_data_func("/piix/dma/fdc/cascade", GUINT_TO_POINTER(4),
+                            test_fdc_invalid_dma);
+        qtest_add_data_func("/piix/dma/fdc/word-channel", GUINT_TO_POINTER(5),
+                            test_fdc_invalid_dma);
+        qtest_add_data_func("/piix/dma/fdc/out-of-range", GUINT_TO_POINTER(8),
+                            test_fdc_invalid_dma);
+    }
     return g_test_run();
 }

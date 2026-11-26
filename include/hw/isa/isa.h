@@ -79,6 +79,14 @@ ISABus *isa_bus_new_type(const char *bus_type, DeviceState *dev,
                          MemoryRegion *address_space_io, Error **errp);
 void isa_bus_register_input_irqs(ISABus *bus, qemu_irq *irqs_in);
 void isa_bus_dma(ISABus *bus, IsaDma *dma8, IsaDma *dma16);
+/**
+ * isa_bus_get_dma: Return the ISA DMA controller for a peripheral channel.
+ * @bus: ISA bus
+ * @nchan: system DMA channel number (0-3 or 5-7)
+ *
+ * Return NULL if the channel is invalid, is the channel 4 cascade, or
+ * has no controller. The cascade is not a peripheral DMA channel.
+ */
 IsaDma *isa_bus_get_dma(ISABus *bus, int nchan);
 /**
  * isa_bus_get_irq: Return input IRQ on ISA bus.

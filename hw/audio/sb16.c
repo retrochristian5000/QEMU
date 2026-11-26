@@ -1469,6 +1469,12 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
+    if (s->dma > 3 || s->hdma > 7 || s->hdma == 4) {
+        error_setg(errp, "sb16: invalid DMA channels (dma=%u, dma16=%u)",
+                   (unsigned int)s->dma, (unsigned int)s->hdma);
+        return;
+    }
+
     s->isa_hdma = isa_bus_get_dma(bus, s->hdma);
     s->isa_dma = isa_bus_get_dma(bus, s->dma);
     if (!s->isa_dma || !s->isa_hdma) {

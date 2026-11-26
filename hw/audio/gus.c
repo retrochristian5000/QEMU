@@ -247,6 +247,12 @@ static void gus_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
+    if ((unsigned int)s->emu.gusdma > 7 || s->emu.gusdma == 4) {
+        error_setg(errp, "gus: invalid ISA DMA channel %u",
+                   (unsigned int)s->emu.gusdma);
+        return;
+    }
+
     s->isa_dma = isa_bus_get_dma(bus, s->emu.gusdma);
     if (!s->isa_dma) {
         error_setg(errp, "ISA controller does not support DMA");
