@@ -1753,6 +1753,33 @@ static void test_piix4_timing_registers(void)
     qtest_quit(qts);
 }
 
+static void test_legacy_drive_controller(gconstpointer opaque)
+{
+    const char *model = opaque;
+    const bool sata = !strcmp(model, "ich9-ahci");
+    g_autofree char *disk = g_shell_quote(tmp_path[0]);
+    g_autofree char *cd = g_shell_quote(tmp_path[1]);
+    QTestState *qts;
+    g_autofree char *tree = NULL;
+
+    /*
+     * The machine has no default SATA controller. Shortcuts must survive
+     * board initialization and attach only to the explicit controller.
+     * Put the selector last to check option-order independence.
+     */
+    qts = qtest_initf("-M q35,sata=off -nodefaults -snapshot "
+                      "-cdrom %s -hda %s -device %s,id=alt "
+                      "-legacy-drive-controller alt", cd, disk, model);
+    tree = qtest_hmp(qts, "info qtree");
+    g_assert_true(g_regex_match_simple(
+        "bus: alt\\.0\\s+type IDE\\s+dev: ide-hd,", tree, 0, 0));
+    g_assert_true(g_regex_match_simple(
+        sata ? "bus: alt\\.2\\s+type IDE\\s+dev: ide-cd,"
+             : "bus: alt\\.1\\s+type IDE\\s+dev: ide-cd,",
+        tree, 0, 0));
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     const char *base;
@@ -1795,6 +1822,16 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/read_native", test_specify);
 
     qtest_add_func("/ide/identify", test_identify);
+    if (qtest_has_machine("q35")) {
+        if (qtest_has_device("piix4-ide")) {
+            qtest_add_data_func("/ide/legacy-controller/piix4",
+                                "piix4-ide", test_legacy_drive_controller);
+        }
+        if (qtest_has_device("ich9-ahci")) {
+            qtest_add_data_func("/ide/legacy-controller/ahci",
+                                "ich9-ahci", test_legacy_drive_controller);
+        }
+    }
     qtest_add_func("/ide/piix/bmdma-access-width",
                    test_piix_bmdma_access_width);
     qtest_add_func("/ide/piix/channel-irq-reset", test_piix_channel_irq_reset);
