@@ -1484,6 +1484,22 @@ SRST
     host CD-ROM by using ``/dev/cdrom`` as filename.
 ERST
 
+DEF("legacy-drive-controller", HAS_ARG, QEMU_OPTION_legacy_drive_controller,
+    "-legacy-drive-controller id\n"
+    "                route legacy disk shortcuts to an explicit IDE/SATA device\n",
+    QEMU_ARCH_ALL)
+SRST
+``-legacy-drive-controller id``
+    Route ``-hda`` through ``-hdd``, a positional disk image, and
+    ``-cdrom`` to the realized IDE or SATA controller with this device ID.
+    Specify the controller using ``-device``. Hard disk slots retain their
+    numeric positions; CD-ROMs prefer slots 2 and 3, then other free slots
+    among the first six. The implicit empty CD-ROM is suppressed.
+    This option does not remove a built-in controller or resolve hardware
+    resource conflicts; disable the built-in controller separately if needed.
+    Explicit ``-drive`` and ``-device`` attachments are unaffected.
+ERST
+
 DEF("blockdev", HAS_ARG, QEMU_OPTION_blockdev,
     "-blockdev [driver=]driver[,node-name=N][,discard=ignore|unmap]\n"
     "          [,cache.direct=on|off][,cache.no-flush=on|off]\n"
