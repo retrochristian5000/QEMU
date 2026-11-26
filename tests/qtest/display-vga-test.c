@@ -429,11 +429,21 @@ static void test_cirrus_pci_dword_expand(void)
     qtest_writeb(qts, mmio + 0x11a, 0x0d);
     qtest_writeb(qts, mmio + 0x11b, 1);
     g_assert_cmphex(vga_gfx_read(qts, 0x33), ==, 1);
+
+    /* BUSY and buffered-command status are not writable, nor is bit 3. */
+    vga_gfx_write(qts, 0x31, 0x19);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 0x19, ==, 0);
+    qtest_writeb(qts, mmio + 0x140, 0x19);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x19, ==, 0);
     qtest_writeb(qts, mmio + 0x140, 2);
     g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 1);
 
     /* Source stream through the first PCI linear aperture. */
     qtest_writeb(qts, lfb + 0x1000, 0xff);
+    /* A control-register write or repeat START must not discard data. */
+    vga_gfx_write(qts, 0x31, 0);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 0x13, ==, 3);
+    qtest_writeb(qts, mmio + 0x140, 2);
     qtest_writeb(qts, lfb + 0x1001, 0x00);
     qtest_writeb(qts, lfb + 0x1002, 0x00);
     g_assert_cmphex(qtest_readb(qts, mmio + 0x140) & 1, ==, 1);
@@ -447,6 +457,29 @@ static void test_cirrus_pci_dword_expand(void)
                         i < 8 ? 0x77 : 0x11);
         g_assert_cmphex(qtest_readb(qts, dst + 32 + i), ==,
                         i < 8 ? 0x11 : 0x77);
+    }
+
+    /* Abort a partially supplied scanline on assertion, not release. */
+    qtest_writeb(qts, mmio + 0x140, 2);
+    qtest_writeb(qts, lfb + 0x1000, 0x00);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+    qtest_writeb(qts, mmio + 0x140, 4);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x17, ==, 4);
+    qtest_writeb(qts, mmio + 0x140, 6);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x17, ==, 4);
+    qtest_writeb(qts, mmio + 0x140, 0);
+    qtest_writeb(qts, lfb + 0x1000, 0x5a);
+    g_assert_cmphex(qtest_readb(qts, lfb + 0x1000), ==, 0x5a);
+    g_assert_cmphex(qtest_readb(qts, dst), ==, 0x77);
+
+    /* A fresh operation must start with an empty source buffer. */
+    qtest_writeb(qts, mmio + 0x140, 2);
+    qtest_writel(qts, lfb + 0x1000, 0xffffffffU);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+    qtest_writel(qts, lfb + 0x1004, 0xffffffffU);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 0x13, ==, 0);
+    for (unsigned i = 0; i < 64; i++) {
+        g_assert_cmphex(qtest_readb(qts, dst + i), ==, 0x77);
     }
     qtest_quit(qts);
 }
