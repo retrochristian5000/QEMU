@@ -117,10 +117,12 @@ void tcg_handle_interrupt(CPUState *cpu, int mask)
     cpu_set_interrupt(cpu, mask);
 
     /*
-     * If called from iothread context, wake the target cpu in
-     * case its halted.
+     * RR vCPUs share one host thread. Thread identity alone cannot tell
+     * whether the interrupt targets the currently executing guest CPU.
+     * Kick the scheduler for a sibling or a remote CPU; retain the cheap
+     * TB exit request only for the actual current vCPU.
      */
-    if (!qemu_cpu_is_self(cpu)) {
+    if (cpu != current_cpu || !qemu_cpu_is_self(cpu)) {
         qemu_cpu_kick(cpu);
     } else {
         qatomic_set(&cpu->neg.icount_decr.u16.high, -1);

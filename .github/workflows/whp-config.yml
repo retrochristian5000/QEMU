@@ -60,6 +60,8 @@ on:
       - 'include/hw/timer/i8254_internal.h'
       - 'scripts/tests/test-i8254-irq-timing.py'
       - 'scripts/tests/test-tcg-rr-idle.py'
+      - 'accel/tcg/tcg-accel-ops.c'
+      - 'scripts/tests/test-tcg-interrupt-target.py'
       - 'hw/intc/i8259.c'
       - 'scripts/tests/test-i8259-cascade.py'
       - 'scripts/tests/test-ui-startup-delay.py'
@@ -231,6 +233,9 @@ jobs:
 
       - name: Test single-threaded TCG idle CPU preemption
         run: python3 scripts/tests/test-tcg-rr-idle.py
+
+      - name: Test TCG interrupt target and shared-thread wakeup
+        run: python3 scripts/tests/test-tcg-interrupt-target.py
 
       - name: Test PIC cascade acknowledgement and pending interrupts
         run: python3 scripts/tests/test-i8259-cascade.py

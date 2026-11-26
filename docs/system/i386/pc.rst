@@ -119,8 +119,19 @@ NDIS when their timing calibration encounters an effective CPU speed above
 its supported range (Microsoft Knowledge Base Q312108). This is not by
 itself evidence of a defective emulated network adapter.
 
-When investigating this failure under TCG, compare the same guest and device
-configuration using a single vCPU and fixed instruction-count virtual time::
+Windows 95 and Windows 98 use one processor even when additional processors
+are installed (Microsoft Knowledge Base Q193645). Start by replacing the
+existing SMP option with a single CPU, without changing the accelerator,
+CPU model, or clock options::
+
+    -smp cpus=1,sockets=1,cores=1,threads=1,maxcpus=1
+
+Compare repeated cold boots with the original SMP configuration. This avoids
+confounding CPU topology with virtual timing changes. More vCPUs do not
+increase the speed of the single-processor Windows 9x kernel.
+
+If the error persists, compare the same guest and device configuration
+using a single vCPU and fixed instruction-count virtual time::
 
     -accel tcg,thread=single -smp 1 -icount shift=3,align=off,sleep=on
 

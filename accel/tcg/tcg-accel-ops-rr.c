@@ -52,10 +52,9 @@ void rr_kick_vcpu_thread(CPUState *unused)
  * TCG vCPU kick timer
  *
  * Keep periodic preemption while any CPU in a multi-vCPU machine runs.
- * A halted sibling can become runnable during translated execution, and
- * qemu_cpu_is_self() is true for every CPU sharing the RR host thread.
- * An interrupt raised on that thread may therefore request an exit only
- * from the target CPU, not from the currently executing sibling.
+ * A halted sibling can become runnable during translated execution.
+ * Keep a periodic scheduling boundary even when a CPU wakeup does not
+ * otherwise force an immediate exit from the current TB chain.
  *
  * Single-vCPU machines need no periodic kick. Stop the timer while all
  * CPUs are idle and rearm it before returning to translated execution.
