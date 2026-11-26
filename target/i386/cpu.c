@@ -3809,7 +3809,6 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .versions = (X86CPUVersionDefinition[]) {
             {
                 .version = 1,
-                .alias = "pentium_mmx",
                 .note = "Pentium MMX (P55C), historical QEMU Pentium",
             },
             {
@@ -3821,6 +3820,30 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                     { "mmx", "off" },
                     { /* end of list */ }
                 },
+            },
+            { /* end of list */ }
+        },
+    },
+    {
+        /*
+         * Independent P55C CPU definition. Preserve the legacy v1
+         * Pentium signature and features without inheriting later
+         * changes to the versioned Pentium family.
+         */
+        .name = "pentium_mmx",
+        .level = 1,
+        .vendor = CPUID_VENDOR_INTEL,
+        .family = 5,
+        .model = 4,
+        .stepping = 3,
+        .features[FEAT_1_EDX] = PENTIUM_FEATURES,
+        .xlevel = 0,
+        .model_id = "",
+        .cache_info = &legacy_intel_cpuid2_cache_info,
+        .versions = (X86CPUVersionDefinition[]) {
+            {
+                .version = 1,
+                .note = "Pentium with MMX Technology (P55C)",
             },
             { /* end of list */ }
         },
@@ -8633,11 +8656,17 @@ static void x86_register_cpudef_types(const X86CPUDefinition *def)
     m = g_new0(X86CPUModel, 1);
     m->cpudef = def;
     /*
-     * The historical Pentium definition is actually a P55C. Keep its
-     * versioned identity and pentium_mmx alias, but make the unversioned
-     * Pentium name select the non-MMX P54C requested by legacy guests.
+     * Keep the historical Pentium v1 and v2 identities. The unversioned
+     * Pentium selects P54C, while the independent P55C profile remains
+     * pinned to v1, including on machines with legacy version policy.
      */
-    m->version = !strcmp(def->name, "pentium") ? 2 : CPU_VERSION_AUTO;
+    if (!strcmp(def->name, "pentium")) {
+        m->version = 2;
+    } else if (!strcmp(def->name, "pentium_mmx")) {
+        m->version = 1;
+    } else {
+        m->version = CPU_VERSION_AUTO;
+    }
     m->is_alias = true;
     x86_register_cpu_model_type(def->name, m);
 

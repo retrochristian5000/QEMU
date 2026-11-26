@@ -157,12 +157,13 @@ verified fix for every NDIS initialization failure.
 Pentium MMX topology and TSC
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The existing ``pentium`` CPU model identifies family 5, model 4
-(Pentium with MMX technology). Use one core and one thread per socket
+The ``pentium_mmx`` CPU model identifies family 5, model 4
+(Pentium with MMX technology). The unversioned ``pentium`` instead
+selects the non-MMX P54C (family 5, model 2). Use one core and one thread per socket
 to avoid synthesizing a multicore or SMT Pentium package. For a Windows
 9x cold-boot timing comparison, replace the CPU and SMP options with::
 
-    -cpu pentium,tsc-frequency=200000000
+    -cpu pentium_mmx,tsc-frequency=200000000
     -smp cpus=1,sockets=1,cores=1,threads=1,maxcpus=1
 
 With system TCG, a positive configured TSC frequency now scales the VM's
