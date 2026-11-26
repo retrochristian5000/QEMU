@@ -60,8 +60,11 @@ struct I440FXState {
     char *pci_type;
 };
 
+#define I440FX_DBC      0x53
+#define I440FX_DRAMT    0x58
 #define I440FX_PAM      0x59
 #define I440FX_PAM_SIZE 7
+#define I440FX_CLT      0x71
 #define I440FX_SMRAM    0x72
 
 /* Keep it 2G to comply with older win32 guests */
@@ -72,9 +75,41 @@ struct I440FXState {
  */
 #define I440FX_COREBOOT_RAM_SIZE 0x57
 
+/*
+ * Intel 290549-001, sections 3.2.13, 3.2.17 and 3.2.22.
+ * These fields provide configuration readback, not cycle-accurate timing.
+ */
+static void i440fx_reset_timing_config(PCIDevice *dev)
+{
+    dev->config[I440FX_DBC] = 0x80;
+    dev->config[I440FX_DRAMT] = 0x10;
+    dev->config[I440FX_CLT] = 0x10;
+}
+
+static void i440fx_reset(DeviceState *dev)
+{
+    PCII440FXState *s = I440FX_PCI_DEVICE(dev);
+
+    if (s->strict_timing_config &&
+        object_get_class(OBJECT(dev)) ==
+        object_class_by_name(TYPE_I440FX_PCI_DEVICE)) {
+        i440fx_reset_timing_config(PCI_DEVICE(dev));
+    }
+}
+
 static void i440fx_realize(PCIDevice *dev, Error **errp)
 {
+    PCII440FXState *s = I440FX_PCI_DEVICE(dev);
+
     dev->config[I440FX_SMRAM] = 0x02;
+    if (s->strict_timing_config &&
+        object_get_class(OBJECT(dev)) ==
+        object_class_by_name(TYPE_I440FX_PCI_DEVICE)) {
+        dev->wmask[I440FX_DBC] = 0xff;
+        dev->wmask[I440FX_DRAMT] = 0x7f;
+        dev->wmask[I440FX_CLT] = 0x1f;
+        i440fx_reset_timing_config(dev);
+    }
 
     if (object_property_get_bool(qdev_get_machine(), "iommu", NULL)) {
         warn_report("i440fx doesn't support emulated iommu");
@@ -326,6 +361,11 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
     i440fx_update_memory_mappings(f, d->config[I440FX_SMRAM]);
 }
 
+static const Property i440fx_device_props[] = {
+    DEFINE_PROP_BOOL("strict-timing-config", PCII440FXState,
+                     strict_timing_config, false),
+};
+
 static void i440fx_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -337,7 +377,9 @@ static void i440fx_class_init(ObjectClass *klass, const void *data)
     k->device_id = PCI_DEVICE_ID_INTEL_82441;
     k->revision = 0x02;
     k->class_id = PCI_CLASS_BRIDGE_HOST;
-    dc->desc = "Host bridge";
+    dc->desc = "Intel 82441FX PCI and memory controller";
+    device_class_set_props(dc, i440fx_device_props);
+    device_class_set_legacy_reset(dc, i440fx_reset);
     dc->vmsd = &vmstate_i440fx;
     /*
      * PCI-facing part of the host bridge, not usable without the

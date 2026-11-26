@@ -382,6 +382,36 @@ static void request_pflash(FirmwareTestFixture *fixture,
     fixture->is_bios = false;
 }
 
+static void test_i440fx_timing_config(void)
+{
+    QTestState *qts = qtest_init("-M pc -nodefaults "
+                                "-global i440FX.strict-timing-config=on");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(0, 0));
+
+    g_assert_nonnull(dev);
+    g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==, 0x12378086);
+    g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x80);
+    g_assert_cmphex(qpci_config_readb(dev, 0x58), ==, 0x10);
+    g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x10);
+
+    qpci_config_writeb(dev, 0x53, 0x55);
+    qpci_config_writeb(dev, 0x58, 0xff);
+    qpci_config_writeb(dev, 0x71, 0xff);
+    g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x55);
+    g_assert_cmphex(qpci_config_readb(dev, 0x58), ==, 0x7f);
+    g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x1f);
+
+    qtest_system_reset(qts);
+    g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x80);
+    g_assert_cmphex(qpci_config_readb(dev, 0x58), ==, 0x10);
+    g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x10);
+
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 static void test_piix4_pm_io_decode(void)
 {
     QTestState *qts = qtest_init("-M pc -nodefaults "
@@ -473,6 +503,7 @@ int main(int argc, char **argv)
 
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
+    qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
     qtest_add_data_func("i440fx/piix3/pirq-registers",
                         GINT_TO_POINTER(0), test_piix_pirq_registers);
     if (qtest_has_device("piix4-isa")) {

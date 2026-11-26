@@ -32,6 +32,7 @@ struct PCII440FXState {
     MemoryRegion smram, low_smram;
     /* Other chipsets may use offset 0x57 for a real register. */
     bool skip_legacy_coreboot_ram_size;
+    bool strict_timing_config;
 };
 
 void i440fx_update_memory_mappings(PCII440FXState *d, uint8_t smram);
