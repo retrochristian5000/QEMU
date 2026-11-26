@@ -63,11 +63,8 @@ static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
         out = (d >= s->count);
         break;
     case 2:
-        if ((d % s->count) == 0 && d != 0) {
-            out = 1;
-        } else {
-            out = 0;
-        }
+        /* OUT is low for the last clock of each count period. */
+        out = s->count <= 1 || (d % s->count) != s->count - 1;
         break;
     case 3:
         out = (d % s->count) < ((s->count + 1) >> 1);
@@ -104,11 +101,14 @@ static int64_t pit_next_transition_elapsed(PITChannelState *s,
         }
         break;
     case 2:
+        /* A divisor of one is invalid in mode 2. Keep OUT high. */
+        if (s->count <= 1) {
+            return -1;
+        }
         base = QEMU_ALIGN_DOWN(d, s->count);
-        if ((d - base) == 0 && d != 0) {
-            next_time = base + s->count;
-        } else {
-            next_time = base + s->count + 1;
+        next_time = base + s->count - 1;
+        if (d == next_time) {
+            next_time++;
         }
         break;
     case 3:
@@ -131,11 +131,10 @@ static int64_t pit_next_transition_elapsed(PITChannelState *s,
         }
         break;
     }
-    /* convert to timer units */
-    next_time = s->count_load_time + muldiv64(next_time, NANOSECONDS_PER_SECOND,
-                                              PIT_FREQ);
-    /* fix potential rounding problems */
-    /* XXX: better solution: use a clock at PIT_FREQ Hz */
+    /* Schedule at the first nanosecond at or after the PIT clock edge. */
+    next_time = s->count_load_time +
+                muldiv64_round_up(next_time, NANOSECONDS_PER_SECOND, PIT_FREQ);
+    /* Ensure forward progress even if the clock has already advanced. */
     if (next_time <= current_time) {
         next_time = current_time + 1;
     }
