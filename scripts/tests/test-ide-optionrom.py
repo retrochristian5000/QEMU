@@ -32,6 +32,60 @@ def check_image(path):
     return data
 
 
+def check_elf(path, raw):
+    data = path.read_bytes()
+    assert data[:6] == b'\x7fELF\x01\x01'
+    kind, machine, _, entry, phoff, shoff = struct.unpack_from('<HHIIII', data, 16)
+    assert (kind, machine, entry) == (2, 3, 0)
+    _, phentsize, phnum, shentsize, shnum, shstrndx = struct.unpack_from(
+        '<HHHHHH', data, 40)
+    segments = [struct.unpack_from('<IIIIIIII', data, phoff + i * phentsize)
+                for i in range(phnum)]
+    loads = [p for p in segments if p[0] == 1]
+    assert len(loads) == 1
+    _, offset, vaddr, paddr, filesz, memsz, flags, _ = loads[0]
+    assert (vaddr, paddr, filesz, memsz, flags) == (0, 0, len(raw), len(raw), 5)
+    assert data[offset:offset + filesz] == raw
+    headers = [struct.unpack_from('<IIIIIIIIII', data, shoff + i * shentsize)
+               for i in range(shnum)]
+    names_header = headers[shstrndx]
+    names = data[names_header[4]:names_header[4] + names_header[5]]
+    allocated = [(names[h[0]:].split(b'\0', 1)[0], h)
+                 for h in headers if h[2] & 2 and h[5]]
+    assert len(allocated) == 1 and allocated[0][0] == b'.text'
+    header = allocated[0][1]
+    assert (header[3], header[4], header[5]) == (0, offset, len(raw))
+
+
+def check_unexpected_section(work, linker, label):
+    source = work / f'{label}-unexpected.S'
+    source.write_text('.code16\n.text\n.global _start\n_start:\n'
+                      '.word 0xaa55\n.byte 1\n.balign 512, 0\n'
+                      '.data\n.byte 1\n')
+    obj = work / f'{label}-unexpected.o'
+    run('as', '--32', '-o', obj, source)
+    result = subprocess.run([
+        str(linker), '-m', 'elf_i386', '-T', str(SOURCE / 'ide-rom.ld'),
+        '-o', str(work / f'{label}-unexpected.elf'), str(obj),
+    ], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert 'IDE ROM contains unexpected allocated sections' in result.stderr
+
+
+def check_llvm(work, clang, lld):
+    obj, elf, raw, rom = (work / name for name in
+                         ('llvm.o', 'llvm.elf', 'llvm.raw', 'llvm.rom'))
+    run(clang, '--target=i386-none-elf', '-m32', '-c', '-x', 'assembler',
+        SOURCE / 'ide-rom.S', '-o', obj)
+    run(lld, '-m', 'elf_i386', '-T', SOURCE / 'ide-rom.ld', '-o', elf, obj)
+    run('objcopy', '-O', 'binary', '-j', '.text', elf, raw)
+    check_elf(elf, raw.read_bytes())
+    run(sys.executable, SOURCE / 'seal.py', raw, rom)
+    check_image(rom)
+    check_unexpected_section(work, lld, 'llvm')
+    print('IDE ROM: LLVM zero-based ELF layout and checksums verified')
+
+
 def build_and_check(work):
     output = work / 'published'
     root = work / 'build'
@@ -43,6 +97,9 @@ def build_and_check(work):
     run(*command)
     rom = output / 'ide-isa.rom'
     data = check_image(rom)
+    check_elf(root / 'ide-optionrom' / 'ide.elf',
+              (root / 'ide-optionrom' / 'ide.raw').read_bytes())
+    check_unexpected_section(work, 'ld', 'gnu')
     object_file = root / 'ide-optionrom' / 'ide.o'
     timestamps = (rom.stat().st_mtime_ns, object_file.stat().st_mtime_ns)
     run(*command)
@@ -97,12 +154,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bios', type=pathlib.Path)
     parser.add_argument('--qemu')
+    parser.add_argument('--clang')
+    parser.add_argument('--lld')
     args = parser.parse_args()
     if bool(args.bios) != bool(args.qemu):
         parser.error('--bios and --qemu must be supplied together')
+    if bool(args.clang) != bool(args.lld):
+        parser.error('--clang and --lld must be supplied together')
     with tempfile.TemporaryDirectory(prefix='whp-ide-rom-test-') as directory:
         work = pathlib.Path(directory)
         rom = build_and_check(work)
+        if args.clang:
+            check_llvm(work, args.clang, args.lld)
         if args.bios:
             guest_test(work, args.qemu, args.bios.resolve(), rom)
 

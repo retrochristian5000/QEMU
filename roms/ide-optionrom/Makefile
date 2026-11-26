@@ -18,8 +18,8 @@ $(OUT)/.toolchain: FORCE
 $(OUT)/ide.o: ide-rom.S $(OUT)/.toolchain Makefile
 	$(AS) --32 -o "$@" "$<"
 
-$(OUT)/ide.elf: $(OUT)/ide.o
-	$(LD) -m elf_i386 -Ttext=0 -e _start -o "$@" "$<"
+$(OUT)/ide.elf: $(OUT)/ide.o ide-rom.ld
+	$(LD) -m elf_i386 -T ide-rom.ld -o "$@" "$<"
 
 $(OUT)/ide.raw: $(OUT)/ide.elf
 	$(OBJCOPY) -O binary -j .text "$<" "$@"

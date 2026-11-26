@@ -66,10 +66,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential binutils clang-18 nasm python3 qemu-system-x86
+            build-essential binutils clang-18 lld-18 nasm python3 qemu-system-x86
 
       - name: Verify default IDE option ROM build and checksums
-        run: python3 scripts/tests/test-ide-optionrom.py
+        run: python3 scripts/tests/test-ide-optionrom.py --clang clang-18 --lld ld.lld-18
 
       - name: Audit both 128 KiB ROM variants without disabling features
         env:
