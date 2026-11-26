@@ -171,3 +171,24 @@ and thread each. This is a synthetic SMP diagnostic, not a claim that
 a particular Pentium MMX motherboard supported four sockets::
 
     -smp cpus=4,sockets=4,cores=1,threads=1,maxcpus=4
+
+Cirrus GD5446 display timing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For an opt-in comparison of the GD5446 display clock and retrace
+behavior, replace the existing primary VGA selection with::
+
+    -vga none -device cirrus-vga,precise-timing=on
+
+Do not add this as a second VGA adapter. The PCI Cirrus profile derives
+the character clock from the selected VCLK synthesizer registers and
+SR1 clocking mode, and computes standard CRTC blanking and vertical
+retrace status from virtual time. The timing state is reconstructed
+from the register values after reset and migration.
+
+The default profile and ISA/VLB variants retain their previous retrace
+behavior. This option does not model extended/interlaced CRTC timing,
+PLL lock latency, memory-clock arbitration, or BitBLT execution time.
+It changes guest-visible status timing, not host display refresh
+scheduling. Use identical powered-off configurations for comparisons
+and keep this property consistent when restoring saved states.
