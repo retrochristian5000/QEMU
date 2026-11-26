@@ -424,7 +424,7 @@ static void test_cirrus_pci_dword_expand(void)
     qtest_writew(qts, mmio + 0x10a, 1);
     qtest_writew(qts, mmio + 0x10c, 32);
     qtest_writel(qts, mmio + 0x110, 0x100);
-    qtest_writeb(qts, mmio + 0x117, 0xff);
+    qtest_writeb(qts, mmio + 0x117, 0); /* No left-side clipping. */
     qtest_writeb(qts, mmio + 0x118, 0x84);
     qtest_writeb(qts, mmio + 0x11a, 0x0d);
     qtest_writeb(qts, mmio + 0x11b, 1);
