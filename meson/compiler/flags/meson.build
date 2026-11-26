@@ -70,7 +70,9 @@ if host_arch == 'x86_64'
     qemu_isa_flags += cc.get_supported_arguments('-mneeded')
   endif
   if get_option('x86_version') >= '3'
-    qemu_isa_flags += ['-mmovbe', '-mabm', '-mbmi', '-mbmi2', '-mfma', '-mf16c']
+    # GCC's -mabm enables LZCNT and POPCNT, but Clang uses explicit flags.
+    # POPCNT is already required by x86-64-v2; enable LZCNT here.
+    qemu_isa_flags += ['-mmovbe', '-mlzcnt', '-mbmi', '-mbmi2', '-mfma', '-mf16c']
   endif
 
   # add required vector instruction set (each level implies those below)
