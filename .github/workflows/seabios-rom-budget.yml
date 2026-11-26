@@ -235,6 +235,39 @@ jobs:
           grep -E '^(16bit size:|32bit |ROM size audit:|ROM alignment audit:|ROM gap audit:|Total size:|Error!)' \
             "$log" || true
 
+      - name: Compare variant-specific packed initialization layout
+        env:
+          WHP_ROM_SIZE_REPORT: '1'
+          SEABIOS_CLANG_PADDING_PROFILE: Default
+          SEABIOS_CLANG_ELF_SPLIT: '0'
+        run: |
+          set -eu
+          prefix="$RUNNER_TEMP/whp-seabios-clang-tools"
+          root="$RUNNER_TEMP/whp-seabios-packed-layout"
+          for variant in seabios-128k seabios-microvm; do
+            for pack in 0 1; do
+              log="$RUNNER_TEMP/$variant-layout-$pack.log"
+              if ! make -C roms "build-seabios-config-$variant" \
+                  "SEABIOS_CROSS_PREFIX=$prefix/bin/i386-none-elf-" \
+                  "SEABIOS_BUILD_ROOT=$root" "SEABIOS_LAYOUT_PACK=$pack" >"$log" 2>&1; then
+                tail -n 90 "$log" >&2
+                exit 1
+              fi
+              image="$root/$variant/bios.bin.raw"
+              test -s "$image"
+              test "$(wc -c < "$root/$variant/bios.bin")" -eq 131072
+              grep -F "ROM layout profile: $variant; compact init text: $pack" \
+                "$root/$variant/romlayout32flat.lds"
+              bytes="$(wc -c < "$image")"
+              if test "$pack" -eq 0; then
+                before="$bytes"
+              fi
+              printf '%s: layout pack=%s raw=%d saved=%d bytes\n' \
+                "$variant" "$pack" "$bytes" "$((before - bytes))"
+              grep -E '^(ROM gap audit:|ROM alignment audit:|Total size:)' "$log"
+            done
+          done
+
       - name: Build isapc with the target-scoped Clang size profile
         env:
           WHP_ROM_SIZE_REPORT: '1'

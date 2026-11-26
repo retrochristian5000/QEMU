@@ -112,6 +112,7 @@ build-seabios-config-seabios-128k: export SEABIOS_CLANG_SIZE_OPT ?= OzSegmented
 export SEABIOS_CLANG_ELF_SPLIT ?= 0
 export SEABIOS_CLANG_INLINE_PROFILE ?= Default
 export SEABIOS_CLANG_PADDING_PROFILE ?= Default
+SEABIOS_LAYOUT_PACK ?= 0
 # CompactFlat fits the isapc ROM in the controlled Clang CI measurement.
 # Limit the default change to this firmware variant.
 ifeq ($(origin SEABIOS_CLANG_INLINE_PROFILE),file)
@@ -177,6 +178,8 @@ build-seabios-config-%: config.%
 		CROSS_PREFIX=$(SEABIOS_CROSS_PREFIX) \
 		CPP=$(SEABIOS_CROSS_PREFIX)cpp \
 		KCONFIG_CONFIG=$(SEABIOS_BUILD_ROOT)/$*/.config \
+		ROM_LAYOUT_VARIANT=$(if $(filter seabios-%,$*),$*,auto) \
+		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) \
 		OUT=$(SEABIOS_BUILD_ROOT)/$*/ all
 
 
