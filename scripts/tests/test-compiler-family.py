@@ -109,6 +109,48 @@ class CompilerFamilyTests(unittest.TestCase):
             fail_preprocessor=True,
         )
 
+    def test_policy_reuses_only_identical_command_and_probe_kind(self):
+        begin = SOURCE.index("compiler_probe_count=0\n")
+        end = SOURCE.index("# Apple defaults", begin)
+        helper = SOURCE[begin:end]
+        log = self.directory / "calls"
+        body = r'''
+set -eu
+compiler_family() {
+    printf 'family:%s\n' "$1" >> "$WHP_TEST_LOG"
+    printf 'clang\n'
+}
+require_darwin_target_identity() {
+    printf 'target:%s\n' "$2" >> "$WHP_TEST_LOG"
+    if [[ "$2" == broken ]]; then
+        return 1
+    fi
+    printf 'arm64-apple-macosx15.0\n'
+}
+'''
+        calls = r'''
+compiler_probe_once a family CC clang
+compiler_probe_once b family OBJC clang
+compiler_probe_once c family CXX clang++
+compiler_probe_once d family CC 'clang -arch arm64'
+compiler_probe_once t1 target CC clang
+compiler_probe_once t2 target OBJC clang
+if compiler_probe_once bad target CC broken; then exit 1; fi
+if compiler_probe_once bad target CC broken; then exit 1; fi
+[[ "$a" == clang && "$b" == clang && "$c" == clang && "$d" == clang ]]
+[[ "$t1" == arm64-apple-macosx15.0 && "$t2" == "$t1" ]]
+'''
+        result = subprocess.run(
+            ["bash", "-c", body + helper + calls],
+            env=dict(os.environ, WHP_TEST_LOG=str(log)),
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(log.read_text(encoding="utf-8").splitlines(), [
+            "family:clang", "family:clang++", "family:clang -arch arm64",
+            "target:clang", "target:broken", "target:broken",
+        ])
+
     def test_native_compilers_when_installed(self):
         for name in ("clang", "gcc", "g++"):
             executable = shutil.which(name)
