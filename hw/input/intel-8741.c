@@ -6,6 +6,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/qdev.h"
 #include "hw/input/intel-8741.h"
+#include "hw/input/intel-8741-program.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 
@@ -15,6 +16,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(Intel8741State, INTEL_8741)
 struct Intel8741State {
     DeviceState parent_obj;
     Intel8741Core core;
+    Intel8741Program program;
 };
 
 static void intel_8741_reset(DeviceState *dev)
@@ -22,6 +24,7 @@ static void intel_8741_reset(DeviceState *dev)
     Intel8741State *s = INTEL_8741(dev);
 
     intel_8741_core_reset(&s->core);
+    intel_8741_program_reset(&s->program);
 }
 
 static void intel_8741_realize(DeviceState *dev, Error **errp)
