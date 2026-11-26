@@ -369,6 +369,10 @@ static void test_dataport_family_controls(gconstpointer opaque)
                              "\r\nERROR\r\n");
     assert_response_contains(modem_command(&fe, &out, "AT%M2\r"),
                              v34 ? "\r\nOK\r\n" : "\r\nERROR\r\n");
+    if (!v34) {
+        assert_response_contains(modem_command(&fe, &out, "AT%BL2400\r"),
+                                 "\r\nERROR\r\n");
+    }
     if (v34) {
         assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "%M2");
         assert_response_contains(modem_command(&fe, &out, "AT%M3\r"),
@@ -390,6 +394,51 @@ static void test_dataport_family_controls(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_3740_modulation(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-dataport-modulation", "att-paradyne-3740");
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "%M0 %B28800 S76:000 S78:000");
+    assert_response_contains(modem_command(&fe, &out, "AT%M2%B14400\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "VFC CONFIGURED RATE:ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out, "AT%BL14400\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "%M2 %BL14400");
+    assert_response_contains(reply, "VFC CONFIGURED RATE:NOT ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out, "AT%BL16800\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "%M2 %BL14400");
+    assert_response_contains(modem_command(&fe, &out, "AT%B12000\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "VFC CONFIGURED RATE:NOT ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out, "AT%M1%B28800\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "VFC CONFIGURED RATE:NOT ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out, "ATS76=1S78=1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "ATS78=2\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "S76:001 S78:001");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "%M0 %B28800 S76:000 S78:000");
+    assert_response_contains(reply, "VFC CONFIGURED RATE:ELIGIBLE");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -408,6 +457,8 @@ static void test_generic_modem_rejects_paradyne_controls(void)
     response = modem_command(&fe, &out, "AT%M0\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%B14400\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT%BL2400\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT&V\r");
     g_assert_null(strstr(response, "DCE:"));
@@ -432,6 +483,8 @@ int main(int argc, char **argv)
     g_test_add_func("/modem/hardware-reset", test_hardware_reset);
     g_test_add_func("/modem/paradyne/3711", test_paradyne_3711_profile);
     g_test_add_func("/modem/paradyne/3740", test_paradyne_3740_profile);
+    g_test_add_func("/modem/paradyne/3740-modulation",
+                    test_dataport_3740_modulation);
     g_test_add_data_func("/modem/paradyne/family-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_family_controls);

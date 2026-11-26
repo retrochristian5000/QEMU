@@ -144,6 +144,35 @@ shared commands, not an additional emulated device in this change.
 * 3741: https://www.stason.org/TULARC/pc/modems-telephone-ISDN/P-R/PARADYNE-CORPORATION-Modem-DATAPORT-EXPRESS-3741.html
 * PCX manual: https://manualmachine.com/att/dataportpcxmodem/19730026-user-manual/
 
+DataPort 3740 modulation configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The 3740 reference distinguishes ``%B`` from ``%BL``: the latter
+selects a legacy modulation/rate combination (2400 through 14400
+bit/s in 2400 bit/s steps), rather than the V.34-capable rate path.
+The requested rate and legacy selector are retained independently
+of the ``%M`` preference. ``S76`` (V.32bis auto-retrain) and
+``S78`` (automatic modulation) accept only 0 (enabled) and 1
+(disabled), defaulting to 0.
+
+``AT&V`` reports these requested settings and a diagnostic
+``VFC CONFIGURED RATE`` field. Eligibility means only that the
+configured rate is a Rockwell V.FC rate (14400 through 28800
+bit/s in 2400 bit/s steps), the legacy selector is not active,
+and the preference does not exclude V.FC. It is not evidence of
+a negotiated modulation, and does not constrain possible fallback
+or TCP throughput. The 3740 source describes %M at 28.8 kbit/s;
+behavior at lower rates is not independently established.
+No carrier is generated from these settings alone, and no artificial
+delay is added to AT commands. Factory reset restores the original
+rate and selection. Other modem profiles do not gain %BL support.
+
+References:
+
+* 3740 command table: https://arvutimuuseum.ee/th99/t/P-R/53813.htm
+* Rockwell AT Command Reference Manual 1048 (1996), V.FC rate table:
+  https://manualzz.com/doc/29221493/rockwell-rc288acx--rc144acx-modem-reference-manual
+
 **Scope:** Settings for flow control and reliability are retained and
 reported, but actual hardware RTS/CTS throttling, V.42/MNP negotiation,
 compression, analogue signaling, fax frames, real manufacturer ROM responses,

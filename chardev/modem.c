@@ -65,6 +65,12 @@ typedef enum ModemResult {
     MODEM_RESULT_NO_ANSWER,
 } ModemResult;
 
+typedef enum DataPortHighSpeedMode {
+    DATAPORT_V34_AND_VFC = 0,
+    DATAPORT_V34_ONLY,
+    DATAPORT_VFC_ONLY,
+} DataPortHighSpeedMode;
+
 typedef struct ModemModel {
     const char *name;
     int connect_speed;
@@ -196,7 +202,8 @@ struct ModemChardev {
     int reliable_mode;
     int flow_control_mode;
     int lapm_frame_size;
-    int v34_modulation;
+    DataPortHighSpeedMode v34_modulation;
+    bool dataport_legacy_rate;
 
     int service_class;
     int voice_line;
@@ -382,7 +389,8 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
     modem->lapm_frame_size = 256;
-    modem->v34_modulation = 0;
+    modem->v34_modulation = DATAPORT_V34_AND_VFC;
+    modem->dataport_legacy_rate = false;
     modem->connect_speed = modem->model->connect_speed;
     modem->service_class = 0;
     modem_voice_defaults(modem);
@@ -474,6 +482,12 @@ static void modem_report_identification(ModemChardev *modem, int index)
     modem_queue_line(modem, identification);
 }
 
+/* Rockwell V.FC supports 14.4 to 28.8 kbit/s in 2.4 kbit/s steps. */
+static bool modem_dataport_vfc_rate(int speed)
+{
+    return speed >= 14400 && speed <= 28800 && speed % 2400 == 0;
+}
+
 static void modem_report_profile(ModemChardev *modem)
 {
     g_autofree char *line = NULL;
@@ -503,7 +517,18 @@ static void modem_report_profile(ModemChardev *modem)
         modem_queue_line(modem, line);
         if (modem->model->dataport_3740_line) {
             g_clear_pointer(&line, g_free);
-            line = g_strdup_printf("%%M%d", modem->v34_modulation);
+            line = g_strdup_printf("%%M%d %%B%s%d S76:%03d S78:%03d",
+                                   modem->v34_modulation,
+                                   modem->dataport_legacy_rate ? "L" : "",
+                                   modem->connect_speed, modem->sreg[76],
+                                   modem->sreg[78]);
+            modem_queue_line(modem, line);
+            g_clear_pointer(&line, g_free);
+            line = g_strdup_printf("VFC CONFIGURED RATE:%s",
+                !modem->dataport_legacy_rate &&
+                modem->v34_modulation != DATAPORT_V34_ONLY &&
+                modem_dataport_vfc_rate(modem->connect_speed) ?
+                "ELIGIBLE" : "NOT ELIGIBLE");
             modem_queue_line(modem, line);
         }
     }
@@ -916,7 +941,7 @@ static bool modem_handle_extended(ModemChardev *modem, const char **command)
 }
 
 static bool modem_paradyne_speed_valid(const ModemChardev *modem,
-                                       int speed)
+                                       int speed, bool legacy)
 {
     static const int speeds[] = {
         300, 1200, 2400, 4800, 7200, 9600, 12000, 14400,
@@ -927,6 +952,11 @@ static bool modem_paradyne_speed_valid(const ModemChardev *modem,
     if (!modem->model->paradyne_commands ||
         speed > modem->model->connect_speed) {
         return false;
+    }
+    if (legacy) {
+        /* %BL is documented for the 3740, not the other profiles. */
+        return modem->model->dataport_3740_line &&
+               speed >= 2400 && speed <= 14400 && speed % 2400 == 0;
     }
     for (i = 0; i < ARRAY_SIZE(speeds); i++) {
         if (speed == speeds[i]) {
@@ -1025,7 +1055,9 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             } else if (*p == '=') {
                 p++;
                 value = modem_parse_number(&p, -1);
-                if (value < 0 || value > 255) {
+                if (value < 0 || value > 255 ||
+                    (modem->model->dataport_3740_line &&
+                     (reg == 76 || reg == 78) && value > 1)) {
                     modem_result(modem, MODEM_RESULT_ERROR);
                     return;
                 }
@@ -1078,20 +1110,29 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
         case '%':
             switch (*p++) {
             case 'B':
+            {
+                bool legacy = *p == 'L';
+
+                if (legacy) {
+                    p++;
+                }
                 value = modem_parse_number(&p, -1);
-                if (!modem_paradyne_speed_valid(modem, value)) {
+                if (!modem_paradyne_speed_valid(modem, value, legacy)) {
                     modem_result(modem, MODEM_RESULT_ERROR);
                     return;
                 }
                 modem->connect_speed = value;
+                modem->dataport_legacy_rate = legacy;
                 break;
+            }
             case 'C':
                 modem->compression = modem_parse_number(&p, 0) != 0;
                 break;
             case 'M':
                 value = modem_parse_number(&p, -1);
                 if (!modem->model->dataport_3740_line ||
-                    value < 0 || value > 2) {
+                    value < DATAPORT_V34_AND_VFC ||
+                    value > DATAPORT_VFC_ONLY) {
                     modem_result(modem, MODEM_RESULT_ERROR);
                     return;
                 }
