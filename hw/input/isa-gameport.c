@@ -12,13 +12,11 @@
 #include "qemu/timer.h"
 #include "qapi/error.h"
 #include "hw/isa/isa.h"
+#include "hw/input/isa-gameport.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 
-#define TYPE_ISA_GAMEPORT "isa-gameport"
 OBJECT_DECLARE_SIMPLE_TYPE(ISAGameportState, ISA_GAMEPORT)
-
-#define GAMEPORT_BASE 0x201
 #define GAMEPORT_MAX_OHMS 100000U
 
 struct ISAGameportState {
@@ -111,13 +109,21 @@ static void gameport_realize(DeviceState *dev, Error **errp)
             return;
         }
     }
-    if (!isa_ioport_range_available(isa, GAMEPORT_BASE, 1, errp)) {
+    if (!isa_ioport_range_available(isa, ISA_GAMEPORT_IOBASE, 1, errp)) {
         return;
     }
 
     memory_region_init_io(&s->io, OBJECT(s), &gameport_ops, s,
                           "isa-gameport", 1);
-    isa_register_ioport(isa, &s->io, GAMEPORT_BASE);
+    isa_register_ioport(isa, &s->io, ISA_GAMEPORT_IOBASE);
+}
+
+static void gameport_unrealize(DeviceState *dev)
+{
+    ISAGameportState *s = ISA_GAMEPORT(dev);
+
+    memory_region_del_subregion(isa_address_space_io(ISA_DEVICE(dev)), &s->io);
+    object_unparent(OBJECT(&s->io));
 }
 
 static const Property gameport_properties[] = {
@@ -135,6 +141,7 @@ static void gameport_class_init(ObjectClass *klass, const void *data)
 
     dc->desc = "Generic ISA analog gameport (0x201)";
     dc->realize = gameport_realize;
+    dc->unrealize = gameport_unrealize;
     dc->hotpluggable = false;
     dc->vmsd = &vmstate_gameport;
     device_class_set_legacy_reset(dc, gameport_reset);
@@ -159,7 +166,7 @@ static const TypeInfo gameport_types[] = {
         .class_init = gameport_profile_class_init,
         .class_data = "IBM PC Game Control Adapter (analog interface)",
     }, {
-        .name = "creative-gameport",
+        .name = TYPE_CREATIVE_GAMEPORT,
         .parent = TYPE_ISA_GAMEPORT,
         .class_init = gameport_profile_class_init,
         .class_data = "Creative Sound Blaster compatible analog gameport",

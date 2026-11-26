@@ -12,6 +12,7 @@ config SB16
     bool
     default y
     depends on ISA_BUS
+    select ISA_GAMEPORT
 
 config AWE32
     bool

@@ -2,9 +2,9 @@ Sound Blaster 16 ISA profiles
 ============================
 
 The existing ``sb16`` model implements a legacy Sound Blaster 16-compatible
-DSP and mixer on ISA. Its device name, DSP version, I/O, IRQ, DMA properties
-and migration state remain unchanged. It does not expose ISA Plug and Play
-card identification.
+DSP and mixer on ISA, plus an integrated analog gameport by default.
+The DSP version, audio I/O, IRQ, DMA properties and DSP migration fields
+remain unchanged. It does not expose ISA Plug and Play card identification.
 
 The ``sb16-pnp`` name is reserved for the later Creative ISA Plug and Play
 family. The QOM profile is built with ``CONFIG_SB16_PNP`` when SB16 and the
@@ -51,10 +51,19 @@ resistance-to-time interface:
 * ``ibm-game-control``: IBM PC Game Control Adapter interface.
 * ``creative-gameport``: Creative legacy analog gameport interface.
 
-Attach only one of these devices. To test a simulated centered joystick A
-with an existing SB16 configuration, append::
+The ``sb16`` device automatically creates a Creative gameport child on the
+same ISA bus unless ``gameport=off`` is specified. There is no additional
+IRQ or DMA assignment. To test a simulated centered joystick A with an
+existing SB16 configuration, append::
 
-    -device creative-gameport,connected=3,a-x=50000,a-y=50000
+    -global creative-gameport.connected=3
+
+For independent adapters, disable the SB16 gameport first. For example::
+
+    -device sb16,audiodev=snd,gameport=off -device ibm-game-control,connected=3
+
+Use the existing audio backend ID in place of ``snd``. Do not attach a
+second gameport at 0x201; conflicting mappings are rejected.
 
 The four-bit ``connected`` mask selects attached analog axes (A-X, A-Y,
 B-X, B-Y, in that order); the four-bit ``buttons`` mask selects pressed
@@ -65,8 +74,11 @@ the virtual clock. Buttons are active-low. No IRQ or DMA is required.
 Only byte accesses to 0x201 are implemented. The profile and input
 properties must match across migration.
 
-These are separate, opt-in analog devices; ``sb16`` does not automatically
-create a gameport. No host controller input, ISA PnP identifiers, MIDI,
+The standalone profiles remain opt-in. The integrated child has its own
+migration state, so both endpoints must use matching topology and input
+properties. For a saved state from before SB16 gained its gameport, set
+``gameport=off`` to preserve the old topology, or cold boot with the new
+default. No host controller input, ISA PnP identifiers, MIDI,
 SideWinder digital protocol, or board-specific jumper state is emulated.
 This interface does not change the Windows generic driver name. The
 Creative profile represents the documented compatible interface, not a

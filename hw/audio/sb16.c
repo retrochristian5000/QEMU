@@ -27,6 +27,7 @@
 #include "qemu/audio.h"
 #include "hw/core/irq.h"
 #include "hw/isa/isa.h"
+#include "hw/input/isa-gameport.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -61,6 +62,8 @@ struct SB16State {
     uint32_t hdma;
     uint32_t port;
     uint32_t ver;
+    bool gameport_enabled;
+    ISADevice *gameport;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -1407,6 +1410,54 @@ static void sb16_initfn (Object *obj)
     s->cmd = -1;
 }
 
+static bool sb16_realize_gameport(SB16State *s, ISABus *bus, Error **errp)
+{
+    ISADevice *gameport;
+
+    if (!s->gameport_enabled) {
+        return true;
+    }
+
+    /* Check the card's own future I/O mappings before realizing its child. */
+    if (s->port <= ISA_GAMEPORT_IOBASE) {
+        uint32_t offset = ISA_GAMEPORT_IOBASE - s->port;
+
+        for (const MemoryRegionPortio *pio = sb16_ioport_list;
+             pio->size; pio++) {
+            if (offset >= pio->offset &&
+                offset - pio->offset < pio->len + pio->size - 1) {
+                error_setg(errp, "sb16: DSP/mixer I/O overlaps integrated "
+                           "gameport at 0x201");
+                return false;
+            }
+        }
+    }
+
+    gameport = isa_new(TYPE_CREATIVE_GAMEPORT);
+    object_property_add_child(OBJECT(s), "gameport-device", OBJECT(gameport));
+    if (!qdev_realize(DEVICE(gameport), BUS(bus), errp)) {
+        object_unparent(OBJECT(gameport));
+        object_unref(OBJECT(gameport));
+        return false;
+    }
+    s->gameport = gameport;
+    object_unref(OBJECT(gameport));
+    return true;
+}
+
+static void sb16_remove_gameport(SB16State *s)
+{
+    if (s->gameport) {
+        object_unparent(OBJECT(s->gameport));
+        s->gameport = NULL;
+    }
+}
+
+static void sb16_unrealize(DeviceState *dev)
+{
+    sb16_remove_gameport(SB16(dev));
+}
+
 static void sb16_realizefn (DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE (dev);
@@ -1427,6 +1478,11 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     s->pic = isa_bus_get_irq(bus, s->irq);
 
+    /* Fail before creating DSP timers or registering DMA callbacks. */
+    if (!sb16_realize_gameport(s, bus, errp)) {
+        return;
+    }
+
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
     s->mixer_regs[0x82] = 2 << 5;
@@ -1437,7 +1493,9 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     reset_mixer (s);
     s->aux_ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, aux_timer, s);
     if (!s->aux_ts) {
-        error_setg(errp, "warning: Could not create auxiliary timer");
+        error_setg(errp, "Could not create SB16 auxiliary timer");
+        sb16_remove_gameport(s);
+        return;
     }
 
     isa_register_portio_list(isadev, &s->portio_list, s->port,
@@ -1459,6 +1517,7 @@ static const Property sb16_properties[] = {
     DEFINE_PROP_UINT32 ("irq",     SB16State, irq,  5),
     DEFINE_PROP_UINT32 ("dma",     SB16State, dma,  1),
     DEFINE_PROP_UINT32 ("dma16",   SB16State, hdma, 5),
+    DEFINE_PROP_BOOL("gameport", SB16State, gameport_enabled, true),
 };
 
 static void sb16_class_initfn(ObjectClass *klass, const void *data)
@@ -1466,6 +1525,7 @@ static void sb16_class_initfn(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS (klass);
 
     dc->realize = sb16_realizefn;
+    dc->unrealize = sb16_unrealize;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->desc = "Sound Blaster 16 compatible (legacy ISA, non-PnP)";
     dc->vmsd = &vmstate_sb16;
