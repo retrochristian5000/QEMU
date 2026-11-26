@@ -126,6 +126,7 @@ static void serial_isa_class_initfn(ObjectClass *klass, const void *data)
     AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(klass);
 
     dc->realize = serial_isa_realizefn;
+    dc->desc = "ISA 16550A-compatible UART serial port";
     dc->vmsd = &vmstate_isa_serial;
     adevc->build_dev_aml = serial_isa_build_aml;
     device_class_set_props(dc, serial_isa_properties);
