@@ -153,6 +153,40 @@ require_darwin_target_identity()
     printf '%s\n' "$triple"
 }
 
+# Cache only within this policy invocation, by exact command and probe kind.
+# No persistent cache or cross-build assumptions about compiler identity.
+compiler_probe_count=0
+compiler_probe_kinds=()
+compiler_probe_commands=()
+compiler_probe_values=()
+
+compiler_probe_once()
+{
+    local destination="$1" kind="$2" role="$3" command_string="$4"
+    local i result
+
+    for ((i = 0; i < compiler_probe_count; i++)); do
+        if [[ "${compiler_probe_kinds[i]}" == "$kind" &&
+              "${compiler_probe_commands[i]}" == "$command_string" ]]; then
+            printf -v "$destination" '%s' "${compiler_probe_values[i]}"
+            return 0
+        fi
+    done
+
+    case "$kind" in
+        family) result="$(compiler_family "$command_string")" || return 1 ;;
+        target) result="$(require_darwin_target_identity "$role" "$command_string")" ||
+                    return 1 ;;
+        *) return 1 ;;
+    esac
+
+    compiler_probe_kinds[compiler_probe_count]="$kind"
+    compiler_probe_commands[compiler_probe_count]="$command_string"
+    compiler_probe_values[compiler_probe_count]="$result"
+    compiler_probe_count=$((compiler_probe_count + 1))
+    printf -v "$destination" '%s' "$result"
+}
+
 # Apple defaults must follow the active Xcode or standalone CLT root.
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/macos-developer-tools.sh"
 APPLE_CLANG="$(whp_apple_find_tool clang)" || return 1 2>/dev/null || exit 1
@@ -180,11 +214,16 @@ export CC_FOR_BUILD="${CC_FOR_BUILD:-$APPLE_CLANG}"
 export CXX_FOR_BUILD="${CXX_FOR_BUILD:-$APPLE_CLANGXX}"
 export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-$APPLE_CLANG}"
 
-cc_family="$(compiler_family "$CC")"
-cxx_family="$(compiler_family "$CXX")"
-objc_family="$(compiler_family "$OBJC")"
-build_cc_family="$(compiler_family "$CC_FOR_BUILD")"
-build_cxx_family="$(compiler_family "$CXX_FOR_BUILD")"
+compiler_probe_once cc_family family CC "$CC" || \
+    return 1 2>/dev/null || exit 1
+compiler_probe_once cxx_family family CXX "$CXX" || \
+    return 1 2>/dev/null || exit 1
+compiler_probe_once objc_family family OBJC "$OBJC" || \
+    return 1 2>/dev/null || exit 1
+compiler_probe_once build_cc_family family CC_FOR_BUILD "$CC_FOR_BUILD" || \
+    return 1 2>/dev/null || exit 1
+compiler_probe_once build_cxx_family family CXX_FOR_BUILD "$CXX_FOR_BUILD" || \
+    return 1 2>/dev/null || exit 1
 
 if [[ "$cc_family" == unknown || "$cxx_family" == unknown ]]; then
     printf '%s\n' \
@@ -219,15 +258,15 @@ if [[ "$build_cc_family" != clang || "$build_cxx_family" != clang ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
-MACOS_CC_TARGET_TRIPLE="$(require_darwin_target_identity CC "$CC")" || \
+compiler_probe_once MACOS_CC_TARGET_TRIPLE target CC "$CC" || \
     return 1 2>/dev/null || exit 1
-MACOS_CXX_TARGET_TRIPLE="$(require_darwin_target_identity CXX "$CXX")" || \
+compiler_probe_once MACOS_CXX_TARGET_TRIPLE target CXX "$CXX" || \
     return 1 2>/dev/null || exit 1
-MACOS_OBJC_TARGET_TRIPLE="$(require_darwin_target_identity OBJC "$OBJC")" || \
+compiler_probe_once MACOS_OBJC_TARGET_TRIPLE target OBJC "$OBJC" || \
     return 1 2>/dev/null || exit 1
-MACOS_BUILD_CC_TARGET_TRIPLE="$(require_darwin_target_identity CC_FOR_BUILD "$CC_FOR_BUILD")" || \
+compiler_probe_once MACOS_BUILD_CC_TARGET_TRIPLE target CC_FOR_BUILD "$CC_FOR_BUILD" || \
     return 1 2>/dev/null || exit 1
-MACOS_BUILD_CXX_TARGET_TRIPLE="$(require_darwin_target_identity CXX_FOR_BUILD "$CXX_FOR_BUILD")" || \
+compiler_probe_once MACOS_BUILD_CXX_TARGET_TRIPLE target CXX_FOR_BUILD "$CXX_FOR_BUILD" || \
     return 1 2>/dev/null || exit 1
 export MACOS_CC_TARGET_TRIPLE MACOS_CXX_TARGET_TRIPLE MACOS_OBJC_TARGET_TRIPLE
 export MACOS_BUILD_CC_TARGET_TRIPLE MACOS_BUILD_CXX_TARGET_TRIPLE
