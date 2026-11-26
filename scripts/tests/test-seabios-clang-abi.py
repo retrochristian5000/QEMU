@@ -349,7 +349,7 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                     ], env=env, text=True, capture_output=True, check=False)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     data = output.read_bytes()
-                    self.assertEqual(data[:6], b'\\x7fELF\\x01\\x01')
+                    self.assertEqual(data[:6], b'\x7fELF\x01\x01')
                     shoff = struct.unpack_from('<I', data, 32)[0]
                     entsize, count, names_idx = struct.unpack_from('<HHH', data, 46)
                     headers = [struct.unpack_from('<IIIIIIIIII', data,
@@ -357,7 +357,7 @@ class SeaBiosClangAbiTests(unittest.TestCase):
                                for i in range(count)]
                     names_hdr = headers[names_idx]
                     names = data[names_hdr[4]:names_hdr[4] + names_hdr[5]]
-                    alignment = {names[h[0]:].split(b'\\0', 1)[0]: h[8]
+                    alignment = {names[h[0]:].split(b'\0', 1)[0]: h[8]
                                  for h in headers}
                     self.assertEqual(alignment[b'.text.normal'], 1)
                     self.assertGreaterEqual(alignment[b'.text.pinned'], 16)
