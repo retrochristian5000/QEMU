@@ -264,3 +264,36 @@ provided from an appropriate authorized source; none are bundled here.
 
 Reference: E-mu/Creative, AWE32/EMU8000 Programmer's Guide (1994-1996),
 sections 1-3, https://www.dosdays.co.uk/media/creative/emu8kpgm.pdf.
+
+Historical ATA HDD identity profiles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The generic ``ide-hd`` remains unchanged. Three optional IDE disk types
+supply manufacturer model strings in IDENTIFY DEVICE words 27-46 and
+nominal rotation rates in word 217:
+
+* ``seagate-st31640a``: ST31640A, 5376 RPM, original 3175200 sectors.
+* ``seagate-st32140a``: ST32140A, 5376 RPM, original 4127760 sectors.
+* ``ibm-dtta-351010``: IBM-DTTA-351010, 5400 RPM, original 19807200 sectors.
+
+For example, with an existing disk image and an available IDE unit::
+
+    -drive if=none,id=hdd0,file=/path/to/disk.img,format=raw \
+        -device seagate-st32140a,bus=ide.0,unit=0,drive=hdd0
+
+Replace the original attachment rather than attaching the image twice.
+The image format must match the actual image. Capacity and geometry
+continue to follow the backend and existing geometry options; the profiles
+never resize an image. Model, serial, firmware revision and rotation rate
+can still be overridden using the existing properties.
+
+These are identity profiles, not complete ATA-2 or ATA/ATAPI-4 hardware
+emulations. They retain the generic engine's command set and advertised
+capabilities, including newer features, and do not model seek time or
+vendor firmware. The rotation field is a later ATA identification field.
+Keep the device profile and overrides identical when restoring a VM.
+
+References: Seagate Medalist 1640 and 2140 Product Manual, January 1996,
+sections 1.1 and 3.2 (https://www.seagate.com/support/disc/manuals/ata/36314-21.pdf);
+IBM DTTA-3xxxxx OEM specifications, sections 1 and 3.2
+(https://www.manualowl.com/m/IBM/DTTA-351010/Manual/335209).

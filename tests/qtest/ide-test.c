@@ -836,6 +836,55 @@ static void test_identify(void)
     free_pci_device(dev);
 }
 
+typedef struct AtaHdIdentity {
+    const char *type;
+    const char *model;
+    uint16_t rpm;
+    const char *options;
+} AtaHdIdentity;
+
+static const AtaHdIdentity ata_hd_identities[] = {
+    { "ide-hd", "QEMU HARDDISK", 0, "" },
+    { "seagate-st31640a", "ST31640A", 5376, "" },
+    { "seagate-st32140a", "ST32140A", 5376, "" },
+    { "ibm-dtta-351010", "IBM-DTTA-351010", 5400, "" },
+    { "ibm-dtta-351010", "Override HDD", 0,
+      ",model=Override HDD,rotation_rate=0" },
+};
+
+static void test_ata_hd_identity(gconstpointer opaque)
+{
+    const AtaHdIdentity *profile = opaque;
+    QTestState *qts;
+    QPCIDevice *dev;
+    QPCIBar bmdma_bar, ide_bar;
+    uint16_t buf[256];
+    char expected[40];
+
+    qts = ide_test_start("-drive if=none,file=%s,format=raw,id=disk0 "
+                         "-device %s,bus=ide.0,unit=0,drive=disk0%s",
+                         tmp_path[0], profile->type, profile->options);
+    dev = get_pci_device(qts, &bmdma_bar, &ide_bar);
+    qpci_io_writeb(dev, ide_bar, reg_device, 0);
+    qpci_io_writeb(dev, ide_bar, reg_command, CMD_IDENTIFY);
+    for (unsigned i = 0; i < ARRAY_SIZE(buf); i++) {
+        assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), DRDY | DRQ);
+        buf[i] = qpci_io_readw(dev, ide_bar, reg_data);
+    }
+    assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), DRQ | ERR);
+
+    memset(expected, ' ', sizeof(expected));
+    memcpy(expected, profile->model, strlen(profile->model));
+    string_cpu_to_be16(&buf[27], sizeof(expected));
+    g_assert_cmpmem(&buf[27], sizeof(expected), expected, sizeof(expected));
+    g_assert_cmpuint(buf[217], ==, profile->rpm);
+    g_assert_cmpuint((uint32_t)buf[60] | ((uint32_t)buf[61] << 16),
+                     ==, TEST_IMAGE_SIZE / 512);
+
+    free_pci_device(dev);
+    ide_test_quit(qts);
+}
+
 static void test_ata_atapi_command_boundary(void)
 {
     QTestState *qts;
@@ -1847,6 +1896,13 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/read_native", test_specify);
 
     qtest_add_func("/ide/identify", test_identify);
+    for (unsigned i = 0; i < ARRAY_SIZE(ata_hd_identities); i++) {
+        const AtaHdIdentity *profile = &ata_hd_identities[i];
+        g_autofree char *name = g_strdup_printf("/ide/hdd-identity/%s/%u",
+                                                profile->type, i);
+
+        qtest_add_data_func(name, profile, test_ata_hd_identity);
+    }
     if (qtest_has_machine("q35")) {
         if (qtest_has_device("piix4-ide")) {
             qtest_add_data_func("/ide/legacy-controller/piix4",
