@@ -21,6 +21,7 @@
 #include "migration/blocker.h"
 #include "qapi/error.h"
 #include "system/address-spaces.h"
+#include "system/memory.h"
 #include "ui/input.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/input/att-kbd302.h"
