@@ -1221,10 +1221,23 @@ static int device_help_func(void *opaque, QemuOpts *opts, Error **errp)
     return qdev_device_help(opts);
 }
 
+/*
+ * Explicit Intel 8741 controllers must exist before either AT&T keyboard
+ * chooses its controller. Keep all other devices in their existing order.
+ */
+static bool device_init_early(const char *driver)
+{
+    return g_strcmp0(driver, "intel-8741") == 0;
+}
+
 static int device_init_func(void *opaque, QemuOpts *opts, Error **errp)
 {
+    const bool *early = opaque;
     DeviceState *dev;
 
+    if (device_init_early(qemu_opt_get(opts, "driver")) != *early) {
+        return 0;
+    }
     dev = qdev_device_add(opts, errp);
     if (!dev && *errp) {
         error_report_err(*errp);
@@ -2777,16 +2790,24 @@ static void qemu_create_cli_devices(void)
         foreach_device_config_or_exit(DEV_USB, usb_parse);
     }
 
-    /* init generic devices */
-    qemu_opts_foreach(qemu_find_opts("device"),
-                      device_init_func, NULL, &error_fatal);
-    QTAILQ_FOREACH(opt, &device_opts, next) {
-        QObject *ret_data = NULL;
+    /* Init explicit controllers first, for both CLI device syntaxes. */
+    for (int pass = 0; pass < 2; pass++) {
+        bool early = pass == 0;
 
-        loc_push_restore(&opt->loc);
-        qmp_device_add(opt->opts, &ret_data, &error_fatal);
-        assert(ret_data == NULL); /* error_fatal aborts */
-        loc_pop(&opt->loc);
+        qemu_opts_foreach(qemu_find_opts("device"),
+                          device_init_func, &early, &error_fatal);
+        QTAILQ_FOREACH(opt, &device_opts, next) {
+            QObject *ret_data = NULL;
+
+            if (device_init_early(qdict_get_try_str(opt->opts, "driver"))
+                != early) {
+                continue;
+            }
+            loc_push_restore(&opt->loc);
+            qmp_device_add(opt->opts, &ret_data, &error_fatal);
+            assert(ret_data == NULL); /* error_fatal aborts */
+            loc_pop(&opt->loc);
+        }
     }
 }
 

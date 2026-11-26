@@ -13,7 +13,7 @@
 OBJECT_DECLARE_SIMPLE_TYPE(Intel8741State, INTEL_8741)
 
 /*
- * The owner provides a byte source with the same lifetime as the controller.
+ * The owner provides a byte source until it explicitly disconnects.
  * False means no byte is available and leaves the destination unchanged.
  * This is a byte-level connection, not yet a serial-clock or pin model.
  */
@@ -30,6 +30,16 @@ struct Intel8741State {
 void intel_8741_connect_keyboard(Intel8741State *s,
                                  Intel8741KeyboardRead read_byte,
                                  void *opaque);
+/*
+ * Resolve a realized explicit controller by ID or by unique availability,
+ * otherwise create a private child. Returns an owned reference on success.
+ */
+Intel8741State *intel_8741_attach_keyboard(DeviceState *owner,
+                                          const char *controller_id,
+                                          Intel8741KeyboardRead read_byte,
+                                          void *opaque, Error **errp);
+void intel_8741_detach_keyboard(DeviceState *owner, Intel8741State *s,
+                               void *opaque);
 bool intel_8741_read_keyboard(Intel8741State *s, uint8_t *value);
 
 #endif

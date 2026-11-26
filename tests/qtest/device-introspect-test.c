@@ -326,6 +326,56 @@ static void test_att_kbd302_controller(void)
     }
 }
 
+static void test_att_keyboard_explicit_controller(void)
+{
+    static const char *const args[] = {
+        "-device intel-8741,id=upi -device att-kbd302,id=kbd",
+        "-device att-kbd302,id=kbd -device intel-8741,id=upi",
+        "-device att-kbd301,id=kbd -device intel-8741,id=upi",
+        "-device att-kbd302,id=kbd,controller-id=upi "
+        "-device intel-8741,id=other -device intel-8741,id=upi",
+        "-device att-kbd302,id=kbd "
+        "-device '{\"driver\":\"intel-8741\",\"id\":\"upi\"}'",
+    };
+    QTestState *qts = qtest_init(common_args);
+    QList *types = device_type_list(qts, false);
+    bool supported = type_list_find(types, "att-kbd302") != NULL;
+
+    qobject_unref(types);
+    qtest_quit(qts);
+    if (!supported) {
+        g_test_skip("AT&T keyboards are not built for this target");
+        return;
+    }
+
+    for (unsigned int i = 0; i < ARRAY_SIZE(args); i++) {
+        g_autofree char *cmd = g_strdup_printf("%s %s", common_args, args[i]);
+        QDict *reply;
+
+        qts = qtest_init(cmd);
+        g_assert_true(qtest_qom_get_bool(qts, "/machine/peripheral/kbd",
+                                        "realized"));
+        g_assert_true(qtest_qom_get_bool(qts, "/machine/peripheral/upi",
+                                        "keyboard-attached"));
+        reply = qtest_qmp(qts,
+            "{'execute':'qom-get','arguments':"
+            "{'path':'/machine/peripheral/kbd','property':'active-controller'}}");
+        g_assert_true(qdict_haskey(reply, "return"));
+        g_assert_cmpstr(qdict_get_str(reply, "return"), ==,
+                        "/machine/peripheral/upi");
+        qobject_unref(reply);
+        reply = qtest_qmp_assert_failure_ref(qts,
+            "{'execute':'qom-get','arguments':"
+            "{'path':'/machine/peripheral/kbd/controller','property':'realized'}}");
+        qobject_unref(reply);
+        if (i == 3) {
+            g_assert_false(qtest_qom_get_bool(qts, "/machine/peripheral/other",
+                                             "keyboard-attached"));
+        }
+        qtest_quit(qts);
+    }
+}
+
 /*
  * Ensure all entries returned by qom-list-types implements=<parent>
  * have <parent> as a parent.
@@ -516,6 +566,8 @@ int main(int argc, char **argv)
                    test_att_kbd301_controller);
     qtest_add_func("device/introspect/att-kbd302-controller",
                    test_att_kbd302_controller);
+    qtest_add_func("device/introspect/att-keyboard-explicit-controller",
+                   test_att_keyboard_explicit_controller);
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
     qtest_add_func("device/introspect/settable-only",
                    test_device_intro_settable_only);

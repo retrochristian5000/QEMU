@@ -12,10 +12,113 @@ void intel_8741_connect_keyboard(Intel8741State *s,
                                  Intel8741KeyboardRead read_byte,
                                  void *opaque)
 {
-    assert(!DEVICE(s)->realized && !s->keyboard_read);
+    assert(!s->keyboard_read);
     assert(read_byte);
     s->keyboard_read = read_byte;
     s->keyboard_opaque = opaque;
+}
+
+typedef struct Intel8741Search {
+    Intel8741State *available;
+    unsigned int total;
+    unsigned int free;
+} Intel8741Search;
+
+static int intel_8741_find_controller(Object *obj, void *opaque)
+{
+    Intel8741Search *search = opaque;
+    Intel8741State *s =
+        (Intel8741State *)object_dynamic_cast(obj, TYPE_INTEL_8741);
+
+    if (s && DEVICE(s)->realized) {
+        search->total++;
+        if (!s->keyboard_read) {
+            search->available = s;
+            search->free++;
+        }
+    }
+    return 0;
+}
+
+Intel8741State *intel_8741_attach_keyboard(DeviceState *owner,
+                                          const char *controller_id,
+                                          Intel8741KeyboardRead read_byte,
+                                          void *opaque, Error **errp)
+{
+    Intel8741State *s;
+    Intel8741Search search = { 0 };
+    Object *obj;
+
+    if (controller_id) {
+        obj = object_resolve_path_component(
+            machine_get_container("peripheral"), controller_id);
+        s = obj ? (Intel8741State *)object_dynamic_cast(obj, TYPE_INTEL_8741)
+                : NULL;
+        if (!s || !DEVICE(s)->realized) {
+            error_setg(errp, "Intel 8741 controller '%s' is not available",
+                       controller_id);
+            return NULL;
+        }
+        if (s->keyboard_read) {
+            error_setg(errp, "Intel 8741 controller '%s' already has a keyboard",
+                       controller_id);
+            return NULL;
+        }
+    } else {
+        object_child_foreach(machine_get_container("peripheral"),
+                             intel_8741_find_controller, &search);
+        object_child_foreach(machine_get_container("peripheral-anon"),
+                             intel_8741_find_controller, &search);
+        if (search.free > 1) {
+            error_setg(errp, "Multiple Intel 8741 controllers are available; "
+                       "select one using controller-id");
+            return NULL;
+        }
+        if (search.total && !search.free) {
+            error_setg(errp, "All explicit Intel 8741 controllers already "
+                       "have keyboards");
+            return NULL;
+        }
+        s = search.available;
+    }
+
+    if (s) {
+        object_ref(OBJECT(s));
+        intel_8741_connect_keyboard(s, read_byte, opaque);
+        return s;
+    }
+
+    /* Keep the existing QOM child path for an implicit controller. */
+    s = INTEL_8741(qdev_new(TYPE_INTEL_8741));
+    object_property_add_child(OBJECT(owner), "controller", OBJECT(s));
+    intel_8741_connect_keyboard(s, read_byte, opaque);
+    if (!qdev_realize(DEVICE(s), NULL, errp)) {
+        s->keyboard_read = NULL;
+        s->keyboard_opaque = NULL;
+        object_unparent(OBJECT(s));
+        object_unref(OBJECT(s));
+        return NULL;
+    }
+    return s;
+}
+
+void intel_8741_detach_keyboard(DeviceState *owner, Intel8741State *s,
+                               void *opaque)
+{
+    if (!s) {
+        return;
+    }
+
+    if (s->keyboard_opaque == opaque) {
+        s->keyboard_read = NULL;
+        s->keyboard_opaque = NULL;
+    }
+    if (object_resolve_path_component(OBJECT(owner), "controller") ==
+        OBJECT(s)) {
+        qdev_unrealize(DEVICE(s));
+        object_unparent(OBJECT(s));
+    }
+    object_unref(OBJECT(s));
 }
 
 bool intel_8741_read_keyboard(Intel8741State *s, uint8_t *value)
@@ -39,14 +142,7 @@ static void intel_8741_reset(DeviceState *dev)
 
 static void intel_8741_realize(DeviceState *dev, Error **errp)
 {
-    Intel8741State *s = INTEL_8741(dev);
-
-    if (!s->keyboard_read) {
-        error_setg(errp, "Intel 8741 requires a connected peripheral; "
-                   "use att-kbd302 to create the experimental keyboard pair");
-        return;
-    }
-
+    /* An explicitly declared controller may acquire its keyboard later. */
     intel_8741_reset(dev);
 }
 
