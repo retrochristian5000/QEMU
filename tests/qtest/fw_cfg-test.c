@@ -322,6 +322,52 @@ static void test_acpi1_fadt(gconstpointer opaque)
     qtest_quit(s);
 }
 
+static void test_piix_pic_resources(gconstpointer opaque)
+{
+    bool enabled = GPOINTER_TO_INT(opaque);
+    QTestState *s = qtest_init(enabled ? "-M pc,pic=on -nodefaults" :
+                                        "-M pc,pic=off -nodefaults");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    static const uint8_t hid[] = {
+        0x08, '_', 'H', 'I', 'D', 0x0c, 0x41, 0xd0, 0x00, 0x00,
+    };
+    static const uint8_t resources[] = {
+        0x47, 1, 0x20, 0, 0x20, 0, 1, 2,
+        0x47, 1, 0xa0, 0, 0xa0, 0, 1, 2,
+        0x47, 1, 0xd0, 4, 0xd0, 4, 1, 2,
+        0x22, 0x04, 0x00,
+    };
+    uint8_t first;
+    size_t len = qfw_cfg_get_file(fw_cfg, "etc/acpi/tables", &first, 1);
+    g_autofree uint8_t *tables = NULL;
+    unsigned ids = 0, descriptors = 0;
+    size_t end;
+
+    g_assert_cmpuint(len, >=, 64 + 36);
+    g_assert_cmpuint(len, <=, 16 * MiB);
+    tables = g_malloc(len);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/tables",
+                                      tables, len), ==, len);
+    g_assert_cmpmem(tables + 64, 4, "DSDT", 4);
+    end = 64 + (size_t)ldl_le_p(tables + 68);
+    g_assert_cmpuint(end, >=, 64 + 36);
+    g_assert_cmpuint(end, <=, len);
+    for (size_t i = 64 + 36; i < end; i++) {
+        if (end - i >= sizeof(hid) &&
+            !memcmp(tables + i, hid, sizeof(hid))) {
+            ids++;
+        }
+        if (end - i >= sizeof(resources) &&
+            !memcmp(tables + i, resources, sizeof(resources))) {
+            descriptors++;
+        }
+    }
+    g_assert_cmpuint(ids, ==, enabled ? 1 : 0);
+    g_assert_cmpuint(descriptors, ==, enabled ? 1 : 0);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -332,6 +378,10 @@ int main(int argc, char **argv)
                             test_acpi1_fadt);
         qtest_add_data_func("fw_cfg/acpi1-fadt/strict", GINT_TO_POINTER(1),
                             test_acpi1_fadt);
+        qtest_add_data_func("fw_cfg/piix-pic/present", GINT_TO_POINTER(1),
+                            test_piix_pic_resources);
+        qtest_add_data_func("fw_cfg/piix-pic/absent", GINT_TO_POINTER(0),
+                            test_piix_pic_resources);
     }
     qtest_add_func("fw_cfg/read_boundaries", test_fw_cfg_read_boundaries);
     qtest_add_func("fw_cfg/id", test_fw_cfg_id);
