@@ -1005,6 +1005,16 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
 {
     uint8_t blt_rop;
 
+    /*
+     * GD5446 has distinct active and buffered commands. Until buffered
+     * commands are implemented, do not replace an active source transfer.
+     */
+    if (s->device_id == CIRRUS_ID_CLGD5446 &&
+        ((s->vga.gr[0x31] & CIRRUS_BLT_RESET) ||
+         s->cirrus_srccounter)) {
+        return;
+    }
+
     if (!s->enable_blitter || s->device_id == CIRRUS_ID_CLGD5422) {
         goto bitblt_ignore;
     }
@@ -1153,6 +1163,23 @@ static void cirrus_write_bitblt(CirrusVGAState * s, unsigned reg_value)
     unsigned old_value;
 
     old_value = s->vga.gr[0x31];
+    if (s->device_id == CIRRUS_ID_CLGD5446) {
+        /*
+         * GD5446 TRM 5.10: BUSY and buffered-register status are
+         * read-only; bit 3 is reserved. No command queue is modeled yet.
+         */
+        s->vga.gr[0x31] = (reg_value & 0xe4) |
+                          (old_value & (CIRRUS_BLT_BUSY | CIRRUS_BLT_START));
+        if (reg_value & CIRRUS_BLT_RESET) {
+            cirrus_bitblt_reset(s);
+        } else if ((reg_value & CIRRUS_BLT_START) &&
+                   !(old_value & (CIRRUS_BLT_BUSY | CIRRUS_BLT_START |
+                                  CIRRUS_BLT_RESET))) {
+            s->vga.gr[0x31] |= CIRRUS_BLT_START;
+            cirrus_bitblt_start(s);
+        }
+        return;
+    }
     s->vga.gr[0x31] = reg_value;
 
     if (((old_value & CIRRUS_BLT_RESET) != 0) &&
@@ -2925,6 +2952,10 @@ static void cirrus_reset(void *opaque)
 {
     CirrusVGAState *s = opaque;
 
+    /* Cancel a partially supplied host-to-video operation on machine reset. */
+    s->cirrus_srcptr = s->cirrus_bltbuf;
+    s->cirrus_srcptr_end = s->cirrus_bltbuf;
+    s->cirrus_srccounter = 0;
     vga_common_reset(&s->vga);
     unmap_linear_vram(s);
     s->vga.sr[0x06] = 0x0f;
