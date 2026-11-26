@@ -21,6 +21,9 @@ typedef struct AttKbd302Core {
 void att_kbd302_core_reset(AttKbd302Core *s);
 /* Return false on invalid code or full queue. Repeated state is a no-op. */
 bool att_kbd302_core_key(AttKbd302Core *s, unsigned int code, bool down);
+/* Provisional M24 deluxe physical-key map; zero means no mapping. */
+uint8_t att_kbd302_linux_to_scan(unsigned int key);
+bool att_kbd302_core_linux_key(AttKbd302Core *s, unsigned int key, bool down);
 /* Return false if empty; do not modify the destination in that case. */
 bool att_kbd302_core_read(AttKbd302Core *s, uint8_t *value);
 
