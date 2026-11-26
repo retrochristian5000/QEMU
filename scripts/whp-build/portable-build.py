@@ -724,6 +724,9 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
 
     if host_is_macos():
         configure_args.append(f"-Db_lto_threads={resolved_jobs(values['MACOS_BUILD_POWER'])}")
+        if lto != 'n':
+            # Match the Bash path: one potentially parallel LTO link at a time.
+            configure_args.append('-Dbackend_max_links=1')
         optional_switch(configure_args, values['MACOS_ENABLE_COCOA'], 'cocoa')
         optional_switch(configure_args, values['MACOS_ENABLE_COREAUDIO'], 'coreaudio')
 
