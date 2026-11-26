@@ -276,6 +276,35 @@ static void test_device_intro_display_descriptions(void)
     qtest_quit(qts);
 }
 
+static void test_device_help_cli(void)
+{
+    const char *binary = qtest_qemu_binary("QTEST_QEMU_BINARY");
+    char *args[] = {
+        (char *)binary, "-device", "help", NULL,
+    };
+    g_autofree char *plain = NULL;
+    g_autofree char *explicit_text = NULL;
+    g_autoptr(GError) err = NULL;
+    int status;
+
+    g_assert_true(g_spawn_sync(NULL, args, NULL, G_SPAWN_SEARCH_PATH,
+                               NULL, NULL, &plain, NULL, &status, &err));
+    g_assert_no_error(err);
+    g_assert_true(g_spawn_check_wait_status(status, &err));
+    g_assert_no_error(err);
+    g_assert_nonnull(strstr(plain, " devices:\n"));
+    g_assert_nonnull(strstr(plain, "name \""));
+
+    args[2] = "help,window=off";
+    g_assert_true(g_spawn_sync(NULL, args, NULL, G_SPAWN_SEARCH_PATH,
+                               NULL, NULL, &explicit_text, NULL,
+                               &status, &err));
+    g_assert_no_error(err);
+    g_assert_true(g_spawn_check_wait_status(status, &err));
+    g_assert_no_error(err);
+    g_assert_cmpstr(plain, ==, explicit_text);
+}
+
 static void test_generic_device_types(void)
 {
     static const struct {
@@ -716,6 +745,7 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list", test_device_intro_list);
     qtest_add_func("device/introspect/display-descriptions",
                    test_device_intro_display_descriptions);
+    qtest_add_func("device/introspect/cli-help", test_device_help_cli);
     qtest_add_func("device/introspect/generic-types",
                    test_generic_device_types);
     qtest_add_func("device/introspect/att-kbd301-controller",

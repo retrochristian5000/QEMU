@@ -68,6 +68,9 @@
 #include "net/slirp.h"
 #include "monitor/monitor.h"
 #include "ui/console.h"
+#ifdef CONFIG_COCOA
+#include "ui/cocoa-device-help.h"
+#endif
 #include "ui/input.h"
 #include "system/system.h"
 #include "system/numa.h"
@@ -1235,6 +1238,27 @@ static int parse_fw_cfg(void *opaque, QemuOpts *opts, Error **errp)
 
 static int device_help_func(void *opaque, QemuOpts *opts, Error **errp)
 {
+    const char *driver = qemu_opt_get(opts, "driver");
+    const char *window = qemu_opt_get(opts, "window");
+
+    /* CLI only: monitor help must never open a host window. */
+    if (driver && is_help_option(driver) && window) {
+        if (g_str_equal(window, "on")) {
+#ifdef CONFIG_COCOA
+            if (!is_daemonized()) {
+                g_autofree char *text = qdev_device_help_catalog();
+
+                if (cocoa_device_help_show(text)) {
+                    return 1;
+                }
+            }
+#endif
+            warn_report("Device help window unavailable; printing catalog");
+        } else if (!g_str_equal(window, "off")) {
+            error_report("Device help window must be on or off");
+            exit(1);
+        }
+    }
     return qdev_device_help(opts);
 }
 

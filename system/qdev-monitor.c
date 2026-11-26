@@ -150,25 +150,26 @@ static bool qdev_class_has_alias(DeviceClass *dc)
     return (qdev_class_get_alias(dc) != NULL);
 }
 
-static void qdev_print_devinfo(DeviceClass *dc)
+static void qdev_append_devinfo(GString *text, DeviceClass *dc)
 {
-    qemu_printf("name \"%s\"", object_class_get_name(OBJECT_CLASS(dc)));
+    g_string_append_printf(text, "name \"%s\"",
+                           object_class_get_name(OBJECT_CLASS(dc)));
     if (dc->bus_type) {
-        qemu_printf(", bus %s", dc->bus_type);
+        g_string_append_printf(text, ", bus %s", dc->bus_type);
     }
     if (qdev_class_has_alias(dc)) {
-        qemu_printf(", alias \"%s\"", qdev_class_get_alias(dc));
+        g_string_append_printf(text, ", alias \"%s\"", qdev_class_get_alias(dc));
     }
     if (dc->desc) {
-        qemu_printf(", desc \"%s\"", dc->desc);
+        g_string_append_printf(text, ", desc \"%s\"", dc->desc);
     }
     if (!dc->user_creatable) {
-        qemu_printf(", no-user");
+        g_string_append(text, ", no-user");
     }
-    qemu_printf("\n");
+    g_string_append_c(text, '\n');
 }
 
-static void qdev_print_devinfos(bool show_no_user)
+static char *qdev_format_devinfos(bool show_no_user)
 {
     static const char *cat_name[DEVICE_CATEGORY_MAX + 1] = {
         [DEVICE_CATEGORY_BRIDGE]  = "Controller/Bridge/Hub",
@@ -183,6 +184,7 @@ static void qdev_print_devinfos(bool show_no_user)
         [DEVICE_CATEGORY_WATCHDOG]= "Watchdog",
         [DEVICE_CATEGORY_MAX]     = "Uncategorized",
     };
+    GString *text = g_string_new(NULL);
     GSList *list, *elt;
     int i;
     bool cat_printed;
@@ -203,14 +205,28 @@ static void qdev_print_devinfos(bool show_no_user)
                 continue;
             }
             if (!cat_printed) {
-                qemu_printf("%s%s devices:\n", i ? "\n" : "", cat_name[i]);
+                g_string_append_printf(text, "%s%s devices:\n",
+                                       i ? "\n" : "", cat_name[i]);
                 cat_printed = true;
             }
-            qdev_print_devinfo(dc);
+            qdev_append_devinfo(text, dc);
         }
     }
 
     g_slist_free(list);
+    return g_string_free(text, false);
+}
+
+char *qdev_device_help_catalog(void)
+{
+    return qdev_format_devinfos(false);
+}
+
+static void qdev_print_devinfos(bool show_no_user)
+{
+    g_autofree char *text = qdev_format_devinfos(show_no_user);
+
+    qemu_printf("%s", text);
 }
 
 static const char *find_typename_by_alias(const char *alias)

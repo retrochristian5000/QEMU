@@ -1151,6 +1151,7 @@ DEF("device", HAS_ARG, QEMU_OPTION_device,
     "                add device (based on driver)\n"
     "                prop=value,... sets driver properties\n"
     "                use '-device help' to print all possible drivers\n"
+    "                use '-device help,window=on' to browse drivers in Cocoa\n"
     "                use '-device driver,help' to print all possible properties\n",
     QEMU_ARCH_ALL)
 SRST
@@ -1158,6 +1159,13 @@ SRST
     Add device driver. prop=value sets driver properties. Valid
     properties depend on the driver. To get help on possible drivers and
     properties, use ``-device help`` and ``-device driver,help``.
+
+    On macOS builds with Cocoa, ``-device help,window=on`` opens a
+    resizable, scrollable, read-only catalog with text selection,
+    copying and Find. Closing it exits QEMU without starting a guest.
+    Builds without Cocoa, or daemonized invocations, print the same
+    catalog in the terminal instead. Plain ``-device help`` and monitor
+    help remain text-only; scripts can continue to use them unchanged.
 
     Some drivers are:
 
