@@ -613,6 +613,22 @@ static void mouse_rate(QTestState *s, uint8_t value)
     mouse_ack(s, value);
 }
 
+static void mouse_motion(QTestState *s, int x, int y)
+{
+    qtest_qmp_assert_success(s,
+        "{'execute':'input-send-event','arguments':{'events':["
+        "{'type':'rel','data':{'axis':'x','value':%d}},"
+        "{'type':'rel','data':{'axis':'y','value':%d}}]}}", x, y);
+}
+
+static void mouse_expect_motion(QTestState *s, int x, int y)
+{
+    g_assert_cmphex(mouse_read(s), ==,
+                    8 | ((x < 0) << 4) | ((y < 0) << 5));
+    g_assert_cmphex(mouse_read(s), ==, x & 0xff);
+    g_assert_cmphex(mouse_read(s), ==, y & 0xff);
+}
+
 static void test_mouse_profile(gconstpointer opaque)
 {
     const MouseProfileCase *test = opaque;
@@ -687,6 +703,30 @@ static void test_mouse_profile(gconstpointer opaque)
     mouse_ack(s, 0xff);
     g_assert_cmphex(mouse_read(s), ==, 0xaa);
     g_assert_cmphex(mouse_read(s), ==, 0);
+
+    /* Test nonlinear stream scaling and the unscaled Read Data path. */
+    static const int scaled[] = { 0, 1, 1, 3, 6, 9, 12 };
+    mouse_ack(s, 0xe7);
+    mouse_ack(s, 0xf4);
+    for (size_t i = 1; i < G_N_ELEMENTS(scaled); i++) {
+        mouse_motion(s, i, i);
+        mouse_expect_motion(s, scaled[i], -scaled[i]);
+        mouse_motion(s, -(int)i, -(int)i);
+        mouse_expect_motion(s, -scaled[i], scaled[i]);
+    }
+    /* A large delta must consume the unscaled counts exactly once. */
+    mouse_motion(s, 130, -130);
+    mouse_expect_motion(s, 254, 254);
+    mouse_expect_motion(s, 3, 3);
+    g_assert_cmphex(qtest_inb(s, 0x64) & 1, ==, 0);
+    mouse_ack(s, 0xf0);
+    mouse_motion(s, 5, 5);
+    mouse_ack(s, 0xeb);
+    mouse_expect_motion(s, 5, -5);
+    mouse_ack(s, 0xea);
+    mouse_ack(s, 0xe6);
+    mouse_motion(s, 5, 5);
+    mouse_expect_motion(s, 5, -5);
 
     /* Exercise the diagnostic echo path with reporting still enabled. */
     mouse_ack(s, 0xf4);
