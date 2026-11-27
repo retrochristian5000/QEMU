@@ -163,6 +163,7 @@ if have_system
     'test-analog-video': [meson.project_source_root() / 'hw/display/analog-video.c'],
     'test-vga-scanout': [],
     'test-vga-palette': [],
+    'test-cirrus-overlay': [],
     'test-edid-input': [meson.project_source_root() / 'hw/display/edid-generate.c'],
     'test-dvdrom': [meson.project_source_root() / 'hw/block/dvdrom.c'],
     'test-cdrom-sector': [],
