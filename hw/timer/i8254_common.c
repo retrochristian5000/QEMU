@@ -41,130 +41,158 @@ void pit_set_gate(PITCommonState *pit, int channel, int val)
 }
 
 /*
- * IRQ updates need both output state and the next transition at the same
- * virtual timestamp. Calculate elapsed PIT clocks once for that pair, while
- * retaining the individual entry points for speaker, read-back, and KVM.
+ * Count reads, output state and IRQ deadlines share the same load epoch.
+ * Clamp an epoch in the future (possible during clock synchronization)
+ * instead of converting a negative interval into unsigned elapsed ticks.
  */
 static uint64_t pit_elapsed_ticks(PITChannelState *s, int64_t current_time)
 {
-    return muldiv64(current_time - s->count_load_time, PIT_FREQ,
-                    NANOSECONDS_PER_SECOND);
+    uint64_t elapsed = current_time < s->count_load_time ? 0 :
+        (uint64_t)current_time - (uint64_t)s->count_load_time;
+
+    return muldiv64(elapsed, PIT_FREQ, NANOSECONDS_PER_SECOND);
 }
 
-/* get pit output bit */
-static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
+/* A programmed zero represents a full 16-bit binary count. */
+static unsigned pit_reload_count(const PITChannelState *s)
 {
-    int out;
-    int mode = pit_effective_mode(s);
+    return s->count > 0 && s->count <= 0x10000 ? (unsigned)s->count : 0x10000U;
+}
 
-    /* In periodic modes, a low GATE immediately forces OUT high. */
-    if (!s->gate && (mode == 2 || mode == 3)) {
-        return 1;
-    }
-    switch (mode) {
+typedef struct PITTiming {
+    int out;
+    /* Zero means no further output transition. */
+    unsigned ticks_to_edge;
+} PITTiming;
+
+/*
+ * Calculate phase once for both OUT and the next edge. The timer remains
+ * anchored to the count-load epoch, never to the host callback time.
+ */
+static PITTiming pit_timing_elapsed(PITChannelState *s, uint64_t ticks)
+{
+    unsigned count = pit_reload_count(s);
+    unsigned phase, high_ticks;
+    PITTiming timing = { .out = 1 };
+
+    switch (pit_effective_mode(s)) {
     default:
     case 0:
     case 1:
-        out = (d >= s->count);
+        timing.out = ticks >= count;
+        if (!timing.out) {
+            timing.ticks_to_edge = count - ticks;
+        }
         break;
     case 2:
-        /* OUT is low for the last clock of each count period. */
-        out = s->count <= 1 || (d % s->count) != s->count - 1;
+        if (!s->gate || count == 1) {
+            break;
+        }
+        phase = ticks % count;
+        timing.out = phase != count - 1;
+        timing.ticks_to_edge = timing.out ? count - 1 - phase : 1;
         break;
     case 3:
-        out = (d % s->count) < ((s->count + 1) >> 1);
+        if (!s->gate || count == 1) {
+            /* No low half-cycle: do not schedule an unchanged OUT. */
+            break;
+        }
+        phase = ticks % count;
+        high_ticks = (count + 1) / 2;
+        timing.out = phase < high_ticks;
+        timing.ticks_to_edge = (timing.out ? high_ticks : count) - phase;
         break;
     case 4:
     case 5:
-        /* Strobe modes idle high and pulse low at terminal count. */
-        out = (d != s->count);
+        timing.out = ticks != count;
+        if (ticks < count) {
+            timing.ticks_to_edge = count - ticks;
+        } else if (ticks == count) {
+            timing.ticks_to_edge = 1;
+        }
         break;
     }
-    return out;
+    return timing;
 }
 
+int pit_get_count_at(PITChannelState *s, int64_t current_time, bool is_8253)
+{
+    uint64_t ticks = pit_elapsed_ticks(s, current_time);
+    unsigned count = pit_reload_count(s);
+    unsigned phase, high_ticks;
+
+    switch (pit_effective_mode(s)) {
+    case 0:
+    case 1:
+    case 4:
+    case 5:
+        return (count - ticks) & 0xffff;
+    case 3:
+        phase = ticks % count;
+        high_ticks = (count + 1) / 2;
+        /*
+         * The 8253 reloads the odd count and makes its first decrement
+         * one or three. The 8254 loads an even counting element instead.
+         */
+        if (is_8253 && (count & 1)) {
+            bool high = phase < high_ticks;
+
+            if (!high) {
+                phase -= high_ticks;
+            }
+            return phase ? count - 2 * phase + (high ? 1 : -1) : count;
+        }
+        if (phase >= high_ticks) {
+            phase -= high_ticks;
+        }
+        return (count & ~1U) - 2 * phase;
+    default:
+        return count - ticks % count;
+    }
+}
 
 int pit_get_out(PITChannelState *s, int64_t current_time)
 {
-    return pit_get_out_elapsed(s, pit_elapsed_ticks(s, current_time));
+    return pit_timing_elapsed(s, pit_elapsed_ticks(s, current_time)).out;
 }
 
-/* return -1 if no transition will occur.  */
-static int64_t pit_next_transition_elapsed(PITChannelState *s,
-                                           int64_t current_time, uint64_t d)
+static int64_t pit_transition_time(PITChannelState *s, int64_t current_time,
+                                   uint64_t elapsed, PITTiming timing)
 {
-    uint64_t next_time, base;
-    int period2;
-    int mode = pit_effective_mode(s);
-
-    if (!s->gate && (mode == 2 || mode == 3)) {
+    if (!timing.ticks_to_edge) {
         return -1;
     }
-    switch (mode) {
-    default:
-    case 0:
-    case 1:
-        if (d < s->count) {
-            next_time = s->count;
-        } else {
-            return -1;
-        }
-        break;
-    case 2:
-        /* A divisor of one is invalid in mode 2. Keep OUT high. */
-        if (s->count <= 1) {
-            return -1;
-        }
-        base = QEMU_ALIGN_DOWN(d, s->count);
-        next_time = base + s->count - 1;
-        if (d == next_time) {
-            next_time++;
-        }
-        break;
-    case 3:
-        base = QEMU_ALIGN_DOWN(d, s->count);
-        period2 = ((s->count + 1) >> 1);
-        if ((d - base) < period2) {
-            next_time = base + period2;
-        } else {
-            next_time = base + s->count;
-        }
-        break;
-    case 4:
-    case 5:
-        if (d < s->count) {
-            next_time = s->count;
-        } else if (d == s->count) {
-            next_time = s->count + 1;
-        } else {
-            return -1;
-        }
-        break;
+
+    /* Round up to the first nanosecond at or after the hardware edge. */
+    uint64_t next_time = (uint64_t)s->count_load_time +
+        muldiv64_round_up(elapsed + timing.ticks_to_edge,
+                          NANOSECONDS_PER_SECOND, PIT_FREQ);
+
+    if (next_time > INT64_MAX || current_time == INT64_MAX) {
+        return -1;
     }
-    /* Schedule at the first nanosecond at or after the PIT clock edge. */
-    next_time = s->count_load_time +
-                muldiv64_round_up(next_time, NANOSECONDS_PER_SECOND, PIT_FREQ);
-    /* Ensure forward progress even if the clock has already advanced. */
-    if (next_time <= current_time) {
-        next_time = current_time + 1;
+    if ((int64_t)next_time <= current_time) {
+        return current_time + 1;
     }
     return next_time;
 }
 
-
 int64_t pit_get_next_transition_time(PITChannelState *s, int64_t current_time)
 {
-    return pit_next_transition_elapsed(s, current_time,
-                                       pit_elapsed_ticks(s, current_time));
+    uint64_t elapsed = pit_elapsed_ticks(s, current_time);
+    PITTiming timing = pit_timing_elapsed(s, elapsed);
+
+    return pit_transition_time(s, current_time, elapsed, timing);
 }
 
 void pit_get_irq_timing(PITChannelState *s, int64_t current_time,
                         int *out, int64_t *next_transition)
 {
     uint64_t elapsed = pit_elapsed_ticks(s, current_time);
+    PITTiming timing = pit_timing_elapsed(s, elapsed);
 
-    *out = pit_get_out_elapsed(s, elapsed);
-    *next_transition = pit_next_transition_elapsed(s, current_time, elapsed);
+    *out = timing.out;
+    *next_transition = pit_transition_time(s, current_time, elapsed, timing);
 }
 
 void pit_get_channel_info_common(PITCommonState *s, PITChannelState *sc,
@@ -192,8 +220,18 @@ void pit_reset_common(PITCommonState *pit)
     pit->pending_initial_count = 0;
     for (i = 0; i < 3; i++) {
         s = &pit->channels[i];
+        s->latched_count = 0;
+        s->count_latched = 0;
+        s->status_latched = 0;
+        s->status = 0;
+        s->read_state = 3;  /* LSB followed by MSB */
+        s->write_state = 3;
+        s->write_latch = 0;
+        s->rw_mode = 3;
         s->mode = 3;
+        s->bcd = 0;
         s->gate = (i != 2);
+        s->next_transition_time = -1;
         s->count_load_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         s->count = 0x10000;
         if (i == 0 && !s->irq_disabled) {
