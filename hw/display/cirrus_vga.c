@@ -1150,10 +1150,15 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
             CIRRUS_BLTMODE_COLOREXPAND) {
 
             if (s->cirrus_blt_mode & CIRRUS_BLTMODE_TRANSPARENTCOMP) {
-                if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV)
+                /* GD5446 TRM 5.12: inverted transparent expansion writes
+                 * foreground, not background, for a zero source bit. */
+                if ((s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV) &&
+                    !(s->device_id == CIRRUS_ID_CLGD5446 &&
+                      s->cirrus_blt_pixelwidth == 1)) {
                     cirrus_bitblt_bgcol(s);
-                else
+                } else {
                     cirrus_bitblt_fgcol(s);
+                }
                 s->cirrus_rop = cirrus_colorexpand_transp[rop_to_index[blt_rop]][s->cirrus_blt_pixelwidth - 1];
             } else {
                 cirrus_bitblt_fgcol(s);
@@ -1163,10 +1168,15 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
         } else if (s->cirrus_blt_mode & CIRRUS_BLTMODE_PATTERNCOPY) {
             if (s->cirrus_blt_mode & CIRRUS_BLTMODE_COLOREXPAND) {
                 if (s->cirrus_blt_mode & CIRRUS_BLTMODE_TRANSPARENTCOMP) {
-                    if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV)
+                    /* GD5446 TRM 5.12: inverted transparent expansion writes
+                     * foreground, not background, for a zero source bit. */
+                    if ((s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV) &&
+                        !(s->device_id == CIRRUS_ID_CLGD5446 &&
+                          s->cirrus_blt_pixelwidth == 1)) {
                         cirrus_bitblt_bgcol(s);
-                    else
+                    } else {
                         cirrus_bitblt_fgcol(s);
+                    }
                     s->cirrus_rop = cirrus_colorexpand_pattern_transp[rop_to_index[blt_rop]][s->cirrus_blt_pixelwidth - 1];
                 } else {
                     cirrus_bitblt_fgcol(s);
@@ -1666,7 +1676,9 @@ static int cirrus_read_hidden_dac(CirrusVGAState * s)
 
 static void cirrus_write_hidden_dac(CirrusVGAState * s, int reg_value)
 {
-    if (s->cirrus_hidden_dac_lockindex == 4) {
+    bool hdr_write = s->cirrus_hidden_dac_lockindex == 4;
+
+    if (hdr_write) {
         s->cirrus_hidden_dac_data = reg_value;
         if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
             s->vga.update_retrace_info(&s->vga);
@@ -1679,6 +1691,9 @@ static void cirrus_write_hidden_dac(CirrusVGAState * s, int reg_value)
          * never the stored RGB components or the direct-color pixels. */
         s->vga.dac_pixel_mask = reg_value;
     }
+    trace_vga_cirrus_dac_control(s->vga.dac_pixel_mask,
+                                s->cirrus_hidden_dac_data,
+                                s->vga.sr[7], hdr_write);
     s->cirrus_hidden_dac_lockindex = 0;
 }
 
@@ -1709,7 +1724,14 @@ static void cirrus_vga_write_palette(CirrusVGAState * s, int reg_value)
 {
     s->vga.dac_cache[s->vga.dac_sub_index] = reg_value;
     if (++s->vga.dac_sub_index == 3) {
-        if ((s->vga.sr[0x12] & CIRRUS_CURSOR_HIDDENPEL)) {
+        bool hidden = s->vga.sr[0x12] & CIRRUS_CURSOR_HIDDENPEL;
+
+        trace_vga_cirrus_dac_palette(hidden ? s->vga.dac_write_index & 0xf :
+                                             s->vga.dac_write_index,
+                                    hidden, s->vga.dac_cache[0] & 0x3f,
+                                    s->vga.dac_cache[1] & 0x3f,
+                                    s->vga.dac_cache[2] & 0x3f);
+        if (hidden) {
             unsigned index = s->vga.dac_write_index & 0x0f;
             uint8_t *rgb = &s->cirrus_hidden_palette[index * 3];
 
