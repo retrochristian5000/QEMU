@@ -1245,6 +1245,12 @@ static uint32_t cirrus_get_bpp16_depth(CirrusVGAState * s)
 {
     uint32_t ret = 16;
 
+    /* GD5446 TRM 8.37: bit 7 alone selects Sierra 5:5:5 mode. */
+    if (s->device_id == CIRRUS_ID_CLGD5446 &&
+        (s->cirrus_hidden_dac_data & 0xc0) == 0x80) {
+        return 15;
+    }
+
     switch (s->cirrus_hidden_dac_data & 0xf) {
     case 0:
         ret = 15;
@@ -2676,6 +2682,11 @@ static uint64_t cirrus_vga_ioport_read(void *opaque, hwaddr addr,
     if (vga_ioport_invalid(s, addr)) {
         val = 0xff;
     } else {
+        /* Other DAC accesses interrupt the GD5446 HDR read sequence. */
+        if (c->device_id == CIRRUS_ID_CLGD5446 &&
+            addr >= 0x3c7 && addr <= 0x3c9) {
+            c->cirrus_hidden_dac_lockindex = 0;
+        }
         switch (addr) {
         case 0x3c0:
             if (s->ar_flip_flop == 0) {
@@ -2763,6 +2774,11 @@ static void cirrus_vga_ioport_write(void *opaque, hwaddr addr, uint64_t val,
         return;
     }
     trace_vga_cirrus_write_io(addr, val);
+
+    if (c->device_id == CIRRUS_ID_CLGD5446 &&
+        addr >= 0x3c7 && addr <= 0x3c9) {
+        c->cirrus_hidden_dac_lockindex = 0;
+    }
 
     switch (addr) {
     case 0x3c0:
@@ -2920,6 +2936,12 @@ static int cirrus_post_load(void *opaque, int version_id)
 {
     CirrusVGAState *s = opaque;
 
+    /* Older streams can contain the former out-of-range reset counter. */
+    if (s->device_id == CIRRUS_ID_CLGD5446 &&
+        s->cirrus_hidden_dac_lockindex > 4) {
+        s->cirrus_hidden_dac_lockindex = 0;
+    }
+
     s->vga.gr[0x00] = s->cirrus_shadow_gr0 & 0x0f;
     s->vga.gr[0x01] = s->cirrus_shadow_gr1 & 0x0f;
 
@@ -3034,7 +3056,9 @@ static void cirrus_reset(void *opaque)
                                   (s->vga.sr[0x07] & 0xf0) != 0);
     }
 
-    s->cirrus_hidden_dac_lockindex = 5;
+    /* GD5446 TRM 8.37: the first four reads after reset access the mask. */
+    s->cirrus_hidden_dac_lockindex =
+        s->device_id == CIRRUS_ID_CLGD5446 ? 0 : 5;
     s->cirrus_hidden_dac_data = 0;
     if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
         s->vga.update_retrace_info(&s->vga);
