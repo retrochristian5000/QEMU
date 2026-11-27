@@ -2821,8 +2821,16 @@ static void cirrus_gd5446b_source_write(void *opaque, hwaddr addr,
     }
 }
 
+static uint64_t cirrus_gd5446b_source_read(void *opaque, hwaddr addr,
+                                           unsigned size)
+{
+    /* Preserve the previous all-ones readback at every access width. */
+    cirrus_linear_bitblt_read(opaque, addr, size);
+    return UINT64_MAX;
+}
+
 static const MemoryRegionOps cirrus_gd5446b_source_ops = {
-    .read = cirrus_linear_bitblt_read,
+    .read = cirrus_gd5446b_source_read,
     .write = cirrus_gd5446b_source_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = { .min_access_size = 1, .max_access_size = 4 },
