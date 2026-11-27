@@ -614,6 +614,31 @@ CPU, RAM, RTC, storage, display and NIC selections are unchanged. The option
 does not select a physical motherboard model or change Windows driver
 names by itself.
 
+AMD PCnet Ethernet controllers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing ``pcnet`` PCI NIC remains the compatibility profile.
+``am79c970a-pci`` selects the AMD Am79C970A PCnet-PCI II profile
+(AMD publication 19436, revision E, June 2000). Both expose PCI
+1022:2000 and CSR88/89 chip part number 2621h, a 32-byte I/O
+BAR and a 32-byte memory BAR. The explicit model retains the
+existing option ROM and network backend support, but implements
+the documented CSR100 reset value 0600h, STOP/SPND write guards
+for CSR46/47/100 and BCR22, and ignores CSR47 bits 3:0.
+Its descriptor poll counter advances in approximately 30 ns clock
+periods instead of multiplying elapsed nanoseconds, and rebases
+the timestamp at each update. PCI cache-line size and configuration
+offsets 40h-FFh are reserved.
+
+The CSR100 timeout is currently register storage only; PCI bus
+arbitration and timeout error signaling are not cycle accurate.
+BCR22 aliases in PCI configuration space remain to be synchronized.
+The explicit model interprets the migrated timer timestamp differently
+from the compatibility profile: use the same device model at both
+migration endpoints. Do not substitute an ISA NIC merely because
+Windows uses a shared PCI/ISA driver name. Am79C960, Am79C961,
+Am79C961A and Am79C970 require separate hardware implementations.
+
 PIIX3 PCI-to-ISA bridge configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
