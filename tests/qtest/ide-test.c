@@ -870,27 +870,23 @@ static void test_pc_legacy_hd_model(gconstpointer opaque)
     g_autofree char *path = NULL;
     int fd = g_file_open_tmp("qemu-ide-model-XXXXXX", &path, NULL);
     int64_t bytes = TEST_IMAGE_SIZE;
-    const char *option = profile->type;
     uint16_t id[256];
     char expected[40];
 
     g_assert_cmpint(fd, >=, 0);
     if (g_str_equal(profile->type, "seagate-st31640a")) {
         bytes = INT64_C(3175200) * 512;
-        option = "auto";
     } else if (g_str_equal(profile->type, "seagate-st32140a")) {
         bytes = INT64_C(4127760) * 512;
-        option = "auto";
     } else if (g_str_equal(profile->type, "ibm-dtta-351010")) {
         bytes = INT64_C(19807200) * 512;
-        option = "auto";
     }
     g_assert_cmpint(ftruncate(fd, bytes), ==, 0);
     close(fd);
     g_autofree char *quoted = g_shell_quote(path);
     QTestState *qts = qtest_initf(
-        "-machine pc,ide-hd-model=%s -nodefaults "
-        "-drive if=ide,index=0,format=raw,file=%s", option, quoted);
+        "-machine pc -nodefaults "
+        "-drive if=ide,index=0,format=raw,file=%s", quoted);
     unlink(path);
     qtest_outb(qts, 0x1f6, 0xe0);
     qtest_outb(qts, 0x1f7, CMD_IDENTIFY);
@@ -1633,6 +1629,39 @@ static void test_oak_identify_model(const void *opaque)
     ide_test_quit(qts);
 }
 
+static void test_pc_legacy_cd_model(const void *opaque)
+{
+    const char *profile = opaque;
+    bool early = g_str_equal(profile, "oti-011");
+    const char *expected = early ? "NEC CD-ROM DRIVE:260" :
+                           g_str_equal(profile, "oti-910") ?
+                           "QEMU OTI-910 CD-ROM" : "QEMU DVD-ROM";
+    QTestState *qts = qtest_initf(
+        "-machine pc,ide-cd-model=%s -nodefaults "
+        "-drive if=ide,index=0,media=cdrom", profile);
+    uint8_t model[40];
+
+    qtest_outb(qts, 0x1f6, 0xe0);
+    qtest_outb(qts, 0x1f7, CMD_PACKET_IDENTIFY);
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    for (int i = 0; i < 256; i++) {
+        uint16_t word = qtest_inw(qts, 0x1f0);
+
+        if (i >= 27 && i < 47) {
+            model[2 * (i - 27)] = word;
+            model[2 * (i - 27) + 1] = word >> 8;
+        }
+    }
+    assert_bit_clear(qtest_inb(qts, 0x1f7), BSY | DRQ | ERR);
+    for (unsigned i = 0; i < sizeof(model); i++) {
+        unsigned index = early ? i : i ^ 1;
+
+        g_assert_cmphex(model[i], ==,
+                        index < strlen(expected) ? expected[index] : ' ');
+    }
+    qtest_quit(qts);
+}
+
 static void test_oti910_profile(void)
 {
     QTestState *qts;
@@ -2144,6 +2173,14 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/flush/empty_drive", test_flush_empty_drive);
     qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
 
+    if (qtest_has_machine("pc")) {
+        qtest_add_data_func("/ide/legacy-model/ide-cd", "ide-cd",
+                            test_pc_legacy_cd_model);
+        qtest_add_data_func("/ide/legacy-model/oti-910", "oti-910",
+                            test_pc_legacy_cd_model);
+        qtest_add_data_func("/ide/legacy-model/oti-011", "oti-011",
+                            test_pc_legacy_cd_model);
+    }
     qtest_add_func("/ide/oti-910/profile", test_oti910_profile);
     qtest_add_data_func("/ide/oti-011/identify", "oti-011",
                         test_oak_identify_model);
