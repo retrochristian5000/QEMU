@@ -614,6 +614,29 @@ CPU, RAM, RTC, storage, display and NIC selections are unchanged. The option
 does not select a physical motherboard model or change Windows driver
 names by itself.
 
+PC speaker and system control port
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The motherboard speaker (``isa-pcspk``) retains its PIT channel 2
+connection and port 61h. Bit 4 approximates normal ISA refresh
+cycles by toggling every 15 microseconds of virtual time, independently
+of the number of reads. This is not cycle-accurate ISA refresh arbitration
+or a model of reprogrammed PIT channel 1. In PIT modes 2 and 3,
+low GATE holds OUT high; raising GATE restarts the period. Port 61h
+bit 5 reports the PIT output.
+
+The mode-3 audio path uses unsigned PCM centered at 128, with
+fractional phase maintained across partial writes. Unsupported modes
+and out-of-band divisors supply silence. The existing 32 kHz rate
+and 1792-byte buffer are unchanged. Reset mutes the voice; loading
+speaker state reconstructs the audio voice activity from the PIT gate
+and speaker-enable bit. The old refresh byte remains in the migration
+stream for layout compatibility, but is no longer used for readback.
+Cross-version migration and actual audio output require runtime testing.
+NMI source controls/status, direct one-bit audio and other PIT audio
+modes remain unimplemented. See Intel 82371FB/82371SB (May 1996),
+sections 2.5.5.1 and 3.4.2.
+
 AMD PCnet Ethernet controllers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
