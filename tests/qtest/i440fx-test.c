@@ -904,6 +904,52 @@ static void test_i440fx_hpet_intcap(void)
     qtest_quit(qts);
 }
 
+static void test_pc_shadow_reset(void)
+{
+    QTestState *qts = qtest_init("-M pc -m 64M -nodefaults -vga none");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(0, 0));
+    const uint32_t addresses[] = { 0xc0000, 0xe0000, 0xffff0 };
+    uint8_t original[ARRAY_SIZE(addresses)];
+    uint8_t vga_original = qtest_readb(qts, 0xa0000);
+
+    g_assert_nonnull(dev);
+    for (size_t i = 0; i < ARRAY_SIZE(addresses); i++) {
+        original[i] = qtest_readb(qts, addresses[i]);
+    }
+
+    for (unsigned pass = 0; pass < 2; pass++) {
+        qpci_config_writeb(dev, 0x59, 0x30);
+        for (unsigned reg = 0x5a; reg <= 0x5f; reg++) {
+            qpci_config_writeb(dev, reg, 0x33);
+        }
+        for (size_t i = 0; i < ARRAY_SIZE(addresses); i++) {
+            qtest_writeb(qts, addresses[i], original[i] ^ 0xff);
+            g_assert_cmphex(qtest_readb(qts, addresses[i]), ==,
+                            original[i] ^ 0xff);
+        }
+
+        /* Expose SMRAM in the VGA address range before resetting. */
+        qpci_config_writeb(dev, 0x72, 0x4a);
+        qtest_writeb(qts, 0xa0000, vga_original ^ 0xff);
+        g_assert_cmphex(qtest_readb(qts, 0xa0000), ==, vga_original ^ 0xff);
+
+        qtest_system_reset(qts);
+        for (unsigned reg = 0x59; reg <= 0x5f; reg++) {
+            g_assert_cmphex(qpci_config_readb(dev, reg), ==, 0);
+        }
+        g_assert_cmphex(qpci_config_readb(dev, 0x72), ==, 0x02);
+        for (size_t i = 0; i < ARRAY_SIZE(addresses); i++) {
+            g_assert_cmphex(qtest_readb(qts, addresses[i]), ==, original[i]);
+        }
+        g_assert_cmphex(qtest_readb(qts, 0xa0000), ==, vga_original);
+    }
+
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_timing_config(void)
 {
     QTestState *qts = qtest_init("-M pc -nodefaults "
@@ -1436,6 +1482,7 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
+    qtest_add_func("i440fx/pc-shadow-reset", test_pc_shadow_reset);
     for (size_t i = 0; i < ARRAY_SIZE(bridges); i++) {
         g_autofree char *path = g_strdup_printf("i440fx/bridge-profile/%zu", i);
 

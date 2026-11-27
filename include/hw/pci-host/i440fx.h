@@ -34,6 +34,7 @@ struct PCII440FXState {
     bool skip_legacy_coreboot_ram_size;
     bool strict_timing_config;
     bool strict_reserved_config;
+    bool strict_shadow_reset;
 };
 
 void i440fx_update_memory_mappings(PCII440FXState *d, uint8_t smram);

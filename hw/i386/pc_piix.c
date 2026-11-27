@@ -639,9 +639,15 @@ static void pc_set_ide_cd_model(Object *obj, const char *value, Error **errp)
     pcms->ide_cd_model = g_strdup(value);
 }
 
+static GlobalProperty pc_desktop_defaults[] = {
+    { TYPE_I440FX_PCI_DEVICE, "strict-shadow-reset", "on" },
+};
+
 static void pc_hardware_machine_options(MachineClass *m)
 {
     pc_hardware_common_options(m);
+    compat_props_add(m->compat_props, pc_desktop_defaults,
+                     G_N_ELEMENTS(pc_desktop_defaults));
     ObjectClass *oc = OBJECT_CLASS(m);
 
     m->default_machine_opts =

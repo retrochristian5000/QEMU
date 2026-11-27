@@ -132,6 +132,16 @@ static void i440fx_reset(DeviceState *dev)
     if (s->strict_reserved_config && i440fx_is_native(PCI_DEVICE(dev))) {
         i440fx_clear_reserved_config(PCI_DEVICE(dev));
     }
+    if (s->strict_shadow_reset && i440fx_is_native(PCI_DEVICE(dev))) {
+        PCIDevice *pd = PCI_DEVICE(dev);
+
+        /* 82441FX datasheet 3.2.18 and 3.2.23: a chipset reset
+         * restores PCI forwarding for the option ROM/BIOS windows
+         * and closes SMRAM. Apply both register and mapping state. */
+        memset(pd->config + I440FX_PAM, 0, I440FX_PAM_SIZE);
+        pd->config[I440FX_SMRAM] = 0x02;
+        i440fx_update_memory_mappings(s, pd->config[I440FX_SMRAM]);
+    }
 }
 
 static void i440fx_realize(PCIDevice *dev, Error **errp)
@@ -424,6 +434,8 @@ static const Property i440fx_device_props[] = {
                      strict_timing_config, false),
     DEFINE_PROP_BOOL("strict-reserved-config", PCII440FXState,
                      strict_reserved_config, false),
+    DEFINE_PROP_BOOL("strict-shadow-reset", PCII440FXState,
+                     strict_shadow_reset, false),
 };
 
 static void i440fx_class_init(ObjectClass *klass, const void *data)
