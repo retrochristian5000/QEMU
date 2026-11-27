@@ -5,6 +5,7 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/units.h"
+#include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qapi/error.h"
 #include "hw/core/sysbus.h"
@@ -145,7 +146,7 @@ static void sst_write(void *opaque, hwaddr addr, uint64_t value,
         /* NOR programming can only clear bits; erase restores ones. */
         s->storage[addr] &= data;
         memory_region_flush_rom_device(&s->mem, addr, 1);
-        sst_start_busy(s, data, 14000);
+        sst_start_busy(s, data, 14 * SCALE_US);
         return;
     case SST_ERASE1:
         if (cmd_addr == SST_UNLOCK1 && data == 0xaa) {
@@ -231,8 +232,6 @@ static void sst_realize(DeviceState *dev, Error **errp)
     SST39SFClass *sc = SST39SF_GET_CLASS(s);
     g_autofree char *image = NULL;
     gsize size = 0;
-    GError *error = NULL;
-
     if (s->image) {
         int64_t len = get_image_size(s->image, errp);
 
@@ -244,13 +243,12 @@ static void sst_realize(DeviceState *dev, Error **errp)
                        sc->capacity);
             return;
         }
-        if (!g_file_get_contents(s->image, &image, &size, &error)) {
-            error_setg(errp, "Could not read SST ROM image: %s", error->message);
-            g_error_free(error);
-            return;
-        }
-        if (size != len) {
-            error_setg(errp, "SST ROM image size changed while loading");
+        size = len;
+        image = g_malloc(size);
+        if (load_image_size(s->image, image, size) != len ||
+            get_image_size(s->image, NULL) != len) {
+            error_setg(errp, "Could not load complete SST ROM image '%s'",
+                       s->image);
             return;
         }
     }
