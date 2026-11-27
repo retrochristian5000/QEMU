@@ -27,6 +27,7 @@ tests = {
   'test-pcspk-signal': [],
   'test-cutils': [],
   'test-tlb-usage': [],
+  'test-isa-dma-transfer': [],
   'test-modem-v42bis': [meson.project_source_root() / 'chardev/modem-v42bis.c'],
   'test-div128': [],
   'test-shift128': [],
