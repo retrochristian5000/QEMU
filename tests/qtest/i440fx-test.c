@@ -398,6 +398,90 @@ static void request_pflash(FirmwareTestFixture *fixture,
     fixture->is_bios = false;
 }
 
+typedef struct SSTTest {
+    const char *model;
+    uint32_t capacity;
+    uint8_t id;
+} SSTTest;
+
+static const SSTTest sst_tests[] = {
+    { "sst39sf010a", 128 * 1024, 0xb5 },
+    { "sst39sf020a", 256 * 1024, 0xb6 },
+    { "sst39sf040", 512 * 1024, 0xb7 },
+};
+
+static void sst_unlock(QTestState *qts, uint64_t base, uint8_t cmd)
+{
+    qtest_writeb(qts, base + 0x5555, 0xaa);
+    qtest_writeb(qts, base + 0x2aaa, 0x55);
+    qtest_writeb(qts, base + 0x5555, cmd);
+}
+
+static void test_sst_rom(gconstpointer opaque)
+{
+    const SSTTest *test = opaque;
+    uint64_t base = 0x100000000ULL - test->capacity;
+    uint64_t last = base + test->capacity - 1;
+    g_autofree char *image = create_blob_file(65536);
+    g_autofree char *quoted = g_shell_quote(image);
+    QTestState *qts = qtest_initf("-machine pc,rom-chip=%s -nodefaults "
+                                  "-bios %s", test->model, quoted);
+    uint8_t status;
+
+    unlink(image);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xff);
+    g_assert_cmphex(qtest_readb(qts, last), ==, firmware_pattern(65535));
+    g_assert_cmphex(qtest_readb(qts, 0xf0000), ==, firmware_pattern(0));
+    g_assert_cmphex(qtest_readb(qts, 0xe0000), ==, 0xff);
+
+    /* Generic AMD unlock addresses must not identify this SST device. */
+    qtest_writeb(qts, base + 0x555, 0xaa);
+    qtest_writeb(qts, base + 0x2aa, 0x55);
+    qtest_writeb(qts, base + 0x555, 0x90);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xff);
+    sst_unlock(qts, base, 0x90);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xbf);
+    g_assert_cmphex(qtest_readb(qts, base + 1), ==, test->id);
+    qtest_writeb(qts, base, 0xf0);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xff);
+
+    /* Direct stores are ignored; a complete unlock permits byte program. */
+    qtest_writeb(qts, base + 0x1000, 0);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1000), ==, 0xff);
+    sst_unlock(qts, base, 0xa0);
+    qtest_writeb(qts, base + 0x1000, 0x12);
+    status = qtest_readb(qts, base + 0x1000);
+    g_assert_cmphex(status & 0x80, ==, 0x80);
+    g_assert_cmphex((status ^ qtest_readb(qts, base + 0x1000)) & 0x40,
+                    ==, 0x40);
+    qtest_writeb(qts, base, 0xf0);
+    qtest_clock_step(qts, 14000);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1000), ==, 0x12);
+
+    sst_unlock(qts, base, 0xa0);
+    qtest_writeb(qts, base + 0x2000, 0x34);
+    qtest_clock_step(qts, 14000);
+    g_assert_cmphex(qtest_readb(qts, base + 0x2000), ==, 0x34);
+
+    /* Erasing one sector must leave its neighbor and the BIOS untouched. */
+    sst_unlock(qts, base, 0x80);
+    qtest_writeb(qts, base + 0x5555, 0xaa);
+    qtest_writeb(qts, base + 0x2aaa, 0x55);
+    qtest_writeb(qts, base + 0x1001, 0x30);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1000) & 0x80, ==, 0);
+    qtest_clock_step(qts, 18000000);
+    g_assert_cmphex(qtest_readb(qts, base + 0x1000), ==, 0xff);
+    g_assert_cmphex(qtest_readb(qts, base + 0x2000), ==, 0x34);
+    g_assert_cmphex(qtest_readb(qts, 0xf0000), ==, 0);
+
+    sst_unlock(qts, base, 0x80);
+    sst_unlock(qts, base, 0x10);
+    qtest_clock_step(qts, 70000000);
+    g_assert_cmphex(qtest_readb(qts, base + 0x2000), ==, 0xff);
+    g_assert_cmphex(qtest_readb(qts, 0xf0000), ==, 0xff);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_cmos_fpu(gconstpointer opaque)
 {
     bool fpu = GPOINTER_TO_INT(opaque);
@@ -1424,6 +1508,11 @@ int main(int argc, char **argv)
     }
     add_firmware_test("i440fx/firmware/bios", request_bios);
     add_firmware_test("i440fx/firmware/pflash", request_pflash);
+    for (size_t i = 0; i < ARRAY_SIZE(sst_tests); i++) {
+        g_autofree char *path = g_strdup_printf("i440fx/firmware/%s",
+                                                sst_tests[i].model);
+        qtest_add_data_func(path, &sst_tests[i], test_sst_rom);
+    }
 
     return g_test_run();
 }
