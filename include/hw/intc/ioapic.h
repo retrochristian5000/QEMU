@@ -27,6 +27,7 @@
 
 #define TYPE_KVM_IOAPIC "kvm-ioapic"
 #define TYPE_IOAPIC "ioapic"
+#define TYPE_I82093AA "i82093aa"
 
 void ioapic_eoi_broadcast(int vector);
 

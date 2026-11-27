@@ -922,7 +922,14 @@ static void test_pc_controller_profile(gconstpointer opaque)
                                                "dev: i8254,"));
     g_assert_null(strstr(tree, profile->named ? "dev: i8257," :
                                                "dev: piix-82c37,"));
+    g_assert_nonnull(strstr(tree, profile->named ? "dev: i82093aa," :
+                                                  "dev: ioapic,"));
     qobject_unref(reply);
+
+    /* IOAPICVER: maximum redirection index 23, version 11h or 20h. */
+    qtest_writel(qts, 0xfec00000, 1);
+    g_assert_cmphex(qtest_readl(qts, 0xfec00010), ==,
+                    profile->named ? 0x00170011 : 0x00170020);
     qtest_quit(qts);
 }
 
@@ -1012,6 +1019,40 @@ static void test_pc_display_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCOptionalHardwareTest {
+    const char *args;
+    const char *fdc;
+    const char *nic;
+} PCOptionalHardwareTest;
+
+static void test_pc_optional_hardware(gconstpointer opaque)
+{
+    const PCOptionalHardwareTest *profile = opaque;
+    QTestState *qts = qtest_init(profile->args);
+    QDict *reply = qtest_qmp(qts,
+        "{'execute':'human-monitor-command','arguments':"
+        "{'command-line':'info qtree'}}");
+    const char *tree = qdict_get_str(reply, "return");
+    const char *const types[] = { "isa-fdc", "i82078", "e1000", "am79c970a-pci" };
+
+    for (size_t i = 0; i < ARRAY_SIZE(types); i++) {
+        g_autofree char *needle = g_strdup_printf("dev: %s,", types[i]);
+        bool expected = (profile->fdc && !strcmp(profile->fdc, types[i])) ||
+                        (profile->nic && !strcmp(profile->nic, types[i]));
+
+        g_assert_cmpint(!!strstr(tree, needle), ==, expected);
+    }
+    qobject_unref(reply);
+
+    if (profile->fdc) {
+        /* VERSION command identifies the existing enhanced FDC interface. */
+        qtest_outb(qts, 0x3f2, 0x0c);
+        qtest_outb(qts, 0x3f5, 0x10);
+        g_assert_cmphex(qtest_inb(qts, 0x3f5), ==, 0x90);
+    }
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -1049,7 +1090,27 @@ int main(int argc, char **argv)
         "-M pc", "VGA", 0x11111234,
     };
 
+    static const PCOptionalHardwareTest optional[] = {
+        { "-M pc -nodefaults -net nic", "i82078", "am79c970a-pci" },
+        { "-M generic-pc -nodefaults -net nic", "isa-fdc", "e1000" },
+        { "-M pc-i440fx-11.1 -nodefaults -net nic", "isa-fdc", "e1000" },
+        { "-M pc,fdc=off -nodefaults -nic none", NULL, NULL },
+        { "-M pc,fdc=on -nodefaults -nic none", "i82078", NULL },
+        { "-M pc,fdc=off -nodefaults -nic none -device isa-fdc",
+          "isa-fdc", NULL },
+        { "-M pc -nodefaults -net nic,model=e1000", "i82078", "e1000" },
+    };
+
     data.num_cpus = 1;
+
+    if (qtest_has_device("i82078") && qtest_has_device("am79c970a-pci") &&
+        qtest_has_device("e1000")) {
+        for (size_t i = 0; i < ARRAY_SIZE(optional); i++) {
+            g_autofree char *path = g_strdup_printf("i440fx/optional/%zu", i);
+
+            qtest_add_data_func(path, &optional[i], test_pc_optional_hardware);
+        }
+    }
 
     if (qtest_has_device("gd5446-pci") && qtest_has_device("VGA")) {
         for (size_t i = 0; i < ARRAY_SIZE(displays); i++) {

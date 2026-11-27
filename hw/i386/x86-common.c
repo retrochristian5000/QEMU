@@ -497,7 +497,8 @@ void gsi_handler(void *opaque, int n, int level)
     }
 }
 
-void ioapic_init_gsi(GSIState *gsi_state, Object *parent)
+void ioapic_init_gsi_model(GSIState *gsi_state, Object *parent,
+                          bool chipset_controllers)
 {
     DeviceState *dev;
     SysBusDevice *d;
@@ -507,7 +508,7 @@ void ioapic_init_gsi(GSIState *gsi_state, Object *parent)
     if (kvm_ioapic_in_kernel()) {
         dev = qdev_new(TYPE_KVM_IOAPIC);
     } else {
-        dev = qdev_new(TYPE_IOAPIC);
+        dev = qdev_new(chipset_controllers ? TYPE_I82093AA : TYPE_IOAPIC);
     }
     object_property_add_child(parent, "ioapic", OBJECT(dev));
     d = SYS_BUS_DEVICE(dev);
@@ -517,6 +518,11 @@ void ioapic_init_gsi(GSIState *gsi_state, Object *parent)
     for (i = 0; i < IOAPIC_NUM_PINS; i++) {
         gsi_state->ioapic_irq[i] = qdev_get_gpio_in(dev, i);
     }
+}
+
+void ioapic_init_gsi(GSIState *gsi_state, Object *parent)
+{
+    ioapic_init_gsi_model(gsi_state, parent, false);
 }
 
 DeviceState *ioapic_init_secondary(GSIState *gsi_state)

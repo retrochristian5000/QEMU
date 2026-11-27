@@ -346,9 +346,22 @@ static const TypeInfo isa_fdc_info = {
     },
 };
 
+static void i82078_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "Intel 82078 ISA floppy disk controller";
+}
+
+/* The common FDC engine already models the 82078 command interface. */
+static const TypeInfo i82078_info = {
+    .name = TYPE_I82078,
+    .parent = TYPE_ISA_FDC,
+    .class_init = i82078_class_init,
+};
+
 static void isa_fdc_register_types(void)
 {
     type_register_static(&isa_fdc_info);
+    type_register_static(&i82078_info);
 }
 
 type_init(isa_fdc_register_types)

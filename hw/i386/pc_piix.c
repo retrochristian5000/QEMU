@@ -320,7 +320,7 @@ static void pc_init1(MachineState *machine, const char *host_type,
                               pcms->chipset_controllers);
     }
 
-    ioapic_init_gsi(gsi_state, phb);
+    ioapic_init_gsi_model(gsi_state, phb, pcms->chipset_controllers);
 
     if (tcg_enabled()) {
         x86_register_ferr_irq(x86ms->gsi[13]);
@@ -475,7 +475,7 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                    pc_get_chipset_controllers,
                                    pc_set_chipset_controllers);
     object_class_property_set_description(oc, "chipset-controllers",
-        "Select explicit 8259A, 8254 and 82C37 motherboard profiles");
+        "Select explicit 8259A, 8254, 82C37 and userspace 82093AA profiles");
     compat_props_add(m->compat_props,
                      pc_piix_compat_defaults, pc_piix_compat_defaults_len);
 }
@@ -502,6 +502,10 @@ static void pc_hardware_machine_options(MachineClass *m)
     pc_i440fx_machine_11_1_options(m);
     pcmc->default_chipset_controllers = true;
     pcmc->default_serial_type = TYPE_NS16550A;
+    pcmc->default_fdc_type = TYPE_I82078;
+    if (module_object_class_by_name("am79c970a-pci")) {
+        m->default_nic = "am79c970a-pci";
+    }
     /*
      * Prefer the named PCI card, but keep minimal builds usable when
      * Cirrus emulation was omitted from the target configuration.

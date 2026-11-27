@@ -8,6 +8,7 @@
 #define MAX_FD 2
 
 #define TYPE_ISA_FDC "isa-fdc"
+#define TYPE_I82078 "i82078"
 
 void isa_fdc_init_drives(ISADevice *fdc, DriveInfo **fds);
 void fdctrl_init_sysbus(qemu_irq irq, hwaddr mmio_base, DriveInfo **fds);

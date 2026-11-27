@@ -457,6 +457,11 @@ static void ioapic_realize(DeviceState *dev, Error **errp)
 {
     IOAPICCommonState *s = IOAPIC_COMMON(dev);
 
+    if (object_dynamic_cast(OBJECT(dev), TYPE_I82093AA) &&
+        s->version != 0x11) {
+        error_setg(errp, "Intel 82093AA requires I/O APIC version 0x11");
+        return;
+    }
     if (s->version != 0x11 && s->version != 0x20) {
         error_setg(errp, "IOAPIC only supports version 0x11 or 0x20 "
                    "(default: 0x%x).", IOAPIC_VER_DEF);
@@ -510,9 +515,28 @@ static const TypeInfo ioapic_info = {
     .class_init    = ioapic_class_init,
 };
 
+static void i82093aa_init(Object *obj)
+{
+    IOAPIC_COMMON(obj)->version = 0x11;
+}
+
+static void i82093aa_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "Intel 82093AA I/O APIC";
+}
+
+/* Intel 290566-001, section 3.2.2: version 11h, 24 redirection entries. */
+static const TypeInfo i82093aa_info = {
+    .name = TYPE_I82093AA,
+    .parent = TYPE_IOAPIC,
+    .instance_init = i82093aa_init,
+    .class_init = i82093aa_class_init,
+};
+
 static void ioapic_register_types(void)
 {
     type_register_static(&ioapic_info);
+    type_register_static(&i82093aa_info);
 }
 
 type_init(ioapic_register_types)

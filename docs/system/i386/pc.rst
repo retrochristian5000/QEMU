@@ -20,8 +20,35 @@ firmware defaults, and configurable CPU, memory and expansion devices.
 Neither represents a specific retail motherboard. The generic machine
 still requires the i440FX/PIIX host and southbridge topology. The named
 UART, mouse and VGA card are representative choices, not components
-claimed to be integrated into every PIIX board. NIC and storage defaults
-are unchanged.
+claimed to be integrated into every PIIX board. The default NIC on
+``pc`` is AMD Am79C970A PCnet-PCI II (``am79c970a-pci``) when built,
+otherwise the existing E1000 default is retained. The automatic floppy
+controller is ``i82078``, using the existing Intel 82078 command engine,
+when ISA FDC support is available. The named userspace I/O APIC is
+``i82093aa`` (version 11h, 24 inputs), selected by
+``chipset-controllers=on``. Kernel I/O APIC acceleration retains its
+existing implementation. Generic and versioned machines retain their
+previous defaults unless explicitly overridden.
+
+Optional devices can be configured independently::
+
+    -machine pc,fdc=off -nic none
+    -machine pc,fdc=on -nic user,model=am79c970a-pci
+    -machine pc,fdc=off -device isa-fdc
+
+The ``fdc`` switch controls automatic controller creation, not explicit
+``-device`` selection. Legacy ``-fda`` or ``-drive if=floppy`` requires
+the automatic controller; use ``if=none`` with an explicitly attached
+floppy device otherwise. ``-nic none`` suppresses default networking.
+Other existing machine options (such as ``usb=off``, ``i8042=off``,
+``hpet=off``) remain available. I/O APIC removal is not supported:
+firmware interrupt tables and routing require separate validation.
+
+The 82078 profile does not implement all electrical or tape-drive
+features of Intel's January 1994 82078 data sheet. The 82093AA profile
+uses the shared I/O APIC engine and selects the register version from
+Intel's May 1996 data sheet (290566-001, section 3.2.2); it does not
+claim full X-bus electrical emulation.
 
 The CL-GD5446 uses the historical chipset compatibility implementation,
 with the bundled Cirrus VGA BIOS and 4 MiB default VRAM. Neither revision

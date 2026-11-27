@@ -147,6 +147,8 @@ typedef struct GSIState {
 qemu_irq x86_allocate_cpu_irq(void);
 void gsi_handler(void *opaque, int n, int level);
 void ioapic_init_gsi(GSIState *gsi_state, Object *parent);
+void ioapic_init_gsi_model(GSIState *gsi_state, Object *parent,
+                          bool chipset_controllers);
 DeviceState *ioapic_init_secondary(GSIState *gsi_state);
 
 /* pc_sysfw.c */

@@ -52,6 +52,7 @@ typedef struct PCMachineState {
     bool sata_enabled;
     bool hpet_enabled;
     bool i8042_enabled;
+    bool fdc_enabled;
     bool chipset_controllers;
     bool chipset_controllers_explicit;
     bool default_bus_bypass_iommu;
@@ -96,6 +97,7 @@ struct PCMachineClass {
     bool pci_enabled;
     const char *default_south_bridge;
     const char *default_serial_type;
+    const char *default_fdc_type;
     bool default_chipset_controllers;
 
     /* Compat options: */

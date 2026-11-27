@@ -1140,11 +1140,16 @@ static void pc_superio_init(PCMachineState *pcms, ISABus *isa_bus,
 
     for (i = 0; i < MAX_FD; i++) {
         fd[i] = drive_get(IF_FLOPPY, 0, i);
+        if (!pcms->fdc_enabled && fd[i] && !fd[i]->is_default) {
+            error_setg(errp, "fdc=off conflicts with a legacy floppy drive; "
+                       "enable fdc or attach an explicit controller and drive");
+            return;
+        }
         create_fdctrl |= !!fd[i];
     }
-    if (create_fdctrl) {
+    if (pcms->fdc_enabled && create_fdctrl) {
 #ifdef CONFIG_FDC_ISA
-        ISADevice *fdc = isa_new(TYPE_ISA_FDC);
+        ISADevice *fdc = isa_new(PC_MACHINE_GET_CLASS(pcms)->default_fdc_type);
         if (fdc) {
             isa_realize_and_unref(fdc, isa_bus, &error_fatal);
             isa_fdc_init_drives(fdc, fd);
@@ -1589,6 +1594,16 @@ static void pc_machine_set_vmport(Object *obj, Visitor *v, const char *name,
     visit_type_OnOffAuto(v, name, &pcms->vmport, errp);
 }
 
+static bool pc_machine_get_fdc(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->fdc_enabled;
+}
+
+static void pc_machine_set_fdc(Object *obj, bool value, Error **errp)
+{
+    PC_MACHINE(obj)->fdc_enabled = value;
+}
+
 static bool pc_machine_get_fd_bootchk(Object *obj, Error **errp)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
@@ -1798,6 +1813,7 @@ static void pc_machine_initfn(Object *obj)
     pcms->smbus_enabled = true;
     pcms->sata_enabled = true;
     pcms->i8042_enabled = true;
+    pcms->fdc_enabled = true;
     pcms->host_battery = false; /* host telemetry is always opt-in */
     pcms->max_fw_size = 8 * MiB;
 #if defined(CONFIG_HPET)
@@ -1857,6 +1873,7 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
 
     pcmc->pci_enabled = true;
     pcmc->default_serial_type = TYPE_ISA_SERIAL;
+    pcmc->default_fdc_type = TYPE_ISA_FDC;
     pcmc->has_acpi_build = true;
     pcmc->smbios_defaults = true;
     pcmc->gigabyte_align = true;
@@ -1942,6 +1959,11 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
         NULL, NULL);
     object_class_property_set_description(oc, PC_MACHINE_SMBIOS_EP,
         "SMBIOS Entry Point type [32, 64]");
+
+    object_class_property_add_bool(oc, "fdc",
+        pc_machine_get_fdc, pc_machine_set_fdc);
+    object_class_property_set_description(oc, "fdc",
+        "Enable automatic floppy disk controller creation");
 
     object_class_property_add_bool(oc, "fd-bootchk",
         pc_machine_get_fd_bootchk,
