@@ -4,7 +4,7 @@ i440fx PC (``pc-i440fx``, ``pc``)
 PC machine profiles
 ~~~~~~~~~~~~~~~~~~~
 
-The fork provides two unversioned i440FX/PIIX machine profiles:
+The fork provides three unversioned i440FX/PIIX machine profiles:
 
 * ``pc`` (canonical type ``pc-hardware``): the default PC, preferring the
   named motherboard controller implementations where userspace emulation
@@ -12,12 +12,15 @@ The fork provides two unversioned i440FX/PIIX machine profiles:
   PS/2 mouse uses the IntelliMouse wheel protocol profile. The synthetic
   VMware backdoor and absolute mouse are disabled by default. The
   default PCI video card is ``gd5446-pci`` when Cirrus support is built.
+* ``laptop-pc``: portable PC profile sharing the named desktop hardware
+  selection, with a two-socket Intel 82092AA PCMCIA bridge when available,
+  laptop SMBIOS enclosure identity and optional floppy/HPET defaults.
 * ``generic-pc`` (canonical type ``pc-generic``): the compatible controller
   configuration, using the previous default device selections.
 
-Both profiles share the same machine initialization, PCI and ISA layout,
-firmware defaults, and configurable CPU, memory and expansion devices.
-Neither represents a specific retail motherboard. The generic machine
+All three profiles share the same motherboard initialization, PCI and ISA
+topology, firmware defaults, and configurable CPU, memory and expansion
+devices. None represents a specific retail motherboard. The generic machine
 still requires the i440FX/PIIX host and southbridge topology. The named
 UART, mouse and VGA card are representative choices, not components
 claimed to be integrated into every PIIX board. The default NIC on
@@ -79,8 +82,40 @@ Use ``vmport=on`` only when the configured build supports VMware integration.
 The ``pc`` alias previously selected ``pc-i440fx-11.1``. Existing saved
 states or migration configurations should use their original explicit
 versioned machine type and matching device options. All versioned i440FX
-machine defaults remain unchanged. Treat the two unversioned profiles
+machine defaults remain unchanged. Treat the three unversioned profiles
 as evolving configurations, not cross-version migration ABIs.
+
+Laptop PC profile (``laptop-pc``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The portable profile reports SMBIOS Type 3 chassis type 09h (Laptop,
+DSP0134 section 7.4.1). The existing desktop and compatibility SMBIOS
+defaults are unchanged. It uses the same named PC chipset, COM, VGA and
+NIC choices as ``pc``; the CL-GD5446 is a display substitute, not an
+LCD panel or a mobile graphics chipset.
+
+With default devices enabled and the Intel 82092AA built, the machine
+creates its two empty 16-bit PC Card sockets. It does not automatically
+insert a modem or network card. Use ``pcmcia=off`` to suppress the bridge,
+or ``pcmcia=on`` to require it, including with ``-nodefaults``. A build
+without the bridge omits it by default and rejects explicit activation.
+The desktop profile also accepts explicit ``pcmcia=on``. To install a
+different socket configuration, disable automatic creation first::
+
+    -machine laptop-pc,pcmcia=off -device i82092aa,id=pcic,sockets=1
+
+The floppy controller and HPET are off by default on the laptop.
+Explicit ``fdc=on`` restores the Intel 82078 controller; use it with
+legacy floppy images. ``hpet=on`` restores the timer if built. The host
+battery remains opt-in and is never a prerequisite for running the
+laptop profile on a desktop host::
+
+    -machine laptop-pc,fdc=on -fda disk.img
+    -machine laptop-pc,host-battery=on
+
+There is no emulated embedded controller, LCD panel, lid switch, charging
+hardware or ACPI control-method battery added by this profile. The host
+battery bridge is still a static APM POST snapshot, not live passthrough.
 
 Peripherals
 ~~~~~~~~~~~

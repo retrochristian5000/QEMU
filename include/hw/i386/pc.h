@@ -53,6 +53,7 @@ typedef struct PCMachineState {
     bool hpet_enabled;
     bool i8042_enabled;
     bool fdc_enabled;
+    bool pcmcia_enabled;
     bool chipset_controllers;
     bool chipset_controllers_explicit;
     bool default_bus_bypass_iommu;
@@ -99,6 +100,7 @@ struct PCMachineClass {
     const char *default_serial_type;
     const char *default_fdc_type;
     bool default_chipset_controllers;
+    bool laptop;
 
     /* Compat options: */
 

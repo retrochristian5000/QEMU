@@ -1813,11 +1813,13 @@ static void pc_machine_initfn(Object *obj)
     pcms->smbus_enabled = true;
     pcms->sata_enabled = true;
     pcms->i8042_enabled = true;
-    pcms->fdc_enabled = true;
+    pcms->fdc_enabled = !pcmc->laptop;
+    pcms->pcmcia_enabled = pcmc->laptop && defaults_enabled() &&
+                           module_object_class_by_name("i82092aa");
     pcms->host_battery = false; /* host telemetry is always opt-in */
     pcms->max_fw_size = 8 * MiB;
 #if defined(CONFIG_HPET)
-    pcms->hpet_enabled = true;
+    pcms->hpet_enabled = !pcmc->laptop;
 #endif
     pcms->fd_bootchk = true;
     pcms->default_bus_bypass_iommu = false;

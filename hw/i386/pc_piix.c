@@ -334,6 +334,15 @@ static void pc_init1(MachineState *machine, const char *host_type,
 
     pc_nic_init(pcmc, isa_bus, pcms->pcibus);
 
+    if (pcms->pcmcia_enabled) {
+        if (!module_object_class_by_name("i82092aa")) {
+            error_report("pcmcia=on requires the Intel 82092AA device "
+                         "in this build");
+            exit(EXIT_FAILURE);
+        }
+        pci_create_simple(pcms->pcibus, -1, "i82092aa");
+    }
+
     if (piix4_pm) {
         smi_irq = qemu_allocate_irq(pc_acpi_smi_interrupt, first_cpu, 0);
 
@@ -383,6 +392,16 @@ static void pc_set_chipset_controllers(Object *obj, bool value, Error **errp)
 
     pcms->chipset_controllers = value;
     pcms->chipset_controllers_explicit = true;
+}
+
+static bool pc_get_pcmcia(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->pcmcia_enabled;
+}
+
+static void pc_set_pcmcia(Object *obj, bool value, Error **errp)
+{
+    PC_MACHINE(obj)->pcmcia_enabled = value;
 }
 
 static int pc_get_south_bridge(Object *obj, Error **errp)
@@ -476,6 +495,10 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                    pc_set_chipset_controllers);
     object_class_property_set_description(oc, "chipset-controllers",
         "Select explicit 8259A, 8254, 82C37 and userspace 82093AA profiles");
+    object_class_property_add_bool(oc, "pcmcia",
+                                   pc_get_pcmcia, pc_set_pcmcia);
+    object_class_property_set_description(oc, "pcmcia",
+        "Enable automatic Intel 82092AA PCI-to-PCMCIA bridge creation");
     compat_props_add(m->compat_props,
                      pc_piix_compat_defaults, pc_piix_compat_defaults_len);
 }
@@ -495,7 +518,7 @@ static GlobalProperty pc_hardware_defaults[] = {
     { TYPE_I8042, "mouse-model", "intellimouse" },
 };
 
-static void pc_hardware_machine_options(MachineClass *m)
+static void pc_hardware_common_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
 
@@ -516,6 +539,11 @@ static void pc_hardware_machine_options(MachineClass *m)
     m->default_machine_opts = "firmware=bios-256k.bin,vmport=off";
     compat_props_add(m->compat_props, pc_hardware_defaults,
                      G_N_ELEMENTS(pc_hardware_defaults));
+}
+
+static void pc_hardware_machine_options(MachineClass *m)
+{
+    pc_hardware_common_options(m);
     m->desc = "PC (i440FX + PIIX, named hardware defaults)";
     m->alias = "pc";
     m->is_default = true;
@@ -523,6 +551,18 @@ static void pc_hardware_machine_options(MachineClass *m)
 
 DEFINE_PC_MACHINE(hardware, "pc-hardware", pc_i440fx_init,
                   pc_hardware_machine_options);
+
+static void pc_laptop_machine_options(MachineClass *m)
+{
+    PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+
+    pc_hardware_common_options(m);
+    pcmc->laptop = true;
+    m->desc = "Laptop PC (i440FX + PIIX, portable hardware defaults)";
+}
+
+DEFINE_PC_MACHINE(laptop, "laptop-pc", pc_i440fx_init,
+                  pc_laptop_machine_options);
 
 static void pc_generic_machine_options(MachineClass *m)
 {

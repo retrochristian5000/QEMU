@@ -255,6 +255,59 @@ static void test_host_battery_default_off(void)
     qtest_quit(s);
 }
 
+typedef struct PCChassisTest {
+    const char *machine;
+    uint8_t chassis;
+} PCChassisTest;
+
+static void test_pc_chassis(gconstpointer opaque)
+{
+    const PCChassisTest *profile = opaque;
+    QTestState *s = qtest_initf("-M %s -nodefaults", profile->machine);
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    const char *filename = "etc/smbios/smbios-tables";
+    uint8_t first;
+    size_t len = qfw_cfg_get_file(fw_cfg, filename, &first, 1);
+    g_autofree uint8_t *tables = NULL;
+    size_t offset = 0;
+    bool found = false;
+
+    /* Even a laptop must not sample host power without explicit consent. */
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg,
+                                     "opt/org.seabios/whp-laptop-apm",
+                                     &first, 1), ==, 0);
+    if (!len) {
+        g_test_skip("SMBIOS tables unavailable in this build");
+        goto out;
+    }
+
+    tables = g_malloc(len);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, filename, tables, len), ==, len);
+    while (offset + 4 <= len) {
+        uint8_t size = tables[offset + 1];
+
+        g_assert_cmpuint(size, >=, 4);
+        g_assert_cmpuint(size, <=, len - offset);
+        if (tables[offset] == 3) {
+            g_assert_cmpuint(size, >=, 6);
+            g_assert_cmphex(tables[offset + 5], ==, profile->chassis);
+            found = true;
+            break;
+        }
+        offset += size;
+        while (offset + 1 < len && (tables[offset] || tables[offset + 1])) {
+            offset++;
+        }
+        g_assert_cmpuint(offset + 1, <, len);
+        offset += 2;
+    }
+    g_assert_true(found);
+
+out:
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 static void test_fw_cfg_splash_time(void)
 {
     QFWCFG *fw_cfg;
@@ -641,6 +694,20 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
+    static const PCChassisTest chassis[] = {
+        { "pc", 0x01 },
+        { "generic-pc", 0x01 },
+        { "laptop-pc", 0x09 },
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(chassis); i++) {
+        if (qtest_has_machine(chassis[i].machine)) {
+            g_autofree char *path = g_strdup_printf("fw_cfg/chassis/%s",
+                                                     chassis[i].machine);
+
+            qtest_add_data_func(path, &chassis[i], test_pc_chassis);
+        }
+    }
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
     if (qtest_has_machine("pc") && qtest_has_device("i8042")) {
         for (size_t j = 0; j < G_N_ELEMENTS(mouse_profiles); j++) {

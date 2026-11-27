@@ -1053,6 +1053,32 @@ static void test_pc_optional_hardware(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCLaptopProfileTest {
+    const char *args;
+    bool pcmcia;
+    bool floppy;
+} PCLaptopProfileTest;
+
+static void test_pc_laptop_profile(gconstpointer opaque)
+{
+    const PCLaptopProfileTest *profile = opaque;
+    QTestState *qts = qtest_initf("%s -nic none -vga none "
+                                  "-serial none -parallel none",
+                                  profile->args);
+    QDict *reply = qtest_qmp(qts,
+        "{'execute':'human-monitor-command','arguments':"
+        "{'command-line':'info qtree'}}");
+    const char *tree = qdict_get_str(reply, "return");
+
+    g_assert_cmpint(!!strstr(tree, "dev: i82092aa,"), ==, profile->pcmcia);
+    if (profile->pcmcia) {
+        g_assert_nonnull(strstr(tree, "sockets = 2"));
+    }
+    g_assert_cmpint(!!strstr(tree, "dev: i82078,"), ==, profile->floppy);
+    qobject_unref(reply);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -1101,7 +1127,24 @@ int main(int argc, char **argv)
         { "-M pc -nodefaults -net nic,model=e1000", "i82078", "e1000" },
     };
 
+    static const PCLaptopProfileTest laptops[] = {
+        { "-M laptop-pc", true, false },
+        { "-M laptop-pc,pcmcia=off,fdc=on", false, true },
+        { "-M laptop-pc -nodefaults", false, false },
+        { "-M laptop-pc,pcmcia=on -nodefaults", true, false },
+        { "-M pc", false, true },
+        { "-M pc,pcmcia=on", true, true },
+    };
+
     data.num_cpus = 1;
+
+    if (qtest_has_device("i82092aa") && qtest_has_device("i82078")) {
+        for (size_t i = 0; i < ARRAY_SIZE(laptops); i++) {
+            g_autofree char *path = g_strdup_printf("i440fx/laptop/%zu", i);
+
+            qtest_add_data_func(path, &laptops[i], test_pc_laptop_profile);
+        }
+    }
 
     if (qtest_has_device("i82078") && qtest_has_device("am79c970a-pci") &&
         qtest_has_device("e1000")) {
