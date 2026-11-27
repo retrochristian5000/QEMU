@@ -350,10 +350,51 @@ static void test_explicit_pit_duplicate(void)
     g_test_trap_assert_stderr("*ISA bus already has a system PIT*");
 }
 
+static void test_pcspk_port61(gconstpointer opaque)
+{
+    bool specific = GPOINTER_TO_INT(opaque);
+    QTestState *s = qtest_initf("-machine pc,hpet=off,chipset-controllers=%s "
+                               "-nodefaults", specific ? "on" : "off");
+    uint8_t refresh = qtest_inb(s, 0x61) & 0x10;
+
+    /* Reads without advancing virtual time cannot create refresh edges. */
+    for (unsigned i = 0; i < 16; i++) {
+        g_assert_cmphex(qtest_inb(s, 0x61) & 0x10, ==, refresh);
+    }
+    qtest_clock_step(s, 15000);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x10, ==, refresh ^ 0x10);
+    qtest_clock_step(s, 15000);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x10, ==, refresh);
+
+    /* Channel 2, mode 3, six clocks: three high and three low. */
+    qtest_outb(s, 0x61, 0);
+    qtest_outb(s, PIT_CONTROL, 0xb6);
+    qtest_outb(s, 0x42, 6);
+    qtest_outb(s, 0x42, 0);
+    qtest_clock_step(s, 4000);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x23, ==, 0x20);
+    qtest_outb(s, 0x61, 3);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x23, ==, 0x23);
+    qtest_clock_step(s, 3000);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x23, ==, 3);
+    qtest_outb(s, 0x61, 2);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x23, ==, 0x22);
+    qtest_clock_step(s, 4000);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 0x23, ==, 0x22);
+    qtest_outb(s, 0x61, 3);
+    qtest_system_reset(s);
+    g_assert_cmphex(qtest_inb(s, 0x61) & 3, ==, 0);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/i8254/mode2/output", test_mode2);
+    qtest_add_data_func("/i8254/speaker/compat", GINT_TO_POINTER(0),
+                        test_pcspk_port61);
+    qtest_add_data_func("/i8254/speaker/chipset", GINT_TO_POINTER(1),
+                        test_pcspk_port61);
     qtest_add_func("/i8254/mode3/counts", test_mode3_counts);
     qtest_add_func("/i8254/mode3/bios-tick-latch", test_bios_tick_latch);
     qtest_add_func("/i8254/mode-aliases", test_mode_aliases);
