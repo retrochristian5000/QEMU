@@ -71,16 +71,22 @@ static char *idebus_get_fw_dev_path(DeviceState *dev)
     return g_strdup(path);
 }
 
-IDEDevice *ide_bus_create_drive(IDEBus *bus, int unit, DriveInfo *drive)
+IDEDevice *ide_bus_create_drive_model(IDEBus *bus, int unit, DriveInfo *drive,
+                                     const char *model)
 {
     DeviceState *dev;
 
-    dev = qdev_new(drive->media_cd ? "ide-cd" : "ide-hd");
+    dev = qdev_new(model ?: (drive->media_cd ? "ide-cd" : "ide-hd"));
     qdev_prop_set_uint32(dev, "unit", unit);
     qdev_prop_set_drive_err(dev, "drive", blk_by_legacy_dinfo(drive),
                             &error_fatal);
     qdev_realize_and_unref(dev, &bus->qbus, &error_fatal);
     return DO_UPCAST(IDEDevice, qdev, dev);
+}
+
+IDEDevice *ide_bus_create_drive(IDEBus *bus, int unit, DriveInfo *drive)
+{
+    return ide_bus_create_drive_model(bus, unit, drive, NULL);
 }
 
 int ide_get_geometry(BusState *bus, int unit,
