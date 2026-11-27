@@ -1219,3 +1219,11 @@ Use the regular BIOS if the selected compiler cannot build the CPU
 profile. Compiler tuning does not model a CPU's cycle rate, implement
 VME, or guarantee faster TCG execution. Validate ROM size and cold boot
 before adopting a CPU-specific image as a machine default.
+
+The shared LLVM bootstrap also publishes an ``i586-none-elf-`` companion
+prefix alongside ``i386-none-elf-``. Both use the same host LLVM binaries,
+ELF32 EM_386 objects and elf_i386 linker emulation. The Pentium build
+rules prefer the companion if present; external toolchains may specify
+``SEABIOS_I586_CROSS_PREFIX``. Without that prefix the named CPU flags
+remain mandatory. CPU-specific binaries remain opt-in; this is not a new
+ISA backend or an automatic change to the guest CPU selection.
