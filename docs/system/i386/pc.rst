@@ -1138,3 +1138,36 @@ The default ``rom-chip=auto`` retains the existing raw BIOS or pflash
 configuration. Explicit SST selection cannot be combined with pflash
 or confidential guests and is not available on ISA-only PC machines.
 A 128 KiB chip requires a BIOS image of at most 128 KiB.
+
+
+PC IDE drive profiles
+---------------------
+
+On the hardware-oriented ``pc`` (also ``pc-hardware``) machine, automatic
+IDE hard disk attachment through ``-hda``, ``-hdb`` or ``-drive if=ide``
+uses ``ide-hd-model=auto``. This chooses an existing historical ATA profile
+only for an exact native capacity match:
+
+* Seagate ST31640A: 3,175,200 sectors (1,625,702,400 bytes).
+* Seagate ST32140A: 4,127,760 sectors (2,113,413,120 bytes).
+* IBM DTTA-351010: 19,807,200 sectors (10,141,286,400 bytes).
+
+These values come from Seagate's Medalist 1640/2140 product manual
+36314-21, section 1.1.1, and IBM's DTTA OEM specification S00K-0286-02,
+figure 1. Other sizes retain the generic ATA device; no image is resized.
+The profile can be explicitly selected, including for a custom image
+size within the historical LBA28 addressing range::
+
+    qemu-system-i386 -M pc,ide-hd-model=ibm-dtta-351010 -hda disk.img
+
+Use ``ide-hd-model=ide-hd`` to retain the generic hard disk behavior.
+The legacy optical attachment defaults to ``ide-cd`` for CD/DVD media
+compatibility. To select a CD-only experimental Oak controller profile::
+
+    qemu-system-i386 -M pc,ide-cd-model=oti-910 -cdrom install.iso
+
+The alternate ``oti-011`` profile has early NEC CDR-260 identification
+behavior. These are compatibility profiles, not complete vendor firmware
+or mechanical timing emulations. An explicit ``-device`` still controls
+its own model independently. The ``generic-pc``, ``laptop-pc``, Q35 and
+versioned machine types retain their previous automatic drive behavior.
