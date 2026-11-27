@@ -30,6 +30,7 @@ struct MPU401UARTState {
     ISADevice parent_obj;
     MemoryRegion io;
     CharFrontend chr;
+    CharFrontend waveblaster;
     qemu_irq irq_out;
     QEMUTimer *tx_timer;
     uint32_t iobase;
@@ -39,6 +40,8 @@ struct MPU401UARTState {
     unsigned int rx_count;
     uint8_t tx_byte;
     bool tx_busy;
+    bool tx_midi_done;
+    bool tx_wave_done;
     bool uart;
     bool ack_pending;
 };
@@ -54,6 +57,8 @@ static void mpu_reset(DeviceState *dev)
 
     timer_del(s->tx_timer);
     s->tx_busy = false;
+    s->tx_midi_done = false;
+    s->tx_wave_done = false;
     s->uart = false;
     s->ack_pending = false;
     s->rx_head = 0;
@@ -82,28 +87,50 @@ static void mpu_receive(void *opaque, const uint8_t *buf, int size)
     mpu_update_irq(s);
 }
 
+/*
+ * Each completed serial frame is delivered once to each connected sink.
+ * Character backends may apply backpressure; never repeat a byte on a
+ * sink which already accepted it while retrying the other sink.
+ */
+static bool mpu_tx_sink(CharFrontend *chr, const uint8_t *byte,
+                        const char *name)
+{
+    int ret;
+
+    if (!qemu_chr_fe_backend_connected(chr) ||
+        !qemu_chr_fe_backend_open(chr)) {
+        return true;
+    }
+    ret = qemu_chr_fe_write(chr, byte, 1);
+    if (ret == 0 || (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+        return false;
+    }
+    if (ret < 0) {
+        qemu_log_mask(LOG_GUEST_ERROR, "MPU-401 UART: %s output failed\n",
+                      name);
+    }
+    return true;
+}
+
 static void mpu_tx_complete(void *opaque)
 {
     MPU401UARTState *s = opaque;
-    int ret;
 
     if (!s->tx_busy) {
         return;
     }
-    if (qemu_chr_fe_backend_connected(&s->chr) &&
-        qemu_chr_fe_backend_open(&s->chr)) {
-        ret = qemu_chr_fe_write(&s->chr, &s->tx_byte, 1);
-        if (ret == 0 ||
-            (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
-            timer_mod(s->tx_timer,
-                      qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MPU_BYTE_NS);
-            return;
-        }
-        if (ret < 0) {
-            qemu_log_mask(LOG_GUEST_ERROR, "MPU-401 UART: MIDI output failed\n");
-        }
+    if (!s->tx_midi_done) {
+        s->tx_midi_done = mpu_tx_sink(&s->chr, &s->tx_byte, "MIDI");
     }
-    /* No connected instrument: the byte leaves the UART without a reply. */
+    if (!s->tx_wave_done) {
+        s->tx_wave_done = mpu_tx_sink(&s->waveblaster, &s->tx_byte,
+                                      "Wave Blaster");
+    }
+    if (!s->tx_midi_done || !s->tx_wave_done) {
+        timer_mod(s->tx_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MPU_BYTE_NS);
+        return;
+    }
     s->tx_busy = false;
 }
 
@@ -150,6 +177,8 @@ static void mpu_write(void *opaque, hwaddr addr, uint64_t value,
         return;
     }
     s->tx_byte = value;
+    s->tx_midi_done = false;
+    s->tx_wave_done = false;
     s->tx_busy = true;
     timer_mod(s->tx_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MPU_BYTE_NS);
@@ -223,6 +252,7 @@ static const Property mpu_properties[] = {
     DEFINE_PROP_UINT32("iobase", MPU401UARTState, iobase, 0x330),
     DEFINE_PROP_UINT32("irq", MPU401UARTState, irq, 9),
     DEFINE_PROP_CHR("chardev", MPU401UARTState, chr),
+    DEFINE_PROP_CHR("waveblaster-chardev", MPU401UARTState, waveblaster),
 };
 
 static void mpu_class_init(ObjectClass *klass, const void *data)

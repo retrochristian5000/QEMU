@@ -62,6 +62,52 @@ static void test_mpu_tx(void)
     qtest_quit(s);
 }
 
+static void check_midi_capture(QTestState *s, const char *id,
+                               const char *expected)
+{
+    QDict *reply = qtest_qmp_assert_success_ref(s,
+        "{'execute':'ringbuf-read','arguments':"
+        "{'device':%s,'size':16,'format':'base64'}}", id);
+
+    g_assert_cmpstr(qdict_get_str(reply, "return"), ==, expected);
+    qobject_unref(reply);
+}
+
+static void test_sb16_waveblaster(gconstpointer opaque)
+{
+    const char *type = opaque;
+    static const uint8_t bytes[] = { 0x90, 0x3c, 0x7f };
+    QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                                "-chardev ringbuf,id=midi,size=4096 "
+                                "-chardev ringbuf,id=wave,size=4096 "
+                                "-device %s,id=card,audiodev=snd,gameport=off,"
+                                "midi-chardev=midi,waveblaster-chardev=wave",
+                                type);
+
+    enter_uart(s, 0x330);
+    for (size_t i = 0; i < ARRAY_SIZE(bytes); i++) {
+        qtest_outb(s, 0x330, bytes[i]);
+        qtest_clock_step(s, MIDI_FRAME_NS - 1);
+        g_assert_cmphex(qtest_inb(s, 0x331), ==, 0xc0);
+        check_midi_capture(s, "midi", "");
+        check_midi_capture(s, "wave", "");
+        qtest_clock_step(s, 1);
+        g_assert_cmphex(qtest_inb(s, 0x331), ==, 0x80);
+        /* Read each frame before starting the next one. */
+        g_autofree char *expected = g_base64_encode(bytes + i, 1);
+        check_midi_capture(s, "midi", expected);
+        check_midi_capture(s, "wave", expected);
+    }
+
+    qtest_outb(s, 0x330, 0x91);
+    qtest_outb(s, 0x331, 0xff);
+    g_assert_cmphex(qtest_inb(s, 0x330), ==, 0xfe);
+    qtest_clock_step(s, MIDI_FRAME_NS);
+    check_midi_capture(s, "midi", "");
+    check_midi_capture(s, "wave", "");
+    qtest_quit(s);
+}
+
 static uint8_t sb16_pending(QTestState *s)
 {
     qtest_outb(s, 0x224, 0x82);
@@ -179,6 +225,10 @@ int main(int argc, char **argv)
     if (qtest_has_machine("pc") && qtest_has_device("mpu401-uart-compat")) {
         qtest_add_func("/mpu401/tx", test_mpu_tx);
         if (qtest_has_device("sb16-ct1740")) {
+            qtest_add_data_func("/mpu401/sb16/waveblaster", "sb16-ct1740",
+                                test_sb16_waveblaster);
+            qtest_add_data_func("/mpu401/sb16/waveblaster-alias", "sb16",
+                                test_sb16_waveblaster);
 #ifndef _WIN32
             qtest_add_func("/mpu401/sb16/receive", test_sb16_midi_receive);
 #endif

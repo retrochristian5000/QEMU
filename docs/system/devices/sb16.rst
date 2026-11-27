@@ -217,6 +217,43 @@ Reference: Creative Sound Blaster Series Hardware Programming Guide,
 chapter 2 (interrupt sharing) and chapter 5 (MPU-401 UART mode),
 https://pdos.csail.mit.edu/6.828/2018/readings/hardware/SoundBlaster.pdf
 
+Wave Blaster expansion interface
+--------------------------------
+
+The CT1740's optional wavetable daughterboard is driven by the existing
+MPU-401 UART, not by another ISA controller. Named fixed-jumper profiles
+now expose a separate, optional transmit-only raw character endpoint
+``waveblaster-chardev``. It models MIDI delivery to a daughterboard
+connector independently of the external MIDI endpoint. Both receive the
+same serialized bytes, with one 320 us frame per byte. No new guest I/O,
+IRQ, DMA channel, PnP identity or EMU8000 registers are allocated.
+Disabling the gameport does not disable MIDI, as Creative's SB16 manual
+specifies.
+
+For example, observe both outputs without sound synthesis::
+
+    -audiodev none,id=snd -chardev ringbuf,id=external,size=4096 \\
+    -chardev ringbuf,id=wave,size=4096 \\
+    -device sb16,audiodev=snd,midi-chardev=external,waveblaster-chardev=wave
+
+A host backend that temporarily cannot accept a byte can delay completion
+of the UART holding register, as in the existing external MIDI transport.
+Each sink has independent completion tracking so retries never duplicate
+bytes already delivered to the other sink. Reset cancels an outstanding
+frame, but cannot retract bytes already delivered. The daughterboard
+endpoint does not provide MIDI input or generate IRQs. Unconnected
+endpoints discard output.
+
+This is an interface model, not a CT1900, CT1910, DB50XG or SCB-55
+synthesizer. Wavetable ROMs, instrument synthesis, reset wiring and the
+stereo analog return to the CT1745 mixer remain unimplemented. The
+generic SB16 has no new property; existing configurations without the
+daughterboard endpoint keep their behavior.
+
+References: Creative Sound Blaster 16 User's Guide, pp. 2-3 to 2-4,
+Appendix A-8, Appendix C-3:
+https://datassette.s3.us-west-004.backblazeb2.com/manuais/sound_blaster_16_users_guide.pdf
+
 Later ISA Plug and Play
 -----------------------
 

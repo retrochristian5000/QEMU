@@ -72,6 +72,7 @@ struct SB16State {
     ISADevice *mpu;
     uint32_t mpu_iobase;
     char *midi_chardev;
+    char *waveblaster_chardev;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -1661,6 +1662,9 @@ static bool sb16_realize_mpu(SB16State *s, ISABus *bus, Error **errp)
     if ((s->midi_chardev &&
          !object_property_set_str(OBJECT(mpu), "chardev",
                                   s->midi_chardev, errp)) ||
+        (s->waveblaster_chardev &&
+         !object_property_set_str(OBJECT(mpu), "waveblaster-chardev",
+                                  s->waveblaster_chardev, errp)) ||
         !qdev_realize(mpu, BUS(bus), errp)) {
         object_unparent(OBJECT(mpu));
         object_unref(OBJECT(mpu));
@@ -1781,6 +1785,7 @@ static const Property sb16_properties[] = {
 static const Property sb16_legacy_midi_properties[] = {
     DEFINE_PROP_UINT32("mpu-iobase", SB16State, mpu_iobase, 0x330),
     DEFINE_PROP_STRING("midi-chardev", SB16State, midi_chardev),
+    DEFINE_PROP_STRING("waveblaster-chardev", SB16State, waveblaster_chardev),
 };
 
 void sb16_legacy_add_midi_properties(DeviceClass *dc)
