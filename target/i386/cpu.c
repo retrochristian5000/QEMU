@@ -3843,7 +3843,15 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .versions = (X86CPUVersionDefinition[]) {
             {
                 .version = 1,
-                .note = "Pentium with MMX Technology (P55C)",
+                .note = "Pentium with MMX Technology (P55C), compatibility",
+            },
+            {
+                .version = 2,
+                .note = "Pentium MMX with corrected reserved CPUID.1 EBX",
+                .props = (PropValue[]) {
+                    { "x-p5-cpuid1-reserved-ebx", "on" },
+                    { /* end of list */ }
+                },
             },
             { /* end of list */ }
         },
@@ -8657,13 +8665,13 @@ static void x86_register_cpudef_types(const X86CPUDefinition *def)
     m->cpudef = def;
     /*
      * Keep the historical Pentium v1 and v2 identities. The unversioned
-     * Pentium selects P54C, while the independent P55C profile remains
-     * pinned to v1, including on machines with legacy version policy.
+     * Pentium selects P54C, while the independent P55C profile selects
+     * the corrected v2, including on machines with legacy version policy.
      */
     if (!strcmp(def->name, "pentium")) {
         m->version = 2;
     } else if (!strcmp(def->name, "pentium_mmx")) {
-        m->version = 1;
+        m->version = 2;
     } else {
         m->version = CPU_VERSION_AUTO;
     }
@@ -8766,6 +8774,16 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
 
             /* Fixup overflow: max value for bits 23-16 is 255. */
             *ebx |= MIN(num, 255) << 16;
+        }
+        /*
+         * Family 5 predates the later CPUID.1 EBX fields. Physical P55C
+         * signature 0543h returns zero in this reserved register.
+         * Preserve existing feature overrides that explicitly enable
+         * later CLFLUSH or HTT functionality.
+         */
+        if (cpu->p5_cpuid1_reserved_ebx &&
+            !(*edx & (CPUID_CLFLUSH | CPUID_HT))) {
+            *ebx = 0;
         }
         if (cpu->pdcm_on_even_without_pmu) {
             if (!cpu->enable_pmu) {
@@ -10907,6 +10925,8 @@ static const Property x86_cpu_properties[] = {
     DEFINE_PROP_BOOL("cpuid-0xb", X86CPU, enable_cpuid_0xb, true),
     DEFINE_PROP_BOOL("x-vendor-cpuid-only", X86CPU, vendor_cpuid_only, true),
     DEFINE_PROP_BOOL("x-vendor-cpuid-only-v2", X86CPU, vendor_cpuid_only_v2, true),
+    DEFINE_PROP_BOOL("x-p5-cpuid1-reserved-ebx", X86CPU,
+                     p5_cpuid1_reserved_ebx, false),
     DEFINE_PROP_BOOL("x-amd-topoext-features-only", X86CPU, amd_topoext_features_only, true),
     DEFINE_PROP_BOOL("lmce", X86CPU, enable_lmce, false),
     DEFINE_PROP_BOOL("l3-cache", X86CPU, enable_l3_cache, true),
