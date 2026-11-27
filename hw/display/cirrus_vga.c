@@ -924,10 +924,20 @@ static void cirrus_bitblt_cputovideo_next(CirrusVGAState * s)
         } else {
             /* at least one scan line */
             do {
-                (*s->cirrus_rop)(s, s->cirrus_blt_dstaddr,
-                                 0, 0, 0, s->cirrus_blt_width, 1);
-                cirrus_invalidate_region(s, s->cirrus_blt_dstaddr, 0,
-                                         s->cirrus_blt_width, 1);
+                unsigned skip = s->cirrus_blt_host_skip;
+                int width = s->cirrus_blt_width - (int)skip;
+
+                /*
+                 * TRM 5.8 and 9.4.5: the programmed width includes
+                 * the clipped prefix. Consume the full aligned source
+                 * row, but do not write the prefix to the destination.
+                 */
+                if (width > 0) {
+                    (*s->cirrus_rop)(s, s->cirrus_blt_dstaddr + skip,
+                                     skip, 0, 0, width, 1);
+                    cirrus_invalidate_region(s, s->cirrus_blt_dstaddr + skip,
+                                             0, width, 1);
+                }
                 s->cirrus_blt_dstaddr += s->cirrus_blt_dstpitch;
                 s->cirrus_srccounter -= s->cirrus_blt_srcpitch;
                 if (s->cirrus_srccounter <= 0)
@@ -962,6 +972,7 @@ static void cirrus_bitblt_reset(CirrusVGAState * s)
     s->cirrus_srcptr = &s->cirrus_bltbuf[0];
     s->cirrus_srcptr_end = &s->cirrus_bltbuf[0];
     s->cirrus_srccounter = 0;
+    s->cirrus_blt_host_skip = 0;
     if (!need_update)
         return;
     cirrus_update_memory_access(s);
@@ -976,6 +987,14 @@ static int cirrus_bitblt_cputovideo(CirrusVGAState * s)
     }
 
     s->cirrus_blt_mode &= ~CIRRUS_BLTMODE_MEMSYSSRC;
+    s->cirrus_blt_host_skip = 0;
+    if (s->device_id == CIRRUS_ID_CLGD5446 &&
+        !(s->cirrus_blt_mode & (CIRRUS_BLTMODE_BACKWARDS |
+                               CIRRUS_BLTMODE_TRANSPARENTCOMP |
+                               CIRRUS_BLTMODE_PATTERNCOPY |
+                               CIRRUS_BLTMODE_COLOREXPAND))) {
+        s->cirrus_blt_host_skip = (s->vga.gr[0x2f] >> 5) & 3;
+    }
     s->cirrus_srcptr = &s->cirrus_bltbuf[0];
     s->cirrus_srcptr_end = &s->cirrus_bltbuf[0];
 
@@ -3469,6 +3488,7 @@ static void cirrus_reset(void *opaque)
     s->cirrus_srcptr = s->cirrus_bltbuf;
     s->cirrus_srcptr_end = s->cirrus_bltbuf;
     s->cirrus_srccounter = 0;
+    s->cirrus_blt_host_skip = 0;
     vga_common_reset(&s->vga);
     cirrus_ddc_reset(s);
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
