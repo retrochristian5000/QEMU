@@ -127,6 +127,45 @@ static void test_sb16_no_emu8000(gconstpointer data)
     qtest_quit(s);
 }
 
+typedef struct SB16BoardProbe {
+    const char *type;
+    const char *options;
+    uint8_t minor;
+} SB16BoardProbe;
+
+static const SB16BoardProbe board_probes[] = {
+    { "sb16-ct1730", "", 4 },
+    { "sb16-ct1730", ",version=0x0405", 5 },
+    { "sb16-ct1750", "", 5 },
+    { "sb16-ct1750", ",version=0x040b", 11 },
+    { "sb16-ct1770", "", 5 },
+    { "sb16-ct1770", ",version=0x040c", 12 },
+    { "sb16-ct1790", "", 11 },
+};
+
+static void test_sb16_legacy_board(gconstpointer data)
+{
+    const SB16BoardProbe *probe = data;
+    QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device %s,audiodev=snd%s",
+                               probe->type, probe->options);
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0x22c, 0xe1);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+    g_assert_cmpuint(qtest_inb(s, 0x22a), ==, probe->minor);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x80), ==, 2);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x81), ==, 0x22);
+    g_assert_cmphex(ct1740_csp_read(s, 0x83), ==, 0xff);
+    for (unsigned int port = 0x620; port <= 0xe20; port += 0x400) {
+        g_assert_cmphex(qtest_inw(s, port), ==, 0xffff);
+        g_assert_cmphex(qtest_inw(s, port + 2), ==, 0xffff);
+    }
+    qtest_quit(s);
+}
+
 static void test_ct1740_invalid(gconstpointer data)
 {
     const char *properties = data;
@@ -169,6 +208,17 @@ int main(int argc, char **argv)
     if (qtest_has_machine("pc") && qtest_has_device("sb16-generic")) {
         qtest_add_data_func("/sb16-generic/no-emu8000", "sb16-generic",
                             test_sb16_no_emu8000);
+    }
+    if (qtest_has_machine("pc")) {
+        for (size_t i = 0; i < G_N_ELEMENTS(board_probes); i++) {
+            if (qtest_has_device(board_probes[i].type)) {
+                g_autofree char *path = g_strdup_printf("/sb16/%s/dsp-%u",
+                                                       board_probes[i].type,
+                                                       board_probes[i].minor);
+                qtest_add_data_func(path, &board_probes[i],
+                                    test_sb16_legacy_board);
+            }
+        }
     }
     return g_test_run();
 }

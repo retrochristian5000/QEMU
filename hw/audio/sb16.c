@@ -29,7 +29,7 @@
 #include "hw/isa/isa.h"
 #include "hw/input/isa-gameport.h"
 #include "hw/audio/mpu401-uart.h"
-#include "sb16-ct1740.h"
+#include "sb16-legacy.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -65,7 +65,7 @@ struct SB16State {
     uint32_t port;
     uint32_t ver;
     bool gameport_enabled;
-    bool ct1740; /* Immutable board policy, set during realization. */
+    bool legacy_board; /* Immutable board policy, set during realization. */
     ISADevice *gameport;
     ISADevice *mpu;
     uint32_t mpu_iobase;
@@ -219,7 +219,7 @@ static void aux_timer (void *opaque)
 {
     SB16State *s = opaque;
     s->can_write = 1;
-    if (s->ct1740) {
+    if (s->legacy_board) {
         s->mixer_regs[0x82] |= 1;
     }
     qemu_irq_raise (s->pic);
@@ -464,8 +464,8 @@ static void command (SB16State *s, uint8_t cmd)
 
         switch (cmd) {
         case 0x03:
-            /* CT1740 without the optional CT1748 CSP must not report it. */
-            dsp_out_data(s, s->ct1740 ? 0xff : 0x10);
+            /* Legacy board without the optional CT1748 CSP must not report it. */
+            dsp_out_data(s, s->legacy_board ? 0xff : 0x10);
             goto warn;
 
         case 0x04:
@@ -485,7 +485,7 @@ static void command (SB16State *s, uint8_t cmd)
             break;
 
         case 0x09:
-            dsp_out_data(s, s->ct1740 ? 0xff : 0xf8);
+            dsp_out_data(s, s->legacy_board ? 0xff : 0xf8);
             goto warn;
 
         case 0x0f:              /* CSP register read: index */
@@ -736,7 +736,7 @@ static void complete (SB16State *s)
         switch (s->cmd) {
         case 0x04:
             d0 = dsp_get_data(s);
-            if (s->ct1740) {
+            if (s->legacy_board) {
                 break;
             }
             s->csp_mode = d0;
@@ -748,7 +748,7 @@ static void complete (SB16State *s)
         case 0x05:
             d0 = dsp_get_data(s);
             d1 = dsp_get_data(s);
-            if (s->ct1740) {
+            if (s->legacy_board) {
                 break;
             }
             s->csp_param = d0;
@@ -762,7 +762,7 @@ static void complete (SB16State *s)
             /* Register storage only; CSP microcode execution is not emulated. */
             d0 = dsp_get_data (s);
             d1 = dsp_get_data (s);
-            if (s->ct1740) {
+            if (s->legacy_board) {
                 break;
             }
             ldebug("write CSP register %d <- 0x%x", d1, d0);
@@ -780,7 +780,7 @@ static void complete (SB16State *s)
 
         case 0x0f:
             d0 = dsp_get_data (s);
-            if (s->ct1740) {
+            if (s->legacy_board) {
                 /* Consume the probe but expose no writable CSP state. */
                 dsp_out_data(s, 0xff);
                 break;
@@ -848,7 +848,7 @@ static void complete (SB16State *s)
                 bytes = samples << s->fmt_stereo << (s->fmt_bits == 16);
                 ticks = muldiv64(bytes, NANOSECONDS_PER_SECOND, freq);
                 if (ticks < NANOSECONDS_PER_SECOND / 1024) {
-                    if (s->ct1740) {
+                    if (s->legacy_board) {
                         s->mixer_regs[0x82] |= 1;
                     }
                     qemu_irq_raise (s->pic);
@@ -945,7 +945,7 @@ static void legacy_reset (SB16State *s)
 
 static void reset (SB16State *s)
 {
-    if (s->ct1740) {
+    if (s->legacy_board) {
         /* DSP reset is not a reset of the separate MPU UART. */
         s->mixer_regs[0x82] &= 4;
         qemu_set_irq(s->pic, !!(s->mixer_regs[0x82] & 4));
@@ -1095,7 +1095,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 1) {
             ack = 1;
             s->mixer_regs[0x82] &= ~1;
-            if (!s->ct1740 || !(s->mixer_regs[0x82] & 7)) {
+            if (!s->legacy_board || !(s->mixer_regs[0x82] & 7)) {
                 qemu_irq_lower(s->pic);
             }
         }
@@ -1106,7 +1106,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         if (s->mixer_regs[0x82] & 2) {
             ack = 1;
             s->mixer_regs[0x82] &= ~2;
-            if (!s->ct1740 || !(s->mixer_regs[0x82] & 7)) {
+            if (!s->legacy_board || !(s->mixer_regs[0x82] & 7)) {
                 qemu_irq_lower(s->pic);
             }
         }
@@ -1172,14 +1172,14 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
     ldebug("mixer_write [0x%x] <- 0x%x", s->mixer_nreg, val);
 
     /*
-     * The initial CT1740 model uses fixed jumper-selected wiring. Do not
+     * The fixed-jumper board model uses fixed jumper-selected wiring. Do not
      * acknowledge resource changes that cannot be applied to the ISA bus.
      */
-    if (s->ct1740 && (s->mixer_nreg == 0x80 || s->mixer_nreg == 0x81)) {
+    if (s->legacy_board && (s->mixer_nreg == 0x80 || s->mixer_nreg == 0x81)) {
         uint8_t mask = s->mixer_nreg == 0x80 ? 0x0f : 0xeb;
 
         if ((val & mask) != s->mixer_regs[s->mixer_nreg]) {
-            qemu_log_mask(LOG_UNIMP, "sb16: CT1740 profile does not support changing "
+            qemu_log_mask(LOG_UNIMP, "sb16: fixed-jumper profile does not support changing "
                           "IRQ/DMA after realization\n");
         }
         return;
@@ -1565,15 +1565,10 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     SB16State *s = SB16 (dev);
     IsaDmaClass *k;
 
-    s->ct1740 = object_dynamic_cast(OBJECT(dev), TYPE_CREATIVE_SB16) != NULL;
-    if (s->ct1740) {
-        if (!sb16_ct1740_validate(s->port, s->irq, s->dma, s->hdma,
-                                  s->ver, errp)) {
-            return;
-        }
-
-        if (s->mpu_iobase != 0x300 && s->mpu_iobase != 0x330) {
-            error_setg(errp, "sb16: CT1740 MIDI base must be 0x300 or 0x330");
+    s->legacy_board = sb16_legacy_model(OBJECT(dev)) != NULL;
+    if (s->legacy_board) {
+        if (!sb16_legacy_validate(OBJECT(dev), s->port, s->irq, s->dma,
+                                  s->hdma, s->ver, s->mpu_iobase, errp)) {
             return;
         }
 
@@ -1611,7 +1606,7 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
-    if (s->ct1740 && !sb16_realize_mpu(s, bus, errp)) {
+    if (s->legacy_board && !sb16_realize_mpu(s, bus, errp)) {
         sb16_remove_gameport(s);
         return;
     }
@@ -1654,17 +1649,17 @@ static const Property sb16_properties[] = {
     DEFINE_PROP_BOOL("gameport", SB16State, gameport_enabled, true),
 };
 
-static const Property sb16_ct1740_midi_properties[] = {
+static const Property sb16_legacy_midi_properties[] = {
     DEFINE_PROP_UINT32("mpu-iobase", SB16State, mpu_iobase, 0x330),
     DEFINE_PROP_STRING("midi-chardev", SB16State, midi_chardev),
 };
 
-void sb16_ct1740_add_midi_properties(DeviceClass *dc)
+void sb16_legacy_add_midi_properties(DeviceClass *dc)
 {
-    device_class_set_props(dc, sb16_ct1740_midi_properties);
+    device_class_set_props(dc, sb16_legacy_midi_properties);
 }
 
-void sb16_ct1740_midi_init(Object *obj)
+void sb16_legacy_midi_init(Object *obj)
 {
     qdev_init_gpio_in_named(DEVICE(obj), sb16_mpu_irq, "midi", 1);
 }

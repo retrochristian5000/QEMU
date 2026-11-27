@@ -51,6 +51,62 @@ Board references:
 * https://ardent-tool.com/sound/Sound_Blaster_HW_Programming_Guide_1st.pdf
   (chapter 2, interrupt and DMA setup).
 
+Additional fixed-jumper boards
+------------------------------
+
+The original CT1740 keeps the short name ``sb16``. The following distinct
+board profiles reuse the same fixed-jumper audio policy, gameport and
+MPU-401 UART, without claiming any Plug and Play or EMU8000 identity:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Device
+     - Default DSP
+     - Other accepted DSP revisions
+     - Physical CD-ROM interface (not emulated)
+   * - ``sb16-ct1730``
+     - 4.04
+     - 4.05
+     - Panasonic
+   * - ``sb16-ct1750``
+     - 4.05
+     - 4.11, 4.12
+     - Panasonic, Sony, Mitsumi (MultiCD)
+   * - ``sb16-ct1770``
+     - 4.05
+     - 4.11, 4.12
+     - SCSI-2
+   * - ``sb16-ct1790``
+     - 4.11
+     - None
+     - Sony
+
+These are experimental PCM/MIDI subsets, not complete boards. The reported
+DSP revisions do not yet reproduce revision-specific firmware behavior
+(including MIDI hanging-note bugs). The optional CSP, OPL3 and storage
+controllers remain unimplemented; none of these profiles registers their
+storage I/O ports. The DSP minor revision is a binary number: use
+``version=0x040b`` for 4.11 and ``version=0x040c`` for 4.12.
+All four new profiles are unmigratable, like the CT1740.
+
+For example::
+
+    -audiodev none,id=snd -device sb16-ct1790,audiodev=snd
+
+Later CT2230/CT2290 and ViBRA boards are not registered by this change;
+their resource-selection and mixer differences need separate modeling.
+
+Board references:
+
+* https://support.creative.com/kb/ShowArticle.aspx?sid=10846
+* https://amoretro.de/guides-workshops/creative-labs-sound-blaster-modellnummern
+* https://www.elhvb.com/mobokive/th99/i/C-D/53583.htm
+* https://www.elhvb.com/mobokive/th99/i/C-D/53582.htm
+* https://www.dosdays.co.uk/topics/Manufacturers/creative/ct1740.php
+* https://www.dosdays.co.uk/topics/Manufacturers/creative/ct1750.php
+* https://dosdays.co.uk/topics/Manufacturers/creative/ct1770.php
+
 MPU-401 UART MIDI
 -----------------
 
