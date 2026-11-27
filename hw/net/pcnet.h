@@ -33,6 +33,7 @@
 typedef struct PCNetState_st PCNetState;
 
 struct PCNetState_st {
+    bool am79c970a; /* Explicit silicon profile; fixed at realization. */
     NICState *nic;
     NICConf conf;
     QEMUTimer *poll_timer;
