@@ -1324,6 +1324,16 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
         {
             uint8_t val = s->nsector & 0x07;
 
+            if (s->drive_kind == IDE_CD && s->atapi_pio_only) {
+                unsigned int type = s->nsector >> 3;
+
+                if ((type == 0 && val <= 1) ||
+                    (type == 1 && val <= 4)) {
+                    return true;
+                }
+                goto abort_cmd;
+            }
+
             if (s->drive_kind == IDE_HD) {
                 if (!ide_hd_set_transfer_mode(s)) {
                     goto abort_cmd;
@@ -1791,6 +1801,10 @@ int ide_init_drive(IDEState *s, IDEDevice *dev, IDEDriveKind kind, Error **errp)
     s->atapi_cd_only = dc->atapi_cd_only;
     s->atapi_unswapped_model = dc->atapi_unswapped_model;
     s->atapi_inquiry_product = dc->atapi_inquiry_product;
+    s->atapi_inquiry_vendor = dc->atapi_inquiry_vendor;
+    s->atapi_read_speed = dc->atapi_read_speed;
+    s->atapi_buffer_kib = dc->atapi_buffer_kib;
+    s->atapi_pio_only = dc->atapi_pio_only;
 
     s->win2k_install_hack = dev->win2k_install_hack;
     s->cylinders = dev->conf.cyls;
